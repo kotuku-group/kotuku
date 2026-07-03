@@ -648,6 +648,7 @@ static ERR  save_svg_scan(extSVG *, objXML *, objVector *, int);
 static ERR  save_svg_defs(extSVG *, objXML *, objVectorScene *, int);
 static ERR  save_svg_scan_std(extSVG *, objXML *, objVector *, int);
 static ERR  save_svg_transform(VectorMatrix *, std::stringstream &);
+static ERR  save_svg_scan_def(extSVG *, objXML *, objVector *, int, std::string_view);
 
 // Tracking for resources like patterns, gradients, filters, etc.  If ENFORCE_TRACKING is enabled, these resources
 // will be automatically terminated when the SVG is terminated.  Otherwise, they will persist until the client

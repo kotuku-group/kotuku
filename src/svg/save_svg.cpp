@@ -1,4 +1,13 @@
+// Exporting a vector scene graph to SVG is handled here.
+//
+// Note on round-tripping: we don't save unnecessary metadata from the source, so a true round-trip isn't possible.
+// However, the client should be able to rely on the output creating a scene that renders identically to the original
+// input, as long as the SVG and Vector modules provide sufficient features for generating the original scene.
+//
+// With respect to SVG optimisation commands like <use>, these are a second-pass detail that can be taken up after
+// the initial generation of the XML document [TODO]
 
+//*********************************************************************************************************************
 // Format a floating point value for SVG output without trailing zeros, e.g. "10" rather than "10.000000".  Required
 // where the result is concatenated into a larger string (such as a percentage); plain attribute values are handled
 // by xml::NewAttrib() directly.
@@ -34,6 +43,135 @@ static void set_gradient_colour_space(XTag *Tag, objGradient *Gradient, ERR &Err
          default: break;
       }
    }
+}
+
+//*********************************************************************************************************************
+
+static bool has_attrib(const XTag *Tag, std::string_view Name) noexcept
+{
+   return Tag->attrib(Name) != nullptr;
+}
+
+//*********************************************************************************************************************
+
+static void set_missing_attrib(XTag *Tag, std::string_view Name, std::string_view Value)
+{
+   if ((not Value.empty()) and (not has_attrib(Tag, Name))) xml::NewAttrib(Tag, Name, Value);
+}
+
+//*********************************************************************************************************************
+
+static ERR save_svg_scan_def(extSVG *Self, objXML *XML, objVector *Vector, int Parent, std::string_view DefID)
+{
+   XTag *parent_tag;
+   ERR error = XML->getTag(Parent, &parent_tag);
+   if (error != ERR::Okay) return error;
+
+   const auto child_count = parent_tag->Children.size();
+
+   error = save_svg_scan(Self, XML, Vector, Parent);
+   if ((error != ERR::Okay) or DefID.empty()) return error;
+
+   error = XML->getTag(Parent, &parent_tag);
+   if ((error IS ERR::Okay) and (parent_tag->Children.size() > child_count)) {
+      set_missing_attrib(&parent_tag->Children[child_count], "id", DefID);
+   }
+
+   return error;
+}
+
+//*********************************************************************************************************************
+
+static ERR save_svg_clip(extSVG *Self, objXML *XML, objVectorClip *Clip, int Parent, std::string_view DefID)
+{
+   XTag *tag;
+   std::string_view sid;
+   ERR error = Clip->getSID(sid);
+   if (error != ERR::Okay) return error;
+
+   const std::string_view id = sid.empty() ? DefID : sid;
+   if (id.empty()) return ERR::Okay;
+
+   error = XML->insertStatement(Parent, XMI::CHILD_END, "<clipPath/>", &tag);
+   if (error != ERR::Okay) return error;
+
+   xml::NewAttrib(tag, "id", id);
+
+   VUNIT units;
+   if (!Clip->getUnits(units)) {
+      switch(units) {
+         default:
+         case VUNIT::USERSPACE:    break; // Default
+         case VUNIT::BOUNDING_BOX: xml::NewAttrib(tag, "clipPathUnits", "objectBoundingBox"); break;
+      }
+   }
+
+   objVectorViewport *viewport = nullptr;
+   if ((error = Clip->getViewport(viewport)) != ERR::Okay) return error;
+
+   if (viewport) {
+      for (auto scan=viewport->Child; (scan) and (!error); scan=scan->Next) {
+         error = save_svg_scan(Self, XML, scan, tag->ID);
+      }
+   }
+
+   return error;
+}
+
+//*********************************************************************************************************************
+
+static void set_unit_attrib(XTag *Tag, std::string_view Name, VUNIT Units)
+{
+   switch(Units) {
+      default:
+      case VUNIT::UNDEFINED:    break;
+      case VUNIT::USERSPACE:    xml::NewAttrib(Tag, Name, "userSpaceOnUse"); break;
+      case VUNIT::BOUNDING_BOX: xml::NewAttrib(Tag, Name, "objectBoundingBox"); break;
+   }
+}
+
+//*********************************************************************************************************************
+
+static ERR save_svg_pattern(extSVG *Self, objXML *XML, objVectorPattern *Pattern, int Parent, std::string_view DefID)
+{
+   XTag *tag;
+   ERR error = XML->insertStatement(Parent, XMI::CHILD_END, "<pattern/>", &tag);
+   if (error != ERR::Okay) return error;
+
+   xml::NewAttrib(tag, "id", DefID);
+
+   Unit unit;
+   if ((!error) and (!Pattern->getX(unit))) set_dimension(tag, "x", unit);
+   if ((!error) and (!Pattern->getY(unit))) set_dimension(tag, "y", unit);
+   if ((!error) and (!Pattern->getWidth(unit))) set_dimension(tag, "width", unit);
+   if ((!error) and (!Pattern->getHeight(unit))) set_dimension(tag, "height", unit);
+
+   VUNIT units;
+   if ((!error) and (!Pattern->getUnits(units))) set_unit_attrib(tag, "patternUnits", units);
+   if ((!error) and (!Pattern->getContentUnits(units))) set_unit_attrib(tag, "patternContentUnits", units);
+
+   std::span<VectorMatrix> transform;
+   if ((!error) and (!Pattern->getMatrices(transform)) and (not transform.empty())) {
+      std::stringstream buffer;
+      if (!save_svg_transform(transform.data(), buffer)) {
+         xml::NewAttrib(tag, "patternTransform", buffer.str());
+      }
+   }
+
+   objVectorViewport *viewport = nullptr;
+   if ((!error) and (!Pattern->getViewport(viewport)) and (viewport)) {
+      double x, y, width, height;
+      if ((!viewport->getViewX(x)) and (!viewport->getViewY(y)) and
+          (!viewport->getViewWidth(width)) and (!viewport->getViewHeight(height)) and (width > 0) and (height > 0)) {
+         xml::NewAttrib(tag, "viewBox", std::format("{} {} {} {}", x, y, width, height));
+      }
+
+      for (auto scan=viewport->Child; (scan) and (!error); scan=scan->Next) {
+         error = save_svg_scan(Self, XML, scan, tag->ID);
+      }
+   }
+
+   return error;
 }
 
 //*********************************************************************************************************************
@@ -266,10 +404,10 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
             log.warning("VectorImage not supported.");
          }
          else if (def->classID() IS CLASSID::VECTORPATH) {
-            error = save_vectorpath(Self, XML, (objVector *)def, def_index);
+            error = save_svg_scan_def(Self, XML, (objVector *)def, def_index, key);
          }
          else if (def->classID() IS CLASSID::VECTORPATTERN) {
-            log.warning("VectorPattern not supported.");
+            error = save_svg_pattern(Self, XML, (objVectorPattern *)def, def_index, key);
          }
          else if (def->classID() IS CLASSID::VECTORFILTER) {
             objVectorFilter *filter = (objVectorFilter *)def;
@@ -307,13 +445,23 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
             }
          }
          else if (def->classID() IS CLASSID::VECTORTRANSITION) {
-            log.warning("VectorTransition not supported.");
+            int transition_index;
+            XTag *tag;
+            error = XML->insertXML(def_index, XMI::CHILD_END, "<kotuku:transition/>", &transition_index);
+            if (!error) error = XML->getTag(transition_index, &tag);
+            if (!error) xml::NewAttrib(tag, "id", key);
+
+            std::string transition_xml;
+            if ((!error) and (!def->get(kt::fieldhash("XMLDef"), transition_xml))) {
+               XTag *stop_tag;
+               error = XML->insertStatement(transition_index, XMI::CHILD_END, transition_xml, &stop_tag);
+            }
          }
          else if (def->classID() IS CLASSID::VECTORCLIP) {
-            log.warning("VectorClip not supported.");
+            error = save_svg_clip(Self, XML, (objVectorClip *)def, def_index, key);
          }
          else if (def->Class->BaseClassID IS CLASSID::VECTOR) {
-            log.warning("%s not supported.", def->Class->ClassName.c_str());
+            error = save_svg_scan_def(Self, XML, (objVector *)def, def_index, key);
          }
          else log.warning("Unrecognised definition class %x", uint32_t(def->classID()));
       }
@@ -336,7 +484,7 @@ static ERR save_svg_transform(VectorMatrix *Transform, std::stringstream &Buffer
    std::for_each(list.rbegin(), list.rend(), [&](auto t) {
       if (need_space) Buffer << " ";
       else need_space = true;
-      Buffer << "matrix(" << t->ScaleX << " " << t->ShearY << " " << t->ShearX << " " << t->ScaleY << " " << t->TranslateX << " " << t->TranslateY << ")";
+      Buffer << std::format("matrix({} {} {} {} {} {})", t->ScaleX, t->ShearY, t->ShearX, t->ScaleY, t->TranslateX, t->TranslateY);
    });
 
    return ERR::Okay;
@@ -588,7 +736,7 @@ static ERR save_svg_scan_polygon(extSVG *Self, objXML *XML, objVector *Vector, i
             error = XML->insertStatement(Parent, XMI::CHILD_END, "<polyline/>", &tag);
             if (!error) {
                for (unsigned i=0; i < points.size(); i++) {
-                  buffer << points[i].X << "," << points[i].Y << " ";
+                  buffer << std::format("{},{} ", points[i].X, points[i].Y);
                }
                xml::NewAttrib(tag, "points", buffer.str());
             }
@@ -601,7 +749,7 @@ static ERR save_svg_scan_polygon(extSVG *Self, objXML *XML, objVector *Vector, i
 
       if ((!error) and (!vp->getPointsArray(points))) {
          for (unsigned i=0; i < points.size(); i++) {
-            buffer << points[i].X << "," << points[i].Y << " ";
+            buffer << std::format("{},{} ", points[i].X, points[i].Y);
          }
          xml::NewAttrib(tag, "points", buffer.str());
       }
@@ -715,29 +863,8 @@ static ERR save_svg_scan_group(extSVG *Self, objXML *XML, objVector *Vector, int
 
 static ERR save_svg_scan_clip(extSVG *Self, objXML *XML, objVector *Vector, int Parent, int &ChildIndex)
 {
-   auto clip = (objVectorClip *)Vector;
-   XTag *tag;
-   std::string_view str;
-   ERR error = ERR::Okay;
-
-   if ((!(error = clip->getSID(str))) and not str.empty()) { // The id is an essential requirement
-      error = XML->insertStatement(Parent, XMI::CHILD_END, "<clipPath/>", &tag);
-
-      VUNIT units;
-      if (!clip->getUnits(units)) {
-         switch(units) {
-            default:
-            case VUNIT::USERSPACE:    break; // Default
-            case VUNIT::BOUNDING_BOX: xml::NewAttrib(tag, "clipPathUnits", "objectBoundingBox"); break;
-         }
-      }
-
-      if (!error) {
-         ChildIndex = tag->ID;
-         error = save_svg_scan_std(Self, XML, Vector, tag->ID);
-      }
-   }
-
+   ERR error = save_svg_clip(Self, XML, (objVectorClip *)Vector, Parent, {});
+   if (!error) ChildIndex = -1;
    return error;
 }
 
@@ -881,11 +1008,7 @@ static ERR save_svg_scan_viewport(extSVG *Self, objXML *XML, objVector *Vector, 
    if (!error) error = viewport->getViewWidth(width);
    if (!error) error = viewport->getViewHeight(height);
 
-   if (!error) {
-      std::stringstream buffer;
-      buffer << x << " " << y << " " << width << " " << height;
-      xml::NewAttrib(tag, "viewBox", buffer.str());
-   }
+   if (!error) xml::NewAttrib(tag, "viewBox", std::format("{} {} {} {}", x, y, width, height));
 
    // Output viewport dimensions, if defined
 
