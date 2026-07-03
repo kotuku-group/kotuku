@@ -64,6 +64,32 @@ end
    assert(#gradient.patches is 1, 'Expected one mesh patch')
 end
 
+@Test function RowMetadataSurvivesFlatPatchAssignment()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local patches = { squarePatch(), squarePatch(), squarePatch(), squarePatch() }
+   local gradient = scene.new('GradientMesh', { units=VUNIT_USERSPACE })
+
+   gradient.rows = 2
+   gradient.columns = 2
+   gradient.patches = patches
+
+   assert(gradient.rows is 2, 'Expected row metadata to survive patch assignment')
+   assert(gradient.columns is 2, 'Expected column metadata to survive patch assignment')
+   assert(#gradient.patches is 4, 'Expected flat patch access to remain available')
+end
+
+@Test function RowMetadataCanBeSetAfterFlatPatches()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local patches = { squarePatch(), squarePatch(), squarePatch(), squarePatch() }
+   local gradient = scene.new('GradientMesh', { units=VUNIT_USERSPACE, patches=patches })
+
+   gradient.rows = 2
+
+   assert(gradient.rows is 2, 'Expected row metadata to update after patch assignment')
+   assert(gradient.columns is 2, 'Expected column metadata to be derived from the patch count')
+   assert(#gradient.patches is 4, 'Expected flat patch access to remain available')
+end
+
 @Test function CornerColoursDominate()
    local scene = newMeshScene()
    local bmp = newBitmap(100, 100)

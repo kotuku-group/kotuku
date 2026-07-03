@@ -22,6 +22,7 @@ https://www.w3.org/Graphics/SVG/Test/Overview.html
 #include <list>
 #include <variant>
 #include <cfloat>
+#include <cmath>
 #include <kotuku/main.h>
 #include <kotuku/modules/compression.h>
 #include <kotuku/modules/filesystem.h>

@@ -95,6 +95,16 @@ static bool mesh_patch_shares_previous_left_edge(const MeshPatchRecord &Patch, c
       mesh_colour_match(Patch.BottomLeft, Previous.BottomRight);
 }
 
+static bool mesh_patch_shares_previous_top_edge(const MeshPatchRecord &Patch, const MeshPatchRecord &Previous) noexcept
+{
+   return (Patch.TopP0X IS Previous.BottomP1X) and (Patch.TopP0Y IS Previous.BottomP1Y) and
+      (Patch.TopC0X IS Previous.BottomC1X) and (Patch.TopC0Y IS Previous.BottomC1Y) and
+      (Patch.TopC1X IS Previous.BottomC0X) and (Patch.TopC1Y IS Previous.BottomC0Y) and
+      (Patch.TopP1X IS Previous.BottomP0X) and (Patch.TopP1Y IS Previous.BottomP0Y) and
+      mesh_colour_match(Patch.TopLeft, Previous.BottomLeft) and
+      mesh_colour_match(Patch.TopRight, Previous.BottomRight);
+}
+
 static void save_mesh_patch(objXML *XML, int RowIndex, int ColIndex, int Parent, const MeshPatchRecord &Patch,
    bool Independent)
 {
@@ -128,17 +138,39 @@ static void save_mesh_gradient(objXML *XML, XTag *Tag, objGradientMesh *Mesh)
    std::span<MeshPatchRecord> patches;
    if ((Mesh->getPatches(patches) != ERR::Okay) or patches.empty()) return;
 
+   int rows = 0;
+   int columns = 0;
+   Mesh->get(kt::fieldhash("Rows"), rows);
+   Mesh->get(kt::fieldhash("Columns"), columns);
+
+   if ((rows <= 0) or (columns <= 0) or ((rows * columns) != int(patches.size()))) {
+      rows = 1;
+      columns = int(patches.size());
+   }
+
    xml::NewAttrib(Tag, "x", patches[0].TopP0X);
    xml::NewAttrib(Tag, "y", patches[0].TopP0Y);
 
-   int row_index;
-   if (XML->insertXML(Tag->ID, XMI::CHILD_END, "<meshrow/>", &row_index) != ERR::Okay) return;
-   for (int col=0; col < int(patches.size()); col++) {
-      bool independent = false;
-      if (col > 0) {
-         independent = not mesh_patch_shares_previous_left_edge(patches[size_t(col)], patches[size_t(col - 1)]);
+   for (int row=0; row < rows; row++) {
+      int row_index;
+      if (XML->insertXML(Tag->ID, XMI::CHILD_END, "<meshrow/>", &row_index) != ERR::Okay) return;
+
+      for (int col=0; col < columns; col++) {
+         const int patch_index = (row * columns) + col;
+         bool independent = false;
+
+         if (col > 0) {
+            independent = not mesh_patch_shares_previous_left_edge(patches[size_t(patch_index)],
+               patches[size_t(patch_index - 1)]);
+         }
+
+         if ((not independent) and (row > 0)) {
+            independent = not mesh_patch_shares_previous_top_edge(patches[size_t(patch_index)],
+               patches[size_t(patch_index - columns)]);
+         }
+
+         save_mesh_patch(XML, row, col, row_index, patches[size_t(patch_index)], independent);
       }
-      save_mesh_patch(XML, 0, col, row_index, patches[size_t(col)], independent);
    }
 }
 

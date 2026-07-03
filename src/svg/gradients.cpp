@@ -336,27 +336,28 @@ static bool parse_mesh_edge_path(const std::string &Path, const SVGMeshPoint &St
       char *end = nullptr;
       const double value = std::strtod(scan.data(), &end);
       if (end IS scan.data()) return false;
+      if (not std::isfinite(value)) return false;
       numbers.push_back(value);
       scan.remove_prefix(size_t(end - scan.data()));
    }
 
    switch (cmd) {
       case 'C':
-         if (numbers.size() < 6) return false;
+         if (numbers.size() != 6) return false;
          Edge.c0 = SVGMeshPoint { numbers[0], numbers[1] };
          Edge.c1 = SVGMeshPoint { numbers[2], numbers[3] };
          Edge.p1 = SVGMeshPoint { numbers[4], numbers[5] };
          return true;
 
       case 'c':
-         if (numbers.size() < 6) return false;
+         if (numbers.size() != 6) return false;
          Edge.c0 = SVGMeshPoint { Start.x + numbers[0], Start.y + numbers[1] };
          Edge.c1 = SVGMeshPoint { Start.x + numbers[2], Start.y + numbers[3] };
          Edge.p1 = SVGMeshPoint { Start.x + numbers[4], Start.y + numbers[5] };
          return true;
 
       case 'L': {
-         if (numbers.size() < 2) return false;
+         if (numbers.size() != 2) return false;
          Edge.p1 = SVGMeshPoint { numbers[0], numbers[1] };
          const double dx = Edge.p1.x - Start.x;
          const double dy = Edge.p1.y - Start.y;
@@ -366,7 +367,7 @@ static bool parse_mesh_edge_path(const std::string &Path, const SVGMeshPoint &St
       }
 
       case 'l': {
-         if (numbers.size() < 2) return false;
+         if (numbers.size() != 2) return false;
          Edge.p1 = SVGMeshPoint { Start.x + numbers[0], Start.y + numbers[1] };
          const double dx = Edge.p1.x - Start.x;
          const double dy = Edge.p1.y - Start.y;
@@ -476,6 +477,8 @@ void svgState::parse_meshgradient(const XTag &Tag, objGradientMesh *Gradient, st
    std::vector<SVGMeshPatch> previous_row;
    std::vector<SVGMeshPatch> current_row;
    int rows = 0;
+   int columns = 0;
+   bool rectangular = true;
 
    for (auto &row_tag : Tag.Children) {
       if (svg_tag_hash(row_tag) != SVF_meshrow) continue;
@@ -575,15 +578,22 @@ void svgState::parse_meshgradient(const XTag &Tag, objGradientMesh *Gradient, st
       }
 
       if (not current_row.empty()) {
+         if (columns IS 0) columns = int(current_row.size());
+         else if (columns != int(current_row.size())) rectangular = false;
+
          previous_row = current_row;
          rows++;
       }
    }
 
    if (not records.empty()) {
+      if ((rectangular) and (rows > 0) and (columns > 0)) {
+         Gradient->set(kt::fieldhash("Rows"), rows);
+         Gradient->set(kt::fieldhash("Columns"), columns);
+      }
+
       std::span<MeshPatchRecord> span(records.data(), records.size());
       Gradient->set(kt::fieldhash("Patches"), span);
-
    }
 }
 

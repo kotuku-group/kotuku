@@ -614,6 +614,8 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   ]])
 
   klass('GradientMesh', { base='Gradient', src='painters/gradient_mesh.cpp', output='painters/gradient_mesh_def.cpp', extended=true }, [[
+    ~int Rows
+    ~int Columns
     ~vector(struct(MeshPatchRecord)) Patches
   ]])
 

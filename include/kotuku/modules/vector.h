@@ -1885,8 +1885,18 @@ class objGradientMesh : public objGradient {
 
    // Customised field getting
 
-   inline ERR getPatches(std::span<MeshPatchRecord> &Value) noexcept {
+   inline ERR getRows(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getColumns(int &Value) noexcept {
       auto field = &this->Class->Dictionary[19];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getPatches(std::span<MeshPatchRecord> &Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
       auto get_field = (ERR (*)(APTR, std::span<MeshPatchRecord> &))field->GetValue;
       return get_field(this, Value);
    }
@@ -1908,8 +1918,18 @@ class objGradientMesh : public objGradient {
 
    // Customised field setting
 
-   inline ERR setPatches(const std::span<const MeshPatchRecord> Value) noexcept {
+   inline ERR setRows(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setColumns(const int Value) noexcept {
       auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setPatches(const std::span<const MeshPatchRecord> Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, 0x00105318, &Value);
    }
 
