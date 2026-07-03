@@ -130,6 +130,7 @@ end
    local saved = saveScene(scene, 'temp:svg_defs_image_path.svg')
    assertContains(saved, '<image', 'Saved SVG should contain the image definition')
    assertContains(saved, 'id="sign_image"', 'VectorImage should use the scene def key')
+   assertContains(saved, 'xmlns:xlink="http://www.w3.org/1999/xlink"', 'Saved SVG should declare the xlink namespace')
    assertContains(saved, 'xlink:href=', 'VectorImage should export a source reference')
    assertContains(saved, 'sign.png', 'VectorImage should preserve an existing source path')
    assert(string.find(saved, 'data:image/png;base64,', 0, true) is nil, 'Existing image paths should not be embedded')

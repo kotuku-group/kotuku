@@ -354,7 +354,8 @@ static ERR SVG_SaveToObject(extSVG *Self, struct acSaveToObject *Args)
       // tree must be supplied via the Statement field at creation time.
 
       static const std::string root_doc = std::string(header) +
-         "<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:kotuku=\"http://www.kotuku.dev/xmlns/svg\"/>";
+         "<svg version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" "
+         "xmlns:xlink=\"http://www.w3.org/1999/xlink\" xmlns:kotuku=\"http://www.kotuku.dev/xmlns/svg\"/>";
 
       auto xml = objXML::create { fl::Flags(XMF::NEW|XMF::READABLE), fl::Statement(root_doc) };
 
