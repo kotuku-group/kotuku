@@ -31,6 +31,7 @@ that is distributed with this package.  Please refer to it for further informati
 #define PRV_SURFACE
 
 #include "defs/hashes.h"
+#include "../link/simd.h"
 #include "../link/unicode.h"
 #include <kotuku/modules/filesystem.h>
 #include <kotuku/modules/processes.h>

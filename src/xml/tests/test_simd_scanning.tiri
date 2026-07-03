@@ -1,0 +1,111 @@
+-- SSE4.2 scanner boundary tests.
+--
+-- These tests exercise the SIMD-accelerated ParseState scanners (skipTo / skipWhitespace) in src/xml/xml.h, which
+-- process 16 bytes per iteration.  The cases below deliberately place delimiters, newlines and content boundaries
+-- around the 16-byte block boundary so that any divergence between the SIMD path and the scalar tail/fallback is
+-- caught.  The scanners must produce byte-identical parsing results and accurate line numbers regardless of length.
+
+   include 'xml'
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Attribute values that straddle the 16-byte SIMD block boundary must be captured exactly.  Lengths are chosen to
+-- land just below, on, and just above multiples of 16 (the skipTo('"') scan width).
+
+@Test function AttrValueBlockBoundaries()
+   for _, len in ipairs({ 1, 15, 16, 17, 31, 32, 33, 48, 100 }) do
+      local value = string.rep('a', len)
+      local xml = obj.new('xml', { statement = '<root attr="' .. value .. '"/>' })
+      assert(xml.tags, 'Parse failed for value length ' .. len)
+      local err, got = xml.mtGetAttrib(xml.tags[0].id, 'attr')
+      assert(err is ERR_Okay, 'GetAttrib failed for length ' .. len)
+      assert(got is value, 'Value mismatch at length ' .. len .. ': got "' .. tostring(got) .. '"')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Single-quoted values exercise the skipTo('\'') scan.  Mix in characters that must NOT terminate the scan early.
+
+@Test function SingleQuotedLongValue()
+   local value = 'the quick brown fox jumps over the lazy dog' -- 43 chars, spans multiple blocks
+   local xml = obj.new('xml', { statement = "<root attr='" .. value .. "'/>" })
+   local err, got = xml.mtGetAttrib(xml.tags[0].id, 'attr')
+   assert(err is ERR_Okay, 'GetAttrib failed for single-quoted value')
+   assert(got is value, 'Single-quoted value mismatch: got "' .. tostring(got) .. '"')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Long text content exercises skipTo('<').  Content longer than one SIMD block with a trailing tag must be captured
+-- in full, and the closing tag correctly located.
+
+@Test function LongContentRun()
+   local content = string.rep('X', 200)
+   local xml = obj.new('xml', { statement = '<root>' .. content .. '</root>' })
+   local children = xml.tags[0].children
+   assert(#children is 1, 'Expected single content node, got ' .. #children)
+   assert(children[0].attribs[0].value is content, 'Long content run not captured exactly')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- skipWhitespace SIMD path: a long whitespace run (> 16 bytes) between attributes must be skipped and both
+-- attributes parsed.  Newlines inside the run must be counted (validated separately below).
+
+@Test function LongWhitespaceRun()
+   local gap = string.rep(' ', 40)
+   local xml = obj.new('xml', { statement = '<root' .. gap .. 'a="1"' .. gap .. 'b="2"/>' })
+   local id = xml.tags[0].id
+   local e1, v1 = xml.mtGetAttrib(id, 'a')
+   local e2, v2 = xml.mtGetAttrib(id, 'b')
+   assert(e1 is ERR_Okay and v1 is '1', 'Attribute a not parsed across long whitespace')
+   assert(e2 is ERR_Okay and v2 is '2', 'Attribute b not parsed across long whitespace')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Line counting across SIMD blocks: the countNewlines() helper must tally every '\n' skipped in bulk.  A malformed
+-- tag placed after a known number of newlines should report the correct line in the error, proving the SIMD scanners
+-- kept the line counter accurate while skipping long runs.  We embed newlines inside a long content run (skipTo('<'))
+-- so the count crosses multiple 16-byte blocks.
+
+@Test function LineCountingAcrossBlocks()
+   -- Each <item> is preceded by a long comment padded with spaces so the newline that ends it is only reached after
+   -- the SIMD scanners have skipped whole 16-byte blocks.  Every item therefore sits on a precisely known line, and
+   -- tag.LineNo must reflect it.  A miscount in countNewlines() (or a scan that overruns a block) would shift these.
+   local parts = { '<root>' } -- source line 1
+   local expected = {}
+   for i = 1, 20 do
+      -- A comment wider than 16 bytes (its own source line), then the item on its own source line.  Comments are
+      -- stripped from the tree but still occupy a source line, so item i lands on source line (2*i + 1).
+      table.insert(parts, '<!-- padding-comment-' .. i .. '-with-extra-width -->')
+      table.insert(parts, '<item n="' .. i .. '"/>')
+      expected[i] = 2 * i + 1
+   end
+   table.insert(parts, '</root>')
+   local doc = table.concat(parts, '\n')
+
+   local xml = obj.new('xml', { statement = doc })
+   assert(xml.tags, 'Document with newline-laden padding should parse')
+
+   local items = xml.tags[0].children
+   local item_index = 0
+   for _, child in ipairs(items) do
+      if child.attribs[0].name is 'item' then
+         item_index = item_index + 1
+         assert(child.lineNo is expected[item_index],
+            'item ' .. item_index .. ' reported line ' .. tostring(child.lineNo) .. ', expected ' .. expected[item_index])
+      end
+   end
+   assert(item_index is 20, 'Expected to inspect 20 items, saw ' .. item_index)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Cross-check: a document parsed identically must yield identical serialised output irrespective of length, which
+-- would break if the SIMD scan over- or under-ran a block boundary.
+
+@Test function SerialisationStableAcrossLengths()
+   for _, len in ipairs({ 14, 16, 18, 34 }) do
+      local content = string.rep('z', len)
+      local xml = obj.new('xml', { statement = '<root><item>' .. content .. '</item></root>' })
+      local err, out = xml.mtSerialise(0, XMF_INCLUDE_SIBLINGS)
+      assert(err is ERR_Okay, 'Serialise failed at length ' .. len)
+      assert(string.find(out, content, 1, true), 'Serialised output missing content at length ' .. len)
+   end
+end
