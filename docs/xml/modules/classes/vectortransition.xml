@@ -45,6 +45,19 @@
       </description>
     </field>
 
+    <field>
+      <name>XMLDef</name>
+      <comment>Returns an SVG compliant XML string that describes the transition.</comment>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <description>
+<p>The returned XML defines the transition's stop list as <code>
+<stop/></code> elements, excluding the wrapping <code>
+<kotuku:transition/></code> element and <code>id</code> attribute.</p>
+      </description>
+      <tags>caller-owns-result</tags>
+    </field>
+
   </fields>
   <structs>
     <struct name="Transition" comment="For VectorTransition definitions">

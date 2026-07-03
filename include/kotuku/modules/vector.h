@@ -779,11 +779,25 @@ class objVectorTransition : public Object {
 
    // Customised field getting
 
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      SetObjectContext(this, field, AC::NIL);
+      std::string_view view;
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, view);
+      if (error IS ERR::Okay) {
+         Value.assign(view);
+         if (view.data()) FreeResource(GetMemoryID(view.data()));
+      }
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
    inline ERR setStops(const std::span<const Transition> Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
+      auto field = &this->Class->Dictionary[6];
       return field->WriteValue(this, field, 0x00005218, &Value);
    }
 

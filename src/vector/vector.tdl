@@ -481,6 +481,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     comment="Transitions are used to gradually apply transforms over distance."
   }, [[
     ~vector(struct(Transition)) Stops
+    ~string XMLDef
   ]])
 
   methods('vectorscene', 'Sc', {
