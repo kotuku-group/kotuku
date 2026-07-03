@@ -336,27 +336,28 @@ static bool parse_mesh_edge_path(const std::string &Path, const SVGMeshPoint &St
       char *end = nullptr;
       const double value = std::strtod(scan.data(), &end);
       if (end IS scan.data()) return false;
+      if (not std::isfinite(value)) return false;
       numbers.push_back(value);
       scan.remove_prefix(size_t(end - scan.data()));
    }
 
    switch (cmd) {
       case 'C':
-         if (numbers.size() < 6) return false;
+         if (numbers.size() != 6) return false;
          Edge.c0 = SVGMeshPoint { numbers[0], numbers[1] };
          Edge.c1 = SVGMeshPoint { numbers[2], numbers[3] };
          Edge.p1 = SVGMeshPoint { numbers[4], numbers[5] };
          return true;
 
       case 'c':
-         if (numbers.size() < 6) return false;
+         if (numbers.size() != 6) return false;
          Edge.c0 = SVGMeshPoint { Start.x + numbers[0], Start.y + numbers[1] };
          Edge.c1 = SVGMeshPoint { Start.x + numbers[2], Start.y + numbers[3] };
          Edge.p1 = SVGMeshPoint { Start.x + numbers[4], Start.y + numbers[5] };
          return true;
 
       case 'L': {
-         if (numbers.size() < 2) return false;
+         if (numbers.size() != 2) return false;
          Edge.p1 = SVGMeshPoint { numbers[0], numbers[1] };
          const double dx = Edge.p1.x - Start.x;
          const double dy = Edge.p1.y - Start.y;
@@ -366,7 +367,7 @@ static bool parse_mesh_edge_path(const std::string &Path, const SVGMeshPoint &St
       }
 
       case 'l': {
-         if (numbers.size() < 2) return false;
+         if (numbers.size() != 2) return false;
          Edge.p1 = SVGMeshPoint { Start.x + numbers[0], Start.y + numbers[1] };
          const double dx = Edge.p1.x - Start.x;
          const double dy = Edge.p1.y - Start.y;
@@ -384,26 +385,26 @@ static MeshPatchRecord mesh_patch_record_from_patch(const SVGMeshPatch &Patch) n
 {
    MeshPatchRecord record = {};
 
-   record.TopP0X = Patch.edge[0].p0.x;       record.TopP0Y = Patch.edge[0].p0.y;
-   record.TopC0X = Patch.edge[0].c0.x;       record.TopC0Y = Patch.edge[0].c0.y;
-   record.TopC1X = Patch.edge[0].c1.x;       record.TopC1Y = Patch.edge[0].c1.y;
-   record.TopP1X = Patch.edge[0].p1.x;       record.TopP1Y = Patch.edge[0].p1.y;
-   record.RightP0X = Patch.edge[1].p0.x;     record.RightP0Y = Patch.edge[1].p0.y;
-   record.RightC0X = Patch.edge[1].c0.x;     record.RightC0Y = Patch.edge[1].c0.y;
-   record.RightC1X = Patch.edge[1].c1.x;     record.RightC1Y = Patch.edge[1].c1.y;
-   record.RightP1X = Patch.edge[1].p1.x;     record.RightP1Y = Patch.edge[1].p1.y;
-   record.BottomP0X = Patch.edge[2].p0.x;    record.BottomP0Y = Patch.edge[2].p0.y;
-   record.BottomC0X = Patch.edge[2].c0.x;    record.BottomC0Y = Patch.edge[2].c0.y;
-   record.BottomC1X = Patch.edge[2].c1.x;    record.BottomC1Y = Patch.edge[2].c1.y;
-   record.BottomP1X = Patch.edge[2].p1.x;    record.BottomP1Y = Patch.edge[2].p1.y;
-   record.LeftP0X = Patch.edge[3].p0.x;      record.LeftP0Y = Patch.edge[3].p0.y;
-   record.LeftC0X = Patch.edge[3].c0.x;      record.LeftC0Y = Patch.edge[3].c0.y;
-   record.LeftC1X = Patch.edge[3].c1.x;      record.LeftC1Y = Patch.edge[3].c1.y;
-   record.LeftP1X = Patch.edge[3].p1.x;      record.LeftP1Y = Patch.edge[3].p1.y;
-   record.TopLeft = Patch.corner[0];
-   record.TopRight = Patch.corner[1];
-   record.BottomRight = Patch.corner[2];
-   record.BottomLeft = Patch.corner[3];
+   record.Top.StartX    = Patch.edge[0].p0.x; record.Top.StartY = Patch.edge[0].p0.y;
+   record.Top.X1        = Patch.edge[0].c0.x; record.Top.Y1 = Patch.edge[0].c0.y;
+   record.Top.X2        = Patch.edge[0].c1.x; record.Top.Y2 = Patch.edge[0].c1.y;
+   record.Top.EndX      = Patch.edge[0].p1.x; record.Top.EndY = Patch.edge[0].p1.y;
+   record.Right.StartX  = Patch.edge[1].p0.x; record.Right.StartY = Patch.edge[1].p0.y;
+   record.Right.X1      = Patch.edge[1].c0.x; record.Right.Y1 = Patch.edge[1].c0.y;
+   record.Right.X2      = Patch.edge[1].c1.x; record.Right.Y2 = Patch.edge[1].c1.y;
+   record.Right.EndX    = Patch.edge[1].p1.x; record.Right.EndY = Patch.edge[1].p1.y;
+   record.Bottom.StartX = Patch.edge[2].p0.x; record.Bottom.StartY = Patch.edge[2].p0.y;
+   record.Bottom.X1     = Patch.edge[2].c0.x; record.Bottom.Y1 = Patch.edge[2].c0.y;
+   record.Bottom.X2     = Patch.edge[2].c1.x; record.Bottom.Y2 = Patch.edge[2].c1.y;
+   record.Bottom.EndX   = Patch.edge[2].p1.x; record.Bottom.EndY = Patch.edge[2].p1.y;
+   record.Left.StartX   = Patch.edge[3].p0.x; record.Left.StartY = Patch.edge[3].p0.y;
+   record.Left.X1       = Patch.edge[3].c0.x; record.Left.Y1 = Patch.edge[3].c0.y;
+   record.Left.X2       = Patch.edge[3].c1.x; record.Left.Y2 = Patch.edge[3].c1.y;
+   record.Left.EndX     = Patch.edge[3].p1.x; record.Left.EndY = Patch.edge[3].p1.y;
+   record.TopLeft       = Patch.corner[0];
+   record.TopRight      = Patch.corner[1];
+   record.BottomRight   = Patch.corner[2];
+   record.BottomLeft    = Patch.corner[3];
 
    return record;
 }
@@ -476,6 +477,8 @@ void svgState::parse_meshgradient(const XTag &Tag, objGradientMesh *Gradient, st
    std::vector<SVGMeshPatch> previous_row;
    std::vector<SVGMeshPatch> current_row;
    int rows = 0;
+   int columns = 0;
+   bool rectangular = true;
 
    for (auto &row_tag : Tag.Children) {
       if (svg_tag_hash(row_tag) != SVF_meshrow) continue;
@@ -575,6 +578,9 @@ void svgState::parse_meshgradient(const XTag &Tag, objGradientMesh *Gradient, st
       }
 
       if (not current_row.empty()) {
+         if (columns IS 0) columns = int(current_row.size());
+         else if (columns != int(current_row.size())) rectangular = false;
+
          previous_row = current_row;
          rows++;
       }
@@ -584,6 +590,10 @@ void svgState::parse_meshgradient(const XTag &Tag, objGradientMesh *Gradient, st
       std::span<MeshPatchRecord> span(records.data(), records.size());
       Gradient->set(kt::fieldhash("Patches"), span);
 
+      if ((rectangular) and (rows > 0) and (columns > 0)) {
+         Gradient->set(kt::fieldhash("Rows"), rows);
+         Gradient->set(kt::fieldhash("Columns"), columns);
+      }
    }
 }
 

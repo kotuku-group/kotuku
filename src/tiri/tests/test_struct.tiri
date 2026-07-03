@@ -49,3 +49,15 @@ end
    assert(colours[1].red is 0,
       'Embedded struct array access used the padded serial stride instead of the in-memory stride.')
 end
+
+@Test function OffsetZeroEmbeddedStructUsesOwnTable()
+   MAKESTRUCT('OffsetZeroChild', 'lValue')
+   MAKESTRUCT('OffsetZeroRecord', 'eChild:OffsetZeroChild,lMarker')
+   MAKESTRUCT('OffsetZeroWrapper', 'eRecord:OffsetZeroRecord[1]')
+
+   local wrapper = struct.new('OffsetZeroWrapper')
+   local patch_record = wrapper.record[0]
+
+   assert(patch_record.child != patch_record, 'Offset-zero embedded struct should not alias its parent table')
+   assert(patch_record.child.value is 0, 'Offset-zero embedded struct fields should be readable')
+end

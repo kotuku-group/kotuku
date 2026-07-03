@@ -1,0 +1,263 @@
+-- $TIRI
+
+   include 'svg'
+   include 'vector'
+
+local glSVGFolder
+
+@BeforeAll function setup(State:table)
+   glSVGFolder = State.folder
+end
+
+function absValue(Value)
+   if Value < 0 then return -Value end
+   return Value
+end
+
+function assertNear(Actual, Expected, Message)
+   assert(Actual ≈ Expected, Message .. ' expected ' .. Expected .. ', got ' .. Actual)
+end
+
+function countMatches(Text:str, Needle:str)
+   local count = 0
+   local offset = 0
+
+   while true do
+      local pos = string.find(Text, Needle, offset, true)
+      if pos is nil then break end
+      count++
+      offset = pos + #Needle
+   end
+
+   return count
+end
+
+function countMeshRowsInGradient(Text:str, ID:str)
+   local start = string.find(Text, 'id="' .. ID .. '"', 0, true)
+   assert(start != nil, 'Saved SVG should contain meshgradient id ' .. ID)
+
+   local stop = string.find(Text, '</meshgradient>', start, true)
+   assert(stop != nil, 'Saved SVG should close meshgradient id ' .. ID)
+
+   local count = 0
+   local offset = start
+
+   while true do
+      local pos = string.find(Text, '<meshrow', offset, true)
+      if (pos is nil) or (pos >= stop) then break end
+      count++
+      offset = pos + #'<meshrow'
+   end
+
+   return count
+end
+
+function malformedMesh(PathValue:str):str
+   return [[
+<?xml version="1.0" standalone="no"?>
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <meshgradient id="mesh2x2" x="0" y="0" gradientUnits="userSpaceOnUse">
+      <meshrow>
+        <meshpatch>
+          <stop path="]] .. PathValue .. [[" stop-color="#00ff00"/>
+          <stop path="L 50 50" stop-color="#ffff00"/>
+          <stop path="L 0 50" stop-color="#0000ff"/>
+          <stop path="L 0 0" stop-color="#ff0000"/>
+        </meshpatch>
+      </meshrow>
+    </meshgradient>
+  </defs>
+  <rect x="0" y="0" width="100" height="100" fill="url(#mesh2x2)"/>
+</svg>
+]]
+end
+
+function inheritedOverrideMesh():str
+   return [[
+<?xml version="1.0" standalone="no"?>
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <meshgradient id="base2x2" x="0" y="0" gradientUnits="userSpaceOnUse">
+      <meshrow>
+        <meshpatch>
+          <stop path="L 50 0" stop-color="#00ff00"/>
+          <stop path="L 50 50" stop-color="#ffff00"/>
+          <stop path="L 0 50" stop-color="#0000ff"/>
+          <stop path="L 0 0" stop-color="#ff0000"/>
+        </meshpatch>
+        <meshpatch>
+          <stop path="L 100 0" stop-color="#00ffff"/>
+          <stop path="L 100 50" stop-color="#ff00ff"/>
+          <stop path="L 50 50" stop-color="#ffff00"/>
+        </meshpatch>
+      </meshrow>
+      <meshrow>
+        <meshpatch>
+          <stop path="L 50 100" stop-color="#ff8800"/>
+          <stop path="L 0 100" stop-color="#8800ff"/>
+          <stop path="L 0 50" stop-color="#0000ff"/>
+        </meshpatch>
+        <meshpatch>
+          <stop path="L 100 100" stop-color="#808080"/>
+          <stop path="L 50 100" stop-color="#ff8800"/>
+        </meshpatch>
+      </meshrow>
+    </meshgradient>
+    <meshgradient id="mesh2x2" href="#base2x2">
+      <meshrow>
+        <meshpatch>
+          <stop path="L 40 0" stop-color="#111111"/>
+          <stop path="L 40 30" stop-color="#222222"/>
+          <stop path="L 0 30" stop-color="#333333"/>
+          <stop path="L 0 0" stop-color="#444444"/>
+        </meshpatch>
+        <meshpatch>
+          <stop path="L 80 0" stop-color="#555555"/>
+          <stop path="L 80 30" stop-color="#666666"/>
+          <stop path="L 40 30" stop-color="#777777"/>
+        </meshpatch>
+      </meshrow>
+      <meshrow>
+        <meshpatch>
+          <stop path="L 40 60" stop-color="#888888"/>
+          <stop path="L 0 60" stop-color="#999999"/>
+          <stop path="L 0 30" stop-color="#aaaaaa"/>
+        </meshpatch>
+        <meshpatch>
+          <stop path="L 80 60" stop-color="#bbbbbb"/>
+          <stop path="L 40 60" stop-color="#cccccc"/>
+        </meshpatch>
+      </meshrow>
+      <meshrow>
+        <meshpatch>
+          <stop path="L 40 90" stop-color="#dddddd"/>
+          <stop path="L 0 90" stop-color="#eeeeee"/>
+          <stop path="L 0 60" stop-color="#ffffff"/>
+        </meshpatch>
+        <meshpatch>
+          <stop path="L 80 90" stop-color="#123456"/>
+          <stop path="L 40 90" stop-color="#654321"/>
+        </meshpatch>
+      </meshrow>
+    </meshgradient>
+  </defs>
+  <rect x="0" y="0" width="100" height="100" fill="url(#mesh2x2)"/>
+</svg>
+]]
+end
+
+function loadMesh(Path:str):<obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local svg = obj.new('svg', { target=scene, path=Path })
+   local err, gradient = scene.mtFindDef('mesh2x2')
+
+   assert(err is ERR_Okay, 'Expected mesh2x2 definition to be parsed')
+   return scene, gradient
+end
+
+function saveScene(Scene:obj, Path:str):str
+   local svg = obj.new('svg', { target=Scene })
+   local file = obj.new('file', { path=Path, flags='!NEW|WRITE' })
+
+   check svg.acSaveToObject(file, 0)
+   file = nil
+   return io.readAll(Path)
+end
+
+function assertMetadata(Gradient:obj, Label:str)
+   assert(Gradient.rows is 2, Label .. ' should preserve two mesh rows')
+   assert(Gradient.columns is 2, Label .. ' should preserve two mesh columns')
+   assert(#Gradient.patches is 4, Label .. ' should expose four flat patches')
+   assert(Gradient.units is VUNIT_USERSPACE, Label .. ' should preserve user-space units')
+   assert(Gradient.colourSpace is VCS_LINEAR_RGB, Label .. ' should preserve linearRGB interpolation')
+end
+
+function assertColourNear(Actual, Expected, Label:str)
+   assertNear(Actual.red, Expected.red, Label .. '.red')
+   assertNear(Actual.green, Expected.green, Label .. '.green')
+   assertNear(Actual.blue, Expected.blue, Label .. '.blue')
+   assertNear(Actual.alpha, Expected.alpha, Label .. '.alpha')
+end
+
+function assertPatchNear(Actual, Expected, Label:str)
+   local coords = { 'startX', 'startY', 'x1', 'y1', 'x2', 'y2', 'endX', 'endY' }
+   local colours = { 'topLeft', 'topRight', 'bottomRight', 'bottomLeft' }
+
+   for i=0, #coords - 1 do
+      local field = coords[i]
+
+      assertNear(Actual.top[field], Expected.top[field], Label .. '.' .. field)
+      assertNear(Actual.right[field], Expected.right[field], Label .. '.' .. field)
+      assertNear(Actual.bottom[field], Expected.bottom[field], Label .. '.' .. field)
+      assertNear(Actual.left[field], Expected.left[field], Label .. '.' .. field)
+   end
+
+   for i=0, #colours - 1 do
+      local field = colours[i]
+      assertColourNear(Actual[field], Expected[field], Label .. '.' .. field)
+   end
+end
+
+function assertPatchesMatch(Actual:obj, Expected:obj, Label:str)
+   for i=0, #Expected.patches - 1 do
+      assertPatchNear(Actual.patches[i], Expected.patches[i], Label .. '.patch' .. i)
+   end
+end
+
+function assertMalformedPathRejected(PathValue:str, Label:str)
+   local path = 'temp:meshgradient_malformed_' .. Label .. '.svg'
+   io.writeAll(path, malformedMesh(PathValue))
+
+   local scene, gradient = loadMesh(path)
+   assert(gradient.rows is 0, Label .. ' should not produce mesh rows')
+   assert(gradient.columns is 0, Label .. ' should not produce mesh columns')
+   assert(#gradient.patches is 0, Label .. ' should not produce patch records')
+end
+
+@Test function ParserPreservesSharedEdgeRows()
+   local scene, gradient = loadMesh(glSVGFolder .. 'gradients/meshgradient_2x2.svg')
+   local patches = gradient.patches
+   assertMetadata(gradient, 'parsed mesh')
+   assertNear(patches[1].left.endX, patches[0].right.startX, 'same-row inherited left edge')
+   assertNear(patches[2].top.endY, patches[0].bottom.startY, 'multi-row inherited top edge')
+end
+
+@Test function SaveRoundTripsRowsAndPatchData()
+   local scene, gradient = loadMesh(glSVGFolder .. 'gradients/meshgradient_2x2.svg')
+   local output_path = 'temp:meshgradient_2x2_roundtrip.svg'
+   local saved = saveScene(scene, output_path)
+
+   assert(countMatches(saved, '<meshrow') is 2, 'Saved meshgradient should contain two mesh rows')
+   assert(string.find(saved, 'kotuku:x', 0, true) is nil, 'A standard shared-edge grid should not require independent-patch metadata')
+   assert(string.find(saved, 'gradientTransform=', 0, true) != nil, 'Saved meshgradient should preserve the gradient transform')
+
+   local reparsed_scene, reparsed_gradient = loadMesh(output_path)
+   assertMetadata(reparsed_gradient, 'reparsed mesh')
+   assertPatchesMatch(reparsed_gradient, gradient, 'round-trip')
+
+   local resaved = saveScene(reparsed_scene, 'temp:meshgradient_2x2_roundtrip_resave.svg')
+   assert(string.find(resaved, 'gradientTransform=', 0, true) != nil, 'Reparsed meshgradient should save the gradient transform again')
+end
+
+@Test function HrefOverrideUsesOwnRowsAndColumns()
+   local input_path = 'temp:meshgradient_href_override.svg'
+   io.writeAll(input_path, inheritedOverrideMesh())
+
+   local scene, gradient = loadMesh(input_path)
+   assert(gradient.rows is 3, 'Override mesh should use its own three rows')
+   assert(gradient.columns is 2, 'Override mesh should use its own two columns')
+   assert(#gradient.patches is 6, 'Override mesh should replace inherited patches')
+
+   local saved = saveScene(scene, 'temp:meshgradient_href_override_saved.svg')
+   assert(countMeshRowsInGradient(saved, 'mesh2x2') is 3, 'Saved override mesh should preserve three mesh rows')
+end
+
+@Test function MalformedMeshStopPathsAreRejected()
+   assertMalformedPathRejected('Q 10 0 20 0', 'unsupported_command')
+   assertMalformedPathRejected('L 50 0 L 100 0', 'repeated_command')
+   assertMalformedPathRejected('L 50 0 60 0', 'extra_line_values')
+   assertMalformedPathRejected('C 10 0 20 0 50 0 60 0', 'extra_cubic_values')
+   assertMalformedPathRejected('L nan 0', 'non_finite_value')
+end

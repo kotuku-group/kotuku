@@ -12,14 +12,14 @@ end
 function lineEdge(Patch, Prefix, X0, Y0, X1, Y1)
    local dx = X1 - X0
    local dy = Y1 - Y0
-   Patch[Prefix .. 'P0X'] = X0
-   Patch[Prefix .. 'P0Y'] = Y0
-   Patch[Prefix .. 'C0X'] = X0 + (dx / 3.0)
-   Patch[Prefix .. 'C0Y'] = Y0 + (dy / 3.0)
-   Patch[Prefix .. 'C1X'] = X0 + (dx * 2.0 / 3.0)
-   Patch[Prefix .. 'C1Y'] = Y0 + (dy * 2.0 / 3.0)
-   Patch[Prefix .. 'P1X'] = X1
-   Patch[Prefix .. 'P1Y'] = Y1
+   Patch[Prefix].StartX = X0
+   Patch[Prefix].StartY = Y0
+   Patch[Prefix].X1 = X0 + (dx / 3.0)
+   Patch[Prefix].Y1 = Y0 + (dy / 3.0)
+   Patch[Prefix].X2 = X0 + (dx * 2.0 / 3.0)
+   Patch[Prefix].Y2 = Y0 + (dy * 2.0 / 3.0)
+   Patch[Prefix].EndX = X1
+   Patch[Prefix].EndY = Y1
 end
 
 function setColour(Patch, Prefix, Red, Green, Blue)
@@ -42,6 +42,41 @@ function squarePatch()
    return patch
 end
 
+function narrowPatch()
+   local patch = struct.new('MeshPatchRecord')
+   lineEdge(patch, 'top', 0, 0, 70, 0)
+   lineEdge(patch, 'right', 70, 0, 70, 100)
+   lineEdge(patch, 'bottom', 70, 100, 0, 100)
+   lineEdge(patch, 'left', 0, 100, 0, 0)
+   setColour(patch, 'topLeft', 1.0, 0.0, 0.0)
+   setColour(patch, 'topRight', 0.0, 1.0, 0.0)
+   setColour(patch, 'bottomRight', 1.0, 1.0, 0.0)
+   setColour(patch, 'bottomLeft', 0.0, 0.0, 1.0)
+   return patch
+end
+
+function greyRampPatch()
+   local patch = struct.new('MeshPatchRecord')
+   lineEdge(patch, 'top', 0, 0, 100, 0)
+   lineEdge(patch, 'right', 100, 0, 100, 100)
+   lineEdge(patch, 'bottom', 100, 100, 0, 100)
+   lineEdge(patch, 'left', 0, 100, 0, 0)
+   setColour(patch, 'topLeft', 0.0, 0.0, 0.0)
+   setColour(patch, 'topRight', 1.0, 1.0, 1.0)
+   setColour(patch, 'bottomRight', 1.0, 1.0, 1.0)
+   setColour(patch, 'bottomLeft', 0.0, 0.0, 0.0)
+   return patch
+end
+
+function recolouredPatch()
+   local patch = squarePatch()
+   setColour(patch, 'topLeft', 1.0, 1.0, 1.0)
+   setColour(patch, 'topRight', 0.5, 0.5, 0.5)
+   setColour(patch, 'bottomRight', 0.0, 0.0, 0.0)
+   setColour(patch, 'bottomLeft', 0.25, 0.25, 0.25)
+   return patch
+end
+
 function newMeshScene()
    local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
@@ -52,16 +87,132 @@ function newMeshScene()
    return scene, gradient
 end
 
+function newPatchScene(Patch, ColourSpace, Resolution)
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local fields = { units=VUNIT_USERSPACE, patches={ Patch } }
+
+   if ColourSpace != nil then fields.colourSpace = ColourSpace end
+   if Resolution != nil then fields.resolution = Resolution end
+
+   local gradient = scene.new('GradientMesh', fields)
+   check scene.mtAddDef('mesh', gradient)
+   local rect = viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='url(#mesh)' })
+   return scene, gradient, rect
+end
+
 function drawScene(Scene, Bitmap)
    Bitmap.acClear()
    Scene.bitmap = Bitmap
    check Scene.acDraw()
 end
 
+function drawHash(Scene, Bitmap)
+   drawScene(Scene, Bitmap)
+   return mSys.GenCRC32(0, Bitmap.data, Bitmap.size)
+end
+
 @Test function PatchesRoundTrip()
    local scene, gradient = newMeshScene()
    assert(gradient != nil, 'GradientMesh should be created')
    assert(#gradient.patches is 1, 'Expected one mesh patch')
+end
+
+@Test function RowMetadataSurvivesFlatPatchAssignment()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local patches = { squarePatch(), squarePatch(), squarePatch(), squarePatch() }
+   local gradient = scene.new('GradientMesh', { units=VUNIT_USERSPACE })
+
+   gradient.rows = 2
+   gradient.columns = 2
+   gradient.patches = patches
+
+   assert(gradient.rows is 2, 'Expected row metadata to survive patch assignment')
+   assert(gradient.columns is 2, 'Expected column metadata to survive patch assignment')
+   assert(#gradient.patches is 4, 'Expected flat patch access to remain available')
+end
+
+@Test function RowMetadataCanBeSetAfterFlatPatches()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local patches = { squarePatch(), squarePatch(), squarePatch(), squarePatch() }
+   local gradient = scene.new('GradientMesh', { units=VUNIT_USERSPACE, patches=patches })
+
+   gradient.rows = 2
+
+   assert(gradient.rows is 2, 'Expected row metadata to update after patch assignment')
+   assert(gradient.columns is 2, 'Expected column metadata to be derived from the patch count')
+   assert(#gradient.patches is 4, 'Expected flat patch access to remain available')
+end
+
+@Test function PatchReplacementInvalidatesCache()
+   local scene, gradient = newPatchScene(squarePatch())
+   local bmp = newBitmap(100, 100)
+   local before = drawHash(scene, bmp)
+
+   gradient.patches = { recolouredPatch() }
+
+   local after = drawHash(scene, bmp)
+   assert(before != after, 'Replacing mesh patch colours should invalidate the cached mesh triangles')
+end
+
+@Test function PatchGeometryMutationInvalidatesCache()
+   local scene, gradient = newPatchScene(squarePatch())
+   local bmp = newBitmap(100, 100)
+   local before = drawHash(scene, bmp)
+
+   gradient.patches = { narrowPatch() }
+
+   local after = drawHash(scene, bmp)
+   assert(before != after, 'Replacing mesh patch geometry should invalidate the cached mesh triangles')
+end
+
+@Test function TransformChangeInvalidatesCache()
+   local scene, gradient = newPatchScene(squarePatch())
+   local bmp = newBitmap(100, 100)
+   local before = drawHash(scene, bmp)
+
+   gradient.transform = 'translate(20 0)'
+
+   local after = drawHash(scene, bmp)
+   assert(before != after, 'Changing gradientTransform should rebuild the cached mesh triangles')
+end
+
+@Test function OpacityChangeInvalidatesCache()
+   local scene, gradient, rect = newPatchScene(squarePatch())
+   local bmp = newBitmap(100, 100)
+   local before = drawHash(scene, bmp)
+
+   rect.fillOpacity = 0.5
+
+   local after = drawHash(scene, bmp)
+   assert(before != after, 'Changing fill opacity should rebuild the cached mesh triangles with new alpha')
+end
+
+@Test function ResolutionChangeUpdatesCachedRender()
+   local scene, gradient = newPatchScene(greyRampPatch(), VCS_SRGB, 1.0)
+   local bmp = newBitmap(100, 100)
+   local before = drawHash(scene, bmp)
+
+   gradient.resolution = 0.5
+
+   local after = drawHash(scene, bmp)
+   assert(before != after, 'Changing resolution should alter mesh tessellation or quantisation output')
+end
+
+@Test function ColourSpaceChangesMeshOutput()
+   local srgb_scene = newPatchScene(greyRampPatch(), VCS_SRGB)
+   local linear_scene = newPatchScene(greyRampPatch(), VCS_LINEAR_RGB)
+   local srgb_bmp = newBitmap(100, 100)
+   local linear_bmp = newBitmap(100, 100)
+
+   drawScene(srgb_scene, srgb_bmp)
+   drawScene(linear_scene, linear_bmp)
+
+   local srgb_mid = mGfx.ReadRGBPixel(srgb_bmp, 50, 50).red
+   local linear_mid = mGfx.ReadRGBPixel(linear_bmp, 50, 50).red
+
+   assert(linear_mid > srgb_mid + 20,
+      'linearRGB mesh midpoint should be brighter than sRGB (linear ' .. linear_mid .. ' vs sRGB ' .. srgb_mid .. ')')
 end
 
 @Test function CornerColoursDominate()

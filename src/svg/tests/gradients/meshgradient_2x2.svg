@@ -1,0 +1,33 @@
+<?xml version="1.0" standalone="no"?>
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <meshgradient id="mesh2x2" x="0" y="0" gradientUnits="userSpaceOnUse"
+       gradientTransform="translate(2 3)" color-interpolation="linearRGB">
+      <meshrow>
+        <meshpatch>
+          <stop path="L 50 0" stop-color="#00ff00"/>
+          <stop path="L 50 50" stop-color="#ffff00"/>
+          <stop path="L 0 50" stop-color="#0000ff"/>
+          <stop path="L 0 0" stop-color="#ff0000"/>
+        </meshpatch>
+        <meshpatch>
+          <stop path="L 100 0" stop-color="#00ffff"/>
+          <stop path="L 100 50" stop-color="#ff00ff"/>
+          <stop path="L 50 50" stop-color="#ffff00"/>
+        </meshpatch>
+      </meshrow>
+      <meshrow>
+        <meshpatch>
+          <stop path="L 50 100" stop-color="#ff8800"/>
+          <stop path="L 0 100" stop-color="#8800ff"/>
+          <stop path="L 0 50" stop-color="#0000ff"/>
+        </meshpatch>
+        <meshpatch>
+          <stop path="L 100 100" stop-color="#808080"/>
+          <stop path="L 50 100" stop-color="#ff8800"/>
+        </meshpatch>
+      </meshrow>
+    </meshgradient>
+  </defs>
+  <rect x="0" y="0" width="100" height="100" fill="url(#mesh2x2)"/>
+</svg>
