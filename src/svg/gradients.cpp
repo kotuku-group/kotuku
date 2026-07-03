@@ -587,13 +587,13 @@ void svgState::parse_meshgradient(const XTag &Tag, objGradientMesh *Gradient, st
    }
 
    if (not records.empty()) {
+      std::span<MeshPatchRecord> span(records.data(), records.size());
+      Gradient->set(kt::fieldhash("Patches"), span);
+
       if ((rectangular) and (rows > 0) and (columns > 0)) {
          Gradient->set(kt::fieldhash("Rows"), rows);
          Gradient->set(kt::fieldhash("Columns"), columns);
       }
-
-      std::span<MeshPatchRecord> span(records.data(), records.size());
-      Gradient->set(kt::fieldhash("Patches"), span);
    }
 }
 

@@ -32,6 +32,26 @@ function countMatches(Text:str, Needle:str)
    return count
 end
 
+function countMeshRowsInGradient(Text:str, ID:str)
+   local start = string.find(Text, 'id="' .. ID .. '"', 0, true)
+   assert(start != nil, 'Saved SVG should contain meshgradient id ' .. ID)
+
+   local stop = string.find(Text, '</meshgradient>', start, true)
+   assert(stop != nil, 'Saved SVG should close meshgradient id ' .. ID)
+
+   local count = 0
+   local offset = start
+
+   while true do
+      local pos = string.find(Text, '<meshrow', offset, true)
+      if (pos is nil) or (pos >= stop) then break end
+      count++
+      offset = pos + #'<meshrow'
+   end
+
+   return count
+end
+
 function malformedMesh(PathValue:str):str
    return [[
 <?xml version="1.0" standalone="no"?>
@@ -44,6 +64,80 @@ function malformedMesh(PathValue:str):str
           <stop path="L 50 50" stop-color="#ffff00"/>
           <stop path="L 0 50" stop-color="#0000ff"/>
           <stop path="L 0 0" stop-color="#ff0000"/>
+        </meshpatch>
+      </meshrow>
+    </meshgradient>
+  </defs>
+  <rect x="0" y="0" width="100" height="100" fill="url(#mesh2x2)"/>
+</svg>
+]]
+end
+
+function inheritedOverrideMesh():str
+   return [[
+<?xml version="1.0" standalone="no"?>
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <meshgradient id="base2x2" x="0" y="0" gradientUnits="userSpaceOnUse">
+      <meshrow>
+        <meshpatch>
+          <stop path="L 50 0" stop-color="#00ff00"/>
+          <stop path="L 50 50" stop-color="#ffff00"/>
+          <stop path="L 0 50" stop-color="#0000ff"/>
+          <stop path="L 0 0" stop-color="#ff0000"/>
+        </meshpatch>
+        <meshpatch>
+          <stop path="L 100 0" stop-color="#00ffff"/>
+          <stop path="L 100 50" stop-color="#ff00ff"/>
+          <stop path="L 50 50" stop-color="#ffff00"/>
+        </meshpatch>
+      </meshrow>
+      <meshrow>
+        <meshpatch>
+          <stop path="L 50 100" stop-color="#ff8800"/>
+          <stop path="L 0 100" stop-color="#8800ff"/>
+          <stop path="L 0 50" stop-color="#0000ff"/>
+        </meshpatch>
+        <meshpatch>
+          <stop path="L 100 100" stop-color="#808080"/>
+          <stop path="L 50 100" stop-color="#ff8800"/>
+        </meshpatch>
+      </meshrow>
+    </meshgradient>
+    <meshgradient id="mesh2x2" href="#base2x2">
+      <meshrow>
+        <meshpatch>
+          <stop path="L 40 0" stop-color="#111111"/>
+          <stop path="L 40 30" stop-color="#222222"/>
+          <stop path="L 0 30" stop-color="#333333"/>
+          <stop path="L 0 0" stop-color="#444444"/>
+        </meshpatch>
+        <meshpatch>
+          <stop path="L 80 0" stop-color="#555555"/>
+          <stop path="L 80 30" stop-color="#666666"/>
+          <stop path="L 40 30" stop-color="#777777"/>
+        </meshpatch>
+      </meshrow>
+      <meshrow>
+        <meshpatch>
+          <stop path="L 40 60" stop-color="#888888"/>
+          <stop path="L 0 60" stop-color="#999999"/>
+          <stop path="L 0 30" stop-color="#aaaaaa"/>
+        </meshpatch>
+        <meshpatch>
+          <stop path="L 80 60" stop-color="#bbbbbb"/>
+          <stop path="L 40 60" stop-color="#cccccc"/>
+        </meshpatch>
+      </meshrow>
+      <meshrow>
+        <meshpatch>
+          <stop path="L 40 90" stop-color="#dddddd"/>
+          <stop path="L 0 90" stop-color="#eeeeee"/>
+          <stop path="L 0 60" stop-color="#ffffff"/>
+        </meshpatch>
+        <meshpatch>
+          <stop path="L 80 90" stop-color="#123456"/>
+          <stop path="L 40 90" stop-color="#654321"/>
         </meshpatch>
       </meshrow>
     </meshgradient>
@@ -145,6 +239,19 @@ end
 
    local resaved = saveScene(reparsed_scene, 'temp:meshgradient_2x2_roundtrip_resave.svg')
    assert(string.find(resaved, 'gradientTransform=', 0, true) != nil, 'Reparsed meshgradient should save the gradient transform again')
+end
+
+@Test function HrefOverrideUsesOwnRowsAndColumns()
+   local input_path = 'temp:meshgradient_href_override.svg'
+   io.writeAll(input_path, inheritedOverrideMesh())
+
+   local scene, gradient = loadMesh(input_path)
+   assert(gradient.rows is 3, 'Override mesh should use its own three rows')
+   assert(gradient.columns is 2, 'Override mesh should use its own two columns')
+   assert(#gradient.patches is 6, 'Override mesh should replace inherited patches')
+
+   local saved = saveScene(scene, 'temp:meshgradient_href_override_saved.svg')
+   assert(countMeshRowsInGradient(saved, 'mesh2x2') is 3, 'Saved override mesh should preserve three mesh rows')
 end
 
 @Test function MalformedMeshStopPathsAreRejected()
