@@ -176,6 +176,142 @@ static ERR save_svg_pattern(extSVG *Self, objXML *XML, objVectorPattern *Pattern
 
 //*********************************************************************************************************************
 
+static std::string save_aspect_ratio(ARF AspectRatio)
+{
+   if ((AspectRatio & ARF::NONE) != ARF::NIL) return "none";
+
+   std::string result;
+
+   if ((AspectRatio & ARF::X_MIN) != ARF::NIL) result = "xMin";
+   else if ((AspectRatio & ARF::X_MAX) != ARF::NIL) result = "xMax";
+   else result = "xMid";
+
+   if ((AspectRatio & ARF::Y_MIN) != ARF::NIL) result += "YMin";
+   else if ((AspectRatio & ARF::Y_MAX) != ARF::NIL) result += "YMax";
+   else result += "YMid";
+
+   if ((AspectRatio & ARF::SLICE) != ARF::NIL) result += " slice";
+   else result += " meet";
+
+   return result;
+}
+
+//*********************************************************************************************************************
+
+static bool external_image_path(std::string_view Path, std::string &Result)
+{
+   if (Path.empty() or Path.starts_with("data:") or Path.starts_with("temp:")) return false;
+
+   std::string resolved;
+   LOC type = LOC::NIL;
+   if ((ResolvePath(Path, RSF::NIL, &resolved) IS ERR::Okay) and
+       (AnalysePath(resolved, &type) IS ERR::Okay) and (type IS LOC::FILE)) {
+      Result.assign(Path);
+      return true;
+   }
+
+   return false;
+}
+
+//*********************************************************************************************************************
+
+static ERR encode_bitmap_png(objBitmap *Bitmap, std::string &Href)
+{
+   if (not Bitmap) return ERR::FieldNotSet;
+
+   objFile::create file = {
+      fl::Size(0),
+      fl::Flags(FL::BUFFER|FL::READ|FL::WRITE)
+   };
+   if (!file.ok()) return file.error;
+
+   objImage::create image(NF::LOCAL);
+   if (!image.ok()) return image.error;
+
+   if (auto owned_bitmap = image->Bitmap) FreeResource(owned_bitmap);
+   image->Bitmap = Bitmap;
+   image->Flags = PCF::NIL;
+
+   ERR error = image->saveImage(*file);
+   image->Bitmap = nullptr;
+   if (error != ERR::Okay) return error;
+
+   std::span<int8_t> data;
+   if ((error = file->getBuffer(data)) != ERR::Okay) return error;
+   if (data.empty()) return ERR::NoData;
+
+   std::vector<char> encoded((data.size() * 2) + 8);
+   kt::BASE64ENCODE state;
+
+   auto len = kt::Base64Encode(&state, std::span((const char *)data.data(), data.size()), encoded);
+   if (len <= 0) return ERR::NoData;
+
+   auto final_len = kt::Base64Encode(&state, {}, std::span(encoded.data() + len, encoded.size() - len));
+   if (final_len <= 0) return ERR::NoData;
+
+   Href = "data:image/png;base64,";
+   Href.reserve(Href.size() + size_t(len + final_len));
+
+   for (int64_t i=0; i < len + final_len; i++) {
+      if ((encoded[i] != '\n') and (encoded[i] != '\r') and (encoded[i] != 0)) Href.push_back(encoded[i]);
+   }
+
+   return ERR::Okay;
+}
+
+//*********************************************************************************************************************
+
+static ERR save_svg_image(objXML *XML, objVectorImage *Image, int Parent, std::string_view DefID)
+{
+   XTag *tag;
+   ERR error = XML->insertStatement(Parent, XMI::CHILD_END, "<image/>", &tag);
+   if (error != ERR::Okay) return error;
+
+   xml::NewAttrib(tag, "id", DefID);
+
+   objBitmap *bitmap;
+   if ((error = Image->getBitmap(bitmap)) != ERR::Okay) return error;
+   if (not bitmap) return ERR::FieldNotSet;
+
+   xml::NewAttrib(tag, "width", bitmap->Width);
+   xml::NewAttrib(tag, "height", bitmap->Height);
+
+   Unit unit;
+   if ((!error) and (!Image->getX(unit)) and unit.defined() and (double(unit) != 0)) set_dimension(tag, "x", unit);
+   if ((!error) and (!Image->getY(unit)) and unit.defined() and (double(unit) != 0)) set_dimension(tag, "y", unit);
+
+   VUNIT units;
+   if ((!error) and (!Image->getUnits(units))) {
+      switch(units) {
+         default:
+         case VUNIT::BOUNDING_BOX: xml::NewAttrib(tag, "units", "objectBoundingBox"); break;
+         case VUNIT::USERSPACE:    xml::NewAttrib(tag, "units", "userSpaceOnUse"); break;
+      }
+   }
+
+   ARF aspect_ratio;
+   if ((!error) and (!Image->getAspectRatio(aspect_ratio))) {
+      xml::NewAttrib(tag, "preserveAspectRatio", save_aspect_ratio(aspect_ratio));
+   }
+
+   std::string href;
+   objImage *source_image;
+   if ((!error) and (!Image->getImage(source_image)) and source_image) {
+      std::string_view path;
+      if ((!source_image->getPath(path)) and external_image_path(path, href)) {
+         xml::NewAttrib(tag, "xlink:href", href);
+         return ERR::Okay;
+      }
+   }
+
+   if ((error = encode_bitmap_png(bitmap, href)) != ERR::Okay) return error;
+   xml::NewAttrib(tag, "xlink:href", href);
+
+   return ERR::Okay;
+}
+
+//*********************************************************************************************************************
+
 static ERR save_vectorpath(extSVG *Self, objXML *XML, objVector *Vector, int Parent)
 {
    std::string path;
@@ -401,7 +537,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
             }
          }
          else if (def->classID() IS CLASSID::VECTORIMAGE) {
-            log.warning("VectorImage not supported.");
+            error = save_svg_image(XML, (objVectorImage *)def, def_index, key);
          }
          else if (def->classID() IS CLASSID::VECTORPATH) {
             error = save_svg_scan_def(Self, XML, (objVector *)def, def_index, key);
