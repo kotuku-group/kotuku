@@ -45,12 +45,12 @@ class extVectorWave : public extVector {
 
    void apply_wave_thickness(agg::path_storage &Path, double Thickness, double ApproxScale, double Length,
       double Amplitude, double Frequency, double FrequencyEnd);
-   void add_sawtooth_vertices(agg::path_storage &Path, double OriginX, double OriginY, double XScale, double Amplitude,
-      double Frequency, double FrequencyEnd);
-   void add_square_vertices(agg::path_storage &Path, double OriginX, double OriginY, double XScale, double Amplitude,
-      double Frequency, double FrequencyEnd);
-   void add_triangle_vertices(agg::path_storage &Path, double OriginX, double OriginY, double XScale, double Amplitude,
-      double Frequency, double FrequencyEnd);
+   double add_sawtooth_vertices(agg::path_storage &Path, double OriginX, double OriginY, double XScale,
+      double Amplitude, double Frequency, double FrequencyEnd, double AngleStep);
+   double add_square_vertices(agg::path_storage &Path, double OriginX, double OriginY, double XScale,
+      double Amplitude, double Frequency, double FrequencyEnd, double AngleStep);
+   double add_triangle_vertices(agg::path_storage &Path, double OriginX, double OriginY, double XScale,
+      double Amplitude, double Frequency, double FrequencyEnd, double AngleStep);
 
    inline double normalise_phase(double Phase) {
       double phase = fmod(Phase, 360.0);
@@ -159,6 +159,19 @@ class extVectorWave : public extVector {
       else return Frequency;
    }
 
+   double sampled_angle_step(double Scale, double Frequency, double FrequencyEnd) {
+      constexpr double MAX_PHASE_STEP = 12.0;
+      const double max_frequency = std::max(Frequency, FrequencyEnd);
+      double angle_step = Scale;
+      double phase_limited_step = MAX_PHASE_STEP * (1.0 / max_frequency);
+
+      if (phase_limited_step < angle_step) angle_step = phase_limited_step;
+      if ((wNoise > 0.0) and (4.0 < angle_step)) angle_step = 4.0;
+      if (angle_step <= 0.0) angle_step = 1.0;
+
+      return angle_step;
+   }
+
    double decay_multiplier(double Angle) {
       double progress = Angle * (1.0 / 360.0);
       if (progress < 0.0) progress = 0.0;
@@ -195,8 +208,9 @@ class extVectorWave : public extVector {
    }
 
    inline double decayed_wave_value(double Angle, double Phase, double Amplitude) {
-      double value = wave_value(this, Phase) * Amplitude * decay_multiplier(Angle);
-      if (wNoise > 0.0) value += noise_value(Phase) * std::abs(Amplitude) * wNoise;
+      double multiplier = decay_multiplier(Angle);
+      double value = wave_value(this, Phase) * Amplitude * multiplier;
+      if (wNoise > 0.0) value += noise_value(Phase) * std::abs(Amplitude) * wNoise * multiplier;
       return value;
    }
 
@@ -207,6 +221,17 @@ class extVectorWave : public extVector {
       double y = decayed_wave_value(Angle, Phase, Amplitude);
       if (Transition) apply_transition_xy(Transition, Angle * (1.0 / 360.0), &x, &y);
       Path.line_to(OriginX + x, OriginY + y);
+   }
+
+   void add_sampled_wave_vertices(agg::path_storage &Path, double OriginX, double OriginY, double XScale,
+      double Amplitude, double Frequency, double FrequencyEnd, double StartAngle, double EndAngle, double AngleStep)
+   {
+      if ((wNoise <= 0.0) or (EndAngle <= StartAngle)) return;
+
+      for (double angle=StartAngle + AngleStep; angle < EndAngle; angle += AngleStep) {
+         double phase = wave_phase_at_angle(angle, Frequency, FrequencyEnd);
+         add_wave_vertex(Path, OriginX, OriginY, XScale, Amplitude, angle, phase);
+      }
    }
 
    bool smooth_wave_needs_resolve(double Length, double Amplitude, double Thickness, double Frequency,
@@ -235,65 +260,89 @@ class extVectorWave : public extVector {
 
 //********************************************************************************************************************
 
-void extVectorWave::add_triangle_vertices(agg::path_storage &Path, double OriginX, double OriginY,
-   double XScale, double Amplitude, double Frequency, double FrequencyEnd)
+double extVectorWave::add_triangle_vertices(agg::path_storage &Path, double OriginX, double OriginY,
+   double XScale, double Amplitude, double Frequency, double FrequencyEnd, double AngleStep)
 {
    const double start_phase = wPhase;
    const double end_phase   = wave_phase_at_angle(360.0, Frequency, FrequencyEnd);
    const double first_cycle = floor((start_phase - 270.0) * (1.0 / 360.0)) * 360.0;
+   double last_angle = 0.0;
 
    for (double cycle=first_cycle; cycle < end_phase + 360.0; cycle += 360.0) {
       double peak_phase = cycle + 90.0;
       double peak_angle = wave_angle_at_phase(peak_phase, Frequency, FrequencyEnd);
       if ((peak_angle > 0.0) and (peak_angle < 360.0)) {
+         add_sampled_wave_vertices(Path, OriginX, OriginY, XScale, Amplitude, Frequency, FrequencyEnd,
+            last_angle, peak_angle, AngleStep);
          add_wave_vertex(Path, OriginX, OriginY, XScale, Amplitude, peak_angle, peak_phase);
+         last_angle = peak_angle;
       }
 
       double trough_phase = cycle + 270.0;
       double trough_angle = wave_angle_at_phase(trough_phase, Frequency, FrequencyEnd);
       if ((trough_angle > 0.0) and (trough_angle < 360.0)) {
+         add_sampled_wave_vertices(Path, OriginX, OriginY, XScale, Amplitude, Frequency, FrequencyEnd,
+            last_angle, trough_angle, AngleStep);
          add_wave_vertex(Path, OriginX, OriginY, XScale, Amplitude, trough_angle, trough_phase);
+         last_angle = trough_angle;
       }
    }
+
+   return last_angle;
 }
 
-void extVectorWave::add_sawtooth_vertices(agg::path_storage &Path, double OriginX, double OriginY,
-   double XScale, double Amplitude, double Frequency, double FrequencyEnd)
+double extVectorWave::add_sawtooth_vertices(agg::path_storage &Path, double OriginX, double OriginY,
+   double XScale, double Amplitude, double Frequency, double FrequencyEnd, double AngleStep)
 {
    const double start_phase = wPhase;
    const double end_phase   = wave_phase_at_angle(360.0, Frequency, FrequencyEnd);
    const double first_cycle = floor(start_phase * (1.0 / 360.0)) * 360.0;
+   double last_angle = 0.0;
 
    for (double cycle=first_cycle; cycle < end_phase + 360.0; cycle += 360.0) {
       double angle = wave_angle_at_phase(cycle, Frequency, FrequencyEnd);
       if ((angle > 0.0) and (angle < 360.0)) {
+         add_sampled_wave_vertices(Path, OriginX, OriginY, XScale, Amplitude, Frequency, FrequencyEnd,
+            last_angle, angle, AngleStep);
          add_wave_vertex(Path, OriginX, OriginY, XScale, Amplitude, angle, cycle - 0.000001);
          add_wave_vertex(Path, OriginX, OriginY, XScale, Amplitude, angle, cycle);
+         last_angle = angle;
       }
    }
+
+   return last_angle;
 }
 
-void extVectorWave::add_square_vertices(agg::path_storage &Path, double OriginX, double OriginY,
-   double XScale, double Amplitude, double Frequency, double FrequencyEnd)
+double extVectorWave::add_square_vertices(agg::path_storage &Path, double OriginX, double OriginY,
+   double XScale, double Amplitude, double Frequency, double FrequencyEnd, double AngleStep)
 {
    const double start_phase = wPhase;
    const double end_phase   = wave_phase_at_angle(360.0, Frequency, FrequencyEnd);
    const double first_cycle = floor(start_phase * (1.0 / 360.0)) * 360.0;
+   double last_angle = 0.0;
 
    for (double cycle=first_cycle; cycle < end_phase + 360.0; cycle += 360.0) {
       double rising_angle = wave_angle_at_phase(cycle, Frequency, FrequencyEnd);
       if ((rising_angle > 0.0) and (rising_angle < 360.0)) {
+         add_sampled_wave_vertices(Path, OriginX, OriginY, XScale, Amplitude, Frequency, FrequencyEnd,
+            last_angle, rising_angle, AngleStep);
          add_wave_vertex(Path, OriginX, OriginY, XScale, Amplitude, rising_angle, cycle - 0.000001);
          add_wave_vertex(Path, OriginX, OriginY, XScale, Amplitude, rising_angle, cycle);
+         last_angle = rising_angle;
       }
 
       double falling_phase = cycle + 180.0;
       double falling_angle = wave_angle_at_phase(falling_phase, Frequency, FrequencyEnd);
       if ((falling_angle > 0.0) and (falling_angle < 360.0)) {
+         add_sampled_wave_vertices(Path, OriginX, OriginY, XScale, Amplitude, Frequency, FrequencyEnd,
+            last_angle, falling_angle, AngleStep);
          add_wave_vertex(Path, OriginX, OriginY, XScale, Amplitude, falling_angle, falling_phase - 0.000001);
          add_wave_vertex(Path, OriginX, OriginY, XScale, Amplitude, falling_angle, falling_phase);
+         last_angle = falling_angle;
       }
    }
+
+   return last_angle;
 }
 
 void extVectorWave::apply_wave_thickness(agg::path_storage &Path, double Thickness, double ApproxScale, double Length,
@@ -372,17 +421,17 @@ static void generate_wave(extVectorWave *Vector, agg::path_storage &Path)
 
    double xscale = length * (1.0 / 360.0);
    double angle;
-   double last_x = x, last_y = y;
-   if ((Vector->wNoise <= 0.0) and ((Vector->wType IS WVT::TRIANGLE) or (Vector->wType IS WVT::SAWTOOTH) or
-      (Vector->wType IS WVT::SQUARE))) {
+   double angle_step = Vector->sampled_angle_step(scale, frequency, frequency_end);
+   if ((Vector->wType IS WVT::TRIANGLE) or (Vector->wType IS WVT::SAWTOOTH) or (Vector->wType IS WVT::SQUARE)) {
+      double last_angle = 0.0;
       if (Vector->wType IS WVT::TRIANGLE) {
-         Vector->add_triangle_vertices(Path, ox, oy, xscale, amp, frequency, frequency_end);
+         last_angle = Vector->add_triangle_vertices(Path, ox, oy, xscale, amp, frequency, frequency_end, angle_step);
       }
       else if (Vector->wType IS WVT::SAWTOOTH) {
-         Vector->add_sawtooth_vertices(Path, ox, oy, xscale, amp, frequency, frequency_end);
+         last_angle = Vector->add_sawtooth_vertices(Path, ox, oy, xscale, amp, frequency, frequency_end, angle_step);
       }
       else if (Vector->wType IS WVT::SQUARE) {
-         Vector->add_square_vertices(Path, ox, oy, xscale, amp, frequency, frequency_end);
+         last_angle = Vector->add_square_vertices(Path, ox, oy, xscale, amp, frequency, frequency_end, angle_step);
       }
 
       double end_phase = Vector->wave_phase_at_angle(360.0, frequency, frequency_end);
@@ -393,17 +442,13 @@ static void generate_wave(extVectorWave *Vector, agg::path_storage &Path)
          double phase = Vector->normalise_phase(end_phase);
          if ((std::abs(phase) < 0.000001) or (std::abs(phase - 180.0) < 0.000001)) end_phase -= 0.000001;
       }
+      Vector->add_sampled_wave_vertices(Path, ox, oy, xscale, amp, frequency, frequency_end, last_angle, 360.0,
+         angle_step);
       Vector->add_wave_vertex(Path, ox, oy, xscale, amp, 360.0, end_phase);
    }
    else {
-      constexpr double MAX_PHASE_STEP = 12.0;
-      const double max_frequency = std::max(frequency, frequency_end);
-      double angle_step = scale;
-      double phase_limited_step = MAX_PHASE_STEP * (1.0 / max_frequency);
+      double last_x = x, last_y = y;
       double vertex_tolerance = 0.5 * scale;
-      if (phase_limited_step < angle_step) angle_step = phase_limited_step;
-      if ((Vector->wNoise > 0.0) and (4.0 < angle_step)) angle_step = 4.0;
-      if (angle_step <= 0.0) angle_step = 1.0;
 
       for (angle=angle_step; angle < 360; angle += angle_step) {
          double phase = Vector->wave_phase_at_angle(angle, frequency, frequency_end);
