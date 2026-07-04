@@ -125,9 +125,12 @@ extern TValue * resolve_index(lua_State *L, int idx)
       GCudata *ud = udataV(o);
       ThunkPayload *payload = thunk_payload(ud);
 
-      // If already resolved, just return the cached value pointer
+      // If already resolved, refresh the stack slot so resolved type checks stay consistent with raw slot reads.
 
-      if (payload->resolved) return &payload->cached_value;
+      if (payload->resolved) {
+         copyTV(L, o, &payload->cached_value);
+         return o;
+      }
 
       ptrdiff_t slot_offset = savestack(L, o); // Track slot position (may move during resolution)
 
@@ -152,7 +155,7 @@ extern TValue * resolve_index(lua_State *L, int idx)
 
 // Const variant for read-only access - resolves but returns const pointer
 
-static cTValue * resolve_index_const(lua_State *L, int idx)
+inline cTValue * resolve_index_const(lua_State *L, int idx)
 {
    if (idx <= LUA_REGISTRYINDEX) return index2adr(L, idx);  // Pseudo-indices can't be thunks
    return resolve_index(L, idx);
