@@ -204,7 +204,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "LINEAR: Linear decay from start to end, this is the default.",
     "QUADRATIC: Quadratic decay, weighted towards the end of the wave.",
     "SMOOTHSTEP: Smoothstep decay with ease-in and ease-out.",
-    "EXPONENTIAL: Exponential decay, weighted strongly towards the end of the wave.")
+    "EXPONENTIAL: Exponential decay, weighted strongly towards the start of the wave.")
 
   enums("GFALL", { type="int", start=1, comment="Gradient fall-off options." },
     "OPAQUE:     No fall-off.",
@@ -804,6 +804,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     base='Vector', src='vectors/wave.cpp', output='vectors/wave_def.cpp',
     references={ 'WVT', 'WVC', 'WVE' }, extended=true },
   [[
+    ~double FrequencyEnd
     ~int(WVE) Envelope
     ~int(WVC) Close
     ~int(WVT) Type

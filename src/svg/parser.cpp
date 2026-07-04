@@ -3532,9 +3532,11 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
                else if (iequals("exponential", StrValue)) wave->setEnvelope(WVE::EXPONENTIAL);
                else wave->setEnvelope(WVE::LINEAR);
                return ERR::Okay;
-            case SVF_frequency: wave->setFrequency(SVGUnit(StrValue)); return ERR::Okay;
-            case SVF_phase:     wave->setPhase(SVGUnit(StrValue)); return ERR::Okay;
-            case SVF_thickness: wave->setThickness(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_frequency:     wave->setFrequency(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_frequency_end:
+            case SVF_frequencyEnd:  wave->setFrequencyEnd(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_phase:         wave->setPhase(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_thickness:     wave->setThickness(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_type:
                if (iequals("triangle", StrValue)) wave->setType(WVT::TRIANGLE);
                else if (iequals("sawtooth", StrValue)) wave->setType(WVT::SAWTOOTH);

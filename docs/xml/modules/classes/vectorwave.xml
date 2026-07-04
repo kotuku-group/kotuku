@@ -95,22 +95,32 @@
 
     <field>
       <name>Envelope</name>
-      <comment>Selects the decay envelope applied to the wave amplitude.</comment>
+      <comment>Selects the interpolation envelope applied to the wave.</comment>
       <access read="R" write="S">Read/Set</access>
       <type lookup="WVE">WVE</type>
       <description>
-<p>The Envelope field controls how the <fl>Decay</fl> value is interpolated across the wave.  The default <code>LINEAR</code> envelope uses an even taper, while <code>QUADRATIC</code>, <code>SMOOTHSTEP</code> and <code>EXPONENTIAL</code> apply progressively stronger curves to the decay.</p>
+<p>The Envelope field controls how the <fl>Decay</fl> value, and any <fl>FrequencyEnd</fl> sweep, is interpolated across the wave.  The default <code>LINEAR</code> envelope uses an even taper, while <code>QUADRATIC</code>, <code>SMOOTHSTEP</code> and <code>EXPONENTIAL</code> apply progressively stronger curves.</p>
 <types lookup="WVE"/>
       </description>
     </field>
 
     <field>
       <name>Frequency</name>
-      <comment>Defines the wave frequency (the distance between each wave).</comment>
+      <comment>Defines the wave frequency at the start of the wave.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>The frequency determines the distance between each individual wave that is generated.  The default value for the frequency is 1.0.  Shortening the frequency to a value closer to 0 will bring the waves closer together.</p>
+<p>The frequency determines the distance between each individual wave that is generated.  The default value for the frequency is 1.0.  Shortening the frequency to a value closer to 0 will bring the waves closer together. If <fl>FrequencyEnd</fl> is set to a different value, Frequency is used as the start frequency for the sweep.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>FrequencyEnd</name>
+      <comment>Defines the wave frequency at the end of the wave.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>When FrequencyEnd differs from <fl>Frequency</fl>, the wave performs a frequency sweep between the start and end points.  The frequency is interpolated across the wave using the selected <fl>Envelope</fl>, and the phase is integrated from that interpolated frequency so the result behaves as a chirp.  If FrequencyEnd is not assigned, it follows <fl>Frequency</fl> and the wave uses a constant frequency.</p>
       </description>
     </field>
 
@@ -184,7 +194,7 @@
     </constants>
 
     <constants lookup="WVE" comment="Wave envelope options.">
-      <const name="EXPONENTIAL">Exponential decay, weighted strongly towards the end of the wave.</const>
+      <const name="EXPONENTIAL">Exponential decay, weighted strongly towards the start of the wave.</const>
       <const name="LINEAR">Linear decay from start to end, this is the default.</const>
       <const name="QUADRATIC">Quadratic decay, weighted towards the end of the wave.</const>
       <const name="SMOOTHSTEP">Smoothstep decay with ease-in and ease-out.</const>
