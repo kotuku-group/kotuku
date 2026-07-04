@@ -93,6 +93,10 @@ int main()
    auto sine_stroke = stroke_path(sine, 10.0);
    if (expect_resolved("smooth-wave", sine_stroke, true) != 0) return 1;
 
+   auto near_limit_sine = make_sine_wave(5.0, 500.0, 100.0);
+   auto near_limit_sine_stroke = stroke_path(near_limit_sine, 5.0);
+   if (expect_resolved("near-limit-smooth-wave", near_limit_sine_stroke, true) != 0) return 1;
+
    auto triangle = make_triangle_wave(20.0, 1024.0 * 0.96, 25.0);
    auto triangle_stroke = stroke_path(triangle, 10.0);
    if (expect_resolved("triangle-wave", triangle_stroke, false) != 0) return 1;

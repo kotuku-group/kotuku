@@ -128,8 +128,11 @@ class extVectorWave : public extVector {
 
       const double phase_scale = DEG2RAD * wFrequency;
       const double max_curvature = std::abs(Amplitude) * phase_scale * phase_scale / (xscale * xscale);
+      constexpr double STROKE_RESOLVE_CURVATURE_MARGIN = 0.9;
 
-      return (half_thickness * max_curvature) > 1.0;
+      // The ideal sine offset reaches a cusp at 1.0, but AGG strokes the sampled polyline generated below.  Round joins
+      // can materialise small loops just before the analytic limit, so resolve close cases as well.
+      return (half_thickness * max_curvature) >= STROKE_RESOLVE_CURVATURE_MARGIN;
    }
 };
 
