@@ -370,6 +370,7 @@ enum class WVT : int {
    SMOOTH = 1,
    TRIANGLE = 2,
    SAWTOOTH = 3,
+   SQUARE = 4,
 };
 
 // Wave envelope options.
