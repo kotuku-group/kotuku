@@ -61,7 +61,7 @@ thread_local std::shared_ptr<ThreadRecord> tlThreadRecord;
 
 void deregister_thread(void)
 {
-   auto tid = get_thread_id();
+   auto tid = GetThreadID();
    tlThreadRecord.reset();
    std::lock_guard lock(glmThreadRegistry);
    glThreadRegistry.erase(int(tid));
@@ -72,7 +72,7 @@ void deregister_thread(void)
 
 std::shared_ptr<ThreadRecord> get_thread_record(void)
 {
-   if (not tlThreadRecord) get_thread_id();
+   if (not tlThreadRecord) GetThreadID();
    return tlThreadRecord;
 }
 
@@ -389,7 +389,6 @@ int64_t GetResource(RES Resource)
       case RES::PROCESS_STATE:   return int64_t(glTaskState);
       case RES::LOG_DEPTH:       return tlDepth;
       case RES::JNI_ENV:         return (int64_t)glJNIEnv;
-      case RES::THREAD_ID:       return int(get_thread_id());
       case RES::DISPLAY_DRIVER:  if (not glDisplayDriver.empty()) return (int64_t)glDisplayDriver.c_str(); else return 0;
       case RES::MAIN_THREAD:     return tlMainThread ? true : false;
       case RES::MAIN_THREAD_ID:  return int(glMainThreadID);
@@ -547,6 +546,42 @@ const SystemState * GetSystemState(void)
 
    state.Stage = glSystemState;
    return &state;
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+GetThreadID: Returns the UID of the current thread.
+
+Returns a unique ID for the active thread.  The ID has no relationship with the host operating system and is not
+re-used.
+
+-RESULT-
+int: A unique ID for the active thread is returned.
+
+-TAGS-
+pure-query
+
+*********************************************************************************************************************/
+
+static thread_local THREADID tlUniqueThreadID(0);
+static std::atomic_int glThreadIDCount = 1;
+
+int GetThreadID(void)
+{
+   if ((tlUniqueThreadID.defined()) and (tlThreadRecord)) return int(tlUniqueThreadID);
+   if (not tlUniqueThreadID.defined()) tlUniqueThreadID = THREADID(glThreadIDCount++);
+
+   // Register or repair the global record once, then use the thread-local record as the fast-path proof.
+
+   std::lock_guard lock(glmThreadRegistry);
+   if (auto it = glThreadRegistry.find(int(tlUniqueThreadID)); it IS glThreadRegistry.end()) {
+      tlThreadRecord = std::make_shared<ThreadRecord>();
+      glThreadRegistry[int(tlUniqueThreadID)] = tlThreadRecord;
+   }
+   else tlThreadRecord = it->second;
+
+   return int(tlUniqueThreadID);
 }
 
 /*********************************************************************************************************************
@@ -1094,7 +1129,7 @@ If `Stop` is set to true then the target thread will be put into a stopping stat
 sleep attempts in the target thread to be cancelled.
 
 -INPUT-
-int Thread: The target thread's unique ID, as returned by `GetResource(RES::THREAD_ID)`.
+int Thread: The target thread's unique ID, as returned by `GetThreadID()`.
 int Stop: If `true`, the target thread will be put into a stopping state.
 
 -ERRORS-

@@ -1315,7 +1315,7 @@ static ERR xq_stringify_select_value(const XPathValue &Value, std::string &Resul
 }
 
 //********************************************************************************************************************
-// print@select always inserts text.  Callers may fall back to the exposed FID_ResultString when the raw value is not
+// print@select always inserts text.  Callers may fall back to the exposed ResultString when the raw value is not
 // available from the XQuery object.
 
 static ERR xq_select_to_print_text(const XPathValue &Value, std::string_view Fallback, bool HasValue,

@@ -17,6 +17,7 @@ with the @XML class to provide a standards-compliant query engine with extensive
 *********************************************************************************************************************/
 
 #include <kotuku/modules/regex.h>
+#include <kotuku/modules/module.h>
 #include "../link/unicode.h"
 #include "../xml/uri_utils.h"
 #include "functions/accessor_support.h"
@@ -87,7 +88,7 @@ static void MODTest(std::string_view Options, int *Passed, int *Total)
 
 #include "xquery_class.cpp"
 
-static STRUCTS glStructures = {
+static ModHeader::STRUCTS glStructures = {
 };
 
 KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, MODTest, MOD_IDL, &glStructures)

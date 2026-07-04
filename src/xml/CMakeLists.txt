@@ -55,3 +55,4 @@ flute_test (${MOD}_parsing "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_xml_parsing.t
 flute_test (${MOD}_namespaces "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_namespaces.tiri")
 flute_test (${MOD}_variables "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_setvariable.tiri")
 flute_test (${MOD}_schema_validation "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_schema_validation.tiri")
+flute_test (${MOD}_simd_scanning "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_simd_scanning.tiri")

@@ -1155,8 +1155,8 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
    }
 
    // Get file size and read contents
-   int file_size = 0;
-   if (file->get(FID_Size, file_size) != ERR::Okay or file_size <= 0) {
+   int64_t file_size = 0;
+   if (file->getSize(file_size) != ERR::Okay or file_size <= 0) {
       this->ctx.pop_import();
       // Empty file - return an empty block
       return ParserResult<std::unique_ptr<BlockStmt>>::success(make_block(ImportToken.span(), {}));
@@ -1386,13 +1386,15 @@ ParserResult<StmtNodePtr> AstBuilder::parse_compile_if()
             check_path = current_file.substr(0, last_sep + 1) + std::string(string_value);
          }
          else {
-            auto working_path = this->ctx.lua().script->get<std::string_view>(FID_WorkingPath);
+            std::string_view working_path;
+            this->ctx.lua().script->getWorkingPath(working_path);
             if (not working_path.empty()) check_path = std::string(working_path) + std::string(string_value);
             else check_path = std::string(string_value);
          }
       }
       else {
-         auto working_path = this->ctx.lua().script->get<std::string_view>(FID_WorkingPath);
+         std::string_view working_path;
+         this->ctx.lua().script->getWorkingPath(working_path);
          if (not working_path.empty()) check_path = std::string(working_path) + std::string(string_value);
          else check_path = std::string(string_value);
       }

@@ -20,7 +20,6 @@ static ERR VECTORVIEWPORT_FreePlacement(extVectorViewport *Self) {
 
 static const struct ActionArray clVectorViewportActions[] = {
    { AC::Clear, VECTORVIEWPORT_Clear },
-   { AC::Free, VECTORVIEWPORT_Free },
    { AC::FreePlacement, VECTORVIEWPORT_FreePlacement },
    { AC::Init, VECTORVIEWPORT_Init },
    { AC::Move, VECTORVIEWPORT_Move },

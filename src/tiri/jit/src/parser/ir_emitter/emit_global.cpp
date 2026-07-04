@@ -17,6 +17,12 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
       const Identifier& identifier = Payload.names[i];
       if (is_blank_symbol(identifier)) continue;
       if (GCstr *name = identifier.symbol) {
+         if ((name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) {
+            return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::OverrideProtectedGlobal,
+               std::format("cannot override built-in '{}'", std::string_view(strdata(name), name->len)),
+               identifier.span));
+         }
+
          this->func_state.declared_globals.insert(name);
 
          if (identifier.has_const) {
@@ -60,10 +66,12 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
       ExpressionValue lhs_value(&this->func_state, global_var);
       auto lhs_reg = lhs_value.discharge_to_any_reg(allocator);
 
-      // Emit checks for empty values: nil, false, 0, ""
+      // Emit checks for empty values: nil, false, 0, "", and empty collections.
 
+      FalseyJumpOptions options;
+      options.include_empty_array = true;
       ControlFlowEdge falsey_edge = emit_falsey_jumps(
-         this->func_state, this->lex_state, this->control_flow, lhs_reg, FalseyJumpOptions{});
+         this->func_state, this->lex_state, this->control_flow, lhs_reg, options);
 
       // Skip assignment if not empty
 

@@ -945,76 +945,6 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="REDRAW">Redraw the surface before performing the copy operation.</const>
     </constants>
 
-    <constants lookup="BLM" comment="Defines the blending algorithm to use when transparent pixels are rendered to the bitmap.">
-      <const name="AUTO">Use the most suitable of the available algorithms.</const>
-      <const name="GAMMA">Use gamma correct blending.  This algorithm is slow but produces a high quality result.</const>
-      <const name="LINEAR">Use linear blending.  Applicable if the bitmap is in linear colour space.</const>
-      <const name="NONE">Never blend transparent pixels, just copy as-is.</const>
-      <const name="SRGB">Use sRGB linear blending.  This algorithm is extremely efficient but produces poor quality results.</const>
-    </constants>
-
-    <constants lookup="BMF" comment="Bitmap flags">
-      <const name="ACCELERATED_2D">2D video acceleration is available.</const>
-      <const name="ACCELERATED_3D">3D video acceleration is available.</const>
-      <const name="ALPHA_CHANNEL">For 32-bit images, indicates that an alpha channel is present.</const>
-      <const name="BLANK_PALETTE">Forces a blank/black palette on initialisation.</const>
-      <const name="CLEAR">Clear graphics on initialisation and when resizing.</const>
-      <const name="COMPRESSED">The bitmap data is compressed.</const>
-      <const name="FIXED_DEPTH">Prevent changing of bitmap depth after initialisation (e.g. via <code>Resize()</code>).</const>
-      <const name="INVERSE_ALPHA">Indicates reverse alpha blending, higher values are transparent.</const>
-      <const name="MASK">Declare the <class name="Bitmap">Bitmap</class> as a 1 or 8 bit mask.  Must be set in conjunction with the <class name="Bitmap" field="BitsPerPixel">Bitmap.BitsPerPixel</class> field on initialisation.</const>
-      <const name="NEVER_SHRINK">Ignore resize requests that would shrink the size of the bitmap.</const>
-      <const name="NO_DATA">Do not allocate memory in the Data field on initialisation.</const>
-      <const name="PREMUL">The RGB values are premultiplied (32-bit only).</const>
-      <const name="QUERIED">Automatically set after a <code>Query()</code> on the bitmap.</const>
-      <const name="TRANSPARENT">Indicates that the bitmap utilises a transparent colour.  This is automatically set if the <class name="Bitmap" field="TransIndex">Bitmap.TransIndex</class> or <class name="Bitmap" field="TransColour">Bitmap.TransColour</class> is defined, and support exists in functions such as <function module="Display">CopyArea</function>.</const>
-      <const name="USER">This user flag can be used to tag bitmaps with special meaning.  Not used internally.</const>
-    </constants>
-
-    <constants lookup="BMP" comment="Bitmap types">
-      <const name="CHUNKY">Chunky pixel mode (default).</const>
-      <const name="PLANAR">Planar pixel mode separates pixel bits across multiple planes.  Commonly used for single bit bitmap masks.</const>
-    </constants>
-
-    <constants lookup="CEF">
-      <const name="DELETE">Requests that the original file source is deleted if a successful paste operation takes place.</const>
-      <const name="EXTEND">Instead of replacing existing clipboard data, add the new data to the group.</const>
-    </constants>
-
-    <constants lookup="CLIPTYPE" comment="Clipboard types">
-      <const name="AUDIO">An audio clip that is recognised by the Sound class (such as wav's and mp3's).</const>
-      <const name="DATA">Raw information that is uncategorised can be defined as a data clip.</const>
-      <const name="FILE">Pure file references are stored as file clips.  This type is typically used by file managers for moving and copying files.</const>
-      <const name="IMAGE">Images that are recognised by the Image class may be stored as this type (such as jpeg's and png files).</const>
-      <const name="OBJECT">An object that has been deserialised into binary form.</const>
-      <const name="TEXT">Plain text files such as ASCII and UTF-8 must be identified through this clip type.</const>
-    </constants>
-
-    <constants lookup="CON" comment="Gamepad controller buttons.">
-      <const name="DPAD_DOWN">Directional pad down.</const>
-      <const name="DPAD_LEFT">Directional pad left.</const>
-      <const name="DPAD_RIGHT">Directional pad right.</const>
-      <const name="DPAD_UP">Directional pad up.</const>
-      <const name="GAMEPAD_E">East button (B)</const>
-      <const name="GAMEPAD_N">North button (Y)</const>
-      <const name="GAMEPAD_S">South button (A)</const>
-      <const name="GAMEPAD_W">West button (X)</const>
-      <const name="LEFT_BUMPER_1">Gamepad left-hand bumper 1 (top, primary).</const>
-      <const name="LEFT_BUMPER_2">Gamepad left-hand bumper 2 (lower).</const>
-      <const name="LEFT_THUMB">Left thumb stick depressed.</const>
-      <const name="RIGHT_BUMPER_1">Gamepad right-hand bumper 1 (top, primary).</const>
-      <const name="RIGHT_BUMPER_2">Gamepad right-hand bumper 2 (lower).</const>
-      <const name="RIGHT_THUMB">Right thumb stick depressed.</const>
-      <const name="SELECT">Gamepad select or back button.</const>
-      <const name="START">Gamepad start button.</const>
-    </constants>
-
-    <constants lookup="CPF" comment="Clipboard flags">
-      <const name="DRAG_DROP">Enables drag and drop mode.  The clipboard content will be private and not share data with the host system in this mode.</const>
-      <const name="HISTORY_BUFFER">Enables the history buffer.  Note that this results in active clipboard monitoring and the program will make copies of all potential clipboard content - whether it is used or not.</const>
-      <const name="HOST">This indicator is automatically set when a clipboard was created due to incoming content from the host system.</const>
-    </constants>
-
     <constants lookup="CRF" comment="Flags for the SetCursor() function.">
       <const name="BUFFER">Use of the <code>BUFFER</code> option allows the cursor request to be buffered in the event that the cursor is locked at the time of calling the <function module="Display">SetCursor</function> function.  Use of this flag is highly recommended in most circumstances, but may not be used in conjunction with the <code>ANCHOR</code> option.</const>
       <const name="LMB">Release the cursor after the left mouse button is held and released.</const>
@@ -1022,13 +952,6 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="NO_BUTTONS">Set the cursor only on the condition that the user is not holding down any buttons.  <code>ERR::NothingDone</code> is returned if the user has a button held down.</const>
       <const name="RESTRICT">Similar to the anchor option, but allows the pointer to move within the surface referred to by ObjectID.</const>
       <const name="RMB">Release the cursor after the right mouse button is held and released.</const>
-    </constants>
-
-    <constants lookup="CS" comment="Colour space options.">
-      <const name="CIE_LAB">Cartesian L*a*b* colour space defined by CIE 15.</const>
-      <const name="CIE_LCH">Polar L*CHab colour space defined by CIE 15.</const>
-      <const name="LINEAR_RGB">Linear RGB is used to improve colour balance in blending operations.</const>
-      <const name="SRGB">The default colour-space is sRGB.</const>
     </constants>
 
     <constants lookup="CSRF" comment="Flags for CopySurface().">
@@ -1040,41 +963,6 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="TRANSPARENT">Enable transparent copying, whereby colours matching the source's <code>Colour</code> field will be ignored.</const>
     </constants>
 
-    <constants lookup="CT">
-      <const name="AUDIO"/>
-      <const name="DATA"/>
-      <const name="END"/>
-      <const name="FILE"/>
-      <const name="IMAGE"/>
-      <const name="OBJECT"/>
-      <const name="TEXT"/>
-    </constants>
-
-    <constants lookup="DPMS" comment="Possible modes for the Display class' PowerMode field.">
-      <const name="DEFAULT">Use the default DPMS mode as defined by the display driver.</const>
-      <const name="OFF">Stop sending power to the display in order to turn it off (it may not be possible to restart the display without the user's intervention).</const>
-      <const name="STANDBY">Puts the display into standby (reduced power) mode.</const>
-      <const name="SUSPEND">Puts the display into suspend mode (blanks the display output while maintaining normal power levels).</const>
-    </constants>
-
-    <constants lookup="DRAG">
-      <const name="ANCHOR">The surface is being dragged and the mouse pointer is anchored to the surface.</const>
-      <const name="NONE">The surface is not being dragged.</const>
-      <const name="NORMAL">The surface is being dragged.</const>
-    </constants>
-
-    <constants lookup="DSF">
-      <const name="NO_DRAW">Drawing and exposures are disabled</const>
-      <const name="NO_EXPOSE">Drawing is enabled, exposures are disabled</const>
-    </constants>
-
-    <constants lookup="DT" comment="Flags for GetDisplayType().">
-      <const name="GLES">The display is driven by OpenGLES.</const>
-      <const name="NATIVE">The display is native (supported by internal drivers).</const>
-      <const name="WINGDI">The display is driven by Microsoft Windows drivers.</const>
-      <const name="X11">The display is driven by the X Window System (X11, X.Org, XFree86)</const>
-    </constants>
-
     <constants lookup="EXF" comment="Optional flags for the ExposeSurface() function.">
       <const name="ABSOLUTE">The supplied coordinates for exposure are absolute (relative to the display).</const>
       <const name="ABSOLUTE_COORDS">The supplied coordinates for exposure are absolute (relative to the display).</const>
@@ -1083,24 +971,12 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="REDRAW_VOLATILE_OVERLAP">Only redraw volatile objects that obscure the expose region from a position outside of the target surface and its children.  Useful if no redrawing has occurred in the surface, but the surface has moved to a new position and the parents need to be redrawn.</const>
     </constants>
 
-    <constants lookup="GMF" comment="Flags for gamma operations.">
-      <const name="SAVE">Save the provided settings permanently.</const>
-    </constants>
-
     <constants lookup="HOST">
       <const name="STICK_TO_FRONT">The hosted display sticks to the front.</const>
       <const name="TASKBAR">The hosted display is given a taskbar button.</const>
       <const name="TRANSLUCENCE">Change the alpha channel level for the entire window.</const>
       <const name="TRANSPARENT">Defines an RGB colour that is to be used as transparent.</const>
       <const name="TRAY_ICON">All new displays are represented in the system tray when this option is active.</const>
-    </constants>
-
-    <constants lookup="IRF" comment="Flags for RedrawSurface().">
-      <const name="FORCE_DRAW">Forces redrawing to the surface buffer (overrides visibility checks).</const>
-      <const name="IGNORE_CHILDREN">Do not draw child surfaces (this includes volatile children).</const>
-      <const name="IGNORE_NV_CHILDREN">Do not draw child surfaces unless they are volatile.</const>
-      <const name="RELATIVE">Coordinate parameters are expressed in relative format.  Right and Bottom reflect Width and Height respectively.</const>
-      <const name="SINGLE_BITMAP">Only draw children and/or siblings when they share our bitmap space.</const>
     </constants>
 
     <constants lookup="JET" comment="JET constants are documented in GetInputEvent()">
@@ -1139,21 +1015,6 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="MOVEMENT">X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system.</const>
       <const name="REPEATED">Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)</const>
       <const name="SECONDARY">Indicates to the receiver of this message that it is not the primary/original recipient</const>
-    </constants>
-
-    <constants lookup="LVF" comment="drwLockBitmap() result flags">
-      <const name="EXPOSE_CHANGES"/>
-    </constants>
-
-    <constants lookup="MON" comment="Flags for the Display class SetMonitor() method.">
-      <const name="AUTO_DETECT">Monitor settings to be auto-detected on startup.</const>
-      <const name="BIT_6">The device is limited to 6-bit colour production in real terms.</const>
-    </constants>
-
-    <constants lookup="PF" comment="Flags for the Pointer class.">
-      <const name="ANCHOR">Allow the pointer to be anchored.</const>
-      <const name="UNUSED"/>
-      <const name="VISIBLE">Indicates that the pointer is currently visible.  Read-only.</const>
     </constants>
 
     <constants lookup="PTC" comment="Predefined cursor styles">
@@ -1218,10 +1079,6 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="WRITE_ONLY">Set this flag if you would like the surface object's data to be managed in video memory only.  While this can give some speed advantages, be warned that video based surfaces are limited to write-only operations.</const>
     </constants>
 
-    <constants lookup="RT">
-      <const name="ROOT">Can be used by window surfaces to identify themselves as a root layer.</const>
-    </constants>
-
     <constants lookup="SCR" comment="Display flags.">
       <const name="ACTIVE">The display is participating in the desktop view - this does not guarantee it is visible.</const>
       <const name="ALPHA_BLEND">Enables alpha channel blending (if display is hosted and 32-bit).</const>
@@ -1247,13 +1104,6 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="ROTATED">True if the display is rotated.</const>
       <const name="VIRTUAL">The display is virtual or not visible (device not switched on).</const>
       <const name="VISIBLE">Set if the screen is on display.</const>
-    </constants>
-
-    <constants lookup="SWIN" comment="Options for the Surface WindowType field.">
-      <const name="HOST">Default to the standard hosted window mode with full titlebar, borders and taskbar representation.</const>
-      <const name="ICON_TRAY">Create a borderless (custom) window with icon tray representation.</const>
-      <const name="NONE">Create a borderless (custom) window with no UI representation.</const>
-      <const name="TASKBAR">Create a borderless (custom) window with taskbar representation.</const>
     </constants>
 
     <constants lookup="WH" comment="Events for WindowHook()">

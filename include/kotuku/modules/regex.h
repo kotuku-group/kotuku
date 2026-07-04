@@ -85,5 +85,3 @@ namespace rx {
 }
 } // namespace rx
 #endif
-
-

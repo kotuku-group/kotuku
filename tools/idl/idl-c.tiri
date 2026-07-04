@@ -27,6 +27,7 @@
    global glCategory       = nil
    global glCategories     = { }
    global glPrivateNames   = { }
+   global glReferences     = { }
 
    global glParser = options({
       name        = 'idl-c',

@@ -193,8 +193,7 @@ static void sslMsgCallback(const ssl_st *s, int where, int ret)
 
 //********************************************************************************************************************
 
-static void sslCtxMsgCallback(const SSL *s, int where, int ret) __attribute__ ((unused));
-static void sslCtxMsgCallback(const SSL *s, int where, int ret)
+[[maybe_unused]] inline void sslCtxMsgCallback(const SSL *s, int where, int ret)
 {
    sslMsgCallback(s, where, ret);
 }

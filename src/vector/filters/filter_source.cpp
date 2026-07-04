@@ -145,8 +145,11 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
 
       cache->Data = Self->BitmapData - (cache->Clip.Left * cache->BytesPerPixel) - (cache->Clip.Top * cache->LineWidth);
 
-      Self->Scene->Viewport->setFields(fl::X(img_x), fl::Y(img_y), fl::Width(img_width), fl::Height(img_height),
-         fl::AspectRatio(Self->AspectRatio));
+      Self->Scene->Viewport->setX(img_x);
+      Self->Scene->Viewport->setY(img_y);
+      Self->Scene->Viewport->setWidth(img_width);
+      Self->Scene->Viewport->setHeight(img_height);
+      Self->Scene->Viewport->setAspectRatio(Self->AspectRatio);
 
       agg::trans_affine &t = filter->ClientVector->Transform;
       VectorMatrix matrix;

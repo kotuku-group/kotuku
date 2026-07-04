@@ -72,22 +72,22 @@ static constexpr uint16_t meta_align_offset(size_t Offset, size_t Alignment)
    return uint16_t(Offset + Alignment - remainder);
 }
 
-static constexpr uint16_t glMetaClassVersionOffset = meta_align_offset(sizeof(Object), alignof(double));
-static constexpr uint16_t glMetaFieldsOffset = meta_align_offset(glMetaClassVersionOffset + sizeof(double), alignof(APTR));
-static constexpr uint16_t glMetaDictionaryOffset = meta_align_offset(glMetaFieldsOffset + sizeof(APTR), alignof(APTR));
-static constexpr uint16_t glMetaClassNameOffset = meta_align_offset(glMetaDictionaryOffset + sizeof(APTR), alignof(std::string));
-static constexpr uint16_t glMetaFileExtensionOffset = meta_align_offset(glMetaClassNameOffset + sizeof(std::string), alignof(std::string));
+static constexpr uint16_t glMetaClassVersionOffset    = meta_align_offset(sizeof(Object), alignof(double));
+static constexpr uint16_t glMetaFieldsOffset          = meta_align_offset(glMetaClassVersionOffset + sizeof(double), alignof(APTR));
+static constexpr uint16_t glMetaDictionaryOffset      = meta_align_offset(glMetaFieldsOffset + sizeof(APTR), alignof(APTR));
+static constexpr uint16_t glMetaClassNameOffset       = meta_align_offset(glMetaDictionaryOffset + sizeof(APTR), alignof(std::string));
+static constexpr uint16_t glMetaFileExtensionOffset   = meta_align_offset(glMetaClassNameOffset + sizeof(std::string), alignof(std::string));
 static constexpr uint16_t glMetaFileDescriptionOffset = meta_align_offset(glMetaFileExtensionOffset + sizeof(std::string), alignof(std::string));
-static constexpr uint16_t glMetaFileHeaderOffset = meta_align_offset(glMetaFileDescriptionOffset + sizeof(std::string), alignof(std::string));
-static constexpr uint16_t glMetaPathOffset = meta_align_offset(glMetaFileHeaderOffset + sizeof(std::string), alignof(std::string));
-static constexpr uint16_t glMetaIconOffset = meta_align_offset(glMetaPathOffset + sizeof(std::string), alignof(std::string));
-static constexpr uint16_t glMetaSizeOffset = meta_align_offset(glMetaIconOffset + sizeof(std::string), alignof(int));
-static constexpr uint16_t glMetaFlagsOffset = meta_align_offset(glMetaSizeOffset + sizeof(int), alignof(CLF));
-static constexpr uint16_t glMetaClassIDOffset = meta_align_offset(glMetaFlagsOffset + sizeof(CLF), alignof(CLASSID));
-static constexpr uint16_t glMetaBaseClassIDOffset = meta_align_offset(glMetaClassIDOffset + sizeof(CLASSID), alignof(CLASSID));
-static constexpr uint16_t glMetaOpenCountOffset = meta_align_offset(glMetaBaseClassIDOffset + sizeof(CLASSID), alignof(int));
-static constexpr uint16_t glMetaCategoryOffset = meta_align_offset(glMetaOpenCountOffset + sizeof(int), alignof(CCF));
-static constexpr uint16_t glMetaPublicSizeOffset = meta_align_offset(glMetaCategoryOffset + sizeof(int), alignof(int));
+static constexpr uint16_t glMetaFileHeaderOffset      = meta_align_offset(glMetaFileDescriptionOffset + sizeof(std::string), alignof(std::string));
+static constexpr uint16_t glMetaPathOffset            = meta_align_offset(glMetaFileHeaderOffset + sizeof(std::string), alignof(std::string));
+static constexpr uint16_t glMetaIconOffset            = meta_align_offset(glMetaPathOffset + sizeof(std::string), alignof(std::string));
+static constexpr uint16_t glMetaSizeOffset            = meta_align_offset(glMetaIconOffset + sizeof(std::string), alignof(int));
+static constexpr uint16_t glMetaFlagsOffset           = meta_align_offset(glMetaSizeOffset + sizeof(int), alignof(CLF));
+static constexpr uint16_t glMetaClassIDOffset         = meta_align_offset(glMetaFlagsOffset + sizeof(CLF), alignof(CLASSID));
+static constexpr uint16_t glMetaBaseClassIDOffset     = meta_align_offset(glMetaClassIDOffset + sizeof(CLASSID), alignof(CLASSID));
+static constexpr uint16_t glMetaOpenCountOffset       = meta_align_offset(glMetaBaseClassIDOffset + sizeof(CLASSID), alignof(int));
+static constexpr uint16_t glMetaCategoryOffset        = meta_align_offset(glMetaOpenCountOffset + sizeof(int), alignof(CCF));
+static constexpr uint16_t glMetaPublicSizeOffset      = meta_align_offset(glMetaCategoryOffset + sizeof(int), alignof(int));
 
 static ERR GET_ClassName(extMetaClass *Self, std::string_view &Value)
 {
@@ -113,34 +113,34 @@ static const FieldDef CategoryTable[] = {
 
 static const std::vector<Field> glMetaFieldsPreset = {
    // If you adjust this table, remember to adjust the index numbers and the byte offsets into the structure.
-   { 0, nullptr, nullptr, writeval_default, "ClassVersion",    FID_ClassVersion, glMetaClassVersionOffset, 0, FDF_DOUBLE|FDF_RI },
-   { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_Fields, (APTR)SET_Fields, writeval_default, "Fields", FID_Fields, glMetaFieldsOffset, 1, FDF_ARRAY|FD_STRUCT|FDF_RI },
-   { MAXINT("Field"),      (ERR (*)(APTR, APTR))GET_Dictionary, nullptr, writeval_default, "Dictionary", FID_Dictionary, glMetaDictionaryOffset, 2, FDF_ARRAY|FD_STRUCT|FDF_R },
-   { 0, nullptr, nullptr, writeval_default, "ClassName",       FID_ClassName,       glMetaClassNameOffset,        3,  FDF_CPPSTRING|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "FileExtension",   FID_FileExtension,   glMetaFileExtensionOffset,    4,  FDF_CPPSTRING|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "FileDescription", FID_FileDescription, glMetaFileDescriptionOffset,  5,  FDF_CPPSTRING|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "FileHeader",      FID_FileHeader,      glMetaFileHeaderOffset,       6,  FDF_CPPSTRING|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "Path",            FID_Path,            glMetaPathOffset,             7,  FDF_CPPSTRING|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "Icon",            FID_Icon,            glMetaIconOffset,             8,  FDF_CPPSTRING|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "Size",            FID_Size,            glMetaSizeOffset,             9,  FDF_INT|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "Flags",           FID_Flags,           glMetaFlagsOffset,            10, FDF_INT|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "ClassID",         FID_ClassID,         glMetaClassIDOffset,          11, FDF_INT|FDF_UNSIGNED|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "BaseClassID",     FID_BaseClassID,     glMetaBaseClassIDOffset,      12, FDF_INT|FDF_UNSIGNED|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "OpenCount",       FID_OpenCount,       glMetaOpenCountOffset,        13, FDF_INT|FDF_R },
-   { MAXINT(&CategoryTable), nullptr, nullptr, writeval_default, "Category",  FID_Category, glMetaCategoryOffset, 14, FDF_INT|FDF_LOOKUP|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "PublicSize",      FID_PublicSize,      glMetaPublicSizeOffset,       15, FDF_INT|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "ClassVersion",    strhash("classVersion"), glMetaClassVersionOffset, 0, FDF_DOUBLE|FDF_RI },
+   { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_Fields, (APTR)SET_Fields, writeval_default, "Fields", strhash("fields"), glMetaFieldsOffset, 1, FDF_ARRAY|FD_STRUCT|FDF_RI },
+   { MAXINT("Field"),      (ERR (*)(APTR, APTR))GET_Dictionary, nullptr, writeval_default, "Dictionary", strhash("dictionary"), glMetaDictionaryOffset, 2, FDF_ARRAY|FD_STRUCT|FDF_R },
+   { 0, nullptr, nullptr, writeval_default, "ClassName",       strhash("className"),       glMetaClassNameOffset,        3,  FDF_CPPSTRING|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "FileExtension",   strhash("fileExtension"),   glMetaFileExtensionOffset,    4,  FDF_CPPSTRING|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "FileDescription", strhash("fileDescription"), glMetaFileDescriptionOffset,  5,  FDF_CPPSTRING|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "FileHeader",      strhash("fileHeader"),      glMetaFileHeaderOffset,       6,  FDF_CPPSTRING|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "Path",            strhash("path"),            glMetaPathOffset,             7,  FDF_CPPSTRING|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "Icon",            strhash("icon"),            glMetaIconOffset,             8,  FDF_CPPSTRING|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "Size",            strhash("size"),            glMetaSizeOffset,             9,  FDF_INT|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "Flags",           strhash("flags"),           glMetaFlagsOffset,            10, FDF_INT|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "ClassID",         strhash("classID"),         glMetaClassIDOffset,          11, FDF_INT|FDF_UNSIGNED|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "BaseClassID",     strhash("baseClassID"),     glMetaBaseClassIDOffset,      12, FDF_INT|FDF_UNSIGNED|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "OpenCount",       strhash("openCount"),       glMetaOpenCountOffset,        13, FDF_INT|FDF_R },
+   { MAXINT(&CategoryTable), nullptr, nullptr, writeval_default, "Category",  strhash("category"), glMetaCategoryOffset, 14, FDF_INT|FDF_LOOKUP|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "PublicSize",      strhash("publicSize"),      glMetaPublicSizeOffset,       15, FDF_INT|FDF_RI },
    // Virtual fields
-   { MAXINT("MethodEntry"), (ERR (*)(APTR, APTR))GET_Methods, (APTR)SET_Methods, writeval_default, "Methods", FID_Methods, sizeof(Object), 16, FDF_ARRAY|FD_STRUCT|FDF_RI },
-   { 0, nullptr, (APTR)SET_Actions,               writeval_default,   "Actions",           FID_Actions,         sizeof(Object), 17, FDF_POINTER|FDF_I },
-   { 0, (ERR (*)(APTR, APTR))GET_ActionTable, 0,  writeval_default,   "ActionTable",       FID_ActionTable,     sizeof(Object), 18, FDF_ARRAY|FDF_POINTER|FDF_R },
-   { 0, (ERR (*)(APTR, APTR))GET_Location, 0,     writeval_default,   "Location",          FID_Location,        sizeof(Object), 19, FDF_CPPSTRING|FDF_R },
-   { 0, (ERR (*)(APTR, APTR))GET_ClassName, (APTR)SET_ClassName, writeval_default, "Name", FID_Name,            sizeof(Object), 20, FDF_CPPSTRING|FDF_SYSTEM|FDF_RI },
-   { 0, (ERR (*)(APTR, APTR))GET_Module, 0,       writeval_default,   "Module",            FID_Module,          sizeof(Object), 21, FDF_CPPSTRING|FDF_R },
-   { 0, (ERR (*)(APTR, APTR))GET_Objects, 0,      writeval_default,   "Objects",           FID_Objects,         sizeof(Object), 22, FDF_ARRAY|FDF_INT|FDF_ALLOC|FDF_R },
-   { MAXINT(CLASSID::METACLASS), (ERR (*)(APTR, APTR))GET_SubClasses, nullptr, writeval_default, "SubClasses", FID_SubClasses, sizeof(Object), 23, FDF_ARRAY|FD_OBJECT|FDF_R },
-   { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_SubFields, 0, writeval_default, "SubFields", FID_SubFields, sizeof(Object), 24, FDF_ARRAY|FD_STRUCT|FDF_SYSTEM|FDF_R },
-   { MAXINT(CLASSID::ROOTMODULE), (ERR (*)(APTR, APTR))GET_RootModule, 0, writeval_default, "RootModule", FID_RootModule, sizeof(Object), 25, FDF_OBJECT|FDF_R },
-   { 0, (ERR (*)(APTR, APTR))OBJECT_GetID, 0,     writeval_default,   "ID",                FID_ID,              sizeof(Object), 26, FDF_INT|FDF_SYSTEM|FDF_R },
+   { MAXINT("MethodEntry"), (ERR (*)(APTR, APTR))GET_Methods, (APTR)SET_Methods, writeval_default, "Methods", strhash("methods"), sizeof(Object), 16, FDF_ARRAY|FD_STRUCT|FDF_RI },
+   { 0, nullptr, (APTR)SET_Actions,               writeval_default,   "Actions",           strhash("actions"),         sizeof(Object), 17, FDF_POINTER|FDF_I },
+   { 0, (ERR (*)(APTR, APTR))GET_ActionTable, 0,  writeval_default,   "ActionTable",       strhash("actionTable"),     sizeof(Object), 18, FDF_ARRAY|FDF_POINTER|FDF_R },
+   { 0, (ERR (*)(APTR, APTR))GET_Location, 0,     writeval_default,   "Location",          strhash("location"),        sizeof(Object), 19, FDF_CPPSTRING|FDF_R },
+   { 0, (ERR (*)(APTR, APTR))GET_ClassName, (APTR)SET_ClassName, writeval_default, "Name", strhash("name"),            sizeof(Object), 20, FDF_CPPSTRING|FDF_SYSTEM|FDF_RI },
+   { 0, (ERR (*)(APTR, APTR))GET_Module, 0,       writeval_default,   "Module",            strhash("module"),          sizeof(Object), 21, FDF_CPPSTRING|FDF_R },
+   { 0, (ERR (*)(APTR, APTR))GET_Objects, 0,      writeval_default,   "Objects",           strhash("objects"),         sizeof(Object), 22, FDF_ARRAY|FDF_INT|FDF_ALLOC|FDF_R },
+   { MAXINT(CLASSID::METACLASS), (ERR (*)(APTR, APTR))GET_SubClasses, nullptr, writeval_default, "SubClasses", strhash("subClasses"), sizeof(Object), 23, FDF_ARRAY|FD_OBJECT|FDF_R },
+   { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_SubFields, 0, writeval_default, "SubFields", strhash("subFields"), sizeof(Object), 24, FDF_ARRAY|FD_STRUCT|FDF_SYSTEM|FDF_R },
+   { MAXINT(CLASSID::ROOTMODULE), (ERR (*)(APTR, APTR))GET_RootModule, 0, writeval_default, "RootModule", strhash("rootModule"), sizeof(Object), 25, FDF_OBJECT|FDF_R },
+   { 0, (ERR (*)(APTR, APTR))OBJECT_GetID, 0,     writeval_default,   "ID",                strhash("id"),              sizeof(Object), 26, FDF_INT|FDF_SYSTEM|FDF_R },
    { 0, 0, 0, nullptr, "", 0, 0, 0,  0 }
 };
 
@@ -160,6 +160,7 @@ static const FieldArray glMetaFields[] = {
    { "BaseClassID",     FDF_INT|FDF_UNSIGNED|FDF_RI },
    { "OpenCount",       FDF_INT|FDF_R },
    { "Category",        FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, nullptr, &CategoryTable },
+   { "PublicSize",      FDF_INT|FDF_RI },
    // Virtual fields
    { "Methods",         FDF_ARRAY|FD_STRUCT|FDF_RI|FDF_PURE, GET_Methods, SET_Methods, "MethodEntry" },
    { "Actions",         FDF_POINTER|FDF_I },
@@ -176,7 +177,7 @@ static const FieldArray glMetaFields[] = {
 };
 
 extern "C" ERR CLASS_FindField(extMetaClass *, struct mc::FindField *);
-extern "C" ERR CLASS_Free(extMetaClass *);
+extern "C" ERR CLASS_FreePlacement(extMetaClass *);
 extern "C" ERR CLASS_Init(extMetaClass *);
 extern "C" ERR CLASS_NewPlacement(extMetaClass *);
 
@@ -204,6 +205,7 @@ void init_metaclass(void)
    glMetaClass.ClassVersion       = 1;
    glMetaClass.Fields             = glMetaFields;
    glMetaClass.ClassName          = "MetaClass";
+   glMetaClass.PublicSize         = 0;
    glMetaClass.Size               = sizeof(extMetaClass);
    glMetaClass.ClassID            = CLASSID::METACLASS;
    glMetaClass.BaseClassID        = CLASSID::METACLASS;
@@ -215,7 +217,7 @@ void init_metaclass(void)
    glMetaClass.Methods.resize(2);
    glMetaClass.Methods[1] = { AC(-1), (APTR)CLASS_FindField, "FindField", argsFindField, sizeof(struct mc::FindField) };
 
-   glMetaClass.ActionTable[int(AC::Free)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_Free;
+   glMetaClass.ActionTable[int(AC::FreePlacement)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_FreePlacement;
    glMetaClass.ActionTable[int(AC::Init)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_Init;
    glMetaClass.ActionTable[int(AC::NewPlacement)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_NewPlacement;
    glMetaClass.ActionTable[int(AC::Signal)].PerformAction = &DEFAULT_Signal;
@@ -270,7 +272,7 @@ ERR CLASS_FindField(extMetaClass *Self, struct mc::FindField *Args)
 
 //********************************************************************************************************************
 
-ERR CLASS_Free(extMetaClass *Self)
+ERR CLASS_FreePlacement(extMetaClass *Self)
 {
    if (Self->ClassID != CLASSID::NIL) glClassMap.erase(Self->ClassID);
 
@@ -887,7 +889,16 @@ static void field_setup(extMetaClass *Class)
 
       if (Class->SubFields) {
          std::vector<Field> subFields;
-         uint16_t offset = Class->Base->Size; // Offset starts from sizeof(extClassName)
+         // Offset normally starts from sizeof(extClassName), but if the base class sets PublicSize then it starts
+         // from sizeof(objClassName).  This distinction is very important - setting PublicSize means that base
+         // classes can store private variables in the ext* area efficiently, because if a derived class is instanced,
+         // the ext* area is ignored and the derived class can store variables starting from sizeof(objClassName).
+         // It is therefore also critical that if the ext* variables must be visible to derived classes, PublicSize
+         // is either zero or matches sizeof(extClassName) in order to prevent the variables being overwritten.
+         //
+         // In more complex cases, use DerivedPtr as an escape hatch for overcoming variable storage headaches.
+
+         uint16_t offset = Class->Base->PublicSize ? Class->Base->PublicSize : Class->Base->Size;
          uint16_t last_offset = offset;
          Field previous_field = {};
          bool have_previous_field = false;
@@ -946,8 +957,8 @@ static void field_setup(extMetaClass *Class)
          previous_field = Class->FieldLookup.back();
          have_previous_field = true;
 
-         if (Class->FieldLookup[i].FieldID IS FID_Name) name_field = false;
-         else if (Class->FieldLookup[i].FieldID IS FID_Owner) owner_field = false;
+         if (Class->FieldLookup[i].FieldID IS strhash("name")) name_field = false;
+         else if (Class->FieldLookup[i].FieldID IS strhash("owner")) owner_field = false;
       }
 
       // Add mandatory system fields that haven't already been defined.
@@ -959,7 +970,7 @@ static void field_setup(extMetaClass *Class)
             .SetValue   = (APTR)&OBJECT_SetName,
             .WriteValue = &writeval_default,
             .Name       = "Name",
-            .FieldID    = FID_Name,
+            .FieldID    = strhash("name"),
             .Offset     = 0,
             .Index      = 0,
             .Flags      = FDF_CPPSTRING|FDF_RW|FDF_SYSTEM
@@ -973,7 +984,7 @@ static void field_setup(extMetaClass *Class)
             .SetValue   = (APTR)&OBJECT_SetOwner,
             .WriteValue = &writeval_default,
             .Name       = "Owner",
-            .FieldID    = FID_Owner,
+            .FieldID    = strhash("owner"),
             .Offset     = 0,
             .Index      = 0,
             .Flags      = FDF_OBJECTID|FDF_RW|FDF_SYSTEM
@@ -986,7 +997,7 @@ static void field_setup(extMetaClass *Class)
          .SetValue   = nullptr,
          .WriteValue = &writeval_default,
          .Name       = "ID",
-         .FieldID    = FID_ID,
+         .FieldID    = strhash("id"),
          .Offset     = 0,
          .Index      = 0,
          .Flags      = FDF_INT|FDF_R|FDF_SYSTEM
@@ -1000,7 +1011,7 @@ static void field_setup(extMetaClass *Class)
          .SetValue   = nullptr,
          .WriteValue = &writeval_default,
          .Name       = "Class",
-         .FieldID    = FID_Class,
+         .FieldID    = strhash("class"),
          .Offset     = 0,
          .Index      = 0,
          .Flags      = FDF_OBJECT|FDF_POINTER|FDF_R|FDF_SYSTEM
@@ -1014,7 +1025,7 @@ static void field_setup(extMetaClass *Class)
          .SetValue   = nullptr,
          .WriteValue = &writeval_default,
          .Name       = "ClassID",
-         .FieldID    = FID_ClassID,
+         .FieldID    = strhash("classID"),
          .Offset     = 0,
          .Index      = 0,
          .Flags      = FDF_INT|FDF_UNSIGNED|FDF_R|FDF_SYSTEM

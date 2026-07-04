@@ -114,10 +114,11 @@ static ERR feedback_view(objVectorViewport *View, FM Event)
    kt::Log log(__FUNCTION__);
    auto Self = (extDocument *)CurrentContext();
 
-   auto width  = View->get<double>(FID_ViewWidth);
-   auto height = View->get<double>(FID_ViewHeight);
-   if (not width) width = View->get<double>(FID_Width);
-   if (not height) height = View->get<double>(FID_Height);
+   double width, height;
+   View->getViewWidth(width);
+   View->getViewHeight(height);
+   if (not width)  { Unit w; View->getWidth(w);  width = w; }
+   if (not height) { Unit h; View->getHeight(h); height = h; }
 
    if ((Self->VPWidth IS width) and (Self->VPHeight IS height)) return ERR::Okay;
 
@@ -660,28 +661,26 @@ static ERR DOCUMENT_Focus(extDocument *Self, APTR Args)
 
 //********************************************************************************************************************
 
-static ERR DOCUMENT_Free(extDocument *Self)
+extDocument::~extDocument()
 {
-   if (Self->FlashTimer)  { UpdateTimer(Self->FlashTimer, 0); Self->FlashTimer = 0; }
+   if (FlashTimer)  UpdateTimer(FlashTimer, 0);
 
-   if ((Self->Focus) and (Self->Focus != Self->Viewport)) UnsubscribeAction(Self->Focus, AC::NIL);
+   if ((Focus) and (Focus != Viewport)) UnsubscribeAction(Focus, AC::NIL);
 
-   if (Self->PretextXML) { FreeResource(Self->PretextXML); Self->PretextXML = nullptr; }
+   if (PretextXML) FreeResource(PretextXML);
 
-   if (Self->Viewport) UnsubscribeAction(Self->Viewport, AC::NIL);
+   if (Viewport) UnsubscribeAction(Viewport, AC::NIL);
 
-   if (Self->EventCallback.isScript()) {
-      UnsubscribeAction(Self->EventCallback.Context, AC::Free);
-      Self->EventCallback.clear();
+   if (EventCallback.isScript()) {
+      UnsubscribeAction(EventCallback.Context, AC::Free);
+      EventCallback.clear();
    }
 
-   unload_doc(Self, ULD::NIL);
+   unload_doc(this, ULD::NIL);
 
-   if (Self->Query) { FreeResource(Self->Query); Self->Query = nullptr; }
-   if (Self->Page) { FreeResource(Self->Page); Self->Page = nullptr; }
-   if (Self->View) { FreeResource(Self->View); Self->View = nullptr; }
-
-   return ERR::Okay;
+   if (Query) FreeResource(Query);
+   if (Page) FreeResource(Page);
+   if (View) FreeResource(View);
 }
 
 /*********************************************************************************************************************
@@ -837,10 +836,10 @@ static ERR DOCUMENT_Init(extDocument *Self)
 
    SubscribeAction(Self->Viewport, AC::Free, C_FUNCTION(notify_free_viewport));
 
-   Self->VPWidth  = Self->Viewport->get<double>(FID_ViewWidth);
-   Self->VPHeight = Self->Viewport->get<double>(FID_ViewHeight);
-   if (not Self->VPWidth) Self->VPWidth = Self->Viewport->get<double>(FID_Width);
-   if (not Self->VPHeight) Self->VPHeight = Self->Viewport->get<double>(FID_Height);
+   Self->Viewport->getViewWidth(Self->VPWidth);
+   Self->Viewport->getViewHeight(Self->VPHeight);
+   if (not Self->VPWidth)  { Unit w; Self->Viewport->getWidth(w);  Self->VPWidth = w; }
+   if (not Self->VPHeight) { Unit h; Self->Viewport->getHeight(h); Self->VPHeight = h; }
 
    FRGB bkgd { 1.0, 1.0, 1.0, 1.0 };
    Self->Viewport->setFillColour(bkgd);

@@ -13,7 +13,7 @@
     <id>2aebea46</id>
     <idstring>COMPRESSION</idstring>
     <category>Data</category>
-    <copyright>Paul Manias 1996-2026</copyright>
+    <copyright>Paul Manias © 1996-2026</copyright>
     <description>
 <p>The Compression class provides an interface to compress and decompress data.  It provides support for file based compression as well as memory based compression routines.  The base class uses zip algorithms to support pkzip files, while other forms of compressed data can be supported by installing additional compression derived classes.</p>
 <p>The following examples demonstrate basic usage of compression objects in Tiri:</p>
@@ -569,6 +569,25 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       <const name="NO_LINKS">Treat symbolic links as normal files/folders.</const>
       <const name="PASSWORD">A password has been set on the object.</const>
       <const name="READ_ONLY">Forces read-only access, which is strongly recommended if an existing archive is being opened with no modifications intended.  If this flag is not set, initialisation can fail if the user does not have write access to the source file.</const>
+    </constants>
+
+    <constants lookup="FL" comment="File flags">
+      <const name="APPROXIMATE">Allows fuzzy matching of the file path by ignoring the file extension; for instance opening 'screenshot.png' when only 'screenshot.jpg' exists in the same folder, the 'screenshot.jpg' file will be opened.  If multiple files could potentially match to the file name, the file object will select the first match that is encountered.</const>
+      <const name="BUFFER">Activates a special mode in which the file data is stored in a memory buffer rather than a disk file.  Set the Size field to a value of at least 1 so that the initial buffer size is configured.  In this mode many of the available file operations are meaningless except for the Read, Write and Seek actions.</const>
+      <const name="DEVICE">The file is a system device (must set if opening a device for read/write operations)</const>
+      <const name="DIRECTORY">The file object represents a folder.</const>
+      <const name="EXCLUDE_FILES">Exclude files when scanning this folder.</const>
+      <const name="EXCLUDE_FOLDERS">Exclude folders when scanning this folder.</const>
+      <const name="FILE">Explicitly declares the file object as an entity that stores content (as opposed to a device or folder for example).</const>
+      <const name="FOLDER">The file object represents a folder.</const>
+      <const name="LINK">Read-Only.  Indicates that the file is a symbolic link or shortcut to another file.</const>
+      <const name="LOOP">In loop mode, the file object's position marker for read/write operations is allowed to extend past the actual file size.  Any read/write operation beyond the file size will loop back to the file at a corrected offset - for example, reading position 330 of a 100 byte file will start the operation from the 30th byte.  Loop mode does not affect any other area besides the read, write and seek operations.  The loop feature is typically used to create multimedia data streams with minimal effort.</const>
+      <const name="NEW">Required when creating a new file.  If a file with the same name exists, its contents will be destroyed. If however the existing file is locked, the initalisation process will fail.</const>
+      <const name="READ">Required if the file needs to be opened for read access.</const>
+      <const name="RESET_DATE">For internal use only</const>
+      <const name="STREAM">File data is streamed (e.g. PIPE, FIFO, socket) and may be accessed locally or via a network.</const>
+      <const name="VIRTUAL">Path is to a virtual device.</const>
+      <const name="WRITE">Prepares a file for writing data, starting at byte position 0.  To start writing from the end of a file, use the Seek action after the file has been initialised.</const>
     </constants>
 
     <constants lookup="PERMIT" comment="Permission flags">

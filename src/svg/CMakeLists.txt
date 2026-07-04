@@ -35,3 +35,5 @@ target_link_libraries (${MOD} PUBLIC base64)
 target_link_libraries (${MOD} PRIVATE ${MATH_LINK})
 
 flute_test (svg_output "tests/test_svg.tiri")
+flute_test (svg_meshgradient_roundtrip "tests/test_meshgradient_roundtrip.tiri")
+flute_test (svg_defs_export "tests/test_defs_export.tiri")

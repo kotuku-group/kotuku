@@ -1,0 +1,94 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>LZMAStream</name>
+    <type>class</type>
+    <module>LZMA</module>
+    <comment>Decompresses raw LZMA1 data streams.</comment>
+    <fileDescription>GZip File</fileDescription>
+    <version>1</version>
+    <id>ea1b1936</id>
+    <idstring>LZMASTREAM</idstring>
+    <category>Data</category>
+    <copyright>Paul Manias © 2024-2026</copyright>
+    <description>
+<p>The LZMAStream class extends <class name="CompressedStream">CompressedStream</class> with support for decoding raw LZMA1 streams.  It is provided by the separate <code>LZMA</code> module so that the Core remains free of an LZMA dependency; only builds that require LZMA pull the module in.</p>
+<p>LZMAStream is decode-only and is instantiated directly rather than being selected through a <class name="CompressedStream" field="Format">CompressedStream.Format</class> option on the base class.  To decompress a stream, set the <class name="CompressedStream" field="Input">CompressedStream.Input</class> field with a source object that supports the Read() action (such as a <class name="File">File</class>) and set the required <fl>Size</fl> field to the exact number of decompressed bytes expected.  Repeatedly reading from the LZMAStream then yields the decompressed data:</p>
+<pre>lz = obj.new('lzmastream', { input=file, size=body_size })
+err, len = lz.acRead(buffer)
+</pre>
+<p>The class decodes a raw LZMA1 stream consisting of a 5-byte properties header followed by the compressed data.  It does not parse the <code>.lzma</code>/<code>.alone</code> 13-byte header or the <code>.xz</code> container; callers are responsible for any outer framing.  Because raw LZMA1 streams may lack a reliable end marker, <fl>Size</fl> is used to bound the output: decoding completes when exactly that many bytes have been produced, and an end marker or exhausted input encountered before that point is reported as a decompression error.</p>
+<p>The inherited <class name="CompressedStream" field="Format">CompressedStream.Format</class> field has no meaning for this class and is ignored.</p></description>
+    <source>
+      <file>lzma.cpp</file>
+    </source>
+  </info>
+
+  <actions>
+    <action>
+      <name>Read</name>
+      <comment>Decompress data from the input stream and write it to the supplied buffer.</comment>
+      <prototype>ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acRead(Buffer:str, Length:num)</tiriPrototype>
+      <input>
+        <param type="APTR" name="Buffer">Points a buffer that will receive the data.</param>
+        <param type="INT" name="Length">The total number of bytes to read from the object.  This value cannot exceed the size of the Buffer.</param>
+        <param type="INT" name="Result">The Read action will write this parameter with the total number of bytes read into the Buffer.</param>
+      </input>
+      <description>
+<p>The Read() action decodes the raw LZMA1 stream supplied via <class name="CompressedStream" field="Input">CompressedStream.Input</class>, writing up to <code>Length</code> decompressed bytes into the caller's buffer.  Decoding is bounded by <fl>Size</fl>; once that many bytes have been produced, subsequent reads return zero bytes.  Truncated input, a premature end marker or output that would exceed <fl>Size</fl> are reported as <code>ERR::Decompression</code>.</p>
+      </description>
+    </action>
+
+    <action>
+      <name>Reset</name>
+      <comment>Reset the state of the stream.</comment>
+      <prototype>ERR acReset(*Object)</prototype>
+      <tiriPrototype>err = Object.acReset()</tiriPrototype>
+      <description>
+<p>Resetting an LZMAStream returns it to the same state as when first initialised.  This does not affect the state of the object referenced via <class name="CompressedStream" field="Input">CompressedStream.Input</class>, so the client may need to reset or re-seek that object separately.</p>
+      </description>
+    </action>
+
+    <action>
+      <name>Seek</name>
+      <comment>For use in decompressing streams only.  Seeks to a position within the stream.</comment>
+      <prototype>ERR acSeek(*Object, DOUBLE Offset, INT Position)</prototype>
+      <tiriPrototype>err = Object.acSeek(Offset:num, Position:SEEK)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="Offset">The desired offset to seek to, relative to the Position parameter.</param>
+        <param type="POS" name="Position">The position that defines the starting point for Offset.</param>
+      </input>
+    </action>
+
+    <action>
+      <name>Write</name>
+      <comment>Not supported.  LZMAStream is decode-only.</comment>
+      <prototype>ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str, Length:num)</tiriPrototype>
+      <input>
+        <param type="APTR" name="Buffer">A buffer containing the data that will be written to the object.</param>
+        <param type="INT" name="Length">The total number of bytes to write to the object.</param>
+        <param type="INT" name="Result">This parameter with be updated with the total number of bytes written from the Buffer.</param>
+      </input>
+    </action>
+
+  </actions>
+
+  <fields>
+    <field>
+      <name>Size</name>
+      <comment>The exact number of bytes expected from the decompressed stream.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>INT64</type>
+      <description>
+<p>This field is required prior to initialisation.  Raw LZMA1 streams may not carry a reliable end marker, so the value is used to bound decoding: the stream completes when exactly this many bytes have been produced, and an end marker or exhausted input encountered beforehand is reported as a decompression error.</p>
+      </description>
+    </field>
+
+  </fields>
+  <structs>
+  </structs>
+</book>

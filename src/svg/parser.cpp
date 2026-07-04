@@ -144,9 +144,10 @@ void svgState::applyStateToVector(objVector *Vector) const noexcept
    if (m_line_cap != VLC::NIL)   Vector->setLineCap(m_line_cap);
 
    if (Vector->classID() IS CLASSID::VECTORTEXT) {
-      if (!m_font_family.empty()) Vector->setFields(fl::Face(m_font_family));
-      if (!m_font_size.empty())   Vector->setFields(fl::FontSize(m_font_size));
-      if (m_font_weight)          Vector->setFields(fl::Weight(m_font_weight));
+      auto vt = (objVectorText *)Vector;
+      if (!m_font_family.empty()) vt->setFace(m_font_family);
+      if (!m_font_size.empty())   vt->setFontSize(m_font_size);
+      if (m_font_weight)          vt->setWeight(m_font_weight);
    }
 
    if (!m_display.empty()) {
@@ -349,10 +350,8 @@ void svgState::proc_pathtransition(XTag &Tag) noexcept
 
    objVectorTransition *trans;
    if (!NewObject(CLASSID::VECTORTRANSITION, &trans)) {
-      trans->setFields(
-         fl::Owner(Self->Scene->UID), // All clips belong to the root page to prevent hierarchy issues.
-         fl::Name("SVGTransition")
-      );
+      trans->setOwner(Self->Scene->UID); // All clips belong to the root page to prevent hierarchy issues.
+      trans->setName("SVGTransition");
 
       std::string id;
       for (int a=1; a < std::ssize(Tag.Attribs); a++) {
@@ -782,7 +781,8 @@ ERR svgState::parse_fe_convolve_matrix(objVectorFilter *Filter, XTag &Tag) noexc
          case SVF_order: {
             int ox = 0, oy = 0;
             if (!read_positive_integer_pair(val, ox, oy)) return fail(ERR::InvalidValue);
-            if (fx->setFields(fl::MatrixColumns(ox), fl::MatrixRows(oy)) != ERR::Okay) return fail(ERR::InvalidValue);
+            if (fx->setMatrixColumns(ox) != ERR::Okay) return fail(ERR::InvalidValue);
+            if (fx->setMatrixRows(oy) != ERR::Okay) return fail(ERR::InvalidValue);
             break;
          }
 
@@ -1357,7 +1357,8 @@ ERR svgState::parse_fe_turbulence(objVectorFilter *Filter, XTag &Tag) noexcept
             read_numseq(val, { &bfx, &bfy });
             if (bfx < 0) bfx = 0;
             if (bfy < 0) bfy = bfx;
-            fx->setFields(fl::FX(bfx), fl::FY(bfy));
+            fx->setFX(bfx);
+            fx->setFY(bfy);
             break;
          }
 
@@ -1413,7 +1414,15 @@ ERR svgState::parse_fe_morphology(objVectorFilter *Filter, XTag &Tag) noexcept
             break;
          }
 
-         case SVF_operator: fx->set(FID_Operator, val); break;
+         case SVF_operator:
+            switch(strhash(val)) {
+               case SVF_erode:  fx->setOperator(MOP::ERODE); break;
+               case SVF_dilate: fx->setOperator(MOP::DILATE); break;
+               default: log.warning("Invalid morphology operator '%s'", val.c_str()); break;
+            }
+
+            break;
+
          case SVF_x:      fx->setX(SVGUnit(val)); break;
          case SVF_y:      fx->setY(SVGUnit(val)); break;
          case SVF_width:  fx->setWidth(SVGUnit(val)); break;
@@ -1605,10 +1614,10 @@ void svgState::proc_filter(XTag &Tag) noexcept
    std::string id;
 
    if (!NewObject(CLASSID::VECTORFILTER, &filter)) {
-      filter->setFields(fl::Owner(Self->Scene->UID),
-         fl::Name("SVGFilter"),
-         fl::Units(VUNIT::BOUNDING_BOX),
-         fl::ColourSpace(VCS::LINEAR_RGB));
+      filter->setOwner(Self->Scene->UID);
+      filter->setName("SVGFilter");
+      filter->setUnits(VUNIT::BOUNDING_BOX);
+      filter->setColourSpace(VCS::LINEAR_RGB);
 
       for (int a=1; a < std::ssize(Tag.Attribs); a++) {
          auto &val = Tag.Attribs[a].Value;
@@ -1626,16 +1635,17 @@ void svgState::proc_filter(XTag &Tag) noexcept
 
             case SVF_id:     id = val; break;
 
-            case SVF_x:      filter->setX(SVGUnit(val)); break;
-            case SVF_y:      filter->setY(SVGUnit(val)); break;
-            case SVF_width:  filter->setWidth(SVGUnit(val)); break;
-            case SVF_height: filter->setHeight(SVGUnit(val)); break;
+            case SVF_x:       filter->setX(SVGUnit(val)); break;
+            case SVF_y:       filter->setY(SVGUnit(val)); break;
+            case SVF_width:   filter->setWidth(SVGUnit(val)); break;
+            case SVF_height:  filter->setHeight(SVGUnit(val)); break;
             case SVF_opacity: filter->setOpacity(std::clamp(svtonum<double>(val), 0.0, 1.0)); break;
 
             case SVF_filterRes: {
                double x = 0, y = 0;
                read_numseq(val, { &x, &y });
-               filter->setFields(fl::ResX(int(x)), fl::ResY(int(y)));
+               filter->setResX(int(x));
+               filter->setResY(int(y));
                break;
             }
 
@@ -1655,7 +1665,10 @@ void svgState::proc_filter(XTag &Tag) noexcept
             case SVF_viewBox: {
                double x=0, y=0, width=0, height=0;
                read_numseq(val, { &x, &y, &width, &height });
-               filter->Viewport->setFields(fl::ViewX(x), fl::ViewY(y), fl::ViewWidth(width), fl::ViewHeight(height));
+               filter->Viewport->setViewX(x);
+               filter->Viewport->setViewY(y);
+               filter->Viewport->setViewWidth(width);
+               filter->Viewport->setViewHeight(height);
                break;
             }
 */
@@ -1721,15 +1734,19 @@ void svgState::proc_pattern(XTag &Tag) noexcept
    objVectorPattern *pattern;
    std::string id;
 
+   auto invalid_value = [&](std::string_view Name) {
+      log.warning("Invalid value for attribute '%.*s' @ line %d", int(Name.size()), Name.data(), Tag.LineNo);
+   };
+
    if (!NewObject(CLASSID::VECTORPATTERN, &pattern)) {
       SetOwner(pattern, Self->Scene);
 
       // NOTE: In SVG 1.0 the default pattern units value is 'userSpaceOnUse'; from 1.1 it changed to 'objectBoundingBox'.
 
-      pattern->setFields(fl::Name("SVGPattern"),
-         fl::Units(VUNIT::BOUNDING_BOX),
-         fl::SpreadMethod(VSPREAD::REPEAT),
-         fl::HostScene(Self->Scene));
+      pattern->setName("SVGPattern");
+      pattern->setUnits(VUNIT::BOUNDING_BOX);
+      pattern->setSpreadMethod(VSPREAD::REPEAT);
+      pattern->Scene->setHostScene(Self->Scene);
 
       objVectorViewport *viewport;
       pattern->getViewport(viewport);
@@ -1755,8 +1772,12 @@ void svgState::proc_pattern(XTag &Tag) noexcept
                   if (iequals("userSpaceOnUse", val)) pattern->setContentUnits(VUNIT::USERSPACE);
                   else if (iequals("objectBoundingBox", val)) {
                      pattern->setContentUnits(VUNIT::BOUNDING_BOX);
-                     viewport->setFields(fl::ViewX(0), fl::ViewY(0), fl::ViewWidth(1.0), fl::ViewHeight(1.0));
+                     viewport->setViewX(0);
+                     viewport->setViewY(0);
+                     viewport->setViewWidth(1.0);
+                     viewport->setViewHeight(1.0);
                   }
+                  else invalid_value(Tags.Attribs[a].Name);
                   break;
 
                case SVF_patternUnits:
@@ -1764,25 +1785,37 @@ void svgState::proc_pattern(XTag &Tag) noexcept
                   if (iequals("userSpaceOnUse", val)) { rel_coords = false; pattern->setUnits(VUNIT::USERSPACE); }
                   else if (iequals("objectBoundingBox", val)) { rel_coords = true; pattern->setUnits(VUNIT::BOUNDING_BOX); }
                   else if (iequals("userSpace", val)) { rel_coords = false; pattern->setUnits(VUNIT::USERSPACE); }
+                  else invalid_value(Tags.Attribs[a].Name);
                   break;
 
                case SVF_patternTransform: pattern->setTransform(val); break;
 
-               case SVF_id:       ID = val; break;
+               case SVF_id: ID = val; break;
 
-               case SVF_overflow: viewport->set(FID_Overflow, val); break;
+               case SVF_overflow:
+                  switch(strhash(val)) {
+                     case SVF_visible: viewport->setOverflow(VOF::VISIBLE); break;
+                     case SVF_hidden:  viewport->setOverflow(VOF::HIDDEN); break;
+                     case SVF_scroll:  viewport->setOverflow(VOF::SCROLL); break;
+                     case SVF_inherit: viewport->setOverflow(VOF::INHERIT); break;
+                     default: invalid_value(Tags.Attribs[a].Name);
+                  }
+                  break;
 
-               case SVF_opacity:  pattern->setOpacity(svtonum<double>(val)); break;
-               case SVF_x:        x = SVGUnit(val); break;
-               case SVF_y:        y = SVGUnit(val); break;
-               case SVF_width:    width = SVGUnit(val); break;
-               case SVF_height:   height = SVGUnit(val); break;
+               case SVF_opacity: pattern->setOpacity(svtonum<double>(val)); break;
+               case SVF_x:       x      = SVGUnit(val); break;
+               case SVF_y:       y      = SVGUnit(val); break;
+               case SVF_width:   width  = SVGUnit(val); break;
+               case SVF_height:  height = SVGUnit(val); break;
 
                case SVF_viewBox: {
                   double vx=0, vy=0, vwidth=1, vheight=1; // Default view-box for bounding-box mode
                   pattern->ContentUnits = VUNIT::USERSPACE;
                   read_numseq(val, { &vx, &vy, &vwidth, &vheight });
-                  viewport->setFields(fl::ViewX(vx), fl::ViewY(vy), fl::ViewWidth(vwidth), fl::ViewHeight(vheight));
+                  viewport->setViewX(vx);
+                  viewport->setViewY(vy);
+                  viewport->setViewWidth(vwidth);
+                  viewport->setViewHeight(vheight);
                   break;
                }
 
@@ -1989,7 +2022,7 @@ static bool has_kotuku_volume(const std::string &Path)
    }
 
    // AnalysePath() confirms that the leading "<volume>:" prefix names a registered Kotuku volume.
-   LOC type = LOC::NIL;
+   auto type = LOC::NIL;
    const bool is_volume = (!AnalysePath(volume, &type)) and (type IS LOC::VOLUME);
 
    const std::lock_guard<std::mutex> lock(cache_lock);
@@ -2119,10 +2152,10 @@ void svgState::proc_def_image(XTag &Tag) noexcept
    Unit width, height;
 
    if (!NewObject(CLASSID::VECTORIMAGE, &image)) {
-      image->setFields(fl::Owner(Self->Scene->UID),
-         fl::Name("SVGImage"),
-         fl::Units(VUNIT::BOUNDING_BOX),
-         fl::SpreadMethod(VSPREAD::PAD));
+      image->setOwner(Self->Scene->UID);
+      image->setName("SVGImage");
+      image->setUnits(VUNIT::BOUNDING_BOX);
+      image->setSpreadMethod(VSPREAD::PAD);
 
       for (int a=1; a < std::ssize(Tag.Attribs); a++) {
          auto &val = Tag.Attribs[a].Value;
@@ -2560,7 +2593,8 @@ void svgState::proc_use(XTag &Tag, OBJECTPTR Parent) noexcept
 
       if (NewObject(CLASSID::VECTORVIEWPORT, &viewport) != ERR::Okay) return;
       SetOwner(viewport, Parent);
-      viewport->setFields(fl::Width(SCALE(1.0)), fl::Height(SCALE(1.0))); // SVG default
+      viewport->setWidth(Unit(1.0, FD_SCALED));
+      viewport->setHeight(Unit(1.0, FD_SCALED)); // SVG default
 
       // Apply attributes from 'use' to the group and/or viewport
       for (int a=1; a < std::ssize(Tag.Attribs); a++) {
@@ -2597,7 +2631,10 @@ void svgState::proc_use(XTag &Tag, OBJECTPTR Parent) noexcept
             case SVF_viewBox:  {
                double x=0, y=0, width=0, height=0;
                read_numseq(val, { &x, &y, &width, &height });
-               viewport->setFields(fl::ViewX(x), fl::ViewY(y), fl::ViewWidth(width), fl::ViewHeight(height));
+               viewport->setViewX(x);
+               viewport->setViewY(y);
+               viewport->setViewWidth(width);
+               viewport->setViewHeight(height);
                break;
             }
             case SVF_id: break; // Ignore (already processed).
@@ -2901,7 +2938,12 @@ void svgState::proc_svg(XTag &Tag, OBJECTPTR Parent, objVector * &Vector) noexce
 
          case SVF_viewBox:  {
             auto dim = read_array(val);
-            if (dim.size() >= 4) viewport->setFields(fl::ViewX(dim[0]), fl::ViewY(dim[1]), fl::ViewWidth(dim[2]), fl::ViewHeight(dim[3]));
+            if (dim.size() >= 4) {
+               viewport->setViewX(dim[0]);
+               viewport->setViewY(dim[1]);
+               viewport->setViewWidth(dim[2]);
+               viewport->setViewHeight(dim[3]);
+            }
             break;
          }
 
@@ -3108,6 +3150,7 @@ ERR svgState::proc_set(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent) noexcept
 
    anim.set_orig_value(*this);
    anim.calc_mode = CMODE::DISCRETE; // Disables interpolation
+   anim.non_interpolating = true;
 
    if (!anim.is_valid()) {
       remove_animation_triggers(anim);
@@ -3693,7 +3736,6 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
             case SVF_r:          spiral->setRadius(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_offset:     spiral->setOffset(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_step:       spiral->setStep(SVGUnit(StrValue)); return ERR::Okay;
-            case SVF_vertices:   Vector->set(FID_Vertices, SVGUnit(StrValue)); return ERR::Okay;
             case SVF_spacing:    spiral->setSpacing(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_loop_limit: spiral->setLoopLimit(SVGUnit(StrValue)); return ERR::Okay;
          }

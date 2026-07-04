@@ -13,13 +13,13 @@
     <id>cd79e511</id>
     <idstring>MODULE</idstring>
     <category>System</category>
-    <copyright>Paul Manias 1996-2026</copyright>
+    <copyright>Paul Manias © 1996-2026</copyright>
     <description>
 <p>The Module class is used to load and maintain the modules that are installed on the user's system.  A number of modules are available in the core platform as standard, which you can use in the development of your programs.  Examples of existing modules can be found in both the <code>modules:</code> folder.</p>
 <p>To load a module and interact with its API, create a module object and initialise it.  The following code segment illustrates in C++:</p>
 <pre>DisplayBase *DisplayBase;
 auto modDisplay = objModule::create::global(fl::Name(&quot;display&quot;));
-if (modDisplay) modDisplay-&gt;get(FID_ModBase, DisplayBase);
+if (modDisplay) modDisplay-&gt;getModBase(DisplayBase);
 </pre>
 <p>To do the same in Tiri:</p>
 <pre>mGfx = mod.load('display')

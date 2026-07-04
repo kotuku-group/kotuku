@@ -16,6 +16,7 @@
 #include "eval_detail.h"
 #include "../../xml/schema/schema_types.h"
 #include <utility>
+#include <kotuku/modules/script.h>
 
 namespace {
 

@@ -32,7 +32,7 @@ static bool glAssetManagerFree = false;
 constexpr int LEN_ASSETS = 7; // "assets:" length
 
 static ERR ASSET_Delete(objFile *, APTR);
-static ERR ASSET_Free(objFile *);
+static ERR ASSET_FreePlacement(objFile *);
 static ERR ASSET_Init(objFile *, APTR);
 static ERR ASSET_Move(objFile *, struct mtFileMove *);
 static ERR ASSET_Read(objFile *, struct acRead *);
@@ -52,13 +52,13 @@ static const FieldArray clFields[] = {
 };
 
 static const ActionArray clActions[] = {
-   { AC::Free,   ASSET_Free },
-   { AC::Init,   ASSET_Init },
-   { AC::Move,   ASSET_Move },
-   { AC::Read,   ASSET_Read },
-   { AC::Rename, ASSET_Rename },
-   { AC::Seek,   ASSET_Seek },
-   { AC::Write,  ASSET_Write },
+   { AC::FreePlacement, ASSET_FreePlacement },
+   { AC::Init,          ASSET_Init },
+   { AC::Move,          ASSET_Move },
+   { AC::Read,          ASSET_Read },
+   { AC::Rename,        ASSET_Rename },
+   { AC::Seek,          ASSET_Seek },
+   { AC::Write,         ASSET_Write },
    { 0, nullptr }
 };
 
@@ -83,7 +83,7 @@ static AAssetManager * get_asset_manager(void);
 
 //********************************************************************************************************************
 
-static bool is_asset_separator(char Value)
+inline bool is_asset_separator(char Value)
 {
    return (Value IS '/') or (Value IS '\\');
 }
@@ -216,21 +216,15 @@ static ERR ASSET_Delete(objFile *Self)
 
 //********************************************************************************************************************
 
-static ERR ASSET_Free(objFile *Self)
+static ERR ASSET_FreePlacement(objFile *Self)
 {
    if (auto prv = (prvFileAsset *)Self->DerivedPtr) {
-      if (prv->Asset) {
-         AAsset_close(prv->Asset);
-         prv->Asset = nullptr;
-      }
-
-      if (prv->Dir) {
-         AAssetDir_close(prv->Dir);
-         prv->Dir = nullptr;
-      }
+      if (prv->Asset) AAsset_close(prv->Asset);
+      if (prv->Dir) AAssetDir_close(prv->Dir);
+      // Let Free call FreeResource()
    }
 
-   return ERR::Okay;
+   return ERR::NothingDone;
 }
 
 //********************************************************************************************************************

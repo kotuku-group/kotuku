@@ -15,6 +15,7 @@
 #include "lj_debug.h"
 #include "lj_tab.h"
 #include "lj_proto_registry.h"
+#include "lj_strfmt.h"
 #include "../parse_internal.h"
 #include "../parse_value.h"
 #include "../token_types.h"
@@ -833,7 +834,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_expression_stmt(const ExpressionStmtPay
 }
 
 //********************************************************************************************************************
-// Emit bytecode for a conditional shorthand statement (executes body only for falsey values like nil, false, 0, or empty string).
+// Emit bytecode for a conditional shorthand statement (executes body only for falsey values like nil, false, 0,
+// empty strings, or empty collections).
 
 ParserResult<IrEmitUnit> IrEmitter::emit_conditional_shorthand_stmt(const ConditionalShorthandStmtPayload &Payload)
 {
@@ -1290,6 +1292,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_numeric_for_stmt(const NumericForStmtPa
       FuncScope visible_scope;
       ScopeGuard guard(fs, &visible_scope, FuncScopeFlag::None);
       this->lex_state.var_add(1);
+      fs->var_get(base.raw() + FORL_EXT).fixed_type = TiriType::Num;
       RegisterAllocator allocator(fs);
       allocator.reserve(BCReg(1));
       std::array<BlockBinding, 1> loop_bindings{};
@@ -2040,7 +2043,7 @@ ParserResult<ExpDesc> IrEmitter::emit_comparison_chain_expr(const ComparisonChai
 }
 //********************************************************************************************************************
 // IF_EMPTY (lhs ?? rhs) with conditional RHS emission for proper short-circuit semantics
-// Similar to ternary but with extended falsey checks (nil, false, 0, "")
+// Similar to ternary but with extended falsey checks (nil, false, 0, "", empty collections)
 
 ParserResult<ExpDesc> IrEmitter::emit_if_empty_expr(ExpDesc lhs, const ExprNode& rhs_ast)
 {

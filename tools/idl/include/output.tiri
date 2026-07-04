@@ -544,7 +544,11 @@ global function outputClassHeader(Class:table, Private:str, Custom:str)
    output(f'   static constexpr CSTRING CLASS_NAME = "{Class.name}";')
    output('')
    output(f'   using create = kt::Create<obj{Class.name}>;')
-   output(f'   obj{Class.name}(objMetaClass *pClass, OBJECTID pUID) noexcept : {Class.base ?? 'Object'}(pClass, pUID) {{}}')
+
+   has_constructor = string.find((Private ?? '') .. (Custom ?? ''), f'obj{Class.name}(objMetaClass *pClass, OBJECTID pUID')
+   if not has_constructor then
+      output(f'   obj{Class.name}(objMetaClass *pClass, OBJECTID pUID) noexcept : {Class.base ?? 'Object'}(pClass, pUID) {{}}')
+   end
 
    outputVisibleFields(Class, Private, Custom)
    outputActionStubs(Class)
@@ -626,7 +630,7 @@ function buildFunctionTableOutput():str
       out ..= 'namespace ' .. glFunctionPrefix:lower() .. ' {\n'
    end
 
-   for k, func in ipairs(glFunctions) do
+   for _, func in ipairs(glFunctions) do
       if func.staticMacro?? and (func.status != 'private') then
          out ..= func.staticMacro() .. '\n'
       end
@@ -654,7 +658,7 @@ global function saveOutput()
       end
    end
 
-   verbose("Saving C header to \"" .. outPath .. "\"")
+   verbose(f"Saving C header to '{outPath}'")
 
    content = ''
 
@@ -671,6 +675,8 @@ global function saveOutput()
          content, blank = appendOutputLine(content, blank, glOutput[a])
       end
    end
+
+   if content:endsWith('\n\n') then content = content:sub(0, -3) end
 
    saveIfModified(outPath, content, 'C header output')
 end

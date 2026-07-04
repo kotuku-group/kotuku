@@ -736,110 +736,42 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <const name="SWEEP">Inverts the default behaviour in generating the arc path (go clockwise).</const>
     </constants>
 
-    <constants lookup="ARF" comment="Aspect ratios control alignment, scaling and clipping.">
-      <const name="MEET">Aspect ratio is preserved. The entire viewbox will be visible in the viewport.  The viewbox is scaled up as much as possible.</const>
-      <const name="NONE">Scale the viewbox to match the size of the viewport.  Aspect ratio is not preserved.</const>
-      <const name="SLICE">Aspect ratio is preserved. The viewbox can extend beyond the viewport's edges on one axis.  The viewbox is scaled up as much as possible.</const>
-      <const name="X_MAX">Align to the right.</const>
-      <const name="X_MID">Align to the horizontal center.</const>
-      <const name="X_MIN">Align to the left.</const>
-      <const name="Y_MAX">Align to the bottom.</const>
-      <const name="Y_MID">Align to the vertical center.</const>
-      <const name="Y_MIN">Align to the top.</const>
+    <constants lookup="JET" comment="JET constants are documented in GetInputEvent()">
+      <const name="ABS_XY">The X, Y values are defined as absolute coordinates, relative to the top-left of the display.</const>
+      <const name="BUTTON_1">Left mouse button; XBox A button, PS square button.  Value is pressure sensitive, ranging between 0 - 1.0 (0 is released, 1.0 is fully depressed).</const>
+      <const name="BUTTON_10">Non-specific button assignment.</const>
+      <const name="BUTTON_2">Right mouse button; XBox X button, PS cross button.</const>
+      <const name="BUTTON_3">Middle mouse button; XBox Y button, PS triangle.</const>
+      <const name="BUTTON_4">Alt. mouse button 1; XBox B button, PS circle.</const>
+      <const name="BUTTON_5">Alt. mouse button 2.</const>
+      <const name="BUTTON_6">Non-specific button assignment.</const>
+      <const name="BUTTON_7">Non-specific button assignment.</const>
+      <const name="BUTTON_8">Non-specific button assignment.</const>
+      <const name="BUTTON_9">Non-specific button assignment.</const>
+      <const name="CROSSED_IN">This message is sent by the input system when the mouse pointer enters an area for the first time.  The message value refers to the object ID of the container being monitored for movement.</const>
+      <const name="CROSSED_OUT">This message is sent by the input system when the mouse pointer leaves an area.  The message value refers to the object ID of the container being monitored for movement.</const>
+      <const name="DEVICE_TILT_XY">Controller tilted on the X/Y axis.  Value indicates angle, -ve = left, +ve = right</const>
+      <const name="DEVICE_TILT_Z">Controller is rising or falling.  Value expressed as 'speed',</const>
+      <const name="DISPLAY_EDGE">Recently supplied input occurred at the edge of the display.</const>
+      <const name="PEN_TILT_XY">Pen tilt angle.  0 is pointing down directly with nib at bottom, 0.5 is 90 degrees, 1.0 is inversed (eraser at bottom)</const>
+      <const name="PRESSURE">Amount of pressure applied, ranges from 0 (none) to 1.0 (normal) and possibly higher if user presses hard enough</const>
+      <const name="WHEEL">Mouse wheel rotation - the value generally reflects the number of 'clicks' rotated on the wheel.</const>
+      <const name="WHEEL_TILT">Some mouse wheels can be tilted to the left or right.  Ranges from -1.0 to +1.0</const>
     </constants>
 
-    <constants lookup="CM" comment="Colour modes for ColourFX.">
-      <const name="BRIGHTNESS">Adjust brightness using the first parameter to define the intensity.</const>
-      <const name="COLOURISE">Colourise the input with the first 3 parameters used as RGB multipliers and the fourth parameter controlling intensity from 0 - 1.0.</const>
-      <const name="CONTRAST">Adjust contrast using the first parameter to define the intensity from -1.0 to 1.0.</const>
-      <const name="DESATURATE">Desaturate the input completely so that it is rendered in greyscale.</const>
-      <const name="HUE">Adjust the hue by 0 - 360 degrees using the first parameter.</const>
-      <const name="HUE_ROTATE">Rotate the hue by 0 - 360 degrees, controlled by the first parameter.</const>
-      <const name="LUMINANCE_ALPHA">Converts each RGB value to greyscale, which then overrides the alpha channel.</const>
-      <const name="MATRIX">Process the supplied 5x4 matrix values.</const>
-      <const name="NONE">Do nothing.</const>
-      <const name="SATURATE">Adjust colour saturation with the first parameter defining the multiplier.</const>
-    </constants>
-
-    <constants lookup="CMP" comment="Component selection for RemapFX methods.">
-      <const name="ALL">All colour channels.</const>
-      <const name="ALPHA">The alpha channel.</const>
-      <const name="BLUE">The blue colour channel.</const>
-      <const name="GREEN">The green colour channel.</const>
-      <const name="RED">The red colour channel.</const>
-    </constants>
-
-    <constants lookup="EM">
-      <const name="DUPLICATE">The input image is extended along its borders by duplicating the color values at its edges.</const>
-      <const name="NONE">The input image is extended with colour values of zero.</const>
-      <const name="WRAP">The input image is extended by taking the color values from the opposite edge of the image.</const>
-    </constants>
-
-    <constants lookup="FM" comment="Mask for controlling feedback events that are received.">
-      <const name="CHILD_HAS_FOCUS">A child of the vector has gained the user focus.</const>
-      <const name="HAS_FOCUS">The vector has gained the user focus.</const>
-      <const name="LOST_FOCUS">The vector has lost the user focus.</const>
-      <const name="PATH_CHANGED">The vector path has been modified or affected by a transform.</const>
-    </constants>
-
-    <constants lookup="GEZ" comment="Gradient easing functions.">
-      <const name="CUBIC_IN">Cubic ease-in.</const>
-      <const name="CUBIC_IN_OUT">Cubic ease-in and ease-out.</const>
-      <const name="CUBIC_OUT">Cubic ease-out.</const>
-      <const name="IN">Ease-in (slow start).</const>
-      <const name="IN_OUT">Smoothstep-style ease-in and ease-out.</const>
-      <const name="LINEAR">Linear interpolation (no easing) - the default.</const>
-      <const name="OUT">Ease-out (slow end).</const>
-    </constants>
-
-    <constants lookup="GFALL" comment="Gradient fall-off options.">
-      <const name="CLEAR">Disables the gradient.</const>
-      <const name="CUBIC">Cubic fall-off - very tight glow hugging the outline.</const>
-      <const name="LINEAR">Linear fall-off (even taper).</const>
-      <const name="OPAQUE">No fall-off.</const>
-      <const name="QUADRATIC">Quadratic fall-off - fast drop, thin tail — natural glow.</const>
-      <const name="SMOOTHSTEP">Smoothstep fall-off - S-curve; brightest, holds the inner half.</const>
-    </constants>
-
-    <constants lookup="LS" comment="Light source identifiers.">
-      <const name="DISTANT">Distant light source.</const>
-      <const name="POINT">Point light source.</const>
-      <const name="SPOT">Spot light source.</const>
-    </constants>
-
-    <constants lookup="LT" comment="Lighting algorithm for the LightingFX class.">
-      <const name="DIFFUSE">Select diffuse lighting.</const>
-      <const name="SPECULAR">Select specular lighting.</const>
-    </constants>
-
-    <constants lookup="MOP" comment="MorphologyFX options.">
-      <const name="DILATE">Dilate (fatten) the input source.</const>
-      <const name="ERODE">Erode (thin) the input source.</const>
-    </constants>
-
-    <constants lookup="OP" comment="Operators for CompositionFX.">
-      <const name="ARITHMETIC">The SVG 'arithmetic' blending algorithm.</const>
-      <const name="ATOP">The Porter-Duff 'atop' operator; the mix alpha channel has priority and the input channel does not occlude.</const>
-      <const name="BURN">Gives a darker result than <code>MULTIPLY</code> by increasing the contrast between the input and mix colours.</const>
-      <const name="CONTRAST">Adjust the mix contrast using the input colour values as the contrast strength.</const>
-      <const name="DARKEN">Use the darker colour components of the mix and input values.</const>
-      <const name="DIFFERENCE">Output the difference between the input and mix colours.</const>
-      <const name="DODGE">Gives a brighter result than <code>SCREEN</code> by decreasing the contrast between the input and mix colours.</const>
-      <const name="EXCLUSION">Produce the difference between the mix and input values around a reference point of mid-grey.</const>
-      <const name="HARD_LIGHT">Apply <code>MULTIPLY</code> or <code>SCREEN</code> according to the input colour, producing a high-contrast result.</const>
-      <const name="IN">The Porter-Duff 'in' operator; the input alpha channel has priority and the mix channel is secondary.</const>
-      <const name="INVERT">Invert the mix colour components using the input alpha channel as the strength.</const>
-      <const name="INVERT_RGB">Invert the mix colour components using the input colour channels as the per-channel strength.</const>
-      <const name="LIGHTEN">Use the lighter colour components of the mix and input values.</const>
-      <const name="MINUS">The input colour value is subtracted from the mix.</const>
-      <const name="MULTIPLY">Multiplies the input and mix colour components, producing a darker result unless one source is white.</const>
-      <const name="OUT">The Porter-Duff 'out' operator; the mix alpha channel is inversed with the input channel.</const>
-      <const name="OVER">The Porter-Duff 'over' operator, this is the default operation for standard alpha blending.</const>
-      <const name="OVERLAY">Combines the multiply and screen blend modes, with the mix determining tonal strength.</const>
-      <const name="PLUS">Add the input and mix colour values together.</const>
-      <const name="SCREEN">Produces a result brighter than the input.</const>
-      <const name="SOFT_LIGHT">Apply a softer variant of <code>HARD_LIGHT</code>, subtly darkening or lightening the mix from the input colour.</const>
-      <const name="XOR">The Porter-Duff 'xor' operator; blend as normal but occlusion occurs when input and mix alpha channels interact.</const>
+    <constants lookup="JTYPE" comment="JTYPE flags are used to categorise input types.">
+      <const name="ANALOG">Analog movement (ranging from -1.0 to 1.0)</const>
+      <const name="ANCHORED">Cursor has been anchored with LockCursor()</const>
+      <const name="BUTTON">Input is a physical button or switch</const>
+      <const name="CROSSING">Crossing events manage the entering and leaving of an area.</const>
+      <const name="DBL_CLICK">Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click.</const>
+      <const name="DIGITAL">D-Pad or digital joystick source (restricted to +/- 1)</const>
+      <const name="DRAGGED">Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference).</const>
+      <const name="DRAG_ITEM">This special flag is set by the input system if the pointer is click-dragging an object at the time of the event.</const>
+      <const name="EXT_MOVEMENT">Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples.</const>
+      <const name="MOVEMENT">X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system.</const>
+      <const name="REPEATED">Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)</const>
+      <const name="SECONDARY">Indicates to the receiver of this message that it is not the primary/original recipient</const>
     </constants>
 
     <constants lookup="PE">
@@ -864,141 +796,6 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <const name="VLineRel"/>
     </constants>
 
-    <constants lookup="RC">
-      <const name="ALL">Synonym for <code>FINAL_PATH | BASE_PATH | TRANSFORM</code></const>
-      <const name="BASE_PATH">The base path (shape of the vector) must be recalculated.</const>
-      <const name="DIRTY">Synonym for <code>FINAL_PATH | BASE_PATH | TRANSFORM</code></const>
-      <const name="FINAL_PATH">The final path will need to be recalculated, so as to take transforms and/or scaled coordinates into account.</const>
-      <const name="TRANSFORM">The transform matrix must be recalculated.  This includes movement, e.g. changing the <code>CX, CY</code> of an ellipse.</const>
-    </constants>
-
-    <constants lookup="RQ">
-      <const name="AUTO">The default option is chosen by the system.</const>
-      <const name="BEST">Use the best quality renderer available and without concerns for computational time taken.</const>
-      <const name="CRISP">Use a good quality renderer that produces crisp outlines (no anti-aliasing).</const>
-      <const name="FAST">Use the fastest renderer available and allow accuracy to be compromised in favour of speed.  Recommended for normalised paths that are known to be rectangular.</const>
-      <const name="PRECISE">Use a high quality renderer to produce accurate results.  Anti-aliasing will be enabled.</const>
-    </constants>
-
-    <constants lookup="TB">
-      <const name="NOISE">Use the fractal noise function.</const>
-      <const name="TURBULENCE">Use the standard turbulence function.</const>
-    </constants>
-
-    <constants lookup="VBF" comment="Options for vecGetBoundary().">
-      <const name="INCLUSIVE">The result will be inclusive of all paths that belong to children of the queried vector.</const>
-      <const name="NO_TRANSFORM">The transformation step will not be applied to the vector's path.</const>
-    </constants>
-
-    <constants lookup="VCLF" comment="Options for VectorClip.">
-      <const name="APPLY_FILLS">Apply fill instructions when drawing the clipping path(s).</const>
-      <const name="APPLY_STROKES">Apply stroke instructions when drawing the clipping path(s).</const>
-    </constants>
-
-    <constants lookup="VCS" comment="Colour space options.">
-      <const name="INHERIT">Inherit the colour space option from the parent vector.</const>
-      <const name="LINEAR_RGB">Linear RGB is the default colour space for SVG and produces the best results.</const>
-      <const name="SRGB">The default colour-space is sRGB, recommended for its speed.</const>
-    </constants>
-
-    <constants lookup="VF" comment="Optional flags and indicators for the Vector class.">
-      <const name="DISABLED">The vector is disabled and user input should be ignored.</const>
-      <const name="HAS_FOCUS">The vector holds the user's input focus.</const>
-      <const name="ISOLATED">Enables isolation mode, which results in a bitmap buffer being allocated for the vector and its children while drawing.</const>
-      <const name="JOIN_PATHS">When appending a new path, use a join operation to connect the tail end to the head.</const>
-    </constants>
-
-    <constants lookup="VFA" comment="Define the aspect ratio for VectorFilter unit scaling.">
-      <const name="MEET">Scale X/Y values independently and in relation to the width/height of the parent viewport.</const>
-      <const name="NONE">Scale X/Y values on a <code>1:1</code> basis, in relation to the diagonal of the parent viewport.</const>
-    </constants>
-
-    <constants lookup="VFR" comment="Vector fill rules for the FillRule field in the Vector class.">
-      <const name="EVEN_ODD">This rule determines the 'insideness' of a point on the canvas by drawing a ray from that point to infinity in any direction and counting the number of path segments from the given shape that the ray crosses. If this number is odd, the point is inside; if even, the point is outside.</const>
-      <const name="INHERIT">The rule is inherited from the parent vector(s).</const>
-      <const name="NON_ZERO">This is the default.  This rule determines the 'insideness' of a point on the canvas by drawing a ray from that point to infinity in any direction and then examining the places where a segment of the shape crosses the ray. Starting with a count of zero, add one each time a path segment crosses the ray from left to right and subtract one each time a path segment crosses the ray from right to left. After counting the crossings, if the result is zero then the point is outside the path. Otherwise, it is inside.</const>
-    </constants>
-
-    <constants lookup="VGF" comment="Gradient flags">
-      <const name="FIXED_CX">CX is fixed</const>
-      <const name="FIXED_CY">CY is fixed</const>
-      <const name="FIXED_FOCAL_RADIUS">Focal radius is fixed</const>
-      <const name="FIXED_FX">FX is fixed</const>
-      <const name="FIXED_FY">FY is fixed</const>
-      <const name="FIXED_RADIUS">Radius is fixed</const>
-      <const name="FIXED_X1">X1 is fixed</const>
-      <const name="FIXED_X2">X2 is fixed</const>
-      <const name="FIXED_Y1">Y1 is fixed</const>
-      <const name="FIXED_Y2">Y2 is fixed</const>
-      <const name="SCALED_CX">CX is scaled</const>
-      <const name="SCALED_CY">CY is scaled</const>
-      <const name="SCALED_FOCAL_RADIUS">Focal radius is scaled</const>
-      <const name="SCALED_FX">FX is scaled</const>
-      <const name="SCALED_FY">FY is scaled</const>
-      <const name="SCALED_RADIUS">Radius is scaled</const>
-      <const name="SCALED_X1">X1 is scaled</const>
-      <const name="SCALED_X2">X2 is scaled</const>
-      <const name="SCALED_Y1">Y1 is scaled</const>
-      <const name="SCALED_Y2">Y2 is scaled</const>
-    </constants>
-
-    <constants lookup="VIJ" comment="Inner join options for angled lines.">
-      <const name="BEVEL">Blunts the edge of the join.</const>
-      <const name="INHERIT">Inherit the parent's join value.</const>
-      <const name="JAG">A special non-SVG option.</const>
-      <const name="MITER">Forms a sharp point at the join.  Typically not the best looking option.</const>
-      <const name="ROUND">Rounds the edge of the join to produce the best looking results.</const>
-    </constants>
-
-    <constants lookup="VIS" comment="Options for the Vector class' Visibility field.">
-      <const name="COLLAPSE">Hide the vector and its children.  Do not use - provided for SVG compatibility only.</const>
-      <const name="HIDDEN">Hide the vector and its children.</const>
-      <const name="INHERIT">Inherit the visibility state from the parent.</const>
-      <const name="VISIBLE">The default.  Ensures that the vector is visible.</const>
-    </constants>
-
-    <constants lookup="VLC" comment="Line-cap options.">
-      <const name="BUTT">The default.  The line is sharply squared off at its exact end point.</const>
-      <const name="INHERIT">The cap type is inherited from the parent (defaults to butt if unspecified).</const>
-      <const name="ROUND">The line cap is a half-circle and the line's end-point forms the center point.</const>
-      <const name="SQUARE">Similar to butt, the line is sharply squared off but will extend past the end point by <code>StrokeWidth / 2</code>.</const>
-    </constants>
-
-    <constants lookup="VLJ" comment="Options for the look of line joins.">
-      <const name="BEVEL">The join is blunted, eliminating overly sharp edges.</const>
-      <const name="INHERIT">Inherit the join option from the parent.</const>
-      <const name="MITER">The default.  A sharp corner is used to join path segments.  The corner is formed by extending the outer edges of the stroke at the tangents of the path segments until they intersect. If the ‘stroke-miterlimit’ is exceeded, the line join falls back to BEVEL.</const>
-      <const name="MITER_ROUND">Default to <code>MITER</code>, but switch to <code>ROUND</code> if the miter limit is exceeded.</const>
-      <const name="MITER_SMART">An alternative form of MITER that extends beyond the intersection point, similarly to the miter-clip SVG rules.</const>
-      <const name="ROUND">The join is rounded.</const>
-    </constants>
-
-    <constants lookup="VMF" comment="Morph flags">
-      <const name="AUTO_SPACING">Applicable when used on <class name="VectorText">VectorText</class>, auto-spacing allows the spacing between glyphs to be shrunk or expanded along the target path so that they can produce a better fit.  The default is for the glyphs to conform to their original spacing requirements.</const>
-      <const name="STRETCH">Applicable when used on <class name="VectorText">VectorText</class>, the stretch option converts glyph outlines into paths, and then all end points and control points will be adjusted to be along the perpendicular vectors from the path, thereby stretching and possibly warping the glyphs.  With this approach, connected glyphs, such as in cursive scripts, will maintain their connections.</const>
-      <const name="X_MAX">Align the source so that it is morphed along the right of the target path.</const>
-      <const name="X_MID">Align the source so that it is morphed along the middle of the target path.</const>
-      <const name="X_MIN">Align the source so that it is morphed along the left of the target path.</const>
-      <const name="Y_MAX">Align the source so that it is morphed along the bottom of the target path.</const>
-      <const name="Y_MID">Align the source so that it is morphed along the middle of the target path.</const>
-      <const name="Y_MIN">Align the source so that it is morphed along the top of the target path.</const>
-    </constants>
-
-    <constants lookup="VOF" comment="Viewport overflow options.">
-      <const name="HIDDEN">All content is clipped to within the viewport's boundary.</const>
-      <const name="INHERIT">The overflow state is inherited from the parent.</const>
-      <const name="SCROLL">All content is clipped to within the viewport's boundary.  A mechanism to scroll the viewport's content may be provided to the user (SVG capability not currently implemented).</const>
-      <const name="VISIBLE">The content is not clipped to the viewport's boundary.  This is the default.</const>
-    </constants>
-
-    <constants lookup="VPF" comment="Optional flags for the VectorScene object.">
-      <const name="BITMAP_SIZED">Automatically adjust the <class name="VectorScene" field="PageWidth">VectorScene.PageWidth</class> and <class name="VectorScene" field="PageHeight">VectorScene.PageHeight</class> to match the target <class name="Bitmap" field="Width">Bitmap.Width</class> and <class name="Bitmap" field="Height">Bitmap.Height</class>.</const>
-      <const name="OUTLINE_VIEWPORTS">Draw a green outline around all viewport paths.  Extremely useful for debugging layout issues.</const>
-      <const name="RENDER_TIME">Compute the drawing frame-rate for the <code>RenderTime</code> field.</const>
-      <const name="RESIZE">The vector will be stretched to fit the <class name="VectorScene" field="PageWidth">VectorScene.PageWidth</class> and <class name="VectorScene" field="PageHeight">VectorScene.PageHeight</class> values, if defined by the client.</const>
-      <const name="STABLE_RENDER">Use rendering algorithms that are stable across all platforms.</const>
-    </constants>
-
     <constants lookup="VSF" comment="Filter source types - these are used internally">
       <const name="ALPHA">As for <code>GRAPHIC</code> except that only the alpha channel is used.</const>
       <const name="BKGD">An image snapshot of the SVG document under the filter region at the time that the filter element was invoked.</const>
@@ -1009,99 +806,6 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <const name="PREVIOUS">Use the previous effect as input, or source graphic if no previous effect.</const>
       <const name="REFERENCE">This value is an assigned name for the filter primitive in the form of a custom-ident. If supplied, then graphics that result from processing this filter primitive can be referenced by an in attribute on a subsequent filter primitive within the same filter element. If no value is provided, the output will only be available for re-use as the implicit input into the next filter primitive if that filter primitive provides no value for its in attribute.</const>
       <const name="STROKE">The value of the stroke property on the target element for the filter effect.</const>
-    </constants>
-
-    <constants lookup="VSM">
-      <const name="AUTO">The default option is chosen by the system.  This will typically be <code>BILINEAR</code>, but slow machines may switch to nearest neighbour and high speed machines could use more advanced methods.</const>
-      <const name="BESSEL">Uses a broad Bessel filter that can preserve detail during resampling, but is slower than the smaller-kernel methods.</const>
-      <const name="BICUBIC">Produces a similar result to <code>BILINEAR</code> at a slightly higher CPU cost and a marginally sharper after-effect.</const>
-      <const name="BILINEAR">Bilinear is a common algorithm that produces a reasonable quality image quickly.</const>
-      <const name="BLACKMAN">Five times slower than <code>BILINEAR</code>, the final result will be less sharp than SINC.</const>
-      <const name="GAUSSIAN">Uses a Gaussian filter that softens the result, reducing aliasing at the cost of sharp edge detail.</const>
-      <const name="KAISER">Uses a Kaiser-windowed filter, giving smooth interpolation with low ringing and a cost close to <code>BILINEAR</code>.</const>
-      <const name="LANCZOS">This well known algorithm may serve as a point of comparison for evaluating the results of other methods.  It shares characteristics with <code>SINC</code> and <code>BLACKMAN</code>.</const>
-      <const name="MITCHELL">Uses a Mitchell-Netravali filter, balancing sharpness and smoothness at a cost similar to <code>BICUBIC</code>.</const>
-      <const name="NEIGHBOUR">Nearest neighbour is the fastest sampler at the cost of poor quality.</const>
-      <const name="QUADRIC">Uses a quadratic filter with a modest kernel, giving smoother results than <code>BILINEAR</code> with limited extra cost.</const>
-      <const name="SINC">Five times slower than <code>BILINEAR</code>, the final result is of very good quality.</const>
-      <const name="SPLINE16">About twice as slow as <code>BILINEAR</code>, this method samples a 4x4 area and produces a considerably better result, and is a good choice for enlarging images without producing artifacts when contrasting colours are present.</const>
-    </constants>
-
-    <constants lookup="VSPREAD" comment="Spread method options define the method to use for tiling filled graphics.">
-      <const name="CLIP">Do not scale the graphic.  Clip it if it extends past imposed boundaries.</const>
-      <const name="PAD">Scale the graphic to the object bounds.</const>
-      <const name="REFLECT">Tile the graphic, reflecting the image alternately on the X and Y axis.</const>
-      <const name="REFLECT_X">Tile the graphic, reflecting the image alternately on the X axis only.</const>
-      <const name="REFLECT_Y">Tile the graphic, reflecting the image alternately on the Y axis only.</const>
-      <const name="REPEAT">Tile the graphic repeatedly.</const>
-      <const name="UNDEFINED">Either the default setting will be applied or the setting will be inherited from a parent object.</const>
-    </constants>
-
-    <constants lookup="VTS" comment="Options for stretching text in VectorText.">
-      <const name="CONDENSED"/>
-      <const name="EXPANDED"/>
-      <const name="EXTRA_CONDENSED"/>
-      <const name="EXTRA_EXPANDED"/>
-      <const name="INHERIT"/>
-      <const name="NARROWER"/>
-      <const name="NORMAL"/>
-      <const name="SEMI_CONDENSED"/>
-      <const name="SEMI_EXPANDED"/>
-      <const name="ULTRA_CONDENSED"/>
-      <const name="ULTRA_EXPANDED"/>
-      <const name="WIDER"/>
-    </constants>
-
-    <constants lookup="VTXF" comment="VectorText flags.">
-      <const name="AREA_SELECTED">Automatically set if a region of text has been selected.</const>
-      <const name="BLINK">Enable animated blinking (not supported - exists as SVG dummy option).</const>
-      <const name="EDIT">Allow user editing of the text if the nearest viewport has the focus.</const>
-      <const name="EDITABLE">Allow user editing of the text if the nearest viewport has the focus.</const>
-      <const name="LINE_THROUGH">Enable a strike-through line in the text.</const>
-      <const name="NO_SYS_KEYS">Disables support for system-keys that enable common key combinations such as Ctrl-C, Ctrl-X etc.</const>
-      <const name="OVERLINE">Enable overlining of the text.</const>
-      <const name="OVERWRITE">Turns on overwrite mode (if off, insert mode is enabled).</const>
-      <const name="RASTER">Rasterise glyphs to a texture cache for very fast rendering.  This feature is not compatible with scalable graphics conventions.</const>
-      <const name="SECRET">Hide all characters from the UI by using generic symbols in place of glyphs.</const>
-      <const name="UNDERLINE">Enable underlining of the text.</const>
-    </constants>
-
-    <constants lookup="VUNIT">
-      <const name="BOUNDING_BOX">Coordinates are scaled to the object's bounding box.</const>
-      <const name="UNDEFINED">Either the default setting will be applied or the setting will be inherited from a parent object.</const>
-      <const name="USERSPACE">Coordinates are scaled to the current viewport.</const>
-    </constants>
-
-    <constants lookup="WLF" comment="Worley field modes.">
-      <const name="F1">Distance to nearest point.</const>
-      <const name="F2">Distance to second-nearest point.</const>
-      <const name="F2_F1">Distance between the nearest and second-nearest points.</const>
-      <const name="PEAKS">Additive peaks or terrain using per-point heights.</const>
-      <const name="WEIGHTED">Additively-weighted Voronoi using per-point heights.</const>
-    </constants>
-
-    <constants lookup="WLM" comment="Worley distance metrics.">
-      <const name="CHEBYSHEV"/>
-      <const name="EUCLIDEAN"/>
-      <const name="MANHATTAN"/>
-    </constants>
-
-    <constants lookup="WVC" comment="Wave options.">
-      <const name="BOTTOM">Close the path across the bottom of its area.</const>
-      <const name="TOP">Close the path across the top of its area.</const>
-    </constants>
-
-    <constants lookup="WVE" comment="Wave envelope options.">
-      <const name="EXPONENTIAL">Exponential decay, weighted strongly towards the end of the wave.</const>
-      <const name="LINEAR">Linear decay from start to end, this is the default.</const>
-      <const name="QUADRATIC">Quadratic decay, weighted towards the end of the wave.</const>
-      <const name="SMOOTHSTEP">Smoothstep decay with ease-in and ease-out.</const>
-    </constants>
-
-    <constants lookup="WVT" comment="Wave style options.">
-      <const name="SAWTOOTH">Sawtooth patterns rise at 45 degrees to the peak, then direct 90 degrees to the bottom.</const>
-      <const name="SMOOTH">Standard sine-wave curvature, this is the default.</const>
-      <const name="TRIANGLE">Chevron style angles at 45 degrees either side of the peak and bottom edge.</const>
     </constants>
 
   </types>
@@ -1129,39 +833,22 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
       <field name="Effect" type="objFilterEffect *">Effect pointer if the <code>SourceType</code> is <code>REFERENCE</code>.</field>
     </struct>
 
+    <struct name="MeshControl" comment="Describes one control point for the GradientMesh.">
+      <field name="StartX" type="DOUBLE">Starting X coordinate.</field>
+      <field name="StartY" type="DOUBLE">Starting Y coordinate.</field>
+      <field name="EndX" type="DOUBLE">Ending X coordinate.</field>
+      <field name="EndY" type="DOUBLE">Ending Y coordinate.</field>
+      <field name="X1" type="DOUBLE">First control point X coordinate.</field>
+      <field name="Y1" type="DOUBLE">First control point Y coordinate.</field>
+      <field name="X2" type="DOUBLE">Second control point X coordinate.</field>
+      <field name="Y2" type="DOUBLE">Second control point Y coordinate.</field>
+    </struct>
+
     <struct name="MeshPatchRecord" comment="Describes one bilinear Coons patch for the GradientMesh Patches field.">
-      <field name="TopP0X" type="DOUBLE">Top edge starting X coordinate.</field>
-      <field name="TopP0Y" type="DOUBLE">Top edge starting Y coordinate.</field>
-      <field name="TopC0X" type="DOUBLE">Top edge first control point X coordinate.</field>
-      <field name="TopC0Y" type="DOUBLE">Top edge first control point Y coordinate.</field>
-      <field name="TopC1X" type="DOUBLE">Top edge second control point X coordinate.</field>
-      <field name="TopC1Y" type="DOUBLE">Top edge second control point Y coordinate.</field>
-      <field name="TopP1X" type="DOUBLE">Top edge ending X coordinate.</field>
-      <field name="TopP1Y" type="DOUBLE">Top edge ending Y coordinate.</field>
-      <field name="RightP0X" type="DOUBLE">Right edge starting X coordinate.</field>
-      <field name="RightP0Y" type="DOUBLE">Right edge starting Y coordinate.</field>
-      <field name="RightC0X" type="DOUBLE">Right edge first control point X coordinate.</field>
-      <field name="RightC0Y" type="DOUBLE">Right edge first control point Y coordinate.</field>
-      <field name="RightC1X" type="DOUBLE">Right edge second control point X coordinate.</field>
-      <field name="RightC1Y" type="DOUBLE">Right edge second control point Y coordinate.</field>
-      <field name="RightP1X" type="DOUBLE">Right edge ending X coordinate.</field>
-      <field name="RightP1Y" type="DOUBLE">Right edge ending Y coordinate.</field>
-      <field name="BottomP0X" type="DOUBLE">Bottom edge starting X coordinate.</field>
-      <field name="BottomP0Y" type="DOUBLE">Bottom edge starting Y coordinate.</field>
-      <field name="BottomC0X" type="DOUBLE">Bottom edge first control point X coordinate.</field>
-      <field name="BottomC0Y" type="DOUBLE">Bottom edge first control point Y coordinate.</field>
-      <field name="BottomC1X" type="DOUBLE">Bottom edge second control point X coordinate.</field>
-      <field name="BottomC1Y" type="DOUBLE">Bottom edge second control point Y coordinate.</field>
-      <field name="BottomP1X" type="DOUBLE">Bottom edge ending X coordinate.</field>
-      <field name="BottomP1Y" type="DOUBLE">Bottom edge ending Y coordinate.</field>
-      <field name="LeftP0X" type="DOUBLE">Left edge starting X coordinate.</field>
-      <field name="LeftP0Y" type="DOUBLE">Left edge starting Y coordinate.</field>
-      <field name="LeftC0X" type="DOUBLE">Left edge first control point X coordinate.</field>
-      <field name="LeftC0Y" type="DOUBLE">Left edge first control point Y coordinate.</field>
-      <field name="LeftC1X" type="DOUBLE">Left edge second control point X coordinate.</field>
-      <field name="LeftC1Y" type="DOUBLE">Left edge second control point Y coordinate.</field>
-      <field name="LeftP1X" type="DOUBLE">Left edge ending X coordinate.</field>
-      <field name="LeftP1Y" type="DOUBLE">Left edge ending Y coordinate.</field>
+      <field name="Top" type="struct MeshControl">Top edge</field>
+      <field name="Right" type="struct MeshControl">Right edge</field>
+      <field name="Bottom" type="struct MeshControl">Bottom edge</field>
+      <field name="Left" type="struct MeshControl">Left edge</field>
       <field name="TopLeft" type="struct FRGB">Colour assigned to the top-left patch corner.</field>
       <field name="TopRight" type="struct FRGB">Colour assigned to the top-right patch corner.</field>
       <field name="BottomRight" type="struct FRGB">Colour assigned to the bottom-right patch corner.</field>

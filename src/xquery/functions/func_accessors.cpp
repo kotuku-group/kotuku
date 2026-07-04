@@ -5,6 +5,7 @@
 // sequence-building helpers declared in xpath_functions.cpp.
 
 #include "accessor_support.h"
+
 //********************************************************************************************************************
 // base-uri() as xs:anyURI?
 // Returns the base URI for the specified node, or the context node if no argument is provided

@@ -18,8 +18,8 @@ namespace fl {
 // Declares a string_view overload and a null-safe CSTRING overload for a string field helper.
 
 #define KT_FIELD_STRING(FieldName) \
-[[nodiscard]] inline FieldValue FieldName(std::string_view Value) { return FieldValue(FID_##FieldName, Value); } \
-[[nodiscard]] inline FieldValue FieldName(CSTRING Value) { return FieldValue(FID_##FieldName, Value ? std::string_view(Value) : std::string_view()); }
+[[nodiscard]] constexpr FieldValue FieldName(std::string_view Value) { return FieldValue(fieldhash(#FieldName), Value); } \
+[[nodiscard]] constexpr FieldValue FieldName(CSTRING Value) { return FieldValue(fieldhash(#FieldName), Value ? std::string_view(Value) : std::string_view()); }
 
 KT_FIELD_STRING(Path)
 KT_FIELD_STRING(Location)
@@ -47,215 +47,216 @@ KT_FIELD_STRING(Point)
 
 #undef KT_FIELD_STRING
 
-[[nodiscard]] constexpr FieldValue FontSize(double Value) { return FieldValue(FID_FontSize, Value); }
-[[nodiscard]] constexpr FieldValue FontSize(int Value) { return FieldValue(FID_FontSize, Value); }
-inline FieldValue FontSize(std::string_view Value) { return FieldValue(FID_FontSize, Value); }
+[[nodiscard]] constexpr FieldValue FontSize(double Value) { return FieldValue(fieldhash("FontSize"), Value); }
+[[nodiscard]] constexpr FieldValue FontSize(int Value) { return FieldValue(fieldhash("FontSize"), Value); }
+inline FieldValue FontSize(std::string_view Value) { return FieldValue(fieldhash("FontSize"), Value); }
 
-[[nodiscard]] constexpr FieldValue ReadOnly(int Value) { return FieldValue(FID_ReadOnly, Value); }
-[[nodiscard]] constexpr FieldValue ReadOnly(bool Value) { return FieldValue(FID_ReadOnly, (Value ? 1 : 0)); }
+[[nodiscard]] constexpr FieldValue ReadOnly(int Value) { return FieldValue(fieldhash("ReadOnly"), Value); }
+[[nodiscard]] constexpr FieldValue ReadOnly(bool Value) { return FieldValue(fieldhash("ReadOnly"), (Value ? 1 : 0)); }
 
-[[nodiscard]] constexpr FieldValue Point(double Value) { return FieldValue(FID_Point, Value); }
-[[nodiscard]] constexpr FieldValue Point(int Value) { return FieldValue(FID_Point, Value); }
-[[nodiscard]] constexpr FieldValue Acceleration(double Value) { return FieldValue(FID_Acceleration, Value); }
-[[nodiscard]] constexpr FieldValue Actions(CPTR Value) { return FieldValue(FID_Actions, Value); }
-[[nodiscard]] constexpr FieldValue AmtColours(int Value) { return FieldValue(FID_AmtColours, Value); }
-[[nodiscard]] constexpr FieldValue BaseClassID(CLASSID Value) { return FieldValue(FID_BaseClassID, int(Value)); }
-[[nodiscard]] constexpr FieldValue Bitmap(objBitmap *Value) { return FieldValue(FID_Bitmap, Value); }
-[[nodiscard]] constexpr FieldValue BitsPerPixel(int Value) { return FieldValue(FID_BitsPerPixel, Value); }
-[[nodiscard]] constexpr FieldValue BytesPerPixel(int Value) { return FieldValue(FID_BytesPerPixel, Value); }
-[[nodiscard]] constexpr FieldValue Category(CCF Value) { return FieldValue(FID_Category, int(Value)); }
-[[nodiscard]] constexpr FieldValue ClassID(CLASSID Value) { return FieldValue(FID_ClassID, int(Value)); }
-[[nodiscard]] constexpr FieldValue ClassVersion(double Value) { return FieldValue(FID_ClassVersion, Value); }
-[[nodiscard]] constexpr FieldValue Client(struct NetClient *Value) { return FieldValue(FID_Client, Value); }
-[[nodiscard]] constexpr FieldValue Closed(bool Value) { return FieldValue(FID_Closed, (Value ? 1 : 0)); }
-[[nodiscard]] constexpr FieldValue Cursor(PTC Value) { return FieldValue(FID_Cursor, int(Value)); }
-[[nodiscard]] constexpr FieldValue DataFlags(MEM Value) { return FieldValue(FID_DataFlags, int(Value)); }
-[[nodiscard]] constexpr FieldValue DoubleClick(double Value) { return FieldValue(FID_DoubleClick, Value); }
-[[nodiscard]] inline    FieldValue Feedback(const FUNCTION &Value) { return FieldValue(FID_Feedback, Value); }
-[[nodiscard]] constexpr FieldValue Feedback(CPTR Value) { return FieldValue(FID_Feedback, Value); }
-[[nodiscard]] constexpr FieldValue Fields(const std::span<const FieldArray> Value) { return FieldValue(FID_Fields, Value); }
-[[nodiscard]] constexpr FieldValue Flags(int Value) { return FieldValue(FID_Flags, Value); }
-[[nodiscard]] constexpr FieldValue Font(OBJECTPTR Value) { return FieldValue(FID_Font, Value); }
-[[nodiscard]] constexpr FieldValue Handle(int Value) { return FieldValue(FID_Handle, Value); }
-[[nodiscard]] constexpr FieldValue Handle(APTR Value) { return FieldValue(FID_Handle, Value); }
-[[nodiscard]] constexpr FieldValue HostScene(OBJECTPTR Value) { return FieldValue(FID_HostScene, Value); }
-[[nodiscard]] inline    FieldValue Incoming(const FUNCTION &Value) { return FieldValue(FID_Incoming, Value); }
-[[nodiscard]] constexpr FieldValue Incoming(CPTR Value) { return FieldValue(FID_Incoming, Value); }
-[[nodiscard]] constexpr FieldValue Input(CPTR Value) { return FieldValue(FID_Input, Value); }
-[[nodiscard]] constexpr FieldValue LineLimit(int Value) { return FieldValue(FID_LineLimit, Value); }
-[[nodiscard]] constexpr FieldValue Listener(int Value) { return FieldValue(FID_Listener, Value); }
-[[nodiscard]] constexpr FieldValue MatrixColumns(int Value) { return FieldValue(FID_MatrixColumns, Value); }
-[[nodiscard]] constexpr FieldValue MatrixRows(int Value) { return FieldValue(FID_MatrixRows, Value); }
-[[nodiscard]] constexpr FieldValue MaxHeight(int Value) { return FieldValue(FID_MaxHeight, Value); }
-[[nodiscard]] constexpr FieldValue MaxSpeed(double Value) { return FieldValue(FID_MaxSpeed, Value); }
-[[nodiscard]] constexpr FieldValue MaxWidth(int Value) { return FieldValue(FID_MaxWidth, Value); }
-[[nodiscard]] constexpr FieldValue Methods(const std::span<const MethodEntry> Value) { return FieldValue(FID_Methods, Value); }
-[[nodiscard]] constexpr FieldValue Opacity(double Value) { return FieldValue(FID_Opacity, Value); }
-[[nodiscard]] constexpr FieldValue Owner(OBJECTID Value) { return FieldValue(FID_Owner, Value); }
-[[nodiscard]] constexpr FieldValue Parent(OBJECTID Value) { return FieldValue(FID_Parent, Value); }
-[[nodiscard]] constexpr FieldValue Permissions(PERMIT Value) { return FieldValue(FID_Permissions, int(Value)); }
-[[nodiscard]] constexpr FieldValue Image(OBJECTPTR Value) { return FieldValue(FID_Image, Value); }
-[[nodiscard]] constexpr FieldValue PopOver(OBJECTID Value) { return FieldValue(FID_PopOver, Value); }
-[[nodiscard]] constexpr FieldValue Port(int Value) { return FieldValue(FID_Port, Value); }
-[[nodiscard]] constexpr FieldValue RefreshRate(double Value) { return FieldValue(FID_RefreshRate, Value); }
-[[nodiscard]] constexpr FieldValue Routine(CPTR Value) { return FieldValue(FID_Routine, Value); }
-[[nodiscard]] constexpr FieldValue Size(int Value) { return FieldValue(FID_Size, Value); }
-[[nodiscard]] constexpr FieldValue Speed(double Value) { return FieldValue(FID_Speed, Value); }
-[[nodiscard]] constexpr FieldValue StrokeWidth(double Value) { return FieldValue(FID_StrokeWidth, Value); }
-[[nodiscard]] constexpr FieldValue Surface(OBJECTID Value) { return FieldValue(FID_Surface, Value); }
-[[nodiscard]] constexpr FieldValue Target(OBJECTID Value) { return FieldValue(FID_Target, Value); }
-[[nodiscard]] constexpr FieldValue Target(OBJECTPTR Value) { return FieldValue(FID_Target, Value); }
-[[nodiscard]] constexpr FieldValue ClientData(CPTR Value) { return FieldValue(FID_ClientData, Value); }
-[[nodiscard]] constexpr FieldValue Version(double Value) { return FieldValue(FID_Version, Value); }
-[[nodiscard]] constexpr FieldValue Viewport(OBJECTID Value) { return FieldValue(FID_Viewport, Value); }
-[[nodiscard]] constexpr FieldValue Viewport(OBJECTPTR Value) { return FieldValue(FID_Viewport, Value); }
-[[nodiscard]] constexpr FieldValue Weight(int Value) { return FieldValue(FID_Weight, Value); }
-[[nodiscard]] constexpr FieldValue WheelSpeed(double Value) { return FieldValue(FID_WheelSpeed, Value); }
-[[nodiscard]] constexpr FieldValue WindowHandle(APTR Value) { return FieldValue(FID_WindowHandle, Value); }
-[[nodiscard]] constexpr FieldValue WindowHandle(int Value) { return FieldValue(FID_WindowHandle, Value); }
+[[nodiscard]] constexpr FieldValue Point(double Value) { return FieldValue(fieldhash("Point"), Value); }
+[[nodiscard]] constexpr FieldValue Point(int Value) { return FieldValue(fieldhash("Point"), Value); }
+[[nodiscard]] constexpr FieldValue Acceleration(double Value) { return FieldValue(fieldhash("Acceleration"), Value); }
+[[nodiscard]] constexpr FieldValue Actions(CPTR Value) { return FieldValue(fieldhash("Actions"), Value); }
+[[nodiscard]] constexpr FieldValue AmtColours(int Value) { return FieldValue(fieldhash("AmtColours"), Value); }
+[[nodiscard]] constexpr FieldValue BaseClassID(CLASSID Value) { return FieldValue(fieldhash("BaseClassID"), int(Value)); }
+[[nodiscard]] constexpr FieldValue Bitmap(objBitmap *Value) { return FieldValue(fieldhash("Bitmap"), Value); }
+[[nodiscard]] constexpr FieldValue BitsPerPixel(int Value) { return FieldValue(fieldhash("BitsPerPixel"), Value); }
+[[nodiscard]] constexpr FieldValue BytesPerPixel(int Value) { return FieldValue(fieldhash("BytesPerPixel"), Value); }
+[[nodiscard]] constexpr FieldValue Category(CCF Value) { return FieldValue(fieldhash("Category"), int(Value)); }
+[[nodiscard]] constexpr FieldValue ClassID(CLASSID Value) { return FieldValue(fieldhash("ClassID"), int(Value)); }
+[[nodiscard]] constexpr FieldValue ClassVersion(double Value) { return FieldValue(fieldhash("ClassVersion"), Value); }
+[[nodiscard]] constexpr FieldValue Client(struct NetClient *Value) { return FieldValue(fieldhash("Client"), Value); }
+[[nodiscard]] constexpr FieldValue Closed(bool Value) { return FieldValue(fieldhash("Closed"), (Value ? 1 : 0)); }
+[[nodiscard]] constexpr FieldValue Cursor(PTC Value) { return FieldValue(fieldhash("Cursor"), int(Value)); }
+[[nodiscard]] constexpr FieldValue DataFlags(MEM Value) { return FieldValue(fieldhash("DataFlags"), int(Value)); }
+[[nodiscard]] constexpr FieldValue DoubleClick(double Value) { return FieldValue(fieldhash("DoubleClick"), Value); }
+[[nodiscard]] inline    FieldValue Feedback(const FUNCTION &Value) { return FieldValue(fieldhash("Feedback"), Value); }
+[[nodiscard]] constexpr FieldValue Feedback(CPTR Value) { return FieldValue(fieldhash("Feedback"), Value); }
+[[nodiscard]] constexpr FieldValue Fields(const std::span<const FieldArray> Value) { return FieldValue(fieldhash("Fields"), Value); }
+[[nodiscard]] constexpr FieldValue Flags(int Value) { return FieldValue(fieldhash("Flags"), Value); }
+[[nodiscard]] constexpr FieldValue Font(OBJECTPTR Value) { return FieldValue(fieldhash("Font"), Value); }
+[[nodiscard]] constexpr FieldValue Handle(int Value) { return FieldValue(fieldhash("Handle"), Value); }
+[[nodiscard]] constexpr FieldValue Handle(APTR Value) { return FieldValue(fieldhash("Handle"), Value); }
+[[nodiscard]] constexpr FieldValue HostScene(OBJECTPTR Value) { return FieldValue(fieldhash("HostScene"), Value); }
+[[nodiscard]] inline    FieldValue Incoming(const FUNCTION &Value) { return FieldValue(fieldhash("Incoming"), Value); }
+[[nodiscard]] constexpr FieldValue Incoming(CPTR Value) { return FieldValue(fieldhash("Incoming"), Value); }
+[[nodiscard]] constexpr FieldValue Input(CPTR Value) { return FieldValue(fieldhash("Input"), Value); }
+[[nodiscard]] constexpr FieldValue LineLimit(int Value) { return FieldValue(fieldhash("LineLimit"), Value); }
+[[nodiscard]] constexpr FieldValue Listener(int Value) { return FieldValue(fieldhash("Listener"), Value); }
+[[nodiscard]] constexpr FieldValue MatrixColumns(int Value) { return FieldValue(fieldhash("MatrixColumns"), Value); }
+[[nodiscard]] constexpr FieldValue MatrixRows(int Value) { return FieldValue(fieldhash("MatrixRows"), Value); }
+[[nodiscard]] constexpr FieldValue MaxHeight(int Value) { return FieldValue(fieldhash("MaxHeight"), Value); }
+[[nodiscard]] constexpr FieldValue MaxSpeed(double Value) { return FieldValue(fieldhash("MaxSpeed"), Value); }
+[[nodiscard]] constexpr FieldValue MaxWidth(int Value) { return FieldValue(fieldhash("MaxWidth"), Value); }
+[[nodiscard]] constexpr FieldValue Methods(const std::span<const MethodEntry> Value) { return FieldValue(fieldhash("Methods"), Value); }
+[[nodiscard]] constexpr FieldValue Opacity(double Value) { return FieldValue(fieldhash("Opacity"), Value); }
+[[nodiscard]] constexpr FieldValue Owner(OBJECTID Value) { return FieldValue(fieldhash("Owner"), Value); }
+[[nodiscard]] constexpr FieldValue Parent(OBJECTID Value) { return FieldValue(fieldhash("Parent"), Value); }
+[[nodiscard]] constexpr FieldValue Permissions(PERMIT Value) { return FieldValue(fieldhash("Permissions"), int(Value)); }
+[[nodiscard]] constexpr FieldValue PublicSize(int64_t Value) { return FieldValue(fieldhash("PublicSize"), Value); }
+[[nodiscard]] constexpr FieldValue Image(OBJECTPTR Value) { return FieldValue(fieldhash("Image"), Value); }
+[[nodiscard]] constexpr FieldValue PopOver(OBJECTID Value) { return FieldValue(fieldhash("PopOver"), Value); }
+[[nodiscard]] constexpr FieldValue Port(int Value) { return FieldValue(fieldhash("Port"), Value); }
+[[nodiscard]] constexpr FieldValue RefreshRate(double Value) { return FieldValue(fieldhash("RefreshRate"), Value); }
+[[nodiscard]] constexpr FieldValue Routine(CPTR Value) { return FieldValue(fieldhash("Routine"), Value); }
+[[nodiscard]] constexpr FieldValue Size(int64_t Value) { return FieldValue(fieldhash("Size"), Value); }
+[[nodiscard]] constexpr FieldValue Speed(double Value) { return FieldValue(fieldhash("Speed"), Value); }
+[[nodiscard]] constexpr FieldValue StrokeWidth(double Value) { return FieldValue(fieldhash("StrokeWidth"), Value); }
+[[nodiscard]] constexpr FieldValue Surface(OBJECTID Value) { return FieldValue(fieldhash("Surface"), Value); }
+[[nodiscard]] constexpr FieldValue Target(OBJECTID Value) { return FieldValue(fieldhash("Target"), Value); }
+[[nodiscard]] constexpr FieldValue Target(OBJECTPTR Value) { return FieldValue(fieldhash("Target"), Value); }
+[[nodiscard]] constexpr FieldValue ClientData(CPTR Value) { return FieldValue(fieldhash("ClientData"), Value); }
+[[nodiscard]] constexpr FieldValue Version(double Value) { return FieldValue(fieldhash("Version"), Value); }
+[[nodiscard]] constexpr FieldValue Viewport(OBJECTID Value) { return FieldValue(fieldhash("Viewport"), Value); }
+[[nodiscard]] constexpr FieldValue Viewport(OBJECTPTR Value) { return FieldValue(fieldhash("Viewport"), Value); }
+[[nodiscard]] constexpr FieldValue Weight(int Value) { return FieldValue(fieldhash("Weight"), Value); }
+[[nodiscard]] constexpr FieldValue WheelSpeed(double Value) { return FieldValue(fieldhash("WheelSpeed"), Value); }
+[[nodiscard]] constexpr FieldValue WindowHandle(APTR Value) { return FieldValue(fieldhash("WindowHandle"), Value); }
+[[nodiscard]] constexpr FieldValue WindowHandle(int Value) { return FieldValue(fieldhash("WindowHandle"), Value); }
 
 // Template-based Flags are required for strongly typed enums
 
 template <NumericOrEnum T> [[nodiscard]] FieldValue Type(T Value) {
-   return FieldValue(FID_Type, int(Value));
+   return FieldValue(fieldhash("Type"), int(Value));
 }
 
 template <NumericOrEnum T> [[nodiscard]] FieldValue AspectRatio(T Value) {
-   return FieldValue(FID_AspectRatio, int(Value));
+   return FieldValue(fieldhash("AspectRatio"), int(Value));
 }
 
 template <NumericOrEnum T> [[nodiscard]] FieldValue BlendMode(T Value) {
-   return FieldValue(FID_BlendMode, int(Value));
+   return FieldValue(fieldhash("BlendMode"), int(Value));
 }
 
 template <NumericOrEnum T> [[nodiscard]] FieldValue ColourSpace(T Value) {
-   return FieldValue(FID_ColourSpace, int(Value));
+   return FieldValue(fieldhash("ColourSpace"), int(Value));
 }
 
 template <NumericOrEnum T> [[nodiscard]] FieldValue Flags(T Value) {
-   return FieldValue(FID_Flags, int(Value));
+   return FieldValue(fieldhash("Flags"), int(Value));
 }
 
 template <NumericOrEnum T> [[nodiscard]] FieldValue Units(T Value) {
-   return FieldValue(FID_Units, int(Value));
+   return FieldValue(fieldhash("Units"), int(Value));
 }
 
 template <NumericOrEnum T> [[nodiscard]] FieldValue SpreadMethod(T Value) {
-   return FieldValue(FID_SpreadMethod, int(Value));
+   return FieldValue(fieldhash("SpreadMethod"), int(Value));
 }
 
 template <NumericOrEnum T> [[nodiscard]] FieldValue Visibility(T Value) {
-   return FieldValue(FID_Visibility, int(Value));
+   return FieldValue(fieldhash("Visibility"), int(Value));
 }
 
 // Dimension fields that accept any arithmetic type but not SCALE values.
 
 template <Numeric T> [[nodiscard]] FieldValue PageWidth(T Value) {
-   return FieldValue(FID_PageWidth, Value);
+   return FieldValue(fieldhash("PageWidth"), Value);
 }
 
 template <Numeric T> [[nodiscard]] FieldValue PageHeight(T Value) {
-   return FieldValue(FID_PageHeight, Value);
+   return FieldValue(fieldhash("PageHeight"), Value);
 }
 
 template <Numeric T> [[nodiscard]] FieldValue ResX(T Value) {
-   return FieldValue(FID_ResX, Value);
+   return FieldValue(fieldhash("ResX"), Value);
 }
 
 template <Numeric T> [[nodiscard]] FieldValue ResY(T Value) {
-   return FieldValue(FID_ResY, Value);
+   return FieldValue(fieldhash("ResY"), Value);
 }
 
 template <Numeric T> [[nodiscard]] FieldValue ViewX(T Value) {
-   return FieldValue(FID_ViewX, Value);
+   return FieldValue(fieldhash("ViewX"), Value);
 }
 
 template <Numeric T> [[nodiscard]] FieldValue ViewY(T Value) {
-   return FieldValue(FID_ViewY, Value);
+   return FieldValue(fieldhash("ViewY"), Value);
 }
 
 template <Numeric T> [[nodiscard]] FieldValue ViewWidth(T Value) {
-   return FieldValue(FID_ViewWidth, Value);
+   return FieldValue(fieldhash("ViewWidth"), Value);
 }
 
 template <Numeric T> [[nodiscard]] FieldValue ViewHeight(T Value) {
-   return FieldValue(FID_ViewHeight, Value);
+   return FieldValue(fieldhash("ViewHeight"), Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue Radius(T Value) {
-   return FieldValue(FID_Radius, Value);
+   return FieldValue(fieldhash("Radius"), Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue CenterX(T Value) {
-   return FieldValue(FID_CenterX, Value);
+   return FieldValue(fieldhash("CenterX"), Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue CenterY(T Value) {
-   return FieldValue(FID_CenterY, Value);
+   return FieldValue(fieldhash("CenterY"), Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue CX(T Value) {
-   return FieldValue(FID_CX, Value);
+   return FieldValue(fieldhash("CX"), Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue CY(T Value) {
-   return FieldValue(FID_CY, Value);
+   return FieldValue(fieldhash("CY"), Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue FX(T Value) {
-   return FieldValue(FID_FX, Value);
+   return FieldValue(fieldhash("FX"), Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue FY(T Value) {
-   return FieldValue(FID_FY, Value);
+   return FieldValue(fieldhash("FY"), Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue Width(T Value) {
-   return FieldValue(FID_Width, Value);
+   return FieldValue(fieldhash("Width"), Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue Height(T Value) {
-   return FieldValue(FID_Height, Value);
+   return FieldValue(fieldhash("Height"), Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue X(T Value) {
-   return FieldValue(FID_X, Value);
+   return FieldValue(fieldhash("X"), Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue XOffset(T Value) {
-   return FieldValue(FID_XOffset, Value);
+   return FieldValue(fieldhash("XOffset"), Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue Y(T Value) {
-   return FieldValue(FID_Y, Value);
+   return FieldValue(fieldhash("Y"), Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue YOffset(T Value) {
-   return FieldValue(FID_YOffset, Value);
+   return FieldValue(fieldhash("YOffset"), Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue Floor(T Value) {
-   return FieldValue(FID_Floor, Value);
+   return FieldValue(fieldhash("Floor"), Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue Multiplier(T Value) {
-   return FieldValue(FID_Multiplier, Value);
+   return FieldValue(fieldhash("Multiplier"), Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue X1(T Value) {
-   return FieldValue(FID_X1, Value);
+   return FieldValue(fieldhash("X1"), Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue Y1(T Value) {
-   return FieldValue(FID_Y1, Value);
+   return FieldValue(fieldhash("Y1"), Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue X2(T Value) {
-   return FieldValue(FID_X2, Value);
+   return FieldValue(fieldhash("X2"), Value);
 }
 
 template <NumericOrScale T> [[nodiscard]] FieldValue Y2(T Value) {
-   return FieldValue(FID_Y2, Value);
+   return FieldValue(fieldhash("Y2"), Value);
 }
 
 }

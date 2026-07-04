@@ -28,11 +28,10 @@ the clipping path is sized to match the target vector.  A viewbox size of `0 0 1
 
 *********************************************************************************************************************/
 
-static ERR VECTORCLIP_Free(extVectorClip *Self)
+extVectorClip::~extVectorClip()
 {
-   if (Self->Viewport) ((extVectorViewport *)Self->Viewport)->vpClipOwner = nullptr;
-   if (Self->ViewportID) { FreeResource(Self->ViewportID); Self->ViewportID = 0; Self->Viewport = nullptr; }
-   return ERR::Okay;
+   if (Viewport) ((extVectorViewport *)Viewport)->vpClipOwner = nullptr;
+   if (ViewportID) FreeResource(ViewportID);
 }
 
 //********************************************************************************************************************
@@ -61,7 +60,8 @@ static ERR VECTORCLIP_Init(extVectorClip *Self)
 
          if (Self->Units IS VUNIT::BOUNDING_BOX) {
             // In BOUNDING_BOX mode the clip paths will be sized within a viewbox of (0 0 1 1) as required by SVG
-            Self->Viewport->setFields(fl::ViewWidth(1.0), fl::ViewHeight(1.0));
+            Self->Viewport->setViewWidth(1.0);
+            Self->Viewport->setViewHeight(1.0);
          }
 
          return ERR::Okay;

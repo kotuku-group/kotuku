@@ -8,6 +8,8 @@
 
 #define MODVERSION_TIRI (1)
 
+#include <kotuku/modules/script.h>
+
 class objTiri;
 
 // JIT behaviour options
@@ -64,12 +66,12 @@ class objTiri : public objScript {
    // Customised field getting
 
    inline ERR getJitOptions(JOF &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[20];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getProcedures(std::span<std::string> &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[19];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, std::span<std::string> &))field->GetValue;
       auto error = get_field(this, Value);
@@ -81,7 +83,7 @@ class objTiri : public objScript {
    // Customised field setting
 
    inline ERR setJitOptions(const JOF Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -109,4 +111,3 @@ namespace ti {
 extern ERR SetVariable(objTiri *Script, const std::string_view &Name, int Type, ...);
 } // namespace
 #endif // KOTUKU_STATIC
-

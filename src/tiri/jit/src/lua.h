@@ -202,6 +202,7 @@ extern int   (lua_next) (lua_State *L, int idx);
 extern void  (lua_concat) (lua_State *L, int n);
 extern lua_Alloc (lua_getallocf) (lua_State *L, void **ud);
 extern void lua_setallocf (lua_State *L, lua_Alloc f, void *ud);
+extern void lua_protect_globals(lua_State *L);
 
 inline void lua_pop(lua_State *L, int N) { lua_settop(L, -(N)-1); }
 inline void lua_newtable(lua_State *L) { lua_createtable(L, 0, 0); }

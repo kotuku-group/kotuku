@@ -39,6 +39,8 @@ rendered image size.
 #include <kotuku/main.h>
 #include <kotuku/modules/image.h>
 #include <kotuku/modules/display.h>
+#include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include "../link/linear_rgb.h"
 
@@ -261,7 +263,7 @@ static ERR IMAGE_Activate(extImage *Self)
                bmp->TransIndex = trans_index;
                rgb = bmp->Palette->Col[bmp->TransIndex];
                rgb.Alpha = 255;
-               bmp->set(FID_Transparence, &rgb);
+               bmp->setTransColour(rgb);
             }
          }
          else if ((info_ptr->color_type IS PNG_COLOR_TYPE_GRAY) or
@@ -271,7 +273,7 @@ static ERR IMAGE_Activate(extImage *Self)
                rgb.Green = trans_colour->gray;
                rgb.Blue  = trans_colour->gray;
                rgb.Alpha = 255;
-               bmp->set(FID_Transparence, &rgb);
+               bmp->setTransColour(rgb);
             }
          }
          else if (trans_colour) {
@@ -279,7 +281,7 @@ static ERR IMAGE_Activate(extImage *Self)
             rgb.Green = trans_colour->green;
             rgb.Blue  = trans_colour->blue;
             rgb.Alpha = 255;
-            bmp->set(FID_Transparence, &rgb);
+            bmp->setTransColour(rgb);
          }
       }
    }
@@ -919,7 +921,6 @@ SaveToObject: Saves the image to a data object.
 static ERR IMAGE_SaveToObject(extImage *Self, struct acSaveToObject *Args)
 {
    kt::Log log;
-   ERR (**routine)(OBJECTPTR, APTR);
 
    if (!Args) return log.warning(ERR::NullArgs);
 
@@ -927,14 +928,15 @@ static ERR IMAGE_SaveToObject(extImage *Self, struct acSaveToObject *Args)
       auto mc = (objMetaClass *)FindClass(Args->ClassID);
       if (!mc) return log.warning(ERR::NoSupport);
 
-      if ((!mc->get(FID_ActionTable, routine)) and (routine)) {
-         if ((routine[int(AC::SaveToObject)]) and (routine[int(AC::SaveToObject)] != (APTR)IMAGE_SaveToObject)) {
-            return routine[int(AC::SaveToObject)](Self, Args);
+      std::span<struct ActionEntry> actions;
+      if ((!mc->getActionTable(actions)) and (not actions.empty())) {
+         if ((actions[int(AC::SaveToObject)].PerformAction) and (actions[int(AC::SaveToObject)].PerformAction != (APTR)IMAGE_SaveToObject)) {
+            return actions[int(AC::SaveToObject)].PerformAction(Self, Args);
          }
-         else if ((routine[int(AC::SaveImage)]) and (routine[int(AC::SaveImage)] != (APTR)IMAGE_SaveImage)) {
+         else if ((actions[int(AC::SaveImage)].PerformAction) and (actions[int(AC::SaveImage)].PerformAction != (APTR)IMAGE_SaveImage)) {
             struct acSaveImage saveimage;
             saveimage.Dest = Args->Dest;
-            return routine[int(AC::SaveImage)](Self, &saveimage);
+            return actions[int(AC::SaveImage)].PerformAction(Self, &saveimage);
          }
          else return log.warning(ERR::NoSupport);
       }
@@ -1401,6 +1403,7 @@ static ERR create_image_class(void)
       fl::Icon("filetypes/image"),
       fl::Actions(clImageActions),
       fl::Fields(clFields),
+      fl::PublicSize(0),
       fl::Size(sizeof(extImage)),
       fl::Path(MOD_PATH));
 

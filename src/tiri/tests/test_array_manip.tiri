@@ -92,6 +92,36 @@ end
    assert(arr:getString() is 'ABCD', 'getString should return ABCD')
 end
 
+@Test function ArrayPushByteString()
+   empty = array<byte>
+   len = empty:push('')
+   assert(len is 0, 'push() should accept an empty string without growing a byte array')
+   assert(#empty is 0, 'Empty string push should leave a fresh byte array empty')
+
+   arr = array<byte>
+   len = arr:push('AB', 67, '', 'D')
+
+   assert(len is 4, 'push() should count string bytes and numeric byte values')
+   assert(#arr is 4, 'Byte array length should be 4 after string push')
+   assert(arr:getString() is 'ABCD', 'String values should append their bytes sequentially')
+
+   source = array<byte> { 88, 0, 89 }
+   len = arr:push(source:getString())
+   expected = 'ABCD' .. source:getString()
+
+   assert(len is 7, 'push() should preserve embedded NUL bytes when appending strings')
+   assert(arr:getString() is expected, 'Byte array string push should preserve embedded NUL bytes')
+   assert(#arr:getString() is 7, 'Byte array string push should preserve the full byte length')
+end
+
+@Test function ArrayPushCharString()
+   arr = array<char>
+   len = arr:push('Hi', 33)
+
+   assert(len is 3, 'char array push() should append string bytes and numeric byte values')
+   assert(tostring(arr) is 'Hi!', "char array push() should produce 'Hi!'")
+end
+
 @Test function ArrayPushString()
    arr = array<string>
    arr:push('hello')

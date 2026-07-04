@@ -1075,15 +1075,6 @@ function append_metadata(Lines:array, Parser:table)
       Lines:push('')
       Lines:push(Parser.epilog)
    end
-
-   if Parser.copyright then
-      Lines:push('')
-      Lines:push(Parser.copyright)
-   end
-
-   if Parser.license then
-      Lines:push(Parser.license)
-   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------

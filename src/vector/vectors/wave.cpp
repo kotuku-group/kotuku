@@ -467,7 +467,7 @@ Thickness: Expands the diameter of the wave to the specified value to produce a 
 
 Specifying a thickness value will create a wave that forms a filled shape, rather than the default of a stroked path.
 The thickness (diameter) of the wave is determined by the provided value.  If defined as a percentage, the value is
-resolved against the normalised diagonal of the parent viewport, matching the scaling rule used for #StrokeWidth.
+resolved against the normalised diagonal of the parent viewport, matching the scaling rule used for @Vector.StrokeWidth.
 Thickness is not compatible with the #Close option, and takes precedence over it.
 
 *********************************************************************************************************************/

@@ -12,7 +12,9 @@ MP3: Sound class extension
 #define PRV_MP3
 #include <kotuku/main.h>
 #include <kotuku/modules/audio.h>
+#include <kotuku/modules/filesystem.h>
 #include <kotuku/modules/mp3.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 
 extern "C" {
@@ -660,8 +662,8 @@ static int64_t calc_length(objMP3 *Self, int ReduceEnd)
 
    prv->VBR = false;
 
-   int filesize;
-   prv->File->get(FID_Size, filesize);
+   int64_t filesize;
+   prv->File->getSize(filesize);
 
    uint8_t *buffer;
    if (!AllocMemory(SIZE_BUFFER, MEM::DATA|MEM::NO_CLEAR, (APTR *)&buffer)) {
@@ -761,7 +763,7 @@ static int64_t calc_length(objMP3 *Self, int ReduceEnd)
    for (int i=first; i < last; i++) avg_frame_len += fsizes[i];
    avg_frame_len /= (last - first);
 
-   log.detail("File Size: %d, %d frames, Average frame length: %.2f bytes, VBR: %c", filesize, (int)fsizes.size(), avg_frame_len, prv->VBR ? 'Y' : 'N');
+   log.detail("File Size: %d, %d frames, Average frame length: %.2f bytes, VBR: %c", int(filesize), (int)fsizes.size(), avg_frame_len, prv->VBR ? 'Y' : 'N');
 
    if (filesize > buffer_size) {
       if (prv->VBR) {
@@ -770,7 +772,7 @@ static int64_t calc_length(objMP3 *Self, int ReduceEnd)
       }
       else {
          // For CBR we guess the total frames from the file size.
-         prv->File->get(FID_Size, filesize);
+         prv->File->getSize(filesize);
          int total_frames = int((filesize - prv->SeekOffset - frame_start - ReduceEnd) / avg_frame_len);
          double seconds = (total_frames * (double)avg_frame_len) / (double(current_bitrate) / 1000.0 * 125.0);
          prv->TotalFrames = total_frames;

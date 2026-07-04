@@ -281,15 +281,7 @@ LJLIB_CF(table_empty)
       return 1;
    }
 
-   if (lj_tab_len(t) != 0) {
-      setboolV(L->top - 1, 0);
-      return 1;
-   }
-
-   TValue key, kv[2];
-   setnilV(&key);
-   if (lj_tab_next(t, &key, kv)) setboolV(L->top - 1, 0);  //  Found at least one entry.
-   else setboolV(L->top - 1, 1);  //  Confirmed empty.
+   setboolV(L->top - 1, lj_tab_empty(t));
 
    return 1;
 }

@@ -325,8 +325,8 @@ void ScintillaKTK::Paste()
       if (!clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, files, nullptr)) {
          objFile::create file = { fl::Path(files[0]), fl::Flags(FL::READ) };
          if (file.ok()) {
-            int len, size;
-            if ((!file->get(FID_Size, size)) and (size > 0)) {
+            int64_t len, size;
+            if ((!file->getSize(size)) and (size > 0)) {
                STRING buffer;
                if (!AllocMemory(size, MEM::STRING, (APTR *)&buffer)) {
                   if (!file->read(buffer, size, &len)) {

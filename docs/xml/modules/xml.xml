@@ -96,43 +96,6 @@
   </function>
 
   <types>
-    <constants lookup="XMF" comment="Standard flags for the XML class.">
-      <const name="HAS_SCHEMA">Automatically defined when a schema has been loaded into the XML object.</const>
-      <const name="INCLUDE_COMMENTS">By default, comments are stripped when parsing XML input unless this flag is specified.</const>
-      <const name="INCLUDE_SIBLINGS">Include siblings when building an XML string (<action>GetXMLString</action> only)</const>
-      <const name="INCLUDE_WHITESPACE">By default the XML parser will skip content between tags when they contain pure whitespace.  Setting this flag will retain all whitespace.</const>
-      <const name="INDENT">Indent the output of serialised XML to improve readability.</const>
-      <const name="LOCK_REMOVE">Prevents removal of tags from the XML tree.  This specifically affects the RemoveTag and RemoveXPath methods.</const>
-      <const name="LOG_ALL">Print extra log messages.</const>
-      <const name="NAMESPACE_AWARE">Enable namespace processing during parsing.</const>
-      <const name="NEW">Creates an empty XML object on initialisation - if the <fl>Path</fl> field has been set, the source file will not be loaded.</const>
-      <const name="NO_ESCAPE">Turns off escape code conversion.</const>
-      <const name="OMIT_TAGS">Prevents tags from being output when the XML is serialised (output content only).</const>
-      <const name="PARSE_ENTITY">Enables parsing of DOCTYPE entities.</const>
-      <const name="PARSE_HTML">Automatically parse HTML escape codes.</const>
-      <const name="READABLE">Indent the output of serialised XML to improve readability.</const>
-      <const name="READ_ONLY">Edits to the document are not permitted.</const>
-      <const name="STANDALONE">Automatically defined when the XML declaration specifies standalone="yes".</const>
-      <const name="STRIP_CDATA">Do not serialise <code>CDATA</code> sections.  Note that this option is used as a parameter, not an object flag.</const>
-      <const name="STRIP_CONTENT">Strip all content from incoming XML data.</const>
-      <const name="STRIP_HEADERS">XML headers found in the source data will not be included in the parsed results.</const>
-      <const name="WELL_FORMED">By default, the XML class will accept badly structured XML data.  This flag requires that XML statements must be well-formed (tags must balance) or an <code>ERR::BadData</code> error will be returned during processing.</const>
-    </constants>
-
-    <constants lookup="XMI" comment="Tag insertion options.">
-      <const name="CHILD">Insert as the first child of the target.</const>
-      <const name="CHILD_END">Insert as the last child of the target.</const>
-      <const name="NEXT">Insert as the next tag of the target.</const>
-      <const name="PREV">Insert as the previous tag of the target.</const>
-    </constants>
-
-    <constants lookup="XMS" comment="For SetAttrib()">
-      <const name="NEW">Adds a new attribute.  Note that if the attribute already exists, this will result in at least two attributes of the same name in the tag.</const>
-      <const name="REMOVE">Removes the named attribute, or clears element content if the name is empty.</const>
-      <const name="UPDATE">As for <code>UPDATE_ONLY</code>, but if the attribute does not exist, it will be created.</const>
-      <const name="UPDATE_ONLY">SetAttrib will find the target attribute and update it.  It is not possible to rename the attribute when using this technique.  <code>ERR::Search</code> is returned if the attribute cannot be found.</const>
-    </constants>
-
     <constants lookup="XPVT" comment="Type descriptors for XPathValue">
       <const name="Array"/>
       <const name="Boolean"/>
@@ -143,11 +106,6 @@
       <const name="Number"/>
       <const name="String"/>
       <const name="Time"/>
-    </constants>
-
-    <constants lookup="XSF" comment="Options for the Sort method.">
-      <const name="CHECK_SORT">Tells the algorithm to check for a 'sort' attribute in each analysed tag and if found, the algorithm will use that as the sort value instead of that indicated in the <code>Attrib</code> field.</const>
-      <const name="DESC">Sort in descending order.</const>
     </constants>
 
     <constants lookup="XTF" comment="Standard flags for XTag.">

@@ -1,0 +1,76 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>GradientMesh</name>
+    <type>class</type>
+    <module>Vector</module>
+    <comment>Bilinear Coons patch mesh gradient paint server.</comment>
+    <version>1</version>
+    <id>5eb36dc0</id>
+    <idstring>GRADIENTMESH</idstring>
+    <category>Graphics</category>
+    <copyright>Paul Manias © 2010-2026</copyright>
+    <description>
+<p>GradientMesh interpolates colour across a grid of curved patches.  Each patch is bounded by four cubic Bezier edges and carries one colour at each corner.  Rendering tessellates the patches into Gouraud triangles, so colour follows the patch geometry rather than a one-dimensional colour ramp.</p>
+<p>The inherited colour-ramp fields <code>Stops</code>, <code>ColourMap</code>, <code>SpreadMethod</code> and <code>Colour</code> are not supported by this class. Patch geometry and corner colours are supplied through <fl>Patches</fl>.</p></description>
+    <source>
+      <file path="painters/">gradient_mesh.cpp</file>
+    </source>
+  </info>
+
+  <fields>
+    <field>
+      <name>Columns</name>
+      <comment>The number of columns represented by the flat Patches array.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>INT</type>
+      <description>
+<p>Columns stores the column count for the mesh grid while <fl>Patches</fl> remains a flat row-major array.  The row and column counts must multiply to the number of patch records when both dimensions and patches are present.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Patches</name>
+      <comment>Defines the Coons patches for a mesh gradient.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>kt::vector&lt;MeshPatchRecord&gt;</type>
+      <description>
+<p>The Patches array defines one or more bilinear Coons patches.  Each <st>MeshPatchRecord</st> contains four cubic Bezier edges in clockwise order (<code>Top</code>, <code>Right</code>, <code>Bottom</code>, <code>Left</code>) plus the top-left, top-right, bottom-right and bottom-left corner colours.</p>
+<p>The coordinate system for patch positions is determined by <class name="Gradient" field="Units">Gradient.Units</class>.  Under <code>BOUNDING_BOX</code>, normalised patch coordinates in the range <code>0 - 1.0</code> are scaled into the target path's bounds.  Under <code>USERSPACE</code>, positions are taken directly in the viewport's coordinate system.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Rows</name>
+      <comment>The number of rows represented by the flat Patches array.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>INT</type>
+      <description>
+<p>Rows stores the row count for the mesh grid while <fl>Patches</fl> remains a flat row-major array.  When valid row and column metadata is supplied, SVG export can preserve standard meshgradient shared-edge syntax across multiple rows.  If no metadata is supplied, assigning <fl>Patches</fl> defaults to a single-row mesh for simple programmatic use.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>XMLDef</name>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <tags>caller-owns-result</tags>
+    </field>
+
+  </fields>
+  <structs>
+    <struct name="MeshPatchRecord" comment="Describes one bilinear Coons patch for the GradientMesh Patches field.">
+      <field name="Top" type="struct MeshControl">Top edge</field>
+      <field name="Right" type="struct MeshControl">Right edge</field>
+      <field name="Bottom" type="struct MeshControl">Bottom edge</field>
+      <field name="Left" type="struct MeshControl">Left edge</field>
+      <field name="TopLeft" type="struct FRGB">Colour assigned to the top-left patch corner.</field>
+      <field name="TopRight" type="struct FRGB">Colour assigned to the top-right patch corner.</field>
+      <field name="BottomRight" type="struct FRGB">Colour assigned to the bottom-right patch corner.</field>
+      <field name="BottomLeft" type="struct FRGB">Colour assigned to the bottom-left patch corner.</field>
+    </struct>
+
+  </structs>
+</book>

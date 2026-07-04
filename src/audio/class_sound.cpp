@@ -660,7 +660,8 @@ static ERR SOUND_Init(extSound *Self)
       else return log.warning(ERR::AccessObject);
    }
 
-   auto path = Self->get<std::string_view>(FID_Path);
+   std::string_view path;
+   Self->getPath(path);
    if (((Self->Flags & SDF::NEW) != SDF::NIL) or (path.empty())) {
       // If the sample is new or no path has been specified, create an audio sample from scratch (e.g. to record
       // audio to disk).
@@ -718,7 +719,9 @@ static ERR SOUND_Init(extSound *Self)
 
    // Setup the sound structure
 
-   Self->DataOffset = Self->File->get<int>(FID_Position);
+   int64_t file_pos;
+   Self->File->getPosition(file_pos);
+   Self->DataOffset = int(file_pos);
 
    Self->Format         = WAVE.Format;
    Self->BytesPerSecond = WAVE.AvgBytesPerSecond;
@@ -728,7 +731,7 @@ static ERR SOUND_Init(extSound *Self)
    if (Self->Playback <= 0)  Self->Playback  = Self->Frequency;
 
    if ((Self->Flags & SDF::NOTE) != SDF::NIL) {
-      Self->set(FID_Note, Self->Note);
+      Self->set(strhash("note"), Self->Note);
       Self->Flags &= ~SDF::NOTE;
    }
 
@@ -765,7 +768,8 @@ static ERR SOUND_Init(extSound *Self)
       else return log.warning(ERR::AccessObject);
    }
 
-   auto path = Self->get<std::string_view>(FID_Path);
+   std::string_view path;
+   Self->getPath(path);
 
    if (((Self->Flags & SDF::NEW) != SDF::NIL) or (path.empty())) {
       log.msg("Sample created as new (without sample data).");
@@ -816,7 +820,9 @@ static ERR SOUND_Init(extSound *Self)
 
    // TODO Look for the cue chunk for loop information
 
-   pos = Self->File->get<int>(FID_Position);
+   int64_t file_pos;
+   Self->File->getPosition(file_pos);
+   pos = int(file_pos);
 #if 0
    if (!find_chunk(Self->File.get(), "cue ")) {
       data_p += 32;
@@ -844,7 +850,8 @@ static ERR SOUND_Init(extSound *Self)
 
    fl::ReadLE(Self->File.get(), &Self->Length); // Length of audio data in this chunk
 
-   Self->DataOffset = Self->File->get<int>(FID_Position);
+   Self->File->getPosition(file_pos);
+   Self->DataOffset = int(file_pos);
 
    Self->Format         = WAVE.Format;
    Self->BytesPerSecond = WAVE.AvgBytesPerSecond;
@@ -921,10 +928,10 @@ static ERR SOUND_SaveToObject(extSound *Self, struct acSaveToObject *Args)
    if ((Args->ClassID != CLASSID::NIL) and (Args->ClassID != CLASSID::SOUND)) {
       auto mclass = (objMetaClass *)FindClass(Args->ClassID);
 
-      ERR (**routine)(OBJECTPTR, APTR);
-      if ((!mclass->get(FID_ActionTable, routine)) and (routine)) {
-         if (routine[int(AC::SaveToObject)]) {
-            return routine[int(AC::SaveToObject)](Self, Args);
+      std::span<ActionEntry> actions;
+      if ((!mclass->getActionTable(actions)) and (not actions.empty())) {
+         if (actions[int(AC::SaveToObject)].PerformAction) {
+            return actions[int(AC::SaveToObject)].PerformAction(Self, Args);
          }
          else return log.warning(ERR::NoSupport);
       }
@@ -1397,7 +1404,7 @@ static ERR SOUND_SET_Octave(extSound *Self, int Value)
 {
    if ((Value < -10) or (Value > 10))
    Self->Octave = Value;
-   return Self->set(FID_Note, Self->Note);
+   return Self->set(strhash("note"), Self->Note);
 }
 
 /*********************************************************************************************************************

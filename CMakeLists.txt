@@ -85,6 +85,7 @@ option (DISABLE_DISPLAY   "Disable Display API" OFF)
 option (DISABLE_DOCUMENT  "Disable Document API" OFF)
 option (DISABLE_FONT      "Disable Font API" OFF)
 option (DISABLE_HTTP      "Disable HTTP API" OFF)
+option (DISABLE_LZMA      "Disable LZMA decompression support" OFF)
 option (DISABLE_MP3       "Disable MP3 support" OFF)
 option (DISABLE_NETWORK   "Disable Network API" OFF)
 option (DISABLE_IMAGE     "Disable Image API" OFF)
@@ -411,7 +412,7 @@ endfunction ()
 # idl_gen() is used to generate both C/C++ headers and IDL strings from TDL files.
 
 function (idl_gen)
-   cmake_parse_arguments (PARSE_ARGV 0 IDLC "" "OUTPUT;APPEND_IDL;NAME" "ARGS;FILES;DEPENDS")
+   cmake_parse_arguments (PARSE_ARGV 0 IDLC "" "OUTPUT;APPEND_IDL;NAME" "ARGS;FILES;DEPENDS;BYPRODUCTS")
 
    if (KOTUKU_DEFS_AVAILABLE)
       if (DEFINED IDLC_NAME)
@@ -425,7 +426,7 @@ function (idl_gen)
       endif ()
 
       set (IDLC_STAMP "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${OUTPUT_NAME}.stamp")
-      set (IDLC_BYPRODUCTS "${IDLC_OUTPUT}")
+      set (IDLC_BYPRODUCTS "${IDLC_OUTPUT}" ${IDLC_BYPRODUCTS})
 
       foreach (ARG IN LISTS IDLC_ARGS)
          if (ARG MATCHES "^output-(defs|proto)=(.+)$")
@@ -585,6 +586,24 @@ if (CMAKE_SIZEOF_VOID_P EQUAL 8)
 else ()
    message (STATUS "This will be a 32-bit build for processor arch ${CMAKE_HOST_SYSTEM_PROCESSOR}")
 #   set (KOTUKU_ARCH "-m32")
+endif ()
+
+# --------------------------------------------------------------------------------------------------------------------
+# SIMD baseline.  SSE4.2 is the mandatory floor for all x86/x86-64 builds (guaranteed on any 64-bit CPU from ~2008
+# onwards).  This unlocks SSE4.2 intrinsics for scalar codegen and lets the compiler auto-vectorise with the full
+# SSE1-4.2 instruction set.  AVX2 remains an opt-in, per-function path gated by simd_has_avx2() at run time -- see
+# src/link/simd.h.  Non-x86 targets (ARM/AArch64, Apple Silicon) are unaffected.
+
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|amd64|AMD64|i[3-6]86|x86)")
+   if (MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      # MSVC has no /arch:SSE4.2 flag (its /arch jumps SSE2 -> AVX) and SSE4.2 intrinsics are always available
+      # without a flag, so no compile option is required to guarantee the baseline for the MSVC toolchain.
+      message (STATUS "SIMD baseline: SSE4.2 (MSVC intrinsics available unconditionally)")
+   else ()
+      # GCC/Clang (including clang-cl) require an explicit flag to raise the baseline above SSE2.
+      message (STATUS "SIMD baseline: SSE4.2 (-msse4.2)")
+      add_compile_options ("-msse4.2")
+   endif ()
 endif ()
 
 if (KOTUKU_VLOG)
@@ -1039,6 +1058,11 @@ if (NOT DISABLE_HTTP AND NOT DISABLE_NETWORK)
    list (APPEND LIB_LIST http)
 endif ()
 
+if (NOT DISABLE_LZMA)
+   add_subdirectory (src/lzma)
+   list (APPEND LIB_LIST lzma)
+endif ()
+
 if (NOT DISABLE_MP3 AND NOT DISABLE_AUDIO)
    add_subdirectory (src/mp3)
    list (APPEND LIB_LIST mp3)
@@ -1099,6 +1123,7 @@ add_generated_header_dependencies (jpeg display_defs image_defs)
 add_generated_header_dependencies (json xml_defs)
 add_generated_header_dependencies (base64 core_defs)
 add_generated_header_dependencies (linear_rgb core_defs)
+add_generated_header_dependencies (lzma core_defs)
 add_generated_header_dependencies (mp3 audio_defs)
 add_generated_header_dependencies (origo_cmd core_defs display_defs)
 add_generated_header_dependencies (image display_defs)

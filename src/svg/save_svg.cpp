@@ -1,4 +1,13 @@
+// Exporting a vector scene graph to SVG is handled here.
+//
+// Note on round-tripping: we don't save unnecessary metadata from the source, so a true round-trip isn't possible.
+// However, the client should be able to rely on the output creating a scene that renders identically to the original
+// input, as long as the SVG and Vector modules provide sufficient features for generating the original scene.
+//
+// With respect to SVG optimisation commands like <use>, these are a second-pass detail that can be taken up after
+// the initial generation of the XML document [TODO]
 
+//*********************************************************************************************************************
 // Format a floating point value for SVG output without trailing zeros, e.g. "10" rather than "10.000000".  Required
 // where the result is concatenated into a larger string (such as a percentage); plain attribute values are handled
 // by xml::NewAttrib() directly.
@@ -38,6 +47,271 @@ static void set_gradient_colour_space(XTag *Tag, objGradient *Gradient, ERR &Err
 
 //*********************************************************************************************************************
 
+static bool has_attrib(const XTag *Tag, std::string_view Name) noexcept
+{
+   return Tag->attrib(Name) != nullptr;
+}
+
+//*********************************************************************************************************************
+
+static void set_missing_attrib(XTag *Tag, std::string_view Name, std::string_view Value)
+{
+   if ((not Value.empty()) and (not has_attrib(Tag, Name))) xml::NewAttrib(Tag, Name, Value);
+}
+
+//*********************************************************************************************************************
+
+static ERR save_svg_scan_def(extSVG *Self, objXML *XML, objVector *Vector, int Parent, std::string_view DefID)
+{
+   XTag *parent_tag;
+   ERR error = XML->getTag(Parent, &parent_tag);
+   if (error != ERR::Okay) return error;
+
+   const auto child_count = parent_tag->Children.size();
+
+   error = save_svg_scan(Self, XML, Vector, Parent);
+   if ((error != ERR::Okay) or DefID.empty()) return error;
+
+   error = XML->getTag(Parent, &parent_tag);
+   if ((error IS ERR::Okay) and (parent_tag->Children.size() > child_count)) {
+      set_missing_attrib(&parent_tag->Children[child_count], "id", DefID);
+   }
+
+   return error;
+}
+
+//*********************************************************************************************************************
+
+static ERR save_svg_clip(extSVG *Self, objXML *XML, objVectorClip *Clip, int Parent, std::string_view DefID)
+{
+   XTag *tag;
+   std::string_view sid;
+   ERR error = Clip->getSID(sid);
+   if (error != ERR::Okay) return error;
+
+   const std::string_view id = sid.empty() ? DefID : sid;
+   if (id.empty()) return ERR::Okay;
+
+   error = XML->insertStatement(Parent, XMI::CHILD_END, "<clipPath/>", &tag);
+   if (error != ERR::Okay) return error;
+
+   xml::NewAttrib(tag, "id", id);
+
+   VUNIT units;
+   if (!Clip->getUnits(units)) {
+      switch(units) {
+         default:
+         case VUNIT::USERSPACE:    break; // Default
+         case VUNIT::BOUNDING_BOX: xml::NewAttrib(tag, "clipPathUnits", "objectBoundingBox"); break;
+      }
+   }
+
+   objVectorViewport *viewport = nullptr;
+   if ((error = Clip->getViewport(viewport)) != ERR::Okay) return error;
+
+   if (viewport) {
+      for (auto scan=viewport->Child; (scan) and (!error); scan=scan->Next) {
+         error = save_svg_scan(Self, XML, scan, tag->ID);
+      }
+   }
+
+   return error;
+}
+
+//*********************************************************************************************************************
+
+static void set_unit_attrib(XTag *Tag, std::string_view Name, VUNIT Units)
+{
+   switch(Units) {
+      default:
+      case VUNIT::UNDEFINED:    break;
+      case VUNIT::USERSPACE:    xml::NewAttrib(Tag, Name, "userSpaceOnUse"); break;
+      case VUNIT::BOUNDING_BOX: xml::NewAttrib(Tag, Name, "objectBoundingBox"); break;
+   }
+}
+
+//*********************************************************************************************************************
+
+static ERR save_svg_pattern(extSVG *Self, objXML *XML, objVectorPattern *Pattern, int Parent, std::string_view DefID)
+{
+   XTag *tag;
+   ERR error = XML->insertStatement(Parent, XMI::CHILD_END, "<pattern/>", &tag);
+   if (error != ERR::Okay) return error;
+
+   xml::NewAttrib(tag, "id", DefID);
+
+   Unit unit;
+   if ((!error) and (!Pattern->getX(unit))) set_dimension(tag, "x", unit);
+   if ((!error) and (!Pattern->getY(unit))) set_dimension(tag, "y", unit);
+   if ((!error) and (!Pattern->getWidth(unit))) set_dimension(tag, "width", unit);
+   if ((!error) and (!Pattern->getHeight(unit))) set_dimension(tag, "height", unit);
+
+   VUNIT units;
+   if ((!error) and (!Pattern->getUnits(units))) set_unit_attrib(tag, "patternUnits", units);
+   if ((!error) and (!Pattern->getContentUnits(units))) set_unit_attrib(tag, "patternContentUnits", units);
+
+   std::span<VectorMatrix> transform;
+   if ((!error) and (!Pattern->getMatrices(transform)) and (not transform.empty())) {
+      std::stringstream buffer;
+      if (!save_svg_transform(transform.data(), buffer)) {
+         xml::NewAttrib(tag, "patternTransform", buffer.str());
+      }
+   }
+
+   objVectorViewport *viewport = nullptr;
+   if ((!error) and (!Pattern->getViewport(viewport)) and (viewport)) {
+      double x, y, width, height;
+      if ((!viewport->getViewX(x)) and (!viewport->getViewY(y)) and
+          (!viewport->getViewWidth(width)) and (!viewport->getViewHeight(height)) and (width > 0) and (height > 0)) {
+         xml::NewAttrib(tag, "viewBox", std::format("{} {} {} {}", x, y, width, height));
+      }
+
+      for (auto scan=viewport->Child; (scan) and (!error); scan=scan->Next) {
+         error = save_svg_scan(Self, XML, scan, tag->ID);
+      }
+   }
+
+   return error;
+}
+
+//*********************************************************************************************************************
+
+static std::string save_aspect_ratio(ARF AspectRatio)
+{
+   if ((AspectRatio & ARF::NONE) != ARF::NIL) return "none";
+
+   std::string result;
+
+   if ((AspectRatio & ARF::X_MIN) != ARF::NIL) result = "xMin";
+   else if ((AspectRatio & ARF::X_MAX) != ARF::NIL) result = "xMax";
+   else result = "xMid";
+
+   if ((AspectRatio & ARF::Y_MIN) != ARF::NIL) result += "YMin";
+   else if ((AspectRatio & ARF::Y_MAX) != ARF::NIL) result += "YMax";
+   else result += "YMid";
+
+   if ((AspectRatio & ARF::SLICE) != ARF::NIL) result += " slice";
+   else result += " meet";
+
+   return result;
+}
+
+//*********************************************************************************************************************
+
+static bool external_image_path(std::string_view Path, std::string &Result)
+{
+   if (Path.empty() or Path.starts_with("data:") or Path.starts_with("temp:")) return false;
+
+   std::string resolved;
+   LOC type = LOC::NIL;
+   if ((ResolvePath(Path, RSF::NIL, &resolved) IS ERR::Okay) and
+       (AnalysePath(resolved, &type) IS ERR::Okay) and (type IS LOC::FILE)) {
+      Result.assign(Path);
+      return true;
+   }
+
+   return false;
+}
+
+//*********************************************************************************************************************
+
+static ERR encode_bitmap_png(objBitmap *Bitmap, std::string &Href)
+{
+   if (not Bitmap) return ERR::FieldNotSet;
+
+   objFile::create file = {
+      fl::Size(0),
+      fl::Flags(FL::BUFFER|FL::READ|FL::WRITE)
+   };
+   if (!file.ok()) return file.error;
+
+   objImage::create image(NF::LOCAL);
+   if (!image.ok()) return image.error;
+
+   if (auto owned_bitmap = image->Bitmap) FreeResource(owned_bitmap);
+   image->Bitmap = Bitmap;
+   image->Flags = PCF::NIL;
+
+   ERR error = image->saveImage(*file);
+   image->Bitmap = nullptr;
+   if (error != ERR::Okay) return error;
+
+   std::span<int8_t> data;
+   if ((error = file->getBuffer(data)) != ERR::Okay) return error;
+   if (data.empty()) return ERR::NoData;
+
+   std::vector<char> encoded((data.size() * 2) + 8);
+   kt::BASE64ENCODE state;
+
+   auto len = kt::Base64Encode(&state, std::span((const char *)data.data(), data.size()), encoded);
+   if (len <= 0) return ERR::NoData;
+
+   auto final_len = kt::Base64Encode(&state, {}, std::span(encoded.data() + len, encoded.size() - len));
+   if (final_len <= 0) return ERR::NoData;
+
+   Href = "data:image/png;base64,";
+   Href.reserve(Href.size() + size_t(len + final_len));
+
+   for (int64_t i=0; i < len + final_len; i++) {
+      if ((encoded[i] != '\n') and (encoded[i] != '\r') and (encoded[i] != 0)) Href.push_back(encoded[i]);
+   }
+
+   return ERR::Okay;
+}
+
+//*********************************************************************************************************************
+
+static ERR save_svg_image(objXML *XML, objVectorImage *Image, int Parent, std::string_view DefID)
+{
+   XTag *tag;
+   ERR error = XML->insertStatement(Parent, XMI::CHILD_END, "<image/>", &tag);
+   if (error != ERR::Okay) return error;
+
+   xml::NewAttrib(tag, "id", DefID);
+
+   objBitmap *bitmap;
+   if ((error = Image->getBitmap(bitmap)) != ERR::Okay) return error;
+   if (not bitmap) return ERR::FieldNotSet;
+
+   xml::NewAttrib(tag, "width", bitmap->Width);
+   xml::NewAttrib(tag, "height", bitmap->Height);
+
+   Unit unit;
+   if ((!error) and (!Image->getX(unit)) and unit.defined() and (double(unit) != 0)) set_dimension(tag, "x", unit);
+   if ((!error) and (!Image->getY(unit)) and unit.defined() and (double(unit) != 0)) set_dimension(tag, "y", unit);
+
+   VUNIT units;
+   if ((!error) and (!Image->getUnits(units))) {
+      switch(units) {
+         default:
+         case VUNIT::BOUNDING_BOX: xml::NewAttrib(tag, "units", "objectBoundingBox"); break;
+         case VUNIT::USERSPACE:    xml::NewAttrib(tag, "units", "userSpaceOnUse"); break;
+      }
+   }
+
+   ARF aspect_ratio;
+   if ((!error) and (!Image->getAspectRatio(aspect_ratio))) {
+      xml::NewAttrib(tag, "preserveAspectRatio", save_aspect_ratio(aspect_ratio));
+   }
+
+   std::string href;
+   objImage *source_image;
+   if ((!error) and (!Image->getImage(source_image)) and source_image) {
+      std::string_view path;
+      if ((!source_image->getPath(path)) and external_image_path(path, href)) {
+         xml::NewAttrib(tag, "xlink:href", href);
+         return ERR::Okay;
+      }
+   }
+
+   if ((error = encode_bitmap_png(bitmap, href)) != ERR::Okay) return error;
+   xml::NewAttrib(tag, "xlink:href", href);
+
+   return ERR::Okay;
+}
+
+//*********************************************************************************************************************
+
 static ERR save_vectorpath(extSVG *Self, objXML *XML, objVector *Vector, int Parent)
 {
    std::string path;
@@ -59,8 +333,8 @@ static ERR save_vectorpath(extSVG *Self, objXML *XML, objVector *Vector, int Par
 
 //*********************************************************************************************************************
 
-static void save_mesh_stop(objXML *XML, int Parent, double C0X, double C0Y, double C1X, double C1Y, double P1X,
-   double P1Y, const FRGB &Colour)
+static void save_mesh_stop(objXML *XML, int Parent, double X1, double Y1, double X2, double Y2, double EndX,
+   double EndY, const FRGB &Colour)
 {
    int stop_index;
    if (XML->insertXML(Parent, XMI::CHILD_END, "<stop/>", &stop_index) != ERR::Okay) return;
@@ -68,9 +342,7 @@ static void save_mesh_stop(objXML *XML, int Parent, double C0X, double C0Y, doub
    XTag *stop_tag;
    if (XML->getTag(stop_index, &stop_tag) != ERR::Okay) return;
 
-   std::stringstream path;
-   path << "C " << C0X << " " << C0Y << " " << C1X << " " << C1Y << " " << P1X << " " << P1Y;
-   xml::NewAttrib(stop_tag, "path", path.str());
+   xml::NewAttrib(stop_tag, "path", std::format("C {} {} {} {} {} {}", X1, Y1, X2, Y2, EndX, EndY));
 
    std::stringstream colour;
    colour << "rgb(" << Colour.Red * 255.0 << "," << Colour.Green * 255.0 << "," << Colour.Blue * 255.0 << ")";
@@ -85,14 +357,24 @@ static bool mesh_colour_match(const FRGB &A, const FRGB &B) noexcept
 
 static bool mesh_patch_shares_previous_left_edge(const MeshPatchRecord &Patch, const MeshPatchRecord &Previous) noexcept
 {
-   return (Patch.TopP0X IS Previous.RightP0X) and (Patch.TopP0Y IS Previous.RightP0Y) and
-      (Patch.BottomP1X IS Previous.RightP1X) and (Patch.BottomP1Y IS Previous.RightP1Y) and
-      (Patch.LeftP0X IS Previous.RightP1X) and (Patch.LeftP0Y IS Previous.RightP1Y) and
-      (Patch.LeftC0X IS Previous.RightC1X) and (Patch.LeftC0Y IS Previous.RightC1Y) and
-      (Patch.LeftC1X IS Previous.RightC0X) and (Patch.LeftC1Y IS Previous.RightC0Y) and
-      (Patch.LeftP1X IS Previous.RightP0X) and (Patch.LeftP1Y IS Previous.RightP0Y) and
+   return (Patch.Top.StartX IS Previous.Right.StartX) and (Patch.Top.StartY IS Previous.Right.StartY) and
+      (Patch.Bottom.EndX IS Previous.Right.EndX) and (Patch.Bottom.EndY IS Previous.Right.EndY) and
+      (Patch.Left.StartX IS Previous.Right.EndX) and (Patch.Left.StartY IS Previous.Right.EndY) and
+      (Patch.Left.X1 IS Previous.Right.X2) and (Patch.Left.Y1 IS Previous.Right.Y2) and
+      (Patch.Left.X2 IS Previous.Right.X1) and (Patch.Left.Y2 IS Previous.Right.Y1) and
+      (Patch.Left.EndX IS Previous.Right.StartX) and (Patch.Left.EndY IS Previous.Right.StartY) and
       mesh_colour_match(Patch.TopLeft, Previous.TopRight) and
       mesh_colour_match(Patch.BottomLeft, Previous.BottomRight);
+}
+
+static bool mesh_patch_shares_previous_top_edge(const MeshPatchRecord &Patch, const MeshPatchRecord &Previous) noexcept
+{
+   return (Patch.Top.StartX IS Previous.Bottom.EndX) and (Patch.Top.StartY IS Previous.Bottom.EndY) and
+      (Patch.Top.X1 IS Previous.Bottom.X2) and (Patch.Top.Y1 IS Previous.Bottom.Y2) and
+      (Patch.Top.X2 IS Previous.Bottom.X1) and (Patch.Top.Y2 IS Previous.Bottom.Y1) and
+      (Patch.Top.EndX IS Previous.Bottom.StartX) and (Patch.Top.EndY IS Previous.Bottom.StartY) and
+      mesh_colour_match(Patch.TopLeft, Previous.BottomLeft) and
+      mesh_colour_match(Patch.TopRight, Previous.BottomRight);
 }
 
 static void save_mesh_patch(objXML *XML, int RowIndex, int ColIndex, int Parent, const MeshPatchRecord &Patch,
@@ -103,23 +385,23 @@ static void save_mesh_patch(objXML *XML, int RowIndex, int ColIndex, int Parent,
 
    XTag *patch_tag;
    if ((Independent) and (XML->getTag(patch_index, &patch_tag) IS ERR::Okay)) {
-      xml::NewAttrib(patch_tag, "kotuku:x", Patch.TopP0X);
-      xml::NewAttrib(patch_tag, "kotuku:y", Patch.TopP0Y);
+      xml::NewAttrib(patch_tag, "kotuku:x", Patch.Top.StartX);
+      xml::NewAttrib(patch_tag, "kotuku:y", Patch.Top.StartY);
    }
 
    if ((RowIndex IS 0) or (Independent)) {
-      save_mesh_stop(XML, patch_index, Patch.TopC0X, Patch.TopC0Y, Patch.TopC1X, Patch.TopC1Y,
-         Patch.TopP1X, Patch.TopP1Y, Patch.TopRight);
+      save_mesh_stop(XML, patch_index, Patch.Top.X1, Patch.Top.Y1, Patch.Top.X2, Patch.Top.Y2,
+         Patch.Top.EndX, Patch.Top.EndY, Patch.TopRight);
    }
 
-   save_mesh_stop(XML, patch_index, Patch.RightC0X, Patch.RightC0Y, Patch.RightC1X, Patch.RightC1Y,
-      Patch.RightP1X, Patch.RightP1Y, Patch.BottomRight);
-   save_mesh_stop(XML, patch_index, Patch.BottomC0X, Patch.BottomC0Y, Patch.BottomC1X, Patch.BottomC1Y,
-      Patch.BottomP1X, Patch.BottomP1Y, Patch.BottomLeft);
+   save_mesh_stop(XML, patch_index, Patch.Right.X1, Patch.Right.Y1, Patch.Right.X2, Patch.Right.Y2,
+      Patch.Right.EndX, Patch.Right.EndY, Patch.BottomRight);
+   save_mesh_stop(XML, patch_index, Patch.Bottom.X1, Patch.Bottom.Y1, Patch.Bottom.X2, Patch.Bottom.Y2,
+      Patch.Bottom.EndX, Patch.Bottom.EndY, Patch.BottomLeft);
 
    if ((ColIndex IS 0) or (Independent)) {
-      save_mesh_stop(XML, patch_index, Patch.LeftC0X, Patch.LeftC0Y, Patch.LeftC1X, Patch.LeftC1Y,
-         Patch.LeftP1X, Patch.LeftP1Y, Patch.TopLeft);
+      save_mesh_stop(XML, patch_index, Patch.Left.X1, Patch.Left.Y1, Patch.Left.X2, Patch.Left.Y2,
+         Patch.Left.EndX, Patch.Left.EndY, Patch.TopLeft);
    }
 }
 
@@ -128,17 +410,39 @@ static void save_mesh_gradient(objXML *XML, XTag *Tag, objGradientMesh *Mesh)
    std::span<MeshPatchRecord> patches;
    if ((Mesh->getPatches(patches) != ERR::Okay) or patches.empty()) return;
 
-   xml::NewAttrib(Tag, "x", patches[0].TopP0X);
-   xml::NewAttrib(Tag, "y", patches[0].TopP0Y);
+   int rows = 0;
+   int columns = 0;
+   Mesh->get(kt::fieldhash("Rows"), rows);
+   Mesh->get(kt::fieldhash("Columns"), columns);
 
-   int row_index;
-   if (XML->insertXML(Tag->ID, XMI::CHILD_END, "<meshrow/>", &row_index) != ERR::Okay) return;
-   for (int col=0; col < int(patches.size()); col++) {
-      bool independent = false;
-      if (col > 0) {
-         independent = not mesh_patch_shares_previous_left_edge(patches[size_t(col)], patches[size_t(col - 1)]);
+   if ((rows <= 0) or (columns <= 0) or ((rows * columns) != int(patches.size()))) {
+      rows = 1;
+      columns = int(patches.size());
+   }
+
+   xml::NewAttrib(Tag, "x", patches[0].Top.StartX);
+   xml::NewAttrib(Tag, "y", patches[0].Top.StartY);
+
+   for (int row=0; row < rows; row++) {
+      int row_index;
+      if (XML->insertXML(Tag->ID, XMI::CHILD_END, "<meshrow/>", &row_index) != ERR::Okay) return;
+
+      for (int col=0; col < columns; col++) {
+         const int patch_index = (row * columns) + col;
+         bool independent = false;
+
+         if (col > 0) {
+            independent = not mesh_patch_shares_previous_left_edge(patches[size_t(patch_index)],
+               patches[size_t(patch_index - 1)]);
+         }
+
+         if ((not independent) and (row > 0)) {
+            independent = not mesh_patch_shares_previous_top_edge(patches[size_t(patch_index)],
+               patches[size_t(patch_index - columns)]);
+         }
+
+         save_mesh_patch(XML, row, col, row_index, patches[size_t(patch_index)], independent);
       }
-      save_mesh_patch(XML, 0, col, row_index, patches[size_t(col)], independent);
    }
 }
 
@@ -149,7 +453,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
    kt::Log log(__FUNCTION__);
    ankerl::unordered_dense::map<std::string, OBJECTPTR> *defs;
 
-   if (!Scene->get(FID_Defs, defs)) {
+   if (!Scene->get(strhash("defs"), defs)) {
       ERR error = ERR::Okay;
       int def_index = 0;
       for (auto & [ key, def ] : *defs) {
@@ -161,23 +465,14 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
 
          if (def->baseClassID() IS CLASSID::GRADIENT) {
             auto gradient = (objGradient *)def;
-            std::string gradient_type;
-            switch(def->classID()) {
-               case CLASSID::GRADIENTRADIAL:  gradient_type = "<radialGradient/>"; break;
-               case CLASSID::GRADIENTCONIC:   gradient_type = "<conicGradient/>"; break;
-               case CLASSID::GRADIENTDIAMOND: gradient_type = "<diamondGradient/>"; break;
-               case CLASSID::GRADIENTCONTOUR: gradient_type = "<contourGradient/>"; break;
-               case CLASSID::GRADIENTDISTAL:  gradient_type = "<distalGradient/>"; break;
-               case CLASSID::GRADIENTLINEAR:  gradient_type = "<linearGradient/>"; break;
-               case CLASSID::GRADIENTMESH:    gradient_type = "<meshgradient/>"; break;
-               case CLASSID::GRADIENTGOURAUD:
-                  log.warning("GradientGouraud not supported.");
-                  continue;
-               default:
-                  log.warning("%s not supported.", def->Class->ClassName.c_str());
-                  continue;
+            std::string gradient_def;
+            if (gradient->get(kt::fieldhash("XMLDef"), gradient_def) != ERR::Okay) {
+               log.warning("%s not supported.", def->Class->ClassName.c_str());
+               continue;
             }
+
             XTag *tag = nullptr;
+            auto gradient_type = "<" + gradient_def + "/>";
             error = XML->insertStatement(def_index, XMI::CHILD_END, gradient_type, &tag);
 
             if (!error) xml::NewAttrib(tag, "id", key);
@@ -208,66 +503,7 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
                xml::NewAttrib(tag, "resolution", resolution);
             }
 
-            if (def->classID() IS CLASSID::GRADIENTLINEAR) {
-               auto linear = (objGradientLinear *)gradient;
-               Unit val;
-               if ((!error) and (!linear->getX1(val))) set_dimension(tag, "x1", val);
-               if ((!error) and (!linear->getY1(val))) set_dimension(tag, "y1", val);
-               if ((!error) and (!linear->getX2(val))) set_dimension(tag, "x2", val);
-               if ((!error) and (!linear->getY2(val))) set_dimension(tag, "y2", val);
-            }
-            else if (def->classID() IS CLASSID::GRADIENTCONTOUR) {
-               auto contour = (objGradientContour *)gradient;
-               double val;
-               if ((!error) and (!contour->getFloor(val))) xml::NewAttrib(tag, "floor", fmt_num(val));
-               if ((!error) and (!contour->getMultiplier(val))) xml::NewAttrib(tag, "multiplier", fmt_num(val));
-            }
-            else if (def->classID() IS CLASSID::GRADIENTDISTAL) {
-               auto distal = (objGradientDistal *)gradient;
-               double val;
-               Unit unit;
-               if ((!error) and (!distal->getFloor(val))) xml::NewAttrib(tag, "floor", fmt_num(val));
-               if ((!error) and (!distal->getMultiplier(val))) xml::NewAttrib(tag, "multiplier", fmt_num(val));
-               if ((!error) and (!distal->getRadius(unit)) and (unit.defined()) and (unit > 0.0)) {
-                  set_dimension(tag, "radius", unit);
-               }
-            }
-            else if (def->classID() IS CLASSID::GRADIENTRADIAL) {
-               auto radial = (objGradientRadial *)gradient;
-               Unit val;
-               if ((!error) and (!radial->getCX(val))) set_dimension(tag, "cx", val);
-               if ((!error) and (!radial->getCY(val))) set_dimension(tag, "cy", val);
-               if ((!error) and (!radial->getFX(val))) set_dimension(tag, "fx", val);
-               if ((!error) and (!radial->getFY(val))) set_dimension(tag, "fy", val);
-               if ((!error) and (!radial->getRadius(val))) set_dimension(tag, "r", val);
-
-               int contain_focal;
-               if ((!error) and (!radial->getContainFocal(contain_focal)) and (!contain_focal)) {
-                  xml::NewAttrib(tag, "focal", "unbound");
-               }
-            }
-            else if ((def->classID() IS CLASSID::GRADIENTDIAMOND) or (def->classID() IS CLASSID::GRADIENTCONIC)) {
-               Unit val;
-
-               if (def->classID() IS CLASSID::GRADIENTCONIC) {
-                  auto conic = (objGradientConic *)gradient;
-                  if ((!error) and (!conic->getCX(val))) set_dimension(tag, "cx", val);
-                  if ((!error) and (!conic->getCY(val))) set_dimension(tag, "cy", val);
-                  if ((!error) and (!conic->getRadius(val))) set_dimension(tag, "r", val);
-
-                  double span;
-                  if ((!error) and (!conic->getSpan(span)) and (span != 1.0)) {
-                     xml::NewAttrib(tag, "span", span);
-                  }
-               }
-               else {
-                  auto diamond = (objGradientDiamond *)gradient;
-                  if ((!error) and (!diamond->getCX(val))) set_dimension(tag, "cx", val);
-                  if ((!error) and (!diamond->getCY(val))) set_dimension(tag, "cy", val);
-                  if ((!error) and (!diamond->getRadius(val))) set_dimension(tag, "r", val);
-               }
-            }
-            else if (def->classID() IS CLASSID::GRADIENTMESH) {
+            if (def->classID() IS CLASSID::GRADIENTMESH) {
                save_mesh_gradient(XML, tag, (objGradientMesh *)gradient);
             }
 
@@ -301,13 +537,13 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
             }
          }
          else if (def->classID() IS CLASSID::VECTORIMAGE) {
-            log.warning("VectorImage not supported.");
+            error = save_svg_image(XML, (objVectorImage *)def, def_index, key);
          }
          else if (def->classID() IS CLASSID::VECTORPATH) {
-            error = save_vectorpath(Self, XML, (objVector *)def, def_index);
+            error = save_svg_scan_def(Self, XML, (objVector *)def, def_index, key);
          }
          else if (def->classID() IS CLASSID::VECTORPATTERN) {
-            log.warning("VectorPattern not supported.");
+            error = save_svg_pattern(Self, XML, (objVectorPattern *)def, def_index, key);
          }
          else if (def->classID() IS CLASSID::VECTORFILTER) {
             objVectorFilter *filter = (objVectorFilter *)def;
@@ -345,13 +581,23 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
             }
          }
          else if (def->classID() IS CLASSID::VECTORTRANSITION) {
-            log.warning("VectorTransition not supported.");
+            int transition_index;
+            XTag *tag;
+            error = XML->insertXML(def_index, XMI::CHILD_END, "<kotuku:transition/>", &transition_index);
+            if (!error) error = XML->getTag(transition_index, &tag);
+            if (!error) xml::NewAttrib(tag, "id", key);
+
+            std::string transition_xml;
+            if ((!error) and (!def->get(kt::fieldhash("XMLDef"), transition_xml))) {
+               XTag *stop_tag;
+               error = XML->insertStatement(transition_index, XMI::CHILD_END, transition_xml, &stop_tag);
+            }
          }
          else if (def->classID() IS CLASSID::VECTORCLIP) {
-            log.warning("VectorClip not supported.");
+            error = save_svg_clip(Self, XML, (objVectorClip *)def, def_index, key);
          }
          else if (def->Class->BaseClassID IS CLASSID::VECTOR) {
-            log.warning("%s not supported.", def->Class->ClassName.c_str());
+            error = save_svg_scan_def(Self, XML, (objVector *)def, def_index, key);
          }
          else log.warning("Unrecognised definition class %x", uint32_t(def->classID()));
       }
@@ -374,7 +620,7 @@ static ERR save_svg_transform(VectorMatrix *Transform, std::stringstream &Buffer
    std::for_each(list.rbegin(), list.rend(), [&](auto t) {
       if (need_space) Buffer << " ";
       else need_space = true;
-      Buffer << "matrix(" << t->ScaleX << " " << t->ShearY << " " << t->ShearX << " " << t->ScaleY << " " << t->TranslateX << " " << t->TranslateY << ")";
+      Buffer << std::format("matrix({} {} {} {} {} {})", t->ScaleX, t->ShearY, t->ShearX, t->ScaleY, t->TranslateX, t->TranslateY);
    });
 
    return ERR::Okay;
@@ -491,21 +737,22 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
    if ((!error) and (!(error = Vector->getFilter(sv))) and not sv.empty()) xml::NewAttrib(tag, "filter", sv);
 
    VectorMatrix *transform;
-   if ((!error) and (!Vector->get(FID_Transforms, transform)) and (transform)) {
+   if ((!error) and (!Vector->getMatrices(transform)) and (transform)) {
       std::stringstream buffer;
       if ((error = save_svg_transform(transform, buffer)) IS ERR::Okay) {
          xml::NewAttrib(tag, "transform", buffer.str());
       }
    }
 
-   OBJECTPTR shape;
-   if ((!error) and (!Vector->getMorph(shape)) and (shape)) {
+   OBJECTPTR morph_obj;
+   if ((!error) and (!Vector->getMorph(morph_obj)) and (morph_obj)) {
+      auto shape = (objVector *)morph_obj;
       VMF morph_flags;
       XTag *morph_tag;
       error = XML->insertStatement(TagID, XMI::CHILD_END, "<kotuku:morph/>", &morph_tag);
 
       std::string_view shape_id;
-      if ((!error) and (!shape->get(FID_ID, shape_id)) and not shape_id.empty()) {
+      if ((!error) and (!shape->getSID(shape_id)) and not shape_id.empty()) {
          // NB: It is required that the shape has previously been registered as a definition, otherwise the url will refer to a dud tag.
          auto shape_ref = std::format("url(#{})", shape_id);
          xml::NewAttrib(morph_tag, "xlink:href", shape_ref);
@@ -625,7 +872,7 @@ static ERR save_svg_scan_polygon(extSVG *Self, objXML *XML, objVector *Vector, i
             error = XML->insertStatement(Parent, XMI::CHILD_END, "<polyline/>", &tag);
             if (!error) {
                for (unsigned i=0; i < points.size(); i++) {
-                  buffer << points[i].X << "," << points[i].Y << " ";
+                  buffer << std::format("{},{} ", points[i].X, points[i].Y);
                }
                xml::NewAttrib(tag, "points", buffer.str());
             }
@@ -638,7 +885,7 @@ static ERR save_svg_scan_polygon(extSVG *Self, objXML *XML, objVector *Vector, i
 
       if ((!error) and (!vp->getPointsArray(points))) {
          for (unsigned i=0; i < points.size(); i++) {
-            buffer << points[i].X << "," << points[i].Y << " ";
+            buffer << std::format("{},{} ", points[i].X, points[i].Y);
          }
          xml::NewAttrib(tag, "points", buffer.str());
       }
@@ -752,29 +999,8 @@ static ERR save_svg_scan_group(extSVG *Self, objXML *XML, objVector *Vector, int
 
 static ERR save_svg_scan_clip(extSVG *Self, objXML *XML, objVector *Vector, int Parent, int &ChildIndex)
 {
-   auto clip = (objVectorClip *)Vector;
-   XTag *tag;
-   std::string_view str;
-   ERR error = ERR::Okay;
-
-   if ((!(error = clip->getSID(str))) and not str.empty()) { // The id is an essential requirement
-      error = XML->insertStatement(Parent, XMI::CHILD_END, "<clipPath/>", &tag);
-
-      VUNIT units;
-      if (!clip->getUnits(units)) {
-         switch(units) {
-            default:
-            case VUNIT::USERSPACE:    break; // Default
-            case VUNIT::BOUNDING_BOX: xml::NewAttrib(tag, "clipPathUnits", "objectBoundingBox"); break;
-         }
-      }
-
-      if (!error) {
-         ChildIndex = tag->ID;
-         error = save_svg_scan_std(Self, XML, Vector, tag->ID);
-      }
-   }
-
+   ERR error = save_svg_clip(Self, XML, (objVectorClip *)Vector, Parent, {});
+   if (!error) ChildIndex = -1;
    return error;
 }
 
@@ -918,11 +1144,7 @@ static ERR save_svg_scan_viewport(extSVG *Self, objXML *XML, objVector *Vector, 
    if (!error) error = viewport->getViewWidth(width);
    if (!error) error = viewport->getViewHeight(height);
 
-   if (!error) {
-      std::stringstream buffer;
-      buffer << x << " " << y << " " << width << " " << height;
-      xml::NewAttrib(tag, "viewBox", buffer.str());
-   }
+   if (!error) xml::NewAttrib(tag, "viewBox", std::format("{} {} {} {}", x, y, width, height));
 
    // Output viewport dimensions, if defined
 

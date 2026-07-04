@@ -10,22 +10,49 @@
 
 local rx_head = <{ regex.new('ref: refs/heads/(.+)') }>
 
+git.findRepository = function(Path:str):any
+   local path = Path:replace('\\', '/')
+
+   while #path > 1 and path:endsWith('/') do
+      path = path:substr(0, #path - 1)
+   end
+
+   while path?? do
+      local git_path = path .. '/.git/'
+      local _, file_type = mSys.AnalysePath(git_path)
+      if file_type is LOC_FOLDER then return git_path end
+
+      local path_len = #path
+      local last_slash = -1
+      for i in {0 to path_len} do
+         if path:substr(i, i + 1) is '/' then last_slash = i end
+      end
+
+      if last_slash < 0 then break end
+      if last_slash is 0 then return nil end
+
+      path = path:substr(0, last_slash)
+   end
+
+   return nil
+end
+
 -- Return basic git repository information (current branch and commit values)
 
 git.query = function(Path:str):table
    local git_info = { branch = 'unknown', commit = 'unknown' }
 
-   -- Check if .git directory exists
+   -- Find the nearest .git directory from the supplied path or any parent folder.
 
-   local _, file_type = mSys.AnalysePath(f'{Path}../.git/')
-   if file_type != LOC_FOLDER then
-      msg(f'No .git folder identified at {Path}../.git/')
+   local git_path = git.findRepository(Path)
+   if git_path is nil then
+      msg(f'No .git folder identified at or above {Path}')
       return git_info
    end
 
    -- Try to read current branch from .git/HEAD
 
-   local head_file = io.open(f'{Path}../.git/HEAD', 'r')
+   local head_file = io.open(git_path .. 'HEAD', 'r')
    if head_file then
       local head_content = head_file:read('*all')
       head_file:close()
@@ -40,9 +67,9 @@ git.query = function(Path:str):table
             git_info.branch = branch_ref
 
             -- Try to read the commit hash from the branch file
-            branch_file = io.open(f'{Path}../.git/refs/heads/{branch_ref}', 'r')
+            local branch_file = io.open(git_path .. 'refs/heads/' .. branch_ref, 'r')
             if branch_file then
-               commit_hash = branch_file:read('*all')
+               local commit_hash = branch_file:read('*all')
                branch_file:close()
 
                if commit_hash then

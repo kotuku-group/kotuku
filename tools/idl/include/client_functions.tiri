@@ -121,6 +121,7 @@ global function module(Options:table, Function:func)
    end
 
    global glModule = Options
+   glModule.exportXML = true
 
    if glModule.name?? then
       priority('#pragma once')
@@ -203,7 +204,12 @@ end
 @input Function containing declarations for the header
 ]])
 global function header(Options:table, Function:func)
-   global glHeaderPath = Options['path']
+   global glHeaderPath = Options.path
+
+   if Options.module then
+      glModule = { name=Options.module, copyright = Options.copyright, exportXML=false }
+   end
+
    if glHeaderPath?? then
       priority('#pragma once')
       priority()
@@ -214,7 +220,7 @@ global function header(Options:table, Function:func)
    end
 
    if Options['copyright']?? then
-      priority(f'// Copyright: {Options["copyright"]}')
+      priority(f'// Copyright: {Options.copyright}')
    end
    priority('// Generator: idl-c')
    priority()
@@ -681,7 +687,7 @@ end
 @input TDL field definition block
 @input Optional raw text to append inside the generated structure
 ]])
-global function struct(Name:str, Options:table, Def, Append)
+global function structdef(Name:str, Options:table, Def, Append)
    verbose(f'Processing struct {Name}')
 
    prevStruct = glCurrentStructure
@@ -733,6 +739,10 @@ global function struct(Name:str, Options:table, Def, Append)
             left = string.format('   %-' .. type_len .. 's %s;', (f.extType ?? f.type), field_name)
          else
             left = string.format('   %-' .. type_len .. 's;', (f.extType ?? f.type))
+         end
+
+         if f.lookup then
+            glReferences['TYPE:' .. f.lookup] = 'struct:' .. full_name
          end
 
          if f.comment?? then
@@ -820,387 +830,400 @@ end
 global function klass(Name, Options:table, Spec, Private, Custom)
    verbose('Processing class ' .. tostring(Name))
 
-   Options ?= {}
+   forward_declared = false
+   if not Options then
+      forward_declared = true
+   end
 
-   output(f'// {Name} class definition')
-   output()
-   output(f'#define VER_{Name:upper()} ({string.format("%f", Options.version ?? 1.0)})')
-   output()
+   Options ?= {}
 
    local cl = registerClass(Name)
    cl.name = Name -- The name defined by class() has priority over any name defined by method()
    cl.src = Options.src
    cl.extended = Options.extended
    cl.cppName = (Options.extended ? 'ext' :> 'obj') .. Name
+   cl.forwardDeclared = forward_declared
    if Options.base then
       cl.base = "obj" .. Options.base
    end
    cl.references = { }
 
+   restore_refs = glActiveRefs
    global glActiveRefs = cl.references
+   defer
+      glActiveRefs = restore_refs
+   end
 
    if type(cl.src) is 'string' then cl.src = { cl.src } end -- Convert string to an array of strings
 
-   if mSys.GetSystemState().StaticBuild is 0 then
-      -- Attempt to load the class into memory.  This introduces a circular reference when the module is not yet
-      -- compiled, so the meta information may only be used for phase 2 output (i.e. documentation).
+   if not forward_declared then
+      output(f'// {Name} class definition')
+      output()
+      output(f'#define VER_{Name:upper()} ({string.format("%f", Options.version ?? 1.0)})')
+      output()
 
-      if mSys.AnalysePath('~modules:' .. glModule.name) is ERR_Okay then
-         cl.meta = mSys.FindClass(Name:hash(), 0)
+      if mSys.GetSystemState().StaticBuild is 0 then
+         -- Attempt to load the class into memory.  This introduces a circular reference when the module is not yet
+         -- compiled, so the meta information may only be used for phase 2 output (i.e. documentation).
+
+         if mSys.AnalysePath('~modules:' .. glModule.name) is ERR_Okay then
+            cl.meta = mSys.FindClass(Name:hash(), 0)
+         else
+            if glFeedback is 'verbose' then
+               print(f'Module {glModule.name} not compiled, class documentation will not be produced.')
+            end
+         end
       else
-         if glFeedback is 'verbose' then
-            print(f'Module {glModule.name} not compiled, class documentation will not be produced.')
-         end
-      end
-   else
-      cl.meta = mSys.FindClass(Name:hash(), 0)
-   end
-
-   -- Process methods and fields defined in the source code (if available)
-
-   cdef = parseClassFields(cl, Spec)
-
-   if not table.empty(Options.references) then
-      for v in values(Options.references) do
-         if glCustomTypes[v]?? then
-            cdef = cdef .. outputLookup(cl.name .. v, glCustomTypes[v].list)
-            glCustomTypes[v].restrict = nil
-         elseif glStructures[v]?? then
-            cl.references['STRUCT:' .. v] = true
-            -- A manual reference to a structure will forcibly turn off any restriction
-            glStructures[v].restrict = nil
-         else
-            print(f'Reference to lookup {v} not found.')
-         end
-      end
-   end
-
-   cl.actions = { }
-   cl.actions['NewPlacement'] = { name = 'NewPlacement' }
-   cl.actions['FreePlacement'] = { name = 'FreePlacement' }
-
-   if cl.src then
-      -- Process -METHOD- and -FIELD- definitions
-
-      for path in values(cl.src) do
-         if glFeedback is 'verbose' then
-            print()
-            print(f'Class file: {glTDLFolder}{path}')
-         end
-
-         content = io.readAll(glTDLFolder .. path)
-         content = content:replace('\r\n', '\n')
-
-         -- Look for C/C++ action declarations, in the format: ERR CLASS_Action(...).  This will create a series
-         -- of dummy action entries that can be overwritten with -ACTION- sections.
-
-         local rx_patterns = {
-            regex.new('ERR\\s*' .. Name:upper() .. '_([A-Za-z]+)\\(obj[^\\)]*\\)'),
-            regex.new('ERR\\s*' .. Name:upper() .. '_([A-Za-z]+)\\(ext[^\\)]*\\)')
-         }
-
-         for rx in values(rx_patterns) do
-            for _, _, cap in rx.findAll(content) do
-               local action_name = cap[0]
-               if glActions[action_name] then
-                  verbose('Discovered action ' .. action_name)
-                  cl.actions[action_name] = { name=action_name }
-               else
-                  verbose('Ignoring declaration of ' .. action_name)
-               end
-            end
-         end
-
-         -- Extract possible content from within comments so that we don't get interference from the code while parsing.
-
-         local extracted_content = ''
-         for _, _, cap in rx_extract_comment.findAll(content) do
-            extracted_content ..= '\n' .. cap[0]
-         end
-
-         -- Parse each line individually
-
-         local current_entry, proc
-         for line in values(extracted_content:split('\n')) do
-            if line?? then
-               line = rx_trailing_space.extract(line)
-               if (line is '-CLASS-') or (line is '-METHOD-') or (line is '-ACTION-') or (line is '-FIELD-') then
-                  if current_entry then parseClassEntry(cl, proc, current_entry) end
-                  current_entry = ''
-                  proc = line
-               elseif line is '-END-' then
-                  if current_entry then parseClassEntry(cl, proc, current_entry) end
-                  current_entry = nil
-                  proc = nil
-               elseif line is '-INTERNAL-' then
-                  current_entry = nil
-                  proc = nil
-               elseif current_entry then
-                  current_entry ..= line .. '\n'
-               end
-            elseif current_entry then
-               current_entry ..= '\n'
-            end
-         end
-
-         if current_entry then parseClassEntry(cl, proc, current_entry) end
-      end
-   end
-
-   for field in values(cl.fields) do -- Process tags from compiled fields
-      field.tags = getTagsFromField(field, field.tags)
-   end
-
-   for action in values(cl.actions) do -- User defined tags for actions
-      if glActions[action.name] then
-         action.tags = getTagsFromCollection(action.tags, glActions[action.name].params)
-      end
-   end
-
-   -- Return the type to use for a given action/method parameter in its struct
-
-   function actionStorageType(Param:table):str
-      local param_type = Param.basicType
-
-      if Param.isComplex then
-         -- std::string is not embeddable, convert to `std::string *`
-         param_type = param_type .. ' *'
+         cl.meta = mSys.FindClass(Name:hash(), 0)
       end
 
-      return param_type
-   end
+      -- Process methods and fields defined in the source code (if available)
 
-   -- Return the type to use for a given action parameter in its inline helper call
+      cdef = parseClassFields(cl, Spec)
 
-   function inlineParamType(Param:table):str
-      if Param.type is 'FUNCTION *' then
-         return 'FUNCTION '
-      elseif Param.type is 'std::string_view' then
-         Param.byRef = true
-         return 'const std::string_view &'
-      elseif Param.resultValue and Param.mutable and Param.type:endsWith('*') then
-         Param.byRef = true
-         return Param.type:sub(0,-2) .. '&'
-      elseif Param.isComplex then
-         Param.byRef = true
-         return Param.type .. ' &'
-      end
-
-      return Param.type .. ' '
-   end
-
-   if cl.methods then
-      pfx  = cl.methodPrefix
-      lpfx = pfx:lower()
-
-      if glFeedback is 'verbose' then
-         print('Generating ' .. #cl.methods .. ' methods.')
-      end
-
-      for k, method in ipairs(cl.methods) do
-         if method.input?? then
-            method.params = { }
-            for _,v in ipairs(method.input:split(';')) do
-               v = v:trim()
-               if v?? then
-                  local param = { }
-                  param.type, param.name = rx_type_name.extract(v)
-                  cType(param, 'Method ' .. method.name)
-                  table.insert(method.params, param)
-               end
-            end
-         end
-
-         method.tags = getTagsFromCollection(method.tags, method.params)
-
-         -- Generate a modified C method name for the function declaration if the method shares a name with an existing
-         -- action.  E.g. 'XML_Sort' will become 'XML_SortXML'
-
-         method.funcName = method.name
-         if glActions[method.funcName] then
-            method.funcName ..= Name
-         end
-
-         function pName(Param:str):str
-            name = Param.name
-            if (Param.type is 'OBJECTID') or (Param.type is 'MEMORYID') then
-               if name:sub(-2) != 'ID' then
-                  name ..= 'ID'
-               end
-            end
-            return name
-         end
-
-         struct_params = '' -- struct parameter types & names
-         v = '' -- Parameter values
-         results = false
-         params = ''
-         if method.params then
-            for param in values(method.params) do
-               local storage_type = param.basicType
-               if param.isComplex then -- Complex types are not embeddable in structs
-                  storage_type ..= ' *'
-               end
-
-               struct_params ..= storage_type
-               if not (storage_type:endsWith('*') or storage_type:endsWith('&')) then
-                  struct_params ..= ' '
-               end
-               struct_params ..= pName(param) .. '; '
-
-               if params?? then params ..= ', ' end
-
-               if param.type is 'FUNCTION *' then
-                  params ..= 'FUNCTION ' .. pName(param)
-                  if v?? then v ..= ', ' end
-                  v ..= f'&{pName(param)}'
-               else
-                  params ..= inlineParamType(param) .. pName(param)
-
-                  if param.resultValue and param.basicType is 'std::string_view' then
-                     -- Do not embed a default value for string views
-                     results = true
-                  else
-                     if v?? then v ..= ', ' end
-
-                     if (param.resultValue and param.mutable) or param.isComplex then
-                        -- Client must provide an empty collection, e.g. std::string or kt::vector
-                        v ..= f'&{pName(param)}'
-                        results = true
-                     elseif param.resultValue then
-                        v ..= f'({actionStorageType(param)})0'
-                        results = true
-                     else
-                        v ..= pName(param)
-                     end
-                  end
-               end
-            end
-         end
-
-         action_support = f'static const AC id = AC(-{method.id}); ERR call(OBJECTPTR Object) {{ return Action(id, Object, this); }}'
-         if method.params and #method.params > 0 then
-            cl.methods[k].struct = f'struct {method.name} {{ {struct_params:trim()} {action_support} }};'
-         else
-            cl.methods[k].struct = f'struct {method.name} {{ {action_support} }};'
-         end
-
-         name = method.name:decap()
-         if name is 'delete' then name = 'del' end -- C++ keyword check
-
-         inline = f'   inline ERR {name}({params}) noexcept {{\n'
-         local args = 'nullptr'
-
-         if method.params and #method.params > 0 then
-            inline ..= f'      struct {lpfx}::{method.name} args = {{ {v} }};\n'
-            args = '&args'
-         end
-
-         if results then
-            inline ..= f'      ERR error = Action(AC(-{method.id}), this, {args});\n'
-            for p in values(method.params) do
-               if p.resultValue then
-                  if not p.mutable then
-                     if p.byRef then
-                        inline ..= f'      if ({p.name}) {p.name} = args.{p.name};\n'
-                     else
-                        inline ..= f'      if ({p.name}) *{p.name} = args.{p.name};\n'
-                     end
-                  end
-               end
-            end
-            inline ..= '      return error;\n'
-         else
-            inline ..= f'      return Action(AC(-{method.id}), this, {args});\n'
-         end
-
-         inline ..= '   }'
-         cl.methods[k].nestedInline = inline
-      end
-
-      output('// ' .. Name:cap() .. ' methods')
-      output()
-
-      if lpfx?? then
-         output('namespace ' .. lpfx .. ' {')
-      end
-
-      for method in values(cl.methods) do
-         if method.struct?? then
-            output(method.struct)
-         end
-      end
-      output()
-
-      if lpfx?? then
-         output('} // namespace')
-      end
-
-      output()
-   end
-
-   cl.sortedActions = { }
-   for a in values(cl.actions) do
-      table.insert(cl.sortedActions, a)
-   end
-
-   if not table.empty(cl.sortedActions) then
-      table.sort(cl.sortedActions, function(a,b) return a.name < b.name end)
-   end
-
-   outputClassHeader(cl, Private, Custom)
-
-   -- Output internal C definitions for class methods & actions, if an output file has been specified.
-
-   if Options.output?? then
-      mdef = ''
-      if not table.empty(cl.methods) then
-         for m in values(cl.methods) do
-            if not table.empty(m.params) then
-               mdef ..= f'FDEF ma{m.name}[] = {{ {buildInputParameters(m.params)} }};\n'
-            end
-         end
-         mdef ..= '\n'
-
-         mdef ..= f'static const struct MethodEntry cl{Name}Methods[] = {{\n'
-         for m in values(cl.methods) do
-            local structSize
-            if table.empty(m.params) then
-               mdef ..= f'   {{ AC(-{m.id}), (APTR){Name:upper()}_{m.funcName}, "{m.name}", 0, 0 }},\n'
+      if not table.empty(Options.references) then
+         for v in values(Options.references) do
+            if glCustomTypes[v]?? then
+               cdef = cdef .. outputLookup(cl.name .. v, glCustomTypes[v].list)
+               cl.references['TYPE:' .. v] = true
+               glCustomTypes[v].restrict = nil
+            elseif glStructures[v]?? then
+               cl.references['STRUCT:' .. v] = true
+               -- A manual reference to a structure will forcibly turn off any restriction
+               glStructures[v].restrict = nil
             else
-               structSize = f'sizeof(struct {cl.methodPrefix:lower()}::{m.name})'
-               mdef ..= f'   {{ AC(-{m.id}), (APTR){Name:upper()}_{m.funcName}, "{m.name}", ma{m.name}, {structSize} }},\n'
+               print(f'Reference to lookup {v} not found.')
             end
          end
-         mdef ..= '   { AC::NIL, 0, 0, 0, 0 }\n};\n\n'
       end
 
-      if cl.actions.NewPlacement then
-         mdef ..= f'static ERR {Name:upper()}_NewPlacement({cl.cppName} *Self) {{\n'
-         mdef ..= f'   new (Self) {cl.cppName}(Self->Class, Self->UID);\n'
-         mdef ..= f'   return ERR::Okay;\n'
-         mdef ..= '}\n\n'
+      cl.actions = { }
+      cl.actions['NewPlacement'] = { name = 'NewPlacement' }
+      cl.actions['FreePlacement'] = { name = 'FreePlacement' }
+
+      if cl.src then
+         -- Process -METHOD- and -FIELD- definitions
+
+         for path in values(cl.src) do
+            if glFeedback is 'verbose' then
+               print()
+               print(f'Class file: {glTDLFolder}{path}')
+            end
+
+            content = io.readAll(glTDLFolder .. path)
+            content = content:replace('\r\n', '\n')
+
+            -- Look for C/C++ action declarations, in the format: ERR CLASS_Action(...).  This will create a series
+            -- of dummy action entries that can be overwritten with -ACTION- sections.
+
+            local rx_patterns = {
+               regex.new('ERR\\s*' .. Name:upper() .. '_([A-Za-z]+)\\(obj[^\\)]*\\)'),
+               regex.new('ERR\\s*' .. Name:upper() .. '_([A-Za-z]+)\\(ext[^\\)]*\\)')
+            }
+
+            for rx in values(rx_patterns) do
+               for _, _, cap in rx.findAll(content) do
+                  local action_name = cap[0]
+                  if glActions[action_name] then
+                     verbose('Discovered action ' .. action_name)
+                     cl.actions[action_name] = { name=action_name }
+                  else
+                     verbose('Ignoring declaration of ' .. action_name)
+                  end
+               end
+            end
+
+            -- Extract possible content from within comments so that we don't get interference from the code while parsing.
+
+            local extracted_content = ''
+            for _, _, cap in rx_extract_comment.findAll(content) do
+               extracted_content ..= '\n' .. cap[0]
+            end
+
+            -- Parse each line individually
+
+            local current_entry, proc
+            for line in values(extracted_content:split('\n')) do
+               if line?? then
+                  line = rx_trailing_space.extract(line)
+                  if (line is '-CLASS-') or (line is '-METHOD-') or (line is '-ACTION-') or (line is '-FIELD-') then
+                     if current_entry then parseClassEntry(cl, proc, current_entry) end
+                     current_entry = ''
+                     proc = line
+                  elseif line is '-END-' then
+                     if current_entry then parseClassEntry(cl, proc, current_entry) end
+                     current_entry = nil
+                     proc = nil
+                  elseif line is '-INTERNAL-' then
+                     current_entry = nil
+                     proc = nil
+                  elseif current_entry then
+                     current_entry ..= line .. '\n'
+                  end
+               elseif current_entry then
+                  current_entry ..= '\n'
+               end
+            end
+
+            if current_entry then parseClassEntry(cl, proc, current_entry) end
+         end
       end
 
-      if cl.actions.FreePlacement then
-         mdef ..= f'static ERR {Name:upper()}_FreePlacement({cl.cppName} *Self) {{\n'
-         mdef ..= f'   Self->~{cl.cppName}();\n'
-         mdef ..= f'   return ERR::Okay;\n'
-         mdef ..= '}\n\n'
+      for field in values(cl.fields) do -- Process tags from compiled fields
+         field.tags = getTagsFromField(field, field.tags)
+      end
+
+      for action in values(cl.actions) do -- User defined tags for actions
+         if glActions[action.name] then
+            action.tags = getTagsFromCollection(action.tags, glActions[action.name].params)
+         end
+      end
+
+      -- Return the type to use for a given action/method parameter in its struct
+
+      function actionStorageType(Param:table):str
+         local param_type = Param.basicType
+
+         if Param.isComplex then
+            -- std::string is not embeddable, convert to `std::string *`
+            param_type = param_type .. ' *'
+         end
+
+         return param_type
+      end
+
+      -- Return the type to use for a given action parameter in its inline helper call
+
+      function inlineParamType(Param:table):str
+         if Param.type is 'FUNCTION *' then
+            return 'FUNCTION '
+         elseif Param.type is 'std::string_view' then
+            Param.byRef = true
+            return 'const std::string_view &'
+         elseif Param.resultValue and Param.mutable and Param.type:endsWith('*') then
+            Param.byRef = true
+            return Param.type:sub(0,-2) .. '&'
+         elseif Param.isComplex then
+            Param.byRef = true
+            return Param.type .. ' &'
+         end
+
+         return Param.type .. ' '
+      end
+
+      if cl.methods then
+         pfx  = cl.methodPrefix
+         lpfx = pfx:lower()
+
+         if glFeedback is 'verbose' then
+            print('Generating ' .. #cl.methods .. ' methods.')
+         end
+
+         for k, method in ipairs(cl.methods) do
+            if method.input?? then
+               method.params = { }
+               for _,v in ipairs(method.input:split(';')) do
+                  v = v:trim()
+                  if v?? then
+                     local param = { }
+                     param.type, param.name = rx_type_name.extract(v)
+                     cType(param, 'Method ' .. method.name)
+                     table.insert(method.params, param)
+                  end
+               end
+            end
+
+            method.tags = getTagsFromCollection(method.tags, method.params)
+
+            -- Generate a modified C method name for the function declaration if the method shares a name with an existing
+            -- action.  E.g. 'XML_Sort' will become 'XML_SortXML'
+
+            method.funcName = method.name
+            if glActions[method.funcName] then
+               method.funcName ..= Name
+            end
+
+            function pName(Param:str):str
+               name = Param.name
+               if (Param.type is 'OBJECTID') or (Param.type is 'MEMORYID') then
+                  if name:sub(-2) != 'ID' then
+                     name ..= 'ID'
+                  end
+               end
+               return name
+            end
+
+            struct_params = '' -- struct parameter types & names
+            v = '' -- Parameter values
+            results = false
+            params = ''
+            if method.params then
+               for param in values(method.params) do
+                  local storage_type = param.basicType
+                  if param.isComplex then -- Complex types are not embeddable in structs
+                     storage_type ..= ' *'
+                  end
+
+                  struct_params ..= storage_type
+                  if not (storage_type:endsWith('*') or storage_type:endsWith('&')) then
+                     struct_params ..= ' '
+                  end
+                  struct_params ..= pName(param) .. '; '
+
+                  if params?? then params ..= ', ' end
+
+                  if param.type is 'FUNCTION *' then
+                     params ..= 'FUNCTION ' .. pName(param)
+                     if v?? then v ..= ', ' end
+                     v ..= f'&{pName(param)}'
+                  else
+                     params ..= inlineParamType(param) .. pName(param)
+
+                     if param.resultValue and param.basicType is 'std::string_view' then
+                        -- Do not embed a default value for string views
+                        results = true
+                     else
+                        if v?? then v ..= ', ' end
+
+                        if (param.resultValue and param.mutable) or param.isComplex then
+                           -- Client must provide an empty collection, e.g. std::string or kt::vector
+                           v ..= f'&{pName(param)}'
+                           results = true
+                        elseif param.resultValue then
+                           v ..= f'({actionStorageType(param)})0'
+                           results = true
+                        else
+                           v ..= pName(param)
+                        end
+                     end
+                  end
+               end
+            end
+
+            action_support = f'static const AC id = AC(-{method.id}); ERR call(OBJECTPTR Object) {{ return Action(id, Object, this); }}'
+            if method.params and #method.params > 0 then
+               cl.methods[k].struct = f'struct {method.name} {{ {struct_params:trim()} {action_support} }};'
+            else
+               cl.methods[k].struct = f'struct {method.name} {{ {action_support} }};'
+            end
+
+            name = method.name:decap()
+            if name is 'delete' then name = 'del' end -- C++ keyword check
+
+            inline = f'   inline ERR {name}({params}) noexcept {{\n'
+            local args = 'nullptr'
+
+            if method.params and #method.params > 0 then
+               inline ..= f'      struct {lpfx}::{method.name} args = {{ {v} }};\n'
+               args = '&args'
+            end
+
+            if results then
+               inline ..= f'      ERR error = Action(AC(-{method.id}), this, {args});\n'
+               for p in values(method.params) do
+                  if p.resultValue then
+                     if not p.mutable then
+                        if p.byRef then
+                           inline ..= f'      if ({p.name}) {p.name} = args.{p.name};\n'
+                        else
+                           inline ..= f'      if ({p.name}) *{p.name} = args.{p.name};\n'
+                        end
+                     end
+                  end
+               end
+               inline ..= '      return error;\n'
+            else
+               inline ..= f'      return Action(AC(-{method.id}), this, {args});\n'
+            end
+
+            inline ..= '   }'
+            cl.methods[k].nestedInline = inline
+         end
+
+         output('// ' .. Name:cap() .. ' methods')
+         output()
+
+         if lpfx?? then
+            output('namespace ' .. lpfx .. ' {')
+         end
+
+         for method in values(cl.methods) do
+            if method.struct?? then
+               output(method.struct)
+            end
+         end
+         output()
+
+         if lpfx?? then
+            output('} // namespace')
+         end
+
+         output()
+      end
+
+      cl.sortedActions = { }
+      for a in values(cl.actions) do
+         table.insert(cl.sortedActions, a)
       end
 
       if not table.empty(cl.sortedActions) then
-         mdef ..= f"static const struct ActionArray cl{Name}Actions[] = {{\n"
-         for action in values(cl.sortedActions) do
-            mdef ..= f"   {{ AC::{action.name}, {Name:upper()}_{action.name} }},\n"
-         end
-         mdef ..= "   { AC::NIL, nullptr }\n};\n\n"
+         table.sort(cl.sortedActions, function(a,b) return a.name < b.name end)
       end
 
-      content = "// Auto-generated by idl-c.tiri\n\n"
-      if cdef?? then content ..= cdef end
-      if mdef?? then content ..= mdef end
-      saveIfModified(glTDLFolder .. Options.output, content, 'class definition output')
+      outputClassHeader(cl, Private, Custom)
+
+      -- Output internal C definitions for class methods & actions, if an output file has been specified.
+
+      if Options.output?? then
+         mdef = ''
+         if not table.empty(cl.methods) then
+            for m in values(cl.methods) do
+               if not table.empty(m.params) then
+                  mdef ..= f'FDEF ma{m.name}[] = {{ {buildInputParameters(m.params)} }};\n'
+               end
+            end
+            mdef ..= '\n'
+
+            mdef ..= f'static const struct MethodEntry cl{Name}Methods[] = {{\n'
+            for m in values(cl.methods) do
+               local structSize
+               if table.empty(m.params) then
+                  mdef ..= f'   {{ AC(-{m.id}), (APTR){Name:upper()}_{m.funcName}, "{m.name}", 0, 0 }},\n'
+               else
+                  structSize = f'sizeof(struct {cl.methodPrefix:lower()}::{m.name})'
+                  mdef ..= f'   {{ AC(-{m.id}), (APTR){Name:upper()}_{m.funcName}, "{m.name}", ma{m.name}, {structSize} }},\n'
+               end
+            end
+            mdef ..= '   { AC::NIL, 0, 0, 0, 0 }\n};\n\n'
+         end
+
+         if cl.actions.NewPlacement then
+            mdef ..= f'static ERR {Name:upper()}_NewPlacement({cl.cppName} *Self) {{\n'
+            mdef ..= f'   new (Self) {cl.cppName}(Self->Class, Self->UID);\n'
+            mdef ..= f'   return ERR::Okay;\n'
+            mdef ..= '}\n\n'
+         end
+
+         if cl.actions.FreePlacement then
+            mdef ..= f'static ERR {Name:upper()}_FreePlacement({cl.cppName} *Self) {{\n'
+            mdef ..= f'   Self->~{cl.cppName}();\n'
+            mdef ..= f'   return ERR::Okay;\n'
+            mdef ..= '}\n\n'
+         end
+
+         if not table.empty(cl.sortedActions) then
+            mdef ..= f"static const struct ActionArray cl{Name}Actions[] = {{\n"
+            for action in values(cl.sortedActions) do
+               mdef ..= f"   {{ AC::{action.name}, {Name:upper()}_{action.name} }},\n"
+            end
+            mdef ..= "   { AC::NIL, nullptr }\n};\n\n"
+         end
+
+         content = "// Auto-generated by idl-c.tiri\n\n"
+         if cdef?? then content ..= cdef end
+         if mdef?? then content ..= mdef end
+         saveIfModified(glTDLFolder .. Options.output, content, 'class definition output')
+      end
    end
 end
 

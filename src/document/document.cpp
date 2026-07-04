@@ -31,8 +31,14 @@ that is distributed with this package.  Please refer to it for further informati
 #define PRV_SURFACE
 
 #include "defs/hashes.h"
+#include "../link/simd.h"
 #include "../link/unicode.h"
+#include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/processes.h>
+#include <kotuku/modules/script.h>
 #include <kotuku/modules/xquery.h>
+#include <kotuku/modules/time.h>
+#include <kotuku/modules/module.h>
 #include <atomic>
 
 using BYTECODE = uint32_t;

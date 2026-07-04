@@ -346,7 +346,7 @@ function signatureGetDocumentSymbols(Doc:table):array
 
    local result
    try
-      result = debug.validate(Doc.content, 'symbols')
+      result = debug.validate(Doc.content, { symbols = true, path = lspUriToPath(Doc.uri) })
    except ex
       result = nil
    end

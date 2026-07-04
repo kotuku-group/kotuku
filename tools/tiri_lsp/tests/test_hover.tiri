@@ -124,6 +124,30 @@ result = greet|('Ada')
    assertContains(hover, '`Name: str` - Person to greet', 'Call hover should include parameter documentation.')
 end
 
+@Test function DocAnnotatedFunctionCallHoverAfterRelativeImport()
+   hover, token = hoverAt([=[
+import './relative_symbol_helper'
+
+@Doc(text=[[
+   Returns a local greeting.
+
+   -INPUT-
+   Name: Person to greet
+]])
+function localGreeting(Name: str):str
+   return Name
+end
+
+result = local|Greeting('Ada')
+]=])
+
+   assert(token and token.text is 'localGreeting', 'Hover should identify the function call after a relative import.')
+   assertContains(hover, 'localGreeting(Name: str):str',
+      'Relative imports should not stop parser symbols from feeding hover.')
+   assertContains(hover, 'Returns a local greeting.',
+      'Hover should include @Doc text after a relative import.')
+end
+
 @Test function AssignedFunctionExpressionHover()
    hover, token = hoverAt([=[
 global greetGlobal = function(Name: str):str

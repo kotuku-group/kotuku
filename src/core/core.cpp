@@ -136,15 +136,13 @@ static std::string glHomeFolderName;
 
 //********************************************************************************************************************
 
-static void print_class_list(void) __attribute__ ((unused));
-static void print_class_list(void)
+[[maybe_unused]] static void print_class_list(void)
 {
-   kt::Log log("Class List");
    std::ostringstream out;
    for (auto & [ cid, v ] : glClassDB) {
       out << v.Name << " ";
    }
-   log.msg("Total: %d, %s", (int)glClassDB.size(), out.str().c_str());
+   kt::Log("Class List").msg("Total: %d, %s", (int)glClassDB.size(), out.str().c_str());
 }
 
 //********************************************************************************************************************
@@ -193,7 +191,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
    if (!Info) return ERR::NullArgs;
    glOpenInfo     = *Info;
    tlMainThread   = true;
-   glMainThreadID = get_thread_id();
+   glMainThreadID = THREADID(GetThreadID());
    glCodeIndex    = 0; // Reset the code index so that CloseCore() will work.
 
    if (glProcessID) fprintf(log_output(), "Core module has already been initialised (OpenCore() called more than once.)\n");
@@ -659,7 +657,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
       kt::Log log("Core");
       log.branch("Initialising %d static modules.", int(std::ssize(glStaticModules)));
       for (auto & [ name, hdr ] : glStaticModules) {
-         objModule::create mod = { kt::FieldValue(FID_Name, std::string_view(name)) };
+         objModule::create mod = { kt::FieldValue(strhash("name"), std::string_view(name)) };
       }
    }
 #endif

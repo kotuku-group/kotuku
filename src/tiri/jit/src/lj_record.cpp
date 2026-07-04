@@ -1657,6 +1657,50 @@ static int nommstr(jit_State *J, TRef key)
 }
 
 //********************************************************************************************************************
+// Record array method lookup for method-form calls.
+
+static TRef rec_array_method_lookup(jit_State *J, RecordIndex* ix)
+{
+   if (ix->val or not tref_isarray(ix->tab) or not tref_isstr(ix->key) or not tref_isk(ix->key)) return 0;
+
+   IRBuilder ir(J);
+   GCarray *arr = arrayV(&ix->tabv);
+   GCtab *mt = tabref(arr->metatable);
+   bool using_base_mt = false;
+   if (not mt) {
+      mt = tabref(basemt_it(J2G(J), LJ_TARRAY));
+      using_base_mt = true;
+   }
+   if (not mt) return 0;
+
+   GCstr *key = ir_kstr(IR(tref_ref(ix->key)));
+   cTValue *method = lj_tab_getstr(mt, key);
+   if (not method or not tvisfunc(method)) return 0;
+
+   RecordIndex mix;
+   TRef mtref = ir.fload_tab(ix->tab, IRFL_ARRAY_META);
+   if (using_base_mt) {
+      int basemt_offset = GG_OFS(g.gcroot) + int((GCROOT_BASEMT + ~LJ_TARRAY) * sizeof(GCRef));
+      ir.guard_eq(mtref, ir.knull(IRT_TAB), IRT_TAB);
+      mix.tab = lj_ir_ggfload(J, IRT_TAB, basemt_offset);
+      ir.guard_eq(mix.tab, lj_ir_ktab(J, mt), IRT_TAB);
+   }
+   else {
+      mix.tab = mtref;
+      ir.guard_eq(mix.tab, lj_ir_ktab(J, mt), IRT_TAB);
+   }
+
+   settabV(J->L, &mix.tabv, mt);
+   setstrV(J->L, &mix.keyv, key);
+   mix.key = ix->key;
+   mix.val = 0;
+   mix.idxchain = 0;
+   TRef method_ref = lj_record_idx(J, &mix);
+   ir.guard_eq(method_ref, lj_ir_kfunc(J, funcV(method)), IRT_FUNC);
+   return method_ref;
+}
+
+//********************************************************************************************************************
 // Record indexed load/store.
 
 TRef lj_record_idx(jit_State *J, RecordIndex* ix)
@@ -1669,6 +1713,7 @@ TRef lj_record_idx(jit_State *J, RecordIndex* ix)
    while (not tref_istab(ix->tab)) {  // Handle non-table lookup.
       // Never call raw lj_record_idx() on non-table.
       lj_assertJ(ix->idxchain != 0, "bad usage");
+      if (TRef method = rec_array_method_lookup(J, ix)) return method;
       if (not lj_record_mm_lookup(J, ix, ix->val ? MM_newindex : MM_index)) lj_trace_err(J, LJ_TRERR_NOMM);
 
 handlemm:
@@ -3170,9 +3215,9 @@ void lj_record_ins(jit_State *J)
       break;
 
    case BC_ISEMPTYARR: {
-      // Empty array check for ?? operator.
+      // Empty collection check for ?? operator.
       // If value is an array, we must guard on its length being 0 or non-zero.
-      // For non-array types, type specialisation suffices (they are always truthy for this check).
+      // Table emptiness needs full traversal, so leave that path to the interpreter.
       if (bc_a(pc[1]) < J->maxslot) J->maxslot = bc_a(pc[1]);  // Shrink used slots.
       if (tref_isarray(ra)) {
          // Load array length and compare to 0
@@ -3188,7 +3233,10 @@ void lj_record_ins(jit_State *J)
          emitir(IRTG(is_empty ? IR_EQ : IR_NE, IRT_INT), arrlen, zero);
          rec_comp_fixup(J, J->pc, !is_empty);
       }
-      // For non-arrays, no additional guard needed - type specialisation handles it
+      else if (tref_istab(ra)) {
+         lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      }
+      // For other non-arrays, no additional guard needed - type specialisation handles it
       break;
    }
 

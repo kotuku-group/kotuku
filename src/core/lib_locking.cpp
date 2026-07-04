@@ -51,7 +51,7 @@ private:
          if (!alloc_public_waitlock(&new_lock, nullptr)) {
             if (thread_locks[index].compare_exchange_weak(expected, new_lock, std::memory_order_acquire)) {
                kt::Log log("ThreadLockManager");
-               log.trace("Allocated thread-lock #%d for thread #%d", index, get_thread_id());
+               log.trace("Allocated thread-lock #%d for thread #%d", index, GetThreadID());
                return new_lock;
             }
             free_public_waitlock(new_lock);
@@ -204,7 +204,7 @@ void register_sleep(int Timeout)
 {
    const std::lock_guard<std::mutex> lock(glWaitLockMutex);
 
-   register_waitlock(get_thread_id(), THREADID(0), 0, RT_SLEEP);
+   register_waitlock(THREADID(GetThreadID()), THREADID(0), 0, RT_SLEEP);
    glWaitLocks[glWLIndex].WaitingTime = Timeout;
 }
 
@@ -227,7 +227,7 @@ ERR init_sleep(THREADID OtherThreadID, int ResourceID, int ResourceType)
 {
    //log.trace("Sleeping on thread %d for resource #%d, Total Threads: %d", OtherThreadID, ResourceID, int(glWaitLocks.size()));
 
-   auto our_thread = get_thread_id();
+   auto our_thread = THREADID(GetThreadID());
    if (OtherThreadID IS our_thread) return ERR::Args;
 
    const std::lock_guard<std::mutex> lock(glWaitLockMutex);
@@ -257,7 +257,7 @@ void remove_process_waitlocks(void)
    kt::Log log("Shutdown");
    log.trace("Removing process waitlocks...");
 
-   auto const our_thread = get_thread_id();
+   auto const our_thread = THREADID(GetThreadID());
 
    const std::lock_guard<std::mutex> lock(glWaitLockMutex);
 
@@ -443,7 +443,7 @@ ERR LockObject(OBJECTPTR Object, int Timeout)
       return ERR::NullArgs;
    }
 
-   auto our_thread = get_thread_id();
+   auto our_thread = THREADID(GetThreadID());
 
    // Using an atomic increment we can achieve a 'quick lock' of the object without having to resort to locks.
    // This is quite safe so long as the developer is being careful with use of the object between threads (i.e. not
@@ -541,7 +541,7 @@ ERR LockObject(OBJECTPTR Object, int Timeout)
          // Failure: Either a timeout occurred, the object no longer exists, or the thread is stopping.
 
          if (glWaitLocks[glWLIndex].Flags & WLF_REMOVED) {
-            log.warning("TID %d: The resource no longer exists.", int(get_thread_id()));
+            log.warning("TID %d: The resource no longer exists.", GetThreadID());
             error = ERR::DoesNotExist;
          }
          else if ((record->interrupted.load(std::memory_order_acquire) or
@@ -594,7 +594,7 @@ void ReleaseObject(OBJECTPTR Object)
    #ifndef NDEBUG
    if (Object->Queue.load(std::memory_order_relaxed) <= 0) {
       kt::Log("ReleaseObject").warning("Queue underflow on #%d (%s), Queue: %d, ThreadID: %d, OurThread: %d",
-         Object->UID, Object->className(), Object->Queue.load(), Object->ThreadID.load(), int(get_thread_id()));
+         Object->UID, Object->className(), Object->Queue.load(), Object->ThreadID.load(), GetThreadID());
       DEBUG_BREAK
    }
    #endif

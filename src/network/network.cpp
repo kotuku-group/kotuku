@@ -28,6 +28,9 @@ sockets and HTTP, please refer to the @NetSocket, @NetServer and @HTTP classes.
 
 #include <kotuku/main.h>
 #include <kotuku/modules/network.h>
+#include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/script.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 
 #include "net_platform.h"
@@ -120,6 +123,8 @@ class extClientSocket : public objClientSocket {
    #endif
 
    extClientSocket(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objClientSocket(ClassPtr, ObjectID) { }
+
+   ~extClientSocket();
 };
 
 //********************************************************************************************************************
@@ -152,6 +157,8 @@ class extNetSocket : public objNetSocket {
       State    = NTC::DISCONNECTED;
       MsgLimit = 1024768;
    }
+
+   ~extNetSocket();
 };
 
 class extNetServer : public extNetSocket {
@@ -189,6 +196,8 @@ class extNetLookup : public objNetLookup {
    std::vector<std::unique_ptr<std::jthread>> Threads; // Simple mechanism for auto-joining all the threads on object destruction
 
    extNetLookup(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objNetLookup(ClassPtr, ObjectID) { }
+
+   ~extNetLookup();
 };
 
 //********************************************************************************************************************
@@ -588,7 +597,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
 static ERR MODOpen(OBJECTPTR Module)
 {
-   Module->set(FID_FunctionList, glFunctions);
+   ((objModule *)Module)->setFunctionList(glFunctions);
    return ERR::Okay;
 }
 
@@ -1066,7 +1075,7 @@ static ERR send_data(T *Self, CPTR Buffer, size_t *Length)
 
 //********************************************************************************************************************
 
-static STRUCTS glStructures = {
+static ModHeader::STRUCTS glStructures = {
    { "DNSEntry",  { sizeof(DNSEntry),  alignof(DNSEntry)  } },
    { "IPAddress", { sizeof(IPAddress), alignof(IPAddress) } },
    { "NetQueue",  { sizeof(NetQueue),  alignof(NetQueue)  } }

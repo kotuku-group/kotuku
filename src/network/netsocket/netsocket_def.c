@@ -52,7 +52,6 @@ static ERR NETSOCKET_FreePlacement(extNetSocket *Self) {
 static const struct ActionArray clNetSocketActions[] = {
    { AC::DataFeed, NETSOCKET_DataFeed },
    { AC::Disable, NETSOCKET_Disable },
-   { AC::Free, NETSOCKET_Free },
    { AC::FreePlacement, NETSOCKET_FreePlacement },
    { AC::FreeWarning, NETSOCKET_FreeWarning },
    { AC::Init, NETSOCKET_Init },

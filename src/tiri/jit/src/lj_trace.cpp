@@ -122,7 +122,7 @@ static void trace_abort_restore_retry_stack(jit_State *J, CSTRING Path)
 void lj_trace_err(jit_State *J, TraceError e)
 {
 #ifdef LUA_USE_ASSERT
-   kt::Log(__FUNCTION__).msg("Aborting JIT trace.");
+   kt::Log(__FUNCTION__).msg("Aborting JIT trace.  Error: %d", int(e));
 #endif
 
    // Mark that we're aborting trace recording. This flag survives through Windows SEH unwinding
@@ -152,7 +152,7 @@ void lj_trace_err(jit_State *J, TraceError e)
 void lj_trace_err_info(jit_State *J, TraceError e)
 {
 #ifdef LUA_USE_ASSERT
-   kt::Log(__FUNCTION__).msg("Aborting JIT trace.");
+   kt::Log(__FUNCTION__).msg("Aborting JIT trace.  Error: %d", int(e));
 #endif
 
    J->abort_in_progress = true; // Mark that we're aborting trace recording.
@@ -883,25 +883,28 @@ void lj_trace_ins(jit_State *J, const BCIns *pc)
    J->pc = pc;
    J->fn = curr_func(J->L);
    J->pt = isluafunc(J->fn) ? funcproto(J->fn) : nullptr;
-   TValue *base_before = J->L->base;
-   TValue *top_before = J->L->top;
+   ptrdiff_t base_before = savestack(J->L, J->L->base);
+   ptrdiff_t top_before = savestack(J->L, J->L->top);
 
    while (true) {
       if (lj_vm_cpcall(J->L, nullptr, (void *)J, trace_state) IS 0) break;
       J->state = TraceState::ERR;
    }
 
-   if (not (J->L->base IS base_before) or not (J->L->top IS top_before)) {
-      log.msg("Stack changed.  Base: %p→%p, Top: %p→%p, State: %d", base_before, J->L->base, top_before, J->L->top, (int)J->state);
+   TValue *expected_base = restorestack(J->L, base_before);
+   TValue *expected_top = restorestack(J->L, top_before);
+   if (not (J->L->base IS expected_base) or not (J->L->top IS expected_top)) {
+      log.msg("Stack changed.  Base: %p→%p, Top: %p→%p, State: %d",
+         expected_base, J->L->base, expected_top, J->L->top, (int)J->state);
 #ifdef LUA_USE_ASSERT
       lj_assertJ(J->state IS TraceState::ERR or J->state IS TraceState::IDLE, "trace recorder mutated stack");
 #endif
       if (J->state IS TraceState::ERR or J->state IS TraceState::IDLE) {
          // try-except may have changed the stack, this stabilises it.  Ideally this
          // doesn't happen in practice, hence the assert above.
-         log.msg("Restoring stack: base=%p, top=%p", (void*)base_before, (void*)top_before);
-         J->L->base = base_before;
-         J->L->top = top_before;
+         log.msg("Restoring stack: base=%p, top=%p", (void*)expected_base, (void*)expected_top);
+         J->L->base = expected_base;
+         J->L->top = expected_top;
       }
    }
 }

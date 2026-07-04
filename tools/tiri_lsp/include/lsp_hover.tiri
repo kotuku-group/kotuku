@@ -196,7 +196,7 @@ function hoverGetDocumentSymbols(Doc:table):array
 
    local result
    try
-      result = debug.validate(Doc.content, 'symbols')
+      result = debug.validate(Doc.content, { symbols = true, path = lspUriToPath(Doc.uri) })
    except ex
       result = nil
    end
@@ -343,7 +343,7 @@ global function resolveHoverContent(TokenInfo, Doc)
       return formatBuiltinHover(token, glDefs.builtins[token])
    end
 
-   -- Check current-document functions parsed by debug.validate(..., 'symbols')
+   -- Check current-document functions parsed by debug.validate(..., { symbols = true })
    document_hover = resolveDocumentSymbolHover(TokenInfo, Doc)
    if document_hover then return document_hover end
 

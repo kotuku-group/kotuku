@@ -128,7 +128,6 @@ set (JIT_KOTUKU_HEADER_DEPENDENCIES
    "${PROJECT_SOURCE_DIR}/include/kotuku/system/types.h"
    "${INCLUDE_OUTPUT}/modules/core.h"
    "${INCLUDE_OUTPUT}/system/errors.h"
-   "${INCLUDE_OUTPUT}/system/fields.h"
    "${INCLUDE_OUTPUT}/system/registry.h"
 )
 
@@ -782,7 +781,7 @@ set (TIRI_TESTS
    type_inference jit pipe pipe_iteration arrow_functions result_filter thunks deferred_expr shadow_assert ranges
    annotations locality anonymous_for key_values debug_filesources compound choose_from enum flow table_slice options
    try_except import processing metatables with thunk_table_index debug malformed_syntax numeric_limits return_types url tips tempus
-   comparison_chaining reserved_keywords compile_if_import overflow
+   comparison_chaining reserved_keywords compile_if_import overflow protected_globals
 )
 
 foreach (TEST_NAME ${TIRI_TESTS})

@@ -87,6 +87,24 @@ end
    assertUriContains(locations, '/scripts/gui/window.tiri', 'Nested import should resolve to SDK script')
 end
 
+@Test function ImportParentRelativeScriptResolution()
+   doc = makeDoc("import '../server'\n")
+   locations = resolveDefinition(doc, { line = 0, character = 11 })
+   assertUriContains(locations, '/tools/tiri_lsp/server.tiri', 'Parent-relative import should resolve from document path')
+end
+
+@Test function ImportAliasScriptResolution()
+   doc = makeDoc("import 'json' as jsonLib\n")
+   locations = resolveDefinition(doc, { line = 0, character = 9 })
+   assertUriContains(locations, '/scripts/json.tiri', 'Aliased import should still resolve its script target')
+end
+
+@Test function ExplicitLocalImportDoesNotFallbackToSdk()
+   doc = makeDoc("import './json'\n")
+   locations = resolveDefinition(doc, { line = 0, character = 10 })
+   assert(not locations, 'Explicit local import should not fall back to SDK script resolution')
+end
+
 @Test function IncludeModuleResolution()
    doc = makeDoc("include 'network'\n")
    locations = resolveDefinition(doc, { line = 0, character = 10 })

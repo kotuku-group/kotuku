@@ -38,7 +38,10 @@ Google Fonts Knowledge page: https://fonts.google.com/knowledge
 #include <kotuku/main.h>
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/font.h>
+#include <kotuku/modules/filesystem.h>
 #include <kotuku/modules/display.h>
+#include <kotuku/modules/config.h>
+#include <kotuku/modules/module.h>
 
 #include <sstream>
 #include <kotuku/strings.hpp>
@@ -102,6 +105,8 @@ class extFont : public objFont {
       GlyphSpacing    = 1.0;
       Style           = "Regular";
    }
+
+   ~extFont();
 };
 
 #include "font_def.c"
@@ -388,7 +393,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       }
 
       ConfigGroups *groups;
-      if (not ((!glConfig->get(FID_Data, groups)) and (not groups->empty()))) {
+      if (not ((!glConfig->getGroups(groups)) and (not groups->empty()))) {
          log.error("Failed to build a database of valid fonts.");
          cleanup();
          return ERR::Failed;
@@ -414,7 +419,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
 static ERR MODOpen(OBJECTPTR Module)
 {
-   Module->set(FID_FunctionList, glFunctions);
+   ((objModule *)Module)->setFunctionList(glFunctions);
    return ERR::Okay;
 }
 
@@ -502,7 +507,7 @@ ERR GetList(FontList **Result)
 
    size_t size = 0;
    ConfigGroups *groups;
-   if (!glConfig->get(FID_Data, groups)) {
+   if (!glConfig->getGroups(groups)) {
       for (auto & [group, keys] : groups[0]) {
          size += sizeof(FontList) + keys["Name"].size() + 1 + keys["Styles"].size() + 1;
          if (keys.contains("Alias")) size += keys["Alias"].size() + 1;
@@ -712,7 +717,7 @@ ERR SelectFont(const std::string_view &Name, const std::string_view &Style, std:
    if (not config.granted()) return log.warning(ERR::AccessObject);
 
    ConfigGroups *groups;
-   if (glConfig->get(FID_Data, groups) != ERR::Okay) return ERR::Search;
+   if (glConfig->getGroups(groups) != ERR::Okay) return ERR::Search;
 
    auto get_meta = [](ConfigKeys &Group) {
       auto meta = FMETA::NIL;
@@ -819,7 +824,7 @@ ERR RefreshFonts(void)
    //    Styles = Bold,Bold Italic,Italic,Regular
 
    ConfigGroups *groups;
-   if (!glConfig->get(FID_Data, groups)) {
+   if (!glConfig->getGroups(groups)) {
       for (auto & [group, keys] : *groups) {
          std::list <std::string> styles;
          for (auto & [k, v] : keys) {
@@ -888,7 +893,7 @@ ERR ResolveFamilyName(const std::string_view &String, std::string_view *Result)
    if (not config.granted()) return log.warning(ERR::AccessObject);
 
    ConfigGroups *groups;
-   if (glConfig->get(FID_Data, groups) != ERR::Okay) return log.warning(ERR::GetField);
+   if (glConfig->getGroups(groups) != ERR::Okay) return log.warning(ERR::GetField);
 
    std::vector<std::string> names;
    kt::split(String, std::back_inserter(names));
@@ -1237,7 +1242,7 @@ static ERR analyse_bmp_font(std::string_view Path, winfnt_header_fields *Header,
 
 //********************************************************************************************************************
 
-static STRUCTS glStructures = {
+static ModHeader::STRUCTS glStructures = {
    { "FontList", { sizeof(FontList), alignof(FontList) } }
 };
 

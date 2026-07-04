@@ -4,6 +4,12 @@
 
 namespace kt {
 
+#ifdef __GNUC__
+#define cmp_fmt(a) __attribute__(a)
+#else
+#define cmp_fmt(a)
+#endif
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-zero-length"
 
@@ -20,7 +26,7 @@ class Log { // C++ wrapper for Kotuku's log functionality
          while (branches > 0) { branches--; LogReturn(); }
       }
 
-      void branch(CSTRING Message = "", ...) __attribute__((format(printf, 2, 3))) {
+      void branch(CSTRING Message = "", ...) cmp_fmt((format(printf, 2, 3))) {
          va_list arg;
          va_start(arg, Message);
          VLogF(VLF::API|VLF::BRANCH, header, Message, arg);
@@ -33,7 +39,7 @@ class Log { // C++ wrapper for Kotuku's log functionality
       void resetBranch() { branches = 0; }
 
       #ifndef NDEBUG
-      void traceBranch(CSTRING Message = "", ...) __attribute__((format(printf, 2, 3))) {
+      void traceBranch(CSTRING Message = "", ...) cmp_fmt((format(printf, 2, 3))) {
          va_list arg;
          va_start(arg, Message);
          VLogF(VLF::TRACE|VLF::BRANCH, header, Message, arg);
@@ -41,7 +47,7 @@ class Log { // C++ wrapper for Kotuku's log functionality
          branches++;
       }
       #else
-      void traceBranch(CSTRING Message = "", ...) __attribute__((format(printf, 2, 3))) { }
+      void traceBranch(CSTRING Message = "", ...) cmp_fmt((format(printf, 2, 3))) { }
       #endif
 
       inline void debranch() {
@@ -56,14 +62,14 @@ class Log { // C++ wrapper for Kotuku's log functionality
          va_end(arg);
       }
 
-      void msg(CSTRING Message, ...) __attribute__((format(printf, 2, 3))) { // Defaults to API level, recommended for modules
+      void msg(CSTRING Message, ...) cmp_fmt((format(printf, 2, 3))) { // Defaults to API level, recommended for modules
          va_list arg;
          va_start(arg, Message);
          VLogF(VLF::API, header, Message, arg);
          va_end(arg);
       }
 
-      void msg(VLF Flags, CSTRING Message, ...) __attribute__((format(printf, 3, 4))) { // Defaults to API level, recommended for modules
+      void msg(VLF Flags, CSTRING Message, ...) cmp_fmt((format(printf, 3, 4))) { // Defaults to API level, recommended for modules
          va_list arg;
          va_start(arg, Message);
          VLogF(Flags, header, Message, arg);
@@ -71,35 +77,35 @@ class Log { // C++ wrapper for Kotuku's log functionality
          if ((Flags & VLF::BRANCH) != VLF::NIL) branches++;
       }
 
-      void detail(CSTRING Message, ...) __attribute__((format(printf, 2, 3))) { // Detailed API message, '--log-xapi' to view
+      void detail(CSTRING Message, ...) cmp_fmt((format(printf, 2, 3))) { // Detailed API message, '--log-xapi' to view
          va_list arg;
          va_start(arg, Message);
          VLogF(VLF::DETAIL, header, Message, arg);
          va_end(arg);
       }
 
-      void pmsg(CSTRING Message, ...) __attribute__((format(printf, 2, 3))) { // "Parent message", uses the scope of the caller
+      void pmsg(CSTRING Message, ...) cmp_fmt((format(printf, 2, 3))) { // "Parent message", uses the scope of the caller
          va_list arg;
          va_start(arg, Message);
          VLogF(VLF::API, nullptr, Message, arg);
          va_end(arg);
       }
 
-      void warning(CSTRING Message, ...) __attribute__((format(printf, 2, 3))) {
+      void warning(CSTRING Message, ...) cmp_fmt((format(printf, 2, 3))) {
          va_list arg;
          va_start(arg, Message);
          VLogF(VLF::WARNING, header, Message, arg);
          va_end(arg); // Breakpoint here
       }
 
-      void error(CSTRING Message, ...) __attribute__((format(printf, 2, 3))) { // NB: Use for messages intended for the user, not the developer
+      void error(CSTRING Message, ...) cmp_fmt((format(printf, 2, 3))) { // NB: Use for messages intended for the user, not the developer
          va_list arg;
          va_start(arg, Message);
          VLogF(VLF::ERROR, header, Message, arg);
          va_end(arg);
       }
 
-      void function(CSTRING Message = "", ...) __attribute__((format(printf, 2, 3))) { // Equivalent to branch() but without a new branch being created
+      void function(CSTRING Message = "", ...) cmp_fmt((format(printf, 2, 3))) { // Equivalent to branch() but without a new branch being created
          va_list arg;
          va_start(arg, Message);
          VLogF(VLF::API|VLF::FUNCTION, header, Message, arg);

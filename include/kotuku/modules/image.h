@@ -37,7 +37,6 @@ class objImage : public Object {
    static constexpr CSTRING CLASS_NAME = "Image";
 
    using create = kt::Create<objImage>;
-   objImage(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID), Quality(80) {}
 
    std::string Path;    // The location of source image data.
    objBitmap * Bitmap;  // Represents image data.
@@ -47,7 +46,7 @@ class objImage : public Object {
    int DisplayWidth;    // The preferred width to use when displaying the image.
    int Quality;         // Defines the quality level to use when saving the image.
    public:
-   objImage() : Object(nullptr, 0), Quality(80) { }
+   objImage(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID), Quality(80) {}
 
    // Action stubs
 
@@ -60,7 +59,7 @@ class objImage : public Object {
       const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
       struct acRead read = { (int8_t *)Buffer, bytes };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
-         *Result = static_cast<U>(read.Result);
+         *Result = U(read.Result);
          return ERR::Okay;
       }
       else { *Result = 0; return error; }
@@ -251,6 +250,6 @@ class objImage : public Object {
 
 namespace fl {
    using namespace kt;
-constexpr FieldValue DisplayWidth(int Value) { return FieldValue(FID_DisplayWidth, Value); }
-constexpr FieldValue DisplayHeight(int Value) { return FieldValue(FID_DisplayHeight, Value); }
+constexpr FieldValue DisplayWidth(int Value) { return FieldValue(strhash("displayWidth"), Value); }
+constexpr FieldValue DisplayHeight(int Value) { return FieldValue(strhash("displayHeight"), Value); }
 }

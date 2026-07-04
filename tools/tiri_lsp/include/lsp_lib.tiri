@@ -256,7 +256,7 @@ global FLUID_KEYWORDS = {
    ['choose'] = true, ['from'] = true, ['when'] = true,
 
    -- Declarations
-   ['function'] = true, ['local'] = true, ['global'] = true, ['thunk'] = true, ['import'] = true,
+   ['function'] = true, ['local'] = true, ['global'] = true, ['thunk'] = true, ['import'] = true, ['as'] = true,
 
    -- Special
    ['defer'] = true, ['catch'] = true, ['raise'] = true, ['check'] = true
@@ -444,7 +444,9 @@ end
 
 @Doc(text="Compute diagnostics for a document using debug.validate()")
 global function computeDiagnostics(Doc:table)
-   result = debug.validate(Doc.content)
+   -- Pass the document's file path so relative imports ('./lib') resolve against its directory rather than the
+   -- LSP server's working directory.
+   result = debug.validate(Doc.content, { path = lspUriToPath(Doc.uri) })
 
    lsp_diags = array<table>
 

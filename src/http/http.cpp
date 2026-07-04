@@ -105,6 +105,9 @@ For information about the HTTP protocol, please refer to the official protocol w
 #include <kotuku/modules/http.h>
 //#include <kotuku/modules/display.h>
 #include <kotuku/modules/network.h>
+#include <kotuku/modules/script.h>
+#include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include "../link/base64.h"
 
@@ -580,7 +583,7 @@ static ERR HTTP_Activate(extHTTP *Self)
    Self->Flags        &= ~(HTF::MOVED|HTF::REDIRECTED);
 
    if ((Self->Socket) and (Self->Socket->State IS NTC::DISCONNECTED)) {
-      Self->Socket->set(FID_Feedback, (APTR)nullptr);
+      Self->Socket->setFeedback(FUNCTION{});
       FreeResource(Self->Socket);
       Self->Socket = nullptr;
       Self->SecurePath = true;
@@ -595,7 +598,7 @@ static ERR HTTP_Activate(extHTTP *Self)
    auto cleanup_activation_failure = [&]() {
       if (Self->flInput) { FreeResource(Self->flInput); Self->flInput = nullptr; }
       if (Self->Socket) {
-         Self->Socket->set(FID_Feedback, (APTR)nullptr);
+         Self->Socket->setFeedback(FUNCTION{});
          FreeResource(Self->Socket);
          Self->Socket = nullptr;
          Self->SecurePath = true;
@@ -732,7 +735,7 @@ static ERR HTTP_Activate(extHTTP *Self)
                if (!Self->Size) {
                   kt::ScopedObjectLock<Object> input(Self->InputObjectID, 3000);
                   if (input.granted()) {
-                     input->get(FID_Size, Self->ContentLength);
+                     Self->ContentLength = input->get<int64_t>(kt::strhash("size"));
                   }
                   else {
                      Self->Error = ERR::Lock;
@@ -887,9 +890,9 @@ static ERR HTTP_Activate(extHTTP *Self)
             (Self->Method IS HTM::PATCH)) {
             Self->Socket->setOutgoing(C_FUNCTION(socket_outgoing));
          }
-         else Self->Socket->set(FID_Outgoing, (APTR)nullptr);
+         else Self->Socket->setOutgoing(FUNCTION{});
       }
-      else Self->Socket->set(FID_Outgoing, (APTR)nullptr);
+      else Self->Socket->setOutgoing(FUNCTION{});
    }
 
    // Buffer the HTTP command string to the socket (will write on connect if we're not connected already).
@@ -967,7 +970,7 @@ static ERR HTTP_Deactivate(extHTTP *Self)
 
       if ((Self->Socket->State IS NTC::DISCONNECTED) or (Self->CurrentState IS HGS::TERMINATED)) {
          log.msg("Terminating socket (disconnected).");
-         Self->Socket->set(FID_Feedback, (APTR)nullptr);
+         Self->Socket->setFeedback(FUNCTION{});
          FreeResource(Self->Socket);
          Self->Socket = nullptr;
          Self->SecurePath = true;
@@ -982,7 +985,7 @@ static ERR HTTP_Deactivate(extHTTP *Self)
 extHTTP::~extHTTP()
 {
    if (Socket) {
-      Socket->set(FID_Feedback, (APTR)nullptr);
+      Socket->setFeedback(FUNCTION{});
       FreeResource(Socket);
    }
 

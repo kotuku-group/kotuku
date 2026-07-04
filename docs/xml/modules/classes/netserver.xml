@@ -178,12 +178,28 @@
     </field>
 
   </fields>
-  <structs>
-    <struct name="IPAddress">
-      <field name="Data" type="INT" size="4">128-bit array for supporting both V4 (32-bit host order) and V6 (8-bit byte order) IP addresses.</field>
-      <field name="Type" type="IPADDR" lookup="IPADDR">Identifies the address Data value as a V4 or V6 address type.</field>
-      <field name="Port" type="INT">For UDP packets, identifies the client port number in host byte order.</field>
-    </struct>
+  <types>
+    <constants lookup="NSF" comment="NetSocket options">
+      <const name="BROADCAST">Enable broadcast (UDP only).</const>
+      <const name="DISABLE_SERVER_VERIFY">Disable SSL server certificate verification for client sockets (testing only).</const>
+      <const name="KEEP_ALIVE">Enable TCP keep-alive probes using operating system defaults.</const>
+      <const name="LOG_ALL">Print extra log messages.</const>
+      <const name="MULTI_CONNECT">Allow multiple connections from the same IP (NetServer only).</const>
+      <const name="SSL">Use Secure Sockets Layer for all communication.</const>
+      <const name="SYNCHRONOUS">Use synchronous (blocking) network calls.</const>
+      <const name="UDP">Use UDP (connectionless datagram protocol) instead of TCP.</const>
+    </constants>
 
+    <constants lookup="NTC" comment="NetSocket states">
+      <const name="CONNECTED">There is an active connection at present.</const>
+      <const name="CONNECTING">A connection is being established.</const>
+      <const name="DISCONNECTED">There is no connection.</const>
+      <const name="HANDSHAKING">An SSL connection is being established.</const>
+      <const name="MULTISTATE">A NetServer reports MULTISTATE because accepted ClientSocket objects track their own states.</const>
+      <const name="RESOLVING">The host name is being resolved.</const>
+    </constants>
+
+  </types>
+  <structs>
   </structs>
 </book>

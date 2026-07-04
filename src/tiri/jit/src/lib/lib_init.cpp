@@ -11,6 +11,7 @@
 #include "lauxlib.h"
 #include "lualib.h"
 #include "lj_arch.h"
+#include "runtime/lj_tab.h"
 #include "runtime/lj_thunk.h"
 #include "runtime/lj_proto_registry.h"
 
@@ -66,3 +67,16 @@ extern void luaL_openlibs(lua_State* L)
    lua_setglobal(L, "_LIB");
 }
 
+extern void lua_protect_globals(lua_State* L)
+{
+   GCtab* globals = tabref(L->env);
+   Node* node = noderef(globals->node);
+
+   // The array part only represents integer keys.  Global names live in the hash part as string keys.
+   for (MSize i = 0; i <= globals->hmask; ++i) {
+      Node* entry = &node[i];
+      if (not tvisnil(&entry->val) and tvisstr(&entry->key)) {
+         strV(&entry->key)->flags |= STRFLAG_PROTECTED_GLOBAL;
+      }
+   }
+}

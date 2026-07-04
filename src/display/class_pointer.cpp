@@ -494,20 +494,19 @@ static void process_ptr_movement(extPointer *Self, struct dcDeviceInput *Input)
 
 //********************************************************************************************************************
 
-static ERR POINTER_Free(extPointer *Self)
+extPointer::~extPointer()
 {
-   acHide(Self);
+   acHide(this);
 
-   if (Self->Bitmap) { FreeResource(Self->Bitmap); Self->Bitmap = nullptr; }
+   if (Bitmap) FreeResource(Bitmap);
 
 /*
    OBJECTPTR object;
-   if ((Self->SurfaceID) and (!AccessObject(Self->SurfaceID, 5000, &object))) {
+   if ((SurfaceID) and (!AccessObject(SurfaceID, 5000, &object))) {
       UnsubscribeFeed(object);
       ReleaseObject(object);
    }
 */
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -1269,7 +1268,7 @@ ERR create_pointer_class(void)
       fl::Methods(clPointerMethods),
       fl::Fields(clPointerFields),
       fl::Size(sizeof(extPointer)),
-      fl::Path(MOD_PATH));
+      fl::Path("modules:display"));
 
    return clPointer ? ERR::Okay : ERR::AddClass;
 }

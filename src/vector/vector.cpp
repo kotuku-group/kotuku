@@ -199,7 +199,7 @@ static ERR MODExpunge(void)
 
 extern ERR MODOpen(OBJECTPTR Module);
 
-static STRUCTS glStructures = {
+static ModHeader::STRUCTS glStructures = {
    { "GradientStop", { sizeof(GradientStop), alignof(GradientStop) } },
    { "MergeSource",  { sizeof(MergeSource),  alignof(MergeSource)  } },
    { "PathCommand",  { sizeof(PathCommand),  alignof(PathCommand)  } },

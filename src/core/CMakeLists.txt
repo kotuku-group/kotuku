@@ -19,68 +19,44 @@ set (FUNCTIONS  # Full paths are required for add_custom_command() dependencies 
    "${CMAKE_CURRENT_SOURCE_DIR}/fs_resolution.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/fs_volumes.cpp")
 
-set (CORE_CLASSES
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_config.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_file.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_metaclass.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_module.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_script.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_storagedevice.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_task.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_thread.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_time.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/compression/class_compression.cpp")
-
-SET (CORE_DEFS
-   "${CMAKE_CURRENT_SOURCE_DIR}/compression/class_compressed_stream_def.c"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_config_def.c"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_file_def.c"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_script_def.c"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_task_def.c"
-   "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_thread_def.c"
-   "${CMAKE_CURRENT_SOURCE_DIR}/compression/class_compression_def.c")
-
 if (KOTUKU_DEFS_AVAILABLE)
    set (CORE_STAMP "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/core_defs.stamp")
-   set (CORE_OUTPUTS
-      ${CORE_DEFS}
-      "${DOCS}/modules/core.xml"
-      "${DOCS}/modules/classes/compressedstream.xml"
-      "${DOCS}/modules/classes/compression.xml"
-      "${DOCS}/modules/classes/config.xml"
-      "${DOCS}/modules/classes/file.xml"
-      "${DOCS}/modules/classes/metaclass.xml"
-      "${DOCS}/modules/classes/module.xml"
-      "${DOCS}/modules/classes/script.xml"
-      "${DOCS}/modules/classes/storagedevice.xml"
-      "${DOCS}/modules/classes/task.xml"
-      "${DOCS}/modules/classes/thread.xml"
-      "${DOCS}/modules/classes/time.xml"
-      "${INCLUDE_OUTPUT}/modules/core.h"
-      "${INCLUDE_OUTPUT}/system/errors.h"
-      "${INCLUDE_OUTPUT}/system/registry.h"
-      "${INCLUDE_OUTPUT}/system/fields.h"
-      "${CMAKE_CURRENT_SOURCE_DIR}/data_functions.c"
-      "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
-      "${CMAKE_CURRENT_SOURCE_DIR}/prototypes.h")
 
-   add_custom_command (
+   set (CORE_OUTPUTS
+      "${DOCS}/modules/core.xml" "${DOCS}/modules/classes/metaclass.xml"
+      "${INCLUDE_OUTPUT}/modules/core.h" "${INCLUDE_OUTPUT}/system/errors.h" "${INCLUDE_OUTPUT}/system/registry.h"
+      "${CMAKE_CURRENT_SOURCE_DIR}/data_functions.c" "${CMAKE_CURRENT_SOURCE_DIR}/idl.h" "${CMAKE_CURRENT_SOURCE_DIR}/prototypes.h")
+
+      add_custom_command (
       OUTPUT "${CORE_STAMP}"
       BYPRODUCTS ${CORE_OUTPUTS}
       COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/errors.tdl" "output=${INCLUDE_OUTPUT}/system/errors.h" "sdk=${PROJECT_SOURCE_DIR}"
       COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/registry.tdl" "output=${INCLUDE_OUTPUT}/system/registry.h" "sdk=${PROJECT_SOURCE_DIR}"
-      COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/fields.tdl" "output=${INCLUDE_OUTPUT}/system/fields.h" "sdk=${PROJECT_SOURCE_DIR}"
       COMMAND ${ORIGO_CMD} ${IDL_C_SCRIPT} "--log-warning" "src=defs/core.tdl" "sdk=${PROJECT_SOURCE_DIR}" "output-proto=prototypes.h" "output-defs=data_functions.c"
-      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/core.tdl" "output=${CMAKE_CURRENT_SOURCE_DIR}/idl.h" "sdk=${PROJECT_SOURCE_DIR}" "format=c"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/core.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "header=#undef MOD_IDL[LF]#define MOD_IDL [DQ]" "format=serial" > "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/time.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "format=serial" >> "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/filesystem.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "format=serial" >> "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/module.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "format=serial" >> "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/script.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "format=serial" >> "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/processes.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "format=serial" >> "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/compression.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "format=serial" >> "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
+      COMMAND ${ORIGO_CMD} ${IDL_COMPILE_SCRIPT} "--log-warning" "src=defs/config.tdl" "output=stdout" "sdk=${PROJECT_SOURCE_DIR}" "footer=[DQ][LF]" "format=serial" >> "${CMAKE_CURRENT_SOURCE_DIR}/idl.h"
       COMMAND ${CMAKE_COMMAND} -E touch "${CORE_STAMP}"
       DEPENDS
          "${CMAKE_CURRENT_SOURCE_DIR}/defs/core.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/time.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/compression.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/filesystem.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/module.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/config.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/time.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/processes.tdl"
+         "${CMAKE_CURRENT_SOURCE_DIR}/defs/common.tdl"
          "${CMAKE_CURRENT_SOURCE_DIR}/defs/errors.tdl"
          "${CMAKE_CURRENT_SOURCE_DIR}/defs/registry.tdl"
-         "${CMAKE_CURRENT_SOURCE_DIR}/defs/fields.tdl"
          "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/idl/common.tdl"
          ${FUNCTIONS}
-         ${CORE_CLASSES}
+         "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_metaclass.cpp"
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       COMMENT "Producing definition files for the Core library"
       VERBATIM)
@@ -89,6 +65,93 @@ if (KOTUKU_DEFS_AVAILABLE)
 
    register_generated_header_target (core_defs)
 endif ()
+
+# Config class
+
+idl_gen ("defs/config.tdl"
+   NAME config_defs
+   OUTPUT "${INCLUDE_OUTPUT}/modules/config.h"
+   BYPRODUCTS
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_config_def.c"
+      "${DOCS}/modules/classes/config.xml"
+   DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/defs/common.tdl"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_config.cpp")
+
+# Module class
+
+idl_gen ("defs/module.tdl"
+   NAME module_defs
+   OUTPUT "${INCLUDE_OUTPUT}/modules/module.h"
+   BYPRODUCTS
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_module_def.c"
+      "${DOCS}/modules/classes/module.xml"
+   DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/defs/common.tdl"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_module.cpp")
+
+# Script class
+
+idl_gen ("defs/script.tdl"
+   NAME script_defs
+   OUTPUT "${INCLUDE_OUTPUT}/modules/script.h"
+   BYPRODUCTS
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_script_def.c"
+      "${DOCS}/modules/classes/script.xml"
+   DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/defs/common.tdl"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_script.cpp")
+
+# Compression & CompressedStream class
+
+idl_gen ("defs/compression.tdl"
+   NAME compression_defs
+   OUTPUT "${INCLUDE_OUTPUT}/modules/compression.h"
+   BYPRODUCTS
+      "${CMAKE_CURRENT_SOURCE_DIR}/compression/class_compressed_stream_def.c"
+      "${CMAKE_CURRENT_SOURCE_DIR}/compression/class_compression_def.c"
+      "${DOCS}/modules/classes/compression.xml"
+      "${DOCS}/modules/classes/compressedstream.xml"
+   DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/defs/common.tdl"
+      "${CMAKE_CURRENT_SOURCE_DIR}/compression/class_compression.cpp"
+      "${CMAKE_CURRENT_SOURCE_DIR}/compression/class_compressed_stream.cpp")
+
+# File class
+
+idl_gen ("defs/filesystem.tdl"
+   NAME filesystem_defs
+   OUTPUT "${INCLUDE_OUTPUT}/modules/filesystem.h"
+   BYPRODUCTS
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_file_def.c"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_storagedevice_def.c"
+      "${DOCS}/modules/classes/file.xml"
+      "${DOCS}/modules/classes/storagedevice.xml"
+   DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/defs/common.tdl"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_file.cpp"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_storagedevice.cpp")
+
+# Process classes
+
+idl_gen ("defs/processes.tdl"
+   NAME process_defs
+   OUTPUT "${INCLUDE_OUTPUT}/modules/processes.h"
+   BYPRODUCTS
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_task_def.c"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_thread_def.c"
+      "${DOCS}/modules/classes/thread.xml"
+      "${DOCS}/modules/classes/task.xml"
+   DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/defs/common.tdl"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_task.cpp"
+      "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_thread.cpp")
+
+# Time class
+
+idl_gen ("defs/time.tdl" NAME time_defs OUTPUT "${INCLUDE_OUTPUT}/modules/time.h"
+   BYPRODUCTS "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_time_def.c" "${DOCS}/modules/classes/time.xml"
+   DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_time.cpp")
 
 if (NOT MSVC)
    # A bug in (MinGW?) GCC requires the following flag is applied to ensure that __packed__ works correctly.

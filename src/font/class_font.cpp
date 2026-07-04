@@ -75,26 +75,6 @@ static ERR FONT_Draw(extFont *Self)
 
 //********************************************************************************************************************
 
-static ERR FONT_Free(extFont *Self)
-{
-   CACHE_LOCK lock(glCacheMutex);
-
-   if (Self->BmpCache) {
-      // Reduce the usage count.  Use a timed delay on freeing the font in case it is used again.
-      Self->BmpCache->OpenCount--;
-      if (!Self->BmpCache->OpenCount) {
-         if (!glCacheTimer) {
-            kt::SwitchContext ctx(modFont);
-            SubscribeTimer(60.0, C_FUNCTION(bitmap_cache_cleaner), &glCacheTimer);
-         }
-      }
-   }
-
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR FONT_Init(extFont *Self)
 {
    kt::Log log;
@@ -951,6 +931,23 @@ static ERR draw_bitmap_font(extFont *Self)
    acUnlock(bitmap);
 
    return error;
+}
+
+//********************************************************************************************************************
+
+extFont::~extFont() {
+   CACHE_LOCK lock(glCacheMutex);
+
+   if (BmpCache) {
+      // Reduce the usage count.  Use a timed delay on freeing the font in case it is used again.
+      BmpCache->OpenCount--;
+      if (!BmpCache->OpenCount) {
+         if (!glCacheTimer) {
+            kt::SwitchContext ctx(modFont);
+            SubscribeTimer(60.0, C_FUNCTION(bitmap_cache_cleaner), &glCacheTimer);
+         }
+      }
+   }
 }
 
 //********************************************************************************************************************

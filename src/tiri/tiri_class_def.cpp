@@ -34,7 +34,6 @@ static ERR TIRI_FreePlacement(extTiri *Self) {
 static const struct ActionArray clTiriActions[] = {
    { AC::Activate, TIRI_Activate },
    { AC::DataFeed, TIRI_DataFeed },
-   { AC::Free, TIRI_Free },
    { AC::FreePlacement, TIRI_FreePlacement },
    { AC::Init, TIRI_Init },
    { AC::NewChild, TIRI_NewChild },

@@ -74,7 +74,9 @@ void Scintilla::Menu::Show(Scintilla::Point pt, Window &Window)
 
    winsurface_id = getSurfaceID(&Window);
 
-   menu->setFields(fl::Relative(winsurface_id), fl::X(pt.x), fl::Y(pt.y));
+   menu->setRelative(winsurface_id);
+   menu->setX(pt.x);
+   menu->setY(pt.y);
 
    /* Get the surface ID */
    //OBJECTID surface_id;

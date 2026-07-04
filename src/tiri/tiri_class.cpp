@@ -15,6 +15,7 @@ The Tiri class provides functionality for running scripts written in the Tiri pr
 #include <kotuku/main.h>
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/tiri.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include <algorithm>
 #include <array>
@@ -119,7 +120,6 @@ static ERR compiled_payload(std::string_view Source, std::string_view &Payload)
 
 static ERR TIRI_Activate(extTiri *);
 static ERR TIRI_DataFeed(extTiri *, struct acDataFeed *);
-static ERR TIRI_Free(extTiri *);
 static ERR TIRI_Init(extTiri *);
 static ERR TIRI_NewChild(extTiri *, struct acNewChild &);
 static ERR TIRI_Query(extTiri *);
@@ -433,15 +433,13 @@ static ERR TIRI_DataFeed(extTiri *Self, struct acDataFeed *Args)
 
 //********************************************************************************************************************
 
-static ERR TIRI_Free(extTiri *Self)
+extTiri::~extTiri()
 {
-   if (Self->FocusEventHandle) { UnsubscribeEvent(Self->FocusEventHandle); Self->FocusEventHandle = nullptr; }
+   if (FocusEventHandle) { UnsubscribeEvent(FocusEventHandle); FocusEventHandle = nullptr; }
 
-   auto lua = Self->Lua;
-   Self->Lua = nullptr; // Release the Lua state now because the Free action manager can reference it on return
+   auto lua = Lua;
+   Lua = nullptr; // Release the Lua state now because the Free action manager can reference it on return
    if (lua) lua_close(lua);
-
-   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -614,6 +612,7 @@ static ERR TIRI_Query(extTiri *Self)
          SetName(core, "mSys");
          new_module(Self->Lua, core);
          lua_setglobal(Self->Lua, "mSys");
+         lua_protect_globals(Self->Lua);
       }
       else {
          log.warning("Failed to create module object.");

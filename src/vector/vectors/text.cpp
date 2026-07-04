@@ -60,7 +60,6 @@ where large glyphs were oriented around sharp corners.  The process would look s
 
 const int DEFAULT_WEIGHT = 400;
 
-static FIELD FID_FreetypeFace;
 objConfig *glFontConfig = nullptr;
 
 //********************************************************************************************************************
@@ -2090,8 +2089,6 @@ static const FieldArray clTextFields[] = {
 
 static ERR init_text(void)
 {
-   FID_FreetypeFace = strihash("FreetypeFace");
-
    OBJECTID id;
    if (!FindObject("cfgSystemFonts", CLASSID::CONFIG, &id)) {
       glFontConfig = (objConfig *)GetObjectPtr(id);

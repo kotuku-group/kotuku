@@ -91,8 +91,7 @@ static const CSTRING names[] = {
   "EGL_CONFORMANT"
 };
 
-static void printConfig(EGLDisplay display, EGLConfig config) __attribute__ ((unused));
-static void printConfig(EGLDisplay display, EGLConfig config) {
+[[maybe_unused]] static void printConfig(EGLDisplay display, EGLConfig config) {
    kt::Log log(__FUNCTION__);
    int value[1];
 
@@ -362,29 +361,28 @@ static ERR DISPLAY_Focus(extDisplay *Self)
 
 //********************************************************************************************************************
 
-static ERR DISPLAY_Free(extDisplay *Self)
+extDisplay::~extDisplay()
 {
    kt::Log log;
 
-   if ((Self->Flags & SCR::AUTO_SAVE) != SCR::NIL) {
+   if ((Flags & SCR::AUTO_SAVE) != SCR::NIL) {
       log.trace("Autosave enabled.");
-      acSaveSettings(Self);
+      acSaveSettings(this);
    }
    else log.trace("Autosave disabled.");
 
 #ifdef __xwindows__
    XEvent xevent;
 
-   if (Self->WindowHandle IS (APTR)glDisplayWindow) glDisplayWindow = 0;
+   if (WindowHandle IS (APTR)glDisplayWindow) glDisplayWindow = 0;
 
-   if (Self->XPixmap) {
-      XFreePixmap(XDisplay, Self->XPixmap);
-      Self->XPixmap = 0;
-      ((extBitmap *)Self->Bitmap)->x11.drawable = 0;
+   if (XPixmap) {
+      XFreePixmap(XDisplay, XPixmap);
+      ((extBitmap *)Bitmap)->x11.drawable = 0;
    }
 
-   if (Self->XWindowHandle) {
-      if (auto colormap = glX11Colormaps.find(Self->XWindowHandle); colormap != glX11Colormaps.end()) {
+   if (XWindowHandle) {
+      if (auto colormap = glX11Colormaps.find(XWindowHandle); colormap != glX11Colormaps.end()) {
          XFreeColormap(XDisplay, colormap->second);
          glX11Colormaps.erase(colormap);
       }
@@ -393,13 +391,13 @@ static ERR DISPLAY_Free(extDisplay *Self)
    // Kill all expose events associated with the X Window owned by the display
 
    if (XDisplay) {
-      while (XCheckWindowEvent(XDisplay, Self->XWindowHandle,
+      while (XCheckWindowEvent(XDisplay, XWindowHandle,
          ExposureMask|FocusChangeMask|StructureNotifyMask, &xevent) IS True);
 
-      if ((Self->Flags & SCR::CUSTOM_WINDOW) IS SCR::NIL) {
-         if (Self->WindowHandle) {
-            XDestroyWindow(XDisplay, Self->XWindowHandle);
-            Self->WindowHandle = nullptr;
+      if ((Flags & SCR::CUSTOM_WINDOW) IS SCR::NIL) {
+         if (WindowHandle) {
+            XDestroyWindow(XDisplay, XWindowHandle);
+            WindowHandle = nullptr;
          }
       }
    }
@@ -408,11 +406,8 @@ static ERR DISPLAY_Free(extDisplay *Self)
 #endif
 
 #ifdef _WIN32
-   if ((Self->Flags & SCR::CUSTOM_WINDOW) IS SCR::NIL) {
-      if (Self->WindowHandle) {
-         winDestroyWindow(Self->WindowHandle);
-         Self->WindowHandle = nullptr;
-      }
+   if ((Flags & SCR::CUSTOM_WINDOW) IS SCR::NIL) {
+      if (WindowHandle) winDestroyWindow(WindowHandle);
    }
 #endif
 
@@ -420,17 +415,15 @@ static ERR DISPLAY_Free(extDisplay *Self)
    glActiveDisplayID = 0;
 #endif
 
-   acHide(Self);  // Hide the display.  In OpenGL this will remove the display resources.
+   acHide(this);  // Hide the display.  In OpenGL this will remove the display resources.
 
    // Free the display's bitmap buffer
 
-   if (Self->BufferID) { FreeResource(Self->BufferID); Self->BufferID = 0; }
+   if (BufferID) FreeResource(BufferID);
 
    // Free the display's video bitmap
 
-   if (Self->Bitmap) { FreeResource(Self->Bitmap); Self->Bitmap = nullptr; }
-
-   return ERR::Okay;
+   if (Bitmap) FreeResource(Bitmap);
 }
 
 /*********************************************************************************************************************
@@ -2919,7 +2912,7 @@ ERR create_display_class(void)
       fl::Methods(clDisplayMethods),
       fl::Fields(DisplayFields),
       fl::Size(sizeof(extDisplay)),
-      fl::Path(MOD_PATH));
+      fl::Path("modules:display"));
 
    return clDisplay ? ERR::Okay : ERR::AddClass;
 }

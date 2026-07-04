@@ -731,12 +731,12 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
     <tags>object-owns-result, nullable-result, pure-query</tags>
     <input>
       <param type="OBJECTPTR" name="Object">The target object.</param>
-      <param type="UINT" name="FieldID">The 'FID' number to lookup.</param>
+      <param type="UINT" name="FieldID">The hash of the field name to lookup.</param>
       <param type="OBJECTPTR *" name="Target">(Optional) The object that represents the field is returned here (in case a field belongs to an integrated child object).</param>
     </input>
     <description>
 <p>The FindField() function checks if an object supports a specified field by scanning its class descriptor for a <code>FieldID</code>. If a matching field is declared, its descriptor is returned.  For example:</p>
-<pre>if (auto field = FindField(Display, FID_Width, NULL)) {
+<pre>if (auto field = FindField(Display, strhash(&quot;width&quot;), nullptr)) {
    log.msg(&quot;The field name is \&quot;%s\&quot;.&quot;, field-&gt;Name);
 }
 </pre>
@@ -949,6 +949,19 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
 <p>The state values in the structure are static and will not change during runtime.</p>
     </description>
     <result type="const struct SystemState *">A read-only <st>SystemState</st> structure is returned.</result>
+  </function>
+
+  <function>
+    <name>GetThreadID</name>
+    <category>System</category>
+    <comment>Returns the UID of the current thread.</comment>
+    <prototype>INT GetThreadID()</prototype>
+    <tiriPrototype>num = GetThreadID()</tiriPrototype>
+    <tags>pure-query</tags>
+    <description>
+<p>Returns a unique ID for the active thread.  The ID has no relationship with the host operating system and is not re-used.</p>
+    </description>
+    <result type="INT">A unique ID for the active thread is returned.</result>
   </function>
 
   <function>
@@ -2075,7 +2088,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <tiriPrototype>err = WakeThread(Thread:num, Stop:num)</tiriPrototype>
     <tags>blocking</tags>
     <input>
-      <param type="INT" name="Thread">The target thread's unique ID, as returned by <code>GetResource(RES::THREAD_ID)</code>.</param>
+      <param type="INT" name="Thread">The target thread's unique ID, as returned by <code>GetThreadID()</code>.</param>
       <param type="INT" name="Stop">If <code>true</code>, the target thread will be put into a stopping state.</param>
     </input>
     <description>
@@ -2142,17 +2155,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="Write"/>
     </constants>
 
-    <constants lookup="ALIGN" comment="Universal values for alignment of graphics and text">
-      <const name="BOTTOM">Align to bottom</const>
-      <const name="CENTER">Synonym for <code>HORIZONTAL | VERTICAL</code></const>
-      <const name="HORIZONTAL">Align to horizontal center</const>
-      <const name="LEFT">Align to left</const>
-      <const name="MIDDLE">Synonym for <code>HORIZONTAL | VERTICAL</code></const>
-      <const name="RIGHT">Align to right</const>
-      <const name="TOP">Align to top</const>
-      <const name="VERTICAL">Align to vertical center</const>
-    </constants>
-
     <constants lookup="CCF" comment="Class categories">
       <const name="AUDIO">Audio classes interface with audio hardware and drivers for audio playback and recording purposes.</const>
       <const name="COMMAND">Command classes perform specific procedures, like copying or moving a file, managing volumes or executing a program.</const>
@@ -2168,82 +2170,11 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="TOOL">Tools provide interactive services for the user.</const>
     </constants>
 
-    <constants lookup="CF" comment="Compression stream formats">
-      <const name="DEFLATE">The 'deflate' format</const>
-      <const name="GZIP">The 'gzip' format</const>
-      <const name="ZLIB">The 'zlib' format</const>
-    </constants>
-
-    <constants lookup="CLF" comment="Flags for the MetaClass.">
-      <const name="INHERIT_LOCAL">Inherit the functionality of local objects defined in the class spec.</const>
-      <const name="NO_OWNERSHIP">Objects created will not be tracked to the creating process, nor any parent object (<function module="Core">SetOwner</function> will not work either).</const>
-    </constants>
-
-    <constants lookup="CLIPMODE" comment="Clipboard modes">
-      <const name="COPY">Copy from the clipboard.</const>
-      <const name="CUT">Cut from the clipboard.</const>
-      <const name="PASTE">Paste from the clipboard.</const>
-    </constants>
-
-    <constants lookup="CMF" comment="Compression flags">
-      <const name="APPLY_SECURITY">When decompressing, apply individual file permissions if they are available in the compression file.</const>
-      <const name="CREATE_FILE">Create a new archive only if the source file does not already exist.</const>
-      <const name="NEW">Force the creation of a new file archive.  Any existing file data at the target location will be destroyed.</const>
-      <const name="NO_LINKS">Treat symbolic links as normal files/folders.</const>
-      <const name="PASSWORD">A password has been set on the object.</const>
-      <const name="READ_ONLY">Forces read-only access, which is strongly recommended if an existing archive is being opened with no modifications intended.  If this flag is not set, initialisation can fail if the user does not have write access to the source file.</const>
-    </constants>
-
-    <constants lookup="CNF" comment="Flags for the Config class.">
-      <const name="AUTO_SAVE">When the configuration object is freed, automatically save the configuration data back to the original file source.</const>
-      <const name="NEW">On initialisation, do not load any data from the referenced configuration file.</const>
-      <const name="OPTIONAL_FILES">Files are optional (do not fail if a requested file does not exist).</const>
-      <const name="STRIP_QUOTES">Removes quotes from key values that are quote-encapsulated.</const>
-    </constants>
-
     <constants lookup="CONTYPE" comment="Console types">
       <const name="HANDLE">Redirected to a handle</const>
       <const name="MANUAL">Console created manually</const>
       <const name="NONE">No console available</const>
       <const name="TERMINAL">Launched from a terminal</const>
-    </constants>
-
-    <constants lookup="DATA" comment="Data codes">
-      <const name="AUDIO">Audio file data, recognised by the Sound class</const>
-      <const name="CONTENT">Document content (between XML tags) - sent by document objects only</const>
-      <const name="DEVICE_INPUT">Device activity</const>
-      <const name="FILE">File location (the data will reflect the complete file path)</const>
-      <const name="IMAGE">Image file data, recognised by the Image class</const>
-      <const name="INPUT_READY">Device input that has been transformed into user input</const>
-      <const name="RAW">Raw unprocessed data</const>
-      <const name="RECEIPT">Receipt for item data, in response to an earlier request</const>
-      <const name="RECORD">Database record</const>
-      <const name="REQUEST">Make a request for item data</const>
-      <const name="TEXT">Standard ASCII text</const>
-      <const name="XML">Markup based text data.  NOTE - For clipboard data, the top-level encapsulating tag must declare the type of XML, e.g. 'html', 'ripple'.  For plain XML, use 'xml'</const>
-    </constants>
-
-    <constants lookup="DEVICE">
-      <const name="BOOKMARK">This marker indicates that the presented volume is a bookmark and not a device name.</const>
-      <const name="COMPACT_DISC">Compact disc style device</const>
-      <const name="FIXED">Catch-all for fixed media devices that are not directly identifiable.</const>
-      <const name="FLOPPY_DISK">Floppy disk style device</const>
-      <const name="HARD_DISK">Hard disk style device</const>
-      <const name="MEMORY">Device is RAM, ROM, WORM, NVRAM, flashdisk or other form of memory.  Does not guarantee a fast connection as it could be over a slow USB 1.1 connection for example</const>
-      <const name="MODEM">Device is a modem.</const>
-      <const name="NETWORK">Device represents a network link</const>
-      <const name="PRINTER">Device is a paper-based printer.</const>
-      <const name="PRINTER_3D">Device is a three dimensional printer.</const>
-      <const name="READ">Device is readable</const>
-      <const name="REMOVABLE">Device media is removable from the hardware</const>
-      <const name="REMOVEABLE">Device media is removable from the hardware</const>
-      <const name="SCANNER">Device is a two dimensional scanner.</const>
-      <const name="SCANNER_3D">Device is a three dimensional scanner.</const>
-      <const name="SOFTWARE">Device is virtual/software defined</const>
-      <const name="TAPE">Tape/Stream style device</const>
-      <const name="TEMPORARY">All storage is temporary</const>
-      <const name="USB">Removable USB storage device.  May be further qualified by <code>HARD_DISK</code>, <code>FLOPPY_DISK</code> etc</const>
-      <const name="WRITE">Device is writeable</const>
     </constants>
 
     <constants lookup="EVG" comment="Event categories.">
@@ -2266,113 +2197,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="COPY_FILE">A file is to be, or has been copied.</const>
       <const name="DELETE_FILE">A file is to be, or has been deleted.</const>
       <const name="MOVE_FILE">A file is to be, or has been moved.</const>
-    </constants>
-
-    <constants lookup="FD" comment="Field descriptors.">
-      <const name="ALLOC">Indicates the returned value is a dynamic allocation that needs to be manually freed (by default is a memory pointer, can be an object if combined with <code>FD_OBJECT</code>)</const>
-      <const name="ARRAY">Indicates an array of values.  Follow with <code>ARRAYSIZE</code> if used in a function.</const>
-      <const name="ARRAYSIZE">FUNCDEF Overrides <code>LOOKUP</code>.  Pair with <code>ARRAY</code> to indicate total elements in the array.  It is preferred that any null terminator is not counted.  If <code>ARRAYSIZE</code> not specified, <code>ARRAY</code> must be null-terminated.</const>
-      <const name="BUFFER">FUNCDEF Overrides <code>WRITE</code>.  Indicates a buffer that can be filled with data by the function if paired with <code>RESULT</code>; must be paired with <code>BUFSIZE</code> in second argument.</const>
-      <const name="BUFSIZE">FUNCDEF Overrides <code>LOOKUP</code>.  Pair with <code>BUFFER</code> to indicate the byte size of the buffer memory.</const>
-      <const name="BYTE">8 bit integer.</const>
-      <const name="CLASS_TYPES">All types that directly contribute to the core definition of a C/C++ type</const>
-      <const name="CPP">Use the C++ variant of the indicated type, e.g. <code>ARRAY</code> is a <code>kt::vector</code>.</const>
-      <const name="CUSTOM"/>
-      <const name="DOUBLE">64 bit float.</const>
-      <const name="DOUBLERESULT">For actions and methods</const>
-      <const name="ERROR">FUNCDEF</const>
-      <const name="FLAGS">CLASSDEF</const>
-      <const name="FLOAT">32 bit float.  Not valid for use in class definitions.</const>
-      <const name="FUNCTION">Intended for callbacks, uses the rkFunction structure.</const>
-      <const name="FUNCTIONPTR">Synonym for <code>PTR | FUNCTION</code></const>
-      <const name="I">Synonym for <code>INIT</code></const>
-      <const name="INIT">CLASSDEF</const>
-      <const name="INT">32 bit integer.</const>
-      <const name="INT64">64 bit integer.</const>
-      <const name="INT64RESULT">For actions and methods</const>
-      <const name="INTRESULT">For actions and methods</const>
-      <const name="LOCAL">CLASSDEF Pointer to an object that is local to the class</const>
-      <const name="LOOKUP">CLASSDEF</const>
-      <const name="MUTABLE">FUNCDEF Overrides <code>VIRTUAL</code>.  The function will overwrite incoming BUFFER or STRING content.  If used in conjunction with the RESULT flag, an empty buffer is expected for output.</const>
-      <const name="NORMALISED">Supplementary, indicates a normalised float value for multiplicative scaling.</const>
-      <const name="OBJECT">Supplementary, can be used with ints (for IDs) or pointers</const>
-      <const name="OBJECTID">Synonym for <code>INT | OBJECT</code></const>
-      <const name="OBJECTPTR">Synonym for <code>PTR | OBJECT</code></const>
-      <const name="POINTER">Pointer (32 or 64 bit).</const>
-      <const name="PRIVATE">Synonym for <code>SYSTEM</code></const>
-      <const name="PTR">Synonym for <code>POINTER</code></const>
-      <const name="PTRBUFFER">The next argument should be <code>INT|BUFSIZE</code></const>
-      <const name="PTRRESULT">Use for pointer-based value results only</const>
-      <const name="PTRSIZE">Synonym for <code>BUFSIZE</code></const>
-      <const name="PTR_DOUBLERESULT">Use for pointer-based value results only.</const>
-      <const name="PTR_INT64RESULT">Use for pointer-based value results only.</const>
-      <const name="PTR_INTRESULT">Use for pointer-based value results only.</const>
-      <const name="PURE">Supplementary, indicates that the Getter function for a field is non-mutating and context free (inc. non-logging).</const>
-      <const name="R">Synonym for <code>READ</code></const>
-      <const name="READ">CLASSDEF</const>
-      <const name="RESOURCE">The referenced struct or pointer is a special resource.  Changes some behaviours, e.g. a resourced struct will use direct value references rather than being copied in Tiri.</const>
-      <const name="RESULT">FUNCDEF Overrides <code>READ</code></const>
-      <const name="RI">Synonym for <code>READ | INIT</code></const>
-      <const name="RW">Synonym for <code>READ | WRITE</code></const>
-      <const name="SCALED">Synonym for <code>NORMALISED</code></const>
-      <const name="STR">Synonym for <code>STRING</code></const>
-      <const name="STRING">Pointer to a string.</const>
-      <const name="STRRESULT">Synonym for <code>STR | RESULT</code></const>
-      <const name="STRUCT">Supplementary, defines the field as a structure reference.  MUST be combined with <code>FD_POINTER</code>.  If used in a class, it is possible to name the structure definition in field-&gt;Arg</const>
-      <const name="SYNONYM">CLASSDEF Use to declare fields that duplicate the functionality of another field.</const>
-      <const name="SYSTEM">CLASSDEF System, internal and private fields.</const>
-      <const name="TAGS">FUNCDEF Overrides <code>INIT</code></const>
-      <const name="UNIT">A value that describes a display unit.</const>
-      <const name="UNSIGNED">Supplementary, integer value is unsigned.</const>
-      <const name="VARTAGS">FUNCDEF Overrides <code>FLAGS</code>.  Use for 64-bit taglists that require value definitions, e.g. <code>TDOUBLE</code>, <code>TINT</code> etc.</const>
-      <const name="VIRTUAL">CLASSDEF Ensures that the field has no physical representation in the structure.</const>
-      <const name="VOID"/>
-      <const name="W">Synonym for <code>WRITE</code></const>
-      <const name="WORD">16 bit integer.</const>
-      <const name="WRITE">CLASSDEF</const>
-    </constants>
-
-    <constants lookup="FDB" comment="Feedback event indicators.">
-      <const name="COMPRESS_FILE">A file or folder is being added to a compressed stream.</const>
-      <const name="DECOMPRESS_FILE">A file is being decompressed to a filesystem path.</const>
-      <const name="DECOMPRESS_OBJECT">A file is being decompressed into an object.</const>
-      <const name="REMOVE_FILE">A file is being removed from a compressed stream.</const>
-    </constants>
-
-    <constants lookup="FDL" comment="Options for the File Delete() method.">
-      <const name="FEEDBACK">Automatically manage user feedback for deleting files by presenting dialog boxes.</const>
-    </constants>
-
-    <constants lookup="FDT" comment="Flags for the SetDate() file method.">
-      <const name="ACCESSED">The date on which the file was last accessed by a user or application.</const>
-      <const name="ARCHIVED">The date on which the file was most recently archived.  Not supported by most filesystems.</const>
-      <const name="CREATED">The date on which the file was created.  On some host platforms this datestamp may be read-only.</const>
-      <const name="MODIFIED">The date on which the file was last modified.</const>
-    </constants>
-
-    <constants lookup="FFR" comment="Return codes available to the feedback routine">
-      <const name="ABORT">Abort the entire operation.</const>
-      <const name="OKAY">Continue processing uninterrupted.</const>
-      <const name="SKIP">Skip processing of this entity.</const>
-    </constants>
-
-    <constants lookup="FL" comment="File flags">
-      <const name="APPROXIMATE">Allows fuzzy matching of the file path by ignoring the file extension; for instance opening 'screenshot.png' when only 'screenshot.jpg' exists in the same folder, the 'screenshot.jpg' file will be opened.  If multiple files could potentially match to the file name, the file object will select the first match that is encountered.</const>
-      <const name="BUFFER">Activates a special mode in which the file data is stored in a memory buffer rather than a disk file.  Set the Size field to a value of at least 1 so that the initial buffer size is configured.  In this mode many of the available file operations are meaningless except for the Read, Write and Seek actions.</const>
-      <const name="DEVICE">The file is a system device (must set if opening a device for read/write operations)</const>
-      <const name="DIRECTORY">The file object represents a folder.</const>
-      <const name="EXCLUDE_FILES">Exclude files when scanning this folder.</const>
-      <const name="EXCLUDE_FOLDERS">Exclude folders when scanning this folder.</const>
-      <const name="FILE">Explicitly declares the file object as an entity that stores content (as opposed to a device or folder for example).</const>
-      <const name="FOLDER">The file object represents a folder.</const>
-      <const name="LINK">Read-Only.  Indicates that the file is a symbolic link or shortcut to another file.</const>
-      <const name="LOOP">In loop mode, the file object's position marker for read/write operations is allowed to extend past the actual file size.  Any read/write operation beyond the file size will loop back to the file at a corrected offset - for example, reading position 330 of a 100 byte file will start the operation from the 30th byte.  Loop mode does not affect any other area besides the read, write and seek operations.  The loop feature is typically used to create multimedia data streams with minimal effort.</const>
-      <const name="NEW">Required when creating a new file.  If a file with the same name exists, its contents will be destroyed. If however the existing file is locked, the initalisation process will fail.</const>
-      <const name="READ">Required if the file needs to be opened for read access.</const>
-      <const name="RESET_DATE">For internal use only</const>
-      <const name="STREAM">File data is streamed (e.g. PIPE, FIFO, socket) and may be accessed locally or via a network.</const>
-      <const name="VIRTUAL">Path is to a virtual device.</const>
-      <const name="WRITE">Prepares a file for writing data, starting at byte position 0.  To start writing from the end of a file, use the Seek action after the file has been initialised.</const>
     </constants>
 
     <constants lookup="IDTYPE" comment="Types for AllocateID()">
@@ -2420,193 +2244,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="SECONDARY">Indicates to the receiver of this message that it is not the primary/original recipient</const>
     </constants>
 
-    <constants lookup="KEY" comment="Raw key codes">
-      <const name="A"/>
-      <const name="APOSTROPHE"/>
-      <const name="AT"/>
-      <const name="B"/>
-      <const name="BACK"/>
-      <const name="BACKSPACE"/>
-      <const name="BACK_SLASH"/>
-      <const name="BREAK"/>
-      <const name="C"/>
-      <const name="CALL"/>
-      <const name="CAMERA"/>
-      <const name="CANCEL"/>
-      <const name="CAPS_LOCK"/>
-      <const name="CLEAR"/>
-      <const name="COMMA"/>
-      <const name="D"/>
-      <const name="DELETE"/>
-      <const name="DOT"/>
-      <const name="DOWN"/>
-      <const name="E"/>
-      <const name="EIGHT"/>
-      <const name="END"/>
-      <const name="END_CALL"/>
-      <const name="ENTER"/>
-      <const name="EQUALS"/>
-      <const name="ESCAPE"/>
-      <const name="EXECUTE"/>
-      <const name="F"/>
-      <const name="F1"/>
-      <const name="F10"/>
-      <const name="F11"/>
-      <const name="F12"/>
-      <const name="F13"/>
-      <const name="F14"/>
-      <const name="F15"/>
-      <const name="F16"/>
-      <const name="F17"/>
-      <const name="F18"/>
-      <const name="F19"/>
-      <const name="F2"/>
-      <const name="F20"/>
-      <const name="F3"/>
-      <const name="F4"/>
-      <const name="F5"/>
-      <const name="F6"/>
-      <const name="F7"/>
-      <const name="F8"/>
-      <const name="F9"/>
-      <const name="FIND"/>
-      <const name="FIVE"/>
-      <const name="FORWARD"/>
-      <const name="FOUR"/>
-      <const name="G"/>
-      <const name="H"/>
-      <const name="HELP"/>
-      <const name="HOME"/>
-      <const name="I"/>
-      <const name="INSERT"/>
-      <const name="J"/>
-      <const name="K"/>
-      <const name="L"/>
-      <const name="LEFT"/>
-      <const name="LENS_FOCUS"/>
-      <const name="LESS_GREATER"/>
-      <const name="LIST_END"/>
-      <const name="L_ALT"/>
-      <const name="L_COMMAND"/>
-      <const name="L_CONTROL"/>
-      <const name="L_SHIFT"/>
-      <const name="L_SQUARE"/>
-      <const name="M"/>
-      <const name="MACRO"/>
-      <const name="MENU"/>
-      <const name="MINUS"/>
-      <const name="MUTE"/>
-      <const name="N"/>
-      <const name="NEXT"/>
-      <const name="NINE"/>
-      <const name="NP_0"/>
-      <const name="NP_1"/>
-      <const name="NP_2"/>
-      <const name="NP_3"/>
-      <const name="NP_4"/>
-      <const name="NP_5"/>
-      <const name="NP_6"/>
-      <const name="NP_7"/>
-      <const name="NP_8"/>
-      <const name="NP_9"/>
-      <const name="NP_BAR"/>
-      <const name="NP_DECIMAL"/>
-      <const name="NP_DIVIDE"/>
-      <const name="NP_DOT"/>
-      <const name="NP_ENTER"/>
-      <const name="NP_MINUS"/>
-      <const name="NP_MULTIPLY"/>
-      <const name="NP_PLUS"/>
-      <const name="NP_PLUS_MINUS"/>
-      <const name="NP_SEPARATOR"/>
-      <const name="NUM_LOCK"/>
-      <const name="O"/>
-      <const name="ONE"/>
-      <const name="P"/>
-      <const name="PAGE_DOWN"/>
-      <const name="PAGE_UP"/>
-      <const name="PAUSE"/>
-      <const name="PERIOD"/>
-      <const name="PLAY"/>
-      <const name="PLUS"/>
-      <const name="POUND"/>
-      <const name="POWER"/>
-      <const name="PREVIOUS"/>
-      <const name="PRINT"/>
-      <const name="PRT_SCR"/>
-      <const name="Q"/>
-      <const name="R"/>
-      <const name="REDO"/>
-      <const name="REVERSE_QUOTE"/>
-      <const name="REWIND"/>
-      <const name="RIGHT"/>
-      <const name="R_ALT"/>
-      <const name="R_COMMAND"/>
-      <const name="R_CONTROL"/>
-      <const name="R_SHIFT"/>
-      <const name="R_SQUARE"/>
-      <const name="S"/>
-      <const name="SCR_LOCK"/>
-      <const name="SELECT"/>
-      <const name="SEMI_COLON"/>
-      <const name="SEVEN"/>
-      <const name="SIX"/>
-      <const name="SLASH"/>
-      <const name="SLEEP"/>
-      <const name="SPACE"/>
-      <const name="STAR"/>
-      <const name="STOP"/>
-      <const name="SYSRQ"/>
-      <const name="T"/>
-      <const name="TAB"/>
-      <const name="THREE"/>
-      <const name="TWO"/>
-      <const name="U"/>
-      <const name="UNDO"/>
-      <const name="UP"/>
-      <const name="V"/>
-      <const name="VOLUME_DOWN"/>
-      <const name="VOLUME_UP"/>
-      <const name="W"/>
-      <const name="WAKE"/>
-      <const name="WIN_CONTROL"/>
-      <const name="X"/>
-      <const name="Y"/>
-      <const name="Z"/>
-      <const name="ZERO"/>
-    </constants>
-
-    <constants lookup="KQ" comment="Special qualifier flags">
-      <const name="ALT">Synonym for <code>L_ALT | R_ALT</code></const>
-      <const name="ALTGR">Synonym for <code>R_ALT</code></const>
-      <const name="CAPS_LOCK">Caps-Lock is on</const>
-      <const name="COMMAND">Synonym for <code>L_COMMAND | R_COMMAND</code></const>
-      <const name="CONTROL">Synonym for <code>L_CONTROL | R_CONTROL</code></const>
-      <const name="CTRL">Synonym for <code>L_CONTROL | R_CONTROL</code></const>
-      <const name="DEAD_KEY">This key will be affected by a previously pressed dead-key</const>
-      <const name="INFO">Synonym for <code>REPEAT | RELEASED | PRESSED | NOT_PRINTABLE | CAPS_LOCK</code></const>
-      <const name="INSTRUCTION_KEYS">Synonym for <code>ALT | CONTROL</code></const>
-      <const name="L_ALT">Left Alt is held</const>
-      <const name="L_COMMAND">Left Logo/Special</const>
-      <const name="L_CONTROL">Control Key is held</const>
-      <const name="L_CTRL">Control Key is held</const>
-      <const name="L_SHIFT">Left Shift is held</const>
-      <const name="NOT_PRINTABLE">The represented key value is not printable</const>
-      <const name="NUM_LOCK">NumLock is on</const>
-      <const name="NUM_PAD">Identifies numeric keypad keys</const>
-      <const name="PRESSED">Key is being held or tapped</const>
-      <const name="QUALIFIERS">Synonym for <code>SHIFT | COMMAND | ALT | CONTROL</code></const>
-      <const name="RELEASED">The key is being released</const>
-      <const name="REPEAT">This is a repeated key</const>
-      <const name="R_ALT">Right Alt is held</const>
-      <const name="R_COMMAND">Right Logo/Special</const>
-      <const name="R_CONTROL">Control Key is held</const>
-      <const name="R_CTRL">Control Key is held</const>
-      <const name="R_SHIFT">Right Shift is held</const>
-      <const name="SCR_LOCK">Scroll Lock is on</const>
-      <const name="SHIFT">Synonym for <code>L_SHIFT | R_SHIFT</code></const>
-    </constants>
-
     <constants lookup="LDF" comment="Flags for LoadFile()">
       <const name="CHECK_EXISTS">Limits the routine to checking the file cache for the existence of the file.  If found, the relevant cache entry is returned. The open count is not incremented by this action (it is therefore unnecessary to follow-up with a call to UnloadFile()).  If no up-to-date cache entry is available, <code>ERR::Search</code> is returned.</const>
     </constants>
@@ -2615,11 +2252,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="DIRECTORY">The path refers to a folder.</const>
       <const name="FILE">The path refers to a file.</const>
       <const name="VOLUME">The path refers to a volume name.</const>
-    </constants>
-
-    <constants lookup="MAX">
-      <const name="FILENAME"/>
-      <const name="NAME_LEN"/>
     </constants>
 
     <constants lookup="MEM" comment="Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.">
@@ -2634,36 +2266,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="UNTRACKED">Prevents the memory block from being tracked back to the current context.</const>
       <const name="VIDEO">Identifies video memory, such as the frame buffer.</const>
       <const name="WRITE">The memory is explicitly marked as writeable.</const>
-    </constants>
-
-    <constants lookup="MFF" comment="Flags for the File Watch() method.">
-      <const name="ATTRIB">File permissions or datestamp changed.</const>
-      <const name="CLOSED">An opened file has been closed.</const>
-      <const name="CREATE">New file/link created or renamed in folder.</const>
-      <const name="DEEP">Receive notifications from sub-folders (Windows only).</const>
-      <const name="DELETE">Existing file deleted</const>
-      <const name="FILE">File identifier; if passed to <class name="File" method="Watch">File.Watch()</class> then indicates a preference for file events only.</const>
-      <const name="FOLDER">Folder identifier; if passed to <class name="File" method="Watch">File.Watch()</class> then indicates a preference for folder events only.</const>
-      <const name="MODIFY">File modified via write or truncation.</const>
-      <const name="MOVED">Existing file moved or renamed.</const>
-      <const name="OPENED">Existing file was opened.</const>
-      <const name="READ">File was accessed (read).</const>
-      <const name="RENAME">Existing file moved or renamed.</const>
-      <const name="SELF">Event applies to the monitored folder and not a contained item</const>
-      <const name="UNMOUNT">Host filesystem was unmounted.</const>
-      <const name="WRITE">File modified via write or truncation.</const>
-    </constants>
-
-    <constants lookup="MHF" comment="Internal options for requesting function tables from modules.">
-      <const name="DEFAULT">Use structures to group exported functions (Linux, C/C++ standard)</const>
-      <const name="STATIC">Keep the module code in memory</const>
-      <const name="STRUCTURE">Use structures to group exported functions (Linux, C/C++ standard)</const>
-    </constants>
-
-    <constants lookup="MOF" comment="Module flags">
-      <const name="LINK_LIBRARY">Module refers to a symbolic link library (e.g. libz DLL or SO)</const>
-      <const name="STATIC">This flag prevents the loaded module code from being unloaded when the module object is freed.  This may be needed in cases where a module is designed with the presumption that it will remain in memory after being loaded by the developer.</const>
-      <const name="SYSTEM_PROBE">Indicates that the module is being probed.  Do not use outside of the core library.</const>
     </constants>
 
     <constants lookup="MSF" comment="Message flags.">
@@ -2685,14 +2287,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="TIRI_THREAD_CALLBACK"/>
       <const name="VALIDATE_PROCESS"/>
       <const name="WAIT_FOR_OBJECTS"/>
-    </constants>
-
-    <constants lookup="MTF" comment="MoveToPoint flags">
-      <const name="ANIM"/>
-      <const name="RELATIVE"/>
-      <const name="X"/>
-      <const name="Y"/>
-      <const name="Z"/>
     </constants>
 
     <constants lookup="NF" comment="Flags that can be passed to NewObject().  If a flag needs to be stored with the object, it must be specified in the lower word.">
@@ -2767,35 +2361,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="EVENT_LOOP">Set if this is the program's main event loop.  Should be accompanied with an infinite timeout.</const>
     </constants>
 
-    <constants lookup="PTC" comment="Predefined cursor styles">
-      <const name="CROSSHAIR">The cross hair is used for targeting specific pixel points (common in paint programs).</const>
-      <const name="CUSTOM">Works in conjunction with the SetCustomCursor() function to represent a program defined bitmap.</const>
-      <const name="DEFAULT">The default cursor (usually an arrow pointing to the upper left).</const>
-      <const name="DRAGGABLE">Used to indicate that a surface or object can be dragged by the user.</const>
-      <const name="END"/>
-      <const name="HAND">The hand cursor is often used for indicating click-able content (hyper-links, icons etc).</const>
-      <const name="HAND_LEFT">Similar to the standard hand cursor, but points to the left.</const>
-      <const name="HAND_RIGHT">Similar to the standard hand cursor, but points to the right.</const>
-      <const name="INVISIBLE">The cursor graphic is invisible (but will continue to operate as normal in all other respects).</const>
-      <const name="MAGNIFIER">Represents a magnifying glass.</const>
-      <const name="NO_CHANGE"/>
-      <const name="PAINTBRUSH">The paintbrush cursor is typically employed by paint programs.</const>
-      <const name="SIZE_BOTTOM">Sizing cursor - for resizing the bottom edge of any rectangular area.</const>
-      <const name="SIZE_BOTTOM_LEFT">Sizing cursor - for resizing the bottom left corner of any rectangular area.</const>
-      <const name="SIZE_BOTTOM_RIGHT">Sizing cursor - for resizing the bottom right corner of any rectangular area.</const>
-      <const name="SIZE_LEFT">Sizing cursor - for resizing the left edge of any rectangular area.</const>
-      <const name="SIZE_RIGHT">Sizing cursor - for resizing the right edge of any rectangular area.</const>
-      <const name="SIZE_TOP">Sizing cursor - for resizing the top edge of any rectangular area.</const>
-      <const name="SIZE_TOP_LEFT">Sizing cursor - for resizing the top left corner of any rectangular area.</const>
-      <const name="SIZE_TOP_RIGHT">Sizing cursor - for resizing the top right corner of any rectangular area.</const>
-      <const name="SIZING">Multi-directional sizing cursor - for resizing in any direction.</const>
-      <const name="SLEEP">The sleep cursor is used to inform the user that the computer is busy.</const>
-      <const name="SPLIT_HORIZONTAL">The horizontal split cursor is typically used for splitting rectangles in half, or dragging a horizontal split within a large rectangular space.</const>
-      <const name="SPLIT_VERTICAL">The vertical split cursor is typically used for splitting rectangles in half, or dragging a vertical split within a large rectangular space.</const>
-      <const name="STOP">The stop cursor is used to inform the user that an operation is not possible (e.g. drag and drop to an unsupported object area).</const>
-      <const name="TEXT">The text cursor is popular for the precise positioning of text cursors.</const>
-    </constants>
-
     <constants lookup="RDF" comment="Flags for the OpenDir() function.">
       <const name="DATE">Retrieve the date stamp of each file.</const>
       <const name="FILE">Read all files in the folder.</const>
@@ -2831,7 +2396,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="PRIVILEGED_USER">If this value is set to 1, the process will operate in privileged mode (typically this enables full administrator rights).  This feature will only work for Unix processes that are granted admin rights when launched.  Setting the Value to 0 reverts to the user's permission settings.  SetResource() will return an error code indicating the level of success.</const>
       <const name="PROCESS_STATE">Life-cycle stage of the running process</const>
       <const name="STRUCT_DB">Returns a map of hashed struct names and corresponding struct sizes.</const>
-      <const name="THREAD_ID">Return the ID of the current thread.</const>
       <const name="TOTAL_MEMORY">The total amount of installed memory.</const>
       <const name="TOTAL_SHARED_MEMORY">The total amount of shared memory in use (system wide).</const>
       <const name="TOTAL_SWAP">The total amount of available swap space.</const>
@@ -2863,94 +2427,12 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="PATH">Use the <code>PATH</code> environment variable to resolve the file name in the <code>Path</code> parameter.</const>
     </constants>
 
-    <constants lookup="SCF" comment="Script flags">
-      <const name="EXIT_ON_ERROR">The script will automatically terminate its execution process if an error is detected.</const>
-      <const name="LOG_ALL">Enables execution debugging.  More information will be printed to the console in this mode.</const>
-      <const name="PROCESS_DOC">Process any embedded documentation in the script.</const>
-    </constants>
-
-    <constants lookup="SEEK" comment="Seek positions">
-      <const name="CURRENT">Use an index at the end of the last read/write operation.</const>
-      <const name="END">Use an index at the end of the data buffer.</const>
-      <const name="RELATIVE">The index is between 0 and 1.0 and relative to the data size.</const>
-      <const name="START">Use an index at position zero.</const>
-    </constants>
-
-    <constants lookup="STR">
-      <const name="CASE">Perform a case-sensitive match.</const>
-      <const name="MATCH_CASE">Perform a case-sensitive match.</const>
-      <const name="MATCH_LEN">The strings must be of equal length to be matched.</const>
-    </constants>
-
-    <constants lookup="STT" comment="Types for StrDatatype().">
-      <const name="FLOAT">The string represents a floating point number.</const>
-      <const name="HEX">The string represents a hexadecimal number.</const>
-      <const name="NUMBER">The string represents a whole number.</const>
-      <const name="STRING">The string represents plain-text.</const>
-    </constants>
-
-    <constants lookup="THF" comment="Thread flags">
-      <const name="AUTO_FREE">Automatically destroy the Thread object when the user routine has completed.</const>
-    </constants>
-
     <constants lookup="TOI">
       <const name="ANDROID_ASSETMGR"/>
       <const name="ANDROID_CLASS"/>
       <const name="ANDROID_ENV"/>
       <const name="LOCAL_CACHE"/>
       <const name="LOCAL_STORAGE"/>
-    </constants>
-
-    <constants lookup="TSF" comment="Task flags">
-      <const name="ATTACHED">Forces the new process to be attached to the parent (child will close when parent closes).</const>
-      <const name="DETACHED">Forces the new process to be detached from the parent.</const>
-      <const name="PIPE">Enable the output pipe to the launched process so that it can read data.</const>
-      <const name="PRIVILEGED">The child process will inherit the system privileges of its parent.</const>
-      <const name="QUIET">Divert all process output to <code>/dev/null</code> or the nearest equivalent for non-Unix systems.</const>
-      <const name="RESET_PATH">The new process will start in its own folder and not the folder of the parent process.</const>
-      <const name="SHELL">Enables shell mode.  On Unix systems, this means that a shell (usually BASH) will be used to launch the process.</const>
-      <const name="VERBOSE">Enable verbose logging.</const>
-      <const name="WAIT">The parent process will halt when the task is running.  Control is returned to the parent process once the child process terminates.</const>
-    </constants>
-
-    <constants lookup="TSTATE" comment="Indicates the state of a process.">
-      <const name="PAUSED">The process is asleep.</const>
-      <const name="RUNNING">The process is currently executing code.</const>
-      <const name="STOPPING">The process is in its termination phase.</const>
-      <const name="TERMINATED">The process has closed.</const>
-    </constants>
-
-    <constants lookup="VAS" comment="For use by VirtualVolume()">
-      <const name="CASE_SENSITIVE">Set to true if the volume's paths are case-sensitive.</const>
-      <const name="CLOSE_DIR">Register the callback used to close an opened virtual folder.</const>
-      <const name="CREATE_LINK">Register the callback used to create a symbolic link on a virtual volume.</const>
-      <const name="DELETE">Register the callback used to delete a virtual file or folder.</const>
-      <const name="DEREGISTER">Remove the virtual volume from the system.</const>
-      <const name="DRIVER_SIZE">Set the size of the driver-specific data attached to folder scans.</const>
-      <const name="GET_DEVICE_INFO">Register the callback used to retrieve storage device information for a virtual path.</const>
-      <const name="GET_INFO">Register the callback used to retrieve information for a virtual file or folder.</const>
-      <const name="IDENTIFY_FILE">Register the callback used to identify the class associated with a virtual file.</const>
-      <const name="IGNORE_FILE">Register the callback used when a virtual file object no longer needs to be watched.</const>
-      <const name="MAKE_DIR">Register the callback used to create a virtual folder.</const>
-      <const name="OPEN_DIR">Register the callback used to open a virtual folder for scanning.</const>
-      <const name="READ_LINK">Register the callback used to read a symbolic link target from a virtual path.</const>
-      <const name="RENAME">Register the callback used to rename or move a virtual path.</const>
-      <const name="SAME_FILE">Register the callback used to determine if two virtual paths refer to the same file.</const>
-      <const name="SCAN_DIR">Register the callback used to retrieve entries from an opened virtual folder.</const>
-      <const name="TEST_PATH">Register the callback used to test and resolve a virtual path.</const>
-      <const name="WATCH_PATH">Register the callback used to watch a virtual path for changes.</const>
-    </constants>
-
-    <constants lookup="VLF" comment="VlogF flags">
-      <const name="API"/>
-      <const name="BRANCH"/>
-      <const name="CRITICAL"/>
-      <const name="DETAIL"/>
-      <const name="ERROR"/>
-      <const name="FUNCTION"/>
-      <const name="INFO"/>
-      <const name="TRACE"/>
-      <const name="WARNING"/>
     </constants>
 
     <constants lookup="VOLUME" comment="Options for SetVolume()">
@@ -3014,36 +2496,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="BitsPerPixel" type="UINT8">Number of bits per pixel for this format.</field>
     </struct>
 
-    <struct name="CompressedItem">
-      <field name="OriginalSize" type="INT64">Original size of the file</field>
-      <field name="CompressedSize" type="INT64">Compressed size of the file</field>
-      <field name="Next" type="struct CompressedItem *">Used only if this is a linked-list.</field>
-      <field name="Path" type="CSTRING">Path to the file (includes folder prefixes).  Archived folders will include the trailing slash.</field>
-      <field name="Permissions" type="PERMIT" lookup="PERMIT">Original permissions - see <code>PERMIT</code> flags.</field>
-      <field name="UserID" type="INT">Original user ID</field>
-      <field name="GroupID" type="INT">Original group ID</field>
-      <field name="OthersID" type="INT">Original others ID</field>
-      <field name="Flags" type="FL" lookup="FL"><code>FL</code> flags</field>
-      <field name="Created" type="struct DateTime">Date and time of the file's creation.</field>
-      <field name="Modified" type="struct DateTime">Date and time last modified.</field>
-    </struct>
-
-    <struct name="CompressionFeedback">
-      <field name="FeedbackID" type="FDB" lookup="FDB">Set to one of the FDB event indicators</field>
-      <field name="Index" type="INT">Index of the current file</field>
-      <field name="Path" type="CSTRING">Name of the current file/path in the archive</field>
-      <field name="Dest" type="CSTRING">Destination file/path during decompression</field>
-      <field name="Progress" type="INT64">Progress indicator (byte position for the file being de/compressed).</field>
-      <field name="OriginalSize" type="INT64">Original size of the file</field>
-      <field name="CompressedSize" type="INT64">Compressed size of the file</field>
-      <field name="Year" type="INT16">Year of the original file's datestamp.</field>
-      <field name="Month" type="INT16">Month of the original file's datestamp.</field>
-      <field name="Day" type="INT16">Day of the original file's datestamp.</field>
-      <field name="Hour" type="INT16">Hour of the original file's datestamp.</field>
-      <field name="Minute" type="INT16">Minute of the original file's datestamp.</field>
-      <field name="Second" type="INT16">Second of the original file's datestamp.</field>
-    </struct>
-
     <struct name="DateTime" comment="Generic structure for date-time management.">
       <field name="Year" type="INT16">Year</field>
       <field name="Month" type="INT8">Month 1 to 12</field>
@@ -3078,7 +2530,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="SetValue" type="APTR">A virtual function that will set the value for this field</field>
       <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, const struct Field *, int, const void *)">An internal function for writing to this field</field>
       <field name="Name" type="CSTRING">The English name for the field, e.g. <code>Width</code></field>
-      <field name="FieldID" type="UINT">32-bit hash from fieldhash(). Represented by FID constants, e.g. <code>FID_Width</code></field>
+      <field name="FieldID" type="UINT">32-bit hash from fieldhash()</field>
       <field name="Offset" type="UINT16">Field offset within the object</field>
       <field name="Index" type="UINT16">Field array index</field>
       <field name="Flags" type="UINT">Special flags that describe the field</field>
@@ -3117,12 +2569,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="GroupID" type="INT">Group ID (Unix systems only).</field>
       <field name="Created" type="struct DateTime">The date/time of the file's creation.</field>
       <field name="Modified" type="struct DateTime">The date/time of the last file modification.</field>
-    </struct>
-
-    <struct name="Function" comment="Function list array structure">
-      <field name="Address" type="APTR">Pointer to the function entry point</field>
-      <field name="Name" type="CSTRING">Name of the function</field>
-      <field name="Args" type="const struct FunctionField *">A list of parameters accepted by the function</field>
     </struct>
 
     <struct name="FunctionField" comment="Used by ActionTable and Function structures to declare lists of parameters.">
@@ -3233,28 +2679,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="Stage" type="INT16">The current operating stage.  <code>-1</code> = Initialising, <code>0</code> indicates normal operating status; <code>1</code> means that the program is shutting down; <code>2</code> indicates a program restart; <code>3</code> is for mode switches.</field>
       <field name="ReleaseBuild" type="UINT8"><code>1</code> = Release build, <code>0</code> = Debug build</field>
       <field name="StaticBuild" type="UINT8"><code>1</code> = Static build, <code>0</code> = Dynamic build</field>
-    </struct>
-
-    <struct name="TimeZoneInfo" comment="Time zone information returned from GetTimeZoneInfo()">
-      <field name="ZoneID" type="STRING">Preferred public ID, e.g. Europe/London or UTC.</field>
-      <field name="NativeID" type="STRING">Host-native ID, e.g. GMT Standard Time on Windows.</field>
-      <field name="Source" type="STRING">"tzif", "win32", or "utc".</field>
-      <field name="DataPath" type="STRING">TZif path on Linux, otherwise empty.</field>
-      <field name="Version" type="STRING">TZDB/source version if available, otherwise empty.</field>
-      <field name="Transitions" type="kt::vector&lt;TimeZoneTransition&gt;">Transitions available for the requested range.</field>
-      <field name="BaseOffset" type="INT">Standard UTC offset in seconds.</field>
-      <field name="StartYear" type="INT16">Inclusive requested start year.</field>
-      <field name="EndYear" type="INT16">Inclusive requested end year.</field>
-      <field name="IsLocal" type="INT8">1 if ZoneID requested the local system zone.</field>
-      <field name="IsFallback" type="INT8">1 if UTC fallback was used.</field>
-    </struct>
-
-    <struct name="TimeZoneTransition" comment="Time zone transition information for GetTimeZoneInfo()">
-      <field name="Instant" type="INT64">Unix epoch microseconds at which the transition occurs.</field>
-      <field name="Abbreviation" type="STRING">Short name where available, e.g. GMT, BST, PST.</field>
-      <field name="OffsetBefore" type="INT">UTC offset in seconds before the transition.</field>
-      <field name="OffsetAfter" type="INT">UTC offset in seconds after the transition.</field>
-      <field name="DaylightSaving" type="INT">1 if the resulting period observes daylight-saving time.</field>
     </struct>
 
     <struct name="Unit">

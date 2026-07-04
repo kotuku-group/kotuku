@@ -95,7 +95,25 @@ from zero before fading again, repeating until the parent area is filled.</li>
       </description>
     </field>
 
+    <field>
+      <name>XMLDef</name>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <tags>caller-owns-result</tags>
+    </field>
+
   </fields>
+  <types>
+    <constants lookup="GFALL" comment="Gradient fall-off options.">
+      <const name="CLEAR">Disables the gradient.</const>
+      <const name="CUBIC">Cubic fall-off - very tight glow hugging the outline.</const>
+      <const name="LINEAR">Linear fall-off (even taper).</const>
+      <const name="OPAQUE">No fall-off.</const>
+      <const name="QUADRATIC">Quadratic fall-off - fast drop, thin tail — natural glow.</const>
+      <const name="SMOOTHSTEP">Smoothstep fall-off - S-curve; brightest, holds the inner half.</const>
+    </constants>
+
+  </types>
   <structs>
   </structs>
 </book>

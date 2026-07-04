@@ -1,5 +1,5 @@
 -- Flute tests for the postfix ?? operator (presence check)
--- Returns boolean: true if value is truthy, false if falsey (nil, false, 0, "")
+-- Returns boolean: true if value is truthy, false if falsey (nil, false, 0, "", empty collections)
 
 @BeforeEach(hotpath=true)
 function enforce_hotpath() end
@@ -261,7 +261,6 @@ end
       {val = -1, name = "negative number"},
       {val = 0.5, name = "fractional number"},
       {val = true, name = "boolean true"},
-      {val = {}, name = "empty table"},
       {val = {x=1}, name = "non-empty table"}
    }
    for _, tc in ipairs(test_cases) do
@@ -276,7 +275,8 @@ end
       {val = nil, name = "nil"},
       {val = false, name = "false"},
       {val = 0, name = "zero"},
-      {val = "", name = "empty string"}
+      {val = "", name = "empty string"},
+      {val = {}, name = "empty table"}
    }
    for _, tc in ipairs(test_cases) do
       result = (tc.val)??
@@ -354,6 +354,22 @@ end
    assert((int_filled??) is true, "Non-empty int array should return true")
 end
 
+@Test function EmptyTablePresence()
+   local empty = { }
+   assert((empty??) is false, "Empty table should return false for ??")
+end
+
+@Test function NonEmptyTablePresence()
+   local named = { name = "table" }
+   assert((named??) is true, "Non-empty table should return true for ??")
+end
+
+@Test function TableClearedToEmptyPresence()
+   local value = { name = "table" }
+   value.name = nil
+   assert((value??) is false, "Table with all entries cleared should return false for ??")
+end
+
 @Test function ArrayInComprehensiveFalseyList()
    -- Verify arrays are now included in the falsey value set
    test_cases = {
@@ -362,10 +378,12 @@ end
       {val = 0, name = "zero", expected = false},
       {val = "", name = "empty string", expected = false},
       {val = array<int>, name = "empty array", expected = false},
+      {val = {}, name = "empty table", expected = false},
       {val = true, name = "true", expected = true},
       {val = 1, name = "one", expected = true},
       {val = "test", name = "non-empty string", expected = true},
-      {val = array<int, 3>, name = "non-empty array", expected = true}
+      {val = array<int, 3>, name = "non-empty array", expected = true},
+      {val = { name = "table" }, name = "non-empty table", expected = true}
    }
    for _, tc in ipairs(test_cases) do
       result = (tc.val)??

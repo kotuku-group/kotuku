@@ -24,7 +24,6 @@ static ERR VECTORCLIP_FreePlacement(extVectorClip *Self) {
 }
 
 static const struct ActionArray clVectorClipActions[] = {
-   { AC::Free, VECTORCLIP_Free },
    { AC::FreePlacement, VECTORCLIP_FreePlacement },
    { AC::Init, VECTORCLIP_Init },
    { AC::NewChild, VECTORCLIP_NewChild },

@@ -10,6 +10,7 @@
 
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/image.h>
+#include <kotuku/modules/config.h>
 
 class objVectorColour;
 class objVectorTransition;
@@ -576,43 +577,26 @@ struct GouraudVertex {
    struct FRGB Colour;    // The floating point RGB colour assigned to this vertex.
 };
 
+struct MeshControl {
+   double StartX;    // Starting X coordinate.
+   double StartY;    // Starting Y coordinate.
+   double EndX;      // Ending X coordinate.
+   double EndY;      // Ending Y coordinate.
+   double X1;        // First control point X coordinate.
+   double Y1;        // First control point Y coordinate.
+   double X2;        // Second control point X coordinate.
+   double Y2;        // Second control point Y coordinate.
+};
+
 struct MeshPatchRecord {
-   double TopP0X;              // Top edge starting X coordinate.
-   double TopP0Y;              // Top edge starting Y coordinate.
-   double TopC0X;              // Top edge first control point X coordinate.
-   double TopC0Y;              // Top edge first control point Y coordinate.
-   double TopC1X;              // Top edge second control point X coordinate.
-   double TopC1Y;              // Top edge second control point Y coordinate.
-   double TopP1X;              // Top edge ending X coordinate.
-   double TopP1Y;              // Top edge ending Y coordinate.
-   double RightP0X;            // Right edge starting X coordinate.
-   double RightP0Y;            // Right edge starting Y coordinate.
-   double RightC0X;            // Right edge first control point X coordinate.
-   double RightC0Y;            // Right edge first control point Y coordinate.
-   double RightC1X;            // Right edge second control point X coordinate.
-   double RightC1Y;            // Right edge second control point Y coordinate.
-   double RightP1X;            // Right edge ending X coordinate.
-   double RightP1Y;            // Right edge ending Y coordinate.
-   double BottomP0X;           // Bottom edge starting X coordinate.
-   double BottomP0Y;           // Bottom edge starting Y coordinate.
-   double BottomC0X;           // Bottom edge first control point X coordinate.
-   double BottomC0Y;           // Bottom edge first control point Y coordinate.
-   double BottomC1X;           // Bottom edge second control point X coordinate.
-   double BottomC1Y;           // Bottom edge second control point Y coordinate.
-   double BottomP1X;           // Bottom edge ending X coordinate.
-   double BottomP1Y;           // Bottom edge ending Y coordinate.
-   double LeftP0X;             // Left edge starting X coordinate.
-   double LeftP0Y;             // Left edge starting Y coordinate.
-   double LeftC0X;             // Left edge first control point X coordinate.
-   double LeftC0Y;             // Left edge first control point Y coordinate.
-   double LeftC1X;             // Left edge second control point X coordinate.
-   double LeftC1Y;             // Left edge second control point Y coordinate.
-   double LeftP1X;             // Left edge ending X coordinate.
-   double LeftP1Y;             // Left edge ending Y coordinate.
-   struct FRGB TopLeft;        // Colour assigned to the top-left patch corner.
-   struct FRGB TopRight;       // Colour assigned to the top-right patch corner.
-   struct FRGB BottomRight;    // Colour assigned to the bottom-right patch corner.
-   struct FRGB BottomLeft;     // Colour assigned to the bottom-left patch corner.
+   struct MeshControl Top;       // Top edge
+   struct MeshControl Right;     // Right edge
+   struct MeshControl Bottom;    // Bottom edge
+   struct MeshControl Left;      // Left edge
+   struct FRGB TopLeft;          // Colour assigned to the top-left patch corner.
+   struct FRGB TopRight;         // Colour assigned to the top-right patch corner.
+   struct FRGB BottomRight;      // Colour assigned to the bottom-right patch corner.
+   struct FRGB BottomLeft;       // Colour assigned to the bottom-left patch corner.
 };
 
 struct Transition {
@@ -716,14 +700,15 @@ class objVectorColour : public Object {
    static constexpr CSTRING CLASS_NAME = "VectorColour";
 
    using create = kt::Create<objVectorColour>;
-   objVectorColour(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID), Alpha(1.0) {}
 
    double Red;    // The red component value.
    double Green;  // The green component value.
    double Blue;   // The blue component value.
    double Alpha;  // The alpha component value.
-   public:
-   objVectorColour() : Object(nullptr, 0), Alpha(1.0) {}
+
+#ifdef PRV_VECTORCOLOUR
+   objVectorColour(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID), Alpha(1.0) {}
+#endif
 
    // Action stubs
 
@@ -794,11 +779,25 @@ class objVectorTransition : public Object {
 
    // Customised field getting
 
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      SetObjectContext(this, field, AC::NIL);
+      std::string_view view;
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, view);
+      if (error IS ERR::Okay) {
+         Value.assign(view);
+         if (view.data()) FreeResource(GetMemoryID(view.data()));
+      }
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
    inline ERR setStops(const std::span<const Transition> Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
+      auto field = &this->Class->Dictionary[6];
       return field->WriteValue(this, field, 0x00005218, &Value);
    }
 
@@ -971,13 +970,6 @@ class objVectorImage : public Object {
    static constexpr CSTRING CLASS_NAME = "VectorImage";
 
    using create = kt::Create<objVectorImage>;
-   objVectorImage(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
-      X            = Unit(0);
-      Y            = Unit(0);
-      Units        = VUNIT::BOUNDING_BOX;
-      SpreadMethod = VSPREAD::CLIP;
-      AspectRatio  = ARF::X_MID|ARF::Y_MID|ARF::MEET; // SVG defaults
-   }
 
    Unit    X;               // Apply a horizontal offset to the image, the origin of which is determined by the Units value.
    Unit    Y;               // Apply a vertical offset to the image, the origin of which is determined by the Units value.
@@ -988,7 +980,7 @@ class objVectorImage : public Object {
    ARF     AspectRatio;     // Flags that affect the aspect ratio of the image within its target vector.
 
 #ifdef PRV_VECTORIMAGE
-   objVectorImage() : Object(nullptr, 0) {
+   objVectorImage(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
       X            = Unit(0);
       Y            = Unit(0);
       Units        = VUNIT::BOUNDING_BOX;
@@ -1088,14 +1080,6 @@ class objVectorPattern : public Object {
    static constexpr CSTRING CLASS_NAME = "VectorPattern";
 
    using create = kt::Create<objVectorPattern>;
-   objVectorPattern(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
-      SpreadMethod = VSPREAD::REPEAT;
-      Units        = VUNIT::BOUNDING_BOX;
-      ContentUnits = VUNIT::USERSPACE;
-      Opacity      = 1.0;
-      X            = Unit(0);
-      Y            = Unit(0);
-   }
 
    Unit    X;                            // X coordinate for the pattern.
    Unit    Y;                            // Y coordinate for the pattern.
@@ -1111,7 +1095,7 @@ class objVectorPattern : public Object {
    VUNIT   ContentUnits;                 // Not yet implemented.
 
 #ifdef PRV_VECTORPATTERN
-   objVectorPattern() : Object(nullptr, 0) {
+   objVectorPattern(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
       SpreadMethod = VSPREAD::REPEAT;
       Units        = VUNIT::BOUNDING_BOX;
       ContentUnits = VUNIT::USERSPACE;
@@ -1269,13 +1253,6 @@ class objGradient : public Object {
    static constexpr CSTRING CLASS_NAME = "Gradient";
 
    using create = kt::Create<objGradient>;
-   objGradient(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
-      Gamma        = 1.0;
-      Easing       = GEZ::LINEAR;
-      SpreadMethod = VSPREAD::PAD;
-      Units        = VUNIT::BOUNDING_BOX;
-      Resolution   = 1;
-   }
 
    kt::vector<VectorMatrix> Matrices;    // Applies one or more transforms to a gradient.
    kt::vector<GradientStop> Stops;       // Defines the colours to use for the gradient.
@@ -1291,17 +1268,17 @@ class objGradient : public Object {
    int     NumericID;                    // Numeric identifier for a vector.
 
 #ifdef PRV_GRADIENT
-   objGradient() : Object(nullptr, 0) {
+   class GradientColours *Colours;
+   RGB8   ColourRGB; // A cached conversion of the FRGB value
+#endif
+   public:
+   objGradient(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {
       Gamma        = 1.0;
       Easing       = GEZ::LINEAR;
       SpreadMethod = VSPREAD::PAD;
       Units        = VUNIT::BOUNDING_BOX;
       Resolution   = 1;
    }
-
-   class GradientColours *Colours;
-   RGB8   ColourRGB; // A cached conversion of the FRGB value
-#endif
 
    // Action stubs
 
@@ -1371,16 +1348,30 @@ class objGradient : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      std::string_view view;
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, view);
+      if (error IS ERR::Okay) {
+         Value.assign(view);
+         if (view.data()) FreeResource(GetMemoryID(view.data()));
+      }
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
    inline ERR setMatrices(const std::span<const VectorMatrix> Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
+      auto field = &this->Class->Dictionary[10];
       return field->WriteValue(this, field, 0x00005310, &Value);
    }
 
    inline ERR setStops(const std::span<const GradientStop> Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, 0x00005310, &Value);
    }
 
@@ -1390,7 +1381,7 @@ class objGradient : public Object {
    }
 
    inline ERR setColourMap(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
+      auto field = &this->Class->Dictionary[9];
       return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
@@ -1405,12 +1396,12 @@ class objGradient : public Object {
    }
 
    inline ERR setGamma(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[11];
+      auto field = &this->Class->Dictionary[12];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setSpreadMethod(const VSPREAD Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -1437,7 +1428,7 @@ class objGradient : public Object {
    }
 
    inline ERR setTransform(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, 0x00804208, &Value);
    }
 
@@ -1481,26 +1472,40 @@ class objGradientLinear : public objGradient {
       return ERR::Okay;
    }
 
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      std::string_view view;
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, view);
+      if (error IS ERR::Okay) {
+         Value.assign(view);
+         if (view.data()) FreeResource(GetMemoryID(view.data()));
+      }
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
    inline ERR setX1(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setY1(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setX2(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setY2(const Unit Value) noexcept {
+   inline ERR setX2(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setY2(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
@@ -1559,41 +1564,55 @@ class objGradientRadial : public objGradient {
       return ERR::Okay;
    }
 
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      std::string_view view;
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, view);
+      if (error IS ERR::Okay) {
+         Value.assign(view);
+         if (view.data()) FreeResource(GetMemoryID(view.data()));
+      }
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
    inline ERR setCX(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setCY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setFX(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setFY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+   inline ERR setCY(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setRadius(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setFocalRadius(const Unit Value) noexcept {
+   inline ERR setFX(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setContainFocal(const int Value) noexcept {
+   inline ERR setFY(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setRadius(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[25];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setFocalRadius(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[24];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setContainFocal(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -1637,26 +1656,40 @@ class objGradientConic : public objGradient {
       return ERR::Okay;
    }
 
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      std::string_view view;
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, view);
+      if (error IS ERR::Okay) {
+         Value.assign(view);
+         if (view.data()) FreeResource(GetMemoryID(view.data()));
+      }
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
    inline ERR setCX(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setCY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
-      return field->WriteValue(this, field, FD_UNIT, &Value);
-   }
-
-   inline ERR setRadius(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setSpan(const double Value) noexcept {
+   inline ERR setCY(const Unit Value) noexcept {
       auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setRadius(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[22];
+      return field->WriteValue(this, field, FD_UNIT, &Value);
+   }
+
+   inline ERR setSpan(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -1695,21 +1728,35 @@ class objGradientDiamond : public objGradient {
       return ERR::Okay;
    }
 
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      std::string_view view;
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, view);
+      if (error IS ERR::Okay) {
+         Value.assign(view);
+         if (view.data()) FreeResource(GetMemoryID(view.data()));
+      }
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
    inline ERR setCX(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setCY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setRadius(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
@@ -1743,16 +1790,30 @@ class objGradientContour : public objGradient {
       return ERR::Okay;
    }
 
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      std::string_view view;
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, view);
+      if (error IS ERR::Okay) {
+         Value.assign(view);
+         if (view.data()) FreeResource(GetMemoryID(view.data()));
+      }
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
    inline ERR setFloor(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setMultiplier(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -1777,13 +1838,13 @@ class objGradientGouraud : public objGradient {
    // Customised field getting
 
    inline ERR getVertices(std::span<GouraudVertex> &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       auto get_field = (ERR (*)(APTR, std::span<GouraudVertex> &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getIndices(std::span<int> &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       auto get_field = (ERR (*)(APTR, std::span<int> &))field->GetValue;
       return get_field(this, Value);
    }
@@ -1792,12 +1853,12 @@ class objGradientGouraud : public objGradient {
    // Customised field setting
 
    inline ERR setVertices(const std::span<const GouraudVertex> Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, 0x00105318, &Value);
    }
 
    inline ERR setIndices(const std::span<const int> Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, 0x40105308, &Value);
    }
 
@@ -1821,17 +1882,51 @@ class objGradientMesh : public objGradient {
 
    // Customised field getting
 
+   inline ERR getRows(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->GetValue(this, &Value);
+   }
+
+   inline ERR getColumns(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      return field->GetValue(this, &Value);
+   }
+
    inline ERR getPatches(std::span<MeshPatchRecord> &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[21];
       auto get_field = (ERR (*)(APTR, std::span<MeshPatchRecord> &))field->GetValue;
       return get_field(this, Value);
+   }
+
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      std::string_view view;
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, view);
+      if (error IS ERR::Okay) {
+         Value.assign(view);
+         if (view.data()) FreeResource(GetMemoryID(view.data()));
+      }
+      RestoreObjectContext();
+      return error;
    }
 
 
    // Customised field setting
 
+   inline ERR setRows(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setColumns(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
    inline ERR setPatches(const std::span<const MeshPatchRecord> Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, 0x00105318, &Value);
    }
 
@@ -1885,36 +1980,50 @@ class objGradientDistal : public objGradient {
       return ERR::Okay;
    }
 
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      SetObjectContext(this, field, AC::NIL);
+      std::string_view view;
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, view);
+      if (error IS ERR::Okay) {
+         Value.assign(view);
+         if (view.data()) FreeResource(GetMemoryID(view.data()));
+      }
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
    inline ERR setFloor(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setMultiplier(const double Value) noexcept {
       auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
+   inline ERR setMultiplier(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
    inline ERR setRadius(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
+      auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setInnerRadius(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setInnerFall(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setOuterFall(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -1993,52 +2102,52 @@ class objGradientVoronoi : public objGradient {
    // Customised field setting
 
    inline ERR setPoints(const std::span<const VoronoiPoint> Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, 0x00005310, &Value);
    }
 
    inline ERR setWorleyMode(const WLF Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setWorleyMetric(const WLM Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
+      auto field = &this->Class->Dictionary[25];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setFloor(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setMultiplier(const double Value) noexcept {
       auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
+   inline ERR setMultiplier(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[24];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
    inline ERR setHeightMin(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setHeightMax(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setJitter(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[27];
+      auto field = &this->Class->Dictionary[28];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setSeed(const int64_t Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
+      auto field = &this->Class->Dictionary[27];
       return field->WriteValue(this, field, FD_INT64, &Value);
    }
 
    inline ERR setPointCount(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
+      auto field = &this->Class->Dictionary[26];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -2131,6 +2240,20 @@ class objFilterEffect : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      SetObjectContext(this, field, AC::NIL);
+      std::string_view view;
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, view);
+      if (error IS ERR::Okay) {
+         Value.assign(view);
+         if (view.data()) FreeResource(GetMemoryID(view.data()));
+      }
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
@@ -2150,12 +2273,12 @@ class objFilterEffect : public Object {
    }
 
    inline ERR setInput(objFilterEffect * Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
+      auto field = &this->Class->Dictionary[14];
       return field->WriteValue(this, field, 0x08000301, Value);
    }
 
    inline ERR setMix(objFilterEffect * Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
+      auto field = &this->Class->Dictionary[10];
       return field->WriteValue(this, field, 0x08000301, Value);
    }
 
@@ -2236,7 +2359,7 @@ class objImageFX : public objFilterEffect {
    }
 
    inline ERR getPath(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[18];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
@@ -2245,7 +2368,7 @@ class objImageFX : public objFilterEffect {
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2262,7 +2385,7 @@ class objImageFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setResampleMethod(const VSM Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -2272,7 +2395,7 @@ class objImageFX : public objFilterEffect {
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, 0x00804508, &Value);
    }
 
@@ -2312,7 +2435,7 @@ class objSourceFX : public objFilterEffect {
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2379,7 +2502,7 @@ class objBlurFX : public objFilterEffect {
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2401,7 +2524,7 @@ class objBlurFX : public objFilterEffect {
    }
 
    inline ERR setSY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -2436,13 +2559,13 @@ class objColourFX : public objFilterEffect {
    }
 
    inline ERR getValues(std::span<double> &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       auto get_field = (ERR (*)(APTR, std::span<double> &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2465,7 +2588,7 @@ class objColourFX : public objFilterEffect {
    }
 
    inline ERR setValues(std::span<const double> Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, 0x80101508, &Value);
    }
 
@@ -2520,7 +2643,7 @@ class objCompositeFX : public objFilterEffect {
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2537,17 +2660,17 @@ class objCompositeFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setOperator(const OP Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setK1(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setK2(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -2557,7 +2680,7 @@ class objCompositeFX : public objFilterEffect {
    }
 
    inline ERR setK4(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -2643,7 +2766,7 @@ class objConvolveFX : public objFilterEffect {
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2672,17 +2795,17 @@ class objConvolveFX : public objFilterEffect {
    }
 
    inline ERR setDivisor(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setMatrixRows(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setMatrixColumns(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -2692,12 +2815,12 @@ class objConvolveFX : public objFilterEffect {
    }
 
    inline ERR setPreserveAlpha(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setTargetX(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -2712,7 +2835,7 @@ class objConvolveFX : public objFilterEffect {
    }
 
    inline ERR setUnitY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -2762,7 +2885,7 @@ class objDisplacementFX : public objFilterEffect {
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2779,22 +2902,22 @@ class objDisplacementFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setResampleMethod(const VSM Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setXChannel(const CMP Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setYChannel(const CMP Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setScale(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -2834,7 +2957,7 @@ class objFloodFX : public objFilterEffect {
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2851,7 +2974,7 @@ class objFloodFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setColour(const struct FRGB & Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
@@ -2942,7 +3065,7 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -2959,7 +3082,7 @@ class objLightingFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setColour(const struct FRGB & Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
@@ -2979,7 +3102,7 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR setScale(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -2989,7 +3112,7 @@ class objLightingFX : public objFilterEffect {
    }
 
    inline ERR setUnitY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -3019,13 +3142,13 @@ class objMergeFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getSourceList(std::span<struct MergeSource> &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       auto get_field = (ERR (*)(APTR, std::span<struct MergeSource> &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -3042,7 +3165,7 @@ class objMergeFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setSourceList(std::span<const struct MergeSource> Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, 0x00101318, &Value);
    }
 
@@ -3087,7 +3210,7 @@ class objMorphologyFX : public objFilterEffect {
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -3104,12 +3227,12 @@ class objMorphologyFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setOperator(const MOP Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setRadiusX(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -3154,7 +3277,7 @@ class objOffsetFX : public objFilterEffect {
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -3171,12 +3294,12 @@ class objOffsetFX : public objFilterEffect {
    // Customised field setting
 
    inline ERR setXOffset(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setYOffset(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -3249,7 +3372,7 @@ class objRemapFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -3321,7 +3444,7 @@ class objTurbulenceFX : public objFilterEffect {
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -3348,7 +3471,7 @@ class objTurbulenceFX : public objFilterEffect {
    }
 
    inline ERR setFY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -3434,7 +3557,7 @@ class objWaveFunctionFX : public objFilterEffect {
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[5];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -3466,7 +3589,7 @@ class objWaveFunctionFX : public objFilterEffect {
    }
 
    inline ERR setScale(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -3476,7 +3599,7 @@ class objWaveFunctionFX : public objFilterEffect {
    }
 
    inline ERR setL(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -3486,7 +3609,7 @@ class objWaveFunctionFX : public objFilterEffect {
    }
 
    inline ERR setResolution(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -3766,7 +3889,7 @@ class objVector : public Object {
    double    FillOpacity;             // The opacity to use when filling the vector.
    double    Opacity;                 // Defines an overall opacity for the vector's graphics.
    double    MiterLimit;              // Imposes a limit on the ratio of the miter length to the StrokeWidth.
-   double    InnerMiterLimit;         // Private. No internal documentation exists for this feature.
+   double    InnerMiterLimit;         // Controls how far an inner stroke miter can extend at concave joins.
    double    DashOffset;              // The distance into the dash pattern to start the dash.  Can be a negative number.
    VIS       Visibility;              // Controls the visibility of a vector and its children.
    VF        Flags;                   // Optional flags.
@@ -3885,6 +4008,11 @@ class objVector : public Object {
 
    inline ERR getMiterLimit(double &Value) noexcept {
       Value = this->MiterLimit;
+      return ERR::Okay;
+   }
+
+   inline ERR getInnerMiterLimit(double &Value) noexcept {
+      Value = this->InnerMiterLimit;
       return ERR::Okay;
    }
 
@@ -4071,6 +4199,11 @@ class objVector : public Object {
 
    inline ERR setMiterLimit(const double Value) noexcept {
       auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setInnerMiterLimit(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -5894,26 +6027,26 @@ inline ERR SubscribeFeedback(APTR Ob, FM Mask, FUNCTION Callback) {
 namespace fl {
    using namespace kt;
 
-constexpr FieldValue Flags(VCLF Value) { return FieldValue(FID_Flags, int(Value)); }
+constexpr FieldValue Flags(VCLF Value) { return FieldValue(strhash("flags"), int(Value)); }
 
-constexpr FieldValue AppendPath(OBJECTPTR Value) { return FieldValue(FID_AppendPath, Value); }
+constexpr FieldValue AppendPath(OBJECTPTR Value) { return FieldValue(strhash("appendPath"), Value); }
 
-constexpr FieldValue DragCallback(const FUNCTION &Value) { return FieldValue(FID_DragCallback, &Value); }
-constexpr FieldValue DragCallback(const FUNCTION *Value) { return FieldValue(FID_DragCallback, Value); }
+constexpr FieldValue DragCallback(const FUNCTION &Value) { return FieldValue(strhash("dragCallback"), &Value); }
+constexpr FieldValue DragCallback(const FUNCTION *Value) { return FieldValue(strhash("dragCallback"), Value); }
 
-constexpr FieldValue OnChange(const FUNCTION &Value) { return FieldValue(FID_OnChange, &Value); }
-constexpr FieldValue OnChange(const FUNCTION *Value) { return FieldValue(FID_OnChange, Value); }
+constexpr FieldValue OnChange(const FUNCTION &Value) { return FieldValue(strhash("onChange"), &Value); }
+constexpr FieldValue OnChange(const FUNCTION *Value) { return FieldValue(strhash("onChange"), Value); }
 
-constexpr FieldValue TextFlags(VTXF Value) { return FieldValue(FID_TextFlags, int(Value)); }
-constexpr FieldValue Overflow(VOF Value) { return FieldValue(FID_Overflow, int(Value)); }
+constexpr FieldValue TextFlags(VTXF Value) { return FieldValue(strhash("textFlags"), int(Value)); }
+constexpr FieldValue Overflow(VOF Value) { return FieldValue(strhash("overflow"), int(Value)); }
 
-[[nodiscard]] inline FieldValue Sequence(std::string_view Value) { return FieldValue(FID_Sequence, Value); }
-[[nodiscard]] constexpr FieldValue Sequence(CSTRING Value) { return FieldValue(FID_Sequence, Value ? std::string_view(Value) : std::string_view{}); }
+[[nodiscard]] inline FieldValue Sequence(std::string_view Value) { return FieldValue(strhash("sequence"), Value); }
+[[nodiscard]] constexpr FieldValue Sequence(CSTRING Value) { return FieldValue(strhash("sequence"), Value ? std::string_view(Value) : std::string_view{}); }
 
-[[nodiscard]] inline FieldValue FontStyle(std::string_view Value) { return FieldValue(FID_FontStyle, Value); }
-[[nodiscard]] constexpr FieldValue FontStyle(CSTRING Value) { return FieldValue(FID_FontStyle, Value ? std::string_view(Value) : std::string_view{}); }
+[[nodiscard]] inline FieldValue FontStyle(std::string_view Value) { return FieldValue(strhash("fontStyle"), Value); }
+[[nodiscard]] constexpr FieldValue FontStyle(CSTRING Value) { return FieldValue(strhash("fontStyle"), Value ? std::string_view(Value) : std::string_view{}); }
 
-template <kt::NumericOrScale T> FieldValue RoundX(T Value) { return FieldValue(FID_RoundX, Value); }
-template <kt::NumericOrScale T> FieldValue RoundY(T Value) { return FieldValue(FID_RoundY, Value); }
+template <kt::NumericOrScale T> FieldValue RoundX(T Value) { return FieldValue(strhash("roundX"), Value); }
+template <kt::NumericOrScale T> FieldValue RoundY(T Value) { return FieldValue(strhash("roundY"), Value); }
 
 }

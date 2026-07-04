@@ -3,6 +3,7 @@
 #define PRV_GRADIENT
 #define PRV_VECTORPATTERN
 #define PRV_VECTORIMAGE
+#define PRV_VECTORCOLOUR
 
 template<class... Args> void DBG_TRANSFORM(Args...) {
    //log.trace(Args)
@@ -26,6 +27,8 @@ template<class... Args> void DBG_TRANSFORM(Args...) {
 #include <kotuku/modules/image.h>
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/font.h>
+#include <kotuku/modules/script.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 
 using namespace kt;
@@ -860,6 +863,8 @@ class extVectorScene : public objVectorScene {
       SampleMethod = VSM::AUTO;
    }
 
+   ~extVectorScene();
+
    // Returns the rasteriser gamma table for the scene's current Gamma value; one shared LUT serves
    // every rasteriser in the scene.  Returns nullptr for identity gamma, which restores the
    // rasteriser's default shared identity table.
@@ -887,6 +892,7 @@ inline extVectorFilter::~extVectorFilter()
 
 //********************************************************************************************************************
 // NB: Considered a shape (can be transformed).
+// Routed through extVector rather than objVectorViewport so that we have visibility of extVector fields.
 
 class extVectorViewport : public extVector {
    public:
@@ -931,6 +937,8 @@ class extVectorViewport : public extVector {
       // intentionally avoided setting the viewport and/or viewbox dimensions (which typically means that the viewport
       // will expand to fit the parent).
    }
+
+   ~extVectorViewport();
 };
 
 inline static double unit_to_fixed(const Unit &Value, double ParentSize)
@@ -1122,6 +1130,8 @@ class extVectorClip : public objVectorClip, public SceneDef {
       Units  = VUNIT::USERSPACE; // SVG default is userSpaceOnUse
       ContentVersion = 1;
    }
+
+   ~extVectorClip();
 
    TClipRectangle<double> Bounds;
    OBJECTID ViewportID;

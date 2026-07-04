@@ -436,11 +436,14 @@ typedef uint32_t StrID;      //  String ID.
 typedef struct GCstr {
    GCHeader;           // 16-bit aligned
    uint8_t reserved;   // Used by lexer for fast lookup of reserved words.
-   uint8_t flags;      // Currently unused, but available for marking strings in relation to the thing they represent
+   uint8_t flags;      // STRFLAG_* bits that mark parser/runtime properties of interned names.
    StrID sid;          // Interned string ID.
    LuaStrHash hash;    // Hash of string.
    MSize len;          // Size of string.
 } GCstr;
+
+// GCstr::flags bits.  Bit 0x01 is STRF_MUTABLE_BUFFER in lj_str.h.
+inline constexpr uint8_t STRFLAG_PROTECTED_GLOBAL = 0x02;  // Name of a host pre-registered global
 
 inline GCstr* strref(GCRef r) noexcept;  // Defined after GCobj
 

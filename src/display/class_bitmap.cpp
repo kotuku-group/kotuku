@@ -1071,59 +1071,6 @@ static ERR BITMAP_Flush(extBitmap *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR BITMAP_Free(extBitmap *Self)
-{
-   #ifdef __xwindows__
-      if (Self->x11.XShmImage) {
-         // Tell the X11 server to detach from the memory block
-         XShmDetach(XDisplay, &Self->x11.ShmInfo);
-         Self->x11.XShmImage = false;
-         free_shm(Self->Data, Self->x11.ShmInfo.shmid);
-         Self->Data = nullptr;
-      }
-
-      if (Self->x11.gc) {
-         XFreeGC(XDisplay, Self->x11.gc);
-         Self->x11.gc = 0;
-      }
-   #endif
-
-   if ((Self->Data) and (Self->prvAFlags & BF_DATA)) {
-      FreeResource(Self->Data);
-      Self->Data = nullptr;
-   }
-
-   if (Self->prvCompress) { FreeResource(Self->prvCompress); Self->prvCompress = nullptr; }
-
-   if (Self->ResolutionChangeHandle) {
-      UnsubscribeEvent(Self->ResolutionChangeHandle);
-      Self->ResolutionChangeHandle = nullptr;
-   }
-
-   #ifdef __xwindows__
-      if ((Self->x11.drawable) and (Self->x11.window != Self->x11.drawable)) {
-         if (XDisplay) XFreePixmap(XDisplay, Self->x11.drawable);
-         Self->x11.drawable = 0;
-      }
-
-      if (Self->x11.readable) {
-         XDestroyImage(Self->x11.readable);
-         Self->x11.readable = nullptr;
-      }
-   #endif
-
-   #ifdef _WIN32
-      if (Self->win.Drawable) {
-         winDeleteDC(Self->win.Drawable);
-         Self->win.Drawable = nullptr;
-      }
-   #endif
-
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-
@@ -2929,6 +2876,38 @@ extBitmap::extBitmap(objMetaClass *ClassPtr, OBJECTID ObjectID) : objBitmap(Clas
 
 //********************************************************************************************************************
 
+extBitmap::~extBitmap()
+{
+   #ifdef __xwindows__
+      if (x11.XShmImage) {
+         // Tell the X11 server to detach from the memory block
+         XShmDetach(XDisplay, &x11.ShmInfo);
+         x11.XShmImage = false;
+         free_shm(Data, x11.ShmInfo.shmid);
+      }
+
+      if (x11.gc) XFreeGC(XDisplay, x11.gc);
+   #endif
+
+   if ((Data) and (prvAFlags & BF_DATA)) FreeResource(Data);
+   if (prvCompress) FreeResource(prvCompress);
+   if (ResolutionChangeHandle) UnsubscribeEvent(ResolutionChangeHandle);
+
+   #ifdef __xwindows__
+      if ((x11.drawable) and (x11.window != x11.drawable)) {
+         if (XDisplay) XFreePixmap(XDisplay, x11.drawable);
+      }
+
+      if (x11.readable) XDestroyImage(x11.readable);
+   #endif
+
+   #ifdef _WIN32
+      if (win.Drawable) winDeleteDC(win.Drawable);
+   #endif
+}
+
+//********************************************************************************************************************
+
 #include "lib_mempixels.cpp"
 
 #ifdef __xwindows__
@@ -2998,7 +2977,7 @@ ERR create_bitmap_class(void)
       fl::Methods(clBitmapMethods),
       fl::Fields(clBitmapFields),
       fl::Size(sizeof(extBitmap)),
-      fl::Path(MOD_PATH));
+      fl::Path("modules:display"));
 
    return clBitmap ? ERR::Okay : ERR::AddClass;
 }

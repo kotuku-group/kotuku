@@ -17,6 +17,8 @@ global glOutputPath = arg('output')
 global glFeedback   = arg('feedback')
 global glFormat     = arg('format')
 global glAppend     = arg('append')
+global glHead       = arg('header', '')
+global glFoot       = arg('footer')
 
 global glOrderedStructures = { }
 global glStructures = { }
@@ -466,7 +468,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-global function struct(Name:str, Options:table, Def:str)
+global function structdef(Name:str, Options:table, Def:str)
    Options ?= {}
    if Options.restrict?? or glRestrict then return end -- Restricted structures are never exported
    if Options.module?? and (Options.module:lower() != glModuleName:lower()) then return end
@@ -514,7 +516,7 @@ global function saveOutput()
    verbose(f'Building IDL output for "{outPath}"')
 
    EOL = '\n'
-   if glFormat is 'c' then EOL = '\\n' end
+   if glFormat is 'c' or glFormat is 'serial' then EOL = '\\n' end
 
    -- Build structures string
 
@@ -557,7 +559,12 @@ global function saveOutput()
       c ..= e .. EOL
    end
 
-   out = ''
+   if glHead?? then
+      glHead = string.replace(glHead, '[LF]', '\n')
+      glHead = string.replace(glHead, '[DQ]', '"')
+   end
+
+   out = glHead
    if glFormat is 'c' then
       if s:len() + c:len() >= 16 * 1024 then -- MSVC doesn't like defined strings > 16Kb, so we need this alternative
          out ..= 'char glIDL[] = { '
@@ -574,12 +581,22 @@ global function saveOutput()
       if c?? then out ..= c end
    end
 
-   if glAppend and (mSys.AnalysePath(outPath) is ERR_Okay) then
-      local existing = readTextFile(outPath, 'compressed IDL append source')
-      out = (existing ?? '') .. out
+   if glFoot then
+      glFoot = string.replace(glFoot, '[LF]', '\n')
+      glFoot = string.replace(glFoot, '[DQ]', '"')
+      out ..= glFoot
    end
 
-   saveIfModified(outPath, out, 'compressed IDL output')
+   if outPath is 'stdout' then
+      io.write(out)
+   else
+      if glAppend and (mSys.AnalysePath(outPath) is ERR_Okay) then
+         local existing = readTextFile(outPath, 'compressed IDL append source')
+         out = (existing ?? '') .. out
+      end
+
+      saveIfModified(outPath, out, 'compressed IDL output')
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------

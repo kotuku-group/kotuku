@@ -37,7 +37,7 @@ class objMP3 : public objSound {
       const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
       struct acRead read = { (int8_t *)Buffer, bytes };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
-         *Result = static_cast<U>(read.Result);
+         *Result = U(read.Result);
          return ERR::Okay;
       }
       else { *Result = 0; return error; }
@@ -62,4 +62,3 @@ class objMP3 : public objSound {
    // Customised field setting
 
 };
-

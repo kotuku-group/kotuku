@@ -3,10 +3,7 @@
 [[maybe_unused]] static FRGB hsl_to_rgb(HSV Colour);
 
 #if defined(DEBUG)
-static void debug_tree(CSTRING Header, OBJECTPTR) __attribute__ ((unused));
-static void debug_branch(CSTRING Header, OBJECTPTR, int &Level) __attribute__ ((unused));
-
-static void debug_branch(CSTRING Header, OBJECTPTR Vector, int &Level)
+[[maybe_unused]] static void debug_branch(CSTRING Header, OBJECTPTR Vector, int &Level)
 {
    kt::Log log(Header);
 
@@ -542,7 +539,7 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
          for (auto &inherit : Self->Inherit) {
             OBJECTPTR ref;
             if (!Self->Scene->findDef(inherit.ID, &ref)) {
-               inherit.Object->set(FID_Inherit, ref);
+               inherit.Object->set(strhash("inherit"), ref);
             }
             else log.warning("Failed to resolve ID %s for inheritance.", inherit.ID.c_str());
          }
@@ -552,7 +549,10 @@ static ERR parse_svg(extSVG *Self, std::string_view Path, std::string_view Buffe
 
             auto view = Self->Scene->Viewport;
             while ((view) and (view->classID() != CLASSID::VECTORVIEWPORT)) view = (objVectorViewport *)view->Next;
-            if (view) view->setFields(fl::Width(SCALE(1.0)), fl::Height(SCALE(1.0)));
+            if (view) {
+               view->setWidth(Unit(1.0, FD_SCALED));
+               view->setHeight(Unit(1.0, FD_SCALED));
+            }
          }
       }
       else error = ERR::Init;

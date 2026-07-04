@@ -85,7 +85,6 @@ static const struct ActionArray clDisplayActions[] = {
    { AC::Enable, DISPLAY_Enable },
    { AC::Flush, DISPLAY_Flush },
    { AC::Focus, DISPLAY_Focus },
-   { AC::Free, DISPLAY_Free },
    { AC::FreePlacement, DISPLAY_FreePlacement },
    { AC::Hide, DISPLAY_Hide },
    { AC::Init, DISPLAY_Init },

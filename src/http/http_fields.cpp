@@ -379,7 +379,7 @@ static ERR SET_Location(extHTTP *Self, const std::string_view &Value)
       // Free the current socket if the entire URI changes
 
       if (Self->Socket) {
-         Self->Socket->set(FID_Feedback, (APTR)nullptr);
+         Self->Socket->setFeedback(FUNCTION{});
          FreeResource(Self->Socket);
          Self->Socket = nullptr;
       }

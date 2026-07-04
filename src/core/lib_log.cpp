@@ -305,7 +305,7 @@ void VLogF(VLF Flags, CSTRING Header, CSTRING Message, va_list Args)
       if ((Flags & (VLF::BRANCH|VLF::FUNCTION)) != VLF::NIL) msgstate = MS_FUNCTION;
       else msgstate = MS_MSG;
 
-      if (glLogThreads) fprintf(fd, "%.4d ", int(get_thread_id()));
+      if (glLogThreads) fprintf(fd, "%.4d ", GetThreadID());
 
       #if defined(__unix__) and !defined(__ANDROID__)
          bool flushdbg;

@@ -3,6 +3,7 @@
 #define PRV_TIRI
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 
 #include "lua.h"
@@ -20,6 +21,16 @@
 #include <set>
 #include <mutex>
 #include <new>
+
+struct module {
+   const struct Function *Functions = nullptr;
+   objModule *Module = nullptr;
+   ankerl::unordered_dense::map<uint32_t, int> FunctionMap; // Hash map for O(1) function lookup
+
+   ~module() {
+      if (Module) FreeResource(Module);
+   }
+};
 
 template<class... Args> void RMSG(Args...) {
    //log.msg(Args)
@@ -242,10 +253,9 @@ static CSTRING load_include_constant(CSTRING Line, std::string_view Source)
 
 static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
 {
-   OBJECTPTR root;
-   if (auto error = module->get(FID_Root, root); !error) {
+   if (auto root = (OBJECTPTR)module->Root) {
       struct ModHeader *header;
-      if ((error = root->get(FID_Header, header)) != ERR::Okay) return error;
+      if (auto error = root->get(strhash("header"), header); error != ERR::Okay) return error;
       if (not header) return ERR::NoData;
 
       if (auto idl = header->Definitions) {
@@ -257,7 +267,7 @@ static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
       }
       return ERR::Okay;
    }
-   else return error;
+   else return ERR::FieldNotSet;
 }
 
 //********************************************************************************************************************
@@ -340,7 +350,7 @@ void new_module(lua_State *Lua, objModule *Module)
    lua_setmetatable(Lua, -2);
 
    mod->Module = Module;
-   Module->get(FID_FunctionList, mod->Functions);
+   Module->getFunctionList(mod->Functions);
 
    // Build hash map for O(1) function lookups
    if (mod->Functions) {
@@ -445,7 +455,7 @@ static int module_tostring(lua_State *Lua)
 {
    if (auto mod = (struct module *)luaL_checkudata(Lua, 1, "Tiri.mod")) {
       std::string_view name;
-      if (!mod->Module->get(FID_Name, name)) {
+      if (!mod->Module->getName(name)) {
          lua_pushstring(Lua, name);
       }
       else lua_pushnil(Lua);

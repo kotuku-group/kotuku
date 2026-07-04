@@ -400,6 +400,34 @@ function hasTipMessage(Result, Message)
    return false
 end
 
+function hasDiagnosticMessage(Result, Message)
+   if not Result.diagnostics then return false end
+   for diagnostic in values(Result.diagnostics) do
+      if diagnostic.message and diagnostic.message:find(Message) then return true end
+   end
+   return false
+end
+
+@Test function ValidatePathDoesNotRegisterFileSource()
+   err, missing_path = mSys.ResolvePath('temp:debug_validate_lsp_missing.tiri', RSF_NO_FILE_CHECK)
+   assert(err is ERR_Okay, 'Failed to resolve temporary missing file path')
+   mSys.DeleteFile(missing_path)
+
+   err, importer_path = mSys.ResolvePath('temp:debug_validate_lsp_importer.tiri', RSF_NO_FILE_CHECK)
+   assert(err is ERR_Okay, 'Failed to resolve temporary importer path')
+
+   primed = debug.validate('buffer_only = true', { path = missing_path })
+   assert(primed.success is true, 'Initial buffer validation should succeed')
+
+   for source in values(debug.fileSources()) do
+      assert(source.path != missing_path, 'debug.validate(path) should not register the buffer path as a FileSource')
+   end
+
+   imported = debug.validate("import './debug_validate_lsp_missing'\nmissing_value = true", { path = importer_path })
+   assert(imported.success is false, 'Missing imported file should not be hidden by an earlier buffer validation')
+   assert(hasDiagnosticMessage(imported, 'Cannot open imported file'), 'Expected missing imported file diagnostic')
+end
+
 @Test function ValidateChooseWithoutElseTip()
    message = "Choose expression has no else branch; unmatched values evaluate to nil"
    result = debug.validate([[
@@ -443,6 +471,16 @@ end
    assert(result.success is true, "Valid function definition should succeed")
 end
 
+@Test function ValidateSymbolsOption()
+   code = "function symbolOption(Value: str):str return Value end"
+
+   result = debug.validate(code, { symbols = true })
+   assert(result.success is true, "Valid symbols option code should succeed")
+   assert(result.symbols != nil, "symbols=true should include a symbols table")
+   assert(#result.symbols is 1, "Expected one symbol with symbols=true")
+   assert(result.symbols[0].name is "symbolOption", "Expected symbolOption symbol")
+end
+
 @Test function ValidateSymbolsWithDocAnnotation()
    code = [=[
       @Doc(text=[[
@@ -462,7 +500,7 @@ end
       end
    ]=]
 
-   result = debug.validate(code, "symbols")
+   result = debug.validate(code, { symbols = true })
    assert(result.success is true, "Valid documented function should succeed")
    assert(result.symbols != nil, "symbols option should include a symbols table")
    assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
@@ -495,7 +533,7 @@ end
       end
    ]=]
 
-   result = debug.validate(code, "symbols")
+   result = debug.validate(code, { symbols = true })
    assert(result.success is true, "Valid compact documented function should succeed")
    assert(result.symbols != nil, "symbols option should include a symbols table")
    assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
@@ -533,7 +571,7 @@ end
       end
    ]=]
 
-   result = debug.validate(code, "symbols")
+   result = debug.validate(code, { symbols = true })
    assert(result.success is true, "Valid compact inferred result docs should succeed")
    assert(result.symbols != nil, "symbols option should include a symbols table")
    assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
@@ -563,7 +601,7 @@ end
       end
    ]=]
 
-   result = debug.validate(code, "symbols")
+   result = debug.validate(code, { symbols = true })
    assert(result.success is true, "Valid compact unknown result docs should succeed")
    assert(result.symbols != nil, "symbols option should include a symbols table")
    assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
@@ -589,7 +627,7 @@ end
       end
    ]=]
 
-   result = debug.validate(code, "symbols")
+   result = debug.validate(code, { symbols = true })
    assert(result.success is true, "Annotated function assignment should parse")
    assert(result.symbols != nil, "symbols option should include a symbols table")
    assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)
@@ -610,7 +648,7 @@ end
       end
    ]=]
 
-   result = debug.validate(code, "symbols")
+   result = debug.validate(code, { symbols = true })
    assert(result.success is true, "Valid global function expression should succeed")
    assert(result.symbols != nil, "symbols option should include a symbols table")
    assert(#result.symbols is 1, "Expected one symbol, got " .. #result.symbols)

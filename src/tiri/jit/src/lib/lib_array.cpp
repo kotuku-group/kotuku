@@ -29,10 +29,13 @@
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
+#include <string_view>
 #include <kotuku/strings.hpp>
 #include <kotuku/main.h>
 
 #define LJLIB_MODULE_array
+
+static constexpr std::string_view glArrayAppendHelperKey("\x1f" "array.append", 13);
 
 constexpr auto HASH_INT     = kt::strhash("int");
 constexpr auto HASH_BYTE    = kt::strhash("byte");
@@ -224,7 +227,7 @@ static void append_integer(std::string &Result, int64_t Value)
 //   size: number of elements (must be non-negative)
 //   type: element type string ("char", "int16", "int", "int64", "float", "double", "string", "StructName")
 
-LJLIB_CF(array_new)
+LJLIB_CF(array_new)      LJLIB_REC(.)
 {
    GCarray *arr;
 
@@ -880,7 +883,7 @@ LJLIB_CF(array_last)
 //
 // Note: For string arrays with GC references, this also nullifies the references to allow garbage collection.
 
-LJLIB_CF(array_clear)
+LJLIB_CF(array_clear)      LJLIB_REC(.)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
@@ -902,7 +905,7 @@ LJLIB_CF(array_clear)
 //
 // Note: External arrays and cached string arrays cannot grow and will raise an error.
 
-LJLIB_CF(array_resize)
+LJLIB_CF(array_resize)      LJLIB_REC(.)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
@@ -952,7 +955,7 @@ LJLIB_CF(array_resize)
 //
 // Note: External arrays and cached string arrays cannot grow and will raise an error.
 
-LJLIB_CF(array_push)
+LJLIB_CF(array_push)      LJLIB_REC(.)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
    if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
@@ -963,12 +966,54 @@ LJLIB_CF(array_push)
       return 1;
    }
 
+   MSize append_count = MSize(num_values);
+
+   if (arr->elemtype IS AET::BYTE) {
+      append_count = 0;
+      for (int i = 0; i < num_values; i++) {
+         int arg_idx = i + 2;
+         TValue *tv = L->base + arg_idx - 1;
+         MSize value_count;
+         if (tvisstr(tv)) value_count = strV(tv)->len;
+         else {
+            luaL_checkinteger(L, arg_idx);
+            value_count = 1;
+         }
+
+         if (value_count > (~MSize(0) - append_count)) lj_err_caller(L, ErrMsg::ARREXT);
+         append_count += value_count;
+      }
+   }
+
    // Ensure we have capacity for the new elements
-   MSize new_len = arr->len + MSize(num_values);
+   if (append_count > (~MSize(0) - arr->len)) lj_err_caller(L, ErrMsg::ARREXT);
+   MSize new_len = arr->len + append_count;
    if (new_len > arr->capacity) {
       if (not lj_array_grow(L, arr, new_len)) {
          lj_err_caller(L, ErrMsg::ARREXT);
       }
+   }
+
+   if (arr->elemtype IS AET::BYTE) {
+      MSize idx = arr->len;
+      for (int i = 0; i < num_values; i++) {
+         int arg_idx = i + 2;
+         TValue *tv = L->base + arg_idx - 1;
+
+         if (tvisstr(tv)) {
+            GCstr *str = strV(tv);
+            if (str->len > 0) memcpy(arr->get<uint8_t>() + idx, strdata(str), str->len);
+            idx += str->len;
+         }
+         else {
+            arr->get<uint8_t>()[idx] = uint8_t(luaL_checkinteger(L, arg_idx));
+            idx++;
+         }
+      }
+
+      arr->len = new_len;
+      setintV(L->top++, int32_t(arr->len));
+      return 1;
    }
 
    // Push each value
@@ -1348,7 +1393,7 @@ LJLIB_CF(array_copy)
 //   start: starting index (0-based, default 0)
 //   len: number of bytes to extract (default: remaining bytes from start)
 
-LJLIB_CF(array_getString)
+LJLIB_CF(array_getString)      LJLIB_REC(.)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
 
@@ -2626,6 +2671,157 @@ LJLIB_CF(array_clone)
 }
 
 //********************************************************************************************************************
+// Created exclusively for implementing array<byte> concatenation operations
+
+struct ArrayAppendPiece {
+   enum class Kind : uint8_t {
+      String,
+      Scratch,
+      ByteArray
+   };
+
+   Kind kind = Kind::String;
+   const char *data = nullptr;
+   GCarray *array = nullptr;
+   MSize offset = 0;
+   MSize len = 0;
+};
+
+static void array_append_add_len(lua_State *L, MSize &Total, MSize Len)
+{
+   if (Len > (~MSize(0) - Total)) lj_err_caller(L, ErrMsg::ARREXT);
+   Total += Len;
+}
+
+static constexpr int max_array_append_stack_pieces = 16;
+
+static void array_append_store_piece(ArrayAppendPiece *Pieces, int &PieceCount, const ArrayAppendPiece &Piece)
+{
+   lj_assertX(PieceCount < max_array_append_stack_pieces, "array append stack piece overflow");
+   Pieces[PieceCount] = Piece;
+   PieceCount++;
+}
+
+static void array_append_push_number(lua_State *L, SBuf *Scratch, cTValue *Value, ArrayAppendPiece *Pieces,
+   int &PieceCount, MSize &Total)
+{
+   MSize offset = sbuflen(Scratch);
+   if (tvisint(Value)) lj_strfmt_putint(Scratch, intV(Value));
+   else lj_strfmt_putnum(Scratch, Value);
+
+   MSize len = sbuflen(Scratch) - offset;
+   array_append_store_piece(Pieces, PieceCount, { ArrayAppendPiece::Kind::Scratch, nullptr, nullptr, offset, len });
+   array_append_add_len(L, Total, len);
+}
+
+static void array_append_push_piece(lua_State *L, cTValue *Value, ArrayAppendPiece *Pieces, int &PieceCount,
+   SBuf *Scratch, MSize &Total)
+{
+   if (tvisstr(Value)) {
+      GCstr *str = strV(Value);
+      array_append_store_piece(Pieces, PieceCount, { ArrayAppendPiece::Kind::String, strdata(str), nullptr, 0,
+         str->len });
+      array_append_add_len(L, Total, str->len);
+      return;
+   }
+
+   if (tvisnumber(Value)) {
+      array_append_push_number(L, Scratch, Value, Pieces, PieceCount, Total);
+      return;
+   }
+
+   if (tvisarray(Value)) {
+      GCarray *source = arrayV(Value);
+      if (source->elemtype IS AET::BYTE) {
+         array_append_store_piece(Pieces, PieceCount, { ArrayAppendPiece::Kind::ByteArray, nullptr, source, 0,
+            source->len });
+         array_append_add_len(L, Total, source->len);
+         return;
+      }
+   }
+
+   lj_err_optype(L, Value, ErrMsg::OPCAT);
+}
+
+static void array_append_byte_pieces(lua_State *L, GCarray *Arr, int PieceCount)
+{
+   if (Arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
+
+   if (PieceCount > max_array_append_stack_pieces) {
+      L->top = L->base + 1 + PieceCount;
+      lua_concat(L, PieceCount);
+      PieceCount = 1;
+   }
+
+   SBuf *scratch = lj_buf_tmp_(L);
+   ArrayAppendPiece pieces[max_array_append_stack_pieces];
+   int piece_count = 0;
+
+   MSize append_len = 0;
+   for (int i = 0; i < PieceCount; i++) {
+      array_append_push_piece(L, L->base + i + 1, pieces, piece_count, scratch, append_len);
+   }
+
+   if (append_len > (~MSize(0) - Arr->len)) lj_err_caller(L, ErrMsg::ARREXT);
+   MSize old_len = Arr->len;
+   MSize new_len = old_len + append_len;
+   if (new_len > Arr->capacity and not lj_array_grow(L, Arr, new_len)) lj_err_caller(L, ErrMsg::ARREXT);
+
+   uint8_t *dest_base = Arr->get<uint8_t>();
+   MSize write_pos = old_len;
+   for (int i = 0; i < piece_count; i++) {
+      const ArrayAppendPiece &piece = pieces[i];
+      if (piece.len IS 0) continue;
+
+      if (piece.kind IS ArrayAppendPiece::Kind::String) {
+         memcpy(dest_base + write_pos, piece.data, piece.len);
+      }
+      else if (piece.kind IS ArrayAppendPiece::Kind::Scratch) {
+         memcpy(dest_base + write_pos, scratch->b + piece.offset, piece.len);
+      }
+      else {
+         memmove(dest_base + write_pos, piece.array->get<const char>(), piece.len);
+      }
+      write_pos += piece.len;
+   }
+
+   Arr->len = new_len;
+}
+
+static void array_append_reduce_rhs(lua_State *L, int PieceCount)
+{
+   L->top = L->base + 1 + PieceCount;
+   if (PieceCount > 1) lua_concat(L, PieceCount);
+}
+
+LJLIB_CF(array_append)      LJLIB_REC(.)
+{
+   TValue *left = lj_lib_checkany(L, 1);
+   int piece_count = lua_gettop(L) - 1;
+   if (piece_count < 1) lj_err_argv(L, 2, ErrMsg::NOVAL);
+
+   if (tvisarray(left)) {
+      GCarray *arr = arrayV(left);
+      if (arr->elemtype IS AET::BYTE) {
+         array_append_byte_pieces(L, arr, piece_count);
+         setarrayV(L, L->base, arr);
+         L->top = L->base + 1;
+         return 1;
+      }
+
+      array_append_reduce_rhs(L, piece_count);
+      lj_cf_array_push(L);
+      setarrayV(L, L->base, arr);
+      L->top = L->base + 1;
+      return 1;
+   }
+
+   array_append_reduce_rhs(L, piece_count);
+   lua_concat(L, 2);
+   return 1;
+}
+
+//********************************************************************************************************************
 // __tostring metamethod.
 
 static int array_tostring(lua_State *L)
@@ -2644,7 +2840,7 @@ static int array_tostring(lua_State *L)
 }
 
 //********************************************************************************************************************
-// __concat metamethod.
+// __concat metamethod.  Produces a new string value from the combination of the LHS and RHS
 
 static GCstr * array_concat_value(lua_State *L, cTValue *Value)
 {
@@ -2766,6 +2962,13 @@ extern "C" int luaopen_array(lua_State *L)
    LJ_LIB_REG(L, "array", array);
    // Stack: [..., array_lib_table]
 
+   // Compound concatenation lowers through this hidden key so rebinding the public array global cannot shadow it.
+   lua_getfield(L, -1, "append");
+   lua_pushlstring(L, glArrayAppendHelperKey.data(), glArrayAppendHelperKey.size());
+   lua_pushvalue(L, -2);
+   lua_rawset(L, LUA_GLOBALSINDEX);
+   lua_pop(L, 1);
+
    // Use the library table directly as the base metatable for arrays.
    // This allows lj_arr_get to find methods like concat, sort, etc. via direct table lookup.
    GCtab *lib = tabV(L->top - 1);
@@ -2793,14 +2996,15 @@ extern "C" int luaopen_array(lua_State *L)
    reg_iface_prototype("array", "of", { TiriType::Array }, { TiriType::Str }, FProtoFlags::Variadic);
    // Methods
    reg_iface_prototype("array", "table", { TiriType::Table }, { TiriType::Array });
-   reg_iface_prototype("array", "concat", { TiriType::Str },
-      { TiriType::Array, TiriType::Str, TiriType::Str, TiriType::Num, TiriType::Num });
+   reg_iface_prototype("array", "concat", { TiriType::Str }, { TiriType::Array, TiriType::Str, TiriType::Str, TiriType::Num, TiriType::Num });
    reg_iface_prototype("array", "contains", { TiriType::Bool }, { TiriType::Array, TiriType::Any });
    reg_iface_prototype("array", "first", { TiriType::Any }, { TiriType::Array, TiriType::Func });
    reg_iface_prototype("array", "last", { TiriType::Any }, { TiriType::Array, TiriType::Func });
    reg_iface_prototype("array", "clear", {}, { TiriType::Array });
    reg_iface_prototype("array", "resize", {}, { TiriType::Array, TiriType::Num });
    reg_iface_prototype("array", "push", {}, { TiriType::Array, TiriType::Any });
+   // Private
+   // reg_iface_prototype("array", "append", { TiriType::Any }, { TiriType::Any, TiriType::Any });
    reg_iface_prototype("array", "pop", { TiriType::Any }, { TiriType::Array });
    reg_iface_prototype("array", "copy", {}, { TiriType::Array, TiriType::Num, TiriType::Num, TiriType::Num });
    reg_iface_prototype("array", "getString", { TiriType::Str }, { TiriType::Array, TiriType::Num, TiriType::Num });

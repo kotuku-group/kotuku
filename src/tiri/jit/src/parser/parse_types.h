@@ -264,7 +264,7 @@ struct ExpDesc {
    [[nodiscard]] inline bool is_any_indexed() const { return this->k IS ExpKind::Indexed or this->k IS ExpKind::IndexedArray or this->k IS ExpKind::SafeIndexedArray; }
    [[nodiscard]] inline bool is_register() const { return this->k IS ExpKind::Local or this->k IS ExpKind::NonReloc; }
 
-   // Extended falsey check (nil, false, 0, "")
+   // Extended falsey check (nil, false, 0, ""; empty collections are runtime-only)
    // Supports Tiri's extended falsey semantics for ?? operator
    [[nodiscard]] bool is_falsey() const;
 

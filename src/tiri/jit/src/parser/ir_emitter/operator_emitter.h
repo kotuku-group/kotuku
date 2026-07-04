@@ -12,7 +12,7 @@
 //
 // EXTENDED FALSEY SEMANTICS:
 // Tiri's falsey semantics differ from standard Lua:
-// - Falsey values: nil, false, 0 (numeric zero), "" (empty string)
+// - Falsey values: nil, false, 0 (numeric zero), "" (empty string), and empty collections
 // - All other values are truthy
 // - This affects the ?? (if-empty) operator and ? (presence check) operator
 // - Use ExpDesc::is_falsey() for compile-time constant checks
@@ -90,7 +90,7 @@ public:
 
    // Presence check operator (x?)
    // Emits bytecode to check if value is truthy (extended falsey semantics)
-   // Returns boolean: true if truthy, false if falsey (nil, false, 0, "")
+   // Returns boolean: true if truthy, false if falsey (nil, false, 0, "", empty collections)
    void emit_presence_check(ExprValue operand);
 
 private:

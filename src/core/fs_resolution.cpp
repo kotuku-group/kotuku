@@ -333,8 +333,6 @@ static ERR resolve_path_env(std::string_view RelativePath, std::string *Result)
 ** Flags   - Optional RSF flags.
 */
 
-static ERR resolve_object_path(const std::string &, const std::string &, std::string &);
-
 static ERR resolve(const std::string &Source, std::string &Dest, RSF Flags)
 {
    kt::Log log("ResolvePath");
@@ -361,13 +359,6 @@ static ERR resolve(const std::string &Source, std::string &Dest, RSF Flags)
       }
    }
    else return log.warning(ERR::SystemLocked);
-
-   // Handle the ":ObjectName" case
-
-   if (fullpath.starts_with(':')) {
-      fullpath.replace(0, 1, "");
-      return resolve_object_path(fullpath, Source, Dest);
-   }
 
    log.traceBranch("%s, Resolved Path: %s, Flags: $%.8x", Source.c_str(), fullpath.c_str(), int(Flags));
 
@@ -456,38 +447,4 @@ static ERR resolve(const std::string &Source, std::string &Dest, RSF Flags)
 
    log.trace("Resolved path but no matching file for %s\"%s\".", ((Flags & RSF::APPROXIMATE) != RSF::NIL) ? "~" : "", Source.c_str());
    return ERR::FileNotFound;
-}
-
-//********************************************************************************************************************
-// For cases such as ":SystemIcons", we find the referenced object and ask it to resolve the path for us.  (In effect,
-// the object will be used as a plugin for volume resolution).
-//
-// If the path is merely ":" or resolve_virtual() returns ERR::VirtualVolume, return the VirtualVolume error code to
-// indicate that no further resolution is required.
-
-static ERR resolve_object_path(const std::string &Path, const std::string &Source, std::string &Dest)
-{
-   kt::Log log("ResolvePath");
-   ERR (*resolve_virtual)(OBJECTPTR, const std::string &, std::string &);
-   ERR error = ERR::VirtualVolume;
-
-   if (!Path.empty()) {
-      OBJECTID volume_id;
-      if (!FindObject(Path.c_str(), CLASSID::NIL, &volume_id)) {
-         OBJECTPTR object;
-         if (!AccessObject(volume_id, 5000, &object)) {
-            if ((!object->get(FID_ResolvePath, resolve_virtual)) and (resolve_virtual)) {
-               error = resolve_virtual(object, Source, Dest);
-            }
-            ReleaseObject(object);
-         }
-      }
-   }
-
-   if (error IS ERR::VirtualVolume) { // Return an exact duplicate of the original source string
-      Dest = Source;
-      return ERR::VirtualVolume;
-   }
-   else if (error != ERR::Okay) return log.warning(error);
-   else return ERR::Okay;
 }

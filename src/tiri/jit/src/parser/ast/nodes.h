@@ -606,6 +606,7 @@ struct ChooseExprPayload {
 struct ExprNode {
    AstNodeKind kind = AstNodeKind::LiteralExpr;
    SourceSpan span{};
+   bool is_grouped = false;
    std::variant<LiteralValue, NameRef, VarArgExprPayload, UnaryExprPayload,
       UpdateExprPayload, BinaryExprPayload, ComparisonChainExprPayload, TernaryExprPayload,
       PresenceExprPayload, PipeExprPayload, CallExprPayload, MemberExprPayload,

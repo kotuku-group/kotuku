@@ -250,7 +250,7 @@ module({
     'DELETE: Requests that the original file source is deleted if a successful paste operation takes place.',
     'EXTEND: Instead of replacing existing clipboard data, add the new data to the group.')
 
-  struct("SurfaceInfo", { type="surfaceinfo" }, [[
+  structdef("SurfaceInfo", { type="surfaceinfo" }, [[
     ptr Data            # Bitmap data memory ID
     oid ParentID        # Object that contains the surface area
     oid BitmapID        # Surface bitmap buffer
@@ -274,12 +274,12 @@ module({
    inline bool transparent() const { return (Flags & RNF::TRANSPARENT) != RNF::NIL; }
   ]])
 
-  struct("SurfaceCallback", { restrict="c", comment="Private structure for managing surface callbacks." }, [[
+  structdef("SurfaceCallback", { restrict="c", comment="Private structure for managing surface callbacks." }, [[
     obj Object    # Context to use for the function.
     func Function # void (*Routine)(OBJECTPTR, struct Surface *, objBitmap *);
   ]])
 
-  struct("SurfaceCoords", { }, [[
+  structdef("SurfaceCoords", { }, [[
     int X      # Horizontal coordinate
     int Y      # Vertical coordinate
     int Width  # Width
@@ -288,7 +288,7 @@ module({
     int AbsY   # Absolute Y
   ]])
 
-  struct("xrMode", { comment="Display mode." }, [[
+  structdef("xrMode", { comment="Display mode." }, [[
     int Width    # Horizontal
     int Height   # Vertical
     int Depth    # bit depth
@@ -296,7 +296,7 @@ module({
 
   -- PixelFormat duplicates the Core module's ColourFormat structure.
 
-  struct("PixelFormat", { type="pixelformat", comment="Carries instructions to pack or unpack RGBA colours." }, [[
+  structdef("PixelFormat", { type="pixelformat", comment="Carries instructions to pack or unpack RGBA colours." }, [[
     uchar  RedShift    # Right shift value
     uchar  GreenShift  # Green shift value
     uchar  BlueShift   # Blue shift value
@@ -312,7 +312,7 @@ module({
     uint   Pad         # Padding
   ]])
 
-  struct("DisplayInfo", { }, [[
+  structdef("DisplayInfo", { }, [[
     struct(PixelFormat) PixelFormat # The colour format to use for each pixel.
     float MinRefresh     # Minimum refresh rate
     float MaxRefresh     # Maximum refresh rate
@@ -342,14 +342,14 @@ module({
     short BytesPerPixel  # Bytes per pixel
   ]])
 
-  struct("CursorInfo", { }, [[
+  structdef("CursorInfo", { }, [[
     int Width           # Maximum cursor width for custom cursors
     int Height          # Maximum cursor height for custom cursors
     int Flags           # Currently unused
     short BitsPerPixel  # Preferred bits-per-pixel setting for custom cursors
   ]])
 
-  struct("BitmapSurface", { type="bitmapsurface" }, [[
+  structdef("BitmapSurface", { type="bitmapsurface" }, [[
     ptr   Data           # Pointer to the bitmap graphics data.
     short Width          # Pixel width of the bitmap.
     short Height         # Pixel height of the bitmap.
@@ -536,6 +536,7 @@ module({
   ]],
   [[
    FUNCTION RequestHandler;
+   ~objClipboard();
   ]])
 
   klass('Controller', { src='class_controller.cpp', output='class_controller_def.c', extended=false }, [[
@@ -550,7 +551,7 @@ module({
   ]],
   nil,
   [[
-   objController() : Port(-1) { }
+   objController(objMetaClass *pClass, OBJECTID pUID) noexcept :  Object(pClass, pUID), Port(-1) { }
   ]])
 
   klass('Pointer', { src='class_pointer.cpp', output='class_pointer_def.c', references={ 'PTC' }, extended=true }, [[
@@ -692,7 +693,7 @@ module({
 namespace fl {
    using namespace kt;
 
-constexpr FieldValue WindowType(SWIN Value) { return FieldValue(FID_WindowType, int(Value)); }
+constexpr FieldValue WindowType(SWIN Value) { return FieldValue(strhash("windowType"), int(Value)); }
 
 } // namespace
 

@@ -70,7 +70,9 @@ objXQuery::create query { statement="/bookstore/book[@price &lt; 10]/title" };
 if (query.ok()) {
    XPathValue *result;
    if (!query-&gt;evaluate(xml)) {
-      log.msg("Got: %s", query-&gt;get&lt;CSTRING&gt;(FID_ResultString));
+      std::string_view str;
+      query-&gt;getResultString(str);
+      log.msg("Got: %s", str.data());
    }
 }
 </pre>
@@ -398,14 +400,12 @@ static ERR XQUERY_Evaluate(extXQuery *Self, struct xq::Evaluate *Args)
 
 //********************************************************************************************************************
 
-static ERR XQUERY_Free(extXQuery *Self)
+extXQuery::~extXQuery()
 {
-   if (Self->ResolveVariable.isScript()) {
-      UnsubscribeAction(Self->ResolveVariable.Context, AC::Free);
-      Self->ResolveVariable.clear();
+   if (ResolveVariable.isScript()) {
+      UnsubscribeAction(ResolveVariable.Context, AC::Free);
+      ResolveVariable.clear();
    }
-
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************

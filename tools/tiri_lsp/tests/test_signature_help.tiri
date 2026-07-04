@@ -111,6 +111,33 @@ result = greet('Ada', |)
       'Second parameter should include @Doc text.')
 end
 
+@Test function DocAnnotatedFunctionSignatureAfterRelativeImport()
+   help = signatureAt([=[
+import './relative_symbol_helper'
+
+@Doc(text=[[
+   Returns a local greeting.
+
+   -INPUT-
+   Name: Person to greet
+   Count: Number of greetings
+]])
+function localGreeting(Name: str, Count: num):str
+   return Name
+end
+
+result = localGreeting('Ada', |)
+]=])
+
+   signature = firstSignature(help)
+   assertContains(signature.label, 'localGreeting(Name: str, Count: num):str',
+      'Relative imports should not stop parser symbols from feeding signature help.')
+   assert(signature.documentation.value is 'Returns a local greeting.',
+      'Signature docs should survive relative import parsing.')
+   assert(signature.parameters[1].label is 'Count: num',
+      'Second parameter should remain available after a relative import.')
+end
+
 @Test function MixedTypedAndUntypedParameters()
    help = signatureAt([=[
 function mix(Untyped, Flag: bool)

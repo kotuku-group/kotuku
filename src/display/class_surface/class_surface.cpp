@@ -930,72 +930,65 @@ static ERR SURFACE_Focus(extSurface *Self)
 
 //********************************************************************************************************************
 
-static ERR SURFACE_Free(extSurface *Self)
+extSurface::~extSurface()
 {
-   if (Self->RedrawTimer) { UpdateTimer(Self->RedrawTimer, 0); Self->RedrawTimer = 0; }
+   if (RedrawTimer) UpdateTimer(RedrawTimer, 0);
 
-   if ((Self->Callback) and (Self->Callback != Self->CallbackCache)) {
-      FreeResource(Self->Callback);
-      Self->Callback = nullptr;
-      Self->CallbackCount = 0;
-      Self->CallbackSize = 0;
+   if ((Callback) and (Callback != CallbackCache)) {
+      FreeResource(Callback);
+      Callback = nullptr;
+      CallbackCount = 0;
+      CallbackSize = 0;
    }
 
-   if (Self->ParentID) {
-      if (kt::ScopedObjectLock<extSurface> parent(Self->ParentID, 5000); parent.granted()) {
+   if (ParentID) {
+      if (kt::ScopedObjectLock<extSurface> parent(ParentID, 5000); parent.granted()) {
          UnsubscribeAction(*parent, AC::NIL);
-         if (Self->transparent()) {
-            Action(drw::RemoveCallback::id, Self, nullptr);
+         if (transparent()) {
+            Action(drw::RemoveCallback::id, this, nullptr);
          }
       }
    }
 
-   acHide(Self);
+   acHide(this);
 
    // Remove any references to this surface object from the global surface list
 
-   untrack_layer(Self->UID);
+   untrack_layer(UID);
 
-   if ((!Self->ParentID) and (Self->DisplayID)) {
-      FreeResource(Self->DisplayID);
-      Self->DisplayID = 0;
-   }
+   if ((!ParentID) and (DisplayID)) FreeResource(DisplayID);
 
-   if ((Self->BufferID) and ((!Self->BitmapOwnerID) or (Self->BitmapOwnerID IS Self->UID))) {
-      if (Self->Bitmap) { ReleaseObject(Self->Bitmap); Self->Bitmap = nullptr; }
-      FreeResource(Self->BufferID);
-      Self->BufferID = 0;
+   if ((BufferID) and ((!BitmapOwnerID) or (BitmapOwnerID IS UID))) {
+      if (Bitmap) { ReleaseObject(Bitmap); Bitmap = nullptr; }
+      FreeResource(BufferID);
    }
 
    // Give the focus to the parent if our object has the primary focus.  Do not apply this technique to surface objects
    // acting as windows, as the window class has its own focus management code.
 
-   if (Self->hasFocus() and (Self->Owner) and (Self->Owner->classID() != CLASSID::WINDOW)) {
-      if (Self->ParentID) {
-         kt::ScopedObjectLock focus(Self->ParentID);
+   if (hasFocus() and Owner) {
+      if (ParentID) {
+         kt::ScopedObjectLock focus(ParentID);
          if (focus.granted()) acFocus(*focus);
       }
    }
 
-   if ((Self->Flags & RNF::AUTO_QUIT) != RNF::NIL) {
-      kt::Log log;
-      log.msg("Posting a quit message due to use of AUTOQUIT.");
+   if ((Flags & RNF::AUTO_QUIT) != RNF::NIL) {
+      kt::Log().msg("Posting a quit message due to use of AUTOQUIT.");
       SendMessage(MSGID::QUIT, MSF::NIL, nullptr, 0);
    }
 
-   if (Self->InputHandle) gfx::UnsubscribeInput(Self->InputHandle);
+   if (InputHandle) gfx::UnsubscribeInput(InputHandle);
 
    {
       const std::lock_guard<std::recursive_mutex> lock(glWindowHookLock);
       for (auto it = glWindowHooks.begin(); it != glWindowHooks.end();) {
-         if (it->first.SurfaceID IS Self->UID) {
+         if (it->first.SurfaceID IS UID) {
             it = glWindowHooks.erase(it);
          }
          else it++;
       }
    }
-
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -2119,8 +2112,8 @@ static ERR SURFACE_SaveImage(extSurface *Self, struct acSaveImage *Args)
                if (list[j].BitmapID != bitmapid) {
                   bitmapid = list[j].BitmapID;
 
-                  extBitmap *picbmp;
-                  img->get(FID_Bitmap, picbmp);
+                  objBitmap *picbmp;
+                  img->getBitmap(picbmp);
                   if (auto error = gfx::CopySurface(list[j].SurfaceID, picbmp, BDF::NIL, 0, 0, list[j].Width,
                         list[j].Height, list[j].Left - list[i].Left, list[j].Top - list[i].Top);
                         error != ERR::Okay) {
@@ -2488,7 +2481,7 @@ ERR create_surface_class(void)
       fl::Methods(clSurfaceMethods),
       fl::Fields(clSurfaceFields),
       fl::Size(sizeof(extSurface)),
-      fl::Path(MOD_PATH));
+      fl::Path("modules:display"));
 
    return clSurface ? ERR::Okay : ERR::AddClass;
 }

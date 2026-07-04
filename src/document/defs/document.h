@@ -356,6 +356,18 @@ struct font_entry {
    }
 };
 
+class FloatRect {
+   public:
+   double X, Y, Width, Height;
+   constexpr FloatRect() noexcept = default;
+   constexpr FloatRect(double Value) noexcept : X(Value), Y(Value), Width(Value), Height(Value) { }
+   constexpr FloatRect(double pX, double pY, double pWidth, double pHeight) noexcept : X(pX), Y(pY), Width(pWidth), Height(pHeight) { }
+   constexpr double left() const noexcept { return X; }
+   constexpr double top() const noexcept { return Y; }
+   constexpr double right() const noexcept { return X + Width; }
+   constexpr double bottom() const noexcept { return Y + Height; }
+};
+
 //********************************************************************************************************************
 // Refer to layout::new_segment().  A segment represents graphical content, which can be in the form of text,
 // graphics or both.  A segment can consist of one line only - so if the layout process encounters a boundary causing
@@ -1399,6 +1411,8 @@ class extDocument : public objDocument {
    extDocument(objMetaClass *ClassPtr, OBJECTID ObjectID) : objDocument(ClassPtr, ObjectID) {
       if (auto error = unload_doc(this); error != ERR::Okay) kt::Log().fatal(error);
    }
+
+   ~extDocument();
 };
 
 bc_button::bc_button() {

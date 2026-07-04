@@ -293,9 +293,10 @@ static ERR find_proxy(extProxy *Self)
    if (auto config = get_proxy_config()) {
       if (not Self->Find) Self->Find = true; // Start of search
 
-      ConfigGroups *groups;
-      if (config->get(FID_Data, groups) != ERR::Okay) return ERR::NoData;
+      APTR group_ptr;
+      if (config->getData(group_ptr) != ERR::Okay) return ERR::NoData;
 
+      auto groups = (ConfigGroups *)group_ptr;
       auto group = groups->begin();
 
       // If continuing search, find next record

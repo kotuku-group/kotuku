@@ -72,7 +72,6 @@ static const struct ActionArray clDocumentActions[] = {
    { AC::Draw, DOCUMENT_Draw },
    { AC::Enable, DOCUMENT_Enable },
    { AC::Focus, DOCUMENT_Focus },
-   { AC::Free, DOCUMENT_Free },
    { AC::FreePlacement, DOCUMENT_FreePlacement },
    { AC::GetKey, DOCUMENT_GetKey },
    { AC::Init, DOCUMENT_Init },

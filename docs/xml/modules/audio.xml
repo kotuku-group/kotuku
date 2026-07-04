@@ -340,31 +340,6 @@
   </function>
 
   <types>
-    <constants lookup="ADF" comment="Optional flags for the Audio object.">
-      <const name="AUTO_SAVE">Save configuration information on exit.</const>
-      <const name="FILTER_HIGH">Enable a high level of output filtering to minimise distortion.</const>
-      <const name="FILTER_LOW">Enable a low level of output filtering to minimise distortion.</const>
-      <const name="OVER_SAMPLING">Enables oversampling for higher quality audio at the cost of slower mixing.</const>
-      <const name="STEREO">Enable stereo output (set by default if the platform supports stereo).  If not set, output is in mono.</const>
-      <const name="SYSTEM_WIDE">Mixer changes should be applied system-wide.</const>
-      <const name="VOL_RAMPING">Enable volume ramping for softer playback when a sample is played multiple times (enabled by default).</const>
-    </constants>
-
-    <constants lookup="CHF" comment="Optional flags for the AudioChannel structure.">
-      <const name="BACKWARD">Play channel backwards.</const>
-      <const name="CHANGED">Sample change</const>
-      <const name="MUTE">Channel is muted.</const>
-      <const name="VOL_RAMP">Volume ramping is enabled.</const>
-    </constants>
-
-    <constants lookup="CHS" comment="Channel status types for the AudioChannel structure.">
-      <const name="FADE_OUT">Playback is fading out.</const>
-      <const name="FINISHED">Playback concluded by reaching the sample end.</const>
-      <const name="PLAYING">Sample playing and not released.</const>
-      <const name="RELEASED">Sample playing and note has been released.</const>
-      <const name="STOPPED">Playing was stopped by the client.</const>
-    </constants>
-
     <constants lookup="LOOP" comment="Loop modes for the AudioLoop structure.">
       <const name="AMIGA">Single loop: Amiga style.</const>
       <const name="AMIGA_NONE">Amiga loop: Do nothing.</const>
@@ -376,59 +351,6 @@
     <constants lookup="LTYPE" comment="Loop types for the AudioLoop structure.">
       <const name="BIDIRECTIONAL">The sample will play in reverse whenever it hits the end marker, then forwards when it hits the start marker.</const>
       <const name="UNIDIRECTIONAL">The sample playback position returns to the byte position specified in the Loop1Start field.</const>
-    </constants>
-
-    <constants lookup="NOTE" comment="Definitions for the Note field.  An 'S' indicates a sharp note.">
-      <const name="A"/>
-      <const name="AS"/>
-      <const name="B"/>
-      <const name="C"/>
-      <const name="CS"/>
-      <const name="D"/>
-      <const name="DS"/>
-      <const name="E"/>
-      <const name="F"/>
-      <const name="FS"/>
-      <const name="G"/>
-      <const name="GS"/>
-      <const name="OCTAVE"/>
-    </constants>
-
-    <constants lookup="SDF" comment="Sound flags">
-      <const name="LOOP">Enables sample looping. The <fl>LoopStart</fl> and <fl>LoopEnd</fl> fields determine where the looping area lies within the sample data.</const>
-      <const name="NEW">Create the sample from scratch (e.g. for audio recording purposes).</const>
-      <const name="RESTRICT_PLAY">Restricts playback so that the sound can never play on more than one channel at any given time.</const>
-      <const name="STEREO">Indicates that the sound has multiple audio channels.</const>
-      <const name="STREAM">Read-Only. Indicates that streaming is enabled.</const>
-    </constants>
-
-    <constants lookup="SFM" comment="These audio bit formats are supported by AddSample and AddStream.">
-      <const name="F_BIG_ENDIAN">Combine this flag with any audio format to declare it as big endian.</const>
-      <const name="S16_BIT_MONO">16-bit mono signed sample.</const>
-      <const name="S16_BIT_STEREO">16-bit stereo signed sample.</const>
-      <const name="U8_BIT_MONO">8-bit mono unsigned sample.</const>
-      <const name="U8_BIT_STEREO">8-bit stereo unsigned sample.</const>
-    </constants>
-
-    <constants lookup="STREAM" comment="Streaming options">
-      <const name="ALWAYS">Stream if the sample length exceeds 64k.</const>
-      <const name="NEVER">No streaming - load all data into memory.</const>
-      <const name="SMART">Smart streaming is the default.  If the sample appears to be relatively small with respect to available system RAM, it will be loaded into memory.  Otherwise it will be streamed.</const>
-    </constants>
-
-    <constants lookup="SVF" comment="Flags for the SetVolume() method.">
-      <const name="CAPTURE">Set input, not output.</const>
-      <const name="MUTE">Mute the audio for this channel.</const>
-      <const name="UNMUTE">Unmute the audio for this channel.</const>
-    </constants>
-
-    <constants lookup="VCF" comment="Volume control flags">
-      <const name="CAPTURE">The mixer supports audio input.</const>
-      <const name="JOINED">The mixer channels are joined (e.g. left and right speakers cannot be adjusted separately).</const>
-      <const name="MONO">The mixer is restricted to mono input/output.</const>
-      <const name="MUTE">The mixer is muted.</const>
-      <const name="PLAYBACK">The mixer supports audio output.</const>
-      <const name="SYNC">The mixer is synchronised.</const>
     </constants>
 
   </types>

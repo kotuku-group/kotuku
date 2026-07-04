@@ -32,6 +32,7 @@ display initialisation.
 *********************************************************************************************************************/
 
 #include "defs.h"
+#include <kotuku/modules/time.h>
 
 #ifdef _WIN32
 using namespace display;
@@ -111,7 +112,9 @@ void clean_clipboard(void)
    if (not time.ok()) return;
 
    time->query();
-   int64_t now = time->get<int64_t>(FID_Timestamp) / 1000000LL;
+   int64_t timestamp;
+   time->getTimestamp(timestamp);
+   int64_t now = timestamp / 1000000LL;
    int64_t yesterday = now - (24 * 60LL * 60LL);
 
    DirInfo *dir;
@@ -496,14 +499,12 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
 
 //********************************************************************************************************************
 
-static ERR CLIPBOARD_Free(objClipboard *Self)
+objClipboard::~objClipboard()
 {
-   if (Self->RequestHandler.isScript()) {
-      UnsubscribeAction(Self->RequestHandler.Context, AC::Free);
-      Self->RequestHandler.clear();
+   if (RequestHandler.isScript()) {
+      UnsubscribeAction(RequestHandler.Context, AC::Free);
+      RequestHandler.clear();
    }
-
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -925,7 +926,7 @@ ERR create_clipboard_class(void)
       fl::Methods(clClipboardMethods),
       fl::Fields(clFields),
       fl::Size(sizeof(objClipboard)),
-      fl::Path(MOD_PATH));
+      fl::Path("modules:display"));
 
    int pid;
    if (!CurrentTask()->getProcess(pid)) glProcessID = std::to_string(pid);

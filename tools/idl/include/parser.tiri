@@ -325,6 +325,10 @@ global function parseMethod(Class:table, Extract:str)
          if param then
             cType(param, f'Method:{name}')
             table.insert(method.params, param)
+
+            if param.lookup then
+               Class.references['TYPE:' .. param.lookup] = 'method:' .. name
+            end
          elseif content:trim()?? then
             error("Unable to process line '" .. (content ?? "NULL") .. "' for method '" .. name .. "'")
          end
@@ -409,11 +413,15 @@ global function parseClassFields(Class:table, ClientSpec:str)
    Class.lookupFields = { }
    if Class.fields then
       for f in values(Class.fields) do
-         local field_id = calcFieldHash(f.name)
-         local err, cf, _ = Class.meta.mtFindField(field_id)
-         if err is ERR_Okay then
-            f.offset = cf.offset
-            f.index  = findDictionaryFieldIndex(Class.meta, field_id) ?? cf.index
+         -- Offset/index enrichment is best-effort and only possible when the live class is loaded.  For a
+         -- not-yet-compiled module (e.g. a clean build of a derived class) Class.meta is nil; skip the lookup.
+         if Class.meta then
+            local field_id = calcFieldHash(f.name)
+            local err, cf, _ = Class.meta.mtFindField(field_id)
+            if err is ERR_Okay then
+               f.offset = cf.offset
+               f.index  = findDictionaryFieldIndex(Class.meta, field_id) ?? cf.index
+            end
          end
 
          Class.lookupFields[f.name] = f

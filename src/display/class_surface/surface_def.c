@@ -166,7 +166,6 @@ static const struct ActionArray clSurfaceActions[] = {
    { AC::Draw, SURFACE_Draw },
    { AC::Enable, SURFACE_Enable },
    { AC::Focus, SURFACE_Focus },
-   { AC::Free, SURFACE_Free },
    { AC::FreePlacement, SURFACE_FreePlacement },
    { AC::Hide, SURFACE_Hide },
    { AC::Init, SURFACE_Init },

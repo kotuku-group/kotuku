@@ -6,6 +6,7 @@ Test for Regex matching
 
 #include <kotuku/startup.h>
 #include <kotuku/modules/regex.h>
+#include <kotuku/modules/module.h>
 #include <format>
 
 JUMPTABLE_REGEX
