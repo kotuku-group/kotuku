@@ -32,6 +32,7 @@ class extVectorWave : public extVector {
    double wFrequency    = 1.0;
    double wFrequencyEnd = 1.0;
    double wDecay        = 1.0;
+   double wNoise        = 0.0;
    double wPhase        = 0;
    WVE wEnvelope     = WVE::LINEAR;
    WVC wClose        = WVC::NIL;
@@ -177,8 +178,26 @@ class extVectorWave : public extVector {
       else return 1.0 - ((1.0 - end_scale) * progress);
    }
 
+   double noise_sample(int Index) {
+      double raw = sin((double(Index) * 12.9898) + 78.233) * 43758.5453123;
+      return ((raw - floor(raw)) * 2.0) - 1.0;
+   }
+
+   double noise_value(double Phase) {
+      double position = Phase * (1.0 / 45.0);
+      double base = floor(position);
+      double fraction = position - base;
+      double smooth = fraction * fraction * (3.0 - (2.0 * fraction));
+      double start = noise_sample(int(base));
+      double end = noise_sample(int(base) + 1);
+
+      return start + ((end - start) * smooth);
+   }
+
    inline double decayed_wave_value(double Angle, double Phase, double Amplitude) {
-      return (wave_value(this, Phase) * Amplitude * decay_multiplier(Angle));
+      double value = wave_value(this, Phase) * Amplitude * decay_multiplier(Angle);
+      if (wNoise > 0.0) value += noise_value(Phase) * std::abs(Amplitude) * wNoise;
+      return value;
    }
 
    inline void add_wave_vertex(agg::path_storage &Path, double OriginX, double OriginY,
@@ -193,6 +212,7 @@ class extVectorWave : public extVector {
    bool smooth_wave_needs_resolve(double Length, double Amplitude, double Thickness, double Frequency,
       double FrequencyEnd)
    {
+      if (wNoise > 0.0) return true;
       if (wType != WVT::SMOOTH) return false;
       if ((Transition) or (not (wDecay IS 1.0)) or frequency_sweeps(Frequency, FrequencyEnd)) return true;
 
@@ -353,7 +373,8 @@ static void generate_wave(extVectorWave *Vector, agg::path_storage &Path)
    double xscale = length * (1.0 / 360.0);
    double angle;
    double last_x = x, last_y = y;
-   if ((Vector->wType IS WVT::TRIANGLE) or (Vector->wType IS WVT::SAWTOOTH) or (Vector->wType IS WVT::SQUARE)) {
+   if ((Vector->wNoise <= 0.0) and ((Vector->wType IS WVT::TRIANGLE) or (Vector->wType IS WVT::SAWTOOTH) or
+      (Vector->wType IS WVT::SQUARE))) {
       if (Vector->wType IS WVT::TRIANGLE) {
          Vector->add_triangle_vertices(Path, ox, oy, xscale, amp, frequency, frequency_end);
       }
@@ -381,6 +402,7 @@ static void generate_wave(extVectorWave *Vector, agg::path_storage &Path)
       double phase_limited_step = MAX_PHASE_STEP * (1.0 / max_frequency);
       double vertex_tolerance = 0.5 * scale;
       if (phase_limited_step < angle_step) angle_step = phase_limited_step;
+      if ((Vector->wNoise > 0.0) and (4.0 < angle_step)) angle_step = 4.0;
       if (angle_step <= 0.0) angle_step = 1.0;
 
       for (angle=angle_step; angle < 360; angle += angle_step) {
@@ -579,6 +601,25 @@ static ERR VECTORWAVE_SET_FrequencyEnd(extVectorWave *Self, double Value)
 
 /*********************************************************************************************************************
 -FIELD-
+Noise: Perturbs the generated wave path with deterministic noise.
+
+The Noise value ranges from `0.0` to `1.0`.  A value of `0.0` applies no noise and preserves the unperturbed wave,
+while `1.0` applies the strongest perturbation.
+
+*********************************************************************************************************************/
+
+static ERR VECTORWAVE_SET_Noise(extVectorWave *Self, double Value)
+{
+   if ((Value >= 0.0) and (Value <= 1.0)) {
+      Self->wNoise = Value;
+      reset_path(Self);
+      return ERR::Okay;
+   }
+   else return ERR::InvalidValue;
+}
+
+/*********************************************************************************************************************
+-FIELD-
 Phase: Declares the initial phase, in degrees, to use when generating the wave.
 
 The phase value defines the initial position that is used when computing the wave.  The default is zero.
@@ -688,6 +729,7 @@ static const FieldArray clVectorWaveFields[] = {
    { "Frequency",  FDF_DOUBLE|FDF_RW, nullptr, VECTORWAVE_SET_Frequency },
    { "FrequencyEnd", FDF_DOUBLE|FDF_RW, nullptr, VECTORWAVE_SET_FrequencyEnd },
    { "Decay",      FDF_DOUBLE|FDF_RW, nullptr, VECTORWAVE_SET_Decay },
+   { "Noise",      FDF_DOUBLE|FDF_RW, nullptr, VECTORWAVE_SET_Noise },
    { "Phase",      FDF_DOUBLE|FDF_RW, nullptr, VECTORWAVE_SET_Phase },
    { "Envelope",   FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORWAVE_SET_Envelope, &clVectorWaveWVE },
    { "Close",      FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTORWAVE_SET_Close, &clVectorWaveWVC },

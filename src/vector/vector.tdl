@@ -805,6 +805,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     references={ 'WVT', 'WVC', 'WVE' }, extended=true },
   [[
     ~double FrequencyEnd
+    ~double Noise
     ~int(WVE) Envelope
     ~int(WVC) Close
     ~int(WVT) Type
