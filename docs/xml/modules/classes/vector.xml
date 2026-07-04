@@ -310,7 +310,7 @@
     <field>
       <name>AppendPath</name>
       <comment>Experimental.  Append the path of the referenced vector during path generation.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>OBJECTPTR</type>
       <description>
 <p>The path of a vector object can be appended to another vector in real-time by making a reference to the former vector here.  The operation is completed immediately after the generation of the client vector's base path, prior to any transforms.</p>
@@ -459,6 +459,26 @@
     </field>
 
     <field>
+      <name>GuideFlags</name>
+      <comment>Optional flags that affect <fl>GuidePath</fl>.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="VMF">VMF</type>
+      <description>
+<types lookup="VMF"/>
+      </description>
+    </field>
+
+    <field>
+      <name>GuidePath</name>
+      <comment>Transform the vector to follow a target path specified here.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>OBJECTPTR</type>
+      <description>
+<p>Setting the GuidePath to reference a path-generating vector will result in the source following the target path when rendered.  This works particularly well for text and shapes that follow a lengthy path.</p>
+      </description>
+    </field>
+
+    <field>
       <name>InnerJoin</name>
       <comment>Adjusts the handling of thickly stroked paths that cross back at the join.</comment>
       <access read="R" write="S">Read/Set</access>
@@ -506,7 +526,7 @@
     <field>
       <name>Mask</name>
       <comment>Reference a VectorClip object here to apply a clipping mask to the rendered vector.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>OBJECTPTR</type>
       <description>
 <p>A mask can be applied to a vector by setting the Mask field with a reference to a <class name="VectorClip">VectorClip</class> object.  Please refer to the <class name="VectorClip">VectorClip</class> class for further information.</p>
@@ -533,27 +553,6 @@
 <p>When two line segments meet at a sharp angle and miter joins have been specified in <fl>LineJoin</fl>, it is possible for the miter to extend far beyond the thickness of the line stroking the path. The MiterLimit imposes a limit on the ratio of the miter length to the <fl>StrokeWidth</fl>. When the limit is exceeded, the join is converted from a miter to a bevel.</p>
 <p>The ratio of miter length (distance between the outer tip and the inner corner of the miter) to <fl>StrokeWidth</fl> is directly related to the angle (theta) between the segments in user space by the formula: <code>MiterLength / StrokeWidth = 1 / sin ( theta / 2 )</code>.</p>
 <p>For example, a miter limit of 1.414 converts miters to bevels for theta less than 90 degrees, a limit of 4.0 converts them for theta less than approximately 29 degrees, and a limit of 10.0 converts them for theta less than approximately 11.5 degrees.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>Morph</name>
-      <comment>Enables morphing of the vector to a target path.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>OBJECTPTR</type>
-      <description>
-<p>If the Morph field is set to a Vector object that generates a path, the vector will be morphed to follow the target vector's path shape.  This works particularly well for text and shapes that follow a horizontal path that is much wider than it is tall.</p>
-<p>Squat shapes will fare poorly if morphed, so experimentation may be necessary to understand how the morph feature is best utilised.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>MorphFlags</name>
-      <comment>Optional flags that affect morphing.</comment>
-      <access read="R" write="S">Read/Set</access>
-      <type lookup="VMF">VMF</type>
-      <description>
-<types lookup="VMF"/>
       </description>
     </field>
 
@@ -733,7 +732,7 @@ Z: Close Path
     <field>
       <name>Transition</name>
       <comment>Reference a VectorTransition object here to apply multiple transforms over the vector's path.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>OBJECTPTR</type>
       <description>
 <p>A transition can be applied by setting this field with a reference to a <class name="VectorTransition">VectorTransition</class> object.  Please refer to the <class name="VectorTransition">VectorTransition</class> class for further information.</p>
@@ -867,7 +866,7 @@ Z: Close Path
       <const name="ROUND">The join is rounded.</const>
     </constants>
 
-    <constants lookup="VMF" comment="Morph flags">
+    <constants lookup="VMF" comment="Guide path flags">
       <const name="AUTO_SPACING">Applicable when used on <class name="VectorText">VectorText</class>, auto-spacing allows the spacing between glyphs to be shrunk or expanded along the target path so that they can produce a better fit.  The default is for the glyphs to conform to their original spacing requirements.</const>
       <const name="STRETCH">Applicable when used on <class name="VectorText">VectorText</class>, the stretch option converts glyph outlines into paths, and then all end points and control points will be adjusted to be along the perpendicular vectors from the path, thereby stretching and possibly warping the glyphs.  With this approach, connected glyphs, such as in cursive scripts, will maintain their connections.</const>
       <const name="X_MAX">Align the source so that it is morphed along the right of the target path.</const>

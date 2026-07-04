@@ -744,36 +744,36 @@ static ERR save_svg_scan_std(extSVG *Self, objXML *XML, objVector *Vector, int T
       }
    }
 
-   OBJECTPTR morph_obj;
-   if ((!error) and (!Vector->getMorph(morph_obj)) and (morph_obj)) {
-      auto shape = (objVector *)morph_obj;
-      VMF morph_flags;
-      XTag *morph_tag;
-      error = XML->insertStatement(TagID, XMI::CHILD_END, "<kotuku:morph/>", &morph_tag);
+   OBJECTPTR guide_obj;
+   if ((!error) and (!Vector->getGuidePath(guide_obj)) and (guide_obj)) {
+      auto shape = (objVector *)guide_obj;
+      VMF guide_flags;
+      XTag *guide_tag;
+      error = XML->insertStatement(TagID, XMI::CHILD_END, "<kotuku:guidePath/>", &guide_tag);
 
       std::string_view shape_id;
       if ((!error) and (!shape->getSID(shape_id)) and not shape_id.empty()) {
          // NB: It is required that the shape has previously been registered as a definition, otherwise the url will refer to a dud tag.
          auto shape_ref = std::format("url(#{})", shape_id);
-         xml::NewAttrib(morph_tag, "xlink:href", shape_ref);
+         xml::NewAttrib(guide_tag, "xlink:href", shape_ref);
       }
 
-      if (!error) error = Vector->getMorphFlags(morph_flags);
+      if (!error) error = Vector->getGuideFlags(guide_flags);
 
-      if ((!error) and ((morph_flags & VMF::STRETCH) != VMF::NIL)) xml::NewAttrib(morph_tag, "method", "stretch");
-      if ((!error) and ((morph_flags & VMF::AUTO_SPACING) != VMF::NIL)) xml::NewAttrib(morph_tag, "spacing", "auto");
+      if ((!error) and ((guide_flags & VMF::STRETCH) != VMF::NIL)) xml::NewAttrib(guide_tag, "method", "stretch");
+      if ((!error) and ((guide_flags & VMF::AUTO_SPACING) != VMF::NIL)) xml::NewAttrib(guide_tag, "spacing", "auto");
 
-      if ((!error) and ((morph_flags & (VMF::X_MIN|VMF::X_MID|VMF::X_MAX|VMF::Y_MIN|VMF::Y_MID|VMF::Y_MAX)) != VMF::NIL)) {
+      if ((!error) and ((guide_flags & (VMF::X_MIN|VMF::X_MID|VMF::X_MAX|VMF::Y_MIN|VMF::Y_MID|VMF::Y_MAX)) != VMF::NIL)) {
          std::string align;
-         if ((morph_flags & VMF::X_MIN) != VMF::NIL) align = "xMin ";
-         else if ((morph_flags & VMF::X_MID) != VMF::NIL) align = "xMid ";
-         else if ((morph_flags & VMF::X_MAX) != VMF::NIL) align = "xMax ";
+         if ((guide_flags & VMF::X_MIN) != VMF::NIL) align = "xMin ";
+         else if ((guide_flags & VMF::X_MID) != VMF::NIL) align = "xMid ";
+         else if ((guide_flags & VMF::X_MAX) != VMF::NIL) align = "xMax ";
 
-         if ((morph_flags & VMF::Y_MIN) != VMF::NIL) align += "yMin";
-         else if ((morph_flags & VMF::Y_MID) != VMF::NIL) align += "yMid";
-         else if ((morph_flags & VMF::Y_MAX) != VMF::NIL) align += "yMax";
+         if ((guide_flags & VMF::Y_MIN) != VMF::NIL) align += "yMin";
+         else if ((guide_flags & VMF::Y_MID) != VMF::NIL) align += "yMid";
+         else if ((guide_flags & VMF::Y_MAX) != VMF::NIL) align += "yMax";
 
-         xml::NewAttrib(morph_tag, "align", align);
+         xml::NewAttrib(guide_tag, "align", align);
       }
 
       OBJECTPTR tv;

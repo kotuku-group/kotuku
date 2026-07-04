@@ -205,26 +205,26 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
       return;
    }
 
-   auto morph = Vector->Morph;
+   auto guide = Vector->GuidePath;
    double start_x, start_y, end_vx, end_vy;
    double path_scale = 1.0;
-   if (morph) {
-      if ((Vector->MorphFlags & VMF::STRETCH) != VMF::NIL) {
+   if (guide) {
+      if ((Vector->GuideFlags & VMF::STRETCH) != VMF::NIL) {
          // In stretch mode, the standard morphing algorithm is used (see gen_vector_path())
-         morph = nullptr;
+         guide = nullptr;
       }
       else {
-         if (morph->dirty()) gen_vector_path(morph); // Regenerate the target path if necessary
+         if (guide->dirty()) gen_vector_path(guide); // Regenerate the target path if necessary
 
-         if (!morph->BasePath.total_vertices()) morph = nullptr;
+         if (!guide->BasePath.total_vertices()) guide = nullptr;
          else {
-            morph->BasePath.rewind(0);
-            morph->BasePath.vertex(0, &start_x, &start_y);
+            guide->BasePath.rewind(0);
+            guide->BasePath.vertex(0, &start_x, &start_y);
             end_vx = start_x;
             end_vy = start_y;
-            if (morph->PathLength > 0) {
-               path_scale = morph->PathLength / agg::path_length(morph->BasePath);
-               morph->BasePath.rewind(0);
+            if (guide->PathLength > 0) {
+               path_scale = guide->PathLength / agg::path_length(guide->BasePath);
+               guide->BasePath.rewind(0);
             }
          }
       }
@@ -259,7 +259,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
       FT_Set_Char_Size(pt.font->face, 0, dbl_to_int26p6(Vector->txFontSize), 72, 72);
    }
 
-   if (morph) {
+   if (guide) {
       // The scale_char transform is applied to each character to ensure that it is scaled to the path correctly.
 
       agg::trans_affine scale_char;
@@ -308,7 +308,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             if (char_width > dist) {
                while (cmd != agg::path_cmd_stop) {
                   double current_x, current_y;
-                  cmd = morph->BasePath.vertex(&current_x, &current_y);
+                  cmd = guide->BasePath.vertex(&current_x, &current_y);
                   if (agg::is_vertex(cmd)) {
                      const double x = (current_x - end_vx), y = (current_y - end_vy);
                      const double vertex_dist = sqrt((x * x) + (y * y));
@@ -329,7 +329,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
 
             double tx = start_x, ty = start_y;
 
-            if (cmd != agg::path_cmd_stop) { // Advance (start_x,start_y) to the next point on the morph path.
+            if (cmd != agg::path_cmd_stop) { // Advance (start_x,start_y) to the next point on the guide path.
                angle = std::atan2(end_vy - start_y, end_vx - start_x);
 
                double x = end_vx - start_x, y = end_vy - start_y;

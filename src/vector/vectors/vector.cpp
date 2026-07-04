@@ -159,7 +159,7 @@ static void notify_free_transition(OBJECTPTR Object, ACTIONID ActionID, ERR Resu
 static void notify_free_morph(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
    auto Self = (extVector *)CurrentContext();
-   if ((Self->Morph) and (Object->UID IS Self->Morph->UID)) Self->Morph = nullptr;
+   if ((Self->GuidePath) and (Object->UID IS Self->GuidePath->UID)) Self->GuidePath = nullptr;
 }
 
 static void notify_free_clipmask(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
@@ -1033,12 +1033,6 @@ Note: Appended paths are not compliant with SVG and this feature is considered e
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_AppendPath(extVector *Self, extVector **Value)
-{
-   *Value = Self->AppendPath;
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_AppendPath(extVector *Self, extVector *Value)
 {
    kt::Log log;
@@ -1538,12 +1532,6 @@ refer to the @VectorClip class for further information.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_Mask(extVector *Self, extVectorClip **Value)
-{
-   *Value = Self->ClipMask;
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_Mask(extVector *Self, extVectorClip *Value)
 {
    kt::Log log;
@@ -1610,39 +1598,26 @@ static ERR VECTOR_SET_MiterLimit(extVector *Self, double Value)
 
 /*********************************************************************************************************************
 -FIELD-
-Morph: Enables morphing of the vector to a target path.
+GuidePath: Transform the vector to follow a target path specified here.
 
-If the Morph field is set to a Vector object that generates a path, the vector will be morphed to follow the target
-vector's path shape.  This works particularly well for text and shapes that follow a horizontal path that is much wider
-than it is tall.
-
-Squat shapes will fare poorly if morphed, so experimentation may be necessary to understand how the morph feature is
-best utilised.
+Setting the GuidePath to reference a path-generating vector will result in the source following the target path when
+rendered.  This works particularly well for text and shapes that follow a lengthy path.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_Morph(extVector *Self, extVector **Value)
-{
-   *Value = Self->Morph;
-   return ERR::Okay;
-}
-
-static ERR VECTOR_SET_Morph(extVector *Self, extVector *Value)
+static ERR VECTOR_SET_GuidePath(extVector *Self, extVector *Value)
 {
    kt::Log log;
 
-   if (!Value) {
-      if (Self->Morph) {
-         UnsubscribeAction(Self->Morph, AC::Free);
-         Self->Morph = nullptr;
-      }
+   if (not Value) {
+      if (Self->GuidePath) { UnsubscribeAction(Self->GuidePath, AC::Free); Self->GuidePath = nullptr; }
       return ERR::Okay;
    }
    else if (Value->Class->BaseClassID IS CLASSID::VECTOR) {
-      if (Self->Morph) UnsubscribeAction(Self->Morph, AC::Free);
+      if (Self->GuidePath) UnsubscribeAction(Self->GuidePath, AC::Free);
       if (Value->initialised()) { // The object must be initialised.
          SubscribeAction(Value, AC::Free, C_FUNCTION(notify_free_morph));
-         Self->Morph = Value;
+         Self->GuidePath = Value;
          mark_buffers_for_refresh(Self);
          return ERR::Okay;
       }
@@ -1654,15 +1629,15 @@ static ERR VECTOR_SET_Morph(extVector *Self, extVector *Value)
 /*********************************************************************************************************************
 
 -FIELD-
-MorphFlags: Optional flags that affect morphing.
+GuideFlags: Optional flags that affect #GuidePath.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_SET_MorphFlags(extVector *Self, VMF Value)
+static ERR VECTOR_SET_GuideFlags(extVector *Self, VMF Value)
 {
-    Self->MorphFlags = Value;
-    mark_buffers_for_refresh(Self);
-    return ERR::Okay;
+   Self->GuideFlags = Value;
+   mark_buffers_for_refresh(Self);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -1688,7 +1663,7 @@ static ERR VECTOR_SET_Next(extVector *Self, extVector *Value)
 {
    kt::Log log;
 
-   if ((!Value) or (Value IS Self)) return log.warning(ERR::InvalidValue);
+   if ((not Value) or (Value IS Self)) return log.warning(ERR::InvalidValue);
    if (Value->Class->BaseClassID != CLASSID::VECTOR) return log.warning(ERR::InvalidObject);
    if (Self->Owner != Value->Owner) return log.warning(ERR::UnsupportedOwner); // Owners must match
    if ((Self->Next IS Value) and (Value->Prev IS Self)) return ERR::Okay;
@@ -1788,7 +1763,7 @@ static ERR VECTOR_SET_Prev(extVector *Self, extVector *Value)
 {
    kt::Log log;
 
-   if ((!Value) or (Value IS Self)) return log.warning(ERR::InvalidValue);
+   if ((not Value) or (Value IS Self)) return log.warning(ERR::InvalidValue);
    if (Value->Class->BaseClassID != CLASSID::VECTOR) return log.warning(ERR::InvalidObject);
    if (Self->Owner != Value->Owner) return log.warning(ERR::UnsupportedOwner); // Owners must match
    if ((Self->Prev IS Value) and (Value->Next IS Self)) return ERR::Okay;
@@ -2145,17 +2120,11 @@ and @VectorWave are able to take full advantage of this feature.
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_Transition(extVector *Self, extVectorTransition **Value)
-{
-   *Value = Self->Transition;
-   return ERR::Okay;
-}
-
 static ERR VECTOR_SET_Transition(extVector *Self, extVectorTransition *Value)
 {
    kt::Log log;
 
-   if (!Value) {
+   if (not Value) {
       if (Self->Transition) {
          UnsubscribeAction(Self->Transition, AC::Free);
          Self->Transition = nullptr;
@@ -2246,7 +2215,7 @@ extVector::~extVector() {
 
    if (ClipMask)   UnsubscribeAction(ClipMask, AC::Free);
    if (Transition) UnsubscribeAction(Transition, AC::Free);
-   if (Morph)      UnsubscribeAction(Morph, AC::Free);
+   if (GuidePath)  UnsubscribeAction(GuidePath, AC::Free);
    if (AppendPath) UnsubscribeAction(AppendPath, AC::Free);
 
    // Patch the nearest vectors that are linked to this one.
@@ -2336,23 +2305,23 @@ static const FieldArray clVectorFields[] = {
    { "Fill",         FDF_CPPSTRING|FDF_RW, nullptr, VECTOR_SET_Fill },
    { "Filter",       FDF_CPPSTRING|FDF_RW, nullptr, VECTOR_SET_Filter },
    { "SID",          FDF_CPPSTRING|FDF_RW },
+   { "GuidePath",    FDF_OBJECT|FDF_RW, nullptr, VECTOR_SET_GuidePath },
+   { "Transition",   FDF_OBJECT|FDF_RW, nullptr, VECTOR_SET_Transition },
+   { "Mask",         FDF_OBJECT|FDF_RW, nullptr, VECTOR_SET_Mask },
+   { "AppendPath",   FDF_OBJECT|FDF_RW, nullptr, VECTOR_SET_AppendPath },
    { "FillRule",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTOR_SET_FillRule, &clVectorVFR },
    { "ClipRule",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTOR_SET_ClipRule, &clVectorVFR },
    { "LineJoin",     FD_INT|FD_LOOKUP|FDF_RW,   nullptr, VECTOR_SET_LineJoin, &clVectorVLJ },
    { "LineCap",      FD_INT|FD_LOOKUP|FDF_RW,   nullptr, VECTOR_SET_LineCap, &clVectorVLC },
    { "InnerJoin",    FD_INT|FD_LOOKUP|FDF_RW,   nullptr, VECTOR_SET_InnerJoin, &clVectorVIJ },
-   { "MorphFlags",   FDF_INTFLAGS|FDF_RW,       nullptr, VECTOR_SET_MorphFlags, &clVectorVMF },
+   { "GuideFlags",   FDF_INTFLAGS|FDF_RW,       nullptr, VECTOR_SET_GuideFlags, &clVectorVMF },
    // Virtual fields
    { "DashArray",    FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FD_RW|FDF_PURE, VECTOR_GET_DashArray, VECTOR_SET_DashArray },
    { "DisplayScale", FDF_VIRTUAL|FDF_DOUBLE|FDF_R,              VECTOR_GET_DisplayScale },
-   { "Mask",         FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,    VECTOR_GET_Mask, VECTOR_SET_Mask },
-   { "Morph",        FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,    VECTOR_GET_Morph, VECTOR_SET_Morph },
-   { "AppendPath",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,    VECTOR_GET_AppendPath, VECTOR_SET_AppendPath },
    { "ResizeEvent",  FDF_VIRTUAL|FDF_FUNCTION|FDF_W,            nullptr, VECTOR_SET_ResizeEvent },
    { "Sequence",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, VECTOR_GET_Sequence },
    { "StrokeColour", FDF_VIRTUAL|FDF_STRUCT|FD_RW|FDF_PURE,     VECTOR_GET_StrokeColour, VECTOR_SET_StrokeColour, "FRGB" },
    { "StrokeWidth",  FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE,      VECTOR_GET_StrokeWidth, VECTOR_SET_StrokeWidth },
-   { "Transition",   FDF_VIRTUAL|FDF_OBJECT|FDF_RW|FDF_PURE,    VECTOR_GET_Transition, VECTOR_SET_Transition },
    { "FillColour",   FDF_VIRTUAL|FDF_STRUCT|FDF_RW|FDF_PURE,    VECTOR_GET_FillColour, VECTOR_SET_FillColour, "FRGB" },
    { "TabOrder",     FDF_VIRTUAL|FD_INT|FD_RW|FDF_PURE,         VECTOR_GET_TabOrder, VECTOR_SET_TabOrder },
    END_FIELD

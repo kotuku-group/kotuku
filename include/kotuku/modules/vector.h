@@ -314,7 +314,7 @@ enum class VTXF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(VTXF)
 
-// Morph flags
+// Guide path flags
 
 enum class VMF : uint32_t {
    NIL = 0,
@@ -4063,32 +4063,32 @@ class objVector : public Object {
    }
 
    inline ERR getFillRule(VFR &Value) noexcept {
-      Value = *((VFR *)(((int8_t *)this) + 336));
+      Value = *((VFR *)(((int8_t *)this) + 368));
       return ERR::Okay;
    }
 
    inline ERR getClipRule(VFR &Value) noexcept {
-      Value = *((VFR *)(((int8_t *)this) + 340));
+      Value = *((VFR *)(((int8_t *)this) + 372));
       return ERR::Okay;
    }
 
-   inline ERR getMorphFlags(VMF &Value) noexcept {
-      Value = *((VMF *)(((int8_t *)this) + 356));
+   inline ERR getGuideFlags(VMF &Value) noexcept {
+      Value = *((VMF *)(((int8_t *)this) + 388));
       return ERR::Okay;
    }
 
    inline ERR getLineJoin(VLJ &Value) noexcept {
-      Value = *((VLJ *)(((int8_t *)this) + 344));
+      Value = *((VLJ *)(((int8_t *)this) + 376));
       return ERR::Okay;
    }
 
    inline ERR getLineCap(VLC &Value) noexcept {
-      Value = *((VLC *)(((int8_t *)this) + 348));
+      Value = *((VLC *)(((int8_t *)this) + 380));
       return ERR::Okay;
    }
 
    inline ERR getInnerJoin(VIJ &Value) noexcept {
-      Value = *((VIJ *)(((int8_t *)this) + 352));
+      Value = *((VIJ *)(((int8_t *)this) + 384));
       return ERR::Okay;
    }
 
@@ -4112,6 +4112,26 @@ class objVector : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getGuidePath(OBJECTPTR &Value) noexcept {
+      Value = *((OBJECTPTR *)(((int8_t *)this) + 336));
+      return ERR::Okay;
+   }
+
+   inline ERR getTransition(OBJECTPTR &Value) noexcept {
+      Value = *((OBJECTPTR *)(((int8_t *)this) + 344));
+      return ERR::Okay;
+   }
+
+   inline ERR getMask(OBJECTPTR &Value) noexcept {
+      Value = *((OBJECTPTR *)(((int8_t *)this) + 352));
+      return ERR::Okay;
+   }
+
+   inline ERR getAppendPath(OBJECTPTR &Value) noexcept {
+      Value = *((OBJECTPTR *)(((int8_t *)this) + 360));
+      return ERR::Okay;
+   }
+
    inline ERR getDashArray(std::span<double> &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
       auto get_field = (ERR (*)(APTR, std::span<double> &))field->GetValue;
@@ -4126,23 +4146,8 @@ class objVector : public Object {
       return error;
    }
 
-   inline ERR getMask(OBJECTPTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[29];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getMorph(OBJECTPTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[31];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getAppendPath(OBJECTPTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[40];
-      return field->GetValue(this, &Value);
-   }
-
    inline ERR getSequence(std::string &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       SetObjectContext(this, field, AC::NIL);
       std::string_view view;
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -4156,17 +4161,12 @@ class objVector : public Object {
    }
 
    inline ERR getStrokeWidth(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
-      return field->GetValue(this, &Value);
-   }
-
-   inline ERR getTransition(OBJECTPTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[38];
+      auto field = &this->Class->Dictionary[21];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getTabOrder(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[39];
+      auto field = &this->Class->Dictionary[38];
       return field->GetValue(this, &Value);
    }
 
@@ -4174,7 +4174,7 @@ class objVector : public Object {
    // Customised field setting
 
    inline ERR setNext(objVector * Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
+      auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, 0x08000301, Value);
    }
 
@@ -4189,17 +4189,17 @@ class objVector : public Object {
    }
 
    inline ERR setFillOpacity(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[34];
-      return field->WriteValue(this, field, FD_DOUBLE, &Value);
-   }
-
-   inline ERR setOpacity(const double Value) noexcept {
       auto field = &this->Class->Dictionary[32];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
+   inline ERR setOpacity(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[30];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
    inline ERR setMiterLimit(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -4214,7 +4214,7 @@ class objVector : public Object {
    }
 
    inline ERR setVisibility(const VIS Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
+      auto field = &this->Class->Dictionary[25];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -4250,7 +4250,7 @@ class objVector : public Object {
    }
 
    inline ERR setFillRule(const VFR Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
+      auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -4259,18 +4259,18 @@ class objVector : public Object {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setMorphFlags(const VMF Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
+   inline ERR setGuideFlags(const VMF Value) noexcept {
+      auto field = &this->Class->Dictionary[36];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setLineJoin(const VLJ Value) noexcept {
-      auto field = &this->Class->Dictionary[30];
+      auto field = &this->Class->Dictionary[29];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setLineCap(const VLC Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -4295,8 +4295,28 @@ class objVector : public Object {
    }
 
    inline ERR setSID(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[19];
       return field->WriteValue(this, field, 0x00804300, &Value);
+   }
+
+   inline ERR setGuidePath(OBJECTPTR Value) noexcept {
+      auto field = &this->Class->Dictionary[40];
+      return field->WriteValue(this, field, 0x08000301, Value);
+   }
+
+   inline ERR setTransition(OBJECTPTR Value) noexcept {
+      auto field = &this->Class->Dictionary[37];
+      return field->WriteValue(this, field, 0x08000301, Value);
+   }
+
+   inline ERR setMask(OBJECTPTR Value) noexcept {
+      auto field = &this->Class->Dictionary[28];
+      return field->WriteValue(this, field, 0x08000301, Value);
+   }
+
+   inline ERR setAppendPath(OBJECTPTR Value) noexcept {
+      auto field = &this->Class->Dictionary[39];
+      return field->WriteValue(this, field, 0x08000301, Value);
    }
 
    inline ERR setDashArray(std::span<const double> Value) noexcept {
@@ -4304,38 +4324,18 @@ class objVector : public Object {
       return field->WriteValue(this, field, 0x80101308, &Value);
    }
 
-   inline ERR setMask(OBJECTPTR Value) noexcept {
-      auto field = &this->Class->Dictionary[29];
-      return field->WriteValue(this, field, 0x08100309, Value);
-   }
-
-   inline ERR setMorph(OBJECTPTR Value) noexcept {
-      auto field = &this->Class->Dictionary[31];
-      return field->WriteValue(this, field, 0x08100309, Value);
-   }
-
-   inline ERR setAppendPath(OBJECTPTR Value) noexcept {
-      auto field = &this->Class->Dictionary[40];
-      return field->WriteValue(this, field, 0x08100309, Value);
-   }
-
    inline ERR setResizeEvent(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setStrokeWidth(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
-   inline ERR setTransition(OBJECTPTR Value) noexcept {
-      auto field = &this->Class->Dictionary[38];
-      return field->WriteValue(this, field, 0x08100309, Value);
-   }
-
    inline ERR setTabOrder(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[39];
+      auto field = &this->Class->Dictionary[38];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -4409,7 +4409,7 @@ class objVectorPath : public objVector {
    }
 
    inline ERR getSequence(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
@@ -4446,7 +4446,7 @@ class objVectorPath : public objVector {
    }
 
    inline ERR setSequence(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, 0x00804308, &Value);
    }
 

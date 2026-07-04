@@ -27,7 +27,7 @@
   &lt;rect fill=&quot;#ffffff&quot; width=&quot;100%&quot; height=&quot;100%&quot;/&gt;
   &lt;text x=&quot;3&quot; y=&quot;80&quot; font-size=&quot;19.6&quot; fill=&quot;navy&quot; transition=&quot;url(#hill)&quot;&gt;This text is morphed by a transition&lt;/text&gt;
 </pre>
-<p>Transitions are most effective when used in conjunction with the morph feature in the <class name="Vector">Vector</class> class.</p></description>
+<p>Transitions are most effective when used in conjunction with the <class name="Vector" field="GuidePath">Vector.GuidePath</class> feature.</p></description>
     <source>
       <file path="transformers/">transition.cpp</file>
     </source>

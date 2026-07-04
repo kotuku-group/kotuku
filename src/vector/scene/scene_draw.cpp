@@ -1227,7 +1227,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
 
             if (not mView) {
                // Vector shapes not inside a viewport cannot be drawn (they may exist as definitions for other objects,
-               // e.g. as morph paths).
+               // e.g. as guide paths).
                return;
             }
 

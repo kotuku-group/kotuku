@@ -25,7 +25,7 @@ The following example illustrates the use of a transition in SVG:
   &lt;text x="3" y="80" font-size="19.6" fill="navy" transition="url(#hill)"&gt;This text is morphed by a transition&lt;/text&gt;
 </pre>
 
-Transitions are most effective when used in conjunction with the morph feature in the @Vector class.
+Transitions are most effective when used in conjunction with the @Vector.GuidePath feature.
 
 -END-
 

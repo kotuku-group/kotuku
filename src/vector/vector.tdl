@@ -164,7 +164,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "SECRET: Hide all characters from the UI by using generic symbols in place of glyphs.",
     "RASTER: Rasterise glyphs to a texture cache for very fast rendering.  This feature is not compatible with scalable graphics conventions.")
 
-  flags("VMF", { comment="Morph flags" },
+  flags("VMF", { comment="Guide path flags" },
     "STRETCH: Applicable when used on @VectorText, the stretch option converts glyph outlines into paths, and then all end points and control points will be adjusted to be along the perpendicular vectors from the path, thereby stretching and possibly warping the glyphs.  With this approach, connected glyphs, such as in cursive scripts, will maintain their connections.",
     "AUTO_SPACING: Applicable when used on @VectorText, auto-spacing allows the spacing between glyphs to be shrunk or expanded along the target path so that they can produce a better fit.  The default is for the glyphs to conform to their original spacing requirements.",
     "X_MIN: Align the source so that it is morphed along the left of the target path.",
@@ -767,7 +767,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     ~struct(FRGB) FillColour
     ~int(VFR) FillRule
     ~int(VFR) ClipRule
-    ~int(VMF) MorphFlags
+    ~int(VMF) GuideFlags
     ~int(VLJ) LineJoin
     ~int(VLC) LineCap
     ~int(VIJ) InnerJoin
