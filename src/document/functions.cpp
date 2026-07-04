@@ -444,7 +444,10 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
       }
    }
 
-   for (auto &t : Self->Triggers) t.clear();
+   for (auto &t : Self->Triggers) {
+      deref_document_callbacks(t);
+      t.clear();
+   }
 
    if (Self->terminating()) Self->Vars.clear();
 

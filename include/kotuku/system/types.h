@@ -74,6 +74,8 @@ struct FUNCTION {
    bool isC() const { return Type IS CALL::STD_C; }
    bool isScript() const { return Type IS CALL::SCRIPT; }
    bool defined() const { return Type != CALL::NIL; }
+   void consume() { Type = CALL::NIL; }
+   bool consumed() const { return Type IS CALL::NIL; }
 };
 
 inline bool operator==(const struct FUNCTION &A, const struct FUNCTION &B)

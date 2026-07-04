@@ -158,6 +158,12 @@ static ERR GET_ResolvedPath(extFile *, std::string_view &);
 
 static ERR set_permissions(extFile *, PERMIT);
 
+static void deref_file_callback(FUNCTION &Function)
+{
+   if (Function.isScript()) ((objScript *)Function.Context)->derefProcedure(Function);
+   Function.clear();
+}
+
 /*********************************************************************************************************************
 -ACTION-
 Activate: Opens the file.  Performed automatically if `NEW`, `READ` or `WRITE` flags were specified on initialisation.
@@ -445,6 +451,11 @@ blocking, updates-seek-index, callback-inlines
 
 static ERR FILE_Copy(extFile *Self, struct fl::Copy *Args)
 {
+   if (not Args) return ERR::NullArgs;
+   auto consume_callback = kt::Defer([&]() {
+      if (Args->Callback) Args->Callback->consume();
+   });
+
    return CopyFile(Self->Path, Args->Dest, Args->Callback);
 }
 
@@ -481,6 +492,10 @@ blocking, mutates-object, closes-handle, callback-inlines
 static ERR FILE_Delete(extFile *Self, struct fl::Delete *Args)
 {
    kt::Log log;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (Args->Callback)) Args->Callback->consume();
+   });
 
    if (Self->Path.empty()) return log.warning(ERR::MissingPath);
 
@@ -899,6 +914,10 @@ blocking, mutates-object, updates-seek-index, callback-inlines
 static ERR FILE_MoveFile(extFile *Self, struct fl::Move *Args)
 {
    kt::Log log;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (Args->Callback)) Args->Callback->consume();
+   });
 
    if ((not Args) or Args->Dest.empty()) return log.warning(ERR::NullArgs);
    if (Self->Path.empty()) return log.warning(ERR::FieldNotSet);
@@ -1563,6 +1582,7 @@ static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
 
    if (Self->prvWatch) {
       auto id = Self->prvWatch->VirtualID;
+      deref_file_callback(Self->prvWatch->Routine);
       void (*ignore_file)(extFile *) = nullptr;
       {
          std::lock_guard<std::mutex> lock(glmVirtual);

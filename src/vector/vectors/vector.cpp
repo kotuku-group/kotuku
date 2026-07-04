@@ -135,6 +135,7 @@ static void notify_free(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Ar
       for (auto it=Self->FeedbackSubscriptions->begin(); it != Self->FeedbackSubscriptions->end(); ) {
          auto &sub = *it;
          if ((sub.Callback.isScript()) and (sub.Callback.Context->UID IS Object->UID)) {
+            deref_vector_callback(sub.Callback);
             it = Self->FeedbackSubscriptions->erase(it);
          }
          else it++;
@@ -179,7 +180,13 @@ static void notify_free_resize_event(OBJECTPTR Object, ACTIONID ActionID, ERR Re
    if (auto scene = (extVectorScene *)Self->Scene) {
       if (!scene->collecting()) {
          auto it = scene->ResizeSubscriptions.find(Self->ParentView);
-         if (it != scene->ResizeSubscriptions.end()) it->second.erase(Self);
+         if (it != scene->ResizeSubscriptions.end()) {
+            auto sub = it->second.find(Self);
+            if (sub != it->second.end()) {
+               deref_vector_callback(sub->second);
+               it->second.erase(sub);
+            }
+         }
       }
    }
 }
@@ -768,7 +775,10 @@ static ERR VECTOR_SubscribeFeedback(extVector *Self, struct vec::SubscribeFeedba
    }
    else if (Self->FeedbackSubscriptions) { // Remove existing subscriptions for this callback
       for (auto it=Self->FeedbackSubscriptions->begin(); it != Self->FeedbackSubscriptions->end(); ) {
-         if (*Args->Callback IS it->Callback) it = Self->FeedbackSubscriptions->erase(it);
+         if (*Args->Callback IS it->Callback) {
+            deref_vector_callback(it->Callback);
+            it = Self->FeedbackSubscriptions->erase(it);
+         }
          else it++;
       }
    }
@@ -836,7 +846,10 @@ static ERR VECTOR_SubscribeInput(extVector *Self, struct vec::SubscribeInput *Ar
    }
    else if (Self->InputSubscriptions) { // Remove existing subscriptions for this callback
       for (auto it=Self->InputSubscriptions->begin(); it != Self->InputSubscriptions->end(); ) {
-         if (*Args->Callback IS it->Callback) it = Self->InputSubscriptions->erase(it);
+         if (*Args->Callback IS it->Callback) {
+            deref_vector_callback(it->Callback);
+            it = Self->InputSubscriptions->erase(it);
+         }
          else it++;
       }
 
@@ -931,6 +944,10 @@ pure-query, callback-inlines
 static ERR VECTOR_Trace(extVector *Self, struct vec::Trace *Args)
 {
    kt::Log log;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (Args->Callback)) Args->Callback->consume();
+   });
 
    if ((!Args) or (!Args->Callback)) return log.warning(ERR::NullArgs);
 
@@ -1816,12 +1833,17 @@ static ERR VECTOR_SET_ResizeEvent(extVector *Self, FUNCTION *Value)
       Self->ResizeSubscription = true;
       if ((Self->Scene) and (Self->ParentView)) {
          auto scene = (extVectorScene *)Self->Scene;
-         scene->ResizeSubscriptions[Self->ParentView][Self] = *Value;
+         auto &subs = scene->ResizeSubscriptions[Self->ParentView];
+         if (auto existing = subs.find(Self); existing != subs.end()) deref_vector_callback(existing->second);
+         subs[Self] = *Value;
 
          SubscribeAction(Value->Context, AC::Free, C_FUNCTION(notify_free_resize_event));
       }
       else {
          const std::lock_guard<std::mutex> lock(glResizeLock);
+         if (auto existing = glResizeSubscriptions.find(Self); existing != glResizeSubscriptions.end()) {
+            deref_vector_callback(existing->second);
+         }
          glResizeSubscriptions[Self] = *Value; // Save the subscription for initialisation.
       }
    }
@@ -1831,7 +1853,11 @@ static ERR VECTOR_SET_ResizeEvent(extVector *Self, FUNCTION *Value)
          auto scene = (extVectorScene *)Self->Scene;
          auto it = scene->ResizeSubscriptions.find(Self->ParentView);
          if (it != scene->ResizeSubscriptions.end()) {
-            it->second.erase(Self);
+            auto sub = it->second.find(Self);
+            if (sub != it->second.end()) {
+               deref_vector_callback(sub->second);
+               it->second.erase(sub);
+            }
          }
       }
    }
@@ -2191,7 +2217,10 @@ void send_feedback(extVector *Vector, FM Event, OBJECTPTR EventObject)
 
          sub.Mask |= Event;
 
-         if (result IS ERR::Terminate) Vector->FeedbackSubscriptions->erase(it);
+         if (result IS ERR::Terminate) {
+            deref_vector_callback(sub.Callback);
+            it = Vector->FeedbackSubscriptions->erase(it);
+         }
          else it++;
       }
       else it++;
@@ -2212,6 +2241,18 @@ double extVector::fixed_stroke_width()
 
 extVector::~extVector() {
    ClipCache.reset();
+
+   if (FeedbackSubscriptions) {
+      for (auto &sub : *FeedbackSubscriptions) deref_vector_callback(sub.Callback);
+   }
+
+   if (InputSubscriptions) {
+      for (auto &sub : *InputSubscriptions) deref_vector_callback(sub.Callback);
+   }
+
+   if (KeyboardSubscriptions) {
+      for (auto &sub : *KeyboardSubscriptions) deref_vector_callback(sub.Callback);
+   }
 
    if (ClipMask)   UnsubscribeAction(ClipMask, AC::Free);
    if (Transition) UnsubscribeAction(Transition, AC::Free);
@@ -2239,7 +2280,11 @@ extVector::~extVector() {
       auto scene = (extVectorScene *)Scene;
       if ((ParentView) and (ResizeSubscription)) {
          if (scene->ResizeSubscriptions.contains(ParentView)) {
-            scene->ResizeSubscriptions[ParentView].erase(this);
+            auto &subs = scene->ResizeSubscriptions[ParentView];
+            if (auto sub = subs.find(this); sub != subs.end()) {
+               deref_vector_callback(sub->second);
+               subs.erase(sub);
+            }
          }
       }
       scene->InputSubscriptions.erase(this);
@@ -2264,6 +2309,7 @@ extVector::~extVector() {
    {
       const std::lock_guard<std::mutex> lock(glResizeLock);
       if ((!glResizeSubscriptions.empty()) and (glResizeSubscriptions.contains(this))) {
+         deref_vector_callback(glResizeSubscriptions[this]);
          glResizeSubscriptions.erase(this);
       }
    }

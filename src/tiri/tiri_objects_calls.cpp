@@ -1,6 +1,13 @@
 // Refer: lib_object.cpp
 
 #include <new>
+#include <vector>
+
+struct pending_function_arg {
+   int Offset;
+   int StackIndex;
+   int Type;
+};
 
 //********************************************************************************************************************
 // Lua C closure executed via calls to obj.acName()
@@ -157,6 +164,44 @@ static void cleanup_function_arg(lua_State *Lua, FUNCTION *Func)
    }
 
    FreeResource(Func);
+}
+
+static void free_function_arg_after_call(lua_State *Lua, FUNCTION *Func)
+{
+   if (not Func) return;
+
+   if ((Func->consumed()) and (Func->Context IS Lua->script) and (Func->ProcedureID > 0)) {
+      luaL_unref(Lua, LUA_REGISTRYINDEX, Func->ProcedureID);
+      Func->ProcedureID = 0;
+   }
+
+   FreeResource(Func);
+}
+
+static ERR materialise_function_arg(lua_State *Lua, const pending_function_arg &Pending, int8_t *ArgBuffer)
+{
+   int ref = LUA_NOREF;
+
+   if (Pending.Type IS LUA_TSTRING) {
+      lua_getglobal(Lua, lua_tostring(Lua, Pending.StackIndex));
+      ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
+   }
+   else {
+      lua_pushvalue(Lua, Pending.StackIndex);
+      ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
+   }
+
+   // Note: The async interface requires FUNCTION storage to outlive the stack frame, hence the allocation.
+
+   FUNCTION *func = nullptr;
+   if (!AllocMemory(sizeof(FUNCTION), MEM::DATA, (APTR *)&func)) {
+      *func = FUNCTION(Lua->script, ref);
+      ((FUNCTION **)(ArgBuffer + Pending.Offset))[0] = func;
+      return ERR::Okay;
+   }
+
+   if ((ref != LUA_NOREF) and (ref != LUA_REFNIL)) luaL_unref(Lua, LUA_REGISTRYINDEX, ref);
+   return ERR::AllocMemory;
 }
 
 template <class T> static void delete_cpp_array_arg(APTR Array)
@@ -480,6 +525,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
    int j = 0;
    size_t buffer_capacity = 0;
    bool buffer_capacity_known = false;
+   std::vector<pending_function_arg> pending_functions;
    for (i=0,n=1; (Args[i].Name) and (j < ArgsSize); i++) {
       if (not (Args[i].Type & FD_BUFSIZE)) buffer_capacity_known = false;
 
@@ -685,23 +731,8 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          }
          else if (Args[i].Type & FD_FUNCTION) {
             if ((type IS LUA_TSTRING) or (type IS LUA_TFUNCTION)) {
-               FUNCTION *func;
-
-               if (!AllocMemory(sizeof(FUNCTION), MEM::DATA, (APTR *)&func)) {
-                  if (type IS LUA_TSTRING) {
-                     lua_getglobal(Lua, lua_tostring(Lua, n));
-                     *func = FUNCTION(Lua->script, luaL_ref(Lua, LUA_REGISTRYINDEX));
-                  }
-                  else {
-                     lua_pushvalue(Lua, n);
-                     *func = FUNCTION(Lua->script, luaL_ref(Lua, LUA_REGISTRYINDEX));
-                  }
-
-                  ((FUNCTION **)(ArgBuffer + j))[0] = func;
-
-                  // The FUNCTION structure is freed when processing results
-               }
-               else return fail(ERR::AllocMemory);
+               ((FUNCTION **)(ArgBuffer + j))[0] = nullptr;
+               pending_functions.push_back({ j, n, type });
             }
             else if ((type IS LUA_TNIL) or (type IS LUA_TNONE)) {
                ((FUNCTION **)(ArgBuffer + j))[0] = nullptr;
@@ -809,6 +840,11 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
 
    log.trace("Processed %d Args (%d bytes), detected %d result parameters.", i, j, resultcount);
    if (ResultCount) *ResultCount = resultcount;
+
+   for (auto &pending : pending_functions) {
+      if (auto error = materialise_function_arg(Lua, pending, ArgBuffer); error != ERR::Okay) return fail(error);
+   }
+
    return ERR::Okay;
 }
 
@@ -929,7 +965,7 @@ static int get_results(lua_State *Lua, const FunctionField *Args, const int8_t *
          if (type & FD_FUNCTION) {
             if (auto func = (FUNCTION *)((APTR *)(ArgBuf+of))[0]) {
                log.trace("Removing function memory allocation %p", func);
-               FreeResource(func);
+               free_function_arg_after_call(Lua, func);
             }
          }
          else if (type & FD_RESULT) {

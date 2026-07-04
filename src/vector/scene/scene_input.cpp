@@ -94,10 +94,11 @@ static void send_input_events(extVector *Vector, InputEvent *Event, bool Propaga
             }), result);
          }
 
-         if (result IS ERR::Terminate) {
-            it = Vector->InputSubscriptions->erase(it);
-            update_input_subscription_state(Vector);
-            mark_input_boundary_dirty(Vector);
+      if (result IS ERR::Terminate) {
+         deref_vector_callback(sub.Callback);
+         it = Vector->InputSubscriptions->erase(it);
+         update_input_subscription_state(Vector);
+         mark_input_boundary_dirty(Vector);
          }
          else it++;
       }

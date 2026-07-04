@@ -55,13 +55,16 @@ static void notify_free_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Result
 static void notify_free_script_context(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
    auto Self = (extDocument *)CurrentContext();
-   if ((Self->EventCallback.isScript()) and (Self->EventCallback.Context IS Object)) Self->EventCallback.clear();
+   if ((Self->EventCallback.isScript()) and (Self->EventCallback.Context IS Object)) {
+      deref_document_callback(Self->EventCallback);
+   }
 
    for (int t=0; t < int(DRT::END); t++) {
 restart:
       auto &triggers = Self->Triggers[t];
       for (auto cb=triggers.begin(); cb != triggers.end(); cb++) {
          if (cb->Context IS Object) {
+            deref_document_callback(*cb);
             Self->Triggers[t].erase(cb);
             goto restart;
          }
@@ -673,7 +676,7 @@ extDocument::~extDocument()
 
    if (EventCallback.isScript()) {
       UnsubscribeAction(EventCallback.Context, AC::Free);
-      EventCallback.clear();
+      deref_document_callback(EventCallback);
    }
 
    unload_doc(this, ULD::NIL);
@@ -1866,6 +1869,10 @@ mutates-object
 
 static ERR DOCUMENT_RemoveListener(extDocument *Self, doc::RemoveListener *Args)
 {
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (Args->Function)) Args->Function->consume();
+   });
+
    if ((not Args) or (not Args->Trigger) or (not Args->Function)) return ERR::NullArgs;
    if (not valid_trigger(Args->Trigger)) return ERR::OutOfRange;
 
@@ -1874,6 +1881,7 @@ static ERR DOCUMENT_RemoveListener(extDocument *Self, doc::RemoveListener *Args)
    if (Args->Function->isC()) {
       for (auto it = Self->Triggers[Args->Trigger].begin(); it != Self->Triggers[Args->Trigger].end(); it++) {
          if ((it->isC()) and (it->Routine IS Args->Function->Routine)) {
+            deref_document_callback(*it);
             Self->Triggers[Args->Trigger].erase(it);
             return ERR::Okay;
          }
@@ -1885,8 +1893,9 @@ static ERR DOCUMENT_RemoveListener(extDocument *Self, doc::RemoveListener *Args)
 
       for (auto it = Self->Triggers[Args->Trigger].begin(); it != Self->Triggers[Args->Trigger].end(); it++) {
          if ((it->isScript()) and
-               (it->Context IS Args->Function->Context) and
-               (it->ProcedureID IS Args->Function->ProcedureID)) {
+                (it->Context IS Args->Function->Context) and
+                (it->ProcedureID IS Args->Function->ProcedureID)) {
+            deref_document_callback(*it);
             Self->Triggers[Args->Trigger].erase(it);
             removed_listener = true;
             break;

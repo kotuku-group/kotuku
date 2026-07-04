@@ -49,6 +49,21 @@ static ERR consume_input_events(const InputEvent *, int);
 static void draw_region(extSurface *, extSurface *, extBitmap *);
 static ERR redraw_timer(extSurface *, int64_t, int64_t);
 
+static void deref_surface_callback(FUNCTION &Function)
+{
+   if (Function.isScript()) ((objScript *)Function.Context)->derefProcedure(Function);
+   Function.clear();
+}
+
+static void deref_surface_callback_range(SurfaceCallback *Callbacks, int Total)
+{
+   if (not Callbacks) return;
+
+   for (int i=0; i < Total; i++) {
+      deref_surface_callback(Callbacks[i].Function);
+   }
+}
+
 //********************************************************************************************************************
 // This call is used to refresh the pointer image when at least one layer has been rearranged.  The timer is used to
 // delay the refresh - useful if multiple surfaces are being rearranged when we only need to do the refresh once.
@@ -442,7 +457,7 @@ static void notify_free_callback(OBJECTPTR Object, ACTIONID ActionID, ERR Result
    for (int i=0; i < Self->CallbackCount; i++) {
       if (Self->Callback[i].Function.isScript()) {
          if (Self->Callback[i].Function.Context->UID IS Object->UID) {
-            Self->Callback[i].Function.clear();
+            deref_surface_callback(Self->Callback[i].Function);
 
             int j;
             for (j=i; j < Self->CallbackCount-1; j++) { // Shorten the array
@@ -651,6 +666,7 @@ static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
       if (i < Self->CallbackCount) {
          log.trace("Moving existing subscription to foreground.");
 
+         deref_surface_callback(Self->Callback[i].Function);
          while (i < Self->CallbackCount-1) {
             Self->Callback[i] = Self->Callback[i+1];
             i++;
@@ -935,10 +951,15 @@ extSurface::~extSurface()
    if (RedrawTimer) UpdateTimer(RedrawTimer, 0);
 
    if ((Callback) and (Callback != CallbackCache)) {
+      deref_surface_callback_range(Callback, CallbackCount);
       FreeResource(Callback);
       Callback = nullptr;
       CallbackCount = 0;
       CallbackSize = 0;
+   }
+   else if (Callback IS CallbackCache) {
+      deref_surface_callback_range(Callback, CallbackCount);
+      CallbackCount = 0;
    }
 
    if (ParentID) {
@@ -1897,6 +1918,10 @@ static ERR SURFACE_RemoveCallback(extSurface *Self, struct drw::RemoveCallback *
    kt::Log log;
    OBJECTPTR context = nullptr;
 
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (Args->Callback)) Args->Callback->consume();
+   });
+
    if (Args) {
       if ((Args->Callback) and (Args->Callback->isC())) {
          context = (OBJECTPTR)Args->Callback->Context;
@@ -1917,6 +1942,7 @@ static ERR SURFACE_RemoveCallback(extSurface *Self, struct drw::RemoveCallback *
       int shrink = 0;
       for (i=0; i < Self->CallbackCount; i++) {
          if (Self->Callback[i].Object IS context) {
+            deref_surface_callback(Self->Callback[i].Function);
             shrink--;
             continue;
          }
@@ -1946,6 +1972,7 @@ static ERR SURFACE_RemoveCallback(extSurface *Self, struct drw::RemoveCallback *
    }
 
    if (i < Self->CallbackCount) {
+      deref_surface_callback(Self->Callback[i].Function);
       while (i < Self->CallbackCount-1) {
          Self->Callback[i] = Self->Callback[i+1];
          i++;

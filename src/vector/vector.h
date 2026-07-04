@@ -248,6 +248,12 @@ public:
    KeyboardSubscription(FUNCTION pCallback) : Callback(pCallback) { }
 };
 
+inline void deref_vector_callback(FUNCTION &Function)
+{
+   if (Function.isScript()) ((objScript *)Function.Context)->derefProcedure(Function);
+   Function.clear();
+}
+
 class DashedStroke {
 public:
    agg::conv_dash<agg::path_storage> path;
