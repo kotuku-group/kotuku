@@ -197,3 +197,20 @@ end
    assertNear(wave.frequency, 2, 'VectorWave frequency should parse from SVG')
    assertNear(wave.frequencyEnd, 8, 'VectorWave frequency-end alias should parse from SVG')
 end
+
+@Test function ParsesAndSavesWaveNoise()
+   local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=80 })
+   scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   obj.new('svg', { target=scene, statement=[[
+<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg">
+  <kotuku:wave id="svg_wave_noise" x="0" y="40" length="100" amplitude="20" frequency="2" noise="0.75" fill="none" stroke="black"/>
+</svg>
+]] })
+
+   local wave = obj.find('svg_wave_noise')
+   assert(wave != nil, 'Parsed SVG should create the named VectorWave')
+   assertNear(wave.noise, 0.75, 'VectorWave noise should parse from SVG')
+
+   local saved = saveScene(scene, 'temp:svg_wave_noise.svg')
+   assertContains(saved, 'noise=', 'Saved SVG should include VectorWave noise')
+end

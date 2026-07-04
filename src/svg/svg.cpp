@@ -470,6 +470,7 @@ static constexpr auto SVF_n2                  = strhash("n2");
 static constexpr auto SVF_n3                  = strhash("n3");
 static constexpr auto SVF_narrower            = strhash("narrower");
 static constexpr auto SVF_none                = strhash("none");
+static constexpr auto SVF_noise               = strhash("noise");
 static constexpr auto SVF_normal              = strhash("normal");
 static constexpr auto SVF_numeric_id          = strhash("numeric-id");
 static constexpr auto SVF_numOctaves          = strhash("numOctaves");

@@ -234,7 +234,7 @@ class extVectorWave : public extVector {
       }
    }
 
-   bool smooth_wave_needs_resolve(double Length, double Amplitude, double Thickness, double Frequency,
+   bool wave_needs_resolve(double Length, double Amplitude, double Thickness, double Frequency,
       double FrequencyEnd)
    {
       if (wNoise > 0.0) return true;
@@ -362,7 +362,7 @@ void extVectorWave::apply_wave_thickness(agg::path_storage &Path, double Thickne
    stroke.line_cap(VLC::ROUND);
    stroke.approximation_scale(ApproxScale > 0.0 ? ApproxScale : 1.0);
 
-   if (smooth_wave_needs_resolve(Length, Amplitude, Thickness, Frequency, FrequencyEnd)) {
+   if (wave_needs_resolve(Length, Amplitude, Thickness, Frequency, FrequencyEnd)) {
       agg::resolve_stroke_self_intersections(Path, stroke);
    }
    else {
