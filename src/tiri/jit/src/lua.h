@@ -109,6 +109,7 @@ extern int (lua_isstring) (lua_State *L, int idx);
 extern int (lua_iscfunction) (lua_State *L, int idx);
 extern int (lua_isuserdata) (lua_State *L, int idx);
 extern int (lua_type) (lua_State *L, int idx);
+extern int lua_resolved_type(lua_State *L, int idx);
 extern const char *(lua_typename) (lua_State *L, int tp);
 
 extern int (lua_equal) (lua_State *L, int idx1, int idx2);

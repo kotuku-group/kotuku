@@ -155,12 +155,6 @@ extern TValue * resolve_index(lua_State *L, int idx)
 static cTValue * resolve_index_const(lua_State *L, int idx)
 {
    if (idx <= LUA_REGISTRYINDEX) return index2adr(L, idx);  // Pseudo-indices can't be thunks
-
-   // For positive indices, check if slot exists before attempting resolution
-   if (idx > 0) {
-      TValue *o = L->base + (idx - 1);
-      if (o >= L->top) return niltv(L);  // Slot doesn't exist, return nil
-   }
    return resolve_index(L, idx);
 }
 
@@ -338,6 +332,27 @@ extern void lua_pushvalue(lua_State *L, int idx)
 extern int lua_type(lua_State *L, int idx)
 {
    cTValue* o = index2adr(L, idx);
+   if (tvisnumber(o)) return LUA_TNUMBER;
+   else if (o IS niltv(L)) return LUA_TNONE;
+   else {  // Magic internal/external tag conversion. ORDER LJ_T
+      uint32_t t = ~itype(o);
+      // Lookup table: position 13 = LUA_TARRAY (11)
+      int tt = (int)((U64x(b75a06, 98042110) >> 4 * t) & 15u);
+      lj_assertL(tt != LUA_TNIL or tvisnil(o), "bad tag conversion");
+      return tt;
+   }
+}
+
+//********************************************************************************************************************
+// Get the type, performing thunk resolution first.
+//
+// Note: Resolving the thunk type in advance can be an anti-pattern, normally you shouldn't perform the resolution
+// until you're ready to read the value.
+
+extern int lua_resolved_type(lua_State *L, int idx)
+{
+   cTValue *o = resolve_index_const(L, idx);
+
    if (tvisnumber(o)) return LUA_TNUMBER;
    else if (o IS niltv(L)) return LUA_TNONE;
    else {  // Magic internal/external tag conversion. ORDER LJ_T

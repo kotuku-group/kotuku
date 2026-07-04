@@ -440,6 +440,8 @@ inline bool check_buffer_size_arg(int64_t Size, size_t Capacity)
    return (Size >= 0) and (uint64_t(Size) <= uint64_t(Capacity));
 }
 
+// Long jumps are not permitted (interferes with RAII cleanup)
+
 ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int ArgsSize, int8_t *ArgBuffer,
    int *ResultCount, int &ErrorArg, CSTRING &ErrorMsg)
 {
@@ -524,7 +526,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          continue;
       }
 
-      int type = (top > 0) ? lua_type(Lua, n) : LUA_TNIL;
+      int type = (top > 0) ? lua_resolved_type(Lua, n) : LUA_TNIL;
 
       //log.trace("Processing arg %s, type $%.8x", Args[i].Name, Args[i].Type);
 
@@ -532,7 +534,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          j = ALIGN64(j);
          if (type != LUA_TARRAY) return fail_arg(n, "Array required.");
 
-         auto array = lua_toarray(Lua, n);
+         auto array = lua_toarray(Lua, n); // Safe (confirmed array type)
          if (Args[i].Type & FD_CPP) {
             APTR vector = nullptr;
             auto error = copy_cpp_array_arg(Args[i].Type, array, &vector);
@@ -561,7 +563,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          if (type IS LUA_TARRAY) {
             //log.trace("Arg: %s, Value: Buffer (Source is Memory)", Args[i].Name);
 
-            auto array = lua_toarray(Lua, n);
+            auto array = lua_toarray(Lua, n); // Safe (confirmed array type)
             ((APTR *)(ArgBuffer + j))[0] = array->arraydata();
             j += sizeof(APTR);
 
@@ -647,17 +649,14 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
                j += sizeof(CSTRING);
             }
          }
-         else {
-            return fail_arg(n, "String required.");
-         }
+         else return fail_arg(n, "String required.");
 
          //log.trace("Arg: %s, Value: %s", Args[i].Name, ((STRING *)(ArgBuffer + j))[0]);
-
       }
       else if (Args[i].Type & FD_PTR) {
          j = ALIGN64(j);
          if (Args[i].Type & FD_OBJECT) {
-            if (auto obj_ref = lj_lib_optobject(Lua, n)) {
+            if (auto obj_ref = lj_lib_optobject(Lua, n, false)) { // Performs thunk resolution
                OBJECTPTR ptr_obj;
                if (obj_ref->ptr) {
                   ((OBJECTPTR *)(ArgBuffer + j))[0] = obj_ref->ptr;
@@ -671,7 +670,8 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
                   ((OBJECTPTR *)(ArgBuffer + j))[0] = nullptr;
                }
             }
-            else ((OBJECTPTR *)(ArgBuffer + j))[0] = nullptr;
+            else if (type IS LUA_TNIL) ((OBJECTPTR *)(ArgBuffer + j))[0] = nullptr;
+            else return fail_arg(n, "Object required.");
          }
          else if (Args[i].Type & FD_FUNCTION) {
             if ((type IS LUA_TSTRING) or (type IS LUA_TFUNCTION)) {
@@ -729,7 +729,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
       }
       else if (Args[i].Type & FD_INT) {
          if ((type IS LUA_TUSERDATA) or (type IS LUA_TLIGHTUSERDATA)) {
-            if (auto obj = lj_lib_checkobject(Lua, n)) {
+            if (auto obj = lj_lib_optobject(Lua, n, false)) {
                ((int *)(ArgBuffer + j))[0] = obj->uid;
             }
             else return fail_arg(n, "Unable to convert usertype to an integer.");
