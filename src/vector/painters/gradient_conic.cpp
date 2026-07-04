@@ -87,6 +87,12 @@ static ERR GRADIENTCONIC_SET_Span(extGradientConic *Self, double Value)
    return ERR::Okay;
 }
 
+/*********************************************************************************************************************
+-FIELD-
+XMLDef: Returns an SVG compliant XML string that describes the effect.
+-END-
+*********************************************************************************************************************/
+
 static ERR GRADIENTCONIC_GET_XMLDef(extGradientConic *Self, std::string_view &Value)
 {
    std::stringstream stream;

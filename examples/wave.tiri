@@ -32,7 +32,7 @@ MAX_AMPLITUDE <const> = 500
 
 function selectWave(Text:str):obj
    glWave.type = choose Text from
-      'Smooth'   -> WVT_SMOOTH
+      'Sine'     -> WVT_SINE
       'Sawtooth' -> WVT_SAWTOOTH
       'Triangle' -> WVT_TRIANGLE
       'Square'   -> WVT_SQUARE
@@ -56,11 +56,11 @@ function buildScene()
    cmbWave = gui.combobox({
       target = glViewport,
       label  = 'Wave:',
-      text   = 'Smooth',
+      text   = 'Sine',
       x      = glWindow.margins.left,
       y      = 10,
       items = array<table> {
-         { item = 'Smooth' },
+         { item = 'Sine' },
          { item = 'Sawtooth' },
          { item = 'Triangle' },
          { item = 'Square' }
@@ -169,7 +169,7 @@ function buildScene()
 
    glWaveVP.y = cmbWave.viewport.y + cmbWave.viewport.height + 12
 
-   selectWave('Smooth')
+   selectWave('Sine')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

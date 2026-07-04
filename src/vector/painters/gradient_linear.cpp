@@ -79,6 +79,12 @@ static ERR GRADIENTLINEAR_SET_Y2(extGradientLinear *Self, Unit &Value)
    return ERR::Okay;
 }
 
+/*********************************************************************************************************************
+-FIELD-
+XMLDef: Returns an SVG compliant XML string that describes the effect.
+-END-
+*********************************************************************************************************************/
+
 static ERR GRADIENTLINEAR_GET_XMLDef(extGradientLinear *Self, std::string_view &Value)
 {
    std::stringstream stream;

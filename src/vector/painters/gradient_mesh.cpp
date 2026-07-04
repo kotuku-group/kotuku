@@ -262,6 +262,12 @@ static ERR GRADIENTMESH_SET_Patches(extGradientMesh *Self, std::span<const MeshP
    return ERR::Okay;
 }
 
+/*********************************************************************************************************************
+-FIELD-
+XMLDef: Returns an SVG compliant XML string that describes the effect.
+-END-
+*********************************************************************************************************************/
+
 static ERR GRADIENTMESH_GET_XMLDef(extGradientMesh *, std::string_view &Value)
 {
    return gradient_xml_result("meshgradient", Value);

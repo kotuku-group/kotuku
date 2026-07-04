@@ -3542,7 +3542,7 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
                if (iequals("triangle", StrValue)) wave->setType(WVT::TRIANGLE);
                else if (iequals("sawtooth", StrValue)) wave->setType(WVT::SAWTOOTH);
                else if (iequals("square", StrValue)) wave->setType(WVT::SQUARE);
-               else wave->setType(WVT::SMOOTH);
+               else wave->setType(WVT::SINE);
                return ERR::Okay;
          }
          break;
