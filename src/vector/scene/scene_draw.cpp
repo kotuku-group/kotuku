@@ -709,8 +709,9 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
 
    apply_stroke_gamma(Vector);
 
-   if (Vector.FillRule IS VFR::NON_ZERO) raster.filling_rule(agg::fill_non_zero);
-   else if (Vector.FillRule IS VFR::EVEN_ODD) raster.filling_rule(agg::fill_even_odd);
+   // SVG requires stroke outlines to be rasterised with the non-zero rule regardless of the vector's FillRule;
+   // stroke geometry legitimately self-overlaps (joins, dashes, crossings) and even-odd would punch holes in it.
+   raster.filling_rule(agg::fill_non_zero);
 
    // Regarding this validation check, SVG requires that stroked vectors have a size > 0 when a paint server is used
    // as a stroker.  If the size is zero, the paint server is ignored and the solid colour can be used as a stroker

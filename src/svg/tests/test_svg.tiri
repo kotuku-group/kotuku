@@ -106,7 +106,7 @@ end
 @Test global function Spirals()         hashTestSVG('paths/spirals.svg', 0x785a3408) end
 @Test global function Strokes()         hashTestSVG('paths/strokes.svg', 0xc35a546a) end
 @Test global function SuperShapes()     hashTestSVG('paths/supershapes.svg', 0x07dc5ee7) end
-@Test global function SuperSpiral()     hashTestSVG('paths/superspiral.svg', 0x4cbc6fd9) end
+@Test global function SuperSpiral()     hashTestSVG('paths/superspiral.svg', 0x87dd0122) end
 @Test global function Transitions()     hashTestSVG('paths/transitions.svg', 0x801a2fb0) end
 @Test global function Wave()            hashTestSVG('paths/wave.svg', 0xea7f93b8) end
 @Test global function W3Paths01()       hashTestSVG('paths/w3-paths-data-01-t.svg', 0x7fdb0e82) end
@@ -150,7 +150,7 @@ end
 @Test global function W3Coords05() hashTestSVG('coords/w3-coords-units-03-b.svg', 0xb462f91b) end
 @Test global function W3Coords06() hashTestSVG('coords/w3-coords-viewattr-01-b.svg', -1) end
 @Test global function W3Coords07() hashTestSVG('coords/w3-coords-viewattr-02-b.svg', -1) end
-@Test global function W3Coords08() hashTestSVG('coords/w3-coords-viewattr-03-b.svg', 0xcd6e4c82) end
+@Test global function W3Coords08() hashTestSVG('coords/w3-coords-viewattr-03-b.svg', 0xf59f3551) end
 
 @Test global function EasingGradients() hashTestSVG('gradients/easing.svg', 0xc45a0cf6) end
 @Test global function ContourGradient() hashTestSVG('gradients/contour-gradient.svg', 0x35a1899a, true) end

@@ -257,27 +257,15 @@ void math_stroke<VC>::calc_join(VC& vc, const vertex_dist& v0, const vertex_dist
             break;
 
          case VIJ::MITER:
-            calc_miter(vc, v0, v1, v2, dx1, dy1, dx2, dy2, VLJ::MITER, limit, 0);
-            break;
-
          case VIJ::JAG:
          case VIJ::ROUND:
-            cp = (dx1-dx2) * (dx1-dx2) + (dy1-dy2) * (dy1-dy2);
-            if (cp < len1 * len1 and cp < len2 * len2) {
-                calc_miter(vc, v0, v1, v2, dx1, dy1, dx2, dy2, VLJ::MITER, limit, 0);
-            }
-            else if (m_inner_join IS VIJ::JAG) {
-                add_vertex(vc, v1.x + dx1, v1.y - dy1);
-                add_vertex(vc, v1.x,       v1.y      );
-                add_vertex(vc, v1.x + dx2, v1.y - dy2);
-            }
-            else {
-                add_vertex(vc, v1.x + dx1, v1.y - dy1);
-                add_vertex(vc, v1.x,       v1.y      );
-                calc_arc(vc, v1.x, v1.y, dx2, -dy2, dx1, -dy1);
-                add_vertex(vc, v1.x,       v1.y      );
-                add_vertex(vc, v1.x + dx2, v1.y - dy2);
-            }
+            // JAG and ROUND previously emitted retrace decoration through the centre vertex (jags, arcs) whenever
+            // the offset displacement across the join exceeded an adjacent segment's length.  That geometry is
+            // invisible under the non-zero fill rule - it is swallowed by the stroke coverage of the neighbouring
+            // segments - yet it self-intersects heavily with nearby outline edges on dense curves.  The miter path
+            // produces identical rasterised coverage with far fewer self-intersections, so all three modes share it.
+
+            calc_miter(vc, v0, v1, v2, dx1, dy1, dx2, dy2, VLJ::MITER, limit, 0);
             break;
          }
       }
