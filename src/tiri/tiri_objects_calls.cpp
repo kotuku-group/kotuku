@@ -728,11 +728,11 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          j += sizeof(APTR);
       }
       else if (Args[i].Type & FD_INT) {
-         if ((type IS LUA_TUSERDATA) or (type IS LUA_TLIGHTUSERDATA)) {
+         if (type IS LUA_TOBJECT) {
             if (auto obj = lj_lib_optobject(Lua, n, false)) {
                ((int *)(ArgBuffer + j))[0] = obj->uid;
             }
-            else return fail_arg(n, "Unable to convert usertype to an integer.");
+            else return fail_arg(n, "Failed to read object type.");
          }
          else if (type IS LUA_TBOOLEAN) {
             auto value = lua_toboolean(Lua, n);
@@ -744,7 +744,10 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
             }
             ((int *)(ArgBuffer + j))[0] = value;
          }
-         else if (type != LUA_TNIL) {
+         else if ((type IS LUA_TUSERDATA) or (type IS LUA_TLIGHTUSERDATA)) {
+            return fail_arg(n, "Unable to convert usertype to an integer.");
+         }
+         else if (type != LUA_TNIL) { // Attempt numeric conversion
             auto value = lua_tointeger(Lua, n);
             if ((Args[i].Type & FD_BUFSIZE) and buffer_capacity_known) {
                if (not check_buffer_size_arg(value, buffer_capacity)) {
@@ -757,7 +760,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          else if (Args[i].Type & (FD_BUFSIZE|FD_ARRAYSIZE)) {
             buffer_capacity_known = false; // Do not alter as the FD_BUFFER support would have managed it
          }
-         else ((int *)(ArgBuffer + j))[0] = 0;
+         else ((int *)(ArgBuffer + j))[0] = 0; // Value is nil
          //log.trace("Arg: %s, Value: %d / $%.8x", Args[i].Name, ((int *)(ArgBuffer + j))[0], ((int *)(ArgBuffer + j))[0]);
          j += sizeof(int);
       }
