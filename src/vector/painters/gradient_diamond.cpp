@@ -61,6 +61,12 @@ static ERR GRADIENTDIAMOND_SET_Radius(extGradientDiamond *Self, Unit &Value)
    else return ERR::OutOfRange;
 }
 
+/*********************************************************************************************************************
+-FIELD-
+XMLDef: Returns an SVG compliant XML string that describes the effect.
+-END-
+*********************************************************************************************************************/
+
 static ERR GRADIENTDIAMOND_GET_XMLDef(extGradientDiamond *Self, std::string_view &Value)
 {
    std::stringstream stream;

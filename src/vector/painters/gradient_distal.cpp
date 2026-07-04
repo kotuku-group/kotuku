@@ -160,6 +160,12 @@ static ERR GRADIENTDISTAL_SET_OuterFall(extGradientDistal *Self, GFALL Value)
    return ERR::Okay;
 }
 
+/*********************************************************************************************************************
+-FIELD-
+XMLDef: Returns an SVG compliant XML string that describes the effect.
+-END-
+*********************************************************************************************************************/
+
 static ERR GRADIENTDISTAL_GET_XMLDef(extGradientDistal *Self, std::string_view &Value)
 {
    std::stringstream stream;

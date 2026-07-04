@@ -367,7 +367,7 @@ enum class WVC : int {
 
 enum class WVT : int {
    NIL = 0,
-   SMOOTH = 1,
+   SINE = 1,
    TRIANGLE = 2,
    SAWTOOTH = 3,
    SQUARE = 4,

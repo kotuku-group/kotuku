@@ -128,6 +128,12 @@ static ERR GRADIENTRADIAL_SET_Radius(extGradientRadial *Self, Unit &Value)
    else return ERR::OutOfRange;
 }
 
+/*********************************************************************************************************************
+-FIELD-
+XMLDef: Returns an SVG compliant XML string that describes the effect.
+-END-
+*********************************************************************************************************************/
+
 static ERR GRADIENTRADIAL_GET_XMLDef(extGradientRadial *Self, std::string_view &Value)
 {
    std::stringstream stream;
