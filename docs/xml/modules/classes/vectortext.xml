@@ -13,7 +13,7 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>To create text along a path, set the <class name="Vector" field="Morph">Vector.Morph</class> field with a reference to any <class name="Vector">Vector</class> object that generates a path.  The following extract illustrates the SVG equivalent of this feature:</p>
+<p>To create text along a path, set the <class name="Vector" field="GuidePath">Vector.GuidePath</class> field with a reference to any <class name="Vector">Vector</class> object that generates a path.  The following extract illustrates the SVG equivalent of this feature:</p>
 <pre>&lt;defs&gt;
   &lt;path id=&quot;myTextPath2&quot; d=&quot;M75,20 l100,0 l100,30 q0,100 150,100&quot;/&gt;
 &lt;/defs&gt;

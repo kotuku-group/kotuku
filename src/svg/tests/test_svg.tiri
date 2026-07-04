@@ -98,7 +98,7 @@ end
 @Test(name='CaseSensitiveNames') global function BasicsCaseSensitiveNames() hashTestSVG('basics/case-sensitive.svg', 0x61fc4322) end
 
 @Test global function Circles()         hashTestSVG('paths/circles.svg', 0xd91a717f) end
-@Test global function Morph()           hashTestSVG('paths/morph.svg', 0x22c9112b) end
+@Test global function GuidePath()       hashTestSVG('paths/guidepath.svg', 0x45b2e26a) end
 @Test global function EllipseVertices() hashTestSVG('paths/ellipse_vertices.svg', 0xa0a8e2df) end
 @Test global function Polygons()        hashTestSVG('paths/polygons.svg', 0x6e755c7b) end
 @Test global function Rough()           hashTestSVG('paths/rough_js.svg', 0xdb8d9130) end

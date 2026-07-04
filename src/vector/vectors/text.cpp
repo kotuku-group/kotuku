@@ -3,7 +3,7 @@
 -CLASS-
 VectorText: Extends the Vector class with support for generating text.
 
-To create text along a path, set the @Vector.Morph field with a reference to any @Vector object that generates a path.  The
+To create text along a path, set the @Vector.GuidePath field with a reference to any @Vector object that generates a path.  The
 following extract illustrates the SVG equivalent of this feature:
 
 <pre>
@@ -48,7 +48,7 @@ textPath warping could be more accurate if the character angles were calculated 
 rather than the bottom left corner.  However, this would be more computationally intensive and only useful in situations
 where large glyphs were oriented around sharp corners.  The process would look something like this:
 
-+ Compute the (x,y) of the character's middle vertex in context of the morph path.
++ Compute the (x,y) of the character's middle vertex in context of the guide path.
 + Compute the angle from the middle vertex to the first vertex (start_x, start_y)
 + Compute the angle from the middle vertex to the last vertex (end_x, end_y)
 + Interpolate the two angles
@@ -1937,7 +1937,7 @@ void TextCursor::reset_vector(extVectorText *Vector) const
          // If the cursor X,Y lies outside of the parent viewport, offset the text so that it remains visible to
          // the user.
 
-         if ((not Vector->Morph) and (Vector->ParentView)) {
+         if ((not Vector->GuidePath) and (Vector->ParentView)) {
             auto p_width = Vector->ParentView->vpFixedWidth;
             double xo = 0;
             const double CURSOR_MARGIN = Vector->txFontSize * 0.5;

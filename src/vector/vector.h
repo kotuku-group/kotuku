@@ -750,12 +750,16 @@ class extVector : public objVector {
    std::string FillString;
    std::string FilterString;
    std::string SID;
+   extVector           *GuidePath;
+   extVectorTransition *Transition;
+   extVectorClip       *ClipMask;
+   extVector           *AppendPath;
    VFR FillRule;
    VFR ClipRule;
    VLJ LineJoin;
    VLC LineCap;
    VIJ InnerJoin;
-   VMF MorphFlags;
+   VMF GuideFlags;
 
    extPainter Fill[2], Stroke;
    double FinalX, FinalY;         // Used by Viewport to define the target X,Y; also VectorText to position the text' final position.
@@ -772,10 +776,6 @@ class extVector : public objVector {
    std::unique_ptr<std::vector<KeyboardSubscription>> KeyboardSubscriptions;
    extVectorFilter     *Filter;
    extVectorViewport   *ParentView;
-   extVectorClip       *ClipMask;
-   extVectorTransition *Transition;
-   extVector           *Morph;
-   extVector           *AppendPath;
    std::unique_ptr<DashedStroke> DashArray;
    std::unique_ptr<ClipMaskCache> ClipCache;
    std::unique_ptr<filter_bitmap> IsolatedBuffer;
