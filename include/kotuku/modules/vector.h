@@ -4877,18 +4877,23 @@ class objVectorWave : public objVector {
       return ERR::Okay;
    }
 
+   inline ERR getNoise(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1064));
+      return ERR::Okay;
+   }
+
    inline ERR getEnvelope(WVE &Value) noexcept {
-      Value = *((WVE *)(((int8_t *)this) + 1072));
+      Value = *((WVE *)(((int8_t *)this) + 1080));
       return ERR::Okay;
    }
 
    inline ERR getClose(WVC &Value) noexcept {
-      Value = *((WVC *)(((int8_t *)this) + 1076));
+      Value = *((WVC *)(((int8_t *)this) + 1084));
       return ERR::Okay;
    }
 
    inline ERR getType(WVT &Value) noexcept {
-      Value = *((WVT *)(((int8_t *)this) + 1080));
+      Value = *((WVT *)(((int8_t *)this) + 1088));
       return ERR::Okay;
    }
 
@@ -4928,7 +4933,7 @@ class objVectorWave : public objVector {
    }
 
    inline ERR getPhase(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1064));
+      Value = *((double *)(((int8_t *)this) + 1072));
       return ERR::Okay;
    }
 
@@ -4937,6 +4942,11 @@ class objVectorWave : public objVector {
 
    inline ERR setFrequencyEnd(const double Value) noexcept {
       auto field = &this->Class->Dictionary[47];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setNoise(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[56];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -4966,7 +4976,7 @@ class objVectorWave : public objVector {
    }
 
    inline ERR setLength(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[56];
+      auto field = &this->Class->Dictionary[57];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 

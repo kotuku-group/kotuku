@@ -1029,6 +1029,7 @@ static ERR save_svg_scan_wave(extSVG *Self, objXML *XML, objVector *Vector, int 
          }
       }
       if (!wave->getDecay(dbl))     xml::NewAttrib(tag, "decay", dbl);
+      if ((!wave->getNoise(dbl)) and (not (dbl IS 0.0))) xml::NewAttrib(tag, "noise", dbl);
       if (!wave->getPhase(dbl))     xml::NewAttrib(tag, "phase", dbl);
 
       WVE envelope;

@@ -135,6 +135,16 @@
     </field>
 
     <field>
+      <name>Noise</name>
+      <comment>Perturbs the generated wave path with deterministic noise.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The Noise value ranges from <code>0.0</code> to <code>1.0</code>.  A value of <code>0.0</code> applies no noise and preserves the unperturbed wave, while <code>1.0</code> applies the strongest perturbation.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Phase</name>
       <comment>Declares the initial phase, in degrees, to use when generating the wave.</comment>
       <access read="R" write="S">Read/Set</access>

@@ -78,6 +78,7 @@ void anim_value::set_value(objVector &Vector)
             case SVF_frequencyEnd:
                wave.setFrequencyEnd(get_numeric_value(Vector, strhash(target_attrib)));
                return;
+            case SVF_noise:         wave.setNoise(get_numeric_value(Vector, strhash("noise"))); return;
             case SVF_phase:         wave.setPhase(get_numeric_value(Vector, strhash("phase"))); return;
             case SVF_thickness:     wave.setThickness(get_numeric_value(Vector, strhash("thickness"))); return;
          }
