@@ -1048,6 +1048,7 @@ static ERR save_svg_scan_wave(extSVG *Self, objXML *XML, objVector *Vector, int 
          switch (type) {
             case WVT::TRIANGLE: xml::NewAttrib(tag, "type", "triangle"); break;
             case WVT::SAWTOOTH: xml::NewAttrib(tag, "type", "sawtooth"); break;
+            case WVT::SQUARE:   xml::NewAttrib(tag, "type", "square"); break;
             default: break;
          }
       }

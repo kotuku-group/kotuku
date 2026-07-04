@@ -197,7 +197,8 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   enums("WVT", { type="int", start=1, comment="Wave style options." },
     "SMOOTH: Standard sine-wave curvature, this is the default.",
     "TRIANGLE: Chevron style angles at 45 degrees either side of the peak and bottom edge.",
-    "SAWTOOTH: Sawtooth patterns rise at 45 degrees to the peak, then direct 90 degrees to the bottom.")
+    "SAWTOOTH: Sawtooth patterns rise at 45 degrees to the peak, then direct 90 degrees to the bottom.",
+    "SQUARE: Stepped pattern that alternates between the peak and bottom edge with vertical transitions.")
 
   enums("WVE", { type="int", start=1, comment="Wave envelope options." },
     "LINEAR: Linear decay from start to end, this is the default.",

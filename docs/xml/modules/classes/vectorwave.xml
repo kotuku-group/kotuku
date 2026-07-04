@@ -151,7 +151,7 @@
       <access read="R" write="S">Read/Set</access>
       <type lookup="WVT">WVT</type>
       <description>
-<p>By default, waves are generated in the style of a sine wave.  Alternative styles can be selected by setting this field. The <code>SMOOTH</code> style generates a sine wave, <code>TRIANGLE</code> generates a triangular wave and <code>SAWTOOTH</code> generates a ramp with a sharp return edge.</p>
+<p>By default, waves are generated in the style of a sine wave.  Alternative styles can be selected by setting this field. The <code>SMOOTH</code> style generates a sine wave, <code>TRIANGLE</code> generates a triangular wave, <code>SAWTOOTH</code> generates a ramp with a sharp return edge and <code>SQUARE</code> generates a stepped wave with vertical transitions.</p>
 <types lookup="WVT"/>
       </description>
     </field>
@@ -193,6 +193,7 @@
     <constants lookup="WVT" comment="Wave style options.">
       <const name="SAWTOOTH">Sawtooth patterns rise at 45 degrees to the peak, then direct 90 degrees to the bottom.</const>
       <const name="SMOOTH">Standard sine-wave curvature, this is the default.</const>
+      <const name="SQUARE">Stepped pattern that alternates between the peak and bottom edge with vertical transitions.</const>
       <const name="TRIANGLE">Chevron style angles at 45 degrees either side of the peak and bottom edge.</const>
     </constants>
 

@@ -4,6 +4,7 @@ static const struct FieldDef clVectorWaveWVT[] = {
    { "Smooth", 0x00000001 },
    { "Triangle", 0x00000002 },
    { "Sawtooth", 0x00000003 },
+   { "Square", 0x00000004 },
    { nullptr, 0 }
 };
 

@@ -32,6 +32,7 @@ function selectWave(Text:str):obj
       'Smooth'   -> WVT_SMOOTH
       'Sawtooth' -> WVT_SAWTOOTH
       'Triangle' -> WVT_TRIANGLE
+      'Square'   -> WVT_SQUARE
    end
 
    glWaveVP.scene.surface.mtScheduleRedraw()
@@ -55,7 +56,8 @@ function buildScene()
       items = array<table> {
          { item = 'Smooth' },
          { item = 'Sawtooth' },
-         { item = 'Triangle' }
+         { item = 'Triangle' },
+         { item = 'Square' }
       },
       events = {
          activate = function(Widget:table, Text:str)
