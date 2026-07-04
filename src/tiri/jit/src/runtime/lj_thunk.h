@@ -14,8 +14,12 @@ LJ_FUNC void lj_thunk_new(lua_State *L, GCfunc *func, int expected_type);
 // Resolve a thunk if not already resolved
 // thunk_udata: The thunk userdata (must be UDTYPE_THUNK)
 // Returns: Pointer to resolved value (either cached or newly evaluated)
+// The throwing variant propagates the deferred function's error as a Lua error if it fails.  The protected
+// variant returns nullptr instead, guaranteeing that no long jump occurs; the error value is left in the
+// unreferenced slot at *L->top for the caller to copy or re-push immediately.
 
 LJ_FUNC TValue * lj_thunk_resolve(lua_State *L, GCudata *thunk_udata);
+LJ_FUNC TValue * lj_thunk_resolve_protected(lua_State *L, GCudata *thunk_udata);
 
 // Get the current value of a thunk (resolved value if resolved, thunk itself if not)
 // o: TValue that might be a thunk

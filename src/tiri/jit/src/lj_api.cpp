@@ -137,15 +137,18 @@ extern TValue * resolve_index(lua_State *L, int idx)
       // Set flag to prevent infinite recursion
 
       L->resolving_thunk = 1;
-      TValue *result = lj_thunk_resolve(L, ud);
+      TValue *result = lj_thunk_resolve_protected(L, ud);
       L->resolving_thunk = 0;
 
       o = restorestack(L, slot_offset); // Restore slot pointer (stack may have been reallocated)
 
-      // If resolution failed (e.g., error in thunk function), return the original slot
-      // which still contains the thunk userdata - let caller handle the error
+      // If resolution failed (e.g., error in thunk function), propagate the original error now that the
+      // recursion flag has been cleared.  The error value was left just above the restored stack top.
 
-      if (not result) return o;
+      if (not result) {
+         L->top++;
+         lj_err_run(L);
+      }
 
       copyTV(L, o, result); // Copy resolved value to stack slot for consistency
       return o;
@@ -365,6 +368,53 @@ extern int lua_resolved_type(lua_State *L, int idx)
       lj_assertL(tt != LUA_TNIL or tvisnil(o), "bad tag conversion");
       return tt;
    }
+}
+
+//********************************************************************************************************************
+// Resolve any thunks in the positive stack slot range [idx, idx+count-1] in place, without raising Lua errors.
+// Returns 0 on success, otherwise the index of the first slot whose thunk raised an error during resolution.
+// On failure the failing slot is overwritten with the error value (anchoring it against GC), so the caller can
+// retrieve the error message with lua_tostring() on the returned index.
+//
+// Intended for C code that must not be interrupted by a long jump (e.g. RAII scopes); resolving all argument
+// slots up-front means subsequent lua_tostring(), lua_tonumber() etc. calls are plain slot reads.
+
+extern int lua_resolve_thunks(lua_State *L, int idx, int count)
+{
+   if (L->resolving_thunk) return 0;  // Nested resolution is prohibited; downstream reads will skip thunks too
+
+   for (int n = idx; n < idx + count; n++) {
+      TValue *o = L->base + (n - 1);
+      if (o >= L->top) break;  // Remaining slots don't exist
+      if (not lj_is_thunk(o)) continue;
+
+      GCudata *ud = udataV(o);
+      ThunkPayload *payload = thunk_payload(ud);
+
+      if (payload->resolved) {
+         copyTV(L, o, &payload->cached_value);
+         continue;
+      }
+
+      ptrdiff_t slot_offset = savestack(L, o); // Track slot position (may move during resolution)
+
+      L->resolving_thunk = 1;
+      TValue *result = lj_thunk_resolve_protected(L, ud);
+      L->resolving_thunk = 0;
+
+      o = restorestack(L, slot_offset);
+
+      if (not result) {
+         // Anchor the error value (left just above the stack top) in the failing argument slot so that it
+         // remains GC-safe while the caller reports it.
+         copyTV(L, o, L->top);
+         return n;
+      }
+
+      copyTV(L, o, result);
+   }
+
+   return 0;
 }
 
 //********************************************************************************************************************

@@ -440,7 +440,8 @@ inline bool check_buffer_size_arg(int64_t Size, size_t Capacity)
    return (Size >= 0) and (uint64_t(Size) <= uint64_t(Capacity));
 }
 
-// Long jumps are not permitted (interferes with RAII cleanup)
+// Long jumps are not permitted (interferes with RAII cleanup).  Thunk arguments are resolved up-front under
+// error protection so that later stack reads can never raise a Lua error mid-function.
 
 ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int ArgsSize, int8_t *ArgBuffer,
    int *ResultCount, int &ErrorArg, CSTRING &ErrorMsg)
@@ -450,6 +451,15 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
    int top = lua_gettop(Lua);
 
    log.traceBranch("%d, %p, Top: %d", ArgsSize, ArgBuffer, top);
+
+   if (top > 0) {
+      if (int failed = lua_resolve_thunks(Lua, 1, top)) {
+         ErrorArg = failed;
+         ErrorMsg = lua_tostring(Lua, failed);  // Error value is anchored in the failed slot
+         if (not ErrorMsg) ErrorMsg = "Exception in thunk argument.";
+         return ERR::Exception;
+      }
+   }
 
    clearmem(ArgBuffer, ArgsSize);
 

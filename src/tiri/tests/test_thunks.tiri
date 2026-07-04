@@ -500,3 +500,33 @@ end
    assert(r2 is 42, "Second access should return 42")
    assert(r5 is 84, "Multiplication should work with cached value")
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A thunk argument that raises an error during native call argument building must surface as a catchable script
+-- exception, and thunk resolution must continue to function afterwards.
+
+@Test function ThunkArgumentException()
+   thunk bad():str
+      error('boom')
+   end
+
+   thunk good():str
+      return 'disasm'
+   end
+
+   script = obj.new('tiri', { statement = 'x = 1' })
+   script.acActivate()
+
+   caught_msg = nil
+   try
+      script.mtDebugLog(bad())
+   except e
+      caught_msg = e.message ?? tostring(e)
+   end
+   assert(caught_msg != nil, 'Expected an exception from the erroring thunk argument')
+   assert(string.find(caught_msg, 'boom') != nil, 'Original thunk error should be propagated, got: ' .. caught_msg)
+
+   -- Resolution must not be left disabled by the earlier failure
+   err = script.mtDebugLog(good())
+   assert(err is 0, 'Post-error thunk argument failed with error ' .. err)
+end
