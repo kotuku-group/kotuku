@@ -7,9 +7,6 @@
 // Materialises stroked outlines and removes simple self-intersection loops. Hooks into conv_stroke output before the
 // result is reused as a fillable path. In the vector renderer it prevents internal stroke loops from being traced when
 // a generated thick path is subsequently filled and stroked.
-//
-// TODO: Code is functional for the situations where it is needed, but as a solution (if it is the right solution) is
-// not yet fast enough
 
 #pragma once
 
@@ -49,23 +46,73 @@ struct stroke_resolve_options {
 
 namespace detail {
 
+   struct stroke_resolve_edge_box {
+      unsigned index;
+      double min_x;
+      double max_x;
+      double min_y;
+      double max_y;
+   };
+
+   struct stroke_resolve_scan {
+      std::vector<stroke_resolve_loop> loops;
+      stroke_resolve_intersection fallback;
+      bool has_fallback = false;
+   };
+
    inline bool almost_same(const stroke_resolve_point &A, const stroke_resolve_point &B, double Epsilon) noexcept
    {
       return (std::abs(A.x - B.x) <= Epsilon) and (std::abs(A.y - B.y) <= Epsilon);
    }
 
-   inline double signed_area(const std::vector<stroke_resolve_point> &Points) noexcept
+   inline void add_signed_area_edge(double &Area, const stroke_resolve_point &A,
+      const stroke_resolve_point &B) noexcept
+   {
+      Area += (A.x * B.y) - (B.x * A.y);
+   }
+
+   inline double signed_area_without_loop(const std::vector<stroke_resolve_point> &Points,
+      const stroke_resolve_intersection &Intersection) noexcept
    {
       double area = 0.0;
+      stroke_resolve_point first = { 0.0, 0.0 };
+      stroke_resolve_point previous = { 0.0, 0.0 };
+      bool has_previous = false;
       const unsigned total = unsigned(Points.size());
-      if (total < 3) return 0.0;
 
-      for (unsigned i=0; i < total; i++) {
-         const auto &a = Points[i];
-         const auto &b = Points[(i + 1) % total];
-         area += (a.x * b.y) - (b.x * a.y);
+      auto add_point = [&](const stroke_resolve_point &Point) {
+         if (not has_previous) {
+            first = Point;
+            previous = Point;
+            has_previous = true;
+         }
+         else {
+            add_signed_area_edge(area, previous, Point);
+            previous = Point;
+         }
+      };
+
+      for (unsigned i=0; i <= Intersection.a; i++) add_point(Points[i]);
+      add_point(Intersection.point);
+      for (unsigned i=Intersection.b + 1; i < total; i++) add_point(Points[i]);
+
+      if (has_previous) add_signed_area_edge(area, previous, first);
+      return area * 0.5;
+   }
+
+   inline double signed_area_loop(const std::vector<stroke_resolve_point> &Points,
+      const stroke_resolve_intersection &Intersection) noexcept
+   {
+      double area = 0.0;
+      stroke_resolve_point first = Intersection.point;
+      stroke_resolve_point previous = Intersection.point;
+
+      for (unsigned i=Intersection.a + 1; i <= Intersection.b; i++) {
+         add_signed_area_edge(area, previous, Points[i]);
+         previous = Points[i];
       }
 
+      add_signed_area_edge(area, previous, first);
       return area * 0.5;
    }
 
@@ -93,21 +140,45 @@ namespace detail {
       return true;
    }
 
-   inline bool boxes_overlap(const stroke_resolve_point &A, const stroke_resolve_point &B,
-      const stroke_resolve_point &C, const stroke_resolve_point &D, double Epsilon) noexcept
+   inline stroke_resolve_edge_box edge_box(const std::vector<stroke_resolve_point> &Points, unsigned Index,
+      double Epsilon) noexcept
    {
-      const double ab_min_x = std::min(A.x, B.x) - Epsilon;
-      const double ab_max_x = std::max(A.x, B.x) + Epsilon;
-      const double ab_min_y = std::min(A.y, B.y) - Epsilon;
-      const double ab_max_y = std::max(A.y, B.y) + Epsilon;
+      const unsigned total = unsigned(Points.size());
+      const auto &a = Points[Index];
+      const auto &b = Points[(Index + 1) % total];
 
-      const double cd_min_x = std::min(C.x, D.x) - Epsilon;
-      const double cd_max_x = std::max(C.x, D.x) + Epsilon;
-      const double cd_min_y = std::min(C.y, D.y) - Epsilon;
-      const double cd_max_y = std::max(C.y, D.y) + Epsilon;
+      return {
+         Index,
+         std::min(a.x, b.x) - Epsilon,
+         std::max(a.x, b.x) + Epsilon,
+         std::min(a.y, b.y) - Epsilon,
+         std::max(a.y, b.y) + Epsilon
+      };
+   }
 
-      return (ab_min_x <= cd_max_x) and (cd_min_x <= ab_max_x) and
-         (ab_min_y <= cd_max_y) and (cd_min_y <= ab_max_y);
+   inline std::vector<stroke_resolve_edge_box> sorted_edge_boxes(
+      const std::vector<stroke_resolve_point> &Points, double Epsilon)
+   {
+      std::vector<stroke_resolve_edge_box> boxes;
+      const unsigned total = unsigned(Points.size());
+      boxes.reserve(total);
+
+      for (unsigned i=0; i < total; i++) boxes.push_back(edge_box(Points, i, Epsilon));
+
+      std::sort(boxes.begin(), boxes.end(), [](const stroke_resolve_edge_box &A,
+         const stroke_resolve_edge_box &B) {
+         if (A.min_x < B.min_x) return true;
+         if (B.min_x < A.min_x) return false;
+         return A.index < B.index;
+      });
+
+      return boxes;
+   }
+
+   inline bool boxes_overlap(const stroke_resolve_edge_box &A, const stroke_resolve_edge_box &B) noexcept
+   {
+      return (A.min_x <= B.max_x) and (B.min_x <= A.max_x) and
+         (A.min_y <= B.max_y) and (B.min_y <= A.max_y);
    }
 
    inline bool adjacent_edges(unsigned A, unsigned B, unsigned Total) noexcept
@@ -118,73 +189,127 @@ namespace detail {
       return ((A IS 0) and (B + 1 IS Total)) or ((B IS 0) and (A + 1 IS Total));
    }
 
-   inline bool find_self_intersection(const std::vector<stroke_resolve_point> &Points,
-      stroke_resolve_intersection &Out, double Epsilon) noexcept
+   inline void sort_removable_loops(std::vector<stroke_resolve_loop> &Loops)
    {
+      std::sort(Loops.begin(), Loops.end(), [](const stroke_resolve_loop &A, const stroke_resolve_loop &B) {
+         if (A.a < B.a) return true;
+         if (B.a < A.a) return false;
+         return A.b < B.b;
+      });
+   }
+
+   inline void discard_overlapping_loops(std::vector<stroke_resolve_loop> &Loops)
+   {
+      if (Loops.empty()) return;
+
+      sort_removable_loops(Loops);
+
+      std::vector<stroke_resolve_loop> filtered;
+      filtered.reserve(Loops.size());
+
+      unsigned cursor = 0;
+      for (auto &loop : Loops) {
+         if (loop.a < cursor) continue;
+         filtered.push_back(loop);
+         cursor = loop.b + 1;
+      }
+
+      Loops = std::move(filtered);
+   }
+
+   inline stroke_resolve_scan scan_self_intersections(const std::vector<stroke_resolve_point> &Points,
+      double Epsilon)
+   {
+      stroke_resolve_scan result;
       const unsigned total = unsigned(Points.size());
-      if (total < 4) return false;
+      if (total < 4) return result;
+
+      auto boxes = sorted_edge_boxes(Points, Epsilon);
 
       for (unsigned i=0; i < total; i++) {
-         const auto &a1 = Points[i];
-         const auto &a2 = Points[(i + 1) % total];
+         const auto &box_a = boxes[i];
+         const auto &a1 = Points[box_a.index];
+         const auto &a2 = Points[(box_a.index + 1) % total];
 
          for (unsigned j=i + 1; j < total; j++) {
-            if (adjacent_edges(i, j, total)) continue;
+            const auto &box_b = boxes[j];
+            if (box_b.min_x > box_a.max_x) break;
+            if (adjacent_edges(box_a.index, box_b.index, total)) continue;
+            if (not boxes_overlap(box_a, box_b)) continue;
 
-            const auto &b1 = Points[j];
-            const auto &b2 = Points[(j + 1) % total];
-            if (!boxes_overlap(a1, a2, b1, b2, Epsilon)) continue;
+            const auto &b1 = Points[box_b.index];
+            const auto &b2 = Points[(box_b.index + 1) % total];
 
             stroke_resolve_intersection intersection;
-            if (line_intersection(a1, a2, b1, b2, intersection, Epsilon)) {
-               intersection.a = i;
-               intersection.b = j;
-               Out = intersection;
-               return true;
+            if (not line_intersection(a1, a2, b1, b2, intersection, Epsilon)) continue;
+
+            if (box_a.index < box_b.index) {
+               intersection.a = box_a.index;
+               intersection.b = box_b.index;
+            }
+            else {
+               intersection.a = box_b.index;
+               intersection.b = box_a.index;
+            }
+
+            if (not result.has_fallback) {
+               result.fallback = intersection;
+               result.has_fallback = true;
+            }
+
+            const unsigned span = intersection.b - intersection.a;
+            if (span <= total / 2) {
+               result.loops.push_back({ intersection.a, intersection.b, intersection.point });
             }
          }
       }
 
-      return false;
+      discard_overlapping_loops(result.loops);
+      return result;
    }
 
    inline std::vector<stroke_resolve_point> remove_inner_loop(const std::vector<stroke_resolve_point> &Points,
       const stroke_resolve_intersection &Intersection)
    {
-      std::vector<stroke_resolve_point> candidate;
       const unsigned total = unsigned(Points.size());
-      candidate.reserve(total);
+      std::vector<stroke_resolve_point> resolved;
 
-      for (unsigned i=0; i <= Intersection.a; i++) candidate.push_back(Points[i]);
-      candidate.push_back(Intersection.point);
-      for (unsigned i=Intersection.b + 1; i < total; i++) candidate.push_back(Points[i]);
+      if (std::abs(signed_area_loop(Points, Intersection)) > std::abs(signed_area_without_loop(Points, Intersection))) {
+         resolved.reserve(Intersection.b - Intersection.a + 2);
+         resolved.push_back(Intersection.point);
+         for (unsigned i=Intersection.a + 1; i <= Intersection.b; i++) resolved.push_back(Points[i]);
+      }
+      else {
+         resolved.reserve(total);
+         for (unsigned i=0; i <= Intersection.a; i++) resolved.push_back(Points[i]);
+         resolved.push_back(Intersection.point);
+         for (unsigned i=Intersection.b + 1; i < total; i++) resolved.push_back(Points[i]);
+      }
 
-      std::vector<stroke_resolve_point> loop;
-      loop.reserve(Intersection.b - Intersection.a + 2);
-      loop.push_back(Intersection.point);
-      for (unsigned i=Intersection.a + 1; i <= Intersection.b; i++) loop.push_back(Points[i]);
-
-      if (std::abs(signed_area(loop)) > std::abs(signed_area(candidate))) return loop;
-      return candidate;
+      return resolved;
    }
 
-   inline unsigned count_self_intersections(const std::vector<stroke_resolve_point> &Points, double Epsilon) noexcept
+   inline unsigned count_self_intersections(const std::vector<stroke_resolve_point> &Points, double Epsilon)
    {
       const unsigned total = unsigned(Points.size());
       if (total < 4) return 0;
 
       unsigned intersections = 0;
+      auto boxes = sorted_edge_boxes(Points, Epsilon);
 
       for (unsigned i=0; i < total; i++) {
-         const auto &a1 = Points[i];
-         const auto &a2 = Points[(i + 1) % total];
+         const auto &box_a = boxes[i];
+         const auto &a1 = Points[box_a.index];
+         const auto &a2 = Points[(box_a.index + 1) % total];
 
          for (unsigned j=i + 1; j < total; j++) {
-            if (adjacent_edges(i, j, total)) continue;
+            const auto &box_b = boxes[j];
+            if (box_b.min_x > box_a.max_x) break;
+            if (adjacent_edges(box_a.index, box_b.index, total)) continue;
+            if (not boxes_overlap(box_a, box_b)) continue;
 
-            const auto &b1 = Points[j];
-            const auto &b2 = Points[(j + 1) % total];
-            if (!boxes_overlap(a1, a2, b1, b2, Epsilon)) continue;
+            const auto &b1 = Points[box_b.index];
+            const auto &b2 = Points[(box_b.index + 1) % total];
 
             stroke_resolve_intersection intersection;
             if (line_intersection(a1, a2, b1, b2, intersection, Epsilon)) intersections++;
@@ -192,35 +317,6 @@ namespace detail {
       }
 
       return intersections;
-   }
-
-   inline std::vector<stroke_resolve_loop> find_removable_loops(
-      const std::vector<stroke_resolve_point> &Points, double Epsilon)
-   {
-      std::vector<stroke_resolve_loop> loops;
-      const unsigned total = unsigned(Points.size());
-      if (total < 4) return loops;
-
-      for (unsigned i=0; i < total; i++) {
-         const auto &a1 = Points[i];
-         const auto &a2 = Points[(i + 1) % total];
-
-         for (unsigned j=i + 1; j < total; j++) {
-            if (adjacent_edges(i, j, total)) continue;
-
-            const auto &b1 = Points[j];
-            const auto &b2 = Points[(j + 1) % total];
-            if (!boxes_overlap(a1, a2, b1, b2, Epsilon)) continue;
-
-            stroke_resolve_intersection intersection;
-            if (!line_intersection(a1, a2, b1, b2, intersection, Epsilon)) continue;
-
-            const unsigned span = j - i;
-            if (span <= total / 2) loops.push_back({ i, j, intersection.point });
-         }
-      }
-
-      return loops;
    }
 
    inline bool remove_loop_batch(std::vector<stroke_resolve_point> &Points, const std::vector<stroke_resolve_loop> &Loops)
@@ -257,16 +353,15 @@ namespace detail {
       bool changed = false;
 
       for (unsigned pass=0; pass < Options.max_passes; pass++) {
-         auto loops = find_removable_loops(Points, Options.epsilon);
-         if (remove_loop_batch(Points, loops)) {
+         auto scan = scan_self_intersections(Points, Options.epsilon);
+         if (remove_loop_batch(Points, scan.loops)) {
             changed = true;
             continue;
          }
 
-         stroke_resolve_intersection intersection;
-         if (!find_self_intersection(Points, intersection, Options.epsilon)) break;
+         if (not scan.has_fallback) break;
 
-         auto resolved = remove_inner_loop(Points, intersection);
+         auto resolved = remove_inner_loop(Points, scan.fallback);
          if (resolved.size() < 3) break;
 
          Points = std::move(resolved);
@@ -347,7 +442,6 @@ inline bool resolve_stroke_self_intersections(path_storage &Path, const stroke_r
    }
 
    bool changed = false;
-   path_storage resolved;
 
    for (unsigned i=0; i < contours.size(); i++) {
       auto &contour = contours[i];
@@ -359,17 +453,19 @@ inline bool resolve_stroke_self_intersections(path_storage &Path, const stroke_r
       }
 
       if ((closed[i]) and (detail::remove_self_intersections(contour, Options))) changed = true;
-
-      if (contour.empty()) continue;
-
-      resolved.move_to(contour[0].x, contour[0].y);
-      for (unsigned j=1; j < contour.size(); j++) resolved.line_to(contour[j].x, contour[j].y);
-      if (closed[i]) resolved.close_polygon();
    }
 
    if (changed) {
       Path.remove_all();
-      Path.concat_path(resolved);
+
+      for (unsigned i=0; i < contours.size(); i++) {
+         auto &contour = contours[i];
+         if (contour.empty()) continue;
+
+         Path.move_to(contour[0].x, contour[0].y);
+         for (unsigned j=1; j < contour.size(); j++) Path.line_to(contour[j].x, contour[j].y);
+         if (closed[i]) Path.close_polygon();
+      }
    }
 
    return changed;
