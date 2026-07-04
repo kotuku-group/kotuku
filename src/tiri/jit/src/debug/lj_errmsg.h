@@ -161,8 +161,6 @@ ERRDEF(ARREXT,  "Cannot grow external or cached string array")
 // Object errors.
 ERRDEF(OBJFREED, "Object has been freed")
 
-ERRDEF(THUNKEX,  "Thunk threw an exception on resolution")
-
 #undef ERRDEF
 
 /* Detecting unused error messages:

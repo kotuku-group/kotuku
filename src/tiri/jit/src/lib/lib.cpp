@@ -304,29 +304,19 @@ GCtab * lj_lib_checktab(lua_State *L, int Arg)
 }
 
 //********************************************************************************************************************
-// Helper function to check argument is an object (nil not accepted)
+// Helper function to check argument is an object (nil not accepted).  Throws error unless CanThrow is false
 
-GCobject * lj_lib_checkobject(lua_State *L, int Arg)
+GCobject * lj_lib_checkobject(lua_State *L, int Arg, bool CanThrow)
 {
-   TValue *o = L->base + Arg - 1;
-   if (o < L->top) {
-      if (lj_is_thunk(o)) { // Resolve thunk if present
-         TValue *resolved = lj_thunk_resolve(L, udataV(o));
-         o = L->base + Arg - 1; // Stack may have moved, recalculate o
-         copyTV(L, o, resolved); // Replace thunk with resolved value
-      }
-
-      if (tvisobject(o)) [[likely]] return objectV(o);
-   }
-
-   lj_err_argt(L, Arg, LUA_TOBJECT);
-   return nullptr; // unreachable
+   auto result = lj_lib_optobject(L, Arg, false);
+   if ((not result) and (CanThrow)) lj_err_argt(L, Arg, LUA_TOBJECT);
+   return result;
 }
 
 //********************************************************************************************************************
-// Helper function to check optional object argument (may be nil, but non-objects throw an error)
+// Helper function to check optional object argument (may be nil, but non-objects throw an error unless CanThrow is false)
 
-GCobject * lj_lib_optobject(lua_State *L, int Arg)
+GCobject * lj_lib_optobject(lua_State *L, int Arg, bool CanThrow)
 {
    TValue *o = L->base + Arg - 1;
    if (o < L->top and not tvisnil(o)) {
@@ -337,15 +327,15 @@ GCobject * lj_lib_optobject(lua_State *L, int Arg)
       }
 
       if (tvisobject(o)) return objectV(o);
-      else lj_err_argt(L, Arg, LUA_TOBJECT);
+      else if (CanThrow) lj_err_argt(L, Arg, LUA_TOBJECT);
    }
    return nullptr;
 }
 
 //********************************************************************************************************************
-// Helper function to check argument is an array
+// Helper function to check argument is an array and performs thunk resolution
 
-GCarray * lj_lib_checkarray(lua_State *L, int Arg)
+GCarray * lj_lib_checkarray(lua_State *L, int Arg, bool Required)
 {
    TValue *o = L->base + Arg - 1;
    if (o < L->top) {
@@ -358,8 +348,8 @@ GCarray * lj_lib_checkarray(lua_State *L, int Arg)
       if (tvisarray(o)) [[likely]] return arrayV(o);
    }
 
-   lj_err_argt(L, Arg, LUA_TARRAY);
-   return nullptr;  //  unreachable
+   if (Required) lj_err_argt(L, Arg, LUA_TARRAY);
+   return nullptr;
 }
 
 //********************************************************************************************************************
