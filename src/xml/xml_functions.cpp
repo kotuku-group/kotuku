@@ -453,9 +453,9 @@ static void extract_content(extXML *Self, TAGS &Tags, ParseState &State)
       auto end_ptr = State.cursor.data();
       auto ptr = content.cursor.data();
 
+      // Newlines in this span were already counted by skipTo() above; this loop only strips carriage returns.
       while (ptr < end_ptr) {
          char ch = *ptr++;
-         if (ch == '\n') ++Self->LineNo;
          if (ch != '\r') str.push_back(ch);
       }
 
@@ -707,20 +707,14 @@ static ERR parse_tag(extXML *Self, TAGS &Tags, ParseState &State)
          if (State.current() IS '"') {
             State.next();
             auto value_start = State.cursor.data();
-            while ((not State.done()) and (State.current() != '"')) {
-               if (State.current() IS '\n') Self->LineNo++;
-               State.next();
-            }
+            State.skipTo('"', Self->LineNo); // SSE4.2-accelerated scan to the closing quote
             val.assign(value_start, State.cursor.data() - value_start);
             if (State.current() IS '"') State.next();
          }
          else if (State.current() IS '\'') {
             State.next();
             auto value_start = State.cursor.data();
-            while ((not State.done()) and (State.current() != '\'')) {
-               if (State.current() IS '\n') Self->LineNo++;
-               State.next();
-            }
+            State.skipTo('\'', Self->LineNo);
             val.assign(value_start, State.cursor.data() - value_start);
             if (State.current() IS '\'') State.next();
          }
