@@ -40,7 +40,8 @@ class extVectorWave : public extVector {
       GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_wave;
    }
 
-   void apply_wave_thickness(agg::path_storage &Path, double Thickness, double ApproxScale);
+   void apply_wave_thickness(agg::path_storage &Path, double Thickness, double ApproxScale, double Length,
+      double Amplitude);
    void add_sawtooth_vertices(agg::path_storage &Path, double OriginX, double OriginY, double XScale, double Amplitude);
    void add_triangle_vertices(agg::path_storage &Path, double OriginX, double OriginY, double XScale, double Amplitude);
 
@@ -114,6 +115,22 @@ class extVectorWave : public extVector {
       if (Transition) apply_transition_xy(Transition, Angle * (1.0 / 360.0), &x, &y);
       Path.line_to(OriginX + x, OriginY + y);
    }
+
+   bool smooth_wave_needs_resolve(double Length, double Amplitude, double Thickness) {
+      if (wType != WVT::SMOOTH) return false;
+      if ((Transition) or (not (wDecay IS 1.0))) return true;
+
+      const double xscale = std::abs(Length) * (1.0 / 360.0);
+      const double half_thickness = Thickness * 0.5;
+      if ((xscale <= 0.0) or (half_thickness <= 0.0) or (std::abs(Amplitude) <= 0.0) or (wFrequency <= 0.0)) {
+         return false;
+      }
+
+      const double phase_scale = DEG2RAD * wFrequency;
+      const double max_curvature = std::abs(Amplitude) * phase_scale * phase_scale / (xscale * xscale);
+
+      return (half_thickness * max_curvature) > 1.0;
+   }
 };
 
 //********************************************************************************************************************
@@ -156,30 +173,30 @@ void extVectorWave::add_sawtooth_vertices(agg::path_storage &Path, double Origin
    }
 }
 
-void extVectorWave::apply_wave_thickness(agg::path_storage &Path, double Thickness, double ApproxScale)
+void extVectorWave::apply_wave_thickness(agg::path_storage &Path, double Thickness, double ApproxScale, double Length,
+   double Amplitude)
 {
    // The centreline path is converted into a filled outline using AGG's stroke generator.
 
    if (Path.total_vertices() < 2) return;
 
-   agg::conv_stroke<agg::path_storage> stroke(Path);
+   agg::path_storage centreline;
+   centreline.concat_path(Path);
+
+   agg::conv_stroke<agg::path_storage> stroke(centreline);
    stroke.width(Thickness);
    stroke.line_join(VLJ::ROUND);  // Rounds the outer (convex) side of sharp peaks
    stroke.inner_join(VIJ::ROUND); // Absorbs the inner (concave) side, preventing cross-over
    stroke.line_cap(VLC::ROUND);
    stroke.approximation_scale(ApproxScale > 0.0 ? ApproxScale : 1.0);
 
-   agg::path_storage outline;
-   outline.concat_path(stroke);
-
-   if (wType IS WVT::SMOOTH) {
-      // Smooth stroking can generate intersecting paths at the creases of peaks and troughs.  This issue
-      // is eliminated through this call.
-      agg::resolve_stroke_self_intersections(outline);
+   if (smooth_wave_needs_resolve(Length, Amplitude, Thickness)) {
+      agg::resolve_stroke_self_intersections(Path, stroke);
    }
-
-   Path.remove_all();
-   Path.concat_path(outline);
+   else {
+      Path.remove_all();
+      Path.concat_path(stroke);
+   }
 }
 
 //********************************************************************************************************************
@@ -272,7 +289,7 @@ static void generate_wave(extVectorWave *Vector, agg::path_storage &Path)
    }
 
    if (thickness > 0) {
-      Vector->apply_wave_thickness(Path, thickness, Vector->Transform.scale());
+      Vector->apply_wave_thickness(Path, thickness, Vector->Transform.scale(), length, amp);
    }
 
    if ((Vector->wClose != WVC::NIL) or (thickness > 0)) Path.close_polygon();

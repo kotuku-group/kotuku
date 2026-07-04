@@ -60,6 +60,11 @@ namespace detail {
       bool has_fallback = false;
    };
 
+   struct stroke_resolve_contours {
+      std::vector<std::vector<stroke_resolve_point>> contours;
+      std::vector<bool> closed;
+   };
+
    inline bool almost_same(const stroke_resolve_point &A, const stroke_resolve_point &B, double Epsilon) noexcept
    {
       return (std::abs(A.x - B.x) <= Epsilon) and (std::abs(A.y - B.y) <= Epsilon);
@@ -370,6 +375,73 @@ namespace detail {
 
       return changed;
    }
+
+   template <class VertexSource> inline stroke_resolve_contours extract_contours(VertexSource &Source)
+   {
+      stroke_resolve_contours extracted;
+      extracted.contours.emplace_back();
+      extracted.closed.push_back(false);
+
+      double x = 0.0;
+      double y = 0.0;
+
+      Source.rewind(0);
+      while (true) {
+         unsigned cmd = Source.vertex(&x, &y);
+         if (is_stop(cmd)) break;
+
+         if (is_move_to(cmd)) {
+            if (not extracted.contours.back().empty()) {
+               extracted.contours.emplace_back();
+               extracted.closed.push_back(false);
+            }
+            extracted.contours.back().push_back({ x, y });
+         }
+         else if (is_vertex(cmd)) {
+            if (extracted.contours.empty()) {
+               extracted.contours.emplace_back();
+               extracted.closed.push_back(false);
+            }
+            extracted.contours.back().push_back({ x, y });
+         }
+         else if (is_end_poly(cmd) and (get_close_flag(cmd) != 0)) {
+            if (not extracted.closed.empty()) extracted.closed.back() = true;
+         }
+      }
+
+      return extracted;
+   }
+
+   inline bool clean_contours(stroke_resolve_contours &Contours, const stroke_resolve_options &Options)
+   {
+      bool changed = false;
+
+      for (unsigned i=0; i < Contours.contours.size(); i++) {
+         auto &contour = Contours.contours[i];
+         if (contour.empty()) continue;
+
+         if (contour.size() > 1 and detail::almost_same(contour.front(), contour.back(), Options.epsilon)) {
+            contour.pop_back();
+            Contours.closed[i] = true;
+         }
+
+         if ((Contours.closed[i]) and (detail::remove_self_intersections(contour, Options))) changed = true;
+      }
+
+      return changed;
+   }
+
+   inline void append_contours(path_storage &Path, const stroke_resolve_contours &Contours)
+   {
+      for (unsigned i=0; i < Contours.contours.size(); i++) {
+         auto &contour = Contours.contours[i];
+         if (contour.empty()) continue;
+
+         Path.move_to(contour[0].x, contour[0].y);
+         for (unsigned j=1; j < contour.size(); j++) Path.line_to(contour[j].x, contour[j].y);
+         if (Contours.closed[i]) Path.close_polygon();
+      }
+   }
 }
 
 inline unsigned path_self_intersection_count(path_storage &Path, double Epsilon = 1.0e-8)
@@ -409,64 +481,25 @@ inline unsigned path_self_intersection_count(path_storage &Path, double Epsilon 
 
 inline bool resolve_stroke_self_intersections(path_storage &Path, const stroke_resolve_options &Options = stroke_resolve_options())
 {
-   std::vector<std::vector<stroke_resolve_point>> contours;
-   std::vector<bool> closed;
-   contours.emplace_back();
-   closed.push_back(false);
-
-   double x = 0.0;
-   double y = 0.0;
-
-   Path.rewind(0);
-   while (true) {
-      unsigned cmd = Path.vertex(&x, &y);
-      if (is_stop(cmd)) break;
-
-      if (is_move_to(cmd)) {
-         if (!contours.back().empty()) {
-            contours.emplace_back();
-            closed.push_back(false);
-         }
-         contours.back().push_back({ x, y });
-      }
-      else if (is_vertex(cmd)) {
-         if (contours.empty()) {
-            contours.emplace_back();
-            closed.push_back(false);
-         }
-         contours.back().push_back({ x, y });
-      }
-      else if (is_end_poly(cmd) and (get_close_flag(cmd) != 0)) {
-         if (!closed.empty()) closed.back() = true;
-      }
-   }
-
-   bool changed = false;
-
-   for (unsigned i=0; i < contours.size(); i++) {
-      auto &contour = contours[i];
-      if (contour.empty()) continue;
-
-      if (contour.size() > 1 and detail::almost_same(contour.front(), contour.back(), Options.epsilon)) {
-         contour.pop_back();
-         closed[i] = true;
-      }
-
-      if ((closed[i]) and (detail::remove_self_intersections(contour, Options))) changed = true;
-   }
+   auto contours = detail::extract_contours(Path);
+   bool changed = detail::clean_contours(contours, Options);
 
    if (changed) {
       Path.remove_all();
-
-      for (unsigned i=0; i < contours.size(); i++) {
-         auto &contour = contours[i];
-         if (contour.empty()) continue;
-
-         Path.move_to(contour[0].x, contour[0].y);
-         for (unsigned j=1; j < contour.size(); j++) Path.line_to(contour[j].x, contour[j].y);
-         if (closed[i]) Path.close_polygon();
-      }
+      detail::append_contours(Path, contours);
    }
+
+   return changed;
+}
+
+template <class VertexSource> inline bool resolve_stroke_self_intersections(path_storage &Target, VertexSource &Source,
+   const stroke_resolve_options &Options = stroke_resolve_options())
+{
+   auto contours = detail::extract_contours(Source);
+   bool changed = detail::clean_contours(contours, Options);
+
+   Target.remove_all();
+   detail::append_contours(Target, contours);
 
    return changed;
 }
