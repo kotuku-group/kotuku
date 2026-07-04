@@ -1020,7 +1020,14 @@ static ERR save_svg_scan_wave(extSVG *Self, objXML *XML, objVector *Vector, int 
       if (!wave->getY(unit))        set_dimension(tag, "y", unit);
       if (!wave->getLength(unit))   set_dimension(tag, "length", unit);
       if (!wave->getAmplitude(unit)) set_dimension(tag, "amplitude", unit);
-      if (!wave->getFrequency(dbl)) xml::NewAttrib(tag, "frequency", dbl);
+      if (!wave->getFrequency(dbl)) {
+         xml::NewAttrib(tag, "frequency", dbl);
+
+         double frequency_end;
+         if ((!wave->getFrequencyEnd(frequency_end)) and (not (frequency_end IS dbl))) {
+            xml::NewAttrib(tag, "frequencyEnd", frequency_end);
+         }
+      }
       if (!wave->getDecay(dbl))     xml::NewAttrib(tag, "decay", dbl);
       if (!wave->getPhase(dbl))     xml::NewAttrib(tag, "phase", dbl);
 

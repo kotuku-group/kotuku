@@ -34,6 +34,10 @@ function assertContains(Haystack:str, Needle:str, Message:str)
    assert(string.find(Haystack, Needle, 0, true) != nil, Message)
 end
 
+function assertNear(Actual, Expected, Message)
+   assert(Actual ≈ Expected, Message .. ' expected ' .. Expected .. ', got ' .. Actual)
+end
+
 function transitionStop(Offset:num, Transform:str)
    local stop = struct.new('Transition')
    stop.offset = Offset
@@ -46,6 +50,25 @@ function transitionStops()
       transitionStop(0.0, 'translate(5 6)'),
       transitionStop(1.0, 'scale(2)')
    }
+end
+
+function waveDocument(ID:str, AttribName:str):str
+   return [[
+<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg">
+  <kotuku:wave id="]] .. ID .. [[" x="0" y="40" length="100" amplitude="20" frequency="2" ]] ..
+     AttribName .. [[="8" fill="none" stroke="black"/>
+</svg>
+]]
+end
+
+function loadWaveWithEndFrequency(ID:str, AttribName:str):<obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=80 })
+   scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   obj.new('svg', { target=scene, statement=waveDocument(ID, AttribName) })
+
+   local wave = obj.find(ID)
+   assert(wave != nil, 'Parsed SVG should create the named VectorWave')
+   return scene, wave
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -156,4 +179,21 @@ end
    local err, loaded_image = loaded_scene.mtFindDef('embedded_image')
    assert(err is ERR_Okay, 'Embedded VectorImage data should load back as a definition')
    assert(loaded_image != nil, 'Embedded VectorImage definition should be available after reload')
+end
+
+@Test function ParsesAndSavesWaveFrequencyEnd()
+   local scene, wave = loadWaveWithEndFrequency('svg_wave_frequency_end', 'frequencyEnd')
+
+   assertNear(wave.frequency, 2, 'VectorWave frequency should parse from SVG')
+   assertNear(wave.frequencyEnd, 8, 'VectorWave frequencyEnd should parse from SVG')
+
+   local saved = saveScene(scene, 'temp:svg_wave_frequency_end.svg')
+   assertContains(saved, 'frequencyEnd=', 'Saved SVG should include a differing VectorWave frequencyEnd')
+end
+
+@Test function ParsesWaveFrequencyEndHyphenAlias()
+   local scene, wave = loadWaveWithEndFrequency('svg_wave_frequency_end_alias', 'frequency-end')
+
+   assertNear(wave.frequency, 2, 'VectorWave frequency should parse from SVG')
+   assertNear(wave.frequencyEnd, 8, 'VectorWave frequency-end alias should parse from SVG')
 end

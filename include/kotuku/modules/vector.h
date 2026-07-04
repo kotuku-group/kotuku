@@ -4872,18 +4872,23 @@ class objVectorWave : public objVector {
 
    // Customised field getting
 
+   inline ERR getFrequencyEnd(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1048));
+      return ERR::Okay;
+   }
+
    inline ERR getEnvelope(WVE &Value) noexcept {
-      Value = *((WVE *)(((int8_t *)this) + 1064));
+      Value = *((WVE *)(((int8_t *)this) + 1072));
       return ERR::Okay;
    }
 
    inline ERR getClose(WVC &Value) noexcept {
-      Value = *((WVC *)(((int8_t *)this) + 1068));
+      Value = *((WVC *)(((int8_t *)this) + 1076));
       return ERR::Okay;
    }
 
    inline ERR getType(WVT &Value) noexcept {
-      Value = *((WVT *)(((int8_t *)this) + 1072));
+      Value = *((WVT *)(((int8_t *)this) + 1080));
       return ERR::Okay;
    }
 
@@ -4918,45 +4923,50 @@ class objVectorWave : public objVector {
    }
 
    inline ERR getDecay(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1048));
+      Value = *((double *)(((int8_t *)this) + 1056));
       return ERR::Okay;
    }
 
    inline ERR getPhase(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1056));
+      Value = *((double *)(((int8_t *)this) + 1064));
       return ERR::Okay;
    }
 
 
    // Customised field setting
 
-   inline ERR setEnvelope(const WVE Value) noexcept {
+   inline ERR setFrequencyEnd(const double Value) noexcept {
       auto field = &this->Class->Dictionary[47];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
+
+   inline ERR setEnvelope(const WVE Value) noexcept {
+      auto field = &this->Class->Dictionary[48];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setClose(const WVC Value) noexcept {
-      auto field = &this->Class->Dictionary[51];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setType(const WVT Value) noexcept {
       auto field = &this->Class->Dictionary[52];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
-   inline ERR setX(const Unit Value) noexcept {
+   inline ERR setType(const WVT Value) noexcept {
       auto field = &this->Class->Dictionary[53];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setX(const Unit Value) noexcept {
+      auto field = &this->Class->Dictionary[54];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setY(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[50];
+      auto field = &this->Class->Dictionary[51];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setLength(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[55];
+      auto field = &this->Class->Dictionary[56];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
@@ -4966,12 +4976,12 @@ class objVectorWave : public objVector {
    }
 
    inline ERR setThickness(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[54];
+      auto field = &this->Class->Dictionary[55];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setFrequency(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[49];
+      auto field = &this->Class->Dictionary[50];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -4981,7 +4991,7 @@ class objVectorWave : public objVector {
    }
 
    inline ERR setPhase(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[48];
+      auto field = &this->Class->Dictionary[49];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 

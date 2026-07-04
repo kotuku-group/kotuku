@@ -804,6 +804,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     base='Vector', src='vectors/wave.cpp', output='vectors/wave_def.cpp',
     references={ 'WVT', 'WVC', 'WVE' }, extended=true },
   [[
+    ~double FrequencyEnd
     ~int(WVE) Envelope
     ~int(WVC) Close
     ~int(WVT) Type
