@@ -426,8 +426,8 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
    if (not is_placement) {
       Object->setFlag(NF::ZOMBIE);
       if (Object->RefCount.load(std::memory_order_acquire) IS 1) {
-         // Fast path: only the terminator's own pin remains, so no other holder can race the release and the
-         // zombie registry can be bypassed entirely.
+         // Fast path: only the terminator's own strong pin remains (no weak pins), so no other holder can race
+         // the release and the zombie registry can be bypassed entirely.
          Object->RefCount.store(0, std::memory_order_release);
          free_object_block(Object);
       }

@@ -196,7 +196,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
    int8_t   ActionDepth;         // Debug builds only: Incremented each time an action or method is called on the object
    std::atomic_char Queue;       // Counter of locks attained by LockObject(); decremented by ReleaseObject(); not stable by design (see lock())
    std::atomic_char SleepQueue;  // For the use of LockObject() only
-   std::atomic_uint8_t RefCount; // Reference counting - object cannot be freed until this reaches 0.  NB: This is not a locking mechanism!
+   std::atomic<uint16_t> RefCount; // Packed pin counters: low byte strong pins, high byte weak pins.  NB: This is not a locking mechanism!
    OBJECTID UID;                 // Unique object identifier
    std::atomic<uint32_t> Flags;  // Object NF flags
    std::atomic_int ThreadID;     // Managed by locking functions.  Atomic due to volatility.
@@ -229,14 +229,20 @@ struct alignas(8) Object { // Must be 64-bit aligned
    inline void setFlag(NF pFlag) { Flags.fetch_or(uint32_t(pFlag), std::memory_order_relaxed); }
    inline void clearFlag(NF pFlag) { Flags.fetch_and(~uint32_t(pFlag), std::memory_order_relaxed); }
 
-   // Pinning an object provides a strong hint that the object is referenced by a variable, stored in a container, or
-   // needed by a thread.  Pinned objects will short-circuit ReleaseObject's automatic free-on-unlock feature, making it
-   // necessary to manually call freeIfReady() after calls to unpin().
+   // Two tiers of pinning are packed into RefCount: the low byte counts strong pins and the high byte counts weak
+   // pins.  Both tiers keep the object's header block allocated after termination (zombie mode) until every pin is
+   // released; only the header fields Flags and RefCount remain valid at that point, and pin holders may only test
+   // NF::FREE and unpin.  Placement objects cannot be pinned because the Core does not own their memory block.
    //
-   // Pinning does not block forced termination.  If a pinned object is terminated, only the header fields Flags and
-   // RefCount remain valid until the last unpin() releases the retained zombie block.  Pin holders may only test
-   // NF::FREE and call unpin() after termination.  Placement objects are excluded because the Core does not own their
-   // memory block.
+   // Strong pins - pin()/unpin() - additionally defer explicit termination: FreeResource() marks the object with
+   // FREE_ON_UNLOCK and collection occurs via unpin(true) or freeIfReady().  Use a strong pin when the object must
+   // remain operational, e.g. for the duration of an asynchronous action.
+   //
+   // Weak pins - pinWeak()/unpinWeak() - never impede termination and exist purely for stale-reference detection,
+   // e.g. callback subscriptions.  A weak pin on an ancestor cannot deadlock its destruction.
+
+   static constexpr uint16_t STRONG_PINS = 0x0001; // RefCount increment per strong pin
+   static constexpr uint16_t WEAK_PINS   = 0x0100; // RefCount increment per weak pin
 
    inline void pin() {
       #ifndef NDEBUG
@@ -245,21 +251,21 @@ struct alignas(8) Object { // Must be 64-bit aligned
          kt::Log("pin").warning("Pinning placement object #%d (%s) is unsupported.", UID, className());
          DEBUG_BREAK
       }
-      if (ref_count >= 254) {
-         kt::Log("pin").warning("RefCount overflow risk for object #%d (%s), count: %d", UID, className(), ref_count);
+      if ((ref_count & 0xff) >= 254) {
+         kt::Log("pin").warning("Strong pin overflow risk for object #%d (%s), count: %d", UID, className(), ref_count & 0xff);
          DEBUG_BREAK
       }
       #endif
-      RefCount.fetch_add(1, std::memory_order_relaxed);
+      RefCount.fetch_add(STRONG_PINS, std::memory_order_relaxed);
    }
 
    inline void unpin(bool FreeIfReady = false) {
       // Saturate at zero; a plain load-check-decrement would allow two racing threads to underflow the counter.
       auto ref_count = RefCount.load(std::memory_order_relaxed);
-      while (ref_count > 0) {
-         if (RefCount.compare_exchange_weak(ref_count, uint8_t(ref_count - 1), std::memory_order_acq_rel,
+      while ((ref_count & 0xff) > 0) {
+         if (RefCount.compare_exchange_weak(ref_count, uint16_t(ref_count - STRONG_PINS), std::memory_order_acq_rel,
                std::memory_order_relaxed)) {
-            if ((ref_count IS 1) and defined(NF::ZOMBIE)) {
+            if ((ref_count IS STRONG_PINS) and defined(NF::ZOMBIE)) {
                ReleaseZombie(this);
                return;
             }
@@ -267,20 +273,52 @@ struct alignas(8) Object { // Must be 64-bit aligned
          }
       }
       #ifndef NDEBUG
-      if (ref_count IS 0) {
-         kt::Log("unpin").warning("Unbalanced unpin() on object #%d (%s) - RefCount is already 0.", UID, className());
+      if ((ref_count & 0xff) IS 0) {
+         kt::Log("unpin").warning("Unbalanced unpin() on object #%d (%s) - no strong pins are held.", UID, className());
          DEBUG_BREAK
       }
       #endif
       if (FreeIfReady) freeIfReady();
    }
 
-   [[nodiscard]] inline bool isPinned() const { return RefCount.load(std::memory_order_acquire) > 0; }
+   inline void pinWeak() {
+      #ifndef NDEBUG
+      auto ref_count = RefCount.load(std::memory_order_relaxed);
+      if (defined(NF::PLACEMENT)) {
+         kt::Log("pinWeak").warning("Pinning placement object #%d (%s) is unsupported.", UID, className());
+         DEBUG_BREAK
+      }
+      if ((ref_count >> 8) >= 254) {
+         kt::Log("pinWeak").warning("Weak pin overflow risk for object #%d (%s), count: %d", UID, className(), ref_count >> 8);
+         DEBUG_BREAK
+      }
+      #endif
+      RefCount.fetch_add(WEAK_PINS, std::memory_order_relaxed);
+   }
+
+   inline void unpinWeak() {
+      // Saturate at zero on the weak byte; see unpin() for rationale.
+      auto ref_count = RefCount.load(std::memory_order_relaxed);
+      while ((ref_count >> 8) > 0) {
+         if (RefCount.compare_exchange_weak(ref_count, uint16_t(ref_count - WEAK_PINS), std::memory_order_acq_rel,
+               std::memory_order_relaxed)) {
+            if ((ref_count IS WEAK_PINS) and defined(NF::ZOMBIE)) ReleaseZombie(this);
+            return;
+         }
+      }
+      #ifndef NDEBUG
+      kt::Log("unpinWeak").warning("Unbalanced unpinWeak() on object #%d - no weak pins are held.", UID);
+      DEBUG_BREAK
+      #endif
+   }
+
+   // Strong pins only; weak pins never influence lock release or termination decisions.
+   [[nodiscard]] inline bool isPinned() const { return (RefCount.load(std::memory_order_acquire) & 0xff) > 0; }
 
    [[nodiscard]] inline bool isZombie() const { return defined(NF::ZOMBIE); }
 
    inline bool freeIfReady() {
-      auto ref_count = RefCount.load(std::memory_order_acquire);
+      auto ref_count = RefCount.load(std::memory_order_acquire) & 0xff; // Strong pins only
       auto queue = Queue.load(std::memory_order_relaxed);
       if ((ref_count IS 0) and (queue IS 0) and defined(NF::FREE_ON_UNLOCK)) {
          FreeResource(this->UID);

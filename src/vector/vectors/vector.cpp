@@ -752,7 +752,7 @@ static ERR VECTOR_SubscribeFeedback(extVector *Self, struct vec::SubscribeFeedba
 
       auto context = Args->Callback->Context;
       if (not context) return log.warning(ERR::InvalidState);
-      context->pin();
+      context->pinWeak();
       Self->FeedbackSubscriptions->emplace_back(*Args->Callback, context, Args->Mask);
    }
    else if (Self->FeedbackSubscriptions) { // Remove existing subscriptions for this callback
@@ -832,7 +832,7 @@ static ERR VECTOR_SubscribeInput(extVector *Self, struct vec::SubscribeInput *Ar
       auto context = Args->Callback->Context;
       if (not context) return log.warning(ERR::InvalidState);
       Self->InputMask |= mask;
-      context->pin();
+      context->pinWeak();
       Self->InputSubscriptions->emplace_back(*Args->Callback, context, mask);
       update_input_subscription_state(Self);
       mark_input_boundary_dirty(Self);
@@ -902,7 +902,7 @@ static ERR VECTOR_SubscribeKeyboard(extVector *Self, struct vec::SubscribeKeyboa
 
    auto context = Args->Callback->Context;
    if (not context) return log.warning(ERR::InvalidState);
-   context->pin();
+   context->pinWeak();
    Self->KeyboardSubscriptions->emplace_back(*Args->Callback, context);
 
    return ERR::Okay;

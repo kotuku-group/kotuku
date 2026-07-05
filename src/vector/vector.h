@@ -266,7 +266,7 @@ inline void clear_vector_callback(FUNCTION &Function, OBJECTPTR &Context)
    }
    Function.clear();
    if (Context) {
-      Context->unpin();
+      Context->unpinWeak();
       Context = nullptr;
    }
 }

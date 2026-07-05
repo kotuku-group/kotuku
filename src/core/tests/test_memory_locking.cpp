@@ -271,6 +271,57 @@ static int run_pinned_forced_object_free_check(void)
 }
 
 //********************************************************************************************************************
+// Weak pins must never defer termination: an explicit FreeResource() without PERMIT_TERMINATE proceeds directly to
+// full teardown, retaining only the zombie header until the weak pin is released.
+
+static int run_weak_pinned_object_free_check(void)
+{
+   kt::Log log(__FUNCTION__);
+
+   OBJECTPTR object = nullptr;
+   if (NewObject(CLASSID::CONFIG, NF::NIL, &object) != ERR::Okay) {
+      log.warning("Failed to create Config object for weak pin check.");
+      return -1;
+   }
+
+   const auto object_id = object->UID;
+   object->pinWeak();
+
+   if (FreeResource(object) != ERR::Okay) {
+      object->unpinWeak();
+      log.warning("FreeResource() failed for weak pinned free check.");
+      return -1;
+   }
+
+   if (object->defined(NF::FREE_ON_UNLOCK)) {
+      object->unpinWeak();
+      log.warning("Weak pin incorrectly deferred object termination.");
+      return -1;
+   }
+
+   if ((not object->defined(NF::FREE)) or (not object->defined(NF::ZOMBIE))) {
+      object->unpinWeak();
+      log.warning("Weak pinned free did not leave a zombie header.");
+      return -1;
+   }
+
+   if (object->RefCount.load(std::memory_order_acquire) != Object::WEAK_PINS) {
+      object->unpinWeak();
+      log.warning("Unexpected zombie RefCount after weak pinned free: %d.", int(object->RefCount.load()));
+      return -1;
+   }
+
+   if (CheckResourceExists(object_id) != ERR::False) {
+      object->unpinWeak();
+      log.warning("Zombie object resource still exists after weak pinned free.");
+      return -1;
+   }
+
+   object->unpinWeak();
+   return 0;
+}
+
+//********************************************************************************************************************
 
 static int run_access_object_checks(void)
 {
@@ -383,6 +434,11 @@ int main(int argc, CSTRING *argv)
    }
 
    if (run_pinned_forced_object_free_check() != 0) {
+      close_kotuku();
+      return -1;
+   }
+
+   if (run_weak_pinned_object_free_check() != 0) {
       close_kotuku();
       return -1;
    }

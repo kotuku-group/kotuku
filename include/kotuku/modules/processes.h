@@ -158,7 +158,7 @@ class objTask : public Object {
    }
 
    inline ERR getParameters(std::span<std::string> &Value) noexcept {
-      auto ktv = (kt::vector<std::string> *)(((int8_t *)this) + 256);
+      auto ktv = (kt::vector<std::string> *)(((int8_t *)this) + 264);
       Value = std::span<std::string>(ktv->data(), ktv->size());
       return ERR::Okay;
    }
