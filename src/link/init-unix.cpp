@@ -16,6 +16,10 @@ This file is in the public domain and may be distributed and modified without re
 
 #include <kotuku/main.h>
 
+#ifdef KOTUKU_STATIC
+#include <kotuku/modules/module.h> // Declares OpenCore() and CloseCore() for static builds
+#endif
+
 #ifndef KOTUKU_STATIC
 
 #ifndef _ROOT_PATH

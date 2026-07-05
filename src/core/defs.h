@@ -338,19 +338,17 @@ using OBJECTLOOKUP = ankerl::unordered_dense::map<uint32_t, std::vector<Object *
 
 //********************************************************************************************************************
 
+using ACTION_CALLBACK = void (*)(OBJECTPTR, ACTIONID, ERR, APTR, APTR);
+
 struct ActionSubscription {
    OBJECTPTR Subscriber; // The object that initiated the subscription
    OBJECTID SubscriberID; // Required for sanity checks on subscriber still existing.
-   void (*Callback)(OBJECTPTR, ACTIONID, ERR, APTR, APTR);
-   APTR Meta;
+   FUNCTION Callback;
 
-   ActionSubscription() : Subscriber(nullptr), SubscriberID(0), Callback(nullptr), Meta(nullptr) { }
+   ActionSubscription() : Subscriber(nullptr), SubscriberID(0), Callback() { }
 
-   ActionSubscription(OBJECTPTR pContext, void (*pCallback)(OBJECTPTR, ACTIONID, ERR, APTR, APTR), APTR pMeta) :
-      Subscriber(pContext), SubscriberID(pContext->UID), Callback(pCallback), Meta(pMeta) { }
-
-   ActionSubscription(OBJECTPTR pContext, APTR pCallback, APTR pMeta) :
-      Subscriber(pContext), SubscriberID(pContext->UID), Callback((void (*)(OBJECTPTR, ACTIONID, ERR, APTR, APTR))pCallback), Meta(pMeta) { }
+   ActionSubscription(OBJECTPTR pContext, FUNCTION pCallback) :
+      Subscriber(pContext), SubscriberID(pContext->UID), Callback(pCallback) { }
 };
 
 struct virtual_drive {

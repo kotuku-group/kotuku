@@ -135,6 +135,7 @@ static void notify_free(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Ar
       for (auto it=Self->FeedbackSubscriptions->begin(); it != Self->FeedbackSubscriptions->end(); ) {
          auto &sub = *it;
          if ((sub.Callback.isScript()) and (sub.Callback.Context->UID IS Object->UID)) {
+            deref_vector_callback(sub.Callback);
             it = Self->FeedbackSubscriptions->erase(it);
          }
          else it++;
@@ -171,6 +172,58 @@ static void notify_free_clipmask(OBJECTPTR Object, ACTIONID ActionID, ERR Result
    }
 }
 
+static void notify_free_input(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
+{
+   auto Self = (extVector *)CurrentContext();
+   bool removed = false;
+   for (auto it=Self->InputSubscriptions->begin(); it != Self->InputSubscriptions->end(); ) {
+      if (Object IS it->Callback.Context) {
+         if (it->Callback.isScript()) ((objScript *)it->Callback.Context)->derefProcedure(it->Callback);
+         it = Self->InputSubscriptions->erase(it);
+         removed = true;
+      }
+      else it++;
+   }
+
+   if (removed) {
+      update_input_subscription_state(Self);
+      mark_input_boundary_dirty(Self);
+   }
+}
+
+static void notify_free_keyboard(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
+{
+   auto Self = (extVector *)CurrentContext();
+   for (auto it=Self->KeyboardSubscriptions->begin(); it != Self->KeyboardSubscriptions->end(); ) {
+      if (Object IS it->Callback.Context) {
+         if (it->Callback.isScript()) ((objScript *)it->Callback.Context)->derefProcedure(it->Callback);
+         it = Self->KeyboardSubscriptions->erase(it);
+      }
+      else it++;
+   }
+
+   if ((Self->KeyboardSubscriptions->empty()) and (Self->Scene) and (!Self->Scene->collecting())) {
+      ((extVectorScene *)Self->Scene)->KeyboardSubscriptions.erase(Self);
+   }
+}
+
+static void notify_free_feedback(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
+{
+   auto Self = (extVector *)CurrentContext();
+   for (auto it=Self->FeedbackSubscriptions->begin(); it != Self->FeedbackSubscriptions->end(); ) {
+      if (Object IS it->Callback.Context) {
+         if (it->Callback.isScript()) ((objScript *)it->Callback.Context)->derefProcedure(it->Callback);
+         it = Self->FeedbackSubscriptions->erase(it);
+      }
+      else it++;
+   }
+}
+
+template <class T> static FUNCTION make_vector_free_callback(extVector *Self, T *Callback)
+{
+   return C_FUNCTION(Callback, Self->NextCallbackSubscriptionID++);
+}
+
 //********************************************************************************************************************
 
 static void notify_free_resize_event(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
@@ -179,7 +232,13 @@ static void notify_free_resize_event(OBJECTPTR Object, ACTIONID ActionID, ERR Re
    if (auto scene = (extVectorScene *)Self->Scene) {
       if (!scene->collecting()) {
          auto it = scene->ResizeSubscriptions.find(Self->ParentView);
-         if (it != scene->ResizeSubscriptions.end()) it->second.erase(Self);
+         if (it != scene->ResizeSubscriptions.end()) {
+            auto sub = it->second.find(Self);
+            if (sub != it->second.end()) {
+               deref_vector_callback(sub->second);
+               it->second.erase(sub);
+            }
+         }
       }
    }
 }
@@ -764,11 +823,17 @@ static ERR VECTOR_SubscribeFeedback(extVector *Self, struct vec::SubscribeFeedba
          if (!Self->FeedbackSubscriptions) return log.warning(ERR::AllocMemory);
       }
 
-      Self->FeedbackSubscriptions->emplace_back(*Args->Callback, Args->Mask);
+      auto free_callback = make_vector_free_callback(Self, notify_free_feedback);
+      SubscribeAction(Args->Callback->Context, AC::Free, &free_callback);
+      Self->FeedbackSubscriptions->emplace_back(*Args->Callback, free_callback, Args->Mask);
    }
    else if (Self->FeedbackSubscriptions) { // Remove existing subscriptions for this callback
       for (auto it=Self->FeedbackSubscriptions->begin(); it != Self->FeedbackSubscriptions->end(); ) {
-         if (*Args->Callback IS it->Callback) it = Self->FeedbackSubscriptions->erase(it);
+         if (*Args->Callback IS it->Callback) {
+            UnsubscribeAction(it->Callback.Context, AC::Free, &it->FreeCallback);
+            deref_vector_callback(it->Callback);
+            it = Self->FeedbackSubscriptions->erase(it);
+         }
          else it++;
       }
    }
@@ -827,16 +892,31 @@ static ERR VECTOR_SubscribeInput(extVector *Self, struct vec::SubscribeInput *Ar
          if (!Self->InputSubscriptions) return log.warning(ERR::AllocMemory);
       }
 
+      // Check that the callback is not already subscribed - this limits subscriptions to one per callback and will
+      // work for both Tiri procedures (via ProcedureID check) and C functions.
+
+      for (auto it=Self->InputSubscriptions->begin(); it != Self->InputSubscriptions->end(); ) {
+         if (*Args->Callback IS it->Callback) return log.warning(ERR::AlreadyDefined);
+         else it++;
+      }
+
       auto mask = Args->Mask;
 
+      auto free_callback = make_vector_free_callback(Self, notify_free_input);
+      SubscribeAction(Args->Callback->Context, AC::Free, &free_callback);
+
       Self->InputMask |= mask;
-      Self->InputSubscriptions->emplace_back(*Args->Callback, mask);
+      Self->InputSubscriptions->emplace_back(*Args->Callback, free_callback, mask);
       update_input_subscription_state(Self);
       mark_input_boundary_dirty(Self);
    }
    else if (Self->InputSubscriptions) { // Remove existing subscriptions for this callback
       for (auto it=Self->InputSubscriptions->begin(); it != Self->InputSubscriptions->end(); ) {
-         if (*Args->Callback IS it->Callback) it = Self->InputSubscriptions->erase(it);
+         if (*Args->Callback IS it->Callback) {
+            UnsubscribeAction(it->Callback.Context, AC::Free, &it->FreeCallback);
+            deref_vector_callback(it->Callback);
+            it = Self->InputSubscriptions->erase(it);
+         }
          else it++;
       }
 
@@ -860,7 +940,7 @@ The prototype for the callback is as follows, whereby `Qualifers` are `KQ` flags
 representing the raw key value.  The `Unicode` value is the resulting character when the qualifier and code are
 translated through the user's keymap.
 
-`ERR callback(*Viewport, LONG Qualifiers, LONG Code, LONG Unicode);`
+`ERR callback(*Viewport, INT Qualifiers, INT Code, INT Unicode);`
 
 If the callback returns `ERR::Terminate` then the subscription will be ended.  All other error codes are ignored.
 
@@ -893,7 +973,11 @@ static ERR VECTOR_SubscribeKeyboard(extVector *Self, struct vec::SubscribeKeyboa
    }
 
    ((extVectorScene *)Self->Scene)->KeyboardSubscriptions.emplace(Self);
-   Self->KeyboardSubscriptions->emplace_back(*Args->Callback);
+
+   auto free_callback = make_vector_free_callback(Self, notify_free_keyboard);
+   SubscribeAction(Args->Callback->Context, AC::Free, &free_callback);
+   Self->KeyboardSubscriptions->emplace_back(*Args->Callback, free_callback);
+
    return ERR::Okay;
 }
 
@@ -904,7 +988,7 @@ Trace: Returns the coordinates for a vector path, using callbacks.
 
 Any vector that generates a path can be traced by calling this method.  Tracing allows the caller to follow the path
 from point-to-point if the path were to be rendered with a stroke.  The prototype of the callback function is
-`ERR Function(OBJECTPTR Vector, LONG Index, LONG Command, DOUBLE X, DOUBLE Y, APTR Meta)`.
+`ERR Function(OBJECTPTR Vector, INT Index, INT Command, DOUBLE X, DOUBLE Y, APTR Meta)`.
 
 The `Vector` parameter refers to the vector targeted by the method.  The `Index` is an incrementing counter that reflects
 the currently plotted point.  The `X` and `Y` parameters reflect the coordinate of a point on the path.
@@ -931,6 +1015,10 @@ pure-query, callback-inlines
 static ERR VECTOR_Trace(extVector *Self, struct vec::Trace *Args)
 {
    kt::Log log;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (Args->Callback)) Args->Callback->consume();
+   });
 
    if ((!Args) or (!Args->Callback)) return log.warning(ERR::NullArgs);
 
@@ -1269,9 +1357,7 @@ static ERR VECTOR_SET_Fill(extVector *Self, const std::string_view &Value)
    Self->Fill[0].reset();
    Self->Fill[1].reset();
 
-   if (Value.empty()) {
-      return ERR::Okay;
-   }
+   if (Value.empty()) return ERR::Okay;
 
    std::string_view next;
    if (auto error = vec::ReadPainter(Self->Scene, Value, &Self->Fill[0], &next); !error) {
@@ -1816,12 +1902,17 @@ static ERR VECTOR_SET_ResizeEvent(extVector *Self, FUNCTION *Value)
       Self->ResizeSubscription = true;
       if ((Self->Scene) and (Self->ParentView)) {
          auto scene = (extVectorScene *)Self->Scene;
-         scene->ResizeSubscriptions[Self->ParentView][Self] = *Value;
+         auto &subs = scene->ResizeSubscriptions[Self->ParentView];
+         if (auto existing = subs.find(Self); existing != subs.end()) deref_vector_callback(existing->second);
+         subs[Self] = *Value;
 
          SubscribeAction(Value->Context, AC::Free, C_FUNCTION(notify_free_resize_event));
       }
       else {
          const std::lock_guard<std::mutex> lock(glResizeLock);
+         if (auto existing = glResizeSubscriptions.find(Self); existing != glResizeSubscriptions.end()) {
+            deref_vector_callback(existing->second);
+         }
          glResizeSubscriptions[Self] = *Value; // Save the subscription for initialisation.
       }
    }
@@ -1831,7 +1922,11 @@ static ERR VECTOR_SET_ResizeEvent(extVector *Self, FUNCTION *Value)
          auto scene = (extVectorScene *)Self->Scene;
          auto it = scene->ResizeSubscriptions.find(Self->ParentView);
          if (it != scene->ResizeSubscriptions.end()) {
-            it->second.erase(Self);
+            auto sub = it->second.find(Self);
+            if (sub != it->second.end()) {
+               deref_vector_callback(sub->second);
+               it->second.erase(sub);
+            }
          }
       }
    }
@@ -1894,7 +1989,7 @@ static ERR VECTOR_GET_Sequence(extVector *Self, std::string_view &Value)
    double x, y, x2, y2, x3, y3, last_x = 0, last_y = 0;
    for (uint32_t i=0; i < base.total_vertices(); i++) {
       auto cmd = base.command(i);
-      //LONG cmd_flags = cmd & (~agg::path_cmd_mask);
+      //int cmd_flags = cmd & (~agg::path_cmd_mask);
       cmd &= agg::path_cmd_mask;
 
       // NB: A Z closes the path by drawing a line to the start of the first point.  A 'dead stop' is defined by
@@ -2191,7 +2286,11 @@ void send_feedback(extVector *Vector, FM Event, OBJECTPTR EventObject)
 
          sub.Mask |= Event;
 
-         if (result IS ERR::Terminate) Vector->FeedbackSubscriptions->erase(it);
+         if (result IS ERR::Terminate) {
+            UnsubscribeAction(sub.Callback.Context, AC::Free, &sub.FreeCallback);
+            deref_vector_callback(sub.Callback);
+            it = Vector->FeedbackSubscriptions->erase(it);
+         }
          else it++;
       }
       else it++;
@@ -2212,6 +2311,27 @@ double extVector::fixed_stroke_width()
 
 extVector::~extVector() {
    ClipCache.reset();
+
+   if (FeedbackSubscriptions) {
+      for (auto &sub : *FeedbackSubscriptions) {
+         UnsubscribeAction(sub.Callback.Context, AC::Free, &sub.FreeCallback);
+         deref_vector_callback(sub.Callback);
+      }
+   }
+
+   if (InputSubscriptions) {
+      for (auto &sub : *InputSubscriptions) {
+         UnsubscribeAction(sub.Callback.Context, AC::Free, &sub.FreeCallback);
+         deref_vector_callback(sub.Callback);
+      }
+   }
+
+   if (KeyboardSubscriptions) {
+      for (auto &sub : *KeyboardSubscriptions) {
+         UnsubscribeAction(sub.Callback.Context, AC::Free, &sub.FreeCallback);
+         deref_vector_callback(sub.Callback);
+      }
+   }
 
    if (ClipMask)   UnsubscribeAction(ClipMask, AC::Free);
    if (Transition) UnsubscribeAction(Transition, AC::Free);
@@ -2239,7 +2359,11 @@ extVector::~extVector() {
       auto scene = (extVectorScene *)Scene;
       if ((ParentView) and (ResizeSubscription)) {
          if (scene->ResizeSubscriptions.contains(ParentView)) {
-            scene->ResizeSubscriptions[ParentView].erase(this);
+            auto &subs = scene->ResizeSubscriptions[ParentView];
+            if (auto sub = subs.find(this); sub != subs.end()) {
+               deref_vector_callback(sub->second);
+               subs.erase(sub);
+            }
          }
       }
       scene->InputSubscriptions.erase(this);
@@ -2264,6 +2388,7 @@ extVector::~extVector() {
    {
       const std::lock_guard<std::mutex> lock(glResizeLock);
       if ((!glResizeSubscriptions.empty()) and (glResizeSubscriptions.contains(this))) {
+         deref_vector_callback(glResizeSubscriptions[this]);
          glResizeSubscriptions.erase(this);
       }
    }

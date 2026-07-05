@@ -637,7 +637,10 @@ static ERR XQUERY_RegisterFunction(extXQuery *Self, struct xq::RegisterFunction 
    if (not Args) return log.warning(ERR::NullArgs);
    if (Args->FunctionName.empty()) return log.warning(ERR::NullArgs);
    if ((not Args->Callback) or (not Args->Callback->defined())) return log.warning(ERR::NullArgs);
-   if (not Args->Callback->isC()) return log.warning(ERR::NoSupport);
+   if (not Args->Callback->isC()) {
+      Args->Callback->consume();
+      return log.warning(ERR::NoSupport);
+   }
 
    Self->RegisteredFunctions[std::string(Args->FunctionName)] = *Args->Callback;
    return ERR::Okay;
@@ -692,6 +695,10 @@ mutates-object, retains-input, callback-inlines
 static ERR XQUERY_Search(extXQuery *Self, struct xq::Search *Args)
 {
    kt::Log log;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (Args->Callback)) Args->Callback->consume();
+   });
 
    if (not Args) return log.warning(ERR::NullArgs);
 

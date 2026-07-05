@@ -352,6 +352,10 @@ static ERR XML_Search(extXML *Self, struct xml::Search *Args)
 {
    kt::Log log;
 
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (Args->Callback)) Args->Callback->consume();
+   });
+
    Self->ErrorMsg.clear();
 
    if ((not Args) or Args->Expression.empty()) return ERR::NullArgs;

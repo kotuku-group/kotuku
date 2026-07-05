@@ -24,6 +24,18 @@ Note: Support for audio recording is not currently available in this implementat
 
 #include "mixer_dispatch.h"
 
+static void deref_audio_callback(FUNCTION &Function)
+{
+   if (Function.isScript()) ((objScript *)Function.Context)->derefProcedure(Function);
+   Function.clear();
+}
+
+static void deref_audio_sample(AudioSample &Sample)
+{
+   deref_audio_callback(Sample.Callback);
+   deref_audio_callback(Sample.OnStop);
+}
+
 #ifndef ALSA_ENABLED
 static ERR init_audio(extAudio *Self)
 {
@@ -244,6 +256,7 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
    auto shift = sample_shift(Args->SampleFormat);
 
    auto &sample = Self->Samples[idx];
+   deref_audio_sample(sample);
    sample.SampleType   = Args->SampleFormat;
    sample.SampleLength = SAMPLE(Args->DataSize >> shift);
    sample.OnStop       = Args->OnStop;
@@ -375,6 +388,7 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
    // Setup the audio sample
 
    auto &sample = Self->Samples[idx];
+   deref_audio_sample(sample);
    sample.SampleType   = Args->SampleFormat;
    sample.SampleLength = SAMPLE(buffer_len>>shift);
    sample.StreamLength = BYTELEN((Args->SampleLength > 0) ? Args->SampleLength : 0x7fffffff); // 'Infinite' stream length
@@ -626,6 +640,7 @@ static ERR AUDIO_RemoveSample(extAudio *Self, struct snd::RemoveSample *Args)
 
    if ((Args->Handle < 1) or (Args->Handle >= std::ssize(Self->Samples))) return log.warning(ERR::OutOfRange);
 
+   deref_audio_sample(Self->Samples[Args->Handle]);
    Self->Samples[Args->Handle].clear();
 
    return ERR::Okay;
@@ -1442,6 +1457,8 @@ extAudio::~extAudio() {
    if ((Flags & ADF::AUTO_SAVE) != ADF::NIL) saveSettings();
 
    if (Timer) { UpdateTimer(Timer, 0); Timer = nullptr; }
+
+   for (auto &sample : Samples) deref_audio_sample(sample);
 
    glSoundChannels.erase(UID);
 
