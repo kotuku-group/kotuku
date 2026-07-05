@@ -1949,15 +1949,16 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <name>UnsubscribeAction</name>
     <category>Objects</category>
     <comment>Terminates action subscriptions.</comment>
-    <prototype>ERR UnsubscribeAction(OBJECTPTR Object, AC Action)</prototype>
-    <tiriPrototype>err = UnsubscribeAction(Object:obj, Action:num)</tiriPrototype>
+    <prototype>ERR UnsubscribeAction(OBJECTPTR Object, AC Action, FUNCTION * Callback)</prototype>
+    <tiriPrototype>err = UnsubscribeAction(Object:obj, Action:num, Callback:func)</tiriPrototype>
     <tags>blocking</tags>
     <input>
       <param type="OBJECTPTR" name="Object">The object that you are unsubscribing from.</param>
       <param type="AC" name="Action" lookup="AC">The ID of the action that will be unsubscribed, or zero for all actions.</param>
+      <param type="FUNCTION *" name="Callback">The original callback reference, or NULL to affect all registrations for the Object/Action combo.</param>
     </input>
     <description>
-<p>The UnsubscribeAction() function will terminate subscriptions made by <function>SubscribeAction</function>.</p>
+<p>The UnsubscribeAction() function will terminate subscriptions made by <function>SubscribeAction</function>.  The removal of subscriptions is context sensitive, so the context of the original <function>SubscribeAction</function> call must be matched by UnsubscribeAction().</p>
 <p>To terminate multiple subscriptions in a single call, set the <code>Action</code> parameter to zero.</p>
     </description>
     <result type="ERR">

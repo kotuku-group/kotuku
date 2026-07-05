@@ -1526,7 +1526,7 @@ struct CoreBase {
    ERR (*_SubscribeEvent)(int64_t Event, FUNCTION *Callback, APTR *Handle);
    ERR (*_SubscribeTimer)(double Interval, FUNCTION *Callback, APTR *Subscription);
    ERR (*_UpdateTimer)(APTR Subscription, double Interval);
-   ERR (*_UnsubscribeAction)(OBJECTPTR Object, AC Action);
+   ERR (*_UnsubscribeAction)(OBJECTPTR Object, AC Action, FUNCTION *Callback);
    void (*_UnsubscribeEvent)(APTR Handle);
    ERR (*_BroadcastEvent)(APTR Event, int EventSize);
    ERR (*_WaitTime)(double Seconds);
@@ -1623,7 +1623,7 @@ inline ERR SubscribeAction(OBJECTPTR Object, AC Action, FUNCTION *Callback) { re
 inline ERR SubscribeEvent(int64_t Event, FUNCTION *Callback, APTR *Handle) { return CoreBase->_SubscribeEvent(Event,Callback,Handle); }
 inline ERR SubscribeTimer(double Interval, FUNCTION *Callback, APTR *Subscription) { return CoreBase->_SubscribeTimer(Interval,Callback,Subscription); }
 inline ERR UpdateTimer(APTR Subscription, double Interval) { return CoreBase->_UpdateTimer(Subscription,Interval); }
-inline ERR UnsubscribeAction(OBJECTPTR Object, AC Action) { return CoreBase->_UnsubscribeAction(Object,Action); }
+inline ERR UnsubscribeAction(OBJECTPTR Object, AC Action, FUNCTION *Callback) { return CoreBase->_UnsubscribeAction(Object,Action,Callback); }
 inline void UnsubscribeEvent(APTR Handle) { return CoreBase->_UnsubscribeEvent(Handle); }
 inline ERR BroadcastEvent(APTR Event, int EventSize) { return CoreBase->_BroadcastEvent(Event,EventSize); }
 inline ERR WaitTime(double Seconds) { return CoreBase->_WaitTime(Seconds); }
@@ -1715,7 +1715,7 @@ extern "C" ERR SubscribeAction(OBJECTPTR Object, AC Action, FUNCTION *Callback);
 extern "C" ERR SubscribeEvent(int64_t Event, FUNCTION *Callback, APTR *Handle);
 extern "C" ERR SubscribeTimer(double Interval, FUNCTION *Callback, APTR *Subscription);
 extern "C" ERR UpdateTimer(APTR Subscription, double Interval);
-extern "C" ERR UnsubscribeAction(OBJECTPTR Object, AC Action);
+extern "C" ERR UnsubscribeAction(OBJECTPTR Object, AC Action, FUNCTION *Callback);
 extern "C" void UnsubscribeEvent(APTR Handle);
 extern "C" ERR BroadcastEvent(APTR Event, int EventSize);
 extern "C" ERR WaitTime(double Seconds);
@@ -1796,6 +1796,10 @@ inline ERR SubscribeEvent(int64_t Event, FUNCTION Callback, APTR *Handle) {
 
 inline ERR SubscribeTimer(double Interval, FUNCTION Callback, APTR *Subscription) {
    return SubscribeTimer(Interval, &Callback, Subscription);
+}
+
+inline ERR UnsubscribeAction(OBJECTPTR Object, ACTIONID ActionID) {
+   return UnsubscribeAction(Object, ActionID, nullptr);
 }
 
 // This template leverages pcObject to be the preferred entry point for any Object type or derivation.

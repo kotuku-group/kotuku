@@ -47,7 +47,7 @@ extern "C" ERR SubscribeAction(OBJECTPTR Object, AC Action, FUNCTION * Callback)
 extern "C" ERR SubscribeEvent(int64_t Event, FUNCTION * Callback, APTR * Handle);
 extern "C" ERR SubscribeTimer(double Interval, FUNCTION * Callback, APTR * Subscription);
 extern "C" ERR UpdateTimer(APTR Subscription, double Interval);
-extern "C" ERR UnsubscribeAction(OBJECTPTR Object, AC Action);
+extern "C" ERR UnsubscribeAction(OBJECTPTR Object, AC Action, FUNCTION * Callback);
 extern "C" void UnsubscribeEvent(APTR Handle);
 extern "C" ERR BroadcastEvent(APTR Event, int EventSize);
 extern "C" ERR WaitTime(double Seconds);

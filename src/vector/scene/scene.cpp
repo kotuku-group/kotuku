@@ -883,6 +883,7 @@ static ERR vector_keyboard_events(extVector *Vector, const evKey *Event)
       }
 
       if (result IS ERR::Terminate) {
+         UnsubscribeAction(sub.Callback.Context, AC::Free, &sub.FreeCallback);
          deref_vector_callback(sub.Callback);
          it = Vector->KeyboardSubscriptions->erase(it);
       }

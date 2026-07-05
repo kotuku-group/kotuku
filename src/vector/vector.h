@@ -238,14 +238,17 @@ public:
 class InputSubscription {
 public:
    FUNCTION Callback;
+   FUNCTION FreeCallback;
    JTYPE Mask;
-   InputSubscription(FUNCTION pCallback, JTYPE pMask) : Callback(pCallback), Mask(pMask) { }
+   InputSubscription(FUNCTION pCallback, FUNCTION pFreeCallback, JTYPE pMask) :
+      Callback(pCallback), FreeCallback(pFreeCallback), Mask(pMask) { }
 };
 
 class KeyboardSubscription {
 public:
    FUNCTION Callback;
-   KeyboardSubscription(FUNCTION pCallback) : Callback(pCallback) { }
+   FUNCTION FreeCallback;
+   KeyboardSubscription(FUNCTION pCallback, FUNCTION pFreeCallback) : Callback(pCallback), FreeCallback(pFreeCallback) { }
 };
 
 inline void deref_vector_callback(FUNCTION &Function)
@@ -400,8 +403,10 @@ struct GouraudCache {
 class FeedbackSubscription {
 public:
    FUNCTION Callback;
+   FUNCTION FreeCallback;
    FM Mask;
-   FeedbackSubscription(FUNCTION pCallback, FM pMask) : Callback(pCallback), Mask(pMask) { }
+   FeedbackSubscription(FUNCTION pCallback, FUNCTION pFreeCallback, FM pMask) :
+      Callback(pCallback), FreeCallback(pFreeCallback), Mask(pMask) { }
 };
 
 //********************************************************************************************************************
@@ -786,6 +791,7 @@ class extVector : public objVector {
    std::unique_ptr<ClipMaskCache> ClipCache;
    std::unique_ptr<filter_bitmap> IsolatedBuffer;
    JTYPE InputMask;
+   int64_t NextCallbackSubscriptionID;
    int   PathLength;
    RC    Dirty;
    uint16_t  TabOrder;
@@ -815,6 +821,7 @@ class extVector : public objVector {
       TabOrder      = 255;
       ColourSpace   = VCS::INHERIT;
       ValidState    = true;
+      NextCallbackSubscriptionID = 1;
    }
 
    ~extVector();

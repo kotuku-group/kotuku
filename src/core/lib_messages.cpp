@@ -77,8 +77,8 @@ static void notify_signal_wfo(OBJECTPTR Object, ACTIONID ActionID, ERR Result, A
 
       // Clean up subscriptions and clear the signal
 
-      UnsubscribeAction(ref.Object, AC::Free);
-      UnsubscribeAction(ref.Object, AC::Signal);
+      UnsubscribeAction(ref.Object, AC::Free, nullptr);
+      UnsubscribeAction(ref.Object, AC::Signal, nullptr);
       ref.Object->clearFlag(NF::SIGNALLED);
 
       glWFOList.erase(lref);
@@ -716,8 +716,8 @@ ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
       for (auto &ref : glWFOList) {
          kt::ScopedObjectLock lock(ref.second.Object); // For thread safety
          if (lock.granted()) {
-            UnsubscribeAction(ref.second.Object, AC::Free);
-            UnsubscribeAction(ref.second.Object, AC::Signal);
+            UnsubscribeAction(ref.second.Object, AC::Free, nullptr);
+            UnsubscribeAction(ref.second.Object, AC::Signal, nullptr);
          }
       }
       glWFOList.clear();

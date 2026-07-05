@@ -56,27 +56,39 @@ struct FUNCTION {
       int64_t ProcedureID; // CALL::SCRIPT: Function identifier, usually a hash
    };
 
-   FUNCTION() : Type(CALL::NIL) { }
-   FUNCTION(CALL pType) : Type(pType) { }
+   FUNCTION() : Type(CALL::NIL), PadA(0), ID(0), Context(nullptr), MetaValue(0), Routine(nullptr) { }
+   FUNCTION(CALL pType) : Type(pType), PadA(0), ID(0), Context(nullptr), MetaValue(0), Routine(nullptr) { }
 
    // Script constructor
 
    FUNCTION(class objScript *pScript, int64_t pProcedure) {
       Type        = CALL::SCRIPT;
       Context     = (OBJECTPTR)pScript;
+      MetaValue   = 0;
       ProcedureID = pProcedure;
    }
 
    // The CALL::STDC constructor is managed by C_FUNCTION() in order to prevent problems with
    // implicit type conversion.
 
-   void clear() { Type = CALL::NIL; }
-   bool isC() const { return Type IS CALL::STD_C; }
-   bool isScript() const { return Type IS CALL::SCRIPT; }
-   bool defined() const { return Type != CALL::NIL; }
+   inline void clear() { Type = CALL::NIL; MetaValue = 0; Routine = nullptr; }
+   inline bool isC() const { return Type IS CALL::STD_C; }
+   inline bool isScript() const { return Type IS CALL::SCRIPT; }
+   inline bool defined() const { return Type != CALL::NIL; }
+   inline bool identical(const FUNCTION &Other) const {
+      if (Type IS CALL::STD_C) {
+         return (Other.Type IS Type) and (Other.Context IS Context) and (Other.Routine IS Routine) and
+            (Other.MetaValue IS MetaValue);
+      }
+      else if (Type IS CALL::SCRIPT) {
+         return (Other.Type IS Type) and (Other.Context IS Context) and (Other.ProcedureID IS ProcedureID) and
+            (Other.MetaValue IS MetaValue);
+      }
+      else return (Other.Type IS Type) and (Other.MetaValue IS MetaValue);
+   }
    // consume() informs the Script client that the procedure can be released on return
-   void consume() { if (Type IS CALL::SCRIPT) Type = CALL::NIL; }
-   bool consumed() const { return Type IS CALL::NIL; }
+   inline void consume() { if (Type IS CALL::SCRIPT) Type = CALL::NIL; }
+   inline bool consumed() const { return Type IS CALL::NIL; }
 };
 
 inline bool operator==(const struct FUNCTION &A, const struct FUNCTION &B)
