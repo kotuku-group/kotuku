@@ -1105,6 +1105,13 @@ template <class T, class X = APTR> FUNCTION C_FUNCTION(T *pRoutine, X pMeta = 0)
 };
 
 inline CSTRING Object::className() { return Class->ClassName.c_str(); }
+
+// Weak-pin management for callback holders (refer to the zombie object contract in objects.h).  A pinned
+// Context header remains readable after termination, allowing stale() to be tested lazily at invoke time.
+
+inline void FUNCTION::pin() { if (Context) Context->pinWeak(); }
+inline void FUNCTION::unpin() { if (Context) Context->unpinWeak(); }
+inline bool FUNCTION::stale() const { return (Context) and (Context->terminating()); }
   ]==])
 
   if (glProgram is "idl-compile") then

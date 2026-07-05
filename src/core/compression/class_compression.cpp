@@ -222,8 +222,8 @@ class extCompression : public objCompression {
 
       if (ArchiveHash) remove_archive(this);
 
-      if (Feedback.isScript()) {
-         UnsubscribeAction(Feedback.Context, AC::Free);
+      if (Feedback.defined()) {
+         Feedback.unpin();
          Feedback.clear();
       }
 
@@ -317,12 +317,6 @@ ERR convert_zip_error(struct z_stream_s *Stream, int Result)
 }
 
 //********************************************************************************************************************
-
-static void notify_free_feedback(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   auto Self = (extCompression *)CurrentContext();
-   Self->Feedback.clear();
-}
 
 static void set_decompress_feedback(CompressionFeedback &Feedback, FDB FeedbackID, int Index, const ZipFile &Entry,
    CSTRING Dest)

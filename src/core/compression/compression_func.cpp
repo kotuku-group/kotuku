@@ -682,6 +682,12 @@ static ERR send_feedback(extCompression *Self, CompressionFeedback *Feedback)
 
    if (!Self->Feedback.defined()) return ERR::Okay;
 
+   if (Self->Feedback.stale()) { // The callback context has been terminated; drop the subscription lazily.
+      Self->Feedback.unpin();
+      Self->Feedback.clear();
+      return ERR::Okay;
+   }
+
    if (Self->Feedback.isC()) {
       auto routine = (ERR (*)(extCompression *, CompressionFeedback *, APTR Meta))Self->Feedback.Routine;
       kt::SwitchContext context(Self->Feedback.Context);

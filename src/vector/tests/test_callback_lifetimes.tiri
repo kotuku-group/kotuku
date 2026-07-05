@@ -87,6 +87,35 @@ end
    assert(glFeedbackCount > count_after_first, 'Live subscriber stopped receiving feedback on subsequent events')
 end
 
+-- Object dependency links (Mask, GuidePath) are weak-pinned rather than eagerly watched via AC_Free.  Freeing the
+-- target must not crash subsequent draws or path generation, and the links must read as nil afterwards.
+
+@Test function StaleDependencyLinksAreDropped()
+   scene, viewport, rect = newRectScene('callback_lifetime_dep_rect')
+   bitmap = obj.new('bitmap', { width=180, height=140, bitsPerPixel=32 })
+
+   clip = scene.new('VectorClip')
+   check clip.init()
+   rect.mask = clip
+
+   guide = viewport.new('VectorPath', { sequence='M 0 0 L 100 100' })
+   check guide.init()
+   rect.guidePath = guide
+
+   drawResizeScene(scene, bitmap)
+
+   clip.free()
+   clip = nil
+   guide.free()
+   guide = nil
+
+   drawResizeScene(scene, bitmap) -- Sweeps the stale mask link during the draw pass
+   firePathChanged(rect)          -- Sweeps the stale guide link during path generation
+
+   assert(rect.mask is nil, 'The mask link should be dropped after the clip is freed')
+   assert(rect.guidePath is nil, 'The guide path link should be dropped after the guide is freed')
+end
+
 -- Freeing a scene that still carries a live resize subscription must release the pinned callback context in the
 -- scene's destructor (child vectors skip that cleanup during a cascade free) without invoking the callback.
 

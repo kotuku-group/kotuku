@@ -53,18 +53,11 @@ class extSourceFX : public extFilterEffect {
 
    ~extSourceFX() {
       if (Bitmap)     FreeResource(Bitmap);
-      if (Source)     UnsubscribeAction(Source, AC::Free);
+      if (Source)     Source->unpinWeak();
       if (Scene)      FreeResource(Scene);
       if (BitmapData) FreeResource(BitmapData);
    }
 };
-
-//********************************************************************************************************************
-
-static void notify_free_source(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   ((extSourceFX *)CurrentContext())->Source = nullptr;
-}
 
 /*********************************************************************************************************************
 -ACTION-
@@ -74,6 +67,7 @@ Draw: Render the source vector to the target bitmap.
 
 static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
 {
+   validate_object_link(Self->Source); // The source is weak-pinned; drop the link if it has been terminated.
    if (!Self->Source) return ERR::Okay;
 
    auto &filter = Self->Filter;
@@ -197,6 +191,7 @@ static ERR SOURCEFX_Init(extSourceFX *Self)
 {
    kt::Log log;
 
+   validate_object_link(Self->Source);
    if (!Self->Source) return log.warning(ERR::UndefinedField);
 
    Self->Scene->Viewport->setColourSpace(Self->Filter->ColourSpace);
@@ -235,15 +230,16 @@ static ERR SOURCEFX_SET_Source(extSourceFX *Self, objVector *Value)
    if (!Value) return log.warning(ERR::InvalidValue);
    if (Value->Class->BaseClassID != CLASSID::VECTOR) return log.warning(ERR::WrongClass);
 
-   if (Self->Source) UnsubscribeAction(Self->Source, AC::Free);
+   if (Self->Source) Self->Source->unpinWeak();
+   Value->pinWeak();
    Self->Source = Value;
-   SubscribeAction(Value, AC::Free, C_FUNCTION(notify_free_source));
    Self->Render = true;
    return ERR::Okay;
 }
 
 static ERR SOURCEFX_GET_Source(extSourceFX *Self, objVector **Value)
 {
+   validate_object_link(Self->Source);
    *Value = Self->Source;
    return ERR::Okay;
 }
@@ -267,15 +263,15 @@ static ERR SOURCEFX_SET_SourceName(extSourceFX *Self, const std::string_view &Va
    if ((not Self->Filter) or (not Self->Filter->Scene)) return log.warning(ERR::UndefinedField);
 
    if (Self->Source) {
-      UnsubscribeAction(Self->Source, AC::Free);
+      Self->Source->unpinWeak();
       Self->Source = nullptr;
    }
 
    objVector *src;
    if (!Self->Filter->Scene->findDef(Value.data(), (OBJECTPTR *)&src)) {
       if (src->Class->BaseClassID != CLASSID::VECTOR) return log.warning(ERR::WrongClass);
+      src->pinWeak();
       Self->Source = src;
-      SubscribeAction(src, AC::Free, C_FUNCTION(notify_free_source));
       Self->Render = true;
       return ERR::Okay;
    }

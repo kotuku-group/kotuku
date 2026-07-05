@@ -129,6 +129,8 @@ void resize_feedback(FUNCTION *Feedback, OBJECTID DisplayID, int X, int Y, int W
 
    log.traceBranch("%dx%d, %dx%d", X, Y, Width, Height);
 
+   if (Feedback->stale()) return; // The callback context has been terminated.
+
    if (Feedback->isC()) {
       auto routine = (ERR (*)(OBJECTID, int, int, int, int, APTR))Feedback->Routine;
       kt::SwitchContext ctx(Feedback->Context);
@@ -146,11 +148,6 @@ void resize_feedback(FUNCTION *Feedback, OBJECTID DisplayID, int X, int Y, int W
 }
 
 //********************************************************************************************************************
-
-static void notify_resize_free(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   ((extDisplay *)CurrentContext())->ResizeFeedback.clear();
-}
 
 /*********************************************************************************************************************
 -ACTION-
@@ -364,6 +361,11 @@ static ERR DISPLAY_Focus(extDisplay *Self)
 extDisplay::~extDisplay()
 {
    kt::Log log;
+
+   if (ResizeFeedback.defined()) {
+      ResizeFeedback.unpin();
+      ResizeFeedback.clear();
+   }
 
    if ((Flags & SCR::AUTO_SAVE) != SCR::NIL) {
       log.trace("Autosave enabled.");
@@ -2638,12 +2640,10 @@ static ERR GET_ResizeFeedback(extDisplay *Self, FUNCTION * &Value)
 
 static ERR SET_ResizeFeedback(extDisplay *Self, FUNCTION *Value)
 {
+   if (Self->ResizeFeedback.defined()) Self->ResizeFeedback.unpin();
    if (Value) {
-      if (Self->ResizeFeedback.isScript()) UnsubscribeAction(Self->ResizeFeedback.Context, AC::Free);
       Self->ResizeFeedback = *Value;
-      if (Self->ResizeFeedback.isScript()) {
-         SubscribeAction(Self->ResizeFeedback.Context, AC::Free, C_FUNCTION(notify_resize_free));
-      }
+      Self->ResizeFeedback.pin();
    }
    else Self->ResizeFeedback.clear();
    return ERR::Okay;

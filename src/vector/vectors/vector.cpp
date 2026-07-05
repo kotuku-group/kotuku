@@ -126,35 +126,6 @@ static ERR set_parent(extVector *Self, OBJECTPTR Owner)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static void notify_free_appendpath(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   auto Self = (extVector *)CurrentContext();
-   if ((Self->AppendPath) and (Object->UID IS Self->AppendPath->UID)) Self->AppendPath = nullptr;
-}
-
-static void notify_free_transition(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   auto Self = (extVector *)CurrentContext();
-   if ((Self->Transition) and (Object->UID IS Self->Transition->UID)) Self->Transition = nullptr;
-}
-
-static void notify_free_morph(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   auto Self = (extVector *)CurrentContext();
-   if ((Self->GuidePath) and (Object->UID IS Self->GuidePath->UID)) Self->GuidePath = nullptr;
-}
-
-static void notify_free_clipmask(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   auto Self = (extVector *)CurrentContext();
-   if ((Self->ClipMask) and (Object->UID IS Self->ClipMask->UID)) {
-      Self->ClipMask = nullptr;
-      Self->ClipCache.reset();
-   }
-}
-
 /*********************************************************************************************************************
 
 -METHOD-
@@ -1027,6 +998,13 @@ Note: Appended paths are not compliant with SVG and this feature is considered e
 
 *********************************************************************************************************************/
 
+static ERR VECTOR_GET_AppendPath(extVector *Self, extVector * &Value)
+{
+   validate_object_link(Self->AppendPath);
+   Value = Self->AppendPath;
+   return ERR::Okay;
+}
+
 static ERR VECTOR_SET_AppendPath(extVector *Self, extVector *Value)
 {
    kt::Log log;
@@ -1035,15 +1013,15 @@ static ERR VECTOR_SET_AppendPath(extVector *Self, extVector *Value)
 
    if (!Value) {
       if (Self->AppendPath) {
-         UnsubscribeAction(Self->AppendPath, AC::Free);
+         Self->AppendPath->unpinWeak();
          Self->AppendPath = nullptr;
       }
       return ERR::Okay;
    }
    else if (Value->Class->BaseClassID IS CLASSID::VECTOR) {
-      if (Self->AppendPath) UnsubscribeAction(Self->AppendPath, AC::Free);
       if (Value->initialised()) { // The object must be initialised.
-         SubscribeAction(Value, AC::Free, C_FUNCTION(notify_free_appendpath));
+         if (Self->AppendPath) Self->AppendPath->unpinWeak();
+         Value->pinWeak();
          Self->AppendPath = Value;
          return ERR::Okay;
       }
@@ -1524,23 +1502,30 @@ refer to the @VectorClip class for further information.
 
 *********************************************************************************************************************/
 
+static ERR VECTOR_GET_Mask(extVector *Self, extVectorClip * &Value)
+{
+   validate_clip_mask(Self);
+   Value = Self->ClipMask;
+   return ERR::Okay;
+}
+
 static ERR VECTOR_SET_Mask(extVector *Self, extVectorClip *Value)
 {
    kt::Log log;
 
    if (!Value) {
       if (Self->ClipMask) {
-         UnsubscribeAction(Self->ClipMask, AC::Free);
+         Self->ClipMask->unpinWeak();
          Self->ClipMask = nullptr;
          Self->ClipCache.reset();
       }
       return ERR::Okay;
    }
    else if (Value->classID() IS CLASSID::VECTORCLIP) {
-      if (Self->ClipMask) UnsubscribeAction(Self->ClipMask, AC::Free);
       Self->ClipCache.reset();
       if (Value->initialised()) { // Ensure that the mask is initialised.
-         SubscribeAction(Value, AC::Free, C_FUNCTION(notify_free_clipmask));
+         if (Self->ClipMask) Self->ClipMask->unpinWeak();
+         Value->pinWeak();
          Self->ClipMask = Value;
          mark_buffers_for_refresh(Self);
          return ERR::Okay;
@@ -1597,18 +1582,25 @@ rendered.  This works particularly well for text and shapes that follow a length
 
 *********************************************************************************************************************/
 
+static ERR VECTOR_GET_GuidePath(extVector *Self, extVector * &Value)
+{
+   validate_object_link(Self->GuidePath);
+   Value = Self->GuidePath;
+   return ERR::Okay;
+}
+
 static ERR VECTOR_SET_GuidePath(extVector *Self, extVector *Value)
 {
    kt::Log log;
 
    if (not Value) {
-      if (Self->GuidePath) { UnsubscribeAction(Self->GuidePath, AC::Free); Self->GuidePath = nullptr; }
+      if (Self->GuidePath) { Self->GuidePath->unpinWeak(); Self->GuidePath = nullptr; }
       return ERR::Okay;
    }
    else if (Value->Class->BaseClassID IS CLASSID::VECTOR) {
-      if (Self->GuidePath) UnsubscribeAction(Self->GuidePath, AC::Free);
       if (Value->initialised()) { // The object must be initialised.
-         SubscribeAction(Value, AC::Free, C_FUNCTION(notify_free_morph));
+         if (Self->GuidePath) Self->GuidePath->unpinWeak();
+         Value->pinWeak();
          Self->GuidePath = Value;
          mark_buffers_for_refresh(Self);
          return ERR::Okay;
@@ -2130,21 +2122,28 @@ and @VectorWave are able to take full advantage of this feature.
 
 *********************************************************************************************************************/
 
+static ERR VECTOR_GET_Transition(extVector *Self, extVectorTransition * &Value)
+{
+   validate_object_link(Self->Transition);
+   Value = Self->Transition;
+   return ERR::Okay;
+}
+
 static ERR VECTOR_SET_Transition(extVector *Self, extVectorTransition *Value)
 {
    kt::Log log;
 
    if (not Value) {
       if (Self->Transition) {
-         UnsubscribeAction(Self->Transition, AC::Free);
+         Self->Transition->unpinWeak();
          Self->Transition = nullptr;
       }
       return ERR::Okay;
    }
    else if (Value->classID() IS CLASSID::VECTORTRANSITION) {
-      if (Self->Transition) UnsubscribeAction(Self->Transition, AC::Free);
       if (Value->initialised()) { // The object must be initialised.
-         SubscribeAction(Value, AC::Free, C_FUNCTION(notify_free_transition));
+         if (Self->Transition) Self->Transition->unpinWeak();
+         Value->pinWeak();
          Self->Transition = Value;
          mark_buffers_for_refresh(Self);
          return ERR::Okay;
@@ -2242,10 +2241,10 @@ extVector::~extVector() {
       for (auto &sub : *KeyboardSubscriptions) release_callback(sub);
    }
 
-   if (ClipMask)   UnsubscribeAction(ClipMask, AC::Free);
-   if (Transition) UnsubscribeAction(Transition, AC::Free);
-   if (GuidePath)  UnsubscribeAction(GuidePath, AC::Free);
-   if (AppendPath) UnsubscribeAction(AppendPath, AC::Free);
+   if (ClipMask)   ClipMask->unpinWeak();
+   if (Transition) Transition->unpinWeak();
+   if (GuidePath)  GuidePath->unpinWeak();
+   if (AppendPath) AppendPath->unpinWeak();
 
    // Patch the nearest vectors that are linked to this one.
    if (Next) Next->Prev = Prev;
@@ -2340,10 +2339,10 @@ static const FieldArray clVectorFields[] = {
    { "Fill",         FDF_CPPSTRING|FDF_RW, nullptr, VECTOR_SET_Fill },
    { "Filter",       FDF_CPPSTRING|FDF_RW, nullptr, VECTOR_SET_Filter },
    { "SID",          FDF_CPPSTRING|FDF_RW },
-   { "GuidePath",    FDF_OBJECT|FDF_RW, nullptr, VECTOR_SET_GuidePath },
-   { "Transition",   FDF_OBJECT|FDF_RW, nullptr, VECTOR_SET_Transition },
-   { "Mask",         FDF_OBJECT|FDF_RW, nullptr, VECTOR_SET_Mask },
-   { "AppendPath",   FDF_OBJECT|FDF_RW, nullptr, VECTOR_SET_AppendPath },
+   { "GuidePath",    FDF_OBJECT|FDF_RW, VECTOR_GET_GuidePath, VECTOR_SET_GuidePath },
+   { "Transition",   FDF_OBJECT|FDF_RW, VECTOR_GET_Transition, VECTOR_SET_Transition },
+   { "Mask",         FDF_OBJECT|FDF_RW, VECTOR_GET_Mask, VECTOR_SET_Mask },
+   { "AppendPath",   FDF_OBJECT|FDF_RW, VECTOR_GET_AppendPath, VECTOR_SET_AppendPath },
    { "FillRule",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTOR_SET_FillRule, &clVectorVFR },
    { "ClipRule",     FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, VECTOR_SET_ClipRule, &clVectorVFR },
    { "LineJoin",     FD_INT|FD_LOOKUP|FDF_RW,   nullptr, VECTOR_SET_LineJoin, &clVectorVLJ },

@@ -853,6 +853,8 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
       Self->RecvBuffer.append(std::string_view((char *)Buffer, Length));
    }
 
+   if (Self->Incoming.stale()) clear_callback_function(Self->Incoming);
+
    if (Self->Incoming.defined()) {
       log.trace("Incoming callback is set.");
 

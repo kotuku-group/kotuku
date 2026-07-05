@@ -4113,23 +4113,35 @@ class objVector : public Object {
    }
 
    inline ERR getGuidePath(OBJECTPTR &Value) noexcept {
-      Value = *((OBJECTPTR *)(((int8_t *)this) + 344));
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[40];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
    }
 
    inline ERR getTransition(OBJECTPTR &Value) noexcept {
-      Value = *((OBJECTPTR *)(((int8_t *)this) + 352));
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[37];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
    }
 
    inline ERR getMask(OBJECTPTR &Value) noexcept {
-      Value = *((OBJECTPTR *)(((int8_t *)this) + 360));
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[28];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
    }
 
    inline ERR getAppendPath(OBJECTPTR &Value) noexcept {
-      Value = *((OBJECTPTR *)(((int8_t *)this) + 368));
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[39];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
    }
 
    inline ERR getDashArray(std::span<double> &Value) noexcept {

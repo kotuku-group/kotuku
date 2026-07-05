@@ -256,6 +256,18 @@ inline void release_callback(FUNCTION &Function)
 }
 
 //********************************************************************************************************************
+// Lazily invalidates a weak-pinned object dependency (e.g. GuidePath, Transition) whose target has been terminated.
+// Only the zombie header remains valid at that point, so the link must be dropped before any dereference.
+
+template <class T> inline void validate_object_link(T *&Link)
+{
+   if ((Link) and (Link->terminating())) {
+      Link->unpinWeak();
+      Link = nullptr;
+   }
+}
+
+//********************************************************************************************************************
 
 inline void deref_vector_callback(FUNCTION &Function)
 {
@@ -1154,6 +1166,18 @@ class extVectorClip : public objVectorClip, public SceneDef {
    OBJECTID ViewportID;
    uint64_t ContentVersion;
 };
+
+//********************************************************************************************************************
+// ClipMask requires its own lazy invalidation because the cached mask must be discarded with the link.
+
+inline void validate_clip_mask(extVector *Vector)
+{
+   if ((Vector->ClipMask) and (Vector->ClipMask->terminating())) {
+      Vector->ClipMask->unpinWeak();
+      Vector->ClipMask = nullptr;
+      Vector->ClipCache.reset();
+   }
+}
 
 //********************************************************************************************************************
 

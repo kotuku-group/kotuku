@@ -79,8 +79,13 @@ struct FUNCTION {
    inline bool isC() const { return Type IS CALL::STD_C; }
    inline bool isScript() const { return Type IS CALL::SCRIPT; }
    inline bool defined() const { return Type != CALL::NIL; }
-   //inline void pin() { Context->pinWeak(); }
-   //inline void unpin() { Context->unpinWeak(); }
+
+   // Weak-pin management for stale callback detection; refer to the zombie object contract in objects.h.
+   // Defined in modules/core.h once Object is complete.
+
+   void pin();
+   void unpin();
+   [[nodiscard]] bool stale() const;
 
    inline bool identical(const FUNCTION &Other) const {
       if (Type IS CALL::STD_C) {

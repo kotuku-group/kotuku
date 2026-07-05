@@ -1011,6 +1011,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                   mClipStack.top().draw_viewport(*this);
                }
 
+               validate_clip_mask(view); // Drop the mask link lazily if its target has been terminated.
                if (view->ClipMask) {
                   mClipStack.emplace(state, view->ClipMask, view);
                   mClipStack.top().draw(*this);
@@ -1215,6 +1216,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
          }
       }
       else {
+         validate_clip_mask(shape); // Drop the mask link lazily if its target has been terminated.
          if (shape->ClipMask) {
             mClipStack.emplace(state, shape->ClipMask, shape);
             mClipStack.top().draw(*this);
