@@ -155,21 +155,6 @@ static void notify_free_clipmask(OBJECTPTR Object, ACTIONID ActionID, ERR Result
    }
 }
 
-static void notify_free_resize_event(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   auto Self = (extVector *)CurrentContext();
-   if (auto scene = (extVectorScene *)Self->Scene) {
-      if (not scene->collecting()) {
-         if (auto it = scene->ResizeSubscriptions.find(Self->ParentView); it != scene->ResizeSubscriptions.end()) {
-            if (auto sub = it->second.find(Self); sub != it->second.end()) {
-               if (sub->second.isScript()) ((objScript *)sub->second.Context)->derefProcedure(sub->second);
-               it->second.erase(sub);
-            }
-         }
-      }
-   }
-}
-
 /*********************************************************************************************************************
 
 -METHOD-
@@ -742,23 +727,21 @@ static ERR VECTOR_SubscribeFeedback(extVector *Self, struct vec::SubscribeFeedba
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Callback)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Callback)) return log.warning(ERR::NullArgs);
 
    if (Args->Mask != FM::NIL) {
-      if (!Self->FeedbackSubscriptions) {
+      if (not Self->FeedbackSubscriptions) {
          Self->FeedbackSubscriptions.reset(new (std::nothrow) std::vector<FeedbackSubscription>);
-         if (!Self->FeedbackSubscriptions) return log.warning(ERR::AllocMemory);
+         if (not Self->FeedbackSubscriptions) return log.warning(ERR::AllocMemory);
       }
 
-      auto context = Args->Callback->Context;
-      if (not context) return log.warning(ERR::InvalidState);
-      context->pinWeak();
-      Self->FeedbackSubscriptions->emplace_back(*Args->Callback, context, Args->Mask);
+      Args->Callback->Context->pinWeak();
+      Self->FeedbackSubscriptions->emplace_back(*Args->Callback, Args->Mask);
    }
    else if (Self->FeedbackSubscriptions) { // Remove existing subscriptions for this callback
       for (auto it=Self->FeedbackSubscriptions->begin(); it != Self->FeedbackSubscriptions->end(); ) {
          if (*Args->Callback IS it->Callback) {
-            clear_vector_callback(it->Callback, it->Context);
+            release_callback(it->Callback);
             it = Self->FeedbackSubscriptions->erase(it);
          }
          else it++;
@@ -829,18 +812,16 @@ static ERR VECTOR_SubscribeInput(extVector *Self, struct vec::SubscribeInput *Ar
 
       auto mask = Args->Mask;
 
-      auto context = Args->Callback->Context;
-      if (not context) return log.warning(ERR::InvalidState);
       Self->InputMask |= mask;
-      context->pinWeak();
-      Self->InputSubscriptions->emplace_back(*Args->Callback, context, mask);
+      Args->Callback->Context->pinWeak();
+      Self->InputSubscriptions->emplace_back(*Args->Callback, mask);
       update_input_subscription_state(Self);
       mark_input_boundary_dirty(Self);
    }
    else if (Self->InputSubscriptions) { // Remove existing subscriptions for this callback
       for (auto it=Self->InputSubscriptions->begin(); it != Self->InputSubscriptions->end(); ) {
          if (*Args->Callback IS it->Callback) {
-            clear_vector_callback(it->Callback, it->Context);
+            release_callback(it->Callback);
             it = Self->InputSubscriptions->erase(it);
          }
          else it++;
@@ -894,16 +875,14 @@ static ERR VECTOR_SubscribeKeyboard(extVector *Self, struct vec::SubscribeKeyboa
    if (!Self->Scene->SurfaceID) return log.warning(ERR::FieldNotSet);
 
    if (!Self->KeyboardSubscriptions) {
-      Self->KeyboardSubscriptions.reset(new (std::nothrow) std::vector<KeyboardSubscription>);
+      Self->KeyboardSubscriptions.reset(new (std::nothrow) std::vector<FUNCTION>);
       if (!Self->KeyboardSubscriptions) return log.warning(ERR::AllocMemory);
    }
 
    ((extVectorScene *)Self->Scene)->KeyboardSubscriptions.emplace(Self);
 
-   auto context = Args->Callback->Context;
-   if (not context) return log.warning(ERR::InvalidState);
-   context->pinWeak();
-   Self->KeyboardSubscriptions->emplace_back(*Args->Callback, context);
+   Args->Callback->Context->pinWeak();
+   Self->KeyboardSubscriptions->emplace_back(*Args->Callback);
 
    return ERR::Okay;
 }
@@ -1826,21 +1805,22 @@ any time.  The conventional means for monitoring the size and position of any ve
 static ERR VECTOR_SET_ResizeEvent(extVector *Self, FUNCTION *Value)
 {
    if (Value) {
+      auto context = Value->Context;
+      context->pinWeak();
+
       Self->ResizeSubscription = true;
       if ((Self->Scene) and (Self->ParentView)) {
          auto scene = (extVectorScene *)Self->Scene;
          auto &subs = scene->ResizeSubscriptions[Self->ParentView];
          if (auto existing = subs.find(Self); existing != subs.end()) {
-            if (existing->second.isScript()) ((objScript *)existing->second.Context)->derefProcedure(existing->second);
+            release_callback(existing->second);
          }
          subs[Self] = *Value;
-
-         SubscribeAction(Value->Context, AC::Free, C_FUNCTION(notify_free_resize_event));
       }
       else {
          const std::lock_guard<std::mutex> lock(glResizeLock);
          if (auto existing = glResizeSubscriptions.find(Self); existing != glResizeSubscriptions.end()) {
-            if (existing->second.isScript()) ((objScript *)existing->second.Context)->derefProcedure(existing->second);
+            release_callback(existing->second);
          }
          glResizeSubscriptions[Self] = *Value; // Save the subscription for initialisation.
       }
@@ -1851,9 +1831,17 @@ static ERR VECTOR_SET_ResizeEvent(extVector *Self, FUNCTION *Value)
          auto scene = (extVectorScene *)Self->Scene;
          if (auto it = scene->ResizeSubscriptions.find(Self->ParentView); it != scene->ResizeSubscriptions.end()) {
             if (auto sub = it->second.find(Self); sub != it->second.end()) {
-               if (sub->second.isScript()) ((objScript *)sub->second.Context)->derefProcedure(sub->second);
+               release_callback(sub->second);
                it->second.erase(sub);
             }
+            if (it->second.empty()) scene->ResizeSubscriptions.erase(it);
+         }
+      }
+      else {
+         const std::lock_guard<std::mutex> lock(glResizeLock);
+         if (auto sub = glResizeSubscriptions.find(Self); sub != glResizeSubscriptions.end()) {
+            release_callback(sub->second);
+            glResizeSubscriptions.erase(sub);
          }
       }
    }
@@ -2194,8 +2182,8 @@ void send_feedback(extVector *Vector, FM Event, OBJECTPTR EventObject)
    for (auto it=Vector->FeedbackSubscriptions->begin(); it != Vector->FeedbackSubscriptions->end(); ) {
       ERR result;
       auto &sub = *it;
-      if (vector_callback_context_gone(sub.Context)) {
-         clear_vector_callback(sub.Callback, sub.Context);
+      if (sub.Callback.Context->terminating()) {
+         release_callback(sub.Callback);
          it = Vector->FeedbackSubscriptions->erase(it);
       }
       else if ((sub.Mask & Event) != FM::NIL) {
@@ -2218,7 +2206,7 @@ void send_feedback(extVector *Vector, FM Event, OBJECTPTR EventObject)
          sub.Mask |= Event;
 
          if (result IS ERR::Terminate) {
-            clear_vector_callback(sub.Callback, sub.Context);
+            release_callback(sub.Callback);
             it = Vector->FeedbackSubscriptions->erase(it);
          }
          else it++;
@@ -2243,21 +2231,15 @@ extVector::~extVector() {
    ClipCache.reset();
 
    if (FeedbackSubscriptions) {
-      for (auto &sub : *FeedbackSubscriptions) {
-         clear_vector_callback(sub.Callback, sub.Context);
-      }
+      for (auto &sub : *FeedbackSubscriptions) release_callback(sub.Callback);
    }
 
    if (InputSubscriptions) {
-      for (auto &sub : *InputSubscriptions) {
-         clear_vector_callback(sub.Callback, sub.Context);
-      }
+      for (auto &sub : *InputSubscriptions) release_callback(sub.Callback);
    }
 
    if (KeyboardSubscriptions) {
-      for (auto &sub : *KeyboardSubscriptions) {
-         clear_vector_callback(sub.Callback, sub.Context);
-      }
+      for (auto &sub : *KeyboardSubscriptions) release_callback(sub);
    }
 
    if (ClipMask)   UnsubscribeAction(ClipMask, AC::Free);
@@ -2288,9 +2270,10 @@ extVector::~extVector() {
          if (scene->ResizeSubscriptions.contains(ParentView)) {
             auto &subs = scene->ResizeSubscriptions[ParentView];
             if (auto sub = subs.find(this); sub != subs.end()) {
-               if (sub->second.isScript()) ((objScript *)sub->second.Context)->derefProcedure(sub->second);
+               release_callback(sub->second);
                subs.erase(sub);
             }
+            if (subs.empty()) scene->ResizeSubscriptions.erase(ParentView);
          }
       }
       scene->InputSubscriptions.erase(this);
@@ -2315,9 +2298,7 @@ extVector::~extVector() {
    {
       const std::lock_guard<std::mutex> lock(glResizeLock);
       if ((!glResizeSubscriptions.empty()) and (glResizeSubscriptions.contains(this))) {
-         if (glResizeSubscriptions[this].isScript()) {
-            ((objScript *)glResizeSubscriptions[this].Context)->derefProcedure(glResizeSubscriptions[this]);
-         }
+         release_callback(glResizeSubscriptions[this]);
          glResizeSubscriptions.erase(this);
       }
    }

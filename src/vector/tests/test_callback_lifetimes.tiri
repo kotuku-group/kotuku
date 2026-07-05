@@ -24,6 +24,12 @@ function firePathChanged(Rect)
    check err
 end
 
+function drawResizeScene(Scene, Bitmap)
+   Bitmap.acClear()
+   Scene.bitmap = Bitmap
+   check Scene.acDraw()
+end
+
 -- A script subscribes to vector feedback and is then freed.  Regenerating the path must not crash on the stale
 -- context; the first event pass removes the record lazily and the second confirms stability.
 
@@ -79,4 +85,48 @@ end
    local count_after_first = glFeedbackCount
    firePathChanged(rect)
    assert(glFeedbackCount > count_after_first, 'Live subscriber stopped receiving feedback on subsequent events')
+end
+
+-- Freeing a scene that still carries a live resize subscription must release the pinned callback context in the
+-- scene's destructor (child vectors skip that cleanup during a cascade free) without invoking the callback.
+
+@Test function SceneFreeReleasesLiveResizeSubscription()
+   scene, viewport, rect = newRectScene('callback_lifetime_scene_free')
+
+   rect.resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
+      error('A resize callback fired during scene destruction')
+   end
+
+   scene.free()
+   scene = nil
+   viewport = nil
+   rect = nil
+end
+
+-- ResizeEvent stores callbacks in a scene-level dispatch table rather than directly on the vector.  A stale script
+-- context in that table must be removed lazily before dispatching the callback.
+
+@Test function StaleResizeSubscriberIsDiscarded()
+   scene, viewport, rect = newRectScene('callback_lifetime_resize_rect')
+   bitmap = obj.new('bitmap', { width=180, height=140, bitsPerPixel=32, bkgd='0,0,0,255' })
+
+   sub_script = obj.new('tiri', { statement=[[
+      include 'vector'
+      local rect = obj.find('callback_lifetime_resize_rect')
+      assert(rect != nil, 'Sub-script could not find the target rectangle')
+      rect.resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
+         error('A resize callback fired for a freed script context')
+      end
+   ]] })
+
+   check sub_script.acActivate()
+   sub_script.free()
+   sub_script = nil
+
+   drawResizeScene(scene, bitmap)
+   drawResizeScene(scene, bitmap)
+
+   viewport.width = 120
+   drawResizeScene(scene, bitmap)
+   drawResizeScene(scene, bitmap)
 end

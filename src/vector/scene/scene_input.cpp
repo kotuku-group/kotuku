@@ -77,8 +77,8 @@ static void send_input_events(extVector *Vector, InputEvent *Event, bool Propaga
    for (auto it=Vector->InputSubscriptions->begin(); it != Vector->InputSubscriptions->end(); ) {
       auto &sub = *it;
 
-      if (vector_callback_context_gone(sub.Context)) {
-         clear_vector_callback(sub.Callback, sub.Context);
+      if (sub.Callback.Context->terminating()) {
+         release_callback(sub.Callback);
          it = Vector->InputSubscriptions->erase(it);
          update_input_subscription_state(Vector);
          mark_input_boundary_dirty(Vector);
@@ -101,7 +101,7 @@ static void send_input_events(extVector *Vector, InputEvent *Event, bool Propaga
          }
 
          if (result IS ERR::Terminate) {
-            clear_vector_callback(sub.Callback, sub.Context);
+            release_callback(sub.Callback);
             it = Vector->InputSubscriptions->erase(it);
             update_input_subscription_state(Vector);
             mark_input_boundary_dirty(Vector);

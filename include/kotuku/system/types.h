@@ -79,6 +79,9 @@ struct FUNCTION {
    inline bool isC() const { return Type IS CALL::STD_C; }
    inline bool isScript() const { return Type IS CALL::SCRIPT; }
    inline bool defined() const { return Type != CALL::NIL; }
+   //inline void pin() { Context->pinWeak(); }
+   //inline void unpin() { Context->unpinWeak(); }
+
    inline bool identical(const FUNCTION &Other) const {
       if (Type IS CALL::STD_C) {
          return (Other.Type IS Type) and (Other.Context IS Context) and (Other.Routine IS Routine) and
@@ -90,6 +93,7 @@ struct FUNCTION {
       }
       else return (Other.Type IS Type) and (Other.MetaValue IS MetaValue);
    }
+
    // consume() informs the Script client that the procedure can be released on return
    inline void consume() { if (Type IS CALL::SCRIPT) Flags |= CONSUMED; }
    inline bool consumed() const { return Flags & CONSUMED; }
