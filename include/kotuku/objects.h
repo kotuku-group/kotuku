@@ -121,6 +121,10 @@ inline ERR write_field_value(OBJECTPTR Target, const struct Field *FieldPtr, con
 #define END_FIELD FieldArray(nullptr, 0)
 #define FDEF static const struct FunctionField
 
+#if defined(KOTUKU_STATIC) or defined(PRV_CORE_MODULE)
+extern "C" void ReleaseZombie(OBJECTPTR Object);
+#endif
+
 //********************************************************************************************************************
 // Locking system for when you have a) the object pointer and b) high confidence that it's alive.
 // Otherwise use ScopedObjectLock.
@@ -225,14 +229,22 @@ struct alignas(8) Object { // Must be 64-bit aligned
    inline void setFlag(NF pFlag) { Flags.fetch_or(uint32_t(pFlag), std::memory_order_relaxed); }
    inline void clearFlag(NF pFlag) { Flags.fetch_and(~uint32_t(pFlag), std::memory_order_relaxed); }
 
-   // Pinning an object provides a strong hint that the object is referenced by a variable, stored in a container, or needed by a thread.
-   // Pinned objects will short-circuit ReleaseObject's automatic free-on-unlock feature, making it necessary to manually call freeIfReady()
-   // after calls to unpin().
-   // Pinning does not guarantee anything; objects can still be immediately terminated if their parent is removed.
+   // Pinning an object provides a strong hint that the object is referenced by a variable, stored in a container, or
+   // needed by a thread.  Pinned objects will short-circuit ReleaseObject's automatic free-on-unlock feature, making it
+   // necessary to manually call freeIfReady() after calls to unpin().
+   //
+   // Pinning does not block forced termination.  If a pinned object is terminated, only the header fields Flags and
+   // RefCount remain valid until the last unpin() releases the retained zombie block.  Pin holders may only test
+   // NF::FREE and call unpin() after termination.  Placement objects are excluded because the Core does not own their
+   // memory block.
 
    inline void pin() {
       #ifndef NDEBUG
       auto ref_count = RefCount.load(std::memory_order_relaxed);
+      if (defined(NF::PLACEMENT)) {
+         kt::Log("pin").warning("Pinning placement object #%d (%s) is unsupported.", UID, className());
+         DEBUG_BREAK
+      }
       if (ref_count >= 254) {
          kt::Log("pin").warning("RefCount overflow risk for object #%d (%s), count: %d", UID, className(), ref_count);
          DEBUG_BREAK
@@ -242,12 +254,17 @@ struct alignas(8) Object { // Must be 64-bit aligned
    }
 
    inline void unpin(bool FreeIfReady = false) {
-      // CAS loop saturates at zero; a plain load-check-decrement would allow two racing threads to underflow the
-      // counter.  The release on a successful decrement pairs with acquire zero checks before destruction.
+      // Saturate at zero; a plain load-check-decrement would allow two racing threads to underflow the counter.
       auto ref_count = RefCount.load(std::memory_order_relaxed);
       while (ref_count > 0) {
-         if (RefCount.compare_exchange_weak(ref_count, uint8_t(ref_count - 1), std::memory_order_release,
-               std::memory_order_relaxed)) break;
+         if (RefCount.compare_exchange_weak(ref_count, uint8_t(ref_count - 1), std::memory_order_acq_rel,
+               std::memory_order_relaxed)) {
+            if ((ref_count IS 1) and defined(NF::ZOMBIE)) {
+               ReleaseZombie(this);
+               return;
+            }
+            break;
+         }
       }
       #ifndef NDEBUG
       if (ref_count IS 0) {
@@ -259,6 +276,8 @@ struct alignas(8) Object { // Must be 64-bit aligned
    }
 
    [[nodiscard]] inline bool isPinned() const { return RefCount.load(std::memory_order_acquire) > 0; }
+
+   [[nodiscard]] inline bool isZombie() const { return defined(NF::ZOMBIE); }
 
    inline bool freeIfReady() {
       auto ref_count = RefCount.load(std::memory_order_acquire);

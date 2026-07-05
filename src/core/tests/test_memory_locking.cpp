@@ -228,6 +228,50 @@ static int run_terminating_resource_check(void)
 
 //********************************************************************************************************************
 
+static int run_pinned_forced_object_free_check(void)
+{
+   kt::Log log(__FUNCTION__);
+
+   OBJECTPTR object = nullptr;
+   if (NewObject(CLASSID::CONFIG, NF::NIL, &object) != ERR::Okay) {
+      log.warning("Failed to create Config object for pinned forced free check.");
+      return -1;
+   }
+
+   const auto object_id = object->UID;
+   object->pin();
+   object->setFlag(NF::PERMIT_TERMINATE);
+
+   if (FreeResource(object) != ERR::Okay) {
+      object->unpin();
+      log.warning("FreeResource() failed for pinned forced free check.");
+      return -1;
+   }
+
+   if ((not object->defined(NF::FREE)) or (not object->defined(NF::ZOMBIE))) {
+      object->unpin();
+      log.warning("Pinned forced free did not leave a zombie header.");
+      return -1;
+   }
+
+   if (object->RefCount.load(std::memory_order_acquire) != 1) {
+      object->unpin();
+      log.warning("Unexpected zombie RefCount after forced free: %d.", int(object->RefCount.load()));
+      return -1;
+   }
+
+   if (CheckResourceExists(object_id) != ERR::False) {
+      object->unpin();
+      log.warning("Zombie object resource still exists after forced free.");
+      return -1;
+   }
+
+   object->unpin();
+   return 0;
+}
+
+//********************************************************************************************************************
+
 static int run_access_object_checks(void)
 {
    kt::Log log(__FUNCTION__);
@@ -334,6 +378,11 @@ int main(int argc, CSTRING *argv)
    }
 
    if (run_terminating_resource_check() != 0) {
+      close_kotuku();
+      return -1;
+   }
+
+   if (run_pinned_forced_object_free_check() != 0) {
       close_kotuku();
       return -1;
    }

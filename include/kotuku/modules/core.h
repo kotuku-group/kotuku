@@ -333,6 +333,7 @@ enum class NF : uint32_t {
    PERMIT_TERMINATE = 0x00000200,
    ASYNC_ACTIVE = 0x00000400,
    PLACEMENT = 0x00000800,
+   ZOMBIE = 0x00001000,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(NF)
@@ -1498,6 +1499,7 @@ struct CoreBase {
    objMetaClass * (*_FindClass)(CLASSID ClassID);
    ERR (*_AnalysePath)(const std::string_view &Path, LOC *Type);
    ERR (*_FreeResource)(RESOURCEID ID);
+   void (*_ReleaseZombie)(OBJECTPTR Object);
    CLASSID (*_GetClassID)(OBJECTID Object);
    OBJECTID (*_GetOwnerID)(OBJECTID Object);
    ERR (*_CompareFilePaths)(const std::string_view &PathA, const std::string_view &PathB);
@@ -1595,6 +1597,7 @@ inline ERR FindObject(const std::string_view &Name, CLASSID ClassID, OBJECTID *O
 inline objMetaClass * FindClass(CLASSID ClassID) { return CoreBase->_FindClass(ClassID); }
 inline ERR AnalysePath(const std::string_view &Path, LOC *Type) { return CoreBase->_AnalysePath(Path,Type); }
 inline ERR FreeResource(RESOURCEID ID) { return CoreBase->_FreeResource(ID); }
+inline void ReleaseZombie(OBJECTPTR Object) { return CoreBase->_ReleaseZombie(Object); }
 inline CLASSID GetClassID(OBJECTID Object) { return CoreBase->_GetClassID(Object); }
 inline OBJECTID GetOwnerID(OBJECTID Object) { return CoreBase->_GetOwnerID(Object); }
 inline ERR CompareFilePaths(const std::string_view &PathA, const std::string_view &PathB) { return CoreBase->_CompareFilePaths(PathA,PathB); }
@@ -1687,6 +1690,7 @@ extern "C" ERR FindObject(const std::string_view &Name, CLASSID ClassID, OBJECTI
 extern "C" objMetaClass * FindClass(CLASSID ClassID);
 extern "C" ERR AnalysePath(const std::string_view &Path, LOC *Type);
 extern "C" ERR FreeResource(RESOURCEID ID);
+extern "C" void ReleaseZombie(OBJECTPTR Object);
 extern "C" CLASSID GetClassID(OBJECTID Object);
 extern "C" OBJECTID GetOwnerID(OBJECTID Object);
 extern "C" ERR CompareFilePaths(const std::string_view &PathA, const std::string_view &PathB);

@@ -238,18 +238,38 @@ public:
 class InputSubscription {
 public:
    FUNCTION Callback;
-   FUNCTION FreeCallback;
+   OBJECTPTR Context;
    JTYPE Mask;
-   InputSubscription(FUNCTION pCallback, FUNCTION pFreeCallback, JTYPE pMask) :
-      Callback(pCallback), FreeCallback(pFreeCallback), Mask(pMask) { }
+   InputSubscription(FUNCTION pCallback, OBJECTPTR pContext, JTYPE pMask) :
+      Callback(pCallback), Context(pContext), Mask(pMask) { }
 };
 
 class KeyboardSubscription {
 public:
    FUNCTION Callback;
-   FUNCTION FreeCallback;
-   KeyboardSubscription(FUNCTION pCallback, FUNCTION pFreeCallback) : Callback(pCallback), FreeCallback(pFreeCallback) { }
+   OBJECTPTR Context;
+   KeyboardSubscription(FUNCTION pCallback, OBJECTPTR pContext) : Callback(pCallback), Context(pContext) { }
 };
+
+inline bool vector_callback_context_gone(OBJECTPTR Context)
+{
+   return (Context) and (Context->defined(NF::FREE));
+}
+
+// Clears a pinned callback subscription.  The script procedure is only dereferenced if the context is still alive;
+// terminated contexts are zombies whereby only the header flags and pin count remain valid.
+
+inline void clear_vector_callback(FUNCTION &Function, OBJECTPTR &Context)
+{
+   if ((Function.isScript()) and (Context) and (not Context->defined(NF::FREE))) {
+      ((objScript *)Context)->derefProcedure(Function);
+   }
+   Function.clear();
+   if (Context) {
+      Context->unpin();
+      Context = nullptr;
+   }
+}
 
 inline void deref_vector_callback(FUNCTION &Function)
 {
@@ -403,10 +423,10 @@ struct GouraudCache {
 class FeedbackSubscription {
 public:
    FUNCTION Callback;
-   FUNCTION FreeCallback;
+   OBJECTPTR Context;
    FM Mask;
-   FeedbackSubscription(FUNCTION pCallback, FUNCTION pFreeCallback, FM pMask) :
-      Callback(pCallback), FreeCallback(pFreeCallback), Mask(pMask) { }
+   FeedbackSubscription(FUNCTION pCallback, OBJECTPTR pContext, FM pMask) :
+      Callback(pCallback), Context(pContext), Mask(pMask) { }
 };
 
 //********************************************************************************************************************
@@ -791,7 +811,6 @@ class extVector : public objVector {
    std::unique_ptr<ClipMaskCache> ClipCache;
    std::unique_ptr<filter_bitmap> IsolatedBuffer;
    JTYPE InputMask;
-   int64_t NextCallbackSubscriptionID;
    int   PathLength;
    RC    Dirty;
    uint16_t  TabOrder;
@@ -821,7 +840,6 @@ class extVector : public objVector {
       TabOrder      = 255;
       ColourSpace   = VCS::INHERIT;
       ValidState    = true;
-      NextCallbackSubscriptionID = 1;
    }
 
    ~extVector();

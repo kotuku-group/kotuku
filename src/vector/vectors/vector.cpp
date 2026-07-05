@@ -155,60 +155,6 @@ static void notify_free_clipmask(OBJECTPTR Object, ACTIONID ActionID, ERR Result
    }
 }
 
-static void notify_free_input(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   auto Self = (extVector *)CurrentContext();
-   bool removed = false;
-   for (auto it=Self->InputSubscriptions->begin(); it != Self->InputSubscriptions->end(); ) {
-      if (Object IS it->Callback.Context) {
-         if (it->Callback.isScript()) ((objScript *)it->Callback.Context)->derefProcedure(it->Callback);
-         it = Self->InputSubscriptions->erase(it);
-         removed = true;
-      }
-      else it++;
-   }
-
-   if (removed) {
-      update_input_subscription_state(Self);
-      mark_input_boundary_dirty(Self);
-   }
-}
-
-static void notify_free_keyboard(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   auto Self = (extVector *)CurrentContext();
-   for (auto it=Self->KeyboardSubscriptions->begin(); it != Self->KeyboardSubscriptions->end(); ) {
-      if (Object IS it->Callback.Context) {
-         if (it->Callback.isScript()) ((objScript *)it->Callback.Context)->derefProcedure(it->Callback);
-         it = Self->KeyboardSubscriptions->erase(it);
-      }
-      else it++;
-   }
-
-   if ((Self->KeyboardSubscriptions->empty()) and (Self->Scene) and (!Self->Scene->collecting())) {
-      ((extVectorScene *)Self->Scene)->KeyboardSubscriptions.erase(Self);
-   }
-}
-
-static void notify_free_feedback(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   auto Self = (extVector *)CurrentContext();
-   for (auto it=Self->FeedbackSubscriptions->begin(); it != Self->FeedbackSubscriptions->end(); ) {
-      if (Object IS it->Callback.Context) {
-         if (it->Callback.isScript()) ((objScript *)it->Callback.Context)->derefProcedure(it->Callback);
-         it = Self->FeedbackSubscriptions->erase(it);
-      }
-      else it++;
-   }
-}
-
-template <class T> static FUNCTION make_vector_free_callback(extVector *Self, T *Callback)
-{
-   return C_FUNCTION(Callback, Self->NextCallbackSubscriptionID++);
-}
-
-//********************************************************************************************************************
-
 static void notify_free_resize_event(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
    auto Self = (extVector *)CurrentContext();
@@ -804,15 +750,15 @@ static ERR VECTOR_SubscribeFeedback(extVector *Self, struct vec::SubscribeFeedba
          if (!Self->FeedbackSubscriptions) return log.warning(ERR::AllocMemory);
       }
 
-      auto free_callback = make_vector_free_callback(Self, notify_free_feedback);
-      SubscribeAction(Args->Callback->Context, AC::Free, &free_callback);
-      Self->FeedbackSubscriptions->emplace_back(*Args->Callback, free_callback, Args->Mask);
+      auto context = Args->Callback->Context;
+      if (not context) return log.warning(ERR::InvalidState);
+      context->pin();
+      Self->FeedbackSubscriptions->emplace_back(*Args->Callback, context, Args->Mask);
    }
    else if (Self->FeedbackSubscriptions) { // Remove existing subscriptions for this callback
       for (auto it=Self->FeedbackSubscriptions->begin(); it != Self->FeedbackSubscriptions->end(); ) {
          if (*Args->Callback IS it->Callback) {
-            UnsubscribeAction(it->Callback.Context, AC::Free, &it->FreeCallback);
-            if (it->Callback.isScript()) ((objScript *)it->Callback.Context)->derefProcedure(it->Callback);
+            clear_vector_callback(it->Callback, it->Context);
             it = Self->FeedbackSubscriptions->erase(it);
          }
          else it++;
@@ -883,19 +829,18 @@ static ERR VECTOR_SubscribeInput(extVector *Self, struct vec::SubscribeInput *Ar
 
       auto mask = Args->Mask;
 
-      auto free_callback = make_vector_free_callback(Self, notify_free_input);
-      SubscribeAction(Args->Callback->Context, AC::Free, &free_callback);
-
+      auto context = Args->Callback->Context;
+      if (not context) return log.warning(ERR::InvalidState);
       Self->InputMask |= mask;
-      Self->InputSubscriptions->emplace_back(*Args->Callback, free_callback, mask);
+      context->pin();
+      Self->InputSubscriptions->emplace_back(*Args->Callback, context, mask);
       update_input_subscription_state(Self);
       mark_input_boundary_dirty(Self);
    }
    else if (Self->InputSubscriptions) { // Remove existing subscriptions for this callback
       for (auto it=Self->InputSubscriptions->begin(); it != Self->InputSubscriptions->end(); ) {
          if (*Args->Callback IS it->Callback) {
-            UnsubscribeAction(it->Callback.Context, AC::Free, &it->FreeCallback);
-            if (it->Callback.isScript()) ((objScript *)it->Callback.Context)->derefProcedure(it->Callback);
+            clear_vector_callback(it->Callback, it->Context);
             it = Self->InputSubscriptions->erase(it);
          }
          else it++;
@@ -955,9 +900,10 @@ static ERR VECTOR_SubscribeKeyboard(extVector *Self, struct vec::SubscribeKeyboa
 
    ((extVectorScene *)Self->Scene)->KeyboardSubscriptions.emplace(Self);
 
-   auto free_callback = make_vector_free_callback(Self, notify_free_keyboard);
-   SubscribeAction(Args->Callback->Context, AC::Free, &free_callback);
-   Self->KeyboardSubscriptions->emplace_back(*Args->Callback, free_callback);
+   auto context = Args->Callback->Context;
+   if (not context) return log.warning(ERR::InvalidState);
+   context->pin();
+   Self->KeyboardSubscriptions->emplace_back(*Args->Callback, context);
 
    return ERR::Okay;
 }
@@ -2248,7 +2194,11 @@ void send_feedback(extVector *Vector, FM Event, OBJECTPTR EventObject)
    for (auto it=Vector->FeedbackSubscriptions->begin(); it != Vector->FeedbackSubscriptions->end(); ) {
       ERR result;
       auto &sub = *it;
-      if ((sub.Mask & Event) != FM::NIL) {
+      if (vector_callback_context_gone(sub.Context)) {
+         clear_vector_callback(sub.Callback, sub.Context);
+         it = Vector->FeedbackSubscriptions->erase(it);
+      }
+      else if ((sub.Mask & Event) != FM::NIL) {
          sub.Mask &= ~Event; // Turned off to prevent recursion
 
          if (sub.Callback.isC()) {
@@ -2268,8 +2218,7 @@ void send_feedback(extVector *Vector, FM Event, OBJECTPTR EventObject)
          sub.Mask |= Event;
 
          if (result IS ERR::Terminate) {
-            UnsubscribeAction(sub.Callback.Context, AC::Free, &sub.FreeCallback);
-            if (sub.Callback.isScript()) ((objScript *)sub.Callback.Context)->derefProcedure(sub.Callback);
+            clear_vector_callback(sub.Callback, sub.Context);
             it = Vector->FeedbackSubscriptions->erase(it);
          }
          else it++;
@@ -2295,22 +2244,19 @@ extVector::~extVector() {
 
    if (FeedbackSubscriptions) {
       for (auto &sub : *FeedbackSubscriptions) {
-         UnsubscribeAction(sub.Callback.Context, AC::Free, &sub.FreeCallback);
-         if (sub.Callback.isScript()) ((objScript *)sub.Callback.Context)->derefProcedure(sub.Callback);
+         clear_vector_callback(sub.Callback, sub.Context);
       }
    }
 
    if (InputSubscriptions) {
       for (auto &sub : *InputSubscriptions) {
-         UnsubscribeAction(sub.Callback.Context, AC::Free, &sub.FreeCallback);
-         if (sub.Callback.isScript()) ((objScript *)sub.Callback.Context)->derefProcedure(sub.Callback);
+         clear_vector_callback(sub.Callback, sub.Context);
       }
    }
 
    if (KeyboardSubscriptions) {
       for (auto &sub : *KeyboardSubscriptions) {
-         UnsubscribeAction(sub.Callback.Context, AC::Free, &sub.FreeCallback);
-         if (sub.Callback.isScript()) ((objScript *)sub.Callback.Context)->derefProcedure(sub.Callback);
+         clear_vector_callback(sub.Callback, sub.Context);
       }
    }
 

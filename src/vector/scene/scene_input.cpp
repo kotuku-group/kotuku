@@ -77,7 +77,13 @@ static void send_input_events(extVector *Vector, InputEvent *Event, bool Propaga
    for (auto it=Vector->InputSubscriptions->begin(); it != Vector->InputSubscriptions->end(); ) {
       auto &sub = *it;
 
-      if (((Event->Mask & JTYPE::REPEATED) != JTYPE::NIL) and ((sub.Mask & JTYPE::REPEATED) IS JTYPE::NIL)) it++;
+      if (vector_callback_context_gone(sub.Context)) {
+         clear_vector_callback(sub.Callback, sub.Context);
+         it = Vector->InputSubscriptions->erase(it);
+         update_input_subscription_state(Vector);
+         mark_input_boundary_dirty(Vector);
+      }
+      else if (((Event->Mask & JTYPE::REPEATED) != JTYPE::NIL) and ((sub.Mask & JTYPE::REPEATED) IS JTYPE::NIL)) it++;
       else if ((sub.Mask & Event->Mask) != JTYPE::NIL) {
          ERR result = ERR::Terminate;
          consumed = true;
@@ -95,8 +101,7 @@ static void send_input_events(extVector *Vector, InputEvent *Event, bool Propaga
          }
 
          if (result IS ERR::Terminate) {
-            UnsubscribeAction(sub.Callback.Context, AC::Free, &sub.FreeCallback);
-            deref_vector_callback(sub.Callback);
+            clear_vector_callback(sub.Callback, sub.Context);
             it = Vector->InputSubscriptions->erase(it);
             update_input_subscription_state(Vector);
             mark_input_boundary_dirty(Vector);

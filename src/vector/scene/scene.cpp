@@ -885,6 +885,12 @@ static ERR vector_keyboard_events(extVector *Vector, const evKey *Event)
    for (auto it=Vector->KeyboardSubscriptions->begin(); it != Vector->KeyboardSubscriptions->end(); ) {
       ERR result = ERR::Terminate;
       auto &sub = *it;
+      if (vector_callback_context_gone(sub.Context)) {
+         clear_vector_callback(sub.Callback, sub.Context);
+         it = Vector->KeyboardSubscriptions->erase(it);
+         continue;
+      }
+
       if (sub.Callback.isC()) {
          kt::SwitchContext ctx(sub.Callback.Context);
          auto callback = (ERR (*)(objVector *, KQ, KEY, int, APTR))sub.Callback.Routine;
@@ -901,11 +907,14 @@ static ERR vector_keyboard_events(extVector *Vector, const evKey *Event)
       }
 
       if (result IS ERR::Terminate) {
-         UnsubscribeAction(sub.Callback.Context, AC::Free, &sub.FreeCallback);
-         deref_vector_callback(sub.Callback);
+         clear_vector_callback(sub.Callback, sub.Context);
          it = Vector->KeyboardSubscriptions->erase(it);
       }
       else it++;
+   }
+
+   if ((Vector->KeyboardSubscriptions->empty()) and (Vector->Scene) and (not Vector->Scene->collecting())) {
+      ((extVectorScene *)Vector->Scene)->KeyboardSubscriptions.erase(Vector);
    }
 
    return ERR::Okay;
@@ -951,8 +960,11 @@ static void scene_key_event(evKey *Event, int Size, extVectorScene *Self)
       return;
    }
 
-   for (auto vi = Self->KeyboardSubscriptions.begin(); vi != Self->KeyboardSubscriptions.end(); vi++) {
-      auto const vector = *vi;
+   // Iterate over a snapshot because vector_keyboard_events() can erase vectors from KeyboardSubscriptions.
+
+   std::vector<extVector *> subscribers(Self->KeyboardSubscriptions.begin(), Self->KeyboardSubscriptions.end());
+   for (auto const vector : subscribers) {
+      if (not Self->KeyboardSubscriptions.contains(vector)) continue;
       // Use the focus list to determine where the key event needs to be sent.
       for (auto it=glVectorFocusList.begin(); it != glVectorFocusList.end(); it++) {
          if (*it IS vector) {
