@@ -828,6 +828,8 @@ void apply_focus(extVectorScene *Scene, extVector *Vector)
 
 static void process_resize_msgs(extVectorScene *Self)
 {
+   kt::Log log(__FUNCTION__);
+
    if (Self->PendingResizeMsgs.size() > 0) {
       for (auto it=Self->PendingResizeMsgs.begin(); it != Self->PendingResizeMsgs.end(); it++) {
          extVectorViewport *view = *it;
@@ -837,6 +839,22 @@ static void process_resize_msgs(extVectorScene *Self)
             ERR result;
             auto vector = sub.first;
             auto func   = sub.second;
+
+            // Print warnings if the subscription list changed - resizing shouldn't mutate the list, so the developer
+            // needs to make an improvement.
+
+            auto live_view = Self->ResizeSubscriptions.find(view);
+            if (live_view IS Self->ResizeSubscriptions.end()) {
+               log.warning("ResizeEvent subscription was cleared during resize dispatch; skipping stale callback.");
+               continue;
+            }
+
+            auto live_sub = live_view->second.find(vector);
+            if ((live_sub IS live_view->second.end()) or (!(live_sub->second IS func))) {
+               log.warning("ResizeEvent subscription was cleared or replaced during resize dispatch; skipping stale callback.");
+               continue;
+            }
+
             if (func.isC()) {
                kt::SwitchContext ctx(func.Context);
                auto callback = (ERR (*)(extVectorViewport *, objVector *, double, double, double, double, APTR))func.Routine;
