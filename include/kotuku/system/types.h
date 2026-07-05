@@ -74,13 +74,14 @@ struct FUNCTION {
    bool isC() const { return Type IS CALL::STD_C; }
    bool isScript() const { return Type IS CALL::SCRIPT; }
    bool defined() const { return Type != CALL::NIL; }
-   void consume() { Type = CALL::NIL; }
+   // consume() informs the Script client that the procedure can be released on return
+   void consume() { if (Type IS CALL::SCRIPT) Type = CALL::NIL; }
    bool consumed() const { return Type IS CALL::NIL; }
 };
 
 inline bool operator==(const struct FUNCTION &A, const struct FUNCTION &B)
 {
-   if (A.Type == CALL::STD_C) return (A.Type == B.Type) and (A.Context == B.Context) and (A.Routine == B.Routine);
-   else if (A.Type == CALL::SCRIPT) return (A.Type == B.Type) and (A.Context == B.Context) and (A.ProcedureID == B.ProcedureID);
-   else return (A.Type == B.Type);
+   if (A.Type IS CALL::STD_C) return (A.Type IS B.Type) and (A.Context IS B.Context) and (A.Routine IS B.Routine);
+   else if (A.Type IS CALL::SCRIPT) return (A.Type IS B.Type) and (A.Context IS B.Context) and (A.ProcedureID IS B.ProcedureID);
+   else return (A.Type IS B.Type);
 }
