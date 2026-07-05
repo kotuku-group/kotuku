@@ -41,13 +41,14 @@ This is an example of a simple client application written in Tiri.  It loads an 
    import 'gui'
    import 'gui/window'
 
-   if not arg('file') then
-      print('Usage: --file [Path]')
+   file = arg('file')
+   if not file then
+      print('Usage: file=[SVG File]')
       return
    end
 
-   if mSys.AnalysePath(arg('file')) != ERR_Okay then
-      error('Unable to load file ' .. arg('file'))
+   if mSys.AnalysePath(file) != ERR_Okay then
+      error('Unable to find file ' .. file)
    end
 
    glWindow = gui.window({
@@ -62,12 +63,16 @@ This is an example of a simple client application written in Tiri.  It loads an 
 
    glViewport = glWindow.scene.new('VectorViewport', {
       aspectRatio='MEET', x=glWindow.client.left, y=glWindow.client.top,
-      xOffset=glWindow.client.right, yOffset=glWindow.client.bottom
+      xOffset=glWindow.client.right, yOffset=glWindow.client.bottom, overflow='hidden'
    })
 
-   obj.new('svg', { target=glViewport, path=arg('file') })
+   if file:endsWith('.svg') then
+      obj.new('svg', { target=glViewport, path=file, flags='ENFORCE_TRACKING' })
+   else
+      error('Unsupported file type: ' .. file)
+   end
 
-   glWindow:setTitle(arg('file'))
+   glWindow:setTitle(file)
    glWindow:show()
 
    processing.sleep()
