@@ -266,7 +266,7 @@
 <p>The SubscribeKeyboard() method provides a callback mechanism for handling keyboard events.  Events are reported when the vector or one of its children has the user focus.  It is a pre-requisite that the associated <class name="VectorScene">VectorScene</class> has been linked to a <class name="Surface">Surface</class>.</p>
 <p>The prototype for the callback is as follows, whereby <code>Qualifers</code> are <code>KQ</code> flags and the Code is a <code>K</code> constant representing the raw key value.  The <code>Unicode</code> value is the resulting character when the qualifier and code are translated through the user's keymap.</p>
 <p>
-<code>ERR callback(*Viewport, LONG Qualifiers, LONG Code, LONG Unicode);</code></p>
+<code>ERR callback(*Viewport, INT Qualifiers, INT Code, INT Unicode);</code></p>
 <p>If the callback returns <code>ERR::Terminate</code> then the subscription will be ended.  All other error codes are ignored.</p>
       </description>
       <result>
@@ -290,7 +290,7 @@
         <param type="INT" name="Transform">Set to <code>true</code> if all transforms applicable to the vector should be applied to the path.</param>
       </input>
       <description>
-<p>Any vector that generates a path can be traced by calling this method.  Tracing allows the caller to follow the path from point-to-point if the path were to be rendered with a stroke.  The prototype of the callback function is <code>ERR Function(OBJECTPTR Vector, LONG Index, LONG Command, DOUBLE X, DOUBLE Y, APTR Meta)</code>.</p>
+<p>Any vector that generates a path can be traced by calling this method.  Tracing allows the caller to follow the path from point-to-point if the path were to be rendered with a stroke.  The prototype of the callback function is <code>ERR Function(OBJECTPTR Vector, INT Index, INT Command, DOUBLE X, DOUBLE Y, APTR Meta)</code>.</p>
 <p>The <code>Vector</code> parameter refers to the vector targeted by the method.  The <code>Index</code> is an incrementing counter that reflects the currently plotted point.  The <code>X</code> and <code>Y</code> parameters reflect the coordinate of a point on the path.</p>
 <p>If the <code>Callback</code> returns <code>ERR::Terminate</code>, then no further coordinates will be processed.</p>
       </description>

@@ -2,7 +2,7 @@
 
 //  types.h
 //
-//  (C) Copyright 1996-2023 Paul Manias
+//  (C) Copyright 1996-2026 Paul Manias
 
 #include <type_traits>
 #include <utility>
@@ -37,14 +37,14 @@ struct SCALE : strong_typedef<SCALE, double> {
 // Tiri).  Use C_FUNCTION(Routine, Meta) to create a standard C function.
 
 enum class CALL : uint8_t {
-   NIL=0,
-   STD_C=1,
-   SCRIPT=2
+   NIL    = 0,
+   STD_C  = 1,
+   SCRIPT = 2
 };
 
 struct FUNCTION {
    CALL Type;
-   uint8_t PadA;
+   uint8_t Flags;
    uint16_t ID; // Unused.  Unique identifier for the function.
    OBJECTPTR Context; // The context at the time the function was created, or a Script reference
    union {
@@ -56,13 +56,17 @@ struct FUNCTION {
       int64_t ProcedureID; // CALL::SCRIPT: Function identifier, usually a hash
    };
 
-   FUNCTION() : Type(CALL::NIL), PadA(0), ID(0), Context(nullptr), MetaValue(0), Routine(nullptr) { }
-   FUNCTION(CALL pType) : Type(pType), PadA(0), ID(0), Context(nullptr), MetaValue(0), Routine(nullptr) { }
+   static constexpr uint8_t CONSUMED = 0x01;
+
+   FUNCTION() : Type(CALL::NIL), Flags(0), ID(0), Context(nullptr), MetaValue(0), Routine(nullptr) { }
+   FUNCTION(CALL pType) : Type(pType), Flags(0), ID(0), Context(nullptr), MetaValue(0), Routine(nullptr) { }
 
    // Script constructor
 
    FUNCTION(class objScript *pScript, int64_t pProcedure) {
       Type        = CALL::SCRIPT;
+      Flags       = 0;
+      ID          = 0;
       Context     = (OBJECTPTR)pScript;
       MetaValue   = 0;
       ProcedureID = pProcedure;
@@ -71,7 +75,7 @@ struct FUNCTION {
    // The CALL::STDC constructor is managed by C_FUNCTION() in order to prevent problems with
    // implicit type conversion.
 
-   inline void clear() { Type = CALL::NIL; MetaValue = 0; Routine = nullptr; }
+   inline void clear() { Type = CALL::NIL; Flags = 0; MetaValue = 0; Routine = nullptr; }
    inline bool isC() const { return Type IS CALL::STD_C; }
    inline bool isScript() const { return Type IS CALL::SCRIPT; }
    inline bool defined() const { return Type != CALL::NIL; }
@@ -87,8 +91,8 @@ struct FUNCTION {
       else return (Other.Type IS Type) and (Other.MetaValue IS MetaValue);
    }
    // consume() informs the Script client that the procedure can be released on return
-   inline void consume() { if (Type IS CALL::SCRIPT) Type = CALL::NIL; }
-   inline bool consumed() const { return Type IS CALL::NIL; }
+   inline void consume() { if (Type IS CALL::SCRIPT) Flags |= CONSUMED; }
+   inline bool consumed() const { return Flags & CONSUMED; }
 };
 
 inline bool operator==(const struct FUNCTION &A, const struct FUNCTION &B)
