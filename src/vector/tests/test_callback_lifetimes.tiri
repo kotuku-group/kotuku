@@ -1,0 +1,82 @@
+-- Verifies pin-based lazy callback invalidation (zombie object pinning).  Feedback subscriptions made by a script
+-- must be discarded silently after that script is freed - without crashing on the zombie context and without
+-- disturbing other live subscribers.
+
+   include 'vector'
+
+   mVec ?= mod.load('vector')
+
+function newRectScene(RectName)
+   scene = obj.new('VectorScene')
+   viewport = scene.new('VectorViewport')
+   rect = viewport.new('VectorRectangle', { name=RectName, x=10, y=10, width=100, height=80 })
+   check scene.init()
+   check viewport.init()
+   check rect.init()
+   return scene, viewport, rect
+end
+
+-- Dirty the rectangle's path and force regeneration, which emits FM_PATH_CHANGED to feedback subscribers.
+
+function firePathChanged(Rect)
+   Rect.width = Rect.width + 10
+   err = Rect.mtGetBoundary(VBF_NO_TRANSFORM)
+   check err
+end
+
+-- A script subscribes to vector feedback and is then freed.  Regenerating the path must not crash on the stale
+-- context; the first event pass removes the record lazily and the second confirms stability.
+
+@Test function StaleScriptSubscriberIsDiscarded()
+   scene, viewport, rect = newRectScene('callback_lifetime_rect')
+
+   sub_script = obj.new('tiri', { statement=[[
+      include 'vector'
+      local rect = obj.find('callback_lifetime_rect')
+      assert(rect != nil, 'Sub-script could not find the target rectangle')
+      check rect.mtSubscribeFeedback(FM_PATH_CHANGED, function(Vector, EventFlag, EventObject)
+         error('A feedback callback fired for a freed script context')
+      end)
+   ]] })
+
+   check sub_script.acActivate()
+   sub_script.free()
+   sub_script = nil
+
+   firePathChanged(rect)
+   firePathChanged(rect)
+end
+
+-- With a freed subscriber ahead of a live one in the subscription list, the stale record's lazy removal must not
+-- disturb delivery to the live subscriber.
+
+@Test function LiveSubscriberSurvivesStaleRemoval()
+   scene, viewport, rect = newRectScene('callback_lifetime_rect_live')
+
+   sub_script = obj.new('tiri', { statement=[[
+      include 'vector'
+      local rect = obj.find('callback_lifetime_rect_live')
+      assert(rect != nil, 'Sub-script could not find the target rectangle')
+      check rect.mtSubscribeFeedback(FM_PATH_CHANGED, function(Vector, EventFlag, EventObject)
+         error('A feedback callback fired for a freed script context')
+      end)
+   ]] })
+
+   check sub_script.acActivate()
+
+   glFeedbackCount = 0
+   check rect.mtSubscribeFeedback(FM_PATH_CHANGED, function(Vector, EventFlag, EventObject)
+      glFeedbackCount++
+      return ERR_Okay
+   end)
+
+   sub_script.free()
+   sub_script = nil
+
+   firePathChanged(rect)
+   assert(glFeedbackCount >= 1, 'Live subscriber did not receive feedback after stale record removal')
+
+   local count_after_first = glFeedbackCount
+   firePathChanged(rect)
+   assert(glFeedbackCount > count_after_first, 'Live subscriber stopped receiving feedback on subsequent events')
+end

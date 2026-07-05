@@ -9,9 +9,9 @@ This program tests resource locking and termination behaviour.
 
 *********************************************************************************************************************/
 
-#include <pthread.h>
 #include <atomic>
 #include <cstdint>
+#include <thread>
 #include <kotuku/startup.h>
 
 using namespace kt;
@@ -42,21 +42,18 @@ static ResourceManager glTerminatingResourceManager = {
 
 //********************************************************************************************************************
 
-static void * free_terminating_resource(void *)
+static void free_terminating_resource()
 {
    glConcurrentFreeError = FreeResource(glTerminatingResource);
-   return nullptr;
 }
 
 //********************************************************************************************************************
 
-static void * alloc_free_worker(void *Arg)
+static void alloc_free_worker(int Base)
 {
-   auto base = int((intptr_t)Arg);
-
    for (int i=0; i < 250; i++) {
       APTR memory = nullptr;
-      if (AllocMemory(32 + ((base + i) % 96), MEM::DATA, &memory) != ERR::Okay) {
+      if (AllocMemory(32 + ((Base + i) % 96), MEM::DATA, &memory) != ERR::Okay) {
          glAllocFreeFailures.fetch_add(1, std::memory_order_relaxed);
          continue;
       }
@@ -78,8 +75,6 @@ static void * alloc_free_worker(void *Arg)
          glAllocFreeFailures.fetch_add(1, std::memory_order_relaxed);
       }
    }
-
-   return nullptr;
 }
 
 //********************************************************************************************************************
@@ -89,18 +84,12 @@ static int run_concurrent_alloc_free_check(void)
    kt::Log log(__FUNCTION__);
 
    static constexpr int thread_count = 4;
-   pthread_t threads[thread_count];
+   std::thread threads[thread_count];
 
    glAllocFreeFailures.store(0, std::memory_order_release);
 
-   for (int i=0; i < thread_count; i++) {
-      if (pthread_create(&threads[i], nullptr, &alloc_free_worker, (void *)(intptr_t)(i * 1000)) != 0) {
-         log.warning("pthread_create() failed for concurrent allocation worker %d.", i);
-         return -1;
-      }
-   }
-
-   for (int i=0; i < thread_count; i++) pthread_join(threads[i], nullptr);
+   for (int i=0; i < thread_count; i++) threads[i] = std::thread(&alloc_free_worker, i * 1000);
+   for (int i=0; i < thread_count; i++) threads[i].join();
 
    if (glAllocFreeFailures.load(std::memory_order_acquire) != 0) {
       log.warning("%d concurrent allocation/free checks failed.", glAllocFreeFailures.load(std::memory_order_relaxed));
@@ -202,15 +191,14 @@ static int run_terminating_resource_check(void)
       return -1;
    }
 
-   pthread_t thread;
-   pthread_create(&thread, nullptr, &free_terminating_resource, nullptr);
+   std::thread thread(&free_terminating_resource);
 
    while (not glManagerEntered.load(std::memory_order_acquire)) WaitTime(0.001);
 
    auto second_error = FreeResource(memory);
 
    glManagerCanFinish.store(true, std::memory_order_release);
-   pthread_join(thread, nullptr);
+   thread.join();
 
    if (second_error != ERR::InUse) {
       log.warning("FreeResource() returned %s for a terminating resource.", GetErrorMsg(second_error));
@@ -318,6 +306,202 @@ static int run_weak_pinned_object_free_check(void)
    }
 
    object->unpinWeak();
+   return 0;
+}
+
+//********************************************************************************************************************
+// Cascade frees are how callback contexts usually die.  A weak-pinned child collected by its parent's free must be
+// zombified with the same guarantees as a direct free: header retained, NF::FREE|NF::ZOMBIE set, block released on
+// the last unpinWeak().
+
+static int run_weak_pinned_cascade_free_check(void)
+{
+   kt::Log log(__FUNCTION__);
+
+   OBJECTPTR parent = nullptr;
+   OBJECTPTR child = nullptr;
+
+   if (NewObject(CLASSID::CONFIG, NF::NIL, &parent) != ERR::Okay) {
+      log.warning("Failed to create parent Config object for weak pinned cascade check.");
+      return -1;
+   }
+
+   if (NewObject(CLASSID::CONFIG, NF::NIL, &child) != ERR::Okay) {
+      FreeResource(parent);
+      log.warning("Failed to create child Config object for weak pinned cascade check.");
+      return -1;
+   }
+
+   if (SetOwner(child, parent) != ERR::Okay) {
+      FreeResource(child);
+      FreeResource(parent);
+      log.warning("SetOwner() failed for weak pinned cascade check.");
+      return -1;
+   }
+
+   const auto child_id = child->UID;
+   child->pinWeak();
+
+   if (FreeResource(parent) != ERR::Okay) {
+      child->unpinWeak();
+      log.warning("FreeResource() failed for parent in weak pinned cascade check.");
+      return -1;
+   }
+
+   if ((not child->defined(NF::FREE)) or (not child->defined(NF::ZOMBIE))) {
+      child->unpinWeak();
+      log.warning("Cascade free of a weak pinned child did not leave a zombie header.");
+      return -1;
+   }
+
+   if (child->RefCount.load(std::memory_order_acquire) != Object::WEAK_PINS) {
+      child->unpinWeak();
+      log.warning("Unexpected zombie RefCount after cascade free: %d.", int(child->RefCount.load()));
+      return -1;
+   }
+
+   if (CheckResourceExists(child_id) != ERR::False) {
+      child->unpinWeak();
+      log.warning("Cascaded child resource still exists in weak pinned cascade check.");
+      return -1;
+   }
+
+   child->unpinWeak();
+   return 0;
+}
+
+//********************************************************************************************************************
+// A strong-pinned child must defer its collection during a parent cascade (NF::FREE_ON_UNLOCK) and the deferred
+// collection via unpin(true) must then follow the same zombie path as a direct free.  A weak pin retains the header
+// for post-collection inspection.
+
+static int run_pinned_deferred_cascade_check(void)
+{
+   kt::Log log(__FUNCTION__);
+
+   OBJECTPTR parent = nullptr;
+   OBJECTPTR child = nullptr;
+
+   if (NewObject(CLASSID::CONFIG, NF::NIL, &parent) != ERR::Okay) {
+      log.warning("Failed to create parent Config object for deferred cascade check.");
+      return -1;
+   }
+
+   if (NewObject(CLASSID::CONFIG, NF::NIL, &child) != ERR::Okay) {
+      FreeResource(parent);
+      log.warning("Failed to create child Config object for deferred cascade check.");
+      return -1;
+   }
+
+   if (SetOwner(child, parent) != ERR::Okay) {
+      FreeResource(child);
+      FreeResource(parent);
+      log.warning("SetOwner() failed for deferred cascade check.");
+      return -1;
+   }
+
+   const auto child_id = child->UID;
+   child->pin();
+   child->pinWeak();
+
+   if (FreeResource(parent) != ERR::Okay) {
+      child->unpinWeak();
+      child->unpin();
+      log.warning("FreeResource() failed for parent in deferred cascade check.");
+      return -1;
+   }
+
+   if (child->defined(NF::FREE)) {
+      child->unpinWeak();
+      child->unpin();
+      log.warning("Strong pinned child was terminated by a parent cascade.");
+      return -1;
+   }
+
+   if (not child->defined(NF::FREE_ON_UNLOCK)) {
+      child->unpinWeak();
+      child->unpin();
+      log.warning("Strong pinned child was not marked for deferred collection.");
+      return -1;
+   }
+
+   child->unpin(true); // freeIfReady() collects the deferred child immediately
+
+   if ((not child->defined(NF::FREE)) or (not child->defined(NF::ZOMBIE))) {
+      child->unpinWeak();
+      log.warning("Deferred collection did not leave a zombie header.");
+      return -1;
+   }
+
+   if (child->RefCount.load(std::memory_order_acquire) != Object::WEAK_PINS) {
+      child->unpinWeak();
+      log.warning("Unexpected zombie RefCount after deferred collection: %d.", int(child->RefCount.load()));
+      return -1;
+   }
+
+   if (CheckResourceExists(child_id) != ERR::False) {
+      child->unpinWeak();
+      log.warning("Deferred child resource still exists after collection.");
+      return -1;
+   }
+
+   child->unpinWeak();
+   return 0;
+}
+
+//********************************************************************************************************************
+// Threaded stress: worker threads release weak pins while the main thread frees the object.  Whichever side crosses
+// zero must perform exactly one block release; correctness is confirmed by the absence of crashes, unbalanced-unpin
+// warnings and shutdown leak reports.
+
+static constexpr int ZOMBIE_STRESS_THREADS = 4;
+static constexpr int ZOMBIE_STRESS_PINS = 4; // Weak pins released per thread
+static OBJECTPTR glStressObject = nullptr;
+static std::atomic_bool glStressStart = false;
+
+static void zombie_stress_worker()
+{
+   while (not glStressStart.load(std::memory_order_acquire));
+   for (int i=0; i < ZOMBIE_STRESS_PINS; i++) glStressObject->unpinWeak();
+}
+
+static int run_threaded_zombie_release_check(void)
+{
+   kt::Log log(__FUNCTION__);
+
+   for (int iteration=0; iteration < 200; iteration++) {
+      OBJECTPTR object = nullptr;
+      if (NewObject(CLASSID::CONFIG, NF::NIL, &object) != ERR::Okay) {
+         log.warning("Failed to create Config object for threaded zombie check, iteration %d.", iteration);
+         return -1;
+      }
+
+      const auto object_id = object->UID;
+      for (int i=0; i < ZOMBIE_STRESS_THREADS * ZOMBIE_STRESS_PINS; i++) object->pinWeak();
+
+      glStressObject = object;
+      glStressStart.store(false, std::memory_order_release);
+
+      std::thread threads[ZOMBIE_STRESS_THREADS];
+      for (int i=0; i < ZOMBIE_STRESS_THREADS; i++) threads[i] = std::thread(&zombie_stress_worker);
+
+      glStressStart.store(true, std::memory_order_release);
+
+      auto error = FreeResource(object);
+
+      for (int i=0; i < ZOMBIE_STRESS_THREADS; i++) threads[i].join();
+
+      if (error != ERR::Okay) {
+         log.warning("FreeResource() returned %s in threaded zombie check, iteration %d.", GetErrorMsg(error), iteration);
+         return -1;
+      }
+
+      if (CheckResourceExists(object_id) != ERR::False) {
+         log.warning("Object resource still exists after threaded zombie check, iteration %d.", iteration);
+         return -1;
+      }
+   }
+
    return 0;
 }
 
@@ -439,6 +623,21 @@ int main(int argc, CSTRING *argv)
    }
 
    if (run_weak_pinned_object_free_check() != 0) {
+      close_kotuku();
+      return -1;
+   }
+
+   if (run_weak_pinned_cascade_free_check() != 0) {
+      close_kotuku();
+      return -1;
+   }
+
+   if (run_pinned_deferred_cascade_check() != 0) {
+      close_kotuku();
+      return -1;
+   }
+
+   if (run_threaded_zombie_release_check() != 0) {
       close_kotuku();
       return -1;
    }
