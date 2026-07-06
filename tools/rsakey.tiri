@@ -78,7 +78,7 @@ function signFiles(DestPath:str)
       input.acSeek(0, 0)
 
       check mSSL.VerifySig(input, 0, glPublicKey, "sha256", sig)
-      print("Verification passed.") end
+      print("Verification passed.")
    else
       print("Failed to generate signature: " .. mSys.GetErrorMsg(err));
    end
