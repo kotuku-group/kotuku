@@ -193,13 +193,13 @@ struct alignas(8) Object { // Must be 64-bit aligned
    APTR     CreatorMeta;         // The creator of the object is permitted to store a custom data pointer here.
    struct Object *Owner;         // The owner of this object
    std::atomic_uint64_t NotifyFlags; // Action subscription flags - space for 64 actions max
-   int8_t   ActionDepth;         // Debug builds only: Incremented each time an action or method is called on the object
-   std::atomic_char Queue;       // Counter of locks attained by LockObject(); decremented by ReleaseObject(); not stable by design (see lock())
-   std::atomic_char SleepQueue;  // For the use of LockObject() only
-   std::atomic<uint16_t> RefCount; // Packed pin counters: low byte strong pins, high byte weak pins.  NB: This is not a locking mechanism!
+   std::atomic<uint32_t> RefCount; // Packed pin counters: low byte strong pins, upper 24 bits weak pins.  NB: This is not a locking mechanism!
    OBJECTID UID;                 // Unique object identifier
    std::atomic<uint32_t> Flags;  // Object NF flags
    std::atomic_int ThreadID;     // Managed by locking functions.  Atomic due to volatility.
+   int8_t   ActionDepth;         // Debug builds only: Incremented each time an action or method is called on the object
+   std::atomic_char Queue;       // Counter of locks attained by LockObject(); decremented by ReleaseObject(); not stable by design (see lock())
+   std::atomic_char SleepQueue;  // For the use of LockObject() only
    char Name[MAX_NAME_LEN];      // The name of the object.  NOTE: This value can be adjusted to ensure that the struct is always 8-bit aligned.
 
    Object(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept :
@@ -208,13 +208,13 @@ struct alignas(8) Object { // Must be 64-bit aligned
       CreatorMeta(nullptr),
       Owner(nullptr),
       NotifyFlags(0),
-      ActionDepth(0),
-      Queue(0),
-      SleepQueue(0),
       RefCount(0),
       UID(ObjectID),
       Flags(0),
       ThreadID(0),
+      ActionDepth(0),
+      Queue(0),
+      SleepQueue(0),
       Name("") { }
 
    Object() = delete;
@@ -229,7 +229,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
    inline void setFlag(NF pFlag) { Flags.fetch_or(uint32_t(pFlag), std::memory_order_relaxed); }
    inline void clearFlag(NF pFlag) { Flags.fetch_and(~uint32_t(pFlag), std::memory_order_relaxed); }
 
-   // Two tiers of pinning are packed into RefCount: the low byte counts strong pins and the high byte counts weak
+   // Two tiers of pinning are packed into RefCount: the low byte counts strong pins and the upper 24 bits count weak
    // pins.  Both tiers keep the object's header block allocated after termination (zombie mode) until every pin is
    // released; only the header fields Flags and RefCount remain valid at that point, and pin holders may only test
    // NF::FREE and unpin.  Placement objects cannot be pinned because the Core does not own their memory block.
@@ -241,8 +241,8 @@ struct alignas(8) Object { // Must be 64-bit aligned
    // Weak pins - pinWeak()/unpinWeak() - never impede termination and exist purely for stale-reference detection,
    // e.g. callback subscriptions.  A weak pin on an ancestor cannot deadlock its destruction.
 
-   static constexpr uint16_t STRONG_PINS = 0x0001; // RefCount increment per strong pin
-   static constexpr uint16_t WEAK_PINS   = 0x0100; // RefCount increment per weak pin
+   static constexpr uint32_t STRONG_PINS = 0x00000001; // RefCount increment per strong pin
+   static constexpr uint32_t WEAK_PINS   = 0x00000100; // RefCount increment per weak pin
 
    inline void pin() {
       #ifndef NDEBUG
@@ -263,7 +263,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
       // Saturate at zero; a plain load-check-decrement would allow two racing threads to underflow the counter.
       auto ref_count = RefCount.load(std::memory_order_relaxed);
       while ((ref_count & 0xff) > 0) {
-         if (RefCount.compare_exchange_weak(ref_count, uint16_t(ref_count - STRONG_PINS), std::memory_order_acq_rel,
+         if (RefCount.compare_exchange_weak(ref_count, ref_count - STRONG_PINS, std::memory_order_acq_rel,
                std::memory_order_relaxed)) {
             if ((ref_count IS STRONG_PINS) and defined(NF::ZOMBIE)) {
                ReleaseZombie(this);
@@ -288,7 +288,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
          kt::Log("pinWeak").warning("Pinning placement object #%d (%s) is unsupported.", UID, className());
          DEBUG_BREAK
       }
-      if ((ref_count >> 8) >= 254) {
+      if ((ref_count >> 8) >= 0xfffffe) {
          kt::Log("pinWeak").warning("Weak pin overflow risk for object #%d (%s), count: %d", UID, className(), ref_count >> 8);
          DEBUG_BREAK
       }
@@ -300,7 +300,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
       // Saturate at zero on the weak byte; see unpin() for rationale.
       auto ref_count = RefCount.load(std::memory_order_relaxed);
       while ((ref_count >> 8) > 0) {
-         if (RefCount.compare_exchange_weak(ref_count, uint16_t(ref_count - WEAK_PINS), std::memory_order_acq_rel,
+         if (RefCount.compare_exchange_weak(ref_count, ref_count - WEAK_PINS, std::memory_order_acq_rel,
                std::memory_order_relaxed)) {
             if ((ref_count IS WEAK_PINS) and defined(NF::ZOMBIE)) ReleaseZombie(this);
             return;

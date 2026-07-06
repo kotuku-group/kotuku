@@ -100,11 +100,13 @@ struct subscription {
 struct unsubscription {
    OBJECTID ObjectID;
    ACTIONID ActionID;
+   OBJECTID SubscriberID; // The context current at the time of the deferred call; the drain runs under a different context.
    FUNCTION Callback;
    bool Filtered;
 
-   unsubscription(OBJECTID pObject, ACTIONID pAction, FUNCTION *pCallback) :
-      ObjectID(pObject), ActionID(pAction), Callback(pCallback ? *pCallback : FUNCTION{}), Filtered(pCallback) { }
+   unsubscription(OBJECTID pObject, ACTIONID pAction, FUNCTION *pCallback, OBJECTID pSubscriber) :
+      ObjectID(pObject), ActionID(pAction), SubscriberID(pSubscriber),
+      Callback(pCallback ? *pCallback : FUNCTION{}), Filtered(pCallback) { }
 };
 
 static std::recursive_mutex glSubLock; // Guards glSubscriptions; same-thread delayed queues are thread-local.
@@ -118,6 +120,29 @@ static ankerl::unordered_dense::set<OBJECTPTR> glZombies;
 constexpr uint64_t notify_bit(ACTIONID Id) { return 1ULL << (int(Id) & 63); }
 
 static void free_children(OBJECTPTR Object);
+static void unsubscribe_from_object(OBJECTPTR Object, ACTIONID ActionID, OBJECTID Subscriber, FUNCTION *Callback);
+
+//********************************************************************************************************************
+// Erases subscription records that dispatch marked as stale (subscriber freed without unsubscribing).  Record
+// destruction releases the weak pin, which may in turn release the subscriber's zombie header.  The caller must
+// hold glSubLock and glSubReadOnly must have returned to zero.
+
+static void sweep_stale_subscriptions(OBJECTPTR Object, ACTIONID ActionID)
+{
+   auto obj_it = glSubscriptions.find(Object->UID);
+   if (obj_it IS glSubscriptions.end()) return;
+
+   auto action_it = obj_it->second.find(int(ActionID));
+   if (action_it IS obj_it->second.end()) return;
+
+   std::erase_if(action_it->second, [](const ActionSubscription &Sub) { return Sub.Stale; });
+
+   if (action_it->second.empty()) {
+      Object->NotifyFlags.fetch_and(~notify_bit(ActionID), std::memory_order::relaxed);
+      obj_it->second.erase(action_it);
+      if (obj_it->second.empty()) glSubscriptions.erase(obj_it);
+   }
+}
 
 //********************************************************************************************************************
 // Applies subscription changes that were queued while glSubscriptions was in a read-only state.  The caller must
@@ -127,7 +152,12 @@ static void drain_delayed_subscriptions(OBJECTPTR Object)
 {
    if (not glDelayedSubscribe.empty()) { // Check if SubscribeAction() was called during the notification process
       for (auto &entry : glDelayedSubscribe) {
-         glSubscriptions[entry.ObjectID][int(entry.ActionID)].emplace_back(entry.Callback.Context, entry.Callback);
+         // The queue holds a weak pin on the subscriber context, so staleness can be tested safely here.  A
+         // context freed between queueing and the drain is dropped instead of being registered.
+         if (not entry.Callback.stale()) {
+            glSubscriptions[entry.ObjectID][int(entry.ActionID)].emplace_back(entry.Callback.Context, entry.Callback);
+         }
+         entry.Callback.unpin();
       }
       glDelayedSubscribe.clear();
    }
@@ -135,11 +165,11 @@ static void drain_delayed_subscriptions(OBJECTPTR Object)
    if (not glDelayedUnsubscribe.empty()) {
       for (auto &entry : glDelayedUnsubscribe) {
          auto callback = entry.Filtered ? &entry.Callback : nullptr;
-         if (Object->UID IS entry.ObjectID) UnsubscribeAction(Object, entry.ActionID, callback);
+         if (Object->UID IS entry.ObjectID) unsubscribe_from_object(Object, entry.ActionID, entry.SubscriberID, callback);
          else {
             OBJECTPTR obj;
             if (!AccessObject(entry.ObjectID, 3000, &obj)) {
-               UnsubscribeAction(obj, entry.ActionID, callback);
+               unsubscribe_from_object(obj, entry.ActionID, entry.SubscriberID, callback);
                ReleaseObject(obj);
             }
          }
@@ -907,10 +937,17 @@ ERR Action(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters)
       std::lock_guard<std::recursive_mutex> lock(glSubLock);
 
       glSubReadOnly++;
+      bool stale_found = false;
 
       if (auto it = glSubscriptions.find(Object->UID); it != glSubscriptions.end()) {
          if (it->second.contains(int(ActionID))) {
             for (auto &list : it->second[int(ActionID)]) {
+               if ((not list.Subscriber) or (list.Subscriber->terminating())) {
+                  // The subscriber was freed without unsubscribing; mark the record for the lazy sweep.
+                  list.Stale = true;
+                  stale_found = true;
+                  continue;
+               }
                #ifndef NDEBUG
                // Locked subscribers can sometimes warrant investigation
                if ((int(ActionID) > 0) and list.Subscriber->locked()) {
@@ -927,7 +964,10 @@ ERR Action(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters)
 
       glSubReadOnly--;
 
-      if (not glSubReadOnly) drain_delayed_subscriptions(Object);
+      if (not glSubReadOnly) {
+         if (stale_found) sweep_stale_subscriptions(Object, ActionID);
+         drain_delayed_subscriptions(Object);
+      }
    }
 
 #ifndef NDEBUG
@@ -2281,8 +2321,14 @@ void NotifySubscribers(OBJECTPTR Object, ACTIONID ActionID, APTR Parameters, ERR
 
    if ((object_it != glSubscriptions.end()) and (action_it != object_it->second.end()) and (not action_it->second.empty())) {
       glSubReadOnly++; // Prevents changes to glSubscriptions while we're processing it.
+      bool stale_found = false;
       for (auto &sub : action_it->second) {
-         if (sub.Subscriber) {
+         if ((not sub.Subscriber) or (sub.Subscriber->terminating())) {
+            // The subscriber was freed without unsubscribing; mark the record for the lazy sweep.
+            sub.Stale = true;
+            stale_found = true;
+         }
+         else {
             kt::SwitchContext ctx(sub.Subscriber);
             auto callback = (ACTION_CALLBACK)sub.Callback.Routine;
             callback(Object, ActionID, ErrorCode, Parameters, sub.Callback.Meta);
@@ -2290,7 +2336,10 @@ void NotifySubscribers(OBJECTPTR Object, ACTIONID ActionID, APTR Parameters, ERR
       }
       glSubReadOnly--;
 
-      if (not glSubReadOnly) drain_delayed_subscriptions(Object);
+      if (not glSubReadOnly) {
+         if (stale_found) sweep_stale_subscriptions(Object, ActionID);
+         drain_delayed_subscriptions(Object);
+      }
    }
    else {
       log.warning("Unstable subscription flags discovered for object #%d, action %d", Object->UID, int(ActionID));
@@ -2666,8 +2715,12 @@ state.  The `Parameters` are the original arguments provided by the client - be 
 `NULL` even if an action specifies a required parameter structure.  Notice that because subscriptions are context
 sensitive, ~CurrentContext() can be used to get a reference to the object that initiated the subscription.
 
-To terminate an action subscription, use the ~UnsubscribeAction() function.  Subscriptions are not resource tracked,
-so it is critical to match the original call with an unsubscription.
+To terminate an action subscription, use the ~UnsubscribeAction() function.  Matching each subscription with an
+unsubscription remains good practice because it releases the subscription record immediately.  If a subscriber is
+freed without unsubscribing, the record degrades safely: the subscriber's object header is weakly pinned for the
+lifetime of the record, dispatch recognises the freed subscriber and skips the callback, and the stale record is
+swept once the notification pass completes.  Until that sweep occurs, the subscriber's header remains allocated in
+zombie form.
 
 -INPUT-
 obj Object: The target object.
@@ -2695,7 +2748,10 @@ ERR SubscribeAction(OBJECTPTR Object, ACTIONID ActionID, FUNCTION *Callback)
    if (Object->collecting()) return ERR::Okay;
 
    if (glSubReadOnly) {
+      // Weakly pin the subscriber context so that the drain can test for staleness safely; another callback in
+      // the same notification pass could free the subscriber before the queue is processed.
       glDelayedSubscribe.emplace_back(Object->UID, ActionID, *Callback);
+      Callback->pin();
       Object->NotifyFlags.fetch_or(notify_bit(ActionID), std::memory_order::relaxed);
    }
    else {
@@ -2718,6 +2774,10 @@ subscriptions is context sensitive, so the context of the original ~SubscribeAct
 UnsubscribeAction().
 
 To terminate multiple subscriptions in a single call, set the `Action` parameter to zero.
+
+Unsubscribing releases the subscription record (and the weak pin it holds on the subscriber) immediately.  A
+subscriber that is freed without unsubscribing is tolerated - its remaining records are swept lazily the next time
+each subscribed action is dispatched - but explicit unsubscription remains the recommended practice.
 
 -INPUT-
 obj Object: The object that you are unsubscribing from.
@@ -2743,25 +2803,36 @@ ERR UnsubscribeAction(OBJECTPTR Object, ACTIONID ActionID, FUNCTION *Callback)
    if ((ActionID < AC::NIL) or (ActionID >= AC::END)) return log.warning(ERR::Args);
 
    if (glSubReadOnly) {
-      glDelayedUnsubscribe.emplace_back(Object->UID, ActionID, Callback);
+      // Capture the current context now; the delayed queue is drained under the notifier's context, which
+      // would otherwise be matched as the subscriber.
+      glDelayedUnsubscribe.emplace_back(Object->UID, ActionID, Callback, tlContext.back().obj->UID);
       return ERR::Okay;
    }
 
    std::lock_guard<std::recursive_mutex> lock(glSubLock);
+   unsubscribe_from_object(Object, ActionID, tlContext.back().obj->UID, Callback);
+   return ERR::Okay;
+}
 
+//********************************************************************************************************************
+// Shared erase path for UnsubscribeAction() and the delayed-unsubscribe replay, which must supply the subscriber
+// that was current when the deferred call was made.  The caller must hold glSubLock.  Record destruction releases
+// the weak pin held on the subscriber.
+
+static void unsubscribe_from_object(OBJECTPTR Object, ACTIONID ActionID, OBJECTID Subscriber, FUNCTION *Callback)
+{
    if (ActionID IS AC::NIL) { // Unsubscribe all actions associated with the subscriber.
       if (glSubscriptions.contains(Object->UID)) {
-         OBJECTID subscriber = tlContext.back().obj->UID;
          bool need_restart = true;
          while (need_restart) {
             need_restart = false;
             for (auto & [action, list] : glSubscriptions[Object->UID]) {
                if (Callback) {
-                  std::erase_if(list, [subscriber, Callback](const auto &sub) {
-                     return (sub.SubscriberID IS subscriber) and sub.Callback.identical(*Callback);
+                  std::erase_if(list, [Subscriber, Callback](const auto &sub) {
+                     return (sub.SubscriberID IS Subscriber) and sub.Callback.identical(*Callback);
                   });
                }
-               else std::erase_if(list, [subscriber](const auto &sub) { return sub.SubscriberID IS subscriber; });
+               else std::erase_if(list, [Subscriber](const auto &sub) { return sub.SubscriberID IS Subscriber; });
 
                if (list.empty()) {
                   Object->NotifyFlags.fetch_and(~notify_bit(ACTIONID(action)), std::memory_order::relaxed);
@@ -2781,14 +2852,13 @@ ERR UnsubscribeAction(OBJECTPTR Object, ACTIONID ActionID, FUNCTION *Callback)
       }
    }
    else if ((glSubscriptions.contains(Object->UID)) and (glSubscriptions[Object->UID].contains(int(ActionID)))) {
-      auto subscriber = tlContext.back().obj->UID;
       auto &list = glSubscriptions[Object->UID][int(ActionID)];
       if (Callback) {
-         std::erase_if(list, [subscriber, Callback](const auto &sub) {
-            return (sub.SubscriberID IS subscriber) and sub.Callback.identical(*Callback);
+         std::erase_if(list, [Subscriber, Callback](const auto &sub) {
+            return (sub.SubscriberID IS Subscriber) and sub.Callback.identical(*Callback);
          });
       }
-      else std::erase_if(list, [subscriber](const auto &sub) { return sub.SubscriberID IS subscriber; });
+      else std::erase_if(list, [Subscriber](const auto &sub) { return sub.SubscriberID IS Subscriber; });
 
       if (list.empty()) {
          Object->NotifyFlags.fetch_and(~notify_bit(ActionID), std::memory_order::relaxed);
@@ -2799,6 +2869,4 @@ ERR UnsubscribeAction(OBJECTPTR Object, ACTIONID ActionID, FUNCTION *Callback)
          else glSubscriptions[Object->UID].erase(int(ActionID));
       }
    }
-
-   return ERR::Okay;
 }

@@ -1,0 +1,78 @@
+-- Verifies subscriber lifetime safety in the core action subscription machinery.  Subscription records weakly pin
+-- their subscriber, so a subscriber freed without unsubscribing must be skipped at dispatch and swept lazily -
+-- without crashing on the stale context and without disturbing other live subscribers.  Unsubscribing from within
+-- a notification callback must also be honoured once the notification pass completes.
+
+-- A sub-script subscribes to an action on the target and is then freed.  Firing the action must not invoke the
+-- stale callback; the first pass sweeps the record lazily and the second confirms stability.
+
+@Test function StaleScriptSubscriberIsDiscarded()
+   target = obj.new('config', { name='sub_lifetime_target' })
+
+   sub_script = obj.new('tiri', { statement=[[
+      local target = obj.find('sub_lifetime_target')
+      assert(target != nil, 'Sub-script could not find the target object')
+      target.subscribe('refresh', function(UID, Args)
+         error('An action callback fired for a freed script context')
+      end)
+   ]] })
+
+   check sub_script.acActivate()
+   sub_script.free()
+   sub_script = nil
+
+   target.acRefresh()
+   target.acRefresh()
+end
+
+-- With a freed subscriber ahead of a live one in the subscription list, the stale record's lazy removal must not
+-- disturb delivery to the live subscriber.
+
+@Test function LiveSubscriberSurvivesStaleRemoval()
+   target = obj.new('config', { name='sub_lifetime_live' })
+
+   sub_script = obj.new('tiri', { statement=[[
+      local target = obj.find('sub_lifetime_live')
+      assert(target != nil, 'Sub-script could not find the target object')
+      target.subscribe('refresh', function(UID, Args)
+         error('An action callback fired for a freed script context')
+      end)
+   ]] })
+
+   check sub_script.acActivate()
+
+   local count = 0
+   target.subscribe('refresh', function(UID, Args)
+      count++
+   end)
+
+   sub_script.free()
+   sub_script = nil
+
+   target.acRefresh()
+   assert(count is 1, 'Live subscriber did not receive the notification after stale record removal')
+
+   target.acRefresh()
+   assert(count is 2, 'Live subscriber stopped receiving notifications on subsequent events')
+
+   target.unsubscribe('refresh')
+end
+
+-- An unsubscribe call made from inside a notification callback is deferred until the pass completes; it must
+-- remove the caller's own record and not linger or affect other subscribers.
+
+@Test function UnsubscribeDuringNotificationIsHonoured()
+   target = obj.new('config')
+
+   local one_shot = 0
+   target.subscribe('refresh', function(UID, Args)
+      one_shot++
+      target.unsubscribe('refresh')
+   end)
+
+   target.acRefresh()
+   assert(one_shot is 1, 'The one-shot callback did not fire on the first notification')
+
+   target.acRefresh()
+   assert(one_shot is 1, 'The one-shot callback fired again despite unsubscribing during notification')
+end
