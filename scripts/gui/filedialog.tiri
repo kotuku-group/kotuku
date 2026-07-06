@@ -60,7 +60,7 @@ gui.dialog.file = function(Options)
                title   = 'Confirmation Required',
                type    = 'warning',
                message = msg,
-               popOver = windowID,
+               popOver = self.windowID,
                feedback = function(Dialog, Response, State)
                   if Response?.id is 1 then
                      self?.feedback(self, self.fileview.path, list)

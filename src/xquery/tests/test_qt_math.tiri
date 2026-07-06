@@ -4,7 +4,8 @@
    include 'xml'
    import 'io/filesearch'
 
-extern runTest, assertEqId, assertStringId
+extern assertEqId, assertStringId
+local runTest
 
 rx_spaces = regex.new('\\s+')
 

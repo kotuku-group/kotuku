@@ -138,13 +138,13 @@ gui.dialog.message = function(Options)
 
       if Options.envTemplate then
          -- The EnvTemplate can redefine the default body, GUI templates etc
-         doc ..= options.envTemplate .. '\n'
+         doc ..= Options.envTemplate .. '\n'
       end
 
       if Options.template then
          -- A dialog-specific template can override the body style and change any class templates,
          -- header and footer etc
-         doc ..= '<include src="' .. options.template .. '"/>\n'
+         doc ..= '<include src="' .. Options.template .. '"/>\n'
       end
 
       icon = Options.image ?? defaultIcon(self)
@@ -218,8 +218,8 @@ gui.dialog.message = function(Options)
          self.message = Message
          self.fmtMessage = nil
       end
-      lDoc.acClear()
-      lDoc.acDataFeed(nil, DATA_XML, buildDocument())
+      self.document.acClear()
+      self.document.acDataFeed(nil, DATA_XML, buildDocument())
    end
 
    -- Work out the dialog width based on the message.

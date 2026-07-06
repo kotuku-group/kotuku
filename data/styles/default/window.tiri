@@ -45,8 +45,12 @@ return {
    titlebar = function(Window:obj)
       bar = Window.surface.new('surface', { drag=Window.surface, height=21, x=5, y=5, xOffset=5, flags='!StickToFront' })
 
-      lGradientA = defineGradient(nil, nil, {r=76,g=62,b=128,a=255}, {r=126,g=123,b=187,a=255}, 0, 0, '100%', 0)
-      lGradientB = defineGradient(nil, nil, {r=76,g=76,b=76,a=255}, {r=150,g=150,b=150,a=255}, 0, 0, '100%', 0)
+      lGradientA = gui.simpleGradient(Window.scene, 'window_titlebar_inactive', {
+         {r=76,g=62,b=128,a=255}, {r=126,g=123,b=187,a=255}
+      }, 0, 0, 1, 0, 'boundingbox')
+      lGradientB = gui.simpleGradient(Window.scene, 'window_titlebar_active', {
+         {r=76,g=76,b=76,a=255}, {r=150,g=150,b=150,a=255}
+      }, 0, 0, 1, 0, 'boundingbox')
 
       bar.mtAddCallback(function(Surface, Bitmap)
          err, path = lVec.generateRectangle(0, 0, Surface.width, Surface.height)
