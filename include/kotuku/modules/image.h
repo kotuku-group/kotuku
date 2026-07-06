@@ -147,32 +147,32 @@ class objImage : public Object {
    }
 
    inline ERR getAuthor(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 152));
+      Value = *((std::string *)(((int8_t *)this) + 160));
       return ERR::Okay;
    }
 
    inline ERR getCopyright(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 184));
+      Value = *((std::string *)(((int8_t *)this) + 192));
       return ERR::Okay;
    }
 
    inline ERR getTitle(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 216));
+      Value = *((std::string *)(((int8_t *)this) + 224));
       return ERR::Okay;
    }
 
    inline ERR getSoftware(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 248));
+      Value = *((std::string *)(((int8_t *)this) + 256));
       return ERR::Okay;
    }
 
    inline ERR getDescription(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 280));
+      Value = *((std::string *)(((int8_t *)this) + 288));
       return ERR::Okay;
    }
 
    inline ERR getDisclaimer(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 312));
+      Value = *((std::string *)(((int8_t *)this) + 320));
       return ERR::Okay;
    }
 

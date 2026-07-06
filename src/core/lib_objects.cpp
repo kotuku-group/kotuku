@@ -112,6 +112,8 @@ static ankerl::unordered_dense::map<OBJECTID, ankerl::unordered_dense::map<int, 
 static std::vector<unsubscription> glDelayedUnsubscribe;
 static std::vector<subscription> glDelayedSubscribe;
 static int glSubReadOnly = 0; // To prevent modification of glSubscriptions
+static std::mutex glZombieLock;
+static ankerl::unordered_dense::set<OBJECTPTR> glZombies;
 
 static void free_children(OBJECTPTR Object);
 
@@ -159,6 +161,65 @@ static void free_object_block(OBJECTPTR Object)
    if (not Object) return;
    Object->~Object();
    aligned_block_free(Object);
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+ReleaseZombie: Releases a terminated object header block.
+Status: private
+Category: Objects
+
+This function is for internal object reference-count handling only.  It releases a zombie object block after object
+teardown has completed and the last pin has been removed.
+
+-INPUT-
+obj Object: The zombie object header block to release.
+
+-END-
+
+*********************************************************************************************************************/
+
+void ReleaseZombie(OBJECTPTR Object)
+{
+   if (not Object) return;
+
+   if ((not Object->defined(NF::ZOMBIE)) or (Object->RefCount.load(std::memory_order_acquire) != 0)) {
+      kt::Log("ReleaseZombie").warning("Invalid zombie release for object block %p.", Object);
+      #ifndef NDEBUG
+      DEBUG_BREAK
+      #endif
+      return;
+   }
+
+   {
+      std::lock_guard lock(glZombieLock);
+      glZombies.erase(Object);
+   }
+
+   free_object_block(Object);
+}
+
+//********************************************************************************************************************
+
+void release_zombie_blocks(void)
+{
+   std::vector<OBJECTPTR> zombies;
+
+   {
+      std::lock_guard lock(glZombieLock);
+      zombies.assign(glZombies.begin(), glZombies.end());
+      glZombies.clear();
+   }
+
+   for (auto object : zombies) {
+      #ifndef NDEBUG
+      kt::Log("Shutdown").warning("Force-releasing zombie object block %p with RefCount %d.", object,
+         int(object->RefCount.load(std::memory_order_acquire)));
+      #endif
+      object->RefCount.store(0, std::memory_order_release);
+      free_object_block(object);
+   }
 }
 
 //********************************************************************************************************************
@@ -285,6 +346,7 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 
       // Object destruction is guaranteed; queued async actions can be cancelled safely.
 
+      if (not is_placement) Object->pin();
       drain_action_queue(Object->UID, true);
 
       // Mark the object as being in the free process.  The mark prevents any further access to the object via
@@ -361,7 +423,22 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
       }
    } // Object lock
 
-   if (not is_placement) free_object_block(Object);
+   if (not is_placement) {
+      Object->setFlag(NF::ZOMBIE);
+      if (Object->RefCount.load(std::memory_order_acquire) IS 1) {
+         // Fast path: only the terminator's own strong pin remains (no weak pins), so no other holder can race
+         // the release and the zombie registry can be bypassed entirely.
+         Object->RefCount.store(0, std::memory_order_release);
+         free_object_block(Object);
+      }
+      else {
+         {
+            std::lock_guard lock(glZombieLock);
+            glZombies.emplace(Object);
+         }
+         Object->unpin();
+      }
+   }
    return ERR::Okay;
 }
 
@@ -2501,10 +2578,10 @@ copies-input, mutates-object, blocking
 static const char sn_lookup[256] = {
    '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
    '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
-   '_', '_', '_', '_', '0', '1', '2', '3', '4', '5', '6', '7', '8', '_', '_', '_', '_', '_', '_', '_', '_', 'a',
+   '_', '_', '_', '_', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '_', '_', '_', '_', '_', '_', 'a',
    'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w',
-   'x', 'y', '_', '_', '_', '_', '_', '_', '_', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
-   'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', '_', '_', '_', '_', '_', '_',
+   'x', 'y', 'z', '_', '_', '_', '_', '_', '_', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+   'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '_', '_', '_', '_', '_',
    '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
    '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',
    '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_',

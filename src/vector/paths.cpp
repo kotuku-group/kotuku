@@ -206,6 +206,12 @@ void gen_vector_path(extVector *Vector)
    else if (Vector->Class->BaseClassID IS CLASSID::VECTOR) {
       Vector->FinalX = 0;
       Vector->FinalY = 0;
+
+      // Dependency links are weak-pinned; drop any whose target has been terminated before generation reads them.
+
+      validate_object_link(Vector->AppendPath);
+      validate_object_link(Vector->GuidePath);
+      validate_object_link(Vector->Transition);
       if (((Vector->Dirty & RC::TRANSFORM) != RC::NIL) and (Vector->classID() != CLASSID::VECTORTEXT)) {
          Vector->Transform.reset();
          apply_parent_transforms(Vector, Vector->Transform);

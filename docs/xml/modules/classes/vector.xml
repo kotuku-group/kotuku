@@ -310,7 +310,7 @@
     <field>
       <name>AppendPath</name>
       <comment>Experimental.  Append the path of the referenced vector during path generation.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="G" write="S">Get/Set</access>
       <type>OBJECTPTR</type>
       <description>
 <p>The path of a vector object can be appended to another vector in real-time by making a reference to the former vector here.  The operation is completed immediately after the generation of the client vector's base path, prior to any transforms.</p>
@@ -471,7 +471,7 @@
     <field>
       <name>GuidePath</name>
       <comment>Transform the vector to follow a target path specified here.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="G" write="S">Get/Set</access>
       <type>OBJECTPTR</type>
       <description>
 <p>Setting the GuidePath to reference a path-generating vector will result in the source following the target path when rendered.  This works particularly well for text and shapes that follow a lengthy path.</p>
@@ -526,7 +526,7 @@
     <field>
       <name>Mask</name>
       <comment>Reference a VectorClip object here to apply a clipping mask to the rendered vector.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="G" write="S">Get/Set</access>
       <type>OBJECTPTR</type>
       <description>
 <p>A mask can be applied to a vector by setting the Mask field with a reference to a <class name="VectorClip">VectorClip</class> object.  Please refer to the <class name="VectorClip">VectorClip</class> class for further information.</p>
@@ -732,7 +732,7 @@ Z: Close Path
     <field>
       <name>Transition</name>
       <comment>Reference a VectorTransition object here to apply multiple transforms over the vector's path.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="G" write="S">Get/Set</access>
       <type>OBJECTPTR</type>
       <description>
 <p>A transition can be applied by setting this field with a reference to a <class name="VectorTransition">VectorTransition</class> object.  Please refer to the <class name="VectorTransition">VectorTransition</class> class for further information.</p>

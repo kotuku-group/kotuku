@@ -129,6 +129,11 @@ void resize_feedback(FUNCTION *Feedback, OBJECTID DisplayID, int X, int Y, int W
 
    log.traceBranch("%dx%d, %dx%d", X, Y, Width, Height);
 
+   // Feedback may be a copy sharing the stored field's weak pin, so a stale subscription is only skipped here;
+   // release is performed by release_stale_resize_feedback() where the owning display is locked.
+
+   if (Feedback->stale()) return;
+
    if (Feedback->isC()) {
       auto routine = (ERR (*)(OBJECTID, int, int, int, int, APTR))Feedback->Routine;
       kt::SwitchContext ctx(Feedback->Context);
@@ -143,13 +148,6 @@ void resize_feedback(FUNCTION *Feedback, OBJECTID DisplayID, int X, int Y, int W
          { "Height",  Height }
       }));
    }
-}
-
-//********************************************************************************************************************
-
-static void notify_resize_free(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   ((extDisplay *)CurrentContext())->ResizeFeedback.clear();
 }
 
 /*********************************************************************************************************************
@@ -191,6 +189,7 @@ static ERR DISPLAY_CheckXWindow(extDisplay *Self)
       Self->X = absx;
       Self->Y = absy;
 
+      release_stale_resize_feedback(Self);
       resize_feedback(&Self->ResizeFeedback, Self->UID, absx, absy, Self->Width, Self->Height);
    }
 
@@ -364,6 +363,11 @@ static ERR DISPLAY_Focus(extDisplay *Self)
 extDisplay::~extDisplay()
 {
    kt::Log log;
+
+   if (ResizeFeedback.defined()) {
+      ResizeFeedback.unpin();
+      ResizeFeedback.clear();
+   }
 
    if ((Flags & SCR::AUTO_SAVE) != SCR::NIL) {
       log.trace("Autosave enabled.");
@@ -2273,6 +2277,7 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
             int cx, cy, cwidth, cheight;
             winGetCoords(Self->WindowHandle, Self->X, Self->Y, Self->Width, Self->Height, cx, cy, cwidth, cheight);
 
+            release_stale_resize_feedback(Self);
             resize_feedback(&Self->ResizeFeedback, Self->UID, cx, cy, cwidth, cheight);
 
             if ((Self->Flags & SCR::VISIBLE) != SCR::NIL) {
@@ -2369,6 +2374,7 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
             QueueAction(AC::Focus, Self->UID);
          }
 
+         release_stale_resize_feedback(Self);
          resize_feedback(&Self->ResizeFeedback, Self->UID, Self->X, Self->Y, Self->Width, Self->Height);
 
          XSync(XDisplay, False);
@@ -2638,12 +2644,10 @@ static ERR GET_ResizeFeedback(extDisplay *Self, FUNCTION * &Value)
 
 static ERR SET_ResizeFeedback(extDisplay *Self, FUNCTION *Value)
 {
+   if (Self->ResizeFeedback.defined()) Self->ResizeFeedback.unpin();
    if (Value) {
-      if (Self->ResizeFeedback.isScript()) UnsubscribeAction(Self->ResizeFeedback.Context, AC::Free);
       Self->ResizeFeedback = *Value;
-      if (Self->ResizeFeedback.isScript()) {
-         SubscribeAction(Self->ResizeFeedback.Context, AC::Free, C_FUNCTION(notify_resize_free));
-      }
+      Self->ResizeFeedback.pin();
    }
    else Self->ResizeFeedback.clear();
    return ERR::Okay;

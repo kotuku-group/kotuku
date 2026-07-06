@@ -122,8 +122,7 @@ extVectorViewport::~extVectorViewport()
 {
    if ((Scene) and (!Scene->collecting()) and (!((extVectorScene *)Scene)->ResizeSubscriptions.empty())) {
       if (((extVectorScene *)Scene)->ResizeSubscriptions.contains(this)) {
-         auto &subs = ((extVectorScene *)Scene)->ResizeSubscriptions[this];
-         for (auto &sub : subs) deref_vector_callback(sub.second);
+         for (auto &sub : ((extVectorScene *)Scene)->ResizeSubscriptions[this]) release_callback(sub.second);
          ((extVectorScene *)Scene)->ResizeSubscriptions.erase(this);
       }
    }

@@ -333,6 +333,7 @@ enum class NF : uint32_t {
    PERMIT_TERMINATE = 0x00000200,
    ASYNC_ACTIVE = 0x00000400,
    PLACEMENT = 0x00000800,
+   ZOMBIE = 0x00001000,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(NF)
@@ -1498,6 +1499,7 @@ struct CoreBase {
    objMetaClass * (*_FindClass)(CLASSID ClassID);
    ERR (*_AnalysePath)(const std::string_view &Path, LOC *Type);
    ERR (*_FreeResource)(RESOURCEID ID);
+   void (*_ReleaseZombie)(OBJECTPTR Object);
    CLASSID (*_GetClassID)(OBJECTID Object);
    OBJECTID (*_GetOwnerID)(OBJECTID Object);
    ERR (*_CompareFilePaths)(const std::string_view &PathA, const std::string_view &PathB);
@@ -1595,6 +1597,7 @@ inline ERR FindObject(const std::string_view &Name, CLASSID ClassID, OBJECTID *O
 inline objMetaClass * FindClass(CLASSID ClassID) { return CoreBase->_FindClass(ClassID); }
 inline ERR AnalysePath(const std::string_view &Path, LOC *Type) { return CoreBase->_AnalysePath(Path,Type); }
 inline ERR FreeResource(RESOURCEID ID) { return CoreBase->_FreeResource(ID); }
+inline void ReleaseZombie(OBJECTPTR Object) { return CoreBase->_ReleaseZombie(Object); }
 inline CLASSID GetClassID(OBJECTID Object) { return CoreBase->_GetClassID(Object); }
 inline OBJECTID GetOwnerID(OBJECTID Object) { return CoreBase->_GetOwnerID(Object); }
 inline ERR CompareFilePaths(const std::string_view &PathA, const std::string_view &PathB) { return CoreBase->_CompareFilePaths(PathA,PathB); }
@@ -2297,3 +2300,10 @@ template <class T, class X = APTR> FUNCTION C_FUNCTION(T *pRoutine, X pMeta = 0)
 };
 
 inline CSTRING Object::className() { return Class->ClassName.c_str(); }
+
+// Weak-pin management for callback holders (refer to the zombie object contract in objects.h).  A pinned
+// Context header remains readable after termination, allowing stale() to be tested lazily at invoke time.
+
+inline void FUNCTION::pin() { if (Context) Context->pinWeak(); }
+inline void FUNCTION::unpin() { if (Context) Context->unpinWeak(); }
+inline bool FUNCTION::stale() const { return defined() and (Context) and (Context->terminating()); }

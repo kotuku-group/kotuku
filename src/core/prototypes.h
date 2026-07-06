@@ -19,6 +19,7 @@ extern "C" ERR FindObject(const std::string_view & Name, CLASSID ClassID, OBJECT
 extern "C" objMetaClass * FindClass(CLASSID ClassID);
 extern "C" ERR AnalysePath(const std::string_view & Path, LOC * Type);
 extern "C" ERR FreeResource(RESOURCEID ID);
+extern "C" void ReleaseZombie(OBJECTPTR Object);
 extern "C" CLASSID GetClassID(OBJECTID Object);
 extern "C" OBJECTID GetOwnerID(OBJECTID Object);
 extern "C" ERR CompareFilePaths(const std::string_view & PathA, const std::string_view & PathB);

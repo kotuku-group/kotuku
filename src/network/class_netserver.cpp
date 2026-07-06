@@ -439,6 +439,7 @@ static void server_accept_client_impl(HOSTHANDLE SocketFD, extNetServer *Self)
          // completed yet, in which case the connection feedback will be sent in a later state change.
 
          if (client_socket->State IS NTC::CONNECTED) {
+            if (Self->Feedback.stale()) clear_callback_function(Self->Feedback);
             if (Self->Feedback.isC()) {
                kt::SwitchContext context(Self->Feedback.Context);
                auto routine = (void (*)(extNetServer *, objClientSocket *, NTC, APTR))Self->Feedback.Routine;

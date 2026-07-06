@@ -82,19 +82,14 @@ static void clientsocket_outgoing(HOSTHANDLE FD, APTR Data) {
 
 //********************************************************************************************************************
 
-static void notify_free_feedback(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   ((extNetSocket *)CurrentContext())->Feedback.clear();
-}
+// Releases a weak-pinned callback subscription; refer to the zombie object contract in objects.h.
 
-static void notify_free_incoming(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
+static void clear_callback_function(FUNCTION &Callback)
 {
-   ((extNetSocket *)CurrentContext())->Incoming.clear();
-}
-
-static void notify_free_outgoing(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   ((extNetSocket *)CurrentContext())->Outgoing.clear();
+   if (Callback.defined()) {
+      Callback.unpin();
+      Callback.clear();
+   }
 }
 
 /*********************************************************************************************************************
@@ -234,7 +229,10 @@ static ERR NETSOCKET_Connect(extNetSocket *Self, struct ns::Connect *Args)
          if (!(Self->NetLookup = extNetLookup::create::local())) return ERR::CreateObject;
       }
 
-      ((extNetLookup *)Self->NetLookup)->Callback = C_FUNCTION(connect_name_resolved_nl);
+      auto &nl_callback = ((extNetLookup *)Self->NetLookup)->Callback;
+      clear_callback_function(nl_callback);
+      nl_callback = C_FUNCTION(connect_name_resolved_nl);
+      nl_callback.pin();
 
       if (Self->NetLookup->resolveName(Self->Address) != ERR::Okay) {
          // Cancel timer on DNS failure
@@ -450,9 +448,9 @@ extNetSocket::~extNetSocket()
    if (TimerHandle)    UpdateTimer(TimerHandle, 0);
    if (NetLookup)      FreeResource(NetLookup);
 
-   if (Feedback.isScript()) UnsubscribeAction(Feedback.Context, AC::Free);
-   if (Incoming.isScript()) UnsubscribeAction(Incoming.Context, AC::Free);
-   if (Outgoing.isScript()) UnsubscribeAction(Outgoing.Context, AC::Free);
+   clear_callback_function(Feedback);
+   clear_callback_function(Incoming);
+   clear_callback_function(Outgoing);
 
 #ifndef DISABLE_SSL
    tls_disconnect(this);

@@ -318,13 +318,6 @@ static void notify_focus(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR A
 
 //********************************************************************************************************************
 
-static void notify_free_event(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   ((extScintilla *)CurrentContext())->EventCallback.clear();
-}
-
-//********************************************************************************************************************
-
 static void notify_hide(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
    // Parent surface has been hidden
@@ -1755,12 +1748,10 @@ static ERR GET_EventCallback(extScintilla *Self, FUNCTION * &Value)
 
 static ERR SET_EventCallback(extScintilla *Self, FUNCTION *Value)
 {
+   if (Self->EventCallback.defined()) Self->EventCallback.unpin();
    if (Value) {
-      if (Self->EventCallback.isScript()) UnsubscribeAction(Self->EventCallback.Context, AC::Free);
       Self->EventCallback = *Value;
-      if (Self->EventCallback.isScript()) {
-         SubscribeAction(Self->EventCallback.Context, AC::Free, C_FUNCTION(notify_free_event));
-      }
+      Self->EventCallback.pin();
    }
    else Self->EventCallback.clear();
    return ERR::Okay;
@@ -2235,7 +2226,12 @@ static ERR consume_input_events(const InputEvent *Events, int TotalEvents)
 static void report_event(extScintilla *Self, SEF Event)
 {
    if ((Event & Self->EventFlags) != SEF::NIL) {
-       if (Self->EventCallback.isC()) {
+      if (Self->EventCallback.stale()) {
+         Self->EventCallback.unpin();
+         Self->EventCallback.clear();
+      }
+
+      if (Self->EventCallback.isC()) {
          kt::SwitchContext ctx(Self->EventCallback.Context);
          auto routine = (void (*)(extScintilla *, SEF, APTR)) Self->EventCallback.Routine;
          routine(Self, Event, Self->EventCallback.Meta);
@@ -2325,6 +2321,11 @@ static ERR idle_timer(extScintilla *Self, int64_t Elapsed, int64_t CurrentTime)
 
 extScintilla::~extScintilla() {
    delete API;
+
+   if (EventCallback.defined()) {
+      EventCallback.unpin();
+      EventCallback.clear();
+   }
 
    if (TimerID) UpdateTimer(TimerID, 0);
 

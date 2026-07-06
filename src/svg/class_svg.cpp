@@ -32,11 +32,6 @@ Please refer to the W3C's online documentation for exhaustive information on the
 
 *********************************************************************************************************************/
 
-static void notify_free_frame_callback(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   ((extSVG *)CurrentContext())->FrameCallback.clear();
-}
-
 //********************************************************************************************************************
 
 static void notify_free_scene(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
@@ -493,12 +488,10 @@ static ERR GET_FrameCallback(extSVG *Self, FUNCTION **Value)
 
 static ERR SET_FrameCallback(extSVG *Self, FUNCTION *Value)
 {
+   if (Self->FrameCallback.defined()) Self->FrameCallback.unpin();
    if (Value) {
-      if (Self->FrameCallback.isScript()) UnsubscribeAction(Self->FrameCallback.Context, AC::Free);
       Self->FrameCallback = *Value;
-      if (Self->FrameCallback.isScript()) {
-         SubscribeAction(Self->FrameCallback.Context, AC::Free, C_FUNCTION(notify_free_frame_callback));
-      }
+      Self->FrameCallback.pin();
    }
    else Self->FrameCallback.clear();
    return ERR::Okay;
@@ -675,7 +668,10 @@ extSVG::~extSVG()
       if (Scene) UnsubscribeAction(Scene, AC::Free);
    }
 
-   if (FrameCallback.isScript()) UnsubscribeAction(FrameCallback.Context, AC::Free);
+   if (FrameCallback.defined()) {
+      FrameCallback.unpin();
+      FrameCallback.clear();
+   }
 
    if ((Target) and (Target IS Scene) and (Scene->Owner IS this)) FreeResource(Target);
 

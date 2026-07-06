@@ -247,13 +247,10 @@ if (INSTALL_TESTS)
    set_target_properties (test_pf_vector test_wildcmp PROPERTIES CXX_STANDARD 20 LINK_FLAGS_RELEASE "-s")
    install (TARGETS test_pf_vector test_wildcmp DESTINATION "tests/")
 
-   # Unix-only tests
-   if (NOT WIN32)
-      add_executable (test_memlocking "tests/test_memory_locking.cpp")
+   add_executable (test_memlocking "tests/test_memory_locking.cpp")
 
-      target_link_libraries (test_memlocking PRIVATE ${INIT_LINK})
+   target_link_libraries (test_memlocking PRIVATE ${INIT_LINK})
 
-      set_target_properties (test_memlocking PROPERTIES CXX_STANDARD 20 LINK_FLAGS_RELEASE "-s")
-      install (TARGETS test_memlocking DESTINATION "tests/")
-   endif ()
+   set_target_properties (test_memlocking PROPERTIES CXX_STANDARD 20 LINK_FLAGS_RELEASE "-s")
+   install (TARGETS test_memlocking DESTINATION "tests/")
 endif ()

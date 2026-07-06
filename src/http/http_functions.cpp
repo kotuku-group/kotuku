@@ -180,6 +180,8 @@ static ERR socket_outgoing(objNetSocket *Socket)
 
    int client_bytes_written = 0;
 
+   if (Self->Outgoing.stale()) clear_callback_function(Self->Outgoing);
+
    if (Self->Outgoing.defined()) {
       if (Self->Outgoing.isC()) {
          auto routine = (ERR (*)(extHTTP *, std::vector<uint8_t> &, APTR))Self->Outgoing.Routine;

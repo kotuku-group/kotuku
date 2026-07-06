@@ -152,6 +152,7 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
     "PERMIT_TERMINATE: Private.  Permits termination when a lock is held on the object.",
     "ASYNC_ACTIVE: Read-only indicator that asynchronous actions are queued or executing against this object.",
     "PLACEMENT: Private.  Uses placement-new to allocate the object in-place.",
+    "ZOMBIE: Private.  The object has been terminated but is waiting for the RefCount to reach zero before being destroyed.",
     { PRIVATE = 0 }
   )
 
@@ -735,6 +736,7 @@ class objTask;
     "FindClass",
     "AnalysePath",
     "FreeResource",
+    "ReleaseZombie",
     "GetClassID",
     "GetOwnerID",
     "CompareFilePaths",
@@ -1103,6 +1105,13 @@ template <class T, class X = APTR> FUNCTION C_FUNCTION(T *pRoutine, X pMeta = 0)
 };
 
 inline CSTRING Object::className() { return Class->ClassName.c_str(); }
+
+// Weak-pin management for callback holders (refer to the zombie object contract in objects.h).  A pinned
+// Context header remains readable after termination, allowing stale() to be tested lazily at invoke time.
+
+inline void FUNCTION::pin() { Context->pinWeak(); }
+inline void FUNCTION::unpin() { Context->unpinWeak(); }
+inline bool FUNCTION::stale() const { return defined() and (Context->terminating()); }
   ]==])
 
   if (glProgram is "idl-compile") then

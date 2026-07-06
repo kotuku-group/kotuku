@@ -293,6 +293,7 @@ void CloseCore(void)
 
    if (glCodeIndex < CP_FREE_PRIVATE_MEMORY) {
       glCodeIndex = CP_FREE_PRIVATE_MEMORY;
+      release_zombie_blocks();
       free_private_memory();
    }
 

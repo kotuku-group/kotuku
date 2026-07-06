@@ -278,6 +278,7 @@ static void server_incoming_from_client_impl(HOSTHANDLE SocketFD, extClientSocke
    log.traceBranch("Handle: %" PRId64 ", Socket: %d, Client: %d", int64_t(SocketFD), Server->UID, client->UID);
 
    auto error = ERR::Okay;
+   if (Server->Incoming.stale()) clear_callback_function(Server->Incoming);
    if (Server->Incoming.defined()) {
       if (Server->Incoming.isC()) {
          kt::SwitchContext context(Server->Incoming.Context);
@@ -389,6 +390,7 @@ static void clientsocket_outgoing_impl(HOSTHANDLE SocketFD, extClientSocket *Cli
        (ClientSocket->WriteQueue.Index >= ClientSocket->WriteQueue.Buffer.size()))) {
       // Fetch more data
 
+      if (Server->Outgoing.stale()) clear_callback_function(Server->Outgoing);
       if (Server->Outgoing.defined()) {
          if (Server->Outgoing.isC()) {
             auto routine = (ERR (*)(extNetSocket *, extClientSocket *, APTR))(Server->Outgoing.Routine);
@@ -402,7 +404,7 @@ static void clientsocket_outgoing_impl(HOSTHANDLE SocketFD, extClientSocket *Cli
                }), error) != ERR::Okay) error = ERR::Terminate;
          }
 
-         if (error != ERR::Okay) Server->Outgoing.clear();
+         if (error != ERR::Okay) clear_callback_function(Server->Outgoing);
       }
 
       // If the write queue is empty then we remove the FD-Write registration so that
@@ -642,6 +644,7 @@ static ERR CS_SET_State(extClientSocket *Self, NTC Value)
 
       Self->State = Value;
 
+      if (server->Feedback.stale()) clear_callback_function(server->Feedback);
       if (server->Feedback.defined()) {
          if (server->Feedback.isC()) {
             kt::SwitchContext context(server->Feedback.Context);

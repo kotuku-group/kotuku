@@ -162,12 +162,6 @@ static std::string get_datatype(CLIPTYPE Datatype)
 
 //********************************************************************************************************************
 
-static void notify_script_free(OBJECTPTR Object, ACTIONID ActionID, ERR Result, nullptr_t Args)
-{
-   auto Self = (objClipboard *)CurrentContext();
-   Self->RequestHandler.clear();
-}
-
 //********************************************************************************************************************
 
 static ERR add_file_to_host(objClipboard *Self, const std::vector<ClipItem> &Items, bool Cut)
@@ -472,6 +466,11 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
       log.branch("Data request from #%d received for item %d, datatype %d", Args->Object->UID, request->Item, request->Preference[0]);
 
       ERR error = ERR::Okay;
+      if (Self->RequestHandler.stale()) {
+         Self->RequestHandler.unpin();
+         Self->RequestHandler.clear();
+      }
+
       if (Self->RequestHandler.isC()) {
          auto routine = (ERR (*)(objClipboard *, OBJECTPTR, int, char *, APTR))Self->RequestHandler.Routine;
          kt::SwitchContext ctx(Self->RequestHandler.Context);
@@ -488,7 +487,10 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
       }
       else error = log.warning(ERR::FieldNotSet);
 
-      if (error IS ERR::Terminate) Self->RequestHandler.Type = CALL::NIL;
+      if (error IS ERR::Terminate) {
+         Self->RequestHandler.unpin();
+         Self->RequestHandler.clear();
+      }
 
       return error;
    }
@@ -501,8 +503,8 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
 
 objClipboard::~objClipboard()
 {
-   if (RequestHandler.isScript()) {
-      UnsubscribeAction(RequestHandler.Context, AC::Free);
+   if (RequestHandler.defined()) {
+      RequestHandler.unpin();
       RequestHandler.clear();
    }
 }
@@ -697,12 +699,10 @@ static ERR GET_RequestHandler(objClipboard *Self, FUNCTION * &Value)
 
 static ERR SET_RequestHandler(objClipboard *Self, FUNCTION *Value)
 {
+   if (Self->RequestHandler.defined()) Self->RequestHandler.unpin();
    if (Value) {
-      if (Self->RequestHandler.isScript()) UnsubscribeAction(Self->RequestHandler.Context, AC::Free);
       Self->RequestHandler = *Value;
-      if (Self->RequestHandler.isScript()) {
-         SubscribeAction(Self->RequestHandler.Context, AC::Free, C_FUNCTION(notify_script_free));
-      }
+      Self->RequestHandler.pin();
    }
    else Self->RequestHandler.clear();
    return ERR::Okay;
