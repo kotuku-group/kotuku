@@ -1,3 +1,4 @@
+// UPDATED: 2026-07-06 -- Documented extern declarations and protected host globals.
 // UPDATED: 2026-04-03 -- Documented `is not` as an alternative inequality form.
 [[appendix-migration-from-lua]]
 [appendix]
@@ -78,6 +79,10 @@ indexterm:[Lua, breaking changes] The following table lists all incompatible cha
 
 |Variables global by default
 |Variables local by default
+|<<sec-migration-scoping>>
+
+|Implicit reads of unknown globals
+|Use `global` or `extern`
 |<<sec-migration-scoping>>
 
 |Tables for sequential data
@@ -190,7 +195,7 @@ This change affects all table constructors, `ipairs()` iteration, string functio
 [[sec-migration-scoping]]
 === Variable Scoping
 
-In standard Lua, an undeclared variable is implicitly global.  In Tiri, all variables and functions are local by default.  Use the `global` keyword to declare globals explicitly.
+In standard Lua, an undeclared variable is implicitly global.  In Tiri, assignments to undeclared names create locals, and reads of undeclared names are compile-time errors.  Use the `global` keyword to declare globals created by the script.  Use `extern` for symbols supplied by another parsed file or by the embedding host.
 
 [source,tiri]
 ----
@@ -205,6 +210,9 @@ global glCounter = 0     -- explicitly global
 function inc()
    glCounter++           -- accesses global
 end
+
+extern hostValue
+print(hostValue)         -- host-supplied global
 ----
 
 The `local` keyword remains available for explicit scope control and multi-variable declarations.
@@ -214,7 +222,15 @@ The `local` keyword remains available for explicit scope control and multi-varia
 local a, b, c = 1, 2, 3
 ----
 
-See <<ch-variables-and-scoping>> for the full scoping rules, including the `global` keyword and naming conventions.
+Host-registered built-in names are protected from rebinding.  Replace a built-in name only by creating an explicit local shadow:
+
+[source,tiri]
+----
+math = {}                -- error: protected built-in global
+local math = {}          -- valid local shadow
+----
+
+See <<ch-variables-and-scoping>> for the full scoping rules, including `global`, `extern`, protected globals, and naming conventions.
 
 [[sec-migration-exception-handling]]
 === Exception Handling
@@ -705,6 +721,7 @@ The following Tiri features have no counterpart in standard Lua.  They do not re
 * **Type annotations**: `local x:num = 0` (see <<ch-type-system>>)
 * **Constant variables**: `local x <const> = 42` (see <<ch-variables-and-scoping>>)
 * **Enum declarations**: `enum PREFIX { MEMBER, pass:[...] }` (see <<sec-enum-declarations>>)
+* **External declarations**: `extern hostValue` (see <<sec-the-extern-keyword>>)
 * **To-be-closed variables**: `resource <close> = pass:[...]` (see <<ch-resource-management>>)
 * **Defer statement**: `defer pass:[...] end` (see <<ch-resource-management>>)
 * **Choose expressions**: `choose x from pass:[...] end` (see <<ch-pattern-matching>>)

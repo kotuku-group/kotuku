@@ -1,4 +1,5 @@
 // VERIFIED: 2026-02-10
+// UPDATED: 2026-07-06 -- Added `extern` to the keyword list.
 // UPDATED: 2026-05-24 — Added regex string shorthand (r'...') to String Literals section.
 
 [[ch-basic-syntax]]
@@ -73,16 +74,15 @@ The single underscore `_` is the blank identifier.  It is a valid target for ass
 
 The following words are reserved and cannot be used as identifiers:
 
-[cols="5*^"]
+[cols="6*^"]
 |===
-|`and`     |`as`       |`break`    |`check`    |`choose`
-|`continue`|`defer`    |`do`       |`else`     |`elseif`
-|`end`     |`enum`     |`except`   |`false`    |`for`
-|`from`    |`function` |`global`   |`has`      |`if`
-|`import`  |`in`       |`is`       |`local`    |`namespace`
-|`nil`     |`not`      |`or`       |`raise`    |`repeat`
-|`return`  |`success`  |`then`     |`thunk`    |`true`
-|`try`     |`until`    |`when`     |`while`    |`with`
+|`and`      |`as`      |`break`   |`check`    |`choose`  |`continue`
+|`defer`    |`do`      |`else`    |`elseif`   |`end`     |`enum`
+|`except`   |`extern`  |`false`   |`for`      |`from`    |`function`
+|`global`   |`has`     |`if`      |`import`   |`in`      |`is`
+|`local`    |`namespace`|`nil`    |`not`      |`or`      |`raise`
+|`repeat`   |`return`  |`success` |`then`     |`thunk`   |`true`
+|`try`      |`until`   |`when`    |`while`    |`with`    |
 |===
 
 Keywords are case-sensitive.  `and` is reserved; `And` and `AND` are valid identifiers.

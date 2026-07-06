@@ -1,3 +1,4 @@
+// UPDATED: 2026-07-06 -- Added the `extern` keyword.
 // UPDATED: 2026-04-03 -- Clarified `is not` as an inequality form using reserved words.
 [[appendix-reserved-words]]
 [appendix]
@@ -6,16 +7,15 @@ indexterm:[reserved words] indexterm:[keywords] This appendix provides a quick-r
 
 === Reserved Word List
 
-[cols="5*"]
+[cols="6*"]
 |===
-|`and`     |`as`       |`break`    |`check`    |`choose`
-|`continue`|`defer`    |`do`       |`else`     |`elseif`
-|`end`     |`enum`     |`except`   |`false`    |`for`
-|`from`    |`function` |`global`   |`has`      |`if`
-|`import`  |`in`       |`is`       |`local`    |`namespace`
-|`nil`     |`not`      |`or`       |`raise`    |`repeat`
-|`return`  |`success`  |`then`     |`thunk`    |`true`
-|`try`     |`until`    |`when`     |`while`    |`with`
+|`and`      |`as`      |`break`   |`check`    |`choose`  |`continue`
+|`defer`    |`do`      |`else`    |`elseif`   |`end`     |`enum`
+|`except`   |`extern`  |`false`   |`for`      |`from`    |`function`
+|`global`   |`has`     |`if`      |`import`   |`in`      |`is`
+|`local`    |`namespace`|`nil`    |`not`      |`or`      |`raise`
+|`repeat`   |`return`  |`success` |`then`     |`thunk`   |`true`
+|`try`      |`until`   |`when`    |`while`    |`with`    |
 |===
 
 === Reference by Category
@@ -39,6 +39,7 @@ indexterm:[reserved words] indexterm:[keywords] This appendix provides a quick-r
 
 |`local`    |Declares a variable or function with local scope.  See <<ch-variables-and-scoping>>.
 |`global`   |Declares a variable or function with global scope.  See <<ch-variables-and-scoping>>.
+|`extern`   |Declares that a symbol is supplied externally and resolves as a global reference.  See <<sec-the-extern-keyword>>.
 |`enum`     |Declares a group of named integer constants.  See <<sec-enum-declarations>>.
 |`function` |Declares a named or anonymous function.  See <<ch-functions>>.
 |`return`   |Returns values from a function.  See <<ch-functions>>.

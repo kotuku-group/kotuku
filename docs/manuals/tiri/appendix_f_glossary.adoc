@@ -62,6 +62,9 @@ A table value passed to `except` handlers, containing the fields `code`, `messag
 Exception threshold::
 The error code value that divides safe codes from exception codes.  Error codes at or above this threshold trigger exceptions when evaluated by `check`.  See <<sec-exception-threshold>>.
 
+Extern declaration::
+A declaration using `extern` to mark a name as supplied by another parsed file or by the embedding host.  The declaration creates no variable and emits no bytecode; it only authorises strict name resolution to treat the name as a global reference.  See <<sec-the-extern-keyword>>.
+
 Extended falsiness::
 The broader falsiness rules used by the `??` and `??=` operators.  Under extended falsiness, `nil`, `false`, `0`, `""`, and empty collections evaluate as falsey.  See <<sec-conditional-operators>>.
 
@@ -90,7 +93,7 @@ Kōtuku::
 The application framework that Tiri is integrated with.  Provides the object system, vector graphics engine, display management, and module architecture.
 
 Local-by-default::
-Tiri's scoping model in which undeclared variable names create local variables in the current scope.  The `global` keyword is required to create or access global variables.  See <<sec-local-by-default>>.
+Tiri's scoping model in which assignments to undeclared variable names create local variables in the current scope.  Reads of undeclared names are errors unless the name resolves to an existing global, a host-registered global, or an extern declaration.  See <<sec-local-by-default>>.
 
 LuaJIT::
 The high-performance Lua virtual machine and JIT compiler that serves as the foundation for the Tiri runtime.
@@ -124,6 +127,9 @@ The Tiri interpreter and application launcher executable.  Executes Tiri scripts
 
 Pipe operator::
 The `|>` operator, which passes the left operand as the first argument to the function on the right.  When the left operand is a range or array and the right operand is a bare function reference, the pipe becomes an iteration operator that calls the function for each element.  See <<sec-pipe-operator>>.
+
+Protected global::
+A host-registered global binding that cannot be rebound by script code.  Protected globals include built-in functions and interface tables.  Explicit local declarations can shadow protected global names within a lexical scope.  See <<sec-protected-host-globals>>.
 
 Range::
 An immutable sequence of numeric values defined by start, stop, and optional step values.  Exclusive ranges (`{a to b}`) exclude the stop value; inclusive ranges (`{a into b}`) include it.  See <<ch-ranges>>.

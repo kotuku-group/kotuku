@@ -1,3 +1,4 @@
+// UPDATED: 2026-07-06 -- Documented extern declarations and protected host globals.
 // VERIFIED: 2026-02-10
 
 [[ch-variables-and-scoping]]
@@ -28,6 +29,8 @@ A bare identifier without an assignment is a parse error:
 bare_var                 -- error: expected assignment
 a, b, c                  -- error: use 'local a, b, c' or assign values
 ----
+
+Reading an undeclared identifier is a compile-time error unless the name resolves to an existing local, upvalue, global, host-registered global, or <<sec-the-extern-keyword,external declaration>>.  This rule catches misspelt names before execution.
 
 [[sec-the-local-keyword]]
 === The local Keyword
@@ -94,6 +97,43 @@ print(VERBOSE)             -- 'true'
 
 Global variables are accessible from nested functions without re-declaration.  The `global` keyword can appear at any scope level, but the variable becomes globally visible.
 
+[[sec-the-extern-keyword]]
+=== The extern Keyword
+
+indexterm:[extern declarations] indexterm:[external symbols] The `extern` keyword declares that a name is supplied by another parsed file or by the embedding host.  An extern declaration emits no bytecode and creates no variable.  It only authorises strict name resolution to treat an otherwise unresolved name as a global reference.
+
+==== Syntax
+
+[source,ebnf]
+----
+extern_declaration = "extern" ( "*" | extern_name_list ) ;
+extern_name_list   = identifier { "," identifier } ;
+----
+
+[source,tiri]
+----
+extern runTest, assertEqual
+
+function run()
+   runTest(assertEqual)
+end
+----
+
+The declaration applies to the current parse and to functions nested inside it.  It does not persist across separate validation or compilation runs.
+
+==== Wildcard Extern
+
+`extern *` turns off name protection in the current parse, allowing unresolved identifiers to resolve as a global reference:
+
+[source,tiri]
+----
+extern *
+
+value = unknown_value -- Now legal, value is set to 'nil'
+----
+
+Use named extern declarations when the expected external surface is known.  Use `extern *` only for code that is intentionally compiled against an open host environment.
+
 ==== Global Functions
 
 Declaring a function with `global` exposes it to the parent scope.  This allows library scripts to make functions available to the caller:
@@ -114,6 +154,46 @@ It is common practice to declare global mutable variables with the `glCamelCase`
 global glWindowTitle = 'My App'
 global MAX_RETRIES <const> = 5
 ----
+
+[[sec-protected-host-globals]]
+=== Protected Host Globals
+
+indexterm:[protected globals] indexterm:[built-in globals] Host-registered global names are protected from rebinding.  This includes built-in functions and library or interface tables such as `math`, `table`, `string`, `obj`, and `tostring`.  A script cannot replace a protected binding through direct assignment, a `global` declaration, a `global function` declaration, or a direct protected-key write through the real `_G` table.  Computed writes through the real `_G` table are rejected because the target key cannot be proven unprotected.
+
+[source,tiri]
+----
+math = {}                    -- error: cannot override built-in 'math'
+global table = {}            -- error: cannot override built-in 'table'
+global function tostring()   -- error: cannot override built-in 'tostring'
+end
+_G.tostring = nil            -- error: cannot override built-in 'tostring'
+_G['math'] = nil             -- error: cannot override built-in 'math'
+_G[name] = value             -- error: computed global-environment store
+----
+
+A local binding may shadow a protected global within its lexical scope.  Variables use an explicit `local` declaration; unqualified function declarations are local by default:
+
+[source,tiri]
+----
+local math = 'local value'
+
+function tostring()
+   return 'local value'
+end
+
+print(_G.tostring(5))        -- '5'
+----
+
+Protected global bindings prevent replacement of the interface name.  They do not freeze the table or object stored in
+that binding:
+
+[source,tiri]
+----
+math.custom = 5              -- valid: member store into protected table
+math.custom = nil
+----
+
+If `_G` is explicitly shadowed by a local variable, writes to that local table follow ordinary table assignment rules.
 
 [[sec-assignment]]
 === Assignment
