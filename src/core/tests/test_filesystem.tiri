@@ -310,7 +310,7 @@ end
    err = mSys.CreateFolder(folder_path, 0)
    assert(err is ERR_FileExists, 'CreateFolder() should report ERR_FileExists for an existing folder, got: ' .. mSys.GetErrorMsg(err))
 
-   err, type = mSys.AnalysePath(folder_path)
+   local err, type = mSys.AnalysePath(folder_path)
    assert(err is ERR_Okay, 'AnalysePath() failed for created folder: ' .. mSys.GetErrorMsg(err))
    assert(type is LOC_FOLDER, 'AnalysePath() returned type ' .. type .. ' and not LOC_FOLDER')
 

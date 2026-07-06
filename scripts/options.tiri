@@ -549,13 +549,13 @@ function add_result_value(Result:table, ArgNames:table, Presence:table, Param:ta
    IsExplicit:bool):table
 
    if Param.multiple then
-      values = Result[Param.name]
-      if values is nil then
-         values = array<any>
-         Result[Param.name] = values
+      local param_values = Result[Param.name]
+      if param_values is nil then
+         param_values = array<any>
+         Result[Param.name] = param_values
       end
 
-      values:push(RawValue)
+      param_values:push(RawValue)
       ArgNames?[Param.name] = ArgName
       if IsExplicit then Presence?[Param.name] = true end
       return
