@@ -120,6 +120,35 @@ constexpr uint64_t notify_bit(ACTIONID Id) { return 1ULL << (int(Id) & 63); }
 static void free_children(OBJECTPTR Object);
 
 //********************************************************************************************************************
+// Applies subscription changes that were queued while glSubscriptions was in a read-only state.  The caller must
+// hold glSubLock and glSubReadOnly must have returned to zero.
+
+static void drain_delayed_subscriptions(OBJECTPTR Object)
+{
+   if (not glDelayedSubscribe.empty()) { // Check if SubscribeAction() was called during the notification process
+      for (auto &entry : glDelayedSubscribe) {
+         glSubscriptions[entry.ObjectID][int(entry.ActionID)].emplace_back(entry.Callback.Context, entry.Callback);
+      }
+      glDelayedSubscribe.clear();
+   }
+
+   if (not glDelayedUnsubscribe.empty()) {
+      for (auto &entry : glDelayedUnsubscribe) {
+         auto callback = entry.Filtered ? &entry.Callback : nullptr;
+         if (Object->UID IS entry.ObjectID) UnsubscribeAction(Object, entry.ActionID, callback);
+         else {
+            OBJECTPTR obj;
+            if (!AccessObject(entry.ObjectID, 3000, &obj)) {
+               UnsubscribeAction(obj, entry.ActionID, callback);
+               ReleaseObject(obj);
+            }
+         }
+      }
+      glDelayedUnsubscribe.clear();
+   }
+}
+
+//********************************************************************************************************************
 
 static void async_wait_callback(OBJECTID ObjectID, bool Active)
 {
@@ -897,6 +926,8 @@ ERR Action(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters)
       }
 
       glSubReadOnly--;
+
+      if (not glSubReadOnly) drain_delayed_subscriptions(Object);
    }
 
 #ifndef NDEBUG
@@ -2259,29 +2290,7 @@ void NotifySubscribers(OBJECTPTR Object, ACTIONID ActionID, APTR Parameters, ERR
       }
       glSubReadOnly--;
 
-      if (not glSubReadOnly) {
-         if (not glDelayedSubscribe.empty()) { // Check if SubscribeAction() was called during the notification process
-            for (auto &entry : glDelayedSubscribe) {
-               glSubscriptions[entry.ObjectID][int(entry.ActionID)].emplace_back(entry.Callback.Context, entry.Callback);
-            }
-            glDelayedSubscribe.clear();
-         }
-
-         if (not glDelayedUnsubscribe.empty()) {
-            for (auto &entry : glDelayedUnsubscribe) {
-               auto callback = entry.Filtered ? &entry.Callback : nullptr;
-               if (Object->UID IS entry.ObjectID) UnsubscribeAction(Object, entry.ActionID, callback);
-               else {
-                  OBJECTPTR obj;
-                  if (!AccessObject(entry.ObjectID, 3000, &obj)) {
-                     UnsubscribeAction(obj, entry.ActionID, callback);
-                     ReleaseObject(obj);
-                  }
-               }
-            }
-            glDelayedUnsubscribe.clear();
-         }
-      }
+      if (not glSubReadOnly) drain_delayed_subscriptions(Object);
    }
    else {
       log.warning("Unstable subscription flags discovered for object #%d, action %d", Object->UID, int(ActionID));
