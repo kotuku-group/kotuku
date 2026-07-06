@@ -1,7 +1,6 @@
 -- XQuery module loading integration tests
 
-   include 'xml'
-   include 'xquery'
+   include 'xml', 'xquery'
 
 @BeforeAll
 function init(State)

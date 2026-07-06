@@ -6,8 +6,7 @@ Documentation is available in the Kotuku Wiki.
 
    import 'gui'
    import 'gui/window'
-   include 'document'
-   include 'xml'
+   include 'document', 'xml'
 
    namespace 'gui'
 

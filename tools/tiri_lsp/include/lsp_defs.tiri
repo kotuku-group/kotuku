@@ -105,8 +105,8 @@ glBuiltins = {
       prototype = 'require(modname)'
    },
    ['include'] = {
-      comment = 'Includes a Tiri module into the current environment.',
-      prototype = 'include(modname)'
+      comment = 'Loads API definitions into the current parse context.',
+      prototype = "include 'module', 'module2'"
    },
    ['loadFile'] = {
       comment = 'Loads and executes a Tiri script file.',

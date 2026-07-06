@@ -271,7 +271,7 @@ static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
 }
 
 //********************************************************************************************************************
-// For the 'include' keyword.  Creates a temporary module object to process the definitions without formally opening
+// For the 'include' statement.  Creates a temporary module object to process the definitions without formally opening
 // an interface.
 
 [[nodiscard]] ERR load_include(extTiri *Script, CSTRING Module)

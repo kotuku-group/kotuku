@@ -414,7 +414,6 @@ void keyvalue_to_table(lua_State *, const KEYVALUE *);
 int fcmd_arg(lua_State *);
 int fcmd_msg(lua_State *);
 int fcmd_print(lua_State *);
-int fcmd_include(lua_State *);
 int fcmd_loadfile(lua_State *);
 int fcmd_exec(lua_State *);
 int fcmd_subscribe_event(lua_State *);
