@@ -49,6 +49,7 @@ struct ParserConfig {
 
 struct ParserError {
    ParserErrorCode code = ParserErrorCode::None;
+   uint8_t file_index = 0;  // FileSource index of the file the error was raised in (token spans store raw lines)
    std::string message;
    Token token;
 
@@ -56,8 +57,8 @@ struct ParserError {
    ParserError() = default;
 
    // Constructor to simplify error creation (accepts std::string, std::string_view, or const char*)
-   ParserError(ParserErrorCode Code, const Token& ErrorToken, std::string_view Message)
-      : code(Code), message(Message), token(ErrorToken) {}
+   ParserError(ParserErrorCode Code, const Token& ErrorToken, std::string_view Message, uint8_t FileIndex = 0)
+      : code(Code), file_index(FileIndex), message(Message), token(ErrorToken) {}
 };
 
 //********************************************************************************************************************
@@ -174,7 +175,9 @@ public:
    void report_limit_error(FuncState &, uint32_t limit, const char *);
 
    void emit_error(ParserErrorCode code, const Token &, std::string_view);
+   void emit_error(const ParserError &);   // Preserves the error's own file_index (e.g. errors from imported files)
    void emit_warning(ParserErrorCode code, const Token &, std::string_view);
+   ParserError make_error(ParserErrorCode, const Token &, std::string_view);  // Stamps the lexer's current file_index
    void set_error_rollback_callback(ErrorRollbackCallback, void *);
    void clear_error_rollback_callback(void *);
    void rollback_before_error();
@@ -192,9 +195,9 @@ private:
    void detach_from_lex();
    std::string format_lex_error(LexToken) const;
    std::string format_expected_message(TokenKind) const;
-   ParserError make_error(ParserErrorCode, const Token &, std::string_view);
    std::string describe_token(const Token &) const;
-   void log_trace(ParserChannel, const Token &, std::string_view) const;
+   void log_trace(ParserChannel, const Token &, std::string_view,
+      std::optional<uint8_t> FileIndex = std::nullopt) const;
 
    LexState *lex_state;
    FuncState *func_state;
