@@ -22,7 +22,7 @@ function hashBitmap(Bitmap)
 end
 
 function copyArea(Source, Dest, Left, Top, Right, Bottom, XDest, YDest)
-   check Source.mtCopyArea(Dest, BAF_NIL, Left, Top, Right - Left, Bottom - Top, XDest, YDest)
+   check Source.mtCopyArea(Dest, nil, Left, Top, Right - Left, Bottom - Top, XDest, YDest)
 end
 
 function copyRegion(Source, Dest, Left, Top, Right, Bottom)

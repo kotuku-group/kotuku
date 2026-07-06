@@ -2,6 +2,7 @@
 -- Flute tests for XQuery support in RIPL documents.
 
 include 'document'
+include 'xml'
 
 @BeforeAll function init(State)
    global glDocFolder = State.folder

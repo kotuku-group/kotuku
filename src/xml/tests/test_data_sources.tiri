@@ -1,5 +1,7 @@
 -- Tests for different XML data source methods
 
+   include 'xml'
+
 @AfterAll function cleanup()
    -- Clean up any remaining test files
    mSys.DeleteFile('temp:test_xml_path.xml')
@@ -20,8 +22,8 @@ end
    xml = obj.new("xml", { path = 'temp:test_xml_path.xml', flags = XMF_STRIP_HEADERS })
    tags = xml.tags
    assert(tags, "XML should load from file path")
-   assert(tags[1].attribs[0].name is "testRoot", "Root tag should be testRoot; got " .. tostring(tags[0].attribs[0].name))
-   assert(tags[1].children[0].children[0].attribs[0].value is "Path content", "Content should be preserved")
+   assert(tags[0].attribs[0].name is "testRoot", "Root tag should be testRoot; got " .. tostring(tags[0].attribs[0].name))
+   assert(tags[0].children[0].children[0].attribs[0].value is "Path content", "Content should be preserved")
 
    processing.collect()
    mSys.DeleteFile('temp:test_xml_path.xml')
@@ -35,7 +37,7 @@ end
    testXML = '<sourceRoot><sourceChild>Object content</sourceChild></sourceRoot>'
    memory = obj.new('file', { flags = FL_READ | FL_WRITE | FL_NEW | FL_BUFFER })
    memory.acWrite(testXML)
-   memory.acSeek(0, SEEK_SET)
+   memory.acSeek(0, SEEK_START)
 
    -- Load XML from object source
    xml = obj.new("xml", { source = memory })

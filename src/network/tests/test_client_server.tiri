@@ -162,6 +162,7 @@ end
 -- One-on-one basic communication test between client and server.
 
 @Test function BasicCommunication()
+   local read_msg_sent
    glPort++
 
    -- Create NetServer with comprehensive message handling

@@ -135,7 +135,7 @@ end
                local err, len = Client.acWrite(large_msg)
                if err != ERR_Okay then
                   logOutput('[Server] Write failed at message ' .. i .. ': ' .. mSys.GetErrorMsg(err))
-                  if (err is ERR_BufferOverflow or err is ERR_ResourceUnavailable) then
+                  if (err is ERR_BufferOverflow or err is ERR_DoesNotExist) then
                      logOutput('[Server] Buffer overflow correctly detected and handled')
                      overflow_handled = true
                      Socket.acSignal()
