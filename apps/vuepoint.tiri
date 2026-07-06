@@ -11,8 +11,7 @@ A file viewer for recognised documents like SVG and RIPL
    import 'gui/scrollbar'
    import 'gui/filedialog'
    import 'options'
-   include 'svg'
-   include 'image'
+   include 'svg', 'image'
 
 CLASSID_IMAGE <const> = 'Image':hash()
 

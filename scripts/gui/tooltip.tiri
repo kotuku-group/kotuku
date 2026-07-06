@@ -2,7 +2,7 @@
 Documentation is available in the Kotuku Wiki.
 --]]
 
-   include('display', 'vector')
+   include 'display', 'vector'
 
    namespace 'gui'
 

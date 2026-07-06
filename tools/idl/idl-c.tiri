@@ -3,8 +3,8 @@
 -- Usage: origo sdk:tools/idl/idl-c.tiri src=source.tdl
 -- Example: origo sdk:tools/idl/idl-c.tiri src=sdk:src/core/defs/core.tdl
 
-   include 'core'
-   include 'xml'
+   include 'core', 'xml'
+
    import 'json'
    import 'options'
 

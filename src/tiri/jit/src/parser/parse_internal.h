@@ -9,9 +9,13 @@
 #include <string_view>
 #include <cstdint>
 
+#include <kotuku/strings.hpp>
+
 #include "parse_concepts.h"  // Must be early for concept-constrained templates
 
 enum class TokenKind : uint16_t;
+
+inline constexpr auto HASH_INCLUDE = kt::strhash("include");
 
 // Constants (lj_parse_constants.cpp)
 

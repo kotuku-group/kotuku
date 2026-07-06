@@ -101,6 +101,7 @@ private:
    ParserResult<StmtNodePtr> parse_try();
    ParserResult<StmtNodePtr> parse_raise();
    ParserResult<StmtNodePtr> parse_check();
+   ParserResult<StmtNodePtr> parse_include_stmt();
    ParserResult<StmtNodePtr> parse_import();
    ParserResult<StmtNodePtr> parse_namespace();
    ParserResult<std::unique_ptr<BlockStmt>> parse_imported_file(std::string &, std::string_view, const Token& import_token);

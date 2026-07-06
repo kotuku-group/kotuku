@@ -1,5 +1,4 @@
-   include 'display'
-   include 'vector'
+   include 'display', 'vector'
 
    mGfx ?= mod.load('display')
 

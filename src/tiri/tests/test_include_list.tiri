@@ -1,0 +1,70 @@
+-- Flute regression tests for statement-only include lists.
+
+function assert_valid(Source:str, Context:str)
+   local result = debug.validate(Source)
+
+   assert(type(result) is 'table', Context .. ': debug.validate() should return a table')
+   assert(result.success is true, Context .. ': source should validate successfully')
+end
+
+function assert_invalid(Source:str, ExpectedMessage:str, Context:str)
+   local result = debug.validate(Source)
+
+   assert(type(result) is 'table', Context .. ': debug.validate() should return a table')
+   assert(result.success is false, Context .. ': source should fail validation')
+   assert(type(result.diagnostics) is 'table', Context .. ': diagnostics should be returned')
+   assert(#result.diagnostics > 0, Context .. ': at least one diagnostic should be reported')
+   assert(string.find(result.diagnostics[0].message, ExpectedMessage, 0, true) != nil,
+      Context .. ': diagnostic should contain "' .. ExpectedMessage .. '", got: ' ..
+      tostring(result.diagnostics[0].message))
+end
+
+@Test function IncludeListLoadsEveryModuleAtParseTime()
+   assert_valid([[
+      include 'core', 'xml'
+      local content_type = DATA_XML
+      local xml_flag = XMF_NEW
+      assert(content_type is DATA_XML)
+      assert(xml_flag is XMF_NEW)
+   ]], 'include list with constants from both modules')
+end
+
+@Test function SingleIncludeStatementStillWorks()
+   assert_valid([[
+      include 'xml'
+      local xml_flag = XMF_NEW
+      assert(xml_flag is XMF_NEW)
+   ]], 'single include statement')
+end
+
+@Test function IncludeListInsideFunctionLoadsConstants()
+   assert_valid([[
+      function load_inside()
+         include 'core', 'xml'
+         return XMF_NEW
+      end
+
+      assert(load_inside() is XMF_NEW)
+   ]], 'include list inside function body')
+end
+
+@Test function ParenthesisedIncludeIsRejected()
+   assert_invalid([[include('core')]], 'include uses statement syntax', 'single parenthesised include')
+   assert_invalid([[include('core', 'xml')]], 'include uses statement syntax', 'multi parenthesised include')
+end
+
+@Test function MalformedIncludeListsAreRejected()
+   assert_invalid([[include 'core',]], "'include' list items must be string literals", 'trailing comma')
+   assert_invalid([[include 'core', name]], "'include' list items must be string literals", 'non-string item')
+   assert_invalid([[include '']], 'invalid module name', 'empty module name')
+end
+
+@Test function UnrelatedParenlessCallsDoNotGainCommaLists()
+   assert_invalid([[
+      local function echo(Value)
+         return Value
+      end
+
+      echo 'a', 'b'
+   ]], 'unexpected expression list without assignment', 'unrelated paren-less string call')
+end

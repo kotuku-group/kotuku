@@ -6,8 +6,7 @@ Particle Graphics Benchmark
    import 'gui'
    import 'gui/window'
    import 'options'
-   include 'display'
-   include 'vector'
+   include 'display', 'vector'
 
    lVec = mVec
 

@@ -5,7 +5,6 @@
 
 constexpr auto HASH_ASSERT  = kt::strhash("assert");
 constexpr auto HASH_MSG     = kt::strhash("msg");
-constexpr auto HASH_INCLUDE = kt::strhash("include");
 
 // Known C library interface hashes - warnings for missing prototypes only apply to these
 
@@ -276,17 +275,6 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
             else if ((func_name->hash IS HASH_MSG) and not glPrintMsg) {
                // msg() is eliminated entirely when debug messaging is disabled at compile time.
                return ParserResult<ExpDesc>::success(ExpDesc(ExpKind::Void));
-            }
-            else if (func_name->hash IS HASH_INCLUDE) {
-               // Intercept include('module_name') to pre-load constants at parse time, not run-time.
-               if (not Payload.arguments.empty() and
-                   Payload.arguments[0]->kind IS AstNodeKind::LiteralExpr) {
-                  const auto *lit = std::get_if<LiteralValue>(&Payload.arguments[0]->data);
-                  if (lit and lit->kind IS LiteralKind::String and lit->string_value) {
-                     std::string mod_name(strdata(lit->string_value), lit->string_value->len);
-                     load_include(this->lex_state.L->script, mod_name.c_str());
-                  }
-               }
             }
          }
       }

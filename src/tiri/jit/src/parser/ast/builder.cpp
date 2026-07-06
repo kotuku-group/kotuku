@@ -20,6 +20,7 @@
 
 #include "../token_types.h"
 #include "../parse_types.h"
+#include "../parse_internal.h"
 #include "runtime/lj_str.h"
 #include "runtime/lj_tab.h"
 #include "runtime/lj_gc.h"
@@ -624,6 +625,16 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
          return ParserResult<StmtNodePtr>::success(nullptr);
 
       case TokenKind::Identifier: {
+         GCstr *identifier = current.identifier();
+         if (identifier and identifier->hash IS HASH_INCLUDE) {
+            Token next = this->ctx.tokens().peek(1);
+            if (next.kind() IS TokenKind::String) return this->parse_include_stmt();
+            if (next.kind() IS TokenKind::LeftParen) {
+               return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, next,
+                  "include uses statement syntax: include 'module', 'module2'");
+            }
+         }
+
          // Check for implicit local declaration with <const> or <close> attribute
          if (is_implicit_local_with_attribute(this->ctx.tokens())) {
             return this->parse_local();

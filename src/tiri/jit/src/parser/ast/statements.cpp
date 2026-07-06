@@ -986,6 +986,73 @@ ParserResult<StmtNodePtr> AstBuilder::parse_check()
 }
 
 //********************************************************************************************************************
+// Validates an include module name before load_include() touches the module loader.
+
+static bool include_module_name_is_valid(std::string_view Module)
+{
+   if (Module.empty() or Module.size() >= 32) return false;
+
+   for (char c : Module) {
+      if ((c >= 'a') and (c <= 'z')) continue;
+      if ((c >= 'A') and (c <= 'Z')) continue;
+      if ((c >= '0') and (c <= '9')) continue;
+      return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+// Parses include statements: include 'module', 'module2'
+//
+// Include is a compile-time statement.  It loads module constants and struct definitions while parsing and emits no
+// runtime bytecode.
+
+ParserResult<StmtNodePtr> AstBuilder::parse_include_stmt()
+{
+   Token include_token = this->ctx.tokens().current();
+   this->ctx.tokens().advance();  // consume 'include'
+
+   bool first_item = true;
+
+   while (true) {
+      Token name_token = this->ctx.tokens().current();
+      if (not name_token.is(TokenKind::String)) {
+         const char *message = first_item ? "include module name must be a string literal" :
+            "'include' list items must be string literals";
+         return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, name_token, message);
+      }
+
+      GCstr *name_str = name_token.payload().as_string();
+      if (not name_str) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, name_token, "invalid include module name");
+      }
+
+      std::string module_name(strdata(name_str), name_str->len);
+      if (not include_module_name_is_valid(module_name)) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token,
+            "invalid module name; only alpha-numeric names shorter than 32 characters are permitted with include");
+      }
+
+      if (auto error = load_include(this->ctx.lua().script, module_name.c_str()); error != ERR::Okay) {
+         std::string message;
+         if (error IS ERR::FileNotFound) message = std::format("requested include file '{}' does not exist", module_name);
+         else message = std::format("failed to process include file '{}': {}", module_name, GetErrorMsg(error));
+
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token, std::move(message));
+      }
+
+      this->ctx.tokens().advance();  // consume module string
+      first_item = false;
+
+      if (not this->ctx.match(TokenKind::Comma).ok()) break;
+   }
+
+   (void)include_token;
+   return ParserResult<StmtNodePtr>::success(nullptr);
+}
+
+//********************************************************************************************************************
 // Parses import statements: import 'library' [as alias]
 //
 // The import statement is a compile-time feature that reads and parses the referenced file, inlining its content as
