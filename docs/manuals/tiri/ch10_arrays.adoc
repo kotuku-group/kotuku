@@ -1,6 +1,7 @@
 // VERIFIED: 2026-02-12
 // UPDATED: 2026-05-18 - Updated negative index slicing to reflect corrected inclusive/exclusive stop semantics (commit 15d3bed4)
 // UPDATED: 2026-05-20 - Updated concat() with new API (separator-first, optional format, range support); removed join() which was merged into concat() (commit 2fbf2ea0)
+// UPDATED: 2026-07-02 - Documented in-place ..= append, byte-array string pushes, and array<char> as the preferred string-buffer builder (commit 1dc290463)
 
 [[ch-arrays]]
 == Arrays
@@ -164,7 +165,7 @@ tostring(array<double, 0>)            -- 'array<double, 0>'
 [discrete]
 ==== String Concatenation
 
-Byte arrays (`byte`, `char`) can be used with the `..` concatenation operator.  The array is converted to a string and concatenated with the other value.  The result is always a string.
+Byte arrays (`byte`, `char`) can be used with the `..` concatenation operator.  The array is converted to a string and concatenated with the other value.  The result is always a new string; neither operand is modified.
 
 [source,tiri]
 ----
@@ -175,7 +176,44 @@ buf .. 123                -- 'Hi123'
 buf .. array<byte> { 33 } -- 'Hi!'
 ----
 
-Non-byte arrays (e.g. `int`, `string`, `table`) cannot be concatenated and will raise an error.
+Non-byte arrays (e.g. `int`, `string`, `table`) cannot be concatenated with `..` and raise an error.
+
+[discrete]
+==== In-Place Append with `..=`
+
+When the target of a `..=` compound assignment is an array, the operator appends to the array in place instead of producing a new value.  The array is mutated and its length grows.  This differs from the `..` operator, which always produces a new string and never mutates its operands.
+
+The appended representation depends on the array's element type:
+
+* Byte arrays (`byte`, `char`) follow concatenation semantics.  A string operand contributes its bytes, preserving embedded NUL bytes; a number operand contributes its decimal text, identical to the conversion the `..` operator performs.
+* All other array types append the operand as a single element of the array's element type.  A number is stored as a numeric element, not as text; an incompatible operand raises an error.
+
+If the right operand is a function call or vararg, only its first value is appended.  The target is any assignable array reference, including a table or object field.  See <<sec-compound-assignment>> for the general rules governing compound assignment.
+
+[source,tiri]
+----
+buf = array<char>
+buf ..= 'Value = '   -- append 8 bytes
+buf ..= 42           -- append '42' as decimal text
+print(buf)           -- 'Value = 42'
+
+nums = array<int> { 1, 2 }
+nums ..= 3           -- append the element 3; nums = {1, 2, 3}
+----
+
+NOTE: On a byte array, `..=` stringifies numbers: `buf ..= 42` appends the two bytes `'42'`.  This is distinct from `push()`, which stores a number as a single raw byte.
+
+TIP: A byte array assembled with `..=` is the most efficient way to build a large string buffer.  Each append mutates the array in place and reuses spare capacity, avoiding the repeated allocation and copying that building a string with `..` in a loop incurs.  Recover the finished string with `tostring(buf)` or `buf:getString()`, or pass the array directly to functions that support character arrays.
+
+[source,tiri]
+----
+buf = array<char>
+for i, line in ipairs(lines) do
+   buf ..= line
+   buf ..= '\n'
+end
+text = tostring(buf)
+----
 
 [[sec-creating-arrays]]
 === Creating Arrays
@@ -318,11 +356,17 @@ end
 
 indexterm:[arrays, mutation] Appends one or more values to the end of the array.  Grows the array if necessary.  Returns the new length.  If called with no arguments, returns the current length without modification.
 
+For byte arrays (`byte`, `char`), string arguments are also accepted: the bytes of each string are appended in sequence, preserving embedded NUL bytes.  Integer arguments are appended as single bytes.  A single call may mix strings and integers.
+
 [source,tiri]
 ----
 arr = array<int>
 arr:push(10)         -- returns 1
 arr:push(20, 30)     -- returns 3
+
+buf = array<char>
+buf:push('Hello')     -- append 5 bytes; returns 5
+buf:push(32, 'World') -- append a space and 5 bytes; returns 11
 ----
 
 [discrete]
