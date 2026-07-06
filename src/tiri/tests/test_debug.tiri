@@ -74,6 +74,8 @@ end
 end
 
 @Test function SetEnvOfFunction()
+   global someVar
+
    function targetFunc()
       return someVar
    end

@@ -784,7 +784,7 @@ end
 end
 
 @Test(hotpath=true) function ResultWithMethodCall()
-   obj = {
+   local obj = {
       getValue = function(self)
          return 'method result'
       end

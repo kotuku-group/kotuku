@@ -41,7 +41,7 @@ end
 
 @Test function EachWithStringArray()
    arr = array<string> { 'hello', 'world' }
-   values = {}
+   local values = {}
    arr:each(function(v, i)
       values[i] = v
    end)

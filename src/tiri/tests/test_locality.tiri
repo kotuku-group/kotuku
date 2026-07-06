@@ -62,13 +62,13 @@ end
 
 @Test function GlobalInFunction()
    function innerFunction()
-      global gFromFunction = 'created inside'
+      global glFromFunction = 'created inside'
    end
 
-   assert(debug.locality('gFromFunction') is 'nil', 'gFromFunction should not exist before function call')
+   assert(debug.locality('glFromFunction') is 'nil', 'glFromFunction should not exist before function call')
    innerFunction()
-   assert(gFromFunction is 'created inside', 'Global should be accessible after function call')
-   assert(debug.locality('gFromFunction') is 'global', 'gFromFunction should have global locality')
+   assert(glFromFunction is 'created inside', 'Global should be accessible after function call')
+   assert(debug.locality('glFromFunction') is 'global', 'glFromFunction should have global locality')
 end
 
 -----------------------------------------------------------------------------------------------------------------------

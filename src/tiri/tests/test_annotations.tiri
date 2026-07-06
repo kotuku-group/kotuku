@@ -261,7 +261,7 @@ end
    assert(entry != nil, "No-args annotation should succeed")
    assert(#entry.annotations is 1, "Expected 1 annotation")
    assert(entry.annotations[0].name is "Disabled", "Expected annotation name 'Disabled'")
-   assert(#entry.annotations[0].args is 0, "Expected empty args table, got " .. count .. " entries")
+   assert(#entry.annotations[0].args is 0, "Expected empty args table, got " .. #entry.annotations[0].args .. " entries")
 end
 
 ----------------------------------------------------------------------------------------------------------------------

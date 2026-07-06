@@ -497,7 +497,7 @@ end
 @Test function EmbeddedConcat()
    test   = 'thing'
    struct = 'struct'
-   type   = test ? ('class ' .. struct) :> ('struct ' .. struct)
+   local type  = test ? ('class ' .. struct) :> ('struct ' .. struct)
    assert(type is 'class struct', "Failed embedded concat test: expected 'class struct', got " .. tostring(type))
 end
 
