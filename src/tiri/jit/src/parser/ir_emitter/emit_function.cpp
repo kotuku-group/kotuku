@@ -254,8 +254,11 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
             return ParserResult<ExpDesc>::success(blank_expr);
          }
 
-         // Check if this is a registered constant - cannot assign to constants
-         if (lookup_constant(name_ref.identifier.symbol)) {
+         // Registered constants are immutable unless this target resolves to an explicit local/upvalue shadow.
+         ExpDesc resolved;
+         this->lex_state.var_lookup_symbol(name_ref.identifier.symbol, &resolved);
+         if (lookup_constant(name_ref.identifier.symbol) and
+             resolved.k != ExpKind::Local and resolved.k != ExpKind::Upval) {
             std::string var_name(strdata(name_ref.identifier.symbol), name_ref.identifier.symbol->len);
             std::string msg = "cannot assign to constant '" + var_name + "'";
             return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::AssignToConstant, msg));
@@ -544,6 +547,11 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
          if (is_direct_global_store and ((name->flags & STRFLAG_PROTECTED_GLOBAL) != 0)) {
             return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::OverrideProtectedGlobal,
                std::format("cannot override built-in '{}'", std::string_view(strdata(name), name->len)),
+               Payload.name.segments.front().span));
+         }
+         if (is_direct_global_store and lookup_constant(name)) {
+            return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::AssignToConstant,
+               std::format("cannot assign to constant '{}'", std::string_view(strdata(name), name->len)),
                Payload.name.segments.front().span));
          }
          this->func_state.declared_globals.insert(name);

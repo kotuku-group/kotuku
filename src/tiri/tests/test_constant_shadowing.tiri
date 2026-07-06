@@ -1,0 +1,105 @@
+-- Flute regression tests for scoped shadowing of registry-backed constants.
+
+global glConstantShadowCounter = 0
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+function assert_activation_fails(Statement:str, Message:str)
+   local script = obj.new('tiri', { statement = Statement })
+   local err = script.acActivate()
+
+   assert(err != ERR_Okay, Message .. ' should fail activation')
+   assert(script.error != ERR_Okay, Message .. ' should set a script error')
+   assert(string.find(script.errorMessage, 'cannot assign to constant') != nil,
+      Message .. ' should report the constant-assignment diagnostic, got: ' .. tostring(script.errorMessage))
+end
+
+@Test function AllowsLocalShadowOfConstant()
+   local ERR_Okay = ''
+   assert(ERR_Okay is '', 'Local shadow should take precedence over the registered constant')
+end
+
+@Test function ShadowIsBlockScoped()
+   do
+      local ERR_Okay = 'shadow'
+      assert(ERR_Okay is 'shadow', 'Block-local shadow should be read inside its block')
+   end
+
+   assert(ERR_Okay is 0, 'Unshadowed reads after the block should fold to the registered constant')
+end
+
+@Test function ShadowCapturedByClosure()
+   local capture
+
+   do
+      local ERR_Okay = 'captured'
+      capture = function()
+         return ERR_Okay
+      end
+   end
+
+   assert(capture() is 'captured', 'Closure should capture the local shadow')
+end
+
+@Test function AllowsParameterShadowOfConstant()
+   local function use_constant_name(ERR_Okay)
+      return ERR_Okay
+   end
+
+   assert(use_constant_name('x') is 'x', 'Parameter shadow should be read as a normal parameter')
+end
+
+@Test function AllowsReassignmentOfShadow()
+   local ERR_Okay = 1
+   ERR_Okay = 2
+   ERR_Okay += 1
+   ERR_Okay++
+
+   assert(ERR_Okay is 4, 'Plain, compound, and update assignment should mutate the local shadow')
+end
+
+@Test function RejectsPlainAssignmentToConstant()
+   assert_activation_fails([[ERR_Okay = 5]], 'plain assignment to registered constant')
+end
+
+@Test function RejectsGlobalDeclarationOfConstant()
+   assert_activation_fails([[global ERR_Okay = 5]], 'global declaration of registered constant')
+end
+
+@Test function RejectsGlobalFunctionDeclarationOfConstant()
+   assert_activation_fails([[global function ERR_Okay() end]], 'global function declaration named after registered constant')
+end
+
+@Test function UnshadowedConstantStillFolds()
+   assert(ERR_Okay is 0, 'Unshadowed registered constant should still fold to its numeric value')
+end
+
+@Test function EnumMemberShadow()
+   glConstantShadowCounter++
+   local prefix = 'SHADOW_ENUM_' .. tostring(glConstantShadowCounter)
+
+   exec(string.format([[
+enum %s {
+   VALUE = 7,
+}
+
+do
+   local %s_VALUE = 'shadow'
+   assert(%s_VALUE is 'shadow')
+end
+
+assert(%s_VALUE is 7)
+]], prefix, prefix, prefix, prefix))
+end
+
+@Test function ForLoopVariableCanShadowConstant()
+   local sum = 0
+
+   for ERR_Okay = 1, 3 do
+      sum += ERR_Okay
+   end
+
+   assert(sum is 6, 'For-loop variable should shadow the registered constant in the loop body')
+   assert(ERR_Okay is 0, 'Unshadowed reads after the loop should fold to the registered constant')
+end
