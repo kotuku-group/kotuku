@@ -243,7 +243,7 @@ end
 end
 
 @Test function MethodCallInOptionalForm()
-   obj = {
+   local obj = {
       getValue = function(self)
          return "method_result"
       end
@@ -292,7 +292,7 @@ end
       called = true
       return "default"
    end
-   msg = "Hello" ?? expensive()
+   local msg = "Hello" ?? expensive()
    assert(msg is "Hello", "Failed optional short-circuit: expected 'Hello', got " .. tostring(msg))
    assert(not called, "Expensive function should not be called")
 end
@@ -312,7 +312,7 @@ end
 
 -- Optional - truthy condition
 @Test function OptionalTruthyString()
-   msg = "Hello" ?? "No message"
+   local msg = "Hello" ?? "No message"
    assert(msg is "Hello", "Failed optional truthy string: expected 'Hello', got " .. tostring(msg))
 end
 
@@ -328,13 +328,13 @@ end
 
 -- Optional - falsey condition (nil)
 @Test function OptionalNil()
-   msg = nil ?? "No message given"
+   local msg = nil ?? "No message given"
    assert(msg is "No message given", "Failed optional nil: expected 'No message given', got " .. tostring(msg))
 end
 
 -- Optional - falsey condition (false)
 @Test function OptionalFalse()
-   msg = false ?? "No message given"
+   local msg = false ?? "No message given"
    assert(msg is "No message given", "Failed optional false: expected 'No message given', got " .. tostring(msg))
 end
 

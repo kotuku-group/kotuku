@@ -1,4 +1,5 @@
 global glSignatureHelpTestUri = nil
+extern lspInitDocs, lspPathToUri, resolveSignatureHelp, registerCoreHandlers
 
 @BeforeAll function SetupSignatureHelpTests(State)
    local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')

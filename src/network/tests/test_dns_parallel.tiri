@@ -52,7 +52,7 @@ function name_resolved(NetLookup, Error)
       end
    end
 
-   msg = 'Resolved ' .. host .. ' with ' .. total_ips .. ' IP addresses.'
+   local msg = 'Resolved ' .. host .. ' with ' .. total_ips .. ' IP addresses.'
    if ip_list then msg ..= '  IPs: ' .. ip_list end
    logOutput(msg)
 

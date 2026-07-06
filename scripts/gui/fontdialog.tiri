@@ -186,7 +186,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
    -- Disassemble any compact font face definition.
 
    if lOptions.face then
-      s = string.split(face, ':') -- FaceName, Size, Style, Colour
+      s = string.split(lOptions.face, ':') -- FaceName, Size, Style, Colour
       if s[0] then lOptions.face      = s[0] end
       if s[1] then lOptions.pointSize = s[1] end
       if s[2] then lOptions.style     = s[2] end

@@ -1,4 +1,5 @@
 global glDocumentSymbolsTestUri = nil
+extern lspPathToUri, registerCoreHandlers, SYMBOL_KIND, extractDocumentSymbols
 
 @BeforeAll function SetupDocumentSymbolTests(State)
    local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')

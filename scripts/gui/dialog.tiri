@@ -89,7 +89,7 @@ gui.dialog.message = function(Options)
 
             state.checkbox = Document.getKey('checkbox') is '1' ? true :> false
 
-            input = Document.getKey('input')
+            local input = Document.getKey('input')
             if input?? then state.input = input end
 
             if self.inputRequired and not state.input then
@@ -138,18 +138,18 @@ gui.dialog.message = function(Options)
 
       if Options.envTemplate then
          -- The EnvTemplate can redefine the default body, GUI templates etc
-         doc ..= options.envTemplate .. '\n'
+         doc ..= Options.envTemplate .. '\n'
       end
 
       if Options.template then
          -- A dialog-specific template can override the body style and change any class templates,
          -- header and footer etc
-         doc ..= '<include src="' .. options.template .. '"/>\n'
+         doc ..= '<include src="' .. Options.template .. '"/>\n'
       end
 
       icon = Options.image ?? defaultIcon(self)
       icon = rx_sanitise_icon.replace(icon, '$1/$2')
-      msg = self.fmtMessage
+      local msg = self.fmtMessage
       if not msg?? then
          msg = string.escXML(self.message ?? '')
          msg = string.replace(msg, '\n', '<br/>')
@@ -218,8 +218,8 @@ gui.dialog.message = function(Options)
          self.message = Message
          self.fmtMessage = nil
       end
-      lDoc.acClear()
-      lDoc.acDataFeed(nil, DATA_XML, buildDocument())
+      self.document.acClear()
+      self.document.acDataFeed(nil, DATA_XML, buildDocument())
    end
 
    -- Work out the dialog width based on the message.

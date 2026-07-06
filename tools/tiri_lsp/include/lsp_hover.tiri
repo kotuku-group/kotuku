@@ -4,6 +4,8 @@ rx_starts_capital = <{ regex.new("^[A-Z]") }>
 rx_action_prefix = <{ regex.new("^ac[A-Z]") }>
 rx_method_prefix = <{ regex.new("^mt[A-Z]") }>
 
+extern lspUriToPath
+
 ----------------------------------------------------------------------------------------------------------------------
 
 @Doc(text="Hover Support - Token Extraction")

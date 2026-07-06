@@ -1,6 +1,8 @@
 -- This file contains the functions that are available for use in TDL files.  If you're looking for internal
 -- functionality, refer to utils.tiri
 
+extern outputClassHeader, buildInputParameters
+
 rx_high_hex        = <{ regex.new([[^0x[8f][0-9abcdef]+]]) }>
 rx_angle_bracket   = <{ regex.new([[^<(.+)>$]]) }>
 rx_kotuku_include  = <{ regex.new([[^<kotuku/(.+)>$]]) }>

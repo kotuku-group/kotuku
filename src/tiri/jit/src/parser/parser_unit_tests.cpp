@@ -1135,6 +1135,8 @@ return value * 3
 static bool test_ast_call_lowering(kt::Log &log)
 {
    constexpr const char* source = R"(
+extern math
+
 local context = { base = 5 }
 
 function context:compute(delta)
@@ -1176,12 +1178,14 @@ return context:compute(-3)
 static bool test_return_lowering(kt::Log &log)
 {
    constexpr const char* source =
+      "extern math\n"
+      "\n"
       "local function retmix(flag, ...)\n"
       "   if flag then\n"
       "      return ...\n"
       "   end\n"
       "\n"
-      "   if flag ~= 0 then\n"
+      "   if flag != 0 then\n"
       "      return math.abs(flag)\n"
       "   end\n"
       "\n"
@@ -1242,6 +1246,8 @@ end
 return total
 )" },
       { "generic_for_defer", R"(
+extern pairs
+
 local sum = 0
 local map = { alpha = 1, beta = 2, gamma = 3 }
 for key, value in pairs(map) do

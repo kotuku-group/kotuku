@@ -6,6 +6,9 @@
 -- Use ! to refer to constants and struct definitions.  Note that if declared on a single line, a
 --   table will be substituted in its place.
 
+global docModuleHeader, docFunction, docTypes, docStructures, docClass
+global substituteReferences
+
 rx_all_anchored = <{ regex.new([[^!([\w]*)$]]) }>
 rx_paragraph    = <{ regex.new([[^<[A-Za-z]+(.*?)>.*?<\/[A-Za-z]*?>.*?$]]) }>
 rx_insert       = <{ regex.new([[^<[A-Za-z]+(.*?)\/>$]]) }>
@@ -1178,7 +1181,7 @@ global function docFunction(Function)
       if not table.empty(Function.result.values) then
          errors = ''
          for result in values(Function.result.values) do
-            comment = (result.msg ?? mSys.GetErrorMsg(code))
+            comment = (result.msg ?? mSys.GetErrorMsg(result.code))
             errors ..= f"      <error code=\"{result.codeName}\">{substituteReferences(comment:escXML())}</error>\n"
          end
 
@@ -1289,7 +1292,7 @@ global function docStructures(References)
             arraySize = ''
             if f.arraySize then arraySize = " size=\"" .. f.arraySize .. '"' end
 
-            type = f.docType ?? 'NIL'
+            local type = f.docType ?? 'NIL'
             prototype = ''
             if f.isFunctionPtr then
                type = 'FUNCTION *'

@@ -319,7 +319,7 @@ end
    })
    y += combobox.viewport.height + 12
 
-   input = gui.input({
+   local input = gui.input({
       target = viewport,
       x      = win.margins.left,
       y      = y,

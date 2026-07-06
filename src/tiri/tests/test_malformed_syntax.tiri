@@ -8,6 +8,15 @@ function assertInvalid(Source, Context)
    assert(#result.diagnostics > 0, Context .. ': at least one diagnostic should be reported')
 end
 
+function assertInvalidCode(Source, Code, Context)
+   result = debug.validate(Source)
+   assert(type(result) is 'table', Context .. ': debug.validate() should return a table')
+   assert(result.success is false, Context .. ': malformed source should fail validation')
+   assert(type(result.diagnostics) is 'table', Context .. ': diagnostics should be returned')
+   assert(#result.diagnostics > 0, Context .. ': at least one diagnostic should be reported')
+   assert(result.diagnostics[0].code is Code, Context .. ': diagnostic code should be ' .. Code)
+end
+
 function assertInvalidCases(GroupName, Cases)
    for case in values(Cases) do
       assertInvalid(case.source, GroupName .. ' - ' .. case.name)
@@ -36,6 +45,45 @@ end
    assert(#result.diagnostics > 0, "Should have diagnostics")
    assert(result.diagnostics[0].message is 'Empty comment appended to variable is not a decrement operation',
       'Should report the appended empty comment diagnostic')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Undefined identifier reads
+
+@Test function ValidateUndefinedIdentifierReads()
+   assertInvalidCode("local something = does_not_exist", 'UndefinedVariable',
+      'unknown variable read in local declaration')
+   assertInvalidCode("local code = ERR_ThisDoesNotExist", 'UndefinedVariable',
+      'unknown constant read in local declaration')
+
+   result = debug.validate("local something = print")
+   assert(result.success is true, "Known global read should validate")
+
+   result = debug.validate("global knownButNil\nlocal something = knownButNil")
+   assert(result.success is true, "Explicitly declared nil global read should validate")
+
+   result = debug.validate("extern externalValue\nlocal something = externalValue")
+   assert(result.success is true, "Extern read should validate")
+
+   result = debug.validate("extern externalValue\nfunction nested()\n   return externalValue\nend")
+   assert(result.success is true, "Extern read inside nested function should validate")
+
+   assertInvalidCode("local something = externalValue", 'UndefinedVariable',
+      'extern symbols should not leak between validation runs')
+
+   result = debug.validate("extern *\nlocal value = anyMissingSymbol")
+   assert(result.success is true, "Extern wildcard read should validate")
+
+   result = debug.validate("extern *\nfunction nested()\n   return anyMissingSymbol\nend")
+   assert(result.success is true, "Extern wildcard read inside nested function should validate")
+
+   assertInvalidCode("local value = anyMissingSymbol", 'UndefinedVariable',
+      'extern wildcard should not leak between validation runs')
+
+   assertInvalid("extern * = value", 'extern wildcard with initialiser')
+   assertInvalid("extern *, namedSymbol", 'extern wildcard combined with named symbols')
+   assertInvalid("extern externalValue:num", 'extern declaration with type annotation')
+   assertInvalid("extern externalValue <const>", 'extern declaration with attribute')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

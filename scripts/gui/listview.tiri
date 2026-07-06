@@ -15,6 +15,8 @@ EDGE      <const> = 4
 
 local LINE_HEIGHT, FONT_HEIGHT, LINE_OFFSET
 
+extern itemHoverCallback
+
 function rearrangeItems(View)
    View.zones = { }
    View._last_y = 0
@@ -40,9 +42,7 @@ gui.listView = function(Options:table)
    lCompact    = Options.compact ?? 0
 
    function setListTextFill(Item, Fill)
-      if Item._vectors.text then
-         Item._vectors.text.fill = Fill
-      end
+      Item._vectors.text?.fill = Fill
    end
 
    -- When an item is hovered, create a highlight for it.
@@ -190,7 +190,7 @@ gui.listView = function(Options:table)
 
             if item._selected then
                item._vectors.text.fill = View.theme.page.textSelect
-            elseif item.index and (item.index is lHighlightedItem) then
+            elseif item._highlighted then
                item._vectors.text.fill = View.theme.page.textHighlight
             else
                item._vectors.text.fill = item.colour ?? View.theme.page.text

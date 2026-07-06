@@ -253,7 +253,7 @@ end
 
 -- Method call tests (critical for in_ternary flag implementation)
 @Test function MethodCallInTrueBranch()
-   obj = {
+   local obj = {
       getValue = function(self)
          return "method_result"
       end
@@ -263,7 +263,7 @@ end
 end
 
 @Test function MethodCallInFalseBranch()
-   obj = {
+   local obj = {
       getValue = function(self)
          return "method_result"
       end
@@ -273,7 +273,7 @@ end
 end
 
 @Test function NestedTernaryWithMethodCallInTrueBranch()
-   obj = {
+   local obj = {
       getValue = function(self)
          return "inner_method"
       end
@@ -284,7 +284,7 @@ end
 end
 
 @Test function NestedTernaryWithMethodCallInFalseBranch()
-   obj = {
+   local obj = {
       getValue = function(self)
          return "inner_method"
       end
@@ -295,7 +295,7 @@ end
 end
 
 @Test function MethodCallWithArgumentsInTernary()
-   obj = {
+   local obj = {
       multiply = function(self, x, y)
          return x * y
       end
@@ -305,7 +305,7 @@ end
 end
 
 @Test function MethodCallInCondition()
-   obj = {
+   local obj = {
       isActive = function(self)
          return true
       end
@@ -496,7 +496,7 @@ end
 
 @Test function EmbeddedConcat()
    test   = 'thing'
-   struct = 'struct'
+   local struct = 'struct'
    local type  = test ? ('class ' .. struct) :> ('struct ' .. struct)
    assert(type is 'class struct', "Failed embedded concat test: expected 'class struct', got " .. tostring(type))
 end

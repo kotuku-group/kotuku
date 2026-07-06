@@ -26,6 +26,7 @@ global glConstants = { }
 
 -- Dummy functions for loaded TDL files to prevent errors.
 
+global substituteReferences, sequenceStruct
 global function c_include(...) end
 global function cpp_include(...) end
 global function klass(Name:str, Options:table, Def:str, Private:bool) end

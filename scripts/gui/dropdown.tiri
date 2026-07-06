@@ -183,7 +183,7 @@ gui.dropdown = function(Options)
             x = rel.absX + self.x - target.absX
             y = rel.absY + self.y - target.absY
 
-            if lReverseY then
+            if self.reverseY then
                y = rel.absY + (Options.y ?? 0) - target.absY - surface.height
             end
 
@@ -281,7 +281,7 @@ gui.dropdown = function(Options)
 
             elseif Value is KEY_DOWN then
 
-            elseif Value is KEY_RETURN then
+            elseif Value is KEY_ENTER then
 
             end
          end) is ERR_Okay then

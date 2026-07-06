@@ -456,7 +456,7 @@ global function buildDefs()
       -- Process the result type first
 
       if func.result and func.result.type then
-         type = func.result.fullType
+         local type = func.result.fullType
 
          if type?? then
             fd = type.fd

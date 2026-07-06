@@ -326,12 +326,12 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Test that reading undeclared variable returns nil (falls back to global lookup)
+-- Test that reading undeclared variables is rejected by the parser
 
-@Test(hotpath=true) function ReadUndeclaredReturnsNil()
-   -- Reading an undeclared variable should return nil (global lookup returns nil)
-   value = thisVariableDoesNotExist
-   assert(value is nil, 'Reading undeclared variable should return nil')
+@Test(hotpath=true) function ReadUndeclaredReportsParserError()
+   result = debug.validate("value = thisVariableDoesNotExist")
+   assert(result.success is false, 'Reading undeclared variable should fail validation')
+   assert(result.diagnostics[0].code is 'UndefinedVariable', 'Expected UndefinedVariable diagnostic')
 end
 
 -----------------------------------------------------------------------------------------------------------------------

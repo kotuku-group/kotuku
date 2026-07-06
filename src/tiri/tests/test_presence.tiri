@@ -64,7 +64,7 @@ end
 -- Test in expressions
 @Test function InExpression()
    name = "Alice"
-   msg = name?? and "Hello, " .. name or "Hello, Guest"
+   local msg = name?? and "Hello, " .. name or "Hello, Guest"
    assert(msg is "Hello, Alice", "Failed expression test with truthy name")
 
    empty_name = ""
@@ -175,7 +175,7 @@ end
 
 -- Test chained field access
 @Test function ChainedAccess()
-   obj = { user = { name = "Alice" } }
+   local obj = { user = { name = "Alice" } }
    assert((obj.user.name??) is true, "Failed chained access test")
 
    obj2 = { user = { name = "" } }

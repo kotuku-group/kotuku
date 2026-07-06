@@ -45,6 +45,7 @@ struct TokenDefinition {
    TOKEN_DEF(elseif,       "elseif",   TKF_RESERVED) \
    TOKEN_DEF(end,          "end",      TKF_RESERVED | TKF_CAN_END_RANGE_EXPRESSION) \
    TOKEN_DEF(enum,         "enum",     TKF_RESERVED | TKF_STATEMENT_START) \
+   TOKEN_DEF(extern,       "extern",   TKF_RESERVED | TKF_STATEMENT_START) \
    TOKEN_DEF(false,        "false",    TKF_RESERVED | TKF_CAN_END_RANGE_EXPRESSION | TKF_LITERAL) \
    TOKEN_DEF(for,          "for",      TKF_RESERVED | TKF_STATEMENT_START) \
    TOKEN_DEF(from,         "from",     TKF_RESERVED) \

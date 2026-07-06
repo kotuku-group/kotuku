@@ -41,6 +41,7 @@ TBID <const> = {
 }
 
 local glFolderFill
+local glEnableThreading = false
 
 rxParentFolder   <const> = <{ regex.new([[^(.+[:\/\\]+).+]]) }>
 rxStripFolder    <const> = <{ regex.new([[^(.*?)[:\/\\]*$]]) }> -- Remove trailing qualifiers
@@ -127,7 +128,7 @@ end
 function parentWindow(Surface)
    scan = obj.find(Surface.parent)
    while scan do
-      if mSys.GetClassID(mSys.GetOwnerID(scan.id)) is ID_WINDOW then
+      if mSys.GetClassID(mSys.GetOwnerID(scan.id)) is 'window':hash() then
          return scan
       end
       scan = obj.find(scan.parent)
@@ -410,7 +411,7 @@ lBkgdTasks = { }
 
 -- Paste from a list of files to a destination folder.
 
-function copyFromList(Folder:str, List, Move:bool)
+function copyFromList(self, Folder:str, List, Move:bool)
    assert(io.isFolder(Folder), 'Invalid folder target of ' .. Folder)
 
    try
@@ -446,7 +447,7 @@ end
 
 -- Paste from a clipboard to a folder using a new thread
 
-function pasteFromClipboard(Folder:str)
+function pasteFromClipboard(self, Folder:str)
    assert(io.isFolder(Folder), 'Invalid folder target of ' .. Folder)
 
    paste_script = obj.new('tiri', { statement = [[
@@ -455,7 +456,7 @@ function pasteFromClipboard(Folder:str)
 ]] })
    paste_script.acSetKey('dest', Folder)
 
-   if enable_threading then
+   if glEnableThreading then
       self.threads ?= { }
       self.threads[paste_script.id] = paste_script
 
@@ -545,7 +546,7 @@ function createFileItem(self, Info)
    elseif Info.flags has RDF_FILE then
       if self.hideFiles then return end
 
-      if not lFilter or lFilter.test(Info.name) then
+      if not self._filter or self._filter.test(Info.name) then
          local filename = self.hideExtensions ? rxStripExtension.extract(Info.name) :> Info.name
 
           new_item = {
@@ -591,6 +592,7 @@ gui.fileview = function(Options)
       showHidden     = Options.showHidden ?? false,
       showSystem     = Options.showSystem ?? false,
       showDocs       = Options.showDocs ?? false,
+      showParent     = Options.showParent ?? true,
       enableSysKeys  = Options.sysKeys ?? false,
       hideExtensions = Options.hideExtensions,
       hideFiles      = Options.hideFiles,
@@ -830,7 +832,7 @@ gui.fileview = function(Options)
          else
             deleteItem(Path)
          end
-      elseif Flags has (MFF_ATTRIB|MFF_CLOSED) and File then
+      elseif Flags has (MFF_ATTRIB|MFF_CLOSED) then
          if info_err is ERR_Okay then
             item = findItem(Path)
             if item then
@@ -1065,7 +1067,7 @@ gui.fileview = function(Options)
             for item in values(items) do
                table.insert(file_list, self.path .. item.name)
             end
-            copyFromList(Dest, file_list)
+            copyFromList(self, Dest, file_list)
          end
 
          self.view.deselectAll()
@@ -1158,7 +1160,8 @@ gui.fileview = function(Options)
                txtName = obj.find('txtName')
                txtPath = obj.find('txtPath')
                if txtName?? and txtPath?? then
-                  mSys.SetVolume(txtName.string, txtPath.string, nil, nil, nil, ASSIGN_REPLACE|ASSIGN_SAVE)
+                  mSys.SetVolume(txtName.string, txtPath.string, nil, nil, nil, VOLUME_REPLACE)
+                  -- TODO: New shortcut should be permanently saved
                end
             end
 
@@ -1222,7 +1225,7 @@ gui.fileview = function(Options)
    -- Apply a private file filter using regex patterns.  E.g. '.*\.tiri$'
 
    self.filter = function(Filter)
-      lFilter = Filter ?? regex.new(Filter) :> nil
+      self._filter = Filter ?? regex.new(Filter) :> nil
       self.refresh()
    end
 
@@ -1238,7 +1241,7 @@ gui.fileview = function(Options)
             for item in values(items) do
                table.insert(file_list, self.path .. item.name.value)
             end
-            copyFromList(Dest, file_list, true)
+            copyFromList(self, Dest, file_list, true)
          end
 
          self.view.deselectAll()
@@ -1254,7 +1257,7 @@ gui.fileview = function(Options)
    -- Pastes files from the clipboard to the current path of the file view.
 
    self.pasteFiles = function()
-      pasteFromClipboard(self.path)
+      pasteFromClipboard(self, self.path)
    end
 
    -- Prompt the user to rename the most recently selected item in the file view.
@@ -1378,9 +1381,9 @@ gui.fileview = function(Options)
             -- application.
 
             choose Value from
-               KEY_C -> copy_files()
-               KEY_X -> cut_files()
-               KEY_V -> paste_files()
+               KEY_C -> self.copyFiles()
+               KEY_X -> self.cutFiles()
+               KEY_V -> self.pasteFiles()
                KEY_A -> self.view.selectAll()
             end
          elseif Value is KEY_DELETE then
@@ -1586,7 +1589,7 @@ gui.fileview = function(Options)
             self.view:setColumns(defineViewColumns(self.path))
          end
 
-         if lShowParent and self.path then
+         if self.showParent and self.path then
             if not (self.limitPath and (self.path is self.limitPath)) then
                self.view.addItem({
                   type = 'parent',
@@ -1757,7 +1760,7 @@ gui.fileview = function(Options)
                end
             end
 
-            if count > 0 then pasteFromClipboard(dest, drag_clipboard.cluster) end
+            if count > 0 then pasteFromClipboard(self, dest, drag_clipboard.cluster) end
          end)
       end)
 --]]

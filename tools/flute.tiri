@@ -45,7 +45,7 @@ global function resolveSDKPath()
       rx_cmake_path = regex.new('^(.+)CMakeLists\\.txt')
       sdk_path = rx_cmake_path.extract(sdk_path) ?? sdk_path
    else
-      msg = ''
+      local msg = ''
       for path in values(search_list) do
          msg ..= path .. '\n'
       end

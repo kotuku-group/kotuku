@@ -1,4 +1,5 @@
-global glDefinitionTestUri = nil
+global glDefinitionTestUri
+extern lspInitDocs, lspPathToUri, resolveDefinition, registerCoreHandlers, lspUriToPath
 
 @BeforeAll function SetupDefinitionTests(State)
    local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')

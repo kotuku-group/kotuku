@@ -670,6 +670,19 @@ struct GlobalDeclStmtPayload {
    ~GlobalDeclStmtPayload();
 };
 
+struct ExternDeclStmtPayload {
+   ExternDeclStmtPayload() = default;
+   explicit ExternDeclStmtPayload(std::vector<Identifier> Names)
+      : names(std::move(Names)) {}
+   ExternDeclStmtPayload(const ExternDeclStmtPayload&) = delete;
+   ExternDeclStmtPayload& operator=(const ExternDeclStmtPayload&) = delete;
+   ExternDeclStmtPayload(ExternDeclStmtPayload&&) noexcept = default;
+   ExternDeclStmtPayload& operator=(ExternDeclStmtPayload&&) noexcept = default;
+   std::vector<Identifier> names;
+   bool all_symbols = false;
+   ~ExternDeclStmtPayload();
+};
+
 struct LocalFunctionStmtPayload {
    LocalFunctionStmtPayload(Identifier name, std::unique_ptr<FunctionExprPayload> function)
       : name(std::move(name)), function(std::move(function)) {}
@@ -912,7 +925,7 @@ struct StmtNode {
    AstNodeKind kind = AstNodeKind::ExpressionStmt;
    SourceSpan span{};
    std::variant<AssignmentStmtPayload, LocalDeclStmtPayload, GlobalDeclStmtPayload,
-      LocalFunctionStmtPayload, FunctionStmtPayload, IfStmtPayload,
+      ExternDeclStmtPayload, LocalFunctionStmtPayload, FunctionStmtPayload, IfStmtPayload,
       LoopStmtPayload, NumericForStmtPayload, GenericForStmtPayload,
       ReturnStmtPayload, BreakStmtPayload, ContinueStmtPayload, DeferStmtPayload,
       DoStmtPayload, ConditionalShorthandStmtPayload, TryExceptPayload,

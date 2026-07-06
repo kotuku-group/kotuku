@@ -42,7 +42,7 @@ gui.window = function(Options:table)
       orientation  = Options.orientation ?? 'landscape',
       client       = { }, -- Client margins
       menubar      = Options.menubar, -- Menubar configuration
-      margins      = { left, right, top, bottom },
+      margins      = Options.margins,
       surface      = nil, -- Client access to the surface is permitted
       viewport     = nil -- The window's top-level viewport
    }

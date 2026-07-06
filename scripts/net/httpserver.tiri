@@ -969,7 +969,7 @@ function serveFile(self:table, ClientSocket:obj, FilePath:str, Request:table)
 
    fileSize = file.size
    mimeType = getMimeType(FilePath)
-   range = parseByteRange(Request.range, fileSize)
+   local range = parseByteRange(Request.range, fileSize)
 
    -- For HEAD requests, only send headers without body
    if Request.method is 'HEAD' then

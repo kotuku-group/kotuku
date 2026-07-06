@@ -224,7 +224,7 @@ end
 
    global glOutFile = obj.new('file', { src='temp:scripts.gz', flags=FL_WRITE|FL_NEW } )
    if cmp.mtCompressStreamStart() is ERR_Okay then
-      input = string.alloc(16384)
+      local input = string.alloc(16384)
       err = ERR_Okay
       while err is ERR_Okay do
          err, len = file.acRead(input)
@@ -291,7 +291,7 @@ end
 
    global glOutFile = obj.new('file', { src='temp:gui.tiri', flags=FL_WRITE|FL_NEW } )
    assert(cmp.mtDecompressStreamStart() is ERR_Okay, 'Failed to initialise decompression.')
-   input = string.alloc(16384)
+   local input = string.alloc(16384)
    err = ERR_Okay
    while err is ERR_Okay do
       err, len = file.acRead(input)

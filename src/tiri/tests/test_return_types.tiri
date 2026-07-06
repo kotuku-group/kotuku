@@ -662,7 +662,7 @@ end
       ]])
    except ex
       -- Check that error message is helpful
-      msg = ex.message
+      local msg = ex.message
       assert(string.find(msg, "type") or string.find(msg, "num") or string.find(msg, "str"),
          "error message should mention type information")
    success

@@ -4,6 +4,9 @@
    include 'xml'
    import 'io/filesearch'
 
+extern assertEqId, assertStringId
+local runTest
+
 rx_spaces = regex.new('\\s+')
 
 @BeforeAll function init(State)

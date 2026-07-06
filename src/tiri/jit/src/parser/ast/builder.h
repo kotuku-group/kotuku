@@ -78,6 +78,7 @@ private:
    ParserResult<StmtNodePtr> parse_statement();
    ParserResult<StmtNodePtr> parse_local();
    ParserResult<StmtNodePtr> parse_global();
+   ParserResult<StmtNodePtr> parse_extern();
    ParserResult<StmtNodePtr> parse_enum(const Token &StartToken);
    ParserResult<int64_t> parse_enum_integer_literal();
    void track_registered_enum_constant(uint32_t Hash);

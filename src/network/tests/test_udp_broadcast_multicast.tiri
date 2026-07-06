@@ -105,7 +105,7 @@ end
          source = struct.new('IPAddress')
          err, read_len = Socket.mtRecvFrom(source, buffer)
          if err is ERR_Okay and read_len > 0 then
-            msg = buffer:sub(0, read_len)
+            local msg = buffer:sub(0, read_len)
             logOutput('[Broadcast Server] Received: "' .. msg .. '" from ' .. mNet.AddressToStr(source) .. ':' .. source.port)
             if (msg:startsWith('Broadcast Test')) then
                bcast_recv = true
