@@ -28,7 +28,7 @@ module({ name="Font", copyright="Paul Manias © 1998-2026", version=1.0, timesta
      "INTERNAL: The Freetype hinter will be forcibly imposed.",
      "LIGHT: The light version of the Freetype hinter will be forcibly imposed.")
 
-  struct("FontList", { comment="For GetList(), describes a system font." }, [[
+  structdef("FontList", { comment="For GetList(), describes a system font." }, [[
     struct(*FontList) Next  # Pointer to the next entry in the list.
     str   Name              # The name of the font face.
     str   Alias             # Reference to another font Name if this is an alias.

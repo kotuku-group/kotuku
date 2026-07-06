@@ -152,6 +152,7 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
     "PERMIT_TERMINATE: Private.  Permits termination when a lock is held on the object.",
     "ASYNC_ACTIVE: Read-only indicator that asynchronous actions are queued or executing against this object.",
     "PLACEMENT: Private.  Uses placement-new to allocate the object in-place.",
+    "ZOMBIE: Private.  The object has been terminated but is waiting for the RefCount to reach zero before being destroyed.",
     { PRIVATE = 0 }
   )
 
@@ -420,7 +421,7 @@ class objTask;
 
 ]==])
 
-  struct('OpenTag', { comment='Tags for OpenInfo.Options' }, [[
+  structdef('OpenTag', { comment='Tags for OpenInfo.Options' }, [[
    int(TOI) Tag          # Tag identifier
    ]],
    [[
@@ -432,7 +433,7 @@ class objTask;
    } Value;
   ]])
 
-  struct('OpenInfo', { comment='Client options for passing to Kotuku on startup' }, [[
+  structdef('OpenInfo', { comment='Client options for passing to Kotuku on startup' }, [[
      string Name          # Program name
      string SystemPath    # Path to system files
      string ModulePath    # Path to module files
@@ -445,7 +446,7 @@ class objTask;
      int ArgCount         # Total arguments in Args
   ]])
 
-  struct('ResourceRecord', { comment='Unified resource management record' }, [[
+  structdef('ResourceRecord', { comment='Unified resource management record' }, [[
      ptr Address               # Direct pointer to the resource (optional, can rely on ResourceID instead)
      struct(*ResourceManager) Manager # Reference to the resource manager for this record
      res ResourceID            # Unique identifier
@@ -464,11 +465,11 @@ class objTask;
       Terminating(false), OwnerManagesChildren(false) { };
   ]])
 
-  struct("ObjectSignal", { comment="Required in calls to WaitForObjects()." }, [[
+  structdef("ObjectSignal", { comment="Required in calls to WaitForObjects()." }, [[
      obj Object # Reference to an object to monitor.
   ]])
 
-  struct("ResourceManager", { comment="Defines custom cleanup behaviour for resources registered with TrackResource().", restrict="c" }, [[
+  structdef("ResourceManager", { comment="Defines custom cleanup behaviour for resources registered with TrackResource().", restrict="c" }, [[
      cstr Name             # The name of the resource
      fptr(error struct(&ResourceRecord) ptr) Free  # A function that will remove the resource's content when terminated
      fptr(void struct(&ResourceRecord) struct(&ResourceRecord)) AddChild # Optional function for tracking child resources
@@ -476,7 +477,7 @@ class objTask;
      bool CanBlock         # True if the Free callback might wait on locks, callbacks or external resources
   ]])
 
-  struct("FieldArray", { comment="Used to construct class blueprints for the MetaClass." }, [[
+  structdef("FieldArray", { comment="Used to construct class blueprints for the MetaClass." }, [[
     cstr  Name      # The name of the field, e.g. `Width`
     ptr   GetField  # `void GetField(*Object, APTR Result);`
     ptr   SetField  # `ERR SetField(*Object, APTR Value);`
@@ -489,7 +490,7 @@ class objTask;
      { }
   ]])
 
-  struct("FieldDef", { comment="Used to define constants for field references." }, [[
+  structdef("FieldDef", { comment="Used to define constants for field references." }, [[
     cstr Name  # The name of the constant.
     int Value  # The value of the constant.
   ]],
@@ -497,7 +498,7 @@ class objTask;
    template <class T> FieldDef(CSTRING pName, T pValue) : Name(pName), Value(int(pValue)) { }
   ]])
 
-  struct("SystemState", { comment="Returned by the GetSystemState() function." }, [[
+  structdef("SystemState", { comment="Returned by the GetSystemState() function." }, [[
     cstr Platform      # String-based field indicating the user's platform.  Currently returns `Native`, `Windows`, `OSX` or `Linux`.
     cstr IDL           # The Core module's compressed IDL string
     cstruct(*OpenInfo) OpenInfo # The OpenInfo structure originally used to initialise the system
@@ -508,7 +509,7 @@ class objTask;
     uchar  StaticBuild   # `1` = Static build, `0` = Dynamic build
   ]])
 
-  struct("Unit", { }, [[
+  structdef("Unit", { }, [[
     double Value  # The unit value.
     uint   Type   # Additional type information
   ]],
@@ -553,7 +554,7 @@ class objTask;
 
   -- Structures for defining method and action invocations.
 
-  struct("ActionArray", { }, [[
+  structdef("ActionArray", { }, [[
     ptr Routine         # Pointer to the function entry point
     int(AC) ActionCode  # Action identifier
   ]],
@@ -561,7 +562,7 @@ class objTask;
   template <class T> ActionArray(AC pID, T pRoutine) : Routine((APTR)pRoutine), ActionCode(pID) { }
   ]])
 
-  struct("MethodEntry", { restrict="c" }, [[
+  structdef("MethodEntry", { restrict="c" }, [[
     int(AC) MethodID  # Unique method identifier
     ptr  Routine      # The method entry point, defined as `ERR (*Routine)(OBJECTPTR, APTR);`
     cstr Name         # Name of the method
@@ -574,40 +575,40 @@ class objTask;
       MethodID(pID), Routine(pRoutine), Name(pName), Args(pArgs), Size(pSize) { }
   ]])
 
-  struct("ActionTable", { comment="Structure for ActionList" }, [[
+  structdef("ActionTable", { comment="Structure for ActionList" }, [[
     uint Hash   # Hash of the action name.
     int  Size   # Byte-size of the structure for this action.
     cstr Name   # Name of the action.
     cstruct(*FunctionField) Args  # List of fields that are passed to this action.
   ]])
 
-  struct("ChildEntry", { comment="Structure for ListChildren() function" }, [[
+  structdef("ChildEntry", { comment="Structure for ListChildren() function" }, [[
     oid ObjectID  # Object ID
     cid ClassID   # The class ID of the referenced object.
   ]])
 
-  struct("Message", { comment="Message header." }, [[
+  structdef("Message", { comment="Message header." }, [[
      large Time      # A timestamp acquired from ~Core.PreciseTime() when the message was first passed to ~Core.SendMessage().
      int UID         # A unique identifier automatically created by ~Core.SendMessage().
      int(MSGID) Type # A message type identifier as defined by the client.
      int Size        # The byte-size of the message data, or zero if no data is provided.
   ]])
 
-  struct("MemInfo", { type="meminfo" }, [[
+  structdef("MemInfo", { type="meminfo" }, [[
     ptr  Start         # The starting address of the memory block (does not apply to shared blocks).
     uint Size          # The size of the memory block.
     int(MEM) Flags     # The type of memory.
     mem   MemoryID     # The unique resource ID for this block.
   ]])
 
-  struct("MsgHandler", { restrict="c" }, [[
+  structdef("MsgHandler", { restrict="c" }, [[
     ptr(struct(MsgHandler)) Prev  # Previous message handler in the chain.
     ptr(struct(MsgHandler)) Next  # Next message handler in the chain.
     func Function                 # Call this function to handle the message.
     int(MSGID) MsgType            # Type of message being filtered.
   ]])
 
-  struct("CacheFile", { restrict="c", comment="Internal structure for managing files cached by LoadFile()." }, [[
+  structdef("CacheFile", { restrict="c", comment="Internal structure for managing files cached by LoadFile()." }, [[
     large Timestamp   # The file's last-modified timestamp.
     large Size        # Byte size of the cached data.
     large LastUse     # The last time that this file was requested.
@@ -615,7 +616,7 @@ class objTask;
     ptr Data          # Pointer to the cached data.
   ]])
 
-  struct("FileInfo", { comment="Metadata for describing a file." }, [[
+  structdef("FileInfo", { comment="Metadata for describing a file." }, [[
     large Size                 # The size of the file's content.
     large Timestamp            # 64-bit time stamp - usable only for comparison (e.g. sorting).
     struct(*FileInfo) Next     # Next structure in the list, or `NULL`.
@@ -653,7 +654,7 @@ class objTask;
    }
   ]==]) -- NB: Private fields can follow this structure.
 
-  struct("DirInfo", { comment="Used by OpenDir() only" }, [[
+  structdef("DirInfo", { comment="Used by OpenDir() only" }, [[
     struct(*FileInfo) Info # Pointer to a !FileInfo structure
   ]],
   [[
@@ -674,7 +675,7 @@ class objTask;
   ]])
 
   -- NB: Duplicated to windows.c
-  struct("FileFeedback", { }, [[
+  structdef("FileFeedback", { }, [[
     large Size          # Size of the file
     large Position      # Current seek position within the file if moving or copying
     str Path            # Path to the file
@@ -686,7 +687,7 @@ class objTask;
   FileFeedback() : Size(0), Position(0), Path(nullptr), Dest(nullptr), FeedbackID(FBK::NIL) { }
   ]])
 
-  struct("Field", { comment="Used to describe the public fields of a class." }, [[
+  structdef("Field", { comment="Used to describe the public fields of a class." }, [[
     maxint Arg         # An option to complement the field type.  Can be a pointer or an integer value
     fptr(error ptr ptr) GetValue # A virtual function that will retrieve the value for this field
     ptr SetValue       # A virtual function that will set the value for this field
@@ -703,7 +704,7 @@ class objTask;
    inline bool pure() const { return (Flags & FD_PURE) ? true : false; }
   ]]) -- [32/52]
 
-  struct("ClassRecord", { comment="Meta information for a class, as recorded in the class database." }, [[
+  structdef("ClassRecord", { comment="Meta information for a class, as recorded in the class database." }, [[
     cid ClassID        # Unique class identifier (hash of Name)
     cid ParentID       # Parent class ID if this is a derived class
     int(CCF) Category  # Assigned category
@@ -735,6 +736,7 @@ class objTask;
     "FindClass",
     "AnalysePath",
     "FreeResource",
+    "ReleaseZombie",
     "GetClassID",
     "GetOwnerID",
     "CompareFilePaths",
@@ -844,6 +846,10 @@ inline ERR SubscribeEvent(int64_t Event, FUNCTION Callback, APTR *Handle) {
 
 inline ERR SubscribeTimer(double Interval, FUNCTION Callback, APTR *Subscription) {
    return SubscribeTimer(Interval, &Callback, Subscription);
+}
+
+inline ERR UnsubscribeAction(OBJECTPTR Object, ACTIONID ActionID) {
+   return UnsubscribeAction(Object, ActionID, nullptr);
 }
 
 // This template leverages pcObject to be the preferred entry point for any Object type or derivation.
@@ -1099,6 +1105,13 @@ template <class T, class X = APTR> FUNCTION C_FUNCTION(T *pRoutine, X pMeta = 0)
 };
 
 inline CSTRING Object::className() { return Class->ClassName.c_str(); }
+
+// Weak-pin management for callback holders (refer to the zombie object contract in objects.h).  A pinned
+// Context header remains readable after termination, allowing stale() to be tested lazily at invoke time.
+
+inline void FUNCTION::pin() { Context->pinWeak(); }
+inline void FUNCTION::unpin() { Context->unpinWeak(); }
+inline bool FUNCTION::stale() const { return defined() and (Context->terminating()); }
   ]==])
 
   if (glProgram is "idl-compile") then

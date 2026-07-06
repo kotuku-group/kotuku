@@ -47,13 +47,13 @@
       <kotuku:spiral offset="30" loop-limit="3" step="0.1" cx="330" cy="280" fill="none" stroke-width="1" stroke="turquoise" opacity="0.2"/>
 
       <text x="330" y="280" font-size="20" fill="navy" font-family="Utopia">
-        <textPath xlink:href="#spiral" transition="url(#swirl)">This text is warped to fit a kotuku:spiral element.  You can morph text to fit any element that generates a shape, not just SVG path elements.  Transitions can also be used to scale and skew the path, as seen here.</textPath>
+        <textPath xlink:href="#spiral" transition="url(#swirl)">This text is warped to fit a kotuku:spiral element.  You can warp text to fit any element that generates a shape, not just SVG path elements.  Transitions can also be used to scale and skew the path, as seen here.</textPath>
       </text>
 
       <text x="10" y="350" font-size="20" fill="navy"></text>
 
       <kotuku:wave length="800" amplitude="15" frequency="50" stroke="red" stroke-width="1" fill="none" transition="url(#scale-and-skew)">
-        <kotuku:morph xlink:href="url(#wavespiral)" align="xMin yMid"/>
+        <kotuku:guidePath xlink:href="url(#wavespiral)" align="xMin yMid"/>
       </kotuku:wave>
     </g>
 

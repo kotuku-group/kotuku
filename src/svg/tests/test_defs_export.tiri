@@ -1,0 +1,216 @@
+-- $TIRI
+
+   include 'svg'
+   include 'vector'
+
+local glSVGFolder
+glFiles = array<string>
+
+@BeforeAll function setup(State:table)
+   glSVGFolder = State.folder
+end
+
+@AfterAll function removeFiles()
+   for path in values(glFiles) do
+      mSys.DeleteFile(path)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+glImagePath = <{ glSVGFolder .. 'basics/sign.png' }>
+
+function saveScene(Scene:obj, Path:str):str
+   svg = obj.new('svg', { target=Scene })
+   file = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
+   glFiles:push(Path)
+
+   check svg.acSaveToObject(file, 0)
+   file = nil
+   return io.readAll(Path)
+end
+
+function assertContains(Haystack:str, Needle:str, Message:str)
+   assert(string.find(Haystack, Needle, 0, true) != nil, Message)
+end
+
+function assertNear(Actual, Expected, Message)
+   assert(Actual ≈ Expected, Message .. ' expected ' .. Expected .. ', got ' .. Actual)
+end
+
+function transitionStop(Offset:num, Transform:str)
+   local stop = struct.new('Transition')
+   stop.offset = Offset
+   stop.transform = Transform
+   return stop
+end
+
+function transitionStops()
+   return {
+      transitionStop(0.0, 'translate(5 6)'),
+      transitionStop(1.0, 'scale(2)')
+   }
+end
+
+function waveDocument(ID:str, AttribName:str):str
+   return [[
+<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg">
+  <kotuku:wave id="]] .. ID .. [[" x="0" y="40" length="100" amplitude="20" frequency="2" ]] ..
+     AttribName .. [[="8" fill="none" stroke="black"/>
+</svg>
+]]
+end
+
+function loadWaveWithEndFrequency(ID:str, AttribName:str):<obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=80 })
+   scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   obj.new('svg', { target=scene, statement=waveDocument(ID, AttribName) })
+
+   local wave = obj.find(ID)
+   assert(wave != nil, 'Parsed SVG should create the named VectorWave')
+   return scene, wave
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function SavesClipDefWithMapKeyId()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local clip = scene.new('VectorClip', { units=VUNIT_BOUNDING_BOX })
+
+   clip.viewport.new('VectorRectangle', { x=0, y=0, width=1, height=1 })
+   viewport.new('VectorRectangle', { x=0, y=0, width=100, height=100, mask=clip })
+   check scene.mtAddDef('tile_clip', clip)
+
+   local saved = saveScene(scene, 'temp:svg_defs_clip.svg')
+   assertContains(saved, '<clipPath', 'Saved SVG should contain the clipPath definition')
+   assertContains(saved, 'id="tile_clip"', 'ClipPath should use the scene def key when SID is empty')
+   assertContains(saved, 'clipPathUnits="objectBoundingBox"', 'ClipPath should preserve object-bounding-box units')
+   assertContains(saved, '<rect', 'ClipPath should include its viewport child vectors')
+end
+
+@Test function SavesPatternDefWithChildren()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local pattern = scene.new('VectorPattern', {
+      x=2, y=3, width=8, height=9, units=VUNIT_USERSPACE, contentUnits=VUNIT_BOUNDING_BOX,
+      transform='translate(1 2)'
+   })
+
+   pattern.viewport.new('VectorRectangle', { x=0, y=0, width=8, height=9, fill='rgb(255,0,0)' })
+   check scene.mtAddDef('tile_pattern', pattern)
+   viewport.new('VectorRectangle', { x=0, y=0, width=100, height=100, fill='url(#tile_pattern)' })
+
+   local saved = saveScene(scene, 'temp:svg_defs_pattern.svg')
+   assertContains(saved, '<pattern', 'Saved SVG should contain the pattern definition')
+   assertContains(saved, 'id="tile_pattern"', 'Pattern should use the scene def key')
+   assertContains(saved, 'patternUnits="userSpaceOnUse"', 'Pattern should preserve user-space units')
+   assertContains(saved, 'patternContentUnits="objectBoundingBox"', 'Pattern should preserve content units')
+   assertContains(saved, 'patternTransform=', 'Pattern should preserve transforms')
+   assertContains(saved, '<rect', 'Pattern should include its viewport child vectors')
+end
+
+@Test function SavesGenericVectorDefWithMapKeyId()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local group = viewport.new('VectorGroup')
+
+   group.new('VectorRectangle', { x=5, y=6, width=7, height=8 })
+   check scene.mtAddDef('shared_group', group)
+
+   local saved = saveScene(scene, 'temp:svg_defs_group.svg')
+   assertContains(saved, '<g', 'Saved SVG should contain the generic vector definition')
+   assertContains(saved, 'id="shared_group"', 'Generic vector defs should use the scene def key when SID is empty')
+   assertContains(saved, '<rect', 'Generic vector defs should preserve child vectors')
+end
+
+@Test function SavesTransitionDefFromXMLDef()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local transition = scene.new('VectorTransition', { stops=transitionStops() })
+
+   assertContains(transition.xmlDef, '<stop offset="0"', 'Transition XMLDef should include the first stop')
+   assertContains(transition.xmlDef, 'transform="matrix(', 'Transition XMLDef should serialise parsed transforms')
+
+   check scene.mtAddDef('text_transition', transition)
+
+   local saved = saveScene(scene, 'temp:svg_defs_transition.svg')
+   assertContains(saved, '<kotuku:transition', 'Saved SVG should contain the transition definition')
+   assertContains(saved, 'id="text_transition"', 'Transition should use the scene def key')
+   assertContains(saved, '<stop offset="0"', 'Transition definition should include XMLDef stop elements')
+   assertContains(saved, 'transform="matrix(', 'Transition definition should include XMLDef transform matrices')
+end
+
+@Test function SavesVectorImageDefWithExistingPath()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local source = obj.new('image', { src=glImagePath, bitsPerPixel=32 })
+   local image = scene.new('VectorImage', { image=source, units=VUNIT_BOUNDING_BOX })
+
+   check scene.mtAddDef('sign_image', image)
+   viewport.new('VectorRectangle', { x=0, y=0, width=100, height=100, fill='url(#sign_image)' })
+
+   local saved = saveScene(scene, 'temp:svg_defs_image_path.svg')
+   assertContains(saved, '<image', 'Saved SVG should contain the image definition')
+   assertContains(saved, 'id="sign_image"', 'VectorImage should use the scene def key')
+   assertContains(saved, 'xmlns:xlink="http://www.w3.org/1999/xlink"', 'Saved SVG should declare the xlink namespace')
+   assertContains(saved, 'xlink:href=', 'VectorImage should export a source reference')
+   assertContains(saved, 'sign.png', 'VectorImage should preserve an existing source path')
+   assert(string.find(saved, 'data:image/png;base64,', 0, true) is nil, 'Existing image paths should not be embedded')
+end
+
+@Test function SavesVectorImageDefWithEmbeddedBitmapFallback()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local source = obj.new('image', { src=glImagePath, bitsPerPixel=32 })
+   local image = scene.new('VectorImage', { bitmap=source.bitmap, units=VUNIT_BOUNDING_BOX })
+
+   check scene.mtAddDef('embedded_image', image)
+   viewport.new('VectorRectangle', { x=0, y=0, width=100, height=100, fill='url(#embedded_image)' })
+
+   local saved = saveScene(scene, 'temp:svg_defs_image_embedded.svg')
+   assertContains(saved, '<image', 'Saved SVG should contain the image definition')
+   assertContains(saved, 'id="embedded_image"', 'Embedded VectorImage should use the scene def key')
+   assertContains(saved, 'xlink:href="data:image/png;base64,', 'VectorImage without a valid path should embed PNG data')
+
+   local loaded_scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   loaded_scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   obj.new('svg', { target=loaded_scene, path='temp:svg_defs_image_embedded.svg' })
+   local err, loaded_image = loaded_scene.mtFindDef('embedded_image')
+   assert(err is ERR_Okay, 'Embedded VectorImage data should load back as a definition')
+   assert(loaded_image != nil, 'Embedded VectorImage definition should be available after reload')
+end
+
+@Test function ParsesAndSavesWaveFrequencyEnd()
+   local scene, wave = loadWaveWithEndFrequency('svg_wave_frequency_end', 'frequencyEnd')
+
+   assertNear(wave.frequency, 2, 'VectorWave frequency should parse from SVG')
+   assertNear(wave.frequencyEnd, 8, 'VectorWave frequencyEnd should parse from SVG')
+
+   local saved = saveScene(scene, 'temp:svg_wave_frequency_end.svg')
+   assertContains(saved, 'frequencyEnd=', 'Saved SVG should include a differing VectorWave frequencyEnd')
+end
+
+@Test function ParsesWaveFrequencyEndHyphenAlias()
+   local scene, wave = loadWaveWithEndFrequency('svg_wave_frequency_end_alias', 'frequency-end')
+
+   assertNear(wave.frequency, 2, 'VectorWave frequency should parse from SVG')
+   assertNear(wave.frequencyEnd, 8, 'VectorWave frequency-end alias should parse from SVG')
+end
+
+@Test function ParsesAndSavesWaveNoise()
+   local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=80 })
+   scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   obj.new('svg', { target=scene, statement=[[
+<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" xmlns:kotuku="http://www.kotuku.dev/xmlns/svg">
+  <kotuku:wave id="svg_wave_noise" x="0" y="40" length="100" amplitude="20" frequency="2" noise="0.75" fill="none" stroke="black"/>
+</svg>
+]] })
+
+   local wave = obj.find('svg_wave_noise')
+   assert(wave != nil, 'Parsed SVG should create the named VectorWave')
+   assertNear(wave.noise, 0.75, 'VectorWave noise should parse from SVG')
+
+   local saved = saveScene(scene, 'temp:svg_wave_noise.svg')
+   assertContains(saved, 'noise=', 'Saved SVG should include VectorWave noise')
+end

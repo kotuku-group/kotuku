@@ -34,6 +34,7 @@ enum class TokenKind : uint16_t {
    Else = TK_else,
    ElseIf = TK_elseif,
    Enum = TK_enum,
+   ExternToken = TK_extern,
    For = TK_for,
    WhileToken = TK_while,
    WithToken = TK_with,
@@ -173,6 +174,7 @@ enum class TokenKind : uint16_t {
       case TokenKind::Else: return "else";
       case TokenKind::ElseIf: return "elseif";
       case TokenKind::Enum: return "enum";
+      case TokenKind::ExternToken: return "extern";
       case TokenKind::For: return "for";
       case TokenKind::WhileToken: return "while";
       case TokenKind::WithToken: return "with";

@@ -50,6 +50,7 @@ using namespace kt;
 #include "agg_rendering_buffer.h"
 #include "agg_scanline_p.h"
 #include "agg_scanline_u.h"
+#include "agg_stroke_resolve.h"
 #include "agg_span_allocator.h"
 #include "agg_span_converter.h"
 #include "agg_span_image_filter_rgba.h"
@@ -241,11 +242,40 @@ public:
    InputSubscription(FUNCTION pCallback, JTYPE pMask) : Callback(pCallback), Mask(pMask) { }
 };
 
-class KeyboardSubscription {
-public:
-   FUNCTION Callback;
-   KeyboardSubscription(FUNCTION pCallback) : Callback(pCallback) { }
-};
+//********************************************************************************************************************
+// Clears a pinned callback subscription.  The script procedure is only dereferenced if the context is still alive;
+// terminated contexts are zombies whereby only the header flags and pin count remain valid.
+
+inline void release_callback(FUNCTION &Function)
+{
+   if (Function.isScript() and (not Function.Context->terminating())) {
+      ((objScript *)Function.Context)->derefProcedure(Function);
+   }
+   Function.clear();
+   Function.Context->unpinWeak();
+}
+
+//********************************************************************************************************************
+// Lazily invalidates a weak-pinned object dependency (e.g. GuidePath, Transition) whose target has been terminated.
+// Only the zombie header remains valid at that point, so the link must be dropped before any dereference.
+
+template <class T> inline void validate_object_link(T *&Link)
+{
+   if ((Link) and (Link->terminating())) {
+      Link->unpinWeak();
+      Link = nullptr;
+   }
+}
+
+//********************************************************************************************************************
+
+inline void deref_vector_callback(FUNCTION &Function)
+{
+   if (Function.isScript()) ((objScript *)Function.Context)->derefProcedure(Function);
+   Function.clear();
+}
+
+//********************************************************************************************************************
 
 class DashedStroke {
 public:
@@ -749,12 +779,16 @@ class extVector : public objVector {
    std::string FillString;
    std::string FilterString;
    std::string SID;
+   extVector           *GuidePath;
+   extVectorTransition *Transition;
+   extVectorClip       *ClipMask;
+   extVector           *AppendPath;
    VFR FillRule;
    VFR ClipRule;
    VLJ LineJoin;
    VLC LineCap;
    VIJ InnerJoin;
-   VMF MorphFlags;
+   VMF GuideFlags;
 
    extPainter Fill[2], Stroke;
    double FinalX, FinalY;         // Used by Viewport to define the target X,Y; also VectorText to position the text' final position.
@@ -768,13 +802,9 @@ class extVector : public objVector {
    std::unique_ptr<agg::rasterizer_scanline_aa<>> FillRaster;
    std::unique_ptr<std::vector<FeedbackSubscription>> FeedbackSubscriptions;
    std::unique_ptr<std::vector<InputSubscription>> InputSubscriptions;
-   std::unique_ptr<std::vector<KeyboardSubscription>> KeyboardSubscriptions;
+   std::unique_ptr<std::vector<FUNCTION>> KeyboardSubscriptions;
    extVectorFilter     *Filter;
    extVectorViewport   *ParentView;
-   extVectorClip       *ClipMask;
-   extVectorTransition *Transition;
-   extVector           *Morph;
-   extVector           *AppendPath;
    std::unique_ptr<DashedStroke> DashArray;
    std::unique_ptr<ClipMaskCache> ClipCache;
    std::unique_ptr<filter_bitmap> IsolatedBuffer;
@@ -1136,6 +1166,18 @@ class extVectorClip : public objVectorClip, public SceneDef {
    OBJECTID ViewportID;
    uint64_t ContentVersion;
 };
+
+//********************************************************************************************************************
+// ClipMask requires its own lazy invalidation because the cached mask must be discarded with the link.
+
+inline void validate_clip_mask(extVector *Vector)
+{
+   if ((Vector->ClipMask) and (Vector->ClipMask->terminating())) {
+      Vector->ClipMask->unpinWeak();
+      Vector->ClipMask = nullptr;
+      Vector->ClipCache.reset();
+   }
+}
 
 //********************************************************************************************************************
 

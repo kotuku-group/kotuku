@@ -95,6 +95,8 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
 
    // Inherit declared globals from parent so nested functions recognize them
    child_state.declared_globals = parent_state->declared_globals;
+   child_state.external_symbols = parent_state->external_symbols;
+   child_state.allow_external_symbol_reads = parent_state->allow_external_symbol_reads;
 
    // Set linedefined to the earliest line that bytecode might reference.
    // Note: SourceSpan.line represents the END line of a span (due to combine_spans behavior),
@@ -184,7 +186,8 @@ ParserResult<ExpDesc> IrEmitter::emit_function_lvalue(const FunctionNamePath &pa
    if (path.segments.empty()) return this->unsupported_expr(AstNodeKind::FunctionExpr, SourceSpan{});
 
    NameRef base_ref = make_name_ref(path.segments.front());
-   auto base_expr = this->emit_identifier_expr(base_ref);
+   bool single_local_function = path.segments.size() IS 1 and not path.method.has_value();
+   auto base_expr = this->emit_identifier_expr(base_ref, single_local_function);
    if (not base_expr.ok()) return base_expr;
 
    ExpDesc target = base_expr.value_ref();
@@ -251,14 +254,17 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
             return ParserResult<ExpDesc>::success(blank_expr);
          }
 
-         // Check if this is a registered constant - cannot assign to constants
-         if (lookup_constant(name_ref.identifier.symbol)) {
+         // Registered constants are immutable unless this target resolves to an explicit local/upvalue shadow.
+         ExpDesc resolved;
+         this->lex_state.var_lookup_symbol(name_ref.identifier.symbol, &resolved);
+         if (lookup_constant(name_ref.identifier.symbol) and
+             resolved.k != ExpKind::Local and resolved.k != ExpKind::Upval) {
             std::string var_name(strdata(name_ref.identifier.symbol), name_ref.identifier.symbol->len);
             std::string msg = "cannot assign to constant '" + var_name + "'";
             return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::AssignToConstant, msg));
          }
 
-         auto result = this->emit_identifier_expr(name_ref);
+         auto result = this->emit_identifier_expr(name_ref, true);
          if (not result.ok()) return result;
          ExpDesc value = result.value_ref();
          if (value.k IS ExpKind::Local) { // Local variable already exists
@@ -536,13 +542,26 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
 
    if (Payload.name.is_explicit_global and not Payload.name.segments.empty()) {
       GCstr *name = Payload.name.segments.front().symbol;
-      if (name) this->func_state.declared_globals.insert(name);
+      if (name) {
+         bool is_direct_global_store = Payload.name.segments.size() IS 1 and not Payload.name.method.has_value();
+         if (is_direct_global_store and ((name->flags & STRFLAG_PROTECTED_GLOBAL) != 0)) {
+            return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::OverrideProtectedGlobal,
+               std::format("cannot override built-in '{}'", std::string_view(strdata(name), name->len)),
+               Payload.name.segments.front().span));
+         }
+         if (is_direct_global_store and lookup_constant(name)) {
+            return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::AssignToConstant,
+               std::format("cannot assign to constant '{}'", std::string_view(strdata(name), name->len)),
+               Payload.name.segments.front().span));
+         }
+         this->func_state.declared_globals.insert(name);
+      }
    }
 
    // Check if this is a simple function name (not a path like foo.bar or method foo:bar)
    // and if protected_globals is enabled without explicit global declaration
 
-   bool is_simple_name = Payload.name.segments.size() == 1 and not Payload.name.method.has_value();
+   bool is_simple_name = Payload.name.segments.size() IS 1 and not Payload.name.method.has_value();
    bool should_be_local = is_simple_name and not Payload.name.is_explicit_global;
 
    // Determine the function name for tostring() support.

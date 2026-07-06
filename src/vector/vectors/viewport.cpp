@@ -122,11 +122,13 @@ extVectorViewport::~extVectorViewport()
 {
    if ((Scene) and (!Scene->collecting()) and (!((extVectorScene *)Scene)->ResizeSubscriptions.empty())) {
       if (((extVectorScene *)Scene)->ResizeSubscriptions.contains(this)) {
+         for (auto &sub : ((extVectorScene *)Scene)->ResizeSubscriptions[this]) release_callback(sub.second);
          ((extVectorScene *)Scene)->ResizeSubscriptions.erase(this);
       }
    }
 
    if (vpDragCallback.defined()) {
+      deref_vector_callback(vpDragCallback);
       subscribeInput(JTYPE::NIL, C_FUNCTION(drag_callback));
    }
 
@@ -358,10 +360,11 @@ static ERR VIEW_SET_DragCallback(extVectorViewport *Self, FUNCTION *Value)
          return ERR::Function;
       }
 
+      deref_vector_callback(Self->vpDragCallback);
       Self->vpDragCallback = *Value;
    }
    else {
-      Self->vpDragCallback.clear();
+      deref_vector_callback(Self->vpDragCallback);
       Self->subscribeInput(JTYPE::NIL, C_FUNCTION(drag_callback));
    }
    return ERR::Okay;

@@ -31,6 +31,7 @@ that is distributed with this package.  Please refer to it for further informati
 #define PRV_SURFACE
 
 #include "defs/hashes.h"
+#include "../link/simd.h"
 #include "../link/unicode.h"
 #include <kotuku/modules/filesystem.h>
 #include <kotuku/modules/processes.h>
@@ -39,9 +40,21 @@ that is distributed with this package.  Please refer to it for further informati
 #include <kotuku/modules/time.h>
 #include <kotuku/modules/module.h>
 #include <atomic>
+#include <vector>
 
 using BYTECODE = uint32_t;
 using CELL_ID = uint32_t;
+
+static void deref_document_callback(FUNCTION &Function)
+{
+   if (Function.isScript()) ((objScript *)Function.Context)->derefProcedure(Function);
+   Function.clear();
+}
+
+static void deref_document_callbacks(std::vector<FUNCTION> &Callbacks)
+{
+   for (auto &callback : Callbacks) deref_document_callback(callback);
+}
 
 static std::atomic<BYTECODE> glByteCodeID = 1;
 static thread_local BYTECODE glReservedByteCodeID = 0;

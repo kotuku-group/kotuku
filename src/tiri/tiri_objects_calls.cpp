@@ -1,6 +1,13 @@
 // Refer: lib_object.cpp
 
 #include <new>
+#include <vector>
+
+struct pending_function_arg {
+   int Offset;
+   int StackIndex;
+   int Type;
+};
 
 //********************************************************************************************************************
 // Lua C closure executed via calls to obj.acName()
@@ -157,6 +164,44 @@ static void cleanup_function_arg(lua_State *Lua, FUNCTION *Func)
    }
 
    FreeResource(Func);
+}
+
+static void free_function_arg_after_call(lua_State *Lua, FUNCTION *Func)
+{
+   if (not Func) return;
+
+   if ((Func->consumed()) and (Func->Context IS Lua->script) and (Func->ProcedureID > 0)) {
+      luaL_unref(Lua, LUA_REGISTRYINDEX, Func->ProcedureID);
+      Func->ProcedureID = 0;
+   }
+
+   FreeResource(Func);
+}
+
+static ERR materialise_function_arg(lua_State *Lua, const pending_function_arg &Pending, int8_t *ArgBuffer)
+{
+   int ref = LUA_NOREF;
+
+   if (Pending.Type IS LUA_TSTRING) {
+      lua_getglobal(Lua, lua_tostring(Lua, Pending.StackIndex));
+      ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
+   }
+   else {
+      lua_pushvalue(Lua, Pending.StackIndex);
+      ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
+   }
+
+   // Note: The async interface requires FUNCTION storage to outlive the stack frame, hence the allocation.
+
+   FUNCTION *func = nullptr;
+   if (!AllocMemory(sizeof(FUNCTION), MEM::DATA, (APTR *)&func)) {
+      *func = FUNCTION(Lua->script, ref);
+      ((FUNCTION **)(ArgBuffer + Pending.Offset))[0] = func;
+      return ERR::Okay;
+   }
+
+   if ((ref != LUA_NOREF) and (ref != LUA_REFNIL)) luaL_unref(Lua, LUA_REGISTRYINDEX, ref);
+   return ERR::AllocMemory;
 }
 
 template <class T> static void delete_cpp_array_arg(APTR Array)
@@ -440,6 +485,9 @@ inline bool check_buffer_size_arg(int64_t Size, size_t Capacity)
    return (Size >= 0) and (uint64_t(Size) <= uint64_t(Capacity));
 }
 
+// Long jumps are not permitted (interferes with RAII cleanup).  Thunk arguments are resolved up-front under
+// error protection so that later stack reads can never raise a Lua error mid-function.
+
 ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int ArgsSize, int8_t *ArgBuffer,
    int *ResultCount, int &ErrorArg, CSTRING &ErrorMsg)
 {
@@ -448,6 +496,15 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
    int top = lua_gettop(Lua);
 
    log.traceBranch("%d, %p, Top: %d", ArgsSize, ArgBuffer, top);
+
+   if (top > 0) {
+      if (int failed = lua_resolve_thunks(Lua, 1, top)) {
+         ErrorArg = failed;
+         ErrorMsg = lua_tostring(Lua, failed);  // Error value is anchored in the failed slot
+         if (not ErrorMsg) ErrorMsg = "Exception in thunk argument.";
+         return ERR::Exception;
+      }
+   }
 
    clearmem(ArgBuffer, ArgsSize);
 
@@ -468,6 +525,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
    int j = 0;
    size_t buffer_capacity = 0;
    bool buffer_capacity_known = false;
+   std::vector<pending_function_arg> pending_functions;
    for (i=0,n=1; (Args[i].Name) and (j < ArgsSize); i++) {
       if (not (Args[i].Type & FD_BUFSIZE)) buffer_capacity_known = false;
 
@@ -524,7 +582,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          continue;
       }
 
-      int type = (top > 0) ? lua_type(Lua, n) : LUA_TNIL;
+      int type = (top > 0) ? lua_resolved_type(Lua, n) : LUA_TNIL;
 
       //log.trace("Processing arg %s, type $%.8x", Args[i].Name, Args[i].Type);
 
@@ -532,7 +590,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          j = ALIGN64(j);
          if (type != LUA_TARRAY) return fail_arg(n, "Array required.");
 
-         auto array = lua_toarray(Lua, n);
+         auto array = lua_toarray(Lua, n); // Safe (confirmed array type)
          if (Args[i].Type & FD_CPP) {
             APTR vector = nullptr;
             auto error = copy_cpp_array_arg(Args[i].Type, array, &vector);
@@ -561,7 +619,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          if (type IS LUA_TARRAY) {
             //log.trace("Arg: %s, Value: Buffer (Source is Memory)", Args[i].Name);
 
-            auto array = lua_toarray(Lua, n);
+            auto array = lua_toarray(Lua, n); // Safe (confirmed array type)
             ((APTR *)(ArgBuffer + j))[0] = array->arraydata();
             j += sizeof(APTR);
 
@@ -647,17 +705,14 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
                j += sizeof(CSTRING);
             }
          }
-         else {
-            return fail_arg(n, "String required.");
-         }
+         else return fail_arg(n, "String required.");
 
          //log.trace("Arg: %s, Value: %s", Args[i].Name, ((STRING *)(ArgBuffer + j))[0]);
-
       }
       else if (Args[i].Type & FD_PTR) {
          j = ALIGN64(j);
          if (Args[i].Type & FD_OBJECT) {
-            if (auto obj_ref = lj_lib_optobject(Lua, n)) {
+            if (auto obj_ref = lj_lib_optobject(Lua, n, false)) { // Performs thunk resolution
                OBJECTPTR ptr_obj;
                if (obj_ref->ptr) {
                   ((OBJECTPTR *)(ArgBuffer + j))[0] = obj_ref->ptr;
@@ -671,27 +726,13 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
                   ((OBJECTPTR *)(ArgBuffer + j))[0] = nullptr;
                }
             }
-            else ((OBJECTPTR *)(ArgBuffer + j))[0] = nullptr;
+            else if (type IS LUA_TNIL) ((OBJECTPTR *)(ArgBuffer + j))[0] = nullptr;
+            else return fail_arg(n, "Object required.");
          }
          else if (Args[i].Type & FD_FUNCTION) {
             if ((type IS LUA_TSTRING) or (type IS LUA_TFUNCTION)) {
-               FUNCTION *func;
-
-               if (!AllocMemory(sizeof(FUNCTION), MEM::DATA, (APTR *)&func)) {
-                  if (type IS LUA_TSTRING) {
-                     lua_getglobal(Lua, lua_tostring(Lua, n));
-                     *func = FUNCTION(Lua->script, luaL_ref(Lua, LUA_REGISTRYINDEX));
-                  }
-                  else {
-                     lua_pushvalue(Lua, n);
-                     *func = FUNCTION(Lua->script, luaL_ref(Lua, LUA_REGISTRYINDEX));
-                  }
-
-                  ((FUNCTION **)(ArgBuffer + j))[0] = func;
-
-                  // The FUNCTION structure is freed when processing results
-               }
-               else return fail(ERR::AllocMemory);
+               ((FUNCTION **)(ArgBuffer + j))[0] = nullptr;
+               pending_functions.push_back({ j, n, type });
             }
             else if ((type IS LUA_TNIL) or (type IS LUA_TNONE)) {
                ((FUNCTION **)(ArgBuffer + j))[0] = nullptr;
@@ -728,11 +769,11 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          j += sizeof(APTR);
       }
       else if (Args[i].Type & FD_INT) {
-         if ((type IS LUA_TUSERDATA) or (type IS LUA_TLIGHTUSERDATA)) {
-            if (auto obj = lj_lib_checkobject(Lua, n)) {
+         if (type IS LUA_TOBJECT) {
+            if (auto obj = lj_lib_optobject(Lua, n, false)) {
                ((int *)(ArgBuffer + j))[0] = obj->uid;
             }
-            else return fail_arg(n, "Unable to convert usertype to an integer.");
+            else return fail_arg(n, "Failed to read object type.");
          }
          else if (type IS LUA_TBOOLEAN) {
             auto value = lua_toboolean(Lua, n);
@@ -744,7 +785,10 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
             }
             ((int *)(ArgBuffer + j))[0] = value;
          }
-         else if (type != LUA_TNIL) {
+         else if ((type IS LUA_TUSERDATA) or (type IS LUA_TLIGHTUSERDATA)) {
+            return fail_arg(n, "Unable to convert usertype to an integer.");
+         }
+         else if (type != LUA_TNIL) { // Attempt numeric conversion
             auto value = lua_tointeger(Lua, n);
             if ((Args[i].Type & FD_BUFSIZE) and buffer_capacity_known) {
                if (not check_buffer_size_arg(value, buffer_capacity)) {
@@ -757,7 +801,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          else if (Args[i].Type & (FD_BUFSIZE|FD_ARRAYSIZE)) {
             buffer_capacity_known = false; // Do not alter as the FD_BUFFER support would have managed it
          }
-         else ((int *)(ArgBuffer + j))[0] = 0;
+         else ((int *)(ArgBuffer + j))[0] = 0; // Value is nil
          //log.trace("Arg: %s, Value: %d / $%.8x", Args[i].Name, ((int *)(ArgBuffer + j))[0], ((int *)(ArgBuffer + j))[0]);
          j += sizeof(int);
       }
@@ -796,6 +840,11 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
 
    log.trace("Processed %d Args (%d bytes), detected %d result parameters.", i, j, resultcount);
    if (ResultCount) *ResultCount = resultcount;
+
+   for (auto &pending : pending_functions) {
+      if (auto error = materialise_function_arg(Lua, pending, ArgBuffer); error != ERR::Okay) return fail(error);
+   }
+
    return ERR::Okay;
 }
 
@@ -916,7 +965,7 @@ static int get_results(lua_State *Lua, const FunctionField *Args, const int8_t *
          if (type & FD_FUNCTION) {
             if (auto func = (FUNCTION *)((APTR *)(ArgBuf+of))[0]) {
                log.trace("Removing function memory allocation %p", func);
-               FreeResource(func);
+               free_function_arg_after_call(Lua, func);
             }
          }
          else if (type & FD_RESULT) {

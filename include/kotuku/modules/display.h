@@ -885,22 +885,22 @@ class objBitmap : public Object {
    }
 
    inline ERR getClipLeft(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 184));
-      return ERR::Okay;
-   }
-
-   inline ERR getClipRight(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 188));
-      return ERR::Okay;
-   }
-
-   inline ERR getClipBottom(int &Value) noexcept {
       Value = *((int *)(((int8_t *)this) + 192));
       return ERR::Okay;
    }
 
-   inline ERR getClipTop(int &Value) noexcept {
+   inline ERR getClipRight(int &Value) noexcept {
       Value = *((int *)(((int8_t *)this) + 196));
+      return ERR::Okay;
+   }
+
+   inline ERR getClipBottom(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 200));
+      return ERR::Okay;
+   }
+
+   inline ERR getClipTop(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 204));
       return ERR::Okay;
    }
 
@@ -1281,27 +1281,27 @@ class objDisplay : public Object {
    }
 
    inline ERR getManufacturer(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 184));
+      Value = *((std::string *)(((int8_t *)this) + 192));
       return ERR::Okay;
    }
 
    inline ERR getChipset(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 216));
+      Value = *((std::string *)(((int8_t *)this) + 224));
       return ERR::Okay;
    }
 
    inline ERR getDisplay(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 248));
+      Value = *((std::string *)(((int8_t *)this) + 256));
       return ERR::Okay;
    }
 
    inline ERR getDisplayMfr(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 280));
+      Value = *((std::string *)(((int8_t *)this) + 288));
       return ERR::Okay;
    }
 
    inline ERR getOpacity(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 312));
+      Value = *((double *)(((int8_t *)this) + 320));
       return ERR::Okay;
    }
 

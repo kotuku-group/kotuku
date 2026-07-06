@@ -24,6 +24,61 @@ static bool contains_safe_nav_target(const ExprNode& Expr)
    }
 }
 
+static bool emit_identifier_name_is(GCstr *Name, std::string_view Text)
+{
+   return Name and std::string_view(strdata(Name), Name->len) IS Text;
+}
+
+static GCstr * emit_literal_string_key(const ExprNode &Expr)
+{
+   if (Expr.kind != AstNodeKind::LiteralExpr) return nullptr;
+   const auto &literal = std::get<LiteralValue>(Expr.data);
+   if (literal.kind != LiteralKind::String) return nullptr;
+   return literal.string_value;
+}
+
+static bool is_global_environment_reference(LexState &State, const ExprNode &Expr)
+{
+   if (Expr.kind != AstNodeKind::IdentifierExpr) return false;
+
+   const auto *name_ref = std::get_if<NameRef>(&Expr.data);
+   if (not name_ref or not emit_identifier_name_is(name_ref->identifier.symbol, "_G")) return false;
+
+   ExpDesc resolved;
+   State.var_lookup_symbol(name_ref->identifier.symbol, &resolved);
+   return resolved.k IS ExpKind::Global or resolved.k IS ExpKind::Unscoped;
+}
+
+static GCstr * protected_global_store_key(LexState &State, const ExprNode &Expr)
+{
+   GCstr *key = nullptr;
+
+   if (Expr.kind IS AstNodeKind::MemberExpr) {
+      const auto &payload = std::get<MemberExprPayload>(Expr.data);
+      if (payload.table and is_global_environment_reference(State, *payload.table)) key = payload.member.symbol;
+   }
+   else if (Expr.kind IS AstNodeKind::IndexExpr) {
+      const auto &payload = std::get<IndexExprPayload>(Expr.data);
+      if (payload.table and payload.index and is_global_environment_reference(State, *payload.table)) {
+         key = emit_literal_string_key(*payload.index);
+      }
+   }
+
+   if (key and ((key->flags & STRFLAG_PROTECTED_GLOBAL) != 0)) return key;
+   return nullptr;
+}
+
+static bool computed_global_environment_store(LexState &State, const ExprNode &Expr)
+{
+   if (Expr.kind != AstNodeKind::IndexExpr) return false;
+
+   const auto &payload = std::get<IndexExprPayload>(Expr.data);
+   if (not payload.table or not payload.index or
+      not is_global_environment_reference(State, *payload.table)) return false;
+
+   return emit_literal_string_key(*payload.index) IS nullptr;
+}
+
 static void patch_safe_nav_skip_here(PreparedAssignment& Target, FuncState& State)
 {
    if (Target.safe_nav_skip.valid()) Target.safe_nav_skip.patch_to(BCPos(State.pc));
@@ -46,7 +101,7 @@ static ParserResult<IrEmitUnit> assignment_value_count_error(
    }
    SourceSpan span = raw ? raw->span : SourceSpan{};
    return ParserResult<IrEmitUnit>::failure(
-      ParserError(ParserErrorCode::InternalInvariant, Token::from_span(span, TokenKind::Unknown), Message));
+      Emitter->make_error(ParserErrorCode::InternalInvariant, Message, span));
 }
 
 static GCstr * array_append_helper_key(LexState *State)
@@ -757,6 +812,42 @@ ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targ
       if (not node) {
          return ParserResult<std::vector<PreparedAssignment>>::failure(this->make_error(
             ParserErrorCode::InternalInvariant, "assignment target missing"));
+      }
+
+      if (computed_global_environment_store(this->lex_state, *node)) {
+         return ParserResult<std::vector<PreparedAssignment>>::failure(this->make_error(
+            ParserErrorCode::OverrideProtectedGlobal,
+            "cannot override built-in through computed _G key",
+            node->span));
+      }
+
+      if (GCstr *protected_name = protected_global_store_key(this->lex_state, *node)) {
+         return ParserResult<std::vector<PreparedAssignment>>::failure(this->make_error(
+            ParserErrorCode::OverrideProtectedGlobal,
+            std::format("cannot override built-in '{}'",
+               std::string_view(strdata(protected_name), protected_name->len)),
+            node->span));
+      }
+
+      // A plain identifier target naming a host pre-registered global is an override unless an explicit
+      // local shadow is in scope.  Member and index stores (math.foo = 1) remain legal table mutations.
+
+      if (node->kind IS AstNodeKind::IdentifierExpr) {
+         if (const auto *name_ref = std::get_if<NameRef>(&node->data)) {
+            GCstr *symbol = name_ref->identifier.symbol;
+            if (symbol and not name_ref->identifier.is_blank and
+                ((symbol->flags & STRFLAG_PROTECTED_GLOBAL) != 0)) {
+               ExpDesc resolved;
+               this->lex_state.var_lookup_symbol(symbol, &resolved);
+               if (resolved.k != ExpKind::Local and resolved.k != ExpKind::Upval) {
+                  return ParserResult<std::vector<PreparedAssignment>>::failure(this->make_error(
+                     ParserErrorCode::OverrideProtectedGlobal,
+                     std::format("cannot override built-in '{}'",
+                        std::string_view(strdata(symbol), symbol->len)),
+                     node->span));
+               }
+            }
+         }
       }
 
       PreparedAssignment prepared;

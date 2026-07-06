@@ -22,7 +22,7 @@ typedef int SOCKET_HANDLE;
 
   enums("IPADDR", { type="int", start=0, comment="Address types for the IPAddress structure." }, "V4", "V6")
 
-  struct("IPAddress", { }, [[
+  structdef("IPAddress", { }, [[
     uint(4) Data        # 128-bit array for supporting both V4 (32-bit host order) and V6 (8-bit byte order) IP addresses.
     int(IPADDR) Type    # Identifies the address Data value as a V4 or V6 address type.
     int Port            # For UDP packets, identifies the client port number in host byte order.

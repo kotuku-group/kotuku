@@ -80,7 +80,7 @@ end
          err, read_len = Client.acRead(server_buffer)
          assert(err is ERR_Okay, 'Failed to read data from client, error: ' .. mSys.GetErrorMsg(err))
 
-         msg = server_buffer:sub(0, read_len)
+         local msg = server_buffer:sub(0, read_len)
          logOutput(f'[Server] Received "{msg}"')
          if (msg:find('Reply')) then
             glTestCompleted = true
@@ -162,6 +162,7 @@ end
 -- One-on-one basic communication test between client and server.
 
 @Test function BasicCommunication()
+   local read_msg_sent
    glPort++
 
    -- Create NetServer with comprehensive message handling
@@ -195,7 +196,7 @@ end
             error('[Server] Failed to read data from client: ' .. mSys.GetErrorMsg(err))
          end
 
-         msg = buffer:sub(0, read_len)
+         local msg = buffer:sub(0, read_len)
          logOutput('[Server] Received: ' .. msg)
 
          if (msg:startsWith('ACK:WELCOME')) then
@@ -235,7 +236,7 @@ end
          err, read_len = Socket.acRead(buffer)
          assert(err is ERR_Okay, '[Client] Failed to read data from server: ' .. mSys.GetErrorMsg(err))
 
-         msg = buffer:sub(0, read_len)
+         local msg = buffer:sub(0, read_len)
          logOutput('[Client] Received: ' .. msg)
 
          if msg:startsWith('WELCOME:') then

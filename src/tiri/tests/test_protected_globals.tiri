@@ -1,0 +1,128 @@
+-- Flute regression tests for protected host-registered global names.
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+function assert_activation_fails(Statement:str, Message:str)
+   local script = obj.new('tiri', { statement = Statement })
+   local err = script.acActivate()
+
+   assert(err != ERR_Okay, Message .. ' should fail activation')
+   assert(script.error != ERR_Okay, Message .. ' should set a script error')
+   assert(string.find(script.errorMessage, 'cannot override built-in') != nil,
+      Message .. ' should report the protected-global diagnostic, got: ' .. tostring(script.errorMessage))
+end
+
+function assert_activation_succeeds(Statement:str, Message:str)
+   local script = obj.new('tiri', { statement = Statement })
+   local err = script.acActivate()
+
+   assert(err is ERR_Okay, Message .. ' should activate successfully: ' .. tostring(script.errorMessage))
+end
+
+@Test function RejectsGlobalDeclarationOfBuiltinFunction()
+   assert_activation_fails([[global tostring = 5]], 'global tostring assignment')
+end
+
+@Test function RejectsGlobalFunctionDeclarationOfBuiltinFunction()
+   assert_activation_fails([[global function tostring() end]], 'global tostring function declaration')
+end
+
+@Test function RejectsGlobalDeclarationOfInterfaceTable()
+   assert_activation_fails([[global table = {}]], 'global table assignment')
+end
+
+@Test function RejectsGlobalEnvironmentMemberAssignment()
+   assert_activation_fails([[_G.tostring = 5]], '_G.tostring assignment')
+end
+
+@Test function RejectsGlobalEnvironmentLiteralIndexAssignment()
+   assert_activation_fails([[_G['tostring'] = 5]], "_G['tostring'] assignment")
+end
+
+@Test function RejectsGlobalEnvironmentComputedIndexAssignment()
+   assert_activation_fails([[local k = 'tostring'; _G[k] = 5]], "_G[k] assignment")
+end
+
+@Test function AllowsComputedIndexAssignmentToLocalNamedGlobalEnvironment()
+   assert_activation_succeeds([[
+      local _G = {}
+      local k = 'tostring'
+      _G[k] = 5
+      assert(_G.tostring is 5)
+   ]], 'local _G computed index assignment')
+end
+
+@Test function RejectsProtectedNameInMultiTargetGlobalDeclaration()
+   assert_activation_fails([[global a, tostring = 1, 2]], 'multi-target global declaration')
+end
+
+@Test function RejectsPlainAssignmentToBuiltin()
+   assert_activation_fails([[tostring = 5]], 'plain tostring assignment')
+end
+
+@Test function RejectsPlainAssignmentToBuiltinLibrary()
+   assert_activation_fails([[math = '']], 'plain math assignment')
+end
+
+@Test function RejectsPlainNilAssignmentToBuiltin()
+   assert_activation_fails([[obj = nil]], 'plain obj nil assignment')
+end
+
+@Test function RejectsProtectedNameInMultiTargetPlainAssignment()
+   assert_activation_fails([[local a; a, math = 1, 2]], 'multi-target plain assignment')
+end
+
+@Test function RejectsCompoundAssignmentToBuiltin()
+   assert_activation_fails([[tostring ..= 'x']], 'compound assignment to builtin')
+end
+
+@Test function AllowsMemberStoreIntoBuiltinTable()
+   assert_activation_succeeds([[
+      math.custom = 5
+      assert(math.custom is 5)
+      math.custom = nil
+   ]], 'member store into builtin table')
+end
+
+@Test function AllowsExplicitLocalShadowReadingBuiltinFirst()
+   assert_activation_succeeds([[
+      local original = tostring
+      local tostring = original
+      assert(type(tostring) is 'function')
+   ]], 'local shadow from builtin')
+end
+
+@Test function AllowsPlainReassignmentOfExplicitLocalShadow()
+   assert_activation_succeeds([[
+      local math = ''
+      math = 'reassigned'
+      assert(math is 'reassigned')
+      assert(type(_G.math) is 'table')
+   ]], 'plain reassignment of explicit local shadow')
+end
+
+@Test function AllowsLocalFunctionShadowOfBuiltin()
+   assert_activation_succeeds([[
+      function tostring()
+         return 'local'
+      end
+      assert(tostring() is 'local')
+      assert(_G.tostring(5) is '5')
+   ]], 'local function shadow')
+end
+
+@Test function AllowsUnregisteredGlobalDeclaration()
+   assert_activation_succeeds([[
+      global myThing = 1
+      assert(myThing is 1)
+   ]], 'unregistered global declaration')
+end
+
+@Test function AllowsScriptCreatedGlobalReassignment()
+   assert_activation_succeeds([[
+      global myThing = 1
+      myThing = 2
+      assert(myThing is 2)
+   ]], 'script-created global reassignment')
+end

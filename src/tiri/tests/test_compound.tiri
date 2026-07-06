@@ -384,25 +384,17 @@ end
    assert(store.label is 'xy', 'field string ..= should still concatenate and store a string')
 end
 
-@Test function ArrayConcatAssignmentIgnoresShadowedArrayGlobal()
-   saved_array = array
+@Test function ArrayConcatAssignmentIgnoresShadowedArrayLocal()
    store = { buf = array<byte>, label = 'x' }
 
-   global array = {}
+   local array = {}
 
-   try
-      store.label ..= 'y'
-      store.buf ..= 'Hi'
-      store.buf ..= 33
+   store.label ..= 'y'
+   store.buf ..= 'Hi'
+   store.buf ..= 33
 
-      assert(store.label is 'xy', 'field string ..= should not call the shadowed array global')
-      assert(store.buf:getString() is 'Hi33', 'field byte array ..= should still use the internal append helper')
-   except e
-      global array = saved_array
-      error(e)
-   success
-      global array = saved_array
-   end
+   assert(store.label is 'xy', 'field string ..= should not call the shadowed array local')
+   assert(store.buf:getString() is 'Hi33', 'field byte array ..= should still use the internal append helper')
 end
 
 @Test function ArrayConcatAssignmentOnTypedLocals()
@@ -523,7 +515,7 @@ end
          return A .. B.val
       end
    }
-   obj = setmetatable({ val = 'data' }, mt)
+   local obj = setmetatable({ val = 'data' }, mt)
    result = array<byte>
 
    result ..= 'prefix_' .. obj

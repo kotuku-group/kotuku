@@ -1,8 +1,9 @@
 #pragma once
 
-// SSE2 availability detection, shared by modules that implement SIMD rendering paths.  SSE2 is guaranteed on
-// all x86-64 targets and on 32-bit MSVC builds compiled with /arch:SSE2 or better.  Code must guard its SIMD
-// paths with KOTUKU_SSE2 and fall back to scalar routines on other architectures.
+// SIMD availability detection, shared by modules that implement SIMD rendering paths.  SSE4.2 is the mandatory
+// baseline for all x86/x86-64 Kotuku builds (see the SIMD baseline block in the root CMakeLists.txt), which in
+// turn guarantees SSE2.  Both are therefore always defined on x86 targets, but code should still guard its SIMD
+// paths with KOTUKU_SSE2 / KOTUKU_SSE42 and fall back to scalar routines on other architectures (e.g. ARM).
 
 #if defined(__SSE2__)
    #define KOTUKU_SSE2 1
@@ -14,8 +15,22 @@
    #endif
 #endif
 
+// SSE4.2 is guaranteed by the build baseline.  GCC/Clang expose __SSE4_2__ when compiled with -msse4.2; MSVC has
+// no equivalent predefined macro but always provides the SSE4.2 intrinsics, so on the MSVC toolchain the baseline
+// is implied wherever SSE2 is present.
+
+#if defined(__SSE4_2__)
+   #define KOTUKU_SSE42 1
+#elif defined(KOTUKU_SSE2) and defined(_MSC_VER) and !defined(__clang__)
+   #define KOTUKU_SSE42 1
+#endif
+
 #ifdef KOTUKU_SSE2
 #include <emmintrin.h>
+#endif
+
+#ifdef KOTUKU_SSE42
+#include <nmmintrin.h>
 #endif
 
 // AVX2 kernels are compiled per-function wherever the toolchain allows it: MSVC permits AVX2

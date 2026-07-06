@@ -594,6 +594,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
       case TokenKind::Annotate:      return this->parse_annotated_statement();
       case TokenKind::Local:         return this->parse_local();
       case TokenKind::Global:        return this->parse_global();
+      case TokenKind::ExternToken:   return this->parse_extern();
       case TokenKind::Enum:          return this->parse_enum(current);
       case TokenKind::Function:      return this->parse_function_stmt();
       case TokenKind::ThunkToken:    return this->parse_function_stmt();

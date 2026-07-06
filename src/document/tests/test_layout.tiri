@@ -6,6 +6,8 @@
 -- You can view the saved image files to confirm the accuracy of the results.  If the test has passed then update the
 -- old checksum with the new one provided in this program's output.
 
+   include 'image'
+
 @BeforeAll function init(State)
    global glDocFolder = State.folder
 end

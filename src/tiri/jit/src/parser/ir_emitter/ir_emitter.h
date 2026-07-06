@@ -132,6 +132,17 @@ public:
 
    ParserResult<IrEmitUnit> emit_chunk(const BlockStmt& chunk);
 
+   // Create a parser error with the specified error code and message, capturing the current token context
+   // and the file index of the file being emitted (kept correct across imports by emit_import_stmt swaps).
+
+   inline ParserError make_error(ParserErrorCode Code, std::string_view Message) const {
+      return ParserError(Code, Token::from_current(this->lex_state), Message, this->lex_state.current_file_index);
+   }
+
+   inline ParserError make_error(ParserErrorCode Code, std::string_view Message, const SourceSpan &Span) const {
+      return ParserError(Code, Token::from_span(Span, TokenKind::Unknown), Message, this->lex_state.current_file_index);
+   }
+
 private:
    friend struct LoopStackGuard;
    friend class NilShortCircuitGuard;
@@ -151,6 +162,7 @@ private:
    ParserResult<IrEmitUnit> emit_return_stmt(const ReturnStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_local_decl_stmt(const LocalDeclStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_global_decl_stmt(const GlobalDeclStmtPayload& payload);
+   ParserResult<IrEmitUnit> emit_extern_decl_stmt(const ExternDeclStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_local_function_stmt(const LocalFunctionStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_function_stmt(const FunctionStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_if_stmt(const IfStmtPayload& payload);
@@ -175,7 +187,7 @@ private:
 
    ParserResult<ExpDesc> emit_expression(const ExprNode& expr);
    ParserResult<ExpDesc> emit_literal_expr(const LiteralValue& literal);
-   ParserResult<ExpDesc> emit_identifier_expr(const NameRef& reference);
+   ParserResult<ExpDesc> emit_identifier_expr(const NameRef& reference, bool AllowUnscoped = false);
    ParserResult<ExpDesc> emit_vararg_expr();
    ParserResult<ExpDesc> emit_unary_expr(const UnaryExprPayload& payload);
    ParserResult<ExpDesc> emit_update_expr(const UpdateExprPayload& payload);
@@ -217,16 +229,6 @@ private:
 
    ParserResult<IrEmitUnit> unsupported_stmt(AstNodeKind kind, const SourceSpan& span);
    ParserResult<ExpDesc> unsupported_expr(AstNodeKind kind, const SourceSpan& span);
-
-   // Create a parser error with the specified error code and message, capturing the current token context.
-
-   inline ParserError make_error(ParserErrorCode Code, std::string_view Message) const {
-      return ParserError(Code, Token::from_current(this->lex_state), Message);
-   }
-
-   inline ParserError make_error(ParserErrorCode Code, std::string_view Message, const SourceSpan &Span) const {
-      return ParserError(Code, Token::from_span(Span, TokenKind::Unknown), Message);
-   }
 
    inline std::optional<BCReg> resolve_local(GCstr *symbol) const { return this->binding_table.resolve(symbol); }
    inline void update_local_binding(GCstr *symbol, BCReg slot) { this->binding_table.add(symbol, slot); }

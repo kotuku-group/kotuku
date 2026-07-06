@@ -456,7 +456,7 @@ end
 end
 
 @Test function TableInputMultipleValues()
-   parser = options({
+   local parser = options({
       args = array<table> {
          { name = 'tag', type = 'int', multiple = true }
       }

@@ -17,11 +17,14 @@ glDecay = 1
 glAmplitude = 50
 glClose = 'top'
 glFrequency = 6
+glNoise = 0
 
 MIN_DECAY <const> = -4
 MAX_DECAY <const> = 4
 MIN_FREQUENCY <const> = 0.01
 MAX_FREQUENCY <const> = 100
+MIN_NOISE <const> = 0
+MAX_NOISE <const> = 1
 MIN_AMPLITUDE <const> = 0
 MAX_AMPLITUDE <const> = 500
 
@@ -29,9 +32,10 @@ MAX_AMPLITUDE <const> = 500
 
 function selectWave(Text:str):obj
    glWave.type = choose Text from
-      'Smooth'   -> WVT_SMOOTH
+      'Sine'     -> WVT_SINE
       'Sawtooth' -> WVT_SAWTOOTH
       'Triangle' -> WVT_TRIANGLE
+      'Square'   -> WVT_SQUARE
    end
 
    glWaveVP.scene.surface.mtScheduleRedraw()
@@ -40,22 +44,26 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 function buildScene()
-   glWaveVP = glViewport.new('VectorViewport', { name='vp_gradient', x = 0, y = 20, xOffset = 0, yOffset=0, overflow='hidden', buffered = true })
+   glWaveVP = glViewport.new('VectorViewport', {
+      name='vp_gradient', x = 0, y = 20, xOffset = 0, yOffset=0, overflow='hidden', buffered = true
+   })
    glWave = glWaveVP.new('VectorWave', { name='wave',
-      x = '2%', y = '50%', length='96%', amplitude = glAmplitude, fill='white', stroke='black', strokeWidth=1, thickness=10,
-      decay = glDecay, close = glClose, frequency = glFrequency
+      x = '2%', y = '50%', length='96%', amplitude = glAmplitude,
+      fill='white', stroke='black', strokeWidth=1, thickness=10,
+      decay = glDecay, close = glClose, frequency = glFrequency, noise = glNoise
    })
 
    cmbWave = gui.combobox({
       target = glViewport,
       label  = 'Wave:',
-      text   = 'Smooth',
+      text   = 'Sine',
       x      = glWindow.margins.left,
       y      = 10,
       items = array<table> {
-         { item = 'Smooth' },
+         { item = 'Sine' },
          { item = 'Sawtooth' },
-         { item = 'Triangle' }
+         { item = 'Triangle' },
+         { item = 'Square' }
       },
       events = {
          activate = function(Widget:table, Text:str)
@@ -140,17 +148,34 @@ function buildScene()
       }
    })
 
+   slNoise = gui.slider({
+      target = glViewport,
+      label  = 'Noise:',
+      value  = glNoise,
+      min    = MIN_NOISE,
+      max    = MAX_NOISE,
+      x      = slDecay.viewport.x + slDecay.viewport.width + 10,
+      y      = 10,
+      events = {
+         activate = function(Widget:table, Value:num)
+            glNoise = Value
+            glWave.noise = glNoise
+            glWaveVP.scene.surface.mtScheduleRedraw()
+         end
+      }
+   })
+
+   -- FrequencyEnd
+
    glWaveVP.y = cmbWave.viewport.y + cmbWave.viewport.height + 12
 
-   selectWave('Smooth')
+   selectWave('Sine')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
    glWindow = gui.window({ title='Wave Demo', insideWidth=1024, insideHeight=800 })
-   glViewport = glWindow:clientViewport({
-      aspectRatio = ARF_MEET
-   })
+   glViewport = glWindow:clientViewport({ aspectRatio = ARF_MEET })
 
    buildScene()
 

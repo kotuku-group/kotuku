@@ -275,7 +275,7 @@ flags("FD", { weak=true, comment="Field descriptors.", module="Core" },
   { CLASS_TYPES      = "DOUBLE|FLOAT|POINTER|INT|INT64|STRING|FUNCTION|UNIT|OBJECT|BYTE|WORD|CPP|ARRAY: All types that directly contribute to the core definition of a C/C++ type" }
 )
 
-  struct("InputEvent", { module="Core" }, [[
+  structdef("InputEvent", { module="Core" }, [[
     cstruct(*InputEvent) Next # Next event in the chain
     double Value      # The value associated with the Type
     large Timestamp   # PreciseTime() of the recorded input
@@ -291,24 +291,24 @@ flags("FD", { weak=true, comment="Field descriptors.", module="Core" },
     int(JTYPE) Mask   # Mask to use for checking against subscribers
   ]])
 
-  struct("dcRequest", { comment="Data feed item request", module="Core" }, [[
+  structdef("dcRequest", { comment="Data feed item request", module="Core" }, [[
     int     Item        # Identifier for retrieval from the source
     char(4) Preference  # Data preferences for the returned item(s)
   ]])
 
-  struct("dcAudio", { comment="Data feed structure for Audio", module="Core" }, [[
+  structdef("dcAudio", { comment="Data feed structure for Audio", module="Core" }, [[
     int Size     # Byte size of this structure
     int Format   # Format of the audio data
   ]])
 
-  struct("dcKeyEntry", { comment="Data feed structure for Keypress", module="Core" }, [[
+  structdef("dcKeyEntry", { comment="Data feed structure for Keypress", module="Core" }, [[
     int   Flags      # Shift/Control/CapsLock...
     int   Value      # ASCII value of the key A/B/C/D...
     large Timestamp  # ~Core.PreciseTime() at which the keypress was recorded
     int   Unicode    # Unicode value for pre-calculated key translations
   ]])
 
-  struct("dcDeviceInput", { module="Core" }, [[
+  structdef("dcDeviceInput", { module="Core" }, [[
     double(2)  Values    # The value(s) associated with the Type
     large      Timestamp # ~Core.PreciseTime() of the recorded input
     oid        DeviceID  # The hardware device that this event originated from (note: This ID can be to a private/inaccessible object, the point is that the ID is unique)
@@ -316,7 +316,7 @@ flags("FD", { weak=true, comment="Field descriptors.", module="Core" },
     int(JET)   Type      # `JET` constant
   ]])
 
-  struct("DateTime", { comment="Generic structure for date-time management.", module="Core" }, [[
+  structdef("DateTime", { comment="Generic structure for date-time management.", module="Core" }, [[
     short Year      # Year
     char  Month     # Month 1 to 12
     char  Day       # Day 1 to 31

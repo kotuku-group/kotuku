@@ -1,4 +1,0 @@
-interface:
-  display_name: "C++ String Field Conversion"
-  short_description: "Convert CSTRING fields to std::string"
-  default_prompt: "Use $cpp-string-field-conversion to convert a Kotuku class from CSTRING field storage to std::string."

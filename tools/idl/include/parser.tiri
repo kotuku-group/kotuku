@@ -1,4 +1,9 @@
 
+-- Forward declarations
+
+global addTag, parseClassHeader, parseMethod, parseAction, parseField, parseCategory, parseFunction
+extern extractFields, calcFieldHash, cName, outputLookup, idlFunction
+
 rx_doc_name        = <{ regex.new([[^[Nn]ame:\s+(.+?)\n]], regex.MULTILINE) }>
 rx_doc_combo       = <{ regex.new([[^(\w+):\s+(.+)\n]], regex.MULTILINE) }>
 rx_doc_comment     = <{ regex.new([[^[Cc]omment:\s+(.+?)\n]], regex.MULTILINE) }>

@@ -285,54 +285,6 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function readRequestWithTimeout(Client:table, MaxSize:num, TimeoutSeconds:num):<str, str>
-   buffer = string.alloc(1024) -- Start with 1KB buffer
-   requestData = ''
-   totalRead = 0
-   startTime = mSys.PreciseTime()
-
-   while totalRead < MaxSize do
-      err, bytes_read = Client.acRead(buffer, 1024)
-
-      if err != ERR_Okay then
-         if err is ERR_TimeOut then
-            logMessage(self, 'Request timeout after ' .. (mSys.PreciseTime() - startTime)/1000000 .. ' seconds')
-            return nil, 'timeout'
-         else
-            logMessage(self, 'Failed to read request: ' .. mSys.GetErrorMsg(err))
-            return nil, 'read_error'
-         end
-      end
-
-      if bytes_read is 0 then
-         break -- No more data
-      end
-
-      requestData ..= buffer:substr(0, bytes_read)
-      totalRead += bytes_read
-
-      -- Check for end of HTTP headers (\r\n\r\n)
-      if requestData:find('\r\n\r\n') then
-         break
-      end
-
-      -- Check timeout
-      if (mSys.PreciseTime() - startTime) / 1000000 > TimeoutSeconds then
-         logMessage(self, 'Request timeout exceeded')
-         return nil, 'timeout'
-      end
-   end
-
-   if totalRead >= MaxSize then
-      logMessage(self, 'Request too large: ' .. totalRead .. ' bytes')
-      return nil, 'too_large'
-   end
-
-   return requestData, nil
-end
-
-----------------------------------------------------------------------------------------------------------------------
-
 @Doc(text=[[
 Read chunked request body (Transfer-Encoding: chunked)
 
@@ -1017,7 +969,7 @@ function serveFile(self:table, ClientSocket:obj, FilePath:str, Request:table)
 
    fileSize = file.size
    mimeType = getMimeType(FilePath)
-   range = parseByteRange(Request.range, fileSize)
+   local range = parseByteRange(Request.range, fileSize)
 
    -- For HEAD requests, only send headers without body
    if Request.method is 'HEAD' then

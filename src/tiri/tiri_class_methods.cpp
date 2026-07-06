@@ -687,12 +687,14 @@ static ERR TIRI_DerefProcedure(extTiri *Self, struct sc::DerefProcedure *Args)
          if (Args->Procedure->ProcedureID) {
             if (not Self->Lua) { // Guarded because Deref is used by the Free action manager.
                Args->Procedure->ProcedureID = 0;
+               Args->Procedure->consume();
                return ERR::Okay;
             }
 
             luaL_unref(Self->Lua, LUA_REGISTRYINDEX, Args->Procedure->ProcedureID);
             Args->Procedure->ProcedureID = 0;
          }
+         Args->Procedure->consume();
          return ERR::Okay;
       }
       else return log.warning(ERR::Args);

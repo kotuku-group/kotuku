@@ -333,6 +333,7 @@ enum class NF : uint32_t {
    PERMIT_TERMINATE = 0x00000200,
    ASYNC_ACTIVE = 0x00000400,
    PLACEMENT = 0x00000800,
+   ZOMBIE = 0x00001000,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(NF)
@@ -1498,6 +1499,7 @@ struct CoreBase {
    objMetaClass * (*_FindClass)(CLASSID ClassID);
    ERR (*_AnalysePath)(const std::string_view &Path, LOC *Type);
    ERR (*_FreeResource)(RESOURCEID ID);
+   void (*_ReleaseZombie)(OBJECTPTR Object);
    CLASSID (*_GetClassID)(OBJECTID Object);
    OBJECTID (*_GetOwnerID)(OBJECTID Object);
    ERR (*_CompareFilePaths)(const std::string_view &PathA, const std::string_view &PathB);
@@ -1526,7 +1528,7 @@ struct CoreBase {
    ERR (*_SubscribeEvent)(int64_t Event, FUNCTION *Callback, APTR *Handle);
    ERR (*_SubscribeTimer)(double Interval, FUNCTION *Callback, APTR *Subscription);
    ERR (*_UpdateTimer)(APTR Subscription, double Interval);
-   ERR (*_UnsubscribeAction)(OBJECTPTR Object, AC Action);
+   ERR (*_UnsubscribeAction)(OBJECTPTR Object, AC Action, FUNCTION *Callback);
    void (*_UnsubscribeEvent)(APTR Handle);
    ERR (*_BroadcastEvent)(APTR Event, int EventSize);
    ERR (*_WaitTime)(double Seconds);
@@ -1595,6 +1597,7 @@ inline ERR FindObject(const std::string_view &Name, CLASSID ClassID, OBJECTID *O
 inline objMetaClass * FindClass(CLASSID ClassID) { return CoreBase->_FindClass(ClassID); }
 inline ERR AnalysePath(const std::string_view &Path, LOC *Type) { return CoreBase->_AnalysePath(Path,Type); }
 inline ERR FreeResource(RESOURCEID ID) { return CoreBase->_FreeResource(ID); }
+inline void ReleaseZombie(OBJECTPTR Object) { return CoreBase->_ReleaseZombie(Object); }
 inline CLASSID GetClassID(OBJECTID Object) { return CoreBase->_GetClassID(Object); }
 inline OBJECTID GetOwnerID(OBJECTID Object) { return CoreBase->_GetOwnerID(Object); }
 inline ERR CompareFilePaths(const std::string_view &PathA, const std::string_view &PathB) { return CoreBase->_CompareFilePaths(PathA,PathB); }
@@ -1623,7 +1626,7 @@ inline ERR SubscribeAction(OBJECTPTR Object, AC Action, FUNCTION *Callback) { re
 inline ERR SubscribeEvent(int64_t Event, FUNCTION *Callback, APTR *Handle) { return CoreBase->_SubscribeEvent(Event,Callback,Handle); }
 inline ERR SubscribeTimer(double Interval, FUNCTION *Callback, APTR *Subscription) { return CoreBase->_SubscribeTimer(Interval,Callback,Subscription); }
 inline ERR UpdateTimer(APTR Subscription, double Interval) { return CoreBase->_UpdateTimer(Subscription,Interval); }
-inline ERR UnsubscribeAction(OBJECTPTR Object, AC Action) { return CoreBase->_UnsubscribeAction(Object,Action); }
+inline ERR UnsubscribeAction(OBJECTPTR Object, AC Action, FUNCTION *Callback) { return CoreBase->_UnsubscribeAction(Object,Action,Callback); }
 inline void UnsubscribeEvent(APTR Handle) { return CoreBase->_UnsubscribeEvent(Handle); }
 inline ERR BroadcastEvent(APTR Event, int EventSize) { return CoreBase->_BroadcastEvent(Event,EventSize); }
 inline ERR WaitTime(double Seconds) { return CoreBase->_WaitTime(Seconds); }
@@ -1715,7 +1718,7 @@ extern "C" ERR SubscribeAction(OBJECTPTR Object, AC Action, FUNCTION *Callback);
 extern "C" ERR SubscribeEvent(int64_t Event, FUNCTION *Callback, APTR *Handle);
 extern "C" ERR SubscribeTimer(double Interval, FUNCTION *Callback, APTR *Subscription);
 extern "C" ERR UpdateTimer(APTR Subscription, double Interval);
-extern "C" ERR UnsubscribeAction(OBJECTPTR Object, AC Action);
+extern "C" ERR UnsubscribeAction(OBJECTPTR Object, AC Action, FUNCTION *Callback);
 extern "C" void UnsubscribeEvent(APTR Handle);
 extern "C" ERR BroadcastEvent(APTR Event, int EventSize);
 extern "C" ERR WaitTime(double Seconds);
@@ -1796,6 +1799,10 @@ inline ERR SubscribeEvent(int64_t Event, FUNCTION Callback, APTR *Handle) {
 
 inline ERR SubscribeTimer(double Interval, FUNCTION Callback, APTR *Subscription) {
    return SubscribeTimer(Interval, &Callback, Subscription);
+}
+
+inline ERR UnsubscribeAction(OBJECTPTR Object, ACTIONID ActionID) {
+   return UnsubscribeAction(Object, ActionID, nullptr);
 }
 
 // This template leverages pcObject to be the preferred entry point for any Object type or derivation.
@@ -2293,3 +2300,10 @@ template <class T, class X = APTR> FUNCTION C_FUNCTION(T *pRoutine, X pMeta = 0)
 };
 
 inline CSTRING Object::className() { return Class->ClassName.c_str(); }
+
+// Weak-pin management for callback holders (refer to the zombie object contract in objects.h).  A pinned
+// Context header remains readable after termination, allowing stale() to be tested lazily at invoke time.
+
+inline void FUNCTION::pin() { Context->pinWeak(); }
+inline void FUNCTION::unpin() { Context->unpinWeak(); }
+inline bool FUNCTION::stale() const { return defined() and (Context->terminating()); }

@@ -26,6 +26,8 @@
 
 inline const TiriConstant * lookup_constant(const GCstr *Name)
 {
+   if (not Name) return nullptr;
+
    std::shared_lock lock(glConstantMutex);
    auto it = glConstantRegistry.find(Name->hash);
    if (it != glConstantRegistry.end()) return &it->second;
@@ -69,7 +71,7 @@ public:
    ParserResult<T> error() const {
       ParserError err;
       err.code = ParserErrorCode::InternalInvariant;
-      err.message = "nil guard setup failed";
+      err.message = "Nil guard setup failed";
       return ParserResult<T>::failure(err);
    }
 
@@ -441,6 +443,7 @@ static UnsupportedNodeRecorder glUnsupportedNodes;
       case AstNodeKind::TryExceptStmt: return "TryExceptStmt";
       case AstNodeKind::RaiseStmt:     return "RaiseStmt";
       case AstNodeKind::CheckStmt:     return "CheckStmt";
+      case AstNodeKind::ExternStmt:    return "ExternStmt";
       case AstNodeKind::WithStmt:      return "WithStmt";
       case AstNodeKind::ExpressionStmt: return "ExpressionStmt";
       default: return "Unknown";
@@ -718,6 +721,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_statement(const StmtNode& stmt)
       const auto &payload = std::get<GlobalDeclStmtPayload>(stmt.data);
       return this->emit_global_decl_stmt(payload);
    }
+   case AstNodeKind::ExternStmt: {
+      const auto &payload = std::get<ExternDeclStmtPayload>(stmt.data);
+      return this->emit_extern_decl_stmt(payload);
+   }
    case AstNodeKind::LocalFunctionStmt: {
       const auto &payload = std::get<LocalFunctionStmtPayload>(stmt.data);
       return this->emit_local_function_stmt(payload);
@@ -808,12 +815,22 @@ ParserResult<IrEmitUnit> IrEmitter::emit_expression_stmt(const ExpressionStmtPay
 
    ExpDesc value = expression.value_ref();
 
+   if (payload.expression->kind IS AstNodeKind::IdentifierExpr) {
+      auto *name_ref = std::get_if<NameRef>(&payload.expression->data);
+      GCstr *name = (name_ref and name_ref->identifier.symbol) ? name_ref->identifier.symbol : nullptr;
+      std::string msg = "Bare identifier '";
+      if (name) msg += std::string_view(strdata(name), name->len);
+      msg += "' is not a statement";
+      return ParserResult<IrEmitUnit>::failure(
+         this->make_error(ParserErrorCode::UnexpectedToken, msg, payload.expression->span));
+   }
+
    // We have a bare Unscoped identifier as an expression statement, this is an error - the user must explicitly
    // declare locals with 'local'.
 
    if (value.k IS ExpKind::Unscoped) {
       GCstr* name = value.u.sval;
-      std::string msg = "undeclared variable '";
+      std::string msg = "Undeclared variable '";
       msg += std::string_view(strdata(name), name->len);
       msg += "' - use 'local' to declare new variables";
       return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::UndefinedVariable, msg, payload.expression->span));
@@ -1017,7 +1034,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
 
    if ((Payload.op IS AssignmentOperator::IfEmpty or Payload.op IS AssignmentOperator::IfNil) and nvars != 1) {
       return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::InternalInvariant,
-         "conditional assignment (?=/?\?=) only supports a single target variable"));
+         "Conditional assignment (?=/?\?=) only supports a single target variable"));
    }
 
    for (auto i = BCReg(0); i < nvars; ++i) {
@@ -1048,7 +1065,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
       uint8_t slot = uint8_t(base.raw() + i.raw());
       if (slot >= 64) {
          return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::InternalInvariant,
-            "too many local variables with <close> attribute (max 64 slots)"));
+            "Too many local variables with <close> attribute (max 64 slots)"));
       }
 
       VarInfo* info = &this->func_state.var_get(base.raw() + i.raw());
@@ -1063,7 +1080,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
       // Validate: const requires initialiser
       if (i.raw() >= Payload.values.size()) {
          return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::ConstRequiresInitialiser,
-            std::format("const local '{}' requires an initialiser",
+            std::format("Const local '{}' requires an initialiser",
                identifier.symbol ? std::string_view(strdata(identifier.symbol), identifier.symbol->len) : "_")));
       }
 
@@ -1094,6 +1111,25 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
       this->update_local_binding(identifier.symbol, BCReg(base.raw() + i.raw()));
    }
    this->func_state.reset_freereg();
+   return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+}
+
+//********************************************************************************************************************
+// Register external symbols for this parse.  The declaration emits no bytecode; it only authorises unresolved names
+// that are expected to be supplied by another file or by the embedding host.
+
+ParserResult<IrEmitUnit> IrEmitter::emit_extern_decl_stmt(const ExternDeclStmtPayload &Payload)
+{
+   if (Payload.all_symbols) {
+      this->func_state.allow_external_symbol_reads = true;
+      return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+   }
+
+   for (const Identifier &identifier : Payload.names) {
+      if (is_blank_symbol(identifier)) continue;
+      if (identifier.symbol) this->func_state.external_symbols.insert(identifier.symbol);
+   }
+
    return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
 }
 
@@ -1514,7 +1550,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_with_stmt(const WithStmtPayload &Payloa
       uint8_t slot = uint8_t(obj_reg.raw());
       if (slot >= 64) {
          return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::InternalInvariant,
-            "too many local variables with <close> attribute (max 64 slots)"));
+            "Too many local variables with <close> attribute (max 64 slots)"));
       }
 
       VarInfo *info = &fs->var_get(fs->varmap.size() - 1);
@@ -1667,7 +1703,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_assignment_stmt(const AssignmentStmtPay
       }
 
       return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::InvalidAssignment,
-         "safe-navigation assignment targets cannot be used in multi-assignment", span));
+         "Safe-navigation assignment targets cannot be used in multi-assignment", span));
    }
 
    auto targets_result = this->prepare_assignment_targets(Payload.targets, AllocNewLocal, has_safe_nav_target);
@@ -1772,29 +1808,72 @@ ParserResult<ExpDesc> IrEmitter::emit_literal_expr(const LiteralValue& literal)
 //********************************************************************************************************************
 // Emit bytecode for an identifier expression, resolving the name to a local, upvalue, or global variable.
 
-ParserResult<ExpDesc> IrEmitter::emit_identifier_expr(const NameRef& reference)
+static bool is_named_external_global(GCstr *Name)
+{
+   if (not Name) return false;
+
+   std::string_view name(strdata(Name), Name->len);
+   if (name.size() >= 3 and name[0] IS 'g' and name[1] IS 'l' and name[2] >= 'A' and name[2] <= 'Z') {
+      return true;
+   }
+
+   if (name.size() >= 2 and name[0] IS 'm' and name[1] >= 'A' and name[1] <= 'Z') {
+      return true;
+   }
+
+   return false;
+}
+
+//********************************************************************************************************************
+
+ParserResult<ExpDesc> IrEmitter::emit_identifier_expr(const NameRef& reference, bool AllowUnscoped)
 {
    // Blank identifiers cannot be read - they are only valid as assignment targets
    if (reference.identifier.is_blank) {
       return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::UnexpectedToken,
-         "cannot read blank identifier '_'"));
+         "Cannot read blank identifier '_'"));
    }
 
-   // Check if this is a registered constant - substitute with literal value
-   if (auto constant = lookup_constant(reference.identifier.symbol)) {
-      ExpDesc expr(constant->to_number());
-      return ParserResult<ExpDesc>::success(expr);
-   }
-
-   // Normal variable lookup
    ExpDesc resolved;
    this->lex_state.var_lookup_symbol(reference.identifier.symbol, &resolved);
+
+   // Explicit local/upvalue shadows take precedence over registered constant substitution.
+   if (resolved.k != ExpKind::Local and resolved.k != ExpKind::Upval) {
+      if (auto constant = lookup_constant(reference.identifier.symbol)) {
+         ExpDesc expr(constant->to_number());
+         return ParserResult<ExpDesc>::success(expr);
+      }
+   }
 
    // If unscoped, check if this was explicitly declared as global
    if (resolved.k IS ExpKind::Unscoped) {
       if (this->func_state.declared_globals.count(reference.identifier.symbol) > 0) {
          resolved.k = ExpKind::Global;
       }
+      else if (this->func_state.external_symbols.count(reference.identifier.symbol) > 0) {
+         resolved.k = ExpKind::Global;
+      }
+      else if (this->func_state.allow_external_symbol_reads) {
+         resolved.k = ExpKind::Global;
+      }
+      else if (reference.identifier.symbol) {
+         cTValue *global = lj_tab_getstr(tabref(this->lex_state.L->env), reference.identifier.symbol);
+         if (global and not tvisnil(global)) {
+            resolved.k = ExpKind::Global;
+         }
+         else if (is_named_external_global(reference.identifier.symbol)) {
+            resolved.k = ExpKind::Global;
+         }
+      }
+   }
+
+   if (resolved.k IS ExpKind::Unscoped and not AllowUnscoped) {
+      GCstr *name = resolved.u.sval;
+      std::string msg = "Undeclared variable '";
+      if (name) msg += std::string_view(strdata(name), name->len);
+      msg += "'";
+      return ParserResult<ExpDesc>::failure(
+         this->make_error(ParserErrorCode::UndefinedVariable, msg, reference.identifier.span));
    }
 
    return ParserResult<ExpDesc>::success(resolved);

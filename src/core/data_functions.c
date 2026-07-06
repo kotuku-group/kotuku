@@ -66,6 +66,7 @@ FDEF argsReadInfoTag[] = { { "Error", FD_INT|FD_ERROR }, { "FileInfo:Info", FD_P
 FDEF argsReallocMemory[] = { { "Error", FD_INT|FD_ERROR }, { "Memory", FD_PTR }, { "Size", FD_INT|FD_UNSIGNED }, { "Address", FD_RESULT|FD_PTR|FD_ALLOC }, { 0, 0 } };
 FDEF argsRegisterFD[] = { { "Error", FD_INT|FD_ERROR }, { "FD", FD_PTR }, { "Flags", FD_INT }, { "Routine", FD_PTR }, { "Data", FD_PTR }, { 0, 0 } };
 FDEF argsReleaseObject[] = { { "Void", FD_VOID }, { "Object", FD_OBJECTPTR }, { 0, 0 } };
+FDEF argsReleaseZombie[] = { { "Void", FD_VOID }, { "Object", FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsResolveClassID[] = { { "Result", FD_STR }, { "ID", FD_INT|FD_UNSIGNED }, { 0, 0 } };
 FDEF argsResolveClassName[] = { { "Result", FD_INT|FD_UNSIGNED }, { "Name", FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsResolveGroupID[] = { { "Result", FD_STR }, { "Group", FD_INT }, { 0, 0 } };
@@ -87,7 +88,7 @@ FDEF argsSubscribeEvent[] = { { "Error", FD_INT|FD_ERROR }, { "Event", FD_INT64 
 FDEF argsSubscribeTimer[] = { { "Error", FD_INT|FD_ERROR }, { "Interval", FD_DOUBLE }, { "Callback", FD_FUNCTIONPTR }, { "Subscription", FD_RESULT|FD_PTR }, { 0, 0 } };
 FDEF argsTrackResource[] = { { "Error", FD_INT|FD_ERROR }, { "ResourceID", FD_INT }, { "Address", FD_PTR }, { "OwnerID", FD_INT }, { "ResourceManager:Manager", FD_PTR|FD_STRUCT }, { 0, 0 } };
 FDEF argsUnloadFile[] = { { "Void", FD_VOID }, { "CacheFile:Cache", FD_PTR|FD_STRUCT|FD_RESOURCE }, { 0, 0 } };
-FDEF argsUnsubscribeAction[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTPTR }, { "Action", FD_INT }, { 0, 0 } };
+FDEF argsUnsubscribeAction[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTPTR }, { "Action", FD_INT }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
 FDEF argsUnsubscribeEvent[] = { { "Void", FD_VOID }, { "Handle", FD_PTR }, { 0, 0 } };
 FDEF argsUpdateMessage[] = { { "Error", FD_INT|FD_ERROR }, { "Message", FD_INT }, { "Type", FD_INT }, { "Data", FD_BUFFER|FD_PTR }, { "Size", FD_INT|FD_BUFSIZE }, { 0, 0 } };
 FDEF argsUpdateTimer[] = { { "Error", FD_INT|FD_ERROR }, { "Subscription", FD_PTR }, { "Interval", FD_DOUBLE }, { 0, 0 } };
@@ -117,6 +118,7 @@ const struct Function glFunctions[] = {
    { (APTR)FindClass, "FindClass", argsFindClass },
    { (APTR)AnalysePath, "AnalysePath", argsAnalysePath },
    { (APTR)FreeResource, "FreeResource", argsFreeResource },
+   { (APTR)ReleaseZombie, "ReleaseZombie", argsReleaseZombie },
    { (APTR)GetClassID, "GetClassID", argsGetClassID },
    { (APTR)GetOwnerID, "GetOwnerID", argsGetOwnerID },
    { (APTR)CompareFilePaths, "CompareFilePaths", argsCompareFilePaths },

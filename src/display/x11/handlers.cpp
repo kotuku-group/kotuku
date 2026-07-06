@@ -313,6 +313,7 @@ void handle_configure_notify(XConfigureEvent *xevent)
          resize_pixmap(*display, width, height);
          acResize(display->Bitmap, width, height, 0.0);
 
+         release_stale_resize_feedback(*display);
          feedback = display->ResizeFeedback;
       }
       else {

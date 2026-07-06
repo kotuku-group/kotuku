@@ -1,6 +1,7 @@
 -- Graphical User Interface functions
 
    namespace 'gui'
+   include 'vector'
 
 global mVec ?= mod.load('vector') -- Configure mVec as a global convenience.  For fast access, clients assign to lVec
 local lVec = mVec

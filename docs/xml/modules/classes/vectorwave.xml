@@ -95,22 +95,32 @@
 
     <field>
       <name>Envelope</name>
-      <comment>Selects the decay envelope applied to the wave amplitude.</comment>
+      <comment>Selects the interpolation envelope applied to the wave.</comment>
       <access read="R" write="S">Read/Set</access>
       <type lookup="WVE">WVE</type>
       <description>
-<p>The Envelope field controls how the <fl>Decay</fl> value is interpolated across the wave.  The default <code>LINEAR</code> envelope uses an even taper, while <code>QUADRATIC</code>, <code>SMOOTHSTEP</code> and <code>EXPONENTIAL</code> apply progressively stronger curves to the decay.</p>
+<p>The Envelope field controls how the <fl>Decay</fl> value, and any <fl>FrequencyEnd</fl> sweep, is interpolated across the wave.  The default <code>LINEAR</code> envelope uses an even taper, while <code>QUADRATIC</code>, <code>SMOOTHSTEP</code> and <code>EXPONENTIAL</code> apply progressively stronger curves.</p>
 <types lookup="WVE"/>
       </description>
     </field>
 
     <field>
       <name>Frequency</name>
-      <comment>Defines the wave frequency (the distance between each wave).</comment>
+      <comment>Defines the wave frequency at the start of the wave.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>The frequency determines the distance between each individual wave that is generated.  The default value for the frequency is 1.0.  Shortening the frequency to a value closer to 0 will bring the waves closer together.</p>
+<p>The frequency determines the distance between each individual wave that is generated.  The default value for the frequency is 1.0.  Shortening the frequency to a value closer to 0 will bring the waves closer together. If <fl>FrequencyEnd</fl> is set to a different value, Frequency is used as the start frequency for the sweep.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>FrequencyEnd</name>
+      <comment>Defines the wave frequency at the end of the wave.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>When FrequencyEnd differs from <fl>Frequency</fl>, the wave performs a frequency sweep between the start and end points.  The frequency is interpolated across the wave using the selected <fl>Envelope</fl>, and the phase is integrated from that interpolated frequency so the result behaves as a chirp.  If FrequencyEnd is not assigned, it follows <fl>Frequency</fl> and the wave uses a constant frequency.</p>
       </description>
     </field>
 
@@ -121,6 +131,16 @@
       <type>UNIT</type>
       <description>
 <p>The length of the generated wave is defined here as a fixed or scaled value.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Noise</name>
+      <comment>Perturbs the generated wave path with deterministic noise.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The Noise value ranges from <code>0.0</code> to <code>1.0</code>.  A value of <code>0.0</code> applies no noise and preserves the unperturbed wave, while <code>1.0</code> applies the strongest perturbation.</p>
       </description>
     </field>
 
@@ -151,7 +171,7 @@
       <access read="R" write="S">Read/Set</access>
       <type lookup="WVT">WVT</type>
       <description>
-<p>By default, waves are generated in the style of a sine wave.  Alternative styles can be selected by setting this field. The <code>SMOOTH</code> style generates a sine wave, <code>TRIANGLE</code> generates a triangular wave and <code>SAWTOOTH</code> generates a ramp with a sharp return edge.</p>
+<p>By default, waves are generated in the style of a sine wave.  Alternative styles can be selected by setting this field. The <code>SINE</code> style generates a sine wave, <code>TRIANGLE</code> generates a triangular wave, <code>SAWTOOTH</code> generates a ramp with a sharp return edge and <code>SQUARE</code> generates a stepped wave with vertical transitions.</p>
 <types lookup="WVT"/>
       </description>
     </field>
@@ -184,7 +204,7 @@
     </constants>
 
     <constants lookup="WVE" comment="Wave envelope options.">
-      <const name="EXPONENTIAL">Exponential decay, weighted strongly towards the end of the wave.</const>
+      <const name="EXPONENTIAL">Exponential decay, weighted strongly towards the start of the wave.</const>
       <const name="LINEAR">Linear decay from start to end, this is the default.</const>
       <const name="QUADRATIC">Quadratic decay, weighted towards the end of the wave.</const>
       <const name="SMOOTHSTEP">Smoothstep decay with ease-in and ease-out.</const>
@@ -192,7 +212,8 @@
 
     <constants lookup="WVT" comment="Wave style options.">
       <const name="SAWTOOTH">Sawtooth patterns rise at 45 degrees to the peak, then direct 90 degrees to the bottom.</const>
-      <const name="SMOOTH">Standard sine-wave curvature, this is the default.</const>
+      <const name="SINE">Standard sine-wave curvature, this is the default.</const>
+      <const name="SQUARE">Stepped pattern that alternates between the peak and bottom edge with vertical transitions.</const>
       <const name="TRIANGLE">Chevron style angles at 45 degrees either side of the peak and bottom edge.</const>
     </constants>
 

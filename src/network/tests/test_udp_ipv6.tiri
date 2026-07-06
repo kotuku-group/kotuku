@@ -28,7 +28,7 @@ glTestTimeout = 3.0
          assert(err is ERR_Okay, 'Server failed to receive IPv6 UDP data: ' .. mSys.GetErrorMsg(err))
 
          if bytesRead > 0 then
-            msg = buffer:getString(0, bytesRead)
+            local msg = buffer:getString(0, bytesRead)
             logOutput('[IPv6 UDP Server] Received: "' .. msg .. '" from ' .. mNet.AddressToStr(sv_source) .. ':' .. sv_source.port)
             assert(msg:startsWith('Hello IPv6'), 'Unexpected message received')
             msg_recv = true
@@ -78,7 +78,7 @@ end
          assert(err is ERR_Okay, 'Server failed to receive dual-stack UDP data: ' .. mSys.GetErrorMsg(err))
 
          if bytesRead > 0 then
-            msg = buffer:getString(0, bytesRead)
+            local msg = buffer:getString(0, bytesRead)
             logOutput('[Dual-Stack UDP Server] Received: "' .. msg .. '" from ' .. mNet.AddressToStr(source) .. ':' .. source.port)
 
             if msg:endsWith('IPv4') then

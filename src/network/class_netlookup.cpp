@@ -131,11 +131,6 @@ static ERR resolve_addr_receiver(APTR Custom, MSGID MsgID, int MsgType, APTR Mes
 
 //********************************************************************************************************************
 
-static void notify_free_callback(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   ((extNetLookup *)CurrentContext())->Callback.clear();
-}
-
 /*********************************************************************************************************************
 
 -METHOD-
@@ -251,10 +246,7 @@ blocking, mutates-object
 
 extNetLookup::~extNetLookup()
 {
-   if (Callback.isScript()) {
-      UnsubscribeAction(Callback.Context, AC::Free);
-      Callback.Type = CALL::NIL;
-   }
+   clear_callback_function(Callback);
 }
 
 //********************************************************************************************************************
@@ -453,14 +445,11 @@ static ERR GET_Callback(extNetLookup *Self, FUNCTION * &Value)
 
 static ERR SET_Callback(extNetLookup *Self, FUNCTION *Value)
 {
+   clear_callback_function(Self->Callback);
    if (Value) {
-      if (Self->Callback.isScript()) UnsubscribeAction(Self->Callback.Context, AC::Free);
       Self->Callback = *Value;
-      if (Self->Callback.isScript()) {
-         SubscribeAction(Self->Callback.Context, AC::Free, C_FUNCTION(notify_free_callback));
-      }
+      if (Self->Callback.defined()) Self->Callback.pin();
    }
-   else Self->Callback.clear();
 
    return ERR::Okay;
 }
@@ -557,6 +546,11 @@ static void resolve_callback(extNetLookup *Self, ERR Error, std::string_view Hos
 {
    kt::Log log(__FUNCTION__);
    log.traceBranch("Host: %.*s", int(HostName.size()), HostName.data());
+
+   if (Self->Callback.stale()) {
+      clear_callback_function(Self->Callback);
+      return;
+   }
 
    if (Self->Callback.isC()) {
       kt::SwitchContext context(Self->Callback.Context);

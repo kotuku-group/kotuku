@@ -1,5 +1,7 @@
 -- Flute tests for XML
 
+   include 'xml'
+
 @BeforeAll function init(State)
    global glXML = obj.new("xml", { path = State.folder .. "test.xml" })
 end

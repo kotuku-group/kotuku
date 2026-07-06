@@ -8,6 +8,8 @@
 
 #include "parser/token_types.h"
 
+struct lua_State;
+
 enum class ParserDiagnosticSeverity : uint8_t {
    Info,
    Warning,
@@ -37,16 +39,18 @@ enum class ParserErrorCode : uint16_t {
    RecoverySkippedTokens,   // Info: tokens skipped during error recovery
    AssignToConstant,        // Cannot assign to a registered constant
    ConstRequiresInitialiser, // Const variable requires an initialiser
+   OverrideProtectedGlobal, // Cannot override a host pre-registered global
    InvalidAssignment        // Assignment form is syntactically valid but semantically forbidden
 };
 
 struct ParserDiagnostic {
    ParserDiagnosticSeverity severity = ParserDiagnosticSeverity::Error;
    ParserErrorCode code = ParserErrorCode::UnexpectedToken;
+   uint8_t file_index = 0;   // FileSource index captured from the lexer at creation (token spans store raw lines)
    std::string message;
    Token token;
 
-   [[nodiscard]] std::string to_string(int LineOffset = 0) const;
+   [[nodiscard]] std::string to_string(int LineOffset = 0, lua_State *L = nullptr) const;
 };
 
 class ParserDiagnostics {

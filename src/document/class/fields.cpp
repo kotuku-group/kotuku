@@ -66,12 +66,13 @@ static ERR SET_EventCallback(extDocument *Self, FUNCTION *Value)
    if ((Value) and (Value->isScript())) subscribe_context = not has_script_free_callback(Self, Value->Context);
 
    if (Value) {
+      deref_document_callback(Self->EventCallback);
       Self->EventCallback = *Value;
       if (subscribe_context) {
          SubscribeAction(Self->EventCallback.Context, AC::Free, C_FUNCTION(notify_free_script_context));
       }
    }
-   else Self->EventCallback.clear();
+   else deref_document_callback(Self->EventCallback);
 
    unsubscribe_script_context(Self, old_context);
    return ERR::Okay;

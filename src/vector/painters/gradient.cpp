@@ -546,6 +546,52 @@ static ERR GRADIENT_SET_Transform(extGradient *Self, const std::string_view &Com
 /*********************************************************************************************************************
 
 -FIELD-
+XMLDef: Returns an SVG compliant XML element string that describes the gradient type.
+
+Derived gradient classes override this field to return the SVG element name and any shape-specific attributes.
+The returned string does not include angle brackets, common gradient attributes, stops or child elements.
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR GRADIENT_GET_XMLDef(extGradient *, std::string_view &)
+{
+   return ERR::NoSupport;
+}
+
+static ERR gradient_xml_result(const std::string &String, std::string_view &Value)
+{
+   if (auto str = strclone(String)) {
+      Value = std::string_view{ str, String.size() };
+      return ERR::Okay;
+   }
+   else return ERR::AllocMemory;
+}
+
+static std::string gradient_xml_num(double Value)
+{
+   std::stringstream stream;
+   stream << Value;
+   return stream.str();
+}
+
+static void gradient_xml_attr(std::stringstream &Stream, const std::string_view Name, double Value)
+{
+   Stream << " " << Name << "=\"" << gradient_xml_num(Value) << "\"";
+}
+
+static void gradient_xml_attr(std::stringstream &Stream, const std::string_view Name, const Unit &Value)
+{
+   if (Value.defined()) {
+      if (Value.scaled()) Stream << " " << Name << "=\"" << gradient_xml_num(double(Value) * 100.0) << "%\"";
+      else Stream << " " << Name << "=\"" << gradient_xml_num(double(Value)) << "\"";
+   }
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Units: Defines the coordinate system for gradient coordinates.
 
 The default coordinate system for gradients is `BOUNDING_BOX`, which positions the gradient around the vector that
@@ -576,6 +622,7 @@ static const FieldArray clGradientFields[] = {
    { "NumericID",    FDF_INT|FDF_RW,            nullptr, GRADIENT_SET_NumericID },
    // Virtual fields
    { "Transform",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W, nullptr, GRADIENT_SET_Transform },
+   { "XMLDef",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, GRADIENT_GET_XMLDef },
    END_FIELD
 };
 

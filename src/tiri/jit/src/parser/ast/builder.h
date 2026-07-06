@@ -78,6 +78,7 @@ private:
    ParserResult<StmtNodePtr> parse_statement();
    ParserResult<StmtNodePtr> parse_local();
    ParserResult<StmtNodePtr> parse_global();
+   ParserResult<StmtNodePtr> parse_extern();
    ParserResult<StmtNodePtr> parse_enum(const Token &StartToken);
    ParserResult<int64_t> parse_enum_integer_literal();
    void track_registered_enum_constant(uint32_t Hash);
@@ -165,7 +166,8 @@ private:
    template<typename T>
    [[nodiscard]] ParserResult<T> fail(ParserErrorCode Code, const Token& ErrorToken, std::string Message) {
       this->ctx.emit_error(Code, ErrorToken, Message);
-      return ParserResult<T>::failure(ParserError(Code, ErrorToken, std::move(Message)));
+      return ParserResult<T>::failure(ParserError(Code, ErrorToken, std::move(Message),
+         this->ctx.lex().current_file_index));
    }
 
    // Helper to map TokenKind to AssignmentOperator.

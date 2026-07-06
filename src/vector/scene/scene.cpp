@@ -486,6 +486,13 @@ extVectorScene::~extVectorScene()
 {
    clear_defs(this);
 
+   // Child vectors skip releasing their resize subscription pins when the scene is collecting, so any records
+   // remaining at this point still hold a weak pin on the callback context and must be released here.
+
+   for (auto &view : ResizeSubscriptions) {
+      for (auto &sub : view.second) release_callback(sub.second);
+   }
+
    if (Viewport) Viewport->Parent = nullptr;
    if (Buffer)   delete Buffer;
    if (InputHandle) gfx::UnsubscribeInput(InputHandle);
@@ -828,22 +835,48 @@ void apply_focus(extVectorScene *Scene, extVector *Vector)
 
 static void process_resize_msgs(extVectorScene *Self)
 {
+   kt::Log log(__FUNCTION__);
+
    if (Self->PendingResizeMsgs.size() > 0) {
       for (auto it=Self->PendingResizeMsgs.begin(); it != Self->PendingResizeMsgs.end(); it++) {
          extVectorViewport *view = *it;
 
          auto list = Self->ResizeSubscriptions[view]; // take copy
-         for (auto &sub : list) {
+         for (auto &record : list) {
             ERR result;
-            auto vector = sub.first;
-            auto func   = sub.second;
-            if (func.isC()) {
-               kt::SwitchContext ctx(func.Context);
-               auto callback = (ERR (*)(extVectorViewport *, objVector *, double, double, double, double, APTR))func.Routine;
-               result = callback(view, vector, view->FinalX, view->FinalY, view->vpFixedWidth, view->vpFixedHeight, func.Meta);
+            auto vector = record.first;
+            FUNCTION &sub = record.second;
+
+            // Print warnings if the subscription list changed - resizing shouldn't mutate the list, so the developer
+            // needs to make an improvement.
+
+            auto live_view = Self->ResizeSubscriptions.find(view);
+            if (live_view IS Self->ResizeSubscriptions.end()) {
+               log.warning("ResizeEvent subscription was cleared during resize dispatch; skipping stale callback.");
+               continue;
             }
-            else if (func.isScript()) {
-               sc::Call(func, std::to_array<ScriptArg>({
+
+            auto live_sub = live_view->second.find(vector);
+            if ((live_sub IS live_view->second.end()) or (!(live_sub->second IS sub))) {
+               log.warning("ResizeEvent subscription was cleared or replaced during resize dispatch; skipping stale callback.");
+               continue;
+            }
+
+            if (sub.Context->terminating()) {
+               release_callback(live_sub->second);
+               live_view->second.erase(live_sub);
+               if (live_view->second.empty()) Self->ResizeSubscriptions.erase(live_view);
+               continue;
+            }
+
+            if (sub.isC()) {
+               kt::SwitchContext ctx(sub.Context);
+               auto callback = (ERR (*)(extVectorViewport *, objVector *, double, double, double, double, APTR))sub.Routine;
+               result = callback(view, vector, view->FinalX, view->FinalY, view->vpFixedWidth, view->vpFixedHeight,
+                  sub.Meta);
+            }
+            else if (sub.isScript()) {
+               sc::Call(sub, std::to_array<ScriptArg>({
                   { "Viewport",       view, FDF_OBJECT },
                   { "Vector",         vector, FDF_OBJECT },
                   { "ViewportX",      view->FinalX },
@@ -867,14 +900,20 @@ static ERR vector_keyboard_events(extVector *Vector, const evKey *Event)
    for (auto it=Vector->KeyboardSubscriptions->begin(); it != Vector->KeyboardSubscriptions->end(); ) {
       ERR result = ERR::Terminate;
       auto &sub = *it;
-      if (sub.Callback.isC()) {
-         kt::SwitchContext ctx(sub.Callback.Context);
-         auto callback = (ERR (*)(objVector *, KQ, KEY, int, APTR))sub.Callback.Routine;
-         result = callback(Vector, Event->Qualifiers, Event->Code, Event->Unicode, sub.Callback.Meta);
+      if (sub.Context->terminating()) {
+         release_callback(sub);
+         it = Vector->KeyboardSubscriptions->erase(it);
+         continue;
       }
-      else if (sub.Callback.isScript()) {
+
+      if (sub.isC()) {
+         kt::SwitchContext ctx(sub.Context);
+         auto callback = (ERR (*)(objVector *, KQ, KEY, int, APTR))sub.Routine;
+         result = callback(Vector, Event->Qualifiers, Event->Code, Event->Unicode, sub.Meta);
+      }
+      else if (sub.isScript()) {
          // In this implementation the script function will receive all the events chained via the Next field
-         sc::Call(sub.Callback, std::to_array<ScriptArg>({
+         sc::Call(sub, std::to_array<ScriptArg>({
             { "Vector",     Vector, FDF_OBJECT },
             { "Qualifiers", int(Event->Qualifiers) },
             { "Code",       int(Event->Code) },
@@ -882,8 +921,15 @@ static ERR vector_keyboard_events(extVector *Vector, const evKey *Event)
          }), result);
       }
 
-      if (result IS ERR::Terminate) it = Vector->KeyboardSubscriptions->erase(it);
+      if (result IS ERR::Terminate) {
+         release_callback(sub);
+         it = Vector->KeyboardSubscriptions->erase(it);
+      }
       else it++;
+   }
+
+   if ((Vector->KeyboardSubscriptions->empty()) and (Vector->Scene) and (not Vector->Scene->collecting())) {
+      ((extVectorScene *)Vector->Scene)->KeyboardSubscriptions.erase(Vector);
    }
 
    return ERR::Okay;
@@ -929,8 +975,11 @@ static void scene_key_event(evKey *Event, int Size, extVectorScene *Self)
       return;
    }
 
-   for (auto vi = Self->KeyboardSubscriptions.begin(); vi != Self->KeyboardSubscriptions.end(); vi++) {
-      auto const vector = *vi;
+   // Iterate over a snapshot because vector_keyboard_events() can erase vectors from KeyboardSubscriptions.
+
+   std::vector<extVector *> subscribers(Self->KeyboardSubscriptions.begin(), Self->KeyboardSubscriptions.end());
+   for (auto const vector : subscribers) {
+      if (not Self->KeyboardSubscriptions.contains(vector)) continue;
       // Use the focus list to determine where the key event needs to be sent.
       for (auto it=glVectorFocusList.begin(); it != glVectorFocusList.end(); it++) {
          if (*it IS vector) {

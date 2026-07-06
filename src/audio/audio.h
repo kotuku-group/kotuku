@@ -108,6 +108,8 @@ struct AudioSample {
    void clear() {
       if (Data) FreeResource(Data);
 
+      Callback.clear();
+      OnStop.clear();
       Data         = nullptr;
       SampleLength = SAMPLE(0);
       Loop1Start   = SAMPLE(0);

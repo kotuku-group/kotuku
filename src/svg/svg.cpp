@@ -22,6 +22,7 @@ https://www.w3.org/Graphics/SVG/Test/Overview.html
 #include <list>
 #include <variant>
 #include <cfloat>
+#include <cmath>
 #include <kotuku/main.h>
 #include <kotuku/modules/compression.h>
 #include <kotuku/modules/filesystem.h>
@@ -191,7 +192,7 @@ private:
    void proc_switch(XTag &, OBJECTPTR, objVector * &) noexcept;
    void proc_use(XTag &, OBJECTPTR) noexcept;
    void proc_clippath(XTag &) noexcept;
-   void proc_morph(XTag &Tag, OBJECTPTR Parent) noexcept;
+   void proc_guide_path(XTag &Tag, OBJECTPTR Parent) noexcept;
    ERR  proc_style(XTag &);
    void proc_symbol(XTag &Tag) noexcept;
    ERR  proc_conicgradient(const XTag &) noexcept;
@@ -375,6 +376,8 @@ static constexpr auto SVF_font_style          = strhash("font-style");
 static constexpr auto SVF_font_variant        = strhash("font-variant");
 static constexpr auto SVF_font_weight         = strhash("font-weight");
 static constexpr auto SVF_frequency           = strhash("frequency");
+static constexpr auto SVF_frequency_end       = strhash("frequency-end");
+static constexpr auto SVF_frequencyEnd        = strhash("frequencyEnd");
 static constexpr auto SVF_floor               = strhash("floor");
 static constexpr auto SVF_from                = strhash("from");
 static constexpr auto SVF_fx                  = strhash("fx");
@@ -415,7 +418,7 @@ static constexpr auto SVF_kerning             = strhash("kerning");
 static constexpr auto SVF_keyPoints           = strhash("keyPoints");
 static constexpr auto SVF_keySplines          = strhash("keySplines");
 static constexpr auto SVF_keyTimes            = strhash("keyTimes");
-static constexpr auto SVF_kotuku_morph        = strhash("kotuku:morph");
+static constexpr auto SVF_kotuku_guidePath    = strhash("kotuku:guidePath");
 static constexpr auto SVF_kotuku_pathTransition = strhash("kotuku:pathTransition");
 static constexpr auto SVF_kotuku_shape        = strhash("kotuku:shape");
 static constexpr auto SVF_kotuku_spiral       = strhash("kotuku:spiral");
@@ -467,6 +470,7 @@ static constexpr auto SVF_n2                  = strhash("n2");
 static constexpr auto SVF_n3                  = strhash("n3");
 static constexpr auto SVF_narrower            = strhash("narrower");
 static constexpr auto SVF_none                = strhash("none");
+static constexpr auto SVF_noise               = strhash("noise");
 static constexpr auto SVF_normal              = strhash("normal");
 static constexpr auto SVF_numeric_id          = strhash("numeric-id");
 static constexpr auto SVF_numOctaves          = strhash("numOctaves");
@@ -616,7 +620,7 @@ static constexpr auto SVF_yChannelSelector = strhash("yChannelSelector");
 static constexpr auto SVF_yOffset          = strhash("yOffset");
 static constexpr auto SVF_z                = strhash("z");
 static constexpr auto SVF_zoomAndPan       = strhash("zoomAndPan");
-static constexpr auto SVF_morph            = strhash("morph");
+static constexpr auto SVF_guidePath        = strhash("guidePath");
 static constexpr auto SVF_pathTransition   = strhash("pathTransition");
 static constexpr auto SVF_shape            = strhash("shape");
 static constexpr auto SVF_wave             = strhash("wave");
@@ -647,6 +651,7 @@ static ERR  save_svg_scan(extSVG *, objXML *, objVector *, int);
 static ERR  save_svg_defs(extSVG *, objXML *, objVectorScene *, int);
 static ERR  save_svg_scan_std(extSVG *, objXML *, objVector *, int);
 static ERR  save_svg_transform(VectorMatrix *, std::stringstream &);
+static ERR  save_svg_scan_def(extSVG *, objXML *, objVector *, int, std::string_view);
 
 // Tracking for resources like patterns, gradients, filters, etc.  If ENFORCE_TRACKING is enabled, these resources
 // will be automatically terminated when the SVG is terminated.  Otherwise, they will persist until the client
@@ -678,7 +683,7 @@ static uint32_t svg_tag_hash(const XTag &Tag) noexcept
 
    if ((Tag.NamespaceID IS glKotukuNamespace) or (Tag.NamespaceID IS glKotukuSVGNamespace)) {
       switch (strhash(svg_local_name(Tag))) {
-         case SVF_morph:          return SVF_kotuku_morph;
+         case SVF_guidePath:      return SVF_kotuku_guidePath;
          case SVF_pathTransition: return SVF_kotuku_pathTransition;
          case SVF_shape:          return SVF_kotuku_shape;
          case SVF_spiral:         return SVF_kotuku_spiral;

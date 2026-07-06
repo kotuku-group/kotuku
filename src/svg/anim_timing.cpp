@@ -185,6 +185,11 @@ static ERR animation_timer(extSVG *SVG, int64_t TimeElapsed, int64_t CurrentTime
 
    SVG->Scene->Viewport->draw();
 
+   if (SVG->FrameCallback.stale()) {
+      SVG->FrameCallback.unpin();
+      SVG->FrameCallback.clear();
+   }
+
    if (SVG->FrameCallback.defined()) {
       if (SVG->FrameCallback.isC()) {
          kt::SwitchContext context(SVG->FrameCallback.Context);

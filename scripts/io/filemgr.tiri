@@ -77,13 +77,14 @@ io.ui.paste = function(Dest:str)
       return
    end
 
-   if move then
-      -- Clears the clipboard.  We do this prior to the copy operation to prevent clashes
-      clip.mtRemove(CLIPTYPE_FILE)
-   end
-
    local move
    if flags has CEF_DELETE then move = true end
+
+   if move then
+      -- Clears the clipboard.  We do this prior to the copy operation to prevent clashes
+      clipboard.mtRemove(CLIPTYPE_FILE)
+   end
+
    local err = io.ui.copy(files, Dest, move)
 end
 

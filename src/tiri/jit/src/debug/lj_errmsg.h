@@ -139,6 +139,7 @@ ERRDEF(XNOTASSIGNABLE,   "Syntax error expression not assignable")
 ERRDEF(XCONTINUE,  "No loop to continue")
 ERRDEF(XBLANKREAD, "Cannot read blank identifier " LUA_QL("_"))
 ERRDEF(XUNDEF,     "Undefined variable " LUA_QS)
+ERRDEF(XPARSER,    "%s")
 ERRDEF(XLUNDEF,    "Undefined label " LUA_QS)
 ERRDEF(XLDUP,      "Duplicate label " LUA_QS)
 ERRDEF(XFSTR_EMPTY, "Empty interpolation in f-string")
@@ -160,8 +161,6 @@ ERRDEF(ARREXT,  "Cannot grow external or cached string array")
 
 // Object errors.
 ERRDEF(OBJFREED, "Object has been freed")
-
-ERRDEF(THUNKEX,  "Thunk threw an exception on resolution")
 
 #undef ERRDEF
 

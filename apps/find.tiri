@@ -280,7 +280,7 @@ Examples:
          print(display_name)
       elseif glOutput is 'detail' then
          size_str = tostring(File.size)
-         mod = File.date
+         local mod = File.date
          date_str = string.format('%04d-%02d-%02d %02d:%02d', mod.year, mod.month, mod.day, mod.hour, mod.minute)
          print(f'{full_path}\t{size_str}\t{date_str}')
       else

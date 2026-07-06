@@ -1241,12 +1241,19 @@ LJLIB_CF(debug_validate)
 
          SourceSpan span = entry.token.span();
          // LSP uses 0-based line/column, Tiri parser uses 1-based
-         settabsi(L, "line", span.line > 0 ? span.line - 1 : 0);
-         settabsi(L, "column", span.column > 0 ? span.column - 1 : 0);
-         settabsi(L, "endColumn", span.column);  // Already correct after -1 adjustment
+         int32_t line = span.line.lineNumber();
+         int32_t column = span.column.lineNumber();
+         settabsi(L, "line", line > 0 ? line - 1 : 0);
+         settabsi(L, "column", column > 0 ? column - 1 : 0);
+         settabsi(L, "endColumn", column);  // Already correct after -1 adjustment
          settabsi(L, "severity", int(entry.severity));
          settabss(L, "code", diagnostic_code_name(entry.code));
          settabss(L, "message", entry.message.empty() ? "Syntax error" : entry.message.c_str());
+
+         if (not L->file_sources.empty()) { // Attribute the diagnostic to its source file
+            const FileSource *src = get_file_source(L, entry.file_index);
+            if (src and not src->filename.empty()) settabss(L, "file", src->filename.c_str());
+         }
 
          lua_rawseti(L, -2, diag_idx++);
       }
@@ -1269,9 +1276,11 @@ LJLIB_CF(debug_validate)
 
          SourceSpan span = entry.token.span();
          // LSP uses 0-based line/column, Tiri parser uses 1-based
-         settabsi(L, "line", span.line > 0 ? span.line - 1 : 0);
-         settabsi(L, "column", span.column > 0 ? span.column - 1 : 0);
-         settabsi(L, "endColumn", span.column);  // Already correct after -1 adjustment
+         int32_t line = span.line.lineNumber();
+         int32_t column = span.column.lineNumber();
+         settabsi(L, "line", line > 0 ? line - 1 : 0);
+         settabsi(L, "column", column > 0 ? column - 1 : 0);
+         settabsi(L, "endColumn", column);  // Already correct after -1 adjustment
          settabsi(L, "severity", 3);  // Hint severity (maps to LSP severity 4)
          settabsi(L, "priority", entry.priority);
          settabss(L, "category", category_name(entry.category));

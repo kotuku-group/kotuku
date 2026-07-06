@@ -27,7 +27,7 @@
   &lt;rect fill=&quot;#ffffff&quot; width=&quot;100%&quot; height=&quot;100%&quot;/&gt;
   &lt;text x=&quot;3&quot; y=&quot;80&quot; font-size=&quot;19.6&quot; fill=&quot;navy&quot; transition=&quot;url(#hill)&quot;&gt;This text is morphed by a transition&lt;/text&gt;
 </pre>
-<p>Transitions are most effective when used in conjunction with the morph feature in the <class name="Vector">Vector</class> class.</p></description>
+<p>Transitions are most effective when used in conjunction with the <class name="Vector" field="GuidePath">Vector.GuidePath</class> feature.</p></description>
     <source>
       <file path="transformers/">transition.cpp</file>
     </source>
@@ -43,6 +43,19 @@
 <p>A valid transition object must consist of at least two stop points in order to transition from one transform to another. This is achieved by setting the Stops field with an array of Transition structures that define each stop point with a transform string.  The Transition structure consists of the following fields:</p>
 <struct lookup="Transition"/>
       </description>
+    </field>
+
+    <field>
+      <name>XMLDef</name>
+      <comment>Returns an SVG compliant XML string that describes the transition.</comment>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <description>
+<p>The returned XML defines the transition's stop list as <code>
+<stop/></code> elements, excluding the wrapping <code>
+<kotuku:transition/></code> element and <code>id</code> attribute.</p>
+      </description>
+      <tags>caller-owns-result</tags>
     </field>
 
   </fields>

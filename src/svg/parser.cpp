@@ -316,7 +316,7 @@ void svgState::process_shape_children(XTag &Tag, OBJECTPTR Vector) noexcept
          case SVF_animateTransform: proc_animate_transform(child, Vector); break;
          case SVF_animateMotion:    proc_animate_motion(child, Vector); break;
          case SVF_set:              proc_set(child, Tag, Vector); break;
-         case SVF_kotuku_morph:    proc_morph(child, Vector); break;
+         case SVF_kotuku_guidePath: proc_guide_path(child, Vector); break;
 
          case SVF_textPath:
             if (Vector->classID() IS CLASSID::VECTORTEXT) {
@@ -329,7 +329,7 @@ void svgState::process_shape_children(XTag &Tag, OBJECTPTR Vector) noexcept
                   else log.msg("Failed to retrieve content for <text> @ line %d", Tag.LineNo);
                }
 
-               proc_morph(child, Vector);
+               proc_guide_path(child, Vector);
             }
             break;
 
@@ -2421,16 +2421,16 @@ void svgState::proc_symbol(XTag &Tag) noexcept
 //********************************************************************************************************************
 // Most vector shapes can be morphed to the path of another vector.
 
-void svgState::proc_morph(XTag &Tag, OBJECTPTR Parent) noexcept
+void svgState::proc_guide_path(XTag &Tag, OBJECTPTR Parent) noexcept
 {
    kt::Log log(__FUNCTION__);
 
    if ((!Parent) or (Parent->Class->BaseClassID != CLASSID::VECTOR)) {
-      log.traceWarning("Unable to apply morph to non-vector parent object.");
+      log.traceWarning("Unable to apply guidePath to non-vector parent object.");
       return;
    }
 
-   // Find the definition that is being referenced for the morph.
+   // Find the definition that is being referenced for the guide path.
 
    std::string offset;
    std::string ref;
@@ -2462,7 +2462,7 @@ void svgState::proc_morph(XTag &Tag, OBJECTPTR Parent) noexcept
    }
 
    if (ref.empty()) {
-      log.warning("<morph> element @ line %d is missing a valid xlink:href attribute.", Tag.LineNo);
+      log.warning("<guidePath> element @ line %d is missing a valid xlink:href attribute.", Tag.LineNo);
       return;
    }
 
@@ -2501,7 +2501,7 @@ void svgState::proc_morph(XTag &Tag, OBJECTPTR Parent) noexcept
       case SVF_kotuku_wave:   class_id = CLASSID::VECTORWAVE; break;
       case SVF_kotuku_shape:  class_id = CLASSID::VECTORSHAPE; break;
       default:
-         log.warning("Invalid reference '%s', '%s' is not recognised by <morph>.", ref.c_str(), tagref->name());
+         log.warning("Invalid reference '%s', '%s' is not recognised by <guidePath>.", ref.c_str(), tagref->name());
    }
 
    if ((flags & (VMF::Y_MIN|VMF::Y_MID|VMF::Y_MAX)) IS VMF::NIL) {
@@ -2514,9 +2514,9 @@ void svgState::proc_morph(XTag &Tag, OBJECTPTR Parent) noexcept
       svgState state(Self);
       state.proc_shape(class_id, *tagref, Self->Scene, shape);
       auto parent_vector = (objVector *)Parent;
-      parent_vector->setMorph(shape);
+      parent_vector->setGuidePath(shape);
       if (transvector) parent_vector->setTransition(transvector);
-      parent_vector->setMorphFlags(flags);
+      parent_vector->setGuideFlags(flags);
       if (!Self->Cloning) Self->Scene->addDef(uri, shape);
    }
 }
@@ -3532,13 +3532,17 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
                else if (iequals("exponential", StrValue)) wave->setEnvelope(WVE::EXPONENTIAL);
                else wave->setEnvelope(WVE::LINEAR);
                return ERR::Okay;
-            case SVF_frequency: wave->setFrequency(SVGUnit(StrValue)); return ERR::Okay;
-            case SVF_phase:     wave->setPhase(SVGUnit(StrValue)); return ERR::Okay;
-            case SVF_thickness: wave->setThickness(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_frequency:     wave->setFrequency(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_frequency_end:
+            case SVF_frequencyEnd:  wave->setFrequencyEnd(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_noise:         wave->setNoise(svtonum<double>(StrValue)); return ERR::Okay;
+            case SVF_phase:         wave->setPhase(SVGUnit(StrValue)); return ERR::Okay;
+            case SVF_thickness:     wave->setThickness(SVGUnit(StrValue)); return ERR::Okay;
             case SVF_type:
                if (iequals("triangle", StrValue)) wave->setType(WVT::TRIANGLE);
                else if (iequals("sawtooth", StrValue)) wave->setType(WVT::SAWTOOTH);
-               else wave->setType(WVT::SMOOTH);
+               else if (iequals("square", StrValue)) wave->setType(WVT::SQUARE);
+               else wave->setType(WVT::SINE);
                return ERR::Okay;
          }
          break;
@@ -3703,8 +3707,8 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
             case SVF_textLength: vt->setTextLength(SVGUnit(StrValue)); return ERR::Okay;
             // TextPath only
             //case SVF_startOffset: vt->set(FID_StartOffset, StrValue); return ERR::Okay;
-            //case SVF_method: // The default is align.  For 'stretch' mode, set VMF::STRETCH in MorphFlags
-            //                      vt->set(FID_MorphFlags, StrValue); return ERR::Okay;
+            //case SVF_method:      // The default is align.  For 'stretch' mode, set VMF::STRETCH in GuideFlags
+            //                      vt->set(FID_GuideFlags, StrValue); return ERR::Okay;
             //case SVF_spacing:     vt->set(FID_Spacing, StrValue); return ERR::Okay;
             //case SVF_xlink_href:  // Used for drawing text along a path.
             //   return ERR::Okay;

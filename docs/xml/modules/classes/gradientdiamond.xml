@@ -50,6 +50,14 @@
       </description>
     </field>
 
+    <field>
+      <name>XMLDef</name>
+      <comment>Returns an SVG compliant XML string that describes the effect.</comment>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <tags>caller-owns-result</tags>
+    </field>
+
   </fields>
   <structs>
   </structs>

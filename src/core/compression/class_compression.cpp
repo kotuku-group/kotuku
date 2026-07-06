@@ -222,8 +222,8 @@ class extCompression : public objCompression {
 
       if (ArchiveHash) remove_archive(this);
 
-      if (Feedback.isScript()) {
-         UnsubscribeAction(Feedback.Context, AC::Free);
+      if (Feedback.defined()) {
+         Feedback.unpin();
          Feedback.clear();
       }
 
@@ -317,12 +317,6 @@ ERR convert_zip_error(struct z_stream_s *Stream, int Result)
 }
 
 //********************************************************************************************************************
-
-static void notify_free_feedback(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   auto Self = (extCompression *)CurrentContext();
-   Self->Feedback.clear();
-}
 
 static void set_decompress_feedback(CompressionFeedback &Feedback, FDB FeedbackID, int Index, const ZipFile &Entry,
    CSTRING Dest)
@@ -865,6 +859,10 @@ static ERR COMPRESSION_CompressStream(extCompression *Self, struct cmp::Compress
 {
    kt::Log log;
 
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (Args->Callback)) Args->Callback->consume();
+   });
+
    if ((!Args) or (!Args->Input) or (!Args->Callback)) return log.warning(ERR::NullArgs);
 
    if (!Self->Deflate.active()) return log.warning(ERR::InvalidState);
@@ -971,6 +969,10 @@ mutates-input, mutates-object, callback-inlines
 static ERR COMPRESSION_CompressStreamEnd(extCompression *Self, struct cmp::CompressStreamEnd *Args)
 {
    kt::Log log;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (Args->Callback)) Args->Callback->consume();
+   });
 
    if ((!Args) or (!Args->Callback)) return log.warning(ERR::NullArgs);
    if (!Self->Deflate.active()) return ERR::Okay;
@@ -1112,6 +1114,10 @@ static ERR COMPRESSION_DecompressStream(extCompression *Self, struct cmp::Decomp
 {
    kt::Log log;
 
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (Args->Callback)) Args->Callback->consume();
+   });
+
    if ((!Args) or (!Args->Input) or (!Args->Callback)) return log.warning(ERR::NullArgs);
    if (!Self->Inflate.active()) return ERR::Okay; // Decompression is complete
 
@@ -1204,6 +1210,10 @@ mutates-object, callback-inlines
 
 static ERR COMPRESSION_DecompressStreamEnd(extCompression *Self, struct cmp::DecompressStreamEnd *Args)
 {
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (Args->Callback)) Args->Callback->consume();
+   });
+
    if (!Self->Inflate.active()) return ERR::Okay; // If not inflating, not a problem
 
    if ((!Args) or (!Args->Callback)) return ERR::NullArgs;
@@ -1881,6 +1891,10 @@ pure-query, callback-inlines
 static ERR COMPRESSION_Scan(extCompression *Self, struct cmp::Scan *Args)
 {
    kt::Log log;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (Args->Callback)) Args->Callback->consume();
+   });
 
    if ((not Args) or (not Args->Callback)) return log.warning(ERR::NullArgs);
 

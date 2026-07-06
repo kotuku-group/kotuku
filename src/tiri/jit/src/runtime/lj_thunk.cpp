@@ -57,7 +57,10 @@ void lj_thunk_new(lua_State *L, GCfunc *func, int expected_type)
 }
 
 //********************************************************************************************************************
-// Resolve a thunk if not already resolved.
+// Resolve a thunk if not already resolved.  This protected variant never raises a Lua error; a nullptr result
+// indicates that the deferred function threw an exception.  In that case the stack is restored to its original
+// state and the error value is left in the unreferenced slot at *L->top - callers wanting to preserve or
+// propagate it must copy or re-push it before performing any further stack operations.
 //
 // IMPORTANT: Callers from VM assembler code (e.g., lj_meta_equal_thunk) must use
 // VMHelperGuard to ensure L->top is valid before calling this function.
@@ -68,7 +71,7 @@ void lj_thunk_new(lua_State *L, GCfunc *func, int expected_type)
 // boundary, which would cause snapshot_framelinks() to fail when it encounters the
 // protected C frame created by lua_pcall.
 
-TValue* lj_thunk_resolve(lua_State *L, GCudata *thunk_udata)
+TValue* lj_thunk_resolve_protected(lua_State *L, GCudata *thunk_udata)
 {
    ThunkPayload *payload = thunk_payload(thunk_udata);
 
@@ -113,9 +116,11 @@ TValue* lj_thunk_resolve(lua_State *L, GCudata *thunk_udata)
    // Restore base in case stack was reallocated
    L->base = restorestack(L, base_offset);
 
-   if (status != 0) { // Error occurred - restore stack and propagate
+   if (status != 0) {
+      // Error occurred - restore the stack and report the failure to the caller.  The error value pushed by
+      // lua_pcall() sits in the slot at the restored L->top, where the caller can retrieve it immediately.
       L->top = restorestack(L, top_offset);
-      lj_err_msg(L, ErrMsg::THUNKEX);
+      return nullptr;
    }
 
    TValue *result = L->top - 1;
@@ -133,6 +138,19 @@ TValue* lj_thunk_resolve(lua_State *L, GCudata *thunk_udata)
    }
 
    return &payload->cached_value;
+}
+
+//********************************************************************************************************************
+// Throwing variant of thunk resolution - propagates the original error if the deferred function fails.
+
+TValue* lj_thunk_resolve(lua_State *L, GCudata *thunk_udata)
+{
+   TValue *result = lj_thunk_resolve_protected(L, thunk_udata);
+   if (not result) {
+      L->top++;  // Re-expose the error value left just above the stack top
+      lj_err_run(L);
+   }
+   return result;
 }
 
 //********************************************************************************************************************

@@ -231,7 +231,7 @@ void keyvalue_to_table(lua_State *Lua, const KEYVALUE *Map)
    // rather than creating another table.
 
    for (auto &rec : References) {
-      if (Address IS rec.Address) {
+      if ((Address IS rec.Address) and (&StructDef IS rec.Def)) {
          lua_rawgeti(Lua, LUA_REGISTRYINDEX, rec.Ref);
          return ERR::Okay;
       }
@@ -243,7 +243,7 @@ void keyvalue_to_table(lua_State *Lua, const KEYVALUE *Map)
    // references to it.
 
    int table_ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
-   References.push_back({ Address, table_ref });
+   References.push_back({ Address, &StructDef, table_ref });
    lua_rawgeti(Lua, LUA_REGISTRYINDEX, table_ref); // Retrieve the struct table
 
    for (auto &field : StructDef.Fields) {

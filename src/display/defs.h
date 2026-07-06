@@ -516,6 +516,7 @@ extern ERR  lock_surface(extBitmap *, int16_t);
 extern ERR  unlock_surface(extBitmap *);
 extern ERR  get_display_info(OBJECTID, DisplayInfo *);
 extern void resize_feedback(FUNCTION *, OBJECTID, int X, int Y, int Width, int Height);
+
 extern void forbidDrawing(void);
 extern void forbidExpose(void);
 extern void permitDrawing(void);
@@ -668,6 +669,20 @@ extern bool glXRRAvailable;
 
 #include "prototypes.h"
 
+//********************************************************************************************************************
+// Lazily releases a stale ResizeFeedback subscription.  The display must be locked by the caller because copies of
+// the FUNCTION share the stored field's weak pin, so only the owning field may be unpinned and cleared.
+
+inline void release_stale_resize_feedback(extDisplay *Display)
+{
+   if (Display->ResizeFeedback.stale()) {
+      Display->ResizeFeedback.unpin();
+      Display->ResizeFeedback.clear();
+   }
+}
+
+//********************************************************************************************************************
+
 template <typename T>
 void UpdateSurfaceField(objSurface *Self, T SurfaceRecord::*LValue, T Value)
 {
@@ -682,6 +697,8 @@ void UpdateSurfaceField(objSurface *Self, T SurfaceRecord::*LValue, T Value)
    }
 }
 
+//********************************************************************************************************************
+
 inline void clip_rectangle(ClipRectangle &rect, ClipRectangle &clip)
 {
    if (rect.Left   < clip.Left)   rect.Left   = clip.Left;
@@ -689,6 +706,8 @@ inline void clip_rectangle(ClipRectangle &rect, ClipRectangle &clip)
    if (rect.Right  > clip.Right)  rect.Right  = clip.Right;
    if (rect.Bottom > clip.Bottom) rect.Bottom = clip.Bottom;
 }
+
+//********************************************************************************************************************
 
 inline int find_bitmap_owner(int Index)
 {

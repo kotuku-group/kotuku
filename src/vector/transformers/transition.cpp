@@ -25,7 +25,7 @@ The following example illustrates the use of a transition in SVG:
   &lt;text x="3" y="80" font-size="19.6" fill="navy" transition="url(#hill)"&gt;This text is morphed by a transition&lt;/text&gt;
 </pre>
 
-Transitions are most effective when used in conjunction with the morph feature in the @Vector class.
+Transitions are most effective when used in conjunction with the @Vector.GuidePath feature.
 
 -END-
 
@@ -157,6 +157,37 @@ static ERR TRANSITION_NewPlacement(extVectorTransition *Self) {
 /*********************************************************************************************************************
 
 -FIELD-
+XMLDef: Returns an SVG compliant XML string that describes the transition.
+
+The returned XML defines the transition's stop list as `<stop/>` elements, excluding the wrapping
+`<kotuku:transition/>` element and `id` attribute.
+-END-
+
+*********************************************************************************************************************/
+
+static ERR TRANSITION_GET_XMLDef(extVectorTransition *Self, std::string_view &Value)
+{
+   std::stringstream stream;
+
+   for (auto &stop : Self->Stops) {
+      const auto &m = stop.Matrix;
+
+      stream << "<stop offset=\"" << stop.Offset << "\" transform=\"matrix("
+         << std::format("{} {} {} {} {} {}", m.ScaleX, m.ShearY, m.ShearX, m.ScaleY, m.TranslateX, m.TranslateY)
+         << ")\"/>";
+   }
+
+   auto cppstr = stream.str();
+   if (auto str = strclone(cppstr)) {
+      Value = std::string_view{ str, cppstr.size() };
+      return ERR::Okay;
+   }
+   else return ERR::AllocMemory;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Stops: Defines the transforms that will be used at specific stop points.
 
 A valid transition object must consist of at least two stop points in order to transition from one transform to another.
@@ -207,6 +238,7 @@ static const ActionArray clTransitionActions[] = {
 
 static const FieldArray clTransitionFields[] = {
    { "Stops", FDF_VIRTUAL|FDF_VECTOR|FDF_STRUCT|FDF_W, nullptr, TRANSITION_SET_Stops, "Transition" },
+   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, TRANSITION_GET_XMLDef },
    END_FIELD
 };
 

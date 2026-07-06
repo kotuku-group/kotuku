@@ -529,7 +529,6 @@ gui.dialog.colour = function(Options)
       _rainbowX  = -1,
       _rainbowY  = -1,
       _rainbow   = { winX = 0, winY = 0, winWidth = 0, winHeight = 0 },
-      _rainbowBmp,
       _rgb       = gui.srgb(200, 200, 200, 255),
       _links     = array<table>,
       _userColours = array<table>,

@@ -14,14 +14,23 @@
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>GradientMesh interpolates colour across a grid of curved patches.  Each patch is bounded by four cubic Bezier edges and carries one colour at each corner.  Rendering tessellates the patches into Gouraud triangles, so colour follows the patch geometry rather than a one-dimensional colour ramp.</p>
-<p>The inherited colour-ramp fields <code>Stops</code>, <code>ColourMap</code>, <code>SpreadMethod</code> and <code>Colour</code> are not supported by this class. Patch geometry and corner colours are supplied through <fl>Patches</fl>.</p>
-<p>TODO: - Add tensor-product bicubic mesh patches, including the four internal control points from the SVG proposal. - Replace the current uniform tessellation with adaptive subdivision driven by patch flatness and screen size. - Preserve mesh row and column metadata through the public authoring API so SVG round-tripping can retain compact shared-edge syntax for multi-row meshes. - Add a richer structured authoring API once mesh patch editing needs per-edge or per-corner mutation without replacing the full <fl>Patches</fl> array. - Extend SVG conformance tests to cover multi-row shared top-edge inheritance, malformed patch path recovery and colour-space interpolation through <code>linearRGB</code>.</p></description>
+<p>The inherited colour-ramp fields <code>Stops</code>, <code>ColourMap</code>, <code>SpreadMethod</code> and <code>Colour</code> are not supported by this class. Patch geometry and corner colours are supplied through <fl>Patches</fl>.</p></description>
     <source>
       <file path="painters/">gradient_mesh.cpp</file>
     </source>
   </info>
 
   <fields>
+    <field>
+      <name>Columns</name>
+      <comment>The number of columns represented by the flat Patches array.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>INT</type>
+      <description>
+<p>Columns stores the column count for the mesh grid while <fl>Patches</fl> remains a flat row-major array.  The row and column counts must multiply to the number of patch records when both dimensions and patches are present.</p>
+      </description>
+    </field>
+
     <field>
       <name>Patches</name>
       <comment>Defines the Coons patches for a mesh gradient.</comment>
@@ -33,41 +42,31 @@
       </description>
     </field>
 
+    <field>
+      <name>Rows</name>
+      <comment>The number of rows represented by the flat Patches array.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>INT</type>
+      <description>
+<p>Rows stores the row count for the mesh grid while <fl>Patches</fl> remains a flat row-major array.  When valid row and column metadata is supplied, SVG export can preserve standard meshgradient shared-edge syntax across multiple rows.  If no metadata is supplied, assigning <fl>Patches</fl> defaults to a single-row mesh for simple programmatic use.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>XMLDef</name>
+      <comment>Returns an SVG compliant XML string that describes the effect.</comment>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <tags>caller-owns-result</tags>
+    </field>
+
   </fields>
   <structs>
     <struct name="MeshPatchRecord" comment="Describes one bilinear Coons patch for the GradientMesh Patches field.">
-      <field name="TopP0X" type="DOUBLE">Top edge starting X coordinate.</field>
-      <field name="TopP0Y" type="DOUBLE">Top edge starting Y coordinate.</field>
-      <field name="TopC0X" type="DOUBLE">Top edge first control point X coordinate.</field>
-      <field name="TopC0Y" type="DOUBLE">Top edge first control point Y coordinate.</field>
-      <field name="TopC1X" type="DOUBLE">Top edge second control point X coordinate.</field>
-      <field name="TopC1Y" type="DOUBLE">Top edge second control point Y coordinate.</field>
-      <field name="TopP1X" type="DOUBLE">Top edge ending X coordinate.</field>
-      <field name="TopP1Y" type="DOUBLE">Top edge ending Y coordinate.</field>
-      <field name="RightP0X" type="DOUBLE">Right edge starting X coordinate.</field>
-      <field name="RightP0Y" type="DOUBLE">Right edge starting Y coordinate.</field>
-      <field name="RightC0X" type="DOUBLE">Right edge first control point X coordinate.</field>
-      <field name="RightC0Y" type="DOUBLE">Right edge first control point Y coordinate.</field>
-      <field name="RightC1X" type="DOUBLE">Right edge second control point X coordinate.</field>
-      <field name="RightC1Y" type="DOUBLE">Right edge second control point Y coordinate.</field>
-      <field name="RightP1X" type="DOUBLE">Right edge ending X coordinate.</field>
-      <field name="RightP1Y" type="DOUBLE">Right edge ending Y coordinate.</field>
-      <field name="BottomP0X" type="DOUBLE">Bottom edge starting X coordinate.</field>
-      <field name="BottomP0Y" type="DOUBLE">Bottom edge starting Y coordinate.</field>
-      <field name="BottomC0X" type="DOUBLE">Bottom edge first control point X coordinate.</field>
-      <field name="BottomC0Y" type="DOUBLE">Bottom edge first control point Y coordinate.</field>
-      <field name="BottomC1X" type="DOUBLE">Bottom edge second control point X coordinate.</field>
-      <field name="BottomC1Y" type="DOUBLE">Bottom edge second control point Y coordinate.</field>
-      <field name="BottomP1X" type="DOUBLE">Bottom edge ending X coordinate.</field>
-      <field name="BottomP1Y" type="DOUBLE">Bottom edge ending Y coordinate.</field>
-      <field name="LeftP0X" type="DOUBLE">Left edge starting X coordinate.</field>
-      <field name="LeftP0Y" type="DOUBLE">Left edge starting Y coordinate.</field>
-      <field name="LeftC0X" type="DOUBLE">Left edge first control point X coordinate.</field>
-      <field name="LeftC0Y" type="DOUBLE">Left edge first control point Y coordinate.</field>
-      <field name="LeftC1X" type="DOUBLE">Left edge second control point X coordinate.</field>
-      <field name="LeftC1Y" type="DOUBLE">Left edge second control point Y coordinate.</field>
-      <field name="LeftP1X" type="DOUBLE">Left edge ending X coordinate.</field>
-      <field name="LeftP1Y" type="DOUBLE">Left edge ending Y coordinate.</field>
+      <field name="Top" type="struct MeshControl">Top edge</field>
+      <field name="Right" type="struct MeshControl">Right edge</field>
+      <field name="Bottom" type="struct MeshControl">Bottom edge</field>
+      <field name="Left" type="struct MeshControl">Left edge</field>
       <field name="TopLeft" type="struct FRGB">Colour assigned to the top-left patch corner.</field>
       <field name="TopRight" type="struct FRGB">Colour assigned to the top-right patch corner.</field>
       <field name="BottomRight" type="struct FRGB">Colour assigned to the bottom-right patch corner.</field>

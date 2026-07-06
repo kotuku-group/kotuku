@@ -200,6 +200,7 @@ restart:
 
    Self->ReadCalled = false;
    auto error = ERR::Okay;
+   if (Self->Incoming.stale()) clear_callback_function(Self->Incoming);
    if (Self->Incoming.defined()) {
       if (Self->Incoming.isC()) {
          auto routine = (ERR (*)(extNetSocket *, APTR))Self->Incoming.Routine;
@@ -232,7 +233,7 @@ restart:
       log.traceBranch("Socket % " PRId64 " will be terminated.", int64_t(SocketFD));
       if (Self->Handle.is_valid()) {
          Self->CloseAfterWrite = true;
-         Self->Incoming.clear();
+         clear_callback_function(Self->Incoming);
          network_platform().register_write(Self->Handle, &netsocket_outgoing, Self);
       }
    }
@@ -353,6 +354,7 @@ static void netsocket_outgoing_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
 
    if ((!error) and ((Self->WriteQueue.Buffer.empty()) or
        (Self->WriteQueue.Index >= Self->WriteQueue.Buffer.size()))) {
+      if (Self->Outgoing.stale()) clear_callback_function(Self->Outgoing);
       if (Self->Outgoing.defined()) {
          if (Self->Outgoing.isC()) {
             auto routine = (ERR (*)(extNetSocket *, APTR))Self->Outgoing.Routine;
@@ -363,7 +365,7 @@ static void netsocket_outgoing_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
             if (sc::Call(Self->Outgoing, std::to_array<ScriptArg>({ { "NetSocket", Self, FD_OBJECTPTR } }), error) != ERR::Okay) error = ERR::Terminate;
          }
 
-         if (error != ERR::Okay) Self->Outgoing.clear();
+         if (error != ERR::Okay) clear_callback_function(Self->Outgoing);
       }
 
       // If the write queue is empty and all data has been retrieved, we can remove the FD-Write registration so that

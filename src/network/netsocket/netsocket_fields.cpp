@@ -59,14 +59,11 @@ static ERR GET_Feedback(extNetSocket *Self, FUNCTION * &Value)
 
 static ERR SET_Feedback(extNetSocket *Self, FUNCTION *Value)
 {
+   clear_callback_function(Self->Feedback);
    if (Value) {
-      if (Self->Feedback.isScript()) UnsubscribeAction(Self->Feedback.Context, AC::Free);
       Self->Feedback = *Value;
-      if (Self->Feedback.isScript()) {
-         SubscribeAction(Self->Feedback.Context, AC::Free, C_FUNCTION(notify_free_feedback));
-      }
+      if (Self->Feedback.defined()) Self->Feedback.pin();
    }
-   else Self->Feedback.clear();
 
    return ERR::Okay;
 }
@@ -104,14 +101,11 @@ static ERR GET_Incoming(extNetSocket *Self, FUNCTION * &Value)
 
 static ERR SET_Incoming(extNetSocket *Self, FUNCTION *Value)
 {
+   clear_callback_function(Self->Incoming);
    if (Value) {
-      if (Self->Incoming.isScript()) UnsubscribeAction(Self->Incoming.Context, AC::Free);
       Self->Incoming = *Value;
-      if (Self->Incoming.isScript()) {
-         SubscribeAction(Self->Incoming.Context, AC::Free, C_FUNCTION(notify_free_incoming));
-      }
+      if (Self->Incoming.defined()) Self->Incoming.pin();
    }
-   else Self->Incoming.clear();
    return ERR::Okay;
 }
 
@@ -180,17 +174,19 @@ static ERR SET_Outgoing(extNetSocket *Self, FUNCTION *Value)
 {
    kt::Log log;
 
-   if (Self->Outgoing.isScript()) UnsubscribeAction(Self->Outgoing.Context, AC::Free);
+   clear_callback_function(Self->Outgoing);
    Self->Outgoing = *Value;
-   if (Self->Outgoing.isScript()) SubscribeAction(Self->Outgoing.Context, AC::Free, C_FUNCTION(notify_free_outgoing));
+   if (Self->Outgoing.defined()) {
+      Self->Outgoing.pin();
 
-   if (Self->initialised()) {
-      if ((Self->Handle.is_valid()) and (Self->State IS NTC::CONNECTED)) {
-         // Setting the Outgoing field after connectivity is established will put the socket into streamed write mode.
+      if (Self->initialised()) {
+         if ((Self->Handle.is_valid()) and (Self->State IS NTC::CONNECTED)) {
+            // Setting the Outgoing field after connectivity is established will put the socket into streamed write mode.
 
-         network_platform().register_write(Self->Handle, &netsocket_outgoing, Self);
+            network_platform().register_write(Self->Handle, &netsocket_outgoing, Self);
+         }
+         else log.trace("Will not listen for socket-writes (no socket handle, or state %d != NTC::CONNECTED).", Self->State);
       }
-      else log.trace("Will not listen for socket-writes (no socket handle, or state %d != NTC::CONNECTED).", Self->State);
    }
 
    return ERR::Okay;
@@ -305,6 +301,7 @@ static ERR SET_State(extNetSocket *Self, NTC Value)
             log.warning("SSL certificate validation failed.");
             Self->Error = ERR::Security;
             Self->State = NTC::DISCONNECTED;
+            if (Self->Feedback.stale()) clear_callback_function(Self->Feedback);
             if (Self->Feedback.defined()) {
                if (Self->Feedback.isC()) {
                   kt::SwitchContext context(Self->Feedback.Context);
@@ -324,6 +321,8 @@ static ERR SET_State(extNetSocket *Self, NTC Value)
       #endif
 
       Self->State = Value;
+
+      if (Self->Feedback.stale()) clear_callback_function(Self->Feedback);
 
       if (Self->Feedback.defined()) {
          log.traceBranch("Reporting state change to subscriber, operation %d, context %p.", int(Self->State), Self->Feedback.Context);

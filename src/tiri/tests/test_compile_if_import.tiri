@@ -2,6 +2,8 @@
 
 import './compile_if_helper'
 
+extern helper_main_only
+
 @Test function CompileIfImported()
    -- helper_always_visible should be true (always defined)
    assert(helper_always_visible is true, "helper_always_visible should be true")

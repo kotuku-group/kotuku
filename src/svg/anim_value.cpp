@@ -71,11 +71,16 @@ void anim_value::set_value(objVector &Vector)
                   default:              wave.setEnvelope(WVE::NIL); return;
                }
 
-            case SVF_amplitude: wave.setAmplitude(get_numeric_value(Vector, strhash("amplitude"))); return;
-            case SVF_decay:     wave.setDecay(get_numeric_value(Vector, strhash("decay"))); return;
-            case SVF_frequency: wave.setFrequency(get_numeric_value(Vector, strhash("frequency"))); return;
-            case SVF_phase:     wave.setPhase(get_numeric_value(Vector, strhash("phase"))); return;
-            case SVF_thickness: wave.setThickness(get_numeric_value(Vector, strhash("thickness"))); return;
+            case SVF_amplitude:     wave.setAmplitude(get_numeric_value(Vector, strhash("amplitude"))); return;
+            case SVF_decay:         wave.setDecay(get_numeric_value(Vector, strhash("decay"))); return;
+            case SVF_frequency:     wave.setFrequency(get_numeric_value(Vector, strhash("frequency"))); return;
+            case SVF_frequency_end:
+            case SVF_frequencyEnd:
+               wave.setFrequencyEnd(get_numeric_value(Vector, strhash(target_attrib)));
+               return;
+            case SVF_noise:         wave.setNoise(get_numeric_value(Vector, strhash("noise"))); return;
+            case SVF_phase:         wave.setPhase(get_numeric_value(Vector, strhash("phase"))); return;
+            case SVF_thickness:     wave.setThickness(get_numeric_value(Vector, strhash("thickness"))); return;
          }
          break;
       }

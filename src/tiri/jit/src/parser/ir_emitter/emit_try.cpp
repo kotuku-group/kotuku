@@ -134,7 +134,11 @@ ParserResult<IrEmitUnit> IrEmitter::emit_try_except_stmt(const TryExceptPayload 
 
             // Try to evaluate the expression as a constant
             auto code_result = this->emit_expression(*code_expr);
-            if (not code_result.ok()) break;
+            if (not code_result.ok()) {
+               fs->try_depth = saved_try_depth;
+               fs->reset_freereg();
+               return ParserResult<IrEmitUnit>::failure(code_result.error_ref());
+            }
 
             ExpDesc code = code_result.value_ref();
 
@@ -145,6 +149,9 @@ ParserResult<IrEmitUnit> IrEmitter::emit_try_except_stmt(const TryExceptPayload 
                shift += 16;
             }
             else { // Non-numeric codes are an error
+               expr_free(fs, &code);
+               fs->try_depth = saved_try_depth;
+               fs->reset_freereg();
                return ParserResult<IrEmitUnit>::failure(this->make_error(
                   ParserErrorCode::InternalInvariant, "Non-numeric filter in try block", SourceSpan{}));
             }

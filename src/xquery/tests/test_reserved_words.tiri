@@ -1,5 +1,7 @@
 -- Flute tests for XML
 
+   include 'xml'
+
 local glXML
 
 @BeforeAll

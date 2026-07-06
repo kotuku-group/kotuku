@@ -5,7 +5,7 @@ module({ name="XML", src="xml.cpp", copyright="Paul Manias © 2001-2026", versio
 
   loadFile('./constants.tdl')
 
-  struct("XMLAttrib", { type="XMLAttrib" }, [[
+  structdef("XMLAttrib", { type="XMLAttrib" }, [[
    string Name   # Name of the attribute
    string Value  # Value of the attribute
   ]],
@@ -18,7 +18,7 @@ module({ name="XML", src="xml.cpp", copyright="Paul Manias © 2001-2026", versio
 
   -- Note that if a tag specifies a namespace prefix then it will appear in the first XMLAttrib with the name
 
-  struct("XTag", { type="XTag" }, [[
+  structdef("XTag", { type="XTag" }, [[
     int ID           # Globally unique ID assigned to the tag on creation.
     int ParentID     # UID of the parent tag
     int LineNo       # Line number on which this tag was encountered
@@ -151,7 +151,7 @@ struct XPathMapEntry;
 struct XPathMapStorage;
 struct XPathArrayStorage;]])
 
-  struct("XPathValue", { type="XPathValue" }, [[
+  structdef("XPathValue", { type="XPathValue" }, [[
     int(XPVT) Type         # Identifies the type of value stored
     double    NumberValue  # Defined if the type is Number or Boolean
     string  StringValue  # Defined if the type is String

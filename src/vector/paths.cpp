@@ -206,6 +206,12 @@ void gen_vector_path(extVector *Vector)
    else if (Vector->Class->BaseClassID IS CLASSID::VECTOR) {
       Vector->FinalX = 0;
       Vector->FinalY = 0;
+
+      // Dependency links are weak-pinned; drop any whose target has been terminated before generation reads them.
+
+      validate_object_link(Vector->AppendPath);
+      validate_object_link(Vector->GuidePath);
+      validate_object_link(Vector->Transition);
       if (((Vector->Dirty & RC::TRANSFORM) != RC::NIL) and (Vector->classID() != CLASSID::VECTORTEXT)) {
          Vector->Transform.reset();
          apply_parent_transforms(Vector, Vector->Transform);
@@ -248,23 +254,23 @@ void gen_vector_path(extVector *Vector)
             }
          }
 
-         if ((Vector->Morph) and (Vector->Morph->Class->BaseClassID IS CLASSID::VECTOR)) {
-            if ((Vector->classID() IS CLASSID::VECTORTEXT) and ((Vector->MorphFlags & VMF::STRETCH) IS VMF::NIL)) {
-               // Do nothing for VectorText because it applies morph and transition effects during base path generation.
+         if ((Vector->GuidePath) and (Vector->GuidePath->Class->BaseClassID IS CLASSID::VECTOR)) {
+            if ((Vector->classID() IS CLASSID::VECTORTEXT) and ((Vector->GuideFlags & VMF::STRETCH) IS VMF::NIL)) {
+               // Do nothing for VectorText because it applies guidepath and transition effects during base path generation.
             }
             else {
-               auto morph = (extVector *)Vector->Morph;
+               auto guide = (extVector *)Vector->GuidePath;
 
-               if (morph->dirty()) gen_vector_path(morph);
+               if (guide->dirty()) gen_vector_path(guide);
 
-               if (morph->BasePath.total_vertices()) {
+               if (guide->BasePath.total_vertices()) {
                   double bx1, bx2, by1, by2;
 
-                  if ((Vector->MorphFlags & VMF::Y_MID) != VMF::NIL) {
+                  if ((Vector->GuideFlags & VMF::Y_MID) != VMF::NIL) {
                      bounding_rect_single(Vector->BasePath, 0, &bx1, &by1, &bx2, &by2);
                      Vector->BasePath.translate(0, -by1 - ((by2 - by1) * 0.5));
                   }
-                  else if ((Vector->MorphFlags & VMF::Y_MIN) != VMF::NIL) {
+                  else if ((Vector->GuideFlags & VMF::Y_MIN) != VMF::NIL) {
                      if (Vector->classID() != CLASSID::VECTORTEXT) {
                         bounding_rect_single(Vector->BasePath, 0, &bx1, &by1, &bx2, &by2);
                         Vector->BasePath.translate(0, -by1 -(by2 - by1));
@@ -278,11 +284,11 @@ void gen_vector_path(extVector *Vector)
                   }
 
                   agg::trans_single_path trans_path;
-                  morph->BasePath.approximation_scale(Vector->Transform.scale());
-                  trans_path.add_path(morph->BasePath);
+                  guide->BasePath.approximation_scale(Vector->Transform.scale());
+                  trans_path.add_path(guide->BasePath);
                   trans_path.preserve_x_scale(true); // The default is true.  Switching to false produces a lot of scrunching and extending
-                  if (morph->classID() IS CLASSID::VECTORPATH) { // Enforcing a fixed length along the path effectively causes a resize.
-                     if (((extVectorPath *)morph)->PathLength > 0) trans_path.base_length(((extVectorPath *)morph)->PathLength);
+                  if (guide->classID() IS CLASSID::VECTORPATH) { // Enforcing a fixed length along the path effectively causes a resize.
+                     if (((extVectorPath *)guide)->PathLength > 0) trans_path.base_length(((extVectorPath *)guide)->PathLength);
                   }
 
                   Vector->BasePath.transform(trans_path); // Apply manipulation to the base path.

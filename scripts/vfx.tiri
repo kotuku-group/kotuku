@@ -474,7 +474,7 @@ vfx.wipes.simple.animate = function(State, Options, Progress)
    pc.x = -((max_width - State.v_width) * 0.5)
    State.clip_path.mtAddCommand(pc)
 
-   pc.type = PE_Close
+   pc.type = PE_ClosePath
    State.clip_path.mtAddCommand(pc)
 end
 
@@ -542,7 +542,7 @@ vfx.wipes.clock.animate = function(State, Options, Progress)
    pc.y = y
    State.clip_path.mtAddCommand(pc)
 
-   pc.type = PE_Close
+   pc.type = PE_ClosePath
    State.clip_path.mtAddCommand(pc)
 end
 
@@ -664,7 +664,7 @@ vfx.wipes.shutter.animate = function(State, Options, Progress)
       pc.x = -((max_width - State.v_width) * 0.5)
       State.clip_path.mtAddCommand(pc)
 
-      pc.type = PE_Close
+      pc.type = PE_ClosePath
       State.clip_path.mtAddCommand(pc)
    end
 end

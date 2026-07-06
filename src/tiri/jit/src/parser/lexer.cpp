@@ -1950,6 +1950,7 @@ static void lj_lex_error_no_skip(LexState *State, LexToken tok, ErrMsg em)
       ParserDiagnostic diag;
       diag.severity = ParserDiagnosticSeverity::Error;
       diag.code = ParserErrorCode::UnexpectedToken;
+      diag.file_index = State->current_file_index;
       if (tokstr) diag.message = std::string(err2msg(em)) + " near '" + tokstr + "'";
       else diag.message = err2msg(em);
 
@@ -2000,6 +2001,7 @@ void lj_lex_error(LexState *State, LexToken tok, ErrMsg em, ...)
       ParserDiagnostic diag;
       diag.severity = ParserDiagnosticSeverity::Error;
       diag.code = ParserErrorCode::UnexpectedToken;
+      diag.file_index = State->current_file_index;
       if (tokstr) diag.message = std::string(msg_buffer) + " near '" + tokstr + "'";
       else diag.message = msg_buffer;
 

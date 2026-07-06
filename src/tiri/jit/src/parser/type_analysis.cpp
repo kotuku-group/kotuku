@@ -16,10 +16,12 @@
 #include "parser/type_checker.h"
 
 #include <format>
+#include <shared_mutex>
 
 #include <ankerl/unordered_dense.h>
 #include <kotuku/main.h>
 #include "parser/parser_context.h"
+#include "../../../defs.h"
 
 #ifdef INCLUDE_TIPS
 #include "parser/parser_tips.h"
@@ -43,6 +45,27 @@
       case LiteralKind::String:  result.primary = TiriType::Str; break;
    }
    return result;
+}
+
+[[nodiscard]] static bool type_identifier_name_is(GCstr *Name, std::string_view Text)
+{
+   return Name and std::string_view(strdata(Name), Name->len) IS Text;
+}
+
+[[nodiscard]] static bool type_is_registered_constant(GCstr *Name)
+{
+   if (not Name) return false;
+
+   std::shared_lock lock(glConstantMutex);
+   return glConstantRegistry.contains(Name->hash);
+}
+
+[[nodiscard]] static GCstr * type_literal_string_key(const ExprNode &Expr)
+{
+   if (Expr.kind != AstNodeKind::LiteralExpr) return nullptr;
+   const auto &literal = std::get<LiteralValue>(Expr.data);
+   if (literal.kind != LiteralKind::String) return nullptr;
+   return literal.string_value;
 }
 
 // Helper to check if type tracing is enabled
@@ -99,6 +122,11 @@ private:
    void analyse_function_payload(const FunctionExprPayload &, GCstr *Name = nullptr);
    void analyse_expression(const ExprNode &);
    void analyse_call_expr(const CallExprPayload &);
+   [[nodiscard]] bool is_global_environment_reference(const ExprNode &) const;
+   [[nodiscard]] GCstr * protected_global_store_key(const ExprNode &) const;
+   [[nodiscard]] bool computed_global_environment_store(const ExprNode &) const;
+   void report_protected_global_override(GCstr *, SourceSpan);
+   void report_computed_global_environment_store(SourceSpan);
 
    // Argument type checking for function calls
    void check_arguments(const FunctionExprPayload &, const CallExprPayload &);
@@ -648,12 +676,32 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
       if (not target_ptr) continue;
       const auto &target = *target_ptr;
 
+      if (this->computed_global_environment_store(target)) {
+         this->report_computed_global_environment_store(target.span);
+         continue;
+      }
+
+      if (GCstr *protected_name = this->protected_global_store_key(target)) {
+         this->report_protected_global_override(protected_name, target.span);
+         continue;
+      }
+
       // Check local and global variable assignments
       if (target.kind IS AstNodeKind::IdentifierExpr) {
          auto *name_ref = std::get_if<NameRef>(&target.data);
          if (not name_ref) continue;
 
          GCstr *name = name_ref->identifier.symbol;
+
+         // A plain identifier target naming a host pre-registered global is an override unless an
+         // explicit local shadow or parameter is in scope.
+
+         if (name and not name_ref->identifier.is_blank and
+             ((name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) and
+             not this->resolve_identifier(name)) {
+            this->report_protected_global_override(name, target.span);
+            continue;
+         }
 
          // First check local variables
 
@@ -905,6 +953,21 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
       const auto &name = Payload.names[i];
       if (not name.symbol) continue;
 
+      if ((name.symbol->flags & STRFLAG_PROTECTED_GLOBAL) != 0) {
+         this->report_protected_global_override(name.symbol, name.span);
+         continue;
+      }
+
+      if (type_is_registered_constant(name.symbol)) {
+         std::string_view name_view(strdata(name.symbol), name.symbol->len);
+         TypeDiagnostic diag;
+         diag.location = name.span;
+         diag.code = ParserErrorCode::AssignToConstant;
+         diag.message = std::format("cannot assign to constant '{}'", name_view);
+         this->diagnostics_.push_back(std::move(diag));
+         continue;
+      }
+
       InferredType inferred;
 
       // Explicit type annotation takes precedence
@@ -999,7 +1062,19 @@ void TypeAnalyser::analyse_function_stmt(const FunctionStmtPayload &Payload)
       if (not Payload.name.segments.empty()) {
          function_name = Payload.name.segments.back().symbol;
          function_location = Payload.name.segments.back().span;
-         this->declare_global_function(function_name, function, function_location);
+         bool is_direct_global_store = Payload.name.segments.size() IS 1 and not Payload.name.method.has_value();
+         if (is_direct_global_store and function_name and ((function_name->flags & STRFLAG_PROTECTED_GLOBAL) != 0)) {
+            this->report_protected_global_override(function_name, function_location);
+         }
+         else if (is_direct_global_store and type_is_registered_constant(function_name)) {
+            std::string_view name_view(strdata(function_name), function_name->len);
+            TypeDiagnostic diag;
+            diag.location = function_location;
+            diag.code = ParserErrorCode::AssignToConstant;
+            diag.message = std::format("cannot assign to constant '{}'", name_view);
+            this->diagnostics_.push_back(std::move(diag));
+         }
+         else this->declare_global_function(function_name, function, function_location);
       }
       else if (Payload.name.method) {
          function_name = Payload.name.method->symbol;
@@ -1009,6 +1084,66 @@ void TypeAnalyser::analyse_function_stmt(const FunctionStmtPayload &Payload)
    }
 
    if (function) this->analyse_function_payload(*function, function_name);
+}
+
+bool TypeAnalyser::is_global_environment_reference(const ExprNode &Expr) const
+{
+   if (Expr.kind != AstNodeKind::IdentifierExpr) return false;
+
+   const auto *name_ref = std::get_if<NameRef>(&Expr.data);
+   if (not name_ref or not type_identifier_name_is(name_ref->identifier.symbol, "_G")) return false;
+
+   return not this->resolve_identifier(name_ref->identifier.symbol).has_value();
+}
+
+GCstr * TypeAnalyser::protected_global_store_key(const ExprNode &Expr) const
+{
+   GCstr *key = nullptr;
+
+   if (Expr.kind IS AstNodeKind::MemberExpr) {
+      const auto &payload = std::get<MemberExprPayload>(Expr.data);
+      if (payload.table and this->is_global_environment_reference(*payload.table)) key = payload.member.symbol;
+   }
+   else if (Expr.kind IS AstNodeKind::IndexExpr) {
+      const auto &payload = std::get<IndexExprPayload>(Expr.data);
+      if (payload.table and payload.index and this->is_global_environment_reference(*payload.table)) {
+         key = type_literal_string_key(*payload.index);
+      }
+   }
+
+   if (key and ((key->flags & STRFLAG_PROTECTED_GLOBAL) != 0)) return key;
+   return nullptr;
+}
+
+bool TypeAnalyser::computed_global_environment_store(const ExprNode &Expr) const
+{
+   if (Expr.kind != AstNodeKind::IndexExpr) return false;
+
+   const auto &payload = std::get<IndexExprPayload>(Expr.data);
+   if (not payload.table or not payload.index or
+      not this->is_global_environment_reference(*payload.table)) return false;
+
+   return type_literal_string_key(*payload.index) IS nullptr;
+}
+
+void TypeAnalyser::report_protected_global_override(GCstr *Name, SourceSpan Location)
+{
+   if (not Name) return;
+
+   TypeDiagnostic diag;
+   diag.location = Location;
+   diag.code = ParserErrorCode::OverrideProtectedGlobal;
+   diag.message = std::format("cannot override built-in '{}'", std::string_view(strdata(Name), Name->len));
+   this->diagnostics_.push_back(std::move(diag));
+}
+
+void TypeAnalyser::report_computed_global_environment_store(SourceSpan Location)
+{
+   TypeDiagnostic diag;
+   diag.location = Location;
+   diag.code = ParserErrorCode::OverrideProtectedGlobal;
+   diag.message = "cannot override built-in through computed _G key";
+   this->diagnostics_.push_back(std::move(diag));
 }
 
 //********************************************************************************************************************
@@ -2055,6 +2190,7 @@ static void publish_type_diagnostics(ParserContext& Context, const std::vector<T
             : ParserDiagnosticSeverity::Warning;
       }
       diagnostic.code = diag.code;
+      diagnostic.file_index = Context.lex().current_file_index;
       diagnostic.message = diag.message;
       diagnostic.token = Token::from_span(diag.location);
       Context.diagnostics().report(diagnostic);

@@ -588,6 +588,24 @@ else ()
 #   set (KOTUKU_ARCH "-m32")
 endif ()
 
+# --------------------------------------------------------------------------------------------------------------------
+# SIMD baseline.  SSE4.2 is the mandatory floor for all x86/x86-64 builds (guaranteed on any 64-bit CPU from ~2008
+# onwards).  This unlocks SSE4.2 intrinsics for scalar codegen and lets the compiler auto-vectorise with the full
+# SSE1-4.2 instruction set.  AVX2 remains an opt-in, per-function path gated by simd_has_avx2() at run time -- see
+# src/link/simd.h.  Non-x86 targets (ARM/AArch64, Apple Silicon) are unaffected.
+
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|amd64|AMD64|i[3-6]86|x86)")
+   if (MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      # MSVC has no /arch:SSE4.2 flag (its /arch jumps SSE2 -> AVX) and SSE4.2 intrinsics are always available
+      # without a flag, so no compile option is required to guarantee the baseline for the MSVC toolchain.
+      message (STATUS "SIMD baseline: SSE4.2 (MSVC intrinsics available unconditionally)")
+   else ()
+      # GCC/Clang (including clang-cl) require an explicit flag to raise the baseline above SSE2.
+      message (STATUS "SIMD baseline: SSE4.2 (-msse4.2)")
+      add_compile_options ("-msse4.2")
+   endif ()
+endif ()
+
 if (KOTUKU_VLOG)
    add_compile_definitions ("_DEBUG")
 endif ()

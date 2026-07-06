@@ -16,14 +16,11 @@ static ERR GET_AuthCallback(extHTTP *Self, FUNCTION * &Value)
 
 static ERR SET_AuthCallback(extHTTP *Self, FUNCTION *Value)
 {
+   clear_callback_function(Self->AuthCallback);
    if (Value) {
-      if (Self->AuthCallback.isScript()) UnsubscribeAction(Self->AuthCallback.Context, AC::Free);
       Self->AuthCallback = *Value;
-      if (Self->AuthCallback.isScript()) {
-         SubscribeAction(Self->AuthCallback.Context, AC::Free, C_FUNCTION(notify_free_auth_callback));
-      }
+      Self->AuthCallback.pin();
    }
-   else clear_callback_function(Self->AuthCallback);
    return ERR::Okay;
 }
 
@@ -113,6 +110,8 @@ static ERR SET_CurrentState(extHTTP *Self, HGS Value)
       if (Self->Socket) QueueAction(AC::Deactivate, Self->UID);
    }
    else Self->CurrentState = Value;
+
+   if (Self->StateChanged.stale()) clear_callback_function(Self->StateChanged);
 
    if (Self->StateChanged.defined()) {
       ERR error;
@@ -221,14 +220,11 @@ static ERR GET_Incoming(extHTTP *Self, FUNCTION * &Value)
 
 static ERR SET_Incoming(extHTTP *Self, FUNCTION *Value)
 {
+   clear_callback_function(Self->Incoming);
    if (Value) {
-      if (Self->Incoming.isScript()) UnsubscribeAction(Self->Incoming.Context, AC::Free);
       Self->Incoming = *Value;
-      if (Self->Incoming.isScript()) {
-         SubscribeAction(Self->Incoming.Context, AC::Free, C_FUNCTION(notify_free_incoming));
-      }
+      Self->Incoming.pin();
    }
-   else clear_callback_function(Self->Incoming);
    return ERR::Okay;
 }
 
@@ -454,14 +450,11 @@ static ERR GET_Outgoing(extHTTP *Self, FUNCTION * &Value)
 
 static ERR SET_Outgoing(extHTTP *Self, FUNCTION *Value)
 {
+   clear_callback_function(Self->Outgoing);
    if (Value) {
-      if (Self->Outgoing.isScript()) UnsubscribeAction(Self->Outgoing.Context, AC::Free);
       Self->Outgoing = *Value;
-      if (Self->Outgoing.isScript()) {
-         SubscribeAction(Self->Outgoing.Context, AC::Free, C_FUNCTION(notify_free_outgoing));
-      }
+      Self->Outgoing.pin();
    }
-   else clear_callback_function(Self->Outgoing);
    return ERR::Okay;
 }
 
@@ -681,14 +674,11 @@ static ERR GET_StateChanged(extHTTP *Self, FUNCTION * &Value)
 
 static ERR SET_StateChanged(extHTTP *Self, FUNCTION *Value)
 {
+   clear_callback_function(Self->StateChanged);
    if (Value) {
-      if (Self->StateChanged.isScript()) UnsubscribeAction(Self->StateChanged.Context, AC::Free);
       Self->StateChanged = *Value;
-      if (Self->StateChanged.isScript()) {
-         SubscribeAction(Self->StateChanged.Context, AC::Free, C_FUNCTION(notify_free_state_changed));
-      }
+      Self->StateChanged.pin();
    }
-   else clear_callback_function(Self->StateChanged);
    return ERR::Okay;
 }
 

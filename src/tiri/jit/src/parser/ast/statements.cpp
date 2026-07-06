@@ -214,6 +214,63 @@ ParserResult<StmtNodePtr> AstBuilder::parse_global()
 }
 
 //********************************************************************************************************************
+// Parses extern symbol declarations.  Extern names are not emitted as variables; they only suppress strict
+// undefined-identifier checks for symbols supplied by another parsed file or runtime host.
+
+ParserResult<StmtNodePtr> AstBuilder::parse_extern()
+{
+   Token extern_token = this->ctx.tokens().current();
+   this->ctx.tokens().advance();
+
+   if (this->ctx.check(TokenKind::Multiply)) {
+      this->ctx.tokens().advance();
+
+      if (this->ctx.check(TokenKind::Comma)) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+            "extern wildcard cannot be combined with named symbols");
+      }
+
+      if (this->ctx.check(TokenKind::Equals) or
+            token_to_assignment_op(this->ctx.tokens().current().kind()).has_value()) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+            "extern declarations cannot have an initialiser");
+      }
+
+      auto stmt = std::make_unique<StmtNode>(AstNodeKind::ExternStmt, extern_token.span());
+      ExternDeclStmtPayload payload;
+      payload.all_symbols = true;
+      stmt->data = std::move(payload);
+      return ParserResult<StmtNodePtr>::success(std::move(stmt));
+   }
+
+   auto names = this->parse_name_list();
+   if (not names.ok()) return ParserResult<StmtNodePtr>::failure(names.error_ref());
+
+   if (this->ctx.check(TokenKind::Equals) or token_to_assignment_op(this->ctx.tokens().current().kind()).has_value()) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         "extern declarations cannot have an initialiser");
+   }
+
+   for (const Identifier &identifier : names.value_ref()) {
+      if (identifier.is_blank) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedIdentifier,
+            Token::from_span(identifier.span, TokenKind::Identifier), "extern declarations require named symbols");
+      }
+
+      if (identifier.type != TiriType::Unknown or identifier.has_const or identifier.has_close) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken,
+            Token::from_span(identifier.span, TokenKind::Identifier),
+            "extern declarations cannot have type annotations or attributes");
+      }
+   }
+
+   auto stmt = std::make_unique<StmtNode>(AstNodeKind::ExternStmt, extern_token.span());
+   ExternDeclStmtPayload payload(std::move(names.value_ref()));
+   stmt->data = std::move(payload);
+   return ParserResult<StmtNodePtr>::success(std::move(stmt));
+}
+
+//********************************************************************************************************************
 // Parses top-level enum declarations and registers their generated constants for compile-time substitution.
 
 struct EnumConstantDecl {
@@ -1233,6 +1290,13 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
    // import_guard destructor handles cleanup
 
    this->ctx.pop_import();
+
+   // Merge the child context's diagnostics into the parent so that diagnose-mode errors and warnings collected
+   // while parsing the imported file survive with their own file_index (the child collector is discarded below).
+
+   for (const auto &entry : import_ctx.diagnostics().entries()) {
+      this->ctx.diagnostics().report(entry);
+   }
 
    if (not result.ok()) {
       // Prepend import context to error message

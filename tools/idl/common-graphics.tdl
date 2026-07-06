@@ -38,7 +38,7 @@ flags("ALIGN", { comment="Universal values for alignment of graphics and text" }
   { CENTER = "HORIZONTAL|VERTICAL" },
   { MIDDLE = "HORIZONTAL|VERTICAL" })
 
-struct("HSV", { comment="Colour structure for Hue, Saturation and Value/Light components." }, [[
+structdef("HSV", { comment="Colour structure for Hue, Saturation and Value/Light components." }, [[
   double Hue        # Between 0 and 359.999
   double Saturation # Between 0 and 1.0
   double Value      # Between 0 and 1.0.  Corresponds to Value, Lightness or Brightness
@@ -50,7 +50,7 @@ c_insert([[
 struct RGB8;
 ]])
 
-struct("FRGB", { comment="32-bit floating point RGB colour components." }, [[
+structdef("FRGB", { comment="32-bit floating point RGB colour components." }, [[
   float Red   # Red component value
   float Green # Green component value
   float Blue  # Blue component value
@@ -67,7 +67,7 @@ struct("FRGB", { comment="32-bit floating point RGB colour components." }, [[
    constexpr RGB8 toRGB8() const noexcept;
 ]])
 
-struct("RGB8", { type="RGB8", comment="8-bit RGB colour value." }, [[
+structdef("RGB8", { type="RGB8", comment="8-bit RGB colour value." }, [[
   uchar Red    # Red component value
   uchar Green  # Green component value
   uchar Blue   # Blue component value
@@ -102,14 +102,14 @@ constexpr RGB8::RGB8(FRGB frgb) noexcept {
 }
 ]])
 
-struct("RGB16", { comment="16-bit RGB colour value." }, [[
+structdef("RGB16", { comment="16-bit RGB colour value." }, [[
   ushort Red    # Red component value
   ushort Green  # Green component value
   ushort Blue   # Blue component value
   ushort Alpha  # Alpha component value
 ]])
 
-struct("RGB32", { comment="32-bit RGB colour value." }, [[
+structdef("RGB32", { comment="32-bit RGB colour value." }, [[
   uint Red     # Red component value
   uint Green   # Green component value
   uint Blue    # Blue component value
@@ -127,7 +127,7 @@ Under consideration:
 --
 -- Layout: [Red:16][Green:16][Blue:16][Alpha:8][Flags:8]
 
-struct("CDP3", { comment="Compressed Display P3 colour." }, [[
+structdef("CDP3", { comment="Compressed Display P3 colour." }, [[
   ushort Red     # Display P3 red, linear, 16-bit fixed-point (0 = 0.0, 65535 = 1.0)
   ushort Green   # Display P3 green, linear, 16-bit fixed-point
   ushort Blue    # Display P3 blue, linear, 16-bit fixed-point
@@ -213,12 +213,12 @@ struct("CDP3", { comment="Compressed Display P3 colour." }, [[
 ]])
 --]==]
 
-struct("RGBPalette", { }, [[
+structdef("RGBPalette", { }, [[
   int AmtColours              # Total colours
   array(struct(RGB8),256) Col # RGB Palette
 ]])
 
-struct("ColourFormat", { type="colourformat" }, [[
+structdef("ColourFormat", { type="colourformat" }, [[
   uchar  RedShift     # Right shift value for red (15/16 bit formats only)
   uchar  GreenShift   # Right shift value for green
   uchar  BlueShift    # Right shift value for blue
@@ -234,7 +234,7 @@ struct("ColourFormat", { type="colourformat" }, [[
   uchar  BitsPerPixel # Number of bits per pixel for this format.
 ]])
 
-struct("ClipRectangle", { comment="Generic structure for rectangular clipping." }, [[
+structdef("ClipRectangle", { comment="Generic structure for rectangular clipping." }, [[
   int Left     # Left-most coordinate
   int Top      # Top coordinate
   int Right    # Right-most coordinate
@@ -254,7 +254,7 @@ struct("ClipRectangle", { comment="Generic structure for rectangular clipping." 
    }\
 ")
 
-struct("Edges", { comment="Generic structure for declaring edge coordinates." }, [[
+structdef("Edges", { comment="Generic structure for declaring edge coordinates." }, [[
   int Left     # Left-most coordinate
   int Top      # Top coordinate
   int Right    # Right-most coordinate

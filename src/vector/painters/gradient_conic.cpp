@@ -87,6 +87,23 @@ static ERR GRADIENTCONIC_SET_Span(extGradientConic *Self, double Value)
    return ERR::Okay;
 }
 
+/*********************************************************************************************************************
+-FIELD-
+XMLDef: Returns an SVG compliant XML string that describes the effect.
+-END-
+*********************************************************************************************************************/
+
+static ERR GRADIENTCONIC_GET_XMLDef(extGradientConic *Self, std::string_view &Value)
+{
+   std::stringstream stream;
+   stream << "conicGradient";
+   gradient_xml_attr(stream, "cx", Self->CX);
+   gradient_xml_attr(stream, "cy", Self->CY);
+   gradient_xml_attr(stream, "r", Self->Radius);
+   if (Self->Span != 1.0) gradient_xml_attr(stream, "span", Self->Span);
+   return gradient_xml_result(stream.str(), Value);
+}
+
 //********************************************************************************************************************
 
 #include "gradient_conic_def.cpp"
@@ -96,6 +113,7 @@ static const FieldArray clGradientConicFields[] = {
    { "CY",      FDF_UNIT|FDF_RW, nullptr, GRADIENTCONIC_SET_CY },
    { "Radius",  FDF_UNIT|FDF_RW, nullptr, GRADIENTCONIC_SET_Radius },
    { "Span",    FDF_DOUBLE|FDF_RW, nullptr, GRADIENTCONIC_SET_Span },
+   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, GRADIENTCONIC_GET_XMLDef },
    END_FIELD
 };
 

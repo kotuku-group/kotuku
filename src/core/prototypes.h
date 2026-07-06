@@ -19,6 +19,7 @@ extern "C" ERR FindObject(const std::string_view & Name, CLASSID ClassID, OBJECT
 extern "C" objMetaClass * FindClass(CLASSID ClassID);
 extern "C" ERR AnalysePath(const std::string_view & Path, LOC * Type);
 extern "C" ERR FreeResource(RESOURCEID ID);
+extern "C" void ReleaseZombie(OBJECTPTR Object);
 extern "C" CLASSID GetClassID(OBJECTID Object);
 extern "C" OBJECTID GetOwnerID(OBJECTID Object);
 extern "C" ERR CompareFilePaths(const std::string_view & PathA, const std::string_view & PathB);
@@ -47,7 +48,7 @@ extern "C" ERR SubscribeAction(OBJECTPTR Object, AC Action, FUNCTION * Callback)
 extern "C" ERR SubscribeEvent(int64_t Event, FUNCTION * Callback, APTR * Handle);
 extern "C" ERR SubscribeTimer(double Interval, FUNCTION * Callback, APTR * Subscription);
 extern "C" ERR UpdateTimer(APTR Subscription, double Interval);
-extern "C" ERR UnsubscribeAction(OBJECTPTR Object, AC Action);
+extern "C" ERR UnsubscribeAction(OBJECTPTR Object, AC Action, FUNCTION * Callback);
 extern "C" void UnsubscribeEvent(APTR Handle);
 extern "C" ERR BroadcastEvent(APTR Event, int EventSize);
 extern "C" ERR WaitTime(double Seconds);

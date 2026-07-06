@@ -1,78 +1,100 @@
--- $TIRI:Batch
+#!/usr/bin/env origo
 -- Example: input=secrets.txt out-private=key.prv out-public=key.pub out-sig=secrets.txt.sig
 
-   glInput       = arg("input")
-   glPrivateFile = arg("out-private")
-   glPublicFile  = arg("out-public")
-   glSigFile     = arg("out-sig")
-   glBits        = tonumber(arg("bits"))
-   glPassword    = arg("password")
+   import 'options'
 
-------------------------------------------------------------------------------
+   parser = options({
+      name        = 'SSL Key Generator',
+      cmdName     = 'rsakey.tiri',
+      description = [[
+Generate an RSA key-pair and write the keys as output files.  The script can also generate an RSA signature for an
+input file and write the generated signature to an output file.]],
+      epilog      = [[
+Examples:
+  origo tools/rsakey.tiri input=secrets.txt out-private=key.prv
+  origo tools/rsakey.tiri input=secrets.txt out-private=key.prv out-public=key.pub out-sig=secrets.txt.sig
+  origo tools/rsakey.tiri input=secrets.txt out-private=key.prv bits=4096 password=secret
+]],
+      args        = array<table> {
+         { name = 'input', type = 'file', exists = true, required = true, group = 'Input',
+           comment = 'Input file to sign.' },
+
+         { name = 'out-private', type = 'path', required = true, group = 'Output',
+           comment = 'Write the private key to this file.' },
+         { name = 'out-public', type = 'path', group = 'Output',
+           comment = 'Write the public key to this file.' },
+         { name = 'out-sig', type = 'path', requires = 'input', group = 'Output',
+           comment = 'Write the signature generated from input to this file.' },
+
+         { name = 'bits', type = 'int', default = 2048, group = 'Key',
+           comment = 'Number of bits to use when generating the key.' },
+         { name = 'password', type = 'str', group = 'Key',
+           comment = 'Password to use when generating the private key.' }
+      }
+   })
+
+   args = parser.process()
+   if args is nil then return end
+
+   glInput       = args.input
+   glPrivateFile = args['out-private']
+   glPublicFile  = args['out-public']
+   glSigFile     = args['out-sig']
+   glBits        = args.bits
+   glPassword    = args.password
+   glPrivateKey  = nil
+   glPublicKey   = nil
+
+----------------------------------------------------------------------------------------------------------------------
 
 function saveKeys()
    if glPrivateFile?? then
-      file = obj.new("file", { path=glPrivateFile, flags="!NEW|WRITE" } )
-      file.acWrite(privateKey)
+      local file = obj.new("file", { path=glPrivateFile, flags=FL_NEW|FL_WRITE } )
+      file.acWrite(glPrivateKey)
    end
 
    if glPublicFile?? then
-      file = obj.new("file", { path=glPublicFile, flags="!NEW|WRITE" } )
-      file.acWrite(publicKey)
+      local file = obj.new("file", { path=glPublicFile, flags=FL_NEW|FL_WRITE } )
+      file.acWrite(glPublicKey)
    end
 end
 
-------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------
 
-function signFiles(destPath)
-   if not destPath?? then return end
+function signFiles(DestPath:str)
+   DestPath ?! return
 
-   print("Generating signature for file: \"" .. destPath .. "\"")
-   input = obj.new("file", { path=destPath, flags="READ" } )
-   error, sig = mSSL.CalcSigFromObject(input, 0, privateKey, nil, "sha256")
+   print(f"Generating signature for file: \"{DestPath}\"")
+   local input = obj.new("file", { path=DestPath, flags=FL_READ } )
+   local err, sig = mSSL.CalcSigFromObject(input, 0, glPrivateKey, nil, "sha256")
 
-   if (error is ERR_Okay) and (sig != nil) then
+   if (err is ERR_Okay) and (sig != nil) then
       if glSigFile?? then
          print("Saving signature to " .. glSigFile)
-         sigfile = obj.new("file", { path=glSigFile, flags="!NEW|WRITE" } )
+         sigfile = obj.new("file", { path=glSigFile, flags=FL_NEW|FL_WRITE } )
          sigfile.acWrite(sig)
       end
 
       input.acSeek(0, 0)
 
-      error = mSSL.VerifySig(input, 0, publicKey, "sha256", sig)
-      if (error != ERR_Okay) then print("Verification failed.")
-      else print("Verification passed.") end
+      check mSSL.VerifySig(input, 0, glPublicKey, "sha256", sig)
+      print("Verification passed.")
    else
-      print("Failed to generate signature: " .. mSys.GetErrorMsg(error));
+      print("Failed to generate signature: " .. mSys.GetErrorMsg(err));
    end
 end
 
-------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------
 
    print("SSL Key Generator\n")
 
-   if (glInput is nil) or (glPrivateFile is nil) then
-      print("This program generates an RSA key-pair and writes the keys as output files.")
-      print("It can also generate the RSA signature for an input file and write generated signature to an output file.")
-      print("")
-      print("input        An input file to be signed.")
-      print("out-private  Write the private key to this file.")
-      print("out-public   Write the public key to this file.")
-      print("out-sig      Write the resulting signature generated from 'input' to this file.")
-      print("bits         Number of bits to use when generating the key.  Default: 2048")
-      print("password     Password to use when generating the private key.")
-      return
-   end
-
    mSSL  = mod.load("openssl")
 
-   if not glBits?? then glBits = 2048 end
+   local err
+   err, glPrivateKey, glPublicKey = mSSL.GenerateRSAKey(glBits, glPassword)
 
-   error, privateKey, publicKey = mSSL.GenerateRSAKey(glBits, glPassword)
-
-   print(privateKey)
-   print(publicKey)
+   print(glPrivateKey)
+   print(glPublicKey)
 
    saveKeys()
    signFiles(glInput)

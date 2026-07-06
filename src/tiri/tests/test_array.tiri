@@ -324,7 +324,7 @@ end
 @Test function ArrayIteratorSpecialisation()
    arr = array<int> { 4, 5, 6, 7 }
    indexes = {}
-   values = {}
+   local values = {}
    count = 0
 
    for i, v in arr do

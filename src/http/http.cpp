@@ -243,8 +243,10 @@ static std::mutex glDebugFileMutex;
 
 static void clear_callback_function(FUNCTION &Callback)
 {
-   if (Callback.isScript()) UnsubscribeAction(Callback.Context, AC::Free);
-   Callback.clear();
+   if (Callback.defined()) {
+      Callback.unpin();
+      Callback.clear();
+   }
 }
 
 #ifdef DEBUG_SOCKET
@@ -493,26 +495,6 @@ static ERR MODExpunge(void)
 }
 
 //********************************************************************************************************************
-
-static void notify_free_outgoing(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   ((extHTTP *)CurrentContext())->Outgoing.clear();
-}
-
-static void notify_free_state_changed(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   ((extHTTP *)CurrentContext())->StateChanged.clear();
-}
-
-static void notify_free_incoming(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   ((extHTTP *)CurrentContext())->Incoming.clear();
-}
-
-static void notify_free_auth_callback(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   ((extHTTP *)CurrentContext())->AuthCallback.clear();
-}
 
 /*********************************************************************************************************************
 
@@ -989,10 +971,10 @@ extHTTP::~extHTTP()
       FreeResource(Socket);
    }
 
-   if (AuthCallback.isScript()) UnsubscribeAction(AuthCallback.Context, AC::Free);
-   if (Incoming.isScript())     UnsubscribeAction(Incoming.Context, AC::Free);
-   if (StateChanged.isScript()) UnsubscribeAction(StateChanged.Context, AC::Free);
-   if (Outgoing.isScript())     UnsubscribeAction(Outgoing.Context, AC::Free);
+   clear_callback_function(AuthCallback);
+   clear_callback_function(Incoming);
+   clear_callback_function(StateChanged);
+   clear_callback_function(Outgoing);
 
    if (TimeoutManager) UpdateTimer(TimeoutManager, 0);
    if (flInput)  FreeResource(flInput);

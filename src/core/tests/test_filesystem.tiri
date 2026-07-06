@@ -132,7 +132,7 @@ end
    err, result = fl.acRead(buf, fl.size)
    assert(err is ERR_Okay, 'Failed to read file ' .. fl.path)
 
-   fl.acSeek(POS_START, 0)
+   fl.acSeek(SEEK_START, 0)
    fl.acWrite(buf:reverse())
 end
 
@@ -153,14 +153,14 @@ end
    assert(string.substr(buffer, 0, result) is expected, 'Mutable string buffer read returned unexpected content.')
 
    try
-      fl.acSeek(POS_START, 0)
+      fl.acSeek(SEEK_START, 0)
       fl.acRead('literal')
    success
       error('acRead() should reject interned strings for mutable buffers')
    end
 
    try
-      fl.acSeek(POS_START, 0)
+      fl.acSeek(SEEK_START, 0)
       fl.acRead(buffer, #buffer + 1)
    success
       error('acRead() should reject sizes larger than the supplied buffer')
@@ -206,7 +206,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function AnalyseVolume()
-   err, type = mSys.AnalysePath('user:')
+   local err, type = mSys.AnalysePath('user:')
    assert(err is ERR_Okay, 'AnalysePath() failed with error: ' .. mSys.GetErrorMsg(err))
    assert(type is LOC_VOLUME, 'AnalysePath() returned type ' .. type .. ' and not LOC_VOLUME')
 end
@@ -214,7 +214,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function AnalyseFile()
-   err, type = mSys.AnalysePath('scripts:gui.tiri')
+   local err, type = mSys.AnalysePath('scripts:gui.tiri')
    assert(err is ERR_Okay, 'AnalysePath() failed with error: ' .. mSys.GetErrorMsg(err))
    assert(type is LOC_FILE, 'AnalysePath() returned type ' .. type .. ' and not LOC_FILE')
 end
@@ -310,7 +310,7 @@ end
    err = mSys.CreateFolder(folder_path, 0)
    assert(err is ERR_FileExists, 'CreateFolder() should report ERR_FileExists for an existing folder, got: ' .. mSys.GetErrorMsg(err))
 
-   err, type = mSys.AnalysePath(folder_path)
+   local err, type = mSys.AnalysePath(folder_path)
    assert(err is ERR_Okay, 'AnalysePath() failed for created folder: ' .. mSys.GetErrorMsg(err))
    assert(type is LOC_FOLDER, 'AnalysePath() returned type ' .. type .. ' and not LOC_FOLDER')
 

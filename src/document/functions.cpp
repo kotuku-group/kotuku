@@ -444,7 +444,10 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
       }
    }
 
-   for (auto &t : Self->Triggers) t.clear();
+   for (auto &t : Self->Triggers) {
+      deref_document_callbacks(t);
+      t.clear();
+   }
 
    if (Self->terminating()) Self->Vars.clear();
 
@@ -613,6 +616,32 @@ static int getutf8(CSTRING Value, int *Unicode)
 }
 
 //********************************************************************************************************************
+// Scan forward from Str[Pos] to the first byte that is <= 0x20 (whitespace, control or newline), returning its
+// index or Str.size() if none is found.  This marks the end of a WORD run during tokenisation.  The SSE4.2 path
+// uses PCMPESTRI range matching to test 16 bytes per iteration; the scalar loop is retained as the tail handler
+// and as the fallback for non-x86 targets.  Bytes >= 0x80 (UTF-8 lead/continuation) are all > 0x20 and therefore
+// remain part of the word, matching the scalar semantics exactly.
+
+inline size_t scan_word_end(std::string_view Str, size_t Pos)
+{
+#ifdef KOTUKU_SSE42
+   // Range set {0x00..0x20}: PCMPESTRI reports the index of the first byte falling inside the range.  The
+   // explicit-length form is used so embedded null bytes are treated as ordinary word terminators.
+   const __m128i range = _mm_setr_epi8(0x00, 0x20, 0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+   constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_RANGES | _SIDD_POSITIVE_POLARITY | _SIDD_LEAST_SIGNIFICANT;
+
+   while (Pos + 16 <= Str.size()) {
+      __m128i block = _mm_loadu_si128((const __m128i *)(Str.data() + Pos));
+      int idx = _mm_cmpestri(range, 2, block, 16, mode);
+      if (idx < 16) return Pos + idx; // Found a byte <= 0x20 within this block
+      Pos += 16;
+   }
+#endif
+   while ((Pos < Str.size()) and (uint8_t(Str[Pos]) > 0x20)) Pos++;
+   return Pos;
+}
+
+//********************************************************************************************************************
 // Build the token list for a bc_text from its text string.  Tokens represent word, whitespace, and newline boundaries.
 // This avoids repeated byte-by-byte scanning during layout restarts.
 
@@ -640,7 +669,7 @@ void bc_text::tokenise()
       }
       else {
          auto start = i;
-         while ((i < str.size()) and (unsigned(str[i]) > 0x20) and (str[i] != '\n')) i++;
+         i = scan_word_end(str, i);
          tokens.push_back({ uint16_t(start), uint16_t(i), -1, 0, text_token_kind::WORD });
       }
    }

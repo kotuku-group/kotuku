@@ -30,7 +30,7 @@ end
 
 function initImages()
    for v in values(glImages) do
-      v.pic = obj.new('image', { path=v.path, flags=PCF_QUERY } )
+      v.pic = obj.new('image', { path=v.path, flags='Lazy' } )
    end
 end
 
@@ -98,7 +98,7 @@ end
 -- Each callback records its Key parameter; the final order should match submission order.
 
 @Test(priority=3); @Requires(display=true) function FifoOrdering()
-   pic = obj.new('image', { path=glImages[0].path, flags=PCF_QUERY })
+   pic = obj.new('image', { path=glImages[0].path, flags='Lazy' })
 
    order_log = { }
    completed = 0
@@ -127,7 +127,7 @@ end
 -- Verify that queued actions without callbacks still allow subsequent queued actions to dispatch.
 
 @Test(priority=4); @Requires(display=true) function CallbacklessQueueing()
-   pic = obj.new('image', { path=glImages[0].path, flags=PCF_QUERY })
+   pic = obj.new('image', { path=glImages[0].path, flags='Lazy' })
 
    completed = 0
 
