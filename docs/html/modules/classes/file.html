@@ -131,7 +131,7 @@
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-ResolvedPath" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-ResolvedPath"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i> <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">ResolvedPath</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Returns a resolved copy of the Path string.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-ResolvedPath" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<p>The ResolvedPath will return a resolved copy of the <a data-bs-toggle="tooltip" title="Specifies the location of a file or folder." href="#tf-Path">Path</a> string.  The resolved path will be in a format that is native to the host platform.  Please refer to the <a href="?page=ResolvePath">ResolvePath()</a> function for further information.</p>
+<p>The ResolvedPath will return a resolved copy of the <a data-bs-toggle="tooltip" title="Specifies the location of a file or folder." href="#tf-Path">Path</a> string.  The resolved path will be in a format that is native to the host platform.  Please refer to the <a href="core.html?page=ResolvePath">ResolvePath()</a> function for further information.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Size" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Size"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Size</th><td class="col-md-1"><span class="text-nowrap">INT64</span></td><td>The byte size of a file.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Size" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
@@ -157,6 +157,7 @@
 <p>Streaming data of any type to a file will result in the content being written to the file at the current seek <a data-bs-toggle="tooltip" title="The current read/write byte position in a file." href="#tf-Position">Position</a>.</p>
       
 </div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tac-Flush" style="scroll-margin:3em;" id="ta-Flush"><td style="width:1%; border-top-style: none; border-bottom-style: none;"></td><th class="col-md-1 text-primary">Flush</th><td>Flushes all pending write operations.</td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tac-Init" style="scroll-margin:3em;" id="ta-Init" role="button"><td style="width:1%; border-top-style: none; border-bottom-style: none;"><i class="bi bi-chevron-double-right text-secondary"></i></td><th class="col-md-1 text-primary">Init</th><td>Initialises a file.</td></tr><tr><td class="hiddenRow" style="width:1%; border-top-style: none; border-bottom-style: none;"></td><td colspan="2" class="hiddenRow"><div id="tac-Init" class="collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR InitObject(*Object)</samp></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>This action will prepare a file or folder at the given <a data-bs-toggle="tooltip" title="Specifies the location of a file or folder." href="#tf-Path">Path</a> for use.</p>
 <p>To create a new file from scratch, specify the <code>NEW</code> flag.  This will overwrite any file that exists at the target path.</p>
@@ -364,11 +365,11 @@
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
-</tbody></table><div class="footer copyright text-right">File class documentation © Paul Manias 1996-2026</div></div><div class="docs-content" style="display:none;" id="FDT"><h1>FDT Type</h1><p class="lead">Flags for the SetDate() file method.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>FDT::ACCESSED</th><td>The date on which the file was last accessed by a user or application.</td></tr>
+</tbody></table><div class="footer copyright text-right">File class documentation © Paul Manias © 1996-2026</div></div><div class="docs-content" style="display:none;" id="FDT"><h1>FDT Type</h1><p class="lead">Flags for the SetDate() file method.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>FDT::ACCESSED</th><td>The date on which the file was last accessed by a user or application.</td></tr>
 <tr><th>FDT::ARCHIVED</th><td>The date on which the file was most recently archived.  Not supported by most filesystems.</td></tr>
 <tr><th>FDT::CREATED</th><td>The date on which the file was created.  On some host platforms this datestamp may be read-only.</td></tr>
 <tr><th>FDT::MODIFIED</th><td>The date on which the file was last modified.</td></tr>
-</tbody></table><div class="footer copyright text-right">File module documentation © Paul Manias 1996-2026</div></div>
+</tbody></table><div class="footer copyright text-right">File module documentation © Paul Manias © 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="FL"><h1>FL Type</h1><p class="lead">File flags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>FL::APPROXIMATE</th><td>Allows fuzzy matching of the file path by ignoring the file extension; for instance opening 'screenshot.png' when only 'screenshot.jpg' exists in the same folder, the 'screenshot.jpg' file will be opened.  If multiple files could potentially match to the file name, the file object will select the first match that is encountered.</td></tr>
 <tr><th>FL::BUFFER</th><td>Activates a special mode in which the file data is stored in a memory buffer rather than a disk file.  Set the Size field to a value of at least 1 so that the initial buffer size is configured.  In this mode many of the available file operations are meaningless except for the Read, Write and Seek actions.</td></tr>
 <tr><th>FL::DEVICE</th><td>The file is a system device (must set if opening a device for read/write operations)</td></tr>
@@ -385,7 +386,7 @@
 <tr><th>FL::STREAM</th><td>File data is streamed (e.g. PIPE, FIFO, socket) and may be accessed locally or via a network.</td></tr>
 <tr><th>FL::VIRTUAL</th><td>Path is to a virtual device.</td></tr>
 <tr><th>FL::WRITE</th><td>Prepares a file for writing data, starting at byte position 0.  To start writing from the end of a file, use the Seek action after the file has been initialised.</td></tr>
-</tbody></table><div class="footer copyright text-right">File module documentation © Paul Manias 1996-2026</div></div>
+</tbody></table><div class="footer copyright text-right">File module documentation © Paul Manias © 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="MFF"><h1>MFF Type</h1><p class="lead">Flags for the File Watch() method.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>MFF::ATTRIB</th><td>File permissions or datestamp changed.</td></tr>
 <tr><th>MFF::CLOSED</th><td>An opened file has been closed.</td></tr>
 <tr><th>MFF::CREATE</th><td>New file/link created or renamed in folder.</td></tr>
@@ -401,7 +402,7 @@
 <tr><th>MFF::SELF</th><td>Event applies to the monitored folder and not a contained item</td></tr>
 <tr><th>MFF::UNMOUNT</th><td>Host filesystem was unmounted.</td></tr>
 <tr><th>MFF::WRITE</th><td>File modified via write or truncation.</td></tr>
-</tbody></table><div class="footer copyright text-right">File module documentation © Paul Manias 1996-2026</div></div>
+</tbody></table><div class="footer copyright text-right">File module documentation © Paul Manias © 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="PERMIT"><h1>PERMIT Type</h1><p class="lead">Permission flags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>PERMIT::ALL_DELETE</th><td>Synonym for <code>EVERYONE_DELETE</code></td></tr>
 <tr><th>PERMIT::ALL_EXEC</th><td>Synonym for <code>EVERYONE_EXEC</code></td></tr>
 <tr><th>PERMIT::ALL_READ</th><td>Synonym for <code>EVERYONE_READ</code></td></tr>
@@ -439,15 +440,7 @@
 <tr><th>PERMIT::USER_READ</th><td>Synonym for <code>READ</code></td></tr>
 <tr><th>PERMIT::USER_WRITE</th><td>Synonym for <code>WRITE</code></td></tr>
 <tr><th>PERMIT::WRITE</th><td>User/Owner can write.</td></tr>
-</tbody></table><div class="footer copyright text-right">File module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="struct-DateTime"><h1>DateTime Structure</h1><p class="lead">Generic structure for date-time management.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Year</th><td><span class="text-nowrap">INT16</span></td><td>Year</td></tr>
-<tr><th>Month</th><td><span class="text-nowrap">INT8</span></td><td>Month 1 to 12</td></tr>
-<tr><th>Day</th><td><span class="text-nowrap">INT8</span></td><td>Day 1 to 31</td></tr>
-<tr><th>Hour</th><td><span class="text-nowrap">INT8</span></td><td>Hour 0 to 23</td></tr>
-<tr><th>Minute</th><td><span class="text-nowrap">INT8</span></td><td>Minute 0 to 59</td></tr>
-<tr><th>Second</th><td><span class="text-nowrap">INT8</span></td><td>Second 0 to 59</td></tr>
-<tr><th>TimeZone</th><td><span class="text-nowrap">INT8</span></td><td>TimeZone -13 to +13</td></tr>
-</tbody></table><div class="footer copyright text-right">File class documentation © Paul Manias 1996-2026</div></div>
+</tbody></table><div class="footer copyright text-right">File module documentation © Paul Manias © 1996-2026</div></div>
 </div></div></div><script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../../js/base.js"></script><script type="text/javascript">
 const ready = fn => document.readyState !== 'loading' ? fn() : document.addEventListener('DOMContentLoaded', fn);
 

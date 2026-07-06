@@ -156,10 +156,7 @@
 <tr><td>Height</td><td>The new height of the object.</td></tr>
 <tr><td>Depth</td><td>The new depth of the object.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;"></div></div></td></tr>
-</tbody></table><div class="footer copyright text-right">VectorViewport class documentation © Paul Manias © 2010-2026</div></div><div class="docs-content" style="display:none;" id="ARC"><h1>ARC Type</h1><p class="lead">Options for drawing arcs.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>ARC::LARGE</th><td>The arc will take the longest available drawing path rather than the shortest.</td></tr>
-<tr><th>ARC::SWEEP</th><td>Inverts the default behaviour in generating the arc path (go clockwise).</td></tr>
-</tbody></table><div class="footer copyright text-right">VectorViewport module documentation © Paul Manias © 2010-2026</div></div>
-<div class="docs-content" style="display:none;" id="ARF"><h1>ARF Type</h1><p class="lead">Aspect ratios control alignment, scaling and clipping.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>ARF::MEET</th><td>Aspect ratio is preserved. The entire viewbox will be visible in the viewport.  The viewbox is scaled up as much as possible.</td></tr>
+</tbody></table><div class="footer copyright text-right">VectorViewport class documentation © Paul Manias © 2010-2026</div></div><div class="docs-content" style="display:none;" id="ARF"><h1>ARF Type</h1><p class="lead">Aspect ratios control alignment, scaling and clipping.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>ARF::MEET</th><td>Aspect ratio is preserved. The entire viewbox will be visible in the viewport.  The viewbox is scaled up as much as possible.</td></tr>
 <tr><th>ARF::NONE</th><td>Scale the viewbox to match the size of the viewport.  Aspect ratio is not preserved.</td></tr>
 <tr><th>ARF::SLICE</th><td>Aspect ratio is preserved. The viewbox can extend beyond the viewport's edges on one axis.  The viewbox is scaled up as much as possible.</td></tr>
 <tr><th>ARF::X_MAX</th><td>Align to the right.</td></tr>
@@ -174,26 +171,6 @@
 <tr><th>VOF::SCROLL</th><td>All content is clipped to within the viewport's boundary.  A mechanism to scroll the viewport's content may be provided to the user (SVG capability not currently implemented).</td></tr>
 <tr><th>VOF::VISIBLE</th><td>The content is not clipped to the viewport's boundary.  This is the default.</td></tr>
 </tbody></table><div class="footer copyright text-right">VectorViewport module documentation © Paul Manias © 2010-2026</div></div>
-<div class="docs-content" style="display:none;" id="struct-FontMetrics"><h1>FontMetrics Structure</h1><p class="lead">Font metrics, measured in pixels relative to the display</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Height</th><td><span class="text-nowrap">INT</span></td><td>Full font height equivalent to <code>Ascent (cap-height) + Descent (gutter)</code>.  Does NOT include accents.</td></tr>
-<tr><th>LineSpacing</th><td><span class="text-nowrap">INT</span></td><td>Vertical advance from one line to the next.  Includes coverage for accents and additional whitespace.</td></tr>
-<tr><th>Ascent</th><td><span class="text-nowrap">INT</span></td><td>Height from the baseline to the top (cap-height) of the font.  Does NOT include accents.</td></tr>
-<tr><th>Descent</th><td><span class="text-nowrap">INT</span></td><td>Height from the baseline to the bottom of the font (gutter)</td></tr>
-</tbody></table><div class="footer copyright text-right">VectorViewport class documentation © Paul Manias © 2010-2026</div></div>
-<div class="docs-content" style="display:none;" id="struct-VectorMatrix"><h1>VectorMatrix Structure</h1><p class="lead">Vector transformation matrix.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Next</th><td><span class="text-nowrap">struct VectorMatrix *</span></td><td>The next transform in the list.</td></tr>
-<tr><th>Vector</th><td><span class="text-nowrap">objVector *</span></td><td>The vector associated with the transform.</td></tr>
-<tr><th>ScaleX</th><td><span class="text-nowrap">DOUBLE</span></td><td>Matrix value A</td></tr>
-<tr><th>ShearY</th><td><span class="text-nowrap">DOUBLE</span></td><td>Matrix value B</td></tr>
-<tr><th>ShearX</th><td><span class="text-nowrap">DOUBLE</span></td><td>Matrix value C</td></tr>
-<tr><th>ScaleY</th><td><span class="text-nowrap">DOUBLE</span></td><td>Matrix value D</td></tr>
-<tr><th>TranslateX</th><td><span class="text-nowrap">DOUBLE</span></td><td>Matrix value E</td></tr>
-<tr><th>TranslateY</th><td><span class="text-nowrap">DOUBLE</span></td><td>Matrix value F</td></tr>
-<tr><th>Tag</th><td><span class="text-nowrap">INT</span></td><td>An optional tag value defined by the client for matrix identification.</td></tr>
-</tbody></table><div class="footer copyright text-right">VectorViewport class documentation © Paul Manias © 2010-2026</div></div>
-<div class="docs-content" style="display:none;" id="struct-VectorPainter"><h1>VectorPainter Structure</h1><p class="lead">Deserialised painter information; compliant with SVG painter definitions.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Pattern</th><td><span class="text-nowrap">objVectorPattern *</span></td><td>A <a href="vectorpattern.html">VectorPattern</a> object, suitable for pattern based fills.</td></tr>
-<tr><th>Image</th><td><span class="text-nowrap">objVectorImage *</span></td><td>A <a href="vectorimage.html">VectorImage</a> object, suitable for image fills.</td></tr>
-<tr><th>Gradient</th><td><span class="text-nowrap">objGradient *</span></td><td>A <a href="gradient.html">Gradient</a> object, suitable for gradient fills.</td></tr>
-<tr><th>Colour</th><td><span class="text-nowrap">struct FRGB</span></td><td>A single RGB colour definition, suitable for block colour fills.  Colour values are unclamped to support all possible colour spaces.</td></tr>
-</tbody></table><div class="footer copyright text-right">VectorViewport class documentation © Paul Manias © 2010-2026</div></div>
 </div></div></div><script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../../js/base.js"></script><script type="text/javascript">
 const ready = fn => document.readyState !== 'loading' ? fn() : document.addEventListener('DOMContentLoaded', fn);
 

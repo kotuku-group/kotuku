@@ -33,7 +33,17 @@
 <tr><td>Width</td><td>The width of the region to be drawn.</td></tr>
 <tr><td>Height</td><td>The height of the region to be drawn.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;"></div></div></td></tr>
-</tbody></table><div class="footer copyright text-right">MergeFX class documentation © Paul Manias © 2010-2026</div></div><div class="docs-content" style="display:none;" id="struct-MergeSource"><h1>MergeSource Structure</h1><p class="lead">Input source declaration for MergeFX</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>SourceType</th><td><span class="text-nowrap">VSF</span></td><td>The type of the required source.</td></tr>
+</tbody></table><div class="footer copyright text-right">MergeFX class documentation © Paul Manias © 2010-2026</div></div><div class="docs-content" style="display:none;" id="VSF"><h1>VSF Type</h1><p class="lead">Filter source types - these are used internally</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>VSF::ALPHA</th><td>As for <code>GRAPHIC</code> except that only the alpha channel is used.</td></tr>
+<tr><th>VSF::BKGD</th><td>An image snapshot of the SVG document under the filter region at the time that the filter element was invoked.</td></tr>
+<tr><th>VSF::BKGD_ALPHA</th><td>As for <code>BKGD</code> but only the alpha channel is used.</td></tr>
+<tr><th>VSF::FILL</th><td>The value of the fill property on the target element for the filter effect.</td></tr>
+<tr><th>VSF::GRAPHIC</th><td>Represents the graphics elements that were the original input into the filter element.</td></tr>
+<tr><th>VSF::IGNORE</th><td>The filter does not require an input source.</td></tr>
+<tr><th>VSF::PREVIOUS</th><td>Use the previous effect as input, or source graphic if no previous effect.</td></tr>
+<tr><th>VSF::REFERENCE</th><td>This value is an assigned name for the filter primitive in the form of a custom-ident. If supplied, then graphics that result from processing this filter primitive can be referenced by an in attribute on a subsequent filter primitive within the same filter element. If no value is provided, the output will only be available for re-use as the implicit input into the next filter primitive if that filter primitive provides no value for its in attribute.</td></tr>
+<tr><th>VSF::STROKE</th><td>The value of the stroke property on the target element for the filter effect.</td></tr>
+</tbody></table><div class="footer copyright text-right">MergeFX module documentation © Paul Manias © 2010-2026</div></div>
+<div class="docs-content" style="display:none;" id="struct-MergeSource"><h1>MergeSource Structure</h1><p class="lead">Input source declaration for MergeFX</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>SourceType</th><td><span class="text-nowrap">VSF</span></td><td>The type of the required source.</td></tr>
 <tr><th>Effect</th><td><span class="text-nowrap">objFilterEffect *</span></td><td>Effect pointer if the <code>SourceType</code> is <code>REFERENCE</code>.</td></tr>
 </tbody></table><div class="footer copyright text-right">MergeFX class documentation © Paul Manias © 2010-2026</div></div>
 </div></div></div><script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../../js/base.js"></script><script type="text/javascript">

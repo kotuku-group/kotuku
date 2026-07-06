@@ -52,7 +52,9 @@
 if (query.ok()) {
    XPathValue *result;
    if (!query-&gt;evaluate(xml)) {
-      log.msg("Got: %s", query-&gt;get&lt;CSTRING&gt;(FID_ResultString));
+      std::string_view str;
+      query-&gt;getResultString(str);
+      log.msg("Got: %s", str.data());
    }
 }
 </pre>
@@ -230,6 +232,29 @@ if (query.ok()) {
 <tr><th>XIF::RETURN_TYPE</th><td>Include function return type in the inspection result.</td></tr>
 <tr><th>XIF::SIGNATURE</th><td>Include function signature in the inspection result.</td></tr>
 <tr><th>XIF::USER_DEFINED</th><td>Include user-defined status in the inspection result.</td></tr>
+</tbody></table><div class="footer copyright text-right">XQuery module documentation © Paul Manias © 2025-2026</div></div>
+<div class="docs-content" style="display:none;" id="XPVT"><h1>XPVT Type</h1><p class="lead">Type descriptors for XPathValue</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>XPVT::Array</th><td></td></tr>
+<tr><th>XPVT::Boolean</th><td></td></tr>
+<tr><th>XPVT::Date</th><td></td></tr>
+<tr><th>XPVT::DateTime</th><td></td></tr>
+<tr><th>XPVT::Map</th><td></td></tr>
+<tr><th>XPVT::NodeSet</th><td></td></tr>
+<tr><th>XPVT::Number</th><td></td></tr>
+<tr><th>XPVT::String</th><td></td></tr>
+<tr><th>XPVT::Time</th><td></td></tr>
+</tbody></table><div class="footer copyright text-right">XQuery module documentation © Paul Manias © 2025-2026</div></div>
+<div class="docs-content" style="display:none;" id="XQF"><h1>XQF Type</h1><p class="lead">Flags indicating the features of a compiled XQuery expression.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>XQF::BASE_URI_DECLARED</th><td>Static base URI declared.</td></tr>
+<tr><th>XQF::BOUNDARY_PRESERVE</th><td>Boundary-space preserve mode.</td></tr>
+<tr><th>XQF::CONSTRUCTION_PRESERVE</th><td>Construction preserve mode.</td></tr>
+<tr><th>XQF::DEFAULT_COLLATION_DECLARED</th><td>Default collation declared.</td></tr>
+<tr><th>XQF::DEFAULT_ELEMENT_NS</th><td>Default element namespace declared.</td></tr>
+<tr><th>XQF::DEFAULT_FUNCTION_NS</th><td>Default function namespace declared.</td></tr>
+<tr><th>XQF::HAS_PROLOG</th><td>The XQuery declares a prolog.</td></tr>
+<tr><th>XQF::HAS_WILDCARD_TESTS</th><td>Wildcard name tests present.</td></tr>
+<tr><th>XQF::LIBRARY_MODULE</th><td>Prolog declares a module namespace (library module).</td></tr>
+<tr><th>XQF::MODULE_IMPORTS</th><td>One or more module imports are declared.</td></tr>
+<tr><th>XQF::ORDERING_UNORDERED</th><td>Ordering mode is unordered.</td></tr>
+<tr><th>XQF::XPATH</th><td>The expression is an XPath location string.</td></tr>
 </tbody></table><div class="footer copyright text-right">XQuery module documentation © Paul Manias © 2025-2026</div></div>
 </div></div></div><script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../../js/base.js"></script><script type="text/javascript">
 const ready = fn => document.readyState !== 'loading' ? fn() : document.addEventListener('DOMContentLoaded', fn);

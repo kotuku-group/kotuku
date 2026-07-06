@@ -208,29 +208,11 @@ external leading or descent.</li>
 <tr><th>ALIGN::TOP</th><td>Align to top</td></tr>
 <tr><th>ALIGN::VERTICAL</th><td>Align to vertical center</td></tr>
 </tbody></table><div class="footer copyright text-right">Font module documentation © Paul Manias © 1998-2026</div></div>
-<div class="docs-content" style="display:none;" id="FMETA"><h1>FMETA Type</h1><p class="lead">Result flags for the SelectFont() function.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>FMETA::HIDDEN</th><td>The font should not appear in any named list shown to the user.</td></tr>
-<tr><th>FMETA::HINT_INTERNAL</th><td>The Freetype hinter should be used.</td></tr>
-<tr><th>FMETA::HINT_LIGHT</th><td>The light version of the Freetype hinter should be used.</td></tr>
-<tr><th>FMETA::HINT_NORMAL</th><td>The hinting information provided by the font should be given preference.</td></tr>
-<tr><th>FMETA::SCALED</th><td>The font is scalable (assume fixed otherwise).</td></tr>
-<tr><th>FMETA::VARIABLE</th><td>This is a scalable font featuring variable metrics.</td></tr>
-</tbody></table><div class="footer copyright text-right">Font module documentation © Paul Manias © 1998-2026</div></div>
 <div class="docs-content" style="display:none;" id="FTF"><h1>FTF Type</h1><p class="lead">Font flags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>FTF::BASE_LINE</th><td>The Font's <a data-bs-toggle="tooltip" title="The starting vertical position when drawing the font string." href="#tf-Y">Y</a> coordinate is the base line.</td></tr>
 <tr><th>FTF::BOLD</th><td>Font is described as having a bold weight (read only).</td></tr>
 <tr><th>FTF::HEAVY_LINE</th><td>Underline the font with a double-sized line, using the colour defined in <a data-bs-toggle="tooltip" title="Enables font underlining when set." href="#tf-Underline">Underline</a>.</td></tr>
 <tr><th>FTF::ITALIC</th><td>Font is described as using italics (read only).</td></tr>
 </tbody></table><div class="footer copyright text-right">Font module documentation © Paul Manias © 1998-2026</div></div>
-<div class="docs-content" style="display:none;" id="struct-FontList"><h1>FontList Structure</h1><p class="lead">For GetList(), describes a system font.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Next</th><td><span class="text-nowrap">struct FontList *</span></td><td>Pointer to the next entry in the list.</td></tr>
-<tr><th>Name</th><td><span class="text-nowrap">STRING</span></td><td>The name of the font face.</td></tr>
-<tr><th>Alias</th><td><span class="text-nowrap">STRING</span></td><td>Reference to another font Name if this is an alias.</td></tr>
-<tr><th>Points</th><td><span class="text-nowrap">INT</span></td><td>Pointer to an array of fixed point sizes supported by the font.</td></tr>
-<tr><th>Styles</th><td><span class="text-nowrap">STRING</span></td><td>Supported styles are listed here in CSV format.</td></tr>
-<tr><th>Axes</th><td><span class="text-nowrap">STRING</span></td><td>For variable fonts, lists all supported axis codes in CSV format</td></tr>
-<tr><th>Scalable</th><td><span class="text-nowrap">INT8</span></td><td><code>TRUE</code> if the font is scalable.</td></tr>
-<tr><th>Variable</th><td><span class="text-nowrap">INT8</span></td><td><code>TRUE</code> if the font has variable metrics.</td></tr>
-<tr><th>Hinting</th><td><span class="text-nowrap">HINT</span></td><td>Hinting options</td></tr>
-<tr><th>Hidden</th><td><span class="text-nowrap">INT8</span></td><td><code>TRUE</code> if the font should be hidden from user font lists.</td></tr>
-</tbody></table><div class="footer copyright text-right">Font class documentation © Paul Manias © 1998-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-RGB8"><h1>RGB8 Structure</h1><p class="lead">8-bit RGB colour value.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Red</th><td><span class="text-nowrap">UINT8</span></td><td>Red component value</td></tr>
 <tr><th>Green</th><td><span class="text-nowrap">UINT8</span></td><td>Green component value</td></tr>
 <tr><th>Blue</th><td><span class="text-nowrap">UINT8</span></td><td>Blue component value</td></tr>
