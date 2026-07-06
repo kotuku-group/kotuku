@@ -129,7 +129,10 @@ void resize_feedback(FUNCTION *Feedback, OBJECTID DisplayID, int X, int Y, int W
 
    log.traceBranch("%dx%d, %dx%d", X, Y, Width, Height);
 
-   if (Feedback->stale()) return; // The callback context has been terminated.
+   // Feedback may be a copy sharing the stored field's weak pin, so a stale subscription is only skipped here;
+   // release is performed by release_stale_resize_feedback() where the owning display is locked.
+
+   if (Feedback->stale()) return;
 
    if (Feedback->isC()) {
       auto routine = (ERR (*)(OBJECTID, int, int, int, int, APTR))Feedback->Routine;
@@ -146,8 +149,6 @@ void resize_feedback(FUNCTION *Feedback, OBJECTID DisplayID, int X, int Y, int W
       }));
    }
 }
-
-//********************************************************************************************************************
 
 /*********************************************************************************************************************
 -ACTION-
@@ -188,6 +189,7 @@ static ERR DISPLAY_CheckXWindow(extDisplay *Self)
       Self->X = absx;
       Self->Y = absy;
 
+      release_stale_resize_feedback(Self);
       resize_feedback(&Self->ResizeFeedback, Self->UID, absx, absy, Self->Width, Self->Height);
    }
 
@@ -2275,6 +2277,7 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
             int cx, cy, cwidth, cheight;
             winGetCoords(Self->WindowHandle, Self->X, Self->Y, Self->Width, Self->Height, cx, cy, cwidth, cheight);
 
+            release_stale_resize_feedback(Self);
             resize_feedback(&Self->ResizeFeedback, Self->UID, cx, cy, cwidth, cheight);
 
             if ((Self->Flags & SCR::VISIBLE) != SCR::NIL) {
@@ -2371,6 +2374,7 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
             QueueAction(AC::Focus, Self->UID);
          }
 
+         release_stale_resize_feedback(Self);
          resize_feedback(&Self->ResizeFeedback, Self->UID, Self->X, Self->Y, Self->Width, Self->Height);
 
          XSync(XDisplay, False);

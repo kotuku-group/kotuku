@@ -174,6 +174,7 @@ void MsgResizedWindow(OBJECTID SurfaceID, int WinX, int WinY, int WinWidth, int 
    if (ScopedObjectLock<objSurface> surface(SurfaceID, 3000); surface.granted()) {
       display_id = surface->DisplayID;
       if (ScopedObjectLock<extDisplay> display(display_id, 3000); display.granted()) {
+         release_stale_resize_feedback(*display);
          if (!display->ResizeFeedback.defined()) return;
          feedback = display->ResizeFeedback;
          display->X = WinX;

@@ -46,7 +46,7 @@ struct FUNCTION {
    CALL Type;
    uint8_t Flags;
    uint16_t ID; // Unused.  Unique identifier for the function.
-   OBJECTPTR Context; // The context at the time the function was created, or a Script reference
+   OBJECTPTR Context; // The context at the time the function was created, or a Script reference.  Must remain defined once initialised
    union {
       void * Meta;    // Additional meta data provided by the client.
       int64_t MetaValue;

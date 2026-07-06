@@ -2306,4 +2306,4 @@ inline CSTRING Object::className() { return Class->ClassName.c_str(); }
 
 inline void FUNCTION::pin() { if (Context) Context->pinWeak(); }
 inline void FUNCTION::unpin() { if (Context) Context->unpinWeak(); }
-inline bool FUNCTION::stale() const { return (Context) and (Context->terminating()); }
+inline bool FUNCTION::stale() const { return defined() and (Context) and (Context->terminating()); }
