@@ -448,7 +448,7 @@ static ERR SET_Callback(extNetLookup *Self, FUNCTION *Value)
    clear_callback_function(Self->Callback);
    if (Value) {
       Self->Callback = *Value;
-      Self->Callback.pin();
+      if (Self->Callback.defined()) Self->Callback.pin();
    }
 
    return ERR::Okay;

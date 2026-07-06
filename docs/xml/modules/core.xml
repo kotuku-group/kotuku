@@ -1842,7 +1842,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
 }
 </pre>
 <p>The <code>Object</code> is the original subscription target, as-is the Action ID.  The Result is the error code that was generated at the end of the action call.  If this is not set to <code>ERR::Okay</code>, assume that the action did not have an effect on state.  The <code>Parameters</code> are the original arguments provided by the client - be aware that these can legitimately be <code>NULL</code> even if an action specifies a required parameter structure.  Notice that because subscriptions are context sensitive, <function>CurrentContext</function> can be used to get a reference to the object that initiated the subscription.</p>
-<p>To terminate an action subscription, use the <function>UnsubscribeAction</function> function.  Subscriptions are not resource tracked, so it is critical to match the original call with an unsubscription.</p>
+<p>To terminate an action subscription, use the <function>UnsubscribeAction</function> function.  Matching each subscription with an unsubscription remains good practice because it releases the subscription record immediately.  If a subscriber is freed without unsubscribing, the record degrades safely: the subscriber's object header is weakly pinned for the lifetime of the record, dispatch recognises the freed subscriber and skips the callback, and the stale record is swept once the notification pass completes.  Until that sweep occurs, the subscriber's header remains allocated in zombie form.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
@@ -1960,6 +1960,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <description>
 <p>The UnsubscribeAction() function will terminate subscriptions made by <function>SubscribeAction</function>.  The removal of subscriptions is context sensitive, so the context of the original <function>SubscribeAction</function> call must be matched by UnsubscribeAction().</p>
 <p>To terminate multiple subscriptions in a single call, set the <code>Action</code> parameter to zero.</p>
+<p>Unsubscribing releases the subscription record (and the weak pin it holds on the subscriber) immediately.  A subscriber that is freed without unsubscribing is tolerated - its remaining records are swept lazily the next time each subscribed action is dispatched - but explicit unsubscription remains the recommended practice.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>

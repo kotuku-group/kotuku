@@ -73,7 +73,7 @@ static ERR SET_Feedback(extCompression *Self, FUNCTION *Value)
    if (Self->Feedback.defined()) Self->Feedback.unpin();
    if (Value) {
       Self->Feedback = *Value;
-      Self->Feedback.pin();
+      if (Self->Feedback.defined()) Self->Feedback.pin();
    }
    else Self->Feedback.clear();
    return ERR::Okay;

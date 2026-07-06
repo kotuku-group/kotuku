@@ -341,14 +341,44 @@ using OBJECTLOOKUP = ankerl::unordered_dense::map<uint32_t, std::vector<Object *
 using ACTION_CALLBACK = void (*)(OBJECTPTR, ACTIONID, ERR, APTR, APTR);
 
 struct ActionSubscription {
-   OBJECTPTR Subscriber; // The object that initiated the subscription
+   OBJECTPTR Subscriber;  // The object that initiated the subscription; weakly pinned for the record's lifetime
    OBJECTID SubscriberID; // Required for sanity checks on subscriber still existing.
    FUNCTION Callback;
+   bool Stale;            // Marked at dispatch time if the subscriber has been freed; swept lazily afterwards
 
-   ActionSubscription() : Subscriber(nullptr), SubscriberID(0), Callback() { }
+   // Each record owns a weak pin on its subscriber so that the header remains readable after termination
+   // (zombie mode), allowing dispatch to test NF::FREE lazily instead of dereferencing freed memory.  Records
+   // are move-only because they live by value in vectors; a moved-from record surrenders pin ownership so
+   // that reallocation and erasure cannot double-unpin.
+
+   ActionSubscription() : Subscriber(nullptr), SubscriberID(0), Callback(), Stale(false) { }
 
    ActionSubscription(OBJECTPTR pContext, FUNCTION pCallback) :
-      Subscriber(pContext), SubscriberID(pContext->UID), Callback(pCallback) { }
+      Subscriber(pContext), SubscriberID(pContext->UID), Callback(pCallback), Stale(false) {
+      Subscriber->pinWeak();
+   }
+
+   ~ActionSubscription() { if (Subscriber) Subscriber->unpinWeak(); }
+
+   ActionSubscription(ActionSubscription &&Other) noexcept :
+      Subscriber(Other.Subscriber), SubscriberID(Other.SubscriberID), Callback(Other.Callback), Stale(Other.Stale) {
+      Other.Subscriber = nullptr;
+   }
+
+   ActionSubscription & operator=(ActionSubscription &&Other) noexcept {
+      if (this != &Other) {
+         if (Subscriber) Subscriber->unpinWeak();
+         Subscriber   = Other.Subscriber;
+         SubscriberID = Other.SubscriberID;
+         Callback     = Other.Callback;
+         Stale        = Other.Stale;
+         Other.Subscriber = nullptr;
+      }
+      return *this;
+   }
+
+   ActionSubscription(const ActionSubscription &) = delete;
+   ActionSubscription & operator=(const ActionSubscription &) = delete;
 };
 
 struct virtual_drive {

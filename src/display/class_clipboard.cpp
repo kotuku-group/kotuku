@@ -702,7 +702,7 @@ static ERR SET_RequestHandler(objClipboard *Self, FUNCTION *Value)
    if (Self->RequestHandler.defined()) Self->RequestHandler.unpin();
    if (Value) {
       Self->RequestHandler = *Value;
-      Self->RequestHandler.pin();
+      if (Self->RequestHandler.defined()) Self->RequestHandler.pin();
    }
    else Self->RequestHandler.clear();
    return ERR::Okay;

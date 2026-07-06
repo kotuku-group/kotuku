@@ -62,7 +62,7 @@ static ERR SET_Feedback(extNetSocket *Self, FUNCTION *Value)
    clear_callback_function(Self->Feedback);
    if (Value) {
       Self->Feedback = *Value;
-      Self->Feedback.pin();
+      if (Self->Feedback.defined()) Self->Feedback.pin();
    }
 
    return ERR::Okay;
@@ -104,7 +104,7 @@ static ERR SET_Incoming(extNetSocket *Self, FUNCTION *Value)
    clear_callback_function(Self->Incoming);
    if (Value) {
       Self->Incoming = *Value;
-      Self->Incoming.pin();
+      if (Self->Incoming.defined()) Self->Incoming.pin();
    }
    return ERR::Okay;
 }
@@ -176,15 +176,17 @@ static ERR SET_Outgoing(extNetSocket *Self, FUNCTION *Value)
 
    clear_callback_function(Self->Outgoing);
    Self->Outgoing = *Value;
-   Self->Outgoing.pin();
+   if (Self->Outgoing.defined()) {
+      Self->Outgoing.pin();
 
-   if (Self->initialised()) {
-      if ((Self->Handle.is_valid()) and (Self->State IS NTC::CONNECTED)) {
-         // Setting the Outgoing field after connectivity is established will put the socket into streamed write mode.
+      if (Self->initialised()) {
+         if ((Self->Handle.is_valid()) and (Self->State IS NTC::CONNECTED)) {
+            // Setting the Outgoing field after connectivity is established will put the socket into streamed write mode.
 
-         network_platform().register_write(Self->Handle, &netsocket_outgoing, Self);
+            network_platform().register_write(Self->Handle, &netsocket_outgoing, Self);
+         }
+         else log.trace("Will not listen for socket-writes (no socket handle, or state %d != NTC::CONNECTED).", Self->State);
       }
-      else log.trace("Will not listen for socket-writes (no socket handle, or state %d != NTC::CONNECTED).", Self->State);
    }
 
    return ERR::Okay;

@@ -238,6 +238,7 @@ flute_test (core_compression "tests/test_compression.tiri")
 flute_test (core_config "tests/test_config.tiri")
 flute_test (core_messages "tests/test_messages.tiri")
 flute_test (core_time "tests/test_time.tiri")
+flute_test (core_subscriber_lifetimes "tests/test_subscriber_lifetimes.tiri")
 
 if (INSTALL_TESTS)
    # Windows-compatible tests
