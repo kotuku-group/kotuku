@@ -645,7 +645,7 @@ static ERR TIRI_Query(extTiri *Self)
                std::string error_msg;
                for (const auto &entry : Self->Lua->parser_diagnostics->entries()) {
                   if (not error_msg.empty()) error_msg += "\n";
-                  error_msg += entry.to_string(Self->LineOffset);
+                  error_msg += entry.to_string(Self->LineOffset, Self->Lua);
                }
                Self->setErrorMessage(error_msg);
             }

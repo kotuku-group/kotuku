@@ -173,8 +173,8 @@ end
 -- Test safe navigation with false values (should not treat as nil)
 
 @Test function testSafeFieldFalseValue()
-   obj = { flag = false }
-   v = obj?.flag
+   object = { flag = false }
+   v = object?.flag
    assert(v is false, "Safe field should return false, not nil")
 end
 
@@ -182,8 +182,8 @@ end
 -- Test safe navigation with zero values (should not treat as nil)
 
 @Test function testSafeFieldZeroValue()
-   obj = { count = 0 }
-   v = obj?.count
+   object = { count = 0 }
+   v = object?.count
    assert(v is 0, "Safe field should return 0, not nil")
 end
 
@@ -191,8 +191,8 @@ end
 -- Test safe navigation with empty string (should not treat as nil)
 
 @Test function testSafeFieldEmptyString()
-   obj = { text = "" }
-   v = obj?.text
+   object = { text = "" }
+   v = object?.text
    assert(v is "", "Safe field should return empty string, not nil")
 end
 
@@ -200,12 +200,12 @@ end
 -- Test three-level chaining
 
 @Test function testThreeLevelChaining()
-   obj = { a = { b = { c = 123 } } }
-   v = obj?.a?.b?.c
+   object = { a = { b = { c = 123 } } }
+   v = object?.a?.b?.c
    assert(v is 123, "Three-level chaining should return nested value")
 
-   obj2 = { a = { b = nil } }
-   v2 = obj2?.a?.b?.c
+   object2 = { a = { b = nil } }
+   v2 = object2?.a?.b?.c
    assert(v2 is nil, "Three-level chaining should short-circuit on nil")
 end
 
@@ -227,12 +227,12 @@ end
 
 @Test function testSafeIndexVariableKey()
    key = "mykey"
-   obj = { mykey = "myvalue" }
-   v = obj?[key]
+   object = { mykey = "myvalue" }
+   v = object?[key]
    assert(v is "myvalue", "Safe index should work with variable keys")
 
-   obj2 = nil
-   v2 = obj2?[key]
+   object2 = nil
+   v2 = object2?[key]
    assert(v2 is nil, "Safe index on nil should return nil with variable key")
 end
 
@@ -240,12 +240,12 @@ end
 -- Test mixed safe field and safe index
 
 @Test function testMixedFieldAndIndex()
-   obj = { arr = { [1] = "first", [2] = "second" } }
-   v = obj?.arr?[2]
+   object = { arr = { [1] = "first", [2] = "second" } }
+   v = object?.arr?[2]
    assert(v is "second", "Mixed safe field and index should work")
 
-   obj2 = { arr = nil }
-   v2 = obj2?.arr?[1]
+   object2 = { arr = nil }
+   v2 = object2?.arr?[1]
    assert(v2 is nil, "Mixed safe field and index should short-circuit")
 end
 
@@ -253,8 +253,8 @@ end
 -- Test safe navigation on empty table
 
 @Test function testSafeFieldOnEmptyTable()
-   obj = {}
-   v = obj?.missingField
+   object = {}
+   v = object?.missingField
    assert(v is nil, "Safe field on empty table should return nil")
 end
 
@@ -337,12 +337,12 @@ end
 -- Test safe method returning nil
 
 @Test function testSafeMethodReturningNil()
-   obj = {
+   object = {
       getNil = function(self)
          return nil
       end
    }
-   v = obj?:getNil()
+   v = object?:getNil()
    assert(v is nil, "Safe method can return nil as a valid result")
 end
 
@@ -351,12 +351,12 @@ end
 -- interference of one with the other.
 
 @Test function testChainingWithIfEmpty()
-   obj = { a = { b = nil } }
-   v = (obj?.a?.b?.c) ?? "default"
+   object = { a = { b = nil } }
+   v = (object?.a?.b?.c) ?? "default"
    assert(v is "default", "Chaining with if-empty should use default on nil, got " .. tostring(v))
 
-   obj2 = { a = { b = { c = "value" } } }
-   v2 = (obj2?.a?.b?.c) ?? "default"
+   object2 = { a = { b = { c = "value" } } }
+   v2 = (object2?.a?.b?.c) ?? "default"
    assert(v2 is "value", "Chaining with if-empty should use value when present")
 end
 
@@ -522,17 +522,17 @@ end
 -- Safe navigation assignment tests
 
 @Test function testSafeNavAssignBasic()
-   obj = { }
-   obj?.field = 42
-   assert(obj.field is 42, "Safe field assignment should store value on non-nil base")
+   object = { }
+   object?.field = 42
+   assert(object.field is 42, "Safe field assignment should store value on non-nil base")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function testSafeNavAssignNilBase()
-   obj = nil
-   obj?.field = 42
-   assert(obj is nil, "Safe field assignment should skip when base is nil")
+   object = nil
+   object?.field = 42
+   assert(object is nil, "Safe field assignment should skip when base is nil")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -560,8 +560,8 @@ end
       return 42
    end
 
-   obj = nil
-   obj?.field = computeValue()
+   object = nil
+   object?.field = computeValue()
    assert(calls is 0, "RHS should not be evaluated when safe assignment is skipped")
 end
 
@@ -784,12 +784,12 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function testSafeNavAssignFunctionValue()
-   obj = { }
-   obj?.method = function()
+   object = { }
+   object?.method = function()
       return 123
    end
 
-   assert(type(obj.method) is 'function', "Safe-nav function assignment should store a function value")
+   assert(type(object.method) is 'function', "Safe-nav function assignment should store a function value")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -803,20 +803,20 @@ end
       end
    end
 
-   obj = nil
-   obj?.method = makeMethod()
+   object = nil
+   object?.method = makeMethod()
    assert(created is 0, "Function-valued RHS should not be evaluated when safe-nav assignment skips")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function testSafeNavAssignFunctionValueCall()
-   obj = { }
-   obj?.method = function()
+   object = { }
+   object?.method = function()
       return 'callable'
    end
 
-   result = obj.method()
+   result = object.method()
    assert(result is 'callable', "Stored function from safe-nav assignment should be callable")
 end
 
@@ -825,8 +825,8 @@ end
 @Test function testSafeNavFunctionStmtUnsupported()
    try
       exec([[
-         obj = { }
-         function obj?.method()
+         object = { }
+         function object?.method()
             return 1
          end
       ]])

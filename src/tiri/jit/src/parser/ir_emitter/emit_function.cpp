@@ -550,7 +550,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
    // Check if this is a simple function name (not a path like foo.bar or method foo:bar)
    // and if protected_globals is enabled without explicit global declaration
 
-   bool is_simple_name = Payload.name.segments.size() == 1 and not Payload.name.method.has_value();
+   bool is_simple_name = Payload.name.segments.size() IS 1 and not Payload.name.method.has_value();
    bool should_be_local = is_simple_name and not Payload.name.is_explicit_global;
 
    // Determine the function name for tostring() support.

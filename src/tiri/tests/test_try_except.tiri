@@ -8,6 +8,7 @@ function enforce_hotpath() end
 
 @Test(priority=0) function BasicTryExcept()
    handled = false
+   local some_value = nil
 
    try
       local some_value = 42

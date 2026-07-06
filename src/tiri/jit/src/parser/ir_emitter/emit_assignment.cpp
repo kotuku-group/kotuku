@@ -101,7 +101,7 @@ static ParserResult<IrEmitUnit> assignment_value_count_error(
    }
    SourceSpan span = raw ? raw->span : SourceSpan{};
    return ParserResult<IrEmitUnit>::failure(
-      ParserError(ParserErrorCode::InternalInvariant, Token::from_span(span, TokenKind::Unknown), Message));
+      Emitter->make_error(ParserErrorCode::InternalInvariant, Message, span));
 }
 
 static GCstr * array_append_helper_key(LexState *State)

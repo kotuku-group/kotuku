@@ -2152,6 +2152,7 @@ static void publish_type_diagnostics(ParserContext& Context, const std::vector<T
             : ParserDiagnosticSeverity::Warning;
       }
       diagnostic.code = diag.code;
+      diagnostic.file_index = Context.lex().current_file_index;
       diagnostic.message = diag.message;
       diagnostic.token = Token::from_span(diag.location);
       Context.diagnostics().report(diagnostic);

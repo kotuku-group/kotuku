@@ -206,7 +206,7 @@ end
 
 @Test function ErrorInvalidPatternCharacter()
    try
-      loadstring("[x]multi()")()
+      exec("[x]multi()")()
    success
       error("Invalid pattern char 'x' should fail to parse")
    end
@@ -214,7 +214,7 @@ end
 
 @Test function ErrorFilterOnNonCall()
    try
-      loadstring("x = [_*]42")()
+      exec("x = [_*]42")()
    success
       error("filter on non-call should fail to parse")
    end
@@ -222,7 +222,7 @@ end
 
 @Test function ErrorFilterOnVariable()
    try
-      loadstring("t = {}; x = [_*]t")()
+      exec("t = {}; x = [_*]t")()
    success
       error("filter on variable should fail to parse")
    end

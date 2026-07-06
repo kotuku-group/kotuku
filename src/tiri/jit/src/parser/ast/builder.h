@@ -165,7 +165,8 @@ private:
    template<typename T>
    [[nodiscard]] ParserResult<T> fail(ParserErrorCode Code, const Token& ErrorToken, std::string Message) {
       this->ctx.emit_error(Code, ErrorToken, Message);
-      return ParserResult<T>::failure(ParserError(Code, ErrorToken, std::move(Message)));
+      return ParserResult<T>::failure(ParserError(Code, ErrorToken, std::move(Message),
+         this->ctx.lex().current_file_index));
    }
 
    // Helper to map TokenKind to AssignmentOperator.

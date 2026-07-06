@@ -129,7 +129,7 @@ ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
          else {
             this->ctx.emit_error(ParserErrorCode::ExpectedTypeName, type_token, "expected type name after ':'");
             return ParserResult<Identifier>::failure(
-               ParserError(ParserErrorCode::ExpectedTypeName, type_token, "expected type name after ':'"));
+               this->ctx.make_error(ParserErrorCode::ExpectedTypeName, type_token, "expected type name after ':'"));
          }
 
          identifier.type = parse_type_name(type_view);
@@ -137,7 +137,7 @@ ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
             std::string message("Invalid type.  Common types are: any, bool, num, str, table, array");
             this->ctx.emit_error(ParserErrorCode::UnknownTypeName, type_token, message);
             return ParserResult<Identifier>::failure(
-               ParserError(ParserErrorCode::UnknownTypeName, type_token, std::move(message)));
+               this->ctx.make_error(ParserErrorCode::UnknownTypeName, type_token, message));
          }
       }
 
@@ -187,7 +187,7 @@ ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
             Token current = this->ctx.tokens().current();
             this->ctx.emit_error(ParserErrorCode::ExpectedToken, current, "expected '>' after attribute");
             return ParserResult<Identifier>::failure(
-               ParserError(ParserErrorCode::ExpectedToken, current, "expected '>' after attribute"));
+               this->ctx.make_error(ParserErrorCode::ExpectedToken, current, "expected '>' after attribute"));
          }
 
          if (is_close_attribute) identifier.has_close = true;
@@ -217,7 +217,7 @@ ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
          else {
             this->ctx.emit_error(ParserErrorCode::ExpectedTypeName, type_token, "expected type name after ':'");
             return ParserResult<Identifier>::failure(
-               ParserError(ParserErrorCode::ExpectedTypeName, type_token, "expected type name after ':'"));
+               this->ctx.make_error(ParserErrorCode::ExpectedTypeName, type_token, "expected type name after ':'"));
          }
 
          identifier.type = parse_type_name(type_view);
@@ -225,7 +225,7 @@ ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
             auto message = std::format("Invalid type.  Common types are: any, bool, num, str, table, array", type_view);
             this->ctx.emit_error(ParserErrorCode::UnknownTypeName, type_token, message);
             return ParserResult<Identifier>::failure(
-               ParserError(ParserErrorCode::UnknownTypeName, type_token, std::move(message)));
+               this->ctx.make_error(ParserErrorCode::UnknownTypeName, type_token, message));
          }
       }
 

@@ -216,7 +216,7 @@ end
    assert(arr:type() is 'char', "Type should be 'char' (byte maps to char)")
 
    -- Size can also be a more complex unary expression
-   obj = { size = 100 }
+   local obj = { size = 100 }
    arr2 = array<int, obj.size>
    assert(#arr2 is 100, "Member access size should work")
 end

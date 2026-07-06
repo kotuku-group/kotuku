@@ -131,7 +131,7 @@ end
 
    check proc.sleep()
 
-   assert(completed >= #scripts, f'Expected {total} callbacks but only {completed} fired.')
+   assert(completed >= #scripts, f'Expected {#scripts} callbacks but only {completed} fired.')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
