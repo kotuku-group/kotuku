@@ -81,13 +81,18 @@ static void raise_accumulated_diagnostics(ParserContext &Context)
 
    auto summary = std::format("parser reported {} {}:\n", entries.size(), entries.size() IS 1 ? "error" : "errors");
 
+   lua_State *L = &Context.lua();
+
    for (const auto& diagnostic : entries) {
       SourceSpan span = diagnostic.token.span();
-      if (diagnostic.message.empty()) summary += std::format("   line {}:{} - unexpected token\n", span.line, span.column);
-      else summary += std::format("   line {}:{} - {}\n", span.line, span.column, diagnostic.message);
+      std::string location = std::format("{}:{}", span.line.lineNumber(), span.column.lineNumber());
+      if (not L->file_sources.empty()) {
+         const FileSource *src = get_file_source(L, diagnostic.file_index);
+         if (src and not src->filename.empty()) location = src->filename + ":" + location;
+      }
+      if (diagnostic.message.empty()) summary += std::format("   {} - unexpected token\n", location);
+      else summary += std::format("   {} - {}\n", location, diagnostic.message);
    }
-
-   lua_State *L = &Context.lua();
 
    // Store diagnostic information in lua_State before throwing
    if (L->parser_diagnostics) delete (ParserDiagnostics*)L->parser_diagnostics;
@@ -125,7 +130,7 @@ static void trace_ast_boundary(ParserContext &Context, const BlockStmt &Chunk, C
    StatementListView statements = Chunk.view();
    SourceSpan span = Chunk.span;
    log.branch("[%s]: statements=%" PRId64 " span=%d:%d offset=%" PRId64,
-      Stage, statements.size(), int(span.line), int(span.column), span.offset);
+      Stage, statements.size(), span.line.lineNumber(), span.column.lineNumber(), span.offset);
 
    size_t index = 0;
    for (const StmtNode &stmt : statements) {
@@ -137,7 +142,7 @@ static void trace_ast_boundary(ParserContext &Context, const BlockStmt &Chunk, C
       size_t children = ast_statement_child_count(stmt);
       SourceSpan stmt_span = stmt.span;
       log.msg("stmt[%" PRId64 "] kind=%d children=%" PRId64 " span=%d:%d offset=%" PRId64, index,
-         int(stmt.kind), children, int(stmt_span.line), int(stmt_span.column), stmt_span.offset);
+         int(stmt.kind), children, stmt_span.line.lineNumber(), stmt_span.column.lineNumber(), stmt_span.offset);
 
       if (stmt.kind IS AstNodeKind::ExpressionStmt) {
          const auto *payload = std::get_if<ExpressionStmtPayload>(&stmt.data);
@@ -146,7 +151,7 @@ static void trace_ast_boundary(ParserContext &Context, const BlockStmt &Chunk, C
             size_t expr_children = ast_expression_child_count(expr);
             SourceSpan expr_span = expr.span;
             log.msg("   expr kind=%d children=%" PRId64 " span=%d:%d offset=%" PRId64,
-               int(expr.kind), expr_children, int(expr_span.line), int(expr_span.column), expr_span.offset);
+               int(expr.kind), expr_children, expr_span.line.lineNumber(), expr_span.column.lineNumber(), expr_span.offset);
          }
       }
 

@@ -16,6 +16,7 @@
 #include "parser/parser_diagnostics.h"
 #include <kotuku/main.h>
 #include <format>
+#include "filesource.h"
 
 //********************************************************************************************************************
 // Reports a function limit error (too many locals, upvalues, etc.) and throws.
@@ -73,12 +74,20 @@ static CSTRING error_code_name(ParserErrorCode Code)
 
 //********************************************************************************************************************
 // Formats the diagnostic as a human-readable string for display.
-// The LineOffset parameter allows adjusting line numbers for embedded scripts.
+// The LineOffset parameter allows adjusting line numbers for embedded scripts.  When a lua_State is provided, the
+// file index encoded in the span's line is resolved to a filename so that errors in imported files are attributable.
 
-std::string ParserDiagnostic::to_string(int LineOffset) const
+std::string ParserDiagnostic::to_string(int LineOffset, lua_State *L) const
 {
    SourceSpan span = this->token.span();
-   return std::format("[{}:{}] {}: {}: {}", span.line + LineOffset, span.column,
+   std::string location = std::format("{}:{}", span.line.lineNumber() + LineOffset, span.column.lineNumber());
+
+   if (L and not L->file_sources.empty()) {
+      const FileSource *src = get_file_source(L, this->file_index);
+      if (src and not src->filename.empty()) location = src->filename + ":" + location;
+   }
+
+   return std::format("[{}] {}: {}: {}", location,
       severity_name(this->severity), error_code_name(this->code),
       this->message.empty() ? "No message" : this->message);
 }

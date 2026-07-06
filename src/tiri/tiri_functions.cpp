@@ -67,7 +67,7 @@ static bool get_caller_src_folder(lua_State *Lua, std::string &Folder)
       std::string msg;
       for (const auto &entry : Lua->parser_diagnostics->entries()) {
          if (not msg.empty()) msg += "\n";
-         msg += entry.to_string(Lua->script->LineOffset);
+         msg += entry.to_string(Lua->script->LineOffset, Lua);
       }
       luaL_error(Lua, std::move(msg));
    }
