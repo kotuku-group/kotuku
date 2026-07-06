@@ -25,6 +25,8 @@
    global glDocCache = nil
    global glDefs = nil
 
+   extern lspUriToPath, registerCoreHandlers
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Document Line Index
 -- Lazily computes and caches an array of line byte offsets. Invalidate by setting doc.lineIndex = nil on changes.
@@ -256,7 +258,8 @@ global FLUID_KEYWORDS = {
    ['choose'] = true, ['from'] = true, ['when'] = true,
 
    -- Declarations
-   ['function'] = true, ['local'] = true, ['global'] = true, ['thunk'] = true, ['import'] = true, ['as'] = true,
+   ['function'] = true, ['local'] = true, ['global'] = true, ['extern'] = true, ['thunk'] = true,
+   ['import'] = true, ['as'] = true,
 
    -- Special
    ['defer'] = true, ['catch'] = true, ['raise'] = true, ['check'] = true

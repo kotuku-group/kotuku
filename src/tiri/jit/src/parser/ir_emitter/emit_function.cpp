@@ -95,6 +95,8 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
 
    // Inherit declared globals from parent so nested functions recognize them
    child_state.declared_globals = parent_state->declared_globals;
+   child_state.external_symbols = parent_state->external_symbols;
+   child_state.allow_external_symbol_reads = parent_state->allow_external_symbol_reads;
 
    // Set linedefined to the earliest line that bytecode might reference.
    // Note: SourceSpan.line represents the END line of a span (due to combine_spans behavior),
@@ -184,7 +186,8 @@ ParserResult<ExpDesc> IrEmitter::emit_function_lvalue(const FunctionNamePath &pa
    if (path.segments.empty()) return this->unsupported_expr(AstNodeKind::FunctionExpr, SourceSpan{});
 
    NameRef base_ref = make_name_ref(path.segments.front());
-   auto base_expr = this->emit_identifier_expr(base_ref);
+   bool single_local_function = path.segments.size() IS 1 and not path.method.has_value();
+   auto base_expr = this->emit_identifier_expr(base_ref, single_local_function);
    if (not base_expr.ok()) return base_expr;
 
    ExpDesc target = base_expr.value_ref();
@@ -258,7 +261,7 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
             return ParserResult<ExpDesc>::failure(this->make_error(ParserErrorCode::AssignToConstant, msg));
          }
 
-         auto result = this->emit_identifier_expr(name_ref);
+         auto result = this->emit_identifier_expr(name_ref, true);
          if (not result.ok()) return result;
          ExpDesc value = result.value_ref();
          if (value.k IS ExpKind::Local) { // Local variable already exists

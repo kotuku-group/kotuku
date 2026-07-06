@@ -2,6 +2,8 @@
    import './compile_if_helper'
    import './import_parent/child'
 
+extern on_windows, on_linux, on_osx, debug_on, debug_off
+
 @Test function ImportBasic()
    assert(helper_message is "Hello from imported module!",
       f"Expected 'Hello from imported module!', got '{helper_message}'")

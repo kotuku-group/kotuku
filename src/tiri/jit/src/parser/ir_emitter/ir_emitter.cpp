@@ -441,6 +441,7 @@ static UnsupportedNodeRecorder glUnsupportedNodes;
       case AstNodeKind::TryExceptStmt: return "TryExceptStmt";
       case AstNodeKind::RaiseStmt:     return "RaiseStmt";
       case AstNodeKind::CheckStmt:     return "CheckStmt";
+      case AstNodeKind::ExternStmt:    return "ExternStmt";
       case AstNodeKind::WithStmt:      return "WithStmt";
       case AstNodeKind::ExpressionStmt: return "ExpressionStmt";
       default: return "Unknown";
@@ -718,6 +719,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_statement(const StmtNode& stmt)
       const auto &payload = std::get<GlobalDeclStmtPayload>(stmt.data);
       return this->emit_global_decl_stmt(payload);
    }
+   case AstNodeKind::ExternStmt: {
+      const auto &payload = std::get<ExternDeclStmtPayload>(stmt.data);
+      return this->emit_extern_decl_stmt(payload);
+   }
    case AstNodeKind::LocalFunctionStmt: {
       const auto &payload = std::get<LocalFunctionStmtPayload>(stmt.data);
       return this->emit_local_function_stmt(payload);
@@ -807,6 +812,16 @@ ParserResult<IrEmitUnit> IrEmitter::emit_expression_stmt(const ExpressionStmtPay
    if (not expression.ok()) return ParserResult<IrEmitUnit>::failure(expression.error_ref());
 
    ExpDesc value = expression.value_ref();
+
+   if (payload.expression->kind IS AstNodeKind::IdentifierExpr) {
+      auto *name_ref = std::get_if<NameRef>(&payload.expression->data);
+      GCstr *name = (name_ref and name_ref->identifier.symbol) ? name_ref->identifier.symbol : nullptr;
+      std::string msg = "Bare identifier '";
+      if (name) msg += std::string_view(strdata(name), name->len);
+      msg += "' is not a statement";
+      return ParserResult<IrEmitUnit>::failure(
+         this->make_error(ParserErrorCode::UnexpectedToken, msg, payload.expression->span));
+   }
 
    // We have a bare Unscoped identifier as an expression statement, this is an error - the user must explicitly
    // declare locals with 'local'.
@@ -1094,6 +1109,25 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
       this->update_local_binding(identifier.symbol, BCReg(base.raw() + i.raw()));
    }
    this->func_state.reset_freereg();
+   return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+}
+
+//********************************************************************************************************************
+// Register external symbols for this parse.  The declaration emits no bytecode; it only authorises unresolved names
+// that are expected to be supplied by another file or by the embedding host.
+
+ParserResult<IrEmitUnit> IrEmitter::emit_extern_decl_stmt(const ExternDeclStmtPayload &Payload)
+{
+   if (Payload.all_symbols) {
+      this->func_state.allow_external_symbol_reads = true;
+      return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+   }
+
+   for (const Identifier &identifier : Payload.names) {
+      if (is_blank_symbol(identifier)) continue;
+      if (identifier.symbol) this->func_state.external_symbols.insert(identifier.symbol);
+   }
+
    return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
 }
 
@@ -1772,7 +1806,25 @@ ParserResult<ExpDesc> IrEmitter::emit_literal_expr(const LiteralValue& literal)
 //********************************************************************************************************************
 // Emit bytecode for an identifier expression, resolving the name to a local, upvalue, or global variable.
 
-ParserResult<ExpDesc> IrEmitter::emit_identifier_expr(const NameRef& reference)
+static bool is_named_external_global(GCstr *Name)
+{
+   if (not Name) return false;
+
+   std::string_view name(strdata(Name), Name->len);
+   if (name.size() >= 3 and name[0] IS 'g' and name[1] IS 'l' and name[2] >= 'A' and name[2] <= 'Z') {
+      return true;
+   }
+
+   if (name.size() >= 2 and name[0] IS 'm' and name[1] >= 'A' and name[1] <= 'Z') {
+      return true;
+   }
+
+   return false;
+}
+
+//********************************************************************************************************************
+
+ParserResult<ExpDesc> IrEmitter::emit_identifier_expr(const NameRef& reference, bool AllowUnscoped)
 {
    // Blank identifiers cannot be read - they are only valid as assignment targets
    if (reference.identifier.is_blank) {
@@ -1795,6 +1847,30 @@ ParserResult<ExpDesc> IrEmitter::emit_identifier_expr(const NameRef& reference)
       if (this->func_state.declared_globals.count(reference.identifier.symbol) > 0) {
          resolved.k = ExpKind::Global;
       }
+      else if (this->func_state.external_symbols.count(reference.identifier.symbol) > 0) {
+         resolved.k = ExpKind::Global;
+      }
+      else if (this->func_state.allow_external_symbol_reads) {
+         resolved.k = ExpKind::Global;
+      }
+      else if (reference.identifier.symbol) {
+         cTValue *global = lj_tab_getstr(tabref(this->lex_state.L->env), reference.identifier.symbol);
+         if (global and not tvisnil(global)) {
+            resolved.k = ExpKind::Global;
+         }
+         else if (is_named_external_global(reference.identifier.symbol)) {
+            resolved.k = ExpKind::Global;
+         }
+      }
+   }
+
+   if (resolved.k IS ExpKind::Unscoped and not AllowUnscoped) {
+      GCstr *name = resolved.u.sval;
+      std::string msg = "Undeclared variable '";
+      if (name) msg += std::string_view(strdata(name), name->len);
+      msg += "'";
+      return ParserResult<ExpDesc>::failure(
+         this->make_error(ParserErrorCode::UndefinedVariable, msg, reference.identifier.span));
    }
 
    return ParserResult<ExpDesc>::success(resolved);
