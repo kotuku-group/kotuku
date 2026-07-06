@@ -16,10 +16,12 @@
 #include "parser/type_checker.h"
 
 #include <format>
+#include <shared_mutex>
 
 #include <ankerl/unordered_dense.h>
 #include <kotuku/main.h>
 #include "parser/parser_context.h"
+#include "../../../defs.h"
 
 #ifdef INCLUDE_TIPS
 #include "parser/parser_tips.h"
@@ -48,6 +50,14 @@
 [[nodiscard]] static bool type_identifier_name_is(GCstr *Name, std::string_view Text)
 {
    return Name and std::string_view(strdata(Name), Name->len) IS Text;
+}
+
+[[nodiscard]] static bool type_is_registered_constant(GCstr *Name)
+{
+   if (not Name) return false;
+
+   std::shared_lock lock(glConstantMutex);
+   return glConstantRegistry.contains(Name->hash);
 }
 
 [[nodiscard]] static GCstr * type_literal_string_key(const ExprNode &Expr)
@@ -948,6 +958,16 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
          continue;
       }
 
+      if (type_is_registered_constant(name.symbol)) {
+         std::string_view name_view(strdata(name.symbol), name.symbol->len);
+         TypeDiagnostic diag;
+         diag.location = name.span;
+         diag.code = ParserErrorCode::AssignToConstant;
+         diag.message = std::format("cannot assign to constant '{}'", name_view);
+         this->diagnostics_.push_back(std::move(diag));
+         continue;
+      }
+
       InferredType inferred;
 
       // Explicit type annotation takes precedence
@@ -1045,6 +1065,14 @@ void TypeAnalyser::analyse_function_stmt(const FunctionStmtPayload &Payload)
          bool is_direct_global_store = Payload.name.segments.size() IS 1 and not Payload.name.method.has_value();
          if (is_direct_global_store and function_name and ((function_name->flags & STRFLAG_PROTECTED_GLOBAL) != 0)) {
             this->report_protected_global_override(function_name, function_location);
+         }
+         else if (is_direct_global_store and type_is_registered_constant(function_name)) {
+            std::string_view name_view(strdata(function_name), function_name->len);
+            TypeDiagnostic diag;
+            diag.location = function_location;
+            diag.code = ParserErrorCode::AssignToConstant;
+            diag.message = std::format("cannot assign to constant '{}'", name_view);
+            this->diagnostics_.push_back(std::move(diag));
          }
          else this->declare_global_function(function_name, function, function_location);
       }

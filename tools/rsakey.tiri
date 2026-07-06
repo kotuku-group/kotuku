@@ -71,15 +71,14 @@ function signFiles(DestPath:str)
    if (err is ERR_Okay) and (sig != nil) then
       if glSigFile?? then
          print("Saving signature to " .. glSigFile)
-         local sigfile = obj.new("file", { path=glSigFile, flags=FL_NEW|FL_WRITE } )
+         sigfile = obj.new("file", { path=glSigFile, flags=FL_NEW|FL_WRITE } )
          sigfile.acWrite(sig)
       end
 
       input.acSeek(0, 0)
 
-      err = mSSL.VerifySig(input, 0, glPublicKey, "sha256", sig)
-      if (err != ERR_Okay) then print("Verification failed.")
-      else print("Verification passed.") end
+      check mSSL.VerifySig(input, 0, glPublicKey, "sha256", sig)
+      print("Verification passed.")
    else
       print("Failed to generate signature: " .. mSys.GetErrorMsg(err));
    end

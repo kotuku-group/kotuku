@@ -26,6 +26,8 @@
 
 inline const TiriConstant * lookup_constant(const GCstr *Name)
 {
+   if (not Name) return nullptr;
+
    std::shared_lock lock(glConstantMutex);
    auto it = glConstantRegistry.find(Name->hash);
    if (it != glConstantRegistry.end()) return &it->second;
@@ -1832,15 +1834,16 @@ ParserResult<ExpDesc> IrEmitter::emit_identifier_expr(const NameRef& reference, 
          "Cannot read blank identifier '_'"));
    }
 
-   // Check if this is a registered constant - substitute with literal value
-   if (auto constant = lookup_constant(reference.identifier.symbol)) {
-      ExpDesc expr(constant->to_number());
-      return ParserResult<ExpDesc>::success(expr);
-   }
-
-   // Normal variable lookup
    ExpDesc resolved;
    this->lex_state.var_lookup_symbol(reference.identifier.symbol, &resolved);
+
+   // Explicit local/upvalue shadows take precedence over registered constant substitution.
+   if (resolved.k != ExpKind::Local and resolved.k != ExpKind::Upval) {
+      if (auto constant = lookup_constant(reference.identifier.symbol)) {
+         ExpDesc expr(constant->to_number());
+         return ParserResult<ExpDesc>::success(expr);
+      }
+   }
 
    // If unscoped, check if this was explicitly declared as global
    if (resolved.k IS ExpKind::Unscoped) {

@@ -23,6 +23,12 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
                identifier.span));
          }
 
+         if (lookup_constant(name)) {
+            return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::AssignToConstant,
+               std::format("cannot assign to constant '{}'", std::string_view(strdata(name), name->len)),
+               identifier.span));
+         }
+
          this->func_state.declared_globals.insert(name);
 
          if (identifier.has_const) {
