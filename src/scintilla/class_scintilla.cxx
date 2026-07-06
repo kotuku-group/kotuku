@@ -1751,7 +1751,7 @@ static ERR SET_EventCallback(extScintilla *Self, FUNCTION *Value)
    if (Self->EventCallback.defined()) Self->EventCallback.unpin();
    if (Value) {
       Self->EventCallback = *Value;
-      Self->EventCallback.pin();
+      if (Self->EventCallback.defined()) Self->EventCallback.pin();
    }
    else Self->EventCallback.clear();
    return ERR::Okay;

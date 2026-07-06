@@ -2304,6 +2304,6 @@ inline CSTRING Object::className() { return Class->ClassName.c_str(); }
 // Weak-pin management for callback holders (refer to the zombie object contract in objects.h).  A pinned
 // Context header remains readable after termination, allowing stale() to be tested lazily at invoke time.
 
-inline void FUNCTION::pin() { if (Context) Context->pinWeak(); }
-inline void FUNCTION::unpin() { if (Context) Context->unpinWeak(); }
-inline bool FUNCTION::stale() const { return defined() and (Context) and (Context->terminating()); }
+inline void FUNCTION::pin() { Context->pinWeak(); }
+inline void FUNCTION::unpin() { Context->unpinWeak(); }
+inline bool FUNCTION::stale() const { return defined() and (Context->terminating()); }

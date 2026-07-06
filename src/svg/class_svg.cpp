@@ -491,7 +491,7 @@ static ERR SET_FrameCallback(extSVG *Self, FUNCTION *Value)
    if (Self->FrameCallback.defined()) Self->FrameCallback.unpin();
    if (Value) {
       Self->FrameCallback = *Value;
-      Self->FrameCallback.pin();
+      if (Self->FrameCallback.defined()) Self->FrameCallback.pin();
    }
    else Self->FrameCallback.clear();
    return ERR::Okay;
