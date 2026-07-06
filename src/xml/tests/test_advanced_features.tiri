@@ -166,7 +166,7 @@ end
    })
 
    -- Test ascending sort
-   err = xml.mtSort('/root', 'item', XSF_NIL)
+   err = xml.mtSort('/root', 'item')
    assert(err is ERR_Okay, "Ascending sort should succeed")
 
    -- Test descending sort

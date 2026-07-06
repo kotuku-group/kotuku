@@ -308,7 +308,7 @@ function MultiPartLocal()
       src         = 'http://127.0.0.1/upload',
       method      = 'post',
       outputFile  = glOutFile,
-      flags       = HTF_NO_HEADER,
+      flags       = HTF_NO_HEAD,
       contenttype = 'multipart/form-data; boundary=' .. boundary,
       incoming = function(HTTP, Buffer)
          content ..= Buffer.toString()

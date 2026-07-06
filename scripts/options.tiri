@@ -131,7 +131,7 @@ function clone_definition(Definition:table):table
 
    validate_name(canonical)
 
-   param = {}
+   local param = {}
    for key, value in pairs(Definition) do
       param[key] = value
    end
@@ -669,7 +669,7 @@ function parse_flag_negation(Parser:table, Result:table, ArgNames:table, Presenc
    if not Name:startsWith('no-') then return false end
 
    suffix = Name:substr(3)
-   param = Parser._named_lookup[suffix]
+   local param = Parser._named_lookup[suffix]
 
    if param then
       if param.kind is 'flag' then
@@ -694,7 +694,7 @@ function parse_positional_value(Parser:table, Result:table, ArgNames:table, Pres
       return PosIndex
    end
 
-   param = Parser._positionals[PosIndex]
+   local param = Parser._positionals[PosIndex]
 
    add_result_value(Result, ArgNames, Presence, param, param.name, Token, true)
 
@@ -856,7 +856,7 @@ end
 -- Convert the final source values after precedence has selected the winning layer.
 
 function convert_result(Parser:table, RawResult:table, ArgNames:table, Presence:table):table
-   result = {}
+   local result = {}
 
    for param in values(Parser._params) do
       raw_value = RawResult[param.name]
@@ -1125,8 +1125,7 @@ end
 -- Generate a compact usage line for the parser.
 
 function build_full_usage(Parser:table):str
-   text = f"Usage: {Parser.cmdName}"
-
+   local text = f"Usage: {Parser.cmdName}"
    text = append_usage_positionals(text, Parser)
 
    for param in values(Parser._params) do
@@ -1243,7 +1242,7 @@ end
 -- Generate detailed help for one parameter.
 
 function build_param_help(Parser:table, Topic:str):str
-   param = Parser._lookup[Topic]
+   local param = Parser._lookup[Topic]
    if param is nil then
       raise ERR_ParameterUnknown, f"Unknown help topic '{Topic}'."
    end
@@ -2082,7 +2081,7 @@ end
 function add_param(Parser:table, Definition:table):table
    assert(type(Definition) is 'table', 'Parameter definition must be a table.')
 
-   param = clone_definition(Definition)
+   local param = clone_definition(Definition)
 
    for name in values(param.names) do
       if Parser._lookup[name] then

@@ -651,7 +651,7 @@ end
          config?.theme, retries = 'dark', 3
       ]])
    except ex
-      assert(ex.message:find('safe-navigation assignment targets cannot be used in multi-assignment') != nil,
+      assert(ex.message:find('Safe-navigation assignment targets cannot be used in multi-assignment') != nil,
          'Expected safe-navigation multi-assignment error, got: ' .. ex.message)
       return
    end
@@ -733,7 +733,7 @@ end
          retries, config?.theme = 3, 'dark'
       ]])
    except ex
-      assert(ex.message:find('safe-navigation assignment targets cannot be used in multi-assignment') != nil,
+      assert(ex.message:find('Safe-navigation assignment targets cannot be used in multi-assignment') != nil,
          'Expected safe-navigation multi-assignment error, got: ' .. ex.message)
       return
    end
@@ -756,7 +756,7 @@ end
          safe_store?.value, second, third = values()
       ]])
    except ex
-      assert(ex.message:find('safe-navigation assignment targets cannot be used in multi-assignment') != nil,
+      assert(ex.message:find('Safe-navigation assignment targets cannot be used in multi-assignment') != nil,
          'Expected safe-navigation multi-assignment error, got: ' .. ex.message)
       return
    end

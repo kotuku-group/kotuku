@@ -824,14 +824,14 @@ function originFormUrl(Url:str):str
    return after_scheme:substr(path_start)
 end
 
-function absoluteFormUrl(State:table, Url:str):str
-   if Url:startsWith('http://') or Url:startsWith('https://') then return Url end
-   return 'http://' .. hostHeaderValue(State.targetHost, State.targetPort) .. originFormUrl(Url)
-end
-
 function hostHeaderValue(Host:str, Port:num):str
    if Port is 80 then return Host end
    return Host .. ':' .. Port
+end
+
+function absoluteFormUrl(State:table, Url:str):str
+   if Url:startsWith('http://') or Url:startsWith('https://') then return Url end
+   return 'http://' .. hostHeaderValue(State.targetHost, State.targetPort) .. originFormUrl(Url)
 end
 
 function resolveConnectTarget(Request:table):<str, num>

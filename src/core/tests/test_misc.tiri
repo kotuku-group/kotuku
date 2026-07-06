@@ -1,5 +1,7 @@
 -- Core tests not covered by other test files.
 
+   include 'xml'
+
 @AfterAll function CleanupTaskStringViewEnvironment()
    task = mSys.CurrentTask()
    task.mtSetEnv('KOTUKU_TASK_STRING_VIEW_TEST', '')
@@ -312,7 +314,7 @@ end
 
    -- Test FindObject()
 
-   err, obj = mSys.FindObject('TestFO')
+   local err, obj = mSys.FindObject('TestFO')
    assert(err is ERR_Okay, 'Failed to find object: ' .. mSys.GetErrorMsg(err))
 
    -- Test ListChildren()
