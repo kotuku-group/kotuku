@@ -88,7 +88,7 @@ end
 
 @Test function SortByKeys()
    t = { b = 2, a = 1, c = 3 }
-   keys = {}
+   local keys = {}
    for k, v in table.sortByKeys(t) do
       table.insert(keys, k)
    end
@@ -443,7 +443,7 @@ end
 @Test function SortByKeysSingleKey()
    -- Single key table
    t = { solo = 99 }
-   keys = {}
+   local keys = {}
    vals = {}
    for k, v in table.sortByKeys(t) do
       table.insert(keys, k)
@@ -457,7 +457,7 @@ end
 @Test function SortByKeysDescending()
    -- Custom comparator for reverse order
    t = { b = 2, a = 1, c = 3 }
-   keys = {}
+   local keys = {}
    for k, v in table.sortByKeys(t, function(a, b) return a > b end) do
       table.insert(keys, k)
    end

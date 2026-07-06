@@ -1109,7 +1109,7 @@ end
 
 @Test(hotpath=true) function WithCompoundAssignment()
    count = 0
-   values = { [0] = 1, [1] = 2, [2] = 3, [3] = 1, [4] = 2, [5] = 1 }
+   local values = { [0] = 1, [1] = 2, [2] = 3, [3] = 1, [4] = 2, [5] = 1 }
    for i in {0 to 6} do
       count += choose values[i] from
          1 -> 1

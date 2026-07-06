@@ -28,10 +28,10 @@ function signFiles(destPath)
    if not destPath?? then return end
 
    print("Generating signature for file: \"" .. destPath .. "\"")
-   input = obj.new("file", { path=destPath, flags="READ" } )
-   error, sig = mSSL.CalcSigFromObject(input, 0, privateKey, nil, "sha256")
+   local input = obj.new("file", { path=destPath, flags="READ" } )
+   local err, sig = mSSL.CalcSigFromObject(input, 0, privateKey, nil, "sha256")
 
-   if (error is ERR_Okay) and (sig != nil) then
+   if (err is ERR_Okay) and (sig != nil) then
       if glSigFile?? then
          print("Saving signature to " .. glSigFile)
          sigfile = obj.new("file", { path=glSigFile, flags="!NEW|WRITE" } )
@@ -40,11 +40,11 @@ function signFiles(destPath)
 
       input.acSeek(0, 0)
 
-      error = mSSL.VerifySig(input, 0, publicKey, "sha256", sig)
-      if (error != ERR_Okay) then print("Verification failed.")
+      err = mSSL.VerifySig(input, 0, publicKey, "sha256", sig)
+      if (err != ERR_Okay) then print("Verification failed.")
       else print("Verification passed.") end
    else
-      print("Failed to generate signature: " .. mSys.GetErrorMsg(error));
+      print("Failed to generate signature: " .. mSys.GetErrorMsg(err));
    end
 end
 
@@ -69,7 +69,7 @@ end
 
    if not glBits?? then glBits = 2048 end
 
-   error, privateKey, publicKey = mSSL.GenerateRSAKey(glBits, glPassword)
+   local err, privateKey, publicKey = mSSL.GenerateRSAKey(glBits, glPassword)
 
    print(privateKey)
    print(publicKey)

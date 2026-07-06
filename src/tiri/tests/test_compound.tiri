@@ -515,7 +515,7 @@ end
          return A .. B.val
       end
    }
-   obj = setmetatable({ val = 'data' }, mt)
+   local obj = setmetatable({ val = 'data' }, mt)
    result = array<byte>
 
    result ..= 'prefix_' .. obj

@@ -45,7 +45,7 @@ end
          source = struct.new('IPAddress')
          err, bytesRead = Socket.mtRecvFrom(source, buffer)
          if (err is ERR_Okay) and (bytesRead > 0) then
-            msg = buffer:getString(0, bytesRead)
+            local msg = buffer:getString(0, bytesRead)
             logOutput('[UDP Server] Received: "' .. msg .. '"')
             if (msg:startsWith('UDP Test')) then
                udpReceived = true
@@ -72,7 +72,7 @@ end
          buffer = array<byte, 1024>
          err, readLen = Client.acRead(buffer)
          if (err is ERR_Okay and readLen > 0) then
-            msg = buffer:getString(0, readLen)
+            local msg = buffer:getString(0, readLen)
             logOutput('[TCP Server] Received: "' .. msg .. '"')
             if (msg:startsWith('TCP Test')) then
                tcpReceived = true
@@ -95,7 +95,7 @@ end
          source = struct.new('IPAddress')
          err, bytesRead = Socket.mtRecvFrom(source, buffer)
          if (err is ERR_Okay) and (bytesRead > 0) then
-            msg = buffer:getString(0, bytesRead)
+            local msg = buffer:getString(0, bytesRead)
             logOutput('[UDP Client] Received response: "' .. msg .. '"')
          end
       end
@@ -117,7 +117,7 @@ end
          buffer = array<byte, 1024>
          err, readLen = Socket.acRead(buffer)
          if (err is ERR_Okay and readLen > 0) then
-            msg = buffer:getString(0, readLen)
+            local msg = buffer:getString(0, readLen)
             logOutput('[TCP Client] Received: "' .. msg .. '"')
          end
       end

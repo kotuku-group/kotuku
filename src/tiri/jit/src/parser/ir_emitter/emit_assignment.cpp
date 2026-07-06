@@ -829,6 +829,27 @@ ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targ
             node->span));
       }
 
+      // A plain identifier target naming a host pre-registered global is an override unless an explicit
+      // local shadow is in scope.  Member and index stores (math.foo = 1) remain legal table mutations.
+
+      if (node->kind IS AstNodeKind::IdentifierExpr) {
+         if (const auto *name_ref = std::get_if<NameRef>(&node->data)) {
+            GCstr *symbol = name_ref->identifier.symbol;
+            if (symbol and not name_ref->identifier.is_blank and
+                ((symbol->flags & STRFLAG_PROTECTED_GLOBAL) != 0)) {
+               ExpDesc resolved;
+               this->lex_state.var_lookup_symbol(symbol, &resolved);
+               if (resolved.k != ExpKind::Local and resolved.k != ExpKind::Upval) {
+                  return ParserResult<std::vector<PreparedAssignment>>::failure(this->make_error(
+                     ParserErrorCode::OverrideProtectedGlobal,
+                     std::format("cannot override built-in '{}'",
+                        std::string_view(strdata(symbol), symbol->len)),
+                     node->span));
+               }
+            }
+         }
+      }
+
       PreparedAssignment prepared;
       auto lvalue = this->emit_lvalue_expr(*node, AllocNewLocal, AllowSafeNav ? &prepared.safe_nav_skip : nullptr);
       if (not lvalue.ok()) return ParserResult<std::vector<PreparedAssignment>>::failure(lvalue.error_ref());

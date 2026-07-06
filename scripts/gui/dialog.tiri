@@ -89,7 +89,7 @@ gui.dialog.message = function(Options)
 
             state.checkbox = Document.getKey('checkbox') is '1' ? true :> false
 
-            input = Document.getKey('input')
+            local input = Document.getKey('input')
             if input?? then state.input = input end
 
             if self.inputRequired and not state.input then
@@ -149,7 +149,7 @@ gui.dialog.message = function(Options)
 
       icon = Options.image ?? defaultIcon(self)
       icon = rx_sanitise_icon.replace(icon, '$1/$2')
-      msg = self.fmtMessage
+      local msg = self.fmtMessage
       if not msg?? then
          msg = string.escXML(self.message ?? '')
          msg = string.replace(msg, '\n', '<br/>')

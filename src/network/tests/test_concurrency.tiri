@@ -64,7 +64,7 @@ end
          if err is ERR_Disconnected then return end
          assert(err is ERR_Okay, '[Server] Failed to read from client: ' .. mSys.GetErrorMsg(err))
 
-         msg = buffer:sub(0, read_len)
+         local msg = buffer:sub(0, read_len)
          print('[Server] Received: ' .. msg)
 
          -- Track messages per client
@@ -103,7 +103,7 @@ end
             err, read_len = Socket.acRead(buffer)
             assert(err is ERR_Okay, '[Client ' .. data.id .. '] Failed to read: ' .. mSys.GetErrorMsg(err))
 
-            msg = buffer:sub(0, read_len)
+            local msg = buffer:sub(0, read_len)
             data.messagesReceived++
 
             -- Store response for verification
@@ -242,7 +242,7 @@ end
       incoming = function(Socket, Client)
          buffer = string.alloc(1024)
          err, read_len = Client.acRead(buffer)
-         msg = buffer:sub(0, read_len)
+         local msg = buffer:sub(0, read_len)
 
          print('[Server] Received isolated message: ' .. msg)
 
@@ -270,7 +270,7 @@ end
          incoming = function(Socket, Script)
             buffer = string.alloc(1024)
             err, read_len = Socket.acRead(buffer)
-            msg = buffer:sub(0, read_len)
+            local msg = buffer:sub(0, read_len)
             clientId = i
 
             print(f'[Client {clientId}] Received: {msg}')

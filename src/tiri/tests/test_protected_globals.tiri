@@ -57,12 +57,32 @@ end
    assert_activation_fails([[global a, tostring = 1, 2]], 'multi-target global declaration')
 end
 
-@Test function AllowsPlainLocalShadowOfBuiltin()
+@Test function RejectsPlainAssignmentToBuiltin()
+   assert_activation_fails([[tostring = 5]], 'plain tostring assignment')
+end
+
+@Test function RejectsPlainAssignmentToBuiltinLibrary()
+   assert_activation_fails([[math = '']], 'plain math assignment')
+end
+
+@Test function RejectsPlainNilAssignmentToBuiltin()
+   assert_activation_fails([[obj = nil]], 'plain obj nil assignment')
+end
+
+@Test function RejectsProtectedNameInMultiTargetPlainAssignment()
+   assert_activation_fails([[local a; a, math = 1, 2]], 'multi-target plain assignment')
+end
+
+@Test function RejectsCompoundAssignmentToBuiltin()
+   assert_activation_fails([[tostring ..= 'x']], 'compound assignment to builtin')
+end
+
+@Test function AllowsMemberStoreIntoBuiltinTable()
    assert_activation_succeeds([[
-      tostring = 5
-      local copy = tostring
-      assert(copy is 5)
-   ]], 'plain local shadow')
+      math.custom = 5
+      assert(math.custom is 5)
+      math.custom = nil
+   ]], 'member store into builtin table')
 end
 
 @Test function AllowsExplicitLocalShadowReadingBuiltinFirst()
@@ -73,12 +93,22 @@ end
    ]], 'local shadow from builtin')
 end
 
+@Test function AllowsPlainReassignmentOfExplicitLocalShadow()
+   assert_activation_succeeds([[
+      local math = ''
+      math = 'reassigned'
+      assert(math is 'reassigned')
+      assert(type(_G.math) is 'table')
+   ]], 'plain reassignment of explicit local shadow')
+end
+
 @Test function AllowsLocalFunctionShadowOfBuiltin()
    assert_activation_succeeds([[
       function tostring()
          return 'local'
       end
       assert(tostring() is 'local')
+      assert(_G.tostring(5) is '5')
    ]], 'local function shadow')
 end
 

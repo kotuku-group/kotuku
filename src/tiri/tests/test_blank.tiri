@@ -75,7 +75,7 @@ end
 
 @Test(hotpath=true) function ForLoopPairsBlankValue()
    t = {a=1, b=2, c=3}
-   keys = {}
+   local keys = {}
    for key, _ in pairs(t) do
       table.insert(keys, key)
    end

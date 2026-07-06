@@ -37,7 +37,7 @@ function resolveSDKPath(Path:str)
    if err is ERR_Okay then
       sdk_path = rx_sdk_path.extract(sdk_path)
    else
-      msg = ''
+      local msg = ''
       for path in values(search_list) do
          msg ..= path .. '\n'
       end

@@ -53,7 +53,7 @@ end
    assert(query.mtEvaluate(glAccessorXML) is ERR_Okay, 'Evaluate() failed: ' .. tostring(query.errorMsg))
    root_base = query.resultString
 
-   err, type = mSys.AnalysePath(root_base .. 'primary.xml')
+   local err, type = mSys.AnalysePath(root_base .. 'primary.xml')
    assert(type is LOC_FILE, "base-uri() should return a path to the primary.xml file, got " .. tostring(root_base))
 end
 
@@ -108,7 +108,7 @@ end
 @Test function StaticBaseUriReflectsDocument()
    err, staticBase = glAccessorXML.mtEvaluate('static-base-uri()')
 
-   err, type = mSys.AnalysePath(staticBase .. 'primary.xml')
+   local err, type = mSys.AnalysePath(staticBase .. 'primary.xml')
    assert(err is ERR_Okay and type is LOC_FILE, "static-base-uri() should return a path to the primary.xml file, got " .. tostring(staticBase))
 end
 

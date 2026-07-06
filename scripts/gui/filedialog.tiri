@@ -42,7 +42,7 @@ gui.dialog.file = function(Options)
       end
 
       if (self.warnExists is true) and (#list > 0) then
-         _, type = mSys.AnalysePath((self.fileview.path ?? '') .. list[0].filename)
+         local _, type = mSys.AnalysePath((self.fileview.path ?? '') .. list[0].filename)
          if type is LOC_FILE then
             local msg
 

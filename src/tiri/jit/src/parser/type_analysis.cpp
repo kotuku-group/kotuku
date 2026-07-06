@@ -683,6 +683,16 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
 
          GCstr *name = name_ref->identifier.symbol;
 
+         // A plain identifier target naming a host pre-registered global is an override unless an
+         // explicit local shadow or parameter is in scope.
+
+         if (name and not name_ref->identifier.is_blank and
+             ((name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) and
+             not this->resolve_identifier(name)) {
+            this->report_protected_global_override(name, target.span);
+            continue;
+         }
+
          // First check local variables
 
          auto existing = this->resolve_identifier(name);

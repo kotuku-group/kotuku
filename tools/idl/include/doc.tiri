@@ -1289,7 +1289,7 @@ global function docStructures(References)
             arraySize = ''
             if f.arraySize then arraySize = " size=\"" .. f.arraySize .. '"' end
 
-            type = f.docType ?? 'NIL'
+            local type = f.docType ?? 'NIL'
             prototype = ''
             if f.isFunctionPtr then
                type = 'FUNCTION *'

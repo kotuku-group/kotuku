@@ -589,8 +589,8 @@ global function lspInitDocs(DocPath)
 end
 
 function runStdioServer(Self:table)
-   input = Self.stdioInput or io.input()
-   output = Self.stdioOutput or io.output()
+   local input = Self.stdioInput or io.input()
+   local output = Self.stdioOutput or io.output()
    stdio_state = {}
    disconnected = false
 

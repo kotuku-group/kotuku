@@ -24,7 +24,7 @@ function createTestFile(name, content)
 end
 
 function fileExists(path)
-   err, type = mSys.AnalysePath(path)
+   local err, type = mSys.AnalysePath(path)
    return err is ERR_Okay and type is LOC_FILE
 end
 

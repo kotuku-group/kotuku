@@ -220,27 +220,27 @@ end
 
 @Test function MetaToString()
    mt = { __tostring = function(Self) return 'MyObject(' .. Self.val .. ')' end }
-   obj = setmetatable({ val = 42 }, mt)
+   local obj = setmetatable({ val = 42 }, mt)
    result = tostring(obj)
    assert(result is 'MyObject(42)', "__tostring should return custom string, got '" .. result .. "'")
 end
 
 @Test function MetaToStringInConcat()
    mt = { __tostring = function(Self) return 'item' end }
-   obj = setmetatable({}, mt)
+   local obj = setmetatable({}, mt)
    result = 'The ' .. tostring(obj) .. ' is here'
    assert(result is 'The item is here', "__tostring used in concatenation, got '" .. result .. "'")
 end
 
 @Test function MetaLen()
    mt = { __len = function(Self) return Self.custom_size end }
-   obj = setmetatable({ custom_size = 42 }, mt)
+   local obj = setmetatable({ custom_size = 42 }, mt)
    assert(#obj is 42, "__len should return custom length, got " .. #obj)
 end
 
 @Test function MetaLenZero()
    mt = { __len = function(Self) return 0 end }
-   obj = setmetatable({ 'a', 'b', 'c' }, mt)
+   local obj = setmetatable({ 'a', 'b', 'c' }, mt)
    assert(#obj is 0, "__len returning 0 should override actual length")
 end
 
@@ -271,7 +271,7 @@ end
          return A .. B.val
       end
    }
-   obj = setmetatable({ val = 'data' }, mt)
+   local obj = setmetatable({ val = 'data' }, mt)
    result = obj .. '!'
    assert(result is 'data!', "__concat table..string, got '" .. result .. "'")
 
@@ -584,7 +584,7 @@ end
    Derived = setmetatable({}, { __index = Base })
    Derived.__index = Derived
    function Derived.new(Name, Extra)
-      obj = Base.new(Name)
+      local obj = Base.new(Name)
       obj.extra = Extra
       return setmetatable(obj, Derived)
    end

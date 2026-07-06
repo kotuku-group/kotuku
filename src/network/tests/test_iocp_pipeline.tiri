@@ -63,7 +63,7 @@ function RapidAcceptBurst()
             err, read_len = Socket.acRead(buffer)
             assert(err is ERR_Okay, 'Client failed to read burst response: ' .. mSys.GetErrorMsg(err))
 
-            msg = buffer:getString(0, read_len)
+            local msg = buffer:getString(0, read_len)
             if msg is 'ready' then
                err, len = Socket.acWrite('hello:' .. data.id)
                assert(err is ERR_Okay, 'Client failed to write hello: ' .. mSys.GetErrorMsg(err))
