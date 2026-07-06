@@ -1234,6 +1234,13 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
 
    this->ctx.pop_import();
 
+   // Merge the child context's diagnostics into the parent so that diagnose-mode errors and warnings collected
+   // while parsing the imported file survive with their own file_index (the child collector is discarded below).
+
+   for (const auto &entry : import_ctx.diagnostics().entries()) {
+      this->ctx.diagnostics().report(entry);
+   }
+
    if (not result.ok()) {
       // Prepend import context to error message
       ParserError error = result.error_ref();

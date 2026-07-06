@@ -217,6 +217,7 @@ ParserError ParserContext::make_error(ParserErrorCode code, const Token &token, 
 {
    ParserError error;
    error.code = code;
+   error.file_index = this->lex_state->current_file_index;
    error.token = token;
    error.message.assign(Message.begin(), Message.end());
    return error;
@@ -237,30 +238,40 @@ void ParserContext::trace_token_advance(const Token &previous, const Token &curr
 
 void ParserContext::emit_error(ParserErrorCode code, const Token &token, std::string_view Message)
 {
+   this->emit_error(ParserError(code, token, Message, this->lex_state->current_file_index));
+}
+
+//********************************************************************************************************************
+// Overload that preserves the error's own file_index.  Errors propagated from a child parser context (e.g. an
+// imported file) carry the child's file index; recomputing it from this context's lexer would attribute the
+// diagnostic to the importing file.
+
+void ParserContext::emit_error(const ParserError &Error)
+{
    ParserDiagnostic diagnostic;
    diagnostic.severity   = ParserDiagnosticSeverity::Error;
-   diagnostic.code       = code;
-   diagnostic.file_index = this->lex_state->current_file_index;
-   diagnostic.message.assign(Message.begin(), Message.end());
-   diagnostic.token      = token;
+   diagnostic.code       = Error.code;
+   diagnostic.file_index = Error.file_index;
+   diagnostic.message    = Error.message;
+   diagnostic.token      = Error.token;
    this->diag.report(diagnostic);
 
    if (this->current_config.abort_on_error) {
       // Log immediately since we're about to throw
-      this->log_trace(ParserChannel::Error, token, Message);
+      this->log_trace(ParserChannel::Error, Error.token, Error.message, Error.file_index);
 
       // Save the diagnostics for client analysis
       if (this->lua().parser_diagnostics) delete (ParserDiagnostics*)this->lua().parser_diagnostics;
       this->lua().parser_diagnostics = new ParserDiagnostics(this->diagnostics());
 
       this->rollback_before_error();
-      if (token.raw() IS 0 or token.kind() IS TokenKind::Unknown) {
-         std::string message(Message);
+      if (Error.token.raw() IS 0 or Error.token.kind() IS TokenKind::Unknown) {
+         std::string message = Error.message;
          if (message.empty()) message = "Parser error";
          lj_lex_error(this->lex_state, 0, ErrMsg::XPARSER, message.c_str());
          return;
       }
-      lj_lex_error(this->lex_state, this->lex_state->tok, ErrMsg::XTOKEN, this->lex_state->token2str(token.raw()));
+      lj_lex_error(this->lex_state, this->lex_state->tok, ErrMsg::XTOKEN, this->lex_state->token2str(Error.token.raw()));
    }
    // In DIAGNOSE mode (abort_on_error=false), skip logging - errors will be reported later
 }
@@ -362,7 +373,8 @@ std::string ParserContext::describe_token(const Token &Token) const
 
 //********************************************************************************************************************
 
-void ParserContext::log_trace(ParserChannel Channel, const Token &Token, std::string_view Note) const
+void ParserContext::log_trace(ParserChannel Channel, const Token &Token, std::string_view Note,
+   std::optional<uint8_t> FileIndex) const
 {
    kt::Log log("Parser");
 
@@ -380,12 +392,13 @@ void ParserContext::log_trace(ParserChannel Channel, const Token &Token, std::st
       default:                     channel = "Unknown"; break;
    }
 
-   // Resolve the lexer's current file index to a filename so that errors reference their source file.
-   // Token spans store raw (unencoded) lines, so the index must come from the lexer state.
+   // Resolve the file index to a filename so that errors reference their source file.  Token spans store raw
+   // (unencoded) lines, so the index comes from the caller or falls back to the lexer's current file.
 
    std::string location = std::format("{}:{}", line.lineNumber(), column.lineNumber());
    if (this->lua_state and this->lex_state and not this->lua_state->file_sources.empty()) {
-      const FileSource *src = get_file_source(this->lua_state, this->lex_state->current_file_index);
+      uint8_t file_index = FileIndex.value_or(this->lex_state->current_file_index);
+      const FileSource *src = get_file_source(this->lua_state, file_index);
       if (src and not src->filename.empty()) location = src->filename + ":" + location;
    }
 

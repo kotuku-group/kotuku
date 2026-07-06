@@ -63,7 +63,7 @@ end
 -- Test break in loop
 @Test function ShortHandBreak()
    iterations = 0
-   values = { 1, 2, 0, 4, 5 }  -- 0 at index 2 should break
+   local values = { 1, 2, 0, 4, 5 }  -- 0 at index 2 should break
 
    for i = 0, #values - 1 do
       values[i] ?! break
@@ -76,7 +76,7 @@ end
 -- Test continue in loop
 @Test function ShortHandContinue()
    sum = 0
-   values = { 1, 0, 2, "", 3 }  -- Skip falsey values
+   local values = { 1, 0, 2, "", 3 }  -- Skip falsey values
 
    for i = 0, #values - 1 do
       values[i] ?! continue
@@ -151,7 +151,7 @@ end
    first = array<int> { 1, 2 }
    empty = array<int>
    after_empty = array<int> { 3 }
-   values = array<array> { first, empty, after_empty }
+   local values = array<array> { first, empty, after_empty }
 
    iterations = 0
    total = 0
@@ -171,7 +171,7 @@ end
    second = array<int> { 0 }
    second_empty = array<int>
    third = array<int> { 2, 3 }
-   values = array<array> { first, first_empty, second, second_empty, third }
+   local values = array<array> { first, first_empty, second, second_empty, third }
 
    iterations = 0
    total = 0

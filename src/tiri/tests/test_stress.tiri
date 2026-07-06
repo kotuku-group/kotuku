@@ -209,6 +209,7 @@ end
    assert(result is 832040, "Fibonacci calculation failed")
 
    -- Test mutual recursion
+   global is_odd
    global function is_even(N)
       if N is 0 then
          return true

@@ -107,7 +107,7 @@ static void raise_accumulated_diagnostics(ParserContext &Context)
 
 static void report_pipeline_error(ParserContext &Context, const ParserError &Error)
 {
-   Context.emit_error(Error.code, Error.token, Error.message);
+   Context.emit_error(Error);  // Preserves the error's file_index for errors raised in imported files
 }
 
 //********************************************************************************************************************
