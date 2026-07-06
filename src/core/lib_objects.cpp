@@ -107,13 +107,15 @@ struct unsubscription {
       ObjectID(pObject), ActionID(pAction), Callback(pCallback ? *pCallback : FUNCTION{}), Filtered(pCallback) { }
 };
 
-static std::recursive_mutex glSubLock; // The following variables are locked by this mutex
+static std::recursive_mutex glSubLock; // Guards glSubscriptions; same-thread delayed queues are thread-local.
 static ankerl::unordered_dense::map<OBJECTID, ankerl::unordered_dense::map<int, std::vector<ActionSubscription> > > glSubscriptions;
-static std::vector<unsubscription> glDelayedUnsubscribe;
-static std::vector<subscription> glDelayedSubscribe;
-static int glSubReadOnly = 0; // To prevent modification of glSubscriptions
+static thread_local std::vector<unsubscription> glDelayedUnsubscribe;
+static thread_local std::vector<subscription> glDelayedSubscribe;
+static thread_local int glSubReadOnly = 0; // To prevent modification of glSubscriptions
 static std::mutex glZombieLock;
 static ankerl::unordered_dense::set<OBJECTPTR> glZombies;
+
+constexpr uint64_t notify_bit(ACTIONID Id) { return 1ULL << (int(Id) & 63); }
 
 static void free_children(OBJECTPTR Object);
 
@@ -872,7 +874,7 @@ ERR Action(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters)
    if (int(error) & int(ERR::Notified)) {
       error = ERR(int(error) & ~int(ERR::Notified));
    }
-   else if ((ActionID > AC::NIL) and (Object->NotifyFlags.load() & (1LL<<(int(ActionID) & 63)))) {
+   else if ((ActionID > AC::NIL) and (Object->NotifyFlags.load() & notify_bit(ActionID))) {
       std::lock_guard<std::recursive_mutex> lock(glSubLock);
 
       glSubReadOnly++;
@@ -2238,13 +2240,17 @@ void NotifySubscribers(OBJECTPTR Object, ACTIONID ActionID, APTR Parameters, ERR
    if (not Object) { log.warning(ERR::NullArgs); return; }
    if ((ActionID <= AC::NIL) or (ActionID >= AC::END)) { log.warning(ERR::Args); return; }
 
-   if (not (Object->NotifyFlags.load() & (1LL<<(int(ActionID) & 63)))) return;
+   if (not (Object->NotifyFlags.load() & notify_bit(ActionID))) return;
 
    const std::lock_guard<std::recursive_mutex> lock(glSubLock);
 
-   if ((not glSubscriptions[Object->UID].empty()) and (not glSubscriptions[Object->UID][int(ActionID)].empty())) {
+   const auto object_it = glSubscriptions.find(Object->UID);
+   const auto action_it = (object_it != glSubscriptions.end()) ? object_it->second.find(int(ActionID)) :
+      ankerl::unordered_dense::map<int, std::vector<ActionSubscription> >::iterator();
+
+   if ((object_it != glSubscriptions.end()) and (action_it != object_it->second.end()) and (not action_it->second.empty())) {
       glSubReadOnly++; // Prevents changes to glSubscriptions while we're processing it.
-      for (auto &sub : glSubscriptions[Object->UID][int(ActionID)]) {
+      for (auto &sub : action_it->second) {
          if (sub.Subscriber) {
             kt::SwitchContext ctx(sub.Subscriber);
             auto callback = (ACTION_CALLBACK)sub.Callback.Routine;
@@ -2279,7 +2285,7 @@ void NotifySubscribers(OBJECTPTR Object, ACTIONID ActionID, APTR Parameters, ERR
    }
    else {
       log.warning("Unstable subscription flags discovered for object #%d, action %d", Object->UID, int(ActionID));
-      Object->NotifyFlags.fetch_and(~(1<<(int(ActionID) & 63)), std::memory_order::relaxed);
+      Object->NotifyFlags.fetch_and(~notify_bit(ActionID), std::memory_order::relaxed);
    }
 }
 
@@ -2681,13 +2687,13 @@ ERR SubscribeAction(OBJECTPTR Object, ACTIONID ActionID, FUNCTION *Callback)
 
    if (glSubReadOnly) {
       glDelayedSubscribe.emplace_back(Object->UID, ActionID, *Callback);
-      Object->NotifyFlags.fetch_or(1LL<<(int(ActionID) & 63), std::memory_order::relaxed);
+      Object->NotifyFlags.fetch_or(notify_bit(ActionID), std::memory_order::relaxed);
    }
    else {
       std::lock_guard<std::recursive_mutex> lock(glSubLock);
 
       glSubscriptions[Object->UID][int(ActionID)].emplace_back(Callback->Context, *Callback);
-      Object->NotifyFlags.fetch_or(1LL<<(int(ActionID) & 63), std::memory_order::relaxed);
+      Object->NotifyFlags.fetch_or(notify_bit(ActionID), std::memory_order::relaxed);
    }
 
    return ERR::Okay;
@@ -2749,7 +2755,7 @@ ERR UnsubscribeAction(OBJECTPTR Object, ACTIONID ActionID, FUNCTION *Callback)
                else std::erase_if(list, [subscriber](const auto &sub) { return sub.SubscriberID IS subscriber; });
 
                if (list.empty()) {
-                  Object->NotifyFlags.fetch_and(~(1<<(action & 63)), std::memory_order::relaxed);
+                  Object->NotifyFlags.fetch_and(~notify_bit(ACTIONID(action)), std::memory_order::relaxed);
 
                   if (not Object->NotifyFlags.load()) {
                      glSubscriptions.erase(Object->UID);
@@ -2776,7 +2782,7 @@ ERR UnsubscribeAction(OBJECTPTR Object, ACTIONID ActionID, FUNCTION *Callback)
       else std::erase_if(list, [subscriber](const auto &sub) { return sub.SubscriberID IS subscriber; });
 
       if (list.empty()) {
-         Object->NotifyFlags.fetch_and(~(1<<(int(ActionID) & 63)), std::memory_order::relaxed);
+         Object->NotifyFlags.fetch_and(~notify_bit(ActionID), std::memory_order::relaxed);
 
          if (not Object->NotifyFlags.load()) {
             glSubscriptions.erase(Object->UID);
