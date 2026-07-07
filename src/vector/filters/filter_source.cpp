@@ -289,14 +289,10 @@ XMLDef: Returns an SVG compliant XML string that describes the filter.
 
 *********************************************************************************************************************/
 
-static ERR SOURCEFX_GET_XMLDef(extSourceFX *Self, std::string_view &Value)
+static ERR SOURCEFX_GET_XMLDef(extSourceFX *Self, std::string &Value)
 {
-   auto cppstr = std::string("feImage");
-   if (auto str = strclone(cppstr)) {
-      Value = std::string_view{str, cppstr.size()};
-      return ERR::Okay;
-   }
-   else return ERR::AllocMemory;
+   Value = std::string("feImage");
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -307,7 +303,7 @@ static const FieldArray clSourceFXFields[] = {
    { "AspectRatio", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SOURCEFX_SET_AspectRatio, &clAspectRatio },
    { "SourceName",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_I, nullptr, SOURCEFX_SET_SourceName },
    { "Source",      FDF_VIRTUAL|FDF_OBJECT|FDF_R|FDF_PURE, SOURCEFX_GET_Source, SOURCEFX_SET_Source, CLASSID::VECTOR },
-   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, SOURCEFX_GET_XMLDef },
+   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, SOURCEFX_GET_XMLDef },
    END_FIELD
 };
 

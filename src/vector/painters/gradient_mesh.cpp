@@ -268,9 +268,10 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 -END-
 *********************************************************************************************************************/
 
-static ERR GRADIENTMESH_GET_XMLDef(extGradientMesh *, std::string_view &Value)
+static ERR GRADIENTMESH_GET_XMLDef(extGradientMesh *, std::string &Value)
 {
-   return gradient_xml_result("meshgradient", Value);
+   Value = "meshgradient";
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -287,7 +288,7 @@ static const FieldArray clGradientMeshFields[] = {
    { "Rows",         FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, GRADIENTMESH_GET_Rows, GRADIENTMESH_SET_Rows },
    { "Columns",      FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, GRADIENTMESH_GET_Columns, GRADIENTMESH_SET_Columns },
    { "Patches",      FDF_VIRTUAL|FDF_VECTOR|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENTMESH_GET_Patches, GRADIENTMESH_SET_Patches, "MeshPatchRecord" },
-   { "XMLDef",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, GRADIENTMESH_GET_XMLDef },
+   { "XMLDef",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, GRADIENTMESH_GET_XMLDef },
    END_FIELD
 };
 

@@ -10,11 +10,6 @@ ramp forwards and then back again within each Span cycle, forming a triangular s
 `1.0` a single triangle spans the full turn: the ramp runs from start to end across the first half-turn and back to
 the start across the second.
 
--END-
-
-*********************************************************************************************************************/
-
-/*********************************************************************************************************************
 -FIELD-
 CX: The horizontal centre point of the gradient.
 
@@ -93,7 +88,7 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 -END-
 *********************************************************************************************************************/
 
-static ERR GRADIENTCONIC_GET_XMLDef(extGradientConic *Self, std::string_view &Value)
+static ERR GRADIENTCONIC_GET_XMLDef(extGradientConic *Self, std::string &Value)
 {
    std::stringstream stream;
    stream << "conicGradient";
@@ -101,7 +96,8 @@ static ERR GRADIENTCONIC_GET_XMLDef(extGradientConic *Self, std::string_view &Va
    gradient_xml_attr(stream, "cy", Self->CY);
    gradient_xml_attr(stream, "r", Self->Radius);
    if (Self->Span != 1.0) gradient_xml_attr(stream, "span", Self->Span);
-   return gradient_xml_result(stream.str(), Value);
+   Value = stream.str();
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -113,7 +109,7 @@ static const FieldArray clGradientConicFields[] = {
    { "CY",      FDF_UNIT|FDF_RW, nullptr, GRADIENTCONIC_SET_CY },
    { "Radius",  FDF_UNIT|FDF_RW, nullptr, GRADIENTCONIC_SET_Radius },
    { "Span",    FDF_DOUBLE|FDF_RW, nullptr, GRADIENTCONIC_SET_Span },
-   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, GRADIENTCONIC_GET_XMLDef },
+   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, GRADIENTCONIC_GET_XMLDef },
    END_FIELD
 };
 

@@ -782,15 +782,8 @@ class objVectorTransition : public Object {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[2];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -1351,15 +1344,8 @@ class objGradient : public Object {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -1475,15 +1461,8 @@ class objGradientLinear : public objGradient {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -1567,15 +1546,8 @@ class objGradientRadial : public objGradient {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -1659,15 +1631,8 @@ class objGradientConic : public objGradient {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -1731,15 +1696,8 @@ class objGradientDiamond : public objGradient {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -1793,15 +1751,8 @@ class objGradientContour : public objGradient {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -1901,15 +1852,8 @@ class objGradientMesh : public objGradient {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -1983,15 +1927,8 @@ class objGradientDistal : public objGradient {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -2243,15 +2180,8 @@ class objFilterEffect : public Object {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -2370,15 +2300,8 @@ class objImageFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -2437,15 +2360,8 @@ class objSourceFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -2504,15 +2420,8 @@ class objBlurFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -2567,15 +2476,8 @@ class objColourFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -2645,15 +2547,8 @@ class objCompositeFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -2768,15 +2663,8 @@ class objConvolveFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -2887,15 +2775,8 @@ class objDisplacementFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -2959,15 +2840,8 @@ class objFloodFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3067,15 +2941,8 @@ class objLightingFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3150,15 +3017,8 @@ class objMergeFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3212,15 +3072,8 @@ class objMorphologyFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3279,15 +3132,8 @@ class objOffsetFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3374,15 +3220,8 @@ class objRemapFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3446,15 +3285,8 @@ class objTurbulenceFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3559,15 +3391,8 @@ class objWaveFunctionFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3773,15 +3598,8 @@ class objVectorFilter : public Object {
 
    inline ERR getEffectXML(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[15];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -4160,13 +3978,8 @@ class objVector : public Object {
    inline ERR getSequence(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[16];
       SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       RestoreObjectContext();
       return error;
    }

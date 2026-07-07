@@ -53,17 +53,13 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 
 *********************************************************************************************************************/
 
-static ERR OFFSETFX_GET_XMLDef(extOffsetFX *Self, std::string_view &Value)
+static ERR OFFSETFX_GET_XMLDef(extOffsetFX *Self, std::string &Value)
 {
    std::stringstream stream;
    stream << "feOffset dx=\"" << Self->XOffset << "\" dy=\"" << Self->YOffset << "\"";
 
-   auto cppstr = stream.str();
-   if (auto str = strclone(stream.str())) {
-      Value = std::string_view{str, cppstr.size()};
-      return ERR::Okay;
-   }
-   else return ERR::AllocMemory;
+   Value = stream.str();
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -73,7 +69,7 @@ static ERR OFFSETFX_GET_XMLDef(extOffsetFX *Self, std::string_view &Value)
 static const FieldArray clOffsetFXFields[] = {
    { "XOffset", FDF_INT|FDF_RW },
    { "YOffset", FDF_INT|FDF_RW },
-   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, OFFSETFX_GET_XMLDef },
+   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, OFFSETFX_GET_XMLDef },
    END_FIELD
 };
 

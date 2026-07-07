@@ -62,13 +62,14 @@ static ERR GRADIENTCONTOUR_SET_Multiplier(extGradientContour *Self, double Value
    return ERR::Okay;
 }
 
-static ERR GRADIENTCONTOUR_GET_XMLDef(extGradientContour *Self, std::string_view &Value)
+static ERR GRADIENTCONTOUR_GET_XMLDef(extGradientContour *Self, std::string &Value)
 {
    std::stringstream stream;
    stream << "contourGradient";
    gradient_xml_attr(stream, "floor", Self->Floor);
    gradient_xml_attr(stream, "multiplier", Self->Multiplier);
-   return gradient_xml_result(stream.str(), Value);
+   Value = stream.str();
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -78,7 +79,7 @@ static ERR GRADIENTCONTOUR_GET_XMLDef(extGradientContour *Self, std::string_view
 static const FieldArray clGradientContourFields[] = {
    { "Floor",      FDF_DOUBLE|FDF_RW, nullptr, GRADIENTCONTOUR_SET_Floor },
    { "Multiplier", FDF_DOUBLE|FDF_RW, nullptr, GRADIENTCONTOUR_SET_Multiplier },
-   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, GRADIENTCONTOUR_GET_XMLDef },
+   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, GRADIENTCONTOUR_GET_XMLDef },
    END_FIELD
 };
 

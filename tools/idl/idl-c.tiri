@@ -5,8 +5,7 @@
 
    include 'core', 'xml'
 
-   import 'json'
-   import 'options'
+   import 'json', 'options'
 
    global glHeader = array<string>
    global glOutput = array<string>

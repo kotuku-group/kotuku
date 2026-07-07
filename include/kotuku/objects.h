@@ -589,6 +589,14 @@ struct alignas(8) Object { // Must be 64-bit aligned
             else return error;
          }
 
+         if ((flags & FD_STRING) and (flags & FD_ALLOC) and field->GetValue) {
+            if (not field->pure()) SetObjectContext(target, field, AC::NIL);
+            auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+            auto error = get_field(target, Value);
+            if (not field->pure()) RestoreObjectContext();
+            return error;
+         }
+
          int8_t field_value[sizeof(std::string_view)];
          auto fv = get_field_value(target, *field, field_value);
          APTR data = fv.second;
