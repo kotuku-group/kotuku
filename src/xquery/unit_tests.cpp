@@ -162,7 +162,10 @@ static ERR registered_function_test_callback(objXQuery *Query, std::string_view 
 static bool compile_query_for_test(extXQuery &Query, std::string_view Statement, FUNCTION ResolveVariable = FUNCTION())
 {
    Query.Statement.assign(Statement);
+   if (Query.ResolveVariable.defined()) Query.ResolveVariable.unpin();
+   Query.ResolveVariable.disable();
    Query.ResolveVariable = ResolveVariable;
+   if (Query.ResolveVariable.defined()) Query.ResolveVariable.pin();
    Query.ParseResult = CompiledXQuery();
    Query.ModuleCache.reset();
    Query.ErrorMsg.clear();
@@ -722,6 +725,7 @@ static void test_registered_function_qname_normalisation()
       registered_function_test_context context;
       FUNCTION callback = C_FUNCTION(registered_function_test_callback, &context);
       query.RegisteredFunctions["ext:double"] = callback;
+      query.RegisteredFunctions["ext:double"].pin();
 
       XPathVal result;
       bool ok = evaluate_query_text(query,
@@ -747,6 +751,7 @@ static void test_registered_function_qname_normalisation()
       registered_function_test_context context;
       FUNCTION callback = C_FUNCTION(registered_function_test_callback, &context);
       query.RegisteredFunctions["double"] = callback;
+      query.RegisteredFunctions["double"].pin();
 
       XPathVal result;
       bool ok = evaluate_query_text(query,

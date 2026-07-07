@@ -248,11 +248,13 @@ public:
 
 inline void release_callback(FUNCTION &Function)
 {
-   if (Function.isScript() and (not Function.Context->terminating())) {
-      ((objScript *)Function.Context)->derefProcedure(Function);
+   if (Function.defined()) {
+      if (Function.isScript() and (not Function.Context->terminating())) {
+         ((objScript *)Function.Context)->derefProcedure(Function);
+      }
+      Function.unpin();
+      Function.disable();
    }
-   Function.clear();
-   Function.Context->unpinWeak();
 }
 
 //********************************************************************************************************************
@@ -265,14 +267,6 @@ template <class T> inline void validate_object_link(T *&Link)
       Link->unpinWeak();
       Link = nullptr;
    }
-}
-
-//********************************************************************************************************************
-
-inline void deref_vector_callback(FUNCTION &Function)
-{
-   if (Function.isScript()) ((objScript *)Function.Context)->derefProcedure(Function);
-   Function.clear();
 }
 
 //********************************************************************************************************************

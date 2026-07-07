@@ -105,8 +105,15 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
                   {
                      const std::lock_guard<std::recursive_mutex> lock(glWindowHookLock);
                      if (auto it = glWindowHooks.find(hook); it != glWindowHooks.end()) {
-                        func = it->second;
-                        has_hook = true;
+                        if (it->second.stale()) {
+                           release_display_callback(it->second);
+                           glWindowHooks.erase(it);
+                        }
+                        else {
+                           func = it->second;
+                           func.pin();
+                           has_hook = true;
+                        }
                      }
                   }
 
@@ -125,12 +132,18 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
 
                      if (result IS ERR::Terminate) {
                         const std::lock_guard<std::recursive_mutex> lock(glWindowHookLock);
-                        glWindowHooks.erase(hook);
+                        if (auto it = glWindowHooks.find(hook); it != glWindowHooks.end()) {
+                           release_display_callback(it->second);
+                           glWindowHooks.erase(it);
+                        }
                      }
                      else if (result IS ERR::Cancelled) {
                         log.msg("Window closure cancelled by client.");
+                        if (func.defined()) func.unpin();
                         break;
                      }
+
+                     if (func.defined()) func.unpin();
                   }
 
                   log.msg("Freeing surface %d from display %d.", surface_id, display_id);

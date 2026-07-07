@@ -500,7 +500,12 @@ ERR XPathEvaluator::invoke_callback(XTag *Node, const XMLAttrib *Attribute, bool
       return ERR::Okay;
    }
 
-   if (query->Callback.isC()) {
+   if (query->Callback.stale()) {
+      query->Callback.unpin();
+      query->Callback.disable();
+      return ERR::Terminate;
+   }
+   else if (query->Callback.isC()) {
       auto routine = (ERR (*)(extXML *, int, CSTRING, APTR))query->Callback.Routine;
       return routine(xml, Node->ID, Attribute ? Attribute->Name.c_str() : nullptr, query->Callback.Meta);
    }

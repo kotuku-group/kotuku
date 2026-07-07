@@ -1066,7 +1066,8 @@ static ERR report_event(extDocument *Self, DEF Event, entity *Entity, KEYVALUE *
       auto entity_id = Entity ? Entity->uid : 0;
       log.traceBranch("Event $%x -> Entity %d", int(Event), entity_id);
 
-      if (Self->EventCallback.isC()) {
+      if (Self->EventCallback.stale()) deref_document_callback(Self->EventCallback);
+      else if (Self->EventCallback.isC()) {
          auto routine = (ERR (*)(extDocument *, DEF, KEYVALUE *, entity *, APTR))Self->EventCallback.Routine;
          kt::SwitchContext context(Self->EventCallback.Context);
          result = routine(Self, Event, EventData, Entity, Self->EventCallback.Meta);

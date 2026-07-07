@@ -725,7 +725,8 @@ blocking, callback-inlines
 
 ERR CopyFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback)
 {
-   return fs_copy(Source, Dest, Callback, FALSE);
+   if (Callback) Callback->consume();
+   return fs_copy(Source, Dest, Callback, false);
 }
 
 /*********************************************************************************************************************
@@ -844,6 +845,8 @@ ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback)
 {
    kt::Log log(__FUNCTION__);
 
+   if (Callback) Callback->consume();
+
    if (Path.empty()) return ERR::NullArgs;
 
    log.branch("%.*s", int(Path.size()), Path.data());
@@ -853,7 +856,7 @@ ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback)
    std::string resolve;
    if (!ResolvePath(Path, RSF::NIL, &resolve)) {
       auto vd = get_fs(resolve);
-      if (vd.Delete) return vd.Delete(resolve, nullptr);
+      if (vd.Delete) return vd.Delete(resolve, Callback);
       else return ERR::NoSupport;
    }
    else return ERR::ResolvePath;
@@ -1132,10 +1135,12 @@ ERR MoveFile(const std::string_view &Source, const std::string_view &Dest, FUNCT
 {
    kt::Log log(__FUNCTION__);
 
+   if (Callback) Callback->consume();
+
    if ((Source.empty()) or (Dest.empty())) return ERR::NullArgs;
 
    log.branch("%.*s to %.*s", int(Source.size()), Source.data(), int(Dest.size()), Dest.data());
-   return fs_copy(Source, Dest, Callback, TRUE);
+   return fs_copy(Source, Dest, Callback, true);
 }
 
 /*********************************************************************************************************************

@@ -63,13 +63,19 @@ ERR msg_threadcallback(APTR Custom, int MsgID, int MsgType, APTR Message, int Ms
 
    log.branch("Executing completion callback for thread #%d", uid);
 
-   if (msg->Callback.isC()) {
+   if (msg->Callback.stale()) clear_callback(msg->Callback);
+   else if (msg->Callback.isC()) {
       auto callback = (void (*)(OBJECTID, APTR))msg->Callback.Routine;
       callback(uid, msg->Callback.Meta);
    }
    else if (msg->Callback.isScript()) {
       ScopedObjectLock script(msg->Callback.Context, 5000);
       if (script.granted()) sc::Call(msg->Callback, std::to_array<ScriptArg>({ { "Thread", uid, FD_OBJECTID } }));
+   }
+
+   if (msg->Callback.defined()) {
+      msg->Callback.unpin();
+      msg->Callback.clear();
    }
 
    // NB: Assume 'msg' is unstable after this point because the callback may have modified the message table.
@@ -144,6 +150,7 @@ static ERR THREAD_Activate(extThread *Self)
       Self->InterruptThreadID.store(GetThreadID(), std::memory_order_release);
 
       ThreadMessage msg = { .ThreadID = uid, .Callback = Self->Callback };
+      if (msg.Callback.defined()) msg.Callback.pin();
 
       {
          // Replace the default dummy context with one that pertains to the thread
@@ -151,6 +158,10 @@ static ERR THREAD_Activate(extThread *Self)
 
          if (StopToken.stop_requested()) {
             Self->Error = ERR::Cancelled;
+         }
+         else if (Self->Routine.stale()) {
+            clear_callback(Self->Routine);
+            Self->Error = ERR::Terminate;
          }
          else if (Self->Routine.isC()) {
             auto routine = (ERR (*)(extThread *, APTR))Self->Routine.Routine;
@@ -298,6 +309,26 @@ static ERR GET_Data(extThread *Self, std::span<uint8_t> &Value)
    return ERR::Okay;
 }
 
+static ERR SET_Callback(extThread *Self, FUNCTION *Value)
+{
+   clear_callback(Self->Callback);
+   if (Value) {
+      Self->Callback = *Value;
+      if (Self->Callback.defined()) Self->Callback.pin();
+   }
+   return ERR::Okay;
+}
+
+static ERR SET_Routine(extThread *Self, FUNCTION *Value)
+{
+   clear_callback(Self->Routine);
+   if (Value) {
+      Self->Routine = *Value;
+      if (Self->Routine.defined()) Self->Routine.pin();
+   }
+   return ERR::Okay;
+}
+
 /*********************************************************************************************************************
 
 -FIELD-
@@ -330,6 +361,9 @@ extThread::~extThread()
    }
 
    if (CPPThread) { delete CPPThread; CPPThread = nullptr; }
+
+   clear_callback(Callback);
+   clear_callback(Routine);
 }
 
 //********************************************************************************************************************
@@ -337,8 +371,8 @@ extThread::~extThread()
 #include "class_thread_def.c"
 
 static const FieldArray clFields[] = {
-   { "Callback",  FDF_FUNCTION|FDF_RW },
-   { "Routine",   FDF_FUNCTION|FDF_RW },
+   { "Callback",  FDF_FUNCTION|FDF_RW, nullptr, SET_Callback },
+   { "Routine",   FDF_FUNCTION|FDF_RW, nullptr, SET_Routine },
    { "Data",      FDF_ARRAY|FDF_BYTE|FDF_R|FDF_PURE, GET_Data },
    { "DataSize",  FDF_INT|FDF_R },
    { "Error",     FDF_INT|FDF_R },

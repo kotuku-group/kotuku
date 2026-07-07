@@ -578,6 +578,15 @@ extern std::recursive_mutex glFocusLock;
 extern std::recursive_mutex glSurfaceLock;
 extern std::recursive_mutex glInputLock;
 
+inline void release_display_callback(FUNCTION &Function)
+{
+   if (Function.defined()) {
+      if (Function.isScript() and (not Function.stale())) ((objScript *)Function.Context)->derefProcedure(Function);
+      Function.unpin();
+      Function.disable();
+   }
+}
+
 // Thread-specific variables.
 
 extern thread_local int16_t tlNoDrawing, tlNoExpose, tlVolatileIndex;

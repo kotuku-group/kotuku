@@ -400,12 +400,27 @@ static ERR XQUERY_Evaluate(extXQuery *Self, struct xq::Evaluate *Args)
 
 //********************************************************************************************************************
 
+static void clear_xquery_callback(FUNCTION &Function)
+{
+   if (Function.defined()) {
+      if (Function.isScript() and (not Function.stale())) ((objScript *)Function.Context)->derefProcedure(Function);
+      Function.unpin();
+      Function.disable();
+   }
+}
+
+static void clear_registered_functions(extXQuery *Self)
+{
+   for (auto & [name, function] : Self->RegisteredFunctions) clear_xquery_callback(function);
+   Self->RegisteredFunctions.clear();
+}
+
+//********************************************************************************************************************
+
 extXQuery::~extXQuery()
 {
-   if (ResolveVariable.isScript()) {
-      UnsubscribeAction(ResolveVariable.Context, AC::Free);
-      ResolveVariable.clear();
-   }
+   clear_registered_functions(this);
+   clear_xquery_callback(ResolveVariable);
 }
 
 /*********************************************************************************************************************
@@ -642,7 +657,10 @@ static ERR XQUERY_RegisterFunction(extXQuery *Self, struct xq::RegisterFunction 
       return log.warning(ERR::NoSupport);
    }
 
-   Self->RegisteredFunctions[std::string(Args->FunctionName)] = *Args->Callback;
+   auto &function = Self->RegisteredFunctions[std::string(Args->FunctionName)];
+   clear_xquery_callback(function);
+   function = *Args->Callback;
+   function.pin();
    return ERR::Okay;
 }
 
@@ -721,12 +739,16 @@ static ERR XQUERY_Search(extXQuery *Self, struct xq::Search *Args)
 
    auto xml = (extXML *)Args->XML;
    Self->XML = xml;
-   if ((Args->Callback) and (Args->Callback->defined())) Self->Callback = *Args->Callback;
+   if ((Args->Callback) and (Args->Callback->defined())) {
+      Self->Callback = *Args->Callback;
+      Self->Callback.pin();
+   }
    else Self->Callback.Type = CALL::NIL;
    Self->ParseResult.error_msg.clear();
 
    auto clear_callback = kt::Defer([&]() {
-      Self->Callback.Type = CALL::NIL;
+      if (Self->Callback.defined()) Self->Callback.unpin();
+      Self->Callback.clear();
    });
 
    if ((Args->Index != 0) and (not xml)) {
@@ -900,9 +922,11 @@ static ERR SET_ResolveVariable(extXQuery *Self, FUNCTION *Value)
 {
    if (Value) {
       if (not Value->isC()) return ERR::NoSupport;
+      clear_xquery_callback(Self->ResolveVariable);
       Self->ResolveVariable = *Value;
+      Self->ResolveVariable.pin();
    }
-   else Self->ResolveVariable.clear();
+   else clear_xquery_callback(Self->ResolveVariable);
 
    return ERR::Okay;
 }

@@ -305,8 +305,15 @@ void MsgWindowClose(OBJECTID SurfaceID)
       {
          const std::lock_guard<std::recursive_mutex> lock(glWindowHookLock);
          if (auto it = glWindowHooks.find(hook); it != glWindowHooks.end()) {
-            func = it->second;
-            has_hook = true;
+            if (it->second.stale()) {
+               release_display_callback(it->second);
+               glWindowHooks.erase(it);
+            }
+            else {
+               func = it->second;
+               func.pin();
+               has_hook = true;
+            }
          }
       }
 
@@ -325,12 +332,18 @@ void MsgWindowClose(OBJECTID SurfaceID)
 
          if (result IS ERR::Terminate) {
             const std::lock_guard<std::recursive_mutex> lock(glWindowHookLock);
-            glWindowHooks.erase(hook);
+            if (auto it = glWindowHooks.find(hook); it != glWindowHooks.end()) {
+               release_display_callback(it->second);
+               glWindowHooks.erase(it);
+            }
          }
          else if (result IS ERR::Cancelled) {
             log.msg("Window closure cancelled by client.");
+            if (func.defined()) func.unpin();
             return;
          }
+
+         if (func.defined()) func.unpin();
       }
 
       if (!CheckResourceExists(SurfaceID)) FreeResource(SurfaceID);

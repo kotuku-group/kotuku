@@ -697,6 +697,11 @@ mutates-object, callback-held
 static ERR VECTOR_SubscribeFeedback(extVector *Self, struct vec::SubscribeFeedback *Args)
 {
    kt::Log log;
+   bool retained_callback = false;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (Args->Callback) and (not retained_callback)) Args->Callback->consume();
+   });
 
    if ((not Args) or (not Args->Callback)) return log.warning(ERR::NullArgs);
 
@@ -706,8 +711,9 @@ static ERR VECTOR_SubscribeFeedback(extVector *Self, struct vec::SubscribeFeedba
          if (not Self->FeedbackSubscriptions) return log.warning(ERR::AllocMemory);
       }
 
-      Args->Callback->Context->pinWeak();
+      Args->Callback->pin();
       Self->FeedbackSubscriptions->emplace_back(*Args->Callback, Args->Mask);
+      retained_callback = true;
    }
    else if (Self->FeedbackSubscriptions) { // Remove existing subscriptions for this callback
       for (auto it=Self->FeedbackSubscriptions->begin(); it != Self->FeedbackSubscriptions->end(); ) {
@@ -760,6 +766,11 @@ mutates-object, callback-held
 static ERR VECTOR_SubscribeInput(extVector *Self, struct vec::SubscribeInput *Args)
 {
    kt::Log log;
+   bool retained_callback = false;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (Args->Callback) and (not retained_callback)) Args->Callback->consume();
+   });
 
    // Refer to scene_input_events() for the origin of incoming input messages
 
@@ -784,8 +795,9 @@ static ERR VECTOR_SubscribeInput(extVector *Self, struct vec::SubscribeInput *Ar
       auto mask = Args->Mask;
 
       Self->InputMask |= mask;
-      Args->Callback->Context->pinWeak();
+      Args->Callback->pin();
       Self->InputSubscriptions->emplace_back(*Args->Callback, mask);
+      retained_callback = true;
       update_input_subscription_state(Self);
       mark_input_boundary_dirty(Self);
    }
@@ -840,6 +852,11 @@ mutates-object, callback-held
 static ERR VECTOR_SubscribeKeyboard(extVector *Self, struct vec::SubscribeKeyboard *Args)
 {
    kt::Log log;
+   bool retained_callback = false;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (Args->Callback) and (not retained_callback)) Args->Callback->consume();
+   });
 
    if ((!Args) or (!Args->Callback)) return log.warning(ERR::NullArgs);
 
@@ -852,8 +869,9 @@ static ERR VECTOR_SubscribeKeyboard(extVector *Self, struct vec::SubscribeKeyboa
 
    ((extVectorScene *)Self->Scene)->KeyboardSubscriptions.emplace(Self);
 
-   Args->Callback->Context->pinWeak();
+   Args->Callback->pin();
    Self->KeyboardSubscriptions->emplace_back(*Args->Callback);
+   retained_callback = true;
 
    return ERR::Okay;
 }
@@ -1797,9 +1815,6 @@ any time.  The conventional means for monitoring the size and position of any ve
 static ERR VECTOR_SET_ResizeEvent(extVector *Self, FUNCTION *Value)
 {
    if (Value) {
-      auto context = Value->Context;
-      context->pinWeak();
-
       Self->ResizeSubscription = true;
       if ((Self->Scene) and (Self->ParentView)) {
          auto scene = (extVectorScene *)Self->Scene;
@@ -1808,6 +1823,7 @@ static ERR VECTOR_SET_ResizeEvent(extVector *Self, FUNCTION *Value)
             release_callback(existing->second);
          }
          subs[Self] = *Value;
+         if (subs[Self].defined()) subs[Self].pin();
       }
       else {
          const std::lock_guard<std::mutex> lock(glResizeLock);
@@ -1815,6 +1831,7 @@ static ERR VECTOR_SET_ResizeEvent(extVector *Self, FUNCTION *Value)
             release_callback(existing->second);
          }
          glResizeSubscriptions[Self] = *Value; // Save the subscription for initialisation.
+         if (glResizeSubscriptions[Self].defined()) glResizeSubscriptions[Self].pin();
       }
    }
    else if (Self->ResizeSubscription) {

@@ -975,12 +975,9 @@ static int object_init(lua_State *Lua)
       report_action_error(Lua, def, "Init", error);
       lua_pushinteger(Lua, int(error));
       release_object(def);
-      return 1;
    }
-   else {
-      luaL_error(Lua, ERR::AccessObject);
-      return 0;
-   }
+   else luaL_error(Lua, ERR::AccessObject);
+   return 1;
 }
 
 //********************************************************************************************************************
@@ -1009,12 +1006,9 @@ static int object_with_lock(lua_State *Lua)
          return 0;
       }
       lua_pushvalue(Lua, 1); // Return the object
-      return 1;
    }
-   else {
-      luaL_argerror(Lua, 1, "Object expected for 'with' statement.");
-      return 0;
-   }
+   else luaL_argerror(Lua, 1, "Object expected for 'with' statement.");
+   return 1;
 }
 
 //********************************************************************************************************************

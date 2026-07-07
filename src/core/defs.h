@@ -1391,3 +1391,14 @@ typename Container::const_iterator binary_search(const Container& container, con
     }
     return container.end();
 }
+
+//********************************************************************************************************************
+
+static void clear_callback(FUNCTION &Function)
+{
+   if (Function.defined()) {
+      if (Function.isScript() and (not Function.stale())) ((objScript *)Function.Context)->derefProcedure(Function);
+      Function.unpin();
+      Function.disable();
+   }
+}

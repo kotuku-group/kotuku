@@ -140,6 +140,11 @@ void convert_samples(const InputType* input, int count, OutputType* output) {
 static void audio_stopped_event(extAudio &Audio, int SampleHandle)
 {
    auto &sample = Audio.Samples[SampleHandle];
+   if (sample.OnStop.stale()) {
+      release_audio_callback(sample.OnStop);
+      return;
+   }
+
    if (sample.OnStop.isC()) {
       kt::SwitchContext context(sample.OnStop.Context);
       auto routine = (void (*)(extAudio *, int, APTR))sample.OnStop.Routine;
@@ -155,6 +160,11 @@ static void audio_stopped_event(extAudio &Audio, int SampleHandle)
 
 static BYTELEN fill_stream_buffer(int Handle, AudioSample &Sample, int Offset)
 {
+   if (Sample.Callback.stale()) {
+      release_audio_callback(Sample.Callback);
+      return BYTELEN(0);
+   }
+
    if (Sample.Callback.isC()) {
       kt::SwitchContext context(Sample.Callback.Context);
       auto routine = (BYTELEN (*)(int, int, uint8_t *, int, APTR))Sample.Callback.Routine;

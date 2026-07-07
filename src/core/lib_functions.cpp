@@ -913,42 +913,69 @@ creates-resource, callback-held, blocking
 ERR SubscribeTimer(double Interval, FUNCTION *Callback, APTR *Subscription)
 {
    kt::Log log(__FUNCTION__);
+   bool retained_callback = false;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Callback) and (not retained_callback)) Callback->consume();
+   });
 
    if ((not Interval) or (not Callback)) return log.warning(ERR::NullArgs);
+   if (not Callback->defined()) return log.warning(ERR::Args);
    if (Interval < 0) return log.warning(ERR::Args);
 
    auto subscriber = tlContext.back().obj;
    if (subscriber->collecting()) return log.warning(ERR::InvalidState);
 
-   if (Callback->Type IS CALL::SCRIPT) log.msg(VLF::BRANCH|VLF::FUNCTION|VLF::DETAIL, "Interval: %.3fs", Interval);
+   if (Callback->isScript()) log.msg(VLF::BRANCH|VLF::FUNCTION|VLF::DETAIL, "Interval: %.3fs", Interval);
    else log.msg(VLF::BRANCH|VLF::FUNCTION|VLF::DETAIL, "Callback: %p, Interval: %.3fs", Callback->Routine, Interval);
 
    if (auto lock = std::unique_lock{glmTimer, 1000ms}) {
       auto usInterval = int64_t(Interval * 1000000.0); // Scale the interval to microseconds
+      auto subscribed = PreciseTime();
+      auto next_call = subscribed + usInterval;
+
       if (usInterval <= 40000) {
-         // TODO: Rapid timers should be synchronised with other existing timers to limit the number of
-         // interruptions that occur per second.
+         // Synchronise rapid timers that share an interval so the message loop can wake once for the group.
+         bool found_phase = false;
+         auto phase_call = next_call;
+
+         for (const auto &timer : glTimers) {
+            if ((timer.Interval != usInterval) or (timer.PendingInterval) or (timer.Routine.stale())) continue;
+
+            auto candidate = timer.NextCall;
+            if (candidate < next_call) {
+               auto cycles = ((next_call - candidate) + usInterval - 1) / usInterval;
+               candidate += cycles * usInterval;
+            }
+
+            if ((not found_phase) or (candidate < phase_call)) {
+               phase_call = candidate;
+               found_phase = true;
+            }
+         }
+
+         if (found_phase) next_call = phase_call;
       }
 
       auto it = glTimers.emplace(glTimers.end());
-      auto subscribed = PreciseTime();
       it->SubscriberID    = subscriber->UID;
       it->Interval        = usInterval;
       it->PendingInterval = 0;
       it->LastCall        = subscribed;
-      it->NextCall        = subscribed + usInterval;
+      it->NextCall        = next_call;
       it->Routine         = *Callback;
       it->Locked          = false;
       it->Cycle           = glTimerCycle - 1;
 
+      it->Routine.pin();
+
       if (subscriber->UID > 0) it->Subscriber = subscriber;
       else it->Subscriber = nullptr;
 
-      // For resource tracking purposes it is important for us to keep a record of the subscription so that
-      // we don't treat the object address as valid when it's been removed from the system.
-
-      subscriber->setFlag(NF::TIMER_SUB); // TODO: Use pin() instead?
+      // This flag lets object_free() cheaply detect and remove abandoned timer subscriptions.
+      subscriber->setFlag(NF::TIMER_SUB);
       if (Subscription) *Subscription = &*it;
+      retained_callback = true;
       return ERR::Okay;
    }
    else return log.warning(ERR::SystemLocked);
@@ -1010,12 +1037,17 @@ ERR UpdateTimer(APTR Subscription, double Interval)
          if (timer->Locked) {
             // A timer can't be removed during its execution, but we can nullify the function entry
             // and ProcessMessages() will automatically terminate it on the next cycle.
-            timer->Routine.Type = CALL::NIL;
+            if (timer->Routine.isScript() and (not timer->Routine.stale())) {
+               ((objScript *)timer->Routine.Context)->derefProcedure(timer->Routine);
+            }
+            if (timer->Routine.defined()) timer->Routine.unpin();
+            timer->Routine.clear();
             return log.warning(ERR::AlreadyLocked);
          }
 
          FUNCTION script_routine;
-         if (timer->Routine.isScript()) script_routine = timer->Routine;
+         if (timer->Routine.isScript() and (not timer->Routine.stale())) script_routine = timer->Routine;
+         if (timer->Routine.defined()) timer->Routine.unpin();
 
          for (auto it=glTimers.begin(); it != glTimers.end(); it++) {
             if (timer IS &(*it)) {

@@ -85,7 +85,11 @@ static ERR win32_audio_stream(extSound *, int64_t, int64_t);
 
 static void sound_stopped_event(extSound *Self)
 {
-   if (Self->OnStop.isC()) {
+   if (Self->OnStop.stale()) {
+      Self->OnStop.unpin();
+      Self->OnStop.clear();
+   }
+   else if (Self->OnStop.isC()) {
       kt::SwitchContext context(Self->OnStop.Context);
       auto routine = (void (*)(extSound *, APTR))Self->OnStop.Routine;
       routine(Self, Self->OnStop.Meta);
@@ -496,7 +500,9 @@ static ERR SOUND_Activate(extSound *Self)
 
 static void notify_onstop_free(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
-   ((extSound *)CurrentContext())->OnStop.clear();
+   auto self = (extSound *)CurrentContext();
+   if (self->OnStop.defined()) self->OnStop.unpin();
+   self->OnStop.clear();
 }
 
 /*********************************************************************************************************************
@@ -1431,14 +1437,22 @@ static ERR SOUND_GET_OnStop(extSound *Self, FUNCTION * &Value)
 
 static ERR SOUND_SET_OnStop(extSound *Self, FUNCTION *Value)
 {
-   if (Value) {
+   if (Self->OnStop.defined()) {
       if (Self->OnStop.isScript()) UnsubscribeAction(Self->OnStop.Context, AC::Free);
+      Self->OnStop.unpin();
+      Self->OnStop.disable();
+   }
+
+   if (Value) {
       Self->OnStop = *Value;
-      if (Self->OnStop.isScript()) {
-         SubscribeAction(Self->OnStop.Context, AC::Free, C_FUNCTION(notify_onstop_free));
+      if (Self->OnStop.defined()) {
+         Self->OnStop.pin();
+         if (Self->OnStop.isScript()) {
+            SubscribeAction(Self->OnStop.Context, AC::Free, C_FUNCTION(notify_onstop_free));
+         }
       }
    }
-   else Self->OnStop.clear();
+
    return ERR::Okay;
 }
 
@@ -1662,9 +1676,10 @@ extSound::~extSound() {
    if (StreamTimer)   UpdateTimer(StreamTimer, 0);
    if (PlaybackTimer) UpdateTimer(PlaybackTimer, 0);
 
-   if (OnStop.isScript()) {
-      UnsubscribeAction(OnStop.Context, AC::Free);
-      OnStop.clear();
+   if (OnStop.defined()) {
+      if (OnStop.isScript()) UnsubscribeAction(OnStop.Context, AC::Free);
+      OnStop.unpin();
+      OnStop.disable();
    }
 
 #ifdef USE_WIN32_PLAYBACK

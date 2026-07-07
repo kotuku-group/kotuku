@@ -24,16 +24,10 @@ Note: Support for audio recording is not currently available in this implementat
 
 #include "mixer_dispatch.h"
 
-static void deref_audio_callback(FUNCTION &Function)
-{
-   if (Function.isScript()) ((objScript *)Function.Context)->derefProcedure(Function);
-   Function.clear();
-}
-
 static void deref_audio_sample(AudioSample &Sample)
 {
-   deref_audio_callback(Sample.Callback);
-   deref_audio_callback(Sample.OnStop);
+   release_audio_callback(Sample.Callback);
+   release_audio_callback(Sample.OnStop);
 }
 
 #ifndef ALSA_ENABLED
@@ -260,6 +254,7 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
    sample.SampleType   = Args->SampleFormat;
    sample.SampleLength = SAMPLE(Args->DataSize >> shift);
    sample.OnStop       = Args->OnStop;
+   if (sample.OnStop.defined()) sample.OnStop.pin();
 
    if (auto loop = Args->Loop) {
       sample.LoopMode     = loop->LoopMode;
@@ -285,7 +280,10 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
    else if (!AllocMemory(Args->DataSize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&sample.Data)) {
       copymem(Args->Data, sample.Data, Args->DataSize);
    }
-   else return log.warning(ERR::AllocMemory);
+   else {
+      deref_audio_sample(sample);
+      return log.warning(ERR::AllocMemory);
+   }
 
    Args->Result = idx;
    return ERR::Okay;
@@ -394,6 +392,8 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
    sample.StreamLength = BYTELEN((Args->SampleLength > 0) ? Args->SampleLength : 0x7fffffff); // 'Infinite' stream length
    sample.Callback     = Args->Callback;
    sample.OnStop       = Args->OnStop;
+   if (sample.Callback.defined()) sample.Callback.pin();
+   if (sample.OnStop.defined()) sample.OnStop.pin();
    sample.Stream       = true;
    sample.PlayPos      = BYTELEN(Args->PlayOffset);
 
@@ -412,6 +412,7 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
    }
 
    if (AllocMemory(buffer_len, MEM::DATA|MEM::NO_CLEAR, (APTR *)&sample.Data) != ERR::Okay) {
+      deref_audio_sample(sample);
       return ERR::AllocMemory;
    }
 

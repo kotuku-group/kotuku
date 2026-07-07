@@ -18,6 +18,15 @@ inline BYTELEN &operator += (BYTELEN &a, BYTELEN b) { return (BYTELEN &)(((int &
 
 inline SAMPLE &operator -= (SAMPLE &a, SAMPLE b) { return (SAMPLE &)(((int &)a) -= ((int)b)); }
 
+inline void release_audio_callback(FUNCTION &Function)
+{
+   if (Function.defined()) {
+      if (Function.isScript() and (not Function.stale())) ((objScript *)Function.Context)->derefProcedure(Function);
+      Function.unpin();
+      Function.disable();
+   }
+}
+
 // Audio channel commands
 
 enum class CMD : int {

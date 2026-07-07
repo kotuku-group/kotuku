@@ -158,12 +158,6 @@ static ERR GET_ResolvedPath(extFile *, std::string_view &);
 
 static ERR set_permissions(extFile *, PERMIT);
 
-static void deref_file_callback(FUNCTION &Function)
-{
-   if (Function.isScript()) ((objScript *)Function.Context)->derefProcedure(Function);
-   Function.clear();
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Activate: Opens the file.  Performed automatically if `NEW`, `READ` or `WRITE` flags were specified on initialisation.
@@ -1575,6 +1569,11 @@ non-blocking, mutates-object, callback-held
 static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
 {
    kt::Log log;
+   bool retained_callback = false;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (Args->Callback) and (not retained_callback)) Args->Callback->consume();
+   });
 
    log.branch("%s, Flags: $%.8x", Self->Path.c_str(), (Args) ? int(Args->Flags) : 0);
 
@@ -1582,7 +1581,13 @@ static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
 
    if (Self->prvWatch) {
       auto id = Self->prvWatch->VirtualID;
-      deref_file_callback(Self->prvWatch->Routine);
+      auto &func = Self->prvWatch->Routine;
+
+      if ((func.isScript()) and (not func.stale())) {
+         ((objScript *)func.Context)->derefProcedure(func);
+      }
+      func.unpin();
+
       void (*ignore_file)(extFile *) = nullptr;
       {
          std::lock_guard<std::mutex> lock(glmVirtual);
@@ -1596,6 +1601,7 @@ static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
    }
 
    if ((not Args) or (not Args->Callback) or (Args->Flags IS MFF::NIL)) return ERR::Okay;
+   if (not Args->Callback->defined()) return log.warning(ERR::Args);
 
 #ifdef __linux__ // Initialise inotify if not done already.
 
@@ -1624,8 +1630,17 @@ static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
             Self->prvWatch->VirtualID = vd.VirtualID;
             Self->prvWatch->Routine   = *Args->Callback;
             Self->prvWatch->Flags     = Args->Flags;
+            Self->prvWatch->Routine.pin();
 
             error = vd.WatchPath(Self);
+            if (error IS ERR::Okay) retained_callback = true;
+            else {
+               auto &func = Self->prvWatch->Routine;
+               if ((func.isScript()) and (not func.stale())) ((objScript *)func.Context)->derefProcedure(func);
+               func.unpin();
+               FreeResource(Self->prvWatch);
+               Self->prvWatch = nullptr;
+            }
          }
          else error = ERR::AllocMemory;
       }

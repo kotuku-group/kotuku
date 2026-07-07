@@ -68,6 +68,7 @@ static ERR SET_EventCallback(extDocument *Self, FUNCTION *Value)
    if (Value) {
       deref_document_callback(Self->EventCallback);
       Self->EventCallback = *Value;
+      if (Self->EventCallback.defined()) Self->EventCallback.pin();
       if (subscribe_context) {
          SubscribeAction(Self->EventCallback.Context, AC::Free, C_FUNCTION(notify_free_script_context));
       }

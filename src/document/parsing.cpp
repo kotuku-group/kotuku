@@ -3305,7 +3305,10 @@ void parser::tag_trigger(const tag_view &Tag)
       std::string args;
       if (!extract_script(Self, function_name, &script, function_name, args)) {
          if (!script->getProcedureID(function_name, &function_id)) {
+            bool subscribe_context = not has_script_free_callback(Self, script);
             Self->Triggers[int(trigger_code)].emplace_back(FUNCTION(script, function_id));
+            Self->Triggers[int(trigger_code)].back().pin();
+            if (subscribe_context) SubscribeAction(script, AC::Free, C_FUNCTION(notify_free_script_context));
          }
          else log_warning(&Tag, "doc.trigger-procedure-missing", attrib_name("function"),
             "Unable to resolve '{}' in script #{} to a function ID (the procedure may not exist).",
