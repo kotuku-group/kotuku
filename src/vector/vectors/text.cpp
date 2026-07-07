@@ -186,7 +186,6 @@ class extVectorText : public extVector {
    using create = kt::Create<extVectorText>;
 
    std::vector<TextLine> txLines;
-   FUNCTION txValidateInput;
    FUNCTION txOnChange;
    double txInlineSize; // Enables word-wrapping
    Unit txX = Unit(0), txY = Unit(0);
@@ -247,6 +246,7 @@ class extVectorText : public extVector {
       if (txDX)           FreeResource(txDX);
       if (txDY)           FreeResource(txDY);
       if (txKeyEvent)     UnsubscribeEvent(txKeyEvent);
+      release_callback(txOnChange);
 
       if (txFocusID) {
          if (kt::ScopedObjectLock<extVector> focus(txFocusID, 5000); focus.granted()) {
@@ -288,7 +288,8 @@ inline double get_kerning(FT_Face Face, int Glyph, int PrevGlyph)
 
 inline void report_change(extVectorText *Self)
 {
-   if (Self->txOnChange.isC()) {
+   if (Self->txOnChange.stale()) release_callback(Self->txOnChange);
+   else if (Self->txOnChange.isC()) {
       auto routine = (void (*)(extVectorText *))Self->txOnChange.Routine;
       kt::SwitchContext context(Self->txOnChange.Context);
       routine(Self);
@@ -671,11 +672,11 @@ static ERR TEXT_GET_OnChange(extVectorText *Self, FUNCTION * &Value)
 
 static ERR TEXT_SET_OnChange(extVectorText *Self, FUNCTION *Value)
 {
+   release_callback(Self->txOnChange);
    if (Value) {
-      if (Self->txOnChange.isScript()) UnsubscribeAction(Self->txOnChange.Context, AC::Free);
       Self->txOnChange = *Value;
+      if (Self->txOnChange.defined()) Self->txOnChange.pin();
    }
-   else Self->txOnChange.clear();
    return ERR::Okay;
 }
 

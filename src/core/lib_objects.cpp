@@ -29,6 +29,15 @@ static void async_wait_callback(OBJECTID, bool);
 //static ERR new_placement(CLASSID ClassID, NF Flags, OBJECTPTR Object);
 static ERR set_owner(OBJECTPTR, OBJECTPTR);
 
+static void release_owned_callback(FUNCTION &Function)
+{
+   if (Function.defined()) {
+      if (Function.isScript() and (not Function.stale())) ((objScript *)Function.Context)->derefProcedure(Function);
+      Function.unpin();
+      Function.disable();
+   }
+}
+
 // AsyncWait() state — guarded by glmAsyncWait.
 
 static std::atomic<int> glAsyncWaitCounter;
@@ -77,6 +86,9 @@ void stop_async_actions(void)
    // Clear any remaining queued actions (no callbacks are sent during shutdown).
    {
       std::lock_guard<std::mutex> lock(glmActionQueue);
+      for (auto &queue_ref : glActionQueues) {
+         for (auto &action : queue_ref.second) release_owned_callback(action.Callback);
+      }
       glActionQueues.clear();
       glActiveAsyncObjects.clear();
       glCancelledAsyncObjects.clear();
@@ -449,9 +461,10 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
                if (it->SubscriberID IS Object->UID) {
                   log.warning("%s object #%d has an unfreed timer subscription, routine %p, interval %" PF64,
                      mc->ClassName.c_str(), Object->UID, &it->Routine, (long long)it->Interval);
-                  if (it->Routine.isScript() and (it->Routine.Context != Object)) {
+                  if (it->Routine.isScript() and (not it->Routine.stale()) and (it->Routine.Context != Object)) {
                      script_routines.emplace_back(it->Routine);
                   }
+                  if (it->Routine.defined()) it->Routine.unpin();
                   it = glTimers.erase(it);
                }
                else it++;
@@ -1131,6 +1144,7 @@ ERR AsyncAction(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters, FUNCTION *
    if (!error) {
       FUNCTION cb;
       if (Callback) cb = *Callback;
+      if (cb.defined()) cb.pin();
 
       // Check if an async action is already active for this object.  If so, queue the request
       // instead of spawning a competing thread.
@@ -1344,16 +1358,21 @@ ERR msg_threadaction(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgS
    auto msg = (ThreadActionMessage *)Message;
    if (not msg) return ERR::Okay;
 
-   if (msg->Callback.isC()) {
+   if (msg->Callback.stale()) {
+      release_owned_callback(msg->Callback);
+   }
+   else if (msg->Callback.isC()) {
       auto routine = (void (*)(ACTIONID, OBJECTPTR, ERR, APTR))msg->Callback.Routine;
       ScopedObjectLock obj(msg->ObjectID);
       if (obj.granted()) {
          routine(msg->ActionID, *obj, msg->Error, msg->Callback.Meta);
       }
       else routine(msg->ActionID, nullptr, ERR::DoesNotExist, msg->Callback.Meta);
+      release_owned_callback(msg->Callback);
    }
    else if (msg->Callback.isScript()) {
       auto script = msg->Callback.Context;
+      bool dereferenced = false;
       if (!LockObject(script, 5000)) {
          sc::Call(msg->Callback, std::to_array<ScriptArg>({
             { "ActionID", int(msg->ActionID) },
@@ -1365,9 +1384,15 @@ ERR msg_threadaction(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgS
          // Dereference the callback procedure to release the script registry reference.
          sc::DerefProcedure deref = { &msg->Callback };
          Action(sc::DerefProcedure::id, script, &deref);
+         dereferenced = true;
 
          ReleaseObject(script);
       }
+      if (dereferenced) {
+         if (msg->Callback.defined()) msg->Callback.unpin();
+         msg->Callback.clear();
+      }
+      else release_owned_callback(msg->Callback);
    }
 
    // Dispatch the next queued action for this object (if any).

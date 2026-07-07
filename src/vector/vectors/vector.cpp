@@ -711,7 +711,7 @@ static ERR VECTOR_SubscribeFeedback(extVector *Self, struct vec::SubscribeFeedba
          if (not Self->FeedbackSubscriptions) return log.warning(ERR::AllocMemory);
       }
 
-      Args->Callback->Context->pinWeak();
+      Args->Callback->pin();
       Self->FeedbackSubscriptions->emplace_back(*Args->Callback, Args->Mask);
       retained_callback = true;
    }
@@ -795,7 +795,7 @@ static ERR VECTOR_SubscribeInput(extVector *Self, struct vec::SubscribeInput *Ar
       auto mask = Args->Mask;
 
       Self->InputMask |= mask;
-      Args->Callback->Context->pinWeak();
+      Args->Callback->pin();
       Self->InputSubscriptions->emplace_back(*Args->Callback, mask);
       retained_callback = true;
       update_input_subscription_state(Self);
@@ -869,7 +869,7 @@ static ERR VECTOR_SubscribeKeyboard(extVector *Self, struct vec::SubscribeKeyboa
 
    ((extVectorScene *)Self->Scene)->KeyboardSubscriptions.emplace(Self);
 
-   Args->Callback->Context->pinWeak();
+   Args->Callback->pin();
    Self->KeyboardSubscriptions->emplace_back(*Args->Callback);
    retained_callback = true;
 
@@ -1815,9 +1815,6 @@ any time.  The conventional means for monitoring the size and position of any ve
 static ERR VECTOR_SET_ResizeEvent(extVector *Self, FUNCTION *Value)
 {
    if (Value) {
-      auto context = Value->Context;
-      context->pinWeak();
-
       Self->ResizeSubscription = true;
       if ((Self->Scene) and (Self->ParentView)) {
          auto scene = (extVectorScene *)Self->Scene;
@@ -1826,6 +1823,7 @@ static ERR VECTOR_SET_ResizeEvent(extVector *Self, FUNCTION *Value)
             release_callback(existing->second);
          }
          subs[Self] = *Value;
+         if (subs[Self].defined()) subs[Self].pin();
       }
       else {
          const std::lock_guard<std::mutex> lock(glResizeLock);
@@ -1833,6 +1831,7 @@ static ERR VECTOR_SET_ResizeEvent(extVector *Self, FUNCTION *Value)
             release_callback(existing->second);
          }
          glResizeSubscriptions[Self] = *Value; // Save the subscription for initialisation.
+         if (glResizeSubscriptions[Self].defined()) glResizeSubscriptions[Self].pin();
       }
    }
    else if (Self->ResizeSubscription) {

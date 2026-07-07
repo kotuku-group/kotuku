@@ -59,7 +59,13 @@ static ERR msghandler_free(ResourceRecord &Resource, APTR Address)
    if (h->Next) h->Next->Prev = h->Prev;
    if (h->Prev) h->Prev->Next = h->Next;
 
-   if (h->Function.isScript()) ((objScript *)h->Function.Context)->derefProcedure(h->Function);
+   if (h->Function.defined()) {
+      if (h->Function.isScript() and (not h->Function.stale())) {
+         ((objScript *)h->Function.Context)->derefProcedure(h->Function);
+      }
+      h->Function.unpin();
+      h->Function.disable();
+   }
 
    return ERR::Terminate;
 }
@@ -150,6 +156,7 @@ ERR AddMsgHandler(MSGID MsgType, FUNCTION *Routine, MsgHandler **Handle)
       handler->Next     = nullptr;
       handler->MsgType  = MsgType;
       handler->Function = *Routine;
+      handler->Function.pin();
 
       if (!glMsgHandlers) glMsgHandlers = handler;
       else {
@@ -268,6 +275,10 @@ timer_cycle:
          for (auto timer=glTimers.begin(); timer != glTimers.end(); ) {
             if (current_time < timer->NextCall) { timer++; continue; }
             if (timer->Cycle IS glTimerCycle) { timer++; continue; }
+            if (timer->Routine.releaseIfStale()) {
+               timer = glTimers.erase(timer);
+               continue;
+            }
 
             int64_t elapsed = current_time - timer->LastCall;
 
@@ -322,9 +333,10 @@ timer_cycle:
             timer->Locked = false;
 
             if (error IS ERR::Terminate) {
-               if (timer->Routine.isScript()) {
+               if (timer->Routine.isScript() and (not timer->Routine.stale())) {
                   ((objScript *)timer->Routine.Context)->derefProcedure(timer->Routine);
                }
+               if (timer->Routine.defined()) timer->Routine.unpin();
 
                timer = glTimers.erase(timer);
             }
@@ -367,7 +379,8 @@ timer_cycle:
          for (auto hdl=glMsgHandlers; hdl; hdl=hdl->Next) {
             if ((hdl->MsgType IS MSGID::NIL) or (hdl->MsgType IS msg.Type)) {
                auto result = ERR::NoSupport;
-               if (hdl->Function.isC()) {
+               if (hdl->Function.stale()) continue;
+               else if (hdl->Function.isC()) {
                   auto msghandler = (ERR (*)(APTR, int, MSGID, APTR, int))hdl->Function.Routine;
                   if (msg.Size) result = msghandler(hdl->Function.Meta, msg.UID, msg.Type, msg.getBuffer(), msg.Size);
                   else result = msghandler(hdl->Function.Meta, msg.UID, msg.Type, nullptr, 0);

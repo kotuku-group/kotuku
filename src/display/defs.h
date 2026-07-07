@@ -580,8 +580,11 @@ extern std::recursive_mutex glInputLock;
 
 inline void release_display_callback(FUNCTION &Function)
 {
-   if (Function.isScript()) ((objScript *)Function.Context)->derefProcedure(Function);
-   Function.clear();
+   if (Function.defined()) {
+      if (Function.isScript() and (not Function.stale())) ((objScript *)Function.Context)->derefProcedure(Function);
+      Function.unpin();
+      Function.disable();
+   }
 }
 
 // Thread-specific variables.

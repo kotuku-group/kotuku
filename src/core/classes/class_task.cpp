@@ -166,7 +166,8 @@ static void task_stdinput_callback(HOSTHANDLE FD, void *Task)
       buffer[0] = 0;
    }
 
-   if (Self->InputCallback.isC()) {
+   if (Self->InputCallback.stale()) clear_callback(Self->InputCallback);
+   else if (Self->InputCallback.isC()) {
       auto routine = (void (*)(extTask *, APTR, int, ERR, APTR))Self->InputCallback.Routine;
       routine(Self, buffer, bytes_read, error, Self->InputCallback.Meta);
    }
@@ -216,7 +217,8 @@ static int read_task_stdout(HOSTHANDLE FD, APTR Task)
       buffer[len] = 0;
 
       auto task = (extTask *)Task;
-      if (task->OutputCallback.isC()) {
+      if (task->OutputCallback.stale()) clear_callback(task->OutputCallback);
+      else if (task->OutputCallback.isC()) {
          auto routine = (void (*)(extTask *, APTR, int, APTR))task->OutputCallback.Routine;
          routine(task, buffer, len, task->OutputCallback.Meta);
       }
@@ -275,7 +277,8 @@ static int read_task_stderr(HOSTHANDLE FD, APTR Task)
       buffer[len] = 0;
 
       auto task = (extTask *)Task;
-      if (task->ErrorCallback.isC()) {
+      if (task->ErrorCallback.stale()) clear_callback(task->ErrorCallback);
+      else if (task->ErrorCallback.isC()) {
          auto routine = (void (*)(extTask *, APTR, int, APTR))task->ErrorCallback.Routine;
          routine(task, buffer, len, task->ErrorCallback.Meta);
       }
@@ -511,7 +514,8 @@ static void task_process_end(extTask *Task, int ReturnCode, bool Returned)
       Task->ReturnCodeSet = true;
    }
 
-   if (Task->ExitCallback.isC()) {
+   if (Task->ExitCallback.stale()) clear_callback(Task->ExitCallback);
+   else if (Task->ExitCallback.isC()) {
       auto routine = (void (*)(extTask *, APTR))Task->ExitCallback.Routine;
       routine(Task, Task->ExitCallback.Meta);
    }
@@ -618,7 +622,8 @@ static void task_process_end(WINHANDLE FD, extTask *Task)
 
    // Call ExitCallback, if specified
 
-   if (Task->ExitCallback.isC()) {
+   if (Task->ExitCallback.stale()) clear_callback(Task->ExitCallback);
+   else if (Task->ExitCallback.isC()) {
       auto routine = (void (*)(extTask *, APTR))Task->ExitCallback.Routine;
       routine(Task, Task->ExitCallback.Meta);
    }
@@ -1547,6 +1552,7 @@ static ERR TASK_Init(extTask *Self)
       FUNCTION call;
       call.Type = CALL::STD_C;
       call.Routine = (APTR)msg_action;
+      call.Context = Self;
       AddMsgHandler(MSGID::ACTION, &call, &handler);
       Self->MsgAction.reset(handler);
 
@@ -1992,8 +1998,11 @@ static ERR GET_ErrorCallback(extTask *Self, FUNCTION * &Value)
 
 static ERR SET_ErrorCallback(extTask *Self, FUNCTION *Value)
 {
-   if (Value) Self->ErrorCallback = *Value;
-   else Self->ErrorCallback.clear();
+   clear_callback(Self->ErrorCallback);
+   if (Value) {
+      Self->ErrorCallback = *Value;
+      if (Self->ErrorCallback.defined()) Self->ErrorCallback.pin();
+   }
    return ERR::Okay;
 }
 
@@ -2021,8 +2030,11 @@ static ERR GET_ExitCallback(extTask *Self, FUNCTION * &Value)
 
 static ERR SET_ExitCallback(extTask *Self, FUNCTION *Value)
 {
-   if (Value) Self->ExitCallback = *Value;
-   else Self->ExitCallback.clear();
+   clear_callback(Self->ExitCallback);
+   if (Value) {
+      Self->ExitCallback = *Value;
+      if (Self->ExitCallback.defined()) Self->ExitCallback.pin();
+   }
    return ERR::Okay;
 }
 
@@ -2079,7 +2091,9 @@ static ERR SET_InputCallback(extTask *Self, FUNCTION *Value)
       #elif _WIN32
       if (auto error = RegisterFD(winGetStdInput(), RFD::READ, &task_stdinput_callback, Self); !error) {
       #endif
+         clear_callback(Self->InputCallback);
          Self->InputCallback = *Value;
+         if (Self->InputCallback.defined()) Self->InputCallback.pin();
       }
       else return error;
    }
@@ -2089,7 +2103,7 @@ static ERR SET_InputCallback(extTask *Self, FUNCTION *Value)
       #else
       if (Self->InputCallback.defined()) RegisterFD(fileno(stdin), RFD::READ|RFD::REMOVE, &task_stdinput_callback, Self);
       #endif
-      Self->InputCallback.clear();
+      clear_callback(Self->InputCallback);
    }
 
    return ERR::Okay;
@@ -2120,8 +2134,11 @@ static ERR GET_OutputCallback(extTask *Self, FUNCTION * &Value)
 
 static ERR SET_OutputCallback(extTask *Self, FUNCTION *Value)
 {
-   if (Value) Self->OutputCallback = *Value;
-   else Self->OutputCallback.clear();
+   clear_callback(Self->OutputCallback);
+   if (Value) {
+      Self->OutputCallback = *Value;
+      if (Self->OutputCallback.defined()) Self->OutputCallback.pin();
+   }
    return ERR::Okay;
 }
 
@@ -2430,6 +2447,11 @@ extTask::~extTask()
    if (Platform) { winFreeProcess(Platform); Platform = nullptr; }
    if (InputCallback.defined()) RegisterFD(winGetStdInput(), RFD::READ|RFD::REMOVE, &task_stdinput_callback, this);
 #endif
+
+   clear_callback(ErrorCallback);
+   clear_callback(OutputCallback);
+   clear_callback(ExitCallback);
+   clear_callback(InputCallback);
 }
 
 //********************************************************************************************************************

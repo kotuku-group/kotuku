@@ -1631,9 +1631,16 @@ static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
             Self->prvWatch->Routine   = *Args->Callback;
             Self->prvWatch->Flags     = Args->Flags;
             Self->prvWatch->Routine.pin();
-            retained_callback = true;
 
             error = vd.WatchPath(Self);
+            if (error IS ERR::Okay) retained_callback = true;
+            else {
+               auto &func = Self->prvWatch->Routine;
+               if ((func.isScript()) and (not func.stale())) ((objScript *)func.Context)->derefProcedure(func);
+               func.unpin();
+               FreeResource(Self->prvWatch);
+               Self->prvWatch = nullptr;
+            }
          }
          else error = ERR::AllocMemory;
       }

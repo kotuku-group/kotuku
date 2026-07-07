@@ -242,6 +242,7 @@ static ERR DOCUMENT_AddListener(extDocument *Self, doc::AddListener *Args)
    }
 
    Self->Triggers[int(Args->Trigger)].push_back(*Args->Function);
+   Args->Function->pin();
    retained_callback = true;
 
    // Scripts can't auto-remove listeners, so a Free subscription is necessary.  Functional

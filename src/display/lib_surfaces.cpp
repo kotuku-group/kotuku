@@ -835,10 +835,16 @@ void process_surface_callbacks(extSurface *Self, extBitmap *Bitmap)
       log.traceBranch("Bitmap: %d, Count: %d", Bitmap->UID, Self->CallbackCount);
    #endif
 
-   for (int i=0; i < Self->CallbackCount; i++) {
+   for (int i=0; i < Self->CallbackCount; ) {
       Bitmap->Opacity = 255;
       auto &cb = Self->Callback[i].Function;
-      if (cb.isC()) {
+      if (cb.stale()) {
+         deref_surface_callback(cb);
+         for (int j=i; j < Self->CallbackCount-1; j++) Self->Callback[j] = Self->Callback[j+1];
+         Self->CallbackCount--;
+         continue;
+      }
+      else if (cb.isC()) {
          auto routine = (void (*)(APTR, extSurface *, objBitmap *, APTR))cb.Routine;
 
          #ifdef DBG_DRAW_ROUTINES
@@ -858,6 +864,7 @@ void process_surface_callbacks(extSurface *Self, extBitmap *Bitmap)
             { "Bitmap",  Bitmap, FD_OBJECTPTR }
          }));
       }
+      i++;
    }
 
    Bitmap->Opacity = 255;
@@ -1541,6 +1548,7 @@ ERR WindowHook(OBJECTID SurfaceID, WH Event, FUNCTION *Callback)
    }
    else glWindowHooks[hook] = *Callback;
 
+   Callback->pin();
    retained_callback = true;
    return ERR::Okay;
 }

@@ -535,6 +535,11 @@ static std::optional<XPathVal> resolve_registered_function(XPathEvaluator &Evalu
    }
 
    if (callback IS Evaluator.query->RegisteredFunctions.end()) return std::nullopt;
+   if (callback->second.stale()) {
+      callback->second.unpin();
+      Evaluator.query->RegisteredFunctions.erase(callback);
+      return std::nullopt;
+   }
 
    std::vector<XPathValue> public_args;
    public_args.reserve(Args.size());

@@ -122,6 +122,7 @@ ERR SubscribeInput(FUNCTION *Callback, OBJECTID SurfaceFilter, JTYPE InputMask, 
    };
 
    glInputCallbacks.emplace(*Handle, is);
+   Callback->pin();
    retained_callback = true;
 
    return ERR::Okay;
@@ -187,7 +188,27 @@ struct input_call {
    std::vector<InputEvent> events;
 
    input_call(int Handle, const InputCallback &Input) :
-      handle(Handle), surface_filter(Input.SurfaceFilter), input_mask(Input.InputMask), callback(Input.Callback) { }
+      handle(Handle), surface_filter(Input.SurfaceFilter), input_mask(Input.InputMask), callback(Input.Callback) {
+      if (callback.defined()) callback.pin();
+   }
+
+   ~input_call() {
+      if (callback.defined()) callback.unpin();
+   }
+
+   input_call(input_call &&Other) noexcept:
+      handle(Other.handle),
+      surface_filter(Other.surface_filter),
+      input_mask(Other.input_mask),
+      callback(Other.callback),
+      events(std::move(Other.events))
+   {
+      Other.callback.clear();
+   }
+
+   input_call(const input_call &) = delete;
+   input_call & operator=(const input_call &) = delete;
+   input_call & operator=(input_call &&) = delete;
 };
 
 static bool input_event_match(const InputEvent &Event, const input_call &Sub)
@@ -215,8 +236,15 @@ void input_event_loop(HOSTHANDLE FD, APTR Data) // Data is undefined
 
       input_buffer.reserve(glInputCallbacks.size());
 
-      for (const auto & [ handle, sub ] : glInputCallbacks) {
-         input_buffer.emplace_back(handle, sub);
+      for (auto it = glInputCallbacks.begin(); it != glInputCallbacks.end(); ) {
+         if (it->second.Callback.stale()) {
+            release_display_callback(it->second.Callback);
+            it = glInputCallbacks.erase(it);
+         }
+         else {
+            input_buffer.emplace_back(it->first, it->second);
+            it++;
+         }
       }
    }
 

@@ -51,8 +51,11 @@ static ERR redraw_timer(extSurface *, int64_t, int64_t);
 
 static void deref_surface_callback(FUNCTION &Function)
 {
-   if (Function.isScript()) ((objScript *)Function.Context)->derefProcedure(Function);
-   Function.clear();
+   if (Function.defined()) {
+      if (Function.isScript() and (not Function.stale())) ((objScript *)Function.Context)->derefProcedure(Function);
+      Function.unpin();
+      Function.clear();
+   }
 }
 
 static void deref_surface_callback_range(SurfaceCallback *Callbacks, int Total)
@@ -678,6 +681,7 @@ static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
          }
          Self->Callback[i].Object   = context;
          Self->Callback[i].Function = *Args->Callback;
+         retained_callback = true;
          return ERR::Okay;
       }
       else if (Self->CallbackCount < Self->CallbackSize) {
@@ -720,6 +724,7 @@ static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
       SubscribeAction(Args->Callback->Context, AC::Free, C_FUNCTION(notify_free_callback));
    }
 
+   Args->Callback->pin();
    retained_callback = true;
    return ERR::Okay;
 }
