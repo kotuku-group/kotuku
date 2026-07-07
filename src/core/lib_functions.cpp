@@ -913,6 +913,11 @@ creates-resource, callback-held, blocking
 ERR SubscribeTimer(double Interval, FUNCTION *Callback, APTR *Subscription)
 {
    kt::Log log(__FUNCTION__);
+   bool retained_callback = false;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Callback) and (not retained_callback)) Callback->consume();
+   });
 
    if ((not Interval) or (not Callback)) return log.warning(ERR::NullArgs);
    if (Interval < 0) return log.warning(ERR::Args);
@@ -949,6 +954,7 @@ ERR SubscribeTimer(double Interval, FUNCTION *Callback, APTR *Subscription)
 
       subscriber->setFlag(NF::TIMER_SUB); // TODO: Use pin() instead?
       if (Subscription) *Subscription = &*it;
+      retained_callback = true;
       return ERR::Okay;
    }
    else return log.warning(ERR::SystemLocked);

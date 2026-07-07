@@ -1525,11 +1525,23 @@ callback-held, does-not-take-ownership, blocking
 
 ERR WindowHook(OBJECTID SurfaceID, WH Event, FUNCTION *Callback)
 {
+   bool retained_callback = false;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Callback) and (not retained_callback)) Callback->consume();
+   });
+
    if ((!SurfaceID) or (Event IS WH::NIL) or (!Callback)) return ERR::NullArgs;
 
    const WinHook hook(SurfaceID, Event);
    const std::lock_guard<std::recursive_mutex> lock(glWindowHookLock);
-   glWindowHooks[hook] = *Callback;
+   if (auto existing = glWindowHooks.find(hook); existing != glWindowHooks.end()) {
+      release_display_callback(existing->second);
+      existing->second = *Callback;
+   }
+   else glWindowHooks[hook] = *Callback;
+
+   retained_callback = true;
    return ERR::Okay;
 }
 

@@ -227,6 +227,12 @@ mutates-object, callback-held
 
 static ERR DOCUMENT_AddListener(extDocument *Self, doc::AddListener *Args)
 {
+   bool retained_callback = false;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (Args->Function) and (not retained_callback)) Args->Function->consume();
+   });
+
    if ((not Args) or (Args->Trigger IS DRT::NIL) or (not Args->Function)) return ERR::NullArgs;
    if (not valid_trigger(Args->Trigger)) return ERR::OutOfRange;
 
@@ -236,6 +242,7 @@ static ERR DOCUMENT_AddListener(extDocument *Self, doc::AddListener *Args)
    }
 
    Self->Triggers[int(Args->Trigger)].push_back(*Args->Function);
+   retained_callback = true;
 
    // Scripts can't auto-remove listeners, so a Free subscription is necessary.  Functional
    // subscribers are expected to self-manage however.

@@ -125,7 +125,10 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
 
                      if (result IS ERR::Terminate) {
                         const std::lock_guard<std::recursive_mutex> lock(glWindowHookLock);
-                        glWindowHooks.erase(hook);
+                        if (auto it = glWindowHooks.find(hook); it != glWindowHooks.end()) {
+                           release_display_callback(it->second);
+                           glWindowHooks.erase(it);
+                        }
                      }
                      else if (result IS ERR::Cancelled) {
                         log.msg("Window closure cancelled by client.");

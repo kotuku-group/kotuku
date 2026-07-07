@@ -42,8 +42,8 @@ static ERR SET_Opacity(extSurface *, double);
 static ERR SET_XOffset(extSurface *, Unit &);
 static ERR SET_YOffset(extSurface *, Unit &);
 
-#define MOVE_VERTICAL   0x0001
-#define MOVE_HORIZONTAL 0x0002
+constexpr int MOVE_VERTICAL   = 0x0001;
+constexpr int MOVE_HORIZONTAL = 0x0002;
 
 static ERR consume_input_events(const InputEvent *, int);
 static void draw_region(extSurface *, extSurface *, extBitmap *);
@@ -631,8 +631,13 @@ mutates-object, callback-held
 static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
 {
    kt::Log log;
+   bool retained_callback = false;
 
    if ((!Args) or (!Args->Callback)) return log.warning(ERR::NullArgs);
+
+   auto consume_callback = kt::Defer([&]() {
+      if (Args->Callback and (not retained_callback)) Args->Callback->consume();
+   });
 
    OBJECTPTR context = ParentContext();
    OBJECTPTR call_context = nullptr;
@@ -715,6 +720,7 @@ static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
       SubscribeAction(Args->Callback->Context, AC::Free, C_FUNCTION(notify_free_callback));
    }
 
+   retained_callback = true;
    return ERR::Okay;
 }
 
@@ -1005,6 +1011,7 @@ extSurface::~extSurface()
       const std::lock_guard<std::recursive_mutex> lock(glWindowHookLock);
       for (auto it = glWindowHooks.begin(); it != glWindowHooks.end();) {
          if (it->first.SurfaceID IS UID) {
+            release_display_callback(it->second);
             it = glWindowHooks.erase(it);
          }
          else it++;

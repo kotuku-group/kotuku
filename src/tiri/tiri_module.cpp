@@ -569,25 +569,17 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       struct_record *Def = nullptr;
 
       allocated_struct_ref() = default;
-      allocated_struct_ref(APTR InitData, struct_record *InitDef):
-         Data(InitData),
-         Def(InitDef)
-      {
-      }
+      allocated_struct_ref(APTR InitData, struct_record *InitDef): Data(InitData), Def(InitDef) { }
 
       allocated_struct_ref(const allocated_struct_ref &) = delete;
       allocated_struct_ref & operator=(const allocated_struct_ref &) = delete;
 
-      allocated_struct_ref(allocated_struct_ref &&Other) noexcept:
-         Data(Other.Data),
-         Def(Other.Def)
-      {
+      allocated_struct_ref(allocated_struct_ref &&Other) noexcept: Data(Other.Data), Def(Other.Def) {
          Other.Data = nullptr;
          Other.Def = nullptr;
       }
 
-      allocated_struct_ref & operator=(allocated_struct_ref &&Other) noexcept
-      {
+      allocated_struct_ref & operator=(allocated_struct_ref &&Other) noexcept {
          if (this != &Other) {
             release();
             Data = Other.Data;
@@ -602,8 +594,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          release();
       }
 
-      void release()
-      {
+      void release() {
          if (Data) {
             if (Def) destroy_struct_cpp_strings(*Def, Data);
             FreeResource(Data);
@@ -678,15 +669,16 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    FUNCTION func;
 
    // This guard owns the Lua registry reference for an FD_FUNCTION argument until the call is handed to the module.
-   // After that point, the module function is responsible for calling DerefProcedure() when it no longer needs it.
+   // After that point, the module function is responsible for calling DerefProcedure() when it no longer needs it,
+   // or alternatively marking the function as consumed.
 
    struct func_ref_guard {
       lua_State *Lua;
       FUNCTION  &Func;
       bool OwnsReference = true;
       ~func_ref_guard() {
-         if (OwnsReference) {
-            if (Func.isScript() and (Func.ProcedureID > 0)) luaL_unref(Lua, LUA_REGISTRYINDEX, Func.ProcedureID);
+         if (Func.isScript() and (Func.ProcedureID > 0)) {
+            if (OwnsReference or Func.consumed()) luaL_unref(Lua, LUA_REGISTRYINDEX, Func.ProcedureID);
          }
       }
    } func_guard{ Lua, func };
@@ -872,7 +864,8 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             return ERR::Args;
          }
 
-         // NOTE: The client is responsible for calling DerefProcedure() on the function reference when it is no longer needed.
+         // NOTE: The client is responsible for calling DerefProcedure() on the function reference when it is no longer needed,
+         // or it can mark the function as consumed.
 
          switch(lua_type(Lua, i)) {
             case LUA_TSTRING: { // Name of function to call

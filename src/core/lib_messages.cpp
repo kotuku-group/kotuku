@@ -59,6 +59,8 @@ static ERR msghandler_free(ResourceRecord &Resource, APTR Address)
    if (h->Next) h->Next->Prev = h->Prev;
    if (h->Prev) h->Prev->Next = h->Next;
 
+   if (h->Function.isScript()) ((objScript *)h->Function.Context)->derefProcedure(h->Function);
+
    return ERR::Terminate;
 }
 
@@ -160,7 +162,10 @@ ERR AddMsgHandler(MSGID MsgType, FUNCTION *Routine, MsgHandler **Handle)
       if (Handle) *Handle = handler;
       return ERR::Okay;
    }
-   else return log.warning(ERR::AllocMemory);
+   else {
+      Routine->consume();
+      return log.warning(ERR::AllocMemory);
+   }
 }
 
 /*********************************************************************************************************************

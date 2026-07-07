@@ -101,6 +101,11 @@ ERR SubscribeInput(FUNCTION *Callback, OBJECTID SurfaceFilter, JTYPE InputMask, 
 {
    static int counter = 1;
    kt::Log log(__FUNCTION__);
+   bool retained_callback = false;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Callback) and (not retained_callback)) Callback->consume();
+   });
 
    if ((!Callback) or (!Handle)) return log.warning(ERR::NullArgs);
 
@@ -117,6 +122,7 @@ ERR SubscribeInput(FUNCTION *Callback, OBJECTID SurfaceFilter, JTYPE InputMask, 
    };
 
    glInputCallbacks.emplace(*Handle, is);
+   retained_callback = true;
 
    return ERR::Okay;
 }
@@ -154,7 +160,10 @@ ERR UnsubscribeInput(int Handle)
 
    auto it = glInputCallbacks.find(Handle);
    if (it IS glInputCallbacks.end()) return log.warning(ERR::NotFound);
-   else glInputCallbacks.erase(it);
+   else {
+      release_display_callback(it->second.Callback);
+      glInputCallbacks.erase(it);
+   }
 
    return ERR::Okay;
 }

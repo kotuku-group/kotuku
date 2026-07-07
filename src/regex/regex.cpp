@@ -541,6 +541,10 @@ ERR Search(Regex *Regex, const std::string_view &Text, RMATCH Flags, FUNCTION *C
 {
    kt::Log log(__FUNCTION__);
 
+   auto consume_callback = kt::Defer([&]() {
+      if (Callback) Callback->consume();
+   });
+
    if (not Regex) return log.warning(ERR::NullArgs);
 
    auto sr = ((extRegex *)Regex)->srell;

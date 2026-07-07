@@ -1090,6 +1090,11 @@ copies-input, callback-held, blocking
 ERR AsyncAction(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters, FUNCTION *Callback)
 {
    kt::Log log(__FUNCTION__);
+   bool retained_callback = false;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Callback) and (not retained_callback)) Callback->consume();
+   });
 
    if ((ActionID IS AC::NIL) or (not Object)) return ERR::NullArgs;
 
@@ -1140,6 +1145,7 @@ ERR AsyncAction(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters, FUNCTION *
                .Parameters = std::move(param_buffer),
                .Callback   = cb
             });
+            retained_callback = true;
 
             log.trace("Queued action %d for object #%d (queue depth: %d)",
                int(ActionID), object_id, int(glActionQueues[object_id].size()));
@@ -1154,6 +1160,7 @@ ERR AsyncAction(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters, FUNCTION *
       }
 
       launch_async_thread(Object, ActionID, argssize, std::move(param_buffer), cb);
+      retained_callback = true;
    }
 
    return error;
@@ -2744,7 +2751,10 @@ ERR SubscribeAction(OBJECTPTR Object, ACTIONID ActionID, FUNCTION *Callback)
 
    if ((not Object) or (not Callback)) return log.warning(ERR::NullArgs);
    if ((ActionID < AC::NIL) or (ActionID >= AC::END)) return log.warning(ERR::OutOfRange);
-   if (not Callback->isC()) return log.warning(ERR::Args);
+   if (not Callback->isC()) {
+      Callback->consume();
+      return log.warning(ERR::Args);
+   }
    if (Object->collecting()) return ERR::Okay;
 
    if (glSubReadOnly) {
@@ -2798,6 +2808,10 @@ blocking
 ERR UnsubscribeAction(OBJECTPTR Object, ACTIONID ActionID, FUNCTION *Callback)
 {
    kt::Log log(__FUNCTION__);
+
+   auto consume_callback = kt::Defer([&]() {
+      if (Callback) Callback->consume();
+   });
 
    if (not Object) return log.warning(ERR::NullArgs);
    if ((ActionID < AC::NIL) or (ActionID >= AC::END)) return log.warning(ERR::Args);
