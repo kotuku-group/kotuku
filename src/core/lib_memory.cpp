@@ -269,17 +269,25 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
 
    // Check if memory protection is requested
    bool use_protection = ((Flags & (MEM::READ|MEM::WRITE)) != MEM::NIL);
+   bool final_protection_pending = false;
    APTR start_mem = nullptr;
 
    if (use_protection) {
-      // Use OS-level memory protection with mmap/VirtualAlloc
+      // Use OS-level memory protection with mmap/VirtualAlloc.  The block is initially writable so that the
+      // allocator can initialise its private header before the requested protection is applied.
       aligned_size = align_page_size(full_size);
+      auto init_flags = Flags;
+      if ((init_flags & MEM::WRITE) IS MEM::NIL) {
+         init_flags |= MEM::WRITE;
+         final_protection_pending = true;
+      }
+
       #ifdef _WIN32
-         start_mem = winAllocProtectedMemory(aligned_size, int(Flags));
+         start_mem = winAllocProtectedMemory(aligned_size, int(init_flags));
       #else
          int prot = PROT_NONE;
-         if ((Flags & MEM::READ) != MEM::NIL) prot |= PROT_READ;
-         if ((Flags & MEM::WRITE) != MEM::NIL) prot |= PROT_WRITE;
+         if ((init_flags & MEM::READ) != MEM::NIL) prot |= PROT_READ;
+         if ((init_flags & MEM::WRITE) != MEM::NIL) prot |= PROT_WRITE;
 
          start_mem = mmap(nullptr, aligned_size, prot, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
          if (start_mem IS MAP_FAILED) start_mem = nullptr;
@@ -288,8 +296,7 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
       if (start_mem) {
          Flags |= MEM::PROTECTED; // Mark as protected for proper cleanup
          if ((Flags & MEM::NO_CLEAR) IS MEM::NIL) {
-            if ((Flags & MEM::WRITE) != MEM::NIL) kt::clearmem(start_mem, full_size);
-            else log.trace("Note: Read-only memory will not be cleared.");
+            kt::clearmem(start_mem, full_size);
          }
       }
    }
@@ -328,6 +335,23 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
       // with resource tracking, identifying the memory block and freeing it later on.  Hidden blocks are never recorded.
 
       glMemory.insert(std::pair<MEMORYID, PrivateAddress>(unique_id, PrivateAddress(data_start, unique_id, (uint32_t)Size, Flags)));
+   }
+
+   if (final_protection_pending) {
+      #ifdef _WIN32
+         if (not winProtectMemory(start_mem, aligned_size, (Flags & MEM::READ) != MEM::NIL, false, false)) {
+            free_private_memory_resource(unique_id);
+            return log.warning(ERR::SystemCall);
+         }
+      #else
+         int prot = PROT_NONE;
+         if ((Flags & MEM::READ) != MEM::NIL) prot |= PROT_READ;
+
+         if (mprotect(start_mem, aligned_size, prot) != 0) {
+            free_private_memory_resource(unique_id);
+            return log.warning(ERR::SystemCall);
+         }
+      #endif
    }
 
    if (auto error = TrackResource(unique_id, data_start, owner_id, &glResourceMemoryHandler); error != ERR::Okay) {

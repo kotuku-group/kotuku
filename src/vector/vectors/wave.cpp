@@ -34,9 +34,9 @@ class extVectorWave : public extVector {
    double wDecay        = 1.0;
    double wNoise        = 0.0;
    double wPhase        = 0;
-   WVE wEnvelope     = WVE::LINEAR;
-   WVC wClose        = WVC::NIL;
-   WVT wType         = WVT::SINE;
+   WVE wEnvelope = WVE::LINEAR;
+   WVC wClose    = WVC::NIL;
+   WVT wType     = WVT::SINE;
    bool wFrequencyEndSet = false;
 
    extVectorWave(objMetaClass *ClassPtr, OBJECTID ObjectID) : extVector(ClassPtr, ObjectID) {
