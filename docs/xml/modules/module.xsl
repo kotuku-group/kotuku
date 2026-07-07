@@ -353,7 +353,7 @@
               <li><a class="rounded" href="classes/display.html">Display</a></li>
               <li><a class="rounded" href="classes/document.html">Document</a></li>
               <li><a class="rounded" href="classes/font.html">Font</a></li>
-              <li><a class="rounded" href="classes/picture.html">Picture</a></li>
+              <li><a class="rounded" href="classes/image.html">Image</a></li>
               <li><a class="rounded" href="classes/pointer.html">Pointer</a></li>
               <li><a class="rounded" href="classes/surface.html">Surface</a></li>
               <li><a class="rounded" href="classes/svg.html">SVG</a></li>

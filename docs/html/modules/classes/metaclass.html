@@ -142,7 +142,7 @@
 <p>The Path field must be set on initialisation and refers to the default location of the class' module binary, for example <code>modules:display</code>. For reasons of platform portability, the file extension must not be specified at the end of the file name.</p>
       
 </div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#fl-PublicSize" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-PublicSize"><i class="bi bi-dash-circle text-secondary" data-bs-toggle="tooltip" title="Not readable"></i> <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">PublicSize</th><td class="col-md-1"><span class="text-nowrap">INT</span></td><td>The size of the class in bytes, as seen by the client.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-PublicSize" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<tr data-bs-toggle="collapse" data-bs-target="#fl-PublicSize" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-PublicSize"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">PublicSize</th><td class="col-md-1"><span class="text-nowrap">INT</span></td><td>The size of the class in bytes, as seen by the client.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-PublicSize" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>The public size reflects the size of the class before any private variables are taken into account.</p>
       
 </div></div></td></tr>
@@ -188,7 +188,7 @@
 <tr><th>SetValue</th><td><span class="text-nowrap">APTR</span></td><td>A virtual function that will set the value for this field</td></tr>
 <tr><th>WriteValue</th><td><span class="text-nowrap">FUNCTION *</span></td><td>An internal function for writing to this field</td></tr>
 <tr><th>Name</th><td><span class="text-nowrap">CSTRING</span></td><td>The English name for the field, e.g. <code>Width</code></td></tr>
-<tr><th>FieldID</th><td><span class="text-nowrap">UINT</span></td><td>32-bit hash from fieldhash(). Represented by FID constants, e.g. <code>FID_Width</code></td></tr>
+<tr><th>FieldID</th><td><span class="text-nowrap">UINT</span></td><td>32-bit hash from fieldhash()</td></tr>
 <tr><th>Offset</th><td><span class="text-nowrap">UINT16</span></td><td>Field offset within the object</td></tr>
 <tr><th>Index</th><td><span class="text-nowrap">UINT16</span></td><td>Field array index</td></tr>
 <tr><th>Flags</th><td><span class="text-nowrap">UINT</span></td><td>Special flags that describe the field</td></tr>

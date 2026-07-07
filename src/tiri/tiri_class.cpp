@@ -1007,7 +1007,6 @@ static ERR register_interfaces(extTiri *Self)
    lua_register(Self->Lua, "loadFile", fcmd_loadfile);
    lua_register(Self->Lua, "exec", fcmd_exec);
    lua_register(Self->Lua, "print", fcmd_print);
-   lua_register(Self->Lua, "include", fcmd_include);
    lua_register(Self->Lua, "msg", fcmd_msg);
    lua_register(Self->Lua, "subscribeEvent", fcmd_subscribe_event);
    lua_register(Self->Lua, "unsubscribeEvent", fcmd_unsubscribe_event);
@@ -1019,7 +1018,6 @@ static ERR register_interfaces(extTiri *Self)
    reg_func_prototype("exec", {}, { TiriType::Str }, FProtoFlags::Variadic);
    reg_func_prototype("getExecutionState", { TiriType::Table }, {});
    reg_func_prototype("print", {}, {}, FProtoFlags::Variadic);
-   reg_func_prototype("include", {}, { TiriType::Str }, FProtoFlags::Variadic);
    reg_func_prototype("require", { TiriType::Table }, { TiriType::Str });
    reg_func_prototype("msg", {}, { TiriType::Str }, FProtoFlags::Variadic);
    reg_func_prototype("subscribeEvent", { TiriType::Num, TiriType::Any }, { TiriType::Str, TiriType::Func });

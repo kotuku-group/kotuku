@@ -53,7 +53,33 @@
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Cursor" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Cursor"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Cursor</th><td class="col-md-1"><span class="text-nowrap">PTC</span></td><td>The mouse cursor to display when the pointer is within the vector's boundary.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Cursor" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>The Cursor field declares the pointer's cursor image to display within the vector's boundary.  The cursor will automatically switch to the specified image when it enters the boundary defined by the vector's path.  This effect lasts until the cursor vacates the area.</p>
 <p>It is a pre-requisite that the associated <a href="vectorscene.html">VectorScene</a> has been linked to a <a href="surface.html">Surface</a>.</p>
-<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody></tbody></table>
+<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">PTC::CROSSHAIR</th><td>The cross hair is used for targeting specific pixel points (common in paint programs).</td></tr>
+<tr><th class="col-md-1">PTC::CUSTOM</th><td>Works in conjunction with the SetCustomCursor() function to represent a program defined bitmap.</td></tr>
+<tr><th class="col-md-1">PTC::DEFAULT</th><td>The default cursor (usually an arrow pointing to the upper left).</td></tr>
+<tr><th class="col-md-1">PTC::DRAGGABLE</th><td>Used to indicate that a surface or object can be dragged by the user.</td></tr>
+<tr><th class="col-md-1">PTC::END</th><td></td></tr>
+<tr><th class="col-md-1">PTC::HAND</th><td>The hand cursor is often used for indicating click-able content (hyper-links, icons etc).</td></tr>
+<tr><th class="col-md-1">PTC::HAND_LEFT</th><td>Similar to the standard hand cursor, but points to the left.</td></tr>
+<tr><th class="col-md-1">PTC::HAND_RIGHT</th><td>Similar to the standard hand cursor, but points to the right.</td></tr>
+<tr><th class="col-md-1">PTC::INVISIBLE</th><td>The cursor graphic is invisible (but will continue to operate as normal in all other respects).</td></tr>
+<tr><th class="col-md-1">PTC::MAGNIFIER</th><td>Represents a magnifying glass.</td></tr>
+<tr><th class="col-md-1">PTC::NO_CHANGE</th><td></td></tr>
+<tr><th class="col-md-1">PTC::PAINTBRUSH</th><td>The paintbrush cursor is typically employed by paint programs.</td></tr>
+<tr><th class="col-md-1">PTC::SIZE_BOTTOM</th><td>Sizing cursor - for resizing the bottom edge of any rectangular area.</td></tr>
+<tr><th class="col-md-1">PTC::SIZE_BOTTOM_LEFT</th><td>Sizing cursor - for resizing the bottom left corner of any rectangular area.</td></tr>
+<tr><th class="col-md-1">PTC::SIZE_BOTTOM_RIGHT</th><td>Sizing cursor - for resizing the bottom right corner of any rectangular area.</td></tr>
+<tr><th class="col-md-1">PTC::SIZE_LEFT</th><td>Sizing cursor - for resizing the left edge of any rectangular area.</td></tr>
+<tr><th class="col-md-1">PTC::SIZE_RIGHT</th><td>Sizing cursor - for resizing the right edge of any rectangular area.</td></tr>
+<tr><th class="col-md-1">PTC::SIZE_TOP</th><td>Sizing cursor - for resizing the top edge of any rectangular area.</td></tr>
+<tr><th class="col-md-1">PTC::SIZE_TOP_LEFT</th><td>Sizing cursor - for resizing the top left corner of any rectangular area.</td></tr>
+<tr><th class="col-md-1">PTC::SIZE_TOP_RIGHT</th><td>Sizing cursor - for resizing the top right corner of any rectangular area.</td></tr>
+<tr><th class="col-md-1">PTC::SIZING</th><td>Multi-directional sizing cursor - for resizing in any direction.</td></tr>
+<tr><th class="col-md-1">PTC::SLEEP</th><td>The sleep cursor is used to inform the user that the computer is busy.</td></tr>
+<tr><th class="col-md-1">PTC::SPLIT_HORIZONTAL</th><td>The horizontal split cursor is typically used for splitting rectangles in half, or dragging a horizontal split within a large rectangular space.</td></tr>
+<tr><th class="col-md-1">PTC::SPLIT_VERTICAL</th><td>The vertical split cursor is typically used for splitting rectangles in half, or dragging a vertical split within a large rectangular space.</td></tr>
+<tr><th class="col-md-1">PTC::STOP</th><td>The stop cursor is used to inform the user that an operation is not possible (e.g. drag and drop to an unsupported object area).</td></tr>
+<tr><th class="col-md-1">PTC::TEXT</th><td>The text cursor is popular for the precise positioning of text cursors.</td></tr>
+</tbody></table>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-DashArray" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-DashArray"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">DashArray</th><td class="col-md-1"><span class="text-nowrap">DOUBLE []</span></td><td>Controls the pattern of dashes and gaps used to stroke paths.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-DashArray" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
@@ -103,6 +129,22 @@
 </tbody></table>
       
 </div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-GuideFlags" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-GuideFlags"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">GuideFlags</th><td class="col-md-1"><span class="text-nowrap">VMF</span></td><td>Optional flags that affect <a data-bs-toggle="tooltip" title="Transform the vector to follow a target path specified here." href="#tf-GuidePath">GuidePath</a>.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-GuideFlags" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">VMF::AUTO_SPACING</th><td>Applicable when used on <a href="vectortext.html">VectorText</a>, auto-spacing allows the spacing between glyphs to be shrunk or expanded along the target path so that they can produce a better fit.  The default is for the glyphs to conform to their original spacing requirements.</td></tr>
+<tr><th class="col-md-1">VMF::STRETCH</th><td>Applicable when used on <a href="vectortext.html">VectorText</a>, the stretch option converts glyph outlines into paths, and then all end points and control points will be adjusted to be along the perpendicular vectors from the path, thereby stretching and possibly warping the glyphs.  With this approach, connected glyphs, such as in cursive scripts, will maintain their connections.</td></tr>
+<tr><th class="col-md-1">VMF::X_MAX</th><td>Align the source so that it is morphed along the right of the target path.</td></tr>
+<tr><th class="col-md-1">VMF::X_MID</th><td>Align the source so that it is morphed along the middle of the target path.</td></tr>
+<tr><th class="col-md-1">VMF::X_MIN</th><td>Align the source so that it is morphed along the left of the target path.</td></tr>
+<tr><th class="col-md-1">VMF::Y_MAX</th><td>Align the source so that it is morphed along the bottom of the target path.</td></tr>
+<tr><th class="col-md-1">VMF::Y_MID</th><td>Align the source so that it is morphed along the middle of the target path.</td></tr>
+<tr><th class="col-md-1">VMF::Y_MIN</th><td>Align the source so that it is morphed along the top of the target path.</td></tr>
+</tbody></table>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-GuidePath" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-GuidePath"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">GuidePath</th><td class="col-md-1"><span class="text-nowrap">OBJECTPTR</span></td><td>Transform the vector to follow a target path specified here.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-GuidePath" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>Setting the GuidePath to reference a path-generating vector will result in the source following the target path when rendered.  This works particularly well for text and shapes that follow a lengthy path.</p>
+      
+</div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-InnerJoin" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-InnerJoin"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">InnerJoin</th><td class="col-md-1"><span class="text-nowrap">VIJ</span></td><td>Adjusts the handling of thickly stroked paths that cross back at the join.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-InnerJoin" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>The InnerJoin value is used to make very technical adjustments to the way that paths are stroked when they form corners.  Visually, the impact of this setting is only noticeable when a path forms an awkward corner that crosses over itself - usually due to the placement of bezier control points.</p>
 <p>The available settings are <code>MITER</code>, <code>ROUND</code>, <code>BEVEL</code>, <code>JAG</code> and <code>INHERIT</code>.  The default of <code>MITER</code> is recommended as it is the fastest, but <code>ROUND</code> produces the best results in ensuring that the stroked path is filled correctly.  The most optimal approach is to use the default setting and switch to <code>ROUND</code> if issues are noted near the corners of the path.</p>
@@ -112,6 +154,11 @@
 <tr><th class="col-md-1">VIJ::MITER</th><td>Forms a sharp point at the join.  Typically not the best looking option.</td></tr>
 <tr><th class="col-md-1">VIJ::ROUND</th><td>Rounds the edge of the join to produce the best looking results.</td></tr>
 </tbody></table>
+      
+</div></div></td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#fl-InnerMiterLimit" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-InnerMiterLimit"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">InnerMiterLimit</th><td class="col-md-1"><span class="text-nowrap">DOUBLE</span></td><td>Controls how far an inner stroke miter can extend at concave joins.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-InnerMiterLimit" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
+<p>InnerMiterLimit is a stroker tuning value used with <a data-bs-toggle="tooltip" title="Adjusts the handling of thickly stroked paths that cross back at the join." href="#tf-InnerJoin">InnerJoin</a> when the inner side of a stroked path turns back on itself.  It limits the inner miter generated for <code>MITER</code>, and for the miter phase of <code>ROUND</code> and <code>JAG</code>, before the renderer falls back to the bevelled inner join shape.  This is separate from <a data-bs-toggle="tooltip" title="Imposes a limit on the ratio of the miter length to the StrokeWidth." href="#tf-MiterLimit">MiterLimit</a>, which applies to the outer <a data-bs-toggle="tooltip" title="The shape to be used at path corners that are stroked." href="#tf-LineJoin">LineJoin</a>.</p>
+<p>Leave this field at zero unless the selected <a data-bs-toggle="tooltip" title="Adjusts the handling of thickly stroked paths that cross back at the join." href="#tf-InnerJoin">InnerJoin</a> is visibly truncating an inner corner too early.  If adjustment is needed, use the smallest value that preserves the intended corner shape: values just above <code>1</code> keep joins conservative, while larger values allow longer and sharper inner miters.  Reduce the value, or return it to zero, if the stroke develops spikes or unwanted self-overlap at tight corners.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-LineCap" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-LineCap"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">LineCap</th><td class="col-md-1"><span class="text-nowrap">VLC</span></td><td>The shape to be used at the start and end of a stroked path.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-LineCap" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
@@ -156,23 +203,6 @@
 <p>When two line segments meet at a sharp angle and miter joins have been specified in <a data-bs-toggle="tooltip" title="The shape to be used at path corners that are stroked." href="#tf-LineJoin">LineJoin</a>, it is possible for the miter to extend far beyond the thickness of the line stroking the path. The MiterLimit imposes a limit on the ratio of the miter length to the <a data-bs-toggle="tooltip" title="The width to use when stroking the path." href="#tf-StrokeWidth">StrokeWidth</a>. When the limit is exceeded, the join is converted from a miter to a bevel.</p>
 <p>The ratio of miter length (distance between the outer tip and the inner corner of the miter) to <a data-bs-toggle="tooltip" title="The width to use when stroking the path." href="#tf-StrokeWidth">StrokeWidth</a> is directly related to the angle (theta) between the segments in user space by the formula: <code>MiterLength / StrokeWidth = 1 / sin ( theta / 2 )</code>.</p>
 <p>For example, a miter limit of 1.414 converts miters to bevels for theta less than 90 degrees, a limit of 4.0 converts them for theta less than approximately 29 degrees, and a limit of 10.0 converts them for theta less than approximately 11.5 degrees.</p>
-      
-</div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#fl-Morph" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Morph"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Morph</th><td class="col-md-1"><span class="text-nowrap">OBJECTPTR</span></td><td>Enables morphing of the vector to a target path.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Morph" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<p>If the Morph field is set to a Vector object that generates a path, the vector will be morphed to follow the target vector's path shape.  This works particularly well for text and shapes that follow a horizontal path that is much wider than it is tall.</p>
-<p>Squat shapes will fare poorly if morphed, so experimentation may be necessary to understand how the morph feature is best utilised.</p>
-      
-</div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#fl-MorphFlags" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-MorphFlags"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">MorphFlags</th><td class="col-md-1"><span class="text-nowrap">VMF</span></td><td>Optional flags that affect morphing.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-MorphFlags" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">VMF::AUTO_SPACING</th><td>Applicable when used on <a href="vectortext.html">VectorText</a>, auto-spacing allows the spacing between glyphs to be shrunk or expanded along the target path so that they can produce a better fit.  The default is for the glyphs to conform to their original spacing requirements.</td></tr>
-<tr><th class="col-md-1">VMF::STRETCH</th><td>Applicable when used on <a href="vectortext.html">VectorText</a>, the stretch option converts glyph outlines into paths, and then all end points and control points will be adjusted to be along the perpendicular vectors from the path, thereby stretching and possibly warping the glyphs.  With this approach, connected glyphs, such as in cursive scripts, will maintain their connections.</td></tr>
-<tr><th class="col-md-1">VMF::X_MAX</th><td>Align the source so that it is morphed along the right of the target path.</td></tr>
-<tr><th class="col-md-1">VMF::X_MID</th><td>Align the source so that it is morphed along the middle of the target path.</td></tr>
-<tr><th class="col-md-1">VMF::X_MIN</th><td>Align the source so that it is morphed along the left of the target path.</td></tr>
-<tr><th class="col-md-1">VMF::Y_MAX</th><td>Align the source so that it is morphed along the bottom of the target path.</td></tr>
-<tr><th class="col-md-1">VMF::Y_MID</th><td>Align the source so that it is morphed along the middle of the target path.</td></tr>
-<tr><th class="col-md-1">VMF::Y_MIN</th><td>Align the source so that it is morphed along the top of the target path.</td></tr>
-</tbody></table>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Next" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Next"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Next</th><td class="col-md-1"><span class="text-nowrap"><a href="vector.html">*Vector</a></span></td><td>The next vector in the branch, or NULL.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Next" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
@@ -379,7 +409,7 @@ Z: Close Path
 <p>The SubscribeKeyboard() method provides a callback mechanism for handling keyboard events.  Events are reported when the vector or one of its children has the user focus.  It is a pre-requisite that the associated <a href="vectorscene.html">VectorScene</a> has been linked to a <a href="surface.html">Surface</a>.</p>
 <p>The prototype for the callback is as follows, whereby <code>Qualifers</code> are <code>KQ</code> flags and the Code is a <code>K</code> constant representing the raw key value.  The <code>Unicode</code> value is the resulting character when the qualifier and code are translated through the user's keymap.</p>
 <p>
-<code>ERR callback(*Viewport, LONG Qualifiers, LONG Code, LONG Unicode);</code></p>
+<code>ERR callback(*Viewport, INT Qualifiers, INT Code, INT Unicode);</code></p>
 <p>If the callback returns <code>ERR::Terminate</code> then the subscription will be ended.  All other error codes are ignored.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
@@ -392,7 +422,7 @@ Z: Close Path
 <tr><td>Scale</td><td>Set to <code>1.0</code> (recommended) to trace the path at a scale of 1 to 1.</td></tr>
 <tr><td>Transform</td><td>Set to <code>true</code> if all transforms applicable to the vector should be applied to the path.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
-<p>Any vector that generates a path can be traced by calling this method.  Tracing allows the caller to follow the path from point-to-point if the path were to be rendered with a stroke.  The prototype of the callback function is <code>ERR Function(OBJECTPTR Vector, LONG Index, LONG Command, DOUBLE X, DOUBLE Y, APTR Meta)</code>.</p>
+<p>Any vector that generates a path can be traced by calling this method.  Tracing allows the caller to follow the path from point-to-point if the path were to be rendered with a stroke.  The prototype of the callback function is <code>ERR Function(OBJECTPTR Vector, INT Index, INT Command, DOUBLE X, DOUBLE Y, APTR Meta)</code>.</p>
 <p>The <code>Vector</code> parameter refers to the vector targeted by the method.  The <code>Index</code> is an incrementing counter that reflects the currently plotted point.  The <code>X</code> and <code>Y</code> parameters reflect the coordinate of a point on the path.</p>
 <p>If the <code>Callback</code> returns <code>ERR::Terminate</code>, then no further coordinates will be processed.</p>
       
@@ -406,6 +436,46 @@ Z: Close Path
 <tr><th>FM::HAS_FOCUS</th><td>The vector has gained the user focus.</td></tr>
 <tr><th>FM::LOST_FOCUS</th><td>The vector has lost the user focus.</td></tr>
 <tr><th>FM::PATH_CHANGED</th><td>The vector path has been modified or affected by a transform.</td></tr>
+</tbody></table><div class="footer copyright text-right">Vector module documentation © Paul Manias © 2010-2026</div></div>
+<div class="docs-content" style="display:none;" id="JTYPE"><h1>JTYPE Type</h1><p class="lead">JTYPE flags are used to categorise input types.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>JTYPE::ANALOG</th><td>Analog movement (ranging from -1.0 to 1.0)</td></tr>
+<tr><th>JTYPE::ANCHORED</th><td>Cursor has been anchored with LockCursor()</td></tr>
+<tr><th>JTYPE::BUTTON</th><td>Input is a physical button or switch</td></tr>
+<tr><th>JTYPE::CROSSING</th><td>Crossing events manage the entering and leaving of an area.</td></tr>
+<tr><th>JTYPE::DBL_CLICK</th><td>Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click.</td></tr>
+<tr><th>JTYPE::DIGITAL</th><td>D-Pad or digital joystick source (restricted to +/- 1)</td></tr>
+<tr><th>JTYPE::DRAGGED</th><td>Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference).</td></tr>
+<tr><th>JTYPE::DRAG_ITEM</th><td>This special flag is set by the input system if the pointer is click-dragging an object at the time of the event.</td></tr>
+<tr><th>JTYPE::EXT_MOVEMENT</th><td>Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples.</td></tr>
+<tr><th>JTYPE::MOVEMENT</th><td>X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system.</td></tr>
+<tr><th>JTYPE::REPEATED</th><td>Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)</td></tr>
+<tr><th>JTYPE::SECONDARY</th><td>Indicates to the receiver of this message that it is not the primary/original recipient</td></tr>
+</tbody></table><div class="footer copyright text-right">Vector module documentation © Paul Manias © 2010-2026</div></div>
+<div class="docs-content" style="display:none;" id="PTC"><h1>PTC Type</h1><p class="lead">Predefined cursor styles</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>PTC::CROSSHAIR</th><td>The cross hair is used for targeting specific pixel points (common in paint programs).</td></tr>
+<tr><th>PTC::CUSTOM</th><td>Works in conjunction with the SetCustomCursor() function to represent a program defined bitmap.</td></tr>
+<tr><th>PTC::DEFAULT</th><td>The default cursor (usually an arrow pointing to the upper left).</td></tr>
+<tr><th>PTC::DRAGGABLE</th><td>Used to indicate that a surface or object can be dragged by the user.</td></tr>
+<tr><th>PTC::END</th><td></td></tr>
+<tr><th>PTC::HAND</th><td>The hand cursor is often used for indicating click-able content (hyper-links, icons etc).</td></tr>
+<tr><th>PTC::HAND_LEFT</th><td>Similar to the standard hand cursor, but points to the left.</td></tr>
+<tr><th>PTC::HAND_RIGHT</th><td>Similar to the standard hand cursor, but points to the right.</td></tr>
+<tr><th>PTC::INVISIBLE</th><td>The cursor graphic is invisible (but will continue to operate as normal in all other respects).</td></tr>
+<tr><th>PTC::MAGNIFIER</th><td>Represents a magnifying glass.</td></tr>
+<tr><th>PTC::NO_CHANGE</th><td></td></tr>
+<tr><th>PTC::PAINTBRUSH</th><td>The paintbrush cursor is typically employed by paint programs.</td></tr>
+<tr><th>PTC::SIZE_BOTTOM</th><td>Sizing cursor - for resizing the bottom edge of any rectangular area.</td></tr>
+<tr><th>PTC::SIZE_BOTTOM_LEFT</th><td>Sizing cursor - for resizing the bottom left corner of any rectangular area.</td></tr>
+<tr><th>PTC::SIZE_BOTTOM_RIGHT</th><td>Sizing cursor - for resizing the bottom right corner of any rectangular area.</td></tr>
+<tr><th>PTC::SIZE_LEFT</th><td>Sizing cursor - for resizing the left edge of any rectangular area.</td></tr>
+<tr><th>PTC::SIZE_RIGHT</th><td>Sizing cursor - for resizing the right edge of any rectangular area.</td></tr>
+<tr><th>PTC::SIZE_TOP</th><td>Sizing cursor - for resizing the top edge of any rectangular area.</td></tr>
+<tr><th>PTC::SIZE_TOP_LEFT</th><td>Sizing cursor - for resizing the top left corner of any rectangular area.</td></tr>
+<tr><th>PTC::SIZE_TOP_RIGHT</th><td>Sizing cursor - for resizing the top right corner of any rectangular area.</td></tr>
+<tr><th>PTC::SIZING</th><td>Multi-directional sizing cursor - for resizing in any direction.</td></tr>
+<tr><th>PTC::SLEEP</th><td>The sleep cursor is used to inform the user that the computer is busy.</td></tr>
+<tr><th>PTC::SPLIT_HORIZONTAL</th><td>The horizontal split cursor is typically used for splitting rectangles in half, or dragging a horizontal split within a large rectangular space.</td></tr>
+<tr><th>PTC::SPLIT_VERTICAL</th><td>The vertical split cursor is typically used for splitting rectangles in half, or dragging a vertical split within a large rectangular space.</td></tr>
+<tr><th>PTC::STOP</th><td>The stop cursor is used to inform the user that an operation is not possible (e.g. drag and drop to an unsupported object area).</td></tr>
+<tr><th>PTC::TEXT</th><td>The text cursor is popular for the precise positioning of text cursors.</td></tr>
 </tbody></table><div class="footer copyright text-right">Vector module documentation © Paul Manias © 2010-2026</div></div>
 <div class="docs-content" style="display:none;" id="RQ"><h1>RQ Type</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>RQ::AUTO</th><td>The default option is chosen by the system.</td></tr>
 <tr><th>RQ::BEST</th><td>Use the best quality renderer available and without concerns for computational time taken.</td></tr>
@@ -452,7 +522,7 @@ Z: Close Path
 <tr><th>VLJ::MITER_SMART</th><td>An alternative form of MITER that extends beyond the intersection point, similarly to the miter-clip SVG rules.</td></tr>
 <tr><th>VLJ::ROUND</th><td>The join is rounded.</td></tr>
 </tbody></table><div class="footer copyright text-right">Vector module documentation © Paul Manias © 2010-2026</div></div>
-<div class="docs-content" style="display:none;" id="VMF"><h1>VMF Type</h1><p class="lead">Morph flags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>VMF::AUTO_SPACING</th><td>Applicable when used on <a href="vectortext.html">VectorText</a>, auto-spacing allows the spacing between glyphs to be shrunk or expanded along the target path so that they can produce a better fit.  The default is for the glyphs to conform to their original spacing requirements.</td></tr>
+<div class="docs-content" style="display:none;" id="VMF"><h1>VMF Type</h1><p class="lead">Guide path flags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>VMF::AUTO_SPACING</th><td>Applicable when used on <a href="vectortext.html">VectorText</a>, auto-spacing allows the spacing between glyphs to be shrunk or expanded along the target path so that they can produce a better fit.  The default is for the glyphs to conform to their original spacing requirements.</td></tr>
 <tr><th>VMF::STRETCH</th><td>Applicable when used on <a href="vectortext.html">VectorText</a>, the stretch option converts glyph outlines into paths, and then all end points and control points will be adjusted to be along the perpendicular vectors from the path, thereby stretching and possibly warping the glyphs.  With this approach, connected glyphs, such as in cursive scripts, will maintain their connections.</td></tr>
 <tr><th>VMF::X_MAX</th><td>Align the source so that it is morphed along the right of the target path.</td></tr>
 <tr><th>VMF::X_MID</th><td>Align the source so that it is morphed along the middle of the target path.</td></tr>

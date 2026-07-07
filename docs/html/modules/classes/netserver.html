@@ -92,10 +92,22 @@
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 <tr><th class="col-md-1">WrongClass</th><td>An object is not of the required class type</td></tr>
 </tbody></table></div></div></td></tr>
-</tbody></table><div class="footer copyright text-right">NetServer class documentation © Paul Manias © 2005-2026</div></div><div class="docs-content" style="display:none;" id="struct-IPAddress"><h1>IPAddress Structure</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Data</th><td><span class="text-nowrap">INT</span></td><td>128-bit array for supporting both V4 (32-bit host order) and V6 (8-bit byte order) IP addresses.</td></tr>
-<tr><th>Type</th><td><span class="text-nowrap">IPADDR</span></td><td>Identifies the address Data value as a V4 or V6 address type.</td></tr>
-<tr><th>Port</th><td><span class="text-nowrap">INT</span></td><td>For UDP packets, identifies the client port number in host byte order.</td></tr>
-</tbody></table><div class="footer copyright text-right">NetServer class documentation © Paul Manias © 2005-2026</div></div>
+</tbody></table><div class="footer copyright text-right">NetServer class documentation © Paul Manias © 2005-2026</div></div><div class="docs-content" style="display:none;" id="NSF"><h1>NSF Type</h1><p class="lead">NetSocket options</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>NSF::BROADCAST</th><td>Enable broadcast (UDP only).</td></tr>
+<tr><th>NSF::DISABLE_SERVER_VERIFY</th><td>Disable SSL server certificate verification for client sockets (testing only).</td></tr>
+<tr><th>NSF::KEEP_ALIVE</th><td>Enable TCP keep-alive probes using operating system defaults.</td></tr>
+<tr><th>NSF::LOG_ALL</th><td>Print extra log messages.</td></tr>
+<tr><th>NSF::MULTI_CONNECT</th><td>Allow multiple connections from the same IP (NetServer only).</td></tr>
+<tr><th>NSF::SSL</th><td>Use Secure Sockets Layer for all communication.</td></tr>
+<tr><th>NSF::SYNCHRONOUS</th><td>Use synchronous (blocking) network calls.</td></tr>
+<tr><th>NSF::UDP</th><td>Use UDP (connectionless datagram protocol) instead of TCP.</td></tr>
+</tbody></table><div class="footer copyright text-right">NetServer module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="NTC"><h1>NTC Type</h1><p class="lead">NetSocket states</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>NTC::CONNECTED</th><td>There is an active connection at present.</td></tr>
+<tr><th>NTC::CONNECTING</th><td>A connection is being established.</td></tr>
+<tr><th>NTC::DISCONNECTED</th><td>There is no connection.</td></tr>
+<tr><th>NTC::HANDSHAKING</th><td>An SSL connection is being established.</td></tr>
+<tr><th>NTC::MULTISTATE</th><td>A NetServer reports MULTISTATE because accepted ClientSocket objects track their own states.</td></tr>
+<tr><th>NTC::RESOLVING</th><td>The host name is being resolved.</td></tr>
+</tbody></table><div class="footer copyright text-right">NetServer module documentation © Paul Manias © 2005-2026</div></div>
 </div></div></div><script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../../js/base.js"></script><script type="text/javascript">
 const ready = fn => document.readyState !== 'loading' ? fn() : document.addEventListener('DOMContentLoaded', fn);
 

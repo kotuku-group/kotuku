@@ -385,13 +385,30 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
 <tr><th class="col-md-1">WrongType</th><td>The expected type was not provided</td></tr>
 <tr><th class="col-md-1">Function</th><td>A function call failed</td></tr>
 </tbody></table></div></div></td></tr>
-</tbody></table><div class="footer copyright text-right">Compression class documentation © Paul Manias 1996-2026</div></div><div class="docs-content" style="display:none;" id="CMF"><h1>CMF Type</h1><p class="lead">Compression flags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>CMF::APPLY_SECURITY</th><td>When decompressing, apply individual file permissions if they are available in the compression file.</td></tr>
+</tbody></table><div class="footer copyright text-right">Compression class documentation © Paul Manias © 1996-2026</div></div><div class="docs-content" style="display:none;" id="CMF"><h1>CMF Type</h1><p class="lead">Compression flags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>CMF::APPLY_SECURITY</th><td>When decompressing, apply individual file permissions if they are available in the compression file.</td></tr>
 <tr><th>CMF::CREATE_FILE</th><td>Create a new archive only if the source file does not already exist.</td></tr>
 <tr><th>CMF::NEW</th><td>Force the creation of a new file archive.  Any existing file data at the target location will be destroyed.</td></tr>
 <tr><th>CMF::NO_LINKS</th><td>Treat symbolic links as normal files/folders.</td></tr>
 <tr><th>CMF::PASSWORD</th><td>A password has been set on the object.</td></tr>
 <tr><th>CMF::READ_ONLY</th><td>Forces read-only access, which is strongly recommended if an existing archive is being opened with no modifications intended.  If this flag is not set, initialisation can fail if the user does not have write access to the source file.</td></tr>
-</tbody></table><div class="footer copyright text-right">Compression module documentation © Paul Manias 1996-2026</div></div>
+</tbody></table><div class="footer copyright text-right">Compression module documentation © Paul Manias © 1996-2026</div></div>
+<div class="docs-content" style="display:none;" id="FL"><h1>FL Type</h1><p class="lead">File flags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>FL::APPROXIMATE</th><td>Allows fuzzy matching of the file path by ignoring the file extension; for instance opening 'screenshot.png' when only 'screenshot.jpg' exists in the same folder, the 'screenshot.jpg' file will be opened.  If multiple files could potentially match to the file name, the file object will select the first match that is encountered.</td></tr>
+<tr><th>FL::BUFFER</th><td>Activates a special mode in which the file data is stored in a memory buffer rather than a disk file.  Set the Size field to a value of at least 1 so that the initial buffer size is configured.  In this mode many of the available file operations are meaningless except for the Read, Write and Seek actions.</td></tr>
+<tr><th>FL::DEVICE</th><td>The file is a system device (must set if opening a device for read/write operations)</td></tr>
+<tr><th>FL::DIRECTORY</th><td>The file object represents a folder.</td></tr>
+<tr><th>FL::EXCLUDE_FILES</th><td>Exclude files when scanning this folder.</td></tr>
+<tr><th>FL::EXCLUDE_FOLDERS</th><td>Exclude folders when scanning this folder.</td></tr>
+<tr><th>FL::FILE</th><td>Explicitly declares the file object as an entity that stores content (as opposed to a device or folder for example).</td></tr>
+<tr><th>FL::FOLDER</th><td>The file object represents a folder.</td></tr>
+<tr><th>FL::LINK</th><td>Read-Only.  Indicates that the file is a symbolic link or shortcut to another file.</td></tr>
+<tr><th>FL::LOOP</th><td>In loop mode, the file object's position marker for read/write operations is allowed to extend past the actual file size.  Any read/write operation beyond the file size will loop back to the file at a corrected offset - for example, reading position 330 of a 100 byte file will start the operation from the 30th byte.  Loop mode does not affect any other area besides the read, write and seek operations.  The loop feature is typically used to create multimedia data streams with minimal effort.</td></tr>
+<tr><th>FL::NEW</th><td>Required when creating a new file.  If a file with the same name exists, its contents will be destroyed. If however the existing file is locked, the initalisation process will fail.</td></tr>
+<tr><th>FL::READ</th><td>Required if the file needs to be opened for read access.</td></tr>
+<tr><th>FL::RESET_DATE</th><td>For internal use only</td></tr>
+<tr><th>FL::STREAM</th><td>File data is streamed (e.g. PIPE, FIFO, socket) and may be accessed locally or via a network.</td></tr>
+<tr><th>FL::VIRTUAL</th><td>Path is to a virtual device.</td></tr>
+<tr><th>FL::WRITE</th><td>Prepares a file for writing data, starting at byte position 0.  To start writing from the end of a file, use the Seek action after the file has been initialised.</td></tr>
+</tbody></table><div class="footer copyright text-right">Compression module documentation © Paul Manias © 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="PERMIT"><h1>PERMIT Type</h1><p class="lead">Permission flags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>PERMIT::ALL_DELETE</th><td>Synonym for <code>EVERYONE_DELETE</code></td></tr>
 <tr><th>PERMIT::ALL_EXEC</th><td>Synonym for <code>EVERYONE_EXEC</code></td></tr>
 <tr><th>PERMIT::ALL_READ</th><td>Synonym for <code>EVERYONE_READ</code></td></tr>
@@ -429,7 +446,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
 <tr><th>PERMIT::USER_READ</th><td>Synonym for <code>READ</code></td></tr>
 <tr><th>PERMIT::USER_WRITE</th><td>Synonym for <code>WRITE</code></td></tr>
 <tr><th>PERMIT::WRITE</th><td>User/Owner can write.</td></tr>
-</tbody></table><div class="footer copyright text-right">Compression module documentation © Paul Manias 1996-2026</div></div>
+</tbody></table><div class="footer copyright text-right">Compression module documentation © Paul Manias © 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-CompressedItem"><h1>CompressedItem Structure</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>OriginalSize</th><td><span class="text-nowrap">INT64</span></td><td>Original size of the file</td></tr>
 <tr><th>CompressedSize</th><td><span class="text-nowrap">INT64</span></td><td>Compressed size of the file</td></tr>
 <tr><th>Next</th><td><span class="text-nowrap">struct CompressedItem *</span></td><td>Used only if this is a linked-list.</td></tr>
@@ -441,7 +458,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
 <tr><th>Flags</th><td><span class="text-nowrap">FL</span></td><td><code>FL</code> flags</td></tr>
 <tr><th>Created</th><td><span class="text-nowrap">struct DateTime</span></td><td>Date and time of the file's creation.</td></tr>
 <tr><th>Modified</th><td><span class="text-nowrap">struct DateTime</span></td><td>Date and time last modified.</td></tr>
-</tbody></table><div class="footer copyright text-right">Compression class documentation © Paul Manias 1996-2026</div></div>
+</tbody></table><div class="footer copyright text-right">Compression class documentation © Paul Manias © 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-CompressionFeedback"><h1>CompressionFeedback Structure</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>FeedbackID</th><td><span class="text-nowrap">FDB</span></td><td>Set to one of the FDB event indicators</td></tr>
 <tr><th>Index</th><td><span class="text-nowrap">INT</span></td><td>Index of the current file</td></tr>
 <tr><th>Path</th><td><span class="text-nowrap">CSTRING</span></td><td>Name of the current file/path in the archive</td></tr>
@@ -455,7 +472,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
 <tr><th>Hour</th><td><span class="text-nowrap">INT16</span></td><td>Hour of the original file's datestamp.</td></tr>
 <tr><th>Minute</th><td><span class="text-nowrap">INT16</span></td><td>Minute of the original file's datestamp.</td></tr>
 <tr><th>Second</th><td><span class="text-nowrap">INT16</span></td><td>Second of the original file's datestamp.</td></tr>
-</tbody></table><div class="footer copyright text-right">Compression class documentation © Paul Manias 1996-2026</div></div>
+</tbody></table><div class="footer copyright text-right">Compression class documentation © Paul Manias © 1996-2026</div></div>
 </div></div></div><script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../../js/base.js"></script><script type="text/javascript">
 const ready = fn => document.readyState !== 'loading' ? fn() : document.addEventListener('DOMContentLoaded', fn);
 

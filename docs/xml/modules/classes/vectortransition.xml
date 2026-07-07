@@ -51,9 +51,7 @@
       <access read="G">Get</access>
       <type>STRING</type>
       <description>
-<p>The returned XML defines the transition's stop list as <code>
-<stop/></code> elements, excluding the wrapping <code>
-<kotuku:transition/></code> element and <code>id</code> attribute.</p>
+<p>The returned XML defines the transition's stop list as <code>&lt;stop/&gt;</code> elements, excluding the wrapping <code>&lt;kotuku:transition/&gt;</code> element and <code>id</code> attribute.</p>
       </description>
       <tags>caller-owns-result</tags>
     </field>

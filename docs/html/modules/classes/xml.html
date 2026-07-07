@@ -459,25 +459,16 @@ local err = xml.acDataFeed(nil, DATA_XML, 'First element')
 <tr><th>XMS::UPDATE</th><td>As for <code>UPDATE_ONLY</code>, but if the attribute does not exist, it will be created.</td></tr>
 <tr><th>XMS::UPDATE_ONLY</th><td>SetAttrib will find the target attribute and update it.  It is not possible to rename the attribute when using this technique.  <code>ERR::Search</code> is returned if the attribute cannot be found.</td></tr>
 </tbody></table><div class="footer copyright text-right">XML module documentation © Paul Manias © 2001-2026</div></div>
-<div class="docs-content" style="display:none;" id="XPVT"><h1>XPVT Type</h1><p class="lead">Type descriptors for XPathValue</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>XPVT::Array</th><td></td></tr>
-<tr><th>XPVT::Boolean</th><td></td></tr>
-<tr><th>XPVT::Date</th><td></td></tr>
-<tr><th>XPVT::DateTime</th><td></td></tr>
-<tr><th>XPVT::Map</th><td></td></tr>
-<tr><th>XPVT::NodeSet</th><td></td></tr>
-<tr><th>XPVT::Number</th><td></td></tr>
-<tr><th>XPVT::String</th><td></td></tr>
-<tr><th>XPVT::Time</th><td></td></tr>
-</tbody></table><div class="footer copyright text-right">XML module documentation © Paul Manias © 2001-2026</div></div>
 <div class="docs-content" style="display:none;" id="XSF"><h1>XSF Type</h1><p class="lead">Options for the Sort method.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>XSF::CHECK_SORT</th><td>Tells the algorithm to check for a 'sort' attribute in each analysed tag and if found, the algorithm will use that as the sort value instead of that indicated in the <code>Attrib</code> field.</td></tr>
 <tr><th>XSF::DESC</th><td>Sort in descending order.</td></tr>
 </tbody></table><div class="footer copyright text-right">XML module documentation © Paul Manias © 2001-2026</div></div>
+<div class="docs-content" style="display:none;" id="XTF"><h1>XTF Type</h1><p class="lead">Standard flags for XTag.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>XTF::CDATA</th><td>Tag represents <code>CDATA</code>.</td></tr>
+<tr><th>XTF::COMMENT</th><td>Tag represents a comment of the format <code>&lt;!-- Comment --&gt;</code>.</td></tr>
+<tr><th>XTF::INSTRUCTION</th><td>Tag represents an instruction of the format <code>&lt;?xml?&gt;</code>.</td></tr>
+<tr><th>XTF::NOTATION</th><td>Tag represents a notation of the format <code>&lt;!XML&gt;</code>.</td></tr>
+</tbody></table><div class="footer copyright text-right">XML module documentation © Paul Manias © 2001-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-XMLAttrib"><h1>XMLAttrib Structure</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Name</th><td><span class="text-nowrap">STRING</span></td><td>Name of the attribute</td></tr>
 <tr><th>Value</th><td><span class="text-nowrap">STRING</span></td><td>Value of the attribute</td></tr>
-</tbody></table><div class="footer copyright text-right">XML class documentation © Paul Manias © 2001-2026</div></div>
-<div class="docs-content" style="display:none;" id="struct-XPathValue"><h1>XPathValue Structure</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Type</th><td><span class="text-nowrap">XPVT</span></td><td>Identifies the type of value stored</td></tr>
-<tr><th>NumberValue</th><td><span class="text-nowrap">DOUBLE</span></td><td>Defined if the type is Number or Boolean</td></tr>
-<tr><th>StringValue</th><td><span class="text-nowrap">STRING</span></td><td>Defined if the type is String</td></tr>
 </tbody></table><div class="footer copyright text-right">XML class documentation © Paul Manias © 2001-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-XTag"><h1>XTag Structure</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>ID</th><td><span class="text-nowrap">INT</span></td><td>Globally unique ID assigned to the tag on creation.</td></tr>
 <tr><th>ParentID</th><td><span class="text-nowrap">INT</span></td><td>UID of the parent tag</td></tr>

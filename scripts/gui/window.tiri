@@ -3,8 +3,7 @@ Documentation is available in the Kotuku Wiki.
 --]]
 
    import 'gui'
-   include 'display'
-   include 'vector'
+   include 'display', 'vector'
 
    namespace 'gui'
 

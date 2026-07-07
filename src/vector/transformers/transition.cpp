@@ -159,8 +159,8 @@ static ERR TRANSITION_NewPlacement(extVectorTransition *Self) {
 -FIELD-
 XMLDef: Returns an SVG compliant XML string that describes the transition.
 
-The returned XML defines the transition's stop list as `<stop/>` elements, excluding the wrapping
-`<kotuku:transition/>` element and `id` attribute.
+The returned XML defines the transition's stop list as `&lt;stop/&gt;` elements, excluding the wrapping
+`&lt;kotuku:transition/&gt;` element and `id` attribute.
 -END-
 
 *********************************************************************************************************************/

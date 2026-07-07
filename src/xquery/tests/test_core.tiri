@@ -1,7 +1,6 @@
 -- Core XPath query tests
 
-   include 'xml'
-   include 'xquery'
+   include 'xml', 'xquery'
 
 function contains(table, element)
    for value in values(table) do

@@ -105,7 +105,19 @@ http.acActivate()
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Datatype" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Datatype"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"></i></td><th class="col-md-1">Datatype</th><td class="col-md-1"><span class="text-nowrap">DATA</span></td><td>The default datatype format to use when passing data to a target object.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Datatype" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>When streaming downloaded content to an object, the default datatype is <code>RAW</code> (binary mode).  An alternative is to send the data as <code>TEXT</code> or <code>XML</code> by changing the Datatype field value.</p>
 <p>The receiving object can identify the data as HTTP information by checking the class ID of the sender.</p>
-<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody></tbody></table>
+<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">DATA::AUDIO</th><td>Audio file data, recognised by the Sound class</td></tr>
+<tr><th class="col-md-1">DATA::CONTENT</th><td>Document content (between XML tags) - sent by document objects only</td></tr>
+<tr><th class="col-md-1">DATA::DEVICE_INPUT</th><td>Device activity</td></tr>
+<tr><th class="col-md-1">DATA::FILE</th><td>File location (the data will reflect the complete file path)</td></tr>
+<tr><th class="col-md-1">DATA::IMAGE</th><td>Image file data, recognised by the Image class</td></tr>
+<tr><th class="col-md-1">DATA::INPUT_READY</th><td>Device input that has been transformed into user input</td></tr>
+<tr><th class="col-md-1">DATA::RAW</th><td>Raw unprocessed data</td></tr>
+<tr><th class="col-md-1">DATA::RECEIPT</th><td>Receipt for item data, in response to an earlier request</td></tr>
+<tr><th class="col-md-1">DATA::RECORD</th><td>Database record</td></tr>
+<tr><th class="col-md-1">DATA::REQUEST</th><td>Make a request for item data</td></tr>
+<tr><th class="col-md-1">DATA::TEXT</th><td>Standard ASCII text</td></tr>
+<tr><th class="col-md-1">DATA::XML</th><td>Markup based text data.  NOTE - For clipboard data, the top-level encapsulating tag must declare the type of XML, e.g. 'html', 'ripple'.  For plain XML, use 'xml'</td></tr>
+</tbody></table>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Error" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Error"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"></i></td><th class="col-md-1">Error</th><td class="col-md-1"><span class="text-nowrap">ERR</span></td><td>The error code received for the most recently executed HTTP command.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Error" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
@@ -344,7 +356,20 @@ http.acActivate()
 <tr><td>Length</td><td>The total number of bytes to write to the object.</td></tr>
 <tr><td>Result</td><td>This parameter with be updated with the total number of bytes written from the Buffer.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;"></div></div></td></tr>
-</tbody></table><div class="footer copyright text-right">HTTP class documentation © Paul Manias © 2005-2026</div></div><div class="docs-content" style="display:none;" id="HGS"><h1>HGS Type</h1><p class="lead">Options for defining an HTTP object's state.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>HGS::AUTHENTICATED</th><td>Following successful authentication, this state value will be set.</td></tr>
+</tbody></table><div class="footer copyright text-right">HTTP class documentation © Paul Manias © 2005-2026</div></div><div class="docs-content" style="display:none;" id="DATA"><h1>DATA Type</h1><p class="lead">Data codes</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>DATA::AUDIO</th><td>Audio file data, recognised by the Sound class</td></tr>
+<tr><th>DATA::CONTENT</th><td>Document content (between XML tags) - sent by document objects only</td></tr>
+<tr><th>DATA::DEVICE_INPUT</th><td>Device activity</td></tr>
+<tr><th>DATA::FILE</th><td>File location (the data will reflect the complete file path)</td></tr>
+<tr><th>DATA::IMAGE</th><td>Image file data, recognised by the Image class</td></tr>
+<tr><th>DATA::INPUT_READY</th><td>Device input that has been transformed into user input</td></tr>
+<tr><th>DATA::RAW</th><td>Raw unprocessed data</td></tr>
+<tr><th>DATA::RECEIPT</th><td>Receipt for item data, in response to an earlier request</td></tr>
+<tr><th>DATA::RECORD</th><td>Database record</td></tr>
+<tr><th>DATA::REQUEST</th><td>Make a request for item data</td></tr>
+<tr><th>DATA::TEXT</th><td>Standard ASCII text</td></tr>
+<tr><th>DATA::XML</th><td>Markup based text data.  NOTE - For clipboard data, the top-level encapsulating tag must declare the type of XML, e.g. 'html', 'ripple'.  For plain XML, use 'xml'</td></tr>
+</tbody></table><div class="footer copyright text-right">HTTP module documentation © Paul Manias © 2005-2026</div></div>
+<div class="docs-content" style="display:none;" id="HGS"><h1>HGS Type</h1><p class="lead">Options for defining an HTTP object's state.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>HGS::AUTHENTICATED</th><td>Following successful authentication, this state value will be set.</td></tr>
 <tr><th>HGS::AUTHENTICATING</th><td>If authentication is requested from the server, the HTTP object will enter this state.</td></tr>
 <tr><th>HGS::COMPLETED</th><td>This state indicates that the HTTP request was completed in a normal manner.</td></tr>
 <tr><th>HGS::READING_CONTENT</th><td>The client will remain in this state when the server is sending data to the client.</td></tr>

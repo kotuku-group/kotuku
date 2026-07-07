@@ -24,7 +24,7 @@
 <p>To load a module and interact with its API, create a module object and initialise it.  The following code segment illustrates in C++:</p>
 <pre>DisplayBase *DisplayBase;
 auto modDisplay = objModule::create::global(fl::Name("display"));
-if (modDisplay) modDisplay-&gt;get(FID_ModBase, DisplayBase);
+if (modDisplay) modDisplay-&gt;getModBase(DisplayBase);
 </pre>
 <p>To do the same in Tiri:</p>
 <pre>mGfx = mod.load('display')
@@ -80,14 +80,14 @@ if (modDisplay) modDisplay-&gt;get(FID_ModBase, DisplayBase);
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">NoSupport</th><td>Unit tests are not defined for the module.</td></tr>
 </tbody></table></div></div></td></tr>
-</tbody></table><div class="footer copyright text-right">Module class documentation © Paul Manias 1996-2026</div></div><div class="docs-content" style="display:none;" id="MOF"><h1>MOF Type</h1><p class="lead">Module flags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>MOF::LINK_LIBRARY</th><td>Module refers to a symbolic link library (e.g. libz DLL or SO)</td></tr>
+</tbody></table><div class="footer copyright text-right">Module class documentation © Paul Manias © 1996-2026</div></div><div class="docs-content" style="display:none;" id="MOF"><h1>MOF Type</h1><p class="lead">Module flags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>MOF::LINK_LIBRARY</th><td>Module refers to a symbolic link library (e.g. libz DLL or SO)</td></tr>
 <tr><th>MOF::STATIC</th><td>This flag prevents the loaded module code from being unloaded when the module object is freed.  This may be needed in cases where a module is designed with the presumption that it will remain in memory after being loaded by the developer.</td></tr>
 <tr><th>MOF::SYSTEM_PROBE</th><td>Indicates that the module is being probed.  Do not use outside of the core library.</td></tr>
-</tbody></table><div class="footer copyright text-right">Module module documentation © Paul Manias 1996-2026</div></div>
+</tbody></table><div class="footer copyright text-right">Module module documentation © Paul Manias © 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-Function"><h1>Function Structure</h1><p class="lead">Function list array structure</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Address</th><td><span class="text-nowrap">APTR</span></td><td>Pointer to the function entry point</td></tr>
 <tr><th>Name</th><td><span class="text-nowrap">CSTRING</span></td><td>Name of the function</td></tr>
 <tr><th>Args</th><td><span class="text-nowrap">const struct FunctionField *</span></td><td>A list of parameters accepted by the function</td></tr>
-</tbody></table><div class="footer copyright text-right">Module class documentation © Paul Manias 1996-2026</div></div>
+</tbody></table><div class="footer copyright text-right">Module class documentation © Paul Manias © 1996-2026</div></div>
 </div></div></div><script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../../js/base.js"></script><script type="text/javascript">
 const ready = fn => document.readyState !== 'loading' ? fn() : document.addEventListener('DOMContentLoaded', fn);
 

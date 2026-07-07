@@ -140,7 +140,18 @@ unpackAlpha(Colour)
 <tr data-bs-toggle="collapse" data-bs-target="#fl-DataFlags" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-DataFlags"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">DataFlags</th><td class="col-md-1"><span class="text-nowrap">MEM</span></td><td>Defines the memory flags to use when allocating a bitmap's data area.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-DataFlags" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>DataFlags controls the kind of backing storage requested during initialisation.  Common values are <code>MEM::DATA</code>, <code>MEM::VIDEO</code> and <code>MEM::TEXTURE</code>.</p>
 <p>Video or texture-backed bitmaps can be faster for some drawing paths, but direct CPU access is platform dependent.  Use <a data-bs-toggle="tooltip" title="Locks the bitmap surface for direct read/write access." href="#ta-Lock">Lock()</a> before reading or writing <a data-bs-toggle="tooltip" title="Pointer to a bitmap's data area." href="#tf-Data">Data</a> directly when the bitmap is not a regular data bitmap.</p>
-<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody></tbody></table>
+<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">MEM::AUDIO</th><td>Identifies memory located on an audio device, such as a sound card.</td></tr>
+<tr><th class="col-md-1">MEM::CODE</th><td>Used for memory that can execute code.</td></tr>
+<tr><th class="col-md-1">MEM::DATA</th><td>The default type, <code>DATA</code>, is used to indicate a standard memory allocation from system RAM.</td></tr>
+<tr><th class="col-md-1">MEM::NO_CLEAR</th><td>Do not clear the memory on allocation (saves time).</td></tr>
+<tr><th class="col-md-1">MEM::READ</th><td>The memory is explicitly marked as readable.</td></tr>
+<tr><th class="col-md-1">MEM::READ_WRITE</th><td>Synonym for <code>READ | WRITE</code></td></tr>
+<tr><th class="col-md-1">MEM::STRING</th><td>Identifies the memory content as a null terminated string, which aids diagnostics.</td></tr>
+<tr><th class="col-md-1">MEM::TEXTURE</th><td>Identifies non-displayable video memory, e.g. texture graphics.</td></tr>
+<tr><th class="col-md-1">MEM::UNTRACKED</th><td>Prevents the memory block from being tracked back to the current context.</td></tr>
+<tr><th class="col-md-1">MEM::VIDEO</th><td>Identifies video memory, such as the frame buffer.</td></tr>
+<tr><th class="col-md-1">MEM::WRITE</th><td>The memory is explicitly marked as writeable.</td></tr>
+</tbody></table>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-DrawUCPixel" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-DrawUCPixel"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">DrawUCPixel</th><td class="col-md-1"><span class="text-nowrap">FUNCTION *</span></td><td>Points to a C function that draws pixels to the bitmap using colour indexes.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-DrawUCPixel" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
@@ -538,6 +549,18 @@ unpackAlpha(Colour)
 <tr><th>CS::CIE_LCH</th><td>Polar L*CHab colour space defined by CIE 15.</td></tr>
 <tr><th>CS::LINEAR_RGB</th><td>Linear RGB is used to improve colour balance in blending operations.</td></tr>
 <tr><th>CS::SRGB</th><td>The default colour-space is sRGB.</td></tr>
+</tbody></table><div class="footer copyright text-right">Bitmap module documentation © Paul Manias © 2003-2026</div></div>
+<div class="docs-content" style="display:none;" id="MEM"><h1>MEM Type</h1><p class="lead">Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>MEM::AUDIO</th><td>Identifies memory located on an audio device, such as a sound card.</td></tr>
+<tr><th>MEM::CODE</th><td>Used for memory that can execute code.</td></tr>
+<tr><th>MEM::DATA</th><td>The default type, <code>DATA</code>, is used to indicate a standard memory allocation from system RAM.</td></tr>
+<tr><th>MEM::NO_CLEAR</th><td>Do not clear the memory on allocation (saves time).</td></tr>
+<tr><th>MEM::READ</th><td>The memory is explicitly marked as readable.</td></tr>
+<tr><th>MEM::READ_WRITE</th><td>Synonym for <code>READ | WRITE</code></td></tr>
+<tr><th>MEM::STRING</th><td>Identifies the memory content as a null terminated string, which aids diagnostics.</td></tr>
+<tr><th>MEM::TEXTURE</th><td>Identifies non-displayable video memory, e.g. texture graphics.</td></tr>
+<tr><th>MEM::UNTRACKED</th><td>Prevents the memory block from being tracked back to the current context.</td></tr>
+<tr><th>MEM::VIDEO</th><td>Identifies video memory, such as the frame buffer.</td></tr>
+<tr><th>MEM::WRITE</th><td>The memory is explicitly marked as writeable.</td></tr>
 </tbody></table><div class="footer copyright text-right">Bitmap module documentation © Paul Manias © 2003-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-ColourFormat"><h1>ColourFormat Structure</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>RedShift</th><td><span class="text-nowrap">UINT8</span></td><td>Right shift value for red (15/16 bit formats only)</td></tr>
 <tr><th>GreenShift</th><td><span class="text-nowrap">UINT8</span></td><td>Right shift value for green</td></tr>

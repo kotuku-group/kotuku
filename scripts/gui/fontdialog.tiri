@@ -6,8 +6,7 @@ Documentation is available in the Kotuku Wiki.
    import 'gui/listview'
    import 'gui/window'
    import 'gui/button'
-   include 'display'
-   include 'font'
+   include 'display', 'font'
 
    namespace 'gui'
 

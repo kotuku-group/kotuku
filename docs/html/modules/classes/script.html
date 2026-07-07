@@ -73,10 +73,6 @@
 <p>This field can refer to the target object that new objects at the root of the script will be initialised to.  If this field is not set, the root-level objects in the script will be initialised to the script's owner.</p>
       
 </div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#fl-TotalArgs" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-TotalArgs"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i> <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">TotalArgs</th><td class="col-md-1"><span class="text-nowrap">INT</span></td><td>Reflects the total number of parameters used in a script object.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-TotalArgs" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<p>The total number of parameters that have been set in a script object through the unlisted field mechanism are reflected in the value of this field.</p>
-      
-</div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-WorkingPath" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-WorkingPath"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i> <i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"></i></td><th class="col-md-1">WorkingPath</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Defines the script's working path (folder).</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-WorkingPath" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>The working path for a script is defined here.  By default this is defined as the location from which the script was loaded, without the file name.  If this cannot be determined then the working path for the parent process is used (this is usually set to the location of the program).</p>
 <p>The working path is always fully qualified with a slash or colon at the end of the string.</p>
@@ -164,10 +160,10 @@ SET_FUNCTION_SCRIPT(callback, script, procedure_id);
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
-</tbody></table><div class="footer copyright text-right">Script class documentation © Paul Manias 1996-2026</div></div><div class="docs-content" style="display:none;" id="SCF"><h1>SCF Type</h1><p class="lead">Script flags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>SCF::EXIT_ON_ERROR</th><td>The script will automatically terminate its execution process if an error is detected.</td></tr>
+</tbody></table><div class="footer copyright text-right">Script class documentation © Paul Manias © 1996-2026</div></div><div class="docs-content" style="display:none;" id="SCF"><h1>SCF Type</h1><p class="lead">Script flags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>SCF::EXIT_ON_ERROR</th><td>The script will automatically terminate its execution process if an error is detected.</td></tr>
 <tr><th>SCF::LOG_ALL</th><td>Enables execution debugging.  More information will be printed to the console in this mode.</td></tr>
 <tr><th>SCF::PROCESS_DOC</th><td>Process any embedded documentation in the script.</td></tr>
-</tbody></table><div class="footer copyright text-right">Script module documentation © Paul Manias 1996-2026</div></div>
+</tbody></table><div class="footer copyright text-right">Script module documentation © Paul Manias © 1996-2026</div></div>
 </div></div></div><script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../../js/base.js"></script><script type="text/javascript">
 const ready = fn => document.readyState !== 'loading' ? fn() : document.addEventListener('DOMContentLoaded', fn);
 

@@ -107,7 +107,27 @@ Z: Close Path
 <p>NOTE: This method is not compatible with Tiri calls.</p>
       
 </div></div></td></tr>
-</tbody></table><div class="footer copyright text-right">VectorPath class documentation © Paul Manias © 2010-2026</div></div><div class="docs-content" style="display:none;" id="struct-PathCommand"><h1>PathCommand Structure</h1><p class="lead">Base structure for path commands.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Type</th><td><span class="text-nowrap">PE</span></td><td>The command type</td></tr>
+</tbody></table><div class="footer copyright text-right">VectorPath class documentation © Paul Manias © 2010-2026</div></div><div class="docs-content" style="display:none;" id="PE"><h1>PE Type</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>PE::Arc</th><td></td></tr>
+<tr><th>PE::ArcRel</th><td></td></tr>
+<tr><th>PE::ClosePath</th><td></td></tr>
+<tr><th>PE::Curve</th><td></td></tr>
+<tr><th>PE::CurveRel</th><td></td></tr>
+<tr><th>PE::HLine</th><td></td></tr>
+<tr><th>PE::HLineRel</th><td></td></tr>
+<tr><th>PE::Line</th><td></td></tr>
+<tr><th>PE::LineRel</th><td></td></tr>
+<tr><th>PE::Move</th><td></td></tr>
+<tr><th>PE::MoveRel</th><td></td></tr>
+<tr><th>PE::QuadCurve</th><td></td></tr>
+<tr><th>PE::QuadCurveRel</th><td></td></tr>
+<tr><th>PE::QuadSmooth</th><td></td></tr>
+<tr><th>PE::QuadSmoothRel</th><td></td></tr>
+<tr><th>PE::Smooth</th><td></td></tr>
+<tr><th>PE::SmoothRel</th><td></td></tr>
+<tr><th>PE::VLine</th><td></td></tr>
+<tr><th>PE::VLineRel</th><td></td></tr>
+</tbody></table><div class="footer copyright text-right">VectorPath module documentation © Paul Manias © 2010-2026</div></div>
+<div class="docs-content" style="display:none;" id="struct-PathCommand"><h1>PathCommand Structure</h1><p class="lead">Base structure for path commands.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Type</th><td><span class="text-nowrap">PE</span></td><td>The command type</td></tr>
 <tr><th>LargeArc</th><td><span class="text-nowrap">UINT8</span></td><td>Equivalent to the large-arc-flag in SVG, it ensures that the arc follows the longest drawing path when <code>TRUE</code>.</td></tr>
 <tr><th>Sweep</th><td><span class="text-nowrap">UINT8</span></td><td>Equivalent to the sweep-flag in SVG, it inverts the default behaviour in generating arc paths.</td></tr>
 <tr><th>Pad1</th><td><span class="text-nowrap">UINT8</span></td><td>Private</td></tr>
