@@ -339,7 +339,7 @@ void SceneRenderer::ClipBuffer::draw_bounding_box(SceneRenderer &Render)
    set_viewport_fixed_bounds(m_clip->Viewport, shape_bounds.left, shape_bounds.top,
       shape_bounds.width(), shape_bounds.height());
 
-   if (!set_render_transform(m_clip->Viewport, build_matrix_transform(m_shape->Matrices))) {
+   if (!set_render_transform(m_clip->Viewport, build_matrix_transform(m_shape->matrices()))) {
       clip_viewport->vpClipConfiguring = false;
       return;
    }

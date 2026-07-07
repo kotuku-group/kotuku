@@ -153,7 +153,7 @@ static ERR animation_timer(extSVG *SVG, int64_t TimeElapsed, int64_t CurrentTime
 
       VectorMatrix *m = nullptr;
       if (vt.transforms.front()->additive IS ADD::REPLACE) {
-         for (m = vector->Matrices; (m); m=m->Next) {
+         for (vector->getMatrices(m); (m); m=m->Next) {
             if ((unsigned int)m->Tag IS MTAG_SVG_TRANSFORM) {
                double d = 1.0 / (m->ScaleX * m->ScaleY - m->ShearY * m->ShearX);
 

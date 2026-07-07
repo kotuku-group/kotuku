@@ -146,16 +146,19 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
       Self->Scene->Viewport->setAspectRatio(Self->AspectRatio);
 
       agg::trans_affine &t = filter->ClientVector->Transform;
-      VectorMatrix matrix;
-      matrix.Vector = Self->Scene->Viewport;
-      matrix.ScaleX = t.sx;
-      matrix.ShearY = t.shy;
-      matrix.ShearX = t.shx;
-      matrix.ScaleY = t.sy;
+      auto viewport = (extVectorViewport *)Self->Scene->Viewport;
+
+      // Temporarily inject the client's transform as the viewport's sole matrix for the duration of the render.
+
+      viewport->Matrices.clear();
+      auto &matrix = viewport->Matrices.emplace_back();
+      matrix.Vector     = Self->Scene->Viewport;
+      matrix.ScaleX     = t.sx;
+      matrix.ShearY     = t.shy;
+      matrix.ShearX     = t.shx;
+      matrix.ScaleY     = t.sy;
       matrix.TranslateX = t.tx;
       matrix.TranslateY = t.ty;
-
-      ((extVectorViewport *)Self->Scene->Viewport)->Matrices = &matrix;
 
       auto save_parent = Self->Source->Parent;
       auto const save_next = Self->Source->Next;
@@ -175,7 +178,7 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
       Self->Scene->Viewport->Child = nullptr;
       Self->Source->Parent = save_parent;
       Self->Source->Next   = save_next;
-      ((extVectorViewport *)Self->Scene->Viewport)->Matrices = nullptr;
+      viewport->Matrices.clear();
       mark_dirty(Self->Source, RC::DIRTY);
    }
 

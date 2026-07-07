@@ -31,6 +31,18 @@ static std::mutex glResizeLock;
 
 static ERR VECTOR_Push(extVector *, struct vec::Push *);
 
+static void rebuild_matrix_links(extVector *Self)
+{
+   VectorMatrix *prev = nullptr;
+
+   for (auto &matrix : Self->Matrices) {
+      matrix.Vector = Self;
+      matrix.Next = nullptr;
+      if (prev) prev->Next = &matrix;
+      prev = &matrix;
+   }
+}
+
 //********************************************************************************************************************
 // For the use of the VectorScene's Debug() method.
 
@@ -228,6 +240,7 @@ struct(*VectorMatrix) Matrix: Reference to the structure that requires removal.
 -ERRORS-
 Okay:
 NullArgs:
+NotFound:
 
 -TAGS-
 mutates-object, closes-handle
@@ -238,24 +251,17 @@ static ERR VECTOR_FreeMatrix(extVector *Self, struct vec::FreeMatrix *Args)
 {
    if ((!Args) or (!Args->Matrix)) return ERR::NullArgs;
 
-   // Clean up the linked list
+   for (auto matrix = Self->Matrices.begin(); matrix != Self->Matrices.end(); ++matrix) {
+      if (&*matrix IS Args->Matrix) {
+         Self->Matrices.erase(matrix);
+         rebuild_matrix_links(Self);
 
-   if (Self->Matrices IS Args->Matrix) {
-      Self->Matrices = Args->Matrix->Next;
-   }
-   else {
-      for (auto t = Self->Matrices; t; t=t->Next) {
-         if (t->Next IS Args->Matrix) {
-            t->Next = Args->Matrix->Next;
-            break;
-         }
+         mark_dirty(Self, RC::TRANSFORM);
+         return ERR::Okay;
       }
    }
 
-   FreeResource(Args->Matrix);
-
-   mark_dirty(Self, RC::TRANSFORM);
-   return ERR::Okay;
+   return ERR::NotFound;
 }
 
 /*********************************************************************************************************************
@@ -463,7 +469,6 @@ int End: If `true`, the matrix priority is lowered by inserting it at the end of
 -ERRORS-
 Okay:
 NullArgs:
-AllocMemory
 
 -TAGS-
 mutates-object, object-owns-result, creates-resource
@@ -472,35 +477,25 @@ mutates-object, object-owns-result, creates-resource
 
 static ERR VECTOR_NewMatrix(extVector *Self, struct vec::NewMatrix *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
-   VectorMatrix *transform;
-   if (!AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&transform)) {
-      transform->Vector = Self;
-      transform->ScaleX = 1.0;
-      transform->ScaleY = 1.0;
-      transform->ShearX = 0;
-      transform->ShearY = 0;
-      transform->TranslateX = 0;
-      transform->TranslateY = 0;
+   Args->Transform = nullptr;
 
-      if ((Args->End) and (Self->Matrices)) {
-         transform->Next   = nullptr;
-         VectorMatrix *last = Self->Matrices;
-         while (last->Next) last = last->Next;
-         last->Next = transform;
-      }
-      else { // Insert transform at the start of the list.
-         transform->Next = Self->Matrices;
-         Self->Matrices = transform;
-      }
-
-      Args->Transform = transform;
-
-      mark_dirty(Self, RC::TRANSFORM);
-      return ERR::Okay;
+   if (Args->End) {
+      Self->Matrices.emplace_back();
+      Args->Transform = &Self->Matrices.back();
    }
-   else return ERR::AllocMemory;
+   else {
+      Self->Matrices.emplace_front();
+      Args->Transform = &Self->Matrices.front();
+   }
+
+   Args->Transform->Vector = Self;
+
+   rebuild_matrix_links(Self);
+
+   mark_dirty(Self, RC::TRANSFORM);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -1563,6 +1558,17 @@ represented by the !VectorMatrix structure, and are linked in the order in which
 
 !VectorMatrix
 
+*********************************************************************************************************************/
+
+static ERR VECTOR_GET_Matrices(extVector *Self, struct VectorMatrix * &Value)
+{
+   if (Self->Matrices.empty()) Value = nullptr;
+   else Value = &Self->Matrices.front();
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
 -FIELD-
 MiterLimit: Imposes a limit on the ratio of the miter length to the StrokeWidth.
 
@@ -2318,14 +2324,6 @@ extVector::~extVector() {
          glResizeSubscriptions.erase(this);
       }
    }
-
-   if (Matrices) {
-      VectorMatrix *next;
-      for (auto t=Matrices; t; t=next) {
-         next = t->Next;
-         FreeResource(t);
-      }
-   }
 }
 
 //********************************************************************************************************************
@@ -2338,7 +2336,6 @@ static const FieldArray clVectorFields[] = {
    { "Next",            FDF_OBJECT|FD_RW, nullptr, VECTOR_SET_Next, CLASSID::VECTOR },
    { "Prev",            FDF_OBJECT|FD_RW, nullptr, VECTOR_SET_Prev, CLASSID::VECTOR },
    { "Parent",          FDF_OBJECT|FD_R },
-   { "Matrices",        FDF_POINTER|FDF_STRUCT|FDF_R, nullptr, nullptr, "VectorMatrix" },
    { "StrokeOpacity",   FDF_DOUBLE|FDF_RW, nullptr, VECTOR_SET_StrokeOpacity },
    { "FillOpacity",     FDF_DOUBLE|FDF_RW, nullptr, VECTOR_SET_FillOpacity },
    { "Opacity",         FDF_DOUBLE|FD_RW, nullptr, VECTOR_SET_Opacity },
@@ -2369,6 +2366,7 @@ static const FieldArray clVectorFields[] = {
    // Virtual fields
    { "DashArray",    FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FD_RW|FDF_PURE, VECTOR_GET_DashArray, VECTOR_SET_DashArray },
    { "DisplayScale", FDF_VIRTUAL|FDF_DOUBLE|FDF_R,              VECTOR_GET_DisplayScale },
+   { "Matrices",     FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_R|FDF_PURE, VECTOR_GET_Matrices, nullptr, "VectorMatrix" },
    { "ResizeEvent",  FDF_VIRTUAL|FDF_FUNCTION|FDF_W,            nullptr, VECTOR_SET_ResizeEvent },
    { "Sequence",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, VECTOR_GET_Sequence },
    { "StrokeColour", FDF_VIRTUAL|FDF_STRUCT|FD_RW|FDF_PURE,     VECTOR_GET_StrokeColour, VECTOR_SET_StrokeColour, "FRGB" },

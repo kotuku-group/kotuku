@@ -212,5 +212,5 @@ end
    assertNear(wave.noise, 0.75, 'VectorWave noise should parse from SVG')
 
    local saved = saveScene(scene, 'temp:svg_wave_noise.svg')
-   assertContains(saved, 'noise=', 'Saved SVG should include VectorWave noise')
+   assertContains(saved, 'noise=', 'Saved SVG should include VectorWave noise, got ' .. saved)
 end

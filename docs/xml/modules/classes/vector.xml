@@ -110,6 +110,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="NotFound">A search routine in this function failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object, closes-handle</tags>
@@ -159,7 +160,6 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object, object-owns-result, creates-resource</tags>
@@ -536,8 +536,8 @@
     <field>
       <name>Matrices</name>
       <comment>A linked list of transform matrices that have been applied to the vector.</comment>
-      <access read="R">Read</access>
-      <type>struct VectorMatrix *</type>
+      <access read="G">Get</access>
+      <type>struct VectorMatrix</type>
       <description>
 <p>All transforms that have been allocated via <function module="Vector">NewMatrix</function> can be read from the Matrices field.  Each transform is represented by the <st>VectorMatrix</st> structure, and are linked in the order in which they are added to the vector.</p>
 <struct lookup="VectorMatrix"/>
