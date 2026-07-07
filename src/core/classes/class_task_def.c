@@ -26,22 +26,22 @@ static const struct MethodEntry clTaskMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR TASK_NewPlacement(extTask *Self) {
+static ERR TASK_New(extTask *Self) {
    new (Self) extTask(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR TASK_FreePlacement(extTask *Self) {
+static ERR TASK_Free(extTask *Self) {
    Self->~extTask();
    return ERR::Okay;
 }
 
 static const struct ActionArray clTaskActions[] = {
    { AC::Activate, TASK_Activate },
-   { AC::FreePlacement, TASK_FreePlacement },
+   { AC::Free, TASK_Free },
    { AC::GetKey, TASK_GetKey },
    { AC::Init, TASK_Init },
-   { AC::NewPlacement, TASK_NewPlacement },
+   { AC::New, TASK_New },
    { AC::Query, TASK_Query },
    { AC::SetKey, TASK_SetKey },
    { AC::Write, TASK_Write },

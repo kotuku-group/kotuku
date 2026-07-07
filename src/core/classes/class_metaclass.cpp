@@ -177,9 +177,9 @@ static const FieldArray glMetaFields[] = {
 };
 
 extern "C" ERR CLASS_FindField(extMetaClass *, struct mc::FindField *);
-extern "C" ERR CLASS_FreePlacement(extMetaClass *);
+extern "C" ERR CLASS_Free(extMetaClass *);
 extern "C" ERR CLASS_Init(extMetaClass *);
-extern "C" ERR CLASS_NewPlacement(extMetaClass *);
+extern "C" ERR CLASS_New(extMetaClass *);
 
 FDEF argsFindField[] = { { "ID", FD_INT }, { "Field:Field", FD_RESULT|FD_PTR|FD_STRUCT }, { "Source", FD_RESULT|FD_OBJECTPTR }, { 0, 0 } };
 
@@ -217,9 +217,9 @@ void init_metaclass(void)
    glMetaClass.Methods.resize(2);
    glMetaClass.Methods[1] = { AC(-1), (APTR)CLASS_FindField, "FindField", argsFindField, sizeof(struct mc::FindField) };
 
-   glMetaClass.ActionTable[int(AC::FreePlacement)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_FreePlacement;
+   glMetaClass.ActionTable[int(AC::Free)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_Free;
    glMetaClass.ActionTable[int(AC::Init)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_Init;
-   glMetaClass.ActionTable[int(AC::NewPlacement)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_NewPlacement;
+   glMetaClass.ActionTable[int(AC::New)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_New;
    glMetaClass.ActionTable[int(AC::Signal)].PerformAction = &DEFAULT_Signal;
 
    sort_class_fields(&glMetaClass, glMetaClass.FieldLookup);
@@ -272,7 +272,7 @@ ERR CLASS_FindField(extMetaClass *Self, struct mc::FindField *Args)
 
 //********************************************************************************************************************
 
-ERR CLASS_FreePlacement(extMetaClass *Self)
+ERR CLASS_Free(extMetaClass *Self)
 {
    if (Self->ClassID != CLASSID::NIL) glClassMap.erase(Self->ClassID);
 
@@ -431,7 +431,7 @@ ERR CLASS_Init(extMetaClass *Self)
 
 //********************************************************************************************************************
 
-ERR CLASS_NewPlacement(extMetaClass *Self)
+ERR CLASS_New(extMetaClass *Self)
 {
    new (Self) extMetaClass(Self->Class, Self->UID);
    return ERR::Okay;
@@ -452,14 +452,14 @@ can also be auto-generated using our IDL scripts - an approach that we strongly 
 
 <pre>
 ActionArray clActions[] = {
-   { AC::FreePlacement, PIC_FreePlacement },
-   { AC::NewPlacement,  PIC_NewPlacement },
-   { AC::Init,          PIC_Init },
-   { AC::Query,         PIC_Query },
-   { AC::Read,          PIC_Read },
-   { AC::SaveToObject,  PIC_SaveToObject },
-   { AC::Seek,          PIC_Seek },
-   { AC::Write,         PIC_Write },
+   { AC::Free,         PIC_Free },
+   { AC::New,          PIC_New },
+   { AC::Init,         PIC_Init },
+   { AC::Query,        PIC_Query },
+   { AC::Read,         PIC_Read },
+   { AC::SaveToObject, PIC_SaveToObject },
+   { AC::Seek,         PIC_Seek },
+   { AC::Write,        PIC_Write },
    { AC::NIL, nullptr }
 };
 </pre>

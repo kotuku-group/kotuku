@@ -131,12 +131,12 @@ static const struct MethodEntry clVectorMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR VECTOR_NewPlacement(extVector *Self) {
+static ERR VECTOR_New(extVector *Self) {
    new (Self) extVector(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR VECTOR_FreePlacement(extVector *Self) {
+static ERR VECTOR_Free(extVector *Self) {
    Self->~extVector();
    return ERR::Okay;
 }
@@ -145,13 +145,13 @@ static const struct ActionArray clVectorActions[] = {
    { AC::Disable, VECTOR_Disable },
    { AC::Draw, VECTOR_Draw },
    { AC::Enable, VECTOR_Enable },
-   { AC::FreePlacement, VECTOR_FreePlacement },
+   { AC::Free, VECTOR_Free },
    { AC::Hide, VECTOR_Hide },
    { AC::Init, VECTOR_Init },
    { AC::MoveToBack, VECTOR_MoveToBack },
    { AC::MoveToFront, VECTOR_MoveToFront },
+   { AC::New, VECTOR_New },
    { AC::NewOwner, VECTOR_NewOwner },
-   { AC::NewPlacement, VECTOR_NewPlacement },
    { AC::Show, VECTOR_Show },
    { AC::NIL, nullptr }
 };

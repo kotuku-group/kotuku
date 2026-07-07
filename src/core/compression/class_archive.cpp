@@ -174,7 +174,7 @@ static ERR ARCHIVE_Activate(objFile *Self)
 
 //********************************************************************************************************************
 
-static ERR ARCHIVE_FreePlacement(objFile *Self)
+static ERR ARCHIVE_Free(objFile *Self)
 {
    if (auto prv = (prvFileArchive *)Self->DerivedPtr) {
       if (prv->FileStream) FreeResource(prv->FileStream);
@@ -666,7 +666,7 @@ static ERR test_path(std::string &Path, RSF Flags, LOC *Type)
 
 static const ActionArray clArchiveActions[] = {
    { AC::Activate, ARCHIVE_Activate },
-   { AC::FreePlacement, ARCHIVE_FreePlacement },
+   { AC::Free, ARCHIVE_Free },
    { AC::Init,     ARCHIVE_Init },
    { AC::Query,    ARCHIVE_Query },
    { AC::Read,     ARCHIVE_Read },

@@ -679,7 +679,7 @@ enum class AC : int {
    MoveToFront = 23,
    NewChild = 24,
    NewOwner = 25,
-   NewObject = 26,
+   New = 26,
    Redo = 27,
    Query = 28,
    Read = 29,
@@ -701,9 +701,7 @@ enum class AC : int {
    Clipboard = 45,
    Refresh = 46,
    Disable = 47,
-   NewPlacement = 48,
-   FreePlacement = 49,
-   END = 50,
+   END = 48,
 };
 
 // Permission flags

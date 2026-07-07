@@ -31,20 +31,20 @@ static const struct FieldDef clVectorImageAspectRatio[] = {
    { nullptr, 0 }
 };
 
-static ERR VECTORIMAGE_NewPlacement(extVectorImage *Self) {
+static ERR VECTORIMAGE_New(extVectorImage *Self) {
    new (Self) extVectorImage(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR VECTORIMAGE_FreePlacement(extVectorImage *Self) {
+static ERR VECTORIMAGE_Free(extVectorImage *Self) {
    Self->~extVectorImage();
    return ERR::Okay;
 }
 
 static const struct ActionArray clVectorImageActions[] = {
-   { AC::FreePlacement, VECTORIMAGE_FreePlacement },
+   { AC::Free, VECTORIMAGE_Free },
    { AC::Init, VECTORIMAGE_Init },
-   { AC::NewPlacement, VECTORIMAGE_NewPlacement },
+   { AC::New, VECTORIMAGE_New },
    { AC::NIL, nullptr }
 };
 

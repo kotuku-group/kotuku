@@ -36,20 +36,20 @@ static const struct FieldDef clGradientEasing[] = {
    { nullptr, 0 }
 };
 
-static ERR GRADIENT_NewPlacement(extGradient *Self) {
+static ERR GRADIENT_New(extGradient *Self) {
    new (Self) extGradient(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR GRADIENT_FreePlacement(extGradient *Self) {
+static ERR GRADIENT_Free(extGradient *Self) {
    Self->~extGradient();
    return ERR::Okay;
 }
 
 static const struct ActionArray clGradientActions[] = {
-   { AC::FreePlacement, GRADIENT_FreePlacement },
+   { AC::Free, GRADIENT_Free },
    { AC::Init, GRADIENT_Init },
-   { AC::NewPlacement, GRADIENT_NewPlacement },
+   { AC::New, GRADIENT_New },
    { AC::NIL, nullptr }
 };
 

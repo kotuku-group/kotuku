@@ -8,23 +8,23 @@ static const struct FieldDef clVectorViewportVOF[] = {
    { nullptr, 0 }
 };
 
-static ERR VECTORVIEWPORT_NewPlacement(extVectorViewport *Self) {
+static ERR VECTORVIEWPORT_New(extVectorViewport *Self) {
    new (Self) extVectorViewport(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR VECTORVIEWPORT_FreePlacement(extVectorViewport *Self) {
+static ERR VECTORVIEWPORT_Free(extVectorViewport *Self) {
    Self->~extVectorViewport();
    return ERR::Okay;
 }
 
 static const struct ActionArray clVectorViewportActions[] = {
    { AC::Clear, VECTORVIEWPORT_Clear },
-   { AC::FreePlacement, VECTORVIEWPORT_FreePlacement },
+   { AC::Free, VECTORVIEWPORT_Free },
    { AC::Init, VECTORVIEWPORT_Init },
    { AC::Move, VECTORVIEWPORT_Move },
    { AC::MoveToPoint, VECTORVIEWPORT_MoveToPoint },
-   { AC::NewPlacement, VECTORVIEWPORT_NewPlacement },
+   { AC::New, VECTORVIEWPORT_New },
    { AC::Redimension, VECTORVIEWPORT_Redimension },
    { AC::Resize, VECTORVIEWPORT_Resize },
    { AC::NIL, nullptr }

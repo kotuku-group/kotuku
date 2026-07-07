@@ -17,22 +17,22 @@ static const struct FieldDef clImageFXVSM[] = {
    { nullptr, 0 }
 };
 
-static ERR IMAGEFX_NewPlacement(extImageFX *Self) {
+static ERR IMAGEFX_New(extImageFX *Self) {
    new (Self) extImageFX(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR IMAGEFX_FreePlacement(extImageFX *Self) {
+static ERR IMAGEFX_Free(extImageFX *Self) {
    Self->~extImageFX();
    return ERR::Okay;
 }
 
 static const struct ActionArray clImageFXActions[] = {
    { AC::Draw, IMAGEFX_Draw },
-   { AC::FreePlacement, IMAGEFX_FreePlacement },
+   { AC::Free, IMAGEFX_Free },
    { AC::Init, IMAGEFX_Init },
+   { AC::New, IMAGEFX_New },
    { AC::NewChild, IMAGEFX_NewChild },
-   { AC::NewPlacement, IMAGEFX_NewPlacement },
    { AC::NIL, nullptr }
 };
 

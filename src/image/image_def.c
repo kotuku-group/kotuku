@@ -11,21 +11,21 @@ static const struct FieldDef clImageFlags[] = {
    { nullptr, 0 }
 };
 
-static ERR IMAGE_NewPlacement(extImage *Self) {
+static ERR IMAGE_New(extImage *Self) {
    new (Self) extImage(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR IMAGE_FreePlacement(extImage *Self) {
+static ERR IMAGE_Free(extImage *Self) {
    Self->~extImage();
    return ERR::Okay;
 }
 
 static const struct ActionArray clImageActions[] = {
    { AC::Activate, IMAGE_Activate },
-   { AC::FreePlacement, IMAGE_FreePlacement },
+   { AC::Free, IMAGE_Free },
    { AC::Init, IMAGE_Init },
-   { AC::NewPlacement, IMAGE_NewPlacement },
+   { AC::New, IMAGE_New },
    { AC::Query, IMAGE_Query },
    { AC::Read, IMAGE_Read },
    { AC::Refresh, IMAGE_Refresh },

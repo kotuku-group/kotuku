@@ -53,7 +53,7 @@ extern "C" const struct ActionTable ActionTable[] = { // Sorted by action ID.
    { kt::strhash("movetofront"),    0, "MoveToFront", 0 },
    { kt::strhash("newchild"),       sizeof(struct acNewChild), "NewChild", argsNewChild },
    { kt::strhash("newowner"),       sizeof(struct acNewOwner), "NewOwner", argsNewOwner },
-   { kt::strhash("newobject"),      0, "NewObject", 0 },
+   { kt::strhash("new"),            0, "New", 0 },
    { kt::strhash("redo"),           sizeof(struct acRedo), "Redo", argsRedo },
    { kt::strhash("query"),          0, "Query", 0 },
    { kt::strhash("read"),           sizeof(struct acRead), "Read", argsRead },
@@ -75,7 +75,5 @@ extern "C" const struct ActionTable ActionTable[] = { // Sorted by action ID.
    { kt::strhash("clipboard"),      sizeof(struct acClipboard), "Clipboard", argsClipboard },
    { kt::strhash("refresh"),        0, "Refresh", 0 },
    { kt::strhash("disable"),        0, "Disable", 0 },
-   { kt::strhash("newplacement"),   0, "NewPlacement", 0 },
-   { kt::strhash("freeplacement"),  0, "FreePlacement", 0 },
    { 0, 0, 0, 0 }
 };

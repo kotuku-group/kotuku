@@ -30,14 +30,14 @@ The alpha component value, measured from 0 to 1.0.  The default is 1.0.
 
 *********************************************************************************************************************/
 
-static ERR VECTORCOLOUR_NewPlacement(objVectorColour *Self)
+static ERR VECTORCOLOUR_New(objVectorColour *Self)
 {
    new (Self) objVectorColour(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
 static const ActionArray clColourActions[] = {
-   { AC::NewPlacement, (APTR)VECTORCOLOUR_NewPlacement },
+   { AC::New, (APTR)VECTORCOLOUR_New },
    { AC::NIL, nullptr }
 };
 

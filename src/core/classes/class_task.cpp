@@ -121,7 +121,7 @@ static ERR TASK_Activate(extTask *);
 static ERR TASK_GetEnv(extTask *, struct task::GetEnv *);
 static ERR TASK_GetKey(extTask *, struct acGetKey *);
 static ERR TASK_Init(extTask *);
-static ERR TASK_NewPlacement(extTask *);
+static ERR TASK_New(extTask *);
 static ERR TASK_Query(extTask *);
 static ERR TASK_SetEnv(extTask *, struct task::SetEnv *);
 static ERR TASK_SetKey(extTask *, struct acSetKey *);

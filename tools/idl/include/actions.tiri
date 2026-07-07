@@ -5,8 +5,7 @@ global glActionStubs = {
    FreeWarning   = '',
    NewChild      = '',
    NewOwner      = '',
-   NewPlacement  = '',
-   FreePlacement = '',
+   New           = '',
 
    -- Actions without parameters
    Activate     = '   inline ERR activate() noexcept { return Action(AC::Activate, this, nullptr); }',

@@ -125,12 +125,12 @@ static const struct MethodEntry clFileMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR FILE_NewPlacement(extFile *Self) {
+static ERR FILE_New(extFile *Self) {
    new (Self) extFile(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR FILE_FreePlacement(extFile *Self) {
+static ERR FILE_Free(extFile *Self) {
    Self->~extFile();
    return ERR::Okay;
 }
@@ -139,9 +139,9 @@ static const struct ActionArray clFileActions[] = {
    { AC::Activate, FILE_Activate },
    { AC::DataFeed, FILE_DataFeed },
    { AC::Flush, FILE_Flush },
-   { AC::FreePlacement, FILE_FreePlacement },
+   { AC::Free, FILE_Free },
    { AC::Init, FILE_Init },
-   { AC::NewPlacement, FILE_NewPlacement },
+   { AC::New, FILE_New },
    { AC::Query, FILE_Query },
    { AC::Read, FILE_Read },
    { AC::Rename, FILE_Rename },

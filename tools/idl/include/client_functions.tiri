@@ -900,8 +900,8 @@ global function klass(Name, Options:table, Spec, Private, Custom)
       end
 
       cl.actions = { }
-      cl.actions['NewPlacement'] = { name = 'NewPlacement' }
-      cl.actions['FreePlacement'] = { name = 'FreePlacement' }
+      cl.actions['New']  = { name = 'New' }
+      cl.actions['Free'] = { name = 'Free' }
 
       if cl.src then
          -- Process -METHOD- and -FIELD- definitions
@@ -1199,15 +1199,15 @@ global function klass(Name, Options:table, Spec, Private, Custom)
             mdef ..= '   { AC::NIL, 0, 0, 0, 0 }\n};\n\n'
          end
 
-         if cl.actions.NewPlacement then
-            mdef ..= f'static ERR {Name:upper()}_NewPlacement({cl.cppName} *Self) {{\n'
+         if cl.actions.New then
+            mdef ..= f'static ERR {Name:upper()}_New({cl.cppName} *Self) {{\n'
             mdef ..= f'   new (Self) {cl.cppName}(Self->Class, Self->UID);\n'
             mdef ..= f'   return ERR::Okay;\n'
             mdef ..= '}\n\n'
          end
 
-         if cl.actions.FreePlacement then
-            mdef ..= f'static ERR {Name:upper()}_FreePlacement({cl.cppName} *Self) {{\n'
+         if cl.actions.Free then
+            mdef ..= f'static ERR {Name:upper()}_Free({cl.cppName} *Self) {{\n'
             mdef ..= f'   Self->~{cl.cppName}();\n'
             mdef ..= f'   return ERR::Okay;\n'
             mdef ..= '}\n\n'

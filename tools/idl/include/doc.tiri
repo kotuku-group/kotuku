@@ -55,10 +55,8 @@ global glIgnoreList = {
    [AC_FreeWarning] = true,
    [AC_Init]        = true,
    [AC_NewChild]    = true,
-   [AC_NewObject]   = true,
-   [AC_NewOwner]    = true,
-   [AC_NewPlacement] = true,
-   [AC_FreePlacement] = true
+   [AC_New]         = true,
+   [AC_NewOwner]    = true
 }
 
 global function setAction(Action, Options)
@@ -249,7 +247,7 @@ setAction('NewChild', {
    comment = 'Used by classes that need to be alerted when an object receives a new child.'
 })
 
-setAction('NewObject', {
+setAction('New', {
    comment = 'Called when a new object has been created from a base class.'
 })
 

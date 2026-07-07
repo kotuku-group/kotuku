@@ -392,14 +392,14 @@ class objThread : public Object {
 
    // Customised field setting
 
-   inline ERR setCallback(const FUNCTION &Value) noexcept {
-      this->Callback = Value;
-      return ERR::Okay;
+   inline ERR setCallback(const FUNCTION Value) noexcept {
+      auto field = &this->Class->Dictionary[2];
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
-   inline ERR setRoutine(const FUNCTION &Value) noexcept {
-      this->Routine = Value;
-      return ERR::Okay;
+   inline ERR setRoutine(const FUNCTION Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setFlags(const THF Value) noexcept {

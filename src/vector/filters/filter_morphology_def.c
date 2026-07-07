@@ -6,20 +6,20 @@ static const struct FieldDef clMorphologyFXMOP[] = {
    { nullptr, 0 }
 };
 
-static ERR MORPHOLOGYFX_NewPlacement(extMorphologyFX *Self) {
+static ERR MORPHOLOGYFX_New(extMorphologyFX *Self) {
    new (Self) extMorphologyFX(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR MORPHOLOGYFX_FreePlacement(extMorphologyFX *Self) {
+static ERR MORPHOLOGYFX_Free(extMorphologyFX *Self) {
    Self->~extMorphologyFX();
    return ERR::Okay;
 }
 
 static const struct ActionArray clMorphologyFXActions[] = {
    { AC::Draw, MORPHOLOGYFX_Draw },
-   { AC::FreePlacement, MORPHOLOGYFX_FreePlacement },
-   { AC::NewPlacement, MORPHOLOGYFX_NewPlacement },
+   { AC::Free, MORPHOLOGYFX_Free },
+   { AC::New, MORPHOLOGYFX_New },
    { AC::NIL, nullptr }
 };
 

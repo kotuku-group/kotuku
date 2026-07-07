@@ -134,7 +134,7 @@ static ERR set_stop_transform(TransitionStop *Stop, std::string_view Commands)
 
 //********************************************************************************************************************
 
-static ERR TRANSITION_FreePlacement(extVectorTransition *Self) {
+static ERR TRANSITION_Free(extVectorTransition *Self) {
    Self->~extVectorTransition();
    return ERR::Okay;
 }
@@ -149,7 +149,7 @@ static ERR TRANSITION_Init(extVectorTransition *Self)
 
 //********************************************************************************************************************
 
-static ERR TRANSITION_NewPlacement(extVectorTransition *Self) {
+static ERR TRANSITION_New(extVectorTransition *Self) {
    new (Self) extVectorTransition(Self->Class, Self->UID);
    return ERR::Okay;
 }
@@ -230,9 +230,9 @@ static ERR TRANSITION_SET_Stops(extVectorTransition *Self, std::span<const Trans
 //********************************************************************************************************************
 
 static const ActionArray clTransitionActions[] = {
-   { AC::FreePlacement, TRANSITION_FreePlacement },
+   { AC::Free, TRANSITION_Free },
    { AC::Init,          TRANSITION_Init },
-   { AC::NewPlacement,  TRANSITION_NewPlacement },
+   { AC::New,  TRANSITION_New },
    { AC::NIL, nullptr }
 };
 

@@ -26,20 +26,20 @@ static const struct FieldDef clDisplacementFXVSM[] = {
    { nullptr, 0 }
 };
 
-static ERR DISPLACEMENTFX_NewPlacement(extDisplacementFX *Self) {
+static ERR DISPLACEMENTFX_New(extDisplacementFX *Self) {
    new (Self) extDisplacementFX(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR DISPLACEMENTFX_FreePlacement(extDisplacementFX *Self) {
+static ERR DISPLACEMENTFX_Free(extDisplacementFX *Self) {
    Self->~extDisplacementFX();
    return ERR::Okay;
 }
 
 static const struct ActionArray clDisplacementFXActions[] = {
    { AC::Draw, DISPLACEMENTFX_Draw },
-   { AC::FreePlacement, DISPLACEMENTFX_FreePlacement },
-   { AC::NewPlacement, DISPLACEMENTFX_NewPlacement },
+   { AC::Free, DISPLACEMENTFX_Free },
+   { AC::New, DISPLACEMENTFX_New },
    { AC::NIL, nullptr }
 };
 

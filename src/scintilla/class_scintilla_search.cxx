@@ -162,7 +162,7 @@ static ERR SEARCH_Find(objScintillaSearch *Self, struct ss::Find *Args)
 
 //********************************************************************************************************************
 
-static ERR SEARCH_FreePlacement(objScintillaSearch *Self)
+static ERR SEARCH_Free(objScintillaSearch *Self)
 {
    Self->~objScintillaSearch();
    return ERR::Okay;
@@ -190,7 +190,7 @@ static ERR SEARCH_Init(objScintillaSearch *Self)
 
 //********************************************************************************************************************
 
-static ERR SEARCH_NewPlacement(objScintillaSearch *Self)
+static ERR SEARCH_New(objScintillaSearch *Self)
 {
    new (Self) objScintillaSearch(Self->Class, Self->UID);
    return ERR::Okay;
@@ -360,9 +360,9 @@ This field defines the string sequence that will be searched for when calling ei
 *********************************************************************************************************************/
 
 static const ActionArray clActions[] = {
-   { AC::FreePlacement, SEARCH_FreePlacement },
+   { AC::Free, SEARCH_Free },
    { AC::Init,          SEARCH_Init },
-   { AC::NewPlacement,  SEARCH_NewPlacement },
+   { AC::New,  SEARCH_New },
    { AC::NIL, nullptr }
 };
 
