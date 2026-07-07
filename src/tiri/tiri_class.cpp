@@ -1016,9 +1016,7 @@ static ERR register_interfaces(extTiri *Self)
    reg_func_prototype("arg", { TiriType::Any }, { TiriType::Str, TiriType::Any });
    reg_func_prototype("loadFile", {}, { TiriType::Str }, FProtoFlags::Variadic);
    reg_func_prototype("exec", {}, { TiriType::Str }, FProtoFlags::Variadic);
-   reg_func_prototype("getExecutionState", { TiriType::Table }, {});
    reg_func_prototype("print", {}, {}, FProtoFlags::Variadic);
-   reg_func_prototype("require", { TiriType::Table }, { TiriType::Str });
    reg_func_prototype("msg", {}, { TiriType::Str }, FProtoFlags::Variadic);
    reg_func_prototype("subscribeEvent", { TiriType::Num, TiriType::Any }, { TiriType::Str, TiriType::Func });
    reg_func_prototype("unsubscribeEvent", {}, { TiriType::Any });

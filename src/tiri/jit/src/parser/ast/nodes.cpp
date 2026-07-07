@@ -482,7 +482,11 @@ struct StatementChildCounter {
 
    [[nodiscard]] inline size_t operator()(const ImportStmtPayload &Payload) const
    {
-      return block_child_count(Payload.inlined_body);
+      size_t total = 0;
+      for (const ImportEntryPayload &entry : Payload.entries) {
+         total += block_child_count(entry.inlined_body);
+      }
+      return total;
    }
 
    [[nodiscard]] inline size_t operator()(const WithStmtPayload &Payload) const
@@ -541,6 +545,7 @@ ExceptClause::~ExceptClause() = default;
 TryExceptPayload::~TryExceptPayload() = default;
 RaiseStmtPayload::~RaiseStmtPayload() = default;
 CheckStmtPayload::~CheckStmtPayload() = default;
+ImportEntryPayload::~ImportEntryPayload() = default;
 ImportStmtPayload::~ImportStmtPayload() = default;
 WithStmtPayload::~WithStmtPayload() = default;
 BlockStmt::~BlockStmt() = default;

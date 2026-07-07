@@ -8,7 +8,10 @@ rx_def_decl           <const> = <{ regex.new([[\b(local|global)\s+([A-Za-z_][A-Z
 rx_def_assign_func    <const> = <{ regex.new([[\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*function\s*\(([^\)]*)\)]]) }>
 rx_def_assign         <const> = <{ regex.new([[^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=]]) }>
 rx_def_param          <const> = <{ regex.new([[([A-Za-z_][A-Za-z0-9_]*)]]) }>
-rx_def_loader_before  <const> = <{ regex.new([[\b(import|require|include)\s*(?:\(\s*)?$]]) }>
+rx_def_loader_before  <const> = <{ regex.new(
+   [[\b(import|require|include)\s*(?:\(\s*)?]] ..
+   [[(?:(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')\s*,\s*)*$]]
+) }>
 rx_def_obj_new_before <const> = <{ regex.new([[obj\.new\s*\(\s*$]]) }>
 rx_def_obj_new        <const> = <{ regex.new([=[([A-Za-z_][A-Za-z0-9_]*)\s*=\s*obj\.new\s*\(\s*['"]([^'"]+)['"]]=], regex.DOT_ALL) }>
 rx_def_action_prefix  <const> = <{ regex.new([=[^ac[A-Z]]=]) }>
@@ -204,6 +207,7 @@ function getStringAtPosition(Doc:table, Line:num, Character:num):table
                      text = line_text:sub(start_pos + 1, pos),
                      quoteStart = start_pos,
                      quoteEnd = pos,
+                     line = Line,
                      before = line_text:sub(0, start_pos)
                   }
                end
@@ -219,11 +223,29 @@ function getStringAtPosition(Doc:table, Line:num, Character:num):table
    return nil
 end
 
+function getLoaderKeywordBeforeString(Doc:table, StringInfo:table):str
+   prefix = StringInfo.before
+   line_no = StringInfo.line
+
+   while line_no >= 0 do
+      keyword = rx_def_loader_before.extract(prefix)
+      if keyword then return keyword end
+
+      if line_no is 0 then break end
+      line_no -= 1
+      previous_line = getLine(Doc, line_no)
+      previous_line ?! break
+      prefix = previous_line .. '\n' .. prefix
+   end
+
+   return nil
+end
+
 function getLoaderStringAtPosition(Doc:table, Position:table):table
    string_info = getStringAtPosition(Doc, Position.line, Position.character)
    string_info ?! return nil
 
-   keyword = rx_def_loader_before.extract(string_info.before)
+   keyword = getLoaderKeywordBeforeString(Doc, string_info)
    keyword ?! return nil
 
    string_info.keyword = keyword
