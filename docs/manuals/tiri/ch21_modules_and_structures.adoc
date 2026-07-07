@@ -107,21 +107,26 @@ print(buffer)
 
 [[sec-the-include-directive]]
 === The include Directive
-[.api]`include 'ModuleName', pass:[...]`
+[.api]`include 'ModuleName'[, 'ModuleName' pass:[...]]`
 
-indexterm:[include directive] The `include` directive loads the interface definitions (constants, structures, and class definitions) for one or more Kōtuku modules.  It accepts a comma-separated list of module names as string arguments:
+indexterm:[include directive] The `include` directive loads the interface definitions (constants, structures, and class definitions) for one or more Kōtuku modules at compile time.  The parser processes each named module while parsing the source and emits no runtime bytecode for the statement.
+
+`include` accepts one or more module names as a comma-separated list of string literals:
 
 [source,tiri]
 ----
 include 'xml', 'display'
 ----
 
-Each module name must be alphanumeric (only `[a-zA-Z0-9]` characters are permitted).  Passing invalid names raises an error.
+Each module name must be a non-empty alphanumeric string.  Variables, expressions, or invalid names raise a parse error.
 
 [discrete]
 ==== Semantics
 
 * Definitions are loaded from the module's IDL (Interface Definition Language) registry.
+* The statement is processed at parse time and has no runtime result.
+* `include` may appear wherever a statement is valid.  Inside a function body, it still loads definitions during parsing rather than when the function is called.
+* An `include` list loads each module named in the list from left to right.
 * Each module is loaded at most once per session.  Repeated `include` calls for the same module are silently ignored.
 * Calling `mod.load()` automatically loads the corresponding module definitions, making an explicit `include` unnecessary in many cases.
 
