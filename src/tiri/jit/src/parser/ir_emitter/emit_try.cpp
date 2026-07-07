@@ -332,28 +332,28 @@ ParserResult<IrEmitUnit> IrEmitter::emit_check_stmt(const CheckStmtPayload &Payl
 }
 
 //********************************************************************************************************************
-// Emit bytecode for import statement: import 'path' [as alias]
+// Emit bytecode for one import entry.
 //
-// The import statement inlines the content of the referenced file at compile time.
+// The import entry inlines the content of the referenced file at compile time.
 // The inlined_body block is emitted as if its statements were written directly at the import location.
 // This creates a new scope for the imported content to provide some isolation.
 //
 // When namespace_name is set (from 'as alias' or module's default namespace), emits:
 //   local <namespace_name> <const> = _LIB['<default_namespace>']
 
-ParserResult<IrEmitUnit> IrEmitter::emit_import_stmt(const ImportStmtPayload &Payload)
+ParserResult<IrEmitUnit> IrEmitter::emit_import_entry(const ImportEntryPayload &Entry)
 {
    FuncState *fs = &this->func_state;
    lua_State *L = this->lex_state.L;
 
    // If there's a body, emit the inlined content first
-   if (Payload.inlined_body) {
+   if (Entry.inlined_body) {
       // Temporarily switch to the imported file's FileSource index
       // so that prototypes created for functions in the import get the correct file_source_idx
       uint8_t saved_file_index = this->lex_state.current_file_index;
-      this->lex_state.current_file_index = Payload.file_source_idx;
+      this->lex_state.current_file_index = Entry.file_source_idx;
 
-      auto result = this->emit_block(*Payload.inlined_body, FuncScopeFlag::None);
+      auto result = this->emit_block(*Entry.inlined_body, FuncScopeFlag::None);
 
       // Restore the parent file's index
       this->lex_state.current_file_index = saved_file_index;
@@ -362,9 +362,9 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_stmt(const ImportStmtPayload &Pa
    }
 
    // If namespace_name is set, emit: local <name> <const> = _LIB['<default_namespace>']
-   if (Payload.namespace_name) {
-      const Identifier &ns_id = *Payload.namespace_name;
-      const std::string &default_ns = Payload.default_namespace;
+   if (Entry.namespace_name) {
+      const Identifier &ns_id = *Entry.namespace_name;
+      const std::string &default_ns = Entry.default_namespace;
 
       if (default_ns.empty()) {
          return ParserResult<IrEmitUnit>::failure(this->make_error(
@@ -399,6 +399,19 @@ ParserResult<IrEmitUnit> IrEmitter::emit_import_stmt(const ImportStmtPayload &Pa
       // Update binding table
       this->update_local_binding(ns_id.symbol, BCReg(fs->varmap.size() - 1));
       fs->reset_freereg();
+   }
+
+   return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+}
+
+//********************************************************************************************************************
+// Emit bytecode for import statement: import 'path' [, 'path'...]
+
+ParserResult<IrEmitUnit> IrEmitter::emit_import_stmt(const ImportStmtPayload &Payload)
+{
+   for (const ImportEntryPayload &entry : Payload.entries) {
+      auto result = this->emit_import_entry(entry);
+      if (not result.ok()) return result;
    }
 
    return ParserResult<IrEmitUnit>::success(IrEmitUnit{});

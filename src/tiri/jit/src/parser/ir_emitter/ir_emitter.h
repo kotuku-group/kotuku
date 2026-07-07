@@ -177,6 +177,7 @@ private:
    ParserResult<IrEmitUnit> emit_try_except_stmt(const TryExceptPayload& payload);
    ParserResult<IrEmitUnit> emit_raise_stmt(const RaiseStmtPayload& payload, const SourceSpan& span);
    ParserResult<IrEmitUnit> emit_check_stmt(const CheckStmtPayload& payload, const SourceSpan& span);
+   ParserResult<IrEmitUnit> emit_import_entry(const ImportEntryPayload& entry);
    ParserResult<IrEmitUnit> emit_import_stmt(const ImportStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_with_stmt(const WithStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_assignment_stmt(const AssignmentStmtPayload& payload);

@@ -305,7 +305,7 @@ end
    try
       exec([[enum DUP_ENUM { ONE, ONE }]])
    except ex
-      assert(ex.message:find('duplicate enum member'), f'Error should mention duplicate enum member: {ex.message}')
+      assert(ex.message:find('Duplicate enum member'), f'Error should mention duplicate enum member: {ex.message}')
       return
    end
    error('Duplicate enum member should fail')
@@ -318,7 +318,7 @@ enum DUP_REG_ENUM { ONE }
 enum DUP_REG_ENUM { ONE }
 ]])
    except ex
-      assert(ex.message:find('duplicate enum constant'), f'Error should mention duplicate enum constant: {ex.message}')
+      assert(ex.message:find('Duplicate enum constant'), f'Error should mention duplicate enum constant: {ex.message}')
       return
    end
    error('Duplicate registered enum constant should fail')

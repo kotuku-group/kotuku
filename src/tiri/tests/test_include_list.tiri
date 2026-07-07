@@ -56,7 +56,7 @@ end
 @Test function MalformedIncludeListsAreRejected()
    assert_invalid([[include 'core',]], "'include' list items must be string literals", 'trailing comma')
    assert_invalid([[include 'core', name]], "'include' list items must be string literals", 'non-string item')
-   assert_invalid([[include '']], 'invalid module name', 'empty module name')
+   assert_invalid([[include '']], 'Invalid module name', 'empty module name')
 end
 
 @Test function UnrelatedParenlessCallsDoNotGainCommaLists()

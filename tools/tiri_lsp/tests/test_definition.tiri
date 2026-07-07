@@ -88,6 +88,18 @@ end
    assertUriContains(locations, '/scripts/gui/window.tiri', 'Nested import should resolve to SDK script')
 end
 
+@Test function ImportListScriptResolution()
+   doc = makeDoc("import 'json', 'options'\n")
+   locations = resolveDefinition(doc, { line = 0, character = 17 })
+   assertUriContains(locations, '/scripts/options.tiri', 'Second import list item should resolve to SDK script')
+end
+
+@Test function WrappedImportListScriptResolution()
+   doc = makeDoc("import 'json',\n   'options'\n")
+   locations = resolveDefinition(doc, { line = 1, character = 6 })
+   assertUriContains(locations, '/scripts/options.tiri', 'Wrapped import list item should resolve to SDK script')
+end
+
 @Test function ImportParentRelativeScriptResolution()
    doc = makeDoc("import '../server'\n")
    locations = resolveDefinition(doc, { line = 0, character = 11 })

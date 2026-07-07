@@ -23,7 +23,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_local()
 
       if (this->ctx.check(TokenKind::Enum)) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
-            "local enum declarations are not supported");
+            "Local enum declarations are not supported");
       }
 
       bool is_thunk = false;
@@ -98,7 +98,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_local()
          else {
             // Non-identifier expression in trailing position - this is an error
             return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedIdentifier, this->ctx.tokens().current(),
-               "expected identifier after values in local declaration");
+               "Expected identifier after values in local declaration");
          }
       }
       // Remove the converted identifiers from the values list
@@ -200,7 +200,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_global()
          else {
             // Non-identifier expression in trailing position - this is an error
             return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedIdentifier, this->ctx.tokens().current(),
-               "expected identifier after values in global declaration");
+               "Expected identifier after values in global declaration");
          }
       }
       // Remove the converted identifiers from the values list
@@ -227,13 +227,13 @@ ParserResult<StmtNodePtr> AstBuilder::parse_extern()
 
       if (this->ctx.check(TokenKind::Comma)) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
-            "extern wildcard cannot be combined with named symbols");
+            "Extern wildcard cannot be combined with named symbols");
       }
 
       if (this->ctx.check(TokenKind::Equals) or
             token_to_assignment_op(this->ctx.tokens().current().kind()).has_value()) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
-            "extern declarations cannot have an initialiser");
+            "Extern declarations cannot have an initialiser");
       }
 
       auto stmt = std::make_unique<StmtNode>(AstNodeKind::ExternStmt, extern_token.span());
@@ -248,7 +248,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_extern()
 
    if (this->ctx.check(TokenKind::Equals) or token_to_assignment_op(this->ctx.tokens().current().kind()).has_value()) {
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
-         "extern declarations cannot have an initialiser");
+         "Extern declarations cannot have an initialiser");
    }
 
    for (const Identifier &identifier : names.value_ref()) {
@@ -260,7 +260,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_extern()
       if (identifier.type != TiriType::Unknown or identifier.has_const or identifier.has_close) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken,
             Token::from_span(identifier.span, TokenKind::Identifier),
-            "extern declarations cannot have type annotations or attributes");
+            "Extern declarations cannot have type annotations or attributes");
       }
    }
 
@@ -321,13 +321,13 @@ ParserResult<int64_t> AstBuilder::parse_enum_integer_literal()
 
    if (not token.is(TokenKind::Number)) {
       return this->fail<int64_t>(ParserErrorCode::UnexpectedToken, token,
-         "enum values must be integer literals");
+         "Enum values must be integer literals");
    }
 
    double number_value = token.payload().as_number();
    if (not std::isfinite(number_value) or std::trunc(number_value) != number_value) {
       return this->fail<int64_t>(ParserErrorCode::UnexpectedToken, token,
-         "enum values must be integer literals");
+         "Enum values must be integer literals");
    }
 
    double signed_value = number_value * double(sign);
@@ -335,7 +335,7 @@ ParserResult<int64_t> AstBuilder::parse_enum_integer_literal()
    constexpr double max_value = double(std::numeric_limits<int64_t>::max());
    if (signed_value < min_value or signed_value > max_value) {
       return this->fail<int64_t>(ParserErrorCode::UnexpectedToken, token,
-         "enum integer literal is out of range");
+         "Enum integer literal is out of range");
    }
 
    this->ctx.tokens().advance();
@@ -346,7 +346,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_enum(const Token &StartToken)
 {
    if (not this->at_top_level()) {
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
-         "enum declarations are only allowed at top-level scope");
+         "Enum declarations are only allowed at top-level scope");
    }
 
    Token enum_token = this->ctx.tokens().current();
@@ -359,17 +359,17 @@ ParserResult<StmtNodePtr> AstBuilder::parse_enum(const Token &StartToken)
    GCstr *prefix_symbol = prefix_token.value_ref().identifier();
    if (not is_uppercase_enum_name(prefix_symbol)) {
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, prefix_token.value_ref(),
-         "declare enum prefixes in uppercase only");
+         "Declare enum prefixes in uppercase only");
    }
 
    if (this->ctx.check(TokenKind::Colon)) {
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
-         "enum prefixes cannot use a type annotation");
+         "Enum prefixes cannot use a type annotation");
    }
 
    if (is_prefixed_attribute_token(this->ctx.tokens())) {
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
-         "enum prefixes cannot use <const> or <close> attributes");
+         "Enum prefixes cannot use <const> or <close> attributes");
    }
 
    auto open_brace = this->ctx.consume(TokenKind::LeftBrace, ParserErrorCode::ExpectedToken);
@@ -383,7 +383,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_enum(const Token &StartToken)
    while (not this->ctx.check(TokenKind::RightBrace)) {
       if (this->ctx.check(TokenKind::EndOfFile)) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedEndOfFile, enum_token,
-            "unterminated enum declaration");
+            "Unterminated enum declaration");
       }
 
       auto member_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
@@ -392,14 +392,14 @@ ParserResult<StmtNodePtr> AstBuilder::parse_enum(const Token &StartToken)
       GCstr *member_symbol = member_token.value_ref().identifier();
       if (not is_uppercase_enum_name(member_symbol)) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, member_token.value_ref(),
-            "declare enum members in uppercase only");
+            "Declare enum members in uppercase only");
       }
 
       std::string member(strdata(member_symbol), member_symbol->len);
       for (const std::string &existing : members) {
          if (existing IS member) {
             return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, member_token.value_ref(),
-               "duplicate enum member '" + member + "'");
+               "Duplicate enum member '" + member + "'");
          }
       }
       members.push_back(member);
@@ -414,7 +414,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_enum(const Token &StartToken)
       constants.push_back(EnumConstantDecl{ prefix + "_" + member, value, member_token.value_ref().span() });
       if (value IS std::numeric_limits<int64_t>::max()) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, member_token.value_ref(),
-            "enum value overflow");
+            "Enum value overflow");
       }
       next_value = value + 1;
 
@@ -423,7 +423,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_enum(const Token &StartToken)
       }
       if (not this->ctx.check(TokenKind::RightBrace)) {
          return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, this->ctx.tokens().current(),
-            "expected ',' or '}' in enum declaration");
+            "Expected ',' or '}' in enum declaration");
       }
    }
 
@@ -432,7 +432,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_enum(const Token &StartToken)
 
    if (constants.empty()) {
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, StartToken,
-         "enum declarations must contain at least one member");
+         "Enum declarations must contain at least one member");
    }
 
    std::string duplicate_name;
@@ -461,7 +461,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_enum(const Token &StartToken)
    if (not duplicate_name.empty()) {
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken,
          Token::from_span(duplicate_span, TokenKind::Identifier),
-         "duplicate enum constant '" + duplicate_name + "'");
+         "Duplicate enum constant '" + duplicate_name + "'");
    }
 
    return ParserResult<StmtNodePtr>::success(nullptr);
@@ -490,7 +490,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_function_stmt()
    if (this->ctx.match(TokenKind::Colon).ok()) {
       if (is_thunk) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
-            "thunk functions do not support method syntax");
+            "Thunk functions do not support method syntax");
       }
       method = true;
       auto seg = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
@@ -794,13 +794,13 @@ ParserResult<StmtNodePtr> AstBuilder::parse_try()
          }
          else {
             return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken,
-               attribute.value_ref(), "unknown try attribute, expected 'trace'");
+               attribute.value_ref(), "Unknown try attribute, expected 'trace'");
          }
       }
 
       if (not this->ctx.lex_opt('>')) {
          return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken,
-            this->ctx.tokens().current(), "expected '>' after try attribute");
+            this->ctx.tokens().current(), "Expected '>' after try attribute");
       }
    }
 
@@ -822,7 +822,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_try()
       if (has_catch_all) {
          // Error: catch-all must be last
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
-            "catch-all 'except' must be the last clause");
+            "Catch-all 'except' must be the last clause");
       }
 
       Token except_token = this->ctx.tokens().current();
@@ -850,7 +850,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_try()
          if (unexpected.span().line IS except_token.span().line) {
             GCstr *ident = unexpected.identifier();
             return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, unexpected,
-               "expected 'when' or newline after 'except', not '" + std::string(strdata(ident), ident->len) + "'");
+               "Expected 'when' or newline after 'except', not '" + std::string(strdata(ident), ident->len) + "'");
          }
       }
 
@@ -862,7 +862,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_try()
          Token next_token = this->ctx.tokens().current();
          if (next_token.span().line != when_token.span().line) {
             return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, when_token,
-               "expected error code(s) after 'when' on the same line");
+               "Expected error code(s) after 'when' on the same line");
          }
 
          // Parse error code filter(s): when ERR_A or when ERR_A, ERR_B
@@ -879,7 +879,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_try()
             Token code_token = this->ctx.tokens().current();
             if (code_token.span().line != when_token.span().line) {
                return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, comma_token,
-                  "expected error code after ',' on the same line as 'when'");
+                  "Expected error code after ',' on the same line as 'when'");
             }
 
             auto next_code = this->parse_expression();
@@ -1018,26 +1018,26 @@ ParserResult<StmtNodePtr> AstBuilder::parse_include_stmt()
    while (true) {
       Token name_token = this->ctx.tokens().current();
       if (not name_token.is(TokenKind::String)) {
-         const char *message = first_item ? "include module name must be a string literal" :
+         const char *message = first_item ? "Include module name must be a string literal" :
             "'include' list items must be string literals";
          return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, name_token, message);
       }
 
       GCstr *name_str = name_token.payload().as_string();
       if (not name_str) {
-         return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, name_token, "invalid include module name");
+         return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, name_token, "Invalid include module name");
       }
 
       std::string module_name(strdata(name_str), name_str->len);
       if (not include_module_name_is_valid(module_name)) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token,
-            "invalid module name; only alpha-numeric names shorter than 32 characters are permitted with include");
+            "Invalid module name; only alpha-numeric names shorter than 32 characters are permitted with include");
       }
 
       if (auto error = load_include(this->ctx.lua().script, module_name.c_str()); error != ERR::Okay) {
          std::string message;
-         if (error IS ERR::FileNotFound) message = std::format("requested include file '{}' does not exist", module_name);
-         else message = std::format("failed to process include file '{}': {}", module_name, GetErrorMsg(error));
+         if (error IS ERR::FileNotFound) message = std::format("Requested include file '{}' does not exist", module_name);
+         else message = std::format("Failed to process include file '{}': {}", module_name, GetErrorMsg(error));
 
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token, std::move(message));
       }
@@ -1053,7 +1053,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_include_stmt()
 }
 
 //********************************************************************************************************************
-// Parses import statements: import 'library' [as alias]
+// Parses one import list entry.
 //
 // The import statement is a compile-time feature that reads and parses the referenced file, inlining its content as
 // statements executed within the current scope.
@@ -1061,29 +1061,26 @@ ParserResult<StmtNodePtr> AstBuilder::parse_include_stmt()
 // When using 'as alias' syntax, the imported library must declare a namespace. The alias creates a local const variable
 // that references _LIB['namespace'] for convenient access to the library exports.
 
-ParserResult<StmtNodePtr> AstBuilder::parse_import()
+ParserResult<ImportEntryPayload> AstBuilder::parse_import_entry(const Token &ImportToken, bool AllowAlias,
+   bool *UsedAlias)
 {
    kt::Log log(__FUNCTION__);
 
-   Token import_token = this->ctx.tokens().current();
-
-   // Import statements must be at the top level of the script
-
-   if (not this->at_top_level()) {
-      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, import_token, "Use of 'import' is not permitted inside function blocks");
-   }
-
-   this->ctx.tokens().advance();  // consume 'import'
+   if (UsedAlias) *UsedAlias = false;
 
    // Require a string literal for the library path
 
    Token path_token = this->ctx.tokens().current();
    if (not path_token.is(TokenKind::String)) {
-      return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, path_token, "Import path must be a string literal");
+      const char *message = AllowAlias ? "Import path must be a string literal" :
+         "Import list items must be string literals";
+      return this->fail<ImportEntryPayload>(ParserErrorCode::ExpectedToken, path_token, message);
    }
 
    GCstr *path_str = path_token.payload().as_string();
-   if (not path_str) return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, path_token, "Invalid import path");
+   if (not path_str) {
+      return this->fail<ImportEntryPayload>(ParserErrorCode::ExpectedToken, path_token, "Invalid import path");
+   }
 
    std::string_view mod_name(strdata(path_str), path_str->len);
    this->ctx.tokens().advance();  // consume string
@@ -1096,13 +1093,20 @@ ParserResult<StmtNodePtr> AstBuilder::parse_import()
    Token as_token;
    if (this->ctx.check(TokenKind::AsToken)) {
       as_token = this->ctx.tokens().current();
+
+      if (not AllowAlias) {
+         return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, as_token,
+            "Import lists do not support 'as' aliases");
+      }
+
       this->ctx.tokens().advance();  // consume 'as'
 
       auto alias_result = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
-      if (not alias_result.ok()) return ParserResult<StmtNodePtr>::failure(alias_result.error_ref());
+      if (not alias_result.ok()) return ParserResult<ImportEntryPayload>::failure(alias_result.error_ref());
 
       alias = make_identifier(alias_result.value_ref());
       alias->has_const = true;  // Namespace alias is const
+      if (UsedAlias) *UsedAlias = true;
    }
 
    std::string path = this->ctx.resolve_lib_to_path(mod_name);
@@ -1110,13 +1114,14 @@ ParserResult<StmtNodePtr> AstBuilder::parse_import()
    // Check for circular import
 
    if (this->ctx.is_importing(path)) {
-      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, import_token, "Circular import detected: " + path);
+      return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, ImportToken,
+         "Circular import detected: " + path);
    }
 
    // Parse the imported file
 
-   auto imported_body = this->parse_imported_file(path, mod_name, import_token);
-   if (not imported_body.ok()) return ParserResult<StmtNodePtr>::failure(imported_body.error_ref());
+   auto imported_body = this->parse_imported_file(path, mod_name, ImportToken);
+   if (not imported_body.ok()) return ParserResult<ImportEntryPayload>::failure(imported_body.error_ref());
 
    // Look up the FileSource index and namespace for this import (registered during parse_imported_file)
 
@@ -1132,8 +1137,8 @@ ParserResult<StmtNodePtr> AstBuilder::parse_import()
    // If using 'as' alias, the library must declare a namespace
 
    if (alias and default_ns.empty()) {
-      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, as_token,
-         std::string("cannot use 'as' alias: library '") + std::string(mod_name) + "' does not declare a namespace");
+      return this->fail<ImportEntryPayload>(ParserErrorCode::UnexpectedToken, as_token,
+         std::string("Cannot use 'as' alias: library '") + std::string(mod_name) + "' does not declare a namespace");
    }
 
    // Determine final namespace name (alias takes precedence)
@@ -1142,29 +1147,63 @@ ParserResult<StmtNodePtr> AstBuilder::parse_import()
    if (alias) final_ns = std::string(strdata(alias->symbol), alias->symbol->len);
    else if (not default_ns.empty()) final_ns = default_ns;
 
-   // Create ImportStmtPayload
-
-   auto stmt = std::make_unique<StmtNode>(AstNodeKind::ImportStmt, import_token.span());
-   ImportStmtPayload payload;
-   payload.lib_path = path;
-   payload.inlined_body = std::move(imported_body.value_ref());
+   ImportEntryPayload entry;
+   entry.lib_path = path;
+   entry.inlined_body = std::move(imported_body.value_ref());
 
    if (file_idx.has_value()) {
-      payload.file_source_idx = file_idx.value();
+      entry.file_source_idx = file_idx.value();
    }
 
    // If we have a namespace (either from alias or default), set up the namespace binding
    if (not final_ns.empty()) {
       Identifier ns_id;
       ns_id.symbol = lj_str_new(L, final_ns.c_str(), final_ns.size());
-      ns_id.span = import_token.span();
+      ns_id.span = ImportToken.span();
       ns_id.has_const = true;
-      payload.namespace_name = std::move(ns_id);
-      payload.default_namespace = default_ns;  // Store original for _LIB lookup
+      entry.namespace_name = std::move(ns_id);
+      entry.default_namespace = default_ns;  // Store original for _LIB lookup
    }
 
-   stmt->data = std::move(payload);
+   return ParserResult<ImportEntryPayload>::success(std::move(entry));
+}
 
+//********************************************************************************************************************
+// Parses import statements: import 'library' [, 'library'...] [as alias for single imports only]
+
+ParserResult<StmtNodePtr> AstBuilder::parse_import()
+{
+   Token import_token = this->ctx.tokens().current();
+
+   // Import statements must be at the top level of the script
+
+   if (not this->at_top_level()) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, import_token,
+         "Use of 'import' is not permitted inside function blocks");
+   }
+
+   this->ctx.tokens().advance();  // consume 'import'
+
+   ImportStmtPayload payload;
+
+   bool first_used_alias = false;
+   auto first_entry = this->parse_import_entry(import_token, true, &first_used_alias);
+   if (not first_entry.ok()) return ParserResult<StmtNodePtr>::failure(first_entry.error_ref());
+   payload.entries.push_back(std::move(first_entry.value_ref()));
+
+   if (this->ctx.check(TokenKind::Comma) and first_used_alias) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         "Import lists do not support 'as' aliases");
+   }
+
+   while (this->ctx.match(TokenKind::Comma).ok()) {
+      auto entry = this->parse_import_entry(import_token, false);
+      if (not entry.ok()) return ParserResult<StmtNodePtr>::failure(entry.error_ref());
+      payload.entries.push_back(std::move(entry.value_ref()));
+   }
+
+   auto stmt = std::make_unique<StmtNode>(AstNodeKind::ImportStmt, import_token.span());
+   stmt->data = std::move(payload);
    return ParserResult<StmtNodePtr>::success(std::move(stmt));
 }
 
@@ -1194,7 +1233,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_namespace()
    Token name_token = this->ctx.tokens().current();
    if (not name_token.is(TokenKind::String)) {
       return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, name_token,
-         "namespace name must be a string literal");
+         "Namespace name must be a string literal");
    }
 
    GCstr *name_str = name_token.payload().as_string();
