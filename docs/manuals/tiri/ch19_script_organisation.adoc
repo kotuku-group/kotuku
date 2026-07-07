@@ -1,3 +1,4 @@
+// CHANGED: 2026-07-07 - Documented comma-separated import lists and their restrictions (#1618).
 // CHANGED: 2026-06-28 - Documented parent-relative ('../') import resolution.
 // VERIFIED: 2026-02-13
 
@@ -7,7 +8,8 @@ indexterm:[script management] Tiri programs are organised through a combination 
 
 [[sec-the-import-directive]]
 === The import Directive
-[.api]`import 'Name' [as Alias]`
+[.api]`import 'Name' [as Alias]` +
+[.api]`import 'Name'[, 'Name' pass:[...]]`
 
 indexterm:[import directive] The `import` directive loads and inlines a Tiri script at parse time.  The imported script's bytecode is merged into the importing script during compilation, enabling the parser to produce optimised code across library boundaries.
 
@@ -30,6 +32,22 @@ import 'gui/button'       -- scripts:gui/button.tiri
 import './helpers'        -- ./helpers.tiri (relative to script)
 import '../shared/util'   -- ../shared/util.tiri (relative to script's parent)
 ----
+
+[discrete]
+==== Import Lists
+
+A single `import` statement imports multiple libraries as a comma-separated list of string literals.  Each entry is resolved and inlined from left to right, following the same order as an equivalent sequence of individual `import` statements.
+
+[source,tiri]
+----
+import 'json', 'options', 'gui/window'
+----
+
+The following restrictions apply to import lists:
+
+. Every list item must be a string literal.  A non-string entry or a trailing comma raises a parse error.
+. The `as` clause is not permitted in a list.
+. Duplicate entries are silently ignored.
 
 [discrete]
 ==== Scope Rules
