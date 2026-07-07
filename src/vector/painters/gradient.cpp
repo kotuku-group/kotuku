@@ -407,6 +407,7 @@ static ERR GRADIENT_SET_Matrices(extGradient *Self, const std::span<const Vector
    if (Value) {
       Self->Matrices.assign(Value->begin(), Value->end());
 
+      // Chain the next and prev pointers
       VectorMatrix *prev = nullptr;
       for (auto &matrix : Self->Matrices) {
          matrix.Vector = nullptr;

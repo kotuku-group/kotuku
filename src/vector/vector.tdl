@@ -750,7 +750,6 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     obj(Vector) Next        # The next vector in the branch, or `NULL`.
     obj(Vector) Prev        # The previous vector in the branch, or `NULL`.
     obj Parent              # The parent vector, or `NULL` if this is the top-most vector.
-    struct(*VectorMatrix) Matrices # A list of transform matrices to apply to the vector.
     double StrokeOpacity    # Defines the opacity of the path stroke.
     double FillOpacity      # The opacity to use when filling the vector.
     double Opacity          # An overall opacity value for the vector.
@@ -763,6 +762,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int(RQ)  PathQuality    # Defines the quality of rendered path outlines.
     int(VCS) ColourSpace    # Desired colour space to use when blending colours.
     int      PathTimestamp  # This counter is modified each time the path is regenerated.
+    ~struct(VectorMatrix) Matrices
     ~struct(FRGB) StrokeColour
     ~struct(FRGB) FillColour
     ~int(VFR) FillRule

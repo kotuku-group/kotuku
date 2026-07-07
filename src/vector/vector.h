@@ -10,6 +10,7 @@ template<class... Args> void DBG_TRANSFORM(Args...) {
 }
 
 #include <array>
+#include <list>
 #include <memory>
 #include <vector>
 #include <unordered_set>
@@ -788,6 +789,7 @@ class extVector : public objVector {
    double FinalX, FinalY;         // Used by Viewport to define the target X,Y; also VectorText to position the text' final position.
    TClipRectangle<double> Bounds; // Must be calculated by GeneratePath() and called from calc_full_boundary()
    Unit StrokeWidth;
+   std::list<VectorMatrix> Matrices;
    agg::path_storage BasePath;
    agg::trans_affine Transform;   // Final transform.  Accumulated from the Matrix list during path generation.
 
@@ -841,6 +843,8 @@ class extVector : public objVector {
    double fixed_stroke_width();
 
    inline bool dirty() { return (Dirty & RC::DIRTY) != RC::NIL; }
+
+   inline VectorMatrix * matrices() { return Matrices.empty() ? nullptr : &Matrices.front(); }
 
    inline bool is_stroked() {
       return (StrokeWidth > 0) and
@@ -1411,16 +1415,16 @@ inline static void reset_final_path(objVector *Vector)
 template <class T>
 inline static void apply_transforms(const T &Vector, agg::trans_affine &AGGTransform)
 {
-   if constexpr (std::is_pointer_v<std::decay_t<decltype(Vector.Matrices)>>) {
-      // Linked-list storage (objVector, viewports and patterns)
-      for (auto t=Vector.Matrices; t; t=t->Next) {
-         AGGTransform.multiply(t->ScaleX, t->ShearY, t->ShearX, t->ScaleY, t->TranslateX, t->TranslateY);
-      }
-   }
-   else { // Contiguous kt::vector storage
-      for (auto &t : Vector.Matrices) {
-         AGGTransform.multiply(t.ScaleX, t.ShearY, t.ShearX, t.ScaleY, t.TranslateX, t.TranslateY);
-      }
+   // extVector-derived shapes store their transforms in a std::list (Matrices); gradients and patterns use a
+   // contiguous kt::vector (Matrices).  Both are range-iterable, so the storage is selected at compile time.
+
+   auto &store = [&]() -> auto & {
+      if constexpr (requires { Vector.Matrices; }) return Vector.Matrices;
+      else return Vector.Matrices;
+   }();
+
+   for (auto &t : store) {
+      AGGTransform.multiply(t.ScaleX, t.ShearY, t.ShearX, t.ScaleY, t.TranslateX, t.TranslateY);
    }
 }
 

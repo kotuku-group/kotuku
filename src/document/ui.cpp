@@ -1279,31 +1279,30 @@ static ERR inputevent_button(objVectorViewport *Viewport, const InputEvent *Even
 
             // Scale the button viewport down a little bit to indicate that it's been clicked.
 
-            if (!button->viewport->Matrices) {
-               VectorMatrix *matrix;
-               button->viewport->newMatrix(&matrix, false);
-            }
+            VectorMatrix *matrix = nullptr;
+            button->viewport->getMatrices(matrix);
+            if (not matrix) button->viewport->newMatrix(&matrix, false);
 
-            Unit width;
+            Unit width, height;
             button->viewport->getWidth(width);
-            Unit height;
             button->viewport->getHeight(height);
 
-            if (auto m = button->viewport->Matrices) {
+            if (matrix) {
                const auto SCALE = 0.95;
-               m->TranslateX -= double(width) * 0.5;
-               m->TranslateY -= double(height) * 0.5;
-               vec::Scale(m, SCALE, SCALE);
-               m->TranslateX += double(width) * 0.5;
-               m->TranslateY += double(height) * 0.5;
-               vec::FlushMatrix(button->viewport->Matrices);
+               matrix->TranslateX -= double(width) * 0.5;
+               matrix->TranslateY -= double(height) * 0.5;
+               vec::Scale(matrix, SCALE, SCALE);
+               matrix->TranslateX += double(width) * 0.5;
+               matrix->TranslateY += double(height) * 0.5;
+               vec::FlushMatrix(matrix);
             }
          }
          else {
-            if (!button->alt_fill.empty()) button->viewport->setFill(button->fill);
+            if (not button->alt_fill.empty()) button->viewport->setFill(button->fill);
 
-            if (button->viewport->Matrices) {
-               vec::ResetMatrix(button->viewport->Matrices);
+            VectorMatrix *m = nullptr;
+            if ((button->viewport->getMatrices(m) IS ERR::Okay) and m) {
+               vec::ResetMatrix(m);
             }
          }
 

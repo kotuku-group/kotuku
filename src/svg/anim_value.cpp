@@ -296,8 +296,9 @@ void anim_value::set_value(objVector &Vector)
             // Special case: SVG groups don't have an (x,y) position, but can declare one in the form of a
             // transform.  Refer to xtag_use() for a working example as to why.
 
-            VectorMatrix *m;
-            for (m=Vector.Matrices; (m) and ((uint32_t)m->Tag != MTAG_SVG_TRANSFORM); m=m->Next);
+            VectorMatrix *m = nullptr;
+            Vector.getMatrices(m);
+            for (; (m) and ((uint32_t)m->Tag != MTAG_SVG_TRANSFORM); m=m->Next);
 
             if (!m) {
                Vector.newMatrix(&m, false);
@@ -314,8 +315,9 @@ void anim_value::set_value(objVector &Vector)
 
       case SVF_y: {
          if (Vector.Class->ClassID IS CLASSID::VECTORGROUP) {
-            VectorMatrix *m;
-            for (m=Vector.Matrices; (m) and ((uint32_t)m->Tag != MTAG_SVG_TRANSFORM); m=m->Next);
+            VectorMatrix *m = nullptr;
+            Vector.getMatrices(m);
+            for (; (m) and ((uint32_t)m->Tag != MTAG_SVG_TRANSFORM); m=m->Next);
 
             if (!m) {
                Vector.newMatrix(&m, false);
