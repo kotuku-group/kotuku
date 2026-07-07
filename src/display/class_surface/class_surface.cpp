@@ -681,6 +681,7 @@ static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
          }
          Self->Callback[i].Object   = context;
          Self->Callback[i].Function = *Args->Callback;
+         Args->Callback->pin();
          retained_callback = true;
          return ERR::Okay;
       }
