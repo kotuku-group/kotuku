@@ -2119,7 +2119,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="Flush"/>
       <const name="Focus"/>
       <const name="Free"/>
-      <const name="FreePlacement"/>
       <const name="FreeWarning"/>
       <const name="GetKey"/>
       <const name="Hide"/>
@@ -2130,10 +2129,9 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="MoveToBack"/>
       <const name="MoveToFront"/>
       <const name="MoveToPoint"/>
+      <const name="New"/>
       <const name="NewChild"/>
-      <const name="NewObject"/>
       <const name="NewOwner"/>
-      <const name="NewPlacement"/>
       <const name="Next"/>
       <const name="Prev"/>
       <const name="Query"/>

@@ -22,21 +22,21 @@ static const struct FieldDef clVectorWaveWVE[] = {
    { nullptr, 0 }
 };
 
-static ERR VECTORWAVE_NewPlacement(extVectorWave *Self) {
+static ERR VECTORWAVE_New(extVectorWave *Self) {
    new (Self) extVectorWave(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR VECTORWAVE_FreePlacement(extVectorWave *Self) {
+static ERR VECTORWAVE_Free(extVectorWave *Self) {
    Self->~extVectorWave();
    return ERR::Okay;
 }
 
 static const struct ActionArray clVectorWaveActions[] = {
-   { AC::FreePlacement, VECTORWAVE_FreePlacement },
+   { AC::Free, VECTORWAVE_Free },
    { AC::Move, VECTORWAVE_Move },
    { AC::MoveToPoint, VECTORWAVE_MoveToPoint },
-   { AC::NewPlacement, VECTORWAVE_NewPlacement },
+   { AC::New, VECTORWAVE_New },
    { AC::Resize, VECTORWAVE_Resize },
    { AC::NIL, nullptr }
 };

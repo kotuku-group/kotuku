@@ -32,7 +32,7 @@ static bool glAssetManagerFree = false;
 constexpr int LEN_ASSETS = 7; // "assets:" length
 
 static ERR ASSET_Delete(objFile *, APTR);
-static ERR ASSET_FreePlacement(objFile *);
+static ERR ASSET_Free(objFile *);
 static ERR ASSET_Init(objFile *, APTR);
 static ERR ASSET_Move(objFile *, struct mtFileMove *);
 static ERR ASSET_Read(objFile *, struct acRead *);
@@ -52,7 +52,7 @@ static const FieldArray clFields[] = {
 };
 
 static const ActionArray clActions[] = {
-   { AC::FreePlacement, ASSET_FreePlacement },
+   { AC::Free, ASSET_Free },
    { AC::Init,          ASSET_Init },
    { AC::Move,          ASSET_Move },
    { AC::Read,          ASSET_Read },
@@ -216,7 +216,7 @@ static ERR ASSET_Delete(objFile *Self)
 
 //********************************************************************************************************************
 
-static ERR ASSET_FreePlacement(objFile *Self)
+static ERR ASSET_Free(objFile *Self)
 {
    if (auto prv = (prvFileAsset *)Self->DerivedPtr) {
       if (prv->Asset) AAsset_close(prv->Asset);

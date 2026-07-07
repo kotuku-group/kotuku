@@ -39,12 +39,12 @@ static const struct MethodEntry clNetSocketMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR NETSOCKET_NewPlacement(extNetSocket *Self) {
+static ERR NETSOCKET_New(extNetSocket *Self) {
    new (Self) extNetSocket(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR NETSOCKET_FreePlacement(extNetSocket *Self) {
+static ERR NETSOCKET_Free(extNetSocket *Self) {
    Self->~extNetSocket();
    return ERR::Okay;
 }
@@ -52,10 +52,10 @@ static ERR NETSOCKET_FreePlacement(extNetSocket *Self) {
 static const struct ActionArray clNetSocketActions[] = {
    { AC::DataFeed, NETSOCKET_DataFeed },
    { AC::Disable, NETSOCKET_Disable },
-   { AC::FreePlacement, NETSOCKET_FreePlacement },
+   { AC::Free, NETSOCKET_Free },
    { AC::FreeWarning, NETSOCKET_FreeWarning },
    { AC::Init, NETSOCKET_Init },
-   { AC::NewPlacement, NETSOCKET_NewPlacement },
+   { AC::New, NETSOCKET_New },
    { AC::Read, NETSOCKET_Read },
    { AC::Write, NETSOCKET_Write },
    { AC::NIL, nullptr }

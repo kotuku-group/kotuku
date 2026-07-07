@@ -42,23 +42,23 @@ static const struct FieldDef clFilterEffectVSF[] = {
    { nullptr, 0 }
 };
 
-static ERR FILTEREFFECT_NewPlacement(extFilterEffect *Self) {
+static ERR FILTEREFFECT_New(extFilterEffect *Self) {
    new (Self) extFilterEffect(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR FILTEREFFECT_FreePlacement(extFilterEffect *Self) {
+static ERR FILTEREFFECT_Free(extFilterEffect *Self) {
    Self->~extFilterEffect();
    return ERR::Okay;
 }
 
 static const struct ActionArray clFilterEffectActions[] = {
-   { AC::FreePlacement, FILTEREFFECT_FreePlacement },
+   { AC::Free, FILTEREFFECT_Free },
    { AC::Init, FILTEREFFECT_Init },
    { AC::MoveToBack, FILTEREFFECT_MoveToBack },
    { AC::MoveToFront, FILTEREFFECT_MoveToFront },
+   { AC::New, FILTEREFFECT_New },
    { AC::NewOwner, FILTEREFFECT_NewOwner },
-   { AC::NewPlacement, FILTEREFFECT_NewPlacement },
    { AC::NIL, nullptr }
 };
 

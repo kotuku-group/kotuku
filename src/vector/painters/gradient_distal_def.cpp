@@ -10,20 +10,20 @@ static const struct FieldDef clGradientDistalGFALL[] = {
    { nullptr, 0 }
 };
 
-static ERR GRADIENTDISTAL_NewPlacement(extGradientDistal *Self) {
+static ERR GRADIENTDISTAL_New(extGradientDistal *Self) {
    new (Self) extGradientDistal(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR GRADIENTDISTAL_FreePlacement(extGradientDistal *Self) {
+static ERR GRADIENTDISTAL_Free(extGradientDistal *Self) {
    Self->~extGradientDistal();
    return ERR::Okay;
 }
 
 static const struct ActionArray clGradientDistalActions[] = {
-   { AC::FreePlacement, GRADIENTDISTAL_FreePlacement },
+   { AC::Free, GRADIENTDISTAL_Free },
    { AC::Init, GRADIENTDISTAL_Init },
-   { AC::NewPlacement, GRADIENTDISTAL_NewPlacement },
+   { AC::New, GRADIENTDISTAL_New },
    { AC::NIL, nullptr }
 };
 

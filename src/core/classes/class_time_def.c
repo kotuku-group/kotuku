@@ -8,19 +8,19 @@ static const struct MethodEntry clTimeMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR TIME_NewPlacement(objTime *Self) {
+static ERR TIME_New(objTime *Self) {
    new (Self) objTime(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR TIME_FreePlacement(objTime *Self) {
+static ERR TIME_Free(objTime *Self) {
    Self->~objTime();
    return ERR::Okay;
 }
 
 static const struct ActionArray clTimeActions[] = {
-   { AC::FreePlacement, TIME_FreePlacement },
-   { AC::NewPlacement, TIME_NewPlacement },
+   { AC::Free, TIME_Free },
+   { AC::New, TIME_New },
    { AC::Query, TIME_Query },
    { AC::Refresh, TIME_Refresh },
    { AC::NIL, nullptr }

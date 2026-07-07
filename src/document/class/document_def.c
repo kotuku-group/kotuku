@@ -53,12 +53,12 @@ static const struct MethodEntry clDocumentMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR DOCUMENT_NewPlacement(extDocument *Self) {
+static ERR DOCUMENT_New(extDocument *Self) {
    new (Self) extDocument(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR DOCUMENT_FreePlacement(extDocument *Self) {
+static ERR DOCUMENT_Free(extDocument *Self) {
    Self->~extDocument();
    return ERR::Okay;
 }
@@ -72,10 +72,10 @@ static const struct ActionArray clDocumentActions[] = {
    { AC::Draw, DOCUMENT_Draw },
    { AC::Enable, DOCUMENT_Enable },
    { AC::Focus, DOCUMENT_Focus },
-   { AC::FreePlacement, DOCUMENT_FreePlacement },
+   { AC::Free, DOCUMENT_Free },
    { AC::GetKey, DOCUMENT_GetKey },
    { AC::Init, DOCUMENT_Init },
-   { AC::NewPlacement, DOCUMENT_NewPlacement },
+   { AC::New, DOCUMENT_New },
    { AC::Refresh, DOCUMENT_Refresh },
    { AC::SaveToObject, DOCUMENT_SaveToObject },
    { AC::SetKey, DOCUMENT_SetKey },

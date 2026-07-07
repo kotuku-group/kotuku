@@ -50,7 +50,7 @@ static ERR RSVG_Activate(extRSVG *Self)
 
 //********************************************************************************************************************
 
-static ERR RSVG_FreePlacement(extRSVG *Self)
+static ERR RSVG_Free(extRSVG *Self)
 {
    Self->~extRSVG();
    return ERR::Okay;
@@ -89,7 +89,7 @@ static ERR RSVG_Init(extRSVG *Self)
 
 //********************************************************************************************************************
 
-static ERR RSVG_NewPlacement(extRSVG *Self)
+static ERR RSVG_New(extRSVG *Self)
 {
    new (Self) extRSVG(Self->Class, Self->UID);
    return ERR::Okay;
@@ -213,9 +213,9 @@ static ERR RSVG_Resize(extRSVG *Self, struct acResize *Args)
 
 static const ActionArray clActions[] = {
    { AC::Activate,      RSVG_Activate },
-   { AC::FreePlacement, RSVG_FreePlacement },
+   { AC::Free, RSVG_Free },
    { AC::Init,          RSVG_Init },
-   { AC::NewPlacement,  RSVG_NewPlacement },
+   { AC::New,  RSVG_New },
    { AC::Query,         RSVG_Query },
    { AC::Resize,        RSVG_Resize },
    { AC::NIL, nullptr }

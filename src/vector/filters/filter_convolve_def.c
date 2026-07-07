@@ -7,21 +7,21 @@ static const struct FieldDef clConvolveFXEM[] = {
    { nullptr, 0 }
 };
 
-static ERR CONVOLVEFX_NewPlacement(extConvolveFX *Self) {
+static ERR CONVOLVEFX_New(extConvolveFX *Self) {
    new (Self) extConvolveFX(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR CONVOLVEFX_FreePlacement(extConvolveFX *Self) {
+static ERR CONVOLVEFX_Free(extConvolveFX *Self) {
    Self->~extConvolveFX();
    return ERR::Okay;
 }
 
 static const struct ActionArray clConvolveFXActions[] = {
    { AC::Draw, CONVOLVEFX_Draw },
-   { AC::FreePlacement, CONVOLVEFX_FreePlacement },
+   { AC::Free, CONVOLVEFX_Free },
    { AC::Init, CONVOLVEFX_Init },
-   { AC::NewPlacement, CONVOLVEFX_NewPlacement },
+   { AC::New, CONVOLVEFX_New },
    { AC::NIL, nullptr }
 };
 

@@ -430,15 +430,15 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 
       NotifySubscribers(Object, AC::Free, nullptr, ERR::Okay);
 
-      if (mc->ActionTable[int(AC::FreePlacement)].PerformAction) {
-         if (mc->ActionTable[int(AC::FreePlacement)].PerformAction(Object, nullptr) IS ERR::NothingDone) {
-            if ((mc->Base) and (mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction)) {
-               mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction(Object, nullptr);
+      if (mc->ActionTable[int(AC::Free)].PerformAction) {
+         if (mc->ActionTable[int(AC::Free)].PerformAction(Object, nullptr) IS ERR::NothingDone) {
+            if ((mc->Base) and (mc->Base->ActionTable[int(AC::Free)].PerformAction)) {
+               mc->Base->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
             }
          }
       }
-      else if ((mc->Base) and (mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction)) { // Fall-back to base class
-         mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction(Object, nullptr);
+      else if ((mc->Base) and (mc->Base->ActionTable[int(AC::Free)].PerformAction)) { // Fall-back to base class
+         mc->Base->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
       }
 
       if (Object->NotifyFlags.load()) {
@@ -2097,7 +2097,7 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 
       kt::clearmem(head + 1, mc->Size - sizeof(class Object));
 
-      // Preset the Object header so NewPlacement constructors can forward these values into the Object constructor.
+      // Preset the Object header so New constructors can forward these values into the Object constructor.
 
       head->UID   = object_id;
       head->Class = (extMetaClass *)mc;
@@ -2130,7 +2130,7 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
          else track_to = obj;
       }
 
-      // Track the object prior to NewPlacement so that action calls will work correctly.
+      // Track the object prior to New so that action calls will work correctly.
 
       {
          std::lock_guard resource_lock(glmResources);
@@ -2140,22 +2140,22 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
       }
 
       ERR error = ERR::Okay;
-      if (mc->ActionTable[int(AC::NewPlacement)].PerformAction) {
-         // Derived classes have priority over base for NewPlacement.  Base classes that need NewPlacement should specify
+      if (mc->ActionTable[int(AC::New)].PerformAction) {
+         // Derived classes have priority over base for New.  Base classes that need New should specify
          // initialisers in the class definition or ensure that their constructor is visible to derived classes.
 
          tlContext.emplace_back(head, nullptr, AC::NIL);
-         error = mc->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
+         error = mc->ActionTable[int(AC::New)].PerformAction(head, nullptr);
          tlContext.pop_back();
       }
-      else if ((mc->Base) and (mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction)) {
+      else if ((mc->Base) and (mc->Base->ActionTable[int(AC::New)].PerformAction)) {
          tlContext.emplace_back(head, nullptr, AC::NIL);
-         error = mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
+         error = mc->Base->ActionTable[int(AC::New)].PerformAction(head, nullptr);
          tlContext.pop_back();
       }
       else {
          new (head) class Object(mc, object_id); // Dummy initialiser so that FreeResource() will work
-         error = log.warning(ERR::NoAction); // NewPlacement is an absolute requirement
+         error = log.warning(ERR::NoAction); // New is an absolute requirement
       }
 
       if (!error) {
@@ -2196,7 +2196,7 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 #if 0
 static ERR new_placement(CLASSID ClassID, NF Flags, OBJECTPTR Object)
 {
-   kt::Log log("NewPlacement");
+   kt::Log log("New");
 
    auto class_id = ClassID;
    if ((class_id IS CLASSID::NIL) or (not Object)) return log.warning(ERR::NullArgs);

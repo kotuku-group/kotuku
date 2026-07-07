@@ -27,23 +27,23 @@ static const struct FieldDef clVectorFilterAspectRatio[] = {
    { nullptr, 0 }
 };
 
-static ERR VECTORFILTER_NewPlacement(extVectorFilter *Self) {
+static ERR VECTORFILTER_New(extVectorFilter *Self) {
    new (Self) extVectorFilter(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR VECTORFILTER_FreePlacement(extVectorFilter *Self) {
+static ERR VECTORFILTER_Free(extVectorFilter *Self) {
    Self->~extVectorFilter();
    return ERR::Okay;
 }
 
 static const struct ActionArray clVectorFilterActions[] = {
    { AC::Clear, VECTORFILTER_Clear },
-   { AC::FreePlacement, VECTORFILTER_FreePlacement },
+   { AC::Free, VECTORFILTER_Free },
    { AC::Init, VECTORFILTER_Init },
+   { AC::New, VECTORFILTER_New },
    { AC::NewChild, VECTORFILTER_NewChild },
    { AC::NewOwner, VECTORFILTER_NewOwner },
-   { AC::NewPlacement, VECTORFILTER_NewPlacement },
    { AC::NIL, nullptr }
 };
 

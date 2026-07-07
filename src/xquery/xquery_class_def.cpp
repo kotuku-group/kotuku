@@ -47,12 +47,12 @@ static const struct MethodEntry clXQueryMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR XQUERY_NewPlacement(extXQuery *Self) {
+static ERR XQUERY_New(extXQuery *Self) {
    new (Self) extXQuery(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR XQUERY_FreePlacement(extXQuery *Self) {
+static ERR XQUERY_Free(extXQuery *Self) {
    Self->~extXQuery();
    return ERR::Okay;
 }
@@ -60,10 +60,10 @@ static ERR XQUERY_FreePlacement(extXQuery *Self) {
 static const struct ActionArray clXQueryActions[] = {
    { AC::Activate, XQUERY_Activate },
    { AC::Clear, XQUERY_Clear },
-   { AC::FreePlacement, XQUERY_FreePlacement },
+   { AC::Free, XQUERY_Free },
    { AC::GetKey, XQUERY_GetKey },
    { AC::Init, XQUERY_Init },
-   { AC::NewPlacement, XQUERY_NewPlacement },
+   { AC::New, XQUERY_New },
    { AC::Reset, XQUERY_Reset },
    { AC::SetKey, XQUERY_SetKey },
    { AC::NIL, nullptr }

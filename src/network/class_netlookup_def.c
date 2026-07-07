@@ -18,20 +18,20 @@ static const struct MethodEntry clNetLookupMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR NETLOOKUP_NewPlacement(extNetLookup *Self) {
+static ERR NETLOOKUP_New(extNetLookup *Self) {
    new (Self) extNetLookup(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR NETLOOKUP_FreePlacement(extNetLookup *Self) {
+static ERR NETLOOKUP_Free(extNetLookup *Self) {
    Self->~extNetLookup();
    return ERR::Okay;
 }
 
 static const struct ActionArray clNetLookupActions[] = {
-   { AC::FreePlacement, NETLOOKUP_FreePlacement },
+   { AC::Free, NETLOOKUP_Free },
    { AC::FreeWarning, NETLOOKUP_FreeWarning },
-   { AC::NewPlacement, NETLOOKUP_NewPlacement },
+   { AC::New, NETLOOKUP_New },
    { AC::NIL, nullptr }
 };
 

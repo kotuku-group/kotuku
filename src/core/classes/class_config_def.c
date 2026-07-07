@@ -31,12 +31,12 @@ static const struct MethodEntry clConfigMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR CONFIG_NewPlacement(extConfig *Self) {
+static ERR CONFIG_New(extConfig *Self) {
    new (Self) extConfig(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR CONFIG_FreePlacement(extConfig *Self) {
+static ERR CONFIG_Free(extConfig *Self) {
    Self->~extConfig();
    return ERR::Okay;
 }
@@ -45,9 +45,9 @@ static const struct ActionArray clConfigActions[] = {
    { AC::Clear, CONFIG_Clear },
    { AC::DataFeed, CONFIG_DataFeed },
    { AC::Flush, CONFIG_Flush },
-   { AC::FreePlacement, CONFIG_FreePlacement },
+   { AC::Free, CONFIG_Free },
    { AC::Init, CONFIG_Init },
-   { AC::NewPlacement, CONFIG_NewPlacement },
+   { AC::New, CONFIG_New },
    { AC::SaveSettings, CONFIG_SaveSettings },
    { AC::SaveToObject, CONFIG_SaveToObject },
    { AC::NIL, nullptr }

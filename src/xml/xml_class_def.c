@@ -74,12 +74,12 @@ static const struct MethodEntry clXMLMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR XML_NewPlacement(extXML *Self) {
+static ERR XML_New(extXML *Self) {
    new (Self) extXML(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR XML_FreePlacement(extXML *Self) {
+static ERR XML_Free(extXML *Self) {
    Self->~extXML();
    return ERR::Okay;
 }
@@ -87,9 +87,9 @@ static ERR XML_FreePlacement(extXML *Self) {
 static const struct ActionArray clXMLActions[] = {
    { AC::Clear, XML_Clear },
    { AC::DataFeed, XML_DataFeed },
-   { AC::FreePlacement, XML_FreePlacement },
+   { AC::Free, XML_Free },
    { AC::Init, XML_Init },
-   { AC::NewPlacement, XML_NewPlacement },
+   { AC::New, XML_New },
    { AC::Reset, XML_Reset },
    { AC::SaveToObject, XML_SaveToObject },
    { AC::SetKey, XML_SetKey },

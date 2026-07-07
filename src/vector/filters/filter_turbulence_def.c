@@ -6,21 +6,21 @@ static const struct FieldDef clTurbulenceFXTB[] = {
    { nullptr, 0 }
 };
 
-static ERR TURBULENCEFX_NewPlacement(extTurbulenceFX *Self) {
+static ERR TURBULENCEFX_New(extTurbulenceFX *Self) {
    new (Self) extTurbulenceFX(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR TURBULENCEFX_FreePlacement(extTurbulenceFX *Self) {
+static ERR TURBULENCEFX_Free(extTurbulenceFX *Self) {
    Self->~extTurbulenceFX();
    return ERR::Okay;
 }
 
 static const struct ActionArray clTurbulenceFXActions[] = {
    { AC::Draw, TURBULENCEFX_Draw },
-   { AC::FreePlacement, TURBULENCEFX_FreePlacement },
+   { AC::Free, TURBULENCEFX_Free },
    { AC::Init, TURBULENCEFX_Init },
-   { AC::NewPlacement, TURBULENCEFX_NewPlacement },
+   { AC::New, TURBULENCEFX_New },
    { AC::NIL, nullptr }
 };
 

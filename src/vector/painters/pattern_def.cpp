@@ -25,21 +25,21 @@ static const struct FieldDef clVectorPatternContentUnits[] = {
    { nullptr, 0 }
 };
 
-static ERR VECTORPATTERN_NewPlacement(extVectorPattern *Self) {
+static ERR VECTORPATTERN_New(extVectorPattern *Self) {
    new (Self) extVectorPattern(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR VECTORPATTERN_FreePlacement(extVectorPattern *Self) {
+static ERR VECTORPATTERN_Free(extVectorPattern *Self) {
    Self->~extVectorPattern();
    return ERR::Okay;
 }
 
 static const struct ActionArray clVectorPatternActions[] = {
    { AC::Draw, VECTORPATTERN_Draw },
-   { AC::FreePlacement, VECTORPATTERN_FreePlacement },
+   { AC::Free, VECTORPATTERN_Free },
    { AC::Init, VECTORPATTERN_Init },
-   { AC::NewPlacement, VECTORPATTERN_NewPlacement },
+   { AC::New, VECTORPATTERN_New },
    { AC::NIL, nullptr }
 };
 

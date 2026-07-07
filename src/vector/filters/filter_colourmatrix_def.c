@@ -14,21 +14,21 @@ static const struct FieldDef clColourFXCM[] = {
    { nullptr, 0 }
 };
 
-static ERR COLOURFX_NewPlacement(extColourFX *Self) {
+static ERR COLOURFX_New(extColourFX *Self) {
    new (Self) extColourFX(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR COLOURFX_FreePlacement(extColourFX *Self) {
+static ERR COLOURFX_Free(extColourFX *Self) {
    Self->~extColourFX();
    return ERR::Okay;
 }
 
 static const struct ActionArray clColourFXActions[] = {
    { AC::Draw, COLOURFX_Draw },
-   { AC::FreePlacement, COLOURFX_FreePlacement },
+   { AC::Free, COLOURFX_Free },
    { AC::Init, COLOURFX_Init },
-   { AC::NewPlacement, COLOURFX_NewPlacement },
+   { AC::New, COLOURFX_New },
    { AC::NIL, nullptr }
 };
 

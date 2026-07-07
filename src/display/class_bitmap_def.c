@@ -81,12 +81,12 @@ static const struct MethodEntry clBitmapMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR BITMAP_NewPlacement(extBitmap *Self) {
+static ERR BITMAP_New(extBitmap *Self) {
    new (Self) extBitmap(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR BITMAP_FreePlacement(extBitmap *Self) {
+static ERR BITMAP_Free(extBitmap *Self) {
    Self->~extBitmap();
    return ERR::Okay;
 }
@@ -96,10 +96,10 @@ static const struct ActionArray clBitmapActions[] = {
    { AC::CopyData, BITMAP_CopyData },
    { AC::Draw, BITMAP_Draw },
    { AC::Flush, BITMAP_Flush },
-   { AC::FreePlacement, BITMAP_FreePlacement },
+   { AC::Free, BITMAP_Free },
    { AC::Init, BITMAP_Init },
    { AC::Lock, BITMAP_Lock },
-   { AC::NewPlacement, BITMAP_NewPlacement },
+   { AC::New, BITMAP_New },
    { AC::Query, BITMAP_Query },
    { AC::Read, BITMAP_Read },
    { AC::Resize, BITMAP_Resize },
