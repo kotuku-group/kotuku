@@ -1,8 +1,26 @@
 
-   import './compile_if_helper'
-   import './import_parent/child'
+   import './compile_if_helper', './import_parent/child'
 
 extern on_windows, on_linux, on_osx, debug_on, debug_off
+
+function assert_valid(Source:str, Context:str)
+   local result = debug.validate(Source)
+
+   assert(type(result) is 'table', Context .. ': debug.validate() should return a table')
+   assert(result.success is true, Context .. ': source should validate successfully')
+end
+
+function assert_invalid(Source:str, ExpectedMessage:str, Context:str)
+   local result = debug.validate(Source)
+
+   assert(type(result) is 'table', Context .. ': debug.validate() should return a table')
+   assert(result.success is false, Context .. ': source should fail validation')
+   assert(type(result.diagnostics) is 'table', Context .. ': diagnostics should be returned')
+   assert(#result.diagnostics > 0, Context .. ': at least one diagnostic should be reported')
+   assert(string.find(result.diagnostics[0].message, ExpectedMessage, 0, true) != nil,
+      Context .. ': diagnostic should contain "' .. ExpectedMessage .. '", got: ' ..
+      tostring(result.diagnostics[0].message))
+end
 
 @Test function ImportBasic()
    assert(helper_message is "Hello from imported module!",
@@ -31,4 +49,53 @@ end
    assert(parent_import_value() is 73, "Expected parent import function to remain available")
    assert(child_parent_message is "Loaded through parent-relative import from child",
       f"Expected child import message, got '{child_parent_message}'")
+end
+
+@Test function ImportListNamespaceLocals()
+   assert_valid([[
+      import 'json', 'options'
+
+      local encoded = json.encode({ ['ok'] = true })
+      local parser = options({ args = {} })
+      assert(type(encoded) is 'string')
+      assert(type(parser.getUsage()) is 'string')
+   ]], 'import list namespace locals')
+end
+
+@Test function DuplicateImportListEntryIsAccepted()
+   assert_valid([[
+      import 'json', 'json'
+
+      local encoded = json.encode({ ['value'] = 1 })
+      assert(type(encoded) is 'string')
+   ]], 'duplicate import list entry')
+end
+
+@Test function SingleAliasedImportStillWorks()
+   assert_valid([[
+      import 'json' as jsonLib
+
+      local encoded = jsonLib.encode({ ['aliased'] = true })
+      assert(type(encoded) is 'string')
+   ]], 'single import alias')
+end
+
+@Test function ImportListAliasesAreRejected()
+   assert_invalid([[import 'json' as jsonLib, 'options']], "import lists do not support 'as' aliases",
+      'alias on first list item')
+   assert_invalid([[import 'json', 'options' as optionsLib]], "import lists do not support 'as' aliases",
+      'alias on later list item')
+end
+
+@Test function MalformedImportListsAreRejected()
+   assert_invalid([[import 'json',]], 'import list items must be string literals', 'trailing comma')
+   assert_invalid([[import 'json', name]], 'import list items must be string literals', 'non-string list item')
+end
+
+@Test function ImportInsideFunctionRemainsRejected()
+   assert_invalid([[
+      function invalid_import()
+         import 'json'
+      end
+   ]], "Use of 'import' is not permitted inside function blocks", 'import inside function')
 end

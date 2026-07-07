@@ -878,7 +878,23 @@ struct CheckStmtPayload {
    ~CheckStmtPayload();
 };
 
-// Import statement payload: import 'library' - compile-time file inlining
+struct ImportEntryPayload {
+   ImportEntryPayload() = default;
+   ImportEntryPayload(const ImportEntryPayload&) = delete;
+   ImportEntryPayload& operator=(const ImportEntryPayload&) = delete;
+   ImportEntryPayload(ImportEntryPayload&&) noexcept = default;
+   ImportEntryPayload& operator=(ImportEntryPayload&&) noexcept = default;
+
+   std::optional<Identifier> namespace_name;  // The local variable name (alias or default)
+   std::string lib_path;                      // Resolved path to library file
+   std::string default_namespace;             // The declared namespace for _LIB lookup
+   std::unique_ptr<BlockStmt> inlined_body;   // Parsed content of imported file
+   uint8_t file_source_idx = 0;               // FileSource index for this imported file
+
+   ~ImportEntryPayload();
+};
+
+// Import statement payload: import 'library' [, 'library'...] - compile-time file inlining
 struct ImportStmtPayload {
    ImportStmtPayload() = default;
    ImportStmtPayload(const ImportStmtPayload&) = delete;
@@ -886,11 +902,7 @@ struct ImportStmtPayload {
    ImportStmtPayload(ImportStmtPayload&&) noexcept = default;
    ImportStmtPayload& operator=(ImportStmtPayload&&) noexcept = default;
 
-   std::optional<Identifier> namespace_name;  // The local variable name (alias or default)
-   std::string lib_path;                      // Resolved path to library file
-   std::string default_namespace;             // The declared namespace for _LIB lookup
-   std::unique_ptr<BlockStmt> inlined_body;   // Parsed content of imported file
-   uint8_t file_source_idx = 0;               // FileSource index for this imported file
+   std::vector<ImportEntryPayload> entries;
 
    ~ImportStmtPayload();
 };

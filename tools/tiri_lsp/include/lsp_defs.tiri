@@ -210,7 +210,10 @@ glKeywords = {
    ['extern'] = {
       comment = 'Declares that a symbol is supplied externally and should be resolved as a global.'
    },
-   ['import'] = { comment = 'Inlines a Tiri script library at parse time. Use ./ or ../ for local libraries.' },
+   ['import'] = {
+      comment = 'Inlines one or more Tiri script libraries at parse time. List entries must be string literals; ' ..
+         'use ./ or ../ for local libraries. The as alias form is only valid for single imports.'
+   },
    ['as'] = { comment = 'Introduces a local alias for an imported library namespace.' },
 
    -- Pattern matching

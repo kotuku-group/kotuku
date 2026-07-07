@@ -86,6 +86,20 @@ end
    assert(import_path and import_path.type is 4, 'Parent-relative import path should remain a string token.')
 end
 
+@Test function ImportListPathsReceiveSemanticTokens()
+   source = "import 'json',\n   'options'\n"
+
+   tokens = tokenizeTiri(source)
+
+   import_keyword = findToken(tokens, 0, 0, 'import')
+   first_path = findToken(tokens, 0, 7, "'json'")
+   second_path = findToken(tokens, 1, 3, "'options'")
+
+   assert(import_keyword and import_keyword.type is 0, 'import list keyword should be highlighted as a keyword.')
+   assert(first_path and first_path.type is 4, 'First import list path should remain a string token.')
+   assert(second_path and second_path.type is 4, 'Wrapped import list path should remain a string token.')
+end
+
 @Test function ExternKeywordReceivesSemanticTokens()
    source = 'extern runTest, assertEqId\n'
 
