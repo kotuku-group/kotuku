@@ -448,7 +448,7 @@ static void notify_free_parent(OBJECTPTR Object, ACTIONID ActionID, ERR Result)
 
    Self->Flags &= ~RNF::VISIBLE;
    UpdateSurfaceField(Self, &SurfaceRecord::Flags, Self->Flags);
-   if (Self->defined(NF::LOCAL)) QueueAction(AC::Free, Self->UID); // If the object is a child of something, give the parent object time to do the deallocation itself
+   if (Self->defined(NF::LOCAL)) SendMessage(MSGID::FREE, MSF::NIL, &Self->UID, sizeof(Self->UID)); // If the object is a child of something, give the parent object time to do the deallocation itself
    else FreeResource(Self);
 }
 
