@@ -71,7 +71,7 @@ extern "C" void program(void)
    glTask = CurrentTask();
    bool time       = false;
    int winhandle  = 0;
-   STRING procedure  = nullptr;
+   std::string procedure;
    STRING scriptfile = nullptr;
    int width      = 0;
    int height     = 0;
@@ -114,14 +114,8 @@ extern "C" void program(void)
             }
          }
          else if (iequals(Args[i], "--procedure")) {
-            if (procedure) { FreeResource(procedure); procedure = nullptr; }
-
             if (Args[i+1]) {
-               for (j=0; Args[i+1][j]; j++);
-               if (!AllocMemory(j+1, MEM::STRING|MEM::NO_CLEAR, &procedure)) {
-                  for (j=0; Args[i+1][j]; j++) procedure[j] = Args[i+1][j];
-                  procedure[j] = 0;
-               }
+               procedure = Args[i+1];
                i++;
             }
          }
@@ -191,7 +185,6 @@ exit:
       }
    }
 
-   if (procedure) { FreeResource(procedure); procedure = nullptr; }
    if (scriptfile) { FreeResource(scriptfile); scriptfile = nullptr; }
 
    if (glDirectory) {
