@@ -2050,8 +2050,8 @@ ERR fs_copydir(std::string &Source, std::string &Dest, FileFeedback *Feedback, F
                   else if (result IS FFR::SKIP) continue;
                }
 
-               STRING link;
-               if (!(error = vsrc.ReadLink(Source, &link))) {
+               std::string link;
+               if (!(error = vsrc.ReadLink(Source, link))) {
                   DeleteFile(Dest, nullptr);
                   error = vdest.CreateLink(Dest, link);
                }
@@ -2144,13 +2144,13 @@ PERMIT get_parent_permissions(std::string_view Path, int *UserID, int *GroupID)
 
 //********************************************************************************************************************
 
-ERR fs_readlink(std::string_view Source, STRING *Link)
+ERR fs_readlink(std::string_view Source, std::string &Link)
 {
 #ifdef __unix__
    char buffer[512];
    if (int i = readlink(Source.data(), buffer, sizeof(buffer)-1); i != -1) {
       buffer[i] = 0;
-      *Link = strclone(buffer);
+      Link.assign(buffer);
       return ERR::Okay;
    }
    else return ERR::SystemCall;

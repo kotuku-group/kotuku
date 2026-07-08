@@ -29,7 +29,8 @@ glTestTimeout = 3.0
 
          if bytesRead > 0 then
             local msg = buffer:getString(0, bytesRead)
-            logOutput('[IPv6 UDP Server] Received: "' .. msg .. '" from ' .. mNet.AddressToStr(sv_source) .. ':' .. sv_source.port)
+            local err, ip = mNet.AddressToStr(sv_source)
+            logOutput('[IPv6 UDP Server] Received: "' .. msg .. '" from ' .. ip .. ':' .. sv_source.port)
             assert(msg:startsWith('Hello IPv6'), 'Unexpected message received')
             msg_recv = true
             Socket.acSignal()
@@ -79,7 +80,8 @@ end
 
          if bytesRead > 0 then
             local msg = buffer:getString(0, bytesRead)
-            logOutput('[Dual-Stack UDP Server] Received: "' .. msg .. '" from ' .. mNet.AddressToStr(source) .. ':' .. source.port)
+            local err, ip = mNet.AddressToStr(source)
+            logOutput('[Dual-Stack UDP Server] Received: "' .. msg .. '" from ' .. ip .. ':' .. source.port)
 
             if msg:endsWith('IPv4') then
                ipv4Received = true

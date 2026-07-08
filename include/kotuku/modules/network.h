@@ -962,7 +962,7 @@ inline ERR nsCreate(objNetSocket **NewNetSocketOut, OBJECTID ListenerID, APTR Cl
 struct NetworkBase {
 #ifndef KOTUKU_STATIC
    ERR (*_StrToAddress)(const std::string_view &String, struct IPAddress *Address);
-   CSTRING (*_AddressToStr)(struct IPAddress *IPAddress);
+   ERR (*_AddressToStr)(struct IPAddress *IPAddress, std::string *Result);
    uint32_t (*_HostToShort)(uint32_t Value);
    uint32_t (*_HostToLong)(uint32_t Value);
    uint32_t (*_ShortToHost)(uint32_t Value);
@@ -975,7 +975,7 @@ struct NetworkBase {
 extern struct NetworkBase *NetworkBase;
 namespace net {
 inline ERR StrToAddress(const std::string_view &String, struct IPAddress *Address) { return NetworkBase->_StrToAddress(String,Address); }
-inline CSTRING AddressToStr(struct IPAddress *IPAddress) { return NetworkBase->_AddressToStr(IPAddress); }
+inline ERR AddressToStr(struct IPAddress *IPAddress, std::string *Result) { return NetworkBase->_AddressToStr(IPAddress,Result); }
 inline uint32_t HostToShort(uint32_t Value) { return NetworkBase->_HostToShort(Value); }
 inline uint32_t HostToLong(uint32_t Value) { return NetworkBase->_HostToLong(Value); }
 inline uint32_t ShortToHost(uint32_t Value) { return NetworkBase->_ShortToHost(Value); }
@@ -985,7 +985,7 @@ inline ERR SetSSL(objNetSocket *NetSocket, const std::string_view &Command, cons
 #else
 namespace net {
 extern ERR StrToAddress(const std::string_view &String, struct IPAddress *Address);
-extern CSTRING AddressToStr(struct IPAddress *IPAddress);
+extern ERR AddressToStr(struct IPAddress *IPAddress, std::string *Result);
 extern uint32_t HostToShort(uint32_t Value);
 extern uint32_t HostToLong(uint32_t Value);
 extern uint32_t ShortToHost(uint32_t Value);

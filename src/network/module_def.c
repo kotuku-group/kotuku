@@ -2,7 +2,7 @@
 
 namespace net {
 extern ERR StrToAddress(const std::string_view & String, struct IPAddress * Address);
-extern CSTRING AddressToStr(struct IPAddress * IPAddress);
+extern ERR AddressToStr(struct IPAddress * IPAddress, std::string * Result);
 extern uint32_t HostToShort(uint32_t Value);
 extern uint32_t HostToLong(uint32_t Value);
 extern uint32_t ShortToHost(uint32_t Value);
@@ -14,7 +14,7 @@ extern ERR SetSSL(objNetSocket * NetSocket, const std::string_view & Command, co
 #define FDEF static const struct FunctionField
 #endif
 
-FDEF argsAddressToStr[] = { { "Result", FD_RESULT|FD_STR|FD_ALLOC }, { "IPAddress:IPAddress", FD_PTR|FD_STRUCT }, { 0, 0 } };
+FDEF argsAddressToStr[] = { { "Error", FD_INT|FD_ERROR }, { "IPAddress:IPAddress", FD_PTR|FD_STRUCT }, { "Result", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsHostToLong[] = { { "Result", FD_INT|FD_UNSIGNED }, { "Value", FD_INT|FD_UNSIGNED }, { 0, 0 } };
 FDEF argsHostToShort[] = { { "Result", FD_INT|FD_UNSIGNED }, { "Value", FD_INT|FD_UNSIGNED }, { 0, 0 } };
 FDEF argsLongToHost[] = { { "Result", FD_INT|FD_UNSIGNED }, { "Value", FD_INT|FD_UNSIGNED }, { 0, 0 } };
