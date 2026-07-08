@@ -155,6 +155,51 @@ void keyvalue_to_table(lua_State *Lua, const KEYVALUE *Map)
 }
 
 //********************************************************************************************************************
+
+static bool is_primitive_field(int Type)
+{
+   return Type & (FD_FLOAT|FD_DOUBLE|FD_INT64|FD_INT|FD_WORD|FD_BYTE);
+}
+
+//********************************************************************************************************************
+
+static bool write_primitive_field(lua_State *Lua, APTR Address, int Type, int StackIndex, int ElementIndex = 0)
+{
+   if (Type & FD_FLOAT)       ((float *)Address)[ElementIndex]   = lua_tonumber(Lua, StackIndex);
+   else if (Type & FD_DOUBLE) ((double *)Address)[ElementIndex]  = lua_tonumber(Lua, StackIndex);
+   else if (Type & FD_INT64)  ((int64_t *)Address)[ElementIndex] = lua_tonumber(Lua, StackIndex);
+   else if (Type & FD_INT)    ((int *)Address)[ElementIndex]     = lua_tointeger(Lua, StackIndex);
+   else if (Type & FD_WORD)   ((int16_t *)Address)[ElementIndex] = lua_tointeger(Lua, StackIndex);
+   else if (Type & FD_BYTE)   ((uint8_t *)Address)[ElementIndex] = lua_tointeger(Lua, StackIndex);
+   else return false;
+
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool read_primitive_field(lua_State *Lua, APTR Address, int Type, int ArraySize)
+{
+   if (not is_primitive_field(Type)) return false;
+
+   if (Type & FD_ARRAY) {
+      if ((Type & FD_CUSTOM) and (Type & FD_BYTE)) {
+         // Character arrays are interpreted as strings.  Use 'b' instead of 'c' if this behaviour is undesirable
+         lua_pushstring(Lua, (CSTRING)Address);
+      }
+      else lua_createarray(Lua, ArraySize, ff_to_aet(Type), (APTR *)Address, ARRAY_CACHED);
+   }
+   else if (Type & FD_FLOAT)  lua_pushnumber(Lua, ((float *)Address)[0]);
+   else if (Type & FD_DOUBLE) lua_pushnumber(Lua, ((double *)Address)[0]);
+   else if (Type & FD_INT64)  lua_pushnumber(Lua, ((int64_t *)Address)[0]);
+   else if (Type & FD_INT)    lua_pushinteger(Lua, ((int *)Address)[0]);
+   else if (Type & FD_WORD)   lua_pushinteger(Lua, ((int16_t *)Address)[0]);
+   else if (Type & FD_BYTE)   lua_pushinteger(Lua, ((uint8_t *)Address)[0]);
+
+   return true;
+}
+
+//********************************************************************************************************************
 // Convert a Lua table to a C structure.  The structure is allocated with AllocMemory() and must be freed by the caller.
 // Types that would require an allocation are not supported - our goal is to support primitive structs and anything
 // more complex than that should really be managed as an object.
@@ -193,16 +238,11 @@ void keyvalue_to_table(lua_State *Lua, const KEYVALUE *Map)
                if (type & FD_ARRAY) {
                   if (type & FD_CPP);
                   else if (field.ArraySize IS - 1); // Pointer to a null-terminated array
-                  else if (lua_istable(Lua, -1) and (type & (FD_FLOAT|FD_DOUBLE|FD_INT64|FD_INT|FD_WORD|FD_BYTE))) { // Embedded, fixed size array
+                  else if (lua_istable(Lua, -1) and is_primitive_field(type)) { // Embedded, fixed size array
                      for (int i = 0; i < field.ArraySize; i++) {
                         lua_pushinteger(Lua, i);
                         lua_gettable(Lua, -2); // Get value at index
-                        if (type & FD_FLOAT)       ((float *)address)[i]   = lua_tonumber(Lua, -1);
-                        else if (type & FD_DOUBLE) ((double *)address)[i]  = lua_tonumber(Lua, -1);
-                        else if (type & FD_INT64)  ((int64_t *)address)[i] = lua_tonumber(Lua, -1);
-                        else if (type & FD_INT)    ((int *)address)[i]     = lua_tointeger(Lua, -1);
-                        else if (type & FD_WORD)   ((int16_t *)address)[i] = lua_tointeger(Lua, -1);
-                        else if (type & FD_BYTE)   ((uint8_t *)address)[i] = lua_tointeger(Lua, -1);
+                        (void)write_primitive_field(Lua, address, type, -1, i);
                         lua_pop(Lua, 1); // Remove value
                      }
                   }
@@ -213,12 +253,7 @@ void keyvalue_to_table(lua_State *Lua, const KEYVALUE *Map)
                   ((std::string *)address)[0].assign(str, len);
                }
                else if (type & (FD_STRING|FD_STRUCT|FD_POINTER));
-               else if (type & FD_FLOAT)  ((float *)address)[0]   = lua_tonumber(Lua, -1);
-               else if (type & FD_DOUBLE) ((double *)address)[0]  = lua_tonumber(Lua, -1);
-               else if (type & FD_INT64)  ((int64_t *)address)[0] = lua_tonumber(Lua, -1);
-               else if (type & FD_INT)    ((int *)address)[0]     = lua_tointeger(Lua, -1);
-               else if (type & FD_WORD)   ((int16_t *)address)[0] = lua_tointeger(Lua, -1);
-               else if (type & FD_BYTE)   ((uint8_t *)address)[0] = lua_tointeger(Lua, -1);
+               else (void)write_primitive_field(Lua, address, type, -1);
                break;
             }
          }
@@ -684,11 +719,7 @@ static int struct_new(lua_State *Lua)
                         // Lua and free it when the field changes or the structure is destroyed.
                      }
                      else if (field.Type & FD_OBJECT) ((OBJECTPTR *)address)[0] = (OBJECTPTR)lua_touserdata(Lua, -1);
-                     else if (field.Type & FD_INT)    ((int *)address)[0]       = lua_tointeger(Lua, -1);
-                     else if (field.Type & FD_WORD)   ((int16_t *)address)[0]   = lua_tointeger(Lua, -1);
-                     else if (field.Type & FD_BYTE)   ((int8_t *)address)[0]    = lua_tointeger(Lua, -1);
-                     else if (field.Type & FD_DOUBLE) ((double *)address)[0]    = lua_tonumber(Lua, -1);
-                     else if (field.Type & FD_FLOAT)  ((float *)address)[0]     = lua_tonumber(Lua, -1);
+                     else if (write_primitive_field(Lua, address, field.Type, -1));
                      else log.warning("Cannot set unsupported field type for %s", field_name);
                   }
                   else field_error = ERR::UnsupportedField;
@@ -819,34 +850,7 @@ static int struct_get(lua_State *Lua)
             else if (field.Type & FD_FUNCTION) {
                lua_pushnil(Lua);
             }
-            else if (field.Type & FD_FLOAT)   {
-               if (field.Type & FD_ARRAY) lua_createarray(Lua, array_size, AET::FLOAT, (APTR *)address, ARRAY_CACHED);
-               else lua_pushnumber(Lua, ((float *)address)[0]);
-            }
-            else if (field.Type & FD_DOUBLE) {
-               if (field.Type & FD_ARRAY) lua_createarray(Lua, array_size, AET::DOUBLE, (APTR *)address, ARRAY_CACHED);
-               else lua_pushnumber(Lua, ((double *)address)[0]);
-            }
-            else if (field.Type & FD_INT64) {
-               if (field.Type & FD_ARRAY) lua_createarray(Lua, array_size, AET::INT64, (APTR *)address, ARRAY_CACHED);
-               else lua_pushnumber(Lua, ((int64_t *)address)[0]);
-            }
-            else if (field.Type & FD_INT) {
-               if (field.Type & FD_ARRAY) lua_createarray(Lua, array_size, AET::INT32, (APTR *)address, ARRAY_CACHED);
-               else lua_pushinteger(Lua, ((int *)address)[0]);
-            }
-            else if (field.Type & FD_WORD) {
-               if (field.Type & FD_ARRAY) lua_createarray(Lua, array_size, AET::INT16, (APTR *)address, ARRAY_CACHED);
-               else lua_pushinteger(Lua, ((int16_t *)address)[0]);
-            }
-            else if (field.Type & FD_BYTE) {
-               if ((field.Type & FD_CUSTOM) and (field.Type & FD_ARRAY)) {
-                  // Character arrays are interpreted as strings.  Use 'b' instead of 'c' if this behaviour is undesirable
-                  lua_pushstring(Lua, (CSTRING)address);
-               }
-               else if (field.Type & FD_ARRAY) lua_createarray(Lua, array_size, AET::BYTE, (APTR *)address, ARRAY_CACHED);
-               else lua_pushinteger(Lua, ((uint8_t *)address)[0]);
-            }
+            else if (read_primitive_field(Lua, address, field.Type, array_size));
             else {
                luaL_error(Lua, ERR::InvalidType,
                   std::format("Field '{}' does not use a supported type of {:x}", fieldname, field.Type));
@@ -886,11 +890,7 @@ static int struct_set(lua_State *Lua)
             else if (field.Type & FD_OBJECT)  ((OBJECTPTR *)address)[0] = (OBJECTPTR)lua_touserdata(Lua, 3);
             else if (field.Type & FD_POINTER) ((APTR *)address)[0] = lua_touserdata(Lua, 3);
             else if (field.Type & FD_FUNCTION);
-            else if (field.Type & FD_INT)    ((int *)address)[0]     = lua_tointeger(Lua, 3);
-            else if (field.Type & FD_WORD)   ((int16_t *)address)[0] = lua_tointeger(Lua, 3);
-            else if (field.Type & FD_BYTE)   ((int8_t *)address)[0]  = lua_tointeger(Lua, 3);
-            else if (field.Type & FD_DOUBLE) ((double *)address)[0]  = lua_tonumber(Lua, 3);
-            else if (field.Type & FD_FLOAT)  ((float *)address)[0]   = lua_tonumber(Lua, 3);
+            else (void)write_primitive_field(Lua, address, field.Type, 3);
          }
          else luaL_error(Lua, "Invalid field reference '%s'", ref);
       }
