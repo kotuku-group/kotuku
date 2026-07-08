@@ -53,6 +53,16 @@ static void key_event(evKey *, int, struct finput *);
 
 //********************************************************************************************************************
 
+static void release_input_subscription(lua_State *Lua, struct finput *Input)
+{
+   if (Input->InputValue)  { luaL_unref(Lua, LUA_REGISTRYINDEX, Input->InputValue); Input->InputValue = 0; }
+   if (Input->Callback)    { luaL_unref(Lua, LUA_REGISTRYINDEX, Input->Callback); Input->Callback = 0; }
+   if (Input->KeyEvent)    { UnsubscribeEvent(Input->KeyEvent); Input->KeyEvent = nullptr; }
+   if (Input->InputHandle) { gfx::UnsubscribeInput(Input->InputHandle); Input->InputHandle = 0; }
+}
+
+//********************************************************************************************************************
+
 [[nodiscard]] static ERR consume_input_events(const InputEvent *Events, int Handle)
 {
    kt::Log log(__FUNCTION__);
@@ -396,11 +406,7 @@ static void key_event(evKey *, int, struct finput *);
    kt::Log log("input.unsubscribe");
    log.traceBranch();
 
-   if (input->InputValue)  { luaL_unref(Lua, LUA_REGISTRYINDEX, input->InputValue); input->InputValue = 0; }
-   if (input->Callback)    { luaL_unref(Lua, LUA_REGISTRYINDEX, input->Callback); input->Callback = 0; }
-   if (input->KeyEvent)    { UnsubscribeEvent(input->KeyEvent); input->KeyEvent = nullptr; }
-   if (input->InputHandle) { gfx::UnsubscribeInput(input->InputHandle); input->InputHandle = 0; }
-
+   release_input_subscription(Lua, input);
    input->Script = nullptr;
    input->Mode   = 0;
    return 0;
@@ -418,10 +424,7 @@ static void key_event(evKey *, int, struct finput *);
       log.traceBranch("Surface: %d, CallbackRef: %d, KeyEvent: %p", input->SurfaceID, input->Callback, input->KeyEvent);
 
       if (input->SurfaceID)   input->SurfaceID = 0;
-      if (input->InputHandle) { gfx::UnsubscribeInput(input->InputHandle); input->InputHandle = 0; }
-      if (input->InputValue)  { luaL_unref(Lua, LUA_REGISTRYINDEX, input->InputValue); input->InputValue = 0; }
-      if (input->Callback)    { luaL_unref(Lua, LUA_REGISTRYINDEX, input->Callback); input->Callback = 0; }
-      if (input->KeyEvent)    { UnsubscribeEvent(input->KeyEvent); input->KeyEvent = nullptr; }
+      release_input_subscription(Lua, input);
 
       if (Lua->script) { // Remove from the chain.
          auto tiri = Lua->script;

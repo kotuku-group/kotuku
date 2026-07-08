@@ -24,6 +24,7 @@ constexpr int SIZE_READ = 1024;
 #include "lj_frame.h"
 #include "lj_state.h"
 #include "lauxlib.h"
+#include "struct_def.h"
 
 using namespace kt;
 
@@ -58,12 +59,8 @@ extern MSGID glDelayedCallMsgID;
 //********************************************************************************************************************
 
 struct CaseInsensitiveHashView {
-   std::size_t operator()(std::string_view s) const noexcept {
-      std::size_t hash = 5381;
-      for (char c : s) {
-         hash = ((hash << 5) + hash) + std::tolower((unsigned char)c);
-      }
-      return hash;
+   std::size_t operator()(std::string_view String) const noexcept {
+      return kt::strihash(String);
    }
 };
 
@@ -152,16 +149,7 @@ static inline std::string_view lua_checkstringview(lua_State *L, int idx)
 
 inline uint32_t STRUCTHASH(CSTRING String)
 {
-   uint32_t hash = 5381;
-   uint8_t c;
-   while ((c = *String++)) {
-      if ((c >= 'A') and (c <= 'Z'));
-      else if ((c >= 'a') and (c <= 'z'));
-      else if ((c >= '0') and (c <= '9'));
-      else break;
-      hash = ((hash<<5) + hash) + c;
-   }
-   return hash;
+   return kt::strhash(struct_name_hash_prefix(String));
 }
 
 //********************************************************************************************************************
@@ -258,8 +246,6 @@ struct datarequest {
       TimeCreated = PreciseTime();
    }
 };
-
-#include "struct_def.h"
 
 //********************************************************************************************************************
 // Variable information captured during parsing when JOF::DIAGNOSE is enabled.
