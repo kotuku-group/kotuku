@@ -637,7 +637,8 @@ end
 function getClientIP(ClientSocket:obj):str
    local ip = ClientSocket.client?.ip
    if ip then
-      return mNet.AddressToStr(ip) or 'unknown'
+      err, ip = mNet.AddressToStr(ip)
+      return ip ?? 'unknown'
    end
 
    return 'unknown'

@@ -36,12 +36,9 @@ glPort = 8089
             logOutput('Parsed successfully as ' .. ((addr.type is IPADDR_V6) and 'IPv6' or 'IPv4'))
 
             -- Test conversion back to string
-            result_str = mNet.AddressToStr(addr)
-            if result_str then
-               logOutput('Converted back to: ' .. result_str)
-            else
-               error('Failed to convert back to string')
-            end
+            err, result_str = mNet.AddressToStr(addr)
+            check err
+            logOutput('Converted back to: ' .. result_str)
          else
             error('Failed to parse ' .. addr_str .. ': ' .. mSys.GetErrorMsg(err))
          end
@@ -137,7 +134,8 @@ end
          if (Error is ERR_Okay) and addresses then
             logOutput('[DNS] Resolved ' .. tostring(Lookup.hostName) .. ' to ' .. #addresses .. ' addresses:')
             for i, addr in ipairs(addresses) do
-               addr_str = mNet.AddressToStr(addr)
+               err, addr_str = mNet.AddressToStr(addr)
+               check err
                type_str = (addr.type is IPADDR_V6) and 'IPv6' or 'IPv4'
                logOutput(i .. '. ' .. (addr_str or 'unknown') .. ' (' .. type_str .. ')')
             end
@@ -180,10 +178,8 @@ end
          logOutput('    Correctly identified as ' .. ((addr.type is IPADDR_V6) and 'IPv6' or 'IPv4'))
 
          -- Test round-trip conversion
-         converted = mNet.AddressToStr(addr)
-         if not converted then
-            error('Round-trip conversion failed')
-         end
+         err, converted = mNet.AddressToStr(addr)
+         check err
       else
          error('Incorrect type identification')
       end

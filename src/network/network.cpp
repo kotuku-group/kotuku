@@ -666,34 +666,35 @@ namespace net {
 -FUNCTION-
 AddressToStr: Converts an IPAddress structure to an IPAddress in dotted string form.
 
-Converts an IPAddress structure to a string containing the IPAddress in dotted format.  Please free the resulting
-string with <function>FreeResource</> once it is no longer required.
+Converts an IPAddress structure to a string containing the IPAddress in dotted format.
 
 -INPUT-
 struct(IPAddress) IPAddress: A pointer to the IPAddress structure.
+^&string Result: Must point to a `std::string` variable so that the resolved address can be stored.
 
--RESULT-
-!cstr: The IP address is returned as an allocated string.
-
--TAGS-
-caller-owns-result, creates-resource, null-terminated-result, nullable-result
+-ERRORS-
+Okay: The IPAddress was converted successfully.
 
 *********************************************************************************************************************/
 
-CSTRING AddressToStr(IPAddress *Address)
+ERR AddressToStr(IPAddress *Address, std::string *Result)
 {
    kt::Log log(__FUNCTION__);
 
-   if (!Address) return nullptr;
+   if ((not Address) or (not Result)) return log.warning(ERR::NullArgs);
 
    if ((Address->Type IS IPADDR::V4) or (Address->Type IS IPADDR::V6)) {
       char buffer[46]; // 46 bytes is sufficient for both IPv4 and IPv6 addresses.
       auto result = network_platform().address_to_string(*Address, buffer, sizeof(buffer));
-      return result ? kt::strclone(result) : nullptr;
+      if (result) {
+         Result->assign(result);
+         return ERR::Okay;
+      }
+      else return ERR::InvalidData;
    }
    else {
       log.warning("Unsupported address type: %d", int(Address->Type));
-      return nullptr;
+      return ERR::InvalidType;
    }
 }
 

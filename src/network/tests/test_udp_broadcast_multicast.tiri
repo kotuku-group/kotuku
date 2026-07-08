@@ -106,7 +106,8 @@ end
          err, read_len = Socket.mtRecvFrom(source, buffer)
          if err is ERR_Okay and read_len > 0 then
             local msg = buffer:sub(0, read_len)
-            logOutput('[Broadcast Server] Received: "' .. msg .. '" from ' .. mNet.AddressToStr(source) .. ':' .. source.port)
+            local err, ip = mNet.AddressToStr(source)
+            logOutput('[Broadcast Server] Received: "' .. msg .. '" from ' .. ip .. ':' .. source.port)
             if (msg:startsWith('Broadcast Test')) then
                bcast_recv = true
                Socket.acSignal()

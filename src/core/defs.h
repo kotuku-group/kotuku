@@ -400,7 +400,7 @@ struct virtual_drive {
    ERR (*IdentifyFile)(std::string_view, CLASSID *, CLASSID *);
    ERR (*CreateFolder)(std::string_view, PERMIT);
    ERR (*SameFile)(std::string_view, std::string_view);
-   ERR (*ReadLink)(std::string_view, STRING *);
+   ERR (*ReadLink)(std::string_view, std::string &);
    ERR (*CreateLink)(std::string_view, std::string_view);
    inline bool is_default() const { return VirtualID IS 0; }
    inline bool is_virtual() const { return VirtualID != 0; }
@@ -1136,7 +1136,7 @@ ERR fs_getdeviceinfo(std::string_view, objStorageDevice *);
 void fs_ignore_file(class extFile *);
 ERR fs_makedir(std::string_view, PERMIT);
 ERR fs_opendir(DirInfo *);
-ERR fs_readlink(std::string_view, STRING *);
+ERR fs_readlink(std::string_view, std::string &);
 ERR fs_rename(std::string_view, std::string_view);
 ERR fs_samefile(std::string_view, std::string_view);
 ERR fs_scandir(DirInfo *);

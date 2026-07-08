@@ -28,16 +28,19 @@
   <function>
     <name>AddressToStr</name>
     <comment>Converts an IPAddress structure to an IPAddress in dotted string form.</comment>
-    <prototype>CSTRING net::AddressToStr(struct IPAddress * IPAddress)</prototype>
-    <tiriPrototype>str = AddressToStr(IPAddress:any)</tiriPrototype>
-    <tags>caller-owns-result, creates-resource, null-terminated-result, nullable-result</tags>
+    <prototype>ERR net::AddressToStr(struct IPAddress * IPAddress, STRING * Result)</prototype>
+    <tiriPrototype>err, Result:str = AddressToStr(IPAddress:any)</tiriPrototype>
+    <tags>mutates-input</tags>
     <input>
       <param type="struct IPAddress *" name="IPAddress">A pointer to the IPAddress structure.</param>
+      <param type="STRING *" name="Result">Must point to a <code>std::string</code> variable so that the resolved address can be stored.</param>
     </input>
     <description>
-<p>Converts an IPAddress structure to a string containing the IPAddress in dotted format.  Please free the resulting string with <function>FreeResource</function> once it is no longer required.</p>
+<p>Converts an IPAddress structure to a string containing the IPAddress in dotted format.</p>
     </description>
-    <result type="CSTRING">The IP address is returned as an allocated string.</result>
+    <result type="ERR">
+      <error code="Okay">The IPAddress was converted successfully.</error>
+    </result>
   </function>
 
   <function>
