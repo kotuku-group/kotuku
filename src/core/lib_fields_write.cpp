@@ -488,11 +488,11 @@ static ERR set_or_write_vector(OBJECTPTR Object, const Field *Field, int Flags, 
          }
          else if (Field->Flags & FD_BYTE) {
             if (not (Flags & FD_BYTE)) return ERR::SetValueNotArray;
-            return assign_vector_field<uint8_t>(Object, Field, Data);
+            return assign_vector_field<int8_t>(Object, Field, Data);
          }
          else if (Field->Flags & FD_WORD) {
             if (not (Flags & FD_WORD)) return ERR::SetValueNotArray;
-            return assign_vector_field<uint16_t>(Object, Field, Data);
+            return assign_vector_field<int16_t>(Object, Field, Data);
          }
          else if (Field->Flags & FD_INT) {
             if (not (Flags & FD_INT)) return ERR::SetValueNotArray;
@@ -547,10 +547,10 @@ static ERR set_or_write_array(OBJECTPTR Object, const Field *Field, int Flags, C
          // All std::span instantiations share the same {pointer, count} layout, so the element count can be read
          // through any concrete element type.  The per-element width is derived from Flags.
 
-         auto span = (const std::span<const uint8_t> *)Data;
+         auto span = (const std::span<const int8_t> *)Data;
          size_t element_size;
-         if (Flags & FD_BYTE) element_size = sizeof(uint8_t);
-         else if (Flags & FD_WORD) element_size = sizeof(uint16_t);
+         if (Flags & FD_BYTE) element_size = sizeof(int8_t);
+         else if (Flags & FD_WORD) element_size = sizeof(int16_t);
          else if (Flags & FD_INT) element_size = sizeof(int);
          else if (Flags & (FD_INT64|FD_DOUBLE)) element_size = sizeof(double);
          else if (Flags & FD_POINTER) element_size = sizeof(APTR);
