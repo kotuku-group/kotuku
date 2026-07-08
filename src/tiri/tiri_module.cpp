@@ -382,10 +382,8 @@ static int module_test(lua_State *Lua)
       lua_pushinteger(Lua, total);
       return 2;
    }
-   else {
-      luaL_argerror(Lua, 1, "Expected module.");
-      return 0;
-   }
+   else luaL_argerror(Lua, 1, "Expected module.");
+   return 0;
 }
 
 //********************************************************************************************************************

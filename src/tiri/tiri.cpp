@@ -562,6 +562,8 @@ ERR make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Eleme
          }
          Lua->top--;  // Pop the table
       }
+
+      unref_struct_references(Lua, ref);
    }
 
    return ERR::Okay;
@@ -601,6 +603,8 @@ void make_struct_array(lua_State *Lua, std::string_view StructName, int Elements
 
          Input = (int8_t *)Input + struct_stride;
       }
+
+      unref_struct_references(Lua, ref);
    }
 }
 
@@ -716,11 +720,14 @@ CSTRING code_reader(lua_State *Lua, void *Handle, size_t *Size)
 {
    auto handle = (code_reader_handle *)Handle;
    int result;
-   if (!acRead(handle->File, handle->Buffer, SIZE_READ, &result)) {
+   if (auto error = acRead(handle->File, handle->Buffer, SIZE_READ, &result); error IS ERR::Okay) {
       *Size = result;
       return (CSTRING)handle->Buffer;
    }
-   else return nullptr;
+   else {
+      kt::Log(__FUNCTION__).warning("Failed to read source chunk: %s", GetErrorMsg(error));
+      return nullptr;
+   }
 }
 
 //********************************************************************************************************************

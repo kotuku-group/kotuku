@@ -118,7 +118,10 @@ static void emit_stack_trace(extTiri *Tiri, std::ostringstream &Buf, bool Compac
       int level = 1; // Start at 1 to skip the C function (mtDebugLog) itself
 
       while (lua_getstack(Tiri->Lua, level, &ar)) {
-         lua_getinfo(Tiri->Lua, "nSl", &ar);
+         if (not lua_getinfo(Tiri->Lua, "nSl", &ar)) {
+            level++;
+            continue;
+         }
 
          if (Compact) {
             Buf << "[" << level << "] ";
@@ -207,7 +210,7 @@ static void emit_upvalues_info(extTiri *Tiri, std::ostringstream &Buf, bool Comp
    lua_Debug ar;
    if (not lua_getstack(Tiri->Lua, 1, &ar)) return; // Level 1 = caller's frame
 
-   lua_getinfo(Tiri->Lua, "f", &ar);
+   if (not lua_getinfo(Tiri->Lua, "f", &ar)) return;
 
    if (not Compact) Buf <<"-UPVALUES-\n";
 
@@ -603,34 +606,35 @@ static ERR TIRI_DebugLog(extTiri *Self, struct sc::DebugLog *Args)
    if (opts.show_dump) {
       lua_Debug ar;
       if (lua_getstack(Self->Lua, 1, &ar)) {
-         lua_getinfo(Self->Lua, "Sln", &ar);
+         if (lua_getinfo(Self->Lua, "Sln", &ar)) {
+            if (not opts.compact) buf <<"-BINARY-\n";
 
-         if (not opts.compact) buf <<"-BINARY-\n";
+            if (lua_getinfo(Self->Lua, "f", &ar)) {
+               GCfunc *fn = funcV(Self->Lua->top - 1);
+               if (isluafunc(fn)) {
+                  std::vector<uint8_t> binary;
 
-         if (lua_getinfo(Self->Lua, "f", &ar)) {
-            GCfunc *fn = funcV(Self->Lua->top - 1);
-            if (isluafunc(fn)) {
-               std::vector<uint8_t> binary;
+                  if (lua_dump(Self->Lua, append_dump_chunk, &binary) IS 0) {
+                     if (not opts.compact) {
+                        CSTRING func_name = ar.name ? ar.name : "<anonymous>";
+                        buf << "Function: " << func_name << " (" << ar.short_src << ":" << ar.linedefined
+                            << "-" << ar.lastlinedefined << ")\n";
+                        buf << "Bytes: " << binary.size() << "\n";
+                     }
 
-               if (lua_dump(Self->Lua, append_dump_chunk, &binary) IS 0) {
-                  if (not opts.compact) {
-                     CSTRING func_name = ar.name ? ar.name : "<anonymous>";
-                     buf << "Function: " << func_name << " (" << ar.short_src << ":" << ar.linedefined
-                         << "-" << ar.lastlinedefined << ")\n";
-                     buf << "Bytes: " << binary.size() << "\n";
+                     append_hex_dump(binary, buf, opts.compact);
                   }
-
-                  append_hex_dump(binary, buf, opts.compact);
+                  else buf << "(failed to serialise bytecode)\n";
                }
-               else buf << "(failed to serialise bytecode)\n";
-            }
-            else buf << "(current frame is a C function; bytecode unavailable)\n";
+               else buf << "(current frame is a C function; bytecode unavailable)\n";
 
-            lua_pop(Self->Lua, 1);
+               lua_pop(Self->Lua, 1);
+            }
+            else buf << "(unable to inspect current frame)\n";
+
+            if (not opts.compact) buf <<"\n";
          }
          else buf << "(unable to inspect current frame)\n";
-
-         if (not opts.compact) buf <<"\n";
       }
       else {
          // No active frame - try to dump the main chunk if available
