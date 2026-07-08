@@ -1081,17 +1081,6 @@ struct evHotplug {
    char Vendor[40];     // Name of vendor
 };
 
-[[nodiscard]] inline char * strclone(const std::string_view String) noexcept
-{
-   char *newstr;
-   if (!AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr)) {
-      memmove(newstr, String.data(), String.size());
-      newstr[String.size()] = 0;
-      return newstr;
-   }
-   else return nullptr;
-}
-
 } // pf namespace
 
 // Function construction (refer types.h)
