@@ -214,5 +214,5 @@ void Scintilla::Window::SetCursor(Cursor curs)
 void Scintilla::Window::SetTitle(const char *s)
 {
    extScintilla *scintilla = (extScintilla *)this->GetID();
-   scintilla->set(FID_Title, (STRING)s);
+   scintilla->setTitle(s);
 }

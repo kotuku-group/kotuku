@@ -90,8 +90,8 @@ void anim_value::set_value(objVector &Vector)
          switch (hash) {
             case SVF_x:  text.setX(Unit(get_dimension(Vector, strhash("x")))); return;
             case SVF_y:  text.setY(Unit(get_dimension(Vector, strhash("y")))); return;
-            case SVF_dx: text.set(strhash("dx"), get_string()); return;
-            case SVF_dy: text.set(strhash("dy"), get_string()); return;
+            //case SVF_dx: text.set(strhash("dx"), get_string()); return;
+            //case SVF_dy: text.set(strhash("dy"), get_string()); return;
 
             case SVF_text_anchor:
                switch(strhash(get_string())) {
@@ -102,14 +102,14 @@ void anim_value::set_value(objVector &Vector)
                }
                break;
 
-            case SVF_rotate:         text.set(strhash("rotate"), get_string()); return;
+            //case SVF_rotate:         text.set(strhash("rotate"), get_string()); return;
             case SVF_string:         text.setString(get_string()); return;
-            case SVF_kerning:        text.set(strhash("kerning"), get_string()); return; // Spacing between letters, default=1.0
-            case SVF_letter_spacing: text.set(strhash("letterSpacing"), get_string()); return;
-            case SVF_pathLength:     text.set(strhash("pathLength"), get_string()); return;
-            case SVF_word_spacing:   text.set(strhash("wordSpacing"), get_string()); return;
+            //case SVF_kerning:        text.set(strhash("kerning"), get_string()); return; // Spacing between letters, default=1.0
+            //case SVF_letter_spacing: text.set(strhash("letterSpacing"), get_string()); return;
+            //case SVF_pathLength:     text.set(strhash("pathLength"), get_string()); return;
+            //case SVF_word_spacing:   text.set(strhash("wordSpacing"), get_string()); return;
             case SVF_font_family:    text.setFace(get_string()); return;
-            case SVF_font_size:      text.set(strhash("fontSize"), get_numeric_value(Vector, strhash("fontSize"))); return;
+            case SVF_font_size:      text.setFontSize(get_string()); return;
          }
          break;
       }
@@ -270,7 +270,11 @@ void anim_value::set_value(objVector &Vector)
       case SVF_stroke_opacity:          Vector.setStrokeOpacity(get_numeric_value(Vector, strhash("strokeOpacity"))); break;
       case SVF_stroke_miterlimit:       Vector.setMiterLimit(get_numeric_value(Vector, strhash("miterLimit"))); break;
       case SVF_stroke_inner_miterlimit: Vector.setInnerMiterLimit(get_numeric_value(Vector, strhash("innerMiterLimit"))); break;
-      case SVF_stroke_dasharray:        Vector.set(strhash("dashArray"), get_string()); return;
+      case SVF_stroke_dasharray: {
+         kt::vector<double> dash_array = read_array(get_string());
+         Vector.setDashArray(dash_array);
+         return;
+      }
       case SVF_stroke_dashoffset:       Vector.setDashOffset(get_numeric_value(Vector, strhash("dashOffset"))); return;
       case SVF_opacity:                 Vector.setOpacity(get_numeric_value(Vector, strhash("opacity"))); return;
 
