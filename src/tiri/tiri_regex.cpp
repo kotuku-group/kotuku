@@ -331,9 +331,11 @@ static int regex_findAll_iter(lua_State *Lua)
 
    size_t text_len = 0;
    CSTRING text = lua_tolstring(Lua, lua_upvalueindex(2), &text_len);
-   auto current_pos = size_t(lua_tointeger(Lua, lua_upvalueindex(3)));
+   auto requested_pos = lua_tointeger(Lua, lua_upvalueindex(3));
    auto flags = RMATCH(lua_tointeger(Lua, lua_upvalueindex(4)));
 
+   if (requested_pos < 0) requested_pos = 0;
+   auto current_pos = size_t(requested_pos);
    if (current_pos >= text_len) {
       lua_pushnil(Lua);
       return 1;
@@ -342,16 +344,17 @@ static int regex_findAll_iter(lua_State *Lua)
    auto meta = regex_callback { Lua };
    auto cb = C_FUNCTION(match_first, &meta);
    if (!rx::Search(r->regex_obj, std::string_view(text + current_pos, text_len - current_pos), flags, &cb)) {
-      auto match_pos = current_pos + meta.result_index;
-      auto match_len = meta.result_len;
+      auto match_index = meta.result_index < 0 ? 0 : meta.result_index;
+      auto match_len = meta.result_len < 0 ? 0 : meta.result_len;
+      auto match_pos = current_pos + size_t(match_index);
 
       // Update position for next iteration. Advance by at least 1 to avoid infinite loops on zero-width matches.
-      auto next_pos = match_pos + (match_len > 0 ? match_len : 1);
-      lua_pushinteger(Lua, int(next_pos));
+      auto next_pos = match_pos + size_t(match_len > 0 ? match_len : 1);
+      lua_pushinteger(Lua, lua_Integer(next_pos));
       lua_replace(Lua, lua_upvalueindex(3));
 
-      lua_pushinteger(Lua, int(match_pos));
-      lua_pushinteger(Lua, int(match_pos) + meta.result_len);
+      lua_pushinteger(Lua, lua_Integer(match_pos));
+      lua_pushinteger(Lua, lua_Integer(match_pos + size_t(match_len)));
       if (meta.captures) setarrayV(Lua, Lua->top++, meta.captures);
       else lua_pushnil(Lua);
       return 3;

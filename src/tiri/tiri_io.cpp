@@ -601,7 +601,13 @@ static int file_write(lua_State *Lua)
          auto str = luaL_checklstring(Lua, i, &len);
 
          int result;
-         if (acWrite(file, str, len, &result) != ERR::Okay) luaL_error(Lua, ERR::Write);
+         if (auto error = acWrite(file, str, len, &result); error != ERR::Okay) {
+            luaL_error(Lua, error, "Failed to write to file.");
+         }
+
+         // Failing to write all the bytes is an exception because the serialisation will otherwise be invalid.
+
+         if (result != int(len)) luaL_error(Lua, ERR::Write, "Wrote %d of %d bytes.", result, int(len));
       }
 
       lua_pushvalue(Lua, 1); // Return file handle
@@ -624,7 +630,7 @@ static int file_flush(lua_State *Lua)
    if (auto handle = check_file_handle(Lua, 1)) {
       auto file = GetObjectPtr(handle->file_id);
       if (not file) luaL_error(Lua, ERR::InvalidState);
-      acFlush(file);
+      if (auto error = acFlush(file); error != ERR::Okay) luaL_error(Lua, error);
       lua_pushboolean(Lua, 1);
       return 1;
    }

@@ -148,7 +148,10 @@ static void key_event(evKey *, int, struct finput *);
    bool sub_keyevent = false;
    if (object_id) {
       if (not tiri->FocusEventHandle) { // Monitor the focus state of the target surface with a global function.
-         SubscribeEvent(EVID_GUI_SURFACE_FOCUS, C_FUNCTION(focus_event, Lua), &tiri->FocusEventHandle);
+         if (auto error = SubscribeEvent(EVID_GUI_SURFACE_FOCUS, C_FUNCTION(focus_event, Lua),
+               &tiri->FocusEventHandle); error != ERR::Okay) {
+            luaL_error(Lua, error, "Failed to subscribe to surface focus events.");
+         }
       }
 
       if (ScopedObjectLock<objSurface> surface(object_id, 5000); surface.granted()) {
@@ -163,13 +166,15 @@ static void key_event(evKey *, int, struct finput *);
       luaL_getmetatable(Lua, "Tiri.input");
       lua_setmetatable(Lua, -2);
 
-      APTR event = nullptr;
-      if (sub_keyevent) SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, C_FUNCTION(key_event, input), &event);
-
       input->InputHandle = 0;
       input->Script      = Lua->script;
       input->SurfaceID   = object_id;
-      input->KeyEvent    = event;
+      input->KeyEvent    = nullptr;
+      input->Callback    = 0;
+      input->InputValue  = 0;
+      input->Mask        = JTYPE::NIL;
+      input->Mode        = FIM_KEYBOARD;
+      input->Next        = nullptr;
       if (function_type IS LUA_TFUNCTION) {
          lua_pushvalue(Lua, 2);
          input->Callback = luaL_ref(Lua, LUA_REGISTRYINDEX);
@@ -181,7 +186,16 @@ static void key_event(evKey *, int, struct finput *);
 
       lua_pushvalue(Lua, lua_gettop(Lua)); // Take a copy of the Tiri.input object
       input->InputValue = luaL_ref(Lua, LUA_REGISTRYINDEX);
-      input->Mode = FIM_KEYBOARD;
+
+      if (sub_keyevent) {
+         if (auto error = SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, C_FUNCTION(key_event, input),
+               &input->KeyEvent); error != ERR::Okay) {
+            if (input->InputValue) { luaL_unref(Lua, LUA_REGISTRYINDEX, input->InputValue); input->InputValue = 0; }
+            if (input->Callback)   { luaL_unref(Lua, LUA_REGISTRYINDEX, input->Callback); input->Callback = 0; }
+            luaL_error(Lua, error, "Failed to subscribe to keyboard input events.");
+         }
+      }
+
       input->Next = tiri->InputList;
       tiri->InputList = input;
    }
@@ -230,14 +244,17 @@ static void key_event(evKey *, int, struct finput *);
       if (int(datatype) <= 0) luaL_argerror(Lua, 3, "Datatype invalid");
    }
 
+   int callback_ref = 0;
    auto function_type = lua_type(Lua, 4);
    if (function_type IS LUA_TFUNCTION) {
       lua_pushvalue(Lua, 4);
-      tiri->Requests.emplace_back(source_id, luaL_ref(Lua, LUA_REGISTRYINDEX));
+      callback_ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
+      tiri->Requests.emplace_back(source_id, callback_ref);
    }
    else if (function_type IS LUA_TSTRING) {
       lua_getglobal(Lua, lua_tostringview(Lua, 4));
-      tiri->Requests.emplace_back(source_id, luaL_ref(Lua, LUA_REGISTRYINDEX));
+      callback_ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
+      tiri->Requests.emplace_back(source_id, callback_ref);
    }
 
    {
@@ -253,10 +270,36 @@ static void key_event(evKey *, int, struct finput *);
 
          auto error = acDataFeed(*src, Lua->script, DATA::REQUEST, &dcr, sizeof(dcr));
          if (error != ERR::Okay) {
+            if (callback_ref) {
+               bool request_found = false;
+               for (auto it = tiri->Requests.begin(); it != tiri->Requests.end(); it++) {
+                  if ((it->SourceID IS source_id) and (it->Callback IS callback_ref)) {
+                     tiri->Requests.erase(it);
+                     request_found = true;
+                     break;
+                  }
+               }
+               if (request_found) luaL_unref(Lua, LUA_REGISTRYINDEX, callback_ref);
+            }
+
             src.unlock();
             luaL_error(Lua, ERR::Failed, "Failed to request item %d from source #%d: %s", item, source_id,
                GetErrorMsg(error));
          }
+      }
+      else {
+         if (callback_ref) {
+            bool request_found = false;
+            for (auto it = tiri->Requests.begin(); it != tiri->Requests.end(); it++) {
+               if ((it->SourceID IS source_id) and (it->Callback IS callback_ref)) {
+                  tiri->Requests.erase(it);
+                  request_found = true;
+                  break;
+               }
+            }
+            if (request_found) luaL_unref(Lua, LUA_REGISTRYINDEX, callback_ref);
+         }
+         luaL_error(Lua, ERR::AccessObject, "Failed to access data source #%d.", source_id);
       }
    }
 
@@ -470,7 +513,10 @@ static void focus_event(evFocus *Event, int Size, lua_State *Lua)
       for (int i=0; i < Event->TotalWithFocus; i++) {
          if (input->SurfaceID IS Event->FocusList[i]) {
             log.trace("Focus notification received for key events on surface #%d.", input->SurfaceID);
-            SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, callback, &input->KeyEvent);
+            if (auto error = SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, callback, &input->KeyEvent);
+                  error != ERR::Okay) {
+               log.warning("Failed to subscribe to keyboard input events: %s", GetErrorMsg(error));
+            }
             break;
          }
       }

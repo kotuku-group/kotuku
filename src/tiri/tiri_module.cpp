@@ -377,10 +377,12 @@ static int module_test(lua_State *Lua)
    if (auto mod = (module *)luaL_checkudata(Lua, 1, "Tiri.mod")) {
       auto options = lua_tostringview(Lua, 2);
       int passed = 0, total = 0;
-      ((objModule *)mod->Module)->test(options, &passed, &total);
-      lua_pushinteger(Lua, passed);
-      lua_pushinteger(Lua, total);
-      return 2;
+      if (((objModule *)mod->Module)->test(options, &passed, &total) IS ERR::Okay) {
+         lua_pushinteger(Lua, passed);
+         lua_pushinteger(Lua, total);
+         return 2;
+      }
+      else luaL_error(Lua, ERR::Failed, "Module test failed.");
    }
    else luaL_argerror(Lua, 1, "Expected module.");
    return 0;
@@ -406,7 +408,8 @@ static int module_load(lua_State *Lua)
    }
 
    if ((modname[i]) or (i >= 32)) {
-      luaL_error(Lua, ERR::Syntax, "Invalid module name; only alpha-numeric names are permitted with max 32 chars.");
+      luaL_error(Lua, ERR::Syntax,
+         "Invalid module name; only alpha-numeric names shorter than 32 characters are permitted.");
    }
 
    if (auto loaded_mod = objModule::create::global(fl::Name(modname))) {

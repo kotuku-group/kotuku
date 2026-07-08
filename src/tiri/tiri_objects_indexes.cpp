@@ -171,18 +171,23 @@ static ERR object_set_array(lua_State *Lua, OBJECTPTR Object, const Field *Field
 
 static ERR object_set_function(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
 {
+   int ref = 0;
    int type = lua_type(Lua, ValueIndex);
    if (type IS LUA_TSTRING) {
       lua_getglobal(Lua, lua_tostring(Lua, ValueIndex));
-      auto func = FUNCTION(Lua->script, luaL_ref(Lua, LUA_REGISTRYINDEX));
-      return Object->set(Field->FieldID, &func);
+      ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
    }
    else if (type IS LUA_TFUNCTION) {
       lua_pushvalue(Lua, ValueIndex);
-      auto func = FUNCTION(Lua->script, luaL_ref(Lua, LUA_REGISTRYINDEX));
-      return Object->set(Field->FieldID, &func);
+      ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
    }
    else return ERR::SetValueNotFunction;
+
+   auto func = FUNCTION(Lua->script, ref);
+   auto error = Object->set(Field->FieldID, &func);
+   // Drop the reference if the setter failed, otherwise the object owns it and must call DerefProcedure()
+   if ((error != ERR::Okay) and (ref > 0)) luaL_unref(Lua, LUA_REGISTRYINDEX, ref);
+   return error;
 }
 
 static ERR object_set_object(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
@@ -438,9 +443,11 @@ static int object_get(lua_State *Lua)
 
       auto obj = access_object(def);
       if (not obj) {
+         Lua->CaughtError = ERR::AccessObject;
          lua_pushvalue(Lua, 2); // Push the client's default value
          return 1;
       }
+      Lua->CaughtError = ERR::Okay;
 
       OBJECTPTR target;
       if (fieldname.starts_with('$')) { // Deprecated feature
@@ -487,8 +494,10 @@ static int object_get(lua_State *Lua)
       }
       else { // Revert to getKey() if the class supports it failed
          std::string buffer;
+         auto error = acGetKey(obj, fieldname, buffer);
+         Lua->CaughtError = error;
 
-         if ((!acGetKey(obj, fieldname, buffer)) and (not buffer.empty())) {
+         if ((error IS ERR::Okay) and (not buffer.empty())) {
             lua_pushstring(Lua, buffer);
          }
          else lua_pushvalue(Lua, 2); // Push the client's default value
