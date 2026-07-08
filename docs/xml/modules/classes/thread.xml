@@ -22,7 +22,7 @@
 objThread::create thread = { fl::Routine(thread_entry), fl::Flags(THF::AUTO_FREE) };
 if (thread.ok()) thread-&gt;activate();
 </pre>
-<p>To initialise the thread with data, call <method>SetData</method> prior to execution and read the <fl>Data</fl> field from within the thread routine.</p></description>
+<p>To initialise the thread with data, set <fl>Data</fl> prior to execution and read the <fl>Data</fl> field from within the thread routine.</p></description>
     <source>
       <file path="../classes/">class_thread.cpp</file>
     </source>
@@ -48,31 +48,6 @@ if (thread.ok()) thread-&gt;activate();
 
   </actions>
 
-  <methods>
-    <method>
-      <name>SetData</name>
-      <comment>Attaches data to the thread.</comment>
-      <prototype>ERR th::SetData(OBJECTPTR Object, APTR Data, INT Size)</prototype>
-      <tiriPrototype>err = SetData(Data:any, Size:num)</tiriPrototype>
-      <input>
-        <param type="APTR" name="Data">Pointer to the data buffer.</param>
-        <param type="INT" name="Size">Size of the data buffer.  If zero, the pointer is stored directly, with no copy operation taking place.</param>
-      </input>
-      <description>
-<p>Use the SetData() method prior to activating a thread so that it can be initialised with user data.  The thread will be able to read the data from the <fl>Data</fl> field.</p>
-<p>A copy of the provided data buffer will be stored with the thread object, so there is no need to retain the original data after this method has returned.  In some cases it may be desirable to store a direct pointer value and bypass the copy operation.  To do this, set the Size parameter to zero.</p>
-      </description>
-      <result>
-        <error code="Okay">Operation successful.</error>
-        <error code="Args">Invalid arguments passed to function</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
-        <error code="NullArgs">Function call missing argument value(s)</error>
-      </result>
-      <tags>mutates-object, copies-input</tags>
-    </method>
-
-  </methods>
-
   <fields>
     <field>
       <name>Callback</name>
@@ -87,19 +62,12 @@ if (thread.ok()) thread-&gt;activate();
 
     <field>
       <name>Data</name>
-      <comment>Pointer to initialisation data for the thread.</comment>
-      <access read="G">Get</access>
-      <type>APTR</type>
+      <comment>Storage for custom client data.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type>kt::vector&lt;int8_t&gt;</type>
       <description>
-<p>The Data field will point to a data buffer if the <method>SetData</method> method has previously been called to store data in the thread object.  It is paired with the <fl>DataSize</fl> field, which reflects the size of the data buffer.</p>
+<p>The Data field is a vector of bytes that can be used to store custom data for the thread.  There are no limits associated with its use, but care should be taken if both the thread and its creator can modify its content at any time.  Reserving the size of the vector in advance is recommended if the data is to be actively shared.</p>
       </description>
-    </field>
-
-    <field>
-      <name>DataSize</name>
-      <comment>The size of the buffer referenced in the Data field.</comment>
-      <access read="R">Read</access>
-      <type>INT</type>
     </field>
 
     <field>

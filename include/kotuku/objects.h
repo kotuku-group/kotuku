@@ -50,16 +50,21 @@
 #define FDF_FIELDTYPES  (FD_INT|FD_DOUBLE|FD_INT64|FD_POINTER|FD_UNIT|FD_BYTE|FD_ARRAY|FD_FUNCTION)
 
 //********************************************************************************************************************
-// For testing if type T can be matched to an FD flag.  All integral types are mapped by size so that types without
-// an explicit branch (e.g. uint32_t, int16_t) cannot fall through to the pointer/struct default.
+// For testing if type T can be matched to an FD flag.  Integral types are mapped by storage width so that typed spans
+// match byte, word, int and large field definitions.
 
 template <class T> [[nodiscard]] constexpr int FIELD_TYPECHECK() {
-   if constexpr (std::is_same_v<T, double>) return FD_DOUBLE;
-   else if constexpr (std::is_same_v<T, float>) return FD_FLOAT;
-   else if constexpr (std::is_integral_v<T>) return (sizeof(T) > 4) ? FD_INT64 : FD_INT;
-   else if constexpr (std::is_same_v<T, std::string>) return FD_STRING|FD_CPP;
-   else if constexpr (std::is_same_v<T, CSTRING> or std::is_same_v<T, STRING>) return FD_STRING;
-   else if constexpr (std::is_same_v<T, OBJECTPTR> or std::is_same_v<T, APTR>) return FD_PTR;
+   using field_type = std::remove_cvref_t<T>;
+
+   if constexpr (std::is_same_v<field_type, double>) return FD_DOUBLE;
+   else if constexpr (std::is_same_v<field_type, float>) return FD_FLOAT;
+   else if constexpr (std::is_integral_v<field_type> and (sizeof(field_type) IS sizeof(int8_t))) return FD_BYTE;
+   else if constexpr (std::is_integral_v<field_type> and (sizeof(field_type) IS sizeof(int16_t))) return FD_WORD;
+   else if constexpr (std::is_integral_v<field_type> and (sizeof(field_type) IS sizeof(int64_t))) return FD_INT64;
+   else if constexpr (std::is_integral_v<field_type>) return FD_INT;
+   else if constexpr (std::is_same_v<field_type, std::string>) return FD_STRING|FD_CPP;
+   else if constexpr (std::is_same_v<field_type, CSTRING> or std::is_same_v<field_type, STRING>) return FD_STRING;
+   else if constexpr (std::is_same_v<field_type, OBJECTPTR> or std::is_same_v<field_type, APTR>) return FD_PTR;
    else return FD_PTR|FD_STRUCT|FD_STRING;
 }
 

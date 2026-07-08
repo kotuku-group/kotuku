@@ -324,13 +324,6 @@ class objTask : public Object {
 
 #define VER_THREAD (1.000000)
 
-// Thread methods
-
-namespace th {
-struct SetData { APTR Data; int Size; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-
-} // namespace
-
 class objThread : public Object {
    public:
    static constexpr CLASSID CLASS_ID = CLASSID::THREAD;
@@ -339,22 +332,17 @@ class objThread : public Object {
    using create = kt::Create<objThread>;
    objThread(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
-   FUNCTION Callback;    // This function will be called when the thread finishes.
-   FUNCTION Routine;     // This function will be called when the thread starts.
-   APTR     Data;        // Pointer to initialisation data for the thread.
-   int      DataSize;    // The size of the buffer referenced in the Data field.
-   ERR      Error;       // Reflects the error code returned by the thread routine.
-   THF      Flags;       // Optional flags can be defined here.
+   FUNCTION Callback;          // This function will be called when the thread finishes.
+   FUNCTION Routine;           // This function will be called when the thread starts.
+   kt::vector<int8_t> Data;    // Storage for custom client data.
+   ERR      Error;             // Reflects the error code returned by the thread routine.
+   THF      Flags;             // Optional flags can be defined here.
 
    // Action stubs
 
    inline ERR activate() noexcept { return Action(AC::Activate, this, nullptr); }
    inline ERR deactivate() noexcept { return Action(AC::Deactivate, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
-   inline ERR setData(APTR Data, int Size) noexcept {
-      struct th::SetData args = { Data, Size };
-      return Action(AC(-1), this, &args);
-   }
 
    // Customised field getting
 
@@ -368,14 +356,9 @@ class objThread : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getData(std::span<APTR> &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
-      auto get_field = (ERR (*)(APTR, std::span<APTR> &))field->GetValue;
-      return get_field(this, Value);
-   }
-
-   inline ERR getDataSize(int &Value) noexcept {
-      Value = this->DataSize;
+   inline ERR getData(std::span<int8_t> &Value) noexcept {
+      auto ktv = (kt::vector<int8_t> *)(((int8_t *)this) + 160);
+      Value = std::span<int8_t>(ktv->data(), ktv->size());
       return ERR::Okay;
    }
 
@@ -398,8 +381,13 @@ class objThread : public Object {
    }
 
    inline ERR setRoutine(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
+      auto field = &this->Class->Dictionary[9];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
+   }
+
+   inline ERR setData(const kt::vector<int8_t> &Value) noexcept {
+      this->Data = Value;
+      return ERR::Okay;
    }
 
    inline ERR setFlags(const THF Value) noexcept {
