@@ -232,7 +232,7 @@ static int processing_signal(lua_State *Lua)
 {
    kt::Log log("processing.signal");
    log.msg("Signaling Tiri object #%d.", Lua->script->UID);
-   Action(AC::Signal, Lua->script, nullptr);
+   if (auto error = Action(AC::Signal, Lua->script, nullptr); error != ERR::Okay) luaL_error(Lua, error);
    return 0;
 }
 

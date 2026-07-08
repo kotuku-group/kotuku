@@ -397,22 +397,26 @@ int MAKESTRUCT(lua_State *Lua)
 
 static void make_camel_case(std::string &String)
 {
+   if (String.empty()) return;
+
    if ((String[0] >= 'A') and (String[0] <= 'Z')) String[0] = String[0] - 'A' + 'a';
 
+   if (String.size() < 2) return;
+
    if ((String[1] >= 'A') and (String[1] <= 'Z')) {
-      int f;
-      for (f=2; String[f]; f++) {
+      size_t f;
+      for (f=2; f < String.size(); f++) {
          if ((String[f] >= 'a') and (String[f] <= 'z')) break;
       }
 
-      if (not String[f]) { // Field is all upper-case
-         for (int f=0; String[f]; f++) {
+      if (f >= String.size()) { // Field is all upper-case
+         for (size_t f=0; f < String.size(); f++) {
             if ((String[f] >= 'A') and (String[f] <= 'Z')) String[f] = String[f] - 'A' + 'a';
          }
       }
       else {
          bool lcase = false;
-         for (f=1; String[f]; f++) {
+         for (f=1; f < String.size(); f++) {
             if ((String[f] >= 'A') and (String[f] <= 'Z')) {
                if (lcase) String[f-1] = String[f-1] - 'A' + 'a';
                lcase = true;

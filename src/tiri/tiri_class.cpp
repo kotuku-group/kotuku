@@ -415,6 +415,7 @@ static ERR TIRI_DataFeed(extTiri *Self, struct acDataFeed *Args)
 
             SetResource(RES::LOG_DEPTH, step);
 
+            if (it->Callback) luaL_unref(Self->Lua, LUA_REGISTRYINDEX, it->Callback);
             it = Self->Requests.erase(it);
             continue;
          }
