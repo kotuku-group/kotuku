@@ -10,6 +10,20 @@ struct pending_function_arg {
 };
 
 //********************************************************************************************************************
+
+[[nodiscard]] inline ERR dispatch_action(GCobject *Def, ACTIONID ActionID, APTR Args, bool &Release)
+{
+   Release = false;
+
+   if (Def->ptr) return Action(ActionID, Def->ptr, Args);
+   else if (auto obj = access_object(Def)) {
+      Release = true;
+      return Action(ActionID, obj, Args);
+   }
+   else return ERR::AccessObject;
+}
+
+//********************************************************************************************************************
 // Lua C closure executed via calls to obj.acName()
 
 static int object_action_call_args(lua_State *Lua)
@@ -36,12 +50,7 @@ static int object_action_call_args(lua_State *Lua)
    }
 
    int results = 1;
-   if (obj_ref->ptr) error = Action(action_id, obj_ref->ptr, argbuffer.get());
-   else if (auto obj = access_object(obj_ref)) {
-      error = Action(action_id, obj, argbuffer.get());
-      release = true;
-   }
-   else error = ERR::AccessObject;
+   error = dispatch_action(obj_ref, action_id, argbuffer.get(), release);
 
    // NB: Even if an error is returned, always get the results (any results parameters are nullified prior to
    // function entry and the action can return results legitimately even if an error code is returned - e.g.
@@ -65,12 +74,7 @@ static int object_action_call(lua_State *Lua)
    ERR error;
    bool release = false;
 
-   if (def->ptr) error = Action(action_id, def->ptr, nullptr);
-   else if (auto obj = access_object(def)) {
-      error = Action(action_id, obj, nullptr);
-      release = true;
-   }
-   else error = ERR::AccessObject;
+   error = dispatch_action(def, action_id, nullptr, release);
 
    lua_pushinteger(Lua, int(error));
 
@@ -105,12 +109,7 @@ static int object_method_call_args(lua_State *Lua)
    int results = 1;
    bool release = false;
 
-   if (def->ptr) error = Action(method->MethodID, def->ptr, argbuffer.get());
-   else if (auto obj = access_object(def)) {
-      error = Action(method->MethodID, obj, argbuffer.get());
-      release = true;
-   }
-   else error = ERR::AccessObject;
+   error = dispatch_action(def, method->MethodID, argbuffer.get(), release);
 
    lua_pushinteger(Lua, int(error));
 
@@ -131,12 +130,7 @@ static int object_method_call(lua_State *Lua)
    bool release = false;
    auto method = (MethodEntry *)lua_touserdata(Lua, lua_upvalueindex(2));
 
-   if (def->ptr) error = Action(method->MethodID, def->ptr, nullptr);
-   else if (auto obj = access_object(def)) {
-      error = Action(method->MethodID, obj, nullptr);
-      release = true;
-   }
-   else error = ERR::AccessObject;
+   error = dispatch_action(def, method->MethodID, nullptr, release);
 
    lua_pushinteger(Lua, int(error));
 
