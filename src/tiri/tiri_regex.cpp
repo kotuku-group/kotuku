@@ -43,6 +43,29 @@ struct regex_callback {
 };
 
 //*********************************************************************************************************************
+
+static GCarray *build_capture_array(lua_State *Lua, const std::vector<std::string_view> &Captures, uint32_t StartIndex)
+{
+   auto count = uint32_t(Captures.size());
+   if (StartIndex > count) StartIndex = count;
+
+   GCarray *arr = lj_array_new(Lua, count - StartIndex, AET::STR_GC);
+   GCRef *refs = arr->get<GCRef>();
+
+   // Captures are normalised: unmatched optional groups appear as empty entries to preserve indices.
+   for (uint32_t j = StartIndex; j < count; ++j) {
+      GCstr *s;
+      if (Captures[j].data()) s = lj_str_new(Lua, Captures[j].data(), Captures[j].length());
+      else s = lj_str_new(Lua, "", 0);
+
+      setgcref(refs[j - StartIndex], obj2gco(s));
+      lj_gc_objbarrier(Lua, arr, s);
+   }
+
+   return arr;
+}
+
+//*********************************************************************************************************************
 // Dynamic loader for the Regex functionality.  We only load it as needed due to the size of the module.
 
 static ERR load_regex(void)
@@ -94,20 +117,7 @@ static ERR match_many(int Index, std::vector<std::string_view> &Captures, size_t
       lj_array_grow(lua, Meta.results, slot + 8);
    }
 
-   // Create string array for captures
-   auto count = uint32_t(Captures.size());
-   GCarray *capture_arr = lj_array_new(lua, count, AET::STR_GC);
-   GCRef *refs = capture_arr->get<GCRef>();
-
-   // Captures are normalised: unmatched optional groups appear as empty entries to preserve indices.
-   for (uint32_t j = 0; j < count; ++j) {
-      GCstr *s;
-      if (Captures[j].data()) s = lj_str_new(lua, Captures[j].data(), Captures[j].length());
-      else s = lj_str_new(lua, "", 0);
-
-      setgcref(refs[j], obj2gco(s));
-      lj_gc_objbarrier(lua, capture_arr, s);
-   }
+   GCarray *capture_arr = build_capture_array(lua, Captures, 0);
 
    // Store capture array in results array
    setgcref(Meta.results->get<GCRef>()[slot], obj2gco(capture_arr));
@@ -126,22 +136,7 @@ static ERR match_one(int Index, std::vector<std::string_view> &Captures, size_t 
 {
    auto L = Meta.lua_state;
 
-   // Create array with exact size for captures
-   auto count = uint32_t(Captures.size());
-   GCarray *arr = lj_array_new(L, count, AET::STR_GC);
-   GCRef *refs = arr->get<GCRef>();
-
-   // Captures are normalised: unmatched optional groups appear as empty entries to preserve indices.
-
-   for (uint32_t j = 0; j < count; ++j) {
-      GCstr *s;
-      if (Captures[j].data()) s = lj_str_new(L, Captures[j].data(), Captures[j].length());
-      else s = lj_str_new(L, "", 0);
-
-      setgcref(refs[j], obj2gco(s));
-      lj_gc_objbarrier(L, arr, s);
-   }
-
+   GCarray *arr = build_capture_array(L, Captures, 0);
    setarrayV(L, L->top++, arr);
    return ERR::Terminate; // Don't match more than once
 }
@@ -157,19 +152,7 @@ static ERR match_first(int Index, std::vector<std::string_view> &Captures, size_
    // Build capture array if the client used at least 1 bracketed capture
    if (auto count = uint32_t(Captures.size()); count > 1) {
       auto L = Meta.lua_state;
-      GCarray *arr = lj_array_new(L, count-1, AET::STR_GC);
-      GCRef *refs = arr->get<GCRef>();
-
-      for (uint32_t j = 1; j < count; ++j) { // Skip the first capture (already reflected in the index & length)
-         GCstr *s;
-         if (Captures[j].data()) s = lj_str_new(L, Captures[j].data(), Captures[j].length());
-         else s = lj_str_new(L, "", 0);
-
-         setgcref(refs[j-1], obj2gco(s));
-         lj_gc_objbarrier(L, arr, s);
-      }
-
-      Meta.captures = arr;
+      Meta.captures = build_capture_array(L, Captures, 1);
    }
    return ERR::Terminate;
 }

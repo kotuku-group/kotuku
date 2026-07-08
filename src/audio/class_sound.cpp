@@ -383,8 +383,8 @@ static ERR SOUND_Activate(extSound *Self)
          }
          else return ERR::AccessObject;
       }
-      else if (!AllocMemory(Self->Length, MEM::DATA|MEM::NO_CLEAR, (APTR *)&buffer)) {
-         auto dc = deferred_call([&buffer] { FreeResource(buffer); });
+      else if (void *buffer = malloc(Self->Length)) {
+         auto dc = deferred_call([&buffer] { free(buffer); });
 
          auto client_pos = Self->Position;
          if (Self->Position) Self->seekStart(0); // Ensure we're reading the entire sample from the start

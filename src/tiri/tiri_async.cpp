@@ -144,6 +144,93 @@ static int async_script(lua_State *Lua)
 }
 
 //********************************************************************************************************************
+
+static int ref_async_callback(lua_State *Lua, int ArgIndex)
+{
+   int client_callback = LUA_NOREF;
+   auto type = lua_type(Lua, ArgIndex);
+   if (type IS LUA_TSTRING) {
+      lua_getglobal(Lua, lua_tostring(Lua, ArgIndex));
+      client_callback = luaL_ref(Lua, LUA_REGISTRYINDEX);
+   }
+   else if (type IS LUA_TFUNCTION) {
+      lua_pushvalue(Lua, ArgIndex);
+      client_callback = luaL_ref(Lua, LUA_REGISTRYINDEX);
+   }
+
+   return client_callback;
+}
+
+static int dispatch_async_object_call(lua_State *Lua, GCobject *GcObj, CSTRING Name, const FunctionField *Args,
+   int ArgsSize, AC ActionID, bool HasResults, CSTRING ResultError)
+{
+   int client_callback = ref_async_callback(Lua, 3);
+
+   // Pin the object and GCobject to prevent destruction while the thread is running.
+
+   GcObj->ptr->pin();
+
+   lua_pushvalue(Lua, 1);
+   int obj_ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
+
+   auto msg = new ThreadMsg { client_callback, obj_ref, Lua->script, lua_tonumber(Lua, 4) };
+   auto callback = C_FUNCTION(msg_thread_complete, msg);
+
+   auto abort = [&]() {
+      GcObj->ptr->unpin(true);
+      luaL_unref(Lua, LUA_REGISTRYINDEX, obj_ref);
+      luaL_unref(Lua, LUA_REGISTRYINDEX, client_callback);
+      delete msg;
+   };
+
+   ERR error = ERR::Okay;
+   if (ArgsSize > 0) {
+      if (HasResults) {
+         abort();
+         luaL_error(Lua, "%s", ResultError);
+      }
+
+      auto arg_buffer = std::make_unique<int8_t[]>(ArgsSize+8); // +8 for overflow protection in build_args()
+      int result_count = 0;
+
+      // Remove the first 4 required arguments so that the user's custom parameters are left on the stack.
+      lua_rotate(Lua, 1, -4);
+      lua_pop(Lua, 4);
+      int arg_index = 0;
+      CSTRING error_msg = nullptr;
+      if (!(error = build_args(Lua, Name, Args, ArgsSize, arg_buffer.get(), &result_count, arg_index, error_msg))) {
+         if (not result_count) {
+            error = AsyncAction(ActionID, GcObj->ptr, arg_buffer.get(), &callback);
+         }
+         else {
+            arg_buffer.reset();
+            abort();
+            luaL_error(Lua, "%s", ResultError);
+         }
+      }
+      else {
+         arg_buffer.reset();
+         abort();
+         if (error_msg) {
+            if (arg_index) luaL_argerror(Lua, arg_index, error_msg);
+            else luaL_error(Lua, error, "%s", error_msg);
+         }
+         else luaL_error(Lua, "Argument build failure for %s.", Name);
+      }
+   }
+   else { // No parameters.
+      error = AsyncAction(ActionID, GcObj->ptr, nullptr, &callback);
+   }
+
+   if (error != ERR::Okay) {
+      abort();
+      luaL_error(Lua, error);
+   }
+
+   return 0;
+}
+
+//********************************************************************************************************************
 // Usage: async.action(Object, Action, Callback, Key, Args...)
 
 static int async_action(lua_State *Lua)
@@ -171,90 +258,23 @@ static int async_action(lua_State *Lua)
    }
    else luaL_argerror(Lua, 2, "Action name required.");
 
-   int client_callback = LUA_NOREF;
-   type = lua_type(Lua, 3); // Optional callback.
-   if (type IS LUA_TSTRING) {
-      lua_getglobal(Lua, lua_tostring(Lua, 3));
-      client_callback = luaL_ref(Lua, LUA_REGISTRYINDEX);
-   }
-   else if (type IS LUA_TFUNCTION) {
-      lua_pushvalue(Lua, 3);
-      client_callback = luaL_ref(Lua, LUA_REGISTRYINDEX);
-   }
-
    int arg_size = 0;
    const FunctionField *args = nullptr;
+   CSTRING name = glActions[int(action_id)].Name;
 
    if ((glActions[int(action_id)].Args) and (glActions[int(action_id)].Size)) {
       arg_size = glActions[int(action_id)].Size;
       args = glActions[int(action_id)].Args;
    }
 
-   log.trace("#%d/%p, Action: %s/%d, Args: %d", gc_obj->uid, gc_obj->ptr, action, int(action_id), arg_size);
+   if (not name) name = action;
+   log.trace("#%d/%p, Action: %s/%d, Args: %d", gc_obj->uid, gc_obj->ptr, name, int(action_id), arg_size);
 
-   // Pin the object and GCobject to prevent destruction while the thread is running.
+   bool action_has_results = false;
+   if (arg_size > 0) action_has_results = (uint64_t(1) << int(action_id)) & glActionsWithResults;
 
-   gc_obj->ptr->pin();
-
-   lua_pushvalue(Lua, 1);
-   int obj_ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
-
-   auto msg = new ThreadMsg { client_callback, obj_ref, Lua->script, lua_tonumber(Lua, 4) };
-   auto callback = C_FUNCTION(msg_thread_complete, msg);
-
-   auto abort = [&]() {
-      gc_obj->ptr->unpin(true);
-      luaL_unref(Lua, LUA_REGISTRYINDEX, obj_ref);
-      luaL_unref(Lua, LUA_REGISTRYINDEX, client_callback);
-      delete msg;
-   };
-
-   ERR error = ERR::Okay;
-   if (arg_size > 0) {
-      if ((uint64_t(1) << int(action_id)) & glActionsWithResults) {
-         abort();
-         luaL_error(Lua, "Actions that return results are not yet supported.");
-      }
-
-      auto arg_buffer = std::make_unique<int8_t[]>(arg_size+8); // +8 for overflow protection in build_args()
-      int result_count;
-
-      // Remove the first 4 required arguments so that the user's custom parameters are left on the stack.
-      lua_rotate(Lua, 1, -4);
-      lua_pop(Lua, 4);
-      int arg_index = 0;
-      CSTRING error_msg = nullptr;
-      if (!(error = build_args(Lua, glActions[int(action_id)].Name, args, arg_size, arg_buffer.get(),
-            &result_count, arg_index, error_msg))) {
-         if (not result_count) {
-            error = AsyncAction(action_id, gc_obj->ptr, arg_buffer.get(), &callback);
-         }
-         else {
-            arg_buffer.reset();
-            abort();
-            luaL_error(Lua, "Actions that return results are not yet supported.");
-         }
-      }
-      else {
-         arg_buffer.reset();
-         abort();
-         if (error_msg) {
-            if (arg_index) luaL_argerror(Lua, arg_index, error_msg);
-            else luaL_error(Lua, error, "%s", error_msg);
-         }
-         else luaL_error(Lua, "Argument build failure for %s.", glActions[int(action_id)].Name);
-      }
-   }
-   else { // No parameters.
-      error = AsyncAction(action_id, gc_obj->ptr, nullptr, &callback);
-   }
-
-   if (error != ERR::Okay) {
-      abort();
-      luaL_error(Lua, error);
-   }
-
-   return 0;
+   return dispatch_async_object_call(Lua, gc_obj, name, args, arg_size, action_id, action_has_results,
+      "Actions that return results are not yet supported.");
 }
 
 //********************************************************************************************************************
@@ -295,87 +315,48 @@ static int async_method(lua_State *Lua)
          auto argsize   = table[i].Size;
          auto action_id = table[i].MethodID;
 
-         int client_callback = LUA_NOREF;
-         int type = lua_type(Lua, 3); // Optional callback.
-         if (type IS LUA_TSTRING) {
-            lua_getglobal(Lua, (STRING)lua_tostring(Lua, 3));
-            client_callback = luaL_ref(Lua, LUA_REGISTRYINDEX);
-         }
-         else if (type IS LUA_TFUNCTION) {
-            lua_pushvalue(Lua, 3);
-            client_callback = luaL_ref(Lua, LUA_REGISTRYINDEX);
-         }
-
-         // Pin the object and GCobject to prevent destruction while the thread is running.
-
-         gc_obj->ptr->pin();
-
-         lua_pushvalue(Lua, 1);
-         int obj_ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
-
-         auto msg = new ThreadMsg { client_callback, obj_ref, Lua->script, lua_tonumber(Lua, 4) };
-         auto callback = C_FUNCTION(msg_thread_complete, msg);
-
-         auto abort = [&]() {
-            gc_obj->ptr->unpin(true);
-            luaL_unref(Lua, LUA_REGISTRYINDEX, obj_ref);
-            luaL_unref(Lua, LUA_REGISTRYINDEX, client_callback);
-            delete msg;
-         };
-
-         ERR error = ERR::Okay;
-         if (argsize > 0) {
-            if (has_results(args)) {
-               abort();
-               luaL_error(Lua, "Methods that return results are not yet supported.");
-            }
-
-            auto argbuffer = std::make_unique<int8_t[]>(argsize+8); // +8 for overflow protection in build_args()
-            int result_count;
-
-            // Remove the first 4 required arguments so that the user's custom parameters are left on the stack.
-            lua_rotate(Lua, 1, -4);
-            lua_pop(Lua, 4);
-            int arg_index = 0;
-            CSTRING error_msg = nullptr;
-            if (!(error = build_args(Lua, table[i].Name, args, argsize, argbuffer.get(), &result_count, arg_index,
-                  error_msg))) {
-               if (not result_count) {
-                  error = AsyncAction(action_id, gc_obj->ptr, argbuffer.get(), &callback);
-               }
-               else {
-                  argbuffer.reset();
-                  abort();
-                  luaL_error(Lua, "Methods that return results are not yet supported.");
-               }
-            }
-            else {
-               argbuffer.reset();
-               if (error_msg) {
-                  if (arg_index) luaL_argerror(Lua, arg_index, error_msg);
-                  else luaL_error(Lua, error, "%s", error_msg);
-               }
-               else luaL_error(Lua, "Argument build failure for %s.", glActions[int(action_id)].Name);
-            }
-         }
-         else { // No parameters.
-            error = AsyncAction(action_id, gc_obj->ptr, nullptr, &callback);
-         }
-
-         if (error != ERR::Okay) {
-            abort();
-            luaL_error(Lua, error);
-         }
-
-         return 0;
+         bool method_has_results = (argsize > 0) and has_results(args);
+         return dispatch_async_object_call(Lua, gc_obj, table[i].Name, args, argsize, action_id, method_has_results,
+            "Methods that return results are not yet supported.");
       }
 
-      if (method) luaL_error(Lua, ERR::Search, "No '%s' method for class %s.", method, gc_obj->classptr->ClassName.c_str());
-      else luaL_error(Lua, ERR::Search, "No method %d for class %s.", int(method_id), gc_obj->classptr->ClassName.c_str());
+      if (method) {
+         luaL_error(Lua, ERR::Search, "No '%s' method for class %s.", method, gc_obj->classptr->ClassName.c_str());
+      }
+      else {
+         luaL_error(Lua, ERR::Search, "No method %d for class %s.", int(method_id),
+            gc_obj->classptr->ClassName.c_str());
+      }
    }
    else luaL_error(Lua, ERR::NoMethods);
 
    return 0;
+}
+
+//********************************************************************************************************************
+
+static void collect_object_ids(lua_State *Lua, int ArgIndex, kt::vector<OBJECTID> &Ids)
+{
+   auto type = lua_type(Lua, ArgIndex);
+   if (type IS LUA_TOBJECT) {
+      auto gc_obj = lua_toobject(Lua, ArgIndex);
+      if (not gc_obj or not gc_obj->ptr) luaL_error(Lua, ERR::ObjectCorrupt);
+      Ids.push_back(gc_obj->uid);
+   }
+   else if (type IS LUA_TARRAY) {
+      GCarray *arr = lua_toarray(Lua, ArgIndex);
+      if (arr->elemtype IS AET::OBJECT) {
+         auto refs = arr->get<GCRef>();
+         for (MSize i = 0; i < arr->len; i++) {
+            if (gcref(refs[i])) {
+               auto gc_obj = gco_to_object(gcref(refs[i]));
+               if (gc_obj and gc_obj->uid) Ids.push_back(gc_obj->uid);
+            }
+         }
+      }
+      else luaL_argerror(Lua, ArgIndex, "Expected an array<object>.");
+   }
+   else luaL_argerror(Lua, ArgIndex, "Expected an object or array<object>.");
 }
 
 //********************************************************************************************************************
@@ -388,30 +369,8 @@ static int async_wait(lua_State *Lua)
 {
    kt::Log log("async.wait");
 
-   // Collect object IDs from argument 1 into a zero-terminated array.
-
    kt::vector<OBJECTID> ids;
-
-   auto type = lua_type(Lua, 1);
-   if (type IS LUA_TOBJECT) {
-      auto gc_obj = lua_toobject(Lua, 1);
-      if (not gc_obj or not gc_obj->ptr) luaL_error(Lua, ERR::ObjectCorrupt);
-      ids.push_back(gc_obj->uid);
-   }
-   else if (type IS LUA_TARRAY) {
-      GCarray *arr = lua_toarray(Lua, 1);
-      if (arr->elemtype IS AET::OBJECT) {
-         auto refs = arr->get<GCRef>();
-         for (MSize i = 0; i < arr->len; i++) {
-            if (gcref(refs[i])) {
-               auto gc_obj = gco_to_object(gcref(refs[i]));
-               if (gc_obj and gc_obj->uid) ids.push_back(gc_obj->uid);
-            }
-         }
-      }
-      else luaL_argerror(Lua, 1, "Expected an array<object>.");
-   }
-   else luaL_argerror(Lua, 1, "Expected an object or array<object>.");
+   collect_object_ids(Lua, 1, ids);
 
    ERR error = ERR::Okay;
    if (not ids.empty()) {
@@ -454,27 +413,7 @@ static int async_pending(lua_State *Lua)
 static int async_cancel(lua_State *Lua)
 {
    kt::vector<OBJECTID> ids;
-
-   auto type = lua_type(Lua, 1);
-   if (type IS LUA_TOBJECT) {
-      auto gc_obj = lua_toobject(Lua, 1);
-      if (not gc_obj or not gc_obj->ptr) luaL_error(Lua, ERR::ObjectCorrupt);
-      ids.push_back(gc_obj->uid);
-   }
-   else if (type IS LUA_TARRAY) {
-      GCarray *arr = lua_toarray(Lua, 1);
-      if (arr->elemtype IS AET::OBJECT) {
-         auto refs = arr->get<GCRef>();
-         for (MSize i = 0; i < arr->len; i++) {
-            if (gcref(refs[i])) {
-               auto gc_obj = gco_to_object(gcref(refs[i]));
-               if (gc_obj and gc_obj->uid) ids.push_back(gc_obj->uid);
-            }
-         }
-      }
-      else luaL_argerror(Lua, 1, "Expected an array<object>.");
-   }
-   else luaL_argerror(Lua, 1, "Expected an object or array<object>.");
+   collect_object_ids(Lua, 1, ids);
 
    ERR error = ERR::Okay;
    if (not ids.empty()) {
