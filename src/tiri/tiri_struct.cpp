@@ -111,7 +111,9 @@ void destroy_struct_cpp_strings(const struct_record &StructDef, APTR Address)
    // NB: Custom comparator will stop if a colon is encountered in StructName
    if (auto def = glStructs.find(StructName); def != glStructs.end()) {
       std::vector<lua_ref> ref;
-      return struct_to_table(Lua, ref, def->second, Address);
+      auto error = struct_to_table(Lua, ref, def->second, Address);
+      unref_struct_references(Lua, ref);
+      return error;
    }
    else if (StructName.starts_with("KeyValue")) {
       // A struct name of 'KeyValue' allows the KEYVALUE type to be used for building structures dynamically.
@@ -124,6 +126,17 @@ void destroy_struct_cpp_strings(const struct_record &StructDef, APTR Address)
       kt::Log().warning("Unknown struct name '%.*s' - use 'include' to load module definitions.", int(StructName.size()), StructName.data());
       return ERR::Search;
    }
+}
+
+//********************************************************************************************************************
+
+void unref_struct_references(lua_State *Lua, std::vector<lua_ref> &References)
+{
+   for (auto &rec : References) {
+      if ((rec.Ref != LUA_NOREF) and (rec.Ref != LUA_REFNIL)) luaL_unref(Lua, LUA_REGISTRYINDEX, rec.Ref);
+   }
+
+   References.clear();
 }
 
 //********************************************************************************************************************

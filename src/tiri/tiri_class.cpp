@@ -522,7 +522,10 @@ static ERR TIRI_Init(extTiri *Self)
    if ((!error) and (Self->SaveCompiled = compile)) {
       DateTime *dt;
       if (!src_file->getDate(dt)) Self->CacheDate = *dt;
-      src_file->getPermissions(Self->CachePermissions);
+      Self->CachePermissions = PERMIT::NIL;
+      if (auto permissions_error = src_file->getPermissions(Self->CachePermissions); permissions_error != ERR::Okay) {
+         log.warning("Failed to read source permissions for cache file: %s", GetErrorMsg(permissions_error));
+      }
    }
 
    if (error != ERR::Okay) {

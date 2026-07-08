@@ -408,6 +408,7 @@ extern void register_async_class(lua_State *);
 void release_object(GCobject *);
 void new_module(lua_State *, objModule *);
 ERR struct_to_table(lua_State *, std::vector<lua_ref> &, struct struct_record &, CPTR);
+void unref_struct_references(lua_State *, std::vector<lua_ref> &);
 ERR table_to_struct(lua_State *, std::string_view, APTR *);
 void keyvalue_to_table(lua_State *, const KEYVALUE *);
 
