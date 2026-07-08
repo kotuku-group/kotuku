@@ -41,17 +41,19 @@ constexpr size_t BUFFER_ELEMENT_SIZE = 16;
 constexpr size_t BUFFER_SIZE = MAX_MODULE_ARGS * BUFFER_ELEMENT_SIZE;
 constexpr size_t MAX_STRING_PREFIX_LENGTH = 200;
 struct CaseInsensitiveCompare {
-   bool operator()(const std::string &A, const std::string &B) const {
+   using is_transparent = void;
+
+   bool operator()(std::string_view A, std::string_view B) const {
       return std::lexicographical_compare(
          A.begin(), A.end(), B.begin(), B.end(),
-         [](char a, char b) { return std::tolower((unsigned char)a) < std::tolower((unsigned char)b); }
+         [](char CharA, char CharB) { return std::tolower((unsigned char)CharA) < std::tolower((unsigned char)CharB); }
       );
    }
 };
 
 static std::set<std::string, CaseInsensitiveCompare> glLoadedConstants; // Stores the names of modules that have loaded constants (system wide)
 
-[[nodiscard]] static CSTRING load_include_struct(extTiri *, CSTRING, std::string_view);
+[[nodiscard]] static ERR load_include_struct(extTiri *, CSTRING, std::string_view, CSTRING *);
 [[nodiscard]] static CSTRING load_include_constant(CSTRING, std::string_view);
 
 static int module_call(lua_State *);
@@ -251,7 +253,7 @@ static CSTRING load_include_constant(CSTRING Line, std::string_view Source)
 
 //********************************************************************************************************************
 
-static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
+static ERR process_module_defs(extTiri *Script, objModule *module, std::string_view Name)
 {
    if (auto root = (OBJECTPTR)module->Root) {
       struct ModHeader *header;
@@ -260,7 +262,9 @@ static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
 
       if (auto idl = header->Definitions) {
          while ((idl) and (*idl)) {
-            if ((idl[0] IS 's') and (idl[1] IS '.')) idl = load_include_struct(Script, idl+2, Name);
+            if ((idl[0] IS 's') and (idl[1] IS '.')) {
+               if (auto error = load_include_struct(Script, idl+2, Name, &idl); error != ERR::Okay) return error;
+            }
             else if ((idl[0] IS 'c') and (idl[1] IS '.')) idl = load_include_constant(idl+2, Name);
             else idl = next_line(idl);
          }
@@ -274,7 +278,7 @@ static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
 // For the 'include' statement.  Creates a temporary module object to process the definitions without formally opening
 // an interface.
 
-[[nodiscard]] ERR load_include(extTiri *Script, CSTRING Module)
+[[nodiscard]] ERR load_include(extTiri *Script, std::string_view Module)
 {
    ERR error = ERR::Okay;
 
@@ -289,7 +293,7 @@ static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
 
    if (process_constants) {
       kt::Log log(__FUNCTION__);
-      log.branch("Definition: %s", Module);
+      log.branch("Definition: %.*s", int(Module.size()), Module.data());
 
       AdjustLogLevel(1);
 
@@ -299,7 +303,7 @@ static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
 
       AdjustLogLevel(-1);
 
-      if (!error) glLoadedConstants.insert(Module);
+      if (!error) glLoadedConstants.emplace(Module);
    }
 
    return error;
@@ -309,8 +313,11 @@ static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
 // Format: s.Name:typeField,...
 // TODO: This parses the struct definitions in advance - ideally we'd record the definition string and parse on first-use.
 
-[[nodiscard]] static CSTRING load_include_struct(extTiri *Script, CSTRING Line, std::string_view Source)
+[[nodiscard]] static ERR load_include_struct(extTiri *Script, CSTRING Line, std::string_view Source, CSTRING *NextLine)
 {
+   if (not NextLine) return ERR::NullArgs;
+   *NextLine = next_line(Line);
+
    int i;
    for (i=0; (Line[i] >= 0x20) and (Line[i] != ':'); i++);
 
@@ -323,18 +330,18 @@ static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
 
       if ((Line[j] IS '\n') or (Line[j] IS '\r')) {
          std::string linebuf(Line, j);
-         make_struct(Script, name, linebuf.c_str());
          while ((Line[j] IS '\n') or (Line[j] IS '\r')) j++;
-         return Line + j;
+         *NextLine = Line + j;
+         return make_struct(Script, name, linebuf.c_str());
       }
       else {
-         make_struct(Script, name, Line);
-         return Line + j;
+         *NextLine = Line + j;
+         return make_struct(Script, name, Line);
       }
    }
    else {
       kt::Log(__FUNCTION__).warning("Malformed struct name in %.*s.", int(Source.size()), Source.data());
-      return next_line(Line);
+      return ERR::Syntax;
    }
 }
 

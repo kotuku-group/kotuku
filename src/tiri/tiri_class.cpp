@@ -1022,7 +1022,10 @@ static ERR register_interfaces(extTiri *Self)
    reg_func_prototype("unsubscribeEvent", {}, { TiriType::Any });
    reg_func_prototype("MAKESTRUCT", { TiriType::Any }, { TiriType::Str });
 
-   load_include(Self, "core");
+   if (auto error = load_include(Self, "core"); error != ERR::Okay) {
+      log.error("Failed to process the core includes.");
+      return error;
+   }
 
 #ifndef NDEBUG
    int stack_delta = lua_gettop(Self->Lua) - stack_top;

@@ -1034,7 +1034,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_include_stmt()
             "Invalid module name; only alpha-numeric names shorter than 32 characters are permitted with include");
       }
 
-      if (auto error = load_include(this->ctx.lua().script, module_name.c_str()); error != ERR::Okay) {
+      if (auto error = load_include(this->ctx.lua().script, module_name); error != ERR::Okay) {
          std::string message;
          if (error IS ERR::FileNotFound) message = std::format("Requested include file '{}' does not exist", module_name);
          else message = std::format("Failed to process include file '{}': {}", module_name, GetErrorMsg(error));

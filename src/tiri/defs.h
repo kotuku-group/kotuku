@@ -378,7 +378,7 @@ ERR create_tiri(void);
 void get_line(extTiri *, int, STRING, int);
 APTR get_meta(lua_State *Lua, int Arg, CSTRING);
 [[maybe_unused]] void hook_debug(lua_State *, lua_Debug *);
-ERR load_include(extTiri *, CSTRING);
+ERR load_include(extTiri *, std::string_view);
 int MAKESTRUCT(lua_State *);
 [[maybe_unused]] void make_any_array(lua_State *, int, std::string_view, int, CPTR);
 [[maybe_unused]] void make_array(lua_State *, AET, int = 0, CPTR = nullptr, std::string_view = {});

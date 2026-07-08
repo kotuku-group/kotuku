@@ -98,8 +98,9 @@ static int io_open(lua_State *Lua)
          case 'r': flags |= FL::READ; break;
          case 'w': flags |= FL::WRITE | FL::NEW; break;
          case 'a':
-            if (!AnalysePath(path, nullptr)) flags |= FL::WRITE;
-            else flags |= FL::WRITE | FL::NEW;
+            if (auto error = AnalysePath(path, nullptr); error IS ERR::Okay) flags |= FL::WRITE;
+            else if (error IS ERR::FileNotFound) flags |= FL::WRITE | FL::NEW;
+            else luaL_error(Lua, error, "Failed to analyse path: %s", path);
             seek_end = true;
             break;  // Append mode - will seek to end after open
          case '+': flags |= FL::READ | FL::WRITE; break;
@@ -107,15 +108,18 @@ static int io_open(lua_State *Lua)
    }
 
    if (auto file = objFile::create::local({ fl::Path(path), fl::Flags(flags) })) {
-      if (seek_end) file->seekEnd(0);
+      if (seek_end) {
+         if (auto error = file->seekEnd(0); error != ERR::Okay) {
+            FreeResource(file);
+            luaL_error(Lua, error, "Failed to seek to end of file: %s", path);
+         }
+      }
 
       push_file_handle(Lua, file);
-      return 1;
    }
-   else {
-      luaL_error(Lua, ERR::OpenFile);
-      return 0;
-   }
+   else luaL_error(Lua, ERR::OpenFile);
+
+   return 1;
 }
 
 //********************************************************************************************************************
@@ -151,8 +155,7 @@ static int io_close(lua_State *Lua)
       lua_pushboolean(Lua, 1);
       return 1;
    }
-
-   return 0;
+   else return 0;
 }
 
 //********************************************************************************************************************
@@ -407,10 +410,7 @@ static int io_lines(lua_State *Lua)
          lua_call(Lua, 0, 1);
       }
 
-      if (lua_isnil(Lua, -1)) {
-         luaL_error(Lua, ERR::InvalidState, "No default input file available");
-         return 0;
-      }
+      if (lua_isnil(Lua, -1)) luaL_error(Lua, ERR::InvalidState, "No default input file available");
 
       file_handle = check_file_handle(Lua, -1);
       handle_index = lua_gettop(Lua);
@@ -527,9 +527,14 @@ static int file_read(lua_State *Lua)
 
                   case 'a': { // Read entire file
                      auto current_pos = file->Position;
-                     file->seekEnd(0);
+                     if (auto error = file->seekEnd(0); error != ERR::Okay) {
+                        luaL_error(Lua, error, "Failed to seek to end of file");
+                     }
+
                      auto file_size = file->Position;
-                     file->seek(current_pos, SEEK::START);
+                     if (auto error = file->seek(current_pos, SEEK::START); error != ERR::Okay) {
+                        luaL_error(Lua, error, "Failed to restore file position");
+                     }
 
                      auto remaining = file_size - current_pos;
                      if (remaining > 0) {

@@ -28,7 +28,7 @@ static ERR set_array_from_table(lua_State *Lua, OBJECTPTR Object, const Field *F
    if (Field->Flags & FD_INT) {
       kt::vector<int> values((size_t)total);
       for (lua_pushnil(Lua); lua_next(Lua, Values); lua_pop(Lua, 1)) {
-         int index = lua_tointeger(Lua, -2) - 1;
+         int index = lua_tointeger(Lua, -2);
          if ((index >= 0) and (index < total)) {
             values[index] = lua_tointeger(Lua, -1);
          }
@@ -38,7 +38,7 @@ static ERR set_array_from_table(lua_State *Lua, OBJECTPTR Object, const Field *F
    else if (Field->Flags & FD_STRING) {
       kt::vector<std::string> values((size_t)total);
       for (lua_pushnil(Lua); lua_next(Lua, Values); lua_pop(Lua, 1)) {
-         int index = lua_tointeger(Lua, -2) - 1;
+         int index = lua_tointeger(Lua, -2);
          if ((index >= 0) and (index < total)) {
             values[index] = lua_tostring(Lua, -1);
          }

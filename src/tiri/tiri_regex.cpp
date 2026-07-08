@@ -19,6 +19,7 @@ Examples:
 #include <string_view>
 #include <utility>
 #include <cctype>
+#include <mutex>
 
 #include "lauxlib.h"
 #include "lj_obj.h"
@@ -47,6 +48,9 @@ struct regex_callback {
 static ERR load_regex(void)
 {
 #ifndef KOTUKU_STATIC
+   static std::mutex regex_load_lock;
+   const std::lock_guard<std::mutex> lock(regex_load_lock);
+
    if (not modRegex) {
       kt::SwitchContext ctx(glTiriContext);
       if (objModule::load("regex", &modRegex, &RegexBase) != ERR::Okay) return ERR::InitModule;
