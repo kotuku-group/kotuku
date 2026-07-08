@@ -111,7 +111,7 @@ requires std::is_integral_v<T>
 }
 
 //********************************************************************************************************************
-// Used by some of the SetField() range of instructions.
+// Used by some of the SetField() and Create() range of instructions.
 
 ERR writeval_default(OBJECTPTR Object, const Field *Field, int flags, CPTR Data)
 {
