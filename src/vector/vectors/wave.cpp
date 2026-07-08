@@ -14,8 +14,6 @@ Waves can be used in Kotuku's SVG implementation by using the &lt;kotuku:wave/&g
 
 -END-
 
-TODO: Allow the line cap and join styles to be configured when Thickness > 0 (currently fixed to ROUND).
-
 *********************************************************************************************************************/
 
 static void generate_wave(class extVectorWave *Vector, agg::path_storage &Path);

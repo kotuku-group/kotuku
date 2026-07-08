@@ -1899,7 +1899,7 @@ of the previous command).
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_Sequence(extVector *Self, std::string_view &Value)
+static ERR VECTOR_GET_Sequence(extVector *Self, std::string &Value)
 {
    kt::Log log;
 
@@ -1973,15 +1973,8 @@ static ERR VECTOR_GET_Sequence(extVector *Self, std::string_view &Value)
       }
    }
 
-   auto out = seq.str();
-   if (out.length() > 0) {
-      if (auto str = strclone(out)) {
-         Value = std::string_view{str, out.length()};
-         return ERR::Okay;
-      }
-      else return ERR::AllocMemory;
-   }
-   else return ERR::NoData;
+   Value = seq.str();
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************

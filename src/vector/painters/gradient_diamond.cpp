@@ -5,11 +5,6 @@ GradientDiamond: Diamond colour gradient paint server.
 
 GradientDiamond draws a square-shaped colour ramp from a centre point.
 
--END-
-
-*********************************************************************************************************************/
-
-/*********************************************************************************************************************
 -FIELD-
 CX: The horizontal centre point of the gradient.
 
@@ -67,14 +62,15 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 -END-
 *********************************************************************************************************************/
 
-static ERR GRADIENTDIAMOND_GET_XMLDef(extGradientDiamond *Self, std::string_view &Value)
+static ERR GRADIENTDIAMOND_GET_XMLDef(extGradientDiamond *Self, std::string &Value)
 {
    std::stringstream stream;
    stream << "diamondGradient";
    gradient_xml_attr(stream, "cx", Self->CX);
    gradient_xml_attr(stream, "cy", Self->CY);
    gradient_xml_attr(stream, "r", Self->Radius);
-   return gradient_xml_result(stream.str(), Value);
+   Value = stream.str();
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -85,7 +81,7 @@ static const FieldArray clGradientDiamondFields[] = {
    { "CX",      FDF_UNIT|FDF_RW, nullptr, GRADIENTDIAMOND_SET_CX },
    { "CY",      FDF_UNIT|FDF_RW, nullptr, GRADIENTDIAMOND_SET_CY },
    { "Radius",  FDF_UNIT|FDF_RW, nullptr, GRADIENTDIAMOND_SET_Radius },
-   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, GRADIENTDIAMOND_GET_XMLDef },
+   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, GRADIENTDIAMOND_GET_XMLDef },
    END_FIELD
 };
 

@@ -1,5 +1,7 @@
 // Refer: lib_object.cpp
 
+static int object_get_cppstring(lua_State *Lua, const obj_read &Handle, GCobject *Def);
+
 //********************************************************************************************************************
 
 static ERR lua_string_view(lua_State *Lua, int ValueIndex, std::string_view &Value)
@@ -452,7 +454,8 @@ static int object_get(lua_State *Lua)
             result = object_get_struct(Lua, obj_read(0, nullptr, (APTR)field), def);
          }
          else if (field->Flags & FD_STRING) {
-            result = object_get_string(Lua, obj_read(0, nullptr, (APTR)field), def);
+            if (field->Flags & FD_ALLOC) result = object_get_cppstring(Lua, obj_read(0, nullptr, (APTR)field), def);
+            else result = object_get_string(Lua, obj_read(0, nullptr, (APTR)field), def);
          }
          else if (field->Flags & FD_POINTER) {
             if (field->Flags & (FD_OBJECT|FD_LOCAL)) {
@@ -697,6 +700,24 @@ static int object_get_struct(lua_State *Lua, const obj_read &Handle, GCobject *D
       else {
          kt::Log(__FUNCTION__).warning("No struct name reference for field %s in class %s.", field->Name, obj->Class->ClassName.c_str());
          error = ERR::Failed;
+      }
+      release_object(Def);
+   }
+   else error = ERR::AccessObject;
+
+   Lua->CaughtError = error;
+   return error != ERR::Okay ? 0 : 1;
+}
+
+static int object_get_cppstring(lua_State *Lua, const obj_read &Handle, GCobject *Def)
+{
+   ERR error;
+   if (auto obj = access_object(Def)) {
+      auto field = (Field *)(Handle.Data);
+      std::string result;
+      if (!(error = obj->get(field->FieldID, result))) {
+         if (result.empty()) lua_pushnil(Lua);
+         else lua_pushlstring(Lua, result.data(), result.size());
       }
       release_object(Def);
    }

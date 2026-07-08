@@ -324,7 +324,10 @@ READ_TABLE * get_read_table(objMetaClass *Class)
             jmp.push_back(obj_read(hash, object_get_array, field_ptr));
          }
          else if (field.Flags & FD_STRUCT) jmp.push_back(obj_read(hash, object_get_struct, field_ptr));
-         else if (field.Flags & FD_STRING) jmp.push_back(obj_read(hash, object_get_string, field_ptr));
+         else if (field.Flags & FD_STRING) {
+            if (field.Flags & FD_ALLOC) jmp.push_back(obj_read(hash, object_get_cppstring, field_ptr));
+            else jmp.push_back(obj_read(hash, object_get_string, field_ptr));
+         }
          else if (field.Flags & FD_POINTER) {
             if (field.Flags & (FD_OBJECT|FD_LOCAL)) {
                jmp.push_back(obj_read(hash, object_get_object, field_ptr));

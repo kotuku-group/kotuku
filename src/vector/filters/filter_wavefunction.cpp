@@ -329,18 +329,14 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 
 *********************************************************************************************************************/
 
-static ERR WAVEFUNCTIONFX_GET_XMLDef(extWaveFunctionFX *Self, std::string_view &Value)
+static ERR WAVEFUNCTIONFX_GET_XMLDef(extWaveFunctionFX *Self, std::string &Value)
 {
    std::stringstream stream;
 
    stream << "feWaveFunction";
 
-   auto cppstr = stream.str();
-   if (auto str = strclone(stream.str())) {
-      Value = std::string_view{str, cppstr.size()};
-      return ERR::Okay;
-   }
-   else return ERR::AllocMemory;
+   Value = stream.str();
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -356,7 +352,7 @@ static const FieldArray clWaveFunctionFXFields[] = {
    { "L",           FDF_INT|FDF_RW,              nullptr, WAVEFUNCTIONFX_SET_L },
    { "M",           FDF_INT|FDF_RW,              nullptr, WAVEFUNCTIONFX_SET_M },
    { "Resolution",  FDF_INT|FDF_RW,              nullptr, WAVEFUNCTIONFX_SET_Resolution },
-   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, WAVEFUNCTIONFX_GET_XMLDef },
+   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, WAVEFUNCTIONFX_GET_XMLDef },
    END_FIELD
 };
 

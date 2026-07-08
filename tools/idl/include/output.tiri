@@ -265,13 +265,8 @@ function outputGetValueCall(Field:table, FieldType:str, Indent:str)
       return
    elseif Field.flags has FD_STRING then
       if Field.flags has FD_ALLOC then
-         output(Indent .. 'std::string_view view;')
-         output(Indent .. 'auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;')
-         output(Indent .. 'auto error = get_field(this, view);')
-         output(Indent .. 'if (error IS ERR::Okay) {')
-         output(Indent .. '   Value.assign(view);')
-         output(Indent .. '   if (view.data()) FreeResource(GetMemoryID(view.data()));')
-         output(Indent .. '}')
+         output(Indent .. 'auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;')
+         output(Indent .. 'auto error = get_field(this, Value);')
       else
          output(Indent .. 'auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;')
          outputResult('get_field(this, Value);')

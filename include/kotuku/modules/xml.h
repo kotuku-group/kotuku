@@ -436,13 +436,8 @@ class objXML : public Object {
    inline ERR getStatement(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[10];
       SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       RestoreObjectContext();
       return error;
    }

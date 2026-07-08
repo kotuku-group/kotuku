@@ -1982,16 +1982,13 @@ the base path for relative references.
 
 *********************************************************************************************************************/
 
-static ERR GET_Statement(extXML *Self, std::string_view &Value)
+static ERR GET_Statement(extXML *Self, std::string &Value)
 {
    kt::Log log;
 
    if (not Self->initialised()) {
-      if (CSTRING str = kt::strclone(Self->Statement)) {
-         Value = str;
-         return ERR::Okay;
-      }
-      else return ERR::AllocMemory;
+      Value = Self->Statement;
+      return ERR::Okay;
    }
 
    if (Self->Tags.empty()) return ERR::FieldNotSet;
@@ -2010,11 +2007,8 @@ static ERR GET_Statement(extXML *Self, std::string_view &Value)
    }
    else return log.warning(ERR::NoData); // NB: If there are tags, tag 0 should always exist, so this indicates a parsing issue
 
-   if (CSTRING str = kt::strclone(buffer.str())) {
-      Value = str;
-      return ERR::Okay;
-   }
-   else return ERR::AllocMemory;
+   Value = buffer.str();
+   return ERR::Okay;
 }
 
 static ERR SET_Statement(extXML *Self, const std::string_view &Value)

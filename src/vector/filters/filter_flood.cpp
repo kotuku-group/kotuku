@@ -118,18 +118,14 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 
 *********************************************************************************************************************/
 
-static ERR FLOODFX_GET_XMLDef(extFloodFX *Self, std::string_view &Value)
+static ERR FLOODFX_GET_XMLDef(extFloodFX *Self, std::string &Value)
 {
    std::stringstream stream;
 
    stream << "feFlood opacity=\"" << Self->Opacity << "\"";
 
-   auto cppstr = stream.str();
-   if (auto str = strclone(stream.str())) {
-      Value = std::string_view{str, cppstr.size()};
-      return ERR::Okay;
-   }
-   else return ERR::AllocMemory;
+   Value = stream.str();
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -139,7 +135,7 @@ static ERR FLOODFX_GET_XMLDef(extFloodFX *Self, std::string_view &Value)
 static const FieldArray clFloodFXFields[] = {
    { "Colour",  FDF_STRUCT|FDF_RW, nullptr, FLOODFX_SET_Colour, "FRGB" },
    { "Opacity", FDF_DOUBLE|FDF_RW, nullptr, FLOODFX_SET_Opacity },
-   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, FLOODFX_GET_XMLDef },
+   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, FLOODFX_GET_XMLDef },
    END_FIELD
 };
 

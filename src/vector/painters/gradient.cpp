@@ -556,18 +556,9 @@ The returned string does not include angle brackets, common gradient attributes,
 
 *********************************************************************************************************************/
 
-static ERR GRADIENT_GET_XMLDef(extGradient *, std::string_view &)
+static ERR GRADIENT_GET_XMLDef(extGradient *, std::string &)
 {
    return ERR::NoSupport;
-}
-
-static ERR gradient_xml_result(const std::string &String, std::string_view &Value)
-{
-   if (auto str = strclone(String)) {
-      Value = std::string_view{ str, String.size() };
-      return ERR::Okay;
-   }
-   else return ERR::AllocMemory;
 }
 
 static std::string gradient_xml_num(double Value)
@@ -623,7 +614,7 @@ static const FieldArray clGradientFields[] = {
    { "NumericID",    FDF_INT|FDF_RW,            nullptr, GRADIENT_SET_NumericID },
    // Virtual fields
    { "Transform",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W, nullptr, GRADIENT_SET_Transform },
-   { "XMLDef",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, GRADIENT_GET_XMLDef },
+   { "XMLDef",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, GRADIENT_GET_XMLDef },
    END_FIELD
 };
 
