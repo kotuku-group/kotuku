@@ -336,7 +336,7 @@
         <param type="DATA" name="Format" lookup="DATA">Set to <code>TEXT</code> to receive plain-text, <code>RAW</code> to receive the original byte-code, or <code>XML</code> to receive a textual XML serialisation of the stream.</param>
         <param type="INT" name="Start">An index in the document stream from which data will be extracted.</param>
         <param type="INT" name="End">An index in the document stream at which extraction will stop.</param>
-        <param type="STRING *" name="Result">The data is returned in this parameter as an allocated string.</param>
+        <param type="STRING *" name="Result">The data is returned in this parameter.</param>
       </input>
       <description>
 <p>The ReadContent() method extracts content from the document stream, covering a specific area.  It can return the data as a RIPL binary stream, translated into plain-text (control codes are removed), or serialised as an XML document describing the byte stream.</p>
@@ -346,12 +346,12 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Args">Invalid arguments passed to function</error>
-        <error code="NoData">Operation successful, but no data was present for extraction.</error>
+        <error code="NoData">No data was extractable - applies to XML type only; other types return an empty string.</error>
         <error code="OutOfRange">The Start index is not within the stream.</error>
         <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
-      <tags>pure-query, caller-owns-result, null-terminated-result</tags>
+      <tags>pure-query, mutates-input</tags>
     </method>
 
     <method>

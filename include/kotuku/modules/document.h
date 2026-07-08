@@ -107,7 +107,7 @@ struct RemoveListener { int Trigger; FUNCTION *Function; static const AC id = AC
 struct ShowIndex { std::string_view Name; static const AC id = AC(-11); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct HideIndex { std::string_view Name; static const AC id = AC(-12); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Edit { std::string_view Name; int Flags; static const AC id = AC(-13); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct ReadContent { DATA Format; int Start; int End; STRING Result; static const AC id = AC(-14); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ReadContent { DATA Format; int Start; int End; std::string *Result; static const AC id = AC(-14); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -223,10 +223,9 @@ class objDocument : public Object {
       struct doc::Edit args = { Name, Flags };
       return Action(AC(-13), this, &args);
    }
-   inline ERR readContent(DATA Format, int Start, int End, STRING * Result) noexcept {
-      struct doc::ReadContent args = { Format, Start, End, (STRING)0 };
+   inline ERR readContent(DATA Format, int Start, int End, std::string &Result) noexcept {
+      struct doc::ReadContent args = { Format, Start, End, &Result };
       ERR error = Action(AC(-14), this, &args);
-      if (Result) *Result = args.Result;
       return error;
    }
 

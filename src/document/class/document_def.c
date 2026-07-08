@@ -34,7 +34,7 @@ FDEF maRemoveListener[] = { { "Trigger", FD_INT }, { "Function", FD_FUNCTIONPTR 
 FDEF maShowIndex[] = { { "Name", FDF_CPPSTRING }, { 0, 0 } };
 FDEF maHideIndex[] = { { "Name", FDF_CPPSTRING }, { 0, 0 } };
 FDEF maEdit[] = { { "Name", FDF_CPPSTRING }, { "Flags", FD_INT }, { 0, 0 } };
-FDEF maReadContent[] = { { "Format", FD_INT }, { "Start", FD_INT }, { "End", FD_INT }, { "Result", FD_RESULT|FD_STR|FD_ALLOC }, { 0, 0 } };
+FDEF maReadContent[] = { { "Format", FD_INT }, { "Start", FD_INT }, { "End", FD_INT }, { "Result", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
 
 static const struct MethodEntry clDocumentMethods[] = {
    { AC(-1), (APTR)DOCUMENT_FeedParser, "FeedParser", maFeedParser, sizeof(struct doc::FeedParser) },

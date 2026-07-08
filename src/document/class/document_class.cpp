@@ -1679,18 +1679,18 @@ resulting data.
 int(DATA) Format: Set to `TEXT` to receive plain-text, `RAW` to receive the original byte-code, or `XML` to receive a textual XML serialisation of the stream.
 int Start:  An index in the document stream from which data will be extracted.
 int End:    An index in the document stream at which extraction will stop.
-!str Result: The data is returned in this parameter as an allocated string.
+^&string Result: The data is returned in this parameter.
 
 -ERRORS-
 Okay
 NullArgs
 OutOfRange: The Start index is not within the stream.
+NoData: No data was extractable - applies to XML type only; other types return an empty string.
 Args
-NoData: Operation successful, but no data was present for extraction.
 AllocMemory
 
 -TAGS-
-pure-query, caller-owns-result, null-terminated-result
+pure-query
 
 *********************************************************************************************************************/
 
@@ -1698,9 +1698,7 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
 {
    kt::Log log(__FUNCTION__);
 
-   if (not Args) return log.warning(ERR::NullArgs);
-
-   Args->Result = nullptr;
+   if ((not Args) or (not Args->Result)) return log.warning(ERR::NullArgs);
 
    if ((Args->Start < 0) or (Args->Start >= std::ssize(Self->Stream))) return log.warning(ERR::OutOfRange);
    if (Args->End <= Args->Start) return log.warning(ERR::Args);
@@ -1719,21 +1717,13 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
          }
       }
 
-      auto str = buffer.str();
-      if (str.empty()) return ERR::NoData;
-      if ((Args->Result = strclone(str))) return ERR::Okay;
-      else return log.warning(ERR::AllocMemory);
+      *Args->Result = std::move(buffer).str();
+      return ERR::Okay;
    }
    else if (Args->Format IS DATA::RAW) {
-      STRING output;
       auto size = (end - Args->Start) * INDEX(sizeof(stream_code));
-      if (!AllocMemory(size + 1, MEM::NO_CLEAR, (APTR *)&output)) {
-         copymem(Self->Stream.data.data() + Args->Start, output, size);
-         output[size] = 0;
-         Args->Result = output;
-         return ERR::Okay;
-      }
-      else return log.warning(ERR::AllocMemory);
+      Args->Result->assign((CSTRING)(Self->Stream.data.data() + Args->Start), size);
+      return ERR::Okay;
    }
    else if (Args->Format IS DATA::XML) {
       std::ostringstream buffer;
@@ -1750,9 +1740,8 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
 
       if (not has_content) return ERR::NoData;
 
-      auto str = buffer.str();
-      if ((Args->Result = strclone(str))) return ERR::Okay;
-      else return log.warning(ERR::AllocMemory);
+      *Args->Result = std::move(buffer).str();
+      return ERR::Okay;
    }
    else return log.warning(ERR::Args);
 }
@@ -1932,10 +1921,10 @@ static ERR DOCUMENT_SaveToObject(extDocument *Self, struct acSaveToObject *Args)
 
    log.branch("Destination: %d", Args->Dest->UID);
 
-   doc::ReadContent read = { DATA::XML, 0, int(Self->Stream.size()), nullptr };
+   std::string result;
+   doc::ReadContent read = { DATA::XML, 0, int(Self->Stream.size()), &result };
    if (auto error = DOCUMENT_ReadContent(Self, &read); !error) {
-      error = acWrite(Args->Dest, read.Result, strlen(read.Result), nullptr);
-      FreeResource(read.Result);
+      error = acWrite(Args->Dest, result.data(), result.size(), nullptr);
       if (!error) return ERR::Okay;
       else return log.warning(ERR::Write);
    }
