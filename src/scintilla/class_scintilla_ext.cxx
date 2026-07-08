@@ -327,27 +327,22 @@ void ScintillaKTK::Paste()
          if (file.ok()) {
             int64_t len, size;
             if ((!file->getSize(size)) and (size > 0)) {
-               STRING buffer;
-               if (!AllocMemory(size, MEM::STRING, (APTR *)&buffer)) {
-                  if (!file->read(buffer, size, &len)) {
-                     pdoc->BeginUndoAction();
+               std::vector<char> buffer(size);
+               if (!file->read(buffer.data(), size, &len)) {
+                  pdoc->BeginUndoAction();
 
-                        ClearSelection();
-                        pdoc->InsertString(CurrentPosition(), (char *)buffer, len);
-                        SetEmptySelection(CurrentPosition() + len);
+                     ClearSelection();
+                     pdoc->InsertString(CurrentPosition(), (char *)buffer.data(), len);
+                     SetEmptySelection(CurrentPosition() + len);
 
-                     pdoc->EndUndoAction();
+                  pdoc->EndUndoAction();
 
-                     NotifyChange();
-                     Redraw();
+                  NotifyChange();
+                  Redraw();
 
-                     calc_longest_line(scintilla);
-                  }
-                  else error_dialog("Paste Error", "Failed to read data from the clipboard file.", ERR::Okay);
-
-                  FreeResource(buffer);
+                  calc_longest_line(scintilla);
                }
-               else error_dialog("Paste Error", nullptr, ERR::AllocMemory);
+               else error_dialog("Paste Error", "Failed to read data from the clipboard file.", ERR::Okay);
             }
          }
          else error_dialog("Paste Error", std::format("Failed to load clipboard file \"{}\"", files[0]), ERR::Okay);

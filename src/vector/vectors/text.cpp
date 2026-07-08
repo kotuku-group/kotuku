@@ -196,8 +196,8 @@ class extVectorText : public extVector {
    double txStartOffset; // TODO
    double txSpacing; // TODO
    double txXOffset, txYOffset; // X,Y adjustment for ensuring that the cursor is visible.
-   double *txDX, *txDY; // A series of spacing adjustments that apply on a per-character level.
-   double *txRotate;  // A series of angles that will rotate each individual character.
+   std::vector<double> txDX, txDY; // A series of spacing adjustments that apply on a per-character level.
+   std::vector<double> txRotate; // A series of angles that will rotate each individual character.
    objFont *txBitmapFont;
    objBitmap *txAlphaBitmap; // Host for the bitmap font texture
    extVectorImage *txBitmapImage;
@@ -212,7 +212,6 @@ class extVectorText : public extVector {
    OBJECTID txShapeSubtractID; // Subtract this shape from the path defined by shape-inside
    int  txTotalLines;
    int  txLineLimit, txCharLimit;
-   int  txTotalRotate, txTotalDX, txTotalDY;
    int  txWeight; // 100 - 300 (Light), 400 (Normal), 700 (Bold), 900 (Boldest)
    ALIGN txAlignFlags;
    VTXF  txFlags;
@@ -243,8 +242,6 @@ class extVectorText : public extVector {
 
       if (txBitmapImage)  FreeResource(txBitmapImage);
       if (txAlphaBitmap)  FreeResource(txAlphaBitmap);
-      if (txDX)           FreeResource(txDX);
-      if (txDY)           FreeResource(txDY);
       if (txKeyEvent)     UnsubscribeEvent(txKeyEvent);
       release_callback(txOnChange);
 
@@ -600,24 +597,16 @@ else (b) no extra shift along the x-axis occurs.
 
 static ERR TEXT_GET_DX(extVectorText *Self, std::span<double> &Array)
 {
-   Array = std::span<double>(Self->txDX, Self->txTotalDX);
+   Array = std::span<double>(Self->txDX.data(), Self->txDX.size());
    return ERR::Okay;
 }
 
 static ERR TEXT_SET_DX(extVectorText *Self, std::span<const double> &Array)
 {
-   if (Self->txDX) { FreeResource(Self->txDX); Self->txDX = nullptr; Self->txTotalDX = 0; }
-
-   if ((Array.data()) and (Array.size() > 0)) {
-      if (!AllocMemory(sizeof(double) * Array.size(), MEM::DATA, (APTR *)&Self->txDX)) {
-         copymem(Array.data(), Self->txDX, Array.size() * sizeof(double));
-         Self->txTotalDX = Array.size();
-         reset_path(Self);
-         return ERR::Okay;
-      }
-      else return ERR::AllocMemory;
-   }
-   else return ERR::Okay;
+   if ((not Array.data()) or Array.empty()) Self->txDX.clear();
+   else Self->txDX.assign(Array.begin(), Array.end());
+   reset_path(Self);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -630,24 +619,16 @@ This field follows the same rules described in #DX.
 
 static ERR TEXT_GET_DY(extVectorText *Self, std::span<double> &Array)
 {
-   Array = std::span<double>(Self->txDY, Self->txTotalDY);
+   Array = std::span<double>(Self->txDY.data(), Self->txDY.size());
    return ERR::Okay;
 }
 
 static ERR TEXT_SET_DY(extVectorText *Self, std::span<const double> &Array)
 {
-   if (Self->txDY) { FreeResource(Self->txDY); Self->txDY = nullptr; Self->txTotalDY = 0; }
-
-   if ((Array.data()) and (Array.size() > 0)) {
-      if (!AllocMemory(sizeof(double) * Array.size(), MEM::DATA, (APTR *)&Self->txDY)) {
-         copymem(Array.data(), Self->txDY, Array.size() * sizeof(double));
-         Self->txTotalDY = Array.size();
-         reset_path(Self);
-         return ERR::Okay;
-      }
-      else return ERR::AllocMemory;
-   }
-   else return ERR::Okay;
+   if ((not Array.data()) or Array.empty()) Self->txDY.clear();
+   else Self->txDY.assign(Array.begin(), Array.end());
+   reset_path(Self);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -1180,21 +1161,16 @@ and is supplemental to any rotation due to text on a path and to 'glyph-orientat
 
 static ERR TEXT_GET_Rotate(extVectorText *Self, std::span<double> &Array)
 {
-   Array = std::span<double>(Self->txRotate, Self->txTotalRotate);
+   Array = std::span<double>(Self->txRotate.data(), Self->txRotate.size());
    return ERR::Okay;
 }
 
 static ERR TEXT_SET_Rotate(extVectorText *Self, std::span<const double> &Array)
 {
-   if (Self->txRotate) { FreeResource(Self->txRotate); Self->txRotate = nullptr; Self->txTotalRotate = 0; }
-
-   if (!AllocMemory(sizeof(double) * Array.size(), MEM::DATA, (APTR *)&Self->txRotate)) {
-      copymem(Array.data(), Self->txRotate, Array.size() * sizeof(double));
-      Self->txTotalRotate = Array.size();
-      reset_path(Self);
-      return ERR::Okay;
-   }
-   else return ERR::AllocMemory;
+   if ((not Array.data()) or Array.empty()) Self->txRotate.clear();
+   else Self->txRotate.assign(Array.begin(), Array.end());
+   reset_path(Self);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************

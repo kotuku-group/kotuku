@@ -1123,16 +1123,9 @@ static ERR SCINTILLA_SaveToObject(extScintilla *Self, struct acSaveToObject *Arg
 
    log.branch("To: %d, Size: %d", Args->Dest->UID, len);
 
-   ERR error;
-   APTR buffer;
-   if (!AllocMemory(len+1, MEM::STRING|MEM::NO_CLEAR, &buffer)) {
-      SCICALL(SCI_GETTEXT, len+1, (const char *)buffer);
-      error = acWrite(Args->Dest, buffer, len, nullptr);
-      FreeResource(buffer);
-   }
-   else error = ERR::AllocMemory;
-
-   return error;
+   std::vector<char> buffer(len+1);
+   SCICALL(SCI_GETTEXT, buffer.size(), (const char *)buffer.data());
+   return acWrite(Args->Dest, buffer.data(), len, nullptr);
 }
 
 /*********************************************************************************************************************
@@ -2081,20 +2074,16 @@ static ERR load_file(extScintilla *Self, std::string_view Path)
       else if (!file->getSize(size)) {
          if (size > 0) {
             if (size < 1024 * 1024 * 10) {
-               if (!AllocMemory(size+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&str)) {
-                  if (!file->read(str, size, &len)) {
-                     str[len] = 0;
-                     SCICALL(SCI_SETTEXT, str);
-                     SCICALL(SCI_EMPTYUNDOBUFFER);
-                     error = ERR::Okay;
+               std::vector<char> str(size);
+               if (!file->read(str.data(), size, &len)) {
+                  str[len] = 0;
+                  SCICALL(SCI_SETTEXT, str);
+                  SCICALL(SCI_EMPTYUNDOBUFFER);
+                  error = ERR::Okay;
 
-                     calc_longest_line(Self);
-                  }
-                  else error = ERR::Read;
-
-                  FreeResource(str);
+                  calc_longest_line(Self);
                }
-               else error = ERR::AllocMemory;
+               else error = ERR::Read;
             }
             else error = ERR::BufferOverflow;
          }
