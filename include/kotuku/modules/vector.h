@@ -4232,10 +4232,10 @@ class objVectorPath : public objVector {
       return get_field(this, Value);
    }
 
-   inline ERR getSequence(std::string_view &Value) noexcept {
+   inline ERR getSequence(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[16];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
       auto error = get_field(this, Value);
       RestoreObjectContext();
       return error;
@@ -4271,7 +4271,7 @@ class objVectorPath : public objVector {
 
    inline ERR setSequence(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(this, field, 0x00804308, &Value);
+      return field->WriteValue(this, field, 0x00804328, &Value);
    }
 
    inline ERR setX(const Unit Value) noexcept {

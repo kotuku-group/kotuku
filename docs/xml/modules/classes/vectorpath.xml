@@ -189,6 +189,7 @@ Z: Close Path
 <p>The use of lower case characters will indicate that the provided coordinates are relative (based on the coordinate of the previous command).</p>
 <p>To terminate a path without joining it to the first coordinate, omit the <code>Z</code> from the end of the sequence.</p>
       </description>
+      <tags>caller-owns-result</tags>
     </field>
 
     <field>
