@@ -35,6 +35,7 @@ For drag and drop operations, data can be requested from a source as follows:
 #include <kotuku/strings.hpp>
 #include <inttypes.h>
 #include <string_view>
+#include <mutex>
 
 #include "lib.h"
 #include "lauxlib.h"
@@ -285,13 +286,17 @@ static void key_event(evKey *, int, struct finput *);
    if ((function_type IS LUA_TFUNCTION) or (function_type IS LUA_TSTRING));
    else luaL_argerror(Lua, 4, "Function reference required.");
 
-   ERR error;
-   if (not modDisplay) {
-      kt::SwitchContext context(modTiri);
-      if ((error = objModule::load("display", &modDisplay, &DisplayBase)) != ERR::Okay) {
-         luaL_error(Lua, ERR::LoadModule);
+   ERR error = ERR::Okay;
+   {
+      static std::mutex display_load_lock;
+      const std::lock_guard<std::mutex> lock(display_load_lock);
+
+      if (not modDisplay) {
+         kt::SwitchContext context(modTiri);
+         error = objModule::load("display", &modDisplay, &DisplayBase);
       }
    }
+   if (error != ERR::Okay) luaL_error(Lua, ERR::LoadModule);
 
    log.msg("Surface: %d, Mask: $%.8x, Device: %d", object_id, int(mask), device_id);
 
@@ -445,7 +450,17 @@ static void focus_event(evFocus *Event, int Size, lua_State *Lua)
       return;
    }
 
-   log.traceBranch("Incoming focus event targeting #%d, focus lost from #%d.", Event->FocusList[0], Event->FocusList[Event->TotalWithFocus]);
+   if ((Event->TotalWithFocus > 0) and (Event->TotalLostFocus > 0)) {
+      log.traceBranch("Incoming focus event targeting #%d, focus lost from #%d.", Event->FocusList[0],
+         Event->FocusList[Event->TotalWithFocus]);
+   }
+   else if (Event->TotalWithFocus > 0) {
+      log.traceBranch("Incoming focus event targeting #%d.", Event->FocusList[0]);
+   }
+   else if (Event->TotalLostFocus > 0) {
+      log.traceBranch("Incoming focus event lost from #%d.", Event->FocusList[Event->TotalWithFocus]);
+   }
+   else log.traceBranch("Incoming focus event with no focus changes.");
 
    for (auto input=tiri->InputList; input; input=input->Next) {
       if (input->Mode != FIM_KEYBOARD) continue;

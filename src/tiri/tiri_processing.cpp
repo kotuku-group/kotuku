@@ -245,8 +245,21 @@ static int processing_flush(lua_State *Lua)
 {
    Lua->script->clearFlag(NF::SIGNALLED);
    if (auto fp = (fprocessing *)get_meta(Lua, lua_upvalueindex(1), "Tiri.processing")) {
-      for (auto &entry : *fp->Signals) {
-         entry.Object->clearFlag(NF::SIGNALLED);
+      if ((fp->SignalRefs) and (not fp->SignalRefs->empty())) {
+         for (auto ref : *fp->SignalRefs) {
+            lua_rawgeti(Lua, LUA_REGISTRYINDEX, ref);
+            if (lua_type(Lua, -1) IS LUA_TOBJECT) {
+               auto object = lua_toobject(Lua, -1);
+               if (auto obj = access_object(object)) {
+                  obj->clearFlag(NF::SIGNALLED);
+                  release_object(object);
+               }
+            }
+            lua_pop(Lua, 1);
+         }
+      }
+      else if ((fp->Signals) and (not fp->Signals->empty())) {
+         Lua->script->clearFlag(NF::SIGNALLED);
       }
    }
    return 0;
