@@ -440,7 +440,7 @@ static ERR remove_file(extCompression *Self, std::list<ZipFile>::iterator &File)
       if (acSeekStart(Self->FileIO, read_cursor) != ERR::Okay) return log.warning(ERR::Seek);
    }
 
-   Self->FileIO->set(strhash("size"), write_cursor);
+   Self->FileIO->setSize(write_cursor);
 
    // Adjust the offset of files that are ahead of this one
 
@@ -763,7 +763,7 @@ static void write_eof(extCompression *Self)
          wrb<uint32_t>(listoffset, tail + TAIL_FILELISTOFFSET);
          acWriteResult(Self->FileIO, tail, TAIL_LENGTH);
       }
-      else Self->FileIO->set(strhash("size"), 0);
+      else Self->FileIO->setSize(0);
 
       Self->CompressionCount = 0;
    }

@@ -1973,11 +1973,11 @@ static const FieldArray clFields[] = {
    { "MinOutputSize",    FDF_INT|FDF_R },
    { "WindowBits",       FDF_INT|FDF_RW, nullptr, SET_WindowBits },
    // Virtual fields
-   { "ArchiveName",      FDF_CPPSTRING|FDF_W,    nullptr, SET_ArchiveName },
-   { "Feedback",         FDF_FUNCTION|FDF_RW,    GET_Feedback, SET_Feedback },
-   { "Header",           FDF_POINTER|FDF_R,      GET_Header },
-   { "Size",             FDF_INT64|FDF_R,        GET_Size },
-   { "UncompressedSize", FDF_INT64|FDF_R,        GET_UncompressedSize },
+   { "ArchiveName",      FDF_CPPSTRING|FDF_W, nullptr, SET_ArchiveName },
+   { "Feedback",         FDF_FUNCTION|FDF_RW, GET_Feedback, SET_Feedback },
+   { "Header",           FDF_POINTER|FDF_R,   GET_Header },
+   { "Size",             FDF_INT64|FDF_R,     GET_Size },
+   { "UncompressedSize", FDF_INT64|FDF_R,     GET_UncompressedSize },
    END_FIELD
 };
 

@@ -1446,7 +1446,7 @@ struct FileFeedback {
 struct Field {
    MAXINT   Arg;                                                              // An option to complement the field type.  Can be a pointer or an integer value
    ERR (*GetValue)(APTR, APTR);                                               // A virtual function that will retrieve the value for this field
-   APTR     SetValue;                                                         // A virtual function that will set the value for this field
+   ERR (*SetValue)(APTR, APTR);                                               // A virtual function that will set the value for this field
    ERR (*WriteValue)(OBJECTPTR, const struct Field *, int, const void *);     // An internal function for writing to this field
    CSTRING  Name;                                                             // The English name for the field, e.g. Width
    uint32_t FieldID;                                                          // 32-bit hash from fieldhash()
