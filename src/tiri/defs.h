@@ -19,6 +19,7 @@ constexpr int SIZE_READ = 1024;
 #include <span>
 #include <concepts>
 #include <format>
+#include <memory>
 
 #include "lj_obj.h"
 #include "lj_frame.h"
@@ -395,7 +396,7 @@ void release_object(GCobject *);
 void new_module(lua_State *, objModule *);
 ERR struct_to_table(lua_State *, std::vector<lua_ref> &, struct struct_record &, CPTR);
 void unref_struct_references(lua_State *, std::vector<lua_ref> &);
-ERR table_to_struct(lua_State *, std::string_view, APTR *);
+ERR table_to_struct(lua_State *, std::string_view, std::unique_ptr<uint8_t[]> &);
 void keyvalue_to_table(lua_State *, const KEYVALUE *);
 
 int fcmd_arg(lua_State *);
