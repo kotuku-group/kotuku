@@ -219,7 +219,7 @@ end
    assert(fl.buffer:getString() is expected, 'Buffered physical file content was not preserved.')
 
    err = fl.mtBufferContent()
-   assert(err is ERR_Okay, 'Repeated BufferContent() should be a no-op: ' .. mSys.GetErrorMsg(err))
+   assert(err is ERR_NothingDone, 'Repeated BufferContent() should be a no-op: ' .. mSys.GetErrorMsg(err))
    assert(fl.buffer:getString() is expected, 'Repeated BufferContent() should not clear the existing buffer.')
 
    err = fl.acSeek(SEEK_START, 0)
