@@ -247,6 +247,7 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
    deref_audio_sample(sample);
    sample.SampleType   = Args->SampleFormat;
    sample.SampleLength = SAMPLE(Args->DataSize >> shift);
+   sample.BufferedLength = BYTELEN(0);
    sample.OnStop       = Args->OnStop;
    if (sample.OnStop.defined()) sample.OnStop.pin();
 
@@ -387,6 +388,7 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
    sample.StreamLength = BYTELEN((Args->SampleLength > 0) ? Args->SampleLength : 0x7fffffff); // 'Infinite' stream length
    sample.Callback     = Args->Callback;
    sample.OnStop       = Args->OnStop;
+   sample.BufferedLength = BYTELEN(0);
    if (sample.Callback.defined()) sample.Callback.pin();
    if (sample.OnStop.defined()) sample.OnStop.pin();
    sample.Stream       = true;

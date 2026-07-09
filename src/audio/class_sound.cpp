@@ -280,7 +280,7 @@ static ERR sound_play_position(extSound *Self, int64_t *Value)
    if (Self->Length <= 0) return ERR::FieldNotSet;
 
 #ifdef USE_WIN32_PLAYBACK
-   if (Self->Active) {
+   if ((Self->Active) and (sndCheckActivity((PlatformData *)Self->PlatformData) > 0)) {
       int64_t position;
       if (sndGetPosition((PlatformData *)Self->PlatformData, &position) >= 0) {
          *Value = clamp_sound_position(Self, position);
@@ -298,8 +298,7 @@ static ERR sound_play_position(extSound *Self, int64_t *Value)
                   ((int64_t(channel->PositionLow) << shift) >> 16);
 
                if (sample.Stream) {
-                  const int64_t buffer_size = int64_t(sample.SampleLength) << shift;
-                  position = int64_t(sample.PlayPos) - buffer_size + position;
+                  position = int64_t(sample.PlayPos) - int64_t(sample.BufferedLength) + position;
                }
 
                *Value = clamp_sound_position(Self, position);

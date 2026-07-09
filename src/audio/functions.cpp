@@ -687,6 +687,7 @@ static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
       if (sample.Stream) {
          // Read the next set of stream data into our sample buffer
          BYTELEN bytes_read = fill_stream_buffer(Channel.SampleHandle, sample, -1);
+         sample.BufferedLength = bytes_read;
          auto buffer_len = sample.SampleLength<<sample_shift(sample.SampleType);
          if (bytes_read < buffer_len) {
             clearmem(sample.Data.data() + bytes_read, buffer_len - bytes_read);
@@ -696,6 +697,7 @@ static bool handle_sample_end(extAudio *Self, AudioChannel &Channel)
             // Loop back to the beginning if the client has defined a loop.  Otherwise finish.
             if (sample.Loop2Type != LTYPE::NIL) {
                sample.PlayPos = BYTELEN(0);
+               sample.BufferedLength = BYTELEN(0);
             }
             else Self->finish(Channel, true);
          }
