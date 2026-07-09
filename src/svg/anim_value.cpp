@@ -109,7 +109,7 @@ void anim_value::set_value(objVector &Vector)
                }
                break;
 
-            //case SVF_rotate:         text.set(strhash("rotate"), get_string()); return;
+            case SVF_rotate:         text.setRotate(read_array(get_string())); return;
             case SVF_string:         text.setString(get_string()); return;
             //case SVF_kerning:        text.set(strhash("kerning"), get_string()); return; // Spacing between letters, default=1.0
             //case SVF_letter_spacing: text.set(strhash("letterSpacing"), get_string()); return;
