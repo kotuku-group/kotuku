@@ -123,7 +123,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       local catalogue = config.decode(io.readAll('fonts:fonts.cfg'))
       local options = { }
       try
-         config.decode(io.readAll('fonts:options.cfg'))
+         options = config.decode(io.readAll('fonts:options.cfg'))
       end
       lFonts = { }
 
@@ -175,7 +175,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
 
    function showStyles(Face)
       styles = array<table> { }
-      if lFonts[Face].alias?? then Face = lFonts[Face].alias end
+      if lFonts[Face].alias then Face = lFonts[Face].alias end
       for v in values(lFonts[Face].styles ?? { 'Regular' }) do
          styles:push({ id=v, name=v })
       end
@@ -392,7 +392,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       if font.hidden?? then continue end
 
       new_font = { id=font.name, name=font.name }
-      if font.alias?? then font = lFonts[font.alias] end
+      if font.alias then font = lFonts[font.alias] end
       new_font.icon = font.scalable ? 'items/font' :> 'layout/text_sans'
       table.insert(faces, new_font)
    end
