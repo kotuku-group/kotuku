@@ -120,7 +120,7 @@ int lj_object_pairs(lua_State *L)
       L->top--;        // Pop the closure from top (now at FFH return position)
       return 3;
    }
-   else luaL_error(L, ERR::FieldSearch, "Object class defines no fields.");
+   else luaL_error(L, ERR::FieldNotFound, "Object class defines no fields.");
    return 0;
 }
 
@@ -163,7 +163,7 @@ int lj_object_ipairs(lua_State *L)
       L->top--;        // Pop the closure from top (now at FFH return position)
       return 3;
    }
-   else luaL_error(L, ERR::FieldSearch, "Object class defines no fields.");
+   else luaL_error(L, ERR::FieldNotFound, "Object class defines no fields.");
    return 0;
 }
 

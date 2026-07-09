@@ -234,7 +234,7 @@ static ERR ASSET_Init(objFile *Self)
    kt::Log log(__FUNCTION__);
    prvFileAsset *prv;
 
-   if (!Self->Path) return ERR::FieldNotSet;
+   if (Self->Path.empty()) return ERR::FieldNotSet;
 
    log.trace("Path: %s", Self->Path);
 
@@ -245,13 +245,12 @@ static ERR ASSET_Init(objFile *Self)
    // Allocate private structure
 
    if (!AllocMemory(sizeof(prvFileAsset), Self->memflags(), &Self->DerivedPtr)) {
-      int len;
-      for (len=0; Self->Path[len]; len++);
+      int len = Self->Path.size();
 
-      if (Self->Path[len-1] IS ':') {
+      if (Self->Path.endsWith(':')) {
          return ERR::Okay;
       }
-      else if (Self->Path[len-1] IS '/') {
+      else if (Self->Path.endsWith('/')) {
          // Check that the folder exists.
 
          const auto dirpath = asset_subpath(Self->Path);

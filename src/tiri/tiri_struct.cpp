@@ -858,7 +858,7 @@ static int struct_get(lua_State *Lua)
 
             return 1;
          }
-         else luaL_error(Lua, ERR::FieldSearch, "Field '%s' does not exist in structure.", fieldname);
+         else luaL_error(Lua, ERR::FieldNotFound, "Field '%s' does not exist in structure.", fieldname);
       }
    }
 

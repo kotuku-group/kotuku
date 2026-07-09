@@ -567,7 +567,7 @@ static int object_set(lua_State *Lua)
             error = target->set(field, sv);
          }
       }
-      else error = ERR::FieldSearch;
+      else error = ERR::FieldNotFound;
 
       release_object(def);
       lua_pushinteger(Lua, int(error));
