@@ -426,7 +426,7 @@
       <name>Buffer</name>
       <comment>Points to the internal data buffer if the file content is held in memory.</comment>
       <access read="G">Get</access>
-      <type>INT8[]</type>
+      <type>kt::vector&lt;int8_t&gt;</type>
       <description>
 <p>If a file has been created with an internal buffer (by setting the <code>BUFFER</code> flag on creation), this field will point to the address of that buffer.  The size of the buffer will match the <fl>Size</fl> field.</p>
       </description>

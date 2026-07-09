@@ -134,12 +134,12 @@ class objFile : public Object {
    using create = kt::Create<objFile>;
    objFile(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
-   int64_t  Position;   // The current read/write byte position in a file.
-   std::string Path;    // Specifies the location of a file or folder.
-   FL       Flags;      // File flags and options.
-   PERMIT   Permissions; // Manages the permissions of a file.
-   int8_t * Buffer;     // Points to the internal data buffer if the file content is held in memory.
-   int64_t  Size;       // The byte size of a file.
+   int64_t Position;             // The current read/write byte position in a file.
+   std::string Path;             // Specifies the location of a file or folder.
+   FL      Flags;                // File flags and options.
+   PERMIT  Permissions;          // Manages the permissions of a file.
+   kt::vector<int8_t> Buffer;    // Points to the internal data buffer if the file content is held in memory.
+   int64_t Size;                 // The byte size of a file.
    public:
    inline std::string readLine() {
       std::string str;
