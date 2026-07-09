@@ -1,0 +1,126 @@
+-- Flute tests for the Config standard library.
+
+   import 'config'
+
+function expect_encode_error(Value:any, Description:str)
+   try
+      config.encode(Value)
+   success
+      error(Description)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function DecodeFontsStyleConfig()
+   local source = [[
+# Font definitions
+[Clean]
+Bold = fonts:fixed/clean.fon
+Points = 8
+Styles = Bold,Bold Italic,Italic,Regular
+
+[Courier Prime]
+Name = Courier Prime
+Scalable = Yes
+]]
+
+   local decoded = config.decode(source)
+   assert(type(decoded) is 'table', 'decode() should return a table')
+   assert(decoded.Clean.Bold is 'fonts:fixed/clean.fon', 'Clean.Bold was not decoded')
+   assert(decoded.Clean.Points is '8', 'Numeric-looking values should remain strings')
+   assert(decoded.Clean.Styles is 'Bold,Bold Italic,Italic,Regular', 'Comma lists should remain strings')
+   assert(decoded['Courier Prime'].Scalable is 'Yes', 'Boolean-looking values should remain strings')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function DecodeCompatibleSyntax()
+   local source = 'Ignored outside groups\r\n' ..
+      '  [Mixed Case]ignored suffix\r\n' ..
+      '  Name = First  \r\n' ..
+      '  # Comment\r\n' ..
+      'Malformed line\r\n' ..
+      'Empty =   \r\n' ..
+      '[Mixed Case]\r\n' ..
+      'Name = Final\r\n' ..
+      'Quoted = "Visible"\r\n' ..
+      '= Missing key\r\n'
+
+   local decoded = config.decode(source)
+   assert(decoded['Mixed Case'].Name is 'Final', 'The final repeated key should take precedence')
+   assert(decoded['Mixed Case'].Empty is '', 'Empty values should decode as empty strings')
+   assert(decoded['Mixed Case'].Quoted is '"Visible"', 'Quotes should be preserved as ordinary text')
+   assert(config.decode('[Group]\nValue = trailing  \n').Group.Value is 'trailing  ',
+      'Trailing value whitespace should be preserved')
+   assert(decoded['mixed case'] is nil, 'Group names should remain case-sensitive')
+   assert(decoded['Mixed Case'].name is nil, 'Key names should remain case-sensitive')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function DecodeMalformedGroupStopsCurrentGroup()
+   local decoded = config.decode('[Valid]\nFirst = kept\n[Invalid\nSecond = ignored\n[Next]\nThird = kept\n')
+
+   assert(decoded.Valid.First is 'kept', 'Valid data before a malformed group should be retained')
+   assert(decoded.Valid.Second is nil, 'Keys after a malformed group should not leak into the previous group')
+   assert(decoded.Next.Third is 'kept', 'Parsing should resume at the next valid group')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function EncodeDeterministicConfig()
+   local encoded = config.encode({
+      Zulu = { Enabled=true, Count=3 },
+      Alpha = { Name='First', Empty='' }
+   })
+   local expected = '[Alpha]\nEmpty = \nName = First\n\n[Zulu]\nCount = 3\nEnabled = true\n'
+
+   assert(encoded is expected, 'encode() did not produce sorted canonical Config text:\n' .. encoded)
+   assert(config.encode({ }) is '', 'An empty table should encode as an empty string')
+   assert(config.encode({ Empty={ } }) is '[Empty]\n', 'An empty group should encode as a section heading')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function EncodeRoundTripsNames()
+   local encoded = config.encode({ ['Mixed Case']={ ['Key With Spaces']='value' } })
+   local decoded = config.decode(encoded)
+
+   assert(decoded['Mixed Case']['Key With Spaces'] is 'value',
+      'Valid group and key names should survive an encode/decode round-trip')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function EncodeValidatesStructure()
+   expect_encode_error('not a table', 'encode() should reject a non-table root')
+   expect_encode_error({ Broken='value' }, 'encode() should require group tables')
+   expect_encode_error({ ['']='value' }, 'encode() should reject empty group names')
+   expect_encode_error({ ['Bad[Group']={ Key='value' } }, 'encode() should reject opening brackets in group names')
+   expect_encode_error({ ['Bad]Group']={ Key='value' } }, 'encode() should reject closing brackets in group names')
+   expect_encode_error({ Group={ ['']='value' } }, 'encode() should reject empty key names')
+   expect_encode_error({ Group={ ['Bad=Key']='value' } }, 'encode() should reject equals signs in key names')
+   expect_encode_error({ Group={ ['#Comment']='value' } }, 'encode() should reject comment-like key names')
+   expect_encode_error({ Group={ ['[Header]']='value' } }, 'encode() should reject header-like key names')
+   expect_encode_error({ Group={ [' Leading']='value' } }, 'encode() should reject leading key whitespace')
+   expect_encode_error({ Group={ ['Trailing ']='value' } }, 'encode() should reject trailing key whitespace')
+   expect_encode_error({ Group={ Key='line one\nline two' } }, 'encode() should reject line breaks in values')
+   expect_encode_error({ Group={ Key={ } } }, 'encode() should reject nested values')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function InteroperatesWithConfigClass()
+   local encoded = config.encode({ Font={ Name='Clean', Points=8, Scalable=true } })
+   local cfg = obj.new('config')
+   check(cfg.acDataFeed(nil, DATA_TEXT, encoded, 0))
+
+   local name = [_*]cfg.mtReadValue('Font', 'Name')
+   local points = [_*]cfg.mtReadValue('Font', 'Points')
+   local scalable = [_*]cfg.mtReadValue('Font', 'Scalable')
+
+   assert(name is 'Clean', 'The Config class could not read an encoded string value')
+   assert(points is '8', 'The Config class could not read an encoded numeric value')
+   assert(scalable is 'true', 'The Config class could not read an encoded boolean value')
+end

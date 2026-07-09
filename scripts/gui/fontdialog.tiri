@@ -6,6 +6,7 @@ Documentation is available in the Kotuku Wiki.
    import 'gui/listview'
    import 'gui/window'
    import 'gui/button'
+   import 'config'
    include 'display', 'font'
 
    namespace 'gui'
@@ -36,7 +37,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
 Ĉras metus mi, ultricies nec blandit condimentum, congue dapibus libero. Nulla eget ornare ante, ac efficitur turpis. Proin venenatis eget sapien vitae volutpat. In interdum id ante in aliquet. Quisque convallis lacus in gravida fringilla. Nam porta pellentesque turpis, ut efficitur neque suscipit vel. Morbi vitae consequat nisl. Donec turpis lorem, dapibus eget scelerisque quis, porttitor bibendum leo.
 ]]
 
-   local lWindow, lFonts, vwSize, vwStyle, vwFace, lFontsSorted
+   local lWindow, lFonts, vwSize, vwStyle, vwFace
    lShortText = 'The Quick Brown Fox Jumped Over The Lazy Dog'
    lOptions   = Options
    lSizes     = array<int> { 6, 8, 10, 12, 14, 18, 24, 30, 36, 42, 50, 70, 90, 100, 120 }
@@ -116,32 +117,49 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       self.viewport.acDraw()
    end
 
-   -- Retrieve the system list of known installed fonts and convert it to a Lua table.
+   -- Load the system font catalogue and convert its Config strings to values used by the dialog.
 
    function getFonts()
-      err, list = mFont.GetList()
-      assert(list, 'Failed to retrieve list of fonts, error: ' .. mSys.GetErrorMsg(err))
+      local catalogue = config.decode(io.readAll('fonts:fonts.cfg'))
+      local options = { }
+      try
+         config.decode(io.readAll('fonts:options.cfg'))
+      end
+      lFonts = { }
 
-      lFonts       = { }
-      lFontsSorted = array<table>
-      font   = list
-      index  = 0
-      while font do
-         lFonts[font.name] = { }
-         lFonts[font.name].order  = index
-         lFonts[font.name].name   = font.name
-         lFonts[font.name].alias  = font.alias
-         if font.styles then lFonts[font.name].styles = string.split(font.styles, ',') end
-         lFonts[font.name].sizes  = font.points
-         lFonts[font.name].hidden = font.hidden
-         if font.scalable?? then
-            lFonts[font.name].scalable = true
+      -- Match Config.MergeFile(): add missing groups and overwrite matching keys with the options file values.
+
+      for group_name, option_group in pairs(options) do
+         local catalogue_group = catalogue[group_name]
+         if catalogue_group is nil then
+            catalogue_group = { }
+            catalogue[group_name] = catalogue_group
          end
-         if not font.hidden?? then
-            lFontsSorted:push(lFonts[font.name])
+
+         for key, value in pairs(option_group) do
+            catalogue_group[key] = value
          end
-         index++
-         font = font.next
+      end
+
+      for group_name, entry in pairs(catalogue) do
+         local name = entry.Name ?? group_name
+         local font = { name=name }
+
+         if entry.Alias then font.alias = entry.Alias end
+         if entry.Styles then font.styles = entry.Styles:split(',') end
+
+         if entry.Points then
+            local sizes = array<int>
+            for point in values(entry.Points:split(',')) do
+               local size = tonumber(point:trim())
+               if size then sizes:push(size) end
+            end
+            if #sizes > 0 then font.sizes = sizes end
+         end
+
+         font.hidden = (entry.Hidden ?? ''):lower() is 'yes'
+         font.scalable = (entry.Scalable ?? ''):lower() is 'yes'
+         lFonts[name] = font
       end
    end
 
@@ -370,7 +388,9 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
    })
 
    faces = { }
-   for font in values(lFontsSorted) do
+   for _, font in table.sortByKeys(lFonts) do
+      if font.hidden?? then continue end
+
       new_font = { id=font.name, name=font.name }
       if font.alias?? then font = lFonts[font.alias] end
       new_font.icon = font.scalable ? 'items/font' :> 'layout/text_sans'
