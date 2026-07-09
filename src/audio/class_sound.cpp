@@ -291,7 +291,7 @@ static ERR sound_play_position(extSound *Self, int64_t *Value)
       kt::ScopedObjectLock<extAudio> audio(Self->AudioID);
       if (audio.granted()) {
          if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
-            if ((channel->SampleHandle IS Self->Handle) and (!channel->isStopped())) {
+            if ((channel->SampleHandle IS Self->Handle) and (channel->State != CHS::STOPPED)) {
                auto &sample = audio->Samples[Self->Handle];
                const int shift = sample_shift(sample.SampleType);
                int64_t position = (int64_t(channel->Position) << shift) +

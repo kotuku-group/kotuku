@@ -119,7 +119,9 @@ int sndGetPosition(PlatformData *Sound, int64_t *Position)
 
    int64_t unread;
    if (Sound->Fill IS FILL_SECOND) {
-      unread = int64_t(Sound->BufferLength - play_pos) + int64_t(Sound->BufferLength>>1);
+      const auto half = Sound->BufferLength>>1;
+      if (play_pos < half) unread = int64_t(half - play_pos);
+      else unread = int64_t(Sound->BufferLength - play_pos) + int64_t(half);
    }
    else unread = int64_t(Sound->BufferLength - play_pos);
 
