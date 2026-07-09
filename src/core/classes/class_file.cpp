@@ -310,8 +310,9 @@ once buffering has been enabled.
 
 -ERRORS-
 Okay: The file content was successfully buffered.
-AllocMemory:
-Read: Failed to read the file content.
+Read:
+NothingDone: The file is already buffered.
+InvalidState: The targeted file is not open for read operations.
 
 -TAGS-
 blocking, mutates-object, creates-resource, updates-seek-index
@@ -322,6 +323,11 @@ static ERR FILE_BufferContent(extFile *Self)
 {
    kt::Log log;
    int len;
+
+   if (Self->Handle IS -1) {
+      if ((Self->Flags & FL::BUFFER) != FL::NIL) return ERR::NothingDone;
+      else return log.warning(ERR::InvalidState);
+   }
 
    Self->seekStart(0);
    Self->Buffer.clear();
@@ -425,7 +431,6 @@ Read: Data could not be read from the source path.
 Write: Data could not be written to the destination path.
 ResolvePath:
 Loop: Performing the copy would cause infinite recursion.
-AllocMemory:
 
 -TAGS-
 blocking, updates-seek-index, callback-inlines
@@ -611,7 +616,6 @@ FileNotFound:
 ResolvePath:
 Search: The file could not be found.
 NoPermission: Permission was denied when accessing or creating the file.
-AllocMemory
 InvalidPath
 ExpectedFile
 UseDerived
@@ -1536,6 +1540,8 @@ int(MFF) Flags: Filter events to those indicated in these flags.
 Okay
 Args
 NullArgs
+AllocMemory
+NoSupport
 
 -TAGS-
 non-blocking, mutates-object, callback-held
@@ -1572,8 +1578,7 @@ static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
       if (ignore_file) ignore_file(Self);
       else log.warning("Failed to find virtual volume ID $%.8x", id);
 
-      FreeResource(Self->prvWatch);
-      Self->prvWatch = nullptr;
+      Self->prvWatch.reset();
    }
 
    if ((not Args) or (not Args->Callback) or (Args->Flags IS MFF::NIL)) return ERR::Okay;
@@ -1598,11 +1603,14 @@ static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
       auto vd = get_fs(resolve);
 
       if (vd.WatchPath) {
-         #ifdef _WIN32
-         if (!AllocMemory(sizeof(rkWatchPath) + winGetWatchBufferSize(), MEM::DATA, (APTR *)&Self->prvWatch)) {
-         #else
-         if (!AllocMemory(sizeof(rkWatchPath), MEM::DATA, (APTR *)&Self->prvWatch)) {
-         #endif
+         auto watch = std::unique_ptr<rkWatchPath>(new (std::nothrow) rkWatchPath);
+         if (watch) {
+            #ifdef _WIN32
+               watch->Buffer.reset(new (std::nothrow) uint8_t[winGetWatchBufferSize()]);
+               if (!watch->Buffer) return ERR::AllocMemory;
+            #endif
+
+            Self->prvWatch = std::move(watch);
             Self->prvWatch->VirtualID = vd.VirtualID;
             Self->prvWatch->Routine   = *Args->Callback;
             Self->prvWatch->Flags     = Args->Flags;
@@ -1614,8 +1622,7 @@ static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
                auto &func = Self->prvWatch->Routine;
                if ((func.isScript()) and (not func.stale())) ((objScript *)func.Context)->derefProcedure(func);
                func.unpin();
-               FreeResource(Self->prvWatch);
-               Self->prvWatch = nullptr;
+               Self->prvWatch.reset();
             }
          }
          else error = ERR::AllocMemory;

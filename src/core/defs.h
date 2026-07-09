@@ -17,6 +17,8 @@
 #include <thread>
 #include <algorithm>
 #include <optional>
+#include <memory>
+#include <new>
 #include <string_view>
 #include <ankerl/unordered_dense.h>
 #include <unordered_set>
@@ -171,13 +173,14 @@ struct THREADID : strong_typedef<THREADID, int> { // Internal thread ID, unrelat
 };
 
 struct rkWatchPath {
-   HOSTHANDLE Handle;    // The handle for the file being monitored, can be a special reference for virtual paths
+   HOSTHANDLE Handle = { }; // The handle for the file being monitored, can be a special reference for virtual paths
    FUNCTION   Routine;   // Routine to call on event trigger
-   MFF        Flags;     // Event mask (original flags supplied to Watch)
-   uint32_t   VirtualID; // If monitored path is virtual, this refers to an ID in the glVirtual table
+   MFF        Flags = MFF(); // Event mask (original flags supplied to Watch)
+   uint32_t   VirtualID = 0; // If monitored path is virtual, this refers to an ID in the glVirtual table
 
 #ifdef _WIN32
-   int WinFlags;
+   int WinFlags = 0;
+   std::unique_ptr<uint8_t[]> Buffer;
 #endif
 };
 
@@ -489,7 +492,7 @@ class extFile : public objFile {
       APTR  Stream;
    #endif
 
-   struct rkWatchPath *prvWatch;
+   std::unique_ptr<rkWatchPath> prvWatch;
    struct DirInfo *prvList;
    bool   isFolder;
    int    Handle;         // Native system file handle
