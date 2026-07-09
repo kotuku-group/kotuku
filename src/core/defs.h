@@ -1397,7 +1397,7 @@ typename Container::const_iterator binary_search(const Container& container, con
 
 //********************************************************************************************************************
 
-static void clear_callback(FUNCTION &Function)
+[[maybe_unused]] static void clear_callback(FUNCTION &Function)
 {
    if (Function.defined()) {
       if (Function.isScript() and (not Function.stale())) ((objScript *)Function.Context)->derefProcedure(Function);
