@@ -323,8 +323,6 @@ static ERR FILE_BufferContent(extFile *Self)
    kt::Log log;
    int len;
 
-   if ((Self->Flags & FL::BUFFER) != FL::NIL) return ERR::Okay;
-
    Self->seekStart(0);
    Self->Buffer.clear();
 
