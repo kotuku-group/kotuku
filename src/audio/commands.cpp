@@ -403,7 +403,7 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
 
    auto bitpos = SAMPLE(Position >> sample_shift(sample.SampleType));
 
-   if (!sample.Data) { // The sample reference must be valid and not stale.
+   if (sample.Data.empty()) { // The sample reference must be valid and not stale.
       log.warning("On channel %d, referenced sample %d is unconfigured.", Handle, channel->SampleHandle);
       return ERR::Failed;
    }
@@ -634,7 +634,7 @@ ERR MixSample(objAudio *Audio, int Handle, int SampleIndex)
    if ((idx <= 0) or (idx >= (int)((extAudio *)Audio)->Samples.size())) {
       return log.warning(ERR::OutOfRange);
    }
-   else if (!((extAudio *)Audio)->Samples[idx].Data) {
+   else if (((extAudio *)Audio)->Samples[idx].Data.empty()) {
       log.warning("Sample #%d refers to a dead sample.", idx);
       return ERR::Failed;
    }

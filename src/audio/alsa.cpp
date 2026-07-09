@@ -9,7 +9,6 @@ static void free_alsa(extAudio *Self)
    if (Self->sndlog) { snd_output_close(Self->sndlog); Self->sndlog = nullptr; }
    if (Self->Handle) { snd_pcm_close(Self->Handle); Self->Handle = nullptr; }
    if (Self->MixHandle) { snd_mixer_close(Self->MixHandle); Self->MixHandle = nullptr; }
-   if (Self->AudioBuffer) { FreeResource(Self->AudioBuffer); Self->AudioBuffer = nullptr; }
 }
 
 //********************************************************************************************************************
@@ -329,64 +328,56 @@ static ERR init_audio(extAudio *Self)
    // Note that ALSA reports the audio buffer size in samples, not bytes
 
    snd_pcm_hw_params_get_buffer_size(hwparams, &buffersize);
-   Self->AudioBufferSize = BYTELEN(buffersize);
+   auto buf_size = BYTELEN(buffersize);
 
-   if (Self->Stereo) Self->AudioBufferSize = BYTELEN(Self->AudioBufferSize<<1);
-   Self->AudioBufferSize = BYTELEN(Self->AudioBufferSize * (Self->BitDepth/8));
+   if (Self->Stereo) buf_size = BYTELEN(buf_size<<1);
+   buf_size = BYTELEN(buf_size * (Self->BitDepth/8));
 
-   log.msg("Total Periods: %d, Period Size: %d, Buffer Size: %d (bytes)", Self->Periods, Self->PeriodSize, Self->AudioBufferSize);
+   log.msg("Total Periods: %d, Period Size: %d, Buffer Size: %d (bytes)", Self->Periods, Self->PeriodSize, buf_size);
 
-   // Allocate a buffer that we will use for audio output
+   Self->AudioBuffer.resize(buf_size);
+   if ((Self->Flags & ADF::SYSTEM_WIDE) != ADF::NIL) {
+      log.msg("Applying user configured volumes.");
 
-   if (Self->AudioBuffer) { FreeResource(Self->AudioBuffer); Self->AudioBuffer = nullptr; }
+      auto oldctl = Self->Volumes;
+      Self->Volumes = volctl;
 
-   if (!AllocMemory(Self->AudioBufferSize, MEM::DATA, (APTR *)&Self->AudioBuffer)) {
-      if ((Self->Flags & ADF::SYSTEM_WIDE) != ADF::NIL) {
-         log.msg("Applying user configured volumes.");
-
-         auto oldctl = Self->Volumes;
-         Self->Volumes = volctl;
-
-         for (int i=0; i < (int)volctl.size(); i++) {
-            int j;
-            for (j=0; j < (int)oldctl.size(); j++) {
-               if (volctl[i].Name == oldctl[j].Name) {
-                  setvol.Index   = i;
-                  setvol.Name    = std::string_view{};
-                  setvol.Flags   = SVF::NIL;
-                  setvol.Channel = -1;
-                  setvol.Volume  = oldctl[j].Channels[0];
-                  if ((oldctl[j].Flags & VCF::MUTE) != VCF::NIL) setvol.Flags |= SVF::MUTE;
-                  else setvol.Flags |= SVF::UNMUTE;
-                  Action(snd::SetVolume::id, Self, &setvol);
-                  break;
-               }
-            }
-
-            // If the user has no volume defined for a mixer, set our own.
-
-            if (j IS (int)oldctl.size()) {
+      for (int i=0; i < std::ssize(volctl); i++) {
+         int j;
+         for (j=0; j < std::ssize(oldctl); j++) {
+            if (volctl[i].Name == oldctl[j].Name) {
                setvol.Index   = i;
                setvol.Name    = std::string_view{};
                setvol.Flags   = SVF::NIL;
                setvol.Channel = -1;
-               setvol.Volume  = 0.8;
+               setvol.Volume  = oldctl[j].Channels[0];
+               if ((oldctl[j].Flags & VCF::MUTE) != VCF::NIL) setvol.Flags |= SVF::MUTE;
+               else setvol.Flags |= SVF::UNMUTE;
                Action(snd::SetVolume::id, Self, &setvol);
+               break;
             }
          }
-      }
-      else {
-         log.msg("Skipping preset volumes.");
-         Self->Volumes = volctl;
-      }
 
-      // Free existing volume measurements and apply the information that we read from alsa.
+         // If the user has no volume defined for a mixer, set our own.
 
-      Self->Handle = pcmhandle;
+         if (j IS std::ssize(oldctl)) {
+            setvol.Index   = i;
+            setvol.Name    = std::string_view{};
+            setvol.Flags   = SVF::NIL;
+            setvol.Channel = -1;
+            setvol.Volume  = 0.8;
+            Action(snd::SetVolume::id, Self, &setvol);
+         }
+      }
    }
    else {
-      return log.warning(ERR::AllocMemory);
+      log.msg("Skipping preset volumes.");
+      Self->Volumes = volctl;
    }
+
+   // Free existing volume measurements and apply the information that we read from alsa.
+
+   Self->Handle = pcmhandle;
 
    return ERR::Okay;
 }
