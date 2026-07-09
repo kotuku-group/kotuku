@@ -557,7 +557,9 @@ static int object_set(lua_State *Lua)
       OBJECTPTR target;
       ERR error;
       if (auto field = FindField(obj, fieldhash(fieldname), &target)) { // NB: Using fieldhash() because camel-case is a valid input
-         if (type IS LUA_TNUMBER) error = target->set(field, luaL_checknumber(Lua, 2));
+         if (not field->writeable()) error = ERR::NoFieldAccess;
+         else if ((field->Flags & FD_INIT) and target->initialised()) error = ERR::NoFieldAccess;
+         else if (type IS LUA_TNUMBER) error = target->set(field, luaL_checknumber(Lua, 2));
          else {
             size_t len;
             auto str = luaL_optlstring(Lua, 2, nullptr, &len);
@@ -603,6 +605,9 @@ static ERR set_object_field(lua_State *Lua, OBJECTPTR Object, uint32_t FieldHash
 {
    OBJECTPTR target;
    if (auto field = FindField(Object, FieldHash, &target)) {
+      if (not field->writeable()) return ERR::NoFieldAccess;
+      else if ((field->Flags & FD_INIT) and target->initialised()) return ERR::NoFieldAccess;
+
       if (field->Flags & FD_ARRAY) {
          return object_set_array(Lua, target, field, ValueIndex);
       }
@@ -617,7 +622,9 @@ static ERR set_object_field(lua_State *Lua, OBJECTPTR Object, uint32_t FieldHash
       }
       else if ((field->Flags & FD_STRING) and (field->Flags & FD_CPP)) { // std::string target
          auto type = lua_type(Lua, ValueIndex);
-         if (type IS LUA_TNIL) return target->set(field, std::string_view{});
+         if (type IS LUA_TNIL) {
+            return target->set(field, std::string_view{});
+         }
          else return object_set_string(Lua, target, field, ValueIndex);
       }
       else if (field->Flags & (FD_DOUBLE|FD_FLOAT)) {

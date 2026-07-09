@@ -316,7 +316,7 @@ READ_TABLE * get_read_table(objMetaClass *Class)
 
    std::span<Field> dict_span;
    if (!Class->getDictionary(dict_span)) {
-      for (auto &field : dict_span | std::views::filter([](const auto &f) { return f.Flags & FDF_R; })) {
+      for (auto &field : dict_span | std::views::filter([](const auto &f) { return f.readable(); })) {
          auto hash = field.FieldID;
          auto field_ptr = (APTR)&field;
 
@@ -441,7 +441,9 @@ extern int object_newindex(lua_State *Lua)
             ERR error;
             auto func = std::lower_bound(jt->begin(), jt->end(), obj_write(hash), write_hash);
             if ((func != jt->end()) and (func->Hash IS hash)) {
-               error = func->Call(Lua, obj, func->Field, 3);
+               // All fields in the table are writable, but init checks are still required.
+               if ((func->Field->Flags & FD_INIT) and obj->initialised()) error = ERR::NoFieldAccess;
+               else error = func->Call(Lua, obj, func->Field, 3);
             }
             else error = ERR::NoSupport;
             release_object(def);
@@ -473,6 +475,7 @@ extern int object_newindex(lua_State *Lua)
    auto hash_key = obj_read(keystr->hash);
    auto func = std::lower_bound(read_table->begin(), read_table->end(), hash_key, read_hash);
    if ((func != read_table->end()) and (func->Hash IS keystr->hash)) {
+      // NB: No readability check is required - if the field isn't in the table, it's not readable.
       auto result = func->Call(Lua, *func, def); // On error, result is 0 and CaughtError is defined.
       if ((not result) and (Lua->CaughtError > ERR::ExceptionThreshold)) {
          luaL_error(Lua, Lua->CaughtError, "Read failure: %s.%s: %s", def->classptr->ClassName.c_str(),

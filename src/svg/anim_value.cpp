@@ -90,9 +90,16 @@ void anim_value::set_value(objVector &Vector)
          switch (hash) {
             case SVF_x:  text.setX(Unit(get_dimension(Vector, strhash("x")))); return;
             case SVF_y:  text.setY(Unit(get_dimension(Vector, strhash("y")))); return;
-            //case SVF_dx: text.set(strhash("dx"), get_string()); return;
-            //case SVF_dy: text.set(strhash("dy"), get_string()); return;
-
+            case SVF_dx: {
+               kt::vector<double> array = read_array(get_string());
+               text.setDX(array);
+               return;
+            }
+            case SVF_dy: {
+               kt::vector<double> array = read_array(get_string());
+               text.setDY(array);
+               return;
+            }
             case SVF_text_anchor:
                switch(strhash(get_string())) {
                   case SVF_start:   text.setAlign(ALIGN::LEFT); return;

@@ -406,20 +406,6 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
    inline ERR setOwner(OBJECTPTR NewOwner) { return SetOwner(this, NewOwner); }
 
-   private:
-   // Pull the field definition for FieldID and retrieve the Target object if necessary.  Performs sanity checks, as
-   // reflected in the error code.
-   inline ERR resolve_write_field(FIELD FieldID, Object *&Target, const struct Field *&FieldPtr, bool Array) {
-      if (not (FieldPtr = FindField(this, FieldID, &Target))) return ERR::UnsupportedField;
-      if ((Array) and not (FieldPtr->Flags & FD_ARRAY)) return ERR::FieldTypeMismatch;
-
-      auto ctx = CurrentContext();
-      if ((not FieldPtr->writeable()) and (ctx != Target)) return ERR::NoFieldAccess;
-      if ((FieldPtr->Flags & FD_INIT) and (Target->initialised()) and (ctx != Target)) return ERR::NoFieldAccess;
-
-      return ERR::Okay;
-   }
-
    public:
 
    // set() support for array fields
