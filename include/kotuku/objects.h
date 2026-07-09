@@ -406,112 +406,74 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
    inline ERR setOwner(OBJECTPTR NewOwner) { return SetOwner(this, NewOwner); }
 
-   private:
-   // Pull the field definition for FieldID and retrieve the Target object if necessary.  Performs sanity checks, as
-   // reflected in the error code.
-   inline ERR resolve_write_field(FIELD FieldID, Object *&Target, const struct Field *&FieldPtr, bool Array) {
-      if (not (FieldPtr = FindField(this, FieldID, &Target))) return ERR::UnsupportedField;
-      if ((Array) and not (FieldPtr->Flags & FD_ARRAY)) return ERR::FieldTypeMismatch;
-
-      auto ctx = CurrentContext();
-      if ((not FieldPtr->writeable()) and (ctx != Target)) return ERR::NoFieldAccess;
-      if ((FieldPtr->Flags & FD_INIT) and (Target->initialised()) and (ctx != Target)) return ERR::NoFieldAccess;
-
-      return ERR::Okay;
-   }
-
    public:
 
    // set() support for array fields
 
-   template <class T> ERR set(FIELD FieldID, const std::span<const T> &Value, int Type = FIELD_TYPECHECK<T>()) {
-      Object *target;
-      const struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, true); error != ERR::Okay) return error;
-      return field->WriteValue(target, field, FD_ARRAY|Type, &Value);
+   template <class T> ERR set(const struct Field *Field, const std::span<const T> &Value, int Type = FIELD_TYPECHECK<T>()) {
+      return Field->WriteValue(this, Field, FD_ARRAY|Type, &Value);
    }
 
    // Mutable-span callers forward to the const-span overload (the value is only read).
 
-   template <class T> ERR set(FIELD FieldID, const std::span<T> &Value, int Type = FIELD_TYPECHECK<T>()) {
-      return set(FieldID, std::span<const T>(Value), Type);
+   template <class T> ERR set(const struct Field *Field, const std::span<T> &Value, int Type = FIELD_TYPECHECK<T>()) {
+      return set(Field, std::span<const T>(Value), Type);
    }
 
-   template <class T> ERR set(FIELD FieldID, const std::vector<T> &Value, int Type = FIELD_TYPECHECK<T>()) {
-      return set(FieldID, std::span<const T>(Value), Type);
+   template <class T> ERR set(const struct Field *Field, const std::vector<T> &Value, int Type = FIELD_TYPECHECK<T>()) {
+      return set(Field, std::span<const T>(Value), Type);
    }
 
-   template <class T> ERR set(FIELD FieldID, const kt::vector<T> &Value, int Type = FIELD_TYPECHECK<T>()) {
-      return set(FieldID, std::span<const T>(Value.data(), Value.size()), Type);
+   template <class T> ERR set(const struct Field *Field, const kt::vector<T> &Value, int Type = FIELD_TYPECHECK<T>()) {
+      return set(Field, std::span<const T>(Value.data(), Value.size()), Type);
    }
 
    // set() support for numeric types
 
    // Bool overload: promote to int to avoid reading 4 bytes from a 1-byte bool in setval_long
-   inline ERR set(FIELD FieldID, const bool Value) {
-      return set(FieldID, int(Value));
+   inline ERR set(const struct Field *Field, const bool Value) {
+      return set(Field, int(Value));
    }
 
-   template <class T> ERR set(FIELD FieldID, const T Value) requires std::integral<T> or std::floating_point<T> {
-      Object *target;
-      const struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
+   template <class T> ERR set(const struct Field *Field, const T Value) requires std::integral<T> or std::floating_point<T> {
       if constexpr (std::is_integral_v<T> and (sizeof(T) < sizeof(int))) {
          // Promote small integrals to int so that WriteValue does not read 4 bytes from a 1 or 2 byte value.
          const int promoted = int(Value);
-         return field->WriteValue(target, field, FD_INT, &promoted);
+         return Field->WriteValue(this, Field, FD_INT, &promoted);
       }
-      else return field->WriteValue(target, field, FIELD_TYPECHECK<T>(), &Value);
+      else return Field->WriteValue(this, Field, FIELD_TYPECHECK<T>(), &Value);
    }
 
-   inline ERR set(FIELD FieldID, const FUNCTION *Value) {
-      Object *target;
-      const struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
-      return field->WriteValue(target, field, FD_FUNCTION, Value);
+   inline ERR set(const struct Field *Field, const FUNCTION *Value) {
+      return Field->WriteValue(this, Field, FD_FUNCTION, Value);
    }
 
-   inline ERR set(FIELD FieldID, const char *Value) {
-      Object *target;
-      const struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
+   inline ERR set(const struct Field *Field, const char *Value) {
       std::string_view sv(Value ? Value : "");
-      return field->WriteValue(target, field, FD_STRING|FD_CPP, &sv);
+      return Field->WriteValue(this, Field, FD_STRING|FD_CPP, &sv);
    }
 
-   inline ERR set(FIELD FieldID, std::string_view Value) {
-      Object *target;
-      const struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
-      return field->WriteValue(target, field, FD_CPP|FD_STRING, &Value);
+   inline ERR set(const struct Field *Field, std::string_view Value) {
+      return Field->WriteValue(this, Field, FD_CPP|FD_STRING, &Value);
    }
 
-   inline ERR set(FIELD FieldID, const std::string &Value) {
-      Object *target;
-      const struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
+   inline ERR set(const struct Field *Field, const std::string &Value) {
       auto sv = std::string_view(Value);
-      return field->WriteValue(target, field, FD_CPP|FD_STRING, &sv);
+      return Field->WriteValue(this, Field, FD_CPP|FD_STRING, &sv);
    }
 
-   inline ERR set(FIELD FieldID, const Unit *Value) {
-      Object *target;
-      const struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
-      return field->WriteValue(target, field, FD_UNIT, Value);
+   inline ERR set(const struct Field *Field, const Unit *Value) {
+      return Field->WriteValue(this, Field, FD_UNIT, Value);
    }
 
-   inline ERR set(FIELD FieldID, const Unit &Value) {
-      return set(FieldID, &Value);
+   inline ERR set(const struct Field *Field, const Unit &Value) {
+      return set(Field, &Value);
    }
 
    // Works both for regular data pointers and function pointers if the field is defined correctly.
 
-   inline ERR set(FIELD FieldID, const void *Value) {
-      Object *target;
-      const struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
-      return field->WriteValue(target, field, FD_POINTER, Value);
+   inline ERR set(const struct Field *Field, const void *Value) {
+      return Field->WriteValue(this, Field, FD_POINTER, Value);
    }
 
    // Internal get helpers
