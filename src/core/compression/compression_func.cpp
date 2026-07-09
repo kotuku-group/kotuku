@@ -458,6 +458,8 @@ static ERR remove_file(extCompression *Self, std::list<ZipFile>::iterator &File)
 // if the zip file is damaged or partially downloaded, it will fail.  In the event that the directory is unavailable,
 // the function will fallback to scan_zip().
 
+static const uint32_t MAX_FAST_SCAN_LIST_SIZE = 64 * 1024 * 1024;
+
 static ERR fast_scan_zip(extCompression *Self)
 {
    kt::Log log(__FUNCTION__);
@@ -479,23 +481,41 @@ static ERR fast_scan_zip(extCompression *Self)
    tail.listoffset = le32_cpu(tail.listoffset);
 #endif
 
+   int64_t file_size;
+   if (Self->FileIO->getSize(file_size) != ERR::Okay) return scan_zip(Self);
+   if ((file_size < 0) or (uint64_t(tail.listoffset) > uint64_t(file_size))) return scan_zip(Self);
+   if (uint64_t(tail.listsize) > uint64_t(file_size) - uint64_t(tail.listoffset)) return scan_zip(Self);
+   if (tail.listsize > MAX_FAST_SCAN_LIST_SIZE) return scan_zip(Self);
+
    if (acSeek(Self->FileIO, tail.listoffset, SEEK::START) != ERR::Okay) return ERR::Seek;
 
    int total_files = 0;
+   if (tail.filecount IS 0) return ERR::Okay;
    if ((tail.filecount > 0) and (tail.listsize < uint32_t(tail.filecount) * LIST_LENGTH)) return scan_zip(Self);
 
    std::vector<uint8_t> list(tail.listsize);
 
    log.trace("Reading end-of-central directory from index %d, %d bytes.", tail.listoffset, tail.listsize);
-   if (acRead(Self->FileIO, list.data(), tail.listsize, nullptr) != ERR::Okay) {
+   int read_result;
+   if ((acRead(Self->FileIO, list.data(), tail.listsize, &read_result) != ERR::Okay) or
+      (read_result != int(tail.listsize))) {
       return scan_zip(Self);
    }
 
-   #pragma GCC diagnostic ignored "-Waddress-of-packed-member"
-   auto head = (uint32_t *)list.data();
-   #pragma GCC diagnostic warning "-Waddress-of-packed-member"
+   auto list_pos = list.data();
+   auto list_end = list.data() + list.size();
 
    for (int i=0; i < tail.filecount; i++) {
+      if (uint64_t(list_end - list_pos) < LIST_LENGTH) {
+         log.warning("Zip file has corrupt end-of-file signature.");
+         Self->Files.clear();
+         return scan_zip(Self);
+      }
+
+      #pragma GCC diagnostic ignored "-Waddress-of-packed-member"
+      auto head = (uint32_t *)list_pos;
+      #pragma GCC diagnostic warning "-Waddress-of-packed-member"
+
       if (0x02014b50 != head[0]) {
          log.warning("Zip file has corrupt end-of-file signature.");
          Self->Files.clear();
@@ -519,6 +539,13 @@ static ERR fast_scan_zip(extCompression *Self)
       scan->offset         = le32_cpu(scan->offset);
 #endif
 
+      auto entry_size = uint64_t(LIST_LENGTH) + scan->commentlen + scan->namelen + scan->extralen;
+      if (entry_size > uint64_t(list_end - list_pos)) {
+         log.warning("Zip file has corrupt end-of-file signature.");
+         Self->Files.clear();
+         return scan_zip(Self);
+      }
+
       total_files++;
 
       ZipFile zf;
@@ -537,8 +564,9 @@ static ERR fast_scan_zip(extCompression *Self)
 
       // Read string information
 
-      STRING str = STRING(head) + LIST_LENGTH;
-      if ((str[0] IS '.') and (str[1] IS '/')) { // Get rid of any useless './' prefix that sometimes make their way into zip files
+      STRING str = STRING(list_pos) + LIST_LENGTH;
+      // Get rid of any useless './' prefix that sometimes make their way into zip files.
+      if ((scan->namelen >= 2) and (str[0] IS '.') and (str[1] IS '/')) {
          zf.Name.assign(str+2, scan->namelen-2);
       }
       else zf.Name.assign(str, scan->namelen);
@@ -546,11 +574,11 @@ static ERR fast_scan_zip(extCompression *Self)
       zf.Comment.assign(str + scan->namelen + scan->extralen, scan->commentlen);
 
       if (zf.Flags & ZIP_LINK);
-      else if ((!zf.OriginalSize) and (zf.Name.back() IS '/')) zf.IsFolder = true;
+      else if ((!zf.OriginalSize) and (not zf.Name.empty()) and (zf.Name.back() IS '/')) zf.IsFolder = true;
 
       Self->Files.push_back(zf);
 
-      head = (uint32_t *)(((uint8_t *)head) + LIST_LENGTH + scan->commentlen + scan->namelen + scan->extralen);
+      list_pos += entry_size;
    }
 
    return ERR::Okay;
