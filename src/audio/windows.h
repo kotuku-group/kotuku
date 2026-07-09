@@ -3,7 +3,10 @@
 ** Hardware/platform related functions.
 */
 
+#include <cstdint>
+
 int sndCheckActivity(struct PlatformData *);
+int sndGetPosition(struct PlatformData *, int64_t *);
 extern "C" const char * sndCreateBuffer(Object *, void *, int, int, struct PlatformData *, int);
 void sndFree(struct PlatformData *);
 void sndFrequency(struct PlatformData *, int);

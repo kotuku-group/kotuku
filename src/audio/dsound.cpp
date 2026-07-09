@@ -103,6 +103,41 @@ int sndCheckActivity(PlatformData *Sound)
    else return -1; // Error
 }
 
+//********************************************************************************************************************
+
+int sndGetPosition(PlatformData *Sound, int64_t *Position)
+{
+   if ((!Position) or (!glDirectSound) or (!Sound->SoundBuffer)) return -1;
+
+   DWORD play_pos;
+   if (IDirectSoundBuffer_GetCurrentPosition(Sound->SoundBuffer, &play_pos, nullptr) != DS_OK) return -1;
+
+   if (!Sound->Stream) {
+      *Position = play_pos;
+      return 0;
+   }
+
+   int64_t unread;
+   if (Sound->Fill IS FILL_SECOND) {
+      unread = int64_t(Sound->BufferLength - play_pos) + int64_t(Sound->BufferLength>>1);
+   }
+   else unread = int64_t(Sound->BufferLength - play_pos);
+
+   int64_t pos = int64_t(Sound->Position) - unread;
+
+   if ((Sound->Loop) and (Sound->SampleLength > 0)) {
+      while (pos < 0) pos += Sound->SampleLength;
+      pos = pos % Sound->SampleLength;
+   }
+   else {
+      if (pos < 0) pos = 0;
+      else if (pos > Sound->SampleLength) pos = Sound->SampleLength;
+   }
+
+   *Position = pos;
+   return 0;
+}
+
 static const GUID pa_KSDATAFORMAT_SUBTYPE_WAVEFORMATEX = { STATIC_KSDATAFORMAT_SUBTYPE_WAVEFORMATEX }; // Standard PCM
 static const GUID pa_KSDATAFORMAT_SUBTYPE_IEEE_FLOAT = { STATIC_KSDATAFORMAT_SUBTYPE_IEEE_FLOAT }; // 32-bit floats
 

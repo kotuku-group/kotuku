@@ -3,9 +3,11 @@
 #include "device_enum.h"
 
 //********************************************************************************************************************
+// NB: Can be called on destruction or deactivation.
 
 static void free_alsa(extAudio *Self)
 {
+   Self->AudioBuffer.clear();
    if (Self->sndlog) { snd_output_close(Self->sndlog); Self->sndlog = nullptr; }
    if (Self->Handle) { snd_pcm_close(Self->Handle); Self->Handle = nullptr; }
    if (Self->MixHandle) { snd_mixer_close(Self->MixHandle); Self->MixHandle = nullptr; }

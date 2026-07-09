@@ -55,6 +55,10 @@ constexpr int SECONDS_STREAM_BUFFER = 2;
 constexpr int SIZE_RIFF_CHUNK = 12;
 
 static ERR SOUND_GET_Active(extSound *, int *);
+static ERR SOUND_GET_Elapsed(extSound *, double *);
+static ERR SOUND_GET_PlayPosition(extSound *, int64_t *);
+static ERR SOUND_GET_Progress(extSound *, double *);
+static ERR SOUND_GET_Remaining(extSound *, double *);
 
 static ERR SOUND_SET_Note(extSound *, const std::string_view &);
 
@@ -236,6 +240,77 @@ extern "C" void end_of_stream(OBJECTPTR Object, int BytesRemaining)
    if (error != ERR::Okay) return log.warning(ERR::CreateObject);
 
    return error;
+}
+
+//********************************************************************************************************************
+
+static int sound_frame_size(extSound *Self)
+{
+   return (((Self->Flags & SDF::STEREO) != SDF::NIL) ? 2 : 1) * (Self->BitsPerSample>>3);
+}
+
+//********************************************************************************************************************
+
+static double sound_seconds(extSound *Self, int64_t Position)
+{
+   const int frame_size = sound_frame_size(Self);
+   const int rate = Self->Playback ? Self->Playback : Self->Frequency;
+
+   if ((frame_size <= 0) or (rate <= 0)) return 0;
+   else return double(Position) / double(frame_size) / double(rate);
+}
+
+//********************************************************************************************************************
+
+static int64_t clamp_sound_position(extSound *Self, int64_t Position)
+{
+   if (Position < 0) return 0;
+   else if ((Self->Length > 0) and (Position > Self->Length)) return Self->Length;
+   else return Position;
+}
+
+//********************************************************************************************************************
+
+static ERR sound_play_position(extSound *Self, int64_t *Value)
+{
+   if (!Value) return ERR::NullArgs;
+
+   *Value = clamp_sound_position(Self, Self->Position);
+
+   if (Self->Length <= 0) return ERR::FieldNotSet;
+
+#ifdef USE_WIN32_PLAYBACK
+   if (Self->Active) {
+      int64_t position;
+      if (sndGetPosition((PlatformData *)Self->PlatformData, &position) >= 0) {
+         *Value = clamp_sound_position(Self, position);
+      }
+   }
+#else
+   if ((Self->ChannelIndex) and (Self->AudioID)) {
+      kt::ScopedObjectLock<extAudio> audio(Self->AudioID);
+      if (audio.granted()) {
+         if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
+            if ((channel->SampleHandle IS Self->Handle) and (!channel->isStopped())) {
+               auto &sample = audio->Samples[Self->Handle];
+               const int shift = sample_shift(sample.SampleType);
+               int64_t position = (int64_t(channel->Position) << shift) +
+                  ((int64_t(channel->PositionLow) << shift) >> 16);
+
+               if (sample.Stream) {
+                  const int64_t buffer_size = int64_t(sample.SampleLength) << shift;
+                  position = int64_t(sample.PlayPos) - buffer_size + position;
+               }
+
+               *Value = clamp_sound_position(Self, position);
+            }
+         }
+      }
+      else return ERR::AccessObject;
+   }
+#endif
+
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -550,6 +625,9 @@ static ERR SOUND_Disable(extSound *Self)
    kt::Log log;
 
    log.branch();
+
+   int64_t position;
+   if (sound_play_position(Self, &position) IS ERR::Okay) Self->Position = position;
 
 #ifdef USE_WIN32_PLAYBACK
    sndStop((PlatformData *)Self->PlatformData);
@@ -1166,6 +1244,25 @@ static ERR SOUND_GET_Duration(extSound *Self, double *Value)
 /*********************************************************************************************************************
 
 -FIELD-
+Elapsed: Returns the elapsed playback time, measured in seconds.
+
+This field reports the current playback position in seconds.  It is derived from the live playback channel when the
+sample is active, or from the stored #Position field when playback is stopped.
+
+*********************************************************************************************************************/
+
+static ERR SOUND_GET_Elapsed(extSound *Self, double *Value)
+{
+   int64_t position;
+   if (auto error = sound_play_position(Self, &position); error != ERR::Okay) return error;
+
+   *Value = sound_seconds(Self, position);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Flags: Optional initialisation flags.
 Lookup: SDF
 
@@ -1535,6 +1632,21 @@ static ERR SOUND_SET_Playback(extSound *Self, int Value)
 }
 
 /*********************************************************************************************************************
+
+-FIELD-
+PlayPosition: Returns the current playback position, measured in bytes.
+
+This field differs from #Position because it reflects the live playback cursor while the sound is active.  For streamed
+playback this is a best-effort source offset derived from the rolling stream buffer.
+
+*********************************************************************************************************************/
+
+static ERR SOUND_GET_PlayPosition(extSound *Self, int64_t *Value)
+{
+   return sound_play_position(Self, Value);
+}
+
+/*********************************************************************************************************************
 -FIELD-
 Position: The current playback position.
 
@@ -1565,6 +1677,43 @@ static ERR SOUND_SET_Priority(extSound *Self, int Value)
    Self->Priority = Value;
    if (Self->Priority < -100) Self->Priority = -100;
    else if (Self->Priority > 100) Self->Priority = 100;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Progress: Returns the current playback progress as a normalised value.
+
+The returned value ranges from `0.0` at the beginning of the sample to `1.0` at the end of the sample.
+
+*********************************************************************************************************************/
+
+static ERR SOUND_GET_Progress(extSound *Self, double *Value)
+{
+   int64_t position;
+   if (auto error = sound_play_position(Self, &position); error != ERR::Okay) return error;
+
+   *Value = double(position) / double(Self->Length);
+   if (*Value < 0) *Value = 0;
+   else if (*Value > 1.0) *Value = 1.0;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Remaining: Returns the remaining playback time, measured in seconds.
+
+*********************************************************************************************************************/
+
+static ERR SOUND_GET_Remaining(extSound *Self, double *Value)
+{
+   int64_t position;
+   if (auto error = sound_play_position(Self, &position); error != ERR::Okay) return error;
+
+   *Value = sound_seconds(Self, Self->Length - position);
+   if (*Value < 0) *Value = 0;
    return ERR::Okay;
 }
 
@@ -1726,11 +1875,15 @@ static const FieldArray clFields[] = {
    { "Handle",         FDF_INT|FDF_SYSTEM|FDF_R },
    { "ChannelIndex",   FDF_INT|FDF_R },
    // Virtual fields
-   { "Active",   FDF_VIRTUAL|FDF_INT|FDF_R,                     SOUND_GET_Active },
-   { "Duration", FDF_VIRTUAL|FDF_DOUBLE|FDF_R|FDF_PURE,         SOUND_GET_Duration },
-   { "Header",   FDF_VIRTUAL|FDF_BYTE|FDF_ARRAY|FDF_R|FDF_PURE, SOUND_GET_Header },
-   { "OnStop",   FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE,      SOUND_GET_OnStop, SOUND_SET_OnStop },
-   { "Note",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,              SOUND_GET_Note, SOUND_SET_Note },
+   { "Active",       FDF_VIRTUAL|FDF_INT|FDF_R,                     SOUND_GET_Active },
+   { "Duration",     FDF_VIRTUAL|FDF_DOUBLE|FDF_R|FDF_PURE,         SOUND_GET_Duration },
+   { "Elapsed",      FDF_VIRTUAL|FDF_DOUBLE|FDF_R,                  SOUND_GET_Elapsed },
+   { "Header",       FDF_VIRTUAL|FDF_BYTE|FDF_ARRAY|FDF_R|FDF_PURE, SOUND_GET_Header },
+   { "OnStop",       FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE,      SOUND_GET_OnStop, SOUND_SET_OnStop },
+   { "PlayPosition", FDF_VIRTUAL|FDF_INT64|FDF_R,                   SOUND_GET_PlayPosition },
+   { "Progress",     FDF_VIRTUAL|FDF_DOUBLE|FDF_R,                  SOUND_GET_Progress },
+   { "Remaining",    FDF_VIRTUAL|FDF_DOUBLE|FDF_R,                  SOUND_GET_Remaining },
+   { "Note",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,              SOUND_GET_Note, SOUND_SET_Note },
    END_FIELD
 };
 
