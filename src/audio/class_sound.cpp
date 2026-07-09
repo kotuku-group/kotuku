@@ -136,6 +136,7 @@ static ERR timer_playback_ended(extSound *Self, int64_t Elapsed, int64_t Current
 {
    kt::Log log;
    log.trace("Sound streaming completed.");
+   if ((Self->Flags & SDF::LOOP) IS SDF::NIL) Self->Position = Self->Length;
    sound_stopped_event(Self);
    Self->PlaybackTimer = 0;
    // NB: We don't manually stop the audio streamer, it will automatically stop once buffers are clear.
@@ -150,7 +151,7 @@ static ERR timer_playback_ended(extSound *Self, int64_t Elapsed, int64_t Current
 #ifdef USE_WIN32_PLAYBACK
 static ERR set_playback_trigger(extSound *Self)
 {
-   if (Self->OnStop.defined()) {
+   if ((Self->OnStop.defined()) or ((Self->Flags & SDF::LOOP) IS SDF::NIL)) {
       kt::Log log(__FUNCTION__);
       const int bytes_per_sample = ((((Self->Flags & SDF::STEREO) != SDF::NIL) ? 2 : 1) * (Self->BitsPerSample>>3));
       const double playback_time = double((Self->Length - Self->Position) / bytes_per_sample) / double(Self->Playback);
@@ -627,6 +628,7 @@ static ERR SOUND_Disable(extSound *Self)
 
    int64_t position;
    if (sound_play_position(Self, &position) IS ERR::Okay) Self->Position = position;
+   if (Self->PlaybackTimer) { UpdateTimer(Self->PlaybackTimer, 0); Self->PlaybackTimer = 0; }
 
 #ifdef USE_WIN32_PLAYBACK
    sndStop((PlatformData *)Self->PlatformData);
@@ -661,6 +663,7 @@ static ERR SOUND_Enable(extSound *Self)
       log.msg("Playing back from position %" PF64, (long long)Self->Position);
       if ((Self->Flags & SDF::LOOP) != SDF::NIL) sndPlay((PlatformData *)Self->PlatformData, TRUE, Self->Position);
       else sndPlay((PlatformData *)Self->PlatformData, FALSE, Self->Position);
+      if ((Self->Flags & SDF::STREAM) IS SDF::NIL) set_playback_trigger(Self);
    }
 #else
    if (!Self->ChannelIndex) return ERR::Okay;
@@ -1811,6 +1814,7 @@ static ERR win32_audio_stream(extSound *Self, int64_t Elapsed, int64_t CurrentTi
       return ERR::Terminate;
    }
    else if (response IS 1) {
+      if ((Self->Flags & SDF::LOOP) IS SDF::NIL) Self->Position = Self->Length;
       Self->StreamTimer = 0;
       return ERR::Terminate;
    }
