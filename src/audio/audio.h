@@ -98,6 +98,7 @@ struct AudioSample {
    SAMPLE   SampleLength; // Length of the Data sample/buffer.  Measured in samples
    BYTELEN  StreamLength; // Streams only.  Total byte-length of the sample data that is being streamed.
    BYTELEN  PlayPos;      // Current read position relative to StreamLength/SampleLength, measured in bytes
+   BYTELEN  BufferedLength; // Streams only.  Valid source bytes in the current rolling buffer.
    LOOP     LoopMode;     // Loop mode (single, double)
    SFM      SampleType;   // Type of sample (bit format)
    LTYPE    Loop1Type;    // First loop type (unidirectional, bidirectional)
@@ -123,6 +124,7 @@ struct AudioSample {
       Loop2Start   = SAMPLE(0);
       Loop2End     = SAMPLE(0);
       StreamLength = BYTELEN(0);
+      BufferedLength = BYTELEN(0);
       SampleType   = SFM::NIL;
       LoopMode     = LOOP::NIL;
       Loop1Type    = LTYPE::NIL;

@@ -410,7 +410,8 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
 
    if (sample.Stream) {
       if (Position > sample.StreamLength) return log.warning(ERR::OutOfRange);
-      sample.PlayPos = BYTELEN(Position) + fill_stream_buffer(Handle, sample, Position);
+      sample.BufferedLength = fill_stream_buffer(Handle, sample, Position);
+      sample.PlayPos = BYTELEN(Position) + sample.BufferedLength;
       Position = 0; // Internally we want to start from byte position zero in our stream buffer
    }
    else if (bitpos > sample.SampleLength) return log.warning(ERR::OutOfRange);

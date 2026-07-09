@@ -3,9 +3,11 @@
 #include "device_enum.h"
 
 //********************************************************************************************************************
+// NB: Can be called on destruction or deactivation.
 
 static void free_alsa(extAudio *Self)
 {
+   Self->AudioBuffer.clear();
    if (Self->sndlog) { snd_output_close(Self->sndlog); Self->sndlog = nullptr; }
    if (Self->Handle) { snd_pcm_close(Self->Handle); Self->Handle = nullptr; }
    if (Self->MixHandle) { snd_mixer_close(Self->MixHandle); Self->MixHandle = nullptr; }
@@ -85,22 +87,22 @@ static ERR init_audio(extAudio *Self)
 
    if ((err = snd_mixer_open(&Self->MixHandle, 0)) < 0) {
       log.warning("snd_mixer_open() %s", snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    if ((err = snd_mixer_attach(Self->MixHandle, pcm_name.c_str())) < 0) {
       log.warning("snd_mixer_attach() %s", snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    if ((err = snd_mixer_selem_register(Self->MixHandle, nullptr, nullptr)) < 0) {
       log.warning("snd_mixer_selem_register() %s", snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    if ((err = snd_mixer_load(Self->MixHandle)) < 0) {
       log.warning("snd_mixer_load() %s", snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    // Build a list of all available volume controls
@@ -253,7 +255,7 @@ static ERR init_audio(extAudio *Self)
    dir = 0;
    if ((err = snd_pcm_hw_params_set_rate_near(pcmhandle, hwparams, (uint32_t *)&Self->OutputRate, &dir)) < 0) {
       log.warning("set_rate_near() %s", snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    // Set number of channels
@@ -261,7 +263,7 @@ static ERR init_audio(extAudio *Self)
    uint32_t channels = ((Self->Flags & ADF::STEREO) != ADF::NIL) ? 2 : 1;
    if ((err = snd_pcm_hw_params_set_channels_near(pcmhandle, hwparams, &channels)) < 0) {
       log.warning("set_channels_near(%d) %s", channels, snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    if (channels IS 2) Self->Stereo = true;
@@ -298,24 +300,24 @@ static ERR init_audio(extAudio *Self)
 
    if ((err = snd_pcm_hw_params_set_period_size_near(pcmhandle, hwparams, &periodsize, 0)) < 0) {
       log.warning("Period size failure: %s", snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    if ((err = snd_pcm_hw_params_set_buffer_size_near(pcmhandle, hwparams, &buffersize)) < 0) {
       log.warning("Buffer size failure: %s", snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    // ALSA device initialisation
 
    if ((err = snd_pcm_hw_params(pcmhandle, hwparams)) < 0) {
       log.warning("snd_pcm_hw_params() %s", snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    if ((err = snd_pcm_prepare(pcmhandle)) < 0) {
       log.warning("snd_pcm_prepare() %s", snd_strerror(err));
-      return ERR::Failed;
+      return ERR::SystemCall;
    }
 
    // Retrieve ALSA buffer sizes
