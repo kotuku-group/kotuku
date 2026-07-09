@@ -481,80 +481,78 @@ static ERR fast_scan_zip(extCompression *Self)
 
    if (acSeek(Self->FileIO, tail.listoffset, SEEK::START) != ERR::Okay) return ERR::Seek;
 
-   zipentry *list, *scan;
    int total_files = 0;
-   if (!AllocMemory(tail.listsize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&list)) {
-      log.trace("Reading end-of-central directory from index %d, %d bytes.", tail.listoffset, tail.listsize);
-      if (acRead(Self->FileIO, list, tail.listsize, nullptr) != ERR::Okay) {
-         FreeResource(list);
+   if ((tail.filecount > 0) and (tail.listsize < uint32_t(tail.filecount) * LIST_LENGTH)) return scan_zip(Self);
+
+   std::vector<uint8_t> list(tail.listsize);
+
+   log.trace("Reading end-of-central directory from index %d, %d bytes.", tail.listoffset, tail.listsize);
+   if (acRead(Self->FileIO, list.data(), tail.listsize, nullptr) != ERR::Okay) {
+      return scan_zip(Self);
+   }
+
+   #pragma GCC diagnostic ignored "-Waddress-of-packed-member"
+   auto head = (uint32_t *)list.data();
+   #pragma GCC diagnostic warning "-Waddress-of-packed-member"
+
+   for (int i=0; i < tail.filecount; i++) {
+      if (0x02014b50 != head[0]) {
+         log.warning("Zip file has corrupt end-of-file signature.");
+         Self->Files.clear();
          return scan_zip(Self);
       }
 
-      #pragma GCC diagnostic ignored "-Waddress-of-packed-member"
-      auto head = (uint32_t *)list;
-      #pragma GCC diagnostic warning "-Waddress-of-packed-member"
-
-      for (int i=0; i < tail.filecount; i++) {
-         if (0x02014b50 != head[0]) {
-            log.warning("Zip file has corrupt end-of-file signature.");
-            Self->Files.clear();
-            FreeResource(list);
-            return scan_zip(Self);
-         }
-
-         scan = (zipentry *)(head + 1);
+      auto scan = (zipentry *)(head + 1);
 
 #ifndef REVERSE_BYTEORDER
-         scan->deflatemethod  = le16_cpu(scan->deflatemethod);
-         scan->timestamp      = le32_cpu(scan->timestamp);
-         scan->crc32          = le32_cpu(scan->crc32);
-         scan->compressedsize = le32_cpu(scan->compressedsize);
-         scan->originalsize   = le32_cpu(scan->originalsize);
-         scan->namelen        = le16_cpu(scan->namelen);
-         scan->extralen       = le16_cpu(scan->extralen);
-         scan->commentlen     = le16_cpu(scan->commentlen);
-         scan->diskno         = le16_cpu(scan->diskno);
-         scan->ifile          = le16_cpu(scan->ifile);
-         scan->attrib         = le32_cpu(scan->attrib);
-         scan->offset         = le32_cpu(scan->offset);
+      scan->deflatemethod  = le16_cpu(scan->deflatemethod);
+      scan->timestamp      = le32_cpu(scan->timestamp);
+      scan->crc32          = le32_cpu(scan->crc32);
+      scan->compressedsize = le32_cpu(scan->compressedsize);
+      scan->originalsize   = le32_cpu(scan->originalsize);
+      scan->namelen        = le16_cpu(scan->namelen);
+      scan->extralen       = le16_cpu(scan->extralen);
+      scan->commentlen     = le16_cpu(scan->commentlen);
+      scan->diskno         = le16_cpu(scan->diskno);
+      scan->ifile          = le16_cpu(scan->ifile);
+      scan->attrib         = le32_cpu(scan->attrib);
+      scan->offset         = le32_cpu(scan->offset);
 #endif
 
-         total_files++;
+      total_files++;
 
-         ZipFile zf;
+      ZipFile zf;
 
-         zf.NameLen        = scan->namelen;
-         zf.CommentLen     = scan->commentlen;
-         zf.CompressedSize = scan->compressedsize;
-         zf.OriginalSize   = scan->originalsize;
-         zf.DeflateMethod  = scan->deflatemethod;
-         zf.Timestamp      = scan->timestamp;
-         zf.CRC            = scan->crc32;
-         zf.Offset         = scan->offset;
+      zf.NameLen        = scan->namelen;
+      zf.CommentLen     = scan->commentlen;
+      zf.CompressedSize = scan->compressedsize;
+      zf.OriginalSize   = scan->originalsize;
+      zf.DeflateMethod  = scan->deflatemethod;
+      zf.Timestamp      = scan->timestamp;
+      zf.CRC            = scan->crc32;
+      zf.Offset         = scan->offset;
 
-         if (scan->ostype IS ZIP_KOTUKU) zf.Flags = scan->attrib;
-         else zf.Flags = 0;
+      if (scan->ostype IS ZIP_KOTUKU) zf.Flags = scan->attrib;
+      else zf.Flags = 0;
 
-         // Read string information
+      // Read string information
 
-         STRING str = STRING(head) + LIST_LENGTH;
-         if ((str[0] IS '.') and (str[1] IS '/')) { // Get rid of any useless './' prefix that sometimes make their way into zip files
-            zf.Name.assign(str+2, scan->namelen-2);
-         }
-         else zf.Name.assign(str, scan->namelen);
-
-         zf.Comment.assign(str + scan->namelen + scan->extralen, scan->commentlen);
-
-         if (zf.Flags & ZIP_LINK);
-         else if ((!zf.OriginalSize) and (zf.Name.back() IS '/')) zf.IsFolder = true;
-
-         Self->Files.push_back(zf);
-
-         head = (uint32_t *)(((uint8_t *)head) + LIST_LENGTH + scan->commentlen + scan->namelen + scan->extralen);
+      STRING str = STRING(head) + LIST_LENGTH;
+      if ((str[0] IS '.') and (str[1] IS '/')) { // Get rid of any useless './' prefix that sometimes make their way into zip files
+         zf.Name.assign(str+2, scan->namelen-2);
       }
+      else zf.Name.assign(str, scan->namelen);
+
+      zf.Comment.assign(str + scan->namelen + scan->extralen, scan->commentlen);
+
+      if (zf.Flags & ZIP_LINK);
+      else if ((!zf.OriginalSize) and (zf.Name.back() IS '/')) zf.IsFolder = true;
+
+      Self->Files.push_back(zf);
+
+      head = (uint32_t *)(((uint8_t *)head) + LIST_LENGTH + scan->commentlen + scan->namelen + scan->extralen);
    }
 
-   FreeResource(list);
    return ERR::Okay;
 }
 
