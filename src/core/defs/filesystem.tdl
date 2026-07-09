@@ -61,7 +61,7 @@ header({ module="Core", copyright="Paul Manias © 1996-2026", timestamp=20240611
     string    Path      # The file path.
     int(FL)   Flags     # File flags and options.
     int(PERMIT) Permissions
-    array(char) Buffer  # Points to the internal data buffer if the file content is held in memory.
+    vector(char) Buffer # Points to the internal data buffer if the file content is held in memory.
     large     Size      # The size of the file's content.
     ~struct(DateTime) Date
     ~struct(DateTime) Created
