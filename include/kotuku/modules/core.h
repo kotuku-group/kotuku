@@ -29,7 +29,7 @@
 #include "ankerl/unordered_dense.h"
 #endif
 
-#define CORE_BUILD_DATE 202607102241
+#define CORE_BUILD_DATE 202607102320
 class objMetaClass;
 
 // Predefined cursor styles
@@ -1572,6 +1572,7 @@ struct CoreBase {
    ERR (*_AsyncWait)(kt::vector<OBJECTID> &Objects, int TimeOut);
    ERR (*_ClassDatabase)(kt::vector<ClassRecord *> *Classes);
    int (*_GetThreadID)(void);
+   void (*_UnitTests)(CSTRING Options, int *Passed, int *Total);
 #endif // KOTUKU_STATIC
 };
 
@@ -1670,6 +1671,7 @@ inline int AsyncPending(OBJECTID Object) { return CoreBase->_AsyncPending(Object
 inline ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut) { return CoreBase->_AsyncWait(Objects,TimeOut); }
 inline ERR ClassDatabase(kt::vector<ClassRecord *> *Classes) { return CoreBase->_ClassDatabase(Classes); }
 inline int GetThreadID(void) { return CoreBase->_GetThreadID(); }
+inline void UnitTests(CSTRING Options, int *Passed, int *Total) { return CoreBase->_UnitTests(Options,Passed,Total); }
 #else
 extern "C" ERR Action(AC Action, OBJECTPTR Object, APTR Parameters);
 extern "C" void ActionList(struct ActionTable **Actions, int *Size);
@@ -1762,6 +1764,7 @@ extern "C" int AsyncPending(OBJECTID Object);
 extern "C" ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut);
 extern "C" ERR ClassDatabase(kt::vector<ClassRecord *> *Classes);
 extern "C" int GetThreadID(void);
+extern "C" void UnitTests(CSTRING Options, int *Passed, int *Total);
 #endif // KOTUKU_STATIC
 
 

@@ -210,6 +210,11 @@ target_sources (core PRIVATE
    "classes/class_time.cpp"
    "compression/class_compression.cpp")
 
+if (UNIT_TESTS)
+   target_sources (core PRIVATE "tests/unit_tests_queue_action.cpp")
+   target_compile_definitions (core PRIVATE UNIT_TESTS)
+endif ()
+
 target_include_directories (core PRIVATE
    ${ZLIB_HEADERS})
 
@@ -239,6 +244,9 @@ flute_test (core_config "tests/test_config.tiri")
 flute_test (core_messages "tests/test_messages.tiri")
 flute_test (core_time "tests/test_time.tiri")
 flute_test (core_subscriber_lifetimes "tests/test_subscriber_lifetimes.tiri")
+if (UNIT_TESTS)
+flute_test (core_unit_tests "tests/test_unit_tests.tiri")
+endif ()
 
 if (INSTALL_TESTS)
    # Windows-compatible tests

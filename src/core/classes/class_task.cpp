@@ -478,6 +478,8 @@ static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int Msg
             }
 
             if (fields) {
+               // Argument pointers were serialised as offsets by QueueAction(); rebase them against this copy.
+               make_args_absolute(fields, action->ArgsSize, (int8_t *)(action + 1));
                glCurrentActionMsg = action;
                Action(action->ActionID, obj, action+1);
                executed = true;
