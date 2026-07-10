@@ -109,4 +109,3 @@ static const struct ActionArray clBitmapActions[] = {
    { AC::Write, BITMAP_Write },
    { AC::NIL, nullptr }
 };
-

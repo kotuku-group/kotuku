@@ -83,19 +83,22 @@ void stop_async_actions(void)
       }
    }
 
-   // Clear any remaining queued actions (no callbacks are sent during shutdown).
+   // Clear any remaining queued actions (no callbacks are sent during shutdown).  Releasing copied object arguments
+   // may trigger object collection, so transfer the queues and release their resources after dropping the queue lock.
+   decltype(glActionQueues) action_queues;
    {
       std::lock_guard<std::mutex> lock(glmActionQueue);
-      for (auto &queue_ref : glActionQueues) {
-         for (auto &action : queue_ref.second) {
-            release_copied_args(action.Fields, action.ArgsSize, action.Parameters.data(), true);
-            release_owned_callback(action.Callback);
-         }
-      }
-      glActionQueues.clear();
+      action_queues = std::move(glActionQueues);
       glActiveAsyncObjects.clear();
       glCancelledAsyncObjects.clear();
       glAsyncObjectThreads.clear();
+   }
+
+   for (auto &queue_ref : action_queues) {
+      for (auto &action : queue_ref.second) {
+         release_copied_args(action.Fields, action.ArgsSize, action.Parameters.data(), true);
+         release_owned_callback(action.Callback);
+      }
    }
 }
 

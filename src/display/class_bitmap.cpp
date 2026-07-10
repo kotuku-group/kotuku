@@ -158,13 +158,6 @@ static const FieldDef clDataFlags[] = {
    { nullptr, 0 }
 };
 
-FDEF argsDrawUCPixel[]  = { { "Void", FD_VOID  }, { "Bitmap", FD_OBJECTPTR }, { "X", FD_INT }, { "Y", FD_INT }, { "Colour", FD_INT }, { nullptr, 0 } };
-FDEF argsDrawUCRPixel[] = { { "Void", FD_VOID  }, { "Bitmap", FD_OBJECTPTR }, { "X", FD_INT }, { "Y", FD_INT }, { "Colour", FD_ARRAY|FD_BYTE }, { nullptr, 0 } };
-FDEF argsReadUCPixel[]  = { { "Value", FD_INT }, { "Bitmap", FD_OBJECTPTR }, { "X", FD_INT }, { "Y", FD_INT }, { "Colour", FD_ARRAY|FD_BYTE|FD_RESULT }, { nullptr, 0 } };
-FDEF argsReadUCRPixel[] = { { "Void", FD_VOID  }, { "Bitmap", FD_OBJECTPTR }, { "X", FD_INT }, { "Y", FD_INT }, { "Colour", FD_ARRAY|FD_BYTE|FD_RESULT }, { nullptr, 0 } };
-FDEF argsDrawUCRIndex[] = { { "Void", FD_VOID  }, { "Bitmap", FD_OBJECTPTR }, { "Data", FD_PTR }, { "Colour", FD_ARRAY|FD_BYTE }, { nullptr, 0 } };
-FDEF argsReadUCRIndex[] = { { "Void", FD_VOID  }, { "Bitmap", FD_OBJECTPTR }, { "Data", FD_PTR }, { "Colour", FD_ARRAY|FD_BYTE|FD_RESULT }, { nullptr, 0 } };
-
 //********************************************************************************************************************
 // Surface locking routines.  These should only be called on occasions where you need to use the CPU to access graphics
 // memory.  These functions are internal, if the user wants to lock a bitmap surface then the Lock() action must be
@@ -2928,12 +2921,12 @@ extBitmap::~extBitmap()
 static const FieldArray clBitmapFields[] = {
    { "Palette",       FDF_POINTER|FDF_RW, nullptr, SET_Palette },
    { "ColourFormat",  FDF_POINTER|FDF_STRUCT|FDF_R, nullptr, nullptr, "ColourFormat" },
-   { "DrawUCPixel",   FDF_POINTER|FDF_R, nullptr, nullptr, &argsDrawUCPixel },
-   { "DrawUCRPixel",  FDF_POINTER|FDF_R, nullptr, nullptr, &argsDrawUCRPixel },
-   { "ReadUCPixel",   FDF_POINTER|FDF_R, nullptr, nullptr, &argsReadUCPixel },
-   { "ReadUCRPixel",  FDF_POINTER|FDF_R, nullptr, nullptr, &argsReadUCRPixel },
-   { "ReadUCRIndex",  FDF_POINTER|FDF_R, nullptr, nullptr, &argsReadUCRIndex },
-   { "DrawUCRIndex",  FDF_POINTER|FDF_R, nullptr, nullptr, &argsDrawUCRIndex },
+   { "DrawUCPixel",   FDF_POINTER|FDF_R },
+   { "DrawUCRPixel",  FDF_POINTER|FDF_R },
+   { "ReadUCPixel",   FDF_POINTER|FDF_R },
+   { "ReadUCRPixel",  FDF_POINTER|FDF_R },
+   { "ReadUCRIndex",  FDF_POINTER|FDF_R },
+   { "DrawUCRIndex",  FDF_POINTER|FDF_R },
    { "Data",          FDF_POINTER|FDF_RI, nullptr, SET_Data },
    { "Width",         FDF_INT|FDF_RI, nullptr, nullptr },
    { "ByteWidth",     FDF_INT|FDF_R, nullptr, nullptr },
