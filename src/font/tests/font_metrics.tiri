@@ -85,7 +85,7 @@ end
    items = array<table> { }
    list = gui.fontList
 
-   for group_name, rec in pairs(list) do
+   for _, rec in pairs(list) do
       if not rec.hidden then
          items:push({ item=rec.name })
       end
