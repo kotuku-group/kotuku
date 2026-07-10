@@ -167,7 +167,7 @@ gui.combobox = function(Options)
 
    defaultText = Options.text
    if not Options.allowCustom and not defaultText then
-      defaultText = Options.items[1].item
+      defaultText = Options.items[0].item
    end
 
    self.text = self._textClip.new('VectorText', {

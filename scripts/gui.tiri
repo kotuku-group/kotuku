@@ -52,7 +52,11 @@ gui.fontList = thunk():table
       local font = { name=name }
 
       if entry.Alias then font.alias = entry.Alias end
-      if entry.Styles then font.styles = entry.Styles:split(',') end
+      if entry.Styles then
+         font.styles = entry.Styles:split(',')
+      else
+         font.styles = array<string> { 'Regular' }
+      end
 
       if entry.Points then
          local sizes = array<int>

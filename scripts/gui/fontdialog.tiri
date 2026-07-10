@@ -136,7 +136,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
    function showStyles(Face)
       styles = array<table> { }
       if lFonts[Face].alias then Face = lFonts[Face].alias end
-      for v in values(lFonts[Face].styles ?? { 'Regular' }) do
+      for v in values(lFonts[Face].styles) do
          styles:push({ id=v, name=v })
       end
       vwStyle.loadItems(styles)
