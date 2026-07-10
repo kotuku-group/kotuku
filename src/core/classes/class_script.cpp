@@ -174,7 +174,7 @@ Note that acquiring a procedure reference and then failing to release it can res
 memory until the Script is terminated.  There may also be unforeseen consequences in the garbage collection process.
 
 -INPUT-
-ptr(func) Procedure: The procedure to be dereferenced.
+func Procedure: The procedure to be dereferenced.
 
 -ERRORS-
 Okay:

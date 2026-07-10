@@ -237,10 +237,10 @@ the surface area first).</li>
     <method>
       <name>AddCallback</name>
       <comment>Inserts a function hook into the drawing process of a surface object.</comment>
-      <prototype>ERR drw::AddCallback(OBJECTPTR Object, FUNCTION * Callback)</prototype>
+      <prototype>ERR drw::AddCallback(OBJECTPTR Object, FUNCTION Callback)</prototype>
       <tiriPrototype>err = AddCallback(Callback:func)</tiriPrototype>
       <input>
-        <param type="FUNCTION *" name="Callback">Callback routine to insert or move in the draw callback list.</param>
+        <param type="FUNCTION" name="Callback">Callback routine to insert or move in the draw callback list.</param>
       </input>
       <description>
 <p>The AddCallback() method installs a draw callback for custom rendering directly into a surface.  During a redraw, callbacks are invoked in subscription order and receive the target <class name="Bitmap">Bitmap</class> for the surface.</p>
@@ -319,10 +319,10 @@ the surface area first).</li>
     <method>
       <name>RemoveCallback</name>
       <comment>Removes a callback previously inserted by AddCallback().</comment>
-      <prototype>ERR drw::RemoveCallback(OBJECTPTR Object, FUNCTION * Callback)</prototype>
+      <prototype>ERR drw::RemoveCallback(OBJECTPTR Object, FUNCTION Callback)</prototype>
       <tiriPrototype>err = RemoveCallback(Callback:func)</tiriPrototype>
       <input>
-        <param type="FUNCTION *" name="Callback">Callback routine to remove, or <code>NULL</code> to remove all associated callback routines for the caller.</param>
+        <param type="FUNCTION" name="Callback">Callback routine to remove, or <code>NULL</code> to remove all associated callback routines for the caller.</param>
       </input>
       <description>
 <p>RemoveCallback() removes a draw callback that was previously inserted by <method>AddCallback</method>.</p>

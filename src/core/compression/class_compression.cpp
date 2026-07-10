@@ -807,7 +807,7 @@ if (auto error = mtCompressStreamStart(compress); !error) {
    while (!(error = acRead(file, input, sizeof(input), &len))) {
       if (!len) break; // No more data to read.
 
-      error = mtCompressStream(compress, input, len, &callback, NULL, 0);
+      error = mtCompressStream(compress, input, len, &callback, nullptr, 0);
       if (error != ERR::Okay) break;
 
       if (result > 0) {
@@ -818,7 +818,7 @@ if (auto error = mtCompressStreamStart(compress); !error) {
    }
 
    if (!error) {
-      if (!(error = mtCompressStreamEnd(compress, NULL, 0))) {
+      if (!(error = mtCompressStreamEnd(compress, nullptr, 0))) {
          cmpsize += result;
          error = acWrite(outfile, output, result, &len);
       }
@@ -835,7 +835,7 @@ before CompressStream was called.
 -INPUT-
 buf(ptr) Input: Pointer to the source data.
 bufsize Length: Amount of data to compress, in bytes.
-ptr(func) Callback: This callback function will be called with a pointer to the compressed data.
+func Callback: This callback function will be called with a pointer to the compressed data.
 ^buf(ptr) Output: Optional.  Points to a buffer that will receive the compressed data.  Must be equal to or larger than the #MinOutputSize field.
 bufsize OutputSize: Indicates the size of the `Output` buffer, otherwise set to zero.
 
@@ -859,11 +859,11 @@ static ERR COMPRESSION_CompressStream(extCompression *Self, struct cmp::Compress
 {
    kt::Log log;
 
-   auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Callback)) Args->Callback->consume();
-   });
+   if (not Args) return log.warning(ERR::NullArgs);
 
-   if ((!Args) or (!Args->Input) or (!Args->Callback)) return log.warning(ERR::NullArgs);
+   auto consume_callback = kt::Defer([&]() { Args->Callback.consume(); });
+
+   if ((not Args->Input) or (not Args->Callback.defined())) return log.warning(ERR::NullArgs);
 
    if (!Self->Deflate.active()) return log.warning(ERR::InvalidState);
 
@@ -909,13 +909,13 @@ static ERR COMPRESSION_CompressStream(extCompression *Self, struct cmp::Compress
 
          log.trace("%d bytes (total %" PF64 ") were compressed.", len, Self->TotalOutput);
 
-         if (Args->Callback->isC()) {
-            kt::SwitchContext context(Args->Callback->Context);
-            auto routine = (ERR (*)(extCompression *, APTR, int, APTR))Args->Callback->Routine;
-            error = routine(Self, output, len, Args->Callback->Meta);
+         if (Args->Callback.isC()) {
+            kt::SwitchContext context(Args->Callback.Context);
+            auto routine = (ERR (*)(extCompression *, APTR, int, APTR))Args->Callback.Routine;
+            error = routine(Self, output, len, Args->Callback.Meta);
          }
-         else if (Args->Callback->isScript()) {
-            if (sc::Call(*Args->Callback, std::to_array<ScriptArg>({
+         else if (Args->Callback.isScript()) {
+            if (sc::Call(Args->Callback, std::to_array<ScriptArg>({
                   { "Compression",  Self, FD_OBJECTPTR },
                   { "Output",       output, FD_BUFFER },
                   { "OutputLength", int64_t(len), FD_INT64|FD_BUFSIZE }
@@ -950,7 +950,7 @@ that were allocated.
 The expected format of the `Callback` function is specified in the #CompressStream() method.
 
 -INPUT-
-ptr(func) Callback: Refers to a function that will be called for each compressed block of data.
+func Callback: Refers to a function that will be called for each compressed block of data.
 ^buf(ptr) Output: Optional pointer to a buffer that will receive the compressed data.  If not set, the compression object will use its own buffer.
 bufsize OutputSize: Size of the `Output` buffer (ignored if Output is `NULL`).
 
@@ -970,11 +970,10 @@ static ERR COMPRESSION_CompressStreamEnd(extCompression *Self, struct cmp::Compr
 {
    kt::Log log;
 
-   auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Callback)) Args->Callback->consume();
-   });
+   if ((not Args) or (not Args->Callback.defined())) return log.warning(ERR::NullArgs);
 
-   if ((!Args) or (!Args->Callback)) return log.warning(ERR::NullArgs);
+   auto consume_callback = kt::Defer([&]() { Args->Callback.consume(); });
+
    if (!Self->Deflate.active()) return ERR::Okay;
 
    APTR output;
@@ -1008,13 +1007,13 @@ static ERR COMPRESSION_CompressStreamEnd(extCompression *Self, struct cmp::Compr
 
       Self->TotalOutput += outputsize - Self->Deflate->avail_out;
 
-      if (Args->Callback->isC()) {
-         kt::SwitchContext context(Args->Callback->Context);
-         auto routine = (ERR (*)(extCompression *, APTR, int, APTR Meta))Args->Callback->Routine;
-         error = routine(Self, output, outputsize - Self->Deflate->avail_out, Args->Callback->Meta);
+      if (Args->Callback.isC()) {
+         kt::SwitchContext context(Args->Callback.Context);
+         auto routine = (ERR (*)(extCompression *, APTR, int, APTR Meta))Args->Callback.Routine;
+         error = routine(Self, output, outputsize - Self->Deflate->avail_out, Args->Callback.Meta);
       }
-      else if (Args->Callback->isScript()) {
-         if (sc::Call(*Args->Callback, std::to_array<ScriptArg>({
+      else if (Args->Callback.isScript()) {
+         if (sc::Call(Args->Callback, std::to_array<ScriptArg>({
             { "Compression",  Self,   FD_OBJECTPTR },
             { "Output",       output, FD_BUFFER },
             { "OutputLength", int64_t(outputsize - Self->Deflate->avail_out), FD_INT64|FD_BUFSIZE }
@@ -1094,7 +1093,7 @@ When there is no more data in the decompression stream or if an error has occurr
 -INPUT-
 buf(ptr) Input: Pointer to data to decompress.
 bufsize Length: Amount of data to decompress from the Input parameter.
-ptr(func) Callback: Refers to a function that will be called for each decompressed block of information.
+func Callback: Refers to a function that will be called for each decompressed block of information.
 ^buf(ptr) Output: Optional pointer to a buffer that will receive the decompressed data.  If not set, the compression object will use its own buffer.
 bufsize OutputSize: Size of the buffer specified in Output (value ignored if `Output` is `NULL`).
 
@@ -1114,11 +1113,11 @@ static ERR COMPRESSION_DecompressStream(extCompression *Self, struct cmp::Decomp
 {
    kt::Log log;
 
-   auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Callback)) Args->Callback->consume();
-   });
+   if (not Args) return log.warning(ERR::NullArgs);
 
-   if ((!Args) or (!Args->Input) or (!Args->Callback)) return log.warning(ERR::NullArgs);
+   auto consume_callback = kt::Defer([&]() { Args->Callback.consume(); });
+
+   if ((not Args->Input) or (not Args->Callback.defined())) return log.warning(ERR::NullArgs);
    if (!Self->Inflate.active()) return ERR::Okay; // Decompression is complete
 
    APTR output;
@@ -1157,13 +1156,13 @@ static ERR COMPRESSION_DecompressStream(extCompression *Self, struct cmp::Decomp
 
       int len = outputsize - Self->Inflate->avail_out;
       if (len > 0) {
-         if (Args->Callback->isC()) {
-            kt::SwitchContext context(Args->Callback->Context);
-            auto routine = (ERR (*)(extCompression *, APTR, int, APTR))Args->Callback->Routine;
-            error = routine(Self, output, len, Args->Callback->Meta);
+         if (Args->Callback.isC()) {
+            kt::SwitchContext context(Args->Callback.Context);
+            auto routine = (ERR (*)(extCompression *, APTR, int, APTR))Args->Callback.Routine;
+            error = routine(Self, output, len, Args->Callback.Meta);
          }
-         else if (Args->Callback->isScript()) {
-            if (sc::Call(*Args->Callback, std::to_array<ScriptArg>({
+         else if (Args->Callback.isScript()) {
+            if (sc::Call(Args->Callback, std::to_array<ScriptArg>({
                { "Compression",  Self,   FD_OBJECTPTR },
                { "Output",       output, FD_BUFFER },
                { "OutputLength", len,    FD_INT|FD_BUFSIZE }
@@ -1197,7 +1196,7 @@ To end the decompression process, this method must be called to write any final 
 that were allocated during decompression.
 
 -INPUT-
-ptr(func) Callback: Refers to a function that will be called for each decompressed block of information.
+func Callback: Refers to a function that will be called for each decompressed block of information.
 
 -ERRORS-
 Okay
@@ -1210,13 +1209,11 @@ mutates-object, callback-inlines
 
 static ERR COMPRESSION_DecompressStreamEnd(extCompression *Self, struct cmp::DecompressStreamEnd *Args)
 {
-   auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Callback)) Args->Callback->consume();
-   });
+   auto consume_callback = kt::Defer([&]() { if (Args) Args->Callback.consume(); });
 
    if (!Self->Inflate.active()) return ERR::Okay; // If not inflating, not a problem
 
-   if ((!Args) or (!Args->Callback)) return ERR::NullArgs;
+   if ((not Args) or (not Args->Callback.defined())) return ERR::NullArgs;
 
    Self->TotalOutput = Self->Inflate->total_out;
    Self->Inflate.reset();
@@ -1873,7 +1870,7 @@ To search for a single item with a path and name already known, use the #Find() 
 -INPUT-
 strview Folder: Only items within the specified folder are returned.  Use an empty string for files in the root folder.
 strview Filter: Search for a specific item or items by name, using wildcards.  If empty, all items will be scanned.
-ptr(func) Callback: This callback function will be called with a pointer to a !CompressedItem structure.
+func Callback: This callback function will be called with a pointer to a !CompressedItem structure.
 
 -ERRORS-
 Okay
@@ -1892,11 +1889,9 @@ static ERR COMPRESSION_Scan(extCompression *Self, struct cmp::Scan *Args)
 {
    kt::Log log;
 
-   auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Callback)) Args->Callback->consume();
-   });
+   if ((not Args) or (not Args->Callback.defined())) return log.warning(ERR::NullArgs);
 
-   if ((not Args) or (not Args->Callback)) return log.warning(ERR::NullArgs);
+   auto consume_callback = kt::Defer([&]() { Args->Callback.consume(); });
 
    if (Self->isDerived()) return ERR::NoSupport;
 
@@ -1933,13 +1928,13 @@ static ERR COMPRESSION_Scan(extCompression *Self, struct cmp::Scan *Args)
       zipfile_to_item(item, meta);
 
       {
-         if (Args->Callback->isC()) {
-            kt::SwitchContext context(Args->Callback->Context);
-            auto routine = (ERR (*)(extCompression *, CompressedItem *, APTR))Args->Callback->Routine;
-            error = routine(Self, &meta, Args->Callback->Meta);
+         if (Args->Callback.isC()) {
+            kt::SwitchContext context(Args->Callback.Context);
+            auto routine = (ERR (*)(extCompression *, CompressedItem *, APTR))Args->Callback.Routine;
+            error = routine(Self, &meta, Args->Callback.Meta);
          }
-         else if (Args->Callback->isScript()) {
-            if (sc::Call(*Args->Callback, std::to_array<ScriptArg>({
+         else if (Args->Callback.isScript()) {
+            if (sc::Call(Args->Callback, std::to_array<ScriptArg>({
                { "Compression", Self, FD_OBJECTPTR },
                { "CompressedItem:Item", &meta, FD_STRUCT|FD_PTR }
             }), error) != ERR::Okay) error = ERR::Function;

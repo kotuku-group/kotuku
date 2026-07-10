@@ -35,8 +35,8 @@ static const struct FieldDef clXQueryXEF[] = {
 };
 
 FDEF maEvaluate[] = { { "XML", FD_OBJECTPTR }, { "Index", FD_INT }, { "Flags", FD_INT }, { 0, 0 } };
-FDEF maSearch[] = { { "XML", FD_OBJECTPTR }, { "Callback", FD_FUNCTIONPTR }, { "Index", FD_INT }, { "Flags", FD_INT }, { 0, 0 } };
-FDEF maRegisterFunction[] = { { "FunctionName", FDF_CPPSTRING }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
+FDEF maSearch[] = { { "XML", FD_OBJECTPTR }, { "Callback", FD_FUNCTION }, { "Index", FD_INT }, { "Flags", FD_INT }, { 0, 0 } };
+FDEF maRegisterFunction[] = { { "FunctionName", FDF_CPPSTRING }, { "Callback", FD_FUNCTION }, { 0, 0 } };
 FDEF maInspectFunctions[] = { { "Name", FDF_CPPSTRING }, { "ResultFlags", FD_INT }, { "Result", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
 
 static const struct MethodEntry clXQueryMethods[] = {

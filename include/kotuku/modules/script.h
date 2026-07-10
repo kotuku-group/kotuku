@@ -47,7 +47,7 @@ struct ScriptArg { // For use with sc::Exec
 
 namespace sc {
 struct Exec { std::string_view Procedure; const struct ScriptArg *Args; int TotalArgs; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DerefProcedure { FUNCTION *Procedure; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DerefProcedure { FUNCTION Procedure; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Callback { int64_t ProcedureID; const struct ScriptArg *Args; int TotalArgs; ERR Error; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetProcedureID { std::string_view Procedure; int64_t ProcedureID; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DebugLog { std::string_view Options; std::string *Result; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
@@ -110,7 +110,7 @@ class objScript : public Object {
       return Action(AC(-1), this, &args);
    }
    inline ERR derefProcedure(FUNCTION Procedure) noexcept {
-      struct sc::DerefProcedure args = { &Procedure };
+      struct sc::DerefProcedure args = { Procedure };
       return Action(AC(-2), this, &args);
    }
    inline ERR callback(int64_t ProcedureID, const struct ScriptArg * Args, int TotalArgs, ERR * Error) noexcept {

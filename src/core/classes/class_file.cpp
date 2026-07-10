@@ -419,7 +419,7 @@ and an error code will be returned.
 
 -INPUT-
 strview Dest: The destination file path for the copy operation.
-ptr(func) Callback: Optional callback for receiving feedback during the operation.
+func Callback: Optional callback for receiving feedback during the operation.
 
 -ERRORS-
 Okay: The file data was copied successfully.
@@ -441,10 +441,10 @@ static ERR FILE_Copy(extFile *Self, struct fl::Copy *Args)
 {
    if (not Args) return ERR::NullArgs;
    auto consume_callback = kt::Defer([&]() {
-      if (Args->Callback) Args->Callback->consume();
+      if (Args->Callback.defined()) Args->Callback.consume();
    });
 
-   return CopyFile(Self->Path, Args->Dest, Args->Callback);
+   return CopyFile(Self->Path, Args->Dest, &Args->Callback);
 }
 
 /*********************************************************************************************************************
@@ -457,7 +457,7 @@ contents will be deleted in the call.   Once a file is deleted, the object effec
 reason, file deletion should normally be followed up with a call to the Free action.
 
 -INPUT-
-ptr(func) Callback: Optional callback for receiving feedback during the operation.
+func Callback: Optional callback for receiving feedback during the operation.
 
 -ERRORS-
 Okay:  File deleted successfully.
@@ -482,7 +482,7 @@ static ERR FILE_Delete(extFile *Self, struct fl::Delete *Args)
    kt::Log log;
 
    auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Callback)) Args->Callback->consume();
+      if ((Args) and (Args->Callback.defined())) Args->Callback.consume();
    });
 
    if (Self->Path.empty()) return log.warning(ERR::MissingPath);
@@ -517,13 +517,13 @@ static ERR FILE_Delete(extFile *Self, struct fl::Delete *Args)
          if (buffer.ends_with('/') or buffer.ends_with('\\')) buffer.pop_back();
 
          FileFeedback fb;
-         if ((Args->Callback) and (Args->Callback->defined())) {
+         if (Args->Callback.defined()) {
             fb.FeedbackID = FBK::DELETE_FILE;
             fb.Path       = buffer.data();
          }
 
          ERR error;
-         if (!(error = delete_tree(buffer, Args->Callback, &fb)));
+         if (!(error = delete_tree(buffer, &Args->Callback, &fb)));
          else if (error != ERR::Cancelled) log.warning("Failed to delete folder \"%s\"", buffer.c_str());
 
          return error;
@@ -879,7 +879,7 @@ The #Position field will be reset as a result of calling this method.
 
 -INPUT-
 strview Dest: The desired path for the file.
-ptr(func) Callback: Optional callback for receiving feedback during the operation.
+func Callback: Optional callback for receiving feedback during the operation.
 
 -ERRORS-
 Okay: The File was moved successfully.
@@ -897,11 +897,11 @@ static ERR FILE_MoveFile(extFile *Self, struct fl::Move *Args)
 {
    kt::Log log;
 
-   auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Callback)) Args->Callback->consume();
-   });
+   if (not Args) return log.warning(ERR::NullArgs);
 
-   if ((not Args) or Args->Dest.empty()) return log.warning(ERR::NullArgs);
+   auto consume_callback = kt::Defer([&]() { Args->Callback.consume(); });
+
+   if (Args->Dest.empty()) return log.warning(ERR::NullArgs);
    if (Self->Path.empty()) return log.warning(ERR::FieldNotSet);
 
    auto src = std::string_view(Self->Path);
@@ -926,7 +926,7 @@ static ERR FILE_MoveFile(extFile *Self, struct fl::Move *Args)
       #endif
 
       ERR error;
-      if (!(error = fs_copy(src, newpath, Args->Callback, true))) {
+      if (!(error = fs_copy(src, newpath, &Args->Callback, true))) {
          Self->Path.assign(newpath);
       }
       else log.warning("Failed to move %.*s to %s", int(src.size()), src.data(), newpath.c_str());
@@ -938,7 +938,7 @@ static ERR FILE_MoveFile(extFile *Self, struct fl::Move *Args)
          if (Self->Handle != -1) { close(Self->Handle); Self->Handle = -1; }
       #endif
 
-      if (auto error = fs_copy(src, dest, Args->Callback, true); !error) {
+      if (auto error = fs_copy(src, dest, &Args->Callback, true); !error) {
          Self->Path.assign(dest);
          return ERR::Okay;
       }
@@ -1530,10 +1530,10 @@ Each event will be delivered in the sequence that they are originally raised.  T
 specific event that has occurred.  The `Path` is a string that is relative to the File's #Path field.
 
 If the callback routine returns `ERR::Terminate`, the watch will be disabled.  It is also possible to disable an existing
-watch by calling this method with no parameters, or by setting the `Flags` parameter to `0`.
+watch by calling this method with no parameters, or by setting the `Flags` parameter to `MFF::NIL`.
 
 -INPUT-
-ptr(func) Callback: The routine that will be called when a file change is triggered by the system.
+func Callback: The routine that will be called when a file change is triggered by the system.
 int(MFF) Flags: Filter events to those indicated in these flags.
 
 -ERRORS-
@@ -1552,10 +1552,6 @@ static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
 {
    kt::Log log;
    bool retained_callback = false;
-
-   auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Callback) and (not retained_callback)) Args->Callback->consume();
-   });
 
    log.branch("%s, Flags: $%.8x", Self->Path.c_str(), (Args) ? int(Args->Flags) : 0);
 
@@ -1581,8 +1577,13 @@ static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
       Self->prvWatch.reset();
    }
 
-   if ((not Args) or (not Args->Callback) or (Args->Flags IS MFF::NIL)) return ERR::Okay;
-   if (not Args->Callback->defined()) return log.warning(ERR::Args);
+   if (not Args) return ERR::Okay;
+
+   auto consume_callback = kt::Defer([&]() {
+      if (not retained_callback) Args->Callback.consume();
+   });
+
+   if ((not Args->Callback.defined()) or (Args->Flags IS MFF::NIL)) return ERR::Okay;
 
 #ifdef __linux__ // Initialise inotify if not done already.
 
@@ -1612,7 +1613,7 @@ static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
 
             Self->prvWatch = std::move(watch);
             Self->prvWatch->VirtualID = vd.VirtualID;
-            Self->prvWatch->Routine   = *Args->Callback;
+            Self->prvWatch->Routine   = Args->Callback;
             Self->prvWatch->Flags     = Args->Flags;
             Self->prvWatch->Routine.pin();
 

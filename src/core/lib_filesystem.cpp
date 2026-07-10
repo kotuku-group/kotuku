@@ -1613,14 +1613,14 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
       if (srcfile.ok()) {
          if ((Move) and (srcvirtual.VirtualID IS destvirtual.VirtualID)) {
             // If the source and destination use the same virtual volume, execute the move method.
-            fl::Move args = { Dest.data(), nullptr };
+            fl::Move args = { Dest };
             return Action(fl::Move::id, *srcfile, &args);
          }
       }
       else return ERR::FileNotFound;
 
       extFile::create destfile = {
-         fl::Path(Dest.data()),
+         fl::Path(Dest),
          fl::Flags(FL::WRITE|FL::NEW),
          fl::Permissions(srcfile->Permissions)
       };

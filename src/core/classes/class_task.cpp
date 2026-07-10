@@ -445,11 +445,15 @@ static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int Msg
 {
    kt::Log log("ProcessMessages");
    ActionMessage *action;
+   const FunctionField *copied_fields = nullptr;
+   bool executed = false;
 
    if (not (action = (ActionMessage *)Message)) {
       log.warning("No data attached to MSGID::ACTION message.");
       return ERR::Okay;
    }
+
+   copied_fields = action->Fields;
 
    #ifdef DBG_INCOMING
       log.function("Executing action %s on object #%d, Data: %p, Size: %d", action_id_name(action->ActionID), action->ObjectID, Message, MsgSize);
@@ -476,6 +480,7 @@ static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int Msg
             if (fields) {
                glCurrentActionMsg = action;
                Action(action->ActionID, obj, action+1);
+               executed = true;
                glCurrentActionMsg = nullptr;
                ReleaseObject(obj);
             }
@@ -487,6 +492,10 @@ static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int Msg
       }
    }
    else log.warning("Action message %s specifies an object ID of #%d.", action_id_name(action->ActionID), action->ObjectID);
+
+   if (action->SendArgs and copied_fields) {
+      release_copied_args(copied_fields, action->ArgsSize, (int8_t *)(action + 1), not executed);
+   }
 
    return ERR::Okay;
 }

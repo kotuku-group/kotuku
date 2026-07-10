@@ -15,6 +15,11 @@ Functions that are internal to the Core.
 
 using namespace kt;
 
+static constexpr int align_arg_offset(int Offset)
+{
+   return (Offset + 7) & ~7;
+}
+
 //********************************************************************************************************************
 
 #ifdef __APPLE__
@@ -168,10 +173,11 @@ ERR process_janitor(OBJECTID SubscriberID, int Elapsed, int TotalElapsed)
 
 /*********************************************************************************************************************
 
-copy_args: Serialise argument structures into sendable messages.
+copy_args: Serialise action/method argument structures into sendable messages.
 
 This function searches an argument structure for pointer and string types.  If it encounters them, it attempts to
-convert them to a format that can be passed to other memory spaces.
+convert them to a format that can be passed to other memory spaces.  Note: The canonical interpreter for these
+structures is in Tiri - for the most part this function should be kept in sync with it.
 
 A PTR|RESULT or PTR|MUTABLE followed by a PTRSIZE indicates that the user has to supply a buffer to the function.  It
 is assumed that the function will fill the buffer with data, so the caller's initial buffer content is not serialised.
@@ -201,12 +207,13 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
 {
    kt::Log log(__FUNCTION__);
 
-   if ((!Args) or (!Parameters)) return ERR::NullArgs;
+   if ((not Args) or (not Parameters)) return ERR::NullArgs;
 
    // Buffer size must be computed in advance
 
    int size = ArgsSize;
    int pos = 0;
+   bool function_found = false;
    for (int i=0; Args[i].Name; i++) {
       if (pos >= ArgsSize) return ERR::InvalidData; // Sanity check, the pos can't exceed ArgsSize.
 
@@ -220,6 +227,13 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
             if (auto str = ((STRING *)(Parameters + pos))[0]) size += strlen(str) + 1;
             pos += sizeof(APTR);
          }
+      }
+      else if (Args[i].Type & FD_FUNCTION) {
+         // There is a hard limit of one function per action call.
+         // Functions are always expressed as an embedded type.
+         if (function_found) return log.warning(ERR::NoSupport);
+         function_found = true;
+         pos = align_arg_offset(pos) + sizeof(FUNCTION);
       }
       else if (Args[i].Type & FD_PTR) {
          if ((Args[i].Type & FD_RESULT) and (not (Args[i+1].Type & FD_PTRSIZE))); // Stored in parameter buffer.
@@ -273,6 +287,12 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
             pos += sizeof(STRING);
          }
       }
+      else if (Args[i].Type & FD_FUNCTION) {
+         pos = align_arg_offset(pos);
+         auto function = (FUNCTION *)(Buffer.data() + pos);
+         if (function->defined()) function->pin();
+         pos += sizeof(FUNCTION);
+      }
       else if (Args[i].Type & FD_PTR) {
          if (Args[i].Type & FD_INT) { // Pointer to int.
             auto insert = (int *)(Buffer.data() + Buffer.size());
@@ -313,4 +333,55 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
    }
 
    return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+void release_copied_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, bool DereferenceAll,
+   FUNCTION *DeferredFunction)
+{
+   if ((not Args) or (not Parameters)) return;
+
+   for (int i=0, pos=0; Args[i].Name and (pos < ArgsSize); i++) {
+      auto type = Args[i].Type;
+
+      if (type & FD_ARRAY) pos = align_arg_offset(pos) + sizeof(APTR);
+      else if ((type & FD_BUFFER) or (Args[i+1].Type & FD_BUFSIZE)) {
+         pos = align_arg_offset(pos) + sizeof(APTR);
+      }
+      else if (type & FD_STR) {
+         pos = align_arg_offset(pos);
+         if ((type & FD_CPP) and (not (type & FD_MUTABLE))) pos += sizeof(std::string_view);
+         else pos += sizeof(APTR);
+      }
+      else if (type & FD_FUNCTION) {
+         pos = align_arg_offset(pos);
+         auto &function = *(FUNCTION *)(Parameters + pos);
+
+         if (function.defined()) {
+            if (function.isScript() and (not function.stale()) and (DereferenceAll or function.consumed())) {
+               if (DeferredFunction) {
+                  *DeferredFunction = function;
+                  function.clear();
+                  pos += sizeof(FUNCTION);
+                  continue;
+               }
+               else {
+                  auto script = function.Context;
+                  sc::DerefProcedure deref = { function };
+                  Action(sc::DerefProcedure::id, script, &deref);
+               }
+            }
+            function.unpin();
+            function.clear();
+         }
+
+         pos += sizeof(FUNCTION);
+      }
+      else if ((type & FD_PTR) or (type & FD_STRUCT)) pos = align_arg_offset(pos) + sizeof(APTR);
+      else if (type & FD_INT) pos += sizeof(int);
+      else if (type & FD_DOUBLE) pos = align_arg_offset(pos) + sizeof(double);
+      else if (type & FD_INT64) pos = align_arg_offset(pos) + sizeof(int64_t);
+      else if (type & FD_TAGS) break;
+   }
 }

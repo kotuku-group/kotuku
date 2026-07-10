@@ -677,7 +677,7 @@ The prototype for the `Callback` is `ERR callback(*Vector, FM Event)`
 
 -INPUT-
 int(FM) Mask: Defines the feedback events required by the client.  Set to `0xffffffff` if all messages are required.
-ptr(func) Callback: The function that will receive feedback events.
+func Callback: The function that will receive feedback events.
 
 -ERRORS-
 Okay:
@@ -695,10 +695,10 @@ static ERR VECTOR_SubscribeFeedback(extVector *Self, struct vec::SubscribeFeedba
    bool retained_callback = false;
 
    auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Callback) and (not retained_callback)) Args->Callback->consume();
+      if ((Args) and (not retained_callback)) Args->Callback.consume();
    });
 
-   if ((not Args) or (not Args->Callback)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Callback.defined())) return log.warning(ERR::NullArgs);
 
    if (Args->Mask != FM::NIL) {
       if (not Self->FeedbackSubscriptions) {
@@ -706,13 +706,13 @@ static ERR VECTOR_SubscribeFeedback(extVector *Self, struct vec::SubscribeFeedba
          if (not Self->FeedbackSubscriptions) return log.warning(ERR::AllocMemory);
       }
 
-      Args->Callback->pin();
-      Self->FeedbackSubscriptions->emplace_back(*Args->Callback, Args->Mask);
+      Args->Callback.pin();
+      Self->FeedbackSubscriptions->emplace_back(Args->Callback, Args->Mask);
       retained_callback = true;
    }
    else if (Self->FeedbackSubscriptions) { // Remove existing subscriptions for this callback
       for (auto it=Self->FeedbackSubscriptions->begin(); it != Self->FeedbackSubscriptions->end(); ) {
-         if (*Args->Callback IS it->Callback) {
+         if (Args->Callback IS it->Callback) {
             release_callback(it->Callback);
             it = Self->FeedbackSubscriptions->erase(it);
          }
@@ -744,7 +744,7 @@ The prototype for the `Callback` is `ERR callback(*Vector, *InputEvent)`
 
 -INPUT-
 flags(JTYPE) Mask: Combine `JTYPE` flags to define the input messages required by the client.  Set to zero to remove an existing subscription.
-ptr(func) Callback: Reference to a function that will receive input messages.
+func Callback: Reference to a function that will receive input messages.
 
 -ERRORS-
 Okay:
@@ -764,12 +764,12 @@ static ERR VECTOR_SubscribeInput(extVector *Self, struct vec::SubscribeInput *Ar
    bool retained_callback = false;
 
    auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Callback) and (not retained_callback)) Args->Callback->consume();
+      if ((Args) and (not retained_callback)) Args->Callback.consume();
    });
 
    // Refer to scene_input_events() for the origin of incoming input messages
 
-   if ((!Args) or (!Args->Callback)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Callback.defined())) return log.warning(ERR::NullArgs);
 
    if (Args->Mask != JTYPE::NIL) {
       if ((!Self->Scene) or (!Self->Scene->SurfaceID)) return ERR::FieldNotSet;
@@ -783,22 +783,22 @@ static ERR VECTOR_SubscribeInput(extVector *Self, struct vec::SubscribeInput *Ar
       // work for both Tiri procedures (via ProcedureID check) and C functions.
 
       for (auto it=Self->InputSubscriptions->begin(); it != Self->InputSubscriptions->end(); ) {
-         if (*Args->Callback IS it->Callback) return log.warning(ERR::AlreadyDefined);
+         if (Args->Callback IS it->Callback) return log.warning(ERR::AlreadyDefined);
          else it++;
       }
 
       auto mask = Args->Mask;
 
       Self->InputMask |= mask;
-      Args->Callback->pin();
-      Self->InputSubscriptions->emplace_back(*Args->Callback, mask);
+      Args->Callback.pin();
+      Self->InputSubscriptions->emplace_back(Args->Callback, mask);
       retained_callback = true;
       update_input_subscription_state(Self);
       mark_input_boundary_dirty(Self);
    }
    else if (Self->InputSubscriptions) { // Remove existing subscriptions for this callback
       for (auto it=Self->InputSubscriptions->begin(); it != Self->InputSubscriptions->end(); ) {
-         if (*Args->Callback IS it->Callback) {
+         if (Args->Callback IS it->Callback) {
             release_callback(it->Callback);
             it = Self->InputSubscriptions->erase(it);
          }
@@ -830,7 +830,7 @@ translated through the user's keymap.
 If the callback returns `ERR::Terminate` then the subscription will be ended.  All other error codes are ignored.
 
 -INPUT-
-ptr(func) Callback: Reference to a callback function that will receive input messages.
+func Callback: Reference to a callback function that will receive input messages.
 
 -ERRORS-
 Okay:
@@ -850,10 +850,10 @@ static ERR VECTOR_SubscribeKeyboard(extVector *Self, struct vec::SubscribeKeyboa
    bool retained_callback = false;
 
    auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Callback) and (not retained_callback)) Args->Callback->consume();
+      if ((Args) and (not retained_callback)) Args->Callback.consume();
    });
 
-   if ((!Args) or (!Args->Callback)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Callback.defined())) return log.warning(ERR::NullArgs);
 
    if (!Self->Scene->SurfaceID) return log.warning(ERR::FieldNotSet);
 
@@ -864,8 +864,8 @@ static ERR VECTOR_SubscribeKeyboard(extVector *Self, struct vec::SubscribeKeyboa
 
    ((extVectorScene *)Self->Scene)->KeyboardSubscriptions.emplace(Self);
 
-   Args->Callback->pin();
-   Self->KeyboardSubscriptions->emplace_back(*Args->Callback);
+   Args->Callback.pin();
+   Self->KeyboardSubscriptions->emplace_back(Args->Callback);
    retained_callback = true;
 
    return ERR::Okay;
@@ -886,7 +886,7 @@ the currently plotted point.  The `X` and `Y` parameters reflect the coordinate 
 If the `Callback` returns `ERR::Terminate`, then no further coordinates will be processed.
 
 -INPUT-
-ptr(func) Callback: A function to call with the path coordinates.
+func Callback: A function to call with the path coordinates.
 double Scale: Set to `1.0` (recommended) to trace the path at a scale of 1 to 1.
 int Transform: Set to `true` if all transforms applicable to the vector should be applied to the path.
 
@@ -907,10 +907,10 @@ static ERR VECTOR_Trace(extVector *Self, struct vec::Trace *Args)
    kt::Log log;
 
    auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Callback)) Args->Callback->consume();
+      if (Args) Args->Callback.consume();
    });
 
-   if ((!Args) or (!Args->Callback)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Callback.defined())) return log.warning(ERR::NullArgs);
 
    gen_vector_tree(Self);
 
@@ -923,8 +923,8 @@ static ERR VECTOR_Trace(extVector *Self, struct vec::Trace *Args)
    int cmd = -1;
    int index = 0;
 
-  if (Args->Callback->isC()) {
-      auto routine = ((ERR (*)(extVector *, int, int, double, double, APTR))(Args->Callback->Routine));
+   if (Args->Callback.isC()) {
+      auto routine = ((ERR (*)(extVector *, int, int, double, double, APTR))(Args->Callback.Routine));
 
       kt::SwitchContext context(ParentContext());
 
@@ -933,7 +933,7 @@ static ERR VECTOR_Trace(extVector *Self, struct vec::Trace *Args)
          do {
             cmd = t_path.vertex(&x, &y);
             if (agg::is_vertex(cmd)) {
-               if (routine(Self, index++, cmd, x, y, Args->Callback->Meta) IS ERR::Terminate) {
+               if (routine(Self, index++, cmd, x, y, Args->Callback.Meta) IS ERR::Terminate) {
                   return ERR::Okay;
                }
             }
@@ -943,14 +943,14 @@ static ERR VECTOR_Trace(extVector *Self, struct vec::Trace *Args)
          do {
             cmd = Self->BasePath.vertex(&x, &y);
             if (agg::is_vertex(cmd)) {
-               if (routine(Self, index++, cmd, x, y, Args->Callback->Meta) IS ERR::Terminate) {
+               if (routine(Self, index++, cmd, x, y, Args->Callback.Meta) IS ERR::Terminate) {
                   return ERR::Okay;
                }
             }
          } while (cmd != agg::path_cmd_stop);
       }
    }
-   else if (Args->Callback->isScript()) {
+   else if (Args->Callback.isScript()) {
       std::array<ScriptArg, 5> args {{
          { "Vector",  Self->UID, FD_OBJECTID },
          { "Index",   int(0) },
@@ -970,7 +970,7 @@ static ERR VECTOR_Trace(extVector *Self, struct vec::Trace *Args)
                args[2].Int = cmd;
                args[3].Double = x;
                args[4].Double = y;
-               if (sc::Call(*Args->Callback, args, result) != ERR::Okay) return ERR::Function;
+               if (sc::Call(Args->Callback, args, result) != ERR::Okay) return ERR::Function;
                if (result IS ERR::Terminate) return ERR::Okay;
             }
          } while (cmd != agg::path_cmd_stop);
@@ -984,7 +984,7 @@ static ERR VECTOR_Trace(extVector *Self, struct vec::Trace *Args)
                args[2].Int = cmd;
                args[3].Double = x;
                args[4].Double = y;
-               if (sc::Call(*Args->Callback, args, result) != ERR::Okay) return ERR::Function;
+               if (sc::Call(Args->Callback, args, result) != ERR::Okay) return ERR::Function;
                if (result IS ERR::Terminate) return ERR::Okay;
             }
          } while (cmd != agg::path_cmd_stop);

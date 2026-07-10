@@ -92,14 +92,14 @@ struct CompressFile { std::string_view Location; std::string_view Path; static c
 struct DecompressBuffer { APTR Input; APTR Output; int OutputSize; int Result; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DecompressFile { std::string_view Path; std::string_view Dest; int Flags; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct RemoveFile { std::string_view Path; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct CompressStream { APTR Input; int Length; FUNCTION *Callback; APTR Output; int OutputSize; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DecompressStream { APTR Input; int Length; FUNCTION *Callback; APTR Output; int OutputSize; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct CompressStream { APTR Input; int Length; FUNCTION Callback; APTR Output; int OutputSize; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DecompressStream { APTR Input; int Length; FUNCTION Callback; APTR Output; int OutputSize; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct CompressStreamStart { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct CompressStreamEnd { FUNCTION *Callback; APTR Output; int OutputSize; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DecompressStreamEnd { FUNCTION *Callback; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct CompressStreamEnd { FUNCTION Callback; APTR Output; int OutputSize; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DecompressStreamEnd { FUNCTION Callback; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DecompressStreamStart { static const AC id = AC(-11); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DecompressObject { std::string_view Path; OBJECTPTR Object; static const AC id = AC(-12); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Scan { std::string_view Folder; std::string_view Filter; FUNCTION *Callback; static const AC id = AC(-13); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Scan { std::string_view Folder; std::string_view Filter; FUNCTION Callback; static const AC id = AC(-13); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Find { std::string_view Path; int CaseSensitive; int Wildcard; struct CompressedItem *Item; static const AC id = AC(-14); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
@@ -152,22 +152,22 @@ class objCompression : public Object {
       return Action(AC(-5), this, &args);
    }
    inline ERR compressStream(APTR Input, int Length, FUNCTION Callback, APTR Output, int OutputSize) noexcept {
-      struct cmp::CompressStream args = { Input, Length, &Callback, Output, OutputSize };
+      struct cmp::CompressStream args = { Input, Length, Callback, Output, OutputSize };
       return Action(AC(-6), this, &args);
    }
    inline ERR decompressStream(APTR Input, int Length, FUNCTION Callback, APTR Output, int OutputSize) noexcept {
-      struct cmp::DecompressStream args = { Input, Length, &Callback, Output, OutputSize };
+      struct cmp::DecompressStream args = { Input, Length, Callback, Output, OutputSize };
       return Action(AC(-7), this, &args);
    }
    inline ERR compressStreamStart() noexcept {
       return Action(AC(-8), this, nullptr);
    }
    inline ERR compressStreamEnd(FUNCTION Callback, APTR Output, int OutputSize) noexcept {
-      struct cmp::CompressStreamEnd args = { &Callback, Output, OutputSize };
+      struct cmp::CompressStreamEnd args = { Callback, Output, OutputSize };
       return Action(AC(-9), this, &args);
    }
    inline ERR decompressStreamEnd(FUNCTION Callback) noexcept {
-      struct cmp::DecompressStreamEnd args = { &Callback };
+      struct cmp::DecompressStreamEnd args = { Callback };
       return Action(AC(-10), this, &args);
    }
    inline ERR decompressStreamStart() noexcept {
@@ -178,7 +178,7 @@ class objCompression : public Object {
       return Action(AC(-12), this, &args);
    }
    inline ERR scan(const std::string_view &Folder, const std::string_view &Filter, FUNCTION Callback) noexcept {
-      struct cmp::Scan args = { Folder, Filter, &Callback };
+      struct cmp::Scan args = { Folder, Filter, Callback };
       return Action(AC(-13), this, &args);
    }
    inline ERR find(const std::string_view &Path, int CaseSensitive, int Wildcard, struct CompressedItem ** Item) noexcept {

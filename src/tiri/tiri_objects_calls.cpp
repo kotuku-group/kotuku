@@ -95,7 +95,7 @@ static int object_method_call_args(lua_State *Lua)
    int result_count;
    int arg_index = 0;
    CSTRING error_msg = nullptr;
-   ERR error = build_args(Lua, method->Name, method->Args, method->Size, argbuffer.get(), &result_count, arg_index,
+   auto error = build_args(Lua, method->Name, method->Args, method->Size, argbuffer.get(), &result_count, arg_index,
       error_msg);
    if (error != ERR::Okay) {
       argbuffer.reset();
@@ -126,11 +126,10 @@ static int object_method_call_args(lua_State *Lua)
 static int object_method_call(lua_State *Lua)
 {
    auto def = object_context(Lua);
-   ERR error;
    bool release = false;
    auto method = (MethodEntry *)lua_touserdata(Lua, lua_upvalueindex(2));
 
-   error = dispatch_action(def, method->MethodID, nullptr, release);
+   auto error = dispatch_action(def, method->MethodID, nullptr, release);
 
    lua_pushinteger(Lua, int(error));
 
@@ -140,41 +139,21 @@ static int object_method_call(lua_State *Lua)
 }
 
 //********************************************************************************************************************
-// Build an argument buffer for actions and methods.  This follows the FD parsing logic of module_call() for the most
-// part, as that is the base-line for argument parsing.  However, some differences apply in part due to the fact that
-// action parameters are stored in structs.
-//
-// NOTE: FD_RESULT types are treated as real result values that are returned after the ERR code.  They don't need to
-// be provided up-front by the client.  FD_MUTABLE types are mutable buffers that must be provided by the client and
-// are manipulated in-place by the action.
+// Helpers for argument building
 
-static void cleanup_function_arg(lua_State *Lua, FUNCTION *Func)
+inline void release_func_id(lua_State *Lua, FUNCTION *Func)
 {
-   if (not Func) return;
-
-   if ((Func->isScript()) and (Func->Context IS Lua->script) and (Func->ProcedureID > 0)) {
-      luaL_unref(Lua, LUA_REGISTRYINDEX, Func->ProcedureID);
-      Func->ProcedureID = 0;
-   }
-
-   FreeResource(Func);
+   if (Func->ProcedureID > 0) luaL_unref(Lua, LUA_REGISTRYINDEX, Func->ProcedureID);
 }
 
-static void free_function_arg_after_call(lua_State *Lua, FUNCTION *Func)
+inline void release_consumed_func(lua_State *Lua, FUNCTION *Func)
 {
-   if (not Func) return;
-
-   if ((Func->consumed()) and (Func->Context IS Lua->script) and (Func->ProcedureID > 0)) {
-      luaL_unref(Lua, LUA_REGISTRYINDEX, Func->ProcedureID);
-      Func->ProcedureID = 0;
-   }
-
-   FreeResource(Func);
+   if (Func->consumed() and (Func->ProcedureID > 0)) luaL_unref(Lua, LUA_REGISTRYINDEX, Func->ProcedureID);
 }
 
-static ERR materialise_function_arg(lua_State *Lua, const pending_function_arg &Pending, int8_t *ArgBuffer)
+static void materialise_function_arg(lua_State *Lua, const pending_function_arg &Pending, int8_t *ArgBuffer)
 {
-   int ref = LUA_NOREF;
+   int ref;
 
    if (Pending.Type IS LUA_TSTRING) {
       lua_getglobal(Lua, lua_tostring(Lua, Pending.StackIndex));
@@ -185,17 +164,7 @@ static ERR materialise_function_arg(lua_State *Lua, const pending_function_arg &
       ref = luaL_ref(Lua, LUA_REGISTRYINDEX);
    }
 
-   // Note: The async interface requires FUNCTION storage to outlive the stack frame, hence the allocation.
-
-   FUNCTION *func = nullptr;
-   if (!AllocMemory(sizeof(FUNCTION), MEM::DATA, (APTR *)&func)) {
-      *func = FUNCTION(Lua->script, ref);
-      ((FUNCTION **)(ArgBuffer + Pending.Offset))[0] = func;
-      return ERR::Okay;
-   }
-
-   if ((ref != LUA_NOREF) and (ref != LUA_REFNIL)) luaL_unref(Lua, LUA_REGISTRYINDEX, ref);
-   return ERR::AllocMemory;
+   *(FUNCTION *)(ArgBuffer + Pending.Offset) = FUNCTION(Lua->script, ref);
 }
 
 template <class T> static void delete_cpp_array_arg(APTR Array)
@@ -380,6 +349,8 @@ static bool push_cpp_array_arg(lua_State *Lua, int Type, std::string_view Name, 
    return true;
 }
 
+// On failure, undoes any lingering resource allocations.
+
 static void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int ArgsSize, int8_t *ArgBuffer)
 {
    if ((not Args) or (not ArgBuffer)) return;
@@ -396,13 +367,10 @@ static void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int Arg
             }
             j += sizeof(APTR);
          }
-         else if ((type & FD_PTR) or (type & FD_STRUCT)) {
+         else if (type & FD_FUNCTION) {
             j = ALIGN64(j);
-            if ((type & FD_PTR) and (type & FD_FUNCTION) and (j + int(sizeof(APTR)) <= ArgsSize)) {
-               cleanup_function_arg(Lua, ((FUNCTION **)(ArgBuffer + j))[0]);
-               ((FUNCTION **)(ArgBuffer + j))[0] = nullptr;
-            }
-            j += sizeof(APTR);
+            release_func_id(Lua, ((FUNCTION *)(ArgBuffer + j)));
+            j += sizeof(FUNCTION);
          }
          else if (type & FD_STR) {
             j = ALIGN64(j);
@@ -418,15 +386,10 @@ static void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int Arg
             }
             else j += sizeof(STRING);
          }
+         else if ((type & FD_PTR) or (type & FD_STRUCT)) j = ALIGN64(j) + sizeof(APTR);
          else if (type & FD_INT) j += sizeof(int);
-         else if (type & FD_DOUBLE) {
-            j = ALIGN64(j);
-            j += sizeof(double);
-         }
-         else if (type & FD_INT64) {
-            j = ALIGN64(j);
-            j += sizeof(int64_t);
-         }
+         else if (type & FD_DOUBLE) j = ALIGN64(j) + sizeof(double);
+         else if (type & FD_INT64) j = ALIGN64(j) + sizeof(int64_t);
          continue;
       }
 
@@ -439,8 +402,7 @@ static void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int Arg
          j += sizeof(APTR);
       }
       else if ((type & FD_BUFFER) or (Args[i+1].Type & FD_BUFSIZE)) {
-         j = ALIGN64(j);
-         j += sizeof(APTR);
+         j = ALIGN64(j) + sizeof(APTR);
       }
       else if (type & FD_STR) {
          j = ALIGN64(j);
@@ -448,30 +410,17 @@ static void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int Arg
          else if (type & FD_CPP) j += sizeof(std::string_view);
          else j += sizeof(CSTRING);
       }
-      else if (type & FD_PTR) {
+      else if (type & FD_FUNCTION) {
          j = ALIGN64(j);
-         if ((type & FD_FUNCTION) and (j + int(sizeof(APTR)) <= ArgsSize)) {
-            cleanup_function_arg(Lua, ((FUNCTION **)(ArgBuffer + j))[0]);
-            ((FUNCTION **)(ArgBuffer + j))[0] = nullptr;
-         }
-         j += sizeof(APTR);
+         release_func_id(Lua, ((FUNCTION *)(ArgBuffer + j)));
+         j += sizeof(FUNCTION);
       }
+      else if (type & FD_PTR) j = ALIGN64(j) + sizeof(APTR);
       else if (type & FD_INT) j += sizeof(int);
-      else if (type & FD_DOUBLE) {
-         j = ALIGN64(j);
-         j += sizeof(double);
-      }
-      else if (type & FD_INT64) {
-         j = ALIGN64(j);
-         j += sizeof(int64_t);
-      }
+      else if (type & FD_DOUBLE) j = ALIGN64(j) + sizeof(double);
+      else if (type & FD_INT64) j = ALIGN64(j) + sizeof(int64_t);
       else if (type & FD_TAGS) break;
    }
-}
-
-inline bool check_mutable_string_arg(GCstr *String)
-{
-   return lj_str_ismutable(String);
 }
 
 inline bool check_buffer_size_arg(int64_t Size, size_t Capacity)
@@ -479,6 +428,15 @@ inline bool check_buffer_size_arg(int64_t Size, size_t Capacity)
    return (Size >= 0) and (uint64_t(Size) <= uint64_t(Capacity));
 }
 
+//********************************************************************************************************************
+// Build an argument buffer for actions and methods.  This follows the FD parsing logic of module_call() for the most
+// part, as that is the base-line for argument parsing.  However, some differences apply in part due to the fact that
+// action parameters are stored in structs.
+//
+// NOTE: FD_RESULT types are treated as real result values that are returned after the ERR code.  They don't need to
+// be provided up-front by the client.  FD_MUTABLE types are mutable buffers that must be provided by the client and
+// are manipulated in-place by the action.
+//
 // Long jumps are not permitted (interferes with RAII cleanup).  Thunk arguments are resolved up-front under
 // error protection so that later stack reads can never raise a Lua error mid-function.
 
@@ -648,7 +606,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          else if (type IS LUA_TSTRING) {
             //log.trace("Arg: %s, Value: Buffer (Source is String)", Args[i].Name);
             auto string = strV(Lua->base + n - 1);
-            if ((Args[i].Type & FD_MUTABLE) and (not check_mutable_string_arg(string))) {
+            if ((Args[i].Type & FD_MUTABLE) and (not lj_str_ismutable(string))) {
                return fail_arg(n, "Mutable buffer required.");
             }
             size_t len = string->len;
@@ -675,7 +633,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          if (Args[i].Type & FD_MUTABLE) {
             if (type != LUA_TSTRING) return fail_arg(n, "Mutable buffer required.");
             auto string = strV(Lua->base + n - 1);
-            if (not check_mutable_string_arg(string)) return fail_arg(n, "Mutable buffer required.");
+            if (not lj_str_ismutable(string)) return fail_arg(n, "Mutable buffer required.");
             ((CSTRING *)(ArgBuffer + j))[0] = strdatawr(string);
             j += sizeof(CSTRING);
          }
@@ -703,6 +661,19 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
 
          //log.trace("Arg: %s, Value: %s", Args[i].Name, ((STRING *)(ArgBuffer + j))[0]);
       }
+      else if (Args[i].Type & FD_FUNCTION) {
+         j = ALIGN64(j);
+         new (ArgBuffer + j) FUNCTION;
+
+         if ((type IS LUA_TSTRING) or (type IS LUA_TFUNCTION)) {
+            pending_functions.push_back({ j, n, type });
+         }
+         else if ((type != LUA_TNIL) and (type != LUA_TNONE)) {
+            return fail_arg(n, "String or function required.");
+         }
+
+         j += sizeof(FUNCTION);
+      }
       else if (Args[i].Type & FD_PTR) {
          j = ALIGN64(j);
          if (Args[i].Type & FD_OBJECT) {
@@ -724,21 +695,12 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
             else return fail_arg(n, "Object required.");
          }
          else if (Args[i].Type & FD_FUNCTION) {
-            if ((type IS LUA_TSTRING) or (type IS LUA_TFUNCTION)) {
-               ((FUNCTION **)(ArgBuffer + j))[0] = nullptr;
-               pending_functions.push_back({ j, n, type });
-            }
-            else if ((type IS LUA_TNIL) or (type IS LUA_TNONE)) {
-               ((FUNCTION **)(ArgBuffer + j))[0] = nullptr;
-            }
-            else {
-               return fail_arg(n, "String or function required.");
-            }
+            return fail_arg(n, "Function pointers are not supported (require embedding)");
          }
          else if (type IS LUA_TSTRING) {
             //log.trace("Arg: %s, Value: Pointer (Source is String)", Args[i].Name);
             auto string = strV(Lua->base + n - 1);
-            if ((Args[i].Type & FD_MUTABLE) and (not check_mutable_string_arg(string))) {
+            if ((Args[i].Type & FD_MUTABLE) and (not lj_str_ismutable(string))) {
                return fail_arg(n, "Mutable buffer required.");
             }
             ((CSTRING *)(ArgBuffer + j))[0] = (Args[i].Type & FD_MUTABLE) ? strdatawr(string) : strdata(string);
@@ -835,13 +797,12 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
    log.trace("Processed %d Args (%d bytes), detected %d result parameters.", i, j, resultcount);
    if (ResultCount) *ResultCount = resultcount;
 
-   for (auto &pending : pending_functions) {
-      if (auto error = materialise_function_arg(Lua, pending, ArgBuffer); error != ERR::Okay) return fail(error);
-   }
+   for (auto &pending : pending_functions) materialise_function_arg(Lua, pending, ArgBuffer);
 
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
 // Note: Please refer to process_results() in tiri_module.c for the 'official' take on result handling.
 
 static int get_results(lua_State *Lua, const FunctionField *Args, const int8_t *ArgBuf)
@@ -954,15 +915,15 @@ static int get_results(lua_State *Lua, const FunctionField *Args, const int8_t *
          }
          of += sizeof(APTR);
       }
+      else if (type & FD_FUNCTION) {
+         of = ALIGN64(of);
+         if (type & FD_RESULT); // We don't process functions as results
+         else release_consumed_func(Lua, (FUNCTION *)(ArgBuf + of));
+         of += sizeof(FUNCTION);
+      }
       else if (type & FD_PTR) {
          of = ALIGN64(of);
-         if (type & FD_FUNCTION) {
-            if (auto func = (FUNCTION *)((APTR *)(ArgBuf+of))[0]) {
-               log.trace("Removing function memory allocation %p", func);
-               free_function_arg_after_call(Lua, func);
-            }
-         }
-         else if (type & FD_RESULT) {
+         if (type & FD_RESULT) {
             if (type & FD_OBJECT) {
                auto obj = (OBJECTPTR)((APTR *)(ArgBuf+of))[0];
 

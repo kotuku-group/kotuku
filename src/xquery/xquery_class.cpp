@@ -631,7 +631,7 @@ Script callbacks are not currently supported.
 
 -INPUT-
 strview FunctionName: The name of the function to register (e.g., "custom-function").
-ptr(func) Callback: The callback function to register for FunctionName.
+func Callback: The callback function to register for FunctionName.
 
 -ERRORS-
 Okay
@@ -651,15 +651,15 @@ static ERR XQUERY_RegisterFunction(extXQuery *Self, struct xq::RegisterFunction 
 
    if (not Args) return log.warning(ERR::NullArgs);
    if (Args->FunctionName.empty()) return log.warning(ERR::NullArgs);
-   if ((not Args->Callback) or (not Args->Callback->defined())) return log.warning(ERR::NullArgs);
-   if (not Args->Callback->isC()) {
-      Args->Callback->consume();
+   if (not Args->Callback.defined()) return log.warning(ERR::NullArgs);
+   if (not Args->Callback.isC()) {
+      Args->Callback.consume();
       return log.warning(ERR::NoSupport);
    }
 
    auto &function = Self->RegisteredFunctions[std::string(Args->FunctionName)];
    clear_xquery_callback(function);
-   function = *Args->Callback;
+   function = Args->Callback;
    function.pin();
    return ERR::Okay;
 }
@@ -693,7 +693,7 @@ The C++ prototype for Callback is `ERR Function(*XML, int TagID, CSTRING Attrib,
 
 -INPUT-
 obj(XML) XML: Target XML document to search.
-ptr(func) Callback: Optional callback function to invoke for each matching node.
+func Callback: Optional callback function to invoke for each matching node.
 int Index: Optional tag index that establishes the initial context for the query.
 int(XEF) Flags: Optional flags.
 
@@ -714,15 +714,15 @@ static ERR XQUERY_Search(extXQuery *Self, struct xq::Search *Args)
 {
    kt::Log log;
 
-   auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Callback)) Args->Callback->consume();
-   });
-
    if (not Args) return log.warning(ERR::NullArgs);
+
+   auto consume_callback = kt::Defer([&]() {
+      Args->Callback.consume();
+   });
 
    int len = 0, max_len = std::min<int>(std::ssize(Self->Statement), 40);
    while ((Self->Statement[len] != '\n') and (len < max_len)) len++;
-   log.branch("Expression: %.*s; Callback: %c, BasePath: %s", len, Self->Statement.c_str(), Args->Callback ? (Args->Callback->Type != CALL::NIL ? 'Y' : 'N') : 'N', Self->Path.c_str());
+   log.branch("Expression: %.*s; Callback: %c, BasePath: %s", len, Self->Statement.c_str(), Args->Callback.defined() ? 'Y' : 'N', Self->Path.c_str());
 
 #ifdef ANALYSE_MEMORY_USAGE
    auto mt = kt::MemTracker();
@@ -739,8 +739,8 @@ static ERR XQUERY_Search(extXQuery *Self, struct xq::Search *Args)
 
    auto xml = (extXML *)Args->XML;
    Self->XML = xml;
-   if ((Args->Callback) and (Args->Callback->defined())) {
-      Self->Callback = *Args->Callback;
+   if (Args->Callback.defined()) {
+      Self->Callback = Args->Callback;
       Self->Callback.pin();
    }
    else Self->Callback.Type = CALL::NIL;

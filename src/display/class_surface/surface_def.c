@@ -133,8 +133,8 @@ FDEF maExposeToDisplay[] = { { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT
 FDEF maInvalidateRegion[] = { { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, { "Height", FD_INT }, { 0, 0 } };
 FDEF maSetDisplay[] = { { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, { "Height", FD_INT }, { "InsideWidth", FD_INT }, { "InsideHeight", FD_INT }, { "BitsPerPixel", FD_INT }, { "RefreshRate", FD_DOUBLE }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maSetOpacity[] = { { "Value", FD_DOUBLE }, { "Adjustment", FD_DOUBLE }, { 0, 0 } };
-FDEF maAddCallback[] = { { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
-FDEF maRemoveCallback[] = { { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
+FDEF maAddCallback[] = { { "Callback", FD_FUNCTION }, { 0, 0 } };
+FDEF maRemoveCallback[] = { { "Callback", FD_FUNCTION }, { 0, 0 } };
 FDEF maScheduleRedraw[] = { { "RefreshRate", FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clSurfaceMethods[] = {
