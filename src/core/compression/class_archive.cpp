@@ -197,7 +197,7 @@ static ERR ARCHIVE_Init(objFile *Self)
    if ((Self->Flags & (FL::NEW|FL::WRITE)) != FL::NIL) return log.warning(ERR::ReadOnly);
 
    ERR error = ERR::Search;
-   if (Self->DerivedPtr = malloc(sizeof(prvFileArchive))) {
+   if ((Self->DerivedPtr = malloc(sizeof(prvFileArchive)))) {
       auto prv = (prvFileArchive *)Self->DerivedPtr;
       new (prv) prvFileArchive{};
 

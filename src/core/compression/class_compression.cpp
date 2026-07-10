@@ -818,7 +818,7 @@ if (auto error = mtCompressStreamStart(compress); !error) {
    }
 
    if (!error) {
-      if (!(error = mtCompressStreamEnd(compress, callback, 0))) {
+      if (!(error = mtCompressStreamEnd(compress, callback, nullptr, 0))) {
          cmpsize += result;
          error = acWrite(outfile, output, result, &len);
       }
