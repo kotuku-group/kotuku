@@ -330,7 +330,7 @@ Note: If an error occurs, check the #ErrorMsg field for a custom error message c
 
 -INPUT-
 strview Expression: A valid XQuery expression.
-func Callback: Optional pointer to a callback function for processing multiple matches.
+func Callback: Optional reference to a callback function for processing multiple matches.
 &int Result: UID of the first matching tag.  When Callback is defined, this is the first matching tag processed.
 
 -ERRORS-

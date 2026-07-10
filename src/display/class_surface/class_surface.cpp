@@ -1915,7 +1915,7 @@ This method is scope restricted.  A caller can remove only callbacks associated 
 callbacks added by other objects are not affected.
 
 -INPUT-
-func Callback: Callback routine to remove, or `NULL` to remove all associated callback routines for the caller.
+func Callback: Callback routine to remove, or leave undefined to remove all associated callback routines for the caller.
 
 -ERRORS-
 Okay
