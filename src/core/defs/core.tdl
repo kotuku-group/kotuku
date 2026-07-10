@@ -813,7 +813,8 @@ class objTask;
     "AsyncPending",
     "AsyncWait",
     "ClassDatabase",
-    "GetThreadID")
+    "GetThreadID",
+    "UnitTests")
 
   c_insert([==[
 

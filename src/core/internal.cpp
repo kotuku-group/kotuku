@@ -454,6 +454,71 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
    return ERR::Okay;
 }
 
+/*********************************************************************************************************************
+A buffer produced by copy_args() embeds absolute pointers into its own storage for string and sized buffer arguments.
+Those pointers survive moves of the owning std::vector, but not byte-for-byte duplication (e.g. serialisation into
+the message queue).  make_args_relative() converts the self-referential pointers to offsets from the start of the
+argument block so that make_args_absolute() can rebase them against the receiving copy.  Object, array and function
+references are position independent and are left untouched, as are null pointers (offsets always exceed zero because
+extension data follows the argument block).
+*********************************************************************************************************************/
+
+void make_args_relative(const FunctionField *Args, int ArgsSize, int8_t *Buffer)
+{
+   if ((not Args) or (not Buffer)) return;
+
+   int pos = 0;
+   for (int i=0; Args[i].Name and (pos < ArgsSize); i++) {
+      int type = Args[i].Type;
+      if (type & FD_ARRAY); // Owned heap copy; position independent
+      else if (type & FD_STR) {
+         pos = align_arg_offset(pos);
+         if ((type & FD_CPP) and (not (type & FD_MUTABLE))) {
+            auto view = (std::string_view *)(Buffer + pos);
+            if (view->data()) *view = std::string_view((CSTRING)(view->data() - (CSTRING)Buffer), view->length());
+         }
+         else if (auto str = (int8_t **)(Buffer + pos); *str) {
+            *str = (int8_t *)(*str - Buffer);
+         }
+      }
+      else if (type & (FD_PTR|FD_BUFFER)) {
+         pos = align_arg_offset(pos);
+         if ((not (type & (FD_OBJECT|FD_RESULT))) and (Args[i+1].Type & FD_PTRSIZE)) {
+            if (auto ptr = (int8_t **)(Buffer + pos); *ptr) *ptr = (int8_t *)(*ptr - Buffer);
+         }
+      }
+      pos = argument_end_offset(type, pos);
+   }
+}
+
+void make_args_absolute(const FunctionField *Args, int ArgsSize, int8_t *Buffer)
+{
+   if ((not Args) or (not Buffer)) return;
+
+   int pos = 0;
+   for (int i=0; Args[i].Name and (pos < ArgsSize); i++) {
+      int type = Args[i].Type;
+      if (type & FD_ARRAY); // Owned heap copy; position independent
+      else if (type & FD_STR) {
+         pos = align_arg_offset(pos);
+         if ((type & FD_CPP) and (not (type & FD_MUTABLE))) {
+            auto view = (std::string_view *)(Buffer + pos);
+            if (view->data()) *view = std::string_view((CSTRING)Buffer + (MAXINT)view->data(), view->length());
+         }
+         else if (auto str = (int8_t **)(Buffer + pos); *str) {
+            *str = Buffer + (MAXINT)*str;
+         }
+      }
+      else if (type & (FD_PTR|FD_BUFFER)) {
+         pos = align_arg_offset(pos);
+         if ((not (type & (FD_OBJECT|FD_RESULT))) and (Args[i+1].Type & FD_PTRSIZE)) {
+            if (auto ptr = (int8_t **)(Buffer + pos); *ptr) *ptr = Buffer + (MAXINT)*ptr;
+         }
+      }
+      pos = argument_end_offset(type, pos);
+   }
+}
+
 //********************************************************************************************************************
 
 void release_copied_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, bool DereferenceAll,

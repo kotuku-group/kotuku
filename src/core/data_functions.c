@@ -87,6 +87,7 @@ FDEF argsSubscribeAction[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJE
 FDEF argsSubscribeEvent[] = { { "Error", FD_INT|FD_ERROR }, { "Event", FD_INT64 }, { "Callback", FD_FUNCTIONPTR }, { "Handle", FD_RESULT|FD_PTR }, { 0, 0 } };
 FDEF argsSubscribeTimer[] = { { "Error", FD_INT|FD_ERROR }, { "Interval", FD_DOUBLE }, { "Callback", FD_FUNCTIONPTR }, { "Subscription", FD_RESULT|FD_PTR }, { 0, 0 } };
 FDEF argsTrackResource[] = { { "Error", FD_INT|FD_ERROR }, { "ResourceID", FD_INT }, { "Address", FD_PTR }, { "OwnerID", FD_INT }, { "ResourceManager:Manager", FD_PTR|FD_STRUCT }, { 0, 0 } };
+FDEF argsUnitTests[] = { { "Void", FD_VOID }, { "Options", FD_STR }, { "Passed", FD_RESULT|FD_INT }, { "Total", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF argsUnloadFile[] = { { "Void", FD_VOID }, { "CacheFile:Cache", FD_PTR|FD_STRUCT|FD_RESOURCE }, { 0, 0 } };
 FDEF argsUnsubscribeAction[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTPTR }, { "Action", FD_INT }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
 FDEF argsUnsubscribeEvent[] = { { "Void", FD_VOID }, { "Handle", FD_PTR }, { 0, 0 } };
@@ -192,6 +193,7 @@ const struct Function glFunctions[] = {
    { (APTR)AsyncWait, "AsyncWait", argsAsyncWait },
    { (APTR)ClassDatabase, "ClassDatabase", argsClassDatabase },
    { (APTR)GetThreadID, "GetThreadID", argsGetThreadID },
+   { (APTR)UnitTests, "UnitTests", argsUnitTests },
    { nullptr, nullptr, nullptr }
 };
 

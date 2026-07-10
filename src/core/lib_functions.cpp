@@ -1202,3 +1202,44 @@ ERR WakeThread(int Thread, int Stop)
    }
    return ERR::Okay;
 }
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+UnitTests: Private.  Run the unit tests that are compiled into the Core.
+
+If the Core has been built with the `UNIT_TESTS` option enabled, calling this function runs the embedded unit tests
+and returns the resulting totals.  If unit tests are not present in the build then no tests are run and both
+counters are returned as zero.
+
+A test run is considered successful when `Passed` matches `Total`.  Details of individual test failures are printed
+to the application log.
+
+-INPUT-
+cstr Options: Reserved for future use; `NULL` is acceptable.
+&int Passed: Returns the number of tests that passed.
+&int Total: Returns the total number of tests that were executed.
+
+-END-
+
+*********************************************************************************************************************/
+
+#ifdef UNIT_TESTS
+extern void queue_action_unit_tests(int &, int &);
+#endif
+
+void UnitTests(CSTRING Options, int *Passed, int *Total)
+{
+   int passed = 0, total = 0;
+
+#ifdef UNIT_TESTS
+   {
+      kt::Log log("CoreTests");
+      log.branch("Running QueueAction unit tests...");
+      queue_action_unit_tests(passed, total);
+   }
+#endif
+
+   if (Passed) *Passed = passed;
+   if (Total) *Total = total;
+}
