@@ -349,8 +349,8 @@ static bool push_cpp_array_arg(lua_State *Lua, int Type, std::string_view Name, 
    return true;
 }
 
-// On failure, undoes any lingering resource allocations.
-
+// Cleans up allocations held by an argument buffer.
+// If ReleaseFunctions is true, also releases any FD_FUNCTION Lua registry references.
 void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int ArgsSize, int8_t *ArgBuffer,
    bool ReleaseFunctions)
 {
