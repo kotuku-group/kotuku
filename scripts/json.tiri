@@ -1,28 +1,4 @@
 -- A compact pure-Lua JSON library originally written by @tylerneylon for the public domain.
---
--- ## json.encode(Object, [ErrorCallback])
---
--- This expects the following to be true of any tables being encoded:
---  * They only have string or number keys. Number keys must be represented as strings in json; this is part of the json
---    spec.
---  * They are not recursive. Such a structure cannot be specified in json.
---
--- Native Tiri arrays are encoded as JSON arrays.
---
--- Because the nil value cannot be a key, and as a table value is considered equivalent to a missing key, there is no
--- way to express the json "null" value in a table. The only way this will output "null" is if your entire input obj
--- is nil itself.
---
--- ## json.decode:
---
--- This function decodes json, with the exception that it does not pay attention to \u-escaped unicode code points in
--- strings.
---
--- It is difficult to return null as a value. In order to prevent the loss of keys with a null value in a json
--- string, this function uses the one-off table value json.null (which is just an empty table) to indicate null values.
--- This way you can check if a value is null with the conditional `val is json.null`.
---
--- If you have control over the data, avoid null values in your data to begin with.
 
    namespace 'json'
 
@@ -98,6 +74,28 @@ end
 
 -- Public values and functions.
 
+@Doc(text=[[
+
+Encode a Tiri value as JSON text.  Tables are encoded as objects and native Tiri arrays are encoded as arrays.
+
+The following constraints apply to any tables being encoded:
+
+* They only have string or number keys. Number keys must be represented as strings in json; this is part of the json spec.
+* They are not recursive. Such a structure cannot be specified in json.
+
+Native Tiri arrays are encoded as JSON arrays.
+
+Because the nil value cannot be a key, and as a table value is considered equivalent to a missing key, there is no
+way to express the json "null" value in a table. The only way the encoder outputs "null" is if the entire input object
+is nil itself.
+
+-INPUT-
+Value: Value to encode
+ErrorCallback: Optional callback invoked when the value cannot be encoded
+
+-RESULTS-
+string: JSON text
+]])
 json.encode = function(Value:any, ErrorCallback:func, AsKey:bool):str
    local kind = type(Value)
    ErrorCallback ?= error
@@ -144,6 +142,25 @@ json.encode = function(Value:any, ErrorCallback:func, AsKey:bool):str
    end
 end
 
+@Doc(text=[[
+Decode JSON text into a Tiri value.  JSON objects become tables, arrays become native Tiri arrays.  Unicode escape
+sequences are not decoded.
+
+Tiri has no representation for null as a JSON value. In order to prevent the loss of keys with a null value, this
+function uses the empty table value `json.null` to indicate null values.  Check for null values with the conditional
+`val is json.null`.
+
+If you have control over the data, avoid null values in your data to begin with.
+
+-INPUT-
+String: JSON text
+Pos: Optional character position to start parsing from
+EndToken: Optional character that indicates the end of the current object or array
+
+-RESULTS-
+any: Decoded value
+num: position after the final parsed character
+]])
 json.decode = function(String:str, Pos:num, EndToken:str):<any, num>
    Pos ?= 0
    if Pos >= #String then error('Reached unexpected end of input.') end
