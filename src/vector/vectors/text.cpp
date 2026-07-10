@@ -869,7 +869,7 @@ FontStyle: Determines font styling.
 
 Unique styles for a font can be selected through the FontStyle field.  Conventional font styles are `Bold`,
 `Bold Italic`, `Italic` and `Regular` (the default).  Because TrueType fonts can use any style name that the
-designer chooses such as `Thin`, `Narrow` or `Wide`, use ~Font.GetList() for a definitive list of available
+designer chooses such as `Thin`, `Narrow` or `Wide`, read `fonts:fonts.cfg` for a definitive list of available
 style names.
 
 Errors are not returned if the style name is invalid or unavailable.

@@ -23,6 +23,59 @@ rxFontSize <const> = <{ regex.new([[^(-?\d+)%$]]) }>
 glStyleConfig = 'user:config/style.cfg'
 glPainter = struct.new('VectorPainter')
 
+gui.fontList = thunk():table
+   return exec([[
+   import 'config'
+
+   local fonts = { }
+   catalogue = config.decode(io.readAll('fonts:fonts.cfg'))
+   local options = { }
+   try
+      options = config.decode(io.readAll('fonts:options.cfg'))
+   end
+
+   -- Merge
+   for group_name, option_group in pairs(options) do
+      local cat_group = catalogue[group_name]
+      if cat_group is nil then
+         cat_group = { }
+         catalogue[group_name] = cat_group
+      end
+
+      for key, value in pairs(option_group) do
+         cat_group[key] = value
+      end
+   end
+
+   for group_name, entry in pairs(catalogue) do
+      local name = entry.Name ?? group_name
+      local font = { name=name }
+
+      if entry.Alias then font.alias = entry.Alias end
+      if entry.Styles then
+         font.styles = entry.Styles:split(',')
+      else
+         font.styles = array<string> { 'Regular' }
+      end
+
+      if entry.Points then
+         local sizes = array<int>
+         for point in values(entry.Points:split(',')) do
+            local size = tonumber(point:trim())
+            if size then sizes:push(size) end
+         end
+         if #sizes > 0 then font.sizes = sizes end
+      end
+
+      font.hidden = (entry.Hidden ?? ''):lower() is 'yes'
+      font.scalable = (entry.Scalable ?? ''):lower() is 'yes'
+      fonts[name] = font
+   end
+
+   return fonts
+   ]])
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 
 gui.mtHSV = { -- HSV metatable
