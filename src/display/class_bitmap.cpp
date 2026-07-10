@@ -2878,32 +2878,33 @@ extBitmap::extBitmap(objMetaClass *ClassPtr, OBJECTID ObjectID) : objBitmap(Clas
 
 extBitmap::~extBitmap()
 {
-   #ifdef __xwindows__
-      if (x11.XShmImage) {
-         // Tell the X11 server to detach from the memory block
-         XShmDetach(XDisplay, &x11.ShmInfo);
-         x11.XShmImage = false;
-         free_shm(Data, x11.ShmInfo.shmid);
-      }
+#ifdef __xwindows__
+   if (x11.XShmImage) {
+      // Tell the X11 server to detach from the memory block
+      XShmDetach(XDisplay, &x11.ShmInfo);
+      x11.XShmImage = false;
+      free_shm(Data, x11.ShmInfo.shmid);
+      Data = nullptr;
+   }
 
-      if (x11.gc) XFreeGC(XDisplay, x11.gc);
-   #endif
+   if (x11.gc) XFreeGC(XDisplay, x11.gc);
+#endif
 
    if ((Data) and (prvAFlags & BF_DATA)) FreeResource(Data);
    if (prvCompress) FreeResource(prvCompress);
    if (ResolutionChangeHandle) UnsubscribeEvent(ResolutionChangeHandle);
 
-   #ifdef __xwindows__
-      if ((x11.drawable) and (x11.window != x11.drawable)) {
-         if (XDisplay) XFreePixmap(XDisplay, x11.drawable);
-      }
+#ifdef __xwindows__
+   if ((x11.drawable) and (x11.window != x11.drawable)) {
+      if (XDisplay) XFreePixmap(XDisplay, x11.drawable);
+   }
 
-      if (x11.readable) XDestroyImage(x11.readable);
-   #endif
+   if (x11.readable) XDestroyImage(x11.readable);
+#endif
 
-   #ifdef _WIN32
-      if (win.Drawable) winDeleteDC(win.Drawable);
-   #endif
+#ifdef _WIN32
+   if (win.Drawable) winDeleteDC(win.Drawable);
+#endif
 }
 
 //********************************************************************************************************************

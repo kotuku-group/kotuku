@@ -449,10 +449,7 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
          glSubscriptions.erase(Object->UID);
       }
 
-      if (Object->DerivedPtr) {
-         if (FreeResource(Object->DerivedPtr) != ERR::Okay) log.warning("Invalid DerivedPtr address %p.", Object->DerivedPtr);
-         Object->DerivedPtr = nullptr;
-      }
+      if (Object->DerivedPtr) { free(Object->DerivedPtr); Object->DerivedPtr = nullptr; }
 
       free_children(Object);
 

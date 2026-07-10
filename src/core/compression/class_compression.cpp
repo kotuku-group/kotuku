@@ -807,7 +807,7 @@ if (auto error = mtCompressStreamStart(compress); !error) {
    while (!(error = acRead(file, input, sizeof(input), &len))) {
       if (!len) break; // No more data to read.
 
-      error = mtCompressStream(compress, input, len, &callback, nullptr, 0);
+      error = mtCompressStream(compress, input, len, callback, nullptr, 0);
       if (error != ERR::Okay) break;
 
       if (result > 0) {
@@ -818,7 +818,7 @@ if (auto error = mtCompressStreamStart(compress); !error) {
    }
 
    if (!error) {
-      if (!(error = mtCompressStreamEnd(compress, nullptr, 0))) {
+      if (!(error = mtCompressStreamEnd(compress, callback, 0))) {
          cmpsize += result;
          error = acWrite(outfile, output, result, &len);
       }

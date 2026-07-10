@@ -37,13 +37,13 @@ constexpr int LEN_ARCHIVE = 8; // "archive:" length
 struct prvFileArchive {
    ZipFile  Info;
    ZStream  Inflate;      // Streaming decompression state for the active archive entry
-   objFile  *FileStream;
-   extCompression *Archive;
+   objFile  *FileStream = nullptr;
+   extCompression *Archive = nullptr;
    uint8_t  InputBuffer[SIZE_COMPRESSION_BUFFER];
    uint8_t  OutputBuffer[SIZE_COMPRESSION_BUFFER];
-   uint8_t  *ReadPtr;      // Current position within OutputBuffer
-   int      InputLength;
-   bool     InvalidState; // Set to true if the archive is corrupt.
+   uint8_t  *ReadPtr = nullptr;   // Current position within OutputBuffer
+   int      InputLength = 0;
+   bool     InvalidState = false; // Set to true if the archive is corrupt.
 };
 
 struct ArchiveDriver {
@@ -65,7 +65,6 @@ static void reset_state(objFile *Self)
    auto prv = (prvFileArchive *)Self->DerivedPtr;
 
    prv->Inflate.reset();
-
    prv->Inflate->avail_in = 0;
    prv->ReadPtr = nullptr;
    Self->Position = 0;
@@ -179,7 +178,7 @@ static ERR ARCHIVE_Free(objFile *Self)
    if (auto prv = (prvFileArchive *)Self->DerivedPtr) {
       if (prv->FileStream) FreeResource(prv->FileStream);
       prv->~prvFileArchive();
-      // Let Free call FreeResource()
+      // Let Free release DerivedPtr
    }
 
    return ERR::NothingDone;
@@ -198,9 +197,9 @@ static ERR ARCHIVE_Init(objFile *Self)
    if ((Self->Flags & (FL::NEW|FL::WRITE)) != FL::NIL) return log.warning(ERR::ReadOnly);
 
    ERR error = ERR::Search;
-   if (!AllocMemory(sizeof(prvFileArchive), MEM::DATA, &Self->DerivedPtr)) {
+   if (Self->DerivedPtr = malloc(sizeof(prvFileArchive))) {
       auto prv = (prvFileArchive *)Self->DerivedPtr;
-      new (prv) prvFileArchive;
+      new (prv) prvFileArchive{};
 
       if (Self->Path.ends_with(':')) { // Nothing is referenced
          return ERR::Okay;
@@ -237,7 +236,7 @@ static ERR ARCHIVE_Init(objFile *Self)
 
       if (error != ERR::Okay) {
          prv->~prvFileArchive();
-         FreeResource(Self->DerivedPtr);
+         free(Self->DerivedPtr);
          Self->DerivedPtr = nullptr;
       }
    }
