@@ -221,7 +221,7 @@ static ERR ASSET_Free(objFile *Self)
    if (auto prv = (prvFileAsset *)Self->DerivedPtr) {
       if (prv->Asset) AAsset_close(prv->Asset);
       if (prv->Dir) AAssetDir_close(prv->Dir);
-      // Let Free call FreeResource()
+      // Let Free release DerivedPtr
    }
 
    return ERR::NothingDone;
@@ -244,9 +244,7 @@ static ERR ASSET_Init(objFile *Self)
 
    // Allocate private structure
 
-   if (!AllocMemory(sizeof(prvFileAsset), Self->memflags(), &Self->DerivedPtr)) {
-      int len = Self->Path.size();
-
+   if (Self->DerivedPtr = malloc(sizeof(prvFileAsset))) {
       if (Self->Path.endsWith(':')) {
          return ERR::Okay;
       }
@@ -264,7 +262,7 @@ static ERR ASSET_Init(objFile *Self)
             return ERR::Okay;
          }
          else {
-            FreeResource(Self->DerivedPtr);
+            free(Self->DerivedPtr);
             Self->DerivedPtr = nullptr;
             return ERR::DoesNotExist;
          }
@@ -282,7 +280,7 @@ static ERR ASSET_Init(objFile *Self)
             else log.warning("Failed to open asset file \"%s\"", Self->Path+LEN_ASSETS);
          }
 
-         FreeResource(Self->DerivedPtr);
+         free(Self->DerivedPtr);
          Self->DerivedPtr = nullptr;
          return ERR::InvalidState;
       }
@@ -302,9 +300,8 @@ static ERR ASSET_Move(objFile *Self, struct mtFileMove *Args)
 static ERR ASSET_Read(objFile *Self, struct acRead *Args)
 {
    kt::Log log(__FUNCTION__);
-   prvFileAsset *prv;
+   prvFileAsset *prv = Self->DerivedPtr;
 
-   if (!(prv = Self->DerivedPtr)) return log.warning(ERR::ObjectCorrupt);
    if (!(Self->Flags & FL::READ)) return log.warning(ERR::FileReadFlag);
 
    Args->Result = AAsset_read(prv->Asset, Args->Buffer, Args->Length);
@@ -339,10 +336,9 @@ static ERR ASSET_Rename(objFile *Self, struct acRename *Args)
 
 static ERR ASSET_Seek(objFile *Self, struct acSeek *Args)
 {
-   prvFileAsset *prv;
    int method;
 
-   if (!(prv = Self->DerivedPtr)) return log.warning(ERR::ObjectCorrupt);
+   prvFileAsset *prv = Self->DerivedPtr;
 
    if (Args->Position IS POS_START) method = SEEK::SET;
    else if (Args->Position IS POS_END) method = SEEK::END;
@@ -382,9 +378,7 @@ static ERR SET_Permissions(objFile *Self, APTR Value)
 
 static ERR GET_Size(objFile *Self, int64_t *Value)
 {
-   prvFileAsset *prv;
-
-   if (!(prv = Self->DerivedPtr)) return log.warning(ERR::ObjectCorrupt);
+   prvFileAsset *prv = Self->DerivedPtr;
 
    if (prv->Asset) {
       *Value = AAsset_getLength(prv->Asset);

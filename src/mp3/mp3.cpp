@@ -314,7 +314,7 @@ static ERR MP3_Init(objMP3 *Self)
    }
 
    prvMP3 *prv;
-   if (!AllocMemory(sizeof(prvMP3), MEM::DATA, &Self->DerivedPtr)) {
+   if (Self->DerivedPtr = malloc(sizeof(prvMP3))) {
       prv = (prvMP3 *)Self->DerivedPtr;
       new (prv) prvMP3;
    }
@@ -361,7 +361,8 @@ static ERR MP3_Init(objMP3 *Self)
       }
    }
    else {
-      FreeResource(Self->DerivedPtr); Self->DerivedPtr = nullptr;
+      free(Self->DerivedPtr);
+      Self->DerivedPtr = nullptr;
       return ERR::NoSupport;
    }
 

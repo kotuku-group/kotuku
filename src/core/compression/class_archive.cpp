@@ -65,7 +65,6 @@ static void reset_state(objFile *Self)
    auto prv = (prvFileArchive *)Self->DerivedPtr;
 
    prv->Inflate.reset();
-
    prv->Inflate->avail_in = 0;
    prv->ReadPtr = nullptr;
    Self->Position = 0;
@@ -179,7 +178,7 @@ static ERR ARCHIVE_Free(objFile *Self)
    if (auto prv = (prvFileArchive *)Self->DerivedPtr) {
       if (prv->FileStream) FreeResource(prv->FileStream);
       prv->~prvFileArchive();
-      // Let Free call FreeResource()
+      // Let Free release DerivedPtr
    }
 
    return ERR::NothingDone;
@@ -198,7 +197,7 @@ static ERR ARCHIVE_Init(objFile *Self)
    if ((Self->Flags & (FL::NEW|FL::WRITE)) != FL::NIL) return log.warning(ERR::ReadOnly);
 
    ERR error = ERR::Search;
-   if (!AllocMemory(sizeof(prvFileArchive), MEM::DATA, &Self->DerivedPtr)) {
+   if (Self->DerivedPtr = malloc(sizeof(prvFileArchive))) {
       auto prv = (prvFileArchive *)Self->DerivedPtr;
       new (prv) prvFileArchive;
 
@@ -237,7 +236,7 @@ static ERR ARCHIVE_Init(objFile *Self)
 
       if (error != ERR::Okay) {
          prv->~prvFileArchive();
-         FreeResource(Self->DerivedPtr);
+         free(Self->DerivedPtr);
          Self->DerivedPtr = nullptr;
       }
    }
