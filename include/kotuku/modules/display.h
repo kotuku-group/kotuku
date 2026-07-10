@@ -1894,9 +1894,9 @@ struct ExposeToDisplay { int X; int Y; int Width; int Height; EXF Flags; static 
 struct InvalidateRegion { int X; int Y; int Width; int Height; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetDisplay { int X; int Y; int Width; int Height; int InsideWidth; int InsideHeight; int BitsPerPixel; double RefreshRate; int Flags; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetOpacity { double Value; double Adjustment; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddCallback { FUNCTION *Callback; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddCallback { FUNCTION Callback; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Minimise { static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct RemoveCallback { FUNCTION *Callback; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct RemoveCallback { FUNCTION Callback; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct ScheduleRedraw { int RefreshRate; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
@@ -2001,14 +2001,14 @@ class objSurface : public Object {
       return Action(AC(-5), this, &args);
    }
    inline ERR addCallback(FUNCTION Callback) noexcept {
-      struct drw::AddCallback args = { &Callback };
+      struct drw::AddCallback args = { Callback };
       return Action(AC(-6), this, &args);
    }
    inline ERR minimise() noexcept {
       return Action(AC(-7), this, nullptr);
    }
    inline ERR removeCallback(FUNCTION Callback) noexcept {
-      struct drw::RemoveCallback args = { &Callback };
+      struct drw::RemoveCallback args = { Callback };
       return Action(AC(-8), this, &args);
    }
    inline ERR scheduleRedraw(int RefreshRate) noexcept {

@@ -330,7 +330,7 @@ Note: If an error occurs, check the #ErrorMsg field for a custom error message c
 
 -INPUT-
 strview Expression: A valid XQuery expression.
-ptr(func) Callback: Optional pointer to a callback function for processing multiple matches.
+func Callback: Optional pointer to a callback function for processing multiple matches.
 &int Result: UID of the first matching tag.  When Callback is defined, this is the first matching tag processed.
 
 -ERRORS-
@@ -352,13 +352,13 @@ static ERR XML_Search(extXML *Self, struct xml::Search *Args)
 {
    kt::Log log;
 
-   auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Callback)) Args->Callback->consume();
-   });
+   if (not Args) return ERR::NullArgs;
+
+   auto consume_callback = kt::Defer([&]() { Args->Callback.consume(); });
 
    Self->ErrorMsg.clear();
 
-   if ((not Args) or Args->Expression.empty()) return ERR::NullArgs;
+   if (Args->Expression.empty()) return ERR::NullArgs;
    if ((Self->Flags & XMF::LOG_ALL) != XMF::NIL) {
       log.msg("Expression: %.*s", int(Args->Expression.size()), Args->Expression.data());
    }
@@ -372,8 +372,8 @@ static ERR XML_Search(extXML *Self, struct xml::Search *Args)
          matching_tag_opt opt;
 
          FUNCTION callback;
-         if ((Args->Callback) and (Args->Callback->defined())) {
-            opt.callback = Args->Callback;
+         if (Args->Callback.defined()) {
+            opt.callback = &Args->Callback;
             callback = C_FUNCTION(find_all_tags, &opt);
             error = xq->search((objXML *)Self, callback, 0, XEF::NIL);
          }
@@ -395,7 +395,7 @@ static ERR XML_Search(extXML *Self, struct xml::Search *Args)
             std::string_view sv;
             if ((!xq->getErrorMsg(sv)) and (not sv.empty())) Self->ErrorMsg.assign(sv);
             FreeResource(xq);
-            if ((Args->Callback) and (error IS ERR::Search)) return ERR::Okay;
+            if (Args->Callback.defined() and (error IS ERR::Search)) return ERR::Okay;
             else return error;
          }
       }

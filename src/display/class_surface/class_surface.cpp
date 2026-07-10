@@ -616,7 +616,7 @@ Calling AddCallback() with a callback that is already registered for the same ob
 the callback list, making it run after the callbacks that remain before it.
 
 -INPUT-
-ptr(func) Callback: Callback routine to insert or move in the draw callback list.
+func Callback: Callback routine to insert or move in the draw callback list.
 
 -ERRORS-
 Okay
@@ -636,23 +636,24 @@ static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
    kt::Log log;
    bool retained_callback = false;
 
-   if ((!Args) or (!Args->Callback)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Callback.defined())) return log.warning(ERR::NullArgs);
 
    auto consume_callback = kt::Defer([&]() {
-      if (Args->Callback and (not retained_callback)) Args->Callback->consume();
+      if (not retained_callback) Args->Callback.consume();
    });
 
    OBJECTPTR context = ParentContext();
    OBJECTPTR call_context = nullptr;
-   if (Args->Callback->isC()) call_context = (OBJECTPTR)Args->Callback->Context;
-   else if (Args->Callback->isScript()) call_context = context; // Scripts use runtime ID resolution...
+   if (Args->Callback.isC()) call_context = (OBJECTPTR)Args->Callback.Context;
+   else if (Args->Callback.isScript()) call_context = context; // Scripts use runtime ID resolution...
 
    if (context->UID < 0) {
       log.warning("Public objects may not draw directly to surfaces.");
       return ERR::NoPermission;
    }
 
-   log.msg("Context: %d, Callback Context: %d, Routine: %p (Count: %d)", context->UID, call_context ? call_context->UID : 0, Args->Callback->Routine, Self->CallbackCount);
+   log.msg("Context: %d, Callback Context: %d, Routine: %p (Count: %d)", context->UID,
+      call_context ? call_context->UID : 0, Args->Callback.Routine, Self->CallbackCount);
 
    if (call_context) context = call_context;
 
@@ -662,11 +663,11 @@ static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
       int i;
       for (i=0; i < Self->CallbackCount; i++) {
          if (Self->Callback[i].Object IS context) {
-            if ((Self->Callback[i].Function.isC()) and (Args->Callback->isC())) {
-               if (Self->Callback[i].Function.Routine IS Args->Callback->Routine) break;
+            if ((Self->Callback[i].Function.isC()) and (Args->Callback.isC())) {
+               if (Self->Callback[i].Function.Routine IS Args->Callback.Routine) break;
             }
-            else if ((Self->Callback[i].Function.isScript()) and (Args->Callback->isScript())) {
-               if (Self->Callback[i].Function.ProcedureID IS Args->Callback->ProcedureID) break;
+            else if ((Self->Callback[i].Function.isScript()) and (Args->Callback.isScript())) {
+               if (Self->Callback[i].Function.ProcedureID IS Args->Callback.ProcedureID) break;
             }
          }
       }
@@ -680,8 +681,8 @@ static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
             i++;
          }
          Self->Callback[i].Object   = context;
-         Self->Callback[i].Function = *Args->Callback;
-         Args->Callback->pin();
+         Self->Callback[i].Function = Args->Callback;
+         Args->Callback.pin();
          retained_callback = true;
          return ERR::Okay;
       }
@@ -689,7 +690,7 @@ static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
          // Add the callback routine to the cache
 
          Self->Callback[Self->CallbackCount].Object   = context;
-         Self->Callback[Self->CallbackCount].Function = *Args->Callback;
+         Self->Callback[Self->CallbackCount].Function = Args->Callback;
          Self->CallbackCount++;
       }
       else if (Self->CallbackCount < 255) {
@@ -702,7 +703,7 @@ static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
             copymem(Self->Callback, scb, sizeof(SurfaceCallback) * Self->CallbackCount);
 
             scb[Self->CallbackCount].Object   = context;
-            scb[Self->CallbackCount].Function = *Args->Callback;
+            scb[Self->CallbackCount].Function = Args->Callback;
             Self->CallbackCount++;
             Self->CallbackSize = new_size;
 
@@ -718,14 +719,14 @@ static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
       Self->CallbackCount = 1;
       Self->CallbackSize = std::ssize(Self->CallbackCache);
       Self->Callback[0].Object = context;
-      Self->Callback[0].Function = *Args->Callback;
+      Self->Callback[0].Function = Args->Callback;
    }
 
-   if (Args->Callback->Type IS CALL::SCRIPT) {
-      SubscribeAction(Args->Callback->Context, AC::Free, C_FUNCTION(notify_free_callback));
+   if (Args->Callback.Type IS CALL::SCRIPT) {
+      SubscribeAction(Args->Callback.Context, AC::Free, C_FUNCTION(notify_free_callback));
    }
 
-   Args->Callback->pin();
+   Args->Callback.pin();
    retained_callback = true;
    return ERR::Okay;
 }
@@ -1914,7 +1915,7 @@ This method is scope restricted.  A caller can remove only callbacks associated 
 callbacks added by other objects are not affected.
 
 -INPUT-
-ptr(func) Callback: Callback routine to remove, or `NULL` to remove all associated callback routines for the caller.
+func Callback: Callback routine to remove, or `NULL` to remove all associated callback routines for the caller.
 
 -ERRORS-
 Okay
@@ -1932,13 +1933,14 @@ static ERR SURFACE_RemoveCallback(extSurface *Self, struct drw::RemoveCallback *
    OBJECTPTR context = nullptr;
 
    auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Callback)) Args->Callback->consume();
+      if (Args) Args->Callback.consume();
    });
 
    if (Args) {
-      if ((Args->Callback) and (Args->Callback->isC())) {
-         context = (OBJECTPTR)Args->Callback->Context;
-         log.trace("Context: %d, Routine %p, Current Total: %d", context->UID, Args->Callback->Routine, Self->CallbackCount);
+      if (Args->Callback.isC()) {
+         context = (OBJECTPTR)Args->Callback.Context;
+         log.trace("Context: %d, Routine %p, Current Total: %d", context->UID, Args->Callback.Routine,
+            Self->CallbackCount);
       }
       else log.trace("Current Total: %d", Self->CallbackCount);
    }
@@ -1948,7 +1950,7 @@ static ERR SURFACE_RemoveCallback(extSurface *Self, struct drw::RemoveCallback *
 
    if (!Self->Callback) return ERR::Okay;
 
-   if ((!Args) or (!Args->Callback) or (!Args->Callback->defined())) {
+   if ((not Args) or (not Args->Callback.defined())) {
       // Remove everything relating to this context if no callback was specified.
 
       int i;
@@ -1965,8 +1967,8 @@ static ERR SURFACE_RemoveCallback(extSurface *Self, struct drw::RemoveCallback *
       return ERR::Okay;
    }
 
-   if (Args->Callback->isScript()) {
-      UnsubscribeAction(Args->Callback->Context, AC::Free);
+   if (Args->Callback.isScript()) {
+      UnsubscribeAction(Args->Callback.Context, AC::Free);
    }
 
    // Find the callback entry, then shrink the list.
@@ -1977,11 +1979,11 @@ static ERR SURFACE_RemoveCallback(extSurface *Self, struct drw::RemoveCallback *
 
       if ((Self->Callback[i].Function.isC()) and
           (Self->Callback[i].Function.Context IS context) and
-          (Self->Callback[i].Function.Routine IS Args->Callback->Routine)) break;
+          (Self->Callback[i].Function.Routine IS Args->Callback.Routine)) break;
 
       if ((Self->Callback[i].Function.isScript()) and
           (Self->Callback[i].Function.Context IS context) and
-          (Self->Callback[i].Function.ProcedureID IS Args->Callback->ProcedureID)) break;
+          (Self->Callback[i].Function.ProcedureID IS Args->Callback.ProcedureID)) break;
    }
 
    if (i < Self->CallbackCount) {
@@ -1994,7 +1996,9 @@ static ERR SURFACE_RemoveCallback(extSurface *Self, struct drw::RemoveCallback *
       return ERR::Okay;
    }
    else {
-      if (Args->Callback->Type IS CALL::STD_C) log.warning("Unable to find callback for #%d, routine %p", context->UID, Args->Callback->Routine);
+      if (Args->Callback.Type IS CALL::STD_C) {
+         log.warning("Unable to find callback for #%d, routine %p", context->UID, Args->Callback.Routine);
+      }
       else log.warning("Unable to find callback for #%d", context->UID);
       return ERR::Search;
    }

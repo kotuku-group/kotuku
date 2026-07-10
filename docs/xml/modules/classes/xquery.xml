@@ -209,11 +209,11 @@ if (query.ok()) {
     <method>
       <name>RegisterFunction</name>
       <comment>Register a custom XQuery function.</comment>
-      <prototype>ERR xq::RegisterFunction(OBJECTPTR Object, STRVIEW FunctionName, FUNCTION * Callback)</prototype>
+      <prototype>ERR xq::RegisterFunction(OBJECTPTR Object, STRVIEW FunctionName, FUNCTION Callback)</prototype>
       <tiriPrototype>err = RegisterFunction(FunctionName:str, Callback:func)</tiriPrototype>
       <input>
         <param type="STRVIEW" name="FunctionName">The name of the function to register (e.g., "custom-function").</param>
-        <param type="FUNCTION *" name="Callback">The callback function to register for FunctionName.</param>
+        <param type="FUNCTION" name="Callback">The callback function to register for FunctionName.</param>
       </input>
       <description>
 <p>Use RegisterFunction to define a custom function that can be invoked within XQuery expressions.  The function will be associated with the specified name and can be called like any standard XQuery function.</p>
@@ -232,11 +232,11 @@ if (query.ok()) {
     <method>
       <name>Search</name>
       <comment>For node-based queries, calls a function for each matching node.</comment>
-      <prototype>ERR xq::Search(OBJECTPTR Object, objXML * XML, FUNCTION * Callback, INT Index, XEF Flags)</prototype>
+      <prototype>ERR xq::Search(OBJECTPTR Object, objXML * XML, FUNCTION Callback, INT Index, XEF Flags)</prototype>
       <tiriPrototype>err = Search(XML:obj, Callback:func, Index:num, Flags:num)</tiriPrototype>
       <input>
         <param type="objXML *" name="XML">Target XML document to search.</param>
-        <param type="FUNCTION *" name="Callback">Optional callback function to invoke for each matching node.</param>
+        <param type="FUNCTION" name="Callback">Optional callback function to invoke for each matching node.</param>
         <param type="INT" name="Index">Optional tag index that establishes the initial context for the query.</param>
         <param type="XEF" name="Flags" lookup="XEF">Optional flags.</param>
       </input>

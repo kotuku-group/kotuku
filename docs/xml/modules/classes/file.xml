@@ -73,7 +73,6 @@
         <error code="InvalidPath">Invalid file or folder path detected</error>
         <error code="SetField">An error occurred while updating the <fl>Path</fl> field.</error>
         <error code="MissingPath">The object is missing a path reference</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="VirtualVolume">ResolvePath() failed to resolve the path because it is a virtual reference</error>
         <error code="ResolvePath">A volume could not be resolved</error>
         <error code="ExpectedFile">The operation expected a path to a file</error>
@@ -184,8 +183,9 @@
       </description>
       <result>
         <error code="Okay">The file content was successfully buffered.</error>
-        <error code="Read">Failed to read the file content.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="NothingDone">The file is already buffered.</error>
+        <error code="Read">Error reading data</error>
+        <error code="InvalidState">The targeted file is not open for read operations.</error>
       </result>
       <tags>blocking, mutates-object, creates-resource, updates-seek-index</tags>
     </method>
@@ -193,11 +193,11 @@
     <method>
       <name>Copy</name>
       <comment>Copies the data of a file to another location.</comment>
-      <prototype>ERR fl::Copy(OBJECTPTR Object, STRVIEW Dest, FUNCTION * Callback)</prototype>
+      <prototype>ERR fl::Copy(OBJECTPTR Object, STRVIEW Dest, FUNCTION Callback)</prototype>
       <tiriPrototype>err = Copy(Dest:str, Callback:func)</tiriPrototype>
       <input>
         <param type="STRVIEW" name="Dest">The destination file path for the copy operation.</param>
-        <param type="FUNCTION *" name="Callback">Optional callback for receiving feedback during the operation.</param>
+        <param type="FUNCTION" name="Callback">Optional callback for receiving feedback during the operation.</param>
       </input>
       <description>
 <p>This method is used to copy the data of a file object to another location.  All of the data will be copied, effectively creating a clone of the original file information.  The file object must have been initialised with the <code>FL::READ</code> flag, or the copy operation will not work (this restriction does not apply to directories).  If a matching file name already exists at the destination path, it will be over-written with the new data.</p>
@@ -211,7 +211,6 @@
         <error code="Read">Data could not be read from the source path.</error>
         <error code="Write">Data could not be written to the destination path.</error>
         <error code="FieldNotSet">The <fl>Path</fl> field has not been set in the file object.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="Loop">Performing the copy would cause infinite recursion.</error>
         <error code="ResolvePath">A volume could not be resolved</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
@@ -222,10 +221,10 @@
     <method>
       <name>Delete</name>
       <comment>Deletes a file from its source location.</comment>
-      <prototype>ERR fl::Delete(OBJECTPTR Object, FUNCTION * Callback)</prototype>
+      <prototype>ERR fl::Delete(OBJECTPTR Object, FUNCTION Callback)</prototype>
       <tiriPrototype>err = Delete(Callback:func)</tiriPrototype>
       <input>
-        <param type="FUNCTION *" name="Callback">Optional callback for receiving feedback during the operation.</param>
+        <param type="FUNCTION" name="Callback">Optional callback for receiving feedback during the operation.</param>
       </input>
       <description>
 <p>This method is used to delete files from their source location.  If used on a folder, all of the folder's contents will be deleted in the call.   Once a file is deleted, the object effectively becomes unusable.  For this reason, file deletion should normally be followed up with a call to the Free action.</p>
@@ -249,11 +248,11 @@
     <method>
       <name>Move</name>
       <comment>Moves a file to a new location.</comment>
-      <prototype>ERR fl::Move(OBJECTPTR Object, STRVIEW Dest, FUNCTION * Callback)</prototype>
+      <prototype>ERR fl::Move(OBJECTPTR Object, STRVIEW Dest, FUNCTION Callback)</prototype>
       <tiriPrototype>err = Move(Dest:str, Callback:func)</tiriPrototype>
       <input>
         <param type="STRVIEW" name="Dest">The desired path for the file.</param>
-        <param type="FUNCTION *" name="Callback">Optional callback for receiving feedback during the operation.</param>
+        <param type="FUNCTION" name="Callback">Optional callback for receiving feedback during the operation.</param>
       </input>
       <description>
 <p>This method is used to move the data of a file to another location.  If the file object represents a folder, then the folder and all of its contents will be moved.  The file object must have been initialised with the <code>FL::READ</code> flag, or the move operation will not work (this restriction does not apply to directories).  If a file already exists at the destination path then it will be over-written with the new data.</p>
@@ -397,10 +396,10 @@
     <method>
       <name>Watch</name>
       <comment>Monitors files and folders for file system events.</comment>
-      <prototype>ERR fl::Watch(OBJECTPTR Object, FUNCTION * Callback, MFF Flags)</prototype>
+      <prototype>ERR fl::Watch(OBJECTPTR Object, FUNCTION Callback, MFF Flags)</prototype>
       <tiriPrototype>err = Watch(Callback:func, Flags:num)</tiriPrototype>
       <input>
-        <param type="FUNCTION *" name="Callback">The routine that will be called when a file change is triggered by the system.</param>
+        <param type="FUNCTION" name="Callback">The routine that will be called when a file change is triggered by the system.</param>
         <param type="MFF" name="Flags" lookup="MFF">Filter events to those indicated in these flags.</param>
       </input>
       <description>
@@ -409,11 +408,13 @@
 <p>The optional <lk>MFF</lk> Flags are used to filter events to those that are desired for monitoring.</p>
 <p>The client must provide a <code>Callback</code> that will be triggered when a monitored event is triggered.  The <code>Callback</code> must follow the format <code>ERR Routine(*File, std::string_view Path, MFF Flags, APTR Meta)</code></p>
 <p>Each event will be delivered in the sequence that they are originally raised.  The <code>Flags</code> parameter will reflect the specific event that has occurred.  The <code>Path</code> is a string that is relative to the File's <fl>Path</fl> field.</p>
-<p>If the callback routine returns <code>ERR::Terminate</code>, the watch will be disabled.  It is also possible to disable an existing watch by calling this method with no parameters, or by setting the <code>Flags</code> parameter to <code>0</code>.</p>
+<p>If the callback routine returns <code>ERR::Terminate</code>, the watch will be disabled.  It is also possible to disable an existing watch by calling this method with no parameters, or by setting the <code>Flags</code> parameter to <code>MFF::NIL</code>.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Args">Invalid arguments passed to function</error>
+        <error code="NoSupport">Operation not supported</error>
+        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>non-blocking, mutates-object, callback-held</tags>

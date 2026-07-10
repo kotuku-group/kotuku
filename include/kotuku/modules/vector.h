@@ -3678,12 +3678,12 @@ class objVectorFilter : public Object {
 
 namespace vec {
 struct Push { int Position; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Trace { FUNCTION *Callback; double Scale; int Transform; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Trace { FUNCTION Callback; double Scale; int Transform; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetBoundary { VBF Flags; double X; double Y; double Width; double Height; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct PointInPath { double X; double Y; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SubscribeInput { JTYPE Mask; FUNCTION *Callback; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SubscribeKeyboard { FUNCTION *Callback; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SubscribeFeedback { FM Mask; FUNCTION *Callback; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SubscribeInput { JTYPE Mask; FUNCTION Callback; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SubscribeKeyboard { FUNCTION Callback; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SubscribeFeedback { FM Mask; FUNCTION Callback; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Debug { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct NewMatrix { struct VectorMatrix *Transform; int End; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct FreeMatrix { struct VectorMatrix *Matrix; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
@@ -3735,7 +3735,7 @@ class objVector : public Object {
       return Action(AC(-1), this, &args);
    }
    inline ERR trace(FUNCTION Callback, double Scale, int Transform) noexcept {
-      struct vec::Trace args = { &Callback, Scale, Transform };
+      struct vec::Trace args = { Callback, Scale, Transform };
       return Action(AC(-2), this, &args);
    }
    inline ERR getBoundary(VBF Flags, double * X, double * Y, double * Width, double * Height) noexcept {
@@ -3752,15 +3752,15 @@ class objVector : public Object {
       return Action(AC(-4), this, &args);
    }
    inline ERR subscribeInput(JTYPE Mask, FUNCTION Callback) noexcept {
-      struct vec::SubscribeInput args = { Mask, &Callback };
+      struct vec::SubscribeInput args = { Mask, Callback };
       return Action(AC(-5), this, &args);
    }
    inline ERR subscribeKeyboard(FUNCTION Callback) noexcept {
-      struct vec::SubscribeKeyboard args = { &Callback };
+      struct vec::SubscribeKeyboard args = { Callback };
       return Action(AC(-6), this, &args);
    }
    inline ERR subscribeFeedback(FM Mask, FUNCTION Callback) noexcept {
-      struct vec::SubscribeFeedback args = { Mask, &Callback };
+      struct vec::SubscribeFeedback args = { Mask, Callback };
       return Action(AC(-7), this, &args);
    }
    inline ERR debug() noexcept {
@@ -5854,17 +5854,17 @@ inline void operator*=(VectorMatrix &This, const VectorMatrix &Other)
 }
 namespace vec {
 inline ERR SubscribeInput(APTR Ob, JTYPE Mask, FUNCTION Callback) {
-   struct SubscribeInput args = { Mask, &Callback };
+   struct SubscribeInput args = { Mask, Callback };
    return(Action(vec::SubscribeInput::id, (OBJECTPTR)Ob, &args));
 }
 
 inline ERR SubscribeKeyboard(APTR Ob, FUNCTION Callback) {
-   struct SubscribeKeyboard args = { &Callback };
+   struct SubscribeKeyboard args = { Callback };
    return(Action(vec::SubscribeKeyboard::id, (OBJECTPTR)Ob, &args));
 }
 
 inline ERR SubscribeFeedback(APTR Ob, FM Mask, FUNCTION Callback) {
-   struct SubscribeFeedback args = { Mask, &Callback };
+   struct SubscribeFeedback args = { Mask, Callback };
    return(Action(vec::SubscribeFeedback::id, (OBJECTPTR)Ob, &args));
 }
 } // namespace

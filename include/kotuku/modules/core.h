@@ -2199,6 +2199,8 @@ namespace kt {
       int  Time;
       AC   ActionID;      // ID of the action or method to execute
       bool SendArgs;
+      const FunctionField *Fields;
+      int ArgsSize;
 
       // Action arguments follow this structure in a buffer
    };

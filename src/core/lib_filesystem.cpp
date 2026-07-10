@@ -1613,7 +1613,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
       if (srcfile.ok()) {
          if ((Move) and (srcvirtual.VirtualID IS destvirtual.VirtualID)) {
             // If the source and destination use the same virtual volume, execute the move method.
-            fl::Move args = { Dest.data(), nullptr };
+            fl::Move args = { Dest.data() };
             return Action(fl::Move::id, *srcfile, &args);
          }
       }

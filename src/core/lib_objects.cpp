@@ -87,7 +87,10 @@ void stop_async_actions(void)
    {
       std::lock_guard<std::mutex> lock(glmActionQueue);
       for (auto &queue_ref : glActionQueues) {
-         for (auto &action : queue_ref.second) release_owned_callback(action.Callback);
+         for (auto &action : queue_ref.second) {
+            release_copied_args(action.Fields, action.ArgsSize, action.Parameters.data(), true);
+            release_owned_callback(action.Callback);
+         }
       }
       glActionQueues.clear();
       glActiveAsyncObjects.clear();
@@ -605,7 +608,7 @@ static void free_children(OBJECTPTR Object)
    for (const auto &id : resources) FreeResource(id);
 }
 
-static void launch_async_thread(OBJECTPTR, AC, int, std::vector<int8_t>, FUNCTION);
+static void launch_async_thread(OBJECTPTR, AC, int, const FunctionField *, std::vector<int8_t>, FUNCTION);
 
 //********************************************************************************************************************
 // Dispatch the next queued action for an object.  Called from msg_threadaction() on the main thread
@@ -660,6 +663,7 @@ void dispatch_queued_action(OBJECTID ObjectID)
    ScopedObjectLock obj(ObjectID);
    if (obj.granted()) {
       if (obj->terminating() or obj->collecting()) {
+         release_copied_args(next.Fields, next.ArgsSize, next.Parameters.data(), true);
          if (next.Callback.defined()) {
             ThreadActionMessage msg = {
                .ActionID = next.ActionID,
@@ -675,13 +679,15 @@ void dispatch_queued_action(OBJECTID ObjectID)
          return;
       }
 
-      launch_async_thread(*obj, next.ActionID, next.ArgsSize, std::move(next.Parameters), next.Callback);
+      launch_async_thread(*obj, next.ActionID, next.ArgsSize, next.Fields, std::move(next.Parameters), next.Callback);
    }
    else {
       // The object is no longer accessible (freed or otherwise invalid).  Treat this identically
       // to the terminating case: send an error callback and drain the remaining queue.
 
       log.traceWarning(obj.error);
+
+      release_copied_args(next.Fields, next.ArgsSize, next.Parameters.data(), true);
 
       if (next.Callback.defined()) {
          ThreadActionMessage msg = {
@@ -738,6 +744,7 @@ static void drain_action_queue(OBJECTID ObjectID, bool Terminating, bool Preserv
    }
 
    for (auto &action : drained) {
+      release_copied_args(action.Fields, action.ArgsSize, action.Parameters.data(), true);
       if (action.Callback.defined()) {
          ThreadActionMessage msg = {
             .ActionID = action.ActionID,
@@ -754,8 +761,8 @@ static void drain_action_queue(OBJECTID ObjectID, bool Terminating, bool Preserv
 //********************************************************************************************************************
 // Helper to launch an async action thread for an object.
 
-static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSize, std::vector<int8_t> Parameters,
-   FUNCTION Callback)
+static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSize, const FunctionField *Fields,
+   std::vector<int8_t> Parameters, FUNCTION Callback)
 {
    auto object_uid = Object->UID;
 
@@ -766,8 +773,8 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
 
    auto thread_ptr = std::make_shared<std::jthread>();
 
-   *thread_ptr = std::jthread([Object, ActionID, ArgsSize, Parameters = std::move(Parameters), Callback,
-      object_uid, thread_ptr](std::stop_token stop_token) {
+   *thread_ptr = std::jthread([Object, ActionID, ArgsSize, Fields, Parameters = std::move(Parameters), Callback,
+      object_uid, thread_ptr](std::stop_token stop_token) mutable {
 
       // Cleanup function to remove thread from tracking
       auto cleanup = [thread_ptr, object_uid]() {
@@ -801,6 +808,7 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
       };
 
       if (is_stopping() or is_cancelled()) {
+         release_copied_args(Fields, ArgsSize, Parameters.data(), true);
          ThreadActionMessage msg = {
             .ActionID = ActionID,
             .ObjectID = object_uid,
@@ -813,10 +821,12 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
       }
 
       ERR error;
+      bool executed = false;
       if (error = LockObject(Object, 5000); !error) { // Access the object and process the action.
          // Check for stop request before executing action
          if ((not is_stopping()) and (not is_cancelled())) {
             error = Action(ActionID, Object, ArgsSize ? (APTR)Parameters.data() : nullptr);
+            executed = true;
          }
 
          if (Object->terminating()) {
@@ -825,6 +835,8 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
          }
          else ReleaseObject(Object);
       }
+
+      release_copied_args(Fields, ArgsSize, Parameters.data(), not executed);
 
       // Always send a completion message so that msg_threadaction() can dispatch the next queued action.
       // Preserve the callback on cancellation so script-side cleanup still runs.
@@ -1156,6 +1168,7 @@ ERR AsyncAction(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters, FUNCTION *
                .ObjectID   = object_id,
                .ActionID   = ActionID,
                .ArgsSize   = argssize,
+               .Fields     = args,
                .Parameters = std::move(param_buffer),
                .Callback   = cb
             });
@@ -1173,7 +1186,7 @@ ERR AsyncAction(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters, FUNCTION *
          }
       }
 
-      launch_async_thread(Object, ActionID, argssize, std::move(param_buffer), cb);
+      launch_async_thread(Object, ActionID, argssize, args, std::move(param_buffer), cb);
       retained_callback = true;
    }
 
@@ -1382,7 +1395,7 @@ ERR msg_threadaction(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgS
          }));
 
          // Dereference the callback procedure to release the script registry reference.
-         sc::DerefProcedure deref = { &msg->Callback };
+         sc::DerefProcedure deref = { msg->Callback };
          Action(sc::DerefProcedure::id, script, &deref);
          dereferenced = true;
 
@@ -2414,14 +2427,24 @@ ERR QueueAction(ACTIONID ActionID, OBJECTID ObjectID, APTR Args)
    if (ActionID >= AC::END) return log.warning(ERR::OutOfRange);
 
    std::vector<int8_t> buffer;
+   const FunctionField *fields = nullptr;
+   int args_size = 0;
 
-   ActionMessage action = { .ObjectID = ObjectID, .Time = 0, .ActionID = ActionID, .SendArgs = false };
+   ActionMessage action = {
+      .ObjectID = ObjectID,
+      .Time     = 0,
+      .ActionID = ActionID,
+      .SendArgs = false,
+      .Fields   = nullptr,
+      .ArgsSize = 0
+   };
 
    if (Args) {
       if (ActionID > AC::NIL) {
          if (ActionTable[int(ActionID)].Size) {
-            if (auto error = copy_args(ActionTable[int(ActionID)].Args, ActionTable[int(ActionID)].Size,
-                  (int8_t *)Args, buffer); error != ERR::Okay) {
+            fields = ActionTable[int(ActionID)].Args;
+            args_size = ActionTable[int(ActionID)].Size;
+            if (auto error = copy_args(fields, args_size, (int8_t *)Args, buffer); error != ERR::Okay) {
                return error;
             }
 
@@ -2429,8 +2452,9 @@ ERR QueueAction(ACTIONID ActionID, OBJECTID ObjectID, APTR Args)
          }
       }
       else if (auto cl = (extMetaClass *)FindClass(GetClassID(ObjectID))) {
-         if (auto error = copy_args(cl->Methods[-int(ActionID)].Args, cl->Methods[-int(ActionID)].Size,
-               (int8_t *)Args, buffer); error != ERR::Okay) {
+         fields = cl->Methods[-int(ActionID)].Args;
+         args_size = cl->Methods[-int(ActionID)].Size;
+         if (auto error = copy_args(fields, args_size, (int8_t *)Args, buffer); error != ERR::Okay) {
             return error;
          }
          action.SendArgs = true;
@@ -2438,9 +2462,13 @@ ERR QueueAction(ACTIONID ActionID, OBJECTID ObjectID, APTR Args)
       else return log.warning(ERR::MissingClass);
    }
 
+   action.Fields = fields;
+   action.ArgsSize = args_size;
+
    buffer.insert(buffer.begin(), (int8_t *)&action, (int8_t *)&action + sizeof(ActionMessage));
 
    if (auto error = SendMessage(MSGID::ACTION, MSF::NIL, buffer.data(), buffer.size()); error != ERR::Okay) {
+      release_copied_args(fields, args_size, buffer.data() + sizeof(ActionMessage), false);
       return error;
    }
    else return error;

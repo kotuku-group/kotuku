@@ -106,10 +106,10 @@
     <method>
       <name>DerefProcedure</name>
       <comment>Dereferences an acquired procedure.</comment>
-      <prototype>ERR sc::DerefProcedure(OBJECTPTR Object, FUNCTION * Procedure)</prototype>
+      <prototype>ERR sc::DerefProcedure(OBJECTPTR Object, FUNCTION Procedure)</prototype>
       <tiriPrototype>err = DerefProcedure(Procedure:func)</tiriPrototype>
       <input>
-        <param type="FUNCTION *" name="Procedure">The procedure to be dereferenced.</param>
+        <param type="FUNCTION" name="Procedure">The procedure to be dereferenced.</param>
       </input>
       <description>
 <p>This method will release a procedure reference that has been acquired through <method>GetProcedureID</method>.  It is only necessary to make this call if the scripting language is managing function references as a keyed resource.  Tiri is one such language.  Languages that do not manage functions as a resource will ignore calls to this method.</p>

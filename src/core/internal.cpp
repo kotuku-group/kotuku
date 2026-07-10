@@ -15,6 +15,11 @@ Functions that are internal to the Core.
 
 using namespace kt;
 
+static constexpr int align_arg_offset(int Offset)
+{
+   return (Offset + 7) & ~7;
+}
+
 //********************************************************************************************************************
 
 #ifdef __APPLE__
@@ -239,6 +244,7 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
          }
          pos += sizeof(APTR);
       }
+      else if (Args[i].Type & FD_FUNCTION) pos = align_arg_offset(pos) + sizeof(FUNCTION);
       else if (Args[i].Type & (FD_DOUBLE|FD_INT64)) pos += sizeof(int64_t);
       else pos += sizeof(int);
    }
@@ -308,9 +314,57 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
          else ((APTR *)param)[0] = nullptr;
          pos += sizeof(APTR);
       }
+      else if (Args[i].Type & FD_FUNCTION) {
+         pos = align_arg_offset(pos);
+         auto function = (FUNCTION *)(Buffer.data() + pos);
+         if (function->defined()) function->pin();
+         pos += sizeof(FUNCTION);
+      }
       else if (Args[i].Type & (FD_DOUBLE|FD_INT64)) pos += sizeof(int64_t);
       else pos += sizeof(int);
    }
 
    return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+void release_copied_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, bool DereferenceAll)
+{
+   if ((not Args) or (not Parameters)) return;
+
+   for (int i=0, pos=0; Args[i].Name and (pos < ArgsSize); i++) {
+      auto type = Args[i].Type;
+
+      if (type & FD_ARRAY) pos = align_arg_offset(pos) + sizeof(APTR);
+      else if ((type & FD_BUFFER) or (Args[i+1].Type & FD_BUFSIZE)) {
+         pos = align_arg_offset(pos) + sizeof(APTR);
+      }
+      else if (type & FD_STR) {
+         pos = align_arg_offset(pos);
+         if ((type & FD_CPP) and (not (type & FD_MUTABLE))) pos += sizeof(std::string_view);
+         else pos += sizeof(APTR);
+      }
+      else if (type & FD_FUNCTION) {
+         pos = align_arg_offset(pos);
+         auto &function = *(FUNCTION *)(Parameters + pos);
+
+         if (function.defined()) {
+            if (function.isScript() and (not function.stale()) and (DereferenceAll or function.consumed())) {
+               auto script = function.Context;
+               sc::DerefProcedure deref = { function };
+               Action(sc::DerefProcedure::id, script, &deref);
+            }
+            function.unpin();
+            function.clear();
+         }
+
+         pos += sizeof(FUNCTION);
+      }
+      else if ((type & FD_PTR) or (type & FD_STRUCT)) pos = align_arg_offset(pos) + sizeof(APTR);
+      else if (type & FD_INT) pos += sizeof(int);
+      else if (type & FD_DOUBLE) pos = align_arg_offset(pos) + sizeof(double);
+      else if (type & FD_INT64) pos = align_arg_offset(pos) + sizeof(int64_t);
+      else if (type & FD_TAGS) break;
+   }
 }

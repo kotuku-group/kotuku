@@ -884,17 +884,17 @@ inline void operator*=(VectorMatrix &This, const VectorMatrix &Other)
     c_insert([==[
 namespace vec {
 inline ERR SubscribeInput(APTR Ob, JTYPE Mask, FUNCTION Callback) {
-   struct SubscribeInput args = { Mask, &Callback };
+   struct SubscribeInput args = { Mask, Callback };
    return(Action(vec::SubscribeInput::id, (OBJECTPTR)Ob, &args));
 }
 
 inline ERR SubscribeKeyboard(APTR Ob, FUNCTION Callback) {
-   struct SubscribeKeyboard args = { &Callback };
+   struct SubscribeKeyboard args = { Callback };
    return(Action(vec::SubscribeKeyboard::id, (OBJECTPTR)Ob, &args));
 }
 
 inline ERR SubscribeFeedback(APTR Ob, FM Mask, FUNCTION Callback) {
-   struct SubscribeFeedback args = { Mask, &Callback };
+   struct SubscribeFeedback args = { Mask, Callback };
    return(Action(vec::SubscribeFeedback::id, (OBJECTPTR)Ob, &args));
 }
 } // namespace

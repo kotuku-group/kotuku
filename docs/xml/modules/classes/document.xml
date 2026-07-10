@@ -163,11 +163,11 @@
     <method>
       <name>AddListener</name>
       <comment>Adds a listener to a document trigger for receiving special callbacks.</comment>
-      <prototype>ERR doc::AddListener(OBJECTPTR Object, DRT Trigger, FUNCTION * Function)</prototype>
+      <prototype>ERR doc::AddListener(OBJECTPTR Object, DRT Trigger, FUNCTION Function)</prototype>
       <tiriPrototype>err = AddListener(Trigger:num, Function:func)</tiriPrototype>
       <input>
         <param type="DRT" name="Trigger" lookup="DRT">The unique identifier for the trigger.</param>
-        <param type="FUNCTION *" name="Function">The function to call when the trigger activates.</param>
+        <param type="FUNCTION" name="Function">The function to call when the trigger activates.</param>
       </input>
       <description>
 <p>Use the AddListener() method to receive feedback whenever a document event is triggered.  Triggers are a fundamental part of document page development, accessible through the <code>&lt;trigger/&gt;</code> tag.  Triggers are normally configured within the document's page code, however if you need to monitor triggers from outside the loaded document's code, then AddListener() will give you that option.</p>
@@ -378,11 +378,11 @@
     <method>
       <name>RemoveListener</name>
       <comment>Removes a previously configured listener from the document.</comment>
-      <prototype>ERR doc::RemoveListener(OBJECTPTR Object, INT Trigger, FUNCTION * Function)</prototype>
+      <prototype>ERR doc::RemoveListener(OBJECTPTR Object, INT Trigger, FUNCTION Function)</prototype>
       <tiriPrototype>err = RemoveListener(Trigger:num, Function:func)</tiriPrototype>
       <input>
         <param type="INT" name="Trigger">The unique identifier for the trigger.</param>
-        <param type="FUNCTION *" name="Function">The function that is called when the trigger activates.</param>
+        <param type="FUNCTION" name="Function">The function that is called when the trigger activates.</param>
       </input>
       <description>
 <p>This method removes a previously configured listener from the document.  The original parameters that were passed to <method>AddListener</method> must be provided.</p>

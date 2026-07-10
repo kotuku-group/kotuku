@@ -212,7 +212,7 @@ subscriptions, nor is there any handling for multiple copies of a subscription t
 
 -INPUT-
 int(DRT) Trigger: The unique identifier for the trigger.
-ptr(func) Function: The function to call when the trigger activates.
+func Function: The function to call when the trigger activates.
 
 -ERRORS-
 Okay
@@ -230,25 +230,25 @@ static ERR DOCUMENT_AddListener(extDocument *Self, doc::AddListener *Args)
    bool retained_callback = false;
 
    auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Function) and (not retained_callback)) Args->Function->consume();
+      if ((Args) and (not retained_callback)) Args->Function.consume();
    });
 
-   if ((not Args) or (Args->Trigger IS DRT::NIL) or (not Args->Function)) return ERR::NullArgs;
+   if ((not Args) or (Args->Trigger IS DRT::NIL) or (not Args->Function.defined())) return ERR::NullArgs;
    if (not valid_trigger(Args->Trigger)) return ERR::OutOfRange;
 
    bool subscribe_context = false;
-   if (Args->Function->isScript()) {
-      subscribe_context = not has_script_free_callback(Self, Args->Function->Context);
+   if (Args->Function.isScript()) {
+      subscribe_context = not has_script_free_callback(Self, Args->Function.Context);
    }
 
-   Self->Triggers[int(Args->Trigger)].push_back(*Args->Function);
-   Args->Function->pin();
+   Self->Triggers[int(Args->Trigger)].push_back(Args->Function);
+   Args->Function.pin();
    retained_callback = true;
 
    // Scripts can't auto-remove listeners, so a Free subscription is necessary.  Functional
    // subscribers are expected to self-manage however.
 
-   if (subscribe_context) SubscribeAction(Args->Function->Context, AC::Free, C_FUNCTION(notify_free_script_context));
+   if (subscribe_context) SubscribeAction(Args->Function.Context, AC::Free, C_FUNCTION(notify_free_script_context));
    return ERR::Okay;
 }
 
@@ -1852,7 +1852,7 @@ This method removes a previously configured listener from the document.  The ori
 
 -INPUT-
 int Trigger: The unique identifier for the trigger.
-ptr(func) Function: The function that is called when the trigger activates.
+func Function: The function that is called when the trigger activates.
 
 -ERRORS-
 Okay
@@ -1867,31 +1867,31 @@ mutates-object
 static ERR DOCUMENT_RemoveListener(extDocument *Self, doc::RemoveListener *Args)
 {
    auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Function)) Args->Function->consume();
+      if (Args) Args->Function.consume();
    });
 
-   if ((not Args) or (not Args->Trigger) or (not Args->Function)) return ERR::NullArgs;
+   if ((not Args) or (not Args->Trigger) or (not Args->Function.defined())) return ERR::NullArgs;
    if (not valid_trigger(Args->Trigger)) return ERR::OutOfRange;
 
    if (Self->Unloading) return ERR::Okay; // Do nothing, termination will take care of cleaning up.
 
-   if (Args->Function->isC()) {
+   if (Args->Function.isC()) {
       for (auto it = Self->Triggers[Args->Trigger].begin(); it != Self->Triggers[Args->Trigger].end(); it++) {
-         if ((it->isC()) and (it->Routine IS Args->Function->Routine)) {
+         if ((it->isC()) and (it->Routine IS Args->Function.Routine)) {
             deref_document_callback(*it);
             Self->Triggers[Args->Trigger].erase(it);
             return ERR::Okay;
          }
       }
    }
-   else if (Args->Function->isScript()) {
-      auto context = Args->Function->Context;
+   else if (Args->Function.isScript()) {
+      auto context = Args->Function.Context;
       bool removed_listener = false;
 
       for (auto it = Self->Triggers[Args->Trigger].begin(); it != Self->Triggers[Args->Trigger].end(); it++) {
          if ((it->isScript()) and
-                (it->Context IS Args->Function->Context) and
-                (it->ProcedureID IS Args->Function->ProcedureID)) {
+                (it->Context IS Args->Function.Context) and
+                (it->ProcedureID IS Args->Function.ProcedureID)) {
             deref_document_callback(*it);
             Self->Triggers[Args->Trigger].erase(it);
             removed_listener = true;

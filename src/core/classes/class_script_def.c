@@ -8,7 +8,7 @@ static const struct FieldDef clScriptFlags[] = {
 };
 
 FDEF maExec[] = { { "Procedure", FDF_CPPSTRING }, { "ScriptArg:Args", FD_PTR|FD_STRUCT }, { "TotalArgs", FD_INT }, { 0, 0 } };
-FDEF maDerefProcedure[] = { { "Procedure", FD_FUNCTIONPTR }, { 0, 0 } };
+FDEF maDerefProcedure[] = { { "Procedure", FD_FUNCTION }, { 0, 0 } };
 FDEF maCallback[] = { { "ProcedureID", FD_INT64 }, { "ScriptArg:Args", FD_PTR|FD_STRUCT }, { "TotalArgs", FD_INT }, { "Error", FD_RESULT|FD_INT|FD_ERROR }, { 0, 0 } };
 FDEF maGetProcedureID[] = { { "Procedure", FDF_CPPSTRING }, { "ProcedureID", FD_RESULT|FD_INT64 }, { 0, 0 } };
 FDEF maDebugLog[] = { { "Options", FDF_CPPSTRING }, { "Result", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };

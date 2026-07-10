@@ -218,6 +218,7 @@ struct QueuedAction {
    OBJECTID  ObjectID;
    AC        ActionID;
    int       ArgsSize;
+   const FunctionField *Fields;
    std::vector<int8_t> Parameters;
    FUNCTION  Callback;
 };
@@ -1173,6 +1174,7 @@ APTR   build_jump_table(const Function *);
 #endif
 void   stop_async_actions(void);
 ERR    copy_args(const FunctionField *, int, int8_t *, std::vector<int8_t> &);
+void   release_copied_args(const FunctionField *, int, int8_t *, bool);
 ERR    create_archive_volume(void);
 void   dispatch_queued_action(OBJECTID);
 ERR    delete_tree(std::string &, FUNCTION *, FileFeedback *);
