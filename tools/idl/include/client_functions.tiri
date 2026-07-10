@@ -110,6 +110,16 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+global function moduleTimestamp()
+   local tm = obj.new('time', {})
+   tm.acQuery()
+   local timestamp = string.format('%04d%02d%02d%02d%02d', tm.year, tm.month, tm.day, tm.hour, tm.minute)
+
+   priority(f'#define {glModule.name:upper()}_BUILD_DATE {timestamp}')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Doc(text=[[
 @desc Define a module and generate the primary module header
 @input Module options including name, version, timestamp, copyright, and source files

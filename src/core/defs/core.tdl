@@ -10,6 +10,8 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
 
   privateNames({ "CoreBase", "DateTime", "ResourceManager" })
 
+  moduleTimestamp()
+
   loadFile(glPath .. 'common-graphics.tdl')
 
   flags("MSF", { comment="Message flags." },

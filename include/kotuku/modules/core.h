@@ -29,6 +29,7 @@
 #include "ankerl/unordered_dense.h"
 #endif
 
+#define CORE_BUILD_DATE 202607102241
 class objMetaClass;
 
 // Predefined cursor styles
