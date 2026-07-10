@@ -37,13 +37,13 @@ constexpr int LEN_ARCHIVE = 8; // "archive:" length
 struct prvFileArchive {
    ZipFile  Info;
    ZStream  Inflate;      // Streaming decompression state for the active archive entry
-   objFile  *FileStream;
-   extCompression *Archive;
+   objFile  *FileStream = nullptr;
+   extCompression *Archive = nullptr;
    uint8_t  InputBuffer[SIZE_COMPRESSION_BUFFER];
    uint8_t  OutputBuffer[SIZE_COMPRESSION_BUFFER];
-   uint8_t  *ReadPtr;      // Current position within OutputBuffer
-   int      InputLength;
-   bool     InvalidState; // Set to true if the archive is corrupt.
+   uint8_t  *ReadPtr = nullptr;   // Current position within OutputBuffer
+   int      InputLength = 0;
+   bool     InvalidState = false; // Set to true if the archive is corrupt.
 };
 
 struct ArchiveDriver {
@@ -199,7 +199,7 @@ static ERR ARCHIVE_Init(objFile *Self)
    ERR error = ERR::Search;
    if (Self->DerivedPtr = malloc(sizeof(prvFileArchive))) {
       auto prv = (prvFileArchive *)Self->DerivedPtr;
-      new (prv) prvFileArchive;
+      new (prv) prvFileArchive{};
 
       if (Self->Path.ends_with(':')) { // Nothing is referenced
          return ERR::Okay;

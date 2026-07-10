@@ -50,23 +50,23 @@ struct prvMP3 {
    mp3dec_frame_info_t info;   // Retains info on the most recently decoded frame.
    objFile *File;              // Source MP3 file
    // frame_bytes, frame_offset, channels, hz, layer, bitrate_kbps
-   int   OverflowPos;         // Overflow read position
-   int   OverflowSize;        // Number of bytes used in the overflow buffer.
-   int   SamplesPerFrame;     // Last known frame size, measured in samples: 384, 576 or 1152
-   int   SeekOffset;          // Offset to apply when performing seek operations.
-   int64_t  WriteOffset;         // Current stream offset in bytes, relative to Sound.Length.
-   int64_t  ReadOffset;          // Current seek position for the Read() action.  Max value is Sound.Length
-   int   CompressedOffset;    // Next byte position for reading compressed input
-   int   FramesProcessed;     // Count of frames processed by the decoder.
-   int   TotalFrames;         // Total frames for the entire stream (known if CBR data, or VBR header is present).
-   int   TotalSamples;        // Total samples for the entire stream.  Adjusted for null padding at either end of the stream.
-   int   PaddingStart;        // Total samples at the start of the decoded stream that can be skipped.
-   int   PaddingEnd;          // Total samples at the end of the decoded stream that can be ignored.
-   int   StreamSize;          // Compressed stream length, if defined by VBR header.
-   bool   EndOfFile;           // True if all incoming data has been read.
-   bool   VBR;                 // True if VBR detected, otherwise CBR
-   bool   XingChecked;         // True if Xing header has been checked
-   bool   TOCLoaded;           // True if the Table of Contents has been defined.
+   int     OverflowPos;         // Overflow read position
+   int     OverflowSize;        // Number of bytes used in the overflow buffer.
+   int     SamplesPerFrame;     // Last known frame size, measured in samples: 384, 576 or 1152
+   int     SeekOffset;          // Offset to apply when performing seek operations.
+   int64_t WriteOffset;         // Current stream offset in bytes, relative to Sound.Length.
+   int64_t ReadOffset;          // Current seek position for the Read() action.  Max value is Sound.Length
+   int     CompressedOffset;    // Next byte position for reading compressed input
+   int     FramesProcessed;     // Count of frames processed by the decoder.
+   int     TotalFrames;         // Total frames for the entire stream (known if CBR data, or VBR header is present).
+   int     TotalSamples;        // Total samples for the entire stream.  Adjusted for null padding at either end of the stream.
+   int     PaddingStart;        // Total samples at the start of the decoded stream that can be skipped.
+   int     PaddingEnd;          // Total samples at the end of the decoded stream that can be ignored.
+   int     StreamSize;          // Compressed stream length, if defined by VBR header.
+   bool    EndOfFile;           // True if all incoming data has been read.
+   bool    VBR;                 // True if VBR detected, otherwise CBR
+   bool    XingChecked;         // True if Xing header has been checked
+   bool    TOCLoaded;           // True if the Table of Contents has been defined.
 
    void reset() { // Reset the decoder.  Necessary for seeking.
       CompressedOffset = 0;
@@ -316,7 +316,7 @@ static ERR MP3_Init(objMP3 *Self)
    prvMP3 *prv;
    if (Self->DerivedPtr = malloc(sizeof(prvMP3))) {
       prv = (prvMP3 *)Self->DerivedPtr;
-      new (prv) prvMP3;
+      new (prv) prvMP3{};
    }
    else return ERR::AllocMemory;
 

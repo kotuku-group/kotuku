@@ -52,13 +52,13 @@ static const FieldArray clFields[] = {
 };
 
 static const ActionArray clActions[] = {
-   { AC::Free, ASSET_Free },
-   { AC::Init,          ASSET_Init },
-   { AC::Move,          ASSET_Move },
-   { AC::Read,          ASSET_Read },
-   { AC::Rename,        ASSET_Rename },
-   { AC::Seek,          ASSET_Seek },
-   { AC::Write,         ASSET_Write },
+   { AC::Free,   ASSET_Free },
+   { AC::Init,   ASSET_Init },
+   { AC::Move,   ASSET_Move },
+   { AC::Read,   ASSET_Read },
+   { AC::Rename, ASSET_Rename },
+   { AC::Seek,   ASSET_Seek },
+   { AC::Write,  ASSET_Write },
    { 0, nullptr }
 };
 
@@ -244,7 +244,7 @@ static ERR ASSET_Init(objFile *Self)
 
    // Allocate private structure
 
-   if (Self->DerivedPtr = malloc(sizeof(prvFileAsset))) {
+   if (Self->DerivedPtr = calloc(1, sizeof(prvFileAsset))) {
       if (Self->Path.endsWith(':')) {
          return ERR::Okay;
       }
