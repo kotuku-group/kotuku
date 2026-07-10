@@ -79,7 +79,7 @@ static ERR RSVG_Init(extRSVG *Self)
    }
    else return ERR::NoSupport;
 
-   log.trace("File \"%s\" is in SVG format.", path);
+   log.trace("File \"%.*s\" is in SVG format.", int(path.size()), path.data());
 
    Self->Flags |= PCF::SCALABLE;
 
