@@ -533,7 +533,7 @@ local err = xml.acDataFeed(nil, DATA_XML, '<first>First element</first>')
       <tiriPrototype>err, Result:num = Search(Expression:str, Callback:func)</tiriPrototype>
       <input>
         <param type="STRVIEW" name="Expression">A valid XQuery expression.</param>
-        <param type="FUNCTION" name="Callback">Optional pointer to a callback function for processing multiple matches.</param>
+        <param type="FUNCTION" name="Callback">Optional reference to a callback function for processing multiple matches.</param>
         <param type="INT *" name="Result">UID of the first matching tag.  When Callback is defined, this is the first matching tag processed.</param>
       </input>
       <description>

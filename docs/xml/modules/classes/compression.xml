@@ -128,7 +128,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
    while (!(error = acRead(file, input, sizeof(input), &amp;len))) {
       if (!len) break; // No more data to read.
 
-      error = mtCompressStream(compress, input, len, &amp;callback, nullptr, 0);
+      error = mtCompressStream(compress, input, len, callback, nullptr, 0);
       if (error != ERR::Okay) break;
 
       if (result &gt; 0) {
@@ -139,7 +139,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
    }
 
    if (!error) {
-      if (!(error = mtCompressStreamEnd(compress, nullptr, 0))) {
+      if (!(error = mtCompressStreamEnd(compress, callback, 0))) {
          cmpsize += result;
          error = acWrite(outfile, output, result, &amp;len);
       }
