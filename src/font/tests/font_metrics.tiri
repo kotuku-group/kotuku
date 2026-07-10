@@ -4,7 +4,6 @@ A simple test program for confirming that our fonts and reported metrics values 
 
    import 'gui/window'
    import 'gui/combobox'
-   import 'config'
 
    global mFont ?= mod.load('font')
 
