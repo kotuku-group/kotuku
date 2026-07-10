@@ -200,16 +200,15 @@ static bool read_primitive_field(lua_State *Lua, APTR Address, int Type, int Arr
 }
 
 //********************************************************************************************************************
-// Convert a Lua table to a C structure.  The structure is allocated with AllocMemory() and must be freed by the caller.
+// Convert a Lua table to a C structure.  The returned structure is owned by a unique pointer.
 // Types that would require an allocation are not supported - our goal is to support primitive structs and anything
 // more complex than that should really be managed as an object.
 
-[[nodiscard]] ERR table_to_struct(lua_State *Lua, std::string_view StructName, APTR *Result)
+[[nodiscard]] ERR table_to_struct(lua_State *Lua, std::string_view StructName, std::unique_ptr<uint8_t[]> &Result)
 {
    kt::Log log(__FUNCTION__);
 
-   if (not Result) return ERR::NullArgs;
-   *Result = NULL;
+   Result.reset();
 
    if (not lua_istable(Lua, -1)) return log.warning(ERR::WrongType);
 
@@ -218,12 +217,10 @@ static bool read_primitive_field(lua_State *Lua, APTR Address, int Type, int Arr
 
    auto &struct_def = def->second;
 
-   APTR memory;
-   if (AllocMemory(struct_def.Size, MEM::DATA, &memory) != ERR::Okay) {
-      return ERR::AllocMemory;
-   }
+   auto memory = std::unique_ptr<uint8_t[]>(new (std::nothrow) uint8_t[struct_def.Size]());
+   if (not memory) return ERR::AllocMemory;
 
-   construct_struct_cpp_strings(struct_def, memory);
+   construct_struct_cpp_strings(struct_def, memory.get());
 
    lua_pushnil(Lua); // Access first key for lua_next()
    while (lua_next(Lua, -2) != 0) { // Pops the current key and pushes the k,v pair.
@@ -232,7 +229,7 @@ static bool read_primitive_field(lua_State *Lua, APTR Address, int Type, int Arr
          auto field_hash = strihash(field_name);
          for (auto &field : struct_def.Fields) {
             if (field.nameHash() IS field_hash) {
-               APTR address = (int8_t *)memory + field.Offset;
+               APTR address = memory.get() + field.Offset;
                auto type = field.Type;
 
                if (type & FD_ARRAY) {
@@ -261,7 +258,7 @@ static bool read_primitive_field(lua_State *Lua, APTR Address, int Type, int Arr
       lua_pop(Lua, 1); // Remove value, keep key for next iteration
    }
 
-   *Result = memory;
+   Result = std::move(memory);
    return ERR::Okay;
 }
 

@@ -278,10 +278,7 @@ LJLIB_CF(array_of)
    // Count number of values provided (all arguments after the type string)
 
    int num_values = lua_gettop(L) - 1;
-   if (num_values < 1) {
-      luaL_error(L, ERR::Args, "array.of() requires at least one value");
-      return 0;
-   }
+   if (num_values < 1) luaL_error(L, ERR::Args, "array.of() requires at least one value");
 
    GCarray *arr = lj_array_new(L, uint32_t(num_values), elem_type);
    setarrayV(L, L->top++, arr);
@@ -540,7 +537,6 @@ LJLIB_CF(array_concat)
 
             if (in_format) {
                luaL_error(L, ERR::Syntax, "Invalid format string: multiple format specifiers not allowed");
-               return 0;
             }
             in_format = true;
          }
@@ -557,19 +553,14 @@ LJLIB_CF(array_concat)
             else if (!(*p IS '-' or *p IS '+' or *p IS ' ' or *p IS '#' or *p IS '0' or
                        (*p >= '1' and *p <= '9') or *p IS '.' or *p IS 'l' or *p IS 'h')) {
                luaL_error(L, ERR::Syntax, "Invalid character '%c' in format string", *p);
-               return 0;
             }
          }
       }
 
-      if (in_format) {
-         luaL_error(L, ERR::Syntax, "Incomplete format specifier");
-         return 0;
-      }
+      if (in_format) luaL_error(L, ERR::Syntax, "Incomplete format specifier");
 
       if (format_count != 1) {
          luaL_error(L, ERR::Syntax, "Format string must contain exactly one format specifier, found %d", format_count);
-         return 0;
       }
    }
 
@@ -620,7 +611,6 @@ LJLIB_CF(array_concat)
                break;
             default:
                luaL_error(L, ERR::InvalidType, "concat() does not support %s types.", elemtype_name(arr->elemtype));
-               return 0;
          }
       }
       else {
@@ -663,7 +653,6 @@ LJLIB_CF(array_concat)
                break;
             default:
                luaL_error(L, ERR::InvalidType, "concat() does not support %s types.", elemtype_name(arr->elemtype));
-               return 0;
          }
       }
    }
@@ -1282,15 +1271,12 @@ LJLIB_CF(array_copy)
             case AET::STR_GC:
                if (lua_tostring(L, -1)) {
                   luaL_error(L, ERR::NoSupport, "Writing to string arrays from tables is not yet supported.");
-                  lua_pop(L, 1);
-                  return 0;
                }
                break;
             case AET::CSTR:
             case AET::PTR:
                luaL_error(L, ERR::NoSupport, "Writing to pointer arrays from tables is not supported.");
-               lua_pop(L, 1);
-               return 0;
+               break;
             case AET::FLOAT:
                dest->get<float>()[dest_index] = lua_tonumber(L, -1);
                break;
@@ -1314,8 +1300,7 @@ LJLIB_CF(array_copy)
                // TODO: We should check the struct fields to confirm if its content can be safely copied.
                // This would only have to be done once per struct type, so we could cache the result.
                luaL_error(L, ERR::NoSupport, "Writing to struct arrays from tables is not yet supported.");
-               lua_pop(L, 1);
-               return 0;
+               break;
 
             case AET::OBJECT:
                if (lua_isobject(L, -1)) {
@@ -1327,11 +1312,7 @@ LJLIB_CF(array_copy)
                else if (lua_isnil(L, -1)) {
                   setgcrefnull(dest->get<GCRef>()[dest_index]);
                }
-               else {
-                  luaL_error(L, ERR::InvalidType, "Expected object value at index %d.", source_index);
-                  lua_pop(L, 1);
-                  return 0;
-               }
+               else luaL_error(L, ERR::InvalidType, "Expected object value at index %d.", source_index);
                break;
 
             case AET::TABLE:
@@ -1344,11 +1325,7 @@ LJLIB_CF(array_copy)
                else if (lua_isnil(L, -1)) {
                   setgcrefnull(dest->get<GCRef>()[dest_index]);
                }
-               else {
-                  luaL_error(L, ERR::InvalidType, "Expected table value at index %d.", source_index);
-                  lua_pop(L, 1);
-                  return 0;
-               }
+               else luaL_error(L, ERR::InvalidType, "Expected table value at index %d.", source_index);
                break;
 
             case AET::ARRAY:
@@ -1361,17 +1338,11 @@ LJLIB_CF(array_copy)
                else if (lua_isnil(L, -1)) {
                   setgcrefnull(dest->get<GCRef>()[dest_index]);
                }
-               else {
-                  luaL_error(L, ERR::InvalidType, "Expected array value at index %d.", source_index);
-                  lua_pop(L, 1);
-                  return 0;
-               }
+               else luaL_error(L, ERR::InvalidType, "Expected array value at index %d.", source_index);
                break;
 
             default:
                luaL_error(L, ERR::InvalidType, "Unsupported array type $%.8x", dest->elemtype);
-               lua_pop(L, 1);
-               return 0;
          }
 
          lua_pop(L, 1); // Remove the value from stack
@@ -2012,7 +1983,6 @@ LJLIB_CF(array_sort)
    if (lua_isfunction(L, 2)) {
       if (arr->elemtype IS AET::STRUCT or arr->elemtype IS AET::PTR or arr->elemtype IS AET::STR_CPP) {
          luaL_error(L, ERR::WrongType, "sort() with comparator does not support this array type.");
-         return 0;
       }
       quicksort_func(L, arr, 0, int32_t(arr->len - 1), 2);
       return 0;
@@ -2608,10 +2578,8 @@ LJLIB_CF(array_remove)
    }
 
    int32_t count = lj_lib_optint(L, 3, 1);
-   if (count < 0) {
-      luaL_error(L, ERR::Args, "count must be non-negative");
-      return 0;
-   }
+   if (count < 0) luaL_error(L, ERR::Args, "count must be non-negative");
+
    if (count IS 0) {
       setintV(L->top++, int32_t(arr->len));
       return 1;
@@ -2655,10 +2623,7 @@ LJLIB_CF(array_clone)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
 
-   if (arr->elemtype IS AET::STRUCT) {
-      luaL_error(L, ERR::NoSupport, "array.clone() does not support struct types.");
-      return 0;
-   }
+   if (arr->elemtype IS AET::STRUCT) luaL_error(L, ERR::NoSupport, "array.clone() does not support struct types.");
 
    // Create new array with same type and length
    GCarray *result = lj_array_new(L, arr->len, arr->elemtype);

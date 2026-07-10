@@ -573,26 +573,25 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
    // Track dynamically allocated objects for cleanup
    struct allocated_struct_ref {
-      APTR Data = nullptr;
+      std::unique_ptr<uint8_t[]> Data;
       struct_record *Def = nullptr;
 
       allocated_struct_ref() = default;
-      allocated_struct_ref(APTR InitData, struct_record *InitDef): Data(InitData), Def(InitDef) { }
+      allocated_struct_ref(std::unique_ptr<uint8_t[]> InitData, struct_record *InitDef):
+         Data(std::move(InitData)), Def(InitDef) { }
 
       allocated_struct_ref(const allocated_struct_ref &) = delete;
       allocated_struct_ref & operator=(const allocated_struct_ref &) = delete;
 
-      allocated_struct_ref(allocated_struct_ref &&Other) noexcept: Data(Other.Data), Def(Other.Def) {
-         Other.Data = nullptr;
+      allocated_struct_ref(allocated_struct_ref &&Other) noexcept: Data(std::move(Other.Data)), Def(Other.Def) {
          Other.Def = nullptr;
       }
 
       allocated_struct_ref & operator=(allocated_struct_ref &&Other) noexcept {
          if (this != &Other) {
             release();
-            Data = Other.Data;
+            Data = std::move(Other.Data);
             Def = Other.Def;
-            Other.Data = nullptr;
             Other.Def = nullptr;
          }
          return *this;
@@ -604,9 +603,8 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
       void release() {
          if (Data) {
-            if (Def) destroy_struct_cpp_strings(*Def, Data);
-            FreeResource(Data);
-            Data = nullptr;
+            if (Def) destroy_struct_cpp_strings(*Def, Data.get());
+            Data.reset();
             Def = nullptr;
          }
       }
@@ -718,7 +716,15 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             // Applicable to RESULT|MUTABLE only, which requires the client to provide an empty kt::vector<> to the function.
             // We set this up here, then convert the resulting values to a Tiri array when the function returns.
             cpp_array_result result_ref = { };
-            if (auto error = make_cpp_array_result(argtype, &result_ref); !error) {
+            if ((argtype & FD_STRUCT) and (!(argtype & FD_PTR))) {
+               // TODO: args[i].Name will include the name of the struct that we need to use to build the array, e.g. "FontList:Result"
+               // where FontList is the struct name.  The kt::vector<T> data() will contain a serialised list of structs and the total
+               // count.  For this to work, the STRUCT type would need to host a kt::vector<> and the call site would need to
+               // make a TrackResource() call that associates its destruction process with the kt::vector<> address.
+               ErrorMsg = "C++ struct arrays are not supported.";
+               return ERR::NoSupport;
+            }
+            else if (auto error = make_cpp_array_result(argtype, &result_ref); !error) {
                ((APTR *)(buffer + j))[0] = result_ref.Data; // kt::vector<>
                cpp_arrays.push_back(std::move(result_ref));
                arg_values[in]  = buffer + j;
@@ -1133,12 +1139,13 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             if (args[i].Type & FD_STRUCT) {
                // Convert Lua table to C struct
                lua_pushvalue(Lua, i); // Duplicate table for table_to_struct (consumes stack)
-               APTR struct_data;
-               if (!table_to_struct(Lua, args[i].Name, &struct_data)) {
+               std::unique_ptr<uint8_t[]> struct_data;
+               if (!table_to_struct(Lua, args[i].Name, struct_data)) {
+                  auto struct_address = struct_data.get();
                   auto def = glStructs.find(std::string_view(args[i].Name));
-                  if (def != glStructs.end()) allocated_structs.push_back({ struct_data, &def->second });
-                  else allocated_structs.push_back({ struct_data, nullptr });
-                  ((APTR *)(buffer + j))[0] = struct_data;
+                  if (def != glStructs.end()) allocated_structs.emplace_back(std::move(struct_data), &def->second);
+                  else allocated_structs.emplace_back(std::move(struct_data), nullptr);
+                  ((APTR *)(buffer + j))[0] = struct_address;
                   arg_values[in] = buffer + j;
                   arg_types[in++] = &ffi_type_pointer;
                   j += sizeof(APTR);
