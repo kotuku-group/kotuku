@@ -120,47 +120,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
    -- Load the system font catalogue and convert its Config strings to values used by the dialog.
 
    function getFonts()
-      local catalogue = config.decode(io.readAll('fonts:fonts.cfg'))
-      local options = { }
-      try
-         options = config.decode(io.readAll('fonts:options.cfg'))
-      end
-      lFonts = { }
-
-      -- Match Config.MergeFile(): add missing groups and overwrite matching keys with the options file values.
-
-      for group_name, option_group in pairs(options) do
-         local catalogue_group = catalogue[group_name]
-         if catalogue_group is nil then
-            catalogue_group = { }
-            catalogue[group_name] = catalogue_group
-         end
-
-         for key, value in pairs(option_group) do
-            catalogue_group[key] = value
-         end
-      end
-
-      for group_name, entry in pairs(catalogue) do
-         local name = entry.Name ?? group_name
-         local font = { name=name }
-
-         if entry.Alias then font.alias = entry.Alias end
-         if entry.Styles then font.styles = entry.Styles:split(',') end
-
-         if entry.Points then
-            local sizes = array<int>
-            for point in values(entry.Points:split(',')) do
-               local size = tonumber(point:trim())
-               if size then sizes:push(size) end
-            end
-            if #sizes > 0 then font.sizes = sizes end
-         end
-
-         font.hidden = (entry.Hidden ?? ''):lower() is 'yes'
-         font.scalable = (entry.Scalable ?? ''):lower() is 'yes'
-         lFonts[name] = font
-      end
+      lFonts = resolve(gui.fontList)
    end
 
    function showFontSizes(List)
@@ -357,7 +317,9 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
 
          if self.style and lFonts[self.face] then
             supported = false
-            for v in values(lFonts[self.face].styles) do
+            face = self.face
+            if lFonts[face].alias then face = lFonts[face].alias end
+            for v in values(lFonts[face].styles) do
                if v is self.style then
                   supported = true
                   break

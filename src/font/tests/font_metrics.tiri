@@ -4,6 +4,7 @@ A simple test program for confirming that our fonts and reported metrics values 
 
    import 'gui/window'
    import 'gui/combobox'
+   import 'config'
 
    global mFont ?= mod.load('font')
 
@@ -83,13 +84,12 @@ end
 
    y = 6
    items = array<table> { }
-   err, list = mFont.GetList()
+   list = gui.fontList
 
-   while list do
-      if list.hidden != 1 then
-         items:push({ item=list.name })
+   for group_name, rec in pairs(list) do
+      if not rec.hidden then
+         items:push({ item=rec.name })
       end
-      list = list.next
    end
 
    combobox = gui.combobox({
