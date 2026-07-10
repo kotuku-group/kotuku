@@ -314,7 +314,7 @@ static ERR MP3_Init(objMP3 *Self)
    }
 
    prvMP3 *prv;
-   if (Self->DerivedPtr = malloc(sizeof(prvMP3))) {
+   if ((Self->DerivedPtr = malloc(sizeof(prvMP3)))) {
       prv = (prvMP3 *)Self->DerivedPtr;
       new (prv) prvMP3{};
    }

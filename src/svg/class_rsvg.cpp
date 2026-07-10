@@ -22,7 +22,7 @@ public:
    inline objSVG * svg() { return (objSVG *)DerivedPtr; }
 
    ~extRSVG() {
-      // Manual termination required because Free's use of FreeResource treats DerivedPtr as a generic memory block.
+      // Manual termination required because Free treats DerivedPtr as a generic memory block.
       if (DerivedPtr) { FreeResource(((objSVG *)DerivedPtr)->UID); DerivedPtr = nullptr; }
    }
 
@@ -212,12 +212,12 @@ static ERR RSVG_Resize(extRSVG *Self, struct acResize *Args)
 //********************************************************************************************************************
 
 static const ActionArray clActions[] = {
-   { AC::Activate,      RSVG_Activate },
-   { AC::Free, RSVG_Free },
-   { AC::Init,          RSVG_Init },
-   { AC::New,  RSVG_New },
-   { AC::Query,         RSVG_Query },
-   { AC::Resize,        RSVG_Resize },
+   { AC::Activate, RSVG_Activate },
+   { AC::Free,     RSVG_Free },
+   { AC::Init,     RSVG_Init },
+   { AC::New,      RSVG_New },
+   { AC::Query,    RSVG_Query },
+   { AC::Resize,   RSVG_Resize },
    { AC::NIL, nullptr }
 };
 
