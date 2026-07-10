@@ -210,6 +210,7 @@ struct ThreadActionMessage {
    ERR       Error;     // The error code resulting from the action's execution.
    FUNCTION  Callback;  // Callback function to execute on action completion.
    bool      DispatchNext = true; // False for callbacks emitted while draining a queue.
+   FUNCTION  DeferredFunction; // Consumed argument callback released by the message thread.
 };
 
 // Queued async action, waiting for the same-object action to complete.
@@ -1174,7 +1175,7 @@ APTR   build_jump_table(const Function *);
 #endif
 void   stop_async_actions(void);
 ERR    copy_args(const FunctionField *, int, int8_t *, std::vector<int8_t> &);
-void   release_copied_args(const FunctionField *, int, int8_t *, bool);
+void   release_copied_args(const FunctionField *, int, int8_t *, bool, FUNCTION * = nullptr);
 ERR    create_archive_volume(void);
 void   dispatch_queued_action(OBJECTID);
 ERR    delete_tree(std::string &, FUNCTION *, FileFeedback *);

@@ -807,13 +807,16 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
          return glCancelledAsyncObjects.contains(object_uid);
       };
 
+      FUNCTION deferred_function;
+
       if (is_stopping() or is_cancelled()) {
-         release_copied_args(Fields, ArgsSize, Parameters.data(), true);
+         release_copied_args(Fields, ArgsSize, Parameters.data(), true, &deferred_function);
          ThreadActionMessage msg = {
             .ActionID = ActionID,
             .ObjectID = object_uid,
             .Error    = ERR::Cancelled,
-            .Callback = Callback
+            .Callback = Callback,
+            .DeferredFunction = deferred_function
          };
          SendMessage(MSGID::THREAD_ACTION, MSF::NIL, &msg, sizeof(msg));
          cleanup();
@@ -836,7 +839,7 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
          else ReleaseObject(Object);
       }
 
-      release_copied_args(Fields, ArgsSize, Parameters.data(), not executed);
+      release_copied_args(Fields, ArgsSize, Parameters.data(), not executed, &deferred_function);
 
       // Always send a completion message so that msg_threadaction() can dispatch the next queued action.
       // Preserve the callback on cancellation so script-side cleanup still runs.
@@ -848,7 +851,8 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
          .ActionID = ActionID,
          .ObjectID = object_uid,
          .Error    = completion_error,
-         .Callback = Callback
+         .Callback = Callback,
+         .DeferredFunction = deferred_function
       };
       SendMessage(MSGID::THREAD_ACTION, MSF::NIL, &msg, sizeof(msg));
 
@@ -1370,6 +1374,8 @@ ERR msg_threadaction(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgS
 {
    auto msg = (ThreadActionMessage *)Message;
    if (not msg) return ERR::Okay;
+
+   release_owned_callback(msg->DeferredFunction);
 
    if (msg->Callback.stale()) {
       release_owned_callback(msg->Callback);
