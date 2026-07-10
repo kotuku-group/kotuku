@@ -351,7 +351,8 @@ static bool push_cpp_array_arg(lua_State *Lua, int Type, std::string_view Name, 
 
 // On failure, undoes any lingering resource allocations.
 
-static void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int ArgsSize, int8_t *ArgBuffer)
+void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int ArgsSize, int8_t *ArgBuffer,
+   bool ReleaseFunctions)
 {
    if ((not Args) or (not ArgBuffer)) return;
 
@@ -369,7 +370,7 @@ static void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int Arg
          }
          else if (type & FD_FUNCTION) {
             j = ALIGN64(j);
-            release_func_id(Lua, ((FUNCTION *)(ArgBuffer + j)));
+            if (ReleaseFunctions) release_func_id(Lua, ((FUNCTION *)(ArgBuffer + j)));
             j += sizeof(FUNCTION);
          }
          else if (type & FD_STR) {
@@ -412,7 +413,7 @@ static void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int Arg
       }
       else if (type & FD_FUNCTION) {
          j = ALIGN64(j);
-         release_func_id(Lua, ((FUNCTION *)(ArgBuffer + j)));
+         if (ReleaseFunctions) release_func_id(Lua, ((FUNCTION *)(ArgBuffer + j)));
          j += sizeof(FUNCTION);
       }
       else if (type & FD_PTR) j = ALIGN64(j) + sizeof(APTR);
@@ -461,12 +462,12 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
    clearmem(ArgBuffer, ArgsSize);
 
    auto fail = [&](ERR Error) -> ERR {
-      cleanup_argbuffer(Lua, Args, ArgsSize, ArgBuffer);
+      cleanup_argbuffer(Lua, Args, ArgsSize, ArgBuffer, true);
       return Error;
    };
 
    auto fail_arg = [&](int ArgIndex, CSTRING Message) -> ERR {
-      cleanup_argbuffer(Lua, Args, ArgsSize, ArgBuffer);
+      cleanup_argbuffer(Lua, Args, ArgsSize, ArgBuffer, true);
       ErrorArg = ArgIndex;
       ErrorMsg = Message;
       return ERR::WrongType;

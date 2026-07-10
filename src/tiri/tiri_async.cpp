@@ -201,8 +201,11 @@ static int dispatch_async_object_call(lua_State *Lua, GCobject *GcObj, CSTRING N
       if (!(error = build_args(Lua, Name, Args, ArgsSize, arg_buffer.get(), &result_count, arg_index, error_msg))) {
          if (not result_count) {
             error = AsyncAction(ActionID, GcObj->ptr, arg_buffer.get(), &callback);
+            cleanup_argbuffer(Lua, Args, ArgsSize, arg_buffer.get(), error != ERR::Okay);
+            arg_buffer.reset();
          }
          else {
+            cleanup_argbuffer(Lua, Args, ArgsSize, arg_buffer.get(), true);
             arg_buffer.reset();
             abort();
             luaL_error(Lua, "%s", ResultError);

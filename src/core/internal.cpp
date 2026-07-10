@@ -20,6 +20,85 @@ static constexpr int align_arg_offset(int Offset)
    return (Offset + 7) & ~7;
 }
 
+template <class T> static ERR copy_cpp_array_arg(APTR Source, APTR *Result)
+{
+   if (not Source) {
+      *Result = nullptr;
+      return ERR::Okay;
+   }
+
+   auto copy = new (std::nothrow) kt::vector<T>(*(kt::vector<T> *)Source);
+   if (not copy) return ERR::AllocMemory;
+   *Result = copy;
+   return ERR::Okay;
+}
+
+static ERR copy_cpp_array_arg(int Type, APTR Source, APTR *Result)
+{
+   if (Type & FD_STR) return copy_cpp_array_arg<std::string>(Source, Result);
+   else if ((Type & FD_OBJECT) and (Type & FD_PTR)) return copy_cpp_array_arg<OBJECTPTR>(Source, Result);
+   else if (Type & FD_PTR) return copy_cpp_array_arg<APTR>(Source, Result);
+   else if (Type & FD_DOUBLE) return copy_cpp_array_arg<double>(Source, Result);
+   else if (Type & FD_FLOAT) return copy_cpp_array_arg<float>(Source, Result);
+   else if (Type & FD_INT64) return copy_cpp_array_arg<int64_t>(Source, Result);
+   else if (Type & FD_INT) return copy_cpp_array_arg<int>(Source, Result);
+   else if (Type & FD_WORD) return copy_cpp_array_arg<int16_t>(Source, Result);
+   else if (Type & FD_BYTE) return copy_cpp_array_arg<uint8_t>(Source, Result);
+   else return ERR::NoSupport;
+}
+
+template <class T> static void delete_cpp_array_arg(APTR Array)
+{
+   delete (kt::vector<T> *)Array;
+}
+
+static void delete_cpp_array_arg(int Type, APTR Array)
+{
+   if (not Array) return;
+
+   if (Type & FD_STR) delete_cpp_array_arg<std::string>(Array);
+   else if ((Type & FD_OBJECT) and (Type & FD_PTR)) delete_cpp_array_arg<OBJECTPTR>(Array);
+   else if (Type & FD_PTR) delete_cpp_array_arg<APTR>(Array);
+   else if (Type & FD_DOUBLE) delete_cpp_array_arg<double>(Array);
+   else if (Type & FD_FLOAT) delete_cpp_array_arg<float>(Array);
+   else if (Type & FD_INT64) delete_cpp_array_arg<int64_t>(Array);
+   else if (Type & FD_INT) delete_cpp_array_arg<int>(Array);
+   else if (Type & FD_WORD) delete_cpp_array_arg<int16_t>(Array);
+   else if (Type & FD_BYTE) delete_cpp_array_arg<uint8_t>(Array);
+}
+
+static void pin_object_array(kt::vector<OBJECTPTR> *Objects)
+{
+   if (not Objects) return;
+   for (auto object : *Objects) {
+      if (object) object->pin();
+   }
+}
+
+static void unpin_object_array(kt::vector<OBJECTPTR> *Objects)
+{
+   if (not Objects) return;
+   for (auto object : *Objects) {
+      if (object) object->unpin(true);
+   }
+}
+
+static int argument_end_offset(int Type, int Offset)
+{
+   if (Type & FD_ARRAY) return align_arg_offset(Offset) + sizeof(APTR);
+   else if (Type & FD_STR) {
+      Offset = align_arg_offset(Offset);
+      if ((Type & FD_CPP) and (not (Type & FD_MUTABLE))) return Offset + sizeof(std::string_view);
+      else return Offset + sizeof(APTR);
+   }
+   else if (Type & FD_FUNCTION) return align_arg_offset(Offset) + sizeof(FUNCTION);
+   else if (Type & (FD_PTR|FD_BUFFER|FD_STRUCT)) return align_arg_offset(Offset) + sizeof(APTR);
+   else if (Type & FD_DOUBLE) return align_arg_offset(Offset) + sizeof(double);
+   else if (Type & FD_INT64) return align_arg_offset(Offset) + sizeof(int64_t);
+   else if (Type & FD_INT) return Offset + sizeof(int);
+   else return Offset;
+}
+
 //********************************************************************************************************************
 
 #ifdef __APPLE__
@@ -179,7 +258,7 @@ This function searches an argument structure for pointer and string types.  If i
 convert them to a format that can be passed to other memory spaces.  Note: The canonical interpreter for these
 structures is in Tiri - for the most part this function should be kept in sync with it.
 
-A PTR|RESULT or PTR|MUTABLE followed by a PTRSIZE indicates that the user has to supply a buffer to the function.  It
+A PTR|RESULT or PTRBUFFER|MUTABLE followed by a PTRSIZE indicates that the user has to supply a buffer to the function.  It
 is assumed that the function will fill the buffer with data, so the caller's initial buffer content is not serialised.
 Example:
 
@@ -192,7 +271,7 @@ that this is one-way traffic only, and the function will not fill the buffer wit
 Example:
 
 <pre>
-Write(Bytes (FD_INT, Buffer (FD_PTR), BufferSize (FD_PTRSIZE), &BytesWritten (FD_INTRESULT));
+Write(Bytes (FD_INT), Buffer (FD_PTRBUFFER), BufferSize (FD_PTRSIZE), &BytesWritten (FD_INTRESULT));
 </pre>
 
 If the function will return a memory block of its own, it must return the block as a MEMORYID, not a PTR.  The
@@ -217,119 +296,159 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
    for (int i=0; Args[i].Name; i++) {
       if (pos >= ArgsSize) return ERR::InvalidData; // Sanity check, the pos can't exceed ArgsSize.
 
-      if (Args[i].Type & FD_STR) {
-         if (Args[i].Type & FD_CPP) {
-            auto view = (std::string_view *)(Parameters + pos);
-            size += view->length() + 1;
-            pos += sizeof(std::string_view);
-         }
-         else {
-            if (auto str = ((STRING *)(Parameters + pos))[0]) size += strlen(str) + 1;
-            pos += sizeof(APTR);
-         }
+      int type = Args[i].Type;
+      if ((type & FD_ARRAY) and (!(type & FD_CPP))) {
+         // Array parameters are considered legacy and effectively unused in the current system.
+         return ERR::NoSupport;
       }
-      else if (Args[i].Type & FD_FUNCTION) {
-         // There is a hard limit of one function per action call.
+      else if (type & FD_STR) {
+         pos = align_arg_offset(pos);
+         if (not (type & FD_RESULT)) {
+            if ((type & FD_CPP) and (not (type & FD_MUTABLE))) {
+               auto view = (std::string_view *)(Parameters + pos);
+               if (view->length() >= size_t(INT_MAX - size)) return log.warning(ERR::InvalidData);
+               size += int(view->length()) + 1;
+            }
+            else if (auto str = *(CSTRING *)(Parameters + pos)) {
+               auto length = strlen(str);
+               if (length >= size_t(INT_MAX - size)) return log.warning(ERR::InvalidData);
+               size += int(length) + 1;
+            }
+         }
+         pos = argument_end_offset(type, pos);
+      }
+      else if (type & FD_FUNCTION) {
+         // There is a hard limit of one embedded function per action call.
          // Functions are always expressed as an embedded type.
          if (function_found) return log.warning(ERR::NoSupport);
          function_found = true;
-         pos = align_arg_offset(pos) + sizeof(FUNCTION);
+         pos = argument_end_offset(type, pos);
       }
-      else if (Args[i].Type & FD_PTR) {
-         if ((Args[i].Type & FD_RESULT) and (not (Args[i+1].Type & FD_PTRSIZE))); // Stored in parameter buffer.
-         else if (Args[i].Type & (FD_INT|FD_PTRSIZE)) { // Pointer to int.
-            pos += sizeof(int);
+      else if (type & (FD_PTR|FD_BUFFER)) {
+         pos = align_arg_offset(pos);
+         if ((not (type & (FD_OBJECT|FD_RESULT))) and (Args[i+1].Type & FD_PTRSIZE)) {
+            int64_t memsize;
+            if (Args[i+1].Type & FD_INT64) memsize = *(int64_t *)(Parameters + pos + sizeof(APTR));
+            else memsize = *(int *)(Parameters + pos + sizeof(APTR));
+            if ((memsize < 0) or (memsize > INT_MAX - size)) return log.warning(ERR::InvalidData);
+            size += int(memsize);
          }
-         else if (Args[i].Type & (FD_DOUBLE|FD_INT64)) { // Pointer to large/double
-            pos += sizeof(int64_t);
-         }
-         else if (Args[i+1].Type & FD_PTRSIZE) {
-            if (int memsize = ((int *)(Parameters + pos + sizeof(APTR)))[0]; memsize > 0) {
-               size += memsize;
-            }
-         }
-         else { // No PTRSIZE is a problem
-            log.warning(ERR::InvalidType);
-         }
+         else if (not (type & (FD_OBJECT|FD_RESULT))) return log.warning(ERR::NoSupport);
          pos += sizeof(APTR);
       }
-      else if (Args[i].Type & (FD_DOUBLE|FD_INT64)) pos += sizeof(int64_t);
-      else pos += sizeof(int);
+      else if (type & (FD_DOUBLE|FD_INT64|FD_INT)) pos = argument_end_offset(type, pos);
+      else if (type & FD_TAGS) return log.warning(ERR::NoSupport);
+      else return log.warning(ERR::NoSupport);
    }
 
    Buffer.reserve(size); // Ensures that the buffer space remains stable when extended.
    Buffer.resize(ArgsSize);
    copymem(Parameters, Buffer.data(), ArgsSize);
 
+   // C++ arrays require an owned vector copy.  Complete these allocations before pinning any referenced objects or
+   // callbacks so that allocation failure cannot leave partially acquired resources behind.
+
+   std::vector<std::pair<int, APTR>> cpp_arrays;
    pos = 0;
    for (int i=0; Args[i].Name; i++) {
-      APTR param = Buffer.data() + pos;
+      int type = Args[i].Type;
+      if (type & FD_ARRAY) {
+         pos = align_arg_offset(pos);
+         APTR copy = nullptr;
+         if (auto error = copy_cpp_array_arg(type, *(APTR *)(Parameters + pos), &copy); error != ERR::Okay) {
+            for (auto &array : cpp_arrays) delete_cpp_array_arg(array.first, array.second);
+            Buffer.clear();
+            return error;
+         }
+         *(APTR *)(Buffer.data() + pos) = copy;
+         cpp_arrays.emplace_back(type, copy);
+      }
+      pos = argument_end_offset(type, pos);
+   }
 
-      if (Args[i].Type & FD_STR) {
-         if (Args[i].Type & FD_CPP) {
+   pos = 0;
+   for (int i=0; Args[i].Name; i++) {
+      int type = Args[i].Type;
+
+      if (type & FD_ARRAY) {
+         pos = align_arg_offset(pos);
+         auto param = (APTR *)(Buffer.data() + pos);
+         if ((type & FD_OBJECT) and (type & FD_PTR)) {
+            pin_object_array((kt::vector<OBJECTPTR> *)*param);
+         }
+         pos += sizeof(APTR);
+      }
+      else if (type & FD_STR) {
+         pos = align_arg_offset(pos);
+         APTR param = Buffer.data() + pos;
+         if (type & FD_RESULT) {
+            // Result values are not available to queued callers, so do not retain references to caller-owned storage.
+            if ((type & FD_CPP) and (not (type & FD_MUTABLE))) new (param) std::string_view;
+            else *(APTR *)param = nullptr;
+         }
+         else if ((type & FD_CPP) and (not (type & FD_MUTABLE))) {
             auto insert = (STRING)(Buffer.data() + Buffer.size());
             auto view = (std::string_view *)(Parameters + pos);
             Buffer.resize(Buffer.size() + view->length() + 1);
             ((std::string_view *)param)[0] = std::string_view(insert, view->length());
             if (not view->empty()) copymem(view->data(), insert, view->length());
             insert[view->length()] = 0;
-            pos += sizeof(std::string_view);
          }
          else {
             auto insert = (STRING)(Buffer.data() + Buffer.size());
-            if (auto str = ((STRING *)(Parameters + pos))[0]) {
+            if (auto str = *(CSTRING *)(Parameters + pos)) {
                auto len = strlen(str);
                Buffer.resize(Buffer.size() + len + 1);
                ((STRING *)param)[0] = insert;
                copymem(str, insert, len + 1);
             }
             else ((STRING *)param)[0] = nullptr;
-            pos += sizeof(STRING);
          }
+         pos = argument_end_offset(type, pos);
       }
-      else if (Args[i].Type & FD_FUNCTION) {
+      else if (type & FD_FUNCTION) {
          pos = align_arg_offset(pos);
          auto function = (FUNCTION *)(Buffer.data() + pos);
          if (function->defined()) function->pin();
          pos += sizeof(FUNCTION);
       }
-      else if (Args[i].Type & FD_PTR) {
-         if (Args[i].Type & FD_INT) { // Pointer to int.
-            auto insert = (int *)(Buffer.data() + Buffer.size());
-            Buffer.resize(Buffer.size() + sizeof(int));
-            insert[0] = ((int *)(Parameters + pos))[0];
-            ((APTR *)param)[0] = insert;
+      else if (type & (FD_PTR|FD_BUFFER)) {
+         pos = align_arg_offset(pos);
+         auto param = (APTR *)(Buffer.data() + pos);
+         if (type & FD_OBJECT) {
+            if (type & FD_RESULT) *param = nullptr;
+            else {
+               auto object = *(OBJECTPTR *)(Parameters + pos);
+               *param = object;
+               if (object) object->pin();
+            }
          }
-         else if (Args[i].Type & (FD_DOUBLE|FD_INT64)) { // Pointer to large/double
-            auto insert = (int64_t *)(Buffer.data() + Buffer.size());
-            Buffer.resize(Buffer.size() + sizeof(int64_t));
-            insert[0] = ((int64_t *)(Parameters + pos))[0];
-            ((APTR *)param)[0] = insert;
-         }
-         else if (Args[i+1].Type & FD_PTRSIZE) { // Pointer to a buffer
-            if (int memsize = ((int *)(Parameters + pos + sizeof(APTR)))[0]; memsize > 0) {
-               if (Args[i].Type & (FD_RESULT|FD_MUTABLE)) { // 'Receive' buffer
+         else if (type & FD_RESULT) *param = nullptr;
+         else if (Args[i+1].Type & FD_PTRSIZE) {
+            int64_t memsize;
+            if (Args[i+1].Type & FD_INT64) memsize = *(int64_t *)(Parameters + pos + sizeof(APTR));
+            else memsize = *(int *)(Parameters + pos + sizeof(APTR));
+            if (memsize > 0) {
+               if (type & FD_MUTABLE) { // Receive buffer
                   auto insert = Buffer.data() + Buffer.size();
-                  ((APTR *)param)[0] = insert;
+                  *param = insert;
                   Buffer.resize(Buffer.size() + memsize);
                }
-               else { // 'Send' buffer
-                  if (int8_t *src = ((int8_t **)(Parameters + pos))[0]) {
+               else { // Send buffer
+                  if (int8_t *src = *(int8_t **)(Parameters + pos)) {
                      auto insert = Buffer.data() + Buffer.size();
-                     ((APTR *)param)[0] = insert;
+                     *param = insert;
                      Buffer.resize(Buffer.size() + memsize);
                      copymem(src, insert, memsize);
                   }
-                  else ((APTR *)param)[0] = nullptr;
+                  else *param = nullptr;
                }
             }
-            else ((APTR *)param)[0] = nullptr;
+            else *param = nullptr;
          }
-         else ((APTR *)param)[0] = nullptr;
          pos += sizeof(APTR);
       }
-      else if (Args[i].Type & (FD_DOUBLE|FD_INT64)) pos += sizeof(int64_t);
-      else pos += sizeof(int);
+      else pos = argument_end_offset(type, pos);
    }
 
    return ERR::Okay;
@@ -345,7 +464,16 @@ void release_copied_args(const FunctionField *Args, int ArgsSize, int8_t *Parame
    for (int i=0, pos=0; Args[i].Name and (pos < ArgsSize); i++) {
       auto type = Args[i].Type;
 
-      if (type & FD_ARRAY) pos = align_arg_offset(pos) + sizeof(APTR);
+      if (type & FD_ARRAY) {
+         pos = align_arg_offset(pos);
+         auto array = *(APTR *)(Parameters + pos);
+         if ((type & FD_OBJECT) and (type & FD_PTR)) {
+            unpin_object_array((kt::vector<OBJECTPTR> *)array);
+         }
+         delete_cpp_array_arg(type, array);
+         *(APTR *)(Parameters + pos) = nullptr;
+         pos += sizeof(APTR);
+      }
       else if ((type & FD_BUFFER) or (Args[i+1].Type & FD_BUFSIZE)) {
          pos = align_arg_offset(pos) + sizeof(APTR);
       }
@@ -362,7 +490,7 @@ void release_copied_args(const FunctionField *Args, int ArgsSize, int8_t *Parame
             if (function.isScript() and (not function.stale()) and (DereferenceAll or function.consumed())) {
                if (DeferredFunction) {
                   *DeferredFunction = function;
-                  function.clear();
+                  function.disable();
                   pos += sizeof(FUNCTION);
                   continue;
                }
@@ -373,15 +501,20 @@ void release_copied_args(const FunctionField *Args, int ArgsSize, int8_t *Parame
                }
             }
             function.unpin();
-            function.clear();
+            function.disable();
          }
 
          pos += sizeof(FUNCTION);
       }
-      else if ((type & FD_PTR) or (type & FD_STRUCT)) pos = align_arg_offset(pos) + sizeof(APTR);
-      else if (type & FD_INT) pos += sizeof(int);
-      else if (type & FD_DOUBLE) pos = align_arg_offset(pos) + sizeof(double);
-      else if (type & FD_INT64) pos = align_arg_offset(pos) + sizeof(int64_t);
+      else if (type & FD_PTR) {
+         pos = align_arg_offset(pos);
+         if ((type & FD_OBJECT) and (not (type & FD_RESULT))) {
+            if (auto object = *(OBJECTPTR *)(Parameters + pos)) object->unpin(true);
+            *(OBJECTPTR *)(Parameters + pos) = nullptr;
+         }
+         pos += sizeof(APTR);
+      }
+      else if (type & (FD_INT|FD_DOUBLE|FD_INT64)) pos = argument_end_offset(type, pos);
       else if (type & FD_TAGS) break;
    }
 }
