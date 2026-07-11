@@ -71,6 +71,50 @@ static void warn_unknown_gradient_attribute(kt::Log &Log, const XTag &Tag, const
 }
 
 //********************************************************************************************************************
+// Shared resolver for <stop> colour attributes, used by both the generic gradient stop parser and mesh gradient
+// stops.  Inline style declarations are converted to real attributes at load time (see convert_styles()), so only
+// presentation attributes require handling here.  Style-derived attributes are appended after the presentation
+// attributes, so processing in order gives them CSS precedence.  'inherit' resolves against the current state's
+// stop-color/stop-opacity and 'currentColor' against the current 'color' value.
+
+FRGB svgState::resolve_stop_colour(const XTag &Tag) noexcept
+{
+   FRGB colour(0,0,0,1);
+   double stop_opacity = 1.0;
+
+   for (int a=1; a < std::ssize(Tag.Attribs); a++) {
+      auto &name  = Tag.Attribs[a].Name;
+      auto &value = Tag.Attribs[a].Value;
+      if (value.empty()) continue;
+
+      if (iequals("stop-color", name)) {
+         VectorPainter painter;
+         if (iequals("inherit", value)) {
+            if (not m_stop_color.empty()) {
+               vec::ReadPainter(Self->Scene, m_stop_color, &painter, nullptr);
+               colour = painter.Colour;
+            }
+         }
+         else if (iequals("currentColor", value)) {
+            vec::ReadPainter(Self->Scene, m_color, &painter, nullptr);
+            colour = painter.Colour;
+         }
+         else {
+            vec::ReadPainter(Self->Scene, value, &painter, nullptr);
+            colour = painter.Colour;
+         }
+      }
+      else if (iequals("stop-opacity", name)) {
+         if (iequals("inherit", value)) stop_opacity = (m_stop_opacity >= 0) ? m_stop_opacity : 1.0;
+         else stop_opacity = svtonum<double>(value);
+      }
+   }
+
+   colour.Alpha = float(double(colour.Alpha) * stop_opacity);
+   return colour;
+}
+
+//********************************************************************************************************************
 // Note that all offsets are percentages.
 
 const kt::vector<GradientStop> svgState::process_gradient_stops(const XTag &Tag) noexcept
@@ -84,9 +128,8 @@ const kt::vector<GradientStop> svgState::process_gradient_stops(const XTag &Tag)
    for (auto &scan : Tag.Children) {
       if (svg_tag_hash(scan) IS kt::strhash("stop")) {
          GradientStop stop;
-         double stop_opacity = 1.0;
          stop.Offset = 0;
-         stop.RGB = FRGB(0,0,0,1);
+         stop.RGB = resolve_stop_colour(scan);
 
          for (int a=1; a < std::ssize(scan.Attribs); a++) {
             auto &name  = scan.Attribs[a].Name;
@@ -108,36 +151,13 @@ const kt::vector<GradientStop> svgState::process_gradient_stops(const XTag &Tag)
                if (stop.Offset < last_stop) stop.Offset = last_stop;
                else last_stop = stop.Offset;
             }
-            else if (iequals("stop-color", name)) {
-               if (iequals("inherit", value)) {
-                  VectorPainter painter;
-                  vec::ReadPainter(Self->Scene, m_stop_color, &painter, nullptr);
-                  stop.RGB = painter.Colour;
-               }
-               else if (iequals("currentColor", value)) {
-                  VectorPainter painter;
-                  vec::ReadPainter(Self->Scene, m_color, &painter, nullptr);
-                  stop.RGB = painter.Colour;
-               }
-               else {
-                  VectorPainter painter;
-                  vec::ReadPainter(Self->Scene, value, &painter, nullptr);
-                  stop.RGB = painter.Colour;
-               }
-            }
-            else if (iequals("stop-opacity", name)) {
-               if (iequals("inherit", value)) {
-                  stop_opacity = m_stop_opacity;
-               }
-               else stop_opacity = svtonum<double>(value);
-            }
+            else if (iequals("stop-color", name));   // Resolved by resolve_stop_colour()
+            else if (iequals("stop-opacity", name)); // Resolved by resolve_stop_colour()
             else if (iequals("id", name)) {
                log.trace("Use of id attribute in <stop/> ignored.");
             }
             else log.warning("Unable to process stop attribute '%s'", name.c_str());
          }
-
-         stop.RGB.Alpha = ((double)stop.RGB.Alpha) * stop_opacity;
 
          stops.emplace_back(stop);
       }
@@ -277,31 +297,6 @@ static SVGMeshPatchEdge reverse_mesh_edge(const SVGMeshPatchEdge &Edge) noexcept
    return SVGMeshPatchEdge { Edge.p1, Edge.c1, Edge.c0, Edge.p0 };
 }
 
-static bool read_mesh_stop_colour(extSVG *Self, const XTag &Tag, FRGB &Colour) noexcept
-{
-   Colour = FRGB(0,0,0,1);
-
-   double stop_opacity = 1.0;
-   bool found_colour = false;
-
-   for (int a=1; a < std::ssize(Tag.Attribs); a++) {
-      auto &name = Tag.Attribs[a].Name;
-      auto &value = Tag.Attribs[a].Value;
-      if (value.empty()) continue;
-
-      if (iequals("stop-color", name)) {
-         VectorPainter painter;
-         vec::ReadPainter(Self->Scene, value, &painter, nullptr);
-         Colour = painter.Colour;
-         found_colour = true;
-      }
-      else if (iequals("stop-opacity", name)) stop_opacity = svtonum<double>(value);
-   }
-
-   Colour.Alpha = ((double)Colour.Alpha) * stop_opacity;
-   return found_colour;
-}
-
 static bool read_mesh_stop_path(const XTag &Tag, std::string &Path) noexcept
 {
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
@@ -313,7 +308,14 @@ static bool read_mesh_stop_path(const XTag &Tag, std::string &Path) noexcept
    return false;
 }
 
-static bool parse_mesh_edge_path(const std::string &Path, const SVGMeshPoint &Start, SVGMeshPatchEdge &Edge) noexcept
+// Mesh stop path grammar (SVG 2 mesh gradient proposal, svgwg.org): each <stop> 'path' consists of exactly one
+// segment drawn with a single 'C', 'c', 'L' or 'l' command, starting from the previous stop's end point.  The
+// closing stop of a fully specified patch may instead use 'Z'/'z', which draws a straight line back to the patch
+// origin.  Multi-segment paths are not part of the grammar and are rejected.  Returns nullptr on success,
+// otherwise a description of the fault.
+
+static const char * parse_mesh_edge_path(const std::string &Path, const SVGMeshPoint &Start, SVGMeshPatchEdge &Edge,
+   const SVGMeshPoint *Close = nullptr) noexcept
 {
    Edge.p0 = Start;
    std::string_view scan(Path);
@@ -321,9 +323,8 @@ static bool parse_mesh_edge_path(const std::string &Path, const SVGMeshPoint &St
       while ((not Scan.empty()) and ((Scan.front() <= 0x20) or (Scan.front() IS ','))) Scan.remove_prefix(1);
    };
 
-   if (scan.empty()) return false;
    skip_separators(scan);
-   if (scan.empty()) return false;
+   if (scan.empty()) return "empty stop path";
 
    const char cmd = scan.front();
    scan.remove_prefix(1);
@@ -335,49 +336,54 @@ static bool parse_mesh_edge_path(const std::string &Path, const SVGMeshPoint &St
 
       char *end = nullptr;
       const double value = std::strtod(scan.data(), &end);
-      if (end IS scan.data()) return false;
-      if (not std::isfinite(value)) return false;
+      if (end IS scan.data()) return "unrecognised character in stop path";
+      if (not std::isfinite(value)) return "non-finite number in stop path";
       numbers.push_back(value);
       scan.remove_prefix(size_t(end - scan.data()));
    }
 
+   auto straight_line = [&Edge](const SVGMeshPoint &From, const SVGMeshPoint &To) noexcept {
+      const double dx = To.x - From.x;
+      const double dy = To.y - From.y;
+      Edge.c0 = SVGMeshPoint { From.x + (dx / 3.0), From.y + (dy / 3.0) };
+      Edge.c1 = SVGMeshPoint { From.x + (dx * 2.0 / 3.0), From.y + (dy * 2.0 / 3.0) };
+      Edge.p1 = To;
+   };
+
    switch (cmd) {
       case 'C':
-         if (numbers.size() != 6) return false;
-         Edge.c0 = SVGMeshPoint { numbers[0], numbers[1] };
-         Edge.c1 = SVGMeshPoint { numbers[2], numbers[3] };
-         Edge.p1 = SVGMeshPoint { numbers[4], numbers[5] };
-         return true;
-
       case 'c':
-         if (numbers.size() != 6) return false;
-         Edge.c0 = SVGMeshPoint { Start.x + numbers[0], Start.y + numbers[1] };
-         Edge.c1 = SVGMeshPoint { Start.x + numbers[2], Start.y + numbers[3] };
-         Edge.p1 = SVGMeshPoint { Start.x + numbers[4], Start.y + numbers[5] };
-         return true;
+         if (numbers.size() > 6) return "multi-segment stop paths are not supported";
+         if (numbers.size() != 6) return "curve commands require six numbers";
+         if (cmd IS 'C') {
+            Edge.c0 = SVGMeshPoint { numbers[0], numbers[1] };
+            Edge.c1 = SVGMeshPoint { numbers[2], numbers[3] };
+            Edge.p1 = SVGMeshPoint { numbers[4], numbers[5] };
+         }
+         else {
+            Edge.c0 = SVGMeshPoint { Start.x + numbers[0], Start.y + numbers[1] };
+            Edge.c1 = SVGMeshPoint { Start.x + numbers[2], Start.y + numbers[3] };
+            Edge.p1 = SVGMeshPoint { Start.x + numbers[4], Start.y + numbers[5] };
+         }
+         return nullptr;
 
-      case 'L': {
-         if (numbers.size() != 2) return false;
-         Edge.p1 = SVGMeshPoint { numbers[0], numbers[1] };
-         const double dx = Edge.p1.x - Start.x;
-         const double dy = Edge.p1.y - Start.y;
-         Edge.c0 = SVGMeshPoint { Start.x + (dx / 3.0), Start.y + (dy / 3.0) };
-         Edge.c1 = SVGMeshPoint { Start.x + (dx * 2.0 / 3.0), Start.y + (dy * 2.0 / 3.0) };
-         return true;
-      }
+      case 'L':
+      case 'l':
+         if (numbers.size() > 2) return "multi-segment stop paths are not supported";
+         if (numbers.size() != 2) return "line commands require two numbers";
+         if (cmd IS 'L') straight_line(Start, SVGMeshPoint { numbers[0], numbers[1] });
+         else straight_line(Start, SVGMeshPoint { Start.x + numbers[0], Start.y + numbers[1] });
+         return nullptr;
 
-      case 'l': {
-         if (numbers.size() != 2) return false;
-         Edge.p1 = SVGMeshPoint { Start.x + numbers[0], Start.y + numbers[1] };
-         const double dx = Edge.p1.x - Start.x;
-         const double dy = Edge.p1.y - Start.y;
-         Edge.c0 = SVGMeshPoint { Start.x + (dx / 3.0), Start.y + (dy / 3.0) };
-         Edge.c1 = SVGMeshPoint { Start.x + (dx * 2.0 / 3.0), Start.y + (dy * 2.0 / 3.0) };
-         return true;
-      }
+      case 'Z':
+      case 'z':
+         if (not Close) return "'Z' is only permitted on the closing stop of a fully specified patch";
+         if (not numbers.empty()) return "'Z' does not accept numbers";
+         straight_line(Start, *Close);
+         return nullptr;
 
       default:
-         return false;
+         return "unsupported stop path command";
    }
 }
 
@@ -409,14 +415,28 @@ static MeshPatchRecord mesh_patch_record_from_patch(const SVGMeshPatch &Patch) n
    return record;
 }
 
-static bool read_mesh_patch_stop(extSVG *Self, const XTag &Stop, const SVGMeshPoint &Start, SVGMeshPatchEdge &Edge,
-   FRGB &Colour) noexcept
+// Snap the closing edge of a fully specified patch back to the patch origin so that numeric drift in authored
+// files cannot leave the patch unclosed.  Warn when the gap is large relative to the patch extent, as that
+// suggests an authoring error rather than rounding drift.
+
+static void close_mesh_patch(kt::Log &Log, SVGMeshPatch &Patch) noexcept
 {
-   std::string path;
-   if (!read_mesh_stop_path(Stop, path)) return false;
-   if (!parse_mesh_edge_path(path, Start, Edge)) return false;
-   read_mesh_stop_colour(Self, Stop, Colour);
-   return true;
+   auto &closing = Patch.edge[3];
+   const auto &origin = Patch.edge[0].p0;
+   const double dx = closing.p1.x - origin.x;
+   const double dy = closing.p1.y - origin.y;
+   const double gap = std::sqrt((dx * dx) + (dy * dy));
+
+   double extent = 0;
+   for (auto &edge : Patch.edge) {
+      extent = std::max({ extent, std::abs(edge.p1.x - edge.p0.x), std::abs(edge.p1.y - edge.p0.y) });
+   }
+
+   if (gap > std::max(extent, 1.0) * 0.001) {
+      Log.warning("Mesh patch closing edge misses the patch origin by %g units; snapping to close the patch.", gap);
+   }
+
+   closing.p1 = origin;
 }
 
 static bool read_mesh_patch_origin(const XTag &Tag, SVGMeshPoint &Origin) noexcept
@@ -459,8 +479,10 @@ void svgState::parse_meshgradient(const XTag &Tag, objGradientMesh *Gradient, st
 
       auto attrib = strhash(Tag.Attribs[a].Name);
       switch(attrib) {
-         case SVF_x: start_x = svtonum<double>(val); break;
-         case SVF_y: start_y = svtonum<double>(val); break;
+         // Percentages scale to 0 - 1.0, matching bounding-box semantics (cf. parse_units()).  Under userspace
+         // units the viewport size is not known at parse time, so a percentage resolves to the same fraction.
+         case SVF_x: { auto v = std::string_view(val); start_x = read_unit(v); break; }
+         case SVF_y: { auto v = std::string_view(val); start_y = read_unit(v); break; }
          case SVF_type:
             if ((not iequals("bilinear", val)) and (not iequals("Coons", val))) {
                log.warning("Mesh gradient type '%s' is not supported; using bilinear Coons patches.", val.c_str());
@@ -480,102 +502,123 @@ void svgState::parse_meshgradient(const XTag &Tag, objGradientMesh *Gradient, st
    int columns = 0;
    bool rectangular = true;
 
+   // Read one stop: parse its edge path and resolve its colour.  Returns nullptr on success or a fault description.
+
+   auto read_stop = [&](const XTag &Stop, const SVGMeshPoint &Start, SVGMeshPatchEdge &Edge, FRGB &Colour,
+         const SVGMeshPoint *Close) noexcept -> const char * {
+      std::string path;
+      if (not read_mesh_stop_path(Stop, path)) return "missing or empty stop path";
+      if (auto fault = parse_mesh_edge_path(path, Start, Edge, Close)) return fault;
+      Colour = resolve_stop_colour(Stop);
+      return nullptr;
+   };
+
+   // Parse one <meshpatch>, appending it to current_row and records.  Returns nullptr on success or a fault
+   // description.  Any fault aborts the entire gradient - a silently dropped patch would shift the remaining
+   // patches left by one column and sew the wrong shared edges together.
+
+   auto parse_patch = [&](const XTag &PatchTag) noexcept -> const char * {
+      SVGMeshPatch patch = {};
+      std::vector<const XTag *> stops;
+      for (auto &stop_tag : PatchTag.Children) {
+         if (svg_tag_hash(stop_tag) IS kt::strhash("stop")) stops.push_back(&stop_tag);
+      }
+
+      const int col = int(current_row.size());
+
+      SVGMeshPoint independent_origin;
+      if (read_mesh_patch_origin(PatchTag, independent_origin)) {
+         if (stops.size() != 4) return "independent patches require exactly four stops";
+
+         patch.edge[0].p0 = independent_origin;
+         if (auto fault = read_stop(*stops[0], patch.edge[0].p0, patch.edge[0], patch.corner[1], nullptr)) return fault;
+         patch.edge[1].p0 = patch.edge[0].p1;
+         if (auto fault = read_stop(*stops[1], patch.edge[1].p0, patch.edge[1], patch.corner[2], nullptr)) return fault;
+         patch.edge[2].p0 = patch.edge[1].p1;
+         if (auto fault = read_stop(*stops[2], patch.edge[2].p0, patch.edge[2], patch.corner[3], nullptr)) return fault;
+         patch.edge[3].p0 = patch.edge[2].p1;
+         if (auto fault = read_stop(*stops[3], patch.edge[3].p0, patch.edge[3], patch.corner[0], &patch.edge[0].p0)) return fault;
+         close_mesh_patch(log, patch);
+
+         current_row.push_back(patch);
+         records.push_back(mesh_patch_record_from_patch(patch));
+         return nullptr;
+      }
+
+      // Expected stop counts under the shared-edge grammar: 4 for the first patch of the first row, 3 for
+      // subsequent first-row patches and for the first patch of later rows, 2 otherwise.
+
+      const size_t expected = (rows IS 0) ? ((col IS 0) ? 4 : 3) : ((col IS 0) ? 3 : 2);
+      if (stops.size() != expected) return "unexpected number of stops for the patch's grid position";
+
+      int stop_index = 0;
+      if (rows IS 0) {
+         if (col IS 0) patch.edge[0].p0 = SVGMeshPoint { start_x, start_y };
+         else {
+            auto &prev = current_row[size_t(col - 1)];
+            patch.edge[3] = reverse_mesh_edge(prev.edge[1]);
+            patch.edge[0].p0 = patch.edge[3].p1;
+            patch.corner[0] = prev.corner[1];
+            patch.corner[3] = prev.corner[2];
+         }
+
+         if (auto fault = read_stop(*stops[size_t(stop_index++)], patch.edge[0].p0,
+            patch.edge[0], patch.corner[1], nullptr)) return fault;
+      }
+      else {
+         if (col >= int(previous_row.size())) return "row contains more patches than the row above";
+         auto &above = previous_row[size_t(col)];
+         patch.edge[0] = reverse_mesh_edge(above.edge[2]);
+         patch.corner[0] = above.corner[3];
+         patch.corner[1] = above.corner[2];
+      }
+
+      patch.edge[1].p0 = patch.edge[0].p1;
+      if (auto fault = read_stop(*stops[size_t(stop_index++)], patch.edge[1].p0,
+         patch.edge[1], patch.corner[2], nullptr)) return fault;
+
+      patch.edge[2].p0 = patch.edge[1].p1;
+      if (auto fault = read_stop(*stops[size_t(stop_index++)], patch.edge[2].p0,
+         patch.edge[2], patch.corner[3], nullptr)) return fault;
+
+      if (col IS 0) {
+         patch.edge[3].p0 = patch.edge[2].p1;
+         if (auto fault = read_stop(*stops[size_t(stop_index++)], patch.edge[3].p0,
+            patch.edge[3], patch.corner[0], &patch.edge[0].p0)) return fault;
+         if (rows IS 0) close_mesh_patch(log, patch);
+         else {
+            patch.edge[3].p1 = patch.edge[0].p0;
+            patch.corner[0] = previous_row[0].corner[3];
+         }
+      }
+      else {
+         auto &prev = current_row[size_t(col - 1)];
+         if (rows != 0) patch.edge[3] = reverse_mesh_edge(prev.edge[1]);
+         patch.edge[2].p1 = patch.edge[3].p0;
+         patch.corner[3] = prev.corner[2];
+         patch.corner[0] = prev.corner[1];
+      }
+
+      current_row.push_back(patch);
+      records.push_back(mesh_patch_record_from_patch(patch));
+      return nullptr;
+   };
+
+   const char *fault = nullptr;
    for (auto &row_tag : Tag.Children) {
       if (svg_tag_hash(row_tag) != SVF_meshrow) continue;
 
       current_row.clear();
-      int col = 0;
       for (auto &patch_tag : row_tag.Children) {
          if (svg_tag_hash(patch_tag) != SVF_meshpatch) continue;
 
-         SVGMeshPatch patch = {};
-         std::vector<const XTag *> stops;
-         for (auto &stop_tag : patch_tag.Children) {
-            if (svg_tag_hash(stop_tag) IS kt::strhash("stop")) stops.push_back(&stop_tag);
+         if ((fault = parse_patch(patch_tag))) {
+            log.warning("Discarding <meshgradient> @ line %d; row %d, patch %d: %s",
+               patch_tag.LineNo, rows + 1, int(current_row.size()) + 1, fault);
+            break;
          }
-
-         SVGMeshPoint independent_origin;
-         if (read_mesh_patch_origin(patch_tag, independent_origin)) {
-            if (stops.size() < 4) continue;
-
-            patch.edge[0].p0 = independent_origin;
-            int stop_index = 0;
-            if (!read_mesh_patch_stop(Self, *stops[size_t(stop_index++)], patch.edge[0].p0,
-               patch.edge[0], patch.corner[1])) continue;
-
-            patch.edge[1].p0 = patch.edge[0].p1;
-            if (!read_mesh_patch_stop(Self, *stops[size_t(stop_index++)], patch.edge[1].p0,
-               patch.edge[1], patch.corner[2])) continue;
-
-            patch.edge[2].p0 = patch.edge[1].p1;
-            if (!read_mesh_patch_stop(Self, *stops[size_t(stop_index++)], patch.edge[2].p0,
-               patch.edge[2], patch.corner[3])) continue;
-
-            patch.edge[3].p0 = patch.edge[2].p1;
-            if (!read_mesh_patch_stop(Self, *stops[size_t(stop_index++)], patch.edge[3].p0,
-               patch.edge[3], patch.corner[0])) continue;
-
-            current_row.push_back(patch);
-            records.push_back(mesh_patch_record_from_patch(patch));
-            col++;
-            continue;
-         }
-
-         int stop_index = 0;
-         if (rows IS 0) {
-            if (col IS 0) patch.edge[0].p0 = SVGMeshPoint { start_x, start_y };
-            else {
-               auto &prev = current_row[size_t(col - 1)];
-               patch.edge[3] = reverse_mesh_edge(prev.edge[1]);
-               patch.edge[0].p0 = patch.edge[3].p1;
-               patch.corner[0] = prev.corner[1];
-               patch.corner[3] = prev.corner[2];
-            }
-
-            if (stop_index >= int(stops.size())) continue;
-            if (!read_mesh_patch_stop(Self, *stops[size_t(stop_index++)], patch.edge[0].p0,
-               patch.edge[0], patch.corner[1])) continue;
-         }
-         else {
-            if (col >= int(previous_row.size())) continue;
-            auto &above = previous_row[size_t(col)];
-            patch.edge[0] = reverse_mesh_edge(above.edge[2]);
-            patch.corner[0] = above.corner[3];
-            patch.corner[1] = above.corner[2];
-         }
-
-         patch.edge[1].p0 = patch.edge[0].p1;
-         if (stop_index >= int(stops.size())) continue;
-         if (!read_mesh_patch_stop(Self, *stops[size_t(stop_index++)], patch.edge[1].p0,
-            patch.edge[1], patch.corner[2])) continue;
-
-         patch.edge[2].p0 = patch.edge[1].p1;
-         if (stop_index >= int(stops.size())) continue;
-         if (!read_mesh_patch_stop(Self, *stops[size_t(stop_index++)], patch.edge[2].p0,
-            patch.edge[2], patch.corner[3])) continue;
-
-         if (col IS 0) {
-            patch.edge[3].p0 = patch.edge[2].p1;
-            if (stop_index >= int(stops.size())) continue;
-            if (!read_mesh_patch_stop(Self, *stops[size_t(stop_index++)], patch.edge[3].p0,
-               patch.edge[3], patch.corner[0])) continue;
-            if (rows != 0) {
-               patch.edge[3].p1 = patch.edge[0].p0;
-               patch.corner[0] = previous_row[0].corner[3];
-            }
-         }
-         else {
-            auto &prev = current_row[size_t(col - 1)];
-            if (rows != 0) patch.edge[3] = reverse_mesh_edge(prev.edge[1]);
-            patch.edge[2].p1 = patch.edge[3].p0;
-            patch.corner[3] = prev.corner[2];
-            patch.corner[0] = prev.corner[1];
-         }
-
-         current_row.push_back(patch);
-         records.push_back(mesh_patch_record_from_patch(patch));
-         col++;
       }
+      if (fault) break;
 
       if (not current_row.empty()) {
          if (columns IS 0) columns = int(current_row.size());
@@ -584,6 +627,13 @@ void svgState::parse_meshgradient(const XTag &Tag, objGradientMesh *Gradient, st
          previous_row = current_row;
          rows++;
       }
+   }
+
+   if (fault) {
+      // A malformed patch invalidates the entire mesh, matching SVG's in-error paint server behaviour.  Clearing
+      // the patches also discards any records inherited via href.
+      Gradient->setPatches(std::span<const MeshPatchRecord>());
+      return;
    }
 
    if (not records.empty()) {

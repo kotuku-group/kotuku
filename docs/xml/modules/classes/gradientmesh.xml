@@ -39,6 +39,7 @@
       <description>
 <p>The Patches array defines one or more bilinear Coons patches.  Each <st>MeshPatchRecord</st> contains four cubic Bezier edges in clockwise order (<code>Top</code>, <code>Right</code>, <code>Bottom</code>, <code>Left</code>) plus the top-left, top-right, bottom-right and bottom-left corner colours.</p>
 <p>The coordinate system for patch positions is determined by <class name="Gradient" field="Units">Gradient.Units</class>.  Under <code>BOUNDING_BOX</code>, normalised patch coordinates in the range <code>0 - 1.0</code> are scaled into the target path's bounds.  Under <code>USERSPACE</code>, positions are taken directly in the viewport's coordinate system.</p>
+<p>Assigning an empty array clears the mesh entirely, including the <fl>Rows</fl> and <fl>Columns</fl> metadata.</p>
       </description>
     </field>
 

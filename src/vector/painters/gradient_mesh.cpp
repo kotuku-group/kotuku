@@ -135,6 +135,8 @@ The coordinate system for patch positions is determined by @Gradient.Units.  Und
 coordinates in the range `0 - 1.0` are scaled into the target path's bounds.  Under `USERSPACE`, positions are taken
 directly in the viewport's coordinate system.
 
+Assigning an empty array clears the mesh entirely, including the #Rows and #Columns metadata.
+
 -END-
 *********************************************************************************************************************/
 
@@ -229,7 +231,15 @@ static ERR GRADIENTMESH_SET_Columns(extGradientMesh *Self, int Value)
 
 static ERR GRADIENTMESH_SET_Patches(extGradientMesh *Self, std::span<const MeshPatchRecord> &Array)
 {
-   if ((not Array.data()) or (Array.empty())) return kt::Log().warning(ERR::InvalidValue);
+   if (Array.empty()) { // An empty array clears the mesh entirely.
+      if (Self->Mesh) {
+         Self->Mesh->patches.clear();
+         Self->Mesh->rows = 0;
+         Self->Mesh->cols = 0;
+         invalidate_mesh(Self);
+      }
+      return ERR::Okay;
+   }
 
    if (not Self->Mesh) Self->Mesh = std::make_unique<MeshGradient>();
 
