@@ -434,12 +434,13 @@ extern void armExecFunction(APTR, APTR, int);
 extern void x64ExecFunction(APTR, int, int64_t *, int);
 #endif
 
-// Throws exceptions.  Used for returning objects to the user.
+// Throws exceptions.  Used for returning objects to the user.  Passing the resolved pointer allows lua_pushobject()
+// to take the wrapper's weak pin at creation, saving the first access from an AccessObject() resolution.
 
 inline GCobject * push_object(lua_State *Lua, OBJECTPTR Object, bool Detached = true)
 {
    load_include_for_class(Lua, Object->Class);
-   return lua_pushobject(Lua, Object->UID, nullptr, Object->Class, Detached ? GCOBJ_DETACHED : 0);
+   return lua_pushobject(Lua, Object->UID, Object, Object->Class, Detached ? GCOBJ_DETACHED : 0);
 }
 
 //********************************************************************************************************************

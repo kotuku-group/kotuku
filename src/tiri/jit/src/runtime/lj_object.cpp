@@ -205,6 +205,8 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
 
    if (curr_funcisL(L)) L->top = curr_topL(L);
 
+   // Deliberately redundant with the access_object() failure inside the field handler: testing here yields a precise
+   // DoesNotExist message instead of a generic read failure.  Do not remove as an optimisation.
    if (object_is_dead(Obj)) luaL_error(L, ERR::DoesNotExist, "Object dereferenced, unable to read field.");
 
    // Use raw pointers for std::lower_bound to avoid MSVC debug iterator tracking.
@@ -287,6 +289,8 @@ extern "C" void bc_object_setfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    }
    else if (L->top <= Val) L->top = Val + 1;
 
+   // Deliberately redundant with the access_object() failure below: testing here yields a precise DoesNotExist
+   // message instead of a generic ERR::AccessObject.  Do not remove as an optimisation.
    if (object_is_dead(Obj)) luaL_error(L, ERR::DoesNotExist, "Object dereferenced, unable to write field.");
 
    auto write_table = get_write_table(Obj->classptr);

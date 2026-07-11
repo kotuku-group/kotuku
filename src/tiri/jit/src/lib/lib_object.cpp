@@ -1,12 +1,16 @@
 // Native Kōtuku object library.
 // Copyright (C) 2025-2026 Paul Manias.
 //
-// The core's technical design means that any object that is not *directly* owned by the Lua Script must be treated as
-// external to that script.  External objects must be locked appropriately whenever they are used.  Locking
-// ensures that threads can interact with the object safely and that the object cannot be prematurely terminated.
+// Object references are managed through weak pins: a GCobject with GCOBJ_PINNED holds one weak pin on its cached
+// Object pointer, which keeps the header block valid (as a zombie) even after the object is terminated.  Liveness must
+// therefore be tested with object_is_dead() - a bare ptr test is NOT a liveness check, because pinned wrappers retain
+// a zombie header pointer after termination.
 //
-// Only objects created through the standard obj.new() interface are directly accessible without a lock.  Those referenced
-// through obj.find(), push_object(), or children created with some_object.new() are marked as detached.
+// Direct dispatch through the cached pointer is permitted only via direct_object_ptr(), which returns null for dead
+// references.  Thread safety is provided by the callee - Action() locks the object internally - or by access_object(),
+// which locks explicitly.  The GCOBJ_DETACHED flag denotes ownership only: wrappers from obj.new() own their object
+// and free it on garbage collection, while references from obj.find(), push_object(), or children created with
+// some_object.new() are detached and never freed by the script.
 //
 // Note: If changing type conversion for field flags to Lua types, there are dependencies that need to be updated
 // elsewhere, such as in field_type_lookup.cpp.  Do a file search for "FD_" to find them.
@@ -608,7 +612,7 @@ LJLIB_CF(object_new)
 [[nodiscard]] static int object_find_ptr(lua_State *L, OBJECTPTR obj)
 {
    load_include_for_class(L, obj->Class);
-   lua_pushobject(L, obj->UID, nullptr, obj->Class, GCOBJ_DETACHED);
+   lua_pushobject(L, obj->UID, obj, obj->Class, GCOBJ_DETACHED);
    return 1;
 }
 
@@ -673,7 +677,7 @@ ERR push_object_id(lua_State *Lua, OBJECTID ObjectID)
    if (not ObjectID) { lua_pushnil(Lua); return ERR::Okay; }
 
    if (auto object = GetObjectPtr(ObjectID)) {
-      lua_pushobject(Lua, ObjectID, nullptr, object->Class, GCOBJ_DETACHED);
+      lua_pushobject(Lua, ObjectID, object, object->Class, GCOBJ_DETACHED);
       return ERR::Okay;
    }
    else {
@@ -743,7 +747,7 @@ static int object_newchild(lua_State *Lua)
 
       load_include_for_class(Lua, obj->Class);
 
-      lua_pushobject(Lua, obj->UID, nullptr, obj->Class, GCOBJ_DETACHED);
+      lua_pushobject(Lua, obj->UID, obj, obj->Class, GCOBJ_DETACHED);
 
       lua_pushinteger(Lua, parent->uid);
 
@@ -850,6 +854,11 @@ static int object_exists(lua_State *Lua)
    if (object_is_dead(def)) {
       access_object(def); // Clears the stale UID and releases the wrapper's weak pin.
       lua_pushboolean(Lua, false);
+      return 1;
+   }
+   if (def->is_pinned()) {
+      // The weak pin guarantees the header remains valid, so not-dead means alive - no lock cycle required.
+      lua_pushboolean(Lua, true);
       return 1;
    }
    if (access_object(def)) {
@@ -963,7 +972,7 @@ static int object_free(lua_State *Lua)
 {
    auto def = object_context(Lua);
 
-   def->flags |= GCOBJ_DETACHED; // Ensure that all future access doesn't go through the ptr
+   def->flags |= GCOBJ_DETACHED; // Prevents double FreeResource() at finalise.
 
    if (FreeResource(def->uid) IS ERR::InUse) {
       // The object has been marked for termination, automatically freeing it once it has been unlocked and unpinned.
