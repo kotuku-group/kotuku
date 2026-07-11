@@ -49,6 +49,7 @@ JUMPTABLE_REGEX
 
 #include "defs.h"
 
+namespace tiri {
 OBJECTPTR modDisplay = nullptr; // Required by tiri_input.c
 OBJECTPTR modTiri = nullptr;
 OBJECTPTR modRegex = nullptr;
@@ -67,6 +68,7 @@ uint64_t glActionsWithResults = 0;
 static struct MsgHandler *glMsgThread = nullptr; // Message handler for thread callbacks
 static MsgHandler *glDelayedCallHandle = nullptr;
 MSGID glDelayedCallMsgID = MSGID::NIL;
+}
 
 constexpr auto HASH_TRACE_TOKENS         = kt::strhash("trace-tokens");
 constexpr auto HASH_TRACE_EXPECT         = kt::strhash("trace-expect");
@@ -377,11 +379,13 @@ static void MODTest(std::string_view Options, int *Passed, int *Total)
 //********************************************************************************************************************
 // Bytecode names for debugging purposes
 
+namespace tiri {
 CSTRING const glBytecodeNames[] = {
 #define BCNAME(name, ma, mb, mc, mt) #name,
    BCDEF(BCNAME)
 #undef BCNAME
 };
+}
 
 /*********************************************************************************************************************
 

@@ -34,9 +34,11 @@ class extTiri; // Internal extended Tiri class (full definition below); derives 
 template <class T> T ALIGN64(T a) { return (((a) + 7) & (~7)); }
 template <class T> T ALIGN32(T a) { return (((a) + 3) & (~3)); }
 
+namespace tiri {
 extern CSTRING const glBytecodeNames[];
 extern bool glPrintMsg;
 extern MSGID glDelayedCallMsgID;
+}
 
 //********************************************************************************************************************
 
@@ -71,6 +73,7 @@ struct CaseInsensitiveEqualView {
    }
 };
 
+namespace tiri {
 extern ankerl::unordered_dense::map<std::string_view, ACTIONID, CaseInsensitiveHashView, CaseInsensitiveEqualView> glActionLookup;
 extern struct ActionTable *glActions;
 extern OBJECTPTR modDisplay; // Required by tiri_input.c
@@ -82,6 +85,9 @@ extern JOF glJitOptions;
 extern ankerl::unordered_dense::map<uint32_t, StructInfo> *glStructSizes;
 extern std::unordered_map<struct_name, struct_record, struct_hash, struct_equal> glStructs;
 extern uint64_t glActionsWithResults;
+}
+
+using namespace tiri;
 
 //********************************************************************************************************************
 // Compile-time constant value (64-bit integer or double)
@@ -104,8 +110,10 @@ struct TiriConstant {
 
 // Global constant registry - case-sensitive, owns string keys
 // Protected by glConstantMutex for thread-safe access
+namespace tiri {
 extern ankerl::unordered_dense::map<uint32_t, TiriConstant> glConstantRegistry;
 extern std::shared_mutex glConstantMutex;
+}
 
 // Thread-safe shared pool for async.pool — see tiri_async.cpp
 // Owned by the main script's extTiri and shared with child scripts via std::shared_ptr.
