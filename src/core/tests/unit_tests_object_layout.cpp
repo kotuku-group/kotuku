@@ -36,4 +36,11 @@ void object_layout_unit_tests(int &Passed, int &Total)
    Total++;
    if (size_t(value_start - object_start) >= sizeof(Object)) Passed++;
    else log.warning("Extended class storage intrudes into the Object header.");
+
+   // This test is intended to catch accidental changes to the Object class layout that would break ABI compatibility.
+   // Adjust the expected size of the change is intentional.
+
+   Total++;
+   if (sizeof(class Object) == 96) Passed++;
+   else log.warning("Unexpected Object class size of %zu bytes.", sizeof(class Object));
 }

@@ -339,7 +339,7 @@ enum class NF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(NF)
 
-#define MAX_NAME_LEN 31
+#define MAX_NAME_LEN 32
 #define MAX_FILENAME 256
 
 // Reserved message ID's that are handled internally.

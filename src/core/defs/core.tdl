@@ -160,7 +160,7 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
 
   constants("MAX", { }, {
      FILENAME = 256, -- Maximum length for file names (not necessarily including path)
-     NAME_LEN = 31   -- Refer to the 'Object' struct for more info on the NAME_LEN value
+     NAME_LEN = 32   -- Refer to the 'Object' struct for more info on the NAME_LEN value
   })
 
   constants("MSGID", { type="int", comment="Reserved message ID's that are handled internally." }, {
