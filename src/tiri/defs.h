@@ -363,6 +363,18 @@ struct lua_ref {
 };
 
 OBJECTPTR access_object(GCobject *);
+inline bool object_is_dead(GCobject *Object)
+{
+   return (not Object->uid) or (Object->is_pinned() and Object->ptr->collecting());
+}
+
+// Returns the cached object pointer only if the reference is still alive.  Pinned wrappers retain a zombie header
+// pointer after termination, so a bare Object->ptr test is not a liveness check.
+
+[[nodiscard]] inline OBJECTPTR direct_object_ptr(GCobject *Object)
+{
+   return object_is_dead(Object) ? nullptr : Object->ptr;
+}
 void load_include_for_class(lua_State *, objMetaClass *);
 ERR build_args(lua_State *, CSTRING, const struct FunctionField *, int, int8_t *, int *, int &,
    CSTRING &);

@@ -49,6 +49,10 @@ void lj_object_finalize(lua_State *L, GCobject *obj)
 
       auto error = FreeResource(obj->uid);
       if ((!error) or (error IS ERR::DoesNotExist)) {
+         if (obj->is_pinned()) {
+            obj->ptr->unpinWeak();
+            obj->set_pinned(false);
+         }
          obj->uid = 0;
          obj->ptr = nullptr;
       }
@@ -68,9 +72,14 @@ void lj_object_free(global_State *g, GCobject *obj)
       if (obj->flags & GCOBJ_LOCKED) {
          ReleaseObject((OBJECTPTR)obj->ptr);
          obj->flags &= ~GCOBJ_LOCKED;
-         obj->ptr = nullptr;
+         if (not obj->is_pinned()) obj->ptr = nullptr;
       }
       obj->accesscount--;
+   }
+
+   if (obj->is_pinned()) {
+      obj->ptr->unpinWeak();
+      obj->set_pinned(false);
    }
 
    // Free the GCobject structure (Kotuku object should have been freed by __gc finalizer)
@@ -196,7 +205,7 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
 
    if (curr_funcisL(L)) L->top = curr_topL(L);
 
-   if (not Obj->uid) luaL_error(L, ERR::DoesNotExist, "Object dereferenced, unable to read field.");
+   if (object_is_dead(Obj)) luaL_error(L, ERR::DoesNotExist, "Object dereferenced, unable to read field.");
 
    // Use raw pointers for std::lower_bound to avoid MSVC debug iterator tracking.
    // luaL_error() uses longjmp which skips C++ destructors, leaking debug iterator
@@ -278,7 +287,7 @@ extern "C" void bc_object_setfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    }
    else if (L->top <= Val) L->top = Val + 1;
 
-   if (not Obj->uid) luaL_error(L, ERR::DoesNotExist, "Object dereferenced, unable to write field.");
+   if (object_is_dead(Obj)) luaL_error(L, ERR::DoesNotExist, "Object dereferenced, unable to write field.");
 
    auto write_table = get_write_table(Obj->classptr);
    auto wt_data = write_table->data();

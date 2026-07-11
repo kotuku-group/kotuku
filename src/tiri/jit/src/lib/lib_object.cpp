@@ -132,11 +132,12 @@ static int action_activate(lua_State *Lua)
    ERR error = ERR::Okay;
    bool release = false;
 
-   if (obj_ref->ptr) error = Action(AC::Activate, obj_ref->ptr, nullptr);
+   if (auto direct = direct_object_ptr(obj_ref)) error = Action(AC::Activate, direct, nullptr);
    else if (auto obj = access_object(obj_ref)) {
       error = Action(AC::Activate, obj, nullptr);
       release = true;
    }
+   else error = ERR::AccessObject;
 
    lua_pushinteger(Lua, int(error));
    if (release) release_object(obj_ref);
@@ -164,11 +165,12 @@ static int action_draw(lua_State *Lua)
    }
 
    bool release = false;
-   if (obj_ref->ptr) error = Action(AC::Draw, obj_ref->ptr, argbuffer);
+   if (auto direct = direct_object_ptr(obj_ref)) error = Action(AC::Draw, direct, argbuffer);
    else if (auto obj = access_object(obj_ref)) {
       error = Action(AC::Draw, obj, argbuffer);
       release = true;
    }
+   else error = ERR::AccessObject;
 
    lua_pushinteger(Lua, int(error));
    if (release) release_object(obj_ref);
@@ -688,6 +690,8 @@ static int object_state(lua_State *Lua)
 {
    auto def = object_context(Lua);
 
+   if (object_is_dead(def)) luaL_error(Lua, ERR::DoesNotExist, "Object dereferenced, unable to access state.");
+
    kt::Log log(__FUNCTION__);
    if (auto it = Lua->script->StateMap.find(def->uid); it != Lua->script->StateMap.end()) {
       lua_rawgeti(Lua, LUA_REGISTRYINDEX, it->second);
@@ -843,6 +847,11 @@ static int object_detach(lua_State *Lua)
 static int object_exists(lua_State *Lua)
 {
    auto def = object_context(Lua);
+   if (object_is_dead(def)) {
+      access_object(def); // Clears the stale UID and releases the wrapper's weak pin.
+      lua_pushboolean(Lua, false);
+      return 1;
+   }
    if (access_object(def)) {
       release_object(def);
       lua_pushboolean(Lua, true);
@@ -963,6 +972,10 @@ static int object_free(lua_State *Lua)
       return 0;
    }
 
+   if (def->is_pinned()) {
+      def->ptr->unpinWeak();
+      def->set_pinned(false);
+   }
    def->uid = 0;
    def->ptr = nullptr;
    def->classptr = nullptr;

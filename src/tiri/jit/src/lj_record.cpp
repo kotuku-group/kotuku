@@ -2851,6 +2851,30 @@ static TRef rec_array_op(jit_State *J, RecordOps *ops)
 // Native objects (GCobject) use field handler lookup tables.  We emit calls to helper functions that handle the field
 // access.  Type inference uses MetaClass field definitions - no probing/side effects.
 
+static_assert(offsetof(Object, Flags) IS 48);
+inline constexpr int OBJECT_FLAGS_OFFSET = offsetof(Object, Flags);
+
+static void rec_object_liveness_guard(jit_State *J, TRef ObjRef, TRef &PtrRef)
+{
+   TRef uid_ref = emitir(IRTI(IR_FLOAD), ObjRef, IRFL_OBJ_UID);
+   emitir(IRTGI(IR_NE), uid_ref, lj_ir_kint(J, 0));
+
+   TRef flags_ref = emitir(IRT(IR_FLOAD, IRT_U8), ObjRef, IRFL_OBJ_FLAGS);
+   TRef detached = emitir(IRTI(IR_BAND), flags_ref, lj_ir_kint(J, GCOBJ_DETACHED));
+   emitir(IRTGI(IR_EQ), detached, lj_ir_kint(J, 0));
+   TRef pinned = emitir(IRTI(IR_BAND), flags_ref, lj_ir_kint(J, GCOBJ_PINNED));
+   emitir(IRTGI(IR_NE), pinned, lj_ir_kint(J, 0));
+
+   PtrRef = emitir(IRT(IR_FLOAD, IRT_PTR), ObjRef, IRFL_OBJ_PTR);
+   emitir(IRTG(IR_NE, IRT_PTR), PtrRef, lj_ir_knull(J, IRT_PTR));
+
+   TRef flags_addr = emitir(IRT(IR_ADD, IRT_PTR), PtrRef, lj_ir_kintp(J, OBJECT_FLAGS_OFFSET));
+   TRef object_flags = emitir(IRT(IR_XLOAD, IRT_U32), flags_addr, 0);
+   // Match the interpreter's object_is_dead() semantics (Object::collecting() tests both flags).
+   TRef collecting = emitir(IRTI(IR_BAND), object_flags, lj_ir_kint(J, uint32_t(NF::FREE|NF::FREE_ON_UNLOCK)));
+   emitir(IRTGI(IR_EQ), collecting, lj_ir_kint(J, 0));
+}
+
 static TRef rec_object_get(jit_State *J, RecordOps *ops)
 {
    TRef obj_ref = ops->rb;
@@ -2867,21 +2891,11 @@ static TRef rec_object_get(jit_State *J, RecordOps *ops)
    int field_type = ir_object_field_type(obj, key, field_offset, field_flags); // Returns an IRT or -1
    if (field_type < 0) lj_trace_err(J, LJ_TRERR_BADTYPE);  // Unknown field type (could be a action/method) - abort recording
 
-   if (field_offset) {
+   if (field_offset and obj->is_pinned()) {
       constexpr uint32_t unsupported = FD_ARRAY|FD_STRUCT|FD_UNSIGNED|FD_CPP;
       if (not (field_flags & unsupported)) {
-         // Guard: object is alive (uid != 0)
-         TRef uid_ref = emitir(IRTI(IR_FLOAD), obj_ref, IRFL_OBJ_UID);
-         emitir(IRTGI(IR_NE), uid_ref, lj_ir_kint(J, 0));
-
-         // Guard: object is not detached (flags & GCOBJ_DETACHED == 0)
-         TRef flags_ref = emitir(IRT(IR_FLOAD, IRT_U8), obj_ref, IRFL_OBJ_FLAGS);
-         TRef detached = emitir(IRTI(IR_BAND), flags_ref, lj_ir_kint(J, GCOBJ_DETACHED));
-         emitir(IRTGI(IR_EQ), detached, lj_ir_kint(J, 0));
-
-         // Guard: object has a valid ptr (ptr != nullptr)
-         TRef ptr_ref = emitir(IRT(IR_FLOAD, IRT_PTR), obj_ref, IRFL_OBJ_PTR);
-         emitir(IRTG(IR_NE, IRT_PTR), ptr_ref, lj_ir_knull(J, IRT_PTR));
+         TRef ptr_ref;
+         rec_object_liveness_guard(J, obj_ref, ptr_ref);
 
          if (field_flags & FD_STRING) {
             // String fields: lock, read CSTRING pointer, unlock, intern via jit_object_getstr.
@@ -2954,23 +2968,13 @@ static TRef rec_object_set(jit_State *J, RecordOps *ops)
    uint32_t field_flags = 0;
    int field_type = ir_object_field_type_write(obj, key, field_offset, field_flags);
 
-   if (field_type >= 0 and field_offset) {
+   if (field_type >= 0 and field_offset and obj->is_pinned()) {
       constexpr uint32_t unsupported = FD_ARRAY|FD_STRUCT|FD_UNSIGNED|FD_CPP;
       if (not (field_flags & unsupported)) {
          constexpr uint32_t supported_numeric = FD_DOUBLE|FD_INT64|FD_INT;
          if ((field_flags & supported_numeric) and not (field_flags & FD_POINTER) and tref_isnumber(val_ref)) {
-            // Guard: object is alive (uid != 0)
-            TRef uid_ref = emitir(IRTI(IR_FLOAD), obj_ref, IRFL_OBJ_UID);
-            emitir(IRTGI(IR_NE), uid_ref, lj_ir_kint(J, 0));
-
-            // Guard: object is not detached (flags & GCOBJ_DETACHED == 0)
-            TRef flags_ref = emitir(IRT(IR_FLOAD, IRT_U8), obj_ref, IRFL_OBJ_FLAGS);
-            TRef detached = emitir(IRTI(IR_BAND), flags_ref, lj_ir_kint(J, GCOBJ_DETACHED));
-            emitir(IRTGI(IR_EQ), detached, lj_ir_kint(J, 0));
-
-            // Guard: object has a valid ptr (ptr != nullptr)
-            TRef ptr_ref = emitir(IRT(IR_FLOAD, IRT_PTR), obj_ref, IRFL_OBJ_PTR);
-            emitir(IRTG(IR_NE, IRT_PTR), ptr_ref, lj_ir_knull(J, IRT_PTR));
+            TRef ptr_ref;
+            rec_object_liveness_guard(J, obj_ref, ptr_ref);
 
             // Lock the object and get C++ pointer
             TRef objptr = lj_ir_call(J, IRCALL_jit_object_lock, obj_ref);
