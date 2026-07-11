@@ -236,8 +236,10 @@ class extVectorText : public extVector {
          // TODO: This would be a good opportunity to garbage-collect stale glyphs
       }
 
-      if ((((extVector *)this)->ParentView) and (((extVector *)this)->ParentView->Scene->SurfaceID)) {
-         ((extVector *)this)->ParentView->subscribeInput(JTYPE::NIL, C_FUNCTION(text_input_events));
+      auto parent_view = ((extVector *)this)->ParentView;
+      if ((parent_view) and (not parent_view->terminating()) and (parent_view->Scene) and
+            (parent_view->Scene->SurfaceID)) {
+         parent_view->subscribeInput(JTYPE::NIL, C_FUNCTION(text_input_events));
       }
 
       if (txBitmapImage)  FreeResource(txBitmapImage);
