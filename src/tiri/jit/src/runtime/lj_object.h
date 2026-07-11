@@ -34,8 +34,8 @@ extern "C" void bc_object_setfield(lua_State *, GCobject *, GCstr *, TValue *, B
 extern "C" int ir_object_field_type(GCobject *, GCstr *, int &, uint32_t &);
 extern "C" int ir_object_field_type_write(GCobject *, GCstr *, int &, uint32_t &);
 
-// JIT fast-path lock/unlock for non-detached objects with valid ptr.
-// Guards in the trace ensure preconditions (alive, non-detached) are met.
+// JIT fast-path lock/unlock for weak-pinned objects with valid ptr.
+// Guards in the trace ensure preconditions (alive, weak-pinned) are met.
 
 extern "C" OBJECTPTR jit_object_lock(GCobject *);
 extern "C" void jit_object_unlock(GCobject *);

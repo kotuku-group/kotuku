@@ -2856,18 +2856,21 @@ inline constexpr int OBJECT_FLAGS_OFFSET = offsetof(Object, Flags);
 
 static void rec_object_liveness_guard(jit_State *J, TRef ObjRef, TRef &PtrRef)
 {
+   // A cleared UID means that the wrapper has already observed object termination.
    TRef uid_ref = emitir(IRTI(IR_FLOAD), ObjRef, IRFL_OBJ_UID);
    emitir(IRTGI(IR_NE), uid_ref, lj_ir_kint(J, 0));
 
+   // The weak pin keeps the Object header readable even after teardown begins.  GCOBJ_DETACHED is intentionally not
+   // tested here: it controls wrapper ownership and has no bearing on the validity of pinned field access.
    TRef flags_ref = emitir(IRT(IR_FLOAD, IRT_U8), ObjRef, IRFL_OBJ_FLAGS);
-   TRef detached = emitir(IRTI(IR_BAND), flags_ref, lj_ir_kint(J, GCOBJ_DETACHED));
-   emitir(IRTGI(IR_EQ), detached, lj_ir_kint(J, 0));
    TRef pinned = emitir(IRTI(IR_BAND), flags_ref, lj_ir_kint(J, GCOBJ_PINNED));
    emitir(IRTGI(IR_NE), pinned, lj_ir_kint(J, 0));
 
+   // A pinned wrapper normally retains its cached pointer, but guard it independently in case the wrapper was cleared.
    PtrRef = emitir(IRT(IR_FLOAD, IRT_PTR), ObjRef, IRFL_OBJ_PTR);
    emitir(IRTG(IR_NE, IRT_PTR), PtrRef, lj_ir_knull(J, IRT_PTR));
 
+   // A weak pin preserves the allocation, not object liveness.  Reject zombie headers before the fast-path lock.
    TRef flags_addr = emitir(IRT(IR_ADD, IRT_PTR), PtrRef, lj_ir_kintp(J, OBJECT_FLAGS_OFFSET));
    TRef object_flags = emitir(IRT(IR_XLOAD, IRT_U32), flags_addr, 0);
    // Match the interpreter's object_is_dead() semantics (Object::collecting() tests both flags).

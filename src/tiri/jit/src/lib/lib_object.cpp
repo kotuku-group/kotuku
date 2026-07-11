@@ -710,7 +710,6 @@ static int object_state(lua_State *Lua)
 
    if (object_is_dead(def)) luaL_error(Lua, ERR::DoesNotExist, "Object dereferenced, unable to access state.");
 
-   kt::Log log(__FUNCTION__);
    if (auto it = Lua->script->StateMap.find(def->uid); it != Lua->script->StateMap.end()) {
       lua_rawgeti(Lua, LUA_REGISTRYINDEX, it->second);
       return 1;
@@ -729,8 +728,6 @@ static int object_state(lua_State *Lua)
 
 static int object_newchild(lua_State *Lua)
 {
-   kt::Log log("obj.child");
-
    auto parent = object_context(Lua);
 
    CSTRING class_name;
@@ -740,16 +737,11 @@ static int object_newchild(lua_State *Lua)
    if (type IS LUA_TNUMBER) {
       class_id = CLASSID(lua_tointeger(Lua, 1));
       class_name = nullptr;
-      log.trace("$%.8x", class_id);
    }
    else if ((class_name = luaL_checkstring(Lua, 1))) {
       class_id = CLASSID(strihash(class_name));
-      log.trace("%s, $%.8x", class_name, class_id);
    }
-   else {
-      log.warning("String or ID expected for class name, got '%s'.", lua_typename(Lua, type));
-      luaL_error(Lua, ERR::Mismatch);
-   }
+   else luaL_error(Lua, ERR::Mismatch, "String or ID expected for class name, got '%s'.", lua_typename(Lua, type));
 
    OBJECTPTR obj;
    if (auto error = NewObject(class_id, objflags, &obj); !error) {
@@ -802,10 +794,9 @@ static int object_newchild(lua_State *Lua)
 
       return 1;
    }
-   else {
-      luaL_error(Lua, ERR::NewObject);
-      return 0;
-   }
+   else luaL_error(Lua, ERR::NewObject);
+
+   return 0;
 }
 
 //********************************************************************************************************************
@@ -813,9 +804,7 @@ static int object_newchild(lua_State *Lua)
 
 static int object_children(lua_State *Lua)
 {
-   kt::Log log("obj.children");
-
-   log.trace("");
+   kt::Log("obj.children").trace("");
 
    GCobject *def = object_context(Lua);
 
@@ -850,12 +839,7 @@ static int object_children(lua_State *Lua)
 static int object_detach(lua_State *Lua)
 {
    auto def = object_context(Lua);
-
-   kt::Log log("obj.detach");
-   log.traceBranch("Detached: %d", def->is_detached());
-
    if (not def->is_detached()) def->set_detached(true);
-
    return 0;
 }
 
@@ -953,18 +937,12 @@ static int object_unsubscribe(lua_State *Lua)
    auto def = object_context(Lua);
 
    CSTRING action;
-   if (not (action = lua_tostring(Lua, 1))) {
-      luaL_argerror(Lua, 1, "Action name expected.");
-      return 0;
-   }
+   if (not (action = lua_tostring(Lua, 1))) luaL_argerror(Lua, 1, "Action name expected.");
 
    const FunctionField *arglist;
    ACTIONID action_id = get_action_info(Lua, def->classptr->ClassID, action, &arglist);
 
-   if (action_id IS AC::NIL) {
-      luaL_argerror(Lua, 1, "Action/Method name is invalid.");
-      return 0;
-   }
+   if (action_id IS AC::NIL) luaL_argerror(Lua, 1, "Action/Method name is invalid.");
 
    log.trace("Object: %d, Action: %s", def->uid, action);
 

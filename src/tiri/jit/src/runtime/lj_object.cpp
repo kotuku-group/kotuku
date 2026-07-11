@@ -402,7 +402,7 @@ extern "C" int ir_object_field_type_write(GCobject *Obj, GCstr *Key, int &Offset
 }
 
 //********************************************************************************************************************
-// JIT fast-path lock: guards in the trace ensure the object is alive, non-detached, and has a valid ptr.
+// JIT fast-path lock: guards in the trace ensure the object is alive, weak-pinned, and has a valid ptr.
 // Mirrors access_object() semantics: skips ptr->lock() if already held (accesscount > 0).
 // Returns the Object* pointer for use by XLOAD.
 
@@ -414,7 +414,7 @@ extern "C" OBJECTPTR jit_object_lock(GCobject *Obj)
 }
 
 //********************************************************************************************************************
-// JIT fast-path unlock: mirrors release_object() semantics for non-detached objects.
+// JIT fast-path unlock: mirrors release_object() semantics for weak-pinned objects.
 
 extern "C" void jit_object_unlock(GCobject *Obj)
 {
@@ -424,7 +424,7 @@ extern "C" void jit_object_unlock(GCobject *Obj)
 //********************************************************************************************************************
 // JIT fast-path string field read: locks the object, reads the CSTRING pointer at the given offset,
 // unlocks, and writes the result to Out.  Null CSTRING values produce nil (matching lua_pushstring).
-// Guards in the trace ensure the object is alive, non-detached, and has a valid ptr.
+// Guards in the trace ensure the object is alive, weak-pinned, and has a valid ptr.
 
 extern "C" void jit_object_getstr(lua_State *L, GCobject *Obj, uint32_t Offset, TValue *Out)
 {
@@ -440,7 +440,7 @@ extern "C" void jit_object_getstr(lua_State *L, GCobject *Obj, uint32_t Offset, 
 // JIT fast-path object field read: locks the parent, reads the OBJECTPTR at the given offset, unlocks, and creates
 // a detached GCobject wrapper written to Out.  Null pointers produce nil.  load_include_for_class() is not called
 // because the interpreter will have already loaded the class definitions during prior execution cycles.
-// Guards in the trace ensure the parent object is alive, non-detached, and has a valid ptr.
+// Guards in the trace ensure the parent object is alive, weak-pinned, and has a valid ptr.
 // The child pointer is read from the parent's field while the parent lock is held, so the child is guaranteed
 // alive at this instant and pinning the wrapper is race-free.
 
