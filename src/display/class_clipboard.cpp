@@ -468,7 +468,7 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
       ERR error = ERR::Okay;
       if (Self->RequestHandler.stale()) {
          Self->RequestHandler.unpin();
-         Self->RequestHandler.clear();
+         Self->RequestHandler.disable();
       }
 
       if (Self->RequestHandler.isC()) {
@@ -489,7 +489,7 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
 
       if (error IS ERR::Terminate) {
          Self->RequestHandler.unpin();
-         Self->RequestHandler.clear();
+         Self->RequestHandler.disable();
       }
 
       return error;
@@ -503,10 +503,7 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
 
 objClipboard::~objClipboard()
 {
-   if (RequestHandler.defined()) {
-      RequestHandler.unpin();
-      RequestHandler.clear();
-   }
+   if (RequestHandler.defined()) RequestHandler.unpin();
 }
 
 /*********************************************************************************************************************
@@ -699,12 +696,17 @@ static ERR GET_RequestHandler(objClipboard *Self, FUNCTION * &Value)
 
 static ERR SET_RequestHandler(objClipboard *Self, FUNCTION *Value)
 {
-   if (Self->RequestHandler.defined()) Self->RequestHandler.unpin();
+   if (Self->RequestHandler.defined()) {
+      Self->RequestHandler.unpin();
+      Self->RequestHandler.disable();
+   }
+
    if (Value) {
       Self->RequestHandler = *Value;
       if (Self->RequestHandler.defined()) Self->RequestHandler.pin();
    }
-   else Self->RequestHandler.clear();
+   else Self->RequestHandler.disable();
+
    return ERR::Okay;
 }
 

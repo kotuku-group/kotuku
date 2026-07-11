@@ -206,6 +206,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
    std::atomic_char Queue;       // Counter of locks attained by LockObject(); decremented by ReleaseObject(); not stable by design (see lock())
    std::atomic_char SleepQueue;  // For the use of LockObject() only
    char Name[MAX_NAME_LEN];      // The name of the object.  NOTE: This value can be adjusted to ensure that the struct is always 8-bit aligned.
+   char Reserved[4];             // Prevent GCC from re-using tail padding
 
    Object(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept :
       Class(ClassPtr),
