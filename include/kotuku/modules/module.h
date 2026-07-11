@@ -61,7 +61,7 @@ struct Function {
 
 struct ModHeader {
    MHF     Flags;                                    // Special flags, type of function table wanted from the Core
-   int     CoreTimestamp;                            // Timestamp of the core build that this module was compiled against.
+   int     CoreTimestamp;                            // Core build date (YYYYMMDD) that this module was compiled against.
    CSTRING Definitions;                              // Module definition string, usable by run-time languages such as Tiri
    ERR (*Init)(OBJECTPTR, struct CoreBase *);        // A one-off initialisation routine for when the module is first opened.
    void (*Close)(OBJECTPTR);                         // A function that will be called each time the module is closed.
