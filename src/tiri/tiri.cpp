@@ -129,7 +129,7 @@ OBJECTPTR access_object(GCobject *Object)
          return nullptr;
       }
       if (auto error = Object->ptr->lock(); error != ERR::Okay) {
-         kt::Log("access_object").warning("#%d lock() failed: %s, Queue: %d", Object->uid, GetErrorMsg(error),
+         kt::Log(__FUNCTION__).warning("#%d lock() failed: %s, Queue: %d", Object->uid, GetErrorMsg(error),
             Object->ptr->Queue.load());
          return nullptr;
       }
@@ -139,14 +139,11 @@ OBJECTPTR access_object(GCobject *Object)
       if (auto error = AccessObject(Object->uid, 5000, &obj_ptr); !error) {
          Object->ptr = obj_ptr;
          Object->set_locked(true);
-         if (not Object->ptr->defined(NF::PLACEMENT)) {
-            Object->ptr->pinWeak();
-            Object->set_pinned(true);
-         }
+         Object->ptr->pinWeak();
+         Object->set_pinned(true);
       }
       else if (error IS ERR::DoesNotExist) {
-         kt::Log log(__FUNCTION__);
-         log.trace("Object #%d has been terminated.", Object->uid);
+         kt::Log(__FUNCTION__).trace("Object #%d has been terminated.", Object->uid);
          Object->ptr = nullptr;
          Object->uid = 0;
       }
@@ -169,7 +166,7 @@ void release_object(GCobject *Object)
          else {
             #ifndef NDEBUG
             if (Object->ptr->Queue.load() <= 0) {
-               kt::Log("release_object").warning("#%d Queue underflow before unlock: Queue: %d, ThreadID: %d, OurThread: %d",
+               kt::Log(__FUNCTION__).warning("#%d Queue underflow before unlock: Queue: %d, ThreadID: %d, OurThread: %d",
                   Object->uid, Object->ptr->Queue.load(), Object->ptr->ThreadID.load(), GetThreadID());
                DEBUG_BREAK
             }

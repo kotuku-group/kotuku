@@ -973,10 +973,9 @@ extern GCobject * lua_pushobject(lua_State *L, OBJECTID UID, OBJECTPTR Ptr, objM
 {
    lj_gc_check(L);
    auto obj = lj_object_new(L, UID, Ptr, ClassPtr, Flags);
-   if (Ptr and not Ptr->defined(NF::PLACEMENT)) {
-      Ptr->pinWeak();
-      obj->set_pinned(true);
-   }
+   // GCOBJ_PINNED in Flags means the caller already holds a weak pin on Ptr (e.g. via PinWeakObject())
+   // and the wrapper adopts it; otherwise pin here while the caller's liveness guarantee still holds.
+   if ((Ptr) and (not obj->is_pinned())) lj_object_pin(obj, Ptr);
    setobjectV(L, L->top, obj);
    incr_top(L);
    return obj;

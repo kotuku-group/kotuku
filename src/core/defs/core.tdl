@@ -153,7 +153,6 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
     "SIGNALLED: The object has been signalled and is awaiting processing.",
     "PERMIT_TERMINATE: Private.  Permits termination when a lock is held on the object.",
     "ASYNC_ACTIVE: Read-only indicator that asynchronous actions are queued or executing against this object.",
-    "PLACEMENT: Private.  Uses placement-new to allocate the object in-place.",
     "ZOMBIE: Private.  The object has been terminated but is waiting for the RefCount to reach zero before being destroyed.",
     { PRIVATE = 0 }
   )
@@ -814,7 +813,8 @@ class objTask;
     "AsyncWait",
     "ClassDatabase",
     "GetThreadID",
-    "UnitTests")
+    "UnitTests",
+    "PinWeakObject")
 
   c_insert([==[
 

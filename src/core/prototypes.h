@@ -94,3 +94,4 @@ extern "C" ERR AsyncWait(kt::vector<OBJECTID> & Objects, int TimeOut);
 extern "C" ERR ClassDatabase(kt::vector<ClassRecord *> * Classes);
 extern "C" int GetThreadID();
 extern "C" void UnitTests(CSTRING Options, int * Passed, int * Total);
+extern "C" OBJECTPTR PinWeakObject(OBJECTID Object);

@@ -641,7 +641,18 @@ LJLIB_CF(object_find)
       }
 
       if (!FindObject(object_name, class_id, &object_id)) {
-         return object_find_ptr(L, GetObjectPtr(object_id));
+         // Pin under the object registry's mutex so a cross-thread free cannot release the block before the
+         // pin lands; GetObjectPtr() alone offers no liveness once its mutex is dropped.  The wrapper adopts
+         // the pin via GCOBJ_PINNED.
+         if (auto obj = PinWeakObject(object_id)) {
+            if (auto cl = obj->Class) {
+               load_include_for_class(L, cl);
+               lua_pushobject(L, object_id, obj, cl, GCOBJ_DETACHED|GCOBJ_PINNED);
+               return 1;
+            }
+            else obj->unpinWeak(); // Teardown began between pin and Class read; treat as not found.
+         }
+         log.detail("Unable to find object '%s'", object_name);
       }
       else log.detail("Unable to find object '%s'", object_name);
    }
@@ -676,14 +687,17 @@ ERR push_object_id(lua_State *Lua, OBJECTID ObjectID)
 {
    if (not ObjectID) { lua_pushnil(Lua); return ERR::Okay; }
 
-   if (auto object = GetObjectPtr(ObjectID)) {
-      lua_pushobject(Lua, ObjectID, object, object->Class, GCOBJ_DETACHED);
-      return ERR::Okay;
+   // Pin under the object registry's mutex (see object_find); the wrapper adopts the pin via GCOBJ_PINNED.
+   if (auto object = PinWeakObject(ObjectID)) {
+      if (auto cl = object->Class) {
+         lua_pushobject(Lua, ObjectID, object, cl, GCOBJ_DETACHED|GCOBJ_PINNED);
+         return ERR::Okay;
+      }
+      else object->unpinWeak(); // Teardown began between pin and Class read; fall through to the UID-only wrapper.
    }
-   else {
-      lua_pushobject(Lua, ObjectID, nullptr, nullptr, GCOBJ_DETACHED);
-      return ERR::Okay;
-   }
+
+   lua_pushobject(Lua, ObjectID, nullptr, nullptr, GCOBJ_DETACHED);
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************

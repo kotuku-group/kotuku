@@ -179,6 +179,7 @@ extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Dat
             for (uint32_t i=0; i < Length; i++) {
                if (objects[i]) {
                   auto obj = lj_object_new(L, objects[i]->UID, nullptr, objects[i]->Class, GCOBJ_DETACHED);
+                  lj_object_pin(obj, objects[i]);
                   setgcref(refs[i], obj2gco(obj));
                   lj_gc_objbarrier(L, arr, obj);
                }

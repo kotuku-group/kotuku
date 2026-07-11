@@ -441,6 +441,8 @@ extern "C" void jit_object_getstr(lua_State *L, GCobject *Obj, uint32_t Offset, 
 // a detached GCobject wrapper written to Out.  Null pointers produce nil.  load_include_for_class() is not called
 // because the interpreter will have already loaded the class definitions during prior execution cycles.
 // Guards in the trace ensure the parent object is alive, non-detached, and has a valid ptr.
+// The child pointer is read from the parent's field while the parent lock is held, so the child is guaranteed
+// alive at this instant and pinning the wrapper is race-free.
 
 extern "C" void jit_object_getobj(lua_State *L, GCobject *Obj, uint32_t Offset, TValue *Out)
 {
@@ -449,6 +451,7 @@ extern "C" void jit_object_getobj(lua_State *L, GCobject *Obj, uint32_t Offset, 
    OBJECTPTR child = *(OBJECTPTR *)(((int8_t *)Obj->ptr) + Offset);
    if (child) {
       auto gcobj = lj_object_new(L, child->UID, nullptr, child->Class, GCOBJ_DETACHED);
+      lj_object_pin(gcobj, child);
       setobjectV(L, Out, gcobj);
    }
    else setnilV(Out);
