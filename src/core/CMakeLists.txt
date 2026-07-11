@@ -211,7 +211,9 @@ target_sources (core PRIVATE
    "compression/class_compression.cpp")
 
 if (UNIT_TESTS)
-   target_sources (core PRIVATE "tests/unit_tests_queue_action.cpp")
+   target_sources (core PRIVATE
+      "tests/unit_tests_object_layout.cpp"
+      "tests/unit_tests_queue_action.cpp")
    target_compile_definitions (core PRIVATE UNIT_TESTS)
 endif ()
 

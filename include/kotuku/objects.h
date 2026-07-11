@@ -194,18 +194,20 @@ struct alignas(8) Object { // Must be 64-bit aligned
       objMetaClass *Class;          // [Public] Class pointer
       class extMetaClass *ExtClass; // [Private] Internal version of the class pointer
    };
-   APTR     DerivedPtr;          // Private allocation area for derived classes only
-   APTR     CreatorMeta;         // The creator of the object is permitted to store a custom data pointer here.
-   struct Object *Owner;         // The owner of this object
-   std::atomic_uint64_t NotifyFlags; // Action subscription flags - space for 64 actions max
-   std::atomic<uint32_t> RefCount; // Packed pin counters: low byte strong pins, upper 24 bits weak pins.  NB: This is not a locking mechanism!
-   OBJECTID UID;                 // Unique object identifier
-   std::atomic<uint32_t> Flags;  // Object NF flags
-   std::atomic_int ThreadID;     // Managed by locking functions.  Atomic due to volatility.
-   int8_t   ActionDepth;         // Debug builds only: Incremented each time an action or method is called on the object
-   std::atomic_char Queue;       // Counter of locks attained by LockObject(); decremented by ReleaseObject(); not stable by design (see lock())
-   std::atomic_char SleepQueue;  // For the use of LockObject() only
-   char Name[MAX_NAME_LEN];      // The name of the object.  NOTE: This value can be adjusted to ensure that the struct is always 8-bit aligned.
+   APTR     DerivedPtr;          // [8] Private allocation area for derived classes only
+   APTR     CreatorMeta;         // [16] The creator of the object is permitted to store a custom data pointer here.
+   struct Object *Owner;         // [24] The owner of this object
+   std::atomic_uint64_t NotifyFlags; // [32] Action subscription flags - space for 64 actions max
+   std::atomic<uint32_t> RefCount; // [40] Packed pin counters: low byte strong pins, upper 24 bits weak pins.  NB: This is not a locking mechanism!
+   OBJECTID UID;                 // [44] Unique object identifier
+   std::atomic<uint32_t> Flags;  // [48] Object NF flags
+   std::atomic_int ThreadID;     // [52] Managed by locking functions.  Atomic due to volatility.
+   int8_t   ActionDepth;         // [56] Debug builds only: Incremented each time an action or method is called on the object
+   std::atomic_char Queue;       // [57] Counter of locks attained by LockObject(); decremented by ReleaseObject(); not stable by design (see lock())
+   std::atomic_char SleepQueue;  // [58] For the use of LockObject() only
+   int8_t   _Reserved1;          // [59] Reserved
+   char Name[36];                // [60] The name of the object.  NOTE: This value can be adjusted to ensure that the struct is always 8-bit aligned.
+   // Refer to MAX_NAME_LEN in core.h that defines the hard limit of the name length for clients.
 
    Object(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept :
       Class(ClassPtr),
