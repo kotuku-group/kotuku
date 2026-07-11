@@ -29,7 +29,7 @@
 #include "ankerl/unordered_dense.h"
 #endif
 
-#define CORE_BUILD_DATE 202607102320
+#define CORE_BUILD_DATE 20260711
 class objMetaClass;
 
 // Predefined cursor styles
@@ -1896,7 +1896,7 @@ struct obj_write {
 inline auto write_hash = [](const obj_write &a, const obj_write &b) { return a.Hash < b.Hash; };
 
 typedef std::vector<obj_write> WRITE_TABLE;
-#endif
+#endif // PRV_METACLASS
 
 // MetaClass class definition
 

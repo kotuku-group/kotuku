@@ -304,8 +304,9 @@ static ERR MODULE_Init(extModule *Self)
       Self->Root = root;
 
       if (table) {
-         if (not table->Init) { log.warning(ERR::ModuleMissingInit); goto exit; }
-         if (not table->Name) { log.warning(ERR::ModuleMissingName); goto exit; }
+         if (not table->Init) { error = log.warning(ERR::ModuleMissingInit); goto exit; }
+         if (not table->Name) { error = log.warning(ERR::ModuleMissingName); goto exit; }
+         if (table->CoreTimestamp != CORE_BUILD_DATE) { error = log.warning(ERR::CoreVersion); goto exit; }
 
          root->Header  = table;
          root->Table   = table;
