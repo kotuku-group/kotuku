@@ -94,6 +94,9 @@ FRGB svgState::resolve_stop_colour(const XTag &Tag) noexcept
                vec::ReadPainter(Self->Scene, m_stop_color, &painter, nullptr);
                colour = painter.Colour;
             }
+            // With no inherited value, 'inherit' resolves to the initial stop-color.  It must still
+            // overwrite any colour set by an earlier attribute (style declarations arrive last and win).
+            else colour = FRGB(0,0,0,1);
          }
          else if (iequals("currentColor", value)) {
             vec::ReadPainter(Self->Scene, m_color, &painter, nullptr);
@@ -472,6 +475,7 @@ void svgState::parse_meshgradient(const XTag &Tag, objGradientMesh *Gradient, st
 
    double start_x = 0;
    double start_y = 0;
+   bool origin_set = false;
 
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
       auto &val = Tag.Attribs[a].Value;
@@ -481,8 +485,8 @@ void svgState::parse_meshgradient(const XTag &Tag, objGradientMesh *Gradient, st
       switch(attrib) {
          // Percentages scale to 0 - 1.0, matching bounding-box semantics (cf. parse_units()).  Under userspace
          // units the viewport size is not known at parse time, so a percentage resolves to the same fraction.
-         case SVF_x: { auto v = std::string_view(val); start_x = read_unit(v); break; }
-         case SVF_y: { auto v = std::string_view(val); start_y = read_unit(v); break; }
+         case SVF_x: { auto v = std::string_view(val); start_x = read_unit(v); origin_set = true; break; }
+         case SVF_y: { auto v = std::string_view(val); start_y = read_unit(v); origin_set = true; break; }
          case SVF_type:
             if ((not iequals("bilinear", val)) and (not iequals("Coons", val))) {
                log.warning("Mesh gradient type '%s' is not supported; using bilinear Coons patches.", val.c_str());
@@ -493,6 +497,18 @@ void svgState::parse_meshgradient(const XTag &Tag, objGradientMesh *Gradient, st
             parse_gradient_defaults(log, Tag, Gradient, attrib, Tag.Attribs[a].Name, val, ID);
             break;
       }
+   }
+
+   // The x/y origin only anchors locally defined rows.  A referencing tag without rows of its own cannot
+   // re-anchor patches inherited via href because their geometry was baked when the href target was parsed,
+   // so x/y is documented as ignored in that case.
+
+   if (origin_set) {
+      bool has_rows = false;
+      for (auto &row_tag : Tag.Children) {
+         if (svg_tag_hash(row_tag) IS SVF_meshrow) { has_rows = true; break; }
+      }
+      if (not has_rows) log.warning("x/y on a <meshgradient> without its own rows is ignored @ line %d.", Tag.LineNo);
    }
 
    std::vector<MeshPatchRecord> records;

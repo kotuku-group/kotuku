@@ -160,6 +160,30 @@ function inheritedColourMesh():str
 ]]
 end
 
+-- No ancestor supplies stop-color, so the style-derived 'inherit' must resolve to the initial value (black)
+-- and overwrite the earlier presentation attribute rather than preserving it.
+
+function inheritFallbackMesh():str
+   return [[
+<?xml version="1.0" standalone="no"?>
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <meshgradient id="mesh2x2" x="0" y="0" gradientUnits="userSpaceOnUse">
+      <meshrow>
+        <meshpatch>
+          <stop path="L 100 0" stop-color="#ff0000" style="stop-color:inherit"/>
+          <stop path="L 100 100" stop-color="#ffff00"/>
+          <stop path="L 0 100" stop-color="#0000ff"/>
+          <stop path="Z" stop-color="#00ff00"/>
+        </meshpatch>
+      </meshrow>
+    </meshgradient>
+  </defs>
+  <rect x="0" y="0" width="100" height="100" fill="url(#mesh2x2)"/>
+</svg>
+]]
+end
+
 function percentageOriginMesh():str
    return [[
 <?xml version="1.0" standalone="no"?>
@@ -172,6 +196,95 @@ function percentageOriginMesh():str
           <stop path="L 1 1" stop-color="#ffff00"/>
           <stop path="L 0.5 1" stop-color="#0000ff"/>
           <stop path="Z" stop-color="#ff0000"/>
+        </meshpatch>
+      </meshrow>
+    </meshgradient>
+  </defs>
+  <rect x="0" y="0" width="100" height="100" fill="url(#mesh2x2)"/>
+</svg>
+]]
+end
+
+-- A referencing mesh with no rows of its own must retain the patches inherited via href; its x/y is ignored
+-- because inherited patch geometry was baked when the href target was parsed.
+
+function hrefOnlyMesh():str
+   return [[
+<?xml version="1.0" standalone="no"?>
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <meshgradient id="base2x2" x="0" y="0" gradientUnits="userSpaceOnUse">
+      <meshrow>
+        <meshpatch>
+          <stop path="L 50 0" stop-color="#00ff00"/>
+          <stop path="L 50 50" stop-color="#ffff00"/>
+          <stop path="L 0 50" stop-color="#0000ff"/>
+          <stop path="L 0 0" stop-color="#ff0000"/>
+        </meshpatch>
+        <meshpatch>
+          <stop path="L 100 0" stop-color="#00ffff"/>
+          <stop path="L 100 50" stop-color="#ff00ff"/>
+          <stop path="L 50 50" stop-color="#ffff00"/>
+        </meshpatch>
+      </meshrow>
+    </meshgradient>
+    <meshgradient id="mesh2x2" href="#base2x2" x="30" y="40"/>
+  </defs>
+  <rect x="0" y="0" width="100" height="100" fill="url(#mesh2x2)"/>
+</svg>
+]]
+end
+
+-- currentColor in a paint server defined outside <defs> must resolve against the definition context (the
+-- enclosing <g>), not the colour of the element that references the gradient.  Exercises process_inherit_refs().
+
+function definitionContextMesh():str
+   return [[
+<?xml version="1.0" standalone="no"?>
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <g color="#008000">
+    <meshgradient id="mesh2x2" x="0" y="0" gradientUnits="userSpaceOnUse">
+      <meshrow>
+        <meshpatch>
+          <stop path="L 100 0" stop-color="currentColor"/>
+          <stop path="L 100 100" stop-color="#ffff00"/>
+          <stop path="L 0 100" stop-color="#0000ff"/>
+          <stop path="Z" stop-color="#ff0000"/>
+        </meshpatch>
+      </meshrow>
+    </meshgradient>
+  </g>
+  <rect x="0" y="0" width="100" height="100" color="#112233" fill="url(#mesh2x2)"/>
+</svg>
+]]
+end
+
+-- Two patches in the first row, one in the second: a valid but non-rectangular grid.
+
+function nonRectangularMesh():str
+   return [[
+<?xml version="1.0" standalone="no"?>
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <meshgradient id="mesh2x2" x="0" y="0" gradientUnits="userSpaceOnUse">
+      <meshrow>
+        <meshpatch>
+          <stop path="L 50 0" stop-color="#00ff00"/>
+          <stop path="L 50 50" stop-color="#ffff00"/>
+          <stop path="L 0 50" stop-color="#0000ff"/>
+          <stop path="L 0 0" stop-color="#ff0000"/>
+        </meshpatch>
+        <meshpatch>
+          <stop path="L 100 0" stop-color="#00ffff"/>
+          <stop path="L 100 50" stop-color="#ff00ff"/>
+          <stop path="L 50 50" stop-color="#ffff00"/>
+        </meshpatch>
+      </meshrow>
+      <meshrow>
+        <meshpatch>
+          <stop path="L 50 100" stop-color="#ff8800"/>
+          <stop path="L 0 100" stop-color="#8800ff"/>
+          <stop path="L 0 50" stop-color="#0000ff"/>
         </meshpatch>
       </meshrow>
     </meshgradient>
@@ -482,6 +595,76 @@ end
    assertChannel(patch.bottomLeft.alpha, 0.25, 'inherited stop-opacity')
    assertChannel(patch.topLeft.red, 0, 'literal stop-color is unaffected')
    assertChannel(patch.topLeft.alpha, 1.0, 'literal stop keeps full opacity')
+end
+
+@Test function HrefOnlyMeshRetainsInheritedPatches()
+   local path = 'temp:meshgradient_href_only.svg'
+   io.writeAll(path, hrefOnlyMesh())
+   glFiles:push(path)
+
+   local scene, gradient = loadMesh(path)
+   assert(#gradient.patches is 2, 'A rowless referencing mesh should retain the inherited patches')
+   assert(gradient.rows is 1, 'Inherited row metadata should be retained')
+   assert(gradient.columns is 2, 'Inherited column metadata should be retained')
+   assert(gradient.units is VUNIT_USERSPACE, 'Inherited units should be retained')
+
+   -- x="30" y="40" on the referencing tag cannot re-anchor baked patch geometry and is ignored.
+   local patch = gradient.patches[0]
+   assertNear(patch.top.startX, 0, 'x on a rowless referencing mesh is ignored')
+   assertNear(patch.top.startY, 0, 'y on a rowless referencing mesh is ignored')
+   assertNear(gradient.patches[1].right.startX, 100, 'inherited second patch geometry')
+end
+
+@Test function CurrentColorResolvesInDefinitionContext()
+   local path = 'temp:meshgradient_definition_context.svg'
+   io.writeAll(path, definitionContextMesh())
+   glFiles:push(path)
+
+   local scene, gradient = loadMesh(path)
+   assert(#gradient.patches is 1, 'Definition-context mesh should parse')
+
+   -- currentColor must be baked from the enclosing <g color="#008000">, not the referencing rect's colour.
+   local patch = gradient.patches[0]
+   assertChannel(patch.topRight.red, 0, 'definition-context currentColor red')
+   assertChannel(patch.topRight.green, 128 / 255, 'definition-context currentColor green')
+   assertChannel(patch.topRight.blue, 0, 'definition-context currentColor blue')
+end
+
+@Test function NonRectangularMeshFlattensToSingleRowOnSave()
+   local path = 'temp:meshgradient_non_rectangular.svg'
+   io.writeAll(path, nonRectangularMesh())
+   glFiles:push(path)
+
+   local scene, gradient = loadMesh(path)
+   assert(#gradient.patches is 3, 'Non-rectangular mesh should parse all patches')
+   assert(gradient.rows is 1, 'Non-rectangular mesh defaults to single-row metadata')
+   assert(gradient.columns is 3, 'Non-rectangular mesh defaults to flat column metadata')
+
+   local saved = saveScene(scene, 'temp:meshgradient_non_rectangular_saved.svg')
+   assert(countMeshRowsInGradient(saved, 'mesh2x2') is 1, 'Non-rectangular mesh should flatten to one meshrow')
+   assert(string.find(saved, 'kotuku:x', 0, true) != nil, 'Flattened non-adjacent patch should save as independent')
+   assert(string.find(saved, 'xmlns:kotuku="http://www.kotuku.dev/xmlns/svg"', 0, true) != nil,
+      'Saved document must declare the kotuku namespace for independent-patch attributes')
+
+   local reparsed_scene, reparsed_gradient = loadMesh('temp:meshgradient_non_rectangular_saved.svg')
+   assert(#reparsed_gradient.patches is 3, 'Flattened mesh should reparse all patches')
+   assertPatchesMatch(reparsed_gradient, gradient, 'non-rectangular flatten round-trip')
+end
+
+@Test function InheritWithoutParentResolvesToInitialColour()
+   local path = 'temp:meshgradient_inherit_fallback.svg'
+   io.writeAll(path, inheritFallbackMesh())
+   glFiles:push(path)
+
+   local scene, gradient = loadMesh(path)
+   assert(#gradient.patches is 1, 'Inherit-fallback mesh should parse')
+
+   -- style="stop-color:inherit" wins over stop-color="#ff0000"; with no parent value it resolves to black.
+   local patch = gradient.patches[0]
+   assertChannel(patch.topRight.red, 0, 'inherit without parent value red')
+   assertChannel(patch.topRight.green, 0, 'inherit without parent value green')
+   assertChannel(patch.topRight.blue, 0, 'inherit without parent value blue')
+   assertChannel(patch.topRight.alpha, 1.0, 'inherit without parent value alpha')
 end
 
 @Test function PercentageOriginParses()

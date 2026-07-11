@@ -10,6 +10,11 @@ the patch geometry rather than a one-dimensional colour ramp.
 The inherited colour-ramp fields `Stops`, `ColourMap`, `SpreadMethod` and `Colour` are not supported by this class.
 Patch geometry and corner colours are supplied through #Patches.
 
+When a mesh is exported to SVG, valid #Rows and #Columns metadata is preserved through the standard shared-edge
+`meshrow` syntax.  A mesh without valid row metadata (e.g. a non-rectangular grid) is flattened to a single row on
+export; every patch survives intact, with patches that do not share an edge with their predecessor written as
+independent patches, but the original row structure is not retained.
+
 -END-
 
 TODO:
@@ -231,7 +236,7 @@ static ERR GRADIENTMESH_SET_Columns(extGradientMesh *Self, int Value)
 
 static ERR GRADIENTMESH_SET_Patches(extGradientMesh *Self, std::span<const MeshPatchRecord> &Array)
 {
-   if (Array.empty()) { // An empty array clears the mesh entirely.
+   if ((not Array.data()) or Array.empty()) { // An empty array clears the mesh entirely.
       if (Self->Mesh) {
          Self->Mesh->patches.clear();
          Self->Mesh->rows = 0;
