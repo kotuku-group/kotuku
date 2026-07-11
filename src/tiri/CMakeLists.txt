@@ -131,6 +131,11 @@ set (JIT_KOTUKU_HEADER_DEPENDENCIES
    "${INCLUDE_OUTPUT}/system/registry.h"
 )
 
+set (JIT_TIRI_HEADER_DEPENDENCIES
+   "${CMAKE_CURRENT_SOURCE_DIR}/defs.h"
+   "${CMAKE_CURRENT_SOURCE_DIR}/struct_def.h"
+)
+
 option(KOTUKU_PARSER_TRACE "Emit parser token and expectation traces" OFF)
 option(INCLUDE_TIPS "Include the parser tips system for code analysis" ON)
 
@@ -614,7 +619,7 @@ else ()
             -Wno-trigraphs
             -c ${SOURCE_FILE} -o ${OBJECT_FILE}
          DEPENDS ${SOURCE_FILE} ${JIT_GENERATED_HEADERS} "${JIT_SRC}/lj_ircall.h"
-            ${JIT_KOTUKU_HEADER_DEPENDENCIES}
+            ${JIT_KOTUKU_HEADER_DEPENDENCIES} ${JIT_TIRI_HEADER_DEPENDENCIES}
          COMMENT "Compiling ${FILENAME}.cpp"
          VERBATIM
       )
