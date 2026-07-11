@@ -958,11 +958,12 @@ inline GCarray* arrayref(GCRef r) noexcept;
 // Flags for GCobject.flags
 inline constexpr uint8_t GCOBJ_DETACHED = 0x01;  // Object is external reference, not owned
 inline constexpr uint8_t GCOBJ_LOCKED   = 0x02;  // Lock acquired via AccessObject()
+inline constexpr uint8_t GCOBJ_PINNED   = 0x04;  // Wrapper holds one weak pin on ptr
 
 struct GCobject {
    GCHeader;                    // [0]  nextgc, marked, gct (10 bytes)
    uint8_t udtype;              // [10] Reserved for sub-types (future use)
-   uint8_t flags;               // [11] Object flags (GCOBJ_DETACHED, GCOBJ_LOCKED)
+   uint8_t flags;               // [11] Object flags (GCOBJ_DETACHED, GCOBJ_LOCKED, GCOBJ_PINNED)
    int32_t uid;                 // [12] Kotuku object unique ID (OBJECTID)
    uint32_t accesscount;        // [16] Access count for lock management
    uint32_t reserved;           // [20] Reserved for alignment
@@ -973,8 +974,10 @@ struct GCobject {
 
    inline bool is_detached() { return (flags & GCOBJ_DETACHED) != 0; }
    inline bool is_locked() { return (flags & GCOBJ_LOCKED) != 0; }
+   inline bool is_pinned() { return (flags & GCOBJ_PINNED) != 0; }
    inline void set_detached(bool v) { if (v) flags |= GCOBJ_DETACHED; else flags &= ~GCOBJ_DETACHED; }
    inline void set_locked(bool v) { if (v) flags |= GCOBJ_LOCKED; else flags &= ~GCOBJ_LOCKED; }
+   inline void set_pinned(bool v) { if (v) flags |= GCOBJ_PINNED; else flags &= ~GCOBJ_PINNED; }
 };
 
 // Ensure metatable and gclist fields are at same offset as other GC types

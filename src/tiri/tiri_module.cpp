@@ -1094,8 +1094,8 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          }
          else if (arg_type IS LUA_TOBJECT) {
             auto obj = lua_toobject(Lua, i);
-            if (obj->ptr) {
-               ((OBJECTPTR *)(buffer + j))[0] = obj->ptr;
+            if (auto direct = direct_object_ptr(obj)) {
+               ((OBJECTPTR *)(buffer + j))[0] = direct;
             }
             else if (auto ptr_obj = (OBJECTPTR)access_object(obj)) {
                ((OBJECTPTR *)(buffer + j))[0] = ptr_obj;

@@ -363,6 +363,35 @@ struct lua_ref {
 };
 
 OBJECTPTR access_object(GCobject *);
+inline bool object_is_dead(GCobject *Object)
+{
+   return (not Object->uid) or (Object->is_pinned() and Object->ptr->collecting());
+}
+
+// Returns the cached object pointer only if the reference is still alive.  Pinned wrappers retain a zombie header
+// pointer after termination, so a bare Object->ptr test is not a liveness check.
+//
+// Safety contract: the returned pointer is deliberately unlocked and unpinned (strong).  This is sound because:
+//
+// 1. Callees provide their own locking - Action() acquires the object lock internally via ScopedObjectAccess, and
+//    field access funnels through access_object().  Adding a lock here would be redundant.
+// 2. Same-thread frees are caught deterministically: nothing on this thread can terminate the object between the
+//    object_is_dead() test and the dispatch.
+// 3. A cross-thread free that is *in progress* at dispatch time fails cleanly - teardown holds the object lock, and
+//    LockObject() refuses collecting objects with ERR::MarkedForDeletion.  The wrapper's weak pin guarantees the
+//    header memory itself remains valid throughout, so the check never reads freed memory.
+// 4. The only residual is a cross-thread free that fully *completes* between the check and the callee's lock
+//    acquisition.  That window pre-dates weak pinning (and was strictly worse - a dangling pointer rather than a
+//    pinned zombie header), and freeing an object while another thread is actively using it is outside the Core's
+//    threading contract (see the LockObject() quick-lock notes).  The systematic close, if ever needed, is a
+//    collecting() recheck inside Object::lock() - not per-call-site locking or strong pins here.  A strong pin must
+//    never be taken on dispatch paths: it defers termination and self-deadlocks when the context is an ancestor of
+//    the object being freed.
+
+[[nodiscard]] inline OBJECTPTR direct_object_ptr(GCobject *Object)
+{
+   return object_is_dead(Object) ? nullptr : Object->ptr;
+}
 void load_include_for_class(lua_State *, objMetaClass *);
 ERR build_args(lua_State *, CSTRING, const struct FunctionField *, int, int8_t *, int *, int &,
    CSTRING &);
@@ -422,12 +451,13 @@ extern void armExecFunction(APTR, APTR, int);
 extern void x64ExecFunction(APTR, int, int64_t *, int);
 #endif
 
-// Throws exceptions.  Used for returning objects to the user.
+// Throws exceptions.  Used for returning objects to the user.  Passing the resolved pointer allows lua_pushobject()
+// to take the wrapper's weak pin at creation, saving the first access from an AccessObject() resolution.
 
 inline GCobject * push_object(lua_State *Lua, OBJECTPTR Object, bool Detached = true)
 {
    load_include_for_class(Lua, Object->Class);
-   return lua_pushobject(Lua, Object->UID, nullptr, Object->Class, Detached ? GCOBJ_DETACHED : 0);
+   return lua_pushobject(Lua, Object->UID, Object, Object->Class, Detached ? GCOBJ_DETACHED : 0);
 }
 
 //********************************************************************************************************************

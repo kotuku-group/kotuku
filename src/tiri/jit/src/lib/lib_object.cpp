@@ -1,12 +1,16 @@
 // Native Kōtuku object library.
 // Copyright (C) 2025-2026 Paul Manias.
 //
-// The core's technical design means that any object that is not *directly* owned by the Lua Script must be treated as
-// external to that script.  External objects must be locked appropriately whenever they are used.  Locking
-// ensures that threads can interact with the object safely and that the object cannot be prematurely terminated.
+// Object references are managed through weak pins: a GCobject with GCOBJ_PINNED holds one weak pin on its cached
+// Object pointer, which keeps the header block valid (as a zombie) even after the object is terminated.  Liveness must
+// therefore be tested with object_is_dead() - a bare ptr test is NOT a liveness check, because pinned wrappers retain
+// a zombie header pointer after termination.
 //
-// Only objects created through the standard obj.new() interface are directly accessible without a lock.  Those referenced
-// through obj.find(), push_object(), or children created with some_object.new() are marked as detached.
+// Direct dispatch through the cached pointer is permitted only via direct_object_ptr(), which returns null for dead
+// references.  Thread safety is provided by the callee - Action() locks the object internally - or by access_object(),
+// which locks explicitly.  The GCOBJ_DETACHED flag denotes ownership only: wrappers from obj.new() own their object
+// and free it on garbage collection, while references from obj.find(), push_object(), or children created with
+// some_object.new() are detached and never freed by the script.
 //
 // Note: If changing type conversion for field flags to Lua types, there are dependencies that need to be updated
 // elsewhere, such as in field_type_lookup.cpp.  Do a file search for "FD_" to find them.
@@ -132,11 +136,12 @@ static int action_activate(lua_State *Lua)
    ERR error = ERR::Okay;
    bool release = false;
 
-   if (obj_ref->ptr) error = Action(AC::Activate, obj_ref->ptr, nullptr);
+   if (auto direct = direct_object_ptr(obj_ref)) error = Action(AC::Activate, direct, nullptr);
    else if (auto obj = access_object(obj_ref)) {
       error = Action(AC::Activate, obj, nullptr);
       release = true;
    }
+   else error = ERR::AccessObject;
 
    lua_pushinteger(Lua, int(error));
    if (release) release_object(obj_ref);
@@ -164,11 +169,12 @@ static int action_draw(lua_State *Lua)
    }
 
    bool release = false;
-   if (obj_ref->ptr) error = Action(AC::Draw, obj_ref->ptr, argbuffer);
+   if (auto direct = direct_object_ptr(obj_ref)) error = Action(AC::Draw, direct, argbuffer);
    else if (auto obj = access_object(obj_ref)) {
       error = Action(AC::Draw, obj, argbuffer);
       release = true;
    }
+   else error = ERR::AccessObject;
 
    lua_pushinteger(Lua, int(error));
    if (release) release_object(obj_ref);
@@ -606,7 +612,7 @@ LJLIB_CF(object_new)
 [[nodiscard]] static int object_find_ptr(lua_State *L, OBJECTPTR obj)
 {
    load_include_for_class(L, obj->Class);
-   lua_pushobject(L, obj->UID, nullptr, obj->Class, GCOBJ_DETACHED);
+   lua_pushobject(L, obj->UID, obj, obj->Class, GCOBJ_DETACHED);
    return 1;
 }
 
@@ -635,7 +641,18 @@ LJLIB_CF(object_find)
       }
 
       if (!FindObject(object_name, class_id, &object_id)) {
-         return object_find_ptr(L, GetObjectPtr(object_id));
+         // Pin under the object registry's mutex so a cross-thread free cannot release the block before the
+         // pin lands; GetObjectPtr() alone offers no liveness once its mutex is dropped.  The wrapper adopts
+         // the pin via GCOBJ_PINNED.
+         if (auto obj = PinWeakObject(object_id)) {
+            if (auto cl = obj->Class) {
+               load_include_for_class(L, cl);
+               lua_pushobject(L, object_id, obj, cl, GCOBJ_DETACHED|GCOBJ_PINNED);
+               return 1;
+            }
+            else obj->unpinWeak(); // Teardown began between pin and Class read; treat as not found.
+         }
+         log.detail("Unable to find object '%s'", object_name);
       }
       else log.detail("Unable to find object '%s'", object_name);
    }
@@ -670,14 +687,17 @@ ERR push_object_id(lua_State *Lua, OBJECTID ObjectID)
 {
    if (not ObjectID) { lua_pushnil(Lua); return ERR::Okay; }
 
-   if (auto object = GetObjectPtr(ObjectID)) {
-      lua_pushobject(Lua, ObjectID, nullptr, object->Class, GCOBJ_DETACHED);
-      return ERR::Okay;
+   // Pin under the object registry's mutex (see object_find); the wrapper adopts the pin via GCOBJ_PINNED.
+   if (auto object = PinWeakObject(ObjectID)) {
+      if (auto cl = object->Class) {
+         lua_pushobject(Lua, ObjectID, object, cl, GCOBJ_DETACHED|GCOBJ_PINNED);
+         return ERR::Okay;
+      }
+      else object->unpinWeak(); // Teardown began between pin and Class read; fall through to the UID-only wrapper.
    }
-   else {
-      lua_pushobject(Lua, ObjectID, nullptr, nullptr, GCOBJ_DETACHED);
-      return ERR::Okay;
-   }
+
+   lua_pushobject(Lua, ObjectID, nullptr, nullptr, GCOBJ_DETACHED);
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -688,7 +708,8 @@ static int object_state(lua_State *Lua)
 {
    auto def = object_context(Lua);
 
-   kt::Log log(__FUNCTION__);
+   if (object_is_dead(def)) luaL_error(Lua, ERR::DoesNotExist, "Object dereferenced, unable to access state.");
+
    if (auto it = Lua->script->StateMap.find(def->uid); it != Lua->script->StateMap.end()) {
       lua_rawgeti(Lua, LUA_REGISTRYINDEX, it->second);
       return 1;
@@ -707,8 +728,6 @@ static int object_state(lua_State *Lua)
 
 static int object_newchild(lua_State *Lua)
 {
-   kt::Log log("obj.child");
-
    auto parent = object_context(Lua);
 
    CSTRING class_name;
@@ -718,16 +737,11 @@ static int object_newchild(lua_State *Lua)
    if (type IS LUA_TNUMBER) {
       class_id = CLASSID(lua_tointeger(Lua, 1));
       class_name = nullptr;
-      log.trace("$%.8x", class_id);
    }
    else if ((class_name = luaL_checkstring(Lua, 1))) {
       class_id = CLASSID(strihash(class_name));
-      log.trace("%s, $%.8x", class_name, class_id);
    }
-   else {
-      log.warning("String or ID expected for class name, got '%s'.", lua_typename(Lua, type));
-      luaL_error(Lua, ERR::Mismatch);
-   }
+   else luaL_error(Lua, ERR::Mismatch, "String or ID expected for class name, got '%s'.", lua_typename(Lua, type));
 
    OBJECTPTR obj;
    if (auto error = NewObject(class_id, objflags, &obj); !error) {
@@ -739,7 +753,7 @@ static int object_newchild(lua_State *Lua)
 
       load_include_for_class(Lua, obj->Class);
 
-      lua_pushobject(Lua, obj->UID, nullptr, obj->Class, GCOBJ_DETACHED);
+      lua_pushobject(Lua, obj->UID, obj, obj->Class, GCOBJ_DETACHED);
 
       lua_pushinteger(Lua, parent->uid);
 
@@ -780,10 +794,9 @@ static int object_newchild(lua_State *Lua)
 
       return 1;
    }
-   else {
-      luaL_error(Lua, ERR::NewObject);
-      return 0;
-   }
+   else luaL_error(Lua, ERR::NewObject);
+
+   return 0;
 }
 
 //********************************************************************************************************************
@@ -791,9 +804,7 @@ static int object_newchild(lua_State *Lua)
 
 static int object_children(lua_State *Lua)
 {
-   kt::Log log("obj.children");
-
-   log.trace("");
+   kt::Log("obj.children").trace("");
 
    GCobject *def = object_context(Lua);
 
@@ -828,12 +839,7 @@ static int object_children(lua_State *Lua)
 static int object_detach(lua_State *Lua)
 {
    auto def = object_context(Lua);
-
-   kt::Log log("obj.detach");
-   log.traceBranch("Detached: %d", def->is_detached());
-
    if (not def->is_detached()) def->set_detached(true);
-
    return 0;
 }
 
@@ -843,6 +849,16 @@ static int object_detach(lua_State *Lua)
 static int object_exists(lua_State *Lua)
 {
    auto def = object_context(Lua);
+   if (object_is_dead(def)) {
+      access_object(def); // Clears the stale UID and releases the wrapper's weak pin.
+      lua_pushboolean(Lua, false);
+      return 1;
+   }
+   if (def->is_pinned()) {
+      // The weak pin guarantees the header remains valid, so not-dead means alive - no lock cycle required.
+      lua_pushboolean(Lua, true);
+      return 1;
+   }
    if (access_object(def)) {
       release_object(def);
       lua_pushboolean(Lua, true);
@@ -921,18 +937,12 @@ static int object_unsubscribe(lua_State *Lua)
    auto def = object_context(Lua);
 
    CSTRING action;
-   if (not (action = lua_tostring(Lua, 1))) {
-      luaL_argerror(Lua, 1, "Action name expected.");
-      return 0;
-   }
+   if (not (action = lua_tostring(Lua, 1))) luaL_argerror(Lua, 1, "Action name expected.");
 
    const FunctionField *arglist;
    ACTIONID action_id = get_action_info(Lua, def->classptr->ClassID, action, &arglist);
 
-   if (action_id IS AC::NIL) {
-      luaL_argerror(Lua, 1, "Action/Method name is invalid.");
-      return 0;
-   }
+   if (action_id IS AC::NIL) luaL_argerror(Lua, 1, "Action/Method name is invalid.");
 
    log.trace("Object: %d, Action: %s", def->uid, action);
 
@@ -954,7 +964,7 @@ static int object_free(lua_State *Lua)
 {
    auto def = object_context(Lua);
 
-   def->flags |= GCOBJ_DETACHED; // Ensure that all future access doesn't go through the ptr
+   def->flags |= GCOBJ_DETACHED; // Prevents double FreeResource() at finalise.
 
    if (FreeResource(def->uid) IS ERR::InUse) {
       // The object has been marked for termination, automatically freeing it once it has been unlocked and unpinned.
@@ -963,6 +973,10 @@ static int object_free(lua_State *Lua)
       return 0;
    }
 
+   if (def->is_pinned()) {
+      def->ptr->unpinWeak();
+      def->set_pinned(false);
+   }
    def->uid = 0;
    def->ptr = nullptr;
    def->classptr = nullptr;

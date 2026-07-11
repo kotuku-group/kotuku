@@ -254,10 +254,6 @@ struct alignas(8) Object { // Must be 64-bit aligned
    inline void pin() {
       #ifndef NDEBUG
       auto ref_count = RefCount.load(std::memory_order_relaxed);
-      if (defined(NF::PLACEMENT)) {
-         kt::Log("pin").warning("Pinning placement object #%d (%s) is unsupported.", UID, className());
-         DEBUG_BREAK
-      }
       if ((ref_count & 0xff) >= 254) {
          kt::Log("pin").warning("Strong pin overflow risk for object #%d (%s), count: %d", UID, className(), ref_count & 0xff);
          DEBUG_BREAK
@@ -291,10 +287,6 @@ struct alignas(8) Object { // Must be 64-bit aligned
    inline void pinWeak() {
       #ifndef NDEBUG
       auto ref_count = RefCount.load(std::memory_order_relaxed);
-      if (defined(NF::PLACEMENT)) {
-         kt::Log("pinWeak").warning("Pinning placement object #%d (%s) is unsupported.", UID, className());
-         DEBUG_BREAK
-      }
       if ((ref_count >> 8) >= 0xfffffe) {
          kt::Log("pinWeak").warning("Weak pin overflow risk for object #%d (%s), count: %d", UID, className(), ref_count >> 8);
          DEBUG_BREAK

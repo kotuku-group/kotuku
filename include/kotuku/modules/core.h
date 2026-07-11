@@ -333,8 +333,7 @@ enum class NF : uint32_t {
    SIGNALLED = 0x00000100,
    PERMIT_TERMINATE = 0x00000200,
    ASYNC_ACTIVE = 0x00000400,
-   PLACEMENT = 0x00000800,
-   ZOMBIE = 0x00001000,
+   ZOMBIE = 0x00000800,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(NF)
@@ -1573,6 +1572,7 @@ struct CoreBase {
    ERR (*_ClassDatabase)(kt::vector<ClassRecord *> *Classes);
    int (*_GetThreadID)(void);
    void (*_UnitTests)(CSTRING Options, int *Passed, int *Total);
+   OBJECTPTR (*_PinWeakObject)(OBJECTID Object);
 #endif // KOTUKU_STATIC
 };
 
@@ -1672,6 +1672,7 @@ inline ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut) { return CoreBa
 inline ERR ClassDatabase(kt::vector<ClassRecord *> *Classes) { return CoreBase->_ClassDatabase(Classes); }
 inline int GetThreadID(void) { return CoreBase->_GetThreadID(); }
 inline void UnitTests(CSTRING Options, int *Passed, int *Total) { return CoreBase->_UnitTests(Options,Passed,Total); }
+inline OBJECTPTR PinWeakObject(OBJECTID Object) { return CoreBase->_PinWeakObject(Object); }
 #else
 extern "C" ERR Action(AC Action, OBJECTPTR Object, APTR Parameters);
 extern "C" void ActionList(struct ActionTable **Actions, int *Size);

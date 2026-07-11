@@ -103,6 +103,7 @@ static int async_script(lua_State *Lua)
    if (gc_script->classptr->ClassID != CLASSID::TIRI) {
       luaL_error(Lua, ERR::WrongClass);
    }
+   if (object_is_dead(gc_script)) luaL_error(Lua, ERR::DoesNotExist);
    if (not gc_script->ptr) luaL_error(Lua, ERR::ObjectCorrupt);
 
    log.branch("Script: %d", gc_script->uid);
@@ -243,6 +244,7 @@ static int async_action(lua_State *Lua)
    // Args: Object (1), Action (2), Callback (3), Key (4), Parameters...
 
    GCobject *gc_obj = lj_lib_checkobject(Lua, 1);
+   if (object_is_dead(gc_obj)) luaL_error(Lua, ERR::DoesNotExist);
    if (not gc_obj->ptr) luaL_error(Lua, ERR::ObjectCorrupt);
 
    auto type = lua_type(Lua, 2);
@@ -288,6 +290,7 @@ static int async_method(lua_State *Lua)
    kt::Log log("async.method");
 
    auto gc_obj = lj_lib_checkobject(Lua, 1);
+   if (object_is_dead(gc_obj)) luaL_error(Lua, ERR::DoesNotExist);
    if (not gc_obj->ptr) luaL_error(Lua, ERR::ObjectCorrupt);
 
    std::span<MethodEntry> table;
@@ -344,6 +347,7 @@ static void collect_object_ids(lua_State *Lua, int ArgIndex, kt::vector<OBJECTID
    if (type IS LUA_TOBJECT) {
       auto gc_obj = lua_toobject(Lua, ArgIndex);
       if (not gc_obj or not gc_obj->ptr) luaL_error(Lua, ERR::ObjectCorrupt);
+      if (object_is_dead(gc_obj)) luaL_error(Lua, ERR::DoesNotExist);
       Ids.push_back(gc_obj->uid);
    }
    else if (type IS LUA_TARRAY) {
@@ -402,6 +406,7 @@ static int async_wait(lua_State *Lua)
 static int async_pending(lua_State *Lua)
 {
    GCobject *gc_obj = lj_lib_checkobject(Lua, 1);
+   if (object_is_dead(gc_obj)) luaL_error(Lua, ERR::DoesNotExist);
    if (not gc_obj->ptr) luaL_error(Lua, ERR::ObjectCorrupt);
    lua_pushinteger(Lua, AsyncPending(gc_obj->uid));
    return 1;

@@ -15,7 +15,7 @@ struct pending_function_arg {
 {
    Release = false;
 
-   if (Def->ptr) return Action(ActionID, Def->ptr, Args);
+   if (auto direct = direct_object_ptr(Def)) return Action(ActionID, direct, Args);
    else if (auto obj = access_object(Def)) {
       Release = true;
       return Action(ActionID, obj, Args);
@@ -268,7 +268,7 @@ static ERR copy_object_cpp_array_arg(GCarray *Array, kt::vector<OBJECTPTR> *Vect
       }
 
       auto obj_ref = gco_to_object(gcref(refs[i]));
-      if (obj_ref->ptr) Vector->push_back(obj_ref->ptr);
+      if (auto direct = direct_object_ptr(obj_ref)) Vector->push_back(direct);
       else if (auto ptr_obj = access_object(obj_ref)) {
          Vector->push_back(ptr_obj);
          release_object(obj_ref);
@@ -680,8 +680,8 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          if (Args[i].Type & FD_OBJECT) {
             if (auto obj_ref = lj_lib_optobject(Lua, n, false)) { // Performs thunk resolution
                OBJECTPTR ptr_obj;
-               if (obj_ref->ptr) {
-                  ((OBJECTPTR *)(ArgBuffer + j))[0] = obj_ref->ptr;
+               if (auto direct = direct_object_ptr(obj_ref)) {
+                  ((OBJECTPTR *)(ArgBuffer + j))[0] = direct;
                }
                else if ((ptr_obj = access_object(obj_ref))) {
                   ((OBJECTPTR *)(ArgBuffer + j))[0] = ptr_obj;

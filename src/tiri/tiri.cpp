@@ -109,8 +109,8 @@ APTR get_meta(lua_State *Lua, int Arg, CSTRING MetaTable)
 }
 
 //********************************************************************************************************************
-// Returns a pointer to an object (if the object exists).  To guarantee safety, object access always utilises the ID
-// so that we don't run into issues if the object has been collected.
+// Returns a locked pointer to an object if it still exists.  Weak-pinned wrappers retain a safe header pointer between
+// accesses, avoiding repeated global resource-table lookups without delaying object termination.
 
 OBJECTPTR access_object(GCobject *Object)
 {
@@ -118,34 +118,38 @@ OBJECTPTR access_object(GCobject *Object)
       Object->accesscount++;
       return Object->ptr;
    }
-   else if (not Object->uid) return nullptr; // Object reference is dead
-   else if ((not Object->ptr) or Object->is_detached()) {
-      // Detached objects are always accessed via UID, even if we have a pointer reference.
+   if (not Object->uid) return nullptr;
+
+   if (Object->is_pinned()) {
+      if (Object->ptr->collecting()) {
+         Object->ptr->unpinWeak();
+         Object->set_pinned(false);
+         Object->ptr = nullptr;
+         Object->uid = 0;
+         return nullptr;
+      }
+      if (auto error = Object->ptr->lock(); error != ERR::Okay) {
+         kt::Log(__FUNCTION__).warning("#%d lock() failed: %s, Queue: %d", Object->uid, GetErrorMsg(error),
+            Object->ptr->Queue.load());
+         return nullptr;
+      }
+   }
+   else {
       OBJECTPTR obj_ptr;
       if (auto error = AccessObject(Object->uid, 5000, &obj_ptr); !error) {
          Object->ptr = obj_ptr;
          Object->set_locked(true);
+         Object->ptr->pinWeak();
+         Object->set_pinned(true);
       }
       else if (error IS ERR::DoesNotExist) {
-         kt::Log log(__FUNCTION__);
-         log.trace("Object #%d has been terminated.", Object->uid);
+         kt::Log(__FUNCTION__).trace("Object #%d has been terminated.", Object->uid);
          Object->ptr = nullptr;
          Object->uid = 0;
       }
    }
-   else if (auto error = Object->ptr->lock(); error != ERR::Okay) {
-      kt::Log("access_object").warning("#%d lock() failed: %s, Queue: %d", Object->uid, GetErrorMsg(error), Object->ptr->Queue.load());
-      return nullptr;
-   }
 
-   if (Object->ptr) {
-      #if LUA_USE_ASSERT
-         // This error indicates that the object was forcibly terminated (e.g. because the parent was terminated).
-         // The client should have marked the object as detached in order to prevent this issue.
-         lj_assertX(Object->ptr->Class, "Object terminated while still attached.");
-      #endif
-      Object->accesscount++;
-   }
+   if (Object->ptr) Object->accesscount++;
 
    return Object->ptr;
 }
@@ -157,12 +161,12 @@ void release_object(GCobject *Object)
          if (Object->is_locked()) {
             ReleaseObject(Object->ptr);
             Object->set_locked(false);
-            Object->ptr = nullptr;
+            if (not Object->is_pinned()) Object->ptr = nullptr;
          }
          else {
             #ifndef NDEBUG
             if (Object->ptr->Queue.load() <= 0) {
-               kt::Log("release_object").warning("#%d Queue underflow before unlock: Queue: %d, ThreadID: %d, OurThread: %d",
+               kt::Log(__FUNCTION__).warning("#%d Queue underflow before unlock: Queue: %d, ThreadID: %d, OurThread: %d",
                   Object->uid, Object->ptr->Queue.load(), Object->ptr->ThreadID.load(), GetThreadID());
                DEBUG_BREAK
             }

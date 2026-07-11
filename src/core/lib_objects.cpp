@@ -355,8 +355,6 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 {
    kt::Log log("Free");
 
-   bool is_placement = Object->defined(NF::PLACEMENT);
-
    {
       ScopedObjectAccess objlock(Object);
       if (not objlock.granted()) return ERR::AccessObject;
@@ -425,7 +423,7 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 
       // Object destruction is guaranteed; queued async actions can be cancelled safely.
 
-      if (not is_placement) Object->pin();
+      Object->pin();
       drain_action_queue(Object->UID, true);
 
       // Mark the object as being in the free process.  The mark prevents any further access to the object via
@@ -500,22 +498,21 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
       }
    } // Object lock
 
-   if (not is_placement) {
-      Object->setFlag(NF::ZOMBIE);
-      if (Object->RefCount.load(std::memory_order_acquire) IS 1) {
-         // Fast path: only the terminator's own strong pin remains (no weak pins), so no other holder can race
-         // the release and the zombie registry can be bypassed entirely.
-         Object->RefCount.store(0, std::memory_order_release);
-         free_object_block(Object);
-      }
-      else {
-         {
-            std::lock_guard lock(glZombieLock);
-            glZombies.emplace(Object);
-         }
-         Object->unpin();
-      }
+   Object->setFlag(NF::ZOMBIE);
+   if (Object->RefCount.load(std::memory_order_acquire) IS 1) {
+      // Fast path: only the terminator's own strong pin remains (no weak pins), so no other holder can race
+      // the release and the zombie registry can be bypassed entirely.
+      Object->RefCount.store(0, std::memory_order_release);
+      free_object_block(Object);
    }
+   else {
+      {
+         std::lock_guard lock(glZombieLock);
+         glZombies.emplace(Object);
+      }
+      Object->unpin();
+   }
+
    return ERR::Okay;
 }
 
@@ -1778,6 +1775,45 @@ OBJECTPTR GetObjectPtr(OBJECTID ObjectID)
 /*********************************************************************************************************************
 
 -FUNCTION-
+PinWeakObject: Resolves an object ID to a weak-pinned object pointer.
+Status: private
+
+This function is for internal object reference-count handling only.  It resolves an object ID to its address and
+acquires a weak pin in the same step, while the object registry still proves the pointer live.  Object teardown
+removes the registry entry before evaluating the pin count, so a pin acquired through this function is always
+observed by the terminating thread and the returned header remains valid - at worst as a zombie - until the pin is
+released with `unpinWeak()`.
+
+Objects that are already collecting, and placement objects (which cannot be pinned), result in `NULL`.
+
+-INPUT-
+oid Object: The ID of the object to pin.
+
+-RESULT-
+obj: The address of the weak-pinned object, or `NULL` if the ID does not relate to a pinnable object.
+
+-TAGS-
+api-owns-result, nullable-result
+
+*********************************************************************************************************************/
+
+OBJECTPTR PinWeakObject(OBJECTID ObjectID)
+{
+   std::unique_lock lock(glmObjects);
+   if (auto object_rec = glObjects.find(ObjectID); object_rec != glObjects.end()) {
+      auto object = object_rec->second.Object;
+      if ((object) and (object->UID IS ObjectID) and (not object->collecting())) {
+         object->pinWeak();
+         return object;
+      }
+   }
+
+   return nullptr;
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
 GetOwnerID: Returns the unique ID of an object's owner.
 
 This function returns an identifier for the owner of any valid object.  This is the fastest way to retrieve the
@@ -2069,21 +2105,10 @@ caller-owns-result, creates-resource, blocking, callback-inlines
 
 ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 {
-   if ((Flags & NF::PLACEMENT) != NF::NIL) {
-      // Support for C++ placement is restricted to non-extended class.  In theory the user can safely declare
-      // `objFile file` if the implementation has no `extFile` definition.  Otherwise the final object size would
-      // be too small, and the extFile constructor would never be called.
-      //
-      // objFile() {
-      //    OBJECTPTR self = this;
-      //    NewObject(CLASS_ID, NF::PLACEMENT, &self);
-      // }
-
-      //if (not Object) return ERR::NullArgs;
-      //if (tlContext.back().obj IS *Object) return ERR::Okay; // Guard against recursive calls (not an error)
-      //return new_placement(ClassID, Flags, *Object);
-      return ERR::NoSupport;
-   }
+   // A historical note on the use of C++ placement-new for Kotuku objects: In theory the user could safely declare
+   // `objFile file` and we could support it if the implementation had no `extFile` definition.  As this is the only
+   // circumstance under which placement-new could work, it is largely pointless to support it because too few
+   // classes are ever that simple.
 
    kt::Log log(__FUNCTION__);
 
@@ -2206,106 +2231,6 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
    }
    else return ERR::AllocMemory;
 }
-
-//********************************************************************************************************************
-// Object creation hook for the Object class constructor in existing memory.
-//
-// 2026-05-25: This code is valid but will only work for simple classes.
-
-#if 0
-static ERR new_placement(CLASSID ClassID, NF Flags, OBJECTPTR Object)
-{
-   kt::Log log("New");
-
-   auto class_id = ClassID;
-   if ((class_id IS CLASSID::NIL) or (not Object)) return log.warning(ERR::NullArgs);
-
-   auto mc = (extMetaClass *)FindClass(class_id);
-   if (not mc) return log.warning(ERR::MissingClass);
-
-   // If the object is local then turn off use of the UNTRACKED flag (otherwise the child will
-   // end up being tracked to its task rather than its parent object).
-
-   if ((Flags & NF::LOCAL) != NF::NIL) Flags &= ~NF::UNTRACKED;
-
-   // Force certain flags on the class' behalf
-
-   if ((mc->Flags & CLF::NO_OWNERSHIP) != CLF::NIL) Flags |= NF::UNTRACKED;
-
-   if ((Flags & NF::SUPPRESS_LOG) IS NF::NIL) {
-      log.branch("%s #%d, Flags: $%x", mc->ClassName.c_str(), glResourceID.load(std::memory_order_relaxed), int(Flags));
-   }
-
-   OBJECTID object_id = glResourceID++;
-
-   new (Object) class Object; // Class constructors aren't expected to initialise the Object header, we do it for them
-
-   Object->UID     = object_id;
-   Object->Class   = (extMetaClass *)mc;
-   Object->setFlag(Flags & (NF::LOCAL|NF::PLACEMENT)); // NF::PLACEMENT indicates the object was created by placement-new
-
-   {
-      std::lock_guard resource_lock(glmResources);
-      std::lock_guard object_lock(glmObjects);
-      glResources.insert_or_assign(object_id, ResourceRecord(object_id, Object, 0, &glResourceObject));
-      glObjects.insert_or_assign(object_id, ObjectRecord(Object));
-   }
-
-   // Tracking for our new object is configured here.
-
-   if ((mc->Flags & CLF::NO_OWNERSHIP) != CLF::NIL) { } // Used by classes like RootModule to avoid tracking back to the task.
-   else if ((Flags & NF::UNTRACKED) != NF::NIL) {
-      if (class_id IS CLASSID::MODULE); // Untracked modules have no owner, due to the expunge process.
-      else {
-         // Untracked objects are owned by the current task.  This ensures that the object
-         // is deallocated correctly when the Core is closed.
-
-         if (glCurrentTask) {
-            ScopedObjectAccess lock(glCurrentTask);
-            set_owner(Object, glCurrentTask);
-         }
-      }
-   }
-   else { // Track the object to the current context
-      auto obj = current_resource();
-      if (obj IS &glDummyObject) { // If dummy object, track to the task
-         if (glCurrentTask) {
-            ScopedObjectAccess lock(glCurrentTask);
-            set_owner(Object, glCurrentTask);
-         }
-      }
-      else set_owner(Object, obj);
-   }
-
-   tlContext.emplace_back(Object, nullptr, AC::NIL);
-
-   ERR error = ERR::Okay;
-
-   if (mc->Base) {
-      if (mc->Base->ActionTable[int(AC::NewObject)].PerformAction) {
-         if ((error = mc->Base->ActionTable[int(AC::NewObject)].PerformAction(Object, nullptr)) != ERR::Okay) {
-            log.warning(error);
-         }
-      }
-   }
-
-   if ((!error) and (mc->ActionTable[int(AC::NewObject)].PerformAction)) {
-      if ((error = mc->ActionTable[int(AC::NewObject)].PerformAction(Object, nullptr)) != ERR::Okay) {
-         log.warning(error);
-      }
-   }
-
-   tlContext.pop_back();
-
-   if (!error) {
-      ((extMetaClass *)Object->Class)->OpenCount++;
-      if (mc->Base) mc->Base->OpenCount++;
-   }
-   else FreeResource(Object); // This won't free the emplacement target, only the resources associated with it
-
-   return error;
-}
-#endif
 
 /*********************************************************************************************************************
 
