@@ -118,6 +118,7 @@ OBJECTPTR access_object(GCobject *Object)
       Object->accesscount++;
       return Object->ptr;
    }
+
    if (not Object->uid) return nullptr;
 
    if (Object->is_pinned()) {

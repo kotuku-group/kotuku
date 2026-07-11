@@ -14,7 +14,8 @@
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>GradientMesh interpolates colour across a grid of curved patches.  Each patch is bounded by four cubic Bezier edges and carries one colour at each corner.  Rendering tessellates the patches into Gouraud triangles, so colour follows the patch geometry rather than a one-dimensional colour ramp.</p>
-<p>The inherited colour-ramp fields <code>Stops</code>, <code>ColourMap</code>, <code>SpreadMethod</code> and <code>Colour</code> are not supported by this class. Patch geometry and corner colours are supplied through <fl>Patches</fl>.</p></description>
+<p>The inherited colour-ramp fields <code>Stops</code>, <code>ColourMap</code>, <code>SpreadMethod</code> and <code>Colour</code> are not supported by this class. Patch geometry and corner colours are supplied through <fl>Patches</fl>.</p>
+<p>When a mesh is exported to SVG, valid <fl>Rows</fl> and <fl>Columns</fl> metadata is preserved through the standard shared-edge <code>meshrow</code> syntax.  A mesh without valid row metadata (e.g. a non-rectangular grid) is flattened to a single row on export; every patch survives intact, with patches that do not share an edge with their predecessor written as independent patches, but the original row structure is not retained.</p></description>
     <source>
       <file path="painters/">gradient_mesh.cpp</file>
     </source>
@@ -39,6 +40,7 @@
       <description>
 <p>The Patches array defines one or more bilinear Coons patches.  Each <st>MeshPatchRecord</st> contains four cubic Bezier edges in clockwise order (<code>Top</code>, <code>Right</code>, <code>Bottom</code>, <code>Left</code>) plus the top-left, top-right, bottom-right and bottom-left corner colours.</p>
 <p>The coordinate system for patch positions is determined by <class name="Gradient" field="Units">Gradient.Units</class>.  Under <code>BOUNDING_BOX</code>, normalised patch coordinates in the range <code>0 - 1.0</code> are scaled into the target path's bounds.  Under <code>USERSPACE</code>, positions are taken directly in the viewport's coordinate system.</p>
+<p>Assigning an empty array clears the mesh entirely, including the <fl>Rows</fl> and <fl>Columns</fl> metadata.</p>
       </description>
     </field>
 
