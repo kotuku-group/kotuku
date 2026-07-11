@@ -50,6 +50,7 @@ using ModTest    = void (*)(std::string_view, int *, int *);
 
   structdef("ModHeader", { comment="Module file header", restrict="c" }, [[
     int(MHF) Flags                 # Special flags, type of function table wanted from the Core
+    int CoreTimestamp              # Timestamp of the core build that this module was compiled against.
     cstr Definitions               # Module definition string, usable by run-time languages such as Tiri
     fptr(error obj struct(*CoreBase)) Init # A one-off initialisation routine for when the module is first opened.
     fptr(void obj) Close           # A function that will be called each time the module is closed.
@@ -67,6 +68,7 @@ using ModTest    = void (*)(std::string_view, int *, int *);
    ModHeader(ModInit pInit, ModClose pClose, ModOpen pOpen, ModExpunge pExpunge, ModTest pTest,
       CSTRING pDef, STRUCTS *pStructs, CSTRING pName, CSTRING pNamespace) {
       Flags         = MHF::DEFAULT;
+      CoreTimestamp = CORE_BUILD_DATE;
       Definitions   = pDef;
       StructDefs    = pStructs;
       Init          = pInit;

@@ -706,7 +706,7 @@ class objTask;
    inline bool readable() const { return (Flags & FD_READ) ? true : false; }
    inline bool writeable() const { return (Flags & (FD_WRITE|FD_INIT)) ? true : false; }
    inline bool pure() const { return (Flags & FD_PURE) ? true : false; }
-  ]]) -- [32/52]
+  ]])
 
   structdef("ClassRecord", { comment="Meta information for a class, as recorded in the class database." }, [[
     cid ClassID        # Unique class identifier (hash of Name)
@@ -946,7 +946,7 @@ struct obj_write {
 inline auto write_hash = [](const obj_write &a, const obj_write &b) { return a.Hash < b.Hash; };
 
 typedef std::vector<obj_write> WRITE_TABLE;
-#endif
+#endif // PRV_METACLASS
 ]==])
 
   -- Declare classes for their inclusion in outgoing Core documentation
