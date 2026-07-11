@@ -28,6 +28,12 @@ reset to `BOUNDING_BOX` during initialisation.
 
 *********************************************************************************************************************/
 
+extGradientDistal::~extGradientDistal() {
+   if (SDFCache) delete SDFCache;
+}
+
+//********************************************************************************************************************
+
 static ERR GRADIENTDISTAL_Init(extGradientDistal *Self)
 {
    kt::Log log;

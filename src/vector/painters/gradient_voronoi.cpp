@@ -14,6 +14,12 @@ reset to `BOUNDING_BOX` during initialisation.
 
 *********************************************************************************************************************/
 
+extGradientVoronoi::~extGradientVoronoi() {
+   if (WorleyCache) delete WorleyCache;
+}
+
+//********************************************************************************************************************
+
 static ERR GRADIENTVORONOI_Init(extGradientVoronoi *Self)
 {
    kt::Log log;

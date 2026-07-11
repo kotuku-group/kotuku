@@ -13,6 +13,12 @@ reset to `BOUNDING_BOX` during initialisation.
 
 *********************************************************************************************************************/
 
+extGradientContour::~extGradientContour() {
+   if (ContourCache) delete ContourCache;
+}
+
+//********************************************************************************************************************
+
 static ERR GRADIENTCONTOUR_Init(extGradientContour *Self)
 {
    kt::Log log;

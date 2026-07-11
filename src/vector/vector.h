@@ -574,9 +574,7 @@ class extGradientContour : public extGradient {
 
    extGradientContour(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
 
-   ~extGradientContour() {
-      if (ContourCache) delete ContourCache;
-   }
+   ~extGradientContour();
 };
 
 class extGradientGouraud : public extGradient {
@@ -624,9 +622,7 @@ class extGradientDistal : public extGradient {
 
    extGradientDistal(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
 
-   ~extGradientDistal() {
-      if (SDFCache) delete SDFCache;
-   }
+   ~extGradientDistal();
 };
 
 class extGradientVoronoi : public extGradient {
@@ -651,9 +647,7 @@ class extGradientVoronoi : public extGradient {
 
    extGradientVoronoi(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
 
-   ~extGradientVoronoi() {
-      if (WorleyCache) delete WorleyCache;
-   }
+   ~extGradientVoronoi();
 };
 
 class extVectorImage : public objVectorImage, public SceneDef {
