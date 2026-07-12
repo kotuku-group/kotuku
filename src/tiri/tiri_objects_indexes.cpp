@@ -727,12 +727,14 @@ static int object_get_struct(lua_State *Lua, const obj_read &Handle, GCobject *D
       if (Field->Arg) {
          APTR result;
          if (!(error = Object->get(Field->FieldID, result))) {
-            if (result) { // Structs are copied into standard Lua tables.
-               if (Field->Flags & FD_RESOURCE) {
-                  push_struct(Lua->script, result, (CSTRING)Field->Arg, (Field->Flags & FD_ALLOC) ? TRUE : FALSE,
-                     TRUE);
+            if (result) {
+               // Object fields expose non-owning live views.  Resource fields may transfer ownership when FD_ALLOC is
+               // set, matching other struct-returning API bridges.
+               bool is_resource = Field->Flags & FD_RESOURCE;
+               if (not push_struct(Lua->script, result, (CSTRING)Field->Arg,
+                     is_resource and (Field->Flags & FD_ALLOC), is_resource)) {
+                  error = ERR::Search;
                }
-               else error = named_struct_to_table(Lua, (CSTRING)Field->Arg, result);
             }
             else lua_pushnil(Lua);
          }

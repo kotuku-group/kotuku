@@ -54,6 +54,11 @@ terminated arrays, use [0].
 
 static constexpr int MAX_STRUCT_DEF = 2048; // Struct definitions are typically 100 - 400 bytes.
 
+inline GCstruct * push_struct_def(lua_State *Lua, APTR Address, struct_record &StructDef, bool Deallocate)
+{
+   return lua_pushstruct(Lua, StructDef, Address, Deallocate ? STRUCT_DEALLOCATE : 0);
+}
+
 // Handles both construction and destruction of std::string usage in a structure.
 
 static void process_struct_cpp_strings(const struct_record &StructDef, APTR Address, bool Construct)
@@ -369,11 +374,6 @@ GCstruct * push_struct(extTiri *Self, APTR Address, std::string_view StructName,
       log.warning("Unrecognised struct '%s'", StructName.data());
       return nullptr;
    }
-}
-
-GCstruct * push_struct_def(lua_State *Lua, APTR Address, struct_record &StructDef, bool Deallocate)
-{
-   return lua_pushstruct(Lua, StructDef, Address, Deallocate ? STRUCT_DEALLOCATE : 0);
 }
 
 //********************************************************************************************************************

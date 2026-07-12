@@ -39,3 +39,20 @@ end
    font.string = nil
    assert(font.string is nil, 'Clearing String should remove the previous value')
 end
+
+@Test(hotpath=true) function StructFieldLiveView()
+   font <close> = obj.new('font')
+
+   colour = font.colour
+   assert(type(colour) is 'struct', 'Font.colour should be exposed as a native struct')
+
+   colour.red = 17
+   colour.green = 29
+   assert(font.colour.red is 17, 'Writing through the struct view should update the object field')
+   assert(font.colour.green is 29, 'Repeated object field reads should observe live struct changes')
+
+   replacement = struct.new('RGB8', { red=41, green=53, blue=67, alpha=79 })
+   font.colour = replacement
+   assert(colour.red is 41, 'Whole-struct assignment should update an existing live view')
+   assert(font.colour.alpha is 79, 'Whole-struct assignment should copy every field')
+end
