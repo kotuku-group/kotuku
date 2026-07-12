@@ -75,7 +75,8 @@ static void process_struct_cpp_strings(const struct_record &StructDef, APTR Addr
       APTR field_address = (int8_t *)Address + field->Offset;
       auto type = field->Type;
 
-      if ((type & FD_STRUCT) and (not (type & FD_PTR)) and (not field->StructRef.empty())) {
+      if ((type & FD_STRUCT) and (not (type & FD_PTR)) and (not (type & FD_CPP)) and
+            (not field->StructRef.empty())) {
          auto def = glStructs.find(std::string_view(field->StructRef));
          if (def != glStructs.end()) {
             if ((type & FD_ARRAY) and (field->ArraySize > 0)) {
@@ -92,6 +93,41 @@ static void process_struct_cpp_strings(const struct_record &StructDef, APTR Addr
       if ((type & FD_STRING) and (type & FD_CPP) and (not (type & FD_ARRAY))) {
          if (Construct) new (field_address) std::string();
          else ((std::string *)field_address)->~basic_string();
+      }
+
+      if ((type & FD_CPP) and (type & FD_ARRAY)) {
+         if (type & FD_STRING) {
+            if (Construct) new (field_address) kt::vector<std::string>();
+            else ((kt::vector<std::string> *)field_address)->~vector();
+         }
+         else if (type & FD_FLOAT) {
+            if (Construct) new (field_address) kt::vector<float>();
+            else ((kt::vector<float> *)field_address)->~vector();
+         }
+         else if (type & FD_DOUBLE) {
+            if (Construct) new (field_address) kt::vector<double>();
+            else ((kt::vector<double> *)field_address)->~vector();
+         }
+         else if (type & FD_INT64) {
+            if (Construct) new (field_address) kt::vector<int64_t>();
+            else ((kt::vector<int64_t> *)field_address)->~vector();
+         }
+         else if (type & FD_INT) {
+            if (Construct) new (field_address) kt::vector<int>();
+            else ((kt::vector<int> *)field_address)->~vector();
+         }
+         else if (type & FD_WORD) {
+            if (Construct) new (field_address) kt::vector<int16_t>();
+            else ((kt::vector<int16_t> *)field_address)->~vector();
+         }
+         else if (type & FD_BYTE) {
+            if (Construct) new (field_address) kt::vector<uint8_t>();
+            else ((kt::vector<uint8_t> *)field_address)->~vector();
+         }
+         else {
+            if (Construct) new (field_address) kt::vector<int>();
+            else ((kt::vector<int> *)field_address)->~vector();
+         }
       }
 
       if (Construct) ++field;

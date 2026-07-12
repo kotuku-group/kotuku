@@ -16,6 +16,7 @@
 #include "lib.h"
 
 #include <format>
+#include <cstring>
 #include <optional>
 #include <kotuku/main.h>
 
@@ -35,9 +36,74 @@ static bool write_primitive_field(lua_State *L, APTR Address, int Type, int Stac
    return true;
 }
 
+template <typename T> static void copy_array_to_vector(APTR Address, GCarray *Source)
+{
+   auto &dest = ((kt::vector<T> *)Address)[0];
+   dest.resize(Source->len);
+   if (Source->len) std::memcpy(dest.data(), Source->arraydata(), size_t(Source->len) * sizeof(T));
+}
+
+static void write_array_field(lua_State *L, APTR Address, const struct_field &Field, int StackIndex, CSTRING FieldName)
+{
+   if (not lua_isarray(L, StackIndex)) {
+      luaL_error(L, ERR::InvalidType, "Array field '%s' requires a native array.", FieldName);
+   }
+
+   auto source = lua_toarray(L, StackIndex);
+   auto expected_type = ff_to_aet(Field.Type);
+
+   if ((Field.Type & FD_STRING) and (not (Field.Type & FD_CPP))) {
+      luaL_error(L, ERR::NoSupport, "Raw C string array field '%s' does not support assignment.", FieldName);
+   }
+
+   if ((Field.Type & FD_STRING) and (Field.Type & FD_CPP)) {
+      if ((source->elemtype != AET::STR_GC) and (source->elemtype != AET::CSTR) and
+            (source->elemtype != AET::STR_CPP)) {
+         luaL_error(L, ERR::InvalidType, "Array field '%s' requires string elements.", FieldName);
+      }
+
+      auto &dest = ((kt::vector<std::string> *)Address)[0];
+      dest.resize(source->len);
+      for (MSize i = 0; i < source->len; i++) {
+         if (source->elemtype IS AET::STR_GC) {
+            auto str = strref(source->get<GCRef>()[i]);
+            dest[i].assign(strdata(str), str->len);
+         }
+         else if (source->elemtype IS AET::CSTR) dest[i].assign(source->get<CSTRING>()[i]);
+         else dest[i] = source->get<std::string>()[i];
+      }
+      return;
+   }
+
+   if (source->elemtype != expected_type) {
+      luaL_error(L, ERR::InvalidType, "Array field '%s' has an incompatible element type.", FieldName);
+   }
+
+   if (Field.Type & FD_CPP) {
+      if (Field.Type & FD_FLOAT) copy_array_to_vector<float>(Address, source);
+      else if (Field.Type & FD_DOUBLE) copy_array_to_vector<double>(Address, source);
+      else if (Field.Type & FD_INT64) copy_array_to_vector<int64_t>(Address, source);
+      else if (Field.Type & FD_INT) copy_array_to_vector<int>(Address, source);
+      else if (Field.Type & FD_WORD) copy_array_to_vector<int16_t>(Address, source);
+      else if (Field.Type & FD_BYTE) copy_array_to_vector<uint8_t>(Address, source);
+      else luaL_error(L, ERR::NoSupport, "Array field '%s' uses an unsupported vector type.", FieldName);
+   }
+   else {
+      if (source->len > MSize(Field.ArraySize)) {
+         luaL_error(L, ERR::OutOfRange, "Array assignment for field '%s' exceeds its fixed size of %d.", FieldName,
+            Field.ArraySize);
+      }
+      if (source->len) std::memcpy(Address, source->arraydata(), size_t(source->len) * source->elemsize);
+   }
+}
+
 static void write_field(lua_State *L, APTR Address, const struct_field &Field, int StackIndex, CSTRING FieldName)
 {
-   if (Field.Type & FD_STRING) {
+   if (Field.Type & FD_ARRAY) {
+      write_array_field(L, Address, Field, StackIndex, FieldName);
+      return;
+   }
+   else if (Field.Type & FD_STRING) {
       if ((Field.Type & FD_CPP) and (not (Field.Type & FD_ARRAY))) {
          size_t length;
          auto value = luaL_checklstring(L, StackIndex, &length);
@@ -73,6 +139,51 @@ static void write_field(lua_State *L, APTR Address, const struct_field &Field, i
    luaL_error(L, ERR::InvalidType, "Field '%s' does not support assignment (type %x).", FieldName, Field.Type);
 }
 
+static bool struct_has_unsupported_cpp_arrays(const struct_record &Def)
+{
+   for (auto &field : Def.Fields) {
+      if ((field.Type & FD_CPP) and (field.Type & FD_ARRAY) and
+            (not (field.Type & (FD_STRING|FD_FLOAT|FD_DOUBLE|FD_INT64|FD_INT|FD_WORD|FD_BYTE)))) return true;
+      if ((field.Type & FD_STRUCT) and (not (field.Type & FD_PTR)) and (not (field.Type & FD_CPP)) and
+            (not field.StructRef.empty())) {
+         if (auto child = glStructs.find(std::string_view(field.StructRef)); child != glStructs.end()) {
+            if (struct_has_unsupported_cpp_arrays(child->second)) return true;
+         }
+      }
+   }
+   return false;
+}
+
+static void copy_cpp_fields(const struct_record &Def, APTR Dest, CPTR Source)
+{
+   for (auto &field : Def.Fields) {
+      auto dest = (int8_t *)Dest + field.Offset;
+      auto source = (const int8_t *)Source + field.Offset;
+      if ((field.Type & FD_CPP) and (field.Type & FD_ARRAY)) {
+         if (field.Type & FD_STRING) {
+            ((kt::vector<std::string> *)dest)[0] = ((const kt::vector<std::string> *)source)[0];
+         }
+         else if (field.Type & FD_FLOAT) ((kt::vector<float> *)dest)[0] = ((const kt::vector<float> *)source)[0];
+         else if (field.Type & FD_DOUBLE) ((kt::vector<double> *)dest)[0] = ((const kt::vector<double> *)source)[0];
+         else if (field.Type & FD_INT64) ((kt::vector<int64_t> *)dest)[0] = ((const kt::vector<int64_t> *)source)[0];
+         else if (field.Type & FD_INT) ((kt::vector<int> *)dest)[0] = ((const kt::vector<int> *)source)[0];
+         else if (field.Type & FD_WORD) ((kt::vector<int16_t> *)dest)[0] = ((const kt::vector<int16_t> *)source)[0];
+         else if (field.Type & FD_BYTE) ((kt::vector<uint8_t> *)dest)[0] = ((const kt::vector<uint8_t> *)source)[0];
+      }
+      else if ((field.Type & FD_STRING) and (field.Type & FD_CPP)) {
+         ((std::string *)dest)[0] = ((const std::string *)source)[0];
+      }
+      else if ((field.Type & FD_STRUCT) and (not (field.Type & FD_PTR)) and (not field.StructRef.empty())) {
+         if (auto child = glStructs.find(std::string_view(field.StructRef)); child != glStructs.end()) {
+            int count = (field.Type & FD_ARRAY) ? field.ArraySize : 1;
+            for (int i = 0; i < count; i++) {
+               copy_cpp_fields(child->second, dest + (child->second.Size * i), source + (child->second.Size * i));
+            }
+         }
+      }
+   }
+}
+
 static bool read_primitive_field(lua_State *L, APTR Address, int Type, int ArraySize)
 {
    if (not (Type & (FD_FLOAT|FD_DOUBLE|FD_INT64|FD_INT|FD_WORD|FD_BYTE))) return false;
@@ -88,6 +199,12 @@ static bool read_primitive_field(lua_State *L, APTR Address, int Type, int Array
    else if (Type & FD_WORD)   lua_pushinteger(L, ((int16_t *)Address)[0]);
    else if (Type & FD_BYTE)   lua_pushinteger(L, ((uint8_t *)Address)[0]);
    return true;
+}
+
+template <typename T> static void push_vector_array(lua_State *L, APTR Address, AET Type)
+{
+   auto &source = ((kt::vector<T> *)Address)[0];
+   lua_createarray(L, source.size(), Type, source.data(), ARRAY_CACHED);
 }
 
 [[nodiscard]] static std::optional<std::reference_wrapper<struct_field>> find_field(GCstruct *Struct,
@@ -189,6 +306,39 @@ static void check_lifecycle(lua_State *L, GCstruct *Struct, CSTRING FieldName)
    }
 }
 
+static int struct_next_pair(lua_State *L)
+{
+   auto value = lua_tostruct(L, lua_upvalueindex(1));
+   int field_index = lua_tointeger(L, lua_upvalueindex(2));
+   if (field_index < 0 or field_index >= int(value->def->Fields.size())) return 0;
+
+   auto &field = value->def->Fields[field_index];
+   check_lifecycle(L, value, field.Name.c_str());
+   lua_pushinteger(L, field_index + 1);
+   lua_replace(L, lua_upvalueindex(2));
+   lua_pushstring(L, field.Name);
+   lua_getfield(L, lua_upvalueindex(1), field.Name.c_str());
+   return 2;
+}
+
+static int struct_pairs(lua_State *L)
+{
+   lj_lib_checkstruct(L, 1);
+   lua_pushvalue(L, 1);
+   lua_pushinteger(L, 0);
+   lua_pushcclosure(L, struct_next_pair, 2);
+   lua_pushnil(L);
+   lua_pushnil(L);
+   return 3;
+}
+
+static int struct_tostring(lua_State *L)
+{
+   auto value = lj_lib_checkstruct(L, 1);
+   lua_pushfstring(L, "%s: %p", value->def->Name.c_str(), value->data);
+   return 1;
+}
+
 static int struct_get(lua_State *L)
 {
    auto *value = lj_lib_checkstruct(L, 1);
@@ -237,6 +387,15 @@ static int struct_get(lua_State *L)
          }
          else make_struct_array(L, field.StructRef, array_size, address);
       }
+      else if ((field.Type & FD_CPP) and (field.Type & FD_ARRAY) and (not (field.Type & FD_STRING))) {
+         if (field.Type & FD_FLOAT) push_vector_array<float>(L, address, AET::FLOAT);
+         else if (field.Type & FD_DOUBLE) push_vector_array<double>(L, address, AET::DOUBLE);
+         else if (field.Type & FD_INT64) push_vector_array<int64_t>(L, address, AET::INT64);
+         else if (field.Type & FD_INT) push_vector_array<int>(L, address, AET::INT32);
+         else if (field.Type & FD_WORD) push_vector_array<int16_t>(L, address, AET::INT16);
+         else if (field.Type & FD_BYTE) push_vector_array<uint8_t>(L, address, AET::BYTE);
+         else luaL_error(L, ERR::NoSupport, "Vector field '%s' uses an unsupported element type.", field_name);
+      }
       else if (field.Type & FD_STRUCT) {
          GCstruct *parent = nullptr;
          if (not value->is_lifecycle_bound()) {
@@ -253,7 +412,7 @@ static int struct_get(lua_State *L)
          if (field.Type & FD_ARRAY) {
             if (field.Type & FD_CPP) {
                auto vector = (kt::vector<std::string> *)address;
-               lua_createarray(L, vector->size(), AET::STR_CPP, (APTR *)vector->data(), ARRAY_CACHED);
+               lua_createarray(L, vector->size(), AET::STR_CPP, vector, ARRAY_CACHED);
             }
             else lua_createarray(L, array_size, AET::CSTR, (APTR *)address, ARRAY_CACHED);
          }
@@ -295,6 +454,51 @@ static int struct_set(lua_State *L)
    return 0;
 }
 
+static void copy_struct_payload(lua_State *L, GCstruct *Dest, GCstruct *Source)
+{
+   if (Dest->def != Source->def) luaL_error(L, ERR::Mismatch, "Struct definitions must match for copying.");
+   check_lifecycle(L, Dest, "copy destination");
+   check_lifecycle(L, Source, "copy source");
+   if ((not Dest->data) or (not Source->data)) luaL_error(L, ERR::Failed, "Cannot copy a null struct payload.");
+   if (Dest->data IS Source->data) return;
+   if (struct_has_unsupported_cpp_arrays(*Dest->def)) {
+      luaL_error(L, ERR::NoSupport, "Struct copy encountered an unsupported C++ array field type.");
+   }
+
+   auto dest_start = uintptr_t(Dest->data);
+   auto source_start = uintptr_t(Source->data);
+   auto size = size_t(Dest->structsize);
+   if ((dest_start < source_start + size) and (source_start < dest_start + size)) {
+      luaL_error(L, ERR::NoSupport, "Struct copy does not support overlapping payloads.");
+   }
+
+   destroy_struct_cpp_strings(*Dest->def, Dest->data);
+   std::memcpy(Dest->data, Source->data, size);
+   construct_struct_cpp_strings(*Dest->def, Dest->data);
+   copy_cpp_fields(*Dest->def, Dest->data, Source->data);
+}
+
+LJLIB_CF(struct_copy)
+{
+   auto dest = lj_lib_checkstruct(L, 1);
+   auto source = lj_lib_checkstruct(L, 2);
+   copy_struct_payload(L, dest, source);
+   lua_settop(L, 1);
+   return 1;
+}
+
+LJLIB_CF(struct_clone)
+{
+   auto source = lj_lib_checkstruct(L, 1);
+   check_lifecycle(L, source, "clone source");
+   if (struct_has_unsupported_cpp_arrays(*source->def)) {
+      luaL_error(L, ERR::NoSupport, "Struct clone encountered an unsupported C++ array field type.");
+   }
+   auto dest = lua_pushstruct(L, *source->def);
+   copy_struct_payload(L, dest, source);
+   return 1;
+}
+
 #include "lj_libdef.h"
 
 extern "C" int luaopen_struct(lua_State *L)
@@ -309,10 +513,16 @@ extern "C" int luaopen_struct(lua_State *L)
    lua_setfield(L, -2, "__newindex");
    lua_pushcfunction(L, struct_len);
    lua_setfield(L, -2, "__len");
+   lua_pushcfunction(L, struct_pairs);
+   lua_setfield(L, -2, "__pairs");
+   lua_pushcfunction(L, struct_tostring);
+   lua_setfield(L, -2, "__tostring");
    setgcref(basemt_it(g, LJ_TSTRUCT), obj2gco(lib));
 
    reg_iface_prototype("struct", "new", { TiriType::Struct }, { TiriType::Str, TiriType::Table });
    reg_iface_prototype("struct", "size", { TiriType::Num }, { TiriType::Str });
    reg_iface_prototype("struct", "structSize", { TiriType::Num }, { TiriType::Struct });
+   reg_iface_prototype("struct", "copy", { TiriType::Struct }, { TiriType::Struct, TiriType::Struct });
+   reg_iface_prototype("struct", "clone", { TiriType::Struct }, { TiriType::Struct });
    return 1;
 }

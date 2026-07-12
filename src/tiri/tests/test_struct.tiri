@@ -122,3 +122,89 @@ end
    assert(leaf.value is 417, 'An interior struct view should keep its parent payload alive')
    assert(leaf.name is 'parent payload remains alive', 'Anchored C++ string storage should remain valid after GC')
 end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function StructPairsAndToString()
+   MAKESTRUCT('IterableRecord', 'lCount,zsName,bEnabled')
+   local value = struct.new('IterableRecord', { count=7, name='sample', enabled=1 })
+   local fields = array<string>
+   local values = array<any>
+
+   for name, field_value in pairs(value) do
+      fields:push(name)
+      values:push(field_value)
+   end
+
+   assert(fields is array<string> { 'count', 'name', 'enabled' }, 'pairs() should preserve declaration order')
+   assert(values[0] is 7 and values[1] is 'sample' and values[2] is 1, 'pairs() should return live field values')
+   assert(tostring(value):startsWith('IterableRecord: 0x'), 'tostring() should include the struct definition name')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayFieldAssignments()
+   MAKESTRUCT('ArrayAssignmentRecord', 'lFixed[3],zlDynamic[1],zsNames[1]')
+   local value = struct.new('ArrayAssignmentRecord')
+
+   value.fixed = array<int> { 4, 5, 6 }
+   assert(value.fixed is array<int> { 4, 5, 6 }, 'Fixed array assignment should copy all elements')
+
+   value.dynamic = array<int> { 8, 9, 10, 11 }
+   assert(value.dynamic is array<int> { 8, 9, 10, 11 }, 'C++ vector assignment should resize and copy elements')
+
+   value.names = array<string> { 'alpha', 'beta' }
+   local names = value.names
+   assert(#names is 2 and names[0] is 'alpha' and names[1] is 'beta',
+      'C++ string vector assignment should copy strings')
+
+   local clone = struct.clone(value)
+   value.dynamic = array<int> { 99 }
+   value.names = array<string> { 'changed' }
+   assert(clone.dynamic is array<int> { 8, 9, 10, 11 }, 'clone() should deep-copy C++ primitive vectors')
+   local clone_names = clone.names
+   assert(#clone_names is 2 and clone_names[0] is 'alpha' and clone_names[1] is 'beta',
+      'clone() should deep-copy C++ string vectors')
+
+   try
+      value.fixed = array<int> { 1, 2, 3, 4 }
+   success
+      error('Fixed array overflow should fail')
+   end
+
+   try
+      value.fixed = array<double> { 1, 2 }
+   success
+      error('Array element type mismatch should fail')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function StructCopyAndClone()
+   MAKESTRUCT('CopyChild', 'lValue,zsLabel')
+   MAKESTRUCT('CopyRecord', 'lCount,zsName,eChild:CopyChild')
+   MAKESTRUCT('CopyMismatch', 'lCount')
+
+   local source = struct.new('CopyRecord', { count=12, name='source' })
+   source.child.value = 44
+   source.child.label = 'nested'
+
+   local clone = struct.clone(source)
+   assert(clone.count is 12 and clone.name is 'source', 'clone() should copy primitive and C++ string fields')
+   assert(clone.child.value is 44 and clone.child.label is 'nested', 'clone() should copy nested struct fields')
+
+   source.name = 'changed'
+   source.child.label = 'changed nested'
+   assert(clone.name is 'source' and clone.child.label is 'nested', 'clone strings should own independent storage')
+
+   local dest = struct.new('CopyRecord')
+   assert(struct.copy(dest, clone) is dest, 'copy() should return its destination')
+   assert(dest.count is 12 and dest.child.label is 'nested', 'copy() should replace the destination payload')
+
+   try
+      struct.copy(struct.new('CopyMismatch'), source)
+   success
+      error('Copying mismatched struct definitions should fail')
+   end
+end
