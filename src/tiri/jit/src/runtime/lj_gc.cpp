@@ -231,13 +231,14 @@ static void gc_mark(global_State *g, GCobj* o)
       if (mt) gc_markobj(g, mt);
    }
    else if (gct IS ~LJ_TSTRUCT and o != obj2gco(mainthread(g))) {
-      // Native struct - payloads hold no GC references, only the optional metatable needs marking.
+      // Native struct - payloads hold no GC references; mark the optional metatable and owning parent.
       // The main-thread lua_State shares this tag and must stay on the gray-list path below.
       GCstruct *s = gco_to_struct(o);
       gray2black(o);  // Structs are never gray (like userdata)
 
       GCtab *mt = tabref(s->metatable);
       if (mt) gc_markobj(g, mt);
+      if (gcref(s->parent)) gc_markobj(g, gcref(s->parent));
    }
    else if (gct != ~LJ_TSTR) {
       // ~LJ_TSTRUCT on the gray list is only valid for the single main-thread lua_State, which shares the tag.

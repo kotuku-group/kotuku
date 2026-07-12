@@ -2,20 +2,29 @@
 
    MAKESTRUCT('BenchmarkStruct', 'lInteger,xWide,fFloat,dDouble')
 
-   local glBenchmarkStruct = struct.new('BenchmarkStruct', {
-      integer = 1,
-      wide    = 2,
-      float   = 3.5,
-      double  = 4.5
-   })
+   MAKESTRUCT('LargeLookupRecord', 'lZulu,lAlpha,lMike,lBravo,lYankee,lCharlie,lXray,lDelta,lWhiskey,lEcho,lVictor,lFoxtrot')
+
+glMaterialise = 0
+
+glBenchmarkStruct = struct.new('BenchmarkStruct', {
+   integer = 1,
+   wide    = 2,
+   float   = 3.5,
+   double  = 4.5
+})
+
+glLargeStruct = struct.new('LargeLookupRecord')
 
 @Test function StructReadFields()
+   local count = 0
    for i = 0,100000 do
       local integer = glBenchmarkStruct.integer
       local wide    = glBenchmarkStruct.wide
       local float   = glBenchmarkStruct.float
       local double  = glBenchmarkStruct.double
+      count += integer + wide + float + double
    end
+   glMaterialise += count
 end
 
 @Test function StructWriteFields()
@@ -25,4 +34,17 @@ end
       glBenchmarkStruct.float   = 3.5
       glBenchmarkStruct.double  = 4.5
    end
+end
+
+@Test function LargeStructRW()
+   local count = 0
+   for i = 0,100000 do
+      glLargeStruct.zulu = 1
+      glLargeStruct.charlie = 6
+      glLargeStruct.foxtrot = 12
+      glLargeStruct.alpha = 120
+      glLargeStruct.mike = 21
+      count += glLargeStruct.zulu + glLargeStruct.charlie + glLargeStruct.foxtrot
+   end
+   glMaterialise += count
 end

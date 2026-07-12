@@ -30,6 +30,7 @@ GCstruct * lj_struct_new(lua_State *L, struct_record &Def)
    setgcrefnull(s->metatable);
    s->def        = &Def;
    s->lifecycle  = nullptr;
+   setgcrefnull(s->parent);
 
    if (Def.Size > 0) std::memset(s->data, 0, size_t(Def.Size));
    construct_struct_cpp_strings(Def, s->data);
@@ -45,10 +46,10 @@ GCstruct * lj_struct_new(lua_State *L, struct_record &Def)
 // termination, and lj_struct_stale() reports the view as dead from that point onwards.  Weak pins never impede
 // object termination (see the zombie contract in kotuku/objects.h).
 //
-// NB: External structs referencing a parent's inline payload (embedded sub-structs) do not anchor the parent;
-// the caller must keep the parent alive for the lifetime of the view.
+// Parent optionally anchors the inline GCstruct that owns Data for interior embedded-struct views.
 
-GCstruct * lj_struct_new_external(lua_State *L, struct_record &Def, void *Data, uint8_t Flags, Object *Lifecycle)
+GCstruct * lj_struct_new_external(lua_State *L, struct_record &Def, void *Data, uint8_t Flags, Object *Lifecycle,
+   GCstruct *Parent)
 {
    auto s = (GCstruct *)lj_mem_newgco(L, sizeof(GCstruct));
    s->gct        = ~LJ_TSTRUCT;
@@ -60,6 +61,8 @@ GCstruct * lj_struct_new_external(lua_State *L, struct_record &Def, void *Data, 
    setgcrefnull(s->metatable);
    s->def        = &Def;
    s->lifecycle  = Lifecycle;
+   if (Parent) setgcref(s->parent, obj2gco(Parent));
+   else setgcrefnull(s->parent);
    if (Lifecycle) {
       Lifecycle->pinWeak();
       s->flags |= STRUCT_LIFECYCLE;

@@ -1009,6 +1009,7 @@ struct GCstruct {
    GCRef metatable;             // [32] Optional metatable (must match GCtab.metatable)
    struct struct_record *def;   // [40] The structure definition (owned by glStructs)
    struct Object *lifecycle;    // [48] Weak-pinned object that owns the payload (STRUCT_LIFECYCLE only)
+   GCRef parent;                // [56] Owning inline GCstruct for an interior payload view
 
    [[nodiscard]] inline bool is_external() const noexcept { return (flags & STRUCT_EXTERNAL) != 0; }
    [[nodiscard]] inline bool is_deallocate() const noexcept { return (flags & STRUCT_DEALLOCATE) != 0; }

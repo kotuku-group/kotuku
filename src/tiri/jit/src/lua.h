@@ -161,7 +161,7 @@ extern void   lua_createarray(lua_State *L, uint32_t Length, AET Type, void *Dat
 struct struct_record;
 struct Object;
 extern GCstruct * lua_pushstruct(lua_State *L, struct_record &Def, void *Data = nullptr, uint8_t Flags = 0,
-   Object *Lifecycle = nullptr);
+   Object *Lifecycle = nullptr, GCstruct *Parent = nullptr);
 extern void * lua_newuserdata(lua_State *L, size_t sz);
 
 // Native Kōtuku object support

@@ -974,10 +974,11 @@ extern void lua_createarray(lua_State *L, uint32_t Length, AET Type, void *Data,
 // Lifecycle optionally binds the view to a Kotuku object whose destruction invalidates the payload; see
 // lj_struct_new_external() for the weak pin contract.
 
-extern GCstruct * lua_pushstruct(lua_State *L, struct_record &Def, void *Data, uint8_t Flags, Object *Lifecycle)
+extern GCstruct * lua_pushstruct(lua_State *L, struct_record &Def, void *Data, uint8_t Flags, Object *Lifecycle,
+   GCstruct *Parent)
 {
    lj_gc_check(L);
-   auto s = Data ? lj_struct_new_external(L, Def, Data, Flags, Lifecycle) : lj_struct_new(L, Def);
+   auto s = Data ? lj_struct_new_external(L, Def, Data, Flags, Lifecycle, Parent) : lj_struct_new(L, Def);
    setstructV(L, L->top, s);
    incr_top(L);
    return s;
