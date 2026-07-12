@@ -13,7 +13,7 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>GradientMesh interpolates colour across a grid of curved patches.  Each patch is bounded by four cubic Bezier edges and carries one colour at each corner.  Rendering tessellates the patches into Gouraud triangles, so colour follows the patch geometry rather than a one-dimensional colour ramp.  Corner colours are blended bilinearly by default; setting #Bicubic selects smooth bicubic colour interpolation across the patch grid instead.</p>
+<p>GradientMesh interpolates colour across a grid of curved patches.  Each patch is bounded by four cubic Bezier edges and carries one colour at each corner.  Rendering tessellates the patches into Gouraud triangles, so colour follows the patch geometry rather than a one-dimensional colour ramp.  Corner colours are blended bilinearly by default; setting <fl>Mode</fl> to <code>BICUBIC</code> selects smooth bicubic colour interpolation across the patch grid instead.</p>
 <p>The inherited colour-ramp fields <code>Stops</code>, <code>ColourMap</code>, <code>SpreadMethod</code> and <code>Colour</code> are not supported by this class. Patch geometry and corner colours are supplied through <fl>Patches</fl>.</p>
 <p>When a mesh is exported to SVG, valid <fl>Rows</fl> and <fl>Columns</fl> metadata is preserved through the standard shared-edge <code>meshrow</code> syntax.  A mesh without valid row metadata (e.g. a non-rectangular grid) is flattened to a single row on export; every patch survives intact, with patches that do not share an edge with their predecessor written as independent patches, but the original row structure is not retained.</p></description>
     <source>

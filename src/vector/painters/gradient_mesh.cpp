@@ -6,7 +6,7 @@ GradientMesh: Bilinear Coons patch mesh gradient paint server.
 GradientMesh interpolates colour across a grid of curved patches.  Each patch is bounded by four cubic Bezier edges
 and carries one colour at each corner.  Rendering tessellates the patches into Gouraud triangles, so colour follows
 the patch geometry rather than a one-dimensional colour ramp.  Corner colours are blended bilinearly by default;
-setting #Bicubic selects smooth bicubic colour interpolation across the patch grid instead.
+setting #Mode to `BICUBIC` selects smooth bicubic colour interpolation across the patch grid instead.
 
 The inherited colour-ramp fields `Stops`, `ColourMap`, `SpreadMethod` and `Colour` are not supported by this class.
 Patch geometry and corner colours are supplied through #Patches.
