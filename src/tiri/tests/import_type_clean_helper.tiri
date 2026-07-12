@@ -1,0 +1,10 @@
+-- Type-clean helper library for test_import_type_analysis.tiri.  The unused local is deliberate:
+-- it verifies that tips raised inside imported statements are suppressed.
+
+namespace 'type_probe_clean'
+
+local unused_helper_var = 5
+
+global function clean_add(A:num, B:num):num
+   return A + B
+end

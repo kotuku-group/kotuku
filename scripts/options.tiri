@@ -494,7 +494,7 @@ function convert_builtin(TypeName:str, Value:any, Param:table):any
 
       raise ERR_WrongType, f"Parameter '{Param.name}' requires a boolean value."
    elseif TypeName is 'path' or TypeName is 'file' or TypeName is 'folder' then
-      if type(Value) is 'string' then return Value, nil end
+      if type(Value) is 'string' then return Value end
       return tostring(Value)
    elseif TypeName is 'csv' then
       return convert_csv(Value, Param)

@@ -213,7 +213,7 @@ function hoverGetDocumentSymbols(Doc:table):array
 end
 
 function hoverTextHasContent(Text:str):bool
-   return Text and Text != ''
+   return Text != nil and Text != ''
 end
 
 function hoverSymbolMatches(Symbol:table, TokenInfo:table):bool
