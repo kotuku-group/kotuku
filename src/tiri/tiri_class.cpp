@@ -1000,7 +1000,6 @@ static ERR register_interfaces(extTiri *Self)
    register_io_class(Self->Lua);
    register_module_class(Self->Lua);
    register_regex_class(Self->Lua);
-   register_struct_class(Self->Lua);
    register_async_class(Self->Lua);
 #ifndef DISABLE_DISPLAY
    register_input_class(Self->Lua);

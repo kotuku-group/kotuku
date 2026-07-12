@@ -270,16 +270,6 @@ struct VariableInfo {
 
 //********************************************************************************************************************
 
-// This structure is created & managed through the 'struct' interface
-
-struct fstruct {
-   APTR Data;          // Pointer to the structure data
-   int StructSize;     // Size of the structure
-   int AlignedSize;    // 64-bit alignment size of the structure.
-   struct struct_record *Def; // The structure definition
-   bool Deallocate;    // Deallocate the struct when Lua collects this resource.
-};
-
 struct fprocessing {
    double Timeout;
    std::list<ObjectSignal> *Signals;
@@ -420,14 +410,13 @@ ERR push_object_id(lua_State *, OBJECTID ObjectID);
 extern ERR delayed_msg_handler(APTR Meta, int MsgID, int MsgType, APTR Message, int MsgSize);
 extern int object_index(lua_State *);
 extern int object_newindex(lua_State *);
-struct fstruct * push_struct(extTiri *, APTR, std::string_view, bool, bool);
-struct fstruct * push_struct_def(lua_State *, APTR, struct struct_record &, bool);
+GCstruct * push_struct(extTiri *, APTR, std::string_view, bool, bool);
+GCstruct * push_struct_def(lua_State *, APTR, struct struct_record &, bool);
 extern void register_io_class(lua_State *);
 extern void register_input_class(lua_State *);
 extern void register_module_class(lua_State *);
 extern void register_processing_class(lua_State *);
 extern void register_regex_class(lua_State *);
-extern void register_struct_class(lua_State *);
 extern void register_async_class(lua_State *);
 //static void register_widget_class(lua_State *);
 void release_object(GCobject *);

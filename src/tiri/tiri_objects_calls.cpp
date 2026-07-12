@@ -587,20 +587,20 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
                else if (Args[i+1].Type & FD_INT64) ((int64_t *)(ArgBuffer + j))[0] = int64_t(memsize);
             }
          }
-         else if (auto fstruct = (struct fstruct *)get_meta(Lua, n, "Tiri.struct")) {
+         else if (auto native_struct = lua_isstruct(Lua, n) ? lua_tostruct(Lua, n) : nullptr) {
             //log.trace("Arg: %s, Value: Buffer (Source is a struct)", Args[i].Name);
 
-            ((APTR *)(ArgBuffer + j))[0] = fstruct->Data;
+            ((APTR *)(ArgBuffer + j))[0] = native_struct->data;
             j += sizeof(APTR);
 
             if (Args[i+1].Type & FD_BUFSIZE) {
                // Buffer size is optional (can be nil), so set the buffer size parameter by default.
                // The user can override it if more arguments are specified in the function call.
 
-               buffer_capacity = fstruct->AlignedSize;
+               buffer_capacity = ALIGN64(native_struct->structsize);
                buffer_capacity_known = true;
-               if (Args[i+1].Type & FD_INT) ((int *)(ArgBuffer + j))[0] = fstruct->AlignedSize;
-               else if (Args[i+1].Type & FD_INT64) ((int64_t *)(ArgBuffer + j))[0] = fstruct->AlignedSize;
+               if (Args[i+1].Type & FD_INT) ((int *)(ArgBuffer + j))[0] = ALIGN64(native_struct->structsize);
+               else if (Args[i+1].Type & FD_INT64) ((int64_t *)(ArgBuffer + j))[0] = ALIGN64(native_struct->structsize);
             }
             n--; // Adjustment required due to successful get_meta()
          }
@@ -716,8 +716,8 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          else {
             //log.trace("Arg: %s, Value: Pointer, SrcType: %s", Args[i].Name, lua_typename(Lua, type));
 
-            if (auto fstruct = (struct fstruct *)get_meta(Lua, n, "Tiri.struct")) {
-               ((APTR *)(ArgBuffer + j))[0] = fstruct->Data;
+            if (auto native_struct = lua_isstruct(Lua, n) ? lua_tostruct(Lua, n) : nullptr) {
+               ((APTR *)(ArgBuffer + j))[0] = native_struct->data;
                //n--; // Adjustment required due to successful get_meta()
             }
             else ((APTR *)(ArgBuffer + j))[0] = lua_touserdata(Lua, n);

@@ -1068,23 +1068,23 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                }
             }
          }
-         else if (auto fstruct = (struct fstruct *)get_meta(Lua, i, "Tiri.struct")) {
-            ((APTR *)(buffer + j))[0] = fstruct->Data;
+         else if (auto native_struct = lua_isstruct(Lua, i) ? lua_tostruct(Lua, i) : nullptr) {
+            ((APTR *)(buffer + j))[0] = native_struct->data;
             arg_values[in] = buffer + j;
             arg_types[in++] = &ffi_type_pointer;
             j += sizeof(APTR);
 
-            log.trace("Struct address %p inserted to arg offset %d", fstruct->Data, j);
+            log.trace("Struct address %p inserted to arg offset %d", native_struct->data, j);
             if (args[i+1].Type & FD_BUFSIZE) {
                if (args[i+1].Type & FD_INT) {
-                  ((int *)(buffer + j))[0] = fstruct->AlignedSize;
+                  ((int *)(buffer + j))[0] = ALIGN64(native_struct->structsize);
                   i++;
                   arg_values[in] = buffer + j;
                   arg_types[in++] = &ffi_type_sint32;
                   j += sizeof(int);
                }
                else if (args[i+1].Type & FD_INT64) {
-                  ((int64_t *)(buffer + j))[0] = fstruct->AlignedSize;
+                  ((int64_t *)(buffer + j))[0] = ALIGN64(native_struct->structsize);
                   i++;
                   arg_values[in] = buffer + j;
                   arg_types[in++] = &ffi_type_sint64;

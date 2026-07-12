@@ -63,9 +63,9 @@ static ERR set_array_from_table(lua_State *Lua, OBJECTPTR Object, const Field *F
                   lua_pop(Lua, 2);
                   return ERR::SetValueNotArray;
                }
-               else if (type IS LUA_TUSERDATA) {
-                  if (auto fs = (fstruct *)get_meta(Lua, -1, "Tiri.struct")) {
-                     copymem(fs->Data, sti, fs->StructSize);
+               else if (type IS LUA_TSTRUCT) {
+                  if (auto fs = lua_isstruct(Lua, -1) ? lua_tostruct(Lua, -1) : nullptr) {
+                     copymem(fs->data, sti, fs->structsize);
                   }
                }
                else {
@@ -226,8 +226,8 @@ static ERR object_set_ptr(lua_State *Lua, OBJECTPTR Object, const Field *Field, 
       GCarray *arr = arrayV(Lua, ValueIndex);
       return Object->set(Field, arr->arraydata());
    }
-   else if (auto fstruct = (struct fstruct *)get_meta(Lua, ValueIndex, "Tiri.struct")) {
-      return Object->set(Field, fstruct->Data);
+   else if (auto native_struct = lua_isstruct(Lua, ValueIndex) ? lua_tostruct(Lua, ValueIndex) : nullptr) {
+      return Object->set(Field, native_struct->data);
    }
    else if (type IS LUA_TNIL) {
       return Object->set(Field, (APTR)nullptr);
@@ -390,19 +390,19 @@ static ERR object_set_struct(lua_State *Lua, OBJECTPTR Object, const Field *Fiel
          }
       }
 
-      case LUA_TUSERDATA:
-         if (auto fs = (fstruct *)get_meta(Lua, ValueIndex, "Tiri.struct")) {
+      case LUA_TSTRUCT:
+         if (auto fs = lua_isstruct(Lua, ValueIndex) ? lua_tostruct(Lua, ValueIndex) : nullptr) {
             auto struct_def = lookup_struct_field_def(Field);
-            if ((not struct_def) or (fs->Def != struct_def) or (fs->StructSize < struct_def->Size)) {
+            if ((not struct_def) or (fs->def != struct_def) or (fs->structsize < uint32_t(struct_def->Size))) {
                return ERR::SetValueNotStruct;
             }
 
             if (Field->SetValue) {
                // We only need to pass a reference to the struct as a pointer
-               return Object->set(Field, fs->Data);
+               return Object->set(Field, fs->data);
             }
             else { // The struct is embedded, we can write to it directly because we know the struct size.
-               copymem(fs->Data, ((int8_t *)Object) + Field->Offset, struct_def->Size);
+               copymem(fs->data, ((int8_t *)Object) + Field->Offset, struct_def->Size);
             }
             return ERR::Okay;
          }
