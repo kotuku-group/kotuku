@@ -353,6 +353,26 @@ GCarray * lj_lib_checkarray(lua_State *L, int Arg, bool Required)
 }
 
 //********************************************************************************************************************
+// Helper function to check argument is a struct and performs thunk resolution
+
+GCstruct * lj_lib_checkstruct(lua_State *L, int Arg, bool Required)
+{
+   TValue *o = L->base + Arg - 1;
+   if (o < L->top) {
+      if (lj_is_thunk(o)) { // Resolve thunk if present
+         TValue *resolved = lj_thunk_resolve(L, udataV(o));
+         o = L->base + Arg - 1; // Stack may have moved, recalculate o
+         copyTV(L, o, resolved); // Replace thunk with resolved value
+      }
+
+      if (tvisstruct(o)) [[likely]] return structV(o);
+   }
+
+   if (Required) lj_err_argt(L, Arg, LUA_TSTRUCT);
+   return nullptr;
+}
+
+//********************************************************************************************************************
 // Helper function to check optional array argument (may be nil, but non-arrays throw an error)
 
 GCarray * lj_lib_optarray(lua_State *L, int Arg)

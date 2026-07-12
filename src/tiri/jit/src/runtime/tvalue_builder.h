@@ -129,6 +129,12 @@ public:
       return *this;
    }
 
+   // Set to struct
+   constexpr TValueBuilder & set_struct(GCstruct *s) noexcept {
+      setstructV(L_, tv_, s);
+      return *this;
+   }
+
    // Set to prototype (internal function prototype)
    constexpr TValueBuilder & set_proto(GCproto* p) noexcept {
       setprotoV(L_, tv_, p);

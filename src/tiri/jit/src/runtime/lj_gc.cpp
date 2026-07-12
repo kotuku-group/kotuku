@@ -46,6 +46,7 @@
 #include "lj_vm.h"
 #include "lj_array.h"
 #include "lj_object.h"
+#include "lj_struct.h"
 #include <kotuku/main.h>
 
 #include <array>
@@ -227,6 +228,15 @@ static void gc_mark(global_State *g, GCobj* o)
 
       // Mark metatable if present
       GCtab *mt = tabref(obj->metatable);
+      if (mt) gc_markobj(g, mt);
+   }
+   else if (gct IS ~LJ_TSTRUCT and o != obj2gco(mainthread(g))) {
+      // Native struct - payloads hold no GC references, only the optional metatable needs marking.
+      // The main-thread lua_State shares this tag and must stay on the gray-list path below.
+      GCstruct *s = gco_to_struct(o);
+      gray2black(o);  // Structs are never gray (like userdata)
+
+      GCtab *mt = tabref(s->metatable);
       if (mt) gc_markobj(g, mt);
    }
    else if (gct != ~LJ_TSTR) {
@@ -639,7 +649,7 @@ using GCFreeFunc = void (*)(global_State*, GCobj*);
 static const std::array<GCFreeFunc, 10> gc_freefunc = {{
    (GCFreeFunc)lj_str_free,       // LJ_TSTR
    (GCFreeFunc)lj_func_freeuv,    // LJ_TUPVAL
-   (GCFreeFunc)lj_state_free,     // LJ_TSTRUCT (shared with main thread; the main thread is never swept)
+   (GCFreeFunc)lj_struct_free,    // LJ_TSTRUCT (tag shared with the main thread, which is never swept)
    (GCFreeFunc)lj_func_freeproto, // LJ_TPROTO
    (GCFreeFunc)lj_func_free,      // LJ_TFUNC
    (GCFreeFunc)lj_trace_free,     // LJ_TTRACE

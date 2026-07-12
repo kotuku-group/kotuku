@@ -99,6 +99,11 @@ cTValue * lj_meta_lookup(lua_State *L, cTValue *o, MMS mm)
       mt = tabref(objectV(o)->metatable);
       if (not mt) mt = tabref(basemt_it(G(L), LJ_TOBJECT));
    }
+   else if (tvisstruct(o)) {
+      // Check per-instance metatable first, then fall back to base metatable
+      mt = tabref(structV(o)->metatable);
+      if (not mt) mt = tabref(basemt_it(G(L), LJ_TSTRUCT));
+   }
    else mt = tabref(basemt_obj(G(L), o));
 
    if (mt) {
@@ -193,6 +198,13 @@ cTValue *lj_meta_tget(lua_State *L, cTValue *o, cTValue *k)
             return nullptr;
          }
       }
+      else if (tvisstruct(o)) {
+         mo = lj_meta_fast(L, tabref(basemt_it(G(L), LJ_TSTRUCT)), MM_index);
+         if (not mo or tvisnil(mo)) {
+            lj_err_optype(L, o, ErrMsg::OPINDEX);
+            return nullptr;
+         }
+      }
       else if (tvisnil(mo = lj_meta_lookup(L, o, MM_index))) {
          lj_err_optype(L, o, ErrMsg::OPINDEX);
          return nullptr;  //  unreachable
@@ -246,6 +258,13 @@ TValue * lj_meta_tset(lua_State *L, cTValue *o, cTValue *k)
       else if (tvisobject(o)) {
          mo = lj_meta_fast(L, tabref(basemt_it(G(L), LJ_TOBJECT)), MM_newindex);
          if (tvisnil(mo)) {
+            lj_err_optype(L, o, ErrMsg::OPINDEX);
+            return nullptr;
+         }
+      }
+      else if (tvisstruct(o)) {
+         mo = lj_meta_fast(L, tabref(basemt_it(G(L), LJ_TSTRUCT)), MM_newindex);
+         if (not mo or tvisnil(mo)) {
             lj_err_optype(L, o, ErrMsg::OPINDEX);
             return nullptr;
          }

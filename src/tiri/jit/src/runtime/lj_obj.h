@@ -988,6 +988,43 @@ static_assert(offsetof(GCobject, gclist) == offsetof(GCtab, gclist));
 inline GCobject* objectref(GCRef r) noexcept;
 
 //********************************************************************************************************************
+// Native struct object.  Wraps a C structure described by a struct_record definition.  The payload either follows
+// the header inline (owned mode) or lives in externally managed memory (STRUCT_EXTERNAL).
+//
+// NB: The TValue tag LJ_TSTRUCT (~6u) is shared with the single main-thread lua_State; GC sites that dispatch on
+// gct must discriminate via pointer-compare with mainthread(g).
+
+// Flags for GCstruct.flags
+inline constexpr uint8_t STRUCT_EXTERNAL   = 0x01;  // Payload is externally managed (data does not follow header)
+inline constexpr uint8_t STRUCT_DEALLOCATE = 0x02;  // FreeResource(data) when the struct is collected
+
+struct GCstruct {
+   GCHeader;                    // [0]  nextgc, marked, gct (10 bytes)
+   uint8_t flags;               // [10] Struct flags (STRUCT_EXTERNAL, STRUCT_DEALLOCATE)
+   uint8_t unused1;             // [11] Reserved for alignment
+   uint32_t structsize;         // [12] Byte size of the structure payload (def->Size at creation time)
+   void *data;                  // [16] Pointer to the structure data (this+1 for inline payloads)
+   GCRef gclist;                // [24] GC list for marking (must match GCtab.gclist)
+   GCRef metatable;             // [32] Optional metatable (must match GCtab.metatable)
+   struct struct_record *def;   // [40] The structure definition (owned by glStructs)
+
+   [[nodiscard]] inline bool is_external() const noexcept { return (flags & STRUCT_EXTERNAL) != 0; }
+   [[nodiscard]] inline bool is_deallocate() const noexcept { return (flags & STRUCT_DEALLOCATE) != 0; }
+
+   // Allocation size must match lj_struct_new()/lj_struct_new_external() exactly or g->gc.total drifts.
+   [[nodiscard]] inline size_t alloc_size() const noexcept {
+      return sizeof(GCstruct) + (is_external() ? 0 : ((size_t(structsize) + 7) & ~size_t(7)));
+   }
+};
+
+// Ensure metatable and gclist fields are at same offset as other GC types
+static_assert(offsetof(GCstruct, metatable) == offsetof(GCtab, metatable));
+static_assert(offsetof(GCstruct, gclist) == offsetof(GCtab, gclist));
+
+// Forward declaration - defined after GCobj is complete
+inline GCstruct* structref(GCRef r) noexcept;
+
+//********************************************************************************************************************
 // VM states.
 
 enum {
@@ -1264,6 +1301,7 @@ typedef union GCobj {
    GCarray   arr;
    GCudata   ud;
    GCobject  obj;  // Native Kotuku object
+   GCstruct  sct;  // Native struct (tag shared with the main-thread lua_State)
    ~GCobj() = delete;
 } GCobj;
 
@@ -1279,6 +1317,8 @@ typedef union GCobj {
 [[nodiscard]] inline GCudata *   gco_to_userdata(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TUDATA, &o->ud); }
 [[nodiscard]] inline GCarray *   gco_to_array(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TARRAY, &o->arr); }
 [[nodiscard]] inline GCobject *  gco_to_object(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TOBJECT, &o->obj); }
+// The main-thread lua_State shares the ~LJ_TSTRUCT gct; callers must have excluded it (compare with mainthread(g)).
+[[nodiscard]] inline GCstruct *  gco_to_struct(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TSTRUCT, &o->sct); }
 
 // Convert any collectable object into a GCobj pointer.
 template<typename T> [[nodiscard]] inline GCobj * obj2gco(T *v) noexcept { return (GCobj*)v; }
@@ -1306,6 +1346,9 @@ template<typename T> [[nodiscard]] inline GCobj * obj2gco(T *v) noexcept { retur
 
 // Kotuku object accessors
 [[nodiscard]] inline GCobject * objectref(GCRef r) noexcept { return &gcref(r)->obj; }
+
+// Struct accessors
+[[nodiscard]] inline GCstruct * structref(GCRef r) noexcept { return &gcref(r)->sct; }
 
 // Thread/state accessors
 
@@ -1404,6 +1447,10 @@ template<typename T> [[nodiscard]] inline GCobj * obj2gco(T *v) noexcept { retur
 [[nodiscard]] inline GCarray * arrayV(lua_State *L, int Arg) noexcept { return arrayV(L->base + Arg - 1); }
 [[nodiscard]] inline GCobject * objectV(cTValue *o) noexcept { return check_exp(tvisobject(o), &gcval(o)->obj); }
 [[nodiscard]] inline GCobject * objectV(lua_State *L, int Arg) noexcept { return objectV(L->base + Arg - 1); }
+// NB: The main-thread lua_State only carries the LJ_TSTRUCT tag in internal frame slots, never in script-visible
+// TValues, so no mainthread discrimination is required here.
+[[nodiscard]] inline GCstruct * structV(cTValue *o) noexcept { return check_exp(tvisstruct(o), &gcval(o)->sct); }
+[[nodiscard]] inline GCstruct * structV(lua_State *L, int Arg) noexcept { return structV(L->base + Arg - 1); }
 [[nodiscard]] inline lua_Number numV(cTValue *o) noexcept { return check_exp(tvisnum(o), o->n); }
 [[nodiscard]] inline int32_t intV(cTValue *o) noexcept { return check_exp(tvisint(o), int32_t(o->i)); }
 
@@ -1481,6 +1528,7 @@ inline void settabV(lua_State* L, TValue* o, const GCtab* v) noexcept { setgcV(L
 inline void setudataV(lua_State* L, TValue* o, const GCudata* v) noexcept { setgcV(L, o, obj2gco(v), LJ_TUDATA); }
 inline void setarrayV(lua_State* L, TValue* o, const GCarray* v) noexcept { setgcV(L, o, obj2gco(v), LJ_TARRAY); }
 inline void setobjectV(lua_State* L, TValue* o, const GCobject* v) noexcept { setgcV(L, o, obj2gco(v), LJ_TOBJECT); }
+inline void setstructV(lua_State* L, TValue* o, const GCstruct* v) noexcept { setgcV(L, o, obj2gco(v), LJ_TSTRUCT); }
 constexpr inline void setnumV(TValue* o, lua_Number x) noexcept { o->n = x; }
 inline void setnanV(TValue* o) noexcept { o->u64 = U64x(fff80000, 00000000); }
 inline void setpinfV(TValue* o) noexcept { o->u64 = U64x(7ff00000, 00000000); }

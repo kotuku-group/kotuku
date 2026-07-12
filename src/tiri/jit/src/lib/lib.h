@@ -45,6 +45,7 @@ extern GCarray *   lj_lib_optarray(lua_State *L, int);
 extern GCobject *  lj_lib_optobject(lua_State *L, int, bool = true);
 extern GCobject *  lj_lib_checkobject(lua_State *, int, bool = true);
 extern GCarray *   lj_lib_checkarray(lua_State *, int, bool = true);
+extern GCstruct *  lj_lib_checkstruct(lua_State *, int, bool = true);
 
 // Avoid including lj_frame.h.
 #define lj_lib_upvalue(L, n) (&gcval(L->base-2)->fn.c.upvalue[(n)-1])

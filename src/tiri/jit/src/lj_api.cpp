@@ -25,6 +25,7 @@
 #include "lj_strfmt.h"
 #include "lib/lib_utils.h"
 #include "lj_array.h"
+#include "runtime/lj_struct.h"
 #include "runtime/lj_thunk.h"
 #include "runtime/stack_helpers.h"
 
@@ -645,6 +646,16 @@ extern GCarray * lua_toarray(lua_State *L, int Arg)
 }
 
 //********************************************************************************************************************
+// Return struct value (does not perform any conversion)
+
+extern GCstruct * lua_tostruct(lua_State *L, int Arg)
+{
+   TValue *o = (Arg > LUA_REGISTRYINDEX) ? resolve_index(L, Arg) : index2adr(L, Arg);
+   if (tvisstruct(o)) return &gcval(o)->sct;
+   lj_err_argt(L, Arg, LUA_TSTRUCT);
+}
+
+//********************************************************************************************************************
 // Return object value (validates but does not perform any conversion)
 // Handles thunk resolution
 
@@ -955,6 +966,19 @@ extern void lua_createarray(lua_State *L, uint32_t Length, AET Type, void *Data,
    lj_gc_check(L);
    setarrayV(L, L->top, lj_array_new(L, Length, Type, Data, Flags, StructName));
    incr_top(L);
+}
+
+//********************************************************************************************************************
+// Create native struct and push onto stack.  With Data null a zeroed inline payload is allocated; otherwise the
+// struct references the external Data (pass STRUCT_DEALLOCATE in Flags to transfer ownership to the GC).
+
+extern GCstruct * lua_pushstruct(lua_State *L, struct_record &Def, void *Data, uint8_t Flags)
+{
+   lj_gc_check(L);
+   auto s = Data ? lj_struct_new_external(L, Def, Data, Flags) : lj_struct_new(L, Def);
+   setstructV(L, L->top, s);
+   incr_top(L);
+   return s;
 }
 
 //********************************************************************************************************************
