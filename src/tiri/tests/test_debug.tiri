@@ -64,6 +64,24 @@ end
    assert(debug.getMetatable(t) is nil, "Should have no metatable after setting nil")
 end
 
+@Test function StructMetatableIsPerInstance()
+   MAKESTRUCT('DebugMetatableStruct', 'lValue')
+   first = struct.new('DebugMetatableStruct', { value=11 })
+   second = struct.new('DebugMetatableStruct', { value=22 })
+   custom_mt = { __index = { custom=true } }
+
+   assert(debug.getMetatable(first) is nil, 'A new struct should not have an instance metatable')
+   assert(debug.getMetatable(second) is nil, 'Struct instance metatables should start unset')
+
+   debug.setMetatable(first, custom_mt)
+   assert(debug.getMetatable(first) is custom_mt, 'The custom metatable should be stored on the target struct')
+   assert(debug.getMetatable(second) is nil, 'Setting one struct metatable must not change another struct')
+   assert(second.value is 22, 'Other structs should retain native field access through the base metatable')
+
+   debug.setMetatable(first, nil)
+   assert(first.value is 11, 'Removing the instance metatable should restore native field access')
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- debug.getEnv() / debug.setEnv()
 

@@ -20,6 +20,9 @@ end
    MAKESTRUCT('TinyStridePalette', 'eCol:TinyStrideColour[2],lMarker')
 
    palette = struct.new('TinyStridePalette', { marker=77 })
+   assert(type(palette) is 'struct', 'Expected struct.new() to return the native struct type')
+   assert(#palette is 2, 'Expected the structure to report its field count')
+   assert(palette.structSize() > 0, 'Expected the structure to report its byte size')
    colours = palette.Col
 
    assert(#colours is 2, 'Expected the embedded struct array to expose two elements, got ' .. #colours)

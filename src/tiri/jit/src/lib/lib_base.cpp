@@ -147,7 +147,7 @@ LJLIB_PUSH(top-1)  //  boolean
 LJLIB_PUSH("userdata")
 LJLIB_PUSH("string")
 LJLIB_PUSH("upval")
-LJLIB_PUSH("thread") // DEPRECATED
+LJLIB_PUSH("struct")
 LJLIB_PUSH("proto")
 LJLIB_PUSH("function")
 LJLIB_PUSH("trace")

@@ -18,6 +18,7 @@
 extern "C" int luaopen_range(lua_State* L);
 extern "C" int luaopen_array(lua_State* L);
 extern "C" int luaopen_object(lua_State* L);
+extern "C" int luaopen_struct(lua_State* L);
 
 static const luaL_Reg lj_lib_load[] = {
   { "",       luaopen_base },
@@ -30,6 +31,7 @@ static const luaL_Reg lj_lib_load[] = {
   { "range",  luaopen_range },
   { "array",  luaopen_array },
   { "obj",    luaopen_object },
+  { "struct", luaopen_struct },
   { nullptr,  nullptr }
 };
 

@@ -29,6 +29,7 @@
 #include "lj_meta.h"
 #include "lj_object.h"
 #include "lj_array.h"
+#include "lj_struct.h"
 #include "lj_proto_registry.h"
 #include "lib.h"
 

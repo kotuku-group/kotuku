@@ -363,10 +363,7 @@ extern "C" int ir_object_field_type(GCobject *Obj, GCstr *Key, int &Offset, uint
          if (flags & FD_UNSIGNED) return IRT_NUM;
          else return LJ_DUALNUM ? IRT_INT : IRT_NUM;
       }
-      else if (flags & FD_STRUCT) {
-         if (flags & FD_RESOURCE) return IRT_LIGHTUD;
-         else return IRT_TAB;
-      }
+      else if (flags & FD_STRUCT) return IRT_STRUCT;
       else if (flags & FD_POINTER) return IRT_LIGHTUD;
       else return -1;  // Unknown type
    }

@@ -63,9 +63,9 @@ static ERR set_array_from_table(lua_State *Lua, OBJECTPTR Object, const Field *F
                   lua_pop(Lua, 2);
                   return ERR::SetValueNotArray;
                }
-               else if (type IS LUA_TUSERDATA) {
-                  if (auto fs = (fstruct *)get_meta(Lua, -1, "Tiri.struct")) {
-                     copymem(fs->Data, sti, fs->StructSize);
+               else if (type IS LUA_TSTRUCT) {
+                  if (auto fs = lua_isstruct(Lua, -1) ? lua_tostruct(Lua, -1) : nullptr) {
+                     copymem(fs->data, sti, fs->structsize);
                   }
                }
                else {
@@ -226,8 +226,10 @@ static ERR object_set_ptr(lua_State *Lua, OBJECTPTR Object, const Field *Field, 
       GCarray *arr = arrayV(Lua, ValueIndex);
       return Object->set(Field, arr->arraydata());
    }
-   else if (auto fstruct = (struct fstruct *)get_meta(Lua, ValueIndex, "Tiri.struct")) {
-      return Object->set(Field, fstruct->Data);
+   else if (auto native_struct = lua_isstruct(Lua, ValueIndex) ? lua_tostruct(Lua, ValueIndex) : nullptr) {
+      // Guard specific to lifecycle-bound struct views; structs without an object dependency skip it.
+      if (lj_struct_stale(native_struct)) return ERR::DoesNotExist;
+      return Object->set(Field, native_struct->data);
    }
    else if (type IS LUA_TNIL) {
       return Object->set(Field, (APTR)nullptr);
@@ -390,19 +392,22 @@ static ERR object_set_struct(lua_State *Lua, OBJECTPTR Object, const Field *Fiel
          }
       }
 
-      case LUA_TUSERDATA:
-         if (auto fs = (fstruct *)get_meta(Lua, ValueIndex, "Tiri.struct")) {
+      case LUA_TSTRUCT:
+         if (auto fs = lua_isstruct(Lua, ValueIndex) ? lua_tostruct(Lua, ValueIndex) : nullptr) {
             auto struct_def = lookup_struct_field_def(Field);
-            if ((not struct_def) or (fs->Def != struct_def) or (fs->StructSize < struct_def->Size)) {
+            if ((not struct_def) or (fs->def != struct_def) or (fs->structsize < uint32_t(struct_def->Size))) {
                return ERR::SetValueNotStruct;
             }
 
+            // Guard specific to lifecycle-bound struct views; structs without an object dependency skip it.
+            if (lj_struct_stale(fs)) return ERR::DoesNotExist;
+
             if (Field->SetValue) {
                // We only need to pass a reference to the struct as a pointer
-               return Object->set(Field, fs->Data);
+               return Object->set(Field, fs->data);
             }
             else { // The struct is embedded, we can write to it directly because we know the struct size.
-               copymem(fs->Data, ((int8_t *)Object) + Field->Offset, struct_def->Size);
+               copymem(fs->data, ((int8_t *)Object) + Field->Offset, struct_def->Size);
             }
             return ERR::Okay;
          }
@@ -727,12 +732,20 @@ static int object_get_struct(lua_State *Lua, const obj_read &Handle, GCobject *D
       if (Field->Arg) {
          APTR result;
          if (!(error = Object->get(Field->FieldID, result))) {
-            if (result) { // Structs are copied into standard Lua tables.
-               if (Field->Flags & FD_RESOURCE) {
-                  push_struct(Lua->script, result, (CSTRING)Field->Arg, (Field->Flags & FD_ALLOC) ? TRUE : FALSE,
-                     TRUE);
+            if (result) {
+               // Object fields expose non-owning live views.  Resource fields may transfer ownership when FD_ALLOC is
+               // set, matching other struct-returning API bridges.
+               //
+               // Non-owning views are bound to the object's lifecycle: access after the object is destroyed raises
+               // a catchable script error via lj_struct_stale() rather than dereferencing freed memory.  The guard
+               // is specific to lifecycle-bound structs - owned copies (FD_ALLOC transfers) and inline structs carry
+               // no dependency and skip it, and a JIT-compiled access would compile the guard out in that case.
+               bool is_resource = Field->Flags & FD_RESOURCE;
+               bool owns_copy = is_resource and (Field->Flags & FD_ALLOC);
+               if (not push_struct(Lua->script, result, (CSTRING)Field->Arg, owns_copy, is_resource,
+                     owns_copy ? nullptr : Object)) {
+                  error = ERR::Search;
                }
-               else error = named_struct_to_table(Lua, (CSTRING)Field->Arg, result);
             }
             else lua_pushnil(Lua);
          }

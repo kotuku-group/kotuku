@@ -1931,7 +1931,7 @@ static int rec_upvalue_constify(jit_State *J, GCupval* uvp)
    if (uvp->immutable) {
       cTValue *o = uvval(uvp);
       // Don't constify objects that may retain large amounts of memory.
-      if (not (tvistab(o) or tvisudata(o) or tvisthread(o))) return 1;
+      if (not (tvistab(o) or tvisudata(o) or tvisstruct(o))) return 1;
    }
    return 0;
 }

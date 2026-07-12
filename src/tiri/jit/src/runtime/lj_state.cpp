@@ -282,7 +282,7 @@ extern lua_State * lua_newstate(lua_Alloc allocf, void* allocd)
    new (L) lua_State;
 
    g = &GG->g;
-   L->gct = ~LJ_TTHREAD;
+   L->gct = ~LJ_TSTRUCT;  // Tag shared with GCstruct; this is the only lua_State per interpreter.
    L->marked = LJ_GC_WHITE0 | LJ_GC_FIXED | LJ_GC_SFIXED;  //  Prevent free.
    L->dummy_ffid = FF_C;
    setnilV(&L->close_err);  // Initialize __close error to nil

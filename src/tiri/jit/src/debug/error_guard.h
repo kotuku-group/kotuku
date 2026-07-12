@@ -102,7 +102,6 @@ public:
          case LUA_TTABLE:    passed_ = tvistab(o); break;
          case LUA_TFUNCTION: passed_ = tvisfunc(o); break;
          case LUA_TUSERDATA: passed_ = tvisudata(o); break;
-         case LUA_TTHREAD:   passed_ = tvisthread(o); break;
          default:            passed_ = false; break;
       }
 

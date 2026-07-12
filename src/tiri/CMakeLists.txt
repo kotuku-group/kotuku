@@ -191,6 +191,7 @@ set (LJLIB_C
    "${JIT_SRC}/lib/lib_range.cpp"
    "${JIT_SRC}/lib/lib_array.cpp"
    "${JIT_SRC}/lib/lib_object.cpp"
+   "${JIT_SRC}/lib/lib_struct.cpp"
    "${JIT_SRC}/lib/lib_debug.cpp"
    "${JIT_SRC}/lib/lib_jit.cpp"
 )
@@ -224,13 +225,13 @@ if (MSVC)
 
    # Expand glob patterns for dependencies (only source headers, not generated ones)
 
-   file(GLOB JIT_CORE_SOURCES
+   file(GLOB JIT_CORE_SOURCES CONFIGURE_DEPENDS
       "${JIT_SRC}/debug/lj_*.cpp"
       "${JIT_SRC}/debug/try_except.cpp"
       "${JIT_SRC}/runtime/lj_*.cpp"
       "${JIT_SRC}/lj_*.cpp")
 
-   file(GLOB JIT_LIB_SOURCES "${JIT_SRC}/lib/lib_*.cpp")
+   file(GLOB JIT_LIB_SOURCES CONFIGURE_DEPENDS "${JIT_SRC}/lib/lib_*.cpp")
 
    # Exclude library and parser files that are compiled into the Tiri module instead
    list(FILTER JIT_LIB_SOURCES EXCLUDE REGEX "lib_.*\\.cpp$")
@@ -577,13 +578,13 @@ else ()
 
    # Expand glob patterns for source files (mirrors MSVC approach)
 
-   file(GLOB JIT_CORE_SOURCES
+   file(GLOB JIT_CORE_SOURCES CONFIGURE_DEPENDS
       "${JIT_SRC}/debug/lj_*.cpp"
       "${JIT_SRC}/debug/try_except.cpp"
       "${JIT_SRC}/runtime/lj_*.cpp"
       "${JIT_SRC}/lj_*.cpp")
 
-   file(GLOB JIT_LIB_SOURCES "${JIT_SRC}/lib/lib_*.cpp")
+   file(GLOB JIT_LIB_SOURCES CONFIGURE_DEPENDS "${JIT_SRC}/lib/lib_*.cpp")
 
    # Exclude library and parser files that are compiled into the Tiri module instead
    list(FILTER JIT_LIB_SOURCES EXCLUDE REGEX "lib_.*\\.cpp$")
@@ -698,6 +699,7 @@ set (TIRI_SOURCES "${MOD}.cpp" "tiri_module.cpp" "tiri_async.cpp" "tiri_struct.c
    "${JIT_SRC}/lib/lib_jit.cpp"
    "${JIT_SRC}/lib/lib_math.cpp"
    "${JIT_SRC}/lib/lib_object.cpp"
+   "${JIT_SRC}/lib/lib_struct.cpp"
    "${JIT_SRC}/lib/lib_range.cpp"
    "${JIT_SRC}/lib/lib_string.cpp"
    "${JIT_SRC}/lib/lib_table.cpp"
