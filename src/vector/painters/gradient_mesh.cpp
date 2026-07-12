@@ -326,7 +326,7 @@ static const FieldArray clGradientMeshFields[] = {
    { "SpreadMethod", FDF_SYSTEM|FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENTMESH_SET_SpreadMethod, &clGradientSpreadMethod },
    { "Stops",        FDF_SYSTEM|FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, nullptr, GRADIENTMESH_SET_Stops, "GradientStop" },
    // Mesh fields
-   { "Mode",         FDF_INT|FDF_RW, nullptr, GRADIENTMESH_SET_Mode },
+   { "Mode",         FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENTMESH_SET_Mode, &clGradientMeshGMT },
    { "Rows",         FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, GRADIENTMESH_GET_Rows, GRADIENTMESH_SET_Rows },
    { "Columns",      FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, GRADIENTMESH_GET_Columns, GRADIENTMESH_SET_Columns },
    { "Patches",      FDF_VIRTUAL|FDF_VECTOR|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENTMESH_GET_Patches, GRADIENTMESH_SET_Patches, "MeshPatchRecord" },

@@ -603,7 +603,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     ~vector(struct(GouraudVertex)) Vertices
   ]])
 
-  klass('GradientMesh', { base='Gradient', src='painters/gradient_mesh.cpp', output='painters/gradient_mesh_def.cpp', extended=true }, [[
+  klass('GradientMesh', { base='Gradient', src='painters/gradient_mesh.cpp', output='painters/gradient_mesh_def.cpp', references={ 'GMT' }, extended=true }, [[
     ~int Rows
     ~int Columns
     ~int(GMT) Mode
