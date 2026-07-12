@@ -28,6 +28,17 @@ build/agents/src/tiri/jitlib-generated/  # Generated headers, VM object, host he
 build/agents/jit/lib/              # Final static library
 ```
 
+## Lua State Thread Confinement
+
+A `lua_State` is strictly confined to the thread that owns it and cannot be shared with, accessed from, or transferred
+to another thread.  This restriction includes every value owned by the state, such as stack entries, closures, tables,
+userdata and GC-managed objects including `GCstruct` instances.  Threads that execute Tiri code must use independent
+Lua states and must not pass Lua values or internal GC pointers between those states.
+
+Keep this invariant in mind during concurrency and lifetime analysis: two threads cannot concurrently operate on the
+same `lua_State` or one of its GC-managed values.  Cross-thread communication must use Kōtuku's thread-safe native
+interfaces and copy or otherwise marshal data between the independent states.
+
 
 ## Integration & Build Tips
 - Always rebuild via CMake (e.g. `cmake --build build/agents --config <BuildType>`) after touching LuaJIT or Tiri sources so the static library target is regenerated and relinked into the Tiri module.

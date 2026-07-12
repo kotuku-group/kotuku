@@ -64,11 +64,13 @@ static bool read_primitive_field(lua_State *L, APTR Address, int Type, int Array
    return std::nullopt;
 }
 
-static GCstruct * push_external_struct(lua_State *L, APTR Address, std::string_view StructName)
+static GCstruct * push_external_struct(lua_State *L, APTR Address, std::string_view StructName,
+   Object *Lifecycle = nullptr)
 {
    if (auto def = glStructs.find(StructName); def != glStructs.end()) {
       // This view does not anchor its parent.  It must not outlive the struct whose payload contains Address.
-      return lua_pushstruct(L, def->second, Address);
+      // Sub-views of a lifecycle-bound view inherit the binding (each takes its own weak pin on the object).
+      return lua_pushstruct(L, def->second, Address, 0, Lifecycle);
    }
    return nullptr;
 }
@@ -144,6 +146,19 @@ static int struct_len(lua_State *L)
    return 1;
 }
 
+// Lifecycle staleness guard for interpreted struct accesses.  The check applies only to structs that carry a
+// dependency on a Kotuku object's lifecycle (STRUCT_LIFECYCLE); all other structs pass through untouched.  A JIT
+// fast path for struct fields would follow the same rule, compiling the guard out entirely when the struct has no
+// lifecycle dependency (struct accesses currently always take this interpreted route).
+
+static void check_lifecycle(lua_State *L, GCstruct *Struct, CSTRING FieldName)
+{
+   if (lj_struct_stale(Struct)) {
+      luaL_error(L, ERR::DoesNotExist, "Cannot access field '%s'; the object providing this struct has been destroyed.",
+         FieldName);
+   }
+}
+
 static int struct_get(lua_State *L)
 {
    auto *value = lj_lib_checkstruct(L, 1);
@@ -153,6 +168,7 @@ static int struct_get(lua_State *L)
       lua_pushcclosure(L, &struct_struct_size, 1);
       return 1;
    }
+   check_lifecycle(L, value, field_name);
    if (not value->data) {
       luaL_error(L, ERR::Failed, "Cannot reference field '%s' because struct address is NULL.", field_name);
    }
@@ -178,7 +194,7 @@ static int struct_get(lua_State *L)
                else lua_createarray(L, array_size, ff_to_element(field.Type), (APTR *)address, ARRAY_CACHED,
                   field.StructRef);
             }
-            else if (not push_external_struct(L, ((APTR *)address)[0], field.StructRef)) {
+            else if (not push_external_struct(L, ((APTR *)address)[0], field.StructRef, value->lifecycle)) {
                luaL_error(L, ERR::Search, "Failed to find struct '%s'", field.StructRef.c_str());
             }
          }
@@ -192,7 +208,7 @@ static int struct_get(lua_State *L)
          else make_struct_array(L, field.StructRef, array_size, address);
       }
       else if (field.Type & FD_STRUCT) {
-         if (not push_external_struct(L, address, field.StructRef)) {
+         if (not push_external_struct(L, address, field.StructRef, value->lifecycle)) {
             luaL_error(L, ERR::Search, "Failed to find struct '%s'", field.StructRef.c_str());
          }
       }
@@ -226,6 +242,7 @@ static int struct_set(lua_State *L)
 {
    auto *value = lj_lib_checkstruct(L, 1);
    auto field_name = luaL_checkstring(L, 2);
+   check_lifecycle(L, value, field_name);
    if (not value->data) luaL_error(L, "Cannot reference field '%s' because struct address is NULL.", field_name);
 
    if (auto field_opt = find_field(value, field_name)) {

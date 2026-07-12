@@ -10,6 +10,7 @@
 #include "lauxlib.h"
 #include "lj_obj.h"
 #include "lj_str.h"
+#include "lj_struct.h"
 
 #include "defs.h"
 #include "lj_proto_registry.h"
@@ -1069,6 +1070,11 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             }
          }
          else if (auto native_struct = lua_isstruct(Lua, i) ? lua_tostruct(Lua, i) : nullptr) {
+            // Guard specific to lifecycle-bound struct views; structs without an object dependency skip it.
+            if (lj_struct_stale(native_struct)) {
+               ErrorMsg = "A struct argument's providing object has been destroyed.";
+               return ERR::DoesNotExist;
+            }
             ((APTR *)(buffer + j))[0] = native_struct->data;
             arg_values[in] = buffer + j;
             arg_types[in++] = &ffi_type_pointer;

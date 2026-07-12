@@ -590,6 +590,8 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          else if (auto native_struct = lua_isstruct(Lua, n) ? lua_tostruct(Lua, n) : nullptr) {
             //log.trace("Arg: %s, Value: Buffer (Source is a struct)", Args[i].Name);
 
+            // Guard specific to lifecycle-bound struct views; structs without an object dependency skip it.
+            if (lj_struct_stale(native_struct)) return fail_arg(n, "Struct's providing object has been destroyed.");
             ((APTR *)(ArgBuffer + j))[0] = native_struct->data;
             j += sizeof(APTR);
 
@@ -717,6 +719,8 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
             //log.trace("Arg: %s, Value: Pointer, SrcType: %s", Args[i].Name, lua_typename(Lua, type));
 
             if (auto native_struct = lua_isstruct(Lua, n) ? lua_tostruct(Lua, n) : nullptr) {
+               // Guard specific to lifecycle-bound struct views; structs without an object dependency skip it.
+               if (lj_struct_stale(native_struct)) return fail_arg(n, "Struct's providing object has been destroyed.");
                ((APTR *)(ArgBuffer + j))[0] = native_struct->data;
                //n--; // Adjustment required due to successful get_meta()
             }

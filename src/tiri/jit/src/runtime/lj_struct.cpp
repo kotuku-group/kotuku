@@ -29,6 +29,7 @@ GCstruct * lj_struct_new(lua_State *L, struct_record &Def)
    setgcrefnull(s->gclist);
    setgcrefnull(s->metatable);
    s->def        = &Def;
+   s->lifecycle  = nullptr;
 
    if (Def.Size > 0) std::memset(s->data, 0, size_t(Def.Size));
    construct_struct_cpp_strings(Def, s->data);
@@ -39,10 +40,15 @@ GCstruct * lj_struct_new(lua_State *L, struct_record &Def)
 // Create a GCstruct header that references externally managed memory.  Pass STRUCT_DEALLOCATE in Flags if the
 // memory was allocated with AllocMemory() and ownership transfers to the GC.
 //
+// If the payload's validity depends on a Kotuku object staying alive (e.g. live views of object struct fields),
+// pass that object as Lifecycle.  The view takes a weak pin so that the object's header remains testable after
+// termination, and lj_struct_stale() reports the view as dead from that point onwards.  Weak pins never impede
+// object termination (see the zombie contract in kotuku/objects.h).
+//
 // NB: External structs referencing a parent's inline payload (embedded sub-structs) do not anchor the parent;
 // the caller must keep the parent alive for the lifetime of the view.
 
-GCstruct * lj_struct_new_external(lua_State *L, struct_record &Def, void *Data, uint8_t Flags)
+GCstruct * lj_struct_new_external(lua_State *L, struct_record &Def, void *Data, uint8_t Flags, Object *Lifecycle)
 {
    auto s = (GCstruct *)lj_mem_newgco(L, sizeof(GCstruct));
    s->gct        = ~LJ_TSTRUCT;
@@ -53,6 +59,11 @@ GCstruct * lj_struct_new_external(lua_State *L, struct_record &Def, void *Data, 
    setgcrefnull(s->gclist);
    setgcrefnull(s->metatable);
    s->def        = &Def;
+   s->lifecycle  = Lifecycle;
+   if (Lifecycle) {
+      Lifecycle->pinWeak();
+      s->flags |= STRUCT_LIFECYCLE;
+   }
    return s;
 }
 
@@ -71,5 +82,32 @@ void lj_struct_free(global_State *g, GCstruct *s)
 
    if (s->is_deallocate()) { FreeResource(s->data); s->data = nullptr; }
 
+   // Releasing the last weak pin collects the zombie header if the object was destroyed while this view lived.
+   if (s->is_lifecycle_bound()) {
+      s->lifecycle->unpinWeak();
+      s->lifecycle = nullptr;
+   }
+
    lj_mem_free(g, s, s->alloc_size());
+}
+
+//********************************************************************************************************************
+// Report whether a struct view has outlived the Kotuku object that owns its payload, poisoning the data pointer on
+// detection so that later NULL-data checks also fail safely.
+//
+// This guard is specific to structs carrying a dependency on an object's lifecycle (STRUCT_LIFECYCLE); inline and
+// plain external structs return false without touching the pin machinery.  For JIT-compiled accesses the same rule
+// applies: the guard would be compiled out of the trace whenever the struct has no lifecycle dependency (structs
+// are presently not traced - FD_STRUCT fields fall back to the interpreter - but any future fast path must emit
+// this test as a trace guard for lifecycle-bound views only).
+//
+// The weak pin taken at creation guarantees the object header stays readable after termination (only Flags and
+// RefCount remain valid at that point), which makes the terminating() test safe here.
+
+bool lj_struct_stale(GCstruct *s)
+{
+   if (not s->is_lifecycle_bound()) return false;
+   if (not s->lifecycle->terminating()) return false; // The lifecycle object is still pinned at this point
+   s->data = nullptr;
+   return true;
 }

@@ -369,8 +369,8 @@ static void collect_object_ids(lua_State *Lua, int ArgIndex, kt::vector<OBJECTID
 //********************************************************************************************************************
 // Usage: error = async.wait(Object|array<object>, [Timeout])
 //
-// Thin wrapper around the Core AsyncWait() API.  Collects object IDs from the Lua arguments
-// and delegates to AsyncWait().
+// Thin wrapper around the Core AsyncWait() API.  Collects object IDs from the Lua arguments and delegates to
+// AsyncWait().
 
 static int async_wait(lua_State *Lua)
 {

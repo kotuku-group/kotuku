@@ -56,3 +56,30 @@ end
    assert(colour.red is 41, 'Whole-struct assignment should update an existing live view')
    assert(font.colour.alpha is 79, 'Whole-struct assignment should copy every field')
 end
+
+@Test function StructFieldStaleView()
+   font = obj.new('font')
+
+   colour = font.colour
+   assert(type(colour) is 'struct', 'Font.colour should be exposed as a native struct')
+
+   font.free()
+
+   read_caught = false
+   try
+      -- NB: '_ = colour.red' would elide the read entirely; a real local is required to trigger the access.
+      local red = colour.red
+      read_caught = red < 0 -- Unreachable; keeps the read live
+   except e
+      read_caught = true
+   end
+   assert(read_caught, 'Reading a struct view after object destruction should raise an exception')
+
+   write_caught = false
+   try
+      colour.green = 1
+   except e
+      write_caught = true
+   end
+   assert(write_caught, 'Writing a struct view after object destruction should raise an exception')
+end

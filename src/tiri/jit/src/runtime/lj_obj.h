@@ -997,19 +997,22 @@ inline GCobject* objectref(GCRef r) noexcept;
 // Flags for GCstruct.flags
 inline constexpr uint8_t STRUCT_EXTERNAL   = 0x01;  // Payload is externally managed (data does not follow header)
 inline constexpr uint8_t STRUCT_DEALLOCATE = 0x02;  // FreeResource(data) when the struct is collected
+inline constexpr uint8_t STRUCT_LIFECYCLE  = 0x04;  // Payload validity depends on a weak-pinned Kotuku object
 
 struct GCstruct {
    GCHeader;                    // [0]  nextgc, marked, gct (10 bytes)
-   uint8_t flags;               // [10] Struct flags (STRUCT_EXTERNAL, STRUCT_DEALLOCATE)
+   uint8_t flags;               // [10] Struct flags (STRUCT_EXTERNAL, STRUCT_DEALLOCATE, STRUCT_LIFECYCLE)
    uint8_t unused1;             // [11] Reserved for alignment
    uint32_t structsize;         // [12] Byte size of the structure payload (def->Size at creation time)
    void *data;                  // [16] Pointer to the structure data (this+1 for inline payloads)
    GCRef gclist;                // [24] GC list for marking (must match GCtab.gclist)
    GCRef metatable;             // [32] Optional metatable (must match GCtab.metatable)
    struct struct_record *def;   // [40] The structure definition (owned by glStructs)
+   struct Object *lifecycle;    // [48] Weak-pinned object that owns the payload (STRUCT_LIFECYCLE only)
 
    [[nodiscard]] inline bool is_external() const noexcept { return (flags & STRUCT_EXTERNAL) != 0; }
    [[nodiscard]] inline bool is_deallocate() const noexcept { return (flags & STRUCT_DEALLOCATE) != 0; }
+   [[nodiscard]] inline bool is_lifecycle_bound() const noexcept { return (flags & STRUCT_LIFECYCLE) != 0; }
 
    // Allocation size must match lj_struct_new()/lj_struct_new_external() exactly or g->gc.total drifts.
    [[nodiscard]] inline size_t alloc_size() const noexcept {

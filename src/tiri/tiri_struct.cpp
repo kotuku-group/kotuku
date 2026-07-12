@@ -54,9 +54,10 @@ terminated arrays, use [0].
 
 static constexpr int MAX_STRUCT_DEF = 2048; // Struct definitions are typically 100 - 400 bytes.
 
-inline GCstruct * push_struct_def(lua_State *Lua, APTR Address, struct_record &StructDef, bool Deallocate)
+inline GCstruct * push_struct_def(lua_State *Lua, APTR Address, struct_record &StructDef, bool Deallocate,
+   OBJECTPTR Lifecycle = nullptr)
 {
-   return lua_pushstruct(Lua, StructDef, Address, Deallocate ? STRUCT_DEALLOCATE : 0);
+   return lua_pushstruct(Lua, StructDef, Address, Deallocate ? STRUCT_DEALLOCATE : 0, Lifecycle);
 }
 
 // Handles both construction and destruction of std::string usage in a structure.
@@ -352,14 +353,15 @@ static bool write_primitive_field(lua_State *Lua, APTR Address, int Type, int St
 //********************************************************************************************************************
 // Use this for creating a struct on the Lua stack.
 
-GCstruct * push_struct(extTiri *Self, APTR Address, std::string_view StructName, bool Deallocate, bool AllowEmpty)
+GCstruct * push_struct(extTiri *Self, APTR Address, std::string_view StructName, bool Deallocate, bool AllowEmpty,
+   OBJECTPTR Lifecycle)
 {
    kt::Log log(__FUNCTION__);
 
    log.traceBranch("Struct: %s, Address: %p, Deallocate: %d", StructName.data(), Address, Deallocate);
 
    if (auto def = glStructs.find(StructName); def != glStructs.end()) {
-      return push_struct_def(Self->Lua, Address, def->second, Deallocate);
+      return push_struct_def(Self->Lua, Address, def->second, Deallocate, Lifecycle);
    }
    else if (AllowEmpty) {
       // The AllowEmpty option is useful in situations where a successful API call returns a structure that is strictly
@@ -367,7 +369,7 @@ GCstruct * push_struct(extTiri *Self, APTR Address, std::string_view StructName,
       // an empty structure declaration.
 
       static struct_record empty("");
-      return push_struct_def(Self->Lua, Address, empty, false);
+      return push_struct_def(Self->Lua, Address, empty, false, Lifecycle);
    }
    else {
       if (Deallocate) FreeResource(Address);

@@ -159,7 +159,9 @@ extern void   lua_rawgeti(lua_State *L, int idx, int n);
 extern void   lua_createtable(lua_State *L, int narr, int nrec);
 extern void   lua_createarray(lua_State *L, uint32_t Length, AET Type, void *Data = nullptr, uint8_t Flags = 0, std::string_view StructName = {});
 struct struct_record;
-extern GCstruct * lua_pushstruct(lua_State *L, struct_record &Def, void *Data = nullptr, uint8_t Flags = 0);
+struct Object;
+extern GCstruct * lua_pushstruct(lua_State *L, struct_record &Def, void *Data = nullptr, uint8_t Flags = 0,
+   Object *Lifecycle = nullptr);
 extern void * lua_newuserdata(lua_State *L, size_t sz);
 
 // Native Kōtuku object support
