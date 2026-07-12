@@ -180,7 +180,7 @@ static uint64_t mesh_gradient_fingerprint(const MeshGradient &Mesh, int Segments
 
    mix(Mesh.rows);
    mix(Mesh.cols);
-   mix(Mesh.bicubic ? 1 : 0);
+   mix(int(Mesh.mode));
    mix(Segments);
    mix(Mesh.patches.size());
 
@@ -452,8 +452,8 @@ static void fill_gouraud(VectorState &State, const TClipRectangle<double> &Bound
 
 //********************************************************************************************************************
 // Mesh gradient tessellation.  A bilinear Coons patch is evaluated from four boundary cubic Beziers.  Patch colours
-// are interpolated bilinearly in the same (u,v) parameter space, then each grid cell is emitted as two Gouraud
-// triangles for the shared renderer above.
+// are interpolated bilinearly in the same (u,v) parameter space - or bicubically when the mesh requests it - then
+// each grid cell is emitted as two Gouraud triangles for the shared renderer above.
 
 static agg::point_d mesh_point_add(const agg::point_d &A, const agg::point_d &B)
 {
@@ -531,6 +531,115 @@ static agg::rgba8 mesh_colour_eval(const MeshPatch &Patch, double U, double V, d
    return agg::rgba8(colour, colour.Alpha * Opacity);
 }
 
+//********************************************************************************************************************
+// Colour grid for bicubic colour interpolation (type="bicubic"; PDF type 7 semantics).  Patch geometry is unchanged -
+// only the colour surface differs.  Corner colours are placed on the (rows+1) x (cols+1) grid of patch corners and
+// per-parameter colour derivatives are estimated at each node: centred differences at interior nodes, one-sided
+// differences at the mesh boundary, and zero cross-derivatives.  Each patch then evaluates a bicubic Hermite surface
+// from its four corner values and derivatives.  Because adjacent patches share node values and derivatives, the
+// colour surface is C1-continuous across seams, removing the star/cross artefact of bilinear blending.
+
+struct MeshColourGrid {
+   int rows = 0, cols = 0;
+   std::vector<FRGB> value, du, dv; // (rows+1) x (cols+1) nodes, row-major
+
+   const FRGB & at(const std::vector<FRGB> &Nodes, int Row, int Col) const {
+      return Nodes[(size_t(Row) * size_t(cols + 1)) + size_t(Col)];
+   }
+};
+
+static FRGB mesh_colour_diff(const FRGB &A, const FRGB &B, float Scale)
+{
+   return FRGB((A.Red - B.Red) * Scale, (A.Green - B.Green) * Scale,
+      (A.Blue - B.Blue) * Scale, (A.Alpha - B.Alpha) * Scale);
+}
+
+static bool build_mesh_colour_grid(const MeshGradient &Mesh, bool Linear, MeshColourGrid &Grid)
+{
+   if ((Mesh.rows < 1) or (Mesh.cols < 1)) return false;
+   if ((size_t(Mesh.rows) * size_t(Mesh.cols)) != Mesh.patches.size()) return false;
+
+   Grid.rows = Mesh.rows;
+   Grid.cols = Mesh.cols;
+   const int nodes_x = Grid.cols + 1;
+   const int nodes_y = Grid.rows + 1;
+   Grid.value.resize(size_t(nodes_x) * size_t(nodes_y));
+   Grid.du.resize(Grid.value.size());
+   Grid.dv.resize(Grid.value.size());
+
+   // Node colours are read from the owning patch corner; adjacent patches in a well-formed mesh carry identical
+   // colours at shared corners, so any owner is equivalent.
+
+   for (int i=0; i < nodes_y; i++) {
+      for (int j=0; j < nodes_x; j++) {
+         const int pr = std::min(i, Grid.rows - 1);
+         const int pc = std::min(j, Grid.cols - 1);
+         const auto &patch = Mesh.patches[(size_t(pr) * size_t(Grid.cols)) + size_t(pc)];
+         const int corner = (i > pr) ? ((j > pc) ? 2 : 3) : ((j > pc) ? 1 : 0);
+         auto colour = patch.corner[corner];
+         if (Linear) glLinearRGB.convert(colour);
+         Grid.value[(size_t(i) * size_t(nodes_x)) + size_t(j)] = colour;
+      }
+   }
+
+   // Derivatives are expressed per unit of patch parameter, so a centred difference spanning two patches is halved.
+   // At a boundary the one-sided difference equals the chord, which degrades single-patch meshes to the bilinear
+   // result - the correct limit when there are no neighbours to smooth against.
+
+   for (int i=0; i < nodes_y; i++) {
+      for (int j=0; j < nodes_x; j++) {
+         const size_t idx = (size_t(i) * size_t(nodes_x)) + size_t(j);
+
+         if (j IS 0) Grid.du[idx] = mesh_colour_diff(Grid.at(Grid.value, i, 1), Grid.at(Grid.value, i, 0), 1.0f);
+         else if (j IS Grid.cols) Grid.du[idx] = mesh_colour_diff(Grid.at(Grid.value, i, j), Grid.at(Grid.value, i, j - 1), 1.0f);
+         else Grid.du[idx] = mesh_colour_diff(Grid.at(Grid.value, i, j + 1), Grid.at(Grid.value, i, j - 1), 0.5f);
+
+         if (i IS 0) Grid.dv[idx] = mesh_colour_diff(Grid.at(Grid.value, 1, j), Grid.at(Grid.value, 0, j), 1.0f);
+         else if (i IS Grid.rows) Grid.dv[idx] = mesh_colour_diff(Grid.at(Grid.value, i, j), Grid.at(Grid.value, i - 1, j), 1.0f);
+         else Grid.dv[idx] = mesh_colour_diff(Grid.at(Grid.value, i + 1, j), Grid.at(Grid.value, i - 1, j), 0.5f);
+      }
+   }
+
+   return true;
+}
+
+static agg::rgba8 mesh_colour_eval_bicubic(const MeshColourGrid &Grid, int Row, int Col, double U, double V,
+   double Opacity)
+{
+   auto hermite = [](double T, double (&H)[4]) {
+      const double t2 = T * T;
+      const double t3 = t2 * T;
+      H[0] = (2.0 * t3) - (3.0 * t2) + 1.0; // Weight of the value at 0
+      H[1] = (3.0 * t2) - (2.0 * t3);       // Weight of the value at 1
+      H[2] = t3 - (2.0 * t2) + T;           // Weight of the derivative at 0
+      H[3] = t3 - t2;                       // Weight of the derivative at 1
+   };
+
+   double hu[4], hv[4];
+   hermite(U, hu);
+   hermite(V, hv);
+
+   const FRGB &c00 = Grid.at(Grid.value, Row, Col),     &c10 = Grid.at(Grid.value, Row, Col + 1);
+   const FRGB &c01 = Grid.at(Grid.value, Row + 1, Col), &c11 = Grid.at(Grid.value, Row + 1, Col + 1);
+   const FRGB &u00 = Grid.at(Grid.du, Row, Col),        &u10 = Grid.at(Grid.du, Row, Col + 1);
+   const FRGB &u01 = Grid.at(Grid.du, Row + 1, Col),    &u11 = Grid.at(Grid.du, Row + 1, Col + 1);
+   const FRGB &v00 = Grid.at(Grid.dv, Row, Col),        &v10 = Grid.at(Grid.dv, Row, Col + 1);
+   const FRGB &v01 = Grid.at(Grid.dv, Row + 1, Col),    &v11 = Grid.at(Grid.dv, Row + 1, Col + 1);
+
+   // The clamp bounds Hermite overshoot on strongly contrasting corners as well as normalising the result.
+
+   auto channel = [&](float FRGB::* Ch) {
+      const double row0   = (hu[0] * c00.*Ch) + (hu[1] * c10.*Ch) + (hu[2] * u00.*Ch) + (hu[3] * u10.*Ch);
+      const double row1   = (hu[0] * c01.*Ch) + (hu[1] * c11.*Ch) + (hu[2] * u01.*Ch) + (hu[3] * u11.*Ch);
+      const double slope0 = (hu[0] * v00.*Ch) + (hu[1] * v10.*Ch); // Cross-derivatives are zero
+      const double slope1 = (hu[0] * v01.*Ch) + (hu[1] * v11.*Ch);
+      return float(std::clamp((hv[0] * row0) + (hv[1] * row1) + (hv[2] * slope0) + (hv[3] * slope1), 0.0, 1.0));
+   };
+
+   FRGB colour(channel(&FRGB::Red), channel(&FRGB::Green), channel(&FRGB::Blue), channel(&FRGB::Alpha));
+   return agg::rgba8(colour, colour.Alpha * Opacity);
+}
+
 struct MeshPreparedVertex {
    double x, y;
    agg::rgba8 colour;
@@ -556,10 +665,20 @@ static void rebuild_mesh_cache(GouraudCache &Cache, const MeshGradient &Mesh, co
    const int stride = Segments + 1;
    std::vector<MeshPreparedVertex> vertices(size_t(stride) * size_t(stride));
 
+   // Bicubic colour interpolation requires valid row/column metadata to locate each patch's neighbours.  Without
+   // it, each patch would smooth in isolation, which is exactly the bilinear result - so fall back to bilinear.
+
+   MeshColourGrid colour_grid;
+   const bool bicubic = (Mesh.mode IS GMT::BICUBIC) and (build_mesh_colour_grid(Mesh, linear, colour_grid));
+
    Cache.Triangles.clear();
    Cache.Triangles.reserve(Mesh.patches.size() * size_t(Segments) * size_t(Segments) * 2);
 
-   for (auto &patch : Mesh.patches) {
+   for (size_t p=0; p < Mesh.patches.size(); p++) {
+      const auto &patch = Mesh.patches[p];
+      const int patch_row = bicubic ? int(p / size_t(colour_grid.cols)) : 0;
+      const int patch_col = bicubic ? int(p % size_t(colour_grid.cols)) : 0;
+
       for (int y=0; y <= Segments; y++) {
          const double v = double(y) / double(Segments);
          for (int x=0; x <= Segments; x++) {
@@ -570,7 +689,8 @@ static void rebuild_mesh_cache(GouraudCache &Cache, const MeshGradient &Mesh, co
             auto &vertex = vertices[size_t(y * stride + x)];
             vertex.x = point.x;
             vertex.y = point.y;
-            vertex.colour = mesh_colour_eval(patch, u, v, Opacity, linear);
+            vertex.colour = bicubic ? mesh_colour_eval_bicubic(colour_grid, patch_row, patch_col, u, v, Opacity)
+               : mesh_colour_eval(patch, u, v, Opacity, linear);
          }
       }
 

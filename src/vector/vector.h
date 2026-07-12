@@ -384,7 +384,7 @@ struct MeshGradient {
    int rows = 0;
    int cols = 0;
    std::vector<MeshPatch> patches;
-   bool bicubic = false;
+   GMT mode = GMT::LINEAR;
 };
 
 // One mesh triangle after coordinate transformation and colour conversion, ready to hand to a Gouraud span.
@@ -595,6 +595,7 @@ class extGradientMesh : public extGradient {
    static constexpr CSTRING CLASS_NAME = "GradientMesh";
    using create = kt::Create<extGradientMesh>;
 
+   GMT Mode = GMT::LINEAR; // Gradient mesh mode: linear or bicubic.
    std::unique_ptr<MeshGradient> Mesh; // Coons patch data for GradientMesh.
    GouraudCache MeshTriangles; // Cached tessellated/coloured triangle list.
 

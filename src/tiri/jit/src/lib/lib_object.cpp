@@ -849,16 +849,19 @@ static int object_detach(lua_State *Lua)
 static int object_exists(lua_State *Lua)
 {
    auto def = object_context(Lua);
+
    if (object_is_dead(def)) {
       access_object(def); // Clears the stale UID and releases the wrapper's weak pin.
       lua_pushboolean(Lua, false);
       return 1;
    }
+
    if (def->is_pinned()) {
       // The weak pin guarantees the header remains valid, so not-dead means alive - no lock cycle required.
       lua_pushboolean(Lua, true);
       return 1;
    }
+
    if (access_object(def)) {
       release_object(def);
       lua_pushboolean(Lua, true);
@@ -977,6 +980,7 @@ static int object_free(lua_State *Lua)
       def->ptr->unpinWeak();
       def->set_pinned(false);
    }
+
    def->uid = 0;
    def->ptr = nullptr;
    def->classptr = nullptr;

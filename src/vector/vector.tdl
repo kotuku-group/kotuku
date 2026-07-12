@@ -24,6 +24,11 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
      "JOIN_PATHS: When appending a new path, use a join operation to connect the tail end to the head.",
      "ISOLATED: Enables isolation mode, which results in a bitmap buffer being allocated for the vector and its children while drawing.")
 
+  enums("GMT", { type="int", start=0, comment="Available modes for the GradientMesh class." },
+    "UNDEFINED: Either the default setting will be applied or the setting will be inherited from a parent object.",
+    "LINEAR: Use linear interpolation for the patch colours.",
+    "BICUBIC: Use bicubic interpolation for the patch colours.")
+
   enums("VFA", { type="int", comment="Define the aspect ratio for VectorFilter unit scaling." },
      "MEET: Scale X/Y values independently and in relation to the width/height of the parent viewport.",
      "NONE: Scale X/Y values on a `1:1` basis, in relation to the diagonal of the parent viewport.")
@@ -598,9 +603,10 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     ~vector(struct(GouraudVertex)) Vertices
   ]])
 
-  klass('GradientMesh', { base='Gradient', src='painters/gradient_mesh.cpp', output='painters/gradient_mesh_def.cpp', extended=true }, [[
+  klass('GradientMesh', { base='Gradient', src='painters/gradient_mesh.cpp', output='painters/gradient_mesh_def.cpp', references={ 'GMT' }, extended=true }, [[
     ~int Rows
     ~int Columns
+    ~int(GMT) Mode
     ~vector(struct(MeshPatchRecord)) Patches
   ]])
 

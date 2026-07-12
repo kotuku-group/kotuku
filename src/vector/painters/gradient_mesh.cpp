@@ -5,7 +5,8 @@ GradientMesh: Bilinear Coons patch mesh gradient paint server.
 
 GradientMesh interpolates colour across a grid of curved patches.  Each patch is bounded by four cubic Bezier edges
 and carries one colour at each corner.  Rendering tessellates the patches into Gouraud triangles, so colour follows
-the patch geometry rather than a one-dimensional colour ramp.
+the patch geometry rather than a one-dimensional colour ramp.  Corner colours are blended bilinearly by default;
+setting #Mode to `BICUBIC` selects smooth bicubic colour interpolation across the patch grid instead.
 
 The inherited colour-ramp fields `Stops`, `ColourMap`, `SpreadMethod` and `Colour` are not supported by this class.
 Patch geometry and corner colours are supplied through #Patches.
@@ -18,12 +19,10 @@ independent patches, but the original row structure is not retained.
 -END-
 
 TODO:
-- Add tensor-product bicubic mesh patches, including the four internal control points from the SVG proposal.
+- Add tensor-product patch geometry (the four internal control points from PDF type 7 shadings).
 - Replace the current uniform tessellation with adaptive subdivision driven by patch flatness and screen size.
 - Add a richer structured authoring API once mesh patch editing needs per-edge or per-corner mutation without
   replacing the full #Patches array.
-- Extend SVG conformance tests to cover multi-row shared top-edge inheritance, malformed patch path recovery and
-  colour-space interpolation through `linearRGB`.
 
 *********************************************************************************************************************/
 
@@ -130,6 +129,43 @@ static MeshPatch record_to_mesh_patch(const MeshPatchRecord &Record)
 /*********************************************************************************************************************
 
 -FIELD-
+Columns: The number of columns represented by the flat Patches array.
+
+Columns stores the column count for the mesh grid while #Patches remains a flat row-major array.  The row and column
+counts must multiply to the number of patch records when both dimensions and patches are present.
+
+-END-
+*********************************************************************************************************************/
+
+static ERR GRADIENTMESH_GET_Columns(extGradientMesh *Self, int &Value)
+{
+   Value = (Self->Mesh) ? Self->Mesh->cols : 0;
+   return ERR::Okay;
+}
+
+static ERR GRADIENTMESH_SET_Columns(extGradientMesh *Self, int Value)
+{
+   if (Value <= 0) return kt::Log().warning(ERR::InvalidValue);
+
+   if (not Self->Mesh) Self->Mesh = std::make_unique<MeshGradient>();
+
+   int rows = Self->Mesh->rows;
+   if (not Self->Mesh->patches.empty()) {
+      if ((int(Self->Mesh->patches.size()) % Value) != 0) return kt::Log().warning(ERR::InvalidValue);
+      rows = int(Self->Mesh->patches.size()) / Value;
+   }
+
+   if (auto error = validate_mesh_dimensions(Self, rows, Value); error != ERR::Okay) return error;
+
+   Self->Mesh->rows = rows;
+   Self->Mesh->cols = Value;
+   invalidate_mesh(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Patches: Defines the Coons patches for a mesh gradient.
 
 The Patches array defines one or more bilinear Coons patches.  Each !MeshPatchRecord contains four cubic Bezier
@@ -156,6 +192,48 @@ static ERR GRADIENTMESH_GET_Patches(extGradientMesh *Self, std::span<MeshPatchRe
    }
 
    Array = std::span<MeshPatchRecord>(records.data(), records.size());
+   return ERR::Okay;
+}
+
+static ERR GRADIENTMESH_SET_Patches(extGradientMesh *Self, std::span<const MeshPatchRecord> &Array)
+{
+   if ((not Array.data()) or Array.empty()) { // An empty array clears the mesh entirely.
+      if (Self->Mesh) {
+         Self->Mesh->patches.clear();
+         Self->Mesh->rows = 0;
+         Self->Mesh->cols = 0;
+         invalidate_mesh(Self);
+      }
+      return ERR::Okay;
+   }
+
+   if (not Self->Mesh) Self->Mesh = std::make_unique<MeshGradient>();
+
+   int rows = Self->Mesh->rows;
+   int columns = Self->Mesh->cols;
+   const int patch_count = int(Array.size());
+
+   if ((rows > 0) and (columns > 0) and ((rows * columns) IS patch_count)) {
+      // Existing row metadata remains valid.
+   }
+   else if ((rows > 0) and ((patch_count % rows) IS 0)) {
+      columns = patch_count / rows;
+   }
+   else if ((columns > 0) and ((patch_count % columns) IS 0)) {
+      rows = patch_count / columns;
+   }
+   else {
+      rows = 1;
+      columns = patch_count;
+   }
+
+   Self->Mesh->rows = rows;
+   Self->Mesh->cols = columns;
+   Self->Mesh->patches.clear();
+   Self->Mesh->patches.reserve(Array.size());
+   for (auto &record : Array) Self->Mesh->patches.push_back(record_to_mesh_patch(record));
+
+   invalidate_mesh(Self);
    return ERR::Okay;
 }
 
@@ -200,80 +278,28 @@ static ERR GRADIENTMESH_SET_Rows(extGradientMesh *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
-Columns: The number of columns represented by the flat Patches array.
+Mode: Chooses the interpolation mode for the mesh gradient.
 
-Columns stores the column count for the mesh grid while #Patches remains a flat row-major array.  The row and column
-counts must multiply to the number of patch records when both dimensions and patches are present.
+By default, corner colours are interpolated bilinearly across each patch, which can leave a visible star or cross
+artefact where patch corners meet.  Opting for the `BICUBIC` mode switches to bicubic colour interpolation: colour
+derivatives are estimated at each grid corner from the neighbouring patch colours, giving smooth colour transitions
+across patch seams.  This matches the `type="bicubic"` mesh gradient mode of the SVG proposal (Inkscape's "smooth
+colors" option).  Patch geometry is unaffected; only the colour surface changes.
+
+The setting is a rendering mode and is retained when #Patches is reassigned.
 
 -END-
 *********************************************************************************************************************/
 
-static ERR GRADIENTMESH_GET_Columns(extGradientMesh *Self, int &Value)
+static ERR GRADIENTMESH_SET_Mode(extGradientMesh *Self, GMT Value)
 {
-   Value = (Self->Mesh) ? Self->Mesh->cols : 0;
-   return ERR::Okay;
-}
-
-static ERR GRADIENTMESH_SET_Columns(extGradientMesh *Self, int Value)
-{
-   if (Value <= 0) return kt::Log().warning(ERR::InvalidValue);
-
    if (not Self->Mesh) Self->Mesh = std::make_unique<MeshGradient>();
 
-   int rows = Self->Mesh->rows;
-   if (not Self->Mesh->patches.empty()) {
-      if ((int(Self->Mesh->patches.size()) % Value) != 0) return kt::Log().warning(ERR::InvalidValue);
-      rows = int(Self->Mesh->patches.size()) / Value;
+   Self->Mode = Value;
+   if (Self->Mesh->mode != Value) {
+      Self->Mesh->mode = Value;
+      invalidate_mesh(Self);
    }
-
-   if (auto error = validate_mesh_dimensions(Self, rows, Value); error != ERR::Okay) return error;
-
-   Self->Mesh->rows = rows;
-   Self->Mesh->cols = Value;
-   invalidate_mesh(Self);
-   return ERR::Okay;
-}
-
-static ERR GRADIENTMESH_SET_Patches(extGradientMesh *Self, std::span<const MeshPatchRecord> &Array)
-{
-   if ((not Array.data()) or Array.empty()) { // An empty array clears the mesh entirely.
-      if (Self->Mesh) {
-         Self->Mesh->patches.clear();
-         Self->Mesh->rows = 0;
-         Self->Mesh->cols = 0;
-         invalidate_mesh(Self);
-      }
-      return ERR::Okay;
-   }
-
-   if (not Self->Mesh) Self->Mesh = std::make_unique<MeshGradient>();
-
-   int rows = Self->Mesh->rows;
-   int columns = Self->Mesh->cols;
-   const int patch_count = int(Array.size());
-
-   if ((rows > 0) and (columns > 0) and ((rows * columns) IS patch_count)) {
-      // Existing row metadata remains valid.
-   }
-   else if ((rows > 0) and ((patch_count % rows) IS 0)) {
-      columns = patch_count / rows;
-   }
-   else if ((columns > 0) and ((patch_count % columns) IS 0)) {
-      rows = patch_count / columns;
-   }
-   else {
-      rows = 1;
-      columns = patch_count;
-   }
-
-   Self->Mesh->rows = rows;
-   Self->Mesh->cols = columns;
-   Self->Mesh->bicubic = false;
-   Self->Mesh->patches.clear();
-   Self->Mesh->patches.reserve(Array.size());
-   for (auto &record : Array) Self->Mesh->patches.push_back(record_to_mesh_patch(record));
-
-   invalidate_mesh(Self);
    return ERR::Okay;
 }
 
@@ -300,6 +326,7 @@ static const FieldArray clGradientMeshFields[] = {
    { "SpreadMethod", FDF_SYSTEM|FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENTMESH_SET_SpreadMethod, &clGradientSpreadMethod },
    { "Stops",        FDF_SYSTEM|FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_RW|FDF_PURE, nullptr, GRADIENTMESH_SET_Stops, "GradientStop" },
    // Mesh fields
+   { "Mode",         FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENTMESH_SET_Mode, &clGradientMeshGMT },
    { "Rows",         FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, GRADIENTMESH_GET_Rows, GRADIENTMESH_SET_Rows },
    { "Columns",      FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, GRADIENTMESH_GET_Columns, GRADIENTMESH_SET_Columns },
    { "Patches",      FDF_VIRTUAL|FDF_VECTOR|FDF_STRUCT|FDF_RW|FDF_PURE, GRADIENTMESH_GET_Patches, GRADIENTMESH_SET_Patches, "MeshPatchRecord" },
