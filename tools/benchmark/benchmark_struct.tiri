@@ -1,0 +1,28 @@
+-- Benchmark direct reads and writes on fields exposed by the native struct interface.
+
+   MAKESTRUCT('BenchmarkStruct', 'lInteger,xWide,fFloat,dDouble')
+
+   local glBenchmarkStruct = struct.new('BenchmarkStruct', {
+      integer = 1,
+      wide    = 2,
+      float   = 3.5,
+      double  = 4.5
+   })
+
+@Test function StructReadFields()
+   for i = 0,100000 do
+      local integer = glBenchmarkStruct.integer
+      local wide    = glBenchmarkStruct.wide
+      local float   = glBenchmarkStruct.float
+      local double  = glBenchmarkStruct.double
+   end
+end
+
+@Test function StructWriteFields()
+   for i = 0,100000 do
+      glBenchmarkStruct.integer = 1
+      glBenchmarkStruct.wide    = 2
+      glBenchmarkStruct.float   = 3.5
+      glBenchmarkStruct.double  = 4.5
+   end
+end

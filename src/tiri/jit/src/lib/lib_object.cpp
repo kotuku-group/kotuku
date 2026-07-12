@@ -878,29 +878,16 @@ static int object_subscribe(lua_State *Lua)
    auto def = object_context(Lua);
 
    CSTRING action;
-   if (not (action = lua_tostring(Lua, 1))) {
-      luaL_argerror(Lua, 1, "Action name expected.");
-      return 0;
-   }
-
-   if (not lua_isfunction(Lua, 2)) {
-      luaL_argerror(Lua, 2, "Function expected.");
-      return 0;
-   }
+   if (not (action = lua_tostring(Lua, 1))) luaL_argerror(Lua, 1, "Action name expected.");
+   if (not lua_isfunction(Lua, 2)) luaL_argerror(Lua, 2, "Function expected.");
 
    const FunctionField *arglist;
    ACTIONID action_id = get_action_info(Lua, def->classptr->ClassID, action, &arglist);
 
-   if (action_id IS AC::NIL) {
-      luaL_argerror(Lua, 1, "Action/Method name is invalid.");
-      return 0;
-   }
+   if (action_id IS AC::NIL) luaL_argerror(Lua, 1, "Action/Method name is invalid.");
 
    OBJECTPTR obj;
-   if (not (obj = access_object(def))) {
-      luaL_error(Lua, ERR::AccessObject);
-      return 0;
-   }
+   if (not (obj = access_object(def))) luaL_error(Lua, ERR::AccessObject);
 
    kt::Log log("obj.subscribe");
    log.trace("Object: %d, Action: %s (ID %d)", def->uid, action, action_id);
@@ -1026,10 +1013,7 @@ static int object_close_handler(lua_State *Lua)
 static int object_with_lock(lua_State *Lua)
 {
    if (auto *def = lj_get_object_fast(Lua, 1)) {
-      if (not access_object(def)) {
-         luaL_error(Lua, ERR::AccessObject, "Failed to lock object for 'with' statement.");
-         return 0;
-      }
+      if (not access_object(def)) luaL_error(Lua, ERR::AccessObject, "Failed to lock object for 'with' statement.");
       lua_pushvalue(Lua, 1); // Return the object
    }
    else luaL_argerror(Lua, 1, "Object expected for 'with' statement.");

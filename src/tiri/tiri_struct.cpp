@@ -28,8 +28,10 @@ Prefixes for variants, in order of acceptable usage:
   z = Use the C++ variant of the type, e.g. 'cs' for std::string
   u = Unsigned (Use in conjunction with a type)
 
-Arrays are permitted if you follow the field name with [n] where 'n' is the array size.  For pointers to null
-terminated arrays, use [0].
+Embedded arrays are permitted if you follow the field name with [n] where 'n' is the array size.  For pointers to
+null terminated arrays, use [0].
+
+TODO: Support for kt::vector
 
 *********************************************************************************************************************/
 
