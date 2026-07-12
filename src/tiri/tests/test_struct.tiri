@@ -41,3 +41,62 @@ end
    assert(patch_record.child != patch_record, 'Offset-zero embedded struct should not alias its parent table')
    assert(patch_record.child.value is 0, 'Offset-zero embedded struct fields should be readable')
 end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ObjectFieldAssignments()
+   MAKESTRUCT('ObjectFieldAssignments', 'oValue')
+
+   local value = mSys.FindClass('task':hash(), 0)
+   local container = struct.new('ObjectFieldAssignments', { value=value })
+   local initial_value = container.value
+   assert(type(initial_value) is 'object', 'struct.new() should return a native object from an object field')
+   assert(initial_value.id is value.id, 'struct.new() should preserve the assigned native object ID')
+
+   container.value = nil
+   assert(container.value is nil, 'Assigning nil should clear an object field')
+
+   container.value = value
+   local updated_value = container.value
+   assert(updated_value.id is value.id, 'Direct assignment should preserve the assigned native object ID')
+
+   local dead_value = obj.new('time')
+   dead_value.free()
+   try
+      container.value = dead_value
+   success
+      error('Assigning a detached object wrapper should fail')
+   end
+   container.value = nil
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function StringFieldAssignments()
+   MAKESTRUCT('StringFieldAssignments', 'zsName,sBorrowed')
+
+   local container = struct.new('StringFieldAssignments', { name='initial' })
+   assert(container.name is 'initial', 'struct.new() should initialise an owned C++ string field')
+
+   container.name = 'updated'
+   assert(container.name is 'updated', 'Direct assignment should update an owned C++ string field')
+
+   try
+      container.borrowed = 'unsupported'
+   success
+      error('Assigning a raw C string field should fail')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function UnsupportedFieldAssignmentRaises()
+   MAKESTRUCT('UnsupportedFieldAssignment', 'rCallback')
+   local container = struct.new('UnsupportedFieldAssignment')
+
+   try
+      container.callback = nil
+   success
+      error('Assigning an unsupported field type should fail')
+   end
+end

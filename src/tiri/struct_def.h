@@ -12,10 +12,8 @@ struct struct_field {
    int  Type      = 0;    // FD flags
    int  ArraySize = 0;    // Set if the field is an array
 
-   uint32_t nameHash() {
-      if (!NameHash) NameHash = kt::strihash(Name);
-      return NameHash;
-   }
+   void precomputeNameHash() { NameHash = kt::strihash(Name); }
+   [[nodiscard]] uint32_t nameHash() const { return NameHash; }
 
    private:
    uint32_t NameHash = 0;     // Lowercase hash of the field name

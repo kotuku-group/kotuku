@@ -522,6 +522,7 @@ static void make_camel_case(std::string &String)
       }
 
       make_camel_case(field.Name);
+      field.precomputeNameHash();
 
       // Manage fields that are based on fixed array sizes.  NOTE: An array size of zero, i.e. [0] is an indicator
       // that the field is a pointer to a null terminated array.

@@ -35,6 +35,44 @@ static bool write_primitive_field(lua_State *L, APTR Address, int Type, int Stac
    return true;
 }
 
+static void write_field(lua_State *L, APTR Address, const struct_field &Field, int StackIndex, CSTRING FieldName)
+{
+   if (Field.Type & FD_STRING) {
+      if ((Field.Type & FD_CPP) and (not (Field.Type & FD_ARRAY))) {
+         size_t length;
+         auto value = luaL_checklstring(L, StackIndex, &length);
+         ((std::string *)Address)[0].assign(value, length);
+         return;
+      }
+      luaL_error(L, ERR::InvalidType, "Field '%s' does not support string assignment.", FieldName);
+   }
+   else if (Field.Type & FD_OBJECT) {
+      if (lua_isnil(L, StackIndex)) ((OBJECTPTR *)Address)[0] = nullptr;
+      else if (lua_isobject(L, StackIndex)) {
+         auto object = lua_toobject(L, StackIndex);
+         if (object_is_dead(object)) {
+            luaL_error(L, ERR::DoesNotExist, "Cannot assign detached object to field '%s'.", FieldName);
+         }
+         ((OBJECTPTR *)Address)[0] = object->ptr;
+      }
+      else if (lua_islightuserdata(L, StackIndex)) {
+         ((OBJECTPTR *)Address)[0] = (OBJECTPTR)lua_touserdata(L, StackIndex);
+      }
+      else luaL_error(L, ERR::InvalidType, "Field '%s' requires an object, lightuserdata or nil.", FieldName);
+      return;
+   }
+   else if (Field.Type & FD_POINTER) {
+      if ((not lua_isnil(L, StackIndex)) and (not lua_islightuserdata(L, StackIndex))) {
+         luaL_error(L, ERR::InvalidType, "Field '%s' requires lightuserdata or nil.", FieldName);
+      }
+      ((APTR *)Address)[0] = lua_touserdata(L, StackIndex);
+      return;
+   }
+   else if (write_primitive_field(L, Address, Field.Type, StackIndex)) return;
+
+   luaL_error(L, ERR::InvalidType, "Field '%s' does not support assignment (type %x).", FieldName, Field.Type);
+}
+
 static bool read_primitive_field(lua_State *L, APTR Address, int Type, int ArraySize)
 {
    if (not (Type & (FD_FLOAT|FD_DOUBLE|FD_INT64|FD_INT|FD_WORD|FD_BYTE))) return false;
@@ -110,13 +148,7 @@ LJLIB_CF(struct_new)
          if (auto field_opt = find_field(result, field_name)) {
             auto &field = field_opt->get();
             APTR address = (int8_t *)result->data + field.Offset;
-            if (field.Type & FD_STRING) {
-               kt::Log("struct.new").trace("Strings not supported yet.");
-            }
-            else if (field.Type & FD_OBJECT) ((OBJECTPTR *)address)[0] = (OBJECTPTR)lua_touserdata(L, -1);
-            else if (not write_primitive_field(L, address, field.Type, -1)) {
-               kt::Log("struct.new").warning("Cannot set unsupported field type for %s", field_name);
-            }
+            write_field(L, address, field, -1, field_name);
          }
          else {
             lua_pop(L, 2);
@@ -223,7 +255,10 @@ static int struct_get(lua_State *L)
          else if (field.Type & FD_CPP) lua_pushstring(L, *((std::string *)address));
          else lua_pushstring(L, ((STRING *)address)[0]);
       }
-      else if (field.Type & FD_OBJECT) push_object(L, ((OBJECTPTR *)address)[0]);
+      else if (field.Type & FD_OBJECT) {
+         if (auto object = ((OBJECTPTR *)address)[0]) push_object(L, object);
+         else lua_pushnil(L);
+      }
       else if (field.Type & FD_POINTER) {
          if (((APTR *)address)[0]) lua_pushlightuserdata(L, ((APTR *)address)[0]);
          else lua_pushnil(L);
@@ -248,11 +283,7 @@ static int struct_set(lua_State *L)
    if (auto field_opt = find_field(value, field_name)) {
       auto &field = field_opt->get();
       APTR address = (int8_t *)value->data + field.Offset;
-      if (field.Type & FD_STRING) kt::Log("struct.set").trace("Strings not supported yet.");
-      else if (field.Type & FD_OBJECT) ((OBJECTPTR *)address)[0] = (OBJECTPTR)lua_touserdata(L, 3);
-      else if (field.Type & FD_POINTER) ((APTR *)address)[0] = lua_touserdata(L, 3);
-      else if (field.Type & FD_FUNCTION);
-      else (void)write_primitive_field(L, address, field.Type, 3);
+      write_field(L, address, field, 3, field_name);
       return 0;
    }
    luaL_error(L, "Invalid field reference '%s'", field_name);
