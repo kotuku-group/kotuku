@@ -271,7 +271,7 @@ bmark.stats = function(Values:any):table
    stddev = math.sqrt(variance)
 
    -- Percentile calculation from sorted sample (inversed since the lower values are better)
-   function getPercentile(SortedValues:array, Percentile:num):num
+   function getPercentile(SortedValues:table, Percentile:num):num
       local sample_n = #SortedValues
       if sample_n is 0 then return 0 end
       local index = math.ceil(Percentile * sample_n / 100) - 1
@@ -391,7 +391,7 @@ bmark.removeOutliers = function(Values:array, Multiplier:num):table
    table.sort(sorted)
 
    -- Calculate Q1 (25th percentile) and Q3 (75th percentile)
-   local function getQuartile(SortedValues:array, Quartile:num):num
+   local function getQuartile(SortedValues:table, Quartile:num):num
       local n = #SortedValues
       local index = (Quartile / 4) * (n + 1) - 1 -- Convert to 0-based
       local lower_idx = math.floor(index)

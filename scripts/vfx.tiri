@@ -1,5 +1,7 @@
 -- Visual FX interface.  Applies cosmetic effects to viewports.
 
+   include 'vector'
+
    mVec ?= mod.load('vector')
 
    global vfx ?= {

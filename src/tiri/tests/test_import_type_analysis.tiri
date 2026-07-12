@@ -1,0 +1,139 @@
+-- Flute regression tests for static type analysis descent into imports.
+--
+-- Type analysis descends into inline-imported libraries, so type errors inside an imported file
+-- are reported by debug.validate() with the imported file's name and line via FileSource indices.
+-- Tips carry no file attribution, so they are suppressed entirely while analysing imported
+-- statements to avoid spamming importers about library internals.
+
+local glFolder
+
+@BeforeAll
+function setup(State)
+   glFolder = State.folder
+end
+
+-- Validate a source buffer as if it were a document sitting in the tests folder, so that
+-- relative imports resolve against the helper libraries alongside this test.
+
+function validate_here(Source:str):table
+   return debug.validate(Source, { path = glFolder .. 'validate_buffer.tiri' })
+end
+
+@Test function ImportedTypeErrorAttributed()
+   local result = validate_here([[
+import './import_type_error_helper'
+local y:num = probe_add(1, 2)
+]])
+
+   assert(result.success is false, 'A type error inside an imported file should fail validation')
+   assert(#result.diagnostics is 1, f"Expected 1 diagnostic, got {#result.diagnostics}")
+
+   local diag = result.diagnostics[0]
+   assert(diag.file is 'import_type_error_helper.tiri',
+      f"Diagnostic should be attributed to the imported file, got '{tostring(diag.file)}'")
+   assert(diag.line is 5, f"Expected 0-based line 5 for the helper's type error, got {diag.line}")
+   assert(diag.code is 'TypeMismatchAssignment', f"Unexpected diagnostic code '{diag.code}'")
+   assert(string.find(diag.message, 'cannot assign', 0, true) != nil,
+      f"Unexpected diagnostic message: {diag.message}")
+end
+
+@Test function CleanImportNoDiagnostics()
+   local result = validate_here([[
+import './import_type_clean_helper'
+local total:num = clean_add(1, 2)
+print(total)
+]])
+
+   assert(result.success is true, 'A type-clean import should validate successfully')
+   assert(#result.diagnostics is 0, f"Expected no diagnostics, got {#result.diagnostics}")
+end
+
+@Test function MainErrorAttributedToBuffer()
+   -- Uses its own helper: test order is randomised and import deduplication parses a library
+   -- body only once per state, so helpers cannot be shared between tests.
+   local result = validate_here([[
+import './import_type_attr_helper'
+local bad:num = 'oops'
+]])
+
+   assert(result.success is false, 'A type error in the main source should fail validation')
+   assert(#result.diagnostics is 1, f"Expected 1 diagnostic, got {#result.diagnostics}")
+
+   local diag = result.diagnostics[0]
+   assert(diag.file is nil,
+      f"Main buffer diagnostics should carry no file attribution, got '{tostring(diag.file)}'")
+   assert(diag.line is 1, f"Expected 0-based line 1 for the main source error, got {diag.line}")
+   assert(diag.code is 'TypeMismatchAssignment', f"Unexpected diagnostic code '{diag.code}'")
+end
+
+@Test function ImportedErrorSurvivesRevalidation()
+   -- FileSource entries persist for the lifetime of the state, but diagnose mode must re-parse
+   -- cached imports so that imported type errors surface on every validation, not just the first.
+   local source = [[
+import './import_type_revalidate_helper'
+local y:num = reval_add(1, 2)
+]]
+
+   for pass = 1, 2 do
+      local result = validate_here(source)
+      assert(result.success is false,
+         f"Pass {pass}: a type error inside an imported file should fail validation")
+      assert(#result.diagnostics is 1,
+         f"Pass {pass}: expected 1 diagnostic, got {#result.diagnostics}")
+
+      local diag = result.diagnostics[0]
+      assert(diag.file is 'import_type_revalidate_helper.tiri',
+         f"Pass {pass}: diagnostic should be attributed to the imported file, got '{tostring(diag.file)}'")
+      assert(diag.code is 'TypeMismatchAssignment', f"Pass {pass}: unexpected diagnostic code '{diag.code}'")
+   end
+end
+
+@Test function DiamondImportAnalysedOnce()
+   -- Two libraries importing the same inner helper within a single validation must analyse the
+   -- inner body exactly once - re-parsing of cached imports is deduplicated per compilation.
+   local source = [[
+import './import_type_diamond_a'
+import './import_type_diamond_b'
+local total:num = diamond_a_fn(1) + diamond_b_fn(2)
+print(total)
+]]
+
+   for pass = 1, 2 do
+      local result = validate_here(source)
+      assert(result.success is false,
+         f"Pass {pass}: the inner helper's type error should fail validation")
+      assert(#result.diagnostics is 1,
+         f"Pass {pass}: expected exactly 1 diagnostic from the shared inner helper, got {#result.diagnostics}")
+
+      local diag = result.diagnostics[0]
+      assert(diag.file is 'import_type_diamond_inner.tiri',
+         f"Pass {pass}: diagnostic should be attributed to the inner helper, got '{tostring(diag.file)}'")
+      assert(diag.code is 'TypeMismatchAssignment', f"Pass {pass}: unexpected diagnostic code '{diag.code}'")
+   end
+end
+
+@Test function ImportedTipsSuppressed()
+   -- The tips helper contains an unused local, which would normally raise a tip.  The main
+   -- buffer's own unused local proves the tip system is active while the helper's stays silent.
+   -- A dedicated helper is required: import deduplication parses a library body only once per
+   -- state, so re-importing the clean helper here could not resolve its global function.
+   local result = validate_here([[
+import './import_type_tips_helper'
+local main_unused = tips_add(1, 2)
+print('done')
+]])
+
+   assert(result.success is true, 'Validation should succeed for tip-only findings')
+
+   local main_tip_found = false
+   local i = 0
+   while result.tips[i] do
+      local tip = result.tips[i]
+      assert(string.find(tip.message, 'unused_helper_var', 0, true) is nil,
+         f"Tips from the imported library should be suppressed, got: {tip.message}")
+      if string.find(tip.message, 'main_unused', 0, true) != nil then main_tip_found = true end
+      i++
+   end
+
+   assert(main_tip_found, 'The main buffer unused-variable tip should still be emitted')
+end

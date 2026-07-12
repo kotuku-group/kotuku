@@ -1,0 +1,9 @@
+-- Type-clean helper library for test_import_type_analysis.tiri (main-buffer attribution case).
+-- Each test in that file imports its own helper: import deduplication parses a library body only
+-- once per state and test order is randomised, so helpers cannot be shared between tests.
+
+namespace 'type_probe_attr'
+
+global function attr_add(A:num, B:num):num
+   return A + B
+end

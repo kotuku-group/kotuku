@@ -35,6 +35,7 @@ struct TypeDiagnostic {
    TiriType expected = TiriType::Any;
    TiriType actual = TiriType::Any;
    ParserErrorCode code = ParserErrorCode::TypeMismatchArgument;
+   uint8_t file_index = 0;  // FileSource index of the file the diagnostic belongs to
 
    TypeDiagnostic() = default;
    TypeDiagnostic(SourceSpan Location, std::string Message, TiriType Expected, TiriType Actual,
