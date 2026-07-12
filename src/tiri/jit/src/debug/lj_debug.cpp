@@ -58,7 +58,7 @@ static BCPOS debug_framepc(lua_State *L, GCfunc *fn, cTValue *nextframe)
    const BCIns* ins;
    GCproto* pt;
    BCPOS pos;
-   lj_assertL(fn->c.gct IS ~LJ_TFUNC or fn->c.gct IS ~LJ_TTHREAD, "function or frame expected");
+   lj_assertL(fn->c.gct IS ~LJ_TFUNC or fn->c.gct IS ~LJ_TSTRUCT, "function or frame expected");
 
    if (not isluafunc(fn)) {  //  Cannot derive a PC for non-Tiri functions.
       return NO_BCPOS;

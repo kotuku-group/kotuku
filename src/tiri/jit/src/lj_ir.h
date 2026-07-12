@@ -315,7 +315,7 @@ LJ_DATA const uint8_t lj_ir_mode[IR__MAX + 1];
 // next to IRT_NUM (see the typerange macros below).
 
 #define IRTDEF(_) \
-  _(NIL, 4) _(FALSE, 4) _(TRUE, 4) _(LIGHTUD, 8) _(STR, 8) _(P32, 4) _(THREAD, 8) _(PROTO, 8) \
+  _(NIL, 4) _(FALSE, 4) _(TRUE, 4) _(LIGHTUD, 8) _(STR, 8) _(P32, 4) _(STRUCT, 8) _(PROTO, 8) \
   _(FUNC, 8) _(P64, 8) _(OBJECT, 8) _(TAB, 8) _(UDATA, 8) _(ARRAY, 8) \
   _(FLOAT, 4) _(NUM, 8) _(I8, 1) _(U8, 1) _(I16, 2) _(U16, 2) \
   _(INT, 4) _(U32, 4) _(I64, 8) _(U64, 8) \
@@ -369,6 +369,7 @@ struct IRType1 { uint8_t irt; };
 #define irt_istab(t)      (irt_type(t) == IRT_TAB)
 #define irt_isarray(t)    (irt_type(t) == IRT_ARRAY)
 #define irt_isobject(t)   (irt_type(t) == IRT_OBJECT)
+#define irt_isstruct(t)   (irt_type(t) == IRT_STRUCT)
 #define irt_isfloat(t)    (irt_type(t) == IRT_FLOAT)
 #define irt_isnum(t)      (irt_type(t) == IRT_NUM)
 #define irt_isint(t)      (irt_type(t) == IRT_INT)
@@ -390,7 +391,7 @@ struct IRType1 { uint8_t irt; };
 // Include IRT_NIL, so IR(ASMREF_L) (aka REF_NIL) is considered 64 bit.
 #define IRT_IS64 \
   ((1u<<IRT_NUM)|(1u<<IRT_I64)|(1u<<IRT_U64)|(1u<<IRT_P64)|\
-   (1u<<IRT_LIGHTUD)|(1u<<IRT_STR)|(1u<<IRT_THREAD)|(1u<<IRT_PROTO)|\
+   (1u<<IRT_LIGHTUD)|(1u<<IRT_STR)|(1u<<IRT_STRUCT)|(1u<<IRT_PROTO)|\
    (1u<<IRT_FUNC)|(1u<<IRT_OBJECT)|(1u<<IRT_TAB)|(1u<<IRT_UDATA)|\
    (1u<<IRT_ARRAY)|(1u<<IRT_NIL))
 #elif LJ_64
@@ -503,6 +504,7 @@ static constexpr TRef TREF(uint32_t ref, IRType t) {
 #define tref_istab(tr)       (tref_istype((tr), IRT_TAB))
 #define tref_isudata(tr)     (tref_istype((tr), IRT_UDATA))
 #define tref_isarray(tr)     (tref_istype((tr), IRT_ARRAY))
+#define tref_isstruct(tr)    (tref_istype((tr), IRT_STRUCT))
 #define tref_isnum(tr)       (tref_istype((tr), IRT_NUM))
 #define tref_isint(tr)       (tref_istype((tr), IRT_INT))
 #define tref_isbool(tr)      (tref_typerange((tr), IRT_FALSE, IRT_TRUE))

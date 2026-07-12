@@ -131,7 +131,7 @@ enum class TiriType : uint8_t {
    Table,
    Array,
    Func,
-   Thread,
+   Struct,       // Kotuku struct (LJ_TSTRUCT)
    Object,       // Kotuku object (LT_TOBJECT)
    Range,        // Range expression (runtime: LJ_TUDATA)
    Unknown
@@ -397,7 +397,7 @@ inline constexpr uint32_t LJ_TTRUE     = ~2u;  // True
 inline constexpr uint32_t LJ_TLIGHTUD  = ~3u;  // Lightuserdata
 inline constexpr uint32_t LJ_TSTR      = ~4u;  // String
 inline constexpr uint32_t LJ_TUPVAL    = ~5u;  // Unused in TValue(?) could be shared?
-inline constexpr uint32_t LJ_TTHREAD   = ~6u;  // Unused?
+inline constexpr uint32_t LJ_TSTRUCT   = ~6u;  // Struct (Kotuku); gct also shared with the single main-thread lua_State
 inline constexpr uint32_t LJ_TPROTO    = ~7u;  // Function prototype
 inline constexpr uint32_t LJ_TFUNC     = ~8u;  // Function
 inline constexpr uint32_t LJ_TTRACE    = ~9u;  // Unused in TValue(?) could be shared?
@@ -1271,7 +1271,8 @@ typedef union GCobj {
 
 [[nodiscard]] inline GCstr *     gco_to_string(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TSTR, &o->str); }
 [[nodiscard]] inline GCupval *   gco_to_upval(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TUPVAL, &o->uv); }
-[[nodiscard]] inline lua_State * gco_to_thread(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TTHREAD, &o->th); }
+// The main-thread lua_State shares the ~LJ_TSTRUCT gct; discriminate via pointer-compare with mainthread(g).
+[[nodiscard]] inline lua_State * gco_to_thread(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TSTRUCT, &o->th); }
 [[nodiscard]] inline GCproto *   gco_to_proto(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TPROTO, &o->pt); }
 [[nodiscard]] inline GCfunc *    gco_to_function(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TFUNC, &o->fn); }
 [[nodiscard]] inline GCtab *     gco_to_table(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TTAB, &o->tab); }
@@ -1344,7 +1345,7 @@ template<typename T> [[nodiscard]] inline GCobj * obj2gco(T *v) noexcept { retur
 [[nodiscard]] constexpr inline bool tvislightud(cTValue *o) noexcept { return itype(o) IS LJ_TLIGHTUD; }
 [[nodiscard]] constexpr inline bool tvisstr(cTValue *o) noexcept { return itype(o) IS LJ_TSTR; }
 [[nodiscard]] constexpr inline bool tvisfunc(cTValue *o) noexcept { return itype(o) IS LJ_TFUNC; }
-[[nodiscard]] constexpr inline bool tvisthread(cTValue *o) noexcept { return itype(o) IS LJ_TTHREAD; }
+[[nodiscard]] constexpr inline bool tvisstruct(cTValue *o) noexcept { return itype(o) IS LJ_TSTRUCT; }
 [[nodiscard]] constexpr inline bool tvisproto(cTValue *o) noexcept { return itype(o) IS LJ_TPROTO; }
 [[nodiscard]] constexpr inline bool tvistab(cTValue *o) noexcept { return itype(o) IS LJ_TTAB; }
 [[nodiscard]] constexpr inline bool tvisudata(cTValue *o) noexcept { return itype(o) IS LJ_TUDATA; }
@@ -1396,7 +1397,6 @@ template<typename T> [[nodiscard]] inline GCobj * obj2gco(T *v) noexcept { retur
 [[nodiscard]] inline GCobj * gcV(cTValue *o) noexcept { return check_exp(tvisgcv(o), gcval(o)); }
 [[nodiscard]] inline GCstr * strV(cTValue *o) noexcept { return check_exp(tvisstr(o), &gcval(o)->str); }
 [[nodiscard]] inline GCfunc* funcV(cTValue *o) noexcept { return check_exp(tvisfunc(o), &gcval(o)->fn); }
-[[nodiscard]] inline lua_State * threadV(cTValue *o) noexcept { return check_exp(tvisthread(o), &gcval(o)->th); }
 [[nodiscard]] inline GCproto * protoV(cTValue *o) noexcept { return check_exp(tvisproto(o), &gcval(o)->pt); }
 [[nodiscard]] inline GCtab * tabV(cTValue *o) noexcept { return check_exp(tvistab(o), &gcval(o)->tab); }
 [[nodiscard]] inline GCudata * udataV(cTValue *o) noexcept { return check_exp(tvisudata(o), &gcval(o)->ud); }
@@ -1461,9 +1461,10 @@ inline void setstrV(lua_State* L, TValue* o, const GCstr* v) noexcept
    setgcV(L, o, obj2gco(v), LJ_TSTR);
 }
 
+// Used only for the stack-bottom sentinel and dummy frame objects of the main thread.
 inline void setthreadV(lua_State* L, TValue* o, const lua_State* v) noexcept
 {
-   setgcV(L, o, obj2gco(v), LJ_TTHREAD);
+   setgcV(L, o, obj2gco(v), LJ_TSTRUCT);
 }
 
 inline void setprotoV(lua_State* L, TValue* o, const GCproto* v) noexcept

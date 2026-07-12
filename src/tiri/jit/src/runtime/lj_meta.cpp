@@ -37,7 +37,7 @@ static TiriType lj_tag_to_tiri_type(uint32_t tag)
       case LJ_TFALSE:
       case LJ_TTRUE:   return TiriType::Bool;
       case LJ_TSTR:    return TiriType::Str;
-      case LJ_TTHREAD: return TiriType::Thread;
+      case LJ_TSTRUCT: return TiriType::Struct;
       case LJ_TFUNC:   return TiriType::Func;
       case LJ_TOBJECT: return TiriType::Object;
       case LJ_TTAB:    return TiriType::Table;
@@ -120,7 +120,7 @@ int lj_meta_tailcall(lua_State *L, cTValue *tv)
    copyTV(L, base - 1 - LJ_FR2, tv);  //  Replace frame with new object.
    (top++)->u64 = LJ_CONT_TAILCALL;
    setframe_pc(top++, pc);
-   setframe_gc(top, obj2gco(L), LJ_TTHREAD);  //  Dummy frame object.
+   setframe_gc(top, obj2gco(L), LJ_TSTRUCT);  //  Dummy frame object.
    top++;
    setframe_ftsz(top, ((char*)(top + 1) - (char*)base) + FRAME_CONT);
    L->base = L->top = top + 1;

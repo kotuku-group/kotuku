@@ -63,7 +63,7 @@ end
    assert_compiles("Function:function")
    assert_compiles("A:any")
    assert_compiles("NilVal:nil")
-   assert_compiles("ThreadVal:thread")
+   assert_compiles("StructVal:struct")
    assert_compiles("ObjVal:obj")
    assert_compiles("ObjectVal:object")
 end

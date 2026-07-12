@@ -230,8 +230,10 @@ static void gc_mark(global_State *g, GCobj* o)
       if (mt) gc_markobj(g, mt);
    }
    else if (gct != ~LJ_TSTR) {
+      // ~LJ_TSTRUCT on the gray list is only valid for the single main-thread lua_State, which shares the tag.
       lj_assertG(gct IS ~LJ_TFUNC or gct IS ~LJ_TTAB or
-         gct IS ~LJ_TTHREAD or gct IS ~LJ_TPROTO or gct IS ~LJ_TTRACE, "bad GC type %d", gct);
+         (gct IS ~LJ_TSTRUCT and o IS obj2gco(mainthread(g))) or
+         gct IS ~LJ_TPROTO or gct IS ~LJ_TTRACE, "bad GC type %d", gct);
       setgcrefr(o->gch.gclist, g->gc.gray);
       setgcref(g->gc.gray, o);
    }
@@ -590,7 +592,9 @@ static size_t propagatemark(global_State *g)
       gc_traverse_proto(g, pt);
       return pt->sizept;
    }
-   else if (LJ_LIKELY(gct IS ~LJ_TTHREAD)) {
+   else if (LJ_LIKELY(gct IS ~LJ_TSTRUCT)) {
+      // Only the main-thread lua_State reaches the gray list with this tag (structs are marked immediately).
+      lj_assertG(o IS obj2gco(mainthread(g)), "non-mainthread ~LJ_TSTRUCT object on gray list");
       lua_State* th = gco_to_thread(o);
       setgcrefr(th->gclist, g->gc.grayagain);
       setgcref(g->gc.grayagain, o);
@@ -635,7 +639,7 @@ using GCFreeFunc = void (*)(global_State*, GCobj*);
 static const std::array<GCFreeFunc, 10> gc_freefunc = {{
    (GCFreeFunc)lj_str_free,       // LJ_TSTR
    (GCFreeFunc)lj_func_freeuv,    // LJ_TUPVAL
-   (GCFreeFunc)lj_state_free,     // LJ_TTHREAD
+   (GCFreeFunc)lj_state_free,     // LJ_TSTRUCT (shared with main thread; the main thread is never swept)
    (GCFreeFunc)lj_func_freeproto, // LJ_TPROTO
    (GCFreeFunc)lj_func_free,      // LJ_TFUNC
    (GCFreeFunc)lj_trace_free,     // LJ_TTRACE
@@ -660,7 +664,7 @@ static GCRef* gc_sweep(global_State *g, GCRef* p, uint32_t lim)
    int ow = otherwhite(g);
    GCobj* o;
    while ((o = gcref(*p)) != nullptr and lim-- > 0) {
-      if (o->gch.gct IS ~LJ_TTHREAD)  //  Need to sweep open upvalues, too.
+      if (o->gch.gct IS ~LJ_TSTRUCT and o IS obj2gco(mainthread(g)))  //  Main thread: sweep open upvalues, too.
          gc_fullsweep(g, &gco_to_thread(o)->openupval);
 
       if (((o->gch.marked ^ LJ_GC_WHITES) & ow)) {  // Black or current white?

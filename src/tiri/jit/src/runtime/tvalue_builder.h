@@ -117,12 +117,6 @@ public:
       return *this;
    }
 
-   // Set to thread (coroutine)
-   constexpr TValueBuilder & set_thread(lua_State* th) noexcept {
-      setthreadV(L_, tv_, th);
-      return *this;
-   }
-
    // Set to userdata
    constexpr TValueBuilder & set_udata(GCudata* u) noexcept {
       setudataV(L_, tv_, u);
