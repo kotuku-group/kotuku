@@ -150,6 +150,12 @@ end
    value.fixed = array<int> { 4, 5, 6 }
    assert(value.fixed is array<int> { 4, 5, 6 }, 'Fixed array assignment should copy all elements')
 
+   value.fixed = array<int> { 9 }
+   assert(value.fixed is array<int> { 9, 0, 0 }, 'Short fixed array assignment should clear unused elements')
+
+   value.fixed = array<int>
+   assert(value.fixed is array<int> { 0, 0, 0 }, 'Empty fixed array assignment should clear all elements')
+
    value.dynamic = array<int> { 8, 9, 10, 11 }
    assert(value.dynamic is array<int> { 8, 9, 10, 11 }, 'C++ vector assignment should resize and copy elements')
 

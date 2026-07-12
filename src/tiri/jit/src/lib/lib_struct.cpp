@@ -93,7 +93,10 @@ static void write_array_field(lua_State *L, APTR Address, const struct_field &Fi
          luaL_error(L, ERR::OutOfRange, "Array assignment for field '%s' exceeds its fixed size of %d.", FieldName,
             Field.ArraySize);
       }
-      if (source->len) std::memcpy(Address, source->arraydata(), size_t(source->len) * source->elemsize);
+      const auto copied_bytes = size_t(source->len) * source->elemsize;
+      const auto remaining_bytes = (size_t(Field.ArraySize) - source->len) * source->elemsize;
+      if (copied_bytes) std::memcpy(Address, source->arraydata(), copied_bytes);
+      if (remaining_bytes) std::memset((uint8_t *)Address + copied_bytes, 0, remaining_bytes);
    }
 }
 
