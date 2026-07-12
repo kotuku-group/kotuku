@@ -1298,11 +1298,19 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
 
    auto libhash = kt::strihash(Path);
 
-   // Check if this file is already registered in FileSource
+   // Check if this file is already registered in FileSource.  FileSource entries persist for the lifetime of the
+   // lua_State, so this hit can come from an earlier, unrelated compilation.  In diagnose mode the type analyser
+   // needs the real body regardless - validation never emits or executes code, so re-parsing cannot double-execute
+   // library code, and skipping here would silently drop imported-file diagnostics on every validation after the
+   // first.  The existing FileSource index is reused below instead of registering a duplicate.
    auto existing_index = find_file_source(L, libhash);
+   bool seen_this_chunk = this->import_seen_this_chunk(libhash);
    if (existing_index.has_value()) {
-      log.detail("Library %.*s already imported (file index %d)", int(Library.size()), Library.data(), existing_index.value());
-      return ParserResult<std::unique_ptr<BlockStmt>>::success(make_block(ImportToken.span(), {}));
+      if (seen_this_chunk or not this->ctx.lex().diagnose_mode) {
+         log.detail("Library %.*s already imported (file index %d)", int(Library.size()), Library.data(), existing_index.value());
+         return ParserResult<std::unique_ptr<BlockStmt>>::success(make_block(ImportToken.span(), {}));
+      }
+      log.branch("Re-parsing '%.*s' for diagnostics (file index %d)", int(Library.size()), Library.data(), existing_index.value());
    }
    else log.branch("Importing '%.*s' from %s", int(Library.size()), Library.data(), Path.c_str());
 
@@ -1353,9 +1361,11 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
    uint8_t parent_index = this->ctx.lex().current_file_index;
    BCLine import_line = ImportToken.span().line.lineNumber();  // Decode line from parent's encoded BCLine
 
-   // Register this imported file with FileSource tracking
+   // Register this imported file with FileSource tracking, or reuse the existing entry when re-parsing a cached
+   // import in diagnose mode.
 
-   uint8_t new_file_index = register_file_source(L, Path, filename, 1, source_lines, parent_index, import_line);
+   uint8_t new_file_index = existing_index.has_value() ? existing_index.value()
+      : register_file_source(L, Path, filename, 1, source_lines, parent_index, import_line);
 
    // RAII guard handles cleanup on normal path; lua_load handles SEH error path
    ImportLexerGuard import_guard(L, source, std::string("@") + Path);

@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -43,6 +44,17 @@ private:
    AstBuilder *parent_builder = nullptr;
    std::vector<GCstr *> function_name_stack;
    std::vector<uint32_t> registered_enum_constants;
+   std::vector<uint32_t> chunk_import_hashes;  // Path hashes inlined during this compilation (root builder only)
+
+   // FileSource entries persist across compilations, so diagnose-mode re-parsing of cached imports needs a
+   // dedup scope limited to the current chunk.  Records Hash on the root builder; returns true if already seen.
+   [[nodiscard]] bool import_seen_this_chunk(uint32_t Hash) {
+      AstBuilder *root = this;
+      while (root->parent_builder) root = root->parent_builder;
+      if (std::find(root->chunk_import_hashes.begin(), root->chunk_import_hashes.end(), Hash) != root->chunk_import_hashes.end()) return true;
+      root->chunk_import_hashes.push_back(Hash);
+      return false;
+   }
 
    class FunctionNameScope {
    public:

@@ -66,6 +66,52 @@ local bad:num = 'oops'
    assert(diag.code is 'TypeMismatchAssignment', f"Unexpected diagnostic code '{diag.code}'")
 end
 
+@Test function ImportedErrorSurvivesRevalidation()
+   -- FileSource entries persist for the lifetime of the state, but diagnose mode must re-parse
+   -- cached imports so that imported type errors surface on every validation, not just the first.
+   local source = [[
+import './import_type_revalidate_helper'
+local y:num = reval_add(1, 2)
+]]
+
+   for pass = 1, 2 do
+      local result = validate_here(source)
+      assert(result.success is false,
+         f"Pass {pass}: a type error inside an imported file should fail validation")
+      assert(#result.diagnostics is 1,
+         f"Pass {pass}: expected 1 diagnostic, got {#result.diagnostics}")
+
+      local diag = result.diagnostics[0]
+      assert(diag.file is 'import_type_revalidate_helper.tiri',
+         f"Pass {pass}: diagnostic should be attributed to the imported file, got '{tostring(diag.file)}'")
+      assert(diag.code is 'TypeMismatchAssignment', f"Pass {pass}: unexpected diagnostic code '{diag.code}'")
+   end
+end
+
+@Test function DiamondImportAnalysedOnce()
+   -- Two libraries importing the same inner helper within a single validation must analyse the
+   -- inner body exactly once - re-parsing of cached imports is deduplicated per compilation.
+   local source = [[
+import './import_type_diamond_a'
+import './import_type_diamond_b'
+local total:num = diamond_a_fn(1) + diamond_b_fn(2)
+print(total)
+]]
+
+   for pass = 1, 2 do
+      local result = validate_here(source)
+      assert(result.success is false,
+         f"Pass {pass}: the inner helper's type error should fail validation")
+      assert(#result.diagnostics is 1,
+         f"Pass {pass}: expected exactly 1 diagnostic from the shared inner helper, got {#result.diagnostics}")
+
+      local diag = result.diagnostics[0]
+      assert(diag.file is 'import_type_diamond_inner.tiri',
+         f"Pass {pass}: diagnostic should be attributed to the inner helper, got '{tostring(diag.file)}'")
+      assert(diag.code is 'TypeMismatchAssignment', f"Pass {pass}: unexpected diagnostic code '{diag.code}'")
+   end
+end
+
 @Test function ImportedTipsSuppressed()
    -- The tips helper contains an unused local, which would normally raise a tip.  The main
    -- buffer's own unused local proves the tip system is active while the helper's stays silent.
