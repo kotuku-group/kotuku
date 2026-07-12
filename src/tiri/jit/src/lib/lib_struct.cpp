@@ -103,12 +103,10 @@ static bool read_primitive_field(lua_State *L, APTR Address, int Type, int Array
 }
 
 static GCstruct * push_external_struct(lua_State *L, APTR Address, std::string_view StructName,
-   Object *Lifecycle = nullptr)
+   Object *Lifecycle = nullptr, GCstruct *Parent = nullptr)
 {
    if (auto def = glStructs.find(StructName); def != glStructs.end()) {
-      // This view does not anchor its parent.  It must not outlive the struct whose payload contains Address.
-      // Sub-views of a lifecycle-bound view inherit the binding (each takes its own weak pin on the object).
-      return lua_pushstruct(L, def->second, Address, 0, Lifecycle);
+      return lua_pushstruct(L, def->second, Address, 0, Lifecycle, Parent);
    }
    return nullptr;
 }
@@ -240,7 +238,14 @@ static int struct_get(lua_State *L)
          else make_struct_array(L, field.StructRef, array_size, address);
       }
       else if (field.Type & FD_STRUCT) {
-         if (not push_external_struct(L, address, field.StructRef, value->lifecycle)) {
+         GCstruct *parent = nullptr;
+         if (not value->is_lifecycle_bound()) {
+            if (value->is_external()) {
+               if (gcref(value->parent)) parent = structref(value->parent);
+            }
+            else parent = value;
+         }
+         if (not push_external_struct(L, address, field.StructRef, value->lifecycle, parent)) {
             luaL_error(L, ERR::Search, "Failed to find struct '%s'", field.StructRef.c_str());
          }
       }

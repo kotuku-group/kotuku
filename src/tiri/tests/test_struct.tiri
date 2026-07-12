@@ -100,3 +100,25 @@ end
       error('Assigning an unsupported field type should fail')
    end
 end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function InteriorStructViewAnchorsParent()
+   MAKESTRUCT('AnchoredLeaf', 'lValue,zsName')
+   MAKESTRUCT('AnchoredBranch', 'eLeaf:AnchoredLeaf')
+   MAKESTRUCT('AnchoredRoot', 'eBranch:AnchoredBranch')
+
+   function create_view()
+      local root = struct.new('AnchoredRoot')
+      root.branch.leaf.value = 417
+      root.branch.leaf.name = 'parent payload remains alive'
+      return root.branch.leaf
+   end
+
+   local leaf = create_view()
+   processing.collect('full')
+   processing.collect('full')
+
+   assert(leaf.value is 417, 'An interior struct view should keep its parent payload alive')
+   assert(leaf.name is 'parent payload remains alive', 'Anchored C++ string storage should remain valid after GC')
+end
