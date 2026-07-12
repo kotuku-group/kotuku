@@ -412,8 +412,8 @@ static void save_mesh_gradient(objXML *XML, XTag *Tag, objGradientMesh *Mesh)
 
    int rows = 0;
    int columns = 0;
-   Mesh->get(kt::fieldhash("Rows"), rows);
-   Mesh->get(kt::fieldhash("Columns"), columns);
+   Mesh->getRows(rows);
+   Mesh->getColumns(columns);
 
    if ((rows <= 0) or (columns <= 0) or ((rows * columns) != int(patches.size()))) {
       rows = 1;
@@ -422,6 +422,10 @@ static void save_mesh_gradient(objXML *XML, XTag *Tag, objGradientMesh *Mesh)
 
    xml::NewAttrib(Tag, "x", patches[0].Top.StartX);
    xml::NewAttrib(Tag, "y", patches[0].Top.StartY);
+
+   GMT mode = GMT::LINEAR;
+   Mesh->getMode(mode);
+   if (mode IS GMT::BICUBIC) xml::NewAttrib(Tag, "type", "bicubic"); // Omitted for linear, the default.
 
    for (int row=0; row < rows; row++) {
       int row_index;

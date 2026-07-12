@@ -476,6 +476,7 @@ void svgState::parse_meshgradient(const XTag &Tag, objGradientMesh *Gradient, st
    double start_x = 0;
    double start_y = 0;
    bool origin_set = false;
+   GMT mode = GMT::UNDEFINED;
 
    for (int a=1; a < std::ssize(Tag.Attribs); a++) {
       auto &val = Tag.Attribs[a].Value;
@@ -488,9 +489,10 @@ void svgState::parse_meshgradient(const XTag &Tag, objGradientMesh *Gradient, st
          case SVF_x: { auto v = std::string_view(val); start_x = read_unit(v); origin_set = true; break; }
          case SVF_y: { auto v = std::string_view(val); start_y = read_unit(v); origin_set = true; break; }
          case SVF_type:
-            if ((not iequals("bilinear", val)) and (not iequals("Coons", val))) {
-               log.warning("Mesh gradient type '%s' is not supported; using bilinear Coons patches.", val.c_str());
-            }
+            // A tag without a type attribute leaves any bicubic mode inherited via href intact.
+            if (iequals("bicubic", val)) { mode = GMT::BICUBIC; }
+            else if ((iequals("bilinear", val)) or (iequals("Coons", val))) { mode = GMT::LINEAR; }
+            else log.warning("Mesh gradient type '%s' is not supported; using bilinear Coons patches.", val.c_str());
             break;
 
          default:
@@ -661,6 +663,8 @@ void svgState::parse_meshgradient(const XTag &Tag, objGradientMesh *Gradient, st
          Gradient->setColumns(columns);
       }
    }
+
+   if (mode != GMT::UNDEFINED) Gradient->setMode(mode);
 }
 
 //********************************************************************************************************************

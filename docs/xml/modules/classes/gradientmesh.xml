@@ -13,7 +13,7 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>GradientMesh interpolates colour across a grid of curved patches.  Each patch is bounded by four cubic Bezier edges and carries one colour at each corner.  Rendering tessellates the patches into Gouraud triangles, so colour follows the patch geometry rather than a one-dimensional colour ramp.</p>
+<p>GradientMesh interpolates colour across a grid of curved patches.  Each patch is bounded by four cubic Bezier edges and carries one colour at each corner.  Rendering tessellates the patches into Gouraud triangles, so colour follows the patch geometry rather than a one-dimensional colour ramp.  Corner colours are blended bilinearly by default; setting #Bicubic selects smooth bicubic colour interpolation across the patch grid instead.</p>
 <p>The inherited colour-ramp fields <code>Stops</code>, <code>ColourMap</code>, <code>SpreadMethod</code> and <code>Colour</code> are not supported by this class. Patch geometry and corner colours are supplied through <fl>Patches</fl>.</p>
 <p>When a mesh is exported to SVG, valid <fl>Rows</fl> and <fl>Columns</fl> metadata is preserved through the standard shared-edge <code>meshrow</code> syntax.  A mesh without valid row metadata (e.g. a non-rectangular grid) is flattened to a single row on export; every patch survives intact, with patches that do not share an edge with their predecessor written as independent patches, but the original row structure is not retained.</p></description>
     <source>
@@ -29,6 +29,18 @@
       <type>INT</type>
       <description>
 <p>Columns stores the column count for the mesh grid while <fl>Patches</fl> remains a flat row-major array.  The row and column counts must multiply to the number of patch records when both dimensions and patches are present.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Mode</name>
+      <comment>Chooses the interpolation mode for the mesh gradient.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="GMT">GMT</type>
+      <description>
+<p>By default, corner colours are interpolated bilinearly across each patch, which can leave a visible star or cross artefact where patch corners meet.  Opting for the <code>BICUBIC</code> mode switches to bicubic colour interpolation: colour derivatives are estimated at each grid corner from the neighbouring patch colours, giving smooth colour transitions across patch seams.  This matches the <code>type=&quot;bicubic&quot;</code> mesh gradient mode of the SVG proposal (Inkscape's &quot;smooth colors&quot; option).  Patch geometry is unaffected; only the colour surface changes.</p>
+<p>The setting is a rendering mode and is retained when <fl>Patches</fl> is reassigned.</p>
+<types lookup="GMT"/>
       </description>
     </field>
 
@@ -63,6 +75,14 @@
     </field>
 
   </fields>
+  <types>
+    <constants lookup="GMT" comment="Available modes for the GradientMesh class.">
+      <const name="BICUBIC">Use bicubic interpolation for the patch colours.</const>
+      <const name="LINEAR">Use linear interpolation for the patch colours.</const>
+      <const name="UNDEFINED">Either the default setting will be applied or the setting will be inherited from a parent object.</const>
+    </constants>
+
+  </types>
   <structs>
     <struct name="MeshPatchRecord" comment="Describes one bilinear Coons patch for the GradientMesh Patches field.">
       <field name="Top" type="struct MeshControl">Top edge</field>

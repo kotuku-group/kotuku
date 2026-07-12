@@ -89,6 +89,15 @@ enum class VF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(VF)
 
+// Available modes for the GradientMesh class.
+
+enum class GMT : int {
+   NIL = 0,
+   UNDEFINED = 0,
+   LINEAR = 1,
+   BICUBIC = 2,
+};
+
 // Define the aspect ratio for VectorFilter unit scaling.
 
 enum class VFA : int {
@@ -1835,7 +1844,7 @@ class objGradientMesh : public objGradient {
    // Customised field getting
 
    inline ERR getRows(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
       return field->GetValue(this, &Value);
    }
 
@@ -1844,8 +1853,13 @@ class objGradientMesh : public objGradient {
       return field->GetValue(this, &Value);
    }
 
+   inline ERR getMode(GMT &Value) noexcept {
+      Value = *((GMT *)(((int8_t *)this) + 288));
+      return ERR::Okay;
+   }
+
    inline ERR getPatches(std::span<MeshPatchRecord> &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       auto get_field = (ERR (*)(APTR, std::span<MeshPatchRecord> &))field->GetValue;
       return get_field(this, Value);
    }
@@ -1861,7 +1875,7 @@ class objGradientMesh : public objGradient {
    // Customised field setting
 
    inline ERR setRows(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -1870,8 +1884,13 @@ class objGradientMesh : public objGradient {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
+   inline ERR setMode(const GMT Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
    inline ERR setPatches(const std::span<const MeshPatchRecord> Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, 0x00105318, &Value);
    }
 

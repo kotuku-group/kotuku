@@ -395,6 +395,53 @@ function inheritedOverrideMesh():str
 ]]
 end
 
+function bicubicMesh():str
+   return [[
+<?xml version="1.0" standalone="no"?>
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <meshgradient id="mesh2x2" type="bicubic" x="0" y="0" gradientUnits="userSpaceOnUse">
+      <meshrow>
+        <meshpatch>
+          <stop path="L 100 0" stop-color="#00ff00"/>
+          <stop path="L 100 100" stop-color="#ffff00"/>
+          <stop path="L 0 100" stop-color="#0000ff"/>
+          <stop path="Z" stop-color="#ff0000"/>
+        </meshpatch>
+      </meshrow>
+    </meshgradient>
+  </defs>
+  <rect x="0" y="0" width="100" height="100" fill="url(#mesh2x2)"/>
+</svg>
+]]
+end
+
+-- A bicubic base referenced by a rowless mesh.  RefType injects an optional type attribute on the reference.
+
+function hrefBicubicMesh(RefType:str):str
+   local ref_type = ''
+   if RefType != '' then ref_type = ' type="' .. RefType .. '"' end
+   return [[
+<?xml version="1.0" standalone="no"?>
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <meshgradient id="base2x2" type="bicubic" x="0" y="0" gradientUnits="userSpaceOnUse">
+      <meshrow>
+        <meshpatch>
+          <stop path="L 100 0" stop-color="#00ff00"/>
+          <stop path="L 100 100" stop-color="#ffff00"/>
+          <stop path="L 0 100" stop-color="#0000ff"/>
+          <stop path="Z" stop-color="#ff0000"/>
+        </meshpatch>
+      </meshrow>
+    </meshgradient>
+    <meshgradient id="mesh2x2" href="#base2x2"]] .. ref_type .. [[/>
+  </defs>
+  <rect x="0" y="0" width="100" height="100" fill="url(#mesh2x2)"/>
+</svg>
+]]
+end
+
 function loadMesh(Path:str):<obj, obj>
    local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=120 })
    local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
@@ -665,6 +712,100 @@ end
    assertChannel(patch.topRight.green, 0, 'inherit without parent value green')
    assertChannel(patch.topRight.blue, 0, 'inherit without parent value blue')
    assertChannel(patch.topRight.alpha, 1.0, 'inherit without parent value alpha')
+end
+
+@Test function InkscapeMeshImports()
+   -- Primary interop fixture: real-world Inkscape output shape (relative 'c' stop paths with comma pairs,
+   -- style= stop declarations, type="bicubic", editor namespace attributes).
+
+   local scene, gradient = loadMesh(glSVGFolder .. 'gradients/meshgradient_inkscape.svg')
+
+   assert(gradient.mode is GMT_BICUBIC, 'Inkscape mesh should import as bicubic')
+   assert(gradient.rows is 2, 'Inkscape mesh should preserve two rows')
+   assert(gradient.columns is 2, 'Inkscape mesh should preserve two columns')
+   assert(#gradient.patches is 4, 'Inkscape mesh should expose four patches')
+   assert(gradient.units is VUNIT_USERSPACE, 'Inkscape mesh should preserve user-space units')
+
+   -- Geometry: relative 'c' paths from origin (20,20) build a 50x50 grid.
+   local p0 = gradient.patches[0]
+   assertNear(p0.top.startX, 20, 'origin x')
+   assertNear(p0.top.startY, 20, 'origin y')
+   assertNear(p0.right.endX, 70, 'first patch bottom-right x')
+   assertNear(p0.right.endY, 70, 'first patch bottom-right y')
+
+   local p3 = gradient.patches[3]
+   assertNear(p3.right.endX, 120, 'last patch bottom-right x')
+   assertNear(p3.right.endY, 120, 'last patch bottom-right y')
+
+   -- style= stop colours resolve; the fourth stop of the first patch introduces the top-left corner.
+   assertChannel(p0.topRight.red, 143 / 255, 'style stop-color red')
+   assertChannel(p0.topRight.green, 151 / 255, 'style stop-color green')
+   assertChannel(p0.topRight.blue, 1.0, 'style stop-color blue')
+   assertChannel(p0.topLeft.green, 38 / 255, 'closing stop colour green')
+   assertChannel(p0.topLeft.blue, 1.0, 'closing stop colour blue')
+   assertChannel(p0.topLeft.alpha, 0.5, 'style stop-opacity')
+
+   -- The second patch's shared corner inherits the first patch's bottom-right colour (#ff0000).
+   local p1 = gradient.patches[1]
+   assertChannel(p1.bottomLeft.red, 1.0, 'shared corner red')
+   assertChannel(p1.bottomLeft.green, 0, 'shared corner green')
+   assertChannel(p1.bottomLeft.blue, 0, 'shared corner blue')
+
+   -- Round-trip: the imported mesh saves canonically and reparses to identical patch data.
+   local output_path = 'temp:meshgradient_inkscape_saved.svg'
+   local saved = saveScene(scene, output_path)
+   assert(string.find(saved, 'type="bicubic"', 0, true) != nil, 'Re-saved Inkscape mesh should keep bicubic mode')
+
+   local reparsed_scene, reparsed_gradient = loadMesh(output_path)
+   assert(reparsed_gradient.mode is GMT_BICUBIC, 'Bicubic mode should survive the round-trip')
+   assert(reparsed_gradient.rows is 2, 'Rows should survive the round-trip')
+   assert(reparsed_gradient.columns is 2, 'Columns should survive the round-trip')
+   assertPatchesMatch(reparsed_gradient, gradient, 'inkscape round-trip')
+end
+
+@Test function BicubicTypeRoundTrips()
+   local path = 'temp:meshgradient_bicubic.svg'
+   io.writeAll(path, bicubicMesh())
+   glFiles:push(path)
+
+   local scene, gradient = loadMesh(path)
+   assert(gradient.mode is GMT_BICUBIC, 'type="bicubic" should set the bicubic mode')
+
+   local output_path = 'temp:meshgradient_bicubic_saved.svg'
+   local saved = saveScene(scene, output_path)
+   assert(string.find(saved, 'type="bicubic"', 0, true) != nil, 'Saved bicubic mesh should emit type="bicubic"')
+
+   local reparsed_scene, reparsed_gradient = loadMesh(output_path)
+   assert(reparsed_gradient.mode is GMT_BICUBIC, 'Bicubic mode should survive a save/reparse round-trip')
+   assertPatchesMatch(reparsed_gradient, gradient, 'bicubic round-trip')
+
+   -- The default bilinear mode omits the type attribute entirely.
+   local control_path = 'temp:meshgradient_bilinear_control.svg'
+   io.writeAll(control_path, malformedMesh('L 100 0'))
+   glFiles:push(control_path)
+   local control_scene, control_gradient = loadMesh(control_path)
+   assert(control_gradient.mode is GMT_LINEAR, 'A mesh without a type attribute defaults to linear')
+   local control_saved = saveScene(control_scene, 'temp:meshgradient_bilinear_control_saved.svg')
+   assert(string.find(control_saved, 'type="bicubic"', 0, true) is nil,
+      'A bilinear mesh must not emit a type attribute')
+end
+
+@Test function BicubicInheritsThroughHref()
+   local path = 'temp:meshgradient_bicubic_href.svg'
+   io.writeAll(path, hrefBicubicMesh(''))
+   glFiles:push(path)
+
+   local scene, gradient = loadMesh(path)
+   assert(gradient.mode is GMT_BICUBIC, 'A rowless referencing mesh should inherit bicubic mode from its href base')
+end
+
+@Test function BicubicOverriddenByReferencingType()
+   local path = 'temp:meshgradient_bicubic_override.svg'
+   io.writeAll(path, hrefBicubicMesh('bilinear'))
+   glFiles:push(path)
+
+   local scene, gradient = loadMesh(path)
+   assert(gradient.mode is GMT_LINEAR, 'type="bilinear" on the referencing mesh should override inherited bicubic mode')
 end
 
 @Test function PercentageOriginParses()
