@@ -67,15 +67,17 @@ git.query = function(Path:str):table
             git_info.branch = branch_ref
 
             -- Try to read the commit hash from the branch file
-            local branch_file = io.open(git_path .. 'refs/heads/' .. branch_ref, 'r')
-            if branch_file then
-               local commit_hash = branch_file:read('*all')
-               branch_file:close()
+            try
+               local branch_file = io.open(git_path .. 'refs/heads/' .. branch_ref, 'r')
+               if branch_file then
+                  local commit_hash = branch_file:read('*all')
+                  branch_file:close()
 
-               if commit_hash then
-                  commit_hash = commit_hash:replace('\n', '')
-                  commit_hash = commit_hash:replace('\r', '')
-                  git_info.commit = commit_hash
+                  if commit_hash then
+                     commit_hash = commit_hash:replace('\n', '')
+                     commit_hash = commit_hash:replace('\r', '')
+                     git_info.commit = commit_hash
+                  end
                end
             end
          else
