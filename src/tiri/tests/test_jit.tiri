@@ -1298,7 +1298,7 @@ function traced_struct_numeric_write(Value:struct, Count:num)
       Value.integral = i
       Value.word = -(i + 0.75)
       Value.byte = i + 250.75
-      Value.unsignedWord = i + 65530.75
+      Value.unsignedWord = i + 65525.75
       Value.unsignedByte = i + 250.75
    end
 end
@@ -1322,8 +1322,8 @@ end
    assert(value.integral is 10, f"Expected traced integer-to-float write to retain 10, got {value.integral}")
    assert(value.word is -10, f"Expected traced word write to retain -10, got {value.word}")
    assert(value.byte is 4, f"Expected traced byte write to wrap to 4, got {value.byte}")
-   assert(value.unsignedWord is 4,
-      f"Expected traced qualified word write to wrap to 4, got {value.unsignedWord}")
+   assert(value.unsignedWord is 65535,
+      f"Expected traced unsigned word write to retain 65535, got {value.unsignedWord}")
    assert(value.unsignedByte is 4,
       f"Expected traced qualified byte write to wrap to 4, got {value.unsignedByte}")
 
@@ -1356,8 +1356,8 @@ end
       f"Expected guarded alternate word write to retain -10, got {alternate.word}")
    assert(alternate.byte is 4,
       f"Expected guarded alternate byte write to wrap to 4, got {alternate.byte}")
-   assert(alternate.unsignedWord is 4,
-      f"Expected guarded alternate qualified word write to wrap to 4, got {alternate.unsignedWord}")
+   assert(alternate.unsignedWord is 65535,
+      f"Expected guarded alternate unsigned word write to retain 65535, got {alternate.unsignedWord}")
    assert(alternate.unsignedByte is 4,
       f"Expected guarded alternate qualified byte write to wrap to 4, got {alternate.unsignedByte}")
 
@@ -1366,7 +1366,7 @@ end
    for i = 1, 20 do
       result = traced_struct_numeric_read(value, 10)
    end
-   assert(result is 100000427.5, f"Expected traced scalar struct sum 100000427.5, got {result}")
+   assert(result is 100655737.5, f"Expected traced scalar struct sum 100655737.5, got {result}")
 
    local load_trace_found = false
    for trace_no = 1, 30 do

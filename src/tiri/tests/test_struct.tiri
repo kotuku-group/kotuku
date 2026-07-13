@@ -219,7 +219,8 @@ end
 -- Exercise scalar FD_* reads and writes through a value inferred as the native struct type.
 
 @Test function FastScalarFieldCategories()
-   MAKESTRUCT('FastScalarFields', 'fFloat,dDouble,xWide,lInteger,wWord,bByte,cText[8],pPointer,rCallback')
+   MAKESTRUCT('FastScalarFields',
+      'fFloat,dDouble,xWide,lInteger,wWord,uwUnsignedWord,bByte,cText[8],pPointer,rCallback')
    local value = struct.new('FastScalarFields')
 
    value.float = 1.25
@@ -227,6 +228,7 @@ end
    value.wide = 9007199
    value.integer = 12345
    value.word = 2345
+   value.unsignedWord = 32767
    value.byte = 231
    value.text = array.new('fast')
    value.pointer = nil
@@ -236,6 +238,11 @@ end
    assert(value.wide is 9007199, 'FD_INT64 should round-trip through STSETF/STGETF')
    assert(value.integer is 12345, 'FD_INT should round-trip through STSETF/STGETF')
    assert(value.word is 2345, 'FD_WORD should round-trip through STSETF/STGETF')
+   assert(value.unsignedWord is 32767, 'Unsigned FD_WORD should retain 0x7fff through STSETF/STGETF')
+   value.unsignedWord = 32768
+   assert(value.unsignedWord is 32768, 'Unsigned FD_WORD should retain 0x8000 through STSETF/STGETF')
+   value.unsignedWord = 65535
+   assert(value.unsignedWord is 65535, 'Unsigned FD_WORD should retain 0xffff through STSETF/STGETF')
    assert(value.byte is 231, 'FD_BYTE should round-trip through STSETF/STGETF')
    assert(value.text is 'fast', 'FD_CUSTOM byte arrays should continue to read as strings')
    assert(value.pointer is nil, 'A null FD_POINTER should read as nil')

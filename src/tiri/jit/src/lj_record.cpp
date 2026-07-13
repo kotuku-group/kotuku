@@ -3078,7 +3078,8 @@ static TRef rec_struct_get(jit_State *J, RecordOps *ops)
          return emitir(IRTN(IR_CONV), result_ref, (IRT_NUM << IRCONV_DSH) | IRT_I64);
       }
       else if (field_flags & FD_WORD) {
-         TRef result_ref = emitir(IRT(IR_XLOAD, IRT_I16), addr_ref, 0);
+         IRType load_type = (field_flags & FD_UNSIGNED) ? IRT_U16 : IRT_I16;
+         TRef result_ref = emitir(IRT(IR_XLOAD, load_type), addr_ref, 0);
          if (not LJ_DUALNUM) result_ref = emitir(IRTN(IR_CONV), result_ref, IRCONV_NUM_INT);
          return result_ref;
       }
@@ -3145,7 +3146,8 @@ static void rec_struct_set(jit_State *J, RecordOps *ops)
       else if (field_flags & FD_WORD) {
          TRef store_ref = val_ref;
          if (tref_isnum(val_ref)) store_ref = emitir(IRTI(IR_CONV), val_ref, IRCONV_INT_NUM | IRCONV_ANY);
-         emitir(IRT(IR_XSTORE, IRT_I16), addr_ref, store_ref);
+         IRType store_type = (field_flags & FD_UNSIGNED) ? IRT_U16 : IRT_I16;
+         emitir(IRT(IR_XSTORE, store_type), addr_ref, store_ref);
       }
       else if (field_flags & FD_BYTE) {
          TRef store_ref = val_ref;
