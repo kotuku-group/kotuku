@@ -440,8 +440,7 @@ site falls back to the ordinary metamethod path.
 `ExpKind::IndexedStruct` lowers constant string member access to `STGETF`/`STSETF`. A struct member used as a callee is
 downgraded to normal indexed access so helpers such as `value.structSize()` still resolve through `__index`.
 
-The interpreter implementation covers x64, ARM64 and PowerPC. JIT trace recording remains a separate follow-up phase;
-a trace encountering these opcodes exits recording and continues in the interpreter.
+The interpreter implementation covers x64, ARM64 and PowerPC. The JIT can record these opcodes: scalar numeric fields may lower to guarded XLOAD/XSTORE, while complex or lifecycle-bound fields fall back to the C helpers.
 
 ## 7. Control-Flow and Short-Circuit Patterns
 ### 7.1 Logical Operators (`and`, `or`)
