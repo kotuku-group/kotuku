@@ -364,7 +364,7 @@ class extSurface : public objSurface {
 
    int64_t    LastRedimension;      // Timestamp of the last redimension call
    objBitmap *Bitmap;
-   std::vector<SurfaceCallback> Callback;
+   std::vector<FUNCTION> Callback;
    APTR     Data;
    double   Opacity;
    WINHANDLE DisplayWindow;       // Reference to the platform dependent window representing the Surface object
