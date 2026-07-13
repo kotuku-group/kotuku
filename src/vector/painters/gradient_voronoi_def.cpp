@@ -16,20 +16,20 @@ static const struct FieldDef clGradientVoronoiWLM[] = {
    { nullptr, 0 }
 };
 
-static ERR GRADIENTVORONOI_NewPlacement(extGradientVoronoi *Self) {
+static ERR GRADIENTVORONOI_New(extGradientVoronoi *Self) {
    new (Self) extGradientVoronoi(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR GRADIENTVORONOI_FreePlacement(extGradientVoronoi *Self) {
+static ERR GRADIENTVORONOI_Free(extGradientVoronoi *Self) {
    Self->~extGradientVoronoi();
    return ERR::Okay;
 }
 
 static const struct ActionArray clGradientVoronoiActions[] = {
-   { AC::FreePlacement, GRADIENTVORONOI_FreePlacement },
+   { AC::Free, GRADIENTVORONOI_Free },
    { AC::Init, GRADIENTVORONOI_Init },
-   { AC::NewPlacement, GRADIENTVORONOI_NewPlacement },
+   { AC::New, GRADIENTVORONOI_New },
    { AC::NIL, nullptr }
 };
 

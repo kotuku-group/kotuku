@@ -22,7 +22,7 @@ objThread::create thread = { fl::Routine(thread_entry), fl::Flags(THF::AUTO_FREE
 if (thread.ok()) thread->activate();
 </pre>
 
-To initialise the thread with data, call #SetData() prior to execution and read the #Data field from within the
+To initialise the thread with data, set #Data prior to execution and read the #Data field from within the
 thread routine.
 
 -END-
@@ -63,13 +63,19 @@ ERR msg_threadcallback(APTR Custom, int MsgID, int MsgType, APTR Message, int Ms
 
    log.branch("Executing completion callback for thread #%d", uid);
 
-   if (msg->Callback.isC()) {
+   if (msg->Callback.stale()) clear_callback(msg->Callback);
+   else if (msg->Callback.isC()) {
       auto callback = (void (*)(OBJECTID, APTR))msg->Callback.Routine;
       callback(uid, msg->Callback.Meta);
    }
    else if (msg->Callback.isScript()) {
       ScopedObjectLock script(msg->Callback.Context, 5000);
       if (script.granted()) sc::Call(msg->Callback, std::to_array<ScriptArg>({ { "Thread", uid, FD_OBJECTID } }));
+   }
+
+   if (msg->Callback.defined()) {
+      msg->Callback.unpin();
+      msg->Callback.clear();
    }
 
    // NB: Assume 'msg' is unstable after this point because the callback may have modified the message table.
@@ -144,6 +150,7 @@ static ERR THREAD_Activate(extThread *Self)
       Self->InterruptThreadID.store(GetThreadID(), std::memory_order_release);
 
       ThreadMessage msg = { .ThreadID = uid, .Callback = Self->Callback };
+      if (msg.Callback.defined()) msg.Callback.pin();
 
       {
          // Replace the default dummy context with one that pertains to the thread
@@ -151,6 +158,10 @@ static ERR THREAD_Activate(extThread *Self)
 
          if (StopToken.stop_requested()) {
             Self->Error = ERR::Cancelled;
+         }
+         else if (Self->Routine.stale()) {
+            clear_callback(Self->Routine);
+            Self->Error = ERR::Terminate;
          }
          else if (Self->Routine.isC()) {
             auto routine = (ERR (*)(extThread *, APTR))Self->Routine.Routine;
@@ -213,65 +224,10 @@ static ERR THREAD_FreeWarning(extThread *Self)
 {
    if (!Self->Active) return ERR::Okay;
    else {
-      kt::Log log;
-      log.detail("Thread is still running, marking for auto termination.");
+      kt::Log().detail("Thread is still running, marking for auto termination.");
       Self->Flags |= THF::AUTO_FREE;
       return ERR::InUse;
    }
-}
-
-/*********************************************************************************************************************
-
--METHOD-
-SetData: Attaches data to the thread.
-
-Use the SetData() method prior to activating a thread so that it can be initialised with user data.  The thread will be
-able to read the data from the #Data field.
-
-A copy of the provided data buffer will be stored with the thread object, so there is no need to retain the original
-data after this method has returned.  In some cases it may be desirable to store a direct pointer value and bypass the
-copy operation.  To do this, set the Size parameter to zero.
-
--INPUT-
-buf(ptr) Data: Pointer to the data buffer.
-bufsize Size: Size of the data buffer.  If zero, the pointer is stored directly, with no copy operation taking place.
-
--ERRORS-
-Okay
-NullArgs
-Args
-AllocMemory
-
--TAGS-
-mutates-object, copies-input
--END-
-
-*********************************************************************************************************************/
-
-static ERR THREAD_SetData(extThread *Self, struct th::SetData *Args)
-{
-   kt::Log log;
-
-   if ((!Args) or (!Args->Data)) return log.warning(ERR::NullArgs);
-   if (Args->Size < 0) return log.warning(ERR::Args);
-
-   if (Self->Data) {
-      FreeResource(Self->Data);
-      Self->Data = nullptr;
-      Self->DataSize = 0;
-   }
-
-   if (!Args->Size) { // If no size is provided, we simply copy the provided pointer.
-      Self->Data = Args->Data;
-      Self->DataSize = 0;
-      return ERR::Okay;
-   }
-   else if (!AllocMemory(Args->Size, MEM::DATA, &Self->Data)) {
-      Self->DataSize = Args->Size;
-      copymem(Args->Data, Self->Data, Args->Size);
-      return ERR::Okay;
-   }
-   else return log.warning(ERR::AllocMemory);
 }
 
 /*********************************************************************************************************************
@@ -285,23 +241,25 @@ callback will be executed in the context of the main program loop to minimise re
 The prototype for the callback routine is `void Callback(objThread *Thread)`.
 
 -FIELD-
-Data: Pointer to initialisation data for the thread.
+Data: Storage for custom client data.
 
-The Data field will point to a data buffer if the #SetData() method has previously been called to store data in
-the thread object.  It is paired with the #DataSize field, which reflects the size of the data buffer.
+The Data field is a vector of bytes that can be used to store custom data for the thread.  There are no limits
+associated with its use, but care should be taken if both the thread and its creator can modify its content at any
+time.  Reserving the size of the vector in advance is recommended if the data is to be actively shared.
 
 *********************************************************************************************************************/
 
-static ERR GET_Data(extThread *Self, std::span<uint8_t> &Value)
+static ERR SET_Callback(extThread *Self, FUNCTION *Value)
 {
-   Value = std::span<uint8_t>((uint8_t *)Self->Data, Self->DataSize);
+   clear_callback(Self->Callback);
+   if (Value) {
+      Self->Callback = *Value;
+      if (Self->Callback.defined()) Self->Callback.pin();
+   }
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
-
--FIELD-
-DataSize: The size of the buffer referenced in the Data field.
 
 -FIELD-
 Error: Reflects the error code returned by the thread routine.
@@ -321,15 +279,22 @@ finished processing, the resulting error code will be stored in the thread objec
 
 *********************************************************************************************************************/
 
+static ERR SET_Routine(extThread *Self, FUNCTION *Value)
+{
+   clear_callback(Self->Routine);
+   if (Value) {
+      Self->Routine = *Value;
+      if (Self->Routine.defined()) Self->Routine.pin();
+   }
+   return ERR::Okay;
+}
+
 extThread::~extThread()
 {
-   if ((Data) and (DataSize > 0)) {
-      FreeResource(Data);
-      Data = nullptr;
-      DataSize = 0;
-   }
-
    if (CPPThread) { delete CPPThread; CPPThread = nullptr; }
+
+   clear_callback(Callback);
+   clear_callback(Routine);
 }
 
 //********************************************************************************************************************
@@ -337,10 +302,9 @@ extThread::~extThread()
 #include "class_thread_def.c"
 
 static const FieldArray clFields[] = {
-   { "Callback",  FDF_FUNCTION|FDF_RW },
-   { "Routine",   FDF_FUNCTION|FDF_RW },
-   { "Data",      FDF_ARRAY|FDF_BYTE|FDF_R|FDF_PURE, GET_Data },
-   { "DataSize",  FDF_INT|FDF_R },
+   { "Callback",  FDF_FUNCTION|FDF_RW, nullptr, SET_Callback },
+   { "Routine",   FDF_FUNCTION|FDF_RW, nullptr, SET_Routine },
+   { "Data",      FDF_VECTOR|FDF_BYTE|FDF_RW },
    { "Error",     FDF_INT|FDF_R },
    { "Flags",     FDF_INT|FDF_RI, nullptr, nullptr, &clThreadFlags },
    END_FIELD
@@ -355,7 +319,6 @@ extern ERR add_thread_class(void)
       fl::Name("Thread"),
       fl::Category(CCF::SYSTEM),
       fl::Actions(clThreadActions),
-      fl::Methods(clThreadMethods),
       fl::Fields(clFields),
       fl::Size(sizeof(extThread)),
       fl::Path("modules:core"));

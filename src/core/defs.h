@@ -17,6 +17,8 @@
 #include <thread>
 #include <algorithm>
 #include <optional>
+#include <memory>
+#include <new>
 #include <string_view>
 #include <ankerl/unordered_dense.h>
 #include <unordered_set>
@@ -171,13 +173,14 @@ struct THREADID : strong_typedef<THREADID, int> { // Internal thread ID, unrelat
 };
 
 struct rkWatchPath {
-   HOSTHANDLE Handle;    // The handle for the file being monitored, can be a special reference for virtual paths
+   HOSTHANDLE Handle = { }; // The handle for the file being monitored, can be a special reference for virtual paths
    FUNCTION   Routine;   // Routine to call on event trigger
-   MFF        Flags;     // Event mask (original flags supplied to Watch)
-   uint32_t   VirtualID; // If monitored path is virtual, this refers to an ID in the glVirtual table
+   MFF        Flags = MFF(); // Event mask (original flags supplied to Watch)
+   uint32_t   VirtualID = 0; // If monitored path is virtual, this refers to an ID in the glVirtual table
 
 #ifdef _WIN32
-   int WinFlags;
+   int WinFlags = 0;
+   std::unique_ptr<uint8_t[]> Buffer;
 #endif
 };
 
@@ -207,6 +210,7 @@ struct ThreadActionMessage {
    ERR       Error;     // The error code resulting from the action's execution.
    FUNCTION  Callback;  // Callback function to execute on action completion.
    bool      DispatchNext = true; // False for callbacks emitted while draining a queue.
+   FUNCTION  DeferredFunction; // Consumed argument callback released by the message thread.
 };
 
 // Queued async action, waiting for the same-object action to complete.
@@ -215,6 +219,7 @@ struct QueuedAction {
    OBJECTID  ObjectID;
    AC        ActionID;
    int       ArgsSize;
+   const FunctionField *Fields;
    std::vector<int8_t> Parameters;
    FUNCTION  Callback;
 };
@@ -400,7 +405,7 @@ struct virtual_drive {
    ERR (*IdentifyFile)(std::string_view, CLASSID *, CLASSID *);
    ERR (*CreateFolder)(std::string_view, PERMIT);
    ERR (*SameFile)(std::string_view, std::string_view);
-   ERR (*ReadLink)(std::string_view, STRING *);
+   ERR (*ReadLink)(std::string_view, std::string &);
    ERR (*CreateLink)(std::string_view, std::string_view);
    inline bool is_default() const { return VirtualID IS 0; }
    inline bool is_virtual() const { return VirtualID != 0; }
@@ -489,7 +494,7 @@ class extFile : public objFile {
       APTR  Stream;
    #endif
 
-   struct rkWatchPath *prvWatch;
+   std::unique_ptr<rkWatchPath> prvWatch;
    struct DirInfo *prvList;
    bool   isFolder;
    int    Handle;         // Native system file handle
@@ -1136,7 +1141,7 @@ ERR fs_getdeviceinfo(std::string_view, objStorageDevice *);
 void fs_ignore_file(class extFile *);
 ERR fs_makedir(std::string_view, PERMIT);
 ERR fs_opendir(DirInfo *);
-ERR fs_readlink(std::string_view, STRING *);
+ERR fs_readlink(std::string_view, std::string &);
 ERR fs_rename(std::string_view, std::string_view);
 ERR fs_samefile(std::string_view, std::string_view);
 ERR fs_scandir(DirInfo *);
@@ -1170,6 +1175,9 @@ APTR   build_jump_table(const Function *);
 #endif
 void   stop_async_actions(void);
 ERR    copy_args(const FunctionField *, int, int8_t *, std::vector<int8_t> &);
+void   release_copied_args(const FunctionField *, int, int8_t *, bool, FUNCTION * = nullptr);
+void   make_args_relative(const FunctionField *, int, int8_t *);
+void   make_args_absolute(const FunctionField *, int, int8_t *);
 ERR    create_archive_volume(void);
 void   dispatch_queued_action(OBJECTID);
 ERR    delete_tree(std::string &, FUNCTION *, FileFeedback *);
@@ -1390,4 +1398,15 @@ typename Container::const_iterator binary_search(const Container& container, con
         else return container.begin() + i;
     }
     return container.end();
+}
+
+//********************************************************************************************************************
+
+[[maybe_unused]] static void clear_callback(FUNCTION &Function)
+{
+   if (Function.defined()) {
+      if (Function.isScript() and (not Function.stale())) ((objScript *)Function.Context)->derefProcedure(Function);
+      Function.unpin();
+      Function.disable();
+   }
 }

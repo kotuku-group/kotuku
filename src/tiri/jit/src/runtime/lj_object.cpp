@@ -49,6 +49,10 @@ void lj_object_finalize(lua_State *L, GCobject *obj)
 
       auto error = FreeResource(obj->uid);
       if ((!error) or (error IS ERR::DoesNotExist)) {
+         if (obj->is_pinned()) {
+            obj->ptr->unpinWeak();
+            obj->set_pinned(false);
+         }
          obj->uid = 0;
          obj->ptr = nullptr;
       }
@@ -68,9 +72,14 @@ void lj_object_free(global_State *g, GCobject *obj)
       if (obj->flags & GCOBJ_LOCKED) {
          ReleaseObject((OBJECTPTR)obj->ptr);
          obj->flags &= ~GCOBJ_LOCKED;
-         obj->ptr = nullptr;
+         if (not obj->is_pinned()) obj->ptr = nullptr;
       }
       obj->accesscount--;
+   }
+
+   if (obj->is_pinned()) {
+      obj->ptr->unpinWeak();
+      obj->set_pinned(false);
    }
 
    // Free the GCobject structure (Kotuku object should have been freed by __gc finalizer)
@@ -120,7 +129,7 @@ int lj_object_pairs(lua_State *L)
       L->top--;        // Pop the closure from top (now at FFH return position)
       return 3;
    }
-   else luaL_error(L, ERR::FieldSearch, "Object class defines no fields.");
+   else luaL_error(L, ERR::FieldNotFound, "Object class defines no fields.");
    return 0;
 }
 
@@ -163,7 +172,7 @@ int lj_object_ipairs(lua_State *L)
       L->top--;        // Pop the closure from top (now at FFH return position)
       return 3;
    }
-   else luaL_error(L, ERR::FieldSearch, "Object class defines no fields.");
+   else luaL_error(L, ERR::FieldNotFound, "Object class defines no fields.");
    return 0;
 }
 
@@ -196,7 +205,9 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
 
    if (curr_funcisL(L)) L->top = curr_topL(L);
 
-   if (not Obj->uid) luaL_error(L, ERR::DoesNotExist, "Object dereferenced, unable to read field.");
+   // Deliberately redundant with the access_object() failure inside the field handler: testing here yields a precise
+   // DoesNotExist message instead of a generic read failure.  Do not remove as an optimisation.
+   if (object_is_dead(Obj)) luaL_error(L, ERR::DoesNotExist, "Object dereferenced, unable to read field.");
 
    // Use raw pointers for std::lower_bound to avoid MSVC debug iterator tracking.
    // luaL_error() uses longjmp which skips C++ destructors, leaking debug iterator
@@ -278,7 +289,9 @@ extern "C" void bc_object_setfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    }
    else if (L->top <= Val) L->top = Val + 1;
 
-   if (not Obj->uid) luaL_error(L, ERR::DoesNotExist, "Object dereferenced, unable to write field.");
+   // Deliberately redundant with the access_object() failure below: testing here yields a precise DoesNotExist
+   // message instead of a generic ERR::AccessObject.  Do not remove as an optimisation.
+   if (object_is_dead(Obj)) luaL_error(L, ERR::DoesNotExist, "Object dereferenced, unable to write field.");
 
    auto write_table = get_write_table(Obj->classptr);
    auto wt_data = write_table->data();
@@ -350,10 +363,7 @@ extern "C" int ir_object_field_type(GCobject *Obj, GCstr *Key, int &Offset, uint
          if (flags & FD_UNSIGNED) return IRT_NUM;
          else return LJ_DUALNUM ? IRT_INT : IRT_NUM;
       }
-      else if (flags & FD_STRUCT) {
-         if (flags & FD_RESOURCE) return IRT_LIGHTUD;
-         else return IRT_TAB;
-      }
+      else if (flags & FD_STRUCT) return IRT_STRUCT;
       else if (flags & FD_POINTER) return IRT_LIGHTUD;
       else return -1;  // Unknown type
    }
@@ -389,7 +399,7 @@ extern "C" int ir_object_field_type_write(GCobject *Obj, GCstr *Key, int &Offset
 }
 
 //********************************************************************************************************************
-// JIT fast-path lock: guards in the trace ensure the object is alive, non-detached, and has a valid ptr.
+// JIT fast-path lock: guards in the trace ensure the object is alive, weak-pinned, and has a valid ptr.
 // Mirrors access_object() semantics: skips ptr->lock() if already held (accesscount > 0).
 // Returns the Object* pointer for use by XLOAD.
 
@@ -401,7 +411,7 @@ extern "C" OBJECTPTR jit_object_lock(GCobject *Obj)
 }
 
 //********************************************************************************************************************
-// JIT fast-path unlock: mirrors release_object() semantics for non-detached objects.
+// JIT fast-path unlock: mirrors release_object() semantics for weak-pinned objects.
 
 extern "C" void jit_object_unlock(GCobject *Obj)
 {
@@ -411,7 +421,7 @@ extern "C" void jit_object_unlock(GCobject *Obj)
 //********************************************************************************************************************
 // JIT fast-path string field read: locks the object, reads the CSTRING pointer at the given offset,
 // unlocks, and writes the result to Out.  Null CSTRING values produce nil (matching lua_pushstring).
-// Guards in the trace ensure the object is alive, non-detached, and has a valid ptr.
+// Guards in the trace ensure the object is alive, weak-pinned, and has a valid ptr.
 
 extern "C" void jit_object_getstr(lua_State *L, GCobject *Obj, uint32_t Offset, TValue *Out)
 {
@@ -427,7 +437,9 @@ extern "C" void jit_object_getstr(lua_State *L, GCobject *Obj, uint32_t Offset, 
 // JIT fast-path object field read: locks the parent, reads the OBJECTPTR at the given offset, unlocks, and creates
 // a detached GCobject wrapper written to Out.  Null pointers produce nil.  load_include_for_class() is not called
 // because the interpreter will have already loaded the class definitions during prior execution cycles.
-// Guards in the trace ensure the parent object is alive, non-detached, and has a valid ptr.
+// Guards in the trace ensure the parent object is alive, weak-pinned, and has a valid ptr.
+// The child pointer is read from the parent's field while the parent lock is held, so the child is guaranteed
+// alive at this instant and pinning the wrapper is race-free.
 
 extern "C" void jit_object_getobj(lua_State *L, GCobject *Obj, uint32_t Offset, TValue *Out)
 {
@@ -436,6 +448,7 @@ extern "C" void jit_object_getobj(lua_State *L, GCobject *Obj, uint32_t Offset, 
    OBJECTPTR child = *(OBJECTPTR *)(((int8_t *)Obj->ptr) + Offset);
    if (child) {
       auto gcobj = lj_object_new(L, child->UID, nullptr, child->Class, GCOBJ_DETACHED);
+      lj_object_pin(gcobj, child);
       setobjectV(L, Out, gcobj);
    }
    else setnilV(Out);

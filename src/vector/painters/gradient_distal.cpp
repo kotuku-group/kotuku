@@ -28,6 +28,12 @@ reset to `BOUNDING_BOX` during initialisation.
 
 *********************************************************************************************************************/
 
+extGradientDistal::~extGradientDistal() {
+   if (SDFCache) delete SDFCache;
+}
+
+//********************************************************************************************************************
+
 static ERR GRADIENTDISTAL_Init(extGradientDistal *Self)
 {
    kt::Log log;
@@ -166,14 +172,15 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 -END-
 *********************************************************************************************************************/
 
-static ERR GRADIENTDISTAL_GET_XMLDef(extGradientDistal *Self, std::string_view &Value)
+static ERR GRADIENTDISTAL_GET_XMLDef(extGradientDistal *Self, std::string &Value)
 {
    std::stringstream stream;
    stream << "distalGradient";
    gradient_xml_attr(stream, "floor", Self->Floor);
    gradient_xml_attr(stream, "multiplier", Self->Multiplier);
    if ((Self->Radius.defined()) and (Self->Radius > 0.0)) gradient_xml_attr(stream, "radius", Self->Radius);
-   return gradient_xml_result(stream.str(), Value);
+   Value = stream.str();
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -187,7 +194,7 @@ static const FieldArray clGradientDistalFields[] = {
    { "InnerRadius", FDF_UNIT|FDF_RW, nullptr, GRADIENTDISTAL_SET_InnerRadius },
    { "InnerFall",   FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENTDISTAL_SET_InnerFall, &clGradientDistalGFALL },
    { "OuterFall",   FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENTDISTAL_SET_OuterFall, &clGradientDistalGFALL },
-   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, GRADIENTDISTAL_GET_XMLDef },
+   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, GRADIENTDISTAL_GET_XMLDef },
    END_FIELD
 };
 

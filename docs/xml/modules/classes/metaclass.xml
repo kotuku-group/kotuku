@@ -64,14 +64,14 @@
 <p>Internally, the provided list is copied to the <fl>ActionTable</fl> and the original values will serve no further purpose.</p>
 <p>The following example shows a list of <st>ActionArray</st> structures borrowed from the <class name="Image">Image</class> class.  Note that such lists can also be auto-generated using our IDL scripts - an approach that we strongly recommend.</p>
 <pre>ActionArray clActions[] = {
-   { AC::FreePlacement, PIC_FreePlacement },
-   { AC::NewPlacement,  PIC_NewPlacement },
-   { AC::Init,          PIC_Init },
-   { AC::Query,         PIC_Query },
-   { AC::Read,          PIC_Read },
-   { AC::SaveToObject,  PIC_SaveToObject },
-   { AC::Seek,          PIC_Seek },
-   { AC::Write,         PIC_Write },
+   { AC::Free,         PIC_Free },
+   { AC::New,          PIC_New },
+   { AC::Init,         PIC_Init },
+   { AC::Query,        PIC_Query },
+   { AC::Read,         PIC_Read },
+   { AC::SaveToObject, PIC_SaveToObject },
+   { AC::Seek,         PIC_Seek },
+   { AC::Write,        PIC_Write },
    { AC::NIL, nullptr }
 };
 </pre>
@@ -338,7 +338,7 @@
     <struct name="Field" comment="Used to describe the public fields of a class.">
       <field name="Arg" type="MAXINT">An option to complement the field type.  Can be a pointer or an integer value</field>
       <field name="GetValue" type="FUNCTION *" prototype="ERR (*GetValue)(APTR, APTR)">A virtual function that will retrieve the value for this field</field>
-      <field name="SetValue" type="APTR">A virtual function that will set the value for this field</field>
+      <field name="SetValue" type="FUNCTION *" prototype="ERR (*SetValue)(APTR, APTR)">A virtual function that will set the value for this field</field>
       <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, const struct Field *, int, const void *)">An internal function for writing to this field</field>
       <field name="Name" type="CSTRING">The English name for the field, e.g. <code>Width</code></field>
       <field name="FieldID" type="UINT">32-bit hash from fieldhash()</field>

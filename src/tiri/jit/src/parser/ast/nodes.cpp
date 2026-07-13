@@ -20,7 +20,7 @@ TiriType parse_type_name(std::string_view Name)
       { "array",     TiriType::Array },
       { "func",      TiriType::Func },
       { "function",  TiriType::Func },
-      { "thread",    TiriType::Thread },
+      { "struct",    TiriType::Struct },
       { "obj",       TiriType::Object },
       { "object",    TiriType::Object },
       { "range",     TiriType::Range }
@@ -40,7 +40,7 @@ std::string_view type_name(TiriType Type)
       case TiriType::Table:  return "table";
       case TiriType::Array:  return "array";
       case TiriType::Func:   return "func";
-      case TiriType::Thread: return "thread";
+      case TiriType::Struct: return "struct";
       case TiriType::Object: return "obj";
       case TiriType::Range:  return "range";
       case TiriType::Any:
@@ -61,7 +61,7 @@ uint8_t tiri_type_to_lj_tag(TiriType Type)
       case TiriType::Nil:    return 0;   // ~0 = LJ_TNIL
       case TiriType::Bool:   return 2;   // ~2 = LJ_TTRUE (we use true as the canonical boolean)
       case TiriType::Str:    return 4;   // ~4 = LJ_TSTR
-      case TiriType::Thread: return 6;   // ~6 = LJ_TTHREAD
+      case TiriType::Struct: return 6;   // ~6 = LJ_TSTRUCT
       case TiriType::Func:   return 8;   // ~8 = LJ_TFUNC
       case TiriType::Object: return 10;  // ~10 = LJ_TOBJECT
       case TiriType::Table:  return 11;  // ~11 = LJ_TTAB
@@ -678,10 +678,11 @@ ExprNodePtr make_pipe_expr(SourceSpan Span, ExprNodePtr lhs, ExprNodePtr rhs_cal
 }
 
 //********************************************************************************************************************
-// Helper to detect obj.new("classname", ...) pattern and extract class information.
-// Returns true if the pattern is detected and sets result_type and object_class_id.
+// Helper to detect obj.new("classname", ...) and struct.new("definition", ...) constructor calls. Returns true if a
+// known constructor is detected and sets result_type; object constructors also set object_class_id.
 
-static bool detect_obj_new_call(const ExprNode &Callee, const ExprNodeList &Arguments, TiriType &ResultType, CLASSID &ClassID)
+static bool detect_constructor_call(const ExprNode &Callee, const ExprNodeList &Arguments, TiriType &ResultType,
+   CLASSID &ClassID)
 {
    // Pattern: obj.new("classname", ...) where callee is MemberExpr(obj, "new")
    if (Callee.kind != AstNodeKind::MemberExpr) return false;
@@ -692,12 +693,18 @@ static bool detect_obj_new_call(const ExprNode &Callee, const ExprNodeList &Argu
    if (not member_payload.member.symbol) return false;
    if (strcmp(strdata(member_payload.member.symbol), "new") != 0) return false;
 
-   // Check if table is identifier "obj"
+   // Check if the constructor interface is a simple identifier.
    if (not member_payload.table) return false;
    if (member_payload.table->kind != AstNodeKind::IdentifierExpr) return false;
 
    const auto& name_ref = std::get<NameRef>(member_payload.table->data);
    if (not name_ref.identifier.symbol) return false;
+
+   if (strcmp(strdata(name_ref.identifier.symbol), "struct") IS 0) {
+      ResultType = TiriType::Struct;
+      return true;
+   }
+
    if (strcmp(strdata(name_ref.identifier.symbol), "obj") != 0) return false;
 
    ResultType = TiriType::Object; // obj.new() always returns an Object
@@ -730,8 +737,8 @@ ExprNodePtr make_call_expr(SourceSpan Span, ExprNodePtr callee, ExprNodeList arg
    assert_node(ensure_operand(callee), "call expression requires callee");
    CallExprPayload payload;
 
-   // Detect obj.new("classname", ...) pattern before moving callee
-   detect_obj_new_call(*callee, arguments, payload.result_type, payload.object_class_id);
+   // Detect known constructor calls before moving callee.
+   detect_constructor_call(*callee, arguments, payload.result_type, payload.object_class_id);
 
    // Mark MemberExpr/SafeMemberExpr callees as call targets so type-checking can be deferred to runtime
    if (callee->kind IS AstNodeKind::MemberExpr) {

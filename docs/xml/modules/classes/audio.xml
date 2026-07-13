@@ -37,7 +37,6 @@
       <result>
         <error code="Okay">Hardware activation completed successfully.</error>
         <error code="Failed">Hardware device unavailable or driver initialisation failed.</error>
-        <error code="AllocMemory">Failed to allocate internal mixing buffers.</error>
       </result>
     </action>
 

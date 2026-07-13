@@ -210,7 +210,10 @@ ERR SubscribeEvent(int64_t EventID, FUNCTION *Callback, APTR *Handle)
 
    if ((!Callback) or (!EventID) or (!Handle)) return ERR::NullArgs;
 
-   if (!Callback->isC()) return ERR::Args; // Currently only StdC callbacks are accepted.
+   if (!Callback->isC()) {
+      Callback->consume();
+      return ERR::Args; // Currently only StdC callbacks are accepted.
+   }
 
    auto gid = EVG(uint8_t(EventID>>56));
 

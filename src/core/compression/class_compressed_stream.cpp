@@ -31,7 +31,7 @@ class extCompressedStream : public objCompressedStream {
 
    // Note: As PublicSize is defined, these fields are specific to CompressedStream and will otherwise be
    // overwritten for derived classes.
-   uint8_t *OutputBuffer;
+   std::vector<uint8_t> OutputBuffer;
    ZStream Stream;
    gz_header Header;
 
@@ -46,7 +46,8 @@ class extCompressedStream : public objCompressedStream {
 
       Stream.reset();
 
-      if (OutputBuffer) { FreeResource(OutputBuffer); OutputBuffer = nullptr; }
+      OutputBuffer.clear();
+      OutputBuffer.shrink_to_fit();
    }
 };
 
@@ -117,10 +118,8 @@ static ERR COMPRESSEDSTREAM_Read(extCompressedStream *Self, struct acRead *Args)
    if (outputsize < MIN_OUTPUT_SIZE) {
       // An internal buffer will need to be allocated if the one supplied to Read() is not large enough.
       outputsize = MIN_OUTPUT_SIZE;
-      if (!(output = Self->OutputBuffer)) {
-         if (AllocMemory(MIN_OUTPUT_SIZE, MEM::DATA|MEM::NO_CLEAR, (APTR *)&Self->OutputBuffer) != ERR::Okay) return ERR::AllocMemory;
-         output = Self->OutputBuffer;
-      }
+      if (Self->OutputBuffer.empty()) Self->OutputBuffer.resize(MIN_OUTPUT_SIZE);
+      output = Self->OutputBuffer.data();
    }
 
    Self->Stream->next_in  = inputstream;
@@ -247,15 +246,13 @@ static ERR COMPRESSEDSTREAM_Write(extCompressedStream *Self, struct acWrite *Arg
       Self->TotalOutput = 0;
    }
 
-   if (!Self->OutputBuffer) {
-      if (AllocMemory(MIN_OUTPUT_SIZE, MEM::DATA|MEM::NO_CLEAR, (APTR *)&Self->OutputBuffer) != ERR::Okay) return ERR::AllocMemory;
-   }
+   if (Self->OutputBuffer.empty()) Self->OutputBuffer.resize(MIN_OUTPUT_SIZE);
 
    Args->Result = 0;
    int mode;
    if (Args->Length IS -1) { // A length of -1 is a signal to complete the compression process.
       mode = Z_FINISH;
-      Self->Stream->next_in  = Self->OutputBuffer;
+      Self->Stream->next_in  = Self->OutputBuffer.data();
       Self->Stream->avail_in = 0;
    }
    else {
@@ -269,7 +266,7 @@ static ERR COMPRESSEDSTREAM_Write(extCompressedStream *Self, struct acWrite *Arg
 
    Self->Stream->avail_out = 0;
    while (Self->Stream->avail_out IS 0) {
-      Self->Stream->next_out  = Self->OutputBuffer;
+      Self->Stream->next_out  = Self->OutputBuffer.data();
       Self->Stream->avail_out = MIN_OUTPUT_SIZE;
 
       if ((deflate(Self->Stream.get(), mode))) {
@@ -282,7 +279,7 @@ static ERR COMPRESSEDSTREAM_Write(extCompressedStream *Self, struct acWrite *Arg
       if (len > 0) {
          Self->TotalOutput += len;
          log.trace("%d bytes (total %" PF64 ") were compressed.", len, Self->TotalOutput);
-         acWrite(Self->Output, Self->OutputBuffer, len, nullptr);
+         acWrite(Self->Output, Self->OutputBuffer.data(), len, nullptr);
       }
       else {
          // deflate() may not output anything if it needs more data to fill up a compression frame.  Return ERR::Okay

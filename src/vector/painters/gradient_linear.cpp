@@ -85,7 +85,7 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 -END-
 *********************************************************************************************************************/
 
-static ERR GRADIENTLINEAR_GET_XMLDef(extGradientLinear *Self, std::string_view &Value)
+static ERR GRADIENTLINEAR_GET_XMLDef(extGradientLinear *Self, std::string &Value)
 {
    std::stringstream stream;
    stream << "linearGradient";
@@ -93,7 +93,8 @@ static ERR GRADIENTLINEAR_GET_XMLDef(extGradientLinear *Self, std::string_view &
    gradient_xml_attr(stream, "y1", Self->Y1);
    gradient_xml_attr(stream, "x2", Self->X2);
    gradient_xml_attr(stream, "y2", Self->Y2);
-   return gradient_xml_result(stream.str(), Value);
+   Value = stream.str();
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -105,7 +106,7 @@ static const FieldArray clGradientLinearFields[] = {
    { "Y1", FDF_UNIT|FDF_RW, nullptr, GRADIENTLINEAR_SET_Y1 },
    { "X2", FDF_UNIT|FDF_RW, nullptr, GRADIENTLINEAR_SET_X2 },
    { "Y2", FDF_UNIT|FDF_RW, nullptr, GRADIENTLINEAR_SET_Y2 },
-   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, GRADIENTLINEAR_GET_XMLDef },
+   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, GRADIENTLINEAR_GET_XMLDef },
    END_FIELD
 };
 

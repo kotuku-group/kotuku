@@ -103,13 +103,13 @@ static const struct FieldDef clFilePERMIT[] = {
 };
 
 FDEF maStartStream[] = { { "Subscriber", FD_OBJECTID }, { "Flags", FD_INT }, { "Length", FD_INT }, { 0, 0 } };
-FDEF maDelete[] = { { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
-FDEF maMove[] = { { "Dest", FDF_CPPSTRING }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
-FDEF maCopy[] = { { "Dest", FDF_CPPSTRING }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
+FDEF maDelete[] = { { "Callback", FD_FUNCTION }, { 0, 0 } };
+FDEF maMove[] = { { "Dest", FDF_CPPSTRING }, { "Callback", FD_FUNCTION }, { 0, 0 } };
+FDEF maCopy[] = { { "Dest", FDF_CPPSTRING }, { "Callback", FD_FUNCTION }, { 0, 0 } };
 FDEF maSetDate[] = { { "Year", FD_INT }, { "Month", FD_INT }, { "Day", FD_INT }, { "Hour", FD_INT }, { "Minute", FD_INT }, { "Second", FD_INT }, { "Type", FD_INT }, { 0, 0 } };
 FDEF maReadLine[] = { { "Result", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
 FDEF maNext[] = { { "File", FD_RESULT|FD_OBJECTPTR|FD_ALLOC }, { 0, 0 } };
-FDEF maWatch[] = { { "Callback", FD_FUNCTIONPTR }, { "Flags", FD_INT }, { 0, 0 } };
+FDEF maWatch[] = { { "Callback", FD_FUNCTION }, { "Flags", FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clFileMethods[] = {
    { AC(-1), (APTR)FILE_StartStream, "StartStream", maStartStream, sizeof(struct fl::StartStream) },
@@ -125,12 +125,12 @@ static const struct MethodEntry clFileMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR FILE_NewPlacement(extFile *Self) {
+static ERR FILE_New(extFile *Self) {
    new (Self) extFile(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR FILE_FreePlacement(extFile *Self) {
+static ERR FILE_Free(extFile *Self) {
    Self->~extFile();
    return ERR::Okay;
 }
@@ -139,9 +139,9 @@ static const struct ActionArray clFileActions[] = {
    { AC::Activate, FILE_Activate },
    { AC::DataFeed, FILE_DataFeed },
    { AC::Flush, FILE_Flush },
-   { AC::FreePlacement, FILE_FreePlacement },
+   { AC::Free, FILE_Free },
    { AC::Init, FILE_Init },
-   { AC::NewPlacement, FILE_NewPlacement },
+   { AC::New, FILE_New },
    { AC::Query, FILE_Query },
    { AC::Read, FILE_Read },
    { AC::Rename, FILE_Rename },

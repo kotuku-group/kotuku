@@ -32,21 +32,21 @@ static const struct FieldDef clFontALIGN[] = {
    { nullptr, 0 }
 };
 
-static ERR FONT_NewPlacement(extFont *Self) {
+static ERR FONT_New(extFont *Self) {
    new (Self) extFont(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR FONT_FreePlacement(extFont *Self) {
+static ERR FONT_Free(extFont *Self) {
    Self->~extFont();
    return ERR::Okay;
 }
 
 static const struct ActionArray clFontActions[] = {
    { AC::Draw, FONT_Draw },
-   { AC::FreePlacement, FONT_FreePlacement },
+   { AC::Free, FONT_Free },
    { AC::Init, FONT_Init },
-   { AC::NewPlacement, FONT_NewPlacement },
+   { AC::New, FONT_New },
    { AC::NIL, nullptr }
 };
 

@@ -5,6 +5,8 @@ UDP Basic Communication Test
    include 'network'
    mNet ?= mod.load('network')
 
+extern logOutput
+
 glBasePort = 19800  -- Base port for UDP tests
 glTestTimeout = 3.0
 
@@ -33,7 +35,8 @@ glTestTimeout = 3.0
 
          if (bytesRead > 0) then
             local msg = sv_buffer:sub(0, bytesRead)
-            logOutput('[UDP Server] Received: "' .. msg .. '" from ' .. mNet.AddressToStr(sv_source) .. ':' .. sv_source.port)
+            local err, ip = mNet.AddressToStr(sv_source)
+            logOutput('[UDP Server] Received: "' .. msg .. '" from ' .. ip .. ':' .. sv_source.port)
             assert(msg:startsWith('Hello UDP Server'), 'Unexpected message received')
 
             -- Echo back a response
@@ -55,7 +58,8 @@ glTestTimeout = 3.0
 
          if (bytesRead > 0) then
             local msg = cl_buffer:sub(0, bytesRead)
-            logOutput('[UDP Client] Received: "' .. msg .. '" from ' .. mNet.AddressToStr(cl_source) .. ':' .. cl_source.port)
+            local err, ip = mNet.AddressToStr(cl_source)
+            logOutput('[UDP Client] Received: "' .. msg .. '" from ' .. ip .. ':' .. cl_source.port)
             assert(msg:startsWith('Hello UDP Client'), 'Unexpected response received')
             client_received = true
             Socket.acSignal()

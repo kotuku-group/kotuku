@@ -47,8 +47,11 @@ using CELL_ID = uint32_t;
 
 static void deref_document_callback(FUNCTION &Function)
 {
-   if (Function.isScript()) ((objScript *)Function.Context)->derefProcedure(Function);
-   Function.clear();
+   if (Function.defined()) {
+      if (Function.isScript() and (not Function.stale())) ((objScript *)Function.Context)->derefProcedure(Function);
+      Function.unpin();
+      Function.disable();
+   }
 }
 
 static void deref_document_callbacks(std::vector<FUNCTION> &Callbacks)

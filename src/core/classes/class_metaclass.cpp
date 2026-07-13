@@ -114,14 +114,14 @@ static const FieldDef CategoryTable[] = {
 static const std::vector<Field> glMetaFieldsPreset = {
    // If you adjust this table, remember to adjust the index numbers and the byte offsets into the structure.
    { 0, nullptr, nullptr, writeval_default, "ClassVersion",    strhash("classVersion"), glMetaClassVersionOffset, 0, FDF_DOUBLE|FDF_RI },
-   { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_Fields, (APTR)SET_Fields, writeval_default, "Fields", strhash("fields"), glMetaFieldsOffset, 1, FDF_ARRAY|FD_STRUCT|FDF_RI },
+   { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_Fields, (ERR (*)(APTR, APTR))SET_Fields, writeval_default, "Fields", strhash("fields"), glMetaFieldsOffset, 1, FDF_ARRAY|FD_STRUCT|FDF_RI },
    { MAXINT("Field"),      (ERR (*)(APTR, APTR))GET_Dictionary, nullptr, writeval_default, "Dictionary", strhash("dictionary"), glMetaDictionaryOffset, 2, FDF_ARRAY|FD_STRUCT|FDF_R },
-   { 0, nullptr, nullptr, writeval_default, "ClassName",       strhash("className"),       glMetaClassNameOffset,        3,  FDF_CPPSTRING|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "FileExtension",   strhash("fileExtension"),   glMetaFileExtensionOffset,    4,  FDF_CPPSTRING|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "FileDescription", strhash("fileDescription"), glMetaFileDescriptionOffset,  5,  FDF_CPPSTRING|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "FileHeader",      strhash("fileHeader"),      glMetaFileHeaderOffset,       6,  FDF_CPPSTRING|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "Path",            strhash("path"),            glMetaPathOffset,             7,  FDF_CPPSTRING|FDF_RI },
-   { 0, nullptr, nullptr, writeval_default, "Icon",            strhash("icon"),            glMetaIconOffset,             8,  FDF_CPPSTRING|FDF_RI },
+   { 0, nullptr, nullptr, writeval_default, "ClassName",       strhash("className"),       glMetaClassNameOffset,        3,  FDF_CPPSTRING|FDF_RI|FDF_PURE },
+   { 0, nullptr, nullptr, writeval_default, "FileExtension",   strhash("fileExtension"),   glMetaFileExtensionOffset,    4,  FDF_CPPSTRING|FDF_RI|FDF_PURE },
+   { 0, nullptr, nullptr, writeval_default, "FileDescription", strhash("fileDescription"), glMetaFileDescriptionOffset,  5,  FDF_CPPSTRING|FDF_RI|FDF_PURE },
+   { 0, nullptr, nullptr, writeval_default, "FileHeader",      strhash("fileHeader"),      glMetaFileHeaderOffset,       6,  FDF_CPPSTRING|FDF_RI|FDF_PURE },
+   { 0, nullptr, nullptr, writeval_default, "Path",            strhash("path"),            glMetaPathOffset,             7,  FDF_CPPSTRING|FDF_RI|FDF_PURE },
+   { 0, nullptr, nullptr, writeval_default, "Icon",            strhash("icon"),            glMetaIconOffset,             8,  FDF_CPPSTRING|FDF_RI|FDF_PURE },
    { 0, nullptr, nullptr, writeval_default, "Size",            strhash("size"),            glMetaSizeOffset,             9,  FDF_INT|FDF_RI },
    { 0, nullptr, nullptr, writeval_default, "Flags",           strhash("flags"),           glMetaFlagsOffset,            10, FDF_INT|FDF_RI },
    { 0, nullptr, nullptr, writeval_default, "ClassID",         strhash("classID"),         glMetaClassIDOffset,          11, FDF_INT|FDF_UNSIGNED|FDF_RI },
@@ -130,11 +130,11 @@ static const std::vector<Field> glMetaFieldsPreset = {
    { MAXINT(&CategoryTable), nullptr, nullptr, writeval_default, "Category",  strhash("category"), glMetaCategoryOffset, 14, FDF_INT|FDF_LOOKUP|FDF_RI },
    { 0, nullptr, nullptr, writeval_default, "PublicSize",      strhash("publicSize"),      glMetaPublicSizeOffset,       15, FDF_INT|FDF_RI },
    // Virtual fields
-   { MAXINT("MethodEntry"), (ERR (*)(APTR, APTR))GET_Methods, (APTR)SET_Methods, writeval_default, "Methods", strhash("methods"), sizeof(Object), 16, FDF_ARRAY|FD_STRUCT|FDF_RI },
-   { 0, nullptr, (APTR)SET_Actions,               writeval_default,   "Actions",           strhash("actions"),         sizeof(Object), 17, FDF_POINTER|FDF_I },
+   { MAXINT("MethodEntry"), (ERR (*)(APTR, APTR))GET_Methods, (ERR (*)(APTR, APTR))SET_Methods, writeval_default, "Methods", strhash("methods"), sizeof(Object), 16, FDF_ARRAY|FD_STRUCT|FDF_RI },
+   { 0, nullptr, (ERR (*)(APTR, APTR))SET_Actions,               writeval_default,   "Actions",           strhash("actions"),         sizeof(Object), 17, FDF_POINTER|FDF_I },
    { 0, (ERR (*)(APTR, APTR))GET_ActionTable, 0,  writeval_default,   "ActionTable",       strhash("actionTable"),     sizeof(Object), 18, FDF_ARRAY|FDF_POINTER|FDF_R },
-   { 0, (ERR (*)(APTR, APTR))GET_Location, 0,     writeval_default,   "Location",          strhash("location"),        sizeof(Object), 19, FDF_CPPSTRING|FDF_R },
-   { 0, (ERR (*)(APTR, APTR))GET_ClassName, (APTR)SET_ClassName, writeval_default, "Name", strhash("name"),            sizeof(Object), 20, FDF_CPPSTRING|FDF_SYSTEM|FDF_RI },
+   { 0, (ERR (*)(APTR, APTR))GET_Location, 0,     writeval_default,   "Location",          strhash("location"),        sizeof(Object), 19, FDF_CPPSTRING|FDF_R|FDF_PURE },
+   { 0, (ERR (*)(APTR, APTR))GET_ClassName, (ERR (*)(APTR, APTR))SET_ClassName, writeval_default, "Name", strhash("name"),            sizeof(Object), 20, FDF_CPPSTRING|FDF_SYSTEM|FDF_RI|FDF_PURE },
    { 0, (ERR (*)(APTR, APTR))GET_Module, 0,       writeval_default,   "Module",            strhash("module"),          sizeof(Object), 21, FDF_CPPSTRING|FDF_R },
    { 0, (ERR (*)(APTR, APTR))GET_Objects, 0,      writeval_default,   "Objects",           strhash("objects"),         sizeof(Object), 22, FDF_ARRAY|FDF_INT|FDF_ALLOC|FDF_R },
    { MAXINT(CLASSID::METACLASS), (ERR (*)(APTR, APTR))GET_SubClasses, nullptr, writeval_default, "SubClasses", strhash("subClasses"), sizeof(Object), 23, FDF_ARRAY|FD_OBJECT|FDF_R },
@@ -177,9 +177,9 @@ static const FieldArray glMetaFields[] = {
 };
 
 extern "C" ERR CLASS_FindField(extMetaClass *, struct mc::FindField *);
-extern "C" ERR CLASS_FreePlacement(extMetaClass *);
+extern "C" ERR CLASS_Free(extMetaClass *);
 extern "C" ERR CLASS_Init(extMetaClass *);
-extern "C" ERR CLASS_NewPlacement(extMetaClass *);
+extern "C" ERR CLASS_New(extMetaClass *);
 
 FDEF argsFindField[] = { { "ID", FD_INT }, { "Field:Field", FD_RESULT|FD_PTR|FD_STRUCT }, { "Source", FD_RESULT|FD_OBJECTPTR }, { 0, 0 } };
 
@@ -217,9 +217,9 @@ void init_metaclass(void)
    glMetaClass.Methods.resize(2);
    glMetaClass.Methods[1] = { AC(-1), (APTR)CLASS_FindField, "FindField", argsFindField, sizeof(struct mc::FindField) };
 
-   glMetaClass.ActionTable[int(AC::FreePlacement)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_FreePlacement;
+   glMetaClass.ActionTable[int(AC::Free)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_Free;
    glMetaClass.ActionTable[int(AC::Init)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_Init;
-   glMetaClass.ActionTable[int(AC::NewPlacement)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_NewPlacement;
+   glMetaClass.ActionTable[int(AC::New)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_New;
    glMetaClass.ActionTable[int(AC::Signal)].PerformAction = &DEFAULT_Signal;
 
    sort_class_fields(&glMetaClass, glMetaClass.FieldLookup);
@@ -272,7 +272,7 @@ ERR CLASS_FindField(extMetaClass *Self, struct mc::FindField *Args)
 
 //********************************************************************************************************************
 
-ERR CLASS_FreePlacement(extMetaClass *Self)
+ERR CLASS_Free(extMetaClass *Self)
 {
    if (Self->ClassID != CLASSID::NIL) glClassMap.erase(Self->ClassID);
 
@@ -431,7 +431,7 @@ ERR CLASS_Init(extMetaClass *Self)
 
 //********************************************************************************************************************
 
-ERR CLASS_NewPlacement(extMetaClass *Self)
+ERR CLASS_New(extMetaClass *Self)
 {
    new (Self) extMetaClass(Self->Class, Self->UID);
    return ERR::Okay;
@@ -452,14 +452,14 @@ can also be auto-generated using our IDL scripts - an approach that we strongly 
 
 <pre>
 ActionArray clActions[] = {
-   { AC::FreePlacement, PIC_FreePlacement },
-   { AC::NewPlacement,  PIC_NewPlacement },
-   { AC::Init,          PIC_Init },
-   { AC::Query,         PIC_Query },
-   { AC::Read,          PIC_Read },
-   { AC::SaveToObject,  PIC_SaveToObject },
-   { AC::Seek,          PIC_Seek },
-   { AC::Write,         PIC_Write },
+   { AC::Free,         PIC_Free },
+   { AC::New,          PIC_New },
+   { AC::Init,         PIC_Init },
+   { AC::Query,        PIC_Query },
+   { AC::Read,         PIC_Read },
+   { AC::SaveToObject, PIC_SaveToObject },
+   { AC::Seek,         PIC_Seek },
+   { AC::Write,        PIC_Write },
    { AC::NIL, nullptr }
 };
 </pre>
@@ -913,7 +913,7 @@ static void field_setup(extMetaClass *Class)
                   }
 
                   if (Class->SubFields[i].SetField) {
-                     Class->FieldLookup[j].SetValue = Class->SubFields[i].SetField;
+                     Class->FieldLookup[j].SetValue = (ERR (*)(APTR, APTR))Class->SubFields[i].SetField;
                      if (Class->FieldLookup[j].Flags & (FDF_W|FDF_I));
                      else Class->FieldLookup[j].Flags |= FDF_W;
                   }
@@ -967,7 +967,7 @@ static void field_setup(extMetaClass *Class)
          Class->FieldLookup.push_back({
             .Arg        = 0,
             .GetValue   = (ERR (*)(APTR, APTR))&OBJECT_GetName,
-            .SetValue   = (APTR)&OBJECT_SetName,
+            .SetValue   = (ERR (*)(APTR, APTR))&OBJECT_SetName,
             .WriteValue = &writeval_default,
             .Name       = "Name",
             .FieldID    = strhash("name"),
@@ -981,7 +981,7 @@ static void field_setup(extMetaClass *Class)
          Class->FieldLookup.push_back({
             .Arg        = 0,
             .GetValue   = (ERR (*)(APTR, APTR))&OBJECT_GetOwner,
-            .SetValue   = (APTR)&OBJECT_SetOwner,
+            .SetValue   = (ERR (*)(APTR, APTR))&OBJECT_SetOwner,
             .WriteValue = &writeval_default,
             .Name       = "Owner",
             .FieldID    = strhash("owner"),
@@ -1111,7 +1111,7 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
    CSTRING field_type = nullptr;
    MAXINT field_arg = Source.Arg;
    auto get_field = (ERR (*)(APTR, APTR))Source.GetField;
-   auto set_field = Source.SetField;
+   auto set_field = (ERR (*)(APTR, APTR))Source.SetField;
    auto field_flags = Source.Flags;
 
    if ((Source.Flags & FD_SYNONYM) and ((Source.Flags & ~FD_SYNONYM) IS FD_VOID)) {

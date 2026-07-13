@@ -134,7 +134,7 @@ static ERR set_stop_transform(TransitionStop *Stop, std::string_view Commands)
 
 //********************************************************************************************************************
 
-static ERR TRANSITION_FreePlacement(extVectorTransition *Self) {
+static ERR TRANSITION_Free(extVectorTransition *Self) {
    Self->~extVectorTransition();
    return ERR::Okay;
 }
@@ -149,7 +149,7 @@ static ERR TRANSITION_Init(extVectorTransition *Self)
 
 //********************************************************************************************************************
 
-static ERR TRANSITION_NewPlacement(extVectorTransition *Self) {
+static ERR TRANSITION_New(extVectorTransition *Self) {
    new (Self) extVectorTransition(Self->Class, Self->UID);
    return ERR::Okay;
 }
@@ -165,7 +165,7 @@ The returned XML defines the transition's stop list as `&lt;stop/&gt;` elements,
 
 *********************************************************************************************************************/
 
-static ERR TRANSITION_GET_XMLDef(extVectorTransition *Self, std::string_view &Value)
+static ERR TRANSITION_GET_XMLDef(extVectorTransition *Self, std::string &Value)
 {
    std::stringstream stream;
 
@@ -177,12 +177,8 @@ static ERR TRANSITION_GET_XMLDef(extVectorTransition *Self, std::string_view &Va
          << ")\"/>";
    }
 
-   auto cppstr = stream.str();
-   if (auto str = strclone(cppstr)) {
-      Value = std::string_view{ str, cppstr.size() };
-      return ERR::Okay;
-   }
-   else return ERR::AllocMemory;
+   Value = stream.str();
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -230,15 +226,15 @@ static ERR TRANSITION_SET_Stops(extVectorTransition *Self, std::span<const Trans
 //********************************************************************************************************************
 
 static const ActionArray clTransitionActions[] = {
-   { AC::FreePlacement, TRANSITION_FreePlacement },
-   { AC::Init,          TRANSITION_Init },
-   { AC::NewPlacement,  TRANSITION_NewPlacement },
+   { AC::Free, TRANSITION_Free },
+   { AC::Init, TRANSITION_Init },
+   { AC::New,  TRANSITION_New },
    { AC::NIL, nullptr }
 };
 
 static const FieldArray clTransitionFields[] = {
    { "Stops", FDF_VIRTUAL|FDF_VECTOR|FDF_STRUCT|FDF_W, nullptr, TRANSITION_SET_Stops, "Transition" },
-   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, TRANSITION_GET_XMLDef },
+   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, TRANSITION_GET_XMLDef },
    END_FIELD
 };
 

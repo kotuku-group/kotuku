@@ -137,8 +137,8 @@ DEFINE_ENUM_FLAG_OPERATORS(XEF)
 
 namespace xq {
 struct Evaluate { objXML *XML; int Index; XEF Flags; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Search { objXML *XML; FUNCTION *Callback; int Index; XEF Flags; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct RegisterFunction { std::string_view FunctionName; FUNCTION *Callback; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Search { objXML *XML; FUNCTION Callback; int Index; XEF Flags; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct RegisterFunction { std::string_view FunctionName; FUNCTION Callback; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct InspectFunctions { std::string_view Name; XIF ResultFlags; std::string *Result; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
@@ -177,11 +177,11 @@ class objXQuery : public Object {
       return Action(AC(-1), this, &args);
    }
    inline ERR search(objXML * XML, FUNCTION Callback, int Index, XEF Flags) noexcept {
-      struct xq::Search args = { XML, &Callback, Index, Flags };
+      struct xq::Search args = { XML, Callback, Index, Flags };
       return Action(AC(-2), this, &args);
    }
    inline ERR registerFunction(const std::string_view &FunctionName, FUNCTION Callback) noexcept {
-      struct xq::RegisterFunction args = { FunctionName, &Callback };
+      struct xq::RegisterFunction args = { FunctionName, Callback };
       return Action(AC(-3), this, &args);
    }
    inline ERR inspectFunctions(const std::string_view &Name, XIF ResultFlags, std::string &Result) noexcept {

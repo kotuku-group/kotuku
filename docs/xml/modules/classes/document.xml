@@ -163,11 +163,11 @@
     <method>
       <name>AddListener</name>
       <comment>Adds a listener to a document trigger for receiving special callbacks.</comment>
-      <prototype>ERR doc::AddListener(OBJECTPTR Object, DRT Trigger, FUNCTION * Function)</prototype>
+      <prototype>ERR doc::AddListener(OBJECTPTR Object, DRT Trigger, FUNCTION Function)</prototype>
       <tiriPrototype>err = AddListener(Trigger:num, Function:func)</tiriPrototype>
       <input>
         <param type="DRT" name="Trigger" lookup="DRT">The unique identifier for the trigger.</param>
-        <param type="FUNCTION *" name="Function">The function to call when the trigger activates.</param>
+        <param type="FUNCTION" name="Function">The function to call when the trigger activates.</param>
       </input>
       <description>
 <p>Use the AddListener() method to receive feedback whenever a document event is triggered.  Triggers are a fundamental part of document page development, accessible through the <code>&lt;trigger/&gt;</code> tag.  Triggers are normally configured within the document's page code, however if you need to monitor triggers from outside the loaded document's code, then AddListener() will give you that option.</p>
@@ -336,7 +336,7 @@
         <param type="DATA" name="Format" lookup="DATA">Set to <code>TEXT</code> to receive plain-text, <code>RAW</code> to receive the original byte-code, or <code>XML</code> to receive a textual XML serialisation of the stream.</param>
         <param type="INT" name="Start">An index in the document stream from which data will be extracted.</param>
         <param type="INT" name="End">An index in the document stream at which extraction will stop.</param>
-        <param type="STRING *" name="Result">The data is returned in this parameter as an allocated string.</param>
+        <param type="STRING *" name="Result">The data is returned in this parameter.</param>
       </input>
       <description>
 <p>The ReadContent() method extracts content from the document stream, covering a specific area.  It can return the data as a RIPL binary stream, translated into plain-text (control codes are removed), or serialised as an XML document describing the byte stream.</p>
@@ -346,12 +346,12 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Args">Invalid arguments passed to function</error>
-        <error code="NoData">Operation successful, but no data was present for extraction.</error>
+        <error code="NoData">No data was extractable - applies to XML type only; other types return an empty string.</error>
         <error code="OutOfRange">The Start index is not within the stream.</error>
         <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
-      <tags>pure-query, caller-owns-result, null-terminated-result</tags>
+      <tags>pure-query, mutates-input</tags>
     </method>
 
     <method>
@@ -378,11 +378,11 @@
     <method>
       <name>RemoveListener</name>
       <comment>Removes a previously configured listener from the document.</comment>
-      <prototype>ERR doc::RemoveListener(OBJECTPTR Object, INT Trigger, FUNCTION * Function)</prototype>
+      <prototype>ERR doc::RemoveListener(OBJECTPTR Object, INT Trigger, FUNCTION Function)</prototype>
       <tiriPrototype>err = RemoveListener(Trigger:num, Function:func)</tiriPrototype>
       <input>
         <param type="INT" name="Trigger">The unique identifier for the trigger.</param>
-        <param type="FUNCTION *" name="Function">The function that is called when the trigger activates.</param>
+        <param type="FUNCTION" name="Function">The function that is called when the trigger activates.</param>
       </input>
       <description>
 <p>This method removes a previously configured listener from the document.  The original parameters that were passed to <method>AddListener</method> must be provided.</p>

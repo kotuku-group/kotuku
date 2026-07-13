@@ -55,6 +55,10 @@ constexpr int SECONDS_STREAM_BUFFER = 2;
 constexpr int SIZE_RIFF_CHUNK = 12;
 
 static ERR SOUND_GET_Active(extSound *, int *);
+static ERR SOUND_GET_Elapsed(extSound *, double *);
+static ERR SOUND_GET_PlayPosition(extSound *, int64_t *);
+static ERR SOUND_GET_Progress(extSound *, double *);
+static ERR SOUND_GET_Remaining(extSound *, double *);
 
 static ERR SOUND_SET_Note(extSound *, const std::string_view &);
 
@@ -85,7 +89,11 @@ static ERR win32_audio_stream(extSound *, int64_t, int64_t);
 
 static void sound_stopped_event(extSound *Self)
 {
-   if (Self->OnStop.isC()) {
+   if (Self->OnStop.stale()) {
+      Self->OnStop.unpin();
+      Self->OnStop.clear();
+   }
+   else if (Self->OnStop.isC()) {
       kt::SwitchContext context(Self->OnStop.Context);
       auto routine = (void (*)(extSound *, APTR))Self->OnStop.Routine;
       routine(Self, Self->OnStop.Meta);
@@ -128,6 +136,7 @@ static ERR timer_playback_ended(extSound *Self, int64_t Elapsed, int64_t Current
 {
    kt::Log log;
    log.trace("Sound streaming completed.");
+   if ((Self->Flags & SDF::LOOP) IS SDF::NIL) Self->Position = Self->Length;
    sound_stopped_event(Self);
    Self->PlaybackTimer = 0;
    // NB: We don't manually stop the audio streamer, it will automatically stop once buffers are clear.
@@ -142,7 +151,7 @@ static ERR timer_playback_ended(extSound *Self, int64_t Elapsed, int64_t Current
 #ifdef USE_WIN32_PLAYBACK
 static ERR set_playback_trigger(extSound *Self)
 {
-   if (Self->OnStop.defined()) {
+   if ((Self->OnStop.defined()) or ((Self->Flags & SDF::LOOP) IS SDF::NIL)) {
       kt::Log log(__FUNCTION__);
       const int bytes_per_sample = ((((Self->Flags & SDF::STEREO) != SDF::NIL) ? 2 : 1) * (Self->BitsPerSample>>3));
       const double playback_time = double((Self->Length - Self->Position) / bytes_per_sample) / double(Self->Playback);
@@ -232,6 +241,76 @@ extern "C" void end_of_stream(OBJECTPTR Object, int BytesRemaining)
    if (error != ERR::Okay) return log.warning(ERR::CreateObject);
 
    return error;
+}
+
+//********************************************************************************************************************
+
+static int sound_frame_size(extSound *Self)
+{
+   return (((Self->Flags & SDF::STEREO) != SDF::NIL) ? 2 : 1) * (Self->BitsPerSample>>3);
+}
+
+//********************************************************************************************************************
+
+static double sound_seconds(extSound *Self, int64_t Position)
+{
+   const int frame_size = sound_frame_size(Self);
+   const int rate = Self->Playback ? Self->Playback : Self->Frequency;
+
+   if ((frame_size <= 0) or (rate <= 0)) return 0;
+   else return double(Position) / double(frame_size) / double(rate);
+}
+
+//********************************************************************************************************************
+
+static int64_t clamp_sound_position(extSound *Self, int64_t Position)
+{
+   if (Position < 0) return 0;
+   else if ((Self->Length > 0) and (Position > Self->Length)) return Self->Length;
+   else return Position;
+}
+
+//********************************************************************************************************************
+
+static ERR sound_play_position(extSound *Self, int64_t *Value)
+{
+   if (!Value) return ERR::NullArgs;
+
+   *Value = clamp_sound_position(Self, Self->Position);
+
+   if (Self->Length <= 0) return ERR::FieldNotSet;
+
+#ifdef USE_WIN32_PLAYBACK
+   if ((Self->Active) and (sndCheckActivity((PlatformData *)Self->PlatformData) > 0)) {
+      int64_t position;
+      if (sndGetPosition((PlatformData *)Self->PlatformData, &position) >= 0) {
+         *Value = clamp_sound_position(Self, position);
+      }
+   }
+#else
+   if ((Self->ChannelIndex) and (Self->AudioID)) {
+      kt::ScopedObjectLock<extAudio> audio(Self->AudioID);
+      if (audio.granted()) {
+         if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
+            if ((channel->SampleHandle IS Self->Handle) and (channel->State != CHS::STOPPED)) {
+               auto &sample = audio->Samples[Self->Handle];
+               const int shift = sample_shift(sample.SampleType);
+               int64_t position = (int64_t(channel->Position) << shift) +
+                  ((int64_t(channel->PositionLow) << shift) >> 16);
+
+               if (sample.Stream) {
+                  position = int64_t(sample.PlayPos) - int64_t(sample.BufferedLength) + position;
+               }
+
+               *Value = clamp_sound_position(Self, position);
+            }
+         }
+      }
+      else return ERR::AccessObject;
+   }
+#endif
+
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -379,8 +458,8 @@ static ERR SOUND_Activate(extSound *Self)
          }
          else return ERR::AccessObject;
       }
-      else if (!AllocMemory(Self->Length, MEM::DATA|MEM::NO_CLEAR, (APTR *)&buffer)) {
-         auto dc = deferred_call([&buffer] { FreeResource(buffer); });
+      else if (void *buffer = malloc(Self->Length)) {
+         auto dc = deferred_call([&buffer] { free(buffer); });
 
          auto client_pos = Self->Position;
          if (Self->Position) Self->seekStart(0); // Ensure we're reading the entire sample from the start
@@ -496,7 +575,9 @@ static ERR SOUND_Activate(extSound *Self)
 
 static void notify_onstop_free(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
-   ((extSound *)CurrentContext())->OnStop.clear();
+   auto self = (extSound *)CurrentContext();
+   if (self->OnStop.defined()) self->OnStop.unpin();
+   self->OnStop.clear();
 }
 
 /*********************************************************************************************************************
@@ -545,6 +626,10 @@ static ERR SOUND_Disable(extSound *Self)
 
    log.branch();
 
+   int64_t position;
+   if (sound_play_position(Self, &position) IS ERR::Okay) Self->Position = position;
+   if (Self->PlaybackTimer) { UpdateTimer(Self->PlaybackTimer, 0); Self->PlaybackTimer = 0; }
+
 #ifdef USE_WIN32_PLAYBACK
    sndStop((PlatformData *)Self->PlatformData);
 #else
@@ -578,6 +663,7 @@ static ERR SOUND_Enable(extSound *Self)
       log.msg("Playing back from position %" PF64, (long long)Self->Position);
       if ((Self->Flags & SDF::LOOP) != SDF::NIL) sndPlay((PlatformData *)Self->PlatformData, TRUE, Self->Position);
       else sndPlay((PlatformData *)Self->PlatformData, FALSE, Self->Position);
+      if ((Self->Flags & SDF::STREAM) IS SDF::NIL) set_playback_trigger(Self);
    }
 #else
    if (!Self->ChannelIndex) return ERR::Okay;
@@ -731,7 +817,7 @@ static ERR SOUND_Init(extSound *Self)
    if (Self->Playback <= 0)  Self->Playback  = Self->Frequency;
 
    if ((Self->Flags & SDF::NOTE) != SDF::NIL) {
-      Self->set(strhash("note"), Self->Note);
+      if (auto field = FindField(Self, strhash("note"), nullptr)) Self->set(field, Self->Note);
       Self->Flags &= ~SDF::NOTE;
    }
 
@@ -1160,6 +1246,25 @@ static ERR SOUND_GET_Duration(extSound *Self, double *Value)
 /*********************************************************************************************************************
 
 -FIELD-
+Elapsed: Returns the elapsed playback time, measured in seconds.
+
+This field reports the current playback position in seconds.  It is derived from the live playback channel when the
+sample is active, or from the stored #Position field when playback is stopped.
+
+*********************************************************************************************************************/
+
+static ERR SOUND_GET_Elapsed(extSound *Self, double *Value)
+{
+   int64_t position;
+   if (auto error = sound_play_position(Self, &position); error != ERR::Okay) return error;
+
+   *Value = sound_seconds(Self, position);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Flags: Optional initialisation flags.
 Lookup: SDF
 
@@ -1404,7 +1509,8 @@ static ERR SOUND_SET_Octave(extSound *Self, int Value)
 {
    if ((Value < -10) or (Value > 10))
    Self->Octave = Value;
-   return Self->set(strhash("note"), Self->Note);
+   if (auto field = FindField(Self, strhash("note"), nullptr)) return Self->set(field, Self->Note);
+   else return ERR::SetField;
 }
 
 /*********************************************************************************************************************
@@ -1431,14 +1537,22 @@ static ERR SOUND_GET_OnStop(extSound *Self, FUNCTION * &Value)
 
 static ERR SOUND_SET_OnStop(extSound *Self, FUNCTION *Value)
 {
-   if (Value) {
+   if (Self->OnStop.defined()) {
       if (Self->OnStop.isScript()) UnsubscribeAction(Self->OnStop.Context, AC::Free);
+      Self->OnStop.unpin();
+      Self->OnStop.disable();
+   }
+
+   if (Value) {
       Self->OnStop = *Value;
-      if (Self->OnStop.isScript()) {
-         SubscribeAction(Self->OnStop.Context, AC::Free, C_FUNCTION(notify_onstop_free));
+      if (Self->OnStop.defined()) {
+         Self->OnStop.pin();
+         if (Self->OnStop.isScript()) {
+            SubscribeAction(Self->OnStop.Context, AC::Free, C_FUNCTION(notify_onstop_free));
+         }
       }
    }
-   else Self->OnStop.clear();
+
    return ERR::Okay;
 }
 
@@ -1520,6 +1634,21 @@ static ERR SOUND_SET_Playback(extSound *Self, int Value)
 }
 
 /*********************************************************************************************************************
+
+-FIELD-
+PlayPosition: Returns the current playback position, measured in bytes.
+
+This field differs from #Position because it reflects the live playback cursor while the sound is active.  For streamed
+playback this is a best-effort source offset derived from the rolling stream buffer.
+
+*********************************************************************************************************************/
+
+static ERR SOUND_GET_PlayPosition(extSound *Self, int64_t *Value)
+{
+   return sound_play_position(Self, Value);
+}
+
+/*********************************************************************************************************************
 -FIELD-
 Position: The current playback position.
 
@@ -1550,6 +1679,43 @@ static ERR SOUND_SET_Priority(extSound *Self, int Value)
    Self->Priority = Value;
    if (Self->Priority < -100) Self->Priority = -100;
    else if (Self->Priority > 100) Self->Priority = 100;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Progress: Returns the current playback progress as a normalised value.
+
+The returned value ranges from `0.0` at the beginning of the sample to `1.0` at the end of the sample.
+
+*********************************************************************************************************************/
+
+static ERR SOUND_GET_Progress(extSound *Self, double *Value)
+{
+   int64_t position;
+   if (auto error = sound_play_position(Self, &position); error != ERR::Okay) return error;
+
+   *Value = double(position) / double(Self->Length);
+   if (*Value < 0) *Value = 0;
+   else if (*Value > 1.0) *Value = 1.0;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Remaining: Returns the remaining playback time, measured in seconds.
+
+*********************************************************************************************************************/
+
+static ERR SOUND_GET_Remaining(extSound *Self, double *Value)
+{
+   int64_t position;
+   if (auto error = sound_play_position(Self, &position); error != ERR::Okay) return error;
+
+   *Value = sound_seconds(Self, Self->Length - position);
+   if (*Value < 0) *Value = 0;
    return ERR::Okay;
 }
 
@@ -1648,6 +1814,7 @@ static ERR win32_audio_stream(extSound *Self, int64_t Elapsed, int64_t CurrentTi
       return ERR::Terminate;
    }
    else if (response IS 1) {
+      if ((Self->Flags & SDF::LOOP) IS SDF::NIL) Self->Position = Self->Length;
       Self->StreamTimer = 0;
       return ERR::Terminate;
    }
@@ -1662,9 +1829,10 @@ extSound::~extSound() {
    if (StreamTimer)   UpdateTimer(StreamTimer, 0);
    if (PlaybackTimer) UpdateTimer(PlaybackTimer, 0);
 
-   if (OnStop.isScript()) {
-      UnsubscribeAction(OnStop.Context, AC::Free);
-      OnStop.clear();
+   if (OnStop.defined()) {
+      if (OnStop.isScript()) UnsubscribeAction(OnStop.Context, AC::Free);
+      OnStop.unpin();
+      OnStop.disable();
    }
 
 #ifdef USE_WIN32_PLAYBACK
@@ -1710,11 +1878,15 @@ static const FieldArray clFields[] = {
    { "Handle",         FDF_INT|FDF_SYSTEM|FDF_R },
    { "ChannelIndex",   FDF_INT|FDF_R },
    // Virtual fields
-   { "Active",   FDF_VIRTUAL|FDF_INT|FDF_R,                     SOUND_GET_Active },
-   { "Duration", FDF_VIRTUAL|FDF_DOUBLE|FDF_R|FDF_PURE,         SOUND_GET_Duration },
-   { "Header",   FDF_VIRTUAL|FDF_BYTE|FDF_ARRAY|FDF_R|FDF_PURE, SOUND_GET_Header },
-   { "OnStop",   FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE,      SOUND_GET_OnStop, SOUND_SET_OnStop },
-   { "Note",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,              SOUND_GET_Note, SOUND_SET_Note },
+   { "Active",       FDF_VIRTUAL|FDF_INT|FDF_R,                     SOUND_GET_Active },
+   { "Duration",     FDF_VIRTUAL|FDF_DOUBLE|FDF_R|FDF_PURE,         SOUND_GET_Duration },
+   { "Elapsed",      FDF_VIRTUAL|FDF_DOUBLE|FDF_R,                  SOUND_GET_Elapsed },
+   { "Header",       FDF_VIRTUAL|FDF_BYTE|FDF_ARRAY|FDF_R|FDF_PURE, SOUND_GET_Header },
+   { "OnStop",       FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE,      SOUND_GET_OnStop, SOUND_SET_OnStop },
+   { "PlayPosition", FDF_VIRTUAL|FDF_INT64|FDF_R,                   SOUND_GET_PlayPosition },
+   { "Progress",     FDF_VIRTUAL|FDF_DOUBLE|FDF_R,                  SOUND_GET_Progress },
+   { "Remaining",    FDF_VIRTUAL|FDF_DOUBLE|FDF_R,                  SOUND_GET_Remaining },
+   { "Note",         FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,              SOUND_GET_Note, SOUND_SET_Note },
    END_FIELD
 };
 

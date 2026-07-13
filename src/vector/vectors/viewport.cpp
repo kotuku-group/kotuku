@@ -128,7 +128,7 @@ extVectorViewport::~extVectorViewport()
    }
 
    if (vpDragCallback.defined()) {
-      deref_vector_callback(vpDragCallback);
+      release_callback(vpDragCallback);
       subscribeInput(JTYPE::NIL, C_FUNCTION(drag_callback));
    }
 
@@ -360,11 +360,12 @@ static ERR VIEW_SET_DragCallback(extVectorViewport *Self, FUNCTION *Value)
          return ERR::Function;
       }
 
-      deref_vector_callback(Self->vpDragCallback);
+      release_callback(Self->vpDragCallback);
       Self->vpDragCallback = *Value;
+      if (Self->vpDragCallback.defined()) Self->vpDragCallback.pin();
    }
    else {
-      deref_vector_callback(Self->vpDragCallback);
+      release_callback(Self->vpDragCallback);
       Self->subscribeInput(JTYPE::NIL, C_FUNCTION(drag_callback));
    }
    return ERR::Okay;

@@ -116,6 +116,15 @@ public:
    bool diagnose_mode = false;  // When true, lexer errors are collected instead of thrown
    bool had_lex_error = false;  // Set when a recoverable lexer error occurred
 
+   // Global type hints published by the type analyser after analysis completes and consumed by the IR emitter
+   // when resolving global identifier reads.  Entries exist only for globals whose type is fixed for the whole
+   // chunk, allowing member access on typed globals to select specialised bytecode (STGETF, OBGETF, AGETV).
+   struct GlobalTypeHint {
+      TiriType primary = TiriType::Unknown;
+      CLASSID  object_class_id = CLASSID::NIL;
+   };
+   ankerl::unordered_dense::map<GCstr*, GlobalTypeHint> global_type_hints;
+
 #ifdef INCLUDE_TIPS
    // Tip system: 0 = off, 1 = best (critical), 2 = most (medium), 3 = all
    uint8_t tip_level = 0;

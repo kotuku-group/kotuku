@@ -1,0 +1,127 @@
+-- Flute regression tests for weak-pinned Tiri object wrappers.
+
+@BeforeEach(hotpath=false)
+function enforce_hotpath() end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function AttachedChildDetectsParentTermination()
+   parent = obj.new('time')
+   child = parent.new('time')
+   hour = child.hour -- Resolve the pointer and acquire the wrapper's weak pin.
+
+   parent.free()
+
+   caught = false
+   try
+      hour = child.hour
+   except e
+      caught = true
+   end
+   assert(caught, 'Expected child field access to fail after its parent was terminated')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function DetachedReferenceReportsStaleness()
+   target = obj.new('time')
+   handle = obj.find(target.id)
+   assert(handle.exists(), 'Expected the detached handle to resolve before termination')
+
+   target.free()
+
+   assert(not handle.exists(), 'Expected exists() to reject a weak-pinned dead reference')
+   caught = false
+   try
+      hour = handle.hour
+   except e
+      caught = true
+   end
+   assert(caught, 'Expected detached field access to fail after termination')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=true) function DetachedRepeatedAccess()
+   target = obj.new('time')
+   target.hour = 7
+   handle = obj.find(target.id)
+
+   for i = 0, 10000 do
+      assert(handle.hour is 7, 'Expected cached detached access to retain the correct value')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function FreeWhileLockedCollectsOnUnlock()
+   target = obj.new('time')
+   with target do
+      target.free()
+   end
+
+   assert(not target.exists(), 'Expected an object freed while locked to collect when the lock is released')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function InitialisationFailureReleasesPin()
+   caught = false
+   try
+      failed = obj.new('time', { unknownField=1 })
+   except e
+      caught = true
+   end
+   assert(caught, 'Expected object creation with an unknown field to fail')
+
+   processing.collect()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function DeadWrapperGarbageCollection()
+   target = obj.new('time')
+   handle = obj.find(target.id)
+   assert(handle.exists(), 'Expected detached wrapper to acquire its weak pin')
+   target.free()
+
+   handle = nil
+   processing.collect()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Pinned wrappers retain a zombie header pointer after termination, so the direct-pointer action dispatch paths must
+-- reject dead references rather than passing the zombie to Action().
+
+@Test function ActionDispatchOnDeadReference()
+   target = obj.new('time')
+   handle = obj.find(target.id)
+   hour = handle.hour -- Resolve the pointer and acquire the wrapper's weak pin.
+   target.free()
+
+   caught = false
+   err = ERR_Okay
+   try
+      err = handle.acActivate()
+   except e
+      caught = true
+   end
+   assert(caught or (err != ERR_Okay), 'Expected action dispatch on a dead reference to fail')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function AsyncActionOnDeadReference()
+   target = obj.new('time')
+   handle = obj.find(target.id)
+   hour = handle.hour -- Resolve the pointer and acquire the wrapper's weak pin.
+   target.free()
+
+   caught = false
+   try
+      async.action(handle, 'Activate', function() end)
+   except e
+      caught = true
+   end
+   assert(caught, 'Expected async.action() on a dead reference to raise an exception')
+end

@@ -440,7 +440,7 @@ static ERR remove_file(extCompression *Self, std::list<ZipFile>::iterator &File)
       if (acSeekStart(Self->FileIO, read_cursor) != ERR::Okay) return log.warning(ERR::Seek);
    }
 
-   Self->FileIO->set(strhash("size"), write_cursor);
+   Self->FileIO->setSize(write_cursor);
 
    // Adjust the offset of files that are ahead of this one
 
@@ -457,6 +457,8 @@ static ERR remove_file(extCompression *Self, std::list<ZipFile>::iterator &File)
 // This technique goes to the end of the zip file and reads the file entries from a huge table.  This is very fast, but
 // if the zip file is damaged or partially downloaded, it will fail.  In the event that the directory is unavailable,
 // the function will fallback to scan_zip().
+
+static const uint32_t MAX_FAST_SCAN_LIST_SIZE = 64 * 1024 * 1024;
 
 static ERR fast_scan_zip(extCompression *Self)
 {
@@ -479,82 +481,106 @@ static ERR fast_scan_zip(extCompression *Self)
    tail.listoffset = le32_cpu(tail.listoffset);
 #endif
 
+   int64_t file_size;
+   if (Self->FileIO->getSize(file_size) != ERR::Okay) return scan_zip(Self);
+   if ((file_size < 0) or (uint64_t(tail.listoffset) > uint64_t(file_size))) return scan_zip(Self);
+   if (uint64_t(tail.listsize) > uint64_t(file_size) - uint64_t(tail.listoffset)) return scan_zip(Self);
+   if (tail.listsize > MAX_FAST_SCAN_LIST_SIZE) return scan_zip(Self);
+
    if (acSeek(Self->FileIO, tail.listoffset, SEEK::START) != ERR::Okay) return ERR::Seek;
 
-   zipentry *list, *scan;
    int total_files = 0;
-   if (!AllocMemory(tail.listsize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&list)) {
-      log.trace("Reading end-of-central directory from index %d, %d bytes.", tail.listoffset, tail.listsize);
-      if (acRead(Self->FileIO, list, tail.listsize, nullptr) != ERR::Okay) {
-         FreeResource(list);
+   if (tail.filecount IS 0) return ERR::Okay;
+   if ((tail.filecount > 0) and (tail.listsize < uint32_t(tail.filecount) * LIST_LENGTH)) return scan_zip(Self);
+
+   std::vector<uint8_t> list(tail.listsize);
+
+   log.trace("Reading end-of-central directory from index %d, %d bytes.", tail.listoffset, tail.listsize);
+   int read_result;
+   if ((acRead(Self->FileIO, list.data(), tail.listsize, &read_result) != ERR::Okay) or
+      (read_result != int(tail.listsize))) {
+      return scan_zip(Self);
+   }
+
+   auto list_pos = list.data();
+   auto list_end = list.data() + list.size();
+
+   for (int i=0; i < tail.filecount; i++) {
+      if (uint64_t(list_end - list_pos) < LIST_LENGTH) {
+         log.warning("Zip file has corrupt end-of-file signature.");
+         Self->Files.clear();
          return scan_zip(Self);
       }
 
       #pragma GCC diagnostic ignored "-Waddress-of-packed-member"
-      auto head = (uint32_t *)list;
+      auto head = (uint32_t *)list_pos;
       #pragma GCC diagnostic warning "-Waddress-of-packed-member"
 
-      for (int i=0; i < tail.filecount; i++) {
-         if (0x02014b50 != head[0]) {
-            log.warning("Zip file has corrupt end-of-file signature.");
-            Self->Files.clear();
-            FreeResource(list);
-            return scan_zip(Self);
-         }
+      if (0x02014b50 != head[0]) {
+         log.warning("Zip file has corrupt end-of-file signature.");
+         Self->Files.clear();
+         return scan_zip(Self);
+      }
 
-         scan = (zipentry *)(head + 1);
+      auto scan = (zipentry *)(head + 1);
 
 #ifndef REVERSE_BYTEORDER
-         scan->deflatemethod  = le16_cpu(scan->deflatemethod);
-         scan->timestamp      = le32_cpu(scan->timestamp);
-         scan->crc32          = le32_cpu(scan->crc32);
-         scan->compressedsize = le32_cpu(scan->compressedsize);
-         scan->originalsize   = le32_cpu(scan->originalsize);
-         scan->namelen        = le16_cpu(scan->namelen);
-         scan->extralen       = le16_cpu(scan->extralen);
-         scan->commentlen     = le16_cpu(scan->commentlen);
-         scan->diskno         = le16_cpu(scan->diskno);
-         scan->ifile          = le16_cpu(scan->ifile);
-         scan->attrib         = le32_cpu(scan->attrib);
-         scan->offset         = le32_cpu(scan->offset);
+      scan->deflatemethod  = le16_cpu(scan->deflatemethod);
+      scan->timestamp      = le32_cpu(scan->timestamp);
+      scan->crc32          = le32_cpu(scan->crc32);
+      scan->compressedsize = le32_cpu(scan->compressedsize);
+      scan->originalsize   = le32_cpu(scan->originalsize);
+      scan->namelen        = le16_cpu(scan->namelen);
+      scan->extralen       = le16_cpu(scan->extralen);
+      scan->commentlen     = le16_cpu(scan->commentlen);
+      scan->diskno         = le16_cpu(scan->diskno);
+      scan->ifile          = le16_cpu(scan->ifile);
+      scan->attrib         = le32_cpu(scan->attrib);
+      scan->offset         = le32_cpu(scan->offset);
 #endif
 
-         total_files++;
-
-         ZipFile zf;
-
-         zf.NameLen        = scan->namelen;
-         zf.CommentLen     = scan->commentlen;
-         zf.CompressedSize = scan->compressedsize;
-         zf.OriginalSize   = scan->originalsize;
-         zf.DeflateMethod  = scan->deflatemethod;
-         zf.Timestamp      = scan->timestamp;
-         zf.CRC            = scan->crc32;
-         zf.Offset         = scan->offset;
-
-         if (scan->ostype IS ZIP_KOTUKU) zf.Flags = scan->attrib;
-         else zf.Flags = 0;
-
-         // Read string information
-
-         STRING str = STRING(head) + LIST_LENGTH;
-         if ((str[0] IS '.') and (str[1] IS '/')) { // Get rid of any useless './' prefix that sometimes make their way into zip files
-            zf.Name.assign(str+2, scan->namelen-2);
-         }
-         else zf.Name.assign(str, scan->namelen);
-
-         zf.Comment.assign(str + scan->namelen + scan->extralen, scan->commentlen);
-
-         if (zf.Flags & ZIP_LINK);
-         else if ((!zf.OriginalSize) and (zf.Name.back() IS '/')) zf.IsFolder = true;
-
-         Self->Files.push_back(zf);
-
-         head = (uint32_t *)(((uint8_t *)head) + LIST_LENGTH + scan->commentlen + scan->namelen + scan->extralen);
+      auto entry_size = uint64_t(LIST_LENGTH) + scan->commentlen + scan->namelen + scan->extralen;
+      if (entry_size > uint64_t(list_end - list_pos)) {
+         log.warning("Zip file has corrupt end-of-file signature.");
+         Self->Files.clear();
+         return scan_zip(Self);
       }
+
+      total_files++;
+
+      ZipFile zf;
+
+      zf.NameLen        = scan->namelen;
+      zf.CommentLen     = scan->commentlen;
+      zf.CompressedSize = scan->compressedsize;
+      zf.OriginalSize   = scan->originalsize;
+      zf.DeflateMethod  = scan->deflatemethod;
+      zf.Timestamp      = scan->timestamp;
+      zf.CRC            = scan->crc32;
+      zf.Offset         = scan->offset;
+
+      if (scan->ostype IS ZIP_KOTUKU) zf.Flags = scan->attrib;
+      else zf.Flags = 0;
+
+      // Read string information
+
+      STRING str = STRING(list_pos) + LIST_LENGTH;
+      // Get rid of any useless './' prefix that sometimes make their way into zip files.
+      if ((scan->namelen >= 2) and (str[0] IS '.') and (str[1] IS '/')) {
+         zf.Name.assign(str+2, scan->namelen-2);
+      }
+      else zf.Name.assign(str, scan->namelen);
+
+      zf.Comment.assign(str + scan->namelen + scan->extralen, scan->commentlen);
+
+      if (zf.Flags & ZIP_LINK);
+      else if ((!zf.OriginalSize) and (not zf.Name.empty()) and (zf.Name.back() IS '/')) zf.IsFolder = true;
+
+      Self->Files.push_back(zf);
+
+      list_pos += entry_size;
    }
 
-   FreeResource(list);
    return ERR::Okay;
 }
 
@@ -763,7 +789,7 @@ static void write_eof(extCompression *Self)
          wrb<uint32_t>(listoffset, tail + TAIL_FILELISTOFFSET);
          acWriteResult(Self->FileIO, tail, TAIL_LENGTH);
       }
-      else Self->FileIO->set(strhash("size"), 0);
+      else Self->FileIO->setSize(0);
 
       Self->CompressionCount = 0;
    }

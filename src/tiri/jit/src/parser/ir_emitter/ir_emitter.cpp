@@ -1861,7 +1861,9 @@ ParserResult<ExpDesc> IrEmitter::emit_identifier_expr(const NameRef& reference, 
          if (global and not tvisnil(global)) {
             resolved.k = ExpKind::Global;
          }
-         else if (is_named_external_global(reference.identifier.symbol)) {
+         else if (not AllowUnscoped and is_named_external_global(reference.identifier.symbol)) {
+            // Naming conventions can hint that an unresolved read refers to an external global, but assignment
+            // targets must remain unscoped so the local-by-default path can create a local variable.
             resolved.k = ExpKind::Global;
          }
       }
@@ -1874,6 +1876,18 @@ ParserResult<ExpDesc> IrEmitter::emit_identifier_expr(const NameRef& reference, 
       msg += "'";
       return ParserResult<ExpDesc>::failure(
          this->make_error(ParserErrorCode::UndefinedVariable, msg, reference.identifier.span));
+   }
+
+   // Attach type metadata published by the type analyser to global reads.  This mirrors the VarInfo type
+   // propagation performed for locals in var_lookup_() and lets member access on typed globals select
+   // specialised bytecode (STGETF/STSETF, OBGETF/OBSETF, AGETV/AGETB) instead of generic table access.
+
+   if (resolved.k IS ExpKind::Global) {
+      auto it = this->lex_state.global_type_hints.find(reference.identifier.symbol);
+      if (it != this->lex_state.global_type_hints.end()) {
+         resolved.result_type = it->second.primary;
+         resolved.object_class_id = it->second.object_class_id;
+      }
    }
 
    return ParserResult<ExpDesc>::success(resolved);
@@ -2572,6 +2586,10 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
          // If is_call_target is true, skip type checking and let runtime handle the method/action call
       }
    }
+   else if (Payload.base_type IS TiriType::Struct or emitted_base_type IS TiriType::Struct) {
+      table.result_type = TiriType::Struct;
+      if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) table.k = ExpKind::IndexedStruct;
+   }
    else {
       // Reset result_type so the base type does not leak into downstream chained expressions.
       // E.g. arr[1].list should not propagate Array type from arr — .list returns whatever it holds.
@@ -2633,6 +2651,11 @@ ParserResult<ExpDesc> IrEmitter::emit_index_expr(const IndexExprPayload &Payload
       // (aux < 0 means string const key)
       if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
          table.k = ExpKind::IndexedObject;
+      }
+   }
+   else if (Payload.base_type IS TiriType::Struct or emitted_base_type IS TiriType::Struct) {
+      if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+         table.k = ExpKind::IndexedStruct;
       }
    }
 

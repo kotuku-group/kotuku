@@ -12,10 +12,8 @@ struct struct_field {
    int  Type      = 0;    // FD flags
    int  ArraySize = 0;    // Set if the field is an array
 
-   uint32_t nameHash() {
-      if (!NameHash) NameHash = kt::strihash(Name);
-      return NameHash;
-   }
+   void precomputeNameHash() { NameHash = kt::strihash(Name); }
+   [[nodiscard]] uint32_t nameHash() const { return NameHash; }
 
    private:
    uint32_t NameHash = 0;     // Lowercase hash of the field name
@@ -31,6 +29,22 @@ struct struct_record {
 
 //********************************************************************************************************************
 // Structure names have their own handler due to the use of colons in struct references, i.e. "OfficialStruct:SomeName"
+
+[[nodiscard]] inline bool struct_name_hash_char(char Value) noexcept
+{
+   auto c = uint8_t(Value);
+   if ((c >= 'A') and (c <= 'Z')) return true;
+   else if ((c >= 'a') and (c <= 'z')) return true;
+   else if ((c >= '0') and (c <= '9')) return true;
+   else return false;
+}
+
+[[nodiscard]] inline std::string_view struct_name_hash_prefix(std::string_view Name) noexcept
+{
+   size_t length = 0;
+   while ((length < Name.size()) and (struct_name_hash_char(Name[length]))) length++;
+   return Name.substr(0, length);
+}
 
 struct struct_name {
    std::string name;
@@ -53,28 +67,12 @@ struct struct_name {
 struct struct_hash { // Stops when an invalid character is encountered (typically a colon separator)
    using is_transparent = void; // Enables heterogeneous string_view lookups in std::unordered_map
 
-   std::size_t operator()(const struct_name &k) const {
-      uint32_t hash = 5381;
-      for (auto c : k.name) {
-         if ((c >= 'A') and (c <= 'Z'));
-         else if ((c >= 'a') and (c <= 'z'));
-         else if ((c >= '0') and (c <= '9'));
-         else break;
-         hash = ((hash<<5) + hash) + uint8_t(c);
-      }
-      return hash;
+   std::size_t operator()(const struct_name &Key) const {
+      return kt::strhash(struct_name_hash_prefix(Key.name));
    }
 
-   std::size_t operator()(const std::string_view k) const {
-      uint32_t hash = 5381;
-      for (auto c : k) {
-         if ((c >= 'A') and (c <= 'Z'));
-         else if ((c >= 'a') and (c <= 'z'));
-         else if ((c >= '0') and (c <= '9'));
-         else break;
-         hash = ((hash<<5) + hash) + uint8_t(c);
-      }
-      return hash;
+   std::size_t operator()(const std::string_view Key) const {
+      return kt::strhash(struct_name_hash_prefix(Key));
    }
 };
 

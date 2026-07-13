@@ -214,6 +214,16 @@ processing.sleep()  -- Wait for completion
     </field>
 
     <field>
+      <name>Elapsed</name>
+      <comment>Returns the elapsed playback time, measured in seconds.</comment>
+      <access read="G">Get</access>
+      <type>DOUBLE</type>
+      <description>
+<p>This field reports the current playback position in seconds.  It is derived from the live playback channel when the sample is active, or from the stored <fl>Position</fl> field when playback is stopped.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Flags</name>
       <comment>Optional initialisation flags.</comment>
       <access read="R" write="S">Read/Set</access>
@@ -333,6 +343,16 @@ processing.sleep()  -- Wait for completion
     </field>
 
     <field>
+      <name>PlayPosition</name>
+      <comment>Returns the current playback position, measured in bytes.</comment>
+      <access read="G">Get</access>
+      <type>INT64</type>
+      <description>
+<p>This field differs from <fl>Position</fl> because it reflects the live playback cursor while the sound is active.  For streamed playback this is a best-effort source offset derived from the rolling stream buffer.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Playback</name>
       <comment>The playback frequency of the sound sample can be defined here.</comment>
       <access read="R" write="S">Read/Set</access>
@@ -361,6 +381,23 @@ processing.sleep()  -- Wait for completion
 <p>The playback priority of the sample is defined here. This helps to determine if the sample should be played when all available mixing channels are busy. Naturally, higher priorities are played over samples with low priorities.</p>
 <p>The minimum priority value allowed is -100, the maximum is 100.</p>
       </description>
+    </field>
+
+    <field>
+      <name>Progress</name>
+      <comment>Returns the current playback progress as a normalised value.</comment>
+      <access read="G">Get</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The returned value ranges from <code>0.0</code> at the beginning of the sample to <code>1.0</code> at the end of the sample.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Remaining</name>
+      <comment>Returns the remaining playback time, measured in seconds.</comment>
+      <access read="G">Get</access>
+      <type>DOUBLE</type>
     </field>
 
     <field>

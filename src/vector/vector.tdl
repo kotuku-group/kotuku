@@ -24,6 +24,11 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
      "JOIN_PATHS: When appending a new path, use a join operation to connect the tail end to the head.",
      "ISOLATED: Enables isolation mode, which results in a bitmap buffer being allocated for the vector and its children while drawing.")
 
+  enums("GMT", { type="int", start=0, comment="Available modes for the GradientMesh class." },
+    "UNDEFINED: Either the default setting will be applied or the setting will be inherited from a parent object.",
+    "LINEAR: Use linear interpolation for the patch colours.",
+    "BICUBIC: Use bicubic interpolation for the patch colours.")
+
   enums("VFA", { type="int", comment="Define the aspect ratio for VectorFilter unit scaling." },
      "MEET: Scale X/Y values independently and in relation to the width/height of the parent viewport.",
      "NONE: Scale X/Y values on a `1:1` basis, in relation to the diagonal of the parent viewport.")
@@ -598,9 +603,10 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     ~vector(struct(GouraudVertex)) Vertices
   ]])
 
-  klass('GradientMesh', { base='Gradient', src='painters/gradient_mesh.cpp', output='painters/gradient_mesh_def.cpp', extended=true }, [[
+  klass('GradientMesh', { base='Gradient', src='painters/gradient_mesh.cpp', output='painters/gradient_mesh_def.cpp', references={ 'GMT' }, extended=true }, [[
     ~int Rows
     ~int Columns
+    ~int(GMT) Mode
     ~vector(struct(MeshPatchRecord)) Patches
   ]])
 
@@ -750,7 +756,6 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     obj(Vector) Next        # The next vector in the branch, or `NULL`.
     obj(Vector) Prev        # The previous vector in the branch, or `NULL`.
     obj Parent              # The parent vector, or `NULL` if this is the top-most vector.
-    struct(*VectorMatrix) Matrices # A list of transform matrices to apply to the vector.
     double StrokeOpacity    # Defines the opacity of the path stroke.
     double FillOpacity      # The opacity to use when filling the vector.
     double Opacity          # An overall opacity value for the vector.
@@ -763,6 +768,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     int(RQ)  PathQuality    # Defines the quality of rendered path outlines.
     int(VCS) ColourSpace    # Desired colour space to use when blending colours.
     int      PathTimestamp  # This counter is modified each time the path is regenerated.
+    ~struct(VectorMatrix) Matrices
     ~struct(FRGB) StrokeColour
     ~struct(FRGB) FillColour
     ~int(VFR) FillRule
@@ -884,17 +890,17 @@ inline void operator*=(VectorMatrix &This, const VectorMatrix &Other)
     c_insert([==[
 namespace vec {
 inline ERR SubscribeInput(APTR Ob, JTYPE Mask, FUNCTION Callback) {
-   struct SubscribeInput args = { Mask, &Callback };
+   struct SubscribeInput args = { Mask, Callback };
    return(Action(vec::SubscribeInput::id, (OBJECTPTR)Ob, &args));
 }
 
 inline ERR SubscribeKeyboard(APTR Ob, FUNCTION Callback) {
-   struct SubscribeKeyboard args = { &Callback };
+   struct SubscribeKeyboard args = { Callback };
    return(Action(vec::SubscribeKeyboard::id, (OBJECTPTR)Ob, &args));
 }
 
 inline ERR SubscribeFeedback(APTR Ob, FM Mask, FUNCTION Callback) {
-   struct SubscribeFeedback args = { Mask, &Callback };
+   struct SubscribeFeedback args = { Mask, Callback };
    return(Action(vec::SubscribeFeedback::id, (OBJECTPTR)Ob, &args));
 }
 } // namespace

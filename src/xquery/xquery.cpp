@@ -17,6 +17,7 @@ with the @XML class to provide a standards-compliant query engine with extensive
 *********************************************************************************************************************/
 
 #include <kotuku/modules/regex.h>
+#include <kotuku/modules/script.h>
 #include <kotuku/modules/module.h>
 #include "../link/unicode.h"
 #include "../xml/uri_utils.h"

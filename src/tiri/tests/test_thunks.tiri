@@ -159,6 +159,44 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test function ThunkTableIterators()
+   pair_resolutions = 0
+   thunk pair_table():table
+      pair_resolutions++
+      return { first = 10, second = 20 }
+   end
+
+   pair_count = 0
+   pair_total = 0
+   for _, value in pairs(pair_table()) do
+      pair_count++
+      pair_total += value
+   end
+
+   assert(pair_count is 2, "pairs() should iterate over both thunk table entries")
+   assert(pair_total is 30, "pairs() should expose the resolved thunk table values")
+   assert(pair_resolutions is 1, "pairs() should resolve its thunk argument once")
+
+   ipairs_resolutions = 0
+   thunk ipairs_table():table
+      ipairs_resolutions++
+      return { 10, 20, 30 }
+   end
+
+   ipairs_count = 0
+   ipairs_total = 0
+   for _, value in ipairs(ipairs_table()) do
+      ipairs_count++
+      ipairs_total += value
+   end
+
+   assert(ipairs_count is 3, "ipairs() should iterate over all thunk table entries")
+   assert(ipairs_total is 60, "ipairs() should expose the resolved thunk table values")
+   assert(ipairs_resolutions is 1, "ipairs() should resolve its thunk argument once")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function ThunkControlFlow()
    -- Test thunk with if/else control flow
    thunk conditional(x):num

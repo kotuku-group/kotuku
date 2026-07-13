@@ -115,14 +115,14 @@ class objStorageDevice : public Object {
 namespace fl {
 struct StartStream { OBJECTID SubscriberID; FL Flags; int Length; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct StopStream { static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Delete { FUNCTION *Callback; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Move { std::string_view Dest; FUNCTION *Callback; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Copy { std::string_view Dest; FUNCTION *Callback; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Delete { FUNCTION Callback; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Move { std::string_view Dest; FUNCTION Callback; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Copy { std::string_view Dest; FUNCTION Callback; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetDate { int Year; int Month; int Day; int Hour; int Minute; int Second; FDT Type; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct ReadLine { std::string *Result; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct BufferContent { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Next { objFile *File; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Watch { FUNCTION *Callback; MFF Flags; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Watch { FUNCTION Callback; MFF Flags; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -134,12 +134,12 @@ class objFile : public Object {
    using create = kt::Create<objFile>;
    objFile(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
-   int64_t  Position;   // The current read/write byte position in a file.
-   std::string Path;    // Specifies the location of a file or folder.
-   FL       Flags;      // File flags and options.
-   PERMIT   Permissions; // Manages the permissions of a file.
-   int8_t * Buffer;     // Points to the internal data buffer if the file content is held in memory.
-   int64_t  Size;       // The byte size of a file.
+   int64_t Position;             // The current read/write byte position in a file.
+   std::string Path;             // Specifies the location of a file or folder.
+   FL      Flags;                // File flags and options.
+   PERMIT  Permissions;          // Manages the permissions of a file.
+   kt::vector<int8_t> Buffer;    // Points to the internal data buffer if the file content is held in memory.
+   int64_t Size;                 // The byte size of a file.
    public:
    inline std::string readLine() {
       std::string str;
@@ -217,15 +217,15 @@ class objFile : public Object {
       return Action(AC(-2), this, nullptr);
    }
    inline ERR del(FUNCTION Callback) noexcept {
-      struct fl::Delete args = { &Callback };
+      struct fl::Delete args = { Callback };
       return Action(AC(-3), this, &args);
    }
    inline ERR move(const std::string_view &Dest, FUNCTION Callback) noexcept {
-      struct fl::Move args = { Dest, &Callback };
+      struct fl::Move args = { Dest, Callback };
       return Action(AC(-4), this, &args);
    }
    inline ERR copy(const std::string_view &Dest, FUNCTION Callback) noexcept {
-      struct fl::Copy args = { Dest, &Callback };
+      struct fl::Copy args = { Dest, Callback };
       return Action(AC(-5), this, &args);
    }
    inline ERR setDate(int Year, int Month, int Day, int Hour, int Minute, int Second, FDT Type) noexcept {
@@ -247,7 +247,7 @@ class objFile : public Object {
       return error;
    }
    inline ERR watch(FUNCTION Callback, MFF Flags) noexcept {
-      struct fl::Watch args = { &Callback, Flags };
+      struct fl::Watch args = { Callback, Flags };
       return Action(AC(-10), this, &args);
    }
 

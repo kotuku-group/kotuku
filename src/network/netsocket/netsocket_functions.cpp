@@ -82,10 +82,9 @@ static bool same_client_ip(const IPAddress &Left, const IPAddress &Right)
 static std::string client_ip_label(const IPAddress &Address)
 {
    IPAddress printable = client_identity(Address);
-   CSTRING value = net::AddressToStr(&printable);
-   std::string label = value ? value : "<invalid>";
-   if (value) FreeResource((APTR)value);
-   return label;
+   std::string value;
+   if (net::AddressToStr(&printable, &value) != ERR::Okay) value = "<invalid>";
+   return value;
 }
 
 //********************************************************************************************************************

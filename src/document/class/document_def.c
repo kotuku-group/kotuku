@@ -29,12 +29,12 @@ FDEF maInsertXML[] = { { "XML", FDF_CPPSTRING }, { "Index", FD_INT }, { 0, 0 } }
 FDEF maRemoveContent[] = { { "Start", FD_INT }, { "End", FD_INT }, { 0, 0 } };
 FDEF maInsertText[] = { { "Text", FDF_CPPSTRING }, { "Index", FD_INT }, { "Char", FD_INT }, { "Preformat", FD_INT }, { 0, 0 } };
 FDEF maCallFunction[] = { { "Function", FDF_CPPSTRING }, { "ScriptArg:Args", FD_PTR|FD_STRUCT }, { "TotalArgs", FD_INT }, { 0, 0 } };
-FDEF maAddListener[] = { { "Trigger", FD_INT }, { "Function", FD_FUNCTIONPTR }, { 0, 0 } };
-FDEF maRemoveListener[] = { { "Trigger", FD_INT }, { "Function", FD_FUNCTIONPTR }, { 0, 0 } };
+FDEF maAddListener[] = { { "Trigger", FD_INT }, { "Function", FD_FUNCTION }, { 0, 0 } };
+FDEF maRemoveListener[] = { { "Trigger", FD_INT }, { "Function", FD_FUNCTION }, { 0, 0 } };
 FDEF maShowIndex[] = { { "Name", FDF_CPPSTRING }, { 0, 0 } };
 FDEF maHideIndex[] = { { "Name", FDF_CPPSTRING }, { 0, 0 } };
 FDEF maEdit[] = { { "Name", FDF_CPPSTRING }, { "Flags", FD_INT }, { 0, 0 } };
-FDEF maReadContent[] = { { "Format", FD_INT }, { "Start", FD_INT }, { "End", FD_INT }, { "Result", FD_RESULT|FD_STR|FD_ALLOC }, { 0, 0 } };
+FDEF maReadContent[] = { { "Format", FD_INT }, { "Start", FD_INT }, { "End", FD_INT }, { "Result", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
 
 static const struct MethodEntry clDocumentMethods[] = {
    { AC(-1), (APTR)DOCUMENT_FeedParser, "FeedParser", maFeedParser, sizeof(struct doc::FeedParser) },
@@ -53,12 +53,12 @@ static const struct MethodEntry clDocumentMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR DOCUMENT_NewPlacement(extDocument *Self) {
+static ERR DOCUMENT_New(extDocument *Self) {
    new (Self) extDocument(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR DOCUMENT_FreePlacement(extDocument *Self) {
+static ERR DOCUMENT_Free(extDocument *Self) {
    Self->~extDocument();
    return ERR::Okay;
 }
@@ -72,10 +72,10 @@ static const struct ActionArray clDocumentActions[] = {
    { AC::Draw, DOCUMENT_Draw },
    { AC::Enable, DOCUMENT_Enable },
    { AC::Focus, DOCUMENT_Focus },
-   { AC::FreePlacement, DOCUMENT_FreePlacement },
+   { AC::Free, DOCUMENT_Free },
    { AC::GetKey, DOCUMENT_GetKey },
    { AC::Init, DOCUMENT_Init },
-   { AC::NewPlacement, DOCUMENT_NewPlacement },
+   { AC::New, DOCUMENT_New },
    { AC::Refresh, DOCUMENT_Refresh },
    { AC::SaveToObject, DOCUMENT_SaveToObject },
    { AC::SetKey, DOCUMENT_SetKey },

@@ -30,8 +30,7 @@ class extSourceFX : public extFilterEffect {
    objBitmap *Bitmap = nullptr;     // Rendered image cache.
    objVector *Source = nullptr;     // The vector branch to render as source graphic.
    objVectorScene *Scene = nullptr; // Internal scene for rendering.
-   uint8_t *BitmapData = nullptr;
-   int  DataSize = 0;
+   std::vector<uint8_t> BitmapData;
    bool Render = true;              // Must be true if the bitmap cache needs to be rendered.
 
    extSourceFX(objMetaClass *ClassPtr, OBJECTID ObjectID) : extFilterEffect(ClassPtr, ObjectID) {
@@ -55,7 +54,6 @@ class extSourceFX : public extFilterEffect {
       if (Bitmap)     FreeResource(Bitmap);
       if (Source)     Source->unpinWeak();
       if (Scene)      FreeResource(Scene);
-      if (BitmapData) FreeResource(BitmapData);
    }
 };
 
@@ -124,20 +122,12 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
       const int canvas_height = cache->Clip.Bottom - cache->Clip.Top;
       cache->LineWidth = canvas_width * cache->BytesPerPixel;
 
-      if ((Self->BitmapData) and (Self->DataSize < cache->LineWidth * canvas_height)) {
-         FreeResource(Self->BitmapData);
-         Self->BitmapData = nullptr;
-         cache->Data = nullptr;
+      if (Self->BitmapData.size() < size_t(cache->LineWidth * canvas_height)) {
+         Self->BitmapData.resize(cache->LineWidth * canvas_height);
       }
 
-      if (!cache->Data) {
-         if (!AllocMemory(cache->LineWidth * canvas_height, MEM::DATA|MEM::NO_CLEAR, (APTR *)&Self->BitmapData)) {
-            Self->DataSize = cache->LineWidth * canvas_height;
-         }
-         else return ERR::AllocMemory;
-      }
-
-      cache->Data = Self->BitmapData - (cache->Clip.Left * cache->BytesPerPixel) - (cache->Clip.Top * cache->LineWidth);
+      cache->Data = Self->BitmapData.data() - (cache->Clip.Left * cache->BytesPerPixel) -
+         (cache->Clip.Top * cache->LineWidth);
 
       Self->Scene->Viewport->setX(img_x);
       Self->Scene->Viewport->setY(img_y);
@@ -146,16 +136,19 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
       Self->Scene->Viewport->setAspectRatio(Self->AspectRatio);
 
       agg::trans_affine &t = filter->ClientVector->Transform;
-      VectorMatrix matrix;
-      matrix.Vector = Self->Scene->Viewport;
-      matrix.ScaleX = t.sx;
-      matrix.ShearY = t.shy;
-      matrix.ShearX = t.shx;
-      matrix.ScaleY = t.sy;
+      auto viewport = (extVectorViewport *)Self->Scene->Viewport;
+
+      // Temporarily inject the client's transform as the viewport's sole matrix for the duration of the render.
+
+      viewport->Matrices.clear();
+      auto &matrix = viewport->Matrices.emplace_back();
+      matrix.Vector     = Self->Scene->Viewport;
+      matrix.ScaleX     = t.sx;
+      matrix.ShearY     = t.shy;
+      matrix.ShearX     = t.shx;
+      matrix.ScaleY     = t.sy;
       matrix.TranslateX = t.tx;
       matrix.TranslateY = t.ty;
-
-      ((extVectorViewport *)Self->Scene->Viewport)->Matrices = &matrix;
 
       auto save_parent = Self->Source->Parent;
       auto const save_next = Self->Source->Next;
@@ -175,7 +168,7 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
       Self->Scene->Viewport->Child = nullptr;
       Self->Source->Parent = save_parent;
       Self->Source->Next   = save_next;
-      ((extVectorViewport *)Self->Scene->Viewport)->Matrices = nullptr;
+      viewport->Matrices.clear();
       mark_dirty(Self->Source, RC::DIRTY);
    }
 
@@ -286,14 +279,10 @@ XMLDef: Returns an SVG compliant XML string that describes the filter.
 
 *********************************************************************************************************************/
 
-static ERR SOURCEFX_GET_XMLDef(extSourceFX *Self, std::string_view &Value)
+static ERR SOURCEFX_GET_XMLDef(extSourceFX *Self, std::string &Value)
 {
-   auto cppstr = std::string("feImage");
-   if (auto str = strclone(cppstr)) {
-      Value = std::string_view{str, cppstr.size()};
-      return ERR::Okay;
-   }
-   else return ERR::AllocMemory;
+   Value = std::string("feImage");
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -304,7 +293,7 @@ static const FieldArray clSourceFXFields[] = {
    { "AspectRatio", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SOURCEFX_SET_AspectRatio, &clAspectRatio },
    { "SourceName",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_I, nullptr, SOURCEFX_SET_SourceName },
    { "Source",      FDF_VIRTUAL|FDF_OBJECT|FDF_R|FDF_PURE, SOURCEFX_GET_Source, SOURCEFX_SET_Source, CLASSID::VECTOR },
-   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, SOURCEFX_GET_XMLDef },
+   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, SOURCEFX_GET_XMLDef },
    END_FIELD
 };
 

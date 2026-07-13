@@ -889,6 +889,10 @@ callback-inlines, updates-seek-index
 
 ERR TracePath(APTR Path, FUNCTION *Callback, double Scale)
 {
+   auto consume_callback = kt::Defer([&]() {
+      if (Callback) Callback->consume();
+   });
+
    if ((not Path) or (not Callback)) return ERR::NullArgs;
 
    auto vector = (SimpleVector *)Path;

@@ -539,7 +539,7 @@ class objSound : public Object {
    }
 
    inline ERR getActive(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[21];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -547,8 +547,16 @@ class objSound : public Object {
    }
 
    inline ERR getDuration(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[27];
+      auto field = &this->Class->Dictionary[31];
       return field->GetValue(this, &Value);
+   }
+
+   inline ERR getElapsed(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[7];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
    }
 
    inline ERR getHeader(std::span<int8_t> &Value) noexcept {
@@ -558,13 +566,37 @@ class objSound : public Object {
    }
 
    inline ERR getOnStop(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
+      auto field = &this->Class->Dictionary[29];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
       return get_field(this, Value);
    }
 
+   inline ERR getPlayPosition(int64_t &Value) noexcept {
+      auto field = &this->Class->Dictionary[17];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getProgress(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[5];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getRemaining(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[4];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
    inline ERR getNote(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
+      auto field = &this->Class->Dictionary[30];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
@@ -582,32 +614,32 @@ class objSound : public Object {
    }
 
    inline ERR setVolume(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[24];
+      auto field = &this->Class->Dictionary[28];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setPan(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setPosition(const int64_t Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, FD_INT64, &Value);
    }
 
    inline ERR setPriority(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
+      auto field = &this->Class->Dictionary[9];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setLength(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[29];
+      auto field = &this->Class->Dictionary[33];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setOctave(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[25];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -623,7 +655,7 @@ class objSound : public Object {
    }
 
    inline ERR setPlayback(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -664,12 +696,12 @@ class objSound : public Object {
    }
 
    inline ERR setOnStop(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
+      auto field = &this->Class->Dictionary[29];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setNote(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
+      auto field = &this->Class->Dictionary[30];
       return field->WriteValue(this, field, 0x00804308, &Value);
    }
 

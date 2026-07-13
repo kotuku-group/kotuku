@@ -202,7 +202,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>STRING</type>
       <description>
-<p>Unique styles for a font can be selected through the FontStyle field.  Conventional font styles are <code>Bold</code>, <code>Bold Italic</code>, <code>Italic</code> and <code>Regular</code> (the default).  Because TrueType fonts can use any style name that the designer chooses such as <code>Thin</code>, <code>Narrow</code> or <code>Wide</code>, use <function module="Font">GetList</function> for a definitive list of available style names.</p>
+<p>Unique styles for a font can be selected through the FontStyle field.  Conventional font styles are <code>Bold</code>, <code>Bold Italic</code>, <code>Italic</code> and <code>Regular</code> (the default).  Because TrueType fonts can use any style name that the designer chooses such as <code>Thin</code>, <code>Narrow</code> or <code>Wide</code>, read <code>fonts:fonts.cfg</code> for a definitive list of available style names.</p>
 <p>Errors are not returned if the style name is invalid or unavailable.</p>
       </description>
     </field>

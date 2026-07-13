@@ -63,7 +63,7 @@ constexpr int LUA_TSTRING = 4;
 constexpr int LUA_TTABLE = 5;
 constexpr int LUA_TFUNCTION = 6;
 constexpr int LUA_TUSERDATA = 7;
-constexpr int LUA_TTHREAD = 8;
+constexpr int LUA_TSTRUCT = 8;
 constexpr int LUA_TPROTO = 9;
 constexpr int LUA_TOBJECT = 10;
 constexpr int LUA_TARRAY = 11;
@@ -119,8 +119,10 @@ extern int (lua_lessthan) (lua_State *L, int idx1, int idx2);
 
 struct GCarray;
 struct GCobject;
+struct GCstruct;
 
 extern GCarray *     lua_toarray(lua_State *, int);
+extern GCstruct *    lua_tostruct(lua_State *, int);
 extern lua_Number    lua_tonumber(lua_State *, int);
 extern lua_Integer   lua_tointeger(lua_State *, int);
 extern int           lua_toboolean(lua_State *, int);
@@ -130,7 +132,6 @@ extern GCobject *    lua_optobject(lua_State *, int);
 extern size_t        lua_objlen(lua_State *, int);
 extern lua_CFunction lua_tocfunction(lua_State *, int);
 extern void *        lua_touserdata(lua_State *, int);
-extern lua_State *   lua_tothread(lua_State *, int);
 extern const void *  lua_topointer(lua_State *, int);
 
 // push functions (C -> stack)
@@ -146,7 +147,6 @@ extern const char *(lua_pushfstring) (lua_State *L, const char *fmt, ...);
 extern void  (lua_pushcclosure) (lua_State *L, lua_CFunction fn, int n);
 extern void  (lua_pushboolean) (lua_State *L, int b);
 extern void  (lua_pushlightuserdata) (lua_State *L, void *p);
-extern int   (lua_pushthread) (lua_State *L);
 
 // get functions (Lua -> stack)
 
@@ -158,6 +158,10 @@ extern void   lua_rawget(lua_State *L, int idx);
 extern void   lua_rawgeti(lua_State *L, int idx, int n);
 extern void   lua_createtable(lua_State *L, int narr, int nrec);
 extern void   lua_createarray(lua_State *L, uint32_t Length, AET Type, void *Data = nullptr, uint8_t Flags = 0, std::string_view StructName = {});
+struct struct_record;
+struct Object;
+extern GCstruct * lua_pushstruct(lua_State *L, struct_record &Def, void *Data = nullptr, uint8_t Flags = 0,
+   Object *Lifecycle = nullptr, GCstruct *Parent = nullptr);
 extern void * lua_newuserdata(lua_State *L, size_t sz);
 
 // Native Kōtuku object support
@@ -223,7 +227,7 @@ inline bool lua_isobject(lua_State *L, int N) { return lua_type(L, N) == LUA_TOB
 inline bool lua_islightuserdata(lua_State *L, int N) { return lua_type(L, N) == LUA_TLIGHTUSERDATA; }
 inline bool lua_isnil(lua_State *L, int N) { return lua_type(L, N) == LUA_TNIL; }
 inline bool lua_isboolean(lua_State *L, int N) { return lua_type(L, N) == LUA_TBOOLEAN; }
-inline bool lua_isthread(lua_State *L, int N) { return lua_type(L, N) == LUA_TTHREAD; }
+inline bool lua_isstruct(lua_State *L, int N) { return lua_type(L, N) == LUA_TSTRUCT; }
 inline bool lua_isarray(lua_State *L, int N) { return lua_type(L, N) == LUA_TARRAY; }
 inline bool lua_isnone(lua_State *L, int N) { return lua_type(L, N) == LUA_TNONE; }
 inline bool lua_isnoneornil(lua_State *L, int N) { return lua_type(L, N) <= 0; }

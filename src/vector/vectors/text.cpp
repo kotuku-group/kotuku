@@ -186,7 +186,6 @@ class extVectorText : public extVector {
    using create = kt::Create<extVectorText>;
 
    std::vector<TextLine> txLines;
-   FUNCTION txValidateInput;
    FUNCTION txOnChange;
    double txInlineSize; // Enables word-wrapping
    Unit txX = Unit(0), txY = Unit(0);
@@ -197,8 +196,8 @@ class extVectorText : public extVector {
    double txStartOffset; // TODO
    double txSpacing; // TODO
    double txXOffset, txYOffset; // X,Y adjustment for ensuring that the cursor is visible.
-   double *txDX, *txDY; // A series of spacing adjustments that apply on a per-character level.
-   double *txRotate;  // A series of angles that will rotate each individual character.
+   std::vector<double> txDX, txDY; // A series of spacing adjustments that apply on a per-character level.
+   std::vector<double> txRotate; // A series of angles that will rotate each individual character.
    objFont *txBitmapFont;
    objBitmap *txAlphaBitmap; // Host for the bitmap font texture
    extVectorImage *txBitmapImage;
@@ -213,7 +212,6 @@ class extVectorText : public extVector {
    OBJECTID txShapeSubtractID; // Subtract this shape from the path defined by shape-inside
    int  txTotalLines;
    int  txLineLimit, txCharLimit;
-   int  txTotalRotate, txTotalDX, txTotalDY;
    int  txWeight; // 100 - 300 (Light), 400 (Normal), 700 (Bold), 900 (Boldest)
    ALIGN txAlignFlags;
    VTXF  txFlags;
@@ -238,15 +236,16 @@ class extVectorText : public extVector {
          // TODO: This would be a good opportunity to garbage-collect stale glyphs
       }
 
-      if ((((extVector *)this)->ParentView) and (((extVector *)this)->ParentView->Scene->SurfaceID)) {
-         ((extVector *)this)->ParentView->subscribeInput(JTYPE::NIL, C_FUNCTION(text_input_events));
+      auto parent_view = ((extVector *)this)->ParentView;
+      if ((parent_view) and (not parent_view->terminating()) and (parent_view->Scene) and
+            (parent_view->Scene->SurfaceID)) {
+         parent_view->subscribeInput(JTYPE::NIL, C_FUNCTION(text_input_events));
       }
 
       if (txBitmapImage)  FreeResource(txBitmapImage);
       if (txAlphaBitmap)  FreeResource(txAlphaBitmap);
-      if (txDX)           FreeResource(txDX);
-      if (txDY)           FreeResource(txDY);
       if (txKeyEvent)     UnsubscribeEvent(txKeyEvent);
+      release_callback(txOnChange);
 
       if (txFocusID) {
          if (kt::ScopedObjectLock<extVector> focus(txFocusID, 5000); focus.granted()) {
@@ -288,7 +287,8 @@ inline double get_kerning(FT_Face Face, int Glyph, int PrevGlyph)
 
 inline void report_change(extVectorText *Self)
 {
-   if (Self->txOnChange.isC()) {
+   if (Self->txOnChange.stale()) release_callback(Self->txOnChange);
+   else if (Self->txOnChange.isC()) {
       auto routine = (void (*)(extVectorText *))Self->txOnChange.Routine;
       kt::SwitchContext context(Self->txOnChange.Context);
       routine(Self);
@@ -599,24 +599,16 @@ else (b) no extra shift along the x-axis occurs.
 
 static ERR TEXT_GET_DX(extVectorText *Self, std::span<double> &Array)
 {
-   Array = std::span<double>(Self->txDX, Self->txTotalDX);
+   Array = std::span<double>(Self->txDX.data(), Self->txDX.size());
    return ERR::Okay;
 }
 
 static ERR TEXT_SET_DX(extVectorText *Self, std::span<const double> &Array)
 {
-   if (Self->txDX) { FreeResource(Self->txDX); Self->txDX = nullptr; Self->txTotalDX = 0; }
-
-   if ((Array.data()) and (Array.size() > 0)) {
-      if (!AllocMemory(sizeof(double) * Array.size(), MEM::DATA, (APTR *)&Self->txDX)) {
-         copymem(Array.data(), Self->txDX, Array.size() * sizeof(double));
-         Self->txTotalDX = Array.size();
-         reset_path(Self);
-         return ERR::Okay;
-      }
-      else return ERR::AllocMemory;
-   }
-   else return ERR::Okay;
+   if ((not Array.data()) or Array.empty()) Self->txDX.clear();
+   else Self->txDX.assign(Array.begin(), Array.end());
+   reset_path(Self);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -629,24 +621,16 @@ This field follows the same rules described in #DX.
 
 static ERR TEXT_GET_DY(extVectorText *Self, std::span<double> &Array)
 {
-   Array = std::span<double>(Self->txDY, Self->txTotalDY);
+   Array = std::span<double>(Self->txDY.data(), Self->txDY.size());
    return ERR::Okay;
 }
 
 static ERR TEXT_SET_DY(extVectorText *Self, std::span<const double> &Array)
 {
-   if (Self->txDY) { FreeResource(Self->txDY); Self->txDY = nullptr; Self->txTotalDY = 0; }
-
-   if ((Array.data()) and (Array.size() > 0)) {
-      if (!AllocMemory(sizeof(double) * Array.size(), MEM::DATA, (APTR *)&Self->txDY)) {
-         copymem(Array.data(), Self->txDY, Array.size() * sizeof(double));
-         Self->txTotalDY = Array.size();
-         reset_path(Self);
-         return ERR::Okay;
-      }
-      else return ERR::AllocMemory;
-   }
-   else return ERR::Okay;
+   if ((not Array.data()) or Array.empty()) Self->txDY.clear();
+   else Self->txDY.assign(Array.begin(), Array.end());
+   reset_path(Self);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -671,11 +655,11 @@ static ERR TEXT_GET_OnChange(extVectorText *Self, FUNCTION * &Value)
 
 static ERR TEXT_SET_OnChange(extVectorText *Self, FUNCTION *Value)
 {
+   release_callback(Self->txOnChange);
    if (Value) {
-      if (Self->txOnChange.isScript()) UnsubscribeAction(Self->txOnChange.Context, AC::Free);
       Self->txOnChange = *Value;
+      if (Self->txOnChange.defined()) Self->txOnChange.pin();
    }
-   else Self->txOnChange.clear();
    return ERR::Okay;
 }
 
@@ -887,7 +871,7 @@ FontStyle: Determines font styling.
 
 Unique styles for a font can be selected through the FontStyle field.  Conventional font styles are `Bold`,
 `Bold Italic`, `Italic` and `Regular` (the default).  Because TrueType fonts can use any style name that the
-designer chooses such as `Thin`, `Narrow` or `Wide`, use ~Font.GetList() for a definitive list of available
+designer chooses such as `Thin`, `Narrow` or `Wide`, read `fonts:fonts.cfg` for a definitive list of available
 style names.
 
 Errors are not returned if the style name is invalid or unavailable.
@@ -1179,21 +1163,16 @@ and is supplemental to any rotation due to text on a path and to 'glyph-orientat
 
 static ERR TEXT_GET_Rotate(extVectorText *Self, std::span<double> &Array)
 {
-   Array = std::span<double>(Self->txRotate, Self->txTotalRotate);
+   Array = std::span<double>(Self->txRotate.data(), Self->txRotate.size());
    return ERR::Okay;
 }
 
 static ERR TEXT_SET_Rotate(extVectorText *Self, std::span<const double> &Array)
 {
-   if (Self->txRotate) { FreeResource(Self->txRotate); Self->txRotate = nullptr; Self->txTotalRotate = 0; }
-
-   if (!AllocMemory(sizeof(double) * Array.size(), MEM::DATA, (APTR *)&Self->txRotate)) {
-      copymem(Array.data(), Self->txRotate, Array.size() * sizeof(double));
-      Self->txTotalRotate = Array.size();
-      reset_path(Self);
-      return ERR::Okay;
-   }
-   else return ERR::AllocMemory;
+   if ((not Array.data()) or Array.empty()) Self->txRotate.clear();
+   else Self->txRotate.assign(Array.begin(), Array.end());
+   reset_path(Self);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************

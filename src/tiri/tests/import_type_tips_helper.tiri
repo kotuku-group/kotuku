@@ -1,0 +1,12 @@
+-- Tip-bait helper library for test_import_type_analysis.tiri.  The unused local is deliberate:
+-- it verifies that tips raised inside imported statements are suppressed.  This helper must not
+-- be shared with other tests: import deduplication means a library body is only parsed once per
+-- state, so a second validate of the same import cannot resolve its globals.
+
+namespace 'type_probe_tips'
+
+local unused_helper_var = 5
+
+global function tips_add(A:num, B:num):num
+   return A + B
+end

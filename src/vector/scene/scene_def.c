@@ -36,12 +36,12 @@ static const struct MethodEntry clVectorSceneMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR VECTORSCENE_NewPlacement(extVectorScene *Self) {
+static ERR VECTORSCENE_New(extVectorScene *Self) {
    new (Self) extVectorScene(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR VECTORSCENE_FreePlacement(extVectorScene *Self) {
+static ERR VECTORSCENE_Free(extVectorScene *Self) {
    Self->~extVectorScene();
    return ERR::Okay;
 }
@@ -49,9 +49,9 @@ static ERR VECTORSCENE_FreePlacement(extVectorScene *Self) {
 static const struct ActionArray clVectorSceneActions[] = {
    { AC::Draw, VECTORSCENE_Draw },
    { AC::Flush, VECTORSCENE_Flush },
-   { AC::FreePlacement, VECTORSCENE_FreePlacement },
+   { AC::Free, VECTORSCENE_Free },
    { AC::Init, VECTORSCENE_Init },
-   { AC::NewPlacement, VECTORSCENE_NewPlacement },
+   { AC::New, VECTORSCENE_New },
    { AC::Redimension, VECTORSCENE_Redimension },
    { AC::Reset, VECTORSCENE_Reset },
    { AC::Resize, VECTORSCENE_Resize },

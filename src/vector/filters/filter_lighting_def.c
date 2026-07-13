@@ -17,20 +17,20 @@ static const struct MethodEntry clLightingFXMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR LIGHTINGFX_NewPlacement(extLightingFX *Self) {
+static ERR LIGHTINGFX_New(extLightingFX *Self) {
    new (Self) extLightingFX(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR LIGHTINGFX_FreePlacement(extLightingFX *Self) {
+static ERR LIGHTINGFX_Free(extLightingFX *Self) {
    Self->~extLightingFX();
    return ERR::Okay;
 }
 
 static const struct ActionArray clLightingFXActions[] = {
    { AC::Draw, LIGHTINGFX_Draw },
-   { AC::FreePlacement, LIGHTINGFX_FreePlacement },
-   { AC::NewPlacement, LIGHTINGFX_NewPlacement },
+   { AC::Free, LIGHTINGFX_Free },
+   { AC::New, LIGHTINGFX_New },
    { AC::NIL, nullptr }
 };
 

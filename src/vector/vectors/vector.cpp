@@ -31,6 +31,18 @@ static std::mutex glResizeLock;
 
 static ERR VECTOR_Push(extVector *, struct vec::Push *);
 
+static void rebuild_matrix_links(extVector *Self)
+{
+   VectorMatrix *prev = nullptr;
+
+   for (auto &matrix : Self->Matrices) {
+      matrix.Vector = Self;
+      matrix.Next = nullptr;
+      if (prev) prev->Next = &matrix;
+      prev = &matrix;
+   }
+}
+
 //********************************************************************************************************************
 // For the use of the VectorScene's Debug() method.
 
@@ -228,6 +240,7 @@ struct(*VectorMatrix) Matrix: Reference to the structure that requires removal.
 -ERRORS-
 Okay:
 NullArgs:
+NotFound:
 
 -TAGS-
 mutates-object, closes-handle
@@ -238,24 +251,17 @@ static ERR VECTOR_FreeMatrix(extVector *Self, struct vec::FreeMatrix *Args)
 {
    if ((!Args) or (!Args->Matrix)) return ERR::NullArgs;
 
-   // Clean up the linked list
+   for (auto matrix = Self->Matrices.begin(); matrix != Self->Matrices.end(); ++matrix) {
+      if (&*matrix IS Args->Matrix) {
+         Self->Matrices.erase(matrix);
+         rebuild_matrix_links(Self);
 
-   if (Self->Matrices IS Args->Matrix) {
-      Self->Matrices = Args->Matrix->Next;
-   }
-   else {
-      for (auto t = Self->Matrices; t; t=t->Next) {
-         if (t->Next IS Args->Matrix) {
-            t->Next = Args->Matrix->Next;
-            break;
-         }
+         mark_dirty(Self, RC::TRANSFORM);
+         return ERR::Okay;
       }
    }
 
-   FreeResource(Args->Matrix);
-
-   mark_dirty(Self, RC::TRANSFORM);
-   return ERR::Okay;
+   return ERR::NotFound;
 }
 
 /*********************************************************************************************************************
@@ -463,7 +469,6 @@ int End: If `true`, the matrix priority is lowered by inserting it at the end of
 -ERRORS-
 Okay:
 NullArgs:
-AllocMemory
 
 -TAGS-
 mutates-object, object-owns-result, creates-resource
@@ -472,35 +477,25 @@ mutates-object, object-owns-result, creates-resource
 
 static ERR VECTOR_NewMatrix(extVector *Self, struct vec::NewMatrix *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
-   VectorMatrix *transform;
-   if (!AllocMemory(sizeof(VectorMatrix), MEM::DATA|MEM::NO_CLEAR, (APTR *)&transform)) {
-      transform->Vector = Self;
-      transform->ScaleX = 1.0;
-      transform->ScaleY = 1.0;
-      transform->ShearX = 0;
-      transform->ShearY = 0;
-      transform->TranslateX = 0;
-      transform->TranslateY = 0;
+   Args->Transform = nullptr;
 
-      if ((Args->End) and (Self->Matrices)) {
-         transform->Next   = nullptr;
-         VectorMatrix *last = Self->Matrices;
-         while (last->Next) last = last->Next;
-         last->Next = transform;
-      }
-      else { // Insert transform at the start of the list.
-         transform->Next = Self->Matrices;
-         Self->Matrices = transform;
-      }
-
-      Args->Transform = transform;
-
-      mark_dirty(Self, RC::TRANSFORM);
-      return ERR::Okay;
+   if (Args->End) {
+      Self->Matrices.emplace_back();
+      Args->Transform = &Self->Matrices.back();
    }
-   else return ERR::AllocMemory;
+   else {
+      Self->Matrices.emplace_front();
+      Args->Transform = &Self->Matrices.front();
+   }
+
+   Args->Transform->Vector = Self;
+
+   rebuild_matrix_links(Self);
+
+   mark_dirty(Self, RC::TRANSFORM);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -682,7 +677,7 @@ The prototype for the `Callback` is `ERR callback(*Vector, FM Event)`
 
 -INPUT-
 int(FM) Mask: Defines the feedback events required by the client.  Set to `0xffffffff` if all messages are required.
-ptr(func) Callback: The function that will receive feedback events.
+func Callback: The function that will receive feedback events.
 
 -ERRORS-
 Okay:
@@ -697,8 +692,13 @@ mutates-object, callback-held
 static ERR VECTOR_SubscribeFeedback(extVector *Self, struct vec::SubscribeFeedback *Args)
 {
    kt::Log log;
+   bool retained_callback = false;
 
-   if ((not Args) or (not Args->Callback)) return log.warning(ERR::NullArgs);
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (not retained_callback)) Args->Callback.consume();
+   });
+
+   if ((not Args) or (not Args->Callback.defined())) return log.warning(ERR::NullArgs);
 
    if (Args->Mask != FM::NIL) {
       if (not Self->FeedbackSubscriptions) {
@@ -706,12 +706,13 @@ static ERR VECTOR_SubscribeFeedback(extVector *Self, struct vec::SubscribeFeedba
          if (not Self->FeedbackSubscriptions) return log.warning(ERR::AllocMemory);
       }
 
-      Args->Callback->Context->pinWeak();
-      Self->FeedbackSubscriptions->emplace_back(*Args->Callback, Args->Mask);
+      Args->Callback.pin();
+      Self->FeedbackSubscriptions->emplace_back(Args->Callback, Args->Mask);
+      retained_callback = true;
    }
    else if (Self->FeedbackSubscriptions) { // Remove existing subscriptions for this callback
       for (auto it=Self->FeedbackSubscriptions->begin(); it != Self->FeedbackSubscriptions->end(); ) {
-         if (*Args->Callback IS it->Callback) {
+         if (Args->Callback IS it->Callback) {
             release_callback(it->Callback);
             it = Self->FeedbackSubscriptions->erase(it);
          }
@@ -743,7 +744,7 @@ The prototype for the `Callback` is `ERR callback(*Vector, *InputEvent)`
 
 -INPUT-
 flags(JTYPE) Mask: Combine `JTYPE` flags to define the input messages required by the client.  Set to zero to remove an existing subscription.
-ptr(func) Callback: Reference to a function that will receive input messages.
+func Callback: Reference to a function that will receive input messages.
 
 -ERRORS-
 Okay:
@@ -760,10 +761,15 @@ mutates-object, callback-held
 static ERR VECTOR_SubscribeInput(extVector *Self, struct vec::SubscribeInput *Args)
 {
    kt::Log log;
+   bool retained_callback = false;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (not retained_callback)) Args->Callback.consume();
+   });
 
    // Refer to scene_input_events() for the origin of incoming input messages
 
-   if ((!Args) or (!Args->Callback)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Callback.defined())) return log.warning(ERR::NullArgs);
 
    if (Args->Mask != JTYPE::NIL) {
       if ((!Self->Scene) or (!Self->Scene->SurfaceID)) return ERR::FieldNotSet;
@@ -777,21 +783,22 @@ static ERR VECTOR_SubscribeInput(extVector *Self, struct vec::SubscribeInput *Ar
       // work for both Tiri procedures (via ProcedureID check) and C functions.
 
       for (auto it=Self->InputSubscriptions->begin(); it != Self->InputSubscriptions->end(); ) {
-         if (*Args->Callback IS it->Callback) return log.warning(ERR::AlreadyDefined);
+         if (Args->Callback IS it->Callback) return log.warning(ERR::AlreadyDefined);
          else it++;
       }
 
       auto mask = Args->Mask;
 
       Self->InputMask |= mask;
-      Args->Callback->Context->pinWeak();
-      Self->InputSubscriptions->emplace_back(*Args->Callback, mask);
+      Args->Callback.pin();
+      Self->InputSubscriptions->emplace_back(Args->Callback, mask);
+      retained_callback = true;
       update_input_subscription_state(Self);
       mark_input_boundary_dirty(Self);
    }
    else if (Self->InputSubscriptions) { // Remove existing subscriptions for this callback
       for (auto it=Self->InputSubscriptions->begin(); it != Self->InputSubscriptions->end(); ) {
-         if (*Args->Callback IS it->Callback) {
+         if (Args->Callback IS it->Callback) {
             release_callback(it->Callback);
             it = Self->InputSubscriptions->erase(it);
          }
@@ -823,7 +830,7 @@ translated through the user's keymap.
 If the callback returns `ERR::Terminate` then the subscription will be ended.  All other error codes are ignored.
 
 -INPUT-
-ptr(func) Callback: Reference to a callback function that will receive input messages.
+func Callback: Reference to a callback function that will receive input messages.
 
 -ERRORS-
 Okay:
@@ -840,8 +847,13 @@ mutates-object, callback-held
 static ERR VECTOR_SubscribeKeyboard(extVector *Self, struct vec::SubscribeKeyboard *Args)
 {
    kt::Log log;
+   bool retained_callback = false;
 
-   if ((!Args) or (!Args->Callback)) return log.warning(ERR::NullArgs);
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (not retained_callback)) Args->Callback.consume();
+   });
+
+   if ((not Args) or (not Args->Callback.defined())) return log.warning(ERR::NullArgs);
 
    if (!Self->Scene->SurfaceID) return log.warning(ERR::FieldNotSet);
 
@@ -852,8 +864,9 @@ static ERR VECTOR_SubscribeKeyboard(extVector *Self, struct vec::SubscribeKeyboa
 
    ((extVectorScene *)Self->Scene)->KeyboardSubscriptions.emplace(Self);
 
-   Args->Callback->Context->pinWeak();
-   Self->KeyboardSubscriptions->emplace_back(*Args->Callback);
+   Args->Callback.pin();
+   Self->KeyboardSubscriptions->emplace_back(Args->Callback);
+   retained_callback = true;
 
    return ERR::Okay;
 }
@@ -873,7 +886,7 @@ the currently plotted point.  The `X` and `Y` parameters reflect the coordinate 
 If the `Callback` returns `ERR::Terminate`, then no further coordinates will be processed.
 
 -INPUT-
-ptr(func) Callback: A function to call with the path coordinates.
+func Callback: A function to call with the path coordinates.
 double Scale: Set to `1.0` (recommended) to trace the path at a scale of 1 to 1.
 int Transform: Set to `true` if all transforms applicable to the vector should be applied to the path.
 
@@ -894,10 +907,10 @@ static ERR VECTOR_Trace(extVector *Self, struct vec::Trace *Args)
    kt::Log log;
 
    auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Callback)) Args->Callback->consume();
+      if (Args) Args->Callback.consume();
    });
 
-   if ((!Args) or (!Args->Callback)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Callback.defined())) return log.warning(ERR::NullArgs);
 
    gen_vector_tree(Self);
 
@@ -910,8 +923,8 @@ static ERR VECTOR_Trace(extVector *Self, struct vec::Trace *Args)
    int cmd = -1;
    int index = 0;
 
-  if (Args->Callback->isC()) {
-      auto routine = ((ERR (*)(extVector *, int, int, double, double, APTR))(Args->Callback->Routine));
+   if (Args->Callback.isC()) {
+      auto routine = ((ERR (*)(extVector *, int, int, double, double, APTR))(Args->Callback.Routine));
 
       kt::SwitchContext context(ParentContext());
 
@@ -920,7 +933,7 @@ static ERR VECTOR_Trace(extVector *Self, struct vec::Trace *Args)
          do {
             cmd = t_path.vertex(&x, &y);
             if (agg::is_vertex(cmd)) {
-               if (routine(Self, index++, cmd, x, y, Args->Callback->Meta) IS ERR::Terminate) {
+               if (routine(Self, index++, cmd, x, y, Args->Callback.Meta) IS ERR::Terminate) {
                   return ERR::Okay;
                }
             }
@@ -930,14 +943,14 @@ static ERR VECTOR_Trace(extVector *Self, struct vec::Trace *Args)
          do {
             cmd = Self->BasePath.vertex(&x, &y);
             if (agg::is_vertex(cmd)) {
-               if (routine(Self, index++, cmd, x, y, Args->Callback->Meta) IS ERR::Terminate) {
+               if (routine(Self, index++, cmd, x, y, Args->Callback.Meta) IS ERR::Terminate) {
                   return ERR::Okay;
                }
             }
          } while (cmd != agg::path_cmd_stop);
       }
    }
-   else if (Args->Callback->isScript()) {
+   else if (Args->Callback.isScript()) {
       std::array<ScriptArg, 5> args {{
          { "Vector",  Self->UID, FD_OBJECTID },
          { "Index",   int(0) },
@@ -957,7 +970,7 @@ static ERR VECTOR_Trace(extVector *Self, struct vec::Trace *Args)
                args[2].Int = cmd;
                args[3].Double = x;
                args[4].Double = y;
-               if (sc::Call(*Args->Callback, args, result) != ERR::Okay) return ERR::Function;
+               if (sc::Call(Args->Callback, args, result) != ERR::Okay) return ERR::Function;
                if (result IS ERR::Terminate) return ERR::Okay;
             }
          } while (cmd != agg::path_cmd_stop);
@@ -971,7 +984,7 @@ static ERR VECTOR_Trace(extVector *Self, struct vec::Trace *Args)
                args[2].Int = cmd;
                args[3].Double = x;
                args[4].Double = y;
-               if (sc::Call(*Args->Callback, args, result) != ERR::Okay) return ERR::Function;
+               if (sc::Call(Args->Callback, args, result) != ERR::Okay) return ERR::Function;
                if (result IS ERR::Terminate) return ERR::Okay;
             }
          } while (cmd != agg::path_cmd_stop);
@@ -1545,6 +1558,17 @@ represented by the !VectorMatrix structure, and are linked in the order in which
 
 !VectorMatrix
 
+*********************************************************************************************************************/
+
+static ERR VECTOR_GET_Matrices(extVector *Self, struct VectorMatrix * &Value)
+{
+   if (Self->Matrices.empty()) Value = nullptr;
+   else Value = &Self->Matrices.front();
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
 -FIELD-
 MiterLimit: Imposes a limit on the ratio of the miter length to the StrokeWidth.
 
@@ -1797,9 +1821,6 @@ any time.  The conventional means for monitoring the size and position of any ve
 static ERR VECTOR_SET_ResizeEvent(extVector *Self, FUNCTION *Value)
 {
    if (Value) {
-      auto context = Value->Context;
-      context->pinWeak();
-
       Self->ResizeSubscription = true;
       if ((Self->Scene) and (Self->ParentView)) {
          auto scene = (extVectorScene *)Self->Scene;
@@ -1808,6 +1829,7 @@ static ERR VECTOR_SET_ResizeEvent(extVector *Self, FUNCTION *Value)
             release_callback(existing->second);
          }
          subs[Self] = *Value;
+         if (subs[Self].defined()) subs[Self].pin();
       }
       else {
          const std::lock_guard<std::mutex> lock(glResizeLock);
@@ -1815,6 +1837,7 @@ static ERR VECTOR_SET_ResizeEvent(extVector *Self, FUNCTION *Value)
             release_callback(existing->second);
          }
          glResizeSubscriptions[Self] = *Value; // Save the subscription for initialisation.
+         if (glResizeSubscriptions[Self].defined()) glResizeSubscriptions[Self].pin();
       }
    }
    else if (Self->ResizeSubscription) {
@@ -1876,7 +1899,7 @@ of the previous command).
 
 *********************************************************************************************************************/
 
-static ERR VECTOR_GET_Sequence(extVector *Self, std::string_view &Value)
+static ERR VECTOR_GET_Sequence(extVector *Self, std::string &Value)
 {
    kt::Log log;
 
@@ -1950,15 +1973,8 @@ static ERR VECTOR_GET_Sequence(extVector *Self, std::string_view &Value)
       }
    }
 
-   auto out = seq.str();
-   if (out.length() > 0) {
-      if (auto str = strclone(out)) {
-         Value = std::string_view{str, out.length()};
-         return ERR::Okay;
-      }
-      else return ERR::AllocMemory;
-   }
-   else return ERR::NoData;
+   Value = seq.str();
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -2301,14 +2317,6 @@ extVector::~extVector() {
          glResizeSubscriptions.erase(this);
       }
    }
-
-   if (Matrices) {
-      VectorMatrix *next;
-      for (auto t=Matrices; t; t=next) {
-         next = t->Next;
-         FreeResource(t);
-      }
-   }
 }
 
 //********************************************************************************************************************
@@ -2321,7 +2329,6 @@ static const FieldArray clVectorFields[] = {
    { "Next",            FDF_OBJECT|FD_RW, nullptr, VECTOR_SET_Next, CLASSID::VECTOR },
    { "Prev",            FDF_OBJECT|FD_RW, nullptr, VECTOR_SET_Prev, CLASSID::VECTOR },
    { "Parent",          FDF_OBJECT|FD_R },
-   { "Matrices",        FDF_POINTER|FDF_STRUCT|FDF_R, nullptr, nullptr, "VectorMatrix" },
    { "StrokeOpacity",   FDF_DOUBLE|FDF_RW, nullptr, VECTOR_SET_StrokeOpacity },
    { "FillOpacity",     FDF_DOUBLE|FDF_RW, nullptr, VECTOR_SET_FillOpacity },
    { "Opacity",         FDF_DOUBLE|FD_RW, nullptr, VECTOR_SET_Opacity },
@@ -2352,6 +2359,7 @@ static const FieldArray clVectorFields[] = {
    // Virtual fields
    { "DashArray",    FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FD_RW|FDF_PURE, VECTOR_GET_DashArray, VECTOR_SET_DashArray },
    { "DisplayScale", FDF_VIRTUAL|FDF_DOUBLE|FDF_R,              VECTOR_GET_DisplayScale },
+   { "Matrices",     FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_R|FDF_PURE, VECTOR_GET_Matrices, nullptr, "VectorMatrix" },
    { "ResizeEvent",  FDF_VIRTUAL|FDF_FUNCTION|FDF_W,            nullptr, VECTOR_SET_ResizeEvent },
    { "Sequence",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, VECTOR_GET_Sequence },
    { "StrokeColour", FDF_VIRTUAL|FDF_STRUCT|FD_RW|FDF_PURE,     VECTOR_GET_StrokeColour, VECTOR_SET_StrokeColour, "FRGB" },

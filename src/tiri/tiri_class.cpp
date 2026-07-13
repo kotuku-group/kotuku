@@ -415,6 +415,7 @@ static ERR TIRI_DataFeed(extTiri *Self, struct acDataFeed *Args)
 
             SetResource(RES::LOG_DEPTH, step);
 
+            if (it->Callback) luaL_unref(Self->Lua, LUA_REGISTRYINDEX, it->Callback);
             it = Self->Requests.erase(it);
             continue;
          }
@@ -522,7 +523,10 @@ static ERR TIRI_Init(extTiri *Self)
    if ((!error) and (Self->SaveCompiled = compile)) {
       DateTime *dt;
       if (!src_file->getDate(dt)) Self->CacheDate = *dt;
-      src_file->getPermissions(Self->CachePermissions);
+      Self->CachePermissions = PERMIT::NIL;
+      if (auto permissions_error = src_file->getPermissions(Self->CachePermissions); permissions_error != ERR::Okay) {
+         log.warning("Failed to read source permissions for cache file: %s", GetErrorMsg(permissions_error));
+      }
    }
 
    if (error != ERR::Okay) {
@@ -996,7 +1000,6 @@ static ERR register_interfaces(extTiri *Self)
    register_io_class(Self->Lua);
    register_module_class(Self->Lua);
    register_regex_class(Self->Lua);
-   register_struct_class(Self->Lua);
    register_async_class(Self->Lua);
 #ifndef DISABLE_DISPLAY
    register_input_class(Self->Lua);
@@ -1022,7 +1025,10 @@ static ERR register_interfaces(extTiri *Self)
    reg_func_prototype("unsubscribeEvent", {}, { TiriType::Any });
    reg_func_prototype("MAKESTRUCT", { TiriType::Any }, { TiriType::Str });
 
-   load_include(Self, "core");
+   if (auto error = load_include(Self, "core"); error != ERR::Okay) {
+      log.error("Failed to process the core includes.");
+      return error;
+   }
 
 #ifndef NDEBUG
    int stack_delta = lua_gettop(Self->Lua) - stack_top;

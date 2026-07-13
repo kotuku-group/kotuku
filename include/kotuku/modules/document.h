@@ -102,12 +102,12 @@ struct InsertXML { std::string_view XML; int Index; static const AC id = AC(-5);
 struct RemoveContent { int Start; int End; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct InsertText { std::string_view Text; int Index; int Char; int Preformat; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct CallFunction { std::string_view Function; struct ScriptArg *Args; int TotalArgs; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddListener { DRT Trigger; FUNCTION *Function; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct RemoveListener { int Trigger; FUNCTION *Function; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddListener { DRT Trigger; FUNCTION Function; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct RemoveListener { int Trigger; FUNCTION Function; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct ShowIndex { std::string_view Name; static const AC id = AC(-11); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct HideIndex { std::string_view Name; static const AC id = AC(-12); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Edit { std::string_view Name; int Flags; static const AC id = AC(-13); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct ReadContent { DATA Format; int Start; int End; STRING Result; static const AC id = AC(-14); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ReadContent { DATA Format; int Start; int End; std::string *Result; static const AC id = AC(-14); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -204,11 +204,11 @@ class objDocument : public Object {
       return Action(AC(-8), this, &args);
    }
    inline ERR addListener(DRT Trigger, FUNCTION Function) noexcept {
-      struct doc::AddListener args = { Trigger, &Function };
+      struct doc::AddListener args = { Trigger, Function };
       return Action(AC(-9), this, &args);
    }
    inline ERR removeListener(int Trigger, FUNCTION Function) noexcept {
-      struct doc::RemoveListener args = { Trigger, &Function };
+      struct doc::RemoveListener args = { Trigger, Function };
       return Action(AC(-10), this, &args);
    }
    inline ERR showIndex(const std::string_view &Name) noexcept {
@@ -223,10 +223,9 @@ class objDocument : public Object {
       struct doc::Edit args = { Name, Flags };
       return Action(AC(-13), this, &args);
    }
-   inline ERR readContent(DATA Format, int Start, int End, STRING * Result) noexcept {
-      struct doc::ReadContent args = { Format, Start, End, (STRING)0 };
+   inline ERR readContent(DATA Format, int Start, int End, std::string &Result) noexcept {
+      struct doc::ReadContent args = { Format, Start, End, &Result };
       ERR error = Action(AC(-14), this, &args);
-      if (Result) *Result = args.Result;
       return error;
    }
 

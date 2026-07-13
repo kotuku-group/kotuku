@@ -26,7 +26,7 @@ static std::string_view tiri_type_name(TiriType Type)
       case TiriType::Table:   return "table";
       case TiriType::Array:   return "array";
       case TiriType::Func:    return "function";
-      case TiriType::Thread:  return "thread";
+      case TiriType::Struct:  return "struct";
       case TiriType::Object:  return "object";
       case TiriType::Range:   return "range";
       case TiriType::Unknown: return "unknown";
@@ -118,7 +118,10 @@ static void emit_stack_trace(extTiri *Tiri, std::ostringstream &Buf, bool Compac
       int level = 1; // Start at 1 to skip the C function (mtDebugLog) itself
 
       while (lua_getstack(Tiri->Lua, level, &ar)) {
-         lua_getinfo(Tiri->Lua, "nSl", &ar);
+         if (not lua_getinfo(Tiri->Lua, "nSl", &ar)) {
+            level++;
+            continue;
+         }
 
          if (Compact) {
             Buf << "[" << level << "] ";
@@ -207,7 +210,7 @@ static void emit_upvalues_info(extTiri *Tiri, std::ostringstream &Buf, bool Comp
    lua_Debug ar;
    if (not lua_getstack(Tiri->Lua, 1, &ar)) return; // Level 1 = caller's frame
 
-   lua_getinfo(Tiri->Lua, "f", &ar);
+   if (not lua_getinfo(Tiri->Lua, "f", &ar)) return;
 
    if (not Compact) Buf <<"-UPVALUES-\n";
 
@@ -603,34 +606,35 @@ static ERR TIRI_DebugLog(extTiri *Self, struct sc::DebugLog *Args)
    if (opts.show_dump) {
       lua_Debug ar;
       if (lua_getstack(Self->Lua, 1, &ar)) {
-         lua_getinfo(Self->Lua, "Sln", &ar);
+         if (lua_getinfo(Self->Lua, "Sln", &ar)) {
+            if (not opts.compact) buf <<"-BINARY-\n";
 
-         if (not opts.compact) buf <<"-BINARY-\n";
+            if (lua_getinfo(Self->Lua, "f", &ar)) {
+               GCfunc *fn = funcV(Self->Lua->top - 1);
+               if (isluafunc(fn)) {
+                  std::vector<uint8_t> binary;
 
-         if (lua_getinfo(Self->Lua, "f", &ar)) {
-            GCfunc *fn = funcV(Self->Lua->top - 1);
-            if (isluafunc(fn)) {
-               std::vector<uint8_t> binary;
+                  if (lua_dump(Self->Lua, append_dump_chunk, &binary) IS 0) {
+                     if (not opts.compact) {
+                        CSTRING func_name = ar.name ? ar.name : "<anonymous>";
+                        buf << "Function: " << func_name << " (" << ar.short_src << ":" << ar.linedefined
+                            << "-" << ar.lastlinedefined << ")\n";
+                        buf << "Bytes: " << binary.size() << "\n";
+                     }
 
-               if (lua_dump(Self->Lua, append_dump_chunk, &binary) IS 0) {
-                  if (not opts.compact) {
-                     CSTRING func_name = ar.name ? ar.name : "<anonymous>";
-                     buf << "Function: " << func_name << " (" << ar.short_src << ":" << ar.linedefined
-                         << "-" << ar.lastlinedefined << ")\n";
-                     buf << "Bytes: " << binary.size() << "\n";
+                     append_hex_dump(binary, buf, opts.compact);
                   }
-
-                  append_hex_dump(binary, buf, opts.compact);
+                  else buf << "(failed to serialise bytecode)\n";
                }
-               else buf << "(failed to serialise bytecode)\n";
-            }
-            else buf << "(current frame is a C function; bytecode unavailable)\n";
+               else buf << "(current frame is a C function; bytecode unavailable)\n";
 
-            lua_pop(Self->Lua, 1);
+               lua_pop(Self->Lua, 1);
+            }
+            else buf << "(unable to inspect current frame)\n";
+
+            if (not opts.compact) buf <<"\n";
          }
          else buf << "(unable to inspect current frame)\n";
-
-         if (not opts.compact) buf <<"\n";
       }
       else {
          // No active frame - try to dump the main chunk if available
@@ -680,24 +684,21 @@ static ERR TIRI_DerefProcedure(extTiri *Self, struct sc::DerefProcedure *Args)
 
    if (not Args) return ERR::NullArgs;
 
-   if ((Args->Procedure) and (Args->Procedure->isScript())) {
-      if (Args->Procedure->Context IS Self) { // Verification of ownership
-         log.trace("Dereferencing procedure #%" PF64, (long long)Args->Procedure->ProcedureID);
+   if (Args->Procedure.isScript() and (Args->Procedure.Context IS Self)) { // Verify ownership
+      log.trace("Dereferencing procedure #%" PF64, (long long)Args->Procedure.ProcedureID);
 
-         if (Args->Procedure->ProcedureID) {
-            if (not Self->Lua) { // Guarded because Deref is used by the Free action manager.
-               Args->Procedure->ProcedureID = 0;
-               Args->Procedure->consume();
-               return ERR::Okay;
-            }
-
-            luaL_unref(Self->Lua, LUA_REGISTRYINDEX, Args->Procedure->ProcedureID);
-            Args->Procedure->ProcedureID = 0;
+      if (Args->Procedure.ProcedureID) {
+         if (not Self->Lua) { // Guarded because Deref is used by the Free action manager.
+            Args->Procedure.ProcedureID = 0;
+            Args->Procedure.consume();
+            return ERR::Okay;
          }
-         Args->Procedure->consume();
-         return ERR::Okay;
+
+         luaL_unref(Self->Lua, LUA_REGISTRYINDEX, Args->Procedure.ProcedureID);
+         Args->Procedure.ProcedureID = 0;
       }
-      else return log.warning(ERR::Args);
+      Args->Procedure.consume();
+      return ERR::Okay;
    }
    else return log.warning(ERR::Args);
 }

@@ -1522,7 +1522,7 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
     <input>
       <param type="STRVIEW" name="Path">The path to be resolved.</param>
       <param type="RSF" name="Flags" lookup="RSF">Optional flags.</param>
-      <param type="STRING *" name="Result">Must point to a <code>std::string</code> variable so that the resolved path can be stored.  If <code>NULL</code>, ResolvePath() will work as normal and return a valid error code without the result string.  The value is unchanged if the error code is not <code>ERR::Okay</code>.</param>
+      <param type="STRING *" name="Result">Refer to a string variable so that the resolved path can be stored.  If <code>NULL</code>, ResolvePath() will work as normal and return a valid error code without the result string.  The value is unchanged if the error code is not <code>ERR::Okay</code>.</param>
     </input>
     <description>
 <p>This function will convert a file path to its resolved form, according to the host system.  For example, a Linux system might resolve <code>drive1:documents/readme.txt</code> to <code>/documents/readme.txt</code>.  A Windows system might resolve the path to <code>c:\documents\readme.txt</code>.</p>
@@ -1530,7 +1530,7 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
 <p>If the path can be resolved to more than one file, ResolvePath() will attempt to discover the correct path by checking the validity of each possible location.  For instance, if resolving a path of <code>user:document.txt</code> and the <code>user:</code> volume refers to both <code>system:users/joebloggs/</code> and <code>system:users/default/</code>, the routine will check both directories for the existence of the <code>document.txt</code> file to determine the correct location.  This approach can be problematic if the intent is to create a new file, in which case <code>RSF::NO_FILE_CHECK</code> will circumvent it.</p>
 <p>When checking the file location, ResolvePath() requires an exact match to the provided file name.  If the file name can be approximated (i.e. the file extension can be ignored) then use the <code>RSF::APPROXIMATE</code> flag.</p>
 <p>To resolve the location of executable programs on Unix systems, use the <code>RSF::PATH</code> flag.  This uses the <code>PATH</code> environment variable to resolve the file name specified in the <code>Path</code> parameter.</p>
-<p>The resolved path will be copied to the <code>std::string</code> provided in the <code>Result</code> parameter.  This will overwrite any existing content in the string.</p>
+<p>The resolved path will be copied to the string provided in the <code>Result</code> parameter.  This will overwrite any existing content in the string.</p>
 <types lookup="RSF"/>
 <p>If the path resolves to a virtual drive, it may not be possible to confirm whether the target file exists if the virtual driver does not support this check.  This is common when working with network drives.</p>
     </description>
@@ -2119,7 +2119,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="Flush"/>
       <const name="Focus"/>
       <const name="Free"/>
-      <const name="FreePlacement"/>
       <const name="FreeWarning"/>
       <const name="GetKey"/>
       <const name="Hide"/>
@@ -2130,10 +2129,9 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="MoveToBack"/>
       <const name="MoveToFront"/>
       <const name="MoveToPoint"/>
+      <const name="New"/>
       <const name="NewChild"/>
-      <const name="NewObject"/>
       <const name="NewOwner"/>
-      <const name="NewPlacement"/>
       <const name="Next"/>
       <const name="Prev"/>
       <const name="Query"/>
@@ -2529,7 +2527,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <struct name="Field" comment="Used to describe the public fields of a class.">
       <field name="Arg" type="MAXINT">An option to complement the field type.  Can be a pointer or an integer value</field>
       <field name="GetValue" type="FUNCTION *" prototype="ERR (*GetValue)(APTR, APTR)">A virtual function that will retrieve the value for this field</field>
-      <field name="SetValue" type="APTR">A virtual function that will set the value for this field</field>
+      <field name="SetValue" type="FUNCTION *" prototype="ERR (*SetValue)(APTR, APTR)">A virtual function that will set the value for this field</field>
       <field name="WriteValue" type="FUNCTION *" prototype="ERR (*WriteValue)(OBJECTPTR, const struct Field *, int, const void *)">An internal function for writing to this field</field>
       <field name="Name" type="CSTRING">The English name for the field, e.g. <code>Width</code></field>
       <field name="FieldID" type="UINT">32-bit hash from fieldhash()</field>

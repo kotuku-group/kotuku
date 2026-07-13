@@ -50,16 +50,21 @@
 #define FDF_FIELDTYPES  (FD_INT|FD_DOUBLE|FD_INT64|FD_POINTER|FD_UNIT|FD_BYTE|FD_ARRAY|FD_FUNCTION)
 
 //********************************************************************************************************************
-// For testing if type T can be matched to an FD flag.  All integral types are mapped by size so that types without
-// an explicit branch (e.g. uint32_t, int16_t) cannot fall through to the pointer/struct default.
+// For testing if type T can be matched to an FD flag.  Integral types are mapped by storage width so that typed spans
+// match byte, word, int and large field definitions.
 
 template <class T> [[nodiscard]] constexpr int FIELD_TYPECHECK() {
-   if constexpr (std::is_same_v<T, double>) return FD_DOUBLE;
-   else if constexpr (std::is_same_v<T, float>) return FD_FLOAT;
-   else if constexpr (std::is_integral_v<T>) return (sizeof(T) > 4) ? FD_INT64 : FD_INT;
-   else if constexpr (std::is_same_v<T, std::string>) return FD_STRING|FD_CPP;
-   else if constexpr (std::is_same_v<T, CSTRING> or std::is_same_v<T, STRING>) return FD_STRING;
-   else if constexpr (std::is_same_v<T, OBJECTPTR> or std::is_same_v<T, APTR>) return FD_PTR;
+   using field_type = std::remove_cvref_t<T>;
+
+   if constexpr (std::is_same_v<field_type, double>) return FD_DOUBLE;
+   else if constexpr (std::is_same_v<field_type, float>) return FD_FLOAT;
+   else if constexpr (std::is_integral_v<field_type> and (sizeof(field_type) IS sizeof(int8_t))) return FD_BYTE;
+   else if constexpr (std::is_integral_v<field_type> and (sizeof(field_type) IS sizeof(int16_t))) return FD_WORD;
+   else if constexpr (std::is_integral_v<field_type> and (sizeof(field_type) IS sizeof(int64_t))) return FD_INT64;
+   else if constexpr (std::is_integral_v<field_type>) return FD_INT;
+   else if constexpr (std::is_same_v<field_type, std::string>) return FD_STRING|FD_CPP;
+   else if constexpr (std::is_same_v<field_type, CSTRING> or std::is_same_v<field_type, STRING>) return FD_STRING;
+   else if constexpr (std::is_same_v<field_type, OBJECTPTR> or std::is_same_v<field_type, APTR>) return FD_PTR;
    else return FD_PTR|FD_STRUCT|FD_STRING;
 }
 
@@ -189,18 +194,20 @@ struct alignas(8) Object { // Must be 64-bit aligned
       objMetaClass *Class;          // [Public] Class pointer
       class extMetaClass *ExtClass; // [Private] Internal version of the class pointer
    };
-   APTR     DerivedPtr;          // Private allocation area for derived classes only
-   APTR     CreatorMeta;         // The creator of the object is permitted to store a custom data pointer here.
-   struct Object *Owner;         // The owner of this object
-   std::atomic_uint64_t NotifyFlags; // Action subscription flags - space for 64 actions max
-   std::atomic<uint32_t> RefCount; // Packed pin counters: low byte strong pins, upper 24 bits weak pins.  NB: This is not a locking mechanism!
-   OBJECTID UID;                 // Unique object identifier
-   std::atomic<uint32_t> Flags;  // Object NF flags
-   std::atomic_int ThreadID;     // Managed by locking functions.  Atomic due to volatility.
-   int8_t   ActionDepth;         // Debug builds only: Incremented each time an action or method is called on the object
-   std::atomic_char Queue;       // Counter of locks attained by LockObject(); decremented by ReleaseObject(); not stable by design (see lock())
-   std::atomic_char SleepQueue;  // For the use of LockObject() only
-   char Name[MAX_NAME_LEN];      // The name of the object.  NOTE: This value can be adjusted to ensure that the struct is always 8-bit aligned.
+   APTR     DerivedPtr;          // [8] Private allocation area for derived classes only
+   APTR     CreatorMeta;         // [16] The creator of the object is permitted to store a custom data pointer here.
+   struct Object *Owner;         // [24] The owner of this object
+   std::atomic_uint64_t NotifyFlags; // [32] Action subscription flags - space for 64 actions max
+   std::atomic<uint32_t> RefCount; // [40] Packed pin counters: low byte strong pins, upper 24 bits weak pins.  NB: This is not a locking mechanism!
+   OBJECTID UID;                 // [44] Unique object identifier
+   std::atomic<uint32_t> Flags;  // [48] Object NF flags
+   std::atomic_int ThreadID;     // [52] Managed by locking functions.  Atomic due to volatility.
+   int8_t   ActionDepth;         // [56] Debug builds only: Incremented each time an action or method is called on the object
+   std::atomic_char Queue;       // [57] Counter of locks attained by LockObject(); decremented by ReleaseObject(); not stable by design (see lock())
+   std::atomic_char SleepQueue;  // [58] For the use of LockObject() only
+   int8_t   _Reserved1;          // [59] Reserved
+   char Name[36];                // [60] The name of the object.  NOTE: This value can be adjusted to ensure that the struct is always 8-bit aligned.
+   // Refer to MAX_NAME_LEN in core.h that defines the hard limit of the name length for clients.
 
    Object(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept :
       Class(ClassPtr),
@@ -247,10 +254,6 @@ struct alignas(8) Object { // Must be 64-bit aligned
    inline void pin() {
       #ifndef NDEBUG
       auto ref_count = RefCount.load(std::memory_order_relaxed);
-      if (defined(NF::PLACEMENT)) {
-         kt::Log("pin").warning("Pinning placement object #%d (%s) is unsupported.", UID, className());
-         DEBUG_BREAK
-      }
       if ((ref_count & 0xff) >= 254) {
          kt::Log("pin").warning("Strong pin overflow risk for object #%d (%s), count: %d", UID, className(), ref_count & 0xff);
          DEBUG_BREAK
@@ -284,10 +287,6 @@ struct alignas(8) Object { // Must be 64-bit aligned
    inline void pinWeak() {
       #ifndef NDEBUG
       auto ref_count = RefCount.load(std::memory_order_relaxed);
-      if (defined(NF::PLACEMENT)) {
-         kt::Log("pinWeak").warning("Pinning placement object #%d (%s) is unsupported.", UID, className());
-         DEBUG_BREAK
-      }
       if ((ref_count >> 8) >= 0xfffffe) {
          kt::Log("pinWeak").warning("Weak pin overflow risk for object #%d (%s), count: %d", UID, className(), ref_count >> 8);
          DEBUG_BREAK
@@ -401,112 +400,74 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
    inline ERR setOwner(OBJECTPTR NewOwner) { return SetOwner(this, NewOwner); }
 
-   private:
-   // Pull the field definition for FieldID and retrieve the Target object if necessary.  Performs sanity checks, as
-   // reflected in the error code.
-   inline ERR resolve_write_field(FIELD FieldID, Object *&Target, const struct Field *&FieldPtr, bool Array) {
-      if (not (FieldPtr = FindField(this, FieldID, &Target))) return ERR::UnsupportedField;
-      if ((Array) and not (FieldPtr->Flags & FD_ARRAY)) return ERR::FieldTypeMismatch;
-
-      auto ctx = CurrentContext();
-      if ((not FieldPtr->writeable()) and (ctx != Target)) return ERR::NoFieldAccess;
-      if ((FieldPtr->Flags & FD_INIT) and (Target->initialised()) and (ctx != Target)) return ERR::NoFieldAccess;
-
-      return ERR::Okay;
-   }
-
    public:
 
    // set() support for array fields
 
-   template <class T> ERR set(FIELD FieldID, const std::span<const T> &Value, int Type = FIELD_TYPECHECK<T>()) {
-      Object *target;
-      const struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, true); error != ERR::Okay) return error;
-      return field->WriteValue(target, field, FD_ARRAY|Type, &Value);
+   template <class T> ERR set(const struct Field *Field, const std::span<const T> &Value, int Type = FIELD_TYPECHECK<T>()) {
+      return Field->WriteValue(this, Field, FD_ARRAY|Type, &Value);
    }
 
    // Mutable-span callers forward to the const-span overload (the value is only read).
 
-   template <class T> ERR set(FIELD FieldID, const std::span<T> &Value, int Type = FIELD_TYPECHECK<T>()) {
-      return set(FieldID, std::span<const T>(Value), Type);
+   template <class T> ERR set(const struct Field *Field, const std::span<T> &Value, int Type = FIELD_TYPECHECK<T>()) {
+      return set(Field, std::span<const T>(Value), Type);
    }
 
-   template <class T> ERR set(FIELD FieldID, const std::vector<T> &Value, int Type = FIELD_TYPECHECK<T>()) {
-      return set(FieldID, std::span<const T>(Value), Type);
+   template <class T> ERR set(const struct Field *Field, const std::vector<T> &Value, int Type = FIELD_TYPECHECK<T>()) {
+      return set(Field, std::span<const T>(Value), Type);
    }
 
-   template <class T> ERR set(FIELD FieldID, const kt::vector<T> &Value, int Type = FIELD_TYPECHECK<T>()) {
-      return set(FieldID, std::span<const T>(Value.data(), Value.size()), Type);
+   template <class T> ERR set(const struct Field *Field, const kt::vector<T> &Value, int Type = FIELD_TYPECHECK<T>()) {
+      return set(Field, std::span<const T>(Value.data(), Value.size()), Type);
    }
 
    // set() support for numeric types
 
    // Bool overload: promote to int to avoid reading 4 bytes from a 1-byte bool in setval_long
-   inline ERR set(FIELD FieldID, const bool Value) {
-      return set(FieldID, int(Value));
+   inline ERR set(const struct Field *Field, const bool Value) {
+      return set(Field, int(Value));
    }
 
-   template <class T> ERR set(FIELD FieldID, const T Value) requires std::integral<T> or std::floating_point<T> {
-      Object *target;
-      const struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
+   template <class T> ERR set(const struct Field *Field, const T Value) requires std::integral<T> or std::floating_point<T> {
       if constexpr (std::is_integral_v<T> and (sizeof(T) < sizeof(int))) {
          // Promote small integrals to int so that WriteValue does not read 4 bytes from a 1 or 2 byte value.
          const int promoted = int(Value);
-         return field->WriteValue(target, field, FD_INT, &promoted);
+         return Field->WriteValue(this, Field, FD_INT, &promoted);
       }
-      else return field->WriteValue(target, field, FIELD_TYPECHECK<T>(), &Value);
+      else return Field->WriteValue(this, Field, FIELD_TYPECHECK<T>(), &Value);
    }
 
-   inline ERR set(FIELD FieldID, const FUNCTION *Value) {
-      Object *target;
-      const struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
-      return field->WriteValue(target, field, FD_FUNCTION, Value);
+   inline ERR set(const struct Field *Field, const FUNCTION *Value) {
+      return Field->WriteValue(this, Field, FD_FUNCTION, Value);
    }
 
-   inline ERR set(FIELD FieldID, const char *Value) {
-      Object *target;
-      const struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
+   inline ERR set(const struct Field *Field, const char *Value) {
       std::string_view sv(Value ? Value : "");
-      return field->WriteValue(target, field, FD_STRING|FD_CPP, &sv);
+      return Field->WriteValue(this, Field, FD_STRING|FD_CPP, &sv);
    }
 
-   inline ERR set(FIELD FieldID, std::string_view Value) {
-      Object *target;
-      const struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
-      return field->WriteValue(target, field, FD_CPP|FD_STRING, &Value);
+   inline ERR set(const struct Field *Field, std::string_view Value) {
+      return Field->WriteValue(this, Field, FD_CPP|FD_STRING, &Value);
    }
 
-   inline ERR set(FIELD FieldID, const std::string &Value) {
-      Object *target;
-      const struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
+   inline ERR set(const struct Field *Field, const std::string &Value) {
       auto sv = std::string_view(Value);
-      return field->WriteValue(target, field, FD_CPP|FD_STRING, &sv);
+      return Field->WriteValue(this, Field, FD_CPP|FD_STRING, &sv);
    }
 
-   inline ERR set(FIELD FieldID, const Unit *Value) {
-      Object *target;
-      const struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
-      return field->WriteValue(target, field, FD_UNIT, Value);
+   inline ERR set(const struct Field *Field, const Unit *Value) {
+      return Field->WriteValue(this, Field, FD_UNIT, Value);
    }
 
-   inline ERR set(FIELD FieldID, const Unit &Value) {
-      return set(FieldID, &Value);
+   inline ERR set(const struct Field *Field, const Unit &Value) {
+      return set(Field, &Value);
    }
 
    // Works both for regular data pointers and function pointers if the field is defined correctly.
 
-   inline ERR set(FIELD FieldID, const void *Value) {
-      Object *target;
-      const struct Field *field;
-      if (auto error = resolve_write_field(FieldID, target, field, false); error != ERR::Okay) return error;
-      return field->WriteValue(target, field, FD_POINTER, Value);
+   inline ERR set(const struct Field *Field, const void *Value) {
+      return Field->WriteValue(this, Field, FD_POINTER, Value);
    }
 
    // Internal get helpers
@@ -587,6 +548,14 @@ struct alignas(8) Object { // Must be 64-bit aligned
                return ERR::Okay;
             }
             else return error;
+         }
+
+         if ((flags & FD_STRING) and (flags & FD_ALLOC) and field->GetValue) {
+            if (not field->pure()) SetObjectContext(target, field, AC::NIL);
+            auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+            auto error = get_field(target, Value);
+            if (not field->pure()) RestoreObjectContext();
+            return error;
          }
 
          int8_t field_value[sizeof(std::string_view)];

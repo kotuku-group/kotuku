@@ -158,12 +158,6 @@ static ERR GET_ResolvedPath(extFile *, std::string_view &);
 
 static ERR set_permissions(extFile *, PERMIT);
 
-static void deref_file_callback(FUNCTION &Function)
-{
-   if (Function.isScript()) ((objScript *)Function.Context)->derefProcedure(Function);
-   Function.clear();
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Activate: Opens the file.  Performed automatically if `NEW`, `READ` or `WRITE` flags were specified on initialisation.
@@ -316,8 +310,9 @@ once buffering has been enabled.
 
 -ERRORS-
 Okay: The file content was successfully buffered.
-AllocMemory:
-Read: Failed to read the file content.
+Read:
+NothingDone: The file is already buffered.
+InvalidState: The targeted file is not open for read operations.
 
 -TAGS-
 blocking, mutates-object, creates-resource, updates-seek-index
@@ -329,9 +324,13 @@ static ERR FILE_BufferContent(extFile *Self)
    kt::Log log;
    int len;
 
-   if (Self->Buffer) return ERR::Okay;
+   if (Self->Handle IS -1) {
+      if ((Self->Flags & FL::BUFFER) != FL::NIL) return ERR::NothingDone;
+      else return log.warning(ERR::InvalidState);
+   }
 
    Self->seekStart(0);
+   Self->Buffer.clear();
 
    if (not Self->Size) {
       // If the file has no size, it could be a stream (or simply empty).  This routine handles this situation.
@@ -341,17 +340,15 @@ static ERR FILE_BufferContent(extFile *Self)
          Self->Flags |= FL::STREAM;
          // Allocate a 1 MB memory block, read the stream into it, then reallocate the block to the correct size.
 
-         uint8_t *buffer;
-         if (!AllocMemory(1024 * 1024, MEM::NO_CLEAR, (APTR *)&buffer)) {
-            Self->seekStart(0);
-            acRead(Self, buffer, 1024 * 1024, &len);
-            if (len > 0) {
-               if (!AllocMemory(len, MEM::NO_CLEAR, (APTR *)&Self->Buffer)) {
-                  copymem(buffer, Self->Buffer, len);
-                  Self->Size = len;
-               }
-            }
-            FreeResource(buffer);
+         kt::vector<int8_t> buffer;
+         buffer.resize((1024 * 1024) + 1);
+         Self->seekStart(0);
+         acRead(Self, buffer.data(), 1024 * 1024, &len);
+         if (len > 0) {
+            buffer.resize(len + 1);
+            buffer[len] = 0;
+            Self->Buffer.swap(buffer);
+            Self->Size = len;
          }
       }
    }
@@ -359,26 +356,18 @@ static ERR FILE_BufferContent(extFile *Self)
       // Allocate buffer and load file content.  A NULL byte is added so that there is some safety in the event that
       // the file content is treated as a string.
 
-      int8_t *buffer;
-      if (!AllocMemory(Self->Size+1, MEM::NO_CLEAR, (APTR *)&buffer)) {
-         buffer[Self->Size] = 0;
-         if (!acRead(Self, buffer, Self->Size, &len)) {
-            Self->Buffer = buffer;
-         }
-         else {
-            FreeResource(buffer);
-            return log.warning(ERR::Read);
-         }
+      kt::vector<int8_t> buffer;
+      buffer.resize(Self->Size + 1);
+      buffer[Self->Size] = 0;
+      if (!acRead(Self, buffer.data(), Self->Size, &len)) {
+         Self->Buffer.swap(buffer);
       }
-      else return log.warning(ERR::AllocMemory);
+      else return log.warning(ERR::Read);
    }
 
-   // If the file was empty, allocate a 1-byte memory block for the Buffer field, in order to satisfy condition tests.
-
-   if (not Self->Buffer) {
-      if (AllocMemory(1, MEM::DATA, (APTR *)&Self->Buffer) != ERR::Okay) {
-         return log.warning(ERR::AllocMemory);
-      }
+   if (Self->Buffer.empty()) {
+      Self->Buffer.resize(1);
+      Self->Buffer[0] = 0;
    }
 
    log.msg("File content now buffered in a %" PF64 " byte memory block.", (long long)Self->Size);
@@ -430,7 +419,7 @@ and an error code will be returned.
 
 -INPUT-
 strview Dest: The destination file path for the copy operation.
-ptr(func) Callback: Optional callback for receiving feedback during the operation.
+func Callback: Optional callback for receiving feedback during the operation.
 
 -ERRORS-
 Okay: The file data was copied successfully.
@@ -442,7 +431,6 @@ Read: Data could not be read from the source path.
 Write: Data could not be written to the destination path.
 ResolvePath:
 Loop: Performing the copy would cause infinite recursion.
-AllocMemory:
 
 -TAGS-
 blocking, updates-seek-index, callback-inlines
@@ -453,10 +441,10 @@ static ERR FILE_Copy(extFile *Self, struct fl::Copy *Args)
 {
    if (not Args) return ERR::NullArgs;
    auto consume_callback = kt::Defer([&]() {
-      if (Args->Callback) Args->Callback->consume();
+      if (Args->Callback.defined()) Args->Callback.consume();
    });
 
-   return CopyFile(Self->Path, Args->Dest, Args->Callback);
+   return CopyFile(Self->Path, Args->Dest, &Args->Callback);
 }
 
 /*********************************************************************************************************************
@@ -469,7 +457,7 @@ contents will be deleted in the call.   Once a file is deleted, the object effec
 reason, file deletion should normally be followed up with a call to the Free action.
 
 -INPUT-
-ptr(func) Callback: Optional callback for receiving feedback during the operation.
+func Callback: Optional callback for receiving feedback during the operation.
 
 -ERRORS-
 Okay:  File deleted successfully.
@@ -494,7 +482,7 @@ static ERR FILE_Delete(extFile *Self, struct fl::Delete *Args)
    kt::Log log;
 
    auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Callback)) Args->Callback->consume();
+      if ((Args) and (Args->Callback.defined())) Args->Callback.consume();
    });
 
    if (Self->Path.empty()) return log.warning(ERR::MissingPath);
@@ -529,13 +517,13 @@ static ERR FILE_Delete(extFile *Self, struct fl::Delete *Args)
          if (buffer.ends_with('/') or buffer.ends_with('\\')) buffer.pop_back();
 
          FileFeedback fb;
-         if ((Args->Callback) and (Args->Callback->defined())) {
+         if (Args->Callback.defined()) {
             fb.FeedbackID = FBK::DELETE_FILE;
             fb.Path       = buffer.data();
          }
 
          ERR error;
-         if (!(error = delete_tree(buffer, Args->Callback, &fb)));
+         if (!(error = delete_tree(buffer, &Args->Callback, &fb)));
          else if (error != ERR::Cancelled) log.warning("Failed to delete folder \"%s\"", buffer.c_str());
 
          return error;
@@ -576,7 +564,7 @@ static ERR FILE_Flush(extFile *Self)
    kt::Log log;
 
    if ((Self->Flags & FL::WRITE) IS FL::NIL) return ERR::Okay;
-   if (Self->Buffer) return ERR::Okay;
+   if ((Self->Flags & FL::BUFFER) != FL::NIL) return ERR::Okay;
    if ((Self->isFolder) or ((Self->Flags & FL::FOLDER) != FL::NIL)) return log.warning(ERR::ExpectedFile);
    if (Self->Handle IS -1) return log.warning(ERR::ObjectCorrupt);
 
@@ -628,7 +616,6 @@ FileNotFound:
 ResolvePath:
 Search: The file could not be found.
 NoPermission: Permission was denied when accessing or creating the file.
-AllocMemory
 InvalidPath
 ExpectedFile
 UseDerived
@@ -649,14 +636,10 @@ static ERR FILE_Init(extFile *Self)
    if (((Self->Flags & FL::BUFFER) != FL::NIL) and (Self->Path.empty())) {
       if (Self->Size < 0) Self->Size = 0;
       Self->Flags |= FL::READ|FL::WRITE|FL::VIRTUAL;
-      if (not Self->Buffer) {
-         // Allocate buffer if none specified.  An extra byte is allocated for a NULL byte on the end, in case the file
-         // content is treated as a string.
-
-         if (AllocMemory((Self->Size < 1) ? 1 : Self->Size+1, MEM::NO_CLEAR, (APTR *)&Self->Buffer) != ERR::Okay) {
-            return log.warning(ERR::AllocMemory);
-         }
-         ((int8_t *)Self->Buffer)[Self->Size] = 0;
+      if (Self->Buffer.empty()) {
+         // An extra byte is allocated for a NULL character, in case the file content is treated as a string.
+         Self->Buffer.resize(Self->Size + 1);
+         Self->Buffer[Self->Size] = 0;
       }
       Self->Permissions |= PERMIT::HIDDEN;
       return ERR::Okay;
@@ -673,13 +656,12 @@ static ERR FILE_Init(extFile *Self)
       Self->Size = Self->Path.size() - 7;
 
       if (Self->Size > 0) {
-         if (!AllocMemory(Self->Size, MEM::DATA, (APTR *)&Self->Buffer)) {
-            Self->Flags |= FL::READ|FL::WRITE|FL::VIRTUAL|FL::BUFFER;
-            Self->Permissions |= PERMIT::HIDDEN;
-            copymem(Self->Path.c_str() + 7, Self->Buffer, Self->Size);
-            return ERR::Okay;
-         }
-         else return log.warning(ERR::AllocMemory);
+         Self->Buffer.resize(Self->Size + 1);
+         Self->Buffer[Self->Size] = 0;
+         Self->Flags |= FL::READ|FL::WRITE|FL::VIRTUAL|FL::BUFFER;
+         Self->Permissions |= PERMIT::HIDDEN;
+         copymem(Self->Path.c_str() + 7, Self->Buffer.data(), Self->Size);
+         return ERR::Okay;
       }
       else return log.warning(ERR::InvalidPath);
    }
@@ -897,7 +879,7 @@ The #Position field will be reset as a result of calling this method.
 
 -INPUT-
 strview Dest: The desired path for the file.
-ptr(func) Callback: Optional callback for receiving feedback during the operation.
+func Callback: Optional callback for receiving feedback during the operation.
 
 -ERRORS-
 Okay: The File was moved successfully.
@@ -915,11 +897,11 @@ static ERR FILE_MoveFile(extFile *Self, struct fl::Move *Args)
 {
    kt::Log log;
 
-   auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Callback)) Args->Callback->consume();
-   });
+   if (not Args) return log.warning(ERR::NullArgs);
 
-   if ((not Args) or Args->Dest.empty()) return log.warning(ERR::NullArgs);
+   auto consume_callback = kt::Defer([&]() { Args->Callback.consume(); });
+
+   if (Args->Dest.empty()) return log.warning(ERR::NullArgs);
    if (Self->Path.empty()) return log.warning(ERR::FieldNotSet);
 
    auto src = std::string_view(Self->Path);
@@ -944,7 +926,7 @@ static ERR FILE_MoveFile(extFile *Self, struct fl::Move *Args)
       #endif
 
       ERR error;
-      if (!(error = fs_copy(src, newpath, Args->Callback, true))) {
+      if (!(error = fs_copy(src, newpath, &Args->Callback, true))) {
          Self->Path.assign(newpath);
       }
       else log.warning("Failed to move %.*s to %s", int(src.size()), src.data(), newpath.c_str());
@@ -956,7 +938,7 @@ static ERR FILE_MoveFile(extFile *Self, struct fl::Move *Args)
          if (Self->Handle != -1) { close(Self->Handle); Self->Handle = -1; }
       #endif
 
-      if (auto error = fs_copy(src, dest, Args->Callback, true); !error) {
+      if (auto error = fs_copy(src, dest, &Args->Callback, true); !error) {
          Self->Path.assign(dest);
          return ERR::Okay;
       }
@@ -1088,7 +1070,7 @@ static ERR FILE_Read(extFile *Self, struct acRead *Args)
 
    if ((Self->Flags & FL::READ) IS FL::NIL) return log.warning(ERR::FileReadFlag);
 
-   if (Self->Buffer) {
+   if ((Self->Flags & FL::BUFFER) != FL::NIL) {
       if ((Self->Flags & FL::LOOP) != FL::NIL) {
          // In loop mode, we must make the file buffer appear to be of infinite length in terms of the read/write
          // position marker.
@@ -1100,25 +1082,17 @@ static ERR FILE_Read(extFile *Self, struct acRead *Args)
             else len = 0; // Avoid division by zero if the file size is zero.
             if (len > readlen) len = readlen; // Restrict the length of the read operation to the length of the destination.
 
-            copymem(Self->Buffer + (Self->Position % Self->Size), dest, len);
+            copymem(Self->Buffer.data() + (Self->Position % Self->Size), dest, len);
             dest += len;
             Self->Position += len;
          }
-/*
-         readlen = Self->Position % Self->Size;
-         for (len=0; len < Args->Length; len++) {
-            ((BYTE *)Args->Buffer)[len] = Self->Buffer[readlen++];
-            if (readlen >= Self->Size) readlen = 0;
-         }
-         Self->Position += Args->Length;
-*/
          Args->Result = Args->Length;
          return ERR::Okay;
       }
       else {
          if (Self->Position + Args->Length > Self->Size) Args->Result = Self->Size - Self->Position;
          else Args->Result = Args->Length;
-         copymem(Self->Buffer + Self->Position, Args->Buffer, Args->Result);
+         copymem(Self->Buffer.data() + Self->Position, Args->Buffer, Args->Result);
          Self->Position += Args->Result;
          return ERR::Okay;
       }
@@ -1189,17 +1163,17 @@ static ERR FILE_ReadLine(extFile *Self, struct fl::ReadLine *Args)
    std::string &output = *Args->Result;
    output.clear();
 
-   if (Self->Buffer) {
+   if ((Self->Flags & FL::BUFFER) != FL::NIL) {
       if (Self->Position >= Self->Size) return ERR::NoData;
       const std::size_t start = std::size_t(Self->Position);
-      auto content = std::string_view((char *)Self->Buffer, std::size_t(Self->Size));
+      auto content = std::string_view((char *)Self->Buffer.data(), std::size_t(Self->Size));
       auto line_feed = content.find('\n', start);
       if (line_feed IS std::string_view::npos) {
-         output.assign((char *)Self->Buffer + start, std::size_t(Self->Size) - start);
+         output.assign((char *)Self->Buffer.data() + start, std::size_t(Self->Size) - start);
          Self->Position = Self->Size;
       }
       else {
-         output.assign((char *)Self->Buffer + start, line_feed - start);
+         output.assign((char *)Self->Buffer.data() + start, line_feed - start);
          Self->Position = line_feed + 1;
       }
       return ERR::Okay;
@@ -1343,7 +1317,7 @@ static ERR FILE_Seek(extFile *Self, struct acSeek *Args)
 
    if (Self->Position < 0) Self->Position = 0;
 
-   if (Self->Buffer) {
+   if ((Self->Flags & FL::BUFFER) != FL::NIL) {
       if ((Self->Flags & FL::LOOP) != FL::NIL) return ERR::Okay; // In loop mode, the position marker can legally be above the buffer size
       else if (Self->Position > Self->Size) Self->Position = Self->Size;
       return ERR::Okay;
@@ -1556,16 +1530,18 @@ Each event will be delivered in the sequence that they are originally raised.  T
 specific event that has occurred.  The `Path` is a string that is relative to the File's #Path field.
 
 If the callback routine returns `ERR::Terminate`, the watch will be disabled.  It is also possible to disable an existing
-watch by calling this method with no parameters, or by setting the `Flags` parameter to `0`.
+watch by calling this method with no parameters, or by setting the `Flags` parameter to `MFF::NIL`.
 
 -INPUT-
-ptr(func) Callback: The routine that will be called when a file change is triggered by the system.
+func Callback: The routine that will be called when a file change is triggered by the system.
 int(MFF) Flags: Filter events to those indicated in these flags.
 
 -ERRORS-
 Okay
 Args
 NullArgs
+AllocMemory
+NoSupport
 
 -TAGS-
 non-blocking, mutates-object, callback-held
@@ -1575,6 +1551,7 @@ non-blocking, mutates-object, callback-held
 static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
 {
    kt::Log log;
+   bool retained_callback = false;
 
    log.branch("%s, Flags: $%.8x", Self->Path.c_str(), (Args) ? int(Args->Flags) : 0);
 
@@ -1582,7 +1559,13 @@ static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
 
    if (Self->prvWatch) {
       auto id = Self->prvWatch->VirtualID;
-      deref_file_callback(Self->prvWatch->Routine);
+      auto &func = Self->prvWatch->Routine;
+
+      if ((func.isScript()) and (not func.stale())) {
+         ((objScript *)func.Context)->derefProcedure(func);
+      }
+      func.unpin();
+
       void (*ignore_file)(extFile *) = nullptr;
       {
          std::lock_guard<std::mutex> lock(glmVirtual);
@@ -1591,11 +1574,16 @@ static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
       if (ignore_file) ignore_file(Self);
       else log.warning("Failed to find virtual volume ID $%.8x", id);
 
-      FreeResource(Self->prvWatch);
-      Self->prvWatch = nullptr;
+      Self->prvWatch.reset();
    }
 
-   if ((not Args) or (not Args->Callback) or (Args->Flags IS MFF::NIL)) return ERR::Okay;
+   if (not Args) return ERR::Okay;
+
+   auto consume_callback = kt::Defer([&]() {
+      if (not retained_callback) Args->Callback.consume();
+   });
+
+   if ((not Args->Callback.defined()) or (Args->Flags IS MFF::NIL)) return ERR::Okay;
 
 #ifdef __linux__ // Initialise inotify if not done already.
 
@@ -1616,16 +1604,27 @@ static ERR FILE_Watch(extFile *Self, struct fl::Watch *Args)
       auto vd = get_fs(resolve);
 
       if (vd.WatchPath) {
-         #ifdef _WIN32
-         if (!AllocMemory(sizeof(rkWatchPath) + winGetWatchBufferSize(), MEM::DATA, (APTR *)&Self->prvWatch)) {
-         #else
-         if (!AllocMemory(sizeof(rkWatchPath), MEM::DATA, (APTR *)&Self->prvWatch)) {
-         #endif
+         auto watch = std::unique_ptr<rkWatchPath>(new (std::nothrow) rkWatchPath);
+         if (watch) {
+            #ifdef _WIN32
+               watch->Buffer.reset(new (std::nothrow) uint8_t[winGetWatchBufferSize()]);
+               if (!watch->Buffer) return ERR::AllocMemory;
+            #endif
+
+            Self->prvWatch = std::move(watch);
             Self->prvWatch->VirtualID = vd.VirtualID;
-            Self->prvWatch->Routine   = *Args->Callback;
+            Self->prvWatch->Routine   = Args->Callback;
             Self->prvWatch->Flags     = Args->Flags;
+            Self->prvWatch->Routine.pin();
 
             error = vd.WatchPath(Self);
+            if (error IS ERR::Okay) retained_callback = true;
+            else {
+               auto &func = Self->prvWatch->Routine;
+               if ((func.isScript()) and (not func.stale())) ((objScript *)func.Context)->derefProcedure(func);
+               func.unpin();
+               Self->prvWatch.reset();
+            }
          }
          else error = ERR::AllocMemory;
       }
@@ -1665,7 +1664,7 @@ static ERR FILE_Write(extFile *Self, struct acWrite *Args)
    if (Args->Length <= 0) return ERR::Args;
    if ((Self->Flags & FL::WRITE) IS FL::NIL) return log.warning(ERR::FileWriteFlag);
 
-   if (Self->Buffer) {
+   if ((Self->Flags & FL::BUFFER) != FL::NIL) {
       if ((Self->Flags & FL::LOOP) != FL::NIL) {
          // In loop mode, we must make the file buffer appear to be of infinite length in terms of the read/write
          // position marker.
@@ -1676,7 +1675,7 @@ static ERR FILE_Write(extFile *Self, struct acWrite *Args)
             len = Self->Size - (Self->Position % Self->Size); // Calculate amount of space ahead of us.
             if (len > writelen) len = writelen; // Restrict the length to the requested amount to write.
 
-            copymem(src, Self->Buffer + (Self->Position % Self->Size), len);
+            copymem(src, Self->Buffer.data() + (Self->Position % Self->Size), len);
             src += len;
             Self->Position += len;
          }
@@ -1688,16 +1687,14 @@ static ERR FILE_Write(extFile *Self, struct acWrite *Args)
          if (Self->Position + Args->Length > Self->Size) {
             // Increase the size of the buffer to cater for the write.  A null byte (not included in the official size)
             // is always placed at the end.
-            if (!ReallocMemory(Self->Buffer, Self->Position + Args->Length + 1, (APTR *)&Self->Buffer)) {
-               Self->Size = Self->Position + Args->Length;
-               Self->Buffer[Self->Size] = 0;
-            }
-            else return log.warning(ERR::ReallocMemory);
+            Self->Buffer.resize(Self->Position + Args->Length + 1);
+            Self->Size = Self->Position + Args->Length;
+            Self->Buffer[Self->Size] = 0;
          }
 
          Args->Result = Args->Length;
 
-         copymem(Args->Buffer, Self->Buffer + Self->Position, Args->Result);
+         copymem(Args->Buffer, Self->Buffer.data() + Self->Position, Args->Result);
 
          Self->Position += Args->Result;
          return ERR::Okay;
@@ -1754,7 +1751,7 @@ the address of that buffer.  The size of the buffer will match the #Size field.
 
 static ERR GET_Buffer(extFile *Self, std::span<int8_t> &Array)
 {
-   Array = std::span<int8_t>(Self->Buffer, Self->Size);
+   Array = std::span<int8_t>(Self->Buffer.data(), std::size_t(Self->Size));
    return ERR::Okay;
 }
 
@@ -2513,7 +2510,7 @@ static ERR GET_Size(extFile *Self, int64_t *Size)
       }
       else return convert_errno(errno, ERR::SystemCall);
    }
-   else if (Self->Buffer) {
+   else if ((Self->Flags & FL::BUFFER) != FL::NIL) {
       *Size = Self->Size;
       return ERR::Okay;
    }
@@ -2538,10 +2535,11 @@ static ERR SET_Size(extFile *Self, int64_t Size)
    if (Size IS Self->Size) return ERR::Okay;
    if (Size < 0) return log.warning(ERR::OutOfRange);
 
-   if (Self->Buffer) {
+   if ((Self->Flags & FL::BUFFER) != FL::NIL) {
       if (Self->initialised()) return ERR::NoSupport;
-      else Self->Size = Size;
-
+      Self->Size = Size;
+      Self->Buffer.resize(Size + 1);
+      Self->Buffer[Size] = 0;
       if (Self->Position > Self->Size) Self->seekStart(Size);
       return ERR::Okay;
    }
@@ -2751,7 +2749,6 @@ extFile::~extFile() {
 #endif
 
    if (prvList) FreeResource(prvList);
-   if (Buffer)  FreeResource(Buffer);
 
    if (Handle != -1) {
       if (close(Handle) IS -1) {
@@ -2783,7 +2780,7 @@ static const FieldArray FileFields[] = {
    { "Src",          FDF_SYNONYM },
    { "Flags",        FDF_INTFLAGS|FDF_RW, nullptr, SET_Flags, &clFileFlags },
    { "Permissions",  FDF_INTFLAGS|FDF_RW, GET_Permissions, SET_Permissions, &clFilePERMIT },
-   { "Buffer",       FDF_ARRAY|FDF_BYTE|FDF_R|FDF_PURE, GET_Buffer },
+   { "Buffer",       FDF_VECTOR|FDF_BYTE|FDF_R|FDF_PURE, GET_Buffer },
    { "Size",         FDF_INT64|FDF_RW, GET_Size, SET_Size },
    // Virtual fields
    { "Date",         FDF_VIRTUAL|FDF_STRUCT|FDF_RW,        GET_Date, SET_Date, "DateTime" },

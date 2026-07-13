@@ -403,14 +403,15 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
 
    auto bitpos = SAMPLE(Position >> sample_shift(sample.SampleType));
 
-   if (!sample.Data) { // The sample reference must be valid and not stale.
+   if (sample.Data.empty()) { // The sample reference must be valid and not stale.
       log.warning("On channel %d, referenced sample %d is unconfigured.", Handle, channel->SampleHandle);
       return ERR::Failed;
    }
 
    if (sample.Stream) {
       if (Position > sample.StreamLength) return log.warning(ERR::OutOfRange);
-      sample.PlayPos = BYTELEN(Position) + fill_stream_buffer(Handle, sample, Position);
+      sample.BufferedLength = fill_stream_buffer(Handle, sample, Position);
+      sample.PlayPos = BYTELEN(Position) + sample.BufferedLength;
       Position = 0; // Internally we want to start from byte position zero in our stream buffer
    }
    else if (bitpos > sample.SampleLength) return log.warning(ERR::OutOfRange);
@@ -634,7 +635,7 @@ ERR MixSample(objAudio *Audio, int Handle, int SampleIndex)
    if ((idx <= 0) or (idx >= (int)((extAudio *)Audio)->Samples.size())) {
       return log.warning(ERR::OutOfRange);
    }
-   else if (!((extAudio *)Audio)->Samples[idx].Data) {
+   else if (((extAudio *)Audio)->Samples[idx].Data.empty()) {
       log.warning("Sample #%d refers to a dead sample.", idx);
       return ERR::Failed;
    }

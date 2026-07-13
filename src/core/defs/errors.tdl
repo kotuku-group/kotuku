@@ -57,7 +57,7 @@ function declareErrors()
     "LostOwner",                     -- The object has lost its container
     "DoNotExpunge",                  -- Do not expunge yet
     "MemoryCorrupt",                 -- The memory block is corrupt
-    "FieldSearch",                   -- Requested field not found
+    "FieldNotFound",                 -- Requested field not found
     "InvalidPath",                   -- Invalid file or folder path detected
     "SetField",                      -- An unspecific error occurred during a SetField() operation
     "MarkedForDeletion",             -- A resource cannot be accessed as it is marked for deletion

@@ -75,10 +75,20 @@ struct FUNCTION {
    // The CALL::STDC constructor is managed by C_FUNCTION() in order to prevent problems with
    // implicit type conversion.
 
+   inline void disable() { Type = CALL::NIL; }
    inline void clear() { Type = CALL::NIL; Flags = 0; MetaValue = 0; Routine = nullptr; }
    inline bool isC() const { return Type IS CALL::STD_C; }
    inline bool isScript() const { return Type IS CALL::SCRIPT; }
    inline bool defined() const { return Type != CALL::NIL; }
+
+   inline bool releaseIfStale() {
+      if (stale()) {
+         unpin();
+         disable();
+         return true;
+      }
+      else return false;
+   }
 
    // Weak-pin management for stale callback detection; refer to the zombie object contract in objects.h.
    // Defined in modules/core.h once Object is complete.

@@ -1536,7 +1536,12 @@ function serverIncoming(self, ClientSocket)
 
       -- Get client IP for rate limiting
       local ip = ClientSocket.client?.ip
-      state.ip = ip and mNet.AddressToStr(ip) or 'unknown'
+      if ip then
+         err, ip_str = mNet.AddressToStr(ip)
+         state.ip = (err is ERR_Okay) ? ip_str :> 'unknown'
+      else
+         state.ip = 'unknown'
+      end
 
       -- Check rate limit
       if not checkRateLimit(self, state.ip) then

@@ -133,8 +133,8 @@ FDEF maExposeToDisplay[] = { { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT
 FDEF maInvalidateRegion[] = { { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, { "Height", FD_INT }, { 0, 0 } };
 FDEF maSetDisplay[] = { { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, { "Height", FD_INT }, { "InsideWidth", FD_INT }, { "InsideHeight", FD_INT }, { "BitsPerPixel", FD_INT }, { "RefreshRate", FD_DOUBLE }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maSetOpacity[] = { { "Value", FD_DOUBLE }, { "Adjustment", FD_DOUBLE }, { 0, 0 } };
-FDEF maAddCallback[] = { { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
-FDEF maRemoveCallback[] = { { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
+FDEF maAddCallback[] = { { "Callback", FD_FUNCTION }, { 0, 0 } };
+FDEF maRemoveCallback[] = { { "Callback", FD_FUNCTION }, { 0, 0 } };
 FDEF maScheduleRedraw[] = { { "RefreshRate", FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clSurfaceMethods[] = {
@@ -150,12 +150,12 @@ static const struct MethodEntry clSurfaceMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR SURFACE_NewPlacement(extSurface *Self) {
+static ERR SURFACE_New(extSurface *Self) {
    new (Self) extSurface(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR SURFACE_FreePlacement(extSurface *Self) {
+static ERR SURFACE_Free(extSurface *Self) {
    Self->~extSurface();
    return ERR::Okay;
 }
@@ -166,7 +166,7 @@ static const struct ActionArray clSurfaceActions[] = {
    { AC::Draw, SURFACE_Draw },
    { AC::Enable, SURFACE_Enable },
    { AC::Focus, SURFACE_Focus },
-   { AC::FreePlacement, SURFACE_FreePlacement },
+   { AC::Free, SURFACE_Free },
    { AC::Hide, SURFACE_Hide },
    { AC::Init, SURFACE_Init },
    { AC::LostFocus, SURFACE_LostFocus },
@@ -174,8 +174,8 @@ static const struct ActionArray clSurfaceActions[] = {
    { AC::MoveToBack, SURFACE_MoveToBack },
    { AC::MoveToFront, SURFACE_MoveToFront },
    { AC::MoveToPoint, SURFACE_MoveToPoint },
+   { AC::New, SURFACE_New },
    { AC::NewOwner, SURFACE_NewOwner },
-   { AC::NewPlacement, SURFACE_NewPlacement },
    { AC::Redimension, SURFACE_Redimension },
    { AC::Resize, SURFACE_Resize },
    { AC::SaveImage, SURFACE_SaveImage },

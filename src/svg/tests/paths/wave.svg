@@ -16,18 +16,18 @@
   <rect fill="#FFFFFF" width="100%" height="100%"/>
   <switch>
     <g requiredExtensions="http://www.kotuku.dev/TR/Kotuku/1.0">
-      <kotuku:wave fill="green" y="5%" length="100%" decay="0.5" amplitude="8%" close="top" frequency="6"/>
-      <kotuku:wave fill="none" y="5%" stroke="url(#helix)" stroke-width="16" length="100%" decay="0.5" amplitude="8%" frequency="6"/>
+      <kotuku:wave fill="green" y="5%" length="100%" decay="0.2" amplitude="8%" close="top" frequency="6"/>
+      <kotuku:wave fill="none" y="5%" stroke="url(#helix)" stroke-width="16" length="100%" decay="0.2" amplitude="8%" frequency="6"/>
 
       <kotuku:wave fill="red" stroke="red" x="0" y="85%" length="100%" amplitude="15%" close="bottom" frequency="4"/>
 
-      <kotuku:wave type="triangle" fill="turquoise" thickness="20" x="0" y="50%" length="100%" amplitude="100" frequency="9" fill-opacity="0.5"/>
+      <kotuku:wave type="triangle" fill="turquoise" thickness="20" x="0" y="50%" length="100%" amplitude="100" frequency="9" fill-opacity="0.5" stroke-linejoin="miter" stroke-linecap="miter"/>
       <kotuku:wave type="triangle" fill="none" stroke="url(#chain)" stroke-width="12" x="0" y="50%" length="100%" amplitude="100" frequency="9"/>
 
       <!-- This example utilises the stroke-width as opposed to thickness -->
-      <kotuku:wave fill="none" stroke="url(#LinearGradient)" stroke-width="40" x="0" y="25%" length="105%" amplitude="100" decay="-2" frequency="8"/>
+      <kotuku:wave fill="none" stroke="url(#LinearGradient)" stroke-width="40" x="0" y="25%" length="105%" amplitude="100" decay="-2" frequency="8" frequencyEnd="20"/>
 
-      <kotuku:wave fill="yellow" thickness="6" type="sawtooth" stroke="black" frequency="16" x="0" y="70%" length="100%" amplitude="20"/>
+      <kotuku:wave fill="yellow" thickness="6" type="sawtooth" stroke="black" frequency="16" x="0" y="70%" length="100%" amplitude="20" stroke-linejoin="miter" stroke-linecap="miter"/>
     </g>
 
     <text x="50%" y="50%" fill="black" font-family="Arial, sans-serif" font-size="48" text-anchor="middle" dominant-baseline="middle">Requires Kotuku framework</text>

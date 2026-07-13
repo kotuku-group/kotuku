@@ -785,7 +785,7 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 
 *********************************************************************************************************************/
 
-static ERR CONVOLVEFX_GET_XMLDef(extConvolveFX *Self, std::string_view &Value)
+static ERR CONVOLVEFX_GET_XMLDef(extConvolveFX *Self, std::string &Value)
 {
    std::stringstream stream;
 
@@ -845,12 +845,8 @@ static ERR CONVOLVEFX_GET_XMLDef(extConvolveFX *Self, std::string_view &Value)
 
    if (Self->PreserveAlpha) stream << " preserveAlpha=\"true\"";
 
-   auto cppstr = stream.str();
-   if (auto str = strclone(stream.str())) {
-      Value = std::string_view{str, cppstr.size()};
-      return ERR::Okay;
-   }
-   else return ERR::AllocMemory;
+   Value = stream.str();
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -869,7 +865,7 @@ static const FieldArray clConvolveFXFields[] = {
    { "TargetY",       FDF_INT|FDF_RI,    nullptr, CONVOLVEFX_SET_TargetY },
    { "UnitX",         FDF_DOUBLE|FDF_RI, nullptr, CONVOLVEFX_SET_UnitX },
    { "UnitY",         FDF_DOUBLE|FDF_RI, nullptr, CONVOLVEFX_SET_UnitY },
-   { "XMLDef",        FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R,  CONVOLVEFX_GET_XMLDef },
+   { "XMLDef",        FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE,  CONVOLVEFX_GET_XMLDef },
    END_FIELD
 };
 

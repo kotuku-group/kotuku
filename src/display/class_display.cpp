@@ -260,10 +260,9 @@ static ERR DISPLAY_DataFeed(extDisplay *Self, struct acDataFeed *Args)
          auto result = xml.str();
          dc.Object   = Self;
          dc.Datatype = DATA::RECEIPT;
-         dc.Buffer   = kt::strclone(result);
+         dc.Buffer   = result.c_str();
          dc.Size     = result.size() + 1;
          auto error = Action(AC::DataFeed, Args->Object, &dc);
-         FreeResource(dc.Buffer);
          return error;
       }
       else return log.warning(ERR::NoSupport);

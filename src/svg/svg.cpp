@@ -171,6 +171,7 @@ private:
    void applyTag(const XTag &) noexcept;
    void applyStateToVector(objVector *) const noexcept;
    const kt::vector<GradientStop> process_gradient_stops(const XTag &) noexcept;
+   FRGB resolve_stop_colour(const XTag &) noexcept;
    ERR  set_property(objVector *, uint32_t, XTag &, const std::string) noexcept;
    ERR  process_tag(XTag &, XTag &, OBJECTPTR, objVector * &) noexcept;
 

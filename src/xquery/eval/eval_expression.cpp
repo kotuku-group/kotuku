@@ -271,6 +271,7 @@ static ERR resolve_variable_callback(XPathEvaluator &Evaluator, std::string_view
    XPathVal &OutValue, const XPathNode *ReferenceNode)
 {
    if (not Evaluator.query->ResolveVariable.defined()) return ERR::Search;
+   if (Evaluator.query->ResolveVariable.releaseIfStale()) return ERR::Search;
 
    std::string cache_key(Name);
 

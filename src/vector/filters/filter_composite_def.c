@@ -27,21 +27,21 @@ static const struct FieldDef clCompositeFXOP[] = {
    { nullptr, 0 }
 };
 
-static ERR COMPOSITEFX_NewPlacement(extCompositeFX *Self) {
+static ERR COMPOSITEFX_New(extCompositeFX *Self) {
    new (Self) extCompositeFX(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR COMPOSITEFX_FreePlacement(extCompositeFX *Self) {
+static ERR COMPOSITEFX_Free(extCompositeFX *Self) {
    Self->~extCompositeFX();
    return ERR::Okay;
 }
 
 static const struct ActionArray clCompositeFXActions[] = {
    { AC::Draw, COMPOSITEFX_Draw },
-   { AC::FreePlacement, COMPOSITEFX_FreePlacement },
+   { AC::Free, COMPOSITEFX_Free },
    { AC::Init, COMPOSITEFX_Init },
-   { AC::NewPlacement, COMPOSITEFX_NewPlacement },
+   { AC::New, COMPOSITEFX_New },
    { AC::NIL, nullptr }
 };
 

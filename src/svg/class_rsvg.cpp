@@ -22,7 +22,7 @@ public:
    inline objSVG * svg() { return (objSVG *)DerivedPtr; }
 
    ~extRSVG() {
-      // Manual termination required because Free's use of FreeResource treats DerivedPtr as a generic memory block.
+      // Manual termination required because Free treats DerivedPtr as a generic memory block.
       if (DerivedPtr) { FreeResource(((objSVG *)DerivedPtr)->UID); DerivedPtr = nullptr; }
    }
 
@@ -50,7 +50,7 @@ static ERR RSVG_Activate(extRSVG *Self)
 
 //********************************************************************************************************************
 
-static ERR RSVG_FreePlacement(extRSVG *Self)
+static ERR RSVG_Free(extRSVG *Self)
 {
    Self->~extRSVG();
    return ERR::Okay;
@@ -79,7 +79,7 @@ static ERR RSVG_Init(extRSVG *Self)
    }
    else return ERR::NoSupport;
 
-   log.trace("File \"%s\" is in SVG format.", path);
+   log.trace("File \"%.*s\" is in SVG format.", int(path.size()), path.data());
 
    Self->Flags |= PCF::SCALABLE;
 
@@ -89,7 +89,7 @@ static ERR RSVG_Init(extRSVG *Self)
 
 //********************************************************************************************************************
 
-static ERR RSVG_NewPlacement(extRSVG *Self)
+static ERR RSVG_New(extRSVG *Self)
 {
    new (Self) extRSVG(Self->Class, Self->UID);
    return ERR::Okay;
@@ -212,12 +212,12 @@ static ERR RSVG_Resize(extRSVG *Self, struct acResize *Args)
 //********************************************************************************************************************
 
 static const ActionArray clActions[] = {
-   { AC::Activate,      RSVG_Activate },
-   { AC::FreePlacement, RSVG_FreePlacement },
-   { AC::Init,          RSVG_Init },
-   { AC::NewPlacement,  RSVG_NewPlacement },
-   { AC::Query,         RSVG_Query },
-   { AC::Resize,        RSVG_Resize },
+   { AC::Activate, RSVG_Activate },
+   { AC::Free,     RSVG_Free },
+   { AC::Init,     RSVG_Init },
+   { AC::New,      RSVG_New },
+   { AC::Query,    RSVG_Query },
+   { AC::Resize,   RSVG_Resize },
    { AC::NIL, nullptr }
 };
 

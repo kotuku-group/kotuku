@@ -18,6 +18,15 @@ inline BYTELEN &operator += (BYTELEN &a, BYTELEN b) { return (BYTELEN &)(((int &
 
 inline SAMPLE &operator -= (SAMPLE &a, SAMPLE b) { return (SAMPLE &)(((int &)a) -= ((int)b)); }
 
+inline void release_audio_callback(FUNCTION &Function)
+{
+   if (Function.defined()) {
+      if (Function.isScript() and (not Function.stale())) ((objScript *)Function.Context)->derefProcedure(Function);
+      Function.unpin();
+      Function.disable();
+   }
+}
+
 // Audio channel commands
 
 enum class CMD : int {
@@ -58,12 +67,12 @@ typedef struct _GUID {
 } GUID;
 
 typedef struct WAVEFormat {
-   int16_t Format;               // Type of WAVE data in the chunk: RAW or ADPCM
-   int16_t Channels;             // Number of channels, 1=mono, 2=stereo
-   int Frequency;            // Playback frequency
-   int AvgBytesPerSecond;    // Channels * SamplesPerSecond * (BitsPerSample / 8)
-   int16_t BlockAlign;           // Channels * (BitsPerSample / 8)
-   int16_t BitsPerSample;        // Bits per sample
+   int16_t Format;            // Type of WAVE data in the chunk: RAW or ADPCM
+   int16_t Channels;          // Number of channels, 1=mono, 2=stereo
+   int Frequency;             // Playback frequency
+   int AvgBytesPerSecond;     // Channels * SamplesPerSecond * (BitsPerSample / 8)
+   int16_t BlockAlign;        // Channels * (BitsPerSample / 8)
+   int16_t BitsPerSample;     // Bits per sample
    int16_t ExtraLength;
 } WAVEFORMATEX;
 
@@ -81,7 +90,7 @@ struct PlatformData { void *Void; };
 struct AudioSample {
    FUNCTION Callback;     // For feeding audio streams.
    FUNCTION OnStop;       // Called when playback stops.
-   uint8_t *  Data;         // Pointer to the sample data.
+   std::vector<uint8_t> Data; // Sample data.
    SAMPLE   Loop1Start;   // Start of the first loop
    SAMPLE   Loop1End;     // End of the first loop
    SAMPLE   Loop2Start;   // Start of the second loop
@@ -89,6 +98,7 @@ struct AudioSample {
    SAMPLE   SampleLength; // Length of the Data sample/buffer.  Measured in samples
    BYTELEN  StreamLength; // Streams only.  Total byte-length of the sample data that is being streamed.
    BYTELEN  PlayPos;      // Current read position relative to StreamLength/SampleLength, measured in bytes
+   BYTELEN  BufferedLength; // Streams only.  Valid source bytes in the current rolling buffer.
    LOOP     LoopMode;     // Loop mode (single, double)
    SFM      SampleType;   // Type of sample (bit format)
    LTYPE    Loop1Type;    // First loop type (unidirectional, bidirectional)
@@ -96,7 +106,6 @@ struct AudioSample {
    bool     Stream;       // True if this is a stream
 
    AudioSample() {
-      Data     = nullptr;
       Stream   = false;
       clear();
    }
@@ -106,17 +115,16 @@ struct AudioSample {
    }
 
    void clear() {
-      if (Data) FreeResource(Data);
-
       Callback.clear();
       OnStop.clear();
-      Data         = nullptr;
+      std::vector<uint8_t>().swap(Data);
       SampleLength = SAMPLE(0);
       Loop1Start   = SAMPLE(0);
       Loop1End     = SAMPLE(0);
       Loop2Start   = SAMPLE(0);
       Loop2End     = SAMPLE(0);
       StreamLength = BYTELEN(0);
+      BufferedLength = BYTELEN(0);
       SampleType   = SFM::NIL;
       LoopMode     = LOOP::NIL;
       Loop1Type    = LTYPE::NIL;
@@ -224,22 +232,20 @@ class extAudio : public objAudio {
    std::vector<VolumeCtl> Volumes;
    std::vector<MixTimer> MixTimers;
    AudioConfig MixConfig;
-   APTR  MixBuffer;
+   std::vector<float> MixBuffer;
    APTR  TaskRemovedHandle;
    APTR  UserLoginHandle;
    #ifdef _WIN32
       uint8_t  PlatformData[128];  // Data area for holding platform/hardware specific information
    #endif
    #ifdef ALSA_ENABLED
-      uint8_t *AudioBuffer;
+      std::vector<uint8_t> AudioBuffer;
       snd_pcm_t    *Handle;
       snd_mixer_t  *MixHandle;
       snd_output_t *sndlog;
-      BYTELEN AudioBufferSize;    // Buffer size measured in bytes
    #endif
    double  MasterVolume;
    TIMER   Timer;
-   BYTELEN MixBufferSize;
    SAMPLE  MixElements;
    int     MaxChannels;    // Recommended maximum mixing channels for Sound class
    std::string Device;

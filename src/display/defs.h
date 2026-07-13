@@ -578,6 +578,15 @@ extern std::recursive_mutex glFocusLock;
 extern std::recursive_mutex glSurfaceLock;
 extern std::recursive_mutex glInputLock;
 
+inline void release_display_callback(FUNCTION &Function)
+{
+   if (Function.defined()) {
+      if (Function.isScript() and (not Function.stale())) ((objScript *)Function.Context)->derefProcedure(Function);
+      Function.unpin();
+      Function.disable();
+   }
+}
+
 // Thread-specific variables.
 
 extern thread_local int16_t tlNoDrawing, tlNoExpose, tlVolatileIndex;
@@ -721,8 +730,7 @@ inline int find_surface_list(extSurface *Surface, int Limit = -1)
 {
    if (Limit IS -1) Limit = int(glSurfaces.size());
    else if (Limit > int(glSurfaces.size())) {
-      kt::Log log(__FUNCTION__);
-      log.warning("Invalid Limit parameter of %d (max %d)", Limit, int(glSurfaces.size()));
+      kt::Log(__FUNCTION__).warning("Invalid Limit parameter of %d (max %d)", Limit, int(glSurfaces.size()));
       Limit = int(glSurfaces.size());
    }
 
@@ -737,8 +745,7 @@ inline int find_surface_list(OBJECTID SurfaceID, int Limit = -1)
 {
    if (Limit IS -1) Limit = int(glSurfaces.size());
    else if (Limit > int(glSurfaces.size())) {
-      kt::Log log(__FUNCTION__);
-      log.warning("Invalid Limit parameter of %d (max %d)", Limit, int(glSurfaces.size()));
+      kt::Log(__FUNCTION__).warning("Invalid Limit parameter of %d (max %d)", Limit, int(glSurfaces.size()));
       Limit = int(glSurfaces.size());
    }
 

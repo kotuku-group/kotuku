@@ -212,7 +212,7 @@ subscriptions, nor is there any handling for multiple copies of a subscription t
 
 -INPUT-
 int(DRT) Trigger: The unique identifier for the trigger.
-ptr(func) Function: The function to call when the trigger activates.
+func Function: The function to call when the trigger activates.
 
 -ERRORS-
 Okay
@@ -227,20 +227,28 @@ mutates-object, callback-held
 
 static ERR DOCUMENT_AddListener(extDocument *Self, doc::AddListener *Args)
 {
-   if ((not Args) or (Args->Trigger IS DRT::NIL) or (not Args->Function)) return ERR::NullArgs;
+   bool retained_callback = false;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (not retained_callback)) Args->Function.consume();
+   });
+
+   if ((not Args) or (Args->Trigger IS DRT::NIL) or (not Args->Function.defined())) return ERR::NullArgs;
    if (not valid_trigger(Args->Trigger)) return ERR::OutOfRange;
 
    bool subscribe_context = false;
-   if (Args->Function->isScript()) {
-      subscribe_context = not has_script_free_callback(Self, Args->Function->Context);
+   if (Args->Function.isScript()) {
+      subscribe_context = not has_script_free_callback(Self, Args->Function.Context);
    }
 
-   Self->Triggers[int(Args->Trigger)].push_back(*Args->Function);
+   Self->Triggers[int(Args->Trigger)].push_back(Args->Function);
+   Args->Function.pin();
+   retained_callback = true;
 
    // Scripts can't auto-remove listeners, so a Free subscription is necessary.  Functional
    // subscribers are expected to self-manage however.
 
-   if (subscribe_context) SubscribeAction(Args->Function->Context, AC::Free, C_FUNCTION(notify_free_script_context));
+   if (subscribe_context) SubscribeAction(Args->Function.Context, AC::Free, C_FUNCTION(notify_free_script_context));
    return ERR::Okay;
 }
 
@@ -1671,18 +1679,18 @@ resulting data.
 int(DATA) Format: Set to `TEXT` to receive plain-text, `RAW` to receive the original byte-code, or `XML` to receive a textual XML serialisation of the stream.
 int Start:  An index in the document stream from which data will be extracted.
 int End:    An index in the document stream at which extraction will stop.
-!str Result: The data is returned in this parameter as an allocated string.
+^&string Result: The data is returned in this parameter.
 
 -ERRORS-
 Okay
 NullArgs
 OutOfRange: The Start index is not within the stream.
+NoData: No data was extractable - applies to XML type only; other types return an empty string.
 Args
-NoData: Operation successful, but no data was present for extraction.
 AllocMemory
 
 -TAGS-
-pure-query, caller-owns-result, null-terminated-result
+pure-query
 
 *********************************************************************************************************************/
 
@@ -1690,9 +1698,7 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
 {
    kt::Log log(__FUNCTION__);
 
-   if (not Args) return log.warning(ERR::NullArgs);
-
-   Args->Result = nullptr;
+   if ((not Args) or (not Args->Result)) return log.warning(ERR::NullArgs);
 
    if ((Args->Start < 0) or (Args->Start >= std::ssize(Self->Stream))) return log.warning(ERR::OutOfRange);
    if (Args->End <= Args->Start) return log.warning(ERR::Args);
@@ -1711,21 +1717,13 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
          }
       }
 
-      auto str = buffer.str();
-      if (str.empty()) return ERR::NoData;
-      if ((Args->Result = strclone(str))) return ERR::Okay;
-      else return log.warning(ERR::AllocMemory);
+      *Args->Result = std::move(buffer).str();
+      return ERR::Okay;
    }
    else if (Args->Format IS DATA::RAW) {
-      STRING output;
       auto size = (end - Args->Start) * INDEX(sizeof(stream_code));
-      if (!AllocMemory(size + 1, MEM::NO_CLEAR, (APTR *)&output)) {
-         copymem(Self->Stream.data.data() + Args->Start, output, size);
-         output[size] = 0;
-         Args->Result = output;
-         return ERR::Okay;
-      }
-      else return log.warning(ERR::AllocMemory);
+      Args->Result->assign((CSTRING)(Self->Stream.data.data() + Args->Start), size);
+      return ERR::Okay;
    }
    else if (Args->Format IS DATA::XML) {
       std::ostringstream buffer;
@@ -1742,9 +1740,8 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
 
       if (not has_content) return ERR::NoData;
 
-      auto str = buffer.str();
-      if ((Args->Result = strclone(str))) return ERR::Okay;
-      else return log.warning(ERR::AllocMemory);
+      *Args->Result = std::move(buffer).str();
+      return ERR::Okay;
    }
    else return log.warning(ERR::Args);
 }
@@ -1855,7 +1852,7 @@ This method removes a previously configured listener from the document.  The ori
 
 -INPUT-
 int Trigger: The unique identifier for the trigger.
-ptr(func) Function: The function that is called when the trigger activates.
+func Function: The function that is called when the trigger activates.
 
 -ERRORS-
 Okay
@@ -1870,31 +1867,31 @@ mutates-object
 static ERR DOCUMENT_RemoveListener(extDocument *Self, doc::RemoveListener *Args)
 {
    auto consume_callback = kt::Defer([&]() {
-      if ((Args) and (Args->Function)) Args->Function->consume();
+      if (Args) Args->Function.consume();
    });
 
-   if ((not Args) or (not Args->Trigger) or (not Args->Function)) return ERR::NullArgs;
+   if ((not Args) or (not Args->Trigger) or (not Args->Function.defined())) return ERR::NullArgs;
    if (not valid_trigger(Args->Trigger)) return ERR::OutOfRange;
 
    if (Self->Unloading) return ERR::Okay; // Do nothing, termination will take care of cleaning up.
 
-   if (Args->Function->isC()) {
+   if (Args->Function.isC()) {
       for (auto it = Self->Triggers[Args->Trigger].begin(); it != Self->Triggers[Args->Trigger].end(); it++) {
-         if ((it->isC()) and (it->Routine IS Args->Function->Routine)) {
+         if ((it->isC()) and (it->Routine IS Args->Function.Routine)) {
             deref_document_callback(*it);
             Self->Triggers[Args->Trigger].erase(it);
             return ERR::Okay;
          }
       }
    }
-   else if (Args->Function->isScript()) {
-      auto context = Args->Function->Context;
+   else if (Args->Function.isScript()) {
+      auto context = Args->Function.Context;
       bool removed_listener = false;
 
       for (auto it = Self->Triggers[Args->Trigger].begin(); it != Self->Triggers[Args->Trigger].end(); it++) {
          if ((it->isScript()) and
-                (it->Context IS Args->Function->Context) and
-                (it->ProcedureID IS Args->Function->ProcedureID)) {
+                (it->Context IS Args->Function.Context) and
+                (it->ProcedureID IS Args->Function.ProcedureID)) {
             deref_document_callback(*it);
             Self->Triggers[Args->Trigger].erase(it);
             removed_listener = true;
@@ -1924,10 +1921,10 @@ static ERR DOCUMENT_SaveToObject(extDocument *Self, struct acSaveToObject *Args)
 
    log.branch("Destination: %d", Args->Dest->UID);
 
-   doc::ReadContent read = { DATA::XML, 0, int(Self->Stream.size()), nullptr };
+   std::string result;
+   doc::ReadContent read = { DATA::XML, 0, int(Self->Stream.size()), &result };
    if (auto error = DOCUMENT_ReadContent(Self, &read); !error) {
-      error = acWrite(Args->Dest, read.Result, strlen(read.Result), nullptr);
-      FreeResource(read.Result);
+      error = acWrite(Args->Dest, result.data(), result.size(), nullptr);
       if (!error) return ERR::Okay;
       else return log.warning(ERR::Write);
    }

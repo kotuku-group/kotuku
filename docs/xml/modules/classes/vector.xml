@@ -110,6 +110,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
+        <error code="NotFound">A search routine in this function failed</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object, closes-handle</tags>
@@ -159,7 +160,6 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object, object-owns-result, creates-resource</tags>
@@ -209,11 +209,11 @@
     <method>
       <name>SubscribeFeedback</name>
       <comment>Subscribe to events that relate to the vector.</comment>
-      <prototype>ERR vec::SubscribeFeedback(OBJECTPTR Object, FM Mask, FUNCTION * Callback)</prototype>
+      <prototype>ERR vec::SubscribeFeedback(OBJECTPTR Object, FM Mask, FUNCTION Callback)</prototype>
       <tiriPrototype>err = SubscribeFeedback(Mask:num, Callback:func)</tiriPrototype>
       <input>
         <param type="FM" name="Mask" lookup="FM">Defines the feedback events required by the client.  Set to <code>0xffffffff</code> if all messages are required.</param>
-        <param type="FUNCTION *" name="Callback">The function that will receive feedback events.</param>
+        <param type="FUNCTION" name="Callback">The function that will receive feedback events.</param>
       </input>
       <description>
 <p>Use this method to receive feedback for events that have affected the state of a vector.</p>
@@ -231,11 +231,11 @@
     <method>
       <name>SubscribeInput</name>
       <comment>Create a subscription for input events that relate to the vector.</comment>
-      <prototype>ERR vec::SubscribeInput(OBJECTPTR Object, JTYPE Mask, FUNCTION * Callback)</prototype>
+      <prototype>ERR vec::SubscribeInput(OBJECTPTR Object, JTYPE Mask, FUNCTION Callback)</prototype>
       <tiriPrototype>err = SubscribeInput(Mask:num, Callback:func)</tiriPrototype>
       <input>
         <param type="JTYPE" name="Mask" lookup="JTYPE">Combine <code>JTYPE</code> flags to define the input messages required by the client.  Set to zero to remove an existing subscription.</param>
-        <param type="FUNCTION *" name="Callback">Reference to a function that will receive input messages.</param>
+        <param type="FUNCTION" name="Callback">Reference to a function that will receive input messages.</param>
       </input>
       <description>
 <p>The SubscribeInput method filters events from <function module="Display">SubscribeInput</function> by limiting their relevance to that of the target vector.  The original events are transferred with some modifications - <code>X</code>, <code>Y</code>, <code>AbsX</code> and <code>AbsY</code> are converted to the vector's coordinate system, and <code>CROSSED_IN</code> and <code>CROSSED_OUT</code> events are triggered during passage through the clipping area.</p>
@@ -257,10 +257,10 @@
     <method>
       <name>SubscribeKeyboard</name>
       <comment>Create a subscription for input events that relate to the vector.</comment>
-      <prototype>ERR vec::SubscribeKeyboard(OBJECTPTR Object, FUNCTION * Callback)</prototype>
+      <prototype>ERR vec::SubscribeKeyboard(OBJECTPTR Object, FUNCTION Callback)</prototype>
       <tiriPrototype>err = SubscribeKeyboard(Callback:func)</tiriPrototype>
       <input>
-        <param type="FUNCTION *" name="Callback">Reference to a callback function that will receive input messages.</param>
+        <param type="FUNCTION" name="Callback">Reference to a callback function that will receive input messages.</param>
       </input>
       <description>
 <p>The SubscribeKeyboard() method provides a callback mechanism for handling keyboard events.  Events are reported when the vector or one of its children has the user focus.  It is a pre-requisite that the associated <class name="VectorScene">VectorScene</class> has been linked to a <class name="Surface">Surface</class>.</p>
@@ -282,10 +282,10 @@
     <method>
       <name>Trace</name>
       <comment>Returns the coordinates for a vector path, using callbacks.</comment>
-      <prototype>ERR vec::Trace(OBJECTPTR Object, FUNCTION * Callback, DOUBLE Scale, INT Transform)</prototype>
+      <prototype>ERR vec::Trace(OBJECTPTR Object, FUNCTION Callback, DOUBLE Scale, INT Transform)</prototype>
       <tiriPrototype>err = Trace(Callback:func, Scale:num, Transform:num)</tiriPrototype>
       <input>
-        <param type="FUNCTION *" name="Callback">A function to call with the path coordinates.</param>
+        <param type="FUNCTION" name="Callback">A function to call with the path coordinates.</param>
         <param type="DOUBLE" name="Scale">Set to <code>1.0</code> (recommended) to trace the path at a scale of 1 to 1.</param>
         <param type="INT" name="Transform">Set to <code>true</code> if all transforms applicable to the vector should be applied to the path.</param>
       </input>
@@ -536,8 +536,8 @@
     <field>
       <name>Matrices</name>
       <comment>A linked list of transform matrices that have been applied to the vector.</comment>
-      <access read="R">Read</access>
-      <type>struct VectorMatrix *</type>
+      <access read="G">Get</access>
+      <type>struct VectorMatrix</type>
       <description>
 <p>All transforms that have been allocated via <function module="Vector">NewMatrix</function> can be read from the Matrices field.  Each transform is represented by the <st>VectorMatrix</st> structure, and are linked in the order in which they are added to the vector.</p>
 <struct lookup="VectorMatrix"/>

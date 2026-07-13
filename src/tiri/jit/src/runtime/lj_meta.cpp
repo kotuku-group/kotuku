@@ -37,7 +37,7 @@ static TiriType lj_tag_to_tiri_type(uint32_t tag)
       case LJ_TFALSE:
       case LJ_TTRUE:   return TiriType::Bool;
       case LJ_TSTR:    return TiriType::Str;
-      case LJ_TTHREAD: return TiriType::Thread;
+      case LJ_TSTRUCT: return TiriType::Struct;
       case LJ_TFUNC:   return TiriType::Func;
       case LJ_TOBJECT: return TiriType::Object;
       case LJ_TTAB:    return TiriType::Table;
@@ -99,6 +99,11 @@ cTValue * lj_meta_lookup(lua_State *L, cTValue *o, MMS mm)
       mt = tabref(objectV(o)->metatable);
       if (not mt) mt = tabref(basemt_it(G(L), LJ_TOBJECT));
    }
+   else if (tvisstruct(o)) {
+      // Check per-instance metatable first, then fall back to base metatable
+      mt = tabref(structV(o)->metatable);
+      if (not mt) mt = tabref(basemt_it(G(L), LJ_TSTRUCT));
+   }
    else mt = tabref(basemt_obj(G(L), o));
 
    if (mt) {
@@ -120,7 +125,7 @@ int lj_meta_tailcall(lua_State *L, cTValue *tv)
    copyTV(L, base - 1 - LJ_FR2, tv);  //  Replace frame with new object.
    (top++)->u64 = LJ_CONT_TAILCALL;
    setframe_pc(top++, pc);
-   setframe_gc(top, obj2gco(L), LJ_TTHREAD);  //  Dummy frame object.
+   setframe_gc(top, obj2gco(L), LJ_TSTRUCT);  //  Dummy frame object.
    top++;
    setframe_ftsz(top, ((char*)(top + 1) - (char*)base) + FRAME_CONT);
    L->base = L->top = top + 1;
@@ -193,6 +198,13 @@ cTValue *lj_meta_tget(lua_State *L, cTValue *o, cTValue *k)
             return nullptr;
          }
       }
+      else if (tvisstruct(o)) {
+         mo = lj_meta_fast(L, tabref(basemt_it(G(L), LJ_TSTRUCT)), MM_index);
+         if (not mo or tvisnil(mo)) {
+            lj_err_optype(L, o, ErrMsg::OPINDEX);
+            return nullptr;
+         }
+      }
       else if (tvisnil(mo = lj_meta_lookup(L, o, MM_index))) {
          lj_err_optype(L, o, ErrMsg::OPINDEX);
          return nullptr;  //  unreachable
@@ -246,6 +258,13 @@ TValue * lj_meta_tset(lua_State *L, cTValue *o, cTValue *k)
       else if (tvisobject(o)) {
          mo = lj_meta_fast(L, tabref(basemt_it(G(L), LJ_TOBJECT)), MM_newindex);
          if (tvisnil(mo)) {
+            lj_err_optype(L, o, ErrMsg::OPINDEX);
+            return nullptr;
+         }
+      }
+      else if (tvisstruct(o)) {
+         mo = lj_meta_fast(L, tabref(basemt_it(G(L), LJ_TSTRUCT)), MM_newindex);
+         if (not mo or tvisnil(mo)) {
             lj_err_optype(L, o, ErrMsg::OPINDEX);
             return nullptr;
          }

@@ -835,10 +835,16 @@ void process_surface_callbacks(extSurface *Self, extBitmap *Bitmap)
       log.traceBranch("Bitmap: %d, Count: %d", Bitmap->UID, Self->CallbackCount);
    #endif
 
-   for (int i=0; i < Self->CallbackCount; i++) {
+   for (int i=0; i < Self->CallbackCount; ) {
       Bitmap->Opacity = 255;
       auto &cb = Self->Callback[i].Function;
-      if (cb.isC()) {
+      if (cb.stale()) {
+         deref_surface_callback(cb);
+         for (int j=i; j < Self->CallbackCount-1; j++) Self->Callback[j] = Self->Callback[j+1];
+         Self->CallbackCount--;
+         continue;
+      }
+      else if (cb.isC()) {
          auto routine = (void (*)(APTR, extSurface *, objBitmap *, APTR))cb.Routine;
 
          #ifdef DBG_DRAW_ROUTINES
@@ -858,6 +864,7 @@ void process_surface_callbacks(extSurface *Self, extBitmap *Bitmap)
             { "Bitmap",  Bitmap, FD_OBJECTPTR }
          }));
       }
+      i++;
    }
 
    Bitmap->Opacity = 255;
@@ -1525,11 +1532,24 @@ callback-held, does-not-take-ownership, blocking
 
 ERR WindowHook(OBJECTID SurfaceID, WH Event, FUNCTION *Callback)
 {
+   bool retained_callback = false;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Callback) and (not retained_callback)) Callback->consume();
+   });
+
    if ((!SurfaceID) or (Event IS WH::NIL) or (!Callback)) return ERR::NullArgs;
 
    const WinHook hook(SurfaceID, Event);
    const std::lock_guard<std::recursive_mutex> lock(glWindowHookLock);
-   glWindowHooks[hook] = *Callback;
+   if (auto existing = glWindowHooks.find(hook); existing != glWindowHooks.end()) {
+      release_display_callback(existing->second);
+      existing->second = *Callback;
+   }
+   else glWindowHooks[hook] = *Callback;
+
+   Callback->pin();
+   retained_callback = true;
    return ERR::Okay;
 }
 

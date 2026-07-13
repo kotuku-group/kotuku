@@ -63,7 +63,7 @@ name can be approximated (i.e. the file extension can be ignored) then use the `
 To resolve the location of executable programs on Unix systems, use the `RSF::PATH` flag.  This uses the `PATH`
 environment variable to resolve the file name specified in the `Path` parameter.
 
-The resolved path will be copied to the `std::string` provided in the `Result` parameter.  This will overwrite any
+The resolved path will be copied to the string provided in the `Result` parameter.  This will overwrite any
 existing content in the string.
 
 <types lookup="RSF"/>
@@ -74,7 +74,7 @@ virtual driver does not support this check.  This is common when working with ne
 -INPUT-
 strview Path: The path to be resolved.
 int(RSF) Flags: Optional flags.
-^&string Result: Must point to a `std::string` variable so that the resolved path can be stored.  If `NULL`, ResolvePath() will work as normal and return a valid error code without the result string.  The value is unchanged if the error code is not `ERR::Okay`.
+^&string Result: Refer to a string variable so that the resolved path can be stored.  If `NULL`, ResolvePath() will work as normal and return a valid error code without the result string.  The value is unchanged if the error code is not `ERR::Okay`.
 
 -ERRORS-
 Okay:        The `Path` was resolved.

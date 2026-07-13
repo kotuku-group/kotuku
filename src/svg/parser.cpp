@@ -2100,21 +2100,16 @@ static ERR load_pic(extSVG *Self, std::string Path, objImage **Image, Unit Width
             kt::BASE64DECODE state;
             clearmem(&state, sizeof(state));
 
-            uint8_t *output;
-            if (!AllocMemory(val.size(), MEM::DATA|MEM::NO_CLEAR, (APTR *)&output)) {
-               int64_t written;
-               if (!(error = kt::Base64Decode(&state, val, output, &written))) {
-                  Path = "temp:svg.img";
-                  if ((file = objFile::create::local(fl::Path(Path), fl::Flags(FL::NEW|FL::WRITE)))) {
-                     int result;
-                     file->write(output, written, &result);
-                  }
-                  else error = ERR::File;
+            std::vector<uint8_t> output(val.size());
+            int64_t written;
+            if (!(error = kt::Base64Decode(&state, val, output.data(), &written))) {
+               Path = "temp:svg.img";
+               if ((file = objFile::create::local(fl::Path(Path), fl::Flags(FL::NEW|FL::WRITE)))) {
+                  int result;
+                  file->write(output.data(), written, &result);
                }
-
-               FreeResource(output);
+               else error = ERR::File;
             }
-            else error = ERR::AllocMemory;
          }
          else error = ERR::StringFormat;
       }

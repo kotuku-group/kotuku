@@ -24,16 +24,10 @@ Note: Support for audio recording is not currently available in this implementat
 
 #include "mixer_dispatch.h"
 
-static void deref_audio_callback(FUNCTION &Function)
-{
-   if (Function.isScript()) ((objScript *)Function.Context)->derefProcedure(Function);
-   Function.clear();
-}
-
 static void deref_audio_sample(AudioSample &Sample)
 {
-   deref_audio_callback(Sample.Callback);
-   deref_audio_callback(Sample.OnStop);
+   release_audio_callback(Sample.Callback);
+   release_audio_callback(Sample.OnStop);
 }
 
 #ifndef ALSA_ENABLED
@@ -58,7 +52,7 @@ inline double extAudio::MixerLag() {
          // Windows uses a split buffer technique, so the write cursor is always 1/2 a buffer ahead.
          mixerLag = MIX_INTERVAL + (double(MixElements>>1) / double(OutputRate));
       #elif ALSA_ENABLED
-         mixerLag = MIX_INTERVAL + (AudioBufferSize / DriverBitSize) / double(OutputRate);
+         mixerLag = MIX_INTERVAL + (double(AudioBuffer.size()) / double(DriverBitSize)) / double(OutputRate);
       #endif
       log.trace("Mixer lag: %.2f", mixerLag);
    }
@@ -106,7 +100,6 @@ object can perform configuration operations but cannot process audio samples.
 
 -ERRORS-
 Okay: Hardware activation completed successfully.
-AllocMemory: Failed to allocate internal mixing buffers.
 Failed: Hardware device unavailable or driver initialisation failed.
 
 *********************************************************************************************************************/
@@ -140,48 +133,43 @@ static ERR AUDIO_Activate(extAudio *Self)
 
    const int mixbitsize = Self->Stereo ? sizeof(float) * 2 : sizeof(float);
 
-   Self->MixBufferSize = BYTELEN((int((mixbitsize * Self->OutputRate) * (MIX_INTERVAL * 1.5)) + 15) & (~15));
-   Self->MixElements   = SAMPLE(Self->MixBufferSize / mixbitsize);
+   auto mix_buffer_size = BYTELEN((int((mixbitsize * Self->OutputRate) * (MIX_INTERVAL * 1.5)) + 15) & (~15));
+   Self->MixBuffer.resize(mix_buffer_size / sizeof(float));
+   Self->MixElements = SAMPLE(mix_buffer_size / mixbitsize);
 
-   if (!AllocMemory(Self->MixBufferSize, MEM::DATA, &Self->MixBuffer)) {
-      // Configure the mixing system
+   // Configure the mixing system
 
-      bool use_interpolation = (Self->Flags & ADF::OVER_SAMPLING) != ADF::NIL;
-      Self->MixConfig = AudioConfig(Self->Stereo, use_interpolation);
+   bool use_interpolation = (Self->Flags & ADF::OVER_SAMPLING) != ADF::NIL;
+   Self->MixConfig = AudioConfig(Self->Stereo, use_interpolation);
 
-      #ifdef _WIN32
-         WAVEFORMATEX wave = {
-            .Format            = int16_t((Self->BitDepth IS 32) ? WAVE_FLOAT : WAVE_RAW),
-            .Channels          = int16_t(Self->Stereo ? 2 : 1),
-            .Frequency         = 44100,
-            .AvgBytesPerSecond = 44100 * Self->DriverBitSize,
-            .BlockAlign        = Self->DriverBitSize,
-            .BitsPerSample     = int16_t(Self->BitDepth),
-            .ExtraLength       = 0
-         };
+   #ifdef _WIN32
+      WAVEFORMATEX wave = {
+         .Format            = int16_t((Self->BitDepth IS 32) ? WAVE_FLOAT : WAVE_RAW),
+         .Channels          = int16_t(Self->Stereo ? 2 : 1),
+         .Frequency         = 44100,
+         .AvgBytesPerSecond = 44100 * Self->DriverBitSize,
+         .BlockAlign        = Self->DriverBitSize,
+         .BitsPerSample     = int16_t(Self->BitDepth),
+         .ExtraLength       = 0
+      };
 
-         if (auto strerr = sndCreateBuffer(Self, &wave, Self->MixBufferSize, 0x7fffffff, (PlatformData *)Self->PlatformData, TRUE)) {
-            log.warning(strerr);
-            Self->Initialising = false;
-            return ERR::Failed;
-         }
+      if (auto strerr = sndCreateBuffer(Self, &wave, mix_buffer_size, 0x7fffffff, (PlatformData *)Self->PlatformData, TRUE)) {
+         log.warning(strerr);
+         Self->Initialising = false;
+         return ERR::Failed;
+      }
 
-         if (sndPlay((PlatformData *)Self->PlatformData, TRUE, 0)) {
-            Self->Initialising = false;
-            return log.warning(ERR::Failed);
-         }
-      #endif
+      if (sndPlay((PlatformData *)Self->PlatformData, TRUE, 0)) {
+         Self->Initialising = false;
+         return log.warning(ERR::Failed);
+      }
+   #endif
 
-      // Note: The audio feed is managed by audio_timer() and is not started until an audio playback command
-      // is executed by the client.
+   // Note: The audio feed is managed by audio_timer() and is not started until an audio playback command
+   // is executed by the client.
 
-      Self->Initialising = false;
-      return ERR::Okay;
-   }
-   else {
-      Self->Initialising = false;
-      return log.warning(ERR::AllocMemory);
-   }
+   Self->Initialising = false;
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -248,7 +236,7 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
 
    int idx;
    for (idx=1; idx < std::ssize(Self->Samples); idx++) {
-      if (!Self->Samples[idx].Data) break;
+      if (Self->Samples[idx].Data.empty()) break;
    }
 
    if (idx >= std::ssize(Self->Samples)) Self->Samples.resize(std::ssize(Self->Samples)+10);
@@ -259,7 +247,9 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
    deref_audio_sample(sample);
    sample.SampleType   = Args->SampleFormat;
    sample.SampleLength = SAMPLE(Args->DataSize >> shift);
+   sample.BufferedLength = BYTELEN(0);
    sample.OnStop       = Args->OnStop;
+   if (sample.OnStop.defined()) sample.OnStop.pin();
 
    if (auto loop = Args->Loop) {
       sample.LoopMode     = loop->LoopMode;
@@ -280,12 +270,12 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
    }
 
    if ((sample.SampleType IS SFM::NIL) or (Args->DataSize <= 0) or (!Args->Data)) {
-      sample.Data = nullptr;
+      sample.Data.clear();
    }
-   else if (!AllocMemory(Args->DataSize, MEM::DATA|MEM::NO_CLEAR, (APTR *)&sample.Data)) {
-      copymem(Args->Data, sample.Data, Args->DataSize);
+   else {
+      sample.Data.resize(Args->DataSize);
+      copymem(Args->Data, sample.Data.data(), Args->DataSize);
    }
-   else return log.warning(ERR::AllocMemory);
 
    Args->Result = idx;
    return ERR::Okay;
@@ -367,7 +357,7 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
 
    int idx;
    for (idx=1; idx < std::ssize(Self->Samples); idx++) {
-      if (!Self->Samples[idx].Data) break;
+      if (Self->Samples[idx].Data.empty()) break;
    }
 
    if (idx >= std::ssize(Self->Samples)) Self->Samples.resize(std::ssize(Self->Samples)+10);
@@ -382,7 +372,11 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
    else buffer_len = MAX_STREAM_BUFFER; // Use the recommended amount of buffer space
 
    #ifdef ALSA_ENABLED
-      if (buffer_len < Self->AudioBufferSize) log.warning("Warning: Buffer length of %d is less than audio buffer size of %d.", buffer_len, Self->AudioBufferSize);
+      auto audio_buffer_size = int(Self->AudioBuffer.size());
+      if (buffer_len < audio_buffer_size) {
+         log.warning("Warning: Buffer length of %d is less than audio buffer size of %d.",
+            buffer_len, audio_buffer_size);
+      }
    #endif
 
    // Setup the audio sample
@@ -394,6 +388,9 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
    sample.StreamLength = BYTELEN((Args->SampleLength > 0) ? Args->SampleLength : 0x7fffffff); // 'Infinite' stream length
    sample.Callback     = Args->Callback;
    sample.OnStop       = Args->OnStop;
+   sample.BufferedLength = BYTELEN(0);
+   if (sample.Callback.defined()) sample.Callback.pin();
+   if (sample.OnStop.defined()) sample.OnStop.pin();
    sample.Stream       = true;
    sample.PlayPos      = BYTELEN(Args->PlayOffset);
 
@@ -411,10 +408,7 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
       if (sample.Loop2Start IS sample.Loop2End) sample.Loop2Type = LTYPE::NIL;
    }
 
-   if (AllocMemory(buffer_len, MEM::DATA|MEM::NO_CLEAR, (APTR *)&sample.Data) != ERR::Okay) {
-      return ERR::AllocMemory;
-   }
-
+   sample.Data.resize(buffer_len);
    Args->Result = idx;
    return ERR::Okay;
 }
@@ -524,8 +518,6 @@ static ERR AUDIO_Deactivate(extAudio *Self)
 
 #ifdef ALSA_ENABLED
    free_alsa(Self);
-   //if (Self->MixHandle) { snd_mixer_close(Self->MixHandle); Self->MixHandle = NULL; }
-   //if (Self->Handle) { snd_pcm_close(Self->Handle); Self->Handle = 0; }
 #endif
 
    return ERR::Okay;
@@ -1463,8 +1455,6 @@ extAudio::~extAudio() {
    glSoundChannels.erase(UID);
 
    acDeactivate(this);
-
-   if (MixBuffer) FreeResource(MixBuffer);
 
 #ifdef ALSA_ENABLED
 

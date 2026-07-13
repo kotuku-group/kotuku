@@ -63,7 +63,7 @@
 #define ERR_LostOwner 47
 #define ERR_DoNotExpunge 48
 #define ERR_MemoryCorrupt 49
-#define ERR_FieldSearch 50
+#define ERR_FieldNotFound 50
 #define ERR_InvalidPath 51
 #define ERR_SetField 52
 #define ERR_MarkedForDeletion 53

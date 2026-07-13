@@ -17,7 +17,7 @@ static TiriType map_field_flags_to_tiri_type(uint32_t Flags)
    // NB: Order is important
 
    if (Flags & FD_ARRAY) return TiriType::Table; // TODO: Using TiriType::Array crashes - requires further investigation
-   else if (Flags & FD_STRUCT) return TiriType::Table;
+   else if (Flags & FD_STRUCT) return TiriType::Struct;
    else if (Flags & FD_STRING) return TiriType::Str;
    else if (Flags & (FD_OBJECT|FD_LOCAL)) return TiriType::Object;
    else if (Flags & FD_POINTER) return TiriType::Any; // Prefer runtime resolution for pointer types

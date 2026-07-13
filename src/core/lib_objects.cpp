@@ -29,6 +29,15 @@ static void async_wait_callback(OBJECTID, bool);
 //static ERR new_placement(CLASSID ClassID, NF Flags, OBJECTPTR Object);
 static ERR set_owner(OBJECTPTR, OBJECTPTR);
 
+static void release_owned_callback(FUNCTION &Function)
+{
+   if (Function.defined()) {
+      if (Function.isScript() and (not Function.stale())) ((objScript *)Function.Context)->derefProcedure(Function);
+      Function.unpin();
+      Function.disable();
+   }
+}
+
 // AsyncWait() state — guarded by glmAsyncWait.
 
 static std::atomic<int> glAsyncWaitCounter;
@@ -74,13 +83,22 @@ void stop_async_actions(void)
       }
    }
 
-   // Clear any remaining queued actions (no callbacks are sent during shutdown).
+   // Clear any remaining queued actions (no callbacks are sent during shutdown).  Releasing copied object arguments
+   // may trigger object collection, so transfer the queues and release their resources after dropping the queue lock.
+   decltype(glActionQueues) action_queues;
    {
       std::lock_guard<std::mutex> lock(glmActionQueue);
-      glActionQueues.clear();
+      action_queues = std::move(glActionQueues);
       glActiveAsyncObjects.clear();
       glCancelledAsyncObjects.clear();
       glAsyncObjectThreads.clear();
+   }
+
+   for (auto &queue_ref : action_queues) {
+      for (auto &action : queue_ref.second) {
+         release_copied_args(action.Fields, action.ArgsSize, action.Parameters.data(), true);
+         release_owned_callback(action.Callback);
+      }
    }
 }
 
@@ -337,8 +355,6 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 {
    kt::Log log("Free");
 
-   bool is_placement = Object->defined(NF::PLACEMENT);
-
    {
       ScopedObjectAccess objlock(Object);
       if (not objlock.granted()) return ERR::AccessObject;
@@ -407,7 +423,7 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 
       // Object destruction is guaranteed; queued async actions can be cancelled safely.
 
-      if (not is_placement) Object->pin();
+      Object->pin();
       drain_action_queue(Object->UID, true);
 
       // Mark the object as being in the free process.  The mark prevents any further access to the object via
@@ -418,15 +434,15 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 
       NotifySubscribers(Object, AC::Free, nullptr, ERR::Okay);
 
-      if (mc->ActionTable[int(AC::FreePlacement)].PerformAction) {
-         if (mc->ActionTable[int(AC::FreePlacement)].PerformAction(Object, nullptr) IS ERR::NothingDone) {
-            if ((mc->Base) and (mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction)) {
-               mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction(Object, nullptr);
+      if (mc->ActionTable[int(AC::Free)].PerformAction) {
+         if (mc->ActionTable[int(AC::Free)].PerformAction(Object, nullptr) IS ERR::NothingDone) {
+            if ((mc->Base) and (mc->Base->ActionTable[int(AC::Free)].PerformAction)) {
+               mc->Base->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
             }
          }
       }
-      else if ((mc->Base) and (mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction)) { // Fall-back to base class
-         mc->Base->ActionTable[int(AC::FreePlacement)].PerformAction(Object, nullptr);
+      else if ((mc->Base) and (mc->Base->ActionTable[int(AC::Free)].PerformAction)) { // Fall-back to base class
+         mc->Base->ActionTable[int(AC::Free)].PerformAction(Object, nullptr);
       }
 
       if (Object->NotifyFlags.load()) {
@@ -434,10 +450,7 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
          glSubscriptions.erase(Object->UID);
       }
 
-      if (Object->DerivedPtr) {
-         if (FreeResource(Object->DerivedPtr) != ERR::Okay) log.warning("Invalid DerivedPtr address %p.", Object->DerivedPtr);
-         Object->DerivedPtr = nullptr;
-      }
+      if (Object->DerivedPtr) { free(Object->DerivedPtr); Object->DerivedPtr = nullptr; }
 
       free_children(Object);
 
@@ -449,9 +462,10 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
                if (it->SubscriberID IS Object->UID) {
                   log.warning("%s object #%d has an unfreed timer subscription, routine %p, interval %" PF64,
                      mc->ClassName.c_str(), Object->UID, &it->Routine, (long long)it->Interval);
-                  if (it->Routine.isScript() and (it->Routine.Context != Object)) {
+                  if (it->Routine.isScript() and (not it->Routine.stale()) and (it->Routine.Context != Object)) {
                      script_routines.emplace_back(it->Routine);
                   }
+                  if (it->Routine.defined()) it->Routine.unpin();
                   it = glTimers.erase(it);
                }
                else it++;
@@ -484,22 +498,21 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
       }
    } // Object lock
 
-   if (not is_placement) {
-      Object->setFlag(NF::ZOMBIE);
-      if (Object->RefCount.load(std::memory_order_acquire) IS 1) {
-         // Fast path: only the terminator's own strong pin remains (no weak pins), so no other holder can race
-         // the release and the zombie registry can be bypassed entirely.
-         Object->RefCount.store(0, std::memory_order_release);
-         free_object_block(Object);
-      }
-      else {
-         {
-            std::lock_guard lock(glZombieLock);
-            glZombies.emplace(Object);
-         }
-         Object->unpin();
-      }
+   Object->setFlag(NF::ZOMBIE);
+   if (Object->RefCount.load(std::memory_order_acquire) IS 1) {
+      // Fast path: only the terminator's own strong pin remains (no weak pins), so no other holder can race
+      // the release and the zombie registry can be bypassed entirely.
+      Object->RefCount.store(0, std::memory_order_release);
+      free_object_block(Object);
    }
+   else {
+      {
+         std::lock_guard lock(glZombieLock);
+         glZombies.emplace(Object);
+      }
+      Object->unpin();
+   }
+
    return ERR::Okay;
 }
 
@@ -592,7 +605,7 @@ static void free_children(OBJECTPTR Object)
    for (const auto &id : resources) FreeResource(id);
 }
 
-static void launch_async_thread(OBJECTPTR, AC, int, std::vector<int8_t>, FUNCTION);
+static void launch_async_thread(OBJECTPTR, AC, int, const FunctionField *, std::vector<int8_t>, FUNCTION);
 
 //********************************************************************************************************************
 // Dispatch the next queued action for an object.  Called from msg_threadaction() on the main thread
@@ -647,6 +660,7 @@ void dispatch_queued_action(OBJECTID ObjectID)
    ScopedObjectLock obj(ObjectID);
    if (obj.granted()) {
       if (obj->terminating() or obj->collecting()) {
+         release_copied_args(next.Fields, next.ArgsSize, next.Parameters.data(), true);
          if (next.Callback.defined()) {
             ThreadActionMessage msg = {
                .ActionID = next.ActionID,
@@ -662,13 +676,15 @@ void dispatch_queued_action(OBJECTID ObjectID)
          return;
       }
 
-      launch_async_thread(*obj, next.ActionID, next.ArgsSize, std::move(next.Parameters), next.Callback);
+      launch_async_thread(*obj, next.ActionID, next.ArgsSize, next.Fields, std::move(next.Parameters), next.Callback);
    }
    else {
       // The object is no longer accessible (freed or otherwise invalid).  Treat this identically
       // to the terminating case: send an error callback and drain the remaining queue.
 
       log.traceWarning(obj.error);
+
+      release_copied_args(next.Fields, next.ArgsSize, next.Parameters.data(), true);
 
       if (next.Callback.defined()) {
          ThreadActionMessage msg = {
@@ -725,6 +741,7 @@ static void drain_action_queue(OBJECTID ObjectID, bool Terminating, bool Preserv
    }
 
    for (auto &action : drained) {
+      release_copied_args(action.Fields, action.ArgsSize, action.Parameters.data(), true);
       if (action.Callback.defined()) {
          ThreadActionMessage msg = {
             .ActionID = action.ActionID,
@@ -741,8 +758,8 @@ static void drain_action_queue(OBJECTID ObjectID, bool Terminating, bool Preserv
 //********************************************************************************************************************
 // Helper to launch an async action thread for an object.
 
-static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSize, std::vector<int8_t> Parameters,
-   FUNCTION Callback)
+static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSize, const FunctionField *Fields,
+   std::vector<int8_t> Parameters, FUNCTION Callback)
 {
    auto object_uid = Object->UID;
 
@@ -753,8 +770,8 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
 
    auto thread_ptr = std::make_shared<std::jthread>();
 
-   *thread_ptr = std::jthread([Object, ActionID, ArgsSize, Parameters = std::move(Parameters), Callback,
-      object_uid, thread_ptr](std::stop_token stop_token) {
+   *thread_ptr = std::jthread([Object, ActionID, ArgsSize, Fields, Parameters = std::move(Parameters), Callback,
+      object_uid, thread_ptr](std::stop_token stop_token) mutable {
 
       // Cleanup function to remove thread from tracking
       auto cleanup = [thread_ptr, object_uid]() {
@@ -787,12 +804,16 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
          return glCancelledAsyncObjects.contains(object_uid);
       };
 
+      FUNCTION deferred_function;
+
       if (is_stopping() or is_cancelled()) {
+         release_copied_args(Fields, ArgsSize, Parameters.data(), true, &deferred_function);
          ThreadActionMessage msg = {
             .ActionID = ActionID,
             .ObjectID = object_uid,
             .Error    = ERR::Cancelled,
-            .Callback = Callback
+            .Callback = Callback,
+            .DeferredFunction = deferred_function
          };
          SendMessage(MSGID::THREAD_ACTION, MSF::NIL, &msg, sizeof(msg));
          cleanup();
@@ -800,10 +821,12 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
       }
 
       ERR error;
+      bool executed = false;
       if (error = LockObject(Object, 5000); !error) { // Access the object and process the action.
          // Check for stop request before executing action
          if ((not is_stopping()) and (not is_cancelled())) {
             error = Action(ActionID, Object, ArgsSize ? (APTR)Parameters.data() : nullptr);
+            executed = true;
          }
 
          if (Object->terminating()) {
@@ -812,6 +835,8 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
          }
          else ReleaseObject(Object);
       }
+
+      release_copied_args(Fields, ArgsSize, Parameters.data(), not executed, &deferred_function);
 
       // Always send a completion message so that msg_threadaction() can dispatch the next queued action.
       // Preserve the callback on cancellation so script-side cleanup still runs.
@@ -823,7 +848,8 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
          .ActionID = ActionID,
          .ObjectID = object_uid,
          .Error    = completion_error,
-         .Callback = Callback
+         .Callback = Callback,
+         .DeferredFunction = deferred_function
       };
       SendMessage(MSGID::THREAD_ACTION, MSF::NIL, &msg, sizeof(msg));
 
@@ -1090,6 +1116,11 @@ copies-input, callback-held, blocking
 ERR AsyncAction(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters, FUNCTION *Callback)
 {
    kt::Log log(__FUNCTION__);
+   bool retained_callback = false;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Callback) and (not retained_callback)) Callback->consume();
+   });
 
    if ((ActionID IS AC::NIL) or (not Object)) return ERR::NullArgs;
 
@@ -1126,6 +1157,7 @@ ERR AsyncAction(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters, FUNCTION *
    if (!error) {
       FUNCTION cb;
       if (Callback) cb = *Callback;
+      if (cb.defined()) cb.pin();
 
       // Check if an async action is already active for this object.  If so, queue the request
       // instead of spawning a competing thread.
@@ -1137,9 +1169,11 @@ ERR AsyncAction(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters, FUNCTION *
                .ObjectID   = object_id,
                .ActionID   = ActionID,
                .ArgsSize   = argssize,
+               .Fields     = args,
                .Parameters = std::move(param_buffer),
                .Callback   = cb
             });
+            retained_callback = true;
 
             log.trace("Queued action %d for object #%d (queue depth: %d)",
                int(ActionID), object_id, int(glActionQueues[object_id].size()));
@@ -1153,7 +1187,8 @@ ERR AsyncAction(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters, FUNCTION *
          }
       }
 
-      launch_async_thread(Object, ActionID, argssize, std::move(param_buffer), cb);
+      launch_async_thread(Object, ActionID, argssize, args, std::move(param_buffer), cb);
+      retained_callback = true;
    }
 
    return error;
@@ -1337,16 +1372,23 @@ ERR msg_threadaction(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgS
    auto msg = (ThreadActionMessage *)Message;
    if (not msg) return ERR::Okay;
 
-   if (msg->Callback.isC()) {
+   release_owned_callback(msg->DeferredFunction);
+
+   if (msg->Callback.stale()) {
+      release_owned_callback(msg->Callback);
+   }
+   else if (msg->Callback.isC()) {
       auto routine = (void (*)(ACTIONID, OBJECTPTR, ERR, APTR))msg->Callback.Routine;
       ScopedObjectLock obj(msg->ObjectID);
       if (obj.granted()) {
          routine(msg->ActionID, *obj, msg->Error, msg->Callback.Meta);
       }
       else routine(msg->ActionID, nullptr, ERR::DoesNotExist, msg->Callback.Meta);
+      release_owned_callback(msg->Callback);
    }
    else if (msg->Callback.isScript()) {
       auto script = msg->Callback.Context;
+      bool dereferenced = false;
       if (!LockObject(script, 5000)) {
          sc::Call(msg->Callback, std::to_array<ScriptArg>({
             { "ActionID", int(msg->ActionID) },
@@ -1356,11 +1398,17 @@ ERR msg_threadaction(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgS
          }));
 
          // Dereference the callback procedure to release the script registry reference.
-         sc::DerefProcedure deref = { &msg->Callback };
+         sc::DerefProcedure deref = { msg->Callback };
          Action(sc::DerefProcedure::id, script, &deref);
+         dereferenced = true;
 
          ReleaseObject(script);
       }
+      if (dereferenced) {
+         if (msg->Callback.defined()) msg->Callback.unpin();
+         msg->Callback.clear();
+      }
+      else release_owned_callback(msg->Callback);
    }
 
    // Dispatch the next queued action for this object (if any).
@@ -1727,6 +1775,45 @@ OBJECTPTR GetObjectPtr(OBJECTID ObjectID)
 /*********************************************************************************************************************
 
 -FUNCTION-
+PinWeakObject: Resolves an object ID to a weak-pinned object pointer.
+Status: private
+
+This function is for internal object reference-count handling only.  It resolves an object ID to its address and
+acquires a weak pin in the same step, while the object registry still proves the pointer live.  Object teardown
+removes the registry entry before evaluating the pin count, so a pin acquired through this function is always
+observed by the terminating thread and the returned header remains valid - at worst as a zombie - until the pin is
+released with `unpinWeak()`.
+
+Objects that are already collecting, and placement objects (which cannot be pinned), result in `NULL`.
+
+-INPUT-
+oid Object: The ID of the object to pin.
+
+-RESULT-
+obj: The address of the weak-pinned object, or `NULL` if the ID does not relate to a pinnable object.
+
+-TAGS-
+api-owns-result, nullable-result
+
+*********************************************************************************************************************/
+
+OBJECTPTR PinWeakObject(OBJECTID ObjectID)
+{
+   std::unique_lock lock(glmObjects);
+   if (auto object_rec = glObjects.find(ObjectID); object_rec != glObjects.end()) {
+      auto object = object_rec->second.Object;
+      if ((object) and (object->UID IS ObjectID) and (not object->collecting())) {
+         object->pinWeak();
+         return object;
+      }
+   }
+
+   return nullptr;
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
 GetOwnerID: Returns the unique ID of an object's owner.
 
 This function returns an identifier for the owner of any valid object.  This is the fastest way to retrieve the
@@ -2018,21 +2105,10 @@ caller-owns-result, creates-resource, blocking, callback-inlines
 
 ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 {
-   if ((Flags & NF::PLACEMENT) != NF::NIL) {
-      // Support for C++ placement is restricted to non-extended class.  In theory the user can safely declare
-      // `objFile file` if the implementation has no `extFile` definition.  Otherwise the final object size would
-      // be too small, and the extFile constructor would never be called.
-      //
-      // objFile() {
-      //    OBJECTPTR self = this;
-      //    NewObject(CLASS_ID, NF::PLACEMENT, &self);
-      // }
-
-      //if (not Object) return ERR::NullArgs;
-      //if (tlContext.back().obj IS *Object) return ERR::Okay; // Guard against recursive calls (not an error)
-      //return new_placement(ClassID, Flags, *Object);
-      return ERR::NoSupport;
-   }
+   // A historical note on the use of C++ placement-new for Kotuku objects: In theory the user could safely declare
+   // `objFile file` and we could support it if the implementation had no `extFile` definition.  As this is the only
+   // circumstance under which placement-new could work, it is largely pointless to support it because too few
+   // classes are ever that simple.
 
    kt::Log log(__FUNCTION__);
 
@@ -2065,7 +2141,7 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
 
       kt::clearmem(head + 1, mc->Size - sizeof(class Object));
 
-      // Preset the Object header so NewPlacement constructors can forward these values into the Object constructor.
+      // Preset the Object header so New constructors can forward these values into the Object constructor.
 
       head->UID   = object_id;
       head->Class = (extMetaClass *)mc;
@@ -2098,7 +2174,7 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
          else track_to = obj;
       }
 
-      // Track the object prior to NewPlacement so that action calls will work correctly.
+      // Track the object prior to New so that action calls will work correctly.
 
       {
          std::lock_guard resource_lock(glmResources);
@@ -2108,22 +2184,22 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
       }
 
       ERR error = ERR::Okay;
-      if (mc->ActionTable[int(AC::NewPlacement)].PerformAction) {
-         // Derived classes have priority over base for NewPlacement.  Base classes that need NewPlacement should specify
+      if (mc->ActionTable[int(AC::New)].PerformAction) {
+         // Derived classes have priority over base for New.  Base classes that need New should specify
          // initialisers in the class definition or ensure that their constructor is visible to derived classes.
 
          tlContext.emplace_back(head, nullptr, AC::NIL);
-         error = mc->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
+         error = mc->ActionTable[int(AC::New)].PerformAction(head, nullptr);
          tlContext.pop_back();
       }
-      else if ((mc->Base) and (mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction)) {
+      else if ((mc->Base) and (mc->Base->ActionTable[int(AC::New)].PerformAction)) {
          tlContext.emplace_back(head, nullptr, AC::NIL);
-         error = mc->Base->ActionTable[int(AC::NewPlacement)].PerformAction(head, nullptr);
+         error = mc->Base->ActionTable[int(AC::New)].PerformAction(head, nullptr);
          tlContext.pop_back();
       }
       else {
          new (head) class Object(mc, object_id); // Dummy initialiser so that FreeResource() will work
-         error = log.warning(ERR::NoAction); // NewPlacement is an absolute requirement
+         error = log.warning(ERR::NoAction); // New is an absolute requirement
       }
 
       if (!error) {
@@ -2155,106 +2231,6 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
    }
    else return ERR::AllocMemory;
 }
-
-//********************************************************************************************************************
-// Object creation hook for the Object class constructor in existing memory.
-//
-// 2026-05-25: This code is valid but will only work for simple classes.
-
-#if 0
-static ERR new_placement(CLASSID ClassID, NF Flags, OBJECTPTR Object)
-{
-   kt::Log log("NewPlacement");
-
-   auto class_id = ClassID;
-   if ((class_id IS CLASSID::NIL) or (not Object)) return log.warning(ERR::NullArgs);
-
-   auto mc = (extMetaClass *)FindClass(class_id);
-   if (not mc) return log.warning(ERR::MissingClass);
-
-   // If the object is local then turn off use of the UNTRACKED flag (otherwise the child will
-   // end up being tracked to its task rather than its parent object).
-
-   if ((Flags & NF::LOCAL) != NF::NIL) Flags &= ~NF::UNTRACKED;
-
-   // Force certain flags on the class' behalf
-
-   if ((mc->Flags & CLF::NO_OWNERSHIP) != CLF::NIL) Flags |= NF::UNTRACKED;
-
-   if ((Flags & NF::SUPPRESS_LOG) IS NF::NIL) {
-      log.branch("%s #%d, Flags: $%x", mc->ClassName.c_str(), glResourceID.load(std::memory_order_relaxed), int(Flags));
-   }
-
-   OBJECTID object_id = glResourceID++;
-
-   new (Object) class Object; // Class constructors aren't expected to initialise the Object header, we do it for them
-
-   Object->UID     = object_id;
-   Object->Class   = (extMetaClass *)mc;
-   Object->setFlag(Flags & (NF::LOCAL|NF::PLACEMENT)); // NF::PLACEMENT indicates the object was created by placement-new
-
-   {
-      std::lock_guard resource_lock(glmResources);
-      std::lock_guard object_lock(glmObjects);
-      glResources.insert_or_assign(object_id, ResourceRecord(object_id, Object, 0, &glResourceObject));
-      glObjects.insert_or_assign(object_id, ObjectRecord(Object));
-   }
-
-   // Tracking for our new object is configured here.
-
-   if ((mc->Flags & CLF::NO_OWNERSHIP) != CLF::NIL) { } // Used by classes like RootModule to avoid tracking back to the task.
-   else if ((Flags & NF::UNTRACKED) != NF::NIL) {
-      if (class_id IS CLASSID::MODULE); // Untracked modules have no owner, due to the expunge process.
-      else {
-         // Untracked objects are owned by the current task.  This ensures that the object
-         // is deallocated correctly when the Core is closed.
-
-         if (glCurrentTask) {
-            ScopedObjectAccess lock(glCurrentTask);
-            set_owner(Object, glCurrentTask);
-         }
-      }
-   }
-   else { // Track the object to the current context
-      auto obj = current_resource();
-      if (obj IS &glDummyObject) { // If dummy object, track to the task
-         if (glCurrentTask) {
-            ScopedObjectAccess lock(glCurrentTask);
-            set_owner(Object, glCurrentTask);
-         }
-      }
-      else set_owner(Object, obj);
-   }
-
-   tlContext.emplace_back(Object, nullptr, AC::NIL);
-
-   ERR error = ERR::Okay;
-
-   if (mc->Base) {
-      if (mc->Base->ActionTable[int(AC::NewObject)].PerformAction) {
-         if ((error = mc->Base->ActionTable[int(AC::NewObject)].PerformAction(Object, nullptr)) != ERR::Okay) {
-            log.warning(error);
-         }
-      }
-   }
-
-   if ((!error) and (mc->ActionTable[int(AC::NewObject)].PerformAction)) {
-      if ((error = mc->ActionTable[int(AC::NewObject)].PerformAction(Object, nullptr)) != ERR::Okay) {
-         log.warning(error);
-      }
-   }
-
-   tlContext.pop_back();
-
-   if (!error) {
-      ((extMetaClass *)Object->Class)->OpenCount++;
-      if (mc->Base) mc->Base->OpenCount++;
-   }
-   else FreeResource(Object); // This won't free the emplacement target, only the resources associated with it
-
-   return error;
-}
-#endif
 
 /*********************************************************************************************************************
 
@@ -2382,14 +2358,24 @@ ERR QueueAction(ACTIONID ActionID, OBJECTID ObjectID, APTR Args)
    if (ActionID >= AC::END) return log.warning(ERR::OutOfRange);
 
    std::vector<int8_t> buffer;
+   const FunctionField *fields = nullptr;
+   int args_size = 0;
 
-   ActionMessage action = { .ObjectID = ObjectID, .Time = 0, .ActionID = ActionID, .SendArgs = false };
+   ActionMessage action = {
+      .ObjectID = ObjectID,
+      .Time     = 0,
+      .ActionID = ActionID,
+      .SendArgs = false,
+      .Fields   = nullptr,
+      .ArgsSize = 0
+   };
 
    if (Args) {
       if (ActionID > AC::NIL) {
          if (ActionTable[int(ActionID)].Size) {
-            if (auto error = copy_args(ActionTable[int(ActionID)].Args, ActionTable[int(ActionID)].Size,
-                  (int8_t *)Args, buffer); error != ERR::Okay) {
+            fields = ActionTable[int(ActionID)].Args;
+            args_size = ActionTable[int(ActionID)].Size;
+            if (auto error = copy_args(fields, args_size, (int8_t *)Args, buffer); error != ERR::Okay) {
                return error;
             }
 
@@ -2397,8 +2383,9 @@ ERR QueueAction(ACTIONID ActionID, OBJECTID ObjectID, APTR Args)
          }
       }
       else if (auto cl = (extMetaClass *)FindClass(GetClassID(ObjectID))) {
-         if (auto error = copy_args(cl->Methods[-int(ActionID)].Args, cl->Methods[-int(ActionID)].Size,
-               (int8_t *)Args, buffer); error != ERR::Okay) {
+         fields = cl->Methods[-int(ActionID)].Args;
+         args_size = cl->Methods[-int(ActionID)].Size;
+         if (auto error = copy_args(fields, args_size, (int8_t *)Args, buffer); error != ERR::Okay) {
             return error;
          }
          action.SendArgs = true;
@@ -2406,9 +2393,18 @@ ERR QueueAction(ACTIONID ActionID, OBJECTID ObjectID, APTR Args)
       else return log.warning(ERR::MissingClass);
    }
 
+   action.Fields = fields;
+   action.ArgsSize = args_size;
+
+   // The buffer is duplicated byte-for-byte into the message queue, so self-referential argument pointers must be
+   // converted to offsets.  The receiver (msg_action) rebases them against its copy with make_args_absolute().
+
+   if (action.SendArgs) make_args_relative(fields, args_size, buffer.data());
+
    buffer.insert(buffer.begin(), (int8_t *)&action, (int8_t *)&action + sizeof(ActionMessage));
 
    if (auto error = SendMessage(MSGID::ACTION, MSF::NIL, buffer.data(), buffer.size()); error != ERR::Okay) {
+      release_copied_args(fields, args_size, buffer.data() + sizeof(ActionMessage), false);
       return error;
    }
    else return error;
@@ -2744,7 +2740,10 @@ ERR SubscribeAction(OBJECTPTR Object, ACTIONID ActionID, FUNCTION *Callback)
 
    if ((not Object) or (not Callback)) return log.warning(ERR::NullArgs);
    if ((ActionID < AC::NIL) or (ActionID >= AC::END)) return log.warning(ERR::OutOfRange);
-   if (not Callback->isC()) return log.warning(ERR::Args);
+   if (not Callback->isC()) {
+      Callback->consume();
+      return log.warning(ERR::Args);
+   }
    if (Object->collecting()) return ERR::Okay;
 
    if (glSubReadOnly) {
@@ -2798,6 +2797,10 @@ blocking
 ERR UnsubscribeAction(OBJECTPTR Object, ACTIONID ActionID, FUNCTION *Callback)
 {
    kt::Log log(__FUNCTION__);
+
+   auto consume_callback = kt::Defer([&]() {
+      if (Callback) Callback->consume();
+   });
 
    if (not Object) return log.warning(ERR::NullArgs);
    if ((ActionID < AC::NIL) or (ActionID >= AC::END)) return log.warning(ERR::Args);

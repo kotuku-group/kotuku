@@ -24,20 +24,20 @@ static const struct FieldDef clStorageDeviceDeviceFlags[] = {
    { nullptr, 0 }
 };
 
-static ERR STORAGEDEVICE_NewPlacement(objStorageDevice *Self) {
+static ERR STORAGEDEVICE_New(objStorageDevice *Self) {
    new (Self) objStorageDevice(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR STORAGEDEVICE_FreePlacement(objStorageDevice *Self) {
+static ERR STORAGEDEVICE_Free(objStorageDevice *Self) {
    Self->~objStorageDevice();
    return ERR::Okay;
 }
 
 static const struct ActionArray clStorageDeviceActions[] = {
-   { AC::FreePlacement, STORAGEDEVICE_FreePlacement },
+   { AC::Free, STORAGEDEVICE_Free },
    { AC::Init, STORAGEDEVICE_Init },
-   { AC::NewPlacement, STORAGEDEVICE_NewPlacement },
+   { AC::New, STORAGEDEVICE_New },
    { AC::NIL, nullptr }
 };
 

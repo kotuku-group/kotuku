@@ -29,12 +29,14 @@ static void set_render_matrix(VectorMatrix &Matrix, const agg::trans_affine &Tra
 
 static bool set_render_transform(objVectorViewport *Viewport, const agg::trans_affine &Transform)
 {
-   if (not Viewport->Matrices) {
+   auto vp = (extVectorViewport *)Viewport;
+
+   if (not vp->matrices()) {
       if (Viewport->newMatrix(nullptr, false) != ERR::Okay) return false;
    }
 
-   if (not render_matrix_matches(*Viewport->Matrices, Transform)) {
-      set_render_matrix(*Viewport->Matrices, Transform);
+   if (not render_matrix_matches(*vp->matrices(), Transform)) {
+      set_render_matrix(*vp->matrices(), Transform);
       mark_dirty(Viewport, RC::TRANSFORM);
    }
 
@@ -933,7 +935,7 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
       }
 
       #ifdef DBG_DRAW
-         log.traceBranch("%s: #%d, Matrices: %p", get_name(shape), shape->UID, shape->Matrices);
+         log.traceBranch("%s: #%d, Matrices: %p", get_name(shape), shape->UID, shape->matrices());
       #endif
 
       if (mBitmap->ColourSpace IS CS::LINEAR_RGB) state.mLinearRGB = true; // The target bitmap's colour space has priority if linear.

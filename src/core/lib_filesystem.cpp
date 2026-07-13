@@ -725,7 +725,8 @@ blocking, callback-inlines
 
 ERR CopyFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback)
 {
-   return fs_copy(Source, Dest, Callback, FALSE);
+   if (Callback) Callback->consume();
+   return fs_copy(Source, Dest, Callback, false);
 }
 
 /*********************************************************************************************************************
@@ -844,6 +845,8 @@ ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback)
 {
    kt::Log log(__FUNCTION__);
 
+   if (Callback) Callback->consume();
+
    if (Path.empty()) return ERR::NullArgs;
 
    log.branch("%.*s", int(Path.size()), Path.data());
@@ -853,7 +856,7 @@ ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback)
    std::string resolve;
    if (!ResolvePath(Path, RSF::NIL, &resolve)) {
       auto vd = get_fs(resolve);
-      if (vd.Delete) return vd.Delete(resolve, nullptr);
+      if (vd.Delete) return vd.Delete(resolve, Callback);
       else return ERR::NoSupport;
    }
    else return ERR::ResolvePath;
@@ -1132,10 +1135,12 @@ ERR MoveFile(const std::string_view &Source, const std::string_view &Dest, FUNCT
 {
    kt::Log log(__FUNCTION__);
 
+   if (Callback) Callback->consume();
+
    if ((Source.empty()) or (Dest.empty())) return ERR::NullArgs;
 
    log.branch("%.*s to %.*s", int(Source.size()), Source.data(), int(Dest.size()), Dest.data());
-   return fs_copy(Source, Dest, Callback, TRUE);
+   return fs_copy(Source, Dest, Callback, true);
 }
 
 /*********************************************************************************************************************
@@ -1608,14 +1613,14 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
       if (srcfile.ok()) {
          if ((Move) and (srcvirtual.VirtualID IS destvirtual.VirtualID)) {
             // If the source and destination use the same virtual volume, execute the move method.
-            fl::Move args = { Dest.data(), nullptr };
+            fl::Move args = { Dest };
             return Action(fl::Move::id, *srcfile, &args);
          }
       }
       else return ERR::FileNotFound;
 
       extFile::create destfile = {
-         fl::Path(Dest.data()),
+         fl::Path(Dest),
          fl::Flags(FL::WRITE|FL::NEW),
          fl::Permissions(srcfile->Permissions)
       };
@@ -2045,8 +2050,8 @@ ERR fs_copydir(std::string &Source, std::string &Dest, FileFeedback *Feedback, F
                   else if (result IS FFR::SKIP) continue;
                }
 
-               STRING link;
-               if (!(error = vsrc.ReadLink(Source, &link))) {
+               std::string link;
+               if (!(error = vsrc.ReadLink(Source, link))) {
                   DeleteFile(Dest, nullptr);
                   error = vdest.CreateLink(Dest, link);
                }
@@ -2139,13 +2144,13 @@ PERMIT get_parent_permissions(std::string_view Path, int *UserID, int *GroupID)
 
 //********************************************************************************************************************
 
-ERR fs_readlink(std::string_view Source, STRING *Link)
+ERR fs_readlink(std::string_view Source, std::string &Link)
 {
 #ifdef __unix__
    char buffer[512];
    if (int i = readlink(Source.data(), buffer, sizeof(buffer)-1); i != -1) {
       buffer[i] = 0;
-      *Link = strclone(buffer);
+      Link.assign(buffer);
       return ERR::Okay;
    }
    else return ERR::SystemCall;

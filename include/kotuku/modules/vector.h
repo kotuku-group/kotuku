@@ -89,6 +89,15 @@ enum class VF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(VF)
 
+// Available modes for the GradientMesh class.
+
+enum class GMT : int {
+   NIL = 0,
+   UNDEFINED = 0,
+   LINEAR = 1,
+   BICUBIC = 2,
+};
+
 // Define the aspect ratio for VectorFilter unit scaling.
 
 enum class VFA : int {
@@ -782,15 +791,8 @@ class objVectorTransition : public Object {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[2];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -1351,15 +1353,8 @@ class objGradient : public Object {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -1475,15 +1470,8 @@ class objGradientLinear : public objGradient {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -1567,15 +1555,8 @@ class objGradientRadial : public objGradient {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -1659,15 +1640,8 @@ class objGradientConic : public objGradient {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -1731,15 +1705,8 @@ class objGradientDiamond : public objGradient {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -1793,15 +1760,8 @@ class objGradientContour : public objGradient {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -1884,7 +1844,7 @@ class objGradientMesh : public objGradient {
    // Customised field getting
 
    inline ERR getRows(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
       return field->GetValue(this, &Value);
    }
 
@@ -1893,23 +1853,21 @@ class objGradientMesh : public objGradient {
       return field->GetValue(this, &Value);
    }
 
+   inline ERR getMode(GMT &Value) noexcept {
+      Value = *((GMT *)(((int8_t *)this) + 288));
+      return ERR::Okay;
+   }
+
    inline ERR getPatches(std::span<MeshPatchRecord> &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       auto get_field = (ERR (*)(APTR, std::span<MeshPatchRecord> &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -1917,7 +1875,7 @@ class objGradientMesh : public objGradient {
    // Customised field setting
 
    inline ERR setRows(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -1926,8 +1884,13 @@ class objGradientMesh : public objGradient {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
+   inline ERR setMode(const GMT Value) noexcept {
+      auto field = &this->Class->Dictionary[20];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
    inline ERR setPatches(const std::span<const MeshPatchRecord> Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, 0x00105318, &Value);
    }
 
@@ -1983,15 +1946,8 @@ class objGradientDistal : public objGradient {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -2243,15 +2199,8 @@ class objFilterEffect : public Object {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -2370,15 +2319,8 @@ class objImageFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -2437,15 +2379,8 @@ class objSourceFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -2504,15 +2439,8 @@ class objBlurFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -2567,15 +2495,8 @@ class objColourFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -2645,15 +2566,8 @@ class objCompositeFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -2768,15 +2682,8 @@ class objConvolveFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -2887,15 +2794,8 @@ class objDisplacementFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -2959,15 +2859,8 @@ class objFloodFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3067,15 +2960,8 @@ class objLightingFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3150,15 +3036,8 @@ class objMergeFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3212,15 +3091,8 @@ class objMorphologyFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3279,15 +3151,8 @@ class objOffsetFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3374,15 +3239,8 @@ class objRemapFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3446,15 +3304,8 @@ class objTurbulenceFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3559,15 +3410,8 @@ class objWaveFunctionFX : public objFilterEffect {
 
    inline ERR getXMLDef(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3773,15 +3617,8 @@ class objVectorFilter : public Object {
 
    inline ERR getEffectXML(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[15];
-      SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
-      RestoreObjectContext();
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       return error;
    }
 
@@ -3860,12 +3697,12 @@ class objVectorFilter : public Object {
 
 namespace vec {
 struct Push { int Position; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Trace { FUNCTION *Callback; double Scale; int Transform; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Trace { FUNCTION Callback; double Scale; int Transform; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetBoundary { VBF Flags; double X; double Y; double Width; double Height; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct PointInPath { double X; double Y; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SubscribeInput { JTYPE Mask; FUNCTION *Callback; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SubscribeKeyboard { FUNCTION *Callback; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SubscribeFeedback { FM Mask; FUNCTION *Callback; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SubscribeInput { JTYPE Mask; FUNCTION Callback; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SubscribeKeyboard { FUNCTION Callback; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SubscribeFeedback { FM Mask; FUNCTION Callback; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Debug { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct NewMatrix { struct VectorMatrix *Transform; int End; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct FreeMatrix { struct VectorMatrix *Matrix; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
@@ -3880,24 +3717,23 @@ class objVector : public Object {
    using create = kt::Create<objVector>;
    objVector(objMetaClass *pClass, OBJECTID pUID) noexcept : Object(pClass, pUID) {}
 
-   objVector * Child;                 // The first child vector, or NULL.
-   objVectorScene * Scene;            // Short-cut to the top-level VectorScene.
-   objVector * Next;                  // The next vector in the branch, or NULL.
-   objVector * Prev;                  // The previous vector in the branch, or NULL.
-   OBJECTPTR Parent;                  // The parent of the vector, or NULL if this is the top-most vector.
-   struct VectorMatrix * Matrices;    // A linked list of transform matrices that have been applied to the vector.
-   double    StrokeOpacity;           // Defines the opacity of the path stroke.
-   double    FillOpacity;             // The opacity to use when filling the vector.
-   double    Opacity;                 // Defines an overall opacity for the vector's graphics.
-   double    MiterLimit;              // Imposes a limit on the ratio of the miter length to the StrokeWidth.
-   double    InnerMiterLimit;         // Controls how far an inner stroke miter can extend at concave joins.
-   double    DashOffset;              // The distance into the dash pattern to start the dash.  Can be a negative number.
-   VIS       Visibility;              // Controls the visibility of a vector and its children.
-   VF        Flags;                   // Optional flags.
-   PTC       Cursor;                  // The mouse cursor to display when the pointer is within the vector's boundary.
-   RQ        PathQuality;             // Defines the quality of a path when it is rendered.
-   VCS       ColourSpace;             // Defines the colour space to use when blending the vector with a target bitmap's content.
-   int       PathTimestamp;           // This counter is modified each time the path is regenerated.
+   objVector * Child;         // The first child vector, or NULL.
+   objVectorScene * Scene;    // Short-cut to the top-level VectorScene.
+   objVector * Next;          // The next vector in the branch, or NULL.
+   objVector * Prev;          // The previous vector in the branch, or NULL.
+   OBJECTPTR Parent;          // The parent of the vector, or NULL if this is the top-most vector.
+   double    StrokeOpacity;   // Defines the opacity of the path stroke.
+   double    FillOpacity;     // The opacity to use when filling the vector.
+   double    Opacity;         // Defines an overall opacity for the vector's graphics.
+   double    MiterLimit;      // Imposes a limit on the ratio of the miter length to the StrokeWidth.
+   double    InnerMiterLimit; // Controls how far an inner stroke miter can extend at concave joins.
+   double    DashOffset;      // The distance into the dash pattern to start the dash.  Can be a negative number.
+   VIS       Visibility;      // Controls the visibility of a vector and its children.
+   VF        Flags;           // Optional flags.
+   PTC       Cursor;          // The mouse cursor to display when the pointer is within the vector's boundary.
+   RQ        PathQuality;     // Defines the quality of a path when it is rendered.
+   VCS       ColourSpace;     // Defines the colour space to use when blending the vector with a target bitmap's content.
+   int       PathTimestamp;   // This counter is modified each time the path is regenerated.
 
    // Action stubs
 
@@ -3918,7 +3754,7 @@ class objVector : public Object {
       return Action(AC(-1), this, &args);
    }
    inline ERR trace(FUNCTION Callback, double Scale, int Transform) noexcept {
-      struct vec::Trace args = { &Callback, Scale, Transform };
+      struct vec::Trace args = { Callback, Scale, Transform };
       return Action(AC(-2), this, &args);
    }
    inline ERR getBoundary(VBF Flags, double * X, double * Y, double * Width, double * Height) noexcept {
@@ -3935,15 +3771,15 @@ class objVector : public Object {
       return Action(AC(-4), this, &args);
    }
    inline ERR subscribeInput(JTYPE Mask, FUNCTION Callback) noexcept {
-      struct vec::SubscribeInput args = { Mask, &Callback };
+      struct vec::SubscribeInput args = { Mask, Callback };
       return Action(AC(-5), this, &args);
    }
    inline ERR subscribeKeyboard(FUNCTION Callback) noexcept {
-      struct vec::SubscribeKeyboard args = { &Callback };
+      struct vec::SubscribeKeyboard args = { Callback };
       return Action(AC(-6), this, &args);
    }
    inline ERR subscribeFeedback(FM Mask, FUNCTION Callback) noexcept {
-      struct vec::SubscribeFeedback args = { Mask, &Callback };
+      struct vec::SubscribeFeedback args = { Mask, Callback };
       return Action(AC(-7), this, &args);
    }
    inline ERR debug() noexcept {
@@ -3984,11 +3820,6 @@ class objVector : public Object {
 
    inline ERR getParent(OBJECTPTR &Value) noexcept {
       Value = this->Parent;
-      return ERR::Okay;
-   }
-
-   inline ERR getMatrices(struct VectorMatrix * &Value) noexcept {
-      Value = this->Matrices;
       return ERR::Okay;
    }
 
@@ -4052,6 +3883,11 @@ class objVector : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getMatrices(struct VectorMatrix * &Value) noexcept {
+      auto field = &this->Class->Dictionary[26];
+      return field->GetValue(this, &Value);
+   }
+
    inline ERR getStrokeColour(struct FRGB * &Value) noexcept {
       auto field = &this->Class->Dictionary[6];
       return field->GetValue(this, &Value);
@@ -4063,52 +3899,52 @@ class objVector : public Object {
    }
 
    inline ERR getFillRule(VFR &Value) noexcept {
-      Value = *((VFR *)(((int8_t *)this) + 376));
+      Value = *((VFR *)(((int8_t *)this) + 368));
       return ERR::Okay;
    }
 
    inline ERR getClipRule(VFR &Value) noexcept {
-      Value = *((VFR *)(((int8_t *)this) + 380));
+      Value = *((VFR *)(((int8_t *)this) + 372));
       return ERR::Okay;
    }
 
    inline ERR getGuideFlags(VMF &Value) noexcept {
-      Value = *((VMF *)(((int8_t *)this) + 396));
+      Value = *((VMF *)(((int8_t *)this) + 388));
       return ERR::Okay;
    }
 
    inline ERR getLineJoin(VLJ &Value) noexcept {
-      Value = *((VLJ *)(((int8_t *)this) + 384));
+      Value = *((VLJ *)(((int8_t *)this) + 376));
       return ERR::Okay;
    }
 
    inline ERR getLineCap(VLC &Value) noexcept {
-      Value = *((VLC *)(((int8_t *)this) + 388));
+      Value = *((VLC *)(((int8_t *)this) + 380));
       return ERR::Okay;
    }
 
    inline ERR getInnerJoin(VIJ &Value) noexcept {
-      Value = *((VIJ *)(((int8_t *)this) + 392));
+      Value = *((VIJ *)(((int8_t *)this) + 384));
       return ERR::Okay;
    }
 
    inline ERR getStroke(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 216));
+      Value = *((std::string *)(((int8_t *)this) + 208));
       return ERR::Okay;
    }
 
    inline ERR getFill(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 248));
+      Value = *((std::string *)(((int8_t *)this) + 240));
       return ERR::Okay;
    }
 
    inline ERR getFilter(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 280));
+      Value = *((std::string *)(((int8_t *)this) + 272));
       return ERR::Okay;
    }
 
    inline ERR getSID(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 312));
+      Value = *((std::string *)(((int8_t *)this) + 304));
       return ERR::Okay;
    }
 
@@ -4161,13 +3997,8 @@ class objVector : public Object {
    inline ERR getSequence(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[16];
       SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       RestoreObjectContext();
       return error;
    }
@@ -4420,10 +4251,10 @@ class objVectorPath : public objVector {
       return get_field(this, Value);
    }
 
-   inline ERR getSequence(std::string_view &Value) noexcept {
+   inline ERR getSequence(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[16];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
       auto error = get_field(this, Value);
       RestoreObjectContext();
       return error;
@@ -4459,7 +4290,7 @@ class objVectorPath : public objVector {
 
    inline ERR setSequence(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[16];
-      return field->WriteValue(this, field, 0x00804308, &Value);
+      return field->WriteValue(this, field, 0x00804328, &Value);
    }
 
    inline ERR setX(const Unit Value) noexcept {
@@ -4885,67 +4716,67 @@ class objVectorWave : public objVector {
    // Customised field getting
 
    inline ERR getFrequencyEnd(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1056));
-      return ERR::Okay;
-   }
-
-   inline ERR getNoise(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1072));
-      return ERR::Okay;
-   }
-
-   inline ERR getEnvelope(WVE &Value) noexcept {
-      Value = *((WVE *)(((int8_t *)this) + 1088));
-      return ERR::Okay;
-   }
-
-   inline ERR getClose(WVC &Value) noexcept {
-      Value = *((WVC *)(((int8_t *)this) + 1092));
-      return ERR::Okay;
-   }
-
-   inline ERR getType(WVT &Value) noexcept {
-      Value = *((WVT *)(((int8_t *)this) + 1096));
-      return ERR::Okay;
-   }
-
-   inline ERR getX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 968));
-      return ERR::Okay;
-   }
-
-   inline ERR getY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 984));
-      return ERR::Okay;
-   }
-
-   inline ERR getLength(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1000));
-      return ERR::Okay;
-   }
-
-   inline ERR getAmplitude(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1016));
-      return ERR::Okay;
-   }
-
-   inline ERR getThickness(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1032));
-      return ERR::Okay;
-   }
-
-   inline ERR getFrequency(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1048));
-      return ERR::Okay;
-   }
-
-   inline ERR getDecay(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 1064));
       return ERR::Okay;
    }
 
-   inline ERR getPhase(double &Value) noexcept {
+   inline ERR getNoise(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 1080));
+      return ERR::Okay;
+   }
+
+   inline ERR getEnvelope(WVE &Value) noexcept {
+      Value = *((WVE *)(((int8_t *)this) + 1096));
+      return ERR::Okay;
+   }
+
+   inline ERR getClose(WVC &Value) noexcept {
+      Value = *((WVC *)(((int8_t *)this) + 1100));
+      return ERR::Okay;
+   }
+
+   inline ERR getType(WVT &Value) noexcept {
+      Value = *((WVT *)(((int8_t *)this) + 1104));
+      return ERR::Okay;
+   }
+
+   inline ERR getX(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 976));
+      return ERR::Okay;
+   }
+
+   inline ERR getY(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 992));
+      return ERR::Okay;
+   }
+
+   inline ERR getLength(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 1008));
+      return ERR::Okay;
+   }
+
+   inline ERR getAmplitude(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 1024));
+      return ERR::Okay;
+   }
+
+   inline ERR getThickness(Unit &Value) noexcept {
+      Value = *((Unit *)(((int8_t *)this) + 1040));
+      return ERR::Okay;
+   }
+
+   inline ERR getFrequency(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1056));
+      return ERR::Okay;
+   }
+
+   inline ERR getDecay(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1072));
+      return ERR::Okay;
+   }
+
+   inline ERR getPhase(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1088));
       return ERR::Okay;
    }
 
@@ -5280,62 +5111,62 @@ class objVectorShape : public objVector {
    // Customised field getting
 
    inline ERR getM(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 968));
-      return ERR::Okay;
-   }
-
-   inline ERR getN1(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 976));
       return ERR::Okay;
    }
 
-   inline ERR getN2(double &Value) noexcept {
+   inline ERR getN1(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 984));
       return ERR::Okay;
    }
 
-   inline ERR getN3(double &Value) noexcept {
+   inline ERR getN2(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 992));
       return ERR::Okay;
    }
 
-   inline ERR getA(double &Value) noexcept {
+   inline ERR getN3(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 1000));
       return ERR::Okay;
    }
 
-   inline ERR getB(double &Value) noexcept {
+   inline ERR getA(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 1008));
       return ERR::Okay;
    }
 
-   inline ERR getPhi(double &Value) noexcept {
+   inline ERR getB(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 1016));
       return ERR::Okay;
    }
 
+   inline ERR getPhi(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1024));
+      return ERR::Okay;
+   }
+
    inline ERR getVertices(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 1024));
-      return ERR::Okay;
-   }
-
-   inline ERR getSpiral(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 1028));
-      return ERR::Okay;
-   }
-
-   inline ERR getRepeat(int &Value) noexcept {
       Value = *((int *)(((int8_t *)this) + 1032));
       return ERR::Okay;
    }
 
-   inline ERR getClose(int &Value) noexcept {
+   inline ERR getSpiral(int &Value) noexcept {
       Value = *((int *)(((int8_t *)this) + 1036));
       return ERR::Okay;
    }
 
-   inline ERR getMod(int &Value) noexcept {
+   inline ERR getRepeat(int &Value) noexcept {
       Value = *((int *)(((int8_t *)this) + 1040));
+      return ERR::Okay;
+   }
+
+   inline ERR getClose(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 1044));
+      return ERR::Okay;
+   }
+
+   inline ERR getMod(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 1048));
       return ERR::Okay;
    }
 
@@ -5453,37 +5284,37 @@ class objVectorSpiral : public objVector {
    // Customised field getting
 
    inline ERR getSpacing(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 968));
-      return ERR::Okay;
-   }
-
-   inline ERR getOffset(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 976));
       return ERR::Okay;
    }
 
-   inline ERR getStep(double &Value) noexcept {
+   inline ERR getOffset(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 984));
       return ERR::Okay;
    }
 
-   inline ERR getLoopLimit(double &Value) noexcept {
+   inline ERR getStep(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 992));
       return ERR::Okay;
    }
 
+   inline ERR getLoopLimit(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1000));
+      return ERR::Okay;
+   }
+
    inline ERR getRadius(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1000));
+      Value = *((Unit *)(((int8_t *)this) + 1008));
       return ERR::Okay;
    }
 
    inline ERR getCX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1016));
+      Value = *((Unit *)(((int8_t *)this) + 1024));
       return ERR::Okay;
    }
 
    inline ERR getCY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1032));
+      Value = *((Unit *)(((int8_t *)this) + 1040));
       return ERR::Okay;
    }
 
@@ -5584,27 +5415,27 @@ class objVectorEllipse : public objVector {
    // Customised field getting
 
    inline ERR getCX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 968));
+      Value = *((Unit *)(((int8_t *)this) + 976));
       return ERR::Okay;
    }
 
    inline ERR getCY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 984));
+      Value = *((Unit *)(((int8_t *)this) + 992));
       return ERR::Okay;
    }
 
    inline ERR getRadiusX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1000));
+      Value = *((Unit *)(((int8_t *)this) + 1008));
       return ERR::Okay;
    }
 
    inline ERR getRadiusY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1016));
+      Value = *((Unit *)(((int8_t *)this) + 1024));
       return ERR::Okay;
    }
 
    inline ERR getVertices(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 1032));
+      Value = *((int *)(((int8_t *)this) + 1040));
       return ERR::Okay;
    }
 
@@ -5708,7 +5539,7 @@ class objVectorViewport : public objVector {
    // Customised field getting
 
    inline ERR getAspectRatio(ARF &Value) noexcept {
-      Value = *((ARF *)(((int8_t *)this) + 1008));
+      Value = *((ARF *)(((int8_t *)this) + 1016));
       return ERR::Okay;
    }
 
@@ -5718,37 +5549,37 @@ class objVectorViewport : public objVector {
    }
 
    inline ERR getOverflowX(VOF &Value) noexcept {
-      Value = *((VOF *)(((int8_t *)this) + 1012));
+      Value = *((VOF *)(((int8_t *)this) + 1020));
       return ERR::Okay;
    }
 
    inline ERR getOverflowY(VOF &Value) noexcept {
-      Value = *((VOF *)(((int8_t *)this) + 1016));
+      Value = *((VOF *)(((int8_t *)this) + 1024));
       return ERR::Okay;
    }
 
    inline ERR getBuffer(OBJECTPTR &Value) noexcept {
-      Value = *((OBJECTPTR *)(((int8_t *)this) + 968));
+      Value = *((OBJECTPTR *)(((int8_t *)this) + 976));
       return ERR::Okay;
    }
 
    inline ERR getViewX(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 976));
-      return ERR::Okay;
-   }
-
-   inline ERR getViewY(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 984));
       return ERR::Okay;
    }
 
-   inline ERR getViewWidth(double &Value) noexcept {
+   inline ERR getViewY(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 992));
       return ERR::Okay;
    }
 
-   inline ERR getViewHeight(double &Value) noexcept {
+   inline ERR getViewWidth(double &Value) noexcept {
       Value = *((double *)(((int8_t *)this) + 1000));
+      return ERR::Okay;
+   }
+
+   inline ERR getViewHeight(double &Value) noexcept {
+      Value = *((double *)(((int8_t *)this) + 1008));
       return ERR::Okay;
    }
 
@@ -6042,17 +5873,17 @@ inline void operator*=(VectorMatrix &This, const VectorMatrix &Other)
 }
 namespace vec {
 inline ERR SubscribeInput(APTR Ob, JTYPE Mask, FUNCTION Callback) {
-   struct SubscribeInput args = { Mask, &Callback };
+   struct SubscribeInput args = { Mask, Callback };
    return(Action(vec::SubscribeInput::id, (OBJECTPTR)Ob, &args));
 }
 
 inline ERR SubscribeKeyboard(APTR Ob, FUNCTION Callback) {
-   struct SubscribeKeyboard args = { &Callback };
+   struct SubscribeKeyboard args = { Callback };
    return(Action(vec::SubscribeKeyboard::id, (OBJECTPTR)Ob, &args));
 }
 
 inline ERR SubscribeFeedback(APTR Ob, FM Mask, FUNCTION Callback) {
-   struct SubscribeFeedback args = { Mask, &Callback };
+   struct SubscribeFeedback args = { Mask, Callback };
    return(Action(vec::SubscribeFeedback::id, (OBJECTPTR)Ob, &args));
 }
 } // namespace

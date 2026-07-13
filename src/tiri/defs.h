@@ -19,11 +19,13 @@ constexpr int SIZE_READ = 1024;
 #include <span>
 #include <concepts>
 #include <format>
+#include <memory>
 
 #include "lj_obj.h"
 #include "lj_frame.h"
 #include "lj_state.h"
 #include "lauxlib.h"
+#include "struct_def.h"
 
 using namespace kt;
 
@@ -32,9 +34,11 @@ class extTiri; // Internal extended Tiri class (full definition below); derives 
 template <class T> T ALIGN64(T a) { return (((a) + 7) & (~7)); }
 template <class T> T ALIGN32(T a) { return (((a) + 3) & (~3)); }
 
+namespace tiri {
 extern CSTRING const glBytecodeNames[];
 extern bool glPrintMsg;
 extern MSGID glDelayedCallMsgID;
+}
 
 //********************************************************************************************************************
 
@@ -58,12 +62,8 @@ extern MSGID glDelayedCallMsgID;
 //********************************************************************************************************************
 
 struct CaseInsensitiveHashView {
-   std::size_t operator()(std::string_view s) const noexcept {
-      std::size_t hash = 5381;
-      for (char c : s) {
-         hash = ((hash << 5) + hash) + std::tolower((unsigned char)c);
-      }
-      return hash;
+   std::size_t operator()(std::string_view String) const noexcept {
+      return kt::strihash(String);
    }
 };
 
@@ -73,6 +73,7 @@ struct CaseInsensitiveEqualView {
    }
 };
 
+namespace tiri {
 extern ankerl::unordered_dense::map<std::string_view, ACTIONID, CaseInsensitiveHashView, CaseInsensitiveEqualView> glActionLookup;
 extern struct ActionTable *glActions;
 extern OBJECTPTR modDisplay; // Required by tiri_input.c
@@ -84,6 +85,9 @@ extern JOF glJitOptions;
 extern ankerl::unordered_dense::map<uint32_t, StructInfo> *glStructSizes;
 extern std::unordered_map<struct_name, struct_record, struct_hash, struct_equal> glStructs;
 extern uint64_t glActionsWithResults;
+}
+
+using namespace tiri;
 
 //********************************************************************************************************************
 // Compile-time constant value (64-bit integer or double)
@@ -106,8 +110,10 @@ struct TiriConstant {
 
 // Global constant registry - case-sensitive, owns string keys
 // Protected by glConstantMutex for thread-safe access
+namespace tiri {
 extern ankerl::unordered_dense::map<uint32_t, TiriConstant> glConstantRegistry;
 extern std::shared_mutex glConstantMutex;
+}
 
 // Thread-safe shared pool for async.pool — see tiri_async.cpp
 // Owned by the main script's extTiri and shared with child scripts via std::shared_ptr.
@@ -152,16 +158,7 @@ static inline std::string_view lua_checkstringview(lua_State *L, int idx)
 
 inline uint32_t STRUCTHASH(CSTRING String)
 {
-   uint32_t hash = 5381;
-   uint8_t c;
-   while ((c = *String++)) {
-      if ((c >= 'A') and (c <= 'Z'));
-      else if ((c >= 'a') and (c <= 'z'));
-      else if ((c >= '0') and (c <= '9'));
-      else break;
-      hash = ((hash<<5) + hash) + c;
-   }
-   return hash;
+   return kt::strhash(struct_name_hash_prefix(String));
 }
 
 //********************************************************************************************************************
@@ -259,8 +256,6 @@ struct datarequest {
    }
 };
 
-#include "struct_def.h"
-
 //********************************************************************************************************************
 // Variable information captured during parsing when JOF::DIAGNOSE is enabled.
 
@@ -274,16 +269,6 @@ struct VariableInfo {
 };
 
 //********************************************************************************************************************
-
-// This structure is created & managed through the 'struct' interface
-
-struct fstruct {
-   APTR Data;          // Pointer to the structure data
-   int StructSize;     // Size of the structure
-   int AlignedSize;    // 64-bit alignment size of the structure.
-   struct struct_record *Def; // The structure definition
-   bool Deallocate;    // Deallocate the struct when Lua collects this resource.
-};
 
 struct fprocessing {
    double Timeout;
@@ -368,9 +353,39 @@ struct lua_ref {
 };
 
 OBJECTPTR access_object(GCobject *);
+inline bool object_is_dead(GCobject *Object)
+{
+   return (not Object->uid) or (Object->is_pinned() and Object->ptr->collecting());
+}
+
+// Returns the cached object pointer only if the reference is still alive.  Pinned wrappers retain a zombie header
+// pointer after termination, so a bare Object->ptr test is not a liveness check.
+//
+// Safety contract: the returned pointer is deliberately unlocked and unpinned (strong).  This is sound because:
+//
+// 1. Callees provide their own locking - Action() acquires the object lock internally via ScopedObjectAccess, and
+//    field access funnels through access_object().  Adding a lock here would be redundant.
+// 2. Same-thread frees are caught deterministically: nothing on this thread can terminate the object between the
+//    object_is_dead() test and the dispatch.
+// 3. A cross-thread free that is *in progress* at dispatch time fails cleanly - teardown holds the object lock, and
+//    LockObject() refuses collecting objects with ERR::MarkedForDeletion.  The wrapper's weak pin guarantees the
+//    header memory itself remains valid throughout, so the check never reads freed memory.
+// 4. The only residual is a cross-thread free that fully *completes* between the check and the callee's lock
+//    acquisition.  That window pre-dates weak pinning (and was strictly worse - a dangling pointer rather than a
+//    pinned zombie header), and freeing an object while another thread is actively using it is outside the Core's
+//    threading contract (see the LockObject() quick-lock notes).  The systematic close, if ever needed, is a
+//    collecting() recheck inside Object::lock() - not per-call-site locking or strong pins here.  A strong pin must
+//    never be taken on dispatch paths: it defers termination and self-deadlocks when the context is an ancestor of
+//    the object being freed.
+
+[[nodiscard]] inline OBJECTPTR direct_object_ptr(GCobject *Object)
+{
+   return object_is_dead(Object) ? nullptr : Object->ptr;
+}
 void load_include_for_class(lua_State *, objMetaClass *);
 ERR build_args(lua_State *, CSTRING, const struct FunctionField *, int, int8_t *, int *, int &,
    CSTRING &);
+void cleanup_argbuffer(lua_State *, const struct FunctionField *, int, int8_t *, bool);
 const char * code_reader(lua_State *, void *, size_t *);
 [[maybe_unused]] int code_writer_id(lua_State *, CPTR, size_t, void *);
 [[maybe_unused]] int code_writer(lua_State *, CPTR, size_t, void *);
@@ -378,7 +393,7 @@ ERR create_tiri(void);
 void get_line(extTiri *, int, STRING, int);
 APTR get_meta(lua_State *Lua, int Arg, CSTRING);
 [[maybe_unused]] void hook_debug(lua_State *, lua_Debug *);
-ERR load_include(extTiri *, CSTRING);
+ERR load_include(extTiri *, std::string_view);
 int MAKESTRUCT(lua_State *);
 [[maybe_unused]] void make_any_array(lua_State *, int, std::string_view, int, CPTR);
 [[maybe_unused]] void make_array(lua_State *, AET, int = 0, CPTR = nullptr, std::string_view = {});
@@ -395,20 +410,19 @@ ERR push_object_id(lua_State *, OBJECTID ObjectID);
 extern ERR delayed_msg_handler(APTR Meta, int MsgID, int MsgType, APTR Message, int MsgSize);
 extern int object_index(lua_State *);
 extern int object_newindex(lua_State *);
-struct fstruct * push_struct(extTiri *, APTR, std::string_view, bool, bool);
-struct fstruct * push_struct_def(lua_State *, APTR, struct struct_record &, bool);
+GCstruct * push_struct(extTiri *, APTR, std::string_view, bool, bool, OBJECTPTR Lifecycle = nullptr);
 extern void register_io_class(lua_State *);
 extern void register_input_class(lua_State *);
 extern void register_module_class(lua_State *);
 extern void register_processing_class(lua_State *);
 extern void register_regex_class(lua_State *);
-extern void register_struct_class(lua_State *);
 extern void register_async_class(lua_State *);
 //static void register_widget_class(lua_State *);
 void release_object(GCobject *);
 void new_module(lua_State *, objModule *);
 ERR struct_to_table(lua_State *, std::vector<lua_ref> &, struct struct_record &, CPTR);
-ERR table_to_struct(lua_State *, std::string_view, APTR *);
+void unref_struct_references(lua_State *, std::vector<lua_ref> &);
+ERR table_to_struct(lua_State *, std::string_view, std::unique_ptr<uint8_t[]> &);
 void keyvalue_to_table(lua_State *, const KEYVALUE *);
 
 int fcmd_arg(lua_State *);
@@ -425,12 +439,13 @@ extern void armExecFunction(APTR, APTR, int);
 extern void x64ExecFunction(APTR, int, int64_t *, int);
 #endif
 
-// Throws exceptions.  Used for returning objects to the user.
+// Throws exceptions.  Used for returning objects to the user.  Passing the resolved pointer allows lua_pushobject()
+// to take the wrapper's weak pin at creation, saving the first access from an AccessObject() resolution.
 
 inline GCobject * push_object(lua_State *Lua, OBJECTPTR Object, bool Detached = true)
 {
    load_include_for_class(Lua, Object->Class);
-   return lua_pushobject(Lua, Object->UID, nullptr, Object->Class, Detached ? GCOBJ_DETACHED : 0);
+   return lua_pushobject(Lua, Object->UID, Object, Object->Class, Detached ? GCOBJ_DETACHED : 0);
 }
 
 //********************************************************************************************************************

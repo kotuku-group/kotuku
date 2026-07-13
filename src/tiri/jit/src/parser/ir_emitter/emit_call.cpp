@@ -305,12 +305,12 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
       if (not callee_result.ok()) return callee_result;
       callee = callee_result.value_ref();
 
-      // TEMPORARY: If the callee is IndexedObject, downgrade to Indexed.
-      // Currently object methods are resolved via metamethods (__index), so we need
+      // TEMPORARY: If the callee is IndexedObject or IndexedStruct, downgrade to Indexed.
+      // Currently object methods and struct helpers are resolved via metamethods (__index), so we need
       // the standard TGETS path which dispatches through lj_meta_tget.
       // This will require removal or modification when OBCALL is implemented.
 
-      if (callee.k IS ExpKind::IndexedObject) callee.k = ExpKind::Indexed;
+      if (callee.k IS ExpKind::IndexedObject or callee.k IS ExpKind::IndexedStruct) callee.k = ExpKind::Indexed;
 
       // If callee is a local variable, check if it has known return types
 

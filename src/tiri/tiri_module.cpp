@@ -10,6 +10,7 @@
 #include "lauxlib.h"
 #include "lj_obj.h"
 #include "lj_str.h"
+#include "lj_struct.h"
 
 #include "defs.h"
 #include "lj_proto_registry.h"
@@ -41,17 +42,19 @@ constexpr size_t BUFFER_ELEMENT_SIZE = 16;
 constexpr size_t BUFFER_SIZE = MAX_MODULE_ARGS * BUFFER_ELEMENT_SIZE;
 constexpr size_t MAX_STRING_PREFIX_LENGTH = 200;
 struct CaseInsensitiveCompare {
-   bool operator()(const std::string &A, const std::string &B) const {
+   using is_transparent = void;
+
+   bool operator()(std::string_view A, std::string_view B) const {
       return std::lexicographical_compare(
          A.begin(), A.end(), B.begin(), B.end(),
-         [](char a, char b) { return std::tolower((unsigned char)a) < std::tolower((unsigned char)b); }
+         [](char CharA, char CharB) { return std::tolower((unsigned char)CharA) < std::tolower((unsigned char)CharB); }
       );
    }
 };
 
 static std::set<std::string, CaseInsensitiveCompare> glLoadedConstants; // Stores the names of modules that have loaded constants (system wide)
 
-[[nodiscard]] static CSTRING load_include_struct(extTiri *, CSTRING, std::string_view);
+[[nodiscard]] static ERR load_include_struct(extTiri *, CSTRING, std::string_view, CSTRING *);
 [[nodiscard]] static CSTRING load_include_constant(CSTRING, std::string_view);
 
 static int module_call(lua_State *);
@@ -251,7 +254,7 @@ static CSTRING load_include_constant(CSTRING Line, std::string_view Source)
 
 //********************************************************************************************************************
 
-static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
+static ERR process_module_defs(extTiri *Script, objModule *module, std::string_view Name)
 {
    if (auto root = (OBJECTPTR)module->Root) {
       struct ModHeader *header;
@@ -260,7 +263,9 @@ static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
 
       if (auto idl = header->Definitions) {
          while ((idl) and (*idl)) {
-            if ((idl[0] IS 's') and (idl[1] IS '.')) idl = load_include_struct(Script, idl+2, Name);
+            if ((idl[0] IS 's') and (idl[1] IS '.')) {
+               if (auto error = load_include_struct(Script, idl+2, Name, &idl); error != ERR::Okay) return error;
+            }
             else if ((idl[0] IS 'c') and (idl[1] IS '.')) idl = load_include_constant(idl+2, Name);
             else idl = next_line(idl);
          }
@@ -274,7 +279,7 @@ static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
 // For the 'include' statement.  Creates a temporary module object to process the definitions without formally opening
 // an interface.
 
-[[nodiscard]] ERR load_include(extTiri *Script, CSTRING Module)
+[[nodiscard]] ERR load_include(extTiri *Script, std::string_view Module)
 {
    ERR error = ERR::Okay;
 
@@ -289,7 +294,7 @@ static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
 
    if (process_constants) {
       kt::Log log(__FUNCTION__);
-      log.branch("Definition: %s", Module);
+      log.branch("Definition: %.*s", int(Module.size()), Module.data());
 
       AdjustLogLevel(1);
 
@@ -299,7 +304,7 @@ static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
 
       AdjustLogLevel(-1);
 
-      if (!error) glLoadedConstants.insert(Module);
+      if (!error) glLoadedConstants.emplace(Module);
    }
 
    return error;
@@ -309,8 +314,11 @@ static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
 // Format: s.Name:typeField,...
 // TODO: This parses the struct definitions in advance - ideally we'd record the definition string and parse on first-use.
 
-[[nodiscard]] static CSTRING load_include_struct(extTiri *Script, CSTRING Line, std::string_view Source)
+[[nodiscard]] static ERR load_include_struct(extTiri *Script, CSTRING Line, std::string_view Source, CSTRING *NextLine)
 {
+   if (not NextLine) return ERR::NullArgs;
+   *NextLine = next_line(Line);
+
    int i;
    for (i=0; (Line[i] >= 0x20) and (Line[i] != ':'); i++);
 
@@ -323,18 +331,18 @@ static ERR process_module_defs(extTiri *Script, objModule *module, CSTRING Name)
 
       if ((Line[j] IS '\n') or (Line[j] IS '\r')) {
          std::string linebuf(Line, j);
-         make_struct(Script, name, linebuf.c_str());
          while ((Line[j] IS '\n') or (Line[j] IS '\r')) j++;
-         return Line + j;
+         *NextLine = Line + j;
+         return make_struct(Script, name, linebuf.c_str());
       }
       else {
-         make_struct(Script, name, Line);
-         return Line + j;
+         *NextLine = Line + j;
+         return make_struct(Script, name, Line);
       }
    }
    else {
       kt::Log(__FUNCTION__).warning("Malformed struct name in %.*s.", int(Source.size()), Source.data());
-      return next_line(Line);
+      return ERR::Syntax;
    }
 }
 
@@ -370,15 +378,15 @@ static int module_test(lua_State *Lua)
    if (auto mod = (module *)luaL_checkudata(Lua, 1, "Tiri.mod")) {
       auto options = lua_tostringview(Lua, 2);
       int passed = 0, total = 0;
-      ((objModule *)mod->Module)->test(options, &passed, &total);
-      lua_pushinteger(Lua, passed);
-      lua_pushinteger(Lua, total);
-      return 2;
+      if (((objModule *)mod->Module)->test(options, &passed, &total) IS ERR::Okay) {
+         lua_pushinteger(Lua, passed);
+         lua_pushinteger(Lua, total);
+         return 2;
+      }
+      else luaL_error(Lua, ERR::Failed, "Module test failed.");
    }
-   else {
-      luaL_argerror(Lua, 1, "Expected module.");
-      return 0;
-   }
+   else luaL_argerror(Lua, 1, "Expected module.");
+   return 0;
 }
 
 //********************************************************************************************************************
@@ -401,7 +409,8 @@ static int module_load(lua_State *Lua)
    }
 
    if ((modname[i]) or (i >= 32)) {
-      luaL_error(Lua, ERR::Syntax, "Invalid module name; only alpha-numeric names are permitted with max 32 chars.");
+      luaL_error(Lua, ERR::Syntax,
+         "Invalid module name; only alpha-numeric names shorter than 32 characters are permitted.");
    }
 
    if (auto loaded_mod = objModule::create::global(fl::Name(modname))) {
@@ -565,34 +574,25 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
    // Track dynamically allocated objects for cleanup
    struct allocated_struct_ref {
-      APTR Data = nullptr;
+      std::unique_ptr<uint8_t[]> Data;
       struct_record *Def = nullptr;
 
       allocated_struct_ref() = default;
-      allocated_struct_ref(APTR InitData, struct_record *InitDef):
-         Data(InitData),
-         Def(InitDef)
-      {
-      }
+      allocated_struct_ref(std::unique_ptr<uint8_t[]> InitData, struct_record *InitDef):
+         Data(std::move(InitData)), Def(InitDef) { }
 
       allocated_struct_ref(const allocated_struct_ref &) = delete;
       allocated_struct_ref & operator=(const allocated_struct_ref &) = delete;
 
-      allocated_struct_ref(allocated_struct_ref &&Other) noexcept:
-         Data(Other.Data),
-         Def(Other.Def)
-      {
-         Other.Data = nullptr;
+      allocated_struct_ref(allocated_struct_ref &&Other) noexcept: Data(std::move(Other.Data)), Def(Other.Def) {
          Other.Def = nullptr;
       }
 
-      allocated_struct_ref & operator=(allocated_struct_ref &&Other) noexcept
-      {
+      allocated_struct_ref & operator=(allocated_struct_ref &&Other) noexcept {
          if (this != &Other) {
             release();
-            Data = Other.Data;
+            Data = std::move(Other.Data);
             Def = Other.Def;
-            Other.Data = nullptr;
             Other.Def = nullptr;
          }
          return *this;
@@ -602,12 +602,10 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          release();
       }
 
-      void release()
-      {
+      void release() {
          if (Data) {
-            if (Def) destroy_struct_cpp_strings(*Def, Data);
-            FreeResource(Data);
-            Data = nullptr;
+            if (Def) destroy_struct_cpp_strings(*Def, Data.get());
+            Data.reset();
             Def = nullptr;
          }
       }
@@ -678,15 +676,16 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    FUNCTION func;
 
    // This guard owns the Lua registry reference for an FD_FUNCTION argument until the call is handed to the module.
-   // After that point, the module function is responsible for calling DerefProcedure() when it no longer needs it.
+   // After that point, the module function is responsible for calling DerefProcedure() when it no longer needs it,
+   // or alternatively marking the function as consumed.
 
    struct func_ref_guard {
       lua_State *Lua;
       FUNCTION  &Func;
       bool OwnsReference = true;
       ~func_ref_guard() {
-         if (OwnsReference) {
-            if (Func.isScript() and (Func.ProcedureID > 0)) luaL_unref(Lua, LUA_REGISTRYINDEX, Func.ProcedureID);
+         if (Func.isScript() and (Func.ProcedureID > 0)) {
+            if (OwnsReference or Func.consumed()) luaL_unref(Lua, LUA_REGISTRYINDEX, Func.ProcedureID);
          }
       }
    } func_guard{ Lua, func };
@@ -718,7 +717,15 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             // Applicable to RESULT|MUTABLE only, which requires the client to provide an empty kt::vector<> to the function.
             // We set this up here, then convert the resulting values to a Tiri array when the function returns.
             cpp_array_result result_ref = { };
-            if (auto error = make_cpp_array_result(argtype, &result_ref); !error) {
+            if ((argtype & FD_STRUCT) and (!(argtype & FD_PTR))) {
+               // TODO: args[i].Name will include the name of the struct that we need to use to build the array, e.g. "FontList:Result"
+               // where FontList is the struct name.  The kt::vector<T> data() will contain a serialised list of structs and the total
+               // count.  For this to work, the STRUCT type would need to host a kt::vector<> and the call site would need to
+               // make a TrackResource() call that associates its destruction process with the kt::vector<> address.
+               ErrorMsg = "C++ struct arrays are not supported.";
+               return ERR::NoSupport;
+            }
+            else if (auto error = make_cpp_array_result(argtype, &result_ref); !error) {
                ((APTR *)(buffer + j))[0] = result_ref.Data; // kt::vector<>
                cpp_arrays.push_back(std::move(result_ref));
                arg_values[in]  = buffer + j;
@@ -872,7 +879,8 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             return ERR::Args;
          }
 
-         // NOTE: The client is responsible for calling DerefProcedure() on the function reference when it is no longer needed.
+         // NOTE: The client is responsible for calling DerefProcedure() on the function reference when it is no longer needed,
+         // or it can mark the function as consumed.
 
          switch(lua_type(Lua, i)) {
             case LUA_TSTRING: { // Name of function to call
@@ -1061,23 +1069,28 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                }
             }
          }
-         else if (auto fstruct = (struct fstruct *)get_meta(Lua, i, "Tiri.struct")) {
-            ((APTR *)(buffer + j))[0] = fstruct->Data;
+         else if (auto native_struct = lua_isstruct(Lua, i) ? lua_tostruct(Lua, i) : nullptr) {
+            // Guard specific to lifecycle-bound struct views; structs without an object dependency skip it.
+            if (lj_struct_stale(native_struct)) {
+               ErrorMsg = "A struct argument's providing object has been destroyed.";
+               return ERR::DoesNotExist;
+            }
+            ((APTR *)(buffer + j))[0] = native_struct->data;
             arg_values[in] = buffer + j;
             arg_types[in++] = &ffi_type_pointer;
             j += sizeof(APTR);
 
-            log.trace("Struct address %p inserted to arg offset %d", fstruct->Data, j);
+            log.trace("Struct address %p inserted to arg offset %d", native_struct->data, j);
             if (args[i+1].Type & FD_BUFSIZE) {
                if (args[i+1].Type & FD_INT) {
-                  ((int *)(buffer + j))[0] = fstruct->AlignedSize;
+                  ((int *)(buffer + j))[0] = ALIGN64(native_struct->structsize);
                   i++;
                   arg_values[in] = buffer + j;
                   arg_types[in++] = &ffi_type_sint32;
                   j += sizeof(int);
                }
                else if (args[i+1].Type & FD_INT64) {
-                  ((int64_t *)(buffer + j))[0] = fstruct->AlignedSize;
+                  ((int64_t *)(buffer + j))[0] = ALIGN64(native_struct->structsize);
                   i++;
                   arg_values[in] = buffer + j;
                   arg_types[in++] = &ffi_type_sint64;
@@ -1087,8 +1100,8 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          }
          else if (arg_type IS LUA_TOBJECT) {
             auto obj = lua_toobject(Lua, i);
-            if (obj->ptr) {
-               ((OBJECTPTR *)(buffer + j))[0] = obj->ptr;
+            if (auto direct = direct_object_ptr(obj)) {
+               ((OBJECTPTR *)(buffer + j))[0] = direct;
             }
             else if (auto ptr_obj = (OBJECTPTR)access_object(obj)) {
                ((OBJECTPTR *)(buffer + j))[0] = ptr_obj;
@@ -1132,12 +1145,13 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             if (args[i].Type & FD_STRUCT) {
                // Convert Lua table to C struct
                lua_pushvalue(Lua, i); // Duplicate table for table_to_struct (consumes stack)
-               APTR struct_data;
-               if (!table_to_struct(Lua, args[i].Name, &struct_data)) {
+               std::unique_ptr<uint8_t[]> struct_data;
+               if (!table_to_struct(Lua, args[i].Name, struct_data)) {
+                  auto struct_address = struct_data.get();
                   auto def = glStructs.find(std::string_view(args[i].Name));
-                  if (def != glStructs.end()) allocated_structs.push_back({ struct_data, &def->second });
-                  else allocated_structs.push_back({ struct_data, nullptr });
-                  ((APTR *)(buffer + j))[0] = struct_data;
+                  if (def != glStructs.end()) allocated_structs.emplace_back(std::move(struct_data), &def->second);
+                  else allocated_structs.emplace_back(std::move(struct_data), nullptr);
+                  ((APTR *)(buffer + j))[0] = struct_address;
                   arg_values[in] = buffer + j;
                   arg_types[in++] = &ffi_type_pointer;
                   j += sizeof(APTR);

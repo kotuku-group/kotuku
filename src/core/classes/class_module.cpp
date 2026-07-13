@@ -75,13 +75,13 @@ static const FieldArray glModuleFields[] = {
 };
 
 static ERR MODULE_Init(extModule *);
-static ERR MODULE_FreePlacement(extModule *);
-static ERR MODULE_NewPlacement(extModule *);
+static ERR MODULE_Free(extModule *);
+static ERR MODULE_New(extModule *);
 
 static const ActionArray glModuleActions[] = {
-   { AC::FreePlacement, MODULE_FreePlacement },
+   { AC::Free, MODULE_Free },
    { AC::Init, MODULE_Init },
-   { AC::NewPlacement, MODULE_NewPlacement },
+   { AC::New, MODULE_New },
    { AC::NIL, nullptr }
 };
 
@@ -216,7 +216,7 @@ static ERR load_mod(extModule *Self, objRootModule *Root, struct ModHeader **Tab
 
 //********************************************************************************************************************
 
-ERR ROOTMODULE_FreePlacement(objRootModule *Self)
+ERR ROOTMODULE_Free(objRootModule *Self)
 {
    Self->~objRootModule();
    return ERR::Okay;
@@ -224,7 +224,7 @@ ERR ROOTMODULE_FreePlacement(objRootModule *Self)
 
 //********************************************************************************************************************
 
-static ERR ROOTMODULE_NewPlacement(objRootModule *Self)
+static ERR ROOTMODULE_New(objRootModule *Self)
 {
    new (Self) objRootModule(Self->Class, Self->UID);
    return ERR::Okay;
@@ -240,7 +240,7 @@ static ERR ROOTMODULE_GET_Header(objRootModule *Self, struct ModHeader **Value)
 
 //********************************************************************************************************************
 
-static ERR MODULE_FreePlacement(extModule *Self)
+static ERR MODULE_Free(extModule *Self)
 {
    Self->~extModule();
    return ERR::Okay;
@@ -304,8 +304,9 @@ static ERR MODULE_Init(extModule *Self)
       Self->Root = root;
 
       if (table) {
-         if (not table->Init) { log.warning(ERR::ModuleMissingInit); goto exit; }
-         if (not table->Name) { log.warning(ERR::ModuleMissingName); goto exit; }
+         if (not table->Init) { error = log.warning(ERR::ModuleMissingInit); goto exit; }
+         if (not table->Name) { error = log.warning(ERR::ModuleMissingName); goto exit; }
+         if (table->CoreTimestamp != CORE_BUILD_DATE) { error = log.warning(ERR::CoreVersion); goto exit; }
 
          root->Header  = table;
          root->Table   = table;
@@ -408,7 +409,7 @@ exit:
 
 //********************************************************************************************************************
 
-static ERR MODULE_NewPlacement(extModule *Self)
+static ERR MODULE_New(extModule *Self)
 {
    new (Self) extModule(Self->Class, Self->UID);
    return ERR::Okay;
@@ -747,8 +748,8 @@ static const FieldArray glRootModuleFields[] = {
 };
 
 static const ActionArray glRootModuleActions[] = {
-   { AC::FreePlacement, ROOTMODULE_FreePlacement },
-   { AC::NewPlacement,  ROOTMODULE_NewPlacement },
+   { AC::Free, ROOTMODULE_Free },
+   { AC::New,  ROOTMODULE_New },
    { AC::NIL, nullptr }
 };
 

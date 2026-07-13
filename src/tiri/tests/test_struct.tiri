@@ -1,39 +1,16 @@
 
 -----------------------------------------------------------------------------------------------------------------------
--- Retrieve a known struct from a function and then list its field values.  GetList() is chosen in particular because
--- it features a null-terminated array in the Points field.
+-- Retrieve a known struct from a function and test the field values.
 
-@Test(hotpath=true); @Requires(font=true)
-function FontList()
-   err, list = mFont.GetList()
-   if not list then
-      logOutput('Skipping struct tests, no fonts installed.')
-      return
-   end
-
-   logOutput(f'Retrieved {#list} fonts.')
-
-   font = list
-   while font do
-      if not font.hidden then
-         if font.scalable is 1 then
-            logOutput("Scalable: " .. font.name)
-         else
-            logOutput("Bitmap: " .. font.name)
-         end
-         logOutput("Styles: " .. font.styles)
-
-         points = ""
-         for p in values(font.points) do
-            if points?? then points ..= ", " end
-            points ..= p
-         end
-         not points ?? logOutput("Available in fixed sizes: " .. points)
-         logOutput("")
-      end
-
-      font = font.next
-   end
+@Test(hotpath=true)
+function ProbeStruct()
+   local meta = mSys.FindClass('task':hash(), 0)
+   local err, field = meta.mtFindField('args':hash())
+   assert(type(field) is 'table', 'Failed to find args field in task class')
+   assert(field.name is 'Args', 'Expected string type for field name')
+   assert(field.fieldID > 0, 'Expected fieldID to be greater than zero')
+   assert(field.index > 0, 'Expected field index to be greater than zero')
+   assert(type(field.writeValue) is 'userdata', 'Expected writeValue to be a function pointer')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -43,6 +20,9 @@ end
    MAKESTRUCT('TinyStridePalette', 'eCol:TinyStrideColour[2],lMarker')
 
    palette = struct.new('TinyStridePalette', { marker=77 })
+   assert(type(palette) is 'struct', 'Expected struct.new() to return the native struct type')
+   assert(#palette is 2, 'Expected the structure to report its field count')
+   assert(palette.structSize() > 0, 'Expected the structure to report its byte size')
    colours = palette.Col
 
    assert(#colours is 2, 'Expected the embedded struct array to expose two elements, got ' .. #colours)
@@ -60,4 +40,296 @@ end
 
    assert(patch_record.child != patch_record, 'Offset-zero embedded struct should not alias its parent table')
    assert(patch_record.child.value is 0, 'Offset-zero embedded struct fields should be readable')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ObjectFieldAssignments()
+   MAKESTRUCT('ObjectFieldAssignments', 'oValue')
+
+   local value = mSys.FindClass('task':hash(), 0)
+   local container = struct.new('ObjectFieldAssignments', { value=value })
+   local initial_value = container.value
+   assert(type(initial_value) is 'object', 'struct.new() should return a native object from an object field')
+   assert(initial_value.id is value.id, 'struct.new() should preserve the assigned native object ID')
+
+   container.value = nil
+   assert(container.value is nil, 'Assigning nil should clear an object field')
+
+   container.value = value
+   local updated_value = container.value
+   assert(updated_value.id is value.id, 'Direct assignment should preserve the assigned native object ID')
+
+   local dead_value = obj.new('time')
+   dead_value.free()
+   try
+      container.value = dead_value
+   success
+      error('Assigning a detached object wrapper should fail')
+   end
+   container.value = nil
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function StringFieldAssignments()
+   MAKESTRUCT('StringFieldAssignments', 'zsName,sBorrowed')
+
+   local container = struct.new('StringFieldAssignments', { name='initial' })
+   assert(container.name is 'initial', 'struct.new() should initialise an owned C++ string field')
+
+   container.name = 'updated'
+   assert(container.name is 'updated', 'Direct assignment should update an owned C++ string field')
+
+   try
+      container.borrowed = 'unsupported'
+   success
+      error('Assigning a raw C string field should fail')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function UnsupportedFieldAssignmentRaises()
+   MAKESTRUCT('UnsupportedFieldAssignment', 'rCallback')
+   local container = struct.new('UnsupportedFieldAssignment')
+
+   try
+      container.callback = nil
+   success
+      error('Assigning an unsupported field type should fail')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function InteriorStructViewAnchorsParent()
+   MAKESTRUCT('AnchoredLeaf', 'lValue,zsName')
+   MAKESTRUCT('AnchoredBranch', 'eLeaf:AnchoredLeaf')
+   MAKESTRUCT('AnchoredRoot', 'eBranch:AnchoredBranch')
+
+   function create_view()
+      local root = struct.new('AnchoredRoot')
+      root.branch.leaf.value = 417
+      root.branch.leaf.name = 'parent payload remains alive'
+      return root.branch.leaf
+   end
+
+   local leaf = create_view()
+   processing.collect('full')
+   processing.collect('full')
+
+   assert(leaf.value is 417, 'An interior struct view should keep its parent payload alive')
+   assert(leaf.name is 'parent payload remains alive', 'Anchored C++ string storage should remain valid after GC')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function StructPairsAndToString()
+   MAKESTRUCT('IterableRecord', 'lCount,zsName,bEnabled')
+   local value = struct.new('IterableRecord', { count=7, name='sample', enabled=1 })
+   local fields = array<string>
+   local values = array<any>
+
+   for name, field_value in pairs(value) do
+      fields:push(name)
+      values:push(field_value)
+   end
+
+   assert(fields is array<string> { 'count', 'name', 'enabled' }, 'pairs() should preserve declaration order')
+   assert(values[0] is 7 and values[1] is 'sample' and values[2] is 1, 'pairs() should return live field values')
+   assert(tostring(value):startsWith('IterableRecord: 0x'), 'tostring() should include the struct definition name')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayFieldAssignments()
+   MAKESTRUCT('ArrayAssignmentRecord', 'lFixed[3],zlDynamic[1],zsNames[1]')
+   local value = struct.new('ArrayAssignmentRecord')
+
+   value.fixed = array<int> { 4, 5, 6 }
+   assert(value.fixed is array<int> { 4, 5, 6 }, 'Fixed array assignment should copy all elements')
+
+   value.fixed = array<int> { 9 }
+   assert(value.fixed is array<int> { 9, 0, 0 }, 'Short fixed array assignment should clear unused elements')
+
+   value.fixed = array<int>
+   assert(value.fixed is array<int> { 0, 0, 0 }, 'Empty fixed array assignment should clear all elements')
+
+   value.dynamic = array<int> { 8, 9, 10, 11 }
+   assert(value.dynamic is array<int> { 8, 9, 10, 11 }, 'C++ vector assignment should resize and copy elements')
+
+   value.names = array<string> { 'alpha', 'beta' }
+   local names = value.names
+   assert(#names is 2 and names[0] is 'alpha' and names[1] is 'beta',
+      'C++ string vector assignment should copy strings')
+
+   local clone = struct.clone(value)
+   value.dynamic = array<int> { 99 }
+   value.names = array<string> { 'changed' }
+   assert(clone.dynamic is array<int> { 8, 9, 10, 11 }, 'clone() should deep-copy C++ primitive vectors')
+   local clone_names = clone.names
+   assert(#clone_names is 2 and clone_names[0] is 'alpha' and clone_names[1] is 'beta',
+      'clone() should deep-copy C++ string vectors')
+
+   try
+      value.fixed = array<int> { 1, 2, 3, 4 }
+   success
+      error('Fixed array overflow should fail')
+   end
+
+   try
+      value.fixed = array<double> { 1, 2 }
+   success
+      error('Array element type mismatch should fail')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function StructCopyAndClone()
+   MAKESTRUCT('CopyChild', 'lValue,zsLabel')
+   MAKESTRUCT('CopyRecord', 'lCount,zsName,eChild:CopyChild')
+   MAKESTRUCT('CopyMismatch', 'lCount')
+
+   local source = struct.new('CopyRecord', { count=12, name='source' })
+   source.child.value = 44
+   source.child.label = 'nested'
+
+   local clone = struct.clone(source)
+   assert(clone.count is 12 and clone.name is 'source', 'clone() should copy primitive and C++ string fields')
+   assert(clone.child.value is 44 and clone.child.label is 'nested', 'clone() should copy nested struct fields')
+
+   source.name = 'changed'
+   source.child.label = 'changed nested'
+   assert(clone.name is 'source' and clone.child.label is 'nested', 'clone strings should own independent storage')
+
+   local dest = struct.new('CopyRecord')
+   assert(struct.copy(dest, clone) is dest, 'copy() should return its destination')
+   assert(dest.count is 12 and dest.child.label is 'nested', 'copy() should replace the destination payload')
+
+   try
+      struct.copy(struct.new('CopyMismatch'), source)
+   success
+      error('Copying mismatched struct definitions should fail')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Exercise scalar FD_* reads and writes through a value inferred as the native struct type.
+
+@Test function FastScalarFieldCategories()
+   MAKESTRUCT('FastScalarFields',
+      'fFloat,dDouble,xWide,lInteger,wWord,uwUnsignedWord,bByte,cText[8],pPointer,rCallback')
+   local value = struct.new('FastScalarFields')
+
+   value.float = 1.25
+   value.double = 2.5
+   value.wide = 9007199
+   value.integer = 12345
+   value.word = 2345
+   value.unsignedWord = 32767
+   value.byte = 231
+   value.text = array.new('fast')
+   value.pointer = nil
+
+   assert(value.float is 1.25, 'FD_FLOAT should round-trip through STSETF/STGETF')
+   assert(value.double is 2.5, 'FD_DOUBLE should round-trip through STSETF/STGETF')
+   assert(value.wide is 9007199, 'FD_INT64 should round-trip through STSETF/STGETF')
+   assert(value.integer is 12345, 'FD_INT should round-trip through STSETF/STGETF')
+   assert(value.word is 2345, 'FD_WORD should round-trip through STSETF/STGETF')
+   assert(value.unsignedWord is 32767, 'Unsigned FD_WORD should retain 0x7fff through STSETF/STGETF')
+   value.unsignedWord = 32768
+   assert(value.unsignedWord is 32768, 'Unsigned FD_WORD should retain 0x8000 through STSETF/STGETF')
+   value.unsignedWord = 65535
+   assert(value.unsignedWord is 65535, 'Unsigned FD_WORD should retain 0xffff through STSETF/STGETF')
+   assert(value.byte is 231, 'FD_BYTE should round-trip through STSETF/STGETF')
+   assert(value.text is 'fast', 'FD_CUSTOM byte arrays should continue to read as strings')
+   assert(value.pointer is nil, 'A null FD_POINTER should read as nil')
+   assert(value.callback is nil, 'FD_FUNCTION fields should continue to read as nil')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Repeated and polymorphic annotated access exercises the P32 field-index cache, including self-healing when the
+-- field occupies a different index in each definition.
+
+function set_annotated_struct_field(Value:struct, NewValue:num):num
+   Value.value = NewValue
+   return Value.value
+end
+
+@Test function FastAnnotatedAndPolymorphicAccess()
+   MAKESTRUCT('FastCacheFirst', 'lValue,lOther')
+   MAKESTRUCT('FastCacheSecond', 'lPrefix,lValue')
+
+   local first = struct.new('FastCacheFirst')
+   local second = struct.new('FastCacheSecond')
+
+   for i = 1, 4 do
+      assert(set_annotated_struct_field(first, i) is i, 'Repeated annotated access should retain the first layout')
+      assert(set_annotated_struct_field(second, i * 10) is i * 10,
+         'A polymorphic cache site should resolve the second layout')
+   end
+
+   assert(first.value is 4, 'The first polymorphic struct should retain its final value')
+   assert(second.value is 40, 'The second polymorphic struct should retain its final value')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- A struct annotation is a parser optimisation hint, not a replacement for runtime type dispatch. Non-struct values
+-- must still fall back to the normal table metamethod path in the VM.
+
+function access_annotated_fallback(Value:struct):num
+   Value.value = 73
+   return Value.value
+end
+
+@Test function AnnotatedStructFallbackUsesTablePath()
+   local value = {}
+   local call = { access_annotated_fallback }
+   assert(call[0](value) is 73, 'A table at a struct-typed access site should use vmeta fallback')
+   assert(value.value is 73, 'The fallback setter should update the table')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function FastFieldErrorsAndHelpers()
+   MAKESTRUCT('FastFieldErrors', 'lValue')
+   local value = struct.new('FastFieldErrors')
+
+   try
+      local missing = value.unknown
+      assert(missing is nil, 'Unknown struct field access should not return normally')
+   success
+      error('Unknown struct field access should raise through STGETF')
+   end
+
+   try
+      value.unknown = 1
+   success
+      error('Unknown struct field assignment should raise through STSETF')
+   end
+
+   assert(value.structSize() > 0, 'structSize() should continue to resolve through the struct metatable')
+   assert(#value is 1, 'Struct length should remain the number of declared fields')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function FastFieldBytecodeDisassembly()
+   MAKESTRUCT('FastFieldDisassembly', 'lValue')
+
+   function capture_struct_disassembly()
+      local value = struct.new('FastFieldDisassembly')
+      value.value = 19
+      local result = value.value
+      local err, disassembly = obj.find('self').mtDebugLog('disasm')
+      assert(result is 19, 'Disassembly probe should keep the fast field read live')
+      return err, disassembly
+   end
+
+   local err, disassembly = capture_struct_disassembly()
+   assert(err is ERR_Okay, 'Struct disassembly probe should succeed')
+   assert(string.find(disassembly, 'STGETF'), 'Known struct reads should emit STGETF')
+   assert(string.find(disassembly, 'STSETF'), 'Known struct writes should emit STSETF')
 end

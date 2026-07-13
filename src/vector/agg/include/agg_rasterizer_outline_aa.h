@@ -46,21 +46,17 @@ namespace agg
         }
     };
 
-
-    //----------------------------------------------------------outline_aa_join_e
     enum outline_aa_join_e
     {
-        outline_no_join,             //-----outline_no_join
-        outline_miter_join,          //-----outline_miter_join
-        outline_round_join,          //-----outline_round_join
-        outline_miter_accurate_join  //-----outline_accurate_join
+        outline_no_join,
+        outline_miter_join,
+        outline_round_join,
+        outline_miter_accurate_join
     };
 
-    //=======================================================rasterizer_outline_aa
     template<class Renderer, class Coord=line_coord> class rasterizer_outline_aa
     {
     private:
-        //------------------------------------------------------------------------
         struct draw_vars
         {
             unsigned idx;
@@ -88,7 +84,6 @@ namespace agg
         {}
         void attach(Renderer& ren) { m_ren = &ren; }
 
-        //------------------------------------------------------------------------
         void line_join(outline_aa_join_e join)
         {
             m_line_join = m_ren->accurate_join_only() ?
@@ -97,80 +92,54 @@ namespace agg
         }
         bool line_join() const { return m_line_join; }
 
-        //------------------------------------------------------------------------
         void round_cap(bool v) { m_round_cap = v; }
         bool round_cap() const { return m_round_cap; }
 
-        //------------------------------------------------------------------------
         void move_to(int x, int y)
         {
             m_src_vertices.modify_last(vertex_type(m_start_x = x, m_start_y = y));
         }
 
-        //------------------------------------------------------------------------
         void line_to(int x, int y)
         {
             m_src_vertices.add(vertex_type(x, y));
         }
 
-        //------------------------------------------------------------------------
         void move_to_d(double x, double y)
         {
             move_to(Coord::conv(x), Coord::conv(y));
         }
 
-        //------------------------------------------------------------------------
         void line_to_d(double x, double y)
         {
             line_to(Coord::conv(x), Coord::conv(y));
         }
 
-        //------------------------------------------------------------------------
         void render(bool close_polygon);
 
-        //------------------------------------------------------------------------
-        void add_vertex(double x, double y, unsigned cmd)
-        {
-            if(is_move_to(cmd))
-            {
-                render(false);
-                move_to_d(x, y);
+        void add_vertex(double x, double y, unsigned cmd) {
+            if (is_move_to(cmd)) {
+               render(false);
+               move_to_d(x, y);
             }
-            else
-            {
-                if(is_end_poly(cmd))
-                {
-                    render(is_closed(cmd));
-                    if(is_closed(cmd))
-                    {
-                        move_to(m_start_x, m_start_y);
-                    }
+            else {
+                if (is_end_poly(cmd)) {
+                   render(is_closed(cmd));
+                   if (is_closed(cmd)) move_to(m_start_x, m_start_y);
                 }
-                else
-                {
-                    line_to_d(x, y);
-                }
+                else line_to_d(x, y);
             }
         }
 
-        //------------------------------------------------------------------------
         template<class VertexSource>
-        void add_path(VertexSource& vs, unsigned path_id=0)
-        {
-            double x;
-            double y;
-
+        void add_path(VertexSource& vs, unsigned path_id=0) {
+            double x, y;
             unsigned cmd;
             vs.rewind(path_id);
-            while(!is_stop(cmd = vs.vertex(&x, &y)))
-            {
-                add_vertex(x, y, cmd);
-            }
+            while(!is_stop(cmd = vs.vertex(&x, &y))) add_vertex(x, y, cmd);
             render(false);
         }
 
-
-        //------------------------------------------------------------------------
         template<class VertexSource, class ColorStorage, class PathId>
         void render_all_paths(VertexSource& vs,
                               const ColorStorage& colors,

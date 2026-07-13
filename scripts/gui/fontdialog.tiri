@@ -6,6 +6,7 @@ Documentation is available in the Kotuku Wiki.
    import 'gui/listview'
    import 'gui/window'
    import 'gui/button'
+   import 'config'
    include 'display', 'font'
 
    namespace 'gui'
@@ -36,7 +37,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
 Ĉras metus mi, ultricies nec blandit condimentum, congue dapibus libero. Nulla eget ornare ante, ac efficitur turpis. Proin venenatis eget sapien vitae volutpat. In interdum id ante in aliquet. Quisque convallis lacus in gravida fringilla. Nam porta pellentesque turpis, ut efficitur neque suscipit vel. Morbi vitae consequat nisl. Donec turpis lorem, dapibus eget scelerisque quis, porttitor bibendum leo.
 ]]
 
-   local lWindow, lFonts, vwSize, vwStyle, vwFace, lFontsSorted
+   local lWindow, lFonts, vwSize, vwStyle, vwFace
    lShortText = 'The Quick Brown Fox Jumped Over The Lazy Dog'
    lOptions   = Options
    lSizes     = array<int> { 6, 8, 10, 12, 14, 18, 24, 30, 36, 42, 50, 70, 90, 100, 120 }
@@ -116,33 +117,10 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       self.viewport.acDraw()
    end
 
-   -- Retrieve the system list of known installed fonts and convert it to a Lua table.
+   -- Load the system font catalogue and convert its Config strings to values used by the dialog.
 
    function getFonts()
-      err, list = mFont.GetList()
-      assert(list, 'Failed to retrieve list of fonts, error: ' .. mSys.GetErrorMsg(err))
-
-      lFonts       = { }
-      lFontsSorted = array<table>
-      font   = list
-      index  = 0
-      while font do
-         lFonts[font.name] = { }
-         lFonts[font.name].order  = index
-         lFonts[font.name].name   = font.name
-         lFonts[font.name].alias  = font.alias
-         if font.styles then lFonts[font.name].styles = string.split(font.styles, ',') end
-         lFonts[font.name].sizes  = font.points
-         lFonts[font.name].hidden = font.hidden
-         if font.scalable?? then
-            lFonts[font.name].scalable = true
-         end
-         if not font.hidden?? then
-            lFontsSorted:push(lFonts[font.name])
-         end
-         index++
-         font = font.next
-      end
+      lFonts = resolve(gui.fontList)
    end
 
    function showFontSizes(List)
@@ -157,8 +135,8 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
 
    function showStyles(Face)
       styles = array<table> { }
-      if lFonts[Face].alias?? then Face = lFonts[Face].alias end
-      for v in values(lFonts[Face].styles ?? { 'Regular' }) do
+      if lFonts[Face].alias then Face = lFonts[Face].alias end
+      for v in values(lFonts[Face].styles) do
          styles:push({ id=v, name=v })
       end
       vwStyle.loadItems(styles)
@@ -339,7 +317,9 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
 
          if self.style and lFonts[self.face] then
             supported = false
-            for v in values(lFonts[self.face].styles) do
+            face = self.face
+            if lFonts[face].alias then face = lFonts[face].alias end
+            for v in values(lFonts[face].styles) do
                if v is self.style then
                   supported = true
                   break
@@ -370,9 +350,11 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
    })
 
    faces = { }
-   for font in values(lFontsSorted) do
+   for _, font in table.sortByKeys(lFonts) do
+      if font.hidden?? then continue end
+
       new_font = { id=font.name, name=font.name }
-      if font.alias?? then font = lFonts[font.alias] end
+      if font.alias then font = lFonts[font.alias] end
       new_font.icon = font.scalable ? 'items/font' :> 'layout/text_sans'
       table.insert(faces, new_font)
    end

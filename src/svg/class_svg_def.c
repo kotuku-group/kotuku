@@ -16,12 +16,12 @@ static const struct MethodEntry clSVGMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR SVG_NewPlacement(extSVG *Self) {
+static ERR SVG_New(extSVG *Self) {
    new (Self) extSVG(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR SVG_FreePlacement(extSVG *Self) {
+static ERR SVG_Free(extSVG *Self) {
    Self->~extSVG();
    return ERR::Okay;
 }
@@ -30,9 +30,9 @@ static const struct ActionArray clSVGActions[] = {
    { AC::Activate, SVG_Activate },
    { AC::DataFeed, SVG_DataFeed },
    { AC::Deactivate, SVG_Deactivate },
-   { AC::FreePlacement, SVG_FreePlacement },
+   { AC::Free, SVG_Free },
    { AC::Init, SVG_Init },
-   { AC::NewPlacement, SVG_NewPlacement },
+   { AC::New, SVG_New },
    { AC::SaveImage, SVG_SaveImage },
    { AC::SaveToObject, SVG_SaveToObject },
    { AC::NIL, nullptr }

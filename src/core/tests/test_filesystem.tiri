@@ -177,6 +177,118 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test function BufferedVirtualFileGrow()
+   expected = 'abcdef'
+   fl = obj.new('file', { flags=FL_BUFFER, size=2 })
+
+   assert(fl.size is 2, 'Buffered file should honour the initial Size field.')
+   assert(#fl.buffer is 2, 'Public Buffer length should match the initial Size field.')
+
+   err, result = fl.acWrite(expected, #expected)
+   assert(err is ERR_Okay, 'Buffered acWrite() failed: ' .. mSys.GetErrorMsg(err))
+   assert(result is #expected, 'Buffered acWrite() returned an unexpected byte count.')
+   assert(fl.size is #expected, 'Buffered file Size should grow to match the write length.')
+   assert(#fl.buffer is #expected, 'Public Buffer length should track the grown Size field.')
+
+   err = fl.acSeek(SEEK_START, 0)
+   assert(err is ERR_Okay, 'Buffered acSeek() failed: ' .. mSys.GetErrorMsg(err))
+
+   buffer = string.alloc(#expected)
+   err, result = fl.acRead(buffer, #expected)
+   assert(err is ERR_Okay, 'Buffered acRead() failed: ' .. mSys.GetErrorMsg(err))
+   assert(result is #expected, 'Buffered acRead() returned an unexpected byte count.')
+   assert(string.substr(buffer, 0, result) is expected, 'Buffered acRead() returned unexpected content.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function BufferContentVirtualisesPhysicalFile()
+   read_path = glTempRoot .. 'buffer_content_source.txt'
+   expected = 'Alpha\nBeta\nGamma'
+
+   resetPath(read_path)
+   writeFile(read_path, expected)
+
+   fl = obj.new('file', { src=read_path, flags=FL_READ|FL_WRITE })
+
+   err = fl.mtBufferContent()
+   assert(err is ERR_Okay, 'BufferContent() failed: ' .. mSys.GetErrorMsg(err))
+   assert((fl.flags & FL_BUFFER) != 0, 'BufferContent() should enable the BUFFER flag.')
+   assert(fl.size is #expected, 'Buffered physical file Size should match the source content length.')
+   assert(#fl.buffer is #expected, 'Public Buffer length should match the buffered file Size.')
+   assert(fl.buffer:getString() is expected, 'Buffered physical file content was not preserved.')
+
+   err = fl.mtBufferContent()
+   assert(err is ERR_NothingDone, 'Repeated BufferContent() should be a no-op: ' .. mSys.GetErrorMsg(err))
+   assert(fl.buffer:getString() is expected, 'Repeated BufferContent() should not clear the existing buffer.')
+
+   err = fl.acSeek(SEEK_START, 0)
+   assert(err is ERR_Okay, 'Buffered physical acSeek() failed: ' .. mSys.GetErrorMsg(err))
+
+   err, result = fl.acWrite('RAM', 3)
+   assert(err is ERR_Okay, 'Buffered physical acWrite() failed: ' .. mSys.GetErrorMsg(err))
+   assert(result is 3, 'Buffered physical acWrite() returned an unexpected byte count.')
+
+   fl = nil
+   processing.collect()
+
+   assert(readFile(read_path) is expected, 'Writes after BufferContent() should not modify the physical file.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function BufferedStringPathReadLine()
+   expected = 'first\nsecond\nthird'
+   fl = obj.new('file', { path='string:' .. expected })
+
+   assert((fl.flags & FL_BUFFER) != 0, 'string: paths should create buffered files.')
+   assert(fl.size is #expected, 'string: buffered file Size should match the string content length.')
+   assert(#fl.buffer is #expected, 'string: public Buffer length should match the Size field.')
+   assert(fl.buffer:getString() is expected, 'string: buffer content was not preserved.')
+
+   err, line = fl.mtReadLine()
+   assert(err is ERR_Okay, 'First buffered ReadLine() failed: ' .. mSys.GetErrorMsg(err))
+   assert(line is 'first', 'First buffered line was unexpected: ' .. tostring(line))
+
+   err, line = fl.mtReadLine()
+   assert(err is ERR_Okay, 'Second buffered ReadLine() failed: ' .. mSys.GetErrorMsg(err))
+   assert(line is 'second', 'Second buffered line was unexpected: ' .. tostring(line))
+
+   err, line = fl.mtReadLine()
+   assert(err is ERR_Okay, 'Final buffered ReadLine() failed: ' .. mSys.GetErrorMsg(err))
+   assert(line is 'third', 'Final buffered line was unexpected: ' .. tostring(line))
+
+   err, line = fl.mtReadLine()
+   assert(err is ERR_NoData, 'ReadLine() should report NoData after the final buffered line, got: ' ..
+      mSys.GetErrorMsg(err))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function BufferContentEmptyFile()
+   read_path = glTempRoot .. 'buffer_content_empty.txt'
+
+   resetPath(read_path)
+
+   fl = obj.new('file', { src=read_path, flags=FL_NEW|FL_WRITE })
+   fl = nil
+   processing.collect()
+
+   fl = obj.new('file', { src=read_path, flags=FL_READ|FL_WRITE })
+   err = fl.mtBufferContent()
+   assert(err is ERR_Okay, 'BufferContent() failed for an empty file: ' .. mSys.GetErrorMsg(err))
+   assert((fl.flags & FL_BUFFER) != 0, 'Empty BufferContent() should enable the BUFFER flag.')
+   assert(fl.size is 0, 'Empty buffered file Size should remain zero.')
+   assert(#fl.buffer is 0, 'Public Buffer length for an empty buffered file should be zero.')
+
+   buffer = string.alloc(1)
+   err, result = fl.acRead(buffer, 1)
+   assert(err is ERR_Okay, 'Reading an empty buffered file should succeed: ' .. mSys.GetErrorMsg(err))
+   assert(result is 0, 'Reading an empty buffered file should return zero bytes.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function FileIcons()
    if mSys.AnalysePath('icons:') != ERR_Okay then
       -- Icons not available, skip test

@@ -195,7 +195,7 @@ struct RemoveTag { int Index; int Total; static const AC id = AC(-6); ERR call(O
 struct MoveTags { int Index; int Total; int DestIndex; XMI Where; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetAttrib { int Index; std::string_view Attrib; std::string *Value; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct InsertXPath { std::string_view XPath; XMI Where; std::string_view XML; int Result; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Search { std::string_view Expression; FUNCTION *Callback; int Result; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Search { std::string_view Expression; FUNCTION Callback; int Result; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Filter { std::string_view XPath; static const AC id = AC(-11); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct Evaluate { std::string_view Statement; std::string *Result; static const AC id = AC(-12); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct ValidateDocument { static const AC id = AC(-13); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
@@ -316,7 +316,7 @@ class objXML : public Object {
       return error;
    }
    inline ERR search(const std::string_view &Expression, FUNCTION Callback, int * Result) noexcept {
-      struct xml::Search args = { Expression, &Callback, (int)0 };
+      struct xml::Search args = { Expression, Callback, (int)0 };
       ERR error = Action(AC(-10), this, &args);
       if (Result) *Result = args.Result;
       return error;
@@ -436,13 +436,8 @@ class objXML : public Object {
    inline ERR getStatement(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[10];
       SetObjectContext(this, field, AC::NIL);
-      std::string_view view;
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, view);
-      if (error IS ERR::Okay) {
-         Value.assign(view);
-         if (view.data()) FreeResource(GetMemoryID(view.data()));
-      }
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
       RestoreObjectContext();
       return error;
    }

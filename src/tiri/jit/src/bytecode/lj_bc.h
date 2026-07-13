@@ -202,6 +202,10 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   _(OBSETF, var,  var, str, newindex) /* Object string field set */ \
   _(OBCALL, base, lit, lit, call)     /* Object action/method call (reserved) */ \
   \
+  /* Struct field access ops (specialised for LJ_TSTRUCT). */ \
+  _(STGETF, dst, var, str, index)     /* Struct string field get */ \
+  _(STSETF, var, var, str, newindex)  /* Struct string field set */ \
+  \
   /* Calls and vararg handling. T = tail call. */ \
   _(CALLM,  base, lit, lit,  call) \
   _(CALL,   base, lit, lit,  call) \
@@ -353,58 +357,62 @@ typedef enum {
    BC_OBSETF  = 73,  // Object string field set: A=value, B=object, C=str const (~)
    BC_OCALL  = 74,  // Object action/method call (reserved for Phase 4)
 
-   // Calls and vararg handling (75-84)
-   BC_CALLM  = 75,
-   BC_CALL   = 76,
-   BC_CALLMT = 77,
-   BC_CALLT  = 78,
-   BC_ITERC  = 79,
-   BC_ITERN  = 80,
-   BC_ITERA  = 81,
-   BC_VARG   = 82,
-   BC_ISNEXT = 83,
-   BC_ISARR  = 84,
+   // Struct field access ops (75-76) - specialised for LJ_TSTRUCT
+   BC_STGETF = 75,  // Struct string field get: A=dst, B=struct, C=str const (~)
+   BC_STSETF = 76,  // Struct string field set: A=value, B=struct, C=str const (~)
 
-   // Returns (85-88)
-   BC_RETM   = 85,
-   BC_RET    = 86,
-   BC_RET0   = 87,
-   BC_RET1   = 88,
+   // Calls and vararg handling (77-86)
+   BC_CALLM  = 77,
+   BC_CALL   = 78,
+   BC_CALLMT = 79,
+   BC_CALLT  = 80,
+   BC_ITERC  = 81,
+   BC_ITERN  = 82,
+   BC_ITERA  = 83,
+   BC_VARG   = 84,
+   BC_ISNEXT = 85,
+   BC_ISARR  = 86,
 
-   // Type fixing (89)
-   BC_TYPEFIX = 89,
+   // Returns (87-90)
+   BC_RETM   = 87,
+   BC_RET    = 88,
+   BC_RET0   = 89,
+   BC_RET1   = 90,
 
-   // Loops and branches (90-101)
-   BC_FORI   = 90,
-   BC_JFORI  = 91,
-   BC_FORL   = 92,
-   BC_IFORL  = 93,
-   BC_JFORL  = 94,
-   BC_ITERL  = 95,
-   BC_IITERL = 96,
-   BC_JITERL = 97,
-   BC_LOOP   = 98,
-   BC_ILOOP  = 99,
-   BC_JLOOP  = 100,
-   BC_JMP    = 101,
+   // Type fixing (91)
+   BC_TYPEFIX = 91,
 
-   // Function headers (102-109)
-   BC_FUNCF  = 102,
-   BC_IFUNCF = 103,
-   BC_JFUNCF = 104,
-   BC_FUNCV  = 105,
-   BC_IFUNCV = 106,
-   BC_JFUNCV = 107,
-   BC_FUNCC  = 108,
-   BC_FUNCCW = 109,
+   // Loops and branches (92-103)
+   BC_FORI   = 92,
+   BC_JFORI  = 93,
+   BC_FORL   = 94,
+   BC_IFORL  = 95,
+   BC_JFORL  = 96,
+   BC_ITERL  = 97,
+   BC_IITERL = 98,
+   BC_JITERL = 99,
+   BC_LOOP   = 100,
+   BC_ILOOP  = 101,
+   BC_JLOOP  = 102,
+   BC_JMP    = 103,
 
-   // Exception handling (110-113)
-   BC_TRYENTER = 110,
-   BC_TRYLEAVE = 111,
-   BC_CHECK  = 112,  // Check error code, raise if >= threshold
-   BC_RAISE  = 113,  // Raise exception with error code and optional message
+   // Function headers (104-111)
+   BC_FUNCF  = 104,
+   BC_IFUNCF = 105,
+   BC_JFUNCF = 106,
+   BC_FUNCV  = 107,
+   BC_IFUNCV = 108,
+   BC_JFUNCV = 109,
+   BC_FUNCC  = 110,
+   BC_FUNCCW = 111,
 
-   BC__MAX   = 114
+   // Exception handling (112-115)
+   BC_TRYENTER = 112,
+   BC_TRYLEAVE = 113,
+   BC_CHECK  = 114,  // Check error code, raise if >= threshold
+   BC_RAISE  = 115,  // Raise exception with error code and optional message
+
+   BC__MAX   = 116
 } BCOp;
 
 [[nodiscard]] inline constexpr bool bc_is_func_header(BCOp Op) noexcept

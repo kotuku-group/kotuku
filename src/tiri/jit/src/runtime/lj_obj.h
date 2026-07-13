@@ -131,7 +131,7 @@ enum class TiriType : uint8_t {
    Table,
    Array,
    Func,
-   Thread,
+   Struct,       // Kotuku struct (LJ_TSTRUCT)
    Object,       // Kotuku object (LT_TOBJECT)
    Range,        // Range expression (runtime: LJ_TUDATA)
    Unknown
@@ -397,7 +397,7 @@ inline constexpr uint32_t LJ_TTRUE     = ~2u;  // True
 inline constexpr uint32_t LJ_TLIGHTUD  = ~3u;  // Lightuserdata
 inline constexpr uint32_t LJ_TSTR      = ~4u;  // String
 inline constexpr uint32_t LJ_TUPVAL    = ~5u;  // Unused in TValue(?) could be shared?
-inline constexpr uint32_t LJ_TTHREAD   = ~6u;  // Unused?
+inline constexpr uint32_t LJ_TSTRUCT   = ~6u;  // Struct (Kotuku); gct also shared with the single main-thread lua_State
 inline constexpr uint32_t LJ_TPROTO    = ~7u;  // Function prototype
 inline constexpr uint32_t LJ_TFUNC     = ~8u;  // Function
 inline constexpr uint32_t LJ_TTRACE    = ~9u;  // Unused in TValue(?) could be shared?
@@ -958,11 +958,12 @@ inline GCarray* arrayref(GCRef r) noexcept;
 // Flags for GCobject.flags
 inline constexpr uint8_t GCOBJ_DETACHED = 0x01;  // Object is external reference, not owned
 inline constexpr uint8_t GCOBJ_LOCKED   = 0x02;  // Lock acquired via AccessObject()
+inline constexpr uint8_t GCOBJ_PINNED   = 0x04;  // Wrapper holds one weak pin on ptr
 
 struct GCobject {
    GCHeader;                    // [0]  nextgc, marked, gct (10 bytes)
    uint8_t udtype;              // [10] Reserved for sub-types (future use)
-   uint8_t flags;               // [11] Object flags (GCOBJ_DETACHED, GCOBJ_LOCKED)
+   uint8_t flags;               // [11] Object flags (GCOBJ_DETACHED, GCOBJ_LOCKED, GCOBJ_PINNED)
    int32_t uid;                 // [12] Kotuku object unique ID (OBJECTID)
    uint32_t accesscount;        // [16] Access count for lock management
    uint32_t reserved;           // [20] Reserved for alignment
@@ -973,8 +974,10 @@ struct GCobject {
 
    inline bool is_detached() { return (flags & GCOBJ_DETACHED) != 0; }
    inline bool is_locked() { return (flags & GCOBJ_LOCKED) != 0; }
+   inline bool is_pinned() { return (flags & GCOBJ_PINNED) != 0; }
    inline void set_detached(bool v) { if (v) flags |= GCOBJ_DETACHED; else flags &= ~GCOBJ_DETACHED; }
    inline void set_locked(bool v) { if (v) flags |= GCOBJ_LOCKED; else flags &= ~GCOBJ_LOCKED; }
+   inline void set_pinned(bool v) { if (v) flags |= GCOBJ_PINNED; else flags &= ~GCOBJ_PINNED; }
 };
 
 // Ensure metatable and gclist fields are at same offset as other GC types
@@ -983,6 +986,47 @@ static_assert(offsetof(GCobject, gclist) == offsetof(GCtab, gclist));
 
 // Forward declaration - defined after GCobj is complete
 inline GCobject* objectref(GCRef r) noexcept;
+
+//********************************************************************************************************************
+// Native struct object.  Wraps a C structure described by a struct_record definition.  The payload either follows
+// the header inline (owned mode) or lives in externally managed memory (STRUCT_EXTERNAL).
+//
+// NB: The TValue tag LJ_TSTRUCT (~6u) is shared with the single main-thread lua_State; GC sites that dispatch on
+// gct must discriminate via pointer-compare with mainthread(g).
+
+// Flags for GCstruct.flags
+inline constexpr uint8_t STRUCT_EXTERNAL   = 0x01;  // Payload is externally managed (data does not follow header)
+inline constexpr uint8_t STRUCT_DEALLOCATE = 0x02;  // FreeResource(data) when the struct is collected
+inline constexpr uint8_t STRUCT_LIFECYCLE  = 0x04;  // Payload validity depends on a weak-pinned Kotuku object
+
+struct GCstruct {
+   GCHeader;                    // [0]  nextgc, marked, gct (10 bytes)
+   uint8_t flags;               // [10] Struct flags (STRUCT_EXTERNAL, STRUCT_DEALLOCATE, STRUCT_LIFECYCLE)
+   uint8_t unused1;             // [11] Reserved for alignment
+   uint32_t structsize;         // [12] Byte size of the structure payload (def->Size at creation time)
+   void *data;                  // [16] Pointer to the structure data (this+1 for inline payloads)
+   GCRef gclist;                // [24] GC list for marking (must match GCtab.gclist)
+   GCRef metatable;             // [32] Optional metatable (must match GCtab.metatable)
+   struct struct_record *def;   // [40] The structure definition (owned by glStructs)
+   struct Object *lifecycle;    // [48] Weak-pinned object that owns the payload (STRUCT_LIFECYCLE only)
+   GCRef parent;                // [56] Owning inline GCstruct for an interior payload view
+
+   [[nodiscard]] inline bool is_external() const noexcept { return (flags & STRUCT_EXTERNAL) != 0; }
+   [[nodiscard]] inline bool is_deallocate() const noexcept { return (flags & STRUCT_DEALLOCATE) != 0; }
+   [[nodiscard]] inline bool is_lifecycle_bound() const noexcept { return (flags & STRUCT_LIFECYCLE) != 0; }
+
+   // Allocation size must match lj_struct_new()/lj_struct_new_external() exactly or g->gc.total drifts.
+   [[nodiscard]] inline size_t alloc_size() const noexcept {
+      return sizeof(GCstruct) + (is_external() ? 0 : ((size_t(structsize) + 7) & ~size_t(7)));
+   }
+};
+
+// Ensure metatable and gclist fields are at same offset as other GC types
+static_assert(offsetof(GCstruct, metatable) == offsetof(GCtab, metatable));
+static_assert(offsetof(GCstruct, gclist) == offsetof(GCtab, gclist));
+
+// Forward declaration - defined after GCobj is complete
+inline GCstruct* structref(GCRef r) noexcept;
 
 //********************************************************************************************************************
 // VM states.
@@ -1261,6 +1305,7 @@ typedef union GCobj {
    GCarray   arr;
    GCudata   ud;
    GCobject  obj;  // Native Kotuku object
+   GCstruct  sct;  // Native struct (tag shared with the main-thread lua_State)
    ~GCobj() = delete;
 } GCobj;
 
@@ -1268,13 +1313,16 @@ typedef union GCobj {
 
 [[nodiscard]] inline GCstr *     gco_to_string(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TSTR, &o->str); }
 [[nodiscard]] inline GCupval *   gco_to_upval(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TUPVAL, &o->uv); }
-[[nodiscard]] inline lua_State * gco_to_thread(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TTHREAD, &o->th); }
+// The main-thread lua_State shares the ~LJ_TSTRUCT gct; discriminate via pointer-compare with mainthread(g).
+[[nodiscard]] inline lua_State * gco_to_thread(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TSTRUCT, &o->th); }
 [[nodiscard]] inline GCproto *   gco_to_proto(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TPROTO, &o->pt); }
 [[nodiscard]] inline GCfunc *    gco_to_function(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TFUNC, &o->fn); }
 [[nodiscard]] inline GCtab *     gco_to_table(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TTAB, &o->tab); }
 [[nodiscard]] inline GCudata *   gco_to_userdata(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TUDATA, &o->ud); }
 [[nodiscard]] inline GCarray *   gco_to_array(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TARRAY, &o->arr); }
 [[nodiscard]] inline GCobject *  gco_to_object(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TOBJECT, &o->obj); }
+// The main-thread lua_State shares the ~LJ_TSTRUCT gct; callers must have excluded it (compare with mainthread(g)).
+[[nodiscard]] inline GCstruct *  gco_to_struct(GCobj *o) noexcept { return check_exp(o->gch.gct IS ~LJ_TSTRUCT, &o->sct); }
 
 // Convert any collectable object into a GCobj pointer.
 template<typename T> [[nodiscard]] inline GCobj * obj2gco(T *v) noexcept { return (GCobj*)v; }
@@ -1302,6 +1350,9 @@ template<typename T> [[nodiscard]] inline GCobj * obj2gco(T *v) noexcept { retur
 
 // Kotuku object accessors
 [[nodiscard]] inline GCobject * objectref(GCRef r) noexcept { return &gcref(r)->obj; }
+
+// Struct accessors
+[[nodiscard]] inline GCstruct * structref(GCRef r) noexcept { return &gcref(r)->sct; }
 
 // Thread/state accessors
 
@@ -1341,7 +1392,7 @@ template<typename T> [[nodiscard]] inline GCobj * obj2gco(T *v) noexcept { retur
 [[nodiscard]] constexpr inline bool tvislightud(cTValue *o) noexcept { return itype(o) IS LJ_TLIGHTUD; }
 [[nodiscard]] constexpr inline bool tvisstr(cTValue *o) noexcept { return itype(o) IS LJ_TSTR; }
 [[nodiscard]] constexpr inline bool tvisfunc(cTValue *o) noexcept { return itype(o) IS LJ_TFUNC; }
-[[nodiscard]] constexpr inline bool tvisthread(cTValue *o) noexcept { return itype(o) IS LJ_TTHREAD; }
+[[nodiscard]] constexpr inline bool tvisstruct(cTValue *o) noexcept { return itype(o) IS LJ_TSTRUCT; }
 [[nodiscard]] constexpr inline bool tvisproto(cTValue *o) noexcept { return itype(o) IS LJ_TPROTO; }
 [[nodiscard]] constexpr inline bool tvistab(cTValue *o) noexcept { return itype(o) IS LJ_TTAB; }
 [[nodiscard]] constexpr inline bool tvisudata(cTValue *o) noexcept { return itype(o) IS LJ_TUDATA; }
@@ -1393,7 +1444,6 @@ template<typename T> [[nodiscard]] inline GCobj * obj2gco(T *v) noexcept { retur
 [[nodiscard]] inline GCobj * gcV(cTValue *o) noexcept { return check_exp(tvisgcv(o), gcval(o)); }
 [[nodiscard]] inline GCstr * strV(cTValue *o) noexcept { return check_exp(tvisstr(o), &gcval(o)->str); }
 [[nodiscard]] inline GCfunc* funcV(cTValue *o) noexcept { return check_exp(tvisfunc(o), &gcval(o)->fn); }
-[[nodiscard]] inline lua_State * threadV(cTValue *o) noexcept { return check_exp(tvisthread(o), &gcval(o)->th); }
 [[nodiscard]] inline GCproto * protoV(cTValue *o) noexcept { return check_exp(tvisproto(o), &gcval(o)->pt); }
 [[nodiscard]] inline GCtab * tabV(cTValue *o) noexcept { return check_exp(tvistab(o), &gcval(o)->tab); }
 [[nodiscard]] inline GCudata * udataV(cTValue *o) noexcept { return check_exp(tvisudata(o), &gcval(o)->ud); }
@@ -1401,6 +1451,10 @@ template<typename T> [[nodiscard]] inline GCobj * obj2gco(T *v) noexcept { retur
 [[nodiscard]] inline GCarray * arrayV(lua_State *L, int Arg) noexcept { return arrayV(L->base + Arg - 1); }
 [[nodiscard]] inline GCobject * objectV(cTValue *o) noexcept { return check_exp(tvisobject(o), &gcval(o)->obj); }
 [[nodiscard]] inline GCobject * objectV(lua_State *L, int Arg) noexcept { return objectV(L->base + Arg - 1); }
+// NB: The main-thread lua_State only carries the LJ_TSTRUCT tag in internal frame slots, never in script-visible
+// TValues, so no mainthread discrimination is required here.
+[[nodiscard]] inline GCstruct * structV(cTValue *o) noexcept { return check_exp(tvisstruct(o), &gcval(o)->sct); }
+[[nodiscard]] inline GCstruct * structV(lua_State *L, int Arg) noexcept { return structV(L->base + Arg - 1); }
 [[nodiscard]] inline lua_Number numV(cTValue *o) noexcept { return check_exp(tvisnum(o), o->n); }
 [[nodiscard]] inline int32_t intV(cTValue *o) noexcept { return check_exp(tvisint(o), int32_t(o->i)); }
 
@@ -1458,9 +1512,10 @@ inline void setstrV(lua_State* L, TValue* o, const GCstr* v) noexcept
    setgcV(L, o, obj2gco(v), LJ_TSTR);
 }
 
+// Used only for the stack-bottom sentinel and dummy frame objects of the main thread.
 inline void setthreadV(lua_State* L, TValue* o, const lua_State* v) noexcept
 {
-   setgcV(L, o, obj2gco(v), LJ_TTHREAD);
+   setgcV(L, o, obj2gco(v), LJ_TSTRUCT);
 }
 
 inline void setprotoV(lua_State* L, TValue* o, const GCproto* v) noexcept
@@ -1477,6 +1532,7 @@ inline void settabV(lua_State* L, TValue* o, const GCtab* v) noexcept { setgcV(L
 inline void setudataV(lua_State* L, TValue* o, const GCudata* v) noexcept { setgcV(L, o, obj2gco(v), LJ_TUDATA); }
 inline void setarrayV(lua_State* L, TValue* o, const GCarray* v) noexcept { setgcV(L, o, obj2gco(v), LJ_TARRAY); }
 inline void setobjectV(lua_State* L, TValue* o, const GCobject* v) noexcept { setgcV(L, o, obj2gco(v), LJ_TOBJECT); }
+inline void setstructV(lua_State* L, TValue* o, const GCstruct* v) noexcept { setgcV(L, o, obj2gco(v), LJ_TSTRUCT); }
 constexpr inline void setnumV(TValue* o, lua_Number x) noexcept { o->n = x; }
 inline void setnanV(TValue* o) noexcept { o->u64 = U64x(fff80000, 00000000); }
 inline void setpinfV(TValue* o) noexcept { o->u64 = U64x(7ff00000, 00000000); }

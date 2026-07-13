@@ -70,7 +70,7 @@ enum class ERR : int32_t {
    LostOwner = 47,
    DoNotExpunge = 48,
    MemoryCorrupt = 49,
-   FieldSearch = 50,
+   FieldNotFound = 50,
    InvalidPath = 51,
    SetField = 52,
    MarkedForDeletion = 53,

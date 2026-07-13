@@ -107,12 +107,12 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <method>
       <name>CompressStream</name>
       <comment>Compresses streamed data into a buffer.</comment>
-      <prototype>ERR cmp::CompressStream(OBJECTPTR Object, APTR Input, INT Length, FUNCTION * Callback, APTR Output, INT OutputSize)</prototype>
+      <prototype>ERR cmp::CompressStream(OBJECTPTR Object, APTR Input, INT Length, FUNCTION Callback, APTR Output, INT OutputSize)</prototype>
       <tiriPrototype>err = CompressStream(Input:any, Length:num, Callback:func, Output:any, OutputSize:num)</tiriPrototype>
       <input>
         <param type="APTR" name="Input">Pointer to the source data.</param>
         <param type="INT" name="Length">Amount of data to compress, in bytes.</param>
-        <param type="FUNCTION *" name="Callback">This callback function will be called with a pointer to the compressed data.</param>
+        <param type="FUNCTION" name="Callback">This callback function will be called with a pointer to the compressed data.</param>
         <param type="APTR" name="Output">Optional.  Points to a buffer that will receive the compressed data.  Must be equal to or larger than the <fl>MinOutputSize</fl> field.</param>
         <param type="INT" name="OutputSize">Indicates the size of the <code>Output</code> buffer, otherwise set to zero.</param>
       </input>
@@ -128,7 +128,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
    while (!(error = acRead(file, input, sizeof(input), &amp;len))) {
       if (!len) break; // No more data to read.
 
-      error = mtCompressStream(compress, input, len, &amp;callback, NULL, 0);
+      error = mtCompressStream(compress, input, len, callback, nullptr, 0);
       if (error != ERR::Okay) break;
 
       if (result &gt; 0) {
@@ -139,7 +139,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
    }
 
    if (!error) {
-      if (!(error = mtCompressStreamEnd(compress, NULL, 0))) {
+      if (!(error = mtCompressStreamEnd(compress, callback, nullptr, 0))) {
          cmpsize += result;
          error = acWrite(outfile, output, result, &amp;len);
       }
@@ -164,10 +164,10 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <method>
       <name>CompressStreamEnd</name>
       <comment>Ends the compression of an open stream.</comment>
-      <prototype>ERR cmp::CompressStreamEnd(OBJECTPTR Object, FUNCTION * Callback, APTR Output, INT OutputSize)</prototype>
+      <prototype>ERR cmp::CompressStreamEnd(OBJECTPTR Object, FUNCTION Callback, APTR Output, INT OutputSize)</prototype>
       <tiriPrototype>err = CompressStreamEnd(Callback:func, Output:any, OutputSize:num)</tiriPrototype>
       <input>
-        <param type="FUNCTION *" name="Callback">Refers to a function that will be called for each compressed block of data.</param>
+        <param type="FUNCTION" name="Callback">Refers to a function that will be called for each compressed block of data.</param>
         <param type="APTR" name="Output">Optional pointer to a buffer that will receive the compressed data.  If not set, the compression object will use its own buffer.</param>
         <param type="INT" name="OutputSize">Size of the <code>Output</code> buffer (ignored if Output is <code>NULL</code>).</param>
       </input>
@@ -292,12 +292,12 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <method>
       <name>DecompressStream</name>
       <comment>Decompresses streamed data to an output buffer.</comment>
-      <prototype>ERR cmp::DecompressStream(OBJECTPTR Object, APTR Input, INT Length, FUNCTION * Callback, APTR Output, INT OutputSize)</prototype>
+      <prototype>ERR cmp::DecompressStream(OBJECTPTR Object, APTR Input, INT Length, FUNCTION Callback, APTR Output, INT OutputSize)</prototype>
       <tiriPrototype>err = DecompressStream(Input:any, Length:num, Callback:func, Output:any, OutputSize:num)</tiriPrototype>
       <input>
         <param type="APTR" name="Input">Pointer to data to decompress.</param>
         <param type="INT" name="Length">Amount of data to decompress from the Input parameter.</param>
-        <param type="FUNCTION *" name="Callback">Refers to a function that will be called for each decompressed block of information.</param>
+        <param type="FUNCTION" name="Callback">Refers to a function that will be called for each decompressed block of information.</param>
         <param type="APTR" name="Output">Optional pointer to a buffer that will receive the decompressed data.  If not set, the compression object will use its own buffer.</param>
         <param type="INT" name="OutputSize">Size of the buffer specified in Output (value ignored if <code>Output</code> is <code>NULL</code>).</param>
       </input>
@@ -321,10 +321,10 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <method>
       <name>DecompressStreamEnd</name>
       <comment>Must be called at the end of the decompression process.</comment>
-      <prototype>ERR cmp::DecompressStreamEnd(OBJECTPTR Object, FUNCTION * Callback)</prototype>
+      <prototype>ERR cmp::DecompressStreamEnd(OBJECTPTR Object, FUNCTION Callback)</prototype>
       <tiriPrototype>err = DecompressStreamEnd(Callback:func)</tiriPrototype>
       <input>
-        <param type="FUNCTION *" name="Callback">Refers to a function that will be called for each decompressed block of information.</param>
+        <param type="FUNCTION" name="Callback">Refers to a function that will be called for each decompressed block of information.</param>
       </input>
       <description>
 <p>To end the decompression process, this method must be called to write any final blocks of data and remove the resources that were allocated during decompression.</p>
@@ -401,12 +401,12 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <method>
       <name>Scan</name>
       <comment>Scan the archive's index of compressed data.</comment>
-      <prototype>ERR cmp::Scan(OBJECTPTR Object, STRVIEW Folder, STRVIEW Filter, FUNCTION * Callback)</prototype>
+      <prototype>ERR cmp::Scan(OBJECTPTR Object, STRVIEW Folder, STRVIEW Filter, FUNCTION Callback)</prototype>
       <tiriPrototype>err = Scan(Folder:str, Filter:str, Callback:func)</tiriPrototype>
       <input>
         <param type="STRVIEW" name="Folder">Only items within the specified folder are returned.  Use an empty string for files in the root folder.</param>
         <param type="STRVIEW" name="Filter">Search for a specific item or items by name, using wildcards.  If empty, all items will be scanned.</param>
-        <param type="FUNCTION *" name="Callback">This callback function will be called with a pointer to a <st>CompressedItem</st> structure.</param>
+        <param type="FUNCTION" name="Callback">This callback function will be called with a pointer to a <st>CompressedItem</st> structure.</param>
       </input>
       <description>
 <p>Use the Scan() method to search an archive's list of items.  Optional filtering can be applied using the <code>Folder</code> parameter to limit results to those within a folder, and <code>Filter</code> parameter to apply wildcard matching to item names.  Each item that is discovered during the scan will be passed to the function referenced in the <code>Callback</code> parameter.  If the <code>Callback</code> function returns <code>ERR::Terminate</code>, the scan will stop immediately.  The prototype of the <code>Callback</code> function is <code>ERR Function(*Compression, *CompressedItem)</code>.</p>

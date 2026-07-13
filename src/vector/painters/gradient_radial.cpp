@@ -134,7 +134,7 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 -END-
 *********************************************************************************************************************/
 
-static ERR GRADIENTRADIAL_GET_XMLDef(extGradientRadial *Self, std::string_view &Value)
+static ERR GRADIENTRADIAL_GET_XMLDef(extGradientRadial *Self, std::string &Value)
 {
    std::stringstream stream;
    stream << "radialGradient";
@@ -144,7 +144,8 @@ static ERR GRADIENTRADIAL_GET_XMLDef(extGradientRadial *Self, std::string_view &
    gradient_xml_attr(stream, "fy", Self->FY);
    gradient_xml_attr(stream, "r", Self->Radius);
    if (!Self->ContainFocal) stream << " focal=\"unbound\"";
-   return gradient_xml_result(stream.str(), Value);
+   Value = stream.str();
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -159,7 +160,7 @@ static const FieldArray clGradientRadialFields[] = {
    { "Radius",       FDF_UNIT|FDF_RW, nullptr, GRADIENTRADIAL_SET_Radius },
    { "FocalRadius",  FDF_UNIT|FDF_RW, nullptr, GRADIENTRADIAL_SET_FocalRadius },
    { "ContainFocal", FDF_INT|FDF_RW, nullptr, GRADIENTRADIAL_SET_ContainFocal },
-   { "XMLDef",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, GRADIENTRADIAL_GET_XMLDef },
+   { "XMLDef",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, GRADIENTRADIAL_GET_XMLDef },
    END_FIELD
 };
 

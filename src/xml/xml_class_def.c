@@ -33,7 +33,7 @@ FDEF maRemoveTag[] = { { "Index", FD_INT }, { "Total", FD_INT }, { 0, 0 } };
 FDEF maMoveTags[] = { { "Index", FD_INT }, { "Total", FD_INT }, { "DestIndex", FD_INT }, { "Where", FD_INT }, { 0, 0 } };
 FDEF maGetAttrib[] = { { "Index", FD_INT }, { "Attrib", FDF_CPPSTRING }, { "Value", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
 FDEF maInsertXPath[] = { { "XPath", FDF_CPPSTRING }, { "Where", FD_INT }, { "XML", FDF_CPPSTRING }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
-FDEF maSearch[] = { { "Expression", FDF_CPPSTRING }, { "Callback", FD_FUNCTIONPTR }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maSearch[] = { { "Expression", FDF_CPPSTRING }, { "Callback", FD_FUNCTION }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF maFilter[] = { { "XPath", FDF_CPPSTRING }, { 0, 0 } };
 FDEF maEvaluate[] = { { "Statement", FDF_CPPSTRING }, { "Result", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
 FDEF maInsertContent[] = { { "Index", FD_INT }, { "Where", FD_INT }, { "Content", FDF_CPPSTRING }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
@@ -74,12 +74,12 @@ static const struct MethodEntry clXMLMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR XML_NewPlacement(extXML *Self) {
+static ERR XML_New(extXML *Self) {
    new (Self) extXML(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR XML_FreePlacement(extXML *Self) {
+static ERR XML_Free(extXML *Self) {
    Self->~extXML();
    return ERR::Okay;
 }
@@ -87,9 +87,9 @@ static ERR XML_FreePlacement(extXML *Self) {
 static const struct ActionArray clXMLActions[] = {
    { AC::Clear, XML_Clear },
    { AC::DataFeed, XML_DataFeed },
-   { AC::FreePlacement, XML_FreePlacement },
+   { AC::Free, XML_Free },
    { AC::Init, XML_Init },
-   { AC::NewPlacement, XML_NewPlacement },
+   { AC::New, XML_New },
    { AC::Reset, XML_Reset },
    { AC::SaveToObject, XML_SaveToObject },
    { AC::SetKey, XML_SetKey },

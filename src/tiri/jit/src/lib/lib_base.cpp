@@ -147,7 +147,7 @@ LJLIB_PUSH(top-1)  //  boolean
 LJLIB_PUSH("userdata")
 LJLIB_PUSH("string")
 LJLIB_PUSH("upval")
-LJLIB_PUSH("thread") // DEPRECATED
+LJLIB_PUSH("struct")
 LJLIB_PUSH("proto")
 LJLIB_PUSH("function")
 LJLIB_PUSH("trace")
@@ -205,6 +205,12 @@ LJLIB_ASM(next) LJLIB_REC(.) // Use of '.' indicates the function name in the re
 static int ffh_pairs(lua_State* L, MMS mm)
 {
    TValue *o = lj_lib_checkany(L, 1);
+   if (lj_is_thunk(o)) {
+      TValue *resolved = lj_thunk_resolve(L, udataV(o));
+      o = L->base;
+      copyTV(L, o, resolved);
+   }
+
    cTValue *mo = lj_meta_lookup(L, o, mm);
    if (not tvisnil(mo)) {
       L->top = o + 1;  //  Only keep one argument.

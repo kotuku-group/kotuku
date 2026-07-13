@@ -1,0 +1,145 @@
+-- Config text encoder and decoder.
+--
+-- Config data is represented as a table of group tables:
+--
+--    import 'config'
+--
+--    data = config.decode('[Display]\nWidth = 1280\n')
+--    text = config.encode({ Display = { Width = 1280 } })
+--
+-- Decoded values are always strings.  Comments, source ordering and formatting are not preserved.
+
+   namespace 'config'
+
+   _LIB[_NS] = { }
+   config = _LIB[_NS]
+
+local rx_non_space = regex.new('[^ \\t]')
+
+function first_non_space(String:str):num
+   return rx_non_space.findFirst(String, 0)
+end
+
+function validate_text(Text:str, Description:str)
+   if Text:find('\n', 0, true) or Text:find('\r', 0, true) then
+      error(Description .. ' cannot contain line breaks.')
+   end
+end
+
+function validate_name(Name:any, Description:str):str
+   if type(Name) != 'string' then error(Description .. ' must be a string.') end
+   if Name is '' then error(Description .. ' cannot be empty.') end
+   validate_text(Name, Description)
+   return Name
+end
+
+function validate_group_name(Name:any):str
+   Name = validate_name(Name, 'Config group name')
+   if Name:find('[', 0, true) or Name:find(']', 0, true) then
+      error('Config group name cannot contain brackets.')
+   end
+   return Name
+end
+
+function validate_key_name(Name:any, GroupName:str):str
+   local description = f'Config key name in group "{GroupName}"'
+   Name = validate_name(Name, description)
+   if Name:trim() != Name then error(description .. ' cannot contain surrounding whitespace.') end
+   if Name:startsWith('#') or Name:startsWith('[') then
+      error(description .. ' cannot start with "#" or "[".')
+   end
+   if Name:find('=', 0, true) then error(description .. ' cannot contain "=".') end
+   return Name
+end
+
+@Doc(text=[[
+@desc Decode Config text into a table of groups and key-value tables.  The parser accepts LF and CRLF line endings, ignores comments and malformed lines, merges repeated groups, and gives the final repeated key precedence.
+@input Config text
+@result Table of groups and key-value tables
+]])
+config.decode = function(String:str):table
+   local result:table = { }
+   local current_group:table = nil
+   local normalised = String:replace('\r\n', '\n'):replace('\r', '\n')
+
+   for raw_line in values(normalised:split('\n')) do
+      local content_start = first_non_space(raw_line)
+      if content_start is nil then continue end
+
+      local line = raw_line:substr(content_start)
+      if line:startsWith('#') then continue end
+
+      if line:startsWith('[') then
+         local close_pos = line:find(']', 1, true)
+         local nested_open_pos = line:find('[', 1, true)
+         if close_pos is nil or (nested_open_pos and nested_open_pos < close_pos) then
+            current_group = nil
+            continue
+         end
+
+         local group_name = line:substr(1, close_pos)
+         if group_name is '' then
+            current_group = nil
+            continue
+         end
+
+         current_group = result[group_name]
+         if current_group is nil then
+            current_group = { }
+            result[group_name] = current_group
+         end
+         continue
+      end
+
+      if current_group is nil then continue end
+
+      local equals_pos = line:find('=', 0, true)
+      if equals_pos is nil then continue end
+
+      local key = line:substr(0, equals_pos):rtrim()
+      if key is '' then continue end
+
+      local value = line:substr(equals_pos + 1)
+      local value_start = first_non_space(value)
+      if value_start is nil then value = ''
+      else value = value:substr(value_start) end
+
+      current_group[key] = value
+   end
+
+   return result
+end
+
+@Doc(text=[[
+@desc Encode a table of groups and key-value tables as deterministic Config text.  Group and key names are sorted alphabetically.  String, number and boolean values are supported; numbers and booleans are converted to strings.
+@input Table of groups and key-value tables
+@result Config text
+]])
+config.encode = function(Value:table):str
+   local output = array<string>
+   local group_count = 0
+
+   for group_name, group in table.sortByKeys(Value) do
+      group_name = validate_group_name(group_name)
+      if type(group) != 'table' then error(f'Config group "{group_name}" must be a table.') end
+
+      if group_count > 0 then output:push('\n') end
+      output:push('[', group_name, ']\n')
+      group_count++
+
+      for key, value in table.sortByKeys(group) do
+         key = validate_key_name(key, group_name)
+
+         local value_type = type(value)
+         if value_type != 'string' and value_type != 'number' and value_type != 'boolean' then
+            error(f'Config value for "{group_name}.{key}" has unsupported type "{value_type}".')
+         end
+
+         local value_text = tostring(value)
+         validate_text(value_text, f'Config value for "{group_name}.{key}"')
+         output:push(key, ' = ', value_text, '\n')
+      end
+   end
+
+   return output:concat()
+end

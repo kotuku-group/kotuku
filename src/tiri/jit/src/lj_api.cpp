@@ -25,6 +25,7 @@
 #include "lj_strfmt.h"
 #include "lib/lib_utils.h"
 #include "lj_array.h"
+#include "runtime/lj_struct.h"
 #include "runtime/lj_thunk.h"
 #include "runtime/stack_helpers.h"
 
@@ -645,6 +646,16 @@ extern GCarray * lua_toarray(lua_State *L, int Arg)
 }
 
 //********************************************************************************************************************
+// Return struct value (does not perform any conversion)
+
+extern GCstruct * lua_tostruct(lua_State *L, int Arg)
+{
+   TValue *o = (Arg > LUA_REGISTRYINDEX) ? resolve_index(L, Arg) : index2adr(L, Arg);
+   if (tvisstruct(o)) return &gcval(o)->sct;
+   lj_err_argt(L, Arg, LUA_TSTRUCT);
+}
+
+//********************************************************************************************************************
 // Return object value (validates but does not perform any conversion)
 // Handles thunk resolution
 
@@ -812,15 +823,6 @@ extern void * lua_touserdata(lua_State *L, int idx)
 }
 
 //********************************************************************************************************************
-// Get thread if value is a coroutine
-
-extern lua_State * lua_tothread(lua_State *L, int idx)
-{
-   cTValue* o = index2adr(L, idx);
-   return (!tvisthread(o)) ? nullptr : threadV(o);
-}
-
-//********************************************************************************************************************
 // Get pointer representation of value
 
 extern const void* lua_topointer(lua_State *L, int idx)
@@ -967,12 +969,31 @@ extern void lua_createarray(lua_State *L, uint32_t Length, AET Type, void *Data,
 }
 
 //********************************************************************************************************************
+// Create native struct and push onto stack.  With Data null a zeroed inline payload is allocated; otherwise the
+// struct references the external Data (pass STRUCT_DEALLOCATE in Flags to transfer ownership to the GC).
+// Lifecycle optionally binds the view to a Kotuku object whose destruction invalidates the payload; see
+// lj_struct_new_external() for the weak pin contract.
+
+extern GCstruct * lua_pushstruct(lua_State *L, struct_record &Def, void *Data, uint8_t Flags, Object *Lifecycle,
+   GCstruct *Parent)
+{
+   lj_gc_check(L);
+   auto s = Data ? lj_struct_new_external(L, Def, Data, Flags, Lifecycle, Parent) : lj_struct_new(L, Def);
+   setstructV(L, L->top, s);
+   incr_top(L);
+   return s;
+}
+
+//********************************************************************************************************************
 // Create native Kotuku object and push onto stack. Returns pointer for additional configuration.
 
 extern GCobject * lua_pushobject(lua_State *L, OBJECTID UID, OBJECTPTR Ptr, objMetaClass *ClassPtr, uint8_t Flags)
 {
    lj_gc_check(L);
    auto obj = lj_object_new(L, UID, Ptr, ClassPtr, Flags);
+   // GCOBJ_PINNED in Flags means the caller already holds a weak pin on Ptr (e.g. via PinWeakObject())
+   // and the wrapper adopts it; otherwise pin here while the caller's liveness guarantee still holds.
+   if ((Ptr) and (not obj->is_pinned())) lj_object_pin(obj, Ptr);
    setobjectV(L, L->top, obj);
    incr_top(L);
    return obj;
@@ -996,16 +1017,6 @@ extern int luaL_newmetatable(lua_State *L, CSTRING tname)
       copyTV(L, L->top++, tv);
       return 0;
    }
-}
-
-//********************************************************************************************************************
-// Push current thread onto stack
-
-extern int lua_pushthread(lua_State *L)
-{
-   setthreadV(L, L->top, L);
-   incr_top(L);
-   return (mainthread(G(L)) IS L);
 }
 
 //********************************************************************************************************************
@@ -1103,6 +1114,7 @@ extern int lua_getmetatable(lua_State *L, int idx)
    if (tvistab(o)) mt = tabref(tabV(o)->metatable);
    else if (tvisudata(o)) mt = tabref(udataV(o)->metatable);
    else if (tvisarray(o)) mt = tabref(arrayV(o)->metatable);
+   else if (tvisstruct(o)) mt = tabref(structV(o)->metatable);
    else mt = tabref(basemt_obj(G(L), o));
    if (mt IS nullptr) return 0;
    settabV(L, L->top, mt);
@@ -1111,14 +1123,13 @@ extern int lua_getmetatable(lua_State *L, int idx)
 }
 
 //********************************************************************************************************************
-// Get function/userdata/thread environment table
+// Get function/userdata environment table
 
 extern void lua_getfenv(lua_State *L, int idx)
 {
    cTValue *o = index2adr_check(L, idx);
    if (tvisfunc(o)) settabV(L, L->top, tabref(funcV(o)->c.env));
    else if (tvisudata(o)) settabV(L, L->top, tabref(udataV(o)->env));
-   else if (tvisthread(o)) settabV(L, L->top, tabref(threadV(o)->env));
    else setnilV(L->top);
    incr_top(L);
 }
@@ -1303,6 +1314,10 @@ extern int lua_setmetatable(lua_State *L, int idx)
       setgcref(arrayV(o)->metatable, obj2gco(mt));
       if (mt) lj_gc_objbarrier(L, arrayV(o), mt);
    }
+   else if (tvisstruct(o)) {
+      setgcref(structV(o)->metatable, obj2gco(mt));
+      if (mt) lj_gc_objbarrier(L, structV(o), mt);
+   }
    else {
       // Flush cache, since traces specialize to basemt. But not during __gc.
       if (lj_trace_flushall(L)) lj_err_caller(L, ErrMsg::NOGCMM);
@@ -1350,7 +1365,7 @@ extern void lua_setbasemetatable(lua_State *L, uint32_t itype)
 }
 
 //********************************************************************************************************************
-// Set function/userdata/thread environment table
+// Set function/userdata environment table
 
 extern int lua_setfenv(lua_State *L, int idx)
 {
@@ -1361,7 +1376,6 @@ extern int lua_setfenv(lua_State *L, int idx)
    t = tabV(L->top - 1);
    if (tvisfunc(o)) setgcref(funcV(o)->c.env, obj2gco(t));
    else if (tvisudata(o)) setgcref(udataV(o)->env, obj2gco(t));
-   else if (tvisthread(o)) setgcref(threadV(o)->env, obj2gco(t));
    else {
       L->top--;
       return 0;

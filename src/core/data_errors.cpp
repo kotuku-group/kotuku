@@ -37,7 +37,7 @@ const CSTRING glMessages[int(ERR::END)+1] = {
  "System corruption detected",
  "A container is needed to operate correctly",
  "Container needs a Bitmap field",
- "A newer version of the Core is required",
+ "A compatible version of the Core is required",
  "The Width and/or Height field values need to be set",
  "Module validation has failed",
  "Process creation has failed",

@@ -83,19 +83,17 @@ end
 
    y = 6
    items = array<table> { }
-   err, list = mFont.GetList()
+   list = resolve(gui.fontList)
 
-   while list do
-      if list.hidden != 1 then
-         items:push({ item=list.name })
+   for _, rec in table.sortByKeys(list) do
+      if not rec.hidden then
+         items:push({ item=rec.name })
       end
-      list = list.next
    end
 
    combobox = gui.combobox({
       target = glViewport,
       label  = 'Font:',
-      string = 'Noto Sans',
       x      = glWindow.margins.left, y = y,
       items  = items,
       events = {

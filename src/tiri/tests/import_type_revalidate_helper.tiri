@@ -1,0 +1,10 @@
+-- Helper library for test_import_type_analysis.tiri containing a deliberate type error.
+-- Do not import this file from a compiled test; it is only referenced through debug.validate() buffers.
+
+namespace 'type_probe_reval'
+
+local mismatch:num = 'str'
+
+global function reval_add(A:num, B:num):num
+   return A + B
+end

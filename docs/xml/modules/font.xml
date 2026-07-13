@@ -38,27 +38,6 @@
   </function>
 
   <function>
-    <name>GetList</name>
-    <comment>Returns a list of all available system fonts.</comment>
-    <prototype>ERR fnt::GetList(struct FontList ** Result)</prototype>
-    <tiriPrototype>err, Result:any = GetList()</tiriPrototype>
-    <tags>caller-owns-result, creates-resource, blocking</tags>
-    <input>
-      <param type="struct FontList **" name="Result">The font list is returned here.</param>
-    </input>
-    <description>
-<p>Returns a linked list of available system fonts.  The returned list is allocated as a single resource and must be released with <code>FreeResource()</code> when it is no longer required.</p>
-    </description>
-    <result type="ERR">
-      <error code="Okay">Operation successful.</error>
-      <error code="NoData">No data is available for use</error>
-      <error code="AccessObject">Access to the font database was denied, or the object does not exist.</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
-      <error code="NullArgs">Function call missing argument value(s)</error>
-    </result>
-  </function>
-
-  <function>
     <name>RefreshFonts</name>
     <comment>Refreshes the system font list with up-to-date font information.</comment>
     <prototype>ERR fnt::RefreshFonts()</prototype>
@@ -152,27 +131,8 @@
       <const name="VARIABLE">This is a scalable font featuring variable metrics.</const>
     </constants>
 
-    <constants lookup="HINT" comment="Force hinting options for a font.">
-      <const name="INTERNAL">The Freetype hinter will be forcibly imposed.</const>
-      <const name="LIGHT">The light version of the Freetype hinter will be forcibly imposed.</const>
-      <const name="NORMAL">The hinting information provided by the font will be given preference.</const>
-    </constants>
-
   </types>
   <structs>
-    <struct name="FontList" comment="For GetList(), describes a system font.">
-      <field name="Next" type="struct FontList *">Pointer to the next entry in the list.</field>
-      <field name="Name" type="STRING">The name of the font face.</field>
-      <field name="Alias" type="STRING">Reference to another font Name if this is an alias.</field>
-      <field name="Points" type="INT" size="0">Pointer to an array of fixed point sizes supported by the font.</field>
-      <field name="Styles" type="STRING">Supported styles are listed here in CSV format.</field>
-      <field name="Axes" type="STRING">For variable fonts, lists all supported axis codes in CSV format</field>
-      <field name="Scalable" type="INT8"><code>TRUE</code> if the font is scalable.</field>
-      <field name="Variable" type="INT8"><code>TRUE</code> if the font has variable metrics.</field>
-      <field name="Hinting" type="HINT" lookup="HINT">Hinting options</field>
-      <field name="Hidden" type="INT8"><code>TRUE</code> if the font should be hidden from user font lists.</field>
-    </struct>
-
     <struct name="RGB8" comment="8-bit RGB colour value." typeName="RGB8">
       <field name="Red" type="UINT8">Red component value</field>
       <field name="Green" type="UINT8">Green component value</field>

@@ -22,12 +22,12 @@ static const struct MethodEntry clClipboardMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR CLIPBOARD_NewPlacement(objClipboard *Self) {
+static ERR CLIPBOARD_New(objClipboard *Self) {
    new (Self) objClipboard(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR CLIPBOARD_FreePlacement(objClipboard *Self) {
+static ERR CLIPBOARD_Free(objClipboard *Self) {
    Self->~objClipboard();
    return ERR::Okay;
 }
@@ -35,9 +35,9 @@ static ERR CLIPBOARD_FreePlacement(objClipboard *Self) {
 static const struct ActionArray clClipboardActions[] = {
    { AC::Clear, CLIPBOARD_Clear },
    { AC::DataFeed, CLIPBOARD_DataFeed },
-   { AC::FreePlacement, CLIPBOARD_FreePlacement },
+   { AC::Free, CLIPBOARD_Free },
    { AC::Init, CLIPBOARD_Init },
-   { AC::NewPlacement, CLIPBOARD_NewPlacement },
+   { AC::New, CLIPBOARD_New },
    { AC::NIL, nullptr }
 };
 

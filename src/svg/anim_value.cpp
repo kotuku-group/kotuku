@@ -90,9 +90,16 @@ void anim_value::set_value(objVector &Vector)
          switch (hash) {
             case SVF_x:  text.setX(Unit(get_dimension(Vector, strhash("x")))); return;
             case SVF_y:  text.setY(Unit(get_dimension(Vector, strhash("y")))); return;
-            case SVF_dx: text.set(strhash("dx"), get_string()); return;
-            case SVF_dy: text.set(strhash("dy"), get_string()); return;
-
+            case SVF_dx: {
+               kt::vector<double> array = read_array(get_string());
+               text.setDX(array);
+               return;
+            }
+            case SVF_dy: {
+               kt::vector<double> array = read_array(get_string());
+               text.setDY(array);
+               return;
+            }
             case SVF_text_anchor:
                switch(strhash(get_string())) {
                   case SVF_start:   text.setAlign(ALIGN::LEFT); return;
@@ -102,14 +109,14 @@ void anim_value::set_value(objVector &Vector)
                }
                break;
 
-            case SVF_rotate:         text.set(strhash("rotate"), get_string()); return;
+            case SVF_rotate:         text.setRotate(read_array(get_string())); return;
             case SVF_string:         text.setString(get_string()); return;
-            case SVF_kerning:        text.set(strhash("kerning"), get_string()); return; // Spacing between letters, default=1.0
-            case SVF_letter_spacing: text.set(strhash("letterSpacing"), get_string()); return;
-            case SVF_pathLength:     text.set(strhash("pathLength"), get_string()); return;
-            case SVF_word_spacing:   text.set(strhash("wordSpacing"), get_string()); return;
+            //case SVF_kerning:        text.set(strhash("kerning"), get_string()); return; // Spacing between letters, default=1.0
+            //case SVF_letter_spacing: text.set(strhash("letterSpacing"), get_string()); return;
+            //case SVF_pathLength:     text.set(strhash("pathLength"), get_string()); return;
+            //case SVF_word_spacing:   text.set(strhash("wordSpacing"), get_string()); return;
             case SVF_font_family:    text.setFace(get_string()); return;
-            case SVF_font_size:      text.set(strhash("fontSize"), get_numeric_value(Vector, strhash("fontSize"))); return;
+            case SVF_font_size:      text.setFontSize(get_string()); return;
          }
          break;
       }
@@ -270,7 +277,11 @@ void anim_value::set_value(objVector &Vector)
       case SVF_stroke_opacity:          Vector.setStrokeOpacity(get_numeric_value(Vector, strhash("strokeOpacity"))); break;
       case SVF_stroke_miterlimit:       Vector.setMiterLimit(get_numeric_value(Vector, strhash("miterLimit"))); break;
       case SVF_stroke_inner_miterlimit: Vector.setInnerMiterLimit(get_numeric_value(Vector, strhash("innerMiterLimit"))); break;
-      case SVF_stroke_dasharray:        Vector.set(strhash("dashArray"), get_string()); return;
+      case SVF_stroke_dasharray: {
+         kt::vector<double> dash_array = read_array(get_string());
+         Vector.setDashArray(dash_array);
+         return;
+      }
       case SVF_stroke_dashoffset:       Vector.setDashOffset(get_numeric_value(Vector, strhash("dashOffset"))); return;
       case SVF_opacity:                 Vector.setOpacity(get_numeric_value(Vector, strhash("opacity"))); return;
 
@@ -296,8 +307,9 @@ void anim_value::set_value(objVector &Vector)
             // Special case: SVG groups don't have an (x,y) position, but can declare one in the form of a
             // transform.  Refer to xtag_use() for a working example as to why.
 
-            VectorMatrix *m;
-            for (m=Vector.Matrices; (m) and ((uint32_t)m->Tag != MTAG_SVG_TRANSFORM); m=m->Next);
+            VectorMatrix *m = nullptr;
+            Vector.getMatrices(m);
+            for (; (m) and ((uint32_t)m->Tag != MTAG_SVG_TRANSFORM); m=m->Next);
 
             if (!m) {
                Vector.newMatrix(&m, false);
@@ -314,8 +326,9 @@ void anim_value::set_value(objVector &Vector)
 
       case SVF_y: {
          if (Vector.Class->ClassID IS CLASSID::VECTORGROUP) {
-            VectorMatrix *m;
-            for (m=Vector.Matrices; (m) and ((uint32_t)m->Tag != MTAG_SVG_TRANSFORM); m=m->Next);
+            VectorMatrix *m = nullptr;
+            Vector.getMatrices(m);
+            for (; (m) and ((uint32_t)m->Tag != MTAG_SVG_TRANSFORM); m=m->Next);
 
             if (!m) {
                Vector.newMatrix(&m, false);

@@ -29,6 +29,7 @@
 #include "ankerl/unordered_dense.h"
 #endif
 
+#define CORE_BUILD_DATE 20260712
 class objMetaClass;
 
 // Predefined cursor styles
@@ -332,13 +333,12 @@ enum class NF : uint32_t {
    SIGNALLED = 0x00000100,
    PERMIT_TERMINATE = 0x00000200,
    ASYNC_ACTIVE = 0x00000400,
-   PLACEMENT = 0x00000800,
-   ZOMBIE = 0x00001000,
+   ZOMBIE = 0x00000800,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(NF)
 
-#define MAX_NAME_LEN 31
+#define MAX_NAME_LEN 32
 #define MAX_FILENAME 256
 
 // Reserved message ID's that are handled internally.
@@ -679,7 +679,7 @@ enum class AC : int {
    MoveToFront = 23,
    NewChild = 24,
    NewOwner = 25,
-   NewObject = 26,
+   New = 26,
    Redo = 27,
    Query = 28,
    Read = 29,
@@ -701,9 +701,7 @@ enum class AC : int {
    Clipboard = 45,
    Refresh = 46,
    Disable = 47,
-   NewPlacement = 48,
-   FreePlacement = 49,
-   END = 50,
+   END = 48,
 };
 
 // Permission flags
@@ -1448,7 +1446,7 @@ struct FileFeedback {
 struct Field {
    MAXINT   Arg;                                                              // An option to complement the field type.  Can be a pointer or an integer value
    ERR (*GetValue)(APTR, APTR);                                               // A virtual function that will retrieve the value for this field
-   APTR     SetValue;                                                         // A virtual function that will set the value for this field
+   ERR (*SetValue)(APTR, APTR);                                               // A virtual function that will set the value for this field
    ERR (*WriteValue)(OBJECTPTR, const struct Field *, int, const void *);     // An internal function for writing to this field
    CSTRING  Name;                                                             // The English name for the field, e.g. Width
    uint32_t FieldID;                                                          // 32-bit hash from fieldhash()
@@ -1573,6 +1571,8 @@ struct CoreBase {
    ERR (*_AsyncWait)(kt::vector<OBJECTID> &Objects, int TimeOut);
    ERR (*_ClassDatabase)(kt::vector<ClassRecord *> *Classes);
    int (*_GetThreadID)(void);
+   void (*_UnitTests)(CSTRING Options, int *Passed, int *Total);
+   OBJECTPTR (*_PinWeakObject)(OBJECTID Object);
 #endif // KOTUKU_STATIC
 };
 
@@ -1671,6 +1671,8 @@ inline int AsyncPending(OBJECTID Object) { return CoreBase->_AsyncPending(Object
 inline ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut) { return CoreBase->_AsyncWait(Objects,TimeOut); }
 inline ERR ClassDatabase(kt::vector<ClassRecord *> *Classes) { return CoreBase->_ClassDatabase(Classes); }
 inline int GetThreadID(void) { return CoreBase->_GetThreadID(); }
+inline void UnitTests(CSTRING Options, int *Passed, int *Total) { return CoreBase->_UnitTests(Options,Passed,Total); }
+inline OBJECTPTR PinWeakObject(OBJECTID Object) { return CoreBase->_PinWeakObject(Object); }
 #else
 extern "C" ERR Action(AC Action, OBJECTPTR Object, APTR Parameters);
 extern "C" void ActionList(struct ActionTable **Actions, int *Size);
@@ -1763,6 +1765,7 @@ extern "C" int AsyncPending(OBJECTID Object);
 extern "C" ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut);
 extern "C" ERR ClassDatabase(kt::vector<ClassRecord *> *Classes);
 extern "C" int GetThreadID(void);
+extern "C" void UnitTests(CSTRING Options, int *Passed, int *Total);
 #endif // KOTUKU_STATIC
 
 
@@ -1894,7 +1897,7 @@ struct obj_write {
 inline auto write_hash = [](const obj_write &a, const obj_write &b) { return a.Hash < b.Hash; };
 
 typedef std::vector<obj_write> WRITE_TABLE;
-#endif
+#endif // PRV_METACLASS
 
 // MetaClass class definition
 
@@ -2201,6 +2204,8 @@ namespace kt {
       int  Time;
       AC   ActionID;      // ID of the action or method to execute
       bool SendArgs;
+      const FunctionField *Fields;
+      int ArgsSize;
 
       // Action arguments follow this structure in a buffer
    };
@@ -2275,17 +2280,6 @@ struct evHotplug {
    char Product[40];    // Name of product or the hardware device
    char Vendor[40];     // Name of vendor
 };
-
-[[nodiscard]] inline char * strclone(const std::string_view String) noexcept
-{
-   char *newstr;
-   if (!AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr)) {
-      memmove(newstr, String.data(), String.size());
-      newstr[String.size()] = 0;
-      return newstr;
-   }
-   else return nullptr;
-}
 
 } // pf namespace
 

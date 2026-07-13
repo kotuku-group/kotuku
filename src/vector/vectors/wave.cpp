@@ -14,8 +14,6 @@ Waves can be used in Kotuku's SVG implementation by using the &lt;kotuku:wave/&g
 
 -END-
 
-TODO: Allow the line cap and join styles to be configured when Thickness > 0 (currently fixed to ROUND).
-
 *********************************************************************************************************************/
 
 static void generate_wave(class extVectorWave *Vector, agg::path_storage &Path);
@@ -34,13 +32,16 @@ class extVectorWave : public extVector {
    double wDecay        = 1.0;
    double wNoise        = 0.0;
    double wPhase        = 0;
-   WVE wEnvelope     = WVE::LINEAR;
-   WVC wClose        = WVC::NIL;
-   WVT wType         = WVT::SINE;
+   WVE wEnvelope = WVE::LINEAR;
+   WVC wClose    = WVC::NIL;
+   WVT wType     = WVT::SINE;
    bool wFrequencyEndSet = false;
 
    extVectorWave(objMetaClass *ClassPtr, OBJECTID ObjectID) : extVector(ClassPtr, ObjectID) {
       GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_wave;
+      LineJoin  = VLJ::ROUND;  // Rounds the outer (convex) side of sharp peaks
+      InnerJoin = VIJ::ROUND;  // Absorbs the inner (concave) side, preventing cross-over
+      LineCap   = VLC::ROUND;
    }
 
    void apply_wave_thickness(agg::path_storage &Path, double Thickness, double ApproxScale, double Length,
@@ -429,9 +430,9 @@ void extVectorWave::apply_wave_thickness(agg::path_storage &Path, double Thickne
 
    agg::conv_stroke<agg::path_storage> stroke(centreline);
    stroke.width(Thickness);
-   stroke.line_join(VLJ::ROUND);  // Rounds the outer (convex) side of sharp peaks
-   stroke.inner_join(VIJ::ROUND); // Absorbs the inner (concave) side, preventing cross-over
-   stroke.line_cap(VLC::ROUND);
+   stroke.line_join(this->LineJoin);  // Rounds the outer (convex) side of sharp peaks
+   stroke.inner_join(this->InnerJoin); // Absorbs the inner (concave) side, preventing cross-over
+   stroke.line_cap(this->LineCap);
    stroke.approximation_scale(ApproxScale > 0.0 ? ApproxScale : 1.0);
 
    if (wave_needs_resolve(Length, Amplitude, Thickness, Frequency, FrequencyEnd)) {

@@ -10,6 +10,7 @@ template<class... Args> void DBG_TRANSFORM(Args...) {
 }
 
 #include <array>
+#include <list>
 #include <memory>
 #include <vector>
 #include <unordered_set>
@@ -248,11 +249,13 @@ public:
 
 inline void release_callback(FUNCTION &Function)
 {
-   if (Function.isScript() and (not Function.Context->terminating())) {
-      ((objScript *)Function.Context)->derefProcedure(Function);
+   if (Function.defined()) {
+      if (Function.isScript() and (not Function.Context->terminating())) {
+         ((objScript *)Function.Context)->derefProcedure(Function);
+      }
+      Function.unpin();
+      Function.disable();
    }
-   Function.clear();
-   Function.Context->unpinWeak();
 }
 
 //********************************************************************************************************************
@@ -265,14 +268,6 @@ template <class T> inline void validate_object_link(T *&Link)
       Link->unpinWeak();
       Link = nullptr;
    }
-}
-
-//********************************************************************************************************************
-
-inline void deref_vector_callback(FUNCTION &Function)
-{
-   if (Function.isScript()) ((objScript *)Function.Context)->derefProcedure(Function);
-   Function.clear();
 }
 
 //********************************************************************************************************************
@@ -389,7 +384,7 @@ struct MeshGradient {
    int rows = 0;
    int cols = 0;
    std::vector<MeshPatch> patches;
-   bool bicubic = false;
+   GMT mode = GMT::LINEAR;
 };
 
 // One mesh triangle after coordinate transformation and colour conversion, ready to hand to a Gouraud span.
@@ -579,9 +574,7 @@ class extGradientContour : public extGradient {
 
    extGradientContour(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
 
-   ~extGradientContour() {
-      if (ContourCache) delete ContourCache;
-   }
+   ~extGradientContour();
 };
 
 class extGradientGouraud : public extGradient {
@@ -602,6 +595,7 @@ class extGradientMesh : public extGradient {
    static constexpr CSTRING CLASS_NAME = "GradientMesh";
    using create = kt::Create<extGradientMesh>;
 
+   GMT Mode = GMT::LINEAR; // Gradient mesh mode: linear or bicubic.
    std::unique_ptr<MeshGradient> Mesh; // Coons patch data for GradientMesh.
    GouraudCache MeshTriangles; // Cached tessellated/coloured triangle list.
 
@@ -629,9 +623,7 @@ class extGradientDistal : public extGradient {
 
    extGradientDistal(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
 
-   ~extGradientDistal() {
-      if (SDFCache) delete SDFCache;
-   }
+   ~extGradientDistal();
 };
 
 class extGradientVoronoi : public extGradient {
@@ -656,9 +648,7 @@ class extGradientVoronoi : public extGradient {
 
    extGradientVoronoi(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
 
-   ~extGradientVoronoi() {
-      if (WorleyCache) delete WorleyCache;
-   }
+   ~extGradientVoronoi();
 };
 
 class extVectorImage : public objVectorImage, public SceneDef {
@@ -794,6 +784,7 @@ class extVector : public objVector {
    double FinalX, FinalY;         // Used by Viewport to define the target X,Y; also VectorText to position the text' final position.
    TClipRectangle<double> Bounds; // Must be calculated by GeneratePath() and called from calc_full_boundary()
    Unit StrokeWidth;
+   std::list<VectorMatrix> Matrices;
    agg::path_storage BasePath;
    agg::trans_affine Transform;   // Final transform.  Accumulated from the Matrix list during path generation.
 
@@ -847,6 +838,8 @@ class extVector : public objVector {
    double fixed_stroke_width();
 
    inline bool dirty() { return (Dirty & RC::DIRTY) != RC::NIL; }
+
+   inline VectorMatrix * matrices() { return Matrices.empty() ? nullptr : &Matrices.front(); }
 
    inline bool is_stroked() {
       return (StrokeWidth > 0) and
@@ -1417,16 +1410,16 @@ inline static void reset_final_path(objVector *Vector)
 template <class T>
 inline static void apply_transforms(const T &Vector, agg::trans_affine &AGGTransform)
 {
-   if constexpr (std::is_pointer_v<std::decay_t<decltype(Vector.Matrices)>>) {
-      // Linked-list storage (objVector, viewports and patterns)
-      for (auto t=Vector.Matrices; t; t=t->Next) {
-         AGGTransform.multiply(t->ScaleX, t->ShearY, t->ShearX, t->ScaleY, t->TranslateX, t->TranslateY);
-      }
-   }
-   else { // Contiguous kt::vector storage
-      for (auto &t : Vector.Matrices) {
-         AGGTransform.multiply(t.ScaleX, t.ShearY, t.ShearX, t.ScaleY, t.TranslateX, t.TranslateY);
-      }
+   // extVector-derived shapes store their transforms in a std::list (Matrices); gradients and patterns use a
+   // contiguous kt::vector (Matrices).  Both are range-iterable, so the storage is selected at compile time.
+
+   auto &store = [&]() -> auto & {
+      if constexpr (requires { Vector.Matrices; }) return Vector.Matrices;
+      else return Vector.Matrices;
+   }();
+
+   for (auto &t : store) {
+      AGGTransform.multiply(t.ScaleX, t.ShearY, t.ShearX, t.ScaleY, t.TranslateX, t.TranslateY);
    }
 }
 

@@ -776,14 +776,10 @@ XMLDef: Returns an SVG compliant XML string that describes the filter.
 
 *********************************************************************************************************************/
 
-static ERR COMPOSITEFX_GET_XMLDef(extCompositeFX *Self, std::string_view &Value)
+static ERR COMPOSITEFX_GET_XMLDef(extCompositeFX *Self, std::string &Value)
 {
-   auto cppstr = std::string("feComposite");
-   if (auto str = strclone(cppstr)) {
-      Value = std::string_view{str, cppstr.size()};
-      return ERR::Okay;
-   }
-   else return ERR::AllocMemory;
+   Value = std::string("feComposite");
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -796,7 +792,7 @@ static const FieldArray clCompositeFXFields[] = {
    { "K3",       FDF_DOUBLE|FDF_RW },
    { "K4",       FDF_DOUBLE|FDF_RW },
    { "Operator", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clCompositeFXOP },
-   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, COMPOSITEFX_GET_XMLDef },
+   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, COMPOSITEFX_GET_XMLDef },
    END_FIELD
 };
 

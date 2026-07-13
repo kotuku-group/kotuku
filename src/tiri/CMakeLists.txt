@@ -131,6 +131,11 @@ set (JIT_KOTUKU_HEADER_DEPENDENCIES
    "${INCLUDE_OUTPUT}/system/registry.h"
 )
 
+set (JIT_TIRI_HEADER_DEPENDENCIES
+   "${CMAKE_CURRENT_SOURCE_DIR}/defs.h"
+   "${CMAKE_CURRENT_SOURCE_DIR}/struct_def.h"
+)
+
 option(KOTUKU_PARSER_TRACE "Emit parser token and expectation traces" OFF)
 option(INCLUDE_TIPS "Include the parser tips system for code analysis" ON)
 
@@ -186,6 +191,7 @@ set (LJLIB_C
    "${JIT_SRC}/lib/lib_range.cpp"
    "${JIT_SRC}/lib/lib_array.cpp"
    "${JIT_SRC}/lib/lib_object.cpp"
+   "${JIT_SRC}/lib/lib_struct.cpp"
    "${JIT_SRC}/lib/lib_debug.cpp"
    "${JIT_SRC}/lib/lib_jit.cpp"
 )
@@ -219,13 +225,13 @@ if (MSVC)
 
    # Expand glob patterns for dependencies (only source headers, not generated ones)
 
-   file(GLOB JIT_CORE_SOURCES
+   file(GLOB JIT_CORE_SOURCES CONFIGURE_DEPENDS
       "${JIT_SRC}/debug/lj_*.cpp"
       "${JIT_SRC}/debug/try_except.cpp"
       "${JIT_SRC}/runtime/lj_*.cpp"
       "${JIT_SRC}/lj_*.cpp")
 
-   file(GLOB JIT_LIB_SOURCES "${JIT_SRC}/lib/lib_*.cpp")
+   file(GLOB JIT_LIB_SOURCES CONFIGURE_DEPENDS "${JIT_SRC}/lib/lib_*.cpp")
 
    # Exclude library and parser files that are compiled into the Tiri module instead
    list(FILTER JIT_LIB_SOURCES EXCLUDE REGEX "lib_.*\\.cpp$")
@@ -572,13 +578,13 @@ else ()
 
    # Expand glob patterns for source files (mirrors MSVC approach)
 
-   file(GLOB JIT_CORE_SOURCES
+   file(GLOB JIT_CORE_SOURCES CONFIGURE_DEPENDS
       "${JIT_SRC}/debug/lj_*.cpp"
       "${JIT_SRC}/debug/try_except.cpp"
       "${JIT_SRC}/runtime/lj_*.cpp"
       "${JIT_SRC}/lj_*.cpp")
 
-   file(GLOB JIT_LIB_SOURCES "${JIT_SRC}/lib/lib_*.cpp")
+   file(GLOB JIT_LIB_SOURCES CONFIGURE_DEPENDS "${JIT_SRC}/lib/lib_*.cpp")
 
    # Exclude library and parser files that are compiled into the Tiri module instead
    list(FILTER JIT_LIB_SOURCES EXCLUDE REGEX "lib_.*\\.cpp$")
@@ -614,7 +620,7 @@ else ()
             -Wno-trigraphs
             -c ${SOURCE_FILE} -o ${OBJECT_FILE}
          DEPENDS ${SOURCE_FILE} ${JIT_GENERATED_HEADERS} "${JIT_SRC}/lj_ircall.h"
-            ${JIT_KOTUKU_HEADER_DEPENDENCIES}
+            ${JIT_KOTUKU_HEADER_DEPENDENCIES} ${JIT_TIRI_HEADER_DEPENDENCIES}
          COMMENT "Compiling ${FILENAME}.cpp"
          VERBATIM
       )
@@ -693,6 +699,7 @@ set (TIRI_SOURCES "${MOD}.cpp" "tiri_module.cpp" "tiri_async.cpp" "tiri_struct.c
    "${JIT_SRC}/lib/lib_jit.cpp"
    "${JIT_SRC}/lib/lib_math.cpp"
    "${JIT_SRC}/lib/lib_object.cpp"
+   "${JIT_SRC}/lib/lib_struct.cpp"
    "${JIT_SRC}/lib/lib_range.cpp"
    "${JIT_SRC}/lib/lib_string.cpp"
    "${JIT_SRC}/lib/lib_table.cpp"
@@ -781,7 +788,8 @@ set (TIRI_TESTS
    type_inference jit pipe pipe_iteration arrow_functions result_filter thunks deferred_expr shadow_assert ranges
    annotations locality anonymous_for key_values debug_filesources compound choose_from enum flow table_slice options
    try_except import include_list processing metatables with thunk_table_index debug malformed_syntax numeric_limits return_types url tips tempus
-   comparison_chaining reserved_keywords compile_if_import overflow protected_globals constant_shadowing
+   comparison_chaining reserved_keywords compile_if_import overflow protected_globals constant_shadowing config_library
+   object_pinning import_type_analysis global_types
 )
 
 foreach (TEST_NAME ${TIRI_TESTS})

@@ -15,12 +15,12 @@ static const struct MethodEntry clVectorPathMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR VECTORPATH_NewPlacement(extVectorPath *Self) {
+static ERR VECTORPATH_New(extVectorPath *Self) {
    new (Self) extVectorPath(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR VECTORPATH_FreePlacement(extVectorPath *Self) {
+static ERR VECTORPATH_Free(extVectorPath *Self) {
    Self->~extVectorPath();
    return ERR::Okay;
 }
@@ -28,10 +28,10 @@ static ERR VECTORPATH_FreePlacement(extVectorPath *Self) {
 static const struct ActionArray clVectorPathActions[] = {
    { AC::Clear, VECTORPATH_Clear },
    { AC::Flush, VECTORPATH_Flush },
-   { AC::FreePlacement, VECTORPATH_FreePlacement },
+   { AC::Free, VECTORPATH_Free },
    { AC::Move, VECTORPATH_Move },
    { AC::MoveToPoint, VECTORPATH_MoveToPoint },
-   { AC::NewPlacement, VECTORPATH_NewPlacement },
+   { AC::New, VECTORPATH_New },
    { AC::NIL, nullptr }
 };
 

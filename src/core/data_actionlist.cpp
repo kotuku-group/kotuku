@@ -24,7 +24,7 @@ FDEF argsSaveToObject[]  = { { "Dest", FD_OBJECTPTR }, { "Class", FD_INT }, { 0,
 FDEF argsSeek[]          = { { "Offset", FD_DOUBLE }, { "Position", FD_INT }, { 0, 0 } };
 FDEF argsSetKey[]        = { { "Field", FDF_CPPSTRING }, { "Value", FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsUndo[]          = { { "Steps", FD_INT }, { 0, 0 } };
-FDEF argsWrite[]         = { { "Buffer", FD_PTR|FD_BUFFER }, { "Length", FD_INT|FD_BUFSIZE }, { "Result", FD_INT|FD_RESULT }, { 0, 0 } };
+FDEF argsWrite[]         = { { "Buffer", FD_PTRBUFFER }, { "Length", FD_INT|FD_BUFSIZE }, { "Result", FD_INT|FD_RESULT }, { 0, 0 } };
 
 extern "C" const struct ActionTable ActionTable[] = { // Sorted by action ID.
    { 0, 0, 0, 0 },
@@ -53,7 +53,7 @@ extern "C" const struct ActionTable ActionTable[] = { // Sorted by action ID.
    { kt::strhash("movetofront"),    0, "MoveToFront", 0 },
    { kt::strhash("newchild"),       sizeof(struct acNewChild), "NewChild", argsNewChild },
    { kt::strhash("newowner"),       sizeof(struct acNewOwner), "NewOwner", argsNewOwner },
-   { kt::strhash("newobject"),      0, "NewObject", 0 },
+   { kt::strhash("new"),            0, "New", 0 },
    { kt::strhash("redo"),           sizeof(struct acRedo), "Redo", argsRedo },
    { kt::strhash("query"),          0, "Query", 0 },
    { kt::strhash("read"),           sizeof(struct acRead), "Read", argsRead },
@@ -75,7 +75,5 @@ extern "C" const struct ActionTable ActionTable[] = { // Sorted by action ID.
    { kt::strhash("clipboard"),      sizeof(struct acClipboard), "Clipboard", argsClipboard },
    { kt::strhash("refresh"),        0, "Refresh", 0 },
    { kt::strhash("disable"),        0, "Disable", 0 },
-   { kt::strhash("newplacement"),   0, "NewPlacement", 0 },
-   { kt::strhash("freeplacement"),  0, "FreePlacement", 0 },
    { 0, 0, 0, 0 }
 };

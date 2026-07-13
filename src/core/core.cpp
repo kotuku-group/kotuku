@@ -1358,42 +1358,41 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
       lseek(file, 0, SEEK_SET);
       if (size < 1) size = 8192;
 
-      STRING buffer;
-      if (!AllocMemory(size + 1, MEM::NO_CLEAR, (APTR *)&buffer)) {
-         if ((size = read(file, buffer, size)) > 0) {
-            buffer[size] = 0;
+      std::string buffer(size, '\0');
+      if ((size = read(file, buffer.data(), size)) > 0) {
+         buffer.resize(size);
 
-            CSTRING str = buffer;
-            while (*str) {
-               if (std::string_view(str, size).starts_with("/dev/hd")) {
-                  // Extract mount point
+         std::string_view str = buffer;
+         while (!str.empty()) {
+            if (str.starts_with("/dev/hd")) {
+               // Extract mount point
 
-                  int i = 0;
-                  while ((*str) and (*str > 0x20)) {
-                     if (i < std::ssize(devpath)-1) devpath[i++] = *str;
-                     str++;
-                  }
-                  devpath[i] = 0;
-
-                  while ((*str) and (*str <= 0x20)) str++;
-                  for (i=0; (*str) and (*str > 0x20) and (i < std::ssize(mount)-1); i++) mount[i] = *str++;
-                  mount[i] = 0;
-
-                  if ((mount[0] IS '/') and (!mount[1]));
-                  else {
-                     strcopy(std::to_string(driveno++), drivename+5, 3);
-                     SetVolume(drivename, mount, "devices/storage", "", "fixed", VOLUME::NIL);
-                  }
+               int i = 0;
+               while ((!str.empty()) and (str.front() > 0x20)) {
+                  if (i < std::ssize(devpath)-1) devpath[i++] = str.front();
+                  str.remove_prefix(1);
                }
+               devpath[i] = 0;
 
-               // Next line
-               while ((*str) and (*str != '\n')) str++;
-               while ((*str) and (*str <= 0x20)) str++;
+               while ((!str.empty()) and (str.front() <= 0x20)) str.remove_prefix(1);
+               for (i=0; (!str.empty()) and (str.front() > 0x20) and (i < std::ssize(mount)-1); i++) {
+                  mount[i] = str.front();
+                  str.remove_prefix(1);
+               }
+               mount[i] = 0;
+
+               if ((mount[0] IS '/') and (!mount[1]));
+               else {
+                  strcopy(std::to_string(driveno++), drivename+5, 3);
+                  SetVolume(drivename, mount, "devices/storage", "", "fixed", VOLUME::NIL);
+               }
             }
+
+            // Next line
+            while ((!str.empty()) and (str.front() != '\n')) str.remove_prefix(1);
+            while ((!str.empty()) and (str.front() <= 0x20)) str.remove_prefix(1);
          }
-         FreeResource(buffer);
       }
-      else log.warning(ERR::AllocMemory);
 
       close(file);
    }

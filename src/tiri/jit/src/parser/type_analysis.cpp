@@ -98,6 +98,9 @@ public:
    // Access collected type diagnostics after analysis
    [[nodiscard]] const std::vector<TypeDiagnostic> & diagnostics() const { return this->diagnostics_; }
 
+   // Publish fixed global types to the lexer state so the IR emitter can specialise global member access
+   void publish_global_type_hints(LexState &) const;
+
 private:
    // Scope management - maintains a stack of TypeCheckScope for tracking variable types
    void push_scope();
@@ -150,6 +153,47 @@ private:
    // Usage tracking - marks variables as used for unused variable detection
    void mark_identifier_used(GCstr *);
 
+   // Diagnostic recording - stamps the active file index so diagnostics raised inside imported
+   // statements are attributed to the imported file rather than the importing one
+   void record_diagnostic(TypeDiagnostic Diag) {
+      Diag.file_index = this->current_file_index_;
+      this->diagnostics_.push_back(std::move(Diag));
+   }
+
+   #ifdef INCLUDE_TIPS
+   // Tip gating - tips carry no file attribution, so they are suppressed entirely while analysing
+   // imported statements to avoid misattributing library internals to the importing file
+   [[nodiscard]] bool should_emit_tip(uint8_t Priority) const {
+      return this->import_depth_ IS 0 and this->ctx_.should_emit_tip(Priority);
+   }
+
+   void emit_tip(uint8_t Priority, TipCategory Category, std::string Message, const Token &Location) {
+      if (this->import_depth_ != 0) return;
+      this->ctx_.emit_tip(Priority, Category, std::move(Message), Location);
+   }
+   #endif
+
+   // RAII guard for descending into an imported file's inlined body: swaps the active file index
+   // and tracks import depth so early returns in analysis helpers cannot leave stale state
+   struct ImportGuard {
+      TypeAnalyser &analyser;
+      uint8_t saved_file_index;
+
+      ImportGuard(TypeAnalyser &Analyser, uint8_t FileIndex)
+         : analyser(Analyser), saved_file_index(Analyser.current_file_index_) {
+         Analyser.current_file_index_ = FileIndex;
+         Analyser.import_depth_++;
+      }
+
+      ~ImportGuard() {
+         this->analyser.current_file_index_ = this->saved_file_index;
+         this->analyser.import_depth_--;
+      }
+
+      ImportGuard(const ImportGuard &) = delete;
+      ImportGuard & operator=(const ImportGuard &) = delete;
+   };
+
    // Return type validation - ensures consistency within functions
    void validate_return_types(const ReturnStmtPayload &, SourceSpan);
 
@@ -193,19 +237,25 @@ private:
       SourceSpan location{};
       const FunctionExprPayload* function = nullptr;  // Non-null if declared as global function
       bool is_const = false;  // True if declared with <const> attribute
+      bool implicit = false;  // True if inferred from a plain assignment rather than a 'global' declaration
    };
 
    void declare_global(GCstr *Name, const InferredType &Type, SourceSpan Location, bool IsConst = false);
    void declare_global_function(GCstr *Name, const FunctionExprPayload *Function, SourceSpan Location);
+   void declare_implicit_global(GCstr *Name, const ExprNode *Value, SourceSpan Location);
    [[nodiscard]] std::optional<InferredType> lookup_global_type(GCstr *Name) const;
    [[nodiscard]] bool is_global_const(GCstr *Name) const;
+   [[nodiscard]] bool is_implicit_global(GCstr *Name) const;
    void fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId = CLASSID::NIL);
+   void degrade_global_type(GCstr *Name);
 
    ParserContext &ctx_;                             // Parser context for diagnostics and lexer access
    std::vector<TypeCheckScope> scope_stack_{};      // Stack of scopes for variable tracking
    std::vector<FunctionContext> function_stack_{};  // Stack of function contexts for return type tracking
    std::vector<TypeDiagnostic> diagnostics_{};      // Collected type errors and warnings
    uint32_t loop_depth_{0};                         // Current loop nesting depth for performance tip
+   uint32_t import_depth_{0};                       // Import nesting depth; non-zero suppresses tips
+   uint8_t current_file_index_{0};                  // FileSource index of the file being analysed
    ankerl::unordered_dense::map<GCstr*, GlobalTypeInfo> global_types_{};  // Type info for global variables
    #ifdef INCLUDE_TIPS
    std::vector<GCstr*> declared_globals_{};         // Globals explicitly declared with 'global' keyword
@@ -256,7 +306,7 @@ void TypeAnalyser::trace_decl(BCLine Line, GCstr* Name, TiriType Type, bool IsFi
 #ifdef INCLUDE_TIPS
 void TypeAnalyser::check_shadowing(GCstr *Name, SourceSpan Location)
 {
-   if (not this->ctx_.should_emit_tip(2)) return;
+   if (not this->should_emit_tip(2)) return;
    if (not Name) return;
    if (Name->len IS 1 and strdata(Name)[0] IS '_') return;
 
@@ -269,7 +319,7 @@ void TypeAnalyser::check_shadowing(GCstr *Name, SourceSpan Location)
       auto existing = scope.lookup_local_type(Name);
       if (existing) {
          std::string_view name_view(strdata(Name), Name->len);
-         this->ctx_.emit_tip(2, TipCategory::CodeQuality,
+         this->emit_tip(2, TipCategory::CodeQuality,
             std::format("Variable '{}' shadows a variable in an outer scope", name_view),
             Token::from_span(Location, TokenKind::Identifier));
          return;  // Only report once per variable
@@ -279,7 +329,7 @@ void TypeAnalyser::check_shadowing(GCstr *Name, SourceSpan Location)
       auto param = scope.lookup_parameter_type(Name);
       if (param) {
          std::string_view name_view(strdata(Name), Name->len);
-         this->ctx_.emit_tip(2, TipCategory::CodeQuality,
+         this->emit_tip(2, TipCategory::CodeQuality,
             std::format("Variable '{}' shadows a parameter in an outer scope", name_view),
             Token::from_span(Location, TokenKind::Identifier));
          return;
@@ -305,7 +355,7 @@ void TypeAnalyser::track_global(GCstr *Name)
 
 void TypeAnalyser::check_global_in_loop(GCstr *Name, SourceSpan Location)
 {
-   if (not this->ctx_.should_emit_tip(2)) return;
+   if (not this->should_emit_tip(2)) return;
    if (this->loop_depth_ IS 0) return;
    if (not Name) return;
    if (Name->len IS 1 and strdata(Name)[0] IS '_') return;
@@ -328,7 +378,7 @@ void TypeAnalyser::check_global_in_loop(GCstr *Name, SourceSpan Location)
 
    // It's a declared global variable being accessed inside a loop
    std::string_view name_view(strdata(Name), Name->len);
-   this->ctx_.emit_tip(2, TipCategory::Performance,
+   this->emit_tip(2, TipCategory::Performance,
       std::format("Global '{}' accessed in loop; consider caching in a local variable for better JIT performance",
          name_view),
       Token::from_span(Location, TokenKind::Identifier));
@@ -339,10 +389,10 @@ void TypeAnalyser::check_global_in_loop(GCstr *Name, SourceSpan Location)
 
 void TypeAnalyser::check_function_in_loop(SourceSpan Location)
 {
-   if (not this->ctx_.should_emit_tip(2)) return;
+   if (not this->should_emit_tip(2)) return;
    if (this->loop_depth_ IS 0) return;
 
-   this->ctx_.emit_tip(2, TipCategory::Performance,
+   this->emit_tip(2, TipCategory::Performance,
       "Function defined inside loop; consider moving it outside the loop for better performance",
       Token::from_span(Location, TokenKind::Function));
 }
@@ -354,10 +404,10 @@ void TypeAnalyser::check_function_in_loop(SourceSpan Location)
 
 void TypeAnalyser::check_concat_in_loop(SourceSpan Location)
 {
-   if (not this->ctx_.should_emit_tip(2)) return;
+   if (not this->should_emit_tip(2)) return;
    if (this->loop_depth_ IS 0) return;
 
-   this->ctx_.emit_tip(2, TipCategory::Performance,
+   this->emit_tip(2, TipCategory::Performance,
       "String concatenation in loop; consider using array.concat() for better performance",
       Token::from_span(Location, TokenKind::Cat));
 }
@@ -368,13 +418,13 @@ void TypeAnalyser::check_concat_in_loop(SourceSpan Location)
 
 void TypeAnalyser::check_choose_missing_fallback(const ChooseExprPayload &Payload, SourceSpan Location)
 {
-   if (not this->ctx_.should_emit_tip(1)) return;
+   if (not this->should_emit_tip(1)) return;
 
    for (const ChooseCase &case_item : Payload.cases) {
       if (case_item.is_else or (case_item.is_wildcard and not case_item.guard)) return;
    }
 
-   this->ctx_.emit_tip(1, TipCategory::TypeSafety,
+   this->emit_tip(1, TipCategory::TypeSafety,
       "Choose expression has no else branch; unmatched values evaluate to nil",
       Token::from_span(Location, TokenKind::Choose));
 }
@@ -401,22 +451,22 @@ void TypeAnalyser::pop_scope() {
 
    #ifdef INCLUDE_TIPS
    // Report unused variables before popping the scope (skip if tip wouldn't be emitted)
-   if (this->ctx_.should_emit_tip(2)) {
+   if (this->should_emit_tip(2)) {
       auto unused = this->scope_stack_.back().get_unused_variables();
       for (const auto& var : unused) {
          std::string_view name_view(strdata(var.name), var.name->len);
          if (var.is_parameter) {
-            this->ctx_.emit_tip(2, TipCategory::CodeQuality,
+            this->emit_tip(2, TipCategory::CodeQuality,
                std::format("Unused function parameter '{}'", name_view),
                Token::from_span(var.location, TokenKind::Identifier));
          }
          else if (var.is_function) {
-            this->ctx_.emit_tip(2, TipCategory::CodeQuality,
+            this->emit_tip(2, TipCategory::CodeQuality,
                std::format("Unused local function '{}'", name_view),
                Token::from_span(var.location, TokenKind::Identifier));
          }
          else {
-            this->ctx_.emit_tip(2, TipCategory::CodeQuality,
+            this->emit_tip(2, TipCategory::CodeQuality,
                std::format("Unused local variable '{}'", name_view),
                Token::from_span(var.location, TokenKind::Identifier));
          }
@@ -488,6 +538,8 @@ const FunctionContext* TypeAnalyser::current_function() const
 
 void TypeAnalyser::analyse_module(const BlockStmt &Module)
 {
+   // For loadFile sources the whole chunk carries a single non-zero FileSource index
+   this->current_file_index_ = this->ctx_.lex().current_file_index;
    this->push_scope();
    this->analyse_block(Module);
    this->pop_scope();
@@ -644,6 +696,25 @@ void TypeAnalyser::analyse_statement(const StmtNode &Statement)
          if (payload and payload->expression) this->analyse_expression(*payload->expression);
          break;
       }
+      case AstNodeKind::ImportStmt: {
+         // Imports are inlined at compile time and never independently compiled, so their bodies
+         // must be analysed here or their type errors can never surface.  Repeated imports of the
+         // same library are deduplicated at parse time (subsequent entries get an empty block), so
+         // descent cannot double-analyse a library.  The scope pair mirrors emit_import_entry(),
+         // which wraps the inlined body in its own lexical scope - imported top-level locals must
+         // not leak into the importer's scope tables.  Globals intentionally remain shared.
+         auto *payload = std::get_if<ImportStmtPayload>(&Statement.data);
+         if (payload) {
+            for (const auto &entry : payload->entries) {
+               if (not entry.inlined_body) continue;
+               ImportGuard guard(*this, entry.file_source_idx);
+               this->push_scope();
+               this->analyse_block(*entry.inlined_body);
+               this->pop_scope();
+            }
+         }
+         break;
+      }
       default:
          break;
    }
@@ -718,7 +789,16 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
          }
          else is_const = this->is_local_const(name);
 
-         if (not existing) continue;
+         if (not existing) {
+            // The name is neither a local nor a known global.  A plain assignment to a name that already exists in
+            // the environment table updates that global at runtime, so record an implicit global type for it.  Only
+            // simple '=' assignments are used for inference; compound operators require an existing value and never
+            // create a global.
+            if (Payload.op IS AssignmentOperator::Plain and i < Payload.values.size()) {
+               this->declare_implicit_global(name, Payload.values[i].get(), target.span);
+            }
+            continue;
+         }
 
          // Check for assignment to const variable
 
@@ -728,7 +808,7 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
             diag.location = target.span;
             diag.code = ParserErrorCode::AssignToConstant;
             diag.message = std::format("cannot assign to const {} '{}'", is_global ? "global" : "local", name_view);
-            this->diagnostics_.push_back(std::move(diag));
+            this->record_diagnostic(std::move(diag));
             continue;  // Skip further checking for this target
          }
 
@@ -749,6 +829,13 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
             }
 
             if (value_type.primary != TiriType::Any and value_type.primary != existing->primary) {
+               // Implicit globals were never declared by the user, so a conflicting assignment is legal;
+               // degrade the tracked type to 'any' rather than raising a diagnostic.
+               if (is_global and this->is_implicit_global(name)) {
+                  this->degrade_global_type(name);
+                  continue;
+               }
+
                // Type mismatch
                TypeDiagnostic diag;
                diag.location = target.span;
@@ -757,12 +844,18 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
                diag.code = ParserErrorCode::TypeMismatchAssignment;
                diag.message = std::format("cannot assign '{}' to {} of type '{}'",
                   type_name(value_type.primary), is_global ? "global" : "variable", type_name(existing->primary));
-               this->diagnostics_.push_back(std::move(diag));
+               this->record_diagnostic(std::move(diag));
             }
             // Check for object class ID mismatch (both types are Object but different classes)
             else if (existing->primary IS TiriType::Object and value_type.primary IS TiriType::Object and
                existing->object_class_id != CLASSID::NIL) {
                if (existing->object_class_id != value_type.object_class_id) {
+                  // Conflicting object classes on an implicit global clear the class association.
+                  if (is_global and this->is_implicit_global(name)) {
+                     this->fix_global_type(name, TiriType::Object, CLASSID::NIL);
+                     continue;
+                  }
+
                   TypeDiagnostic diag;
                   diag.location = target.span;
                   diag.expected = TiriType::Object;
@@ -770,7 +863,7 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
                   diag.code = ParserErrorCode::ObjectClassMismatch;
                   diag.message = std::format("object class mismatch: cannot assign object of different class to {} ({} vs {})",
                      is_global ? "global" : "variable", ResolveClassID(value_type.object_class_id), ResolveClassID(existing->object_class_id));
-                  this->diagnostics_.push_back(std::move(diag));
+                  this->record_diagnostic(std::move(diag));
                }
             }
          }
@@ -865,7 +958,7 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
                diag.code = ParserErrorCode::TypeMismatchAssignment;
                diag.message = std::format("cannot assign '{}' to variable of type '{}'",
                   type_name(value_type.primary), type_name(name.type));
-               this->diagnostics_.push_back(std::move(diag));
+               this->record_diagnostic(std::move(diag));
             }
          }
       }
@@ -964,7 +1057,7 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
          diag.location = name.span;
          diag.code = ParserErrorCode::AssignToConstant;
          diag.message = std::format("cannot assign to constant '{}'", name_view);
-         this->diagnostics_.push_back(std::move(diag));
+         this->record_diagnostic(std::move(diag));
          continue;
       }
 
@@ -998,12 +1091,12 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
    }
 
    // Check global naming conventions
-   if (this->ctx_.should_emit_tip(3)) {
+   if (this->should_emit_tip(3)) {
       for (const auto &name : Payload.names) {
          if (not name.symbol) continue;
          std::string_view name_view(strdata(name.symbol), name.symbol->len);
          if (not is_valid_global_name(name_view)) {
-            this->ctx_.emit_tip(3, TipCategory::Style,
+            this->emit_tip(3, TipCategory::Style,
                std::format("Global variable '{}' should follow naming convention: 'gl[A-Z]...' or 'ALL_CAPS'",
                   name_view),
                Token::from_span(name.span, TokenKind::Identifier));
@@ -1072,7 +1165,7 @@ void TypeAnalyser::analyse_function_stmt(const FunctionStmtPayload &Payload)
             diag.location = function_location;
             diag.code = ParserErrorCode::AssignToConstant;
             diag.message = std::format("cannot assign to constant '{}'", name_view);
-            this->diagnostics_.push_back(std::move(diag));
+            this->record_diagnostic(std::move(diag));
          }
          else this->declare_global_function(function_name, function, function_location);
       }
@@ -1134,7 +1227,7 @@ void TypeAnalyser::report_protected_global_override(GCstr *Name, SourceSpan Loca
    diag.location = Location;
    diag.code = ParserErrorCode::OverrideProtectedGlobal;
    diag.message = std::format("cannot override built-in '{}'", std::string_view(strdata(Name), Name->len));
-   this->diagnostics_.push_back(std::move(diag));
+   this->record_diagnostic(std::move(diag));
 }
 
 void TypeAnalyser::report_computed_global_environment_store(SourceSpan Location)
@@ -1143,7 +1236,7 @@ void TypeAnalyser::report_computed_global_environment_store(SourceSpan Location)
    diag.location = Location;
    diag.code = ParserErrorCode::OverrideProtectedGlobal;
    diag.message = "cannot override built-in through computed _G key";
-   this->diagnostics_.push_back(std::move(diag));
+   this->record_diagnostic(std::move(diag));
 }
 
 //********************************************************************************************************************
@@ -1171,16 +1264,16 @@ void TypeAnalyser::analyse_function_payload(const FunctionExprPayload &Function,
       diag.code = ParserErrorCode::RecursiveFunctionNeedsType;
       diag.message = std::format("recursive function '{}' must have explicit return type declaration",
          Name ? std::string_view(strdata(Name), Name->len) : "<anonymous>");
-      this->diagnostics_.push_back(std::move(diag));
+      this->record_diagnostic(std::move(diag));
    }
 
    // Advise on missing return type annotation for functions that return values
 
    #ifdef INCLUDE_TIPS
-   if (this->ctx_.should_emit_tip(1) and
+   if (this->should_emit_tip(1) and
        (not Function.return_types.is_explicit) and this->function_has_return_values(Function)) {
       SourceSpan span = Function.body ? Function.body->span : SourceSpan{};
-      this->ctx_.emit_tip(1, TipCategory::TypeSafety,
+      this->emit_tip(1, TipCategory::TypeSafety,
          "Function lacks return type annotation; consider adding ': type' after the parameter list",
          Token::from_span(span, TokenKind::Function));
    }
@@ -1235,7 +1328,7 @@ void TypeAnalyser::analyse_expression(const ExprNode &Expression)
                      const char *op_name = payload->op IS AstBinaryOperator::HasFlag ? "has" : "≈";
                      diag.message = std::format("'{}' operator expects numeric {}, got {}", op_name, Side,
                         type_name(inferred.primary));
-                     this->diagnostics_.push_back(std::move(diag));
+                     this->record_diagnostic(std::move(diag));
                   }
                };
                check_operand(payload->left, "operand");
@@ -1418,7 +1511,7 @@ void TypeAnalyser::check_argument_type(const ExprNode& Argument, TiriType Expect
       diag.code = ParserErrorCode::TypeMismatchArgument;
       diag.message = std::format("type mismatch: argument {} expects '{}', got '{}'",
          Index + 1, type_name(Expected), type_name(actual.primary));
-      this->diagnostics_.push_back(std::move(diag));
+      this->record_diagnostic(std::move(diag));
    }
 }
 
@@ -1545,13 +1638,31 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                case AstBinaryOperator::Concat:
                   result.primary = TiriType::Str;
                   return result;
-               // Arithmetic operators return number
+               // Arithmetic operators return number, unless an operand may be a table or object
+               // whose metamethods (__add, __sub, ...) can overload the operation to return any
+               // type.  Operands of type Any or Unknown may hold such values, so the result is
+               // only known to be numeric when neither operand can carry a metatable.
                case AstBinaryOperator::Add:
                case AstBinaryOperator::Subtract:
                case AstBinaryOperator::Multiply:
                case AstBinaryOperator::Divide:
                case AstBinaryOperator::Modulo:
-               case AstBinaryOperator::Power:
+               case AstBinaryOperator::Power: {
+                  auto may_overload = [](TiriType Type) {
+                     return Type IS TiriType::Table or Type IS TiriType::Object or
+                            Type IS TiriType::Any or Type IS TiriType::Unknown;
+                  };
+                  InferredType left_type, right_type;
+                  if (payload->left) left_type = this->infer_expression_type(*payload->left);
+                  if (payload->right) right_type = this->infer_expression_type(*payload->right);
+                  if (may_overload(left_type.primary) or may_overload(right_type.primary)) {
+                     result.primary = TiriType::Any;
+                     return result;
+                  }
+                  result.primary = TiriType::Num;
+                  return result;
+               }
+               // Bitwise operators are implemented via the bit library and always return number
                case AstBinaryOperator::BitAnd:
                case AstBinaryOperator::BitOr:
                case AstBinaryOperator::BitXor:
@@ -1584,7 +1695,19 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                case AstUnaryOperator::Not:
                   result.primary = TiriType::Bool;
                   return result;
-               case AstUnaryOperator::Negate:
+               case AstUnaryOperator::Negate: {
+                  // Negation may be overloaded via the __unm metamethod on tables and objects;
+                  // Any/Unknown operands may hold such values
+                  InferredType operand_type;
+                  if (payload->operand) operand_type = this->infer_expression_type(*payload->operand);
+                  if (operand_type.primary IS TiriType::Table or operand_type.primary IS TiriType::Object or
+                      operand_type.primary IS TiriType::Any or operand_type.primary IS TiriType::Unknown) {
+                     result.primary = TiriType::Any;
+                     return result;
+                  }
+                  result.primary = TiriType::Num;
+                  return result;
+               }
                case AstUnaryOperator::BitNot:
                   result.primary = TiriType::Num;
                   return result;
@@ -1778,11 +1901,60 @@ void TypeAnalyser::declare_global_function(GCstr *Name, const FunctionExprPayloa
    this->trace_decl(this->ctx_.lex().linenumber, Name, TiriType::Func, true);
 }
 
+// Records a pre-existing environment global updated through plain assignment.  The inferred type is advisory only:
+// conflicting later assignments degrade it to 'any' instead of diagnosing, since the assignment carries no
+// user-declared type contract.
+
+void TypeAnalyser::declare_implicit_global(GCstr *Name, const ExprNode *Value, SourceSpan Location)
+{
+   if (not Name or not Value) return;
+   if ((Name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) return;
+
+   cTValue *global = lj_tab_getstr(tabref(this->ctx_.lua().env), Name);
+   bool is_global_store = (global != nullptr) and not tvisnil(global);
+   if (not is_global_store) return;  // Plain assignment to this name creates a local, not a global
+
+   InferredType inferred = this->infer_expression_type(*Value);
+   if (inferred.primary != TiriType::Nil and inferred.primary != TiriType::Any and
+       inferred.primary != TiriType::Unknown) {
+      inferred.is_fixed = true;
+   }
+   else inferred.is_fixed = false;
+
+   GlobalTypeInfo info;
+   info.type = inferred;
+   info.location = Location;
+   info.implicit = true;
+   this->global_types_[Name] = info;
+   this->trace_decl(this->ctx_.lex().linenumber, Name, inferred.primary, inferred.is_fixed);
+}
+
 std::optional<InferredType> TypeAnalyser::lookup_global_type(GCstr *Name) const
 {
    if (not Name) return std::nullopt;
    if (auto it = this->global_types_.find(Name); it != this->global_types_.end()) return it->second.type;
    return std::nullopt;
+}
+
+bool TypeAnalyser::is_implicit_global(GCstr *Name) const
+{
+   if (not Name) return false;
+   if (auto it = this->global_types_.find(Name); it != this->global_types_.end()) return it->second.implicit;
+   return false;
+}
+
+// Degrades a global's tracked type to 'any', disabling specialised access without raising diagnostics.  Applied
+// when an implicit global receives assignments of conflicting types.
+
+void TypeAnalyser::degrade_global_type(GCstr *Name)
+{
+   if (not Name) return;
+   if (auto it = this->global_types_.find(Name); it != this->global_types_.end()) {
+      it->second.type.primary = TiriType::Any;
+      it->second.type.is_fixed = true;  // 'any' accepts every subsequent assignment
+      it->second.type.object_class_id = CLASSID::NIL;
+      this->trace_fix(this->ctx_.lex().linenumber, Name, TiriType::Any);
+   }
 }
 
 void TypeAnalyser::fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId)
@@ -1830,7 +2002,7 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
          diag.code     = ParserErrorCode::ReturnCountMismatch;
          diag.message  = std::format("too many return values: function declares {} but {} returned",
             ctx->expected_returns.count, return_count);
-         this->diagnostics_.push_back(std::move(diag));
+         this->record_diagnostic(std::move(diag));
       }
 
       // Validate type of each returned value
@@ -1853,7 +2025,7 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
             diag.code = ParserErrorCode::ReturnTypeMismatch;
             diag.message = std::format("return type mismatch at position {}: expected '{}', got '{}'",
                i + 1, type_name(expected), type_name(actual.primary));
-            this->diagnostics_.push_back(std::move(diag));
+            this->record_diagnostic(std::move(diag));
          }
       }
    }
@@ -1907,7 +2079,7 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
                diag.code = ParserErrorCode::ReturnTypeMismatch;
                diag.message = std::format("inconsistent return type at position {}: first return established '{}', but this returns '{}'",
                   i + 1, type_name(expected), type_name(actual.primary));
-               this->diagnostics_.push_back(std::move(diag));
+               this->record_diagnostic(std::move(diag));
             }
          }
       }
@@ -2190,7 +2362,7 @@ static void publish_type_diagnostics(ParserContext& Context, const std::vector<T
             : ParserDiagnosticSeverity::Warning;
       }
       diagnostic.code = diag.code;
-      diagnostic.file_index = Context.lex().current_file_index;
+      diagnostic.file_index = diag.file_index;
       diagnostic.message = diag.message;
       diagnostic.token = Token::from_span(diag.location);
       Context.diagnostics().report(diagnostic);
@@ -2201,9 +2373,32 @@ static void publish_type_diagnostics(ParserContext& Context, const std::vector<T
 // Entry Point: Called from the parser after AST construction to run semantic type analysis.  Creates a TypeAnalyser
 // instance, runs analysis on the module, and publishes any collected diagnostics.
 
+// Publish fixed global types to the lexer state so that IR emission (which runs after analysis) can attach type
+// metadata to global identifier reads.  Only the container types with specialised access bytecodes are published;
+// scalar hints have no emitter consumers and are withheld to avoid altering unrelated emission paths.
+
+void TypeAnalyser::publish_global_type_hints(LexState &Lex) const
+{
+   for (const auto &[name, info] : this->global_types_) {
+      if (not info.type.is_fixed) continue;
+      switch (info.type.primary) {
+         case TiriType::Struct:
+         case TiriType::Object:
+         case TiriType::Array:
+            Lex.global_type_hints[name] = { info.type.primary, info.type.object_class_id };
+            break;
+         default:
+            break;
+      }
+   }
+}
+
+//********************************************************************************************************************
+
 void run_type_analysis(ParserContext& Context, const BlockStmt& Module)
 {
    TypeAnalyser analyser(Context);
    analyser.analyse_module(Module);
+   analyser.publish_global_type_hints(Context.lex());
    publish_type_diagnostics(Context, analyser.diagnostics());
 }

@@ -35,6 +35,7 @@ global function methods(ClassName:str, Prefix:str, Methods:table) end
 global function c_insert(Raw:str) end
 global function privateNames(List:table) end
 global function hash(Prefix:str, Format:str, ...) end
+global function moduleTimestamp() end
 
    import './include/utils'
 

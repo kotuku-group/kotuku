@@ -170,7 +170,7 @@ void gen_vector_path(extVector *Vector)
 
       Vector->Transform.reset();
 
-      for (auto t=Vector->Matrices; t; t=t->Next) {
+      for (auto t=Vector->matrices(); t; t=t->Next) {
          Vector->Transform.multiply(t->ScaleX, t->ShearY, t->ShearX, t->ScaleY, t->TranslateX, t->TranslateY);
       }
 
@@ -231,11 +231,11 @@ void gen_vector_path(extVector *Vector)
          if (Vector->AppendPath) {
             if (Vector->AppendPath->dirty()) gen_vector_path(Vector->AppendPath);
 
-            if (Vector->AppendPath->Matrices) {
+            if (not Vector->AppendPath->Matrices.empty()) {
                agg::trans_affine trans;
                trans.tx += Vector->AppendPath->FinalX;
                trans.ty += Vector->AppendPath->FinalY;
-               for (auto t=Vector->AppendPath->Matrices; t; t=t->Next) {
+               for (auto t=&Vector->AppendPath->Matrices.front(); t; t=t->Next) {
                   trans.multiply(t->ScaleX, t->ShearY, t->ShearX, t->ScaleY, t->TranslateX, t->TranslateY);
                }
 
@@ -309,7 +309,7 @@ void gen_vector_path(extVector *Vector)
          Vector->Dirty = (Vector->Dirty & (~RC::TRANSFORM)) | RC::FINAL_PATH;
       }
 
-      if (Vector->Matrices) {
+      if (not Vector->Matrices.empty()) {
          double scale = Vector->Transform.scale();
          if (scale > 1.0) Vector->BasePath.angle_tolerance(0.2); // Set in radians.  The less this value is, the more accurate it will be at sharp turns.
          else Vector->BasePath.angle_tolerance(0);
@@ -404,7 +404,7 @@ void apply_parent_transforms(extVector *Start, agg::trans_affine &AGGTransform)
             }
          }
 
-         for (auto t=node->Matrices; t; t=t->Next) {
+         for (auto t=node->matrices(); t; t=t->Next) {
             AGGTransform.multiply(t->ScaleX, t->ShearY, t->ShearX, t->ScaleY, t->TranslateX, t->TranslateY);
          }
 
@@ -417,7 +417,7 @@ void apply_parent_transforms(extVector *Start, agg::trans_affine &AGGTransform)
 
          AGGTransform.tx += node->FinalX;
          AGGTransform.ty += node->FinalY;
-         for (auto t=node->Matrices; t; t=t->Next) {
+         for (auto t=node->matrices(); t; t=t->Next) {
             AGGTransform.multiply(t->ScaleX, t->ShearY, t->ShearX, t->ScaleY, t->TranslateX, t->TranslateY);
          }
       }

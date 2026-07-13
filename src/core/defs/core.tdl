@@ -10,6 +10,8 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
 
   privateNames({ "CoreBase", "DateTime", "ResourceManager" })
 
+  moduleTimestamp()
+
   loadFile(glPath .. 'common-graphics.tdl')
 
   flags("MSF", { comment="Message flags." },
@@ -151,14 +153,13 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
     "SIGNALLED: The object has been signalled and is awaiting processing.",
     "PERMIT_TERMINATE: Private.  Permits termination when a lock is held on the object.",
     "ASYNC_ACTIVE: Read-only indicator that asynchronous actions are queued or executing against this object.",
-    "PLACEMENT: Private.  Uses placement-new to allocate the object in-place.",
     "ZOMBIE: Private.  The object has been terminated but is waiting for the RefCount to reach zero before being destroyed.",
     { PRIVATE = 0 }
   )
 
   constants("MAX", { }, {
      FILENAME = 256, -- Maximum length for file names (not necessarily including path)
-     NAME_LEN = 31   -- Refer to the 'Object' struct for more info on the NAME_LEN value
+     NAME_LEN = 32   -- Refer to the 'Object' struct for more info on the NAME_LEN value
   })
 
   constants("MSGID", { type="int", comment="Reserved message ID's that are handled internally." }, {
@@ -687,10 +688,12 @@ class objTask;
   FileFeedback() : Size(0), Position(0), Path(nullptr), Dest(nullptr), FeedbackID(FBK::NIL) { }
   ]])
 
+  -- WriteValue signature is Object, *Field, Flags, *Value
+
   structdef("Field", { comment="Used to describe the public fields of a class." }, [[
     maxint Arg         # An option to complement the field type.  Can be a pointer or an integer value
     fptr(error ptr ptr) GetValue # A virtual function that will retrieve the value for this field
-    ptr SetValue       # A virtual function that will set the value for this field
+    fptr(error ptr ptr) SetValue # A virtual function that will set the value for this field
     fptr(error obj cstruct(*Field) int cptr) WriteValue # An internal function for writing to this field
     cstr Name          # The English name for the field, e.g. `Width`
     uint FieldID       # 32-bit hash from fieldhash()
@@ -702,7 +705,7 @@ class objTask;
    inline bool readable() const { return (Flags & FD_READ) ? true : false; }
    inline bool writeable() const { return (Flags & (FD_WRITE|FD_INIT)) ? true : false; }
    inline bool pure() const { return (Flags & FD_PURE) ? true : false; }
-  ]]) -- [32/52]
+  ]])
 
   structdef("ClassRecord", { comment="Meta information for a class, as recorded in the class database." }, [[
     cid ClassID        # Unique class identifier (hash of Name)
@@ -809,7 +812,9 @@ class objTask;
     "AsyncPending",
     "AsyncWait",
     "ClassDatabase",
-    "GetThreadID")
+    "GetThreadID",
+    "UnitTests",
+    "PinWeakObject")
 
   c_insert([==[
 
@@ -941,7 +946,7 @@ struct obj_write {
 inline auto write_hash = [](const obj_write &a, const obj_write &b) { return a.Hash < b.Hash; };
 
 typedef std::vector<obj_write> WRITE_TABLE;
-#endif
+#endif // PRV_METACLASS
 ]==])
 
   -- Declare classes for their inclusion in outgoing Core documentation
@@ -1006,6 +1011,8 @@ namespace kt {
       int  Time;
       AC   ActionID;      // ID of the action or method to execute
       bool SendArgs;
+      const FunctionField *Fields;
+      int ArgsSize;
 
       // Action arguments follow this structure in a buffer
    };
@@ -1080,17 +1087,6 @@ struct evHotplug {
    char Product[40];    // Name of product or the hardware device
    char Vendor[40];     // Name of vendor
 };
-
-[[nodiscard]] inline char * strclone(const std::string_view String) noexcept
-{
-   char *newstr;
-   if (!AllocMemory(String.size()+1, MEM::STRING|MEM::NO_CLEAR, (APTR *)&newstr)) {
-      memmove(newstr, String.data(), String.size());
-      newstr[String.size()] = 0;
-      return newstr;
-   }
-   else return nullptr;
-}
 
 } // pf namespace
 

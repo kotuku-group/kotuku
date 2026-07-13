@@ -19,20 +19,20 @@ static const struct MethodEntry clRemapFXMethods[] = {
    { AC::NIL, 0, 0, 0, 0 }
 };
 
-static ERR REMAPFX_NewPlacement(extRemapFX *Self) {
+static ERR REMAPFX_New(extRemapFX *Self) {
    new (Self) extRemapFX(Self->Class, Self->UID);
    return ERR::Okay;
 }
 
-static ERR REMAPFX_FreePlacement(extRemapFX *Self) {
+static ERR REMAPFX_Free(extRemapFX *Self) {
    Self->~extRemapFX();
    return ERR::Okay;
 }
 
 static const struct ActionArray clRemapFXActions[] = {
    { AC::Draw, REMAPFX_Draw },
-   { AC::FreePlacement, REMAPFX_FreePlacement },
-   { AC::NewPlacement, REMAPFX_NewPlacement },
+   { AC::Free, REMAPFX_Free },
+   { AC::New, REMAPFX_New },
    { AC::NIL, nullptr }
 };
 

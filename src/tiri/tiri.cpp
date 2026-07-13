@@ -49,6 +49,7 @@ JUMPTABLE_REGEX
 
 #include "defs.h"
 
+namespace tiri {
 OBJECTPTR modDisplay = nullptr; // Required by tiri_input.c
 OBJECTPTR modTiri = nullptr;
 OBJECTPTR modRegex = nullptr;
@@ -67,6 +68,7 @@ uint64_t glActionsWithResults = 0;
 static struct MsgHandler *glMsgThread = nullptr; // Message handler for thread callbacks
 static MsgHandler *glDelayedCallHandle = nullptr;
 MSGID glDelayedCallMsgID = MSGID::NIL;
+}
 
 constexpr auto HASH_TRACE_TOKENS         = kt::strhash("trace-tokens");
 constexpr auto HASH_TRACE_EXPECT         = kt::strhash("trace-expect");
@@ -107,8 +109,8 @@ APTR get_meta(lua_State *Lua, int Arg, CSTRING MetaTable)
 }
 
 //********************************************************************************************************************
-// Returns a pointer to an object (if the object exists).  To guarantee safety, object access always utilises the ID
-// so that we don't run into issues if the object has been collected.
+// Returns a locked pointer to an object if it still exists.  Weak-pinned wrappers retain a safe header pointer between
+// accesses, avoiding repeated global resource-table lookups without delaying object termination.
 
 OBJECTPTR access_object(GCobject *Object)
 {
@@ -116,34 +118,39 @@ OBJECTPTR access_object(GCobject *Object)
       Object->accesscount++;
       return Object->ptr;
    }
-   else if (not Object->uid) return nullptr; // Object reference is dead
-   else if ((not Object->ptr) or Object->is_detached()) {
-      // Detached objects are always accessed via UID, even if we have a pointer reference.
+
+   if (not Object->uid) return nullptr;
+
+   if (Object->is_pinned()) {
+      if (Object->ptr->collecting()) {
+         Object->ptr->unpinWeak();
+         Object->set_pinned(false);
+         Object->ptr = nullptr;
+         Object->uid = 0;
+         return nullptr;
+      }
+      if (auto error = Object->ptr->lock(); error != ERR::Okay) {
+         kt::Log(__FUNCTION__).warning("#%d lock() failed: %s, Queue: %d", Object->uid, GetErrorMsg(error),
+            Object->ptr->Queue.load());
+         return nullptr;
+      }
+   }
+   else {
       OBJECTPTR obj_ptr;
       if (auto error = AccessObject(Object->uid, 5000, &obj_ptr); !error) {
          Object->ptr = obj_ptr;
          Object->set_locked(true);
+         Object->ptr->pinWeak();
+         Object->set_pinned(true);
       }
       else if (error IS ERR::DoesNotExist) {
-         kt::Log log(__FUNCTION__);
-         log.trace("Object #%d has been terminated.", Object->uid);
+         kt::Log(__FUNCTION__).trace("Object #%d has been terminated.", Object->uid);
          Object->ptr = nullptr;
          Object->uid = 0;
       }
    }
-   else if (auto error = Object->ptr->lock(); error != ERR::Okay) {
-      kt::Log("access_object").warning("#%d lock() failed: %s, Queue: %d", Object->uid, GetErrorMsg(error), Object->ptr->Queue.load());
-      return nullptr;
-   }
 
-   if (Object->ptr) {
-      #if LUA_USE_ASSERT
-         // This error indicates that the object was forcibly terminated (e.g. because the parent was terminated).
-         // The client should have marked the object as detached in order to prevent this issue.
-         lj_assertX(Object->ptr->Class, "Object terminated while still attached.");
-      #endif
-      Object->accesscount++;
-   }
+   if (Object->ptr) Object->accesscount++;
 
    return Object->ptr;
 }
@@ -155,12 +162,12 @@ void release_object(GCobject *Object)
          if (Object->is_locked()) {
             ReleaseObject(Object->ptr);
             Object->set_locked(false);
-            Object->ptr = nullptr;
+            if (not Object->is_pinned()) Object->ptr = nullptr;
          }
          else {
             #ifndef NDEBUG
             if (Object->ptr->Queue.load() <= 0) {
-               kt::Log("release_object").warning("#%d Queue underflow before unlock: Queue: %d, ThreadID: %d, OurThread: %d",
+               kt::Log(__FUNCTION__).warning("#%d Queue underflow before unlock: Queue: %d, ThreadID: %d, OurThread: %d",
                   Object->uid, Object->ptr->Queue.load(), Object->ptr->ThreadID.load(), GetThreadID());
                DEBUG_BREAK
             }
@@ -186,7 +193,7 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
    std::string_view module_name;
    // NOTE: Stick to the indirect get() method here because it otherwise crashes if the MetaClass table requires regeneration
    if (auto error = MetaClass->get(strhash("module"), module_name); !error) {
-      if (auto error = load_include(Lua->script, module_name.data()); error != ERR::Okay) {
+      if (auto error = load_include(Lua->script, module_name); error != ERR::Okay) {
          luaL_error(Lua, error,
             std::format("Failed to process module '{}' for class '{}'", module_name, MetaClass->ClassName));
       }
@@ -377,11 +384,13 @@ static void MODTest(std::string_view Options, int *Passed, int *Total)
 //********************************************************************************************************************
 // Bytecode names for debugging purposes
 
+namespace tiri {
 CSTRING const glBytecodeNames[] = {
 #define BCNAME(name, ma, mb, mc, mt) #name,
    BCDEF(BCNAME)
 #undef BCNAME
 };
+}
 
 /*********************************************************************************************************************
 
@@ -562,6 +571,8 @@ ERR make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Eleme
          }
          Lua->top--;  // Pop the table
       }
+
+      unref_struct_references(Lua, ref);
    }
 
    return ERR::Okay;
@@ -601,6 +612,8 @@ void make_struct_array(lua_State *Lua, std::string_view StructName, int Elements
 
          Input = (int8_t *)Input + struct_stride;
       }
+
+      unref_struct_references(Lua, ref);
    }
 }
 
@@ -716,11 +729,14 @@ CSTRING code_reader(lua_State *Lua, void *Handle, size_t *Size)
 {
    auto handle = (code_reader_handle *)Handle;
    int result;
-   if (!acRead(handle->File, handle->Buffer, SIZE_READ, &result)) {
+   if (auto error = acRead(handle->File, handle->Buffer, SIZE_READ, &result); error IS ERR::Okay) {
       *Size = result;
       return (CSTRING)handle->Buffer;
    }
-   else return nullptr;
+   else {
+      kt::Log(__FUNCTION__).warning("Failed to read source chunk: %s", GetErrorMsg(error));
+      return nullptr;
+   }
 }
 
 //********************************************************************************************************************
