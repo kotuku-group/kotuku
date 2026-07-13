@@ -24,3 +24,7 @@ extern void lj_struct_push_size_closure(lua_State *, GCstruct *);
 
 extern "C" void bc_struct_getfield(lua_State *, GCstruct *, GCstr *, TValue *, BCIns *);
 extern "C" void bc_struct_setfield(lua_State *, GCstruct *, GCstr *, TValue *, BCIns *);
+
+// Side-effect-free field type lookup for JIT recording.
+
+extern "C" int ir_struct_field_type(GCstruct *, GCstr *, int &, uint32_t &);

@@ -30,6 +30,7 @@
 #include "lj_prng.h"
 #include "jit/frame_manager.h"
 #include "runtime/lj_object.h"
+#include "runtime/lj_struct.h"
 #include "runtime/lj_state.h"
 
 // Some local macros to save typing. Undef'd at the end.
@@ -3023,6 +3024,48 @@ static TRef rec_object_set(jit_State *J, RecordOps *ops)
 }
 
 //********************************************************************************************************************
+// Handle native struct ops: BC_STGETF, BC_STSETF
+//
+// Phase 3 records helper calls for all unambiguous field types.  The typed VLOAD on reads guards the runtime value,
+// while the helper retains lifecycle checks, payload validation and all field conversion behaviour.
+
+static TRef rec_struct_get(jit_State *J, RecordOps *ops)
+{
+   TRef struct_ref = ops->rb;
+   if (not tref_isstruct(struct_ref)) lj_trace_err(J, LJ_TRERR_BADTYPE);
+
+   GCstruct *value = structV(ops->rbv());
+   GCstr *key = strV(ops->rcv());
+   int field_offset;
+   uint32_t field_flags = 0;
+   int field_type = ir_struct_field_type(value, key, field_offset, field_flags);
+   if (field_type < 0) lj_trace_err(J, LJ_TRERR_BADTYPE);
+
+   TRef tmp_ref = rec_tmpref(J, TREF_NIL, IRTMPREF_OUT1);
+   TRef null_ref = lj_ir_kkptr(J, nullptr);
+   lj_ir_call(J, IRCALL_bc_struct_getfield, struct_ref, ops->rc, tmp_ref, null_ref);
+   return lj_record_vload(J, tmp_ref, 0, (IRType)field_type);
+}
+
+static void rec_struct_set(jit_State *J, RecordOps *ops)
+{
+   TRef struct_ref = ops->rb;
+   if (not tref_isstruct(struct_ref)) lj_trace_err(J, LJ_TRERR_BADTYPE);
+
+   GCstruct *value = structV(ops->rbv());
+   GCstr *key = strV(ops->rcv());
+   int field_offset;
+   uint32_t field_flags = 0;
+   if (ir_struct_field_type(value, key, field_offset, field_flags) < 0) {
+      lj_trace_err(J, LJ_TRERR_BADTYPE);
+   }
+
+   TRef tmp_ref = rec_tmpref(J, ops->ra, IRTMPREF_IN1);
+   TRef null_ref = lj_ir_kkptr(J, nullptr);
+   lj_ir_call(J, IRCALL_bc_struct_setfield, struct_ref, ops->rc, tmp_ref, null_ref);
+}
+
+//********************************************************************************************************************
 // Handle table access ops: BC_GGET, BC_GSET, BC_TGET*, BC_TSET*, BC_TNEW, BC_TDUP
 
 static TRef rec_table_op(jit_State *J, RecordOps *ops, const BCIns *pc)
@@ -3344,6 +3387,16 @@ void lj_record_ins(jit_State *J)
 
    case BC_OBSETF:
       rec_object_set(J, &ops);
+      break;
+
+   // Struct ops - native struct field access
+
+   case BC_STGETF:
+      rc = rec_struct_get(J, &ops);
+      break;
+
+   case BC_STSETF:
+      rec_struct_set(J, &ops);
       break;
 
    // Calls and vararg handling

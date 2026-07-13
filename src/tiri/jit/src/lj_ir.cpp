@@ -9,6 +9,7 @@
 #include <math.h>
 
 #include "lj_object.h"
+#include "runtime/lj_struct.h"
 #include "lj_obj.h"
 #include "lj_gc.h"
 #include "lj_buf.h"

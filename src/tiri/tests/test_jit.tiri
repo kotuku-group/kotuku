@@ -16,6 +16,9 @@ function SetupJitTests()
    jit.on()
    jit.opt.start()  -- Reset to default JIT options before starting tests.
    glCfg = obj.new('config', { flags=CNF_NEW })
+   MAKESTRUCT('JITStructNumericFields', 'lValue')
+   MAKESTRUCT('JITStructTraceChild', 'lValue')
+   MAKESTRUCT('JITStructComplexFields', 'zsName,lValues[2],eChild:JITStructTraceChild,oOwner')
 end
 
 @AfterAll
@@ -1268,6 +1271,89 @@ end
    end
 
    assert(trace_found is true, "Expected BC_OBSETF to produce a JIT trace instead of aborting")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Test JIT recording of BC_STGETF and BC_STSETF through the helper-call fallback.
+
+function traced_struct_numeric(Value:struct, Count:num):num
+   local total = 0
+   for i = 1, Count do
+      Value.value = i
+      total += Value.value
+   end
+   return total
+end
+
+@Test(hotpath=50) function JITStructNumericFieldAccess()
+   local value = struct.new('JITStructNumericFields')
+
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local result = 0
+   for i = 1, 20 do
+      result = traced_struct_numeric(value, 10)
+   end
+
+   assert(result is 55, f"Expected traced struct sum 55, got {result}")
+   assert(value.value is 10, f"Expected traced struct write to retain 10, got {value.value}")
+
+   local trace_found = false
+   local helper_call_found = false
+   for trace_no = 1, 30 do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil then
+         trace_found = true
+         if count_trace_calls(trace_no, info) > 0 then helper_call_found = true end
+      end
+   end
+
+   assert(trace_found is true, "Expected BC_STGETF/BC_STSETF to produce a JIT trace instead of aborting")
+   assert(helper_call_found is true, "Expected struct field recording to retain the helper-call fallback")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Exercise typed helper results for string, array, nested-struct and object fields on a hot trace.
+
+function traced_struct_complex(Value:struct, Count:num):num
+   local name = nil
+   local values = nil
+   local child = nil
+   local owner = nil
+   for i = 1, Count do
+      Value.name = "trace"
+      name = Value.name
+      values = Value.values
+      child = Value.child
+      owner = Value.owner
+   end
+
+   local total = 0
+   if name is "trace" then total += values[0] end
+   if child != nil then total++ end
+   if owner != nil then total++ end
+   return total
+end
+
+@Test(hotpath=50) function JITStructComplexFieldTypes()
+   local value = struct.new('JITStructComplexFields')
+   value.values = array<int> { 3, 4 }
+   value.owner = glCfg
+
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local result = 0
+   for i = 1, 20 do
+      result = traced_struct_complex(value, 10)
+   end
+
+   assert(result is 5, f"Expected traced complex struct result 5, got {result}")
+   assert(value.name is "trace", "Expected traced string assignment to retain its value")
+   assert(count_jit_traces(30) > 0, "Expected complex struct field types to remain traceable")
 end
 
 -----------------------------------------------------------------------------------------------------------------------

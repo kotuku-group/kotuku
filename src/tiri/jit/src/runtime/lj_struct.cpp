@@ -6,6 +6,7 @@
 
 #include "lj_obj.h"
 #include "lj_gc.h"
+#include "lj_ir.h"
 #include "lj_bc.h"
 #include "lj_struct.h"
 #include "lauxlib.h"
@@ -152,6 +153,32 @@ static struct_field * find_cached_field(GCstruct *Struct, GCstr *Key, BCIns *Ins
       }
    }
    return nullptr;
+}
+
+//********************************************************************************************************************
+// JIT field type lookup.  Struct definitions are immutable for the lifetime of the Lua state, so the recorder can
+// derive a stable result type without reading the field payload or invoking any field access behaviour.
+
+extern "C" int ir_struct_field_type(GCstruct *Struct, GCstr *Key, int &Offset, uint32_t &Flags)
+{
+   if (not Struct or not Key) return -1;
+
+   if (auto field = find_cached_field(Struct, Key, nullptr)) {
+      const uint32_t flags = uint32_t(field->Type);
+      Offset = field->Offset;
+      Flags = flags;
+
+      // Order is significant because array, struct and object fields also carry element/storage flags.
+      if ((flags & FD_CUSTOM) and (flags & FD_BYTE) and (flags & FD_ARRAY)) return IRT_STR;
+      else if (flags & FD_ARRAY) return IRT_ARRAY;
+      else if (flags & FD_STRING) return IRT_STR;
+      else if (flags & FD_STRUCT) return IRT_STRUCT;
+      else if (flags & FD_OBJECT) return IRT_OBJECT;
+      else if (flags & (FD_POINTER|FD_FUNCTION)) return -1;
+      else if (flags & (FD_DOUBLE|FD_FLOAT|FD_INT64)) return IRT_NUM;
+      else if (flags & (FD_INT|FD_WORD|FD_BYTE)) return LJ_DUALNUM ? IRT_INT : IRT_NUM;
+   }
+   return -1;
 }
 
 //********************************************************************************************************************
