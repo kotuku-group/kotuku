@@ -1398,30 +1398,6 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
   </function>
 
   <function>
-    <name>ReallocMemory</name>
-    <category>Memory</category>
-    <comment>Reallocates memory blocks.</comment>
-    <prototype>ERR ReallocMemory(APTR Memory, UINT Size, APTR * Address)</prototype>
-    <tiriPrototype>err, Address:any = ReallocMemory(Memory:any, Size:num)</tiriPrototype>
-    <tags>caller-owns-result, creates-resource, closes-handle, blocking</tags>
-    <input>
-      <param type="APTR" name="Memory">Pointer to a memory block obtained from <function>AllocMemory</function>.</param>
-      <param type="UINT" name="Size">The size of the new memory block.</param>
-      <param type="APTR *" name="Address">Point to an <code>APTR</code> variable to store the resulting pointer to the new memory block.</param>
-    </input>
-    <description>
-<p>This function is used to reallocate memory blocks to new lengths.  You can shrink or expand a memory block as you wish.  The data of your original memory block will be copied over to the new block.  If the new block is larger and the original allocation did not use <code>MEM::NO_CLEAR</code>, the extra bytes are initialised to zero.  If the new block is smaller, you will lose some of the original data.</p>
-<p>The original block will be destroyed as a result of calling this function unless the reallocation process fails, in which case your existing memory block will remain valid.</p>
-    </description>
-    <result type="ERR">
-      <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function</error>
-      <error code="Memory">The memory block to be re-allocated is invalid.</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
-    </result>
-  </function>
-
-  <function>
     <name>RegisterFD</name>
     <category>System</category>
     <comment>Registers a file descriptor for monitoring when the task is asleep.</comment>

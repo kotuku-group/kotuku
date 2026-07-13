@@ -754,7 +754,6 @@ class objTask;
     "CopyFile",
     "ProcessMessages",
     "IdentifyFile",
-    "ReallocMemory",
     "ResolveClassName",
     "SendMessage",
     "SetOwner",
