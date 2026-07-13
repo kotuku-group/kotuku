@@ -430,18 +430,18 @@ and replaces P, so a single polymorphic instruction site can safely alternate be
 | `STGETF` | Load a named field or the bound `structSize` closure | `vmeta_tgets` | Field index |
 | `STSETF` | Store a named writable field | `vmeta_tsets` | Field index |
 
-The x64 handlers call `bc_struct_getfield` and `bc_struct_setfield`. The helpers synchronise the Lua frame before any
-operation that may allocate, protect setter values from garbage collection and restore the interpreter stack after
-the shared struct field core completes. A non-struct value at a statically struct-typed access site falls back to the
-ordinary metamethod path.
+The x64, ARM64 and PowerPC handlers call `bc_struct_getfield` and `bc_struct_setfield`. The helpers synchronise the Lua
+frame before any operation that may allocate, protect setter values from garbage collection and restore the
+interpreter stack after the shared struct field core completes. A non-struct value at a statically struct-typed access
+site falls back to the ordinary metamethod path.
 
 ### 6.4 Parser and Platform Status
 
 `ExpKind::IndexedStruct` lowers constant string member access to `STGETF`/`STSETF`. A struct member used as a callee is
 downgraded to normal indexed access so helpers such as `value.structSize()` still resolve through `__index`.
 
-The interpreter implementation currently covers x64. ARM64 and PowerPC handlers and JIT trace recording are separate
-follow-up phases; an x64 trace encountering these opcodes exits recording and continues in the interpreter.
+The interpreter implementation covers x64, ARM64 and PowerPC. JIT trace recording remains a separate follow-up phase;
+a trace encountering these opcodes exits recording and continues in the interpreter.
 
 ## 7. Control-Flow and Short-Circuit Patterns
 ### 7.1 Logical Operators (`and`, `or`)

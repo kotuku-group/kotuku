@@ -251,6 +251,7 @@
 |.macro checkfunc, reg, target; checktp reg, LJ_TFUNC, target; .endmacro
 |.macro checkarray, reg, target; checktp reg, LJ_TARRAY, target; .endmacro
 |.macro checkobject, reg, target; checktp reg, LJ_TOBJECT, target; .endmacro
+|.macro checkstruct, reg, target; checktp reg, LJ_TSTRUCT, target; .endmacro
 |.macro checkint, reg, target
 |  cmp TISNUMhi, reg, lsr #32
 |  bne target
@@ -3524,6 +3525,48 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  sub CARG5, PC, #8             // 5th arg: BCIns * (current instruction for IC)
     |   str PC, SAVE_PC
     |  bl extern bc_object_setfield
+    |  ldr BASE, L->base
+    |  ins_next
+    break;
+
+  //  -- Struct ops (specialised for LJ_TSTRUCT) --------------------------
+
+  case BC_STGETF:
+    |  decode_RB RB, INS
+    |   and RC, RC, #255
+    |  // RA = dst, RB = struct, RC = str_const (~)
+    |  ldr CARG2, [BASE, RB, lsl #3]
+    |   mvn RC, RC
+    |   ldr STR:RC, [KBASE, RC, lsl #3]
+    |  checkstruct CARG2, ->vmeta_tgets1
+    |  // Call C helper: bc_struct_getfield(L, GCstruct*, GCstr*, TValue*, BCIns*)
+    |  add CARG4, BASE, RA, lsl #3
+    |   str BASE, L->base
+    |  mov CARG1, L
+    |  mov CARG3, STR:RC
+    |  sub CARG5, PC, #8             // 5th arg: BCIns * (current instruction for IC)
+    |   str PC, SAVE_PC
+    |  bl extern bc_struct_getfield
+    |  ldr BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_STSETF:
+    |  decode_RB RB, INS
+    |   and RC, RC, #255
+    |  // RA = value, RB = struct, RC = str_const (~)
+    |  ldr CARG2, [BASE, RB, lsl #3]
+    |   mvn RC, RC
+    |   ldr STR:RC, [KBASE, RC, lsl #3]
+    |  checkstruct CARG2, ->vmeta_tsets1
+    |  // Call C helper: bc_struct_setfield(L, GCstruct*, GCstr*, TValue*, BCIns*)
+    |  add CARG4, BASE, RA, lsl #3
+    |   str BASE, L->base
+    |  mov CARG1, L
+    |  mov CARG3, STR:RC
+    |  sub CARG5, PC, #8             // 5th arg: BCIns * (current instruction for IC)
+    |   str PC, SAVE_PC
+    |  bl extern bc_struct_setfield
     |  ldr BASE, L->base
     |  ins_next
     break;
