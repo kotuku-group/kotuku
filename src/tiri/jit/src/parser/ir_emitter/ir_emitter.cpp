@@ -1876,6 +1876,18 @@ ParserResult<ExpDesc> IrEmitter::emit_identifier_expr(const NameRef& reference, 
          this->make_error(ParserErrorCode::UndefinedVariable, msg, reference.identifier.span));
    }
 
+   // Attach type metadata published by the type analyser to global reads.  This mirrors the VarInfo type
+   // propagation performed for locals in var_lookup_() and lets member access on typed globals select
+   // specialised bytecode (STGETF/STSETF, OBGETF/OBSETF, AGETV/AGETB) instead of generic table access.
+
+   if (resolved.k IS ExpKind::Global) {
+      auto it = this->lex_state.global_type_hints.find(reference.identifier.symbol);
+      if (it != this->lex_state.global_type_hints.end()) {
+         resolved.result_type = it->second.primary;
+         resolved.object_class_id = it->second.object_class_id;
+      }
+   }
+
    return ParserResult<ExpDesc>::success(resolved);
 }
 
