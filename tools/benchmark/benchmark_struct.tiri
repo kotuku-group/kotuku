@@ -26,7 +26,7 @@ glLargeStruct = struct.new('LargeLookupRecord')
 
 @Test function StructReadFields()
    local count = 0
-   for i = 0,100000 do
+   for i = 0,10000000 do
       local integer = glBenchmarkStruct.integer
       local wide    = glBenchmarkStruct.wide
       local float   = glBenchmarkStruct.float
@@ -37,7 +37,7 @@ glLargeStruct = struct.new('LargeLookupRecord')
 end
 
 @Test function StructWriteFields()
-   for i = 0,100000 do
+   for i = 0,10000000 do
       glBenchmarkStruct.integer = 1
       glBenchmarkStruct.wide    = 2
       glBenchmarkStruct.float   = 3.5
@@ -47,7 +47,7 @@ end
 
 @Test function NarrowStructReadFields()
    local count = 0
-   for i = 0,100000 do
+   for i = 0,10000000 do
       local word          = glBenchmarkNarrowStruct.word
       local byte          = glBenchmarkNarrowStruct.byte
       local unsigned_word = glBenchmarkNarrowStruct.unsignedWord
@@ -58,7 +58,7 @@ end
 end
 
 @Test function NarrowStructWriteFields()
-   for i = 0,100000 do
+   for i = 0,10000000 do
       glBenchmarkNarrowStruct.word         = -i
       glBenchmarkNarrowStruct.byte         = i
       glBenchmarkNarrowStruct.unsignedWord = i
@@ -68,7 +68,7 @@ end
 
 @Test function LargeStructRW()
    local count = 0
-   for i = 0,100000 do
+   for i = 0,10000000 do
       glLargeStruct.zulu = i
       glLargeStruct.charlie = i
       glLargeStruct.foxtrot = i

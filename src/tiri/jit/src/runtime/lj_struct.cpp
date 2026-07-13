@@ -174,7 +174,7 @@ extern "C" int ir_struct_field_type(GCstruct *Struct, GCstr *Key, int &Offset, u
       else if (flags & FD_STRING) return IRT_STR;
       else if (flags & FD_STRUCT) return IRT_STRUCT;
       else if (flags & FD_OBJECT) return IRT_OBJECT;
-      else if (flags & (FD_POINTER|FD_FUNCTION)) return -1;
+      else if (flags & (FD_POINTER|FD_FUNCTION)) return IRT_LIGHTUD;
       else if (flags & (FD_DOUBLE|FD_FLOAT|FD_INT64)) return IRT_NUM;
       else if (flags & (FD_INT|FD_WORD|FD_BYTE)) return LJ_DUALNUM ? IRT_INT : IRT_NUM;
    }
