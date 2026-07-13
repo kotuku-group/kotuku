@@ -456,6 +456,10 @@ end
       async.script(script)
       check proc.sleep()
    end
+
+   -- The worker signals before its async completion message is processed.  Drain the final action so Flute's next
+   -- hot-path repetition cannot overlap teardown of this script and its signal object.
+   check async.wait(script, 3.0)
 end
 
 -----------------------------------------------------------------------------------------------------------------------
