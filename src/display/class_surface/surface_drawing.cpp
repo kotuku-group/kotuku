@@ -604,7 +604,7 @@ void move_layer(extSurface *Self, int X, int Y)
 
    bool redraw;
    if (Self->transparent()) { // Transparent surfaces are treated as volatile if they contain graphics
-      if (Self->CallbackCount > 0) redraw = true;
+      if (not Self->Callback.empty()) redraw = true;
       else redraw = false;
    }
    else if ((volatilegfx) and ((Self->Flags & RNF::COMPOSITE) IS RNF::NIL)) redraw = true;

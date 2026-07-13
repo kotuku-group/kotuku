@@ -27,6 +27,7 @@
 #include <queue>
 #include <sstream>
 #include <array>
+#include <vector>
 #include <math.h>
 
 #ifdef __linux__
@@ -363,7 +364,7 @@ class extSurface : public objSurface {
 
    int64_t    LastRedimension;      // Timestamp of the last redimension call
    objBitmap *Bitmap;
-   SurfaceCallback *Callback;
+   std::vector<SurfaceCallback> Callback;
    APTR     Data;
    double   Opacity;
    WINHANDLE DisplayWindow;       // Reference to the platform dependent window representing the Surface object
@@ -375,7 +376,6 @@ class extSurface : public objSurface {
    int      InputHandle;          // Input handler for dragging of surfaces
    SWIN     WindowType;           // See SWIN constants
    TIMER    RedrawTimer;          // For ScheduleRedraw()
-   SurfaceCallback CallbackCache[3]; // For AddCallback()
    int16_t FixedWidth, FixedHeight, FixedX, FixedY, FixedXO, FixedYO;
    uint16_t InheritedRoot:1;      // TRUE if the user set the RootLayer manually
    uint16_t ParentDefined:1;      // TRUE if the parent field was set manually
@@ -385,8 +385,6 @@ class extSurface : public objSurface {
    uint8_t  RedrawRate;           // Last refresh rate used for scheduled redrawing
    int8_t   BitsPerPixel;         // Bitmap bits per pixel
    int8_t   BytesPerPixel;        // Bitmap bytes per pixel
-   uint8_t  CallbackCount;
-   uint8_t  CallbackSize;         // Current size of the callback array.
 
    extSurface(objMetaClass *ClassPtr, OBJECTID ObjectID) : objSurface(ClassPtr, ObjectID) {
       Opacity    = 1.0;
