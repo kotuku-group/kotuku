@@ -339,6 +339,18 @@ static void expr_discharge(FuncState *fs, ExpDesc *e)
       ins = BCINS_ABCP(BC_OBGETF, 0, e->u.s.info, idx, 0xFFFFFFFFu);
       bcreg_free(fs, e->u.s.info);
    }
+   else if (e->k IS ExpKind::IndexedStruct) {
+      // Struct field access - emit BC_STGETF for a string key.
+      BCREG rc = e->u.s.aux;
+      fs_check_assert(fs, int32_t(rc) < 0, "struct field index must be string constant");
+      BCREG idx = (BCREG)~rc;
+      if (idx > BCMAX_C) {
+         err_limit(fs, BCMAX_C + 1, "struct field string constants");
+         return;
+      }
+      ins = BCINS_ABCP(BC_STGETF, 0, e->u.s.info, idx, 0xFFFFFFFFu);
+      bcreg_free(fs, e->u.s.info);
+   }
    else if (e->k IS ExpKind::Call) {
       e->u.s.info = e->u.s.aux;
       e->k = ExpKind::NonReloc;
@@ -676,6 +688,18 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
          return;
       }
       ins = BCINS_ABCP(BC_OBSETF, ra, LHS->u.s.info, idx, 0xFFFFFFFFu);
+   }
+   else if (LHS->k IS ExpKind::IndexedStruct) {
+      // Struct field assignment - emit BC_STSETF for a string key.
+      BCREG ra = expr_toanyreg(fs, RHS);
+      BCREG rc = LHS->u.s.aux;
+      fs_check_assert(fs, int32_t(rc) < 0, "struct field index must be string constant");
+      BCREG idx = (BCREG)~rc;
+      if (idx > BCMAX_C) {
+         err_limit(fs, BCMAX_C + 1, "struct field string constants");
+         return;
+      }
+      ins = BCINS_ABCP(BC_STSETF, ra, LHS->u.s.info, idx, 0xFFFFFFFFu);
    }
    else {
       // Table index assignment - emit BC_TSETV, BC_TSETB, or BC_TSETS

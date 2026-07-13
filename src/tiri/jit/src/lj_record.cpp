@@ -30,6 +30,7 @@
 #include "lj_prng.h"
 #include "jit/frame_manager.h"
 #include "runtime/lj_object.h"
+#include "runtime/lj_struct.h"
 #include "runtime/lj_state.h"
 
 // Some local macros to save typing. Undef'd at the end.
@@ -3023,6 +3024,150 @@ static TRef rec_object_set(jit_State *J, RecordOps *ops)
 }
 
 //********************************************************************************************************************
+// Handle native struct ops: BC_STGETF, BC_STSETF
+//
+// Non-lifecycle scalar fields are loaded and stored directly after guarding the immutable definition and payload.
+// Lifecycle-bound structs and complex field types retain the helper path and its full access semantics.
+
+static TRef rec_struct_payload_guard(jit_State *J, TRef StructRef, GCstruct *Value)
+{
+   TRef flags_ref = emitir(IRT(IR_FLOAD, IRT_U8), StructRef, IRFL_STRUCT_FLAGS);
+   TRef lifecycle_ref = emitir(IRTI(IR_BAND), flags_ref, lj_ir_kint(J, STRUCT_LIFECYCLE));
+   emitir(IRTGI(IR_EQ), lifecycle_ref, lj_ir_kint(J, 0));
+
+   TRef def_ref = emitir(IRT(IR_FLOAD, IRT_PTR), StructRef, IRFL_STRUCT_DEF);
+   emitir(IRTG(IR_EQ, IRT_PTR), def_ref, lj_ir_kkptr(J, Value->def));
+
+   TRef data_ref = emitir(IRT(IR_FLOAD, IRT_PTR), StructRef, IRFL_STRUCT_DATA);
+   emitir(IRTG(IR_NE, IRT_PTR), data_ref, lj_ir_knull(J, IRT_PTR));
+   return data_ref;
+}
+
+static bool rec_struct_scalar_field(uint32_t FieldFlags)
+{
+   constexpr uint32_t supported = FD_FLOAT|FD_DOUBLE|FD_INT64|FD_INT|FD_WORD|FD_BYTE;
+   constexpr uint32_t unsupported = FD_ARRAY|FD_STRUCT|FD_POINTER|FD_STRING|FD_OBJECT|FD_FUNCTION|FD_CPP;
+   if (FieldFlags & unsupported) return false;
+   if ((FieldFlags & FD_UNSIGNED) and not (FieldFlags & (FD_WORD|FD_BYTE))) return false;
+   return (FieldFlags & supported) != 0;
+}
+
+static TRef rec_struct_get(jit_State *J, RecordOps *ops)
+{
+   TRef struct_ref = ops->rb;
+   if (not tref_isstruct(struct_ref)) lj_trace_err(J, LJ_TRERR_BADTYPE);
+
+   GCstruct *value = structV(ops->rbv());
+   GCstr *key = strV(ops->rcv());
+   int field_offset;
+   uint32_t field_flags = 0;
+   int field_type = ir_struct_field_type(value, key, field_offset, field_flags);
+   if (field_type < 0) lj_trace_err(J, LJ_TRERR_BADTYPE);
+
+   if (not value->is_lifecycle_bound() and rec_struct_scalar_field(field_flags)) {
+      TRef data_ref = rec_struct_payload_guard(J, struct_ref, value);
+      TRef addr_ref = emitir(IRT(IR_ADD, IRT_PTR), data_ref, lj_ir_kintp(J, field_offset));
+
+      if (field_flags & FD_FLOAT) {
+         TRef result_ref = emitir(IRT(IR_XLOAD, IRT_FLOAT), addr_ref, 0);
+         return emitir(IRTN(IR_CONV), result_ref, (IRT_NUM << IRCONV_DSH) | IRT_FLOAT);
+      }
+      else if (field_flags & FD_DOUBLE) return emitir(IRT(IR_XLOAD, IRT_NUM), addr_ref, 0);
+      else if (field_flags & FD_INT64) {
+         TRef result_ref = emitir(IRT(IR_XLOAD, IRT_I64), addr_ref, 0);
+         return emitir(IRTN(IR_CONV), result_ref, (IRT_NUM << IRCONV_DSH) | IRT_I64);
+      }
+      else if (field_flags & FD_WORD) {
+         IRType load_type = (field_flags & FD_UNSIGNED) ? IRT_U16 : IRT_I16;
+         TRef result_ref = emitir(IRT(IR_XLOAD, load_type), addr_ref, 0);
+         if (not LJ_DUALNUM) result_ref = emitir(IRTN(IR_CONV), result_ref, IRCONV_NUM_INT);
+         return result_ref;
+      }
+      else if (field_flags & FD_BYTE) {
+         TRef result_ref = emitir(IRT(IR_XLOAD, IRT_U8), addr_ref, 0);
+         if (not LJ_DUALNUM) result_ref = emitir(IRTN(IR_CONV), result_ref, IRCONV_NUM_INT);
+         return result_ref;
+      }
+      else {
+         TRef result_ref = emitir(IRT(IR_XLOAD, IRT_INT), addr_ref, 0);
+         if (not LJ_DUALNUM) result_ref = emitir(IRTN(IR_CONV), result_ref, IRCONV_NUM_INT);
+         return result_ref;
+      }
+   }
+
+   TRef tmp_ref = rec_tmpref(J, TREF_NIL, IRTMPREF_OUT1);
+   TRef null_ref = lj_ir_kkptr(J, nullptr);
+   lj_ir_call(J, IRCALL_bc_struct_getfield, struct_ref, ops->rc, tmp_ref, null_ref);
+   return lj_record_vload(J, tmp_ref, 0, (IRType)field_type);
+}
+
+static void rec_struct_set(jit_State *J, RecordOps *ops)
+{
+   TRef struct_ref = ops->rb;
+   if (not tref_isstruct(struct_ref)) lj_trace_err(J, LJ_TRERR_BADTYPE);
+
+   GCstruct *value = structV(ops->rbv());
+   GCstr *key = strV(ops->rcv());
+   int field_offset;
+   uint32_t field_flags = 0;
+   int field_type = ir_struct_field_type(value, key, field_offset, field_flags);
+   if (field_type < 0) {
+      lj_trace_err(J, LJ_TRERR_BADTYPE);
+   }
+
+   TRef val_ref = ops->ra;
+   if (not value->is_lifecycle_bound() and rec_struct_scalar_field(field_flags) and tref_isnumber(val_ref)) {
+      TRef data_ref = rec_struct_payload_guard(J, struct_ref, value);
+      TRef addr_ref = emitir(IRT(IR_ADD, IRT_PTR), data_ref, lj_ir_kintp(J, field_offset));
+
+      if (field_flags & FD_FLOAT) {
+         TRef store_ref = val_ref;
+         if (tref_isint(val_ref)) store_ref = emitir(IRTN(IR_CONV), val_ref, IRCONV_NUM_INT);
+         store_ref = emitir(IRT(IR_CONV, IRT_FLOAT), store_ref, (IRT_FLOAT << IRCONV_DSH) | IRT_NUM);
+         emitir(IRT(IR_XSTORE, IRT_FLOAT), addr_ref, store_ref);
+      }
+      else if (field_flags & FD_DOUBLE) {
+         TRef store_ref = val_ref;
+         if (tref_isint(val_ref)) store_ref = emitir(IRTN(IR_CONV), val_ref, IRCONV_NUM_INT);
+         emitir(IRT(IR_XSTORE, IRT_NUM), addr_ref, store_ref);
+      }
+      else if (field_flags & FD_INT64) {
+         TRef store_ref;
+         if (tref_isint(val_ref)) {
+            store_ref = emitir(IRT(IR_CONV, IRT_I64), val_ref,
+               (IRT_I64 << IRCONV_DSH) | IRT_INT | IRCONV_SEXT);
+         }
+         else {
+            store_ref = emitir(IRT(IR_CONV, IRT_I64), val_ref,
+               (IRT_I64 << IRCONV_DSH) | IRT_NUM | IRCONV_ANY);
+         }
+         emitir(IRT(IR_XSTORE, IRT_I64), addr_ref, store_ref);
+      }
+      else if (field_flags & FD_WORD) {
+         TRef store_ref = val_ref;
+         if (tref_isnum(val_ref)) store_ref = emitir(IRTI(IR_CONV), val_ref, IRCONV_INT_NUM | IRCONV_ANY);
+         IRType store_type = (field_flags & FD_UNSIGNED) ? IRT_U16 : IRT_I16;
+         emitir(IRT(IR_XSTORE, store_type), addr_ref, store_ref);
+      }
+      else if (field_flags & FD_BYTE) {
+         TRef store_ref = val_ref;
+         if (tref_isnum(val_ref)) store_ref = emitir(IRTI(IR_CONV), val_ref, IRCONV_INT_NUM | IRCONV_ANY);
+         emitir(IRT(IR_XSTORE, IRT_U8), addr_ref, store_ref);
+      }
+      else {
+         TRef store_ref = val_ref;
+         if (tref_isnum(val_ref)) store_ref = emitir(IRTI(IR_CONV), val_ref, IRCONV_INT_NUM | IRCONV_ANY);
+         emitir(IRT(IR_XSTORE, IRT_INT), addr_ref, store_ref);
+      }
+      return;
+   }
+
+   TRef tmp_ref = rec_tmpref(J, ops->ra, IRTMPREF_IN1);
+   TRef null_ref = lj_ir_kkptr(J, nullptr);
+   lj_ir_call(J, IRCALL_bc_struct_setfield, struct_ref, ops->rc, tmp_ref, null_ref);
+}
+
+//********************************************************************************************************************
 // Handle table access ops: BC_GGET, BC_GSET, BC_TGET*, BC_TSET*, BC_TNEW, BC_TDUP
 
 static TRef rec_table_op(jit_State *J, RecordOps *ops, const BCIns *pc)
@@ -3344,6 +3489,16 @@ void lj_record_ins(jit_State *J)
 
    case BC_OBSETF:
       rec_object_set(J, &ops);
+      break;
+
+   // Struct ops - native struct field access
+
+   case BC_STGETF:
+      rc = rec_struct_get(J, &ops);
+      break;
+
+   case BC_STSETF:
+      rec_struct_set(J, &ops);
       break;
 
    // Calls and vararg handling

@@ -213,7 +213,10 @@ static bool write_primitive_field(lua_State *Lua, APTR Address, int Type, int St
    else if (Type & FD_DOUBLE) ((double *)Address)[ElementIndex]  = lua_tonumber(Lua, StackIndex);
    else if (Type & FD_INT64)  ((int64_t *)Address)[ElementIndex] = lua_tonumber(Lua, StackIndex);
    else if (Type & FD_INT)    ((int *)Address)[ElementIndex]     = lua_tointeger(Lua, StackIndex);
-   else if (Type & FD_WORD)   ((int16_t *)Address)[ElementIndex] = lua_tointeger(Lua, StackIndex);
+   else if (Type & FD_WORD) {
+      if (Type & FD_UNSIGNED) ((uint16_t *)Address)[ElementIndex] = lua_tointeger(Lua, StackIndex);
+      else ((int16_t *)Address)[ElementIndex] = lua_tointeger(Lua, StackIndex);
+   }
    else if (Type & FD_BYTE)   ((uint8_t *)Address)[ElementIndex] = lua_tointeger(Lua, StackIndex);
    else return false;
 
@@ -378,7 +381,10 @@ static bool write_primitive_field(lua_State *Lua, APTR Address, int Type, int St
       else if (type & FD_DOUBLE) lua_pushnumber(Lua, ((double *)address)[0]);
       else if (type & FD_INT64)  lua_pushnumber(Lua, ((int64_t *)address)[0]);
       else if (type & FD_INT)    lua_pushinteger(Lua, ((int *)address)[0]);
-      else if (type & FD_WORD)   lua_pushinteger(Lua, ((int16_t *)address)[0]);
+      else if (type & FD_WORD) {
+         if (type & FD_UNSIGNED) lua_pushinteger(Lua, ((uint16_t *)address)[0]);
+         else lua_pushinteger(Lua, ((int16_t *)address)[0]);
+      }
       else if (type & FD_BYTE)   lua_pushinteger(Lua, ((uint8_t *)address)[0]);
       else lua_pushnil(Lua);
 

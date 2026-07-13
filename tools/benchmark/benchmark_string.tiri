@@ -2,7 +2,7 @@
 -- STRING OPERATIONS
 ----------------------------------------------------------------------------------------------------------------------
 
-global glStringBenchmarkSink = 0
+local glStringBenchmarkSink = 0
 
 -- Goal: Get the length of strings of varying sizes
 

@@ -127,13 +127,18 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
 
    child_state.numparams = uint8_t(param_count.raw());
    this->lex_state.var_add(param_count);
+   auto base = BCReg(child_state.varmap.size() - param_count.raw());
+   for (auto i = BCReg(0); i < param_count; ++i) {
+      const FunctionParameter &param = Payload.parameters[i.raw()];
+      if (param.type IS TiriType::Struct) child_state.var_get(base.raw() + i.raw()).fixed_type = param.type;
+   }
+
    if (child_state.varmap.size() > 0) {
       RegisterAllocator child_allocator(&child_state);
       child_allocator.reserve(BCReg(child_state.varmap.size()));
    }
 
    IrEmitter child_emitter(child_ctx);
-   auto base = BCReg(child_state.varmap.size() - param_count.raw());
    for (auto i = BCReg(0); i < param_count; ++i) {
       const FunctionParameter &param = Payload.parameters[i.raw()];
       if (param.name.is_blank or param.name.symbol IS nullptr) continue;
@@ -329,6 +334,12 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
                table.k = ExpKind::IndexedObject;
             }
          }
+         else if (payload.base_type IS TiriType::Struct or emitted_base_type IS TiriType::Struct) {
+            table.result_type = TiriType::Struct;
+            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+               table.k = ExpKind::IndexedStruct;
+            }
+         }
 
          return ParserResult<ExpDesc>::success(table);
       }
@@ -381,6 +392,12 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
                table.k = ExpKind::IndexedObject;
             }
          }
+         else if (payload.base_type IS TiriType::Struct or emitted_base_type IS TiriType::Struct) {
+            table.result_type = TiriType::Struct;
+            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+               table.k = ExpKind::IndexedStruct;
+            }
+         }
 
          return ParserResult<ExpDesc>::success(table);
       }
@@ -420,6 +437,12 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
             table.result_type = TiriType::Object;
             if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
                table.k = ExpKind::IndexedObject;
+            }
+         }
+         else if (payload.base_type IS TiriType::Struct or emitted_base_type IS TiriType::Struct) {
+            table.result_type = TiriType::Struct;
+            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+               table.k = ExpKind::IndexedStruct;
             }
          }
 
@@ -470,6 +493,12 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          else if (payload.base_type IS TiriType::Object or emitted_base_type IS TiriType::Object) {
             if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
                table.k = ExpKind::IndexedObject;
+            }
+         }
+         else if (payload.base_type IS TiriType::Struct or emitted_base_type IS TiriType::Struct) {
+            table.result_type = TiriType::Struct;
+            if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+               table.k = ExpKind::IndexedStruct;
             }
          }
 

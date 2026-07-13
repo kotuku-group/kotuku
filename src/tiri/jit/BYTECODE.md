@@ -154,6 +154,15 @@ Operand suffixes: V=variable slot, S=string const, N=number const, P=primitive (
 | `ASGETV` | A B C | R(A) = R(B)?[R(C)] (safe array get - nil for out-of-bounds) |
 | `ASGETB` | A B C | R(A) = R(B)?[C] (safe array get with literal - nil for out-of-bounds) |
 
+#### Object and Struct Field Ops
+| Opcode | Format | Description |
+|--------|--------|-------------|
+| `OBGETF` | A B C P | R(A) = object field R(B)[str(C)]; P caches the object read-table index |
+| `OBSETF` | A B C P | object field R(B)[str(C)] = R(A); P caches the object write-table index |
+| `OBCALL` | A B C | Reserved object action/method call opcode |
+| `STGETF` | A B C P | R(A) = struct field R(B)[str(C)]; P caches the struct field index |
+| `STSETF` | A B C P | struct field R(B)[str(C)] = R(A); P caches the struct field index |
+
 #### Call and Vararg Ops
 | Opcode | Format | Description |
 |--------|--------|-------------|
@@ -397,13 +406,49 @@ ASETB   arr, 0, value    ; Store 42 at index 0
 AGETV   dest, arr, i     ; Load element at variable index i
 ```
 
-## 6. Control-Flow and Short-Circuit Patterns
-### 6.1 Logical Operators (`and`, `or`)
+## 6. Native Struct Field Operations
+
+### 6.1 Overview
+
+`GCstruct` field reads and writes use `STGETF` and `STSETF` when the parser knows that the base expression has the
+`struct` type. These opcodes bypass the generic base-metatable lookup and C-closure call frame while preserving the
+same field conversion, lifecycle, null-payload and error behaviour as `__index` and `__newindex`.
+
+### 6.2 Encoding and Inline Cache
+
+Both instructions use ABCP format. B identifies the struct register, C is the negated string-constant index used by
+`TGETS`, and A is the destination for `STGETF` or source value for `STSETF`. P starts at `0xFFFFFFFF` and caches the
+index into `GCstruct.def->Fields`.
+
+Every cache hit validates both the index and the field's case-insensitive `strihash`. A miss performs a linear lookup
+and replaces P, so a single polymorphic instruction site can safely alternate between different struct definitions.
+
+### 6.3 Interpreter Semantics
+
+| Bytecode | Operation | Fast-type failure | Cached value |
+|----------|-----------|-------------------|--------------|
+| `STGETF` | Load a named field or the bound `structSize` closure | `vmeta_tgets` | Field index |
+| `STSETF` | Store a named writable field | `vmeta_tsets` | Field index |
+
+The x64, ARM64 and PowerPC handlers call `bc_struct_getfield` and `bc_struct_setfield`. The helpers synchronise the Lua
+frame before any operation that may allocate, protect setter values from garbage collection and restore the
+interpreter stack after the shared struct field core completes. A non-struct value at a statically struct-typed access
+site falls back to the ordinary metamethod path.
+
+### 6.4 Parser and Platform Status
+
+`ExpKind::IndexedStruct` lowers constant string member access to `STGETF`/`STSETF`. A struct member used as a callee is
+downgraded to normal indexed access so helpers such as `value.structSize()` still resolve through `__index`.
+
+The interpreter implementation covers x64, ARM64 and PowerPC. The JIT can record these opcodes: scalar numeric fields may lower to guarded XLOAD/XSTORE, while complex or lifecycle-bound fields fall back to the C helpers.
+
+## 7. Control-Flow and Short-Circuit Patterns
+### 7.1 Logical Operators (`and`, `or`)
 - `a and b`: evaluate `a`; emit compare + `JMP` that branches past `b` when `a` is falsey. Truthy `a` falls through, so `b` is evaluated and its result replaces/occupies the same slot.
 - `a or b`: evaluate `a`; emit compare + `JMP` that branches into `b` only when `a` is falsey. Truthy `a` falls through and becomes the result; `b` is untouched.
 - Registers are normalised so the resulting value lives in the LHS register; `freereg` collapses after RHS evaluation to avoid leaks.
 
-### 6.2 Ternary Operators (`cond ? true_val :> false_val`, `cond ?? true_val :> false_val`)
+### 7.2 Ternary Operators (`cond ? true_val :> false_val`, `cond ?? true_val :> false_val`)
 - Only one branch executes. The standard `? :>` form matches `if` falsey semantics: only `nil` and `false` branch to the false value.
 - The extended `?? :>` form uses the same extended falsey set as `??`: `nil`, `false`, numeric zero, empty string, and empty collections.
 - `IrEmitter::emit_ternary_expr` places both branches so the selected branch materialises into a single result register. Each branch frees temporaries before convergence, and `freereg` is patched back to guarantee a single-slot result.
@@ -419,50 +464,50 @@ false:
 end:
   ```
 
-### 6.3 Presence Operator (`x?`) – Extended Falsey Check
+### 7.3 Presence Operator (`x?`) – Extended Falsey Check
 - Falsey set: `nil`, `false`, numeric zero, empty string, empty arrays, and empty tables. If operand is in this set, result is `false` and RHS (if any) is skipped.
 - Emission: chain `BC_ISEQP`/`BC_ISEQN`/`BC_ISEQS`/`BC_ISEMPTYARR` comparisons, each followed by a `JMP` to the falsey path. A matching equality branches to that path; non-matching comparisons fall through to the next check. If all checks fall through (truthy value), execution continues past the chain.
 - Jump lists patch the falsey exit after the chain; truthy fallthrough sets the result and collapses `freereg`.
 - `BC_ISEMPTYARR` is used to check if the value is an empty collection. Semantics: if `R(A)` is a native array with `len == 0` or a table with no entries, execute the following `JMP` (falsey); otherwise skip the `JMP` (truthy).
 
-### 6.4 If-Empty Operator (`lhs ?? rhs`) – Short-Circuiting with Extended Falsey Semantics
+### 7.4 If-Empty Operator (`lhs ?? rhs`) – Short-Circuiting with Extended Falsey Semantics
 - Evaluate `lhs`; if it is nil/false/0/""/empty array/empty table, evaluate `rhs` and return it; otherwise return `lhs` without touching `rhs`.
 - Implemented in `IrEmitter::emit_if_empty_expr` plus helper routines in `operator_emitter.cpp`. The compare chain mirrors the presence operator: a matching falsey value branches to RHS evaluation; a truthy value falls through all checks and skips RHS entirely.
 - The result register is the original `lhs` slot; RHS evaluation reuses it and collapses `freereg` afterward to avoid leaked arguments or vararg tails.
 - Uses `BC_ISEMPTYARR` to check for empty arrays and tables as part of the extended falsey semantics. If `R(A)` is a native array with `len == 0` or a table with no entries, the following `JMP` is executed (falsey path); otherwise the `JMP` is skipped (truthy path).
 
-## 7. Register Semantics and Multi-Value Behaviour
-### 7.1 Register Lifetimes, `freereg`, and `nactvar`
+## 8. Register Semantics and Multi-Value Behaviour
+### 8.1 Register Lifetimes, `freereg`, and `nactvar`
 - `nactvar` tracks active local slots; `freereg` is the first free slot above them. Temporaries are allocated above `nactvar` and must be reclaimed when no longer needed.
 - Helpers such as `expr_free`, `RegisterGuard`, and `ir_collapse_freereg` ensure temporaries are released so following expressions do not see spurious stack entries.
 - Failing to collapse `freereg` manifests as leaked arguments in calls or extra return values in vararg contexts.
 
-### 7.2 `ExpKind::Call` and Multi-Return Semantics
+### 8.2 `ExpKind::Call` and Multi-Return Semantics
 - A freshly emitted `BC_CALL` yields an `ExpKind::Call` tied to its base register and may return multiple values (`BC_CALLM`) if left uncapped.
 - Binary operators and control-flow constructs force single-value semantics: they convert call expressions to registers (`expr_toanyreg`), then free the call expression to cap results at one slot.
 - Multi-return propagation is allowed only when explicitly constructing vararg lists; otherwise collapse to a single register before further comparisons or jumps.
 
-### 7.3 Preventing Register Leaks in Chained Operations
+### 8.3 Preventing Register Leaks in Chained Operations
 - Reuse the LHS register when chaining operators at the same precedence; allocate new temporaries only when operands cannot share.
 - After emitting a RHS, immediately free or collapse temporaries so the stack height matches `freereg` expectations before emitting the next operator.
 - Always call `expr_free` before reserving new registers when an operand might still own a multi-return slot.
 
-## 8. Common Emission Patterns and Anti-Patterns
-### 8.1 Canonical Patterns (Do This)
+## 9. Common Emission Patterns and Anti-Patterns
+### 9.1 Canonical Patterns (Do This)
 - Compare + `JMP` for "branch on not-equal": `ISEQP A,const; JMP target` with true skipping the jump; see the relevant compare/jump emission logic in `operator_emitter.cpp`.
 - Presence / if-empty chains: sequential `ISEQP/ISEQN/ISEQS/ISEMPTYARR` with shared jump list patched to the truthy or RHS path; see `operator_emitter.emit_presence_check` (called from `IrEmitter::emit_presence_expr`) and `IrEmitter::emit_if_empty_expr`.
 - Logical short-circuit: `a or b` uses compare + `JMP` into RHS only when falsey; `a and b` jumps over RHS when falsey. Implemented via general binary operator emission in `operator_emitter.cpp` and `ir_emitter.cpp`.
 - Ternary layout: condition in place, compare chain, then true/false blocks writing back into the same register, with end jump to merge; see `IrEmitter::emit_ternary_expr`.
 
-### 8.2 Typical Mistakes (Do NOT Do This)
+### 9.2 Typical Mistakes (Do NOT Do This)
 - Wiring compare + `JMP` backwards (treating "skip on equal" as "jump on equal"), which executes the wrong branch.
 - Failing to collapse `freereg` after evaluating RHS, causing leaked stack slots that appear as extra arguments or returns.
 - Allocating a new register for an operand without freeing the previous expression, allowing multi-return values to flow into subsequent operators.
 - Regression tests that catch these issues: `src/tiri/tests/test_if_empty.tiri`, `test_presence.tiri`, logical operator suites, and ternary-focused cases; add new ones when patterns change.
 
-## 9. Exception Handling and Type Fixing
+## 10. Exception Handling and Type Fixing
 
-### 9.1 Exception Handling Bytecodes (`BC_TRYENTER`, `BC_TRYLEAVE`, `BC_CHECK`, `BC_RAISE`)
+### 10.1 Exception Handling Bytecodes (`BC_TRYENTER`, `BC_TRYLEAVE`, `BC_CHECK`, `BC_RAISE`)
 
 Tiri's `try...except...end` statements are implemented using inline bytecode (not closures), allowing `return`, `break`, and `continue` to work correctly within try blocks.
 
@@ -501,7 +546,7 @@ Each `TryHandlerDesc` contains:
 
 **Implementation:** See [emit_try.cpp:30-240](src/tiri/jit/src/parser/ir_emitter/emit_try.cpp#L30-L240), [emit_try.cpp:248-291](src/tiri/jit/src/parser/ir_emitter/emit_try.cpp#L248-L291), [emit_try.cpp:299-320](src/tiri/jit/src/parser/ir_emitter/emit_try.cpp#L299-L320).
 
-### 9.2 Runtime Type Fixing (`BC_TYPEFIX`)
+### 10.2 Runtime Type Fixing (`BC_TYPEFIX`)
 
 `BC_TYPEFIX` enables runtime type inference for function return types when the function has no explicit return type annotations.
 
@@ -520,23 +565,23 @@ Enables type inference for untyped functions, allowing the VM to optimize subseq
 
 **Implementation:** See [vm_x64.dasc:4901-4922](src/tiri/jit/src/jit/vm_x64.dasc#L4901-L4922), [lj_meta.cpp:664-685](src/tiri/jit/src/runtime/lj_meta.cpp#L664-L685), [parse_scope.cpp:1012-1024](src/tiri/jit/src/parser/parse_scope.cpp#L1012-L1024).
 
-## 10. Testing, Debugging, and Tooling
-### 10.1 Using Flute and Tiri Tests
+## 11. Testing, Debugging, and Tooling
+### 11.1 Using Flute and Tiri Tests
 - Run the Tiri regression tests under `src/tiri/tests/` (e.g. `test_if_empty.tiri`, `test_presence.tiri`, logical/ternary suites) to validate control-flow changes.
 - When adding coverage, use side effects (counters, print hooks) on RHS expressions to prove short-circuiting, and capture varargs with `{...}` to detect leaked registers.
 
-### 10.2 Disassembly and Bytecode Inspection
+### 11.2 Disassembly and Bytecode Inspection
 - Obtain bytecode via `mtDebugLog('disasm')` on a `tiri` object or run scripts with `--jit-options dump-bytecode,diagnose`.
 - Map disassembly back to source by matching instruction order to expression evaluation order, then locate emission sites in `ir_emitter.cpp` or `operator_emitter.cpp`.
 - Treat disassembly as the source of truth for branch direction when debugging control flow.
 
-## 11. Maintenance Guidelines
+## 12. Maintenance Guidelines
 - When touching conditional emission or short-circuit logic, update the opcode matrix and the relevant sections here.
 - Add or adjust regression tests in `src/tiri/tests/` to cover new control-flow behaviours; rerun tests after installing a fresh build.
 - Re-generate disassembly for representative snippets (logical ops, ternary, `??`, `?`) to verify register collapse and branch wiring.
 - Reviewers should confirm emitted patterns match the documented skip/execute semantics and that test coverage exercises both true and false paths.
 
-## 12. Glossary and Quick Reference
+## 13. Glossary and Quick Reference
 
 ### Bytecode Types and Structures
 - `BCIns`: 64-bit packed bytecode instruction (was 32-bit in legacy LuaJIT).
@@ -591,6 +636,11 @@ Enables type inference for untyped functions, allowing the VM to optimize subseq
 - `ARRAY_FLAG_EXTERNAL`: flag indicating array data is not owned by the GC.
 - `AGETV`/`AGETB`/`ASETV`/`ASETB` provide direct array element access with bounds checking.
 - `ASGETV`/`ASGETB` provide safe array access (returns nil for out-of-bounds) for the `?[]` operator.
+
+### Native Structs
+- `GCstruct`: native struct header referencing an inline or external payload and its stable `struct_record` definition.
+- `LJ_TSTRUCT`: type tag for native structs.
+- `STGETF`/`STSETF`: named field access with a P32 field-index cache and generic metamethod fallback.
 
 ### Exception Handling
 - `PROTO_TYPEFIX`: flag indicating runtime type inference is enabled for function return types.

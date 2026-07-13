@@ -1,0 +1,158 @@
+-----------------------------------------------------------------------------------------------------------------------
+-- Global type propagation: member access on typed globals must select specialised bytecode (STGETF/STSETF for
+-- structs, OBGETF for objects, AGETB/AGETV for arrays) instead of generic table access.  Types are recorded by the
+-- type analyser from explicit 'global' declarations, then attached to global identifier reads during IR emission.
+--
+-- Bytecode assertions compile a nested tiri object and inspect its disassembly; acQuery() must precede
+-- acActivate() so the main chunk reference is retained for DebugLog('disasm').
+
+local function disassemble(Statement)
+   local script = obj.new('tiri', { statement = Statement })
+   script.acQuery()
+   script.acActivate()
+   local _, disasm = script.mtDebugLog('disasm')
+   assert(disasm != nil, 'Expected DebugLog to return a disassembly')
+   return disasm
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Explicit global assignment must propagate the struct type to reads and writes.
+
+@Test function GlobalStructBytecode()
+   local disasm = disassemble([[
+MAKESTRUCT('GTImplicitRec', 'lAlpha,lBravo')
+global glGTRec = struct.new('GTImplicitRec')
+function readField()
+   return glGTRec.alpha
+end
+function writeField()
+   glGTRec.bravo = 5
+end
+]])
+   assert(disasm:find('STGETF') != nil, 'Global struct read should emit STGETF, got:\n' .. disasm)
+   assert(disasm:find('STSETF') != nil, 'Global struct write should emit STSETF, got:\n' .. disasm)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Explicit 'global' declarations must propagate the declared type.
+
+@Test function ExplicitGlobalStructBytecode()
+   local disasm = disassemble([[
+MAKESTRUCT('GTExplicitRec', 'lAlpha')
+global glGTExplicit = struct.new('GTExplicitRec')
+function readField()
+   return glGTExplicit.alpha
+end
+]])
+   assert(disasm:find('STGETF') != nil, 'Explicit global struct read should emit STGETF, got:\n' .. disasm)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- A global explicitly typed as 'any' must use generic table access.
+
+@Test function AnyGlobalStaysGeneric()
+   local disasm = disassemble([[
+MAKESTRUCT('GTConflictRec', 'lAlpha')
+global glGTMixed:any = struct.new('GTConflictRec')
+glGTMixed = 'text'
+function readField()
+   return glGTMixed.alpha
+end
+]])
+   assert(disasm:find('STGETF') is nil, 'Any global must not emit STGETF, got:\n' .. disasm)
+   assert(disasm:find('TGETS') != nil, 'Any global should use TGETS, got:\n' .. disasm)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Object globals must use specialised object field access.
+
+@Test function GlobalObjectBytecode()
+   local disasm = disassemble([[
+global glGTTime = obj.new('time')
+function readYear()
+   return glGTTime.year
+end
+]])
+   assert(disasm:find('OBGETF') != nil, 'Global object field read should emit OBGETF, got:\n' .. disasm)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Class-identified object globals gain compile-time field validation, matching local variable behaviour.
+
+@Test function GlobalObjectUnknownFieldRejected()
+   local script = obj.new('tiri', { statement = [[
+global glGTTime2 = obj.new('time')
+function readBad()
+   return glGTTime2.no_such_field
+end
+]] })
+   local err = script.acQuery()
+   assert(err != ERR_Okay, 'Reading an unknown field from a class-identified global object should fail to compile')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Array globals must use specialised array indexing.
+
+@Test function GlobalArrayBytecode()
+   local disasm = disassemble([[
+global glGTNums = array<int> { 10, 20, 30 }
+function readNum()
+   return glGTNums[1]
+end
+]])
+   assert(disasm:find('AGETB') != nil or disasm:find('AGETV') != nil,
+      'Global array indexing should emit AGETB/AGETV, got:\n' .. disasm)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- A local variable shadowing a typed global name must not inherit the global's type.
+
+@Test function LocalShadowKeepsOwnType()
+   local disasm = disassemble([[
+MAKESTRUCT('GTShadowRec', 'lAlpha')
+global glGTShadow = struct.new('GTShadowRec')
+function readShadowed()
+   local glGTShadow = { alpha = 1 }
+   return glGTShadow.alpha
+end
+]])
+   assert(disasm:find('STGETF') is nil, 'Local shadow of a struct global must use generic access, got:\n' .. disasm)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Functional checks: typed global access must produce correct values through the specialised opcodes.
+
+   MAKESTRUCT('GTFunctionalRec', 'lAlpha,lBravo,dDelta')
+
+global glGTFunctional = struct.new('GTFunctionalRec')
+
+@Test function GlobalStructReadWrite()
+   glGTFunctional.alpha = 42
+   glGTFunctional.bravo = -7
+   glGTFunctional.delta = 2.5
+
+   assert(glGTFunctional.alpha is 42, 'Expected alpha field write/read through global to return 42')
+   assert(glGTFunctional.bravo is -7, 'Expected bravo field write/read through global to return -7')
+   assert(glGTFunctional.delta is 2.5, 'Expected delta field write/read through global to return 2.5')
+
+   local total = 0
+   for i = 1, 100 do
+      glGTFunctional.alpha = i
+      total += glGTFunctional.alpha
+   end
+   assert(total is 5050, 'Expected accumulated global struct reads to total 5050, got ' .. total)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Reading a field from a typed global that currently holds nil must raise the standard index error.
+
+@Test function NilGlobalReadStillErrors()
+   global glGTNilable = struct.new('GTFunctionalRec')
+   glGTNilable = nil
+
+   try
+      local _ = glGTNilable.alpha
+   success
+      error('Reading a field from a nil-valued global should raise an index error')
+   end
+end

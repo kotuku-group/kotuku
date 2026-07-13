@@ -98,6 +98,9 @@ public:
    // Access collected type diagnostics after analysis
    [[nodiscard]] const std::vector<TypeDiagnostic> & diagnostics() const { return this->diagnostics_; }
 
+   // Publish fixed global types to the lexer state so the IR emitter can specialise global member access
+   void publish_global_type_hints(LexState &) const;
+
 private:
    // Scope management - maintains a stack of TypeCheckScope for tracking variable types
    void push_scope();
@@ -234,13 +237,17 @@ private:
       SourceSpan location{};
       const FunctionExprPayload* function = nullptr;  // Non-null if declared as global function
       bool is_const = false;  // True if declared with <const> attribute
+      bool implicit = false;  // True if inferred from a plain assignment rather than a 'global' declaration
    };
 
    void declare_global(GCstr *Name, const InferredType &Type, SourceSpan Location, bool IsConst = false);
    void declare_global_function(GCstr *Name, const FunctionExprPayload *Function, SourceSpan Location);
+   void declare_implicit_global(GCstr *Name, const ExprNode *Value, SourceSpan Location);
    [[nodiscard]] std::optional<InferredType> lookup_global_type(GCstr *Name) const;
    [[nodiscard]] bool is_global_const(GCstr *Name) const;
+   [[nodiscard]] bool is_implicit_global(GCstr *Name) const;
    void fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId = CLASSID::NIL);
+   void degrade_global_type(GCstr *Name);
 
    ParserContext &ctx_;                             // Parser context for diagnostics and lexer access
    std::vector<TypeCheckScope> scope_stack_{};      // Stack of scopes for variable tracking
@@ -782,7 +789,16 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
          }
          else is_const = this->is_local_const(name);
 
-         if (not existing) continue;
+         if (not existing) {
+            // The name is neither a local nor a known global.  A plain assignment to a name that already exists in
+            // the environment table updates that global at runtime, so record an implicit global type for it.  Only
+            // simple '=' assignments are used for inference; compound operators require an existing value and never
+            // create a global.
+            if (Payload.op IS AssignmentOperator::Plain and i < Payload.values.size()) {
+               this->declare_implicit_global(name, Payload.values[i].get(), target.span);
+            }
+            continue;
+         }
 
          // Check for assignment to const variable
 
@@ -813,6 +829,13 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
             }
 
             if (value_type.primary != TiriType::Any and value_type.primary != existing->primary) {
+               // Implicit globals were never declared by the user, so a conflicting assignment is legal;
+               // degrade the tracked type to 'any' rather than raising a diagnostic.
+               if (is_global and this->is_implicit_global(name)) {
+                  this->degrade_global_type(name);
+                  continue;
+               }
+
                // Type mismatch
                TypeDiagnostic diag;
                diag.location = target.span;
@@ -827,6 +850,12 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
             else if (existing->primary IS TiriType::Object and value_type.primary IS TiriType::Object and
                existing->object_class_id != CLASSID::NIL) {
                if (existing->object_class_id != value_type.object_class_id) {
+                  // Conflicting object classes on an implicit global clear the class association.
+                  if (is_global and this->is_implicit_global(name)) {
+                     this->fix_global_type(name, TiriType::Object, CLASSID::NIL);
+                     continue;
+                  }
+
                   TypeDiagnostic diag;
                   diag.location = target.span;
                   diag.expected = TiriType::Object;
@@ -1872,11 +1901,60 @@ void TypeAnalyser::declare_global_function(GCstr *Name, const FunctionExprPayloa
    this->trace_decl(this->ctx_.lex().linenumber, Name, TiriType::Func, true);
 }
 
+// Records a pre-existing environment global updated through plain assignment.  The inferred type is advisory only:
+// conflicting later assignments degrade it to 'any' instead of diagnosing, since the assignment carries no
+// user-declared type contract.
+
+void TypeAnalyser::declare_implicit_global(GCstr *Name, const ExprNode *Value, SourceSpan Location)
+{
+   if (not Name or not Value) return;
+   if ((Name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) return;
+
+   cTValue *global = lj_tab_getstr(tabref(this->ctx_.lua().env), Name);
+   bool is_global_store = (global != nullptr) and not tvisnil(global);
+   if (not is_global_store) return;  // Plain assignment to this name creates a local, not a global
+
+   InferredType inferred = this->infer_expression_type(*Value);
+   if (inferred.primary != TiriType::Nil and inferred.primary != TiriType::Any and
+       inferred.primary != TiriType::Unknown) {
+      inferred.is_fixed = true;
+   }
+   else inferred.is_fixed = false;
+
+   GlobalTypeInfo info;
+   info.type = inferred;
+   info.location = Location;
+   info.implicit = true;
+   this->global_types_[Name] = info;
+   this->trace_decl(this->ctx_.lex().linenumber, Name, inferred.primary, inferred.is_fixed);
+}
+
 std::optional<InferredType> TypeAnalyser::lookup_global_type(GCstr *Name) const
 {
    if (not Name) return std::nullopt;
    if (auto it = this->global_types_.find(Name); it != this->global_types_.end()) return it->second.type;
    return std::nullopt;
+}
+
+bool TypeAnalyser::is_implicit_global(GCstr *Name) const
+{
+   if (not Name) return false;
+   if (auto it = this->global_types_.find(Name); it != this->global_types_.end()) return it->second.implicit;
+   return false;
+}
+
+// Degrades a global's tracked type to 'any', disabling specialised access without raising diagnostics.  Applied
+// when an implicit global receives assignments of conflicting types.
+
+void TypeAnalyser::degrade_global_type(GCstr *Name)
+{
+   if (not Name) return;
+   if (auto it = this->global_types_.find(Name); it != this->global_types_.end()) {
+      it->second.type.primary = TiriType::Any;
+      it->second.type.is_fixed = true;  // 'any' accepts every subsequent assignment
+      it->second.type.object_class_id = CLASSID::NIL;
+      this->trace_fix(this->ctx_.lex().linenumber, Name, TiriType::Any);
+   }
 }
 
 void TypeAnalyser::fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId)
@@ -2295,9 +2373,32 @@ static void publish_type_diagnostics(ParserContext& Context, const std::vector<T
 // Entry Point: Called from the parser after AST construction to run semantic type analysis.  Creates a TypeAnalyser
 // instance, runs analysis on the module, and publishes any collected diagnostics.
 
+// Publish fixed global types to the lexer state so that IR emission (which runs after analysis) can attach type
+// metadata to global identifier reads.  Only the container types with specialised access bytecodes are published;
+// scalar hints have no emitter consumers and are withheld to avoid altering unrelated emission paths.
+
+void TypeAnalyser::publish_global_type_hints(LexState &Lex) const
+{
+   for (const auto &[name, info] : this->global_types_) {
+      if (not info.type.is_fixed) continue;
+      switch (info.type.primary) {
+         case TiriType::Struct:
+         case TiriType::Object:
+         case TiriType::Array:
+            Lex.global_type_hints[name] = { info.type.primary, info.type.object_class_id };
+            break;
+         default:
+            break;
+      }
+   }
+}
+
+//********************************************************************************************************************
+
 void run_type_analysis(ParserContext& Context, const BlockStmt& Module)
 {
    TypeAnalyser analyser(Context);
    analyser.analyse_module(Module);
+   analyser.publish_global_type_hints(Context.lex());
    publish_type_diagnostics(Context, analyser.diagnostics());
 }
