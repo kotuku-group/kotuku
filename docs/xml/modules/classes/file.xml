@@ -163,7 +163,6 @@
         <error code="Args">Invalid arguments passed to function</error>
         <error code="FileWriteFlag">The <code>FL::WRITE</code> flag was not specified when initialising the file.</error>
         <error code="ObjectCorrupt">The object structure is corrupt or has not been initialised</error>
-        <error code="ReallocMemory">The reallocation of a memory block failed</error>
         <error code="ExpectedFile">The operation expected a path to a file</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>

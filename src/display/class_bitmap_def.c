@@ -61,23 +61,19 @@ static const struct FieldDef clBitmapColourSpace[] = {
 };
 
 FDEF maCopyArea[] = { { "DestBitmap", FD_OBJECTPTR }, { "Flags", FD_INT }, { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, { "Height", FD_INT }, { "XDest", FD_INT }, { "YDest", FD_INT }, { 0, 0 } };
-FDEF maCompress[] = { { "Level", FD_INT }, { 0, 0 } };
-FDEF maDecompress[] = { { "RetainData", FD_INT }, { 0, 0 } };
 FDEF maDrawRectangle[] = { { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, { "Height", FD_INT }, { "Colour", FD_INT|FD_UNSIGNED }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maSetClipRegion[] = { { "Left", FD_INT }, { "Top", FD_INT }, { "Right", FD_INT }, { "Bottom", FD_INT }, { 0, 0 } };
 FDEF maGetColour[] = { { "Red", FD_INT }, { "Green", FD_INT }, { "Blue", FD_INT }, { "Alpha", FD_INT }, { "Colour", FD_RESULT|FD_INT|FD_UNSIGNED }, { 0, 0 } };
 
 static const struct MethodEntry clBitmapMethods[] = {
    { AC(-1), (APTR)BITMAP_CopyArea, "CopyArea", maCopyArea, sizeof(struct bmp::CopyArea) },
-   { AC(-2), (APTR)BITMAP_Compress, "Compress", maCompress, sizeof(struct bmp::Compress) },
-   { AC(-3), (APTR)BITMAP_Decompress, "Decompress", maDecompress, sizeof(struct bmp::Decompress) },
-   { AC(-4), (APTR)BITMAP_DrawRectangle, "DrawRectangle", maDrawRectangle, sizeof(struct bmp::DrawRectangle) },
-   { AC(-5), (APTR)BITMAP_SetClipRegion, "SetClipRegion", maSetClipRegion, sizeof(struct bmp::SetClipRegion) },
-   { AC(-6), (APTR)BITMAP_GetColour, "GetColour", maGetColour, sizeof(struct bmp::GetColour) },
-   { AC(-7), (APTR)BITMAP_Premultiply, "Premultiply", 0, 0 },
-   { AC(-8), (APTR)BITMAP_Demultiply, "Demultiply", 0, 0 },
-   { AC(-9), (APTR)BITMAP_ConvertToLinear, "ConvertToLinear", 0, 0 },
-   { AC(-10), (APTR)BITMAP_ConvertToRGB, "ConvertToRGB", 0, 0 },
+   { AC(-2), (APTR)BITMAP_DrawRectangle, "DrawRectangle", maDrawRectangle, sizeof(struct bmp::DrawRectangle) },
+   { AC(-3), (APTR)BITMAP_SetClipRegion, "SetClipRegion", maSetClipRegion, sizeof(struct bmp::SetClipRegion) },
+   { AC(-4), (APTR)BITMAP_GetColour, "GetColour", maGetColour, sizeof(struct bmp::GetColour) },
+   { AC(-5), (APTR)BITMAP_Premultiply, "Premultiply", 0, 0 },
+   { AC(-6), (APTR)BITMAP_Demultiply, "Demultiply", 0, 0 },
+   { AC(-7), (APTR)BITMAP_ConvertToLinear, "ConvertToLinear", 0, 0 },
+   { AC(-8), (APTR)BITMAP_ConvertToRGB, "ConvertToRGB", 0, 0 },
    { AC::NIL, 0, 0, 0, 0 }
 };
 

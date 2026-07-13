@@ -511,99 +511,6 @@ static ERR BITMAP_Clear(extBitmap *Self)
 }
 
 /*********************************************************************************************************************
-
--METHOD-
-Compress: Compresses bitmap data to save memory.
-
-Compress() stores a compressed copy of the bitmap's pixel data and releases the uncompressed #Data buffer.  It is
-useful for large data-backed bitmaps that need to remain available but are accessed infrequently.
-
-Once a bitmap is compressed, #Data is no longer available for direct access.  Call #Decompress() before reading pixels,
-writing pixels or passing the bitmap to code that expects an active data buffer.
-
-The `BMF::COMPRESSED` flag is set in #Flags after successful compression.  Video and texture-backed bitmaps are not
-supported by this method.
-
--INPUT-
-int Level: Reserved compression level.  The current implementation uses the compression module's default level.
-
--ERRORS-
-Okay
-NullArgs
-NoSupport
-AllocMemory
-ReallocMemory
-CreateObject: A Compression object could not be created.
-Compression
-
--TAGS-
-mutates-object, creates-resource
--END-
-
-*********************************************************************************************************************/
-
-static ERR BITMAP_Compress(extBitmap *Self, struct bmp::Compress *Args)
-{
-   kt::Log log;
-
-   if (!Args) return log.warning(ERR::NullArgs);
-
-   if ((Self->DataFlags & (MEM::VIDEO|MEM::TEXTURE)) != MEM::NIL) {
-      log.warning("Cannot compress video bitmaps.");
-      return ERR::NoSupport;
-   }
-
-   if (Self->Size < 8192) return ERR::Okay;
-
-   log.traceBranch();
-
-   if (Self->prvCompress) {
-      // If the original compression object still exists, all we are going to do is free up the raw bitmap data.
-
-      if ((Self->Data) and (Self->prvAFlags & BF_DATA)) {
-         FreeResource(Self->Data);
-         Self->Data = nullptr;
-      }
-
-      return ERR::Okay;
-   }
-
-   ERR error = ERR::Okay;
-   if (!glCompress) {
-      if (!(glCompress = objCompression::create::global())) {
-         return log.warning(ERR::CreateObject);
-      }
-      SetOwner(glCompress, glModule);
-   }
-
-   APTR buffer;
-   if (!AllocMemory(Self->Size, MEM::NO_CLEAR, &buffer)) {
-      int result;
-      if (!glCompress->compressBuffer(Self->Data, Self->Size, buffer, Self->Size, &result)) {
-         if (!AllocMemory(result, MEM::NO_CLEAR, (APTR *)&Self->prvCompress)) {
-            copymem(buffer, Self->prvCompress, result);
-         }
-         else error = ERR::ReallocMemory;
-      }
-      else error = ERR::Compression;
-
-      FreeResource(buffer);
-   }
-   else error = ERR::AllocMemory;
-
-   if (!error) { // Free the original data
-      if ((Self->Data) and (Self->prvAFlags & BF_DATA)) {
-         FreeResource(Self->Data);
-         Self->Data = nullptr;
-      }
-
-      Self->Flags |= BMF::COMPRESSED;
-   }
-
-   return error;
-}
-
-/*********************************************************************************************************************
 -METHOD-
 ConvertToLinear: Converts a bitmap's colour space to linear RGB.
 
@@ -794,71 +701,6 @@ static ERR BITMAP_CopyArea(objBitmap *Self, struct bmp::CopyArea *Args)
 {
    if (Args) return gfx::CopyArea((extBitmap *)Self, (extBitmap *)Args->DestBitmap, Args->Flags, Args->X, Args->Y, Args->Width, Args->Height, Args->XDest, Args->YDest);
    else return ERR::NullArgs;
-}
-
-/*********************************************************************************************************************
-
--METHOD-
-Decompress: Decompresses a compressed bitmap.
-
-Decompress() restores #Data for a bitmap previously compressed with #Compress().  If no compressed data is available,
-the method returns `ERR::Okay` without changing the bitmap.
-
-Compressed data is released after a successful restore unless `RetainData` is `true`.  Retaining it allows the most
-recent compressed image to be restored again later.
-
--INPUT-
-int RetainData: Retains the compression data if `true`.
-
--ERRORS-
-Okay
-AllocMemory: Insufficient memory in recreating the bitmap data buffer.
-CreateObject: A Compression object could not be created.
-BufferOverflow
-
--TAGS-
-mutates-object, creates-resource
-
-*********************************************************************************************************************/
-
-static ERR BITMAP_Decompress(extBitmap *Self, struct bmp::Decompress *Args)
-{
-   kt::Log log;
-
-   if (!Self->prvCompress) return ERR::Okay;
-
-   log.msg(VLF::BRANCH|VLF::DETAIL, "Size: %d, Retain: %d", Self->Size, (Args) ? Args->RetainData : FALSE);
-
-   // Note: If the decompression fails, we'll keep the bitmap data in memory in order to stop code from failing if it
-   // accesses the Data address following attempted decompression.
-
-   if (!Self->Data) {
-      if (!AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, (APTR *)&Self->Data)) {
-         Self->prvAFlags |= BF_DATA;
-      }
-      else return log.warning(ERR::AllocMemory);
-   }
-
-   if (!glCompress) {
-      if (!(glCompress = objCompression::create::global())) {
-         return log.warning(ERR::CreateObject);
-      }
-      SetOwner(glCompress, glModule);
-   }
-
-   auto error = glCompress->decompressBuffer(Self->prvCompress, Self->Data, Self->Size, nullptr);
-   if (error IS ERR::BufferOverflow) error = ERR::Okay;
-
-   if ((Args) and (Args->RetainData IS TRUE)) {
-      // Keep the source compression data
-   }
-   else {
-      FreeResource(Self->prvCompress);
-      Self->prvCompress = nullptr;
-      Self->Flags &= ~BMF::COMPRESSED;
-   }
-
-   return error;
 }
 
 /*********************************************************************************************************************
@@ -2884,7 +2726,6 @@ extBitmap::~extBitmap()
 #endif
 
    if ((Data) and (prvAFlags & BF_DATA)) FreeResource(Data);
-   if (prvCompress) FreeResource(prvCompress);
    if (ResolutionChangeHandle) UnsubscribeEvent(ResolutionChangeHandle);
 
 #ifdef __xwindows__

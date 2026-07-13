@@ -508,7 +508,7 @@ global function extractParagraph(Input:str, Caller:str, References:table)
    -- need special treatment.
 
    lines = Input:split('\n')
-   output = ''
+   local output = ''
    currentParagraph = nil
 
    function closeParagraph()

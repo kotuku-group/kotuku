@@ -104,7 +104,7 @@ function declareErrors()
     "Mismatch",                      -- A mis-match has been detected that prevents further processing
     "OutOfBounds",                   -- Out-of-bounds access denied
     "Seek",                          -- Seek failure
-    "ReallocMemory",                 -- ReallocMemory() failed
+    "ReallocMemory",                 -- Memory reallocation failed
     "Loop",                          -- Recursion error
     "FileExists",
     "ResolvePath",                   -- ResolvePath() failed

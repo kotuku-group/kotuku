@@ -347,7 +347,6 @@ static ERR JPEG_Init(extImage *Self)
 static ERR JPEG_Query(extImage *Self)
 {
    kt::Log log;
-   struct jpeg_decompress_struct *cinfo;
    struct jpeg_error_mgr jerr;
 
    log.branch();
