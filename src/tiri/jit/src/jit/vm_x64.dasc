@@ -99,6 +99,7 @@
 |.type SBUF,      SBuf
 |.type ARRAY,     GCarray
 |.type OOBJ,      GCobject
+|.type SSTRUCT,   GCstruct
 |
 |// Stack layout while in interpreter. Must match with lj_frame.h.
 |//-----------------------------------------------------------------------
@@ -293,6 +294,7 @@
 |.macro checkfunc, reg, target; checktp reg, LJ_TFUNC, target; .endmacro
 |.macro checkarray, reg, target; checktp reg, LJ_TARRAY, target; .endmacro
 |.macro checkobject, reg, target; checktp reg, LJ_TOBJECT, target; .endmacro
+|.macro checkstruct, reg, target; checktp reg, LJ_TSTRUCT, target; .endmacro
 |
 |.macro checknumx, reg, target, jump
 |  mov ITYPE, reg
@@ -4231,6 +4233,69 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     // Reserved for object action/method call optimisation.
     // For now, fall through to metamethod dispatch.
     |  jmp ->vmeta_call
+    break;
+
+  //  -- Struct ops (specialised for LJ_TSTRUCT) --------------------------
+
+  case BC_STGETF:
+    |  ins_ABC // RA = dst, RB = struct, RC = str const (~)
+    |  mov SSTRUCT:RB, [BASE+RB*8]
+    |  not RC
+    |  mov STR:RC, [KBASE+RC*8]
+    |  checkstruct SSTRUCT:RB, ->vmeta_tgets
+    |  // Call C helper: bc_struct_getfield(L, GCstruct*, GCstr*, TValue*, BCIns*)
+    |  lea CARG4, [BASE+RA*8]        // TValue * dest (preserve before BASE is clobbered)
+    |  mov L:CARG1, SAVE_L
+    |  mov L:CARG1->base, BASE       // Save BASE to L->base
+    |  mov CARG2, SSTRUCT:RB         // GCstruct * (with type tag)
+    |  cleartp CARG2                 // Clear type tag for pointer
+    |  mov CARG3, STR:RC             // GCstr *
+    |  mov L:RB, L:CARG1             // Save L to RB for restoring BASE
+    |.if X64WIN
+    |  lea rax, [PC-8]
+    |  mov ARG5, rax                 // 5th arg: BCIns * (current instruction for IC)
+    |.else
+    |  lea CARG5, [PC-8]             // 5th arg: BCIns * (current instruction for IC)
+    |.endif
+    |  mov SAVE_PC, PC
+    |  call extern bc_struct_getfield
+    |  mov BASE, L:RB->base          // Restore BASE from L->base
+    |  ins_next
+    break;
+
+  case BC_STSETF:
+    |  ins_ABC // RA = value, RB = struct, RC = str const (~)
+    |  mov SSTRUCT:RB, [BASE+RB*8]
+    |  not RC
+    |  mov STR:RC, [KBASE+RC*8]
+    |  checkstruct SSTRUCT:RB, ->vmeta_tsets
+    |  // Call C helper: bc_struct_setfield(L, GCstruct*, GCstr*, TValue*, BCIns*)
+    |.if X64WIN
+    |  // Windows x64: RCX, RDX, R8, R9, [rsp+32]. Caveat: CARG2 == BASE.
+    |  lea CARG4, [BASE+RA*8]        // TValue * value (compute before BASE is clobbered)
+    |  mov L:CARG1, SAVE_L
+    |  mov L:CARG1->base, BASE       // Save BASE to L->base
+    |  mov CARG2, SSTRUCT:RB         // GCstruct * (with type tag)
+    |  cleartp CARG2                 // Clear type tag for pointer
+    |  mov CARG3, STR:RC             // GCstr *
+    |  mov L:RB, L:CARG1             // Save L to RB for restoring BASE
+    |  lea rax, [PC-8]
+    |  mov ARG5, rax                 // 5th arg: BCIns * (current instruction for IC)
+    |.else
+    |  // SysV x64: RDI, RSI, RDX, RCX, R8. Caveat: CARG3 == BASE.
+    |  mov L:CARG1, SAVE_L
+    |  mov L:CARG1->base, BASE       // Save BASE to L->base
+    |  mov CARG2, SSTRUCT:RB         // GCstruct * (with type tag)
+    |  cleartp CARG2                 // Clear type tag for pointer
+    |  lea CARG4, [BASE+RA*8]        // TValue * value (after BASE used)
+    |  mov CARG3, STR:RC             // GCstr *
+    |  lea CARG5, [PC-8]             // 5th arg: BCIns * (current instruction for IC)
+    |  mov L:RB, L:CARG1             // Save L to RB for restoring BASE
+    |.endif
+    |  mov SAVE_PC, PC
+    |  call extern bc_struct_setfield
+    |  mov BASE, L:RB->base          // Restore BASE from L->base
+    |  ins_next
     break;
 
   //  -- Array ops ---------------------------------------------------------

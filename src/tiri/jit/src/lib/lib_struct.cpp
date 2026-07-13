@@ -289,24 +289,18 @@ static int struct_struct_size(lua_State *L)
    return 1;
 }
 
+void lj_struct_push_size_closure(lua_State *L, GCstruct *Struct)
+{
+   setstructV(L, L->top, Struct);
+   incr_top(L);
+   lua_pushcclosure(L, &struct_struct_size, 1);
+}
+
 static int struct_len(lua_State *L)
 {
    auto *value = lj_lib_checkstruct(L, 1);
    lua_pushnumber(L, value->def->Fields.size());
    return 1;
-}
-
-// Lifecycle staleness guard for interpreted struct accesses.  The check applies only to structs that carry a
-// dependency on a Kotuku object's lifecycle (STRUCT_LIFECYCLE); all other structs pass through untouched.  A JIT
-// fast path for struct fields would follow the same rule, compiling the guard out entirely when the struct has no
-// lifecycle dependency (struct accesses currently always take this interpreted route).
-
-static void check_lifecycle(lua_State *L, GCstruct *Struct, CSTRING FieldName)
-{
-   if (lj_struct_stale(Struct)) {
-      luaL_error(L, ERR::DoesNotExist, "Cannot access field '%s'; the object providing this struct has been destroyed.",
-         FieldName);
-   }
 }
 
 static int struct_next_pair(lua_State *L)
@@ -316,7 +310,7 @@ static int struct_next_pair(lua_State *L)
    if (field_index < 0 or field_index >= int(value->def->Fields.size())) return 0;
 
    auto &field = value->def->Fields[field_index];
-   check_lifecycle(L, value, field.Name.c_str());
+   lj_struct_check_lifecycle(L, value, field.Name.c_str());
    lua_pushinteger(L, field_index + 1);
    lua_replace(L, lua_upvalueindex(2));
    lua_pushstring(L, field.Name);
@@ -342,16 +336,100 @@ static int struct_tostring(lua_State *L)
    return 1;
 }
 
+void lj_struct_getfield_core(lua_State *L, GCstruct *Struct, struct_field &Field, APTR Address)
+{
+   int array_size = (not Field.ArraySize) ? -1 : Field.ArraySize;
+
+   if ((Field.Type & FD_CPP) and (Field.Type & FD_ARRAY) and (not Field.StructRef.empty()) and
+         (not (Field.Type & FD_PTR))) {
+      auto vector = (kt::vector<int> *)Address;
+      make_struct_serial_array(L, Field.StructRef, vector->size(), vector->data());
+   }
+   else if ((Field.Type & FD_STRUCT) and (Field.Type & FD_PTR) and (not Field.StructRef.empty())) {
+      if (((APTR *)Address)[0]) {
+         if (Field.Type & FD_ARRAY) {
+            if (Field.Type & FD_CPP) {
+               auto vector = (kt::vector<int> *)Address;
+               lua_createarray(L, vector->size(), ff_to_element(Field.Type), (APTR *)vector->data(), ARRAY_CACHED,
+                  Field.StructRef);
+            }
+            else lua_createarray(L, array_size, ff_to_element(Field.Type), (APTR *)Address, ARRAY_CACHED,
+               Field.StructRef);
+         }
+         else if (not push_external_struct(L, ((APTR *)Address)[0], Field.StructRef, Struct->lifecycle)) {
+            luaL_error(L, ERR::Search, "Failed to find struct '%s'", Field.StructRef.c_str());
+         }
+      }
+      else lua_pushnil(L);
+   }
+   else if ((Field.Type & FD_STRUCT) and (Field.Type & FD_ARRAY)) {
+      if (Field.Type & FD_CPP) {
+         auto vector = (kt::vector<int> *)Address;
+         make_any_array(L, Field.Type, Field.StructRef, vector->size(), vector->data());
+      }
+      else make_struct_array(L, Field.StructRef, array_size, Address);
+   }
+   else if ((Field.Type & FD_CPP) and (Field.Type & FD_ARRAY) and (not (Field.Type & FD_STRING))) {
+      if (Field.Type & FD_FLOAT) push_vector_array<float>(L, Address, AET::FLOAT);
+      else if (Field.Type & FD_DOUBLE) push_vector_array<double>(L, Address, AET::DOUBLE);
+      else if (Field.Type & FD_INT64) push_vector_array<int64_t>(L, Address, AET::INT64);
+      else if (Field.Type & FD_INT) push_vector_array<int>(L, Address, AET::INT32);
+      else if (Field.Type & FD_WORD) push_vector_array<int16_t>(L, Address, AET::INT16);
+      else if (Field.Type & FD_BYTE) push_vector_array<uint8_t>(L, Address, AET::BYTE);
+      else luaL_error(L, ERR::NoSupport, "Vector field '%s' uses an unsupported element type.", Field.Name.c_str());
+   }
+   else if (Field.Type & FD_STRUCT) {
+      GCstruct *parent = nullptr;
+      if (not Struct->is_lifecycle_bound()) {
+         if (Struct->is_external()) {
+            if (gcref(Struct->parent)) parent = structref(Struct->parent);
+         }
+         else parent = Struct;
+      }
+      if (not push_external_struct(L, Address, Field.StructRef, Struct->lifecycle, parent)) {
+         luaL_error(L, ERR::Search, "Failed to find struct '%s'", Field.StructRef.c_str());
+      }
+   }
+   else if (Field.Type & FD_STRING) {
+      if (Field.Type & FD_ARRAY) {
+         if (Field.Type & FD_CPP) {
+            auto vector = (kt::vector<std::string> *)Address;
+            lua_createarray(L, vector->size(), AET::STR_CPP, vector, ARRAY_CACHED);
+         }
+         else lua_createarray(L, array_size, AET::CSTR, (APTR *)Address, ARRAY_CACHED);
+      }
+      else if (Field.Type & FD_CPP) lua_pushstring(L, *((std::string *)Address));
+      else lua_pushstring(L, ((STRING *)Address)[0]);
+   }
+   else if (Field.Type & FD_OBJECT) {
+      if (auto object = ((OBJECTPTR *)Address)[0]) push_object(L, object);
+      else lua_pushnil(L);
+   }
+   else if (Field.Type & FD_POINTER) {
+      if (((APTR *)Address)[0]) lua_pushlightuserdata(L, ((APTR *)Address)[0]);
+      else lua_pushnil(L);
+   }
+   else if (Field.Type & FD_FUNCTION) lua_pushnil(L);
+   else if (read_primitive_field(L, Address, Field.Type, array_size));
+   else luaL_error(L, ERR::InvalidType,
+      std::format("Field '{}' does not use a supported type of {:x}", Field.Name, Field.Type));
+}
+
+void lj_struct_setfield_core(lua_State *L, GCstruct *, struct_field &Field, APTR Address)
+{
+   write_field(L, Address, Field, -1, Field.Name.c_str());
+   lua_pop(L, 1);
+}
+
 static int struct_get(lua_State *L)
 {
    auto *value = lj_lib_checkstruct(L, 1);
    auto field_name = luaL_checkstring(L, 2);
    if (std::string_view("structSize") IS field_name) {
-      lua_pushvalue(L, 1);
-      lua_pushcclosure(L, &struct_struct_size, 1);
+      lj_struct_push_size_closure(L, value);
       return 1;
    }
-   check_lifecycle(L, value, field_name);
+   lj_struct_check_lifecycle(L, value, field_name);
    if (not value->data) {
       luaL_error(L, ERR::Failed, "Cannot reference field '%s' because struct address is NULL.", field_name);
    }
@@ -359,81 +437,7 @@ static int struct_get(lua_State *L)
    if (auto field_opt = find_field(value, field_name)) {
       auto &field = field_opt->get();
       APTR address = (int8_t *)value->data + field.Offset;
-      int array_size = (not field.ArraySize) ? -1 : field.ArraySize;
-
-      if ((field.Type & FD_CPP) and (field.Type & FD_ARRAY) and (not field.StructRef.empty()) and
-            (not (field.Type & FD_PTR))) {
-         auto vector = (kt::vector<int> *)address;
-         make_struct_serial_array(L, field.StructRef, vector->size(), vector->data());
-      }
-      else if ((field.Type & FD_STRUCT) and (field.Type & FD_PTR) and (not field.StructRef.empty())) {
-         if (((APTR *)address)[0]) {
-            if (field.Type & FD_ARRAY) {
-               if (field.Type & FD_CPP) {
-                  auto vector = (kt::vector<int> *)address;
-                  lua_createarray(L, vector->size(), ff_to_element(field.Type), (APTR *)vector->data(), ARRAY_CACHED,
-                     field.StructRef);
-               }
-               else lua_createarray(L, array_size, ff_to_element(field.Type), (APTR *)address, ARRAY_CACHED,
-                  field.StructRef);
-            }
-            else if (not push_external_struct(L, ((APTR *)address)[0], field.StructRef, value->lifecycle)) {
-               luaL_error(L, ERR::Search, "Failed to find struct '%s'", field.StructRef.c_str());
-            }
-         }
-         else lua_pushnil(L);
-      }
-      else if ((field.Type & FD_STRUCT) and (field.Type & FD_ARRAY)) {
-         if (field.Type & FD_CPP) {
-            auto vector = (kt::vector<int> *)address;
-            make_any_array(L, field.Type, field.StructRef, vector->size(), vector->data());
-         }
-         else make_struct_array(L, field.StructRef, array_size, address);
-      }
-      else if ((field.Type & FD_CPP) and (field.Type & FD_ARRAY) and (not (field.Type & FD_STRING))) {
-         if (field.Type & FD_FLOAT) push_vector_array<float>(L, address, AET::FLOAT);
-         else if (field.Type & FD_DOUBLE) push_vector_array<double>(L, address, AET::DOUBLE);
-         else if (field.Type & FD_INT64) push_vector_array<int64_t>(L, address, AET::INT64);
-         else if (field.Type & FD_INT) push_vector_array<int>(L, address, AET::INT32);
-         else if (field.Type & FD_WORD) push_vector_array<int16_t>(L, address, AET::INT16);
-         else if (field.Type & FD_BYTE) push_vector_array<uint8_t>(L, address, AET::BYTE);
-         else luaL_error(L, ERR::NoSupport, "Vector field '%s' uses an unsupported element type.", field_name);
-      }
-      else if (field.Type & FD_STRUCT) {
-         GCstruct *parent = nullptr;
-         if (not value->is_lifecycle_bound()) {
-            if (value->is_external()) {
-               if (gcref(value->parent)) parent = structref(value->parent);
-            }
-            else parent = value;
-         }
-         if (not push_external_struct(L, address, field.StructRef, value->lifecycle, parent)) {
-            luaL_error(L, ERR::Search, "Failed to find struct '%s'", field.StructRef.c_str());
-         }
-      }
-      else if (field.Type & FD_STRING) {
-         if (field.Type & FD_ARRAY) {
-            if (field.Type & FD_CPP) {
-               auto vector = (kt::vector<std::string> *)address;
-               lua_createarray(L, vector->size(), AET::STR_CPP, vector, ARRAY_CACHED);
-            }
-            else lua_createarray(L, array_size, AET::CSTR, (APTR *)address, ARRAY_CACHED);
-         }
-         else if (field.Type & FD_CPP) lua_pushstring(L, *((std::string *)address));
-         else lua_pushstring(L, ((STRING *)address)[0]);
-      }
-      else if (field.Type & FD_OBJECT) {
-         if (auto object = ((OBJECTPTR *)address)[0]) push_object(L, object);
-         else lua_pushnil(L);
-      }
-      else if (field.Type & FD_POINTER) {
-         if (((APTR *)address)[0]) lua_pushlightuserdata(L, ((APTR *)address)[0]);
-         else lua_pushnil(L);
-      }
-      else if (field.Type & FD_FUNCTION) lua_pushnil(L);
-      else if (read_primitive_field(L, address, field.Type, array_size));
-      else luaL_error(L, ERR::InvalidType,
-         std::format("Field '{}' does not use a supported type of {:x}", field_name, field.Type));
+      lj_struct_getfield_core(L, value, field, address);
       return 1;
    }
    luaL_error(L, ERR::FieldNotFound, "Field '%s' does not exist in structure.", field_name);
@@ -444,13 +448,14 @@ static int struct_set(lua_State *L)
 {
    auto *value = lj_lib_checkstruct(L, 1);
    auto field_name = luaL_checkstring(L, 2);
-   check_lifecycle(L, value, field_name);
+   lj_struct_check_lifecycle(L, value, field_name);
    if (not value->data) luaL_error(L, "Cannot reference field '%s' because struct address is NULL.", field_name);
 
    if (auto field_opt = find_field(value, field_name)) {
       auto &field = field_opt->get();
       APTR address = (int8_t *)value->data + field.Offset;
-      write_field(L, address, field, 3, field_name);
+      lua_pushvalue(L, 3);
+      lj_struct_setfield_core(L, value, field, address);
       return 0;
    }
    luaL_error(L, "Invalid field reference '%s'", field_name);
@@ -460,8 +465,8 @@ static int struct_set(lua_State *L)
 static void copy_struct_payload(lua_State *L, GCstruct *Dest, GCstruct *Source)
 {
    if (Dest->def != Source->def) luaL_error(L, ERR::Mismatch, "Struct definitions must match for copying.");
-   check_lifecycle(L, Dest, "copy destination");
-   check_lifecycle(L, Source, "copy source");
+   lj_struct_check_lifecycle(L, Dest, "copy destination");
+   lj_struct_check_lifecycle(L, Source, "copy source");
    if ((not Dest->data) or (not Source->data)) luaL_error(L, ERR::Failed, "Cannot copy a null struct payload.");
    if (Dest->data IS Source->data) return;
    if (struct_has_unsupported_cpp_arrays(*Dest->def)) {
@@ -493,7 +498,7 @@ LJLIB_CF(struct_copy)
 LJLIB_CF(struct_clone)
 {
    auto source = lj_lib_checkstruct(L, 1);
-   check_lifecycle(L, source, "clone source");
+   lj_struct_check_lifecycle(L, source, "clone source");
    if (struct_has_unsupported_cpp_arrays(*source->def)) {
       luaL_error(L, ERR::NoSupport, "Struct clone encountered an unsupported C++ array field type.");
    }

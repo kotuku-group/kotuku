@@ -6,9 +6,12 @@
 
 #include "lj_obj.h"
 #include "lj_gc.h"
+#include "lj_bc.h"
 #include "lj_struct.h"
+#include "lauxlib.h"
 
 #include <cstring>
+#include <string_view>
 #include <kotuku/main.h>
 #include <kotuku/modules/tiri.h>
 #include "../../defs.h"
@@ -113,4 +116,130 @@ bool lj_struct_stale(GCstruct *s)
    if (not s->lifecycle->terminating()) return false; // The lifecycle object is still pinned at this point
    s->data = nullptr;
    return true;
+}
+
+//********************************************************************************************************************
+// Guard access to a struct view whose payload is owned by a Kotuku object.
+
+void lj_struct_check_lifecycle(lua_State *L, GCstruct *Struct, const char *FieldName)
+{
+   if (lj_struct_stale(Struct)) {
+      luaL_error(L, ERR::DoesNotExist, "Cannot access field '%s'; the object providing this struct has been destroyed.",
+         FieldName);
+   }
+}
+
+//********************************************************************************************************************
+// Resolve a struct field and maintain the instruction's P32 inline cache.  Struct definitions are stable for the
+// lifetime of the Lua state, but the hash is checked on every hit so polymorphic access sites self-heal.
+
+static struct_field * find_cached_field(GCstruct *Struct, GCstr *Key, BCIns *Ins)
+{
+   if (not Struct->def) return nullptr;
+
+   auto &fields = Struct->def->Fields;
+   const auto field_hash = strihash(strdata(Key));
+   if (Ins) {
+      const uint32_t cached = bc_p32(*Ins);
+      if ((cached != 0xFFFFFFFFu) and (cached < fields.size()) and
+            (fields[cached].nameHash() IS field_hash)) return &fields[cached];
+   }
+
+   for (uint32_t i = 0; i < fields.size(); i++) {
+      if (fields[i].nameHash() IS field_hash) {
+         if (Ins) setbc_p32(Ins, i);
+         return &fields[i];
+      }
+   }
+   return nullptr;
+}
+
+//********************************************************************************************************************
+// Fast struct field get - called from BC_STGETF.  The field core pushes its result and this helper copies it directly
+// to Dest before restoring the interpreter's stack pointers.
+
+extern "C" void bc_struct_getfield(lua_State *L, GCstruct *Struct, GCstr *Key, TValue *Dest, BCIns *Ins)
+{
+   const auto saved_base = L->base;
+   const auto saved_top = L->top;
+
+   if (not Ins) {
+      auto jit_base = tvref(G(L)->jit_base);
+      if (jit_base) L->base = jit_base;
+   }
+   if (curr_funcisL(L)) L->top = curr_topL(L);
+
+   const auto field_name = strdata(Key);
+   if (std::string_view("structSize") IS field_name) {
+      lj_struct_push_size_closure(L, Struct);
+      copyTV(L, Dest, L->top - 1);
+      L->base = saved_base;
+      L->top = saved_top;
+      return;
+   }
+
+   lj_struct_check_lifecycle(L, Struct, field_name);
+   if (not Struct->data) {
+      luaL_error(L, ERR::Failed, "Cannot reference field '%s' because struct address is NULL.", field_name);
+   }
+
+   if (auto field = find_cached_field(Struct, Key, Ins)) {
+      auto address = (int8_t *)Struct->data + field->Offset;
+      lj_struct_getfield_core(L, Struct, *field, address);
+      copyTV(L, Dest, L->top - 1);
+      L->base = saved_base;
+      L->top = saved_top;
+      return;
+   }
+
+   luaL_error(L, ERR::FieldNotFound, "Field '%s' does not exist in structure.", field_name);
+}
+
+//********************************************************************************************************************
+// Fast struct field set - called from BC_STSETF.  A protected copy of Val is placed at the top of the Lua stack before
+// any operation can allocate or raise, and the shared field core consumes that value.
+
+extern "C" void bc_struct_setfield(lua_State *L, GCstruct *Struct, GCstr *Key, TValue *Val, BCIns *Ins)
+{
+   const auto saved_base = L->base;
+   const auto saved_top = L->top;
+
+   if (not Ins) {
+      auto jit_base = tvref(G(L)->jit_base);
+      if (jit_base) L->base = jit_base;
+   }
+   if (curr_funcisL(L)) L->top = curr_topL(L);
+
+   // Ensure L->top is past the value register before any error can be thrown. luaL_error pushes its error string at
+   // L->top, so a stale top could overwrite the value or another active VM register.
+   const auto stack_base = tvref(L->stack);
+   const auto stack_end = stack_base + L->stacksize;
+   auto val_ptr = Val;
+   if ((Val < stack_base) or (Val >= stack_end)) {
+      copyTV(L, L->top, Val);
+      val_ptr = L->top;
+      L->top++;
+   }
+   else if (L->top <= Val) L->top = Val + 1;
+
+   // The shared setter core consumes its value from the stack top. Avoid a second copy when the protection step
+   // already placed the value there.
+   if (val_ptr != L->top - 1) {
+      copyTV(L, L->top, val_ptr);
+      L->top++;
+   }
+
+   const auto field_name = strdata(Key);
+   lj_struct_check_lifecycle(L, Struct, field_name);
+   if (not Struct->data) luaL_error(L, "Cannot reference field '%s' because struct address is NULL.", field_name);
+
+   if (auto field = find_cached_field(Struct, Key, Ins)) {
+      auto address = (int8_t *)Struct->data + field->Offset;
+      lj_struct_setfield_core(L, Struct, *field, address);
+      L->base = saved_base;
+      L->top = saved_top;
+      return;
+   }
+
+   luaL_error(L, "Invalid field reference '%s'", field_name);
 }

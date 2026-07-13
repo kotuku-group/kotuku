@@ -9,7 +9,7 @@ function max_call_c_operand(Func)
 
    for pc = 0, info.byteCodes - 1 do
       local ins = jit.util.funcBC(Func, pc)
-      if ins != nil and (ins & 255) is 76 then
+      if ins != nil and (ins & 255) is 78 then
          local operand_count = (ins >> 16) & 255
          if largest is nil then
             largest = operand_count

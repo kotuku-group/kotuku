@@ -214,3 +214,115 @@ end
       error('Copying mismatched struct definitions should fail')
    end
 end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Exercise scalar FD_* reads and writes through a value inferred as the native struct type.
+
+@Test function FastScalarFieldCategories()
+   MAKESTRUCT('FastScalarFields', 'fFloat,dDouble,xWide,lInteger,wWord,bByte,cText[8],pPointer,rCallback')
+   local value = struct.new('FastScalarFields')
+
+   value.float = 1.25
+   value.double = 2.5
+   value.wide = 9007199
+   value.integer = 12345
+   value.word = 2345
+   value.byte = 231
+   value.text = array.new('fast')
+   value.pointer = nil
+
+   assert(value.float is 1.25, 'FD_FLOAT should round-trip through STSETF/STGETF')
+   assert(value.double is 2.5, 'FD_DOUBLE should round-trip through STSETF/STGETF')
+   assert(value.wide is 9007199, 'FD_INT64 should round-trip through STSETF/STGETF')
+   assert(value.integer is 12345, 'FD_INT should round-trip through STSETF/STGETF')
+   assert(value.word is 2345, 'FD_WORD should round-trip through STSETF/STGETF')
+   assert(value.byte is 231, 'FD_BYTE should round-trip through STSETF/STGETF')
+   assert(value.text is 'fast', 'FD_CUSTOM byte arrays should continue to read as strings')
+   assert(value.pointer is nil, 'A null FD_POINTER should read as nil')
+   assert(value.callback is nil, 'FD_FUNCTION fields should continue to read as nil')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Repeated and polymorphic annotated access exercises the P32 field-index cache, including self-healing when the
+-- field occupies a different index in each definition.
+
+function set_annotated_struct_field(Value:struct, NewValue:num):num
+   Value.value = NewValue
+   return Value.value
+end
+
+@Test function FastAnnotatedAndPolymorphicAccess()
+   MAKESTRUCT('FastCacheFirst', 'lValue,lOther')
+   MAKESTRUCT('FastCacheSecond', 'lPrefix,lValue')
+
+   local first = struct.new('FastCacheFirst')
+   local second = struct.new('FastCacheSecond')
+
+   for i = 1, 4 do
+      assert(set_annotated_struct_field(first, i) is i, 'Repeated annotated access should retain the first layout')
+      assert(set_annotated_struct_field(second, i * 10) is i * 10,
+         'A polymorphic cache site should resolve the second layout')
+   end
+
+   assert(first.value is 4, 'The first polymorphic struct should retain its final value')
+   assert(second.value is 40, 'The second polymorphic struct should retain its final value')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- A struct annotation is a parser optimisation hint, not a replacement for runtime type dispatch. Non-struct values
+-- must still fall back to the normal table metamethod path in the VM.
+
+function access_annotated_fallback(Value:struct):num
+   Value.value = 73
+   return Value.value
+end
+
+@Test function AnnotatedStructFallbackUsesTablePath()
+   local value = {}
+   local call = { access_annotated_fallback }
+   assert(call[0](value) is 73, 'A table at a struct-typed access site should use vmeta fallback')
+   assert(value.value is 73, 'The fallback setter should update the table')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function FastFieldErrorsAndHelpers()
+   MAKESTRUCT('FastFieldErrors', 'lValue')
+   local value = struct.new('FastFieldErrors')
+
+   try
+      local missing = value.unknown
+      assert(missing is nil, 'Unknown struct field access should not return normally')
+   success
+      error('Unknown struct field access should raise through STGETF')
+   end
+
+   try
+      value.unknown = 1
+   success
+      error('Unknown struct field assignment should raise through STSETF')
+   end
+
+   assert(value.structSize() > 0, 'structSize() should continue to resolve through the struct metatable')
+   assert(#value is 1, 'Struct length should remain the number of declared fields')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function FastFieldBytecodeDisassembly()
+   MAKESTRUCT('FastFieldDisassembly', 'lValue')
+
+   function capture_struct_disassembly()
+      local value = struct.new('FastFieldDisassembly')
+      value.value = 19
+      local result = value.value
+      local err, disassembly = glSelf.mtDebugLog('disasm')
+      assert(result is 19, 'Disassembly probe should keep the fast field read live')
+      return err, disassembly
+   end
+
+   local err, disassembly = capture_struct_disassembly()
+   assert(err is ERR_Okay, 'Struct disassembly probe should succeed')
+   assert(string.find(disassembly, 'STGETF'), 'Known struct reads should emit STGETF')
+   assert(string.find(disassembly, 'STSETF'), 'Known struct writes should emit STSETF')
+end

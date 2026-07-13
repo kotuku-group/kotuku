@@ -678,10 +678,11 @@ ExprNodePtr make_pipe_expr(SourceSpan Span, ExprNodePtr lhs, ExprNodePtr rhs_cal
 }
 
 //********************************************************************************************************************
-// Helper to detect obj.new("classname", ...) pattern and extract class information.
-// Returns true if the pattern is detected and sets result_type and object_class_id.
+// Helper to detect obj.new("classname", ...) and struct.new("definition", ...) constructor calls. Returns true if a
+// known constructor is detected and sets result_type; object constructors also set object_class_id.
 
-static bool detect_obj_new_call(const ExprNode &Callee, const ExprNodeList &Arguments, TiriType &ResultType, CLASSID &ClassID)
+static bool detect_constructor_call(const ExprNode &Callee, const ExprNodeList &Arguments, TiriType &ResultType,
+   CLASSID &ClassID)
 {
    // Pattern: obj.new("classname", ...) where callee is MemberExpr(obj, "new")
    if (Callee.kind != AstNodeKind::MemberExpr) return false;
@@ -692,12 +693,18 @@ static bool detect_obj_new_call(const ExprNode &Callee, const ExprNodeList &Argu
    if (not member_payload.member.symbol) return false;
    if (strcmp(strdata(member_payload.member.symbol), "new") != 0) return false;
 
-   // Check if table is identifier "obj"
+   // Check if the constructor interface is a simple identifier.
    if (not member_payload.table) return false;
    if (member_payload.table->kind != AstNodeKind::IdentifierExpr) return false;
 
    const auto& name_ref = std::get<NameRef>(member_payload.table->data);
    if (not name_ref.identifier.symbol) return false;
+
+   if (strcmp(strdata(name_ref.identifier.symbol), "struct") IS 0) {
+      ResultType = TiriType::Struct;
+      return true;
+   }
+
    if (strcmp(strdata(name_ref.identifier.symbol), "obj") != 0) return false;
 
    ResultType = TiriType::Object; // obj.new() always returns an Object
@@ -730,8 +737,8 @@ ExprNodePtr make_call_expr(SourceSpan Span, ExprNodePtr callee, ExprNodeList arg
    assert_node(ensure_operand(callee), "call expression requires callee");
    CallExprPayload payload;
 
-   // Detect obj.new("classname", ...) pattern before moving callee
-   detect_obj_new_call(*callee, arguments, payload.result_type, payload.object_class_id);
+   // Detect known constructor calls before moving callee.
+   detect_constructor_call(*callee, arguments, payload.result_type, payload.object_class_id);
 
    // Mark MemberExpr/SafeMemberExpr callees as call targets so type-checking can be deferred to runtime
    if (callee->kind IS AstNodeKind::MemberExpr) {

@@ -2572,6 +2572,10 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
          // If is_call_target is true, skip type checking and let runtime handle the method/action call
       }
    }
+   else if (Payload.base_type IS TiriType::Struct or emitted_base_type IS TiriType::Struct) {
+      table.result_type = TiriType::Struct;
+      if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) table.k = ExpKind::IndexedStruct;
+   }
    else {
       // Reset result_type so the base type does not leak into downstream chained expressions.
       // E.g. arr[1].list should not propagate Array type from arr — .list returns whatever it holds.
@@ -2633,6 +2637,11 @@ ParserResult<ExpDesc> IrEmitter::emit_index_expr(const IndexExprPayload &Payload
       // (aux < 0 means string const key)
       if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
          table.k = ExpKind::IndexedObject;
+      }
+   }
+   else if (Payload.base_type IS TiriType::Struct or emitted_base_type IS TiriType::Struct) {
+      if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+         table.k = ExpKind::IndexedStruct;
       }
    }
 
