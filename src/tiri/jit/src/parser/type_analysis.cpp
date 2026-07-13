@@ -790,10 +790,10 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
          else is_const = this->is_local_const(name);
 
          if (not existing) {
-            // The name is neither a local nor a known global.  A plain assignment to a name that follows the
-            // global naming convention (or that already exists in the environment table) creates a global at
-            // runtime, so record an implicit global type for it.  Only simple '=' assignments are used for
-            // inference; compound operators require an existing value and never create a global.
+            // The name is neither a local nor a known global.  A plain assignment to a name that already exists in
+            // the environment table updates that global at runtime, so record an implicit global type for it.  Only
+            // simple '=' assignments are used for inference; compound operators require an existing value and never
+            // create a global.
             if (Payload.op IS AssignmentOperator::Plain and i < Payload.values.size()) {
                this->declare_implicit_global(name, Payload.values[i].get(), target.span);
             }
@@ -1901,34 +1901,17 @@ void TypeAnalyser::declare_global_function(GCstr *Name, const FunctionExprPayloa
    this->trace_decl(this->ctx_.lex().linenumber, Name, TiriType::Func, true);
 }
 
-// Checks whether an undeclared assignment target will become a global at runtime.  This mirrors the promotion
-// logic in IrEmitter::emit_identifier_expr(): names following the global naming convention ('gl[A-Z]...' or
-// 'm[A-Z]...') and names already present in the environment table store globally; anything else creates a local.
-
-[[nodiscard]] static bool type_name_is_conventional_global(GCstr *Name)
-{
-   if (not Name) return false;
-
-   std::string_view name(strdata(Name), Name->len);
-   if (name.size() >= 3 and name[0] IS 'g' and name[1] IS 'l' and name[2] >= 'A' and name[2] <= 'Z') return true;
-   if (name.size() >= 2 and name[0] IS 'm' and name[1] >= 'A' and name[1] <= 'Z') return true;
-   return false;
-}
-
-// Records a global created implicitly through plain assignment (e.g. glValue = struct.new('Record')).  The
-// inferred type is advisory only: conflicting later assignments degrade it to 'any' instead of diagnosing, since
-// implicit globals carry no user-declared type contract.
+// Records a pre-existing environment global updated through plain assignment.  The inferred type is advisory only:
+// conflicting later assignments degrade it to 'any' instead of diagnosing, since the assignment carries no
+// user-declared type contract.
 
 void TypeAnalyser::declare_implicit_global(GCstr *Name, const ExprNode *Value, SourceSpan Location)
 {
    if (not Name or not Value) return;
    if ((Name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) return;
 
-   bool is_global_store = type_name_is_conventional_global(Name);
-   if (not is_global_store) {
-      cTValue *global = lj_tab_getstr(tabref(this->ctx_.lua().env), Name);
-      is_global_store = (global != nullptr) and not tvisnil(global);
-   }
+   cTValue *global = lj_tab_getstr(tabref(this->ctx_.lua().env), Name);
+   bool is_global_store = (global != nullptr) and not tvisnil(global);
    if (not is_global_store) return;  // Plain assignment to this name creates a local, not a global
 
    InferredType inferred = this->infer_expression_type(*Value);

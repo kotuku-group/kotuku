@@ -273,6 +273,28 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+-- Naming conventions are hints only and must not override local-by-default assignment semantics.
+
+@Test(hotpath=true) function GlobalStylePrefixesStillCreateLocals()
+   glPrefixedLocal = 'gl hint'
+   mPrefixedLocal = 'module hint'
+
+   assert(debug.locality('glPrefixedLocal') is 'local', 'gl prefix must not promote a plain assignment to global')
+   assert(debug.locality('mPrefixedLocal') is 'local', 'm prefix must not promote a plain assignment to global')
+end
+
+@Test function GlobalStylePrefixAtTopLevelStillCreatesLocal()
+   local script = obj.new('tiri', { statement = [[
+glTopLevelLocal = 'gl hint'
+assert(debug.locality('glTopLevelLocal') is 'local', 'gl prefix must remain local at the top level')
+assert(_G.glTopLevelLocal is nil, 'plain assignment must not publish a gl-prefixed name globally')
+]] })
+
+   local err = script.acActivate()
+   assert(err is ERR_Okay, 'Top-level gl-prefixed local should activate: ' .. tostring(script.errorMessage))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 -- Test that if-empty assignment (??=) works on undeclared variables
 -- An undeclared variable is effectively nil, so ??= should assign and create a local
 

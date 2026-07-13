@@ -316,7 +316,7 @@ end
       local value = struct.new('FastFieldDisassembly')
       value.value = 19
       local result = value.value
-      local err, disassembly = glSelf.mtDebugLog('disasm')
+      local err, disassembly = obj.find('self').mtDebugLog('disasm')
       assert(result is 19, 'Disassembly probe should keep the fast field read live')
       return err, disassembly
    end

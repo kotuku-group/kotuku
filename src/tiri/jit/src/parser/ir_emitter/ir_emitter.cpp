@@ -1861,7 +1861,9 @@ ParserResult<ExpDesc> IrEmitter::emit_identifier_expr(const NameRef& reference, 
          if (global and not tvisnil(global)) {
             resolved.k = ExpKind::Global;
          }
-         else if (is_named_external_global(reference.identifier.symbol)) {
+         else if (not AllowUnscoped and is_named_external_global(reference.identifier.symbol)) {
+            // Naming conventions can hint that an unresolved read refers to an external global, but assignment
+            // targets must remain unscoped so the local-by-default path can create a local variable.
             resolved.k = ExpKind::Global;
          }
       }
