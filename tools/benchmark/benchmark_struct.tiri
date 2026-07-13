@@ -2,6 +2,8 @@
 
    MAKESTRUCT('BenchmarkStruct', 'lInteger,xWide,fFloat,dDouble')
 
+   MAKESTRUCT('BenchmarkNarrowStruct', 'wWord,bByte,uwUnsignedWord,ucUnsignedByte')
+
    MAKESTRUCT('LargeLookupRecord', 'lZulu,lAlpha,lMike,lBravo,lYankee,lCharlie,lXray,lDelta,lWhiskey,lEcho,lVictor,lFoxtrot')
 
 glMaterialise = 0
@@ -11,6 +13,13 @@ glBenchmarkStruct = struct.new('BenchmarkStruct', {
    wide    = 2,
    float   = 3.5,
    double  = 4.5
+})
+
+glBenchmarkNarrowStruct = struct.new('BenchmarkNarrowStruct', {
+   word         = -123,
+   byte         = 250,
+   unsignedWord = 321,
+   unsignedByte = 200
 })
 
 glLargeStruct = struct.new('LargeLookupRecord')
@@ -36,14 +45,36 @@ end
    end
 end
 
+@Test function NarrowStructReadFields()
+   local count = 0
+   for i = 0,100000 do
+      local word          = glBenchmarkNarrowStruct.word
+      local byte          = glBenchmarkNarrowStruct.byte
+      local unsigned_word = glBenchmarkNarrowStruct.unsignedWord
+      local unsigned_byte = glBenchmarkNarrowStruct.unsignedByte
+      count += word + byte + unsigned_word + unsigned_byte
+   end
+   glMaterialise += count
+end
+
+@Test function NarrowStructWriteFields()
+   for i = 0,100000 do
+      glBenchmarkNarrowStruct.word         = -i
+      glBenchmarkNarrowStruct.byte         = i
+      glBenchmarkNarrowStruct.unsignedWord = i
+      glBenchmarkNarrowStruct.unsignedByte = i
+   end
+end
+
 @Test function LargeStructRW()
    local count = 0
    for i = 0,100000 do
-      glLargeStruct.zulu = 1
-      glLargeStruct.charlie = 6
-      glLargeStruct.foxtrot = 12
-      glLargeStruct.alpha = 120
-      glLargeStruct.mike = 21
+      glLargeStruct.zulu = i
+      glLargeStruct.charlie = i
+      glLargeStruct.foxtrot = i
+      glLargeStruct.alpha = i
+      glLargeStruct.mike = i
+      -- NB: The JIT may collapse away the reads - benchmark still valid though
       count += glLargeStruct.zulu + glLargeStruct.charlie + glLargeStruct.foxtrot
    end
    glMaterialise += count

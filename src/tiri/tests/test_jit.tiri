@@ -3,6 +3,7 @@
 local glCfg
 local ir_min <const> = 50  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
 local ir_max <const> = 51  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
+local ir_xload <const> = 70  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
 local ir_xstore <const> = 78  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
 local ir_bufput <const> = 86
 local ir_bufstr <const> = 87
@@ -16,7 +17,10 @@ function SetupJitTests()
    jit.on()
    jit.opt.start()  -- Reset to default JIT options before starting tests.
    glCfg = obj.new('config', { flags=CNF_NEW })
-   MAKESTRUCT('JITStructNumericFields', 'lValue')
+   MAKESTRUCT('JITStructNumericFields',
+      'lValue,dRatio,xLarge,fSingle,fIntegral,wWord,bByte,uwUnsignedWord,ucUnsignedByte')
+   MAKESTRUCT('JITStructNumericFieldsAlt',
+      'lPadding,lValue,dRatio,xLarge,fSingle,fIntegral,wWord,bByte,uwUnsignedWord,ucUnsignedByte')
    MAKESTRUCT('JITStructTraceChild', 'lValue')
    MAKESTRUCT('JITStructComplexFields', 'zsName,lValues[2],eChild:JITStructTraceChild,oOwner')
 end
@@ -1274,44 +1278,110 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Test JIT recording of BC_STGETF and BC_STSETF through the helper-call fallback.
+-- Test inline JIT loads and stores for scalar struct fields.
 
-function traced_struct_numeric(Value:struct, Count:num):num
+function traced_struct_numeric_read(Value:struct, Count:num):num
    local total = 0
    for i = 1, Count do
-      Value.value = i
-      total += Value.value
+      total += Value.value + Value.ratio + Value.large + Value.single + Value.integral + Value.word + Value.byte +
+         Value.unsignedWord + Value.unsignedByte
    end
    return total
 end
 
+function traced_struct_numeric_write(Value:struct, Count:num)
+   for i = 1, Count do
+      Value.value = i + 0.75
+      Value.ratio = i + 0.5
+      Value.large = (i * 1000000) + 0.75
+      Value.single = i + 0.25
+      Value.integral = i
+      Value.word = -(i + 0.75)
+      Value.byte = i + 250.75
+      Value.unsignedWord = i + 65530.75
+      Value.unsignedByte = i + 250.75
+   end
+end
+
 @Test(hotpath=50) function JITStructNumericFieldAccess()
    local value = struct.new('JITStructNumericFields')
+   local alternate = struct.new('JITStructNumericFieldsAlt')
 
    jit.on()
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
 
-   local result = 0
    for i = 1, 20 do
-      result = traced_struct_numeric(value, 10)
+      traced_struct_numeric_write(value, 10)
    end
 
-   assert(result is 55, f"Expected traced struct sum 55, got {result}")
    assert(value.value is 10, f"Expected traced struct write to retain 10, got {value.value}")
+   assert(value.ratio is 10.5, f"Expected traced double write to retain 10.5, got {value.ratio}")
+   assert(value.large is 10000000, f"Expected traced int64 write to retain 10000000, got {value.large}")
+   assert(value.single is 10.25, f"Expected traced float write to retain 10.25, got {value.single}")
+   assert(value.integral is 10, f"Expected traced integer-to-float write to retain 10, got {value.integral}")
+   assert(value.word is -10, f"Expected traced word write to retain -10, got {value.word}")
+   assert(value.byte is 4, f"Expected traced byte write to wrap to 4, got {value.byte}")
+   assert(value.unsignedWord is 4,
+      f"Expected traced qualified word write to wrap to 4, got {value.unsignedWord}")
+   assert(value.unsignedByte is 4,
+      f"Expected traced qualified byte write to wrap to 4, got {value.unsignedByte}")
 
-   local trace_found = false
-   local helper_call_found = false
+   local store_trace_found = false
    for trace_no = 1, 30 do
       local info = jit.util.traceInfo(trace_no)
-      if info != nil then
-         trace_found = true
-         if count_trace_calls(trace_no, info) > 0 then helper_call_found = true end
+      if info != nil and count_trace_opcode(trace_no, info, ir_xstore) >= 9 then
+         store_trace_found = true
+         assert(count_trace_calls(trace_no, info) is 0,
+            "Expected scalar struct writes to avoid the helper-call fallback")
       end
    end
+   assert(store_trace_found, "Expected scalar struct writes to emit direct XSTORE instructions")
 
-   assert(trace_found is true, "Expected BC_STGETF/BC_STSETF to produce a JIT trace instead of aborting")
-   assert(helper_call_found is true, "Expected struct field recording to retain the helper-call fallback")
+   -- Reuse the compiled access sites with a different definition whose fields have different offsets.
+   for i = 1, 20 do
+      traced_struct_numeric_write(alternate, 10)
+   end
+   assert(alternate.padding is 0, "Expected the struct definition guard to preserve the alternate padding field")
+   assert(alternate.value is 10, f"Expected guarded alternate struct write to retain 10, got {alternate.value}")
+   assert(alternate.ratio is 10.5,
+      f"Expected guarded alternate double write to retain 10.5, got {alternate.ratio}")
+   assert(alternate.large is 10000000,
+      f"Expected guarded alternate int64 write to retain 10000000, got {alternate.large}")
+   assert(alternate.single is 10.25,
+      f"Expected guarded alternate float write to retain 10.25, got {alternate.single}")
+   assert(alternate.integral is 10,
+      f"Expected guarded alternate integer-to-float write to retain 10, got {alternate.integral}")
+   assert(alternate.word is -10,
+      f"Expected guarded alternate word write to retain -10, got {alternate.word}")
+   assert(alternate.byte is 4,
+      f"Expected guarded alternate byte write to wrap to 4, got {alternate.byte}")
+   assert(alternate.unsignedWord is 4,
+      f"Expected guarded alternate qualified word write to wrap to 4, got {alternate.unsignedWord}")
+   assert(alternate.unsignedByte is 4,
+      f"Expected guarded alternate qualified byte write to wrap to 4, got {alternate.unsignedByte}")
+
+   jit.flush()
+   local result = 0
+   for i = 1, 20 do
+      result = traced_struct_numeric_read(value, 10)
+   end
+   assert(result is 100000427.5, f"Expected traced scalar struct sum 100000427.5, got {result}")
+
+   local load_trace_found = false
+   for trace_no = 1, 30 do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil and count_trace_opcode(trace_no, info, ir_xload) >= 9 then
+         load_trace_found = true
+         assert(count_trace_calls(trace_no, info) is 0,
+            "Expected scalar struct reads to avoid the helper-call fallback")
+      end
+   end
+   assert(load_trace_found, "Expected scalar struct reads to emit direct XLOAD instructions")
+
+   local alternate_result = traced_struct_numeric_read(alternate, 10)
+   assert(alternate_result is result,
+      f"Expected guarded alternate struct read {result}, got {alternate_result}")
 end
 
 -----------------------------------------------------------------------------------------------------------------------
