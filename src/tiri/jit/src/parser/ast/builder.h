@@ -31,6 +31,8 @@ public:
    void commit_registered_enum_constants();
    void rollback_registered_enum_constants();
    void rollback_registered_enum_hierarchy();
+   void commit_registered_structs();
+   void rollback_registered_structs();
 
    [[nodiscard]] bool at_top_level() const { return function_depth IS 0 and block_depth IS 0; }
 
@@ -44,6 +46,7 @@ private:
    AstBuilder *parent_builder = nullptr;
    std::vector<GCstr *> function_name_stack;
    std::vector<uint32_t> registered_enum_constants;
+   std::vector<uint32_t> registered_structs;
    std::vector<uint32_t> chunk_import_hashes;  // Path hashes inlined during this compilation (root builder only)
 
    // FileSource entries persist across compilations, so diagnose-mode re-parsing of cached imports needs a
@@ -92,9 +95,12 @@ private:
    ParserResult<StmtNodePtr> parse_global();
    ParserResult<StmtNodePtr> parse_extern();
    ParserResult<StmtNodePtr> parse_enum(const Token &StartToken);
+   ParserResult<StmtNodePtr> parse_struct_declaration();
    ParserResult<int64_t> parse_enum_integer_literal();
    void track_registered_enum_constant(uint32_t Hash);
    void adopt_registered_enum_constants(AstBuilder &Child);
+   void adopt_registered_structs(AstBuilder &Child);
+   void track_registered_struct(uint32_t Key);
    ParserResult<StmtNodePtr> parse_function_stmt();
    ParserResult<StmtNodePtr> parse_annotated_statement();
    ParserResult<std::vector<AnnotationEntry>> parse_annotations();
@@ -147,6 +153,7 @@ private:
    }
 
    ParserResult<ParameterListResult> parse_parameter_list(bool);
+   ParserResult<Token> parse_type_annotation(TiriType &Type, struct_record *&StructDef);
    ParserResult<std::vector<TableField>> parse_table_fields(bool *);
    ParserResult<ExprNodeList> parse_call_arguments(bool *);
 

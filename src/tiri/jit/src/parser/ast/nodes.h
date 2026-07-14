@@ -59,6 +59,7 @@ using StmtNodeList = std::vector<StmtNodePtr>;
 // Function return type declaration for static analysis
 struct FunctionReturnTypes {
    std::array<TiriType, MAX_RETURN_TYPES> types{};  // Return types (Unknown = unused slot)
+   std::array<struct_record *, MAX_RETURN_TYPES> struct_defs{}; // Resolved layouts for struct<Name> results
    uint8_t count = 0;           // Number of declared types (0 = not declared)
    bool is_variadic = false;    // True if declaration ends with ... (last type repeats)
    bool is_explicit = false;    // True if explicitly declared, false if inferred
@@ -85,6 +86,7 @@ struct FunctionReturnTypes {
 struct InferredTypeInfo {
    TiriType type = TiriType::Unknown;
    CLASSID object_class_id = CLASSID::NIL; // Object type identifier
+   struct_record *struct_def = nullptr; // Resolved layout for Struct results
 };
 [[nodiscard]] InferredTypeInfo infer_expression_type_ext(const ExprNode& Expr);
 
@@ -206,6 +208,7 @@ struct Identifier {
    bool has_const = false;  // Const attribute flag - variable cannot be reassigned
    bool is_future_reserved = false;  // True when parsed from a keyword reserved for future syntax
    TiriType type = TiriType::Unknown;  // Explicit type annotation (Unknown = no annotation)
+   struct_record *struct_def = nullptr; // Resolved layout for struct<Name> annotations
 
    // Default constructor
    Identifier() = default;
@@ -274,6 +277,7 @@ struct LiteralValue {
 struct FunctionParameter {
    Identifier name;
    TiriType type = TiriType::Any;
+   struct_record *struct_def = nullptr;
    bool is_self = false;
 };
 
@@ -406,6 +410,7 @@ struct CallExprPayload {
    bool forwards_multret = false;
    mutable TiriType result_type = TiriType::Unknown;  // Inferred return type (e.g., Object for obj.new())
    mutable CLASSID object_class_id = CLASSID::NIL; // CLASSID if result is Object
+   mutable struct_record *struct_def = nullptr; // Resolved layout if result is Struct, or callable struct definition
    ~CallExprPayload();
 };
 

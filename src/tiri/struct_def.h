@@ -1,16 +1,45 @@
 #pragma once
 
 #include <string>
+#include <cstdint>
 #include <vector>
 #include <string_view>
 #include <kotuku/strings.hpp>
+#include <kotuku/system/registry.h>
+
+enum class NativeStructType : uint8_t {
+   Legacy,
+   Bool,
+   Char,
+   Int8,
+   UInt8,
+   Int16,
+   UInt16,
+   Int32,
+   UInt32,
+   Int64,
+   UInt64,
+   Float,
+   Double,
+   String,
+   CStr,
+   Pointer,
+   Struct,
+   Object,
+   Function
+};
+
+struct struct_record;
 
 struct struct_field {
    std::string Name;      // Field name
-   std::string StructRef; // Named reference to other structure
+   uint32_t StructRef = 0; // struct_key() of a referenced structure; 0 = no reference
+   CLASSID ObjectClassID = CLASSID::NIL; // Optional class constraint for obj<Class> fields
+   struct_record *StructDefinition = nullptr; // Resolved definition; registry ownership remains external
    uint16_t Offset = 0;   // Offset to the field value.
    int  Type      = 0;    // FD flags
    int  ArraySize = 0;    // Set if the field is an array
+   NativeStructType NativeType = NativeStructType::Legacy;
 
    void precomputeNameHash() { NameHash = kt::strihash(Name); }
    [[nodiscard]] uint32_t nameHash() const { return NameHash; }
@@ -23,71 +52,40 @@ struct struct_record {
    std::string Name;
    std::vector<struct_field> Fields;
    int Size = 0; // Total byte size of the structure
+   std::string DeclarationSource;
+   uint32_t DeclarationLine = 0;
    struct_record(std::string_view pName) : Name(pName) { }
    struct_record() = default;
 };
 
 //********************************************************************************************************************
-// Structure names have their own handler due to the use of colons in struct references, i.e. "OfficialStruct:SomeName"
+// Struct references may include a colon-delimited field suffix, i.e. "OfficialStruct:SomeName".
 
-[[nodiscard]] inline bool struct_name_hash_char(char Value) noexcept
+[[nodiscard]] constexpr inline std::string_view struct_name_prefix(std::string_view Name) noexcept
 {
-   auto c = uint8_t(Value);
-   if ((c >= 'A') and (c <= 'Z')) return true;
-   else if ((c >= 'a') and (c <= 'z')) return true;
-   else if ((c >= '0') and (c <= '9')) return true;
-   else return false;
+   auto colon = Name.find(':');
+   return (colon IS std::string_view::npos) ? Name : Name.substr(0, colon);
 }
 
-[[nodiscard]] inline std::string_view struct_name_hash_prefix(std::string_view Name) noexcept
+[[nodiscard]] constexpr inline bool valid_struct_name(std::string_view Name) noexcept
 {
-   size_t length = 0;
-   while ((length < Name.size()) and (struct_name_hash_char(Name[length]))) length++;
-   return Name.substr(0, length);
+   Name = struct_name_prefix(Name);
+   if (Name.empty()) return false;
+
+   auto first = uint8_t(Name.front());
+   if (not (((first >= 'A') and (first <= 'Z')) or ((first >= 'a') and (first <= 'z')))) return false;
+
+   for (auto value : Name.substr(1)) {
+      auto c = uint8_t(value);
+      if (not (((c >= 'A') and (c <= 'Z')) or ((c >= 'a') and (c <= 'z')) or
+            ((c >= '0') and (c <= '9')))) return false;
+   }
+   return true;
 }
 
-struct struct_name {
-   std::string name;
-   struct_name(const std::string_view pName) {
-      auto colon = pName.find(':');
+// Struct names are case-sensitive.  Field names remain case-insensitive via struct_field::precomputeNameHash().
 
-      if (colon IS std::string::npos) name = pName;
-      else name = pName.substr(0, colon);
-   }
-
-   bool operator==(const std::string_view &other) const {
-      return (name == other);
-   }
-
-   bool operator==(const struct_name &other) const {
-      return (name == other.name);
-   }
-};
-
-struct struct_hash { // Stops when an invalid character is encountered (typically a colon separator)
-   using is_transparent = void; // Enables heterogeneous string_view lookups in std::unordered_map
-
-   std::size_t operator()(const struct_name &Key) const {
-      return kt::strhash(struct_name_hash_prefix(Key.name));
-   }
-
-   std::size_t operator()(const std::string_view Key) const {
-      return kt::strhash(struct_name_hash_prefix(Key));
-   }
-};
-
-struct struct_equal { // Transparent comparator supporting struct_name and string_view keys
-   using is_transparent = void;
-
-   // A raw string_view may carry a colon-delimited suffix (e.g. "TimeZoneInfo:Info").  Struct keys only
-   // retain the portion before the colon, so the suffix must be stripped before comparison to mirror the
-   // truncation performed by the struct_name constructor.
-   static std::string_view prefix(const std::string_view Name) {
-      auto colon = Name.find(':');
-      return (colon IS std::string_view::npos) ? Name : Name.substr(0, colon);
-   }
-
-   bool operator()(const struct_name &a, const struct_name &b) const { return a == b; }
-   bool operator()(const struct_name &a, const std::string_view b) const { return a == prefix(b); }
-   bool operator()(const std::string_view a, const struct_name &b) const { return b == prefix(a); }
-};
+[[nodiscard]] constexpr inline uint32_t struct_key(std::string_view Name) noexcept
+{
+   return kt::strhash(struct_name_prefix(Name));
+}

@@ -37,7 +37,7 @@ GCstruct * lj_struct_new(lua_State *L, struct_record &Def)
    setgcrefnull(s->parent);
 
    if (Def.Size > 0) std::memset(s->data, 0, size_t(Def.Size));
-   construct_struct_cpp_strings(Def, s->data);
+   construct_struct_cpp_strings(L, Def, s->data);
    return s;
 }
 
@@ -84,7 +84,7 @@ void lj_struct_free(global_State *g, GCstruct *s)
    lj_assertG(obj2gco(s) != obj2gco(mainthread(g)), "attempt to free main thread as struct");
 
    if (s->def and s->data and (s->is_deallocate() or (s->data IS (void *)(s + 1)))) {
-      destroy_struct_cpp_strings(*s->def, s->data);
+      destroy_struct_cpp_strings(mainthread(g), *s->def, s->data);
    }
 
    if (s->is_deallocate()) { FreeResource(s->data); s->data = nullptr; }

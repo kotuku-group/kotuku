@@ -576,16 +576,19 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    struct allocated_struct_ref {
       std::unique_ptr<uint8_t[]> Data;
       struct_record *Def = nullptr;
+      lua_State *Lua = nullptr;
 
       allocated_struct_ref() = default;
-      allocated_struct_ref(std::unique_ptr<uint8_t[]> InitData, struct_record *InitDef):
-         Data(std::move(InitData)), Def(InitDef) { }
+      allocated_struct_ref(std::unique_ptr<uint8_t[]> InitData, struct_record *InitDef, lua_State *InitLua):
+         Data(std::move(InitData)), Def(InitDef), Lua(InitLua) { }
 
       allocated_struct_ref(const allocated_struct_ref &) = delete;
       allocated_struct_ref & operator=(const allocated_struct_ref &) = delete;
 
-      allocated_struct_ref(allocated_struct_ref &&Other) noexcept: Data(std::move(Other.Data)), Def(Other.Def) {
+      allocated_struct_ref(allocated_struct_ref &&Other) noexcept:
+         Data(std::move(Other.Data)), Def(Other.Def), Lua(Other.Lua) {
          Other.Def = nullptr;
+         Other.Lua = nullptr;
       }
 
       allocated_struct_ref & operator=(allocated_struct_ref &&Other) noexcept {
@@ -593,7 +596,9 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             release();
             Data = std::move(Other.Data);
             Def = Other.Def;
+            Lua = Other.Lua;
             Other.Def = nullptr;
+            Other.Lua = nullptr;
          }
          return *this;
       }
@@ -604,9 +609,10 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
       void release() {
          if (Data) {
-            if (Def) destroy_struct_cpp_strings(*Def, Data.get());
+            if (Def) destroy_struct_cpp_strings(Lua, *Def, Data.get());
             Data.reset();
             Def = nullptr;
+            Lua = nullptr;
          }
       }
    };
@@ -1148,9 +1154,9 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                std::unique_ptr<uint8_t[]> struct_data;
                if (!table_to_struct(Lua, args[i].Name, struct_data)) {
                   auto struct_address = struct_data.get();
-                  auto def = glStructs.find(std::string_view(args[i].Name));
-                  if (def != glStructs.end()) allocated_structs.emplace_back(std::move(struct_data), &def->second);
-                  else allocated_structs.emplace_back(std::move(struct_data), nullptr);
+                  auto def = find_struct(Lua, args[i].Name);
+                  if (def) allocated_structs.emplace_back(std::move(struct_data), def, Lua);
+                  else allocated_structs.emplace_back(std::move(struct_data), nullptr, Lua);
                   ((APTR *)(buffer + j))[0] = struct_address;
                   arg_values[in] = buffer + j;
                   arg_types[in++] = &ffi_type_pointer;

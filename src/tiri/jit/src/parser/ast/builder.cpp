@@ -18,6 +18,8 @@
 #include <mutex>
 #include <utility>
 
+#include "../../../../defs.h"
+
 #include "../token_types.h"
 #include "../parse_types.h"
 #include "../parse_internal.h"
@@ -353,6 +355,7 @@ AstBuilder::AstBuilder(ParserContext &Context, AstBuilder *Parent) : ctx(Context
 AstBuilder::~AstBuilder()
 {
    this->rollback_registered_enum_constants();
+   this->rollback_registered_structs();
    this->ctx.clear_error_rollback_callback(this);
 }
 
@@ -360,6 +363,24 @@ void AstBuilder::commit_registered_enum_constants()
 {
    this->registered_enum_constants.clear();
    this->enum_constants_committed = true;
+}
+
+void AstBuilder::commit_registered_structs()
+{
+   this->registered_structs.clear();
+}
+
+void AstBuilder::track_registered_struct(uint32_t Key)
+{
+   this->registered_structs.push_back(Key);
+}
+
+void AstBuilder::rollback_registered_structs()
+{
+   for (const auto key : this->registered_structs) {
+      this->ctx.lua().struct_declarations.erase(key);
+   }
+   this->registered_structs.clear();
 }
 
 void AstBuilder::track_registered_enum_constant(uint32_t Hash)
@@ -373,6 +394,14 @@ void AstBuilder::adopt_registered_enum_constants(AstBuilder &Child)
    this->registered_enum_constants.insert(this->registered_enum_constants.end(),
       Child.registered_enum_constants.begin(), Child.registered_enum_constants.end());
    Child.registered_enum_constants.clear();
+}
+
+void AstBuilder::adopt_registered_structs(AstBuilder &Child)
+{
+   this->registered_structs.insert(this->registered_structs.end(),
+      std::make_move_iterator(Child.registered_structs.begin()),
+      std::make_move_iterator(Child.registered_structs.end()));
+   Child.registered_structs.clear();
 }
 
 void AstBuilder::rollback_registered_enum_constants()
@@ -389,6 +418,7 @@ void AstBuilder::rollback_registered_enum_constants()
 void AstBuilder::rollback_registered_enum_hierarchy()
 {
    this->rollback_registered_enum_constants();
+   this->rollback_registered_structs();
    if (this->parent_builder) this->parent_builder->rollback_registered_enum_hierarchy();
 }
 
@@ -590,6 +620,13 @@ static bool is_implicit_local_with_attribute(TokenStreamAdapter& Tokens)
 ParserResult<StmtNodePtr> AstBuilder::parse_statement()
 {
    Token current = this->ctx.tokens().current();
+
+   if (current.kind() IS TokenKind::Identifier and current.identifier() and
+         std::string_view(strdata(current.identifier()), current.identifier()->len) IS "struct" and
+         this->ctx.tokens().peek(1).kind() IS TokenKind::Identifier and
+         this->ctx.tokens().peek(2).kind() IS TokenKind::LeftBrace) {
+      return this->parse_struct_declaration();
+   }
 
    switch (current.kind()) {
       case TokenKind::Annotate:      return this->parse_annotated_statement();

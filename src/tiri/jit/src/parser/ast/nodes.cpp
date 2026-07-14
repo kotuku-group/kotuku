@@ -233,6 +233,7 @@ InferredTypeInfo infer_expression_type_ext(const ExprNode &Expr)
       if (payload.result_type IS TiriType::Object) {
          result.object_class_id = payload.object_class_id;
       }
+      if (payload.result_type IS TiriType::Struct or payload.struct_def) result.struct_def = payload.struct_def;
    }
 
    return result;
@@ -689,9 +690,10 @@ static bool detect_constructor_call(const ExprNode &Callee, const ExprNodeList &
 
    const auto& member_payload = std::get<MemberExprPayload>(Callee.data);
 
-   // Check if member name is "new"
+   // Check the constructor member name.
    if (not member_payload.member.symbol) return false;
-   if (strcmp(strdata(member_payload.member.symbol), "new") != 0) return false;
+   std::string_view member_name(strdata(member_payload.member.symbol), member_payload.member.symbol->len);
+   if (member_name != "new" and member_name != "def") return false;
 
    // Check if the constructor interface is a simple identifier.
    if (not member_payload.table) return false;
@@ -701,10 +703,11 @@ static bool detect_constructor_call(const ExprNode &Callee, const ExprNodeList &
    if (not name_ref.identifier.symbol) return false;
 
    if (strcmp(strdata(name_ref.identifier.symbol), "struct") IS 0) {
-      ResultType = TiriType::Struct;
+      ResultType = member_name IS "def" ? TiriType::Func : TiriType::Struct;
       return true;
    }
 
+   if (member_name != "new") return false;
    if (strcmp(strdata(name_ref.identifier.symbol), "obj") != 0) return false;
 
    ResultType = TiriType::Object; // obj.new() always returns an Object

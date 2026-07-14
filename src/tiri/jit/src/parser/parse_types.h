@@ -218,6 +218,8 @@ struct ExpDesc {
    ExprFlag flags; // Expression flags.
    TiriType result_type = TiriType::Unknown;  // Known result type (for Call: callee's first return type)
    CLASSID object_class_id = CLASSID::NIL; // CLASSID for Object result types
+   struct_record *struct_def = nullptr; // Resolved layout for Struct result types
+   uint32_t struct_field_index = 0xFFFFFFFFu; // Pre-resolved field index for STGETF/STSETF
    bool type_confirmed = false;  // True if result_type is confirmed from class dictionary lookup
    BCPOS t;        // True condition jump list.
    BCPOS f;        // False condition jump list.

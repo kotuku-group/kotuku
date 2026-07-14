@@ -4,12 +4,14 @@
 
 #define LUA_CORE
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cmath>
 #include <concepts>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "lj_obj.h"
 #include "lj_gc.h"
@@ -112,6 +114,53 @@ namespace {
 [[nodiscard]] LexChar LexState::peek_next() const noexcept
 {
    return this->peek(0);
+}
+
+//********************************************************************************************************************
+// Assembles the documentation for a struct field declared on FieldLine, from the comments the lexer captured while
+// capture_comments was active.  A trailing comment on the field's own line is combined with any unbroken run of
+// full-line comments directly above it, outermost first.
+
+static std::string_view trim_comment_body(std::string_view Text) noexcept
+{
+   while (not Text.empty() and ((Text.front() IS ' ') or (Text.front() IS '\t'))) Text.remove_prefix(1);
+   while (not Text.empty() and ((Text.back() IS ' ') or (Text.back() IS '\t') or (Text.back() IS '\r'))) {
+      Text.remove_suffix(1);
+   }
+   return Text;
+}
+
+[[nodiscard]] std::string LexState::documentation_for_line(BCLine FieldLine) const
+{
+   std::vector<std::string_view> parts;
+
+   // BCLine packs a file index into its high bits, so only lineNumber() may be compared or decremented.
+
+   const int32_t field_line = FieldLine.lineNumber();
+
+   // Walk upwards from the line above the field, gathering full-line comments until the run is broken by a blank
+   // line or by code.  A trailing comment above the field belongs to that earlier field, so it terminates the run.
+
+   for (int32_t line = field_line - 1; line > 0; line--) {
+      auto found = std::find_if(this->comments.begin(), this->comments.end(),
+         [line](const CommentRecord &Record) { return Record.line.lineNumber() IS line; });
+      if ((found IS this->comments.end()) or found->trailing) break;
+      parts.insert(parts.begin(), trim_comment_body(found->text));
+   }
+
+   for (const auto &record : this->comments) {
+      if ((record.line.lineNumber() IS field_line) and record.trailing) {
+         parts.push_back(trim_comment_body(record.text));
+      }
+   }
+
+   std::string result;
+   for (auto part : parts) {
+      if (part.empty()) continue;
+      if (not result.empty()) result += '\n';
+      result += part;
+   }
+   return result;
 }
 
 static LJ_AINLINE LexChar lex_next(LexState *State) noexcept
@@ -1225,8 +1274,45 @@ static LexToken lex_scan(LexState *State, TValue *tv)
             }
 
             // Short comment "--.*\n"
-            while (not lex_iseol(State->c) and State->c != LEX_EOF) lex_next(State);
-            continue;
+            if (not State->capture_comments) {  // Only the struct declaration parser needs the text.
+               while (not lex_iseol(State->c) and State->c != LEX_EOF) lex_next(State);
+               continue;
+            }
+            else {
+               // current_offset is the offset of the character held in State->c, i.e. the first character of the
+               // comment body.  The body is empty when the comment ends the line immediately.
+
+               size_t body_start = State->current_offset;
+               size_t line_start = State->line_start_offset;
+               BCLine comment_line = State->linenumber;
+               bool empty_body = lex_iseol(State->c) or (State->c IS LEX_EOF);
+
+               while (not lex_iseol(State->c) and State->c != LEX_EOF) lex_next(State);
+
+               // The loop stops with State->c holding the EOL character, whose offset is current_offset, so that
+               // offset is the exclusive end of the body.  At EOF the stream is exhausted and pos is the end.
+               // An empty body yields a zero-length range.
+
+               size_t body_end = body_start;
+               if (not empty_body) {
+                  body_end = (State->c IS LEX_EOF) ? State->pos : State->current_offset;
+               }
+               if (body_end > State->source.size()) body_end = State->source.size();
+               if (body_start > body_end) body_start = body_end;
+
+               // Code before the '--' marks this as a trailing comment on a field line; otherwise it is a full-line
+               // comment describing the field below.  line_start_offset is only updated at newlines, so it still
+               // points at the start of this line.
+
+               auto prefix = State->source.substr(line_start,
+                  (body_start >= line_start) ? body_start - line_start : 0);
+               if (auto marker = prefix.rfind("--"); marker != std::string_view::npos) prefix = prefix.substr(0, marker);
+               bool trailing = prefix.find_first_not_of(" \t\r") != std::string_view::npos;
+
+               State->comments.push_back({ comment_line, trailing,
+                  std::string(State->source.substr(body_start, body_end - body_start)) });
+               continue;
+            }
 
          case '[': {
             State->mark_token_start();

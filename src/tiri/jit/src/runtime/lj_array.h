@@ -5,7 +5,8 @@
 
 #include "lj_obj.h"
 
-extern GCarray * lj_array_new(lua_State *, uint32_t, AET, void *Data = nullptr, uint8_t Flags = 0, std::string_view StructName = {});
+extern GCarray * lj_array_new(lua_State *, uint32_t, AET, void *Data = nullptr, uint8_t Flags = 0,
+   std::string_view StructName = {}, struct_record *StructDef = nullptr);
 extern void lj_array_free(global_State *, GCarray *);
 [[nodiscard]] extern uint8_t lj_array_elemsize(AET);
 extern void lj_array_clear_range(GCarray *, MSize Start, MSize Count);

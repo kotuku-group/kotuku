@@ -50,8 +50,8 @@ static ERR set_array_from_table(lua_State *Lua, OBJECTPTR Object, const Field *F
    else if (Field->Flags & FD_STRUCT) {
       // Array structs can be set if the Lua table consists of Tiri.struct types.
 
-      if (auto def = glStructs.find(std::string_view((CSTRING)Field->Arg)); def != glStructs.end()) {
-         int aligned_size = ALIGN64(def->second.Size);
+      if (auto def = find_struct(Lua, (CSTRING)Field->Arg)) {
+         int aligned_size = ALIGN64(def->Size);
          auto structbuf = std::make_unique<uint8_t[]>(total * aligned_size);
 
          for (lua_pushnil(Lua); lua_next(Lua, Values); lua_pop(Lua, 1)) {
@@ -359,13 +359,11 @@ static ERR parse_csv_struct(std::string_view String, struct_record &Def, APTR De
    return ERR::Okay;
 }
 
-static struct_record * lookup_struct_field_def(const Field *Field)
+static struct_record * lookup_struct_field_def(lua_State *Lua, const Field *Field)
 {
    if (not Field->Arg) return nullptr;
 
-   auto def = glStructs.find(std::string_view((CSTRING)Field->Arg));
-   if (def IS glStructs.end()) return nullptr;
-   else return &def->second;
+   return find_struct(Lua, (CSTRING)Field->Arg);
 }
 
 static ERR object_set_struct(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
@@ -375,7 +373,7 @@ static ERR object_set_struct(lua_State *Lua, OBJECTPTR Object, const Field *Fiel
          // The user can provide a CSV list of values for the struct.  This is only valid for structs that consist of
          // primitive numeric values.  Each CSV value is mapped positionally to the struct's fields.
 
-         auto struct_def = lookup_struct_field_def(Field);
+         auto struct_def = lookup_struct_field_def(Lua, Field);
          if (not struct_def) return ERR::SetValueNotStruct;
 
          std::string_view source = lua_tostring(Lua, ValueIndex);
@@ -394,7 +392,7 @@ static ERR object_set_struct(lua_State *Lua, OBJECTPTR Object, const Field *Fiel
 
       case LUA_TSTRUCT:
          if (auto fs = lua_isstruct(Lua, ValueIndex) ? lua_tostruct(Lua, ValueIndex) : nullptr) {
-            auto struct_def = lookup_struct_field_def(Field);
+            auto struct_def = lookup_struct_field_def(Lua, Field);
             if ((not struct_def) or (fs->def != struct_def) or (fs->structsize < uint32_t(struct_def->Size))) {
                return ERR::SetValueNotStruct;
             }

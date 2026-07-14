@@ -285,11 +285,21 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
    bool is_safe_callable = false;
    TiriType callee_return_type = TiriType::Unknown;  // First return type of callee (if known)
    CLASSID callee_object_class_id = CLASSID::NIL;  // CLASSID if return type is Object
+   struct_record *callee_struct_def = nullptr;
 
    // Check if the AST has pre-computed type info (e.g., from obj.new() pattern detection)
    if (Payload.result_type != TiriType::Unknown) {
       callee_return_type = Payload.result_type;
       callee_object_class_id = Payload.object_class_id;
+      callee_struct_def = Payload.struct_def;
+      if ((callee_return_type IS TiriType::Struct or callee_return_type IS TiriType::Func) and
+          not callee_struct_def and not Payload.arguments.empty()) {
+         const auto *literal = std::get_if<LiteralValue>(&Payload.arguments[0]->data);
+         if (literal and literal->kind IS LiteralKind::String and literal->string_value) {
+            std::string_view name(strdata(literal->string_value), literal->string_value->len);
+            callee_struct_def = find_struct(this->lex_state.L, name);
+         }
+      }
    }
 
    if (const auto *direct = std::get_if<DirectCallTarget>(&Payload.target)) {
@@ -317,6 +327,10 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
       if (callee.k IS ExpKind::Local) {
          VarInfo* vinfo = &this->lex_state.vstack[callee.u.s.aux];
          callee_return_type = vinfo->result_types[0];
+         if (vinfo->struct_def) {
+            callee_return_type = TiriType::Struct;
+            callee_struct_def = vinfo->struct_def;
+         }
       }
 
       // Prototype registry lookup for global/interface calls
@@ -428,6 +442,7 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
    result.u.s.aux = base;
    result.result_type = callee_return_type;  // Propagate known return type
    result.object_class_id = callee_object_class_id;  // Propagate object class ID for Object types
+   result.struct_def = callee_struct_def;
    this->func_state.freereg = base + 1;
    return ParserResult<ExpDesc>::success(result);
 }
