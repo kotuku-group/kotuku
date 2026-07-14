@@ -370,15 +370,15 @@ void AstBuilder::commit_registered_structs()
    this->registered_structs.clear();
 }
 
-void AstBuilder::track_registered_struct(std::string Name)
+void AstBuilder::track_registered_struct(uint32_t Key)
 {
-   this->registered_structs.push_back(std::move(Name));
+   this->registered_structs.push_back(Key);
 }
 
 void AstBuilder::rollback_registered_structs()
 {
-   for (const auto &name : this->registered_structs) {
-      this->ctx.lua().struct_declarations.erase(std::string_view(name));
+   for (const auto key : this->registered_structs) {
+      this->ctx.lua().struct_declarations.erase(key);
    }
    this->registered_structs.clear();
 }

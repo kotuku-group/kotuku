@@ -84,7 +84,7 @@ extern OBJECTPTR glTiriContext;
 extern OBJECTPTR clTiri;
 extern JOF glJitOptions;
 extern ankerl::unordered_dense::map<uint32_t, StructInfo> *glStructSizes;
-extern std::unordered_map<struct_name, struct_record, struct_hash, struct_equal> glStructs;
+extern std::unordered_map<uint32_t, struct_record> glStructs;
 extern std::recursive_mutex glStructMutex;
 extern uint64_t glActionsWithResults;
 }
@@ -152,15 +152,6 @@ static inline std::string_view lua_checkstringview(lua_State *L, int idx)
    size_t len = 0;
    if (auto s = luaL_checklstring(L, idx, &len)) return std::string_view{s, len};
    else return std::string_view{};
-}
-
-//********************************************************************************************************************
-// Standard hash computation, but stops when it encounters a character outside of A-Za-z0-9 range
-// Note that struct name hashes are case sensitive.
-
-inline uint32_t STRUCTHASH(CSTRING String)
-{
-   return kt::strhash(struct_name_hash_prefix(String));
 }
 
 //********************************************************************************************************************

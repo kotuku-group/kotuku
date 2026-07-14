@@ -46,7 +46,7 @@ private:
    AstBuilder *parent_builder = nullptr;
    std::vector<GCstr *> function_name_stack;
    std::vector<uint32_t> registered_enum_constants;
-   std::vector<std::string> registered_structs;
+   std::vector<uint32_t> registered_structs;
    std::vector<uint32_t> chunk_import_hashes;  // Path hashes inlined during this compilation (root builder only)
 
    // FileSource entries persist across compilations, so diagnose-mode re-parsing of cached imports needs a
@@ -100,7 +100,7 @@ private:
    void track_registered_enum_constant(uint32_t Hash);
    void adopt_registered_enum_constants(AstBuilder &Child);
    void adopt_registered_structs(AstBuilder &Child);
-   void track_registered_struct(std::string Name);
+   void track_registered_struct(uint32_t Key);
    ParserResult<StmtNodePtr> parse_function_stmt();
    ParserResult<StmtNodePtr> parse_annotated_statement();
    ParserResult<std::vector<AnnotationEntry>> parse_annotations();

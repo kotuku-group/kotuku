@@ -523,7 +523,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token.value_ref(),
          std::format("Struct '{}' conflicts with its previous declaration{}", struct_name, location));
    }
-   if (inserted) this->track_registered_struct(struct_name);
+   if (inserted) this->track_registered_struct(struct_key(struct_name));
    auto registered = find_struct(&this->ctx.lua(), struct_name);
 
    Identifier variable = make_identifier(name_token.value_ref());

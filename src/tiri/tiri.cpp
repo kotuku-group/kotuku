@@ -62,7 +62,7 @@ ankerl::unordered_dense::map<std::string_view, ACTIONID, CaseInsensitiveHashView
 ankerl::unordered_dense::map<uint32_t, StructInfo> *glStructSizes = nullptr;
 ankerl::unordered_dense::map<uint32_t, TiriConstant> glConstantRegistry;
 std::recursive_mutex glStructMutex;
-std::unordered_map<struct_name, struct_record, struct_hash, struct_equal> glStructs;
+std::unordered_map<uint32_t, struct_record> glStructs;
 std::shared_mutex glConstantMutex;
 uint64_t glActionsWithResults = 0;
 

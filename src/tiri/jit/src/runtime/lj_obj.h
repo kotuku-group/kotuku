@@ -1237,7 +1237,7 @@ struct lua_State {
 
    // Parser-declared structures are scoped to this interpreter.  Registry nodes remain stable while GC objects
    // reference their struct_record values and are released after those objects during state shutdown.
-   std::unordered_map<struct_name, struct_record, struct_hash, struct_equal> struct_declarations;
+   std::unordered_map<uint32_t, struct_record> struct_declarations;
 
    // Stack of pending import lexers for cleanup if SEH throws during import parsing.
    // Note: Windows SEH doesn't call C++ destructors, so we track these for manual cleanup.

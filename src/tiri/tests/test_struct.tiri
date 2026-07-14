@@ -113,6 +113,18 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function NativeStructDeclarationErrors()
+   try
+      MAKESTRUCT('Bad_Name', 'lValue')
+   success
+      error('MAKESTRUCT should reject names containing non-alphanumeric characters')
+   end
+
+   try
+      exec([[struct Bad_Name { Value: int }]])
+   success
+      error('Struct declarations should reject names containing non-alphanumeric characters')
+   end
+
    exec([[
 struct IdenticalLayout { Value: int }
 struct IdenticalLayout { Value: int }

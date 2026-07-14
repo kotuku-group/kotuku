@@ -442,7 +442,9 @@ int MAKESTRUCT(lua_State *Lua)
    CSTRING sequence, name;
    if (not (name = lua_tostring(Lua, 1))) luaL_argerror(Lua, 1, "Structure name required.");
    else if (not (sequence = lua_tostring(Lua, 2))) luaL_argerror(Lua, 2, "Structure definition required.");
-   else make_struct(Lua->script, name, sequence);
+   else if (make_struct(Lua->script, name, sequence) != ERR::Okay) {
+      luaL_error(Lua, "Failed to register structure '%s'.", name);
+   }
    return 0;
 }
 
@@ -571,7 +573,7 @@ static ERR layout_struct_field(struct_field &Field, int Type, int FieldSize, int
                if (end IS std::string::npos) end = Sequence.size();
                auto name = Sequence.substr(sep, end-sep);
 
-               if (auto def = glStructs.find(std::string_view(name)); def != glStructs.end()) {
+               if (auto def = glStructs.find(struct_key(name)); def != glStructs.end()) {
                   field_size = def->second.Size;
                   field.StructDefinition = &def->second;
                   break;
@@ -602,7 +604,7 @@ static ERR layout_struct_field(struct_field &Field, int Type, int FieldSize, int
          auto i = Sequence.find_first_of(",[", pos);
          if (i IS std::string::npos) i = Sequence.size();
          field.StructRef.assign(Sequence, pos, i-pos);
-         if (auto def = glStructs.find(std::string_view(field.StructRef)); def != glStructs.end()) {
+         if (auto def = glStructs.find(struct_key(field.StructRef)); def != glStructs.end()) {
             field.StructDefinition = &def->second;
          }
          type |= FD_STRUCT;
@@ -671,25 +673,31 @@ static ERR layout_struct_field(struct_field &Field, int Type, int FieldSize, int
       return ERR::NullArgs;
    }
 
-   if (glStructs.contains(StructName)) {
+   if (not valid_struct_name(StructName)) {
+      log.warning("Invalid structure name '%s'.", StructName.data());
+      return ERR::Syntax;
+   }
+
+   const auto key = struct_key(StructName);
+   auto [it, inserted] = glStructs.try_emplace(key, StructName);
+   if (not inserted) {
       log.warning("Structure '%s' is already registered.", StructName.data());
       return ERR::Exists;
    }
 
    log.traceBranch("%s, %.50s", StructName.data(), Sequence);
 
-   glStructs[StructName] = struct_record(StructName);
-
    int computed_size = 0;
-   if (auto error = generate_structdef(Self, StructName, Sequence, glStructs[StructName], &computed_size); error != ERR::Okay) {
+   if (auto error = generate_structdef(Self, StructName, Sequence, it->second, &computed_size); error != ERR::Okay) {
       if (error IS ERR::BufferOverflow) log.warning("String too long - buffer overflow");
       else if (error IS ERR::Syntax) log.warning("Unsupported struct character in definition: %s", Sequence);
       else log.warning("Failed to make struct for %s, error: %s", StructName.data(), GetErrorMsg(error));
+      glStructs.erase(it);
       return error;
    }
 
-   if (auto it = glStructSizes->find(kt::strhash(StructName)); it != glStructSizes->end()) glStructs[StructName].Size = it->second.Size;
-   else glStructs[StructName].Size = computed_size;
+   if (auto size = glStructSizes->find(key); size != glStructSizes->end()) it->second.Size = size->second.Size;
+   else it->second.Size = computed_size;
 
    return ERR::Okay;
 }
@@ -700,13 +708,13 @@ static ERR layout_struct_field(struct_field &Field, int Type, int FieldSize, int
 [[nodiscard]] struct_record * find_struct(lua_State *Lua, std::string_view Name)
 {
    if (Lua) {
-      if (auto found = Lua->struct_declarations.find(Name); found != Lua->struct_declarations.end()) {
+      if (auto found = Lua->struct_declarations.find(struct_key(Name)); found != Lua->struct_declarations.end()) {
          return &found->second;
       }
    }
 
    const std::lock_guard lock(glStructMutex);
-   if (auto found = glStructs.find(Name); found != glStructs.end()) return &found->second;
+   if (auto found = glStructs.find(struct_key(Name)); found != glStructs.end()) return &found->second;
    return nullptr;
 }
 
@@ -715,9 +723,9 @@ static ERR layout_struct_field(struct_field &Field, int Type, int FieldSize, int
 {
    {
       const std::lock_guard lock(glStructMutex);
-      auto owner = glStructs.find(std::string_view(Owner.Name));
+      auto owner = glStructs.find(struct_key(Owner.Name));
       if ((owner != glStructs.end()) and (&owner->second IS &Owner)) {
-         if (auto found = glStructs.find(Name); found != glStructs.end()) return &found->second;
+         if (auto found = glStructs.find(struct_key(Name)); found != glStructs.end()) return &found->second;
          return nullptr;
       }
    }
@@ -778,6 +786,9 @@ static bool identical_struct_layout(const struct_record &Left, const struct_reco
    if (Inserted) *Inserted = false;
    if (Existing) *Existing = nullptr;
    if ((not Lua) or Record.Name.empty() or Record.Fields.empty()) return ERR::NullArgs;
+   if (not valid_struct_name(Record.Name)) return ERR::Syntax;
+
+   const auto key = struct_key(Record.Name);
 
    int offset = 0;
    for (auto &field : Record.Fields) {
@@ -795,15 +806,14 @@ static bool identical_struct_layout(const struct_record &Left, const struct_reco
    }
    Record.Size = offset;
 
-   if (auto found = Lua->struct_declarations.find(std::string_view(Record.Name));
+   if (auto found = Lua->struct_declarations.find(key);
          found != Lua->struct_declarations.end()) {
       if (Existing) *Existing = &found->second;
       if (not identical_struct_layout(found->second, Record)) return ERR::Exists;
       return ERR::Okay;
    }
 
-   auto name = Record.Name;
-   Lua->struct_declarations.emplace(struct_name(name), std::move(Record));
+   Lua->struct_declarations.emplace(key, std::move(Record));
    if (Inserted) *Inserted = true;
    return ERR::Okay;
 }
