@@ -44,26 +44,12 @@ static ERR init_audio(extAudio *Self)
    if (!Self->Device.empty()) pcm_name = Self->Device;
    else pcm_name = "default";
 
-   // Use unified device enumeration to find the appropriate audio device
-   ALSADeviceInfo selected_device;
-
    if (iequals("default", pcm_name)) {
-      // Select best available device (most mixer controls, not a modem)
-      selected_device = ALSADeviceEnumerator::select_best_device();
-      if (selected_device.card_number IS -1) {
-         log.warning("There are no sound cards supported by audio drivers.");
-         return ERR::NoSupport;
-      }
-
-      Self->Device = selected_device.card_id;
-      pcm_name = selected_device.device_name;
-      log.msg("Selected default device: %s (%s) with %d mixer controls",
-              selected_device.card_id.c_str(), selected_device.card_name.c_str(),
-              selected_device.mixer_controls);
+      log.msg("Using the default audio output device.");
    }
    else {
       // Find specific device by ID
-      selected_device = ALSADeviceEnumerator::find_device_by_id(pcm_name);
+      auto selected_device = ALSADeviceEnumerator::find_device_by_id(pcm_name);
       if (selected_device.card_number IS -1) {
          log.warning("Requested device '%s' not found.", pcm_name.c_str());
          return ERR::NoSupport;
