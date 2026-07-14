@@ -1007,7 +1007,7 @@ struct GCstruct {
    void *data;                  // [16] Pointer to the structure data (this+1 for inline payloads)
    GCRef gclist;                // [24] GC list for marking (must match GCtab.gclist)
    GCRef metatable;             // [32] Optional metatable (must match GCtab.metatable)
-   struct struct_record *def;   // [40] The structure definition (owned by glStructs)
+   struct struct_record *def;   // [40] Structure definition owned by a state-local or global registry
    struct Object *lifecycle;    // [48] Weak-pinned object that owns the payload (STRUCT_LIFECYCLE only)
    GCRef parent;                // [56] Owning inline GCstruct for an interior payload view
 
@@ -1234,6 +1234,10 @@ struct lua_State {
    // FileSource tracking for accurate error reporting in imported files
    std::vector<FileSource> file_sources;  // Index 0 = main file, 255 = overflow
    ankerl::unordered_dense::map<uint32_t, uint8_t> file_index_map;  // path_hash -> index
+
+   // Parser-declared structures are scoped to this interpreter.  Registry nodes remain stable while GC objects
+   // reference their struct_record values and are released after those objects during state shutdown.
+   std::unordered_map<struct_name, struct_record, struct_hash, struct_equal> struct_declarations;
 
    // Stack of pending import lexers for cleanup if SEH throws during import parsing.
    // Note: Windows SEH doesn't call C++ destructors, so we track these for manual cleanup.

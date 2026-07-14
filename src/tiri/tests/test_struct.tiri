@@ -1,6 +1,183 @@
 
------------------------------------------------------------------------------------------------------------------------
+struct DeclaredChild {
+   Value: int
+}
+
+struct DeclaredUser {
+   -- User-facing name retained as parser tooling metadata.
+   Name: string -- Owned string storage.
+   Borrowed: cstr
+   Age: int
+   Enabled: bool
+   Initial: char
+   Buffer: char[16]
+   Child: struct<DeclaredChild>
+   ChildPointer: ptr<DeclaredChild>
+   Object: obj
+}
+
+struct DeclaredLayout {
+   Bool: bool, Char: char, Byte: byte, Int8: int8, UInt8: uint8,
+   Int16: int16, UInt16: uint16, Int: int, UInt: uint,
+   Int32: int32, UInt32: uint32, Int64: int64, UInt64: uint64,
+   Float: float, Double: double, String: string, CStr: cstr,
+   Pointer: ptr, IntPointer: ptr<int>, IntList: ptr<int[]>, Object: obj, Callback: func, Buffer: char[7],
+   Fixed: int[3], Child: struct<DeclaredChild>, ChildPointer: ptr<DeclaredChild>
+}
+
+function declared_user_age(Value: struct<DeclaredUser>):num
+   return Value.Age
+end
+
+function create_declared_user():struct<DeclaredUser>
+   return DeclaredUser()
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Retrieve a known struct from a function and test the field values.
+
+@Test function NativeStructDeclarationConstruction()
+   local user = DeclaredUser { Name='Paul', Age=37, Enabled=true, Initial=65, Buffer='hello' }
+   assert(type(user) is 'struct', 'A declared definition should construct a native struct')
+   assert(user.Name is 'Paul' and user.Age is 37, 'Definition calls should apply initialiser fields verbatim')
+   assert(user.Enabled is true, 'Boolean fields should be exposed as Tiri booleans')
+   assert(user.Initial is 65 and user.Buffer is 'hello', 'Character fields and buffers should round-trip')
+   assert(declared_user_age(user) is 37, 'struct<Name> annotations should resolve declared layouts')
+   assert(create_declared_user().Age is 0, 'struct<Name> return annotations should parse and retain the layout')
+   local typed_user:struct<DeclaredUser> = user
+   assert(typed_user.Name is 'Paul', 'struct<Name> local annotations should resolve declared layouts')
+
+   user.Child.Value = 91
+   assert(user.Child.Value is 91, 'Embedded declared structs should expose their fields')
+   assert(user.ChildPointer is nil, 'Typed struct pointers should initialise to nil')
+   assert(user.Object is nil, 'Object fields should initialise to nil')
+
+   local empty_user = DeclaredUser()
+   assert(empty_user.Age is 0 and empty_user.Name is '', 'Empty definition calls should zero-initialise fields')
+   assert(struct.new('DeclaredUser').Age is 0, 'struct.new() should interoperate with declarations')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructDeclarationLayoutParity()
+   MAKESTRUCT('LegacyDeclaredChild', 'lValue')
+   MAKESTRUCT('LegacyDeclaredLayout',
+      'bBool,cChar,ubByte,bInt8,ubUInt8,wInt16,uwUInt16,lInt,ulUInt,lInt32,ulUInt32,' ..
+      'xInt64,uxUInt64,fFloat,dDouble,zsString,sCStr,pPointer,pIntPointer,pIntList[0],oObject,rCallback,' ..
+      'cBuffer[7],lFixed[3],' ..
+      'eChild:LegacyDeclaredChild,pChildPointer:LegacyDeclaredChild')
+   assert(struct.size('DeclaredLayout') is struct.size('LegacyDeclaredLayout'),
+      'Declarative and MAKESTRUCT layouts should have identical byte sizes')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructDeclarationErrors()
+   exec([[
+struct IdenticalLayout { Value: int }
+struct IdenticalLayout { Value: int }
+local value = IdenticalLayout { Value=12 }
+assert(value.Value is 12)
+]])
+
+   try
+      exec([[struct BadUnknownType { Value: mystery }]])
+   success
+      error('Unknown declaration field types should fail')
+   end
+
+   try
+      exec([[struct BadForwardReference { Value: struct<NotDeclaredYet> }]])
+   success
+      error('Forward struct references should fail')
+   end
+
+   try
+      exec([[struct BadCaseCollision { Value: int, value: int }]])
+   success
+      error('Case-insensitive field-name collisions should fail')
+   end
+
+   try
+      exec([[struct BadArrayDimensionRange { Values: int[4294967296] }]])
+   success
+      error('Array dimensions that exceed the parser integer range should fail')
+   end
+
+   try
+      exec([[struct BadArrayStorageRange { Values: int[20000] }]])
+   success
+      error('Array layouts that exceed the native struct offset range should fail')
+   end
+
+   try
+      exec([[
+struct ConflictingLayout { Value: int }
+struct ConflictingLayout { Value: double }
+]])
+   success
+      error('Conflicting declarations should fail')
+   end
+   exec([[
+struct ConflictingLayout { Value: double }
+local value = ConflictingLayout { Value=2.5 }
+assert(value.Value is 2.5)
+]])
+
+   exec([[
+local struct = { marker=42 }
+assert(struct.marker is 42)
+]])
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructConcurrentRegistration()
+   local total = 16
+   local completed = 0
+   local succeeded = 0
+   local failed = 0
+   local signal = obj.new('time', { })
+   local proc = processing.new({ timeout=5.0, signals=array<object> { signal } })
+   local scripts = array<object>
+
+   for i=0, total-1 do
+      local statement
+      if (i & 1) is 0 then
+         statement = [[
+struct ConcurrentDeclaredStruct { Value: int }
+local value = ConcurrentDeclaredStruct { Value=42 }
+assert(value.Value is 42)
+]]
+      else
+         statement = [[
+struct ConcurrentDeclaredStruct { Value: double }
+local value = ConcurrentDeclaredStruct { Value=42.5 }
+assert(value.Value is 42.5)
+]]
+      end
+      if (i & 2) is 0 then
+         statement ..= [[
+struct ConcurrentInvalidStruct { Value: mystery }]]
+      end
+      scripts:push(obj.new('tiri', { statement=statement }))
+   end
+
+   for script in values(scripts) do
+      async.script(script, function(Object)
+         if Object.error is ERR_Okay then succeeded++
+         else failed++ end
+         completed++
+         if completed >= total then signal.acSignal() end
+      end)
+   end
+
+   check proc.sleep()
+   assert(succeeded is total / 2 and failed is total / 2,
+      f'Expected equal successful and failed concurrent declarations, got {succeeded}/{failed}')
+   exec([[struct ConcurrentDeclaredStruct { Value: int }
+assert(ConcurrentDeclaredStruct { Value=17 }.Value is 17)]])
+end
 
 @Test(hotpath=true)
 function ProbeStruct()
@@ -220,29 +397,29 @@ end
 
 @Test function FastScalarFieldCategories()
    MAKESTRUCT('FastScalarFields',
-      'fFloat,dDouble,xWide,lInteger,wWord,uwUnsignedWord,bByte,cText[8],pPointer,rCallback')
+      'fFloat,dDouble,xWide,lInteger,wWord,uwUWord,bByte,cText[8],pPointer,rCallback')
    local value = struct.new('FastScalarFields')
 
-   value.float = 1.25
-   value.double = 2.5
-   value.wide = 9007199
-   value.integer = 12345
-   value.word = 2345
-   value.unsignedWord = 32767
-   value.byte = 231
-   value.text = array.new('fast')
-   value.pointer = nil
+   value.float    = 1.25
+   value.double   = 2.5
+   value.wide     = 9007199
+   value.integer  = 12345
+   value.word     = 2345
+   value.uword    = 32767
+   value.byte     = 231
+   value.text     = array.new('fast')
+   value.pointer  = nil
 
    assert(value.float is 1.25, 'FD_FLOAT should round-trip through STSETF/STGETF')
    assert(value.double is 2.5, 'FD_DOUBLE should round-trip through STSETF/STGETF')
    assert(value.wide is 9007199, 'FD_INT64 should round-trip through STSETF/STGETF')
    assert(value.integer is 12345, 'FD_INT should round-trip through STSETF/STGETF')
    assert(value.word is 2345, 'FD_WORD should round-trip through STSETF/STGETF')
-   assert(value.unsignedWord is 32767, 'Unsigned FD_WORD should retain 0x7fff through STSETF/STGETF')
-   value.unsignedWord = 32768
-   assert(value.unsignedWord is 32768, 'Unsigned FD_WORD should retain 0x8000 through STSETF/STGETF')
-   value.unsignedWord = 65535
-   assert(value.unsignedWord is 65535, 'Unsigned FD_WORD should retain 0xffff through STSETF/STGETF')
+   assert(value.uword is 32767, 'Unsigned FD_WORD should retain 0x7fff through STSETF/STGETF')
+   value.uword = 32768
+   assert(value.uword is 32768, 'Unsigned FD_WORD should retain 0x8000 through STSETF/STGETF')
+   value.uword = 65535
+   assert(value.uword is 65535, 'Unsigned FD_WORD should retain 0xffff through STSETF/STGETF')
    assert(value.byte is 231, 'FD_BYTE should round-trip through STSETF/STGETF')
    assert(value.text is 'fast', 'FD_CUSTOM byte arrays should continue to read as strings')
    assert(value.pointer is nil, 'A null FD_POINTER should read as nil')

@@ -1095,6 +1095,243 @@ static std::optional<BytecodeSnapshot> compile_snapshot(lua_State* L, std::strin
    return snapshot;
 }
 
+static bool parse_struct_source(lua_State *L, std::string_view Source, std::string &Error)
+{
+   StringReaderCtx reader = { Source.data(), Source.size() };
+   LexState lex(L, unit_reader, &reader, "parser-unit", std::nullopt);
+   FuncState &func_state = lex.fs_init();
+   ParserAllocator allocator = ParserAllocator::from(L);
+   ParserContext context = ParserContext::from(lex, func_state, allocator);
+   ParserConfig config;
+   config.abort_on_error = false;
+   config.max_diagnostics = 32;
+   ParserSession session(context, config);
+
+   lex.next();
+   AstBuilder builder(context);
+   auto chunk = builder.parse_chunk();
+   if (not chunk.ok()) {
+      Error = chunk.error_ref().message;
+      return false;
+   }
+   if (context.diagnostics().has_errors()) {
+      auto entries = context.diagnostics().entries();
+      Error = entries.empty() ? "unknown parser error" : entries.back().message;
+      builder.rollback_registered_structs();
+      return false;
+   }
+
+   builder.commit_registered_structs();
+   Error.clear();
+   return true;
+}
+
+// Parses Source and returns the field documentation the declaration parser captured, so that tests can assert on
+// metadata that is otherwise confined to the LexState.
+
+static bool parse_struct_documentation(lua_State *L, std::string_view Source,
+   std::vector<LexState::StructFieldDocumentation> &Documentation, std::string &Error)
+{
+   StringReaderCtx reader = { Source.data(), Source.size() };
+   LexState lex(L, unit_reader, &reader, "parser-unit", std::nullopt);
+   FuncState &func_state = lex.fs_init();
+   ParserAllocator allocator = ParserAllocator::from(L);
+   ParserContext context = ParserContext::from(lex, func_state, allocator);
+   ParserConfig config;
+   config.abort_on_error = false;
+   config.max_diagnostics = 32;
+   ParserSession session(context, config);
+
+   lex.next();
+   AstBuilder builder(context);
+   auto chunk = builder.parse_chunk();
+   if (not chunk.ok()) {
+      Error = chunk.error_ref().message;
+      return false;
+   }
+   if (context.diagnostics().has_errors()) {
+      auto entries = context.diagnostics().entries();
+      Error = entries.empty() ? "unknown parser error" : entries.back().message;
+      builder.rollback_registered_structs();
+      return false;
+   }
+
+   Documentation = lex.struct_field_documentation;
+   builder.commit_registered_structs();
+   Error.clear();
+   return true;
+}
+
+[[nodiscard]] static const LexState::StructFieldDocumentation * find_documentation(
+   const std::vector<LexState::StructFieldDocumentation> &Documentation, std::string_view FieldName)
+{
+   for (const auto &entry : Documentation) {
+      if (entry.field_name IS FieldName) return &entry;
+   }
+   return nullptr;
+}
+
+static bool test_struct_field_documentation(kt::Log &Log)
+{
+   std::vector<LexState::StructFieldDocumentation> docs;
+   std::string error;
+
+   LuaStateHolder holder;
+   lua_State *state = holder.get();
+   if (not state) {
+      Log.error("failed to allocate state for struct documentation test");
+      return false;
+   }
+
+   // The Marker and Divider fields exist to prove that comment capture runs through the lexer: a naive scan for
+   // '--' in the source text would mistake the string literals for comment markers.
+
+   if (not parse_struct_documentation(state,
+         "struct ParserDocumentedRecord {\n"
+         "   Plain: int -- Trailing description.\n"
+         "   -- Leading description.\n"
+         "   -- Second leading line.\n"
+         "   Described: int\n"
+         "   Marker: cstr -- Sets the \"--\" delimiter.\n"
+         "   Divider: cstr\n"
+         "   Undocumented: int\n"
+         "}", docs, error)) {
+      Log.error("failed to compile documented struct: %s", error.c_str());
+      return false;
+   }
+
+   auto plain = find_documentation(docs, "Plain");
+   if ((not plain) or (plain->text != "Trailing description.")) {
+      Log.error("trailing comment was not captured verbatim (got '%s')", plain ? plain->text.c_str() : "<none>");
+      return false;
+   }
+
+   auto described = find_documentation(docs, "Described");
+   if ((not described) or (described->text != "Leading description.\nSecond leading line.")) {
+      Log.error("leading comment run was not captured (got '%s')",
+         described ? described->text.c_str() : "<none>");
+      return false;
+   }
+
+   auto marker = find_documentation(docs, "Marker");
+   if ((not marker) or (marker->text != "Sets the \"--\" delimiter.")) {
+      Log.error("comment following a string literal was mis-captured (got '%s')",
+         marker ? marker->text.c_str() : "<none>");
+      return false;
+   }
+
+   // Divider follows a line whose trailing comment belongs to Marker, so it must not inherit it.
+
+   if (find_documentation(docs, "Divider")) {
+      Log.error("a preceding field's trailing comment leaked onto the next field");
+      return false;
+   }
+
+   if (find_documentation(docs, "Undocumented")) {
+      Log.error("an undocumented field acquired documentation");
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_state_local_struct_declarations(kt::Log &Log)
+{
+   constexpr std::string_view local_name = "ParserStateLocalRecord";
+   constexpr std::string_view shadow_name = "ParserStateShadowRecord";
+   constexpr std::string_view global_child_name = "ParserGlobalChildRecord";
+   constexpr std::string_view global_parent_name = "ParserGlobalParentRecord";
+   std::string error;
+
+   if (auto result = make_struct(glTestScript, shadow_name, "lGlobal");
+         result != ERR::Okay and result != ERR::Exists) {
+      Log.error("failed to register global shadow fixture: %s", GetErrorMsg(result));
+      return false;
+   }
+   if (auto result = make_struct(glTestScript, global_child_name, "lGlobalValue");
+         result != ERR::Okay and result != ERR::Exists) {
+      Log.error("failed to register global child fixture: %s", GetErrorMsg(result));
+      return false;
+   }
+   if (auto result = make_struct(glTestScript, global_parent_name,
+         "eChild:ParserGlobalChildRecord"); result != ERR::Okay and result != ERR::Exists) {
+      Log.error("failed to register global parent fixture: %s", GetErrorMsg(result));
+      return false;
+   }
+
+   {
+      LuaStateHolder first;
+      LuaStateHolder second;
+      lua_State *first_state = first.get();
+      lua_State *second_state = second.get();
+      if ((not first_state) or (not second_state)) {
+         Log.error("failed to allocate states for local struct registry test");
+         return false;
+      }
+
+      if (not parse_struct_source(first_state,
+            "struct ParserStateLocalRecord { Value: int }\n"
+            "struct ParserStateShadowRecord { Local: double }\n"
+            "struct ParserGlobalChildRecord { LocalValue: double }", error)) {
+         Log.error("failed to compile local struct declarations: %s", error.c_str());
+         return false;
+      }
+
+      if (not find_struct(first_state, local_name)) {
+         Log.error("declarative struct was not retained in its originating state");
+         return false;
+      }
+      if (find_struct(second_state, local_name)) {
+         Log.error("declarative struct leaked into an independent state");
+         return false;
+      }
+
+      auto first_shadow = find_struct(first_state, shadow_name);
+      auto second_shadow = find_struct(second_state, shadow_name);
+      if ((not first_shadow) or first_shadow->Fields.empty() or first_shadow->Fields[0].Name != "Local") {
+         Log.error("state-local struct did not shadow the global definition");
+         return false;
+      }
+      if ((not second_shadow) or second_shadow->Fields.empty() or second_shadow->Fields[0].Name != "global") {
+         Log.error("global struct fallback was changed by another state's declaration");
+         return false;
+      }
+
+      auto global_parent = find_struct(first_state, global_parent_name);
+      auto global_child = find_struct(second_state, global_child_name);
+      if ((not global_parent) or global_parent->Fields.empty() or (not global_child) or
+            global_parent->Fields[0].StructDefinition != global_child) {
+         Log.error("global parent did not retain its global embedded-struct definition");
+         return false;
+      }
+
+      if (not parse_struct_source(first_state,
+            "local value:struct<ParserStateLocalRecord> = ParserStateLocalRecord()", error)) {
+         Log.error("later compilation in the same state could not resolve its declaration: %s", error.c_str());
+         return false;
+      }
+
+      if (parse_struct_source(first_state,
+            "struct ParserRolledBackRecord { Value: int }\n"
+            "struct ParserInvalidRecord { Value: mystery }", error)) {
+         Log.error("invalid declaration fixture compiled successfully");
+         return false;
+      }
+      if (find_struct(first_state, "ParserRolledBackRecord")) {
+         Log.error("failed compilation retained a state-local declaration");
+         return false;
+      }
+   }
+
+   LuaStateHolder replacement;
+   if (find_struct(replacement.get(), local_name)) {
+      Log.error("declarative struct survived closure of its owning state");
+      return false;
+   }
+
+   return true;
+}
+
 static bool test_bytecode_equivalence(kt::Log &log)
 {
    constexpr const char* source = R"(
@@ -1585,7 +1822,7 @@ static bool test_ternary_falsey_semantics(kt::Log &log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 20> tests = { {
+   constexpr std::array<TestCase, 22> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -1603,6 +1840,8 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "return_lowering", test_return_lowering },
       { "ast_call_lowering", test_ast_call_lowering },
       { "bytecode_equivalence", test_bytecode_equivalence },
+      { "state_local_struct_declarations", test_state_local_struct_declarations },
+      { "struct_field_documentation", test_struct_field_documentation },
       { "expdesc_is_falsey", test_expdesc_is_falsey },
       { "if_empty_operator_constants", test_if_empty_operator_constants },
       { "ternary_falsey_semantics", test_ternary_falsey_semantics }

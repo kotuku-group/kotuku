@@ -21,6 +21,7 @@
 #include "lj_vm.h"
 #include "lj_vmevent.h"
 #include "field_type_lookup.h"
+#include "../../../defs.h"
 
 #include <kotuku/main.h>
 
@@ -171,6 +172,7 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
 
    if (not chunk_result.ok()) {
       builder.rollback_registered_enum_constants();
+      builder.rollback_registered_structs();
       report_pipeline_error(Context, chunk_result.error_ref());
       flush_non_fatal_errors(Context);
       return;
@@ -181,6 +183,7 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
 
    if (Context.diagnostics().has_errors() and Context.config().abort_on_error) {
       builder.rollback_registered_enum_constants();
+      builder.rollback_registered_structs();
       raise_accumulated_diagnostics(Context);
       return;
    }
@@ -197,6 +200,7 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
       // In diagnose mode (abort_on_error=false), continue to emit to collect more errors.
       if (Context.diagnostics().has_errors() and Context.config().abort_on_error) {
          builder.rollback_registered_enum_constants();
+         builder.rollback_registered_structs();
          raise_accumulated_diagnostics(Context);
          return;
       }
@@ -209,6 +213,7 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
    auto emit_result = emitter.emit_chunk(*chunk);
    if (not emit_result.ok()) {
       builder.rollback_registered_enum_constants();
+      builder.rollback_registered_structs();
       report_pipeline_error(Context, emit_result.error_ref());
       flush_non_fatal_errors(Context);
       return;
@@ -216,10 +221,12 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
 
    if (Context.diagnostics().has_errors()) {
       builder.rollback_registered_enum_constants();
+      builder.rollback_registered_structs();
       return;
    }
 
    builder.commit_registered_enum_constants();
+   builder.commit_registered_structs();
 
    emit_timer.stop();
 }

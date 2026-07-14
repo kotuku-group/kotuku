@@ -151,14 +151,17 @@ extern void  (lua_pushlightuserdata) (lua_State *L, void *p);
 // get functions (Lua -> stack)
 
 enum class AET : uint8_t;
+struct struct_record;
 
 extern void   lua_gettable(lua_State *L, int idx);
 extern void   lua_getfield(lua_State *L, int idx, std::string_view k);
 extern void   lua_rawget(lua_State *L, int idx);
 extern void   lua_rawgeti(lua_State *L, int idx, int n);
 extern void   lua_createtable(lua_State *L, int narr, int nrec);
-extern void   lua_createarray(lua_State *L, uint32_t Length, AET Type, void *Data = nullptr, uint8_t Flags = 0, std::string_view StructName = {});
-struct struct_record;
+extern void   lua_createarray(lua_State *L, uint32_t Length, AET Type, void *Data = nullptr, uint8_t Flags = 0,
+   std::string_view StructName = {});
+extern void   lua_createarray(lua_State *L, uint32_t Length, AET Type, void *Data, uint8_t Flags,
+   std::string_view StructName, struct_record *StructDef);
 struct Object;
 extern GCstruct * lua_pushstruct(lua_State *L, struct_record &Def, void *Data = nullptr, uint8_t Flags = 0,
    Object *Lifecycle = nullptr, GCstruct *Parent = nullptr);

@@ -691,7 +691,7 @@ class objTask;
   -- WriteValue signature is Object, *Field, Flags, *Value
 
   structdef("Field", { comment="Used to describe the public fields of a class." }, [[
-    maxint Arg         # An option to complement the field type.  Can be a pointer or an integer value
+    large Arg         # An option to complement the field type.  Can be a pointer or an integer value
     fptr(error ptr ptr) GetValue # A virtual function that will retrieve the value for this field
     fptr(error ptr ptr) SetValue # A virtual function that will set the value for this field
     fptr(error obj cstruct(*Field) int cptr) WriteValue # An internal function for writing to this field

@@ -61,6 +61,7 @@ JOF glJitOptions = JOF::NIL;
 ankerl::unordered_dense::map<std::string_view, ACTIONID, CaseInsensitiveHashView, CaseInsensitiveEqualView> glActionLookup;
 ankerl::unordered_dense::map<uint32_t, StructInfo> *glStructSizes = nullptr;
 ankerl::unordered_dense::map<uint32_t, TiriConstant> glConstantRegistry;
+std::recursive_mutex glStructMutex;
 std::unordered_map<struct_name, struct_record, struct_hash, struct_equal> glStructs;
 std::shared_mutex glConstantMutex;
 uint64_t glActionsWithResults = 0;
@@ -537,7 +538,8 @@ void make_array(lua_State *Lua, AET Type, int Elements, CPTR Data, std::string_v
 //********************************************************************************************************************
 // Create a Lua array from a list of structure pointers.
 
-ERR make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Elements, CPTR *Values)
+ERR make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Elements, CPTR *Values,
+   struct_record *StructDef)
 {
    kt::Log log(__FUNCTION__);
 
@@ -549,8 +551,8 @@ ERR make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Eleme
       Elements = i;
    }
 
-   auto s_name = struct_name(StructName);
-   if (not glStructs.contains(s_name)) return ERR::Search;
+   auto sdef = StructDef ? StructDef : find_struct(Lua, StructName);
+   if (not sdef) return ERR::Search;
 
    GCarray *arr = lj_array_new(Lua, Elements, AET::TABLE);
    setarrayV(Lua, Lua->top++, arr); // Push to stack immediately to protect from GC during loop
@@ -558,10 +560,8 @@ ERR make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Eleme
 
    if (Values) {
       std::vector<lua_ref> ref;
-      auto &sdef = glStructs[s_name];
-
       for (int i=0; i < Elements; i++) {
-         if (!struct_to_table(Lua, ref, sdef, Values[i])) {
+         if (!struct_to_table(Lua, ref, *sdef, Values[i])) {
             // Table is now on top of stack; retrieve arr from stack in case GC moved it
             arr = arrayV(Lua->base + arr_idx - 1);
             TValue *tv = Lua->top - 1;
@@ -581,14 +581,17 @@ ERR make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Eleme
 //********************************************************************************************************************
 // Create an array from a contiguous list of structures using the provided in-memory stride.
 
-void make_struct_array(lua_State *Lua, std::string_view StructName, int Elements, CPTR Input, int Stride)
+void make_struct_array(lua_State *Lua, std::string_view StructName, int Elements, CPTR Input, int Stride,
+   struct_record *StructDef)
 {
    kt::Log log(__FUNCTION__);
 
    if (Elements < 0) Elements = 0; // The total number of structs is a hard requirement.
 
-   auto s_name = struct_name(StructName);
-   if (not glStructs.contains(s_name)) luaL_error(Lua, ERR::Search, "Failed to find struct '%.*s'", int(StructName.size()), StructName.data());
+   auto sdef = StructDef ? StructDef : find_struct(Lua, StructName);
+   if (not sdef) {
+      luaL_error(Lua, ERR::Search, "Failed to find struct '%.*s'", int(StructName.size()), StructName.data());
+   }
 
    GCarray *arr = lj_array_new(Lua, Elements, AET::TABLE);
    setarrayV(Lua, Lua->top++, arr); // Push to stack immediately to protect from GC during loop
@@ -596,11 +599,10 @@ void make_struct_array(lua_State *Lua, std::string_view StructName, int Elements
 
    if (Input) {
       std::vector<lua_ref> ref;
-      auto &sdef = glStructs[s_name];
-      int struct_stride = (Stride > 0) ? Stride : sdef.Size;
+      int struct_stride = (Stride > 0) ? Stride : sdef->Size;
 
       for (int i=0; i < Elements; i++) {
-         if (!struct_to_table(Lua, ref, sdef, Input)) {
+         if (!struct_to_table(Lua, ref, *sdef, Input)) {
             // Table is now on top of stack; retrieve arr from stack in case GC moved it
             arr = arrayV(Lua->base + arr_idx - 1);
             TValue *tv = Lua->top - 1;
@@ -620,41 +622,41 @@ void make_struct_array(lua_State *Lua, std::string_view StructName, int Elements
 //********************************************************************************************************************
 // Create an array from a serialised list of structures aligned to a 64-bit boundary.
 
-void make_struct_serial_array(lua_State *Lua, std::string_view StructName, int Elements, CPTR Input)
+void make_struct_serial_array(lua_State *Lua, std::string_view StructName, int Elements, CPTR Input,
+   struct_record *StructDef)
 {
-   auto s_name = struct_name(StructName);
-   if (not glStructs.contains(s_name)) {
+   auto sdef = StructDef ? StructDef : find_struct(Lua, StructName);
+   if (not sdef) {
       luaL_error(Lua, ERR::Search, "Failed to find struct '%.*s'", int(StructName.size()), StructName.data());
    }
-
-   auto &sdef = glStructs[s_name];
 
    // 64-bit compilers don't always align structures to 64-bit, and it's difficult to compute alignment with
    // certainty.  It is essential that structures that are intended to be serialised into arrays are manually
    // padded to 64-bit so that the potential for mishap is eliminated.
 
-   int def_size = ALIGN64(sdef.Size);
-   char aligned = ((sdef.Size & 0x7) != 0) ? 'N': 'Y';
+   int def_size = ALIGN64(sdef->Size);
+   char aligned = ((sdef->Size & 0x7) != 0) ? 'N': 'Y';
    if (aligned IS 'N') {
       kt::Log(__FUNCTION__).msg("%.*s, Elements: %d, Values: %p, StructSize: %d, Aligned: %c",
          int(StructName.size()), StructName.data(), Elements, Input, def_size, aligned);
    }
 
-   make_struct_array(Lua, StructName, Elements, Input, def_size);
+   make_struct_array(Lua, StructName, Elements, Input, def_size, sdef);
 }
 
 //********************************************************************************************************************
 // The TypeName can be in the format 'Struct:Arg' without causing any issues.
 
-void make_any_array(lua_State *Lua, int Flags, std::string_view TypeName, int Elements, CPTR Values)
+void make_any_array(lua_State *Lua, int Flags, std::string_view TypeName, int Elements, CPTR Values,
+   struct_record *StructDef)
 {
    if (Flags & FD_STRUCT) {
       if (Flags & FD_POINTER) {
-         if (make_struct_ptr_array(Lua, TypeName, Elements, (CPTR *)Values) != ERR::Okay) {
+         if (make_struct_ptr_array(Lua, TypeName, Elements, (CPTR *)Values, StructDef) != ERR::Okay) {
             luaL_error(Lua, ERR::Search, "Failed to find struct '%.*s'", int(TypeName.size()), TypeName.data());
          }
       }
-      else make_struct_serial_array(Lua, TypeName, Elements, Values);
+      else make_struct_serial_array(Lua, TypeName, Elements, Values, StructDef);
    }
    else make_array(Lua, ff_to_aet(Flags), Elements, Values, TypeName);
 }

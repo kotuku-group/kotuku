@@ -1,16 +1,43 @@
 #pragma once
 
 #include <string>
+#include <cstdint>
 #include <vector>
 #include <string_view>
 #include <kotuku/strings.hpp>
 
+enum class NativeStructType : uint8_t {
+   Legacy,
+   Bool,
+   Char,
+   Int8,
+   UInt8,
+   Int16,
+   UInt16,
+   Int32,
+   UInt32,
+   Int64,
+   UInt64,
+   Float,
+   Double,
+   String,
+   CStr,
+   Pointer,
+   Struct,
+   Object,
+   Function
+};
+
+struct struct_record;
+
 struct struct_field {
    std::string Name;      // Field name
    std::string StructRef; // Named reference to other structure
+   struct_record *StructDefinition = nullptr; // Resolved definition; registry ownership remains external
    uint16_t Offset = 0;   // Offset to the field value.
    int  Type      = 0;    // FD flags
    int  ArraySize = 0;    // Set if the field is an array
+   NativeStructType NativeType = NativeStructType::Legacy;
 
    void precomputeNameHash() { NameHash = kt::strihash(Name); }
    [[nodiscard]] uint32_t nameHash() const { return NameHash; }
@@ -23,6 +50,8 @@ struct struct_record {
    std::string Name;
    std::vector<struct_field> Fields;
    int Size = 0; // Total byte size of the structure
+   std::string DeclarationSource;
+   uint32_t DeclarationLine = 0;
    struct_record(std::string_view pName) : Name(pName) { }
    struct_record() = default;
 };

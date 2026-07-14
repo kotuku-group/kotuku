@@ -99,6 +99,47 @@ ParserResult<ExprNodeList> AstBuilder::parse_expression_list()
 //********************************************************************************************************************
 // Parses comma-separated lists of identifiers with optional attributes (e.g., <close>).
 
+ParserResult<Token> AstBuilder::parse_type_annotation(TiriType &Type, struct_record *&StructDef)
+{
+   Token type_token = this->ctx.tokens().current();
+   auto kind = type_token.kind();
+   std::string_view type_view;
+
+   if (kind IS TokenKind::Identifier) {
+      this->ctx.tokens().advance();
+      GCstr *type_symbol = type_token.identifier();
+      if (type_symbol) type_view = std::string_view(strdata(type_symbol), type_symbol->len);
+   }
+   else if (kind IS TokenKind::Function or kind IS TokenKind::Nil) {
+      this->ctx.tokens().advance();
+      type_view = token_kind_name_constexpr(kind);
+   }
+   else return this->fail<Token>(ParserErrorCode::ExpectedTypeName, type_token, "Expected type name after ':'");
+
+   Type = parse_type_name(type_view);
+   if (Type IS TiriType::Unknown) {
+      return this->fail<Token>(ParserErrorCode::UnknownTypeName, type_token,
+         std::format("Unknown type name '{}'; expected a valid type name", type_view));
+   }
+
+   if (Type IS TiriType::Struct and this->ctx.check(TokenKind::Less)) {
+      this->ctx.tokens().advance();
+      auto name_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
+      if (not name_token.ok()) return ParserResult<Token>::failure(name_token.error_ref());
+      GCstr *name_symbol = name_token.value_ref().identifier();
+      std::string_view name(strdata(name_symbol), name_symbol->len);
+      auto found = find_struct(&this->ctx.lua(), name);
+      if (not found) {
+         return this->fail<Token>(ParserErrorCode::UnknownTypeName, name_token.value_ref(),
+            std::format("Unknown struct name '{}'; declarations must precede use", name));
+      }
+      StructDef = found;
+      auto close = this->ctx.consume(TokenKind::Greater, ParserErrorCode::ExpectedToken);
+      if (not close.ok()) return ParserResult<Token>::failure(close.error_ref());
+   }
+   return ParserResult<Token>::success(type_token);
+}
+
 ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
 {
    std::vector<Identifier> names;
@@ -112,33 +153,8 @@ ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
       // Parse optional type annotation (:type)
       if (this->ctx.check(TokenKind::Colon)) {
          this->ctx.tokens().advance();
-
-         Token type_token = this->ctx.tokens().current();
-         std::string_view type_view;
-
-         auto kind = type_token.kind();
-         if (kind IS TokenKind::Identifier) {
-            this->ctx.tokens().advance();
-            GCstr* type_symbol = type_token.identifier();
-            if (type_symbol) type_view = std::string_view(strdata(type_symbol), type_symbol->len);
-         }
-         else if (kind IS TokenKind::Function or kind IS TokenKind::Nil) {
-            this->ctx.tokens().advance();
-            type_view = token_kind_name_constexpr(kind);
-         }
-         else {
-            this->ctx.emit_error(ParserErrorCode::ExpectedTypeName, type_token, "expected type name after ':'");
-            return ParserResult<Identifier>::failure(
-               this->ctx.make_error(ParserErrorCode::ExpectedTypeName, type_token, "expected type name after ':'"));
-         }
-
-         identifier.type = parse_type_name(type_view);
-         if (identifier.type IS TiriType::Unknown) {
-            std::string message("Invalid type.  Common types are: any, bool, num, str, table, array");
-            this->ctx.emit_error(ParserErrorCode::UnknownTypeName, type_token, message);
-            return ParserResult<Identifier>::failure(
-               this->ctx.make_error(ParserErrorCode::UnknownTypeName, type_token, message));
-         }
+         auto parsed = this->parse_type_annotation(identifier.type, identifier.struct_def);
+         if (not parsed.ok()) return ParserResult<Identifier>::failure(parsed.error_ref());
       }
 
       // Check for attribute: either '<' (normal case) or 'const'/'close' followed by '<' (buffered case)
@@ -200,33 +216,8 @@ ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
       // Parse optional type annotation (:type) after attribute (supports `name <const>:type` syntax)
       if (identifier.type IS TiriType::Unknown and this->ctx.check(TokenKind::Colon)) {
          this->ctx.tokens().advance();
-
-         Token type_token = this->ctx.tokens().current();
-         std::string_view type_view;
-
-         auto kind = type_token.kind();
-         if (kind IS TokenKind::Identifier) {
-            this->ctx.tokens().advance();
-            GCstr* type_symbol = type_token.identifier();
-            if (type_symbol) type_view = std::string_view(strdata(type_symbol), type_symbol->len);
-         }
-         else if (kind IS TokenKind::Function or kind IS TokenKind::Nil) {
-            this->ctx.tokens().advance();
-            type_view = token_kind_name_constexpr(kind);
-         }
-         else {
-            this->ctx.emit_error(ParserErrorCode::ExpectedTypeName, type_token, "expected type name after ':'");
-            return ParserResult<Identifier>::failure(
-               this->ctx.make_error(ParserErrorCode::ExpectedTypeName, type_token, "expected type name after ':'"));
-         }
-
-         identifier.type = parse_type_name(type_view);
-         if (identifier.type IS TiriType::Unknown) {
-            auto message = std::format("Invalid type.  Common types are: any, bool, num, str, table, array", type_view);
-            this->ctx.emit_error(ParserErrorCode::UnknownTypeName, type_token, message);
-            return ParserResult<Identifier>::failure(
-               this->ctx.make_error(ParserErrorCode::UnknownTypeName, type_token, message));
-         }
+         auto parsed = this->parse_type_annotation(identifier.type, identifier.struct_def);
+         if (not parsed.ok()) return ParserResult<Identifier>::failure(parsed.error_ref());
       }
 
       return ParserResult<Identifier>::success(std::move(identifier));
@@ -270,31 +261,8 @@ ParserResult<AstBuilder::ParameterListResult> AstBuilder::parse_parameter_list(b
 
          if (this->ctx.check(TokenKind::Colon)) {
             this->ctx.tokens().advance();
-
-            Token type_token = this->ctx.tokens().current();
-            std::string_view type_view;
-
-            auto kind = type_token.kind();
-            if (kind IS TokenKind::Identifier) {
-               this->ctx.tokens().advance();
-               GCstr *type_symbol = type_token.identifier();
-               if (type_symbol) type_view = std::string_view(strdata(type_symbol), type_symbol->len);
-            }
-            else if (kind IS TokenKind::Function or kind IS TokenKind::Nil) {
-               this->ctx.tokens().advance();
-               type_view = token_kind_name_constexpr(kind);
-            }
-            else {
-               return this->fail<ParameterListResult>(ParserErrorCode::ExpectedTypeName, type_token,
-                  "Expected type name after ':'");
-            }
-
-            param.type = parse_type_name(type_view);
-            // If parse_type_name returns an invalid type, emit error
-            if (param.type IS TiriType::Unknown) {
-               return this->fail<ParameterListResult>(ParserErrorCode::UnknownTypeName, type_token,
-                  std::format("Unknown type name '{}'; expected a valid type name", type_view));
-            }
+            auto parsed = this->parse_type_annotation(param.type, param.struct_def);
+            if (not parsed.ok()) return ParserResult<ParameterListResult>::failure(parsed.error_ref());
          }
          else { // No type annotation provided - emit tips for untyped parameter
             if (param.name.symbol) {
@@ -585,25 +553,12 @@ ParserResult<FunctionReturnTypes> AstBuilder::parse_return_type_annotation()
             continue;
          }
 
-         // Parse type name
-         auto type_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
+         TiriType parsed = TiriType::Unknown;
+         struct_record *struct_def = nullptr;
+         auto type_token = this->parse_type_annotation(parsed, struct_def);
          if (not type_token.ok()) return ParserResult<FunctionReturnTypes>::failure(type_token.error_ref());
-
-         GCstr *type_name_str = type_token.value_ref().identifier();
-         if (type_name_str IS nullptr) {
-            return this->fail<FunctionReturnTypes>(ParserErrorCode::ExpectedIdentifier, type_token.value_ref(),
-               "expected type name in return type list");
-         }
-
-         std::string_view type_str(strdata(type_name_str), type_name_str->len);
-         TiriType parsed = parse_type_name(type_str);
-
-         if (parsed IS TiriType::Unknown) {
-            return this->fail<FunctionReturnTypes>(ParserErrorCode::UnexpectedToken, type_token.value_ref(),
-               std::format("unknown type name '{}'", type_str));
-         }
-
-         result.types[result.count++] = parsed;
+         result.types[result.count] = parsed;
+         result.struct_defs[result.count++] = struct_def;
 
       } while (this->ctx.match(TokenKind::Comma).ok());
 
@@ -613,25 +568,8 @@ ParserResult<FunctionReturnTypes> AstBuilder::parse_return_type_annotation()
       else return this->fail<FunctionReturnTypes>(ParserErrorCode::ExpectedToken, current, "expected '>' to close return type list");
    }
    else {
-      // Single type: :typename
-      auto type_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
+      auto type_token = this->parse_type_annotation(result.types[0], result.struct_defs[0]);
       if (not type_token.ok()) return ParserResult<FunctionReturnTypes>::failure(type_token.error_ref());
-
-      GCstr *type_name_str = type_token.value_ref().identifier();
-      if (type_name_str IS nullptr) {
-         return this->fail<FunctionReturnTypes>(ParserErrorCode::ExpectedIdentifier, type_token.value_ref(),
-            "expected type name after ':'");
-      }
-
-      std::string_view type_str(strdata(type_name_str), type_name_str->len);
-      TiriType parsed = parse_type_name(type_str);
-
-      if (parsed IS TiriType::Unknown) {
-         return this->fail<FunctionReturnTypes>(ParserErrorCode::UnexpectedToken, type_token.value_ref(),
-            std::format("unknown type name '{}'", type_str));
-      }
-
-      result.types[0] = parsed;
       result.count = 1;
    }
 
