@@ -978,6 +978,19 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
                   type_name(value_type.primary), type_name(name.type));
                this->record_diagnostic(std::move(diag));
             }
+            else if (name.type IS TiriType::Struct and value_type.primary IS TiriType::Struct and
+                name.struct_def and value_type.struct_def and name.struct_def != value_type.struct_def) {
+               TypeDiagnostic diag;
+               if (value_index > 0 and value_index - 1 < Payload.values.size()) {
+                  diag.location = Payload.values[value_index - 1]->span;
+               }
+               diag.expected = TiriType::Struct;
+               diag.actual = TiriType::Struct;
+               diag.code = ParserErrorCode::TypeMismatchAssignment;
+               diag.message = std::format("struct layout mismatch: cannot assign '{}' to '{}'",
+                  value_type.struct_def->Name, name.struct_def->Name);
+               this->record_diagnostic(std::move(diag));
+            }
          }
       }
       else if (have_value_type) {

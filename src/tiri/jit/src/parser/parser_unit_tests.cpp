@@ -1312,6 +1312,16 @@ static bool test_state_local_struct_declarations(kt::Log &Log)
       }
 
       if (parse_struct_source(first_state,
+            "local value:struct<ParserStateLocalRecord> = ParserStateShadowRecord()", error)) {
+         Log.error("local declaration accepted an initialiser with a different struct layout");
+         return false;
+      }
+      if (error.find("struct layout mismatch") IS std::string::npos) {
+         Log.error("local struct layout mismatch produced an unexpected diagnostic: %s", error.c_str());
+         return false;
+      }
+
+      if (parse_struct_source(first_state,
             "struct ParserRolledBackRecord { Value: int }\n"
             "struct ParserInvalidRecord { Value: mystery }", error)) {
          Log.error("invalid declaration fixture compiled successfully");
