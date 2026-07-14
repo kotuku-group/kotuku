@@ -1370,7 +1370,7 @@ extAudio::extAudio(objMetaClass *ClassPtr, OBJECTID ObjectID) : objAudio(ClassPt
 
    kt::Log log("New");
 
-   // Attempt to get the user's preferred pointer settings from the user:config/pointer file.
+   // Attempt to get the user's preferred audio settings from user:config/audio.cfg.
 
    objConfig::create config = { fl::Path("user:config/audio.cfg") };
 
