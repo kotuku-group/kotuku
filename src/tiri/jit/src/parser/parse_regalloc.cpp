@@ -348,7 +348,7 @@ static void expr_discharge(FuncState *fs, ExpDesc *e)
          err_limit(fs, BCMAX_C + 1, "struct field string constants");
          return;
       }
-      ins = BCINS_ABCP(BC_STGETF, 0, e->u.s.info, idx, 0xFFFFFFFFu);
+      ins = BCINS_ABCP(BC_STGETF, 0, e->u.s.info, idx, e->struct_field_index);
       bcreg_free(fs, e->u.s.info);
    }
    else if (e->k IS ExpKind::Call) {
@@ -699,7 +699,7 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
          err_limit(fs, BCMAX_C + 1, "struct field string constants");
          return;
       }
-      ins = BCINS_ABCP(BC_STSETF, ra, LHS->u.s.info, idx, 0xFFFFFFFFu);
+      ins = BCINS_ABCP(BC_STSETF, ra, LHS->u.s.info, idx, LHS->struct_field_index);
    }
    else {
       // Table index assignment - emit BC_TSETV, BC_TSETB, or BC_TSETS

@@ -148,7 +148,8 @@ private:
    [[nodiscard]] bool is_local_const(GCstr *) const;
 
    // Type fixation - locks variable type after first concrete assignment
-   void fix_local_type(GCstr *, TiriType, CLASSID ObjectClassId = CLASSID::NIL);
+   void fix_local_type(GCstr *, TiriType, CLASSID ObjectClassId = CLASSID::NIL,
+      struct_record *StructDef = nullptr);
 
    // Usage tracking - marks variables as used for unused variable detection
    void mark_identifier_used(GCstr *);
@@ -246,7 +247,8 @@ private:
    [[nodiscard]] std::optional<InferredType> lookup_global_type(GCstr *Name) const;
    [[nodiscard]] bool is_global_const(GCstr *Name) const;
    [[nodiscard]] bool is_implicit_global(GCstr *Name) const;
-   void fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId = CLASSID::NIL);
+   void fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId = CLASSID::NIL,
+      struct_record *StructDef = nullptr);
    void degrade_global_type(GCstr *Name);
 
    ParserContext &ctx_;                             // Parser context for diagnostics and lexer access
@@ -866,6 +868,21 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
                   this->record_diagnostic(std::move(diag));
                }
             }
+            else if (existing->primary IS TiriType::Struct and value_type.primary IS TiriType::Struct and
+               existing->struct_def and value_type.struct_def and existing->struct_def != value_type.struct_def) {
+               if (is_global and this->is_implicit_global(name)) {
+                  this->degrade_global_type(name);
+                  continue;
+               }
+               TypeDiagnostic diag;
+               diag.location = target.span;
+               diag.expected = TiriType::Struct;
+               diag.actual = TiriType::Struct;
+               diag.code = ParserErrorCode::TypeMismatchAssignment;
+               diag.message = std::format("struct layout mismatch: cannot assign '{}' to '{}'",
+                  value_type.struct_def->Name, existing->struct_def->Name);
+               this->record_diagnostic(std::move(diag));
+            }
          }
          else {
             // Unfixed variable: first non-nil assignment fixes the type
@@ -873,10 +890,10 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
             if ((existing->primary != TiriType::Any) and (value_type.primary != TiriType::Nil) and
                 (value_type.primary != TiriType::Any)) {
                if (is_global) {
-                  this->fix_global_type(name, value_type.primary, value_type.object_class_id);
+                  this->fix_global_type(name, value_type.primary, value_type.object_class_id, value_type.struct_def);
                }
                else {
-                  this->fix_local_type(name, value_type.primary, value_type.object_class_id);
+                  this->fix_local_type(name, value_type.primary, value_type.object_class_id, value_type.struct_def);
                }
             }
          }
@@ -940,6 +957,7 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
       // Explicit type annotation takes precedence (Unknown = no annotation)
       if (name.type != TiriType::Unknown) {
          inferred.primary = name.type;
+         inferred.struct_def = name.struct_def;
          // 'any' type is not fixed - it accepts any value
          inferred.is_fixed = (name.type != TiriType::Any);
 
@@ -1066,6 +1084,7 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
       // Explicit type annotation takes precedence
       if (name.type != TiriType::Unknown) {
          inferred.primary = name.type;
+         inferred.struct_def = name.struct_def;
          inferred.is_fixed = (name.type != TiriType::Any);
       }
       else if (i < Payload.values.size()) {
@@ -1249,7 +1268,7 @@ void TypeAnalyser::analyse_function_payload(const FunctionExprPayload &Function,
    this->enter_function(Function, Name);
 
    for (const auto &param : Function.parameters) {
-      this->current_scope().declare_parameter(param.name.symbol, param.type, param.name.span);
+      this->current_scope().declare_parameter(param.name.symbol, param.type, param.struct_def, param.name.span);
    }
 
    // Check for recursive functions without explicit return types
@@ -1458,6 +1477,26 @@ void TypeAnalyser::analyse_expression(const ExprNode &Expression)
 
 void TypeAnalyser::analyse_call_expr(const CallExprPayload &Call)
 {
+   if ((Call.result_type IS TiriType::Struct or Call.result_type IS TiriType::Func) and
+       not Call.struct_def and not Call.arguments.empty()) {
+      const auto *literal = std::get_if<LiteralValue>(&Call.arguments[0]->data);
+      if (literal and literal->kind IS LiteralKind::String and literal->string_value) {
+         std::string_view name(strdata(literal->string_value), literal->string_value->len);
+         Call.struct_def = find_struct(&this->ctx_.lua(), name);
+      }
+   }
+   if (not Call.struct_def) {
+      if (const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+          direct and direct->callable and direct->callable->kind IS AstNodeKind::IdentifierExpr) {
+         const auto &name_ref = std::get<NameRef>(direct->callable->data);
+         auto callable = this->resolve_identifier(name_ref.identifier.symbol);
+         if (callable and callable->struct_def) {
+            Call.result_type = TiriType::Struct;
+            Call.struct_def = callable->struct_def;
+         }
+      }
+   }
+
    // Analyse the callable to mark function names as used
    if (std::holds_alternative<DirectCallTarget>(Call.target)) {
       const auto &direct = std::get<DirectCallTarget>(Call.target);
@@ -1478,7 +1517,13 @@ void TypeAnalyser::analyse_call_expr(const CallExprPayload &Call)
    }
 
    const FunctionExprPayload* target = this->resolve_call_target(Call.target);
-   if (target) this->check_arguments(*target, Call);
+   if (target) {
+      if (target->return_types.is_explicit and target->return_types.count > 0) {
+         Call.result_type = target->return_types.types[0];
+         Call.struct_def = target->return_types.struct_defs[0];
+      }
+      this->check_arguments(*target, Call);
+   }
 }
 
 //********************************************************************************************************************
@@ -1565,12 +1610,36 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                if (payload->result_type IS TiriType::Object) {
                   result.object_class_id = payload->object_class_id;
                }
+               result.struct_def = payload->struct_def;
+               if ((result.primary IS TiriType::Struct or result.primary IS TiriType::Func) and
+                   not result.struct_def and not payload->arguments.empty()) {
+                  const auto *literal = std::get_if<LiteralValue>(&payload->arguments[0]->data);
+                  if (literal and literal->kind IS LiteralKind::String and literal->string_value) {
+                     std::string_view name(strdata(literal->string_value), literal->string_value->len);
+                     result.struct_def = find_struct(&this->ctx_.lua(), name);
+                     payload->struct_def = result.struct_def;
+                  }
+               }
                return result;
+            }
+            if (const auto *direct = std::get_if<DirectCallTarget>(&payload->target);
+                direct and direct->callable and direct->callable->kind IS AstNodeKind::IdentifierExpr) {
+               const auto &name_ref = std::get<NameRef>(direct->callable->data);
+               auto callable = this->resolve_identifier(name_ref.identifier.symbol);
+               if (callable and callable->struct_def) {
+                  result.primary = TiriType::Struct;
+                  result.struct_def = callable->struct_def;
+                  payload->result_type = TiriType::Struct;
+                  payload->struct_def = callable->struct_def;
+                  return result;
+               }
             }
             // Otherwise try to infer from the function's declared return type
             const FunctionExprPayload* target = this->resolve_call_target(payload->target);
             if (target and target->return_types.is_explicit and target->return_types.count > 0) {
                result.primary = target->return_types.types[0];
+               result.struct_def = target->return_types.struct_defs[0];
+               payload->struct_def = result.struct_def;
                return result;
             }
          }
@@ -1763,7 +1832,12 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
 
    // Get the type at the requested position
    TiriType type = target->return_types.type_at(Position);
-   if (type != TiriType::Unknown) result.primary = type;
+   if (type != TiriType::Unknown) {
+      result.primary = type;
+      if (Position < target->return_types.struct_defs.size()) {
+         result.struct_def = target->return_types.struct_defs[Position];
+      }
+   }
 
    return result;
 }
@@ -1781,11 +1855,7 @@ std::optional<InferredType> TypeAnalyser::resolve_identifier(GCstr *Name) const
       if (type) return type;
 
       auto param = it->lookup_parameter_type(Name);
-      if (param) {
-         InferredType inferred;
-         inferred.primary = *param;
-         return inferred;
-      }
+      if (param) return param;
    }
    return std::nullopt;
 }
@@ -1859,12 +1929,12 @@ bool TypeAnalyser::is_local_const(GCstr *Name) const
    return false;
 }
 
-void TypeAnalyser::fix_local_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId)
+void TypeAnalyser::fix_local_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId, struct_record *StructDef)
 {
    for (auto it = this->scope_stack_.rbegin(); it != this->scope_stack_.rend(); ++it) {
       auto existing = it->lookup_local_type(Name);
       if (existing) {
-         it->fix_local_type(Name, Type, ObjectClassId);
+         it->fix_local_type(Name, Type, ObjectClassId, StructDef);
          this->trace_fix(this->ctx_.lex().linenumber, Name, Type);
          return;
       }
@@ -1953,17 +2023,19 @@ void TypeAnalyser::degrade_global_type(GCstr *Name)
       it->second.type.primary = TiriType::Any;
       it->second.type.is_fixed = true;  // 'any' accepts every subsequent assignment
       it->second.type.object_class_id = CLASSID::NIL;
+      it->second.type.struct_def = nullptr;
       this->trace_fix(this->ctx_.lex().linenumber, Name, TiriType::Any);
    }
 }
 
-void TypeAnalyser::fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId)
+void TypeAnalyser::fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId, struct_record *StructDef)
 {
    if (not Name) return;
    if (auto it = this->global_types_.find(Name); it != this->global_types_.end()) {
       it->second.type.primary = Type;
       it->second.type.is_fixed = true;
       it->second.type.object_class_id = ObjectClassId;
+      it->second.type.struct_def = StructDef;
       this->trace_fix(this->ctx_.lex().linenumber, Name, Type);
    }
 }
@@ -2385,7 +2457,7 @@ void TypeAnalyser::publish_global_type_hints(LexState &Lex) const
          case TiriType::Struct:
          case TiriType::Object:
          case TiriType::Array:
-            Lex.global_type_hints[name] = { info.type.primary, info.type.object_class_id };
+            Lex.global_type_hints[name] = { info.type.primary, info.type.object_class_id, info.type.struct_def };
             break;
          default:
             break;

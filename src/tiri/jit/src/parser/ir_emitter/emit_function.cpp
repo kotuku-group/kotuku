@@ -130,7 +130,11 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    auto base = BCReg(child_state.varmap.size() - param_count.raw());
    for (auto i = BCReg(0); i < param_count; ++i) {
       const FunctionParameter &param = Payload.parameters[i.raw()];
-      if (param.type IS TiriType::Struct) child_state.var_get(base.raw() + i.raw()).fixed_type = param.type;
+      if (param.type IS TiriType::Struct) {
+         auto &param_info = child_state.var_get(base.raw() + i.raw());
+         param_info.fixed_type = param.type;
+         param_info.struct_def = param.struct_def;
+      }
    }
 
    if (child_state.varmap.size() > 0) {
@@ -312,6 +316,7 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          // Save the emitted expression's result_type before discharge operations may modify it.
          // This captures type information propagated from VarInfo during variable lookup.
          TiriType emitted_base_type = table.result_type;
+         struct_record *emitted_struct_def = table.struct_def;
 
          ExpressionValue table_toval(&this->func_state, table);
          table_toval.to_val();
@@ -339,6 +344,7 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
             if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
                table.k = ExpKind::IndexedStruct;
             }
+            apply_struct_field_metadata(table, emitted_struct_def, payload.member.symbol);
          }
 
          return ParserResult<ExpDesc>::success(table);
@@ -416,6 +422,7 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          ExpDesc table = table_result.value_ref();
 
          TiriType emitted_base_type = table.result_type;
+         struct_record *emitted_struct_def = table.struct_def;
 
          ExpressionValue table_toval(&this->func_state, table);
          table_toval.to_val();
@@ -444,6 +451,7 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
             if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
                table.k = ExpKind::IndexedStruct;
             }
+            apply_struct_field_metadata(table, emitted_struct_def, payload.member.symbol);
          }
 
          return ParserResult<ExpDesc>::success(table);

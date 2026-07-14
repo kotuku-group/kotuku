@@ -177,9 +177,21 @@ static void write_field(lua_State *L, APTR Address, const struct_field &Field, i
          if (object_is_dead(object)) {
             luaL_error(L, ERR::DoesNotExist, "Cannot assign detached object to field '%s'.", FieldName);
          }
+         if (Field.ObjectClassID != CLASSID::NIL) {
+            // Sub-classes satisfy a base class constraint, so both identifiers are eligible for the match.
+            auto class_ptr = object->classptr;
+            if ((not class_ptr) or ((class_ptr->ClassID != Field.ObjectClassID) and
+                (class_ptr->BaseClassID != Field.ObjectClassID))) {
+               luaL_error(L, ERR::InvalidType, "Field '%s' requires an object of class '%s'.", FieldName,
+                  ResolveClassID(Field.ObjectClassID));
+            }
+         }
          ((OBJECTPTR *)Address)[0] = object->ptr;
       }
       else if (lua_islightuserdata(L, StackIndex)) {
+         if (Field.ObjectClassID != CLASSID::NIL) {
+            luaL_error(L, ERR::InvalidType, "Field '%s' requires a typed object reference.", FieldName);
+         }
          ((OBJECTPTR *)Address)[0] = (OBJECTPTR)lua_touserdata(L, StackIndex);
       }
       else luaL_error(L, ERR::InvalidType, "Field '%s' requires an object, lightuserdata or nil.", FieldName);

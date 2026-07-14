@@ -14,6 +14,8 @@ struct DeclaredUser {
    Child: struct<DeclaredChild>
    ChildPointer: ptr<DeclaredChild>
    Object: obj
+   Clock: obj<Time>
+   Markup: obj<XML>
 }
 
 struct DeclaredLayout {
@@ -55,6 +57,44 @@ end
    local empty_user = DeclaredUser()
    assert(empty_user.Age is 0 and empty_user.Name is '', 'Empty definition calls should zero-initialise fields')
    assert(struct.new('DeclaredUser').Age is 0, 'struct.new() should interoperate with declarations')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConstrainedObjectField()
+   local holder = DeclaredUser()
+   local clock = obj.new('time', { })
+   holder.Clock = clock
+   assert(holder.Clock.year is clock.year, 'obj<Class> fields should retain typed object references')
+   holder.Clock = nil
+   assert(holder.Clock is nil, 'Constrained object fields should allow nil clearing')
+
+   try
+      holder.Clock = obj.new('tiri', { statement='return 1' })
+   success
+      error('obj<Class> fields should reject objects of another class')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A sub-class satisfies a base class constraint: 'json' declares XML as its base class, so an obj<XML> field must
+-- accept it.  An exact ClassID comparison would incorrectly reject this.
+
+@Test function ConstrainedObjectFieldAcceptsSubClass()
+   local holder = DeclaredUser()
+   local markup = obj.new('xml', { statement='<a/>' })
+   holder.Markup = markup
+   assert(holder.Markup is not nil, 'obj<Class> fields should accept an exact class match')
+
+   local derived = obj.new('json', { statement='{ "a": 1 }' })
+   holder.Markup = derived
+   assert(holder.Markup is not nil, 'obj<Class> fields should accept a sub-class of the constrained base class')
+
+   try
+      holder.Markup = obj.new('time', { })
+   success
+      error('obj<Class> fields should still reject unrelated classes')
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------

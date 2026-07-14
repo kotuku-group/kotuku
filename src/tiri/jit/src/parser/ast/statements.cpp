@@ -403,6 +403,9 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
          if (this->ctx.match(TokenKind::Less).ok()) {
             auto class_name = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
             if (not class_name.ok()) return ParserResult<StmtNodePtr>::failure(class_name.error_ref());
+            GCstr *class_symbol = class_name.value_ref().identifier();
+            std::string_view class_view(strdata(class_symbol), class_symbol->len);
+            field.ObjectClassID = CLASSID(kt::strihash(class_view));
             auto close = this->ctx.consume(TokenKind::Greater, ParserErrorCode::ExpectedToken);
             if (not close.ok()) return ParserResult<StmtNodePtr>::failure(close.error_ref());
          }
@@ -521,9 +524,11 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
          std::format("Struct '{}' conflicts with its previous declaration{}", struct_name, location));
    }
    if (inserted) this->track_registered_struct(struct_name);
+   auto registered = find_struct(&this->ctx.lua(), struct_name);
 
    Identifier variable = make_identifier(name_token.value_ref());
    variable.type = TiriType::Func;
+   variable.struct_def = registered;
    Identifier struct_identifier(&this->ctx.lua(), "struct", struct_token.span());
    Identifier def_identifier(&this->ctx.lua(), "def", struct_token.span());
    NameRef struct_reference;

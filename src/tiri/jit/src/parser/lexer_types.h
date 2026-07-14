@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <string_view>
 
+struct struct_record;
+
 inline constexpr uint32_t TKF_NONE = 0x0000;
 inline constexpr uint32_t TKF_RESERVED = 0x0001;
 inline constexpr uint32_t TKF_CAN_END_RANGE_EXPRESSION = 0x0002;
@@ -200,6 +202,7 @@ typedef struct VarInfo {
    VarInfoFlag info;  //  Variable info flags.
    TiriType fixed_type;  // Type once established (Unknown = not yet fixed)
    CLASSID object_class_id = CLASSID::NIL;  // CLASSID for Object types (0 = unknown class)
+   struct_record *struct_def = nullptr; // Resolved layout for struct values and callable definitions
    BCLine line = 0;    // Line number where the variable was declared (for diagnostics)
    BCLine column = 0;  // Column number where the variable was declared (for diagnostics)
 } VarInfo;

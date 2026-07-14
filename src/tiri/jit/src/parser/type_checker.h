@@ -13,6 +13,7 @@ struct InferredType {
    bool is_nullable = false;
    bool is_fixed = false;  // Type is locked, cannot change
    CLASSID object_class_id = CLASSID::NIL;  // CLASSID for Object types
+   struct_record *struct_def = nullptr; // Resolved layout for Struct types and definition callables
 
    InferredType() = default;
    explicit InferredType(TiriType Primary, bool IsConstant = false, bool IsNullable = false, bool IsFixed = false,
@@ -69,15 +70,16 @@ struct UnusedVariableInfo {
 
 class TypeCheckScope {
 public:
-   void declare_parameter(GCstr *, TiriType Type, SourceSpan Location = {});
+   void declare_parameter(GCstr *, TiriType Type, struct_record *StructDef, SourceSpan Location = {});
    void declare_local(GCstr *, const InferredType &, SourceSpan Location = {}, bool IsConst = false);
    void declare_function(GCstr *, const FunctionExprPayload *, SourceSpan Location = {});
-   void fix_local_type(GCstr *, TiriType Type, CLASSID ObjectClassId = CLASSID::NIL);
+   void fix_local_type(GCstr *, TiriType Type, CLASSID ObjectClassId = CLASSID::NIL,
+      struct_record *StructDef = nullptr);
 
    // Mark a variable as used (called when variable is referenced)
    void mark_used(GCstr *);
 
-   [[nodiscard]] std::optional<TiriType> lookup_parameter_type(GCstr *) const;
+   [[nodiscard]] std::optional<InferredType> lookup_parameter_type(GCstr *) const;
    [[nodiscard]] std::optional<InferredType> lookup_local_type(GCstr *) const;
    [[nodiscard]] const FunctionExprPayload * lookup_function(GCstr *) const;
 

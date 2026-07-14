@@ -759,7 +759,8 @@ static bool identical_struct_layout(const struct_record &Left, const struct_reco
    for (size_t i = 0; i < Left.Fields.size(); i++) {
       const auto &left = Left.Fields[i];
       const auto &right = Right.Fields[i];
-      if ((left.Name != right.Name) or (left.StructRef != right.StructRef) or (left.Offset != right.Offset) or
+      if ((left.Name != right.Name) or (left.StructRef != right.StructRef) or
+         (left.ObjectClassID != right.ObjectClassID) or (left.Offset != right.Offset) or
             (left.Type != right.Type)) return false;
       if ((left.Type & FD_ARRAY) and (left.ArraySize != right.ArraySize)) return false;
       if ((left.NativeType != NativeStructType::Legacy) and (right.NativeType != NativeStructType::Legacy) and

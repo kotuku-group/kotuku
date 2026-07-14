@@ -86,6 +86,7 @@ struct FunctionReturnTypes {
 struct InferredTypeInfo {
    TiriType type = TiriType::Unknown;
    CLASSID object_class_id = CLASSID::NIL; // Object type identifier
+   struct_record *struct_def = nullptr; // Resolved layout for Struct results
 };
 [[nodiscard]] InferredTypeInfo infer_expression_type_ext(const ExprNode& Expr);
 
@@ -409,6 +410,7 @@ struct CallExprPayload {
    bool forwards_multret = false;
    mutable TiriType result_type = TiriType::Unknown;  // Inferred return type (e.g., Object for obj.new())
    mutable CLASSID object_class_id = CLASSID::NIL; // CLASSID if result is Object
+   mutable struct_record *struct_def = nullptr; // Resolved layout if result is Struct, or callable struct definition
    ~CallExprPayload();
 };
 

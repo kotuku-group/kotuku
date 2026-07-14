@@ -5,6 +5,7 @@
 #include <vector>
 #include <string_view>
 #include <kotuku/strings.hpp>
+#include <kotuku/system/registry.h>
 
 enum class NativeStructType : uint8_t {
    Legacy,
@@ -32,7 +33,8 @@ struct struct_record;
 
 struct struct_field {
    std::string Name;      // Field name
-   std::string StructRef; // Named reference to other structure
+   std::string StructRef; // Named reference to other structure.  TODO: Replace with uint32_t hash from kt::strhash()
+   CLASSID ObjectClassID = CLASSID::NIL; // Optional class constraint for obj<Class> fields
    struct_record *StructDefinition = nullptr; // Resolved definition; registry ownership remains external
    uint16_t Offset = 0;   // Offset to the field value.
    int  Type      = 0;    // FD flags
