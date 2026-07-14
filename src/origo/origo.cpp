@@ -59,20 +59,23 @@ Origo launches Tiri scripts and PARC files developed for Kotuku.
 
    origo [options] [script.ext] arg1 arg2=value ...
 
-The following options can be used when executing script files:
+The following options are available:
 
  --procedure [n] The name of a procedure to execute.
  --time          Print the amount of time that it took to execute the script.
  --dialog        Display a file dialog for choosing a script manually.
  --backstage     Enables the backstage REST API (see Wiki).
  --statement     Instead of running a script file, executes a single statement or expression.
+ --audio-device  Select the audio output device.
+ --jit-options   Development options that control the behaviour of the compiler.
+ --version       Prints the version number on line 1 and git commit on line 2.
+
+Logging options; messages are printed to stderr:
 
  --log-api       Activates run-time log messages at API level.
  --log-info      Activates run-time log messages at INFO level.
  --log-error     Activates run-time log messages at ERROR level.
  --log-file      Write log output to the given file path.
- --jit-options   Development options that control the behaviour of the compiler.
- --version       Prints the version number on line 1 and git commit on line 2.
 )";
 
 static std::string glDialogScript =
@@ -106,21 +109,22 @@ end
 
 //********************************************************************************************************************
 
-constexpr uint32_t ARG_HELP1       = kt::strhash("--help");
-constexpr uint32_t ARG_HELP2       = kt::strhash("help");
-constexpr uint32_t ARG_VERSION     = kt::strhash("--version");
-constexpr uint32_t ARG_VERIFY      = kt::strhash("--verify");
-constexpr uint32_t ARG_SANDBOX     = kt::strhash("--sandbox");
-constexpr uint32_t ARG_TIME        = kt::strhash("--time");
-constexpr uint32_t ARG_DIALOG      = kt::strhash("--dialog");
-constexpr uint32_t ARG_RELAUNCH    = kt::strhash("--relaunch");
-constexpr uint32_t ARG_BACKSTAGE   = kt::strhash("--backstage");
-constexpr uint32_t ARG_PROCEDURE   = kt::strhash("--procedure");
-constexpr uint32_t ARG_STATEMENT   = kt::strhash("--statement");
-constexpr uint32_t ARG_JIT_OPTIONS = kt::strhash("--jit-options");
-constexpr uint32_t ARG_LOG_FILE    = kt::strhash("--log-file");
-constexpr uint32_t ARG_C           = kt::strhash("-c");
-constexpr uint32_t ARG_E           = kt::strhash("-e");
+constexpr uint32_t ARG_HELP1        = kt::strhash("--help");
+constexpr uint32_t ARG_HELP2        = kt::strhash("help");
+constexpr uint32_t ARG_VERSION      = kt::strhash("--version");
+constexpr uint32_t ARG_VERIFY       = kt::strhash("--verify");
+constexpr uint32_t ARG_SANDBOX      = kt::strhash("--sandbox");
+constexpr uint32_t ARG_TIME         = kt::strhash("--time");
+constexpr uint32_t ARG_DIALOG       = kt::strhash("--dialog");
+constexpr uint32_t ARG_RELAUNCH     = kt::strhash("--relaunch");
+constexpr uint32_t ARG_BACKSTAGE    = kt::strhash("--backstage");
+constexpr uint32_t ARG_PROCEDURE    = kt::strhash("--procedure");
+constexpr uint32_t ARG_STATEMENT    = kt::strhash("--statement");
+constexpr uint32_t ARG_AUDIO_DEVICE = kt::strhash("--audio-device");
+constexpr uint32_t ARG_JIT_OPTIONS  = kt::strhash("--jit-options");
+constexpr uint32_t ARG_LOG_FILE     = kt::strhash("--log-file");
+constexpr uint32_t ARG_C            = kt::strhash("-c");
+constexpr uint32_t ARG_E            = kt::strhash("-e");
 
 static ERR process_args(void)
 {
@@ -175,7 +179,7 @@ static ERR process_args(void)
                i++;
             }
          }
-         else if (hash IS ARG_JIT_OPTIONS or hash IS ARG_LOG_FILE) {
+         else if (hash IS ARG_AUDIO_DEVICE or hash IS ARG_JIT_OPTIONS or hash IS ARG_LOG_FILE) {
             // For some system parameters we need to skip the next argument.
             if (i + 1 < glArgs.size()) i++;
          }

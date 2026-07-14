@@ -67,6 +67,7 @@ class objConfig : public Object {
    }
 
    // For C++ only, these read variants avoid method calls for speed, but apply identical logic.
+   // The target value is unaltered if the group/key is not found, and ERR::Search is returned.
 
    inline ERR read(std::string_view pGroup, std::string_view pKey, double &pValue) {
       for (auto & [group, keys] : Groups) {
