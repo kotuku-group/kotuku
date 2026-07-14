@@ -10,7 +10,6 @@
 # GENERATED HEADERS OVERVIEW:
 #
 # From TDL files (Kōtuku Interface Definition Language):
-#   hashes.h                      - Hash definitions for Tiri internal use
 #   include/kotuku/modules/tiri.h - Public API header for Tiri module
 #
 # From LuaJIT build process:
@@ -47,8 +46,6 @@ set (INC_MOD_TIRI TRUE PARENT_SCOPE)
 # set (UNIT_TESTS ON)
 
 # IDL processing for headers and documentation
-
-idl_gen ("hashes.tdl" NAME ${MOD}_hashes OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/hashes.h")
 
 idl_gen ("${MOD}.tdl" NAME ${MOD}_defs
    OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h"
@@ -515,18 +512,35 @@ else ()
       VERBATIM
    )
 
-   # Build buildvm host tool
-   # Note: lj_obj.h contains MMDEF which defines metamethod tables used by buildvm
+   # Build buildvm host tool.  Compile each source with a separate custom command so parallel builds can schedule the
+   # objects independently instead of making one compiler driver process compile every source in sequence.
+   # Note: lj_obj.h contains MMDEF which defines metamethod tables used by buildvm.
+
+   set (BUILDVM_OBJECTS "")
+   foreach (BUILDVM_SOURCE ${BUILDVM_SOURCES})
+      get_filename_component(BUILDVM_FILENAME ${BUILDVM_SOURCE} NAME_WE)
+      set (BUILDVM_OBJECT "${JIT_BUILD_DIR}/host_${BUILDVM_FILENAME}.o")
+      list (APPEND BUILDVM_OBJECTS ${BUILDVM_OBJECT})
+
+      add_custom_command(
+         OUTPUT ${BUILDVM_OBJECT}
+         COMMAND ${CMAKE_CXX_COMPILER} ${JIT_COMMON_CXXFLAGS}
+            ${JIT_NON_MSVC_DEFS}
+            ${JIT_INCLUDE_DIRS}
+            -c ${BUILDVM_SOURCE} -o ${BUILDVM_OBJECT}
+         DEPENDS ${BUILDVM_SOURCE} ${BUILDVM_ARCH_H} ${JIT_LAYOUT_HEADERS}
+            ${JIT_KOTUKU_HEADER_DEPENDENCIES}
+         COMMENT "Compiling host/${BUILDVM_FILENAME}.cpp"
+         VERBATIM
+      )
+   endforeach ()
 
    add_custom_command(
       OUTPUT ${BUILDVM_TARGET}
       COMMAND ${CMAKE_CXX_COMPILER} ${JIT_COMMON_CXXFLAGS}
-         ${JIT_NON_MSVC_DEFS}
-         ${JIT_INCLUDE_DIRS}
-         -o ${BUILDVM_TARGET} ${BUILDVM_SOURCES} ${JIT_MATH_LIB}
-      DEPENDS ${BUILDVM_SOURCES} ${BUILDVM_ARCH_H} ${JIT_LAYOUT_HEADERS}
-         ${JIT_KOTUKU_HEADER_DEPENDENCIES}
-      COMMENT "Building buildvm host tool"
+         -o ${BUILDVM_TARGET} ${BUILDVM_OBJECTS} ${JIT_MATH_LIB}
+      DEPENDS ${BUILDVM_OBJECTS}
+      COMMENT "Linking buildvm host tool"
       VERBATIM
    )
 
@@ -549,16 +563,41 @@ else ()
       set(JIT_VM_COMMENT "Generating JIT headers and VM assembly via buildvm")
    endif ()
 
+   set (JIT_LIB_GENERATORS bcdef ffdef libdef recdef)
+   foreach (JIT_GENERATOR ${JIT_LIB_GENERATORS})
+      set (JIT_GENERATOR_OUTPUT "${JIT_BUILD_DIR}/lj_${JIT_GENERATOR}.h")
+      add_custom_command(
+         OUTPUT ${JIT_GENERATOR_OUTPUT}
+         COMMAND ${BUILDVM_TARGET} -m ${JIT_GENERATOR} -o ${JIT_GENERATOR_OUTPUT} ${LJLIB_C}
+         DEPENDS ${BUILDVM_TARGET} ${LJLIB_C}
+         WORKING_DIRECTORY ${JIT_SRC}
+         COMMENT "Generating lj_${JIT_GENERATOR}.h"
+         VERBATIM
+      )
+   endforeach ()
+
    add_custom_command(
-      OUTPUT ${JIT_GENERATED_HEADERS} ${JIT_VM_OUTPUT} ${JIT_VMDEF_LUA}
-      COMMAND ${BUILDVM_TARGET} -m bcdef -o ${JIT_BUILD_DIR}/lj_bcdef.h ${LJLIB_C}
-      COMMAND ${BUILDVM_TARGET} -m ffdef -o ${JIT_BUILD_DIR}/lj_ffdef.h ${LJLIB_C}
-      COMMAND ${BUILDVM_TARGET} -m libdef -o ${JIT_BUILD_DIR}/lj_libdef.h ${LJLIB_C}
-      COMMAND ${BUILDVM_TARGET} -m recdef -o ${JIT_BUILD_DIR}/lj_recdef.h ${LJLIB_C}
-      COMMAND ${BUILDVM_TARGET} -m folddef -o ${JIT_BUILD_DIR}/lj_folddef.h "${JIT_SRC}/lj_opt_fold.cpp"
+      OUTPUT "${JIT_BUILD_DIR}/lj_folddef.h"
+      COMMAND ${BUILDVM_TARGET} -m folddef -o "${JIT_BUILD_DIR}/lj_folddef.h" "${JIT_SRC}/lj_opt_fold.cpp"
+      DEPENDS ${BUILDVM_TARGET} "${JIT_SRC}/lj_opt_fold.cpp"
+      WORKING_DIRECTORY ${JIT_SRC}
+      COMMENT "Generating lj_folddef.h"
+      VERBATIM
+   )
+
+   add_custom_command(
+      OUTPUT ${JIT_VMDEF_LUA}
       COMMAND ${BUILDVM_TARGET} -m vmdef -o ${JIT_VMDEF_LUA} ${LJLIB_C}
+      DEPENDS ${BUILDVM_TARGET} ${LJLIB_C}
+      WORKING_DIRECTORY ${JIT_SRC}
+      COMMENT "Generating jit/vmdef.lua"
+      VERBATIM
+   )
+
+   add_custom_command(
+      OUTPUT ${JIT_VM_OUTPUT}
       COMMAND ${BUILDVM_TARGET} -m ${JIT_VM_MODE} -o ${JIT_VM_OUTPUT}
-      DEPENDS ${BUILDVM_TARGET} ${LJLIB_C} "${JIT_SRC}/lj_opt_fold.cpp" ${JIT_LAYOUT_HEADERS}
+      DEPENDS ${BUILDVM_TARGET} ${JIT_LAYOUT_HEADERS}
       WORKING_DIRECTORY ${JIT_SRC}
       COMMENT ${JIT_VM_COMMENT}
       VERBATIM
@@ -677,6 +716,10 @@ endif ()
 add_library (${MOD})
 
 set_module_defaults (${MOD} "Fl")
+
+if (TARGET ${MOD}_defs)
+   add_dependencies (${MOD} ${MOD}_defs)
+endif ()
 
 add_dependencies (${MOD} ${FFI_PROJECT} jitlib jit_codegen)
 

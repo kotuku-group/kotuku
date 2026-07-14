@@ -40,8 +40,6 @@ For drag and drop operations, data can be requested from a source as follows:
 #include "lib.h"
 #include "lauxlib.h"
 #include "lj_obj.h"
-
-#include "hashes.h"
 #include "defs.h"
 #include "lj_proto_registry.h"
 
@@ -122,7 +120,7 @@ static void release_input_subscription(lua_State *Lua, struct finput *Input)
       log.trace("input.index(#%d, %.*s)", input->SurfaceID, int(field.size()), field.data());
 
       switch (strihash(field)) {
-         case HASH_UNSUBSCRIBE:
+         case strhash("unsubscribe"):
             lua_pushvalue(Lua, 1); // Duplicate the interface reference
             lua_pushcclosure(Lua, input_unsubscribe, 1);
             return 1;
