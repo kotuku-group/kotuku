@@ -13,6 +13,7 @@
 #include "lj_gc.h"
 #include "lj_array.h"
 #include "lj_str.h"
+#include "lj_struct.h"
 #include "lj_tab.h"
 #include "lj_vmarray.h"
 
@@ -141,6 +142,46 @@ static bool test_array_creation_int32(kt::Log &Log)
          Log.error("int32 array read/write mismatch at index %d", i);
          return false;
       }
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+// Null-terminated pointer fields use a negative array size as a sentinel.  The struct reader must scan the pointed-to
+// values before creating the cached array rather than passing that sentinel to the unsigned array allocator.
+
+static bool test_struct_pointer_array_sentinel(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   int values[] = { 17, -4, 0 };
+   APTR pointer = values;
+   struct_field field;
+   field.Type = FD_POINTER|FD_ARRAY|FD_INT;
+   field.ArraySize = -1;
+
+   lj_struct_getfield_core(lua, nullptr, field, &pointer);
+   if (not lua_isarray(lua, -1)) {
+      Log.error("struct pointer array field did not produce an array");
+      return false;
+   }
+
+   auto array = lua_toarray(lua, -1);
+   if ((array->len != 2) or (array->elemtype != AET::INT32)) {
+      Log.error("struct pointer array field produced length %d and type %d", array->len, int(array->elemtype));
+      return false;
+   }
+
+   auto result = array->get<int>();
+   if ((result[0] != 17) or (result[1] != -4)) {
+      Log.error("struct pointer array field did not copy values up to its sentinel");
+      return false;
    }
 
    return true;
@@ -1058,10 +1099,11 @@ static bool test_lib_array_double_type(kt::Log &Log)
 
 void array_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 29> Tests = { {
+   constexpr std::array<TestCase, 30> Tests = { {
       // Core Data Structures
       { "array_creation_byte", test_array_creation_byte },
       { "array_creation_int32", test_array_creation_int32 },
+      { "struct_pointer_array_sentinel", test_struct_pointer_array_sentinel },
       { "array_creation_double", test_array_creation_double },
       { "array_index_access", test_array_index_access },
       { "array_elemsize", test_array_elemsize },

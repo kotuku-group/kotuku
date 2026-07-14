@@ -1311,8 +1311,10 @@ static bool test_state_local_struct_declarations(kt::Log &Log)
          return false;
       }
 
-      if (parse_struct_source(first_state,
-            "local value:struct<ParserStateLocalRecord> = ParserStateShadowRecord()", error)) {
+      if (compile_snapshot(first_state,
+            "struct ParserLocalExpectedRecord { Value: int }\n"
+            "struct ParserLocalActualRecord { Value: double }\n"
+            "local value:struct<ParserLocalExpectedRecord> = ParserLocalActualRecord()", true, error).has_value()) {
          Log.error("local declaration accepted an initialiser with a different struct layout");
          return false;
       }

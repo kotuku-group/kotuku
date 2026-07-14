@@ -961,13 +961,13 @@ extern void lua_createtable(lua_State *L, int narray, int nrec)
 //********************************************************************************************************************
 // Create array and push onto stack
 
-extern void lua_createarray(lua_State *L, uint32_t Length, AET Type, void *Data, uint8_t Flags,
+extern void lua_createarray(lua_State *L, int64_t Length, AET Type, void *Data, uint8_t Flags,
    std::string_view StructName)
 {
    lua_createarray(L, Length, Type, Data, Flags, StructName, nullptr);
 }
 
-extern void lua_createarray(lua_State *L, uint32_t Length, AET Type, void *Data, uint8_t Flags,
+extern void lua_createarray(lua_State *L, int64_t Length, AET Type, void *Data, uint8_t Flags,
    std::string_view StructName, struct_record *StructDef)
 {
    lj_gc_check(L);

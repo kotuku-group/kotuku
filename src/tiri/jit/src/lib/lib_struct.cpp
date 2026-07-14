@@ -482,7 +482,7 @@ void lj_struct_getfield_core(lua_State *L, GCstruct *Struct, struct_field &Field
    }
    else if ((Field.Type & FD_POINTER) and (Field.Type & FD_ARRAY)) {
       if (((APTR *)Address)[0]) {
-         lua_createarray(L, -1, ff_to_aet(Field.Type & ~FD_POINTER), (APTR *)((APTR *)Address)[0], ARRAY_CACHED);
+         make_array(L, ff_to_aet(Field.Type & ~FD_POINTER), -1, ((APTR *)Address)[0]);
       }
       else lua_pushnil(L);
    }

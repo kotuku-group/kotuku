@@ -1616,6 +1616,18 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
          // For call expressions, try to infer from the function's declared return type
          auto *payload = std::get_if<CallExprPayload>(&Expr.data);
          if (payload) {
+            if (const auto *direct = std::get_if<DirectCallTarget>(&payload->target);
+                direct and direct->callable and direct->callable->kind IS AstNodeKind::IdentifierExpr) {
+               const auto &name_ref = std::get<NameRef>(direct->callable->data);
+               auto callable = this->resolve_identifier(name_ref.identifier.symbol);
+               if (callable and callable->struct_def) {
+                  result.primary = TiriType::Struct;
+                  result.struct_def = callable->struct_def;
+                  payload->result_type = TiriType::Struct;
+                  payload->struct_def = callable->struct_def;
+                  return result;
+               }
+            }
             // First check if the call has a known result type (e.g., obj.new() returns Object)
             if (payload->result_type != TiriType::Unknown) {
                result.primary = payload->result_type;
@@ -1634,18 +1646,6 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                   }
                }
                return result;
-            }
-            if (const auto *direct = std::get_if<DirectCallTarget>(&payload->target);
-                direct and direct->callable and direct->callable->kind IS AstNodeKind::IdentifierExpr) {
-               const auto &name_ref = std::get<NameRef>(direct->callable->data);
-               auto callable = this->resolve_identifier(name_ref.identifier.symbol);
-               if (callable and callable->struct_def) {
-                  result.primary = TiriType::Struct;
-                  result.struct_def = callable->struct_def;
-                  payload->result_type = TiriType::Struct;
-                  payload->struct_def = callable->struct_def;
-                  return result;
-               }
             }
             // Otherwise try to infer from the function's declared return type
             const FunctionExprPayload* target = this->resolve_call_target(payload->target);
