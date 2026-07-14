@@ -11,7 +11,6 @@
 #include "lua.h"
 #include "lauxlib.h"
 #include "lj_obj.h"
-#include "hashes.h"
 #include "defs.h"
 #include "lj_proto_registry.h"
 
@@ -60,11 +59,11 @@ static int processing_new(lua_State *Lua)
                auto field_hash = strihash(field_name);
 
                switch (field_hash) {
-                  case HASH_TIMEOUT:
+                  case strhash("timeout"):
                      fp->Timeout = lua_tonumber(Lua, -1);
                      break;
 
-                  case HASH_SIGNALS: {
+                  case strhash("signals"): {
                      if (lua_type(Lua, -1) IS LUA_TARRAY) { // { obj1, obj2, ... }
                         GCarray *arr = lua_toarray(Lua, -1);
                         if (arr->elemtype IS AET::OBJECT) {

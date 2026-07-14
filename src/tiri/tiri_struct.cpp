@@ -51,7 +51,6 @@ TODO: Support for kt::vector
 #include "lauxlib.h"
 #include "lib.h"
 #include "lj_obj.h"
-#include "hashes.h"
 #include "defs.h"
 
 static constexpr int MAX_STRUCT_DEF = 2048; // Struct definitions are typically 100 - 400 bytes.
