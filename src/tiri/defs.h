@@ -83,8 +83,8 @@ extern OBJECTPTR modRegex;
 extern OBJECTPTR glTiriContext;
 extern OBJECTPTR clTiri;
 extern JOF glJitOptions;
-extern ankerl::unordered_dense::map<uint32_t, StructInfo> *glStructSizes;
-extern std::unordered_map<uint32_t, struct_record> glStructs;
+extern ankerl::unordered_dense::map<uint32_t, StructInfo> *glStructSizes; // Originates from the Core
+extern std::unordered_map<uint32_t, struct_record> glStructs; // struct_record pointers must remain stable
 extern std::recursive_mutex glStructMutex;
 extern uint64_t glActionsWithResults;
 }
@@ -110,8 +110,9 @@ struct TiriConstant {
    }
 };
 
-// Global constant registry - case-sensitive, owns string keys
+// Global constant registry - case-sensitive, owns string keys.
 // Protected by glConstantMutex for thread-safe access
+
 namespace tiri {
 extern ankerl::unordered_dense::map<uint32_t, TiriConstant> glConstantRegistry;
 extern std::shared_mutex glConstantMutex;
@@ -391,7 +392,9 @@ int MAKESTRUCT(lua_State *);
 [[maybe_unused]] void make_any_array(lua_State *, int, std::string_view, int, CPTR, struct_record * = nullptr);
 [[maybe_unused]] void make_array(lua_State *, AET, int = 0, CPTR = nullptr, std::string_view = {});
 [[maybe_unused]] ERR make_struct(extTiri *, std::string_view, CSTRING);
+[[nodiscard]] struct_record * find_struct(lua_State *Lua, uint32_t Key);
 [[nodiscard]] struct_record * find_struct(lua_State *Lua, std::string_view Name);
+[[nodiscard]] struct_record * find_struct_reference(lua_State *Lua, const struct_record &Owner, uint32_t Key);
 [[nodiscard]] struct_record * find_struct_reference(lua_State *Lua, const struct_record &Owner,
    std::string_view Name);
 [[nodiscard]] ERR register_declared_struct(lua_State *Lua, struct_record &&Record, bool *Inserted,

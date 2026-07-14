@@ -208,7 +208,7 @@ static bool struct_has_unsupported_cpp_arrays(lua_State *L, const struct_record 
       if ((field.Type & FD_CPP) and (field.Type & FD_ARRAY) and
             (not (field.Type & (FD_STRING|FD_FLOAT|FD_DOUBLE|FD_INT64|FD_INT|FD_WORD|FD_BYTE)))) return true;
       if ((field.Type & FD_STRUCT) and (not (field.Type & FD_PTR)) and (not (field.Type & FD_CPP)) and
-            (not field.StructRef.empty())) {
+            (field.StructRef != 0)) {
          if (auto child = field.StructDefinition ? field.StructDefinition :
                find_struct_reference(L, Def, field.StructRef)) {
             if (struct_has_unsupported_cpp_arrays(L, *child)) return true;
@@ -237,7 +237,7 @@ static void copy_cpp_fields(lua_State *L, const struct_record &Def, APTR Dest, C
       else if ((field.Type & FD_STRING) and (field.Type & FD_CPP)) {
          ((std::string *)dest)[0] = ((const std::string *)source)[0];
       }
-      else if ((field.Type & FD_STRUCT) and (not (field.Type & FD_PTR)) and (not field.StructRef.empty())) {
+      else if ((field.Type & FD_STRUCT) and (not (field.Type & FD_PTR)) and (field.StructRef != 0)) {
          if (auto child = field.StructDefinition ? field.StructDefinition :
                find_struct_reference(L, Def, field.StructRef)) {
             int count = (field.Type & FD_ARRAY) ? field.ArraySize : 1;
@@ -436,40 +436,49 @@ void lj_struct_getfield_core(lua_State *L, GCstruct *Struct, struct_field &Field
 {
    int array_size = (not Field.ArraySize) ? -1 : Field.ArraySize;
    struct_record *field_def = Field.StructDefinition;
-   if ((not field_def) and (not Field.StructRef.empty())) {
+   if ((not field_def) and (Field.StructRef != 0)) {
       field_def = find_struct_reference(L, *Struct->def, Field.StructRef);
    }
 
-   if ((Field.Type & FD_CPP) and (Field.Type & FD_ARRAY) and (not Field.StructRef.empty()) and
+   if ((Field.Type & FD_CPP) and (Field.Type & FD_ARRAY) and (Field.StructRef != 0) and
          (not (Field.Type & FD_PTR))) {
+      if (not field_def) {
+         luaL_error(L, ERR::Search, "Failed to find struct referenced by field '%s'.", Field.Name.c_str());
+      }
       auto vector = (kt::vector<int> *)Address;
-      make_struct_serial_array(L, Field.StructRef, vector->size(), vector->data(), field_def);
+      make_struct_serial_array(L, field_def->Name, vector->size(), vector->data(), field_def);
    }
-   else if ((Field.Type & FD_STRUCT) and (Field.Type & FD_PTR) and (not Field.StructRef.empty())) {
+   else if ((Field.Type & FD_STRUCT) and (Field.Type & FD_PTR) and (Field.StructRef != 0)) {
       if (((APTR *)Address)[0]) {
+         if (not field_def) {
+            luaL_error(L, ERR::Search, "Failed to find struct referenced by field '%s'.", Field.Name.c_str());
+         }
          if (Field.Type & FD_ARRAY) {
             if (Field.Type & FD_CPP) {
                // A vector of struct pointers - kt::vector<StructName *>
                auto vector = (kt::vector<int> *)Address;
                lua_createarray(L, vector->size(), ff_to_element(Field.Type), (APTR *)vector->data(), ARRAY_CACHED,
-                  Field.StructRef, field_def);
+                  field_def->Name, field_def);
             }
             else lua_createarray(L, array_size, ff_to_element(Field.Type), (APTR *)Address, ARRAY_CACHED,
-               Field.StructRef, field_def);
+               field_def->Name, field_def);
          }
-         else if (not push_external_struct(L, ((APTR *)Address)[0], Field.StructRef, field_def,
+         else if (not push_external_struct(L, ((APTR *)Address)[0], field_def->Name, field_def,
                Struct->lifecycle)) {
-            luaL_error(L, ERR::Search, "Failed to find struct '%s'", Field.StructRef.c_str());
+            luaL_error(L, ERR::Search, "Failed to find struct referenced by field '%s'.", Field.Name.c_str());
          }
       }
       else lua_pushnil(L);
    }
    else if ((Field.Type & FD_STRUCT) and (Field.Type & FD_ARRAY)) {
+      if (not field_def) {
+         luaL_error(L, ERR::Search, "Failed to find struct referenced by field '%s'.", Field.Name.c_str());
+      }
       if (Field.Type & FD_CPP) {
          auto vector = (kt::vector<int> *)Address;
-         make_any_array(L, Field.Type, Field.StructRef, vector->size(), vector->data(), field_def);
+         make_any_array(L, Field.Type, field_def->Name, vector->size(), vector->data(), field_def);
       }
-      else make_struct_array(L, Field.StructRef, array_size, Address, 0, field_def);
+      else make_struct_array(L, field_def->Name, array_size, Address, 0, field_def);
    }
    else if ((Field.Type & FD_POINTER) and (Field.Type & FD_ARRAY)) {
       if (((APTR *)Address)[0]) {
@@ -487,6 +496,9 @@ void lj_struct_getfield_core(lua_State *L, GCstruct *Struct, struct_field &Field
       else luaL_error(L, ERR::NoSupport, "Vector field '%s' uses an unsupported element type.", Field.Name.c_str());
    }
    else if (Field.Type & FD_STRUCT) {
+      if (not field_def) {
+         luaL_error(L, ERR::Search, "Failed to find struct referenced by field '%s'.", Field.Name.c_str());
+      }
       GCstruct *parent = nullptr;
       if (not Struct->is_lifecycle_bound()) {
          if (Struct->is_external()) {
@@ -494,8 +506,8 @@ void lj_struct_getfield_core(lua_State *L, GCstruct *Struct, struct_field &Field
          }
          else parent = Struct;
       }
-      if (not push_external_struct(L, Address, Field.StructRef, field_def, Struct->lifecycle, parent)) {
-         luaL_error(L, ERR::Search, "Failed to find struct '%s'", Field.StructRef.c_str());
+      if (not push_external_struct(L, Address, field_def->Name, field_def, Struct->lifecycle, parent)) {
+         luaL_error(L, ERR::Search, "Failed to find struct referenced by field '%s'.", Field.Name.c_str());
       }
    }
    else if (Field.Type & FD_STRING) {

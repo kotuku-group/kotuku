@@ -76,7 +76,7 @@ static void process_struct_cpp_strings(lua_State *Lua, const struct_record &Stru
       auto type = field->Type;
 
       if ((type & FD_STRUCT) and (not (type & FD_PTR)) and (not (type & FD_CPP)) and
-            (not field->StructRef.empty())) {
+            (field->StructRef != 0)) {
          auto def = field->StructDefinition ? field->StructDefinition :
             find_struct_reference(Lua, StructDef, field->StructRef);
          if (def) {
@@ -323,7 +323,7 @@ static bool write_primitive_field(lua_State *Lua, APTR Address, int Type, int St
       CPTR address = (int8_t *)Address + field.Offset;
       auto type = field.Type;
       struct_record *field_def = field.StructDefinition;
-      if ((not field_def) and (type & FD_STRUCT) and (not field.StructRef.empty())) {
+      if ((not field_def) and (type & FD_STRUCT) and (field.StructRef != 0)) {
          field_def = find_struct_reference(Lua, StructDef, field.StructRef);
       }
 
@@ -332,7 +332,7 @@ static bool write_primitive_field(lua_State *Lua, APTR Address, int Type, int St
             auto vector = (kt::vector<int> *)(address); // Uses int as a placeholder
             if (type & FD_STRUCT) {
                if (field_def) {
-                  make_any_array(Lua, type, field.StructRef, vector->size(), vector->data(), field_def);
+                  make_any_array(Lua, type, field_def->Name, vector->size(), vector->data(), field_def);
                }
                else lua_pushnil(Lua);
             }
@@ -342,7 +342,7 @@ static bool write_primitive_field(lua_State *Lua, APTR Address, int Type, int St
             if (type & FD_STRUCT) {
                if (field_def) {
                   if (((CPTR *)address)[0]) {
-                     make_any_array(Lua, type, field.StructRef, -1, ((CPTR *)address)[0], field_def);
+                     make_any_array(Lua, type, field_def->Name, -1, ((CPTR *)address)[0], field_def);
                   }
                   else lua_pushnil(Lua);
                }
@@ -353,7 +353,7 @@ static bool write_primitive_field(lua_State *Lua, APTR Address, int Type, int St
          else { // It's an embedded array of fixed size.
             if (type & FD_STRUCT) {
                if (field_def) {
-                  make_struct_array(Lua, field.StructRef, field.ArraySize, address, 0, field_def);
+                  make_struct_array(Lua, field_def->Name, field.ArraySize, address, 0, field_def);
                }
                else lua_pushnil(Lua);
             }
@@ -371,7 +371,7 @@ static bool write_primitive_field(lua_State *Lua, APTR Address, int Type, int St
             else (void)struct_to_table(Lua, References, *field_def, address);
          }
          else {
-            log.msg("Struct '%s' not found for field '%s'", field.StructRef.c_str(), field.Name.c_str());
+            log.msg("Struct reference $%.8x not found for field '%s'", field.StructRef, field.Name.c_str());
             lua_pushnil(Lua);
          }
       }
@@ -603,8 +603,9 @@ static ERR layout_struct_field(struct_field &Field, int Type, int FieldSize, int
          pos++;
          auto i = Sequence.find_first_of(",[", pos);
          if (i IS std::string::npos) i = Sequence.size();
-         field.StructRef.assign(Sequence, pos, i-pos);
-         if (auto def = glStructs.find(struct_key(field.StructRef)); def != glStructs.end()) {
+         std::string_view reference_name(Sequence.data() + pos, i - pos);
+         field.StructRef = struct_key(reference_name);
+         if (auto def = glStructs.find(field.StructRef); def != glStructs.end()) {
             field.StructDefinition = &def->second;
          }
          type |= FD_STRUCT;
@@ -705,32 +706,42 @@ static ERR layout_struct_field(struct_field &Field, int Type, int FieldSize, int
 //********************************************************************************************************************
 // Resolve declarative definitions in the active state before falling back to process-wide MAKESTRUCT definitions.
 
-[[nodiscard]] struct_record * find_struct(lua_State *Lua, std::string_view Name)
+[[nodiscard]] struct_record * find_struct(lua_State *Lua, uint32_t Key)
 {
    if (Lua) {
-      if (auto found = Lua->struct_declarations.find(struct_key(Name)); found != Lua->struct_declarations.end()) {
+      if (auto found = Lua->struct_declarations.find(Key); found != Lua->struct_declarations.end()) {
          return &found->second;
       }
    }
 
    const std::lock_guard lock(glStructMutex);
-   if (auto found = glStructs.find(struct_key(Name)); found != glStructs.end()) return &found->second;
+   if (auto found = glStructs.find(Key); found != glStructs.end()) return &found->second;
    return nullptr;
 }
 
-[[nodiscard]] struct_record * find_struct_reference(lua_State *Lua, const struct_record &Owner,
-   std::string_view Name)
+[[nodiscard]] struct_record * find_struct(lua_State *Lua, std::string_view Name)
+{
+   return find_struct(Lua, struct_key(Name));
+}
+
+[[nodiscard]] struct_record * find_struct_reference(lua_State *Lua, const struct_record &Owner, uint32_t Key)
 {
    {
       const std::lock_guard lock(glStructMutex);
       auto owner = glStructs.find(struct_key(Owner.Name));
       if ((owner != glStructs.end()) and (&owner->second IS &Owner)) {
-         if (auto found = glStructs.find(struct_key(Name)); found != glStructs.end()) return &found->second;
+         if (auto found = glStructs.find(Key); found != glStructs.end()) return &found->second;
          return nullptr;
       }
    }
 
-   return find_struct(Lua, Name);
+   return find_struct(Lua, Key);
+}
+
+[[nodiscard]] struct_record * find_struct_reference(lua_State *Lua, const struct_record &Owner,
+   std::string_view Name)
+{
+   return find_struct_reference(Lua, Owner, struct_key(Name));
 }
 
 // Returns the storage size of one element of a declared field, or 0 if the field's type cannot be resolved.

@@ -421,7 +421,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
             std::string_view reference_name(strdata(reference_symbol), reference_symbol->len);
             auto referenced = find_struct(&this->ctx.lua(), reference_name);
             if (referenced) {
-               field.StructRef = reference_name;
+               field.StructRef = struct_key(reference_name);
                field.StructDefinition = referenced;
                field.Type |= FD_STRUCT;
             }
