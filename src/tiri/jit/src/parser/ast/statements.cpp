@@ -363,15 +363,86 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
 
       auto colon = this->ctx.consume(TokenKind::Colon, ParserErrorCode::ExpectedToken);
       if (not colon.ok()) return ParserResult<StmtNodePtr>::failure(colon.error_ref());
-      auto type_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
-      if (not type_token.ok()) return ParserResult<StmtNodePtr>::failure(type_token.error_ref());
-      GCstr *type_symbol = type_token.value_ref().identifier();
-      std::string_view type_name(strdata(type_symbol), type_symbol->len);
+      Token type_token = this->ctx.tokens().current();
+      bool array_type = type_token.kind() IS TokenKind::ArrayTyped;
+      int64_t array_dimension = array_type ? this->ctx.lex().array_typed_size : -1;
+      if (array_type) this->ctx.tokens().advance();
+      else {
+         auto type_result = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
+         if (not type_result.ok()) return ParserResult<StmtNodePtr>::failure(type_result.error_ref());
+         type_token = type_result.value_ref();
+      }
+      GCstr *type_symbol = array_type ? type_token.payload().as_string() : type_token.identifier();
+      std::string_view type_name = array_type ? std::string_view("array") :
+         std::string_view(strdata(type_symbol), type_symbol->len);
 
       struct_field field;
       field.Name = field_name;
       field.ArraySize = 0;
-      if (type_name IS "bool") { field.Type = FD_BYTE; field.NativeType = NativeStructType::Bool; }
+      bool dynamic_array = false;
+      if (type_name IS "array") {
+         dynamic_array = true;
+         if (array_dimension != -1) {
+            return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, type_token,
+               "Dynamically sized struct array fields cannot declare a dimension");
+         }
+         std::string_view element_name(strdata(type_symbol), type_symbol->len);
+
+         if (element_name IS "bool") { field.Type = FD_BYTE; field.NativeType = NativeStructType::Bool; }
+         else if (element_name IS "char") { field.Type = FD_BYTE|FD_CUSTOM; field.NativeType = NativeStructType::Char; }
+         else if (element_name IS "byte" or element_name IS "uint8") {
+            field.Type = FD_BYTE; field.NativeType = NativeStructType::UInt8;
+         }
+         else if (element_name IS "int8") { field.Type = FD_BYTE; field.NativeType = NativeStructType::Int8; }
+         else if (element_name IS "int16") { field.Type = FD_WORD; field.NativeType = NativeStructType::Int16; }
+         else if (element_name IS "uint16") {
+            field.Type = FD_WORD|FD_UNSIGNED; field.NativeType = NativeStructType::UInt16;
+         }
+         else if (element_name IS "int" or element_name IS "int32") {
+            field.Type = FD_INT; field.NativeType = NativeStructType::Int32;
+         }
+         else if (element_name IS "uint" or element_name IS "uint32") {
+            field.Type = FD_INT|FD_UNSIGNED; field.NativeType = NativeStructType::UInt32;
+         }
+         else if (element_name IS "int64") { field.Type = FD_INT64; field.NativeType = NativeStructType::Int64; }
+         else if (element_name IS "uint64") {
+            field.Type = FD_INT64|FD_UNSIGNED; field.NativeType = NativeStructType::UInt64;
+         }
+         else if (element_name IS "float") { field.Type = FD_FLOAT; field.NativeType = NativeStructType::Float; }
+         else if (element_name IS "double") { field.Type = FD_DOUBLE; field.NativeType = NativeStructType::Double; }
+         else if (element_name IS "string") {
+            field.Type = FD_STRING; field.NativeType = NativeStructType::String;
+         }
+         else if (element_name.starts_with("struct<") and element_name.ends_with(">")) {
+            std::string_view reference_name = element_name.substr(7, element_name.size() - 8);
+            auto referenced = find_struct(&this->ctx.lua(), reference_name);
+            if (not referenced) {
+               return this->fail<StmtNodePtr>(ParserErrorCode::UnknownTypeName, type_token,
+                  std::format("Unknown struct name '{}'; declarations must precede use", reference_name));
+            }
+            field.Type = FD_STRUCT;
+            field.NativeType = NativeStructType::Struct;
+            field.StructRef = struct_key(reference_name);
+            field.StructDefinition = referenced;
+         }
+         else if (element_name IS "array") {
+            return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, type_token,
+               "Nested array fields are not supported");
+         }
+         else if (element_name IS "cstr" or element_name IS "ptr" or element_name IS "obj" or
+               element_name IS "func") {
+            return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, type_token,
+               std::format("array<{}> fields cannot own this element type", element_name));
+         }
+         else {
+            return this->fail<StmtNodePtr>(ParserErrorCode::UnknownTypeName, type_token,
+               std::format("Unknown array element type '{}'", element_name));
+         }
+
+         field.Type |= FD_CPP|FD_ARRAY;
+         field.ArraySize = 1;
+      }
+      else if (type_name IS "bool") { field.Type = FD_BYTE; field.NativeType = NativeStructType::Bool; }
       else if (type_name IS "char") { field.Type = FD_BYTE|FD_CUSTOM; field.NativeType = NativeStructType::Char; }
       else if (type_name IS "byte" or type_name IS "uint8") {
          field.Type = FD_BYTE; field.NativeType = NativeStructType::UInt8;
@@ -455,17 +526,21 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
             if (not close.ok()) return ParserResult<StmtNodePtr>::failure(close.error_ref());
          }
          else if (not is_pointer) {
-            return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, type_token.value_ref(),
+            return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, type_token,
                "struct fields require a referenced name, for example struct<User>");
          }
       }
       else {
-         return this->fail<StmtNodePtr>(ParserErrorCode::UnknownTypeName, type_token.value_ref(),
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnknownTypeName, type_token,
             std::format("Unknown struct field type '{}'", type_name));
       }
 
       if (this->ctx.match(TokenKind::LeftBracket).ok()) {
          Token dimension = this->ctx.tokens().current();
+         if (dynamic_array) {
+            return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, dimension,
+               "Dynamically sized array fields cannot have a fixed dimension");
+         }
          lua_Number dimension_value = dimension.payload().as_number();
          if (dimension.kind() != TokenKind::Number or dimension_value < 1 or
                dimension_value > lua_Number(std::numeric_limits<int>::max()) or
@@ -497,7 +572,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
       Token last = this->ctx.tokens().current();
       if (this->ctx.match(TokenKind::Comma).ok()) continue;
       if (this->ctx.check(TokenKind::RightBrace)) continue;
-      if (last.span().line.lineNumber() <= type_token.value_ref().span().line.lineNumber()) {
+      if (last.span().line.lineNumber() <= type_token.span().line.lineNumber()) {
          return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, last,
             "Expected a newline, ',' or '}' after struct field");
       }
@@ -512,11 +587,14 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
 
    bool inserted = false;
    const struct_record *existing = nullptr;
-   ERR registration = register_declared_struct(&this->ctx.lua(), std::move(record), &inserted, &existing);
+   std::string registration_detail;
+   ERR registration = register_declared_struct(&this->ctx.lua(), std::move(record), &inserted, &existing,
+      &registration_detail);
    if (registration != ERR::Okay) {
       if (registration != ERR::Exists) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token.value_ref(),
-            std::format("Failed to lay out struct '{}': {}", struct_name, GetErrorMsg(registration)));
+            registration_detail.empty() ? std::format("Failed to lay out struct '{}': {}", struct_name,
+               GetErrorMsg(registration)) : registration_detail);
       }
       std::string location = (existing and not existing->DeclarationSource.empty()) ?
          std::format(" at {}:{}", existing->DeclarationSource, existing->DeclarationLine) : " from native code";

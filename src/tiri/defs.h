@@ -398,7 +398,14 @@ int MAKESTRUCT(lua_State *);
 [[nodiscard]] struct_record * find_struct_reference(lua_State *Lua, const struct_record &Owner,
    std::string_view Name);
 [[nodiscard]] ERR register_declared_struct(lua_State *Lua, struct_record &&Record, bool *Inserted,
-   const struct_record **Existing = nullptr);
+   const struct_record **Existing = nullptr, std::string *Detail = nullptr);
+void construct_trivial_struct_vector(APTR Address);
+void destroy_trivial_struct_vector(APTR Address);
+void assign_trivial_struct_vector(APTR Address, CPTR Source, size_t Elements, size_t Stride);
+void copy_trivial_struct_vector(APTR Dest, CPTR Source, size_t Stride);
+[[nodiscard]] size_t trivial_struct_vector_size(CPTR Address);
+[[nodiscard]] APTR trivial_struct_vector_data(APTR Address);
+[[nodiscard]] CPTR trivial_struct_vector_data(CPTR Address);
 ERR named_struct_to_table(lua_State *, std::string_view, CPTR);
 void construct_struct_cpp_strings(lua_State *, const struct struct_record &, APTR);
 void destroy_struct_cpp_strings(lua_State *, const struct struct_record &, APTR);
