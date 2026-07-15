@@ -4471,7 +4471,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     break;
 
   case BC_CHECK:
-    // BC_CHECK A, D: Check error code in RA, raise if >= ExceptionThreshold (9)
+    // BC_CHECK A, D: Check error code in RA, raise with source column D if >= ExceptionThreshold (9)
     // Fast path: If error code < 9, return
     // Slow path: Throw exception
     |  ins_AD                         // A = error code register
@@ -4484,15 +4484,16 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |2:
     |  cmp RAw, #9                    // Compare with ExceptionThreshold (ERR::Terminate = 9)
     |  b.lo >1                        // Below threshold? Skip to fast path exit
-    |  // Error >= threshold: raise exception
+    |  // Error >= threshold: raise exception with assert-style location and traceback details
     |  ldr L, SAVE_L
     |  str BASE, L->base              // Sync L->base for error handling
     |  str BASE, L->top               // Sync L->top for error handling
     |  str PC, SAVE_PC                // Ensure cframe has a valid PC for trace capture
     |  str RAw, [L, #L_CAUGHTERROR_OFS]  // Set L->CaughtError
+    |  mov CARG3w, RCw                // 3rd arg: source column (RC == RD after ins_AD)
     |  mov CARG2w, RAw                // 2nd arg: error code
     |  mov CARG1, L                   // 1st arg: lua_State *L
-    |  bl extern lj_raise             // Never returns
+    |  bl extern lj_check_raise       // Never returns
     |1:
     |  ins_next
     break;

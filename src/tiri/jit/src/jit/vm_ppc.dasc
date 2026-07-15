@@ -6453,10 +6453,11 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     break;
 
   case BC_CHECK:
-    // BC_CHECK A, D: Check error code in RA, raise if >= ExceptionThreshold (9)
+    // BC_CHECK A, D: Check error code in RA, raise with source column D if >= ExceptionThreshold (9)
     // Fast path: if error code < 9, just continue (no exception)
     // Slow path: call lj_check_raise to throw exception
-    |  ins_AD                         // A = error code register
+    |  ins_AD                         // A = error code register, D = source column
+    |  mr SAVE0, RD                   // Preserve the source column across numeric conversion helpers
     |  lwzx TMP0, BASE, RA            // Load type tag/high word
     |  checknum TMP0
     |  bgt >1                         // Not a number - skip
@@ -6492,9 +6493,10 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  stp BASE, L->top               // Sync L->top for error handling
     |  stw PC, SAVE_PC                // Ensure cframe has a valid PC for trace capture
     |  stw TMP1, L_CAUGHTERROR_OFS(L) // Set L->CaughtError
+    |  mr CARG3, SAVE0                // 3rd arg: source column
     |  mr CARG2, TMP1                 // 2nd arg: error code
     |  mr CARG1, L                    // 1st arg: lua_State *L
-    |  bl extern lj_raise             // Never returns
+    |  bl extern lj_check_raise       // Never returns
     |1:
     |  ins_next
     break;
