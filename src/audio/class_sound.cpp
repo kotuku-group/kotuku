@@ -136,7 +136,6 @@ static ERR timer_playback_ended(extSound *Self, int64_t Elapsed, int64_t Current
 {
    kt::Log log;
    log.trace("Sound streaming completed.");
-   if ((Self->Flags & SDF::LOOP) IS SDF::NIL) Self->Position = Self->Length;
    sound_stopped_event(Self);
    Self->PlaybackTimer = 0;
    // NB: We don't manually stop the audio streamer, it will automatically stop once buffers are clear.
@@ -1814,7 +1813,6 @@ static ERR win32_audio_stream(extSound *Self, int64_t Elapsed, int64_t CurrentTi
       return ERR::Terminate;
    }
    else if (response IS 1) {
-      if ((Self->Flags & SDF::LOOP) IS SDF::NIL) Self->Position = Self->Length;
       Self->StreamTimer = 0;
       return ERR::Terminate;
    }
