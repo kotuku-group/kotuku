@@ -196,7 +196,8 @@ local count: num = 'text'  -- error: cannot assign 'string' to 'number'
 |`func`, `function` |Function
 |`obj`, `object`    |Object
 |`range`            |Range
-|`struct`           |Structure (see <<sec-structures>>)
+|`struct`           |Structure (see <<ch-structs>>)
+|`struct<Name>`     |Structure constrained to the declared layout `Name` (see <<sec-struct-typed-references>>)
 |===
 
 Short and long forms are interchangeable.  An unrecognised type name raises a parse-time diagnostic.

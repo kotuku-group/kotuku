@@ -1,0 +1,173 @@
+// VERIFIED: 2026-02-13
+// UPDATED: 2026-07-13 — Structures promoted to a first-class 'struct' type; added struct.clone()/struct.copy(), field-assignment semantics, pairs() iteration and tostring() representation.
+// UPDATED: 2026-07-15 — Struct documentation relocated to the Structs chapter in Part II following the native 'struct' keyword implementation (commit 9279202).  Chapter retitled to Modules.
+
+[[ch-modules]]
+== Modules
+indexterm:[modules] Tiri provides direct access to Kōtuku's compiled modules through the `mod` namespace.  This chapter defines the interfaces for loading modules and calling module functions.  Struct definitions registered by modules are documented in <<ch-structs>>.
+
+The Core module (`mSys`) is loaded automatically and is always available.  All other modules are loaded on demand with `mod.load()` or `mod.new()`.  The `include` directive (<<sec-the-include-directive>>) provides a lightweight alternative that loads only definitions (constants, structures, and class metadata) without opening the module's function table.
+
+[[sec-loading-modules]]
+=== Loading Modules
+==== mod.load()
+
+[.api]`module = mod.load(Name)`
+
+indexterm:[modules, loading] Loads the Kōtuku module identified by `Name` and returns a module interface object.  `Name` is a case-insensitive alphanumeric string with a maximum length of 32 characters.  Passing an invalid name raises an exception with `ERR_Syntax`.
+
+If the module cannot be loaded (e.g. the binary is missing or initialisation fails), an exception is raised with `ERR_LoadModule`.
+
+Loading a module automatically processes its IDL definitions, making all constants and structure definitions available.  A separate `include` call for the same module is unnecessary.
+
+[source,tiri]
+----
+mGfx = mod.load('display')
+err, x, y = mGfx.getCursorPos()
+----
+
+[discrete]
+==== Module Protection
+
+Each module is loaded at most once per process.  Subsequent calls to `mod.load()` with the same name return the existing module interface without reloading.  Use the `?=` operator to guard against redundant calls:
+
+[source,tiri]
+----
+mGfx ?= mod.load('display')
+----
+
+[discrete]
+==== Naming Conventions
+
+Module interfaces should always be stored in consistently named variables at the top-level scope.  The following table lists the standard naming conventions for the default set of modules:
+
+[cols="1,1a",options="header"]
+|===
+|Module |Global Name
+|audio
+|`mAudio`
+|core
+|`mSys` 💡
+|display
+|`mGfx`
+|font
+|`mFont`
+|network
+|`mNet`
+|vector
+|`mVec`
+|xml
+|`mXML`
+|===
+
+💡The Core module (`mSys`) is an essential API that is always loaded by default.
+
+[discrete]
+==== Calling Module Functions
+
+Module functions are accessed through dot notation on the module interface.  Function lookup is case-insensitive.
+
+[source,tiri]
+----
+mGfx = mod.load('display')
+err, x, y = mGfx.getCursorPos()
+----
+
+Most module functions return an `ERR` code as their first result, followed by any additional return values.  See <<appendix-error-code-reference>> for the full error code reference and <<ch-error-handling>> for general advice.
+
+Error codes at or above `ERR_ExceptionThreshold` are automatically promoted to exceptions when the call is enclosed in a `try` statement.
+
+[discrete]
+==== Multiple Return Values
+
+Some module functions return multiple results.  In C/C++, result parameters are written to pointers.  In Tiri, these pointer parameters are removed from the call signature and their values are appended to the result set:
+
+[source,tiri]
+----
+-- C prototype: ERR ListMemory(INT Flags, ListMemory **Memory)
+-- Tiri call:
+err, list = mSys.ListMemory(0)
+----
+
+Functions that return allocated resources are automatically covered by the garbage collector.  Use `local` scoping to ensure timely cleanup.
+
+[discrete]
+==== Buffer Handling
+
+When calling functions that copy results to a user-supplied buffer, pass an array or allocated string type.  Tiri automatically provides the buffer size to the function if the corresponding size parameter is omitted:
+
+[source,tiri]
+----
+buffer = array<byte, file.size>
+err, result = file.acRead(buffer)
+print(tostring(buffer))
+
+buffer = string.alloc(file.size)
+err, result = file.acRead(buffer)
+print(buffer)
+----
+
+[[sec-the-include-directive]]
+=== The include Directive
+[.api]`include 'ModuleName'[, 'ModuleName' pass:[...]]`
+
+indexterm:[include directive] The `include` directive loads the interface definitions (constants, structures, and class definitions) for one or more Kōtuku modules at compile time.  The parser processes each named module while parsing the source and emits no runtime bytecode for the statement.
+
+`include` accepts one or more module names as a comma-separated list of string literals:
+
+[source,tiri]
+----
+include 'xml', 'display'
+----
+
+Each module name must be a non-empty alphanumeric string.  Variables, expressions, or invalid names raise a parse error.
+
+[discrete]
+==== Semantics
+
+* Definitions are loaded from the module's IDL (Interface Definition Language) registry.
+* The statement is processed at parse time and has no runtime result.
+* `include` may appear wherever a statement is valid.  Inside a function body, it still loads definitions during parsing rather than when the function is called.
+* An `include` list loads each module named in the list from left to right.
+* Each module is loaded at most once per session.  Repeated `include` calls for the same module are silently ignored.
+* Calling `mod.load()` automatically loads the corresponding module definitions, making an explicit `include` unnecessary in many cases.
+
+[discrete]
+==== When to Use include
+
+Use `include` when access to a module's constants, structures, or class definitions is needed without loading the module's function table.  If the function table is also required, prefer `mod.load()` (see <<sec-loading-modules>>), which loads definitions implicitly.
+
+[source,tiri]
+----
+-- Access display constants without loading the function table
+include 'display'
+flags = DPMS_OFF -- The DPMS_OFF constant originates from the display module
+
+-- Equivalent: mod.load() loads definitions and also returns the interface
+mGfx = mod.load('display')
+----
+
+[[sec-type-conversion]]
+=== Type Conversion
+indexterm:[type conversion] When calling a module function, Tiri performs automatic type conversion to match the types declared in the function definition.  For example, a string value passed to an integer parameter is converted to an integer.  A boolean passed to a string parameter is converted to its string representation.
+
+If the conversion is not possible (e.g. an abstract pointer cannot be converted to a number), an exception is raised with `ERR_WrongType`.
+
+While automatic conversion is convenient, prefer passing correctly typed values for efficiency.  Automatic conversion imposes a small overhead on every mismatched call, and may not be supported by the JIT optimiser.
+
+[cols="1,1,2a",options="header"]
+|===
+|From |To |Behaviour
+
+|string
+|integer / double
+|Parsed as a numeric literal.  Raises an exception if the string is not a valid number.
+
+|number / boolean
+|string
+|Converted to its string representation.
+
+|object
+|integer
+|The object's unique ID is used.
+|===

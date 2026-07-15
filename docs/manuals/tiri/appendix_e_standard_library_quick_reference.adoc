@@ -394,7 +394,7 @@ indexterm:[library, I/O] See <<ch-file-io>>.
 Standard streams: `io.stdin`, `io.stdout`, `io.stderr`.
 
 === Struct Library
-indexterm:[library, struct] See <<sec-structures>>.
+indexterm:[library, struct] See <<ch-structs>>.
 
 [cols="4,5"]
 |===

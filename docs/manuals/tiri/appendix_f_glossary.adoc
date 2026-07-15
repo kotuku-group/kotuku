@@ -108,7 +108,7 @@ Method::
 A class-specific operation on a Kōtuku object, prefixed with `mt`.  Methods are invoked using colon syntax and receive an implicit `self` parameter.  See <<sec-actions-and-methods>>.
 
 Module::
-A separately loadable component of the Kōtuku framework providing domain-specific functionality (e.g. network, vector, display).  Modules are loaded dynamically or linked statically depending on the build configuration.  See <<ch-modules-and-structures>>.
+A separately loadable component of the Kōtuku framework providing domain-specific functionality (e.g. network, vector, display).  Modules are loaded dynamically or linked statically depending on the build configuration.  See <<ch-modules>>.
 
 Namespace::
 An organisational scope declared with the `namespace` keyword.  Groups related functions and variables under a named prefix.  See <<ch-script-management>>.
@@ -174,7 +174,7 @@ String interpolation::
 Embedding expressions within string literals using `f"{pass:[...]}"` syntax.  Expressions enclosed in `{pass:[...]}` are evaluated and their string representations inserted.  See <<sec-string-interpolation>>.
 
 Structure::
-A named table template declared with struct-like syntax, providing named fields with optional default values and type constraints.  See <<sec-structures>>.
+A first-class reference type that maps a fixed set of named, typed fields onto memory with a C/C++ compatible layout; `type()` returns `"struct"`.  Definitions are registered with the `struct` declaration statement or by Kōtuku modules.  See <<ch-structs>>.
 
 Subscription::
 A registration mechanism by which a Tiri function receives callbacks when an object's state changes or events occur.  See <<sec-subscriptions>>.

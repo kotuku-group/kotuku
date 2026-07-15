@@ -140,9 +140,9 @@ See <<ch-the-object-system>> for the full object interface.
 
 [[sec-structs-type]]
 === Structures
-indexterm:[structures] A structure is a first-class value that maps directly onto a C/C++ structure declared in the Kōtuku API.  Structures are a distinct reference type: they are not tables, and the `type()` function returns `"struct"` for them.  Instances are created with `struct.new()`, iterated with `pairs()`, and formatted with `tostring()`.
+indexterm:[structures] A structure is a first-class value that maps a fixed set of named, typed fields onto memory with a C/C++ compatible layout.  Structures are a distinct reference type: they are not tables, and the `type()` function returns `"struct"` for them.  Definitions are registered with the `struct` declaration statement or by Kōtuku modules; instances are created by calling a declared name or `struct.new()`, iterated with `pairs()`, and formatted with `tostring()`.
 
-Although structs are most often used as a compatibility layer between Tiri and compiled programs, they also offer a compact data layout option for storage, and access to values is optimised by the JIT compiler.  Accessing a key that does not exist in the struct will also throw an error, making it easy to detect typos.
+Although structs are most often used as a compatibility layer between Tiri and compiled programs, they also offer a compact data layout option for storage, and access to values is optimised by the JIT compiler.  Accessing non-existent keys will also throw errors, preventing common typos.
 
 [source,tiri]
 ----
@@ -151,7 +151,7 @@ stop = struct.new('GradientStop')
 print(type(stop))  -- 'struct'
 ----
 
-See <<ch-modules-and-structures>> for the full structure interface.
+See <<ch-structs>> for the full structure interface.
 
 [[sec-userdata]]
 === Userdata

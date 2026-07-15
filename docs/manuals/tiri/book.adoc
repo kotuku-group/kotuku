@@ -86,67 +86,69 @@ include::ch08_strings.adoc[]
 
 include::ch09_tables.adoc[]
 
-include::ch10_arrays.adoc[]
+include::ch10_structs.adoc[]
 
-include::ch11_ranges.adoc[]
+include::ch11_arrays.adoc[]
 
-include::ch12_mathematics.adoc[]
+include::ch12_ranges.adoc[]
+
+include::ch13_mathematics.adoc[]
 
 // Part III: Intermediate Language Features
 
 = Intermediate Language Features
 
-include::ch13_error_handling.adoc[]
+include::ch14_error_handling.adoc[]
 
-include::ch14_resource_management.adoc[]
+include::ch15_resource_management.adoc[]
 
-include::ch15_pattern_matching.adoc[]
+include::ch16_pattern_matching.adoc[]
 
-include::ch16_type_system.adoc[]
+include::ch17_type_system.adoc[]
 
-include::ch17_regular_expressions.adoc[]
+include::ch18_regular_expressions.adoc[]
 
-include::ch18_result_management.adoc[]
+include::ch19_result_management.adoc[]
 
-include::ch19_script_organisation.adoc[]
+include::ch20_script_organisation.adoc[]
 
 // Part IV: Kōtuku Integration
 
 = Kōtuku Integration
 
-include::ch20_the_object_system.adoc[]
+include::ch21_the_object_system.adoc[]
 
-include::ch21_modules_and_structures.adoc[]
+include::ch22_modules.adoc[]
 
-include::ch22_processing_and_events.adoc[]
+include::ch23_processing_and_events.adoc[]
 
-include::ch23_file_io.adoc[]
+include::ch24_file_io.adoc[]
 
-include::ch24_input_handling.adoc[]
+include::ch25_input_handling.adoc[]
 
-include::ch25_threading.adoc[]
+include::ch26_threading.adoc[]
 
 // Part V: Advanced Topics
 
 = Advanced Topics
 
-include::ch26_metatables_and_metamethods.adoc[]
+include::ch27_metatables_and_metamethods.adoc[]
 
-include::ch27_annotations_and_preprocessing.adoc[]
+include::ch28_annotations_and_preprocessing.adoc[]
 
-include::ch28_the_debug_library.adoc[]
+include::ch29_the_debug_library.adoc[]
 
-include::ch29_performance_and_the_jit.adoc[]
+include::ch30_performance_and_the_jit.adoc[]
 
-include::ch30_logging_and_diagnostics.adoc[]
+include::ch31_logging_and_diagnostics.adoc[]
 
 // Part VI: Tools
 
 = Tools
 
-include::ch31_origo.adoc[]
+include::ch32_origo.adoc[]
 
-include::ch32_tiri_lsp.adoc[]
+include::ch33_tiri_lsp.adoc[]
 
 // Appendices
 
