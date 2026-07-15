@@ -213,7 +213,8 @@ target_sources (core PRIVATE
 if (UNIT_TESTS)
    target_sources (core PRIVATE
       "tests/unit_tests_object_layout.cpp"
-      "tests/unit_tests_queue_action.cpp")
+      "tests/unit_tests_queue_action.cpp"
+      "tests/unit_tests_wait_for_objects.cpp")
    target_compile_definitions (core PRIVATE UNIT_TESTS)
 endif ()
 
