@@ -81,7 +81,7 @@ enum class ERR : int32_t {
    EntryMissingHeader = 58,
    ModuleMissingInit = 59,
    ModuleInitFailed = 60,
-   MemoryDoesNotExist = 61,
+   AudioMix = 61,
    DeadLock = 62,
    SystemLocked = 63,
    ModuleMissingName = 64,
@@ -229,7 +229,8 @@ enum class ERR : int32_t {
    ParameterRequired = 197,
    ParameterUnknown = 198,
    SetValueNotStruct = 199,
-   END = 200,
+   ResourceRegistration = 200,
+   END = 201,
    Notified = 1073741824,
 };
 

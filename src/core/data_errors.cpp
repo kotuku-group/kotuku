@@ -60,7 +60,7 @@ const CSTRING glMessages[int(ERR::END)+1] = {
  "The ModEntry->Header is missing",
  "Module has not defined support for Init()",
  "Module failed its Initialisation routine",
- "Memory block does not exist",
+ "Audio mixing failed",
  "Dead-lock detected - procedure aborted",
  "Part of the system is unreachable due to a persistent lock",
  "Module has not declared an official name",
@@ -199,6 +199,7 @@ const CSTRING glMessages[int(ERR::END)+1] = {
  "Missing required parameter",
  "Unknown parameter name",
  "Attempted to set a struct field with an incompatible value",
+ "Failed to register a resource with the system",
  nullptr // Needs to be null-terminated for Tiri support
 };
 

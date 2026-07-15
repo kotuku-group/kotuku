@@ -68,7 +68,7 @@ function declareErrors()
     "EntryMissingHeader",            -- The ModEntry->Header is missing
     "ModuleMissingInit",             -- Module has not defined support for Init()
     "ModuleInitFailed",              -- Module failed its Initialisation routine
-    "MemoryDoesNotExist",            -- DEPRECATED
+    "AudioMix",                      -- Audio mixing failed
     "DeadLock",                      -- Dead-lock detected - procedure aborted
     "SystemLocked",                  -- Part of the system is unreachable due to a persistent lock
     "ModuleMissingName",             -- Module has not declared an official name
@@ -207,6 +207,7 @@ function declareErrors()
     "ParameterRequired",       -- Missing required parameter
     "ParameterUnknown",        -- Unknown parameter name
     "SetValueNotStruct",       -- Attempted to set a struct field with an incompatible value
+    "ResourceRegistration",    -- Failed to register a resource with the system
     "END",
     { Notified = 0x40000000 }
   ) -- NB: Any new error messages need to be added to data_errors.c manually
