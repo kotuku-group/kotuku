@@ -529,15 +529,13 @@ typedef struct BitmapSurface {
 
 namespace bmp {
 struct CopyArea { objBitmap *DestBitmap; BAF Flags; int X; int Y; int Width; int Height; int XDest; int YDest; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Compress { int Level; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Decompress { int RetainData; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DrawRectangle { int X; int Y; int Width; int Height; uint32_t Colour; BAF Flags; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SetClipRegion { int Left; int Top; int Right; int Bottom; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetColour { int Red; int Green; int Blue; int Alpha; uint32_t Colour; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Premultiply { static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct Demultiply { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct ConvertToLinear { static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct ConvertToRGB { static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DrawRectangle { int X; int Y; int Width; int Height; uint32_t Colour; BAF Flags; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetClipRegion { int Left; int Top; int Right; int Bottom; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetColour { int Red; int Green; int Blue; int Alpha; uint32_t Colour; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Premultiply { static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Demultiply { static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ConvertToLinear { static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ConvertToRGB { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -727,39 +725,31 @@ class objBitmap : public Object {
       struct bmp::CopyArea args = { DestBitmap, Flags, X, Y, Width, Height, XDest, YDest };
       return Action(AC(-1), this, &args);
    }
-   inline ERR compress(int Level) noexcept {
-      struct bmp::Compress args = { Level };
-      return Action(AC(-2), this, &args);
-   }
-   inline ERR decompress(int RetainData) noexcept {
-      struct bmp::Decompress args = { RetainData };
-      return Action(AC(-3), this, &args);
-   }
    inline ERR drawRectangle(int X, int Y, int Width, int Height, uint32_t Colour, BAF Flags) noexcept {
       struct bmp::DrawRectangle args = { X, Y, Width, Height, Colour, Flags };
-      return Action(AC(-4), this, &args);
+      return Action(AC(-2), this, &args);
    }
    inline ERR setClipRegion(int Left, int Top, int Right, int Bottom) noexcept {
       struct bmp::SetClipRegion args = { Left, Top, Right, Bottom };
-      return Action(AC(-5), this, &args);
+      return Action(AC(-3), this, &args);
    }
    inline ERR getColour(int Red, int Green, int Blue, int Alpha, uint32_t * Colour) noexcept {
       struct bmp::GetColour args = { Red, Green, Blue, Alpha, (uint32_t)0 };
-      ERR error = Action(AC(-6), this, &args);
+      ERR error = Action(AC(-4), this, &args);
       if (Colour) *Colour = args.Colour;
       return error;
    }
    inline ERR premultiply() noexcept {
-      return Action(AC(-7), this, nullptr);
+      return Action(AC(-5), this, nullptr);
    }
    inline ERR demultiply() noexcept {
-      return Action(AC(-8), this, nullptr);
+      return Action(AC(-6), this, nullptr);
    }
    inline ERR convertToLinear() noexcept {
-      return Action(AC(-9), this, nullptr);
+      return Action(AC(-7), this, nullptr);
    }
    inline ERR convertToRGB() noexcept {
-      return Action(AC(-10), this, nullptr);
+      return Action(AC(-8), this, nullptr);
    }
 
    // Customised field getting

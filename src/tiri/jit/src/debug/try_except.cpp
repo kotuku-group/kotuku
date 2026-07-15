@@ -12,6 +12,7 @@
 #include "lua.h"
 #include "lj_gc.h"
 #include "lj_array.h"
+#include "lj_buf.h"
 #include "lj_obj.h"
 #include "lj_debug.h"
 #include "lj_err.h"
@@ -135,6 +136,42 @@ extern "C" LJ_NORET void lj_raise(lua_State *L, int32_t ErrorCode)
 {
    ERR error = ERR(ErrorCode);
    GCstr *message = lj_str_newz(L, GetErrorMsg(error));
+   lj_raise_recorded(L, error, message);
+}
+
+extern "C" LJ_NORET void lj_check_raise(lua_State *L, int32_t ErrorCode, uint32_t SourceColumn)
+{
+   ERR error = ERR(ErrorCode);
+   GCstr *message = lj_str_newz(L, GetErrorMsg(error));
+
+   // VM helpers enter with top synchronised to base.  Keep traceback temporaries above the current function's register
+   // frame so caught checks cannot overwrite live locals before the try handler restores execution.
+   GCfunc *func = frame_func(L->base - 1);
+   if (isluafunc(func)) L->top = L->base + funcproto(func)->framesize;
+
+   DebugLocation location;
+   int32_t line = 0;
+   if (lj_debug_getloc(L, L->base - 1, nullptr, &location)) line = location.line;
+
+   if (line > 0) {
+      SBuf *sb = lj_buf_tmp_(L);
+      lj_buf_putchar(sb, '[');
+      lj_strfmt_putint(sb, line);
+      lj_buf_putchar(sb, ':');
+      lj_strfmt_putint(sb, SourceColumn);
+      lj_buf_putmem(sb, "] ", 2);
+      lj_buf_putmem(sb, strdata(message), message->len);
+      message = lj_buf_str(L, sb);
+   }
+
+   if (not L->sent_traceback) {
+      // luaL_traceback() can collect while formatting its first string.  Root the message before exposing its data.
+      setstrV(L, L->top++, message);
+      luaL_traceback(L, L, strVdata(L->top - 1), 0);
+      message = strV(L->top - 1);
+      L->sent_traceback = true;
+   }
+
    lj_raise_recorded(L, error, message);
 }
 

@@ -832,16 +832,15 @@ void process_surface_callbacks(extSurface *Self, extBitmap *Bitmap)
    kt::Log log(__FUNCTION__);
 
    #ifdef DBG_DRAW_ROUTINES
-      log.traceBranch("Bitmap: %d, Count: %d", Bitmap->UID, Self->CallbackCount);
+      log.traceBranch("Bitmap: %d, Count: %d", Bitmap->UID, int(Self->Callback.size()));
    #endif
 
-   for (int i=0; i < Self->CallbackCount; ) {
+   for (int i=0; i < std::ssize(Self->Callback); ) {
       Bitmap->Opacity = 255;
-      auto &cb = Self->Callback[i].Function;
+      auto &cb = Self->Callback[i];
       if (cb.stale()) {
          deref_surface_callback(cb);
-         for (int j=i; j < Self->CallbackCount-1; j++) Self->Callback[j] = Self->Callback[j+1];
-         Self->CallbackCount--;
+         Self->Callback.erase(Self->Callback.begin() + i);
          continue;
       }
       else if (cb.isC()) {
@@ -849,14 +848,11 @@ void process_surface_callbacks(extSurface *Self, extBitmap *Bitmap)
 
          #ifdef DBG_DRAW_ROUTINES
             kt::Log log(__FUNCTION__);
-            log.branch("%d/%d: Routine: %p, Object: %p, Context: %p", i, Self->CallbackCount, routine, Self->Callback[i].Object, cb.Context);
+            log.branch("%d/%d: Routine: %p, Context: %p", i, int(Self->Callback.size()), routine, cb.Context);
          #endif
 
-         if (cb.Context) {
-            kt::SwitchContext context(cb.Context);
-            routine(cb.Context, Self, Bitmap, cb.Meta);
-         }
-         else routine(Self->Callback[i].Object, Self, Bitmap, cb.Meta);
+         kt::SwitchContext context(cb.Context);
+         routine(cb.Context, Self, Bitmap, cb.Meta);
       }
       else if (cb.isScript()) {
          sc::Call(cb, std::to_array<ScriptArg>({

@@ -9,6 +9,7 @@ Gradient Demonstration
    import 'gui/slider'
    import 'gui/button'
    import 'gui/filedialog'
+   include 'image'
 
 local win, viewport, gradientVP, rect
 local focalEllipse, contourShape, distalShape, uiEvent

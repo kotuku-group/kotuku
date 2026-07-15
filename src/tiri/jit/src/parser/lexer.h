@@ -10,6 +10,7 @@
 #include <deque>
 #include <optional>
 #include <span>
+#include <string>
 #include <stdarg.h>
 #include <string_view>
 #include <cstdint>
@@ -50,6 +51,21 @@ struct LocalDeclResult {
 
 class LexState {
 public:
+   struct StructFieldDocumentation {
+      std::string struct_name;
+      std::string field_name;
+      std::string text;
+      SourceSpan span{};
+   };
+
+   // A '--' comment recorded verbatim by the lexer as it is skipped.  Capturing here rather than re-scanning the
+   // source text keeps string literals from being mistaken for comment markers, and costs one entry per comment.
+   struct CommentRecord {
+      BCLine line = 0;   // Line the comment body started on.
+      bool trailing = false;  // True if code preceded the '--' on this line.
+      std::string text;
+   };
+
    struct BufferedToken {
       LexToken token = 0;
       TValue value;
@@ -122,8 +138,19 @@ public:
    struct GlobalTypeHint {
       TiriType primary = TiriType::Unknown;
       CLASSID  object_class_id = CLASSID::NIL;
+      struct_record *struct_def = nullptr;
    };
    ankerl::unordered_dense::map<GCstr*, GlobalTypeHint> global_type_hints;
+   std::vector<StructFieldDocumentation> struct_field_documentation;
+
+   // Comments seen so far, in source order.  Only retained while a struct declaration is being parsed; see
+   // capture_comments().  Cleared once each declaration has harvested what it needs.
+   std::vector<CommentRecord> comments;
+   bool capture_comments = false;
+
+   // Returns the documentation attached to a field declared on FieldLine: the trailing comment on that line,
+   // preceded by any run of full-line comments immediately above it.
+   [[nodiscard]] std::string documentation_for_line(BCLine FieldLine) const;
 
 #ifdef INCLUDE_TIPS
    // Tip system: 0 = off, 1 = best (critical), 2 = most (medium), 3 = all

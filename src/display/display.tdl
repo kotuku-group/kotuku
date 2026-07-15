@@ -367,15 +367,13 @@ module({
 
   methods("Bitmap", "Bmp", {
     { id=1, name="CopyArea" },
-    { id=2, name="Compress" },
-    { id=3, name="Decompress" },
-    { id=4, name="DrawRectangle" },
-    { id=5, name="SetClipRegion" },
-    { id=6, name="GetColour" },
-    { id=7, name="Premultiply" },
-    { id=8, name="Demultiply" },
-    { id=9, name="ConvertToLinear" },
-    { id=10, name="ConvertToRGB" }
+    { id=2, name="DrawRectangle" },
+    { id=3, name="SetClipRegion" },
+    { id=4, name="GetColour" },
+    { id=5, name="Premultiply" },
+    { id=6, name="Demultiply" },
+    { id=7, name="ConvertToLinear" },
+    { id=8, name="ConvertToRGB" }
   })
 
   klass("Bitmap", { src="class_bitmap.cpp", output="class_bitmap_def.c", references={ "ColourFormat" }, extended=true }, [[

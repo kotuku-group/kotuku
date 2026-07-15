@@ -386,6 +386,10 @@ void trace_proto_bytecode(lua_State *L, GCproto *Proto, BytecodeLogger Logger, v
          if (info.mode_b != BCMnone) append_operand(operands, "B", describe_operand_value(Proto, nullptr, info.mode_b, info.value_b, pc));
          if (info.mode_c != BCMnone) append_operand(operands, "C", describe_operand_value(Proto, nullptr, info.mode_c, info.value_c, pc));
       }
+      if (info.op IS BC_STGETF or info.op IS BC_STSETF) {
+         uint32_t field_index = bc_p32(instruction);
+         append_operand(operands, "P", field_index IS 0xFFFFFFFFu ? "dynamic" : std::format("#{}", field_index));
+      }
 
       BCLine line = get_proto_line(Proto, pc);
 
@@ -437,6 +441,10 @@ extern void dump_bytecode(FuncState &fs)
       else {
          if (info.mode_b != BCMnone) append_operand(operands, "B", describe_operand_value(nullptr, &fs, info.mode_b, info.value_b, pc));
          if (info.mode_c != BCMnone) append_operand(operands, "C", describe_operand_value(nullptr, &fs, info.mode_c, info.value_c, pc));
+      }
+      if (info.op IS BC_STGETF or info.op IS BC_STSETF) {
+         uint32_t field_index = bc_p32(iline.ins);
+         append_operand(operands, "P", field_index IS 0xFFFFFFFFu ? "dynamic" : std::format("#{}", field_index));
       }
 
       format_bc_line(fs.L, iline.line, file_width, log_callback, "", pc, operands, nullptr, info, false, true);

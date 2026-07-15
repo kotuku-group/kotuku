@@ -250,9 +250,6 @@ the surface area first).</li>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="NoPermission">Public objects cannot draw directly to surfaces.</error>
-        <error code="ArrayFull">The callback list has reached its maximum size.</error>
-        <error code="AllocMemory">The callback list could not be expanded.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object, callback-held</tags>

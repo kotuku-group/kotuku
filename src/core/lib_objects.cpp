@@ -1834,11 +1834,9 @@ blocking, pure-query
 
 OBJECTID GetOwnerID(OBJECTID ObjectID)
 {
-   {
-      std::unique_lock lock(glmObjects);
-      if (auto object_rec = glObjects.find(ObjectID); object_rec != glObjects.end()) {
-         if (object_rec->second.Object) return object_rec->second.Object->ownerID();
-      }
+   std::unique_lock lock(glmObjects);
+   if (auto object_rec = glObjects.find(ObjectID); object_rec != glObjects.end()) {
+      if (object_rec->second.Object) return object_rec->second.Object->ownerID();
    }
    return 0;
 }

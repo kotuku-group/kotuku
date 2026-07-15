@@ -58,13 +58,9 @@ static void deref_surface_callback(FUNCTION &Function)
    }
 }
 
-static void deref_surface_callback_range(SurfaceCallback *Callbacks, int Total)
+static void deref_surface_callbacks(std::vector<FUNCTION> &Callbacks)
 {
-   if (not Callbacks) return;
-
-   for (int i=0; i < Total; i++) {
-      deref_surface_callback(Callbacks[i].Function);
-   }
+   for (auto &callback : Callbacks) deref_surface_callback(callback);
 }
 
 //********************************************************************************************************************
@@ -457,19 +453,12 @@ static void notify_free_callback(OBJECTPTR Object, ACTIONID ActionID, ERR Result
    kt::Log log(__FUNCTION__);
    auto Self = (extSurface *)CurrentContext();
 
-   for (int i=0; i < Self->CallbackCount; i++) {
-      if (Self->Callback[i].Function.isScript()) {
-         if (Self->Callback[i].Function.Context->UID IS Object->UID) {
-            deref_surface_callback(Self->Callback[i].Function);
-
-            int j;
-            for (j=i; j < Self->CallbackCount-1; j++) { // Shorten the array
-               Self->Callback[j] = Self->Callback[j+1];
-            }
-            i--;
-            Self->CallbackCount--;
-         }
+   for (auto callback = Self->Callback.begin(); callback != Self->Callback.end(); ) {
+      if (callback->isScript() and (callback->Context->UID IS Object->UID)) {
+         deref_surface_callback(*callback);
+         callback = Self->Callback.erase(callback);
       }
+      else callback++;
    }
 }
 
@@ -621,9 +610,6 @@ func Callback: Callback routine to insert or move in the draw callback list.
 -ERRORS-
 Okay
 NullArgs
-NoPermission: Public objects cannot draw directly to surfaces.
-AllocMemory: The callback list could not be expanded.
-ArrayFull: The callback list has reached its maximum size.
 
 -TAGS-
 mutates-object, callback-held
@@ -634,6 +620,7 @@ mutates-object, callback-held
 static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
 {
    kt::Log log;
+   bool new_callback = true;
    bool retained_callback = false;
 
    if ((not Args) or (not Args->Callback.defined())) return log.warning(ERR::NullArgs);
@@ -642,87 +629,32 @@ static ERR SURFACE_AddCallback(extSurface *Self, struct drw::AddCallback *Args)
       if (not retained_callback) Args->Callback.consume();
    });
 
-   OBJECTPTR context = ParentContext();
-   OBJECTPTR call_context = nullptr;
-   if (Args->Callback.isC()) call_context = (OBJECTPTR)Args->Callback.Context;
-   else if (Args->Callback.isScript()) call_context = context; // Scripts use runtime ID resolution...
+   log.msg("Count: %d", int(Self->Callback.size()));
 
-   if (context->UID < 0) {
-      log.warning("Public objects may not draw directly to surfaces.");
-      return ERR::NoPermission;
-   }
+   // Check if the subscription is already registered
 
-   log.msg("Context: %d, Callback Context: %d, Routine: %p (Count: %d)", context->UID,
-      call_context ? call_context->UID : 0, Args->Callback.Routine, Self->CallbackCount);
-
-   if (call_context) context = call_context;
-
-   if (Self->Callback) {
-      // Check if the subscription is already on the list for our surface context.
-
-      int i;
-      for (i=0; i < Self->CallbackCount; i++) {
-         if (Self->Callback[i].Object IS context) {
-            if ((Self->Callback[i].Function.isC()) and (Args->Callback.isC())) {
-               if (Self->Callback[i].Function.Routine IS Args->Callback.Routine) break;
-            }
-            else if ((Self->Callback[i].Function.isScript()) and (Args->Callback.isScript())) {
-               if (Self->Callback[i].Function.ProcedureID IS Args->Callback.ProcedureID) break;
-            }
+   auto callback = Self->Callback.begin();
+   for (; callback != Self->Callback.end(); callback++) {
+      if (callback->Context IS Args->Callback.Context) {
+         if ((callback->isC()) and (Args->Callback.isC())) {
+            if (callback->Routine IS Args->Callback.Routine) break;
+         }
+         else if ((callback->isScript()) and (Args->Callback.isScript())) {
+            if (callback->ProcedureID IS Args->Callback.ProcedureID) break;
          }
       }
-
-      if (i < Self->CallbackCount) {
-         log.trace("Moving existing subscription to foreground.");
-
-         deref_surface_callback(Self->Callback[i].Function);
-         while (i < Self->CallbackCount-1) {
-            Self->Callback[i] = Self->Callback[i+1];
-            i++;
-         }
-         Self->Callback[i].Object   = context;
-         Self->Callback[i].Function = Args->Callback;
-         Args->Callback.pin();
-         retained_callback = true;
-         return ERR::Okay;
-      }
-      else if (Self->CallbackCount < Self->CallbackSize) {
-         // Add the callback routine to the cache
-
-         Self->Callback[Self->CallbackCount].Object   = context;
-         Self->Callback[Self->CallbackCount].Function = Args->Callback;
-         Self->CallbackCount++;
-      }
-      else if (Self->CallbackCount < 255) {
-         log.detail("Expanding draw subscription array.");
-
-         int new_size = Self->CallbackSize + 10;
-         if (new_size > 255) new_size = 255;
-         SurfaceCallback *scb;
-         if (!AllocMemory(sizeof(SurfaceCallback) * new_size, MEM::DATA|MEM::NO_CLEAR, (APTR *)&scb)) {
-            copymem(Self->Callback, scb, sizeof(SurfaceCallback) * Self->CallbackCount);
-
-            scb[Self->CallbackCount].Object   = context;
-            scb[Self->CallbackCount].Function = Args->Callback;
-            Self->CallbackCount++;
-            Self->CallbackSize = new_size;
-
-            if (Self->Callback != Self->CallbackCache) FreeResource(Self->Callback);
-            Self->Callback = scb;
-         }
-         else return ERR::AllocMemory;
-      }
-      else return ERR::ArrayFull;
-   }
-   else {
-      Self->Callback = Self->CallbackCache;
-      Self->CallbackCount = 1;
-      Self->CallbackSize = std::ssize(Self->CallbackCache);
-      Self->Callback[0].Object = context;
-      Self->Callback[0].Function = Args->Callback;
    }
 
-   if (Args->Callback.Type IS CALL::SCRIPT) {
+   if (callback != Self->Callback.end()) {
+      log.trace("Moving existing subscription to foreground.");
+      deref_surface_callback(*callback);
+      Self->Callback.erase(callback);
+      new_callback = false;
+   }
+
+   Self->Callback.push_back(Args->Callback);
+
+   if (new_callback and (Args->Callback.Type IS CALL::SCRIPT)) {
       SubscribeAction(Args->Callback.Context, AC::Free, C_FUNCTION(notify_free_callback));
    }
 
@@ -963,24 +895,13 @@ extSurface::~extSurface()
 {
    if (RedrawTimer) UpdateTimer(RedrawTimer, 0);
 
-   if ((Callback) and (Callback != CallbackCache)) {
-      deref_surface_callback_range(Callback, CallbackCount);
-      FreeResource(Callback);
-      Callback = nullptr;
-      CallbackCount = 0;
-      CallbackSize = 0;
-   }
-   else if (Callback IS CallbackCache) {
-      deref_surface_callback_range(Callback, CallbackCount);
-      CallbackCount = 0;
-   }
+   deref_surface_callbacks(Callback);
+   Callback.clear();
 
    if (ParentID) {
       if (kt::ScopedObjectLock<extSurface> parent(ParentID, 5000); parent.granted()) {
          UnsubscribeAction(*parent, AC::NIL);
-         if (transparent()) {
-            Action(drw::RemoveCallback::id, this, nullptr);
-         }
+         if (transparent()) Action(drw::RemoveCallback::id, this, nullptr);
       }
    }
 
@@ -1932,67 +1853,53 @@ static ERR SURFACE_RemoveCallback(extSurface *Self, struct drw::RemoveCallback *
    kt::Log log;
    OBJECTPTR context = nullptr;
 
-   auto consume_callback = kt::Defer([&]() {
-      if (Args) Args->Callback.consume();
-   });
-
    if (Args) {
+      context = Args->Callback.Context;
       if (Args->Callback.isC()) {
-         context = (OBJECTPTR)Args->Callback.Context;
          log.trace("Context: %d, Routine %p, Current Total: %d", context->UID, Args->Callback.Routine,
-            Self->CallbackCount);
+            int(Self->Callback.size()));
       }
-      else log.trace("Current Total: %d", Self->CallbackCount);
+      else {
+         log.trace("Current Total: %d", int(Self->Callback.size()));
+         Args->Callback.consume();
+      }
    }
-   else log.trace("Current Total: %d [Remove All]", Self->CallbackCount);
+   else log.trace("Current Total: %d [Remove All]", int(Self->Callback.size()));
 
-   if (!context) context = ParentContext();
+   if (not context) context = ParentContext();
 
-   if (!Self->Callback) return ERR::Okay;
+   if (Self->Callback.empty()) return ERR::Okay;
 
    if ((not Args) or (not Args->Callback.defined())) {
       // Remove everything relating to this context if no callback was specified.
 
-      int i;
-      int shrink = 0;
-      for (i=0; i < Self->CallbackCount; i++) {
-         if (Self->Callback[i].Object IS context) {
-            deref_surface_callback(Self->Callback[i].Function);
-            shrink--;
-            continue;
+      for (auto callback = Self->Callback.begin(); callback != Self->Callback.end(); ) {
+         if (callback->Context IS context) {
+            deref_surface_callback(*callback);
+            callback = Self->Callback.erase(callback);
          }
-         if (shrink) Self->Callback[i+shrink] = Self->Callback[i];
+         else callback++;
       }
-      Self->CallbackCount += shrink;
       return ERR::Okay;
    }
 
-   if (Args->Callback.isScript()) {
-      UnsubscribeAction(Args->Callback.Context, AC::Free);
-   }
+   if (Args->Callback.isScript()) UnsubscribeAction(Args->Callback.Context, AC::Free);
 
    // Find the callback entry, then shrink the list.
 
-   int i;
-   for (i=0; i < Self->CallbackCount; i++) {
-      //log.msg("  %d: #%d, Routine %p", i, Self->Callback[i].Object->UID, Self->Callback[i].Function.Routine);
+   auto callback = Self->Callback.begin();
+   for (; callback != Self->Callback.end(); callback++) {
+      if (callback->Context != context) continue;
 
-      if ((Self->Callback[i].Function.isC()) and
-          (Self->Callback[i].Function.Context IS context) and
-          (Self->Callback[i].Function.Routine IS Args->Callback.Routine)) break;
+      if ((callback->isC()) and (callback->Routine IS Args->Callback.Routine)) break;
 
-      if ((Self->Callback[i].Function.isScript()) and
-          (Self->Callback[i].Function.Context IS context) and
-          (Self->Callback[i].Function.ProcedureID IS Args->Callback.ProcedureID)) break;
+      if ((callback->isScript()) and
+          (callback->ProcedureID IS Args->Callback.ProcedureID)) break;
    }
 
-   if (i < Self->CallbackCount) {
-      deref_surface_callback(Self->Callback[i].Function);
-      while (i < Self->CallbackCount-1) {
-         Self->Callback[i] = Self->Callback[i+1];
-         i++;
-      }
-      Self->CallbackCount--;
+   if (callback != Self->Callback.end()) {
+      deref_surface_callback(*callback);
+      Self->Callback.erase(callback);
       return ERR::Okay;
    }
    else {

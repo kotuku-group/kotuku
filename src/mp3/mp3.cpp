@@ -666,20 +666,19 @@ static int64_t calc_length(objMP3 *Self, int ReduceEnd)
    int64_t filesize;
    prv->File->getSize(filesize);
 
-   uint8_t *buffer;
-   if (!AllocMemory(SIZE_BUFFER, MEM::DATA|MEM::NO_CLEAR, (APTR *)&buffer)) {
+   {
       // Load MP3 data from the file
 
+      std::vector<uint8_t> buffer(SIZE_BUFFER);
       prv->File->seekStart(prv->SeekOffset);
-      prv->File->read(buffer, SIZE_CBR_BUFFER, &buffer_size);
+      prv->File->read(buffer.data(), SIZE_CBR_BUFFER, &buffer_size);
 
       // Find the start of the frame data
 
-      frame_start = find_frame(Self, buffer, buffer_size);
+      frame_start = find_frame(Self, buffer.data(), buffer_size);
 
       if (frame_start IS -1) {
          log.warning("Failed to find the first mp3 frame.");
-         FreeResource(buffer);
          return -1;
       }
 
@@ -698,7 +697,7 @@ static int64_t calc_length(objMP3 *Self, int ReduceEnd)
             }
 
             int index = (frame & 0x0000f000)>>12;
-            frame_samples = hdr_frame_samples(buffer);
+            frame_samples = hdr_frame_samples(buffer.data());
 
             int bitrate;
             if (frame & MPF_MPEG1) bitrate = bitrate_table[layer - 1][index]; // MPEG-1
@@ -708,7 +707,7 @@ static int64_t calc_length(objMP3 *Self, int ReduceEnd)
             else if (current_bitrate != bitrate) prv->VBR = true;
 
             int8_t pad = (frame & MPF_PAD) ? 1 : 0;
-            channels = HDR_IS_MONO(buffer) ? 1 : 2;
+            channels = HDR_IS_MONO(buffer.data()) ? 1 : 2;
 
             if (layer IS 1) frame_size = ((12 * bitrate / samplerate) + pad) * 4;
             else frame_size = (144 * bitrate / samplerate) + pad;
@@ -731,7 +730,7 @@ static int64_t calc_length(objMP3 *Self, int ReduceEnd)
             if ((prv->VBR) and (buffer_size IS SIZE_CBR_BUFFER)) {
                // Read more file data so that we can calculate the vbr more accurately
                int result;
-               prv->File->read(buffer + buffer_size, SIZE_BUFFER - buffer_size, &result);
+               prv->File->read(buffer.data() + buffer_size, SIZE_BUFFER - buffer_size, &result);
                buffer_size += result;
             }
             else break; // File is CBR, no need to scan more data
@@ -740,7 +739,7 @@ static int64_t calc_length(objMP3 *Self, int ReduceEnd)
          // Check that the frame is valid
 
          if (invalid) {
-            int index = find_frame(Self, buffer + pos, buffer_size - pos);
+            int index = find_frame(Self, buffer.data() + pos, buffer_size - pos);
             if ((index IS -1) or (!index)) {
                log.msg("Failed to find the next frame at position %d.", pos);
                break;
@@ -748,10 +747,7 @@ static int64_t calc_length(objMP3 *Self, int ReduceEnd)
             else pos += index;
          }
       }
-
-      FreeResource(buffer);
    }
-   else return -1;
 
    if (fsizes.empty()) return -1;
 

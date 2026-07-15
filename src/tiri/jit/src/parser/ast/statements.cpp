@@ -295,6 +295,254 @@ static bool is_uppercase_enum_name(GCstr *Symbol)
    return true;
 }
 
+// Enables lexer comment capture for the lifetime of a struct declaration.  Comments are only of interest inside a
+// declaration body, so capture is switched off (and the buffer released) as soon as parsing leaves it.
+
+struct CommentCaptureGuard {
+   LexState &lex;
+
+   explicit CommentCaptureGuard(LexState &Lex) : lex(Lex) {
+      lex.comments.clear();
+      lex.capture_comments = true;
+   }
+
+   ~CommentCaptureGuard() {
+      lex.capture_comments = false;
+      lex.comments.clear();
+      lex.comments.shrink_to_fit();
+   }
+
+   CommentCaptureGuard(const CommentCaptureGuard &) = delete;
+   CommentCaptureGuard & operator=(const CommentCaptureGuard &) = delete;
+};
+
+ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
+{
+   Token struct_token = this->ctx.tokens().current();
+   if (not this->at_top_level()) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, struct_token,
+         "Struct declarations are only allowed at top-level scope");
+   }
+   this->ctx.tokens().advance();
+
+   auto name_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
+   if (not name_token.ok()) return ParserResult<StmtNodePtr>::failure(name_token.error_ref());
+   GCstr *name_symbol = name_token.value_ref().identifier();
+   std::string struct_name(strdata(name_symbol), name_symbol->len);
+   auto open = this->ctx.consume(TokenKind::LeftBrace, ParserErrorCode::ExpectedToken);
+   if (not open.ok()) return ParserResult<StmtNodePtr>::failure(open.error_ref());
+
+   // Capture comments for the body only.  The statement dispatcher peeks ahead as far as '{' to recognise the
+   // declaration, so nothing before this point could have been captured anyway.
+
+   CommentCaptureGuard comment_capture(this->ctx.lex());
+
+   struct_record record(struct_name);
+   record.DeclarationLine = struct_token.span().line.lineNumber();
+   if (auto source_symbol = this->current_source_file()) {
+      record.DeclarationSource.assign(strdata(source_symbol), source_symbol->len);
+   }
+
+   while (not this->ctx.check(TokenKind::RightBrace)) {
+      if (this->ctx.check(TokenKind::EndOfFile)) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedEndOfFile, struct_token,
+            "Unterminated struct declaration");
+      }
+
+      auto field_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
+      if (not field_token.ok()) return ParserResult<StmtNodePtr>::failure(field_token.error_ref());
+      GCstr *field_symbol = field_token.value_ref().identifier();
+      std::string field_name(strdata(field_symbol), field_symbol->len);
+      uint32_t field_hash = kt::strihash(field_name);
+      for (const auto &existing : record.Fields) {
+         if (existing.nameHash() IS field_hash) {
+            return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, field_token.value_ref(),
+               std::format("Struct fields '{}' and '{}' collide case-insensitively", existing.Name, field_name));
+         }
+      }
+
+      auto colon = this->ctx.consume(TokenKind::Colon, ParserErrorCode::ExpectedToken);
+      if (not colon.ok()) return ParserResult<StmtNodePtr>::failure(colon.error_ref());
+      auto type_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
+      if (not type_token.ok()) return ParserResult<StmtNodePtr>::failure(type_token.error_ref());
+      GCstr *type_symbol = type_token.value_ref().identifier();
+      std::string_view type_name(strdata(type_symbol), type_symbol->len);
+
+      struct_field field;
+      field.Name = field_name;
+      field.ArraySize = 0;
+      if (type_name IS "bool") { field.Type = FD_BYTE; field.NativeType = NativeStructType::Bool; }
+      else if (type_name IS "char") { field.Type = FD_BYTE|FD_CUSTOM; field.NativeType = NativeStructType::Char; }
+      else if (type_name IS "byte" or type_name IS "uint8") {
+         field.Type = FD_BYTE; field.NativeType = NativeStructType::UInt8;
+      }
+      else if (type_name IS "int8") { field.Type = FD_BYTE; field.NativeType = NativeStructType::Int8; }
+      else if (type_name IS "int16") { field.Type = FD_WORD; field.NativeType = NativeStructType::Int16; }
+      else if (type_name IS "uint16") {
+         field.Type = FD_WORD|FD_UNSIGNED; field.NativeType = NativeStructType::UInt16;
+      }
+      else if (type_name IS "int" or type_name IS "int32") {
+         field.Type = FD_INT; field.NativeType = NativeStructType::Int32;
+      }
+      else if (type_name IS "uint" or type_name IS "uint32") {
+         field.Type = FD_INT|FD_UNSIGNED; field.NativeType = NativeStructType::UInt32;
+      }
+      else if (type_name IS "int64") { field.Type = FD_INT64; field.NativeType = NativeStructType::Int64; }
+      else if (type_name IS "uint64") {
+         field.Type = FD_INT64|FD_UNSIGNED; field.NativeType = NativeStructType::UInt64;
+      }
+      else if (type_name IS "float") { field.Type = FD_FLOAT; field.NativeType = NativeStructType::Float; }
+      else if (type_name IS "double") { field.Type = FD_DOUBLE; field.NativeType = NativeStructType::Double; }
+      else if (type_name IS "string") {
+         field.Type = FD_STRING|FD_CPP; field.NativeType = NativeStructType::String;
+      }
+      else if (type_name IS "cstr") { field.Type = FD_STRING; field.NativeType = NativeStructType::CStr; }
+      else if (type_name IS "func") { field.Type = FD_FUNCTION; field.NativeType = NativeStructType::Function; }
+      else if (type_name IS "obj") {
+         field.Type = FD_OBJECT; field.NativeType = NativeStructType::Object;
+         if (this->ctx.match(TokenKind::Less).ok()) {
+            auto class_name = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
+            if (not class_name.ok()) return ParserResult<StmtNodePtr>::failure(class_name.error_ref());
+            GCstr *class_symbol = class_name.value_ref().identifier();
+            std::string_view class_view(strdata(class_symbol), class_symbol->len);
+            field.ObjectClassID = CLASSID(kt::strihash(class_view));
+            auto close = this->ctx.consume(TokenKind::Greater, ParserErrorCode::ExpectedToken);
+            if (not close.ok()) return ParserResult<StmtNodePtr>::failure(close.error_ref());
+         }
+      }
+      else if (type_name IS "ptr" or type_name IS "struct") {
+         bool is_pointer = type_name IS "ptr";
+         field.Type = is_pointer ? FD_POINTER : FD_STRUCT;
+         field.NativeType = is_pointer ? NativeStructType::Pointer : NativeStructType::Struct;
+         if (this->ctx.match(TokenKind::Less).ok()) {
+            auto reference = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
+            if (not reference.ok()) return ParserResult<StmtNodePtr>::failure(reference.error_ref());
+            GCstr *reference_symbol = reference.value_ref().identifier();
+            std::string_view reference_name(strdata(reference_symbol), reference_symbol->len);
+            auto referenced = find_struct(&this->ctx.lua(), reference_name);
+            if (referenced) {
+               field.StructRef = struct_key(reference_name);
+               field.StructDefinition = referenced;
+               field.Type |= FD_STRUCT;
+            }
+            else if (is_pointer) {
+               if (reference_name IS "bool" or reference_name IS "char" or reference_name IS "byte" or
+                     reference_name IS "int8" or reference_name IS "uint8") field.Type |= FD_BYTE;
+               else if (reference_name IS "int16" or reference_name IS "uint16") field.Type |= FD_WORD;
+               else if (reference_name IS "int" or reference_name IS "uint" or reference_name IS "int32" or
+                     reference_name IS "uint32") field.Type |= FD_INT;
+               else if (reference_name IS "int64" or reference_name IS "uint64") field.Type |= FD_INT64;
+               else if (reference_name IS "float") field.Type |= FD_FLOAT;
+               else if (reference_name IS "double") field.Type |= FD_DOUBLE;
+               else {
+                  return this->fail<StmtNodePtr>(ParserErrorCode::UnknownTypeName, reference.value_ref(),
+                     std::format("Unknown struct or scalar name '{}'", reference_name));
+               }
+               if (reference_name.starts_with("uint") or reference_name IS "byte") field.Type |= FD_UNSIGNED;
+            }
+            else {
+               return this->fail<StmtNodePtr>(ParserErrorCode::UnknownTypeName, reference.value_ref(),
+                  std::format("Unknown struct name '{}'; declarations must precede use", reference_name));
+            }
+            // Handling for ptr<Struct[]>
+            if (is_pointer and this->ctx.match(TokenKind::LeftBracket).ok()) {
+               auto empty = this->ctx.consume(TokenKind::RightBracket, ParserErrorCode::ExpectedToken);
+               if (not empty.ok()) return ParserResult<StmtNodePtr>::failure(empty.error_ref());
+               field.Type |= FD_ARRAY;
+               field.ArraySize = -1;
+            }
+            auto close = this->ctx.consume(TokenKind::Greater, ParserErrorCode::ExpectedToken);
+            if (not close.ok()) return ParserResult<StmtNodePtr>::failure(close.error_ref());
+         }
+         else if (not is_pointer) {
+            return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, type_token.value_ref(),
+               "struct fields require a referenced name, for example struct<User>");
+         }
+      }
+      else {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnknownTypeName, type_token.value_ref(),
+            std::format("Unknown struct field type '{}'", type_name));
+      }
+
+      if (this->ctx.match(TokenKind::LeftBracket).ok()) {
+         Token dimension = this->ctx.tokens().current();
+         lua_Number dimension_value = dimension.payload().as_number();
+         if (dimension.kind() != TokenKind::Number or dimension_value < 1 or
+               dimension_value > lua_Number(std::numeric_limits<int>::max()) or
+               dimension_value != lua_Number(int64_t(dimension_value))) {
+            return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, dimension,
+               "Struct array dimensions must be positive integers within the supported range");
+         }
+         if ((field.Type & FD_STRING) and (field.Type & FD_CPP)) {
+            return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, dimension,
+               "Fixed arrays of owned strings are not supported");
+         }
+         field.Type |= FD_ARRAY;
+         field.ArraySize = int(dimension_value);
+         this->ctx.tokens().advance();
+         auto close = this->ctx.consume(TokenKind::RightBracket, ParserErrorCode::ExpectedToken);
+         if (not close.ok()) return ParserResult<StmtNodePtr>::failure(close.error_ref());
+      }
+
+      field.precomputeNameHash();
+      record.Fields.push_back(std::move(field));
+
+      auto documentation = this->ctx.lex().documentation_for_line(
+         field_token.value_ref().span().line.lineNumber());
+      if (not documentation.empty()) {
+         this->ctx.lex().struct_field_documentation.push_back({ struct_name, field_name,
+            std::move(documentation), field_token.value_ref().span() });
+      }
+
+      Token last = this->ctx.tokens().current();
+      if (this->ctx.match(TokenKind::Comma).ok()) continue;
+      if (this->ctx.check(TokenKind::RightBrace)) continue;
+      if (last.span().line.lineNumber() <= type_token.value_ref().span().line.lineNumber()) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, last,
+            "Expected a newline, ',' or '}' after struct field");
+      }
+   }
+
+   auto close = this->ctx.consume(TokenKind::RightBrace, ParserErrorCode::ExpectedToken);
+   if (not close.ok()) return ParserResult<StmtNodePtr>::failure(close.error_ref());
+   if (record.Fields.empty()) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, struct_token,
+         "Struct declarations must contain at least one field");
+   }
+
+   bool inserted = false;
+   const struct_record *existing = nullptr;
+   ERR registration = register_declared_struct(&this->ctx.lua(), std::move(record), &inserted, &existing);
+   if (registration != ERR::Okay) {
+      if (registration != ERR::Exists) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token.value_ref(),
+            std::format("Failed to lay out struct '{}': {}", struct_name, GetErrorMsg(registration)));
+      }
+      std::string location = (existing and not existing->DeclarationSource.empty()) ?
+         std::format(" at {}:{}", existing->DeclarationSource, existing->DeclarationLine) : " from native code";
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token.value_ref(),
+         std::format("Struct '{}' conflicts with its previous declaration{}", struct_name, location));
+   }
+   if (inserted) this->track_registered_struct(struct_key(struct_name));
+   auto registered = find_struct(&this->ctx.lua(), struct_name);
+
+   Identifier variable = make_identifier(name_token.value_ref());
+   variable.type = TiriType::Func;
+   variable.struct_def = registered;
+   Identifier struct_identifier(&this->ctx.lua(), "struct", struct_token.span());
+   Identifier def_identifier(&this->ctx.lua(), "def", struct_token.span());
+   NameRef struct_reference;
+   struct_reference.identifier = struct_identifier;
+   auto base = make_identifier_expr(struct_token.span(), struct_reference);
+   auto callee = make_member_expr(struct_token.span(), std::move(base), def_identifier, false);
+   ExprNodeList arguments;
+   arguments.push_back(make_literal_expr(name_token.value_ref().span(),
+      LiteralValue::string(this->ctx.lex().keepstr(struct_name))));
+   ExprNodeList values;
+   values.push_back(make_call_expr(struct_token.span(), std::move(callee), std::move(arguments), false));
+   return ParserResult<StmtNodePtr>::success(make_local_decl_stmt(struct_token.span(), { variable }, std::move(values)));
+}
+
 static bool is_prefixed_attribute_token(TokenStreamAdapter &Tokens)
 {
    Token current = Tokens.current();
@@ -1422,6 +1670,7 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
    }
 
    this->adopt_registered_enum_constants(import_builder);
+   this->adopt_registered_structs(import_builder);
 
    return result;
 }

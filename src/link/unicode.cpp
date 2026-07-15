@@ -8,7 +8,7 @@ size_t  (*iconv)(iconv_t cd, const char** inbuf, size_t* inbytesleft,   char** o
 int     (*iconv_close)(iconv_t cd);
 void    (*iconvlist)(int (*do_one)(unsigned int namescount, const char* const* names, void* data), void* data);
 
-STRING glIconvBuffer = nullptr;
+std::vector<char> glIconvBuffer;
 OBJECTPTR modIconv = nullptr;
 static iconv_t glIconv = nullptr;
 
@@ -16,8 +16,6 @@ void free_iconv(void)
 {
    if (modIconv) {
       if (glIconv) { iconv_close(glIconv); glIconv = nullptr; }
-      if (glIconvBuffer) { FreeResource(glIconvBuffer); glIconvBuffer = nullptr; }
-
       FreeResource(modIconv);
       modIconv = nullptr;
    }
@@ -235,23 +233,18 @@ api-owns-result, null-terminated-result, nullable-result, blocking
 
 *********************************************************************************************************************/
 #if 0
-CSTRING UTF8ValidEncoding(CSTRING String, CSTRING Encoding)
+CSTRING UTF8ValidEncoding(std::string_view String, std::string_view Encoding)
 {
-   static int buffersize = 0;
    static uint32_t icvhash = 0;
    static bool init_failed = false;
-   CSTRING str, output, input;
+   CSTRING output, input;
    uint32_t uchar, enchash;
    int len, in, out;
    size_t inleft, outleft;
 
-   if ((!String) or (init_failed)) {
-      if (glIconvBuffer) {
-         // Calling this function with a NULL String is an easy/valid way to free the internal buffer
-         FreeResource(glIconvBuffer);
-         glIconvBuffer = nullptr;
-         buffersize = 0;
-      }
+   if ((String.empty()) or (init_failed)) {
+      // Calling this function with a NULL String is an easy/valid way to free the internal buffer
+      glIconvBuffer.clear();
       return nullptr;
    }
 
@@ -292,7 +285,7 @@ CSTRING UTF8ValidEncoding(CSTRING String, CSTRING Encoding)
 
    // Check if the string is valid UTF-8 and if so, return
 
-   str    = String;
+   auto str = String;
    in     = 0; // Current input index
    out    = 0; // No of bytes written
    while (str[in]) {
@@ -301,9 +294,7 @@ CSTRING UTF8ValidEncoding(CSTRING String, CSTRING Encoding)
       if (!uchar) {
          // An invalid character has been found
 
-         if (!Encoding) {
-            Encoding = "char"; // Convert from the system default
-         }
+         if (Encoding.empty()) Encoding = "char"; // Convert from the system default
 
          // Initialise iconv
 
@@ -321,31 +312,21 @@ CSTRING UTF8ValidEncoding(CSTRING String, CSTRING Encoding)
             icvhash = enchash;
          }
 
-         // Allocate a conversion buffer if we don't already have one
-
-         if (!glIconvBuffer) {
-            buffersize = 4096;
+         if (glIconvBuffer.empty()) {
+            size_t buffersize = 4096;
             if (buffersize < in) buffersize = in + 1024;
-
-            if (AllocMemory(buffersize, MEM::STRING|MEM::NO_CLEAR, (APTR *)&glIconvBuffer) != ERR::Okay) {
-               tlContext = context;
-               return nullptr;
-            }
+            glIconvBuffer.resize(buffersize);
          }
 
          // Copy all characters up to the point at which the last invalid character was encountered.
 
-         if (in > 0) copymem(str, glIconvBuffer, in);
+         if (in > 0) copymem(str, glIconvBuffer.data(), in);
 
          while (str[in]) {
             // Check/Expand the buffer size
 
-            if (out+12 > buffersize) {
-               if (ReallocMemory(glIconvBuffer, buffersize + 4096, (APTR *)&glIconvBuffer) != ERR::Okay) {
-                  tlContext = context;
-                  return nullptr;
-               }
-               buffersize += 4096;
+            if (out+12 > glIconvBuffer.size()) {
+               glIconvBuffer.resize(glIconvBuffer.size() + 2096);
             }
 
             uchar = UTF8ReadValue(str+in, &len);

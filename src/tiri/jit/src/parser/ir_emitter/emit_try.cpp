@@ -306,7 +306,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_raise_stmt(const RaiseStmtPayload &Payl
 // Emit bytecode for check statement: check expression
 //
 // Bytecode structure:
-//   BC_CHECK  A=error_reg, D=0
+//   BC_CHECK  A=error_reg, D=source_column
 
 ParserResult<IrEmitUnit> IrEmitter::emit_check_stmt(const CheckStmtPayload &Payload, const SourceSpan &Span)
 {
@@ -324,8 +324,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_check_stmt(const CheckStmtPayload &Payl
    ExpDesc code_expr = code_result.value_ref();
    expr_toanyreg(fs, &code_expr);
 
-   // Emit BC_CHECK: A=error_reg, D=0
-   bcemit_AD(fs, BC_CHECK, BCReg(code_expr.u.s.info), BCReg(0));
+   // Preserve the expression column for assert-style error formatting.  BC_CHECK's D operand is otherwise unused.
+   int32_t raw_column = Payload.error_code->span.column.lineNumber();
+   BCReg source_column = BCReg(raw_column > int32_t(BCMAX_D) ? BCMAX_D : raw_column);
+   bcemit_AD(fs, BC_CHECK, BCReg(code_expr.u.s.info), source_column);
    expr_free(fs, &code_expr);
 
    return ParserResult<IrEmitUnit>::success(IrEmitUnit{});

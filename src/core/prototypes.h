@@ -34,7 +34,6 @@ extern "C" void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Er
 extern "C" ERR CopyFile(const std::string_view & Source, const std::string_view & Dest, FUNCTION * Callback);
 extern "C" ERR ProcessMessages(PMF Flags, int TimeOut);
 extern "C" ERR IdentifyFile(const std::string_view & Path, CLASSID Filter, CLASSID * Class, CLASSID * SubClass);
-extern "C" ERR ReallocMemory(APTR Memory, uint32_t Size, APTR * Address);
 extern "C" CLASSID ResolveClassName(const std::string_view & Name);
 extern "C" ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size);
 extern "C" ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner);

@@ -16,7 +16,6 @@
 #include "lj_obj.h"
 #include "parser/parser_diagnostics.h"
 
-#include "hashes.h"
 #include "defs.h"
 
 static int lua_load(lua_State *Lua, class objFile *File, CSTRING SourceName)
@@ -177,18 +176,18 @@ int fcmd_subscribe_event(lua_State *Lua)
    auto group_id = EVG::NIL;
    if ((group_hash) and (subgroup_hash)) {
       switch (group_hash) {
-         case HASH_FILESYSTEM: group_id = EVG::FILESYSTEM; break;
-         case HASH_NETWORK:    group_id = EVG::NETWORK; break;
-         case HASH_USER:       group_id = EVG::USER; break;
-         case HASH_SYSTEM:     group_id = EVG::SYSTEM; break;
-         case HASH_GUI:        group_id = EVG::GUI; break;
-         case HASH_DISPLAY:    group_id = EVG::DISPLAY; break;
-         case HASH_IO:         group_id = EVG::IO; break;
-         case HASH_HARDWARE:   group_id = EVG::HARDWARE; break;
-         case HASH_AUDIO:      group_id = EVG::AUDIO; break;
-         case HASH_POWER:      group_id = EVG::POWER; break;
-         case HASH_CLASS:      group_id = EVG::CLASS; break;
-         case HASH_APP:        group_id = EVG::APP; break;
+         case strhash("filesystem"): group_id = EVG::FILESYSTEM; break;
+         case strhash("network"):    group_id = EVG::NETWORK; break;
+         case strhash("user"):       group_id = EVG::USER; break;
+         case strhash("system"):     group_id = EVG::SYSTEM; break;
+         case strhash("gui"):        group_id = EVG::GUI; break;
+         case strhash("display"):    group_id = EVG::DISPLAY; break;
+         case strhash("io"):         group_id = EVG::IO; break;
+         case strhash("hardware"):   group_id = EVG::HARDWARE; break;
+         case strhash("audio"):      group_id = EVG::AUDIO; break;
+         case strhash("power"):      group_id = EVG::POWER; break;
+         case strhash("class"):      group_id = EVG::CLASS; break;
+         case strhash("app"):        group_id = EVG::APP; break;
       }
    }
 

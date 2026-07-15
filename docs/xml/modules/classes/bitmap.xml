@@ -266,31 +266,6 @@
 
   <methods>
     <method>
-      <name>Compress</name>
-      <comment>Compresses bitmap data to save memory.</comment>
-      <prototype>ERR bmp::Compress(OBJECTPTR Object, INT Level)</prototype>
-      <tiriPrototype>err = Compress(Level:num)</tiriPrototype>
-      <input>
-        <param type="INT" name="Level">Reserved compression level.  The current implementation uses the compression module's default level.</param>
-      </input>
-      <description>
-<p>Compress() stores a compressed copy of the bitmap's pixel data and releases the uncompressed <fl>Data</fl> buffer.  It is useful for large data-backed bitmaps that need to remain available but are accessed infrequently.</p>
-<p>Once a bitmap is compressed, <fl>Data</fl> is no longer available for direct access.  Call <method>Decompress</method> before reading pixels, writing pixels or passing the bitmap to code that expects an active data buffer.</p>
-<p>The <code>BMF::COMPRESSED</code> flag is set in <fl>Flags</fl> after successful compression.  Video and texture-backed bitmaps are not supported by this method.</p>
-      </description>
-      <result>
-        <error code="Okay">Operation successful.</error>
-        <error code="NoSupport">Operation not supported</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
-        <error code="ReallocMemory">The reallocation of a memory block failed</error>
-        <error code="CreateObject">A Compression object could not be created.</error>
-        <error code="NullArgs">Function call missing argument value(s)</error>
-        <error code="Compression">Unspecified failure during compression of a data stream</error>
-      </result>
-      <tags>mutates-object, creates-resource</tags>
-    </method>
-
-    <method>
       <name>ConvertToLinear</name>
       <comment>Converts a bitmap's colour space to linear RGB.</comment>
       <prototype>ERR bmp::ConvertToLinear(OBJECTPTR Object)</prototype>
@@ -355,27 +330,6 @@
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-input</tags>
-    </method>
-
-    <method>
-      <name>Decompress</name>
-      <comment>Decompresses a compressed bitmap.</comment>
-      <prototype>ERR bmp::Decompress(OBJECTPTR Object, INT RetainData)</prototype>
-      <tiriPrototype>err = Decompress(RetainData:num)</tiriPrototype>
-      <input>
-        <param type="INT" name="RetainData">Retains the compression data if <code>true</code>.</param>
-      </input>
-      <description>
-<p>Decompress() restores <fl>Data</fl> for a bitmap previously compressed with <method>Compress</method>.  If no compressed data is available, the method returns <code>ERR::Okay</code> without changing the bitmap.</p>
-<p>Compressed data is released after a successful restore unless <code>RetainData</code> is <code>true</code>.  Retaining it allows the most recent compressed image to be restored again later.</p>
-      </description>
-      <result>
-        <error code="Okay">Operation successful.</error>
-        <error code="AllocMemory">Insufficient memory in recreating the bitmap data buffer.</error>
-        <error code="BufferOverflow">A buffer overflow has occurred</error>
-        <error code="CreateObject">A Compression object could not be created.</error>
-      </result>
-      <tags>mutates-object, creates-resource</tags>
     </method>
 
     <method>

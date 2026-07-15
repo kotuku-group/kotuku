@@ -18,7 +18,6 @@ Acceptable field definitions:
   c = Char (If used in an array, array will be interpreted as a string)
   p = Pointer (For a pointer to refer to another structure, use the suffix ':StructName')
   s = String
-  m = MaxInt
   o = Object (Pointer)
   r = Function (Embedded)
   e = Embedded structure (e.g. 'eColour:RGB' would embed an RGB structure)
@@ -43,6 +42,7 @@ TODO: Support for kt::vector
 #include <inttypes.h>
 #include <format>
 #include <new>
+#include <limits>
 #include <optional>
 #include <ranges>
 
@@ -51,7 +51,6 @@ TODO: Support for kt::vector
 #include "lauxlib.h"
 #include "lib.h"
 #include "lj_obj.h"
-#include "hashes.h"
 #include "defs.h"
 
 static constexpr int MAX_STRUCT_DEF = 2048; // Struct definitions are typically 100 - 400 bytes.
@@ -64,7 +63,7 @@ inline GCstruct * push_struct_def(lua_State *Lua, APTR Address, struct_record &S
 
 // Handles both construction and destruction of std::string usage in a structure.
 
-static void process_struct_cpp_strings(const struct_record &StructDef, APTR Address, bool Construct)
+static void process_struct_cpp_strings(lua_State *Lua, const struct_record &StructDef, APTR Address, bool Construct)
 {
    if (not Address) return;
 
@@ -76,17 +75,18 @@ static void process_struct_cpp_strings(const struct_record &StructDef, APTR Addr
       auto type = field->Type;
 
       if ((type & FD_STRUCT) and (not (type & FD_PTR)) and (not (type & FD_CPP)) and
-            (not field->StructRef.empty())) {
-         auto def = glStructs.find(std::string_view(field->StructRef));
-         if (def != glStructs.end()) {
+            (field->StructRef != 0)) {
+         auto def = field->StructDefinition ? field->StructDefinition :
+            find_struct_reference(Lua, StructDef, field->StructRef);
+         if (def) {
             if ((type & FD_ARRAY) and (field->ArraySize > 0)) {
                for (int i = Construct ? 0 : field->ArraySize; Construct ? (i < field->ArraySize) : (i > 0);) {
                   if (not Construct) --i;
-                  process_struct_cpp_strings(def->second, (int8_t *)field_address + (def->second.Size * i), Construct);
+                  process_struct_cpp_strings(Lua, *def, (int8_t *)field_address + (def->Size * i), Construct);
                   if (Construct) i++;
                }
             }
-            else process_struct_cpp_strings(def->second, field_address, Construct);
+            else process_struct_cpp_strings(Lua, *def, field_address, Construct);
          }
       }
 
@@ -134,14 +134,14 @@ static void process_struct_cpp_strings(const struct_record &StructDef, APTR Addr
    }
 }
 
-void construct_struct_cpp_strings(const struct_record &StructDef, APTR Address)
+void construct_struct_cpp_strings(lua_State *Lua, const struct_record &StructDef, APTR Address)
 {
-   process_struct_cpp_strings(StructDef, Address, true);
+   process_struct_cpp_strings(Lua, StructDef, Address, true);
 }
 
-void destroy_struct_cpp_strings(const struct_record &StructDef, APTR Address)
+void destroy_struct_cpp_strings(lua_State *Lua, const struct_record &StructDef, APTR Address)
 {
-   process_struct_cpp_strings(StructDef, Address, false);
+   process_struct_cpp_strings(Lua, StructDef, Address, false);
 }
 
 //********************************************************************************************************************
@@ -153,9 +153,9 @@ void destroy_struct_cpp_strings(const struct_record &StructDef, APTR Address)
 [[nodiscard]] ERR named_struct_to_table(lua_State *Lua, std::string_view StructName, CPTR Address)
 {
    // NB: Custom comparator will stop if a colon is encountered in StructName
-   if (auto def = glStructs.find(StructName); def != glStructs.end()) {
+   if (auto def = find_struct(Lua, StructName)) {
       std::vector<lua_ref> ref;
-      auto error = struct_to_table(Lua, ref, def->second, Address);
+      auto error = struct_to_table(Lua, ref, *def, Address);
       unref_struct_references(Lua, ref);
       return error;
    }
@@ -237,15 +237,15 @@ static bool write_primitive_field(lua_State *Lua, APTR Address, int Type, int St
 
    if (not lua_istable(Lua, -1)) return log.warning(ERR::WrongType);
 
-   auto def = glStructs.find(StructName);
-   if (def IS glStructs.end()) return ERR::Search;
+   auto def = find_struct(Lua, StructName);
+   if (not def) return ERR::Search;
 
-   auto &struct_def = def->second;
+   auto &struct_def = *def;
 
    auto memory = std::unique_ptr<uint8_t[]>(new (std::nothrow) uint8_t[struct_def.Size]());
    if (not memory) return ERR::AllocMemory;
 
-   construct_struct_cpp_strings(struct_def, memory.get());
+   construct_struct_cpp_strings(Lua, struct_def, memory.get());
 
    lua_pushnil(Lua); // Access first key for lua_next()
    while (lua_next(Lua, -2) != 0) { // Pops the current key and pushes the k,v pair.
@@ -321,13 +321,17 @@ static bool write_primitive_field(lua_State *Lua, APTR Address, int Type, int St
 
       CPTR address = (int8_t *)Address + field.Offset;
       auto type = field.Type;
+      struct_record *field_def = field.StructDefinition;
+      if ((not field_def) and (type & FD_STRUCT) and (field.StructRef != 0)) {
+         field_def = find_struct_reference(Lua, StructDef, field.StructRef);
+      }
 
       if (type & FD_ARRAY) {
          if (type & FD_CPP) { // kt::vector<ANY>
             auto vector = (kt::vector<int> *)(address); // Uses int as a placeholder
             if (type & FD_STRUCT) {
-               if (glStructs.contains(std::string_view(field.StructRef))) {
-                  make_any_array(Lua, type, field.StructRef, vector->size(), vector->data());
+               if (field_def) {
+                  make_any_array(Lua, type, field_def->Name, vector->size(), vector->data(), field_def);
                }
                else lua_pushnil(Lua);
             }
@@ -335,8 +339,10 @@ static bool write_primitive_field(lua_State *Lua, APTR Address, int Type, int St
          }
          else if (field.ArraySize IS -1) { // Pointer to a null-terminated array.
             if (type & FD_STRUCT) {
-               if (glStructs.contains(std::string_view(field.StructRef))) {
-                  if (((CPTR *)address)[0]) make_any_array(Lua, type, field.StructRef, -1, ((CPTR *)address)[0]);
+               if (field_def) {
+                  if (((CPTR *)address)[0]) {
+                     make_any_array(Lua, type, field_def->Name, -1, ((CPTR *)address)[0], field_def);
+                  }
                   else lua_pushnil(Lua);
                }
                else lua_pushnil(Lua);
@@ -345,8 +351,8 @@ static bool write_primitive_field(lua_State *Lua, APTR Address, int Type, int St
          }
          else { // It's an embedded array of fixed size.
             if (type & FD_STRUCT) {
-               if (glStructs.contains(std::string_view(field.StructRef))) {
-                  make_struct_array(Lua, field.StructRef, field.ArraySize, address);
+               if (field_def) {
+                  make_struct_array(Lua, field_def->Name, field.ArraySize, address, 0, field_def);
                }
                else lua_pushnil(Lua);
             }
@@ -354,17 +360,17 @@ static bool write_primitive_field(lua_State *Lua, APTR Address, int Type, int St
          }
       }
       else if (type & FD_STRUCT) {
-         if (auto def = glStructs.find(std::string_view(field.StructRef)); def != glStructs.end()) {
+         if (field_def) {
             if (type & FD_PTR) {
                if (((APTR *)address)[0]) {
-                  (void)struct_to_table(Lua, References, def->second, ((APTR *)address)[0]);
+                  (void)struct_to_table(Lua, References, *field_def, ((APTR *)address)[0]);
                }
                else lua_pushnil(Lua);
             }
-            else (void)struct_to_table(Lua, References, def->second, address);
+            else (void)struct_to_table(Lua, References, *field_def, address);
          }
          else {
-            log.msg("Struct '%s' not found for field '%s'", field.StructRef.c_str(), field.Name.c_str());
+            log.msg("Struct reference $%.8x not found for field '%s'", field.StructRef, field.Name.c_str());
             lua_pushnil(Lua);
          }
       }
@@ -404,8 +410,8 @@ GCstruct * push_struct(extTiri *Self, APTR Address, std::string_view StructName,
 
    log.traceBranch("Struct: %s, Address: %p, Deallocate: %d", StructName.data(), Address, Deallocate);
 
-   if (auto def = glStructs.find(StructName); def != glStructs.end()) {
-      return push_struct_def(Self->Lua, Address, def->second, Deallocate, Lifecycle);
+   if (auto def = find_struct(Self->Lua, StructName)) {
+      return push_struct_def(Self->Lua, Address, *def, Deallocate, Lifecycle);
    }
    else if (AllowEmpty) {
       // The AllowEmpty option is useful in situations where a successful API call returns a structure that is strictly
@@ -423,16 +429,21 @@ GCstruct * push_struct(extTiri *Self, APTR Address, std::string_view StructName,
 }
 
 //********************************************************************************************************************
-// Lua Usage: structdef = MAKESTRUCT(Name, Sequence)
+// structdef = MAKESTRUCT(Name, Sequence)
 //
 // This function makes a structure definition which can be passed to struct.new()
+//
+// Tiri clients should use the `struct` parser instead of this function.  It is exposed only for the purpose of
+// testing the parsing of IDL struct definitions.
 
 int MAKESTRUCT(lua_State *Lua)
 {
    CSTRING sequence, name;
    if (not (name = lua_tostring(Lua, 1))) luaL_argerror(Lua, 1, "Structure name required.");
    else if (not (sequence = lua_tostring(Lua, 2))) luaL_argerror(Lua, 2, "Structure definition required.");
-   else make_struct(Lua->script, name, sequence);
+   else if (make_struct(Lua->script, name, sequence) != ERR::Okay) {
+      luaL_error(Lua, "Failed to register structure '%s'.", name);
+   }
    return 0;
 }
 
@@ -469,6 +480,43 @@ static void make_camel_case(std::string &String)
          }
       }
    }
+}
+
+//********************************************************************************************************************
+// Computes the alignment, offset and storage size for a single field.  Shared by the MAKESTRUCT sequence parser and
+// the declarative `struct` statement so that both paths produce byte-identical layouts.
+//
+// ArraySize is the caller's element count and is interpreted alongside FD_ARRAY as follows:
+//
+//   No FD_ARRAY          Scalar field.  Callers pass 1; the recorded ArraySize is always 1.
+//   FD_ARRAY, count > 0  Fixed inline array occupying FieldSize * count bytes.
+//   FD_ARRAY, count <= 0 Pointer to a null-terminated array (the sequence format's [0] suffix, or ptr<T[]> in a
+//                        declaration).  Occupies one pointer and is recorded as -1, which downstream readers such
+//                        as struct_to_table() test for to distinguish it from an inline array.
+//
+// NB: A scalar field is recorded as 1, never -1.  Only an explicit [0]/ptr<T[]> yields -1.
+
+static ERR layout_struct_field(struct_field &Field, int Type, int FieldSize, int ArraySize, int &Offset)
+{
+   if ((FieldSize >= 8) and (Type != FD_STRUCT)) Offset = ALIGN64(Offset);
+   else if (FieldSize IS 4) Offset = ALIGN32(Offset);
+   else if ((FieldSize IS 2) and (Offset & 1)) Offset++;
+
+   // Offset is a uint16_t in struct_field, so oversized fixed arrays must be rejected rather than silently wrapped.
+
+   uint64_t storage_size = uint64_t(FieldSize);
+   if (Type & FD_ARRAY) {
+      storage_size = (ArraySize > 0) ? uint64_t(FieldSize) * uint64_t(ArraySize) : sizeof(APTR);
+   }
+   if ((uint64_t(Offset) + storage_size) > std::numeric_limits<uint16_t>::max()) {
+      return ERR::OutOfRange;
+   }
+
+   Field.Offset = Offset;
+   Field.Type = Type;
+   Field.ArraySize = (Type & FD_ARRAY) ? (ArraySize ? ArraySize : -1) : 1;
+   Offset += int(storage_size);
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -524,8 +572,9 @@ static void make_camel_case(std::string &String)
                if (end IS std::string::npos) end = Sequence.size();
                auto name = Sequence.substr(sep, end-sep);
 
-               if (auto def = glStructs.find(std::string_view(name)); def != glStructs.end()) {
+               if (auto def = glStructs.find(struct_key(name)); def != glStructs.end()) {
                   field_size = def->second.Size;
+                  field.StructDefinition = &def->second;
                   break;
                }
                else {
@@ -535,11 +584,6 @@ static void make_camel_case(std::string &String)
             }
             else return ERR::Syntax;
          }
-
-         case 'm': // MAXINT
-            type |= (sizeof(MAXINT) IS 4) ? FD_INT : FD_INT64;
-            field_size = sizeof(MAXINT);
-            break;
 
          default:
             return ERR::Syntax;
@@ -558,7 +602,11 @@ static void make_camel_case(std::string &String)
          pos++;
          auto i = Sequence.find_first_of(",[", pos);
          if (i IS std::string::npos) i = Sequence.size();
-         field.StructRef.assign(Sequence, pos, i-pos);
+         std::string_view reference_name(Sequence.data() + pos, i - pos);
+         field.StructRef = struct_key(reference_name);
+         if (auto def = glStructs.find(field.StructRef); def != glStructs.end()) {
+            field.StructDefinition = &def->second;
+         }
          type |= FD_STRUCT;
          pos = i;
       }
@@ -568,6 +616,9 @@ static void make_camel_case(std::string &String)
 
       // Manage fields that are based on fixed array sizes.  NOTE: An array size of zero, i.e. [0] is an indicator
       // that the field is a pointer to a null terminated array.
+      //
+      // The default of 1 applies to every field that has no '[' suffix, so a scalar reaches layout_struct_field()
+      // with a count of 1 and FD_ARRAY unset.  Zero is only ever reached via an explicit [0].
 
       int array_size = 1;
       if (Sequence[pos] IS '[') {
@@ -590,21 +641,15 @@ static void make_camel_case(std::string &String)
          if (offset & 7) {
             log.msg("%s", std::format("Warning: {}.{} ({} bytes) is mis-aligned.", StructName, field.Name, field_size).c_str());
          }
-         offset = ALIGN64(offset); // 64-bit alignment
       }
-      else if (field_size IS 4) offset = ALIGN32(offset);
-      else if ((field_size IS 2) and (offset & 1)) offset++; // 16-bit alignment
 
       pos = Sequence.find(',', pos);
 
-      field.Offset    = offset;
-      field.Type      = type;
-      field.ArraySize = array_size ? array_size : -1;
+      if (auto error = layout_struct_field(field, type, field_size, array_size, offset); error != ERR::Okay) {
+         return error;
+      }
 
-      log.trace("Added field %s @ offset %d", field.Name.c_str(), offset);
-
-      if (array_size) offset += field_size * array_size;
-      else offset += sizeof(APTR); // Use of [0] indicates a ptr to a null-terminated array.
+      log.trace("Added field %s @ offset %d", field.Name.c_str(), field.Offset);
 
       Record.Fields.push_back(field);
 
@@ -621,33 +666,164 @@ static void make_camel_case(std::string &String)
 [[nodiscard]] ERR make_struct(extTiri *Self, std::string_view StructName, CSTRING Sequence)
 {
    kt::Log log(__FUNCTION__);
+   const std::lock_guard lock(glStructMutex);
 
    if (not Sequence) {
       log.warning("Missing struct name and/or definition.");
       return ERR::NullArgs;
    }
 
-   if (glStructs.contains(StructName)) {
+   if (not valid_struct_name(StructName)) {
+      log.warning("Invalid structure name '%s'.", StructName.data());
+      return ERR::Syntax;
+   }
+
+   const auto key = struct_key(StructName);
+   auto [it, inserted] = glStructs.try_emplace(key, StructName);
+   if (not inserted) {
       log.warning("Structure '%s' is already registered.", StructName.data());
       return ERR::Exists;
    }
 
    log.traceBranch("%s, %.50s", StructName.data(), Sequence);
 
-   glStructs[StructName] = struct_record(StructName);
-
    int computed_size = 0;
-   if (auto error = generate_structdef(Self, StructName, Sequence, glStructs[StructName], &computed_size); error != ERR::Okay) {
+   if (auto error = generate_structdef(Self, StructName, Sequence, it->second, &computed_size); error != ERR::Okay) {
       if (error IS ERR::BufferOverflow) log.warning("String too long - buffer overflow");
       else if (error IS ERR::Syntax) log.warning("Unsupported struct character in definition: %s", Sequence);
       else log.warning("Failed to make struct for %s, error: %s", StructName.data(), GetErrorMsg(error));
+      glStructs.erase(it);
       return error;
    }
 
-   if (auto it = glStructSizes->find(kt::strhash(StructName)); it != glStructSizes->end()) glStructs[StructName].Size = it->second.Size;
-   else glStructs[StructName].Size = computed_size;
+   if (auto size = glStructSizes->find(key); size != glStructSizes->end()) it->second.Size = size->second.Size;
+   else it->second.Size = computed_size;
 
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
+// Resolve declarative definitions in the active state before falling back to process-wide MAKESTRUCT definitions.
+
+[[nodiscard]] struct_record * find_struct(lua_State *Lua, uint32_t Key)
+{
+   if (Lua) {
+      if (auto found = Lua->struct_declarations.find(Key); found != Lua->struct_declarations.end()) {
+         return &found->second;
+      }
+   }
+
+   const std::lock_guard lock(glStructMutex);
+   if (auto found = glStructs.find(Key); found != glStructs.end()) return &found->second;
+   return nullptr;
+}
+
+[[nodiscard]] struct_record * find_struct(lua_State *Lua, std::string_view Name)
+{
+   return find_struct(Lua, struct_key(Name));
+}
+
+[[nodiscard]] struct_record * find_struct_reference(lua_State *Lua, const struct_record &Owner, uint32_t Key)
+{
+   {
+      const std::lock_guard lock(glStructMutex);
+      auto owner = glStructs.find(struct_key(Owner.Name));
+      if ((owner != glStructs.end()) and (&owner->second IS &Owner)) {
+         if (auto found = glStructs.find(Key); found != glStructs.end()) return &found->second;
+         return nullptr;
+      }
+   }
+
+   return find_struct(Lua, Key);
+}
+
+[[nodiscard]] struct_record * find_struct_reference(lua_State *Lua, const struct_record &Owner,
+   std::string_view Name)
+{
+   return find_struct_reference(Lua, Owner, struct_key(Name));
+}
+
+// Returns the storage size of one element of a declared field, or 0 if the field's type cannot be resolved.
+//
+// The test order is significant.  A declared field may combine a storage flag with the type it refers to, e.g.
+// ptr<int[]> is FD_POINTER|FD_INT|FD_ARRAY and ptr<Name> is FD_POINTER|FD_STRUCT.  Pointer-ness must therefore be
+// tested before the scalar and struct types, otherwise a pointer field would be sized as its referent.
+
+static int declared_field_size(lua_State *Lua, const struct_field &Field)
+{
+   // FD_PTR is an alias of FD_POINTER, so this only matches a struct embedded inline rather than by reference.
+
+   if ((Field.Type & FD_STRUCT) and (not (Field.Type & FD_PTR))) {
+      if (Field.StructDefinition) return Field.StructDefinition->Size;
+      if (auto def = find_struct(Lua, Field.StructRef)) return def->Size;
+      return 0;
+   }
+   if (Field.Type & FD_STRING) return (Field.Type & FD_CPP) ? int(sizeof(std::string)) : int(sizeof(STRING));
+   if (Field.Type & FD_OBJECT) return sizeof(OBJECTPTR);
+   if (Field.Type & FD_POINTER) return sizeof(APTR);
+   if (Field.Type & FD_FUNCTION) return sizeof(FUNCTION);
+   if (Field.Type & FD_DOUBLE) return sizeof(double);
+   if (Field.Type & FD_INT64) return sizeof(int64_t);
+   if (Field.Type & FD_FLOAT) return sizeof(float);
+   if (Field.Type & FD_INT) return sizeof(int32_t);
+   if (Field.Type & FD_WORD) return sizeof(int16_t);
+   if (Field.Type & FD_BYTE) return sizeof(uint8_t);
+   return 0;
+}
+
+static bool identical_struct_layout(const struct_record &Left, const struct_record &Right)
+{
+   if ((Left.Size != Right.Size) or (Left.Fields.size() != Right.Fields.size())) return false;
+   for (size_t i = 0; i < Left.Fields.size(); i++) {
+      const auto &left = Left.Fields[i];
+      const auto &right = Right.Fields[i];
+      if ((left.Name != right.Name) or (left.StructRef != right.StructRef) or
+         (left.ObjectClassID != right.ObjectClassID) or (left.Offset != right.Offset) or
+            (left.Type != right.Type)) return false;
+      if ((left.Type & FD_ARRAY) and (left.ArraySize != right.ArraySize)) return false;
+      if ((left.NativeType != NativeStructType::Legacy) and (right.NativeType != NativeStructType::Legacy) and
+            (left.NativeType != right.NativeType)) return false;
+   }
+   return true;
+}
+
+// Register a parser-built declaration.  Keeping layout calculation here ensures declarative definitions use the
+// same alignment and embedded-structure rules as MAKESTRUCT.
+
+[[nodiscard]] ERR register_declared_struct(lua_State *Lua, struct_record &&Record, bool *Inserted,
+   const struct_record **Existing)
+{
+   if (Inserted) *Inserted = false;
+   if (Existing) *Existing = nullptr;
+   if ((not Lua) or Record.Name.empty() or Record.Fields.empty()) return ERR::NullArgs;
+   if (not valid_struct_name(Record.Name)) return ERR::Syntax;
+
+   const auto key = struct_key(Record.Name);
+
+   int offset = 0;
+   for (auto &field : Record.Fields) {
+      int field_size = declared_field_size(Lua, field);
+      if (field_size <= 0) return ERR::NotFound;
+
+      // Mirror the sequence parser's convention: scalars carry a count of 1, and the parser's ArraySize of -1 for
+      // ptr<T[]> passes straight through as the null-terminated-pointer marker.
+
+      int array_size = (field.Type & FD_ARRAY) ? field.ArraySize : 1;
+      if (auto error = layout_struct_field(field, field.Type, field_size, array_size, offset); error != ERR::Okay) {
+         return error;
+      }
+      field.precomputeNameHash();
+   }
+   Record.Size = offset;
+
+   if (auto found = Lua->struct_declarations.find(key);
+         found != Lua->struct_declarations.end()) {
+      if (Existing) *Existing = &found->second;
+      if (not identical_struct_layout(found->second, Record)) return ERR::Exists;
+      return ERR::Okay;
+   }
+
+   Lua->struct_declarations.emplace(key, std::move(Record));
+   if (Inserted) *Inserted = true;
+   return ERR::Okay;
+}

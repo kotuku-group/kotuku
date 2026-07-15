@@ -113,6 +113,7 @@ static ERR MODOpen(OBJECTPTR);
 JUMPTABLE_CORE
 static OBJECTPTR clAudio = 0;
 static ankerl::unordered_dense::map<OBJECTID, int> glSoundChannels;
+static std::string glAudioDevice;
 class extAudio;
 
 ERR add_audio_class(void);
@@ -124,7 +125,6 @@ extern "C" void end_of_stream(OBJECTPTR, int);
 
 static void audio_stopped_event(extAudio &, int);
 static ERR set_channel_volume(extAudio *, struct AudioChannel *);
-static void load_config(extAudio *);
 static ERR init_audio(extAudio *);
 static ERR audio_timer(extAudio *, int64_t, int64_t);
 
@@ -167,7 +167,19 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       return ERR::NoSupport;
    }
 #elif ALSA_ENABLED
-   // Nothing required for ALSA
+   std::span<std::string> args;
+   auto task = CurrentTask();
+   if (!task->getParameters(args)) {
+      for (int i=0; i < std::ssize(args); i++) {
+         if (kt::iequals(args[i], "--audio-device")) {
+            if (i + 1 < std::ssize(args)) {
+               glAudioDevice = args[i + 1];
+               log.msg("Audio output device set to \"%s\".", glAudioDevice.c_str());
+               i++;
+            }
+         }
+      }
+   }
 #else
    log.warning("No audio support available.");
    return ERR::Failed;

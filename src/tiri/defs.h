@@ -8,6 +8,7 @@ constexpr int SIZE_READ = 1024;
 #include <unordered_set>
 #include <set>
 #include <array>
+#include <mutex>
 #include <shared_mutex>
 #include <kotuku/strings.hpp>
 #include <kotuku/modules/regex.h>
@@ -82,8 +83,9 @@ extern OBJECTPTR modRegex;
 extern OBJECTPTR glTiriContext;
 extern OBJECTPTR clTiri;
 extern JOF glJitOptions;
-extern ankerl::unordered_dense::map<uint32_t, StructInfo> *glStructSizes;
-extern std::unordered_map<struct_name, struct_record, struct_hash, struct_equal> glStructs;
+extern ankerl::unordered_dense::map<uint32_t, StructInfo> *glStructSizes; // Originates from the Core
+extern std::unordered_map<uint32_t, struct_record> glStructs; // struct_record pointers must remain stable
+extern std::recursive_mutex glStructMutex;
 extern uint64_t glActionsWithResults;
 }
 
@@ -108,8 +110,9 @@ struct TiriConstant {
    }
 };
 
-// Global constant registry - case-sensitive, owns string keys
+// Global constant registry - case-sensitive, owns string keys.
 // Protected by glConstantMutex for thread-safe access
+
 namespace tiri {
 extern ankerl::unordered_dense::map<uint32_t, TiriConstant> glConstantRegistry;
 extern std::shared_mutex glConstantMutex;
@@ -150,15 +153,6 @@ static inline std::string_view lua_checkstringview(lua_State *L, int idx)
    size_t len = 0;
    if (auto s = luaL_checklstring(L, idx, &len)) return std::string_view{s, len};
    else return std::string_view{};
-}
-
-//********************************************************************************************************************
-// Standard hash computation, but stops when it encounters a character outside of A-Za-z0-9 range
-// Note that struct name hashes are case sensitive.
-
-inline uint32_t STRUCTHASH(CSTRING String)
-{
-   return kt::strhash(struct_name_hash_prefix(String));
 }
 
 //********************************************************************************************************************
@@ -395,15 +389,22 @@ APTR get_meta(lua_State *Lua, int Arg, CSTRING);
 [[maybe_unused]] void hook_debug(lua_State *, lua_Debug *);
 ERR load_include(extTiri *, std::string_view);
 int MAKESTRUCT(lua_State *);
-[[maybe_unused]] void make_any_array(lua_State *, int, std::string_view, int, CPTR);
+[[maybe_unused]] void make_any_array(lua_State *, int, std::string_view, int, CPTR, struct_record * = nullptr);
 [[maybe_unused]] void make_array(lua_State *, AET, int = 0, CPTR = nullptr, std::string_view = {});
 [[maybe_unused]] ERR make_struct(extTiri *, std::string_view, CSTRING);
+[[nodiscard]] struct_record * find_struct(lua_State *Lua, uint32_t Key);
+[[nodiscard]] struct_record * find_struct(lua_State *Lua, std::string_view Name);
+[[nodiscard]] struct_record * find_struct_reference(lua_State *Lua, const struct_record &Owner, uint32_t Key);
+[[nodiscard]] struct_record * find_struct_reference(lua_State *Lua, const struct_record &Owner,
+   std::string_view Name);
+[[nodiscard]] ERR register_declared_struct(lua_State *Lua, struct_record &&Record, bool *Inserted,
+   const struct_record **Existing = nullptr);
 ERR named_struct_to_table(lua_State *, std::string_view, CPTR);
-void construct_struct_cpp_strings(const struct struct_record &, APTR);
-void destroy_struct_cpp_strings(const struct struct_record &, APTR);
-void make_struct_array(lua_State *, std::string_view, int, CPTR, int = 0);
-ERR make_struct_ptr_array(lua_State *, std::string_view, int, CPTR *);
-void make_struct_serial_array(lua_State *, std::string_view, int, CPTR);
+void construct_struct_cpp_strings(lua_State *, const struct struct_record &, APTR);
+void destroy_struct_cpp_strings(lua_State *, const struct struct_record &, APTR);
+void make_struct_array(lua_State *, std::string_view, int, CPTR, int = 0, struct_record * = nullptr);
+ERR make_struct_ptr_array(lua_State *, std::string_view, int, CPTR *, struct_record * = nullptr);
+void make_struct_serial_array(lua_State *, std::string_view, int, CPTR, struct_record * = nullptr);
 void notify_action(OBJECTPTR, ACTIONID, ERR, APTR);
 void process_error(extTiri *, CSTRING);
 ERR push_object_id(lua_State *, OBJECTID ObjectID);

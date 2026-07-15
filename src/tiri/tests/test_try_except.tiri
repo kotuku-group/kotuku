@@ -1453,6 +1453,24 @@ end
    error("check with expression should have thrown")
 end
 
+@Test(priority=0.5,hotpath=false) function CheckIncludesLocationAndTraceback()
+   expected_line = @SourceLine + 3
+
+   try
+      check ERR_Failed
+   except e
+      assert(e.line is expected_line,
+         f"check should retain source line {expected_line}, got {e.line}; message: {e.message}")
+      assert(e.message:startsWith(f'[{expected_line}:'), "check should prefix its line and column, got " .. e.message)
+      assert(e.message:find(mSys.GetErrorMsg(ERR_Failed)), "check should include the error description")
+      assert(e.message:find("stack traceback:"), "check should include a stack traceback")
+      assert(e.message:find("in function 'func'"), "check traceback should identify the Flute test function")
+      return
+   end
+
+   error("check should have raised an exception with a traceback")
+end
+
 @Test(priority=67) function RaiseWithVariable()
    -- Test that raise works with variables, not just constants
    err_code = ERR_Failed

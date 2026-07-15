@@ -347,7 +347,6 @@ static ERR JPEG_Init(extImage *Self)
 static ERR JPEG_Query(extImage *Self)
 {
    kt::Log log;
-   struct jpeg_decompress_struct *cinfo;
    struct jpeg_error_mgr jerr;
 
    log.branch();
@@ -362,28 +361,26 @@ static ERR JPEG_Query(extImage *Self)
    }
 
    acSeek(Self->prvFile, 0.0, SEEK::START);
-   if (!AllocMemory(sizeof(struct jpeg_decompress_struct), MEM::DATA, (APTR *)&cinfo)) {
-      auto bmp = Self->Bitmap;
-      cinfo->err = jpeg_std_error((struct jpeg_error_mgr *)&jerr);
-      jpeg_create_decompress(cinfo);
-      jpeg_kotuku_src(cinfo, Self->prvFile);
-      jpeg_read_header(cinfo, FALSE);
 
-      if (!bmp->Width)           bmp->Width          = cinfo->image_width;
-      if (!bmp->Height)          bmp->Height         = cinfo->image_height;
-      if (!Self->DisplayWidth)   Self->DisplayWidth  = bmp->Width;
-      if (!Self->DisplayHeight)  Self->DisplayHeight = bmp->Height;
-      if (bmp->Type IS BMP::NIL) bmp->Type           = BMP::CHUNKY;
-      if (!bmp->BitsPerPixel) {
-         bmp->BitsPerPixel = 24;
-         bmp->BytesPerPixel = 3;
-      }
+   struct jpeg_decompress_struct cinfo;
+   auto bmp = Self->Bitmap;
+   cinfo.err = jpeg_std_error((struct jpeg_error_mgr *)&jerr);
+   jpeg_create_decompress(&cinfo);
+   jpeg_kotuku_src(&cinfo, Self->prvFile);
+   jpeg_read_header(&cinfo, FALSE);
 
-      jpeg_destroy_decompress(cinfo);
-      FreeResource(cinfo);
-      return acQuery(bmp);
+   if (!bmp->Width)           bmp->Width          = cinfo.image_width;
+   if (!bmp->Height)          bmp->Height         = cinfo.image_height;
+   if (!Self->DisplayWidth)   Self->DisplayWidth  = bmp->Width;
+   if (!Self->DisplayHeight)  Self->DisplayHeight = bmp->Height;
+   if (bmp->Type IS BMP::NIL) bmp->Type           = BMP::CHUNKY;
+   if (!bmp->BitsPerPixel) {
+      bmp->BitsPerPixel = 24;
+      bmp->BytesPerPixel = 3;
    }
-   else return log.warning(ERR::Memory);
+
+   jpeg_destroy_decompress(&cinfo);
+   return acQuery(bmp);
 }
 
 //********************************************************************************************************************

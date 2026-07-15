@@ -42,6 +42,7 @@ rendered image size.
 #include <kotuku/modules/filesystem.h>
 #include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
+#include <vector>
 #include "../link/linear_rgb.h"
 
 #include "image.h"
@@ -601,7 +602,7 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
    kt::Log log;
    std::string_view path;
    png_bytep row_pointers;
-   uint8_t *row_buffer = nullptr;
+   std::vector<uint8_t> row_buffer;
    png_color palette[256];
 
    log.branch();
@@ -652,9 +653,7 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
    }
 
    if (alpha_mask or (bmp->BitsPerPixel IS 32) or (bmp->BytesPerPixel IS 2)) {
-      if ((error = AllocMemory(size_t(bmp->Width) * 4, MEM::DATA|MEM::NO_CLEAR, (APTR *)&row_buffer)) != ERR::Okay) {
-         goto exit;
-      }
+      row_buffer.resize(size_t(bmp->Width) * 4);
    }
 
    if (setjmp(png_jmpbuf(write_ptr))) {
@@ -739,7 +738,7 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
 
    if (bmp->BitsPerPixel IS 8) {
       if (alpha_mask) {
-         row_pointers = row_buffer;
+         row_pointers = row_buffer.data();
          uint8_t *data = bmp->Data;
          uint8_t *mask = Self->Mask->Data;
          int palette_count = bmp->Palette ? bmp->Palette->AmtColours : 0;
@@ -758,7 +757,7 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
                row_buffer[i++] = colour.Red;
                row_buffer[i++] = mask[x];
             }
-            if (bmp->ColourSpace IS CS::LINEAR_RGB) conv_l2r_row32(row_buffer, bmp->Width);
+            if (bmp->ColourSpace IS CS::LINEAR_RGB) conv_l2r_row32(row_buffer.data(), bmp->Width);
             png_write_row(write_ptr, row_pointers);
             if (tlError) { error = ERR::Write; goto exit; }
             data += bmp->LineWidth;
@@ -775,7 +774,7 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
    }
    else if (bmp->BitsPerPixel IS 24) {
       if (alpha_mask) {
-         row_pointers = row_buffer;
+         row_pointers = row_buffer.data();
          uint8_t *data = bmp->Data;
          uint8_t *mask = Self->Mask->Data;
          for (int y=0; y < bmp->Height; y++) {
@@ -787,7 +786,7 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
                row_buffer[i++] = data[data_x+2];  // Red
                row_buffer[i++] = mask[x];         // Alpha
             }
-            if (bmp->ColourSpace IS CS::LINEAR_RGB) conv_l2r_row32(row_buffer, bmp->Width);
+            if (bmp->ColourSpace IS CS::LINEAR_RGB) conv_l2r_row32(row_buffer.data(), bmp->Width);
             png_write_row(write_ptr, row_pointers);
             if (tlError) { error = ERR::Write; goto exit; }
             data += bmp->LineWidth;
@@ -804,7 +803,7 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
    }
    else if (bmp->BitsPerPixel IS 32) {
       if ((bmp->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL) {
-         row_pointers = row_buffer;
+         row_pointers = row_buffer.data();
          uint8_t *data = bmp->Data;
          for (int y=0; y < bmp->Height; y++) {
             int i = 0;
@@ -814,14 +813,14 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
                row_buffer[i++] = data[x+2];  // Red
                row_buffer[i++] = data[x+3];  // Alpha
             }
-            if (bmp->ColourSpace IS CS::LINEAR_RGB) conv_l2r_row32(row_buffer, bmp->Width);
+            if (bmp->ColourSpace IS CS::LINEAR_RGB) conv_l2r_row32(row_buffer.data(), bmp->Width);
             png_write_row(write_ptr, row_pointers);
             if (tlError) { error = ERR::Write; goto exit; }
             data += bmp->LineWidth;
          }
       }
       else if (alpha_mask) {
-         row_pointers = row_buffer;
+         row_pointers = row_buffer.data();
          uint8_t *data = bmp->Data;
          uint8_t *mask = Self->Mask->Data;
          for (int y=0; y < bmp->Height; y++) {
@@ -833,7 +832,7 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
                row_buffer[i++] = data[x+2];       // Red
                row_buffer[i++] = mask[mask_x++];  // Alpha
             }
-            if (bmp->ColourSpace IS CS::LINEAR_RGB) conv_l2r_row32(row_buffer, bmp->Width);
+            if (bmp->ColourSpace IS CS::LINEAR_RGB) conv_l2r_row32(row_buffer.data(), bmp->Width);
             png_write_row(write_ptr, row_pointers);
             if (tlError) { error = ERR::Write; goto exit; }
             data += bmp->LineWidth;
@@ -841,7 +840,7 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
          }
       }
       else {
-         row_pointers = row_buffer;
+         row_pointers = row_buffer.data();
          uint8_t *data = bmp->Data;
          for (int y=0; y < bmp->Height; y++) {
             int i = 0;
@@ -850,7 +849,7 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
                row_buffer[i++] = data[x+1];  // Green
                row_buffer[i++] = data[x+2];  // Red
             }
-            if (bmp->ColourSpace IS CS::LINEAR_RGB) conv_l2r_row24(row_buffer, bmp->Width);
+            if (bmp->ColourSpace IS CS::LINEAR_RGB) conv_l2r_row24(row_buffer.data(), bmp->Width);
             png_write_row(write_ptr, row_pointers);
             if (tlError) { error = ERR::Write; goto exit; }
             data += bmp->LineWidth;
@@ -859,7 +858,7 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
    }
    else if (bmp->BytesPerPixel IS 2) {
       if (alpha_mask) {
-         row_pointers = row_buffer;
+         row_pointers = row_buffer.data();
          uint16_t *data = (uint16_t *)bmp->Data;
          uint8_t *mask = Self->Mask->Data;
          for (int y=0; y < bmp->Height; y++) {
@@ -871,7 +870,7 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
                row_buffer[i++] = bmp->unpackRed(data[x]);
                row_buffer[i++] = mask[mask_x++];
             }
-            if (bmp->ColourSpace IS CS::LINEAR_RGB) conv_l2r_row32(row_buffer, bmp->Width);
+            if (bmp->ColourSpace IS CS::LINEAR_RGB) conv_l2r_row32(row_buffer.data(), bmp->Width);
             png_write_row(write_ptr, row_pointers);
             if (tlError) { error = ERR::Write; goto exit; }
             data = (uint16_t *)(((uint8_t *)data) + bmp->LineWidth);
@@ -879,7 +878,7 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
          }
       }
       else {
-         row_pointers = row_buffer;
+         row_pointers = row_buffer.data();
          uint16_t *data = (uint16_t *)bmp->Data;
          for (int y=0; y < bmp->Height; y++) {
             int i = 0;
@@ -888,7 +887,7 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
                row_buffer[i++] = bmp->unpackGreen(data[x]);
                row_buffer[i++] = bmp->unpackRed(data[x]);
             }
-            if (bmp->ColourSpace IS CS::LINEAR_RGB) conv_l2r_row24(row_buffer, bmp->Width);
+            if (bmp->ColourSpace IS CS::LINEAR_RGB) conv_l2r_row24(row_buffer.data(), bmp->Width);
             png_write_row(write_ptr, row_pointers);
             if (tlError) { error = ERR::Write; goto exit; }
             data = (uint16_t *)(((uint8_t *)data) + bmp->LineWidth);
@@ -902,7 +901,6 @@ static ERR IMAGE_SaveImage(extImage *Self, struct acSaveImage *Args)
    error = ERR::Okay;
 
 exit:
-   if (row_buffer) FreeResource(row_buffer);
    png_destroy_write_struct(&write_ptr, &info_ptr);
 
    if ((Args) and (Args->Dest));
@@ -1139,9 +1137,9 @@ static ERR decompress_png(extImage *Self, objBitmap *Bitmap, int BitDepth, int C
                             png_infop InfoPtr, png_uint_32 PngWidth, png_uint_32 PngHeight)
 {
    ERR error = ERR::Failed;
-   uint8_t *row = nullptr;
-   uint8_t *image_data = nullptr;
-   uint8_t *scratch_row = nullptr;
+   std::vector<uint8_t> row;
+   std::vector<uint8_t> image_data;
+   std::vector<uint8_t> scratch_row;
    png_bytep row_pointers;
    RGB8 rgb;
    int i;
@@ -1215,26 +1213,26 @@ static ERR decompress_png(extImage *Self, objBitmap *Bitmap, int BitDepth, int C
       if (PngHeight > 0) {
          if (row_size > (size_t(0x7fffffff) / size_t(PngHeight))) return ERR::DataSize;
          auto image_size = row_size * size_t(PngHeight);
-         if ((error = AllocMemory((int)image_size, MEM::DATA, (APTR *)&image_data)) != ERR::Okay) return error;
+         image_data.resize(image_size);
       }
 
       if (source_height > PngHeight) {
-         if ((error = AllocMemory((int)row_size, MEM::DATA, (APTR *)&scratch_row)) != ERR::Okay) goto exit;
+         scratch_row.resize(row_size);
       }
    }
-   else if ((error = AllocMemory((int)row_size, MEM::DATA|MEM::NO_CLEAR, (APTR *)&row)) != ERR::Okay) return error;
+   else row.resize(row_size);
 
    if (setjmp(png_jmpbuf(ReadPtr))) {
       error = ERR::Read;
       goto exit;
    }
 
-   row_pointers = row;
+   row_pointers = row.data();
 
    if (interlaced) {
       for (int pass=0; pass < passes; pass++) {
          for (png_uint_32 y=0; y < source_height; y++) {
-            png_bytep output_row = (y < PngHeight) ? image_data + (size_t(y) * row_size) : scratch_row;
+            png_bytep output_row = (y < PngHeight) ? image_data.data() + (size_t(y) * row_size) : scratch_row.data();
             png_read_row(ReadPtr, output_row, nullptr); if (tlError) goto exit;
          }
       }
@@ -1248,7 +1246,7 @@ static ERR decompress_png(extImage *Self, objBitmap *Bitmap, int BitDepth, int C
 
       while (passes > 0) {
          for (png_uint_32 y=0; y < PngHeight; y++) {
-            auto source_row = interlaced ? image_data + (size_t(y) * row_size) : row;
+            auto source_row = interlaced ? image_data.data() + (size_t(y) * row_size) : row.data();
             if (!interlaced) { png_read_row(ReadPtr, row_pointers, nullptr); if (tlError) goto exit; }
             for (png_uint_32 x=0; x < PngWidth; x++) {
                rgb.Red   = source_row[x];
@@ -1266,7 +1264,7 @@ static ERR decompress_png(extImage *Self, objBitmap *Bitmap, int BitDepth, int C
       while (passes > 0) {
          if (Bitmap->BitsPerPixel IS 8) {
             for (png_uint_32 y=0; y < PngHeight; y++) {
-               auto source_row = interlaced ? image_data + (size_t(y) * row_size) : row;
+               auto source_row = interlaced ? image_data.data() + (size_t(y) * row_size) : row.data();
                if (!interlaced) { png_read_row(ReadPtr, row_pointers, nullptr); if (tlError) goto exit; }
                for (png_uint_32 x=0; x < PngWidth; x++) {
                   Bitmap->DrawUCPixel(Bitmap, x, y, source_row[x]);
@@ -1278,7 +1276,7 @@ static ERR decompress_png(extImage *Self, objBitmap *Bitmap, int BitDepth, int C
          else {
             rgb.Alpha = 255;
             for (png_uint_32 y=0; y < PngHeight; y++) {
-               auto source_row = interlaced ? image_data + (size_t(y) * row_size) : row;
+               auto source_row = interlaced ? image_data.data() + (size_t(y) * row_size) : row.data();
                if (!interlaced) { png_read_row(ReadPtr, row_pointers, nullptr); if (tlError) goto exit; }
                for (png_uint_32 x=0; x < PngWidth; x++) {
                   auto &palette_colour = Bitmap->Palette->Col[source_row[x]];
@@ -1296,7 +1294,7 @@ static ERR decompress_png(extImage *Self, objBitmap *Bitmap, int BitDepth, int C
 
       while (passes > 0) {
          for (png_uint_32 y=0; y < PngHeight; y++) {
-            auto source_row = interlaced ? image_data + (size_t(y) * row_size) : row;
+            auto source_row = interlaced ? image_data.data() + (size_t(y) * row_size) : row.data();
             if (!interlaced) { png_read_row(ReadPtr, row_pointers, nullptr); if (tlError) goto exit; }
             i = 0;
             for (png_uint_32 x=0; x < PngWidth; x++) {
@@ -1320,7 +1318,7 @@ static ERR decompress_png(extImage *Self, objBitmap *Bitmap, int BitDepth, int C
 
       while (passes > 0) {
          for (png_uint_32 y=0; y < PngHeight; y++) {
-            auto source_row = interlaced ? image_data + (size_t(y) * row_size) : row;
+            auto source_row = interlaced ? image_data.data() + (size_t(y) * row_size) : row.data();
             if (!interlaced) { png_read_row(ReadPtr, row_pointers, nullptr); if (tlError) goto exit; }
             i = 0;
             for (png_uint_32 x=0; x < PngWidth; x++) {
@@ -1342,7 +1340,7 @@ static ERR decompress_png(extImage *Self, objBitmap *Bitmap, int BitDepth, int C
       while (passes > 0) {
          rgb.Alpha = 255;
          for (png_uint_32 y=0; y < PngHeight; y++) {
-            auto source_row = interlaced ? image_data + (size_t(y) * row_size) : row;
+            auto source_row = interlaced ? image_data.data() + (size_t(y) * row_size) : row.data();
             if (!interlaced) { png_read_row(ReadPtr, row_pointers, nullptr); if (tlError) goto exit; }
             i = 0;
             for (png_uint_32 x=0; x < PngWidth; x++) {
@@ -1359,9 +1357,6 @@ static ERR decompress_png(extImage *Self, objBitmap *Bitmap, int BitDepth, int C
    error = ERR::Okay;
 
 exit:
-   FreeResource(row);
-   FreeResource(image_data);
-   FreeResource(scratch_row);
    return error;
 }
 

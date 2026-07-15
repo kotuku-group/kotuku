@@ -64,7 +64,6 @@ FDEF argsProtectMemory[] = { { "Error", FD_INT|FD_ERROR }, { "Address", FD_PTR }
 FDEF argsQueueAction[] = { { "Error", FD_INT|FD_ERROR }, { "Action", FD_INT }, { "Object", FD_OBJECTID }, { "Args", FD_PTR }, { 0, 0 } };
 FDEF argsReadFileToBuffer[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPSTRING }, { "Buffer", FD_BUFFER|FD_MUTABLE|FD_PTR }, { "BufferSize", FD_INT|FD_BUFSIZE }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF argsReadInfoTag[] = { { "Error", FD_INT|FD_ERROR }, { "FileInfo:Info", FD_PTR|FD_STRUCT }, { "Name", FDF_CPPSTRING }, { "Value", FD_RESULT|FDF_CPPSTRING }, { 0, 0 } };
-FDEF argsReallocMemory[] = { { "Error", FD_INT|FD_ERROR }, { "Memory", FD_PTR }, { "Size", FD_INT|FD_UNSIGNED }, { "Address", FD_RESULT|FD_PTR|FD_ALLOC }, { 0, 0 } };
 FDEF argsRegisterFD[] = { { "Error", FD_INT|FD_ERROR }, { "FD", FD_PTR }, { "Flags", FD_INT }, { "Routine", FD_PTR }, { "Data", FD_PTR }, { 0, 0 } };
 FDEF argsReleaseObject[] = { { "Void", FD_VOID }, { "Object", FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsReleaseZombie[] = { { "Void", FD_VOID }, { "Object", FD_OBJECTPTR }, { 0, 0 } };
@@ -135,7 +134,6 @@ const struct Function glFunctions[] = {
    { (APTR)CopyFile, "CopyFile", argsCopyFile },
    { (APTR)ProcessMessages, "ProcessMessages", argsProcessMessages },
    { (APTR)IdentifyFile, "IdentifyFile", argsIdentifyFile },
-   { (APTR)ReallocMemory, "ReallocMemory", argsReallocMemory },
    { (APTR)ResolveClassName, "ResolveClassName", argsResolveClassName },
    { (APTR)SendMessage, "SendMessage", argsSendMessage },
    { (APTR)SetOwner, "SetOwner", argsSetOwner },

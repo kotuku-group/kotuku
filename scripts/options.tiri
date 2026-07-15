@@ -715,7 +715,7 @@ function launcher_option_needs_value(Token:str):bool
 
    name = name:lower()
    return name is 'procedure' or name is 'statement' or name is 'jit-options' or name is 'set-volume' or
-      name is 'log-file' or name is 'gfx-driver'
+      name is 'log-file' or name is 'gfx-driver' or name is 'audio-device'
 end
 
 ----------------------------------------------------------------------------------------------------------------------

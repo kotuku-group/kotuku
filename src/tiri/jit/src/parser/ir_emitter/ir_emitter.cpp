@@ -617,6 +617,7 @@ void IrEmitter::apply_inferred_local_type(BCReg Slot, const ExprNode& Value)
    VarInfo *info = &this->func_state.var_get(Slot.raw());
    info->fixed_type = inferred.type;
    info->object_class_id = (inferred.type IS TiriType::Object) ? inferred.object_class_id : CLASSID::NIL;
+   info->struct_def = inferred.struct_def;
 }
 
 BCReg IrEmitter::finalise_pending_local_assignment(PreparedAssignment& Target)
@@ -1096,6 +1097,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
       if (identifier.type != TiriType::Unknown) {
          // Explicit type annotation takes precedence
          info->fixed_type = identifier.type;
+         info->struct_def = identifier.struct_def;
       }
       else if (i.raw() < Payload.values.size()) {
          // No explicit annotation - infer type from initialiser expression
@@ -1887,6 +1889,7 @@ ParserResult<ExpDesc> IrEmitter::emit_identifier_expr(const NameRef& reference, 
       if (it != this->lex_state.global_type_hints.end()) {
          resolved.result_type = it->second.primary;
          resolved.object_class_id = it->second.object_class_id;
+         resolved.struct_def = it->second.struct_def;
       }
    }
 
@@ -2528,6 +2531,38 @@ ParserResult<ExpDesc> IrEmitter::emit_presence_expr(const PresenceExprPayload &P
 // Emit bytecode for a member access expression (table.field), indexing a table with a string key.
 // base_type and class_id are tracked for potential future optimizations (Object-specific bytecode paths).
 
+static void apply_struct_field_metadata(ExpDesc &Expression, struct_record *StructDef, GCstr *FieldName)
+{
+   if (not StructDef or not FieldName) return;
+
+   for (uint32_t i = 0; i < StructDef->Fields.size(); i++) {
+      auto &field = StructDef->Fields[i];
+      if (field.nameHash() != kt::strihash(strdata(FieldName))) continue;
+
+      Expression.struct_field_index = i;
+      Expression.result_type = TiriType::Any;
+      Expression.struct_def = nullptr;
+      Expression.object_class_id = CLASSID::NIL;
+
+      if (field.Type & FD_ARRAY) Expression.result_type = TiriType::Array;
+      else if ((field.Type & FD_STRUCT) and not (field.Type & FD_POINTER)) {
+         Expression.result_type = TiriType::Struct;
+         Expression.struct_def = field.StructDefinition;
+      }
+      else if (field.Type & FD_OBJECT) {
+         Expression.result_type = TiriType::Object;
+         Expression.object_class_id = field.ObjectClassID;
+      }
+      else if (field.Type & FD_STRING) Expression.result_type = TiriType::Str;
+      else if (field.NativeType IS NativeStructType::Bool) Expression.result_type = TiriType::Bool;
+      else if (field.Type & (FD_FLOAT|FD_DOUBLE|FD_INT64|FD_INT|FD_WORD|FD_BYTE)) {
+         Expression.result_type = TiriType::Num;
+      }
+      else if (field.Type & FD_FUNCTION) Expression.result_type = TiriType::Func;
+      return;
+   }
+}
+
 ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Payload)
 {
    if (not Payload.table or Payload.member.symbol IS nullptr) {
@@ -2544,6 +2579,7 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
 
    TiriType emitted_base_type = table.result_type;
    CLASSID emitted_class_id = table.object_class_id;
+   struct_record *emitted_struct_def = table.struct_def;
 
    RegisterAllocator allocator(&this->func_state);
    ExpressionValue table_value(&this->func_state, table);
@@ -2589,6 +2625,7 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
    else if (Payload.base_type IS TiriType::Struct or emitted_base_type IS TiriType::Struct) {
       table.result_type = TiriType::Struct;
       if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) table.k = ExpKind::IndexedStruct;
+      apply_struct_field_metadata(table, emitted_struct_def, Payload.member.symbol);
    }
    else {
       // Reset result_type so the base type does not leak into downstream chained expressions.
@@ -2740,6 +2777,7 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
    if (not guard.ok()) return guard.error<ExpDesc>();
 
    ExpDesc table = guard.base_expression();
+   struct_record *emitted_struct_def = table.struct_def;
    ExpDesc key(Payload.member.symbol);
    expr_index(&this->func_state, &table, &key);
 
@@ -2768,6 +2806,11 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
          }
          // If is_call_target is true, skip type checking and let runtime handle the method/action call
       }
+   }
+   else if (table.result_type IS TiriType::Struct or emitted_struct_def) {
+      table.result_type = TiriType::Struct;
+      if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) table.k = ExpKind::IndexedStruct;
+      apply_struct_field_metadata(table, emitted_struct_def, Payload.member.symbol);
    }
 
    // Materialize the indexed result to a new register.

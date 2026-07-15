@@ -1647,7 +1647,6 @@ the call will fail.
 Okay: All of the data was written to the file.
 Args:
 NullArgs:
-ReallocMemory:
 ExpectedFile:
 ObjectCorrupt:
 FileWriteFlag: The `FL::WRITE` flag was not specified when initialising the file.

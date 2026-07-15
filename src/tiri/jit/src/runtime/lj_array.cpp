@@ -74,16 +74,16 @@ static void array_attach_basemt(lua_State *L, GCarray *Arr)
 // - String content is copied into a vector<char> owned by the array
 // - The storage area stores CSTRING pointers into the vector
 
-extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Data, uint8_t Flags, std::string_view StructName)
+extern GCarray * lj_array_new(lua_State *L, uint32_t Length, AET Type, void *Data, uint8_t Flags,
+   std::string_view StructName, struct_record *StructDef)
 {
    MSize elem_size;
    struct_record *sdef = nullptr;
 
    if (not StructName.empty()) {
       // Struct-backed array
-      auto name = struct_name(StructName);
-      if (glStructs.contains(name)) {
-         sdef = &glStructs[name];
+      if (auto def = StructDef ? StructDef : find_struct(L, StructName)) {
+         sdef = def;
          elem_size = sdef->Size;
       }
       else {

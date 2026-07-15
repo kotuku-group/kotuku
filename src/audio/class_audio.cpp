@@ -1335,78 +1335,6 @@ static ERR SET_Stereo(extAudio *Self, int Value)
 
 //********************************************************************************************************************
 
-static void load_config(extAudio *Self)
-{
-   kt::Log log(__FUNCTION__);
-
-   // Attempt to get the user's preferred pointer settings from the user:config/pointer file.
-
-   objConfig::create config = { fl::Path("user:config/audio.cfg") };
-
-   if (config.ok()) {
-      config->read("AUDIO", "OutputRate", Self->OutputRate);
-      config->read("AUDIO", "InputRate", Self->InputRate);
-      config->read("AUDIO", "Quality", Self->Quality);
-      config->read("AUDIO", "BitDepth", Self->BitDepth);
-
-      int value;
-      if (!config->read("AUDIO", "Periods", value)) SET_Periods(Self, value);
-      if (!config->read("AUDIO", "PeriodSize", value)) SET_PeriodSize(Self, value);
-      if (config->read("AUDIO", "Device", Self->Device) != ERR::Okay) Self->Device = "default";
-
-      std::string str;
-      Self->Flags |= ADF::STEREO;
-      if (!config->read("AUDIO", "Stereo", str)) {
-         if (iequals("FALSE", str)) Self->Flags &= ~ADF::STEREO;
-      }
-
-      if ((Self->BitDepth != 8) and (Self->BitDepth != 16) and (Self->BitDepth != 24)) Self->BitDepth = 16;
-      SET_Quality(Self, Self->Quality);
-
-      // Find the mixer section, then load the mixer information
-
-      ConfigGroups *groups;
-      if (!config->getGroups(groups)) {
-         for (auto& [group, keys] : groups[0]) {
-            if (iequals("MIXER", group)) {
-               Self->Volumes.clear();
-               Self->Volumes.resize(keys.size());
-
-               int j = 0;
-               for (auto& [k, v] : keys) {
-                  Self->Volumes[j].Name = k;
-
-                  CSTRING str = v.c_str();
-                  if (std::stoi(v) IS 1) Self->Volumes[j].Flags |= VCF::MUTE;
-                  while ((*str) and (*str != ',')) str++;
-                  if (*str IS ',') str++;
-
-                  int channel = 0;
-                  if (*str IS '[') { // Read channel volumes
-                     str++;
-                     while ((*str) and (*str != ']')) {
-                        Self->Volumes[j].Channels[channel] = strtol(str, nullptr, 0);
-                        while ((*str) and (*str != ',') and (*str != ']')) str++;
-                        if (*str IS ',') str++;
-                        channel++;
-                     }
-                  }
-
-                  while (channel < (int)Self->Volumes[j].Channels.size()) {
-                     Self->Volumes[j].Channels[channel] = 0.75;
-                     channel++;
-                  }
-                  j++;
-               }
-            }
-            break;
-         }
-      }
-   }
-}
-
-//********************************************************************************************************************
-
 extAudio::extAudio(objMetaClass *ClassPtr, OBJECTID ObjectID) : objAudio(ClassPtr, ObjectID)
 {
    OutputRate  = 44100;        // Rate for output to speakers
@@ -1416,8 +1344,8 @@ extAudio::extAudio(objMetaClass *ClassPtr, OBJECTID ObjectID) : objAudio(ClassPt
    Flags       = ADF::OVER_SAMPLING|ADF::FILTER_HIGH|ADF::VOL_RAMPING|ADF::STEREO;
    Periods     = 4;
    PeriodSize  = 2048;
-   Device      = "default";
    MaxChannels = 8;
+   Device      = glAudioDevice.empty() ? "default" : glAudioDevice;
 
    const SystemState *state = GetSystemState();
    if ((iequals(state->Platform, "Native")) or (iequals(state->Platform, "Linux"))) {
@@ -1440,7 +1368,72 @@ extAudio::extAudio(objMetaClass *ClassPtr, OBJECTID ObjectID) : objAudio(ClassPt
    for (int i=1; i < std::ssize(Volumes[0].Channels); i++) Volumes[0].Channels[i] = -1;
 #endif
 
-   load_config(this);
+   kt::Log log("New");
+
+   // Attempt to get the user's preferred audio settings from user:config/audio.cfg.
+
+   objConfig::create config = { fl::Path("user:config/audio.cfg") };
+
+   if (config.ok()) {
+      config->read("AUDIO", "OutputRate", OutputRate);
+      config->read("AUDIO", "InputRate", InputRate);
+      config->read("AUDIO", "Quality", Quality);
+      config->read("AUDIO", "BitDepth", BitDepth);
+
+      int value;
+      if (!config->read("AUDIO", "Periods", value)) SET_Periods(this, value);
+      if (!config->read("AUDIO", "PeriodSize", value)) SET_PeriodSize(this, value);
+      if (glAudioDevice.empty()) config->read("AUDIO", "Device", Device);
+
+      std::string str;
+      Flags |= ADF::STEREO;
+      if (!config->read("AUDIO", "Stereo", str)) {
+         if (iequals("FALSE", str)) Flags &= ~ADF::STEREO;
+      }
+
+      if ((BitDepth != 8) and (BitDepth != 16) and (BitDepth != 24)) BitDepth = 16;
+      SET_Quality(this, Quality);
+
+      // Find the mixer section, then load the mixer information
+
+      ConfigGroups *groups;
+      if (!config->getGroups(groups)) {
+         for (auto & [group, keys] : groups[0]) {
+            if (iequals("MIXER", group)) {
+               Volumes.clear();
+               Volumes.resize(keys.size());
+
+               int j = 0;
+               for (auto & [k, v] : keys) {
+                  Volumes[j].Name = k;
+
+                  CSTRING str = v.c_str();
+                  if (std::stoi(v) IS 1) Volumes[j].Flags |= VCF::MUTE;
+                  while ((*str) and (*str != ',')) str++;
+                  if (*str IS ',') str++;
+
+                  int channel = 0;
+                  if (*str IS '[') { // Read channel volumes
+                     str++;
+                     while ((*str) and (*str != ']')) {
+                        Volumes[j].Channels[channel] = strtol(str, nullptr, 0);
+                        while ((*str) and (*str != ',') and (*str != ']')) str++;
+                        if (*str IS ',') str++;
+                        channel++;
+                     }
+                  }
+
+                  while (channel < (int)Volumes[j].Channels.size()) {
+                     Volumes[j].Channels[channel] = 0.75;
+                     channel++;
+                  }
+                  j++;
+               }
+            }
+            break;
+         }
+      }
+   }
 }
 
 //********************************************************************************************************************

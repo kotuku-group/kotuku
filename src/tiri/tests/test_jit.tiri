@@ -25,6 +25,72 @@ function SetupJitTests()
    MAKESTRUCT('JITStructComplexFields', 'zsName,lValues[2],eChild:JITStructTraceChild,oOwner')
 end
 
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function LayoutAwareStructBytecodeDisassembly()
+   local script = obj.new('tiri', { statement=[[
+struct PhaseTwoLayout { First: int, Second: int }
+global glPhaseTwo:struct<PhaseTwoLayout> = PhaseTwoLayout()
+
+function annotatedLocal():num
+   local value:struct<PhaseTwoLayout> = PhaseTwoLayout()
+   return value.Second
+end
+
+function annotatedParameter(Value:struct<PhaseTwoLayout>):num
+   return Value.Second
+end
+
+function inferredLocal():num
+   local value = PhaseTwoLayout()
+   value.Second = 9
+   return value.Second
+end
+
+function createValue():struct<PhaseTwoLayout>
+   return PhaseTwoLayout()
+end
+
+function returnedValue():num
+   return createValue().Second
+end
+
+function definitionValue():num
+   local definition = struct.def('PhaseTwoLayout')
+   local value = definition()
+   return value.Second
+end
+
+function typedGlobal():num
+   glPhaseTwo.Second = 7
+   return glPhaseTwo.Second
+end
+]] })
+   check script.acQuery()
+   check script.acActivate()
+   local _, disassembly = script.mtDebugLog('disasm')
+   assert(disassembly:count('P=#1') >= 8,
+      'Annotations, constructors, definition values, returns and typed globals should pre-resolve field index 1')
+   assert(disassembly:find('P=dynamic') is nil,
+      'Layout-aware struct accesses should not retain dynamic field lookup caches')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConstrainedObjectFieldTypePropagation()
+   local script = obj.new('tiri', { statement=[[
+struct PhaseTwoObjectHolder { Clock: obj<Time> }
+function readYear(Holder:struct<PhaseTwoObjectHolder>):num
+   return Holder.Clock.year
+end
+]] })
+   check script.acQuery()
+   check script.acActivate()
+   local _, disassembly = script.mtDebugLog('disasm')
+   assert(disassembly:find('STGETF') != nil, 'The constrained object should be read with STGETF')
+   assert(disassembly:find('OBGETF') != nil, 'obj<Class> metadata should specialise chained object field access')
+end
+
 @AfterAll
 function TeardownJitTests()
    jit.opt.start()
