@@ -626,7 +626,7 @@ function buildFunctionTableOutput():str
    end
 
    for _, func in ipairs(glFunctions) do
-      if func.staticMacro?? and (func.status != 'private') then
+      if func.staticMacro?? then
          out ..= func.staticMacro() .. '\n'
       end
    end

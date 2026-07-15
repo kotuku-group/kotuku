@@ -29,7 +29,7 @@
 #include "ankerl/unordered_dense.h"
 #endif
 
-#define CORE_BUILD_DATE 20260714
+#define CORE_BUILD_DATE 20260715
 class objMetaClass;
 
 // Predefined cursor styles
@@ -1682,6 +1682,7 @@ extern "C" ERR AccessObject(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result
 extern "C" ERR CheckAction(OBJECTPTR Object, AC Action);
 extern "C" ERR CheckResourceExists(RESOURCEID ID);
 extern "C" ERR InitObject(OBJECTPTR Object);
+extern "C" ERR VirtualVolume(const std::string_view &Name, ...);
 extern "C" OBJECTPTR CurrentContext(void);
 extern "C" void SetLogCallback(APTR Callback, int DepthLimit, int LogLimit);
 extern "C" int AdjustLogLevel(int Delta);
@@ -1690,6 +1691,7 @@ extern "C" ERR FindObject(const std::string_view &Name, CLASSID ClassID, OBJECTI
 extern "C" objMetaClass * FindClass(CLASSID ClassID);
 extern "C" ERR AnalysePath(const std::string_view &Path, LOC *Type);
 extern "C" ERR FreeResource(RESOURCEID ID);
+extern "C" void ReleaseZombie(OBJECTPTR Object);
 extern "C" CLASSID GetClassID(OBJECTID Object);
 extern "C" OBJECTID GetOwnerID(OBJECTID Object);
 extern "C" ERR CompareFilePaths(const std::string_view &PathA, const std::string_view &PathB);
@@ -1763,6 +1765,7 @@ extern "C" ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut);
 extern "C" ERR ClassDatabase(kt::vector<ClassRecord *> *Classes);
 extern "C" int GetThreadID(void);
 extern "C" void UnitTests(CSTRING Options, int *Passed, int *Total);
+extern "C" OBJECTPTR PinWeakObject(OBJECTID Object);
 #endif // KOTUKU_STATIC
 
 
