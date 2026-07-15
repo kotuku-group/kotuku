@@ -165,7 +165,9 @@ extern "C" LJ_NORET void lj_check_raise(lua_State *L, int32_t ErrorCode, uint32_
    }
 
    if (not L->sent_traceback) {
-      luaL_traceback(L, L, strdata(message), 0);
+      // luaL_traceback() can collect while formatting its first string.  Root the message before exposing its data.
+      setstrV(L, L->top++, message);
+      luaL_traceback(L, L, strVdata(L->top - 1), 0);
       message = strV(L->top - 1);
       L->sent_traceback = true;
    }
