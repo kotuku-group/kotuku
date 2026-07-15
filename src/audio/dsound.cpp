@@ -5,6 +5,7 @@
 #include <mmreg.h>
 #include <dsound.h>
 #include <math.h>
+#include <kotuku/system/errors_c.h>
 
 #define IS  ==
 
@@ -238,12 +239,12 @@ __declspec(no_sanitize_address) int sndPlay(PlatformData *Sound, bool Loop, int 
    // There is an issue with the address sanitizer being tripped in calls to DirectSound under no client fault.
    // The no_sanitize_address option doesn't seem to work as expected, so for the time being DirectSound
    // is disabled if the sanitizer is enabled.
-   return -1;
+   return ERR_NoSupport;
 #else
-   if ((!Sound) or (!Sound->SoundBuffer)) return -1;
+   if ((!Sound) or (!Sound->SoundBuffer)) return ERR_Args;
 
    if (Offset < 0) Offset = 0;
-   else if (Offset >= (int)Sound->SampleLength) return -1;
+   else if (Offset >= (int)Sound->SampleLength) return ERR_OutOfRange;
 
    Sound->Loop = Loop;
 
@@ -268,7 +269,7 @@ __declspec(no_sanitize_address) int sndPlay(PlatformData *Sound, bool Loop, int 
          }
          IDirectSoundBuffer_Unlock(Sound->SoundBuffer, bufA, lenA, bufB, 0);
       }
-      else return -1;
+      else return ERR_LockFailed;
    }
    else { // For non-streamed samples, start the play position from the proposed offset
       IDirectSoundBuffer_Stop(Sound->SoundBuffer);
@@ -282,7 +283,7 @@ __declspec(no_sanitize_address) int sndPlay(PlatformData *Sound, bool Loop, int 
    }
    else IDirectSoundBuffer_Play(Sound->SoundBuffer, 0, 0, 0);
 
-   return 0;
+   return ERR_Okay;
 #endif
 }
 

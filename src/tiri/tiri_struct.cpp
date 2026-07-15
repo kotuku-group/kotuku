@@ -1,13 +1,12 @@
 /*********************************************************************************************************************
 
-To create a struct definition:                    MAKESTRUCT('XTag', 'Definition')
 To create a struct from a registered definition:  xmltag = struct.new('XTag')
 To create a struct with pre-configured values:    xmltag = struct.new('XTag', { name='Hello' })
 To get the byte size of any structure definition: size = struct.size('XTag')
 To get the total number of fields in a structure: #xmltag
 To get the byte size of a created structure:      xmltag.structSize()
 
-Acceptable field definitions:
+Acceptable short-hand field definitions, for MAKESTRUCT() and IDL usage only:
 
   l = Long
   d = Double
@@ -29,8 +28,6 @@ Prefixes for variants, in order of acceptable usage:
 
 Embedded arrays are permitted if you follow the field name with [n] where 'n' is the array size.  For pointers to
 null terminated arrays, use [0].
-
-TODO: Support for kt::vector
 
 *********************************************************************************************************************/
 
@@ -54,6 +51,62 @@ TODO: Support for kt::vector
 #include "defs.h"
 
 static constexpr int MAX_STRUCT_DEF = 2048; // Struct definitions are typically 100 - 400 bytes.
+
+struct trivial_struct_vector {
+   size_t Capacity;
+   size_t Length;
+   APTR Elements;
+};
+
+static_assert(sizeof(trivial_struct_vector) IS sizeof(kt::vector<int>));
+
+void construct_trivial_struct_vector(APTR Address)
+{
+   new (Address) trivial_struct_vector { 0, 0, nullptr };
+}
+
+void destroy_trivial_struct_vector(APTR Address)
+{
+   auto vector = (trivial_struct_vector *)Address;
+   ::operator delete(vector->Elements);
+   vector->Elements = nullptr;
+   vector->Length = 0;
+   vector->Capacity = 0;
+}
+
+void assign_trivial_struct_vector(APTR Address, CPTR Source, size_t Elements, size_t Stride)
+{
+   auto vector = (trivial_struct_vector *)Address;
+   if (Elements > vector->Capacity) {
+      APTR replacement = Elements ? ::operator new(Elements * Stride) : nullptr;
+      ::operator delete(vector->Elements);
+      vector->Elements = replacement;
+      vector->Capacity = Elements;
+   }
+   if (Elements) std::memcpy(vector->Elements, Source, Elements * Stride);
+   vector->Length = Elements;
+}
+
+void copy_trivial_struct_vector(APTR Dest, CPTR Source, size_t Stride)
+{
+   auto source = (const trivial_struct_vector *)Source;
+   assign_trivial_struct_vector(Dest, source->Elements, source->Length, Stride);
+}
+
+size_t trivial_struct_vector_size(CPTR Address)
+{
+   return ((const trivial_struct_vector *)Address)->Length;
+}
+
+APTR trivial_struct_vector_data(APTR Address)
+{
+   return ((trivial_struct_vector *)Address)->Elements;
+}
+
+CPTR trivial_struct_vector_data(CPTR Address)
+{
+   return ((const trivial_struct_vector *)Address)->Elements;
+}
 
 inline GCstruct * push_struct_def(lua_State *Lua, APTR Address, struct_record &StructDef, bool Deallocate,
    OBJECTPTR Lifecycle = nullptr)
@@ -96,7 +149,11 @@ static void process_struct_cpp_strings(lua_State *Lua, const struct_record &Stru
       }
 
       if ((type & FD_CPP) and (type & FD_ARRAY)) {
-         if (type & FD_STRING) {
+         if ((type & FD_STRUCT) and (not (type & FD_PTR))) {
+            if (Construct) construct_trivial_struct_vector(field_address);
+            else destroy_trivial_struct_vector(field_address);
+         }
+         else if (type & FD_STRING) {
             if (Construct) new (field_address) kt::vector<std::string>();
             else ((kt::vector<std::string> *)field_address)->~vector();
          }
@@ -223,6 +280,87 @@ static bool write_primitive_field(lua_State *Lua, APTR Address, int Type, int St
    return true;
 }
 
+template <typename T> static ERR table_values_to_vector(lua_State *Lua, int StackIndex, int Type, APTR Address)
+{
+   auto &dest = ((kt::vector<T> *)Address)[0];
+   size_t elements = lua_objlen(Lua, StackIndex);
+   dest.resize(elements);
+   for (size_t i = 0; i < elements; i++) {
+      lua_rawgeti(Lua, StackIndex, i);
+      if (not lua_isnumber(Lua, -1)) {
+         lua_pop(Lua, 1);
+         return ERR::InvalidType;
+      }
+      (void)write_primitive_field(Lua, dest.data(), Type, -1, int(i));
+      lua_pop(Lua, 1);
+   }
+   return ERR::Okay;
+}
+
+template <typename T> static ERR array_values_to_vector(GCarray *Source, APTR Address)
+{
+   auto &dest = ((kt::vector<T> *)Address)[0];
+   dest.resize(Source->len);
+   if (Source->len) std::memcpy(dest.data(), Source->arraydata(), size_t(Source->len) * sizeof(T));
+   return ERR::Okay;
+}
+
+static ERR value_to_cpp_vector(lua_State *Lua, int StackIndex, int Type, APTR Address)
+{
+   if (lua_isarray(Lua, StackIndex)) {
+      auto source = lua_toarray(Lua, StackIndex);
+      if (Type & FD_STRING) {
+         if ((source->elemtype != AET::STR_GC) and (source->elemtype != AET::CSTR) and
+               (source->elemtype != AET::STR_CPP)) return ERR::InvalidType;
+         auto &dest = ((kt::vector<std::string> *)Address)[0];
+         dest.resize(source->len);
+         for (MSize i = 0; i < source->len; i++) {
+            if (source->elemtype IS AET::STR_GC) {
+               auto value = strref(source->get<GCRef>()[i]);
+               dest[i].assign(strdata(value), value->len);
+            }
+            else if (source->elemtype IS AET::CSTR) dest[i] = source->get<CSTRING>()[i];
+            else dest[i] = source->get<std::string>()[i];
+         }
+         return ERR::Okay;
+      }
+      if (source->elemtype != ff_to_aet(Type)) return ERR::InvalidType;
+      if (Type & FD_FLOAT) return array_values_to_vector<float>(source, Address);
+      if (Type & FD_DOUBLE) return array_values_to_vector<double>(source, Address);
+      if (Type & FD_INT64) return array_values_to_vector<int64_t>(source, Address);
+      if (Type & FD_INT) return array_values_to_vector<int>(source, Address);
+      if (Type & FD_WORD) return array_values_to_vector<int16_t>(source, Address);
+      if (Type & FD_BYTE) return array_values_to_vector<uint8_t>(source, Address);
+      return ERR::NoSupport;
+   }
+
+   if (not lua_istable(Lua, StackIndex)) return ERR::InvalidType;
+   if (Type & FD_STRING) {
+      auto &dest = ((kt::vector<std::string> *)Address)[0];
+      size_t elements = lua_objlen(Lua, StackIndex);
+      dest.resize(elements);
+      for (size_t i = 0; i < elements; i++) {
+         lua_rawgeti(Lua, StackIndex, i);
+         size_t length = 0;
+         auto value = lua_tolstring(Lua, -1, &length);
+         if (not value) {
+            lua_pop(Lua, 1);
+            return ERR::InvalidType;
+         }
+         dest[i].assign(value, length);
+         lua_pop(Lua, 1);
+      }
+      return ERR::Okay;
+   }
+   if (Type & FD_FLOAT) return table_values_to_vector<float>(Lua, StackIndex, Type, Address);
+   if (Type & FD_DOUBLE) return table_values_to_vector<double>(Lua, StackIndex, Type, Address);
+   if (Type & FD_INT64) return table_values_to_vector<int64_t>(Lua, StackIndex, Type, Address);
+   if (Type & FD_INT) return table_values_to_vector<int>(Lua, StackIndex, Type, Address);
+   if (Type & FD_WORD) return table_values_to_vector<int16_t>(Lua, StackIndex, Type, Address);
+   if (Type & FD_BYTE) return table_values_to_vector<uint8_t>(Lua, StackIndex, Type, Address);
+   return ERR::NoSupport;
+}
+
 //********************************************************************************************************************
 
 // Convert a Lua table to a C structure.  The returned structure is owned by a unique pointer.
@@ -258,7 +396,44 @@ static bool write_primitive_field(lua_State *Lua, APTR Address, int Type, int St
                auto type = field.Type;
 
                if (type & FD_ARRAY) {
-                  if (type & FD_CPP);
+                  if ((type & FD_CPP) and (type & FD_STRUCT)) {
+                     if (not field.TrivialElements) {
+                        destroy_struct_cpp_strings(Lua, struct_def, memory.get());
+                        return ERR::NoSupport;
+                     }
+                     auto field_def = field.StructDefinition ? field.StructDefinition :
+                        find_struct_reference(Lua, struct_def, field.StructRef);
+                     if ((not field_def) or (not lua_isarray(Lua, -1))) {
+                        destroy_struct_cpp_strings(Lua, struct_def, memory.get());
+                        return ERR::InvalidType;
+                     }
+                     auto source = lua_toarray(Lua, -1);
+                     if (source->elemtype != AET::TABLE) {
+                        destroy_struct_cpp_strings(Lua, struct_def, memory.get());
+                        return ERR::InvalidType;
+                     }
+                     std::vector<uint8_t> serial(size_t(source->len) * field.ElementStride);
+                     for (MSize i = 0; i < source->len; i++) {
+                        auto table = tabref(source->get<GCRef>()[i]);
+                        settabV(Lua, Lua->top++, table);
+                        std::unique_ptr<uint8_t[]> element;
+                        auto error = table_to_struct(Lua, field_def->Name, element);
+                        lua_pop(Lua, 1);
+                        if (error != ERR::Okay) {
+                           destroy_struct_cpp_strings(Lua, struct_def, memory.get());
+                           return error;
+                        }
+                        std::memcpy(serial.data() + (size_t(i) * field.ElementStride), element.get(),
+                           field.ElementStride);
+                     }
+                     assign_trivial_struct_vector(address, serial.data(), source->len, field.ElementStride);
+                  }
+                  else if (type & FD_CPP) {
+                     if (auto error = value_to_cpp_vector(Lua, -1, type, address); error != ERR::Okay) {
+                        destroy_struct_cpp_strings(Lua, struct_def, memory.get());
+                        return error;
+                     }
+                  }
                   else if (field.ArraySize IS - 1); // Pointer to a null-terminated array
                   else if (lua_istable(Lua, -1) and is_primitive_field(type)) { // Embedded, fixed size array
                      for (int i = 0; i < field.ArraySize; i++) {
@@ -328,14 +503,21 @@ static bool write_primitive_field(lua_State *Lua, APTR Address, int Type, int St
 
       if (type & FD_ARRAY) {
          if (type & FD_CPP) { // kt::vector<ANY>
-            auto vector = (kt::vector<int> *)(address); // Uses int as a placeholder
             if (type & FD_STRUCT) {
                if (field_def) {
-                  make_any_array(Lua, type, field_def->Name, vector->size(), vector->data(), field_def);
+                  make_struct_array(Lua, field_def->Name, int(trivial_struct_vector_size(address)),
+                     trivial_struct_vector_data(address), field.ElementStride, field_def);
                }
                else lua_pushnil(Lua);
             }
-            else make_array(Lua, ff_to_aet(type), vector->size(), vector->data());
+            else if (type & FD_STRING) {
+               auto vector = (kt::vector<std::string> *)(address);
+               make_array(Lua, AET::STR_CPP, int(vector->size()), vector);
+            }
+            else {
+               auto vector = (kt::vector<int> *)(address); // Uses int as a type-stable layout placeholder
+               make_array(Lua, ff_to_aet(type), vector->size(), vector->data());
+            }
          }
          else if (field.ArraySize IS -1) { // Pointer to a null-terminated array.
             if (type & FD_STRUCT) {
@@ -496,11 +678,23 @@ static void make_camel_case(std::string &String)
 //
 // NB: A scalar field is recorded as 1, never -1.  Only an explicit [0]/ptr<T[]> yields -1.
 
+static int struct_field_alignment(const struct_field &Field, int Type, int FieldSize)
+{
+   if ((Type & FD_CPP) and (Type & FD_ARRAY)) return alignof(kt::vector<int>);
+   if (Type & (FD_POINTER|FD_OBJECT|FD_FUNCTION)) return alignof(APTR);
+   if ((Type & FD_STRUCT) and (not (Type & FD_PTR)) and Field.StructDefinition) {
+      return Field.StructDefinition->Alignment;
+   }
+   if (FieldSize >= 8) return 8;
+   if (FieldSize >= 4) return 4;
+   if (FieldSize >= 2) return 2;
+   return 1;
+}
+
 static ERR layout_struct_field(struct_field &Field, int Type, int FieldSize, int ArraySize, int &Offset)
 {
-   if ((FieldSize >= 8) and (Type != FD_STRUCT)) Offset = ALIGN64(Offset);
-   else if (FieldSize IS 4) Offset = ALIGN32(Offset);
-   else if ((FieldSize IS 2) and (Offset & 1)) Offset++;
+   int alignment = struct_field_alignment(Field, Type, FieldSize);
+   Offset = (Offset + alignment - 1) & ~(alignment - 1);
 
    // Offset is a uint16_t in struct_field, so oversized fixed arrays must be rejected rather than silently wrapped.
 
@@ -518,6 +712,8 @@ static ERR layout_struct_field(struct_field &Field, int Type, int FieldSize, int
    Offset += int(storage_size);
    return ERR::Okay;
 }
+
+static bool struct_is_trivial(lua_State *Lua, const struct_record &Record, std::string &Offending);
 
 //********************************************************************************************************************
 // The TypeName is optional and usually refers to the name of a struct.  The list is sorted by name for fast lookups.
@@ -649,6 +845,8 @@ static ERR layout_struct_field(struct_field &Field, int Type, int FieldSize, int
          return error;
       }
 
+      Record.Alignment = std::max(Record.Alignment, struct_field_alignment(field, type, field_size));
+
       log.trace("Added field %s @ offset %d", field.Name.c_str(), field.Offset);
 
       Record.Fields.push_back(field);
@@ -656,7 +854,16 @@ static ERR layout_struct_field(struct_field &Field, int Type, int FieldSize, int
       while ((pos < Sequence.size()) and ((Sequence[pos] <= 0x20) or (Sequence[pos] IS ','))) pos++;
    }
 
-   *StructSize = offset;
+   for (auto &field : Record.Fields) {
+      if ((field.Type & FD_CPP) and (field.Type & FD_ARRAY) and (field.Type & FD_STRUCT) and
+            (not (field.Type & FD_PTR)) and field.StructDefinition) {
+         field.ElementStride = field.StructDefinition->Size;
+         std::string offending;
+         field.TrivialElements = struct_is_trivial(Self->Lua, *field.StructDefinition, offending);
+      }
+   }
+
+   *StructSize = (offset + Record.Alignment - 1) & ~(Record.Alignment - 1);
    return ERR::Okay;
 }
 
@@ -751,6 +958,7 @@ static ERR layout_struct_field(struct_field &Field, int Type, int FieldSize, int
 
 static int declared_field_size(lua_State *Lua, const struct_field &Field)
 {
+   if ((Field.Type & FD_CPP) and (Field.Type & FD_ARRAY)) return sizeof(kt::vector<int>);
    // FD_PTR is an alias of FD_POINTER, so this only matches a struct embedded inline rather than by reference.
 
    if ((Field.Type & FD_STRUCT) and (not (Field.Type & FD_PTR))) {
@@ -773,7 +981,8 @@ static int declared_field_size(lua_State *Lua, const struct_field &Field)
 
 static bool identical_struct_layout(const struct_record &Left, const struct_record &Right)
 {
-   if ((Left.Size != Right.Size) or (Left.Fields.size() != Right.Fields.size())) return false;
+   if ((Left.Size != Right.Size) or (Left.Alignment != Right.Alignment) or
+         (Left.Fields.size() != Right.Fields.size())) return false;
    for (size_t i = 0; i < Left.Fields.size(); i++) {
       const auto &left = Left.Fields[i];
       const auto &right = Right.Fields[i];
@@ -781,6 +990,8 @@ static bool identical_struct_layout(const struct_record &Left, const struct_reco
          (left.ObjectClassID != right.ObjectClassID) or (left.Offset != right.Offset) or
             (left.Type != right.Type)) return false;
       if ((left.Type & FD_ARRAY) and (left.ArraySize != right.ArraySize)) return false;
+      if (left.ElementStride != right.ElementStride) return false;
+      if (left.TrivialElements != right.TrivialElements) return false;
       if ((left.NativeType != NativeStructType::Legacy) and (right.NativeType != NativeStructType::Legacy) and
             (left.NativeType != right.NativeType)) return false;
    }
@@ -790,8 +1001,27 @@ static bool identical_struct_layout(const struct_record &Left, const struct_reco
 // Register a parser-built declaration.  Keeping layout calculation here ensures declarative definitions use the
 // same alignment and embedded-structure rules as MAKESTRUCT.
 
+static bool struct_is_trivial(lua_State *Lua, const struct_record &Record, std::string &Offending)
+{
+   for (auto &field : Record.Fields) {
+      if ((field.Type & FD_CPP) and ((field.Type & FD_STRING) or (field.Type & FD_ARRAY))) {
+         Offending = field.Name;
+         return false;
+      }
+      if ((field.Type & FD_STRUCT) and (not (field.Type & FD_PTR))) {
+         auto child = field.StructDefinition ? field.StructDefinition :
+            find_struct_reference(Lua, Record, field.StructRef);
+         if (child and not struct_is_trivial(Lua, *child, Offending)) {
+            Offending = field.Name + "." + Offending;
+            return false;
+         }
+      }
+   }
+   return true;
+}
+
 [[nodiscard]] ERR register_declared_struct(lua_State *Lua, struct_record &&Record, bool *Inserted,
-   const struct_record **Existing)
+   const struct_record **Existing, std::string *Detail)
 {
    if (Inserted) *Inserted = false;
    if (Existing) *Existing = nullptr;
@@ -805,6 +1035,22 @@ static bool identical_struct_layout(const struct_record &Left, const struct_reco
       int field_size = declared_field_size(Lua, field);
       if (field_size <= 0) return ERR::NotFound;
 
+      if ((field.Type & FD_CPP) and (field.Type & FD_ARRAY) and (field.Type & FD_STRUCT) and
+            (not (field.Type & FD_PTR))) {
+         auto child = field.StructDefinition ? field.StructDefinition : find_struct(Lua, field.StructRef);
+         std::string offending;
+         if ((not child) or (not struct_is_trivial(Lua, *child, offending))) {
+            if (Detail) {
+               auto field_path = field.Name + (offending.empty() ? std::string() : "." + offending);
+               *Detail = std::format("Struct array field '{}.{}' requires a trivially owned element layout",
+                  Record.Name, field_path);
+            }
+            return ERR::NoSupport;
+         }
+         field.ElementStride = child->Size;
+         field.TrivialElements = true;
+      }
+
       // Mirror the sequence parser's convention: scalars carry a count of 1, and the parser's ArraySize of -1 for
       // ptr<T[]> passes straight through as the null-terminated-pointer marker.
 
@@ -812,9 +1058,10 @@ static bool identical_struct_layout(const struct_record &Left, const struct_reco
       if (auto error = layout_struct_field(field, field.Type, field_size, array_size, offset); error != ERR::Okay) {
          return error;
       }
+      Record.Alignment = std::max(Record.Alignment, struct_field_alignment(field, field.Type, field_size));
       field.precomputeNameHash();
    }
-   Record.Size = offset;
+   Record.Size = (offset + Record.Alignment - 1) & ~(Record.Alignment - 1);
 
    if (auto found = Lua->struct_declarations.find(key);
          found != Lua->struct_declarations.end()) {

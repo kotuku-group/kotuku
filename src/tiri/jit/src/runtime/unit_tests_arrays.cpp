@@ -187,6 +187,60 @@ static bool test_struct_pointer_array_sentinel(kt::Log &Log)
    return true;
 }
 
+//********************************************************************************************************************
+// struct_to_table() receives the address of a native structure rather than using the struct field getter.  C++ string
+// arrays require the vector object itself because the array cache reads std::string elements through its vector header.
+
+static bool test_struct_to_table_cpp_string_array(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *lua = holder.get();
+   if (not lua) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   kt::vector<std::string> names;
+   names.push_back("alpha");
+   names.push_back("beta");
+
+   struct_record def("StringArrayResult");
+   def.Size = int(sizeof(names));
+   struct_field field;
+   field.Name = "Names";
+   field.Type = FD_CPP|FD_ARRAY|FD_STRING;
+   field.ArraySize = 1;
+   def.Fields.push_back(field);
+
+   std::vector<lua_ref> references;
+   if (struct_to_table(lua, references, def, &names) != ERR::Okay) {
+      Log.error("failed to convert native structure containing a C++ string array");
+      unref_struct_references(lua, references);
+      return false;
+   }
+   unref_struct_references(lua, references);
+
+   lua_getfield(lua, -1, "Names");
+   if (not lua_isarray(lua, -1)) {
+      Log.error("C++ string array field did not produce an array");
+      return false;
+   }
+
+   auto array = lua_toarray(lua, -1);
+   if ((array->len != 2) or (array->elemtype != AET::CSTR)) {
+      Log.error("C++ string array field produced length %d and type %d", array->len, int(array->elemtype));
+      return false;
+   }
+
+   auto result = array->get<CSTRING>();
+   if ((std::string_view(result[0]) != "alpha") or (std::string_view(result[1]) != "beta")) {
+      Log.error("C++ string array field did not preserve its values");
+      return false;
+   }
+
+   return true;
+}
+
 static bool test_array_creation_double(kt::Log &Log)
 {
    LuaStateHolder Holder;
@@ -1099,11 +1153,12 @@ static bool test_lib_array_double_type(kt::Log &Log)
 
 void array_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 30> Tests = { {
+   constexpr std::array<TestCase, 31> Tests = { {
       // Core Data Structures
       { "array_creation_byte", test_array_creation_byte },
       { "array_creation_int32", test_array_creation_int32 },
       { "struct_pointer_array_sentinel", test_struct_pointer_array_sentinel },
+      { "struct_to_table_cpp_string_array", test_struct_to_table_cpp_string_array },
       { "array_creation_double", test_array_creation_double },
       { "array_index_access", test_array_index_access },
       { "array_elemsize", test_array_elemsize },

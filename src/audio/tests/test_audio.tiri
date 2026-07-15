@@ -34,7 +34,7 @@ function SequentialPlayback()
    processing.collect()
 
    proc = processing.new({ signals = array<object> { snd } })
-   assert(snd.acActivate() is ERR_Okay, 'Failed to playback low-tone sound sample.')
+   check snd.acActivate()
    time = mSys.preciseTime()
 
    proc.sleep()
@@ -55,7 +55,7 @@ function SequentialPlayback()
    proc = processing.new({ signals = array<object> { snd } })
 
    duration = snd.duration
-   assert(snd.acActivate() is ERR_Okay, 'Failed to playback high-tone sound sample.')
+   check snd.acActivate()
    time = mSys.preciseTime()
 
    proc.sleep()
@@ -82,7 +82,7 @@ function Pan()
 
    logOutput('Play left speaker.')
 
-   assert(snd.acActivate() is ERR_Okay, 'Failed to playback low-tone sound sample.')
+   check snd.acActivate()
 
    proc.sleep()
 
@@ -90,7 +90,7 @@ function Pan()
 
    logOutput('Play right speaker.')
    snd.pan = 1.0
-   assert(snd.acActivate() is ERR_Okay, 'Failed to playback low-tone sound sample.')
+   check snd.acActivate()
 
    proc.sleep()
 
@@ -118,7 +118,7 @@ function Volume()
    for i=1,4 do
       snd.volume = 1.0 * (i / 4)
       active_time = mSys.PreciseTime()
-      snd.acActivate()
+      check snd.acActivate()
       proc.sleep()
       assert(elapsed >= snd.duration-0.02, 'OnStop triggered ' .. string.format('%.2fs', snd.duration - elapsed) .. ' earlier than the sample\'s duration.')
       logOutput('Playback latency measured as ' .. string.format('%.2fs', elapsed - snd.duration))
@@ -146,7 +146,7 @@ function Tones()
    for i=1,8 do
       snd.note = i
       active_time = mSys.PreciseTime()
-      snd.acActivate()
+      check snd.acActivate()
       proc.sleep()
    end
 
@@ -170,8 +170,7 @@ function WaveSave()
    output_file = obj.new('file', { path='temp:low-tone.wav', flags='!NEW|WRITE' })
 
    -- Save the sound as WAVE format to the temporary file
-   result = snd.acSaveToObject(output_file)
-   assert(result is ERR_Okay, 'Failed to save sound to temporary file: ' .. mSys.GetErrorMsg(result))
+   check snd.acSaveToObject(output_file)
 
    -- Close the output file to ensure data is flushed
    output_file = nil

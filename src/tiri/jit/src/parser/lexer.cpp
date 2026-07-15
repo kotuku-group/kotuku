@@ -9,6 +9,7 @@
 #include <cctype>
 #include <cmath>
 #include <concepts>
+#include <format>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -1080,7 +1081,7 @@ static LexToken lex_array_typed(LexState *State, TValue *tv)
    } while (lj_char_isident(State->c));
 
    auto type_str = std::string_view(State->sb.b, sbuflen(&State->sb));
-   GCstr *type_name = State->keepstr(type_str);
+   std::string nested_type;
 
    lex_skip_inline_ws(State);
 
@@ -1102,6 +1103,24 @@ static LexToken lex_array_typed(LexState *State, TValue *tv)
          if (depth > 0) lex_next(State);
       }
       if (State->c IS '>') lex_next(State);  // Move past the inner closing '>'
+      lex_skip_inline_ws(State);
+   }
+   else if (type_str IS "struct" and State->c IS '<') {
+      lex_next(State);
+      lex_skip_inline_ws(State);
+      if (not (isalpha(State->c) or State->c IS '_')) {
+         lj_lex_error(State, lex_current_char_token(State), ErrMsg::XTOKEN, State->token2str(TK_name));
+      }
+      lj_buf_reset(&State->sb);
+      do {
+         lex_savenext(State);
+      } while (lj_char_isident(State->c));
+      nested_type = std::format("struct<{}>", std::string_view(State->sb.b, sbuflen(&State->sb)));
+      lex_skip_inline_ws(State);
+      if (State->c != '>') {
+         lj_lex_error(State, lex_current_char_token(State), ErrMsg::XTOKEN, State->token2str('>'));
+      }
+      lex_next(State);
       lex_skip_inline_ws(State);
    }
 
@@ -1142,7 +1161,7 @@ static LexToken lex_array_typed(LexState *State, TValue *tv)
    }
 
    // Store type name in token value
-   setstrV(State->L, tv, type_name);
+   setstrV(State->L, tv, State->keepstr(nested_type.empty() ? type_str : std::string_view(nested_type)));
    return TK_array_typed;
 }
 
