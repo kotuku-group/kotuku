@@ -39,6 +39,8 @@ struct struct_field {
    uint16_t Offset = 0;   // Offset to the field value.
    int  Type      = 0;    // FD flags
    int  ArraySize = 0;    // Set if the field is an array
+   uint16_t ElementStride = 0; // Byte stride for dynamically sized struct elements
+   bool TrivialElements = false; // Struct vectors may use type-erased ownership only when validated as trivial
    NativeStructType NativeType = NativeStructType::Legacy;
 
    void precomputeNameHash() { NameHash = kt::strihash(Name); }
@@ -52,6 +54,7 @@ struct struct_record {
    std::string Name;
    std::vector<struct_field> Fields;
    int Size = 0; // Total byte size of the structure
+   int Alignment = 1; // Strictest native member alignment, including tail padding
    std::string DeclarationSource;
    uint32_t DeclarationLine = 0;
    struct_record(std::string_view pName) : Name(pName) { }

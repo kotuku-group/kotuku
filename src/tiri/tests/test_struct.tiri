@@ -27,6 +27,24 @@ struct DeclaredLayout {
    Fixed: int[3], Child: struct<DeclaredChild>, ChildPointer: ptr<DeclaredChild>
 }
 
+struct DeclaredVectorElement {
+   Red: byte
+   Green: byte
+   Blue: byte
+}
+
+struct DeclaredVectorFields {
+   Bool: array<bool>, Char: array<char>, Byte: array<byte>, Int8: array<int8>, UInt8: array<uint8>,
+   Int16: array<int16>, UInt16: array<uint16>, Int: array<int>, UInt: array<uint>,
+   Int32: array<int32>, UInt32: array<uint32>, Int64: array<int64>, UInt64: array<uint64>,
+   Float: array<float>, Double: array<double>, String: array<string>,
+   Points: array<struct<DeclaredVectorElement>>
+}
+
+struct DeclaredNonTrivialVectorElement {
+   Name: string
+}
+
 function declared_user_age(Value: struct<DeclaredUser>):num
    return Value.Age
 end
@@ -108,6 +126,128 @@ end
       'eChild:LegacyDeclaredChild,pChildPointer:LegacyDeclaredChild')
    assert(struct.size('DeclaredLayout') is struct.size('LegacyDeclaredLayout'),
       'Declarative and MAKESTRUCT layouts should have identical byte sizes')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructVectorLayoutParity()
+   MAKESTRUCT('LegacyDeclaredVectorElement', 'ubRed,ubGreen,ubBlue')
+   MAKESTRUCT('LegacyDeclaredVectorFields',
+      'zbBool[1],zcChar[1],zubByte[1],zbInt8[1],zubUInt8[1],zwInt16[1],zuwUInt16[1],zlInt[1],zulUInt[1],' ..
+      'zlInt32[1],zulUInt32[1],zxInt64[1],zuxUInt64[1],zfFloat[1],zdDouble[1],zsString[1],' ..
+      'zePoints:LegacyDeclaredVectorElement[1]')
+   assert(struct.size('DeclaredVectorFields') is struct.size('LegacyDeclaredVectorFields'),
+      'Declarative vector fields should match the MAKESTRUCT vector layout')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructVectorRoundTrips()
+   local value = DeclaredVectorFields {
+      Int=array<int> { 1, 2, 3 },
+      String=array<string> { 'alpha', 'beta' }
+   }
+
+   value.Bool = array<byte> { 0, 1 }
+   value.Char = array<byte> { 65, 66 }
+   value.Byte = array<byte> { 250, 251 }
+   value.Int8 = array<byte> { 1, 2 }
+   value.UInt8 = array<byte> { 3, 4 }
+   value.Int16 = array<int16> { -12, 34 }
+   value.UInt16 = array<int16> { 123, 456 }
+   value.UInt = array<int> { 4000000000 }
+   value.Int32 = array<int> { -123456, 654321 }
+   value.UInt32 = array<int> { 123456, 654321 }
+   value.Int64 = array<int64> { -9007199, 9007199 }
+   value.UInt64 = array<int64> { 9007199, 18014398 }
+   value.Float = array<float> { 1.25, 2.5 }
+   value.Double = array<double> { 3.5, 7.25 }
+
+   assert(value.Int is array<int> { 1, 2, 3 }, 'Initialiser assignment should populate an int vector')
+   local initial_strings = value.String
+   assert(#initial_strings is 2 and initial_strings[0] is 'alpha' and initial_strings[1] is 'beta',
+      'Initialiser assignment should populate a string vector')
+   assert(value.Bool is array<byte> { 0, 1 } and value.Char is array<byte> { 65, 66 },
+      'Byte-sized vector categories should round-trip')
+   assert(value.Int16 is array<int16> { -12, 34 } and value.UInt16 is array<int16> { 123, 456 },
+      'Word-sized vector categories should round-trip')
+   assert(value.Int64 is array<int64> { -9007199, 9007199 }, 'Int64 vectors should round-trip')
+   assert(value.Float is array<float> { 1.25, 2.5 } and value.Double is array<double> { 3.5, 7.25 },
+      'Floating-point vectors should round-trip')
+
+   value.Int = array<int> { 8, 9, 10, 11, 12 }
+   assert(#value.Int is 5, 'Whole-field assignment should resize dynamic vector fields')
+
+   local clone = struct.clone(value)
+   local copy = DeclaredVectorFields()
+   struct.copy(copy, value)
+   value.Int = array<int> { 99 }
+   value.String = array<string> { 'changed' }
+   assert(clone.Int is array<int> { 8, 9, 10, 11, 12 } and copy.Int is array<int> { 8, 9, 10, 11, 12 },
+      'copy() and clone() should deep-copy scalar vectors')
+   local clone_strings = clone.String
+   local copy_strings = copy.String
+   assert(#clone_strings is 2 and clone_strings[0] is 'alpha' and clone_strings[1] is 'beta' and
+      #copy_strings is 2 and copy_strings[0] is 'alpha' and copy_strings[1] is 'beta',
+      'copy() and clone() should deep-copy string vectors')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructElementVectorRoundTrips()
+   local value = DeclaredVectorFields()
+   value.Points = array<table> {
+      { red=1, green=2, blue=3 },
+      { red=4, green=5, blue=6 },
+      { red=7, green=8, blue=9 }
+   }
+
+   local points = value.Points
+   assert(#points is 3 and points[0].Red is 1 and points[1].Green is 5 and points[2].Blue is 9,
+      'Struct vectors should use the exact three-byte C++ element stride')
+
+   local clone = struct.clone(value)
+   local copy = DeclaredVectorFields()
+   struct.copy(copy, value)
+   value.Points = array<table> { { red=20, green=21, blue=22 } }
+   assert(#clone.Points is 3 and clone.Points[2].Blue is 9,
+      'clone() should deep-copy trivially owned struct vectors')
+   assert(#copy.Points is 3 and copy.Points[1].Green is 5,
+      'copy() should deep-copy trivially owned struct vectors')
+
+   points[0].Red = 99
+   assert(value.Points[0].Red is 20,
+      'A previously read vector snapshot should remain independent after whole-field reassignment')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructVectorDeclarationErrors()
+   for statement in values(array<string> {
+      'struct BadCStrVector { Values: array<cstr> }',
+      'struct BadObjectVector { Values: array<obj> }',
+      'struct BadPointerVector { Values: array<ptr> }',
+      'struct BadFunctionVector { Values: array<func> }',
+      'struct BadNestedVector { Values: array<array<int>> }',
+      'struct BadGenericSizedVector { Values: array<int, 4> }',
+      'struct BadSizedVector { Values: array<int>[4] }',
+      'struct BadUnknownVector { Values: array<mystery> }',
+      'struct BadOwnedElementVector { Values: array<struct<DeclaredNonTrivialVectorElement>> }'
+   }) do
+      try
+         exec(statement)
+      success
+         error('Invalid vector field declaration should fail: ' .. statement)
+      end
+   end
+
+   MAKESTRUCT('LegacyNonTrivialVectorElement', 'zsName')
+   MAKESTRUCT('LegacyBadOwnedElementVector', 'zeValues:LegacyNonTrivialVectorElement[1]')
+   try
+      struct.new('LegacyBadOwnedElementVector').values = array<table> { { name='unsafe' } }
+   success
+      error('Legacy non-trivial struct vectors should reject type-erased assignment')
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
