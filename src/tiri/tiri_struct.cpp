@@ -1,13 +1,12 @@
 /*********************************************************************************************************************
 
-To create a struct definition:                    MAKESTRUCT('XTag', 'Definition')
 To create a struct from a registered definition:  xmltag = struct.new('XTag')
 To create a struct with pre-configured values:    xmltag = struct.new('XTag', { name='Hello' })
 To get the byte size of any structure definition: size = struct.size('XTag')
 To get the total number of fields in a structure: #xmltag
 To get the byte size of a created structure:      xmltag.structSize()
 
-Acceptable field definitions:
+Acceptable short-hand field definitions, for MAKESTRUCT() and IDL usage only:
 
   l = Long
   d = Double
@@ -29,8 +28,6 @@ Prefixes for variants, in order of acceptable usage:
 
 Embedded arrays are permitted if you follow the field name with [n] where 'n' is the array size.  For pointers to
 null terminated arrays, use [0].
-
-TODO: Support for kt::vector
 
 *********************************************************************************************************************/
 
@@ -512,6 +509,10 @@ static ERR value_to_cpp_vector(lua_State *Lua, int StackIndex, int Type, APTR Ad
                      trivial_struct_vector_data(address), field.ElementStride, field_def);
                }
                else lua_pushnil(Lua);
+            }
+            else if (type & FD_STRING) {
+               auto vector = (kt::vector<std::string> *)(address);
+               make_array(Lua, AET::STR_CPP, int(vector->size()), vector);
             }
             else {
                auto vector = (kt::vector<int> *)(address); // Uses int as a type-stable layout placeholder
