@@ -1192,6 +1192,7 @@ Field * lookup_id(OBJECTPTR, uint32_t, OBJECTPTR *);
 ERR    msg_event(APTR, int, int, APTR, int);
 ERR    msg_threadcallback(APTR, int, int, APTR, int);
 ERR    msg_threadaction(APTR, int, int, APTR, int);
+ERR    msg_waitforobjects(APTR, int, int, APTR, int);
 ERR    msg_free(APTR, int, int, APTR, int);
 void   optimise_write_field(Field &);
 void   PrepareSleep(void);

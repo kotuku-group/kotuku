@@ -78,6 +78,14 @@ static ResourceManager glResourceMsgHandler = { "Message", &msghandler_free, nul
 
 static void notify_signal_wfo(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
+   if (!tlMainThread) {
+      // Signals and frees can be initiated from any thread, but glWFOList is owned by the main thread.  Defer
+      // processing by posting the object ID back to the main queue; see msg_waitforobjects() for the follow-up.
+      OBJECTID object_id = Object->UID;
+      SendMessage(MSGID::WAIT_FOR_OBJECTS, MSF::NIL, &object_id, sizeof(object_id));
+      return;
+   }
+
    if (auto lref = glWFOList.find(Object->UID); lref != glWFOList.end()) {
       kt::Log log;
       auto &ref = lref->second;
@@ -96,6 +104,44 @@ static void notify_signal_wfo(OBJECTPTR Object, ACTIONID ActionID, ERR Result, A
          SendMessage(MSGID::WAIT_FOR_OBJECTS, MSF::NIL, nullptr, 0); // Will result in ProcessMessages() terminating
       }
    }
+}
+
+//********************************************************************************************************************
+// Handler for MSGID::WAIT_FOR_OBJECTS messages, called from ProcessMessages() on the main thread.  A message with
+// no payload indicates that the monitored object list is exhausted and the WaitForObjects() message loop can
+// terminate.  A message carrying an object ID is a signal or free that occurred on a child thread, deferred by
+// notify_signal_wfo() so that glWFOList is only ever modified by the main thread.
+
+ERR msg_waitforobjects(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
+{
+   if ((Message) and (MsgSize >= int(sizeof(OBJECTID)))) {
+      auto object_id = ((OBJECTID *)Message)[0];
+      if (auto lref = glWFOList.find(object_id); lref != glWFOList.end()) {
+         kt::Log log;
+         kt::ScopedObjectLock lock(object_id); // Locking by ID fails safely if the object has been freed
+         if (lock.granted()) {
+            if (lock.obj->defined(NF::SIGNALLED)) {
+               log.trace("Object #%d was signalled from a child thread.", object_id);
+               UnsubscribeAction(lock.obj, AC::Free, nullptr);
+               UnsubscribeAction(lock.obj, AC::Signal, nullptr);
+               lock.obj->clearFlag(NF::SIGNALLED);
+               glWFOList.erase(lref);
+            }
+            // An unsignalled object indicates a stale message from an earlier wait; leave it monitored.
+         }
+         else if (!GetObjectPtr(object_id)) {
+            // The object was freed by the child thread; its subscriptions died with it.
+            log.trace("Object #%d was freed from a child thread.", object_id);
+            glWFOList.erase(lref);
+         }
+         // Other lock failures are transient; the object remains monitored.
+
+         if (glWFOList.empty()) return ERR::Terminate;
+      }
+      return ERR::Okay; // Never terminate the message loop on a stale deferral
+   }
+
+   return ERR::Terminate;
 }
 
 /*********************************************************************************************************************
@@ -696,9 +742,14 @@ ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
                // NB: An object being freed is treated as equivalent to it receiving a signal.
                // Refer to notify_signal_wfo() for notification handling and clearing of signals.
                log.detail("Monitoring object #%d", ObjectSignals[i].Object->UID);
-               if (!(SubscribeAction(ObjectSignals[i].Object, AC::Free, C_FUNCTION(notify_signal_wfo))) and
-                   (!SubscribeAction(ObjectSignals[i].Object, AC::Signal, C_FUNCTION(notify_signal_wfo)))) {
-                  glWFOList.insert(std::make_pair(ObjectSignals[i].Object->UID, ObjectSignals[i]));
+               if (!SubscribeAction(ObjectSignals[i].Object, AC::Free, C_FUNCTION(notify_signal_wfo))) {
+                  if (!SubscribeAction(ObjectSignals[i].Object, AC::Signal, C_FUNCTION(notify_signal_wfo))) {
+                     glWFOList.insert(std::make_pair(ObjectSignals[i].Object->UID, ObjectSignals[i]));
+                  }
+                  else {
+                     UnsubscribeAction(ObjectSignals[i].Object, AC::Free, nullptr);
+                     error = ERR::MessageOperation;
+                  }
                }
                else error = ERR::MessageOperation;
             }
@@ -732,10 +783,12 @@ ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
 
    if (not glWFOList.empty()) { // Clean up if there are dangling subscriptions
       for (auto &ref : glWFOList) {
-         kt::ScopedObjectLock lock(ref.second.Object); // For thread safety
+         // Lock by ID rather than pointer; a child thread may have freed the object with its
+         // deferred notification still unprocessed (see msg_waitforobjects()).
+         kt::ScopedObjectLock lock(ref.first);
          if (lock.granted()) {
-            UnsubscribeAction(ref.second.Object, AC::Free, nullptr);
-            UnsubscribeAction(ref.second.Object, AC::Signal, nullptr);
+            UnsubscribeAction(lock.obj, AC::Free, nullptr);
+            UnsubscribeAction(lock.obj, AC::Signal, nullptr);
          }
       }
       glWFOList.clear();
