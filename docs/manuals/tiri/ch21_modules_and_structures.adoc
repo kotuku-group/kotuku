@@ -1,4 +1,5 @@
 // VERIFIED: 2026-02-13
+// UPDATED: 2026-07-13 — Structures promoted to a first-class 'struct' type; added struct.clone()/struct.copy(), field-assignment semantics, pairs() iteration and tostring() representation.
 
 [[ch-modules-and-structures]]
 == Modules & Structures
@@ -174,14 +175,39 @@ While automatic conversion is convenient, prefer passing correctly typed values 
 === Structures
 indexterm:[structures] The structure interface allows Tiri scripts to create and manipulate C/C++ structures declared in the Kōtuku API.  Many class and module functions use structures for returning condensed information.  All structure functions are accessed through the `struct` namespace.
 
+A structure instance is a first-class value with its own type.  The `type()` function returns `"struct"` for a structure instance (see <<sec-structs-type>>).  A structure is a reference type: assigning it to another variable copies the reference, not the payload.  Field access is provided directly on the instance; a structure is not a table and does not respond to table operations other than those defined in this section.
+
+[cols="1,3a",options="header"]
+|===
+|Property |Guarantee
+
+|Mutation
+|Field writes modify the backing memory in place.  Reads and writes to a field are visible through every reference to the same instance.
+
+|Ordering
+|Fields have a fixed order fixed by the structure definition.  `pairs()` visits fields in declaration order.
+
+|Iteration
+|`pairs()` yields each field name and its current value.  The set of fields is fixed by the definition and does not change during iteration.
+
+|Identity
+|Two references are equal via `is` when they refer to the same instance.  Distinct instances are never equal, even when their payloads are identical.
+
+|Equality
+|Structures are compared by reference identity.  Field-by-field comparison is not performed.
+
+|Performance
+|Field access by name is O(1).  Reads and writes of scalar fields on a value annotated as `struct` compile to dedicated bytecodes (see <<ch-performance-and-the-jit>>).
+|===
+
 ==== struct.new()
 
 [.api]`instance = struct.new(StructName, [Fields])` +
 [.api]`instance = struct.new(StructName, Address)`
 
-Creates a new structure instance from a registered definition identified by `StructName`.  The definition must have been registered through an `include` directive, a `mod.load()` call, or a prior call to `MAKESTRUCT()`.  Raises an exception if the definition is not found.
+Creates a new structure instance from a registered definition identified by `StructName`.  The definition must have been registered through an `include` directive, a `mod.load()` call, or a prior call to `MAKESTRUCT()`.  Raises an exception if the definition is not found.  Returns a value whose `type()` is `"struct"`.
 
-If `Fields` is a table, the key-value pairs are applied to the corresponding structure fields during creation.  String fields are not supported for initial assignment.
+If `Fields` is a table, the key-value pairs are applied to the corresponding structure fields during creation.  Field values are subject to the assignment rules defined in <<sec-struct-field-access>>; a value that the target field does not accept raises an exception.
 
 If `Address` is provided as a pointer value, the structure references existing memory at that address instead of allocating new memory.
 
@@ -209,6 +235,26 @@ tag = struct.new('XMLTag', address)
 [.api]`bytes = struct.size(StructName)`
 
 Returns the byte size of the structure definition identified by `StructName`.  Does not create a structure instance.  Raises an exception if the definition is not found.
+
+==== struct.clone()
+
+[.api]`copy = struct.clone(Source)`
+
+Creates a new structure instance of the same definition as `Source` and deep-copies its payload into the new instance.  Owned C++ string and vector fields are duplicated so that the copy holds independent storage; subsequent modifications to `Source` do not affect the returned instance.  Raises an exception if `Source` holds an unsupported C++ array field type.
+
+[source,tiri]
+----
+source = struct.new('CopyRecord', { count = 12, name = 'source' })
+copy   = struct.clone(source)
+source.name = 'changed'
+print(copy.name)   -- 'source'
+----
+
+==== struct.copy()
+
+[.api]`dest = struct.copy(Dest, Source)`
+
+Deep-copies the payload of `Source` into the existing `Dest` instance and returns `Dest`.  `Dest` and `Source` must share the same definition; a mismatch raises an exception with `ERR_Mismatch`.  Raises an exception if either payload is null, if the payloads overlap in memory, or if the definition holds an unsupported C++ array field type.
 
 ==== structSize() Method
 
@@ -238,6 +284,75 @@ WARNING: Modifying the pointer referenced by the struct is dangerous.  Alternati
 ==== Length Operator
 
 The `#` operator returns the total number of fields in the structure.
+
+[[sec-struct-field-access]]
+==== Field Access
+
+Fields are read and written directly on the instance using dot notation.  Field names are matched against the definition in camel-case.  Reading or writing a name that the definition does not declare raises an exception.
+
+The value produced by a read, and the values accepted by a write, depend on the field's declared type:
+
+[cols="1,3a",options="header"]
+|===
+|Field category |Behaviour
+
+|Scalar numeric (`l`, `d`, `x`, `f`, `w`, `b` and unsigned variants)
+|Reads and writes a number.  Unsigned fields preserve the full unsigned range of the storage width.
+
+|Object (`o`)
+|Reads as a native object (`type()` is `"object"`), or `nil` when unset.  Accepts an object or `nil` on assignment; assigning `nil` clears the field.  Assigning a detached object wrapper raises an exception.
+
+|Owned C++ string (`zs`)
+|Reads and writes a string.  The structure owns the string storage.
+
+|Raw C string (`s`)
+|Reads a string.  Assignment is not supported and raises an exception.
+
+|Char array (`c[N]`)
+|Reads as a string.  Accepts a string or byte array on assignment.
+
+|Pointer (`p`) and function reference (`r`)
+|A null pointer reads as `nil`; a non-null pointer or function reference reads as userdata.  A function reference (`r`) does not accept assignment and raises an exception.
+
+|Embedded structure (`e`)
+|Reads as a structure view over the embedded field, or an array of views for an embedded array.  The view keeps the enclosing instance alive.
+|===
+
+Array fields accept an array value on assignment:
+
+* A fixed array (`type[N]`) copies elements from the source array.  A source shorter than `N` clears the remaining elements; an empty array clears the field.  A source longer than `N` raises an exception.
+* A C++ vector field (`z`-prefixed array, e.g. `zl`, `zs`) resizes to match the source array and copies its elements.
+* An element type that does not match the field's declared type raises an exception.
+
+[source,tiri]
+----
+value.fixed = array<int> { 4, 5, 6 }   -- copies three elements
+value.fixed = array<int> { 9 }         -- { 9, 0, 0 }
+value.dynamic = array<int> { 8, 9, 10 } -- C++ vector resizes and copies
+----
+
+[[sec-struct-iteration]]
+==== Iteration
+
+`pairs()` iterates the fields of a structure in declaration order, yielding each field name and its current value.
+
+[source,tiri]
+----
+value = struct.new('IterableRecord', { count = 7, name = 'sample' })
+for name, field_value in pairs(value) do
+   print(name, field_value)
+end
+----
+
+[[sec-struct-tostring]]
+==== String Representation
+
+`tostring()` produces a string in the form `StructName: 0xADDRESS`, where `StructName` is the definition name and `ADDRESS` is the payload address in hexadecimal.
+
+[source,tiri]
+----
+tostring(struct.new('IterableRecord'))  -- 'IterableRecord: 0x...'
+----
 
 ==== Custom Structures
 
@@ -298,10 +413,6 @@ tag.index = 42
 |`s`
 |String (C string pointer)
 |8
-
-|`m`
-|MaxInt (platform-dependent: 4 or 8 bytes)
-|4 or 8
 
 |`o`
 |Object pointer

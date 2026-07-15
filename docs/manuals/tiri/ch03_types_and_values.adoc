@@ -1,11 +1,13 @@
 // VERIFIED: 2026-02-10
 // UPDATED: 2026-06-30 — Extended falsiness now treats empty tables as falsey; described as empty collections.
+// UPDATED: 2026-07-13 — Structures are now a first-class 'struct' type; added to type() and a new Structures subsection.
+// UPDATED: 2026-07-13 — Objects and structs are distinct first-class types, no longer specialised userdata; promoted to top-level sections.
 
 [[ch-types-and-values]]
 == Types & Values
 indexterm:[types] indexterm:[values] Tiri is dynamically typed: every value carries its type at runtime, and variables do not require explicit type declarations.  However, Tiri enforces type consistency through _sticky types_: when a variable receives its first non-`nil` value, the variable commits to that value's type.  All subsequent non-`nil` assignments must match the committed type; assigning a value of a different type produces a compile-time or runtime error.  Assigning `nil` is always permitted, acting as a "clear" operation that preserves the type constraint.  The `:any` annotation opts a variable out of type fixing entirely.  See <<ch-type-system>> for the complete rules governing type inference, explicit annotations, and the `any` escape hatch.
 
-Tiri defines the following types: nil, boolean, number, string, table, array, function, userdata and object.
+Tiri defines the following types: nil, boolean, number, string, table, array, function, userdata, object and struct.
 
 [[sec-nil]]
 === Nil
@@ -124,15 +126,9 @@ print(double(5))  -- 10
 
 See <<ch-functions>> for function declarations, closures, and parameter rules.
 
-[[sec-userdata]]
-=== Userdata
-indexterm:[userdata] Userdata values represent opaque C data managed outside the Tiri runtime.  They cannot be created or modified directly from Tiri code; they are produced by C/C++ host functions.
-
-The `type()` function returns `"userdata"` for userdata values.  Ranges are implemented as userdata internally, but `type()` returns `"range"` for them.  See <<ch-ranges>> for range semantics.
-
 [[sec-objects]]
-==== Objects
-indexterm:[objects] Kōtuku framework objects are a specialised form of userdata.  They represent C++ objects exposed through the Kōtuku API and support field access, method calls, and action invocations.  The `type()` function returns `"object"` for Kōtuku objects.
+=== Objects
+indexterm:[objects] Kōtuku framework objects are a distinct reference type.  They represent C++ objects exposed through the Kōtuku API and support field access, method calls, and action invocations.
 
 [source,tiri]
 ----
@@ -141,6 +137,27 @@ print(type(file))  -- 'object'
 ----
 
 See <<ch-the-object-system>> for the full object interface.
+
+[[sec-structs-type]]
+=== Structures
+indexterm:[structures] A structure is a first-class value that maps directly onto a C/C++ structure declared in the Kōtuku API.  Structures are a distinct reference type: they are not tables, and the `type()` function returns `"struct"` for them.  Instances are created with `struct.new()`, iterated with `pairs()`, and formatted with `tostring()`.
+
+Although structs are most often used as a compatibility layer between Tiri and compiled programs, they also offer a compact data layout option for storage, and access to values is optimised by the JIT compiler.  Accessing a key that does not exist in the struct will also throw an error, making it easy to detect typos.
+
+[source,tiri]
+----
+include 'vector'
+stop = struct.new('GradientStop')
+print(type(stop))  -- 'struct'
+----
+
+See <<ch-modules-and-structures>> for the full structure interface.
+
+[[sec-userdata]]
+=== Userdata
+indexterm:[userdata] Userdata values represent opaque C data managed outside the Tiri runtime.  They cannot be created or modified directly from Tiri code; they are produced by C/C++ host functions.
+
+The `type()` function returns `"userdata"` for userdata values.  Ranges are implemented as userdata internally, but `type()` returns `"range"` for them.  See <<ch-ranges>> for range semantics.
 
 [[sec-truthiness]]
 === Truthiness and Falsiness
@@ -158,7 +175,7 @@ The `??` operator and its postfix form `??` use a broader definition.  The value
 
 indexterm:[type inspection] `result = type(Value)`
 
-Returns a string naming the type of `Value`.  The returned string is one of: "nil", "boolean", "number", "string", "table", "array", "function", "userdata", "range", "object".
+Returns a string naming the type of `Value`.  The returned string is one of: "nil", "boolean", "number", "string", "table", "array", "function", "userdata", "range", "object", "struct".
 
 [source,tiri]
 ----
@@ -171,6 +188,7 @@ type({})            -- 'table'
 type(array<int>)    -- 'array'
 type(print)         -- 'function'
 type(range(0, 5))   -- 'range'
+type(struct.new('GradientStop')) -- 'struct'
 ----
 
 When called on a thunk (deferred expression), `type()` returns the declared type of the thunk without evaluating it.
@@ -179,7 +197,7 @@ When called on a thunk (deferred expression), `type()` returns the declared type
 
 `result = tostring(Value)`
 
-Converts `Value` to a string.  If `Value` has a `__tostring` metamethod, calls it and returns the result.  Otherwise produces a default representation: numbers yield their decimal form, booleans yield `"true"` or `"false"`, `nil` yields `"nil"`, and reference types (tables, arrays, functions, userdata, objects) yield the type name followed by a memory address.
+Converts `Value` to a string.  If `Value` has a `__tostring` metamethod, calls it and returns the result.  Otherwise produces a default representation: numbers yield their decimal form, booleans yield `"true"` or `"false"`, `nil` yields `"nil"`, and reference types (tables, arrays, functions, userdata, objects, structs) yield the type name followed by a memory address.
 
 [source,tiri]
 ----

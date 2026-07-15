@@ -120,7 +120,7 @@ Number::
 A dual-representation numeric type supporting both 32-bit integers and 64-bit IEEE 754 double-precision floating-point values.  Arithmetic operations preserve integer representation where possible.  See <<sec-numbers>>.
 
 Object::
-A specialised userdata value representing a Kōtuku C++ class instance.  Objects expose fields, actions, and methods through the Tiri interface.  Every object has exactly one owner (parent).  See <<ch-the-object-system>>.
+A distinct first-class reference type representing a Kōtuku C++ class instance; `type()` returns `"object"`.  Objects expose fields, actions, and methods through the Tiri interface.  Every object has exactly one owner (parent).  See <<ch-the-object-system>>.
 
 Origo::
 The Tiri interpreter and application launcher executable.  Executes Tiri scripts from the command line with configurable options for logging, graphics drivers, and script arguments.  See <<ch-origo>>.
@@ -138,7 +138,7 @@ Raw access::
 Bypassing metamethods on a table using the `rawget`, `rawset`, `rawlen`, and `rawequal` functions.  See <<sec-raw-access>>.
 
 Reference type::
-A value whose variable holds a reference to the underlying data rather than a copy.  Tables, arrays, functions, userdata, and objects are reference types.  Assignment copies the reference, not the data.  See <<ch-types-and-values>>.
+A value whose variable holds a reference to the underlying data rather than a copy.  Tables, arrays, functions, userdata, objects, and structs are reference types.  Assignment copies the reference, not the data.  See <<ch-types-and-values>>.
 
 Regular expression::
 A pattern-matching facility provided by the `regex` library.  Replaces the deprecated Lua pattern system.  See <<ch-regular-expressions>>.
@@ -207,7 +207,7 @@ Upvalue::
 A local variable from an enclosing scope that is captured by a nested function.  The upvalue persists as long as any closure referencing it remains alive.  See <<sec-upvalues-and-closures>>.
 
 Userdata::
-An opaque C data value managed outside the Tiri runtime.  Objects and ranges are specialised forms of userdata, though they report distinct types via `type()`.  See <<sec-userdata>>.
+An opaque C data value managed outside the Tiri runtime.  Ranges are implemented as userdata internally but report `"range"` via `type()`.  Objects and structs are distinct first-class types, not userdata.  See <<sec-userdata>>.
 
 Value type::
 A value whose variable holds the data directly rather than a reference.  Nil, booleans, numbers, and strings are value types.  Assignment copies the value.  See <<ch-types-and-values>>.

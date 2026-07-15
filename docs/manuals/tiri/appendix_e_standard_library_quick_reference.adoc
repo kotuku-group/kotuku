@@ -393,6 +393,32 @@ indexterm:[library, I/O] See <<ch-file-io>>.
 
 Standard streams: `io.stdin`, `io.stdout`, `io.stderr`.
 
+=== Struct Library
+indexterm:[library, struct] See <<sec-structures>>.
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`struct.new(StructName, [Fields])`   |Creates a structure instance, optionally initialised from a table.
+|`struct.new(StructName, Address)`    |Creates a structure that references existing memory.
+|`struct.size(StructName)`            |Returns the byte size of a structure definition.
+|`struct.clone(Source)`               |Returns a deep copy of a structure instance.
+|`struct.copy(Dest, Source)`          |Deep-copies `Source` into `Dest` and returns `Dest`.
+|===
+
+==== Instance Methods
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`inst.structSize()`  |Returns the byte size of the instance.
+|`inst.ptr([Address])`|Retrieves or replaces the backing memory address.
+|===
+
+Instances support `#inst` (field count), `pairs(inst)` (declaration-order iteration), and `tostring(inst)`.
+
 === Debug Library
 indexterm:[library, debug] See <<ch-the-debug-library>>.
 

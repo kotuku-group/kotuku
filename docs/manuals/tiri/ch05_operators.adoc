@@ -80,7 +80,7 @@ The `is` operator compares by value for value types (numbers, strings, booleans,
 |Content comparison (type, length, elements)
 |Built-in `pass:[__]eq`
 
-|Table, function, userdata, object
+|Table, function, userdata, object, struct
 |Identity (same reference)
 |Custom `pass:[__]eq`
 |===
@@ -429,6 +429,8 @@ if config.timeout?? then
    apply_timeout(config.timeout)
 end
 ----
+
+This feature is best used for ensuring that a collection, string or number type has a concrete value prior to processing it.  Avoid using it on known binary types such as bool.
 
 [[sec-ternary-operator]]
 === Ternary Operator

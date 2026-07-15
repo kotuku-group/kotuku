@@ -186,16 +186,17 @@ local count: num = 'text'  -- error: cannot assign 'string' to 'number'
 |===
 |Annotation |Type
 
-|`any`          |Any (see <<sec-the-any-type>>)
-|`nil`          |Nil
-|`bool`, `boolean` |Boolean
-|`num`, `number`   |Number
-|`str`, `string`   |String
-|`table`        |Table
-|`array`        |Array
+|`any`              |Any (see <<sec-the-any-type>>)
+|`nil`              |Nil
+|`bool`, `boolean`  |Boolean
+|`num`, `number`    |Number
+|`str`, `string`    |String
+|`table`            |Table
+|`array`            |Array
 |`func`, `function` |Function
-|`obj`, `object`   |Object
-|`range`        |Range
+|`obj`, `object`    |Object
+|`range`            |Range
+|`struct`           |Structure (see <<sec-structures>>)
 |===
 
 Short and long forms are interchangeable.  An unrecognised type name raises a parse-time diagnostic.
