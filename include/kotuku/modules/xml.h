@@ -133,7 +133,8 @@ typedef struct XTag {
       { }
 
    XTag(int pID, int pLine, kt::vector<XMLAttrib> pAttribs) :
-      ID(pID), ParentID(0), LineNo(pLine), Flags(XTF::NIL), NamespaceID(0), Reserved(0), Attribs(pAttribs)
+      ID(pID), ParentID(0), LineNo(pLine), Flags(XTF::NIL), NamespaceID(0), Reserved(0),
+      Attribs(std::move(pAttribs))
       { }
 
    XTag() { XTag(0); }
@@ -233,6 +234,10 @@ class objXML : public Object {
    public:
    typedef kt::vector<XTag> TAGS;
    TAGS Tags;
+
+   inline ERR getStatementView(std::string_view &Value) noexcept {
+      return this->get((FIELD)kt::strhash("statementView"), Value);
+   }
 
    template <class T> inline ERR insertStatement(int Index, XMI Where, T Statement, XTag **Result) {
       int index_result;
