@@ -129,12 +129,19 @@ ERR msg_waitforobjects(APTR Custom, int MsgID, int MsgType, APTR Message, int Ms
             }
             // An unsignalled object indicates a stale message from an earlier wait; leave it monitored.
          }
-         else if (!GetObjectPtr(object_id)) {
-            // The object was freed by the child thread; its subscriptions died with it.
+         else if ((lock.error IS ERR::MarkedForDeletion) or (lock.error IS ERR::DoesNotExist) or
+                  (lock.error IS ERR::NoMatchingObject)) {
+            // The object was freed - or its destruction is already guaranteed - on the child thread.  Freeing is
+            // equivalent to a signal, so the entry is removed; any remaining subscriptions die with the object.
             log.trace("Object #%d was freed from a child thread.", object_id);
             glWFOList.erase(lref);
          }
-         // Other lock failures are transient; the object remains monitored.
+         else {
+            // A transient lock failure (e.g. time-out).  Requeue the deferral so that the wake-up is not lost;
+            // an indefinite WaitForObjects() would otherwise sleep forever on an already-signalled object.
+            log.trace("Deferred signal for object #%d requeued (%s).", object_id, GetErrorMsg(lock.error));
+            SendMessage(MSGID::WAIT_FOR_OBJECTS, MSF::NIL, &object_id, sizeof(object_id));
+         }
 
          if (glWFOList.empty()) return ERR::Terminate;
       }

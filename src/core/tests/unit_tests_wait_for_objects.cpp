@@ -90,6 +90,50 @@ static bool cross_thread_free_check(kt::Log &Log)
 }
 
 //********************************************************************************************************************
+// A deferred notification can be drained while the child thread is still inside object_free(): NF::FREE is set but
+// the object has not yet left the registry.  The handler must treat a terminating object as completed rather than
+// leaving the entry monitored, because the consumed message was the only wake-up an indefinite wait would receive.
+
+static bool mid_free_window_check(kt::Log &Log)
+{
+   OBJECTPTR object;
+   if (NewObject(CLASSID::TIME, NF::NIL, &object) != ERR::Okay) {
+      Log.warning("Failed to create the test object.");
+      return false;
+   }
+
+   if (InitObject(object) != ERR::Okay) {
+      Log.warning("Failed to initialise the test object.");
+      FreeResource(object->UID);
+      return false;
+   }
+
+   // Simulate the mid-free window as msg_waitforobjects() would encounter it.
+
+   glWFOList.insert(std::make_pair(object->UID, ObjectSignal { object }));
+   object->setFlag(NF::FREE);
+
+   OBJECTID object_id = object->UID;
+   auto result = msg_waitforobjects(nullptr, 0, 0, &object_id, sizeof(object_id));
+
+   object->clearFlag(NF::FREE);
+
+   bool okay = true;
+   if (glWFOList.contains(object->UID)) {
+      Log.warning("A terminating object was left in the monitored list.");
+      glWFOList.erase(object->UID);
+      okay = false;
+   }
+   else if (result != ERR::Terminate) {
+      Log.warning("Expected ERR::Terminate for an emptied list, got '%s'.", GetErrorMsg(result));
+      okay = false;
+   }
+
+   FreeResource(object->UID);
+   return okay;
+}
+
+//********************************************************************************************************************
 
 void wait_for_objects_unit_tests(int &Passed, int &Total)
 {
@@ -100,4 +144,7 @@ void wait_for_objects_unit_tests(int &Passed, int &Total)
 
    Total++;
    if (cross_thread_free_check(log)) Passed++;
+
+   Total++;
+   if (mid_free_window_check(log)) Passed++;
 }
