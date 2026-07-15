@@ -161,9 +161,7 @@ static ERR set_playback_trigger(extSound *Self)
       else {
          log.trace("Playback time period set to %.2fs", playback_time);
          if (Self->PlaybackTimer) return UpdateTimer(Self->PlaybackTimer, playback_time + 0.01);
-         else {
-            return SubscribeTimer(playback_time + 0.01, C_FUNCTION(timer_playback_ended), &Self->PlaybackTimer);
-         }
+         else return SubscribeTimer(playback_time + 0.01, C_FUNCTION(timer_playback_ended), &Self->PlaybackTimer);
       }
    }
    return ERR::Okay;
@@ -392,8 +390,8 @@ static ERR SOUND_Activate(extSound *Self)
    }
    else if (set_playback_trigger(Self) != ERR::Okay) return log.warning(ERR::Failed);
 
-   auto response = sndPlay((PlatformData *)Self->PlatformData, ((Self->Flags & SDF::LOOP) != SDF::NIL) ? true : false, Self->Position);
-   return response ? log.warning(ERR::Failed) : ERR::Okay;
+   auto error = (ERR)sndPlay((PlatformData *)Self->PlatformData, ((Self->Flags & SDF::LOOP) != SDF::NIL) ? true : false, Self->Position);
+   return (error != ERR::Okay) ? log.warning(error) : ERR::Okay;
 #else
 
    if (!Self->Active) {
@@ -401,12 +399,10 @@ static ERR SOUND_Activate(extSound *Self)
 
       auto sampleformat = SFM::NIL;
       if (Self->BitsPerSample IS 8) {
-         if ((Self->Flags & SDF::STEREO) != SDF::NIL) sampleformat = SFM::U8_BIT_STEREO;
-         else sampleformat = SFM::U8_BIT_MONO;
+         sampleformat = ((Self->Flags & SDF::STEREO) != SDF::NIL) ? SFM::U8_BIT_STEREO : SFM::U8_BIT_MONO;
       }
       else if (Self->BitsPerSample IS 16) {
-         if ((Self->Flags & SDF::STEREO) != SDF::NIL) sampleformat = SFM::S16_BIT_STEREO;
-         else sampleformat = SFM::S16_BIT_MONO;
+         sampleformat = ((Self->Flags & SDF::STEREO) != SDF::NIL) ? SFM::S16_BIT_STEREO : SFM::S16_BIT_MONO;
       }
 
       if (sampleformat IS SFM::NIL) return log.warning(ERR::InvalidData);
@@ -452,7 +448,7 @@ static ERR SOUND_Activate(extSound *Self)
             }
             else {
                log.warning("Failed to add sample to the Audio device.");
-               return ERR::Failed;
+               return ERR::ResourceRegistration;
             }
          }
          else return ERR::AccessObject;
@@ -501,7 +497,7 @@ static ERR SOUND_Activate(extSound *Self)
                }
                else {
                   log.warning("Failed to add sample to the Audio device.");
-                  return ERR::Failed;
+                  return ERR::ResourceRegistration;
                }
             }
             else return log.warning(ERR::AccessObject);
@@ -546,7 +542,7 @@ static ERR SOUND_Activate(extSound *Self)
          if (i >= audio->MaxChannels) {
             if (!(channel = priority)) {
                log.msg("Audio channel not available for playback.");
-               return ERR::Failed;
+               return ERR::ArrayFull;
             }
          }
       }
@@ -554,16 +550,16 @@ static ERR SOUND_Activate(extSound *Self)
       snd::MixStop(*audio, Self->ChannelIndex);
 
       if (!snd::MixSample(*audio, Self->ChannelIndex, Self->Handle)) {
-         if (snd::MixVolume(*audio, Self->ChannelIndex, Self->Volume) != ERR::Okay) return log.warning(ERR::Failed);
-         if (snd::MixPan(*audio, Self->ChannelIndex, Self->Pan) != ERR::Okay) return log.warning(ERR::Failed);
-         if (snd::MixFrequency(*audio, Self->ChannelIndex, Self->Playback) != ERR::Okay) return log.warning(ERR::Failed);
-         if (snd::MixPlay(*audio, Self->ChannelIndex, Self->Position) != ERR::Okay) return log.warning(ERR::Failed);
+         if (snd::MixVolume(*audio, Self->ChannelIndex, Self->Volume) != ERR::Okay) return log.warning(ERR::AudioMix);
+         if (snd::MixPan(*audio, Self->ChannelIndex, Self->Pan) != ERR::Okay) return log.warning(ERR::AudioMix);
+         if (snd::MixFrequency(*audio, Self->ChannelIndex, Self->Playback) != ERR::Okay) return log.warning(ERR::AudioMix);
+         if (snd::MixPlay(*audio, Self->ChannelIndex, Self->Position) != ERR::Okay) return log.warning(ERR::AudioMix);
 
          return ERR::Okay;
       }
       else {
          log.warning("Failed to set sample %d to channel $%.8x", Self->Handle, Self->ChannelIndex);
-         return ERR::Failed;
+         return ERR::AudioMix;
       }
    }
    else return log.warning(ERR::AccessObject);
