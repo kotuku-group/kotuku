@@ -787,19 +787,12 @@ enum class KQ : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(KQ)
 
-// Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.
+// Memory types.
 
 enum class MEM : uint32_t {
    NIL = 0,
-   DATA = 0x00000000,
    VIDEO = 0x00000001,
    TEXTURE = 0x00000002,
-   AUDIO = 0x00000004,
-   CODE = 0x00000008,
-   PROTECTED = 0x00000010,
-   READ = 0x00010000,
-   WRITE = 0x00020000,
-   READ_WRITE = 0x00030000,
    NO_CLEAR = 0x00040000,
 };
 

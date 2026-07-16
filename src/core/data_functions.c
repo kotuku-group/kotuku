@@ -192,3 +192,4 @@ const struct Function glFunctions[] = {
    { (APTR)PinWeakObject, "PinWeakObject", argsPinWeakObject },
    { nullptr, nullptr, nullptr }
 };
+

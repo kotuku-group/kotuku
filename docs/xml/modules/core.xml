@@ -1967,7 +1967,8 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <param type="struct ObjectSignal *" name="ObjectSignals">A null-terminated array of objects to monitor for signals.</param>
     </input>
     <description>
-<p>WaitForObjects() acts as a front-end to <function>ProcessMessages</function>, with an ability to wait for a list of objects that are expected to signal an end to their activities.  An object can be signalled via the Signal() action, or via termination. This function will only return once ALL of the objects are signalled or a time-out occurs.  It is guaranteed that the message queue will be processed at least once before returning.</p>
+<p>WaitForObjects() acts as a front-end to <function>ProcessMessages</function>, with an ability to wait for a list of objects that are expected to signal an end to their activities.  An object can be signalled via the Signal() action, or via termination. By default, this function will only return once ALL of the objects are signalled or a time-out occurs.  Use the <code>PMF::ANY_SIGNAL</code> flag to return once ANY of the objects are signalled.</p>
+<p>It is guaranteed that the message queue will be consumed by ~ProcessMessage() at least once before this function returns.</p>
 <p>Note that if an object has been signalled prior to entry to this function, its signal flag will be cleared and the object will not be monitored.</p>
 <p>If this function is called recursively, the state of the earlier call will be preserved so that it will not be affected by subsequent calls.</p>
     </description>
@@ -2178,16 +2179,10 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="VOLUME">The path refers to a volume name.</const>
     </constants>
 
-    <constants lookup="MEM" comment="Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.">
-      <const name="AUDIO">Identifies memory located on an audio device, such as a sound card.</const>
-      <const name="CODE">Used for memory that can execute code.</const>
-      <const name="DATA">The default type, <code>DATA</code>, is used to indicate a standard memory allocation from system RAM.</const>
+    <constants lookup="MEM" comment="Memory types.">
       <const name="NO_CLEAR">Do not clear the memory on allocation (saves time).</const>
-      <const name="READ">The memory is explicitly marked as readable.</const>
-      <const name="READ_WRITE">Synonym for <code>READ | WRITE</code></const>
       <const name="TEXTURE">Identifies non-displayable video memory, e.g. texture graphics.</const>
       <const name="VIDEO">Identifies video memory, such as the frame buffer.</const>
-      <const name="WRITE">The memory is explicitly marked as writeable.</const>
     </constants>
 
     <constants lookup="MSF" comment="Message flags.">
