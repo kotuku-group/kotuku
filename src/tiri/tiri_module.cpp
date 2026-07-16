@@ -1411,24 +1411,6 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
                   }
                   else lua_pushnil(lua);
                }
-               else if (argtype & FD_ALLOC) { // The result is a memory allocation.  Convert it to a binary 'string' of fixed length
-                  int64_t size = 0;
-                  if (args[i+1].Type & FD_BUFSIZE) {
-                     const APTR size_var = ((APTR *)scan)[0];
-                     if (args[i+1].Type & FD_INT) size = ((int *)size_var)[0];
-                     else if (args[i+1].Type & FD_INT64) size = ((int64_t *)size_var)[0];
-                     else log.warning("Invalid arg %s, flags $%.8x", args[i+1].Name, args[i+1].Type);
-                  }
-                  else {
-                     MemInfo meminfo;
-                     if (!MemoryInfo(GetMemoryID(((APTR *)var)[0]), &meminfo)) size = meminfo.Size;
-                  }
-
-                  if (size > 0) lua_pushlstring(lua, ((CSTRING *)var)[0], size);
-                  else lua_pushnil(lua);
-
-                  if (((APTR *)var)[0]) FreeResource(((APTR *)var)[0]);
-               }
                else if (args[i+1].Type & FD_BUFSIZE) { // We can convert the data to a binary string rather than work with unsafe pointers.
                   int64_t size = 0;
                   CPTR size_var = ((APTR *)scan)[0];
@@ -1438,6 +1420,14 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
 
                   if (size > 0) lua_pushlstring(lua, ((CSTRING *)var)[0], size);
                   else lua_pushnil(lua);
+
+                  if (argtype & FD_ALLOC) {
+                     if (((APTR *)var)[0]) FreeResource(((APTR *)var)[0]);
+                  }
+               }
+               else if (argtype & FD_ALLOC) {
+                  // Misconfigured or unsupported parameter
+                  if (((APTR *)var)[0]) FreeResource(((APTR *)var)[0]);
                }
                else lua_pushlightuserdata(lua, ((APTR *)var)[0]);
             }

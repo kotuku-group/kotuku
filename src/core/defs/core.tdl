@@ -595,13 +595,6 @@ class objTask;
      int Size        # The byte-size of the message data, or zero if no data is provided.
   ]])
 
-  structdef("MemInfo", { type="meminfo" }, [[
-    ptr  Start         # The starting address of the memory block (does not apply to shared blocks).
-    uint Size          # The size of the memory block.
-    int(MEM) Flags     # The type of memory.
-    mem   MemoryID     # The unique resource ID for this block.
-  ]])
-
   structdef("MsgHandler", { restrict="c" }, [[
     ptr(struct(MsgHandler)) Prev  # Previous message handler in the chain.
     ptr(struct(MsgHandler)) Next  # Next message handler in the chain.
@@ -747,7 +740,6 @@ class objTask;
     "ListChildren",
     "RegisterFD",
     "ResolvePath",
-    "MemoryInfo",
     "TrackResource",
     "NewObject",
     "NotifySubscribers",
@@ -880,10 +872,6 @@ template<class T> inline ERR NewObject(CLASSID ClassID, T **Result) {
 
 template<class T> inline ERR NewLocalObject(CLASSID ClassID, T **Result) {
    return NewObject(ClassID, NF::LOCAL, (OBJECTPTR *)Result);
-}
-
-inline ERR MemoryInfo(MEMORYID ID, struct MemInfo * MemInfo) {
-   return MemoryInfo(ID,MemInfo,sizeof(struct MemInfo));
 }
 
 inline ERR QueueAction(AC Action, OBJECTID ObjectID) {

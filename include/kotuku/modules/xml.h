@@ -433,7 +433,7 @@ class objXML : public Object {
    }
 
    inline ERR getTags(std::span<struct XTag> &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       auto get_field = (ERR (*)(APTR, std::span<struct XTag> &))field->GetValue;
       return get_field(this, Value);
    }

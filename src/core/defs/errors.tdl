@@ -109,7 +109,7 @@ function declareErrors()
     "FileExists",
     "ResolvePath",                   -- ResolvePath() failed
     "CreateObject",                  -- CreateObject() failed
-    "MemoryInfo",                    -- MemoryInfo() failed
+    "MemoryInfo",                    -- DEPRECATED
     "NotInitialised",                -- Object or resource is not initialised
     "ResourceExists",                -- A new resource could not be created because a matching resource exists
     "Refresh",                       -- An attempt to Refresh() an object failed

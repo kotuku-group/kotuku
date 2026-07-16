@@ -29,7 +29,7 @@
 #include "ankerl/unordered_dense.h"
 #endif
 
-#define CORE_BUILD_DATE 20260715
+#define CORE_BUILD_DATE 20260716
 class objMetaClass;
 
 // Predefined cursor styles
@@ -1357,13 +1357,6 @@ struct Message {
    int     Size;    // The byte-size of the message data, or zero if no data is provided.
 };
 
-typedef struct MemInfo {
-   APTR     Start;       // The starting address of the memory block (does not apply to shared blocks).
-   uint32_t Size;        // The size of the memory block.
-   MEM      Flags;       // The type of memory.
-   MEMORYID MemoryID;    // The unique resource ID for this block.
-} MEMINFO;
-
 struct MsgHandler {
    struct MsgHandler * Prev;    // Previous message handler in the chain.
    struct MsgHandler * Next;    // Next message handler in the chain.
@@ -1505,7 +1498,6 @@ struct CoreBase {
    ERR (*_ListChildren)(OBJECTID Object, kt::vector<ChildEntry> *List);
    ERR (*_RegisterFD)(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR) , APTR Data);
    ERR (*_ResolvePath)(const std::string_view &Path, RSF Flags, std::string *Result);
-   ERR (*_MemoryInfo)(MEMORYID ID, struct MemInfo *MemInfo, int Size);
    ERR (*_TrackResource)(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager *Manager);
    ERR (*_NewObject)(CLASSID ClassID, NF Flags, OBJECTPTR *Object);
    void (*_NotifySubscribers)(OBJECTPTR Object, AC Action, APTR Args, ERR Error);
@@ -1604,7 +1596,6 @@ inline const struct SystemState * GetSystemState(void) { return CoreBase->_GetSy
 inline ERR ListChildren(OBJECTID Object, kt::vector<ChildEntry> *List) { return CoreBase->_ListChildren(Object,List); }
 inline ERR RegisterFD(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR) , APTR Data) { return CoreBase->_RegisterFD(FD,Flags,Routine,Data); }
 inline ERR ResolvePath(const std::string_view &Path, RSF Flags, std::string *Result) { return CoreBase->_ResolvePath(Path,Flags,Result); }
-inline ERR MemoryInfo(MEMORYID ID, struct MemInfo *MemInfo, int Size) { return CoreBase->_MemoryInfo(ID,MemInfo,Size); }
 inline ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager *Manager) { return CoreBase->_TrackResource(ResourceID,Address,OwnerID,Manager); }
 inline ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object) { return CoreBase->_NewObject(ClassID,Flags,Object); }
 inline void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Error) { return CoreBase->_NotifySubscribers(Object,Action,Args,Error); }
@@ -1699,7 +1690,6 @@ extern "C" const struct SystemState * GetSystemState(void);
 extern "C" ERR ListChildren(OBJECTID Object, kt::vector<ChildEntry> *List);
 extern "C" ERR RegisterFD(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR) , APTR Data);
 extern "C" ERR ResolvePath(const std::string_view &Path, RSF Flags, std::string *Result);
-extern "C" ERR MemoryInfo(MEMORYID ID, struct MemInfo *MemInfo, int Size);
 extern "C" ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager *Manager);
 extern "C" ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object);
 extern "C" void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Error);
@@ -1832,10 +1822,6 @@ template<class T> inline ERR NewObject(CLASSID ClassID, T **Result) {
 
 template<class T> inline ERR NewLocalObject(CLASSID ClassID, T **Result) {
    return NewObject(ClassID, NF::LOCAL, (OBJECTPTR *)Result);
-}
-
-inline ERR MemoryInfo(MEMORYID ID, struct MemInfo * MemInfo) {
-   return MemoryInfo(ID,MemInfo,sizeof(struct MemInfo));
 }
 
 inline ERR QueueAction(AC Action, OBJECTID ObjectID) {
