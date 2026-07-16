@@ -530,10 +530,7 @@ static void free_private_memory(void)
       if (not mem.Address) continue;
 
       if (not glCrashStatus) {
-         if ((mem.Flags & MEM::STRING) != MEM::NIL) {
-            log.warning("Unfreed string \"%.80s\" (%p, #%d)", (CSTRING)mem.Address, mem.Address, id);
-         }
-         else log.warning("Unfreed resource #%d/%p, Size %d", id, mem.Address, mem.Size);
+         log.warning("Unfreed resource #%d/%p, Size %d", id, mem.Address, mem.Size);
       }
 
       FreeResource(mem.Address);

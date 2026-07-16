@@ -48,7 +48,7 @@ static void erase_resource(ResourceRecord &Resource)
 }
 
 //********************************************************************************************************************
-// Calling this function with a non-existant MemoryID is safe
+// Calling this function with a non-existent MemoryID is safe
 
 static ERR free_private_memory_resource(MEMORYID MemoryID)
 {
@@ -94,99 +94,6 @@ static ERR memory_resource_free(ResourceRecord &Resource, APTR Address)
 }
 
 static ResourceManager glResourceMemoryHandler = { "Memory", &memory_resource_free, nullptr, nullptr, false };
-
-/*********************************************************************************************************************
-
--FUNCTION-
-TrackResource: Assign a resource manager to an address, or update an existing one.
-
-TrackResource() registers a resource identifier with the memory manager so that later calls to ~FreeResource() can
-dispatch cleanup through the supplied `ResourceManager`.  If the resource identifier is already registered, the existing
-record is updated with the non-zero values provided by the caller.
-
-The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is
-tracked, or until the record is replaced or removed.  When an `OwnerID` is supplied for a non-object resource, the
-resource is added to the owner's resource list so it can be removed during owner cleanup.  Use `RESOURCEID_INHERIT` to
-preserve the existing owner when updating a resource, or to inherit the current context when registering a new resource.
-
-A unique `ResourceID` can be obtained from ~AllocateID() by using `IDTYPE::RESOURCE`.
-
--INPUT-
-res ResourceID: Unique identifier for the resource to register or replace.
-ptr Address: Address of the resource, or `NULL` to preserve an existing address.
-res OwnerID: Optional owning resource ID, normally an object.  Use `0` when the resource is not owned.
-struct(ResourceManager) Manager: Resource manager used to release the resource.
-
--ERRORS-
-Okay
-NullArgs: `ResourceID` is `0`, or `Manager` is `NULL` when registering a new resource.
-InUse
-
--TAGS-
-retains-input, does-not-take-ownership, blocking, thread-safe
-
--END-
-
-*********************************************************************************************************************/
-
-ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, ResourceManager *Manager)
-{
-   kt::Log log(__FUNCTION__);
-   std::lock_guard lock(glmResources);
-
-   if (not ResourceID) return log.warning(ERR::NullArgs);
-
-   if (auto existing = glResources.find(ResourceID); existing != glResources.end()) {
-      auto &record = existing->second;
-      if (record.Terminating) return ERR::InUse;
-
-      if (Address) record.Address = Address; // Assigning a new address to an existing ID is permissable
-      if (Manager) record.Manager = Manager; // Switching between the memory manager and custom managers is permissable
-
-      const auto new_owner = (OwnerID IS RESOURCEID_INHERIT) ? record.OwnerID : OwnerID;
-
-      if (record.OwnerID != new_owner) {
-         if (record.OwnerManagesChildren) {
-            auto current_owner = glResources.find(record.OwnerID);
-            if ((current_owner != glResources.end()) and (current_owner->second.Manager->RemoveChild)) {
-               current_owner->second.Manager->RemoveChild(current_owner->second, record);
-            }
-         }
-
-         record.OwnerID = new_owner;
-         record.OwnerManagesChildren = false; // Revert to standard behaviour
-
-         if (new_owner) {
-            auto owner_record = glResources.find(OwnerID);
-            if ((owner_record != glResources.end()) and (owner_record->second.Manager->AddChild)) {
-               owner_record->second.Manager->AddChild(owner_record->second, record);
-               record.OwnerManagesChildren = true;
-            }
-         }
-      }
-   }
-   else {
-      if (not Manager) return log.warning(ERR::NullArgs);
-
-      if (OwnerID IS RESOURCEID_INHERIT) { // Get the owner from the current context
-         if (tlContext.size() > 1) OwnerID = current_resource()->UID;
-         else if (glCurrentTask) OwnerID = glCurrentTask->UID;
-         else OwnerID = 0;
-      }
-
-      auto resource = glResources.insert_or_assign(ResourceID, ResourceRecord(ResourceID, Address, OwnerID, Manager));
-
-      if (OwnerID) {
-         auto owner_record = glResources.find(OwnerID);
-         if ((owner_record != glResources.end()) and (owner_record->second.Manager->AddChild)) {
-            owner_record->second.Manager->AddChild(owner_record->second, resource.first->second);
-            resource.first->second.OwnerManagesChildren = true;
-         }
-      }
-   }
-
-   return ERR::Okay;
-}
 
 //********************************************************************************************************************
 
@@ -260,8 +167,7 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
    // Determine the object that will own the memory block.  The preferred default is for it to belong to the current context.
 
    OBJECTID owner_id = 0;
-   if ((Flags & MEM::UNTRACKED) != MEM::NIL);
-   else if (tlContext.size() > 1) owner_id = current_resource()->UID;
+   if (tlContext.size() > 1) owner_id = current_resource()->UID;
    else if (glCurrentTask) owner_id = glCurrentTask->UID;
 
    size_t full_size = Size + MEMHEADER;
@@ -559,4 +465,97 @@ ERR ProtectMemory(APTR Address, MEM Flags)
       }
       else return log.warning(ERR::SystemCall);
    #endif
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+TrackResource: Assign a resource manager to an address, or update an existing one.
+
+TrackResource() registers a resource identifier with the memory manager so that later calls to ~FreeResource() can
+dispatch cleanup through the supplied `ResourceManager`.  If the resource identifier is already registered, the existing
+record is updated with the non-zero values provided by the caller.
+
+The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is
+tracked, or until the record is replaced or removed.  When an `OwnerID` is supplied for a non-object resource, the
+resource is added to the owner's resource list so it can be removed during owner cleanup.  Use `RESOURCEID_INHERIT` to
+preserve the existing owner when updating a resource, or to inherit the current context when registering a new resource.
+
+A unique `ResourceID` can be obtained from ~AllocateID() by using `IDTYPE::RESOURCE`.
+
+-INPUT-
+res ResourceID: Unique identifier for the resource to register or replace.
+ptr Address: Address of the resource, or `NULL` to preserve an existing address.
+res OwnerID: Optional owning resource ID, normally an object.  Use `0` when the resource is not owned.
+struct(ResourceManager) Manager: Resource manager used to release the resource.
+
+-ERRORS-
+Okay
+NullArgs: `ResourceID` is `0`, or `Manager` is `NULL` when registering a new resource.
+InUse
+
+-TAGS-
+retains-input, does-not-take-ownership, blocking, thread-safe
+
+-END-
+
+*********************************************************************************************************************/
+
+ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, ResourceManager *Manager)
+{
+   kt::Log log(__FUNCTION__);
+   std::lock_guard lock(glmResources);
+
+   if (not ResourceID) return log.warning(ERR::NullArgs);
+
+   if (auto existing = glResources.find(ResourceID); existing != glResources.end()) {
+      auto &record = existing->second;
+      if (record.Terminating) return ERR::InUse;
+
+      if (Address) record.Address = Address; // Assigning a new address to an existing ID is permitted
+      if (Manager) record.Manager = Manager; // Switching between the memory manager and custom managers is permitted
+
+      const auto new_owner = (OwnerID IS RESOURCEID_INHERIT) ? record.OwnerID : OwnerID;
+
+      if (record.OwnerID != new_owner) {
+         if (record.OwnerManagesChildren) {
+            auto current_owner = glResources.find(record.OwnerID);
+            if ((current_owner != glResources.end()) and (current_owner->second.Manager->RemoveChild)) {
+               current_owner->second.Manager->RemoveChild(current_owner->second, record);
+            }
+         }
+
+         record.OwnerID = new_owner;
+         record.OwnerManagesChildren = false; // Revert to standard behaviour
+
+         if (new_owner) {
+            auto owner_record = glResources.find(OwnerID);
+            if ((owner_record != glResources.end()) and (owner_record->second.Manager->AddChild)) {
+               owner_record->second.Manager->AddChild(owner_record->second, record);
+               record.OwnerManagesChildren = true;
+            }
+         }
+      }
+   }
+   else {
+      if (not Manager) return log.warning(ERR::NullArgs);
+
+      if (OwnerID IS RESOURCEID_INHERIT) { // Get the owner from the current context
+         if (tlContext.size() > 1) OwnerID = current_resource()->UID;
+         else if (glCurrentTask) OwnerID = glCurrentTask->UID;
+         else OwnerID = 0;
+      }
+
+      auto resource = glResources.insert_or_assign(ResourceID, ResourceRecord(ResourceID, Address, OwnerID, Manager));
+
+      if (OwnerID) {
+         auto owner_record = glResources.find(OwnerID);
+         if ((owner_record != glResources.end()) and (owner_record->second.Manager->AddChild)) {
+            owner_record->second.Manager->AddChild(owner_record->second, resource.first->second);
+            resource.first->second.OwnerManagesChildren = true;
+         }
+      }
+   }
+
+   return ERR::Okay;
 }
