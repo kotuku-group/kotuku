@@ -43,7 +43,7 @@ GCstruct * lj_struct_new(lua_State *L, struct_record &Def)
 
 //********************************************************************************************************************
 // Create a GCstruct header that references externally managed memory.  Pass STRUCT_DEALLOCATE in Flags if the
-// memory was allocated with AllocMemory() and ownership transfers to the GC.
+// memory ownership transfers to the GC and can be removed with FreeResource().
 //
 // If the payload's validity depends on a Kotuku object staying alive (e.g. live views of object struct fields),
 // pass that object as Lifecycle.  The view takes a weak pin so that the object's header remains testable after
