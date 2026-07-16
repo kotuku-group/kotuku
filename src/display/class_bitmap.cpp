@@ -776,17 +776,20 @@ static ERR BITMAP_Demultiply(extBitmap *Self)
    kt::Log log;
 
    static std::mutex mutex;
-   if (!glDemultiply) {
+   {
       const std::lock_guard<std::mutex> lock(mutex);
       if (!glDemultiply) {
-         if (!AllocMemory(256 * 256, MEM::NO_CLEAR|MEM::UNTRACKED, (APTR *)&glDemultiply)) {
-            for (int a=1; a <= 255; a++) {
-               for (int i=0; i <= 255; i++) {
-                  glDemultiply[(a<<8) + i] = (i * 0xff) / a;
-               }
+         auto demultiply = std::unique_ptr<std::array<uint16_t, 256 * 256>>(
+            new (std::nothrow) std::array<uint16_t, 256 * 256>());
+         if (!demultiply) return ERR::AllocMemory;
+
+         for (int a=1; a <= 255; a++) {
+            for (int i=0; i <= 255; i++) {
+               (*demultiply)[(a<<8) + i] = uint16_t((i * 0xff) / a);
             }
          }
-         else return ERR::AllocMemory;
+
+         glDemultiply = std::move(demultiply);
       }
    }
 
@@ -813,9 +816,9 @@ static ERR BITMAP_Demultiply(extBitmap *Self)
          if (a < 0xff) {
             if (a == 0) pixel[R] = pixel[G] = pixel[B] = 0;
             else {
-               uint32_t r = glDemultiply[(a<<8) + pixel[R]]; //(uint32_t(pixel[R]) * 0xff) / a;
-               uint32_t g = glDemultiply[(a<<8) + pixel[G]]; //(uint32_t(pixel[G]) * 0xff) / a;
-               uint32_t b = glDemultiply[(a<<8) + pixel[B]]; //(uint32_t(pixel[B]) * 0xff) / a;
+               uint32_t r = (*glDemultiply)[(a<<8) + pixel[R]]; //(uint32_t(pixel[R]) * 0xff) / a;
+               uint32_t g = (*glDemultiply)[(a<<8) + pixel[G]]; //(uint32_t(pixel[G]) * 0xff) / a;
+               uint32_t b = (*glDemultiply)[(a<<8) + pixel[B]]; //(uint32_t(pixel[B]) * 0xff) / a;
                pixel[R] = uint8_t((r > 0xff) ? 0xff : r);
                pixel[G] = uint8_t((g > 0xff) ? 0xff : g);
                pixel[B] = uint8_t((b > 0xff) ? 0xff : b);
