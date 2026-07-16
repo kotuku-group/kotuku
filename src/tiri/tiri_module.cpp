@@ -536,7 +536,7 @@ static int module_index(lua_State *Lua)
 // RESULT|STR|CPP    = std::string *.  Tiri provides a temporary std::string; returned to Tiri as a string.
 //
 // RESULT|PTR        = APTR *.  Function writes a pointer; returned to Tiri as light userdata unless specialised.
-// RESULT|PTR|ALLOC  = APTR *.  Function writes an allocated block; returned as a binary string when BUFSIZE is
+// RESULT|PTR|ALLOC  = APTR *.  Function writes an allocated block; returned as a byte array when BUFSIZE is
 //                     available, then freed.
 // RESULT|PTR|STRUCT = Struct **.  Function writes a struct pointer; returned as a Tiri table, or as a managed
 //                     struct when RESOURCE is set.
@@ -1411,14 +1411,14 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
                   }
                   else lua_pushnil(lua);
                }
-               else if (args[i+1].Type & FD_BUFSIZE) { // We can convert the data to a binary string rather than work with unsafe pointers.
+               else if (args[i+1].Type & FD_BUFSIZE) {
                   int64_t size = 0;
                   CPTR size_var = ((APTR *)scan)[0];
                   if (args[i+1].Type & FD_INT) size = ((int *)size_var)[0];
                   else if (args[i+1].Type & FD_INT64) size = ((int64_t *)size_var)[0];
                   else log.warning("Invalid arg %s, flags $%.8x", args[i+1].Name, args[i+1].Type);
 
-                  if (size > 0) lua_pushlstring(lua, ((CSTRING *)var)[0], size);
+                  if (size > 0) lua_createarray(lua, size, AET::BYTE, ((APTR *)var)[0], ARRAY_CACHED);
                   else lua_pushnil(lua);
 
                   if (argtype & FD_ALLOC) {
@@ -1427,6 +1427,7 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
                }
                else if (argtype & FD_ALLOC) {
                   // Misconfigured or unsupported parameter
+                  lua_pushnil(lua);
                   if (((APTR *)var)[0]) FreeResource(((APTR *)var)[0]);
                }
                else lua_pushlightuserdata(lua, ((APTR *)var)[0]);

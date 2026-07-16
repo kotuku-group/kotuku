@@ -321,7 +321,6 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
    }
 
    APTR data_start = (char *)start_mem + MEMHEADER;
-
    MEMORYID unique_id = 0;
 
    {
