@@ -268,6 +268,7 @@ struct fprocessing {
    double Timeout;
    std::list<ObjectSignal> *Signals;
    std::list<int> *SignalRefs;
+   bool AnySignal;
 };
 
 class fregex {
