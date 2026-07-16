@@ -356,7 +356,7 @@ int glpDisplayDepth = 0; // If zero, the display depth will be based on the host
 int glpMaximise = FALSE, glpFullScreen = FALSE;
 SWIN glpWindowType = SWIN::HOST;
 char glpDPMS[20] = "Standby";
-uint8_t *glDemultiply = nullptr;
+std::unique_ptr<std::array<uint16_t, 256 * 256>> glDemultiply;
 std::atomic<int> glLastPort = -1;
 
 std::vector<OBJECTID> glFocusList;
@@ -1417,7 +1417,7 @@ static ERR MODExpunge(void)
    if (glRefreshPointerTimer) { UpdateTimer(glRefreshPointerTimer, 0); glRefreshPointerTimer = 0; }
    if (glComposite)           { FreeResource(glComposite); glComposite = nullptr; }
    if (glCompress)            { FreeResource(glCompress); glCompress = nullptr; }
-   if (glDemultiply)          { FreeResource(glDemultiply); glDemultiply = nullptr; }
+   glDemultiply.reset();
 
    DeregisterFD((HOSTHANDLE)-2); // Disable input_event_loop()
 

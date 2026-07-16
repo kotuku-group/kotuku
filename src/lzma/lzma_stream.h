@@ -18,12 +18,12 @@ struct LZMADecoder {
 
    static void * lzma_alloc(ISzAllocPtr, size_t Size) {
       APTR mem;
-      if (AllocMemory(Size, MEM::DATA|MEM::NO_CLEAR, &mem) != ERR::Okay) return nullptr;
+      if ((mem = malloc(Size)) == nullptr) return nullptr;
       return mem;
    }
 
    static void lzma_free(ISzAllocPtr, void *Address) {
-      if (Address) FreeResource(Address);
+      if (Address) free(Address);
    }
 
    LZMADecoder() {

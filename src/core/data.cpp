@@ -118,7 +118,6 @@ ankerl::unordered_dense::map<uint32_t, StructInfo> glStructSizes = {
    REG_STRUCT(FunctionField),
    REG_STRUCT(HSV),
    REG_STRUCT(InputEvent),
-   REG_STRUCT(MemInfo),
    REG_STRUCT(Message),
    REG_STRUCT(MethodEntry),
    { kt::strhash("ModHeader"), { uint16_t(sizeof(struct ModHeader)), uint16_t(alignof(struct ModHeader)) } },

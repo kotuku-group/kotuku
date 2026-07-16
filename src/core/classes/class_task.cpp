@@ -420,13 +420,6 @@ extern "C" void task_deregister_incoming(WINHANDLE Handle)
 
 //********************************************************************************************************************
 
-static ERR msg_waitforobjects(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
-{
-   return ERR::Terminate;
-}
-
-//********************************************************************************************************************
-
 static CSTRING action_id_name(ACTIONID ActionID)
 {
    static char idname[20];
@@ -1575,7 +1568,7 @@ static ERR TASK_Init(extTask *Self)
       AddMsgHandler(MSGID::QUIT, &call, &handler);
       Self->MsgQuit.reset(handler);
 
-      call.Routine = (APTR)msg_waitforobjects;
+      call.Routine = (APTR)msg_waitforobjects; // lib_messages.cpp
       AddMsgHandler(MSGID::WAIT_FOR_OBJECTS, &call, &handler);
       Self->MsgWaitForObjects.reset(handler);
 

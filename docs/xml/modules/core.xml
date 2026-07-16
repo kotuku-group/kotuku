@@ -254,7 +254,7 @@ struct FunctionField argsResize[] = {
 <p>AllocMemory() provides comprehensive memory allocation with automatic ownership tracking, resource management, and debugging features. The function allocates a new block of memory and associates it with the current execution context, allowing it to be automatically cleaned up when the context is destroyed.</p>
 <p>Example usage:</p>
 <pre>APTR address;
-if (!AllocMemory(1000, MEM::DATA, &amp;address)) {
+if (!AllocMemory(1000, MEM::NIL, &amp;address)) {
    // Use memory block...
    FreeResource(address);
 }
@@ -1095,35 +1095,6 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
   </function>
 
   <function>
-    <name>MemoryInfo</name>
-    <category>Memory</category>
-    <comment>Returns information on memory IDs.</comment>
-    <prototype>ERR MemoryInfo(MEMORYID ID, struct MemInfo * MemInfo, INT Size)</prototype>
-    <tiriPrototype>err = MemoryInfo(ID:num, MemInfo:any, Size:num)</tiriPrototype>
-    <tags>mutates-input, blocking, pure-query</tags>
-    <input>
-      <param type="MEMORYID" name="ID">Memory identifier to inspect.</param>
-      <param type="struct MemInfo *" name="MemInfo">Pointer to a <st>MemInfo</st> structure.</param>
-      <param type="INT" name="Size">Size of the <st>MemInfo</st> structure.</param>
-    </input>
-    <description>
-<p>This function returns the attributes of a memory block, including the start address, memory ID, size and flags.  The following example illustrates correct use of this function:</p>
-<pre>MemInfo info;
-if (!MemoryInfo(memid, &amp;info)) {
-   log.msg(&quot;Memory block #%d is %d bytes large.&quot;, info.MemoryID, info.Size);
-}
-</pre>
-<p>If the memory ID is not found after argument validation, the <st>MemInfo</st> structure's fields are cleared before the error code is returned.</p>
-    </description>
-    <result type="ERR">
-      <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function</error>
-      <error code="DoesNotExist">Resource does not exist</error>
-      <error code="NullArgs">Function call missing argument value(s)</error>
-    </result>
-  </function>
-
-  <function>
     <name>MoveFile</name>
     <category>Files</category>
     <comment>Moves folders and files to new locations.</comment>
@@ -1296,29 +1267,6 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
       <error code="AccessObject">Attempting to lock an object failed</error>
       <error code="Recursion">Detected a recursive function call</error>
       <error code="OutsideMainThread">Operation permitted from the main thread only</error>
-    </result>
-  </function>
-
-  <function>
-    <name>ProtectMemory</name>
-    <category>Memory</category>
-    <comment>Change the access permissions of a memory block.</comment>
-    <prototype>ERR ProtectMemory(APTR Address, MEM Flags)</prototype>
-    <tiriPrototype>err = ProtectMemory(Address:any, Flags:num)</tiriPrototype>
-    <tags>blocking</tags>
-    <input>
-      <param type="APTR" name="Address">Pointer to a memory block obtained from <function>AllocMemory</function>.</param>
-      <param type="MEM" name="Flags" lookup="MEM">New access flags (MEM::READ, MEM::WRITE).</param>
-    </input>
-    <description>
-<p>This function changes the access permissions of a memory block that was allocated with the <code>MEM::READ</code> and/or <code>MEM::WRITE</code> flags.  This allows you to tighten or relax the access permissions of a memory block as your program's logic requires.</p>
-    </description>
-    <result type="ERR">
-      <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid flags specified or memory block is not protected.</error>
-      <error code="SystemCall">A system call failed.</error>
-      <error code="DoesNotExist">The memory block is not valid.</error>
-      <error code="NullArgs">Address is NULL.</error>
     </result>
   </function>
 
@@ -2019,7 +1967,8 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <param type="struct ObjectSignal *" name="ObjectSignals">A null-terminated array of objects to monitor for signals.</param>
     </input>
     <description>
-<p>WaitForObjects() acts as a front-end to <function>ProcessMessages</function>, with an ability to wait for a list of objects that are expected to signal an end to their activities.  An object can be signalled via the Signal() action, or via termination. This function will only return once ALL of the objects are signalled or a time-out occurs.  It is guaranteed that the message queue will be processed at least once before returning.</p>
+<p>WaitForObjects() acts as a front-end to <function>ProcessMessages</function>, with an ability to wait for a list of objects that are expected to signal an end to their activities.  An object can be signalled via the Signal() action, or via termination. By default, this function will only return once ALL of the objects are signalled or a time-out occurs.  Use the <code>PMF::ANY_SIGNAL</code> flag to return once ANY of the objects are signalled.</p>
+<p>It is guaranteed that the message queue will be consumed by ~ProcessMessage() at least once before this function returns.</p>
 <p>Note that if an object has been signalled prior to entry to this function, its signal flag will be cleared and the object will not be monitored.</p>
 <p>If this function is called recursively, the state of the earlier call will be preserved so that it will not be affected by subsequent calls.</p>
     </description>
@@ -2176,9 +2125,9 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     </constants>
 
     <constants lookup="IDTYPE" comment="Types for AllocateID()">
-      <const name="FUNCTION">Function ID's are used to track <code>FUNCTION</code> types and are assigned to the function ID field.</const>
-      <const name="GLOBAL">Global ID's have no specific association with anything.</const>
-      <const name="MESSAGE">Message ID's are allocated for the purpose of sending uniquely identifiable messages between tasks.</const>
+      <const name="FUNCTION">Function IDs are used to track <code>FUNCTION</code> types and are assigned to the function ID field.</const>
+      <const name="GLOBAL">Global IDs have no specific association with anything.</const>
+      <const name="MESSAGE">Message IDs are allocated for the purpose of sending uniquely identifiable messages between tasks.</const>
       <const name="RESOURCE">Resource identifier for TrackResource()</const>
     </constants>
 
@@ -2230,18 +2179,10 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="VOLUME">The path refers to a volume name.</const>
     </constants>
 
-    <constants lookup="MEM" comment="Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.">
-      <const name="AUDIO">Identifies memory located on an audio device, such as a sound card.</const>
-      <const name="CODE">Used for memory that can execute code.</const>
-      <const name="DATA">The default type, <code>DATA</code>, is used to indicate a standard memory allocation from system RAM.</const>
+    <constants lookup="MEM" comment="Memory types.">
       <const name="NO_CLEAR">Do not clear the memory on allocation (saves time).</const>
-      <const name="READ">The memory is explicitly marked as readable.</const>
-      <const name="READ_WRITE">Synonym for <code>READ | WRITE</code></const>
-      <const name="STRING">Identifies the memory content as a null terminated string, which aids diagnostics.</const>
       <const name="TEXTURE">Identifies non-displayable video memory, e.g. texture graphics.</const>
-      <const name="UNTRACKED">Prevents the memory block from being tracked back to the current context.</const>
       <const name="VIDEO">Identifies video memory, such as the frame buffer.</const>
-      <const name="WRITE">The memory is explicitly marked as writeable.</const>
     </constants>
 
     <constants lookup="MSF" comment="Message flags.">
@@ -2334,6 +2275,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     </constants>
 
     <constants lookup="PMF" comment="Flags for ProcessMessages">
+      <const name="ANY_SIGNAL">Return from WaitForObjects() when any monitored object is signalled.</const>
       <const name="EVENT_LOOP">Set if this is the program's main event loop.  Should be accompanied with an infinite timeout.</const>
     </constants>
 
@@ -2573,13 +2515,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="Type" type="JET" lookup="JET">JET constant that describes the event</field>
       <field name="Flags" type="JTYPE" lookup="JTYPE">Broad descriptors for the given <code>Type</code> (see <code>JTYPE</code> flags).  Automatically defined when delivered to the pointer object</field>
       <field name="Mask" type="JTYPE" lookup="JTYPE">Mask to use for checking against subscribers</field>
-    </struct>
-
-    <struct name="MemInfo" typeName="MEMINFO">
-      <field name="Start" type="APTR">The starting address of the memory block (does not apply to shared blocks).</field>
-      <field name="Size" type="UINT">The size of the memory block.</field>
-      <field name="Flags" type="MEM" lookup="MEM">The type of memory.</field>
-      <field name="MemoryID" type="MEMORYID">The unique resource ID for this block.</field>
     </struct>
 
     <struct name="Message" comment="Message header.">

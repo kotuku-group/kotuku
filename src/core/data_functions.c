@@ -51,7 +51,6 @@ FDEF argsListChildren[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTI
 FDEF argsLoadFile[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPSTRING }, { "Flags", FD_INT }, { "CacheFile:Cache", FD_RESULT|FD_PTR|FD_STRUCT|FD_RESOURCE }, { 0, 0 } };
 FDEF argsLockObject[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTPTR }, { "MilliSeconds", FD_INT }, { 0, 0 } };
 FDEF argsLogReturn[] = { { "Void", FD_VOID }, { 0, 0 } };
-FDEF argsMemoryInfo[] = { { "Error", FD_INT|FD_ERROR }, { "ID", FD_INT }, { "MemInfo:MemInfo", FD_BUFFER|FD_PTR|FD_STRUCT }, { "Size", FD_INT|FD_BUFSIZE }, { 0, 0 } };
 FDEF argsMoveFile[] = { { "Error", FD_INT|FD_ERROR }, { "Source", FDF_CPPSTRING }, { "Dest", FDF_CPPSTRING }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
 FDEF argsNewObject[] = { { "Error", FD_INT|FD_ERROR }, { "ClassID", FD_INT|FD_UNSIGNED }, { "Flags", FD_INT }, { "Object", FD_RESULT|FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsNotifySubscribers[] = { { "Void", FD_VOID }, { "Object", FD_OBJECTPTR }, { "Action", FD_INT }, { "Args", FD_PTR }, { "Error", FD_INT|FD_ERROR }, { 0, 0 } };
@@ -60,7 +59,6 @@ FDEF argsParentContext[] = { { "Object", FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsPinWeakObject[] = { { "Object", FD_OBJECTPTR }, { "Object", FD_OBJECTID }, { 0, 0 } };
 FDEF argsPreciseTime[] = { { "Result", FD_INT64 }, { 0, 0 } };
 FDEF argsProcessMessages[] = { { "Error", FD_INT|FD_ERROR }, { "Flags", FD_INT }, { "TimeOut", FD_INT }, { 0, 0 } };
-FDEF argsProtectMemory[] = { { "Error", FD_INT|FD_ERROR }, { "Address", FD_PTR }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF argsQueueAction[] = { { "Error", FD_INT|FD_ERROR }, { "Action", FD_INT }, { "Object", FD_OBJECTID }, { "Args", FD_PTR }, { 0, 0 } };
 FDEF argsReadFileToBuffer[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPSTRING }, { "Buffer", FD_BUFFER|FD_MUTABLE|FD_PTR }, { "BufferSize", FD_INT|FD_BUFSIZE }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF argsReadInfoTag[] = { { "Error", FD_INT|FD_ERROR }, { "FileInfo:Info", FD_PTR|FD_STRUCT }, { "Name", FDF_CPPSTRING }, { "Value", FD_RESULT|FDF_CPPSTRING }, { 0, 0 } };
@@ -127,7 +125,6 @@ const struct Function glFunctions[] = {
    { (APTR)ListChildren, "ListChildren", argsListChildren },
    { (APTR)RegisterFD, "RegisterFD", argsRegisterFD },
    { (APTR)ResolvePath, "ResolvePath", argsResolvePath },
-   { (APTR)MemoryInfo, "MemoryInfo", argsMemoryInfo },
    { (APTR)TrackResource, "TrackResource", argsTrackResource },
    { (APTR)NewObject, "NewObject", argsNewObject },
    { (APTR)NotifySubscribers, "NotifySubscribers", argsNotifySubscribers },
@@ -137,7 +134,6 @@ const struct Function glFunctions[] = {
    { (APTR)ResolveClassName, "ResolveClassName", argsResolveClassName },
    { (APTR)SendMessage, "SendMessage", argsSendMessage },
    { (APTR)SetOwner, "SetOwner", argsSetOwner },
-   { (APTR)ProtectMemory, "ProtectMemory", argsProtectMemory },
    { (APTR)SetObjectContext, "SetObjectContext", argsSetObjectContext },
    { (APTR)FieldName, "FieldName", argsFieldName },
    { (APTR)ScanDir, "ScanDir", argsScanDir },

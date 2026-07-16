@@ -7,18 +7,8 @@ static const struct FieldDef clBitmapType[] = {
 };
 
 static const struct FieldDef clBitmapDataFlags[] = {
-   { "Data", 0x00000000 },
    { "Video", 0x00000001 },
    { "Texture", 0x00000002 },
-   { "Audio", 0x00000004 },
-   { "Code", 0x00000008 },
-   { "Untracked", 0x00000010 },
-   { "String", 0x00000020 },
-   { "Collect", 0x00000040 },
-   { "Protected", 0x00000080 },
-   { "Read", 0x00010000 },
-   { "Write", 0x00020000 },
-   { "ReadWrite", 0x00030000 },
    { "NoClear", 0x00040000 },
    { nullptr, 0 }
 };

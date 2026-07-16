@@ -48,7 +48,7 @@ static void erase_resource(ResourceRecord &Resource)
 }
 
 //********************************************************************************************************************
-// Calling this function with a non-existant MemoryID is safe
+// Calling this function with a non-existent MemoryID is safe
 
 static ERR free_private_memory_resource(MEMORYID MemoryID)
 {
@@ -63,20 +63,11 @@ static ERR free_private_memory_resource(MEMORYID MemoryID)
 
    auto start_mem = (char *)active_mem.Address - MEMHEADER;
 
-   if ((active_mem.Flags & MEM::PROTECTED) != MEM::NIL) {
-      #ifdef _WIN32
-         winFreeProtectedMemory(start_mem, align_page_size(active_mem.Size + MEMHEADER));
-      #else
-         munmap(start_mem, align_page_size(active_mem.Size + MEMHEADER));
-      #endif
-   }
-   else {
-      #ifdef _WIN32
-         _aligned_free(start_mem);
-      #else
-         free(start_mem);
-      #endif
-   }
+   #ifdef _WIN32
+      _aligned_free(start_mem);
+   #else
+      free(start_mem);
+   #endif
 
    active_mem.clear();
 
@@ -94,99 +85,6 @@ static ERR memory_resource_free(ResourceRecord &Resource, APTR Address)
 }
 
 static ResourceManager glResourceMemoryHandler = { "Memory", &memory_resource_free, nullptr, nullptr, false };
-
-/*********************************************************************************************************************
-
--FUNCTION-
-TrackResource: Assign a resource manager to an address, or update an existing one.
-
-TrackResource() registers a resource identifier with the memory manager so that later calls to ~FreeResource() can
-dispatch cleanup through the supplied `ResourceManager`.  If the resource identifier is already registered, the existing
-record is updated with the non-zero values provided by the caller.
-
-The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is
-tracked, or until the record is replaced or removed.  When an `OwnerID` is supplied for a non-object resource, the
-resource is added to the owner's resource list so it can be removed during owner cleanup.  Use `RESOURCEID_INHERIT` to
-preserve the existing owner when updating a resource, or to inherit the current context when registering a new resource.
-
-A unique `ResourceID` can be obtained from ~AllocateID() by using `IDTYPE::RESOURCE`.
-
--INPUT-
-res ResourceID: Unique identifier for the resource to register or replace.
-ptr Address: Address of the resource, or `NULL` to preserve an existing address.
-res OwnerID: Optional owning resource ID, normally an object.  Use `0` when the resource is not owned.
-struct(ResourceManager) Manager: Resource manager used to release the resource.
-
--ERRORS-
-Okay
-NullArgs: `ResourceID` is `0`, or `Manager` is `NULL` when registering a new resource.
-InUse
-
--TAGS-
-retains-input, does-not-take-ownership, blocking, thread-safe
-
--END-
-
-*********************************************************************************************************************/
-
-ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, ResourceManager *Manager)
-{
-   kt::Log log(__FUNCTION__);
-   std::lock_guard lock(glmResources);
-
-   if (not ResourceID) return log.warning(ERR::NullArgs);
-
-   if (auto existing = glResources.find(ResourceID); existing != glResources.end()) {
-      auto &record = existing->second;
-      if (record.Terminating) return ERR::InUse;
-
-      if (Address) record.Address = Address; // Assigning a new address to an existing ID is permissable
-      if (Manager) record.Manager = Manager; // Switching between the memory manager and custom managers is permissable
-
-      const auto new_owner = (OwnerID IS RESOURCEID_INHERIT) ? record.OwnerID : OwnerID;
-
-      if (record.OwnerID != new_owner) {
-         if (record.OwnerManagesChildren) {
-            auto current_owner = glResources.find(record.OwnerID);
-            if ((current_owner != glResources.end()) and (current_owner->second.Manager->RemoveChild)) {
-               current_owner->second.Manager->RemoveChild(current_owner->second, record);
-            }
-         }
-
-         record.OwnerID = new_owner;
-         record.OwnerManagesChildren = false; // Revert to standard behaviour
-
-         if (new_owner) {
-            auto owner_record = glResources.find(OwnerID);
-            if ((owner_record != glResources.end()) and (owner_record->second.Manager->AddChild)) {
-               owner_record->second.Manager->AddChild(owner_record->second, record);
-               record.OwnerManagesChildren = true;
-            }
-         }
-      }
-   }
-   else {
-      if (not Manager) return log.warning(ERR::NullArgs);
-
-      if (OwnerID IS RESOURCEID_INHERIT) { // Get the owner from the current context
-         if (tlContext.size() > 1) OwnerID = current_resource()->UID;
-         else if (glCurrentTask) OwnerID = glCurrentTask->UID;
-         else OwnerID = 0;
-      }
-
-      auto resource = glResources.insert_or_assign(ResourceID, ResourceRecord(ResourceID, Address, OwnerID, Manager));
-
-      if (OwnerID) {
-         auto owner_record = glResources.find(OwnerID);
-         if ((owner_record != glResources.end()) and (owner_record->second.Manager->AddChild)) {
-            owner_record->second.Manager->AddChild(owner_record->second, resource.first->second);
-            resource.first->second.OwnerManagesChildren = true;
-         }
-      }
-   }
-
-   return ERR::Okay;
-}
 
 //********************************************************************************************************************
 
@@ -214,7 +112,7 @@ Example usage:
 
 <pre>
 APTR address;
-if (!AllocMemory(1000, MEM::DATA, &address)) {
+if (!AllocMemory(1000, MEM::NIL, &address)) {
    // Use memory block...
    FreeResource(address);
 }
@@ -260,59 +158,25 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
    // Determine the object that will own the memory block.  The preferred default is for it to belong to the current context.
 
    OBJECTID owner_id = 0;
-   if ((Flags & MEM::UNTRACKED) != MEM::NIL);
-   else if (tlContext.size() > 1) owner_id = current_resource()->UID;
+   if (tlContext.size() > 1) owner_id = current_resource()->UID;
    else if (glCurrentTask) owner_id = glCurrentTask->UID;
 
    size_t full_size = Size + MEMHEADER;
    size_t aligned_size = full_size;
 
-   // Check if memory protection is requested
-   bool use_protection = ((Flags & (MEM::READ|MEM::WRITE)) != MEM::NIL);
-   bool final_protection_pending = false;
    APTR start_mem = nullptr;
 
-   if (use_protection) {
-      // Use OS-level memory protection with mmap/VirtualAlloc.  The block is initially writable so that the
-      // allocator can initialise its private header before the requested protection is applied.
-      aligned_size = align_page_size(full_size);
-      auto init_flags = Flags;
-      if ((init_flags & MEM::WRITE) IS MEM::NIL) {
-         init_flags |= MEM::WRITE;
-         final_protection_pending = true;
-      }
+   // Use standard aligned allocation (typically 64-bit) for non-protected memory
+   full_size = ((full_size + CACHE_LINE_SIZE - 1) / CACHE_LINE_SIZE) * CACHE_LINE_SIZE;
 
-      #ifdef _WIN32
-         start_mem = winAllocProtectedMemory(aligned_size, int(init_flags));
-      #else
-         int prot = PROT_NONE;
-         if ((init_flags & MEM::READ) != MEM::NIL) prot |= PROT_READ;
-         if ((init_flags & MEM::WRITE) != MEM::NIL) prot |= PROT_WRITE;
+   #ifdef _WIN32
+      start_mem = _aligned_malloc(full_size, CACHE_LINE_SIZE);
+   #else
+      if (posix_memalign(&start_mem, CACHE_LINE_SIZE, full_size) != 0) start_mem = nullptr;
+   #endif
 
-         start_mem = mmap(nullptr, aligned_size, prot, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-         if (start_mem IS MAP_FAILED) start_mem = nullptr;
-      #endif
-
-      if (start_mem) {
-         Flags |= MEM::PROTECTED; // Mark as protected for proper cleanup
-         if ((Flags & MEM::NO_CLEAR) IS MEM::NIL) {
-            kt::clearmem(start_mem, full_size);
-         }
-      }
-   }
-   else {
-      // Use standard aligned allocation (typically 64-bit) for non-protected memory
-      full_size = ((full_size + CACHE_LINE_SIZE - 1) / CACHE_LINE_SIZE) * CACHE_LINE_SIZE;
-
-      #ifdef _WIN32
-         start_mem = _aligned_malloc(full_size, CACHE_LINE_SIZE);
-      #else
-         if (posix_memalign(&start_mem, CACHE_LINE_SIZE, full_size) != 0) start_mem = nullptr;
-      #endif
-
-      if (start_mem) {
-         if ((Flags & MEM::NO_CLEAR) IS MEM::NIL) kt::clearmem(start_mem, full_size);
-      }
+   if (start_mem) {
+      if ((Flags & MEM::NO_CLEAR) IS MEM::NIL) kt::clearmem(start_mem, full_size);
    }
 
    if (not start_mem) {
@@ -321,7 +185,6 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
    }
 
    APTR data_start = (char *)start_mem + MEMHEADER;
-
    MEMORYID unique_id = 0;
 
    {
@@ -334,24 +197,7 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
       // Record memory details such as the size, ID and flags.  This helps us
       // with resource tracking, identifying the memory block and freeing it later on.  Hidden blocks are never recorded.
 
-      glMemory.insert(std::pair<MEMORYID, PrivateAddress>(unique_id, PrivateAddress(data_start, unique_id, (uint32_t)Size, Flags)));
-   }
-
-   if (final_protection_pending) {
-      #ifdef _WIN32
-         if (not winProtectMemory(start_mem, aligned_size, (Flags & MEM::READ) != MEM::NIL, false, false)) {
-            free_private_memory_resource(unique_id);
-            return log.warning(ERR::SystemCall);
-         }
-      #else
-         int prot = PROT_NONE;
-         if ((Flags & MEM::READ) != MEM::NIL) prot |= PROT_READ;
-
-         if (mprotect(start_mem, aligned_size, prot) != 0) {
-            free_private_memory_resource(unique_id);
-            return log.warning(ERR::SystemCall);
-         }
-      #endif
+      glMemory.insert(std::pair<MEMORYID, PrivateAddress>(unique_id, PrivateAddress(data_start, (uint32_t)Size, Flags)));
    }
 
    if (auto error = TrackResource(unique_id, data_start, owner_id, &glResourceMemoryHandler); error != ERR::Okay) {
@@ -495,120 +341,92 @@ ERR FreeResource(RESOURCEID ResourceID)
 /*********************************************************************************************************************
 
 -FUNCTION-
-MemoryInfo: Returns information on memory IDs.
+TrackResource: Assign a resource manager to an address, or update an existing one.
 
-This function returns the attributes of a memory block, including the start address, memory ID, size and flags.  The
-following example illustrates correct use of this function:
+TrackResource() registers a resource identifier with the memory manager so that later calls to ~FreeResource() can
+dispatch cleanup through the supplied `ResourceManager`.  If the resource identifier is already registered, the existing
+record is updated with the non-zero values provided by the caller.
 
-<pre>
-MemInfo info;
-if (!MemoryInfo(memid, &info)) {
-   log.msg("Memory block #%d is %d bytes large.", info.MemoryID, info.Size);
-}
-</pre>
+The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is
+tracked, or until the record is replaced or removed.  When an `OwnerID` is supplied for a non-object resource, the
+resource is added to the owner's resource list so it can be removed during owner cleanup.  Use `RESOURCEID_INHERIT` to
+preserve the existing owner when updating a resource, or to inherit the current context when registering a new resource.
 
-If the memory ID is not found after argument validation, the !MemInfo structure's fields are cleared before the error
-code is returned.
+A unique `ResourceID` can be obtained from ~AllocateID() by using `IDTYPE::RESOURCE`.
 
 -INPUT-
-mem ID: Memory identifier to inspect.
-buf(struct(MemInfo)) MemInfo:  Pointer to a !MemInfo structure.
-structsize Size: Size of the !MemInfo structure.
+res ResourceID: Unique identifier for the resource to register or replace.
+ptr Address: Address of the resource, or `NULL` to preserve an existing address.
+res OwnerID: Optional owning resource ID, normally an object.  Use `0` when the resource is not owned.
+struct(ResourceManager) Manager: Resource manager used to release the resource.
 
 -ERRORS-
 Okay
-NullArgs
-Args
-DoesNotExist
+NullArgs: `ResourceID` is `0`, or `Manager` is `NULL` when registering a new resource.
+InUse
 
 -TAGS-
-mutates-input, blocking, pure-query
+retains-input, does-not-take-ownership, blocking, thread-safe
+
 -END-
 
 *********************************************************************************************************************/
 
-ERR MemoryInfo(MEMORYID MemoryID, MemInfo *MemInfo, int Size)
+ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, ResourceManager *Manager)
 {
    kt::Log log(__FUNCTION__);
+   std::lock_guard lock(glmResources);
 
-   if ((not MemInfo) or (not MemoryID)) return log.warning(ERR::NullArgs);
-   if ((size_t)Size < sizeof(MemInfo)) return log.warning(ERR::Args);
+   if (not ResourceID) return log.warning(ERR::NullArgs);
 
-   clearmem(MemInfo, Size);
+   if (auto existing = glResources.find(ResourceID); existing != glResources.end()) {
+      auto &record = existing->second;
+      if (record.Terminating) return ERR::InUse;
 
-   std::unique_lock lock(glmMemory);
-   auto mem = glMemory.find(MemoryID);
-   if ((mem != glMemory.end()) and (mem->second.Address)) {
-      MemInfo->Start    = mem->second.Address;
-      MemInfo->Size     = mem->second.Size;
-      MemInfo->Flags    = mem->second.Flags;
-      MemInfo->MemoryID = mem->second.MemoryID;
-      return ERR::Okay;
+      if (Address) record.Address = Address; // Assigning a new address to an existing ID is permitted
+      if (Manager) record.Manager = Manager; // Switching between the memory manager and custom managers is permitted
+
+      const auto new_owner = (OwnerID IS RESOURCEID_INHERIT) ? record.OwnerID : OwnerID;
+
+      if (record.OwnerID != new_owner) {
+         if (record.OwnerManagesChildren) {
+            auto current_owner = glResources.find(record.OwnerID);
+            if ((current_owner != glResources.end()) and (current_owner->second.Manager->RemoveChild)) {
+               current_owner->second.Manager->RemoveChild(current_owner->second, record);
+            }
+         }
+
+         record.OwnerID = new_owner;
+         record.OwnerManagesChildren = false; // Revert to standard behaviour
+
+         if (new_owner) {
+            auto owner_record = glResources.find(OwnerID);
+            if ((owner_record != glResources.end()) and (owner_record->second.Manager->AddChild)) {
+               owner_record->second.Manager->AddChild(owner_record->second, record);
+               record.OwnerManagesChildren = true;
+            }
+         }
+      }
    }
-   else return ERR::DoesNotExist;
-}
+   else {
+      if (not Manager) return log.warning(ERR::NullArgs);
 
-/*********************************************************************************************************************
-
--FUNCTION-
-ProtectMemory: Change the access permissions of a memory block.
-
-This function changes the access permissions of a memory block that was allocated with the `MEM::READ` and/or
-`MEM::WRITE` flags.  This allows you to tighten or relax the access permissions of a memory block as your program's
-logic requires.
-
--INPUT-
-ptr Address: Pointer to a memory block obtained from ~AllocMemory().
-int(MEM) Flags: New access flags (MEM::READ, MEM::WRITE).
-
--ERRORS-
-Okay
-NullArgs: Address is NULL.
-Args: Invalid flags specified or memory block is not protected.
-DoesNotExist: The memory block is not valid.
-SystemCall: A system call failed.
-
--TAGS-
-blocking
--END-
-
-*********************************************************************************************************************/
-
-ERR ProtectMemory(APTR Address, MEM Flags)
-{
-   kt::Log log(__FUNCTION__);
-
-   if (not Address) return ERR::NullArgs;
-   if ((Flags & (MEM::READ | MEM::WRITE)) IS MEM::NIL) return ERR::Args;
-
-   if (glShowPrivate) log.branch("ProtectMemory(%p, $%.8x)", Address, int(Flags));
-
-   MemInfo meminfo;
-   if (!MemoryInfo(GetMemoryID(Address), &meminfo, sizeof(meminfo))) {
-      if ((meminfo.Flags & MEM::PROTECTED) IS MEM::NIL) {
-         log.warning("Memory block at %p is not protected.", Address);
-         return ERR::Args;
+      if (OwnerID IS RESOURCEID_INHERIT) { // Get the owner from the current context
+         if (tlContext.size() > 1) OwnerID = current_resource()->UID;
+         else if (glCurrentTask) OwnerID = glCurrentTask->UID;
+         else OwnerID = 0;
       }
 
-      auto start_mem = (char *)Address - MEMHEADER;
-      auto full_size = meminfo.Size + MEMHEADER;
-      auto aligned_size = align_page_size(full_size);
+      auto resource = glResources.insert_or_assign(ResourceID, ResourceRecord(ResourceID, Address, OwnerID, Manager));
 
-      #ifdef _WIN32
-         if (winProtectMemory(start_mem, aligned_size, (Flags & MEM::READ) != MEM::NIL, (Flags & MEM::WRITE) != MEM::NIL, false)) {
-            return ERR::Okay;
+      if (OwnerID) {
+         auto owner_record = glResources.find(OwnerID);
+         if ((owner_record != glResources.end()) and (owner_record->second.Manager->AddChild)) {
+            owner_record->second.Manager->AddChild(owner_record->second, resource.first->second);
+            resource.first->second.OwnerManagesChildren = true;
          }
-         else return log.warning(ERR::SystemCall);
-      #else
-         int prot = PROT_NONE;
-         if ((Flags & MEM::READ) != MEM::NIL) prot |= PROT_READ;
-         if ((Flags & MEM::WRITE) != MEM::NIL) prot |= PROT_WRITE;
-
-         if (mprotect(start_mem, aligned_size, prot) IS 0) {
-            return ERR::Okay;
-         }
-         else return log.warning(ERR::SystemCall);
-      #endif
+      }
    }
-   else return ERR::DoesNotExist;
+
+   return ERR::Okay;
 }

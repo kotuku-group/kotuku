@@ -126,20 +126,11 @@ flags("KQ", { comment="Special qualifier flags", module="Core" },
     { INFO            = "REPEAT|RELEASED|PRESSED|NOT_PRINTABLE|CAPS_LOCK" }
 )
 
-flags("MEM", { comment="Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.", module="Core" },
-    "VIDEO:     Identifies video memory, such as the frame buffer.",
-    "TEXTURE:   Identifies non-displayable video memory, e.g. texture graphics.",
-    "AUDIO:     Identifies memory located on an audio device, such as a sound card.",
-    "CODE:      Used for memory that can execute code.",
-    "UNTRACKED: Prevents the memory block from being tracked back to the current context.",
-    "STRING:    Identifies the memory content as a null terminated string, which aids diagnostics.",
-    "COLLECT:   Internal - The memory block is marked for collection.",
-    "PROTECTED: Internal - Indicates that the block is using memory protection features.",
-    { DATA          = "0: The default type, `DATA`, is used to indicate a standard memory allocation from system RAM." },
-    { READ          = "0x00010000: The memory is explicitly marked as readable." },
-    { WRITE         = "0x00020000: The memory is explicitly marked as writeable." },
-    { NO_CLEAR      = "0x00040000: Do not clear the memory on allocation (saves time)." },
-    { READ_WRITE    = "READ|WRITE" })
+flags("MEM", { comment="Memory types.", module="Core" },
+    "VIDEO:   Identifies video memory, such as the frame buffer.",
+    "TEXTURE: Identifies non-displayable video memory, e.g. texture graphics.",
+    { NO_CLEAR = "0x00040000: Do not clear the memory on allocation (saves time)." }
+)
 
 enums("EVG", { type="int", start=1, comment="Event categories.", module="Core" }, -- 5 bit limit (max 32 entries).  These constants are also managed in core.tiri and tiri_functions.c, line 493
     "FILESYSTEM: File system events.",

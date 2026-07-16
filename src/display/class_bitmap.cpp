@@ -268,9 +268,8 @@ ERR lock_surface(extBitmap *Bitmap, int16_t Access)
       log.warning("Warning: Locking of OpenGL video surfaces for CPU access is bad practice (bitmap: #%d, mem: $%.8x)", Bitmap->UID, Bitmap->DataFlags);
 
       if (!Bitmap->Data) {
-         if (AllocMemory(Bitmap->Size, MEM::NO_CLEAR|Bitmap->DataFlags, &Bitmap->Data) != ERR::Okay) {
-            return log.warning(ERR::AllocMemory);
-         }
+         Bitmap->Data = (uint8_t *)malloc(Bitmap->Size);
+         if (!Bitmap->Data) return log.warning(ERR::AllocMemory);
          Bitmap->prvAFlags |= BF_DATA;
       }
 
@@ -289,14 +288,12 @@ ERR lock_surface(extBitmap *Bitmap, int16_t Access)
       return ERR::Okay;
    }
    else if ((Bitmap->DataFlags & MEM::TEXTURE) != MEM::NIL) {
-      // Using the CPU on TEXTURE bitmaps is banned - it is considered to be poor programming.  Instead,
-      // MEM::DATA bitmaps should be used when R/W CPU access is desired to a bitmap.
-
+      // Using the CPU on TEXTURE bitmaps is banned (anti-pattern)
       return log.warning(ERR::NoSupport);
    }
 
    if (!Bitmap->Data) {
-      log.warning("[Bitmap:%d] Bitmap is missing the Data field.  Memory flags: $%.8x", Bitmap->UID, Bitmap->DataFlags);
+      log.warning("[Bitmap:%d] Bitmap is missing the Data field", Bitmap->UID);
       return ERR::FieldNotSet;
    }
 
@@ -776,17 +773,20 @@ static ERR BITMAP_Demultiply(extBitmap *Self)
    kt::Log log;
 
    static std::mutex mutex;
-   if (!glDemultiply) {
+   {
       const std::lock_guard<std::mutex> lock(mutex);
       if (!glDemultiply) {
-         if (!AllocMemory(256 * 256, MEM::NO_CLEAR|MEM::UNTRACKED, (APTR *)&glDemultiply)) {
-            for (int a=1; a <= 255; a++) {
-               for (int i=0; i <= 255; i++) {
-                  glDemultiply[(a<<8) + i] = (i * 0xff) / a;
-               }
+         auto demultiply = std::unique_ptr<std::array<uint16_t, 256 * 256>>(
+            new (std::nothrow) std::array<uint16_t, 256 * 256>());
+         if (!demultiply) return ERR::AllocMemory;
+
+         for (int a=1; a <= 255; a++) {
+            for (int i=0; i <= 255; i++) {
+               (*demultiply)[(a<<8) + i] = uint16_t((i * 0xff) / a);
             }
          }
-         else return ERR::AllocMemory;
+
+         glDemultiply = std::move(demultiply);
       }
    }
 
@@ -813,9 +813,9 @@ static ERR BITMAP_Demultiply(extBitmap *Self)
          if (a < 0xff) {
             if (a == 0) pixel[R] = pixel[G] = pixel[B] = 0;
             else {
-               uint32_t r = glDemultiply[(a<<8) + pixel[R]]; //(uint32_t(pixel[R]) * 0xff) / a;
-               uint32_t g = glDemultiply[(a<<8) + pixel[G]]; //(uint32_t(pixel[G]) * 0xff) / a;
-               uint32_t b = glDemultiply[(a<<8) + pixel[B]]; //(uint32_t(pixel[B]) * 0xff) / a;
+               uint32_t r = (*glDemultiply)[(a<<8) + pixel[R]]; //(uint32_t(pixel[R]) * 0xff) / a;
+               uint32_t g = (*glDemultiply)[(a<<8) + pixel[G]]; //(uint32_t(pixel[G]) * 0xff) / a;
+               uint32_t b = (*glDemultiply)[(a<<8) + pixel[B]]; //(uint32_t(pixel[B]) * 0xff) / a;
                pixel[R] = uint8_t((r > 0xff) ? 0xff : r);
                pixel[G] = uint8_t((g > 0xff) ? 0xff : g);
                pixel[B] = uint8_t((b > 0xff) ? 0xff : b);
@@ -976,7 +976,7 @@ static ERR BITMAP_Init(extBitmap *Self)
 
    if (acQuery(Self) != ERR::Okay) return log.warning(ERR::Query);
 
-   log.branch("Size: %dx%d @ %d bit, %d bytes, Mem: $%.8x, Flags: $%.8x", Self->Width, Self->Height, Self->BitsPerPixel, Self->BytesPerPixel, int(Self->DataFlags), int(Self->Flags));
+   log.branch("Size: %dx%d @ %d bit, %d bytes, Flags: $%.8x", Self->Width, Self->Height, Self->BitsPerPixel, Self->BytesPerPixel, int(Self->Flags));
 
    if (Self->Clip.Left < 0) Self->Clip.Left = 0;
    if (Self->Clip.Top < 0)  Self->Clip.Top  = 0;
@@ -1015,10 +1015,9 @@ static ERR BITMAP_Init(extBitmap *Self)
          if (!Self->Size) return log.warning(ERR::FieldNotSet);
 
          if (glHeadless) {
-            if (!AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, (APTR *)&Self->Data)) {
-               Self->prvAFlags |= BF_DATA;
-            }
-            else return log.warning(ERR::AllocMemory);
+            Self->Data = (uint8_t *)malloc(Self->Size);
+            if (!Self->Data) return log.warning(ERR::AllocMemory);
+            Self->prvAFlags |= BF_DATA;
          }
          else if (!Self->x11.XShmImage) {
             log.detail("Allocating a memory based XImage.");
@@ -1062,10 +1061,11 @@ static ERR BITMAP_Init(extBitmap *Self)
             Self->prvAFlags |= BF_WINVIDEO;
             if (!(Self->win.Drawable = winCreateCompatibleDC())) return log.warning(ERR::SystemCall);
          }
-         else if (!AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, (APTR *)&Self->Data)) {
+         else {
+            Self->Data = (uint8_t *)malloc(Self->Size);
+            if (!Self->Data) return log.warning(ERR::AllocMemory);
             Self->prvAFlags |= BF_DATA;
          }
-         else return log.warning(ERR::AllocMemory);
       }
       else if ((Self->DataFlags & MEM::VIDEO) != MEM::NIL) Self->prvAFlags |= BF_WINVIDEO;
    }
@@ -1074,7 +1074,7 @@ static ERR BITMAP_Init(extBitmap *Self)
    // MEM::VIDEO + BMF::NO_DATA: The bitmap represents the OpenGL display.  No data area will be allocated as direct access to the OpenGL video frame buffer is not possible.
    // MEM::VIDEO: Not currently used as a means of allocating a particular type of OpenGL buffer.
    // MEM::TEXTURE:  The bitmap is to be used as an OpenGL texture or off-screen buffer.  The bitmap content is temporary - i.e. the content can be dumped by the graphics driver if the video display changes.
-   // MEM::DATA:  The bitmap resides in regular CPU accessible memory.
+   // MEM::NIL:  The bitmap resides in regular CPU accessible memory.
 
    if (!Self->Data) {
       if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
@@ -1085,15 +1085,16 @@ static ERR BITMAP_Init(extBitmap *Self)
          }
          else if ((Self->DataFlags & MEM::TEXTURE) != MEM::NIL) {
             // Blittable bitmaps are fast, but their content is temporary.  It is not possible to use the CPU on this
-            // bitmap type - the developer should use MEM::DATA if that is desired.
+            // bitmap type (anti-pattern).
 
             log.warning("Support for MEM::TEXTURE not included yet.");
             return ERR::NoSupport;
          }
-         else if (!AllocMemory(Self->Size, Self->DataFlags|MEM::NO_CLEAR, &Self->Data)) {
+         else {
+            Self->Data = (uint8_t *)malloc(Self->Size);
+            if (!Self->Data) return ERR::AllocMemory;
             Self->prvAFlags |= BF_DATA;
          }
-         else return ERR::AllocMemory;
       }
    }
 
@@ -1105,10 +1106,9 @@ static ERR BITMAP_Init(extBitmap *Self)
    if (!Self->Data) {
       if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
          if (!Self->Size) return log.warning(ERR::FieldNotSet);
-         if (!AllocMemory(Self->Size, MEM::NO_CLEAR|Self->DataFlags, &Self->Data)) {
-            Self->prvAFlags |= BF_DATA;
-         }
-         else return log.warning(ERR::AllocMemory);
+         Self->Data = (uint8_t *)malloc(Self->Size);
+         if (!Self->Data) return log.warning(ERR::AllocMemory);
+         Self->prvAFlags |= BF_DATA;
       }
    }
 #endif
@@ -1648,8 +1648,8 @@ static ERR BITMAP_Resize(extBitmap *Self, struct acResize *Args)
       if ((size <= Self->Size) and (size / Self->Size > 0.5)) { // Do nothing when shrinking unless able to save considerable resources
          size = Self->Size;
       }
-      else if (!AllocMemory(size, Self->DataFlags|MEM::NO_CLEAR, (APTR *)&data)) {
-         if (Self->Data) FreeResource(Self->Data);
+      else if ((data = (uint8_t *)malloc(size))) {
+         if (Self->Data) free(Self->Data);
          Self->Data = data;
       }
       else return log.warning(ERR::AllocMemory);
@@ -1780,7 +1780,7 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
    else pcx.NumPlanes = 3;
 
    size = width * height * pcx.NumPlanes;
-   if (!AllocMemory(size, MEM::DATA|MEM::NO_CLEAR, (APTR *)&buffer)) {
+   if (!AllocMemory(size, MEM::NO_CLEAR, (APTR *)&buffer)) {
       auto write_error = acWrite(Args->Dest, &pcx, sizeof(pcx), nullptr);
       if (write_error != ERR::Okay) {
          FreeResource(buffer);
@@ -2212,14 +2212,7 @@ ERR SET_Data(extBitmap *Self, uint8_t *Value)
    if (Self->x11.XShmImage) return ERR::NotPossible;
 #endif
 
-   if (Self->Data != Value) {
-      Self->Data = Value;
-
-      if (Self->DataFlags IS MEM::NIL) {
-         Self->DataFlags = MEM::DATA;
-      }
-   }
-
+   if (Self->Data != Value) Self->Data = Value;
    return ERR::Okay;
 }
 
@@ -2228,7 +2221,7 @@ ERR SET_Data(extBitmap *Self, uint8_t *Value)
 -FIELD-
 DataFlags: Defines the memory flags to use when allocating a bitmap's data area.
 
-DataFlags controls the kind of backing storage requested during initialisation.  Common values are `MEM::DATA`,
+DataFlags controls the kind of backing storage requested during initialisation.  Common values are `MEM::NIL`,
 `MEM::VIDEO` and `MEM::TEXTURE`.
 
 Video or texture-backed bitmaps can be faster for some drawing paths, but direct CPU access is platform dependent.  Use
@@ -2725,7 +2718,7 @@ extBitmap::~extBitmap()
    if (x11.gc) XFreeGC(XDisplay, x11.gc);
 #endif
 
-   if ((Data) and (prvAFlags & BF_DATA)) FreeResource(Data);
+   if ((Data) and (prvAFlags & BF_DATA)) free(Data);
    if (ResolutionChangeHandle) UnsubscribeEvent(ResolutionChangeHandle);
 
 #ifdef __xwindows__

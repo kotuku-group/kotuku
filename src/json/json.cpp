@@ -8,47 +8,54 @@ that is distributed with this package.  Please refer to it for further informati
 -CLASS-
 JSON: Extends the XML class with JSON support.
 
-The JSON class is an extension for the @XML class.  It allows JSON data to be loaded into an XML tree, where
-it can be manipulated and scanned using XML based functions.  This approach is advantageous in that the simplicity of
-the JSON is maintained, yet advanced features such as XPath lookups can be used to inspect the data.
+The JSON class extends the @XML class so JSON data can be loaded into an XML tree and inspected with XML operations
+such as XPath queries.
 
-It is important to understand how JSON data is converted to the XML tree structure.  All JSON values will be
-represented as 'item' tags that describe the name and type of value that is being represented.  Each value will be
-stored as content in the corresponding item tag.  Arrays are stored as items that contain a series of value tags, in
-the case of strings and numbers, or object tags.
+The root JSON object and all named members are represented by `item` tags.  Each named member has `name` and `type`
+attributes.  The supported type values are `object`, `array`, `string`, `integer`, `number`, `boolean`, and `null`.
+Numbers without a fraction or exponent use `integer`; other standard numbers use `number`.
+
+Arrays are represented by `item` tags with a `subtype` attribute.  A homogeneous array uses its common element type,
+a heterogeneous array uses `mixed`, and an empty array uses `null`.  Scalar array elements use `value` tags with a
+`type` attribute.  Nested objects and arrays use unnamed `item` tags.  Null values have no content, while booleans
+retain the exact lower-case `true` or `false` text from the JSON source.
 
 -EXAMPLE-
-The following example illustrates a JSON structure containing the common datatypes:
+The following example illustrates scalar values, nested arrays, and a mixed array:
 
 { "string":"foo bar",
-  "array":[ 0, 1, 2 ],
-  "array2":[ { "ABC":"XYZ" },
-             { "DEF":"XYZ" } ]
+  "enabled":true,
+  "nothing":null,
+  "integers":[ 0, 1 ],
+  "nested":[ [ "A" ], [ 1, null ] ]
 }
 
 It will be translated to the following when loaded into an XML object:
 
 &lt;item type="object"&gt;
   &lt;item name="string" type="string"&gt;foo bar&lt;/item&gt;
+  &lt;item name="enabled" type="boolean"&gt;true&lt;/item&gt;
+  &lt;item name="nothing" type="null"/&gt;
 
-  &lt;item name="array" type="array" subtype="integer"&gt;
-    &lt;value&gt;0&lt;/value&gt;
-    &lt;value&gt;1&lt;/value&gt;
-    &lt;value&gt;2&lt;/value&gt;
+  &lt;item name="integers" type="array" subtype="integer"&gt;
+    &lt;value type="integer"&gt;0&lt;/value&gt;
+    &lt;value type="integer"&gt;1&lt;/value&gt;
   &lt;/item&gt;
 
-  &lt;item name="array2" type="array" subtype="object"&gt;
-    &lt;item type="object"&gt;&lt;item name="ABC" type="string" value="XYZ"/&gt;&lt;/item&gt;
-    &lt;item type="object"&gt;&lt;item name="DEF" type="string" value="XYZ"/&gt;&lt;/item&gt;
+  &lt;item name="nested" type="array" subtype="array"&gt;
+    &lt;item type="array" subtype="string"&gt;
+      &lt;value type="string"&gt;A&lt;/value&gt;
+    &lt;/item&gt;
+    &lt;item type="array" subtype="mixed"&gt;
+      &lt;value type="integer"&gt;1&lt;/value&gt;
+      &lt;value type="null"/&gt;
+    &lt;/item&gt;
   &lt;/item&gt;
-&lt;item&gt;
+&lt;/item&gt;
 
 -END-
 
 *********************************************************************************************************************/
-
-#undef DEBUG
-//#define DEBUG
 
 #define PRV_XML
 #include <kotuku/main.h>
@@ -56,7 +63,7 @@ It will be translated to the following when loaded into an XML object:
 #include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include <algorithm>
-#include <sstream>
+#include <utility>
 
 JUMPTABLE_CORE
 
@@ -71,8 +78,16 @@ static ActionArray clActions[] = {
    { AC::NIL, nullptr }
 };
 
-static ERR extract_item(int &, CSTRING *, objXML::TAGS &, int &);
 static ERR txt_to_json(objXML *, std::string_view);
+
+static size_t string_segment_length(CSTRING Input, CSTRING End) noexcept
+{
+   if (Input >= End) return 0;
+
+   auto remaining = std::string_view(Input, size_t(End - Input));
+   auto length = remaining.find_first_of(std::string_view("\"\\\0", 3));
+   return (length IS std::string_view::npos) ? remaining.size() : length;
+}
 
 //********************************************************************************************************************
 
@@ -102,44 +117,6 @@ static ERR MODExpunge(void)
 }
 
 //********************************************************************************************************************
-// Debug routines.
-
-#if defined(DEBUG)
-
-static void debug_tree(objXML *Self)
-{
-   kt::Log log("Tree");
-   int i, j;
-   char buffer[1000];
-
-   for (int index=0; index < int(Tags.size()); index++) {
-      XTag &Tag = Tags[index];
-
-      //for (i=0; i < Tag.Branch; i++) buffer[i] = ' '; // Indenting
-      //buffer[i] = 0;
-
-      if (Tag.Attrib) {
-         if (Tag.Attrib->Name) {
-            log.msg("%.3d/%.3d: %p<-%p->%p Child %p %s%s", index, Tag.Index, Tag.Prev, Tag, Tag.Next, Tag.Child, buffer, Tag.Attrib->Name ? Tag.Attrib->Name : "Content");
-         }
-         else {
-            // Extract a limited amount of content
-            for (j=0; (Tag.Attrib->Value[j]) and (j < 16) and ((size_t)i < sizeof(buffer)); j++) {
-               if (Tag.Attrib->Value[j] IS '\n') buffer[i++] = '.';
-               else buffer[i++] = Tag.Attrib->Value[j];
-            }
-            if (i) buffer[i] = 0;
-            else StrCopy("<Empty Content>", buffer, sizeof(buffer));
-            log.msg("%.3d/%.3d: %p<-%p->%p Child %p %s", index, Tag.Index, Tag.Prev, Tag, Tag.Next, Tag.Child, buffer);
-            //log.msg("%.3d: %s", index, buffer);
-         }
-      }
-   }
-}
-
-#endif
-
-//********************************************************************************************************************
 
 static ERR load_file(objXML *Self, std::string_view Path)
 {
@@ -155,36 +132,17 @@ static ERR load_file(objXML *Self, std::string_view Path)
 
 //********************************************************************************************************************
 
-static ERR next_item(int &Line, CSTRING &Input)
-{
-   while ((*Input) and (*Input <= 0x20)) { if (*Input IS '\n') Line++; Input++; }
-   if (*Input IS ',') {
-      Input++;
-      while ((*Input) and (*Input <= 0x20)) { if (*Input IS '\n') Line++; Input++; }
-      return ERR::Okay;
-   }
-   else return ERR::Failed;
-}
-
-//********************************************************************************************************************
-
 static ERR JSON_Init(objXML *Self)
 {
    kt::Log log;
 
    log.trace("Attempting JSON interpretation of source data.");
 
-   // TODO: A back-door to get the Statement string directly from the XML object would be useful
-
-   std::string statement;
-   if (!Self->getStatement(statement)) {
+   std::string_view statement;
+   if (!Self->getStatementView(statement)) {
       if ((Self->ParseError = txt_to_json(Self, statement)) != ERR::Okay) {
          log.warning("JSON Parsing Error: %s", GetErrorMsg(Self->ParseError));
       }
-
-      #ifdef DEBUG
-      debug_tree(Self);
-      #endif
 
       return Self->ParseError;
    }
@@ -216,7 +174,419 @@ static ERR JSON_SaveToObject(objXML *Self, struct acSaveToObject *Args)
 }
 
 //********************************************************************************************************************
-// Parse Text string to JSON.  Assumes that the incoming string is null terminated.
+
+enum class JSONValueKind {
+   Object,
+   Array,
+   String,
+   Integer,
+   Number,
+   Boolean,
+   Null
+};
+
+static std::string_view json_kind_name(JSONValueKind Kind) noexcept
+{
+   switch (Kind) {
+      case JSONValueKind::Object:  return "object";
+      case JSONValueKind::Array:   return "array";
+      case JSONValueKind::String:  return "string";
+      case JSONValueKind::Integer: return "integer";
+      case JSONValueKind::Number:  return "number";
+      case JSONValueKind::Boolean: return "boolean";
+      case JSONValueKind::Null:    return "null";
+   }
+
+   return "null";
+}
+
+struct JSONParser {
+   CSTRING Current;
+   CSTRING End;
+   int Line;
+   int NextTagID;
+
+   JSONParser(std::string_view Text) noexcept :
+      Current(Text.data()), End(Text.data() + Text.size()), Line(1), NextTagID(1) { }
+
+   bool at_end() const noexcept { return Current >= End; }
+
+   bool has(size_t Count) const noexcept { return size_t(End - Current) >= Count; }
+
+   bool at_value_boundary() const noexcept
+   {
+      if (at_end()) return true;
+      return (*Current IS ',') or (*Current IS ']') or (*Current IS '}') or (*Current IS ' ') or
+         (*Current IS '\t') or (*Current IS '\r') or (*Current IS '\n');
+   }
+
+   static int hex_digit(char Value) noexcept
+   {
+      if ((Value >= '0') and (Value <= '9')) return Value - '0';
+      if ((Value >= 'A') and (Value <= 'F')) return Value - 'A' + 10;
+      if ((Value >= 'a') and (Value <= 'f')) return Value - 'a' + 10;
+      return -1;
+   }
+
+   ERR parse_hex_quad(uint32_t &Result) noexcept
+   {
+      if (not has(4)) return ERR::Syntax;
+
+      uint32_t value = 0;
+      for (unsigned i=0; i < 4; i++) {
+         int digit = hex_digit(Current[i]);
+         if (digit < 0) return ERR::Syntax;
+         value = (value << 4) | uint32_t(digit);
+      }
+
+      Current += 4;
+      Result = value;
+      return ERR::Okay;
+   }
+
+   static ERR append_utf8(uint32_t CodePoint, std::string &Result)
+   {
+      bool valid_xml = (CodePoint IS 0x09) or (CodePoint IS 0x0a) or (CodePoint IS 0x0d) or
+         ((CodePoint >= 0x20) and (CodePoint <= 0xd7ff)) or
+         ((CodePoint >= 0xe000) and (CodePoint <= 0xfffd)) or
+         ((CodePoint >= 0x10000) and (CodePoint <= 0x10ffff));
+      if (not valid_xml) return ERR::Syntax;
+
+      if (CodePoint <= 0x7f) Result += char(CodePoint);
+      else if (CodePoint <= 0x7ff) {
+         Result += char(0xc0 | (CodePoint >> 6));
+         Result += char(0x80 | (CodePoint & 0x3f));
+      }
+      else if (CodePoint <= 0xffff) {
+         Result += char(0xe0 | (CodePoint >> 12));
+         Result += char(0x80 | ((CodePoint >> 6) & 0x3f));
+         Result += char(0x80 | (CodePoint & 0x3f));
+      }
+      else {
+         Result += char(0xf0 | (CodePoint >> 18));
+         Result += char(0x80 | ((CodePoint >> 12) & 0x3f));
+         Result += char(0x80 | ((CodePoint >> 6) & 0x3f));
+         Result += char(0x80 | (CodePoint & 0x3f));
+      }
+
+      return ERR::Okay;
+   }
+
+   void skip_whitespace() noexcept
+   {
+      while (Current < End) {
+         if ((*Current IS ' ') or (*Current IS '\t') or (*Current IS '\r')) Current++;
+         else if (*Current IS '\n') { Line++; Current++; }
+         else break;
+      }
+   }
+
+   ERR parse_string(std::string &Result)
+   {
+      if (at_end() or (*Current != '"')) return ERR::Syntax;
+      Current++;
+
+      while (Current < End) {
+         if (*Current IS '"') {
+            Current++;
+            return ERR::Okay;
+         }
+
+         if (*Current IS '\\') {
+            Current++;
+            if (at_end() or (not *Current)) return ERR::Syntax;
+
+            if (*Current IS '"') Result += '"';
+            else if (*Current IS '\\') Result += '\\';
+            else if (*Current IS '/') Result += '/';
+            else if ((*Current IS 'b') or (*Current IS 'f')) return ERR::Syntax;
+            else if (*Current IS 'n') Result += '\n';
+            else if (*Current IS 'r') Result += '\r';
+            else if (*Current IS 't') Result += '\t';
+            else if (*Current IS 'u') {
+               Current++;
+               uint32_t code_point;
+               if (parse_hex_quad(code_point) != ERR::Okay) return ERR::Syntax;
+
+               if ((code_point >= 0xd800) and (code_point <= 0xdbff)) {
+                  if ((not has(2)) or (Current[0] != '\\') or (Current[1] != 'u')) return ERR::Syntax;
+                  Current += 2;
+
+                  uint32_t low_surrogate;
+                  if (parse_hex_quad(low_surrogate) != ERR::Okay) return ERR::Syntax;
+                  if ((low_surrogate < 0xdc00) or (low_surrogate > 0xdfff)) return ERR::Syntax;
+                  code_point = 0x10000 + ((code_point - 0xd800) << 10) + (low_surrogate - 0xdc00);
+               }
+               else if ((code_point >= 0xdc00) and (code_point <= 0xdfff)) return ERR::Syntax;
+
+               if (append_utf8(code_point, Result) != ERR::Okay) return ERR::Syntax;
+               continue;
+            }
+            else return ERR::Syntax;
+
+            Current++;
+         }
+         else {
+            auto length = string_segment_length(Current, End);
+            if (not length) return ERR::Syntax;
+
+            auto segment = std::string_view(Current, length);
+            auto control = std::find_if(segment.begin(), segment.end(), [](unsigned char Char) { return Char < 0x20; });
+            if (control != segment.end()) return ERR::Syntax;
+
+            Result.append(segment);
+            Current += length;
+         }
+      }
+
+      return ERR::Syntax;
+   }
+
+   ERR parse_hex_number(std::string &Result, JSONValueKind &Kind)
+   {
+      auto number_start = Current;
+      Kind = JSONValueKind::Integer;
+
+      Current += 2;
+      auto digit_start = Current;
+      while ((Current < End) and (((*Current >= '0') and (*Current <= '9')) or
+         ((*Current >= 'A') and (*Current <= 'F')) or ((*Current >= 'a') and (*Current <= 'f')))) Current++;
+      if ((Current IS digit_start) or (not at_value_boundary())) return ERR::Syntax;
+
+      Result.assign(number_start, size_t(Current - number_start));
+      return ERR::Okay;
+   }
+
+   ERR parse_standard_number(std::string &Result, JSONValueKind &Kind)
+   {
+      auto number_start = Current;
+      Kind = JSONValueKind::Integer;
+
+      if (*Current IS '-') {
+         Current++;
+         if (at_end()) return ERR::Syntax;
+      }
+
+      if (*Current IS '0') {
+         Current++;
+         if ((Current < End) and (*Current >= '0') and (*Current <= '9')) return ERR::Syntax;
+      }
+      else {
+         if ((*Current < '1') or (*Current > '9')) return ERR::Syntax;
+         while ((Current < End) and (*Current >= '0') and (*Current <= '9')) Current++;
+      }
+
+      if ((Current < End) and (*Current IS '.')) {
+         Kind = JSONValueKind::Number;
+         Current++;
+         auto fraction_start = Current;
+         while ((Current < End) and (*Current >= '0') and (*Current <= '9')) Current++;
+         if (Current IS fraction_start) return ERR::Syntax;
+      }
+
+      if ((Current < End) and ((*Current IS 'e') or (*Current IS 'E'))) {
+         Kind = JSONValueKind::Number;
+         Current++;
+         if ((Current < End) and ((*Current IS '+') or (*Current IS '-'))) Current++;
+
+         auto exponent_start = Current;
+         while ((Current < End) and (*Current >= '0') and (*Current <= '9')) Current++;
+         if (Current IS exponent_start) return ERR::Syntax;
+      }
+
+      if (not at_value_boundary()) return ERR::Syntax;
+      Result.assign(number_start, size_t(Current - number_start));
+      return ERR::Okay;
+   }
+
+   ERR parse_number(std::string &Result, JSONValueKind &Kind)
+   {
+      if (has(2) and (Current[0] IS '0') and (Current[1] IS 'x')) return parse_hex_number(Result, Kind);
+      return parse_standard_number(Result, Kind);
+   }
+
+   ERR parse_literal(std::string &Result, JSONValueKind &Kind)
+   {
+      std::string_view literal;
+      if (*Current IS 't') {
+         literal = "true";
+         Kind = JSONValueKind::Boolean;
+      }
+      else if (*Current IS 'f') {
+         literal = "false";
+         Kind = JSONValueKind::Boolean;
+      }
+      else if (*Current IS 'n') {
+         literal = "null";
+         Kind = JSONValueKind::Null;
+      }
+      else return ERR::Syntax;
+
+      if ((size_t(End - Current) < literal.size()) or
+          (std::string_view(Current, literal.size()) != literal)) return ERR::Syntax;
+
+      Current += literal.size();
+      if (not at_value_boundary()) return ERR::Syntax;
+      Result.assign(literal);
+      return ERR::Okay;
+   }
+
+   ERR parse_member(objXML::TAGS &Tags)
+   {
+      std::string item_name;
+      if (parse_string(item_name) != ERR::Okay) return ERR::Syntax;
+
+      skip_whitespace();
+      if (at_end() or (*Current != ':')) return ERR::Syntax;
+      Current++;
+      skip_whitespace();
+
+      JSONValueKind kind;
+      return parse_value(Tags, &item_name, kind);
+   }
+
+   ERR parse_object(objXML::TAGS &Children)
+   {
+      if (at_end() or (*Current != '{')) return ERR::Syntax;
+      Current++;
+      skip_whitespace();
+
+      if ((Current < End) and (*Current IS '}')) {
+         Current++;
+         return ERR::Okay;
+      }
+
+      while (Current < End) {
+         if (parse_member(Children) != ERR::Okay) return ERR::Syntax;
+         skip_whitespace();
+         if (at_end()) return ERR::Syntax;
+
+         if (*Current IS '}') {
+            Current++;
+            return ERR::Okay;
+         }
+
+         if (*Current != ',') return ERR::Syntax;
+         Current++;
+         skip_whitespace();
+         if (at_end() or (*Current IS '}')) return ERR::Syntax;
+      }
+
+      return ERR::Syntax;
+   }
+
+   ERR parse_array(objXML::TAGS &Children, std::string_view &Subtype)
+   {
+      if (at_end() or (*Current != '[')) return ERR::Syntax;
+      Current++;
+      skip_whitespace();
+
+      if ((Current < End) and (*Current IS ']')) {
+         Current++;
+         Subtype = "null";
+         return ERR::Okay;
+      }
+
+      bool first_value = true;
+      JSONValueKind common_kind = JSONValueKind::Null;
+      bool mixed = false;
+
+      while (Current < End) {
+         JSONValueKind value_kind;
+         if (parse_value(Children, nullptr, value_kind) != ERR::Okay) return ERR::Syntax;
+
+         if (first_value) {
+            common_kind = value_kind;
+            first_value = false;
+         }
+         else if (value_kind != common_kind) mixed = true;
+
+         skip_whitespace();
+         if (at_end()) return ERR::Syntax;
+
+         if (*Current IS ']') {
+            Current++;
+            Subtype = mixed ? std::string_view("mixed") : json_kind_name(common_kind);
+            return ERR::Okay;
+         }
+
+         if (*Current != ',') return ERR::Syntax;
+         Current++;
+         skip_whitespace();
+         if (at_end() or (*Current IS ']')) return ERR::Syntax;
+      }
+
+      return ERR::Syntax;
+   }
+
+   ERR parse_value(objXML::TAGS &Tags, const std::string *Name, JSONValueKind &Kind)
+   {
+      if (at_end() or (not *Current)) return ERR::Syntax;
+
+      int line_no = Line;
+      bool array_element = not Name;
+      if (*Current IS '{') {
+         Kind = JSONValueKind::Object;
+         auto &object_tag = Tags.emplace_back(XTag(NextTagID++, line_no));
+         object_tag.Attribs.reserve(Name ? 3 : 2);
+         object_tag.Attribs.emplace_back("item", "");
+         if (Name) object_tag.Attribs.emplace_back("name", *Name);
+         object_tag.Attribs.emplace_back("type", "object");
+         return parse_object(object_tag.Children);
+      }
+
+      if (*Current IS '[') {
+         Kind = JSONValueKind::Array;
+         auto &array_tag = Tags.emplace_back(XTag(NextTagID++, line_no));
+         array_tag.Attribs.reserve(Name ? 4 : 3);
+         array_tag.Attribs.emplace_back("item", "");
+         if (Name) array_tag.Attribs.emplace_back("name", *Name);
+         array_tag.Attribs.emplace_back("type", "array");
+
+         std::string_view subtype;
+         auto error = parse_array(array_tag.Children, subtype);
+         if (error != ERR::Okay) return error;
+         array_tag.Attribs.emplace_back("subtype", subtype);
+         return ERR::Okay;
+      }
+
+      std::string content;
+      if (*Current IS '"') {
+         Kind = JSONValueKind::String;
+         if (parse_string(content) != ERR::Okay) return ERR::Syntax;
+      }
+      else if ((*Current IS '-') or ((*Current >= '0') and (*Current <= '9'))) {
+         if (parse_number(content, Kind) != ERR::Okay) return ERR::Syntax;
+      }
+      else if ((*Current IS 't') or (*Current IS 'f') or (*Current IS 'n')) {
+         if (parse_literal(content, Kind) != ERR::Okay) return ERR::Syntax;
+      }
+      else return ERR::Syntax;
+
+      auto &value_tag = Tags.emplace_back(XTag(NextTagID++, line_no));
+      if (array_element) {
+         value_tag.Attribs.reserve(2);
+         value_tag.Attribs.emplace_back("value", "");
+         value_tag.Attribs.emplace_back("type", json_kind_name(Kind));
+      }
+      else {
+         value_tag.Attribs.reserve(3);
+         value_tag.Attribs.emplace_back("item", "");
+         value_tag.Attribs.emplace_back("name", *Name);
+         value_tag.Attribs.emplace_back("type", json_kind_name(Kind));
+      }
+
+      if (Kind != JSONValueKind::Null) {
+         auto &content_tag = value_tag.Children.emplace_back(XTag(NextTagID++, Line));
+         content_tag.Attribs.emplace_back("", std::move(content));
+      }
+
+      return ERR::Okay;
+   }
+};
+
+//********************************************************************************************************************
+// Parse a bounded text string into the JSON class's XML representation.
 
 static ERR txt_to_json(objXML *Self, std::string_view Text)
 {
@@ -226,412 +596,27 @@ static ERR txt_to_json(objXML *Self, std::string_view Text)
 
    log.traceBranch();
 
-   CSTRING str = Text.data();
    Self->Tags.clear();
    Self->LineNo = 1;
-   for (; (*str) and (*str != '{'); str++) if (*str IS '\n') Self->LineNo++;
-   if (*str != '{') return log.warning(ERR::NoData);
+   JSONParser parser(Text);
+   parser.skip_whitespace();
+   if (parser.at_end()) return log.warning(ERR::NoData);
+   if (*parser.Current != '{') return log.warning((*parser.Current IS 0) ? ERR::Syntax : ERR::NoData);
 
-   log.trace("Extracting tag information with extract_tag()");
-   if (*str IS '{') {
-      // XML requires the root tag to be numbered with ID 0
-      auto &root = Self->Tags.emplace_back(XTag(0, Self->LineNo, { { "item", "" }, { "type", "object" } }));
+   auto &root = Self->Tags.emplace_back(XTag(0, parser.Line));
+   root.Attribs.reserve(2);
+   root.Attribs.emplace_back("item", "");
+   root.Attribs.emplace_back("type", "object");
 
-      str++; // Skip '{'
-      while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Self->LineNo++; str++; }
-
-      int tag_id = 1;
-      do {
-         if (extract_item(Self->LineNo, &str, root.Children, tag_id) != ERR::Okay) {
-            return log.warning(ERR::Syntax);
-         }
-      } while (!next_item(Self->LineNo, str));
-   }
-
-   if (*str != '}') {
-      log.warning("Missing expected '}' terminator at line %d.", Self->LineNo);
+   auto error = parser.parse_object(root.Children);
+   parser.skip_whitespace();
+   Self->LineNo = parser.Line;
+   if ((error != ERR::Okay) or (not parser.at_end())) {
+      Self->Tags.clear();
+      log.warning("Malformed JSON statement detected at line %d.", parser.Line);
       return ERR::Syntax;
    }
 
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-// Called by txt_to_json() to extract the next item from a JSON string.  This function also recurses into itself.
-
-static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags, int &TagID)
-{
-   kt::Log log(__FUNCTION__);
-
-   log.traceBranch("Line: %d, %.20s", Line, *Input);
-
-   CSTRING str = Input[0];
-   if (*str != '"') {
-      log.warning("Malformed JSON statement detected at line %d, expected '\"', got '%c'.", Line, str[0]);
-      return ERR::Syntax;
-   }
-
-   int line_no = Line;
-   str++;
-   int i = 0;
-   std::string item_name;
-   while (*str != '"') {
-      if (*str IS '\\') {
-         str++;
-         if (*str IS 'n') item_name += '\n';
-         else if (*str IS 'r') item_name += '\r';
-         else if (*str IS 't') item_name += '\t';
-         else if (*str IS '"') item_name += '"';
-         else {
-            log.warning("Invalid use of back-slash in item name encountered at line %d", Line);
-            return ERR::Syntax;
-         }
-      }
-      else if (*str < 0x20) {
-         log.warning("Invalid item name encountered at line %d.", Line);
-         return ERR::Syntax;
-      }
-      else item_name += *str++;
-   }
-
-   if (*str IS '"') str++;
-   else return ERR::Syntax;
-
-   while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Line++; str++; }
-
-   if (*str != ':') {
-      log.warning("Missing separator ':' after item name '%s' at line %d.", item_name.c_str(), Line);
-      return ERR::Syntax;
-   }
-
-   str++; // Skip ':'
-   while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Line++; str++; }
-
-   if (*str IS '[') {
-      int line_start = Line;
-
-      // Evaluates to:
-      //
-      //    <item name="array" type="array" subtype="type">
-      //      <value>val</value>
-      //      ...
-      //    </item>
-      //
-      // Except for JSON arrays:
-      //
-      //    <item name="array" type="array" subtype="object">
-      //      <object>...</object>
-      //      ...
-      //    </item>
-
-      str++; // Skip '['
-      while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Line++; str++; }
-
-      // Figure out what type of array this is
-
-      std::string subtype;
-      if (*str IS '{') subtype = "object";
-      else if (*str IS '"') subtype = "string";
-      else if ((*str >= '0') and (*str <= '9')) subtype = "integer";
-      else if (*str IS ']') subtype = "null";
-      else {
-         log.warning("Invalid array defined at line %d.", line_start);
-         return ERR::Syntax;
-      }
-
-      log.trace("Processing %s array at line %d.", subtype.c_str(), Line);
-
-      auto &array_tag = Tags.emplace_back(XTag(TagID++, line_no, {
-         { "item", "" }, { "name", item_name }, { "type", "array" }, { "subtype", subtype }
-      }));
-
-      // Read the array values
-
-      if (*str IS '{') {
-         while ((*str) and (*str != ']')) {
-            // Evaluates to: <object>...</object>
-
-            auto &object_tag = array_tag.Children.emplace_back(XTag(TagID++, line_no, {
-               { "item", "" }, { "type", "object" }
-            }));
-
-            if (*str IS '{') {
-               log.trace("Processing new object in array.");
-
-               str++; // Skip '{'
-               while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Line++; str++; }
-
-               if (*str != '}') { // Don't process content if the object is empty.
-                  if (auto error = extract_item(Line, &str, object_tag.Children, TagID); error != ERR::Okay) return error;
-
-                  while ((*str) and (*str != '}')) { if (*str IS '\n') Line++; str++; } // Skip content/whitespace to get to the next tag.
-
-                  if (*str != '}') {
-                     log.warning("Missing '}' character to close an object by the end of line %d.", Line);
-                     return ERR::Syntax;
-                  }
-
-                  // Go to next value, or end of array
-
-                  log.trace("End of object array reached.");
-
-                  str++; // Skip '}'
-                  while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Line++; str++; }
-                  if (*str IS ',') {
-                     str++;
-                     while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Line++; str++; }
-                  }
-               }
-               else {
-                  log.warning("Invalid array entry encountered at line %d, expected object, encountered character '%c'.", Line, *str);
-                  return ERR::Syntax;
-               }
-            }
-         }
-      }
-      else if (*str IS '"') {
-         while ((*str) and (*str != ']')) {
-            if (*str != '"') {
-               log.warning("Invalid array of strings at line %d.", line_start);
-               return ERR::Syntax;
-            }
-
-            str++; // Skip '"'
-
-            std::stringstream buffer;
-            while ((*str) and (*str != '"')) {
-               if (*str IS '\\') {
-                  str++;
-                  if (*str) {
-                     if (*str IS 'n') buffer << '\n';
-                     else if (*str IS 'r') buffer << '\r';
-                     else if (*str IS 't') buffer << '\t';
-                     else if (*str IS '"') buffer << '"';
-                     else { buffer << '\\'; buffer << *str; }
-                     str++;
-                  }
-               }
-               else buffer << *str++;
-            }
-
-            // Create <value>string</value>
-
-            auto &value_tag = Tags.emplace_back(XTag(TagID++, Line, { { "value", "" } }));
-            value_tag.Children.emplace_back(XTag(TagID++, Line, { { "", buffer.str() } }));
-
-            str++; // Skip terminating '"'
-
-            // Go to next value, or end of array
-
-            while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Line++; str++; }
-            if (*str IS ',') str++;
-            while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Line++; str++; }
-         }
-      }
-      else if ((str[0] IS '0') and (str[1] IS 'x')) {
-         // Hexadecimal number.
-
-         while ((*str) and (*str != ']')) {
-            if ((str[0] != '0') or (str[1] != 'x')) {
-               log.warning("Invalid array of hexadecimal numbers at line %d.", line_start);
-               return ERR::Syntax;
-            }
-
-            std::string numbuf("0x");
-            while (((*str >= '0') and (*str <= '9')) or
-               ((str[2] >= 'A') and (str[2] <= 'F')) or
-               ((str[2] >= 'a') and (str[2] <= 'f'))
-            ) numbuf += *str++;
-
-            while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Line++; str++; }
-
-            if ((*str != ',') and (*str != ']')) { // If the next character is something other than ',' or ']' then it indicates that the hex value has an invalid character in it, e.g. 0x939fW
-               log.warning("Invalid array of hexadecimal numbers at line %d.", line_start);
-               return ERR::Syntax;
-            }
-
-            // Create <value>number</value>
-
-            auto &value_tag = Tags.emplace_back(XTag(TagID++, Line, { { "value", "" } }));
-            value_tag.Children.emplace_back(XTag(TagID++, Line, { { "", numbuf } }));
-
-            // Go to next value, or end of array
-
-            if (*str IS ',') str++;
-            while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Line++; str++; }
-         }
-      }
-      else if (((*str >= '0') and (*str <= '9')) or (*str IS '-')) {
-         while ((*str) and (*str != ']')) {
-            if (((*str < '0') or (*str > '9')) and (*str != '-')) {
-               log.warning("Invalid array of integers at line %d.", Line);
-               return ERR::Syntax;
-            }
-
-            std::string numbuf;
-            while ((*str IS '-') or (*str IS '.') or ((*str >= '0') and (*str <= '9'))) {
-               numbuf += *str++;
-            }
-
-            // Create <value>number</value>
-
-            auto &value_tag = Tags.emplace_back(XTag(TagID++, Line, { { "value", "" } }));
-            value_tag.Children.emplace_back(XTag(TagID++, Line, { { "", numbuf } }));
-
-            // Go to next value, or end of array
-
-            while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Line++; str++; }
-            if (*str IS ',') str++;
-            while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Line++; str++; }
-         }
-      }
-      else if (*str IS ']') {
-
-      }
-      else {
-         log.warning("Invalid array defined at line %d.", line_start);
-         return ERR::Syntax;
-      }
-
-      if (*str != ']') {
-         log.warning("Array at line %d not terminated with expected ']' character.", line_start);
-         return ERR::Syntax;
-      }
-      else str++; // Skip array terminator ']'
-   }
-   else if (*str IS '{') {
-      // Evaluates to: <object>...</object>
-
-      log.trace("Item '%s' is an object.", item_name.c_str());
-
-      auto &object_tag = Tags.emplace_back(XTag(TagID++, Line, {
-         { "item", "" }, { "name", item_name }, { "type", "object" }
-      }));
-
-      str++; // Skip '{'
-      while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Line++; str++; } // Skip content/whitespace to get to the next tag.
-
-      if (*str != '}') {
-
-         do {
-            if (extract_item(Line, &str, object_tag.Children, TagID) != ERR::Okay) {
-               log.warning("Aborting parsing of JSON statement.");
-               return ERR::Syntax;
-            }
-         } while (!next_item(Line, str));
-
-         while ((*str) and (*str != '}')) { if (*str IS '\n') Line++; str++; } // Skip content/whitespace to get to the next tag.
-
-         if (*str != '}') {
-            log.warning("Missing '}' character to close one of the objects.");
-            return ERR::Syntax;
-         }
-         else str++; // Skip '}'
-      }
-      else log.trace("The object is empty.");
-   }
-   else if (*str IS '"') {
-      // Evaluates to: <item name="item_name" type="string">string</item>
-
-      log.trace("Item '%s' is a string.", item_name.c_str());
-
-      str++; // Skip '"'
-
-      auto &string_tag = Tags.emplace_back(XTag(TagID++, Line, {
-         { "item", "" }, { "name", item_name }, { "type", "string" }
-      }));
-
-      std::stringstream buffer;
-      while ((*str) and (*str != '"')) {
-         if (*str IS '\n') Line++;
-         if (*str IS '\\') {
-            str++;
-            if (*str) {
-               if (*str IS 'n') buffer << '\n';
-               else if (*str IS 'r') buffer << '\r';
-               else if (*str IS 't') buffer << '\t';
-               else if (*str IS '"') buffer << '"';
-               else { buffer << '\\'; buffer << *str; }
-               str++;
-            }
-         }
-         else buffer << *str++;
-      }
-
-      if (*str IS '"') {
-         string_tag.Children.emplace_back(XTag(TagID++, Line, { { "", buffer.str() } }));
-         str++; // Skip '"'
-      }
-      else return log.warning(ERR::Syntax);
-   }
-  else if ((str[0] IS '0') and (str[1] IS 'x')) {
-      // Evaluates to: <item name="item_name" type="integer">number</item>
-
-      std::string numbuf("0x");
-      while (((*str >= '0') and (*str <= '9')) or
-         ((*str >= 'A') and (*str <= 'F')) or
-         ((*str >= 'a') and (*str <= 'f'))
-      ) numbuf += *str++;
-
-      // Skip whitespace and check that the number was valid.
-      while (*str) {
-         if (*str IS '\n') Line++;
-         else if (*str <= 0x20);
-         else if (*str IS ',') break;
-         else if (*str IS '}') break;
-         else {
-            log.warning("Invalid hexadecimal number '%s' at line %d", numbuf.c_str(), Line);
-            return ERR::Syntax;
-         }
-         str++;
-      }
-
-      auto &number_tag = Tags.emplace_back(XTag(TagID++, Line, {
-         { "item", "" }, { "name", item_name }, { "type", "number" }
-      }));
-
-      number_tag.Children.emplace_back(XTag(TagID++, Line, { { "", numbuf } }));
-   }
-   else if (((*str >= '0') and (*str <= '9')) or
-            ((*str IS '-') and (str[1] >= '0') and (str[1] <= '9'))) {
-      // Evaluates to: <item name="item_name" type="integer">number</item>
-
-      for (i=0; (str[i] IS '-') or (str[i] IS '.') or ((str[i] >= '0') and (str[i] <= '9')); i++);
-      std::string numbuf(str, i);
-      str += i;
-
-      // Skip whitespace and check that the number was valid.
-      while (*str) {
-         if (*str IS '\n') Line++;
-         else if (*str <= 0x20);
-         else if (*str IS ',') break;
-         else if (*str IS '}') break;
-         else {
-            log.warning("Invalid number at line %d", Line);
-            return ERR::Syntax;
-         }
-         str++;
-      }
-
-      auto &number_tag = Tags.emplace_back(XTag(TagID++, Line, {
-         { "item", "" }, { "name", item_name }, { "type", "number" }
-      }));
-
-      number_tag.Children.emplace_back(XTag(TagID++, Line, { { "", numbuf } }));
-   }
-   else if (kt::startswith("null", str)) { // Evaluates to <item name="item_name" type="null"/>
-      str += 4;
-
-      Tags.emplace_back(XTag(TagID++, Line, {
-         { "item", "" }, { "name", item_name }, { "type", "null" }
-      }));
-   }
-   else {
-      log.warning("Invalid value character '%c' encountered for item '%s' at line %d.", *str, item_name.c_str(), Line);
-      return ERR::Syntax;
-   }
-
-   *Input = str;
    return ERR::Okay;
 }
 

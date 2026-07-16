@@ -1192,6 +1192,7 @@ Field * lookup_id(OBJECTPTR, uint32_t, OBJECTPTR *);
 ERR    msg_event(APTR, int, int, APTR, int);
 ERR    msg_threadcallback(APTR, int, int, APTR, int);
 ERR    msg_threadaction(APTR, int, int, APTR, int);
+ERR    msg_waitforobjects(APTR, int, int, APTR, int);
 ERR    msg_free(APTR, int, int, APTR, int);
 void   optimise_write_field(Field &);
 void   PrepareSleep(void);
@@ -1240,7 +1241,6 @@ extern "C" WINHANDLE winCreateThread(APTR Function, APTR Arg, int StackSize, int
 extern "C" APTR winAllocProtectedMemory(size_t Size, int ProtectionFlags);
 extern "C" int winFreeProtectedMemory(APTR Address, size_t Size);
 extern "C" size_t winGetPageSize(void);
-extern "C" int winProtectMemory(APTR Address, size_t Size, bool, bool, bool);
 extern "C" int winGetCurrentThreadId(void);
 extern "C" void winDeathBringer(int Value);
 extern "C" int winDuplicateHandle(int, int, int, int *);

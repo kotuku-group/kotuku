@@ -52,20 +52,15 @@ public:
 class PrivateAddress {
 public:
    APTR     Address;
-   MEMORYID MemoryID;   // Unique identifier
    uint32_t Size;       // 4GB max (user-requested size)
-   THREADID ThreadLockID = THREADID(0);
    MEM      Flags;
-   int16_t  AccessCount = 0; // Total number of locks
 
-   PrivateAddress(APTR aAddress, MEMORYID aMemoryID, uint32_t aSize, MEM aFlags) :
-      Address(aAddress), MemoryID(aMemoryID), Size(aSize), Flags(aFlags) { };
+   PrivateAddress(APTR aAddress, uint32_t aSize, MEM aFlags) :
+      Address(aAddress), Size(aSize), Flags(aFlags) { };
 
    void clear() {
       Address  = 0;
-      MemoryID = 0;
       Flags    = MEM::NIL;
-      ThreadLockID = THREADID(0);
    }
 };
 

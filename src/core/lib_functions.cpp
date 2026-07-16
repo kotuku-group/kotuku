@@ -1227,6 +1227,7 @@ cstr Options: Reserved for future use; `NULL` is acceptable.
 #ifdef UNIT_TESTS
 extern void object_layout_unit_tests(int &, int &);
 extern void queue_action_unit_tests(int &, int &);
+extern void wait_for_objects_unit_tests(int &, int &);
 #endif
 
 void UnitTests(CSTRING Options, int *Passed, int *Total)
@@ -1240,6 +1241,8 @@ void UnitTests(CSTRING Options, int *Passed, int *Total)
       object_layout_unit_tests(passed, total);
       log.branch("Running QueueAction unit tests...");
       queue_action_unit_tests(passed, total);
+      log.branch("Running WaitForObjects unit tests...");
+      wait_for_objects_unit_tests(passed, total);
    }
 #endif
 

@@ -1,4 +1,4 @@
-
+// TODO: The client does not have a mechanism to find out which object woke the process from processing.sleep()
 #define PRV_SCRIPT
 #define PRV_TIRI
 #define PRV_TIRI_MODULE
@@ -15,7 +15,7 @@
 #include "lj_proto_registry.h"
 
 //********************************************************************************************************************
-// Usage: proc = processing.new({ timeout=5.0, signals={ obj1, obj2, ... } })
+// Usage: proc = processing.new({ timeout=5.0, signals={ obj1, obj2, ... }, mode="any" })
 //
 // Creates a new processing object.
 
@@ -29,6 +29,7 @@ static int processing_new(lua_State *Lua)
       fp->Timeout = -1;
       fp->Signals = 0;
       fp->SignalRefs = 0;
+      fp->AnySignal = false;
 
       auto fail = [&](ERR Error, std::string Message) -> int {
          if (fp->SignalRefs) {
@@ -97,6 +98,23 @@ static int processing_new(lua_State *Lua)
                      }
                      break;
                   }
+
+                  case strhash("mode"):
+                     if (lua_type(Lua, -1) != LUA_TSTRING) {
+                        return fail(ERR::InvalidType, std::format("The mode option requires a string."));
+                     }
+                     switch (strihash(lua_tostring(Lua, -1))) {
+                        case strhash("all"):
+                           fp->AnySignal = false;
+                           break;
+                        case strhash("any"):
+                           fp->AnySignal = true;
+                           break;
+                        default:
+                           return fail(ERR::InvalidValue,
+                              std::format("The mode option must be either 'all' or 'any'."));
+                     }
+                     break;
 
                   default:
                      return fail(ERR::UnknownProperty, std::format("Unrecognised option '{}'", field_name));
@@ -196,8 +214,9 @@ static int processing_sleep(lua_State *Lua)
          signal_list_c[i].Object = nullptr;
 
          std::scoped_lock lock(recursion);
-         auto timeout = int(seconds * 1000.0);
-         error = WaitForObjects(timeout IS -1 ? PMF::EVENT_LOOP : PMF::NIL, timeout, signal_list_c.get());
+         auto flags = seconds IS -1 ? PMF::EVENT_LOOP : PMF::NIL;
+         if (fp->AnySignal) flags |= PMF::ANY_SIGNAL;
+         error = WaitForObjects(flags, int(seconds * 1000.0), signal_list_c.get());
       }
       else { // Default behaviour: Sleeping can be broken with a signal to the Tiri object.
          if (Lua->script->defined(NF::SIGNALLED)) {
@@ -208,8 +227,7 @@ static int processing_sleep(lua_State *Lua)
          else {
             ObjectSignal signal_list_c[2] = { { .Object = Lua->script }, { .Object = nullptr } };
             std::scoped_lock lock(recursion);
-            auto timeout = int(seconds * 1000.0);
-            error = WaitForObjects(timeout IS -1 ? PMF::EVENT_LOOP : PMF::NIL, timeout, signal_list_c);
+            error = WaitForObjects(seconds IS -1 ? PMF::EVENT_LOOP : PMF::NIL, int(seconds * 1000.0), signal_list_c);
          }
       }
    }
@@ -243,6 +261,7 @@ static int processing_signal(lua_State *Lua)
 static int processing_flush(lua_State *Lua)
 {
    Lua->script->clearFlag(NF::SIGNALLED);
+
    if (auto fp = (fprocessing *)get_meta(Lua, lua_upvalueindex(1), "Tiri.processing")) {
       if ((fp->SignalRefs) and (not fp->SignalRefs->empty())) {
          for (auto ref : *fp->SignalRefs) {
@@ -256,9 +275,6 @@ static int processing_flush(lua_State *Lua)
             }
             lua_pop(Lua, 1);
          }
-      }
-      else if ((fp->Signals) and (not fp->Signals->empty())) {
-         Lua->script->clearFlag(NF::SIGNALLED);
       }
    }
    return 0;

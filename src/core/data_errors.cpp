@@ -101,7 +101,7 @@ const CSTRING glMessages[int(ERR::END)+1] = {
  "The destination file or folder already exists",
  "A volume could not be resolved",
  "A call to CreateObject() failed",
- "Failed to obtain information on a memory block (MemoryInfo() failed)",
+ ".",
  "The resource has not been initialised",
  "A new resource could not be created because a matching resource exists",
  "An attempt to Refresh() an object failed",

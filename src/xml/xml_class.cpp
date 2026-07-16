@@ -1982,6 +1982,16 @@ the base path for relative references.
 
 *********************************************************************************************************************/
 
+static ERR GET_StatementView(extXML *Self, std::string_view &Value)
+{
+   if (Self->Statement.empty()) return ERR::FieldNotSet;
+
+   Value = Self->Statement;
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
 static ERR GET_Statement(extXML *Self, std::string &Value)
 {
    kt::Log log;
@@ -2312,6 +2322,7 @@ static const FieldArray clFields[] = {
    // Virtual fields
    { "Statement",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_RW, GET_Statement, SET_Statement },
    { "Tags",       FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_R|FDF_PURE, GET_Tags, nullptr, "XTag" },
+   { "StatementView", FDF_VIRTUAL|FDF_CPPSTRING|FD_PRIVATE|FDF_R, GET_StatementView },
    END_FIELD
 };
 

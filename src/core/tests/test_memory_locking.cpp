@@ -53,7 +53,7 @@ static void alloc_free_worker(int Base)
 {
    for (int i=0; i < 250; i++) {
       APTR memory = nullptr;
-      if (AllocMemory(32 + ((Base + i) % 96), MEM::DATA, &memory) != ERR::Okay) {
+      if (AllocMemory(32 + ((Base + i) % 96), MEM::NIL, &memory) != ERR::Okay) {
          glAllocFreeFailures.fetch_add(1, std::memory_order_relaxed);
          continue;
       }
@@ -101,52 +101,6 @@ static int run_concurrent_alloc_free_check(void)
 
 //********************************************************************************************************************
 
-static int run_read_only_memory_allocation_check(void)
-{
-   kt::Log log(__FUNCTION__);
-
-   APTR memory = nullptr;
-   if (AllocMemory(64, MEM::READ, &memory) != ERR::Okay) {
-      log.warning("AllocMemory() failed for read-only protected memory.");
-      return -1;
-   }
-
-   auto memory_id = GetMemoryID(memory);
-   MemInfo info;
-   if (MemoryInfo(memory_id, &info, sizeof(info)) != ERR::Okay) {
-      FreeResource(memory);
-      log.warning("MemoryInfo() failed for read-only protected memory.");
-      return -1;
-   }
-
-   if ((info.Flags & MEM::PROTECTED) IS MEM::NIL) {
-      FreeResource(memory);
-      log.warning("Read-only memory was not marked as protected.");
-      return -1;
-   }
-
-   if ((info.Flags & MEM::READ) IS MEM::NIL) {
-      FreeResource(memory);
-      log.warning("Read-only memory did not retain MEM::READ.");
-      return -1;
-   }
-
-   if ((info.Flags & MEM::WRITE) != MEM::NIL) {
-      FreeResource(memory);
-      log.warning("Read-only memory retained temporary MEM::WRITE access.");
-      return -1;
-   }
-
-   if (FreeResource(memory) != ERR::Okay) {
-      log.warning("FreeResource() failed for read-only protected memory.");
-      return -1;
-   }
-
-   return 0;
-}
-
-//********************************************************************************************************************
-
 static int run_owned_resource_cleanup_check(void)
 {
    kt::Log log(__FUNCTION__);
@@ -173,7 +127,7 @@ static int run_owned_resource_cleanup_check(void)
       return -1;
    }
 
-   if (AllocMemory(64, MEM::DATA, &memory) != ERR::Okay) {
+   if (AllocMemory(64, MEM::NIL, &memory) != ERR::Okay) {
       FreeResource(child);
       FreeResource(parent);
       log.warning("AllocMemory() failed for ownership cleanup check.");
@@ -221,7 +175,7 @@ static int run_terminating_resource_check(void)
    kt::Log log(__FUNCTION__);
 
    APTR memory = nullptr;
-   if (AllocMemory(64, MEM::DATA, &memory) != ERR::Okay) {
+   if (AllocMemory(64, MEM::NIL, &memory) != ERR::Okay) {
       log.warning("AllocMemory() failed for terminating resource test.");
       return -1;
    }
@@ -558,7 +512,7 @@ static int run_access_object_checks(void)
    kt::Log log(__FUNCTION__);
 
    APTR memory = nullptr;
-   if (AllocMemory(64, MEM::DATA, &memory) != ERR::Okay) {
+   if (AllocMemory(64, MEM::NIL, &memory) != ERR::Okay) {
       log.warning("AllocMemory() failed for AccessObject() resource rejection test.");
       return -1;
    }
@@ -654,11 +608,6 @@ int main(int argc, CSTRING *argv)
    }
 
    if (run_concurrent_alloc_free_check() != 0) {
-      close_kotuku();
-      return -1;
-   }
-
-   if (run_read_only_memory_allocation_check() != 0) {
       close_kotuku();
       return -1;
    }

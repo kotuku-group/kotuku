@@ -2131,8 +2131,8 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
       log.branch("%s #%d, Flags: $%x", mc->ClassName.c_str(), glResourceID.load(std::memory_order_relaxed), int(Flags));
    }
 
-   // Object memory is allocated directly on the heap and tracked through glResources/glObjects rather than
-   // glMemory.  Only 8-byte alignment is required for the object header.
+   // Object memory is allocated directly on the heap and tracked through glResources/glObjects.
+   // Only 8-byte alignment is required for the object header.
 
    if (auto head = (OBJECTPTR)aligned_block_alloc(mc->Size, OBJECT_ALIGNMENT)) {
       OBJECTID object_id = glResourceID++;

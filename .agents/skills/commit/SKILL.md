@@ -51,3 +51,4 @@ Push to remote after completing your commit.
 
 Do not compile, test or perform any verification of the staged files.
 If Git returns a pull-request URL after the commit, always report it back to the user as a clickable link.
+Changes to files in the workspace are not permitted during a review.

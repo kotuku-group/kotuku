@@ -27,6 +27,8 @@
 #include <queue>
 #include <sstream>
 #include <array>
+#include <memory>
+#include <new>
 #include <vector>
 #include <math.h>
 
@@ -563,7 +565,7 @@ extern int glpDisplayWidth, glpDisplayHeight, glpDisplayX, glpDisplayY;
 extern int glpDisplayDepth; // If zero, the display depth will be based on the hosted desktop's bit depth.
 extern int glpMaximise, glpFullScreen;
 extern char glpDPMS[20];
-extern uint8_t *glDemultiply;
+extern std::unique_ptr<std::array<uint16_t, 256 * 256>> glDemultiply;
 extern std::array<uint8_t, 256 * 256> glAlphaLookup;
 extern std::list<ClipRecord> glClips;
 extern std::recursive_mutex glClipboardLock;

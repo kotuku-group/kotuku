@@ -29,7 +29,7 @@
 #include "ankerl/unordered_dense.h"
 #endif
 
-#define CORE_BUILD_DATE 20260715
+#define CORE_BUILD_DATE 20260716
 class objMetaClass;
 
 // Predefined cursor styles
@@ -96,6 +96,7 @@ enum class PMF : uint32_t {
    NIL = 0,
    EVENT_LOOP = 0x00000001,
    SYSTEM_NO_BREAK = 0x00000002,
+   ANY_SIGNAL = 0x00000004,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(PMF)
@@ -786,22 +787,12 @@ enum class KQ : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(KQ)
 
-// Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.
+// Memory types.
 
 enum class MEM : uint32_t {
    NIL = 0,
-   DATA = 0x00000000,
    VIDEO = 0x00000001,
    TEXTURE = 0x00000002,
-   AUDIO = 0x00000004,
-   CODE = 0x00000008,
-   UNTRACKED = 0x00000010,
-   STRING = 0x00000020,
-   COLLECT = 0x00000040,
-   PROTECTED = 0x00000080,
-   READ = 0x00010000,
-   WRITE = 0x00020000,
-   READ_WRITE = 0x00030000,
    NO_CLEAR = 0x00040000,
 };
 
@@ -1357,13 +1348,6 @@ struct Message {
    int     Size;    // The byte-size of the message data, or zero if no data is provided.
 };
 
-typedef struct MemInfo {
-   APTR     Start;       // The starting address of the memory block (does not apply to shared blocks).
-   uint32_t Size;        // The size of the memory block.
-   MEM      Flags;       // The type of memory.
-   MEMORYID MemoryID;    // The unique resource ID for this block.
-} MEMINFO;
-
 struct MsgHandler {
    struct MsgHandler * Prev;    // Previous message handler in the chain.
    struct MsgHandler * Next;    // Next message handler in the chain.
@@ -1505,7 +1489,6 @@ struct CoreBase {
    ERR (*_ListChildren)(OBJECTID Object, kt::vector<ChildEntry> *List);
    ERR (*_RegisterFD)(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR) , APTR Data);
    ERR (*_ResolvePath)(const std::string_view &Path, RSF Flags, std::string *Result);
-   ERR (*_MemoryInfo)(MEMORYID ID, struct MemInfo *MemInfo, int Size);
    ERR (*_TrackResource)(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager *Manager);
    ERR (*_NewObject)(CLASSID ClassID, NF Flags, OBJECTPTR *Object);
    void (*_NotifySubscribers)(OBJECTPTR Object, AC Action, APTR Args, ERR Error);
@@ -1515,7 +1498,6 @@ struct CoreBase {
    CLASSID (*_ResolveClassName)(const std::string_view &Name);
    ERR (*_SendMessage)(MSGID Type, MSF Flags, APTR Data, int Size);
    ERR (*_SetOwner)(OBJECTPTR Object, OBJECTPTR Owner);
-   ERR (*_ProtectMemory)(APTR Address, MEM Flags);
    void (*_SetObjectContext)(OBJECTPTR Object, const struct Field *Field, AC ActionID);
    CSTRING (*_FieldName)(uint32_t FieldID);
    ERR (*_ScanDir)(struct DirInfo *Info);
@@ -1604,7 +1586,6 @@ inline const struct SystemState * GetSystemState(void) { return CoreBase->_GetSy
 inline ERR ListChildren(OBJECTID Object, kt::vector<ChildEntry> *List) { return CoreBase->_ListChildren(Object,List); }
 inline ERR RegisterFD(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR) , APTR Data) { return CoreBase->_RegisterFD(FD,Flags,Routine,Data); }
 inline ERR ResolvePath(const std::string_view &Path, RSF Flags, std::string *Result) { return CoreBase->_ResolvePath(Path,Flags,Result); }
-inline ERR MemoryInfo(MEMORYID ID, struct MemInfo *MemInfo, int Size) { return CoreBase->_MemoryInfo(ID,MemInfo,Size); }
 inline ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager *Manager) { return CoreBase->_TrackResource(ResourceID,Address,OwnerID,Manager); }
 inline ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object) { return CoreBase->_NewObject(ClassID,Flags,Object); }
 inline void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Error) { return CoreBase->_NotifySubscribers(Object,Action,Args,Error); }
@@ -1614,7 +1595,6 @@ inline ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *C
 inline CLASSID ResolveClassName(const std::string_view &Name) { return CoreBase->_ResolveClassName(Name); }
 inline ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size) { return CoreBase->_SendMessage(Type,Flags,Data,Size); }
 inline ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner) { return CoreBase->_SetOwner(Object,Owner); }
-inline ERR ProtectMemory(APTR Address, MEM Flags) { return CoreBase->_ProtectMemory(Address,Flags); }
 inline void SetObjectContext(OBJECTPTR Object, const struct Field *Field, AC ActionID) { return CoreBase->_SetObjectContext(Object,Field,ActionID); }
 inline CSTRING FieldName(uint32_t FieldID) { return CoreBase->_FieldName(FieldID); }
 inline ERR ScanDir(struct DirInfo *Info) { return CoreBase->_ScanDir(Info); }
@@ -1699,7 +1679,6 @@ extern "C" const struct SystemState * GetSystemState(void);
 extern "C" ERR ListChildren(OBJECTID Object, kt::vector<ChildEntry> *List);
 extern "C" ERR RegisterFD(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR) , APTR Data);
 extern "C" ERR ResolvePath(const std::string_view &Path, RSF Flags, std::string *Result);
-extern "C" ERR MemoryInfo(MEMORYID ID, struct MemInfo *MemInfo, int Size);
 extern "C" ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager *Manager);
 extern "C" ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object);
 extern "C" void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Error);
@@ -1709,7 +1688,6 @@ extern "C" ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSI
 extern "C" CLASSID ResolveClassName(const std::string_view &Name);
 extern "C" ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size);
 extern "C" ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner);
-extern "C" ERR ProtectMemory(APTR Address, MEM Flags);
 extern "C" void SetObjectContext(OBJECTPTR Object, const struct Field *Field, AC ActionID);
 extern "C" CSTRING FieldName(uint32_t FieldID);
 extern "C" ERR ScanDir(struct DirInfo *Info);
@@ -1832,10 +1810,6 @@ template<class T> inline ERR NewObject(CLASSID ClassID, T **Result) {
 
 template<class T> inline ERR NewLocalObject(CLASSID ClassID, T **Result) {
    return NewObject(ClassID, NF::LOCAL, (OBJECTPTR *)Result);
-}
-
-inline ERR MemoryInfo(MEMORYID ID, struct MemInfo * MemInfo) {
-   return MemoryInfo(ID,MemInfo,sizeof(struct MemInfo));
 }
 
 inline ERR QueueAction(AC Action, OBJECTID ObjectID) {
