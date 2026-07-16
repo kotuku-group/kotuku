@@ -1,0 +1,55 @@
+-- Tests for processing objects and signal wait modes.
+
+@Test function AnyModeReturnsAfterFirstSignal()
+   local first = obj.new('config')
+   local second = obj.new('config')
+   local proc = processing.new({
+      timeout = 0.5,
+      signals = array<object> { first, second },
+      mode = 'any'
+   })
+
+   processing.delayedCall(function()
+      first.acSignal()
+   end)
+
+   local err = proc.sleep()
+   assert(err is ERR_Okay, 'Any-signal wait did not return after the first signal: ' .. mSys.GetErrorMsg(err))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function AnyModeConsumesPreExistingSignal()
+   local first = obj.new('config')
+   local second = obj.new('config')
+   local proc = processing.new({
+      timeout = 0.5,
+      signals = array<object> { first, second },
+      mode = 'any'
+   })
+
+   second.acSignal()
+
+   local err = proc.sleep()
+   assert(err is ERR_Okay, 'Any-signal wait did not consume a pre-existing signal: ' .. mSys.GetErrorMsg(err))
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ModeRejectsUnknownValue()
+   try
+      processing.new({ mode = 'first' })
+   success
+      error("processing.new() accepted an unknown signal mode")
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ModeRejectsNonStringValue()
+   try
+      processing.new({ mode = 1 })
+   success
+      error("processing.new() accepted a non-string signal mode")
+   end
+end
