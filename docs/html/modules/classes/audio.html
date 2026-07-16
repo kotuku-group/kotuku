@@ -130,7 +130,6 @@
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Hardware activation completed successfully.</td></tr>
 <tr><th class="col-md-1">Failed</th><td>Hardware device unavailable or driver initialisation failed.</td></tr>
-<tr><th class="col-md-1">AllocMemory</th><td>Failed to allocate internal mixing buffers.</td></tr>
 </tbody></table></div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tac-Deactivate" style="scroll-margin:3em;" id="ta-Deactivate" role="button"><td style="width:1%; border-top-style: none; border-bottom-style: none;"><i class="bi bi-chevron-double-right text-secondary"></i></td><th class="col-md-1 text-primary">Deactivate</th><td>Disables the audio mixer and returns device resources to the system.</td></tr><tr><td class="hiddenRow" style="width:1%; border-top-style: none; border-bottom-style: none;"></td><td colspan="2" class="hiddenRow"><div id="tac-Deactivate" class="collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR acDeactivate(*Object)</samp></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>Deactivating an audio object will switch off the mixer, clear the output buffer and return any allocated device resources back to the host system.  The audio object will remain in a suspended state until it is reactivated.</p>

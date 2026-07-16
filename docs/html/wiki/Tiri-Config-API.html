@@ -11,7 +11,7 @@
 <meta name="description" content="Kōtuku documentation, machine generated from source">
 <meta name="author" content="Paul Manias">
 <link rel="icon" href="/favicon.ico">
-<title>Kōtuku Wiki - TDL Tools</title>
+<title>Kōtuku Wiki - Tiri Config API</title>
 <link href="../css/bootstrap.min.css" rel="stylesheet">
 <link href="../css/module-template.css" rel="stylesheet">
 <link href="../css/github-markdown.css" rel="stylesheet">
@@ -268,153 +268,111 @@
 <div class="col-sm-9" style="max-width: 1200px;">
 <div class="docs-content" id="default-page">
 
-<h1>TDL Tools</h1>
-<h1 id="idl-c">idl-c</h1>
-<p>The idl-c script is the primary parser for TDL files, producing essential C++ headers and auto-generating interface definitions based on class and module specs. It also generates XML documentation by way of the idl-doc extension.</p>
-<p>The idl-c script is located in Kōtuku&#39;s <code>scripts/dev/</code> folder. The following command-line parameters are accepted:</p>
-<table>
-<thead>
-<tr>
-<th style="text-align: left;">Arg</th>
-<th style="text-align: left;">Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align: left;">src</td>
-<td style="text-align: left;">The source TDL file (required).</td>
-</tr>
-<tr>
-<td style="text-align: left;">output</td>
-<td style="text-align: left;">Output path for the C++ header. Not required if the TDL defines a named module.</td>
-</tr>
-<tr>
-<td style="text-align: left;">feedback</td>
-<td style="text-align: left;">Feedback level, can be set to <code>verbose</code> for extra log messages.</td>
-</tr>
-<tr>
-<td style="text-align: left;">output-defs</td>
-<td style="text-align: left;">C++ interface definitions (e.g. the module function table) will be output to this file if specified.</td>
-</tr>
-<tr>
-<td style="text-align: left;">output-proto</td>
-<td style="text-align: left;">Function prototypes will be output to this file if specified.</td>
-</tr>
-<tr>
-<td style="text-align: left;">prototypes</td>
-<td style="text-align: left;">Can be set to <code>static</code> to output static prototype functions in conjunction with <code>output-proto</code>.</td>
-</tr>
-<tr>
-<td style="text-align: left;">sdk</td>
-<td style="text-align: left;">Refers to the path of the Kōtuku SDK. Not normally required as it can be inferred.</td>
-</tr>
-<tr>
-<td style="text-align: left;">files</td>
-<td style="text-align: left;">A list of source files that need to be processed in conjunction with the TDL file.</td>
-</tr>
-</tbody>
-</table>
-<p>This example from the Core API parses <code>errors.tdl</code> as a straight header file with no interface definitions:</p>
-<pre><code>origo scripts/dev/idl-c src=defs/errors.tdl output=sdk:include/system/errors.h</code></pre>
-<p>This example parses every function interface for the Core API, and auto-generates C prototypes according to their definitions:</p>
-<pre><code>origo scripts/dev/idl-c src=defs/core.tdl
-  output-proto=prototypes.h
-  output-defs=data_functions.c
-  files={ &quot;core.cpp&quot; &quot;lib_objects.cpp&quot; &quot;lib_base64.cpp&quot; &quot;lib_events.cpp&quot; &quot;lib_fields_read.cpp&quot;
-   &quot;lib_fields_write.cpp&quot; &quot;lib_filesystem.cpp&quot; &quot;lib_functions.cpp&quot; &quot;lib_locking.cpp&quot;
-   &quot;lib_log.cpp&quot; &quot;lib_messages.cpp&quot; &quot;lib_memory.cpp&quot; &quot;lib_strings.cpp&quot; &quot;lib_unicode.cpp&quot;
-   &quot;fs_folders.cpp&quot; &quot;fs_identify.cpp&quot; &quot;fs_resolution.cpp&quot; &quot;fs_volumes.cpp&quot;
-  }</code></pre>
-<hr>
-<h1 id="idl-doc">idl-doc</h1>
-<p>The idl-doc script is an extension of idl-c and cannot be run independently. XML documentation is automatically generated as part of idl-c&#39;s process, and document files are saved to the <code>sdk:docs/xml/</code> path.</p>
-<p>We use XML style-sheets to process the XML documents into HTML. An automated script that will process every manual is located at <code>sdk:docs/generate.tiri</code> and requires <code>xsltproc</code> to be installed.</p>
-<hr>
-<h1 id="idl-compile">idl-compile</h1>
-<p>idl-compile will parse an TDL file and produce compiled IDL data that is in a universal format. The IDL describes all classes, structs and constants defined in the TDL source.</p>
-<p>The compiled IDL is expected to be compiled into the module binary and referenced from its <code>KOTUKU_MOD()</code> definition, which will make it available in the module header. Run-time languages like Tiri will be able to read the IDL at run-time and bind to it, guaranteeing that the language header and the compiled binary are correctly matched.</p>
-<p>The idl-compile script is located in Kōtuku&#39;s <code>scripts/dev/</code> folder. The following command-line parameters are accepted:</p>
-<table>
-<thead>
-<tr>
-<th style="text-align: left;">Arg</th>
-<th style="text-align: left;">Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align: left;">src</td>
-<td style="text-align: left;">The source TDL file (required).</td>
-</tr>
-<tr>
-<td style="text-align: left;">output</td>
-<td style="text-align: left;">Output path for the C++ header. Not required if the TDL defines a named module.</td>
-</tr>
-<tr>
-<td style="text-align: left;">feedback</td>
-<td style="text-align: left;">Feedback level, can be set to <code>verbose</code> for extra log messages.</td>
-</tr>
-<tr>
-<td style="text-align: left;">sdk</td>
-<td style="text-align: left;">Refers to the path of the Kōtuku SDK. Not normally required as it can be inferred.</td>
-</tr>
-<tr>
-<td style="text-align: left;">format</td>
-<td style="text-align: left;">Set to &#39;c&#39; if the IDL should be output as a C char string named <code>glIDL</code>. It is otherwise generated as a constant for a <code>.h</code> C header, and named <code>MOD_IDL</code>.</td>
-</tr>
-<tr>
-<td style="text-align: left;">append</td>
-<td style="text-align: left;">If true, the generated output will be appended to the target output file.</td>
-</tr>
-</tbody>
-</table>
-<p>Example:</p>
-<pre><code>origo scripts/dev/idl-compile src=defs/core.tdl output=idl.h format=c</code></pre>
-<h1 id="cmake-support">CMake Support</h1>
-<p>The IDL scripts are not intended for direct use from the command-line, and should instead be integrated as part of a module&#39;s build process. Kōtuku&#39;s <code>CMakeLists.txt</code> file has a number of pre-defined functions to help with integrating TDL processing into your build.</p>
-<p>They are as follows:</p>
-<h3 id="idl_gen">idl_gen()</h3>
-<p><code>idl_gen(&quot;{TDL_PATH}&quot; NAME &quot;{NAME}&quot; OUTPUT &quot;{OUTPUT}&quot; ...)</code></p>
-<p><code>idl_gen()</code> is used to generate C/C++ headers from TDL files, and produces XML document files as a by-product. It can also produce IDL output in C-format if <code>APPEND_IDL</code> is specified.</p>
-<p>The following options are available:</p>
-<table>
-<thead>
-<tr>
-<th style="text-align: left;">Option</th>
-<th style="text-align: left;">Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align: left;">NAME</td>
-<td style="text-align: left;">Required. Defines the CMake target name for add_custom_target().</td>
-</tr>
-<tr>
-<td style="text-align: left;">OUTPUT</td>
-<td style="text-align: left;">Required. Defines the <code>output</code> parameter for idl-c and also acts as a CMake dependency. <em>Must be a full path</em>.</td>
-</tr>
-<tr>
-<td style="text-align: left;">FILES</td>
-<td style="text-align: left;">A list of C/C++ source files to be passed to the idl-c <code>files</code> parameter.</td>
-</tr>
-<tr>
-<td style="text-align: left;">ARGS</td>
-<td style="text-align: left;">Additional arguments to be passed directly to the idl-c script.</td>
-</tr>
-<tr>
-<td style="text-align: left;">APPEND_IDL</td>
-<td style="text-align: left;">Run the idl-compile script and <em>append</em> the output to the given path.</td>
-</tr>
-</tbody>
-</table>
-<pre><code>idl_gen (&quot;${MOD}.tdl&quot; NAME ${MOD}_defs
-   OUTPUT &quot;${INCLUDE_OUTPUT}/modules/${MOD}.h&quot;
-   FILES &quot;class_rsvg.cpp&quot; &quot;class_svg.cpp&quot;)</code></pre>
-<h3 id="idl_compile">idl_compile()</h3>
-<p><code>idl_compile(&quot;{TDL_PATH}&quot;) NAME &quot;{NAME}&quot; OUTPUT &quot;{OUTPUT_PATH}&quot;)</code></p>
-<p>Calls the idl-compile script with <code>TDL_PATH</code> as the source and <code>OUTPUT_PATH</code> as the target C file, which will be <em>overwritten</em>. The <code>NAME</code> must be a unique target name for CMake.</p>
-<p>Example of typical usage:</p>
-<pre><code>idl_compile (&quot;svg.tdl&quot; NAME svg_idl OUTPUT &quot;${CMAKE_CURRENT_SOURCE_DIR}/svg_def.c&quot;)</code></pre>
+<h1>Tiri Config API</h1>
+<p>The Config API provides encoding and decoding functionality for moving data between Config text and Tiri tables.</p>
+<p>Config text is a simple, human-readable data format built from named groups of key-value pairs. It is the same format used by the <code>Config</code> class, so this library is a convenient way to produce and consume that data directly in script without instantiating an object.</p>
+<p>The API can be loaded with the line:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;config&#39;</span></span></code></pre></div>
+<h2 id="data-model">Data Model</h2>
+<p>Config data is represented as a table of group tables. Each top-level key names a group, and each group is itself a table of string-valued keys:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="va">data</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">Display</span> <span class="op">=</span> <span class="op">{</span> <span class="va">Width</span> <span class="op">=</span> <span class="st">&#39;1280&#39;</span><span class="op">,</span> <span class="va">Height</span> <span class="op">=</span> <span class="st">&#39;720&#39;</span> <span class="op">},</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">Audio</span>   <span class="op">=</span> <span class="op">{</span> <span class="va">Volume</span> <span class="op">=</span> <span class="st">&#39;80&#39;</span> <span class="op">}</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p>This corresponds to the following Config text:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode ini"><code class="sourceCode ini"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">[Audio]</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="dt">Volume </span><span class="ot">=</span><span class="st"> </span><span class="dv">80</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="kw">[Display]</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="dt">Height </span><span class="ot">=</span><span class="st"> </span><span class="dv">720</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="dt">Width </span><span class="ot">=</span><span class="st"> </span><span class="dv">1280</span></span></code></pre></div>
+<p>A few properties of the format are worth noting:</p>
+<ul>
+<li>Decoded values are <strong>always strings</strong>. Numeric- and boolean-looking values such as <code>8</code> or <code>Yes</code> are returned verbatim as <code>&#39;8&#39;</code> and <code>&#39;Yes&#39;</code>; no type conversion is performed.</li>
+<li>Comments (lines beginning with <code>#</code>), source ordering, and incidental formatting are <strong>not preserved</strong> across a decode.</li>
+<li>Group and key names are <strong>case-sensitive</strong>. <code>[Display]</code> and <code>[display]</code> are distinct groups.</li>
+</ul>
+<h2 id="configdecode">config.decode()</h2>
+<p><code>result = config.decode(String)</code></p>
+<p>Decodes Config text into a table of groups and key-value tables.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="va">data</span> <span class="op">=</span> <span class="va">config</span><span class="op">.</span>decode<span class="op">(</span><span class="st">&#39;[Display]</span><span class="sc">\n</span><span class="st">Width = 1280</span><span class="sc">\n</span><span class="st">&#39;</span><span class="op">)</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: { Display = { Width = &#39;1280&#39; } }</span></span></code></pre></div>
+<p>The parser is deliberately lenient and mirrors the behaviour of the Config class:</p>
+<ul>
+<li>Both LF (<code>\n</code>) and CRLF (<code>\r\n</code>) line endings are accepted.</li>
+<li>Leading whitespace on a line is ignored.</li>
+<li>Blank lines and comment lines (those whose first non-space character is <code>#</code>) are skipped.</li>
+<li>Key-value lines are split on the first <code>=</code>. Surrounding whitespace is trimmed from the key, and leading whitespace is trimmed from the value. <strong>Trailing</strong> whitespace in a value is preserved.</li>
+<li>Lines that appear before the first group, and malformed lines with no <code>=</code>, are ignored.</li>
+<li>Repeated groups are merged, and when a key appears more than once the <strong>final</strong> occurrence takes precedence.</li>
+<li>A malformed group header (for example <code>[Invalid</code> with no closing bracket, or a nested <code>[</code>) closes the current group, so subsequent keys are discarded until the next valid header.</li>
+</ul>
+<div class="sourceCode" id="cb5"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="va">source</span> <span class="op">=</span> <span class="vs">[[</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="vs"># Font definitions</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="vs">[Clean]</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="vs">Bold = fonts:fixed/clean.fon</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="vs">Points = 8</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="vs">Styles = Bold,Bold Italic,Italic,Regular</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="vs">]]</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="va">data</span> <span class="op">=</span> <span class="va">config</span><span class="op">.</span>decode<span class="op">(</span><span class="va">source</span><span class="op">)</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="co">-- data.Clean.Bold   = &#39;fonts:fixed/clean.fon&#39;</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="co">-- data.Clean.Points = &#39;8&#39;                          (still a string)</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="co">-- data.Clean.Styles = &#39;Bold,Bold Italic,Italic,Regular&#39;</span></span></code></pre></div>
+<h2 id="configencode">config.encode()</h2>
+<p><code>text = config.encode(Value)</code></p>
+<p>Encodes a table of groups and key-value tables as deterministic Config text.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="va">text</span> <span class="op">=</span> <span class="va">config</span><span class="op">.</span>encode<span class="op">({</span> <span class="va">Display</span> <span class="op">=</span> <span class="op">{</span> <span class="va">Width</span> <span class="op">=</span> <span class="dv">1280</span> <span class="op">}</span> <span class="op">})</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result: &#39;[Display]\nWidth = 1280\n&#39;</span></span></code></pre></div>
+<p>The output is canonical and reproducible:</p>
+<ul>
+<li>Group names and, within each group, key names are sorted alphabetically.</li>
+<li>Groups are separated by a single blank line. An empty group is emitted as a bare section heading with no keys.</li>
+<li><code>string</code>, <code>number</code>, and <code>boolean</code> values are supported. Numbers and booleans are converted to their string representations (<code>3</code>, <code>true</code>).</li>
+</ul>
+<div class="sourceCode" id="cb7"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="va">text</span> <span class="op">=</span> <span class="va">config</span><span class="op">.</span>encode<span class="op">({</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>   <span class="va">Zulu</span>  <span class="op">=</span> <span class="op">{</span> <span class="va">Enabled</span> <span class="op">=</span> <span class="kw">true</span><span class="op">,</span> <span class="va">Count</span> <span class="op">=</span> <span class="dv">3</span> <span class="op">},</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>   <span class="va">Alpha</span> <span class="op">=</span> <span class="op">{</span> <span class="va">Name</span> <span class="op">=</span> <span class="st">&#39;First&#39;</span><span class="op">,</span> <span class="va">Empty</span> <span class="op">=</span> <span class="st">&#39;&#39;</span> <span class="op">}</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="op">})</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="co">-- Result:</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="co">-- [Alpha]</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="co">-- Empty =</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="co">-- Name = First</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="co">--</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a><span class="co">-- [Zulu]</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="co">-- Count = 3</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="co">-- Enabled = true</span></span></code></pre></div>
+<p>An empty table encodes to an empty string, and an empty group encodes to just its heading:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="va">config</span><span class="op">.</span>encode<span class="op">({</span> <span class="op">})</span>            <span class="co">-- Result: &#39;&#39;</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="va">config</span><span class="op">.</span>encode<span class="op">({</span> <span class="va">Empty</span> <span class="op">=</span> <span class="op">{</span> <span class="op">}</span> <span class="op">})</span> <span class="co">-- Result: &#39;[Empty]\n&#39;</span></span></code></pre></div>
+<h3 id="validation">Validation</h3>
+<p>Unlike <code>decode()</code>, the encoder is strict and raises an <code>error()</code> for any input that could not be represented as valid, round-trippable Config text:</p>
+<ul>
+<li>The root value must be a table, and every group value must be a table.</li>
+<li>Group names must be non-empty strings and cannot contain <code>[</code>, <code>]</code>, or line breaks.</li>
+<li>Key names must be non-empty strings with no surrounding whitespace, cannot start with <code>#</code> or <code>[</code>, and cannot contain <code>=</code> or line breaks.</li>
+<li>Values must be strings, numbers, or booleans (nested tables are rejected) and cannot contain line breaks.</li>
+</ul>
+<div class="sourceCode" id="cb9"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="va">config</span><span class="op">.</span>encode<span class="op">(</span><span class="st">&#39;not a table&#39;</span><span class="op">)</span>                 <span class="co">-- error: root must be a table</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="va">config</span><span class="op">.</span>encode<span class="op">({</span> <span class="va">Broken</span> <span class="op">=</span> <span class="st">&#39;value&#39;</span> <span class="op">})</span>          <span class="co">-- error: group must be a table</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="va">config</span><span class="op">.</span>encode<span class="op">({</span> <span class="va">Group</span> <span class="op">=</span> <span class="op">{</span> <span class="op">[</span><span class="st">&#39;Bad=Key&#39;</span><span class="op">]</span> <span class="op">=</span> <span class="st">&#39;x&#39;</span> <span class="op">}</span> <span class="op">})</span> <span class="co">-- error: key cannot contain &#39;=&#39;</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="va">config</span><span class="op">.</span>encode<span class="op">({</span> <span class="va">Group</span> <span class="op">=</span> <span class="op">{</span> <span class="va">Key</span> <span class="op">=</span> <span class="st">&#39;a</span><span class="sc">\n</span><span class="st">b&#39;</span> <span class="op">}</span> <span class="op">})</span>   <span class="co">-- error: value cannot contain line breaks</span></span></code></pre></div>
+<h2 id="round-tripping">Round-Tripping</h2>
+<p>Because the encoder enforces exactly the constraints the decoder relies on, any table that <code>encode()</code> accepts survives a full <code>encode</code> → <code>decode</code> cycle with its group names, key names, and string values intact:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="va">encoded</span> <span class="op">=</span> <span class="va">config</span><span class="op">.</span>encode<span class="op">({</span> <span class="op">[</span><span class="st">&#39;Mixed Case&#39;</span><span class="op">]</span> <span class="op">=</span> <span class="op">{</span> <span class="op">[</span><span class="st">&#39;Key With Spaces&#39;</span><span class="op">]</span> <span class="op">=</span> <span class="st">&#39;value&#39;</span> <span class="op">}</span> <span class="op">})</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="va">decoded</span> <span class="op">=</span> <span class="va">config</span><span class="op">.</span>decode<span class="op">(</span><span class="va">encoded</span><span class="op">)</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="co">-- decoded[&#39;Mixed Case&#39;][&#39;Key With Spaces&#39;] = &#39;value&#39;</span></span></code></pre></div>
+<p>Note that the reverse is not guaranteed: <code>decode()</code> accepts input the encoder would reject (comments, malformed lines, duplicate keys), so <code>decode</code> → <code>encode</code> normalises the data rather than reproducing the original text byte-for-byte.</p>
+<h2 id="interoperating-with-the-config-class">Interoperating with the Config Class</h2>
+<p>The text produced by <code>config.encode()</code> is directly consumable by the <code>Config</code> class via a <code>DATA_TEXT</code> data feed, which is useful when you want to build configuration data in script and then hand it to code that expects a Config object:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="va">encoded</span> <span class="op">=</span> <span class="va">config</span><span class="op">.</span>encode<span class="op">({</span> <span class="va">Font</span> <span class="op">=</span> <span class="op">{</span> <span class="va">Name</span> <span class="op">=</span> <span class="st">&#39;Clean&#39;</span><span class="op">,</span> <span class="va">Points</span> <span class="op">=</span> <span class="dv">8</span><span class="op">,</span> <span class="va">Scalable</span> <span class="op">=</span> <span class="kw">true</span> <span class="op">}</span> <span class="op">})</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="va">cfg</span> <span class="op">=</span> <span class="va">obj</span><span class="op">.</span>new<span class="op">(</span><span class="st">&#39;config&#39;</span><span class="op">)</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>check<span class="op">(</span><span class="va">cfg</span><span class="op">.</span>acDataFeed<span class="op">(</span><span class="kw">nil</span><span class="op">,</span> <span class="cn">DATA_TEXT</span><span class="op">,</span> <span class="va">encoded</span><span class="op">,</span> <span class="dv">0</span><span class="op">))</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="va">name</span> <span class="op">=</span> <span class="op">[</span><span class="cn">_</span><span class="op">*]</span><span class="va">cfg</span><span class="op">.</span>mtReadValue<span class="op">(</span><span class="st">&#39;Font&#39;</span><span class="op">,</span> <span class="st">&#39;Name&#39;</span><span class="op">)</span>      <span class="co">-- &#39;Clean&#39;</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="va">points</span> <span class="op">=</span> <span class="op">[</span><span class="cn">_</span><span class="op">*]</span><span class="va">cfg</span><span class="op">.</span>mtReadValue<span class="op">(</span><span class="st">&#39;Font&#39;</span><span class="op">,</span> <span class="st">&#39;Points&#39;</span><span class="op">)</span>  <span class="co">-- &#39;8&#39;</span></span></code></pre></div>
+<p>Conversely, use <code>config.decode()</code> when you have Config text (for instance loaded from a file) and prefer to work with it as a plain Tiri table rather than through the object API.</p>
 </div></div></div></div>
 
 <script src="../js/bootstrap.bundle.min.js"></script>

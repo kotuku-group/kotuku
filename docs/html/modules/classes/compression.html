@@ -182,7 +182,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
 <tr><th class="col-md-1">MissingPath</th><td>The object is missing a path reference</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-CompressStream" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">CompressStream</th><td id="tm-CompressStream">Compresses streamed data into a buffer.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-CompressStream" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::CompressStream(OBJECTPTR Object, APTR Input, INT Length, FUNCTION * Callback, APTR Output, INT OutputSize)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Input</td><td>Pointer to the source data.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-CompressStream" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">CompressStream</th><td id="tm-CompressStream">Compresses streamed data into a buffer.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-CompressStream" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::CompressStream(OBJECTPTR Object, APTR Input, INT Length, FUNCTION Callback, APTR Output, INT OutputSize)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Input</td><td>Pointer to the source data.</td></tr>
 <tr><td>Length</td><td>Amount of data to compress, in bytes.</td></tr>
 <tr><td>Callback</td><td>This callback function will be called with a pointer to the compressed data.</td></tr>
 <tr><td>Output</td><td>Optional.  Points to a buffer that will receive the compressed data.  Must be equal to or larger than the <a data-bs-toggle="tooltip" title="Indicates the minimum output buffer size that will be needed during de/compression." href="#tf-MinOutputSize">MinOutputSize</a> field.</td></tr>
@@ -199,7 +199,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
    while (!(error = acRead(file, input, sizeof(input), &amp;len))) {
       if (!len) break; // No more data to read.
 
-      error = mtCompressStream(compress, input, len, &amp;callback, NULL, 0);
+      error = mtCompressStream(compress, input, len, callback, nullptr, 0);
       if (error != ERR::Okay) break;
 
       if (result &gt; 0) {
@@ -210,7 +210,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
    }
 
    if (!error) {
-      if (!(error = mtCompressStreamEnd(compress, NULL, 0))) {
+      if (!(error = mtCompressStreamEnd(compress, callback, nullptr, 0))) {
          cmpsize += result;
          error = acWrite(outfile, output, result, &amp;len);
       }
@@ -228,7 +228,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 <tr><th class="col-md-1">Function</th><td>A function call failed</td></tr>
 </tbody></table></div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-CompressStreamEnd" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">CompressStreamEnd</th><td id="tm-CompressStreamEnd">Ends the compression of an open stream.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-CompressStreamEnd" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::CompressStreamEnd(OBJECTPTR Object, FUNCTION * Callback, APTR Output, INT OutputSize)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Callback</td><td>Refers to a function that will be called for each compressed block of data.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-CompressStreamEnd" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">CompressStreamEnd</th><td id="tm-CompressStreamEnd">Ends the compression of an open stream.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-CompressStreamEnd" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::CompressStreamEnd(OBJECTPTR Object, FUNCTION Callback, APTR Output, INT OutputSize)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Callback</td><td>Refers to a function that will be called for each compressed block of data.</td></tr>
 <tr><td>Output</td><td>Optional pointer to a buffer that will receive the compressed data.  If not set, the compression object will use its own buffer.</td></tr>
 <tr><td>OutputSize</td><td>Size of the <code>Output</code> buffer (ignored if Output is <code>NULL</code>).</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
@@ -303,7 +303,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
 <tr><th class="col-md-1">Decompression</th><td>Unspecified failure during decompression of a data stream</td></tr>
 <tr><th class="col-md-1">InvalidCompression</th><td>The compression data is invalid or corrupted</td></tr>
 </tbody></table></div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-DecompressStream" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">DecompressStream</th><td id="tm-DecompressStream">Decompresses streamed data to an output buffer.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-DecompressStream" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::DecompressStream(OBJECTPTR Object, APTR Input, INT Length, FUNCTION * Callback, APTR Output, INT OutputSize)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Input</td><td>Pointer to data to decompress.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-DecompressStream" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">DecompressStream</th><td id="tm-DecompressStream">Decompresses streamed data to an output buffer.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-DecompressStream" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::DecompressStream(OBJECTPTR Object, APTR Input, INT Length, FUNCTION Callback, APTR Output, INT OutputSize)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Input</td><td>Pointer to data to decompress.</td></tr>
 <tr><td>Length</td><td>Amount of data to decompress from the Input parameter.</td></tr>
 <tr><td>Callback</td><td>Refers to a function that will be called for each decompressed block of information.</td></tr>
 <tr><td>Output</td><td>Optional pointer to a buffer that will receive the decompressed data.  If not set, the compression object will use its own buffer.</td></tr>
@@ -321,7 +321,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 <tr><th class="col-md-1">Function</th><td>A function call failed</td></tr>
 </tbody></table></div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-DecompressStreamEnd" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">DecompressStreamEnd</th><td id="tm-DecompressStreamEnd">Must be called at the end of the decompression process.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-DecompressStreamEnd" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::DecompressStreamEnd(OBJECTPTR Object, FUNCTION * Callback)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Callback</td><td>Refers to a function that will be called for each decompressed block of information.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-DecompressStreamEnd" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">DecompressStreamEnd</th><td id="tm-DecompressStreamEnd">Must be called at the end of the decompression process.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-DecompressStreamEnd" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::DecompressStreamEnd(OBJECTPTR Object, FUNCTION Callback)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Callback</td><td>Refers to a function that will be called for each decompressed block of information.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>To end the decompression process, this method must be called to write any final blocks of data and remove the resources that were allocated during decompression.</p>
       
@@ -359,7 +359,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
 <tr><th class="col-md-1">NoSupport</th><td>Operation not supported</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-Scan" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">Scan</th><td id="tm-Scan">Scan the archive's index of compressed data.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-Scan" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::Scan(OBJECTPTR Object, STRVIEW Folder, STRVIEW Filter, FUNCTION * Callback)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Folder</td><td>Only items within the specified folder are returned.  Use an empty string for files in the root folder.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-Scan" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">Scan</th><td id="tm-Scan">Scan the archive's index of compressed data.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-Scan" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::Scan(OBJECTPTR Object, STRVIEW Folder, STRVIEW Filter, FUNCTION Callback)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Folder</td><td>Only items within the specified folder are returned.  Use an empty string for files in the root folder.</td></tr>
 <tr><td>Filter</td><td>Search for a specific item or items by name, using wildcards.  If empty, all items will be scanned.</td></tr>
 <tr><td>Callback</td><td>This callback function will be called with a pointer to a <a data-bs-toggle="tooltip" title="" href="?page=struct-CompressedItem">CompressedItem</a> structure.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">

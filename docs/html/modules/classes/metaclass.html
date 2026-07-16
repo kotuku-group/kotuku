@@ -34,14 +34,14 @@
 <p>Internally, the provided list is copied to the <a data-bs-toggle="tooltip" title="This field can be read to retrieve a MetaClass object's internal action table." href="#tf-ActionTable">ActionTable</a> and the original values will serve no further purpose.</p>
 <p>The following example shows a list of <a data-bs-toggle="tooltip" title="" href="?page=struct-ActionArray">ActionArray</a> structures borrowed from the <a href="image.html">Image</a> class.  Note that such lists can also be auto-generated using our IDL scripts - an approach that we strongly recommend.</p>
 <pre>ActionArray clActions[] = {
-   { AC::FreePlacement, PIC_FreePlacement },
-   { AC::NewPlacement,  PIC_NewPlacement },
-   { AC::Init,          PIC_Init },
-   { AC::Query,         PIC_Query },
-   { AC::Read,          PIC_Read },
-   { AC::SaveToObject,  PIC_SaveToObject },
-   { AC::Seek,          PIC_Seek },
-   { AC::Write,         PIC_Write },
+   { AC::Free,         PIC_Free },
+   { AC::New,          PIC_New },
+   { AC::Init,         PIC_Init },
+   { AC::Query,        PIC_Query },
+   { AC::Read,         PIC_Read },
+   { AC::SaveToObject, PIC_SaveToObject },
+   { AC::Seek,         PIC_Seek },
+   { AC::Write,        PIC_Write },
    { AC::NIL, nullptr }
 };
 </pre>
@@ -183,9 +183,9 @@
 <div class="docs-content" style="display:none;" id="struct-ActionArray"><h1>ActionArray Structure</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Routine</th><td><span class="text-nowrap">APTR</span></td><td>Pointer to the function entry point</td></tr>
 <tr><th>ActionCode</th><td><span class="text-nowrap">AC</span></td><td>Action identifier</td></tr>
 </tbody></table><div class="footer copyright text-right">MetaClass class documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="struct-Field"><h1>Field Structure</h1><p class="lead">Used to describe the public fields of a class.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Arg</th><td><span class="text-nowrap">MAXINT</span></td><td>An option to complement the field type.  Can be a pointer or an integer value</td></tr>
+<div class="docs-content" style="display:none;" id="struct-Field"><h1>Field Structure</h1><p class="lead">Used to describe the public fields of a class.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Arg</th><td><span class="text-nowrap">INT64</span></td><td>An option to complement the field type.  Can be a pointer or an integer value</td></tr>
 <tr><th>GetValue</th><td><span class="text-nowrap">FUNCTION *</span></td><td>A virtual function that will retrieve the value for this field</td></tr>
-<tr><th>SetValue</th><td><span class="text-nowrap">APTR</span></td><td>A virtual function that will set the value for this field</td></tr>
+<tr><th>SetValue</th><td><span class="text-nowrap">FUNCTION *</span></td><td>A virtual function that will set the value for this field</td></tr>
 <tr><th>WriteValue</th><td><span class="text-nowrap">FUNCTION *</span></td><td>An internal function for writing to this field</td></tr>
 <tr><th>Name</th><td><span class="text-nowrap">CSTRING</span></td><td>The English name for the field, e.g. <code>Width</code></td></tr>
 <tr><th>FieldID</th><td><span class="text-nowrap">UINT</span></td><td>32-bit hash from fieldhash()</td></tr>

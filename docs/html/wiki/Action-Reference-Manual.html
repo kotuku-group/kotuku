@@ -209,7 +209,7 @@
         <li><a class="rounded" href="../modules/classes/display.html">Display</a></li>
         <li><a class="rounded" href="../modules/classes/document.html">Document</a></li>
         <li><a class="rounded" href="../modules/classes/font.html">Font</a></li>
-        <li><a class="rounded" href="../modules/classes/picture.html">Picture</a></li>
+        <li><a class="rounded" href="../modules/classes/image.html">Image</a></li>
         <li><a class="rounded" href="../modules/classes/pointer.html">Pointer</a></li>
         <li><a class="rounded" href="../modules/classes/surface.html">Surface</a></li>
         <li><a class="rounded" href="../modules/classes/svg.html">SVG</a></li>
@@ -235,6 +235,7 @@
         <li><a class="rounded" href="../modules/classes/gradientdistal.html">GradientDistal</a></li>
         <li><a class="rounded" href="../modules/classes/gradientgouraud.html">GradientGouraud</a></li>
         <li><a class="rounded" href="../modules/classes/gradientlinear.html">GradientLinear</a></li>
+        <li><a class="rounded" href="../modules/classes/gradientmesh.html">GradientMesh</a></li>
         <li><a class="rounded" href="../modules/classes/gradientradial.html">GradientRadial</a></li>
         <li><a class="rounded" href="../modules/classes/vector.html">Vector</a></li>
         <li><a class="rounded" href="../modules/classes/vectorclip.html">VectorClip</a></li>
@@ -282,7 +283,7 @@
 <p><a href="#activate"><code>Activate</code></a> | <a href="#clear"><code>Clear</code></a> | <a href="#clipboard"><code>Clipboard</code></a> | <a href="#copydata"><code>CopyData</code></a> | <a href="#datafeed"><code>DataFeed</code></a> | <a href="#deactivate"><code>Deactivate</code></a> | <a href="#disable"><code>Disable</code></a> | <a href="#dragdrop"><code>DragDrop</code></a> | <a href="#draw"><code>Draw</code></a> | <a href="#enable"><code>Enable</code></a> | <a href="#flush"><code>Flush</code></a> | <a href="#focus"><code>Focus</code></a> | <a href="#free"><code>Free</code></a> | <a href="#getkey"><code>GetKey</code></a> | <a href="#hide"><code>Hide</code></a> | <a href="#init"><code>Init</code></a> | <a href="#lock"><code>Lock</code></a> | <a href="#move"><code>Move</code></a> | <a href="#movetoback"><code>MoveToBack</code></a> | <a href="#movetofront"><code>MoveToFront</code></a> | <a href="#movetopoint"><code>MoveToPoint</code></a> | <a href="#next"><code>Next</code></a> | <a href="#prev"><code>Prev</code></a> | <a href="#query"><code>Query</code></a> | <a href="#read"><code>Read</code></a> | <a href="#redimension"><code>Redimension</code></a> | <a href="#redo"><code>Redo</code></a> | <a href="#refresh"><code>Refresh</code></a> | <a href="#rename"><code>Rename</code></a> | <a href="#reset"><code>Reset</code></a> | <a href="#resize"><code>Resize</code></a> | <a href="#saveimage"><code>SaveImage</code></a> | <a href="#savesettings"><code>SaveSettings</code></a> | <a href="#savetoobject"><code>SaveToObject</code></a> | <a href="#seek"><code>Seek</code></a> | <a href="#setfield"><code>SetField</code></a> | <a href="#setkey"><code>SetKey</code></a> | <a href="#show"><code>Show</code></a> | <a href="#signal"><code>Signal</code></a> | <a href="#undo"><code>Undo</code></a> | <a href="#unlock"><code>Unlock</code></a> | <a href="#write"><code>Write</code></a></p>
 <h1 id="internal-actions">Internal Actions</h1>
 <p>These actions are implemented for use internally, and must never be called from client code.</p>
-<p><a href="#freewarning"><code>FreeWarning</code></a> | <a href="#lostfocus"><code>LostFocus</code></a> | <a href="#newchild"><code>NewChild</code></a> | <a href="#newobject"><code>NewObject</code></a> | <a href="#newowner"><code>NewOwner</code></a> | <a href="#newplacement"><code>NewPlacement</code></a></p>
+<p><a href="#freewarning"><code>FreeWarning</code></a> | <a href="#lostfocus"><code>LostFocus</code></a> | <a href="#newchild"><code>NewChild</code></a> | <a href="#newowner"><code>NewOwner</code></a></p>
 <hr>
 <h2 id="activate">Activate</h2>
 <p><code>ERR acActivate(Object)</code></p>
@@ -807,34 +808,29 @@ ERR acDraw(Object)</code></pre>
 <h3 id="implementation-details-21">Implementation Details</h3>
 <p>The <code>NewOwner</code> action is used to alert an object that its owner has been changed successfully. Supporting this action provides an opportunity to respond to the change before the client next uses the object.</p>
 <p>The error code returned by your function will have no effect on the <code>SetOwner()</code> process.</p>
-<h2 id="newobject-">NewObject <!-- Private --></h2>
+<h2 id="new-">New <!-- Private --></h2>
 <p>For internal use only.</p>
 <h3 id="implementation-details-22">Implementation Details</h3>
-<p><code>NewObject</code> is called when a new object instance from your class has been created. It is recommended that your support routine performs the bare necessities only, meaning the setting of default values and allocating resources without initialising them. Anything more important should occur in the <code>Init</code> action.</p>
-<p>Returning an error code will cause the object creation process to fail.</p>
-<h2 id="newplacement-">NewPlacement <!-- Private --></h2>
-<p>For internal use only.</p>
-<h3 id="implementation-details-23">Implementation Details</h3>
-<p><code>NewPlacement</code> is called during the in-place construction of a new object, immediately after the raw memory has been allocated and the <code>Object</code> header has been initialised. It exists for classes that need to construct C++ members in-place before the standard <code>NewObject</code> hook runs.</p>
-<p>The object context is not yet established at this stage, so allocations that pass through <code>AllocMemory()</code> are not permitted; defer any such work to the <code>NewObject</code> hook. Where a derived and base class both provide <code>NewPlacement</code> support, the derived class takes priority.</p>
+<p><code>New</code> is called during the in-place construction of a new object, immediately after the raw memory has been allocated and the <code>Object</code> header has been initialised. It is the standard construction hook for classes that need to set up C++ members in-place.</p>
+<p>The object&#39;s owner is not assigned until after <code>New</code> returns, so any work that depends on the owner — including resource allocation through <code>AllocMemory()</code> — must be deferred to the <code>Init</code> action. Where a derived and base class both provide <code>New</code> support, the derived class takes priority. Base classes must ensure that their own construction logic is visible to derived classes.</p>
 <p>Returning an error code will cause the object creation process to fail.</p>
 <h2 id="next">Next</h2>
 <p><code>ERR acNext(Object)</code></p>
 <p>The <code>Next</code> and <a href="#Prev"><code>Prev</code></a> actions are used to traverse a sequence of related objects, such as the entries in a list or a chain of sibling objects. Calling <code>Next</code> advances to the object that follows the target in its sequence.</p>
 <p>The meaning of &#39;next&#39; is defined by the object&#39;s class, so consult the class documentation to confirm the behaviour and how the resulting position is reported. If the target has no successor, <code>ERR::NothingDone</code> is typically returned.</p>
-<h3 id="implementation-details-24">Implementation Details</h3>
+<h3 id="implementation-details-23">Implementation Details</h3>
 <p>Support <code>Next</code> if your class represents a member of an ordered sequence and forward traversal is meaningful. Pair it with <a href="#Prev"><code>Prev</code></a> so that the client can move in either direction.</p>
 <h2 id="prev">Prev</h2>
 <p><code>ERR acPrev(Object)</code></p>
 <p>The <code>Prev</code> and <a href="#Next"><code>Next</code></a> actions are used to traverse a sequence of related objects. Calling <code>Prev</code> moves to the object that precedes the target in its sequence.</p>
 <p>The meaning of &#39;previous&#39; is defined by the object&#39;s class, so consult the class documentation to confirm the behaviour and how the resulting position is reported. If the target has no predecessor, <code>ERR::NothingDone</code> is typically returned.</p>
-<h3 id="implementation-details-25">Implementation Details</h3>
+<h3 id="implementation-details-24">Implementation Details</h3>
 <p>Support <code>Prev</code> if your class represents a member of an ordered sequence and backward traversal is meaningful. Pair it with <a href="#Next"><code>Next</code></a> so that the client can move in either direction.</p>
 <h2 id="query">Query</h2>
 <p><code>ERR acQuery(Object)</code></p>
 <p>Calling the <code>Query</code> action will update the target object&#39;s state to match its source, typically in the form of a file or hardware device.</p>
 <p>Check the class documentation for the target object before utilising <code>Query</code>, as the exact nature of the process will be implementation dependent.</p>
-<h3 id="implementation-details-26">Implementation Details</h3>
+<h3 id="implementation-details-25">Implementation Details</h3>
 <p><code>Query</code> is useful action for ensuring that an object&#39;s state is reflective of the external source that it represents. Classes that are linked to some form of hardware will often benefit by supporting it. A basic example is the <code>Time</code> class, which updates its time values whenever <code>Query</code> is used.</p>
 <p>It is advised that your documentation specifies the exact fields that are updated after a successful <code>Query</code> call.</p>
 <h2 id="read">Read</h2>
@@ -869,7 +865,7 @@ ERR acDraw(Object)</code></pre>
 <p>Making a <code>Read</code> call will result in the object reading the total number of bytes defined by <code>Length</code> into the provided <code>Buffer</code>. If the class supports a seek marker, the read will start from the <code>Position</code> field&#39;s index. The <code>Position</code> will be incremented by the amount of bytes read if the call succeeds. Altering the position of the seek marker is possible with the <a href="#Seek"><code>Seek</code></a> action, if the class supports it.</p>
 <p>If the <code>Length</code> exceeds the total number of bytes left in the object, <code>Read</code> will only read as many bytes as there are available. If the class supports a <code>Size</code> field then it can be used to determine the number of bytes that are left to read.</p>
 <p>The <code>Result</code> parameter will be updated to reflect the total amount of data that was read into the supplied <code>Buffer</code>. If an error occurred, or if no data is left to read, the <code>Result</code> will be set to zero.</p>
-<h3 id="implementation-details-27">Implementation Details</h3>
+<h3 id="implementation-details-26">Implementation Details</h3>
 <p>The <code>Read</code> action is commonly used to read data from files, but can theoretically be used in any circumstance involving data storage and streaming content.</p>
 <p>The <code>Buffer</code> parameter points directly to the area that will receive data from your object. The <code>Length</code> will indicate the number of bytes that a program wants to retrieve. If the <code>Length</code> is larger than the amount of data that is available, write out the full amount of data remaining.</p>
 <p>Your class should support a <code>Position</code> field to indicate the current byte position from which the <code>Read</code> action will start. Increment the <code>Position</code> by the number of bytes that were read from the object&#39;s data store before returning to the client. Also consider supporting the <a href="#Seek"><code>Seek</code></a> action to manipulate the <code>Position</code> value.</p>
@@ -925,7 +921,7 @@ ERR acDraw(Object)</code></pre>
 <p><code>ERR acRefresh(Object)</code></p>
 <p>Some classes support the <code>Refresh</code> action if their objects represent external data sources. For example, the Document class can be refreshed if the source has changed.</p>
 <p>If a <code>Refresh</code> action fails, the object should remain in its original state unless the object&#39;s class states otherwise.</p>
-<h3 id="implementation-details-28">Implementation Details</h3>
+<h3 id="implementation-details-27">Implementation Details</h3>
 <p>A class that represents a view of an &#39;external&#39; data source should typically support the <code>Refresh</code> action. The purpose of a refresh is to re-read the origins of an object&#39;s data and then update the object to reflect any differences between the object and its data source.</p>
 <p>If the refresh process fails, avoid allowing the object to fall into an invalid state. It is recommended that either the object is left in its original state, or that the object reports the error in a way that makes it known to the user.</p>
 <h2 id="rename">Rename</h2>
@@ -948,14 +944,14 @@ ERR acDraw(Object)</code></pre>
 </table>
 <p>Objects that support naming conventions will typically support the <code>Rename</code> action. The <code>File</code> class is a typical example of a class that provides this kind of support to change filenames.</p>
 <p><code>Rename</code> does not impose limits on the length of the supplied <code>Name</code>, but the underlying system might; for instance all filesystems impose a hard limit on filename length.</p>
-<h3 id="implementation-details-29">Implementation Details</h3>
+<h3 id="implementation-details-28">Implementation Details</h3>
 <p>If your class supports naming (e.g. for the purpose of representing a data location such as a filename) then support the <code>Rename</code> action. If there is a limit on the number of characters that are supported by your code, document this restriction in the class manual.</p>
 <h2 id="reset">Reset</h2>
 <p><code>ERR acReset(Object)</code></p>
 <p>Using <code>Reset</code> on an object will revert its state to one that is similar to when it was first initialised.</p>
 <p>The exact behaviour of a reset is class dependent, but as a rule, object data will not be destroyed as a result of calling this action (the <a href="#Clear"><code>Clear</code></a> action is typically used for this purpose). A common example of a reset is to <a href="#Seek"><code>Seek</code></a> back to a position of zero, stop any currently running activity, then reset the object state back to normal.</p>
 <p>Be wary of confusing the consequences of a <code>Reset</code> with the <a href="#Flush"><code>Flush</code></a> action. Some objects will flush themselves as a consequence of a <code>Reset</code>, but the key difference is that calling <a href="#Flush"><code>Flush</code></a> will not result in a change of state.</p>
-<h3 id="implementation-details-30">Implementation Details</h3>
+<h3 id="implementation-details-29">Implementation Details</h3>
 <p>The most common reason for supporting the <code>Reset</code> action is to allow an object to get back to its most basic state, similar to when the object was first initialised. Examples could be resetting a file position back to the beginning, or restarting a running procedure from scratch.</p>
 <p>It is strongly recommended that you do not destroy any data in your support routine, but you may manipulate the object&#39;s state as required.</p>
 <h2 id="resize">Resize</h2>
@@ -1005,7 +1001,7 @@ ERR acDraw(Object)</code></pre>
 <p><code>SaveImage</code> is used to save an object&#39;s graphics to a storage object of your choosing. The process of saving the image will leverage the <code>Image</code> class, which by default saves images in PNG format. If an alternative image format provided by a <code>Image</code> derived class is desired, it can be referenced in the <code>ClassID</code> parameter. For instance, specifying <code>ID_JPEG</code> in <code>ClassID</code> is sufficient to save an image in JPEG format.</p>
 <p>The object referenced in <code>Dest</code> must be from a class that supports the <a href="#Write"><code>Write</code></a> action. Typically this would be a <code>File</code> object, but this is not imposed as a restriction.</p>
 <p>In some cases, the <code>SaveImage</code> and <a href="#SaveToObject"><code>SaveToObject</code></a> actions will both save image information (for example the <code>Image</code> and <code>Bitmap</code> classes will do this) but objects that can be represented as an image and in a native data format will make a clear distinction between the two.</p>
-<h3 id="implementation-details-31">Implementation Details</h3>
+<h3 id="implementation-details-30">Implementation Details</h3>
 <p>This action is provided for classes that wish to make a distinction between the image of an object and the data of an object. For instance, using <code>SaveToObject</code> on a GUI object could store its meta information, while <code>SaveToImage</code> can save the object as it is seen by the user.</p>
 <p>When supporting this action you must save the image using the <code>Image</code> class so that the data can be saved in the user&#39;s preferred format.</p>
 <h2 id="savesettings">SaveSettings</h2>
@@ -1037,7 +1033,7 @@ ERR acDraw(Object)</code></pre>
 <p>This action will save an object&#39;s data to a storage object of your choosing. The data will be saved in a file format that can be reloaded at a later time using the same class.</p>
 <p>The object referenced in <code>Dest</code> must be from a class that supports the <a href="#Write"><code>Write</code></a> action. Typically this would be a <code>File</code> object, but this is not imposed as a restriction.</p>
 <p>The <code>ClassID</code> is optional, and can be used to specify a derived class that is preferred for encoding the object data. For example, the <code>Sound</code> class supports WAV data by default, but we could save audio in MP3 format if the <code>MP3</code> class was referenced here.</p>
-<h3 id="implementation-details-32">Implementation Details</h3>
+<h3 id="implementation-details-31">Implementation Details</h3>
 <p>By supporting the <code>SaveToObject</code> action, you can make it possible to save an object&#39;s data to a <code>File</code> or similar data storage object.</p>
 <p>It is a requirement that the data being saved can be loaded by the class at a later time.</p>
 <h2 id="seek">Seek</h2>
@@ -1070,7 +1066,7 @@ ERR acSeekCurrent(Object, DOUBLE Offset)</code></pre>
 <p>The <code>Position</code> can be set to <code>SEEK::START</code>, <code>SEEK::CURRENT</code> or <code>SEEK::END</code> to indicate the relative start position. For example, +20 from <code>SEEK::CURRENT</code> is <code>20</code> bytes from the current position, while <code>-20</code> would be <code>20</code> bytes back from the current position. In <code>SEEK::START</code> and <code>SEEK::END</code> modes the <code>Position</code> should be unsigned; if the value is negative then the sign will be dropped.</p>
 <p>You cannot seek beyond the &#39;end&#39; of an object, nor can you seek to a position less than zero.</p>
 <p>To get the current position of an object, read its <code>Position</code> field.</p>
-<h3 id="implementation-details-33">Implementation Details</h3>
+<h3 id="implementation-details-32">Implementation Details</h3>
 <p>A class that supports the <code>Read</code> and <code>Write</code> actions should support <code>Seek</code> wherever possible. Seeking is used to position the &#39;read/write head&#39; so that the next time some I/O occurs, it will start at the seeked position.</p>
 <p>Your class is required to define a <code>Position</code> field that always reflects the current byte position in your object&#39;s data. When the <code>Seek</code> action is called, the <code>Position</code> must be altered to reflect the absolute byte position that the program has seeked to.</p>
 <p>When writing your support routine, you must write code for each of the three different modes - <code>SEEK::START</code>, <code>SEEK::CURRENT</code> and <code>SEEK::END</code>. <code>SEEK::START</code> refers to the beginning of the data, <code>SEEK::CURRENT</code> refers to the current byte position and <code>SEEK::END</code> refers to the end of the data. The <code>Position</code> parameter can be either negative or positive when used in conjunction with <code>SEEK::CURRENT</code>, but in the <code>SEEK::START</code> and <code>SEEK::END</code> modes the sign of the <code>Position</code> is ignored (i.e. read it as an absolute value and then offset in the appropriate direction).</p>
@@ -1100,7 +1096,7 @@ ERR acSeekCurrent(Object, DOUBLE Offset)</code></pre>
 </table>
 <p>The <code>SetKey</code> action is used to set custom key-values on an object. Keys can either be functional, as is the case for <code>XML</code>&#39;s xpath support, or they can be created by the client ad-hoc and permanently stored with the object.</p>
 <p><code>Key</code> names are case-insensitive unless documented otherwise, and can be retrieved with the <a href="#getkey"><code>GetKey</code></a> action.</p>
-<h3 id="implementation-details-34">Implementation Details</h3>
+<h3 id="implementation-details-33">Implementation Details</h3>
 <p>If your class design allows for key-values then you will need to support <code>SetKey</code> as the mechanism for setting the values.</p>
 <p>The general recommendation for C++ developers to use a <code>std::unordered_map</code> to store the key values. Be sure that your method can overwrite existing values when the same key is set more than once.</p>
 <p>Keys should be case-insensitive by default. If this is not the case, document this fact for the client.</p>
@@ -1109,7 +1105,7 @@ ERR acSeekCurrent(Object, DOUBLE Offset)</code></pre>
 <p><code>ERR acShow(Object)</code></p>
 <p>Calling this action will make the target object visible to the user. While graphics objects are the obvious use-case for this action, non-visual objects such as files can also support visibility changes.</p>
 <p>Showing an object that is already visible has no effect. To make the target object invisible, call the <a href="#Hide"><code>Hide</code></a> action.</p>
-<h3 id="implementation-details-35">Implementation Details</h3>
+<h3 id="implementation-details-34">Implementation Details</h3>
 <p>If a class represents objects that are visible to the user (for example, a UI class) then being able to control that visibility is usually necessary.</p>
 <p>If the visible state of the object is already <code>true</code>, do nothing and return <code>ERR::Okay</code>.</p>
 <p>Changing the visible state of a graphics object can trigger a redraw of the display, but this is at your discretion. Documenting whether or not the changes will be immediately visible is advised.</p>
@@ -1175,7 +1171,7 @@ ERR acSeekCurrent(Object, DOUBLE Offset)</code></pre>
 <p>Making a <code>Write</code> call will write <code>Length</code> number of bytes from the provided <code>Buffer</code> to the object. If the class supports a seek marker, it will start the write operation from the point determined by the <code>Position</code> field. The <code>Position</code> field will be incremented to <code>Position + Length</code> if the call succeeds. Altering the position of the seek marker is possible with the <a href="#Seek"><code>Seek</code></a> action, if the class supports it.</p>
 <p>If the object is at capacity then it may attempt to increase its space to write out the entire <code>Buffer</code> that has been provided. If it cannot do this, it will attempt to write as much information as possible and return an <code>ERR::Okay</code> code. If it cannot write out any data, it will return a fail code. If the object&#39;s class has a <code>Size</code> field, this may be expanded as a result of the call.</p>
 <p>To confirm how much data was written after a successful <code>Write</code> call, check the <code>Result</code> parameter and compare it to the <code>Length</code> that was supplied.</p>
-<h3 id="implementation-details-36">Implementation Details</h3>
+<h3 id="implementation-details-35">Implementation Details</h3>
 <p>The <code>Write</code> action is commonly used to write data to files, but can theoretically be used in any circumstance involving data storage and streaming content.</p>
 <p>If the <code>Length</code> exceeds the total amount of space available for writing data and nothing further can be written, return an error code of <code>ERR::LowCapacity</code>.</p>
 <p>Your class should support a <code>Position</code> field to indicate the current byte position from which the <code>Write</code> action will start. Increment the <code>Position</code> by the number of bytes that were written to the object&#39;s data store before returning to the client. Also consider supporting the <a href="#Seek"><code>Seek</code></a> action to manipulate the <code>Position</code> value.</p>
