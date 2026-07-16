@@ -215,6 +215,7 @@ enum class JSONValueKind {
    String,
    Integer,
    Number,
+   Boolean,
    Null
 };
 
@@ -226,6 +227,7 @@ static std::string_view json_kind_name(JSONValueKind Kind) noexcept
       case JSONValueKind::String:  return "string";
       case JSONValueKind::Integer: return "integer";
       case JSONValueKind::Number:  return "number";
+      case JSONValueKind::Boolean: return "boolean";
       case JSONValueKind::Null:    return "null";
    }
 
@@ -244,6 +246,13 @@ struct JSONParser {
    bool at_end() const noexcept { return Current >= End; }
 
    bool has(size_t Count) const noexcept { return size_t(End - Current) >= Count; }
+
+   bool at_value_boundary() const noexcept
+   {
+      if (at_end()) return true;
+      return (*Current IS ',') or (*Current IS ']') or (*Current IS '}') or (*Current IS ' ') or
+         (*Current IS '\t') or (*Current IS '\r') or (*Current IS '\n');
+   }
 
    static int hex_digit(char Value) noexcept
    {
@@ -364,46 +373,92 @@ struct JSONParser {
       return ERR::Syntax;
    }
 
-   ERR parse_number(std::string &Result, JSONValueKind &Kind)
+   ERR parse_hex_number(std::string &Result, JSONValueKind &Kind)
    {
       auto number_start = Current;
       Kind = JSONValueKind::Integer;
 
-      if (has(2) and (Current[0] IS '0') and (Current[1] IS 'x')) {
-         Current += 2;
-         auto digit_start = Current;
-         while ((Current < End) and (((*Current >= '0') and (*Current <= '9')) or
-            ((*Current >= 'A') and (*Current <= 'F')) or ((*Current >= 'a') and (*Current <= 'f')))) Current++;
-         if (Current IS digit_start) return ERR::Syntax;
-      }
-      else {
-         if ((Current < End) and (*Current IS '-')) Current++;
-         auto digit_start = Current;
-         while ((Current < End) and (*Current >= '0') and (*Current <= '9')) Current++;
-         if (Current IS digit_start) return ERR::Syntax;
-
-         if ((Current < End) and (*Current IS '.')) {
-            Kind = JSONValueKind::Number;
-            Current++;
-            auto fraction_start = Current;
-            while ((Current < End) and (*Current >= '0') and (*Current <= '9')) Current++;
-            if (Current IS fraction_start) return ERR::Syntax;
-         }
-      }
+      Current += 2;
+      auto digit_start = Current;
+      while ((Current < End) and (((*Current >= '0') and (*Current <= '9')) or
+         ((*Current >= 'A') and (*Current <= 'F')) or ((*Current >= 'a') and (*Current <= 'f')))) Current++;
+      if ((Current IS digit_start) or (not at_value_boundary())) return ERR::Syntax;
 
       Result.assign(number_start, size_t(Current - number_start));
       return ERR::Okay;
    }
 
+   ERR parse_standard_number(std::string &Result, JSONValueKind &Kind)
+   {
+      auto number_start = Current;
+      Kind = JSONValueKind::Integer;
+
+      if (*Current IS '-') {
+         Current++;
+         if (at_end()) return ERR::Syntax;
+      }
+
+      if (*Current IS '0') {
+         Current++;
+         if ((Current < End) and (*Current >= '0') and (*Current <= '9')) return ERR::Syntax;
+      }
+      else {
+         if ((*Current < '1') or (*Current > '9')) return ERR::Syntax;
+         while ((Current < End) and (*Current >= '0') and (*Current <= '9')) Current++;
+      }
+
+      if ((Current < End) and (*Current IS '.')) {
+         Kind = JSONValueKind::Number;
+         Current++;
+         auto fraction_start = Current;
+         while ((Current < End) and (*Current >= '0') and (*Current <= '9')) Current++;
+         if (Current IS fraction_start) return ERR::Syntax;
+      }
+
+      if ((Current < End) and ((*Current IS 'e') or (*Current IS 'E'))) {
+         Kind = JSONValueKind::Number;
+         Current++;
+         if ((Current < End) and ((*Current IS '+') or (*Current IS '-'))) Current++;
+
+         auto exponent_start = Current;
+         while ((Current < End) and (*Current >= '0') and (*Current <= '9')) Current++;
+         if (Current IS exponent_start) return ERR::Syntax;
+      }
+
+      if (not at_value_boundary()) return ERR::Syntax;
+      Result.assign(number_start, size_t(Current - number_start));
+      return ERR::Okay;
+   }
+
+   ERR parse_number(std::string &Result, JSONValueKind &Kind)
+   {
+      if (has(2) and (Current[0] IS '0') and (Current[1] IS 'x')) return parse_hex_number(Result, Kind);
+      return parse_standard_number(Result, Kind);
+   }
+
    ERR parse_literal(std::string &Result, JSONValueKind &Kind)
    {
-      constexpr std::string_view null_literal = "null";
-      if ((size_t(End - Current) < null_literal.size()) or
-          (std::string_view(Current, null_literal.size()) != null_literal)) return ERR::Syntax;
+      std::string_view literal;
+      if (*Current IS 't') {
+         literal = "true";
+         Kind = JSONValueKind::Boolean;
+      }
+      else if (*Current IS 'f') {
+         literal = "false";
+         Kind = JSONValueKind::Boolean;
+      }
+      else if (*Current IS 'n') {
+         literal = "null";
+         Kind = JSONValueKind::Null;
+      }
+      else return ERR::Syntax;
 
-      Current += null_literal.size();
-      Result.assign(null_literal);
-      Kind = JSONValueKind::Null;
+      if ((size_t(End - Current) < literal.size()) or
+          (std::string_view(Current, literal.size()) != literal)) return ERR::Syntax;
+
+      Current += literal.size();
+      if (not at_value_boundary()) return ERR::Syntax;
+      Result.assign(literal);
       return ERR::Okay;
    }
 
@@ -534,7 +589,7 @@ struct JSONParser {
       else if ((*Current IS '-') or ((*Current >= '0') and (*Current <= '9'))) {
          if (parse_number(content, Kind) != ERR::Okay) return ERR::Syntax;
       }
-      else if (*Current IS 'n') {
+      else if ((*Current IS 't') or (*Current IS 'f') or (*Current IS 'n')) {
          if (parse_literal(content, Kind) != ERR::Okay) return ERR::Syntax;
       }
       else return ERR::Syntax;
