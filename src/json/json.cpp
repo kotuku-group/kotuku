@@ -56,7 +56,7 @@ It will be translated to the following when loaded into an XML object:
 #include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include <algorithm>
-#include <sstream>
+#include <utility>
 
 JUMPTABLE_CORE
 
@@ -71,8 +71,17 @@ static ActionArray clActions[] = {
    { AC::NIL, nullptr }
 };
 
-static ERR extract_item(int &, CSTRING *, objXML::TAGS &, int &);
+static ERR extract_item(int &, CSTRING *, CSTRING, objXML::TAGS &, int &);
 static ERR txt_to_json(objXML *, std::string_view);
+
+static size_t string_segment_length(CSTRING Input, CSTRING End) noexcept
+{
+   if (Input >= End) return 0;
+
+   auto remaining = std::string_view(Input, size_t(End - Input));
+   auto length = remaining.find_first_of(std::string_view("\"\\\0", 3));
+   return (length IS std::string_view::npos) ? remaining.size() : length;
+}
 
 //********************************************************************************************************************
 
@@ -174,10 +183,8 @@ static ERR JSON_Init(objXML *Self)
 
    log.trace("Attempting JSON interpretation of source data.");
 
-   // TODO: A back-door to get the Statement string directly from the XML object would be useful
-
-   std::string statement;
-   if (!Self->getStatement(statement)) {
+   std::string_view statement;
+   if (!Self->getStatementView(statement)) {
       if ((Self->ParseError = txt_to_json(Self, statement)) != ERR::Okay) {
          log.warning("JSON Parsing Error: %s", GetErrorMsg(Self->ParseError));
       }
@@ -227,6 +234,7 @@ static ERR txt_to_json(objXML *Self, std::string_view Text)
    log.traceBranch();
 
    CSTRING str = Text.data();
+   CSTRING text_end = str + Text.size();
    Self->Tags.clear();
    Self->LineNo = 1;
    for (; (*str) and (*str != '{'); str++) if (*str IS '\n') Self->LineNo++;
@@ -235,14 +243,17 @@ static ERR txt_to_json(objXML *Self, std::string_view Text)
    log.trace("Extracting tag information with extract_tag()");
    if (*str IS '{') {
       // XML requires the root tag to be numbered with ID 0
-      auto &root = Self->Tags.emplace_back(XTag(0, Self->LineNo, { { "item", "" }, { "type", "object" } }));
+      auto &root = Self->Tags.emplace_back(XTag(0, Self->LineNo));
+      root.Attribs.reserve(2);
+      root.Attribs.emplace_back("item", "");
+      root.Attribs.emplace_back("type", "object");
 
       str++; // Skip '{'
       while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Self->LineNo++; str++; }
 
       int tag_id = 1;
       do {
-         if (extract_item(Self->LineNo, &str, root.Children, tag_id) != ERR::Okay) {
+         if (extract_item(Self->LineNo, &str, text_end, root.Children, tag_id) != ERR::Okay) {
             return log.warning(ERR::Syntax);
          }
       } while (!next_item(Self->LineNo, str));
@@ -259,7 +270,7 @@ static ERR txt_to_json(objXML *Self, std::string_view Text)
 //********************************************************************************************************************
 // Called by txt_to_json() to extract the next item from a JSON string.  This function also recurses into itself.
 
-static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags, int &TagID)
+static ERR extract_item(int &Line, CSTRING *Input, CSTRING End, objXML::TAGS &Tags, int &TagID)
 {
    kt::Log log(__FUNCTION__);
 
@@ -275,9 +286,14 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags, int &TagI
    str++;
    int i = 0;
    std::string item_name;
-   while (*str != '"') {
+   while ((str < End) and (*str) and (*str != '"')) {
       if (*str IS '\\') {
          str++;
+         if ((str >= End) or (not *str)) {
+            log.warning("Invalid use of back-slash in item name encountered at line %d", Line);
+            return ERR::Syntax;
+         }
+
          if (*str IS 'n') item_name += '\n';
          else if (*str IS 'r') item_name += '\r';
          else if (*str IS 't') item_name += '\t';
@@ -287,14 +303,21 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags, int &TagI
             return ERR::Syntax;
          }
       }
-      else if (*str < 0x20) {
-         log.warning("Invalid item name encountered at line %d.", Line);
-         return ERR::Syntax;
+      else {
+         auto length = string_segment_length(str, End);
+         auto segment = std::string_view(str, length);
+         auto control = std::find_if(segment.begin(), segment.end(), [](unsigned char Char) { return Char < 0x20; });
+         if (control != segment.end()) {
+            log.warning("Invalid item name encountered at line %d.", Line);
+            return ERR::Syntax;
+         }
+
+         item_name.append(segment);
+         str += length;
       }
-      else item_name += *str++;
    }
 
-   if (*str IS '"') str++;
+   if ((str < End) and (*str IS '"')) str++;
    else return ERR::Syntax;
 
    while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Line++; str++; }
@@ -329,7 +352,7 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags, int &TagI
 
       // Figure out what type of array this is
 
-      std::string subtype;
+      std::string_view subtype;
       if (*str IS '{') subtype = "object";
       else if (*str IS '"') subtype = "string";
       else if ((*str >= '0') and (*str <= '9')) subtype = "integer";
@@ -339,11 +362,14 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags, int &TagI
          return ERR::Syntax;
       }
 
-      log.trace("Processing %s array at line %d.", subtype.c_str(), Line);
+      log.trace("Processing %.*s array at line %d.", int(subtype.size()), subtype.data(), Line);
 
-      auto &array_tag = Tags.emplace_back(XTag(TagID++, line_no, {
-         { "item", "" }, { "name", item_name }, { "type", "array" }, { "subtype", subtype }
-      }));
+      auto &array_tag = Tags.emplace_back(XTag(TagID++, line_no));
+      array_tag.Attribs.reserve(4);
+      array_tag.Attribs.emplace_back("item", "");
+      array_tag.Attribs.emplace_back("name", std::move(item_name));
+      array_tag.Attribs.emplace_back("type", "array");
+      array_tag.Attribs.emplace_back("subtype", subtype);
 
       // Read the array values
 
@@ -351,9 +377,10 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags, int &TagI
          while ((*str) and (*str != ']')) {
             // Evaluates to: <object>...</object>
 
-            auto &object_tag = array_tag.Children.emplace_back(XTag(TagID++, line_no, {
-               { "item", "" }, { "type", "object" }
-            }));
+            auto &object_tag = array_tag.Children.emplace_back(XTag(TagID++, line_no));
+            object_tag.Attribs.reserve(2);
+            object_tag.Attribs.emplace_back("item", "");
+            object_tag.Attribs.emplace_back("type", "object");
 
             if (*str IS '{') {
                log.trace("Processing new object in array.");
@@ -362,7 +389,9 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags, int &TagI
                while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Line++; str++; }
 
                if (*str != '}') { // Don't process content if the object is empty.
-                  if (auto error = extract_item(Line, &str, object_tag.Children, TagID); error != ERR::Okay) return error;
+                  if (auto error = extract_item(Line, &str, End, object_tag.Children, TagID); error != ERR::Okay) {
+                     return error;
+                  }
 
                   while ((*str) and (*str != '}')) { if (*str IS '\n') Line++; str++; } // Skip content/whitespace to get to the next tag.
 
@@ -398,26 +427,37 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags, int &TagI
 
             str++; // Skip '"'
 
-            std::stringstream buffer;
-            while ((*str) and (*str != '"')) {
+            std::string buffer;
+            while ((str < End) and (*str) and (*str != '"')) {
                if (*str IS '\\') {
                   str++;
-                  if (*str) {
-                     if (*str IS 'n') buffer << '\n';
-                     else if (*str IS 'r') buffer << '\r';
-                     else if (*str IS 't') buffer << '\t';
-                     else if (*str IS '"') buffer << '"';
-                     else { buffer << '\\'; buffer << *str; }
+                  if ((str < End) and (*str)) {
+                     if (*str IS 'n') buffer += '\n';
+                     else if (*str IS 'r') buffer += '\r';
+                     else if (*str IS 't') buffer += '\t';
+                     else if (*str IS '"') buffer += '"';
+                     else { buffer += '\\'; buffer += *str; }
                      str++;
                   }
                }
-               else buffer << *str++;
+               else {
+                  auto length = string_segment_length(str, End);
+                  buffer.append(str, length);
+                  str += length;
+               }
             }
 
             // Create <value>string</value>
 
-            auto &value_tag = Tags.emplace_back(XTag(TagID++, Line, { { "value", "" } }));
-            value_tag.Children.emplace_back(XTag(TagID++, Line, { { "", buffer.str() } }));
+            if ((str >= End) or (*str != '"')) {
+               log.warning("Unterminated string in array at line %d.", line_start);
+               return ERR::Syntax;
+            }
+
+            auto &value_tag = array_tag.Children.emplace_back(XTag(TagID++, Line));
+            value_tag.Attribs.emplace_back("value", "");
+            auto &content_tag = value_tag.Children.emplace_back(XTag(TagID++, Line));
+            content_tag.Attribs.emplace_back("", std::move(buffer));
 
             str++; // Skip terminating '"'
 
@@ -428,32 +468,43 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags, int &TagI
             while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Line++; str++; }
          }
       }
-      else if ((str[0] IS '0') and (str[1] IS 'x')) {
+      else if (((End - str) >= 2) and (str[0] IS '0') and (str[1] IS 'x')) {
          // Hexadecimal number.
 
          while ((*str) and (*str != ']')) {
-            if ((str[0] != '0') or (str[1] != 'x')) {
+            if (((End - str) < 2) or (str[0] != '0') or (str[1] != 'x')) {
+               log.warning("Invalid array of hexadecimal numbers at line %d.", line_start);
+               return ERR::Syntax;
+            }
+
+            str += 2;
+            CSTRING digit_start = str;
+            while ((str < End) and (((*str >= '0') and (*str <= '9')) or
+               ((*str >= 'A') and (*str <= 'F')) or ((*str >= 'a') and (*str <= 'f')))) str++;
+
+            if (str IS digit_start) {
                log.warning("Invalid array of hexadecimal numbers at line %d.", line_start);
                return ERR::Syntax;
             }
 
             std::string numbuf("0x");
-            while (((*str >= '0') and (*str <= '9')) or
-               ((str[2] >= 'A') and (str[2] <= 'F')) or
-               ((str[2] >= 'a') and (str[2] <= 'f'))
-            ) numbuf += *str++;
+            numbuf.append(digit_start, size_t(str - digit_start));
 
             while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Line++; str++; }
 
-            if ((*str != ',') and (*str != ']')) { // If the next character is something other than ',' or ']' then it indicates that the hex value has an invalid character in it, e.g. 0x939fW
+            // Any character other than ',' or ']' after the number makes the hexadecimal value invalid.
+
+            if ((*str != ',') and (*str != ']')) {
                log.warning("Invalid array of hexadecimal numbers at line %d.", line_start);
                return ERR::Syntax;
             }
 
             // Create <value>number</value>
 
-            auto &value_tag = Tags.emplace_back(XTag(TagID++, Line, { { "value", "" } }));
-            value_tag.Children.emplace_back(XTag(TagID++, Line, { { "", numbuf } }));
+            auto &value_tag = array_tag.Children.emplace_back(XTag(TagID++, Line));
+            value_tag.Attribs.emplace_back("value", "");
+            auto &content_tag = value_tag.Children.emplace_back(XTag(TagID++, Line));
+            content_tag.Attribs.emplace_back("", std::move(numbuf));
 
             // Go to next value, or end of array
 
@@ -468,15 +519,16 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags, int &TagI
                return ERR::Syntax;
             }
 
-            std::string numbuf;
-            while ((*str IS '-') or (*str IS '.') or ((*str >= '0') and (*str <= '9'))) {
-               numbuf += *str++;
-            }
+            CSTRING number_start = str;
+            while ((*str IS '-') or (*str IS '.') or ((*str >= '0') and (*str <= '9'))) str++;
+            std::string numbuf(number_start, size_t(str - number_start));
 
             // Create <value>number</value>
 
-            auto &value_tag = Tags.emplace_back(XTag(TagID++, Line, { { "value", "" } }));
-            value_tag.Children.emplace_back(XTag(TagID++, Line, { { "", numbuf } }));
+            auto &value_tag = array_tag.Children.emplace_back(XTag(TagID++, Line));
+            value_tag.Attribs.emplace_back("value", "");
+            auto &content_tag = value_tag.Children.emplace_back(XTag(TagID++, Line));
+            content_tag.Attribs.emplace_back("", std::move(numbuf));
 
             // Go to next value, or end of array
 
@@ -504,9 +556,11 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags, int &TagI
 
       log.trace("Item '%s' is an object.", item_name.c_str());
 
-      auto &object_tag = Tags.emplace_back(XTag(TagID++, Line, {
-         { "item", "" }, { "name", item_name }, { "type", "object" }
-      }));
+      auto &object_tag = Tags.emplace_back(XTag(TagID++, Line));
+      object_tag.Attribs.reserve(3);
+      object_tag.Attribs.emplace_back("item", "");
+      object_tag.Attribs.emplace_back("name", std::move(item_name));
+      object_tag.Attribs.emplace_back("type", "object");
 
       str++; // Skip '{'
       while ((*str) and (*str <= 0x20)) { if (*str IS '\n') Line++; str++; } // Skip content/whitespace to get to the next tag.
@@ -514,7 +568,7 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags, int &TagI
       if (*str != '}') {
 
          do {
-            if (extract_item(Line, &str, object_tag.Children, TagID) != ERR::Okay) {
+            if (extract_item(Line, &str, End, object_tag.Children, TagID) != ERR::Okay) {
                log.warning("Aborting parsing of JSON statement.");
                return ERR::Syntax;
             }
@@ -537,29 +591,37 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags, int &TagI
 
       str++; // Skip '"'
 
-      auto &string_tag = Tags.emplace_back(XTag(TagID++, Line, {
-         { "item", "" }, { "name", item_name }, { "type", "string" }
-      }));
+      auto &string_tag = Tags.emplace_back(XTag(TagID++, Line));
+      string_tag.Attribs.reserve(3);
+      string_tag.Attribs.emplace_back("item", "");
+      string_tag.Attribs.emplace_back("name", std::move(item_name));
+      string_tag.Attribs.emplace_back("type", "string");
 
-      std::stringstream buffer;
-      while ((*str) and (*str != '"')) {
-         if (*str IS '\n') Line++;
+      std::string buffer;
+      while ((str < End) and (*str) and (*str != '"')) {
          if (*str IS '\\') {
             str++;
-            if (*str) {
-               if (*str IS 'n') buffer << '\n';
-               else if (*str IS 'r') buffer << '\r';
-               else if (*str IS 't') buffer << '\t';
-               else if (*str IS '"') buffer << '"';
-               else { buffer << '\\'; buffer << *str; }
+            if ((str < End) and (*str)) {
+               if (*str IS 'n') buffer += '\n';
+               else if (*str IS 'r') buffer += '\r';
+               else if (*str IS 't') buffer += '\t';
+               else if (*str IS '"') buffer += '"';
+               else { buffer += '\\'; buffer += *str; }
                str++;
             }
          }
-         else buffer << *str++;
+         else {
+            auto length = string_segment_length(str, End);
+            auto segment = std::string_view(str, length);
+            Line += int(std::count(segment.begin(), segment.end(), '\n'));
+            buffer.append(segment);
+            str += length;
+         }
       }
 
-      if (*str IS '"') {
-         string_tag.Children.emplace_back(XTag(TagID++, Line, { { "", buffer.str() } }));
+      if ((str < End) and (*str IS '"')) {
+         auto &content_tag = string_tag.Children.emplace_back(XTag(TagID++, Line));
+         content_tag.Attribs.emplace_back("", std::move(buffer));
          str++; // Skip '"'
       }
       else return log.warning(ERR::Syntax);
@@ -586,11 +648,14 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags, int &TagI
          str++;
       }
 
-      auto &number_tag = Tags.emplace_back(XTag(TagID++, Line, {
-         { "item", "" }, { "name", item_name }, { "type", "number" }
-      }));
+      auto &number_tag = Tags.emplace_back(XTag(TagID++, Line));
+      number_tag.Attribs.reserve(3);
+      number_tag.Attribs.emplace_back("item", "");
+      number_tag.Attribs.emplace_back("name", std::move(item_name));
+      number_tag.Attribs.emplace_back("type", "number");
 
-      number_tag.Children.emplace_back(XTag(TagID++, Line, { { "", numbuf } }));
+      auto &content_tag = number_tag.Children.emplace_back(XTag(TagID++, Line));
+      content_tag.Attribs.emplace_back("", std::move(numbuf));
    }
    else if (((*str >= '0') and (*str <= '9')) or
             ((*str IS '-') and (str[1] >= '0') and (str[1] <= '9'))) {
@@ -613,18 +678,23 @@ static ERR extract_item(int &Line, CSTRING *Input, objXML::TAGS &Tags, int &TagI
          str++;
       }
 
-      auto &number_tag = Tags.emplace_back(XTag(TagID++, Line, {
-         { "item", "" }, { "name", item_name }, { "type", "number" }
-      }));
+      auto &number_tag = Tags.emplace_back(XTag(TagID++, Line));
+      number_tag.Attribs.reserve(3);
+      number_tag.Attribs.emplace_back("item", "");
+      number_tag.Attribs.emplace_back("name", std::move(item_name));
+      number_tag.Attribs.emplace_back("type", "number");
 
-      number_tag.Children.emplace_back(XTag(TagID++, Line, { { "", numbuf } }));
+      auto &content_tag = number_tag.Children.emplace_back(XTag(TagID++, Line));
+      content_tag.Attribs.emplace_back("", std::move(numbuf));
    }
    else if (kt::startswith("null", str)) { // Evaluates to <item name="item_name" type="null"/>
       str += 4;
 
-      Tags.emplace_back(XTag(TagID++, Line, {
-         { "item", "" }, { "name", item_name }, { "type", "null" }
-      }));
+      auto &null_tag = Tags.emplace_back(XTag(TagID++, Line));
+      null_tag.Attribs.reserve(3);
+      null_tag.Attribs.emplace_back("item", "");
+      null_tag.Attribs.emplace_back("name", std::move(item_name));
+      null_tag.Attribs.emplace_back("type", "null");
    }
    else {
       log.warning("Invalid value character '%c' encountered for item '%s' at line %d.", *str, item_name.c_str(), Line);

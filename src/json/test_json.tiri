@@ -23,10 +23,10 @@ glJSON = [[
 <item name="number" type="number">12345</item>
 <item name="float" type="number">12345.54321</item>
 <item name="null" type="null"/>
-<item name="array-int" type="array" subtype="integer"/>
-<value>0</value><value>1</value><value>2</value><value>3</value><value>4</value>
-<item name="array-str" type="array" subtype="string"/>
-<value>A</value><value>B</value><value>C</value>
+<item name="array-int" type="array" subtype="integer">
+<value>0</value><value>1</value><value>2</value><value>3</value><value>4</value></item>
+<item name="array-str" type="array" subtype="string">
+<value>A</value><value>B</value><value>C</value></item>
 <item name="array-obj" type="array" subtype="object">
 <item type="object"><item name="ABC" type="string">XYZ</item></item>
 <item type="object"><item name="DEF" type="string">XYZ</item></item></item>
@@ -79,4 +79,13 @@ end
    data = json.decode(glEscape)
    assert(type(data) is 'table', "Decoded JSON did not return a table.")
    assert(data.escaped is 'Return:\n,Tab:\t,Quote:"', "Escape sequences not interpreted correctly.")
+end
+
+@Test function HexadecimalArray()
+   local xml = obj.new('json', { statement='{ "values":[ 0x1, 0xAf, 0x10 ] }' })
+   local err, statement = xml.mtSerialise(0, 0)
+   assert(err is ERR_Okay, "Serialising a hexadecimal array failed.")
+   assert(statement:find('>0x1<'), "The first hexadecimal array value was not preserved.")
+   assert(statement:find('>0xAf<'), "The mixed-case hexadecimal array value was not preserved.")
+   assert(statement:find('>0x10<'), "The final hexadecimal array value was not preserved.")
 end
