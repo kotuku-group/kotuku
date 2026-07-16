@@ -27,7 +27,6 @@ extern "C" const struct SystemState * GetSystemState();
 extern "C" ERR ListChildren(OBJECTID Object, kt::vector<ChildEntry> * List);
 extern "C" ERR RegisterFD(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR) , APTR Data);
 extern "C" ERR ResolvePath(const std::string_view & Path, RSF Flags, std::string * Result);
-extern "C" ERR MemoryInfo(MEMORYID ID, struct MemInfo * MemInfo, int Size);
 extern "C" ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager * Manager);
 extern "C" ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR * Object);
 extern "C" void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Error);

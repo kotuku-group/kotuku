@@ -321,7 +321,6 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
    }
 
    APTR data_start = (char *)start_mem + MEMHEADER;
-
    MEMORYID unique_id = 0;
 
    {
@@ -334,7 +333,7 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
       // Record memory details such as the size, ID and flags.  This helps us
       // with resource tracking, identifying the memory block and freeing it later on.  Hidden blocks are never recorded.
 
-      glMemory.insert(std::pair<MEMORYID, PrivateAddress>(unique_id, PrivateAddress(data_start, unique_id, (uint32_t)Size, Flags)));
+      glMemory.insert(std::pair<MEMORYID, PrivateAddress>(unique_id, PrivateAddress(data_start, (uint32_t)Size, Flags)));
    }
 
    if (final_protection_pending) {
@@ -495,62 +494,6 @@ ERR FreeResource(RESOURCEID ResourceID)
 /*********************************************************************************************************************
 
 -FUNCTION-
-MemoryInfo: Returns information on memory IDs.
-
-This function returns the attributes of a memory block, including the start address, memory ID, size and flags.  The
-following example illustrates correct use of this function:
-
-<pre>
-MemInfo info;
-if (!MemoryInfo(memid, &info)) {
-   log.msg("Memory block #%d is %d bytes large.", info.MemoryID, info.Size);
-}
-</pre>
-
-If the memory ID is not found after argument validation, the !MemInfo structure's fields are cleared before the error
-code is returned.
-
--INPUT-
-mem ID: Memory identifier to inspect.
-buf(struct(MemInfo)) MemInfo:  Pointer to a !MemInfo structure.
-structsize Size: Size of the !MemInfo structure.
-
--ERRORS-
-Okay
-NullArgs
-Args
-DoesNotExist
-
--TAGS-
-mutates-input, blocking, pure-query
--END-
-
-*********************************************************************************************************************/
-
-ERR MemoryInfo(MEMORYID MemoryID, MemInfo *MemInfo, int Size)
-{
-   kt::Log log(__FUNCTION__);
-
-   if ((not MemInfo) or (not MemoryID)) return log.warning(ERR::NullArgs);
-   if ((size_t)Size < sizeof(MemInfo)) return log.warning(ERR::Args);
-
-   clearmem(MemInfo, Size);
-
-   std::unique_lock lock(glmMemory);
-   auto mem = glMemory.find(MemoryID);
-   if ((mem != glMemory.end()) and (mem->second.Address)) {
-      MemInfo->Start    = mem->second.Address;
-      MemInfo->Size     = mem->second.Size;
-      MemInfo->Flags    = mem->second.Flags;
-      MemInfo->MemoryID = mem->second.MemoryID;
-      return ERR::Okay;
-   }
-   else return ERR::DoesNotExist;
-}
-
-/*********************************************************************************************************************
-
--FUNCTION-
 ProtectMemory: Change the access permissions of a memory block.
 
 This function changes the access permissions of a memory block that was allocated with the `MEM::READ` and/or
@@ -564,7 +507,8 @@ int(MEM) Flags: New access flags (MEM::READ, MEM::WRITE).
 -ERRORS-
 Okay
 NullArgs: Address is NULL.
-Args: Invalid flags specified or memory block is not protected.
+Args: Invalid flags specified
+InvalidState: Memory block is not protected.
 DoesNotExist: The memory block is not valid.
 SystemCall: A system call failed.
 
@@ -578,37 +522,41 @@ ERR ProtectMemory(APTR Address, MEM Flags)
 {
    kt::Log log(__FUNCTION__);
 
-   if (not Address) return ERR::NullArgs;
-   if ((Flags & (MEM::READ | MEM::WRITE)) IS MEM::NIL) return ERR::Args;
+   if (not Address) return log.warning(ERR::NullArgs);
+   if ((Flags & (MEM::READ | MEM::WRITE)) IS MEM::NIL) return log.warning(ERR::Args);
 
    if (glShowPrivate) log.branch("ProtectMemory(%p, $%.8x)", Address, int(Flags));
 
-   MemInfo meminfo;
-   if (!MemoryInfo(GetMemoryID(Address), &meminfo, sizeof(meminfo))) {
-      if ((meminfo.Flags & MEM::PROTECTED) IS MEM::NIL) {
+   size_t mem_size;
+   {
+      std::unique_lock lock(glmMemory);
+      auto mem = glMemory.find(GetMemoryID(Address));
+      if ((mem != glMemory.end()) and (mem->second.Address)) mem_size = mem->second.Size;
+      else return ERR::DoesNotExist;
+
+      if ((mem->second.Flags & MEM::PROTECTED) IS MEM::NIL) {
          log.warning("Memory block at %p is not protected.", Address);
-         return ERR::Args;
+         return ERR::InvalidState;
       }
-
-      auto start_mem = (char *)Address - MEMHEADER;
-      auto full_size = meminfo.Size + MEMHEADER;
-      auto aligned_size = align_page_size(full_size);
-
-      #ifdef _WIN32
-         if (winProtectMemory(start_mem, aligned_size, (Flags & MEM::READ) != MEM::NIL, (Flags & MEM::WRITE) != MEM::NIL, false)) {
-            return ERR::Okay;
-         }
-         else return log.warning(ERR::SystemCall);
-      #else
-         int prot = PROT_NONE;
-         if ((Flags & MEM::READ) != MEM::NIL) prot |= PROT_READ;
-         if ((Flags & MEM::WRITE) != MEM::NIL) prot |= PROT_WRITE;
-
-         if (mprotect(start_mem, aligned_size, prot) IS 0) {
-            return ERR::Okay;
-         }
-         else return log.warning(ERR::SystemCall);
-      #endif
    }
-   else return ERR::DoesNotExist;
+
+   auto start_mem = (char *)Address - MEMHEADER;
+   auto full_size = mem_size + MEMHEADER;
+   auto aligned_size = align_page_size(full_size);
+
+   #ifdef _WIN32
+      if (winProtectMemory(start_mem, aligned_size, (Flags & MEM::READ) != MEM::NIL, (Flags & MEM::WRITE) != MEM::NIL, false)) {
+         return ERR::Okay;
+      }
+      else return log.warning(ERR::SystemCall);
+   #else
+      int prot = PROT_NONE;
+      if ((Flags & MEM::READ) != MEM::NIL) prot |= PROT_READ;
+      if ((Flags & MEM::WRITE) != MEM::NIL) prot |= PROT_WRITE;
+
+      if (mprotect(start_mem, aligned_size, prot) IS 0) {
+         return ERR::Okay;
+      }
+      else return log.warning(ERR::SystemCall);
+   #endif
 }

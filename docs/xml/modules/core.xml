@@ -1095,35 +1095,6 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
   </function>
 
   <function>
-    <name>MemoryInfo</name>
-    <category>Memory</category>
-    <comment>Returns information on memory IDs.</comment>
-    <prototype>ERR MemoryInfo(MEMORYID ID, struct MemInfo * MemInfo, INT Size)</prototype>
-    <tiriPrototype>err = MemoryInfo(ID:num, MemInfo:any, Size:num)</tiriPrototype>
-    <tags>mutates-input, blocking, pure-query</tags>
-    <input>
-      <param type="MEMORYID" name="ID">Memory identifier to inspect.</param>
-      <param type="struct MemInfo *" name="MemInfo">Pointer to a <st>MemInfo</st> structure.</param>
-      <param type="INT" name="Size">Size of the <st>MemInfo</st> structure.</param>
-    </input>
-    <description>
-<p>This function returns the attributes of a memory block, including the start address, memory ID, size and flags.  The following example illustrates correct use of this function:</p>
-<pre>MemInfo info;
-if (!MemoryInfo(memid, &amp;info)) {
-   log.msg(&quot;Memory block #%d is %d bytes large.&quot;, info.MemoryID, info.Size);
-}
-</pre>
-<p>If the memory ID is not found after argument validation, the <st>MemInfo</st> structure's fields are cleared before the error code is returned.</p>
-    </description>
-    <result type="ERR">
-      <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function</error>
-      <error code="DoesNotExist">Resource does not exist</error>
-      <error code="NullArgs">Function call missing argument value(s)</error>
-    </result>
-  </function>
-
-  <function>
     <name>MoveFile</name>
     <category>Files</category>
     <comment>Moves folders and files to new locations.</comment>
@@ -1315,9 +1286,10 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid flags specified or memory block is not protected.</error>
+      <error code="Args">Invalid flags specified</error>
       <error code="SystemCall">A system call failed.</error>
       <error code="DoesNotExist">The memory block is not valid.</error>
+      <error code="InvalidState">Memory block is not protected.</error>
       <error code="NullArgs">Address is NULL.</error>
     </result>
   </function>
@@ -2573,13 +2545,6 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="Type" type="JET" lookup="JET">JET constant that describes the event</field>
       <field name="Flags" type="JTYPE" lookup="JTYPE">Broad descriptors for the given <code>Type</code> (see <code>JTYPE</code> flags).  Automatically defined when delivered to the pointer object</field>
       <field name="Mask" type="JTYPE" lookup="JTYPE">Mask to use for checking against subscribers</field>
-    </struct>
-
-    <struct name="MemInfo" typeName="MEMINFO">
-      <field name="Start" type="APTR">The starting address of the memory block (does not apply to shared blocks).</field>
-      <field name="Size" type="UINT">The size of the memory block.</field>
-      <field name="Flags" type="MEM" lookup="MEM">The type of memory.</field>
-      <field name="MemoryID" type="MEMORYID">The unique resource ID for this block.</field>
     </struct>
 
     <struct name="Message" comment="Message header.">
