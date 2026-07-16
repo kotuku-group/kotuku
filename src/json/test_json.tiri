@@ -1,5 +1,5 @@
 -- JSON support is made available as an extension of the XML class
--- Alternatively the native JSON module can be used by script writers.
+-- Alternatively the native JSON library can be used by Tiri programs.
 
    include 'xml'
    mJson = mod.load('json')
@@ -20,21 +20,41 @@ glJSON = [[
 --[[ Expected XML structure:
 <item type="object">
 <item name="string" type="string">foo bar</item>
-<item name="number" type="number">12345</item>
+<item name="number" type="integer">12345</item>
 <item name="float" type="number">12345.54321</item>
 <item name="null" type="null"/>
 <item name="array-int" type="array" subtype="integer">
-<value>0</value><value>1</value><value>2</value><value>3</value><value>4</value></item>
+<value type="integer">0</value><value type="integer">1</value><value type="integer">2</value>
+<value type="integer">3</value><value type="integer">4</value></item>
 <item name="array-str" type="array" subtype="string">
-<value>A</value><value>B</value><value>C</value></item>
+<value type="string">A</value><value type="string">B</value><value type="string">C</value></item>
 <item name="array-obj" type="array" subtype="object">
 <item type="object"><item name="ABC" type="string">XYZ</item></item>
 <item type="object"><item name="DEF" type="string">XYZ</item></item></item>
-<item name="an-object" type="object"><item name="field1" type="string">value1</item><item name="field2" type="number">2</item></item>
+<item name="an-object" type="object"><item name="field1" type="string">value1</item>
+<item name="field2" type="integer">2</item></item>
 </item>
 --]]
 
 glEscape = '{ "escaped": "Return:\n,Tab:\t,Quote:\\"" }'
+
+function serialise_native(Source:str):str
+   local xml = obj.new('json', { statement=Source })
+   local err, statement = xml.mtSerialise(0, 0)
+   assert(err is ERR_Okay, 'Native JSON serialisation failed for: ' .. Source)
+   return statement
+end
+
+function expect_native_failure(Source:str, Description:str)
+   try
+      local xml = obj.new('json', { statement=Source })
+   except e
+      assert(e.code != ERR_Okay, Description .. ' should report a non-Okay parser result.')
+      return
+   end
+
+   error(Description .. ' was accepted by the native JSON parser: ' .. Source)
+end
 
 @Test function LoadJSON()
    print('Interpreting JSON statement:\n' .. glJSON)
@@ -88,4 +108,130 @@ end
    assert(statement:find('>0x1<'), "The first hexadecimal array value was not preserved.")
    assert(statement:find('>0xAf<'), "The mixed-case hexadecimal array value was not preserved.")
    assert(statement:find('>0x10<'), "The final hexadecimal array value was not preserved.")
+end
+
+@Test function NativeBooleans()
+   local statement = serialise_native('{ "enabled":true, "disabled":false, "values":[true,false] }')
+   assert(statement:find('name="enabled" type="boolean">true<'),
+      'Object true value should retain its boolean type and exact text.')
+   assert(statement:find('name="disabled" type="boolean">false<'),
+      'Object false value should retain its boolean type and exact text.')
+   assert(statement:find('name="values" type="array" subtype="boolean"'),
+      'A homogeneous boolean array should use the boolean subtype.')
+   assert(statement:find('<value type="boolean">true<'),
+      'Array true value should retain its boolean type and exact text.')
+   assert(statement:find('<value type="boolean">false<'),
+      'Array false value should retain its boolean type and exact text.')
+end
+
+@Test function NativeRecursiveArrays()
+   local source = [[{ "empty":[], "arrays":[ [], [1,2] ], "objects":[ {}, {"x":"y"} ],
+      "mixed":[1,"two",false,null,[3],{"x":4}] }]]
+   local statement = serialise_native(source)
+   assert(statement:find('name="empty" type="array" subtype="null"'),
+      'An empty array should use the null subtype.')
+   assert(statement:find('name="arrays" type="array" subtype="array"'),
+      'An array of arrays should use the array subtype.')
+   assert(statement:find('<item type="array" subtype="null"'),
+      'A nested empty array should be represented by an unnamed array item.')
+   assert(statement:find('<item type="array" subtype="integer"'),
+      'A nested integer array should retain its own subtype.')
+   assert(statement:find('name="objects" type="array" subtype="object"'),
+      'An array of objects should use the object subtype.')
+   assert(statement:find('<item type="object"'),
+      'Objects in arrays should be represented by unnamed object items.')
+   assert(statement:find('name="mixed" type="array" subtype="mixed"'),
+      'A heterogeneous nested array should use the mixed subtype.')
+   assert(statement:find('<value type="null"'), 'A null array element should retain explicit null metadata.')
+end
+
+@Test function NativeUnicodeStrings()
+   local source = [[{ "\u006e\u0061\u006d\u0065":"\u00a3", "bmp":"\u6771",
+      "raw":"雪", "pair":"\ud834\udd1e", "xml-controls":"\u0009\u000a\u000d" }]]
+   local statement = serialise_native(source)
+   assert(statement:find('name="name" type="string">£<'),
+      'Unicode escapes in a member name and BMP value should decode to UTF-8.')
+   assert(statement:find('name="bmp" type="string">東<'),
+      'A non-ASCII BMP escape should decode to UTF-8.')
+   assert(statement:find('name="raw" type="string">雪<'),
+      'A raw non-ASCII BMP value should remain intact.')
+   assert(statement:find('name="pair" type="string">𝄞<'),
+      'A UTF-16 surrogate pair should decode to one supplementary character.')
+   assert(statement:find('name="xml-controls" type="string"'),
+      'Escaped tab, newline and carriage return characters should remain valid XML content.')
+end
+
+@Test function NativeNumberForms()
+   local source = [[{ "zero":0, "negative-zero":-0, "integer":12, "fraction":-12.5, "small":0.25,
+      "avogadro":6.022e23, "positive-exponent":1E+9, "negative-exponent":-1e-9 }]]
+   local statement = serialise_native(source)
+   assert(statement:find('name="zero" type="integer">0<'), 'Zero should retain its integer type and lexeme.')
+   assert(statement:find('name="negative-zero" type="integer">-0<'),
+      'Negative zero should retain its integer type and lexeme.')
+   assert(statement:find('name="integer" type="integer">12<'),
+      'A positive integer should retain its integer type and lexeme.')
+   assert(statement:find('name="fraction" type="number">-12.5<'),
+      'A negative fraction should retain its number type and lexeme.')
+   assert(statement:find('name="small" type="number">0.25<'),
+      'A fraction below one should retain its number type and lexeme.')
+   assert(statement:find('name="avogadro" type="number">6.022e23<'),
+      'A fractional exponent should retain its source lexeme.')
+   assert(statement:find('name="positive-exponent" type="number">1E+9<'),
+      'An exponent with an explicit plus should retain its source lexeme.')
+   assert(statement:find('name="negative-exponent" type="number">-1e-9<'),
+      'A negative exponent should retain its source lexeme.')
+end
+
+@Test function NativeHexadecimalValues()
+   local statement = serialise_native('{ "object":0xAf, "nested":[ [0x1,0x10], [0xB] ] }')
+   assert(statement:find('name="object" type="integer">0xAf<'),
+      'An object hexadecimal value should retain its integer type and source lexeme.')
+   assert(statement:find('name="nested" type="array" subtype="array"'),
+      'Nested hexadecimal arrays should be represented recursively.')
+   assert(statement:find('<value type="integer">0x1<'),
+      'The first nested hexadecimal value should retain its type and source lexeme.')
+   assert(statement:find('<value type="integer">0x10<'),
+      'The second nested hexadecimal value should retain its type and source lexeme.')
+   assert(statement:find('<value type="integer">0xB<'),
+      'The final nested hexadecimal value should retain its type and source lexeme.')
+end
+
+@Test function NativeMalformedInput()
+   local fixtures = array<table> {
+      { source='{ "value":tru }', description='A truncated true literal' },
+      { source='{ "value":truex }', description='A true literal with an invalid boundary' },
+      { source='{ "value":False }', description='An incorrectly cased false literal' },
+      { source='{ "value":null0 }', description='A null literal with an invalid boundary' },
+      { source='{ "value":01 }', description='A number with a leading zero' },
+      { source='{ "value":- }', description='A bare minus' },
+      { source='{ "value":+1 }', description='A number with a leading plus' },
+      { source='{ "value":.5 }', description='A number without an integer part' },
+      { source='{ "value":1. }', description='A number without fraction digits' },
+      { source='{ "value":1e }', description='An exponent without digits' },
+      { source='{ "value":1e+ }', description='A signed exponent without digits' },
+      { source='{ "value":0x }', description='A hexadecimal value without digits' },
+      { source='{ "value":"\\u12" }', description='A truncated Unicode escape' },
+      { source='{ "value":"\\u12G4" }', description='A Unicode escape with a malformed hex digit' },
+      { source='{ "value":"\\ud800" }', description='An unmatched high surrogate' },
+      { source='{ "value":"\\ud800\\u0041" }', description='A high surrogate with an invalid low surrogate' },
+      { source='{ "value":"\\udc00" }', description='An isolated low surrogate' },
+      { source='{ "value":"\\u0000" }', description='An XML-forbidden escaped NUL character' },
+      { source='{ "value":"\\u0001" }', description='An XML-forbidden escaped control character' },
+      { source='{ "value":"\\b" }', description='An XML-forbidden escaped backspace character' },
+      { source='{ "value":"\\f" }', description='An XML-forbidden escaped form-feed character' },
+      { source='{ "value":"\\ufffe" }', description='An XML-forbidden Unicode noncharacter' },
+      { source='{ "value":"\\uffff" }', description='An XML-forbidden Unicode noncharacter' },
+      { source='{ "first":1 "second":2 }', description='An object with a missing comma' },
+      { source='{ "values":[1 2] }', description='An array with a missing comma' },
+      { source='{ "value":1, }', description='An object with a trailing comma' },
+      { source='{ "values":[1,] }', description='An array with a trailing comma' },
+      { source='{ "values":[1,2', description='A prematurely terminated nested array' },
+      { source='{ "value":', description='A prematurely terminated object value' },
+      { source='{ "value":1 } trailing', description='Trailing non-whitespace input' },
+      { source='{ "value":"before' .. string.char(0) .. 'after" }', description='An embedded NUL byte' }
+   }
+
+   for _, fixture in ipairs(fixtures) do
+      expect_native_failure(fixture.source, fixture.description)
+   end
 end
