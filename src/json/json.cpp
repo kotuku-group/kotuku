@@ -8,40 +8,50 @@ that is distributed with this package.  Please refer to it for further informati
 -CLASS-
 JSON: Extends the XML class with JSON support.
 
-The JSON class is an extension for the @XML class.  It allows JSON data to be loaded into an XML tree, where
-it can be manipulated and scanned using XML based functions.  This approach is advantageous in that the simplicity of
-the JSON is maintained, yet advanced features such as XPath lookups can be used to inspect the data.
+The JSON class extends the @XML class so JSON data can be loaded into an XML tree and inspected with XML operations
+such as XPath queries.
 
-It is important to understand how JSON data is converted to the XML tree structure.  All JSON values will be
-represented as 'item' tags that describe the name and type of value that is being represented.  Each value will be
-stored as content in the corresponding item tag.  Arrays are stored as items that contain a series of value tags, in
-the case of strings and numbers, or object tags.
+The root JSON object and all named members are represented by `item` tags.  Each named member has `name` and `type`
+attributes.  The supported type values are `object`, `array`, `string`, `integer`, `number`, `boolean`, and `null`.
+Numbers without a fraction or exponent use `integer`; other standard numbers use `number`.
+
+Arrays are represented by `item` tags with a `subtype` attribute.  A homogeneous array uses its common element type,
+a heterogeneous array uses `mixed`, and an empty array uses `null`.  Scalar array elements use `value` tags with a
+`type` attribute.  Nested objects and arrays use unnamed `item` tags.  Null values have no content, while booleans
+retain the exact lower-case `true` or `false` text from the JSON source.
 
 -EXAMPLE-
-The following example illustrates a JSON structure containing the common datatypes:
+The following example illustrates scalar values, nested arrays, and a mixed array:
 
 { "string":"foo bar",
-  "array":[ 0, 1, 2 ],
-  "array2":[ { "ABC":"XYZ" },
-             { "DEF":"XYZ" } ]
+  "enabled":true,
+  "nothing":null,
+  "integers":[ 0, 1 ],
+  "nested":[ [ "A" ], [ 1, null ] ]
 }
 
 It will be translated to the following when loaded into an XML object:
 
 &lt;item type="object"&gt;
   &lt;item name="string" type="string"&gt;foo bar&lt;/item&gt;
+  &lt;item name="enabled" type="boolean"&gt;true&lt;/item&gt;
+  &lt;item name="nothing" type="null"/&gt;
 
-  &lt;item name="array" type="array" subtype="integer"&gt;
-    &lt;value&gt;0&lt;/value&gt;
-    &lt;value&gt;1&lt;/value&gt;
-    &lt;value&gt;2&lt;/value&gt;
+  &lt;item name="integers" type="array" subtype="integer"&gt;
+    &lt;value type="integer"&gt;0&lt;/value&gt;
+    &lt;value type="integer"&gt;1&lt;/value&gt;
   &lt;/item&gt;
 
-  &lt;item name="array2" type="array" subtype="object"&gt;
-    &lt;item type="object"&gt;&lt;item name="ABC" type="string" value="XYZ"/&gt;&lt;/item&gt;
-    &lt;item type="object"&gt;&lt;item name="DEF" type="string" value="XYZ"/&gt;&lt;/item&gt;
+  &lt;item name="nested" type="array" subtype="array"&gt;
+    &lt;item type="array" subtype="string"&gt;
+      &lt;value type="string"&gt;A&lt;/value&gt;
+    &lt;/item&gt;
+    &lt;item type="array" subtype="mixed"&gt;
+      &lt;value type="integer"&gt;1&lt;/value&gt;
+      &lt;value type="null"/&gt;
+    &lt;/item&gt;
   &lt;/item&gt;
-&lt;item&gt;
+&lt;/item&gt;
 
 -END-
 
@@ -595,12 +605,16 @@ struct JSONParser {
       else return ERR::Syntax;
 
       auto &value_tag = Tags.emplace_back(XTag(NextTagID++, line_no));
-      if (array_element) value_tag.Attribs.emplace_back("value", "");
+      if (array_element) {
+         value_tag.Attribs.reserve(2);
+         value_tag.Attribs.emplace_back("value", "");
+         value_tag.Attribs.emplace_back("type", json_kind_name(Kind));
+      }
       else {
          value_tag.Attribs.reserve(3);
          value_tag.Attribs.emplace_back("item", "");
          value_tag.Attribs.emplace_back("name", *Name);
-         value_tag.Attribs.emplace_back("type", Kind IS JSONValueKind::Integer ? "number" : json_kind_name(Kind));
+         value_tag.Attribs.emplace_back("type", json_kind_name(Kind));
       }
 
       if (Kind != JSONValueKind::Null) {
