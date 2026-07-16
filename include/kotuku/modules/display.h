@@ -46,6 +46,15 @@ enum class CS : int {
    CIE_LCH = 4,
 };
 
+// Bitmap memory type.
+
+enum class BMT : int {
+   NIL = 0,
+   DATA = 0,
+   VIDEO = 1,
+   TEXTURE = 2,
+};
+
 // Optional flags for the ExposeSurface() function.
 
 enum class EXF : uint32_t {
@@ -564,7 +573,7 @@ class objBitmap : public Object {
    int       PlaneMod;                                             // The differential between each bitmap plane.
    struct ClipRectangle Clip;                                      // Defines the bitmap's clipping region.
    int       Size;                                                 // The total size of the bitmap, in bytes.
-   MEM       DataFlags;                                            // Defines the memory flags to use when allocating a bitmap's data area.
+   BMT       MemType;                                              // Defines the memory type used to host a bitmap's data area.
    int       AmtColours;                                           // The maximum number of colours represented by the bitmap format.
    BMF       Flags;                                                // Optional flags.
    int       TransIndex;                                           // The transparent colour of the bitmap, represented as an index.
@@ -809,8 +818,8 @@ class objBitmap : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getDataFlags(MEM &Value) noexcept {
-      Value = this->DataFlags;
+   inline ERR getMemType(BMT &Value) noexcept {
+      Value = this->MemType;
       return ERR::Okay;
    }
 
@@ -895,7 +904,7 @@ class objBitmap : public Object {
    }
 
    inline ERR getHandle(APTR &Value) noexcept {
-      auto field = &this->Class->Dictionary[12];
+      auto field = &this->Class->Dictionary[11];
       return field->GetValue(this, &Value);
    }
 
@@ -935,9 +944,9 @@ class objBitmap : public Object {
       return field->WriteValue(this, field, 0x08100310, Value);
    }
 
-   inline ERR setDataFlags(const MEM Value) noexcept {
+   inline ERR setMemType(const BMT Value) noexcept {
       if (this->initialised()) return ERR::ImmutableField;
-      this->DataFlags = Value;
+      this->MemType = Value;
       return ERR::Okay;
    }
 
@@ -1016,12 +1025,12 @@ class objBitmap : public Object {
    }
 
    inline ERR setClipTop(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[15];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setHandle(APTR Value) noexcept {
-      auto field = &this->Class->Dictionary[12];
+      auto field = &this->Class->Dictionary[11];
       return field->WriteValue(this, field, 0x08100300, Value);
    }
 
@@ -2441,6 +2450,7 @@ extern ERR WindowHook(OBJECTID SurfaceID, WH Event, FUNCTION *Callback);
 namespace fl {
    using namespace kt;
 
-constexpr FieldValue WindowType(SWIN Value) { return FieldValue(strhash("windowType"), int(Value)); }
+[[nodiscard]] constexpr FieldValue WindowType(SWIN Value) { return FieldValue(strhash("windowType"), int(Value)); }
+[[nodiscard]] constexpr FieldValue MemType(BMT Value) { return FieldValue(strhash("memType"), int(Value)); }
 
 } // namespace

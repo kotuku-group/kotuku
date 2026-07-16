@@ -14,7 +14,7 @@ low-level pixel storage behind much of Kōtuku's 2D graphics pipeline.
 
 To create a bitmap, set #Width and #Height before initialisation.  The pixel format can be selected explicitly with
 #BitsPerPixel, #BytesPerPixel, #AmtColours and #Type, or left for #Query() and #Init() to derive from the current
-display environment.  #DataFlags controls whether the bitmap uses regular CPU-accessible memory or a platform-specific
+display environment.  #MemType controls whether the bitmap uses regular CPU-accessible memory or a platform-specific
 video or texture resource where supported.
 
 Direct CPU access is reliable for regular data bitmaps.  Bitmaps backed by video or texture resources may require
@@ -153,8 +153,8 @@ static ERR SET_Data(extBitmap *, uint8_t *);
 static ERR SET_Handle(extBitmap *, APTR);
 static ERR SET_Palette(extBitmap *, RGBPalette *);
 
-static const FieldDef clDataFlags[] = {
-   { "Video", MEM::VIDEO }, { "Blit", MEM::TEXTURE }, { "NoClear", MEM::NO_CLEAR }, { "Data", 0 },
+static const FieldDef clMemType[] = {
+   { "Data", int(BMT::DATA) }, { "Video", int(BMT::VIDEO) }, { "Texture", int(BMT::TEXTURE) },
    { nullptr, 0 }
 };
 
@@ -258,14 +258,15 @@ ERR lock_surface(extBitmap *Bitmap, int16_t Access)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((Bitmap->DataFlags & MEM::VIDEO) != MEM::NIL) {
-      // MEM::VIDEO represents the video display in OpenGL.  Read/write CPU access is not available to this area but
+   if (Bitmap->MemType IS BMT::VIDEO) {
+      // BMT::VIDEO represents the video display in OpenGL.  Read/write CPU access is not available to this area but
       // we can use glReadPixels() to get a copy of the framebuffer and then write changes back.  Because this is
       // extremely bad practice (slow), a debug message is printed to warn the developer to use a different code path.
       //
       // Practically the only reason why we allow this is for unusual measures like taking screenshots, grabbing the display for debugging, development testing etc.
 
-      log.warning("Warning: Locking of OpenGL video surfaces for CPU access is bad practice (bitmap: #%d, mem: $%.8x)", Bitmap->UID, Bitmap->DataFlags);
+      log.warning("Warning: Locking of OpenGL video surfaces for CPU access is bad practice "
+         "(bitmap: #%d, memory type: %d)", Bitmap->UID, int(Bitmap->MemType));
 
       if (!Bitmap->Data) {
          Bitmap->Data = (uint8_t *)malloc(Bitmap->Size);
@@ -287,7 +288,7 @@ ERR lock_surface(extBitmap *Bitmap, int16_t Access)
 
       return ERR::Okay;
    }
-   else if ((Bitmap->DataFlags & MEM::TEXTURE) != MEM::NIL) {
+   else if (Bitmap->MemType IS BMT::TEXTURE) {
       // Using the CPU on TEXTURE bitmaps is banned (anti-pattern)
       return log.warning(ERR::NoSupport);
    }
@@ -302,7 +303,7 @@ ERR lock_surface(extBitmap *Bitmap, int16_t Access)
 
 ERR unlock_surface(extBitmap *Bitmap)
 {
-   if (((Bitmap->DataFlags & MEM::VIDEO) != MEM::NIL) and (Bitmap->prvWriteBackBuffer)) {
+   if ((Bitmap->MemType IS BMT::VIDEO) and (Bitmap->prvWriteBackBuffer)) {
       if (!lock_graphics_active(__func__)) {
          #ifdef GL_DRAW_PIXELS
             glDrawPixels(Bitmap->Width, Bitmap->Height, pixel_type, format, Bitmap->Data);
@@ -477,7 +478,7 @@ LockFailed
 static ERR BITMAP_Clear(extBitmap *Self)
 {
 #ifdef _GLES_
-   if ((Self->DataFlags & MEM::VIDEO) != MEM::NIL) {
+   if (Self->MemType IS BMT::VIDEO) {
       if (!lock_graphics_active(__func__)) {
          glClearColorx(Self->Bkgd.Red, Self->Bkgd.Green, Self->Bkgd.Blue, 255);
          glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
@@ -490,7 +491,7 @@ static ERR BITMAP_Clear(extBitmap *Self)
 
    // Clear any alignment padding first - some clients may expect the Data to be completely clear.
 
-   if ((Self->DataFlags & (MEM::VIDEO|MEM::TEXTURE)) IS MEM::NIL) {
+   if (Self->MemType IS BMT::DATA) {
       if (Self->LineWidth > Self->Width * Self->BytesPerPixel) {
          int offset = 0;
          for (int y=0; y < Self->Height; y++) {
@@ -958,7 +959,7 @@ Init prepares a queried bitmap for use.  It validates the calculated bitmap stat
 configures platform-specific backing resources and selects the pixel access routines used by drawing operations.
 
 If #Data has already been supplied, Init uses the caller-provided memory.  Otherwise allocation is controlled by
-#DataFlags and #Flags.  #Width and #Height must be set before this action is called.
+#MemType and #Flags.  #Width and #Height must be set before this action is called.
 
 -ERRORS-
 Okay
@@ -1006,11 +1007,11 @@ static ERR BITMAP_Init(extBitmap *Self)
 
 #ifdef __xwindows__
 
-   Self->DataFlags &= ~MEM::TEXTURE; // Blitter memory not available in X11
+   if (Self->MemType IS BMT::TEXTURE) Self->MemType = BMT::DATA; // Blitter memory not available in X11
 
    if (!Self->Data) {
       if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
-         Self->DataFlags &= ~MEM::VIDEO; // Video memory not available for allocation in X11 (may be set to identify X11 windows only)
+         Self->MemType = BMT::DATA; // Video memory not available for allocation in X11 (may be set to identify X11 windows only)
 
          if (!Self->Size) return log.warning(ERR::FieldNotSet);
 
@@ -1051,13 +1052,13 @@ static ERR BITMAP_Init(extBitmap *Self)
 
 #elif _WIN32
 
-   Self->DataFlags &= ~MEM::TEXTURE; // Video buffer memory not available in Win32
+   if (Self->MemType IS BMT::TEXTURE) Self->MemType = BMT::DATA; // Video buffer memory not available in Win32
 
    if (!Self->Data) {
       if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
          if (!Self->Size) return log.warning(ERR::FieldNotSet);
 
-         if ((Self->DataFlags & MEM::VIDEO) != MEM::NIL) {
+         if (Self->MemType IS BMT::VIDEO) {
             Self->prvAFlags |= BF_WINVIDEO;
             if (!(Self->win.Drawable = winCreateCompatibleDC())) return log.warning(ERR::SystemCall);
          }
@@ -1067,27 +1068,29 @@ static ERR BITMAP_Init(extBitmap *Self)
             Self->prvAFlags |= BF_DATA;
          }
       }
-      else if ((Self->DataFlags & MEM::VIDEO) != MEM::NIL) Self->prvAFlags |= BF_WINVIDEO;
+      else if (Self->MemType IS BMT::VIDEO) Self->prvAFlags |= BF_WINVIDEO;
    }
 
 #elif _GLES_
-   // MEM::VIDEO + BMF::NO_DATA: The bitmap represents the OpenGL display.  No data area will be allocated as direct access to the OpenGL video frame buffer is not possible.
-   // MEM::VIDEO: Not currently used as a means of allocating a particular type of OpenGL buffer.
-   // MEM::TEXTURE:  The bitmap is to be used as an OpenGL texture or off-screen buffer.  The bitmap content is temporary - i.e. the content can be dumped by the graphics driver if the video display changes.
-   // MEM::NIL:  The bitmap resides in regular CPU accessible memory.
+   // BMT::VIDEO + BMF::NO_DATA: The bitmap represents the OpenGL display.  No data area will be allocated because
+   // direct access to the OpenGL video frame buffer is not possible.
+   // BMT::VIDEO: Not currently used as a means of allocating a particular type of OpenGL buffer.
+   // BMT::TEXTURE: The bitmap is to be used as an OpenGL texture or off-screen buffer.  Its content is temporary and
+   // can be discarded by the graphics driver if the video display changes.
+   // BMT::DATA: The bitmap resides in regular CPU-accessible memory.
 
    if (!Self->Data) {
       if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
          if (Self->Size <= 0) log.warning(ERR::FieldNotSet);
 
-         if ((Self->DataFlags & MEM::VIDEO) != MEM::NIL) {
+         if (Self->MemType IS BMT::VIDEO) {
             // Do nothing - the bitmap merely represents the video display and does not hold content.
          }
-         else if ((Self->DataFlags & MEM::TEXTURE) != MEM::NIL) {
+         else if (Self->MemType IS BMT::TEXTURE) {
             // Blittable bitmaps are fast, but their content is temporary.  It is not possible to use the CPU on this
             // bitmap type (anti-pattern).
 
-            log.warning("Support for MEM::TEXTURE not included yet.");
+            log.warning("Support for BMT::TEXTURE not included yet.");
             return ERR::NoSupport;
          }
          else {
@@ -1098,10 +1101,10 @@ static ERR BITMAP_Init(extBitmap *Self)
       }
    }
 
-   if ((Self->DataFlags & (MEM::VIDEO|MEM::TEXTURE)) != MEM::NIL) Self->Flags |= BMF::2DACCELERATED;
+   if (Self->MemType != BMT::DATA) Self->Flags |= BMF::2DACCELERATED;
 
 #else // Software rendering only
-   Self->DataFlags &= ~(MEM::TEXTURE|MEM::VIDEO);
+   Self->MemType = BMT::DATA;
 
    if (!Self->Data) {
       if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
@@ -1134,7 +1137,7 @@ static ERR BITMAP_Init(extBitmap *Self)
 
 #elif _WIN32
 
-   if ((Self->DataFlags & MEM::VIDEO) != MEM::NIL) {
+   if (Self->MemType IS BMT::VIDEO) {
       int red, green, blue, alpha;
 
       if (!winGetPixelFormat(&red, &green, &blue, &alpha)) {
@@ -1364,7 +1367,7 @@ static ERR BITMAP_Query(extBitmap *Self)
    }
 
    #ifdef _GLES_
-      if ((Self->DataFlags & MEM::TEXTURE) != MEM::NIL) {
+      if (Self->MemType IS BMT::TEXTURE) {
          // OpenGL requires bitmap textures to be a power of 2.
 
          int new_width = nearestPower(Self->Width);
@@ -1483,7 +1486,7 @@ static ERR BITMAP_Query(extBitmap *Self)
 
    // If we have Direct Graphics Access, use the DGA values rather than our generic calculations for bitmap parameters.
 
-   if (((Self->DataFlags & MEM::VIDEO) != MEM::NIL) and (Self->x11.drawable)) {
+   if ((Self->MemType IS BMT::VIDEO) and (Self->x11.drawable)) {
       log.trace("LineWidth: %d, PixelLine: %d, BankSize: %d", Self->LineWidth, glDGAPixelsPerLine, glDGABankSize);
       if ((glDGAAvailable) and (glDGAPixelsPerLine)) {
          Self->LineWidth = glDGAPixelsPerLine * Self->BytesPerPixel;
@@ -1724,7 +1727,6 @@ Errors returned by the destination object's Write action are propagated to the c
 -ERRORS-
 Okay
 NullArgs
-AllocMemory
 BufferOverflow
 *********************************************************************************************************************/
 
@@ -1749,8 +1751,8 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
       uint8_t dummy[54];
    } pcx;
    RGB8 rgb;
-   uint8_t *buffer, lastpixel, newpixel;
-   int i, j, p, size;
+   uint8_t lastpixel, newpixel;
+   int i, j, p;
 
    if ((!Args) or (!Args->Dest)) return log.warning(ERR::NullArgs);
 
@@ -1779,15 +1781,19 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
    if (Self->AmtColours <= 256) pcx.NumPlanes = 1;
    else pcx.NumPlanes = 3;
 
-   size = width * height * pcx.NumPlanes;
-   if (!AllocMemory(size, MEM::NO_CLEAR, (APTR *)&buffer)) {
+   {
+      const auto buffer_size = size_t(width) * size_t(height) * size_t(pcx.NumPlanes) * 2;
+      std::vector<uint8_t> buffer(buffer_size);
       auto write_error = acWrite(Args->Dest, &pcx, sizeof(pcx), nullptr);
-      if (write_error != ERR::Okay) {
-         FreeResource(buffer);
-         return log.warning(write_error);
-      }
+      if (write_error != ERR::Okay) return log.warning(write_error);
 
       int dp = 0;
+      auto append_byte = [&](uint8_t Value) {
+         if (size_t(dp) >= buffer.size()) return false;
+         buffer[dp++] = Value;
+         return true;
+      };
+
       for (i=Self->Clip.Top; i < (Self->Clip.Bottom); i++) {
          if (pcx.NumPlanes IS 1) { // Save as a 256 colour image
             lastpixel = Self->ReadUCPixel(Self, Self->Clip.Left, i);
@@ -1800,31 +1806,18 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
                }
                else {
                   if (!((counter IS 1) and (lastpixel < 192))) {
-                     buffer[dp++] = 192 + counter;
+                     if (!append_byte(192 + counter)) return log.warning(ERR::BufferOverflow);
                   }
-                  buffer[dp++] = lastpixel;
+                  if (!append_byte(lastpixel)) return log.warning(ERR::BufferOverflow);
                   lastpixel = newpixel;
                   counter = 1;
-               }
-
-               if (dp >= (size - 10)) {
-                  FreeResource(buffer);
-                  return log.warning(ERR::BufferOverflow);
                }
             }
 
             if (!((counter IS 1) and (lastpixel < 192))) {
-               if (dp >= (size - 2)) {
-                  FreeResource(buffer);
-                  return log.warning(ERR::BufferOverflow);
-               }
-               buffer[dp++] = 192 + counter;
+               if (!append_byte(192 + counter)) return log.warning(ERR::BufferOverflow);
             }
-            else if (dp >= (size - 1)) {
-               FreeResource(buffer);
-               return log.warning(ERR::BufferOverflow);
-            }
-            buffer[dp++] = lastpixel;
+            if (!append_byte(lastpixel)) return log.warning(ERR::BufferOverflow);
          }
          else { // Save as a true colour image with run-length encoding
             auto read_pixel = [&](int X, int Y) {
@@ -1853,18 +1846,20 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
                   if (newpixel IS lastpixel) {
                      counter++;
                      if (counter IS 63) {
-                        buffer[dp++] = 0xc0 | counter;
-                        buffer[dp++] = lastpixel;
+                        if ((!append_byte(0xc0 | counter)) or (!append_byte(lastpixel))) {
+                           return log.warning(ERR::BufferOverflow);
+                        }
                         counter = 0;
                      }
                   }
                   else {
                      if ((counter IS 1) and (0xc0 != (0xc0 & lastpixel))) {
-                        buffer[dp++] = lastpixel;
+                        if (!append_byte(lastpixel)) return log.warning(ERR::BufferOverflow);
                      }
                      else if (counter) {
-                        buffer[dp++] = 0xc0 | counter;
-                        buffer[dp++] = lastpixel;
+                        if ((!append_byte(0xc0 | counter)) or (!append_byte(lastpixel))) {
+                           return log.warning(ERR::BufferOverflow);
+                        }
                      }
                      lastpixel = newpixel;
                      counter = 1;
@@ -1874,18 +1869,18 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
                // Finish line if necessary
 
                if ((counter IS 1) and (0xc0 != (0xc0 & lastpixel))) {
-                  buffer[dp++] = lastpixel;
+                  if (!append_byte(lastpixel)) return log.warning(ERR::BufferOverflow);
                }
                else if (counter) {
-                  buffer[dp++] = 0xc0 | counter;
-                  buffer[dp++] = lastpixel;
+                  if ((!append_byte(0xc0 | counter)) or (!append_byte(lastpixel))) {
+                     return log.warning(ERR::BufferOverflow);
+                  }
                }
             }
          }
       }
 
-      write_error = acWrite(Args->Dest, buffer, dp, nullptr);
-      FreeResource(buffer);
+      write_error = acWrite(Args->Dest, buffer.data(), dp, nullptr);
       if (write_error != ERR::Okay) return log.warning(write_error);
 
       // Setup palette
@@ -1905,9 +1900,7 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
       }
 
       return ERR::Okay;
-
    }
-   else return ERR::AllocMemory;
 }
 
 /*********************************************************************************************************************
@@ -2219,15 +2212,6 @@ ERR SET_Data(extBitmap *Self, uint8_t *Value)
 /*********************************************************************************************************************
 
 -FIELD-
-DataFlags: Defines the memory flags to use when allocating a bitmap's data area.
-
-DataFlags controls the kind of backing storage requested during initialisation.  Common values are `MEM::NIL`,
-`MEM::VIDEO` and `MEM::TEXTURE`.
-
-Video or texture-backed bitmaps can be faster for some drawing paths, but direct CPU access is platform dependent.  Use
-#Lock() before reading or writing #Data directly when the bitmap is not a regular data bitmap.
-
--FIELD-
 DrawUCPixel: Points to a C function that draws pixels to the bitmap using colour indexes.
 
 DrawUCPixel points to the active low-level pixel writer for packed colour or palette-index values.  It is intended for
@@ -2309,6 +2293,15 @@ LineWidth includes any row padding required by the active bitmap type or platfor
 number of meaningful pixel bytes in a row.
 
 -FIELD-
+MemType: Defines the memory type used to host a bitmap's data area.
+
+MemType controls the kind of backing storage requested during initialisation.  The available values are `BMT::DATA`,
+`BMT::VIDEO` and `BMT::TEXTURE`.
+
+Video or texture-backed bitmaps can be faster for some drawing paths, but direct CPU access is platform dependent.  Use
+#Lock() before reading or writing #Data directly when the bitmap is not a regular data bitmap.
+
+-FIELD-
 Opacity: Determines the translucency setting to use in drawing operations.
 
 Opacity is an 8-bit alpha multiplier used by drawing operations that support translucent bitmap copies.  A value of
@@ -2374,10 +2367,7 @@ ERR SET_Palette(extBitmap *Self, RGBPalette *SrcPalette)
       }
       return ERR::Okay;
    }
-   else {
-      log.warning("Corruption in Palette at %p.", SrcPalette);
-      return ERR::ObjectCorrupt;
-   }
+   else return log.warning(ERR::ObjectCorrupt);
 }
 
 /*********************************************************************************************************************
@@ -2451,7 +2441,7 @@ static ERR SET_Trans(extBitmap *Self, RGB8 *Value)
    }
    else Self->TransIndex = RGBToValue(&Self->TransColour, Self->Palette);
 
-   if ((Self->DataFlags & MEM::VIDEO) IS MEM::NIL) Self->Flags |= BMF::TRANSPARENT;
+   if (Self->MemType != BMT::VIDEO) Self->Flags |= BMF::TRANSPARENT;
    return ERR::Okay;
 }
 
@@ -2476,7 +2466,7 @@ static ERR SET_TransIndex(extBitmap *Self, int Index)
    Self->TransIndex = Index;
    Self->TransColour   = Self->Palette->Col[Self->TransIndex];
 
-   if ((Self->DataFlags & MEM::VIDEO) IS MEM::NIL) Self->Flags |= BMF::TRANSPARENT;
+   if (Self->MemType != BMT::VIDEO) Self->Flags |= BMF::TRANSPARENT;
    return ERR::Okay;
 }
 
@@ -2530,7 +2520,7 @@ static ERR CalculatePixelRoutines(extBitmap *Self)
 
 #elif defined(__xwindows__) or defined(__ANDROID__) or defined(_GLES_)
 
-   if ((Self->DataFlags & (MEM::VIDEO|MEM::TEXTURE)) != MEM::NIL) {
+   if ((Self->MemType IS BMT::VIDEO) or (Self->MemType IS BMT::TEXTURE)) {
       switch(Self->BytesPerPixel) {
          case 1:
             Self->ReadUCPixel  = &VideoReadPixel8;
@@ -2773,7 +2763,7 @@ static const FieldArray clBitmapFields[] = {
    { "ClipBottom",    FDF_INT|FDF_RW },
    { "ClipTop",       FDF_INT|FDF_RW },
    { "Size",          FDF_INT|FDF_R },
-   { "DataFlags",     FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clDataFlags },
+   { "MemType",       FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, nullptr, &clMemType },
    { "AmtColours",    FDF_INT|FDF_RI },
    { "Flags",         FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clBitmapFlags },
    { "TransIndex",    FDF_INT|FDF_RW, nullptr, SET_TransIndex },

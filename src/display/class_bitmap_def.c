@@ -6,10 +6,10 @@ static const struct FieldDef clBitmapType[] = {
    { nullptr, 0 }
 };
 
-static const struct FieldDef clBitmapDataFlags[] = {
+static const struct FieldDef clBitmapMemType[] = {
+   { "Data", 0x00000000 },
    { "Video", 0x00000001 },
    { "Texture", 0x00000002 },
-   { "NoClear", 0x00040000 },
    { nullptr, 0 }
 };
 

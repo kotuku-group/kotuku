@@ -787,12 +787,10 @@ enum class KQ : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(KQ)
 
-// Memory types.
+// Memory flags.
 
 enum class MEM : uint32_t {
    NIL = 0,
-   VIDEO = 0x00000001,
-   TEXTURE = 0x00000002,
    NO_CLEAR = 0x00040000,
 };
 

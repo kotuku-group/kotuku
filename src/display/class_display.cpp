@@ -731,7 +731,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
    #ifdef __xwindows__
 
       bmp->Flags |= BMF::NO_DATA;
-      bmp->DataFlags = MEM::VIDEO;
+      bmp->MemType = BMT::VIDEO;
 
       // Set the Window Attributes structure
 
@@ -886,7 +886,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
       // will be managed by the Surface class.
 
       bmp->Flags |= BMF::NO_DATA;
-      bmp->DataFlags = MEM::VIDEO;
+      bmp->MemType = BMT::VIDEO;
 
       if (InitObject(bmp) != ERR::Okay) {
          return log.warning(ERR::Init);
@@ -954,7 +954,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
       // Initialise the video bitmap that will represent the OpenGL surface
 
       bmp->Flags |= BMF::NO_DATA;
-      bmp->DataFlags = MEM::VIDEO;
+      bmp->MemType = BMT::VIDEO;
       if (InitObject(bmp) != ERR::Okay) {
          return log.warning(ERR::Init);
       }
@@ -2839,7 +2839,7 @@ void alloc_display_buffer(extDisplay *Self)
          fl::Width(Self->Bitmap->Width),
          fl::Height(Self->Bitmap->Height)
          #ifndef __xwindows__
-            , fl::DataFlags(MEM::TEXTURE)
+            , fl::MemType(BMT::TEXTURE)
          #endif
       )) {
       Self->BufferID = buffer->UID;

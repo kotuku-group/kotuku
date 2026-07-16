@@ -14,7 +14,7 @@
     <copyright>Paul Manias © 2003-2026</copyright>
     <description>
 <p>The Bitmap class describes a rectangular block of pixel data together with its dimensions, colour format, palette, clipping region and drawing state.  Bitmaps are used directly by <class name="Display">Display</class> and <class name="Image">Image</class> objects and provide the low-level pixel storage behind much of Kōtuku's 2D graphics pipeline.</p>
-<p>To create a bitmap, set <fl>Width</fl> and <fl>Height</fl> before initialisation.  The pixel format can be selected explicitly with <fl>BitsPerPixel</fl>, <fl>BytesPerPixel</fl>, <fl>AmtColours</fl> and <fl>Type</fl>, or left for <action>Query</action> and <action>Init</action> to derive from the current display environment.  <fl>DataFlags</fl> controls whether the bitmap uses regular CPU-accessible memory or a platform-specific video or texture resource where supported.</p>
+<p>To create a bitmap, set <fl>Width</fl> and <fl>Height</fl> before initialisation.  The pixel format can be selected explicitly with <fl>BitsPerPixel</fl>, <fl>BytesPerPixel</fl>, <fl>AmtColours</fl> and <fl>Type</fl>, or left for <action>Query</action> and <action>Init</action> to derive from the current display environment.  <fl>MemType</fl> controls whether the bitmap uses regular CPU-accessible memory or a platform-specific video or texture resource where supported.</p>
 <p>Direct CPU access is reliable for regular data bitmaps.  Bitmaps backed by video or texture resources may require <action>Lock</action> before reading or writing <fl>Data</fl>, and <action>Unlock</action> after direct access is complete.  Code that uses the drawing methods exposed by this class does not normally need to manage locking itself.</p>
 <p>Bitmap methods are intentionally low-level and operate on immediate pixel data.  Use the Vector module when retained scene graphs, paths, gradients, filters or higher-level drawing composition are required.  Use <class name="Image">Image</class> when decoding or encoding image formats is the main concern.</p>
 <p>Raw image bytes can be read and written with <action>Read</action> and <action>Write</action>.  <action>SaveImage</action> writes the clipped bitmap image as PCX data to a destination object that supports writing.</p></description>
@@ -92,7 +92,7 @@
       <tiriPrototype>err = Object.init()</tiriPrototype>
       <description>
 <p>Init prepares a queried bitmap for use.  It validates the calculated bitmap state, allocates <fl>Data</fl> when required, configures platform-specific backing resources and selects the pixel access routines used by drawing operations.</p>
-<p>If <fl>Data</fl> has already been supplied, Init uses the caller-provided memory.  Otherwise allocation is controlled by <fl>DataFlags</fl> and <fl>Flags</fl>.  <fl>Width</fl> and <fl>Height</fl> must be set before this action is called.</p>
+<p>If <fl>Data</fl> has already been supplied, Init uses the caller-provided memory.  Otherwise allocation is controlled by <fl>MemType</fl> and <fl>Flags</fl>.  <fl>Width</fl> and <fl>Height</fl> must be set before this action is called.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -202,7 +202,6 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
         <error code="BufferOverflow">A buffer overflow has occurred</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
@@ -622,18 +621,6 @@ unpackAlpha(Colour)
     </field>
 
     <field>
-      <name>DataFlags</name>
-      <comment>Defines the memory flags to use when allocating a bitmap's data area.</comment>
-      <access read="R" write="I">Read/Init</access>
-      <type lookup="MEM">MEM</type>
-      <description>
-<p>DataFlags controls the kind of backing storage requested during initialisation.  Common values are <code>MEM::NIL</code>, <code>MEM::VIDEO</code> and <code>MEM::TEXTURE</code>.</p>
-<p>Video or texture-backed bitmaps can be faster for some drawing paths, but direct CPU access is platform dependent.  Use <action>Lock</action> before reading or writing <fl>Data</fl> directly when the bitmap is not a regular data bitmap.</p>
-<types lookup="MEM"/>
-      </description>
-    </field>
-
-    <field>
       <name>DrawUCPixel</name>
       <comment>Points to a C function that draws pixels to the bitmap using colour indexes.</comment>
       <access read="R">Read</access>
@@ -701,6 +688,18 @@ unpackAlpha(Colour)
       <type>INT</type>
       <description>
 <p>LineWidth includes any row padding required by the active bitmap type or platform backend.  Use <fl>ByteWidth</fl> for the number of meaningful pixel bytes in a row.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>MemType</name>
+      <comment>Defines the memory type used to host a bitmap's data area.</comment>
+      <access read="R" write="I">Read/Init</access>
+      <type lookup="BMT">BMT</type>
+      <description>
+<p>MemType controls the kind of backing storage requested during initialisation.  The available values are <code>BMT::DATA</code>, <code>BMT::VIDEO</code> and <code>BMT::TEXTURE</code>.</p>
+<p>Video or texture-backed bitmaps can be faster for some drawing paths, but direct CPU access is platform dependent.  Use <action>Lock</action> before reading or writing <fl>Data</fl> directly when the bitmap is not a regular data bitmap.</p>
+<types lookup="BMT"/>
       </description>
     </field>
 
@@ -890,17 +889,17 @@ unpackAlpha(Colour)
       <const name="PLANAR">Planar pixel mode separates pixel bits across multiple planes.  Commonly used for single bit bitmap masks.</const>
     </constants>
 
+    <constants lookup="BMT" comment="Bitmap memory type.">
+      <const name="DATA">The default type, indicates a standard memory allocation from system RAM.</const>
+      <const name="TEXTURE">Identifies non-displayable video memory, e.g. texture graphics.</const>
+      <const name="VIDEO">Identifies video memory, such as the frame buffer.</const>
+    </constants>
+
     <constants lookup="CS" comment="Colour space options.">
       <const name="CIE_LAB">Cartesian L*a*b* colour space defined by CIE 15.</const>
       <const name="CIE_LCH">Polar L*CHab colour space defined by CIE 15.</const>
       <const name="LINEAR_RGB">Linear RGB is used to improve colour balance in blending operations.</const>
       <const name="SRGB">The default colour-space is sRGB.</const>
-    </constants>
-
-    <constants lookup="MEM" comment="Memory types.">
-      <const name="NO_CLEAR">Do not clear the memory on allocation (saves time).</const>
-      <const name="TEXTURE">Identifies non-displayable video memory, e.g. texture graphics.</const>
-      <const name="VIDEO">Identifies video memory, such as the frame buffer.</const>
     </constants>
 
   </types>
