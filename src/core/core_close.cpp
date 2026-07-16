@@ -1,6 +1,4 @@
 
-static void free_resources(void);
-
 //********************************************************************************************************************
 
 static void free_classes(void)
@@ -292,7 +290,19 @@ void CloseCore(void)
    if (glCodeIndex < CP_FREE_PRIVATE_MEMORY) {
       glCodeIndex = CP_FREE_PRIVATE_MEMORY;
       release_zombie_blocks();
-      free_resources();
+
+      // It is assumed that no threads are running by this point in the shutdown process
+
+      if (not glCrashStatus) {
+         log.branch("Checking for orphaned resources...");
+
+         // Print warnings only.  Resource managers like a stable system environment, and additionally
+         // because modules have been expunged by this point, they can be unsafe to call or inspect.
+         for (const auto & [ id, resource ] : glResources) {
+            if (not resource.Address) continue;
+            log.warning("Unfreed resource #%d/%p, Owner: #%d.", id, resource.Address, resource.OwnerID);
+         }
+      }
    }
 
    #ifdef _WIN32
@@ -508,28 +518,6 @@ restart_forced_expunge:
          FreeResource(mod_master);
          sanity_check = mod_master;
          goto restart_forced_expunge;
-      }
-   }
-}
-
-//********************************************************************************************************************
-// Note: Class and object pointers are no longer valid for interaction at this stage.
-
-static void free_resources(void)
-{
-   kt::Log log("Shutdown");
-
-   // It is assumed that no threads are running by this point in the shutdown process
-
-   if (not glCrashStatus) {
-      log.branch("Checking for orphaned resources...");
-
-      // Print warnings only - resource managers typically expect a stable system environment
-      for (const auto & [ id, resource ] : glResources) {
-         if (not resource.Address) continue;
-
-         log.warning("Unfreed resource #%d/%p (%s), Owner: #%d.", id, resource.Address,
-            resource.Manager ? resource.Manager->Name : "Unknown", resource.OwnerID);
       }
    }
 }

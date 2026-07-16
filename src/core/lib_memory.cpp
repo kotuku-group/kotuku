@@ -72,6 +72,7 @@ static ERR free_private_memory_resource(MEMORYID MemoryID)
 }
 
 //********************************************************************************************************************
+// Resource manager for AllocMemory()
 
 static ERR memory_resource_free(ResourceRecord &Resource, APTR Address)
 {
@@ -275,7 +276,7 @@ ERR FreeResource(RESOURCEID ResourceID)
    // Fast route for direct memory deallocation
 
    if (resource->Manager IS &glResourceMemoryHandler) {
-      error = memory_resource_free(*resource, resource->Address);
+      error = free_private_memory_resource(resource->ResourceID);
    }
    else {
       // Use the resource manager if under normal operating conditions.
@@ -283,12 +284,11 @@ ERR FreeResource(RESOURCEID ResourceID)
       if (not glCrashStatus) {
          error = resource->Manager->Free(*resource, resource->Address);
 
-         if (error IS ERR::Terminate) { // Manager requested regular memory cleanup.
+         if (error IS ERR::Terminate) { // Manager requested regular memory cleanup, as per AllocMemory().
             free_private_memory_resource(ResourceID);
             error = ERR::Okay;
          }
       }
-      else error = free_private_memory_resource(ResourceID);
    }
 
    if (!error) {
