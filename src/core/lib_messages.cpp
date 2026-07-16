@@ -42,6 +42,8 @@ static constexpr size_t MESSAGE_BATCH_LIMIT = 30;
 static std::mutex glQueueLock;
 static std::deque<TaskMessage> glQueue; // Available to all threads, use glQueueLock
 static std::atomic_size_t glQueuedMessages = 0;
+static bool glWFOAnySignal = false; // Main-thread state for the active WaitForObjects() call
+static bool glWFOSignalReceived = false;
 
 template <class T> inline APTR ResolveAddress(T *Pointer, int Offset) {
    return APTR(((int8_t *)Pointer) + Offset);
@@ -99,8 +101,9 @@ static void notify_signal_wfo(OBJECTPTR Object, ACTIONID ActionID, ERR Result, A
 
       glWFOList.erase(lref);
 
-      if (glWFOList.empty()) {
-         log.trace("All objects signalled.");
+      if ((glWFOAnySignal) or (glWFOList.empty())) {
+         glWFOSignalReceived = true;
+         log.trace(glWFOAnySignal ? "An object was signalled." : "All objects signalled.");
          SendMessage(MSGID::WAIT_FOR_OBJECTS, MSF::NIL, nullptr, 0); // Will result in ProcessMessages() terminating
       }
    }
@@ -118,6 +121,7 @@ ERR msg_waitforobjects(APTR Custom, int MsgID, int MsgType, APTR Message, int Ms
       auto object_id = ((OBJECTID *)Message)[0];
       if (auto lref = glWFOList.find(object_id); lref != glWFOList.end()) {
          kt::Log log;
+         bool signal_received = false;
          kt::ScopedObjectLock lock(object_id); // Locking by ID fails safely if the object has been freed
          if (lock.granted()) {
             if (lock.obj->defined(NF::SIGNALLED)) {
@@ -126,6 +130,7 @@ ERR msg_waitforobjects(APTR Custom, int MsgID, int MsgType, APTR Message, int Ms
                UnsubscribeAction(lock.obj, AC::Signal, nullptr);
                lock.obj->clearFlag(NF::SIGNALLED);
                glWFOList.erase(lref);
+               signal_received = true;
             }
             // An unsignalled object indicates a stale message from an earlier wait; leave it monitored.
          }
@@ -135,6 +140,7 @@ ERR msg_waitforobjects(APTR Custom, int MsgID, int MsgType, APTR Message, int Ms
             // equivalent to a signal, so the entry is removed; any remaining subscriptions die with the object.
             log.trace("Object #%d was freed from a child thread.", object_id);
             glWFOList.erase(lref);
+            signal_received = true;
          }
          else {
             // A transient lock failure (e.g. time-out).  Requeue the deferral so that the wake-up is not lost;
@@ -143,7 +149,10 @@ ERR msg_waitforobjects(APTR Custom, int MsgID, int MsgType, APTR Message, int Ms
             SendMessage(MSGID::WAIT_FOR_OBJECTS, MSF::NIL, &object_id, sizeof(object_id));
          }
 
-         if (glWFOList.empty()) return ERR::Terminate;
+         if (((glWFOAnySignal) and (signal_received)) or (glWFOList.empty())) {
+            glWFOSignalReceived = true;
+            return ERR::Terminate;
+         }
       }
       return ERR::Okay; // Never terminate the message loop on a stale deferral
    }
@@ -682,8 +691,11 @@ WaitForObjects: Process incoming messages while waiting on objects to complete t
 
 WaitForObjects() acts as a front-end to ~ProcessMessages(), with an ability to wait for a list of objects that are
 expected to signal an end to their activities.  An object can be signalled via the Signal() action, or via termination.
-This function will only return once ALL of the objects are signalled or a time-out occurs.  It is guaranteed that
-the message queue will be processed at least once before returning.
+By default, this function will only return once ALL of the objects are signalled or a time-out occurs.  Use the
+`PMF::ANY_SIGNAL` flag to return once ANY of the objects are signalled.
+
+It is guaranteed that the message queue will be consumed by ~ProcessMessage() at least once before this function
+returns.
 
 Note that if an object has been signalled prior to entry to this function, its signal flag will be cleared and the
 object will not be monitored.
@@ -719,6 +731,8 @@ ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
    kt::Log log(__FUNCTION__);
 
    std::unordered_map<OBJECTID, ObjectSignal> saved_list;
+   bool saved_any_signal = glWFOAnySignal;
+   bool saved_signal_received = glWFOSignalReceived;
 
    // Message processing is only possible from the main thread (for system design and synchronisation reasons)
    if (!tlMainThread) return log.warning(ERR::OutsideMainThread);
@@ -734,9 +748,11 @@ ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
 
    if (!glWFOList.empty()) std::swap(saved_list, glWFOList);
    glWFOList.clear();
+   glWFOAnySignal = (Flags & PMF::ANY_SIGNAL) != PMF::NIL;
+   glWFOSignalReceived = false;
 
    if (ObjectSignals) {
-      for (int i=0; ((!error) and (ObjectSignals[i].Object)); i++) {
+      for (int i=0; ((!error) and (not glWFOSignalReceived) and (ObjectSignals[i].Object)); i++) {
          kt::ScopedObjectLock lock(ObjectSignals[i].Object); // For thread safety
 
          if (lock.granted()) {
@@ -744,6 +760,7 @@ ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
                // Objects that have already been signalled do not require monitoring and we switch off the
                // signal flag.
                ObjectSignals[i].Object->clearFlag(NF::SIGNALLED);
+               if (glWFOAnySignal) glWFOSignalReceived = true;
             }
             else {
                // NB: An object being freed is treated as equivalent to it receiving a signal.
@@ -764,23 +781,23 @@ ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
       }
    }
 
-   if ((!error) and (not glWFOList.empty())) {
+   if ((!error) and (not glWFOSignalReceived) and (not glWFOList.empty())) {
       if (TimeOut < 0) { // No time-out will apply
-         while ((not glWFOList.empty()) and (!error)) {
+         while ((not glWFOSignalReceived) and (not glWFOList.empty()) and (!error)) {
             error = ProcessMessages(Flags, -1);
          }
       }
       else {
          auto current_time = PreciseTime();
          auto end_time = current_time + (TimeOut * 1000LL);
-         while ((not glWFOList.empty()) and (current_time < end_time) and (!error)) {
+         while ((not glWFOSignalReceived) and (not glWFOList.empty()) and (current_time < end_time) and (!error)) {
             log.detail("Waiting on %d objects.", (int)glWFOList.size());
             error = ProcessMessages(Flags, (end_time - current_time) / 1000LL);
             current_time = PreciseTime();
          }
       }
 
-      if ((!error) and (not glWFOList.empty())) error = ERR::TimeOut;
+      if ((!error) and (not glWFOSignalReceived) and (not glWFOList.empty())) error = ERR::TimeOut;
    }
    else {
       // At least one call to ProcessMessages() is needed (the caller's message loop may
@@ -802,6 +819,8 @@ ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
    }
 
    if (!saved_list.empty()) std::swap(glWFOList, saved_list);
+   glWFOAnySignal = saved_any_signal;
+   glWFOSignalReceived = saved_signal_received;
 
    if ((error > ERR::ExceptionThreshold) and (error != ERR::TimeOut)) log.warning(error);
 

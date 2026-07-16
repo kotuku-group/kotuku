@@ -20,7 +20,8 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
 
   flags("PMF", { comment="Flags for ProcessMessages" },
      "EVENT_LOOP: Set if this is the program's main event loop.  Should be accompanied with an infinite timeout.",
-     "SYSTEM_NO_BREAK: Private.  For system calls that need to avoid early termination.")
+     "SYSTEM_NO_BREAK: Private.  For system calls that need to avoid early termination.",
+     "ANY_SIGNAL: Return from WaitForObjects() when any monitored object is signalled.")
 
   flags("RFD", { bits=32, comment="Flags for RegisterFD()" },
      "WRITE: Activate the callback if there is room to write to the FD's buffer.",
@@ -179,9 +180,9 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
   })
 
   enums("IDTYPE", { type="int", start=1, comment="Types for AllocateID()" },
-    "MESSAGE: Message ID's are allocated for the purpose of sending uniquely identifiable messages between tasks.",
-    "GLOBAL: Global ID's have no specific association with anything.",
-    "FUNCTION: Function ID's are used to track `FUNCTION` types and are assigned to the function ID field.",
+    "MESSAGE: Message IDs are allocated for the purpose of sending uniquely identifiable messages between tasks.",
+    "GLOBAL: Global IDs have no specific association with anything.",
+    "FUNCTION: Function IDs are used to track `FUNCTION` types and are assigned to the function ID field.",
     "RESOURCE: Resource identifier for TrackResource()"
   )
 
