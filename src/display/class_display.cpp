@@ -2837,11 +2837,9 @@ void alloc_display_buffer(extDisplay *Self)
          fl::BitsPerPixel(Self->Bitmap->BitsPerPixel),
          fl::BytesPerPixel(Self->Bitmap->BytesPerPixel),
          fl::Width(Self->Bitmap->Width),
-         fl::Height(Self->Bitmap->Height),
-         #ifdef __xwindows__
-            fl::DataFlags(MEM::DATA)
-         #else
-            fl::DataFlags(MEM::TEXTURE)
+         fl::Height(Self->Bitmap->Height)
+         #ifndef __xwindows__
+            , fl::DataFlags(MEM::TEXTURE)
          #endif
       )) {
       Self->BufferID = buffer->UID;

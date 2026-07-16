@@ -288,9 +288,7 @@ ERR lock_surface(extBitmap *Bitmap, int16_t Access)
       return ERR::Okay;
    }
    else if ((Bitmap->DataFlags & MEM::TEXTURE) != MEM::NIL) {
-      // Using the CPU on TEXTURE bitmaps is banned - it is considered to be poor programming.  Instead,
-      // MEM::DATA bitmaps should be used when R/W CPU access is desired to a bitmap.
-
+      // Using the CPU on TEXTURE bitmaps is banned (anti-pattern)
       return log.warning(ERR::NoSupport);
    }
 
@@ -1076,7 +1074,7 @@ static ERR BITMAP_Init(extBitmap *Self)
    // MEM::VIDEO + BMF::NO_DATA: The bitmap represents the OpenGL display.  No data area will be allocated as direct access to the OpenGL video frame buffer is not possible.
    // MEM::VIDEO: Not currently used as a means of allocating a particular type of OpenGL buffer.
    // MEM::TEXTURE:  The bitmap is to be used as an OpenGL texture or off-screen buffer.  The bitmap content is temporary - i.e. the content can be dumped by the graphics driver if the video display changes.
-   // MEM::DATA:  The bitmap resides in regular CPU accessible memory.
+   // MEM::NIL:  The bitmap resides in regular CPU accessible memory.
 
    if (!Self->Data) {
       if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
@@ -1087,7 +1085,7 @@ static ERR BITMAP_Init(extBitmap *Self)
          }
          else if ((Self->DataFlags & MEM::TEXTURE) != MEM::NIL) {
             // Blittable bitmaps are fast, but their content is temporary.  It is not possible to use the CPU on this
-            // bitmap type - the developer should use MEM::DATA if that is desired.
+            // bitmap type (anti-pattern).
 
             log.warning("Support for MEM::TEXTURE not included yet.");
             return ERR::NoSupport;
@@ -1782,7 +1780,7 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
    else pcx.NumPlanes = 3;
 
    size = width * height * pcx.NumPlanes;
-   if (!AllocMemory(size, MEM::DATA|MEM::NO_CLEAR, (APTR *)&buffer)) {
+   if (!AllocMemory(size, MEM::NO_CLEAR, (APTR *)&buffer)) {
       auto write_error = acWrite(Args->Dest, &pcx, sizeof(pcx), nullptr);
       if (write_error != ERR::Okay) {
          FreeResource(buffer);
@@ -2214,11 +2212,7 @@ ERR SET_Data(extBitmap *Self, uint8_t *Value)
    if (Self->x11.XShmImage) return ERR::NotPossible;
 #endif
 
-   if (Self->Data != Value) {
-      Self->Data = Value;
-      if (Self->DataFlags IS MEM::NIL) Self->DataFlags = MEM::DATA;
-   }
-
+   if (Self->Data != Value) Self->Data = Value;
    return ERR::Okay;
 }
 
@@ -2227,7 +2221,7 @@ ERR SET_Data(extBitmap *Self, uint8_t *Value)
 -FIELD-
 DataFlags: Defines the memory flags to use when allocating a bitmap's data area.
 
-DataFlags controls the kind of backing storage requested during initialisation.  Common values are `MEM::DATA`,
+DataFlags controls the kind of backing storage requested during initialisation.  Common values are `MEM::NIL`,
 `MEM::VIDEO` and `MEM::TEXTURE`.
 
 Video or texture-backed bitmaps can be faster for some drawing paths, but direct CPU access is platform dependent.  Use

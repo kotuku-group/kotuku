@@ -1241,7 +1241,6 @@ extern "C" WINHANDLE winCreateThread(APTR Function, APTR Arg, int StackSize, int
 extern "C" APTR winAllocProtectedMemory(size_t Size, int ProtectionFlags);
 extern "C" int winFreeProtectedMemory(APTR Address, size_t Size);
 extern "C" size_t winGetPageSize(void);
-extern "C" int winProtectMemory(APTR Address, size_t Size, bool, bool, bool);
 extern "C" int winGetCurrentThreadId(void);
 extern "C" void winDeathBringer(int Value);
 extern "C" int winDuplicateHandle(int, int, int, int *);

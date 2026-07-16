@@ -750,7 +750,6 @@ class objTask;
     "ResolveClassName",
     "SendMessage",
     "SetOwner",
-    "ProtectMemory",
     "SetObjectContext",
     "FieldName",
     "ScanDir",

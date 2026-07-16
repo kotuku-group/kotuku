@@ -689,7 +689,7 @@ end
 @Test(priority=30,hotpath=false) function ErrorCodeRaised()
    try
       -- Trigger an ERR_Args exception
-      err = mSys.AllocMemory(-1024, MEM_DATA)
+      err = mSys.AllocMemory(-1024, 0)
    except e when ERR_Args
       -- Expected result
    except e
@@ -701,7 +701,7 @@ end
    -- Try can only check ERR codes in its immediate scope, so the AllocMemory() result would not be tested in this case
    try
       function internal()
-         mSys.AllocMemory(-1024, MEM_DATA)
+         mSys.AllocMemory(-1024, 0)
       end
       internal()
    except e

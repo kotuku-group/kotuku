@@ -1363,7 +1363,7 @@ static ERR SURFACE_Init(extSurface *Self)
       kt::ScopedObjectLock<objDisplay> display(Self->DisplayID, 3000);
 
       if (display.granted()) {
-         auto memflags = MEM::DATA;
+         auto memflags = MEM::NIL;
 
          if ((Self->Flags & RNF::VIDEO) != RNF::NIL) {
             // If acceleration is available then it is OK to create the buffer in video RAM.

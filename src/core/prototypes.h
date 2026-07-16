@@ -36,7 +36,6 @@ extern "C" ERR IdentifyFile(const std::string_view & Path, CLASSID Filter, CLASS
 extern "C" CLASSID ResolveClassName(const std::string_view & Name);
 extern "C" ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size);
 extern "C" ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner);
-extern "C" ERR ProtectMemory(APTR Address, MEM Flags);
 extern "C" void SetObjectContext(OBJECTPTR Object, const struct Field * Field, AC ActionID);
 extern "C" CSTRING FieldName(uint32_t FieldID);
 extern "C" ERR ScanDir(struct DirInfo * Info);

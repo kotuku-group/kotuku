@@ -53,7 +53,7 @@ static void alloc_free_worker(int Base)
 {
    for (int i=0; i < 250; i++) {
       APTR memory = nullptr;
-      if (AllocMemory(32 + ((Base + i) % 96), MEM::DATA, &memory) != ERR::Okay) {
+      if (AllocMemory(32 + ((Base + i) % 96), MEM::NIL, &memory) != ERR::Okay) {
          glAllocFreeFailures.fetch_add(1, std::memory_order_relaxed);
          continue;
       }
@@ -127,7 +127,7 @@ static int run_owned_resource_cleanup_check(void)
       return -1;
    }
 
-   if (AllocMemory(64, MEM::DATA, &memory) != ERR::Okay) {
+   if (AllocMemory(64, MEM::NIL, &memory) != ERR::Okay) {
       FreeResource(child);
       FreeResource(parent);
       log.warning("AllocMemory() failed for ownership cleanup check.");
@@ -175,7 +175,7 @@ static int run_terminating_resource_check(void)
    kt::Log log(__FUNCTION__);
 
    APTR memory = nullptr;
-   if (AllocMemory(64, MEM::DATA, &memory) != ERR::Okay) {
+   if (AllocMemory(64, MEM::NIL, &memory) != ERR::Okay) {
       log.warning("AllocMemory() failed for terminating resource test.");
       return -1;
    }
@@ -512,7 +512,7 @@ static int run_access_object_checks(void)
    kt::Log log(__FUNCTION__);
 
    APTR memory = nullptr;
-   if (AllocMemory(64, MEM::DATA, &memory) != ERR::Okay) {
+   if (AllocMemory(64, MEM::NIL, &memory) != ERR::Okay) {
       log.warning("AllocMemory() failed for AccessObject() resource rejection test.");
       return -1;
    }

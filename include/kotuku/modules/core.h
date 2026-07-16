@@ -787,19 +787,12 @@ enum class KQ : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(KQ)
 
-// Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.
+// Memory types.
 
 enum class MEM : uint32_t {
    NIL = 0,
-   DATA = 0x00000000,
    VIDEO = 0x00000001,
    TEXTURE = 0x00000002,
-   AUDIO = 0x00000004,
-   CODE = 0x00000008,
-   PROTECTED = 0x00000010,
-   READ = 0x00010000,
-   WRITE = 0x00020000,
-   READ_WRITE = 0x00030000,
    NO_CLEAR = 0x00040000,
 };
 
@@ -1505,7 +1498,6 @@ struct CoreBase {
    CLASSID (*_ResolveClassName)(const std::string_view &Name);
    ERR (*_SendMessage)(MSGID Type, MSF Flags, APTR Data, int Size);
    ERR (*_SetOwner)(OBJECTPTR Object, OBJECTPTR Owner);
-   ERR (*_ProtectMemory)(APTR Address, MEM Flags);
    void (*_SetObjectContext)(OBJECTPTR Object, const struct Field *Field, AC ActionID);
    CSTRING (*_FieldName)(uint32_t FieldID);
    ERR (*_ScanDir)(struct DirInfo *Info);
@@ -1603,7 +1595,6 @@ inline ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *C
 inline CLASSID ResolveClassName(const std::string_view &Name) { return CoreBase->_ResolveClassName(Name); }
 inline ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size) { return CoreBase->_SendMessage(Type,Flags,Data,Size); }
 inline ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner) { return CoreBase->_SetOwner(Object,Owner); }
-inline ERR ProtectMemory(APTR Address, MEM Flags) { return CoreBase->_ProtectMemory(Address,Flags); }
 inline void SetObjectContext(OBJECTPTR Object, const struct Field *Field, AC ActionID) { return CoreBase->_SetObjectContext(Object,Field,ActionID); }
 inline CSTRING FieldName(uint32_t FieldID) { return CoreBase->_FieldName(FieldID); }
 inline ERR ScanDir(struct DirInfo *Info) { return CoreBase->_ScanDir(Info); }
@@ -1697,7 +1688,6 @@ extern "C" ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSI
 extern "C" CLASSID ResolveClassName(const std::string_view &Name);
 extern "C" ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size);
 extern "C" ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner);
-extern "C" ERR ProtectMemory(APTR Address, MEM Flags);
 extern "C" void SetObjectContext(OBJECTPTR Object, const struct Field *Field, AC ActionID);
 extern "C" CSTRING FieldName(uint32_t FieldID);
 extern "C" ERR ScanDir(struct DirInfo *Info);
