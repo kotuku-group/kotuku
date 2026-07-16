@@ -47,24 +47,6 @@ public:
 };
 
 //********************************************************************************************************************
-// Memory management record.
-
-class PrivateAddress {
-public:
-   APTR     Address;
-   uint32_t Size;       // 4GB max (user-requested size)
-   MEM      Flags;
-
-   PrivateAddress(APTR aAddress, uint32_t aSize, MEM aFlags) :
-      Address(aAddress), Size(aSize), Flags(aFlags) { };
-
-   void clear() {
-      Address  = 0;
-      Flags    = MEM::NIL;
-   }
-};
-
-//********************************************************************************************************************
 // Object management record.  These records are keyed by OBJECTID in glObjects and are used for live object lookup,
 // object ownership, and non-child resources tracked to each object.
 

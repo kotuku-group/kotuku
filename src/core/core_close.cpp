@@ -1,6 +1,4 @@
 
-static void free_private_memory(void);
-
 //********************************************************************************************************************
 
 static void free_classes(void)
@@ -282,8 +280,6 @@ void CloseCore(void)
 
    if (!glCrashStatus) {
       if (glTaskClass) { FreeResource(glTaskClass); glTaskClass = 0; }
-      // Although we haven't crashed, setting this to true enables safer shutdown behaviour in memory deallocations from this point.
-      glCrashStatus = 1;
    }
 
    if (glCodeIndex < CP_FREE_COREBASE) {
@@ -294,7 +290,19 @@ void CloseCore(void)
    if (glCodeIndex < CP_FREE_PRIVATE_MEMORY) {
       glCodeIndex = CP_FREE_PRIVATE_MEMORY;
       release_zombie_blocks();
-      free_private_memory();
+
+      // It is assumed that no threads are running by this point in the shutdown process
+
+      if (not glCrashStatus) {
+         log.branch("Checking for orphaned resources...");
+
+         // Print warnings only.  Resource managers like a stable system environment, and additionally
+         // because modules have been expunged by this point, they can be unsafe to call or inspect.
+         for (const auto & [ id, resource ] : glResources) {
+            if (not resource.Address) continue;
+            log.warning("Unfreed resource #%d/%p, Owner: #%d.", id, resource.Address, resource.OwnerID);
+         }
+      }
    }
 
    #ifdef _WIN32
@@ -510,40 +518,6 @@ restart_forced_expunge:
          FreeResource(mod_master);
          sanity_check = mod_master;
          goto restart_forced_expunge;
-      }
-   }
-}
-
-//********************************************************************************************************************
-// Note: Class and object pointers are no longer valid for interaction at this stage.  glMemory remains stable
-// during this process because records are cleared rather than removed.
-
-static void free_private_memory(void)
-{
-   kt::Log log("Shutdown");
-
-   log.branch("Checking for orphaned memory allocations...");
-
-   // It is assumed that no threads are running by this point in the shutdown process
-
-   for (auto & [ id, mem ] : glMemory) {
-      if (not mem.Address) continue;
-
-      if (not glCrashStatus) {
-         log.warning("Unfreed resource #%d/%p, Size %d", id, mem.Address, mem.Size);
-      }
-
-      FreeResource(mem.Address);
-      mem.Address = nullptr;
-   }
-
-   if (not glCrashStatus) {
-      // Print warnings only - resource managers typically expect a stable system environment
-      for (const auto & [ id, resource ] : glResources) {
-         if (not resource.Address) continue;
-
-         log.warning("Unfreed resource #%d/%p (%s), Owner: #%d.", id, resource.Address,
-            resource.Manager ? resource.Manager->Name : "Unknown", resource.OwnerID);
       }
    }
 }
