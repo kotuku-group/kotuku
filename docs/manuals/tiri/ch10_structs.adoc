@@ -1,4 +1,5 @@
 // CREATED: 2026-07-15 — Struct documentation relocated from the former Modules & Structures chapter.  Added the native 'struct' declaration syntax, the official field type table and typed reference annotations (commit 9279202).  Removed the internal MAKESTRUCT interface and its shorthand field definitions.
+// UPDATED: 2026-07-16 — Dynamically sized array<type> fields can now be declared in native structs (commit 408def84d).
 
 [[ch-structs]]
 == Structs
@@ -71,6 +72,7 @@ The following conditions raise a parse error:
 * Two field names that collide case-insensitively.
 * An unrecognised field type name.
 * A `struct<Name>` or `ptr<Name>` reference to a definition that has not been registered yet.  Forward references are not supported; declarations must precede use.
+* An `array<type>` field with an unsupported element type or a declared dimension (see <<sec-struct-dynamic-arrays>>).
 * A layout whose total size exceeds the supported struct size range.
 
 [discrete]
@@ -78,7 +80,7 @@ The following conditions raise a parse error:
 
 [.api]`instance = Name([Fields])`
 
-A declared name is called as a constructor.  Calling with no arguments returns a zero-initialised instance: numeric fields read `0`, `bool` fields read `false`, string fields read `''`, and object and pointer fields read `nil`.
+A declared name is called as a constructor.  Calling with no arguments returns a zero-initialised instance: numeric fields read `0`, `bool` fields read `false`, string fields read `''`, object and pointer fields read `nil`, and dynamic array fields read as empty arrays.
 
 If `Fields` is a table, the key-value pairs are applied to the corresponding fields after zero-initialisation.  Field values are subject to the assignment rules defined in <<sec-struct-field-access>>; a value that the target field does not accept raises an exception.
 
@@ -178,7 +180,14 @@ user  = User { Name='Alice', Age=30, Enabled=true }
 |`struct<Name>`
 |Embedded struct.  `Name` must reference a registered definition.
 |Size of `Name`
+
+|`array<type>`
+|Dynamically sized array owned by the struct (a C++ vector).  See <<sec-struct-dynamic-arrays>> for the permitted element types.
+|Implementation-defined
 |===
+
+[discrete]
+==== Fixed Arrays
 
 Append `[N]` to a type to declare a fixed-size array of `N` elements, where `N` is a positive integer:
 
@@ -191,6 +200,29 @@ struct Sample {
 ----
 
 Fixed arrays of `string` are not supported and raise a parse error.
+
+[[sec-struct-dynamic-arrays]]
+[discrete]
+==== Dynamic Arrays
+
+indexterm:[struct array fields] The `array<type>` field type declares a dynamically sized array whose storage is owned by the struct and resizes on assignment:
+
+[source,tiri]
+----
+struct Palette {
+   Names:  array<string>
+   Values: array<int>
+}
+
+palette = Palette { Values=array<int> { 1, 2, 3 } }
+palette.Values = array<int> { 8, 9, 10, 11, 12 }   -- resizes to five elements
+----
+
+The element type may be any scalar numeric type from the table above, `string`, or `struct<Name>` where `Name` references a registered definition whose fields are all trivially owned (a definition containing owned `string` or `array` fields is rejected).  Element types that own external resources -- `cstr`, `ptr`, `obj`, `func` and nested `array` types -- raise a parse error.
+
+A dynamic array field cannot declare a dimension: both `array<type, N>` and `array<type>[N]` raise a parse error.  A newly constructed instance reads dynamic array fields as empty arrays.
+
+Reading a dynamic array field produces an array holding a copy of the field's current elements; the result does not track subsequent changes to the field.  `struct.clone()` and `struct.copy()` deep-copy dynamic array fields, so the copy holds independent storage.
 
 [[sec-struct-typed-references]]
 === Typed References
@@ -340,19 +372,27 @@ The value produced by a read, and the values accepted by a write, depend on the 
 
 |Embedded struct (`struct<Name>`)
 |Reads as a struct view over the embedded field, or an array of views for an embedded array.  The view keeps the enclosing instance alive.
+
+|Dynamic array (`array<type>`)
+|Reads as an array holding a copy of the current elements.  Accepts an array or sequential table on assignment; the field resizes to match the source and copies its elements.
 |===
 
 Array fields accept an array value on assignment:
 
 * A fixed array (`type[N]`) copies elements from the source array.  A source shorter than `N` clears the remaining elements; an empty array clears the field.  A source longer than `N` raises an exception.
-* A dynamic array field (a C++ vector, present in module-defined structs) resizes to match the source array and copies its elements.
+* A dynamic array field (`array<type>`, or a C++ vector in a module-defined struct) resizes to match the source array and copies its elements.
+* A dynamic array of struct elements (`array<struct<Name>>`) accepts an array of tables, where each table's key-value pairs populate the fields of the corresponding element.
 * An element type that does not match the field's declared type raises an exception.
 
 [source,tiri]
 ----
-value.fixed = array<int> { 4, 5, 6 }   -- copies three elements
-value.fixed = array<int> { 9 }         -- { 9, 0, 0 }
-value.dynamic = array<int> { 8, 9, 10 } -- C++ vector resizes and copies
+value.fixed = array<int> { 4, 5, 6 }    -- copies three elements
+value.fixed = array<int> { 9 }          -- { 9, 0, 0 }
+value.dynamic = array<int> { 8, 9, 10 } -- resizes and copies
+value.points = array<table> {           -- struct element vector
+   { red=1, green=2, blue=3 },
+   { red=4, green=5, blue=6 }
+}
 ----
 
 [[sec-struct-iteration]]

@@ -81,6 +81,7 @@
   <path class="arrow" d="M400,140 L400,180" />
   <path class="arrow" d="M400,230 L400,270" />
 
+  <!-- Upper mid -->
   <path class="line" d="M400,320 L400,350" />
   <path class="line" d="M110,350 L570,350" />
   <path class="arrow" d="M110,350 L110,380" />
@@ -88,6 +89,7 @@
   <path class="arrow" d="M415,350 L415,380" />
   <path class="arrow" d="M570,350 L570,380" />
 
+  <!-- Lower mid -->
   <path class="line" d="M110,440 L110,490" />
   <path class="line" d="M260,440 L260,490" />
   <path class="line" d="M415,460 L415,490" />
@@ -95,10 +97,10 @@
   <path class="line" d="M110,490 L570,490" />
   <path class="arrow" d="M400,490 L400,520" />
 
+  <!-- Right -->
   <path class="line" d="M400,570 L400,620" />
   <path class="arrow" d="M400,620 L720,620 L720,205 L500,205" />
-  <rect x="700" y="380" width="60" height="20" class="label-bg" transform="rotate(-90 700 380)"/>
-  <text x="690" y="430" class="text" transform="rotate(-90 690 430)" fill="#007bff">Continue</text>
+  <text x="710" y="420" class="text" transform="rotate(-90 710 420)" fill="#007bff">Continue</text>
 
   <path class="arrow" d="M400,620 L400,700" />
   <text x="360" y="640" class="text" fill="#dc3545" font-weight="bold">Exit</text>

@@ -1,7 +1,7 @@
 // VERIFIED: 2026-02-10
 // UPDATED: 2026-06-30 — Extended falsiness now treats empty tables as falsey; described as empty collections.
 // UPDATED: 2026-07-13 — Structures are now a first-class 'struct' type; added to type() and a new Structures subsection.
-// UPDATED: 2026-07-13 — Objects and structs are distinct first-class types, no longer specialised userdata; promoted to top-level sections.
+// UPDATED: 2026-07-16 — Objects and structs are distinct first-class types, no longer specialised userdata; promoted to top-level sections.
 
 [[ch-types-and-values]]
 == Types & Values
