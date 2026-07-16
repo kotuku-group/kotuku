@@ -245,6 +245,54 @@ struct JSONParser {
 
    bool has(size_t Count) const noexcept { return size_t(End - Current) >= Count; }
 
+   static int hex_digit(char Value) noexcept
+   {
+      if ((Value >= '0') and (Value <= '9')) return Value - '0';
+      if ((Value >= 'A') and (Value <= 'F')) return Value - 'A' + 10;
+      if ((Value >= 'a') and (Value <= 'f')) return Value - 'a' + 10;
+      return -1;
+   }
+
+   ERR parse_hex_quad(uint32_t &Result) noexcept
+   {
+      if (not has(4)) return ERR::Syntax;
+
+      uint32_t value = 0;
+      for (unsigned i=0; i < 4; i++) {
+         int digit = hex_digit(Current[i]);
+         if (digit < 0) return ERR::Syntax;
+         value = (value << 4) | uint32_t(digit);
+      }
+
+      Current += 4;
+      Result = value;
+      return ERR::Okay;
+   }
+
+   static ERR append_utf8(uint32_t CodePoint, std::string &Result)
+   {
+      if ((CodePoint > 0x10ffff) or ((CodePoint >= 0xd800) and (CodePoint <= 0xdfff))) return ERR::Syntax;
+
+      if (CodePoint <= 0x7f) Result += char(CodePoint);
+      else if (CodePoint <= 0x7ff) {
+         Result += char(0xc0 | (CodePoint >> 6));
+         Result += char(0x80 | (CodePoint & 0x3f));
+      }
+      else if (CodePoint <= 0xffff) {
+         Result += char(0xe0 | (CodePoint >> 12));
+         Result += char(0x80 | ((CodePoint >> 6) & 0x3f));
+         Result += char(0x80 | (CodePoint & 0x3f));
+      }
+      else {
+         Result += char(0xf0 | (CodePoint >> 18));
+         Result += char(0x80 | ((CodePoint >> 12) & 0x3f));
+         Result += char(0x80 | ((CodePoint >> 6) & 0x3f));
+         Result += char(0x80 | (CodePoint & 0x3f));
+      }
+
+      return ERR::Okay;
+   }
+
    void skip_whitespace() noexcept
    {
       while (Current < End) {
@@ -269,11 +317,35 @@ struct JSONParser {
             Current++;
             if (at_end() or (not *Current)) return ERR::Syntax;
 
-            if (*Current IS 'n') Result += '\n';
+            if (*Current IS '"') Result += '"';
+            else if (*Current IS '\\') Result += '\\';
+            else if (*Current IS '/') Result += '/';
+            else if (*Current IS 'b') Result += '\b';
+            else if (*Current IS 'f') Result += '\f';
+            else if (*Current IS 'n') Result += '\n';
             else if (*Current IS 'r') Result += '\r';
             else if (*Current IS 't') Result += '\t';
-            else if (*Current IS '"') Result += '"';
-            else { Result += '\\'; Result += *Current; }
+            else if (*Current IS 'u') {
+               Current++;
+               uint32_t code_point;
+               if (parse_hex_quad(code_point) != ERR::Okay) return ERR::Syntax;
+
+               if ((code_point >= 0xd800) and (code_point <= 0xdbff)) {
+                  if ((not has(2)) or (Current[0] != '\\') or (Current[1] != 'u')) return ERR::Syntax;
+                  Current += 2;
+
+                  uint32_t low_surrogate;
+                  if (parse_hex_quad(low_surrogate) != ERR::Okay) return ERR::Syntax;
+                  if ((low_surrogate < 0xdc00) or (low_surrogate > 0xdfff)) return ERR::Syntax;
+                  code_point = 0x10000 + ((code_point - 0xd800) << 10) + (low_surrogate - 0xdc00);
+               }
+               else if ((code_point >= 0xdc00) and (code_point <= 0xdfff)) return ERR::Syntax;
+
+               if (append_utf8(code_point, Result) != ERR::Okay) return ERR::Syntax;
+               continue;
+            }
+            else return ERR::Syntax;
+
             Current++;
          }
          else {
