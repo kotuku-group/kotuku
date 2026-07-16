@@ -126,9 +126,7 @@ flags("KQ", { comment="Special qualifier flags", module="Core" },
     { INFO            = "REPEAT|RELEASED|PRESSED|NOT_PRINTABLE|CAPS_LOCK" }
 )
 
-flags("MEM", { comment="Memory types.", module="Core" },
-    "VIDEO:   Identifies video memory, such as the frame buffer.",
-    "TEXTURE: Identifies non-displayable video memory, e.g. texture graphics.",
+flags("MEM", { comment="Memory flags.", module="Core" },
     { NO_CLEAR = "0x00040000: Do not clear the memory on allocation (saves time)." }
 )
 

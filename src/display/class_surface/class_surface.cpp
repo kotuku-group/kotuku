@@ -1363,12 +1363,12 @@ static ERR SURFACE_Init(extSurface *Self)
       kt::ScopedObjectLock<objDisplay> display(Self->DisplayID, 3000);
 
       if (display.granted()) {
-         auto memflags = MEM::NIL;
+         auto memflags = BMT::DATA;
 
          if ((Self->Flags & RNF::VIDEO) != RNF::NIL) {
             // If acceleration is available then it is OK to create the buffer in video RAM.
 
-            if ((display->Flags & SCR::NO_ACCELERATION) IS SCR::NIL) memflags = MEM::TEXTURE;
+            if ((display->Flags & SCR::NO_ACCELERATION) IS SCR::NIL) memflags = BMT::TEXTURE;
          }
 
          int bpp;
@@ -1384,7 +1384,7 @@ static ERR SURFACE_Init(extSurface *Self)
 
          if (auto bitmap = objBitmap::create::local(
                fl::BitsPerPixel(bpp), fl::Width(Self->FixedWidth), fl::Height(Self->FixedHeight),
-               fl::DataFlags(memflags),
+               fl::MemType(memflags),
                fl::Flags((((Self->Flags & RNF::COMPOSITE) != RNF::NIL) ? (BMF::ALPHA_CHANNEL|BMF::FIXED_DEPTH) : BMF::NIL)))) {
 
             if (Self->BitsPerPixel) bitmap->Flags |= BMF::FIXED_DEPTH; // This flag prevents automatic changes to the bit depth

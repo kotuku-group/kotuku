@@ -28,6 +28,12 @@ module({
     "CIE_LAB: Cartesian L*a*b* colour space defined by CIE 15.",
     "CIE_LCH: Polar L*CHab colour space defined by CIE 15.")
 
+  enums("BMT", { type="int", start=0, comment="Bitmap memory type." },
+    "DATA:    The default type, indicates a standard memory allocation from system RAM.",
+    "VIDEO:   Identifies video memory, such as the frame buffer.",
+    "TEXTURE: Identifies non-displayable video memory, e.g. texture graphics."
+  )
+
   flags("EXF", { comment="Optional flags for the ExposeSurface() function." },
     "CHILDREN: If set, all child surfaces that intersect with exposed region will be included in the expose operation.",
     "REDRAW_VOLATILE: Redraw every volatile object that intersects with the expose region, including internal volatile children.",
@@ -394,7 +400,7 @@ module({
     int   PlaneMod              # Plane differential in bytes
     struct(ClipRectangle) Clip  # Clipping rectangle
     int   Size                  # Total size of the bitmap in bytes
-    int(MEM) DataFlags          # Memory flags to use in allocation
+    int(BMT) MemType            # Memory type used to host the bitmap data
     int   AmtColours            # Maximum amount of colours available
     int(BMF) Flags              # Optional flags
     int   TransIndex            # Colour index or packed colour value that acts as the background/transparency
@@ -675,7 +681,7 @@ module({
     'UnsubscribeInput',
     'WindowHook')
 
-  c_insert([[
+  c_insert([==[
 // Direct ColourFormat versions
 
 #define CFPackPixel(a,b,c,d)      ((((b)>>(a)->RedShift) & (a)->RedMask) << (a)->RedPos) | ((((c)>>(a)->GreenShift) & (a)->GreenMask) << (a)->GreenPos) | ((((d)>>(a)->BlueShift) & (a)->BlueMask) << (a)->BluePos)
@@ -691,9 +697,10 @@ module({
 namespace fl {
    using namespace kt;
 
-constexpr FieldValue WindowType(SWIN Value) { return FieldValue(strhash("windowType"), int(Value)); }
+[[nodiscard]] constexpr FieldValue WindowType(SWIN Value) { return FieldValue(strhash("windowType"), int(Value)); }
+[[nodiscard]] constexpr FieldValue MemType(BMT Value) { return FieldValue(strhash("memType"), int(Value)); }
 
 } // namespace
 
-  ]])
+  ]==])
 end)
