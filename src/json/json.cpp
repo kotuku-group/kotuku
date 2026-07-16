@@ -57,9 +57,6 @@ It will be translated to the following when loaded into an XML object:
 
 *********************************************************************************************************************/
 
-#undef DEBUG
-//#define DEBUG
-
 #define PRV_XML
 #include <kotuku/main.h>
 #include <kotuku/modules/xml.h>
@@ -120,44 +117,6 @@ static ERR MODExpunge(void)
 }
 
 //********************************************************************************************************************
-// Debug routines.
-
-#if defined(DEBUG)
-
-static void debug_tree(objXML *Self)
-{
-   kt::Log log("Tree");
-   int i, j;
-   char buffer[1000];
-
-   for (int index=0; index < int(Tags.size()); index++) {
-      XTag &Tag = Tags[index];
-
-      //for (i=0; i < Tag.Branch; i++) buffer[i] = ' '; // Indenting
-      //buffer[i] = 0;
-
-      if (Tag.Attrib) {
-         if (Tag.Attrib->Name) {
-            log.msg("%.3d/%.3d: %p<-%p->%p Child %p %s%s", index, Tag.Index, Tag.Prev, Tag, Tag.Next, Tag.Child, buffer, Tag.Attrib->Name ? Tag.Attrib->Name : "Content");
-         }
-         else {
-            // Extract a limited amount of content
-            for (j=0; (Tag.Attrib->Value[j]) and (j < 16) and ((size_t)i < sizeof(buffer)); j++) {
-               if (Tag.Attrib->Value[j] IS '\n') buffer[i++] = '.';
-               else buffer[i++] = Tag.Attrib->Value[j];
-            }
-            if (i) buffer[i] = 0;
-            else StrCopy("<Empty Content>", buffer, sizeof(buffer));
-            log.msg("%.3d/%.3d: %p<-%p->%p Child %p %s", index, Tag.Index, Tag.Prev, Tag, Tag.Next, Tag.Child, buffer);
-            //log.msg("%.3d: %s", index, buffer);
-         }
-      }
-   }
-}
-
-#endif
-
-//********************************************************************************************************************
 
 static ERR load_file(objXML *Self, std::string_view Path)
 {
@@ -184,10 +143,6 @@ static ERR JSON_Init(objXML *Self)
       if ((Self->ParseError = txt_to_json(Self, statement)) != ERR::Okay) {
          log.warning("JSON Parsing Error: %s", GetErrorMsg(Self->ParseError));
       }
-
-      #ifdef DEBUG
-      debug_tree(Self);
-      #endif
 
       return Self->ParseError;
    }
@@ -290,7 +245,11 @@ struct JSONParser {
 
    static ERR append_utf8(uint32_t CodePoint, std::string &Result)
    {
-      if ((CodePoint > 0x10ffff) or ((CodePoint >= 0xd800) and (CodePoint <= 0xdfff))) return ERR::Syntax;
+      bool valid_xml = (CodePoint IS 0x09) or (CodePoint IS 0x0a) or (CodePoint IS 0x0d) or
+         ((CodePoint >= 0x20) and (CodePoint <= 0xd7ff)) or
+         ((CodePoint >= 0xe000) and (CodePoint <= 0xfffd)) or
+         ((CodePoint >= 0x10000) and (CodePoint <= 0x10ffff));
+      if (not valid_xml) return ERR::Syntax;
 
       if (CodePoint <= 0x7f) Result += char(CodePoint);
       else if (CodePoint <= 0x7ff) {
@@ -339,8 +298,7 @@ struct JSONParser {
             if (*Current IS '"') Result += '"';
             else if (*Current IS '\\') Result += '\\';
             else if (*Current IS '/') Result += '/';
-            else if (*Current IS 'b') Result += '\b';
-            else if (*Current IS 'f') Result += '\f';
+            else if ((*Current IS 'b') or (*Current IS 'f')) return ERR::Syntax;
             else if (*Current IS 'n') Result += '\n';
             else if (*Current IS 'r') Result += '\r';
             else if (*Current IS 't') Result += '\t';

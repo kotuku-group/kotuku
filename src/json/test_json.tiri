@@ -147,7 +147,7 @@ end
 
 @Test function NativeUnicodeStrings()
    local source = [[{ "\u006e\u0061\u006d\u0065":"\u00a3", "bmp":"\u6771",
-      "raw":"雪", "pair":"\ud834\udd1e" }]]
+      "raw":"雪", "pair":"\ud834\udd1e", "xml-controls":"\u0009\u000a\u000d" }]]
    local statement = serialise_native(source)
    assert(statement:find('name="name" type="string">£<'),
       'Unicode escapes in a member name and BMP value should decode to UTF-8.')
@@ -157,6 +157,8 @@ end
       'A raw non-ASCII BMP value should remain intact.')
    assert(statement:find('name="pair" type="string">𝄞<'),
       'A UTF-16 surrogate pair should decode to one supplementary character.')
+   assert(statement:find('name="xml-controls" type="string"'),
+      'Escaped tab, newline and carriage return characters should remain valid XML content.')
 end
 
 @Test function NativeNumberForms()
@@ -213,6 +215,12 @@ end
       { source='{ "value":"\\ud800" }', description='An unmatched high surrogate' },
       { source='{ "value":"\\ud800\\u0041" }', description='A high surrogate with an invalid low surrogate' },
       { source='{ "value":"\\udc00" }', description='An isolated low surrogate' },
+      { source='{ "value":"\\u0000" }', description='An XML-forbidden escaped NUL character' },
+      { source='{ "value":"\\u0001" }', description='An XML-forbidden escaped control character' },
+      { source='{ "value":"\\b" }', description='An XML-forbidden escaped backspace character' },
+      { source='{ "value":"\\f" }', description='An XML-forbidden escaped form-feed character' },
+      { source='{ "value":"\\ufffe" }', description='An XML-forbidden Unicode noncharacter' },
+      { source='{ "value":"\\uffff" }', description='An XML-forbidden Unicode noncharacter' },
       { source='{ "first":1 "second":2 }', description='An object with a missing comma' },
       { source='{ "values":[1 2] }', description='An array with a missing comma' },
       { source='{ "value":1, }', description='An object with a trailing comma' },
