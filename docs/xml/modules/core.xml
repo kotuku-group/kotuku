@@ -254,7 +254,7 @@ struct FunctionField argsResize[] = {
 <p>AllocMemory() provides comprehensive memory allocation with automatic ownership tracking, resource management, and debugging features. The function allocates a new block of memory and associates it with the current execution context, allowing it to be automatically cleaned up when the context is destroyed.</p>
 <p>Example usage:</p>
 <pre>APTR address;
-if (!AllocMemory(1000, MEM::DATA, &amp;address)) {
+if (!AllocMemory(1000, MEM::NIL, &amp;address)) {
    // Use memory block...
    FreeResource(address);
 }
@@ -1267,30 +1267,6 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
       <error code="AccessObject">Attempting to lock an object failed</error>
       <error code="Recursion">Detected a recursive function call</error>
       <error code="OutsideMainThread">Operation permitted from the main thread only</error>
-    </result>
-  </function>
-
-  <function>
-    <name>ProtectMemory</name>
-    <category>Memory</category>
-    <comment>Change the access permissions of a memory block.</comment>
-    <prototype>ERR ProtectMemory(APTR Address, MEM Flags)</prototype>
-    <tiriPrototype>err = ProtectMemory(Address:any, Flags:num)</tiriPrototype>
-    <tags>blocking</tags>
-    <input>
-      <param type="APTR" name="Address">Pointer to a memory block obtained from <function>AllocMemory</function>.</param>
-      <param type="MEM" name="Flags" lookup="MEM">New access flags (MEM::READ, MEM::WRITE).</param>
-    </input>
-    <description>
-<p>This function changes the access permissions of a memory block that was allocated with the <code>MEM::READ</code> and/or <code>MEM::WRITE</code> flags.  This allows you to tighten or relax the access permissions of a memory block as your program's logic requires.</p>
-    </description>
-    <result type="ERR">
-      <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid flags specified</error>
-      <error code="SystemCall">A system call failed.</error>
-      <error code="DoesNotExist">The memory block is not valid.</error>
-      <error code="InvalidState">Memory block is not protected.</error>
-      <error code="NullArgs">Address is NULL.</error>
     </result>
   </function>
 

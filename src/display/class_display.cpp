@@ -2838,9 +2838,7 @@ void alloc_display_buffer(extDisplay *Self)
          fl::BytesPerPixel(Self->Bitmap->BytesPerPixel),
          fl::Width(Self->Bitmap->Width),
          fl::Height(Self->Bitmap->Height),
-         #ifdef __xwindows__
-            fl::DataFlags(MEM::DATA)
-         #else
+         #ifndef __xwindows__
             fl::DataFlags(MEM::TEXTURE)
          #endif
       )) {

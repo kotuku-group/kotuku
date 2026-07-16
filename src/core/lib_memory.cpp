@@ -63,20 +63,11 @@ static ERR free_private_memory_resource(MEMORYID MemoryID)
 
    auto start_mem = (char *)active_mem.Address - MEMHEADER;
 
-   if ((active_mem.Flags & MEM::PROTECTED) != MEM::NIL) {
-      #ifdef _WIN32
-         winFreeProtectedMemory(start_mem, align_page_size(active_mem.Size + MEMHEADER));
-      #else
-         munmap(start_mem, align_page_size(active_mem.Size + MEMHEADER));
-      #endif
-   }
-   else {
-      #ifdef _WIN32
-         _aligned_free(start_mem);
-      #else
-         free(start_mem);
-      #endif
-   }
+   #ifdef _WIN32
+      _aligned_free(start_mem);
+   #else
+      free(start_mem);
+   #endif
 
    active_mem.clear();
 
@@ -121,7 +112,7 @@ Example usage:
 
 <pre>
 APTR address;
-if (!AllocMemory(1000, MEM::DATA, &address)) {
+if (!AllocMemory(1000, MEM::NIL, &address)) {
    // Use memory block...
    FreeResource(address);
 }
@@ -173,52 +164,19 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
    size_t full_size = Size + MEMHEADER;
    size_t aligned_size = full_size;
 
-   // Check if memory protection is requested
-   bool use_protection = ((Flags & (MEM::READ|MEM::WRITE)) != MEM::NIL);
-   bool final_protection_pending = false;
    APTR start_mem = nullptr;
 
-   if (use_protection) {
-      // Use OS-level memory protection with mmap/VirtualAlloc.  The block is initially writable so that the
-      // allocator can initialise its private header before the requested protection is applied.
-      aligned_size = align_page_size(full_size);
-      auto init_flags = Flags;
-      if ((init_flags & MEM::WRITE) IS MEM::NIL) {
-         init_flags |= MEM::WRITE;
-         final_protection_pending = true;
-      }
+   // Use standard aligned allocation (typically 64-bit) for non-protected memory
+   full_size = ((full_size + CACHE_LINE_SIZE - 1) / CACHE_LINE_SIZE) * CACHE_LINE_SIZE;
 
-      #ifdef _WIN32
-         start_mem = winAllocProtectedMemory(aligned_size, int(init_flags));
-      #else
-         int prot = PROT_NONE;
-         if ((init_flags & MEM::READ) != MEM::NIL) prot |= PROT_READ;
-         if ((init_flags & MEM::WRITE) != MEM::NIL) prot |= PROT_WRITE;
+   #ifdef _WIN32
+      start_mem = _aligned_malloc(full_size, CACHE_LINE_SIZE);
+   #else
+      if (posix_memalign(&start_mem, CACHE_LINE_SIZE, full_size) != 0) start_mem = nullptr;
+   #endif
 
-         start_mem = mmap(nullptr, aligned_size, prot, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-         if (start_mem IS MAP_FAILED) start_mem = nullptr;
-      #endif
-
-      if (start_mem) {
-         Flags |= MEM::PROTECTED; // Mark as protected for proper cleanup
-         if ((Flags & MEM::NO_CLEAR) IS MEM::NIL) {
-            kt::clearmem(start_mem, full_size);
-         }
-      }
-   }
-   else {
-      // Use standard aligned allocation (typically 64-bit) for non-protected memory
-      full_size = ((full_size + CACHE_LINE_SIZE - 1) / CACHE_LINE_SIZE) * CACHE_LINE_SIZE;
-
-      #ifdef _WIN32
-         start_mem = _aligned_malloc(full_size, CACHE_LINE_SIZE);
-      #else
-         if (posix_memalign(&start_mem, CACHE_LINE_SIZE, full_size) != 0) start_mem = nullptr;
-      #endif
-
-      if (start_mem) {
-         if ((Flags & MEM::NO_CLEAR) IS MEM::NIL) kt::clearmem(start_mem, full_size);
-      }
+   if (start_mem) {
+      if ((Flags & MEM::NO_CLEAR) IS MEM::NIL) kt::clearmem(start_mem, full_size);
    }
 
    if (not start_mem) {
@@ -240,23 +198,6 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
       // with resource tracking, identifying the memory block and freeing it later on.  Hidden blocks are never recorded.
 
       glMemory.insert(std::pair<MEMORYID, PrivateAddress>(unique_id, PrivateAddress(data_start, (uint32_t)Size, Flags)));
-   }
-
-   if (final_protection_pending) {
-      #ifdef _WIN32
-         if (not winProtectMemory(start_mem, aligned_size, (Flags & MEM::READ) != MEM::NIL, false, false)) {
-            free_private_memory_resource(unique_id);
-            return log.warning(ERR::SystemCall);
-         }
-      #else
-         int prot = PROT_NONE;
-         if ((Flags & MEM::READ) != MEM::NIL) prot |= PROT_READ;
-
-         if (mprotect(start_mem, aligned_size, prot) != 0) {
-            free_private_memory_resource(unique_id);
-            return log.warning(ERR::SystemCall);
-         }
-      #endif
    }
 
    if (auto error = TrackResource(unique_id, data_start, owner_id, &glResourceMemoryHandler); error != ERR::Okay) {
@@ -395,76 +336,6 @@ ERR FreeResource(RESOURCEID ResourceID)
    else resource->Terminating = false; // No glmResources lock necessary, the resource will ultimately be deallocated
 
    return error;
-}
-
-/*********************************************************************************************************************
-
--FUNCTION-
-ProtectMemory: Change the access permissions of a memory block.
-
-This function changes the access permissions of a memory block that was allocated with the `MEM::READ` and/or
-`MEM::WRITE` flags.  This allows you to tighten or relax the access permissions of a memory block as your program's
-logic requires.
-
--INPUT-
-ptr Address: Pointer to a memory block obtained from ~AllocMemory().
-int(MEM) Flags: New access flags (MEM::READ, MEM::WRITE).
-
--ERRORS-
-Okay
-NullArgs: Address is NULL.
-Args: Invalid flags specified
-InvalidState: Memory block is not protected.
-DoesNotExist: The memory block is not valid.
-SystemCall: A system call failed.
-
--TAGS-
-blocking
--END-
-
-*********************************************************************************************************************/
-
-ERR ProtectMemory(APTR Address, MEM Flags)
-{
-   kt::Log log(__FUNCTION__);
-
-   if (not Address) return log.warning(ERR::NullArgs);
-   if ((Flags & (MEM::READ | MEM::WRITE)) IS MEM::NIL) return log.warning(ERR::Args);
-
-   if (glShowPrivate) log.branch("ProtectMemory(%p, $%.8x)", Address, int(Flags));
-
-   size_t mem_size;
-   {
-      std::unique_lock lock(glmMemory);
-      auto mem = glMemory.find(GetMemoryID(Address));
-      if ((mem != glMemory.end()) and (mem->second.Address)) mem_size = mem->second.Size;
-      else return ERR::DoesNotExist;
-
-      if ((mem->second.Flags & MEM::PROTECTED) IS MEM::NIL) {
-         log.warning("Memory block at %p is not protected.", Address);
-         return ERR::InvalidState;
-      }
-   }
-
-   auto start_mem = (char *)Address - MEMHEADER;
-   auto full_size = mem_size + MEMHEADER;
-   auto aligned_size = align_page_size(full_size);
-
-   #ifdef _WIN32
-      if (winProtectMemory(start_mem, aligned_size, (Flags & MEM::READ) != MEM::NIL, (Flags & MEM::WRITE) != MEM::NIL, false)) {
-         return ERR::Okay;
-      }
-      else return log.warning(ERR::SystemCall);
-   #else
-      int prot = PROT_NONE;
-      if ((Flags & MEM::READ) != MEM::NIL) prot |= PROT_READ;
-      if ((Flags & MEM::WRITE) != MEM::NIL) prot |= PROT_WRITE;
-
-      if (mprotect(start_mem, aligned_size, prot) IS 0) {
-         return ERR::Okay;
-      }
-      else return log.warning(ERR::SystemCall);
-   #endif
 }
 
 /*********************************************************************************************************************
