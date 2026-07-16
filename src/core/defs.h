@@ -233,7 +233,6 @@ struct QueuedAction {
 #ifdef RESOURCE_POOL
 template <class K, class V> using PooledMap =
    std::unordered_map<K, V, std::hash<K>, std::equal_to<K>, PoolAllocator<std::pair<const K, V>>>;
-extern NodePool glMemoryNodePool, glResourcesNodePool, glObjectsNodePool;
 #else
 template <class K, class V> using PooledMap = std::unordered_map<K, V>;
 #endif
@@ -251,7 +250,6 @@ extern std::shared_timed_mutex glmVolumes;   // For glVolumes
 extern std::recursive_timed_mutex glmTimer;        // For timer subscriptions.
 extern std::shared_timed_mutex glmObjectLookup;    // For glObjectLookup
 
-extern std::recursive_mutex glmMemory;
 extern std::recursive_mutex glmResources;
 extern std::recursive_mutex glmObjects;
 extern std::recursive_mutex glmMsgHandler;
@@ -784,7 +782,6 @@ extern ankerl::unordered_dense::map<uint32_t, std::string> glFields; // Reverse 
 extern std::set<std::shared_ptr<std::jthread>> glAsyncThreads;
 extern OBJECTLOOKUP glObjectLookup;  // Locked with glmObjectlookup
 
-extern PooledMap<MEMORYID, PrivateAddress> glMemory;  // Locked with glmMemory.
 extern PooledMap<RESOURCEID, ResourceRecord> glResources; // Locked with glmResources.
 extern PooledMap<OBJECTID, ObjectRecord> glObjects; // Locked with glmObjects.
 

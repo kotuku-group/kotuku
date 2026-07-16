@@ -1,6 +1,6 @@
 #pragma once
 
-// Node-recycling pool allocator for the pointer-stable resource maps (glMemory / glResources / glObjects).
+// Node-recycling pool allocator for the pointer-stable resource maps (glResources / glObjects).
 //
 // These maps experience balanced, high-volume insert/erase churn (see examples/resource_map_churn.tiri) where the
 // dominant cost is the per-node malloc()/free() performed by std::unordered_map.  NodePool recycles fixed-size node
@@ -8,7 +8,7 @@
 // reference/pointer stability contract: a recycled block is never relocated, only reused at the same address.
 //
 // THREAD SAFETY: NodePool performs NO internal locking.  Every map that uses it is already serialised behind its own
-// mutex (glmMemory / glmResources / glmObjects), so all allocate()/deallocate() calls are mutually exclusive.  Do not
+// mutex (glmResources / glmObjects), so all allocate()/deallocate() calls are mutually exclusive.  Do not
 // share a NodePool across maps that are guarded by different mutexes.
 
 #include <cstdlib>

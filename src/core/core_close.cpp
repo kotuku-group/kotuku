@@ -1,5 +1,5 @@
 
-static void free_private_memory(void);
+static void free_resources(void);
 
 //********************************************************************************************************************
 
@@ -282,8 +282,6 @@ void CloseCore(void)
 
    if (!glCrashStatus) {
       if (glTaskClass) { FreeResource(glTaskClass); glTaskClass = 0; }
-      // Although we haven't crashed, setting this to true enables safer shutdown behaviour in memory deallocations from this point.
-      glCrashStatus = 1;
    }
 
    if (glCodeIndex < CP_FREE_COREBASE) {
@@ -294,7 +292,7 @@ void CloseCore(void)
    if (glCodeIndex < CP_FREE_PRIVATE_MEMORY) {
       glCodeIndex = CP_FREE_PRIVATE_MEMORY;
       release_zombie_blocks();
-      free_private_memory();
+      free_resources();
    }
 
    #ifdef _WIN32
@@ -515,29 +513,17 @@ restart_forced_expunge:
 }
 
 //********************************************************************************************************************
-// Note: Class and object pointers are no longer valid for interaction at this stage.  glMemory remains stable
-// during this process because records are cleared rather than removed.
+// Note: Class and object pointers are no longer valid for interaction at this stage.
 
-static void free_private_memory(void)
+static void free_resources(void)
 {
    kt::Log log("Shutdown");
 
-   log.branch("Checking for orphaned memory allocations...");
-
    // It is assumed that no threads are running by this point in the shutdown process
 
-   for (auto & [ id, mem ] : glMemory) {
-      if (not mem.Address) continue;
-
-      if (not glCrashStatus) {
-         log.warning("Unfreed resource #%d/%p, Size %d", id, mem.Address, mem.Size);
-      }
-
-      FreeResource(mem.Address);
-      mem.Address = nullptr;
-   }
-
    if (not glCrashStatus) {
+      log.branch("Checking for orphaned resources...");
+
       // Print warnings only - resource managers typically expect a stable system environment
       for (const auto & [ id, resource ] : glResources) {
          if (not resource.Address) continue;

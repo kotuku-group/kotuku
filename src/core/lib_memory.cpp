@@ -52,15 +52,14 @@ static void erase_resource(ResourceRecord &Resource)
 
 static ERR free_private_memory_resource(MEMORYID MemoryID)
 {
-   std::unique_lock lock(glmMemory);
-   auto mem_it = glMemory.find(MemoryID);
-   if ((mem_it IS glMemory.end()) or (not mem_it->second.Address)) {
+   std::unique_lock lock(glmResources);
+   auto mem_it = glResources.find(MemoryID);
+   if ((mem_it IS glResources.end()) or (not mem_it->second.Address)) {
       if (glCrashStatus) return ERR::Okay;
       else return ERR::DoesNotExist;
    }
 
    auto &active_mem = mem_it->second;
-
    auto start_mem = (char *)active_mem.Address - MEMHEADER;
 
    #ifdef _WIN32
@@ -68,11 +67,6 @@ static ERR free_private_memory_resource(MEMORYID MemoryID)
    #else
       free(start_mem);
    #endif
-
-   active_mem.clear();
-
-   // During shutdown, glMemory records are not removed in order to maintain pointer validity
-   if (glProgramStage != STAGE_SHUTDOWN) glMemory.erase(MemoryID);
 
    return ERR::Okay;
 }
@@ -146,27 +140,12 @@ caller-owns-result, creates-resource, blocking
 
 ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
 {
-   kt::Log log(__FUNCTION__);
-
-   if ((Size <= 0) or (not Address)) {
-      log.warning("Bad args - Size %" PF64 ", Address %p", (long long)Size, Address);
-      return ERR::Args;
-   }
+   if ((Size <= 0) or (not Address)) return kt::Log(__FUNCTION__).warning(ERR::Args);
 
    *Address = nullptr;
 
-   // Determine the object that will own the memory block.  The preferred default is for it to belong to the current context.
-
-   OBJECTID owner_id = 0;
-   if (tlContext.size() > 1) owner_id = current_resource()->UID;
-   else if (glCurrentTask) owner_id = glCurrentTask->UID;
-
    size_t full_size = Size + MEMHEADER;
-   size_t aligned_size = full_size;
-
    APTR start_mem = nullptr;
-
-   // Use standard aligned allocation (typically 64-bit) for non-protected memory
    full_size = ((full_size + CACHE_LINE_SIZE - 1) / CACHE_LINE_SIZE) * CACHE_LINE_SIZE;
 
    #ifdef _WIN32
@@ -175,42 +154,29 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
       if (posix_memalign(&start_mem, CACHE_LINE_SIZE, full_size) != 0) start_mem = nullptr;
    #endif
 
-   if (start_mem) {
-      if ((Flags & MEM::NO_CLEAR) IS MEM::NIL) kt::clearmem(start_mem, full_size);
-   }
+   if (not start_mem) return kt::Log(__FUNCTION__).warning(ERR::AllocMemory);
 
-   if (not start_mem) {
-      log.warning("Failed to allocate %" PF64 " bytes.", (long long)Size);
-      return ERR::AllocMemory;
-   }
+   if ((Flags & MEM::NO_CLEAR) IS MEM::NIL) kt::clearmem(start_mem, full_size);
 
    APTR data_start = (char *)start_mem + MEMHEADER;
-   MEMORYID unique_id = 0;
+   MEMORYID unique_id = glResourceID++;
+   ((int *)data_start)[RESOURCE_ID_OFFSET] = unique_id;
 
-   {
-      std::unique_lock lock(glmMemory);
-      unique_id = glResourceID++;
-      // Configure the memory header.
-
-      ((int *)data_start)[RESOURCE_ID_OFFSET] = unique_id;
-
-      // Record memory details such as the size, ID and flags.  This helps us
-      // with resource tracking, identifying the memory block and freeing it later on.  Hidden blocks are never recorded.
-
-      glMemory.insert(std::pair<MEMORYID, PrivateAddress>(unique_id, PrivateAddress(data_start, (uint32_t)Size, Flags)));
-   }
+   OBJECTID owner_id;
+   if (tlContext.size() > 1) owner_id = current_resource()->UID;
+   else if (glCurrentTask) owner_id = glCurrentTask->UID;
+   else owner_id = 0;
 
    if (auto error = TrackResource(unique_id, data_start, owner_id, &glResourceMemoryHandler); error != ERR::Okay) {
-      free_private_memory_resource(unique_id);
+      #ifdef _WIN32
+         _aligned_free(start_mem);
+      #else
+         free(start_mem);
+      #endif
       return error;
    }
 
    *Address = data_start;
-
-   if (glShowPrivate) {
-      log.pmsg("AllocMemory(%p/#%d, %" PF64 ", $%.8x, Owner: #%d)", data_start, unique_id, (long long)Size,
-         int(Flags), owner_id);
-   }
    return ERR::Okay;
 }
 
@@ -277,8 +243,6 @@ closes-handle, blocking
 
 ERR FreeResource(RESOURCEID ResourceID)
 {
-   kt::Log log(__FUNCTION__);
-
    // Resource pointers are assumed to remain stable according to the map rules.
    // The Terminating flag is set to true to prevent other threads from interfering with the deallocation process.
 
@@ -296,7 +260,7 @@ ERR FreeResource(RESOURCEID ResourceID)
 
       auto resource_it = glResources.find(ResourceID);
       if ((resource_it IS glResources.end()) or (not resource_it->second.Address)) {
-         log.trace("Resource ID #%d does not exist.", ResourceID);
+         kt::Log(__FUNCTION__).trace("Resource ID #%d does not exist.", ResourceID);
          return ERR::DoesNotExist;
       }
 
@@ -305,8 +269,6 @@ ERR FreeResource(RESOURCEID ResourceID)
       resource_it->second.Terminating = true;
       resource = &resource_it->second;
    }
-
-   if (glShowPrivate) log.branch("FreeResource(#%d, %p, Owner: #%d)", ResourceID, resource->Address, resource->OwnerID);
 
    auto error = ERR::Okay;
 
