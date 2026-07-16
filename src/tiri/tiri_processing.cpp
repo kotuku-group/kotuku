@@ -241,6 +241,7 @@ static int processing_signal(lua_State *Lua)
 static int processing_flush(lua_State *Lua)
 {
    Lua->script->clearFlag(NF::SIGNALLED);
+
    if (auto fp = (fprocessing *)get_meta(Lua, lua_upvalueindex(1), "Tiri.processing")) {
       if ((fp->SignalRefs) and (not fp->SignalRefs->empty())) {
          for (auto ref : *fp->SignalRefs) {
@@ -254,9 +255,6 @@ static int processing_flush(lua_State *Lua)
             }
             lua_pop(Lua, 1);
          }
-      }
-      else if ((fp->Signals) and (not fp->Signals->empty())) {
-         Lua->script->clearFlag(NF::SIGNALLED);
       }
    }
    return 0;

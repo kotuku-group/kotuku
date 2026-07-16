@@ -395,7 +395,7 @@ static ERROR decompress_archive(CSTRING Location)
 
    objCompression::create compress = { fl::Path(Location) };
    if (compress.ok()) {
-      if (!(error = AllocMemory(sizeof(STR_UNPACK) + len + sizeof(STR_MAIN) + 2, MEM::STRING, &glDirectory))) {
+      if (!(error = malloc(sizeof(STR_UNPACK) + len + sizeof(STR_MAIN) + 2, MEM::STRING, &glDirectory))) {
          for (i=0; STR_UNPACK[i]; i++) glDirectory[i] = STR_UNPACK[i];
          for (j=len; (j > 1) and (Location[j-1] != '/') and (Location[j-1] != '\\') and (Location[j-1] != ':'); j--);
          while (Location[j]) {
