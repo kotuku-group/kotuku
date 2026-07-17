@@ -329,11 +329,13 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
    if (not name_token.ok()) return ParserResult<StmtNodePtr>::failure(name_token.error_ref());
    GCstr *name_symbol = name_token.value_ref().identifier();
    std::string struct_name(strdata(name_symbol), name_symbol->len);
-   auto open = this->ctx.consume(TokenKind::LeftBrace, ParserErrorCode::ExpectedToken);
-   if (not open.ok()) return ParserResult<StmtNodePtr>::failure(open.error_ref());
+   if (this->ctx.check(TokenKind::LeftBrace)) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         "Struct declarations use 'end' termination; braces are reserved for struct<Name> { ... } construction");
+   }
 
-   // Capture comments for the body only.  The statement dispatcher peeks ahead as far as '{' to recognise the
-   // declaration, so nothing before this point could have been captured anyway.
+   // Capture comments for the body only.  The statement dispatcher peeks through the declaration name, so nothing
+   // before this point could have been captured anyway.
 
    CommentCaptureGuard comment_capture(this->ctx.lex());
 
@@ -354,7 +356,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
       record.DeclarationSource.assign(strdata(source_symbol), source_symbol->len);
    }
 
-   while (not this->ctx.check(TokenKind::RightBrace)) {
+   while (not this->ctx.check(TokenKind::EndToken)) {
       if (this->ctx.check(TokenKind::EndOfFile)) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedEndOfFile, struct_token,
             "Unterminated struct declaration");
@@ -611,14 +613,14 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
 
       Token last = this->ctx.tokens().current();
       if (this->ctx.match(TokenKind::Comma).ok()) continue;
-      if (this->ctx.check(TokenKind::RightBrace)) continue;
+      if (this->ctx.check(TokenKind::EndToken)) continue;
       if (last.span().line.lineNumber() <= type_token.span().line.lineNumber()) {
          return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, last,
-            "Expected a newline, ',' or '}' after struct field");
+            "Expected a newline, ',' or 'end' after struct field");
       }
    }
 
-   auto close = this->ctx.consume(TokenKind::RightBrace, ParserErrorCode::ExpectedToken);
+   auto close = this->ctx.consume(TokenKind::EndToken, ParserErrorCode::ExpectedToken);
    if (not close.ok()) return ParserResult<StmtNodePtr>::failure(close.error_ref());
    if (record.Fields.empty()) {
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, struct_token,

@@ -623,8 +623,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
 
    if (current.kind() IS TokenKind::Identifier and current.identifier() and
          std::string_view(strdata(current.identifier()), current.identifier()->len) IS "struct" and
-         this->ctx.tokens().peek(1).kind() IS TokenKind::Identifier and
-         this->ctx.tokens().peek(2).kind() IS TokenKind::LeftBrace) {
+         this->ctx.tokens().peek(1).kind() IS TokenKind::Identifier) {
       return this->parse_struct_declaration();
    }
 

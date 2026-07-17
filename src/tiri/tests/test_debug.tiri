@@ -683,13 +683,13 @@ end
 
 @Test function ValidateStructSymbols()
    code = [=[
-struct ValidatePoint {
+struct ValidatePoint
    X: double
    Y: double
-}
+end
 
 -- Leading description.
-struct ValidateUser {
+struct ValidateUser
    Name: string -- The user name.
    Age: int
    Sock: obj<NetSocket>
@@ -698,7 +698,7 @@ struct ValidateUser {
    Home: struct<ValidatePoint>
    Next: ptr<ValidatePoint>
    List: ptr<ValidatePoint[]>
-}
+end
 
 function validateGreet(U)
    return U.Name
@@ -722,7 +722,7 @@ end
    assert(point.signature is 'struct ValidatePoint', "Unexpected struct signature: " .. tostring(point.signature))
    assert(#point.fields is 2, "Expected two ValidatePoint fields, got " .. #point.fields)
    assert(point.line is 0, "Struct symbol line should be 0-based, got " .. point.line)
-   assert(point.endLine is 3, "Struct endLine should sit on the closing brace, got " .. point.endLine)
+   assert(point.endLine is 3, "Struct endLine should sit on the end keyword, got " .. point.endLine)
 
    assert(user and user.kind is 'struct', "Expected a struct symbol for ValidateUser")
    assert(#user.fields is 8, "Expected eight ValidateUser fields, got " .. #user.fields)
@@ -749,10 +749,10 @@ end
    -- Validation must not permanently register declared structs: an edited declaration would otherwise conflict
    -- with the version registered by an earlier validation of the same document.
 
-   first = debug.validate('struct RevalidateRecord { Value: int }', { symbols = true })
+   first = debug.validate('struct RevalidateRecord Value: int end', { symbols = true })
    assert(first.success is true, "Initial struct declaration should validate")
 
-   second = debug.validate('struct RevalidateRecord { Value: float }', { symbols = true })
+   second = debug.validate('struct RevalidateRecord Value: float end', { symbols = true })
    assert(second.success is true,
       "Revalidating an edited struct must not conflict with the previous validation")
    assert(#second.diagnostics is 0, "No diagnostics expected for the edited declaration")

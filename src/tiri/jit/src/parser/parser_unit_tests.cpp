@@ -1116,7 +1116,7 @@ static bool parse_struct_source(lua_State *L, std::string_view Source, std::stri
    }
    if (context.diagnostics().has_errors()) {
       auto entries = context.diagnostics().entries();
-      Error = entries.empty() ? "unknown parser error" : entries.back().message;
+      Error = entries.empty() ? "unknown parser error" : entries.front().message;
       builder.rollback_registered_structs();
       return false;
    }
@@ -1187,7 +1187,7 @@ static bool test_struct_field_documentation(kt::Log &Log)
    // '--' in the source text would mistake the string literals for comment markers.
 
    if (not parse_struct_documentation(state,
-         "struct ParserDocumentedRecord {\n"
+         "struct ParserDocumentedRecord\n"
          "   Plain: int -- Trailing description.\n"
          "   -- Leading description.\n"
          "   -- Second leading line.\n"
@@ -1195,7 +1195,7 @@ static bool test_struct_field_documentation(kt::Log &Log)
          "   Marker: cstr -- Sets the \"--\" delimiter.\n"
          "   Divider: cstr\n"
          "   Undocumented: int\n"
-         "}", docs, error)) {
+         "end", docs, error)) {
       Log.error("failed to compile documented struct: %s", error.c_str());
       return false;
    }
@@ -1290,11 +1290,11 @@ static bool test_struct_declaration_metadata(kt::Log &Log)
    }
 
    if (not parse_struct_metadata(state,
-         "struct ParserMetadataPoint {\n"
+         "struct ParserMetadataPoint\n"
          "   X: double\n"
          "   Y: double\n"
-         "}\n"
-         "struct ParserMetadataRecord {\n"
+         "end\n"
+         "struct ParserMetadataRecord\n"
          "   Plain: byte -- Documented field.\n"
          "   Sock: obj<NetSocket>\n"
          "   Buffer: char[32]\n"
@@ -1302,7 +1302,7 @@ static bool test_struct_declaration_metadata(kt::Log &Log)
          "   Embedded: struct<ParserMetadataPoint>\n"
          "   Link: ptr<ParserMetadataPoint>\n"
          "   List: ptr<ParserMetadataPoint[]>\n"
-         "}", metadata, error)) {
+         "end", metadata, error)) {
       Log.error("failed to compile metadata struct source: %s", error.c_str());
       return false;
    }
@@ -1365,7 +1365,7 @@ static bool test_struct_declaration_metadata(kt::Log &Log)
       return false;
    }
 
-   constexpr std::string_view gated_source = "struct ParserMetadataGated { A: int }";
+   constexpr std::string_view gated_source = "struct ParserMetadataGated A: int end";
    StringReaderCtx reader = { gated_source.data(), gated_source.size() };
    LexState lex(plain_state, unit_reader, &reader, "parser-unit", std::nullopt);
    FuncState &func_state = lex.fs_init();
@@ -1420,9 +1420,9 @@ static bool test_state_local_struct_declarations(kt::Log &Log)
       }
 
       if (not parse_struct_source(first_state,
-            "struct ParserStateLocalRecord { Value: int }\n"
-            "struct ParserStateShadowRecord { Local: double }\n"
-            "struct ParserGlobalChildRecord { LocalValue: double }", error)) {
+            "struct ParserStateLocalRecord Value: int end\n"
+            "struct ParserStateShadowRecord Local: double end\n"
+            "struct ParserGlobalChildRecord LocalValue: double end", error)) {
          Log.error("failed to compile local struct declarations: %s", error.c_str());
          return false;
       }
@@ -1462,8 +1462,8 @@ static bool test_state_local_struct_declarations(kt::Log &Log)
       }
 
       if (compile_snapshot(first_state,
-            "struct ParserLocalExpectedRecord { Value: int }\n"
-            "struct ParserLocalActualRecord { Value: double }\n"
+            "struct ParserLocalExpectedRecord Value: int end\n"
+            "struct ParserLocalActualRecord Value: double end\n"
             "local value:struct<ParserLocalExpectedRecord> = struct<ParserLocalActualRecord> { }", true, error).has_value()) {
          Log.error("local declaration accepted an initialiser with a different struct layout");
          return false;
@@ -1474,8 +1474,8 @@ static bool test_state_local_struct_declarations(kt::Log &Log)
       }
 
       if (parse_struct_source(first_state,
-            "struct ParserRolledBackRecord { Value: int }\n"
-            "struct ParserInvalidRecord { Value: mystery }", error)) {
+            "struct ParserRolledBackRecord Value: int end\n"
+            "struct ParserInvalidRecord Value: mystery end", error)) {
          Log.error("invalid declaration fixture compiled successfully");
          return false;
       }
@@ -1488,6 +1488,33 @@ static bool test_state_local_struct_declarations(kt::Log &Log)
    LuaStateHolder replacement;
    if (find_struct(replacement.get(), local_name)) {
       Log.error("declarative struct survived closure of its owning state");
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_struct_declaration_syntax(kt::Log &Log)
+{
+   std::string error;
+   LuaStateHolder holder;
+   lua_State *state = holder.get();
+   if (not state) {
+      Log.error("failed to allocate state for struct declaration syntax test");
+      return false;
+   }
+
+   if (not parse_struct_source(state, "struct ParserSingleLine X: int, Y: int end", error)) {
+      Log.error("single-line end-terminated declaration failed: %s", error.c_str());
+      return false;
+   }
+
+   if (parse_struct_source(state, "struct ParserBraceDeclaration { X: int }", error)) {
+      Log.error("brace-delimited struct declaration compiled successfully");
+      return false;
+   }
+   if (error.find("Struct declarations use 'end' termination") IS std::string::npos) {
+      Log.error("brace-delimited declaration produced an unexpected diagnostic: %s", error.c_str());
       return false;
    }
 
@@ -1984,7 +2011,7 @@ static bool test_ternary_falsey_semantics(kt::Log &log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 23> tests = { {
+   constexpr std::array<TestCase, 24> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -2003,6 +2030,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "ast_call_lowering", test_ast_call_lowering },
       { "bytecode_equivalence", test_bytecode_equivalence },
       { "state_local_struct_declarations", test_state_local_struct_declarations },
+      { "struct_declaration_syntax", test_struct_declaration_syntax },
       { "struct_field_documentation", test_struct_field_documentation },
       { "struct_declaration_metadata", test_struct_declaration_metadata },
       { "expdesc_is_falsey", test_expdesc_is_falsey },
