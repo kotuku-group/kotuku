@@ -337,7 +337,7 @@ static ERR set_owner(OBJECTPTR Object, OBJECTPTR Owner)
 
    auto &resource = resource_rec->second;
 
-   object_rec->second.OwnerID = Owner->UID;
+   object_rec->second.Owner = Owner;
    resource.OwnerID = Owner->UID;
    resource.OwnerManagesChildren = false;
    Object->Owner = Owner;
@@ -487,22 +487,36 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
          }
       }
 
-      // Clear the object header to help raise use-after-free errors.
-
-      Object->Class = nullptr;
-      Object->UID   = 0;
-
       {
          std::lock_guard lock(glmObjects);
          if (auto object_rec = glObjects.find(Resource.ResourceID); object_rec != glObjects.end()) {
             // The owner's Children entry must be removed before the object block can be released, so that
             // pointers held in Children remain valid for as long as glmObjects is held.
-            if (auto owner_rec = glObjects.find(object_rec->second.OwnerID); owner_rec != glObjects.end()) {
-               owner_rec->second.Children.erase(Object);
+            if (auto owner = object_rec->second.Owner) {
+               if (auto owner_rec = glObjects.find(owner->UID); owner_rec != glObjects.end()) {
+                  owner_rec->second.Children.erase(Object);
+               }
             }
+
+            // Any children still present at this point survived free_children() due to deferred collection.
+            // Their Owner references must be nulled before this object's block can be released.
+
+            for (auto child : object_rec->second.Children) {
+               if (auto child_rec = glObjects.find(child->UID); child_rec != glObjects.end()) {
+                  child_rec->second.Owner = nullptr;
+               }
+            }
+
             glObjects.erase(object_rec);
          }
       }
+
+      // Clear the object header to help raise use-after-free errors.  The UID must remain valid until after the
+      // critical section above; a child completing deferred collection on another thread resolves this object's
+      // record via glObjects.find(Owner->UID) to remove itself from the Children set.
+
+      Object->Class = nullptr;
+      Object->UID   = 0;
    } // Object lock
 
    Object->setFlag(NF::ZOMBIE);
@@ -2569,11 +2583,13 @@ ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner)
          previous_owner->second.Manager->RemoveChild(previous_owner->second, resource);
       }
    }
-   else if (auto previous_owner = glObjects.find(object_rec->second.OwnerID); previous_owner != glObjects.end()) {
-      previous_owner->second.Children.erase(Object);
+   else if (auto prev_owner = object_rec->second.Owner) {
+      if (auto previous_owner = glObjects.find(prev_owner->UID); previous_owner != glObjects.end()) {
+         previous_owner->second.Children.erase(Object);
+      }
    }
 
-   object_rec->second.OwnerID = Owner->UID;
+   object_rec->second.Owner = Owner;
    resource.OwnerID = Owner->UID;
    resource.OwnerManagesChildren = false;
    Object->Owner = Owner;
