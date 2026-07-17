@@ -305,9 +305,9 @@ end
 end
 
 @Test function StructDeclarationReceivesKeywordToken()
-   source = 'struct User {\n' ..
+   source = 'struct User\n' ..
       '   Name: string\n' ..
-      '}\n'
+      'end\n'
 
    tokens = tokenizeTiri(source)
 
@@ -339,19 +339,19 @@ end
    assert(anno_name and anno_name.type is 11, 'The annotated struct name should be a class token.')
 end
 
-@Test function StructDeclarationBraceOnNextLine()
-   source = 'struct User\n' ..
-      '{\n' ..
+@Test function StructDeclarationNameOnNextLine()
+   source = 'struct\n' ..
+      'User\n' ..
       '   Name: string\n' ..
-      '}\n'
+      'end\n'
 
    tokens = tokenizeTiri(source)
 
    struct_keyword = findToken(tokens, 0, 0, 'struct')
-   struct_name = findToken(tokens, 0, 7, 'User')
+   struct_name = findToken(tokens, 1, 0, 'User')
 
-   assert(struct_keyword and struct_keyword.type is 0, 'A brace on the following line is still a declaration.')
-   assert(struct_name and struct_name.type is 11, 'The struct name should be a class token with the brace deferred.')
+   assert(struct_keyword and struct_keyword.type is 0, 'struct should remain a declaration keyword before a newline.')
+   assert(struct_name and struct_name.type is 11, 'A declaration name on the following line should be a class token.')
 end
 
 @Test function StructLibraryRemainsNamespace()

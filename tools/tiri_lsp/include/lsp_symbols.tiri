@@ -309,7 +309,7 @@ function symbolDetectModuleValue(LineCode:str, LineText:str, LineNo:num):table
    return nil
 end
 
--- Detect a top-level struct declaration; the opening brace may appear on a later line.
+-- Detect a top-level end-terminated struct declaration.
 
 function symbolDetectStruct(LineCode:str, LineText:str, LineNo:num):table
    start_pos, stop_pos, cap = rx_symbol_struct.findFirst(LineCode)
@@ -330,7 +330,7 @@ function symbolAddStructFields(Symbol:table, LineCode:str, LineText:str, LineNo:
       if s then
          field_name = cap[0]
          field_type = segment:sub(e)
-         close_pos = field_type:find('}', 0, true)
+         close_pos = field_type:find(' end', 0, true)
          if close_pos then field_type = field_type:sub(0, close_pos) end
          field_type = field_type:trim()
          name_start = LineText:find(field_name, search_pos, true) or search_pos
@@ -390,7 +390,7 @@ function symbolCloseBlockFrames(Stack:array, LineCode:str, LineNo:num, LineText:
 end
 
 function symbolIsBraceFrame(Frame:table):bool
-   return Frame.kind is 'table' or Frame.kind is 'struct'
+   return Frame.kind is 'table'
 end
 
 function symbolFindTopTableFrame(Stack:array):table
@@ -479,20 +479,11 @@ global function extractDocumentSymbols(Doc:table):array
          struct_symbol = symbolDetectStruct(symbol_code, line_text, line_num)
          if struct_symbol then
             symbolAddChild(symbols, stack, struct_symbol)
-            open_count = symbolCountChar(symbol_code, '{')
-            close_count = symbolCountChar(symbol_code, '}')
-            brace_pos = symbol_code:find('{', 0, true)
-            remainder = brace_pos and symbol_code:sub(brace_pos + 1) or ''
-            if not brace_pos or open_count > close_count then
-               stack:push({
-                  kind = 'struct',
-                  symbol = struct_symbol,
-                  brace_depth = 0,
-                  awaiting_brace = not brace_pos
-               })
-            end
-            -- Fields declared on the opening line, e.g. struct P { X: int }
-            symbolAddStructFields(struct_symbol, remainder, line_text, line_num, brace_pos or 0)
+            name_start = line_text:find(struct_symbol.name, 0, true) or 0
+            remainder_start = name_start + #struct_symbol.name
+            symbolAddStructFields(struct_symbol, symbol_code:sub(remainder_start), line_text, line_num,
+               remainder_start)
+            stack:push({ kind = 'struct', symbol = struct_symbol })
          else
             module_symbol = symbolDetectModuleValue(symbol_code, line_text, line_num)
             if module_symbol then

@@ -29,7 +29,7 @@ end
 
 @Test function LayoutAwareStructBytecodeDisassembly()
    local script = obj.new('tiri', { statement=[[
-struct PhaseTwoLayout { First: int, Second: int }
+struct PhaseTwoLayout First: int, Second: int end
 global glPhaseTwo:struct<PhaseTwoLayout> = struct<PhaseTwoLayout> { }
 
 function annotatedLocal():num
@@ -79,7 +79,7 @@ end
 
 @Test function ConstrainedObjectFieldTypePropagation()
    local script = obj.new('tiri', { statement=[[
-struct PhaseTwoObjectHolder { Clock: obj<Time> }
+struct PhaseTwoObjectHolder Clock: obj<Time> end
 function readYear(Holder:struct<PhaseTwoObjectHolder>):num
    return Holder.Clock.year
 end

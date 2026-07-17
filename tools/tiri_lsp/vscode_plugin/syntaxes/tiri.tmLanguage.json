@@ -309,7 +309,7 @@
             },
             {
                "name": "meta.struct.declaration.tiri",
-               "match": "\\b(struct)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\{)",
+               "match": "\\b(struct)\\s+([A-Za-z_][A-Za-z0-9_]*)\\b",
                "captures": {
                   "1": {
                      "name": "storage.type.struct.tiri"

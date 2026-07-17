@@ -34,20 +34,20 @@ end
 end
 
 @Test function StructBlockFolds()
-   doc = makeDoc('struct User {\n   Name: string\n   Age: int\n}\n')
+   doc = makeDoc('struct User\n   Name: string\n   Age: int\nend\n')
    ranges = extractFoldingRanges(doc)
-   assert(findRange(ranges, 0, 3), 'Struct declaration blocks should fold to the closing brace.')
+   assert(findRange(ranges, 0, 3), 'Struct declaration blocks should fold to the end keyword.')
 end
 
 @Test function StructFollowedByFunctionFoldsBoth()
-   doc = makeDoc('struct User {\n   Name: string\n}\n\nfunction greet()\n   print(2)\nend\n')
+   doc = makeDoc('struct User\n   Name: string\nend\n\nfunction greet()\n   print(2)\nend\n')
    ranges = extractFoldingRanges(doc)
    assert(findRange(ranges, 0, 2), 'The struct block should fold.')
    assert(findRange(ranges, 4, 6), 'A function after the struct should fold normally.')
 end
 
 @Test function SingleLineStructDoesNotFold()
-   doc = makeDoc('struct Point { X: double, Y: double }\nprint(1)\n')
+   doc = makeDoc('struct Point X: double, Y: double end\nprint(1)\n')
    ranges = extractFoldingRanges(doc)
    assert(#ranges is 0, 'A single-line struct declaration should not create a folding range.')
 end
@@ -58,15 +58,15 @@ end
    assert(#ranges is 0, 'struct.new() usage should not create a folding range.')
 end
 
-@Test function StructDeferredBraceFolds()
-   doc = makeDoc('struct User\n{\n   Name: string\n}\n')
+@Test function StructNameOnOpeningLineFolds()
+   doc = makeDoc('struct User\n   Name: string\n   Age: int\nend\n')
    ranges = extractFoldingRanges(doc)
-   assert(findRange(ranges, 0, 3), 'A deferred opening brace should fold from the struct declaration.')
+   assert(findRange(ranges, 0, 3), 'An end-terminated struct should fold from its declaration.')
 end
 
-@Test function SingleLineBodyAfterDeferredBraceDoesNotFold()
-   doc = makeDoc('struct Empty\n{}\nfunction greet()\nend\n')
+@Test function FoldingResumesAfterStructEnd()
+   doc = makeDoc('struct Item\n   Value: int\nend\nfunction greet()\nend\n')
    ranges = extractFoldingRanges(doc)
-   assert(not findRange(ranges, 0, 1), 'A single-line body should not create a struct folding range.')
-   assert(findRange(ranges, 2, 3), 'Folding should resume after the deferred single-line body.')
+   assert(findRange(ranges, 0, 2), 'The struct should close at its end keyword.')
+   assert(findRange(ranges, 3, 4), 'Folding should resume after the struct block.')
 end

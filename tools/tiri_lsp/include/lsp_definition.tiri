@@ -10,6 +10,7 @@ rx_def_assign         <const> = <{ regex.new([[^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=]
 rx_def_param          <const> = <{ regex.new([[([A-Za-z_][A-Za-z0-9_]*)]]) }>
 rx_def_struct         <const> = <{ regex.new([[^\s*struct\s+([A-Za-z_][A-Za-z0-9_]*)\b]]) }>
 rx_def_struct_field   <const> = <{ regex.new([[([A-Za-z_][A-Za-z0-9_]*)\s*:]]) }>
+rx_def_end            <const> = <{ regex.new([[\bend\b]]) }>
 rx_def_struct_new     <const> = <{ regex.new([=[([A-Za-z_]\w*)\s*=\s*struct\.new\s*\(\s*['"]([A-Za-z_]\w*)['"]]=]) }>
 rx_def_struct_anno    <const> = <{ regex.new([[([A-Za-z_]\w*)\s*:\s*struct<\s*([A-Za-z_]\w*)\s*>]]) }>
 rx_def_struct_ctor    <const> = <{ regex.new([[([A-Za-z_]\w*)\s*=\s*struct<\s*([A-Za-z_]\w*)\s*>]]) }>
@@ -340,34 +341,17 @@ global function extractDefinitionSymbols(Doc:table):array
    total_lines = getTotalLines(Doc)
    in_block_comment = false
    table_depth = 0
-   local struct_frame  -- { name, depth } while inside a struct declaration body
-   local pending_struct -- Struct declaration waiting for its opening brace
+   local struct_frame  -- Struct name while inside an end-terminated declaration body
 
    for line_num = 0, total_lines - 1 do
       line_text = getLine(Doc, line_num)
       line_code, in_block_comment = maskNonCode(line_text, in_block_comment)
       in_table_literal = table_depth > 0
 
-      if pending_struct then
-         brace_pos = line_code:find('{', 0, true)
-         if brace_pos then
-            remainder = line_code:sub(brace_pos + 1)
-            addStructFieldSymbols(symbols, pending_struct.name, remainder, line_text, line_num, brace_pos)
-            open_depth = updateTableDepth(line_code, 0)
-            if open_depth > 0 then
-               struct_frame = { name = pending_struct.name, depth = open_depth }
-            end
-            pending_struct = nil
-         end
-         table_depth = updateTableDepth(line_code, table_depth)
-         continue
-      end
-
       -- Struct declaration bodies contain only field declarations; register them and skip the other extractors.
       if struct_frame then
-         addStructFieldSymbols(symbols, struct_frame.name, line_code, line_text, line_num, 0)
-         struct_frame.depth = updateTableDepth(line_code, struct_frame.depth)
-         if struct_frame.depth is 0 then struct_frame = nil end
+         addStructFieldSymbols(symbols, struct_frame, line_code, line_text, line_num, 0)
+         if rx_def_end.test(line_code) then struct_frame = nil end
          table_depth = updateTableDepth(line_code, table_depth)
          continue
       end
@@ -378,17 +362,9 @@ global function extractDefinitionSymbols(Doc:table):array
          name_start = line_text:find(struct_name, struct_start, true) or struct_start
          addSymbol(symbols, struct_name, 'struct', line_num, name_start, name_start + #struct_name)
 
-         brace_pos = line_code:find('{', 0, true)
-         if brace_pos then
-            remainder = line_code:sub(brace_pos + 1)
-            addStructFieldSymbols(symbols, struct_name, remainder, line_text, line_num, brace_pos)
-            open_depth = updateTableDepth(line_code, 0)
-            if open_depth > 0 then
-               struct_frame = { name = struct_name, depth = open_depth }
-            end
-         else
-            pending_struct = { name = struct_name }
-         end
+         remainder = line_code:sub(struct_stop)
+         addStructFieldSymbols(symbols, struct_name, remainder, line_text, line_num, struct_stop)
+         if not rx_def_end.test(remainder) then struct_frame = struct_name end
          table_depth = updateTableDepth(line_code, table_depth)
          continue
       end

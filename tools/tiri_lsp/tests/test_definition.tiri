@@ -173,13 +173,13 @@ end
 end
 
 @Test function StructAnnotationResolvesToDeclaration()
-   doc = makeDoc('struct User {\n   Name: string\n}\n\nfunction describe(Person: struct<User>)\nend\n')
+   doc = makeDoc('struct User\n   Name: string\nend\n\nfunction describe(Person: struct<User>)\nend\n')
    locations = resolveDefinition(doc, { line = 4, character = 34 })
    assertLocationLine(locations, 0, 'struct<User> annotation should resolve to the struct declaration')
 end
 
 @Test function StructFieldAccessResolvesToFieldLine()
-   doc = makeDoc('struct User {\n   Name: string\n   Age: int\n}\n\nu = struct.new(\'User\')\nprint(u.Age)\n')
+   doc = makeDoc('struct User\n   Name: string\n   Age: int\nend\n\nu = struct.new(\'User\')\nprint(u.Age)\n')
    locations = resolveDefinition(doc, { line = 6, character = 9 })
    assertLocationLine(locations, 2, 'Field access should resolve to the field declaration line')
 end
@@ -191,19 +191,19 @@ end
 end
 
 @Test function StructFieldDefinitionUsesInstanceType()
-   doc = makeDoc('struct A { Value: int }\nstruct B { Value: float }\na = struct.new(\'A\')\nprint(a.Value)\n')
+   doc = makeDoc('struct A Value: int end\nstruct B Value: float end\na = struct.new(\'A\')\nprint(a.Value)\n')
    locations = resolveDefinition(doc, { line = 3, character = 10 })
    assertLocationLine(locations, 0, 'Field access should resolve through the instance struct type')
 end
 
-@Test function StructDeclarationWithDeferredBraceResolves()
-   doc = makeDoc('struct User\n{\n   Name: string\n}\n\nfunction describe(Person: struct<User>)\nend\n')
-   locations = resolveDefinition(doc, { line = 5, character = 34 })
-   assertLocationLine(locations, 0, 'A struct declaration with a deferred brace should resolve')
+@Test function EndTerminatedStructDeclarationResolves()
+   doc = makeDoc('struct User\n   Name: string\nend\n\nfunction describe(Person: struct<User>)\nend\n')
+   locations = resolveDefinition(doc, { line = 4, character = 34 })
+   assertLocationLine(locations, 0, 'An end-terminated struct declaration should resolve')
 end
 
 @Test function LaterStructAssignmentDoesNotAffectEarlierDefinition()
-   doc = makeDoc('struct A { Value: int }\nstruct B { Value: float }\na = struct<A> { }\nprint(a.Value)\na = struct<B> { }\n')
+   doc = makeDoc('struct A Value: int end\nstruct B Value: float end\na = struct<A> { }\nprint(a.Value)\na = struct<B> { }\n')
    locations = resolveDefinition(doc, { line = 3, character = 10 })
    assertLocationLine(locations, 0, 'A later assignment must not change the type at an earlier field access')
 end
