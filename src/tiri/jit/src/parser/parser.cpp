@@ -189,7 +189,7 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
    }
 
    trace_ast_boundary(Context, *chunk, "parse");
-   collect_parser_symbols(Context.lua(), *chunk);
+   collect_parser_symbols(Context.lua(), Context.lex(), *chunk);
 
    if (Context.config().enable_type_analysis) {
       ParserProfiler::StageTimer type_timer = Profiler.stage("type_analysis");

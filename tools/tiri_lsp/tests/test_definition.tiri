@@ -171,3 +171,39 @@ end
    assert(response.result and #response.result > 0, 'Definition handler should return a location array.')
    assert(response.result[0].range.start.line is 0, 'Definition handler should resolve through resolver.')
 end
+
+@Test function StructAnnotationResolvesToDeclaration()
+   doc = makeDoc('struct User {\n   Name: string\n}\n\nfunction describe(Person: struct<User>)\nend\n')
+   locations = resolveDefinition(doc, { line = 4, character = 34 })
+   assertLocationLine(locations, 0, 'struct<User> annotation should resolve to the struct declaration')
+end
+
+@Test function StructFieldAccessResolvesToFieldLine()
+   doc = makeDoc('struct User {\n   Name: string\n   Age: int\n}\n\nu = struct.new(\'User\')\nprint(u.Age)\n')
+   locations = resolveDefinition(doc, { line = 6, character = 9 })
+   assertLocationLine(locations, 2, 'Field access should resolve to the field declaration line')
+end
+
+@Test function StructLibraryCallDoesNotResolveAsStruct()
+   doc = makeDoc('u = struct.new(\'Missing\')\nprint(u)\n')
+   locations = resolveDefinition(doc, { line = 1, character = 7 })
+   assertLocationLine(locations, 0, 'struct.new() assignment should still resolve as a variable')
+end
+
+@Test function StructFieldDefinitionUsesInstanceType()
+   doc = makeDoc('struct A { Value: int }\nstruct B { Value: float }\na = struct.new(\'A\')\nprint(a.Value)\n')
+   locations = resolveDefinition(doc, { line = 3, character = 10 })
+   assertLocationLine(locations, 0, 'Field access should resolve through the instance struct type')
+end
+
+@Test function StructDeclarationWithDeferredBraceResolves()
+   doc = makeDoc('struct User\n{\n   Name: string\n}\n\nfunction describe(Person: struct<User>)\nend\n')
+   locations = resolveDefinition(doc, { line = 5, character = 34 })
+   assertLocationLine(locations, 0, 'A struct declaration with a deferred brace should resolve')
+end
+
+@Test function LaterStructAssignmentDoesNotAffectEarlierDefinition()
+   doc = makeDoc('struct A { Value: int }\nstruct B { Value: float }\na = A()\nprint(a.Value)\na = B()\n')
+   locations = resolveDefinition(doc, { line = 3, character = 10 })
+   assertLocationLine(locations, 0, 'A later assignment must not change the type at an earlier field access')
+end

@@ -1235,6 +1235,156 @@ static bool test_struct_field_documentation(kt::Log &Log)
    return true;
 }
 
+// Parses Source with SCF::PROCESS_DOC active and returns the struct declaration metadata captured for tooling,
+// mirroring the conditions of debug.validate(source, { symbols = true }).
+
+static bool parse_struct_metadata(lua_State *L, std::string_view Source,
+   std::vector<LexState::StructDeclarationMetadata> &Metadata, std::string &Error)
+{
+   SCF old_flags = L->script->Flags;
+   L->script->Flags |= SCF::PROCESS_DOC;
+
+   StringReaderCtx reader = { Source.data(), Source.size() };
+   LexState lex(L, unit_reader, &reader, "parser-unit", std::nullopt);
+   FuncState &func_state = lex.fs_init();
+   ParserAllocator allocator = ParserAllocator::from(L);
+   ParserContext context = ParserContext::from(lex, func_state, allocator);
+   ParserConfig config;
+   config.abort_on_error = false;
+   config.max_diagnostics = 32;
+   ParserSession session(context, config);
+
+   lex.next();
+   AstBuilder builder(context);
+   auto chunk = builder.parse_chunk();
+   if (not chunk.ok()) {
+      Error = chunk.error_ref().message;
+      L->script->Flags = old_flags;
+      return false;
+   }
+   if (context.diagnostics().has_errors()) {
+      auto entries = context.diagnostics().entries();
+      Error = entries.empty() ? "unknown parser error" : entries.back().message;
+      builder.rollback_registered_structs();
+      L->script->Flags = old_flags;
+      return false;
+   }
+
+   Metadata = lex.struct_declaration_metadata;
+   builder.commit_registered_structs();
+   L->script->Flags = old_flags;
+   Error.clear();
+   return true;
+}
+
+static bool test_struct_declaration_metadata(kt::Log &Log)
+{
+   std::vector<LexState::StructDeclarationMetadata> metadata;
+   std::string error;
+
+   LuaStateHolder holder;
+   lua_State *state = holder.get();
+   if (not state) {
+      Log.error("failed to allocate state for struct metadata test");
+      return false;
+   }
+
+   if (not parse_struct_metadata(state,
+         "struct ParserMetadataPoint {\n"
+         "   X: double\n"
+         "   Y: double\n"
+         "}\n"
+         "struct ParserMetadataRecord {\n"
+         "   Plain: byte -- Documented field.\n"
+         "   Sock: obj<NetSocket>\n"
+         "   Buffer: char[32]\n"
+         "   Values: array<float>\n"
+         "   Embedded: struct<ParserMetadataPoint>\n"
+         "   Link: ptr<ParserMetadataPoint>\n"
+         "   List: ptr<ParserMetadataPoint[]>\n"
+         "}", metadata, error)) {
+      Log.error("failed to compile metadata struct source: %s", error.c_str());
+      return false;
+   }
+
+   if (metadata.size() != 2) {
+      Log.error("expected metadata for two declarations, got %d", int(metadata.size()));
+      return false;
+   }
+
+   const auto &point = metadata[0];
+   if (point.name != "ParserMetadataPoint" or point.fields.size() != 2) {
+      Log.error("first declaration metadata is incomplete (name '%s', %d fields)",
+         point.name.c_str(), int(point.fields.size()));
+      return false;
+   }
+   if (point.name_span.line.lineNumber() != 1 or point.end_span.line.lineNumber() != 4) {
+      Log.error("first declaration spans are wrong (name line %d, end line %d)",
+         int(point.name_span.line.lineNumber()), int(point.end_span.line.lineNumber()));
+      return false;
+   }
+
+   const auto &record = metadata[1];
+   if (record.name != "ParserMetadataRecord" or record.fields.size() != 7) {
+      Log.error("second declaration metadata is incomplete (name '%s', %d fields)",
+         record.name.c_str(), int(record.fields.size()));
+      return false;
+   }
+
+   auto expect_field = [&Log, &record](size_t Index, std::string_view Name, std::string_view Type,
+         std::string_view Doc) -> bool {
+      const auto &field = record.fields[Index];
+      if (field.name != Name or field.type != Type or field.doc != Doc) {
+         Log.error("field %d mismatch: got '%s: %s' doc '%s'", int(Index), field.name.c_str(),
+            field.type.c_str(), field.doc.c_str());
+         return false;
+      }
+      return true;
+   };
+
+   if (not expect_field(0, "Plain", "byte", "Documented field.")) return false;
+   if (not expect_field(1, "Sock", "obj<NetSocket>", "")) return false;
+   if (not expect_field(2, "Buffer", "char[32]", "")) return false;
+   if (not expect_field(3, "Values", "array<float>", "")) return false;
+   if (not expect_field(4, "Embedded", "struct<ParserMetadataPoint>", "")) return false;
+   if (not expect_field(5, "Link", "ptr<ParserMetadataPoint>", "")) return false;
+   if (not expect_field(6, "List", "ptr<ParserMetadataPoint[]>", "")) return false;
+
+   if (record.fields[0].span.line.lineNumber() != 6) {
+      Log.error("field span line is wrong (got %d)", int(record.fields[0].span.line.lineNumber()));
+      return false;
+   }
+
+   // Without SCF::PROCESS_DOC the parser must not spend time collecting metadata.
+
+   std::vector<LexState::StructFieldDocumentation> docs;
+   LuaStateHolder plain_holder;
+   lua_State *plain_state = plain_holder.get();
+   if (not plain_state) {
+      Log.error("failed to allocate state for gating check");
+      return false;
+   }
+
+   constexpr std::string_view gated_source = "struct ParserMetadataGated { A: int }";
+   StringReaderCtx reader = { gated_source.data(), gated_source.size() };
+   LexState lex(plain_state, unit_reader, &reader, "parser-unit", std::nullopt);
+   FuncState &func_state = lex.fs_init();
+   ParserAllocator allocator = ParserAllocator::from(plain_state);
+   ParserContext context = ParserContext::from(lex, func_state, allocator);
+   ParserConfig config;
+   config.abort_on_error = false;
+   ParserSession session(context, config);
+   lex.next();
+   AstBuilder builder(context);
+   auto chunk = builder.parse_chunk();
+   if (chunk.ok() and not lex.struct_declaration_metadata.empty()) {
+      Log.error("metadata was collected without SCF::PROCESS_DOC");
+      return false;
+   }
+
+   return true;
+}
+
 static bool test_state_local_struct_declarations(kt::Log &Log)
 {
    constexpr std::string_view local_name = "ParserStateLocalRecord";
@@ -1834,7 +1984,7 @@ static bool test_ternary_falsey_semantics(kt::Log &log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 22> tests = { {
+   constexpr std::array<TestCase, 23> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -1854,6 +2004,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "bytecode_equivalence", test_bytecode_equivalence },
       { "state_local_struct_declarations", test_state_local_struct_declarations },
       { "struct_field_documentation", test_struct_field_documentation },
+      { "struct_declaration_metadata", test_struct_declaration_metadata },
       { "expdesc_is_falsey", test_expdesc_is_falsey },
       { "if_empty_operator_constants", test_if_empty_operator_constants },
       { "ternary_falsey_semantics", test_ternary_falsey_semantics }

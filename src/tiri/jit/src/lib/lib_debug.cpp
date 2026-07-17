@@ -66,6 +66,7 @@
 #include <string>       // For std::string
 #include <string_view>  // For std::string_view
 #include <charconv>     // For std::from_chars
+#include <unordered_set> // For debug.validate struct registry snapshots
 
 #define LEVELS1   12   //  size of the first part of the stack
 #define LEVELS2   10   //  size of the second part of the stack
@@ -1149,6 +1150,24 @@ static void push_errors_metadata(lua_State *L, const std::vector<ParserDocErrorM
    }
 }
 
+static void push_fields_metadata(lua_State *L, const std::vector<ParserStructFieldMetadata> &Fields)
+{
+   lua_newtable(L);
+   int idx = 0;
+
+   for (const auto &field : Fields) {
+      lua_newtable(L);
+      set_table_string(L, "name", field.name);
+      set_table_string(L, "type", field.type);
+      set_table_string(L, "doc", field.doc);
+      int32_t line = field.span.line.lineNumber();
+      int32_t column = field.span.column.lineNumber();
+      set_table_int(L, "line", line > 0 ? line - 1 : 0);
+      set_table_int(L, "column", column > 0 ? column - 1 : 0);
+      lua_rawseti(L, -2, idx++);
+   }
+}
+
 static void push_symbol_metadata(lua_State *L, const ParserSymbolCollection *Symbols)
 {
    lua_newtable(L);
@@ -1174,6 +1193,9 @@ static void push_symbol_metadata(lua_State *L, const ParserSymbolCollection *Sym
 
       push_errors_metadata(L, symbol.errors);
       lua_setfield(L, -2, "errors");
+
+      push_fields_metadata(L, symbol.fields);
+      lua_setfield(L, -2, "fields");
 
       push_doc_metadata(L, symbol.doc);
       lua_setfield(L, -2, "doc");
@@ -1222,7 +1244,19 @@ LJLIB_CF(debug_validate)
    if (include_symbols) L->script->Flags |= SCF::PROCESS_DOC;
    if (L->parser_symbols) { delete L->parser_symbols; L->parser_symbols = nullptr; }
 
+   // Validation must be side-effect free with respect to the state-local struct registry.  A successful parse
+   // registers declared structs permanently, so a subsequent validation of an edited declaration would report a
+   // bogus layout conflict.  Snapshot the key set and discard any additions once the parse completes.
+
+   std::unordered_set<uint32_t> struct_snapshot;
+   struct_snapshot.reserve(L->struct_declarations.size());
+   for (const auto &entry : L->struct_declarations) struct_snapshot.insert(entry.first);
+
    int parse_result = lua_load(L, std::string_view(statement, strlen(statement)), chunk_name.c_str());
+
+   std::erase_if(L->struct_declarations, [&struct_snapshot](const auto &Entry) {
+      return not struct_snapshot.contains(Entry.first);
+   });
 
    L->script->JitOptions = old_options;  // Restore options
    L->script->Flags = old_flags;
