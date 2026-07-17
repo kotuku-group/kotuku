@@ -151,6 +151,7 @@ Examples:
   origo apps/find path=src/core/                            Search all files in src/core/
   origo apps/find path=src/ filter="\.cpp$"                 Find all C++ source files
   origo apps/find path=src/core/ name=defs.h                Find a specific file by name
+  origo apps/find path=src/ content="io.search"             Find files containing literal text
   origo apps/find path=src/ type=dir maxdepth=0             List top-level directories
   origo apps/find path=src/ size=+10K                       Files larger than 10 KB
   origo apps/find path=src/ modified=-7d                    Files modified in the last 7 days
@@ -178,6 +179,8 @@ Examples:
            comment = 'Modification time filter, e.g. -7d (newer), +24h (older). Units: m, h, d.' },
          { name = 'exclude', type = 'regex', group = 'Filters',
            comment = 'A regex pattern to exclude matching filenames.' },
+         { name = 'content', type = 'str', group = 'Filters',
+           comment = 'Match files containing the specified literal text.' },
 
          { name = 'count', kind = 'flag', default = false, group = 'Output',
            comment = 'Print only the total match count.' },
@@ -202,6 +205,7 @@ Examples:
    glSize       = glArgs.size
    glModified   = glArgs.modified
    glExclude    = glArgs.exclude
+   glContent    = glArgs.content
    glCount      = glArgs.count
    glExec       = glArgs.exec
    glOutput     = glArgs.output
@@ -236,6 +240,8 @@ Examples:
       if glModified.maxDate then options.maxDate = glModified.maxDate end
    end
 
+   if glContent then options.contentFilter = glContent end
+
    if glVerbose then
       print(f'Search path: {glSearchPath}')
       if glFilter then print(f'Filter: {glFilter.pattern}') end
@@ -246,6 +252,7 @@ Examples:
       if glSize then print(f'Size: {glSize.source}') end
       if glModified then print(f'Modified: {glModified.source}') end
       if glExclude then print(f'Exclude: {glExclude.pattern}') end
+      if glContent then print(f'Content: {glContent}') end
       if glCount then print('Mode: count only') end
       if glExec then print(f'Exec: {glExec}') end
       print(f'Output: {glOutput}')
