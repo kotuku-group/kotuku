@@ -10,6 +10,7 @@ rx_symbol_decl            = <{ regex.new([[\s*(local|global)\s+([A-Za-z_][A-Za-z
 rx_symbol_assign          = <{ regex.new([[\s*([A-Za-z_][A-Za-z0-9_]*(?:[.:][A-Za-z_][A-Za-z0-9_]*)*)\s*(<const>)?\s*=]]) }>
 rx_symbol_struct          = <{ regex.new([[^\s*struct\s+([A-Za-z_][A-Za-z0-9_]*)\b]]) }>
 rx_symbol_struct_field    = <{ regex.new([[([A-Za-z_][A-Za-z0-9_]*)\s*:]]) }>
+rx_symbol_struct_end      = <{ regex.new([[\s+end\s*$]]) }>
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -330,7 +331,7 @@ function symbolAddStructFields(Symbol:table, LineCode:str, LineText:str, LineNo:
       if s then
          field_name = cap[0]
          field_type = segment:sub(e)
-         close_pos = field_type:find(' end', 0, true)
+         close_pos = rx_symbol_struct_end.findFirst(field_type)
          if close_pos then field_type = field_type:sub(0, close_pos) end
          field_type = field_type:trim()
          name_start = LineText:find(field_name, search_pos, true) or search_pos

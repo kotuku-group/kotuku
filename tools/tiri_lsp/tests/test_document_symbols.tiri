@@ -263,6 +263,16 @@ end
    assert(findChild(pair, 'Second').detail is 'int', 'Second comma-separated field should carry its type.')
 end
 
+@Test function StructSingleLineTabBeforeEnd()
+   doc = makeDoc('struct Point X: double, Y: double\tend\n')
+   symbols = extractDocumentSymbols(doc)
+   point = findSymbol(symbols, 'Point')
+   y_field = findChild(point, 'Y')
+
+   assert(y_field and y_field.detail is 'double',
+      'Whitespace before end should not be included in the final field type.')
+end
+
 @Test function StructLibraryUsageIsNotADeclaration()
    doc = makeDoc([[
 user = struct.new('User')
