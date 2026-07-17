@@ -494,7 +494,14 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 
       {
          std::lock_guard lock(glmObjects);
-         glObjects.erase(Resource.ResourceID);
+         if (auto object_rec = glObjects.find(Resource.ResourceID); object_rec != glObjects.end()) {
+            // The owner's Children entry must be removed before the object block can be released, so that
+            // pointers held in Children remain valid for as long as glmObjects is held.
+            if (auto owner_rec = glObjects.find(object_rec->second.OwnerID); owner_rec != glObjects.end()) {
+               owner_rec->second.Children.erase(Object);
+            }
+            glObjects.erase(object_rec);
+         }
       }
    } // Object lock
 
@@ -523,7 +530,7 @@ void object_add_child(ResourceRecord &Parent, ResourceRecord &Child)
    std::lock_guard lock(glmObjects);
 
    if (auto parent_object = glObjects.find(Parent.ResourceID); parent_object != glObjects.end()) {
-      if (Child.Manager IS &glResourceObject) parent_object->second.Children.insert(Child.ResourceID);
+      if (Child.Manager IS &glResourceObject) parent_object->second.Children.insert((OBJECTPTR)Child.Address);
       else parent_object->second.Resources.insert(Child.ResourceID);
    }
 }
@@ -536,7 +543,9 @@ void object_remove_child(ResourceRecord &Parent, ResourceRecord &Child)
 
    if (auto object_rec = glObjects.find(Parent.ResourceID); object_rec != glObjects.end()) {
       object_rec->second.Resources.erase(Child.ResourceID);
-      object_rec->second.Children.erase(Child.ResourceID);
+      // For freed objects the Address value may be stale; erase() only hashes the value and never
+      // dereferences it, and object_free() will have already removed the entry in that case.
+      object_rec->second.Children.erase((OBJECTPTR)Child.Address);
    }
 }
 
@@ -573,11 +582,9 @@ static void free_children(OBJECTPTR Object)
       // Free all children associated with this object.
 
       if (not object_rec->second.Children.empty()) {
-         for (const auto id : object_rec->second.Children) {
-            auto child_rec = glObjects.find(id);
-            if ((child_rec IS glObjects.end()) or (not child_rec->second.Object)) continue;
-
-            auto child = child_rec->second.Object;
+         // Snapshot UIDs rather than pointers; freeing one child can cascade-free a sibling, and a
+         // subsequent FreeResource() on a stale UID is a safe no-op.
+         for (const auto child : object_rec->second.Children) {
             if (not child->collecting()) {
                if (child->defined(NF::LOCAL)) {
                   log.warning("Found unfreed child object #%d (class %s) belonging to %s object #%d.", child->UID, ResolveClassID(child->classID()), Object->className(), Object->UID);
@@ -2051,12 +2058,7 @@ ERR ListChildren(OBJECTID ObjectID, kt::vector<ChildEntry> *List)
 
    std::unique_lock lock(glmObjects);
    if (auto object_rec = glObjects.find(ObjectID); object_rec != glObjects.end()) {
-      for (const auto id : object_rec->second.Children) {
-         auto child_rec = glObjects.find(id);
-         if (child_rec IS glObjects.end()) continue;
-
-         auto child = child_rec->second.Object;
-         if (not child) continue;
+      for (const auto child : object_rec->second.Children) {
          if (not child->defined(NF::LOCAL)) {
             List->emplace_back(child->UID, child->classID());
          }
@@ -2568,7 +2570,7 @@ ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner)
       }
    }
    else if (auto previous_owner = glObjects.find(object_rec->second.OwnerID); previous_owner != glObjects.end()) {
-      previous_owner->second.Children.erase(Object->UID);
+      previous_owner->second.Children.erase(Object);
    }
 
    object_rec->second.OwnerID = Owner->UID;

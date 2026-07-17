@@ -54,7 +54,9 @@ class ObjectRecord {
 public:
    OBJECTPTR Object;
    OBJECTID OwnerID;
-   ankerl::unordered_dense::set<OBJECTID> Children; // Object children
+   // Object children; entries are valid pointers whilst glmObjects is held.  Pinning of child objects is unnecessary,
+   // the code has been designed for this and maintaining that behaviour is essential.
+   ankerl::unordered_dense::set<OBJECTPTR> Children;
    ankerl::unordered_dense::set<RESOURCEID> Resources; // Non-object resources
 
    ObjectRecord() : Object(nullptr), OwnerID(0) { };
