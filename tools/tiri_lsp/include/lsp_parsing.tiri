@@ -453,9 +453,44 @@ global function tokenizeTiri(Source:str):array
          if isRangeOperator(start_pos, pos, ident) then
             addToken(line, ident_start, ident_len, 1, 0)  -- range separator operator
          elseif ident is 'struct' then
-            -- 'struct' is a soft keyword: it begins a declaration only when followed by an identifier and '{'
-            -- (newlines permitted, matching the parser's token-based lookahead).  Anything else is the runtime
-            -- library namespace, e.g. struct.new().
+            -- 'struct' is a soft keyword.  Followed immediately by '<' it forms a struct<Name> type reference or
+            -- explicit construction; followed by an identifier and '{' it begins a declaration (newlines permitted,
+            -- matching the parser's token-based lookahead).  Anything else is the runtime library namespace,
+            -- e.g. struct.new().
+            if pos < len and Source:sub(pos, pos + 1) is '<' then
+               sk_pos = pos
+               sk_col = col
+               pos++
+               col++
+               while pos < len and (Source:sub(pos, pos + 1) is ' ' or Source:sub(pos, pos + 1) is '\t') do
+                  pos++
+                  col++
+               end
+               if pos < len and isIdentStart(Source:sub(pos, pos + 1)) then
+                  name_col = col
+                  while pos < len and isIdentChar(Source:sub(pos, pos + 1)) do
+                     pos++
+                     col++
+                  end
+                  name_len = col - name_col
+                  while pos < len and (Source:sub(pos, pos + 1) is ' ' or Source:sub(pos, pos + 1) is '\t') do
+                     pos++
+                     col++
+                  end
+                  if pos < len and Source:sub(pos, pos + 1) is '>' then
+                     pos++
+                     col++
+                     addToken(line, ident_start, ident_len, 0, 0)  -- 'struct' keyword
+                     addToken(line, name_col, name_len, 11, 0)     -- referenced struct name: class
+                     continue
+                  end
+               end
+               -- Not a well-formed struct<Name>; rewind and fall through to the namespace token
+               pos = sk_pos
+               col = sk_col
+               addToken(line, ident_start, ident_len, 10, 0)  -- namespace ('struct' library)
+               continue
+            end
             sk_pos = pos
             sk_col = col
             sk_line = line

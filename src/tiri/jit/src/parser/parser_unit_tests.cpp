@@ -1456,7 +1456,7 @@ static bool test_state_local_struct_declarations(kt::Log &Log)
       }
 
       if (not parse_struct_source(first_state,
-            "local value:struct<ParserStateLocalRecord> = ParserStateLocalRecord()", error)) {
+            "local value:struct<ParserStateLocalRecord> = struct<ParserStateLocalRecord> { }", error)) {
          Log.error("later compilation in the same state could not resolve its declaration: %s", error.c_str());
          return false;
       }
@@ -1464,7 +1464,7 @@ static bool test_state_local_struct_declarations(kt::Log &Log)
       if (compile_snapshot(first_state,
             "struct ParserLocalExpectedRecord { Value: int }\n"
             "struct ParserLocalActualRecord { Value: double }\n"
-            "local value:struct<ParserLocalExpectedRecord> = ParserLocalActualRecord()", true, error).has_value()) {
+            "local value:struct<ParserLocalExpectedRecord> = struct<ParserLocalActualRecord> { }", true, error).has_value()) {
          Log.error("local declaration accepted an initialiser with a different struct layout");
          return false;
       }

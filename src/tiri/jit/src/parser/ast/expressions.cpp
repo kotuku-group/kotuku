@@ -817,6 +817,45 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          break;
       }
 
+      case TokenKind::StructTyped: {
+         // Explicit struct construction: struct<Name> { fields }
+         // Desugar to: struct.new('Name', { fields })
+         // This is the only declaration-based construction form; declarations do not bind a constructor variable.
+
+         Token start = this->ctx.tokens().current();
+         GCstr *name_str = start.payload().as_string();
+         std::string_view struct_name(strdata(name_str), name_str->len);
+         if (not find_struct(&this->ctx.lua(), struct_name)) {
+            return this->fail<ExprNodePtr>(ParserErrorCode::UnknownTypeName, start,
+               std::format("Unknown struct name '{}'; declarations must precede use", struct_name));
+         }
+         this->ctx.tokens().advance();
+
+         if (not this->ctx.check(TokenKind::LeftBrace)) {
+            return this->fail<ExprNodePtr>(ParserErrorCode::ExpectedToken, this->ctx.tokens().current(),
+               std::format("Expected '{{' to construct struct<{}>", struct_name));
+         }
+
+         auto table_result = this->parse_table_literal(false);
+         if (not table_result.ok()) return table_result;
+
+         SourceSpan span = start.span();
+
+         // Build struct.new('Name', { fields })
+         Identifier struct_id = Identifier::from_keepstr(this->ctx.lex().keepstr("struct"), span);
+         NameRef struct_ref;
+         struct_ref.identifier = struct_id;
+         ExprNodePtr struct_base = make_identifier_expr(span, struct_ref);
+         Identifier new_id = Identifier::from_keepstr(this->ctx.lex().keepstr("new"), span);
+         ExprNodePtr struct_new = make_member_expr(span, std::move(struct_base), new_id, false);
+
+         ExprNodeList args;
+         args.push_back(make_literal_expr(span, LiteralValue::string(name_str)));
+         args.push_back(std::move(table_result.value_ref()));
+         node = make_call_expr(span, std::move(struct_new), std::move(args), false);
+         break;
+      }
+
       case TokenKind::DeferredTyped: {
          // Typed deferred expression: <type{ expr }>
          // Desugar to: (thunk():explicit_type return expr end)()

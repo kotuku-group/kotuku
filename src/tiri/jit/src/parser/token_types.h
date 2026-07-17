@@ -82,6 +82,7 @@ enum class TokenKind : uint16_t {
    DeferredTyped = TK_defer_typed,
    DeferredClose = TK_defer_close,
    ArrayTyped = TK_array_typed,
+   StructTyped = TK_struct_typed,
    ThunkToken = TK_thunk,
    Choose = TK_choose,
    From = TK_from,
@@ -222,6 +223,7 @@ enum class TokenKind : uint16_t {
       case TokenKind::DeferredTyped: return "<type{";
       case TokenKind::DeferredClose: return "}>";
       case TokenKind::ArrayTyped: return "array<type>";
+      case TokenKind::StructTyped: return "struct<name>";
       case TokenKind::Choose: return "choose";
       case TokenKind::From: return "from";
       case TokenKind::When: return "when";

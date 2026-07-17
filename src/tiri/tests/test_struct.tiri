@@ -50,14 +50,14 @@ function declared_user_age(Value: struct<DeclaredUser>):num
 end
 
 function create_declared_user():struct<DeclaredUser>
-   return DeclaredUser()
+   return struct<DeclaredUser> { }
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Retrieve a known struct from a function and test the field values.
 
 @Test function NativeStructDeclarationConstruction()
-   local user = DeclaredUser { Name='Paul', Age=37, Enabled=true, Initial=65, Buffer='hello' }
+   local user = struct<DeclaredUser> { Name='Paul', Age=37, Enabled=true, Initial=65, Buffer='hello' }
    assert(type(user) is 'struct', 'A declared definition should construct a native struct')
    assert(user.Name is 'Paul' and user.Age is 37, 'Definition calls should apply initialiser fields verbatim')
    assert(user.Enabled is true, 'Boolean fields should be exposed as Tiri booleans')
@@ -66,21 +66,63 @@ end
    assert(create_declared_user().Age is 0, 'struct<Name> return annotations should parse and retain the layout')
    local typed_user:struct<DeclaredUser> = user
    assert(typed_user.Name is 'Paul', 'struct<Name> local annotations should resolve declared layouts')
+   local constructed_user:struct<DeclaredUser> = struct<DeclaredUser> { Age=42 }
+   assert(constructed_user.Age is 42, 'Explicit construction should retain its type in annotated assignments')
+   assert(declared_user_age(struct<DeclaredUser> { Age=31 }) is 31,
+      'Explicit construction should retain its type when passed to annotated parameters')
 
    user.Child.Value = 91
    assert(user.Child.Value is 91, 'Embedded declared structs should expose their fields')
    assert(user.ChildPointer is nil, 'Typed struct pointers should initialise to nil')
    assert(user.Object is nil, 'Object fields should initialise to nil')
 
-   local empty_user = DeclaredUser()
-   assert(empty_user.Age is 0 and empty_user.Name is '', 'Empty definition calls should zero-initialise fields')
+   local empty_user = struct<DeclaredUser> { }
+   assert(empty_user.Age is 0 and empty_user.Name is '', 'Empty initialisers should zero-initialise fields')
    assert(struct.new('DeclaredUser').Age is 0, 'struct.new() should interoperate with declarations')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Declarations no longer bind a constructor variable; construction must use the explicit struct<Name> form.
+
+@Test function ExplicitConstructionRequired()
+   try
+      exec([[
+struct RetiredTableSyntax { Value: int }
+local value = RetiredTableSyntax { Value=1 }
+]])
+   success
+      error('The retired Name { fields } construction syntax should fail to compile')
+   end
+
+   try
+      exec([[
+struct RetiredCallSyntax { Value: int }
+local value = RetiredCallSyntax()
+]])
+   success
+      error('The retired Name() construction syntax should fail to compile')
+   end
+
+   try
+      exec([[local value = struct<NotARegisteredStruct> { }]])
+   success
+      error('Constructing an unknown struct name should fail to compile')
+   end
+
+   try
+      exec([[
+struct MissingInitialiser { Value: int }
+local value = struct<MissingInitialiser>
+]])
+   success
+      error('struct<Name> without an initialiser table should fail to compile')
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function ConstrainedObjectField()
-   local holder = DeclaredUser()
+   local holder = struct<DeclaredUser> { }
    local clock = obj.new('time', { })
    holder.Clock = clock
    assert(holder.Clock.year is clock.year, 'obj<Class> fields should retain typed object references')
@@ -99,7 +141,7 @@ end
 -- accept it.  An exact ClassID comparison would incorrectly reject this.
 
 @Test function ConstrainedObjectFieldAcceptsSubClass()
-   local holder = DeclaredUser()
+   local holder = struct<DeclaredUser> { }
    local markup = obj.new('xml', { statement='<a/>' })
    holder.Markup = markup
    assert(holder.Markup is not nil, 'obj<Class> fields should accept an exact class match')
@@ -143,7 +185,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function NativeStructVectorRoundTrips()
-   local value = DeclaredVectorFields {
+   local value = struct<DeclaredVectorFields> {
       Int=array<int> { 1, 2, 3 },
       String=array<string> { 'alpha', 'beta' }
    }
@@ -179,7 +221,7 @@ end
    assert(#value.Int is 5, 'Whole-field assignment should resize dynamic vector fields')
 
    local clone = struct.clone(value)
-   local copy = DeclaredVectorFields()
+   local copy = struct<DeclaredVectorFields> { }
    struct.copy(copy, value)
    value.Int = array<int> { 99 }
    value.String = array<string> { 'changed' }
@@ -195,7 +237,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function NativeStructElementVectorRoundTrips()
-   local value = DeclaredVectorFields()
+   local value = struct<DeclaredVectorFields> { }
    value.Points = array<table> {
       { red=1, green=2, blue=3 },
       { red=4, green=5, blue=6 },
@@ -207,7 +249,7 @@ end
       'Struct vectors should use the exact three-byte C++ element stride')
 
    local clone = struct.clone(value)
-   local copy = DeclaredVectorFields()
+   local copy = struct<DeclaredVectorFields> { }
    struct.copy(copy, value)
    value.Points = array<table> { { red=20, green=21, blue=22 } }
    assert(#clone.Points is 3 and clone.Points[2].Blue is 9,
@@ -268,7 +310,7 @@ end
    exec([[
 struct IdenticalLayout { Value: int }
 struct IdenticalLayout { Value: int }
-local value = IdenticalLayout { Value=12 }
+local value = struct<IdenticalLayout> { Value=12 }
 assert(value.Value is 12)
 ]])
 
@@ -312,7 +354,7 @@ struct ConflictingLayout { Value: double }
    end
    exec([[
 struct ConflictingLayout { Value: double }
-local value = ConflictingLayout { Value=2.5 }
+local value = struct<ConflictingLayout> { Value=2.5 }
 assert(value.Value is 2.5)
 ]])
 
@@ -338,13 +380,13 @@ end
       if (i & 1) is 0 then
          statement = [[
 struct ConcurrentDeclaredStruct { Value: int }
-local value = ConcurrentDeclaredStruct { Value=42 }
+local value = struct<ConcurrentDeclaredStruct> { Value=42 }
 assert(value.Value is 42)
 ]]
       else
          statement = [[
 struct ConcurrentDeclaredStruct { Value: double }
-local value = ConcurrentDeclaredStruct { Value=42.5 }
+local value = struct<ConcurrentDeclaredStruct> { Value=42.5 }
 assert(value.Value is 42.5)
 ]]
       end
@@ -368,7 +410,7 @@ struct ConcurrentInvalidStruct { Value: mystery }]]
    assert(succeeded is total / 2 and failed is total / 2,
       f'Expected equal successful and failed concurrent declarations, got {succeeded}/{failed}')
    exec([[struct ConcurrentDeclaredStruct { Value: int }
-assert(ConcurrentDeclaredStruct { Value=17 }.Value is 17)]])
+assert(struct<ConcurrentDeclaredStruct> { Value=17 }.Value is 17)]])
 end
 
 @Test(hotpath=true)
