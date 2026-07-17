@@ -5,7 +5,7 @@ rx_action_prefix = <{ regex.new("^ac[A-Z]") }>
 rx_method_prefix = <{ regex.new("^mt[A-Z]") }>
 rx_struct_new  = <{ regex.new("([\\w]+)\\s*=\\s*struct\\.new\\s*\\(\\s*['\"]([\\w]+)['\"]", regex.DOT_ALL) }>
 rx_struct_anno = <{ regex.new([[([A-Za-z_]\w*)\s*:\s*struct<\s*([A-Za-z_]\w*)\s*>]]) }>
-rx_struct_ctor = <{ regex.new("([A-Za-z_]\\w*)\\s*=\\s*([A-Za-z_]\\w*)\\s*[\\(\\{]") }>
+rx_struct_ctor = <{ regex.new([[([A-Za-z_]\w*)\s*=\s*struct<\s*([A-Za-z_]\w*)\s*>]]) }>
 
 extern lspUriToPath, maskNonCode
 
@@ -117,8 +117,8 @@ function buildTypeMap(Doc)
    return typeMap
 end
 
--- Build a mapping of variable names to declared-struct names.  Sources, in increasing precedence: definition-value
--- construction (user = User {...} / User()), struct.new('Name') assignments, and struct<Name> type annotations.
+-- Build a mapping of variable names to declared-struct names.  Sources, in increasing precedence: explicit
+-- construction (user = struct<User> {...}), struct.new('Name') assignments, and struct<Name> type annotations.
 -- Constructor matches are speculative; lookups only succeed when the mapped name resolves to a struct symbol.
 
 function buildStructTypeMap(Doc:table, Position:table):table

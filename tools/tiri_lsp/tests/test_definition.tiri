@@ -203,7 +203,7 @@ end
 end
 
 @Test function LaterStructAssignmentDoesNotAffectEarlierDefinition()
-   doc = makeDoc('struct A { Value: int }\nstruct B { Value: float }\na = A()\nprint(a.Value)\na = B()\n')
+   doc = makeDoc('struct A { Value: int }\nstruct B { Value: float }\na = struct<A> { }\nprint(a.Value)\na = struct<B> { }\n')
    locations = resolveDefinition(doc, { line = 3, character = 10 })
    assertLocationLine(locations, 0, 'A later assignment must not change the type at an earlier field access')
 end

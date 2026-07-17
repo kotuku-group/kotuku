@@ -12,7 +12,7 @@ rx_def_struct         <const> = <{ regex.new([[^\s*struct\s+([A-Za-z_][A-Za-z0-9
 rx_def_struct_field   <const> = <{ regex.new([[([A-Za-z_][A-Za-z0-9_]*)\s*:]]) }>
 rx_def_struct_new     <const> = <{ regex.new([=[([A-Za-z_]\w*)\s*=\s*struct\.new\s*\(\s*['"]([A-Za-z_]\w*)['"]]=]) }>
 rx_def_struct_anno    <const> = <{ regex.new([[([A-Za-z_]\w*)\s*:\s*struct<\s*([A-Za-z_]\w*)\s*>]]) }>
-rx_def_struct_ctor    <const> = <{ regex.new([=[([A-Za-z_]\w*)\s*=\s*([A-Za-z_]\w*)\s*[\(\{]]=]) }>
+rx_def_struct_ctor    <const> = <{ regex.new([[([A-Za-z_]\w*)\s*=\s*struct<\s*([A-Za-z_]\w*)\s*>]]) }>
 rx_def_loader_before  <const> = <{ regex.new(
    [[\b(import|require|include)\s*(?:\(\s*)?]] ..
    [[(?:(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')\s*,\s*)*$]]

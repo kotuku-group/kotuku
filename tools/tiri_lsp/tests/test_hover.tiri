@@ -230,11 +230,11 @@ end
 struct User {
    Name: string -- The user name
 }
-user = User { Name = 'Paul' }
+user = struct<User> { Name = 'Paul' }
 print(user.Na|me)
 ]])
 
-   assertContains(hover, 'User.Name', 'Definition-value construction should map the variable to its struct.')
+   assertContains(hover, 'User.Name', 'Explicit struct construction should map the variable to its struct.')
    assertContains(hover, 'The user name', 'Constructed instance hover should include the doc comment.')
 end
 

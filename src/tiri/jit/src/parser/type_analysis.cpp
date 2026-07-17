@@ -1507,6 +1507,21 @@ void TypeAnalyser::analyse_call_expr(const CallExprPayload &Call)
             Call.result_type = TiriType::Struct;
             Call.struct_def = callable->struct_def;
          }
+         else if (not callable and not this->lookup_global_type(name_ref.identifier.symbol)) {
+            // Declared structs no longer bind constructor variables.  A call on an unresolved name that matches a
+            // registered struct is almost certainly the retired 'Name { ... }' / 'Name()' construction syntax.
+            std::string_view name(strdata(name_ref.identifier.symbol), name_ref.identifier.symbol->len);
+            if (find_struct(&this->ctx_.lua(), name)) {
+               TypeDiagnostic diag;
+               diag.location = direct->callable->span;
+               diag.expected = TiriType::Struct;
+               diag.actual = TiriType::Nil;
+               diag.code = ParserErrorCode::UnexpectedToken;
+               diag.message = std::format("'{}' is a struct declaration; construct instances with struct<{}> {{ ... }}",
+                  name, name);
+               this->record_diagnostic(std::move(diag));
+            }
+         }
       }
    }
 

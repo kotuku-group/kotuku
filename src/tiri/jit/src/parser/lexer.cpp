@@ -575,6 +575,7 @@ static LexToken lex_scan(LexState *, TValue *);
       case TK_string:
       case TK_regex_string:
       case TK_array_typed:
+      case TK_struct_typed:
       case TK_defer_typed:
       case TK_pipe:
          return true;
@@ -1166,6 +1167,37 @@ static LexToken lex_array_typed(LexState *State, TValue *tv)
 }
 
 //********************************************************************************************************************
+// Scan a struct type reference: struct<Name>
+// Caller has already scanned "struct" and confirmed c is '<'
+// Returns TK_struct_typed with the referenced struct name in tv
+
+static LexToken lex_struct_typed(LexState *State, TValue *tv)
+{
+   lex_next(State);  // Consume '<'
+   lex_skip_inline_ws(State);
+
+   if (not (isalpha(State->c) or State->c IS '_')) {
+      lj_lex_error(State, lex_current_char_token(State), ErrMsg::XTOKEN, State->token2str(TK_name));
+   }
+
+   lj_buf_reset(&State->sb);
+   do {
+      lex_savenext(State);
+   } while (lj_char_isident(State->c));
+
+   auto name_str = std::string_view(State->sb.b, sbuflen(&State->sb));
+
+   lex_skip_inline_ws(State);
+   if (State->c != '>') {
+      lj_lex_error(State, lex_current_char_token(State), ErrMsg::XTOKEN, State->token2str('>'));
+   }
+   lex_next(State);  // Consume '>'
+
+   setstrV(State->L, tv, State->keepstr(name_str));
+   return TK_struct_typed;
+}
+
+//********************************************************************************************************************
 // Token scanner, main entry point
 
 static LexToken lex_scan(LexState *State, TValue *tv)
@@ -1240,6 +1272,11 @@ static LexToken lex_scan(LexState *State, TValue *tv)
          // Check for array<type> syntax before interning the string
          if (str_view IS "array" and State->c IS '<') {
             return lex_array_typed(State, tv);
+         }
+
+         // Check for struct<Name> syntax (type references and explicit construction)
+         if (str_view IS "struct" and State->c IS '<') {
+            return lex_struct_typed(State, tv);
          }
 
          // Check for f-string prefix: f"..." or f'...'

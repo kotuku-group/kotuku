@@ -376,15 +376,17 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
       if (not colon.ok()) return ParserResult<StmtNodePtr>::failure(colon.error_ref());
       Token type_token = this->ctx.tokens().current();
       bool array_type = type_token.kind() IS TokenKind::ArrayTyped;
+      bool struct_typed = type_token.kind() IS TokenKind::StructTyped;
       int64_t array_dimension = array_type ? this->ctx.lex().array_typed_size : -1;
-      if (array_type) this->ctx.tokens().advance();
+      if (array_type or struct_typed) this->ctx.tokens().advance();
       else {
          auto type_result = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
          if (not type_result.ok()) return ParserResult<StmtNodePtr>::failure(type_result.error_ref());
          type_token = type_result.value_ref();
       }
-      GCstr *type_symbol = array_type ? type_token.payload().as_string() : type_token.identifier();
+      GCstr *type_symbol = (array_type or struct_typed) ? type_token.payload().as_string() : type_token.identifier();
       std::string_view type_name = array_type ? std::string_view("array") :
+         struct_typed ? std::string_view("struct") :
          std::string_view(strdata(type_symbol), type_symbol->len);
 
       struct_field field;
@@ -454,6 +456,20 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
          field.Type |= FD_CPP|FD_ARRAY;
          field.ArraySize = 1;
          type_display = std::format("array<{}>", element_name);
+      }
+      else if (struct_typed) {
+         // Embedded struct reference in the single-token struct<Name> form
+         std::string_view reference_name(strdata(type_symbol), type_symbol->len);
+         auto referenced = find_struct(&this->ctx.lua(), reference_name);
+         if (not referenced) {
+            return this->fail<StmtNodePtr>(ParserErrorCode::UnknownTypeName, type_token,
+               std::format("Unknown struct name '{}'; declarations must precede use", reference_name));
+         }
+         field.Type = FD_STRUCT;
+         field.NativeType = NativeStructType::Struct;
+         field.StructRef = struct_key(reference_name);
+         field.StructDefinition = referenced;
+         type_display = std::format("struct<{}>", reference_name);
       }
       else if (type_name IS "bool") { field.Type = FD_BYTE; field.NativeType = NativeStructType::Bool; }
       else if (type_name IS "char") { field.Type = FD_BYTE|FD_CUSTOM; field.NativeType = NativeStructType::Char; }
@@ -626,28 +642,17 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
          std::format("Struct '{}' conflicts with its previous declaration{}", struct_name, location));
    }
    if (inserted) this->track_registered_struct(struct_key(struct_name));
-   auto registered = find_struct(&this->ctx.lua(), struct_name);
 
    if (collect_meta) {
       meta.end_span = close.value_ref().span();
       this->ctx.lex().struct_declaration_metadata.push_back(std::move(meta));
    }
 
-   Identifier variable = make_identifier(name_token.value_ref());
-   variable.type = TiriType::Func;
-   variable.struct_def = registered;
-   Identifier struct_identifier(&this->ctx.lua(), "struct", struct_token.span());
-   Identifier def_identifier(&this->ctx.lua(), "def", struct_token.span());
-   NameRef struct_reference;
-   struct_reference.identifier = struct_identifier;
-   auto base = make_identifier_expr(struct_token.span(), struct_reference);
-   auto callee = make_member_expr(struct_token.span(), std::move(base), def_identifier, false);
-   ExprNodeList arguments;
-   arguments.push_back(make_literal_expr(name_token.value_ref().span(),
-      LiteralValue::string(this->ctx.lex().keepstr(struct_name))));
-   ExprNodeList values;
-   values.push_back(make_call_expr(struct_token.span(), std::move(callee), std::move(arguments), false));
-   return ParserResult<StmtNodePtr>::success(make_local_decl_stmt(struct_token.span(), { variable }, std::move(values)));
+   // Declarations only register the layout.  Construction is explicit via struct<Name> { ... }, so no
+   // constructor variable is bound and the declaration itself emits no bytecode.
+   auto stmt = std::make_unique<StmtNode>(AstNodeKind::DoStmt, struct_token.span());
+   stmt->data = DoStmtPayload(make_block(struct_token.span(), {}));
+   return ParserResult<StmtNodePtr>::success(std::move(stmt));
 }
 
 static bool is_prefixed_attribute_token(TokenStreamAdapter &Tokens)
