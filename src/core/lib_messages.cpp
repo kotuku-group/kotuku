@@ -335,6 +335,18 @@ timer_cycle:
       else if (glmTimer.try_lock_for(200ms)) {
          int64_t current_time = PreciseTime();
          for (auto timer=glTimers.begin(); timer != glTimers.end(); ) {
+            if ((timer->Subscriber) and (not timer->Locked) and (timer->Subscriber->terminating())) {
+               // Sweep orphaned subscriptions ahead of the deadline gate; a subscriber freed during its own
+               // callback would otherwise retain its entry and weak pin until the next interval elapsed.
+               // Locked entries belong to a dispatcher mid-callback and are left for it to remove.
+               if (timer->Routine.isScript() and (not timer->Routine.stale())) {
+                  ((objScript *)timer->Routine.Context)->derefProcedure(timer->Routine);
+               }
+               if (timer->Routine.defined()) timer->Routine.unpin();
+               timer->Subscriber->unpinWeak();
+               timer = glTimers.erase(timer);
+               continue;
+            }
             if (current_time < timer->NextCall) { timer++; continue; }
             if (timer->Cycle IS glTimerCycle) { timer++; continue; }
             if (timer->Routine.releaseIfStale()) {
