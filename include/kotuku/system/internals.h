@@ -53,20 +53,20 @@ public:
 class ObjectRecord {
 public:
    OBJECTPTR Object;
-   OBJECTID OwnerID;
+   OBJECTPTR Owner; // Null or a valid pointer whilst glmObjects is held; nulled by object_free() when the owner dies first
    // Object children; entries are valid pointers whilst glmObjects is held.  Pinning of child objects is unnecessary,
    // the code has been designed for this and maintaining that behaviour is essential.
    ankerl::unordered_dense::set<OBJECTPTR> Children;
    ankerl::unordered_dense::set<RESOURCEID> Resources; // Non-object resources
 
-   ObjectRecord() : Object(nullptr), OwnerID(0) { };
+   ObjectRecord() : Object(nullptr), Owner(nullptr) { };
 
-   ObjectRecord(OBJECTPTR AObject, OBJECTID AOwnerID = 0) :
-      Object(AObject), OwnerID(AOwnerID) { };
+   ObjectRecord(OBJECTPTR AObject, OBJECTPTR AOwner = nullptr) :
+      Object(AObject), Owner(AOwner) { };
 
    void clear() {
       Object = nullptr;
-      OwnerID = 0;
+      Owner = nullptr;
       Children.clear();
       Resources.clear();
    }
