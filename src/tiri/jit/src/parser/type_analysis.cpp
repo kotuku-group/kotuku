@@ -1546,7 +1546,8 @@ void TypeAnalyser::analyse_call_expr(const CallExprPayload &Call)
 
    const FunctionExprPayload* target = this->resolve_call_target(Call.target);
    if (target) {
-      if (target->return_types.is_explicit and target->return_types.count > 0) {
+      if (Call.result_type IS TiriType::Unknown and target->return_types.is_explicit and
+          target->return_types.count > 0) {
          Call.result_type = target->return_types.types[0];
          Call.struct_def = target->return_types.struct_defs[0];
       }

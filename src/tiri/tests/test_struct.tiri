@@ -66,6 +66,10 @@ end
    assert(create_declared_user().Age is 0, 'struct<Name> return annotations should parse and retain the layout')
    local typed_user:struct<DeclaredUser> = user
    assert(typed_user.Name is 'Paul', 'struct<Name> local annotations should resolve declared layouts')
+   local constructed_user:struct<DeclaredUser> = struct<DeclaredUser> { Age=42 }
+   assert(constructed_user.Age is 42, 'Explicit construction should retain its type in annotated assignments')
+   assert(declared_user_age(struct<DeclaredUser> { Age=31 }) is 31,
+      'Explicit construction should retain its type when passed to annotated parameters')
 
    user.Child.Value = 91
    assert(user.Child.Value is 91, 'Embedded declared structs should expose their fields')
