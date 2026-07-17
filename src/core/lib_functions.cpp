@@ -958,7 +958,6 @@ ERR SubscribeTimer(double Interval, FUNCTION *Callback, APTR *Subscription)
       }
 
       auto it = glTimers.emplace(glTimers.end());
-      it->SubscriberID    = subscriber->UID;
       it->Interval        = usInterval;
       it->PendingInterval = 0;
       it->LastCall        = subscribed;
@@ -969,8 +968,13 @@ ERR SubscribeTimer(double Interval, FUNCTION *Callback, APTR *Subscription)
 
       it->Routine.pin();
 
-      if (subscriber->UID > 0) it->Subscriber = subscriber;
-      else it->Subscriber = nullptr;
+      if (subscriber->UID) {
+         // The weak pin keeps the subscriber's header readable so that the dispatcher can detect and remove
+         // orphaned subscriptions if the object_free() cleanup misses them due to a glmTimer lock timeout.
+         it->Subscriber = subscriber;
+         subscriber->pinWeak();
+      }
+      else it->Subscriber = nullptr; // Subscribed from the dummy context; internal subscriptions have no subscriber
 
       // This flag lets object_free() cheaply detect and remove abandoned timer subscriptions.
       subscriber->setFlag(NF::TIMER_SUB);
@@ -1051,6 +1055,7 @@ ERR UpdateTimer(APTR Subscription, double Interval)
 
          for (auto it=glTimers.begin(); it != glTimers.end(); it++) {
             if (timer IS &(*it)) {
+               if (it->Subscriber) it->Subscriber->unpinWeak();
                glTimers.erase(it);
                break;
             }

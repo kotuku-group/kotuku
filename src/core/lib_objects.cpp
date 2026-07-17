@@ -459,13 +459,14 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 
          if (auto lock = std::unique_lock{glmTimer, 1000ms}) {
             for (auto it=glTimers.begin(); it != glTimers.end(); ) {
-               if (it->SubscriberID IS Object->UID) {
+               if (it->Subscriber IS Object) {
                   log.warning("%s object #%d has an unfreed timer subscription, routine %p, interval %" PF64,
                      mc->ClassName.c_str(), Object->UID, &it->Routine, (long long)it->Interval);
                   if (it->Routine.isScript() and (not it->Routine.stale()) and (it->Routine.Context != Object)) {
                      script_routines.emplace_back(it->Routine);
                   }
                   if (it->Routine.defined()) it->Routine.unpin();
+                  it->Subscriber->unpinWeak();
                   it = glTimers.erase(it);
                }
                else it++;

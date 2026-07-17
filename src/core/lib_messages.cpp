@@ -338,6 +338,7 @@ timer_cycle:
             if (current_time < timer->NextCall) { timer++; continue; }
             if (timer->Cycle IS glTimerCycle) { timer++; continue; }
             if (timer->Routine.releaseIfStale()) {
+               if (timer->Subscriber) timer->Subscriber->unpinWeak();
                timer = glTimers.erase(timer);
                continue;
             }
@@ -354,38 +355,43 @@ timer_cycle:
             timer->LastCall = current_time;
             timer->Cycle = glTimerCycle;
 
-            //log.trace("Subscriber: %d, Interval: %d, Time: %" PRId64, timer->SubscriberID, timer->Interval, current_time);
-
             timer->Locked = true; // Prevents termination of the structure irrespective of having a TL_TIMER lock.
 
             bool relock = false;
-            if (timer->Routine.isC()) {
-               OBJECTPTR subscriber;
-               if (!timer->SubscriberID) { // Internal subscriptions like process_janitor() don't have a subscriber
+            if ((timer->Subscriber) and (timer->Subscriber->terminating())) {
+               // Orphaned entry: the subscriber terminated but object_free() could not acquire glmTimer to remove
+               // the subscription.  The weak pin keeps the subscriber's header readable for this detection.
+               error = ERR::Terminate;
+            }
+            else if (timer->Routine.isC()) {
+               if (auto subscriber = timer->Subscriber) {
+                  if (!LockObject(subscriber, 50)) {
+                     kt::SwitchContext context(subscriber);
+
+                     auto routine = (ERR (*)(OBJECTPTR, int64_t, int64_t, APTR))timer->Routine.Routine;
+                     glmTimer.unlock();
+                     relock = true;
+
+                     error = routine(subscriber, elapsed, current_time, timer->Routine.Meta);
+
+                     ReleaseObject(subscriber);
+                  }
+                  else error = ERR::AccessObject;
+               }
+               else { // Internal subscriptions like process_janitor() don't have a subscriber
                   auto routine = (ERR (*)(OBJECTPTR, int64_t, int64_t, APTR))timer->Routine.Routine;
                   glmTimer.unlock();
                   relock = true;
                   error = routine(nullptr, elapsed, current_time, timer->Routine.Meta);
                }
-               else if (!AccessObject(timer->SubscriberID, 50, &subscriber)) {
-                  kt::SwitchContext context(subscriber);
-
-                  auto routine = (ERR (*)(OBJECTPTR, int64_t, int64_t, APTR))timer->Routine.Routine;
-                  glmTimer.unlock();
-                  relock = true;
-
-                  error = routine(subscriber, elapsed, current_time, timer->Routine.Meta);
-
-                  ReleaseObject(subscriber);
-               }
-               else error = ERR::AccessObject;
             }
             else if (timer->Routine.isScript()) {
+               OBJECTID subscriber_id = timer->Subscriber ? timer->Subscriber->UID : 0;
                glmTimer.unlock();
                relock = true;
 
                if (sc::Call(timer->Routine, std::to_array<ScriptArg>({
-                     { "Subscriber",  timer->SubscriberID, FDF_OBJECTID },
+                     { "Subscriber",  subscriber_id, FDF_OBJECTID },
                      { "Elapsed",     elapsed },
                      { "CurrentTime", current_time }
                   }), error) != ERR::Okay) error = ERR::Terminate;
@@ -399,6 +405,7 @@ timer_cycle:
                   ((objScript *)timer->Routine.Context)->derefProcedure(timer->Routine);
                }
                if (timer->Routine.defined()) timer->Routine.unpin();
+               if (timer->Subscriber) timer->Subscriber->unpinWeak();
 
                timer = glTimers.erase(timer);
             }
