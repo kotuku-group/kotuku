@@ -487,11 +487,6 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
          }
       }
 
-      // Clear the object header to help raise use-after-free errors.
-
-      Object->Class = nullptr;
-      Object->UID   = 0;
-
       {
          std::lock_guard lock(glmObjects);
          if (auto object_rec = glObjects.find(Resource.ResourceID); object_rec != glObjects.end()) {
@@ -515,6 +510,13 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
             glObjects.erase(object_rec);
          }
       }
+
+      // Clear the object header to help raise use-after-free errors.  The UID must remain valid until after the
+      // critical section above; a child completing deferred collection on another thread resolves this object's
+      // record via glObjects.find(Owner->UID) to remove itself from the Children set.
+
+      Object->Class = nullptr;
+      Object->UID   = 0;
    } // Object lock
 
    Object->setFlag(NF::ZOMBIE);
