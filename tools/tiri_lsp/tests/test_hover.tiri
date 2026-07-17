@@ -180,10 +180,10 @@ end
 
 @Test function StructDeclarationHoverShowsFields()
    hover, token = hoverAt([[
-struct Us|er {
+struct Us|er
    Name: string -- The user name
    Age: int
-}
+end
 ]])
 
    assert(token and token.text is 'User', 'Hover token extraction should identify the struct name.')
@@ -195,10 +195,10 @@ end
 
 @Test function StructFieldHoverViaStructNew()
    hover, token = hoverAt([[
-struct User {
+struct User
    Name: string -- The user name
    Age: int
-}
+end
 u = struct.new('User')
 print(u.Na|me)
 ]])
@@ -211,10 +211,10 @@ end
 
 @Test function StructFieldHoverViaAnnotatedParameter()
    hover, token = hoverAt([[
-struct User {
+struct User
    Name: string
    Age: int -- Age in years
-}
+end
 function describe(Person: struct<User>)
    return Person.Ag|e
 end
@@ -227,9 +227,9 @@ end
 
 @Test function StructFieldHoverViaConstruction()
    hover, token = hoverAt([[
-struct User {
+struct User
    Name: string -- The user name
-}
+end
 user = struct<User> { Name = 'Paul' }
 print(user.Na|me)
 ]])
@@ -240,9 +240,9 @@ end
 
 @Test function StructUnknownFieldHasNoHover()
    hover, token = hoverAt([[
-struct User {
+struct User
    Name: string
-}
+end
 u = struct.new('User')
 print(u.Mis|sing)
 ]])
@@ -253,12 +253,12 @@ end
 
 @Test function LaterStructAssignmentDoesNotAffectEarlierHover()
    hover, token = hoverAt([[
-struct A {
+struct A
    Value: int -- Value from A
-}
-struct B {
+end
+struct B
    Value: float -- Value from B
-}
+end
 u = struct.new('A')
 print(u.Val|ue)
 u = struct.new('B')
