@@ -45,7 +45,7 @@ end
 function hoverAt(Content:str):<str,table>
    doc, position = makeDocAtMarker(Content)
    token = getTokenAtPosition(doc, position.line, position.character)
-   return resolveHoverContent(token, doc), token
+   return resolveHoverContent(token, doc, position), token
 end
 
 function assertContains(Text:str, Needle:str, Message:str)
@@ -249,4 +249,23 @@ print(u.Mis|sing)
 
    assert(token and token.text is 'Missing', 'Token extraction should identify the unknown field.')
    assert(not hover, 'Unknown struct fields should not produce hover content.')
+end
+
+@Test function LaterStructAssignmentDoesNotAffectEarlierHover()
+   hover, token = hoverAt([[
+struct A {
+   Value: int -- Value from A
+}
+struct B {
+   Value: float -- Value from B
+}
+u = struct.new('A')
+print(u.Val|ue)
+u = struct.new('B')
+]])
+
+   assert(token and token.text is 'Value' and token.object is 'u', 'Token extraction should identify field access.')
+   assertContains(hover, 'A.Value', 'A later assignment must not change the earlier field hover type.')
+   assertContains(hover, '`int`', 'The earlier field hover should use the first struct field type.')
+   assertContains(hover, 'Value from A', 'The earlier field hover should use the first struct documentation.')
 end

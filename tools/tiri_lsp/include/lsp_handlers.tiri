@@ -537,7 +537,7 @@ global function registerCoreHandlers(Self)
          (tokenInfo.object and (' object=' .. tokenInfo.object) or ''))
 
       -- Attempt to resolve documentation
-      hoverContent = resolveHoverContent(tokenInfo, doc)
+      hoverContent = resolveHoverContent(tokenInfo, doc, position)
 
       if not hoverContent then
          return {
