@@ -329,13 +329,26 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
    if (not name_token.ok()) return ParserResult<StmtNodePtr>::failure(name_token.error_ref());
    GCstr *name_symbol = name_token.value_ref().identifier();
    std::string struct_name(strdata(name_symbol), name_symbol->len);
-   auto open = this->ctx.consume(TokenKind::LeftBrace, ParserErrorCode::ExpectedToken);
-   if (not open.ok()) return ParserResult<StmtNodePtr>::failure(open.error_ref());
+   if (this->ctx.check(TokenKind::LeftBrace)) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         "Struct declarations use 'end' termination; braces are reserved for struct<Name> { ... } construction");
+   }
 
-   // Capture comments for the body only.  The statement dispatcher peeks ahead as far as '{' to recognise the
-   // declaration, so nothing before this point could have been captured anyway.
+   // Capture comments for the body only.  The statement dispatcher peeks through the declaration name, so nothing
+   // before this point could have been captured anyway.
 
    CommentCaptureGuard comment_capture(this->ctx.lex());
+
+   // Tooling metadata (field display types, doc comments, spans) is only captured for documentation-processing
+   // parses such as debug.validate(source, { symbols = true }); normal compiles skip the collection entirely.
+   lua_State &lua_ref = this->ctx.lua();
+   bool collect_meta = lua_ref.script and ((lua_ref.script->Flags & SCF::PROCESS_DOC) != SCF::NIL);
+   LexState::StructDeclarationMetadata meta;
+   if (collect_meta) {
+      meta.name = struct_name;
+      meta.keyword_span = struct_token.span();
+      meta.name_span = name_token.value_ref().span();
+   }
 
    struct_record record(struct_name);
    record.DeclarationLine = struct_token.span().line.lineNumber();
@@ -343,7 +356,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
       record.DeclarationSource.assign(strdata(source_symbol), source_symbol->len);
    }
 
-   while (not this->ctx.check(TokenKind::RightBrace)) {
+   while (not this->ctx.check(TokenKind::EndToken)) {
       if (this->ctx.check(TokenKind::EndOfFile)) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedEndOfFile, struct_token,
             "Unterminated struct declaration");
@@ -365,21 +378,24 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
       if (not colon.ok()) return ParserResult<StmtNodePtr>::failure(colon.error_ref());
       Token type_token = this->ctx.tokens().current();
       bool array_type = type_token.kind() IS TokenKind::ArrayTyped;
+      bool struct_typed = type_token.kind() IS TokenKind::StructTyped;
       int64_t array_dimension = array_type ? this->ctx.lex().array_typed_size : -1;
-      if (array_type) this->ctx.tokens().advance();
+      if (array_type or struct_typed) this->ctx.tokens().advance();
       else {
          auto type_result = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
          if (not type_result.ok()) return ParserResult<StmtNodePtr>::failure(type_result.error_ref());
          type_token = type_result.value_ref();
       }
-      GCstr *type_symbol = array_type ? type_token.payload().as_string() : type_token.identifier();
+      GCstr *type_symbol = (array_type or struct_typed) ? type_token.payload().as_string() : type_token.identifier();
       std::string_view type_name = array_type ? std::string_view("array") :
+         struct_typed ? std::string_view("struct") :
          std::string_view(strdata(type_symbol), type_symbol->len);
 
       struct_field field;
       field.Name = field_name;
       field.ArraySize = 0;
       bool dynamic_array = false;
+      std::string type_display;  // Display spelling of the type for tooling metadata, e.g. 'obj<NetSocket>'
       if (type_name IS "array") {
          dynamic_array = true;
          if (array_dimension != -1) {
@@ -441,6 +457,21 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
 
          field.Type |= FD_CPP|FD_ARRAY;
          field.ArraySize = 1;
+         type_display = std::format("array<{}>", element_name);
+      }
+      else if (struct_typed) {
+         // Embedded struct reference in the single-token struct<Name> form
+         std::string_view reference_name(strdata(type_symbol), type_symbol->len);
+         auto referenced = find_struct(&this->ctx.lua(), reference_name);
+         if (not referenced) {
+            return this->fail<StmtNodePtr>(ParserErrorCode::UnknownTypeName, type_token,
+               std::format("Unknown struct name '{}'; declarations must precede use", reference_name));
+         }
+         field.Type = FD_STRUCT;
+         field.NativeType = NativeStructType::Struct;
+         field.StructRef = struct_key(reference_name);
+         field.StructDefinition = referenced;
+         type_display = std::format("struct<{}>", reference_name);
       }
       else if (type_name IS "bool") { field.Type = FD_BYTE; field.NativeType = NativeStructType::Bool; }
       else if (type_name IS "char") { field.Type = FD_BYTE|FD_CUSTOM; field.NativeType = NativeStructType::Char; }
@@ -477,6 +508,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
             GCstr *class_symbol = class_name.value_ref().identifier();
             std::string_view class_view(strdata(class_symbol), class_symbol->len);
             field.ObjectClassID = CLASSID(kt::strihash(class_view));
+            type_display = std::format("obj<{}>", class_view);
             auto close = this->ctx.consume(TokenKind::Greater, ParserErrorCode::ExpectedToken);
             if (not close.ok()) return ParserResult<StmtNodePtr>::failure(close.error_ref());
          }
@@ -515,15 +547,18 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
                return this->fail<StmtNodePtr>(ParserErrorCode::UnknownTypeName, reference.value_ref(),
                   std::format("Unknown struct name '{}'; declarations must precede use", reference_name));
             }
+            type_display = std::format("{}<{}", type_name, reference_name);
             // Handling for ptr<Struct[]>
             if (is_pointer and this->ctx.match(TokenKind::LeftBracket).ok()) {
                auto empty = this->ctx.consume(TokenKind::RightBracket, ParserErrorCode::ExpectedToken);
                if (not empty.ok()) return ParserResult<StmtNodePtr>::failure(empty.error_ref());
                field.Type |= FD_ARRAY;
                field.ArraySize = -1;
+               type_display += "[]";
             }
             auto close = this->ctx.consume(TokenKind::Greater, ParserErrorCode::ExpectedToken);
             if (not close.ok()) return ParserResult<StmtNodePtr>::failure(close.error_ref());
+            type_display += ">";
          }
          else if (not is_pointer) {
             return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, type_token,
@@ -534,6 +569,8 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
          return this->fail<StmtNodePtr>(ParserErrorCode::UnknownTypeName, type_token,
             std::format("Unknown struct field type '{}'", type_name));
       }
+
+      if (type_display.empty()) type_display.assign(type_name);
 
       if (this->ctx.match(TokenKind::LeftBracket).ok()) {
          Token dimension = this->ctx.tokens().current();
@@ -554,6 +591,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
          }
          field.Type |= FD_ARRAY;
          field.ArraySize = int(dimension_value);
+         type_display += std::format("[{}]", int(dimension_value));
          this->ctx.tokens().advance();
          auto close = this->ctx.consume(TokenKind::RightBracket, ParserErrorCode::ExpectedToken);
          if (not close.ok()) return ParserResult<StmtNodePtr>::failure(close.error_ref());
@@ -564,6 +602,10 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
 
       auto documentation = this->ctx.lex().documentation_for_line(
          field_token.value_ref().span().line.lineNumber());
+      if (collect_meta) {
+         meta.fields.push_back({ field_name, std::move(type_display), documentation,
+            field_token.value_ref().span() });
+      }
       if (not documentation.empty()) {
          this->ctx.lex().struct_field_documentation.push_back({ struct_name, field_name,
             std::move(documentation), field_token.value_ref().span() });
@@ -571,14 +613,14 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
 
       Token last = this->ctx.tokens().current();
       if (this->ctx.match(TokenKind::Comma).ok()) continue;
-      if (this->ctx.check(TokenKind::RightBrace)) continue;
+      if (this->ctx.check(TokenKind::EndToken)) continue;
       if (last.span().line.lineNumber() <= type_token.span().line.lineNumber()) {
          return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, last,
-            "Expected a newline, ',' or '}' after struct field");
+            "Expected a newline, ',' or 'end' after struct field");
       }
    }
 
-   auto close = this->ctx.consume(TokenKind::RightBrace, ParserErrorCode::ExpectedToken);
+   auto close = this->ctx.consume(TokenKind::EndToken, ParserErrorCode::ExpectedToken);
    if (not close.ok()) return ParserResult<StmtNodePtr>::failure(close.error_ref());
    if (record.Fields.empty()) {
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, struct_token,
@@ -602,23 +644,17 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
          std::format("Struct '{}' conflicts with its previous declaration{}", struct_name, location));
    }
    if (inserted) this->track_registered_struct(struct_key(struct_name));
-   auto registered = find_struct(&this->ctx.lua(), struct_name);
 
-   Identifier variable = make_identifier(name_token.value_ref());
-   variable.type = TiriType::Func;
-   variable.struct_def = registered;
-   Identifier struct_identifier(&this->ctx.lua(), "struct", struct_token.span());
-   Identifier def_identifier(&this->ctx.lua(), "def", struct_token.span());
-   NameRef struct_reference;
-   struct_reference.identifier = struct_identifier;
-   auto base = make_identifier_expr(struct_token.span(), struct_reference);
-   auto callee = make_member_expr(struct_token.span(), std::move(base), def_identifier, false);
-   ExprNodeList arguments;
-   arguments.push_back(make_literal_expr(name_token.value_ref().span(),
-      LiteralValue::string(this->ctx.lex().keepstr(struct_name))));
-   ExprNodeList values;
-   values.push_back(make_call_expr(struct_token.span(), std::move(callee), std::move(arguments), false));
-   return ParserResult<StmtNodePtr>::success(make_local_decl_stmt(struct_token.span(), { variable }, std::move(values)));
+   if (collect_meta) {
+      meta.end_span = close.value_ref().span();
+      this->ctx.lex().struct_declaration_metadata.push_back(std::move(meta));
+   }
+
+   // Declarations only register the layout.  Construction is explicit via struct<Name> { ... }, so no
+   // constructor variable is bound and the declaration itself emits no bytecode.
+   auto stmt = std::make_unique<StmtNode>(AstNodeKind::DoStmt, struct_token.span());
+   stmt->data = DoStmtPayload(make_block(struct_token.span(), {}));
+   return ParserResult<StmtNodePtr>::success(std::move(stmt));
 }
 
 static bool is_prefixed_attribute_token(TokenStreamAdapter &Tokens)

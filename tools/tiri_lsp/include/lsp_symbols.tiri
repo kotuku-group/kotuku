@@ -8,6 +8,9 @@ rx_symbol_named_function  = <{ regex.new([[\s*(local\s+|global\s+)?(function|thu
 rx_symbol_assign_function = <{ regex.new([[\s*(local\s+|global\s+)?([A-Za-z_][A-Za-z0-9_]*(?:[.:][A-Za-z_][A-Za-z0-9_]*)*)\s*=\s*(function|thunk)\s*\(]]) }>
 rx_symbol_decl            = <{ regex.new([[\s*(local|global)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(<const>)?]]) }>
 rx_symbol_assign          = <{ regex.new([[\s*([A-Za-z_][A-Za-z0-9_]*(?:[.:][A-Za-z_][A-Za-z0-9_]*)*)\s*(<const>)?\s*=]]) }>
+rx_symbol_struct          = <{ regex.new([[^\s*struct\s+([A-Za-z_][A-Za-z0-9_]*)\b]]) }>
+rx_symbol_struct_field    = <{ regex.new([[([A-Za-z_][A-Za-z0-9_]*)\s*:]]) }>
+rx_symbol_struct_end      = <{ regex.new([[\s+end\s*$]]) }>
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -307,6 +310,39 @@ function symbolDetectModuleValue(LineCode:str, LineText:str, LineNo:num):table
    return nil
 end
 
+-- Detect a top-level end-terminated struct declaration.
+
+function symbolDetectStruct(LineCode:str, LineText:str, LineNo:num):table
+   start_pos, stop_pos, cap = rx_symbol_struct.findFirst(LineCode)
+   if not start_pos then return nil end
+
+   name = cap[0]
+   name_start = LineText:find(name, start_pos, true) or start_pos
+   return symbolMakeDocumentSymbol(name, SYMBOL_KIND.STRUCT, LineNo, LineText, name_start, 'struct', nil)
+end
+
+-- Add 'Name: type' field children found in LineCode to a struct symbol.  Fields may be comma-separated on a
+-- single line; SearchFrom anchors name position lookups within LineText.
+
+function symbolAddStructFields(Symbol:table, LineCode:str, LineText:str, LineNo:num, SearchFrom:num)
+   search_pos = SearchFrom or 0
+   for segment in values(LineCode:split(',')) do
+      s, e, cap = rx_symbol_struct_field.findFirst(segment)
+      if s then
+         field_name = cap[0]
+         field_type = segment:sub(e)
+         close_pos = rx_symbol_struct_end.findFirst(field_type)
+         if close_pos then field_type = field_type:sub(0, close_pos) end
+         field_type = field_type:trim()
+         name_start = LineText:find(field_name, search_pos, true) or search_pos
+         child = symbolMakeDocumentSymbol(field_name, SYMBOL_KIND.FIELD, LineNo, LineText, name_start,
+            field_type, nil)
+         Symbol.children:push(child)
+         search_pos = name_start + #field_name
+      end
+   end
+end
+
 function symbolPushBlockFrames(Stack:array, LineCode:str, FunctionFrame:table)
    function_count = symbolCountBlockKeyword(LineCode, 'function') + symbolCountBlockKeyword(LineCode, 'thunk')
    if FunctionFrame and function_count > 0 then function_count -= 1 end
@@ -354,10 +390,14 @@ function symbolCloseBlockFrames(Stack:array, LineCode:str, LineNo:num, LineText:
    end
 end
 
+function symbolIsBraceFrame(Frame:table):bool
+   return Frame.kind is 'table'
+end
+
 function symbolFindTopTableFrame(Stack:array):table
    for i = #Stack - 1, 0, -1 do
       frame = Stack[i]
-      if frame.kind is 'table' then
+      if symbolIsBraceFrame(frame) then
          return frame
       end
    end
@@ -368,12 +408,17 @@ function symbolCloseTables(Stack:array, LineCode:str, LineNo:num, LineText:str)
    table_frame = symbolFindTopTableFrame(Stack)
    if not table_frame then return end
 
+   if table_frame.awaiting_brace then
+      if symbolCountChar(LineCode, '{') is 0 then return end
+      table_frame.awaiting_brace = false
+   end
+
    table_frame.brace_depth += symbolCountChar(LineCode, '{') - symbolCountChar(LineCode, '}')
    if table_frame.brace_depth > 0 then return end
 
    for i = #Stack - 1, 0, -1 do
       frame = Stack[i]
-      if frame.kind is 'table' then
+      if symbolIsBraceFrame(frame) then
          Stack:remove(i)
          symbolCloseFrame(frame, LineNo, LineText)
          break
@@ -432,15 +477,28 @@ global function extractDocumentSymbols(Doc:table):array
          stack:push(function_frame)
          pending_annotations = array<table>
       elseif #stack is 0 then
-         module_symbol = symbolDetectModuleValue(symbol_code, line_text, line_num)
-         if module_symbol then
-            symbolAddChild(symbols, stack, module_symbol)
-            open_count = symbolCountChar(symbol_code, '{')
-            close_count = symbolCountChar(symbol_code, '}')
-            if module_symbol.kind is SYMBOL_KIND.OBJECT and open_count > close_count then
-               stack:push({ kind = 'table', symbol = module_symbol, brace_depth = 0 })
+         struct_symbol = symbolDetectStruct(symbol_code, line_text, line_num)
+         if struct_symbol then
+            symbolAddChild(symbols, stack, struct_symbol)
+            name_start = line_text:find(struct_symbol.name, 0, true) or 0
+            remainder_start = name_start + #struct_symbol.name
+            symbolAddStructFields(struct_symbol, symbol_code:sub(remainder_start), line_text, line_num,
+               remainder_start)
+            stack:push({ kind = 'struct', symbol = struct_symbol })
+         else
+            module_symbol = symbolDetectModuleValue(symbol_code, line_text, line_num)
+            if module_symbol then
+               symbolAddChild(symbols, stack, module_symbol)
+               open_count = symbolCountChar(symbol_code, '{')
+               close_count = symbolCountChar(symbol_code, '}')
+               if module_symbol.kind is SYMBOL_KIND.OBJECT and open_count > close_count then
+                  stack:push({ kind = 'table', symbol = module_symbol, brace_depth = 0 })
+               end
             end
          end
+         pending_annotations = array<table>
+      elseif stack[#stack - 1].kind is 'struct' then
+         symbolAddStructFields(stack[#stack - 1].symbol, symbol_code, line_text, line_num, 0)
          pending_annotations = array<table>
       else
          pending_annotations = array<table>

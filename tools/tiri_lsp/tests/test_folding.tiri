@@ -1,0 +1,72 @@
+global glFoldingTestUri = nil
+extern lspPathToUri, extractFoldingRanges
+
+@BeforeAll function SetupFoldingTests(State)
+   local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
+   assert(err is ERR_Okay, 'Failed to resolve SDK path for LSP folding tests.')
+   mSys.SetVolume('sdk', sdk_path)
+
+   loadFile('sdk:tools/tiri_lsp/include/lsp_lib.tiri')
+   glFoldingTestUri = lspPathToUri('sdk:tools/tiri_lsp/tests/test_folding.tiri')
+   assert(glFoldingTestUri, 'Failed to create test document URI.')
+end
+
+function makeDoc(Content:str):table
+   return {
+      uri = glFoldingTestUri,
+      languageId = 'tiri',
+      version = 1,
+      content = Content,
+      lineIndex = nil
+   }
+end
+
+function findRange(Ranges:array, StartLine:num, EndLine:num):table
+   for range in values(Ranges) do
+      if range.startLine is StartLine and range.endLine is EndLine then return range end
+   end
+end
+
+@Test function FunctionBlocksStillFold()
+   doc = makeDoc('function alpha()\n   print(1)\nend\n')
+   ranges = extractFoldingRanges(doc)
+   assert(findRange(ranges, 0, 2), 'Function blocks should fold from declaration to end.')
+end
+
+@Test function StructBlockFolds()
+   doc = makeDoc('struct User\n   Name: string\n   Age: int\nend\n')
+   ranges = extractFoldingRanges(doc)
+   assert(findRange(ranges, 0, 3), 'Struct declaration blocks should fold to the end keyword.')
+end
+
+@Test function StructFollowedByFunctionFoldsBoth()
+   doc = makeDoc('struct User\n   Name: string\nend\n\nfunction greet()\n   print(2)\nend\n')
+   ranges = extractFoldingRanges(doc)
+   assert(findRange(ranges, 0, 2), 'The struct block should fold.')
+   assert(findRange(ranges, 4, 6), 'A function after the struct should fold normally.')
+end
+
+@Test function SingleLineStructDoesNotFold()
+   doc = makeDoc('struct Point X: double, Y: double end\nprint(1)\n')
+   ranges = extractFoldingRanges(doc)
+   assert(#ranges is 0, 'A single-line struct declaration should not create a folding range.')
+end
+
+@Test function StructLibraryUsageDoesNotFold()
+   doc = makeDoc("u = struct.new('User')\nprint(u)\n")
+   ranges = extractFoldingRanges(doc)
+   assert(#ranges is 0, 'struct.new() usage should not create a folding range.')
+end
+
+@Test function StructNameOnOpeningLineFolds()
+   doc = makeDoc('struct User\n   Name: string\n   Age: int\nend\n')
+   ranges = extractFoldingRanges(doc)
+   assert(findRange(ranges, 0, 3), 'An end-terminated struct should fold from its declaration.')
+end
+
+@Test function FoldingResumesAfterStructEnd()
+   doc = makeDoc('struct Item\n   Value: int\nend\nfunction greet()\nend\n')
+   ranges = extractFoldingRanges(doc)
+   assert(findRange(ranges, 0, 2), 'The struct should close at its end keyword.')
+   assert(findRange(ranges, 3, 4), 'Folding should resume after the struct block.')
+end

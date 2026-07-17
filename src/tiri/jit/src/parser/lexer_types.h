@@ -123,6 +123,7 @@ struct TokenDefinition {
    TOKEN_DEF(defer_typed,  "<type{",   TKF_NONE) \
    TOKEN_DEF(defer_close,  "}>",       TKF_CAN_END_RANGE_EXPRESSION) \
    TOKEN_DEF(array_typed,  "array<type>", TKF_NONE) \
+   TOKEN_DEF(struct_typed, "struct<name>", TKF_NONE) \
    TOKEN_DEF(annotate,     "@",        TKF_STATEMENT_START) \
    TOKEN_DEF(compif,       "@if",      TKF_STATEMENT_START) \
    TOKEN_DEF(compend,      "@end",     TKF_NONE) \

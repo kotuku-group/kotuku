@@ -1,9 +1,9 @@
 
-struct DeclaredChild {
+struct DeclaredChild
    Value: int
-}
+end
 
-struct DeclaredUser {
+struct DeclaredUser
    -- User-facing name retained as parser tooling metadata.
    Name: string -- Owned string storage.
    Borrowed: cstr
@@ -16,48 +16,48 @@ struct DeclaredUser {
    Object: obj
    Clock: obj<Time>
    Markup: obj<XML>
-}
+end
 
-struct DeclaredLayout {
+struct DeclaredLayout
    Bool: bool, Char: char, Byte: byte, Int8: int8, UInt8: uint8,
    Int16: int16, UInt16: uint16, Int: int, UInt: uint,
    Int32: int32, UInt32: uint32, Int64: int64, UInt64: uint64,
    Float: float, Double: double, String: string, CStr: cstr,
    Pointer: ptr, IntPointer: ptr<int>, IntList: ptr<int[]>, Object: obj, Callback: func, Buffer: char[7],
    Fixed: int[3], Child: struct<DeclaredChild>, ChildPointer: ptr<DeclaredChild>
-}
+end
 
-struct DeclaredVectorElement {
+struct DeclaredVectorElement
    Red: byte
    Green: byte
    Blue: byte
-}
+end
 
-struct DeclaredVectorFields {
+struct DeclaredVectorFields
    Bool: array<bool>, Char: array<char>, Byte: array<byte>, Int8: array<int8>, UInt8: array<uint8>,
    Int16: array<int16>, UInt16: array<uint16>, Int: array<int>, UInt: array<uint>,
    Int32: array<int32>, UInt32: array<uint32>, Int64: array<int64>, UInt64: array<uint64>,
    Float: array<float>, Double: array<double>, String: array<string>,
    Points: array<struct<DeclaredVectorElement>>
-}
+end
 
-struct DeclaredNonTrivialVectorElement {
+struct DeclaredNonTrivialVectorElement
    Name: string
-}
+end
 
 function declared_user_age(Value: struct<DeclaredUser>):num
    return Value.Age
 end
 
 function create_declared_user():struct<DeclaredUser>
-   return DeclaredUser()
+   return struct<DeclaredUser> { }
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Retrieve a known struct from a function and test the field values.
 
 @Test function NativeStructDeclarationConstruction()
-   local user = DeclaredUser { Name='Paul', Age=37, Enabled=true, Initial=65, Buffer='hello' }
+   local user = struct<DeclaredUser> { Name='Paul', Age=37, Enabled=true, Initial=65, Buffer='hello' }
    assert(type(user) is 'struct', 'A declared definition should construct a native struct')
    assert(user.Name is 'Paul' and user.Age is 37, 'Definition calls should apply initialiser fields verbatim')
    assert(user.Enabled is true, 'Boolean fields should be exposed as Tiri booleans')
@@ -66,21 +66,63 @@ end
    assert(create_declared_user().Age is 0, 'struct<Name> return annotations should parse and retain the layout')
    local typed_user:struct<DeclaredUser> = user
    assert(typed_user.Name is 'Paul', 'struct<Name> local annotations should resolve declared layouts')
+   local constructed_user:struct<DeclaredUser> = struct<DeclaredUser> { Age=42 }
+   assert(constructed_user.Age is 42, 'Explicit construction should retain its type in annotated assignments')
+   assert(declared_user_age(struct<DeclaredUser> { Age=31 }) is 31,
+      'Explicit construction should retain its type when passed to annotated parameters')
 
    user.Child.Value = 91
    assert(user.Child.Value is 91, 'Embedded declared structs should expose their fields')
    assert(user.ChildPointer is nil, 'Typed struct pointers should initialise to nil')
    assert(user.Object is nil, 'Object fields should initialise to nil')
 
-   local empty_user = DeclaredUser()
-   assert(empty_user.Age is 0 and empty_user.Name is '', 'Empty definition calls should zero-initialise fields')
+   local empty_user = struct<DeclaredUser> { }
+   assert(empty_user.Age is 0 and empty_user.Name is '', 'Empty initialisers should zero-initialise fields')
    assert(struct.new('DeclaredUser').Age is 0, 'struct.new() should interoperate with declarations')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Declarations no longer bind a constructor variable; construction must use the explicit struct<Name> form.
+
+@Test function ExplicitConstructionRequired()
+   try
+      exec([[
+struct RetiredTableSyntax Value: int end
+local value = RetiredTableSyntax { Value=1 }
+]])
+   success
+      error('The retired Name { fields } construction syntax should fail to compile')
+   end
+
+   try
+      exec([[
+struct RetiredCallSyntax Value: int end
+local value = RetiredCallSyntax()
+]])
+   success
+      error('The retired Name() construction syntax should fail to compile')
+   end
+
+   try
+      exec([[local value = struct<NotARegisteredStruct> { }]])
+   success
+      error('Constructing an unknown struct name should fail to compile')
+   end
+
+   try
+      exec([[
+struct MissingInitialiser Value: int end
+local value = struct<MissingInitialiser>
+]])
+   success
+      error('struct<Name> without an initialiser table should fail to compile')
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function ConstrainedObjectField()
-   local holder = DeclaredUser()
+   local holder = struct<DeclaredUser> { }
    local clock = obj.new('time', { })
    holder.Clock = clock
    assert(holder.Clock.year is clock.year, 'obj<Class> fields should retain typed object references')
@@ -99,7 +141,7 @@ end
 -- accept it.  An exact ClassID comparison would incorrectly reject this.
 
 @Test function ConstrainedObjectFieldAcceptsSubClass()
-   local holder = DeclaredUser()
+   local holder = struct<DeclaredUser> { }
    local markup = obj.new('xml', { statement='<a/>' })
    holder.Markup = markup
    assert(holder.Markup is not nil, 'obj<Class> fields should accept an exact class match')
@@ -143,7 +185,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function NativeStructVectorRoundTrips()
-   local value = DeclaredVectorFields {
+   local value = struct<DeclaredVectorFields> {
       Int=array<int> { 1, 2, 3 },
       String=array<string> { 'alpha', 'beta' }
    }
@@ -179,7 +221,7 @@ end
    assert(#value.Int is 5, 'Whole-field assignment should resize dynamic vector fields')
 
    local clone = struct.clone(value)
-   local copy = DeclaredVectorFields()
+   local copy = struct<DeclaredVectorFields> { }
    struct.copy(copy, value)
    value.Int = array<int> { 99 }
    value.String = array<string> { 'changed' }
@@ -195,7 +237,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function NativeStructElementVectorRoundTrips()
-   local value = DeclaredVectorFields()
+   local value = struct<DeclaredVectorFields> { }
    value.Points = array<table> {
       { red=1, green=2, blue=3 },
       { red=4, green=5, blue=6 },
@@ -207,7 +249,7 @@ end
       'Struct vectors should use the exact three-byte C++ element stride')
 
    local clone = struct.clone(value)
-   local copy = DeclaredVectorFields()
+   local copy = struct<DeclaredVectorFields> { }
    struct.copy(copy, value)
    value.Points = array<table> { { red=20, green=21, blue=22 } }
    assert(#clone.Points is 3 and clone.Points[2].Blue is 9,
@@ -224,15 +266,15 @@ end
 
 @Test function NativeStructVectorDeclarationErrors()
    for statement in values(array<string> {
-      'struct BadCStrVector { Values: array<cstr> }',
-      'struct BadObjectVector { Values: array<obj> }',
-      'struct BadPointerVector { Values: array<ptr> }',
-      'struct BadFunctionVector { Values: array<func> }',
-      'struct BadNestedVector { Values: array<array<int>> }',
-      'struct BadGenericSizedVector { Values: array<int, 4> }',
-      'struct BadSizedVector { Values: array<int>[4] }',
-      'struct BadUnknownVector { Values: array<mystery> }',
-      'struct BadOwnedElementVector { Values: array<struct<DeclaredNonTrivialVectorElement>> }'
+      'struct BadCStrVector Values: array<cstr> end',
+      'struct BadObjectVector Values: array<obj> end',
+      'struct BadPointerVector Values: array<ptr> end',
+      'struct BadFunctionVector Values: array<func> end',
+      'struct BadNestedVector Values: array<array<int>> end',
+      'struct BadGenericSizedVector Values: array<int, 4> end',
+      'struct BadSizedVector Values: array<int>[4] end',
+      'struct BadUnknownVector Values: array<mystery> end',
+      'struct BadOwnedElementVector Values: array<struct<DeclaredNonTrivialVectorElement>> end'
    }) do
       try
          exec(statement)
@@ -254,65 +296,71 @@ end
 
 @Test function NativeStructDeclarationErrors()
    try
+      exec([[struct RetiredBraceDeclaration { Value: int }]])
+   success
+      error("Brace-delimited struct declarations should fail to compile")
+   end
+
+   try
       MAKESTRUCT('Bad_Name', 'lValue')
    success
       error('MAKESTRUCT should reject names containing non-alphanumeric characters')
    end
 
    try
-      exec([[struct Bad_Name { Value: int }]])
+      exec([[struct Bad_Name Value: int end]])
    success
       error('Struct declarations should reject names containing non-alphanumeric characters')
    end
 
    exec([[
-struct IdenticalLayout { Value: int }
-struct IdenticalLayout { Value: int }
-local value = IdenticalLayout { Value=12 }
+struct IdenticalLayout Value: int end
+struct IdenticalLayout Value: int end
+local value = struct<IdenticalLayout> { Value=12 }
 assert(value.Value is 12)
 ]])
 
    try
-      exec([[struct BadUnknownType { Value: mystery }]])
+      exec([[struct BadUnknownType Value: mystery end]])
    success
       error('Unknown declaration field types should fail')
    end
 
    try
-      exec([[struct BadForwardReference { Value: struct<NotDeclaredYet> }]])
+      exec([[struct BadForwardReference Value: struct<NotDeclaredYet> end]])
    success
       error('Forward struct references should fail')
    end
 
    try
-      exec([[struct BadCaseCollision { Value: int, value: int }]])
+      exec([[struct BadCaseCollision Value: int, value: int end]])
    success
       error('Case-insensitive field-name collisions should fail')
    end
 
    try
-      exec([[struct BadArrayDimensionRange { Values: int[4294967296] }]])
+      exec([[struct BadArrayDimensionRange Values: int[4294967296] end]])
    success
       error('Array dimensions that exceed the parser integer range should fail')
    end
 
    try
-      exec([[struct BadArrayStorageRange { Values: int[20000] }]])
+      exec([[struct BadArrayStorageRange Values: int[20000] end]])
    success
       error('Array layouts that exceed the native struct offset range should fail')
    end
 
    try
       exec([[
-struct ConflictingLayout { Value: int }
-struct ConflictingLayout { Value: double }
+struct ConflictingLayout Value: int end
+struct ConflictingLayout Value: double end
 ]])
    success
       error('Conflicting declarations should fail')
    end
    exec([[
-struct ConflictingLayout { Value: double }
-local value = ConflictingLayout { Value=2.5 }
+struct ConflictingLayout Value: double end
+local value = struct<ConflictingLayout> { Value=2.5 }
 assert(value.Value is 2.5)
 ]])
 
@@ -337,20 +385,20 @@ end
       local statement
       if (i & 1) is 0 then
          statement = [[
-struct ConcurrentDeclaredStruct { Value: int }
-local value = ConcurrentDeclaredStruct { Value=42 }
+struct ConcurrentDeclaredStruct Value: int end
+local value = struct<ConcurrentDeclaredStruct> { Value=42 }
 assert(value.Value is 42)
 ]]
       else
          statement = [[
-struct ConcurrentDeclaredStruct { Value: double }
-local value = ConcurrentDeclaredStruct { Value=42.5 }
+struct ConcurrentDeclaredStruct Value: double end
+local value = struct<ConcurrentDeclaredStruct> { Value=42.5 }
 assert(value.Value is 42.5)
 ]]
       end
       if (i & 2) is 0 then
          statement ..= [[
-struct ConcurrentInvalidStruct { Value: mystery }]]
+struct ConcurrentInvalidStruct Value: mystery end]]
       end
       scripts:push(obj.new('tiri', { statement=statement }))
    end
@@ -367,8 +415,8 @@ struct ConcurrentInvalidStruct { Value: mystery }]]
    check proc.sleep()
    assert(succeeded is total / 2 and failed is total / 2,
       f'Expected equal successful and failed concurrent declarations, got {succeeded}/{failed}')
-   exec([[struct ConcurrentDeclaredStruct { Value: int }
-assert(ConcurrentDeclaredStruct { Value=17 }.Value is 17)]])
+   exec([[struct ConcurrentDeclaredStruct Value: int end
+assert(struct<ConcurrentDeclaredStruct> { Value=17 }.Value is 17)]])
 end
 
 @Test(hotpath=true)

@@ -201,6 +201,107 @@ end
    assert(unfinished.range['end'].line is 1, 'Incomplete function should end at the last known line.')
 end
 
+@Test function StructDeclarationWithFieldChildren()
+   doc = makeDoc([[
+struct User
+   Name: string -- The user name
+   Age: int
+   Sock: obj<NetSocket>
+   Buf: char[32]
+   Tags: array<float>
+end
+
+function greet()
+end
+]])
+   symbols = extractDocumentSymbols(doc)
+   user = findSymbol(symbols, 'User')
+   greet = findSymbol(symbols, 'greet')
+
+   assert(user, 'Struct declaration should be listed.')
+   assert(user.kind is SYMBOL_KIND.STRUCT, 'Struct declaration should use the struct kind.')
+   assert(user.detail is 'struct', 'Struct detail should identify structs.')
+   assert(user.range.start.line is 0, 'Struct range should start on the declaration line.')
+   assert(user.range['end'].line is 6, 'Struct range should end at the end keyword.')
+   assert(#user.children is 5, 'Struct should list one child per field.')
+
+   name_field = findChild(user, 'Name')
+   assert(name_field and name_field.kind is SYMBOL_KIND.FIELD, 'Struct fields should use the field kind.')
+   assert(name_field.detail is 'string', 'Field detail should carry the declared type.')
+
+   sock_field = findChild(user, 'Sock')
+   assert(sock_field and sock_field.detail is 'obj<NetSocket>', 'Generic field types should be preserved.')
+
+   buf_field = findChild(user, 'Buf')
+   assert(buf_field and buf_field.detail is 'char[32]', 'Fixed array field types should be preserved.')
+
+   tags_field = findChild(user, 'Tags')
+   assert(tags_field and tags_field.detail is 'array<float>', 'Dynamic array field types should be preserved.')
+
+   assert(greet and greet.kind is SYMBOL_KIND.FUNCTION, 'Symbols after a struct should be top-level.')
+   assert(not findChild(user, 'greet'), 'The struct frame must close before later declarations.')
+end
+
+@Test function StructSingleLineAndCommaFields()
+   doc = makeDoc([[
+struct Point X: double, Y: double end
+
+struct Pair
+   First: int, Second: int
+end
+]])
+   symbols = extractDocumentSymbols(doc)
+   point = findSymbol(symbols, 'Point')
+   pair = findSymbol(symbols, 'Pair')
+
+   assert(point and point.kind is SYMBOL_KIND.STRUCT, 'Single-line struct should be listed.')
+   assert(#point.children is 2, 'Single-line struct should list comma-separated fields.')
+   assert(findChild(point, 'X') and findChild(point, 'Y'), 'Both fields should be children.')
+
+   assert(pair and #pair.children is 2, 'Comma-separated fields on one body line should be listed.')
+   assert(findChild(pair, 'First').detail is 'int', 'First comma-separated field should carry its type.')
+   assert(findChild(pair, 'Second').detail is 'int', 'Second comma-separated field should carry its type.')
+end
+
+@Test function StructSingleLineTabBeforeEnd()
+   doc = makeDoc('struct Point X: double, Y: double\tend\n')
+   symbols = extractDocumentSymbols(doc)
+   point = findSymbol(symbols, 'Point')
+   y_field = findChild(point, 'Y')
+
+   assert(y_field and y_field.detail is 'double',
+      'Whitespace before end should not be included in the final field type.')
+end
+
+@Test function StructLibraryUsageIsNotADeclaration()
+   doc = makeDoc([[
+user = struct.new('User')
+size = struct.size('User')
+]])
+   symbols = extractDocumentSymbols(doc)
+
+   assert(not findSymbol(symbols, 'new'), 'struct.new() must not be detected as a struct declaration.')
+   user = findSymbol(symbols, 'user')
+   assert(user and user.kind is SYMBOL_KIND.VARIABLE, 'struct.new() assignment should remain a variable symbol.')
+end
+
+@Test function StructBlockAndNestedFieldType()
+   doc = makeDoc([[
+struct Child Value: int end
+struct Parent
+   Children: array<struct<Child>>
+end
+]])
+   symbols = extractDocumentSymbols(doc)
+   parent = findSymbol(symbols, 'Parent')
+
+   assert(parent and parent.kind is SYMBOL_KIND.STRUCT, 'An end-terminated block should retain the struct symbol.')
+   assert(parent.range['end'].line is 3, 'The struct frame should close at its end keyword.')
+   children = findChild(parent, 'Children')
+   assert(children, 'The nested generic field should be listed.')
+   assert(children.detail is 'array<struct<Child>>', 'Nested generic field types should remain complete.')
+end
+
 @Test function ControlFlowDoesNotCreateModuleVariables()
    doc = makeDoc([[
 if x == 1 then

@@ -29,11 +29,11 @@ end
 
 @Test function LayoutAwareStructBytecodeDisassembly()
    local script = obj.new('tiri', { statement=[[
-struct PhaseTwoLayout { First: int, Second: int }
-global glPhaseTwo:struct<PhaseTwoLayout> = PhaseTwoLayout()
+struct PhaseTwoLayout First: int, Second: int end
+global glPhaseTwo:struct<PhaseTwoLayout> = struct<PhaseTwoLayout> { }
 
 function annotatedLocal():num
-   local value:struct<PhaseTwoLayout> = PhaseTwoLayout()
+   local value:struct<PhaseTwoLayout> = struct<PhaseTwoLayout> { }
    return value.Second
 end
 
@@ -42,13 +42,13 @@ function annotatedParameter(Value:struct<PhaseTwoLayout>):num
 end
 
 function inferredLocal():num
-   local value = PhaseTwoLayout()
+   local value = struct<PhaseTwoLayout> { }
    value.Second = 9
    return value.Second
 end
 
 function createValue():struct<PhaseTwoLayout>
-   return PhaseTwoLayout()
+   return struct<PhaseTwoLayout> { }
 end
 
 function returnedValue():num
@@ -79,7 +79,7 @@ end
 
 @Test function ConstrainedObjectFieldTypePropagation()
    local script = obj.new('tiri', { statement=[[
-struct PhaseTwoObjectHolder { Clock: obj<Time> }
+struct PhaseTwoObjectHolder Clock: obj<Time> end
 function readYear(Holder:struct<PhaseTwoObjectHolder>):num
    return Holder.Clock.year
 end

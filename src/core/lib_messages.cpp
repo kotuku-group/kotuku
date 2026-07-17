@@ -694,7 +694,7 @@ expected to signal an end to their activities.  An object can be signalled via t
 By default, this function will only return once ALL of the objects are signalled or a time-out occurs.  Use the
 `PMF::ANY_SIGNAL` flag to return once ANY of the objects are signalled.
 
-It is guaranteed that the message queue will be consumed by ~ProcessMessage() at least once before this function
+It is guaranteed that the message queue will be consumed by ~ProcessMessages() at least once before this function
 returns.
 
 Note that if an object has been signalled prior to entry to this function, its signal flag will be cleared and the

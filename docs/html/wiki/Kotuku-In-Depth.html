@@ -209,7 +209,7 @@
         <li><a class="rounded" href="../modules/classes/display.html">Display</a></li>
         <li><a class="rounded" href="../modules/classes/document.html">Document</a></li>
         <li><a class="rounded" href="../modules/classes/font.html">Font</a></li>
-        <li><a class="rounded" href="../modules/classes/picture.html">Picture</a></li>
+        <li><a class="rounded" href="../modules/classes/image.html">Image</a></li>
         <li><a class="rounded" href="../modules/classes/pointer.html">Pointer</a></li>
         <li><a class="rounded" href="../modules/classes/surface.html">Surface</a></li>
         <li><a class="rounded" href="../modules/classes/svg.html">SVG</a></li>
@@ -235,6 +235,7 @@
         <li><a class="rounded" href="../modules/classes/gradientdistal.html">GradientDistal</a></li>
         <li><a class="rounded" href="../modules/classes/gradientgouraud.html">GradientGouraud</a></li>
         <li><a class="rounded" href="../modules/classes/gradientlinear.html">GradientLinear</a></li>
+        <li><a class="rounded" href="../modules/classes/gradientmesh.html">GradientMesh</a></li>
         <li><a class="rounded" href="../modules/classes/gradientradial.html">GradientRadial</a></li>
         <li><a class="rounded" href="../modules/classes/vector.html">Vector</a></li>
         <li><a class="rounded" href="../modules/classes/vectorclip.html">VectorClip</a></li>
@@ -752,15 +753,15 @@ class(&quot;XML&quot;, { src=&quot;xml.cpp&quot;, output=&quot;xml_def.c&quot; }
 <p>A complete and detailed guide on action interfaces is available in the <a href="./Action-Reference-Manual.html">Action Reference Manual</a>. In this section we will discuss how actions are supported in practice.</p>
 <p>Actions are declared during MetaClass creation and utilise the <code>ActionArray</code>, as in this XML class example:</p>
 <div class="sourceCode" id="cb15"><pre class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="at">static</span> <span class="at">const</span> <span class="kw">struct</span> ActionArray clXMLActions<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span></span>
-<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Clear<span class="op">,</span>        XML_Clear <span class="op">},</span></span>
-<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>DataFeed<span class="op">,</span>     XML_DataFeed <span class="op">},</span></span>
-<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Free<span class="op">,</span>         XML_Free <span class="op">},</span></span>
-<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>GetKey<span class="op">,</span>       XML_GetKey <span class="op">},</span></span>
-<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Init<span class="op">,</span>         XML_Init <span class="op">},</span></span>
-<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>NewObject<span class="op">,</span>    XML_NewObject <span class="op">},</span></span>
-<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Reset<span class="op">,</span>        XML_Reset <span class="op">},</span></span>
-<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>SaveToObject<span class="op">,</span> XML_SaveToObject <span class="op">},</span></span>
-<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>SetKey<span class="op">,</span>       XML_SetKey <span class="op">},</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Clear<span class="op">,</span>         XML_Clear <span class="op">},</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>DataFeed<span class="op">,</span>      XML_DataFeed <span class="op">},</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Free<span class="op">,</span>          XML_Free <span class="op">},</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>GetKey<span class="op">,</span>        XML_GetKey <span class="op">},</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Init<span class="op">,</span>          XML_Init <span class="op">},</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>New<span class="op">,</span>           XML_New <span class="op">},</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>Reset<span class="op">,</span>         XML_Reset <span class="op">},</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>SaveToObject<span class="op">,</span>  XML_SaveToObject <span class="op">},</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>SetKey<span class="op">,</span>        XML_SetKey <span class="op">},</span></span>
 <span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>   <span class="op">{</span> AC<span class="op">::</span>NIL<span class="op">,</span> <span class="kw">nullptr</span> <span class="op">}</span></span>
 <span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
 <span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a></span>
@@ -882,14 +883,14 @@ ReadOnly: The XML object is read-only.
 <span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a><span class="op">{</span></span>
 <span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>   <span class="op">...</span></span>
 <span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a>   Self<span class="op">-&gt;</span>get<span class="op">(</span>FID_Location<span class="op">,</span> <span class="op">&amp;</span>path<span class="op">);</span></span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a>   Self<span class="op">-&gt;</span>getPath<span class="op">(</span>path<span class="op">);</span></span>
 <span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb22-7"><a href="#cb22-7" aria-hidden="true" tabindex="-1"></a>   <span class="cf">if</span> <span class="op">((!</span>path<span class="op">)</span> <span class="kw">or</span> <span class="op">((</span>Self<span class="op">-&gt;</span>Flags <span class="op">&amp;</span> PCF<span class="op">::</span>NEW<span class="op">)</span> <span class="op">!=</span> PCF<span class="op">::</span>NIL<span class="op">))</span> <span class="op">{</span></span>
 <span id="cb22-8"><a href="#cb22-8" aria-hidden="true" tabindex="-1"></a>      <span class="co">// A JPEG image is being created from scratch (e.g. to save an image to disk).</span></span>
 <span id="cb22-9"><a href="#cb22-9" aria-hidden="true" tabindex="-1"></a>      <span class="op">...</span></span>
 <span id="cb22-10"><a href="#cb22-10" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> ERR<span class="op">::</span>Okay<span class="op">;</span></span>
 <span id="cb22-11"><a href="#cb22-11" aria-hidden="true" tabindex="-1"></a>   <span class="op">}</span></span>
-<span id="cb22-12"><a href="#cb22-12" aria-hidden="true" tabindex="-1"></a>   <span class="cf">else</span> <span class="cf">if</span> <span class="op">(</span>Self<span class="op">-&gt;</span>getPtr<span class="op">(</span>FID_Header<span class="op">,</span> <span class="op">&amp;</span>buffer<span class="op">)</span> IS ERR<span class="op">::</span>Okay<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb22-12"><a href="#cb22-12" aria-hidden="true" tabindex="-1"></a>   <span class="cf">else</span> <span class="cf">if</span> <span class="op">(</span>Self<span class="op">-&gt;</span>get<span class="op">(</span>FID_Header<span class="op">,</span> <span class="op">&amp;</span>buffer<span class="op">)</span> IS ERR<span class="op">::</span>Okay<span class="op">)</span> <span class="op">{</span></span>
 <span id="cb22-13"><a href="#cb22-13" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> <span class="op">((</span>buffer<span class="op">[</span><span class="dv">0</span><span class="op">]</span> IS <span class="bn">0xff</span><span class="op">)</span> <span class="kw">and</span> <span class="op">(</span>buffer<span class="op">[</span><span class="dv">1</span><span class="op">]</span> IS <span class="bn">0xd8</span><span class="op">)</span> <span class="kw">and</span> <span class="op">(</span>buffer<span class="op">[</span><span class="dv">2</span><span class="op">]</span> IS <span class="bn">0xff</span><span class="op">)</span> <span class="kw">and</span></span>
 <span id="cb22-14"><a href="#cb22-14" aria-hidden="true" tabindex="-1"></a>          <span class="op">((</span>buffer<span class="op">[</span><span class="dv">3</span><span class="op">]</span> IS <span class="bn">0xe0</span><span class="op">)</span> <span class="kw">or</span> <span class="op">(</span>buffer<span class="op">[</span><span class="dv">3</span><span class="op">]</span> IS <span class="bn">0xe1</span><span class="op">)</span> <span class="kw">or</span> <span class="op">(</span>buffer<span class="op">[</span><span class="dv">3</span><span class="op">]</span> IS <span class="bn">0xfe</span><span class="op">)))</span> <span class="op">{</span></span>
 <span id="cb22-15"><a href="#cb22-15" aria-hidden="true" tabindex="-1"></a>         log<span class="op">.</span>msg<span class="op">(</span><span class="st">&quot;The file is a JPEG image.&quot;</span><span class="op">);</span></span>

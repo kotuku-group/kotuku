@@ -71,12 +71,10 @@ struct CoreBase *LocalCoreBase = nullptr;
 #ifdef RESOURCE_POOL
 // Node pools must be constructed before the maps that reference them (guaranteed here by declaration order within
 // this translation unit) and destroyed after them (reverse declaration order).
-NodePool glMemoryNodePool, glResourcesNodePool, glObjectsNodePool;
-PooledMap<MEMORYID, PrivateAddress> glMemory{0, PoolAllocator<std::pair<const MEMORYID, PrivateAddress>>(glMemoryNodePool)}; // Pointer stable collection
+NodePool glResourcesNodePool, glObjectsNodePool;
 PooledMap<RESOURCEID, ResourceRecord> glResources{0, PoolAllocator<std::pair<const RESOURCEID, ResourceRecord>>(glResourcesNodePool)}; // Pointer stable collection
 PooledMap<OBJECTID, ObjectRecord> glObjects{0, PoolAllocator<std::pair<const OBJECTID, ObjectRecord>>(glObjectsNodePool)}; // Pointer stable collection
 #else
-PooledMap<MEMORYID, PrivateAddress> glMemory; // Pointer stable collection
 PooledMap<RESOURCEID, ResourceRecord> glResources; // Pointer stable collection
 PooledMap<OBJECTID, ObjectRecord> glObjects; // Pointer stable collection
 #endif
@@ -159,7 +157,6 @@ std::map<std::string, ConfigKeys, CaseInsensitiveMap> glVolumes;
 OBJECTLOOKUP glObjectLookup; // Name lookups
 
 std::mutex glmPrint;
-std::recursive_mutex glmMemory;
 std::recursive_mutex glmResources; // For glResources
 std::recursive_mutex glmObjects; // For glObjects
 std::recursive_mutex glmMsgHandler;

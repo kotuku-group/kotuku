@@ -680,3 +680,80 @@ end
    assert(symbol.params[0].type is "str", "Expected Name type to be str")
    assert(symbol.results[0].type is "str", "Expected return type to be str")
 end
+
+@Test function ValidateStructSymbols()
+   code = [=[
+struct ValidatePoint
+   X: double
+   Y: double
+end
+
+-- Leading description.
+struct ValidateUser
+   Name: string -- The user name.
+   Age: int
+   Sock: obj<NetSocket>
+   Buf: char[16]
+   Tags: array<float>
+   Home: struct<ValidatePoint>
+   Next: ptr<ValidatePoint>
+   List: ptr<ValidatePoint[]>
+end
+
+function validateGreet(U)
+   return U.Name
+end
+]=]
+
+   result = debug.validate(code, { symbols = true })
+   assert(result.success is true, "Struct declarations should validate")
+   assert(result.symbols != nil, "symbols option should include a symbols table")
+   assert(#result.symbols is 3, "Expected three symbols, got " .. #result.symbols)
+
+   local point, user, greet
+   for s in values(result.symbols) do
+      if s.name is 'ValidatePoint' then point = s end
+      if s.name is 'ValidateUser' then user = s end
+      if s.name is 'validateGreet' then greet = s end
+   end
+
+   assert(greet and greet.kind is 'function', "Function symbols should be unaffected by struct support")
+   assert(point and point.kind is 'struct', "Expected a struct symbol for ValidatePoint")
+   assert(point.signature is 'struct ValidatePoint', "Unexpected struct signature: " .. tostring(point.signature))
+   assert(#point.fields is 2, "Expected two ValidatePoint fields, got " .. #point.fields)
+   assert(point.line is 0, "Struct symbol line should be 0-based, got " .. point.line)
+   assert(point.endLine is 3, "Struct endLine should sit on the end keyword, got " .. point.endLine)
+
+   assert(user and user.kind is 'struct', "Expected a struct symbol for ValidateUser")
+   assert(#user.fields is 8, "Expected eight ValidateUser fields, got " .. #user.fields)
+
+   fields = {}
+   for f in values(user.fields) do fields[f.name] = f end
+
+   assert(fields.Name.type is 'string', "Name field type should be preserved")
+   assert(fields.Name.doc is 'The user name.', "Trailing field doc comment should be captured")
+   assert(fields.Age.type is 'int', "Age field type should be preserved")
+   assert(fields.Sock.type is 'obj<NetSocket>', "Object class constraints should be preserved")
+   assert(fields.Buf.type is 'char[16]', "Fixed array types should be preserved")
+   assert(fields.Tags.type is 'array<float>', "Dynamic array types should be preserved")
+   assert(fields.Home.type is 'struct<ValidatePoint>', "Embedded struct types should be preserved")
+   assert(fields.Next.type is 'ptr<ValidatePoint>', "Struct pointer types should be preserved")
+   assert(fields.List.type is 'ptr<ValidatePoint[]>', "Null-terminated list types should be preserved")
+   assert(fields.Name.line is 7, "Field lines should be 0-based, got " .. fields.Name.line)
+
+   -- Functions should carry an empty fields array rather than nil for consistency.
+   assert(greet.fields != nil and #greet.fields is 0, "Function symbols should have an empty fields array")
+end
+
+@Test function ValidateStructRevalidationIsSideEffectFree()
+   -- Validation must not permanently register declared structs: an edited declaration would otherwise conflict
+   -- with the version registered by an earlier validation of the same document.
+
+   first = debug.validate('struct RevalidateRecord Value: int end', { symbols = true })
+   assert(first.success is true, "Initial struct declaration should validate")
+
+   second = debug.validate('struct RevalidateRecord Value: float end', { symbols = true })
+   assert(second.success is true,
+      "Revalidating an edited struct must not conflict with the previous validation")
+   assert(#second.diagnostics is 0, "No diagnostics expected for the edited declaration")
+end

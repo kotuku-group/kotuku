@@ -105,6 +105,21 @@ ParserResult<Token> AstBuilder::parse_type_annotation(TiriType &Type, struct_rec
    auto kind = type_token.kind();
    std::string_view type_view;
 
+   if (kind IS TokenKind::StructTyped) {
+      // struct<Name> lexes as a single token carrying the referenced struct name
+      this->ctx.tokens().advance();
+      GCstr *name_symbol = type_token.payload().as_string();
+      std::string_view name(strdata(name_symbol), name_symbol->len);
+      auto found = find_struct(&this->ctx.lua(), name);
+      if (not found) {
+         return this->fail<Token>(ParserErrorCode::UnknownTypeName, type_token,
+            std::format("Unknown struct name '{}'; declarations must precede use", name));
+      }
+      Type = TiriType::Struct;
+      StructDef = found;
+      return ParserResult<Token>::success(type_token);
+   }
+
    if (kind IS TokenKind::Identifier) {
       this->ctx.tokens().advance();
       GCstr *type_symbol = type_token.identifier();

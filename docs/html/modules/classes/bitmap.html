@@ -138,19 +138,11 @@ unpackAlpha(Colour)
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-DataFlags" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-DataFlags"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">DataFlags</th><td class="col-md-1"><span class="text-nowrap">MEM</span></td><td>Defines the memory flags to use when allocating a bitmap's data area.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-DataFlags" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<p>DataFlags controls the kind of backing storage requested during initialisation.  Common values are <code>MEM::DATA</code>, <code>MEM::VIDEO</code> and <code>MEM::TEXTURE</code>.</p>
+<p>DataFlags controls the kind of backing storage requested during initialisation.  Common values are <code>MEM::NIL</code>, <code>MEM::VIDEO</code> and <code>MEM::TEXTURE</code>.</p>
 <p>Video or texture-backed bitmaps can be faster for some drawing paths, but direct CPU access is platform dependent.  Use <a data-bs-toggle="tooltip" title="Locks the bitmap surface for direct read/write access." href="#ta-Lock">Lock()</a> before reading or writing <a data-bs-toggle="tooltip" title="Pointer to a bitmap's data area." href="#tf-Data">Data</a> directly when the bitmap is not a regular data bitmap.</p>
-<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">MEM::AUDIO</th><td>Identifies memory located on an audio device, such as a sound card.</td></tr>
-<tr><th class="col-md-1">MEM::CODE</th><td>Used for memory that can execute code.</td></tr>
-<tr><th class="col-md-1">MEM::DATA</th><td>The default type, <code>DATA</code>, is used to indicate a standard memory allocation from system RAM.</td></tr>
-<tr><th class="col-md-1">MEM::NO_CLEAR</th><td>Do not clear the memory on allocation (saves time).</td></tr>
-<tr><th class="col-md-1">MEM::READ</th><td>The memory is explicitly marked as readable.</td></tr>
-<tr><th class="col-md-1">MEM::READ_WRITE</th><td>Synonym for <code>READ | WRITE</code></td></tr>
-<tr><th class="col-md-1">MEM::STRING</th><td>Identifies the memory content as a null terminated string, which aids diagnostics.</td></tr>
+<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">MEM::NO_CLEAR</th><td>Do not clear the memory on allocation (saves time).</td></tr>
 <tr><th class="col-md-1">MEM::TEXTURE</th><td>Identifies non-displayable video memory, e.g. texture graphics.</td></tr>
-<tr><th class="col-md-1">MEM::UNTRACKED</th><td>Prevents the memory block from being tracked back to the current context.</td></tr>
 <tr><th class="col-md-1">MEM::VIDEO</th><td>Identifies video memory, such as the frame buffer.</td></tr>
-<tr><th class="col-md-1">MEM::WRITE</th><td>The memory is explicitly marked as writeable.</td></tr>
 </tbody></table>
       
 </div></div></td></tr>
@@ -397,21 +389,7 @@ unpackAlpha(Colour)
 <tr><th class="col-md-1">OutOfSpace</th><td>Out of space.  There is no available room to complete the request</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
-</tbody></table><h3>Methods</h3><p>The following methods are currently supported:</p><table class="table"><tbody><tr data-bs-toggle="collapse" data-bs-target="#tmx-Compress" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">Compress</th><td id="tm-Compress">Compresses bitmap data to save memory.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-Compress" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR bmp::Compress(OBJECTPTR Object, INT Level)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Level</td><td>Reserved compression level.  The current implementation uses the compression module's default level.</td></tr>
-</tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
-<p>Compress() stores a compressed copy of the bitmap's pixel data and releases the uncompressed <a data-bs-toggle="tooltip" title="Pointer to a bitmap's data area." href="#tf-Data">Data</a> buffer.  It is useful for large data-backed bitmaps that need to remain available but are accessed infrequently.</p>
-<p>Once a bitmap is compressed, <a data-bs-toggle="tooltip" title="Pointer to a bitmap's data area." href="#tf-Data">Data</a> is no longer available for direct access.  Call <a data-bs-toggle="tooltip" title="Decompresses a compressed bitmap." href="#tm-Decompress">Decompress()</a> before reading pixels, writing pixels or passing the bitmap to code that expects an active data buffer.</p>
-<p>The <code>BMF::COMPRESSED</code> flag is set in <a data-bs-toggle="tooltip" title="Optional flags." href="#tf-Flags">Flags</a> after successful compression.  Video and texture-backed bitmaps are not supported by this method.</p>
-      
-<div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">NoSupport</th><td>Operation not supported</td></tr>
-<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
-<tr><th class="col-md-1">ReallocMemory</th><td>The reallocation of a memory block failed</td></tr>
-<tr><th class="col-md-1">CreateObject</th><td>A Compression object could not be created.</td></tr>
-<tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
-<tr><th class="col-md-1">Compression</th><td>Unspecified failure during compression of a data stream</td></tr>
-</tbody></table></div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-ConvertToLinear" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">ConvertToLinear</th><td id="tm-ConvertToLinear">Converts a bitmap's colour space to linear RGB.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-ConvertToLinear" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR bmp::ConvertToLinear(OBJECTPTR Object)</samp></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
+</tbody></table><h3>Methods</h3><p>The following methods are currently supported:</p><table class="table"><tbody><tr data-bs-toggle="collapse" data-bs-target="#tmx-ConvertToLinear" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">ConvertToLinear</th><td id="tm-ConvertToLinear">Converts a bitmap's colour space to linear RGB.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-ConvertToLinear" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR bmp::ConvertToLinear(OBJECTPTR Object)</samp></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>ConvertToLinear() converts the bitmap's clipped region from sRGB to linear RGB.  If <code>BMF::ALPHA_CHANNEL</code> is set, pixels with an alpha value of zero are left unchanged.</p>
 <p>
 <a data-bs-toggle="tooltip" title="Defines the colour space for RGB values." href="#tf-ColourSpace">ColourSpace</a> is set to <code>CS::LINEAR_RGB</code> on completion.  The method returns <code>ERR::NothingDone</code> if the bitmap is already marked as linear RGB.</p>
@@ -448,16 +426,6 @@ unpackAlpha(Colour)
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Mismatch</th><td>The target bitmap is not a close enough match to the source bitmap in order to perform the operation.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
-</tbody></table></div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-Decompress" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">Decompress</th><td id="tm-Decompress">Decompresses a compressed bitmap.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-Decompress" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR bmp::Decompress(OBJECTPTR Object, INT RetainData)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>RetainData</td><td>Retains the compression data if <code>true</code>.</td></tr>
-</tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
-<p>Decompress() restores <a data-bs-toggle="tooltip" title="Pointer to a bitmap's data area." href="#tf-Data">Data</a> for a bitmap previously compressed with <a data-bs-toggle="tooltip" title="Compresses bitmap data to save memory." href="#tm-Compress">Compress()</a>.  If no compressed data is available, the method returns <code>ERR::Okay</code> without changing the bitmap.</p>
-<p>Compressed data is released after a successful restore unless <code>RetainData</code> is <code>true</code>.  Retaining it allows the most recent compressed image to be restored again later.</p>
-      
-<div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">AllocMemory</th><td>Insufficient memory in recreating the bitmap data buffer.</td></tr>
-<tr><th class="col-md-1">BufferOverflow</th><td>A buffer overflow has occurred</td></tr>
-<tr><th class="col-md-1">CreateObject</th><td>A Compression object could not be created.</td></tr>
 </tbody></table></div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tmx-Demultiply" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">Demultiply</th><td id="tm-Demultiply">Reverses the conversion process performed by Premultiply().</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-Demultiply" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR bmp::Demultiply(OBJECTPTR Object)</samp></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>Demultiply() restores straight RGB channel values after <a data-bs-toggle="tooltip" title="Premultiplies RGB channel values by the alpha channel." href="#tm-Premultiply">Premultiply()</a> has converted them to premultiplied alpha.  The method returns <code>ERR::NothingDone</code> if <code>BMF::PREMUL</code> is not set in <a data-bs-toggle="tooltip" title="Optional flags." href="#tf-Flags">Flags</a>.</p>
@@ -550,17 +518,9 @@ unpackAlpha(Colour)
 <tr><th>CS::LINEAR_RGB</th><td>Linear RGB is used to improve colour balance in blending operations.</td></tr>
 <tr><th>CS::SRGB</th><td>The default colour-space is sRGB.</td></tr>
 </tbody></table><div class="footer copyright text-right">Bitmap module documentation © Paul Manias © 2003-2026</div></div>
-<div class="docs-content" style="display:none;" id="MEM"><h1>MEM Type</h1><p class="lead">Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>MEM::AUDIO</th><td>Identifies memory located on an audio device, such as a sound card.</td></tr>
-<tr><th>MEM::CODE</th><td>Used for memory that can execute code.</td></tr>
-<tr><th>MEM::DATA</th><td>The default type, <code>DATA</code>, is used to indicate a standard memory allocation from system RAM.</td></tr>
-<tr><th>MEM::NO_CLEAR</th><td>Do not clear the memory on allocation (saves time).</td></tr>
-<tr><th>MEM::READ</th><td>The memory is explicitly marked as readable.</td></tr>
-<tr><th>MEM::READ_WRITE</th><td>Synonym for <code>READ | WRITE</code></td></tr>
-<tr><th>MEM::STRING</th><td>Identifies the memory content as a null terminated string, which aids diagnostics.</td></tr>
+<div class="docs-content" style="display:none;" id="MEM"><h1>MEM Type</h1><p class="lead">Memory types.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>MEM::NO_CLEAR</th><td>Do not clear the memory on allocation (saves time).</td></tr>
 <tr><th>MEM::TEXTURE</th><td>Identifies non-displayable video memory, e.g. texture graphics.</td></tr>
-<tr><th>MEM::UNTRACKED</th><td>Prevents the memory block from being tracked back to the current context.</td></tr>
 <tr><th>MEM::VIDEO</th><td>Identifies video memory, such as the frame buffer.</td></tr>
-<tr><th>MEM::WRITE</th><td>The memory is explicitly marked as writeable.</td></tr>
 </tbody></table><div class="footer copyright text-right">Bitmap module documentation © Paul Manias © 2003-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-ColourFormat"><h1>ColourFormat Structure</h1><p class="lead"></p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>RedShift</th><td><span class="text-nowrap">UINT8</span></td><td>Right shift value for red (15/16 bit formats only)</td></tr>
 <tr><th>GreenShift</th><td><span class="text-nowrap">UINT8</span></td><td>Right shift value for green</td></tr>

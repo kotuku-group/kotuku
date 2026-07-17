@@ -59,6 +59,7 @@ endif ()
 
 flute_test(tiri_lsp_definition "${TIRI_LSP_DIR}/tests/test_definition.tiri")
 flute_test(tiri_lsp_document_symbols "${TIRI_LSP_DIR}/tests/test_document_symbols.tiri")
+flute_test(tiri_lsp_folding "${TIRI_LSP_DIR}/tests/test_folding.tiri")
 flute_test(tiri_lsp_hover "${TIRI_LSP_DIR}/tests/test_hover.tiri")
 flute_test(tiri_lsp_semantic_tokens "${TIRI_LSP_DIR}/tests/test_semantic_tokens.tiri")
 flute_test(tiri_lsp_signature_help "${TIRI_LSP_DIR}/tests/test_signature_help.tiri")

@@ -13,6 +13,7 @@ rx_kw_repeat   = <{ regex.new([[\brepeat\b]]) }>
 rx_kw_defer    = <{ regex.new([[\bdefer\b]]) }>
 rx_kw_end      = <{ regex.new([[\bend\b]]) }>
 rx_kw_until    = <{ regex.new([[\buntil\b]]) }>
+rx_kw_struct   = <{ regex.new([[^\s*struct\s+[A-Za-z_][A-Za-z0-9_]*\b]]) }>
 
 -- Deferred regex patterns for token parsing
 rx_global_var   = <{ regex.new("^gl[A-Z]") }>
@@ -451,6 +452,74 @@ global function tokenizeTiri(Source:str):array
 
          if isRangeOperator(start_pos, pos, ident) then
             addToken(line, ident_start, ident_len, 1, 0)  -- range separator operator
+         elseif ident is 'struct' then
+            -- 'struct' is a soft keyword.  Followed immediately by '<' it forms a struct<Name> type reference or
+            -- explicit construction; followed by an identifier it begins an end-terminated declaration.  Anything
+            -- else is the runtime library namespace, e.g. struct.new().
+            if pos < len and Source:sub(pos, pos + 1) is '<' then
+               sk_pos = pos
+               sk_col = col
+               pos++
+               col++
+               while pos < len and (Source:sub(pos, pos + 1) is ' ' or Source:sub(pos, pos + 1) is '\t') do
+                  pos++
+                  col++
+               end
+               if pos < len and isIdentStart(Source:sub(pos, pos + 1)) then
+                  name_col = col
+                  while pos < len and isIdentChar(Source:sub(pos, pos + 1)) do
+                     pos++
+                     col++
+                  end
+                  name_len = col - name_col
+                  while pos < len and (Source:sub(pos, pos + 1) is ' ' or Source:sub(pos, pos + 1) is '\t') do
+                     pos++
+                     col++
+                  end
+                  if pos < len and Source:sub(pos, pos + 1) is '>' then
+                     pos++
+                     col++
+                     addToken(line, ident_start, ident_len, 0, 0)  -- 'struct' keyword
+                     addToken(line, name_col, name_len, 11, 0)     -- referenced struct name: class
+                     continue
+                  end
+               end
+               -- Not a well-formed struct<Name>; rewind and fall through to the namespace token
+               pos = sk_pos
+               col = sk_col
+               addToken(line, ident_start, ident_len, 10, 0)  -- namespace ('struct' library)
+               continue
+            end
+            sk_pos = pos
+            sk_col = col
+            sk_line = line
+            sk_matched = false
+            skipWhitespace()
+            if pos < len and isIdentStart(Source:sub(pos, pos + 1)) then
+               name_line = line
+               name_col = col
+               name_pos = pos
+               while pos < len and isIdentChar(Source:sub(pos, pos + 1)) do
+                  pos++
+                  col++
+               end
+               name_len = col - name_col
+               after_pos = pos
+               after_col = col
+               after_line = line
+               addToken(sk_line, ident_start, ident_len, 0, 0)  -- 'struct' keyword
+               addToken(name_line, name_col, name_len, 11, 1)   -- struct name: class + declaration
+               pos = after_pos
+               col = after_col
+               line = after_line
+               sk_matched = true
+            end
+            if not sk_matched then
+               pos = sk_pos
+               col = sk_col
+               line = sk_line
+               addToken(sk_line, ident_start, ident_len, 10, 0)  -- namespace ('struct' library)
+            end
          elseif FLUID_KEYWORDS[ident] then
             addToken(line, ident_start, ident_len, 0, 0)  -- keyword
          elseif FLUID_OPERATORS[ident] then
@@ -865,8 +934,13 @@ global function extractFoldingRanges(Doc:table):array
          block_stack:push({ line = line_num, kind = 'defer' })
       end
 
+      -- struct Name ... end (declaration block)
+      if checkKeyword(rx_kw_struct) then
+         block_stack:push({ line = line_num, kind = 'struct' })
+      end
+
       -- Check for block closers
-      -- 'end' closes function, if, for, while, defer
+      -- 'end' closes function, if, for, while, defer and struct declarations
       if checkKeyword(rx_kw_end) then
          if #block_stack > 0 then
             block_start = block_stack:pop()

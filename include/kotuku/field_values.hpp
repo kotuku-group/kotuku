@@ -69,7 +69,6 @@ inline FieldValue FontSize(std::string_view Value) { return FieldValue(fieldhash
 [[nodiscard]] constexpr FieldValue Client(struct NetClient *Value) { return FieldValue(fieldhash("Client"), Value); }
 [[nodiscard]] constexpr FieldValue Closed(bool Value) { return FieldValue(fieldhash("Closed"), (Value ? 1 : 0)); }
 [[nodiscard]] constexpr FieldValue Cursor(PTC Value) { return FieldValue(fieldhash("Cursor"), int(Value)); }
-[[nodiscard]] constexpr FieldValue DataFlags(MEM Value) { return FieldValue(fieldhash("DataFlags"), int(Value)); }
 [[nodiscard]] constexpr FieldValue DoubleClick(double Value) { return FieldValue(fieldhash("DoubleClick"), Value); }
 [[nodiscard]] inline    FieldValue Feedback(const FUNCTION &Value) { return FieldValue(fieldhash("Feedback"), Value); }
 [[nodiscard]] constexpr FieldValue Feedback(CPTR Value) { return FieldValue(fieldhash("Feedback"), Value); }
