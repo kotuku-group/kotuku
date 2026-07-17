@@ -427,6 +427,14 @@ timer_cycle:
             }
             else error = ERR::Terminate;
 
+            if (relock) {
+               // Reacquire glmTimer before clearing Locked.  The moment an entry is observed unlocked,
+               // object_free() on another thread is free to erase it and release its pins, so completing the
+               // entry here must be mutually exclusive with the concurrent erasers.  Blocking indefinitely is
+               // safe because all other holders of glmTimer acquire it with a timeout.
+               glmTimer.lock();
+            }
+
             timer->Locked = false;
 
             if (error IS ERR::Terminate) {
@@ -440,7 +448,10 @@ timer_cycle:
             }
             else timer++;
 
-            if (relock) goto timer_cycle;
+            if (relock) {
+               glmTimer.unlock();
+               goto timer_cycle;
+            }
          } // for
 
          glmTimer.unlock();
