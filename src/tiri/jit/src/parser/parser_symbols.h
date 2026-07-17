@@ -43,6 +43,13 @@ struct ParserDocErrorMetadata {
    bool inferred = false;
 };
 
+struct ParserStructFieldMetadata {
+   std::string name;
+   std::string type;
+   std::string doc;
+   SourceSpan span{};
+};
+
 struct ParserSymbolMetadata {
    std::string name;
    std::string kind;
@@ -54,10 +61,11 @@ struct ParserSymbolMetadata {
    std::vector<ParserDocParamMetadata> params;
    std::vector<ParserDocReturnMetadata> results;
    std::vector<ParserDocErrorMetadata> errors;
+   std::vector<ParserStructFieldMetadata> fields;  // Populated for 'struct' symbols only
 };
 
 struct ParserSymbolCollection {
    std::vector<ParserSymbolMetadata> symbols;
 };
 
-void collect_parser_symbols(lua_State &, const BlockStmt &);
+void collect_parser_symbols(lua_State &, const LexState &, const BlockStmt &);

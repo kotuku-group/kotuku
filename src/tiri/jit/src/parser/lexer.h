@@ -58,6 +58,25 @@ public:
       SourceSpan span{};
    };
 
+   // Tooling metadata describing a single declared struct field: the display type preserves the spelling used in
+   // the source (e.g. 'uint8' vs 'byte', 'obj<NetSocket>', 'ptr<User[]>', 'int[4]').
+   struct StructFieldMetadata {
+      std::string name;
+      std::string type;
+      std::string doc;
+      SourceSpan span{};   // Span of the field name token.
+   };
+
+   // Tooling metadata for a whole struct declaration, captured only when SCF::PROCESS_DOC is active (debug.validate
+   // with symbols=true).  Consumed by collect_parser_symbols() for exposure to the LSP.
+   struct StructDeclarationMetadata {
+      std::string name;
+      SourceSpan keyword_span{};  // The 'struct' soft keyword.
+      SourceSpan name_span{};     // The struct name token.
+      SourceSpan end_span{};      // The closing '}'.
+      std::vector<StructFieldMetadata> fields;
+   };
+
    // A '--' comment recorded verbatim by the lexer as it is skipped.  Capturing here rather than re-scanning the
    // source text keeps string literals from being mistaken for comment markers, and costs one entry per comment.
    struct CommentRecord {
@@ -142,6 +161,7 @@ public:
    };
    ankerl::unordered_dense::map<GCstr*, GlobalTypeHint> global_type_hints;
    std::vector<StructFieldDocumentation> struct_field_documentation;
+   std::vector<StructDeclarationMetadata> struct_declaration_metadata;  // Tooling only; see SCF::PROCESS_DOC
 
    // Comments seen so far, in source order.  Only retained while a struct declaration is being parsed; see
    // capture_comments().  Cleared once each declaration has harvested what it needs.

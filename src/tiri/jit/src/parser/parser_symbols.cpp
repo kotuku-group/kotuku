@@ -779,7 +779,7 @@ inline void collect_from_block(ParserSymbolCollection &Collection, const BlockSt
    for (const StmtNode &statement : Block.view()) collect_from_statement(Collection, statement);
 }
 
-void collect_parser_symbols(lua_State &Lua, const BlockStmt &Chunk)
+void collect_parser_symbols(lua_State &Lua, const LexState &Lex, const BlockStmt &Chunk)
 {
    if (Lua.parser_symbols) {
       delete Lua.parser_symbols;
@@ -790,5 +790,22 @@ void collect_parser_symbols(lua_State &Lua, const BlockStmt &Chunk)
 
    auto *collection = new ParserSymbolCollection();
    collect_from_block(*collection, Chunk);
+
+   // Struct declarations lower to plain local declarations in the AST, so they are surfaced from the parse-time
+   // metadata captured by parse_struct_declaration() rather than from the statement walk above.
+   for (const auto &declaration : Lex.struct_declaration_metadata) {
+      ParserSymbolMetadata symbol;
+      symbol.name = declaration.name;
+      symbol.kind = "struct";
+      symbol.signature = std::format("struct {}", declaration.name);
+      symbol.span = declaration.name_span;
+      symbol.end_span = declaration.end_span;
+      symbol.fields.reserve(declaration.fields.size());
+      for (const auto &field : declaration.fields) {
+         symbol.fields.push_back({ field.name, field.type, field.doc, field.span });
+      }
+      collection->symbols.push_back(std::move(symbol));
+   }
+
    Lua.parser_symbols = collection;
 }

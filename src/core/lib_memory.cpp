@@ -251,7 +251,7 @@ ERR FreeResource(RESOURCEID ResourceID)
    //
    // ERR::Okay      - The manager deallocated the resource, return to user immediately
    // ERR::InUse     - Resource cannot be deallocated yet, do nothing and return error to user
-   // ERR::Terminate - Deallocate the resource as a standard memory block
+   // ERR::Terminate - Deallocate the resource as a memory block originating from AllocMemory()
    // ERR::*         - Return code to user
 
    ResourceRecord *resource;
