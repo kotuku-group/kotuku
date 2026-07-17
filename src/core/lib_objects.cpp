@@ -459,7 +459,10 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 
          if (auto lock = std::unique_lock{glmTimer, 1000ms}) {
             for (auto it=glTimers.begin(); it != glTimers.end(); ) {
-               if (it->Subscriber IS Object) {
+               if ((it->Subscriber IS Object) and (not it->Locked)) {
+                  // Locked entries are in use by the timer dispatcher, which holds an iterator to them; erasing
+                  // one here would invalidate it.  The dispatcher detects the terminated subscriber on its next
+                  // cycle and removes the entry itself.
                   log.warning("%s object #%d has an unfreed timer subscription, routine %p, interval %" PF64,
                      mc->ClassName.c_str(), Object->UID, &it->Routine, (long long)it->Interval);
                   if (it->Routine.isScript() and (not it->Routine.stale()) and (it->Routine.Context != Object)) {

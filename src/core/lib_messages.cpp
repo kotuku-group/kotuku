@@ -363,18 +363,32 @@ timer_cycle:
                // the subscription.  The weak pin keeps the subscriber's header readable for this detection.
                error = ERR::Terminate;
             }
+            else if ((timer->Subscriber) and (timer->Subscriber->collecting())) {
+               // The subscriber is marked for deletion; skip the callback and leave entry removal to object_free().
+               error = ERR::AccessObject;
+            }
             else if (timer->Routine.isC()) {
                if (auto subscriber = timer->Subscriber) {
                   if (!LockObject(subscriber, 50)) {
-                     kt::SwitchContext context(subscriber);
+                     if (subscriber->collecting()) {
+                        // Re-validate after locking: the preceding checks can race with object_free(), which may
+                        // run to completion in the interim, and LockObject()'s fast path will succeed on a zombie
+                        // header.  Once the lock is held any new free attempt is deferred, so this test is final.
+                        // Refer to AccessObject() for the same pattern.
+                        ReleaseObject(subscriber);
+                        error = ERR::AccessObject;
+                     }
+                     else {
+                        kt::SwitchContext context(subscriber);
 
-                     auto routine = (ERR (*)(OBJECTPTR, int64_t, int64_t, APTR))timer->Routine.Routine;
-                     glmTimer.unlock();
-                     relock = true;
+                        auto routine = (ERR (*)(OBJECTPTR, int64_t, int64_t, APTR))timer->Routine.Routine;
+                        glmTimer.unlock();
+                        relock = true;
 
-                     error = routine(subscriber, elapsed, current_time, timer->Routine.Meta);
+                        error = routine(subscriber, elapsed, current_time, timer->Routine.Meta);
 
-                     ReleaseObject(subscriber);
+                        ReleaseObject(subscriber);
+                     }
                   }
                   else error = ERR::AccessObject;
                }
@@ -387,14 +401,17 @@ timer_cycle:
             }
             else if (timer->Routine.isScript()) {
                OBJECTID subscriber_id = timer->Subscriber ? timer->Subscriber->UID : 0;
-               glmTimer.unlock();
-               relock = true;
+               if ((timer->Subscriber) and (not subscriber_id)) error = ERR::Terminate; // Zombie; discard orphan
+               else { 
+                  glmTimer.unlock();
+                  relock = true;
 
-               if (sc::Call(timer->Routine, std::to_array<ScriptArg>({
-                     { "Subscriber",  subscriber_id, FDF_OBJECTID },
-                     { "Elapsed",     elapsed },
-                     { "CurrentTime", current_time }
-                  }), error) != ERR::Okay) error = ERR::Terminate;
+                  if (sc::Call(timer->Routine, std::to_array<ScriptArg>({
+                        { "Subscriber",  subscriber_id, FDF_OBJECTID },
+                        { "Elapsed",     elapsed },
+                        { "CurrentTime", current_time }
+                     }), error) != ERR::Okay) error = ERR::Terminate;
+               }
             }
             else error = ERR::Terminate;
 
