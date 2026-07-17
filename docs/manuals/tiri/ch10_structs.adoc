@@ -1,5 +1,6 @@
 // CREATED: 2026-07-15 — Struct documentation relocated from the former Modules & Structures chapter.  Added the native 'struct' declaration syntax, the official field type table and typed reference annotations (commit 9279202).  Removed the internal MAKESTRUCT interface and its shorthand field definitions.
 // UPDATED: 2026-07-16 — Dynamically sized array<type> fields can now be declared in native structs (commit 408def84d).
+// UPDATED: 2026-07-17 — Declarations are now 'end'-terminated blocks rather than brace-delimited (commit 56400bb).  Declarations no longer bind a constructor; instances are constructed only through the explicit struct<Name> { ... } form (commit 41b2c10).
 
 [[ch-structs]]
 == Structs
@@ -37,27 +38,29 @@ Both sources produce identical struct values and share the `struct` namespace fu
 
 [[sec-struct-declarations]]
 === Struct Declarations
-indexterm:[struct declarations] The `struct` declaration statement registers a new struct definition and binds the definition name as a constructor:
+indexterm:[struct declarations] The `struct` declaration statement registers a new struct definition.  The declaration begins with the `struct` keyword and the definition name, lists the fields, and terminates with the `end` keyword:
 
 [source,tiri]
 ----
-struct User {
+struct User
    Name: string
    Age: int
    Enabled: bool
-}
+end
 
-user = User { Name='Alice', Age=30 }
+user = struct<User> { Name='Alice', Age=30 }
 print(user.Name, user.Age)   -- Alice  30
 ----
 
 Each field is declared as `Name: type`, where `type` is one of the official field types listed in <<sec-struct-field-types>>.  Fields are separated by commas or newlines; both separators are interchangeable within the same declaration.
 
+A declaration does not bind the definition name as a variable or constructor.  Instances are constructed through the explicit `struct<Name> { ... }` form described in <<sec-struct-construction>>, or through the `struct` namespace functions in <<sec-struct-namespace>>.  Braces are reserved for construction and cannot delimit a declaration.
+
 [discrete]
 ==== Semantics
 
 * Declarations are permitted at the top-level scope of a source file only.  A declaration inside a function or block raises a parse error.
-* The definition is registered at parse time for the current script, and the definition name is bound as a constructor in the declaring scope.
+* The definition is registered at parse time for the current script.  A declaration binds no variable and emits no bytecode; it registers the layout only.
 * The definition interoperates with the `struct` namespace: `struct.new('User')` and `struct.size('User')` resolve declarations by name.
 * Re-declaring a name with an identical layout is permitted and has no effect.  Re-declaring a name with a different layout raises a parse error that reports the location of the original declaration.
 * `struct` is not a reserved word.  The declaration form is recognised contextually at statement position, and `struct` remains usable as an identifier.
@@ -68,6 +71,7 @@ Each field is declared as `Name: type`, where `type` is one of the official fiel
 The following conditions raise a parse error:
 
 * A definition name containing non-alphanumeric characters.
+* A brace following the definition name.  Declarations use `end` termination; braces are reserved for `struct<Name> { ... }` construction.
 * A declaration with no fields.
 * Two field names that collide case-insensitively.
 * An unrecognised field type name.
@@ -75,20 +79,23 @@ The following conditions raise a parse error:
 * An `array<type>` field with an unsupported element type or a declared dimension (see <<sec-struct-dynamic-arrays>>).
 * A layout whose total size exceeds the supported struct size range.
 
+[[sec-struct-construction]]
 [discrete]
 ==== Construction
 
-[.api]`instance = Name([Fields])`
+[.api]`instance = struct<Name> { [Fields] }`
 
-A declared name is called as a constructor.  Calling with no arguments returns a zero-initialised instance: numeric fields read `0`, `bool` fields read `false`, string fields read `''`, object and pointer fields read `nil`, and dynamic array fields read as empty arrays.
+The explicit `struct<Name>` construction form creates an instance of the declared layout `Name`.  This is the only construction syntax bound to a declaration; the definition name is not itself callable.  `Name` must reference a definition that has already been registered.  A `struct<Name>` reference with no following initialiser table raises a parse error, as does a reference to an unregistered definition.
 
-If `Fields` is a table, the key-value pairs are applied to the corresponding fields after zero-initialisation.  Field values are subject to the assignment rules defined in <<sec-struct-field-access>>; a value that the target field does not accept raises an exception.
+The initialiser table is mandatory.  An empty table constructs a zero-initialised instance: numeric fields read `0`, `bool` fields read `false`, string fields read `''`, object and pointer fields read `nil`, and dynamic array fields read as empty arrays.  When `Fields` is present, its key-value pairs are applied to the corresponding fields after zero-initialisation.  Field values are subject to the assignment rules defined in <<sec-struct-field-access>>; a value that the target field does not accept raises an exception.
 
 [source,tiri]
 ----
-empty = User()
-user  = User { Name='Alice', Age=30, Enabled=true }
+empty = struct<User> { }
+user  = struct<User> { Name='Alice', Age=30, Enabled=true }
 ----
+
+`struct<Name> { Fields }` is equivalent to `struct.new('Name', Fields)` (see <<sec-struct-namespace>>).
 
 [[sec-struct-field-types]]
 === Field Types
@@ -193,10 +200,10 @@ Append `[N]` to a type to declare a fixed-size array of `N` elements, where `N` 
 
 [source,tiri]
 ----
-struct Sample {
+struct Sample
    Buffer: char[16]
    Fixed: int[3]
-}
+end
 ----
 
 Fixed arrays of `string` are not supported and raise a parse error.
@@ -209,12 +216,12 @@ indexterm:[struct array fields] The `array<type>` field type declares a dynamica
 
 [source,tiri]
 ----
-struct Palette {
+struct Palette
    Names:  array<string>
    Values: array<int>
-}
+end
 
-palette = Palette { Values=array<int> { 1, 2, 3 } }
+palette = struct<Palette> { Values=array<int> { 1, 2, 3 } }
 palette.Values = array<int> { 8, 9, 10, 11, 12 }   -- resizes to five elements
 ----
 
@@ -234,7 +241,7 @@ function age(Value: struct<User>): num
    return Value.Age
 end
 
-local typed: struct<User> = User { Age=30 }
+local typed: struct<User> = struct<User> { Age=30 }
 ----
 
 Annotating a value with its layout enables the compiler to resolve field offsets statically (see <<ch-performance-and-the-jit>>).
