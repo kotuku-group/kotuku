@@ -3,6 +3,9 @@ rx_obj_new = <{ regex.new("([\\w]+)\\s*=\\s*obj\\.new\\s*\\(\\s*['\"]([\\w]+)['\
 rx_starts_capital = <{ regex.new("^[A-Z]") }>
 rx_action_prefix = <{ regex.new("^ac[A-Z]") }>
 rx_method_prefix = <{ regex.new("^mt[A-Z]") }>
+rx_struct_new  = <{ regex.new("([\\w]+)\\s*=\\s*struct\\.new\\s*\\(\\s*['\"]([\\w]+)['\"]", regex.DOT_ALL) }>
+rx_struct_anno = <{ regex.new([[([A-Za-z_]\w*)\s*:\s*struct<\s*([A-Za-z_]\w*)\s*>]]) }>
+rx_struct_ctor = <{ regex.new("([A-Za-z_]\\w*)\\s*=\\s*([A-Za-z_]\\w*)\\s*[\\(\\{]") }>
 
 extern lspUriToPath
 
@@ -111,6 +114,28 @@ function buildTypeMap(Doc)
    end
 
    return typeMap
+end
+
+-- Build a mapping of variable names to declared-struct names.  Sources, in increasing precedence: definition-value
+-- construction (user = User {...} / User()), struct.new('Name') assignments, and struct<Name> type annotations.
+-- Constructor matches are speculative; lookups only succeed when the mapped name resolves to a struct symbol.
+
+function buildStructTypeMap(Doc:table):table
+   struct_map = {}
+
+   for start, stop, cap in rx_struct_ctor.findAll(Doc.content) do
+      struct_map[cap[0]] = cap[1]
+   end
+
+   for start, stop, cap in rx_struct_new.findAll(Doc.content) do
+      struct_map[cap[0]] = cap[1]
+   end
+
+   for start, stop, cap in rx_struct_anno.findAll(Doc.content) do
+      struct_map[cap[0]] = cap[1]
+   end
+
+   return struct_map
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -289,6 +314,26 @@ function hoverAppendErrorSection(Markdown:str, Errors:array):str
    return Markdown
 end
 
+function hoverAppendFieldSection(Markdown:str, Fields:array):str
+   lines = array<string>
+
+   for field in values(Fields or array<table>) do
+      label = field.name or ''
+      if hoverTextHasContent(field.type) then
+         label ..= ': ' .. field.type
+      end
+      line = f'- `{label}`'
+      if hoverTextHasContent(field.doc) then line ..= ' - ' .. field.doc end
+      lines:push(line)
+   end
+
+   if #lines > 0 then
+      Markdown ..= '\n\n**Fields**\n\n' .. lines:concat('\n')
+   end
+
+   return Markdown
+end
+
 function formatDocumentSymbolHover(Symbol:table):str
    signature = Symbol.signature or Symbol.name
    doc_text = Symbol.doc?.body
@@ -304,6 +349,7 @@ function formatDocumentSymbolHover(Symbol:table):str
    md = hoverAppendParamSection(md, Symbol.params)
    md = hoverAppendResultSection(md, Symbol.results)
    md = hoverAppendErrorSection(md, Symbol.errors)
+   md = hoverAppendFieldSection(md, Symbol.fields)
 
    return md
 end
@@ -316,6 +362,52 @@ function resolveDocumentSymbolHover(TokenInfo:table, Doc:table):str
       if hoverSymbolMatches(symbol, TokenInfo) then
          return formatDocumentSymbolHover(symbol)
       end
+   end
+
+   return nil
+end
+
+function hoverFindStructSymbol(Doc:table, Name:str):table
+   Name ?! return nil
+   symbols = hoverGetDocumentSymbols(Doc)
+   symbols ?! return nil
+
+   for symbol in values(symbols) do
+      if symbol.kind is 'struct' and symbol.name is Name then return symbol end
+   end
+
+   return nil
+end
+
+function formatStructFieldHover(StructName:str, Field:table):str
+   md = f'**{StructName}.{Field.name}**\n\n'
+   md ..= f"Type: `{Field.type or 'unknown'}`"
+   if hoverTextHasContent(Field.doc) then
+      md ..= '\n\n' .. Field.doc
+   end
+   return md
+end
+
+-- Resolve hover for field access on a declared-struct instance (user.Name) or on the struct name itself
+-- (User.Name).  Field names are unique case-insensitively, so an exact match is preferred with a
+-- case-insensitive fallback.
+
+function resolveStructFieldHover(TokenInfo:table, Doc:table):str
+   struct_symbol = hoverFindStructSymbol(Doc, TokenInfo.object)
+   if not struct_symbol then
+      struct_map = buildStructTypeMap(Doc)
+      struct_symbol = hoverFindStructSymbol(Doc, struct_map[TokenInfo.object])
+   end
+   struct_symbol ?! return nil
+
+   token = TokenInfo.text
+   for field in values(struct_symbol.fields or array<table>) do
+      if field.name is token then return formatStructFieldHover(struct_symbol.name, field) end
+   end
+
+   lower_token = token:lower()
+   for field in values(struct_symbol.fields or array<table>) do
+      if field.name:lower() is lower_token then return formatStructFieldHover(struct_symbol.name, field) end
    end
 
    return nil
@@ -366,6 +458,12 @@ global function resolveHoverContent(TokenInfo, Doc)
    -- Handle method or field access on an object
    if (context is 'method_call' or context is 'field_access') and TokenInfo.object then
       objName = TokenInfo.object
+
+      -- Declared-struct field access, e.g. user.Name where user is a struct instance
+      if context is 'field_access' then
+         struct_hover = resolveStructFieldHover(TokenInfo, Doc)
+         if struct_hover then return struct_hover end
+      end
 
       -- Try to infer class type from obj.new() assignments
       typeMap = buildTypeMap(Doc)

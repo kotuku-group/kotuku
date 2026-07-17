@@ -303,3 +303,55 @@ end
    assert(hover and hover:find('@SourceFile', 0, true), 'Hover should document @SourceFile.')
    assert(hover:find('Parser annotation', 0, true), 'Hover should identify parser annotations.')
 end
+
+@Test function StructDeclarationReceivesKeywordToken()
+   source = 'struct User {\n' ..
+      '   Name: string\n' ..
+      '}\n'
+
+   tokens = tokenizeTiri(source)
+
+   struct_keyword = findToken(tokens, 0, 0, 'struct')
+   struct_name = findToken(tokens, 0, 7, 'User')
+
+   assert(struct_keyword and struct_keyword.type is 0, 'struct declarations should highlight struct as a keyword.')
+   assert(struct_name and struct_name.type is 11, 'The declared struct name should be a class token.')
+   assert((struct_name.modifiers & 1) != 0, 'The declared struct name should carry the declaration modifier.')
+end
+
+@Test function StructDeclarationBraceOnNextLine()
+   source = 'struct User\n' ..
+      '{\n' ..
+      '   Name: string\n' ..
+      '}\n'
+
+   tokens = tokenizeTiri(source)
+
+   struct_keyword = findToken(tokens, 0, 0, 'struct')
+   struct_name = findToken(tokens, 0, 7, 'User')
+
+   assert(struct_keyword and struct_keyword.type is 0, 'A brace on the following line is still a declaration.')
+   assert(struct_name and struct_name.type is 11, 'The struct name should be a class token with the brace deferred.')
+end
+
+@Test function StructLibraryRemainsNamespace()
+   source = "user = struct.new('User')\n" ..
+      'struct.size(user)\n'
+
+   tokens = tokenizeTiri(source)
+
+   assign_namespace = findToken(tokens, 0, 7, 'struct')
+   call_namespace = findToken(tokens, 1, 0, 'struct')
+
+   assert(assign_namespace and assign_namespace.type is 10, 'struct.new() usage should remain a namespace token.')
+   assert(call_namespace and call_namespace.type is 10, 'struct.size() usage should remain a namespace token.')
+end
+
+@Test function EnumIsAKeyword()
+   source = 'enum Colour { Red, Green }\n'
+
+   tokens = tokenizeTiri(source)
+
+   enum_keyword = findToken(tokens, 0, 0, 'enum')
+   assert(enum_keyword and enum_keyword.type is 0, 'enum should be highlighted as a keyword.')
+end

@@ -177,3 +177,76 @@ end
    assert(token and token.text is 'missingSymbol', 'Hover should identify the unknown symbol token.')
    assert(not hover, 'Unknown symbols should not return hover content.')
 end
+
+@Test function StructDeclarationHoverShowsFields()
+   hover, token = hoverAt([[
+struct Us|er {
+   Name: string -- The user name
+   Age: int
+}
+]])
+
+   assert(token and token.text is 'User', 'Hover token extraction should identify the struct name.')
+   assertContains(hover, 'struct User', 'Struct hover should lead with the declaration signature.')
+   assertContains(hover, '**Fields**', 'Struct hover should include a Fields section.')
+   assertContains(hover, '`Name: string`', 'Struct hover should list field names and types.')
+   assertContains(hover, 'The user name', 'Struct hover should include field doc comments.')
+end
+
+@Test function StructFieldHoverViaStructNew()
+   hover, token = hoverAt([[
+struct User {
+   Name: string -- The user name
+   Age: int
+}
+u = struct.new('User')
+print(u.Na|me)
+]])
+
+   assert(token and token.text is 'Name' and token.object is 'u', 'Token extraction should identify field access.')
+   assertContains(hover, 'User.Name', 'Field hover should be attributed to the struct.')
+   assertContains(hover, '`string`', 'Field hover should state the declared type.')
+   assertContains(hover, 'The user name', 'Field hover should include the doc comment.')
+end
+
+@Test function StructFieldHoverViaAnnotatedParameter()
+   hover, token = hoverAt([[
+struct User {
+   Name: string
+   Age: int -- Age in years
+}
+function describe(Person: struct<User>)
+   return Person.Ag|e
+end
+]])
+
+   assert(token and token.text is 'Age' and token.object is 'Person', 'Token extraction should identify the parameter access.')
+   assertContains(hover, 'User.Age', 'Annotated parameter access should resolve to the struct field.')
+   assertContains(hover, 'Age in years', 'Annotated parameter hover should include the doc comment.')
+end
+
+@Test function StructFieldHoverViaConstruction()
+   hover, token = hoverAt([[
+struct User {
+   Name: string -- The user name
+}
+user = User { Name = 'Paul' }
+print(user.Na|me)
+]])
+
+   assertContains(hover, 'User.Name', 'Definition-value construction should map the variable to its struct.')
+   assertContains(hover, 'The user name', 'Constructed instance hover should include the doc comment.')
+end
+
+@Test function StructUnknownFieldHasNoHover()
+   hover, token = hoverAt([[
+struct User {
+   Name: string
+}
+u = struct.new('User')
+print(u.Mis|sing)
+]])
+
+   assert(token and token.text is 'Missing', 'Token extraction should identify the unknown field.')
+   assert(not hover, 'Unknown struct fields should not produce hover content.')
+end

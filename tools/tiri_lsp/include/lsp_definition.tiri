@@ -8,6 +8,11 @@ rx_def_decl           <const> = <{ regex.new([[\b(local|global)\s+([A-Za-z_][A-Z
 rx_def_assign_func    <const> = <{ regex.new([[\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*function\s*\(([^\)]*)\)]]) }>
 rx_def_assign         <const> = <{ regex.new([[^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=]]) }>
 rx_def_param          <const> = <{ regex.new([[([A-Za-z_][A-Za-z0-9_]*)]]) }>
+rx_def_struct         <const> = <{ regex.new([[^\s*struct\s+([A-Za-z_][A-Za-z0-9_]*)\b]]) }>
+rx_def_struct_field   <const> = <{ regex.new([[([A-Za-z_][A-Za-z0-9_]*)\s*:]]) }>
+rx_def_struct_new     <const> = <{ regex.new([=[([A-Za-z_]\w*)\s*=\s*struct\.new\s*\(\s*['"]([A-Za-z_]\w*)['"]]=]) }>
+rx_def_struct_anno    <const> = <{ regex.new([[([A-Za-z_]\w*)\s*:\s*struct<\s*([A-Za-z_]\w*)\s*>]]) }>
+rx_def_struct_ctor    <const> = <{ regex.new([=[([A-Za-z_]\w*)\s*=\s*([A-Za-z_]\w*)\s*[\(\{]]=]) }>
 rx_def_loader_before  <const> = <{ regex.new(
    [[\b(import|require|include)\s*(?:\(\s*)?]] ..
    [[(?:(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')\s*,\s*)*$]]
@@ -281,8 +286,11 @@ function addFunctionParameters(Symbols:array, Params:str, LineText:str, Line:num
    Params ?! return
    scan_from = SearchFrom or 0
 
-   for start, stop, cap in rx_def_param.findAll(Params) do
-      name = cap[0]
+   -- Only the first identifier of each comma-separated segment is the parameter name; anything after a ':' is a
+   -- type annotation (e.g. 'Person: struct<User>') and must not shadow real declarations.
+   for segment in values(Params:split(',')) do
+      s, e, cap = rx_def_param.findFirst(segment)
+      name = s and cap[0]
       if name and name != '' then
          name_start = LineText:find(name, scan_from, true)
          if name_start then
@@ -308,16 +316,82 @@ function updateTableDepth(LineCode:str, TableDepth:num):num
    return depth
 end
 
+-- Add 'StructName.FieldName' symbols for the struct fields present in LineCode.
+
+function addStructFieldSymbols(Symbols:array, StructName:str, LineCode:str, LineText:str, Line:num, SearchFrom:num)
+   scan_from = SearchFrom or 0
+
+   for segment in values(LineCode:split(',')) do
+      s, e, cap = rx_def_struct_field.findFirst(segment)
+      if s then
+         field_name = cap[0]
+         name_start = LineText:find(field_name, scan_from, true)
+         if name_start then
+            addSymbol(Symbols, StructName .. '.' .. field_name, 'field', Line, name_start,
+               name_start + #field_name)
+            scan_from = name_start + #field_name
+         end
+      end
+   end
+end
+
 global function extractDefinitionSymbols(Doc:table):array
    symbols = array<table>
    total_lines = getTotalLines(Doc)
    in_block_comment = false
    table_depth = 0
+   local struct_frame  -- { name, depth } while inside a struct declaration body
+   local pending_struct -- Struct declaration waiting for its opening brace
 
    for line_num = 0, total_lines - 1 do
       line_text = getLine(Doc, line_num)
       line_code, in_block_comment = maskNonCode(line_text, in_block_comment)
       in_table_literal = table_depth > 0
+
+      if pending_struct then
+         brace_pos = line_code:find('{', 0, true)
+         if brace_pos then
+            remainder = line_code:sub(brace_pos + 1)
+            addStructFieldSymbols(symbols, pending_struct.name, remainder, line_text, line_num, brace_pos)
+            open_depth = updateTableDepth(line_code, 0)
+            if open_depth > 0 then
+               struct_frame = { name = pending_struct.name, depth = open_depth }
+            end
+            pending_struct = nil
+         end
+         table_depth = updateTableDepth(line_code, table_depth)
+         continue
+      end
+
+      -- Struct declaration bodies contain only field declarations; register them and skip the other extractors.
+      if struct_frame then
+         addStructFieldSymbols(symbols, struct_frame.name, line_code, line_text, line_num, 0)
+         struct_frame.depth = updateTableDepth(line_code, struct_frame.depth)
+         if struct_frame.depth is 0 then struct_frame = nil end
+         table_depth = updateTableDepth(line_code, table_depth)
+         continue
+      end
+
+      struct_start, struct_stop, struct_cap = rx_def_struct.findFirst(line_code)
+      if struct_start then
+         struct_name = struct_cap[0]
+         name_start = line_text:find(struct_name, struct_start, true) or struct_start
+         addSymbol(symbols, struct_name, 'struct', line_num, name_start, name_start + #struct_name)
+
+         brace_pos = line_code:find('{', 0, true)
+         if brace_pos then
+            remainder = line_code:sub(brace_pos + 1)
+            addStructFieldSymbols(symbols, struct_name, remainder, line_text, line_num, brace_pos)
+            open_depth = updateTableDepth(line_code, 0)
+            if open_depth > 0 then
+               struct_frame = { name = struct_name, depth = open_depth }
+            end
+         else
+            pending_struct = { name = struct_name }
+         end
+         table_depth = updateTableDepth(line_code, table_depth)
+         continue
+      end
 
       for start, stop, cap in rx_def_func.findAll(line_code) do
          name = cap[0]
@@ -370,6 +444,39 @@ global function extractDefinitionSymbols(Doc:table):array
    return symbols
 end
 
+function buildDefinitionStructTypeMap(Doc:table, Position:table):table
+   type_map = {}
+   in_block_comment = false
+   total_lines = getTotalLines(Doc)
+   if Position and Position.line + 1 < total_lines then total_lines = Position.line + 1 end
+
+   for line_num = 0, total_lines - 1 do
+      line_text = getLine(Doc, line_num)
+      if Position and line_num is Position.line then
+         line_text = line_text:sub(0, utf16ColToByteCol(line_text, Position.character))
+      end
+      line_code, in_block_comment = maskNonCode(line_text, in_block_comment)
+
+      for start, stop, cap in rx_def_struct_ctor.findAll(line_code) do
+         type_map[cap[0]] = cap[1]
+      end
+
+      -- The class name passed to struct.new() is a string and is therefore absent from LineCode.  Match the raw
+      -- line, then require the assignment itself to remain visible in the masked code to reject comments.
+      for start, stop, cap in rx_def_struct_new.findAll(line_text) do
+         if line_code:sub(start, start + #cap[0]) is cap[0] then
+            type_map[cap[0]] = cap[1]
+         end
+      end
+
+      for start, stop, cap in rx_def_struct_anno.findAll(line_code) do
+         type_map[cap[0]] = cap[1]
+      end
+   end
+
+   return type_map
+end
+
 function isSymbolBefore(Symbol:table, Position:table):bool
    if Symbol.line < Position.line then return true end
    if Symbol.line is Position.line and Symbol.startChar <= Position.character then return true end
@@ -395,9 +502,31 @@ function resolveDocumentSymbolDefinition(Doc:table, TokenInfo:table, Position:ta
    symbols = extractDefinitionSymbols(Doc)
    best = nil
    fallback_function = nil
+   qualified_field = nil
+
+   if TokenInfo.object then
+      struct_map = buildDefinitionStructTypeMap(Doc, Position)
+      struct_name = struct_map[TokenInfo.object]
+
+      if not struct_name then
+         for symbol in values(symbols) do
+            if symbol.kind is 'struct' and symbol.name is TokenInfo.object then
+               struct_name = symbol.name
+               break
+            end
+         end
+      end
+
+      if struct_name then qualified_field = struct_name .. '.' .. TokenInfo.text end
+   end
 
    for symbol in values(symbols) do
-      if symbolNameMatches(symbol.name, TokenInfo) then
+      matches = symbolNameMatches(symbol.name, TokenInfo)
+      if symbol.kind is 'field' and TokenInfo.object then
+         matches = qualified_field and symbol.name is qualified_field
+      end
+
+      if matches then
          if symbol.kind is 'function' and not fallback_function then
             fallback_function = symbol
          end

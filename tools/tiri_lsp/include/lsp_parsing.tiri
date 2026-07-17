@@ -13,6 +13,7 @@ rx_kw_repeat   = <{ regex.new([[\brepeat\b]]) }>
 rx_kw_defer    = <{ regex.new([[\bdefer\b]]) }>
 rx_kw_end      = <{ regex.new([[\bend\b]]) }>
 rx_kw_until    = <{ regex.new([[\buntil\b]]) }>
+rx_kw_struct   = <{ regex.new([[^\s*struct\s+[A-Za-z_][A-Za-z0-9_]*\b]]) }>
 
 -- Deferred regex patterns for token parsing
 rx_global_var   = <{ regex.new("^gl[A-Z]") }>
@@ -451,6 +452,44 @@ global function tokenizeTiri(Source:str):array
 
          if isRangeOperator(start_pos, pos, ident) then
             addToken(line, ident_start, ident_len, 1, 0)  -- range separator operator
+         elseif ident is 'struct' then
+            -- 'struct' is a soft keyword: it begins a declaration only when followed by an identifier and '{'
+            -- (newlines permitted, matching the parser's token-based lookahead).  Anything else is the runtime
+            -- library namespace, e.g. struct.new().
+            sk_pos = pos
+            sk_col = col
+            sk_line = line
+            sk_matched = false
+            skipWhitespace()
+            if pos < len and isIdentStart(Source:sub(pos, pos + 1)) then
+               name_line = line
+               name_col = col
+               name_pos = pos
+               while pos < len and isIdentChar(Source:sub(pos, pos + 1)) do
+                  pos++
+                  col++
+               end
+               name_len = col - name_col
+               after_pos = pos
+               after_col = col
+               after_line = line
+               skipWhitespace()
+               if pos < len and Source:sub(pos, pos + 1) is '{' then
+                  addToken(sk_line, ident_start, ident_len, 0, 0)  -- 'struct' keyword
+                  addToken(name_line, name_col, name_len, 11, 1)   -- struct name: class + declaration
+                  -- Resume immediately after the struct name; the '{' is tokenised normally
+                  pos = after_pos
+                  col = after_col
+                  line = after_line
+                  sk_matched = true
+               end
+            end
+            if not sk_matched then
+               pos = sk_pos
+               col = sk_col
+               line = sk_line
+               addToken(sk_line, ident_start, ident_len, 10, 0)  -- namespace ('struct' library)
+            end
          elseif FLUID_KEYWORDS[ident] then
             addToken(line, ident_start, ident_len, 0, 0)  -- keyword
          elseif FLUID_OPERATORS[ident] then
@@ -782,6 +821,7 @@ global function extractFoldingRanges(Doc:table):array
    block_stack = array<table>  -- Stack of { line, kind } for nested blocks
    in_block_comment = false
    block_comment_start = 0
+   local pending_struct_line
 
    for line_num = 0, total_lines - 1 do
       line_text = getLine(Doc, line_num)
@@ -826,6 +866,49 @@ global function extractFoldingRanges(Doc:table):array
       -- Find comment position to avoid matching keywords in comments
       comment_pos = line_text:find('--')
 
+      -- Net brace balance for the code portion of the line (struct bodies are brace-delimited)
+      function countLineBraces()
+         limit = comment_pos or #line_text
+         net = 0
+         for i = 0, limit - 1 do
+            c = line_text:sub(i, i + 1)
+            if c is '{' then
+               net++
+            elseif c is '}' then
+               net -= 1
+            end
+         end
+         return net
+      end
+
+      if pending_struct_line != nil then
+         net_braces = countLineBraces()
+         if net_braces > 0 then
+            block_stack:push({ line = pending_struct_line, kind = 'struct', depth = net_braces })
+            pending_struct_line = nil
+         elseif line_text:find('{', 0, true) then
+            pending_struct_line = nil
+         end
+         continue
+      end
+
+      -- While inside a struct declaration body, track brace balance instead of keyword blocks.  Struct bodies
+      -- cannot contain keyword blocks, so this cannot interleave with the frames below.
+      if #block_stack > 0 and block_stack[#block_stack - 1].kind is 'struct' then
+         frame = block_stack[#block_stack - 1]
+         frame.depth += countLineBraces()
+         if frame.depth <= 0 then
+            block_stack:pop()
+            if line_num > frame.line then
+               ranges:push({
+                  startLine = frame.line,
+                  endLine = line_num
+               })
+            end
+         end
+         continue
+      end
+
       -- Check for block openers (only if not in a comment)
       function checkKeyword(RxPattern)
          start_pos, stop_pos = RxPattern.findFirst(line_text)
@@ -863,6 +946,18 @@ global function extractFoldingRanges(Doc:table):array
       -- defer (opens a block)
       if checkKeyword(rx_kw_defer) then
          block_stack:push({ line = line_num, kind = 'defer' })
+      end
+
+      -- struct Name { ... } (brace-delimited declaration block)
+      if checkKeyword(rx_kw_struct) then
+         net_braces = countLineBraces()
+         if net_braces > 0 then
+            block_stack:push({ line = line_num, kind = 'struct', depth = net_braces })
+            continue
+         elseif line_text:find('{', 0, true) is nil then
+            pending_struct_line = line_num
+            continue
+         end
       end
 
       -- Check for block closers
