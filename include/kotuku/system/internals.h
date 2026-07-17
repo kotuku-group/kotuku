@@ -39,9 +39,8 @@ public:
    int64_t   LastCall;        // PreciseTime() recorded at the last call (us)
    int64_t   Interval;        // The amount of microseconds to wait at each interval
    int64_t   PendingInterval; // Switch to this interval after completing the next cycle
-   OBJECTPTR Subscriber;      // The object that is subscribed (pointer, if private)
-   OBJECTID  SubscriberID;    // The object that is subscribed
-   FUNCTION  Routine;         // Routine to call if not using AC::Timer - ERR Routine(OBJECTID, int, int);
+   OBJECTPTR Subscriber;      // Weak-pinned subscriber, or null for internal subscriptions with no subscriber
+   FUNCTION  Routine;         // Routine to call on trigger
    uint8_t   Cycle;
    bool      Locked;
 };
@@ -53,8 +52,9 @@ public:
 class ObjectRecord {
 public:
    OBJECTPTR Object;
-   OBJECTPTR Owner; // Null or a valid pointer whilst glmObjects is held; nulled by object_free() when the owner dies first
-   // Object children; entries are valid pointers whilst glmObjects is held.  Pinning of child objects is unnecessary,
+   // Can be null or a valid pointer whilst glmObjects is held.  Nulled by object_free() when the owner dies first.
+   OBJECTPTR Owner; 
+   // Object children entries are valid pointers whilst glmObjects is held.  Pinning of child objects is unnecessary,
    // the code has been designed for this and maintaining that behaviour is essential.
    ankerl::unordered_dense::set<OBJECTPTR> Children;
    ankerl::unordered_dense::set<RESOURCEID> Resources; // Non-object resources

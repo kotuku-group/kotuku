@@ -335,9 +335,22 @@ timer_cycle:
       else if (glmTimer.try_lock_for(200ms)) {
          int64_t current_time = PreciseTime();
          for (auto timer=glTimers.begin(); timer != glTimers.end(); ) {
+            if ((timer->Subscriber) and (not timer->Locked) and (timer->Subscriber->terminating())) {
+               // Sweep orphaned subscriptions ahead of the deadline gate; a subscriber freed during its own
+               // callback would otherwise retain its entry and weak pin until the next interval elapsed.
+               // Locked entries belong to a dispatcher mid-callback and are left for it to remove.
+               if (timer->Routine.isScript() and (not timer->Routine.stale())) {
+                  ((objScript *)timer->Routine.Context)->derefProcedure(timer->Routine);
+               }
+               if (timer->Routine.defined()) timer->Routine.unpin();
+               timer->Subscriber->unpinWeak();
+               timer = glTimers.erase(timer);
+               continue;
+            }
             if (current_time < timer->NextCall) { timer++; continue; }
             if (timer->Cycle IS glTimerCycle) { timer++; continue; }
             if (timer->Routine.releaseIfStale()) {
+               if (timer->Subscriber) timer->Subscriber->unpinWeak();
                timer = glTimers.erase(timer);
                continue;
             }
@@ -354,43 +367,73 @@ timer_cycle:
             timer->LastCall = current_time;
             timer->Cycle = glTimerCycle;
 
-            //log.trace("Subscriber: %d, Interval: %d, Time: %" PRId64, timer->SubscriberID, timer->Interval, current_time);
-
             timer->Locked = true; // Prevents termination of the structure irrespective of having a TL_TIMER lock.
 
             bool relock = false;
-            if (timer->Routine.isC()) {
-               OBJECTPTR subscriber;
-               if (!timer->SubscriberID) { // Internal subscriptions like process_janitor() don't have a subscriber
+            if ((timer->Subscriber) and (timer->Subscriber->terminating())) {
+               // Orphaned entry: the subscriber terminated but object_free() could not acquire glmTimer to remove
+               // the subscription.  The weak pin keeps the subscriber's header readable for this detection.
+               error = ERR::Terminate;
+            }
+            else if ((timer->Subscriber) and (timer->Subscriber->collecting())) {
+               // The subscriber is marked for deletion; skip the callback and leave entry removal to object_free().
+               error = ERR::AccessObject;
+            }
+            else if (timer->Routine.isC()) {
+               if (auto subscriber = timer->Subscriber) {
+                  if (!LockObject(subscriber, 50)) {
+                     if (subscriber->collecting()) {
+                        // Re-validate after locking: the preceding checks can race with object_free(), which may
+                        // run to completion in the interim, and LockObject()'s fast path will succeed on a zombie
+                        // header.  Once the lock is held any new free attempt is deferred, so this test is final.
+                        // Refer to AccessObject() for the same pattern.
+                        ReleaseObject(subscriber);
+                        error = ERR::AccessObject;
+                     }
+                     else {
+                        kt::SwitchContext context(subscriber);
+
+                        auto routine = (ERR (*)(OBJECTPTR, int64_t, int64_t, APTR))timer->Routine.Routine;
+                        glmTimer.unlock();
+                        relock = true;
+
+                        error = routine(subscriber, elapsed, current_time, timer->Routine.Meta);
+
+                        ReleaseObject(subscriber);
+                     }
+                  }
+                  else error = ERR::AccessObject;
+               }
+               else { // Internal subscriptions like process_janitor() don't have a subscriber
                   auto routine = (ERR (*)(OBJECTPTR, int64_t, int64_t, APTR))timer->Routine.Routine;
                   glmTimer.unlock();
                   relock = true;
                   error = routine(nullptr, elapsed, current_time, timer->Routine.Meta);
                }
-               else if (!AccessObject(timer->SubscriberID, 50, &subscriber)) {
-                  kt::SwitchContext context(subscriber);
-
-                  auto routine = (ERR (*)(OBJECTPTR, int64_t, int64_t, APTR))timer->Routine.Routine;
+            }
+            else if (timer->Routine.isScript()) {
+               OBJECTID subscriber_id = timer->Subscriber ? timer->Subscriber->UID : 0;
+               if ((timer->Subscriber) and (not subscriber_id)) error = ERR::Terminate; // Zombie; discard orphan
+               else { 
                   glmTimer.unlock();
                   relock = true;
 
-                  error = routine(subscriber, elapsed, current_time, timer->Routine.Meta);
-
-                  ReleaseObject(subscriber);
+                  if (sc::Call(timer->Routine, std::to_array<ScriptArg>({
+                        { "Subscriber",  subscriber_id, FDF_OBJECTID },
+                        { "Elapsed",     elapsed },
+                        { "CurrentTime", current_time }
+                     }), error) != ERR::Okay) error = ERR::Terminate;
                }
-               else error = ERR::AccessObject;
-            }
-            else if (timer->Routine.isScript()) {
-               glmTimer.unlock();
-               relock = true;
-
-               if (sc::Call(timer->Routine, std::to_array<ScriptArg>({
-                     { "Subscriber",  timer->SubscriberID, FDF_OBJECTID },
-                     { "Elapsed",     elapsed },
-                     { "CurrentTime", current_time }
-                  }), error) != ERR::Okay) error = ERR::Terminate;
             }
             else error = ERR::Terminate;
+
+            if (relock) {
+               // Reacquire glmTimer before clearing Locked.  The moment an entry is observed unlocked,
+               // object_free() on another thread is free to erase it and release its pins, so completing the
+               // entry here must be mutually exclusive with the concurrent erasers.  Blocking indefinitely is
+               // safe because all other holders of glmTimer acquire it with a timeout.
+               glmTimer.lock();
+            }
 
             timer->Locked = false;
 
@@ -399,12 +442,16 @@ timer_cycle:
                   ((objScript *)timer->Routine.Context)->derefProcedure(timer->Routine);
                }
                if (timer->Routine.defined()) timer->Routine.unpin();
+               if (timer->Subscriber) timer->Subscriber->unpinWeak();
 
                timer = glTimers.erase(timer);
             }
             else timer++;
 
-            if (relock) goto timer_cycle;
+            if (relock) {
+               glmTimer.unlock();
+               goto timer_cycle;
+            }
          } // for
 
          glmTimer.unlock();
