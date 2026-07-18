@@ -151,6 +151,12 @@ extern "C" const char * sndCreateBuffer(Object *Object, void *Wave, int BufferLe
 {
    if (!glDirectSound) return 0;
 
+   if (Sound->SoundBuffer) { // Release any buffer from a previous activation to prevent a resource leak
+      IDirectSoundBuffer_Stop(Sound->SoundBuffer);
+      IDirectSoundBuffer_Release(Sound->SoundBuffer);
+      Sound->SoundBuffer = nullptr;
+   }
+
    Sound->Object       = Object;
    Sound->SampleLength = SampleLength;
    Sound->BufferLength = BufferLength;
