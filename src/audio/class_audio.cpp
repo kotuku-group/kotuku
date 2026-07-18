@@ -1346,6 +1346,7 @@ extAudio::extAudio(objMetaClass *ClassPtr, OBJECTID ObjectID) : objAudio(ClassPt
    PeriodSize  = 2048;
    MaxChannels = 8;
    Device      = glAudioDevice.empty() ? "default" : glAudioDevice;
+   MasterVolume = 1.0;
 
    const SystemState *state = GetSystemState();
    if ((iequals(state->Platform, "Native")) or (iequals(state->Platform, "Linux"))) {
@@ -1357,10 +1358,8 @@ extAudio::extAudio(objMetaClass *ClassPtr, OBJECTID ObjectID) : objAudio(ClassPt
 #ifdef __linux__
    Volumes.resize(2);
    Volumes[0].Name = "Master";
-   for (int i=0; i < std::ssize(Volumes[0].Channels); i++) Volumes[0].Channels[i] = 1.0;
 
    Volumes[1].Name = "PCM";
-   for (int i=0; i < std::ssize(Volumes[1].Channels); i++) Volumes[1].Channels[i] = 1.0;
 #else
    Volumes.resize(1);
    Volumes[0].Name = "Master";
