@@ -26,6 +26,7 @@
       <class>GradientConic</class>
       <class>GradientContour</class>
       <class>GradientDiamond</class>
+      <class>GradientDiffusion</class>
       <class>GradientDistal</class>
       <class>GradientGouraud</class>
       <class>GradientLinear</class>
@@ -810,6 +811,14 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
 
   </types>
   <structs>
+    <struct name="DiffusionCurveRecord" comment="Describes one curve for the GradientDiffusion Curves field.">
+      <field name="Curve" type="struct MeshControl">Cubic Bezier geometry for this curve segment.</field>
+      <field name="LeftStart" type="struct FRGB">Colour on the left side at the start of the curve.</field>
+      <field name="LeftEnd" type="struct FRGB">Colour on the left side at the end of the curve.</field>
+      <field name="RightStart" type="struct FRGB">Colour on the right side at the start of the curve.</field>
+      <field name="RightEnd" type="struct FRGB">Colour on the right side at the end of the curve.</field>
+    </struct>
+
     <struct name="FontMetrics" comment="Font metrics, measured in pixels relative to the display">
       <field name="Height" type="INT">Full font height equivalent to <code>Ascent (cap-height) + Descent (gutter)</code>.  Does NOT include accents.</field>
       <field name="LineSpacing" type="INT">Vertical advance from one line to the next.  Includes coverage for accents and additional whitespace.</field>

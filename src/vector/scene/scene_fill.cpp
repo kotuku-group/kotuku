@@ -5,6 +5,9 @@ static void fill_gouraud(VectorState &, const TClipRectangle<double> &, double, 
    agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &, SceneRenderer *);
 static void fill_mesh(VectorState &, const TClipRectangle<double> &, double, double, extGradientMesh &, double,
    agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &, SceneRenderer *);
+static void fill_diffusion(VectorState &, const TClipRectangle<double> &, double, double, extGradientDiffusion &,
+   double, agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &,
+   SceneRenderer *);
 
 //********************************************************************************************************************
 
@@ -61,6 +64,11 @@ void SceneRenderer::render_fill(VectorState &State, extVector &Vector, agg::rast
       }
       else if (gradient.classID() IS CLASSID::GRADIENTMESH) {
          fill_mesh(State, Vector.Bounds, mView->vpFixedWidth, mView->vpFixedHeight, (extGradientMesh &)gradient,
+            State.mOpacity * Vector.FillOpacity, mRenderBase, Raster,
+            build_fill_transform(Vector, gradient.Units IS VUNIT::USERSPACE, State), this);
+      }
+      else if (gradient.classID() IS CLASSID::GRADIENTDIFFUSION) {
+         fill_diffusion(State, Vector.Bounds, mView->vpFixedWidth, mView->vpFixedHeight, (extGradientDiffusion &)gradient,
             State.mOpacity * Vector.FillOpacity, mRenderBase, Raster,
             build_fill_transform(Vector, gradient.Units IS VUNIT::USERSPACE, State), this);
       }
@@ -746,6 +754,118 @@ static void fill_mesh(VectorState &State, const TClipRectangle<double> &Bounds, 
    }
 
    render_gouraud_triangles(Gradient.MeshTriangles, Gradient.Resolution, colour_space, RenderBase, path_mask_buffer);
+}
+
+//********************************************************************************************************************
+// Diffusion curves fill.  The gradient's cached colour field (solved in painters/gradient_diffusion.cpp) is sampled
+// as an image through a bilinear span filter with the standard inverse fill transform, reusing the machinery of
+// fill_image().  Unlike the scalar span gradients there is no 1D colour ramp; every pixel receives a full RGBA value
+// from the solved field.
+
+class DiffusionSpanConverter {
+   public:
+   explicit DiffusionSpanConverter(bool Linear) : linear(Linear) { }
+
+   void prepare() { }
+
+   void generate(agg::rgba8 *Span, int, int, unsigned Length) const {
+      do {
+         const int alpha = Span->a;
+         if (alpha > 0) {
+            Span->r = unpremultiply(Span->r, alpha);
+            Span->g = unpremultiply(Span->g, alpha);
+            Span->b = unpremultiply(Span->b, alpha);
+            if (linear) {
+               Span->r = glLinearRGB.invert(Span->r);
+               Span->g = glLinearRGB.invert(Span->g);
+               Span->b = glLinearRGB.invert(Span->b);
+            }
+         }
+         else Span->r = Span->g = Span->b = 0;
+         Span++;
+      } while (--Length);
+   }
+
+   private:
+   bool linear;
+
+   static uint8_t unpremultiply(uint8_t Colour, int Alpha) {
+      return uint8_t(std::min(255, ((int(Colour) * 255) + (Alpha / 2)) / Alpha));
+   }
+};
+
+static void fill_diffusion(VectorState &State, const TClipRectangle<double> &Bounds, double ViewWidth,
+   double ViewHeight, extGradientDiffusion &Gradient, double Opacity,
+   agg::renderer_base<agg::pixfmt_psl> &RenderBase, agg::rasterizer_scanline_aa<> &Raster,
+   const agg::trans_affine &Transform, SceneRenderer *Render)
+{
+   if (Gradient.Curves.empty()) return;
+
+   // The solve rectangle is the region the colour field covers in the gradient's coordinate space.  BOUNDING_BOX
+   // solves over the normalised unit square (so a pure translation of the path never re-solves); USERSPACE solves
+   // over the target path's bounds in viewport coordinates.
+
+   TClipRectangle<double> solve_rect;
+   if (Gradient.Units IS VUNIT::USERSPACE) solve_rect = Bounds;
+   else solve_rect = { 0.0, 0.0, 1.0, 1.0 };
+
+   const double rect_width  = solve_rect.width();
+   const double rect_height = solve_rect.height();
+   if ((rect_width <= 0) or (rect_height <= 0)) return;
+
+   // Resolution scales the solve grid: 128 texels on the longest axis at 0, up to 512 at 1.0.  The short axis
+   // scales proportionally with a floor of 16 texels.
+
+   const double resolution = std::clamp(Gradient.Resolution, 0.0, 1.0);
+   const int grid_max = int(std::round(128.0 + (resolution * 384.0)));
+   int grid_width, grid_height;
+   if (rect_width >= rect_height) {
+      grid_width  = grid_max;
+      grid_height = std::max(16, int(std::round(double(grid_max) * rect_height / rect_width)));
+   }
+   else {
+      grid_height = grid_max;
+      grid_width  = std::max(16, int(std::round(double(grid_max) * rect_width / rect_height)));
+   }
+
+   Gradient.refresh_field(grid_width, grid_height, solve_rect);
+   if (Gradient.FieldBuffer.empty()) return;
+
+   // Build the grid-to-scene transform, then invert it for span sampling - the same sequence as fill_image().
+
+   agg::trans_affine transform;
+   transform.scale(rect_width / double(grid_width), rect_height / double(grid_height));
+   transform.translate(solve_rect.left, solve_rect.top);
+   if (Gradient.Units IS VUNIT::BOUNDING_BOX) {
+      transform.scale(Bounds.width(), Bounds.height());
+      transform.translate(Bounds.left, Bounds.top);
+   }
+   apply_transforms(Gradient, transform);
+   transform *= Transform;
+   transform.invert();
+
+   // Wrap the solved field in a pixel format and sample it bilinearly.  The clone accessor clamps reads at the
+   // field edges, so the fill extends the boundary colours rather than darkening toward transparent black.
+
+   agg::rendering_buffer field_buffer((agg::int8u *)Gradient.FieldBuffer.data(), grid_width, grid_height,
+      grid_width * 4);
+   agg::pixfmt_rgba32 field_pixels(field_buffer);
+   agg::image_accessor_clone<agg::pixfmt_rgba32> source(field_pixels);
+   agg::span_interpolator_linear<> interpolator(transform);
+   agg::span_image_filter_rgba_bilinear<agg::image_accessor_clone<agg::pixfmt_rgba32>,
+      agg::span_interpolator_linear<>> span_gen(source, interpolator);
+   DiffusionSpanConverter span_converter(Gradient.ColourSpace IS VCS::LINEAR_RGB);
+   agg::span_converter converted_span(span_gen, span_converter);
+
+   if ((Render) and (!Render->clip_stack_empty())) {
+      agg::alpha_mask_gray8 alpha_mask(Render->clip_stack_top().m_renderer);
+      agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
+      drawBitmapRender(masked_scanline, RenderBase, Raster, converted_span, Opacity);
+   }
+   else {
+      agg::scanline_u8 scanline;
+      drawBitmapRender(scanline, RenderBase, Raster, converted_span, Opacity);
+   }
 }
 
 //********************************************************************************************************************

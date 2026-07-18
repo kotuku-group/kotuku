@@ -1,0 +1,233 @@
+   include 'vector'
+
+   mVec ?= mod.load('vector')
+
+TOLERANCE <const> = 0.01
+
+glTraceX = 0
+glTraceY = 0
+glTraceCount = 0
+glTraceMinY = 0
+glTraceMaxY = 0
+glTraceMaxX = 0
+glTraceVerticalJumps = 0
+glTracePreviousX = 0
+glTracePreviousY = 0
+glTraceHasPrevious = false
+glTraceLimitMinY = 0
+glTraceLimitMaxY = 0
+glTraceLimitPlateaus = 0
+glTraceLimitPlateausEnabled = false
+glTraceTargetX = 0
+glTraceTargetY = 0
+glTraceTargetDistance = 0
+glTraceTargetEnabled = false
+
+function assertNear(Actual, Expected, Message)
+   assert(math.abs(Actual - Expected) < TOLERANCE, f'{Message}: expected {Expected}, got {Actual}')
+end
+
+function resetTrace()
+   glTraceX = 0
+   glTraceY = 0
+   glTraceCount = 0
+   glTraceMinY = 1000000
+   glTraceMaxY = -1000000
+   glTraceMaxX = -1000000
+   glTraceVerticalJumps = 0
+   glTracePreviousX = 0
+   glTracePreviousY = 0
+   glTraceHasPrevious = false
+   glTraceLimitPlateaus = 0
+   glTraceLimitPlateausEnabled = false
+   glTraceTargetDistance = 1000000
+   glTraceTargetEnabled = false
+end
+
+function traceWave(Vector, Index, Command, X, Y)
+   if (glTraceHasPrevious and (math.abs(X - glTracePreviousX) < TOLERANCE) and
+      (math.abs(Y - glTracePreviousY) > 1.0)) then glTraceVerticalJumps++ end
+
+   if (glTraceLimitPlateausEnabled and glTraceHasPrevious and (math.abs(X - glTracePreviousX) > TOLERANCE)) then
+      local at_min = (math.abs(Y - glTraceLimitMinY) < TOLERANCE) and
+         (math.abs(glTracePreviousY - glTraceLimitMinY) < TOLERANCE)
+      local at_max = (math.abs(Y - glTraceLimitMaxY) < TOLERANCE) and
+         (math.abs(glTracePreviousY - glTraceLimitMaxY) < TOLERANCE)
+      if (at_min or at_max) then glTraceLimitPlateaus++ end
+   end
+
+   if (glTraceTargetEnabled) then
+      local distance = math.abs(X - glTraceTargetX)
+      if (distance < glTraceTargetDistance) then
+         glTraceTargetDistance = distance
+         glTraceTargetY = Y
+      end
+   end
+
+   glTraceX = X
+   glTraceY = Y
+   glTraceCount++
+   if (Y < glTraceMinY) then glTraceMinY = Y end
+   if (Y > glTraceMaxY) then glTraceMaxY = Y end
+   if (X > glTraceMaxX) then glTraceMaxX = X end
+   glTracePreviousX = X
+   glTracePreviousY = Y
+   glTraceHasPrevious = true
+   return ERR_Okay
+end
+
+function newWave(Fields:table):obj
+   local scene = obj.new('VectorScene', { pageWidth=120, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width=120, height=100 })
+   return viewport.new('VectorWave', Fields)
+end
+
+function traceWavePath(Wave:obj)
+   resetTrace()
+   check Wave.mtTrace(traceWave, 1.0, false)
+   assert(glTraceCount > 1, 'VectorWave trace should produce multiple vertices')
+end
+
+function traceWavePathAtX(Wave:obj, TargetX:num):num
+   resetTrace()
+   glTraceTargetX = TargetX
+   glTraceTargetEnabled = true
+   check Wave.mtTrace(traceWave, 1.0, false)
+   glTraceTargetEnabled = false
+   assert(glTraceCount > 1, 'VectorWave trace should produce multiple vertices')
+   assert(glTraceTargetDistance < 0.1,
+      f'VectorWave trace should sample target x, closest distance was {glTraceTargetDistance}')
+   return glTraceTargetY
+end
+
+function exponentialEnvelopeIntegral(Progress:num):num
+   return (Progress + ((math.exp(Progress * -4.0) - 1.0) * 0.25)) * (1.0 / (1.0 - math.exp(-4.0)))
+end
+
+function dampedHarmonicY(OriginY:num, Amplitude:num, Frequency:num, FrequencyEnd:num, Decay:num, Progress:num):num
+   local cycles = (Frequency * Progress) + ((FrequencyEnd - Frequency) * exponentialEnvelopeIntegral(Progress))
+   local total_cycles = Frequency + ((FrequencyEnd - Frequency) * exponentialEnvelopeIntegral(1.0))
+   local phase_progress = cycles / total_cycles
+   local multiplier = math.exp(math.log(Decay) * phase_progress)
+   return OriginY + (math.sin(cycles * 2.0 * 3.141592653589793) * (Amplitude * 0.5) *
+      multiplier)
+end
+
+function traceWavePathWithLimitPlateaus(Wave:obj, MinY:num, MaxY:num)
+   resetTrace()
+   glTraceLimitMinY = MinY
+   glTraceLimitMaxY = MaxY
+   glTraceLimitPlateausEnabled = true
+   check Wave.mtTrace(traceWave, 1.0, false)
+   assert(glTraceCount > 1, 'VectorWave trace should produce multiple vertices')
+end
+
+@Test function NoiseDefaultsToUnperturbedWave()
+   local wave = newWave({ x=0, y=50, length=100, amplitude=20, frequency=1 })
+
+   assertNear(wave.noise, 0, 'Default noise')
+   traceWavePath(wave)
+
+   assertNear(glTraceX, 100, 'Unperturbed endpoint X')
+   assertNear(glTraceY, 50, 'Unperturbed endpoint Y')
+end
+
+@Test function NoisePerturbsWave()
+   local wave = newWave({ x=0, y=50, length=100, amplitude=20, frequency=1, noise=1 })
+
+   traceWavePath(wave)
+
+   assert(math.abs(glTraceY - 50) > TOLERANCE, 'Noise should perturb the endpoint')
+end
+
+@Test function DecayAlsoTapersNoise()
+   local wave = newWave({ x=0, y=50, length=100, amplitude=20, frequency=1, noise=1, decay=0 })
+
+   traceWavePath(wave)
+
+   assertNear(glTraceY, 50, 'Decay should taper the noisy endpoint to the wave origin')
+end
+
+@Test function ExponentialDecayFollowsWavePhase()
+   local wave = newWave({
+      x=0, y=50, length=360, amplitude=100, frequency=1, frequencyEnd=9, decay=0.25,
+      envelope=WVE_EXPONENTIAL
+   })
+
+   local sampled_y = traceWavePathAtX(wave, 180)
+   local expected_y = dampedHarmonicY(50, 100, 1, 9, 0.25, 0.5)
+
+   assert(math.abs(sampled_y - expected_y) < 0.5,
+      f'Exponential decay should follow phase-coupled damping: expected {expected_y}, got {sampled_y}')
+end
+
+@Test function NoisyThickWaveTracesFullLength()
+   local wave = newWave({
+      x=0, y=50, length=100, amplitude=100, frequency=25, noise=1, thickness=10
+   })
+
+   traceWavePath(wave)
+
+   assert(glTraceMaxX >= 95, f'Noisy thick wave should not terminate early, max X was {glTraceMaxX}')
+end
+
+@Test function NoisySawtoothKeepsDiscontinuityVertices()
+   local wave = newWave({
+      x=0, y=50, length=100, amplitude=40, frequency=4, noise=1, type=WVT_SAWTOOTH
+   })
+
+   traceWavePath(wave)
+
+   assert(glTraceVerticalJumps > 0, 'Noisy sawtooth should keep vertical reset vertices')
+end
+
+@Test function NoisySawtoothAvoidsClippedPlateaus()
+   local wave = newWave({
+      x=0, y=50, length=100, amplitude=40, frequency=4, noise=1, type=WVT_SAWTOOTH
+   })
+
+   traceWavePathWithLimitPlateaus(wave, 30, 70)
+
+   assert(glTraceLimitPlateaus is 0, f'Noisy sawtooth should not flatten at amplitude limits: {glTraceLimitPlateaus}')
+end
+
+@Test function NoisyTriangleAvoidsClippedPlateaus()
+   local wave = newWave({
+      x=0, y=50, length=100, amplitude=40, frequency=4, noise=1, type=WVT_TRIANGLE
+   })
+
+   traceWavePathWithLimitPlateaus(wave, 30, 70)
+
+   assert(glTraceLimitPlateaus is 0, f'Noisy triangle should not flatten at amplitude limits: {glTraceLimitPlateaus}')
+end
+
+@Test function NoisySquareKeepsDiscontinuityVertices()
+   local wave = newWave({
+      x=0, y=50, length=100, amplitude=40, frequency=4, noise=1, type=WVT_SQUARE
+   })
+
+   traceWavePath(wave)
+
+   assert(glTraceVerticalJumps > 0, 'Noisy square should keep vertical transition vertices')
+end
+
+@Test function NoiseRejectsOutOfRangeValues()
+   local wave = newWave({ x=0, y=50, length=100, amplitude=20, frequency=1 })
+   local caught_low = false
+   local caught_high = false
+
+   try
+      wave.noise = -0.01
+   except e
+      caught_low = true
+   end
+
+   try
+      wave.noise = 1.01
+   except e
+      caught_high = true
+   end
+
+   assert(caught_low, 'Noise should reject negative values')
+   assert(caught_high, 'Noise should reject values above one')
+end

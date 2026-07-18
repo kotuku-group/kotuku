@@ -368,6 +368,14 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     struct(FRGB) BottomLeft    # Colour assigned to the bottom-left patch corner.
   ]])
 
+  structdef('DiffusionCurveRecord', { comment='Describes one curve for the GradientDiffusion Curves field.' }, [[
+    struct(MeshControl) Curve  # Cubic Bezier geometry for this curve segment.
+    struct(FRGB) LeftStart     # Colour on the left side at the start of the curve.
+    struct(FRGB) LeftEnd       # Colour on the left side at the end of the curve.
+    struct(FRGB) RightStart    # Colour on the right side at the start of the curve.
+    struct(FRGB) RightEnd      # Colour on the right side at the end of the curve.
+  ]])
+
   structdef('Transition', { comment='For VectorTransition definitions' }, [[
     double Offset     # An offset from 0.0 to 1.0 at which to apply the transform.
     string Transform  # A transform string, as per SVG guidelines.
@@ -608,6 +616,10 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     ~int Columns
     ~int(GMT) Mode
     ~vector(struct(MeshPatchRecord)) Patches
+  ]])
+
+  klass('GradientDiffusion', { base='Gradient', src='painters/gradient_diffusion.cpp', output='painters/gradient_diffusion_def.cpp', extended=true }, [[
+    ~vector(struct(DiffusionCurveRecord)) Curves
   ]])
 
   klass('GradientDistal', { base='Gradient', src='painters/gradient_distal.cpp', output='painters/gradient_distal_def.cpp', references={ 'GFALL' }, extended=true })
