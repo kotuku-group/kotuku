@@ -61,9 +61,10 @@ gui.tooltip = function(Options)
    -- This code segment attaches to the surface so that it works independently of the client.  It
    -- terminates the tooltip when the pointer is moved by the user.
 
-   local script = self.surface.new('tiri', { name='flTip', statement=[[
+   local script = self.surface.new('tiri', { name='tiriTip', statement=[[
       include 'display'
-      surface = obj.find(arg('surface'))
+      surface_id = tonumber(obj.find('self').getKey('surface'))
+      surface = obj.find(surface_id)
       if surface then
          input.subscribe(JTYPE_MOVEMENT | JTYPE_BUTTON, nil, 0, function(Input, Message)
             Input.unsubscribe()
