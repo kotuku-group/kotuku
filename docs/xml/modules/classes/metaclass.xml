@@ -40,6 +40,20 @@
       <tags>pure-query, object-owns-result</tags>
     </method>
 
+    <method>
+      <name>GetMembers</name>
+      <comment>Returns a list of all objects that are members of the class.</comment>
+      <prototype>ERR mc::GetMembers(OBJECTPTR Object, kt::vector&lt;OBJECTID&gt; List)</prototype>
+      <tiriPrototype>err = GetMembers(List:array)</tiriPrototype>
+      <input>
+        <param type="kt::vector&lt;OBJECTID&gt;" name="List">Pointer to an array of object IDs that will be filled with the results.</param>
+      </input>
+      <description>
+<p>This method will compile a list of all objects that are members of the class.  The list is unordered, but identifier values reflect their age with lower IDs being older.</p>
+      </description>
+      <tags>mutates-input</tags>
+    </method>
+
   </methods>
 
   <fields>
@@ -234,18 +248,6 @@
       <comment>The name of the module binary that initialised the class.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
-    </field>
-
-    <field>
-      <name>Objects</name>
-      <comment>Returns an allocated list of all objects that belong to this class.</comment>
-      <access read="G">Get</access>
-      <type>INT []</type>
-      <description>
-<p>This field will compile a list of all objects that belong to the class.  The list is sorted with the oldest object appearing first.</p>
-<p>The resulting array must be terminated with <function>FreeResource</function> after use.</p>
-      </description>
-      <tags>caller-owns-result</tags>
     </field>
 
     <field>

@@ -52,7 +52,6 @@ static ERR GET_Fields(extMetaClass *Self, std::span<const FieldArray> &);
 static ERR GET_Location(extMetaClass *, std::string_view &);
 static ERR GET_Methods(extMetaClass *, std::span<const MethodEntry> &);
 static ERR GET_Module(extMetaClass *, std::string_view &);
-static ERR GET_Objects(extMetaClass *, std::span<OBJECTID> &);
 static ERR GET_RootModule(extMetaClass *, class objRootModule **);
 static ERR GET_Dictionary(extMetaClass *, std::span<Field> &);
 static ERR GET_SubClasses(extMetaClass *, std::span<extMetaClass *> &);
@@ -131,16 +130,15 @@ static const std::vector<Field> glMetaFieldsPreset = {
    { 0, nullptr, nullptr, writeval_default, "PublicSize",      strhash("publicSize"),      glMetaPublicSizeOffset,       15, FDF_INT|FDF_RI },
    // Virtual fields
    { MAXINT("MethodEntry"), (ERR (*)(APTR, APTR))GET_Methods, (ERR (*)(APTR, APTR))SET_Methods, writeval_default, "Methods", strhash("methods"), sizeof(Object), 16, FDF_ARRAY|FD_STRUCT|FDF_RI },
-   { 0, nullptr, (ERR (*)(APTR, APTR))SET_Actions,               writeval_default,   "Actions",           strhash("actions"),         sizeof(Object), 17, FDF_POINTER|FDF_I },
+   { 0, nullptr, (ERR (*)(APTR, APTR))SET_Actions, writeval_default,  "Actions",           strhash("actions"),         sizeof(Object), 17, FDF_POINTER|FDF_I },
    { 0, (ERR (*)(APTR, APTR))GET_ActionTable, 0,  writeval_default,   "ActionTable",       strhash("actionTable"),     sizeof(Object), 18, FDF_ARRAY|FDF_POINTER|FDF_R },
    { 0, (ERR (*)(APTR, APTR))GET_Location, 0,     writeval_default,   "Location",          strhash("location"),        sizeof(Object), 19, FDF_CPPSTRING|FDF_R|FDF_PURE },
-   { 0, (ERR (*)(APTR, APTR))GET_ClassName, (ERR (*)(APTR, APTR))SET_ClassName, writeval_default, "Name", strhash("name"),            sizeof(Object), 20, FDF_CPPSTRING|FDF_SYSTEM|FDF_RI|FDF_PURE },
+   { 0, (ERR (*)(APTR, APTR))GET_ClassName, (ERR (*)(APTR, APTR))SET_ClassName, writeval_default, "Name", strhash("name"), sizeof(Object), 20, FDF_CPPSTRING|FDF_SYSTEM|FDF_RI|FDF_PURE },
    { 0, (ERR (*)(APTR, APTR))GET_Module, 0,       writeval_default,   "Module",            strhash("module"),          sizeof(Object), 21, FDF_CPPSTRING|FDF_R },
-   { 0, (ERR (*)(APTR, APTR))GET_Objects, 0,      writeval_default,   "Objects",           strhash("objects"),         sizeof(Object), 22, FDF_ARRAY|FDF_INT|FDF_ALLOC|FDF_R },
-   { MAXINT(CLASSID::METACLASS), (ERR (*)(APTR, APTR))GET_SubClasses, nullptr, writeval_default, "SubClasses", strhash("subClasses"), sizeof(Object), 23, FDF_ARRAY|FD_OBJECT|FDF_R },
-   { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_SubFields, 0, writeval_default, "SubFields", strhash("subFields"), sizeof(Object), 24, FDF_ARRAY|FD_STRUCT|FDF_SYSTEM|FDF_R },
-   { MAXINT(CLASSID::ROOTMODULE), (ERR (*)(APTR, APTR))GET_RootModule, 0, writeval_default, "RootModule", strhash("rootModule"), sizeof(Object), 25, FDF_OBJECT|FDF_R },
-   { 0, (ERR (*)(APTR, APTR))OBJECT_GetID, 0,     writeval_default,   "ID",                strhash("id"),              sizeof(Object), 26, FDF_INT|FDF_SYSTEM|FDF_R },
+   { MAXINT(CLASSID::METACLASS), (ERR (*)(APTR, APTR))GET_SubClasses, nullptr, writeval_default, "SubClasses", strhash("subClasses"), sizeof(Object), 22, FDF_ARRAY|FD_OBJECT|FDF_R },
+   { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_SubFields, 0, writeval_default, "SubFields", strhash("subFields"), sizeof(Object), 23, FDF_ARRAY|FD_STRUCT|FDF_SYSTEM|FDF_R },
+   { MAXINT(CLASSID::ROOTMODULE), (ERR (*)(APTR, APTR))GET_RootModule, 0, writeval_default, "RootModule", strhash("rootModule"), sizeof(Object), 24, FDF_OBJECT|FDF_R },
+   { 0, (ERR (*)(APTR, APTR))OBJECT_GetID, 0,     writeval_default,   "ID",                strhash("id"),              sizeof(Object), 25, FDF_INT|FDF_SYSTEM|FDF_R },
    { 0, 0, 0, nullptr, "", 0, 0, 0,  0 }
 };
 
@@ -168,7 +166,6 @@ static const FieldArray glMetaFields[] = {
    { "Location",        FDF_CPPSTRING|FDF_R, GET_Location },
    { "Name",            FDF_CPPSTRING|FDF_SYSTEM|FDF_RI|FDF_PURE, GET_ClassName, SET_ClassName },
    { "Module",          FDF_CPPSTRING|FDF_R, GET_Module },
-   { "Objects",         FDF_ARRAY|FDF_INT|FDF_ALLOC|FDF_R, GET_Objects },
    { "SubClasses",      FDF_ARRAY|FD_OBJECT|FDF_R|FDF_PURE, GET_SubClasses, nullptr, CLASSID::METACLASS },
    { "SubFields",       FDF_ARRAY|FD_STRUCT|FDF_SYSTEM|FDF_R|FDF_PURE, GET_SubFields, nullptr, "FieldArray" },
    { "RootModule",      FDF_OBJECT|FDF_R|FDF_PURE, GET_RootModule, nullptr, CLASSID::ROOTMODULE },
@@ -177,11 +174,13 @@ static const FieldArray glMetaFields[] = {
 };
 
 extern "C" ERR CLASS_FindField(extMetaClass *, struct mc::FindField *);
+extern "C" ERR CLASS_GetMembers(extMetaClass *, struct mc::GetMembers *);
 extern "C" ERR CLASS_Free(extMetaClass *);
 extern "C" ERR CLASS_Init(extMetaClass *);
 extern "C" ERR CLASS_New(extMetaClass *);
 
 FDEF argsFindField[] = { { "ID", FD_INT }, { "Field:Field", FD_RESULT|FD_PTR|FD_STRUCT }, { "Source", FD_RESULT|FD_OBJECTPTR }, { 0, 0 } };
+FDEF argsGetMembers[] = { { "List", FDF_VECTOR|FD_MUTABLE|FD_OBJECTID }, { 0, 0 } };
 
 extMetaClass glMetaClass(&glMetaClass, 123);
 
@@ -214,8 +213,10 @@ void init_metaclass(void)
    glMetaClass.OriginalFieldTotal = std::ssize(glMetaFields)-1;
    glMetaClass.Local[0]           = 0xff;
 
-   glMetaClass.Methods.resize(2);
+   glMetaClass.Methods.resize(3);
    glMetaClass.Methods[1] = { AC(-1), (APTR)CLASS_FindField, "FindField", argsFindField, sizeof(struct mc::FindField) };
+   glMetaClass.Methods[2] = { AC(-2), (APTR)CLASS_GetMembers, "GetMembers", argsGetMembers,
+      sizeof(struct mc::GetMembers) };
 
    glMetaClass.ActionTable[int(AC::Free)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_Free;
    glMetaClass.ActionTable[int(AC::Init)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_Init;
@@ -288,6 +289,41 @@ ERR CLASS_Free(extMetaClass *Self)
    }
 
    Self->~extMetaClass();
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+GetMembers: Returns a list of all objects that are members of the class.
+
+This method will compile a list of all objects that are members of the class.  The list is unordered, but identifier
+values reflect their age with lower IDs being older.
+
+-INPUT-
+^vector(oid) List: Pointer to an array of object IDs that will be filled with the results.
+
+-RESULT-
+Okay
+NullArgs
+
+-END-
+
+*********************************************************************************************************************/
+
+ERR CLASS_GetMembers(extMetaClass *Self, struct mc::GetMembers *Args)
+{
+   if ((not Args) or (not Args->List)) return ERR::NullArgs;
+
+   Args->List->clear();
+
+   std::unique_lock lock(glmObjects);
+   for (const auto &entry : glObjects) {
+      if (auto object = entry.second.Object) {
+         if (Self->ClassID IS object->classID()) Args->List->push_back(object->UID);
+      }
+   }
+
    return ERR::Okay;
 }
 
@@ -751,51 +787,6 @@ static ERR GET_Module(extMetaClass *Self, std::string_view &Value)
       Value = "core";
       return ERR::Okay;
    }
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-Objects: Returns an allocated list of all objects that belong to this class.
-
-This field will compile a list of all objects that belong to the class.  The list is sorted with the oldest
-object appearing first.
-
-The resulting array must be terminated with ~FreeResource() after use.
-
-*********************************************************************************************************************/
-
-static ERR GET_Objects(extMetaClass *Self, std::span<OBJECTID> &Value)
-{
-   kt::Log log;
-   std::list<OBJECTID> objlist;
-
-   {
-      std::unique_lock lock(glmObjects);
-      for (const auto &entry : glObjects) {
-         if (auto object = entry.second.Object) {
-            if (Self->classID() IS object->classID()) {
-               objlist.push_back(object->UID);
-            }
-         }
-      }
-   }
-
-   if (!objlist.size()) {
-      Value = std::span<OBJECTID>();
-      return ERR::Okay;
-   }
-
-   objlist.sort([](const OBJECTID &a, const OBJECTID &b) { return (a < b); });
-
-   OBJECTID *result;
-   if (!AllocMemory(sizeof(OBJECTID) * objlist.size(), MEM::NO_CLEAR, (APTR *)&result)) {
-      int i = 0;
-      for (const auto & id : objlist) result[i++] = id;
-      Value = std::span<OBJECTID>(result, objlist.size());
-      return ERR::Okay;
-   }
-   else return ERR::AllocMemory;
 }
 
 /*********************************************************************************************************************
