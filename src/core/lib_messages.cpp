@@ -211,9 +211,7 @@ ERR AddMsgHandler(MSGID MsgType, FUNCTION *Routine, MsgHandler **Handle)
 
    std::unique_lock lock(glmMsgHandler);
    MsgHandler *handler;
-   if (!AllocMemory(sizeof(MsgHandler), MEM::NIL, (APTR *)&handler)) {
-      TrackResource(GetMemoryID(handler), handler, RESOURCEID_INHERIT, &glResourceMsgHandler);
-
+   if (!AllocResource(sizeof(MsgHandler), MEM::NIL, (APTR *)&handler, &glResourceMsgHandler)) {
       handler->Prev     = nullptr;
       handler->Next     = nullptr;
       handler->MsgType  = MsgType;
@@ -414,7 +412,7 @@ timer_cycle:
             else if (timer->Routine.isScript()) {
                OBJECTID subscriber_id = timer->Subscriber ? timer->Subscriber->UID : 0;
                if ((timer->Subscriber) and (not subscriber_id)) error = ERR::Terminate; // Zombie; discard orphan
-               else { 
+               else {
                   glmTimer.unlock();
                   relock = true;
 

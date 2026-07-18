@@ -83,7 +83,7 @@ const CSTRING glMessages[int(ERR::END)+1] = {
  "Container pass through notification",
  "The owner is not supported by this object",
  "Attempting to lock an object failed",
- "AllocMemory() failed to create a new memory block",
+ "Failed to create a new memory block",
  "NewObject() failed to produce a new object",
  "GetField() failed to retrieve a field value",
  "Access to a field was denied",

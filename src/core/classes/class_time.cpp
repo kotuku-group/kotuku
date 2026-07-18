@@ -833,9 +833,8 @@ static ERR TIME_GetTimeZoneInfo(objTime *Self, struct pt::GetTimeZoneInfo *Args)
    if (not valid_timezone_year_range(Args->StartYear, Args->EndYear)) return log.warning(ERR::OutOfRange);
 
    struct TimeZoneInfo *tz;
-   if (!AllocMemory(sizeof(struct TimeZoneInfo), MEM::NO_CLEAR, (APTR *)&tz)) {
+   if (!AllocResource(sizeof(struct TimeZoneInfo), MEM::NO_CLEAR, (APTR *)&tz, &glTimeZoneHandler)) {
       new (tz) struct TimeZoneInfo;
-      TrackResource(GetMemoryID(tz), tz, RESOURCEID_INHERIT, &glTimeZoneHandler);
 
       const std::string_view zone_id = Args->ZoneID;
       if (is_utc_zone(zone_id)) {
