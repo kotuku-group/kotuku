@@ -35,8 +35,6 @@ static ERR terminating_resource_free(ResourceRecord &, APTR)
 static ResourceManager glTerminatingResourceManager = {
    "TerminatingTest",
    &terminating_resource_free,
-   nullptr,
-   nullptr,
    true
 };
 

@@ -28,7 +28,7 @@ static ERR simplevector_free(ResourceRecord &Resource, APTR Address) {
    return ERR::Terminate;
 }
 
-static ResourceManager glResourceSimpleVector = { "SimpleVector", &simplevector_free, nullptr, nullptr, false };
+static ResourceManager glResourceSimpleVector = { "SimpleVector", &simplevector_free, false };
 
 static SimpleVector * new_simplevector(void)
 {

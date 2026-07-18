@@ -157,8 +157,8 @@ std::map<std::string, ConfigKeys, CaseInsensitiveMap> glVolumes;
 OBJECTLOOKUP glObjectLookup; // Name lookups
 
 std::mutex glmPrint;
-std::recursive_mutex glmResources; // For glResources
-std::recursive_mutex glmObjects; // For glObjects
+std::recursive_mutex glmResources; // For glResources; acquire before glmObjects when both are required
+std::recursive_mutex glmObjects; // For glObjects; never acquire glmResources whilst this mutex is held
 std::recursive_mutex glmMsgHandler;
 std::recursive_mutex glmAsyncActions;
 std::shared_timed_mutex glmObjectLookup; // For glObjectLookup
@@ -308,16 +308,6 @@ void (*glKeyboardRecovery)(void) = nullptr;
 #ifdef __ANDROID__
 static struct AndroidBase *AndroidBase = nullptr;
 #endif
-
-ResourceManager glResourceObject = {
-   "Object",
-   &object_resource_free,
-   &object_add_child,
-   &object_remove_child,
-   true
-};
-
-//********************************************************************************************************************
 
 #include "data_functions.c"
 #include "data_errors.cpp"

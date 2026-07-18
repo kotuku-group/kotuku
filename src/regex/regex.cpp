@@ -145,7 +145,7 @@ static ERR regex_free(ResourceRecord &Resource, APTR Address)
    return ERR::Terminate;
 }
 
-static ResourceManager glRegexMgr = { "Regex", &regex_free, nullptr, nullptr, false };
+static ResourceManager glRegexMgr = { "Regex", &regex_free, false };
 
 //********************************************************************************************************************
 

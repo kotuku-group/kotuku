@@ -46,7 +46,7 @@ static ERR tzi_free(ResourceRecord &Resource, APTR Address)
    return ERR::Terminate;
 }
 
-static ResourceManager glTimeZoneHandler = { "TimeZoneInfo", &tzi_free, nullptr, nullptr, false };
+static ResourceManager glTimeZoneHandler = { "TimeZoneInfo", &tzi_free, false };
 
 static constexpr int TIMEZONE_MIN_YEAR = 1601;
 static constexpr int TIMEZONE_MAX_YEAR = 9999;

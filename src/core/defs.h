@@ -225,10 +225,10 @@ struct QueuedAction {
 };
 
 //********************************************************************************************************************
-// Resource maps recycle their nodes through a per-map NodePool to absorb high insert/erase churn.  std::unordered_map
-// is retained because it guarantees stable references to values across insert/erase, a contract the core relies upon
-// (e.g. a ResourceRecord reference is taken under glmResources, the lock dropped, then dereferenced).  The pool never
-// relocates a node, so that guarantee is preserved.  Each pool is mutated only under its map's mutex.
+// Registry maps recycle their nodes through a per-map NodePool to absorb high insert/erase churn.  std::unordered_map
+// is retained because it guarantees stable references to values across insert/erase, a contract the core relies upon.
+// The pool never relocates a node, so that guarantee is preserved.  Each pool is mutated only under its map's mutex.
+// Code that requires both registries must acquire glmResources before glmObjects.
 
 #ifdef RESOURCE_POOL
 template <class K, class V> using PooledMap =
@@ -250,7 +250,7 @@ extern std::shared_timed_mutex glmVolumes;   // For glVolumes
 extern std::recursive_timed_mutex glmTimer;        // For timer subscriptions.
 extern std::shared_timed_mutex glmObjectLookup;    // For glObjectLookup
 
-extern std::recursive_mutex glmResources;
+extern std::recursive_mutex glmResources; // Must be acquired before glmObjects when both are required
 extern std::recursive_mutex glmObjects;
 extern std::recursive_mutex glmMsgHandler;
 extern std::recursive_mutex glmAsyncActions;
@@ -1200,7 +1200,6 @@ void   deregister_sleep(void);
 void   remove_process_waitlocks(void);
 void   UntrackResource(RESOURCEID);
 ERR    FreeObject(OBJECTID);
-ERR    object_resource_free(ResourceRecord &, APTR);
 CLASSID lookup_class_by_ext(CLASSID, std::string_view);
 ERR get_file_info(const std::string_view &Path, FileInfo &Info);
 
@@ -1328,10 +1327,6 @@ extern ERR winGetTimeZoneInfo(std::string_view ZoneID, int StartYear, int EndYea
 
 #endif
 
-extern ERR object_free(ResourceRecord &, Object *);
-extern void object_add_child(ResourceRecord &, ResourceRecord &);
-extern void object_remove_child(ResourceRecord &, ResourceRecord &);
-extern ResourceManager glResourceObject;
 void release_zombie_blocks(void);
 
 //********************************************************************************************************************

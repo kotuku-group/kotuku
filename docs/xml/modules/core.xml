@@ -469,7 +469,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
       <param type="RESOURCEID" name="ID">The unique identifier of the resource to verify.</param>
     </input>
     <description>
-<p>CheckResourceExists() verifies whether a resource with the specified identifier still exists in the system's resource tracking collection. This function is useful for defensive programming when working with resources such as memory or objects that may have been freed by other code paths.</p>
+<p>CheckResourceExists() verifies whether a resource with the specified identifier still exists in the system's object or resource registry. This function is useful for defensive programming when working with resources such as memory or objects that may have been freed by other code paths.  Objects that are terminating or awaiting deferred collection are reported as unavailable.</p>
     </description>
     <result type="ERR">
       <error code="True">The resource exists and is valid.</error>
@@ -805,6 +805,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     </input>
     <description>
 <p>FreeResource() provides safe deallocation of resources with comprehensive validation and cleanup. The function accepts resource identifiers for optimal safety, though C++ headers also provide pointer-based variants for convenience.</p>
+<p>Object identifiers are detected in the object registry and dispatched to <function>FreeObject</function>.  All other identifiers are resolved through the non-object resource registry and its associated <code>ResourceManager</code>.</p>
 <p>The deallocation process includes lock-aware deallocation that respects access counting, resource manager integration for managed memory blocks, and automatic cleanup of ownership tracking structures.</p>
 <p>If a resource is locked at the time of the call, it is marked for delayed collection only. This prevents use-after-free errors while ensuring eventual cleanup when all references are released.</p>
     </description>
@@ -1876,7 +1877,7 @@ identifier has no effect.</li>
     </input>
     <description>
 <p>TrackResource() registers a resource identifier with the memory manager so that later calls to <function>FreeResource</function> can dispatch cleanup through the supplied <code>ResourceManager</code>.  If the resource identifier is already registered, the existing record is updated with the non-zero values provided by the caller.</p>
-<p>The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is tracked, or until the record is replaced or removed.  When an <code>OwnerID</code> is supplied for a non-object resource, the resource is added to the owner's resource list so it can be removed during owner cleanup.  Use <code>RESOURCEID_INHERIT</code> to preserve the existing owner when updating a resource, or to inherit the current context when registering a new resource.</p>
+<p>The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is tracked, or until the record is replaced or removed.  When an <code>OwnerID</code> names an object, the resource is added directly to that object's resource list so it can be removed during object cleanup.  Use <code>RESOURCEID_INHERIT</code> to preserve the existing owner when updating a resource, or to inherit the current context when registering a new resource.</p>
 <p>A unique <code>ResourceID</code> can be obtained from <function>AllocateID</function> by using <code>IDTYPE::RESOURCE</code>.</p>
     </description>
     <result type="ERR">
@@ -2608,7 +2609,6 @@ identifier has no effect.</li>
       <field name="OwnerID" type="INT">Owner of the resource, could be another resource or object</field>
       <field name="CollectOnUnlock" type="BOOL">Resource is locked; manager will collect immediately once unlocked</field>
       <field name="Terminating" type="BOOL">A FreeResource() call currently owns the destruction path</field>
-      <field name="OwnerManagesChildren" type="BOOL">True if the current OwnerID manages its child resources</field>
     </struct>
 
     <struct name="SystemState" comment="Returned by the GetSystemState() function.">

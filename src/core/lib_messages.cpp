@@ -72,7 +72,7 @@ static ERR msghandler_free(ResourceRecord &Resource, APTR Address)
    return ERR::Terminate;
 }
 
-static ResourceManager glResourceMsgHandler = { "Message", &msghandler_free, nullptr, nullptr, true };
+static ResourceManager glResourceMsgHandler = { "Message", &msghandler_free, true };
 
 //********************************************************************************************************************
 // Handler for WaitForObjects().  If an object on the list is signalled then it is removed from the list.  A
