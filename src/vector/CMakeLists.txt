@@ -71,6 +71,7 @@ flute_test(vector_apply_path "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_apply_path.
 flute_test(vector_clip_mask_cache "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_clip_mask_cache.tiri")
 flute_test(vector_gouraud_gradient "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gouraud_gradient.tiri")
 flute_test(vector_mesh_gradient "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_mesh_gradient.tiri")
+flute_test(vector_diffusion_gradient "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_diffusion_gradient.tiri")
 flute_test(vector_conic_gradient "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_conic_gradient.tiri")
 flute_test(vector_contour_gradient "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_contour_gradient.tiri")
 flute_test(vector_gradient_easing_gamma "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gradient_easing_gamma.tiri")

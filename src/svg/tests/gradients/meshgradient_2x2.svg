@@ -1,5 +1,5 @@
 <?xml version="1.0" standalone="no"?>
-<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+<svg width="300" height="300" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <meshgradient id="mesh2x2" x="0" y="0" gradientUnits="userSpaceOnUse"
        gradientTransform="translate(2 3)" color-interpolation="linearRGB">

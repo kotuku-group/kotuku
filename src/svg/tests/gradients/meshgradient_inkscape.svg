@@ -1,97 +1,37 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!-- Interop fixture mimicking Inkscape >= 0.92 mesh output: relative 'c' stop paths with comma pairs,
      style= stop declarations, type="bicubic" and editor namespace attributes. -->
-<svg
-   width="140"
-   height="140"
-   viewBox="0 0 140 140"
-   version="1.1"
-   id="svg1"
+<svg width="600" height="600" viewBox="0 0 140 140" version="1.1" id="svg1"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.0.dtd"
    xmlns="http://www.w3.org/2000/svg">
-  <defs
-     id="defs1">
-    <meshgradient
-       inkscape:collect="always"
-       id="mesh2x2"
-       gradientUnits="userSpaceOnUse"
-       x="20"
-       y="20"
-       type="bicubic">
-      <meshrow
-         id="meshrow10">
-        <meshpatch
-           id="meshpatch10">
-          <stop
-             path="c 16.6667,0  33.3333,0  50,0"
-             style="stop-color:#8f97ff;stop-opacity:1"
-             id="stop10" />
-          <stop
-             path="c 0,16.6667  0,33.3333  0,50"
-             style="stop-color:#ff0000;stop-opacity:1"
-             id="stop11" />
-          <stop
-             path="c -16.6667,0  -33.3333,0  -50,0"
-             style="stop-color:#1cff00;stop-opacity:1"
-             id="stop12" />
-          <stop
-             path="c 0,-16.6667  0,-33.3333  0,-50"
-             style="stop-color:#0026ff;stop-opacity:0.5"
-             id="stop13" />
+  <defs id="defs1">
+    <meshgradient inkscape:collect="always" id="mesh2x2" gradientUnits="userSpaceOnUse" x="20" y="20" type="bicubic">
+      <meshrow id="meshrow10">
+        <meshpatch id="meshpatch10">
+          <stop path="c 16.6667,0  33.3333,0  50,0" style="stop-color:#8f97ff;stop-opacity:1" id="stop10" />
+          <stop path="c 0,16.6667  0,33.3333  0,50" style="stop-color:#ff0000;stop-opacity:1" id="stop11" />
+          <stop path="c -16.6667,0  -33.3333,0  -50,0" style="stop-color:#1cff00;stop-opacity:1" id="stop12" />
+          <stop path="c 0,-16.6667  0,-33.3333  0,-50" style="stop-color:#0026ff;stop-opacity:0.5" id="stop13" />
         </meshpatch>
-        <meshpatch
-           id="meshpatch11">
-          <stop
-             path="c 16.6667,0  33.3333,0  50,0"
-             style="stop-color:#ffe680;stop-opacity:1"
-             id="stop14" />
-          <stop
-             path="c 0,16.6667  0,33.3333  0,50"
-             style="stop-color:#aa00d4;stop-opacity:1"
-             id="stop15" />
-          <stop
-             path="c -16.6667,0  -33.3333,0  -50,0"
-             style="stop-color:#ff0000;stop-opacity:1"
-             id="stop16" />
+        <meshpatch id="meshpatch11">
+          <stop path="c 16.6667,0  33.3333,0  50,0" style="stop-color:#ffe680;stop-opacity:1" id="stop14" />
+          <stop path="c 0,16.6667  0,33.3333  0,50" style="stop-color:#aa00d4;stop-opacity:1" id="stop15" />
+          <stop path="c -16.6667,0  -33.3333,0  -50,0" style="stop-color:#ff0000;stop-opacity:1" id="stop16" />
         </meshpatch>
       </meshrow>
-      <meshrow
-         id="meshrow11">
-        <meshpatch
-           id="meshpatch12">
-          <stop
-             path="c 0,16.6667  0,33.3333  0,50"
-             style="stop-color:#00ffcc;stop-opacity:1"
-             id="stop17" />
-          <stop
-             path="c -16.6667,0  -33.3333,0  -50,0"
-             style="stop-color:#502d16;stop-opacity:1"
-             id="stop18" />
-          <stop
-             path="c 0,-16.6667  0,-33.3333  0,-50"
-             style="stop-color:#ff0000;stop-opacity:1"
-             id="stop19" />
+      <meshrow id="meshrow11">
+        <meshpatch id="meshpatch12">
+          <stop path="c 0,16.6667  0,33.3333  0,50" style="stop-color:#00ffcc;stop-opacity:1" id="stop17" />
+          <stop path="c -16.6667,0  -33.3333,0  -50,0" style="stop-color:#502d16;stop-opacity:1" id="stop18" />
+          <stop path="c 0,-16.6667  0,-33.3333  0,-50" style="stop-color:#ff0000;stop-opacity:1" id="stop19" />
         </meshpatch>
-        <meshpatch
-           id="meshpatch13">
-          <stop
-             path="c 0,16.6667  0,33.3333  0,50"
-             style="stop-color:#ffcc00;stop-opacity:1"
-             id="stop20" />
-          <stop
-             path="c -16.6667,0  -33.3333,0  -50,0"
-             style="stop-color:#00ffcc;stop-opacity:1"
-             id="stop21" />
+        <meshpatch id="meshpatch13">
+          <stop path="c 0,16.6667  0,33.3333  0,50" style="stop-color:#ffcc00;stop-opacity:1" id="stop20" />
+          <stop path="c -16.6667,0  -33.3333,0  -50,0" style="stop-color:#00ffcc;stop-opacity:1" id="stop21" />
         </meshpatch>
       </meshrow>
     </meshgradient>
   </defs>
-  <rect
-     style="fill:url(#mesh2x2);stroke:none"
-     id="rect1"
-     width="100"
-     height="100"
-     x="20"
-     y="20" />
+  <rect style="fill:url(#mesh2x2);stroke:none" id="rect1" width="100" height="100" x="20" y="20"/>
 </svg>

@@ -61,6 +61,10 @@ static void fill_mesh(VectorState &, const TClipRectangle<double> &, double, dou
    agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &,
    SceneRenderer *Render = nullptr);
 
+static void fill_diffusion(VectorState &, const TClipRectangle<double> &, double, double, extGradientDiffusion &,
+   double, agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &,
+   SceneRenderer *Render = nullptr);
+
 static void fill_pattern(VectorState &, const TClipRectangle<double> &, agg::path_storage *,
    VSM, const agg::trans_affine &, double ViewWidth, double, extVectorPattern &,
    agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, SceneRenderer *Render = nullptr);

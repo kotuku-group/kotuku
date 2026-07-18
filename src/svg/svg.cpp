@@ -199,6 +199,7 @@ private:
    ERR  proc_conicgradient(const XTag &) noexcept;
    ERR  proc_contourgradient(const XTag &) noexcept;
    ERR  proc_diamondgradient(const XTag &) noexcept;
+   ERR  proc_diffusiongradient(const XTag &) noexcept;
    ERR  proc_distalgradient(const XTag &) noexcept;
    ERR  proc_lineargradient(const XTag &) noexcept;
    ERR  proc_meshgradient(const XTag &) noexcept;
@@ -213,6 +214,7 @@ private:
    void parse_contourgradient(const XTag &, objGradientContour *, std::string &) noexcept;
    void parse_conicgradient(const XTag &, objGradientConic *, std::string &) noexcept;
    void parse_diamondgradient(const XTag &, objGradientDiamond *, std::string &) noexcept;
+   void parse_diffusiongradient(const XTag &, objGradientDiffusion *, std::string &) noexcept;
    void parse_distalgradient(const XTag &, objGradientDistal *, std::string &) noexcept;
    void parse_lineargradient(const XTag &, objGradientLinear *, std::string &) noexcept;
    void parse_meshgradient(const XTag &, objGradientMesh *, std::string &) noexcept;
@@ -296,6 +298,7 @@ static constexpr auto SVF_colourmap           = strhash("colourmap");
 static constexpr auto SVF_condensed           = strhash("condensed");
 static constexpr auto SVF_conicGradient       = strhash("conicGradient");
 static constexpr auto SVF_contourGradient     = strhash("contourGradient");
+static constexpr auto SVF_diffusionGradient   = strhash("diffusionGradient");
 static constexpr auto SVF_contrast            = strhash("contrast");
 static constexpr auto SVF_crossOrigin         = strhash("crossOrigin");
 static constexpr auto SVF_cx                  = strhash("cx");

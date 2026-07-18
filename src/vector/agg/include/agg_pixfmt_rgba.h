@@ -149,6 +149,7 @@ namespace agg
     template<class ColorT, class Order> struct blender_rgba
     {
         typedef ColorT color_type;
+        typedef Order  order_type;
         typedef typename color_type::value_type value_type;
         typedef typename color_type::calc_type calc_type;
         enum base_scale_e {

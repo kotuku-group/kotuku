@@ -14,6 +14,7 @@
 #include "gradient_contour.cpp"
 #include "gradient_gouraud.cpp"
 #include "gradient_mesh.cpp"
+#include "gradient_diffusion.cpp"
 #include "gradient_distal.cpp"
 #include "gradient_voronoi.cpp"
 #include "image.cpp"
