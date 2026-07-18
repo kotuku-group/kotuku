@@ -1220,14 +1220,13 @@ struct ResourceRecord {
    int  OwnerID;                        // Owner of the resource, could be another resource or object
    bool CollectOnUnlock;                // Resource is locked; manager will collect immediately once unlocked
    bool Terminating;                    // A FreeResource() call currently owns the destruction path
-   bool OwnerManagesChildren;           // True if the current OwnerID manages its child resources
    ResourceRecord() :
       Address(nullptr), Manager(nullptr), ResourceID(0), OwnerID(0), CollectOnUnlock(false),
-      Terminating(false), OwnerManagesChildren(false) { };
+      Terminating(false) { };
 
    ResourceRecord(RESOURCEID pResourceID, APTR pAddress, int pOwnerID, ResourceManager *pManager) :
       Address(pAddress), Manager(pManager), ResourceID(pResourceID), OwnerID(pOwnerID), CollectOnUnlock(false),
-      Terminating(false), OwnerManagesChildren(false) { };
+      Terminating(false) { };
 };
 
 struct ObjectSignal {
@@ -1235,11 +1234,9 @@ struct ObjectSignal {
 };
 
 struct ResourceManager {
-   CSTRING Name;                                                              // The name of the resource
-   ERR (*Free)(struct ResourceRecord &, APTR);                                // A function that will remove the resource's content when terminated
-   void (*AddChild)(struct ResourceRecord &, struct ResourceRecord &);        // Optional function for tracking child resources
-   void (*RemoveChild)(struct ResourceRecord &, struct ResourceRecord &);     // Optional function to remove tracking of child resources
-   bool    CanBlock;                                                          // True if the Free callback might wait on locks, callbacks or external resources
+   CSTRING Name;                                   // The name of the resource
+   ERR (*Free)(struct ResourceRecord &, APTR);     // A function that will remove the resource's content when terminated
+   bool    CanBlock;                               // True if the Free callback might wait on locks, callbacks or external resources
 };
 
 struct FieldArray {
@@ -1553,6 +1550,7 @@ struct CoreBase {
    int (*_GetThreadID)(void);
    void (*_UnitTests)(CSTRING Options, int *Passed, int *Total);
    OBJECTPTR (*_PinWeakObject)(OBJECTID Object);
+   ERR (*_FreeObject)(OBJECTID ObjectID);
 #endif // KOTUKU_STATIC
 };
 
@@ -1650,6 +1648,7 @@ inline ERR ClassDatabase(kt::vector<ClassRecord *> *Classes) { return CoreBase->
 inline int GetThreadID(void) { return CoreBase->_GetThreadID(); }
 inline void UnitTests(CSTRING Options, int *Passed, int *Total) { return CoreBase->_UnitTests(Options,Passed,Total); }
 inline OBJECTPTR PinWeakObject(OBJECTID Object) { return CoreBase->_PinWeakObject(Object); }
+inline ERR FreeObject(OBJECTID ObjectID) { return CoreBase->_FreeObject(ObjectID); }
 #else
 extern "C" ERR Action(AC Action, OBJECTPTR Object, APTR Parameters);
 extern "C" void ActionList(struct ActionTable **Actions, int *Size);
@@ -1743,6 +1742,7 @@ extern "C" ERR ClassDatabase(kt::vector<ClassRecord *> *Classes);
 extern "C" int GetThreadID(void);
 extern "C" void UnitTests(CSTRING Options, int *Passed, int *Total);
 extern "C" OBJECTPTR PinWeakObject(OBJECTID Object);
+extern "C" ERR FreeObject(OBJECTID ObjectID);
 #endif // KOTUKU_STATIC
 
 
@@ -1789,7 +1789,7 @@ inline ERR UnsubscribeAction(OBJECTPTR Object, ACTIONID ActionID) {
 
 template <pcObject T> inline ERR FreeResource(T *Object) {
    if (not Object) return ERR::NullArgs;
-   return FreeResource(Object->UID);
+   return FreeObject(Object->UID);
 }
 
 template <class T> requires ((not pcComplete<T>) and (not std::is_void_v<std::remove_cv_t<T>>))

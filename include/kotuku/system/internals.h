@@ -52,6 +52,8 @@ public:
 class ObjectRecord {
 public:
    OBJECTPTR Object;
+   bool Terminating;      // A FreeObject() call owns the destruction path; guarded by glmObjects
+   bool CollectOnUnlock;  // Destruction is deferred until the final unlock; guarded by glmObjects
    // Can be null or a valid pointer whilst glmObjects is held.  Nulled by object_free() when the owner dies first.
    OBJECTPTR Owner; 
    // Object children entries are valid pointers whilst glmObjects is held.  Pinning of child objects is unnecessary,
@@ -59,13 +61,15 @@ public:
    ankerl::unordered_dense::set<OBJECTPTR> Children;
    ankerl::unordered_dense::set<RESOURCEID> Resources; // Non-object resources
 
-   ObjectRecord() : Object(nullptr), Owner(nullptr) { };
+   ObjectRecord() : Object(nullptr), Terminating(false), CollectOnUnlock(false), Owner(nullptr) { };
 
    ObjectRecord(OBJECTPTR AObject, OBJECTPTR AOwner = nullptr) :
-      Object(AObject), Owner(AOwner) { };
+      Object(AObject), Terminating(false), CollectOnUnlock(false), Owner(AOwner) { };
 
    void clear() {
       Object = nullptr;
+      Terminating = false;
+      CollectOnUnlock = false;
       Owner = nullptr;
       Children.clear();
       Resources.clear();

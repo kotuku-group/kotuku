@@ -346,7 +346,7 @@ void MsgWindowClose(OBJECTID SurfaceID)
          if (func.defined()) func.unpin();
       }
 
-      if (!CheckResourceExists(SurfaceID)) FreeResource(SurfaceID);
+      if (!CheckResourceExists(SurfaceID)) FreeObject(SurfaceID);
    }
 }
 
@@ -357,7 +357,7 @@ void MsgWindowDestroyed(OBJECTID SurfaceID)
    if (SurfaceID) {
       kt::Log log("WinMgr");
       log.branch("Freeing window surface #%d.", SurfaceID);
-      FreeResource(SurfaceID);
+      FreeObject(SurfaceID);
    }
 }
 

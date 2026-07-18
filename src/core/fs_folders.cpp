@@ -107,7 +107,7 @@ static ERR folder_free(ResourceRecord &Resource, APTR Address)
    return ERR::Terminate;
 }
 
-static ResourceManager glResourceFolder = { "Folder", &folder_free, nullptr, nullptr, true };
+static ResourceManager glResourceFolder = { "Folder", &folder_free, true };
 
 /*********************************************************************************************************************
 

@@ -35,8 +35,6 @@ static ERR terminating_resource_free(ResourceRecord &, APTR)
 static ResourceManager glTerminatingResourceManager = {
    "TerminatingTest",
    &terminating_resource_free,
-   nullptr,
-   nullptr,
    true
 };
 
@@ -53,7 +51,7 @@ static void alloc_free_worker(int Base)
 {
    for (int i=0; i < 250; i++) {
       APTR memory = nullptr;
-      if (AllocMemory(32 + ((Base + i) % 96), MEM::NIL, &memory) != ERR::Okay) {
+      if (AllocResource(32 + ((Base + i) % 96), MEM::NIL, &memory, nullptr) != ERR::Okay) {
          glAllocFreeFailures.fetch_add(1, std::memory_order_relaxed);
          continue;
       }
@@ -127,7 +125,7 @@ static int run_owned_resource_cleanup_check(void)
       return -1;
    }
 
-   if (AllocMemory(64, MEM::NIL, &memory) != ERR::Okay) {
+   if (AllocResource(64, MEM::NIL, &memory, nullptr) != ERR::Okay) {
       FreeResource(child);
       FreeResource(parent);
       log.warning("AllocMemory() failed for ownership cleanup check.");
@@ -175,7 +173,7 @@ static int run_terminating_resource_check(void)
    kt::Log log(__FUNCTION__);
 
    APTR memory = nullptr;
-   if (AllocMemory(64, MEM::NIL, &memory) != ERR::Okay) {
+   if (AllocResource(64, MEM::NIL, &memory, nullptr) != ERR::Okay) {
       log.warning("AllocMemory() failed for terminating resource test.");
       return -1;
    }
@@ -211,6 +209,91 @@ static int run_terminating_resource_check(void)
    }
 
    glTerminatingResource = nullptr;
+   return 0;
+}
+
+//********************************************************************************************************************
+
+static int run_free_object_checks(void)
+{
+   kt::Log log(__FUNCTION__);
+
+   OBJECTPTR object = nullptr;
+   if (NewObject(CLASSID::CONFIG, NF::NIL, &object) != ERR::Okay) {
+      log.warning("Failed to create Config object for direct FreeObject() check.");
+      return -1;
+   }
+
+   auto object_id = object->UID;
+   if (FreeObject(object_id) != ERR::Okay) {
+      log.warning("FreeObject() failed for an unlocked object.");
+      return -1;
+   }
+
+   if (CheckResourceExists(object_id) != ERR::False) {
+      log.warning("Directly freed object still exists.");
+      return -1;
+   }
+
+   if (FreeObject(object_id) != ERR::DoesNotExist) {
+      log.warning("FreeObject() did not reject an already freed object.");
+      return -1;
+   }
+
+   if (NewObject(CLASSID::CONFIG, NF::NIL, &object) != ERR::Okay) {
+      log.warning("Failed to create Config object for deferred FreeObject() check.");
+      return -1;
+   }
+
+   object_id = object->UID;
+   OBJECTPTR locked = nullptr;
+   if (AccessObject(object_id, 1000, &locked) != ERR::Okay) {
+      FreeObject(object_id);
+      log.warning("Failed to lock Config object for deferred FreeObject() check.");
+      return -1;
+   }
+
+   if (FreeObject(object_id) != ERR::InUse) {
+      ReleaseObject(locked);
+      log.warning("FreeObject() did not defer destruction of a locked object.");
+      return -1;
+   }
+
+   if (CheckResourceExists(object_id) != ERR::False) {
+      ReleaseObject(locked);
+      log.warning("Deferred object remains visible through CheckResourceExists().");
+      return -1;
+   }
+
+   if (FreeObject(object_id) != ERR::InUse) {
+      ReleaseObject(locked);
+      log.warning("Repeated FreeObject() did not report a locked object as in use.");
+      return -1;
+   }
+
+   ReleaseObject(locked);
+
+   if (FreeObject(object_id) != ERR::DoesNotExist) {
+      log.warning("Deferred object was not collected on its final unlock.");
+      return -1;
+   }
+
+   if (NewObject(CLASSID::CONFIG, NF::NIL, &object) != ERR::Okay) {
+      log.warning("Failed to create Config object for FreeResource() dispatch check.");
+      return -1;
+   }
+
+   object_id = object->UID;
+   if (FreeResource(object_id) != ERR::Okay) {
+      log.warning("FreeResource() failed to dispatch an object identifier.");
+      return -1;
+   }
+
+   if (FreeObject(object_id) != ERR::DoesNotExist) {
+      log.warning("FreeResource() dispatch did not remove the object registry entry.");
+      return -1;
+   }
+
    return 0;
 }
 
@@ -512,7 +595,7 @@ static int run_access_object_checks(void)
    kt::Log log(__FUNCTION__);
 
    APTR memory = nullptr;
-   if (AllocMemory(64, MEM::NIL, &memory) != ERR::Okay) {
+   if (AllocResource(64, MEM::NIL, &memory, nullptr) != ERR::Okay) {
       log.warning("AllocMemory() failed for AccessObject() resource rejection test.");
       return -1;
    }
@@ -613,6 +696,11 @@ int main(int argc, CSTRING *argv)
    }
 
    if (run_terminating_resource_check() != 0) {
+      close_kotuku();
+      return -1;
+   }
+
+   if (run_free_object_checks() != 0) {
       close_kotuku();
       return -1;
    }

@@ -9,7 +9,8 @@
 //
 // THREAD SAFETY: NodePool performs NO internal locking.  Every map that uses it is already serialised behind its own
 // mutex (glmResources / glmObjects), so all allocate()/deallocate() calls are mutually exclusive.  Do not
-// share a NodePool across maps that are guarded by different mutexes.
+// share a NodePool across maps that are guarded by different mutexes.  Code that locks both registries must acquire
+// glmResources before glmObjects.
 
 #include <cstdlib>
 #include <cstddef>

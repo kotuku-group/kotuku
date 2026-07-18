@@ -147,7 +147,7 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
                   }
 
                   log.msg("Freeing surface %d from display %d.", surface_id, display_id);
-                  FreeResource(surface_id);
+                  FreeObject(surface_id);
                }
                else {
                   log.msg("Failed to retrieve display ID for window $%x.", (unsigned int)xevent.xany.window);
@@ -163,7 +163,7 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
             if (glPlugin) {
                if (auto display_id = get_display(xevent.xany.window)) {
                   auto surface_id = GetOwnerID(display_id);
-                  FreeResource(surface_id);
+                  FreeObject(surface_id);
                }
             }
             break;

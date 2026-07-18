@@ -504,7 +504,7 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
 
       kt::vector<ChildEntry> list;
       if (!ListChildren(Self->Page->UID, &list)) {
-         for (auto it=list.rbegin(); it != list.rend(); it++) FreeResource(it->ObjectID);
+         for (auto it=list.rbegin(); it != list.rend(); it++) FreeObject(it->ObjectID);
       }
    }
 
@@ -513,7 +513,7 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
       kt::vector<ChildEntry> list;
       if (!ListChildren(Self->View->UID, &list)) {
          for (auto child=list.rbegin(); child != list.rend(); child++) {
-            if (child->ObjectID != Self->Page->UID) FreeResource(child->ObjectID);
+            if (child->ObjectID != Self->Page->UID) FreeObject(child->ObjectID);
          }
       }
    }

@@ -41,13 +41,12 @@ void lj_object_finalize(lua_State *L, GCobject *obj)
    while (obj->accesscount > 0) release_object(obj); // Critical for recovering from exceptions
 
    if ((not obj->is_detached()) and obj->uid) {
-      // Non-detached GCobjects are owned by Tiri.  Do not call GetObjectPtr() here; FreeResource() may have dropped
-      // the memory lock while an object is being torn down, leaving the lookup table observable in an intermediate
-      // state during forced collection.
+      // Non-detached GCobjects are owned by Tiri.  Do not call GetObjectPtr() here; object teardown drops the registry
+      // lock while class cleanup runs, so a separate lookup would not keep the object stable through forced collection.
       kt::Log log("obj.destruct");
       log.traceBranch("Freeing Tiri-owned object #%d.", obj->uid);
 
-      auto error = FreeResource(obj->uid);
+      auto error = FreeObject(obj->uid);
       if ((!error) or (error IS ERR::DoesNotExist)) {
          if (obj->is_pinned()) {
             obj->ptr->unpinWeak();

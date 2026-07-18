@@ -296,13 +296,19 @@ void CloseCore(void)
       // It is assumed that no threads are running by this point in the shutdown process
 
       if (not glCrashStatus) {
-         log.branch("Checking for orphaned resources...");
+         log.branch("Checking for orphaned objects and resources...");
 
          // Print warnings only.  Resource managers like a stable system environment, and additionally
          // because modules have been expunged by this point, they can be unsafe to call or inspect.
          for (const auto & [ id, resource ] : glResources) {
             if (not resource.Address) continue;
             log.warning("Unfreed resource #%d/%p, Owner: #%d.", id, resource.Address, resource.OwnerID);
+         }
+
+         for (const auto & [ id, record ] : glObjects) {
+            if (not record.Object) continue;
+            auto owner_id = record.Owner ? record.Owner->UID : 0;
+            log.warning("Unfreed object #%d/%p, Owner: #%d.", id, record.Object, owner_id);
          }
       }
    }
