@@ -224,14 +224,15 @@ end
 @Test global function W3Struct09() hashTestSVG('struct/w3-struct-group-02-b.svg', 0xd430b77c) end
 
 @Test global function CoarsePaper()        hashTestSVG('filters/coarse_paper.svg', 0xedc2c5e4) end
-@Test global function Composite()          hashTestSVG('filters/composite.svg', 0x5bf2bee1) end
-@Test global function Convolve()           hashTestSVG('filters/convolve.svg', 0xa2261695) end
+@Test global function Composite()          hashTestSVG('filters/composite.svg', 0x83f72f0e) end
+@Test global function CompositeClamp()     hashTestSVG('filters/composite_linear_clamp.svg', 0x137886b9) end
+@Test global function Convolve()           hashTestSVG('filters/convolve.svg', 0x0bd7d2d6) end
 @Test global function ConvolveUnit2()      hashTestSVG('filters/kernel_unit_length_2.svg', 0x87bad74f) end
 @Test global function ConvolveUnit05()     hashTestSVG('filters/kernel_unit_length_0_5.svg', 0xae9de7fa) end
-@Test global function RockyLighting()      hashTestSVG('filters/rocky_lighting.svg', 0xd89b7f75) end
+@Test global function RockyLighting()      hashTestSVG('filters/rocky_lighting.svg', 0x4e4b38f5) end
 @Test global function ScaledLighting()     hashTestSVG('filters/lighting_scale.svg', 0x0ba5705d) end
-@Test global function W3Composite1()       hashTestSVG('filters/w3-composite.svg', 0x6534eb63) end
-@Test global function W3Composite2()       hashTestSVG('filters/w3-filters-composite-02-b.svg', 0xc628d603) end
+@Test global function W3Composite1()       hashTestSVG('filters/w3-composite.svg', 0xed801eb2) end
+@Test global function W3Composite2()       hashTestSVG('filters/w3-filters-composite-02-b.svg', 0x913b9955) end
 @Test global function W3Convolve1()        hashTestSVG('filters/w3-filters-conv-01-f.svg', -1) end
 @Test global function W3Convolve2()        hashTestSVG('filters/w3-filters-conv-02-f.svg', 0x47ded148) end
 @Test; @Disabled global function W3Convolve4()        hashTestSVG('filters/w3-filters-conv-04-f.svg', 0x3e4d8a13) end
