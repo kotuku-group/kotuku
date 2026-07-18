@@ -1214,18 +1214,18 @@ struct OpenInfo {
 };
 
 struct ResourceRecord {
-   APTR     Address;                    // Direct pointer to the resource (optional, can rely on ResourceID instead)
+   APTR Address;                        // Direct pointer to the resource (optional, can rely on ResourceID instead)
    struct ResourceManager * Manager;    // Reference to the resource manager for this record
    RESOURCEID ResourceID;               // Unique identifier
-   OBJECTID OwnerID;                    // Owner of the resource
-   bool     CollectOnUnlock;            // Resource is locked; manager will collect immediately once unlocked
-   bool     Terminating;                // A FreeResource() call currently owns the destruction path
-   bool     OwnerManagesChildren;       // True if the current OwnerID manages its child resources
+   int  OwnerID;                        // Owner of the resource, could be another resource or object
+   bool CollectOnUnlock;                // Resource is locked; manager will collect immediately once unlocked
+   bool Terminating;                    // A FreeResource() call currently owns the destruction path
+   bool OwnerManagesChildren;           // True if the current OwnerID manages its child resources
    ResourceRecord() :
       Address(nullptr), Manager(nullptr), ResourceID(0), OwnerID(0), CollectOnUnlock(false),
       Terminating(false), OwnerManagesChildren(false) { };
 
-   ResourceRecord(RESOURCEID pResourceID, APTR pAddress, OBJECTID pOwnerID, ResourceManager *pManager) :
+   ResourceRecord(RESOURCEID pResourceID, APTR pAddress, int pOwnerID, ResourceManager *pManager) :
       Address(pAddress), Manager(pManager), ResourceID(pResourceID), OwnerID(pOwnerID), CollectOnUnlock(false),
       Terminating(false), OwnerManagesChildren(false) { };
 };

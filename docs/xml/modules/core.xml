@@ -2584,7 +2584,7 @@ identifier has no effect.</li>
       <field name="Address" type="APTR">Direct pointer to the resource (optional, can rely on ResourceID instead)</field>
       <field name="Manager" type="struct ResourceManager *">Reference to the resource manager for this record</field>
       <field name="ResourceID" type="RESOURCEID">Unique identifier</field>
-      <field name="OwnerID" type="OBJECTID">Owner of the resource</field>
+      <field name="OwnerID" type="INT">Owner of the resource, could be another resource or object</field>
       <field name="CollectOnUnlock" type="BOOL">Resource is locked; manager will collect immediately once unlocked</field>
       <field name="Terminating" type="BOOL">A FreeResource() call currently owns the destruction path</field>
       <field name="OwnerManagesChildren" type="BOOL">True if the current OwnerID manages its child resources</field>
