@@ -89,6 +89,8 @@ static ERR win32_audio_stream(extSound *, int64_t, int64_t);
 
 static void sound_stopped_event(extSound *Self)
 {
+   Self->Active = false;
+
    if (Self->OnStop.stale()) {
       Self->OnStop.unpin();
       Self->OnStop.clear();
@@ -313,6 +315,27 @@ static ERR sound_play_position(extSound *Self, int64_t *Value)
 /*********************************************************************************************************************
 -ACTION-
 Activate: Plays the audio sample.
+
+Calling Activate will play the sample data from the current seek position defined by the #Position field.  Playback
+continues asynchronously and the client can monitor its progress through the #Position field, or receive an event
+notification through an #OnStop callback once playback has stopped.
+
+The #Length field must be set prior to activation, otherwise `ERR::FieldNotSet` is returned.
+
+On first activation the sample data is either loaded into an audio buffer in its entirety, or configured for streaming
+according to the #Stream field.  Streaming is enabled automatically when `STREAM::ALWAYS` is set and the sample exceeds
+16KB, or when `STREAM::SMART` is set and the sample exceeds 256KB.  Subsequent calls reuse the prepared buffer.
+
+If the `LOOP` flag is defined then the sample will loop continuously between #LoopStart and #LoopEnd (or the full sample
+length if #LoopEnd is zero) until deactivated.
+
+The sound is assigned to the first available mixer channel.  If every channel is in use, a channel belonging to a sound
+of lower #Priority may be reallocated for playback.  When no suitable channel can be obtained, `ERR::ArrayFull` is
+returned.  Samples flagged with `RESTRICT_PLAY` or configured for streaming are limited to a single active channel, so
+re-activating them will restart playback on that channel rather than mixing a second copy.
+
+The current #Volume, #Pan and #Playback (frequency) values are applied to the channel when playback begins.  If the seek
+position is at or beyond the end of the sample, it is automatically reset to the start before playing.
 -END-
 *********************************************************************************************************************/
 
@@ -320,9 +343,14 @@ static ERR SOUND_Activate(extSound *Self)
 {
    kt::Log log;
 
-   log.traceBranch("Position: %" PF64, (long long)Self->Position);
+   log.branch("Position: %" PF64 ", Active: %d", (long long)Self->Position, Self->Active);
 
    if (!Self->Length) return log.warning(ERR::FieldNotSet);
+
+   if (Self->Active) {
+      int active;
+      if ((SOUND_GET_Active(Self, &active) IS ERR::Okay) and (!active)) Self->Active = false;
+   }
 
 #ifdef USE_WIN32_PLAYBACK
    // Optimised playback for Windows - this does not use our internal mixer.
@@ -394,7 +422,11 @@ static ERR SOUND_Activate(extSound *Self)
    return (error != ERR::Okay) ? log.warning(error) : ERR::Okay;
 #else
 
-   if (!Self->Active) {
+   if ((!Self->Active) and (Self->Position >= Self->Length)) {
+      if (Self->seekStart(0) != ERR::Okay) return log.warning(ERR::Seek);
+   }
+
+   if (!Self->Handle) {
       // Determine the sample type
 
       auto sampleformat = SFM::NIL;
@@ -506,8 +538,6 @@ static ERR SOUND_Activate(extSound *Self)
       else return log.warning(ERR::AllocMemory);
    }
 
-   Self->Active = true;
-
    kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 2000);
    if (audio.granted()) {
       // Restricted and streaming audio can be played on only one channel at any given time.  This search will check
@@ -554,6 +584,7 @@ static ERR SOUND_Activate(extSound *Self)
          if (snd::MixFrequency(*audio, Self->ChannelIndex, Self->Playback) != ERR::Okay) return log.warning(ERR::AudioMix);
          if (snd::MixPlay(*audio, Self->ChannelIndex, Self->Position) != ERR::Okay) return log.warning(ERR::AudioMix);
 
+         Self->Active = true;
          return ERR::Okay;
       }
       else {
@@ -1175,6 +1206,7 @@ static ERR SOUND_GET_Active(extSound *Self, int *Value)
    }
    else *Value = FALSE;
 
+   Self->Active = *Value;
    return ERR::Okay;
 #else
    *Value = FALSE;
@@ -1190,6 +1222,7 @@ static ERR SOUND_GET_Active(extSound *Self, int *Value)
    }
 #endif
 
+   Self->Active = *Value;
    return ERR::Okay;
 }
 
