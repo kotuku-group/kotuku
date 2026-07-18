@@ -704,8 +704,7 @@ Note that if SVG compatibility is required, linear RGB must be used as the defau
 -FIELD-
 EffectXML: Returns a SVG XML string that defines the filter's effects.
 
-This field value will return a purpose-built string that defines the filter's effects in SVG compliant XML.  The string
-is allocated and must be freed once no longer in use.
+This field value will return a purpose-built string that defines the filter's effects in SVG compliant XML.
 
 *********************************************************************************************************************/
 

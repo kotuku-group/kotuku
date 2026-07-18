@@ -719,7 +719,7 @@ class objTask;
     "DeleteFile",
     "ResolveClassID",
     "AllocateID",
-    "AllocMemory",
+    "AllocResource",
     "AccessObject",
     "CheckAction",
     "CheckResourceExists",

@@ -222,7 +222,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object, callback-held</tags>
@@ -247,7 +247,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="FieldNotSet">The VectorScene has no reference to a Surface.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="Function">A call to <function module="Display">SubscribeInput</function> failed.</error>
       </result>
@@ -272,7 +272,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="FieldNotSet">The <class name="VectorScene" field="Surface">VectorScene.Surface</class> field has not been defined.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="Function">A call to <function module="Display">SubscribeInput</function> failed.</error>
       </result>

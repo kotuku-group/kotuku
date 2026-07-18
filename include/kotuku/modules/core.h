@@ -1466,7 +1466,7 @@ struct CoreBase {
    ERR (*_DeleteFile)(const std::string_view &Path, FUNCTION *Callback);
    CSTRING (*_ResolveClassID)(CLASSID ID);
    int (*_AllocateID)(IDTYPE Type);
-   ERR (*_AllocMemory)(int64_t Size, MEM Flags, APTR *Address);
+   ERR (*_AllocResource)(int64_t Size, MEM Flags, APTR *Address, struct ResourceManager *Manager);
    ERR (*_AccessObject)(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result);
    ERR (*_CheckAction)(OBJECTPTR Object, AC Action);
    ERR (*_CheckResourceExists)(RESOURCEID ID);
@@ -1563,7 +1563,7 @@ inline void ActionList(struct ActionTable **Actions, int *Size) { return CoreBas
 inline ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback) { return CoreBase->_DeleteFile(Path,Callback); }
 inline CSTRING ResolveClassID(CLASSID ID) { return CoreBase->_ResolveClassID(ID); }
 inline int AllocateID(IDTYPE Type) { return CoreBase->_AllocateID(Type); }
-inline ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address) { return CoreBase->_AllocMemory(Size,Flags,Address); }
+inline ERR AllocResource(int64_t Size, MEM Flags, APTR *Address, struct ResourceManager *Manager) { return CoreBase->_AllocResource(Size,Flags,Address,Manager); }
 inline ERR AccessObject(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result) { return CoreBase->_AccessObject(Object,MilliSeconds,Result); }
 inline ERR CheckAction(OBJECTPTR Object, AC Action) { return CoreBase->_CheckAction(Object,Action); }
 inline ERR CheckResourceExists(RESOURCEID ID) { return CoreBase->_CheckResourceExists(ID); }
@@ -1656,7 +1656,7 @@ extern "C" void ActionList(struct ActionTable **Actions, int *Size);
 extern "C" ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback);
 extern "C" CSTRING ResolveClassID(CLASSID ID);
 extern "C" int AllocateID(IDTYPE Type);
-extern "C" ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address);
+extern "C" ERR AllocResource(int64_t Size, MEM Flags, APTR *Address, struct ResourceManager *Manager);
 extern "C" ERR AccessObject(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result);
 extern "C" ERR CheckAction(OBJECTPTR Object, AC Action);
 extern "C" ERR CheckResourceExists(RESOURCEID ID);

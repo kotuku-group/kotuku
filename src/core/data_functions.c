@@ -10,7 +10,7 @@ FDEF argsActionList[] = { { "Void", FD_VOID }, { "ActionTable:Actions", FD_RESUL
 FDEF argsAddInfoTag[] = { { "Error", FD_INT|FD_ERROR }, { "FileInfo:Info", FD_PTR|FD_STRUCT }, { "Name", FDF_CPPSTRING }, { "Value", FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsAddMsgHandler[] = { { "Error", FD_INT|FD_ERROR }, { "MsgType", FD_INT }, { "Routine", FD_FUNCTIONPTR }, { "MsgHandler:Handle", FD_RESULT|FD_PTR|FD_STRUCT|FD_RESOURCE|FD_ALLOC }, { 0, 0 } };
 FDEF argsAdjustLogLevel[] = { { "Result", FD_INT }, { "Delta", FD_INT }, { 0, 0 } };
-FDEF argsAllocMemory[] = { { "Error", FD_INT|FD_ERROR }, { "Size", FD_INT64 }, { "Flags", FD_INT }, { "Address", FD_RESULT|FD_PTR }, { 0, 0 } };
+FDEF argsAllocResource[] = { { "Error", FD_INT|FD_ERROR }, { "Size", FD_INT64 }, { "Flags", FD_INT }, { "Address", FD_RESULT|FD_PTR }, { "ResourceManager:Manager", FD_PTR|FD_STRUCT }, { 0, 0 } };
 FDEF argsAllocateID[] = { { "Result", FD_INT }, { "Type", FD_INT }, { 0, 0 } };
 FDEF argsAnalysePath[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPSTRING }, { "Type", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF argsAsyncAction[] = { { "Error", FD_INT|FD_ERROR }, { "Action", FD_INT }, { "Object", FD_OBJECTPTR }, { "Args", FD_PTR }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
@@ -103,7 +103,7 @@ const struct Function glFunctions[] = {
    { (APTR)DeleteFile, "DeleteFile", argsDeleteFile },
    { (APTR)ResolveClassID, "ResolveClassID", argsResolveClassID },
    { (APTR)AllocateID, "AllocateID", argsAllocateID },
-   { (APTR)AllocMemory, "AllocMemory", argsAllocMemory },
+   { (APTR)AllocResource, "AllocResource", argsAllocResource },
    { (APTR)AccessObject, "AccessObject", argsAccessObject },
    { (APTR)CheckAction, "CheckAction", argsCheckAction },
    { (APTR)CheckResourceExists, "CheckResourceExists", argsCheckResourceExists },

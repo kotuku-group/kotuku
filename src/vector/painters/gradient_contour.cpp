@@ -68,6 +68,12 @@ static ERR GRADIENTCONTOUR_SET_Multiplier(extGradientContour *Self, double Value
    return ERR::Okay;
 }
 
+/*********************************************************************************************************************
+-FIELD-
+XMLDef: Returns an SVG compliant XML string that describes the effect.
+-END-
+*********************************************************************************************************************/
+
 static ERR GRADIENTCONTOUR_GET_XMLDef(extGradientContour *Self, std::string &Value)
 {
    std::stringstream stream;

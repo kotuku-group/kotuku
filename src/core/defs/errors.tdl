@@ -91,7 +91,7 @@ function declareErrors()
     "OwnerPassThrough",              -- Container pass through notification
     "UnsupportedOwner",              -- The owner is not supported by this object
     "ExclusiveDenied|AccessObject",  -- Attempting to lock an object failed
-    "AllocMemory",                   -- AllocMemory() failed to create a new memory block
+    "AllocMemory",                   -- Failed to create a new memory block
     "NewObject",                     -- NewObject() failed to produce a new object
     "GetField",                      -- GetField() failed to retrieve a field value
     "NoFieldAccess",                 -- Access to a field was denied

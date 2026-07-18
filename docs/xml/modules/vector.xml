@@ -272,7 +272,7 @@ Z: Close Path
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="InvalidData">There is an error in the provided data</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+      <error code="AllocMemory">Failed to create a new memory block</error>
       <error code="BufferOverflow">A buffer overflow has occurred</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
       <error code="InvalidValue">A required value was not within expected constraints</error>
@@ -326,7 +326,7 @@ Z: Close Path
       <error code="Search">A search routine in this function failed</error>
       <error code="Args">Invalid arguments passed to function</error>
       <error code="AccessObject">Attempting to lock an object failed</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+      <error code="AllocMemory">Failed to create a new memory block</error>
       <error code="ResolvePath">A volume could not be resolved</error>
       <error code="CreateObject">A call to CreateObject() failed</error>
     </result>

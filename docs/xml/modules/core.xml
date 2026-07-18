@@ -214,7 +214,7 @@ struct FunctionField argsResize[] = {
     <result type="ERR">
       <error code="Okay">Message handler successfully processed.</error>
       <error code="Lock">Failed to lock a required resource</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+      <error code="AllocMemory">Failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -239,29 +239,27 @@ struct FunctionField argsResize[] = {
   </function>
 
   <function>
-    <name>AllocMemory</name>
+    <name>AllocResource</name>
     <category>Memory</category>
     <comment>Allocates a managed memory block on the heap.</comment>
-    <prototype>ERR AllocMemory(INT64 Size, MEM Flags, APTR * Address)</prototype>
-    <tiriPrototype>err, Address:any = AllocMemory(Size:num, Flags:num)</tiriPrototype>
+    <prototype>ERR AllocResource(INT64 Size, MEM Flags, APTR * Address, struct ResourceManager * Manager)</prototype>
+    <tiriPrototype>err, Address:any = AllocResource(Size:num, Flags:num, Manager:any)</tiriPrototype>
     <tags>caller-owns-result, creates-resource, blocking</tags>
     <input>
       <param type="INT64" name="Size">The size of the memory block in bytes. Must be greater than zero.</param>
       <param type="MEM" name="Flags" lookup="MEM">Optional allocation flags controlling behaviour and ownership.</param>
       <param type="APTR *" name="Address">Pointer to store the address of the allocated memory block.</param>
+      <param type="struct ResourceManager *" name="Manager">Resource manager used to release the resource.</param>
     </input>
     <description>
-<p>AllocMemory() provides comprehensive memory allocation with automatic ownership tracking, resource management, and debugging features. The function allocates a new block of memory and associates it with the current execution context, allowing it to be automatically cleaned up when the context is destroyed.</p>
+<p>AllocResource() reserves an area of memory of <code>Size</code> bytes and tracks it using the supplied resource manager.  If no <code>Manager</code> is provided, the default memory manager is used.  The function returns a pointer to the allocated memory block in <code>Address</code>.  The allocated memory is automatically associated with the current execution context, allowing it to be automatically cleaned up when the context is destroyed.</p>
 <p>Example usage:</p>
 <pre>APTR address;
-if (!AllocMemory(1000, MEM::NIL, &amp;address)) {
+if (!AllocResource(1000, MEM::NIL, &amp;address, nullptr)) {
    // Use memory block...
    FreeResource(address);
 }
 </pre>
-<p>Memory allocation behaviour is controlled through MEM flags:</p>
-<types lookup="MEM"/>
-<p>The resulting memory block is zero-initialised unless the <code>MEM::NO_CLEAR</code> flag is specified.  For large allocations where initialisation overhead is a concern, utilising <code>MEM::NO_CLEAR</code> is recommended.</p>
 <p>Memory blocks are automatically associated with their owning object context, enabling automatic cleanup when the owner is destroyed. This prevents memory leaks in object-oriented code.</p>
     </description>
     <result type="ERR">
@@ -777,7 +775,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
   <function>
     <name>FreeResource</name>
     <category>Memory</category>
-    <comment>Safely deallocates resources allocated by AllocMemory() and similar functions.</comment>
+    <comment>Safely deallocates resources allocated by AllocResource() and similar functions.</comment>
     <prototype>ERR FreeResource(RESOURCEID ID)</prototype>
     <tiriPrototype>err = FreeResource(ID:num)</tiriPrototype>
     <tags>closes-handle, blocking</tags>
@@ -1151,7 +1149,7 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="MissingClass">The <code>ClassID</code> is invalid or refers to a class that is not installed.</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+      <error code="AllocMemory">Failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1208,7 +1206,7 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
       <error code="Okay">Operation successful.</error>
       <error code="DirEmpty">The folder is empty</error>
       <error code="Args">Invalid arguments passed to function</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+      <error code="AllocMemory">Failed to create a new memory block</error>
       <error code="ResolvePath">A volume could not be resolved</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
@@ -1668,23 +1666,36 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
   <function>
     <name>SetResource</name>
     <category>System</category>
-    <comment>Sets miscellaneous resource identifiers.</comment>
+    <comment>Updates a writable Core resource value.</comment>
     <prototype>INT64 SetResource(RES Resource, INT64 Value)</prototype>
     <tiriPrototype>num = SetResource(Resource:num, Value:num)</tiriPrototype>
     <input>
-      <param type="RES" name="Resource" lookup="RES">The ID of the resource to be set.</param>
-      <param type="INT64" name="Value">The new value to set for the resource.</param>
+      <param type="RES" name="Resource" lookup="RES">The writable resource identifier.</param>
+      <param type="INT64" name="Value">The value to assign to the resource.</param>
     </input>
     <description>
-<p>The SetResource() function is used to manipulate miscellaneous system resources.  Currently the following resources are supported:</p>
-<types lookup="RES" type="Resource">
-<type name="ALLOC_MEM_LIMIT">Adjusts the memory limit imposed on <function>AllocMemory</function>.  The <code>Value</code> specifies the memory limit in bytes.</type>
-<type name="LOG_LEVEL">Adjusts the current debug level.  The <code>Value</code> must be between 0 and 9, where 1 is the lowest level of debug output (errors only) and 0 is off.</type>
-<type name="PRIVILEGED_USER">If the <code>Value</code> is set to 1, this resource option puts the process in privileged mode (typically this enables full administrator rights).  This feature will only work for Unix processes that are granted admin rights when launched.  Setting the Value to 0 reverts to the user's permission settings.  SetResource() will return an error code indicating the level of success.</type>
-<type name="LOG_DEPTH">Changes the branch depth of the log output (affects indenting).</type>
-</types>
+<p>SetResource() updates Core state selected by a <lk>RES</lk> identifier.  The following identifiers are writable:</p>
+<list type="bullet">
+<li>
+<code>LOG_LEVEL</code> sets the logging detail from 0 (disabled) to 9 (maximum detail).  Values outside this range are
+ignored.</li>
+<li>
+<code>LOG_DEPTH</code> sets the logging branch depth for the current thread.  This controls indentation of subsequent log
+output.</li>
+<li>
+<code>PRIVILEGED_USER</code> enables elevated Unix privileges when <code>Value</code> is non-zero and releases one level of privilege
+when it is zero.  Elevation is available only when the process was launched with suitable privileges.  Calls may be
+nested; privileges are released after the corresponding number of disable requests.  On non-Unix platforms this
+identifier has no effect.</li>
+<li>
+<code>WINDOWS_ICON</code> sets the Microsoft Windows resource icon ID for the process.</li>
+<li>
+<code>CONSOLE_FD</code> and <code>JNI_ENV</code> update internal host integration values.</li>
+</list>
+<p>Other <lk>RES</lk> identifiers are read-only or unsupported by this function.</p>
+<p>For <code>PRIVILEGED_USER</code>, the result is an <code>ERR</code> value indicating whether the request succeeded.  All other supported resources return 0.  Unsupported identifiers also return 0 after writing a warning to the log.</p>
     </description>
-    <result type="INT64">Returns the previous value of the <code>Resource</code>.  If the <code>Resource</code> value is invalid, <code>NULL</code> is returned.</result>
+    <result type="INT64">Result code is dependent on the targeted resource.</result>
   </function>
 
   <function>
@@ -1796,7 +1807,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Args">Invalid arguments passed to function</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+      <error code="AllocMemory">Failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>

@@ -59,7 +59,7 @@
         <error code="Okay">Time-zone information was returned.  Local-zone failures may return a UTC fallback result.</error>
         <error code="Search">An explicit zone ID could not be resolved.</error>
         <error code="OutOfRange">A value is outside of the valid range</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="SystemCall">A required host time-zone API call failed.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
