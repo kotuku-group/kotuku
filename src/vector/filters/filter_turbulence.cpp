@@ -469,7 +469,7 @@ static const FieldArray clTurbulenceFXFields[] = {
    { "Seed",    FDF_INT|FDF_RI,            nullptr, TURBULENCEFX_SET_Seed },
    { "Stitch",  FDF_INT|FDF_RI,            nullptr, TURBULENCEFX_SET_Stitch },
    { "Type",    FDF_INT|FDF_LOOKUP|FDF_RI, nullptr, TURBULENCEFX_SET_Type, &clTurbulenceFXTB },
-   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE,      TURBULENCEFX_GET_XMLDef },
+   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE,      TURBULENCEFX_GET_XMLDef },
    END_FIELD
 };
 

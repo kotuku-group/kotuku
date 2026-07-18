@@ -468,7 +468,7 @@ static int object_get(lua_State *Lua)
             result = object_get_struct(Lua, obj_read(0, nullptr, (APTR)field), def);
          }
          else if (field->Flags & FD_STRING) {
-            if (field->Flags & FD_ALLOC) result = object_get_cppstring(Lua, obj_read(0, nullptr, (APTR)field), def);
+            if (field->Flags & FD_STORE) result = object_get_cppstring(Lua, obj_read(0, nullptr, (APTR)field), def);
             else result = object_get_string(Lua, obj_read(0, nullptr, (APTR)field), def);
          }
          else if (field->Flags & FD_POINTER) {
@@ -731,15 +731,15 @@ static int object_get_struct(lua_State *Lua, const obj_read &Handle, GCobject *D
          APTR result;
          if (!(error = Object->get(Field->FieldID, result))) {
             if (result) {
-               // Object fields expose non-owning live views.  Resource fields may transfer ownership when FD_ALLOC is
+               // Object fields expose non-owning live views.  Resource fields may transfer ownership when FD_STORE is
                // set, matching other struct-returning API bridges.
                //
                // Non-owning views are bound to the object's lifecycle: access after the object is destroyed raises
                // a catchable script error via lj_struct_stale() rather than dereferencing freed memory.  The guard
-               // is specific to lifecycle-bound structs - owned copies (FD_ALLOC transfers) and inline structs carry
+               // is specific to lifecycle-bound structs - owned copies (FD_STORE transfers) and inline structs carry
                // no dependency and skip it, and a JIT-compiled access would compile the guard out in that case.
                bool is_resource = Field->Flags & FD_RESOURCE;
-               bool owns_copy = is_resource and (Field->Flags & FD_ALLOC);
+               bool owns_copy = is_resource and (Field->Flags & FD_STORE);
                if (not push_struct(Lua->script, result, (CSTRING)Field->Arg, owns_copy, is_resource,
                      owns_copy ? nullptr : Object)) {
                   error = ERR::Search;
@@ -779,7 +779,6 @@ static int object_get_string(lua_State *Lua, const obj_read &Handle, GCobject *D
       if (!(error = Object->get(Field->FieldID, result))) {
          if (result.empty()) lua_pushnil(Lua);
          else lua_pushlstring(Lua, result.data(), result.size());
-         if (Field->Flags & FD_ALLOC) FreeResource(result.data());
       }
       return error;
    });

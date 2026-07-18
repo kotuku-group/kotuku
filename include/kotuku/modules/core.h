@@ -651,7 +651,7 @@ enum class CCF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(CCF)
 
-// Action identifiers.
+// Action identifiers
 
 enum class AC : int {
    NIL = 0,
@@ -787,7 +787,7 @@ enum class KQ : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(KQ)
 
-// Memory flags.
+// Memory flags
 
 enum class MEM : uint32_t {
    NIL = 0,
@@ -796,7 +796,7 @@ enum class MEM : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(MEM)
 
-// Event categories.
+// Event categories
 
 enum class EVG : int {
    NIL = 0,
@@ -834,7 +834,7 @@ enum class DATA : int {
    INPUT_READY = 12,
 };
 
-// JTYPE flags are used to categorise input types.
+// JTYPE flags are used to categorise input types
 
 enum class JTYPE : uint32_t {
    NIL = 0,
@@ -884,7 +884,7 @@ enum class JET : int {
    END = 21,
 };
 
-// Field descriptors.
+// Field descriptors
 
 #define FD_DOUBLERESULT 0x80000100
 #define FD_PTR_DOUBLERESULT 0x88000100
@@ -892,34 +892,35 @@ enum class JET : int {
 #define FD_VOID 0x00000000
 #define FD_OBJECT 0x00000001
 #define FD_LOCAL 0x00000002
-#define FD_VIRTUAL 0x00000008
 #define FD_MUTABLE 0x00000008
+#define FD_VIRTUAL 0x00000008
 #define FD_STRUCT 0x00000010
 #define FD_ALLOC 0x00000020
+#define FD_STORE 0x00000020
 #define FD_FLAGS 0x00000040
 #define FD_VARTAGS 0x00000040
 #define FD_PTRSIZE 0x00000080
+#define FD_BUFSIZE 0x00000080
 #define FD_ARRAYSIZE 0x00000080
 #define FD_LOOKUP 0x00000080
-#define FD_BUFSIZE 0x00000080
-#define FD_R 0x00000100
 #define FD_READ 0x00000100
 #define FD_RESULT 0x00000100
-#define FD_WRITE 0x00000200
+#define FD_R 0x00000100
 #define FD_W 0x00000200
 #define FD_BUFFER 0x00000200
+#define FD_WRITE 0x00000200
 #define FD_RW 0x00000300
-#define FD_I 0x00000400
-#define FD_TAGS 0x00000400
 #define FD_INIT 0x00000400
+#define FD_TAGS 0x00000400
+#define FD_I 0x00000400
 #define FD_RI 0x00000500
 #define FD_ERROR 0x00000800
 #define FD_ARRAY 0x00001000
 #define FD_RESOURCE 0x00002000
 #define FD_CPP 0x00004000
 #define FD_CUSTOM 0x00008000
-#define FD_SYSTEM 0x00010000
 #define FD_PRIVATE 0x00010000
+#define FD_SYSTEM 0x00010000
 #define FD_SYNONYM 0x00020000
 #define FD_UNSIGNED 0x00040000
 #define FD_PURE 0x00100000

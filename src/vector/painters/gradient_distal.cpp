@@ -194,7 +194,7 @@ static const FieldArray clGradientDistalFields[] = {
    { "InnerRadius", FDF_UNIT|FDF_RW, nullptr, GRADIENTDISTAL_SET_InnerRadius },
    { "InnerFall",   FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENTDISTAL_SET_InnerFall, &clGradientDistalGFALL },
    { "OuterFall",   FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, GRADIENTDISTAL_SET_OuterFall, &clGradientDistalGFALL },
-   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, GRADIENTDISTAL_GET_XMLDef },
+   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, GRADIENTDISTAL_GET_XMLDef },
    END_FIELD
 };
 

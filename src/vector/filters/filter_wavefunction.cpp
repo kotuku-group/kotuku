@@ -352,7 +352,7 @@ static const FieldArray clWaveFunctionFXFields[] = {
    { "L",           FDF_INT|FDF_RW,              nullptr, WAVEFUNCTIONFX_SET_L },
    { "M",           FDF_INT|FDF_RW,              nullptr, WAVEFUNCTIONFX_SET_M },
    { "Resolution",  FDF_INT|FDF_RW,              nullptr, WAVEFUNCTIONFX_SET_Resolution },
-   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, WAVEFUNCTIONFX_GET_XMLDef },
+   { "XMLDef",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, WAVEFUNCTIONFX_GET_XMLDef },
    END_FIELD
 };
 

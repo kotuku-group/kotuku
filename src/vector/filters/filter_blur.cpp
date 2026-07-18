@@ -579,7 +579,7 @@ static ERR BLURFX_GET_XMLDef(extBlurFX *Self, std::string &Value)
 static const FieldArray clBlurFXFields[] = {
    { "SX",     FDF_DOUBLE|FDF_RW },
    { "SY",     FDF_DOUBLE|FDF_RW },
-   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, BLURFX_GET_XMLDef },
+   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, BLURFX_GET_XMLDef },
    END_FIELD
 };
 

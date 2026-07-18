@@ -32,7 +32,7 @@
 #define FDF_NORMALISED  FD_NORMALISED           // Value between 0 and 1
 #define FDF_SCALED      FD_NORMALISED           // Legacy
 #define FDF_FLAGS       FD_FLAGS                // Field contains flags
-#define FDF_ALLOC       FD_ALLOC                // Field is a dynamic allocation - either a memory block or object
+#define FDF_STORE       FD_STORE                // Field is a dynamic allocation - either a memory block or object
 #define FDF_LOOKUP      FD_LOOKUP               // Lookup names for values in this field
 #define FDF_READ        FD_READ                 // Field is readable
 #define FDF_WRITE       FD_WRITE                // Field is writeable
@@ -519,10 +519,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
          if (flags & FD_INT)         Value = *((int *)fv.second);
          else if (flags & FD_INT64)  Value = *((int64_t *)fv.second);
          else if (flags & FD_DOUBLE) Value = *((double *)fv.second);
-         else {
-            if ((fv.first IS ERR::Okay) and (flags & FD_ALLOC)) FreeResource(GetMemoryID(*((APTR *)fv.second)));
-            return ERR::FieldTypeMismatch;
-         }
+         else return ERR::FieldTypeMismatch;
          return fv.first;
       }
       else return ERR::UnsupportedField;
@@ -550,7 +547,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
             else return error;
          }
 
-         if ((flags & FD_STRING) and (flags & FD_ALLOC) and field->GetValue) {
+         if ((flags & FD_STRING) and (flags & FD_STORE) and field->GetValue) {
             if (not field->pure()) SetObjectContext(target, field, AC::NIL);
             auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
             auto error = get_field(target, Value);
@@ -606,10 +603,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
             if (ec IS std::errc()) Value.assign(buffer, ptr);
          }
          else if (flags & FD_STRING) {
-            if (field->GetValue) {
-               Value.assign(*((std::string_view *)data));
-               if (flags & FD_ALLOC) FreeResource(GetMemoryID(((std::string_view *)data)->data()));
-            }
+            if (field->GetValue) Value.assign(*((std::string_view *)data));
             else Value.assign(*((std::string *)data));
          }
          else return ERR::UnrecognisedFieldType;

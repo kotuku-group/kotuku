@@ -135,7 +135,7 @@ static ERR FLOODFX_GET_XMLDef(extFloodFX *Self, std::string &Value)
 static const FieldArray clFloodFXFields[] = {
    { "Colour",  FDF_STRUCT|FDF_RW, nullptr, FLOODFX_SET_Colour, "FRGB" },
    { "Opacity", FDF_DOUBLE|FDF_RW, nullptr, FLOODFX_SET_Opacity },
-   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, FLOODFX_GET_XMLDef },
+   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FLOODFX_GET_XMLDef },
    END_FIELD
 };
 

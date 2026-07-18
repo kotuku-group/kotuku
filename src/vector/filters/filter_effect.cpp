@@ -231,7 +231,7 @@ static const FieldArray clFilterEffectFields[] = {
    { "Height",     FDF_UNIT|FDF_RW },
    { "SourceType", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clFilterEffectSourceType },
    { "MixType",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clFilterEffectMixType },
-   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
+   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, FILTEREFFECT_GET_XMLDef },
    END_FIELD
 };
 

@@ -234,7 +234,7 @@ static const ActionArray clTransitionActions[] = {
 
 static const FieldArray clTransitionFields[] = {
    { "Stops", FDF_VIRTUAL|FDF_VECTOR|FDF_STRUCT|FDF_W, nullptr, TRANSITION_SET_Stops, "Transition" },
-   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, TRANSITION_GET_XMLDef },
+   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, TRANSITION_GET_XMLDef },
    END_FIELD
 };
 

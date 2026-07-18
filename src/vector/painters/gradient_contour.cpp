@@ -85,7 +85,7 @@ static ERR GRADIENTCONTOUR_GET_XMLDef(extGradientContour *Self, std::string &Val
 static const FieldArray clGradientContourFields[] = {
    { "Floor",      FDF_DOUBLE|FDF_RW, nullptr, GRADIENTCONTOUR_SET_Floor },
    { "Multiplier", FDF_DOUBLE|FDF_RW, nullptr, GRADIENTCONTOUR_SET_Multiplier },
-   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, GRADIENTCONTOUR_GET_XMLDef },
+   { "XMLDef",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, GRADIENTCONTOUR_GET_XMLDef },
    END_FIELD
 };
 

@@ -2361,7 +2361,7 @@ static const FieldArray clVectorFields[] = {
    { "DisplayScale", FDF_VIRTUAL|FDF_DOUBLE|FDF_R,              VECTOR_GET_DisplayScale },
    { "Matrices",     FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_R|FDF_PURE, VECTOR_GET_Matrices, nullptr, "VectorMatrix" },
    { "ResizeEvent",  FDF_VIRTUAL|FDF_FUNCTION|FDF_W,            nullptr, VECTOR_SET_ResizeEvent },
-   { "Sequence",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R, VECTOR_GET_Sequence },
+   { "Sequence",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R, VECTOR_GET_Sequence },
    { "StrokeColour", FDF_VIRTUAL|FDF_STRUCT|FD_RW|FDF_PURE,     VECTOR_GET_StrokeColour, VECTOR_SET_StrokeColour, "FRGB" },
    { "StrokeWidth",  FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE,      VECTOR_GET_StrokeWidth, VECTOR_SET_StrokeWidth },
    { "FillColour",   FDF_VIRTUAL|FDF_STRUCT|FDF_RW|FDF_PURE,    VECTOR_GET_FillColour, VECTOR_SET_FillColour, "FRGB" },
