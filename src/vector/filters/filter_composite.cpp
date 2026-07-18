@@ -792,7 +792,7 @@ static const FieldArray clCompositeFXFields[] = {
    { "K3",       FDF_DOUBLE|FDF_RW },
    { "K4",       FDF_DOUBLE|FDF_RW },
    { "Operator", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clCompositeFXOP },
-   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, COMPOSITEFX_GET_XMLDef },
+   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, COMPOSITEFX_GET_XMLDef },
    END_FIELD
 };
 

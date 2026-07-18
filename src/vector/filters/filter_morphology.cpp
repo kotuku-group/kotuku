@@ -285,7 +285,7 @@ static const FieldArray clMorphologyFXFields[] = {
    { "RadiusX",  FDF_INT|FDF_RW, nullptr, MORPHOLOGYFX_SET_RadiusX },
    { "RadiusY",  FDF_INT|FDF_RW, nullptr, MORPHOLOGYFX_SET_RadiusY },
    { "Operator", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clMorphologyFXMOP },
-   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, MORPHOLOGYFX_GET_XMLDef },
+   { "XMLDef",   FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, MORPHOLOGYFX_GET_XMLDef },
    END_FIELD
 };
 

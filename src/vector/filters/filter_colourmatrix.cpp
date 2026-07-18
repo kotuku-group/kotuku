@@ -610,7 +610,7 @@ static ERR COLOURFX_GET_XMLDef(extColourFX *Self, std::string &Value)
 static const FieldArray clColourFXFields[] = {
    { "Mode",   FDF_INT|FDF_LOOKUP|FDF_RI,  nullptr, nullptr, &clColourFXCM },
    { "Values", FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_RI|FDF_PURE, COLOURFX_GET_Values, COLOURFX_SET_Values },
-   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE,  COLOURFX_GET_XMLDef },
+   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE,  COLOURFX_GET_XMLDef },
    END_FIELD
 };
 

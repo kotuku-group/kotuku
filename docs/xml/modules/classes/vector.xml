@@ -759,17 +759,17 @@ Z: Close Path
       <const name="PATH_CHANGED">The vector path has been modified or affected by a transform.</const>
     </constants>
 
-    <constants lookup="JTYPE" comment="JTYPE flags are used to categorise input types.">
+    <constants lookup="JTYPE" comment="JTYPE flags are used to categorise input types">
       <const name="ANALOG">Analog movement (ranging from -1.0 to 1.0)</const>
       <const name="ANCHORED">Cursor has been anchored with LockCursor()</const>
       <const name="BUTTON">Input is a physical button or switch</const>
-      <const name="CROSSING">Crossing events manage the entering and leaving of an area.</const>
-      <const name="DBL_CLICK">Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click.</const>
+      <const name="CROSSING">Crossing events manage the entering and leaving of an area</const>
+      <const name="DBL_CLICK">Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click</const>
       <const name="DIGITAL">D-Pad or digital joystick source (restricted to +/- 1)</const>
-      <const name="DRAGGED">Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference).</const>
-      <const name="DRAG_ITEM">This special flag is set by the input system if the pointer is click-dragging an object at the time of the event.</const>
-      <const name="EXT_MOVEMENT">Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples.</const>
-      <const name="MOVEMENT">X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system.</const>
+      <const name="DRAGGED">Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference)</const>
+      <const name="DRAG_ITEM">This special flag is set by the input system if the pointer is click-dragging an object at the time of the event</const>
+      <const name="EXT_MOVEMENT">Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples</const>
+      <const name="MOVEMENT">X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system</const>
       <const name="REPEATED">Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)</const>
       <const name="SECONDARY">Indicates to the receiver of this message that it is not the primary/original recipient</const>
     </constants>

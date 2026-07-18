@@ -109,7 +109,7 @@ static const FieldArray clGradientConicFields[] = {
    { "CY",      FDF_UNIT|FDF_RW, nullptr, GRADIENTCONIC_SET_CY },
    { "Radius",  FDF_UNIT|FDF_RW, nullptr, GRADIENTCONIC_SET_Radius },
    { "Span",    FDF_DOUBLE|FDF_RW, nullptr, GRADIENTCONIC_SET_Span },
-   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, GRADIENTCONIC_GET_XMLDef },
+   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, GRADIENTCONIC_GET_XMLDef },
    END_FIELD
 };
 

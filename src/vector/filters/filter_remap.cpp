@@ -504,7 +504,7 @@ static ERR REMAPFX_GET_XMLDef(extRemapFX *Self, std::string &Value)
 #include "filter_remap_def.c"
 
 static const FieldArray clRemapFXFields[] = {
-   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, REMAPFX_GET_XMLDef },
+   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, REMAPFX_GET_XMLDef },
    END_FIELD
 };
 
