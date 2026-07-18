@@ -555,9 +555,10 @@ static ERR MP3_Seek(objMP3 *Self, struct acSeek *Args)
       prv->reset();
       mp3dec_init(&prv->mp3d);
 
-      if (Args->Offset <= 0) {
+      if (offset <= 0) {
          log.traceBranch("Resetting play position to zero.");
          prv->File->seekStart(prv->SeekOffset);
+         Self->Position = 0;
       }
       else {
          // Seeking via byte position, where the position is relative to the decoded length.
