@@ -180,7 +180,7 @@ extern "C" ERR CLASS_Init(extMetaClass *);
 extern "C" ERR CLASS_New(extMetaClass *);
 
 FDEF argsFindField[] = { { "ID", FD_INT }, { "Field:Field", FD_RESULT|FD_PTR|FD_STRUCT }, { "Source", FD_RESULT|FD_OBJECTPTR }, { 0, 0 } };
-FDEF argsGetMembers[] = { { "List", FDF_VECTOR|FD_MUTABLE|FD_OBJECTID }, { 0, 0 } };
+FDEF argsGetMembers[] = { { "List", FDF_VECTOR|FD_RESULT|FD_MUTABLE|FD_OBJECTID }, { 0, 0 } };
 
 extMetaClass glMetaClass(&glMetaClass, 123);
 
@@ -215,8 +215,7 @@ void init_metaclass(void)
 
    glMetaClass.Methods.resize(3);
    glMetaClass.Methods[1] = { AC(-1), (APTR)CLASS_FindField, "FindField", argsFindField, sizeof(struct mc::FindField) };
-   glMetaClass.Methods[2] = { AC(-2), (APTR)CLASS_GetMembers, "GetMembers", argsGetMembers,
-      sizeof(struct mc::GetMembers) };
+   glMetaClass.Methods[2] = { AC(-2), (APTR)CLASS_GetMembers, "GetMembers", argsGetMembers, sizeof(struct mc::GetMembers) };
 
    glMetaClass.ActionTable[int(AC::Free)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_Free;
    glMetaClass.ActionTable[int(AC::Init)].PerformAction = (ERR (*)(OBJECTPTR, APTR))CLASS_Init;
