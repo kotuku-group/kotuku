@@ -955,9 +955,9 @@ static int object_free(lua_State *Lua)
 {
    auto def = object_context(Lua);
 
-   def->flags |= GCOBJ_DETACHED; // Prevents double FreeResource() at finalise.
+   def->flags |= GCOBJ_DETACHED; // Prevents a second object free at finalise.
 
-   if (FreeResource(def->uid) IS ERR::InUse) {
+   if (FreeObject(def->uid) IS ERR::InUse) {
       // The object has been marked for termination, automatically freeing it once it has been unlocked and unpinned.
       // Clearing the definition would have adverse effects on any areas that have pinned the object in a thread or
       // closure.
