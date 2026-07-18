@@ -29,7 +29,7 @@
 #include "ankerl/unordered_dense.h"
 #endif
 
-#define CORE_BUILD_DATE 20260716
+#define CORE_BUILD_DATE 20260718
 class objMetaClass;
 
 // Predefined cursor styles
@@ -1879,6 +1879,7 @@ typedef std::vector<obj_write> WRITE_TABLE;
 
 namespace mc {
 struct FindField { int ID; struct Field *Field; objMetaClass *Source; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetMembers { kt::vector<OBJECTID> *List; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -1921,6 +1922,11 @@ class objMetaClass : public Object {
       ERR error = Action(AC(-1), this, &args);
       if (Field) *Field = args.Field;
       if (Source) *Source = args.Source;
+      return error;
+   }
+   inline ERR getMembers(kt::vector<OBJECTID> &List) noexcept {
+      struct mc::GetMembers args = { &List };
+      ERR error = Action(AC(-2), this, &args);
       return error;
    }
 
@@ -2036,15 +2042,6 @@ class objMetaClass : public Object {
       auto field = &this->Class->Dictionary[25];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getObjects(std::span<int> &Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
-      SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::span<int> &))field->GetValue;
       auto error = get_field(this, Value);
       RestoreObjectContext();
       return error;

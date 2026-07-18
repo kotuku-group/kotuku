@@ -950,7 +950,8 @@ typedef std::vector<obj_write> WRITE_TABLE;
   klass("Module")
 
   methods("MetaClass", "mc", {
-    { id=1, name="FindField" }
+    { id=1, name="FindField" },
+    { id=2, name="GetMembers" }
   })
 
   klass("MetaClass", { src="../classes/class_metaclass.cpp" }, [[
