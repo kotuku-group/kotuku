@@ -108,11 +108,11 @@ struct WaitLock {
    #ifdef _WIN32
    WINHANDLE Lock;
    #endif
-   int64_t WaitingTime;
+   int64_t  WaitingTime;
    THREADID WaitingForThreadID;
-   int  WaitingForResourceID;
-   int  WaitingForResourceType;
-   uint8_t Flags; // WLF flags
+   int      WaitingForResourceID;
+   int      WaitingForResourceType;
+   uint8_t  Flags; // WLF flags
 
    #define WLF_REMOVED 0x01  // Set if the resource was removed by the thread that was holding it.
 

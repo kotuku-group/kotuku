@@ -46,7 +46,7 @@ DLLCALL int WINAPI SetPixel(APTR, int, int, int);
 DLLCALL int WINAPI GetPixel(APTR, int, int);
 #endif
 
-static ERR CalculatePixelRoutines(extBitmap *);
+static ERR calc_pixel_routines(extBitmap *);
 
 //********************************************************************************************************************
 // Pixel and pen based functions.
@@ -171,7 +171,7 @@ static const FieldDef clMemType[] = {
 
 ERR lock_surface(extBitmap *Bitmap, int16_t Access)
 {
-   if (!Bitmap->Data) {
+   if (not Bitmap->Data) {
       kt::Log log(__FUNCTION__);
       log.warning("[Bitmap:%d] Bitmap is missing the Data field.", Bitmap->UID);
       return ERR::FieldNotSet;
@@ -226,7 +226,7 @@ ERR lock_surface(extBitmap *Bitmap, int16_t Access)
       else size = Bitmap->LineWidth * Bitmap->Height;
 
       Bitmap->Data = (uint8_t *)malloc(size);
-      if (!Bitmap->Data) return ERR::AllocMemory;
+      if (not Bitmap->Data) return ERR::AllocMemory;
 
       if ((Bitmap->x11.readable = XCreateImage(XDisplay, CopyFromParent, Bitmap->BitsPerPixel,
            ZPixmap, 0, (char *)Bitmap->Data, Bitmap->Width, Bitmap->Height, alignment, Bitmap->LineWidth))) {
@@ -268,9 +268,9 @@ ERR lock_surface(extBitmap *Bitmap, int16_t Access)
       log.warning("Warning: Locking of OpenGL video surfaces for CPU access is bad practice "
          "(bitmap: #%d, memory type: %d)", Bitmap->UID, int(Bitmap->MemType));
 
-      if (!Bitmap->Data) {
+      if (not Bitmap->Data) {
          Bitmap->Data = (uint8_t *)malloc(Bitmap->Size);
-         if (!Bitmap->Data) return log.warning(ERR::AllocMemory);
+         if (not Bitmap->Data) return log.warning(ERR::AllocMemory);
          Bitmap->prvAFlags |= BF_DATA;
       }
 
@@ -293,7 +293,7 @@ ERR lock_surface(extBitmap *Bitmap, int16_t Access)
       return log.warning(ERR::NoSupport);
    }
 
-   if (!Bitmap->Data) {
+   if (not Bitmap->Data) {
       log.warning("[Bitmap:%d] Bitmap is missing the Data field", Bitmap->UID);
       return ERR::FieldNotSet;
    }
@@ -343,7 +343,7 @@ ERR unlock_surface(extBitmap *Bitmap)
 
 ERR lock_surface(extBitmap *Bitmap, int16_t Access)
 {
-   if (!Bitmap->Data) {
+   if (not Bitmap->Data) {
       kt::Log log(__FUNCTION__);
       log.warning("[Bitmap:%d] Bitmap is missing the Data field.", Bitmap->UID);
       return ERR::FieldNotSet;
@@ -449,7 +449,7 @@ static uint32_t RGBToValue(RGB8 *RGB, RGBPalette *Palette)
       if (b < 0) Match -= b; else Match += b;
 
       if (Match < BestMatch) {
-         if (!Match) return i;
+         if (not Match) return i;
          BestMatch  = Match;
          best = i;
       }
@@ -722,7 +722,7 @@ static ERR BITMAP_CopyData(extBitmap *Self, struct acCopyData *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Dest)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Dest)) return log.warning(ERR::NullArgs);
    if ((Args->Dest->classID() != CLASSID::BITMAP)) return log.warning(ERR::Args);
 
    auto target = (extBitmap *)Args->Dest;
@@ -776,10 +776,10 @@ static ERR BITMAP_Demultiply(extBitmap *Self)
    static std::mutex mutex;
    {
       const std::lock_guard<std::mutex> lock(mutex);
-      if (!glDemultiply) {
+      if (not glDemultiply) {
          auto demultiply = std::unique_ptr<std::array<uint16_t, 256 * 256>>(
             new (std::nothrow) std::array<uint16_t, 256 * 256>());
-         if (!demultiply) return ERR::AllocMemory;
+         if (not demultiply) return ERR::AllocMemory;
 
          for (int a=1; a <= 255; a++) {
             for (int i=0; i <= 255; i++) {
@@ -878,7 +878,7 @@ mutates-object
 
 static ERR BITMAP_DrawRectangle(extBitmap *Self, struct bmp::DrawRectangle *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
    gfx::DrawRectangle(Self, Args->X, Args->Y, Args->Width, Args->Height, Args->Colour, Args->Flags);
    return ERR::Okay;
 }
@@ -933,7 +933,7 @@ pure-query
 
 static ERR BITMAP_GetColour(extBitmap *Self, struct bmp::GetColour *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
    if (Self->BitsPerPixel > 8) {
       Args->Colour = Self->packPixel(Args->Red, Args->Green, Args->Blue, Args->Alpha);
@@ -1009,18 +1009,18 @@ static ERR BITMAP_Init(extBitmap *Self)
 
    if (Self->MemType IS BMT::TEXTURE) Self->MemType = BMT::DATA; // Blitter memory not available in X11
 
-   if (!Self->Data) {
+   if (not Self->Data) {
       if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
          Self->MemType = BMT::DATA; // Video memory not available for allocation in X11 (may be set to identify X11 windows only)
 
-         if (!Self->Size) return log.warning(ERR::FieldNotSet);
+         if (not Self->Size) return log.warning(ERR::FieldNotSet);
 
          if (glHeadless) {
             Self->Data = (uint8_t *)malloc(Self->Size);
-            if (!Self->Data) return log.warning(ERR::AllocMemory);
+            if (not Self->Data) return log.warning(ERR::AllocMemory);
             Self->prvAFlags |= BF_DATA;
          }
-         else if (!Self->x11.XShmImage) {
+         else if (not Self->x11.XShmImage) {
             log.detail("Allocating a memory based XImage.");
             if (!alloc_shm(Self->Size, &Self->Data, &Self->x11.ShmInfo.shmid)) {
                Self->prvAFlags |= BF_DATA;
@@ -1048,23 +1048,23 @@ static ERR BITMAP_Init(extBitmap *Self)
       }
    }
 
-   if (!glHeadless) XSync(XDisplay, False);
+   if (not glHeadless) XSync(XDisplay, False);
 
 #elif _WIN32
 
    if (Self->MemType IS BMT::TEXTURE) Self->MemType = BMT::DATA; // Video buffer memory not available in Win32
 
-   if (!Self->Data) {
+   if (not Self->Data) {
       if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
-         if (!Self->Size) return log.warning(ERR::FieldNotSet);
+         if (not Self->Size) return log.warning(ERR::FieldNotSet);
 
          if (Self->MemType IS BMT::VIDEO) {
             Self->prvAFlags |= BF_WINVIDEO;
-            if (!(Self->win.Drawable = winCreateCompatibleDC())) return log.warning(ERR::SystemCall);
+            if (not (Self->win.Drawable = winCreateCompatibleDC())) return log.warning(ERR::SystemCall);
          }
          else {
             Self->Data = (uint8_t *)malloc(Self->Size);
-            if (!Self->Data) return log.warning(ERR::AllocMemory);
+            if (not Self->Data) return log.warning(ERR::AllocMemory);
             Self->prvAFlags |= BF_DATA;
          }
       }
@@ -1079,7 +1079,7 @@ static ERR BITMAP_Init(extBitmap *Self)
    // can be discarded by the graphics driver if the video display changes.
    // BMT::DATA: The bitmap resides in regular CPU-accessible memory.
 
-   if (!Self->Data) {
+   if (not Self->Data) {
       if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
          if (Self->Size <= 0) log.warning(ERR::FieldNotSet);
 
@@ -1095,7 +1095,7 @@ static ERR BITMAP_Init(extBitmap *Self)
          }
          else {
             Self->Data = (uint8_t *)malloc(Self->Size);
-            if (!Self->Data) return ERR::AllocMemory;
+            if (not Self->Data) return ERR::AllocMemory;
             Self->prvAFlags |= BF_DATA;
          }
       }
@@ -1106,11 +1106,11 @@ static ERR BITMAP_Init(extBitmap *Self)
 #else // Software rendering only
    Self->MemType = BMT::DATA;
 
-   if (!Self->Data) {
+   if (not Self->Data) {
       if ((Self->Flags & BMF::NO_DATA) IS BMF::NIL) {
-         if (!Self->Size) return log.warning(ERR::FieldNotSet);
+         if (not Self->Size) return log.warning(ERR::FieldNotSet);
          Self->Data = (uint8_t *)malloc(Self->Size);
-         if (!Self->Data) return log.warning(ERR::AllocMemory);
+         if (not Self->Data) return log.warning(ERR::AllocMemory);
          Self->prvAFlags |= BF_DATA;
       }
    }
@@ -1120,7 +1120,7 @@ static ERR BITMAP_Init(extBitmap *Self)
 
 #ifdef __xwindows__
 
-   if (!glHeadless) {
+   if (not glHeadless) {
       if (Self->x11.drawable) {
          XVisualInfo visual, *info;
          int items;
@@ -1140,7 +1140,7 @@ static ERR BITMAP_Init(extBitmap *Self)
    if (Self->MemType IS BMT::VIDEO) {
       int red, green, blue, alpha;
 
-      if (!winGetPixelFormat(&red, &green, &blue, &alpha)) {
+      if (not winGetPixelFormat(&red, &green, &blue, &alpha)) {
          gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, red, green, blue, alpha);
       }
       else gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
@@ -1160,7 +1160,7 @@ static ERR BITMAP_Init(extBitmap *Self)
 
 #endif
 
-   if (auto error = CalculatePixelRoutines(Self); error != ERR::Okay) return error;
+   if (auto error = calc_pixel_routines(Self); error != ERR::Okay) return error;
 
    if (Self->BitsPerPixel > 8) {
       Self->TransIndex = (((Self->TransColour.Red   >> Self->prvColourFormat.RedShift)   & Self->prvColourFormat.RedMask)   << Self->prvColourFormat.RedPos) |
@@ -1241,7 +1241,7 @@ static ERR BITMAP_Lock(extBitmap *Self)
       else size = Self->ByteWidth * Self->Height;
 
       Self->Data = (uint8_t *)malloc(size);
-      if (!Self->Data) return ERR::AllocMemory;
+      if (not Self->Data) return ERR::AllocMemory;
 
       if ((bpp = Self->BitsPerPixel) IS 32) bpp = 24;
 
@@ -1388,7 +1388,7 @@ static ERR BITMAP_Query(extBitmap *Self)
    // If the BMF::MASK flag is set then the programmer wants to use the Bitmap object as a 1 or 8-bit mask.
 
    if ((Self->Flags & BMF::MASK) != BMF::NIL) {
-      if ((!Self->BitsPerPixel) and (!Self->AmtColours)) {
+      if ((not Self->BitsPerPixel) and (not Self->AmtColours)) {
          Self->BitsPerPixel = 1;
          Self->AmtColours = 2;
          Self->Type = BMP::PLANAR;
@@ -1433,7 +1433,7 @@ static ERR BITMAP_Query(extBitmap *Self)
 
    // Ensure values for BitsPerPixel, AmtColours, BytesPerPixel are correct
 
-   if (!Self->AmtColours) {
+   if (not Self->AmtColours) {
       if (Self->BitsPerPixel) {
          if (Self->BitsPerPixel <= 24) {
             Self->AmtColours = 1<<Self->BitsPerPixel;
@@ -1536,8 +1536,8 @@ OutOfRange
 
 static ERR BITMAP_Read(extBitmap *Self, struct acRead *Args)
 {
-   if (!Self->Data) return ERR::NoData;
-   if ((!Args) or (!Args->Buffer)) return ERR::NullArgs;
+   if (not Self->Data) return ERR::NoData;
+   if ((not Args) or (not Args->Buffer)) return ERR::NullArgs;
    if (Args->Length < 0) return ERR::OutOfRange;
 
    int len = Args->Length;
@@ -1576,7 +1576,7 @@ static ERR BITMAP_Resize(extBitmap *Self, struct acResize *Args)
    kt::Log log;
    int width, height, bytewidth, bpp, amtcolours, size;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    auto origbpp = Self->BitsPerPixel;
 
@@ -1695,7 +1695,7 @@ setfields:
       }
    }
 
-   if ((!Self->x11.drawable) and (Self->x11.XShmImage != TRUE)) {
+   if ((not Self->x11.drawable) and (Self->x11.XShmImage != TRUE)) {
       init_x11_image(Self, false);
    }
 
@@ -1705,7 +1705,7 @@ setfields:
       gfx::GetColourFormat(Self->ColourFormat, Self->BitsPerPixel, 0, 0, 0, 0);
    }
 
-   CalculatePixelRoutines(Self);
+   calc_pixel_routines(Self);
 
    if ((Self->Flags & BMF::CLEAR) != BMF::NIL) {
       gfx::DrawRectangle(Self, 0, 0, Self->Width, Self->Height, Self->getColour(Self->Bkgd), BAF::FILL);
@@ -1754,7 +1754,7 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
    uint8_t lastpixel, newpixel;
    int i, j, p;
 
-   if ((!Args) or (!Args->Dest)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Dest)) return log.warning(ERR::NullArgs);
 
    log.branch("Save To #%d", Args->Dest->UID);
 
@@ -1805,19 +1805,19 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
                   counter++;
                }
                else {
-                  if (!((counter IS 1) and (lastpixel < 192))) {
-                     if (!append_byte(192 + counter)) return log.warning(ERR::BufferOverflow);
+                  if (not ((counter IS 1) and (lastpixel < 192))) {
+                     if (not append_byte(192 + counter)) return log.warning(ERR::BufferOverflow);
                   }
-                  if (!append_byte(lastpixel)) return log.warning(ERR::BufferOverflow);
+                  if (not append_byte(lastpixel)) return log.warning(ERR::BufferOverflow);
                   lastpixel = newpixel;
                   counter = 1;
                }
             }
 
-            if (!((counter IS 1) and (lastpixel < 192))) {
-               if (!append_byte(192 + counter)) return log.warning(ERR::BufferOverflow);
+            if (not ((counter IS 1) and (lastpixel < 192))) {
+               if (not append_byte(192 + counter)) return log.warning(ERR::BufferOverflow);
             }
-            if (!append_byte(lastpixel)) return log.warning(ERR::BufferOverflow);
+            if (not append_byte(lastpixel)) return log.warning(ERR::BufferOverflow);
          }
          else { // Save as a true colour image with run-length encoding
             auto read_pixel = [&](int X, int Y) {
@@ -1846,7 +1846,7 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
                   if (newpixel IS lastpixel) {
                      counter++;
                      if (counter IS 63) {
-                        if ((!append_byte(0xc0 | counter)) or (!append_byte(lastpixel))) {
+                        if ((not append_byte(0xc0 | counter)) or (not append_byte(lastpixel))) {
                            return log.warning(ERR::BufferOverflow);
                         }
                         counter = 0;
@@ -1854,10 +1854,10 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
                   }
                   else {
                      if ((counter IS 1) and (0xc0 != (0xc0 & lastpixel))) {
-                        if (!append_byte(lastpixel)) return log.warning(ERR::BufferOverflow);
+                        if (not append_byte(lastpixel)) return log.warning(ERR::BufferOverflow);
                      }
                      else if (counter) {
-                        if ((!append_byte(0xc0 | counter)) or (!append_byte(lastpixel))) {
+                        if ((not append_byte(0xc0 | counter)) or (not append_byte(lastpixel))) {
                            return log.warning(ERR::BufferOverflow);
                         }
                      }
@@ -1869,10 +1869,10 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
                // Finish line if necessary
 
                if ((counter IS 1) and (0xc0 != (0xc0 & lastpixel))) {
-                  if (!append_byte(lastpixel)) return log.warning(ERR::BufferOverflow);
+                  if (not append_byte(lastpixel)) return log.warning(ERR::BufferOverflow);
                }
                else if (counter) {
-                  if ((!append_byte(0xc0 | counter)) or (!append_byte(lastpixel))) {
+                  if ((not append_byte(0xc0 | counter)) or (not append_byte(lastpixel))) {
                      return log.warning(ERR::BufferOverflow);
                   }
                }
@@ -1919,7 +1919,7 @@ Args
 
 static ERR BITMAP_Seek(extBitmap *Self, struct acSeek *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
    if (Args->Position IS SEEK::START) Self->Position = (int)Args->Offset;
    else if (Args->Position IS SEEK::END) Self->Position = (int)(Self->Size - Args->Offset);
@@ -1959,7 +1959,7 @@ mutates-object
 
 static ERR BITMAP_SetClipRegion(extBitmap *Self, struct bmp::SetClipRegion *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
    gfx::SetClipRegion(Self, Args->Left, Args->Top, Args->Right, Args->Bottom);
    return ERR::Okay;
@@ -2002,13 +2002,13 @@ OutOfSpace
 
 static ERR BITMAP_Write(extBitmap *Self, struct acWrite *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
    Args->Result = 0;
 
-   if (!Self->Data) return ERR::NoData;
+   if (not Self->Data) return ERR::NoData;
    if (Args->Length <= 0) return ERR::Okay;
-   if (!Args->Buffer) return ERR::NullArgs;
+   if (not Args->Buffer) return ERR::NullArgs;
 
    int available = Self->Size - Self->Position;
    if (available <= 0) return ERR::OutOfSpace;
@@ -2345,20 +2345,9 @@ display.
 
 ERR SET_Palette(extBitmap *Self, RGBPalette *SrcPalette)
 {
-   kt::Log log;
-
-   // The objective here is to copy the given source palette to the bitmap's palette.  To see how the hook is set up,
-   // refer to the bitmap's object definition structure that is compiled into the module.
-
-   if (!SrcPalette) return ERR::Okay;
+   if (not SrcPalette) return ERR::Okay;
 
    if (SrcPalette->AmtColours <= 256) {
-      if (!Self->Palette) {
-         if (AllocMemory(sizeof(RGBPalette), MEM::NO_CLEAR, (APTR *)&Self->Palette) != ERR::Okay) {
-            return log.warning(ERR::AllocMemory);
-         }
-      }
-
       Self->Palette->AmtColours = SrcPalette->AmtColours;
       int16_t i = SrcPalette->AmtColours-1;
       while (i > 0) {
@@ -2367,7 +2356,7 @@ ERR SET_Palette(extBitmap *Self, RGBPalette *SrcPalette)
       }
       return ERR::Okay;
    }
-   else return log.warning(ERR::ObjectCorrupt);
+   else return kt::Log().warning(ERR::BufferOverflow);
 }
 
 /*********************************************************************************************************************
@@ -2485,9 +2474,7 @@ Width must be set before #Query() or #Init() can derive the bitmap layout.
 
 *********************************************************************************************************************/
 
-//********************************************************************************************************************
-
-static ERR CalculatePixelRoutines(extBitmap *Self)
+static ERR calc_pixel_routines(extBitmap *Self)
 {
    kt::Log log;
 
