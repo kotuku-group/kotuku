@@ -202,7 +202,15 @@ blocking, pure-query
 
 ERR CheckResourceExists(RESOURCEID ResourceID)
 {
-   std::unique_lock lock(glmResources);
+   {
+      std::lock_guard lock(glmObjects);
+      if (auto it = glObjects.find(ResourceID); it != glObjects.end()) {
+         if ((it->second.Terminating) or (it->second.CollectOnUnlock)) return ERR::False;
+         return ERR::True;
+      }
+   }
+
+   std::lock_guard lock(glmResources);
    if (auto it = glResources.find(ResourceID); it != glResources.end()) {
       if ((it->second.Terminating) or (it->second.CollectOnUnlock)) return ERR::False;
       return ERR::True;
@@ -241,6 +249,13 @@ closes-handle, blocking
 
 ERR FreeResource(RESOURCEID ResourceID)
 {
+   bool is_object;
+   {
+      std::lock_guard lock(glmObjects);
+      is_object = glObjects.contains(ResourceID);
+   }
+   if (is_object) return FreeObject(ResourceID);
+
    // Resource pointers are assumed to remain stable according to the map rules.
    // The Terminating flag is set to true to prevent other threads from interfering with the deallocation process.
 

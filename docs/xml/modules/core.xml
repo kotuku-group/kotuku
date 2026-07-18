@@ -773,6 +773,27 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
   </function>
 
   <function>
+    <name>FreeObject</name>
+    <category>Objects</category>
+    <comment>Terminates an object by its unique identifier.</comment>
+    <prototype>ERR FreeObject(OBJECTID ObjectID)</prototype>
+    <tiriPrototype>err = FreeObject(ObjectID:obj)</tiriPrototype>
+    <tags>closes-handle, blocking</tags>
+    <input>
+      <param type="OBJECTID" name="ObjectID">The unique identifier of the object to terminate.</param>
+    </input>
+    <description>
+<p>FreeObject() starts the destruction process for the object identified by <code>ObjectID</code>.  If the object is locked or strongly pinned, destruction is deferred until the final lock or pin is released.  Once termination has started, new access through <function>AccessObject</function> is rejected.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">The object was terminated successfully.</error>
+      <error code="InUse">The object is already terminating, or destruction has been deferred until it is unlocked.</error>
+      <error code="AccessObject">The object could not be accessed for destruction.</error>
+      <error code="DoesNotExist">The object identifier is not registered.</error>
+    </result>
+  </function>
+
+  <function>
     <name>FreeResource</name>
     <category>Memory</category>
     <comment>Safely deallocates resources allocated by AllocResource() and similar functions.</comment>

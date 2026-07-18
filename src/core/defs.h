@@ -1199,6 +1199,8 @@ void   register_sleep(int);
 void   deregister_sleep(void);
 void   remove_process_waitlocks(void);
 void   UntrackResource(RESOURCEID);
+ERR    FreeObject(OBJECTID);
+ERR    object_resource_free(ResourceRecord &, APTR);
 CLASSID lookup_class_by_ext(CLASSID, std::string_view);
 ERR get_file_info(const std::string_view &Path, FileInfo &Info);
 

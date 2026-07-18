@@ -805,7 +805,8 @@ class objTask;
     "ClassDatabase",
     "GetThreadID",
     "UnitTests",
-    "PinWeakObject")
+    "PinWeakObject",
+    "FreeObject")
 
   c_insert([==[
 
@@ -852,7 +853,7 @@ inline ERR UnsubscribeAction(OBJECTPTR Object, ACTIONID ActionID) {
 
 template <pcObject T> inline ERR FreeResource(T *Object) {
    if (not Object) return ERR::NullArgs;
-   return FreeResource(Object->UID);
+   return FreeObject(Object->UID);
 }
 
 template <class T> requires ((not pcComplete<T>) and (not std::is_void_v<std::remove_cv_t<T>>))

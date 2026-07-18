@@ -33,6 +33,7 @@ FDEF argsFieldName[] = { { "Result", FD_STR }, { "FieldID", FD_INT|FD_UNSIGNED }
 FDEF argsFindClass[] = { { "Object", FD_OBJECTPTR }, { "ClassID", FD_INT|FD_UNSIGNED }, { 0, 0 } };
 FDEF argsFindField[] = { { "Field", FD_PTR|FD_STRUCT }, { "Object", FD_OBJECTPTR }, { "FieldID", FD_INT|FD_UNSIGNED }, { "Target", FD_RESULT|FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsFindObject[] = { { "Error", FD_INT|FD_ERROR }, { "Name", FDF_CPPSTRING }, { "ClassID", FD_INT|FD_UNSIGNED }, { "ObjectID", FD_RESULT|FD_OBJECTID }, { 0, 0 } };
+FDEF argsFreeObject[] = { { "Error", FD_INT|FD_ERROR }, { "ObjectID", FD_OBJECTID }, { 0, 0 } };
 FDEF argsFreeResource[] = { { "Error", FD_INT|FD_ERROR }, { "ID", FD_INT }, { 0, 0 } };
 FDEF argsFuncError[] = { { "Error", FD_INT|FD_ERROR }, { "Header", FD_STR }, { "Error", FD_INT|FD_ERROR }, { 0, 0 } };
 FDEF argsGenCRC32[] = { { "Result", FD_INT|FD_UNSIGNED }, { "CRC", FD_INT|FD_UNSIGNED }, { "Data", FD_PTR }, { "Length", FD_INT|FD_UNSIGNED }, { 0, 0 } };
@@ -190,6 +191,7 @@ const struct Function glFunctions[] = {
    { (APTR)GetThreadID, "GetThreadID", argsGetThreadID },
    { (APTR)UnitTests, "UnitTests", argsUnitTests },
    { (APTR)PinWeakObject, "PinWeakObject", argsPinWeakObject },
+   { (APTR)FreeObject, "FreeObject", argsFreeObject },
    { nullptr, nullptr, nullptr }
 };
 

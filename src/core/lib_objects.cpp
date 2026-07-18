@@ -349,9 +349,9 @@ static ERR set_owner(OBJECTPTR Object, OBJECTPTR Owner)
 }
 
 //********************************************************************************************************************
-// Object termination hook for FreeResource()
+// Object destruction path for FreeObject().
 
-ERR object_free(ResourceRecord &Resource, Object *Object)
+static ERR object_free(ObjectRecord &, Object *Object)
 {
    kt::Log log("Free");
 
@@ -370,7 +370,6 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
          log.detail("Object #%d locked/pinned; marking for deletion.", Object->UID);
          if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr; // The Owner pointer is no longer safe to use
          Object->setFlag(NF::FREE_ON_UNLOCK);
-         Resource.CollectOnUnlock = true; // Defer destruction until the object is unlocked
          return ERR::InUse;
       }
 
@@ -492,8 +491,12 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
       }
 
       {
-         std::lock_guard lock(glmObjects);
-         if (auto object_rec = glObjects.find(Resource.ResourceID); object_rec != glObjects.end()) {
+         // Remove the twin resource entry before the object lookup entry.  Holding glmResources across both erases
+         // prevents an ID-based free from falling through to the stale resource entry during this phase.
+         std::lock_guard resource_lock(glmResources);
+         UntrackResource(Object->UID);
+         std::lock_guard object_lock(glmObjects);
+         if (auto object_rec = glObjects.find(Object->UID); object_rec != glObjects.end()) {
             // The owner's Children entry must be removed before the object block can be released, so that
             // pointers held in Children remain valid for as long as glmObjects is held.
             if (auto owner = object_rec->second.Owner) {
@@ -539,6 +542,70 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
    }
 
    return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+FreeObject: Terminates an object by its unique identifier.
+
+FreeObject() starts the destruction process for the object identified by `ObjectID`.  If the object is locked or
+strongly pinned, destruction is deferred until the final lock or pin is released.  Once termination has started, new
+access through ~AccessObject() is rejected.
+
+-INPUT-
+oid ObjectID: The unique identifier of the object to terminate.
+
+-ERRORS-
+Okay: The object was terminated successfully.
+DoesNotExist: The object identifier is not registered.
+InUse: The object is already terminating, or destruction has been deferred until it is unlocked.
+AccessObject: The object could not be accessed for destruction.
+
+-TAGS-
+closes-handle, blocking
+-END-
+
+*********************************************************************************************************************/
+
+ERR FreeObject(OBJECTID ObjectID)
+{
+   ObjectRecord *record;
+   OBJECTPTR object;
+
+   {
+      std::lock_guard lock(glmObjects);
+      auto object_it = glObjects.find(ObjectID);
+      if ((object_it IS glObjects.end()) or (not object_it->second.Object)) return ERR::DoesNotExist;
+      if (object_it->second.Terminating) return ERR::InUse;
+
+      object_it->second.Terminating = true;
+      record = &object_it->second;
+      object = record->Object;
+   }
+
+   auto error = object_free(*record, object);
+   if (error != ERR::Okay) {
+      std::lock_guard lock(glmObjects);
+      if (auto object_it = glObjects.find(ObjectID); object_it != glObjects.end()) {
+         if ((error IS ERR::InUse) and object->defined(NF::FREE_ON_UNLOCK)) {
+            object_it->second.CollectOnUnlock = true;
+         }
+         object_it->second.Terminating = false;
+      }
+   }
+
+   return error;
+}
+
+//********************************************************************************************************************
+// Adapter retained while objects continue to have twin glResources entries during phase 1.
+
+ERR object_resource_free(ResourceRecord &Resource, APTR)
+{
+   return FreeObject(Resource.ResourceID);
 }
 
 //********************************************************************************************************************
