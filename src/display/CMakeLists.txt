@@ -4,7 +4,7 @@ set (MOD "display")
 set (INC_MOD_DISPLAY TRUE PARENT_SCOPE)
 
 set (FUNCTIONS # Full paths are required for add_custom_command() dependencies to work correctly
-   "${CMAKE_CURRENT_SOURCE_DIR}/display-driver.cpp"
+   "${CMAKE_CURRENT_SOURCE_DIR}/display.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/lib_bitmap.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/lib_display.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/lib_cursor.cpp"
