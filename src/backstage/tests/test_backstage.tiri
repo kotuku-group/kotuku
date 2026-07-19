@@ -17,6 +17,9 @@ glBackstageTask = nil
       end,
       errorCallback = function(Task:obj, Buffer)
          print(Buffer:getString())
+      end,
+      exitCallback = function(Task:obj)
+         processing.signal()
       end
    })
 
@@ -26,7 +29,9 @@ end
 
 @AfterAll function stopBackstage()
    if glBackstageTask then
-      glBackstageTask.acDeactivate()
+      processing.flush()
+      check glBackstageTask.mtQuit()
+      check processing.sleep(1.0)
       glBackstageTask.free()
       glBackstageTask = nil
    end

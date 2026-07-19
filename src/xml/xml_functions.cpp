@@ -936,14 +936,33 @@ static ERR txt_to_xml(extXML *Self, TAGS &Tags, std::string_view Text)
 //********************************************************************************************************************
 // Serialise XML data into string form.
 
-static void serialise_xml(XTag &Tag, std::ostringstream &Buffer, XMF Flags)
+static bool has_content_child(const XTag &Tag, XMF Flags)
 {
-   if (Tag.Attribs[0].isContent()) {
+   for (auto &child : Tag.Children) {
+      if (not child.Attribs[0].isContent()) continue;
+      if ((child.Flags & XTF::COMMENT) != XTF::NIL) continue;
+      if (((child.Flags & XTF::CDATA) != XTF::NIL) and ((Flags & XMF::STRIP_CDATA) != XMF::NIL)) continue;
+      return true;
+   }
+
+   return false;
+}
+
+static void serialise_xml(XTag &Tag, std::ostringstream &Buffer, XMF Flags, size_t Depth = 0, bool Inline = false)
+{
+   if (((Tag.Flags & XTF::CDATA) != XTF::NIL) and ((Flags & XMF::STRIP_CDATA) != XMF::NIL)) return;
+
+   const bool readable = ((Flags & XMF::READABLE) != XMF::NIL) and (not Inline);
+   if (readable) Buffer << std::string(Depth * 3, ' ');
+
+   if ((Tag.Flags & XTF::COMMENT) != XTF::NIL) {
+      Buffer << "<!--" << Tag.Attribs[0].Value << "-->";
+      if (readable) Buffer << '\n';
+   }
+   else if (Tag.Attribs[0].isContent()) {
       if (not Tag.Attribs[0].Value.empty()) {
          if ((Tag.Flags & XTF::CDATA) != XTF::NIL) {
-            if ((Flags & XMF::STRIP_CDATA) IS XMF::NIL) Buffer << "<![CDATA[";
-            Buffer << Tag.Attribs[0].Value;
-            if ((Flags & XMF::STRIP_CDATA) IS XMF::NIL) Buffer << "]]>";
+            Buffer << "<![CDATA[" << Tag.Attribs[0].Value << "]]>";
          }
          else {
             // Use lookup table for efficient escaping (matching output_attribvalue)
@@ -959,24 +978,27 @@ static void serialise_xml(XTag &Tag, std::ostringstream &Buffer, XMF Flags)
             if (last_pos < str.size()) Buffer.write(str.data() + last_pos, str.size() - last_pos);
          }
       }
+      if (readable) Buffer << '\n';
    }
    else if ((Flags & XMF::OMIT_TAGS) != XMF::NIL) {
       if (not Tag.Children.empty()) {
+         const bool inline_children = Inline or has_content_child(Tag, Flags);
          for (auto &child : Tag.Children) {
-            serialise_xml(child, Buffer, Flags);
+            serialise_xml(child, Buffer, Flags, Depth, inline_children);
          }
-         if ((Flags & XMF::READABLE) != XMF::NIL) Buffer << '\n';
       }
    }
    else {
       Buffer << '<';
 
       bool insert_space = false;
-      for (auto &scan : Tag.Attribs) {
+      for (size_t i = 0; i < Tag.Attribs.size(); i++) {
+         auto &scan = Tag.Attribs[i];
          if (insert_space) Buffer << ' ';
          if (not scan.Name.empty()) output_attribvalue(scan.Name, Buffer);
 
-         if (not scan.Value.empty()) {
+         const bool requires_value = (i > 0) and ((Tag.Flags & (XTF::INSTRUCTION|XTF::NOTATION)) IS XTF::NIL);
+         if (requires_value or (not scan.Value.empty())) {
             if (not scan.Name.empty()) Buffer << '=';
             Buffer << '"';
             output_attribvalue(scan.Value, Buffer);
@@ -987,28 +1009,30 @@ static void serialise_xml(XTag &Tag, std::ostringstream &Buffer, XMF Flags)
 
       if ((Tag.Flags & XTF::INSTRUCTION) != XTF::NIL) {
          Buffer << "?>";
-         if ((Flags & XMF::READABLE) != XMF::NIL) Buffer << '\n';
+         if (readable) Buffer << '\n';
       }
       else if ((Tag.Flags & XTF::NOTATION) != XTF::NIL) {
          Buffer << '>';
-         if ((Flags & XMF::READABLE) != XMF::NIL) Buffer << '\n';
+         if (readable) Buffer << '\n';
       }
       else if (not Tag.Children.empty()) {
+         const bool inline_children = Inline or has_content_child(Tag, Flags);
          Buffer << '>';
-         if (not Tag.Children[0].Attribs[0].isContent()) Buffer << '\n';
+         if (readable and (not inline_children)) Buffer << '\n';
 
          for (auto &child : Tag.Children) {
-            serialise_xml(child, Buffer, Flags);
+            serialise_xml(child, Buffer, Flags, Depth + 1, inline_children);
          }
 
+         if (readable and (not inline_children)) Buffer << std::string(Depth * 3, ' ');
          Buffer << "</";
          output_attribvalue(Tag.Attribs[0].Name, Buffer);
          Buffer << '>';
-         if ((Flags & XMF::READABLE) != XMF::NIL) Buffer << '\n';
+         if (readable) Buffer << '\n';
       }
       else {
          Buffer << "/>";
-         if ((Flags & XMF::READABLE) != XMF::NIL) Buffer << '\n';
+         if (readable) Buffer << '\n';
       }
    }
 }
