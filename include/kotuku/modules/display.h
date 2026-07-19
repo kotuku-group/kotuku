@@ -564,7 +564,7 @@ class objBitmap : public Object {
    void (*ReadUCRPixel)(objBitmap *, int, int, struct RGB8 *);     // Points to a C function that reads pixels from the bitmap in RGB format.
    void (*ReadUCRIndex)(objBitmap *, uint8_t *, struct RGB8 *);    // Points to a C function that reads pixels from the bitmap in RGB format.
    void (*DrawUCRIndex)(objBitmap *, uint8_t *, struct RGB8 *);    // Points to a C function that draws pixels to the bitmap in RGB format.
-   uint8_t * Data;                                                 // Pointer to a bitmap's data area.
+   uint8_t * Data;                                                 // Provides direct access to the bitmap's data area.
    int       Width;                                                // The width of the bitmap, in pixels.
    int       ByteWidth;                                            // The width of the bitmap, in bytes.
    int       Height;                                               // The height of the bitmap, in pixels.
@@ -773,9 +773,13 @@ class objBitmap : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getData(uint8_t * &Value) noexcept {
-      Value = this->Data;
-      return ERR::Okay;
+   inline ERR getData(std::span<uint8_t> &Value) noexcept {
+      auto field = &this->Class->Dictionary[27];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::span<uint8_t> &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
    }
 
    inline ERR getWidth(int &Value) noexcept {
@@ -916,9 +920,9 @@ class objBitmap : public Object {
       return field->WriteValue(this, field, 0x08000300, Value);
    }
 
-   inline ERR setData(uint8_t * Value) noexcept {
+   inline ERR setData(std::span<const uint8_t> Value) noexcept {
       auto field = &this->Class->Dictionary[27];
-      return field->WriteValue(this, field, 0x08000500, Value);
+      return field->WriteValue(this, field, 0x01001500, &Value);
    }
 
    inline ERR setWidth(const int Value) noexcept {

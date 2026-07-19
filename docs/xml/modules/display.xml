@@ -10,7 +10,7 @@
     <prefix>gfx</prefix>
     <copyright>Paul Manias © 2003-2026</copyright>
     <source>
-      <file path="src/display/">display-driver.cpp</file>
+      <file path="src/display/">display.cpp</file>
       <file path="src/display/">lib_bitmap.cpp</file>
       <file path="src/display/">lib_display.cpp</file>
       <file path="src/display/">lib_cursor.cpp</file>
