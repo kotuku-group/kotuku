@@ -530,9 +530,10 @@ void make_array(lua_State *Lua, AET Type, int Elements, CPTR Data, std::string_v
 
    GCarray *array = lj_array_new(Lua, Elements, Type, (void *)Data, ARRAY_CACHED, StructName);
 
-   // Push to the stack
-   lj_gc_check(Lua);
+   // Anchor the array on the stack before running a GC check; the new object is otherwise unreferenced and a GC
+   // step that flips the current white can sweep it immediately.
    setarrayV(Lua, Lua->top++, array);
+   lj_gc_check(Lua);
 }
 
 //********************************************************************************************************************

@@ -688,8 +688,9 @@ static int object_get_array(lua_State *Lua, const obj_read &Handle, GCobject *De
             if (!(error = Object->get(Field->FieldID, values))) {
                kt::vector<std::string> strings(values.data(), values.data() + values.size());
                GCarray *array = lj_array_new(Lua, values.size(), AET::STR_CPP, (void *)&strings, ARRAY_CACHED, "");
-               lj_gc_check(Lua);
+               // Anchor before the GC check so the unreferenced array cannot be swept by a white flip.
                setarrayV(Lua, Lua->top++, array);
+               lj_gc_check(Lua);
             }
          }
          else {
