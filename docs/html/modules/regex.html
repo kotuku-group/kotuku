@@ -28,7 +28,7 @@
 </tbody></table></div></div>
 <p>Use Compile() to compile a regex pattern into a regex object that can be used for matching and searching.  The compiled regex object can be reused for multiple match or search operations, improving performance.  It must be removed with ~Core:FreeResource() when no longer needed to avoid memory leaks.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
+<tr><th class="col-md-1">AllocMemory</th><td>Failed to create a new memory block</td></tr>
 <tr><th class="col-md-1">Syntax</th><td>Invalid syntax detected</td></tr>
 </tbody></table><div class="footer copyright text-right">Regex module documentation © Paul Manias © 2025-2026</div></div>
 <div class="docs-content" style="display:none;" id="GetCaptureIndex"><h2>GetCaptureIndex()</h2><p class="lead">Retrieves capture indices for a named group.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR rx::GetCaptureIndex(struct Regex * Regex, STRVIEW Name, kt::vector&lt;int&gt; * Indices)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Regex</td><td>The compiled regex object.</td></tr>

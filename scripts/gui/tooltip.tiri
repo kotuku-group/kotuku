@@ -63,7 +63,7 @@ gui.tooltip = function(Options)
 
    local script = self.surface.new('tiri', { name='tiriTip', statement=[[
       include 'display'
-      surface_id = tonumber(obj.find('self').getKey('surface'))
+      surface_id = tonumber(arg('surface'))
       surface = obj.find(surface_id)
       if surface then
          input.subscribe(JTYPE_MOVEMENT | JTYPE_BUTTON, nil, 0, function(Input, Message)

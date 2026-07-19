@@ -55,18 +55,18 @@
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Category" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Category"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-lg text-success" data-bs-toggle="tooltip" title="Immutable"></i></td><th class="col-md-1">Category</th><td class="col-md-1"><span class="text-nowrap">CCF</span></td><td>The system category that a class belongs to.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Category" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>When designing a new class it is recommended that a suitable category is chosen and declared in this field. It is acceptable for a class to be a member of multiple categories by combining category flags together.</p>
-<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">CCF::AUDIO</th><td>Audio classes interface with audio hardware and drivers for audio playback and recording purposes.</td></tr>
-<tr><th class="col-md-1">CCF::COMMAND</th><td>Command classes perform specific procedures, like copying or moving a file, managing volumes or executing a program.</td></tr>
-<tr><th class="col-md-1">CCF::DATA</th><td>Data classes parse, query and manipulate data.</td></tr>
-<tr><th class="col-md-1">CCF::FILESYSTEM</th><td>FileSystem classes are based on file management and interaction with file based data.</td></tr>
-<tr><th class="col-md-1">CCF::GRAPHICS</th><td>Graphics classes provide graphics management and drawing services.</td></tr>
-<tr><th class="col-md-1">CCF::GUI</th><td>GUI classes are used in the development of graphical user interfaces.</td></tr>
-<tr><th class="col-md-1">CCF::IO</th><td>I/O classes manage hardware and software based input and output.</td></tr>
-<tr><th class="col-md-1">CCF::MISC</th><td>Miscellaneous classes do not fit into any of the other available categories.</td></tr>
-<tr><th class="col-md-1">CCF::MULTIMEDIA</th><td>Classes that represent more than one media type, e.g. video files.</td></tr>
-<tr><th class="col-md-1">CCF::NETWORK</th><td>Network classes interface with system drivers to simplify network communications.</td></tr>
-<tr><th class="col-md-1">CCF::SYSTEM</th><td>System classes are designed to provide low-level services related to system management.</td></tr>
-<tr><th class="col-md-1">CCF::TOOL</th><td>Tools provide interactive services for the user.</td></tr>
+<table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">CCF::AUDIO</th><td>Audio classes interface with audio hardware and drivers for audio playback and recording purposes</td></tr>
+<tr><th class="col-md-1">CCF::COMMAND</th><td>Command classes perform specific procedures, like copying or moving a file, managing volumes or executing a program</td></tr>
+<tr><th class="col-md-1">CCF::DATA</th><td>Data classes parse, query and manipulate data</td></tr>
+<tr><th class="col-md-1">CCF::FILESYSTEM</th><td>FileSystem classes are based on file management and interaction with file based data</td></tr>
+<tr><th class="col-md-1">CCF::GRAPHICS</th><td>Graphics classes provide graphics management and drawing services</td></tr>
+<tr><th class="col-md-1">CCF::GUI</th><td>GUI classes are used in the development of graphical user interfaces</td></tr>
+<tr><th class="col-md-1">CCF::IO</th><td>I/O classes manage hardware and software based input and output</td></tr>
+<tr><th class="col-md-1">CCF::MISC</th><td>Miscellaneous classes do not fit into any of the other available categories</td></tr>
+<tr><th class="col-md-1">CCF::MULTIMEDIA</th><td>Classes that represent more than one media type, e.g. video files</td></tr>
+<tr><th class="col-md-1">CCF::NETWORK</th><td>Network classes interface with system drivers to simplify network communications</td></tr>
+<tr><th class="col-md-1">CCF::SYSTEM</th><td>System classes are designed to provide low-level services related to system management</td></tr>
+<tr><th class="col-md-1">CCF::TOOL</th><td>Tools provide interactive services for the user</td></tr>
 </tbody></table>
       
 </div></div></td></tr>
@@ -129,11 +129,6 @@
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Module" style="scroll-margin:3em;"><td class="col-md-1" id="tf-Module"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i> <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">Module</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>The name of the module binary that initialised the class.</td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#fl-Objects" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Objects"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i> <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">Objects</th><td class="col-md-1"><span class="text-nowrap">INT []</span></td><td>Returns an allocated list of all objects that belong to this class.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Objects" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<p>This field will compile a list of all objects that belong to the class.  The list is sorted with the oldest object appearing first.</p>
-<p>The resulting array must be terminated with <a href="?page=FreeResource">FreeResource()</a> after use.</p>
-      
-</div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-OpenCount" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-OpenCount"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">OpenCount</th><td class="col-md-1"><span class="text-nowrap">INT</span></td><td>The total number of active objects that are linked back to the MetaClass.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-OpenCount" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>This field reveals the total number of objects that reference the class.  This figure will fluctuate over time as new objects are created and old ones are destroyed.  When the OpenCount reaches zero, the Core may flush the <a href="module.html">Module</a> that the class is related to, so long as no more programs are using it or any other classes created by the module.</p>
       
@@ -164,18 +159,23 @@
 <p>In some classes the field might not be present in the main class spec, but does appear in an integral class.  In that case, a reference to the class will be returned in the <code>Source</code> parameter.</p>
       
 </div></div></td></tr>
-</tbody></table><div class="footer copyright text-right">MetaClass class documentation © Paul Manias 1996-2026</div></div><div class="docs-content" style="display:none;" id="CCF"><h1>CCF Type</h1><p class="lead">Class categories</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>CCF::AUDIO</th><td>Audio classes interface with audio hardware and drivers for audio playback and recording purposes.</td></tr>
-<tr><th>CCF::COMMAND</th><td>Command classes perform specific procedures, like copying or moving a file, managing volumes or executing a program.</td></tr>
-<tr><th>CCF::DATA</th><td>Data classes parse, query and manipulate data.</td></tr>
-<tr><th>CCF::FILESYSTEM</th><td>FileSystem classes are based on file management and interaction with file based data.</td></tr>
-<tr><th>CCF::GRAPHICS</th><td>Graphics classes provide graphics management and drawing services.</td></tr>
-<tr><th>CCF::GUI</th><td>GUI classes are used in the development of graphical user interfaces.</td></tr>
-<tr><th>CCF::IO</th><td>I/O classes manage hardware and software based input and output.</td></tr>
-<tr><th>CCF::MISC</th><td>Miscellaneous classes do not fit into any of the other available categories.</td></tr>
-<tr><th>CCF::MULTIMEDIA</th><td>Classes that represent more than one media type, e.g. video files.</td></tr>
-<tr><th>CCF::NETWORK</th><td>Network classes interface with system drivers to simplify network communications.</td></tr>
-<tr><th>CCF::SYSTEM</th><td>System classes are designed to provide low-level services related to system management.</td></tr>
-<tr><th>CCF::TOOL</th><td>Tools provide interactive services for the user.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-GetMembers" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">GetMembers</th><td id="tm-GetMembers">Returns a list of all objects that are members of the class.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-GetMembers" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR mc::GetMembers(OBJECTPTR Object, kt::vector&lt;OBJECTID&gt; List)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>List</td><td>Pointer to an array of object IDs that will be filled with the results.</td></tr>
+</tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
+<p>This method will compile a list of all objects that are members of the class.  The list is unordered, but identifier values reflect their age with lower IDs being older.</p>
+      
+</div></div></td></tr>
+</tbody></table><div class="footer copyright text-right">MetaClass class documentation © Paul Manias 1996-2026</div></div><div class="docs-content" style="display:none;" id="CCF"><h1>CCF Type</h1><p class="lead">Class categories</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>CCF::AUDIO</th><td>Audio classes interface with audio hardware and drivers for audio playback and recording purposes</td></tr>
+<tr><th>CCF::COMMAND</th><td>Command classes perform specific procedures, like copying or moving a file, managing volumes or executing a program</td></tr>
+<tr><th>CCF::DATA</th><td>Data classes parse, query and manipulate data</td></tr>
+<tr><th>CCF::FILESYSTEM</th><td>FileSystem classes are based on file management and interaction with file based data</td></tr>
+<tr><th>CCF::GRAPHICS</th><td>Graphics classes provide graphics management and drawing services</td></tr>
+<tr><th>CCF::GUI</th><td>GUI classes are used in the development of graphical user interfaces</td></tr>
+<tr><th>CCF::IO</th><td>I/O classes manage hardware and software based input and output</td></tr>
+<tr><th>CCF::MISC</th><td>Miscellaneous classes do not fit into any of the other available categories</td></tr>
+<tr><th>CCF::MULTIMEDIA</th><td>Classes that represent more than one media type, e.g. video files</td></tr>
+<tr><th>CCF::NETWORK</th><td>Network classes interface with system drivers to simplify network communications</td></tr>
+<tr><th>CCF::SYSTEM</th><td>System classes are designed to provide low-level services related to system management</td></tr>
+<tr><th>CCF::TOOL</th><td>Tools provide interactive services for the user</td></tr>
 </tbody></table><div class="footer copyright text-right">MetaClass module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="CLF"><h1>CLF Type</h1><p class="lead">Flags for the MetaClass.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>CLF::INHERIT_LOCAL</th><td>Inherit the functionality of local objects defined in the class spec.</td></tr>
 <tr><th>CLF::NO_OWNERSHIP</th><td>Objects created will not be tracked to the creating process, nor any parent object (<a href="core.html?page=SetOwner">SetOwner()</a> will not work either).</td></tr>

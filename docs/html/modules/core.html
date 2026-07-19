@@ -52,7 +52,7 @@
 </li>
 </ul></li>
 
-<li><ul class="list-unstyled ps-3"><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" aria-expanded="false" data-bs-target="#Memory-collapse">Memory</button><div class="collapse" id="Memory-collapse"><ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3"><li><a class="rounded" role="button" onclick="showPage('AllocMemory');">AllocMemory()</a></li>
+<li><ul class="list-unstyled ps-3"><li><button class="btn btn-toggle align-items-center rounded collapsed" data-bs-toggle="collapse" aria-expanded="false" data-bs-target="#Memory-collapse">Memory</button><div class="collapse" id="Memory-collapse"><ul class="btn-toggle-nav list-unstyled fw-normal pb-1 ps-3"><li><a class="rounded" role="button" onclick="showPage('AllocResource');">AllocResource()</a></li>
 <li><a class="rounded" role="button" onclick="showPage('CheckResourceExists');">CheckResourceExists()</a></li>
 <li><a class="rounded" role="button" onclick="showPage('FreeResource');">FreeResource()</a></li>
 <li><a class="rounded" role="button" onclick="showPage('TrackResource');">TrackResource()</a></li>
@@ -84,6 +84,7 @@
 <li><a class="rounded" role="button" onclick="showPage('CurrentContext');">CurrentContext()</a></li>
 <li><a class="rounded" role="button" onclick="showPage('FindClass');">FindClass()</a></li>
 <li><a class="rounded" role="button" onclick="showPage('FindObject');">FindObject()</a></li>
+<li><a class="rounded" role="button" onclick="showPage('FreeObject');">FreeObject()</a></li>
 <li><a class="rounded" role="button" onclick="showPage('GetActionMsg');">GetActionMsg()</a></li>
 <li><a class="rounded" role="button" onclick="showPage('GetClassID');">GetClassID()</a></li>
 <li><a class="rounded" role="button" onclick="showPage('GetObjectPtr');">GetObjectPtr()</a></li>
@@ -132,7 +133,7 @@
 <p>The Kotuku Core is a system library that provides a universal API that works on multiple platforms.  It follows an object oriented design with granular resource tracking to minimise resource usage and memory leaks.</p>
 <p>The portability of the core has been safe-guarded by keeping the functions as generalised as possible.  When writing code for a target platform it will be possible for the application to be completely sandboxed if the host's system calls are avoided.</p>
 <p>This documentation is intended for technical reference and is not suitable as an introductory guide to the framework.</p>
-<h3>Functions</h3><h6>Events</h6><p class="appendix ps-4"><a role="button" onclick="showPage('BroadcastEvent');">BroadcastEvent</a> | <a role="button" onclick="showPage('GetEventID');">GetEventID</a> | <a role="button" onclick="showPage('SubscribeEvent');">SubscribeEvent</a> | <a role="button" onclick="showPage('UnsubscribeEvent');">UnsubscribeEvent</a></p><h6>Fields</h6><p class="appendix ps-4"><a role="button" onclick="showPage('FieldName');">FieldName</a> | <a role="button" onclick="showPage('FindField');">FindField</a></p><h6>Files</h6><p class="appendix ps-4"><a role="button" onclick="showPage('AddInfoTag');">AddInfoTag</a> | <a role="button" onclick="showPage('AnalysePath');">AnalysePath</a> | <a role="button" onclick="showPage('CompareFilePaths');">CompareFilePaths</a> | <a role="button" onclick="showPage('CopyFile');">CopyFile</a> | <a role="button" onclick="showPage('CreateFolder');">CreateFolder</a> | <a role="button" onclick="showPage('CreateLink');">CreateLink</a> | <a role="button" onclick="showPage('DeleteFile');">DeleteFile</a> | <a role="button" onclick="showPage('DeleteVolume');">DeleteVolume</a> | <a role="button" onclick="showPage('IdentifyFile');">IdentifyFile</a> | <a role="button" onclick="showPage('LoadFile');">LoadFile</a> | <a role="button" onclick="showPage('MoveFile');">MoveFile</a> | <a role="button" onclick="showPage('OpenDir');">OpenDir</a> | <a role="button" onclick="showPage('ReadFileToBuffer');">ReadFileToBuffer</a> | <a role="button" onclick="showPage('ReadInfoTag');">ReadInfoTag</a> | <a role="button" onclick="showPage('ResolveGroupID');">ResolveGroupID</a> | <a role="button" onclick="showPage('ResolvePath');">ResolvePath</a> | <a role="button" onclick="showPage('ResolveUserID');">ResolveUserID</a> | <a role="button" onclick="showPage('ScanDir');">ScanDir</a> | <a role="button" onclick="showPage('SetDefaultPermissions');">SetDefaultPermissions</a> | <a role="button" onclick="showPage('SetVolume');">SetVolume</a> | <a role="button" onclick="showPage('UnloadFile');">UnloadFile</a></p><h6>Memory</h6><p class="appendix ps-4"><a role="button" onclick="showPage('AllocMemory');">AllocMemory</a> | <a role="button" onclick="showPage('CheckResourceExists');">CheckResourceExists</a> | <a role="button" onclick="showPage('FreeResource');">FreeResource</a> | <a role="button" onclick="showPage('TrackResource');">TrackResource</a></p><h6>Messages</h6><p class="appendix ps-4"><a role="button" onclick="showPage('AddMsgHandler');">AddMsgHandler</a> | <a role="button" onclick="showPage('ProcessMessages');">ProcessMessages</a> | <a role="button" onclick="showPage('ScanMessages');">ScanMessages</a> | <a role="button" onclick="showPage('SendMessage');">SendMessage</a> | <a role="button" onclick="showPage('UpdateMessage');">UpdateMessage</a> | <a role="button" onclick="showPage('WaitForObjects');">WaitForObjects</a></p><h6>Objects</h6><p class="appendix ps-4"><a role="button" onclick="showPage('AccessObject');">AccessObject</a> | <a role="button" onclick="showPage('Action');">Action</a> | <a role="button" onclick="showPage('ActionList');">ActionList</a> | <a role="button" onclick="showPage('AsyncAction');">AsyncAction</a> | <a role="button" onclick="showPage('AsyncCancel');">AsyncCancel</a> | <a role="button" onclick="showPage('AsyncPending');">AsyncPending</a> | <a role="button" onclick="showPage('AsyncWait');">AsyncWait</a> | <a role="button" onclick="showPage('CheckAction');">CheckAction</a> | <a role="button" onclick="showPage('ClassDatabase');">ClassDatabase</a> | <a role="button" onclick="showPage('CurrentContext');">CurrentContext</a> | <a role="button" onclick="showPage('FindClass');">FindClass</a> | <a role="button" onclick="showPage('FindObject');">FindObject</a> | <a role="button" onclick="showPage('GetActionMsg');">GetActionMsg</a> | <a role="button" onclick="showPage('GetClassID');">GetClassID</a> | <a role="button" onclick="showPage('GetObjectPtr');">GetObjectPtr</a> | <a role="button" onclick="showPage('GetOwnerID');">GetOwnerID</a> | <a role="button" onclick="showPage('InitObject');">InitObject</a> | <a role="button" onclick="showPage('ListChildren');">ListChildren</a> | <a role="button" onclick="showPage('LockObject');">LockObject</a> | <a role="button" onclick="showPage('NewObject');">NewObject</a> | <a role="button" onclick="showPage('NotifySubscribers');">NotifySubscribers</a> | <a role="button" onclick="showPage('ParentContext');">ParentContext</a> | <a role="button" onclick="showPage('QueueAction');">QueueAction</a> | <a role="button" onclick="showPage('ReleaseObject');">ReleaseObject</a> | <a role="button" onclick="showPage('ResolveClassID');">ResolveClassID</a> | <a role="button" onclick="showPage('ResolveClassName');">ResolveClassName</a> | <a role="button" onclick="showPage('SetName');">SetName</a> | <a role="button" onclick="showPage('SetOwner');">SetOwner</a> | <a role="button" onclick="showPage('SubscribeAction');">SubscribeAction</a> | <a role="button" onclick="showPage('UnsubscribeAction');">UnsubscribeAction</a></p><h6>System</h6><p class="appendix ps-4"><a role="button" onclick="showPage('AdjustLogLevel');">AdjustLogLevel</a> | <a role="button" onclick="showPage('AllocateID');">AllocateID</a> | <a role="button" onclick="showPage('CurrentTask');">CurrentTask</a> | <a role="button" onclick="showPage('GenCRC32');">GenCRC32</a> | <a role="button" onclick="showPage('GetResource');">GetResource</a> | <a role="button" onclick="showPage('GetSystemState');">GetSystemState</a> | <a role="button" onclick="showPage('GetThreadID');">GetThreadID</a> | <a role="button" onclick="showPage('PreciseTime');">PreciseTime</a> | <a role="button" onclick="showPage('RegisterFD');">RegisterFD</a> | <a role="button" onclick="showPage('SetLogCallback');">SetLogCallback</a> | <a role="button" onclick="showPage('SetResource');">SetResource</a> | <a role="button" onclick="showPage('SetResourcePath');">SetResourcePath</a> | <a role="button" onclick="showPage('SubscribeTimer');">SubscribeTimer</a> | <a role="button" onclick="showPage('UpdateTimer');">UpdateTimer</a> | <a role="button" onclick="showPage('WaitTime');">WaitTime</a> | <a role="button" onclick="showPage('WakeThread');">WakeThread</a></p><h3>Structures</h3><p class="appendix"><a role="button" onclick="showPage('struct-ActionArray');">ActionArray</a> | <a role="button" onclick="showPage('struct-ActionTable');">ActionTable</a> | <a role="button" onclick="showPage('struct-ChildEntry');">ChildEntry</a> | <a role="button" onclick="showPage('struct-ClassRecord');">ClassRecord</a> | <a role="button" onclick="showPage('struct-ClipRectangle');">ClipRectangle</a> | <a role="button" onclick="showPage('struct-ColourFormat');">ColourFormat</a> | <a role="button" onclick="showPage('struct-DateTime');">DateTime</a> | <a role="button" onclick="showPage('struct-DirInfo');">DirInfo</a> | <a role="button" onclick="showPage('struct-Edges');">Edges</a> | <a role="button" onclick="showPage('struct-FRGB');">FRGB</a> | <a role="button" onclick="showPage('struct-Field');">Field</a> | <a role="button" onclick="showPage('struct-FieldArray');">FieldArray</a> | <a role="button" onclick="showPage('struct-FieldDef');">FieldDef</a> | <a role="button" onclick="showPage('struct-FileFeedback');">FileFeedback</a> | <a role="button" onclick="showPage('struct-FileInfo');">FileInfo</a> | <a role="button" onclick="showPage('struct-FunctionField');">FunctionField</a> | <a role="button" onclick="showPage('struct-HSV');">HSV</a> | <a role="button" onclick="showPage('struct-InputEvent');">InputEvent</a> | <a role="button" onclick="showPage('struct-Message');">Message</a> | <a role="button" onclick="showPage('struct-ObjectSignal');">ObjectSignal</a> | <a role="button" onclick="showPage('struct-OpenInfo');">OpenInfo</a> | <a role="button" onclick="showPage('struct-OpenTag');">OpenTag</a> | <a role="button" onclick="showPage('struct-RGB16');">RGB16</a> | <a role="button" onclick="showPage('struct-RGB32');">RGB32</a> | <a role="button" onclick="showPage('struct-RGB8');">RGB8</a> | <a role="button" onclick="showPage('struct-RGBPalette');">RGBPalette</a> | <a role="button" onclick="showPage('struct-ResourceRecord');">ResourceRecord</a> | <a role="button" onclick="showPage('struct-SystemState');">SystemState</a> | <a role="button" onclick="showPage('struct-Unit');">Unit</a> | <a role="button" onclick="showPage('struct-dcAudio');">dcAudio</a> | <a role="button" onclick="showPage('struct-dcDeviceInput');">dcDeviceInput</a> | <a role="button" onclick="showPage('struct-dcKeyEntry');">dcKeyEntry</a> | <a role="button" onclick="showPage('struct-dcRequest');">dcRequest</a></p><h3>Classes</h3><p class="appendix"><a role="button" onclick="" href="classes/compressedstream.html">CompressedStream</a> | <a role="button" onclick="" href="classes/compression.html">Compression</a> | <a role="button" onclick="" href="classes/config.html">Config</a> | <a role="button" onclick="" href="classes/file.html">File</a> | <a role="button" onclick="" href="classes/metaclass.html">MetaClass</a> | <a role="button" onclick="" href="classes/module.html">Module</a> | <a role="button" onclick="" href="classes/script.html">Script</a> | <a role="button" onclick="" href="classes/storagedevice.html">StorageDevice</a> | <a role="button" onclick="" href="classes/task.html">Task</a> | <a role="button" onclick="" href="classes/thread.html">Thread</a> | <a role="button" onclick="" href="classes/time.html">Time</a></p><h3>Constants</h3><p class="appendix"><a role="button" onclick="showPage('AC');">AC</a> | <a role="button" onclick="showPage('CCF');">CCF</a> | <a role="button" onclick="showPage('CONTYPE');">CONTYPE</a> | <a role="button" onclick="showPage('EVG');">EVG</a> | <a role="button" onclick="showPage('FBK');">FBK</a> | <a role="button" onclick="showPage('IDTYPE');">IDTYPE</a> | <a role="button" onclick="showPage('JET');">JET</a> | <a role="button" onclick="showPage('JTYPE');">JTYPE</a> | <a role="button" onclick="showPage('LDF');">LDF</a> | <a role="button" onclick="showPage('LOC');">LOC</a> | <a role="button" onclick="showPage('MEM');">MEM</a> | <a role="button" onclick="showPage('MSF');">MSF</a> | <a role="button" onclick="showPage('MSGID');">MSGID</a> | <a role="button" onclick="showPage('NF');">NF</a> | <a role="button" onclick="showPage('OPF');">OPF</a> | <a role="button" onclick="showPage('PERMIT');">PERMIT</a> | <a role="button" onclick="showPage('PMF');">PMF</a> | <a role="button" onclick="showPage('RDF');">RDF</a> | <a role="button" onclick="showPage('RES');">RES</a> | <a role="button" onclick="showPage('RFD');">RFD</a> | <a role="button" onclick="showPage('RP');">RP</a> | <a role="button" onclick="showPage('RSF');">RSF</a> | <a role="button" onclick="showPage('TOI');">TOI</a> | <a role="button" onclick="showPage('VOLUME');">VOLUME</a></p></div><div class="docs-content" style="display:none;" id="AccessObject"><h2>AccessObject()</h2><p class="lead">Grants exclusive access to objects via unique ID.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR AccessObject(OBJECTID Object, INT MilliSeconds, OBJECTPTR * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Object</td><td>The unique ID of the target object.</td></tr>
+<h3>Functions</h3><h6>Events</h6><p class="appendix ps-4"><a role="button" onclick="showPage('BroadcastEvent');">BroadcastEvent</a> | <a role="button" onclick="showPage('GetEventID');">GetEventID</a> | <a role="button" onclick="showPage('SubscribeEvent');">SubscribeEvent</a> | <a role="button" onclick="showPage('UnsubscribeEvent');">UnsubscribeEvent</a></p><h6>Fields</h6><p class="appendix ps-4"><a role="button" onclick="showPage('FieldName');">FieldName</a> | <a role="button" onclick="showPage('FindField');">FindField</a></p><h6>Files</h6><p class="appendix ps-4"><a role="button" onclick="showPage('AddInfoTag');">AddInfoTag</a> | <a role="button" onclick="showPage('AnalysePath');">AnalysePath</a> | <a role="button" onclick="showPage('CompareFilePaths');">CompareFilePaths</a> | <a role="button" onclick="showPage('CopyFile');">CopyFile</a> | <a role="button" onclick="showPage('CreateFolder');">CreateFolder</a> | <a role="button" onclick="showPage('CreateLink');">CreateLink</a> | <a role="button" onclick="showPage('DeleteFile');">DeleteFile</a> | <a role="button" onclick="showPage('DeleteVolume');">DeleteVolume</a> | <a role="button" onclick="showPage('IdentifyFile');">IdentifyFile</a> | <a role="button" onclick="showPage('LoadFile');">LoadFile</a> | <a role="button" onclick="showPage('MoveFile');">MoveFile</a> | <a role="button" onclick="showPage('OpenDir');">OpenDir</a> | <a role="button" onclick="showPage('ReadFileToBuffer');">ReadFileToBuffer</a> | <a role="button" onclick="showPage('ReadInfoTag');">ReadInfoTag</a> | <a role="button" onclick="showPage('ResolveGroupID');">ResolveGroupID</a> | <a role="button" onclick="showPage('ResolvePath');">ResolvePath</a> | <a role="button" onclick="showPage('ResolveUserID');">ResolveUserID</a> | <a role="button" onclick="showPage('ScanDir');">ScanDir</a> | <a role="button" onclick="showPage('SetDefaultPermissions');">SetDefaultPermissions</a> | <a role="button" onclick="showPage('SetVolume');">SetVolume</a> | <a role="button" onclick="showPage('UnloadFile');">UnloadFile</a></p><h6>Memory</h6><p class="appendix ps-4"><a role="button" onclick="showPage('AllocResource');">AllocResource</a> | <a role="button" onclick="showPage('CheckResourceExists');">CheckResourceExists</a> | <a role="button" onclick="showPage('FreeResource');">FreeResource</a> | <a role="button" onclick="showPage('TrackResource');">TrackResource</a></p><h6>Messages</h6><p class="appendix ps-4"><a role="button" onclick="showPage('AddMsgHandler');">AddMsgHandler</a> | <a role="button" onclick="showPage('ProcessMessages');">ProcessMessages</a> | <a role="button" onclick="showPage('ScanMessages');">ScanMessages</a> | <a role="button" onclick="showPage('SendMessage');">SendMessage</a> | <a role="button" onclick="showPage('UpdateMessage');">UpdateMessage</a> | <a role="button" onclick="showPage('WaitForObjects');">WaitForObjects</a></p><h6>Objects</h6><p class="appendix ps-4"><a role="button" onclick="showPage('AccessObject');">AccessObject</a> | <a role="button" onclick="showPage('Action');">Action</a> | <a role="button" onclick="showPage('ActionList');">ActionList</a> | <a role="button" onclick="showPage('AsyncAction');">AsyncAction</a> | <a role="button" onclick="showPage('AsyncCancel');">AsyncCancel</a> | <a role="button" onclick="showPage('AsyncPending');">AsyncPending</a> | <a role="button" onclick="showPage('AsyncWait');">AsyncWait</a> | <a role="button" onclick="showPage('CheckAction');">CheckAction</a> | <a role="button" onclick="showPage('ClassDatabase');">ClassDatabase</a> | <a role="button" onclick="showPage('CurrentContext');">CurrentContext</a> | <a role="button" onclick="showPage('FindClass');">FindClass</a> | <a role="button" onclick="showPage('FindObject');">FindObject</a> | <a role="button" onclick="showPage('FreeObject');">FreeObject</a> | <a role="button" onclick="showPage('GetActionMsg');">GetActionMsg</a> | <a role="button" onclick="showPage('GetClassID');">GetClassID</a> | <a role="button" onclick="showPage('GetObjectPtr');">GetObjectPtr</a> | <a role="button" onclick="showPage('GetOwnerID');">GetOwnerID</a> | <a role="button" onclick="showPage('InitObject');">InitObject</a> | <a role="button" onclick="showPage('ListChildren');">ListChildren</a> | <a role="button" onclick="showPage('LockObject');">LockObject</a> | <a role="button" onclick="showPage('NewObject');">NewObject</a> | <a role="button" onclick="showPage('NotifySubscribers');">NotifySubscribers</a> | <a role="button" onclick="showPage('ParentContext');">ParentContext</a> | <a role="button" onclick="showPage('QueueAction');">QueueAction</a> | <a role="button" onclick="showPage('ReleaseObject');">ReleaseObject</a> | <a role="button" onclick="showPage('ResolveClassID');">ResolveClassID</a> | <a role="button" onclick="showPage('ResolveClassName');">ResolveClassName</a> | <a role="button" onclick="showPage('SetName');">SetName</a> | <a role="button" onclick="showPage('SetOwner');">SetOwner</a> | <a role="button" onclick="showPage('SubscribeAction');">SubscribeAction</a> | <a role="button" onclick="showPage('UnsubscribeAction');">UnsubscribeAction</a></p><h6>System</h6><p class="appendix ps-4"><a role="button" onclick="showPage('AdjustLogLevel');">AdjustLogLevel</a> | <a role="button" onclick="showPage('AllocateID');">AllocateID</a> | <a role="button" onclick="showPage('CurrentTask');">CurrentTask</a> | <a role="button" onclick="showPage('GenCRC32');">GenCRC32</a> | <a role="button" onclick="showPage('GetResource');">GetResource</a> | <a role="button" onclick="showPage('GetSystemState');">GetSystemState</a> | <a role="button" onclick="showPage('GetThreadID');">GetThreadID</a> | <a role="button" onclick="showPage('PreciseTime');">PreciseTime</a> | <a role="button" onclick="showPage('RegisterFD');">RegisterFD</a> | <a role="button" onclick="showPage('SetLogCallback');">SetLogCallback</a> | <a role="button" onclick="showPage('SetResource');">SetResource</a> | <a role="button" onclick="showPage('SetResourcePath');">SetResourcePath</a> | <a role="button" onclick="showPage('SubscribeTimer');">SubscribeTimer</a> | <a role="button" onclick="showPage('UpdateTimer');">UpdateTimer</a> | <a role="button" onclick="showPage('WaitTime');">WaitTime</a> | <a role="button" onclick="showPage('WakeThread');">WakeThread</a></p><h3>Structures</h3><p class="appendix"><a role="button" onclick="showPage('struct-ActionArray');">ActionArray</a> | <a role="button" onclick="showPage('struct-ActionTable');">ActionTable</a> | <a role="button" onclick="showPage('struct-ChildEntry');">ChildEntry</a> | <a role="button" onclick="showPage('struct-ClassRecord');">ClassRecord</a> | <a role="button" onclick="showPage('struct-ClipRectangle');">ClipRectangle</a> | <a role="button" onclick="showPage('struct-ColourFormat');">ColourFormat</a> | <a role="button" onclick="showPage('struct-DateTime');">DateTime</a> | <a role="button" onclick="showPage('struct-DirInfo');">DirInfo</a> | <a role="button" onclick="showPage('struct-Edges');">Edges</a> | <a role="button" onclick="showPage('struct-FRGB');">FRGB</a> | <a role="button" onclick="showPage('struct-Field');">Field</a> | <a role="button" onclick="showPage('struct-FieldArray');">FieldArray</a> | <a role="button" onclick="showPage('struct-FieldDef');">FieldDef</a> | <a role="button" onclick="showPage('struct-FileFeedback');">FileFeedback</a> | <a role="button" onclick="showPage('struct-FileInfo');">FileInfo</a> | <a role="button" onclick="showPage('struct-FunctionField');">FunctionField</a> | <a role="button" onclick="showPage('struct-HSV');">HSV</a> | <a role="button" onclick="showPage('struct-InputEvent');">InputEvent</a> | <a role="button" onclick="showPage('struct-Message');">Message</a> | <a role="button" onclick="showPage('struct-ObjectSignal');">ObjectSignal</a> | <a role="button" onclick="showPage('struct-OpenInfo');">OpenInfo</a> | <a role="button" onclick="showPage('struct-OpenTag');">OpenTag</a> | <a role="button" onclick="showPage('struct-RGB16');">RGB16</a> | <a role="button" onclick="showPage('struct-RGB32');">RGB32</a> | <a role="button" onclick="showPage('struct-RGB8');">RGB8</a> | <a role="button" onclick="showPage('struct-RGBPalette');">RGBPalette</a> | <a role="button" onclick="showPage('struct-ResourceRecord');">ResourceRecord</a> | <a role="button" onclick="showPage('struct-SystemState');">SystemState</a> | <a role="button" onclick="showPage('struct-Unit');">Unit</a> | <a role="button" onclick="showPage('struct-dcAudio');">dcAudio</a> | <a role="button" onclick="showPage('struct-dcDeviceInput');">dcDeviceInput</a> | <a role="button" onclick="showPage('struct-dcKeyEntry');">dcKeyEntry</a> | <a role="button" onclick="showPage('struct-dcRequest');">dcRequest</a></p><h3>Classes</h3><p class="appendix"><a role="button" onclick="" href="classes/compressedstream.html">CompressedStream</a> | <a role="button" onclick="" href="classes/compression.html">Compression</a> | <a role="button" onclick="" href="classes/config.html">Config</a> | <a role="button" onclick="" href="classes/file.html">File</a> | <a role="button" onclick="" href="classes/metaclass.html">MetaClass</a> | <a role="button" onclick="" href="classes/module.html">Module</a> | <a role="button" onclick="" href="classes/script.html">Script</a> | <a role="button" onclick="" href="classes/storagedevice.html">StorageDevice</a> | <a role="button" onclick="" href="classes/task.html">Task</a> | <a role="button" onclick="" href="classes/thread.html">Thread</a> | <a role="button" onclick="" href="classes/time.html">Time</a></p><h3>Constants</h3><p class="appendix"><a role="button" onclick="showPage('AC');">AC</a> | <a role="button" onclick="showPage('CCF');">CCF</a> | <a role="button" onclick="showPage('CONTYPE');">CONTYPE</a> | <a role="button" onclick="showPage('EVG');">EVG</a> | <a role="button" onclick="showPage('FBK');">FBK</a> | <a role="button" onclick="showPage('IDTYPE');">IDTYPE</a> | <a role="button" onclick="showPage('JET');">JET</a> | <a role="button" onclick="showPage('JTYPE');">JTYPE</a> | <a role="button" onclick="showPage('LDF');">LDF</a> | <a role="button" onclick="showPage('LOC');">LOC</a> | <a role="button" onclick="showPage('MEM');">MEM</a> | <a role="button" onclick="showPage('MSF');">MSF</a> | <a role="button" onclick="showPage('MSGID');">MSGID</a> | <a role="button" onclick="showPage('NF');">NF</a> | <a role="button" onclick="showPage('OPF');">OPF</a> | <a role="button" onclick="showPage('PERMIT');">PERMIT</a> | <a role="button" onclick="showPage('PMF');">PMF</a> | <a role="button" onclick="showPage('RDF');">RDF</a> | <a role="button" onclick="showPage('RES');">RES</a> | <a role="button" onclick="showPage('RFD');">RFD</a> | <a role="button" onclick="showPage('RP');">RP</a> | <a role="button" onclick="showPage('RSF');">RSF</a> | <a role="button" onclick="showPage('TOI');">TOI</a> | <a role="button" onclick="showPage('VOLUME');">VOLUME</a></p></div><div class="docs-content" style="display:none;" id="AccessObject"><h2>AccessObject()</h2><p class="lead">Grants exclusive access to objects via unique ID.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR AccessObject(OBJECTID Object, INT MilliSeconds, OBJECTPTR * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Object</td><td>The unique ID of the target object.</td></tr>
 <tr><td>MilliSeconds</td><td>The limit in milliseconds before a timeout occurs.  The maximum limit is <code>60000</code>, and <code>100</code> is recommended.</td></tr>
 <tr><td>Result</td><td>A pointer storage variable that will store the resulting object address.</td></tr>
 </tbody></table></div></div>
@@ -232,7 +233,7 @@ struct FunctionField argsResize[] = {
 <p>The handler will be identified by a unique pointer returned in the Handle parameter.  This handle will be garbage collected or can be passed to <a href="?page=FreeResource">FreeResource()</a> once it is no longer required.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Message handler successfully processed.</td></tr>
 <tr><th class="col-md-1">Lock</th><td>Failed to lock a required resource</td></tr>
-<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
+<tr><th class="col-md-1">AllocMemory</th><td>Failed to create a new memory block</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="AdjustLogLevel"><h2>AdjustLogLevel()</h2><p class="lead">Adjusts the base-line of all log messages.</p><div class="card card-info mb-3"><div class="card-header"><samp>INT AdjustLogLevel(INT Delta)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Delta</td><td>The level of adjustment to make to new log messages.  Zero is no change.  The maximum level is +/- 9.</td></tr>
@@ -243,24 +244,19 @@ struct FunctionField argsResize[] = {
 <p>Adjustments to the base-line are accumulative, so small increments of 1 or 2 are encouraged.  To revert logging to the previous base-line, call this function again with a negation of the previously passed value.</p>
 <p>Note: This function is complemented by the <a href="?page=SetResource">SetResource()</a> function with the <code>RES::LOG_LEVEL</code> option, which permanently changes the log level for the duration of the program.</p>
     <h3>Result</h3><p>Returns the absolute base-line value that was active prior to calling this function.</p><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="AllocMemory"><h2>AllocMemory()</h2><p class="lead">Allocates a managed memory block on the heap.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR AllocMemory(INT64 Size, MEM Flags, APTR * Address)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Size</td><td>The size of the memory block in bytes. Must be greater than zero.</td></tr>
+<div class="docs-content" style="display:none;" id="AllocResource"><h2>AllocResource()</h2><p class="lead">Allocates a managed memory block on the heap.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR AllocResource(INT64 Size, MEM Flags, APTR * Address, struct ResourceManager * Manager)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Size</td><td>The size of the memory block in bytes. Must be greater than zero.</td></tr>
 <tr><td><a onclick="showPage('MEM');">Flags</a></td><td>Optional allocation flags controlling behaviour and ownership.</td></tr>
 <tr><td>Address</td><td>Pointer to store the address of the allocated memory block.</td></tr>
+<tr><td>Manager</td><td>Resource manager used to release the resource.</td></tr>
 </tbody></table></div></div>
-<p>AllocMemory() provides comprehensive memory allocation with automatic ownership tracking, resource management, and debugging features. The function allocates a new block of memory and associates it with the current execution context, allowing it to be automatically cleaned up when the context is destroyed.</p>
+<p>AllocResource() reserves an area of memory of <code>Size</code> bytes and tracks it using the supplied resource manager.  If no <code>Manager</code> is provided, the default memory manager is used.  The function returns a pointer to the allocated memory block in <code>Address</code>.  The allocated memory is automatically associated with the current execution context, allowing it to be automatically cleaned up when the context is destroyed.</p>
 <p>Example usage:</p>
 <pre>APTR address;
-if (!AllocMemory(1000, MEM::NIL, &amp;address)) {
+if (!AllocResource(1000, MEM::NIL, &amp;address, nullptr)) {
    // Use memory block...
    FreeResource(address);
 }
 </pre>
-<p>Memory allocation behaviour is controlled through MEM flags:</p>
-<table class="table"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody><tr><th>MEM::NO_CLEAR</th><td>Do not clear the memory on allocation (saves time).</td></tr>
-<tr><th>MEM::TEXTURE</th><td>Identifies non-displayable video memory, e.g. texture graphics.</td></tr>
-<tr><th>MEM::VIDEO</th><td>Identifies video memory, such as the frame buffer.</td></tr>
-</tbody></table>
-<p>The resulting memory block is zero-initialised unless the <code>MEM::NO_CLEAR</code> flag is specified.  For large allocations where initialisation overhead is a concern, utilising <code>MEM::NO_CLEAR</code> is recommended.</p>
 <p>Memory blocks are automatically associated with their owning object context, enabling automatic cleanup when the owner is destroyed. This prevents memory leaks in object-oriented code.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Memory block successfully allocated.</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid parameters (size &lt;= 0 or Address is NULL).</td></tr>
@@ -356,7 +352,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="CheckResourceExists"><h2>CheckResourceExists()</h2><p class="lead">Verifies the existence of a resource.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR CheckResourceExists(RESOURCEID ID)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>ID</td><td>The unique identifier of the resource to verify.</td></tr>
 </tbody></table></div></div>
-<p>CheckResourceExists() verifies whether a resource with the specified identifier still exists in the system's resource tracking collection. This function is useful for defensive programming when working with resources such as memory or objects that may have been freed by other code paths.</p>
+<p>CheckResourceExists() verifies whether a resource with the specified identifier still exists in the system's object or resource registry. This function is useful for defensive programming when working with resources such as memory or objects that may have been freed by other code paths.  Objects that are terminating or awaiting deferred collection are reported as unavailable.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">True</th><td>The resource exists and is valid.</td></tr>
 <tr><th class="col-md-1">False</th><td>The resource does not exist or has been freed.</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
@@ -495,9 +491,18 @@ FindObject("SystemPointer", CLASSID::POINTER, &amp;id);
 <tr><th class="col-md-1">EmptyString</th><td>A required string value contains no characters</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="FreeResource"><h2>FreeResource()</h2><p class="lead">Safely deallocates resources allocated by AllocMemory() and similar functions.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR FreeResource(RESOURCEID ID)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>ID</td><td>The unique identifier of the resource to be freed.</td></tr>
+<div class="docs-content" style="display:none;" id="FreeObject"><h2>FreeObject()</h2><p class="lead">Terminates an object by its unique identifier.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR FreeObject(OBJECTID ObjectID)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>ObjectID</td><td>The unique identifier of the object to terminate.</td></tr>
+</tbody></table></div></div>
+<p>FreeObject() starts the destruction process for the object identified by <code>ObjectID</code>.  If the object is locked or strongly pinned, destruction is deferred until the final lock or pin is released.  Once termination has started, new access through <a href="?page=AccessObject">AccessObject()</a> is rejected.</p>
+    <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The object was terminated successfully.</td></tr>
+<tr><th class="col-md-1">InUse</th><td>The object is already terminating, or destruction has been deferred until it is unlocked.</td></tr>
+<tr><th class="col-md-1">AccessObject</th><td>The object could not be accessed for destruction.</td></tr>
+<tr><th class="col-md-1">DoesNotExist</th><td>The object identifier is not registered.</td></tr>
+</tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
+<div class="docs-content" style="display:none;" id="FreeResource"><h2>FreeResource()</h2><p class="lead">Safely deallocates resources allocated by AllocResource() and similar functions.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR FreeResource(RESOURCEID ID)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>ID</td><td>The unique identifier of the resource to be freed.</td></tr>
 </tbody></table></div></div>
 <p>FreeResource() provides safe deallocation of resources with comprehensive validation and cleanup. The function accepts resource identifiers for optimal safety, though C++ headers also provide pointer-based variants for convenience.</p>
+<p>Object identifiers are detected in the object registry and dispatched to <a href="?page=FreeObject">FreeObject()</a>.  All other identifiers are resolved through the non-object resource registry and its associated <code>ResourceManager</code>.</p>
 <p>The deallocation process includes lock-aware deallocation that respects access counting, resource manager integration for managed memory blocks, and automatic cleanup of ownership tracking structures.</p>
 <p>If a resource is locked at the time of the call, it is marked for delayed collection only. This prevents use-after-free errors while ensuring eventual cleanup when all references are released.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The resource was successfully freed or marked for delayed collection.</td></tr>
@@ -532,19 +537,19 @@ FindObject("SystemPointer", CLASSID::POINTER, &amp;id);
 </tbody></table></div></div>
 <p>Use GetEventID() to generate a 64-bit event identifier.  This identifier can be used for broadcasting and subscribing to events.  Events are described in three parts - <code>Group</code>, <code>SubGroup</code> and the <code>Event</code> name, or in string format <code>group.subgroup.event</code>.</p>
 <p>The <code>Group</code> is strictly limited to one of the following definitions:</p>
-<table class="table"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody><tr><th>EVG::ANDROID</th><td>Android specific events that do not already fit existing categories.</td></tr>
+<table class="table"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody><tr><th>EVG::ANDROID</th><td>Android specific events that do not already fit existing categories</td></tr>
 <tr><th>EVG::APP</th><td>Custom event dispatched from an application</td></tr>
-<tr><th>EVG::AUDIO</th><td>Audio system events.</td></tr>
+<tr><th>EVG::AUDIO</th><td>Audio system events</td></tr>
 <tr><th>EVG::CLASS</th><td>Custom event dispatched from a class that doesn't fit within the rest of the event framework</td></tr>
-<tr><th>EVG::DISPLAY</th><td>Video display events.</td></tr>
-<tr><th>EVG::FILESYSTEM</th><td>File system events.</td></tr>
-<tr><th>EVG::GUI</th><td>Events generated by the Graphical User Interface.</td></tr>
-<tr><th>EVG::HARDWARE</th><td>Hardware device events that are not covered by other types.</td></tr>
-<tr><th>EVG::IO</th><td>Input/Output events.</td></tr>
-<tr><th>EVG::NETWORK</th><td>Network events.</td></tr>
-<tr><th>EVG::POWER</th><td>Power Management - can also include app-specific events relating to resource management.</td></tr>
+<tr><th>EVG::DISPLAY</th><td>Video display events</td></tr>
+<tr><th>EVG::FILESYSTEM</th><td>File system events</td></tr>
+<tr><th>EVG::GUI</th><td>Events generated by the Graphical User Interface</td></tr>
+<tr><th>EVG::HARDWARE</th><td>Hardware device events that are not covered by other types</td></tr>
+<tr><th>EVG::IO</th><td>Input/Output events</td></tr>
+<tr><th>EVG::NETWORK</th><td>Network events</td></tr>
+<tr><th>EVG::POWER</th><td>Power Management - can also include app-specific events relating to resource management</td></tr>
 <tr><th>EVG::SYSTEM</th><td>System-wide events</td></tr>
-<tr><th>EVG::USER</th><td>User activity events (such as user login).</td></tr>
+<tr><th>EVG::USER</th><td>User activity events (such as user login)</td></tr>
 </tbody></table>
 <p>The <code>SubGroup</code> and <code>Event</code> parameters are string-based and there are no restrictions on naming.  If a <code>SubGroup</code> or <code>Event</code> name is <code>NULL</code>, this will act as a wildcard for subscribing to multiple events.  For example, subscribing to the network group with <code>SubGroup</code> and <code>Event</code> set to <code>NULL</code> will allow for a subscription to all network events that are broadcast.  A <code>Group</code> setting of zero is not allowed.</p>
     <h3>Result</h3><p>The event ID is returned as a 64-bit integer.</p><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
@@ -667,7 +672,7 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
 <p>To destroy an object, call <a href="?page=FreeResource">FreeResource()</a>.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">MissingClass</th><td>The <code>ClassID</code> is invalid or refers to a class that is not installed.</td></tr>
-<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
+<tr><th class="col-md-1">AllocMemory</th><td>Failed to create a new memory block</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="NotifySubscribers"><h2>NotifySubscribers()</h2><p class="lead">Send a notification event to action subscribers.</p><div class="card card-info mb-3"><div class="card-header"><samp>void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Error)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Object</td><td>Pointer to the object that is to receive the notification message.</td></tr>
@@ -700,7 +705,7 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">DirEmpty</th><td>The folder is empty</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
-<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
+<tr><th class="col-md-1">AllocMemory</th><td>Failed to create a new memory block</td></tr>
 <tr><th class="col-md-1">ResolvePath</th><td>A volume could not be resolved</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
@@ -918,16 +923,30 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 <tr><th class="col-md-1">Recursion</th><td>Detected a recursive function call</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="SetResource"><h2>SetResource()</h2><p class="lead">Sets miscellaneous resource identifiers.</p><div class="card card-info mb-3"><div class="card-header"><samp>INT64 SetResource(RES Resource, INT64 Value)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a onclick="showPage('RES');">Resource</a></td><td>The ID of the resource to be set.</td></tr>
-<tr><td>Value</td><td>The new value to set for the resource.</td></tr>
+<div class="docs-content" style="display:none;" id="SetResource"><h2>SetResource()</h2><p class="lead">Updates a writable Core resource value.</p><div class="card card-info mb-3"><div class="card-header"><samp>INT64 SetResource(RES Resource, INT64 Value)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a onclick="showPage('RES');">Resource</a></td><td>The writable resource identifier.</td></tr>
+<tr><td>Value</td><td>The value to assign to the resource.</td></tr>
 </tbody></table></div></div>
-<p>The SetResource() function is used to manipulate miscellaneous system resources.  Currently the following resources are supported:</p>
-<table class="table"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">RES::ALLOC_MEM_LIMIT</th><td>Adjusts the memory limit imposed on <a href="?page=AllocMemory">AllocMemory()</a>.  The <code>Value</code> specifies the memory limit in bytes.</td></tr>
-<tr><th class="col-md-1">RES::LOG_LEVEL</th><td>Adjusts the current debug level.  The <code>Value</code> must be between 0 and 9, where 1 is the lowest level of debug output (errors only) and 0 is off.</td></tr>
-<tr><th class="col-md-1">RES::PRIVILEGED_USER</th><td>If the <code>Value</code> is set to 1, this resource option puts the process in privileged mode (typically this enables full administrator rights).  This feature will only work for Unix processes that are granted admin rights when launched.  Setting the Value to 0 reverts to the user's permission settings.  SetResource() will return an error code indicating the level of success.</td></tr>
-<tr><th class="col-md-1">RES::LOG_DEPTH</th><td>Changes the branch depth of the log output (affects indenting).</td></tr>
-</tbody></table>
-    <h3>Result</h3><p>Returns the previous value of the <code>Resource</code>.  If the <code>Resource</code> value is invalid, <code>NULL</code> is returned.</p><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
+<p>SetResource() updates Core state selected by a <a data-toggle="tooltip" title="" href="?page=RES">RES</a> identifier.  The following identifiers are writable:</p>
+<ul>
+<li>
+<code>LOG_LEVEL</code> sets the logging detail from 0 (disabled) to 9 (maximum detail).  Values outside this range are
+ignored.</li>
+<li>
+<code>LOG_DEPTH</code> sets the logging branch depth for the current thread.  This controls indentation of subsequent log
+output.</li>
+<li>
+<code>PRIVILEGED_USER</code> enables elevated Unix privileges when <code>Value</code> is non-zero and releases one level of privilege
+when it is zero.  Elevation is available only when the process was launched with suitable privileges.  Calls may be
+nested; privileges are released after the corresponding number of disable requests.  On non-Unix platforms this
+identifier has no effect.</li>
+<li>
+<code>WINDOWS_ICON</code> sets the Microsoft Windows resource icon ID for the process.</li>
+<li>
+<code>CONSOLE_FD</code> and <code>JNI_ENV</code> update internal host integration values.</li>
+</ul>
+<p>Other <a data-toggle="tooltip" title="" href="?page=RES">RES</a> identifiers are read-only or unsupported by this function.</p>
+<p>For <code>PRIVILEGED_USER</code>, the result is an <code>ERR</code> value indicating whether the request succeeded.  All other supported resources return 0.  Unsupported identifiers also return 0 after writing a warning to the log.</p>
+    <h3>Result</h3><p>Result code is dependent on the targeted resource.</p><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="SetResourcePath"><h2>SetResourcePath()</h2><p class="lead">Redefines the location of a system resource path.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR SetResourcePath(RP PathType, STRVIEW Path)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a onclick="showPage('RP');">PathType</a></td><td>The ID of the resource path to set.</td></tr>
 <tr><td>Path</td><td>The new location to set for the resource path.</td></tr>
 </tbody></table></div></div>
@@ -991,7 +1010,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
 <p>The prototype for the <code>Callback</code> function is <code>Function(APTR Event, LONG Size, APTR CallbackMeta)</code>, where <code>Event</code> is the event structure that matches to the subscribed EventID.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
-<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
+<tr><th class="col-md-1">AllocMemory</th><td>Failed to create a new memory block</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="SubscribeTimer"><h2>SubscribeTimer()</h2><p class="lead">Subscribes an object or function to the timer service.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR SubscribeTimer(DOUBLE Interval, FUNCTION * Callback, APTR * Subscription)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Interval</td><td>The total number of seconds to wait between timer calls.</td></tr>
@@ -1015,7 +1034,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
 <tr><td>Manager</td><td>Resource manager used to release the resource.</td></tr>
 </tbody></table></div></div>
 <p>TrackResource() registers a resource identifier with the memory manager so that later calls to <a href="?page=FreeResource">FreeResource()</a> can dispatch cleanup through the supplied <code>ResourceManager</code>.  If the resource identifier is already registered, the existing record is updated with the non-zero values provided by the caller.</p>
-<p>The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is tracked, or until the record is replaced or removed.  When an <code>OwnerID</code> is supplied for a non-object resource, the resource is added to the owner's resource list so it can be removed during owner cleanup.  Use <code>RESOURCEID_INHERIT</code> to preserve the existing owner when updating a resource, or to inherit the current context when registering a new resource.</p>
+<p>The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is tracked, or until the record is replaced or removed.  When an <code>OwnerID</code> names an object, the resource is added directly to that object's resource list so it can be removed during object cleanup.  Use <code>RESOURCEID_INHERIT</code> to preserve the existing owner when updating a resource, or to inherit the current context when registering a new resource.</p>
 <p>A unique <code>ResourceID</code> can be obtained from <a href="?page=AllocateID">AllocateID()</a> by using <code>IDTYPE::RESOURCE</code>.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">InUse</th><td>Resource is in use</td></tr>
@@ -1065,7 +1084,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
 <tr><td>ObjectSignals</td><td>A null-terminated array of objects to monitor for signals.</td></tr>
 </tbody></table></div></div>
 <p>WaitForObjects() acts as a front-end to <a href="?page=ProcessMessages">ProcessMessages()</a>, with an ability to wait for a list of objects that are expected to signal an end to their activities.  An object can be signalled via the Signal() action, or via termination. By default, this function will only return once ALL of the objects are signalled or a time-out occurs.  Use the <code>PMF::ANY_SIGNAL</code> flag to return once ANY of the objects are signalled.</p>
-<p>It is guaranteed that the message queue will be consumed by ~ProcessMessage() at least once before this function returns.</p>
+<p>It is guaranteed that the message queue will be consumed by <a href="?page=ProcessMessages">ProcessMessages()</a> at least once before this function returns.</p>
 <p>Note that if an object has been signalled prior to entry to this function, its signal flag will be cleared and the object will not be monitored.</p>
 <p>If this function is called recursively, the state of the earlier call will be preserved so that it will not be affected by subsequent calls.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
@@ -1095,7 +1114,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The thread was successfully interrupted.</td></tr>
 <tr><th class="col-md-1">Search</th><td>No thread with the given ID was found in the registry.</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="AC"><h1>AC Type</h1><p class="lead">Action identifiers.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>AC::Activate</th><td></td></tr>
+<div class="docs-content" style="display:none;" id="AC"><h1>AC Type</h1><p class="lead">Action identifiers</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>AC::Activate</th><td></td></tr>
 <tr><th>AC::Clear</th><td></td></tr>
 <tr><th>AC::Clipboard</th><td></td></tr>
 <tr><th>AC::CopyData</th><td></td></tr>
@@ -1144,37 +1163,37 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
 <tr><th>AC::Unlock</th><td></td></tr>
 <tr><th>AC::Write</th><td></td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="CCF"><h1>CCF Type</h1><p class="lead">Class categories</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>CCF::AUDIO</th><td>Audio classes interface with audio hardware and drivers for audio playback and recording purposes.</td></tr>
-<tr><th>CCF::COMMAND</th><td>Command classes perform specific procedures, like copying or moving a file, managing volumes or executing a program.</td></tr>
-<tr><th>CCF::DATA</th><td>Data classes parse, query and manipulate data.</td></tr>
-<tr><th>CCF::FILESYSTEM</th><td>FileSystem classes are based on file management and interaction with file based data.</td></tr>
-<tr><th>CCF::GRAPHICS</th><td>Graphics classes provide graphics management and drawing services.</td></tr>
-<tr><th>CCF::GUI</th><td>GUI classes are used in the development of graphical user interfaces.</td></tr>
-<tr><th>CCF::IO</th><td>I/O classes manage hardware and software based input and output.</td></tr>
-<tr><th>CCF::MISC</th><td>Miscellaneous classes do not fit into any of the other available categories.</td></tr>
-<tr><th>CCF::MULTIMEDIA</th><td>Classes that represent more than one media type, e.g. video files.</td></tr>
-<tr><th>CCF::NETWORK</th><td>Network classes interface with system drivers to simplify network communications.</td></tr>
-<tr><th>CCF::SYSTEM</th><td>System classes are designed to provide low-level services related to system management.</td></tr>
-<tr><th>CCF::TOOL</th><td>Tools provide interactive services for the user.</td></tr>
+<div class="docs-content" style="display:none;" id="CCF"><h1>CCF Type</h1><p class="lead">Class categories</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>CCF::AUDIO</th><td>Audio classes interface with audio hardware and drivers for audio playback and recording purposes</td></tr>
+<tr><th>CCF::COMMAND</th><td>Command classes perform specific procedures, like copying or moving a file, managing volumes or executing a program</td></tr>
+<tr><th>CCF::DATA</th><td>Data classes parse, query and manipulate data</td></tr>
+<tr><th>CCF::FILESYSTEM</th><td>FileSystem classes are based on file management and interaction with file based data</td></tr>
+<tr><th>CCF::GRAPHICS</th><td>Graphics classes provide graphics management and drawing services</td></tr>
+<tr><th>CCF::GUI</th><td>GUI classes are used in the development of graphical user interfaces</td></tr>
+<tr><th>CCF::IO</th><td>I/O classes manage hardware and software based input and output</td></tr>
+<tr><th>CCF::MISC</th><td>Miscellaneous classes do not fit into any of the other available categories</td></tr>
+<tr><th>CCF::MULTIMEDIA</th><td>Classes that represent more than one media type, e.g. video files</td></tr>
+<tr><th>CCF::NETWORK</th><td>Network classes interface with system drivers to simplify network communications</td></tr>
+<tr><th>CCF::SYSTEM</th><td>System classes are designed to provide low-level services related to system management</td></tr>
+<tr><th>CCF::TOOL</th><td>Tools provide interactive services for the user</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="CONTYPE"><h1>CONTYPE Type</h1><p class="lead">Console types</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>CONTYPE::HANDLE</th><td>Redirected to a handle</td></tr>
 <tr><th>CONTYPE::MANUAL</th><td>Console created manually</td></tr>
 <tr><th>CONTYPE::NONE</th><td>No console available</td></tr>
 <tr><th>CONTYPE::TERMINAL</th><td>Launched from a terminal</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="EVG"><h1>EVG Type</h1><p class="lead">Event categories.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>EVG::ANDROID</th><td>Android specific events that do not already fit existing categories.</td></tr>
+<div class="docs-content" style="display:none;" id="EVG"><h1>EVG Type</h1><p class="lead">Event categories</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>EVG::ANDROID</th><td>Android specific events that do not already fit existing categories</td></tr>
 <tr><th>EVG::APP</th><td>Custom event dispatched from an application</td></tr>
-<tr><th>EVG::AUDIO</th><td>Audio system events.</td></tr>
+<tr><th>EVG::AUDIO</th><td>Audio system events</td></tr>
 <tr><th>EVG::CLASS</th><td>Custom event dispatched from a class that doesn't fit within the rest of the event framework</td></tr>
-<tr><th>EVG::DISPLAY</th><td>Video display events.</td></tr>
-<tr><th>EVG::FILESYSTEM</th><td>File system events.</td></tr>
-<tr><th>EVG::GUI</th><td>Events generated by the Graphical User Interface.</td></tr>
-<tr><th>EVG::HARDWARE</th><td>Hardware device events that are not covered by other types.</td></tr>
-<tr><th>EVG::IO</th><td>Input/Output events.</td></tr>
-<tr><th>EVG::NETWORK</th><td>Network events.</td></tr>
-<tr><th>EVG::POWER</th><td>Power Management - can also include app-specific events relating to resource management.</td></tr>
+<tr><th>EVG::DISPLAY</th><td>Video display events</td></tr>
+<tr><th>EVG::FILESYSTEM</th><td>File system events</td></tr>
+<tr><th>EVG::GUI</th><td>Events generated by the Graphical User Interface</td></tr>
+<tr><th>EVG::HARDWARE</th><td>Hardware device events that are not covered by other types</td></tr>
+<tr><th>EVG::IO</th><td>Input/Output events</td></tr>
+<tr><th>EVG::NETWORK</th><td>Network events</td></tr>
+<tr><th>EVG::POWER</th><td>Power Management - can also include app-specific events relating to resource management</td></tr>
 <tr><th>EVG::SYSTEM</th><td>System-wide events</td></tr>
-<tr><th>EVG::USER</th><td>User activity events (such as user login).</td></tr>
+<tr><th>EVG::USER</th><td>User activity events (such as user login)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="FBK"><h1>FBK Type</h1><p class="lead">Flags for file feedback.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>FBK::COPY_FILE</th><td>A file is to be, or has been copied.</td></tr>
 <tr><th>FBK::DELETE_FILE</th><td>A file is to be, or has been deleted.</td></tr>
@@ -1185,37 +1204,37 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
 <tr><th>IDTYPE::MESSAGE</th><td>Message IDs are allocated for the purpose of sending uniquely identifiable messages between tasks.</td></tr>
 <tr><th>IDTYPE::RESOURCE</th><td>Resource identifier for TrackResource()</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="JET"><h1>JET Type</h1><p class="lead">JET constants are documented in GetInputEvent()</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>JET::ABS_XY</th><td>The X, Y values are defined as absolute coordinates, relative to the top-left of the display.</td></tr>
-<tr><th>JET::BUTTON_1</th><td>Left mouse button; XBox A button, PS square button.  Value is pressure sensitive, ranging between 0 - 1.0 (0 is released, 1.0 is fully depressed).</td></tr>
-<tr><th>JET::BUTTON_10</th><td>Non-specific button assignment.</td></tr>
-<tr><th>JET::BUTTON_2</th><td>Right mouse button; XBox X button, PS cross button.</td></tr>
-<tr><th>JET::BUTTON_3</th><td>Middle mouse button; XBox Y button, PS triangle.</td></tr>
-<tr><th>JET::BUTTON_4</th><td>Alt. mouse button 1; XBox B button, PS circle.</td></tr>
-<tr><th>JET::BUTTON_5</th><td>Alt. mouse button 2.</td></tr>
-<tr><th>JET::BUTTON_6</th><td>Non-specific button assignment.</td></tr>
-<tr><th>JET::BUTTON_7</th><td>Non-specific button assignment.</td></tr>
-<tr><th>JET::BUTTON_8</th><td>Non-specific button assignment.</td></tr>
-<tr><th>JET::BUTTON_9</th><td>Non-specific button assignment.</td></tr>
-<tr><th>JET::CROSSED_IN</th><td>This message is sent by the input system when the mouse pointer enters an area for the first time.  The message value refers to the object ID of the container being monitored for movement.</td></tr>
-<tr><th>JET::CROSSED_OUT</th><td>This message is sent by the input system when the mouse pointer leaves an area.  The message value refers to the object ID of the container being monitored for movement.</td></tr>
+<div class="docs-content" style="display:none;" id="JET"><h1>JET Type</h1><p class="lead">JET constants are documented in GetInputEvent()</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>JET::ABS_XY</th><td>The X, Y values are defined as absolute coordinates, relative to the top-left of the display</td></tr>
+<tr><th>JET::BUTTON_1</th><td>Left mouse button; XBox A button, PS square button.  Value is pressure sensitive, ranging between 0 - 1.0 (0 is released, 1.0 is fully depressed)</td></tr>
+<tr><th>JET::BUTTON_10</th><td>Non-specific button assignment</td></tr>
+<tr><th>JET::BUTTON_2</th><td>Right mouse button; XBox X button, PS cross button</td></tr>
+<tr><th>JET::BUTTON_3</th><td>Middle mouse button; XBox Y button, PS triangle</td></tr>
+<tr><th>JET::BUTTON_4</th><td>Alt. mouse button 1; XBox B button, PS circle</td></tr>
+<tr><th>JET::BUTTON_5</th><td>Alt. mouse button 2</td></tr>
+<tr><th>JET::BUTTON_6</th><td>Non-specific button assignment</td></tr>
+<tr><th>JET::BUTTON_7</th><td>Non-specific button assignment</td></tr>
+<tr><th>JET::BUTTON_8</th><td>Non-specific button assignment</td></tr>
+<tr><th>JET::BUTTON_9</th><td>Non-specific button assignment</td></tr>
+<tr><th>JET::CROSSED_IN</th><td>This message is sent by the input system when the mouse pointer enters an area for the first time.  The message value refers to the object ID of the container being monitored for movement</td></tr>
+<tr><th>JET::CROSSED_OUT</th><td>This message is sent by the input system when the mouse pointer leaves an area.  The message value refers to the object ID of the container being monitored for movement</td></tr>
 <tr><th>JET::DEVICE_TILT_XY</th><td>Controller tilted on the X/Y axis.  Value indicates angle, -ve = left, +ve = right</td></tr>
 <tr><th>JET::DEVICE_TILT_Z</th><td>Controller is rising or falling.  Value expressed as 'speed',</td></tr>
-<tr><th>JET::DISPLAY_EDGE</th><td>Recently supplied input occurred at the edge of the display.</td></tr>
+<tr><th>JET::DISPLAY_EDGE</th><td>Recently supplied input occurred at the edge of the display</td></tr>
 <tr><th>JET::PEN_TILT_XY</th><td>Pen tilt angle.  0 is pointing down directly with nib at bottom, 0.5 is 90 degrees, 1.0 is inversed (eraser at bottom)</td></tr>
 <tr><th>JET::PRESSURE</th><td>Amount of pressure applied, ranges from 0 (none) to 1.0 (normal) and possibly higher if user presses hard enough</td></tr>
-<tr><th>JET::WHEEL</th><td>Mouse wheel rotation - the value generally reflects the number of 'clicks' rotated on the wheel.</td></tr>
+<tr><th>JET::WHEEL</th><td>Mouse wheel rotation - the value generally reflects the number of 'clicks' rotated on the wheel</td></tr>
 <tr><th>JET::WHEEL_TILT</th><td>Some mouse wheels can be tilted to the left or right.  Ranges from -1.0 to +1.0</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="JTYPE"><h1>JTYPE Type</h1><p class="lead">JTYPE flags are used to categorise input types.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>JTYPE::ANALOG</th><td>Analog movement (ranging from -1.0 to 1.0)</td></tr>
+<div class="docs-content" style="display:none;" id="JTYPE"><h1>JTYPE Type</h1><p class="lead">JTYPE flags are used to categorise input types</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>JTYPE::ANALOG</th><td>Analog movement (ranging from -1.0 to 1.0)</td></tr>
 <tr><th>JTYPE::ANCHORED</th><td>Cursor has been anchored with LockCursor()</td></tr>
 <tr><th>JTYPE::BUTTON</th><td>Input is a physical button or switch</td></tr>
-<tr><th>JTYPE::CROSSING</th><td>Crossing events manage the entering and leaving of an area.</td></tr>
-<tr><th>JTYPE::DBL_CLICK</th><td>Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click.</td></tr>
+<tr><th>JTYPE::CROSSING</th><td>Crossing events manage the entering and leaving of an area</td></tr>
+<tr><th>JTYPE::DBL_CLICK</th><td>Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click</td></tr>
 <tr><th>JTYPE::DIGITAL</th><td>D-Pad or digital joystick source (restricted to +/- 1)</td></tr>
-<tr><th>JTYPE::DRAGGED</th><td>Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference).</td></tr>
-<tr><th>JTYPE::DRAG_ITEM</th><td>This special flag is set by the input system if the pointer is click-dragging an object at the time of the event.</td></tr>
-<tr><th>JTYPE::EXT_MOVEMENT</th><td>Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples.</td></tr>
-<tr><th>JTYPE::MOVEMENT</th><td>X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system.</td></tr>
+<tr><th>JTYPE::DRAGGED</th><td>Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference)</td></tr>
+<tr><th>JTYPE::DRAG_ITEM</th><td>This special flag is set by the input system if the pointer is click-dragging an object at the time of the event</td></tr>
+<tr><th>JTYPE::EXT_MOVEMENT</th><td>Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples</td></tr>
+<tr><th>JTYPE::MOVEMENT</th><td>X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system</td></tr>
 <tr><th>JTYPE::REPEATED</th><td>Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)</td></tr>
 <tr><th>JTYPE::SECONDARY</th><td>Indicates to the receiver of this message that it is not the primary/original recipient</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
@@ -1225,9 +1244,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
 <tr><th>LOC::FILE</th><td>The path refers to a file.</td></tr>
 <tr><th>LOC::VOLUME</th><td>The path refers to a volume name.</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="MEM"><h1>MEM Type</h1><p class="lead">Memory types.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>MEM::NO_CLEAR</th><td>Do not clear the memory on allocation (saves time).</td></tr>
-<tr><th>MEM::TEXTURE</th><td>Identifies non-displayable video memory, e.g. texture graphics.</td></tr>
-<tr><th>MEM::VIDEO</th><td>Identifies video memory, such as the frame buffer.</td></tr>
+<div class="docs-content" style="display:none;" id="MEM"><h1>MEM Type</h1><p class="lead">Memory flags</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>MEM::NO_CLEAR</th><td>Do not clear the memory on allocation (saves time)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="MSF"><h1>MSF Type</h1><p class="lead">Message flags.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>MSF::NO_DUPLICATE</th><td>If the <code>Type</code> parameter matches a message already inside the queue, the new message will not be added and the function will immediately return with <code>ERR::Okay</code>.</td></tr>
 <tr><th>MSF::UPDATE</th><td>If <code>Type</code> matches a queued message, update that message's data in place.</td></tr>
@@ -1274,39 +1291,39 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
 <tr><th>PERMIT::ALL_EXEC</th><td>Synonym for <code>EVERYONE_EXEC</code></td></tr>
 <tr><th>PERMIT::ALL_READ</th><td>Synonym for <code>EVERYONE_READ</code></td></tr>
 <tr><th>PERMIT::ALL_WRITE</th><td>Synonym for <code>EVERYONE_WRITE</code></td></tr>
-<tr><th>PERMIT::ARCHIVE</th><td>Marks the file for future backup.  The flag should be cleared after the backup has succeeded.</td></tr>
-<tr><th>PERMIT::DELETE</th><td>Owner can delete.  If the file system does not support this, deletion is enabled via the <code>WRITE</code> flag.</td></tr>
+<tr><th>PERMIT::ARCHIVE</th><td>Marks the file for future backup.  The flag should be cleared after the backup has succeeded</td></tr>
+<tr><th>PERMIT::DELETE</th><td>Owner can delete.  If the file system does not support this, deletion is enabled via the <code>WRITE</code> flag</td></tr>
 <tr><th>PERMIT::EVERYONE_ACCESS</th><td>Synonym for <code>EVERYONE_READ | EVERYONE_WRITE | EVERYONE_EXEC | EVERYONE_DELETE</code></td></tr>
 <tr><th>PERMIT::EVERYONE_DELETE</th><td>Synonym for <code>DELETE | GROUP_DELETE | OTHERS_DELETE</code></td></tr>
 <tr><th>PERMIT::EVERYONE_EXEC</th><td>Synonym for <code>EXEC | GROUP_EXEC | OTHERS_EXEC</code></td></tr>
 <tr><th>PERMIT::EVERYONE_READ</th><td>Synonym for <code>READ | GROUP_READ | OTHERS_READ</code></td></tr>
 <tr><th>PERMIT::EVERYONE_READWRITE</th><td>Synonym for <code>EVERYONE_READ | EVERYONE_WRITE</code></td></tr>
 <tr><th>PERMIT::EVERYONE_WRITE</th><td>Synonym for <code>WRITE | GROUP_WRITE | OTHERS_WRITE</code></td></tr>
-<tr><th>PERMIT::EXEC</th><td>User/Owner can execute.</td></tr>
+<tr><th>PERMIT::EXEC</th><td>User/Owner can execute</td></tr>
 <tr><th>PERMIT::GROUP</th><td>Synonym for <code>GROUP_READ | GROUP_WRITE | GROUP_EXEC | GROUP_DELETE</code></td></tr>
-<tr><th>PERMIT::GROUPID</th><td>Allows executables to run with a set group id.</td></tr>
-<tr><th>PERMIT::GROUP_DELETE</th><td>Group members can delete.</td></tr>
-<tr><th>PERMIT::GROUP_EXEC</th><td>Group members can execute.</td></tr>
-<tr><th>PERMIT::GROUP_READ</th><td>Group members can read.</td></tr>
-<tr><th>PERMIT::GROUP_WRITE</th><td>Group members can write.</td></tr>
-<tr><th>PERMIT::HIDDEN</th><td>Recommends that the file is hidden from view by default.</td></tr>
-<tr><th>PERMIT::INHERIT</th><td>Inherit permissions from parent folder and logical OR them with preset permission flags.</td></tr>
+<tr><th>PERMIT::GROUPID</th><td>Allows executables to run with a set group id</td></tr>
+<tr><th>PERMIT::GROUP_DELETE</th><td>Group members can delete</td></tr>
+<tr><th>PERMIT::GROUP_EXEC</th><td>Group members can execute</td></tr>
+<tr><th>PERMIT::GROUP_READ</th><td>Group members can read</td></tr>
+<tr><th>PERMIT::GROUP_WRITE</th><td>Group members can write</td></tr>
+<tr><th>PERMIT::HIDDEN</th><td>Recommends that the file is hidden from view by default</td></tr>
+<tr><th>PERMIT::INHERIT</th><td>Inherit permissions from parent folder and logical OR them with preset permission flags</td></tr>
 <tr><th>PERMIT::META</th><td>Synonym for <code>HIDDEN | PASSWORD | OFFLINE | NETWORK</code></td></tr>
-<tr><th>PERMIT::NETWORK</th><td>File is hosted on another machine.</td></tr>
-<tr><th>PERMIT::OFFLINE</th><td>File content for this networked file has not been cached on the local PC.</td></tr>
+<tr><th>PERMIT::NETWORK</th><td>File is hosted on another machine</td></tr>
+<tr><th>PERMIT::OFFLINE</th><td>File content for this networked file has not been cached on the local PC</td></tr>
 <tr><th>PERMIT::OTHERS</th><td>Synonym for <code>OTHERS_READ | OTHERS_WRITE | OTHERS_EXEC | OTHERS_DELETE</code></td></tr>
-<tr><th>PERMIT::OTHERS_DELETE</th><td>Others can delete.</td></tr>
-<tr><th>PERMIT::OTHERS_EXEC</th><td>Others can execute.</td></tr>
-<tr><th>PERMIT::OTHERS_READ</th><td>Others can read.</td></tr>
-<tr><th>PERMIT::OTHERS_WRITE</th><td>Others can write.</td></tr>
-<tr><th>PERMIT::PASSWORD</th><td>File is password protected.</td></tr>
-<tr><th>PERMIT::READ</th><td>User/Owner has read access.  This will not allow compiled code to be executed.</td></tr>
+<tr><th>PERMIT::OTHERS_DELETE</th><td>Others can delete</td></tr>
+<tr><th>PERMIT::OTHERS_EXEC</th><td>Others can execute</td></tr>
+<tr><th>PERMIT::OTHERS_READ</th><td>Others can read</td></tr>
+<tr><th>PERMIT::OTHERS_WRITE</th><td>Others can write</td></tr>
+<tr><th>PERMIT::PASSWORD</th><td>File is password protected</td></tr>
+<tr><th>PERMIT::READ</th><td>User/Owner has read access.  This will not allow compiled code to be executed</td></tr>
 <tr><th>PERMIT::USER</th><td>Synonym for <code>READ | WRITE | EXEC | DELETE</code></td></tr>
-<tr><th>PERMIT::USERID</th><td>Allows executables to run with a set user id.</td></tr>
+<tr><th>PERMIT::USERID</th><td>Allows executables to run with a set user id</td></tr>
 <tr><th>PERMIT::USER_EXEC</th><td>Synonym for <code>EXEC</code></td></tr>
 <tr><th>PERMIT::USER_READ</th><td>Synonym for <code>READ</code></td></tr>
 <tr><th>PERMIT::USER_WRITE</th><td>Synonym for <code>WRITE</code></td></tr>
-<tr><th>PERMIT::WRITE</th><td>User/Owner can write.</td></tr>
+<tr><th>PERMIT::WRITE</th><td>User/Owner can write</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="PMF"><h1>PMF Type</h1><p class="lead">Flags for ProcessMessages</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>PMF::ANY_SIGNAL</th><td>Return from WaitForObjects() when any monitored object is signalled.</td></tr>
 <tr><th>PMF::EVENT_LOOP</th><td>Set if this is the program's main event loop.  Should be accompanied with an infinite timeout.</td></tr>
@@ -1418,7 +1435,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
 <tr><th>AlphaPos</th><td><span class="text-nowrap">UINT8</span></td><td>Left shift/positional value for alpha</td></tr>
 <tr><th>BitsPerPixel</th><td><span class="text-nowrap">UINT8</span></td><td>Number of bits per pixel for this format.</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="struct-DateTime"><h1>DateTime Structure</h1><p class="lead">Generic structure for date-time management.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Year</th><td><span class="text-nowrap">INT16</span></td><td>Year</td></tr>
+<div class="docs-content" style="display:none;" id="struct-DateTime"><h1>DateTime Structure</h1><p class="lead">Generic structure for date-time management</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Year</th><td><span class="text-nowrap">INT16</span></td><td>Year</td></tr>
 <tr><th>Month</th><td><span class="text-nowrap">INT8</span></td><td>Month 1 to 12</td></tr>
 <tr><th>Day</th><td><span class="text-nowrap">INT8</span></td><td>Day 1 to 31</td></tr>
 <tr><th>Hour</th><td><span class="text-nowrap">INT8</span></td><td>Hour 0 to 23</td></tr>
@@ -1538,10 +1555,9 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
 <div class="docs-content" style="display:none;" id="struct-ResourceRecord"><h1>ResourceRecord Structure</h1><p class="lead">Unified resource management record</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Address</th><td><span class="text-nowrap">APTR</span></td><td>Direct pointer to the resource (optional, can rely on ResourceID instead)</td></tr>
 <tr><th>Manager</th><td><span class="text-nowrap">struct ResourceManager *</span></td><td>Reference to the resource manager for this record</td></tr>
 <tr><th>ResourceID</th><td><span class="text-nowrap">RESOURCEID</span></td><td>Unique identifier</td></tr>
-<tr><th>OwnerID</th><td><span class="text-nowrap">OBJECTID</span></td><td>Owner of the resource</td></tr>
+<tr><th>OwnerID</th><td><span class="text-nowrap">INT</span></td><td>Owner of the resource, could be another resource or object</td></tr>
 <tr><th>CollectOnUnlock</th><td><span class="text-nowrap">BOOL</span></td><td>Resource is locked; manager will collect immediately once unlocked</td></tr>
 <tr><th>Terminating</th><td><span class="text-nowrap">BOOL</span></td><td>A FreeResource() call currently owns the destruction path</td></tr>
-<tr><th>OwnerManagesChildren</th><td><span class="text-nowrap">BOOL</span></td><td>True if the current OwnerID manages its child resources</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-SystemState"><h1>SystemState Structure</h1><p class="lead">Returned by the GetSystemState() function.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Platform</th><td><span class="text-nowrap">CSTRING</span></td><td>String-based field indicating the user's platform.  Currently returns <code>Native</code>, <code>Windows</code>, <code>OSX</code> or <code>Linux</code>.</td></tr>
 <tr><th>IDL</th><td><span class="text-nowrap">CSTRING</span></td><td>The Core module's compressed IDL string</td></tr>
