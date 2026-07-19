@@ -245,7 +245,8 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    if (func->Call(L, *func, Obj) > 0) copyTV(L, Dest, L->top - 1);
    else { // An error occurred and is stored in L->CaughtError
       if (L->CaughtError > ERR::ExceptionThreshold) {
-         luaL_error(L, L->CaughtError, "Read failure: %s.%s: %s", cl->ClassName.c_str(), luaL_checkstring(L, 2), GetErrorMsg(L->CaughtError));
+         luaL_error(L, L->CaughtError, "Read failure: %s.%s: %s", cl->ClassName.c_str(), strdata(Key),
+            GetErrorMsg(L->CaughtError));
       }
 
       setnilV(Dest);

@@ -2000,7 +2000,16 @@ static ERR GET_Group(extFile *Self, int *Value)
 {
 #ifdef __unix__
    struct stat64 info;
-   if (fstat64(Self->Handle, &info) IS -1) return ERR::FileNotFound;
+
+   if (Self->Handle != -1) {
+      if (fstat64(Self->Handle, &info) IS -1) return convert_errno(errno, ERR::SystemCall);
+   }
+   else {
+      std::string_view path;
+      if (auto error = GET_ResolvedPath(Self, path); error != ERR::Okay) return error;
+      if (stat64(path.data(), &info) IS -1) return convert_errno(errno, ERR::SystemCall);
+   }
+
    *Value = info.st_gid;
    return ERR::Okay;
 #else
@@ -2705,7 +2714,14 @@ static ERR GET_User(extFile *Self, int *Value)
 #ifdef __unix__
    struct stat64 info;
 
-   if (fstat64(Self->Handle, &info) IS -1) return ERR::FileNotFound;
+   if (Self->Handle != -1) {
+      if (fstat64(Self->Handle, &info) IS -1) return convert_errno(errno, ERR::SystemCall);
+   }
+   else {
+      std::string_view path;
+      if (auto error = GET_ResolvedPath(Self, path); error != ERR::Okay) return error;
+      if (stat64(path.data(), &info) IS -1) return convert_errno(errno, ERR::SystemCall);
+   }
 
    *Value = info.st_uid;
    return ERR::Okay;

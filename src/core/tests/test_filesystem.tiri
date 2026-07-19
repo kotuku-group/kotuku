@@ -2,6 +2,8 @@
 Tests for file functions
 --]]
 
+extern logOutput
+
 glPath = 'kotuku:'
 glTempRoot = 'temp:filesystem_tests/'
 
@@ -14,17 +16,17 @@ function ensureFolder(Path)
    end
 end
 
-function resetPath(Path)
+function resetPath(Path:str)
    mSys.DeleteFile(Path)
 end
 
-function writeFile(Path, Content)
+function writeFile(Path:str, Content:str)
    file = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
    file.acWrite(Content, #Content)
    file.free()
 end
 
-function readFile(Path)
+function readFile(Path:str):str
    file = obj.new('file', { path=Path })
    buffer = array<byte, file.size>
    err = mSys.ReadFileToBuffer(Path, buffer)
@@ -134,6 +136,34 @@ end
 
    fl.acSeek(SEEK_START, 0)
    fl.acWrite(buf:reverse())
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(linux_platform=true)
+function PathOnlyFileOwnership()
+   ownership_path = glTempRoot .. 'ownership.txt'
+   writeFile(ownership_path, 'ownership')
+
+   path_file = obj.new('file', { path=ownership_path })
+   open_file = obj.new('file', { path=ownership_path, flags=FL_READ })
+
+   assert(path_file.user is open_file.user, 'A path-only File should report the same user ID as an open File.')
+   assert(path_file.group is open_file.group, 'A path-only File should report the same group ID as an open File.')
+
+   missing_path = glTempRoot .. 'missing-ownership.txt'
+   writeFile(missing_path, 'ownership')
+   missing_file = obj.new('file', { path=missing_path })
+   err = mSys.DeleteFile(missing_path)
+   assert(err is ERR_Okay, 'Failed to remove ownership test file: ' .. mSys.GetErrorMsg(err))
+   try
+      print(missing_file.user)
+   except ex
+      assert(ex.message:startsWith('Read failure: File.user:'),
+         'A failed field read should identify File.user, got: ' .. ex.message)
+   success
+      error('Reading User for a missing file should fail.')
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -550,7 +580,7 @@ end
    out.free()
 
    -- Pump the message queue so inotify / ReadDirectoryChangesW events are delivered.
-   for i=0,20 do
+   for {0 to 20} do
       processing.sleep(0.05)
       if #events > 0 then break end
    end
