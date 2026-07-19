@@ -139,7 +139,7 @@ static int action_activate(lua_State *Lua)
 
    OBJECTPTR obj;
    if (auto direct = direct_object_ptr(obj_ref)) error = Action(AC::Activate, direct, nullptr);
-   else if (auto error = access_object(obj_ref, obj); error IS ERR::Okay) {
+   else if (error = access_object(obj_ref, obj); error IS ERR::Okay) {
       error = Action(AC::Activate, obj, nullptr);
       release = true;
    }
