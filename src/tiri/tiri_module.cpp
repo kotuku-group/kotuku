@@ -1109,13 +1109,17 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             if (auto direct = direct_object_ptr(obj)) {
                ((OBJECTPTR *)(buffer + j))[0] = direct;
             }
-            else if (auto ptr_obj = (OBJECTPTR)access_object(obj)) {
-               ((OBJECTPTR *)(buffer + j))[0] = ptr_obj;
-               release_object(obj);
-            }
             else {
-               log.warning("Unable to resolve object pointer for #%d.", obj->uid);
-               ((OBJECTPTR *)(buffer + j))[0] = nullptr;
+               OBJECTPTR ptr_obj;
+               if (auto error = access_object(obj, ptr_obj); error IS ERR::Okay) {
+                  ((OBJECTPTR *)(buffer + j))[0] = ptr_obj;
+                  release_object(obj);
+               }
+               else {
+                  // Referenced object probably does not exist
+                  ErrorMsg = std::format("Unable to resolve object #{}: {}", obj->uid, GetErrorMsg(error));
+                  return error;
+               }
             }
 
             arg_values[in] = buffer + j;

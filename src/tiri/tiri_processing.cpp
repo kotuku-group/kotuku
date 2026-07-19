@@ -268,7 +268,8 @@ static int processing_flush(lua_State *Lua)
             lua_rawgeti(Lua, LUA_REGISTRYINDEX, ref);
             if (lua_type(Lua, -1) IS LUA_TOBJECT) {
                auto object = lua_toobject(Lua, -1);
-               if (auto obj = access_object(object)) {
+               OBJECTPTR obj;
+               if (access_object(object, obj) IS ERR::Okay) {
                   obj->clearFlag(NF::SIGNALLED);
                   release_object(object);
                }

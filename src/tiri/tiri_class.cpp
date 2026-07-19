@@ -878,7 +878,8 @@ static ERR run_script(extTiri *Self)
 
                      if (args->Address) {
                         GCobject *obj = push_object(Self->Lua, (OBJECTPTR)args->Address);
-                        if ((r < release_list.size()) and (access_object(obj))) {
+                        OBJECTPTR ptr_obj;
+                        if ((r < release_list.size()) and (access_object(obj, ptr_obj) IS ERR::Okay)) {
                            release_list[r++] = obj;
                         }
                      }
