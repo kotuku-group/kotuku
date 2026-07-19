@@ -150,7 +150,7 @@ end
 
 function pHashString(Hash:array):str
    local result = ''
-   for i = 0, #Hash - 1 do result ..= string.format('%d', Hash[i]) end
+   for i = 0, #Hash - 1 do result ..= string.format('%d,', Hash[i]) end
    return result
 end
 
@@ -278,7 +278,7 @@ end
 @Test global function ContourGradient() pHashTestSVG('gradients/contour-gradient.svg', array<byte> { 0x76,0x97,0xa3,0x8d,0x18,0xb0,0x7c,0x43 }, 6, true) end
 @Test global function MeshGradient() hashTestSVG('gradients/meshgradient.svg', 0x647d054f) end
 @Test global function DiffusionGradient() hashTestSVG('gradients/diffusiongradient.svg', 0xafe6ee58) end
-@Test global function MeshGradientInkscape() hashTestSVG('gradients/meshgradient_inkscape.svg', 0xeefbdff2) end
+@Test global function MeshGradientInkscape() pHashTestSVG('gradients/meshgradient_inkscape.svg', array<byte> { 110,238,145,49,230,131,1,110 }, 6, true) end
 @Test global function W3Gradients01() hashTestSVG('gradients/w3-pservers-grad-01-b.svg', 0xd6ab0e01) end
 @Test global function W3Gradients02() hashTestSVG('gradients/w3-pservers-grad-02-b.svg', 0xe8e84124) end
 @Test global function W3Gradients04() hashTestSVG('gradients/w3-pservers-grad-04-b.svg', 0x11d0611e) end
