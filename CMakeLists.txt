@@ -169,12 +169,14 @@ if (SYSTEM_ENDIAN_STYLE EQUAL 0) # Little endian (Intel)
    set (LITTLE_ENDIAN TRUE)
 endif ()
 
+set (KOTUKU_OPENSSL_MINIMUM_VERSION 1.1.1)
+
 if (NOT DISABLE_SSL)
    if (WIN32)
       # Win32 SSL support is supported natively
    else ()
       set (OPENSSL_USE_STATIC_LIBS TRUE)
-      include (FindOpenSSL)
+      find_package (OpenSSL ${KOTUKU_OPENSSL_MINIMUM_VERSION} QUIET)
       if (NOT OpenSSL_FOUND)
          set (DISABLE_SSL TRUE)
       else ()
@@ -1223,16 +1225,7 @@ if (KOTUKU_INSTALL)
    endif ()
 
    if (NOT DISABLE_SSL)
-      if (WIN32)
-         install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/ssl/" DESTINATION "${CONFIG_TARGET}/ssl"
-            FILES_MATCHING
-               PATTERN "ca-bundle.crt"
-               PATTERN "localhost.pem"
-               PATTERN "localhost.p12"
-               PATTERN "localhost-password.p12")
-      else ()
-         install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/ssl/" DESTINATION "${CONFIG_TARGET}/ssl")
-      endif ()
+      install (FILES "${PROJECT_SOURCE_DIR}/data/ssl/ca-bundle.crt" DESTINATION "${CONFIG_TARGET}/ssl")
    endif ()
    if (NOT DISABLE_FONT)
       install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/fonts/" DESTINATION "${CONFIG_TARGET}/fonts")

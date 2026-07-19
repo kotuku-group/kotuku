@@ -87,76 +87,75 @@ target_link_libraries (${MOD} PRIVATE ${NETWORK_LIBS})
 
 target_compile_definitions (${MOD} PRIVATE "MAX_ALIASES=64" "MAX_ADDRESSES=32" "HAVE_CONFIG_H=1")
 
-# SSL Certificate Generation
-find_program(MKCERT_EXECUTABLE mkcert PATHS ${CMAKE_SOURCE_DIR}/tools ENV PATH)
+# SSL test certificate generation
 find_program(OPENSSL_EXECUTABLE openssl)
 
-set(OPENSSL_RSA_TRADITIONAL_FLAG)
-if(OPENSSL_EXECUTABLE)
-   execute_process(
-      COMMAND "${OPENSSL_EXECUTABLE}" rsa -help
-      OUTPUT_VARIABLE OPENSSL_RSA_HELP
-      ERROR_VARIABLE OPENSSL_RSA_HELP
-      RESULT_VARIABLE OPENSSL_RSA_HELP_RESULT)
-   if(OPENSSL_RSA_HELP MATCHES "(^|[ \\r\\n])-traditional([ \\r\\n]|$)")
-      set(OPENSSL_RSA_TRADITIONAL_FLAG -traditional)
-   endif()
-endif()
+if (OPENSSL_EXECUTABLE)
+   execute_process (
+      COMMAND "${OPENSSL_EXECUTABLE}" version
+      RESULT_VARIABLE OPENSSL_EXECUTABLE_VERSION_RESULT
+      OUTPUT_VARIABLE OPENSSL_EXECUTABLE_VERSION_OUTPUT
+      ERROR_VARIABLE OPENSSL_EXECUTABLE_VERSION_ERROR
+      OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-set(SSL_DATA_DIR "${CMAKE_SOURCE_DIR}/data/ssl")
-set(LOCALHOST_PEM "${SSL_DATA_DIR}/localhost.pem")
-set(LOCALHOST_KEY_PEM "${SSL_DATA_DIR}/localhost-key.pem")
-set(LOCALHOST_RSA_KEY_PEM "${SSL_DATA_DIR}/localhost-rsa-key.pem")
-set(LOCALHOST_EC_PEM "${SSL_DATA_DIR}/localhost-ec.pem")
-set(LOCALHOST_EC_KEY_PEM "${SSL_DATA_DIR}/localhost-ec-key.pem")
-set(LOCALHOST_P12 "${SSL_DATA_DIR}/localhost.p12")
-set(LOCALHOST_PASSWORD_P12 "${SSL_DATA_DIR}/localhost-password.p12")
-set(MKCERT_PEM "${SSL_DATA_DIR}/localhost+2.pem")
-set(MKCERT_KEY_PEM "${SSL_DATA_DIR}/localhost+2-key.pem")
+   if ((NOT OPENSSL_EXECUTABLE_VERSION_RESULT EQUAL 0) OR
+      (NOT OPENSSL_EXECUTABLE_VERSION_OUTPUT MATCHES "^OpenSSL[ \t]+([0-9]+\\.[0-9]+\\.[0-9]+)"))
+      message (STATUS "The openssl executable is unavailable or did not report a supported version")
+      set (OPENSSL_EXECUTABLE "")
+   elseif (CMAKE_MATCH_1 VERSION_LESS KOTUKU_OPENSSL_MINIMUM_VERSION)
+      message (STATUS
+         "The openssl executable is version ${CMAKE_MATCH_1}; "
+         "version ${KOTUKU_OPENSSL_MINIMUM_VERSION} or later is required")
+      set (OPENSSL_EXECUTABLE "")
+   endif ()
+endif ()
 
-if(MKCERT_EXECUTABLE AND OPENSSL_EXECUTABLE)
-   # Custom command to generate SSL certificates only when they don't exist
-   add_custom_command(
-      OUTPUT "${LOCALHOST_PEM}" "${LOCALHOST_KEY_PEM}" "${LOCALHOST_RSA_KEY_PEM}" "${LOCALHOST_P12}"
-             "${LOCALHOST_PASSWORD_P12}" "${LOCALHOST_EC_PEM}" "${LOCALHOST_EC_KEY_PEM}"
-      COMMAND ${CMAKE_COMMAND} -E make_directory "${SSL_DATA_DIR}"
-      COMMAND ${CMAKE_COMMAND} -E remove -f "${LOCALHOST_PEM}" "${LOCALHOST_KEY_PEM}" "${LOCALHOST_P12}"
-              "${LOCALHOST_PASSWORD_P12}" "${LOCALHOST_RSA_KEY_PEM}" "${LOCALHOST_EC_PEM}"
-              "${LOCALHOST_EC_KEY_PEM}" "${MKCERT_PEM}" "${MKCERT_KEY_PEM}"
-      COMMAND ${CMAKE_COMMAND} -E chdir "${SSL_DATA_DIR}" "${MKCERT_EXECUTABLE}" localhost 127.0.0.1 ::1
-      COMMAND ${CMAKE_COMMAND} -E rename "${MKCERT_PEM}" "${LOCALHOST_PEM}"
-      COMMAND ${CMAKE_COMMAND} -E rename "${MKCERT_KEY_PEM}" "${LOCALHOST_KEY_PEM}"
-      COMMAND "${OPENSSL_EXECUTABLE}" rsa -in "${LOCALHOST_KEY_PEM}" ${OPENSSL_RSA_TRADITIONAL_FLAG} -out "${LOCALHOST_RSA_KEY_PEM}"
-      COMMAND "${OPENSSL_EXECUTABLE}" ecparam -name prime256v1 -genkey -noout -out "${LOCALHOST_EC_KEY_PEM}"
-      COMMAND "${OPENSSL_EXECUTABLE}" req -new -x509 -key "${LOCALHOST_EC_KEY_PEM}" -out "${LOCALHOST_EC_PEM}"
-              -days 3650 -subj "/CN=localhost"
-      COMMAND "${OPENSSL_EXECUTABLE}" pkcs12 -export -out "${LOCALHOST_P12}"
-              -inkey "${LOCALHOST_KEY_PEM}" -in "${LOCALHOST_PEM}" -passout pass:
-      COMMAND "${OPENSSL_EXECUTABLE}" pkcs12 -export -out "${LOCALHOST_PASSWORD_P12}"
-              -inkey "${LOCALHOST_KEY_PEM}" -in "${LOCALHOST_PEM}" -passout pass:kotuku-test
-      COMMENT "Generating SSL certificates for localhost testing"
-      VERBATIM
-   )
+set (SSL_FIXTURE_DIR "${CMAKE_CURRENT_BINARY_DIR}/ssl")
+set (SSL_FIXTURE_GENERATOR "${CMAKE_CURRENT_SOURCE_DIR}/generate_ssl_certificates.cmake")
+set (LOCALHOST_PEM "${SSL_FIXTURE_DIR}/localhost.pem")
+set (LOCALHOST_KEY_PEM "${SSL_FIXTURE_DIR}/localhost-key.pem")
+set (LOCALHOST_RSA_KEY_PEM "${SSL_FIXTURE_DIR}/localhost-rsa-key.pem")
+set (LOCALHOST_EC_PEM "${SSL_FIXTURE_DIR}/localhost-ec.pem")
+set (LOCALHOST_EC_KEY_PEM "${SSL_FIXTURE_DIR}/localhost-ec-key.pem")
+set (LOCALHOST_P12 "${SSL_FIXTURE_DIR}/localhost.p12")
+set (LOCALHOST_PASSWORD_P12 "${SSL_FIXTURE_DIR}/localhost-password.p12")
+set (SSL_FIXTURES
+   "${LOCALHOST_PEM}"
+   "${LOCALHOST_KEY_PEM}"
+   "${LOCALHOST_RSA_KEY_PEM}"
+   "${LOCALHOST_EC_PEM}"
+   "${LOCALHOST_EC_KEY_PEM}"
+   "${LOCALHOST_P12}"
+   "${LOCALHOST_PASSWORD_P12}")
 
-   # Custom target that depends on the certificate files
-   add_custom_target(generate_ssl_certificates DEPENDS "${LOCALHOST_PEM}" "${LOCALHOST_KEY_PEM}"
-      "${LOCALHOST_RSA_KEY_PEM}" "${LOCALHOST_EC_PEM}" "${LOCALHOST_EC_KEY_PEM}" "${LOCALHOST_P12}"
-      "${LOCALHOST_PASSWORD_P12}")
+if (NOT DISABLE_SSL AND (WIN32 OR OPENSSL_FOUND) AND OPENSSL_EXECUTABLE)
+   add_custom_target (generate_ssl_certificates ALL
+      COMMAND ${CMAKE_COMMAND}
+         "-DOPENSSL_EXECUTABLE=${OPENSSL_EXECUTABLE}"
+         "-DOUTPUT_DIR=${SSL_FIXTURE_DIR}"
+         -P "${SSL_FIXTURE_GENERATOR}"
+      BYPRODUCTS ${SSL_FIXTURES} "${SSL_FIXTURE_DIR}/fixture-version.txt"
+      DEPENDS "${SSL_FIXTURE_GENERATOR}"
+      COMMENT "Checking Network SSL test certificates"
+      VERBATIM)
 
-   # Make the network module depend on certificate generation
-   add_dependencies(${MOD} generate_ssl_certificates)
+   add_dependencies (${MOD} generate_ssl_certificates)
 
-   message(STATUS "SSL certificate generation enabled (mkcert and openssl found)")
-else()
-   if(NOT MKCERT_EXECUTABLE)
-      message(STATUS "mkcert not found - SSL certificates will not be auto-generated")
-      message(STATUS "Install mkcert from: https://github.com/FiloSottile/mkcert")
-   endif()
+   if (KOTUKU_INSTALL)
+      if (WIN32)
+         install (FILES "${LOCALHOST_PEM}" "${LOCALHOST_P12}" "${LOCALHOST_PASSWORD_P12}"
+            DESTINATION "${CONFIG_TARGET}/ssl")
+      else ()
+         install (FILES ${SSL_FIXTURES} DESTINATION "${CONFIG_TARGET}/ssl")
+      endif ()
+   endif ()
 
-   if(NOT OPENSSL_EXECUTABLE)
-      message(STATUS "openssl not found - SSL certificates will not be auto-generated")
-   endif()
-endif()
+   message (STATUS "Network SSL test certificate generation enabled")
+elseif (NOT DISABLE_SSL AND (WIN32 OR OPENSSL_FOUND) AND BUILD_TESTS)
+   message (FATAL_ERROR "The Network SSL tests require the openssl executable to generate certificate fixtures")
+elseif (NOT DISABLE_SSL AND (WIN32 OR OPENSSL_FOUND))
+   message (STATUS "openssl not found - Network SSL test certificates will not be generated")
+endif ()
 
 set (NETWORK_TESTS
    bind_address dns_parallel server_io client_server error_handling ipv6 concurrency ssl iocp_pipeline

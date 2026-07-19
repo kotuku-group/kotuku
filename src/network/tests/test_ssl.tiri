@@ -541,6 +541,11 @@ function customCertificateFilesAvailable(CertPath, KeyPath)
    return true
 end
 
+function requireCustomCertificateFile(CertPath)
+   assert(mSys.AnalysePath(CertPath) is ERR_Okay,
+      'Required PKCS#12 test certificate is not installed: ' .. CertPath)
+end
+
 function runCustomCertificateHandshake(TestName, CertPath, KeyPath, KeyPassword)
    custom_cert_test_complete = false
    handshake_successful = false
@@ -607,7 +612,7 @@ end
 @Test(priority=40); @Requires(ssl=true)
 function CustomCertificate()
    cert_path = 'config:ssl/localhost.p12'
-   if not customCertificateFilesAvailable(cert_path, nil) then return end
+   requireCustomCertificateFile(cert_path)
 
    runCustomCertificateHandshake('CustomCert', cert_path, nil, nil)
 end
@@ -615,7 +620,7 @@ end
 @Test(priority=41); @Requires(ssl=true)
 function PasswordProtectedCustomCertificate()
    cert_path = 'config:ssl/localhost-password.p12'
-   if not customCertificateFilesAvailable(cert_path, nil) then return end
+   requireCustomCertificateFile(cert_path)
 
    runCustomCertificateHandshake('PasswordCert', cert_path, nil, 'kotuku-test')
 end
@@ -623,7 +628,7 @@ end
 @Test(priority=42); @Requires(ssl=true)
 function PasswordProtectedCustomCertificateRejectsWrongPassword()
    cert_path = 'config:ssl/localhost-password.p12'
-   if not customCertificateFilesAvailable(cert_path, nil) then return end
+   requireCustomCertificateFile(cert_path)
 
    glPort++
 
