@@ -347,7 +347,7 @@ struct lua_ref {
    int Ref;
 };
 
-OBJECTPTR access_object(GCobject *);
+ERR access_object(GCobject *, OBJECTPTR &);
 inline bool object_is_dead(GCobject *Object)
 {
    return (not Object->uid) or (Object->is_pinned() and Object->ptr->collecting());

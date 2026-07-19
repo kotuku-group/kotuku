@@ -47,7 +47,8 @@ function crcTest(Name:str, Path:str, ExpectedCRC:any, TimeLimit:num)
          bmp = renderDocToBitmap(glDocFolder .. Path, res)
          timeTaken = (mSys.PreciseTime() - startTime) / 1000000
 
-         bmp_crc = mSys.GenCRC32(0, bmp.data, bmp.size)
+         bmpdata = bmp.data
+         bmp_crc = mSys.GenCRC32(0, bmpdata, #bmpdata)
          if crc is 0 then
             saveBitmap(bmp, f'{Name}_{res}')
             error(f'File "{Path}" @ page width {res} is yet to be assigned a checksum, current CRC is {string.format("0x%.8x", bmp_crc)}')
@@ -67,7 +68,8 @@ function crcTest(Name:str, Path:str, ExpectedCRC:any, TimeLimit:num)
    bmp = renderDocToBitmap(glDocFolder .. Path, 1024)
    timeTaken = (mSys.PreciseTime() - startTime) / 1000000
 
-   crc = mSys.GenCRC32(0, bmp.data, bmp.size)
+   bmpdata = bmp.data
+   crc = mSys.GenCRC32(0, bmpdata, #bmpdata)
    if ExpectedCRC is 0 then
       saveBitmap(bmp, Name)
       error(f'The {Name} test is yet to be assigned a checksum, current CRC is {string.format("0x%.8x", crc)}')

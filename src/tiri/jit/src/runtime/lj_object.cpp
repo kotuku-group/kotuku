@@ -322,16 +322,17 @@ extern "C" void bc_object_setfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
       func = found;
    }
 
-   if (auto pobj = access_object(Obj)) {
+   OBJECTPTR pobj;
+   if (auto error = access_object(Obj, pobj); !error) {
       auto stack_idx = int(val_ptr - L->base) + 1;
-      ERR error = func->Call(L, pobj, func->Field, stack_idx);
+      error = func->Call(L, pobj, func->Field, stack_idx);
       L->base = saved_base;
       L->top = saved_top;
       release_object(Obj);
 
       if (error >= ERR::ExceptionThreshold) luaL_error(L, error);
    }
-   else luaL_error(L, ERR::AccessObject);
+   else luaL_error(L, error);
 }
 
 //********************************************************************************************************************

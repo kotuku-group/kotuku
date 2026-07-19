@@ -112,33 +112,46 @@ APTR get_meta(lua_State *Lua, int Arg, CSTRING MetaTable)
 //********************************************************************************************************************
 // Returns a locked pointer to an object if it still exists.  Weak-pinned wrappers retain a safe header pointer between
 // accesses, avoiding repeated global resource-table lookups without delaying object termination.
+//
+// The optional Error parameter reports why access failed so that callers can distinguish a genuine locking problem
+// (ERR::AccessObject) from an object that has been terminated (ERR::DoesNotExist) or is scheduled for collection
+// (ERR::MarkedForDeletion).
 
-OBJECTPTR access_object(GCobject *Object)
+ERR access_object(GCobject *Object, OBJECTPTR &ObjectPtr)
 {
+   ObjectPtr = nullptr;
+   ERR error = ERR::AccessObject; // Default reason if access fails
+
    if (Object->accesscount) {
       Object->accesscount++;
-      return Object->ptr;
+      ObjectPtr = Object->ptr;
+      return ERR::Okay;
    }
 
-   if (not Object->uid) return nullptr;
+   if (not Object->uid) {
+      // The wrapper has already observed object termination in a previous access attempt.
+      return ERR::DoesNotExist;
+   }
 
    if (Object->is_pinned()) {
       if (Object->ptr->collecting()) {
+         // NF::FREE means destruction is in progress; FREE_ON_UNLOCK alone means collection is scheduled.
+         error = Object->ptr->terminating() ? ERR::DoesNotExist : ERR::MarkedForDeletion;
          Object->ptr->unpinWeak();
          Object->set_pinned(false);
          Object->ptr = nullptr;
          Object->uid = 0;
-         return nullptr;
+         return error;
       }
-      if (auto error = Object->ptr->lock(); error != ERR::Okay) {
+      if ((error = Object->ptr->lock()) != ERR::Okay) {
          kt::Log(__FUNCTION__).warning("#%d lock() failed: %s, Queue: %d", Object->uid, GetErrorMsg(error),
             Object->ptr->Queue.load());
-         return nullptr;
+         return error;
       }
    }
    else {
       OBJECTPTR obj_ptr;
-      if (auto error = AccessObject(Object->uid, 5000, &obj_ptr); !error) {
+      if (!(error = AccessObject(Object->uid, 5000, &obj_ptr))) {
          Object->ptr = obj_ptr;
          Object->set_locked(true);
          Object->ptr->pinWeak();
@@ -151,9 +164,13 @@ OBJECTPTR access_object(GCobject *Object)
       }
    }
 
-   if (Object->ptr) Object->accesscount++;
+   if (Object->ptr) {
+      Object->accesscount++;
+      ObjectPtr = Object->ptr;
+      return ERR::Okay;
+   }
 
-   return Object->ptr;
+   return error;
 }
 
 void release_object(GCobject *Object)
