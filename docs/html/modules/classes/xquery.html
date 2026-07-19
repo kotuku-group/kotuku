@@ -90,8 +90,7 @@ if (query.ok()) {
 <p>This callback is invoked when an XQuery expression refers to a variable that has not been declared in the XQuery expression or XQuery module.  Variable resolution precedence is:</p>
 <ul>
 <li>Evaluator-local bindings</li>
-<li>
-<a data-bs-toggle="tooltip" title="Set XQuery variable values." href="#ta-SetKey">SetKey()</a> string variables</li>
+<li><a data-bs-toggle="tooltip" title="Set XQuery variable values." href="#ta-SetKey">SetKey()</a> string variables</li>
 <li>Declared/internal XQuery variables</li>
 <li>This callback for otherwise unresolved names</li>
 </ul>
@@ -162,7 +161,7 @@ if (query.ok()) {
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">NotFound</th><td>A search routine in this function failed</td></tr>
-<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
+<tr><th class="col-md-1">AllocMemory</th><td>Failed to create a new memory block</td></tr>
 <tr><th class="col-md-1">NotInitialised</th><td>The resource has not been initialised</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>

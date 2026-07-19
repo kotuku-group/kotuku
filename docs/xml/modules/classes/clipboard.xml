@@ -201,8 +201,7 @@
       <description>
 <p>When the clipboard is in drag-and-drop mode, applications can request source data by sending a <code>DATA::REQUEST</code> to <action>DataFeed</action>.  The request is forwarded to the callback stored in RequestHandler, which must be supplied by the source application.</p>
 <p>The callback uses this signature:</p>
-<p>
-<code>ERR RequestHandler(*Clipboard, OBJECTPTR Requester, int Item, BYTE Datatypes[4])</code></p>
+<p><code>ERR RequestHandler(*Clipboard, OBJECTPTR Requester, int Item, BYTE Datatypes[4])</code></p>
 <p>The callback is expected to send a <code>DATA::RECEIPT</code> to the object referenced by <code>Requester</code>.  The receipt must cover <code>Item</code> and use one of the preferred datatypes supplied in <code>Datatypes</code>.  If the request cannot be fulfilled, the callback should return <code>ERR::NoSupport</code>.</p>
       </description>
     </field>

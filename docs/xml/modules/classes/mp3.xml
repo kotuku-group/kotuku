@@ -1,0 +1,48 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>MP3</name>
+    <type>class</type>
+    <module>MP3</module>
+    <fileExtension>mp3</fileExtension>
+    <fileDescription>MP3 Audio Stream</fileDescription>
+    <version>1</version>
+    <id>d961bed4</id>
+    <idstring>MP3</idstring>
+    <category>Audio</category>
+    <copyright>Paul Manias © 2006-2026</copyright>
+    <source>
+      <file>mp3.cpp</file>
+    </source>
+  </info>
+
+  <actions>
+    <action>
+      <name>Read</name>
+      <comment>Reads raw data information from objects.</comment>
+      <prototype>ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acRead(Buffer:str, Length:num)</tiriPrototype>
+      <input>
+        <param type="APTR" name="Buffer">Points a buffer that will receive the data.</param>
+        <param type="INT" name="Length">The total number of bytes to read from the object.  This value cannot exceed the size of the Buffer.</param>
+        <param type="INT" name="Result">The Read action will write this parameter with the total number of bytes read into the Buffer.</param>
+      </input>
+    </action>
+
+    <action>
+      <name>Seek</name>
+      <comment>Move the read/write marker to a new position.</comment>
+      <prototype>ERR acSeek(*Object, DOUBLE Offset, INT Position)</prototype>
+      <tiriPrototype>err = Object.acSeek(Offset:num, Position:SEEK)</tiriPrototype>
+      <input>
+        <param type="DOUBLE" name="Offset">The desired offset to seek to, relative to the Position parameter.</param>
+        <param type="POS" name="Position">The position that defines the starting point for Offset.</param>
+      </input>
+    </action>
+
+  </actions>
+  <structs>
+  </structs>
+</book>

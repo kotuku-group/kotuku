@@ -333,7 +333,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <error code="Okay">Operation successful.</error>
       <error code="TimeOut">Function timed-out before successful completion</error>
       <error code="AccessObject">Attempting to lock an object failed</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+      <error code="AllocMemory">Failed to create a new memory block</error>
       <error code="SystemCall">A call to the host system has failed</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
@@ -837,8 +837,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
 }
 </pre>
 <p>All processable events are referenced in the <st>InputEvent</st> structure in the <code>Events</code> parameter.</p>
-<p>
-<code>JET</code> constants are as follows and take note of <code>CROSSED_IN</code> and <code>CROSSED_OUT</code> which are software generated and not a device event:</p>
+<p><code>JET</code> constants are as follows and take note of <code>CROSSED_IN</code> and <code>CROSSED_OUT</code> which are software generated and not a device event:</p>
 <types lookup="JET"/>
 <p>The <code>JTYPE</code> values for the <code>Flags</code> field are as follows.  Note that these flags also serve as input masks for the SubscribeInput() function, so to receive a message of the given type the appropriate <code>JTYPE</code> flag must have been set in the original subscription call.</p>
 <types lookup="JTYPE"/>

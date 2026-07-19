@@ -36,11 +36,9 @@
 </tbody></table></div></div>
 <p>Use the SetSSL() function to adjust the SSL capabilities of a NetSocket client object.  Server-side SSL is configured on <a href="classes/netserver.html">NetServer</a> before initialisation with the <code>SSL</code> flag and certificate fields.  The following commands are currently available:</p>
 <ul>
-<li>
-<b>EnableSSL</b>: Starts an SSL handshaking process with the remote server.  Does nothing if the socket is already
+<li><b>EnableSSL</b>: Starts an SSL handshaking process with the remote server.  Does nothing if the socket is already
 in SSL mode.</li>
-<li>
-<b>DisableSSL</b>: Disconnects the SSL connection and reverts to unencrypted mode.</li>
+<li><b>DisableSSL</b>: Disconnects the SSL connection and reverts to unencrypted mode.</li>
 </ul>
 <p>If a failure occurs when executing a command, the execution of all further commands is aborted and the error code is returned immediately.</p>
 <p>SetSSL() can also be used to check if SSL is supported in the current build, in which case <code>ERR::NoSecureSockets</code> will be the return value if all other arguments are <code>NULL</code>.</p>

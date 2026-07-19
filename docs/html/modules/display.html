@@ -218,7 +218,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">TimeOut</th><td>Function timed-out before successful completion</td></tr>
 <tr><th class="col-md-1">AccessObject</th><td>Attempting to lock an object failed</td></tr>
-<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
+<tr><th class="col-md-1">AllocMemory</th><td>Failed to create a new memory block</td></tr>
 <tr><th class="col-md-1">SystemCall</th><td>A call to the host system has failed</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>
@@ -450,8 +450,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
 }
 </pre>
 <p>All processable events are referenced in the <a data-toggle="tooltip" title="" href="?page=struct-InputEvent">InputEvent</a> structure in the <code>Events</code> parameter.</p>
-<p>
-<code>JET</code> constants are as follows and take note of <code>CROSSED_IN</code> and <code>CROSSED_OUT</code> which are software generated and not a device event:</p>
+<p><code>JET</code> constants are as follows and take note of <code>CROSSED_IN</code> and <code>CROSSED_OUT</code> which are software generated and not a device event:</p>
 <table class="table"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody><tr><th>JET::ABS_XY</th><td>The X, Y values are defined as absolute coordinates, relative to the top-left of the display</td></tr>
 <tr><th>JET::BUTTON_1</th><td>Left mouse button; XBox A button, PS square button.  Value is pressure sensitive, ranging between 0 - 1.0 (0 is released, 1.0 is fully depressed)</td></tr>
 <tr><th>JET::BUTTON_10</th><td>Non-specific button assignment</td></tr>

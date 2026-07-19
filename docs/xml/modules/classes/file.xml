@@ -302,8 +302,7 @@
       </input>
       <description>
 <p>Reads one line from the file into a provided string buffer, which is required in the Result argument.  Reading a line will increase the <fl>Position</fl> field by the amount of bytes read from the file.  You must have set the <code>FL::READ</code> bit in the <fl>Flags</fl> field when you initialised the file, or the call will fail.</p>
-<p>
-<code>ERR::NoData</code> is returned once all lines have been read.</p>
+<p><code>ERR::NoData</code> is returned once all lines have been read.</p>
       </description>
       <result>
         <error code="Okay">The file information was read into the buffer.</error>
@@ -413,7 +412,7 @@
         <error code="Okay">Operation successful.</error>
         <error code="Args">Invalid arguments passed to function</error>
         <error code="NoSupport">Operation not supported</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>non-blocking, mutates-object, callback-held</tags>

@@ -222,7 +222,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Retry</th><td>Please recall the method using a larger output buffer.</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
-<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
+<tr><th class="col-md-1">AllocMemory</th><td>Failed to create a new memory block</td></tr>
 <tr><th class="col-md-1">BufferOverflow</th><td>The output buffer is not large enough to contain the compressed data.</td></tr>
 <tr><th class="col-md-1">InvalidState</th><td>Object was in an incorrect state for the operation</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
@@ -316,7 +316,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
 <p>When there is no more data in the decompression stream or if an error has occurred, the client must call <a data-bs-toggle="tooltip" title="Must be called at the end of the decompression process." href="#tm-DecompressStreamEnd">DecompressStreamEnd()</a>.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
+<tr><th class="col-md-1">AllocMemory</th><td>Failed to create a new memory block</td></tr>
 <tr><th class="col-md-1">BufferOverflow</th><td>The output buffer is not large enough.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 <tr><th class="col-md-1">Function</th><td>A function call failed</td></tr>

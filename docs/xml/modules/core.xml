@@ -542,8 +542,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
 <p>This function will overwrite any destination file(s) that already exist.</p>
 <p>The Source parameter should always clarify the type of location that is being copied.  For example if copying a folder, a forward slash must terminate the string or it will be assumed that a file is the source.</p>
 <p>The Callback parameter can be set with a function that matches this prototype:</p>
-<p>
-<code>INT Callback(FileFeedback *)</code></p>
+<p><code>INT Callback(FileFeedback *)</code></p>
 <p>For each file that is processed during the copy operation, a &amp;FileFeedback structure is passed that describes the source file and its target.  The callback must return a constant value that can potentially affect file processing. Valid values are <code>FFR::Okay</code> (copy the file), <code>FFR::Skip</code> (do not copy the file) and <code>FFR::Abort</code> (abort the process completely and return <code>ERR::Cancelled</code> as an error code).</p>
     </description>
     <result type="ERR">
@@ -1139,8 +1138,7 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
 <p>This function will overwrite the destination location if it already exists.</p>
 <p>The <code>Source</code> argument should always clarify the type of location that is being copied - e.g. if you are copying a folder, you must specify a forward slash at the end of the string or the function will assume that you are moving a file.</p>
 <p>The <code>Callback</code> parameter can be set with a function that matches this prototype:</p>
-<p>
-<code>INT Callback(*FileFeedback)</code></p>
+<p><code>INT Callback(*FileFeedback)</code></p>
 <p>For each file that is processed during the move operation, a <st>FileFeedback</st> structure is passed that describes the source file and its target.  The callback must return a constant value that can potentially affect file processing. Valid values are <code>FFR::Okay</code> (move the file), <code>FFR::Skip</code> (do not move the file) and <code>FFR::Abort</code> (abort the process completely and return <code>ERR::Cancelled</code> as an error code).</p>
     </description>
     <result type="ERR">
@@ -1698,21 +1696,16 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <description>
 <p>SetResource() updates Core state selected by a <lk>RES</lk> identifier.  The following identifiers are writable:</p>
 <list type="bullet">
-<li>
-<code>LOG_LEVEL</code> sets the logging detail from 0 (disabled) to 9 (maximum detail).  Values outside this range are
+<li><code>LOG_LEVEL</code> sets the logging detail from 0 (disabled) to 9 (maximum detail).  Values outside this range are
 ignored.</li>
-<li>
-<code>LOG_DEPTH</code> sets the logging branch depth for the current thread.  This controls indentation of subsequent log
+<li><code>LOG_DEPTH</code> sets the logging branch depth for the current thread.  This controls indentation of subsequent log
 output.</li>
-<li>
-<code>PRIVILEGED_USER</code> enables elevated Unix privileges when <code>Value</code> is non-zero and releases one level of privilege
+<li><code>PRIVILEGED_USER</code> enables elevated Unix privileges when <code>Value</code> is non-zero and releases one level of privilege
 when it is zero.  Elevation is available only when the process was launched with suitable privileges.  Calls may be
 nested; privileges are released after the corresponding number of disable requests.  On non-Unix platforms this
 identifier has no effect.</li>
-<li>
-<code>WINDOWS_ICON</code> sets the Microsoft Windows resource icon ID for the process.</li>
-<li>
-<code>CONSOLE_FD</code> and <code>JNI_ENV</code> update internal host integration values.</li>
+<li><code>WINDOWS_ICON</code> sets the Microsoft Windows resource icon ID for the process.</li>
+<li><code>CONSOLE_FD</code> and <code>JNI_ENV</code> update internal host integration values.</li>
 </list>
 <p>Other <lk>RES</lk> identifiers are read-only or unsupported by this function.</p>
 <p>For <code>PRIVILEGED_USER</code>, the result is an <code>ERR</code> value indicating whether the request succeeded.  All other supported resources return 0.  Unsupported identifiers also return 0 after writing a warning to the log.</p>

@@ -160,7 +160,7 @@ if (query.ok()) {
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="NotFound">A search routine in this function failed</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="NotInitialised">The resource has not been initialised</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
@@ -318,8 +318,7 @@ if (query.ok()) {
 <p>This callback is invoked when an XQuery expression refers to a variable that has not been declared in the XQuery expression or XQuery module.  Variable resolution precedence is:</p>
 <list type="bullet">
 <li>Evaluator-local bindings</li>
-<li>
-<action>SetKey</action> string variables</li>
+<li><action>SetKey</action> string variables</li>
 <li>Declared/internal XQuery variables</li>
 <li>This callback for otherwise unresolved names</li>
 </list>

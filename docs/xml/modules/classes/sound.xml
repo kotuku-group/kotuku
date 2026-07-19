@@ -18,14 +18,10 @@
 <p>The Sound class provides a comprehensive, user-friendly interface for audio sample playback that abstracts the complexities of audio hardware management whilst delivering professional-quality results.  Designed as the primary interface for general-purpose audio operations, the Sound class automatically handles resource allocation, format detection, hardware abstraction, and intelligent streaming decisions to provide optimal performance across diverse system configurations.</p>
 <p>The Sound class implements robust file format support with automatic detection and validation:</p>
 <list type="bullet">
-<li>
-<b>Native WAVE Support:</b> Complete support for WAVE format files including all standard PCM encodings, multiple bit depths (8/16-bit), and both mono and stereo configurations</li>
-<li>
-<b>Automatic Format Detection:</b> File format identification occurs automatically during initialisation based on file headers and content analysis</li>
-<li>
-<b>Extensible Architecture:</b> Additional audio formats (MP3, OGG, FLAC, AAC) can be supported through Sound class extensions and codec plugins</li>
-<li>
-<b>Validation and Error Handling:</b> Comprehensive file validation prevents playback of corrupted or unsupported audio data</li>
+<li><b>Native WAVE Support:</b> Complete support for WAVE format files including all standard PCM encodings, multiple bit depths (8/16-bit), and both mono and stereo configurations</li>
+<li><b>Automatic Format Detection:</b> File format identification occurs automatically during initialisation based on file headers and content analysis</li>
+<li><b>Extensible Architecture:</b> Additional audio formats (MP3, OGG, FLAC, AAC) can be supported through Sound class extensions and codec plugins</li>
+<li><b>Validation and Error Handling:</b> Comprehensive file validation prevents playback of corrupted or unsupported audio data</li>
 </list>
 <p>The following demonstrates advanced Sound class usage including pitch control and event handling:</p>
 <pre>snd = obj.new('sound', {
@@ -52,6 +48,14 @@ processing.sleep()  -- Wait for completion
       <comment>Plays the audio sample.</comment>
       <prototype>ERR acActivate(*Object)</prototype>
       <tiriPrototype>err = Object.acActivate()</tiriPrototype>
+      <description>
+<p>Calling Activate will play the sample data from the current seek position defined by the <fl>Position</fl> field.  Playback continues asynchronously and the client can monitor its progress through the <fl>Position</fl> field, or receive an event notification through an <fl>OnStop</fl> callback once playback has stopped.</p>
+<p>The <fl>Length</fl> field must be set prior to activation, otherwise <code>ERR::FieldNotSet</code> is returned.</p>
+<p>On first activation the sample data is either loaded into an audio buffer in its entirety, or configured for streaming according to the <fl>Stream</fl> field.  Streaming is enabled automatically when <code>STREAM::ALWAYS</code> is set and the sample exceeds 16KB, or when <code>STREAM::SMART</code> is set and the sample exceeds 256KB.  Subsequent calls reuse the prepared buffer.</p>
+<p>If the <code>LOOP</code> flag is defined then the sample will loop continuously between <fl>LoopStart</fl> and <fl>LoopEnd</fl> (or the full sample length if <fl>LoopEnd</fl> is zero) until deactivated.</p>
+<p>The sound is assigned to the first available mixer channel.  If every channel is in use, a channel belonging to a sound of lower <fl>Priority</fl> may be reallocated for playback.  When no suitable channel can be obtained, <code>ERR::ArrayFull</code> is returned.  Samples flagged with <code>RESTRICT_PLAY</code> or configured for streaming are limited to a single active channel, so re-activating them will restart playback on that channel rather than mixing a second copy.</p>
+<p>The current <fl>Volume</fl>, <fl>Pan</fl> and <fl>Playback</fl> (frequency) values are applied to the channel when playback begins.  If the seek position is at or beyond the end of the sample, it is automatically reset to the start before playing.</p>
+      </description>
     </action>
 
     <action>

@@ -14,10 +14,8 @@
 <p>The Audio module provides a robust, cross-platform audio infrastructure that manages the complete audio pipeline from sample loading through to hardware output.  The module's architecture supports both high-level convenience interfaces and low-level professional audio control, making it suitable for applications ranging from simple media playback to sophisticated audio production environments.</p>
 <p>The module implements a client-server design pattern with two complementary class interfaces:</p>
 <ul>
-<li>
-<a href="classes/audio.html">Audio</a>: Low-level hardware interface providing precise control over audio mixing, buffering, and output configuration.  Designed for applications requiring professional audio capabilities including real-time processing, multi-channel mixing, and advanced streaming architectures</li>
-<li>
-<a href="classes/sound.html">Sound</a>: High-level sample playback interface optimised for simplicity and performance.  Automatically manages resource allocation, format conversion, and hardware abstraction whilst providing intelligent streaming decisions</li>
+<li><a href="classes/audio.html">Audio</a>: Low-level hardware interface providing precise control over audio mixing, buffering, and output configuration.  Designed for applications requiring professional audio capabilities including real-time processing, multi-channel mixing, and advanced streaming architectures</li>
+<li><a href="classes/sound.html">Sound</a>: High-level sample playback interface optimised for simplicity and performance.  Automatically manages resource allocation, format conversion, and hardware abstraction whilst providing intelligent streaming decisions</li>
 </ul>
 <p>The internal mixer is a floating-point engine that processes all audio internally at 32-bit precision regardless of output bit depth.  The mixer supports features that include:</p>
 <ul>
@@ -30,12 +28,9 @@
 <h4>Platform-Specific Optimisations</h4>
 <p>Audio implementation is optimised for each supported platform to maximise performance and minimise latency:</p>
 <ul>
-<li>
-<b>Linux (ALSA Integration):</b> Utilises ALSA's period-based buffering with configurable period counts and sizes.  All samples are processed through the unified mixer with support for system-wide volume control and hardware mixer integration</li>
-<li>
-<b>Windows (DirectSound Integration):</b> Implements dual-path audio where simple playback can bypass the internal mixer for reduced latency, whilst complex operations utilise the full mixing pipeline.  Automatic fallback ensures compatibility across Windows audio driver variations</li>
-<li>
-<b>Cross-Platform Consistency:</b> API behaviour remains consistent across platforms, with platform-specific optimisations operating transparently to applications</li>
+<li><b>Linux (ALSA Integration):</b> Utilises ALSA's period-based buffering with configurable period counts and sizes.  All samples are processed through the unified mixer with support for system-wide volume control and hardware mixer integration</li>
+<li><b>Windows (DirectSound Integration):</b> Implements dual-path audio where simple playback can bypass the internal mixer for reduced latency, whilst complex operations utilise the full mixing pipeline.  Automatic fallback ensures compatibility across Windows audio driver variations</li>
+<li><b>Cross-Platform Consistency:</b> API behaviour remains consistent across platforms, with platform-specific optimisations operating transparently to applications</li>
 </ul>
 <h4>Streaming and Memory Management</h4>
 <p>The module implements streaming technology that automatically adapts to sample characteristics and system resources:</p>
@@ -48,12 +43,8 @@
 <h4>Usage Guidelines</h4>
 <p>For optimal results, choose the appropriate interface based on application requirements:</p>
 <ul>
-<li>
-<b>
-<a href="classes/sound.html">Sound</a> Class (Recommended for Most Applications):</b> Provides immediate audio playback with automatic resource management, format detection, and intelligent streaming.  Ideal for media players, games, and general-purpose audio applications</li>
-<li>
-<b>
-<a href="classes/audio.html">Audio</a> Class (Advanced Applications):</b> Offers complete control over the audio pipeline including custom mixer configurations, real-time effects processing, and professional-grade timing control.  Required for audio workstations, synthesisers, and applications with demanding audio requirements</li>
+<li><b><a href="classes/sound.html">Sound</a> Class (Recommended for Most Applications):</b> Provides immediate audio playback with automatic resource management, format detection, and intelligent streaming.  Ideal for media players, games, and general-purpose audio applications</li>
+<li><b><a href="classes/audio.html">Audio</a> Class (Advanced Applications):</b> Offers complete control over the audio pipeline including custom mixer configurations, real-time effects processing, and professional-grade timing control.  Required for audio workstations, synthesisers, and applications with demanding audio requirements</li>
 </ul>
 <h4>Technical Specifications</h4>
 <ul>
@@ -141,26 +132,18 @@
 <h4>Command Buffering Architecture</h4>
 <p>When command buffering is activated, the mixer transitions to a batch processing mode with several key characteristics:</p>
 <ul>
-<li>
-<b>Deferred Execution:</b> All mixer operations (<a href="?page=MixPlay">MixPlay()</a>, <a href="?page=MixVolume">MixVolume()</a>, <a href="?page=MixPan">MixPan()</a>, <a href="?page=MixFrequency">MixFrequency()</a>, etc.) are queued rather than executed immediately</li>
-<li>
-<b>Atomic Batch Processing:</b> Queued commands are processed synchronously during the next mixer update cycle, ensuring sample-accurate timing coordination</li>
-<li>
-<b>Thread-Safe Queueing:</b> Commands can be safely queued from multiple threads without explicit synchronisation requirements</li>
-<li>
-<b>Overflow Protection:</b> Command buffers include overflow detection to prevent memory exhaustion during extended buffering periods</li>
+<li><b>Deferred Execution:</b> All mixer operations (<a href="?page=MixPlay">MixPlay()</a>, <a href="?page=MixVolume">MixVolume()</a>, <a href="?page=MixPan">MixPan()</a>, <a href="?page=MixFrequency">MixFrequency()</a>, etc.) are queued rather than executed immediately</li>
+<li><b>Atomic Batch Processing:</b> Queued commands are processed synchronously during the next mixer update cycle, ensuring sample-accurate timing coordination</li>
+<li><b>Thread-Safe Queueing:</b> Commands can be safely queued from multiple threads without explicit synchronisation requirements</li>
+<li><b>Overflow Protection:</b> Command buffers include overflow detection to prevent memory exhaustion during extended buffering periods</li>
 </ul>
 <p>This feature can be used to implement complex sound mixes and digital music players.</p>
 <h4>Advanced Usage Patterns</h4>
 <ol>
-<li>
-<b>Sequence Initiation:</b> Call MixStartSequence() to begin command buffering for the target channel or channel set</li>
-<li>
-<b>Command Queuing:</b> Issue multiple mixer commands (volume, pan, play, frequency adjustments, etc.) which are automatically queued</li>
-<li>
-<b>Sequence Completion:</b> Call <a href="?page=MixEndSequence">MixEndSequence()</a> to mark the end of the command batch and schedule execution</li>
-<li>
-<b>Automatic Execution:</b> Commands execute atomically at the next mixer update interval determined by <a href="?page=MixRate">MixRate()</a></li>
+<li><b>Sequence Initiation:</b> Call MixStartSequence() to begin command buffering for the target channel or channel set</li>
+<li><b>Command Queuing:</b> Issue multiple mixer commands (volume, pan, play, frequency adjustments, etc.) which are automatically queued</li>
+<li><b>Sequence Completion:</b> Call <a href="?page=MixEndSequence">MixEndSequence()</a> to mark the end of the command batch and schedule execution</li>
+<li><b>Automatic Execution:</b> Commands execute atomically at the next mixer update interval determined by <a href="?page=MixRate">MixRate()</a></li>
 </ol>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Command buffering successfully initiated.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Required parameters are null or missing.</td></tr>

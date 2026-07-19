@@ -211,8 +211,7 @@
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Opacity" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Opacity"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Opacity</th><td class="col-md-1"><span class="text-nowrap">DOUBLE</span></td><td>Defines an overall opacity for the vector's graphics.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Opacity" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<p>The overall opacity of a vector can be defined here using a value between 0 and 1.0.  The value will be multiplied with other opacity settings as required during rendering.  For instance, when filling a vector the opacity will be calculated as <code>
-<a data-bs-toggle="tooltip" title="The opacity to use when filling the vector." href="#tf-FillOpacity">FillOpacity</a> * Opacity</code>.</p>
+<p>The overall opacity of a vector can be defined here using a value between 0 and 1.0.  The value will be multiplied with other opacity settings as required during rendering.  For instance, when filling a vector the opacity will be calculated as <code><a data-bs-toggle="tooltip" title="The opacity to use when filling the vector." href="#tf-FillOpacity">FillOpacity</a> * Opacity</code>.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Parent" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Parent"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">Parent</th><td class="col-md-1"><span class="text-nowrap">OBJECTPTR</span></td><td>The parent of the vector, or NULL if this is the top-most vector.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Parent" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
@@ -408,8 +407,7 @@ Z: Close Path
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>The SubscribeKeyboard() method provides a callback mechanism for handling keyboard events.  Events are reported when the vector or one of its children has the user focus.  It is a pre-requisite that the associated <a href="vectorscene.html">VectorScene</a> has been linked to a <a href="surface.html">Surface</a>.</p>
 <p>The prototype for the callback is as follows, whereby <code>Qualifers</code> are <code>KQ</code> flags and the Code is a <code>K</code> constant representing the raw key value.  The <code>Unicode</code> value is the resulting character when the qualifier and code are translated through the user's keymap.</p>
-<p>
-<code>ERR callback(*Viewport, INT Qualifiers, INT Code, INT Unicode);</code></p>
+<p><code>ERR callback(*Viewport, INT Qualifiers, INT Code, INT Unicode);</code></p>
 <p>If the callback returns <code>ERR::Terminate</code> then the subscription will be ended.  All other error codes are ignored.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>

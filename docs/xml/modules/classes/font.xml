@@ -22,19 +22,14 @@
 <p>To draw a string, set <fl>Bitmap</fl> and <fl>String</fl>, then call <action>Draw</action>.  The <fl>X</fl> and <fl>Y</fl> fields set the starting position.  Use <fl>Align</fl> together with <fl>AlignWidth</fl> and <fl>AlignHeight</fl> when text needs to be positioned within a larger surface area.</p>
 <p>This documentation uses the following font terminology:</p>
 <list type="bullet">
-<li>
-<code>Point</code> is the requested size of the font.  It is relative to other point sizes of the same face; two faces at the
+<li><code>Point</code> is the requested size of the font.  It is relative to other point sizes of the same face; two faces at the
 same point size are not necessarily the same pixel height.</li>
-<li>
-<code>Height</code> is the vertical bearing of the font expressed in pixels.  It excludes top leading and the gutter used by
+<li><code>Height</code> is the vertical bearing of the font expressed in pixels.  It excludes top leading and the gutter used by
 descending glyphs.</li>
-<li>
-<code>Gutter</code> is the space below the baseline used by descending glyphs such as <code>g</code> and <code>y</code>.  It is also known as the
+<li><code>Gutter</code> is the space below the baseline used by descending glyphs such as <code>g</code> and <code>y</code>.  It is also known as the
 external leading or descent.</li>
-<li>
-<code>LineSpacing</code> is the recommended pixel distance from one baseline to the next.</li>
-<li>
-<code>Glyph</code> is a single rendered character image.</li>
+<li><code>LineSpacing</code> is the recommended pixel distance from one baseline to the next.</li>
+<li><code>Glyph</code> is a single rendered character image.</li>
 </list>
 <p>Use <class name="VectorText">VectorText</class> for most display text.  The Font class draws directly to a <class name="Bitmap">Bitmap</class> and is not integrated with the display vector scene graph.</p></description>
     <source>

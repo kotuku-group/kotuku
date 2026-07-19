@@ -99,7 +99,7 @@
         <error code="NoSupport">Operation not supported</error>
         <error code="Query">Attempt to Query() failed</error>
         <error code="FieldNotSet">A required field value is undefined</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="SystemCall">A call to the host system has failed</error>
       </result>
     </action>
@@ -119,7 +119,7 @@
         <error code="LockFailed">Failed to lock a required resource</error>
         <error code="NoSupport">Operation not supported</error>
         <error code="FieldNotSet">A required field value is undefined</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="SystemCall">A call to the host system has failed</error>
         <error code="CreateResource">Failed to create a new resource</error>
       </result>
@@ -181,7 +181,7 @@
         <error code="Args">Invalid arguments passed to function</error>
         <error code="NoSupport">Operation not supported</error>
         <error code="UndefinedField">A required field value is undefined</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="Notified">Unknown error code.</error>
       </result>
@@ -271,8 +271,7 @@
       <tiriPrototype>err = ConvertToLinear()</tiriPrototype>
       <description>
 <p>ConvertToLinear() converts the bitmap's clipped region from sRGB to linear RGB.  If <code>BMF::ALPHA_CHANNEL</code> is set, pixels with an alpha value of zero are left unchanged.</p>
-<p>
-<fl>ColourSpace</fl> is set to <code>CS::LINEAR_RGB</code> on completion.  The method returns <code>ERR::NothingDone</code> if the bitmap is already marked as linear RGB.</p>
+<p><fl>ColourSpace</fl> is set to <code>CS::LINEAR_RGB</code> on completion.  The method returns <code>ERR::NothingDone</code> if the bitmap is already marked as linear RGB.</p>
 <p>This method currently requires a 32-bit bitmap.</p>
       </description>
       <result>
@@ -291,8 +290,7 @@
       <tiriPrototype>err = ConvertToRGB()</tiriPrototype>
       <description>
 <p>ConvertToRGB() converts the bitmap's clipped region from linear RGB to sRGB.  If <code>BMF::ALPHA_CHANNEL</code> is set, pixels with an alpha value of zero are left unchanged.</p>
-<p>
-<fl>ColourSpace</fl> is set to <code>CS::SRGB</code> on completion.  The method returns <code>ERR::NothingDone</code> if the bitmap is already marked as sRGB.</p>
+<p><fl>ColourSpace</fl> is set to <code>CS::SRGB</code> on completion.  The method returns <code>ERR::NothingDone</code> if the bitmap is already marked as sRGB.</p>
 <p>This method currently requires a 32-bit bitmap.</p>
       </description>
       <result>
@@ -343,7 +341,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="NothingDone">The content is already normalised.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="InvalidDimension">The clipping region is invalid.</error>
         <error code="InvalidState">The Bitmap is not in the expected state (32-bit with an alpha channel).</error>
       </result>

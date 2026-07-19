@@ -152,7 +152,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
         <error code="Okay">Operation successful.</error>
         <error code="Retry">Please recall the method using a larger output buffer.</error>
         <error code="Args">Invalid arguments passed to function</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="BufferOverflow">The output buffer is not large enough to contain the compressed data.</error>
         <error code="InvalidState">Object was in an incorrect state for the operation</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
@@ -310,7 +310,7 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="BufferOverflow">The output buffer is not large enough.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="Function">A function call failed</error>

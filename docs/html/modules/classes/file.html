@@ -290,8 +290,7 @@
 <tr data-bs-toggle="collapse" data-bs-target="#tmx-ReadLine" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">ReadLine</th><td id="tm-ReadLine">Reads the next line from the file.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-ReadLine" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR fl::ReadLine(OBJECTPTR Object, STRING * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Result</td><td>The string provided in this parameter will be updated with the line read from the file.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>Reads one line from the file into a provided string buffer, which is required in the Result argument.  Reading a line will increase the <a data-bs-toggle="tooltip" title="The current read/write byte position in a file." href="#tf-Position">Position</a> field by the amount of bytes read from the file.  You must have set the <code>FL::READ</code> bit in the <a data-bs-toggle="tooltip" title="File flags and options." href="#tf-Flags">Flags</a> field when you initialised the file, or the call will fail.</p>
-<p>
-<code>ERR::NoData</code> is returned once all lines have been read.</p>
+<p><code>ERR::NoData</code> is returned once all lines have been read.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The file information was read into the buffer.</td></tr>
 <tr><th class="col-md-1">Failed</th><td>The file object refers to a folder.</td></tr>
@@ -362,7 +361,7 @@
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
 <tr><th class="col-md-1">NoSupport</th><td>Operation not supported</td></tr>
-<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
+<tr><th class="col-md-1">AllocMemory</th><td>Failed to create a new memory block</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
 </tbody></table><div class="footer copyright text-right">File class documentation © Paul Manias © 1996-2026</div></div><div class="docs-content" style="display:none;" id="FDT"><h1>FDT Type</h1><p class="lead">Flags for the SetDate() file method.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>FDT::ACCESSED</th><td>The date on which the file was last accessed by a user or application.</td></tr>

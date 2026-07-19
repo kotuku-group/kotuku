@@ -142,8 +142,7 @@
       <description>
 <p>Set the DragCallback field with a callback function to receive drag requests from the viewport's user input.  When the user drags the viewport, the callback will receive the user's desired <code>(X, Y)</code> target coordinates.  For unimpeded dragging, have the callback set the viewport's <fl>X</fl> and <fl>Y</fl> values to match the incoming coordinates, then redraw the scene.</p>
 <p>The prototype for the callback function is as follows, where <code>OriginX</code> and <code>OriginY</code> refer to the (<fl>X</fl>,<fl>Y</fl>) position of the vector at initiation of the drag.</p>
-<p>
-<code>void function(*VectorViewport, DOUBLE X, DOUBLE Y, DOUBLE OriginX, DOUBLE OriginY)</code></p>
+<p><code>void function(*VectorViewport, DOUBLE X, DOUBLE Y, DOUBLE OriginX, DOUBLE OriginY)</code></p>
 <p>Setting this field to <code>NULL</code> will turn off the callback.</p>
 <p>It is required that the parent <class name="VectorScene">VectorScene</class> is associated with a <class name="Surface">Surface</class> for this feature to work.</p>
       </description>
