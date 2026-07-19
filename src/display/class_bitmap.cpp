@@ -2196,9 +2196,6 @@ Data: Provides direct access to the bitmap's data area.
 Data points to the first byte of the bitmap's pixel buffer when CPU-visible memory is available.  Caller-supplied
 memory can be used for data-backed bitmaps, but most callers should let #Init() allocate the correctly sized buffer.
 
-Tiri exposes Data as a fixed-length byte array containing #Size elements.  The array references the bitmap's existing
-storage directly and must not outlive the bitmap.
-
 For video or texture-backed bitmaps, #Data may be unavailable until #Lock() succeeds.
 
 *********************************************************************************************************************/

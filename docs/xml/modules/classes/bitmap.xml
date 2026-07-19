@@ -614,7 +614,6 @@ unpackAlpha(Colour)
       <type>UINT8[]</type>
       <description>
 <p>Data points to the first byte of the bitmap's pixel buffer when CPU-visible memory is available.  Caller-supplied memory can be used for data-backed bitmaps, but most callers should let <action>Init</action> allocate the correctly sized buffer.</p>
-<p>Tiri exposes Data as a fixed-length byte array containing <fl>Size</fl> elements.  The array references the bitmap's existing storage directly and must not outlive the bitmap.</p>
 <p>For video or texture-backed bitmaps, <fl>Data</fl> may be unavailable until <action>Lock</action> succeeds.</p>
       </description>
     </field>

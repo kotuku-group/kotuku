@@ -884,37 +884,37 @@ class objNetServer : public objNetSocket {
    // Customised field getting
 
    inline ERR getClients(OBJECTPTR &Value) noexcept {
-      Value = *((OBJECTPTR *)(((int8_t *)this) + 336));
+      Value = *((OBJECTPTR *)(((int8_t *)this) + 344));
       return ERR::Okay;
    }
 
    inline ERR getSSLCertificate(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 344));
+      Value = *((std::string *)(((int8_t *)this) + 352));
       return ERR::Okay;
    }
 
    inline ERR getSSLKeyPassword(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 408));
+      Value = *((std::string *)(((int8_t *)this) + 416));
       return ERR::Okay;
    }
 
    inline ERR getBacklog(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 440));
-      return ERR::Okay;
-   }
-
-   inline ERR getClientLimit(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 444));
-      return ERR::Okay;
-   }
-
-   inline ERR getSocketLimit(int &Value) noexcept {
       Value = *((int *)(((int8_t *)this) + 448));
       return ERR::Okay;
    }
 
-   inline ERR getTotalClients(int &Value) noexcept {
+   inline ERR getClientLimit(int &Value) noexcept {
       Value = *((int *)(((int8_t *)this) + 452));
+      return ERR::Okay;
+   }
+
+   inline ERR getSocketLimit(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 456));
+      return ERR::Okay;
+   }
+
+   inline ERR getTotalClients(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + 460));
       return ERR::Okay;
    }
 
