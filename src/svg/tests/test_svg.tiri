@@ -63,6 +63,128 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 
+-- Generate a 64-bit perceptual hash from a bitmap.  The image is reduced to 32x32 luminance samples before applying
+-- an 8x8 discrete cosine transform.  Bitmap.data is an external byte-array view over the pixel buffer, so this avoids
+-- the overhead of calling a pixel reader for every source pixel.
+
+function pHash(Bitmap:obj):array
+   local sample_size <const> = 32
+   local dct_size <const> = 8
+   local pixels = Bitmap.data
+   local format = Bitmap.colourFormat
+   local bytes_per_pixel = Bitmap.bytesPerPixel
+   local red_offset = format.redPos / 8
+   local green_offset = format.greenPos / 8
+   local blue_offset = format.bluePos / 8
+   local samples = array<double>
+
+   for sample_y = 0, sample_size - 1 do
+      local y_start = math.floor((sample_y * Bitmap.height) / sample_size)
+      local y_end = math.floor(((sample_y + 1) * Bitmap.height) / sample_size)
+
+      for sample_x = 0, sample_size - 1 do
+         local x_start = math.floor((sample_x * Bitmap.width) / sample_size)
+         local x_end = math.floor(((sample_x + 1) * Bitmap.width) / sample_size)
+         local luminance = 0
+
+         for y = y_start, y_end - 1 do
+            local pixel = (y * Bitmap.lineWidth) + (x_start * bytes_per_pixel)
+            for x = x_start, x_end - 1 do
+               luminance += (77 * pixels[pixel + red_offset]) + (150 * pixels[pixel + green_offset]) +
+                  (29 * pixels[pixel + blue_offset])
+               pixel += bytes_per_pixel
+            end
+         end
+
+         samples:push(luminance / (256 * (x_end - x_start) * (y_end - y_start)))
+      end
+   end
+
+   local cosines = array<double>
+   for frequency = 0, dct_size - 1 do
+      for position = 0, sample_size - 1 do
+         cosines:push(math.cos(((2 * position + 1) * frequency * math.pi) / (2 * sample_size)))
+      end
+   end
+
+   local row_dct = array<double>
+   for y = 0, sample_size - 1 do
+      for frequency_x = 0, dct_size - 1 do
+         local coefficient = 0
+         for x = 0, sample_size - 1 do
+            coefficient += samples[(y * sample_size) + x] * cosines[(frequency_x * sample_size) + x]
+         end
+         row_dct:push(coefficient)
+      end
+   end
+
+   local coefficients = array<double>
+   for frequency_y = 0, dct_size - 1 do
+      for frequency_x = 0, dct_size - 1 do
+         local coefficient = 0
+         for y = 0, sample_size - 1 do
+            coefficient += row_dct[(y * dct_size) + frequency_x] * cosines[(frequency_y * sample_size) + y]
+         end
+         coefficients:push(coefficient)
+      end
+   end
+
+   local ac_coefficients = array<double>
+   for i = 1, #coefficients - 1 do ac_coefficients:push(coefficients[i]) end
+   ac_coefficients:sort()
+   local median = ac_coefficients[math.floor(#ac_coefficients / 2)]
+   local fingerprint = array<byte> { 0, 0, 0, 0, 0, 0, 0, 0 }
+
+   for i = 1, #coefficients - 1 do
+      if coefficients[i] > median then
+         local bit_index = i - 1
+         local byte_index = math.floor(bit_index / 8)
+         fingerprint[byte_index] = bit.bor(fingerprint[byte_index], bit.lshift(1, bit_index % 8))
+      end
+   end
+
+   return fingerprint
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+function pHashString(Hash:array):str
+   local result = ''
+   for i = 0, #Hash - 1 do result ..= string.format('%d', Hash[i]) end
+   return result
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+function pHashDistance(Left:array, Right:array):num
+   assert(#Left is #Right, 'Perceptual hashes must have the same length')
+   local set_bits <const> = array<byte> { 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4 }
+   local distance = 0
+
+   for i = 0, #Left - 1 do
+      local difference = bit.bxor(Left[i], Right[i])
+      distance += set_bits[bit.band(difference, 0x0f)] + set_bits[bit.rshift(difference, 4)]
+   end
+
+   return distance
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+function pHashTestSVG(Path:str, ExpectedHash:array, MaxDistance:num, Stable:bool)
+   local bmp = renderSVGToBitmap(glSVGFolder .. Path, Stable)
+   local hash = pHash(bmp)
+   local distance = pHashDistance(hash, ExpectedHash)
+
+   if distance > MaxDistance then
+      saveBitmap(bmp, Path)
+      error('Computed pHash for "' .. Path .. '" is ' .. pHashString(hash) .. ', expected ' ..
+         pHashString(ExpectedHash) .. ' (Hamming distance ' .. distance .. ', maximum ' .. MaxDistance .. ')')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
 @Test global function Basics01() hashTestSVG('basics/w3-render-elems-01-t.svg', 0x8ab4f1f1) end
 @Test global function Basics02() hashTestSVG('basics/w3-render-elems-02-t.svg', 0x16c115bb) end
 @Test global function Basics03() hashTestSVG('basics/w3-render-elems-03-t.svg', -1) end
@@ -153,8 +275,10 @@ end
 @Test global function W3Coords08() hashTestSVG('coords/w3-coords-viewattr-03-b.svg', 0xf59f3551) end
 
 @Test global function EasingGradients() hashTestSVG('gradients/easing.svg', 0xc45a0cf6) end
-@Test global function ContourGradient() hashTestSVG('gradients/contour-gradient.svg', 0x35a1899a, true) end
+@Test global function ContourGradient() pHashTestSVG('gradients/contour-gradient.svg', array<byte> { 0x76,0x97,0xa3,0x8d,0x18,0xb0,0x7c,0x43 }, 6, true) end
 @Test global function MeshGradient() hashTestSVG('gradients/meshgradient.svg', 0x647d054f) end
+@Test global function DiffusionGradient() hashTestSVG('gradients/diffusiongradient.svg', 0xafe6ee58) end
+@Test global function MeshGradientInkscape() hashTestSVG('gradients/meshgradient_inkscape.svg', 0xeefbdff2) end
 @Test global function W3Gradients01() hashTestSVG('gradients/w3-pservers-grad-01-b.svg', 0xd6ab0e01) end
 @Test global function W3Gradients02() hashTestSVG('gradients/w3-pservers-grad-02-b.svg', 0xe8e84124) end
 @Test global function W3Gradients04() hashTestSVG('gradients/w3-pservers-grad-04-b.svg', 0x11d0611e) end

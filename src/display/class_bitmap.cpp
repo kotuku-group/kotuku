@@ -144,12 +144,13 @@ static void DrawRGBPixelPlanar(objBitmap *, int X, int Y, RGB8 *);
 //********************************************************************************************************************
 
 static ERR GET_Handle(extBitmap *, APTR *);
+static ERR GET_Data(extBitmap *, std::span<uint8_t> &);
 
 static ERR SET_Bkgd(extBitmap *, RGB8 *);
 static ERR SET_BkgdIndex(extBitmap *, int);
 static ERR SET_Trans(extBitmap *, RGB8 *);
 static ERR SET_TransIndex(extBitmap *, int);
-static ERR SET_Data(extBitmap *, uint8_t *);
+static ERR SET_Data(extBitmap *, std::span<const uint8_t> &);
 static ERR SET_Handle(extBitmap *, APTR);
 static ERR SET_Palette(extBitmap *, RGBPalette *);
 
@@ -2190,22 +2191,33 @@ unpackAlpha(Colour)
 </pre>
 
 -FIELD-
-Data: Pointer to a bitmap's data area.
+Data: Provides direct access to the bitmap's data area.
 
 Data points to the first byte of the bitmap's pixel buffer when CPU-visible memory is available.  Caller-supplied
 memory can be used for data-backed bitmaps, but most callers should let #Init() allocate the correctly sized buffer.
+
+Tiri exposes Data as a fixed-length byte array containing #Size elements.  The array references the bitmap's existing
+storage directly and must not outlive the bitmap.
 
 For video or texture-backed bitmaps, #Data may be unavailable until #Lock() succeeds.
 
 *********************************************************************************************************************/
 
-ERR SET_Data(extBitmap *Self, uint8_t *Value)
+static ERR GET_Data(extBitmap *Self, std::span<uint8_t> &Value)
+{
+   if ((not Self->Data) or (Self->Size <= 0)) return ERR::FieldNotSet;
+
+   Value = std::span<uint8_t>(Self->Data, size_t(Self->Size));
+   return ERR::Okay;
+}
+
+static ERR SET_Data(extBitmap *Self, std::span<const uint8_t> &Value)
 {
 #ifdef __xwindows__
    if (Self->x11.XShmImage) return ERR::NotPossible;
 #endif
 
-   if (Self->Data != Value) Self->Data = Value;
+   Self->Data = const_cast<uint8_t *>(Value.data());
    return ERR::Okay;
 }
 
@@ -2738,7 +2750,7 @@ static const FieldArray clBitmapFields[] = {
    { "ReadUCRPixel",  FDF_POINTER|FDF_R },
    { "ReadUCRIndex",  FDF_POINTER|FDF_R },
    { "DrawUCRIndex",  FDF_POINTER|FDF_R },
-   { "Data",          FDF_POINTER|FDF_RI, nullptr, SET_Data },
+   { "Data",          FDF_ARRAY|FDF_BYTE|FDF_RI, GET_Data, SET_Data },
    { "Width",         FDF_INT|FDF_RI, nullptr, nullptr },
    { "ByteWidth",     FDF_INT|FDF_R, nullptr, nullptr },
    { "Height",        FDF_INT|FDF_RI, nullptr, nullptr },
