@@ -349,7 +349,7 @@ function runTests()
          processing.collect()
 
          if not succeeded then
-            not error_msg ?? print(error_msg)
+            if error_msg then print(error_msg) end
             if success_count is 0 then
                print(string.format('FAIL: %.6f sec', totalTime))
             else
