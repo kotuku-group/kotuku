@@ -990,7 +990,7 @@ static int object_init(lua_State *Lua)
 
    OBJECTPTR obj;
    if (auto error = access_object(def, obj); error IS ERR::Okay) {
-      auto error = InitObject(obj);
+      error = InitObject(obj);
       report_action_error(Lua, def, "Init", error);
       lua_pushinteger(Lua, int(error));
       release_object(def);
