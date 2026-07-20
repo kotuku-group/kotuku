@@ -685,7 +685,15 @@ static ERR MP3_Seek(objMP3 *Self, struct acSeek *Args)
       return ERR::Okay;
    }
    else {
-      // Revert to base-class behaviour for fully buffered samples, since the MP3 is already decoded.
+      // Revert to base-class behaviour for fully buffered samples, since the MP3 is already decoded.  The decoder
+      // must still be rewound if its state no longer matches the target position, otherwise a subsequent buffer
+      // refill (Win32 re-activation re-reads the sample in full) receives no data due to the stale EndOfFile.
+
+      if ((prv->File) and (offset != prv->WriteOffset)) {
+         if (auto error = prv->File->seekStart(prv->SeekOffset); error != ERR::Okay) return log.warning(error);
+         prv->reset();
+         mp3dec_init(&prv->mp3d);
+      }
       return ERR::NoAction;
    }
 }
