@@ -112,8 +112,8 @@
       <prototype>ERR snd::AddStream(OBJECTPTR Object, FUNCTION Callback, FUNCTION OnStop, SFM SampleFormat, INT SampleLength, INT PlayOffset, struct AudioLoop * Loop, INT LoopSize, INT * Result)</prototype>
       <tiriPrototype>err, Result:num = AddStream(Callback:func, OnStop:func, SampleFormat:num, SampleLength:num, PlayOffset:num, Loop:any, LoopSize:num)</tiriPrototype>
       <input>
-        <param type="FUNCTION" name="Callback">This callback function must be able to return raw audio data for streaming.</param>
-        <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.</param>
+        <param type="FUNCTION" name="Callback">This callback function must be able to return raw audio data for streaming.  The function context will be pinned as a safety measure.</param>
+        <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.  The function context will be pinned as a safety measure.</param>
         <param type="SFM" name="SampleFormat" lookup="SFM">Indicates the format of the sample data that you are adding.</param>
         <param type="INT" name="SampleLength">Total byte-length of the sample data that is being streamed.  May be set to zero if the length is infinite or unknown.</param>
         <param type="INT" name="PlayOffset">Offset the playing position by this byte index.</param>

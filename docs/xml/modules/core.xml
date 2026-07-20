@@ -305,8 +305,8 @@ if (!AllocResource(1000, MEM::NIL, &amp;address, nullptr)) {
     </description>
     <result type="ERR">
       <error code="Okay">The path was analysed and the result is stored in the <code>Type</code> variable.</error>
+      <error code="FileNotFound">File not found</error>
       <error code="NoSupport">Operation not supported</error>
-      <error code="DoesNotExist">Resource does not exist</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
