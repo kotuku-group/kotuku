@@ -321,8 +321,8 @@ currently supported for streams.  For that reason, set the type variables to eit
 `LTYPE::UNIDIRECTIONAL`.
 
 -INPUT-
-func Callback: This callback function must be able to return raw audio data for streaming.
-func OnStop: This optional callback function will be called when the stream stops playing.
+func Callback: This callback function must be able to return raw audio data for streaming.  The function context will be pinned as a safety measure.
+func OnStop: This optional callback function will be called when the stream stops playing.  The function context will be pinned as a safety measure.
 int(SFM) SampleFormat: Indicates the format of the sample data that you are adding.
 int SampleLength: Total byte-length of the sample data that is being streamed.  May be set to zero if the length is infinite or unknown.
 int PlayOffset: Offset the playing position by this byte index.

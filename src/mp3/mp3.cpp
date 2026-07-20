@@ -68,7 +68,6 @@ struct prvMP3 {
       CompressedOffset = 0;
       WriteOffset      = 0;
       FramesProcessed  = 0;
-      SamplesPerFrame  = 0;
       OverflowPos      = 0;
       OverflowSize     = 0;
       EndOfFile        = false;
@@ -435,6 +434,7 @@ static ERR MP3_Read(objMP3 *Self, struct acRead *Args)
    int pos = 0;
    auto write_offset  = prv->WriteOffset;
    bool no_more_input = false;
+   ERR read_error = ERR::Okay;
    while ((prv->WriteOffset < Self->Length) and (!prv->EndOfFile) and (pos < Args->Length)) {
       // Previously decoded bytes that overflowed have priority.
 
@@ -456,7 +456,7 @@ static ERR MP3_Read(objMP3 *Self, struct acRead *Args)
          int result;
          if (auto error = prv->File->read(prv->Input.data() + prv->CompressedOffset, prv->Input.size() - prv->CompressedOffset, &result); error != ERR::Okay) {
             log.warning("File read error: %s", GetErrorMsg(error));
-            prv->EndOfFile = true;
+            read_error = error;
             break;
          }
          else if (!result) {
@@ -555,7 +555,7 @@ static ERR MP3_Read(objMP3 *Self, struct acRead *Args)
 
    Self->Position = prv->WriteOffset;
    Args->Result = prv->WriteOffset - write_offset;
-   return ERR::Okay;
+   return read_error;
 }
 
 //********************************************************************************************************************
@@ -599,13 +599,14 @@ static ERR MP3_Seek(objMP3 *Self, struct acSeek *Args)
    if (offset IS Self->Position) return ERR::Okay;
 
    if ((Self->Flags & SDF::STREAM) != SDF::NIL) {
-      prv->reset();
-      mp3dec_init(&prv->mp3d);
+      int active;
+      if (auto error = Self->getActive(active); error != ERR::Okay) return log.warning(error);
+
+      int frame = 0;
+      int64_t file_offset = prv->SeekOffset;
 
       if (offset <= 0) {
          log.traceBranch("Resetting play position to zero.");
-         prv->File->seekStart(prv->SeekOffset);
-         Self->Position = 0;
       }
       else {
          // Seeking via byte position, where the position is relative to the decoded length.
@@ -626,15 +627,10 @@ static ERR MP3_Seek(objMP3 *Self, struct acSeek *Args)
             if (idx < 0) idx = 0;
             else if (idx >= (int)prv->TOC.size()) idx = prv->TOC.size() - 1;
 
-            int64_t file_offset = int64_t(prv->SeekOffset) + ((int64_t(prv->TOC[idx]) * prv->StreamSize) / 256);
-            int frame = int((int64_t(prv->TOC[idx]) * prv->TotalFrames) / 256);
-            prv->File->seekStart(file_offset);
+            file_offset = int64_t(prv->SeekOffset) + ((int64_t(prv->TOC[idx]) * prv->StreamSize) / 256);
+            frame = int((int64_t(prv->TOC[idx]) * prv->TotalFrames) / 256);
 
             log.detail("Seeking to byte offset %" PRId64 ", frame %d of %d", file_offset, frame, prv->TotalFrames);
-
-            prv->WriteOffset     = int64_t(frame) * prv->SamplesPerFrame * prv->info.channels * sizeof(int16_t);
-            prv->FramesProcessed = frame;
-            Self->Position = prv->WriteOffset;
          }
          else {
             // Seeking without a TOC has two approaches: 1) Scan from frame 1 until you reach the frame
@@ -643,33 +639,36 @@ static ERR MP3_Seek(objMP3 *Self, struct acSeek *Args)
             // computations.
 
             if (!prv->StreamSize) {
-               int64_t size;
-               prv->File->getSize(size);
+               int64_t size = 0;
+               if (auto error = prv->File->getSize(size); error != ERR::Okay) return log.warning(error);
+               if (size < prv->SeekOffset) return log.warning(ERR::InvalidData);
                prv->StreamSize = size - prv->SeekOffset;
             }
 
-            int frame = int(prv->TotalFrames * pct);
+            frame = int(prv->TotalFrames * pct);
             int64_t stream_offset = int64_t(double(prv->StreamSize) * pct);
             if (frame < 0) frame = 0;
             if (stream_offset < 0) stream_offset = 0;
-            prv->File->seekStart(prv->SeekOffset + stream_offset);
+            file_offset = prv->SeekOffset + stream_offset;
 
-            log.detail("Seeking to byte offset %" PRId64 ", frame %d of %d", stream_offset, frame, prv->TotalFrames);
-
-            prv->WriteOffset     = int64_t(frame) * prv->SamplesPerFrame * prv->info.channels * sizeof(int16_t);
-            prv->FramesProcessed = frame;
-            Self->Position = prv->WriteOffset;
+            log.detail("Seeking to byte offset %" PRId64 ", frame %d of %d", file_offset, frame, prv->TotalFrames);
          }
       }
 
-      int active;
-      if (!Self->getActive(active)) {
-         if (active) {
-            log.branch("Resetting state of active sample, seek to byte %" PF64, (long long)prv->WriteOffset);
-            Self->deactivate();
-            Self->Position = prv->WriteOffset;
-            Self->activate();
-         }
+      if (auto error = prv->File->seekStart(file_offset); error != ERR::Okay) return log.warning(error);
+
+      prv->reset();
+      mp3dec_init(&prv->mp3d);
+      prv->WriteOffset     = int64_t(frame) * prv->SamplesPerFrame * prv->info.channels * sizeof(int16_t);
+      prv->FramesProcessed = frame;
+      Self->Position       = prv->WriteOffset;
+
+      if (active) {
+         log.branch("Resetting state of active sample, seek to byte %" PF64, (long long)prv->WriteOffset);
+         auto error = Self->deactivate();
+         Self->Position = prv->WriteOffset;
+         if (error != ERR::Okay) return log.warning(error);
+         if (error = Self->activate(); error != ERR::Okay) return log.warning(error);
       }
 
       return ERR::Okay;
@@ -894,12 +893,17 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       fl::Actions(clMP3Actions),
       fl::Path(MOD_PATH));
 
-   return clMP3 ? ERR::Okay : ERR::AddClass;
+   if (clMP3) return ERR::Okay;
+
+   FreeResource(modAudio);
+   modAudio = nullptr;
+   return ERR::AddClass;
 }
 
 static ERR MODExpunge(void)
 {
    if (clMP3) { FreeResource(clMP3); clMP3 = nullptr; }
+   if (modAudio) { FreeResource(modAudio); modAudio = nullptr; }
    return ERR::Okay;
 }
 

@@ -112,9 +112,12 @@ static int read_stream(int Handle, int Offset, APTR Buffer, int Length)
 {
    auto Self = (extSound *)CurrentContext();
 
-   if ((Offset >= 0) and (Self->Position != Offset)) Self->seekStart(Offset);
-
    if (Length > 0) {
+      // The mixer holds the Audio lock while invoking this callback.  Never wait for Sound here because Sound actions
+      // such as a streamed seek can need the Audio lock in the opposite direction.
+
+      if ((Offset >= 0) and (sound->Position != Offset)) sound->seekStart(Offset);
+
       int result;
       Self->read(Buffer, Length, &result);
       return result;

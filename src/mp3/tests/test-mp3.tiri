@@ -2,7 +2,7 @@
 -- Flute tests for MP3 playback.
 -- These are audible tests that require human verification to confirm a full pass.
 
-@BeforeAll setp(State)
+@BeforeAll function setup(State:table)
    global glFolder = State.folder
    global glAudio = obj.new('audio', { name='SystemAudio' })
    if not glAudio then error('Failed to create audio object.') end
@@ -20,8 +20,8 @@ end
 @Test function Seek()
    proc = processing.new()
 
-   time, time_taken
-   wake = function(SoundID)
+   local time, time_taken
+   wake = function(Sound)
       time_taken = (mSys.preciseTime() - time) / 1000000
       proc.signal()
    end
