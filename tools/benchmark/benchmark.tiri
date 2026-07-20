@@ -198,27 +198,40 @@ end
 
    local last_result
    try
+      logMessage(f'Loading last results from log file "{glLogFile}"...')
       log_file = io.open(glLogFile, 'r')
-      local offset = 1024
-      local pos = 1
+      local pos = log_file:seek('end', 0)
       local buffer = ''
-      local rx = regex.new('(.*)\n(?!\n)')
       while (pos > 0) do
-         pos     = log_file:seek('end', offset)
-         segment = log_file:read(1024)
-         buffer  = segment .. buffer
+         local read_size = math.min(1024, pos)
+         pos -= read_size
+         log_file:seek('set', pos)
+         buffer = log_file:read(read_size) .. buffer
          while buffer:endsWith('\n') do
             buffer = buffer:rtrim()
          end
 
-         split = buffer:find('\n')
-         if split then
-            last_result = json.decode(buffer:substr(split))
+         local split
+         local search_from = 0
+         while true do
+            local next_split = buffer:find('\n', search_from, true)
+            if next_split is nil then break end
+            split = next_split
+            search_from = next_split + 1
+         end
+
+         if split != nil then
+            last_result = json.decode(buffer:substr(split + 1))
             break
          end
-         offset += 1024
+
+         if pos is 0 and buffer?? then
+            last_result = json.decode(buffer)
+         end
       end
       log_file:close()
+   except ex
+      logMessage(f'Error loading last results: {ex.message}')
    end
 
    -- Save the results
@@ -261,4 +274,6 @@ end
       else
          logMessage('No results from last run')
       end
+   else
+      logMessage('No previous results found')
    end
