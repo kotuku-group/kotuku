@@ -169,8 +169,8 @@ static bool parse_id3v1(objMP3 *Self)
          }
          else acSetKey(Self, "Genre", "Unknown");
 
-         if (id3.comment[COMMENT_TRACK] > 0) {
-            strcopy(std::to_string(id3.comment[COMMENT_TRACK]), buffer, sizeof(buffer));
+         if ((id3.comment[COMMENT_TRACK - 1] IS 0) and (uint8_t(id3.comment[COMMENT_TRACK]) > 0)) {
+            strcopy(std::to_string(uint8_t(id3.comment[COMMENT_TRACK])), buffer, sizeof(buffer));
             acSetKey(Self, "Track", buffer);
          }
 
@@ -421,10 +421,12 @@ static ERR MP3_Read(objMP3 *Self, struct acRead *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Buffer)) return log.warning(ERR::NullArgs);
+   if (!Args) return log.warning(ERR::NullArgs);
 
    Args->Result = 0;
-   if (Args->Length <= 0) return ERR::Okay;
+   if (Args->Length < 0) return log.warning(ERR::OutOfRange);
+   if (!Args->Length) return ERR::Okay;
+   if (!Args->Buffer) return log.warning(ERR::NullArgs);
 
    auto prv = (prvMP3 *)Self->DerivedPtr;
 
@@ -441,10 +443,15 @@ static ERR MP3_Read(objMP3 *Self, struct acRead *Args)
       if ((prv->OverflowSize) and (prv->OverflowPos < prv->OverflowSize)) {
          int to_copy = prv->OverflowSize - prv->OverflowPos;
          if (pos + to_copy > Args->Length) to_copy = Args->Length - pos;
+         if (to_copy > Self->Length - prv->WriteOffset) to_copy = int(Self->Length - prv->WriteOffset);
          copymem(prv->Overflow.data() + prv->OverflowPos, (uint8_t *)Args->Buffer + pos, to_copy);
          prv->OverflowPos += to_copy;
          prv->WriteOffset += to_copy;
          pos += to_copy;
+         if (prv->WriteOffset >= Self->Length) {
+            prv->WriteOffset = Self->Length;
+            prv->EndOfFile = true;
+         }
          continue;
       }
 
@@ -472,13 +479,17 @@ static ERR MP3_Read(objMP3 *Self, struct acRead *Args)
       while ((prv->WriteOffset < Self->Length) and (in < (int)prv->Input.size() - (8 * 1024)) and (pos < Args->Length)) {
          int decoded_samples;
 
-         if (pos + MAX_FRAME_BYTES > Args->Length) {
+         if ((pos + MAX_FRAME_BYTES > Args->Length) or
+             (prv->WriteOffset + MAX_FRAME_BYTES > Self->Length)) {
             // Buffer overflow management - necessary if we need to decode more data than what the output buffer can support.
 
             int16_t pcm[MINIMP3_MAX_SAMPLES_PER_FRAME];
             decoded_samples = mp3dec_decode_frame(&prv->mp3d, prv->Input.data() + in, prv->CompressedOffset - in, pcm, &prv->info);
             if (decoded_samples) {
                int decoded_bytes = decoded_samples * sizeof(int16_t) * prv->info.channels;
+               if (decoded_bytes > Self->Length - prv->WriteOffset) {
+                  decoded_bytes = int(Self->Length - prv->WriteOffset);
+               }
 
                if (pos + decoded_bytes > Args->Length) {
                   // We can't write the full amount, store the rest in overflow.  It is presumed that Length

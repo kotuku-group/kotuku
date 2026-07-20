@@ -33,13 +33,14 @@ end
    snd = obj.new('sound', { path=glFolder .. 'synth-cbr-joint-192k.mp3', onStop=wake, volume=0.33 })
    assert(snd, 'Failed to process MP3 file.')
 
-   snd.acSeek(0.5, SEEK_RELATIVE)
+   assert(snd.acSeek(0.5, SEEK_RELATIVE) is ERR_Okay, 'Failed to pre-seek MP3 sample.')
    assert(snd.acActivate() is ERR_Okay, 'Failed to playback MP3 sample.')
+   duration = snd.duration / 2
    time = mSys.preciseTime()
 
-   proc.sleep()
+   wait_error = proc.sleep(duration + glLag + 1.0)
+   assert(wait_error is ERR_Okay, 'Timed out waiting for pre-seek playback to finish.')
 
-   duration = snd.duration / 2
    assert(time_taken > duration-0.05, 'End-of-sample occurred earlier than duration of ' .. duration .. ': ' .. time_taken)
    assert(time_taken < duration+glLag+0.1, 'End-of-sample exceeded duration of ' .. duration .. ': ' .. time_taken)
 
@@ -51,12 +52,13 @@ end
    assert(snd, 'Failed to process MP3 file.')
 
    assert(snd.acActivate() is ERR_Okay, 'Failed to playback MP3 sample.')
-   snd.acSeek(0.5, SEEK_RELATIVE)
+   assert(snd.acSeek(0.5, SEEK_RELATIVE) is ERR_Okay, 'Failed to seek active MP3 sample.')
+   duration = snd.duration / 2
    time = mSys.preciseTime()
 
-   proc.sleep()
+   wait_error = proc.sleep(duration + glLag + 1.0)
+   assert(wait_error is ERR_Okay, 'Timed out waiting for post-seek playback to finish.')
 
-   duration = snd.duration / 2
    assert(time_taken > duration-0.05, 'End-of-sample occurred earlier than duration of ' .. duration .. ': ' .. time_taken)
    assert(time_taken < duration+glLag+0.1, 'End-of-sample exceeded duration of ' .. duration .. ': ' .. time_taken)
 
@@ -77,7 +79,8 @@ end
       proc.signal()
    end
 
-   snd.acActivate()
-   proc.sleep()
+   assert(snd.acActivate() is ERR_Okay, 'Failed to playback tolerance MP3 sample.')
+   wait_error = proc.sleep(snd.duration + glLag + 1.0)
+   assert(wait_error is ERR_Okay, 'Timed out waiting for tolerance playback to finish.')
    processing.halt(0.25)
 end
