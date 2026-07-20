@@ -413,6 +413,7 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
       sample.BufferedLength = fill_stream_buffer(Handle, sample, Position);
       sample.PlayPos = BYTELEN(Position) + sample.BufferedLength;
       Position = 0; // Internally we want to start from byte position zero in our stream buffer
+      bitpos = SAMPLE(0);
    }
    else if (bitpos > sample.SampleLength) return log.warning(ERR::OutOfRange);
 
@@ -439,10 +440,11 @@ ERR MixPlay(objAudio *Audio, int Handle, int Position)
          if (sample.OnStop.defined()) {
             double sec;
             if (sample.Stream) {
-               // NB: Accuracy is dependent on the StreamLength value being correct.
-               sec = double((sample.StreamLength - sample.PlayPos)>>sample_shift(sample.SampleType)) / double(channel->Frequency);
+               // NB: Accuracy is dependent on the StreamLength value being correct.  PlayPos already includes the
+               // buffered fill, which still has to be played, so it is added back to the anticipated time.
+               sec = double((sample.StreamLength - sample.PlayPos + sample.BufferedLength)>>sample_shift(sample.SampleType)) / double(channel->Frequency);
             }
-            else sec = double(sample.SampleLength - Position) / double(channel->Frequency);
+            else sec = double(sample.SampleLength - bitpos) / double(channel->Frequency);
             channel->EndTime = PreciseTime() + std::lrint(sec * 1000000.0);
          }
          else channel->EndTime = 0;

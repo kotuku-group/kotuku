@@ -24,6 +24,8 @@ extern "C" {
 }
 
 #include <array>
+#include <cmath>
+#include <limits>
 
 using namespace kt;
 
@@ -34,11 +36,6 @@ static OBJECTPTR modAudio = nullptr;
 static OBJECTPTR clMP3 = nullptr;
 
 const int COMMENT_TRACK = 29;
-
-#define MPF_MPEG1     (1<<19)
-#define MPF_PAD       (1<<9)
-#define MPF_COPYRIGHT (1<<3)
-#define MPF_ORIGINAL  (1<<2)
 
 const int MAX_FRAME_BYTES = MINIMP3_MAX_SAMPLES_PER_FRAME * sizeof(int16_t);
 
@@ -55,14 +52,13 @@ struct prvMP3 {
    int     SamplesPerFrame;     // Last known frame size, measured in samples: 384, 576 or 1152
    int     SeekOffset;          // Offset to apply when performing seek operations.
    int64_t WriteOffset;         // Current stream offset in bytes, relative to Sound.Length.
-   int64_t ReadOffset;          // Current seek position for the Read() action.  Max value is Sound.Length
    int     CompressedOffset;    // Next byte position for reading compressed input
    int     FramesProcessed;     // Count of frames processed by the decoder.
    int     TotalFrames;         // Total frames for the entire stream (known if CBR data, or VBR header is present).
-   int     TotalSamples;        // Total samples for the entire stream.  Adjusted for null padding at either end of the stream.
+   int64_t TotalSamples;        // Total samples for the stream, adjusted for null padding at either end.
    int     PaddingStart;        // Total samples at the start of the decoded stream that can be skipped.
    int     PaddingEnd;          // Total samples at the end of the decoded stream that can be ignored.
-   int     StreamSize;          // Compressed stream length, if defined by VBR header.
+   int64_t StreamSize;          // Compressed stream length, if defined by VBR header.
    bool    EndOfFile;           // True if all incoming data has been read.
    bool    VBR;                 // True if VBR detected, otherwise CBR
    bool    XingChecked;         // True if Xing header has been checked
@@ -70,10 +66,8 @@ struct prvMP3 {
 
    void reset() { // Reset the decoder.  Necessary for seeking.
       CompressedOffset = 0;
-      ReadOffset       = 0;
       WriteOffset      = 0;
       FramesProcessed  = 0;
-      SamplesPerFrame  = 1152;
       OverflowPos      = 0;
       OverflowSize     = 0;
       EndOfFile        = false;
@@ -90,7 +84,7 @@ struct id3tag {
    uint8_t genre;
 };
 
-static int find_frame(objMP3 *, uint8_t *, int);
+static int find_frame(objMP3 *, const uint8_t *, int);
 
 //********************************************************************************************************************
 
@@ -123,19 +117,15 @@ static const std::vector<CSTRING> genre_table = {
 
 // Determine the decoded byte length of the entire MP3 sample
 
-static const int bitrate_table[5][15] = {
-   // MPEG-1
-   { 0, 32000,  64000,  96000, 128000, 160000, 192000, 224000, 256000, 288000, 320000, 352000, 384000, 416000, 448000 }, // Layer I
-   { 0, 32000,  48000,  56000,  64000,  80000,  96000, 112000, 128000, 160000, 192000, 224000, 256000, 320000, 384000 }, // Layer II
-   { 0, 32000,  40000,  48000,  56000,  64000,  80000,  96000, 112000, 128000, 160000, 192000, 224000, 256000, 320000 }, // Layer III
-   // MPEG-2 LSF
-   { 0, 32000,  48000,  56000,  64000,  80000,  96000, 112000, 128000, 144000, 160000, 176000, 192000, 224000, 256000 }, // Layer I
-   { 0,  8000,  16000,  24000,  32000,  40000,  48000,  56000, 64000,  80000,  96000,  112000, 128000, 144000, 160000 }  // Layers II & III
-};
+static ERR calc_length(objMP3 *, int, int64_t *);
 
-static const int samplerate_table[3] = { 44100, 48000, 32000 };
+//********************************************************************************************************************
 
-static int64_t calc_length(objMP3 *, int);
+static uint32_t read_be32(const uint8_t *Buffer)
+{
+   return (uint32_t(Buffer[0]) << 24) | (uint32_t(Buffer[1]) << 16) |
+      (uint32_t(Buffer[2]) << 8) | uint32_t(Buffer[3]);
+}
 
 //********************************************************************************************************************
 // The ID3v1 tag can be located at the end of the MP3 file.
@@ -158,29 +148,29 @@ static bool parse_id3v1(objMP3 *Self)
 
          log.detail("ID3v1 tag found.");
 
-         std::string title(id3.title);
+         std::string title(id3.title, sizeof(id3.title));
          kt::ltrim(title, " ");
          acSetKey(Self, "Title", title.c_str());
 
-         std::string artist(id3.artist);
+         std::string artist(id3.artist, sizeof(id3.artist));
          kt::ltrim(artist, " ");
          acSetKey(Self, "Author", artist.c_str());
 
-         std::string album(id3.album);
+         std::string album(id3.album, sizeof(id3.album));
          kt::ltrim(album, " ");
          acSetKey(Self, "Album", album.c_str());
 
-         std::string comment(id3.comment);
+         std::string comment(id3.comment, sizeof(id3.comment));
          kt::ltrim(comment, " ");
          acSetKey(Self, "Description", comment.c_str());
 
-         if (id3.genre <= genre_table.size()) {
+         if (id3.genre < genre_table.size()) {
             acSetKey(Self, "Genre", genre_table[id3.genre]);
          }
          else acSetKey(Self, "Genre", "Unknown");
 
-         if (id3.comment[COMMENT_TRACK] > 0) {
-            strcopy(std::to_string(id3.comment[COMMENT_TRACK]), buffer, sizeof(buffer));
+         if ((id3.comment[COMMENT_TRACK - 1] IS 0) and (uint8_t(id3.comment[COMMENT_TRACK]) > 0)) {
+            strcopy(std::to_string(uint8_t(id3.comment[COMMENT_TRACK])), buffer, sizeof(buffer));
             acSetKey(Self, "Track", buffer);
          }
 
@@ -216,63 +206,81 @@ const int XING_STREAM_SIZE  = 2; // The compressed audio stream size in bytes is
 const int XING_TOC          = 4; // TOC entries are defined.
 const int XING_SCALE        = 8; // VBR quality is indicated from 0 (best) to 100 (worst).
 
-static int check_xing(objMP3 *Self, const uint8_t *Frame)
+static bool check_xing(objMP3 *Self, const uint8_t *Frame)
 {
    kt::Log log;
 
    auto prv = (prvMP3 *)Self->DerivedPtr;
 
-   if (prv->XingChecked) return 1;
+   if (prv->XingChecked) return false;
    else prv->XingChecked = true;
 
+   if ((prv->info.frame_bytes <= HDR_SIZE) or (HDR_GET_LAYER(Frame) != 1)) return false;
+
+   const uint8_t *frame_end = Frame + prv->info.frame_bytes;
    bs_t bs[1];
    L3_gr_info_t gr_info[4];
    bs_init(bs, Frame + HDR_SIZE, prv->info.frame_bytes - HDR_SIZE);
    if (HDR_IS_CRC(Frame)) get_bits(bs, 16);
-   if (L3_read_side_info(bs, gr_info, Frame) < 0) return 0; // side info corrupted
+   if ((L3_read_side_info(bs, gr_info, Frame) < 0) or (bs->pos > bs->limit)) return false;
 
    const uint8_t *tag = Frame + HDR_SIZE + bs->pos / 8;
-   if ((!strncmp("Xing", (CSTRING)tag, 4)) and (!strncmp("Info", (CSTRING)tag, 4))) return 0;
-   const int flags = tag[7];
-   if (!(flags & XING_FRAMES)) return -1;
+   if ((frame_end - tag < 8) or (strncmp("Xing", (CSTRING)tag, 4) and strncmp("Info", (CSTRING)tag, 4))) {
+      return false;
+   }
+
+   const uint32_t flags = read_be32(tag + 4);
+   if (!(flags & XING_FRAMES)) return false;
    tag += 8;
 
-   prv->TotalFrames = int((tag[0] << 24) | (tag[1] << 16) | (tag[2] << 8) | tag[3]);
-   //prv->TotalFrames--; // The VBR frame doesn't count as audio data.
+   if (frame_end - tag < 4) return false;
+   const uint32_t total_frames = read_be32(tag);
+   if ((!total_frames) or (total_frames > uint32_t(std::numeric_limits<int>::max()))) return false;
    tag += 4;
 
+   int64_t stream_size = 0;
    if (flags & XING_STREAM_SIZE) {
       // This value is used for TOC seek calculations.
-      prv->StreamSize = int((tag[0] << 24) | (tag[1] << 16) | (tag[2] << 8) | tag[3]);
+      if (frame_end - tag < 4) return false;
+      stream_size = read_be32(tag);
       tag += 4;
    }
 
+   std::array<uint8_t, 100> toc;
+   bool toc_loaded = false;
    if (flags & XING_TOC) {
-      copymem(tag, prv->TOC.data(), 100);
+      if (frame_end - tag < std::ssize(toc)) return false;
+      copymem(tag, toc.data(), toc.size());
       tag += 100;
-      prv->TOCLoaded = true;
+      toc_loaded = true;
    }
 
+   uint32_t quality = 0;
+   bool quality_defined = false;
    if (flags & XING_SCALE) {
-      int quality = int((tag[0] << 24) | (tag[1] << 16) | (tag[2] << 8) | tag[3]);
-      acSetKey(Self, "Quality", std::to_string(quality).c_str());
+      if (frame_end - tag < 4) return false;
+      quality = read_be32(tag);
+      quality_defined = true;
       tag += 4;
    }
 
    int delay = 0; // Typically the first 528 samples are padding set to zero and can be skipped.
    int padding = 0; // Padding tells you the number of samples at the end of the file that are empty.
 
-   if (*tag) { // Optional extension, LAME, Lavc, etc. Should be the same structure.
-       tag += 21;
-       if (tag - Frame + 14 >= prv->info.frame_bytes);
-       else {
-          delay   = ((tag[0] << 4) | (tag[1] >> 4)) + (528 + 1);
-          padding = (((tag[1] & 0xF) << 8) | tag[2]) - (528 + 1);
-       }
+   if ((tag < frame_end) and (*tag) and (frame_end - tag >= 24)) {
+      // Optional extension, LAME, Lavc, etc. Should be the same structure.
+      tag += 21;
+      delay   = ((tag[0] << 4) | (tag[1] >> 4)) + (528 + 1);
+      padding = (((tag[1] & 0xF) << 8) | tag[2]) - (528 + 1);
    }
 
+   prv->TotalFrames  = int(total_frames);
+   prv->StreamSize   = stream_size;
+   prv->TOCLoaded    = toc_loaded;
    prv->PaddingEnd   = padding;
    prv->PaddingStart = delay;
+   if (toc_loaded) prv->TOC = toc;
+   if (quality_defined) acSetKey(Self, "Quality", std::to_string(quality).c_str());
 
    // Calculate the total no of samples for the entire stream, adjusted for padding at both the start and end.
 
@@ -286,18 +294,33 @@ static int check_xing(objMP3 *Self, const uint8_t *Frame)
 
    // Compute byte length with adjustment for padding at the end, but not the start.
 
-   int64_t len = prv->TotalFrames * prv->SamplesPerFrame * prv->info.channels * sizeof(int16_t);
+   int64_t len = int64_t(prv->TotalFrames) * prv->info.samples * prv->info.channels * sizeof(int16_t);
    len -= int64_t(prv->PaddingEnd * prv->info.channels) * sizeof(int16_t);
    Self->setLength(len);
 
-   log.msg("Info header detected.  Total Frames: %d, Samples: %d, Track Time: %.2fs, Byte Length: %" PRId64 ", Padding: %d/%d",
-      prv->TotalFrames, prv->TotalSamples, seconds_len, int64_t(len), prv->PaddingStart, prv->PaddingEnd);
+   log.msg("Info header detected.  Total Frames: %d, Samples: %" PRId64 ", Track Time: %.2fs, Byte Length: %" PRId64
+      ", Padding: %d/%d", prv->TotalFrames, prv->TotalSamples, seconds_len, int64_t(len), prv->PaddingStart,
+      prv->PaddingEnd);
 
-   return 1;
+   return true;
 }
 
 //********************************************************************************************************************
 // Playback is managed by Sound.acActivate()
+
+static ERR init_error(objMP3 *Self, ERR Error)
+{
+   if (auto prv = (prvMP3 *)Self->DerivedPtr) {
+      if (prv->File) FreeResource(prv->File);
+      prv->~prvMP3();
+      free(Self->DerivedPtr);
+      Self->DerivedPtr = nullptr;
+   }
+
+   return Error;
+}
+
+//********************************************************************************************************************
 
 static ERR MP3_Init(objMP3 *Self)
 {
@@ -328,10 +351,10 @@ static ERR MP3_Init(objMP3 *Self)
 
    if (!prv->File) {
       if (!(prv->File = objFile::create::local(fl::Path(location), fl::Flags(FL::READ|FL::APPROXIMATE)))) {
-         return log.warning(ERR::CreateObject);
+         return init_error(Self, log.warning(ERR::CreateObject));
       }
    }
-   else prv->File->seekStart(0);
+   else if (auto error = prv->File->seekStart(0); error != ERR::Okay) return init_error(Self, error);
 
    // Read the ID3v1 file header, if there is one.
 
@@ -340,33 +363,36 @@ static ERR MP3_Init(objMP3 *Self)
 
    // Process ID3V2 and Xing VBR headers if present.
 
-   int result;
-   if (!prv->File->read(prv->Input.data(), prv->Input.size(), &result)) {
-      if (auto id3size = detect_id3v2((const char *)prv->Input.data())) {
-         log.msg("Detected ID3v2 header of %d bytes.", id3size);
-         prv->SeekOffset = id3size;
-         prv->File->seekStart(prv->SeekOffset);
-         prv->File->read(prv->Input.data(), prv->Input.size(), &result);
-      }
-      else {
-         log.msg("No ID3v2 header found.");
-         prv->SeekOffset = 0;
-      }
+   int result = 0;
+   if (auto error = prv->File->read(prv->Input.data(), prv->Input.size(), &result); error != ERR::Okay) {
+      return init_error(Self, error);
+   }
 
-      if (find_frame(Self, prv->Input.data(), result) != -1) {
-         if (check_xing(Self, prv->Input.data())) {
-            prv->SeekOffset += prv->info.frame_bytes;
-         }
-         else log.detail("No VBR header found.");
+   if (auto id3size = (result >= 10) ? detect_id3v2((const char *)prv->Input.data()) : 0) {
+      log.msg("Detected ID3v2 header of %d bytes.", id3size);
+      prv->SeekOffset = id3size;
+      if (auto error = prv->File->seekStart(prv->SeekOffset); error != ERR::Okay) {
+         return init_error(Self, error);
+      }
+      if (auto error = prv->File->read(prv->Input.data(), prv->Input.size(), &result); error != ERR::Okay) {
+         return init_error(Self, error);
       }
    }
    else {
-      free(Self->DerivedPtr);
-      Self->DerivedPtr = nullptr;
-      return ERR::NoSupport;
+      log.msg("No ID3v2 header found.");
+      prv->SeekOffset = 0;
    }
 
-   prv->File->seekStart(prv->SeekOffset);
+   const int frame_offset = find_frame(Self, prv->Input.data(), result);
+   if (frame_offset IS -1) return init_error(Self, log.warning(ERR::NoSupport));
+
+   prv->SeekOffset += frame_offset;
+   if (check_xing(Self, prv->Input.data() + frame_offset)) {
+      prv->SeekOffset += prv->info.frame_bytes;
+   }
+   else log.detail("No VBR header found.");
+
+   if (auto error = prv->File->seekStart(prv->SeekOffset); error != ERR::Okay) return init_error(Self, error);
 
    if (prv->info.channels IS 2) Self->Flags |= SDF::STEREO;
    if (Self->Stream != STREAM::NEVER) Self->Flags |= SDF::STREAM;
@@ -377,8 +403,10 @@ static ERR MP3_Init(objMP3 *Self)
    Self->Playback       = Self->Frequency;
 
    if (Self->Length <= 0) {
-      Self->Length = calc_length(Self, reduce);
-      prv->File->seekStart(prv->SeekOffset);
+      int64_t length;
+      if (auto error = calc_length(Self, reduce, &length); error != ERR::Okay) return init_error(Self, error);
+      Self->Length = length;
+      if (auto error = prv->File->seekStart(prv->SeekOffset); error != ERR::Okay) return init_error(Self, error);
    }
 
    log.msg("File is MP3.  Stereo: %c, BytesPerSecond: %d, Freq: %d, Byte Length: %d",
@@ -396,7 +424,9 @@ static ERR MP3_Read(objMP3 *Self, struct acRead *Args)
    if (!Args) return log.warning(ERR::NullArgs);
 
    Args->Result = 0;
-   if (Args->Length <= 0) return ERR::Okay;
+   if (Args->Length < 0) return log.warning(ERR::OutOfRange);
+   if (!Args->Length) return ERR::Okay;
+   if (!Args->Buffer) return log.warning(ERR::NullArgs);
 
    auto prv = (prvMP3 *)Self->DerivedPtr;
 
@@ -406,16 +436,22 @@ static ERR MP3_Read(objMP3 *Self, struct acRead *Args)
    int pos = 0;
    auto write_offset  = prv->WriteOffset;
    bool no_more_input = false;
+   ERR read_error = ERR::Okay;
    while ((prv->WriteOffset < Self->Length) and (!prv->EndOfFile) and (pos < Args->Length)) {
       // Previously decoded bytes that overflowed have priority.
 
       if ((prv->OverflowSize) and (prv->OverflowPos < prv->OverflowSize)) {
          int to_copy = prv->OverflowSize - prv->OverflowPos;
          if (pos + to_copy > Args->Length) to_copy = Args->Length - pos;
+         if (to_copy > Self->Length - prv->WriteOffset) to_copy = int(Self->Length - prv->WriteOffset);
          copymem(prv->Overflow.data() + prv->OverflowPos, (uint8_t *)Args->Buffer + pos, to_copy);
          prv->OverflowPos += to_copy;
          prv->WriteOffset += to_copy;
          pos += to_copy;
+         if (prv->WriteOffset >= Self->Length) {
+            prv->WriteOffset = Self->Length;
+            prv->EndOfFile = true;
+         }
          continue;
       }
 
@@ -427,7 +463,7 @@ static ERR MP3_Read(objMP3 *Self, struct acRead *Args)
          int result;
          if (auto error = prv->File->read(prv->Input.data() + prv->CompressedOffset, prv->Input.size() - prv->CompressedOffset, &result); error != ERR::Okay) {
             log.warning("File read error: %s", GetErrorMsg(error));
-            prv->EndOfFile = true;
+            read_error = error;
             break;
          }
          else if (!result) {
@@ -443,13 +479,17 @@ static ERR MP3_Read(objMP3 *Self, struct acRead *Args)
       while ((prv->WriteOffset < Self->Length) and (in < (int)prv->Input.size() - (8 * 1024)) and (pos < Args->Length)) {
          int decoded_samples;
 
-         if (pos + MAX_FRAME_BYTES > Args->Length) {
+         if ((pos + MAX_FRAME_BYTES > Args->Length) or
+             (prv->WriteOffset + MAX_FRAME_BYTES > Self->Length)) {
             // Buffer overflow management - necessary if we need to decode more data than what the output buffer can support.
 
             int16_t pcm[MINIMP3_MAX_SAMPLES_PER_FRAME];
             decoded_samples = mp3dec_decode_frame(&prv->mp3d, prv->Input.data() + in, prv->CompressedOffset - in, pcm, &prv->info);
             if (decoded_samples) {
                int decoded_bytes = decoded_samples * sizeof(int16_t) * prv->info.channels;
+               if (decoded_bytes > Self->Length - prv->WriteOffset) {
+                  decoded_bytes = int(Self->Length - prv->WriteOffset);
+               }
 
                if (pos + decoded_bytes > Args->Length) {
                   // We can't write the full amount, store the rest in overflow.  It is presumed that Length
@@ -526,7 +566,7 @@ static ERR MP3_Read(objMP3 *Self, struct acRead *Args)
 
    Self->Position = prv->WriteOffset;
    Args->Result = prv->WriteOffset - write_offset;
-   return ERR::Okay;
+   return read_error;
 }
 
 //********************************************************************************************************************
@@ -542,23 +582,42 @@ static ERR MP3_Seek(objMP3 *Self, struct acSeek *Args)
 
    auto prv = (prvMP3 *)Self->DerivedPtr;
 
+   if (!std::isfinite(Args->Offset)) return log.warning(ERR::OutOfRange);
+
    int64_t offset;
-   if (Args->Position IS SEEK::START)         offset = int(Args->Offset);
-   else if (Args->Position IS SEEK::END)      offset = Self->Length - int(Args->Offset);
-   else if (Args->Position IS SEEK::CURRENT)  offset = prv->ReadOffset + int(Args->Offset);
-   else if (Args->Position IS SEEK::RELATIVE) offset = Self->Length * Args->Offset;
+   if (Args->Position IS SEEK::START) {
+      if (Args->Offset <= 0) offset = 0;
+      else if (Args->Offset >= double(Self->Length)) offset = Self->Length;
+      else offset = int64_t(Args->Offset);
+   }
+   else if (Args->Position IS SEEK::END) {
+      if (Args->Offset <= 0) offset = Self->Length;
+      else if (Args->Offset >= double(Self->Length)) offset = 0;
+      else offset = Self->Length - int64_t(Args->Offset);
+   }
+   else if (Args->Position IS SEEK::CURRENT) {
+      if (Args->Offset <= -double(Self->Position)) offset = 0;
+      else if (Args->Offset >= double(Self->Length - Self->Position)) offset = Self->Length;
+      else offset = Self->Position + int64_t(Args->Offset);
+   }
+   else if (Args->Position IS SEEK::RELATIVE) {
+      if (Args->Offset <= 0) offset = 0;
+      else if (Args->Offset >= 1.0) offset = Self->Length;
+      else offset = int64_t(double(Self->Length) * Args->Offset);
+   }
    else return log.warning(ERR::Args);
 
    if (offset IS Self->Position) return ERR::Okay;
 
    if ((Self->Flags & SDF::STREAM) != SDF::NIL) {
-      prv->reset();
-      mp3dec_init(&prv->mp3d);
+      int active;
+      if (auto error = Self->getActive(active); error != ERR::Okay) return log.warning(error);
+
+      int frame = 0;
+      int64_t file_offset = prv->SeekOffset;
 
       if (offset <= 0) {
          log.traceBranch("Resetting play position to zero.");
-         prv->File->seekStart(prv->SeekOffset);
-         Self->Position = 0;
       }
       else {
          // Seeking via byte position, where the position is relative to the decoded length.
@@ -579,16 +638,10 @@ static ERR MP3_Seek(objMP3 *Self, struct acSeek *Args)
             if (idx < 0) idx = 0;
             else if (idx >= (int)prv->TOC.size()) idx = prv->TOC.size() - 1;
 
-            int offset = prv->SeekOffset + ((prv->TOC[idx] * prv->StreamSize) / 256);
-            int frame = prv->TOC[idx] * prv->TotalFrames / 256;
-            prv->File->seekStart(offset);
+            file_offset = int64_t(prv->SeekOffset) + ((int64_t(prv->TOC[idx]) * prv->StreamSize) / 256);
+            frame = int((int64_t(prv->TOC[idx]) * prv->TotalFrames) / 256);
 
-            log.detail("Seeking to byte offset %d, frame %d of %d", offset, frame, prv->TotalFrames);
-
-            prv->WriteOffset     = int64_t(frame * prv->SamplesPerFrame * prv->info.channels) * sizeof(int16_t);
-            prv->ReadOffset      = prv->WriteOffset;
-            prv->FramesProcessed = frame;
-            Self->Position = prv->WriteOffset;
+            log.detail("Seeking to byte offset %" PRId64 ", frame %d of %d", file_offset, frame, prv->TotalFrames);
          }
          else {
             // Seeking without a TOC has two approaches: 1) Scan from frame 1 until you reach the frame
@@ -597,34 +650,36 @@ static ERR MP3_Seek(objMP3 *Self, struct acSeek *Args)
             // computations.
 
             if (!prv->StreamSize) {
-               int64_t size;
-               prv->File->getSize(size);
+               int64_t size = 0;
+               if (auto error = prv->File->getSize(size); error != ERR::Okay) return log.warning(error);
+               if (size < prv->SeekOffset) return log.warning(ERR::InvalidData);
                prv->StreamSize = size - prv->SeekOffset;
             }
 
-            int frame  = int(prv->TotalFrames * pct);
-            int offset = int(prv->StreamSize * pct);
+            frame = int(prv->TotalFrames * pct);
+            int64_t stream_offset = int64_t(double(prv->StreamSize) * pct);
             if (frame < 0) frame = 0;
-            if (offset < 0) offset = 0;
-            prv->File->seekStart(prv->SeekOffset + offset);
+            if (stream_offset < 0) stream_offset = 0;
+            file_offset = prv->SeekOffset + stream_offset;
 
-            log.detail("Seeking to byte offset %d, frame %d of %d", offset, frame, prv->TotalFrames);
-
-            prv->WriteOffset     = int64_t(frame * prv->SamplesPerFrame * prv->info.channels) * sizeof(int16_t);
-            prv->ReadOffset      = prv->WriteOffset;
-            prv->FramesProcessed = frame;
-            Self->Position = prv->WriteOffset;
+            log.detail("Seeking to byte offset %" PRId64 ", frame %d of %d", file_offset, frame, prv->TotalFrames);
          }
       }
 
-      int active;
-      if (!Self->getActive(active)) {
-         if (active) {
-            log.branch("Resetting state of active sample, seek to byte %" PF64, (long long)prv->WriteOffset);
-            Self->deactivate();
-            Self->Position = prv->WriteOffset;
-            Self->activate();
-         }
+      if (auto error = prv->File->seekStart(file_offset); error != ERR::Okay) return log.warning(error);
+
+      prv->reset();
+      mp3dec_init(&prv->mp3d);
+      prv->WriteOffset     = int64_t(frame) * prv->SamplesPerFrame * prv->info.channels * sizeof(int16_t);
+      prv->FramesProcessed = frame;
+      Self->Position       = prv->WriteOffset;
+
+      if (active) {
+         log.branch("Resetting state of active sample, seek to byte %" PF64, (long long)prv->WriteOffset);
+         auto error = Self->deactivate();
+         Self->Position = prv->WriteOffset;
+         if (error != ERR::Okay) return log.warning(error);
+         if (error = Self->activate(); error != ERR::Okay) return log.warning(error);
       }
 
       return ERR::Okay;
@@ -642,37 +697,34 @@ static ERR MP3_Seek(objMP3 *Self, struct acSeek *Args)
 #define SIZE_BUFFER     256000  // Load up to this many bytes to determine if the file is in variable bit-rate
 #define SIZE_CBR_BUFFER 51200   // Load at least this many bytes to determine if the file is in constant bit-rate
 
-static int64_t calc_length(objMP3 *Self, int ReduceEnd)
+static ERR calc_length(objMP3 *Self, int ReduceEnd, int64_t *Length)
 {
    kt::Log log(__FUNCTION__);
-   int buffer_size;
-   std::array<uint16_t, 16> avg;  // Used to compute the interquartile mean
+   int buffer_size = 0;
    std::vector<uint16_t> fsizes;  // List of all compressed frame sizes
 
    log.branch();
 
-   auto prv = (prvMP3 *)Self->DerivedPtr;
+   if (!Length) return ERR::NullArgs;
+   *Length = 0;
 
-   avg.fill(0);
+   auto prv = (prvMP3 *)Self->DerivedPtr;
 
    int frame_start     = 0;
    int current_bitrate = 0;
-   int frame_size      = 0;
-   int channels        = 1;
-   int frame_samples   = 1152;
-   int8_t layer           = 0;
+   int64_t decoded_size = 0;
 
    prv->VBR = false;
 
-   int64_t filesize;
-   prv->File->getSize(filesize);
+   int64_t filesize = 0;
+   if (auto error = prv->File->getSize(filesize); error != ERR::Okay) return error;
 
    {
       // Load MP3 data from the file
 
       std::vector<uint8_t> buffer(SIZE_BUFFER);
-      prv->File->seekStart(prv->SeekOffset);
-      prv->File->read(buffer.data(), SIZE_CBR_BUFFER, &buffer_size);
+      if (auto error = prv->File->seekStart(prv->SeekOffset); error != ERR::Okay) return error;
+      if (auto error = prv->File->read(buffer.data(), SIZE_CBR_BUFFER, &buffer_size); error != ERR::Okay) return error;
 
       // Find the start of the frame data
 
@@ -680,165 +732,143 @@ static int64_t calc_length(objMP3 *Self, int ReduceEnd)
 
       if (frame_start IS -1) {
          log.warning("Failed to find the first mp3 frame.");
-         return -1;
+         return ERR::NoSupport;
       }
 
+      const uint8_t *first_header = buffer.data() + frame_start;
+      int free_format_bytes = HDR_IS_FREE_FORMAT(first_header) ?
+         prv->info.frame_bytes - hdr_padding(first_header) : 0;
       int pos = frame_start;
-      while (pos < buffer_size - 8) {
-         // MP3 frame information consists of a single 32-bit header
-         int frame = (buffer[pos]<<24) | (buffer[pos+1]<<16) | (buffer[pos+2]<<8) | buffer[pos+3];
+      while (pos <= buffer_size - HDR_SIZE) {
+         const uint8_t *frame_header = buffer.data() + pos;
 
-         bool invalid;
-         if ((frame & 0xffe00000) IS 0xffe00000) {
-            layer = 4 - ((frame & ((1<<17)|(1<<18)))>>17);
-            int samplerate = samplerate_table[(frame & 0x0c00)>>10];
-            if ((layer > 3) or (!samplerate)) {
+         if (hdr_valid(frame_header)) {
+            const int frame_size = hdr_frame_bytes(frame_header, free_format_bytes) + hdr_padding(frame_header);
+            if (frame_size <= 0) {
                pos++;
                continue;
             }
 
-            int index = (frame & 0x0000f000)>>12;
-            frame_samples = hdr_frame_samples(buffer.data());
+            if (pos + frame_size > buffer_size) {
+               if ((prv->VBR) and (buffer_size IS SIZE_CBR_BUFFER)) {
+                  int result = 0;
+                  if (auto error = prv->File->read(buffer.data() + buffer_size, SIZE_BUFFER - buffer_size, &result);
+                      error != ERR::Okay) return error;
+                  buffer_size += result;
+                  if (pos + frame_size <= buffer_size) continue;
+               }
+               break;
+            }
 
-            int bitrate;
-            if (frame & MPF_MPEG1) bitrate = bitrate_table[layer - 1][index]; // MPEG-1
-            else bitrate = bitrate_table[3 + (layer >> 1)][index]; // MPEG-2
-
+            const int bitrate = int(hdr_bitrate_kbps(frame_header) * 1000);
             if (!current_bitrate) current_bitrate = bitrate;
-            else if (current_bitrate != bitrate) prv->VBR = true;
+            else if ((bitrate) and (current_bitrate != bitrate)) prv->VBR = true;
 
-            int8_t pad = (frame & MPF_PAD) ? 1 : 0;
-            channels = HDR_IS_MONO(buffer.data()) ? 1 : 2;
-
-            if (layer IS 1) frame_size = ((12 * bitrate / samplerate) + pad) * 4;
-            else frame_size = (144 * bitrate / samplerate) + pad;
-
-            if (frame_size <= 0) { // In case file lacks integrity.  Frame must be at least 1 byte
-               pos++;
-               continue;
-            }
-
+            const int channels = HDR_IS_MONO(frame_header) ? 1 : 2;
+            const int frame_samples = int(hdr_frame_samples(frame_header));
+            decoded_size += int64_t(frame_samples) * channels * sizeof(int16_t);
             fsizes.push_back(frame_size);
             pos += frame_size;
-            avg[index] = avg[index] + 1;
-            invalid = false;
          }
-         else invalid = true;
+         else {
+            int index = find_frame(Self, buffer.data() + pos, buffer_size - pos);
+            if (index <= 0) {
+               log.msg("Failed to find the next frame at position %d.", pos);
+               break;
+            }
+
+            pos += index;
+            const uint8_t *next_header = buffer.data() + pos;
+            free_format_bytes = HDR_IS_FREE_FORMAT(next_header) ?
+               prv->info.frame_bytes - hdr_padding(next_header) : 0;
+         }
 
          // Check if we need to load more data into our buffer for VBR analysis
 
          if (pos >= buffer_size - 8) {
             if ((prv->VBR) and (buffer_size IS SIZE_CBR_BUFFER)) {
                // Read more file data so that we can calculate the vbr more accurately
-               int result;
-               prv->File->read(buffer.data() + buffer_size, SIZE_BUFFER - buffer_size, &result);
+               int result = 0;
+               if (auto error = prv->File->read(buffer.data() + buffer_size, SIZE_BUFFER - buffer_size, &result);
+                   error != ERR::Okay) return error;
                buffer_size += result;
             }
             else break; // File is CBR, no need to scan more data
          }
-
-         // Check that the frame is valid
-
-         if (invalid) {
-            int index = find_frame(Self, buffer.data() + pos, buffer_size - pos);
-            if ((index IS -1) or (!index)) {
-               log.msg("Failed to find the next frame at position %d.", pos);
-               break;
-            }
-            else pos += index;
-         }
       }
    }
 
-   if (fsizes.empty()) return -1;
+   if (fsizes.empty()) return ERR::NoSupport;
 
    // Calculate average frame length using interquartile mean
 
    sort(fsizes.begin(), fsizes.end(), std::greater<uint16_t>());
-   const int first = fsizes.size() / 4;
-   const int last  = int(fsizes.size() * 0.75);
+   int first = fsizes.size() / 4;
+   int last  = int(fsizes.size() * 0.75);
+   if (last <= first) {
+      first = 0;
+      last = fsizes.size();
+   }
+
    double avg_frame_len = 0;
    for (int i=first; i < last; i++) avg_frame_len += fsizes[i];
    avg_frame_len /= (last - first);
 
-   log.detail("File Size: %d, %d frames, Average frame length: %.2f bytes, VBR: %c", int(filesize), (int)fsizes.size(), avg_frame_len, prv->VBR ? 'Y' : 'N');
+   log.detail("File Size: %" PRId64 ", %d frames, Average frame length: %.2f bytes, VBR: %c", filesize,
+      int(fsizes.size()), avg_frame_len, prv->VBR ? 'Y' : 'N');
 
-   if (filesize > buffer_size) {
-      if (prv->VBR) {
-         prv->TotalFrames = int((filesize - prv->SeekOffset - frame_start - ReduceEnd) / avg_frame_len);
-         return int64_t(prv->TotalFrames * frame_samples * channels) * sizeof(int16_t);
-      }
-      else {
-         // For CBR we guess the total frames from the file size.
-         prv->File->getSize(filesize);
-         int total_frames = int((filesize - prv->SeekOffset - frame_start - ReduceEnd) / avg_frame_len);
-         double seconds = (total_frames * (double)avg_frame_len) / (double(current_bitrate) / 1000.0 * 125.0);
-         prv->TotalFrames = total_frames;
-         return seconds * Self->BytesPerSecond;
-      }
+   const int64_t stream_size = filesize - prv->SeekOffset - frame_start - ReduceEnd;
+   if (stream_size <= 0) return ERR::NoSupport;
+
+   if (stream_size > buffer_size) {
+      const double estimated_frames = double(stream_size) / avg_frame_len;
+      if (estimated_frames > double(std::numeric_limits<int>::max())) return ERR::OutOfRange;
+      prv->TotalFrames = int(estimated_frames);
+      const double decoded_frame_len = double(decoded_size) / double(fsizes.size());
+      *Length = int64_t(estimated_frames * decoded_frame_len);
    }
-   else if (fsizes.size() > 0) { // The entire file was loaded into the buffer, so we know the exact length.
-      return fsizes.size() * frame_size * channels * sizeof(int16_t);
+   else { // The entire file was loaded into the buffer, so we know the exact length.
+      if (fsizes.size() > std::size_t(std::numeric_limits<int>::max())) return ERR::OutOfRange;
+      prv->TotalFrames = int(fsizes.size());
+      *Length = decoded_size;
    }
-   else { // File has no detectable MP3 audio content
-      return -1;
-   }
+
+   return (*Length > 0) ? ERR::Okay : ERR::NoSupport;
 }
 
 //********************************************************************************************************************
 
-static int find_frame(objMP3 *Self, uint8_t *Buffer, int BufferSize)
+static int find_frame(objMP3 *Self, const uint8_t *Buffer, int BufferSize)
 {
    kt::Log log(__FUNCTION__);
-   int bitrate, frame_size;
    auto prv = (prvMP3 *)Self->DerivedPtr;
 
    log.traceBranch("Buffer Size: %d", BufferSize);
 
-   for (int pos=0; (pos < BufferSize-8); pos++) {
-      if (Buffer[pos] IS 0xff) {
-         int frame = (Buffer[pos]<<24) | (Buffer[pos+1]<<16) | (Buffer[pos+2]<<8) | Buffer[pos+3];
-         if ((frame & 0xffe00000) IS 0xffe00000) {
-            // Frame sync found.  Check its validity by looking for a following frame.
+   if (BufferSize <= HDR_SIZE) return -1;
 
-            int layer = 4 - ((frame & ((1<<17)|(1<<18)))>>17);
-            int index = (frame & 0x0c00)>>10;
-            if (index >= std::ssize(samplerate_table)) continue;
-            int samplerate = samplerate_table[index];
-            if ((layer < 0) or (layer > 3) or (!samplerate)) continue;
-
-            index = (frame & 0x0000f000)>>12;
-
-            if (frame & MPF_MPEG1) bitrate = bitrate_table[layer - 1][index]; // MPEG-1
-            else bitrate = bitrate_table[3 + (layer >> 1)][index]; // MPEG-2
-
-            int8_t pad = (frame & MPF_PAD) ? 1 : 0;
-
-            if (layer IS 1) frame_size = ((12 * bitrate / samplerate) + pad) * 4;
-            else frame_size = (144 * bitrate / samplerate) + pad;
-
-            int next = pos + frame_size;
-            if (next + 4 < BufferSize) {
-               frame = (Buffer[next]<<24) | (Buffer[next+1]<<16) | (Buffer[next+2]<<8) | Buffer[next+3];
-
-               if ((frame & 0xffe00000) != 0xffe00000) continue;
-
-               prv->info.channels    = HDR_IS_MONO(Buffer) ? 1 : 2;
-               prv->info.hz          = samplerate;
-               prv->info.frame_bytes = frame_size;
-               prv->info.samples     = hdr_frame_samples(Buffer);
-
-               log.detail("Frame found at %d, size %d, channels %d, %d samples, %dhz.", pos, prv->info.frame_bytes, prv->info.channels, prv->info.samples, prv->info.hz);
-
-               return pos;
-            }
-         }
-      }
+   int free_format_bytes = 0;
+   int frame_bytes = 0;
+   const int pos = mp3d_find_frame(Buffer, BufferSize, &free_format_bytes, &frame_bytes);
+   if ((pos >= BufferSize) or (frame_bytes <= 0)) {
+      log.detail("Failed to find a valid frame.");
+      return -1;
    }
 
-   log.detail("Failed to find a valid frame.");
+   const uint8_t *frame = Buffer + pos;
+   prv->info.frame_bytes  = frame_bytes;
+   prv->info.frame_offset = pos;
+   prv->info.channels     = HDR_IS_MONO(frame) ? 1 : 2;
+   prv->info.hz           = int(hdr_sample_rate_hz(frame));
+   prv->info.layer        = 4 - HDR_GET_LAYER(frame);
+   prv->info.bitrate_kbps = int(hdr_bitrate_kbps(frame));
+   prv->info.samples      = int(hdr_frame_samples(frame));
+   prv->SamplesPerFrame   = prv->info.samples;
 
-   return -1;
+   log.detail("Frame found at %d, size %d, channels %d, %d samples, %dhz.", pos, prv->info.frame_bytes,
+      prv->info.channels, prv->info.samples, prv->info.hz);
+
+   return pos;
 }
 
 //********************************************************************************************************************
@@ -874,12 +904,17 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       fl::Actions(clMP3Actions),
       fl::Path(MOD_PATH));
 
-   return clMP3 ? ERR::Okay : ERR::AddClass;
+   if (clMP3) return ERR::Okay;
+
+   FreeResource(modAudio);
+   modAudio = nullptr;
+   return ERR::AddClass;
 }
 
 static ERR MODExpunge(void)
 {
    if (clMP3) { FreeResource(clMP3); clMP3 = nullptr; }
+   if (modAudio) { FreeResource(modAudio); modAudio = nullptr; }
    return ERR::Okay;
 }
 

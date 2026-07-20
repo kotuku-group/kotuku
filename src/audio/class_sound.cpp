@@ -112,9 +112,12 @@ static int read_stream(int Handle, int Offset, APTR Buffer, int Length)
 {
    auto Self = (extSound *)CurrentContext();
 
-   if ((Offset >= 0) and (Self->Position != Offset)) Self->seekStart(Offset);
-
    if (Length > 0) {
+      // The mixer holds the Audio lock while invoking this callback.  Never wait for Sound here because Sound actions
+      // such as a streamed seek can need the Audio lock in the opposite direction.
+
+      if ((Offset >= 0) and (Self->Position != Offset)) Self->seekStart(Offset);
+
       int result;
       Self->read(Buffer, Length, &result);
       return result;
@@ -136,8 +139,7 @@ static void onstop_event(int SampleHandle)
 #ifdef _WIN32
 static ERR timer_playback_ended(extSound *Self, int64_t Elapsed, int64_t CurrentTime)
 {
-   kt::Log log;
-   log.trace("Sound streaming completed.");
+   kt::Log().detail("Sound streaming completed.");
    sound_stopped_event(Self);
    Self->PlaybackTimer = 0;
    // NB: We don't manually stop the audio streamer, it will automatically stop once buffers are clear.
@@ -1150,8 +1152,10 @@ static ERR SOUND_Seek(extSound *Self, struct acSeek *Args)
          if (Self->Handle) {
             audio->Samples[Self->Handle].PlayPos = BYTELEN(Self->Position);
 
-            if ((!audio->Samples[Self->Handle].Stream) and (Self->Active)) {
-               // Sample is fully buffered.  Adjust position now if it's in playback.
+            if (Self->Active) {
+               // Adjust the playback position now if the sample is in playback.  Streams are restarted so that the
+               // buffer is refilled from the new position and the channel's anticipated end-time is recomputed;
+               // otherwise stale buffered audio continues to play and the OnStop event is mistimed.
 
                if (Self->ChannelIndex) {
                   if (auto channel = audio->GetChannel(Self->ChannelIndex)) {
