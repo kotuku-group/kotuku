@@ -46,14 +46,15 @@ end
 
    -- Post-seek by using the seek() action after initialisation
 
-   print('Post-seek to half-way position.')
+   target = 0.9
+   print(f'Post-seek to relative position {target}.')
 
    snd = obj.new('sound', { path=glFolder .. 'synth-cbr-mono-192k.mp3', onStop=wake, volume=0.33 })
    assert(snd, 'Failed to process MP3 file.')
 
    assert(snd.acActivate() is ERR_Okay, 'Failed to playback MP3 sample.')
-   assert(snd.acSeek(0.5, SEEK_RELATIVE) is ERR_Okay, 'Failed to seek active MP3 sample.')
-   duration = snd.duration / 2
+   assert(snd.acSeek(target, SEEK_RELATIVE) is ERR_Okay, 'Failed to seek active MP3 sample.')
+   duration = snd.duration * (1.0 - target)
    time = mSys.preciseTime()
 
    wait_error = proc.sleep(duration + glLag + 1.0)

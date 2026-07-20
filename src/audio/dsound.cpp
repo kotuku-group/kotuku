@@ -265,17 +265,26 @@ __declspec(no_sanitize_address) int sndPlay(PlatformData *Sound, bool Loop, int 
 
       unsigned char *bufA, *bufB;
       int lenA, lenB;
+      int fill_length = 0;
       if (IDirectSoundBuffer_Lock(Sound->SoundBuffer, 0, Sound->BufferLength, (void **)&bufA, (DWORD *)&lenA, (void **)&bufB, (DWORD *)&lenB, 0) IS DS_OK) {
          dsSeekData(Sound->Object, Offset);
          Sound->Position = Offset;
          if (lenA > 0) {
-            auto lenA2 = dsReadData(Sound->Object, bufA, lenA);
-            if (lenA2 < lenA) ZeroMemory(bufA + lenA2, lenA - lenA2);
-            Sound->Position += lenA2;
+            fill_length = dsReadData(Sound->Object, bufA, lenA);
+            if (fill_length < lenA) ZeroMemory(bufA + fill_length, lenA - fill_length);
+            Sound->Position += fill_length;
          }
          IDirectSoundBuffer_Unlock(Sound->SoundBuffer, bufA, lenA, bufB, 0);
       }
       else return ERR_LockFailed;
+
+      if ((!Sound->Loop) and (Sound->Position >= Sound->SampleLength)) {
+         // The initial fill consumed the entire stream, so signal the end immediately with an exact byte count.
+         // Otherwise detection is deferred to a buffer half-crossing, by which time the play cursor may have
+         // passed the end of the valid data and the remaining-bytes estimate becomes a gross over-estimate.
+         Sound->Stop = 1;
+         end_of_stream(Sound->Object, fill_length);
+      }
    }
    else { // For non-streamed samples, start the play position from the proposed offset
       IDirectSoundBuffer_Stop(Sound->SoundBuffer);
@@ -344,29 +353,36 @@ extern "C" int sndStreamAudio(PlatformData *Sound)
             }
             else bytes_out = 0;
 
+            int unlock_a = bytes_out; // Unlock lengths must cover all modified bytes, including zeroed regions
+            int unlock_b = 0;
+
             if (Sound->Position >= Sound->SampleLength) {
                // All of the bytes have been read from the sample.
 
                if (Sound->Loop) {
                   dsSeekData(Sound->Object, 0);
-                  bytes_out = dsReadData(Sound->Object, write + bytes_out, length - bytes_out);
-                  Sound->Position = bytes_out;
+                  auto wrapped = dsReadData(Sound->Object, write + bytes_out, length - bytes_out);
+                  Sound->Position = wrapped;
+                  unlock_a = bytes_out + wrapped;
+                  bytes_out = wrapped;
                }
                else {
                   Sound->Stop++;
                   if (length - bytes_out > 0) ZeroMemory(write+bytes_out, length-bytes_out); // Clear trailing data for a clean exit
                   if (length2 > 0) ZeroMemory(write2, length2);
+                  unlock_a = length;
+                  unlock_b = length2;
 
                   if (Sound->Stop IS 1) {
-                     if (Sound->Fill IS FILL_FIRST) {
-                        end_of_stream(Sound->Object, (Sound->BufferLength>>1) - Sound->BufferPos + bytes_out);
-                     }
-                     else end_of_stream(Sound->Object, (Sound->BufferLength - Sound->BufferPos) + bytes_out);
+                     int remaining = (Sound->Fill IS FILL_FIRST) ?
+                        ((Sound->BufferLength>>1) - (int)Sound->BufferPos + bytes_out) :
+                        ((int)Sound->BufferLength - (int)Sound->BufferPos + bytes_out);
+                     end_of_stream(Sound->Object, remaining);
                   }
                }
             }
 
-            IDirectSoundBuffer_Unlock(Sound->SoundBuffer, write, bytes_out, write2, 0);
+            IDirectSoundBuffer_Unlock(Sound->SoundBuffer, write, unlock_a, write2, unlock_b);
          }
       }
       return 0;
