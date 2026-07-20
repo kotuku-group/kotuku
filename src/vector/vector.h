@@ -417,6 +417,8 @@ struct GouraudCache {
    uint64_t MeshHash = 0;       // Fingerprint of the source mesh (positions, colours, indices)
    double Opacity = -1.0;       // Fill opacity the colours were built with (-1 => never built)
    VCS ColourSpace = VCS::INHERIT; // Colour space the vertex colours were encoded for
+   bool Translucent = false;    // Any vertex alpha < 255; may select the seamless compound render path
+   bool Overlapping = false;    // Triangle interiors overlap; requires ordered source-over compositing
    bool Valid = false;
 
    bool matches(uint64_t pMeshHash, const agg::trans_affine &pTransform, double pOpacity, VCS pColourSpace) const {
