@@ -24,6 +24,7 @@ extern "C" {
 }
 
 #include <array>
+#include <cmath>
 #include <limits>
 
 using namespace kt;
@@ -51,7 +52,6 @@ struct prvMP3 {
    int     SamplesPerFrame;     // Last known frame size, measured in samples: 384, 576 or 1152
    int     SeekOffset;          // Offset to apply when performing seek operations.
    int64_t WriteOffset;         // Current stream offset in bytes, relative to Sound.Length.
-   int64_t ReadOffset;          // Current seek position for the Read() action.  Max value is Sound.Length
    int     CompressedOffset;    // Next byte position for reading compressed input
    int     FramesProcessed;     // Count of frames processed by the decoder.
    int     TotalFrames;         // Total frames for the entire stream (known if CBR data, or VBR header is present).
@@ -66,7 +66,6 @@ struct prvMP3 {
 
    void reset() { // Reset the decoder.  Necessary for seeking.
       CompressedOffset = 0;
-      ReadOffset       = 0;
       WriteOffset      = 0;
       FramesProcessed  = 0;
       SamplesPerFrame  = 0;
@@ -150,23 +149,23 @@ static bool parse_id3v1(objMP3 *Self)
 
          log.detail("ID3v1 tag found.");
 
-         std::string title(id3.title);
+         std::string title(id3.title, sizeof(id3.title));
          kt::ltrim(title, " ");
          acSetKey(Self, "Title", title.c_str());
 
-         std::string artist(id3.artist);
+         std::string artist(id3.artist, sizeof(id3.artist));
          kt::ltrim(artist, " ");
          acSetKey(Self, "Author", artist.c_str());
 
-         std::string album(id3.album);
+         std::string album(id3.album, sizeof(id3.album));
          kt::ltrim(album, " ");
          acSetKey(Self, "Album", album.c_str());
 
-         std::string comment(id3.comment);
+         std::string comment(id3.comment, sizeof(id3.comment));
          kt::ltrim(comment, " ");
          acSetKey(Self, "Description", comment.c_str());
 
-         if (id3.genre <= genre_table.size()) {
+         if (id3.genre < genre_table.size()) {
             acSetKey(Self, "Genre", genre_table[id3.genre]);
          }
          else acSetKey(Self, "Genre", "Unknown");
@@ -572,11 +571,29 @@ static ERR MP3_Seek(objMP3 *Self, struct acSeek *Args)
 
    auto prv = (prvMP3 *)Self->DerivedPtr;
 
+   if (!std::isfinite(Args->Offset)) return log.warning(ERR::OutOfRange);
+
    int64_t offset;
-   if (Args->Position IS SEEK::START)         offset = int(Args->Offset);
-   else if (Args->Position IS SEEK::END)      offset = Self->Length - int(Args->Offset);
-   else if (Args->Position IS SEEK::CURRENT)  offset = prv->ReadOffset + int(Args->Offset);
-   else if (Args->Position IS SEEK::RELATIVE) offset = Self->Length * Args->Offset;
+   if (Args->Position IS SEEK::START) {
+      if (Args->Offset <= 0) offset = 0;
+      else if (Args->Offset >= double(Self->Length)) offset = Self->Length;
+      else offset = int64_t(Args->Offset);
+   }
+   else if (Args->Position IS SEEK::END) {
+      if (Args->Offset <= 0) offset = Self->Length;
+      else if (Args->Offset >= double(Self->Length)) offset = 0;
+      else offset = Self->Length - int64_t(Args->Offset);
+   }
+   else if (Args->Position IS SEEK::CURRENT) {
+      if (Args->Offset <= -double(Self->Position)) offset = 0;
+      else if (Args->Offset >= double(Self->Length - Self->Position)) offset = Self->Length;
+      else offset = Self->Position + int64_t(Args->Offset);
+   }
+   else if (Args->Position IS SEEK::RELATIVE) {
+      if (Args->Offset <= 0) offset = 0;
+      else if (Args->Offset >= 1.0) offset = Self->Length;
+      else offset = int64_t(double(Self->Length) * Args->Offset);
+   }
    else return log.warning(ERR::Args);
 
    if (offset IS Self->Position) return ERR::Okay;
@@ -616,7 +633,6 @@ static ERR MP3_Seek(objMP3 *Self, struct acSeek *Args)
             log.detail("Seeking to byte offset %" PRId64 ", frame %d of %d", file_offset, frame, prv->TotalFrames);
 
             prv->WriteOffset     = int64_t(frame) * prv->SamplesPerFrame * prv->info.channels * sizeof(int16_t);
-            prv->ReadOffset      = prv->WriteOffset;
             prv->FramesProcessed = frame;
             Self->Position = prv->WriteOffset;
          }
@@ -641,7 +657,6 @@ static ERR MP3_Seek(objMP3 *Self, struct acSeek *Args)
             log.detail("Seeking to byte offset %" PRId64 ", frame %d of %d", stream_offset, frame, prv->TotalFrames);
 
             prv->WriteOffset     = int64_t(frame) * prv->SamplesPerFrame * prv->info.channels * sizeof(int16_t);
-            prv->ReadOffset      = prv->WriteOffset;
             prv->FramesProcessed = frame;
             Self->Position = prv->WriteOffset;
          }
