@@ -67,6 +67,18 @@ end
    content = readFileContent(write_path)
    assert(content is 'Test content - appended', 'Append mode should add to end of file')
 
+   -- Test that append mode creates a missing file
+   append_path = glTestFolder .. 'test_append_new.txt'
+   mSys.DeleteFile(append_path)
+   file = io.open(append_path, 'a')
+   assert(file, 'Failed to create a missing file in append mode')
+   file:write('New append content')
+   file:close()
+   glTestFiles:push(append_path)
+
+   content = readFileContent(append_path)
+   assert(content is 'New append content', 'Append mode should create and write a missing file')
+
    -- Test opening non-existent file for reading
    try
       io.open(glTestFolder .. 'nonexistent.txt', 'r')

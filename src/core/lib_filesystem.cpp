@@ -427,7 +427,7 @@ strview Path: The path to analyse.
 -ERRORS-
 Okay: The path was analysed and the result is stored in the `Type` variable.
 NullArgs:
-DoesNotExist:
+FileNotFound:
 NoSupport:
 
 -TAGS-
@@ -466,7 +466,7 @@ ERR AnalysePath(const std::string_view &Path, LOC *PathType)
             return ERR::Okay;
          }
       }
-      return ERR::DoesNotExist;
+      return ERR::FileNotFound;
    }
 
    std::string test_path;
@@ -483,7 +483,7 @@ ERR AnalysePath(const std::string_view &Path, LOC *PathType)
    }
    else {
       log.trace("Path '%.*s' does not exist.", int(path.size()), path.data());
-      return ERR::DoesNotExist;
+      return ERR::FileNotFound;
    }
 }
 
