@@ -689,7 +689,8 @@ end
 
 @Test(priority=46); @Requires(network=true, ssl=true, windows_platform=true)
 function PendingSSLFreeDropsCompletion()
-   port                  = nextPort()
+   glPort++
+   port                  = glPort
    client_freed          = false
    late_client_callbacks = 0
 
