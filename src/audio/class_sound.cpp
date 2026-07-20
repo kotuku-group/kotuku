@@ -136,8 +136,7 @@ static void onstop_event(int SampleHandle)
 #ifdef _WIN32
 static ERR timer_playback_ended(extSound *Self, int64_t Elapsed, int64_t CurrentTime)
 {
-   kt::Log log;
-   log.trace("Sound streaming completed.");
+   kt::Log().detail("Sound streaming completed.");
    sound_stopped_event(Self);
    Self->PlaybackTimer = 0;
    // NB: We don't manually stop the audio streamer, it will automatically stop once buffers are clear.
