@@ -458,3 +458,120 @@ end
    assert(res4_greys is 4, 'Resolution 0.75 should yield 4 distinct levels (got ' .. res4_greys .. ')')
    assert(res2_greys is 2, 'Resolution 0.5 should yield 2 distinct levels (got ' .. res2_greys .. ')')
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Translucent Gouraud rendering.  Vertices with alpha < 1 select the compound (single-pass) render path, where
+-- coverage along shared triangle edges is partitioned exactly instead of being sealed by overlap.  The dilated
+-- fast path would source-over blend the ~1px overlap band twice, exposing the shared edge as a seam.
+
+function translucentVertex(X, Y, R, G, B, A)
+   local v = struct.new('GouraudVertex')
+   v.x = X
+   v.y = Y
+   v.colour.red   = R
+   v.colour.green = G
+   v.colour.blue  = B
+   v.colour.alpha = A
+   return v
+end
+
+-- A uniform red quad at 50% alpha, split into two triangles sharing the top-right / bottom-left diagonal.
+
+function newTranslucentQuadScene()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local vertices = { }
+   table.insert(vertices, translucentVertex(0,   0,   1.0, 0.0, 0.0, 0.5))
+   table.insert(vertices, translucentVertex(100, 0,   1.0, 0.0, 0.0, 0.5))
+   table.insert(vertices, translucentVertex(0,   100, 1.0, 0.0, 0.0, 0.5))
+   table.insert(vertices, translucentVertex(100, 100, 1.0, 0.0, 0.0, 0.5))
+
+   local gradient = scene.new('GradientGouraud', {
+      units    = VUNIT_USERSPACE,
+      vertices = vertices
+   })
+   gradient.indices = array<int> { 0, 1, 2,   -- triangle A: TL, TR, BL
+                                   1, 3, 2 }  -- triangle B: TR, BR, BL
+   check scene.mtAddDef('gouraud_translucent', gradient)
+
+   viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='url(#gouraud_translucent)' })
+   return scene, gradient
+end
+
+-- Two translucent triangles with positive-area overlap.  They must retain ordered source-over compositing rather
+-- than being flattened as neighbouring cells of one compound mesh.
+
+function newOverlappingTranslucentScene()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local vertices = { }
+   table.insert(vertices, translucentVertex(10, 10, 1.0, 0.0, 0.0, 0.5))
+   table.insert(vertices, translucentVertex(90, 10, 1.0, 0.0, 0.0, 0.5))
+   table.insert(vertices, translucentVertex(50, 90, 1.0, 0.0, 0.0, 0.5))
+   table.insert(vertices, translucentVertex(10, 90, 0.0, 0.0, 1.0, 0.5))
+   table.insert(vertices, translucentVertex(50, 10, 0.0, 0.0, 1.0, 0.5))
+   table.insert(vertices, translucentVertex(90, 90, 0.0, 0.0, 1.0, 0.5))
+
+   local gradient = scene.new('GradientGouraud', {
+      units    = VUNIT_USERSPACE,
+      vertices = vertices
+   })
+   check scene.mtAddDef('gouraud_translucent_overlap', gradient)
+
+   viewport.new('VectorRectangle', {
+      x=0, y=0, width='100%', height='100%', fill='url(#gouraud_translucent_overlap)'
+   })
+   return scene
+end
+
+@Test function TranslucentQuadHasNoSeam()
+   -- Composite the translucent quad over white.  The framework blends in linear-light space, so red at 50% alpha
+   -- yields green/blue ~186 (sRGB encoding of linear 0.5) everywhere - the same value a plain 'rgba(255,0,0,.5)'
+   -- fill produces.  A seam along the shared diagonal would source-over blend twice (linear 0.25 -> ~137), so
+   -- every sample across the diagonal must stay near the single-blend value.
+
+   local scene = newTranslucentQuadScene()
+   local bmp = obj.new('bitmap', { width=100, height=100, bitsPerPixel=32, bkgd='255,255,255,255' })
+   drawScene(scene, bmp)
+
+   for x = 40, 60 do
+      local c = mGfx.ReadRGBPixel(bmp, x, 100 - x)  -- track the diagonal x+y=100
+      assert((c.green > 165) and (c.green < 205),
+         'Translucent shared edge must blend exactly once (green ' .. c.green .. ' at ' .. x .. ',' .. (100 - x) .. ')')
+      assert(c.red > 250, 'Red channel should remain saturated over a white background (got ' .. c.red .. ')')
+   end
+end
+
+@Test function TranslucentFillCompositesCorrectly()
+   -- Away from any edge, 50% red over white must match the plain-fill source-over result on all channels
+   -- (green/blue ~186 under linear-light blending).
+
+   local scene = newTranslucentQuadScene()
+   local bmp = obj.new('bitmap', { width=100, height=100, bitsPerPixel=32, bkgd='255,255,255,255' })
+   drawScene(scene, bmp)
+
+   local p = mGfx.ReadRGBPixel(bmp, 25, 25)
+   assert(p.red > 250, '50% red over white should keep red saturated (got ' .. p.red .. ')')
+   assert((p.green > 175) and (p.green < 200),
+      '50% red over white should blend green to ~186 (got ' .. p.green .. ')')
+   assert((p.blue > 175) and (p.blue < 200),
+      '50% red over white should blend blue to ~186 (got ' .. p.blue .. ')')
+end
+
+@Test function OverlappingTranslucentTrianglesCompositeInOrder()
+   -- At the centre, 50% blue is composited over 50% red over white.  In linear light that produces approximately
+   -- (186, 137, 224); flattening the triangles as compound styles would discard the red layer and produce
+   -- approximately (186, 186, 255).
+
+   local scene = newOverlappingTranslucentScene()
+   local bmp = obj.new('bitmap', { width=100, height=100, bitsPerPixel=32, bkgd='255,255,255,255' })
+   drawScene(scene, bmp)
+
+   local p = mGfx.ReadRGBPixel(bmp, 50, 50)
+   assert((p.red > 170) and (p.red < 205), 'Overlapping red contribution should remain visible (got ' .. p.red .. ')')
+   assert((p.green > 120) and (p.green < 155),
+      'Two translucent layers should source-over composite in order (green ' .. p.green .. ')')
+   assert(p.blue > 215, 'Top blue layer should remain dominant (got ' .. p.blue .. ')')
+end
