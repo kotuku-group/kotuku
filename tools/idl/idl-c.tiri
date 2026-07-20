@@ -22,6 +22,7 @@
    global glCustomTypes    = { }
    global glStructures     = { }
    global glModule         = { }
+   global glClassOffsets   = { }
    global glTotalWarnings  = 0
    global glCategory       = nil
    global glCategories     = { }

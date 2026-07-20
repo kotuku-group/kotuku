@@ -888,22 +888,22 @@ class objBitmap : public Object {
    }
 
    inline ERR getClipLeft(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 192));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET + 96));
       return ERR::Okay;
    }
 
    inline ERR getClipRight(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 196));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET + 100));
       return ERR::Okay;
    }
 
    inline ERR getClipBottom(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 200));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET + 104));
       return ERR::Okay;
    }
 
    inline ERR getClipTop(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 204));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET + 108));
       return ERR::Okay;
    }
 
@@ -1284,27 +1284,27 @@ class objDisplay : public Object {
    }
 
    inline ERR getManufacturer(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 192));
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 96));
       return ERR::Okay;
    }
 
    inline ERR getChipset(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 224));
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 128));
       return ERR::Okay;
    }
 
    inline ERR getDisplay(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 256));
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 160));
       return ERR::Okay;
    }
 
    inline ERR getDisplayMfr(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 288));
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 192));
       return ERR::Okay;
    }
 
    inline ERR getOpacity(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 320));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET + 224));
       return ERR::Okay;
    }
 
