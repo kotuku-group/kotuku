@@ -560,6 +560,22 @@ end
       '50% red over white should blend blue to ~186 (got ' .. p.blue .. ')')
 end
 
+@Test function ReflectedTranslucentMeshRenders()
+   -- Reflection reverses the transformed triangle winding.  The compound rasteriser must assign each triangle's
+   -- style to its new interior side rather than silently treating the reflected interior as unstyled.
+
+   local scene, gradient = newTranslucentQuadScene()
+   gradient.transform = 'matrix(-1 0 0 1 100 0)'
+
+   local bmp = obj.new('bitmap', { width=100, height=100, bitsPerPixel=32, bkgd='255,255,255,255' })
+   drawScene(scene, bmp)
+
+   local p = mGfx.ReadRGBPixel(bmp, 50, 50)
+   assert(p.red > 250, 'Reflected translucent mesh should retain its red fill (got ' .. p.red .. ')')
+   assert((p.green > 175) and (p.green < 200),
+      'Reflected translucent mesh should composite at 50% alpha (green ' .. p.green .. ')')
+end
+
 @Test function OverlappingTranslucentTrianglesCompositeInOrder()
    -- At the centre, 50% blue is composited over 50% red over white.  In linear light that produces approximately
    -- (186, 137, 224); flattening the triangles as compound styles would discard the red layer and produce

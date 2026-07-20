@@ -566,7 +566,10 @@ static void render_gouraud_triangles(const GouraudCache &Cache, double Resolutio
 
       for (size_t i=0; i < Cache.Triangles.size(); i++) {
          auto &tri = Cache.Triangles[i];
-         compound_raster.styles(int(i), -1);
+         const double area = ((tri.x[1] - tri.x[0]) * (tri.y[2] - tri.y[0])) -
+            ((tri.x[2] - tri.x[0]) * (tri.y[1] - tri.y[0]));
+         if (area > 0) compound_raster.styles(int(i), -1);
+         else compound_raster.styles(-1, int(i));
          compound_raster.move_to_d(tri.x[0], tri.y[0]);
          compound_raster.line_to_d(tri.x[1], tri.y[1]);
          compound_raster.line_to_d(tri.x[2], tri.y[2]);
