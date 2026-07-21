@@ -1,107 +1,121 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Compression" mod="Core" c="Compresses data into archives, supporting a variety of compression formats." cat="Data" id="700c0197" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Compression" mod="Core" c="Compresses data into archives, supporting a variety of compression formats." cat="Data" id="2aebea46" v="1">
   <ai:a n="Flush" c="Flushes all pending actions." p="ERR acFlush(*Object)"/>
-  <ai:m n="CompressBuffer" c="Compresses a plain memory area into an empty buffer." p="ERR cmp::CompressBuffer(OBJECTPTR Object, APTR Input, INT InputSize, APTR Output, INT OutputSize, INT * Result)">
-    <ai:i n="Input" t="APTR" c="Pointer to the source data."/>
-    <ai:i n="InputSize" t="INT" c="Byte length of the source data."/>
-    <ai:i n="Output" t="APTR" c="Pointer to a destination buffer."/>
-    <ai:i n="OutputSize" t="INT" c="Available space in the destination buffer."/>
+  <ai:m n="CompressBuffer" c="Compresses a plain memory area into an empty buffer." p="ERR cmp::CompressBuffer(OBJECTPTR Object, std::span&lt;const int8_t&gt; Input, std::span&lt;int8_t&gt; Output, INT * Result)">
+    <ai:i n="Input" t="std::span&lt;const int8_t&gt;" c="Pointer to the source data."/>
+    <ai:i n="Output" t="std::span&lt;int8_t&gt;" c="Pointer to a destination buffer."/>
     <ai:i n="Result" t="INT *" c="The size of the compressed data will be returned in this parameter."/>
     <ai:e c="Okay"/>
     <ai:e c="Failed"/>
     <ai:e c="Args"/>
     <ai:e c="BufferOverflow"/>
     <ai:e c="NullArgs"/>
+    <ai:e c="InvalidCompression"/>
   </ai:m>
-  <ai:m n="CompressFile" c="Add files to a compression object." p="ERR cmp::CompressFile(OBJECTPTR Object, CSTRING Location, CSTRING Path)">
-    <ai:i n="Location" t="CSTRING" c="The location of the file(s) to add."/>
-    <ai:i n="Path" t="CSTRING" c="The path that is prefixed to the file name when added to the compression object. May be NULL for no path."/>
+  <ai:m n="CompressFile" c="Add files to a compression object." p="ERR cmp::CompressFile(OBJECTPTR Object, STRVIEW Location, STRVIEW Path)">
+    <ai:i n="Location" t="STRVIEW" c="The location of the file(s) to add."/>
+    <ai:i n="Path" t="STRVIEW" c="The path that is prefixed to the file name when added to the compression object. May be empty for no path."/>
     <ai:e c="Okay"/>
     <ai:e c="File"/>
     <ai:e c="Args"/>
     <ai:e c="NoSupport"/>
     <ai:e c="NoPermission"/>
+    <ai:e c="MissingPath"/>
+    <ai:e c="NullArgs"/>
   </ai:m>
-  <ai:m n="CompressStream" c="Compresses streamed data into a buffer." p="ERR cmp::CompressStream(OBJECTPTR Object, APTR Input, INT Length, FUNCTION * Callback, APTR Output, INT OutputSize)">
-    <ai:i n="Input" t="APTR" c="Pointer to the source data."/>
-    <ai:i n="Length" t="INT" c="Amount of data to compress, in bytes."/>
-    <ai:i n="Callback" t="FUNCTION *" c="This callback function will be called with a pointer to the compressed data."/>
-    <ai:i n="Output" t="APTR" c="Optional. Points to a buffer that will receive the compressed data. Must be equal to or larger than the MinOutputSize field."/>
-    <ai:i n="OutputSize" t="INT" c="Indicates the size of the Output buffer, otherwise set to zero."/>
+  <ai:m n="CompressStream" c="Compresses streamed data into a buffer." p="ERR cmp::CompressStream(OBJECTPTR Object, std::span&lt;const int8_t&gt; Input, FUNCTION Callback, std::span&lt;int8_t&gt; Output)">
+    <ai:i n="Input" t="std::span&lt;const int8_t&gt;" c="Pointer to the source data."/>
+    <ai:i n="Callback" t="FUNCTION" c="This callback function will be called with a pointer to the compressed data."/>
+    <ai:i n="Output" t="std::span&lt;int8_t&gt;" c="Optional. Points to a buffer that will receive the compressed data. Must be equal to or larger than the MinOutputSize field."/>
     <ai:e c="Okay"/>
     <ai:e c="Retry"/>
     <ai:e c="Args"/>
+    <ai:e c="AllocMemory"/>
     <ai:e c="BufferOverflow"/>
+    <ai:e c="InvalidState"/>
     <ai:e c="NullArgs"/>
+    <ai:e c="Function"/>
   </ai:m>
-  <ai:m n="CompressStreamEnd" c="Ends the compression of an open stream." p="ERR cmp::CompressStreamEnd(OBJECTPTR Object, FUNCTION * Callback, APTR Output, INT OutputSize)">
-    <ai:i n="Callback" t="FUNCTION *" c="Refers to a function that will be called for each compressed block of data."/>
-    <ai:i n="Output" t="APTR" c="Optional pointer to a buffer that will receive the compressed data. If not set, the compression object will use its own buffer."/>
-    <ai:i n="OutputSize" t="INT" c="Size of the Output buffer (ignored if Output is NULL)."/>
+  <ai:m n="CompressStreamEnd" c="Ends the compression of an open stream." p="ERR cmp::CompressStreamEnd(OBJECTPTR Object, FUNCTION Callback, std::span&lt;int8_t&gt; Output)">
+    <ai:i n="Callback" t="FUNCTION" c="Refers to a function that will be called for each compressed block of data."/>
+    <ai:i n="Output" t="std::span&lt;int8_t&gt;" c="Optional pointer to a buffer that will receive the compressed data. If not set, the compression object will use its own buffer."/>
     <ai:e c="Okay"/>
+    <ai:e c="FieldNotSet"/>
     <ai:e c="BufferOverflow"/>
     <ai:e c="NullArgs"/>
+    <ai:e c="Function"/>
   </ai:m>
   <ai:m n="CompressStreamStart" c="Initialises a new compression stream." p="ERR cmp::CompressStreamStart(OBJECTPTR Object)">
     <ai:e c="Okay"/>
     <ai:e c="Failed"/>
+    <ai:e c="InvalidCompression"/>
   </ai:m>
-  <ai:m n="DecompressBuffer" c="Decompresses data originating from the CompressBuffer method." p="ERR cmp::DecompressBuffer(OBJECTPTR Object, APTR Input, APTR Output, INT OutputSize, INT * Result)">
-    <ai:i n="Input" t="APTR" c="Pointer to the compressed data."/>
-    <ai:i n="Output" t="APTR" c="Pointer to the decompression buffer."/>
-    <ai:i n="OutputSize" t="INT" c="Size of the decompression buffer."/>
+  <ai:m n="DecompressBuffer" c="Decompresses data originating from the CompressBuffer method." p="ERR cmp::DecompressBuffer(OBJECTPTR Object, std::span&lt;const int8_t&gt; Input, std::span&lt;int8_t&gt; Output, INT * Result)">
+    <ai:i n="Input" t="std::span&lt;const int8_t&gt;" c="Pointer to the compressed data."/>
+    <ai:i n="Output" t="std::span&lt;int8_t&gt;" c="Pointer to the decompression buffer."/>
     <ai:i n="Result" t="INT *" c="The amount of bytes decompressed will be returned in this parameter."/>
     <ai:e c="Okay"/>
     <ai:e c="Args"/>
     <ai:e c="BufferOverflow"/>
+    <ai:e c="NullArgs"/>
+    <ai:e c="InvalidCompression"/>
   </ai:m>
-  <ai:m n="DecompressFile" c="Extracts one or more files from a compression object." p="ERR cmp::DecompressFile(OBJECTPTR Object, CSTRING Path, CSTRING Dest, INT Flags)">
-    <ai:i n="Path" t="CSTRING" c="The full path name of the file to extract from the archive."/>
-    <ai:i n="Dest" t="CSTRING" c="The destination to extract the file to."/>
+  <ai:m n="DecompressFile" c="Extracts one or more files from a compression object." p="ERR cmp::DecompressFile(OBJECTPTR Object, STRVIEW Path, STRVIEW Dest, INT Flags)">
+    <ai:i n="Path" t="STRVIEW" c="The full path name of the file to extract from the archive."/>
+    <ai:i n="Dest" t="STRVIEW" c="The destination to extract the file to."/>
     <ai:i n="Flags" t="INT" c="Optional flags. Currently unused."/>
     <ai:e c="Okay"/>
     <ai:e c="Cancelled"/>
+    <ai:e c="Skip"/>
+    <ai:e c="Terminate"/>
     <ai:e c="Failed"/>
     <ai:e c="File"/>
+    <ai:e c="Search"/>
     <ai:e c="Args"/>
     <ai:e c="NoData"/>
     <ai:e c="Write"/>
+    <ai:e c="NoSupport"/>
     <ai:e c="MissingPath"/>
     <ai:e c="Seek"/>
     <ai:e c="NullArgs"/>
+    <ai:e c="InvalidCompression"/>
   </ai:m>
-  <ai:m n="DecompressObject" c="Decompresses one file to a target object." p="ERR cmp::DecompressObject(OBJECTPTR Object, CSTRING Path, OBJECTPTR Object)">
-    <ai:i n="Path" t="CSTRING" c="The location of the source file within the archive. If a wildcard is used, the first matching file is extracted."/>
+  <ai:m n="DecompressObject" c="Decompresses one file to a target object." p="ERR cmp::DecompressObject(OBJECTPTR Object, STRVIEW Path, OBJECTPTR Object)">
+    <ai:i n="Path" t="STRVIEW" c="The location of the source file within the archive. If a wildcard is used, the first matching file is extracted."/>
     <ai:i n="Object" t="OBJECTPTR" c="The target object for the decompressed source data."/>
     <ai:e c="Okay"/>
     <ai:e c="Failed"/>
+    <ai:e c="Search"/>
     <ai:e c="Write"/>
+    <ai:e c="NoSupport"/>
     <ai:e c="MissingPath"/>
     <ai:e c="Seek"/>
     <ai:e c="NullArgs"/>
+    <ai:e c="Decompression"/>
+    <ai:e c="InvalidCompression"/>
   </ai:m>
-  <ai:m n="DecompressStream" c="Decompresses streamed data to an output buffer." p="ERR cmp::DecompressStream(OBJECTPTR Object, APTR Input, INT Length, FUNCTION * Callback, APTR Output, INT OutputSize)">
-    <ai:i n="Input" t="APTR" c="Pointer to data to decompress."/>
-    <ai:i n="Length" t="INT" c="Amount of data to decompress from the Input parameter."/>
-    <ai:i n="Callback" t="FUNCTION *" c="Refers to a function that will be called for each decompressed block of information."/>
-    <ai:i n="Output" t="APTR" c="Optional pointer to a buffer that will receive the decompressed data. If not set, the compression object will use its own buffer."/>
-    <ai:i n="OutputSize" t="INT" c="Size of the buffer specified in Output (value ignored if Output is NULL)."/>
+  <ai:m n="DecompressStream" c="Decompresses streamed data to an output buffer." p="ERR cmp::DecompressStream(OBJECTPTR Object, std::span&lt;const int8_t&gt; Input, FUNCTION Callback, std::span&lt;int8_t&gt; Output)">
+    <ai:i n="Input" t="std::span&lt;const int8_t&gt;" c="Pointer to data to decompress."/>
+    <ai:i n="Callback" t="FUNCTION" c="Refers to a function that will be called for each decompressed block of information."/>
+    <ai:i n="Output" t="std::span&lt;int8_t&gt;" c="Optional pointer to a buffer that will receive the decompressed data. If not set, the compression object will use its own buffer."/>
     <ai:e c="Okay"/>
     <ai:e c="AllocMemory"/>
     <ai:e c="BufferOverflow"/>
     <ai:e c="NullArgs"/>
+    <ai:e c="Function"/>
   </ai:m>
-  <ai:m n="DecompressStreamEnd" c="Must be called at the end of the decompression process." p="ERR cmp::DecompressStreamEnd(OBJECTPTR Object, FUNCTION * Callback)">
-    <ai:i n="Callback" t="FUNCTION *" c="Refers to a function that will be called for each decompressed block of information."/>
+  <ai:m n="DecompressStreamEnd" c="Must be called at the end of the decompression process." p="ERR cmp::DecompressStreamEnd(OBJECTPTR Object, FUNCTION Callback)">
+    <ai:i n="Callback" t="FUNCTION" c="Refers to a function that will be called for each decompressed block of information."/>
     <ai:e c="Okay"/>
     <ai:e c="NullArgs"/>
   </ai:m>
   <ai:m n="DecompressStreamStart" c="Initialises a new decompression stream." p="ERR cmp::DecompressStreamStart(OBJECTPTR Object)">
     <ai:e c="Okay"/>
     <ai:e c="Failed"/>
+    <ai:e c="InvalidCompression"/>
   </ai:m>
-  <ai:m n="Find" c="Find the first item that matches a given filter." p="ERR cmp::Find(OBJECTPTR Object, CSTRING Path, INT CaseSensitive, INT Wildcard, struct CompressedItem ** Item)">
-    <ai:i n="Path" t="CSTRING" c="Search for a specific item or items, using wildcards."/>
+  <ai:m n="Find" c="Find the first item that matches a given filter." p="ERR cmp::Find(OBJECTPTR Object, STRVIEW Path, INT CaseSensitive, INT Wildcard, struct CompressedItem ** Item)">
+    <ai:i n="Path" t="STRVIEW" c="Search for a specific item or items, using wildcards."/>
     <ai:i n="CaseSensitive" t="INT" c="Set to true if Path comparisons are case-sensitive."/>
     <ai:i n="Wildcard" t="INT" c="Set to true if Path uses wildcards."/>
     <ai:i n="Item" t="struct CompressedItem **" c="The discovered item is returned in this parameter, or NULL if the search failed."/>
@@ -110,19 +124,21 @@
     <ai:e c="NoSupport"/>
     <ai:e c="NullArgs"/>
   </ai:m>
-  <ai:m n="RemoveFile" c="Deletes one or more files from a compression object." p="ERR cmp::RemoveFile(OBJECTPTR Object, CSTRING Path)">
-    <ai:i n="Path" t="CSTRING" c="The full path name of the file to delete from the archive."/>
+  <ai:m n="RemoveFile" c="Deletes one or more files from a compression object." p="ERR cmp::RemoveFile(OBJECTPTR Object, STRVIEW Path)">
+    <ai:i n="Path" t="STRVIEW" c="The full path name of the file to delete from the archive."/>
     <ai:e c="Okay"/>
     <ai:e c="NoSupport"/>
     <ai:e c="NullArgs"/>
   </ai:m>
-  <ai:m n="Scan" c="Scan the archive's index of compressed data." p="ERR cmp::Scan(OBJECTPTR Object, CSTRING Folder, CSTRING Filter, FUNCTION * Callback)">
-    <ai:i n="Folder" t="CSTRING" c="If defined, only items within the specified folder are returned. Use an empty string for files in the root folder."/>
-    <ai:i n="Filter" t="CSTRING" c="Search for a specific item or items by name, using wildcards. If NULL or an empty string, all items will be scanned."/>
-    <ai:i n="Callback" t="FUNCTION *" c="This callback function will be called with a pointer to a CompressedItem structure."/>
+  <ai:m n="Scan" c="Scan the archive's index of compressed data." p="ERR cmp::Scan(OBJECTPTR Object, STRVIEW Folder, STRVIEW Filter, FUNCTION Callback)">
+    <ai:i n="Folder" t="STRVIEW" c="Only items within the specified folder are returned. Use an empty string for files in the root folder."/>
+    <ai:i n="Filter" t="STRVIEW" c="Search for a specific item or items by name, using wildcards. If empty, all items will be scanned."/>
+    <ai:i n="Callback" t="FUNCTION" c="This callback function will be called with a pointer to a CompressedItem structure."/>
     <ai:e c="Okay"/>
     <ai:e c="NoSupport"/>
     <ai:e c="NullArgs"/>
+    <ai:e c="WrongType"/>
+    <ai:e c="Function"/>
   </ai:m>
   <ai:f n="ArchiveName" c="Apply an archive name to the object, allowing it to be used as a named object in the file system." t="STRING" a="S"/>
   <ai:f n="CompressionLevel" c="The compression level to use when compressing data." t="INT" a="RS"/>
@@ -130,8 +146,8 @@
   <ai:f n="Flags" c="Optional flags." t="CMF" a="RW"/>
   <ai:f n="MinOutputSize" c="Indicates the minimum output buffer size that will be needed during de/compression." t="INT" a="R"/>
   <ai:f n="Output" c="Resulting messages will be sent to the object referred to in this field." t="OBJECTID" a="RI"/>
-  <ai:f n="Password" c="Required if an archive needs an encryption password for access." t="STRING" a="GS"/>
-  <ai:f n="Path" c="Set if the compressed data originates from, or is to be saved to a file source." t="STRING" a="GS"/>
+  <ai:f n="Password" c="Required if an archive needs an encryption password for access." t="STRING" a="RS"/>
+  <ai:f n="Path" c="Set if the compressed data originates from, or is to be saved to a file source." t="STRING" a="RW"/>
   <ai:f n="Permissions" c="Default permissions for decompressed files are defined here." t="PERMIT" a="RW"/>
   <ai:f n="Size" c="Indicates the size of the source archive, in bytes." t="INT64" a="G"/>
   <ai:f n="TotalOutput" c="The total number of bytes that have been output during the compression or decompression of streamed data." t="INT64" a="R"/>

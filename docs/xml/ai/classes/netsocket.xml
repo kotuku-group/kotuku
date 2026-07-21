@@ -1,43 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="NetSocket" mod="Network" c="Manages network connections via TCP/IP sockets." cat="Network" id="2b439bb5" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="NetSocket" mod="Network" c="Manages network connections via TCP/IP sockets." cat="Network" id="b58a423b" v="1">
+  <ai:a n="DataFeed" c="Streams raw data to the socket for writing." p="ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)">
+    <ai:i n="Object" t="OBJECTID" c="Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID."/>
+    <ai:i n="Datatype" t="DATA" c="The type of data being sent."/>
+    <ai:i n="Buffer" t="APTR" c="The data being sent to the target object."/>
+    <ai:i n="Size" t="INT" c="The size of the data in Buffer."/>
+  </ai:a>
   <ai:a n="Disable" c="Disables sending and receiving on the socket." p="ERR acDisable(*Object)">
     <ai:e c="Okay"/>
     <ai:e c="Failed"/>
+    <ai:e c="SystemCall"/>
   </ai:a>
-  <ai:a n="Read" c="Read information from the socket." p="ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)">
-    <ai:i n="Buffer" t="APTR" c="Points a buffer that will receive the data."/>
-    <ai:i n="Length" t="INT" c="The total number of bytes to read from the object. This value cannot exceed the size of the Buffer."/>
+  <ai:a n="Read" c="Read information from the socket." p="ERR acRead(*Object, std::span&lt;int8_t&gt; Buffer, INT *Result)">
+    <ai:i n="Buffer" t="std::span&lt;int8_t&gt;" c="A mutable buffer that will receive the data."/>
     <ai:i n="Result" t="INT" c="The Read action will write this parameter with the total number of bytes read into the Buffer."/>
     <ai:e c="Okay"/>
     <ai:e c="Failed"/>
+    <ai:e c="Args"/>
+    <ai:e c="Read"/>
     <ai:e c="InvalidState"/>
     <ai:e c="Disconnected"/>
     <ai:e c="NullArgs"/>
   </ai:a>
-  <ai:a n="Write" c="Writes data to the socket." p="ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)">
-    <ai:i n="Buffer" t="APTR" c="A buffer containing the data that will be written to the object."/>
-    <ai:i n="Length" t="INT" c="The total number of bytes to write to the object."/>
+  <ai:a n="Write" c="Writes data to the socket." p="ERR acWrite(*Object, std::span&lt;const int8_t&gt; Buffer, INT *Result)">
+    <ai:i n="Buffer" t="std::span&lt;const int8_t&gt;" c="A buffer containing the data that will be written to the object."/>
     <ai:i n="Result" t="INT" c="This parameter with be updated with the total number of bytes written from the Buffer."/>
   </ai:a>
-  <ai:m n="Connect" c="Connects a NetSocket to an address." p="ERR ns::Connect(OBJECTPTR Object, CSTRING Address, INT Port)">
-    <ai:i n="Address" t="CSTRING" c="String containing either a domain name (e.g. www.google.com) or an IP address (e.g. 123.123.123.123)"/>
+  <ai:m n="Connect" c="Connects a NetSocket to an address." p="ERR ns::Connect(OBJECTPTR Object, STRVIEW Address, INT Port, DOUBLE Timeout)">
+    <ai:i n="Address" t="STRVIEW" c="String containing either a domain name (e.g. www.google.com) or an IP address (e.g. 123.123.123.123)"/>
     <ai:i n="Port" t="INT" c="Remote port to connect to."/>
+    <ai:i n="Timeout" t="DOUBLE" c="Connection timeout in seconds (0 = no timeout)."/>
     <ai:e c="Okay"/>
     <ai:e c="Failed"/>
     <ai:e c="Args"/>
+    <ai:e c="TimeOut"/>
     <ai:e c="InvalidState"/>
     <ai:e c="HostNotFound"/>
-  </ai:m>
-  <ai:m n="DisconnectClient" c="Disconnects all sockets connected to a specific client IP." p="ERR ns::DisconnectClient(OBJECTPTR Object, objNetClient * Client)">
-    <ai:i n="Client" t="objNetClient *" c="The client to be disconnected."/>
-    <ai:e c="Okay"/>
-    <ai:e c="NullArgs"/>
-    <ai:e c="WrongClass"/>
-  </ai:m>
-  <ai:m n="DisconnectSocket" c="Disconnects a single socket that is connected to a client IP address." p="ERR ns::DisconnectSocket(OBJECTPTR Object, objClientSocket * Socket)">
-    <ai:i n="Socket" t="objClientSocket *" c="The client socket to be disconnected."/>
-    <ai:e c="Okay"/>
-    <ai:e c="NullArgs"/>
   </ai:m>
   <ai:m n="GetLocalIPAddress" c="Returns the IP address that the socket is locally bound to." p="ERR ns::GetLocalIPAddress(OBJECTPTR Object, struct IPAddress * Address)">
     <ai:i n="Address" t="struct IPAddress *" c="Pointer to an IPAddress structure which will be set to the result of the query if successful."/>
@@ -45,23 +43,57 @@
     <ai:e c="Failed"/>
     <ai:e c="NullArgs"/>
   </ai:m>
-  <ai:f n="Address" c="An IP address or domain name to connect to." t="STRING" a="RS"/>
-  <ai:f n="Backlog" c="The maximum number of connections that can be queued against the socket." t="INT" a="RI"/>
+  <ai:m n="JoinMulticastGroup" c="Join a multicast group for receiving multicast packets (UDP only)." p="ERR ns::JoinMulticastGroup(OBJECTPTR Object, STRVIEW Group)">
+    <ai:i n="Group" t="STRVIEW" c="The multicast group address to join (e.g. 224.1.1.1)."/>
+    <ai:e c="Okay"/>
+    <ai:e c="Failed"/>
+    <ai:e c="Args"/>
+    <ai:e c="NoSupport"/>
+    <ai:e c="NullArgs"/>
+  </ai:m>
+  <ai:m n="LeaveMulticastGroup" c="Leave a multicast group (UDP only)." p="ERR ns::LeaveMulticastGroup(OBJECTPTR Object, STRVIEW Group)">
+    <ai:i n="Group" t="STRVIEW" c="The multicast group address to leave."/>
+    <ai:e c="Okay"/>
+    <ai:e c="Failed"/>
+    <ai:e c="Args"/>
+    <ai:e c="NoSupport"/>
+    <ai:e c="NullArgs"/>
+  </ai:m>
+  <ai:m n="RecvFrom" c="Receive a datagram packet from any address (UDP only)." p="ERR ns::RecvFrom(OBJECTPTR Object, struct IPAddress * Source, std::span&lt;int8_t&gt; Buffer, INT * BytesRead)">
+    <ai:i n="Source" t="struct IPAddress *" c="Source IP address of the received packet."/>
+    <ai:i n="Buffer" t="std::span&lt;int8_t&gt;" c="Output buffer for received data."/>
+    <ai:i n="BytesRead" t="INT *" c="Number of bytes actually received."/>
+    <ai:e c="Okay"/>
+    <ai:e c="Args"/>
+    <ai:e c="NoSupport"/>
+    <ai:e c="BufferOverflow"/>
+    <ai:e c="NullArgs"/>
+  </ai:m>
+  <ai:m n="SendTo" c="Send a datagram packet to a specific address (UDP only)." p="ERR ns::SendTo(OBJECTPTR Object, struct IPAddress * Dest, std::span&lt;const int8_t&gt; Data, INT * BytesSent)">
+    <ai:i n="Dest" t="struct IPAddress *" c="The destination IP address (IPv4 or IPv6) and port number."/>
+    <ai:i n="Data" t="std::span&lt;const int8_t&gt;" c="Pointer to the data buffer to send."/>
+    <ai:i n="BytesSent" t="INT *" c="Number of bytes actually sent."/>
+    <ai:e c="Okay"/>
+    <ai:e c="Args"/>
+    <ai:e c="OutOfRange"/>
+    <ai:e c="BufferOverflow"/>
+    <ai:e c="InvalidState"/>
+    <ai:e c="NetworkUnreachable"/>
+    <ai:e c="DataSize"/>
+    <ai:e c="NullArgs"/>
+  </ai:m>
+  <ai:f n="Address" c="An IP address or domain name to connect to." t="STRING" a="RI"/>
   <ai:f n="ClientData" c="A client-defined value that can be useful in action notify events." t="APTR" a="RW"/>
-  <ai:f n="ClientLimit" c="The maximum number of clients (unique IP addresses) that can be connected to a server socket." t="INT" a="RW"/>
-  <ai:f n="Clients" c="For server sockets, lists all clients connected to the server." t="*NetClient" a="R"/>
   <ai:f n="Error" c="Information about the last error that occurred during a NetSocket operation" t="ERR" a="R"/>
   <ai:f n="Feedback" c="A callback trigger for when the state of the NetSocket is changed." t="FUNCTION" a="GS"/>
   <ai:f n="Flags" c="Optional flags." t="NSF" a="RW"/>
   <ai:f n="Handle" c="Platform specific reference to the network socket handle." t="APTR" a="GS"/>
   <ai:f n="Incoming" c="Callback that is triggered when the socket receives data." t="FUNCTION" a="GS"/>
+  <ai:f n="MaxPacketSize" c="Maximum UDP packet size for sending and receiving data." t="INT" a="RI"/>
   <ai:f n="MsgLimit" c="Limits the size of incoming and outgoing data packets." t="INT" a="RI"/>
+  <ai:f n="MulticastTTL" c="Time-to-live (hop limit) for multicast packets." t="INT" a="RI"/>
   <ai:f n="OutQueueSize" c="The number of bytes on the socket's outgoing queue." t="INT" a="G"/>
   <ai:f n="Outgoing" c="Callback that is triggered when a socket is ready to send data." t="FUNCTION" a="GS"/>
-  <ai:f n="Port" c="The port number to use for initiating a connection." t="INT" a="RI"/>
-  <ai:f n="SSLCertificate" c="SSL certificate file to use if in server mode." t="STRING" a="RS"/>
-  <ai:f n="SSLKeyPassword" c="SSL private key password." t="STRING" a="RS"/>
-  <ai:f n="SocketLimit" c="Limits the number of connected sockets per client IP address." t="INT" a="RW"/>
+  <ai:f n="Port" c="The port number to use for connections." t="INT" a="RI"/>
   <ai:f n="State" c="The current connection state of the NetSocket object." t="NTC" a="GS"/>
-  <ai:f n="TotalClients" c="Indicates the total number of clients currently connected to the socket (if in server mode)." t="INT" a="R"/>
 </ai:cl>

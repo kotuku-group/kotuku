@@ -158,21 +158,17 @@ class objFile : public Object {
    inline ERR flush() noexcept { return Action(AC::Flush, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR query() noexcept { return Action(AC::Query, this, nullptr); }
-   template <class T, class U> ERR read(APTR Buffer, T Size, U *Result) noexcept {
-      static_assert(std::is_integral<U>::value, "Result value must be an integer type");
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
+      static_assert(std::is_integral<T>::value, "Result value must be an integer type");
+      struct acRead read = { Buffer };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
-         *Result = U(read.Result);
+         *Result = T(read.Result);
          return ERR::Okay;
       }
       else { *Result = 0; return error; }
    }
-   template <class T> ERR read(APTR Buffer, T Size) noexcept {
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   inline ERR read(std::span<int8_t> Buffer) noexcept {
+      struct acRead read = { Buffer };
       return Action(AC::Read, this, &read);
    }
    inline ERR rename(std::string_view Name) noexcept {
@@ -187,8 +183,8 @@ class objFile : public Object {
    inline ERR seekStart(double Offset) noexcept { return seek(Offset, SEEK::START); }
    inline ERR seekEnd(double Offset) noexcept { return seek(Offset, SEEK::END); }
    inline ERR seekCurrent(double Offset) noexcept { return seek(Offset, SEEK::CURRENT); }
-   inline ERR write(CPTR Buffer, int Size, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
+   inline ERR write(std::span<const int8_t> Buffer, int *Result = nullptr) noexcept {
+      struct acWrite write = { Buffer };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -199,7 +195,7 @@ class objFile : public Object {
       }
    }
    inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer.c_str(), int(Buffer.size()) };
+      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()) };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -419,7 +415,7 @@ namespace fl {
 template<class T> ERR ReadLE(OBJECTPTR Object, T *Result)
 {
    uint8_t data[sizeof(T)];
-   struct acRead read = { .Buffer = data, .Length = sizeof(T) };
+   struct acRead read = { .Buffer = std::span<int8_t>((int8_t *)data, sizeof(T)) };
    if (!Action(AC::Read, Object, &read)) {
       if (read.Result IS sizeof(T)) {
          if constexpr (std::endian::native IS std::endian::little) {
@@ -443,7 +439,7 @@ template<class T> ERR ReadLE(OBJECTPTR Object, T *Result)
 template<class T> ERR ReadBE(OBJECTPTR Object, T *Result)
 {
    uint8_t data[sizeof(T)];
-   struct acRead read = { .Buffer = data, .Length = sizeof(T) };
+   struct acRead read = { .Buffer = std::span<int8_t>((int8_t *)data, sizeof(T)) };
    if (!Action(AC::Read, Object, &read)) {
       if (read.Result IS sizeof(T)) {
          if constexpr (std::endian::native IS std::endian::little) {

@@ -343,11 +343,11 @@ function MultiPartLocal()
    str ..= 'Content-Type: application/octet-stream' .. CRLF .. CRLF
 
    headfile = obj.new('file', { src='temp:http-head', flags='WRITE|NEW' } )
-   headfile.acWrite(str, str:len())
+   headfile.acWrite(str)
 
    tailfile = obj.new('file', { src='temp:http-tail', flags='WRITE|NEW' } )
    str = CRLF .. '--' .. boundary .. '--' .. CRLF
-   tailfile.acWrite(str, str:len())
+   tailfile.acWrite(str)
 
    srcfile = obj.new('file', { src=filepath, flags='READ' } )
 

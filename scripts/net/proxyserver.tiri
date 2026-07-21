@@ -409,7 +409,7 @@ function createFlowManager(self)
 
       if not fl then return false end
 
-      local err, written = fl.acWrite(encoded, #encoded)
+      local err, written = fl.acWrite(encoded)
       fl.free()
 
       if err != ERR_Okay or written != #encoded then
@@ -433,7 +433,7 @@ function createFlowManager(self)
       if not file then return false end
 
       local buffer = string.alloc(file.size)
-      local err, bytes_read = file.acRead(buffer, file.size)
+      local err, bytes_read = file.acRead(buffer)
       file.free()
 
       if err != ERR_Okay then return false end
@@ -715,7 +715,7 @@ function sendClientError(self, State:table, Status:num, Body:str)
       f'Content-Length: {#body}\r\n\r\n' ..
       body
 
-   State.clientSocket.acWrite(response, #response)
+   State.clientSocket.acWrite(response)
    cleanupProxyConnection(self, State, true)
 end
 
@@ -886,7 +886,7 @@ function writeUpstream(State:table, Data:str):bool
    end
 
    if State.requestSent then
-      err = State.upstreamSocket.acWrite(Data, #Data)
+      err = State.upstreamSocket.acWrite(Data)
       if err is ERR_Okay then touchProxyConnection(State) end
       return err is ERR_Okay
    end
@@ -908,7 +908,7 @@ function writeTunnelClientData(self, State:table, Data:str):bool
 
    while offset < #Data do
       chunk = Data:substr(offset, math.min(offset + chunk_size, #Data))
-      err = State.upstreamSocket.acWrite(chunk, #chunk)
+      err = State.upstreamSocket.acWrite(chunk)
       if err != ERR_Okay then
          reportProxyError(self, 'tunnel_write_failed', 'Failed to write tunnel data to upstream', State,
             mSys.GetErrorMsg(err))
@@ -943,7 +943,7 @@ function establishTunnel(self, State:table):bool
    if State.phase is 'tunnelling' then return true end
 
    response = 'HTTP/1.1 200 Connection Established\r\nConnection: close\r\n\r\n'
-   err = State.clientSocket.acWrite(response, #response)
+   err = State.clientSocket.acWrite(response)
    if err != ERR_Okay then
       reportProxyError(self, 'connect_response_failed', 'Failed to send CONNECT response', State,
          mSys.GetErrorMsg(err))
@@ -965,7 +965,7 @@ end
 function upstreamTunnelIncoming(self, State:table, UpstreamSocket:obj)
    while true do
       buffer = string.alloc(16384)
-      err, bytes_read = UpstreamSocket.acRead(buffer, 16384)
+      err, bytes_read = UpstreamSocket.acRead(buffer)
 
       if err != ERR_Okay then
          if err != ERR_TimeOut and err != ERR_Disconnected then
@@ -984,7 +984,7 @@ function upstreamTunnelIncoming(self, State:table, UpstreamSocket:obj)
 
       while offset < #data do
          chunk = data:substr(offset, math.min(offset + chunk_size, #data))
-         write_err = State.clientSocket.acWrite(chunk, #chunk)
+         write_err = State.clientSocket.acWrite(chunk)
          if write_err != ERR_Okay then
             reportProxyError(self, 'tunnel_client_write_failed', 'Failed to write tunnel data to client', State,
                mSys.GetErrorMsg(write_err))
@@ -1004,7 +1004,7 @@ function flushPendingRequest(self, State:table):bool
    State.pendingClientData = ''
    State.requestSent = true
 
-   err = State.upstreamSocket.acWrite(request_data, #request_data)
+   err = State.upstreamSocket.acWrite(request_data)
    if err != ERR_Okay then
       reportProxyError(self, 'request_forward_failed', 'Failed to forward request', State, mSys.GetErrorMsg(err))
       sendClientError(self, State, 502, 'Failed to forward request')
@@ -1024,7 +1024,7 @@ function forwardResponseData(self, State:table, Data:str):bool
 
    while offset < #Data do
       chunk = Data:substr(offset, math.min(offset + chunk_size, #Data))
-      err = State.clientSocket.acWrite(chunk, #chunk)
+      err = State.clientSocket.acWrite(chunk)
       if err != ERR_Okay then
          reportProxyError(self, 'response_client_write_failed', 'Failed to write response to client', State,
             mSys.GetErrorMsg(err))
@@ -1077,7 +1077,7 @@ end
 function upstreamIncoming(self, State:table, UpstreamSocket:obj)
    while true do
       buffer = string.alloc(16384)
-      err, bytes_read = UpstreamSocket.acRead(buffer, 16384)
+      err, bytes_read = UpstreamSocket.acRead(buffer)
 
       if err != ERR_Okay then
          if err != ERR_TimeOut and err != ERR_Disconnected then
@@ -1114,7 +1114,7 @@ function sendUpstreamProxyConnect(self, State:table):bool
    State.upstreamProxyConnectSent = true
    State.requestSent = true
 
-   local err = State.upstreamSocket.acWrite(request_data, #request_data)
+   local err = State.upstreamSocket.acWrite(request_data)
    if err != ERR_Okay then
       reportProxyError(self, 'upstream_proxy_connect_write_failed',
          'Failed to write CONNECT request to upstream proxy', State, mSys.GetErrorMsg(err))
@@ -1163,7 +1163,7 @@ end
 function upstreamProxyConnectIncoming(self, State:table, UpstreamSocket:obj)
    while true do
       local buffer = string.alloc(16384)
-      local err, bytes_read = UpstreamSocket.acRead(buffer, 16384)
+      local err, bytes_read = UpstreamSocket.acRead(buffer)
 
       if err != ERR_Okay then
          if err != ERR_TimeOut and err != ERR_Disconnected then
@@ -1341,7 +1341,7 @@ function proxyIncoming(self, ClientSocket:obj)
    state = createProxyConnectionState(self, ClientSocket)
 
    buffer = string.alloc(8192)
-   err, bytes_read = ClientSocket.acRead(buffer, 8192)
+   err, bytes_read = ClientSocket.acRead(buffer)
 
    if err != ERR_Okay then
       if err != ERR_TimeOut and err != ERR_Disconnected then

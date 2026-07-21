@@ -309,7 +309,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                   fl::Owner(Viewport->UID), fl::Stroke("rgb(255 0 0 / 1)"), fl::StrokeWidth(2)
                });
 
-               vp->setCommand(seq.size(), seq.data(), seq.size() * sizeof(PathCommand));
+               vp->setCommand(int(seq.size()), std::span<const PathCommand>(seq));
                m_cursor_drawn = true;
             }
          }
@@ -411,7 +411,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
 
             case SCODE::TABLE_END: {
                auto &table = stack_table.top();
-               table->path->setCommand(table->seq.size(), table->seq.data(), table->seq.size() * sizeof(PathCommand));
+               table->path->setCommand(int(table->seq.size()), std::span<const PathCommand>(table->seq));
                table->seq.clear();
 
                Viewport = stack_vp.top();
@@ -470,7 +470,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
                      else {
                         std::vector<PathCommand> seq;
                         apply_border_to_path(cell.border, seq, FloatRect { 0, 0, cell.width, cell.height });
-                        cell.border_path->setCommand(seq.size(), seq.data(), seq.size() * sizeof(PathCommand));
+                        cell.border_path->setCommand(int(seq.size()), std::span<const PathCommand>(seq));
                      }
                   }
 
@@ -523,8 +523,7 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
 
                // Define the path that represents the clickable area.
 
-               ui_link.origin.path->setCommand(ui_link.path.size(), ui_link.path.data(),
-                  ui_link.path.size() * sizeof(PathCommand));
+               ui_link.origin.path->setCommand(int(ui_link.path.size()), std::span<const PathCommand>(ui_link.path));
 
                acMoveToFront(*ui_link.origin.path);
 

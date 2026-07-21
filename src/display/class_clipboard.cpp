@@ -452,7 +452,9 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
       if (auto error = add_clip(CLIPTYPE::TEXT, items); !error) {
          auto file = objFile::create { fl::Path(items[0].Path), fl::Flags(FL::NEW|FL::WRITE), fl::Permissions(PERMIT::READ|PERMIT::WRITE) };
          if (file.ok()) {
-            if (file->write(Args->Buffer, Args->Size, 0) != ERR::Okay) return log.warning(ERR::Write);
+            if (file->write(std::span<const int8_t>((const int8_t *)Args->Buffer, Args->Size)) != ERR::Okay) {
+               return log.warning(ERR::Write);
+            }
             return ERR::Okay;
          }
          else return log.warning(ERR::CreateObject);
@@ -764,7 +766,8 @@ static ERR add_clip(std::string_view String)
    if (auto error = add_clip(CLIPTYPE::TEXT, items); !error) {
       kt::Create<objFile> file = { fl::Path(items[0].Path), fl::Flags(FL::WRITE|FL::NEW), fl::Permissions(PERMIT::READ|PERMIT::WRITE) };
       if (file.ok()) {
-         if (auto error = file->write(String.data(), int(String.size()), 0); error != ERR::Okay) return log.warning(error);
+         if (auto error = file->write(std::span<const int8_t>((const int8_t *)String.data(), String.size()));
+             error != ERR::Okay) return log.warning(error);
          return ERR::Okay;
       }
       else return log.warning(ERR::CreateFile);

@@ -1,0 +1,76 @@
+   include 'vector'
+
+function newPath(Sequence)
+   scene = obj.new('VectorScene')
+   viewport = scene.new('VectorViewport')
+   path = viewport.new('VectorPath')
+   check scene.init()
+   check viewport.init()
+   check path.init()
+   if Sequence?? then path.sequence = Sequence end
+   return scene, viewport, path
+end
+
+function assertCommand(Path, Index, Type, X, Y)
+   err, command = Path.mtGetCommand(Index)
+   assert(err is ERR_Okay, f'GetCommand({Index}) failed: {mSys.GetErrorMsg(err)}')
+   assert(command.type is Type, f'Command {Index} has the wrong type.')
+   assert(command.x ≈ X and command.y ≈ Y, f'Command {Index} has the wrong coordinates.')
+end
+
+@Test function TypedCommandArrays()
+   commands = array<struct<PathCommand>> {
+      struct.new('PathCommand', { type=PE_Move, x=10, y=20 }),
+      struct.new('PathCommand', { type=PE_Line, x=30, y=40 }),
+      struct.new('PathCommand', { type=PE_Line, x=50, y=60 })
+   }
+
+   scene, viewport, path = newPath('')
+   check path.mtSetCommandList(commands)
+   assert(path.totalCommands is 3, 'SetCommandList() should accept a typed PathCommand array.')
+   assertCommand(path, 0, PE_Move, 10, 20)
+   assertCommand(path, 2, PE_Line, 50, 60)
+
+   one_command = array<struct<PathCommand>> {
+      struct.new('PathCommand', { type=PE_Move, x=70, y=80 })
+   }
+   check path.mtAddCommand(one_command)
+   assert(path.totalCommands is 4, 'AddCommand() should append one typed command.')
+   assertCommand(path, 3, PE_Move, 70, 80)
+
+   replacements = array<struct<PathCommand>> {
+      struct.new('PathCommand', { type=PE_Line, x=90, y=100 }),
+      struct.new('PathCommand', { type=PE_Line, x=110, y=120 })
+   }
+   check path.mtSetCommand(1, replacements)
+   assertCommand(path, 1, PE_Line, 90, 100)
+   assertCommand(path, 2, PE_Line, 110, 120)
+end
+
+@Test function EmptyAndMismatchedInputsAreRejected()
+   scene, viewport, path = newPath('M 1 2 L 3 4')
+   empty_commands = array<struct<PathCommand>, 0>
+
+   assert(path.mtAddCommand(empty_commands) is ERR_NullArgs, 'AddCommand() should reject an empty command span.')
+   assert(path.mtSetCommand(0, empty_commands) is ERR_NullArgs, 'SetCommand() should reject an empty command span.')
+   assert(path.mtSetCommandList(empty_commands) is ERR_NullArgs,
+      'SetCommandList() should reject an empty command span.')
+
+   try
+      path.mtSetCommandList(array<byte> { 1, 2, 3 })
+   success
+      error('SetCommandList() should reject an array with the wrong element type.')
+   end
+end
+
+@Test function IndexPlusExtentOverflowIsRejected()
+   scene, viewport, path = newPath('M 1 2 L 3 4')
+   commands = array<struct<PathCommand>> {
+      struct.new('PathCommand', { type=PE_Line, x=3, y=4 }),
+      struct.new('PathCommand', { type=PE_Line, x=5, y=6 })
+   }
+
+   err = path.mtSetCommand(1000000, commands)
+   assert(err is ERR_BufferOverflow, 'SetCommand() should reject an index-plus-extent beyond the command limit.')
+   assert(path.totalCommands is 2, 'A rejected SetCommand() call should leave the path unchanged.')
+end

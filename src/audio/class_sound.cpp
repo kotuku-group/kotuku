@@ -119,7 +119,7 @@ static int read_stream(int Handle, int Offset, APTR Buffer, int Length)
       if ((Offset >= 0) and (Self->Position != Offset)) Self->seekStart(Offset);
 
       int result;
-      Self->read(Buffer, Length, &result);
+      Self->read(std::span<int8_t>((int8_t *)Buffer, Length), &result);
       return result;
    }
 
@@ -493,7 +493,7 @@ static ERR SOUND_Activate(extSound *Self)
          if (Self->Position) Self->seekStart(0); // Ensure we're reading the entire sample from the start
 
          int result;
-         if (!Self->read(buffer, Self->Length, &result)) {
+         if (!Self->read(std::span<int8_t>((int8_t *)buffer, Self->Length), &result)) {
             if (result != Self->Length) log.warning("Expected %d bytes, read %d", Self->Length, result);
 
             Self->seekStart(client_pos);
@@ -520,8 +520,7 @@ static ERR SOUND_Activate(extSound *Self)
             else add.OnStop.clear();
 
             add.SampleFormat = sampleformat;
-            add.Data         = buffer;
-            add.DataSize     = Self->Length;
+            add.Data         = std::span<const int8_t>((int8_t *)buffer, Self->Length);
 
             kt::ScopedObjectLock<extAudio> audio(Self->AudioID, 250);
             if (audio.granted()) {
@@ -793,7 +792,7 @@ static ERR SOUND_Init(extSound *Self)
    }
    else Self->File->seekStart(0);
 
-   Self->File->read(Self->Header.data(), Self->Header.size());
+   Self->File->read(std::span<int8_t>((int8_t *)Self->Header.data(), Self->Header.size()));
 
    if ((std::string_view((char *)Self->Header.data(), 4) != "RIFF") or
        (std::string_view((char *)Self->Header.data() + 8, 4) != "WAVE")) {
@@ -904,7 +903,7 @@ static ERR SOUND_Init(extSound *Self)
    }
    else Self->File->seekStart(0);
 
-   Self->File->read(Self->Header.data(), Self->Header.size());
+   Self->File->read(std::span<int8_t>((int8_t *)Self->Header.data(), Self->Header.size()));
 
    if ((std::string_view((char *)Self->Header.data(), 4) != "RIFF") or
        (std::string_view((char *)Self->Header.data() + 8, 4) != "WAVE")) {
@@ -919,7 +918,7 @@ static ERR SOUND_Init(extSound *Self)
    if (fl::ReadLE(Self->File.get(), &len) != ERR::Okay) return ERR::Read; // Length of data in this chunk
 
    WAVEFormat WAVE;
-   if ((Self->File->read(&WAVE, len, &result) != ERR::Okay) or (result < len)) {
+   if ((Self->File->read(std::span<int8_t>((int8_t *)&WAVE, len), &result) != ERR::Okay) or (result < len)) {
       log.warning("Failed to read WAVE format header (got %d, expected %d)", result, len);
       return ERR::Read;
    }
@@ -1005,20 +1004,25 @@ static ERR SOUND_Read(extSound *Self, struct acRead *Args)
 
    if (!Args) return log.warning(ERR::NullArgs);
 
-   log.traceBranch("Length: %d, Offset: %" PF64, Args->Length, (long long)Self->Position);
+   log.traceBranch("Length: %" PRIu64 ", Offset: %" PF64, uint64_t(Args->Buffer.size()),
+      (long long)Self->Position);
 
-   if (Args->Length <= 0) {
+   if (Args->Buffer.empty()) {
       Args->Result = 0;
       return ERR::Okay;
    }
 
+   if (not Args->Buffer.data()) return log.warning(ERR::NullArgs);
+
    // Don't read more than the known raw sample length
 
    int result;
-   if (Self->Position + Args->Length > Self->Length) {
-      if (auto error = Self->File->read(Args->Buffer, Self->Length - Self->Position, &result); error != ERR::Okay) return error;
+   if (Self->Position >= Self->Length) {
+      Args->Result = 0;
+      return ERR::Okay;
    }
-   else if (auto error = Self->File->read(Args->Buffer, Args->Length, &result); error != ERR::Okay) return error;
+   auto read_size = std::min<size_t>(Args->Buffer.size(), size_t(Self->Length - Self->Position));
+   if (auto error = Self->File->read(Args->Buffer.first(read_size), &result); error != ERR::Okay) return error;
 
    Self->Position += result;
    Args->Result = result;
@@ -1080,7 +1084,9 @@ static ERR SOUND_SaveToObject(extSound *Self, struct acSaveToObject *Args)
    header.DataChunkSize = audio_data_size;
    header.ChunkSize     = 36 + audio_data_size; // Header size (44) - 8 + data size
 
-   if (acWrite(Args->Dest, &header, sizeof(header)) != ERR::Okay) return log.warning(ERR::Write);
+   if (acWrite(Args->Dest, std::span<const int8_t>((const int8_t *)&header, sizeof(header))) != ERR::Okay) {
+      return log.warning(ERR::Write);
+   }
 
    // Read and write audio data in chunks
    const int chunk_size = 8192;
@@ -1093,8 +1099,12 @@ static ERR SOUND_SaveToObject(extSound *Self, struct acSaveToObject *Args)
       int read_size = (bytes_remaining < chunk_size) ? bytes_remaining : chunk_size;
       uint8_t buffer[8192];
       int bytes_read;
-      if (acRead(Self, buffer, read_size, &bytes_read) != ERR::Okay) return log.warning(ERR::Read);
-      if (acWrite(Args->Dest, buffer, bytes_read) != ERR::Okay) return log.warning(ERR::Write);
+      if (acRead(Self, std::span<int8_t>((int8_t *)buffer, read_size), &bytes_read) != ERR::Okay) {
+         return log.warning(ERR::Read);
+      }
+      if (acWrite(Args->Dest, std::span<const int8_t>((const int8_t *)buffer, bytes_read)) != ERR::Okay) {
+         return log.warning(ERR::Write);
+      }
       bytes_remaining -= bytes_read;
       if (bytes_read < read_size) break;
    }
@@ -1816,7 +1826,8 @@ static ERR find_chunk(objFile *File, std::string_view ChunkName)
    while (true) {
       char chunk[4];
       int len;
-      if ((File->read(chunk, sizeof(chunk), &len) != ERR::Okay) or (len != sizeof(chunk))) {
+      if ((File->read(std::span<int8_t>((int8_t *)chunk, sizeof(chunk)), &len) != ERR::Okay) or
+          (len != sizeof(chunk))) {
          return ERR::Read;
       }
 

@@ -15,9 +15,20 @@ Functions that are internal to the Core.
 
 using namespace kt;
 
-static constexpr int align_arg_offset(int Offset)
+static bool align_arg_offset(size_t Offset, size_t Alignment, size_t *Result)
 {
-   return (Offset + 7) & ~7;
+   if ((not Alignment) or (Alignment & (Alignment - 1))) return false;
+   if (Offset > std::numeric_limits<size_t>::max() - (Alignment - 1)) return false;
+   *Result = (Offset + Alignment - 1) & ~(Alignment - 1);
+   return true;
+}
+
+static int align_arg_offset(int Offset)
+{
+   size_t result;
+   if ((Offset < 0) or (not align_arg_offset(size_t(Offset), 8, &result)) or
+       (result > size_t(std::numeric_limits<int>::max()))) return -1;
+   return int(result);
 }
 
 template <class T> static ERR copy_cpp_array_arg(APTR Source, APTR *Result)
@@ -83,20 +94,113 @@ static void unpin_object_array(kt::vector<OBJECTPTR> *Objects)
    }
 }
 
-static int argument_end_offset(int Type, int Offset)
+static ERR span_descriptor_element_layout(const FunctionField &Field, size_t *ElementSize, size_t *ElementAlignment)
 {
-   if (Type & FD_ARRAY) return align_arg_offset(Offset) + sizeof(APTR);
-   else if (Type & FD_STR) {
-      Offset = align_arg_offset(Offset);
-      if ((Type & FD_CPP) and (not (Type & FD_MUTABLE))) return Offset + sizeof(std::string_view);
-      else return Offset + sizeof(APTR);
+   if (Field.Type & FD_STRUCT) {
+      if (not Field.Name) return ERR::InvalidData;
+      const std::string_view name(Field.Name);
+      const auto separator = name.find(':');
+      if ((separator IS std::string_view::npos) or (separator IS 0)) return ERR::InvalidData;
+
+      const auto it = glStructSizes.find(kt::strhash(name.substr(0, separator)));
+      if (it IS glStructSizes.end()) return ERR::InvalidData;
+      *ElementSize = it->second.Size;
+      *ElementAlignment = it->second.Alignment;
    }
-   else if (Type & FD_FUNCTION) return align_arg_offset(Offset) + sizeof(FUNCTION);
-   else if (Type & (FD_PTR|FD_BUFFER|FD_STRUCT)) return align_arg_offset(Offset) + sizeof(APTR);
-   else if (Type & FD_DOUBLE) return align_arg_offset(Offset) + sizeof(double);
-   else if (Type & FD_INT64) return align_arg_offset(Offset) + sizeof(int64_t);
-   else if (Type & FD_INT) return Offset + sizeof(int);
-   else return Offset;
+   else {
+      const int type_count = bool(Field.Type & FD_DOUBLE) + bool(Field.Type & FD_INT64) +
+         bool(Field.Type & FD_FLOAT) + bool(Field.Type & FD_INT) + bool(Field.Type & FD_WORD) +
+         bool(Field.Type & FD_BYTE) + bool(Field.Type & FD_PTR) + bool(Field.Type & FD_STR);
+      if (type_count != 1) return ERR::InvalidData;
+
+      if (Field.Type & FD_DOUBLE) { *ElementSize = sizeof(double); *ElementAlignment = alignof(double); }
+      else if (Field.Type & FD_INT64) { *ElementSize = sizeof(int64_t); *ElementAlignment = alignof(int64_t); }
+      else if (Field.Type & FD_FLOAT) { *ElementSize = sizeof(float); *ElementAlignment = alignof(float); }
+      else if (Field.Type & FD_INT) { *ElementSize = sizeof(int); *ElementAlignment = alignof(int); }
+      else if (Field.Type & FD_WORD) { *ElementSize = sizeof(int16_t); *ElementAlignment = alignof(int16_t); }
+      else { *ElementSize = sizeof(int8_t); *ElementAlignment = alignof(int8_t); }
+   }
+
+   if ((not *ElementSize) or (not *ElementAlignment) or
+       (*ElementAlignment > alignof(std::max_align_t))) return ERR::InvalidData;
+   return ERR::Okay;
+}
+
+using GenericSpan = std::span<int8_t>;
+
+static ERR span_field_layout(const FunctionField &Field, size_t Offset, size_t *AlignedOffset, size_t *EndOffset)
+{
+   if ((Field.Type & FDF_SPAN) != FDF_SPAN) return ERR::InvalidData;
+
+   size_t aligned_offset;
+   if (not align_arg_offset(Offset, alignof(GenericSpan), &aligned_offset)) return ERR::InvalidData;
+   if (aligned_offset > std::numeric_limits<size_t>::max() - sizeof(GenericSpan)) return ERR::InvalidData;
+
+   if (AlignedOffset) *AlignedOffset = aligned_offset;
+   if (EndOffset) *EndOffset = aligned_offset + sizeof(GenericSpan);
+   return ERR::Okay;
+}
+
+static ERR span_field_value(const FunctionField &Field, CPTR Storage, GenericSpan *Value, size_t *ByteSize)
+{
+   if ((not Storage) or (not Value) or (not ByteSize)) return ERR::NullArgs;
+   if (span_field_layout(Field, 0, nullptr, nullptr) != ERR::Okay) return ERR::InvalidData;
+
+   size_t element_size, element_alignment;
+   if (span_descriptor_element_layout(Field, &element_size, &element_alignment) != ERR::Okay) {
+      return ERR::InvalidData;
+   }
+
+   const auto value = *(const GenericSpan *)Storage;
+   if ((not value.data()) and value.size()) return ERR::InvalidData;
+   if (value.size() > std::numeric_limits<size_t>::max() / element_size) return ERR::InvalidData;
+
+   *Value = value;
+   *ByteSize = value.size() * element_size;
+   return ERR::Okay;
+}
+
+static void rebind_span_field(APTR Storage, CPTR Data, size_t Extent)
+{
+   *(GenericSpan *)Storage = GenericSpan((int8_t *)Data, Extent);
+}
+
+static int argument_end_offset(const FunctionField &Field, int Offset)
+{
+   if (Offset < 0) return -1;
+
+   size_t end_offset;
+   if ((Field.Type & FDF_SPAN) IS FDF_SPAN) {
+      if (span_field_layout(Field, size_t(Offset), nullptr, &end_offset) != ERR::Okay) return -1;
+   }
+   else {
+      size_t aligned_offset = size_t(Offset);
+      size_t field_size;
+
+      if (Field.Type & FD_ARRAY) field_size = sizeof(APTR);
+      else if (Field.Type & FD_STR) {
+         field_size = ((Field.Type & FD_CPP) and (not (Field.Type & FD_MUTABLE))) ?
+            sizeof(std::string_view) : sizeof(APTR);
+      }
+      else if (Field.Type & FD_FUNCTION) field_size = sizeof(FUNCTION);
+      else if (Field.Type & (FD_PTR|FD_STRUCT)) field_size = sizeof(APTR);
+      else if (Field.Type & FD_DOUBLE) field_size = sizeof(double);
+      else if (Field.Type & FD_INT64) field_size = sizeof(int64_t);
+      else if (Field.Type & FD_INT) {
+         field_size = sizeof(int);
+         end_offset = size_t(Offset) + field_size;
+         if (end_offset > size_t(std::numeric_limits<int>::max())) return -1;
+         return int(end_offset);
+      }
+      else return -1;
+
+      if (not align_arg_offset(size_t(Offset), 8, &aligned_offset)) return -1;
+      if (aligned_offset > std::numeric_limits<size_t>::max() - field_size) return -1;
+      end_offset = aligned_offset + field_size;
+   }
+
+   if (end_offset > size_t(std::numeric_limits<int>::max())) return -1;
+   return int(end_offset);
 }
 
 //********************************************************************************************************************
@@ -258,8 +362,8 @@ This function searches an argument structure for pointer and string types.  If i
 convert them to a format that can be passed to other memory spaces.  Note: The canonical interpreter for these
 structures is in Tiri - for the most part this function should be kept in sync with it.
 
-A PTR|RESULT or PTRBUFFER|MUTABLE followed by a PTRSIZE indicates that the user has to supply a buffer to the function.  It
-is assumed that the function will fill the buffer with data, so the caller's initial buffer content is not serialised.
+A PTR|RESULT or PTR|MUTABLE followed by a PTRSIZE indicates that the user has to supply a buffer to the function.  It is
+assumed that the function will fill the buffer with data, so the caller's initial buffer content is not serialised.
 Example:
 
 <pre>
@@ -287,10 +391,15 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
    kt::Log log(__FUNCTION__);
 
    if ((not Args) or (not Parameters)) return ERR::NullArgs;
+   if (ArgsSize <= 0) return ERR::InvalidData;
+   Buffer.clear();
+
+   const auto max_copy_size = std::min(Buffer.max_size(), size_t(INT_MAX - sizeof(ActionMessage)));
+   if (size_t(ArgsSize) > max_copy_size) return ERR::InvalidData;
 
    // Buffer size must be computed in advance
 
-   int size = ArgsSize;
+   size_t size = ArgsSize;
    int pos = 0;
    bool function_found = false;
    for (int i=0; Args[i].Name; i++) {
@@ -301,44 +410,84 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
          // Array parameters are considered legacy and effectively unused in the current system.
          return ERR::NoSupport;
       }
+      else if ((type & FDF_SPAN) IS FDF_SPAN) {
+         if (type & (FD_RESULT|FD_ALLOC)) return log.warning(ERR::InvalidData);
+
+         size_t aligned_offset, end_offset;
+         if ((span_field_layout(Args[i], size_t(pos), &aligned_offset, &end_offset) != ERR::Okay) or
+             (end_offset > size_t(ArgsSize))) return log.warning(ERR::InvalidData);
+
+         GenericSpan value;
+         size_t byte_size;
+         if (span_field_value(Args[i], Parameters + aligned_offset, &value, &byte_size) != ERR::Okay) {
+            return log.warning(ERR::InvalidData);
+         }
+         if (byte_size) {
+            size_t element_size, element_alignment, payload_offset;
+            if (span_descriptor_element_layout(Args[i], &element_size, &element_alignment) != ERR::Okay) {
+               return log.warning(ERR::InvalidData);
+            }
+            if ((not align_arg_offset(size, element_alignment, &payload_offset)) or
+                (payload_offset > max_copy_size) or (byte_size > max_copy_size - payload_offset)) {
+               return log.warning(ERR::InvalidData);
+            }
+            size = payload_offset + byte_size;
+         }
+         pos = int(end_offset);
+      }
       else if (type & FD_STR) {
          pos = align_arg_offset(pos);
+         if (pos < 0) return log.warning(ERR::InvalidData);
          if (not (type & FD_RESULT)) {
             if ((type & FD_CPP) and (not (type & FD_MUTABLE))) {
                auto view = (std::string_view *)(Parameters + pos);
-               if (view->length() >= size_t(INT_MAX - size)) return log.warning(ERR::InvalidData);
-               size += int(view->length()) + 1;
+               if ((size > max_copy_size) or (view->length() >= max_copy_size - size)) {
+                  return log.warning(ERR::InvalidData);
+               }
+               size += view->length() + 1;
             }
             else if (auto str = *(CSTRING *)(Parameters + pos)) {
                auto length = strlen(str);
-               if (length >= size_t(INT_MAX - size)) return log.warning(ERR::InvalidData);
-               size += int(length) + 1;
+               if ((size > max_copy_size) or (length >= max_copy_size - size)) {
+                  return log.warning(ERR::InvalidData);
+               }
+               size += length + 1;
             }
          }
-         pos = argument_end_offset(type, pos);
+         pos = argument_end_offset(Args[i], pos);
+         if (pos < 0) return log.warning(ERR::InvalidData);
       }
       else if (type & FD_FUNCTION) {
          // There is a hard limit of one embedded function per action call.
          // Functions are always expressed as an embedded type.
          if (function_found) return log.warning(ERR::NoSupport);
          function_found = true;
-         pos = argument_end_offset(type, pos);
+         pos = argument_end_offset(Args[i], pos);
+         if (pos < 0) return log.warning(ERR::InvalidData);
       }
-      else if (type & (FD_PTR|FD_BUFFER)) {
+      else if (type & FD_PTR) {
          pos = align_arg_offset(pos);
+         if (pos < 0) return log.warning(ERR::InvalidData);
          if ((not (type & (FD_OBJECT|FD_RESULT))) and (Args[i+1].Type & FD_PTRSIZE)) {
             int64_t memsize;
             if (Args[i+1].Type & FD_INT64) memsize = *(int64_t *)(Parameters + pos + sizeof(APTR));
             else memsize = *(int *)(Parameters + pos + sizeof(APTR));
-            if ((memsize < 0) or (memsize > INT_MAX - size)) return log.warning(ERR::InvalidData);
-            size += int(memsize);
+            if ((memsize < 0) or (size > max_copy_size) or (uint64_t(memsize) > max_copy_size - size)) {
+               return log.warning(ERR::InvalidData);
+            }
+            size += size_t(memsize);
          }
          else if (not (type & (FD_OBJECT|FD_RESULT))) return log.warning(ERR::NoSupport);
          pos += sizeof(APTR);
       }
-      else if (type & (FD_DOUBLE|FD_INT64|FD_INT)) pos = argument_end_offset(type, pos);
+      else if (type & (FD_DOUBLE|FD_INT64|FD_INT)) {
+         pos = argument_end_offset(Args[i], pos);
+         if (pos < 0) return log.warning(ERR::InvalidData);
+      }
       else if (type & FD_TAGS) return log.warning(ERR::NoSupport);
       else return log.warning(ERR::NoSupport);
+
+      if (pos > ArgsSize) return log.warning(ERR::InvalidData);
    }
 
    Buffer.reserve(size); // Ensures that the buffer space remains stable when extended.
@@ -352,8 +501,10 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
    pos = 0;
    for (int i=0; Args[i].Name; i++) {
       int type = Args[i].Type;
-      if (type & FD_ARRAY) {
+      if ((type & FDF_SPAN) IS FDF_SPAN); // Embedded value; payload ownership is handled below.
+      else if (type & FD_ARRAY) {
          pos = align_arg_offset(pos);
+         if (pos < 0) return ERR::InvalidData;
          APTR copy = nullptr;
          if (auto error = copy_cpp_array_arg(type, *(APTR *)(Parameters + pos), &copy); error != ERR::Okay) {
             for (auto &array : cpp_arrays) delete_cpp_array_arg(array.first, array.second);
@@ -363,15 +514,45 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
          *(APTR *)(Buffer.data() + pos) = copy;
          cpp_arrays.emplace_back(type, copy);
       }
-      pos = argument_end_offset(type, pos);
+      pos = argument_end_offset(Args[i], pos);
+      if ((pos < 0) or (pos > ArgsSize)) return ERR::InvalidData;
    }
 
    pos = 0;
    for (int i=0; Args[i].Name; i++) {
       int type = Args[i].Type;
 
-      if (type & FD_ARRAY) {
+      if ((type & FDF_SPAN) IS FDF_SPAN) {
+         size_t aligned_offset, end_offset;
+         if ((span_field_layout(Args[i], size_t(pos), &aligned_offset, &end_offset) != ERR::Okay) or
+             (end_offset > size_t(ArgsSize))) return ERR::InvalidData;
+
+         GenericSpan value;
+         size_t byte_size;
+         if (span_field_value(Args[i], Parameters + aligned_offset, &value, &byte_size) != ERR::Okay) {
+            return ERR::InvalidData;
+         }
+
+         if (byte_size) {
+            size_t element_size, element_alignment, payload_offset;
+            if ((span_descriptor_element_layout(Args[i], &element_size, &element_alignment) != ERR::Okay) or
+                (not align_arg_offset(Buffer.size(), element_alignment, &payload_offset)) or
+                (payload_offset > size) or (byte_size > size - payload_offset)) return ERR::InvalidData;
+
+            Buffer.resize(payload_offset);
+            const auto payload_end = payload_offset + byte_size;
+            Buffer.resize(payload_end);
+            auto payload = Buffer.data() + payload_offset;
+            if (not (type & FD_MUTABLE)) copymem(value.data(), payload, byte_size);
+            rebind_span_field(Buffer.data() + aligned_offset, payload, value.size());
+         }
+         else rebind_span_field(Buffer.data() + aligned_offset, nullptr, 0);
+
+         pos = int(end_offset);
+      }
+      else if (type & FD_ARRAY) {
          pos = align_arg_offset(pos);
+         if (pos < 0) return ERR::InvalidData;
          auto param = (APTR *)(Buffer.data() + pos);
          if ((type & FD_OBJECT) and (type & FD_PTR)) {
             pin_object_array((kt::vector<OBJECTPTR> *)*param);
@@ -380,6 +561,7 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
       }
       else if (type & FD_STR) {
          pos = align_arg_offset(pos);
+         if (pos < 0) return ERR::InvalidData;
          APTR param = Buffer.data() + pos;
          if (type & FD_RESULT) {
             // Result values are not available to queued callers, so do not retain references to caller-owned storage.
@@ -404,16 +586,19 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
             }
             else ((STRING *)param)[0] = nullptr;
          }
-         pos = argument_end_offset(type, pos);
+         pos = argument_end_offset(Args[i], pos);
+         if (pos < 0) return ERR::InvalidData;
       }
       else if (type & FD_FUNCTION) {
          pos = align_arg_offset(pos);
+         if (pos < 0) return ERR::InvalidData;
          auto function = (FUNCTION *)(Buffer.data() + pos);
          if (function->defined()) function->pin();
          pos += sizeof(FUNCTION);
       }
-      else if (type & (FD_PTR|FD_BUFFER)) {
+      else if (type & FD_PTR) {
          pos = align_arg_offset(pos);
+         if (pos < 0) return ERR::InvalidData;
          auto param = (APTR *)(Buffer.data() + pos);
          if (type & FD_OBJECT) {
             if (type & FD_RESULT) *param = nullptr;
@@ -448,14 +633,18 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
          }
          pos += sizeof(APTR);
       }
-      else pos = argument_end_offset(type, pos);
+      else {
+         pos = argument_end_offset(Args[i], pos);
+         if ((pos < 0) or (pos > ArgsSize)) return ERR::InvalidData;
+      }
    }
 
+   if (Buffer.size() != size) return ERR::InvalidData;
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
-A buffer produced by copy_args() embeds absolute pointers into its own storage for string and sized buffer arguments.
+A buffer produced by copy_args() embeds absolute pointers into its own storage for spans, strings and sized buffers.
 Those pointers survive moves of the owning std::vector, but not byte-for-byte duplication (e.g. serialisation into
 the message queue).  make_args_relative() converts the self-referential pointers to offsets from the start of the
 argument block so that make_args_absolute() can rebase them against the receiving copy.  Object, array and function
@@ -463,16 +652,41 @@ references are position independent and are left untouched, as are null pointers
 extension data follows the argument block).
 *********************************************************************************************************************/
 
-void make_args_relative(const FunctionField *Args, int ArgsSize, int8_t *Buffer)
+ERR make_args_relative(const FunctionField *Args, int ArgsSize, int8_t *Buffer, size_t BufferSize)
 {
-   if ((not Args) or (not Buffer)) return;
+   if ((not Args) or (not Buffer)) return ERR::NullArgs;
+   if ((ArgsSize <= 0) or (size_t(ArgsSize) > BufferSize)) return ERR::InvalidData;
 
    int pos = 0;
    for (int i=0; Args[i].Name and (pos < ArgsSize); i++) {
       int type = Args[i].Type;
-      if (type & FD_ARRAY); // Owned heap copy; position independent
+      if ((type & FDF_SPAN) IS FDF_SPAN) {
+         size_t aligned_offset, end_offset;
+         if ((span_field_layout(Args[i], size_t(pos), &aligned_offset, &end_offset) != ERR::Okay) or
+             (end_offset > size_t(ArgsSize))) return ERR::InvalidData;
+
+         GenericSpan value;
+         size_t byte_size;
+         auto storage = Buffer + aligned_offset;
+         if (span_field_value(Args[i], storage, &value, &byte_size) != ERR::Okay) return ERR::InvalidData;
+         if (value.empty()) rebind_span_field(storage, nullptr, 0);
+         else {
+            const auto base_address = uintptr_t(Buffer);
+            const auto data_address = uintptr_t(value.data());
+            if ((data_address < base_address) or (data_address - base_address < size_t(ArgsSize))) {
+               return ERR::InvalidData;
+            }
+            const auto payload_offset = data_address - base_address;
+            if ((payload_offset > BufferSize) or (byte_size > BufferSize - payload_offset)) return ERR::InvalidData;
+            rebind_span_field(storage, (CPTR)payload_offset, value.size());
+         }
+         pos = int(end_offset);
+         continue;
+      }
+      else if (type & FD_ARRAY); // Owned heap copy; position independent
       else if (type & FD_STR) {
          pos = align_arg_offset(pos);
+         if (pos < 0) return ERR::InvalidData;
          if ((type & FD_CPP) and (not (type & FD_MUTABLE))) {
             auto view = (std::string_view *)(Buffer + pos);
             if (view->data()) *view = std::string_view((CSTRING)(view->data() - (CSTRING)Buffer), view->length());
@@ -481,26 +695,51 @@ void make_args_relative(const FunctionField *Args, int ArgsSize, int8_t *Buffer)
             *str = (int8_t *)(*str - Buffer);
          }
       }
-      else if (type & (FD_PTR|FD_BUFFER)) {
+      else if (type & FD_PTR) {
          pos = align_arg_offset(pos);
+         if (pos < 0) return ERR::InvalidData;
          if ((not (type & (FD_OBJECT|FD_RESULT))) and (Args[i+1].Type & FD_PTRSIZE)) {
             if (auto ptr = (int8_t **)(Buffer + pos); *ptr) *ptr = (int8_t *)(*ptr - Buffer);
          }
       }
-      pos = argument_end_offset(type, pos);
+      pos = argument_end_offset(Args[i], pos);
+      if ((pos < 0) or (pos > ArgsSize)) return ERR::InvalidData;
    }
+
+   return ERR::Okay;
 }
 
-void make_args_absolute(const FunctionField *Args, int ArgsSize, int8_t *Buffer)
+ERR make_args_absolute(const FunctionField *Args, int ArgsSize, int8_t *Buffer, size_t BufferSize)
 {
-   if ((not Args) or (not Buffer)) return;
+   if ((not Args) or (not Buffer)) return ERR::NullArgs;
+   if ((ArgsSize <= 0) or (size_t(ArgsSize) > BufferSize)) return ERR::InvalidData;
 
    int pos = 0;
    for (int i=0; Args[i].Name and (pos < ArgsSize); i++) {
       int type = Args[i].Type;
-      if (type & FD_ARRAY); // Owned heap copy; position independent
+      if ((type & FDF_SPAN) IS FDF_SPAN) {
+         size_t aligned_offset, end_offset;
+         if ((span_field_layout(Args[i], size_t(pos), &aligned_offset, &end_offset) != ERR::Okay) or
+             (end_offset > size_t(ArgsSize))) return ERR::InvalidData;
+
+         auto storage = Buffer + aligned_offset;
+         GenericSpan value;
+         size_t byte_size;
+         if (span_field_value(Args[i], storage, &value, &byte_size) != ERR::Okay) return ERR::InvalidData;
+         if (value.empty()) rebind_span_field(storage, nullptr, 0);
+         else {
+            const auto payload_offset = uintptr_t(value.data());
+            if ((payload_offset < size_t(ArgsSize)) or (payload_offset > BufferSize) or
+                (byte_size > BufferSize - payload_offset)) return ERR::InvalidData;
+            rebind_span_field(storage, Buffer + payload_offset, value.size());
+         }
+         pos = int(end_offset);
+         continue;
+      }
+      else if (type & FD_ARRAY); // Owned heap copy; position independent
       else if (type & FD_STR) {
          pos = align_arg_offset(pos);
+         if (pos < 0) return ERR::InvalidData;
          if ((type & FD_CPP) and (not (type & FD_MUTABLE))) {
             auto view = (std::string_view *)(Buffer + pos);
             if (view->data()) *view = std::string_view((CSTRING)Buffer + (MAXINT)view->data(), view->length());
@@ -509,14 +748,18 @@ void make_args_absolute(const FunctionField *Args, int ArgsSize, int8_t *Buffer)
             *str = Buffer + (MAXINT)*str;
          }
       }
-      else if (type & (FD_PTR|FD_BUFFER)) {
+      else if (type & FD_PTR) {
          pos = align_arg_offset(pos);
+         if (pos < 0) return ERR::InvalidData;
          if ((not (type & (FD_OBJECT|FD_RESULT))) and (Args[i+1].Type & FD_PTRSIZE)) {
             if (auto ptr = (int8_t **)(Buffer + pos); *ptr) *ptr = Buffer + (MAXINT)*ptr;
          }
       }
-      pos = argument_end_offset(type, pos);
+      pos = argument_end_offset(Args[i], pos);
+      if ((pos < 0) or (pos > ArgsSize)) return ERR::InvalidData;
    }
+
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -529,8 +772,13 @@ void release_copied_args(const FunctionField *Args, int ArgsSize, int8_t *Parame
    for (int i=0, pos=0; Args[i].Name and (pos < ArgsSize); i++) {
       auto type = Args[i].Type;
 
-      if (type & FD_ARRAY) {
+      if ((type & FDF_SPAN) IS FDF_SPAN) {
+         pos = argument_end_offset(Args[i], pos);
+         if ((pos < 0) or (pos > ArgsSize)) return;
+      }
+      else if (type & FD_ARRAY) {
          pos = align_arg_offset(pos);
+         if (pos < 0) return;
          auto array = *(APTR *)(Parameters + pos);
          if ((type & FD_OBJECT) and (type & FD_PTR)) {
             unpin_object_array((kt::vector<OBJECTPTR> *)array);
@@ -539,16 +787,15 @@ void release_copied_args(const FunctionField *Args, int ArgsSize, int8_t *Parame
          *(APTR *)(Parameters + pos) = nullptr;
          pos += sizeof(APTR);
       }
-      else if ((type & FD_BUFFER) or (Args[i+1].Type & FD_BUFSIZE)) {
-         pos = align_arg_offset(pos) + sizeof(APTR);
-      }
       else if (type & FD_STR) {
          pos = align_arg_offset(pos);
+         if (pos < 0) return;
          if ((type & FD_CPP) and (not (type & FD_MUTABLE))) pos += sizeof(std::string_view);
          else pos += sizeof(APTR);
       }
       else if (type & FD_FUNCTION) {
          pos = align_arg_offset(pos);
+         if (pos < 0) return;
          auto &function = *(FUNCTION *)(Parameters + pos);
 
          if (function.defined()) {
@@ -573,13 +820,17 @@ void release_copied_args(const FunctionField *Args, int ArgsSize, int8_t *Parame
       }
       else if (type & FD_PTR) {
          pos = align_arg_offset(pos);
+         if (pos < 0) return;
          if ((type & FD_OBJECT) and (not (type & FD_RESULT))) {
             if (auto object = *(OBJECTPTR *)(Parameters + pos)) object->unpin(true);
             *(OBJECTPTR *)(Parameters + pos) = nullptr;
          }
          pos += sizeof(APTR);
       }
-      else if (type & (FD_INT|FD_DOUBLE|FD_INT64)) pos = argument_end_offset(type, pos);
+      else if (type & (FD_INT|FD_DOUBLE|FD_INT64)) {
+         pos = argument_end_offset(Args[i], pos);
+         if (pos < 0) return;
+      }
       else if (type & FD_TAGS) break;
    }
 }

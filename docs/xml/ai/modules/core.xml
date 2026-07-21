@@ -1,25 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ai:m xmlns:ai="http://kotuku.dev/ai-docs" n="Core" cl="CompressedStream,Compression,Config,File,MetaClass,Module,Script,StorageDevice,Task,Thread,Time">
-  <ai:f n="AccessMemory" c="Grants access to memory blocks by identifier." p="ERR AccessMemory(MEMORYID Memory, MEM Flags, INT MilliSeconds, APTR * Result)" r="ERR">
-    <ai:i n="Memory" t="MEMORYID" c="The ID of the memory block to access."/>
-    <ai:i n="Flags" t="MEM" c="Set to READ, WRITE or READ_WRITE."/>
-    <ai:i n="MilliSeconds" t="INT" c="The millisecond interval to wait before a timeout occurs. Use at least 40ms for best results."/>
-    <ai:i n="Result" t="APTR *" c="Must refer to an APTR for storing the resolved address."/>
-    <ai:e c="Okay"/>
-    <ai:e c="Args"/>
-    <ai:e c="TimeOut"/>
-    <ai:e c="MemoryDoesNotExist"/>
-    <ai:e c="SystemLocked"/>
-    <ai:e c="NullArgs"/>
-  </ai:f>
   <ai:f n="AccessObject" c="Grants exclusive access to objects via unique ID." p="ERR AccessObject(OBJECTID Object, INT MilliSeconds, OBJECTPTR * Result)" r="ERR">
     <ai:i n="Object" t="OBJECTID" c="The unique ID of the target object."/>
     <ai:i n="MilliSeconds" t="INT" c="The limit in milliseconds before a timeout occurs. The maximum limit is 60000, and 100 is recommended."/>
     <ai:i n="Result" t="OBJECTPTR *" c="A pointer storage variable that will store the resulting object address."/>
     <ai:e c="Okay"/>
+    <ai:e c="Cancelled"/>
+    <ai:e c="Args"/>
+    <ai:e c="LockFailed"/>
     <ai:e c="TimeOut"/>
+    <ai:e c="MarkedForDeletion"/>
     <ai:e c="SystemLocked"/>
     <ai:e c="NoMatchingObject"/>
+    <ai:e c="DoesNotExist"/>
     <ai:e c="NullArgs"/>
   </ai:f>
   <ai:f n="Action" c="This function is responsible for executing action routines." p="ERR Action(AC Action, OBJECTPTR Object, APTR Parameters)" r="ERR">
@@ -28,65 +21,84 @@
     <ai:i n="Parameters" t="APTR" c="Optional parameter structure associated with Action."/>
     <ai:e c="Okay"/>
     <ai:e c="NoAction"/>
-    <ai:e c="IllegalActionID"/>
-    <ai:e c="ObjectCorrupt"/>
+    <ai:e c="AccessObject"/>
     <ai:e c="NullArgs"/>
+    <ai:e c="Notified"/>
   </ai:f>
   <ai:f n="ActionList" c="Returns a pointer to the global action table." p="void ActionList(struct ActionTable ** Actions, INT * Size)">
     <ai:i n="Actions" t="struct ActionTable **" c="A pointer to the Core's action table struct ActionTable * is returned. Please note that the first entry in the ActionTable list has all fields driven to NULL, because valid action ID's start from one, not zero. The final action in the list is also terminated with NULL fields in order to indicate an end to the list. Knowing this is helpful when scanning the list or calculating the total number of actions supported by the Core."/>
     <ai:i n="Size" t="INT *" c="Total number of elements in the returned list."/>
   </ai:f>
-  <ai:f n="AddInfoTag" c="Adds new tags to FileInfo structures." p="ERR AddInfoTag(struct FileInfo * Info, CSTRING Name, CSTRING Value)" r="ERR">
+  <ai:f n="AddInfoTag" c="Adds new tags to FileInfo structures." p="ERR AddInfoTag(struct FileInfo * Info, STRVIEW Name, STRVIEW Value)" r="ERR">
     <ai:i n="Info" t="struct FileInfo *" c="Pointer to a valid FileInfo structure."/>
-    <ai:i n="Name" t="CSTRING" c="The name of the tag, which must be declared in camel-case."/>
-    <ai:i n="Value" t="CSTRING" c="The value to associate with the tag name. If NULL, any existing tag with a matching Name will be removed."/>
+    <ai:i n="Name" t="STRVIEW" c="The name of the tag, which must be declared in camel-case."/>
+    <ai:i n="Value" t="STRVIEW" c="The value to associate with the tag name. If empty, any existing tag with a matching Name will be removed."/>
     <ai:e c="Okay"/>
     <ai:e c="NullArgs"/>
+    <ai:e c="CreateResource"/>
   </ai:f>
   <ai:f n="AddMsgHandler" c="Adds a new message handler for processing incoming messages." p="ERR AddMsgHandler(MSGID MsgType, FUNCTION * Routine, struct MsgHandler ** Handle)" r="ERR">
     <ai:i n="MsgType" t="MSGID" c="The message type that the handler will intercept. If zero, all incoming messages are passed to the handler."/>
     <ai:i n="Routine" t="FUNCTION *" c="Refers to the function that will handle incoming messages."/>
     <ai:i n="Handle" t="struct MsgHandler **" c="The resulting handle of the new message handler - retain for FreeResource."/>
     <ai:e c="Okay"/>
+    <ai:e c="Lock"/>
     <ai:e c="AllocMemory"/>
     <ai:e c="NullArgs"/>
   </ai:f>
   <ai:f n="AdjustLogLevel" c="Adjusts the base-line of all log messages." p="INT AdjustLogLevel(INT Delta)" r="INT">
-    <ai:i n="Delta" t="INT" c="The level of adjustment to make to new log messages. Zero is no change. The maximum level is +/- 6."/>
+    <ai:i n="Delta" t="INT" c="The level of adjustment to make to new log messages. Zero is no change. The maximum level is +/- 9."/>
   </ai:f>
-  <ai:f n="AllocMemory" c="Allocates a managed memory block on the heap." p="ERR AllocMemory(INT Size, MEM Flags, APTR * Address, MEMORYID * ID)" r="ERR">
-    <ai:i n="Size" t="INT" c="The size of the memory block in bytes. Must be greater than zero."/>
-    <ai:i n="Flags" t="MEM" c="Optional allocation flags controlling behavior and ownership."/>
+  <ai:f n="AllocResource" c="Allocates a managed memory block on the heap." p="ERR AllocResource(INT64 Size, MEM Flags, APTR * Address, struct ResourceManager * Manager)" r="ERR">
+    <ai:i n="Size" t="INT64" c="The size of the memory block in bytes. Must be greater than zero."/>
+    <ai:i n="Flags" t="MEM" c="Optional allocation flags controlling behaviour and ownership."/>
     <ai:i n="Address" t="APTR *" c="Pointer to store the address of the allocated memory block."/>
-    <ai:i n="ID" t="MEMORYID *" c="Pointer to store the unique identifier of the allocated memory block."/>
+    <ai:i n="Manager" t="struct ResourceManager *" c="Resource manager used to release the resource."/>
     <ai:e c="Okay"/>
     <ai:e c="Args"/>
-    <ai:e c="ArrayFull"/>
-    <ai:e c="SystemLocked"/>
-    <ai:e c="AccessMemory"/>
     <ai:e c="AllocMemory"/>
   </ai:f>
   <ai:f n="AllocateID" c="Generates unique ID's for general purposes." p="INT AllocateID(IDTYPE Type)" r="INT">
     <ai:i n="Type" t="IDTYPE" c="The type of ID that is required."/>
   </ai:f>
-  <ai:f n="AnalysePath" c="Analyses paths to determine their type (file, folder or volume)." p="ERR AnalysePath(CSTRING Path, LOC * Type)" r="ERR">
-    <ai:i n="Path" t="CSTRING" c="The path to analyse."/>
+  <ai:f n="AnalysePath" c="Analyses paths to determine their type (file, folder or volume)." p="ERR AnalysePath(STRVIEW Path, LOC * Type)" r="ERR">
+    <ai:i n="Path" t="STRVIEW" c="The path to analyse."/>
     <ai:i n="Type" t="LOC *" c="The result will be stored in the variable referred to by this parameter. The return types are DIRECTORY, FILE and VOLUME. Set this parameter to NULL if you are only interested in checking if the file exists."/>
     <ai:e c="Okay"/>
-    <ai:e c="DoesNotExist"/>
+    <ai:e c="FileNotFound"/>
+    <ai:e c="NoSupport"/>
     <ai:e c="NullArgs"/>
   </ai:f>
-  <ai:f n="AsyncAction" c="Execute an action in parallel, via a separate thread." p="ERR AsyncAction(AC Action, OBJECTPTR Object, APTR Args, FUNCTION * Callback)" r="ERR">
+  <ai:f n="AsyncAction" c="Submit an action for asynchronous execution against an object." p="ERR AsyncAction(AC Action, OBJECTPTR Object, APTR Args, FUNCTION * Callback)" r="ERR">
     <ai:i n="Action" t="AC" c="An action or method ID must be specified here."/>
-    <ai:i n="Object" t="OBJECTPTR" c="A pointer to the object that is going to perform the action."/>
+    <ai:i n="Object" t="OBJECTPTR" c="The target object to execute the action against."/>
     <ai:i n="Args" t="APTR" c="If the action or method is documented as taking parameters, provide the correct parameter structure here."/>
-    <ai:i n="Callback" t="FUNCTION *" c="This function will be called after the thread has finished executing the action."/>
+    <ai:i n="Callback" t="FUNCTION *" c="Optional function called on the main thread after the action completes."/>
     <ai:e c="Okay"/>
-    <ai:e c="Init"/>
-    <ai:e c="IllegalMethodID"/>
+    <ai:e c="InvalidData"/>
+    <ai:e c="MarkedForDeletion"/>
     <ai:e c="MissingClass"/>
-    <ai:e c="NewObject"/>
     <ai:e c="NullArgs"/>
+  </ai:f>
+  <ai:f n="AsyncCancel" c="Drain the pending queue for listed objects without executing the remaining actions." p="ERR AsyncCancel(kt::vector&lt;OBJECTID&gt; Objects)" r="ERR">
+    <ai:i n="Objects" t="kt::vector&lt;OBJECTID&gt;" c="A list of object IDs to cancel."/>
+    <ai:e c="Okay"/>
+    <ai:e c="NullArgs"/>
+  </ai:f>
+  <ai:f n="AsyncPending" c="Return the number of queued and in-flight async actions for an object." p="INT AsyncPending(OBJECTID Object)" r="INT">
+    <ai:i n="Object" t="OBJECTID" c="The object to query."/>
+  </ai:f>
+  <ai:f n="AsyncWait" c="Block until all queued async actions for the listed objects have completed." p="ERR AsyncWait(kt::vector&lt;OBJECTID&gt; Objects, INT TimeOut)" r="ERR">
+    <ai:i n="Objects" t="kt::vector&lt;OBJECTID&gt;" c="A list of object IDs to wait on."/>
+    <ai:i n="TimeOut" t="INT" c="Maximum time to wait in milliseconds, or -1 for an indefinite wait."/>
+    <ai:e c="Okay"/>
+    <ai:e c="Terminate"/>
+    <ai:e c="InUse"/>
+    <ai:e c="TimeOut"/>
+    <ai:e c="SystemLocked"/>
+    <ai:e c="NullArgs"/>
+    <ai:e c="Recursion"/>
+    <ai:e c="OutsideMainThread"/>
   </ai:f>
   <ai:f n="BroadcastEvent" c="Broadcast an event to all event listeners in the system." p="ERR BroadcastEvent(APTR Event, INT EventSize)" r="ERR">
     <ai:i n="Event" t="APTR" c="Pointer to an event structure."/>
@@ -100,46 +112,48 @@
     <ai:e c="True"/>
     <ai:e c="False"/>
     <ai:e c="LostClass"/>
+    <ai:e c="OutOfRange"/>
     <ai:e c="NullArgs"/>
   </ai:f>
-  <ai:f n="CheckMemoryExists" c="Verifies the existence of a memory block." p="ERR CheckMemoryExists(MEMORYID ID)" r="ERR">
-    <ai:i n="ID" t="MEMORYID" c="The unique identifier of the memory block to verify."/>
+  <ai:f n="CheckResourceExists" c="Verifies the existence of a resource." p="ERR CheckResourceExists(RESOURCEID ID)" r="ERR">
+    <ai:i n="ID" t="RESOURCEID" c="The unique identifier of the resource to verify."/>
     <ai:e c="True"/>
     <ai:e c="False"/>
   </ai:f>
-  <ai:f n="CheckObjectExists" c="Checks if a particular object is still available in the system." p="ERR CheckObjectExists(OBJECTID Object)" r="ERR">
-    <ai:i n="Object" t="OBJECTID" c="The object identity to verify."/>
-    <ai:e c="True"/>
-    <ai:e c="False"/>
-    <ai:e c="LockFailed"/>
-  </ai:f>
-  <ai:f n="CompareFilePaths" c="Checks if two file paths refer to the same physical file." p="ERR CompareFilePaths(CSTRING PathA, CSTRING PathB)" r="ERR">
-    <ai:i n="PathA" t="CSTRING" c="File location 1."/>
-    <ai:i n="PathB" t="CSTRING" c="File location 2."/>
+  <ai:f n="ClassDatabase" c="Returns an array of all classes known to the system." p="ERR ClassDatabase(kt::vector&lt;ClassRecord *&gt; * Classes)" r="ERR">
+    <ai:i n="Classes" t="kt::vector&lt;ClassRecord *&gt; *" c="A pointer to an array of class records is returned here."/>
     <ai:e c="Okay"/>
+    <ai:e c="SystemLocked"/>
+    <ai:e c="NullArgs"/>
+  </ai:f>
+  <ai:f n="CompareFilePaths" c="Checks if two file paths refer to the same physical file." p="ERR CompareFilePaths(STRVIEW PathA, STRVIEW PathB)" r="ERR">
+    <ai:i n="PathA" t="STRVIEW" c="File location 1."/>
+    <ai:i n="PathB" t="STRVIEW" c="File location 2."/>
+    <ai:e c="Okay"/>
+    <ai:e c="True"/>
     <ai:e c="False"/>
     <ai:e c="NullArgs"/>
   </ai:f>
-  <ai:f n="CopyFile" c="Makes copies of folders and files." p="ERR CopyFile(CSTRING Source, CSTRING Dest, FUNCTION * Callback)" r="ERR">
-    <ai:i n="Source" t="CSTRING" c="The source location."/>
-    <ai:i n="Dest" t="CSTRING" c="The destination location."/>
+  <ai:f n="CopyFile" c="Makes copies of folders and files." p="ERR CopyFile(STRVIEW Source, STRVIEW Dest, FUNCTION * Callback)" r="ERR">
+    <ai:i n="Source" t="STRVIEW" c="The source location."/>
+    <ai:i n="Dest" t="STRVIEW" c="The destination location."/>
     <ai:i n="Callback" t="FUNCTION *" c="Optional callback for receiving feedback during the operation."/>
     <ai:e c="Okay"/>
     <ai:e c="Failed"/>
     <ai:e c="Args"/>
   </ai:f>
-  <ai:f n="CreateFolder" c="Makes new folders." p="ERR CreateFolder(CSTRING Path, PERMIT Permissions)" r="ERR">
-    <ai:i n="Path" t="CSTRING" c="The location of the folder."/>
+  <ai:f n="CreateFolder" c="Makes new folders." p="ERR CreateFolder(STRVIEW Path, PERMIT Permissions)" r="ERR">
+    <ai:i n="Path" t="STRVIEW" c="The location of the folder."/>
     <ai:i n="Permissions" t="PERMIT" c="Security permissions to apply to the created Dir(s). Set to NULL if only the current user should have access."/>
     <ai:e c="Okay"/>
-    <ai:e c="Failed"/>
     <ai:e c="NoSupport"/>
     <ai:e c="FileExists"/>
+    <ai:e c="ResolvePath"/>
     <ai:e c="NullArgs"/>
   </ai:f>
-  <ai:f n="CreateLink" c="Creates symbolic links on Unix file systems." p="ERR CreateLink(CSTRING From, CSTRING To)" r="ERR">
-    <ai:i n="From" t="CSTRING" c="The symbolic link will be created at the location specified here."/>
-    <ai:i n="To" t="CSTRING" c="The file that you are linking to is specified here."/>
+  <ai:f n="CreateLink" c="Creates symbolic links on supported file systems." p="ERR CreateLink(STRVIEW From, STRVIEW To)" r="ERR">
+    <ai:i n="From" t="STRVIEW" c="The symbolic link will be created at the location specified here."/>
+    <ai:i n="To" t="STRVIEW" c="The file that you are linking to is specified here."/>
     <ai:e c="Okay"/>
     <ai:e c="NoSupport"/>
     <ai:e c="Memory"/>
@@ -148,24 +162,27 @@
     <ai:e c="BufferOverflow"/>
     <ai:e c="FileExists"/>
     <ai:e c="ResolvePath"/>
+    <ai:e c="SystemCall"/>
     <ai:e c="NullArgs"/>
   </ai:f>
   <ai:f n="CurrentContext" c="Returns a pointer to the object that has the current context." p="OBJECTPTR CurrentContext()" r="OBJECTPTR"/>
   <ai:f n="CurrentTask" c="Returns the active Task object." p="objTask * CurrentTask()" r="objTask *"/>
-  <ai:f n="DeleteFile" c="Deletes files and folders." p="ERR DeleteFile(CSTRING Path, FUNCTION * Callback)" r="ERR">
-    <ai:i n="Path" t="CSTRING" c="String referring to the file or folder to be deleted. Folders must be denoted with a trailing slash."/>
+  <ai:f n="DeleteFile" c="Deletes files and folders." p="ERR DeleteFile(STRVIEW Path, FUNCTION * Callback)" r="ERR">
+    <ai:i n="Path" t="STRVIEW" c="String referring to the file or folder to be deleted. Folders must be denoted with a trailing slash."/>
     <ai:i n="Callback" t="FUNCTION *" c="Optional callback for receiving feedback during the operation."/>
     <ai:e c="Okay"/>
     <ai:e c="File"/>
-    <ai:e c="FileNotFound"/>
     <ai:e c="NoSupport"/>
+    <ai:e c="NoPermission"/>
+    <ai:e c="SystemLocked"/>
+    <ai:e c="ResolvePath"/>
     <ai:e c="NullArgs"/>
   </ai:f>
-  <ai:f n="DeleteVolume" c="Deletes volumes from the system." p="ERR DeleteVolume(CSTRING Name)" r="ERR">
-    <ai:i n="Name" t="CSTRING" c="The name of the volume."/>
+  <ai:f n="DeleteVolume" c="Deletes volumes from the system." p="ERR DeleteVolume(STRVIEW Name)" r="ERR">
+    <ai:i n="Name" t="STRVIEW" c="The name of the volume."/>
     <ai:e c="Okay"/>
-    <ai:e c="LockFailed"/>
     <ai:e c="NoPermission"/>
+    <ai:e c="SystemLocked"/>
     <ai:e c="NullArgs"/>
   </ai:f>
   <ai:f n="FieldName" c="Resolves a field ID to its registered name." p="CSTRING FieldName(UINT FieldID)" r="CSTRING">
@@ -174,47 +191,52 @@
   <ai:f n="FindClass" c="Returns the internal MetaClass for a given class ID." p="objMetaClass * FindClass(CLASSID ClassID)" r="objMetaClass *">
     <ai:i n="ClassID" t="CLASSID" c="A class ID such as one retrieved from ResolveClassName."/>
   </ai:f>
-  <ai:f n="FindField" c="Finds field descriptors for any class, by ID." p="struct Field * FindField(OBJECTPTR Object, UINT FieldID, OBJECTPTR * Target)" r="struct Field *">
+  <ai:f n="FindField" c="Finds field descriptors for any class, by ID." p="const struct Field * FindField(OBJECTPTR Object, UINT FieldID, OBJECTPTR * Target)" r="const struct Field *">
     <ai:i n="Object" t="OBJECTPTR" c="The target object."/>
-    <ai:i n="FieldID" t="UINT" c="The 'FID' number to lookup."/>
+    <ai:i n="FieldID" t="UINT" c="The hash of the field name to lookup."/>
     <ai:i n="Target" t="OBJECTPTR *" c="(Optional) The object that represents the field is returned here (in case a field belongs to an integrated child object)."/>
   </ai:f>
-  <ai:f n="FindObject" c="Searches for objects by name." p="ERR FindObject(CSTRING Name, CLASSID ClassID, FOF Flags, OBJECTID * ObjectID)" r="ERR">
-    <ai:i n="Name" t="CSTRING" c="The name of an object to search for."/>
+  <ai:f n="FindObject" c="Searches for objects by name." p="ERR FindObject(STRVIEW Name, CLASSID ClassID, OBJECTID * ObjectID)" r="ERR">
+    <ai:i n="Name" t="STRVIEW" c="The name of an object to search for."/>
     <ai:i n="ClassID" t="CLASSID" c="Optional. Set to a class ID to filter the results down to a specific class type."/>
-    <ai:i n="Flags" t="FOF" c="Optional flags."/>
     <ai:i n="ObjectID" t="OBJECTID *" c="An object id variable for storing the result."/>
     <ai:e c="Okay"/>
     <ai:e c="Search"/>
-    <ai:e c="Args"/>
-    <ai:e c="LockFailed"/>
     <ai:e c="EmptyString"/>
-    <ai:e c="DoesNotExist"/>
-  </ai:f>
-  <ai:f n="FreeResource" c="Safely deallocates memory blocks allocated by AllocMemory()." p="ERR FreeResource(MEMORYID ID)" r="ERR">
-    <ai:i n="ID" t="MEMORYID" c="The unique identifier of the memory block to be freed."/>
-    <ai:e c="Okay"/>
-    <ai:e c="InvalidData"/>
-    <ai:e c="MemoryDoesNotExist"/>
-    <ai:e c="SystemLocked"/>
     <ai:e c="NullArgs"/>
   </ai:f>
-  <ai:f n="GenCRC32" c="Generates 32-bit CRC checksum values." p="UINT GenCRC32(UINT CRC, APTR Data, UINT Length)" r="UINT">
-    <ai:i n="CRC" t="UINT" c="If streaming data to this function, this value should reflect the most recently returned CRC integer. Otherwise set to zero."/>
+  <ai:f n="FreeObject" c="Terminates an object by its unique identifier." p="ERR FreeObject(OBJECTID ObjectID)" r="ERR">
+    <ai:i n="ObjectID" t="OBJECTID" c="The unique identifier of the object to terminate."/>
+    <ai:e c="Okay"/>
+    <ai:e c="InUse"/>
+    <ai:e c="AccessObject"/>
+    <ai:e c="DoesNotExist"/>
+  </ai:f>
+  <ai:f n="FreeResource" c="Safely deallocates resources allocated by AllocResource() and similar functions." p="ERR FreeResource(RESOURCEID ID)" r="ERR">
+    <ai:i n="ID" t="RESOURCEID" c="The unique identifier of the resource to be freed."/>
+    <ai:e c="Okay"/>
+    <ai:e c="Terminate"/>
+    <ai:e c="InUse"/>
+    <ai:e c="DoesNotExist"/>
+  </ai:f>
+  <ai:f n="GenCRC32" c="Generates 32-bit IEEE 802.3 CRC checksum values." p="UINT GenCRC32(UINT CRC, APTR Data, UINT Length)" r="UINT">
+    <ai:i n="CRC" t="UINT" c="If streaming data to this function, this value must reflect the most recently returned CRC integer. Otherwise set to zero."/>
     <ai:i n="Data" t="APTR" c="The data to generate a CRC value for."/>
     <ai:i n="Length" t="UINT" c="The length of the Data buffer."/>
   </ai:f>
-  <ai:f n="GetActionMsg" c="Returns a message structure if called from an action that was executed by the message system." p="struct Message * GetActionMsg()" r="struct Message *"/>
+  <ai:f n="GetActionMsg" c="Returns a message structure if called from an action that was executed by the message system." p="struct Message * GetActionMsg(AC Action)" r="struct Message *">
+    <ai:i n="Action" t="AC" c="Action identifier represented by the caller."/>
+  </ai:f>
   <ai:f n="GetClassID" c="Returns the class ID of an ID-referenced object." p="CLASSID GetClassID(OBJECTID Object)" r="CLASSID">
     <ai:i n="Object" t="OBJECTID" c="The object to be examined."/>
   </ai:f>
   <ai:f n="GetErrorMsg" c="Translates error codes into human readable strings." p="CSTRING GetErrorMsg(ERR Error)" r="CSTRING">
     <ai:i n="Error" t="ERR" c="The error code to lookup."/>
   </ai:f>
-  <ai:f n="GetEventID" c="Generates unique event ID's suitable for event broadcasting." p="INT64 GetEventID(EVG Group, CSTRING SubGroup, CSTRING Event)" r="INT64">
+  <ai:f n="GetEventID" c="Generates unique event ID's suitable for event broadcasting." p="INT64 GetEventID(EVG Group, STRVIEW SubGroup, STRVIEW Event)" r="INT64">
     <ai:i n="Group" t="EVG" c="The group to which the event belongs."/>
-    <ai:i n="SubGroup" t="CSTRING" c="The sub-group to which the event belongs (case-sensitive)."/>
-    <ai:i n="Event" t="CSTRING" c="The name of the event (case-sensitive)."/>
+    <ai:i n="SubGroup" t="STRVIEW" c="The sub-group to which the event belongs (case-sensitive)."/>
+    <ai:i n="Event" t="STRVIEW" c="The name of the event (case-sensitive)."/>
   </ai:f>
   <ai:f n="GetObjectPtr" c="Returns a direct pointer for any object ID." p="OBJECTPTR GetObjectPtr(OBJECTID Object)" r="OBJECTPTR">
     <ai:i n="Object" t="OBJECTID" c="The ID of the object to lookup."/>
@@ -226,71 +248,60 @@
     <ai:i n="Resource" t="RES" c="The ID of the resource that you want to obtain."/>
   </ai:f>
   <ai:f n="GetSystemState" c="Returns miscellaneous data values from the Core." p="const struct SystemState * GetSystemState()" r="const struct SystemState *"/>
-  <ai:f n="IdentifyFile" c="Analyse a file and identify a class that can process it." p="ERR IdentifyFile(CSTRING Path, CLASSID Filter, CLASSID * Class, CLASSID * SubClass)" r="ERR">
-    <ai:i n="Path" t="CSTRING" c="The location of the object data."/>
+  <ai:f n="GetThreadID" c="Returns the UID of the current thread." p="INT GetThreadID()" r="INT"/>
+  <ai:f n="IdentifyFile" c="Analyse a file and identify a class that can process it." p="ERR IdentifyFile(STRVIEW Path, CLASSID Filter, CLASSID * Class, CLASSID * SubClass)" r="ERR">
+    <ai:i n="Path" t="STRVIEW" c="The location of the object data."/>
     <ai:i n="Filter" t="CLASSID" c="Restrict the search to classes in this subset, or use CLASSID::NIL to search all classes."/>
     <ai:i n="Class" t="CLASSID *" c="Must refer to a CLASSID variable that will store the resulting class ID."/>
-    <ai:i n="SubClass" t="CLASSID *" c="Optional argument that can refer to a variable that will store the resulting sub-class ID (if the result is a base-class, this variable will receive a value of zero)."/>
+    <ai:i n="SubClass" t="CLASSID *" c="Optional argument that can refer to a variable that will store the resulting derived class ID (if the result is a base-class, this variable will receive a value of zero)."/>
     <ai:e c="Okay"/>
     <ai:e c="Search"/>
     <ai:e c="FileNotFound"/>
-    <ai:e c="Args"/>
     <ai:e c="Read"/>
+    <ai:e c="VirtualVolume"/>
+    <ai:e c="NullArgs"/>
   </ai:f>
   <ai:f n="InitObject" c="Initialises an object so that it is ready for use." p="ERR InitObject(OBJECTPTR Object)" r="ERR">
     <ai:i n="Object" t="OBJECTPTR" c="The object to initialise."/>
     <ai:e c="Okay"/>
     <ai:e c="LostClass"/>
+    <ai:e c="NoSupport"/>
     <ai:e c="DoubleInit"/>
     <ai:e c="ObjectCorrupt"/>
+    <ai:e c="UseDerived"/>
   </ai:f>
-  <ai:f n="ListChildren" c="Returns a list of all children belonging to an object." p="ERR ListChildren(OBJECTID Object, pf::vector&lt;ChildEntry&gt; * List)" r="ERR">
+  <ai:f n="ListChildren" c="Returns a list of all children belonging to an object." p="ERR ListChildren(OBJECTID Object, kt::vector&lt;ChildEntry&gt; * List)" r="ERR">
     <ai:i n="Object" t="OBJECTID" c="An object to query."/>
-    <ai:i n="List" t="pf::vector&lt;ChildEntry&gt; *" c="Must refer to an array of ChildEntry structures."/>
+    <ai:i n="List" t="kt::vector&lt;ChildEntry&gt; *" c="Must refer to an array of ChildEntry structures."/>
     <ai:e c="Okay"/>
-    <ai:e c="Args"/>
     <ai:e c="LockFailed"/>
     <ai:e c="NullArgs"/>
   </ai:f>
-  <ai:f n="LoadFile" c="Loads files into a local cache for fast file processing." p="ERR LoadFile(CSTRING Path, LDF Flags, struct CacheFile ** Cache)" r="ERR">
-    <ai:i n="Path" t="CSTRING" c="The location of the file to be cached."/>
+  <ai:f n="LoadFile" c="Loads files into a local cache for fast file processing." p="ERR LoadFile(STRVIEW Path, LDF Flags, struct CacheFile ** Cache)" r="ERR">
+    <ai:i n="Path" t="STRVIEW" c="The location of the file to be cached."/>
     <ai:i n="Flags" t="LDF" c="Optional flags are specified here."/>
     <ai:i n="Cache" t="struct CacheFile **" c="A pointer to a CacheFile structure is returned here if successful."/>
     <ai:e c="Okay"/>
     <ai:e c="Search"/>
-    <ai:e c="AllocMemory"/>
+    <ai:e c="Read"/>
+    <ai:e c="CreateObject"/>
     <ai:e c="NullArgs"/>
   </ai:f>
   <ai:f n="LockObject" c="Lock an object to prevent contention between threads." p="ERR LockObject(OBJECTPTR Object, INT MilliSeconds)" r="ERR">
     <ai:i n="Object" t="OBJECTPTR" c="The address of the object to lock."/>
     <ai:i n="MilliSeconds" t="INT" c="The total number of milliseconds to wait before giving up. If -1, the function will wait indefinitely."/>
     <ai:e c="Okay"/>
+    <ai:e c="Cancelled"/>
+    <ai:e c="LockFailed"/>
     <ai:e c="TimeOut"/>
     <ai:e c="MarkedForDeletion"/>
     <ai:e c="SystemLocked"/>
+    <ai:e c="DoesNotExist"/>
     <ai:e c="NullArgs"/>
   </ai:f>
-  <ai:f n="MemoryIDInfo" c="Returns information on memory ID's." p="ERR MemoryIDInfo(MEMORYID ID, struct MemInfo * MemInfo, INT Size)" r="ERR">
-    <ai:i n="ID" t="MEMORYID" c="Pointer to a valid memory ID."/>
-    <ai:i n="MemInfo" t="struct MemInfo *" c="Pointer to a MemInfo structure."/>
-    <ai:i n="Size" t="INT" c="Size of the MemInfo structure."/>
-    <ai:e c="Okay"/>
-    <ai:e c="Args"/>
-    <ai:e c="MemoryDoesNotExist"/>
-    <ai:e c="SystemLocked"/>
-    <ai:e c="NullArgs"/>
-  </ai:f>
-  <ai:f n="MemoryPtrInfo" c="Returns information on memory addresses." p="ERR MemoryPtrInfo(APTR Address, struct MemInfo * MemInfo, INT Size)" r="ERR">
-    <ai:i n="Address" t="APTR" c="Pointer to a valid memory area."/>
-    <ai:i n="MemInfo" t="struct MemInfo *" c="Pointer to a MemInfo structure to be populated."/>
-    <ai:i n="Size" t="INT" c="Size of the MemInfo structure."/>
-    <ai:e c="Okay"/>
-    <ai:e c="MemoryDoesNotExist"/>
-    <ai:e c="NullArgs"/>
-  </ai:f>
-  <ai:f n="MoveFile" c="Moves folders and files to new locations." p="ERR MoveFile(CSTRING Source, CSTRING Dest, FUNCTION * Callback)" r="ERR">
-    <ai:i n="Source" t="CSTRING" c="The source path."/>
-    <ai:i n="Dest" t="CSTRING" c="The destination path."/>
+  <ai:f n="MoveFile" c="Moves folders and files to new locations." p="ERR MoveFile(STRVIEW Source, STRVIEW Dest, FUNCTION * Callback)" r="ERR">
+    <ai:i n="Source" t="STRVIEW" c="The source path."/>
+    <ai:i n="Dest" t="STRVIEW" c="The destination path."/>
     <ai:i n="Callback" t="FUNCTION *" c="Optional callback for receiving feedback during the operation."/>
     <ai:e c="Okay"/>
     <ai:e c="Failed"/>
@@ -311,14 +322,15 @@
     <ai:i n="Args" t="APTR" c="Pointer to an action parameter structure that is relevant to the Action ID."/>
     <ai:i n="Error" t="ERR" c="The error code that is associated with the action result."/>
   </ai:f>
-  <ai:f n="OpenDir" c="Opens a folder for content scanning." p="ERR OpenDir(CSTRING Path, RDF Flags, struct DirInfo ** Info)" r="ERR">
-    <ai:i n="Path" t="CSTRING" c="The folder location to be scanned. Using an empty string will scan for volume names."/>
+  <ai:f n="OpenDir" c="Opens a folder for content scanning." p="ERR OpenDir(STRVIEW Path, RDF Flags, struct DirInfo ** Info)" r="ERR">
+    <ai:i n="Path" t="STRVIEW" c="The folder location to be scanned. Using an empty string will scan for volume names."/>
     <ai:i n="Flags" t="RDF" c="Optional flags."/>
     <ai:i n="Info" t="struct DirInfo **" c="A DirInfo structure will be returned in the pointer referenced here."/>
     <ai:e c="Okay"/>
     <ai:e c="DirEmpty"/>
     <ai:e c="Args"/>
     <ai:e c="AllocMemory"/>
+    <ai:e c="ResolvePath"/>
     <ai:e c="NullArgs"/>
   </ai:f>
   <ai:f n="ParentContext" c="Returns the context of the client." p="OBJECTPTR ParentContext()" r="OBJECTPTR"/>
@@ -328,50 +340,41 @@
     <ai:i n="TimeOut" t="INT" c="A TimeOut value, measured in milliseconds. If zero, the function will return as soon as all messages on the queue are processed. If less than zero, the function does not return until a request for termination is received or a user message requires processing."/>
     <ai:e c="Okay"/>
     <ai:e c="Terminate"/>
+    <ai:e c="NoSupport"/>
     <ai:e c="TimeOut"/>
+    <ai:e c="SystemLocked"/>
+    <ai:e c="AccessObject"/>
+    <ai:e c="Recursion"/>
+    <ai:e c="OutsideMainThread"/>
   </ai:f>
   <ai:f n="QueueAction" c="Delay the execution of an action by adding the call to the message queue." p="ERR QueueAction(AC Action, OBJECTID Object, APTR Args)" r="ERR">
     <ai:i n="Action" t="AC" c="The ID of an action or method to execute."/>
     <ai:i n="Object" t="OBJECTID" c="The target object."/>
     <ai:i n="Args" t="APTR" c="The relevant argument structure for the Action, or NULL if not required."/>
     <ai:e c="Okay"/>
-    <ai:e c="Failed"/>
     <ai:e c="OutOfRange"/>
-    <ai:e c="IllegalMethodID"/>
     <ai:e c="MissingClass"/>
-    <ai:e c="NoMatchingObject"/>
     <ai:e c="NullArgs"/>
   </ai:f>
-  <ai:f n="ReadFileToBuffer" c="Reads a file into a buffer." p="ERR ReadFileToBuffer(CSTRING Path, APTR Buffer, INT BufferSize, INT * Result)" r="ERR">
-    <ai:i n="Path" t="CSTRING" c="The path of the file."/>
-    <ai:i n="Buffer" t="APTR" c="Pointer to a buffer that will receive the file content."/>
-    <ai:i n="BufferSize" t="INT" c="The byte size of the Buffer."/>
+  <ai:f n="ReadFileToBuffer" c="Reads a file into a buffer." p="ERR ReadFileToBuffer(STRVIEW Path, const std::span&lt;int8_t&gt; &amp;Buffer, INT * Result)" r="ERR">
+    <ai:i n="Path" t="STRVIEW" c="The path of the file."/>
+    <ai:i n="Buffer" t="std::span&lt;int8_t&gt;" c="Buffer that will receive the file content."/>
     <ai:i n="Result" t="INT *" c="The total number of bytes read into the Buffer will be returned here (optional)."/>
     <ai:e c="Okay"/>
     <ai:e c="File"/>
+    <ai:e c="FileNotFound"/>
     <ai:e c="Args"/>
     <ai:e c="Read"/>
     <ai:e c="InvalidPath"/>
+    <ai:e c="VirtualVolume"/>
     <ai:e c="OpenFile"/>
-    <ai:e c="NullArgs"/>
   </ai:f>
-  <ai:f n="ReadInfoTag" c="Read a named tag from a FileInfo structure." p="ERR ReadInfoTag(struct FileInfo * Info, CSTRING Name, CSTRING * Value)" r="ERR">
+  <ai:f n="ReadInfoTag" c="Read a named tag from a FileInfo structure." p="ERR ReadInfoTag(struct FileInfo * Info, STRVIEW Name, STRVIEW * Value)" r="ERR">
     <ai:i n="Info" t="struct FileInfo *" c="Pointer to a valid FileInfo structure."/>
-    <ai:i n="Name" t="CSTRING" c="The name of the tag, which must be declared in camel-case as tags are case-sensitive."/>
-    <ai:i n="Value" t="CSTRING *" c="The discovered string value is returned here if found."/>
+    <ai:i n="Name" t="STRVIEW" c="The name of the tag, which must be declared in camel-case as tags are case-sensitive."/>
+    <ai:i n="Value" t="STRVIEW *" c="The discovered string value is returned here if found."/>
     <ai:e c="Okay"/>
     <ai:e c="NotFound"/>
-    <ai:e c="NullArgs"/>
-  </ai:f>
-  <ai:f n="ReallocMemory" c="Reallocates memory blocks." p="ERR ReallocMemory(APTR Memory, UINT Size, APTR * Address, MEMORYID * ID)" r="ERR">
-    <ai:i n="Memory" t="APTR" c="Pointer to a memory block obtained from AllocMemory."/>
-    <ai:i n="Size" t="UINT" c="The size of the new memory block."/>
-    <ai:i n="Address" t="APTR *" c="Point to an APTR variable to store the resulting pointer to the new memory block."/>
-    <ai:i n="ID" t="MEMORYID *" c="Point to a MEMORYID variable to store the resulting memory block's unique ID."/>
-    <ai:e c="Okay"/>
-    <ai:e c="Args"/>
-    <ai:e c="Memory"/>
-    <ai:e c="AllocMemory"/>
     <ai:e c="NullArgs"/>
   </ai:f>
   <ai:f n="RegisterFD" c="Registers a file descriptor for monitoring when the task is asleep." p="ERR RegisterFD(HOSTHANDLE FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR) , APTR Data)" r="ERR">
@@ -383,36 +386,31 @@
     <ai:e c="Args"/>
     <ai:e c="NoSupport"/>
   </ai:f>
-  <ai:f n="ReleaseMemory" c="Releases a lock from a memory based resource." p="ERR ReleaseMemory(MEMORYID MemoryID)" r="ERR">
-    <ai:i n="MemoryID" t="MEMORYID" c="A reference to a memory resource for release."/>
-    <ai:e c="Okay"/>
-    <ai:e c="Search"/>
-    <ai:e c="SystemLocked"/>
-    <ai:e c="NullArgs"/>
-  </ai:f>
   <ai:f n="ReleaseObject" c="Release a locked object." p="void ReleaseObject(OBJECTPTR Object)">
     <ai:i n="Object" t="OBJECTPTR" c="Pointer to the object to be released."/>
   </ai:f>
   <ai:f n="ResolveClassID" c="Resolve a valid CLASSID to its name." p="CSTRING ResolveClassID(CLASSID ID)" r="CSTRING">
     <ai:i n="ID" t="CLASSID" c="The ID of the class that needs to be resolved."/>
   </ai:f>
-  <ai:f n="ResolveClassName" c="Resolves any class name to a CLASSID UID." p="CLASSID ResolveClassName(CSTRING Name)" r="CLASSID">
-    <ai:i n="Name" t="CSTRING" c="The name of the class that requires resolution."/>
+  <ai:f n="ResolveClassName" c="Resolves any class name to a CLASSID UID." p="CLASSID ResolveClassName(STRVIEW Name)" r="CLASSID">
+    <ai:i n="Name" t="STRVIEW" c="The name of the class that requires resolution."/>
   </ai:f>
   <ai:f n="ResolveGroupID" c="Converts a group ID to its corresponding name." p="CSTRING ResolveGroupID(INT Group)" r="CSTRING">
     <ai:i n="Group" t="INT" c="The group ID."/>
   </ai:f>
-  <ai:f n="ResolvePath" c="Converts volume-based paths into absolute paths applicable to the host platform." p="ERR ResolvePath(const std::string_view &amp; Path, RSF Flags, std::string * Result)" r="ERR">
-    <ai:i n="Path" t="const std::string_view &amp;" c="The path to be resolved."/>
+  <ai:f n="ResolvePath" c="Converts volume-based paths into absolute paths applicable to the host platform." p="ERR ResolvePath(STRVIEW Path, RSF Flags, STRING * Result)" r="ERR">
+    <ai:i n="Path" t="STRVIEW" c="The path to be resolved."/>
     <ai:i n="Flags" t="RSF" c="Optional flags."/>
-    <ai:i n="Result" t="std::string *" c="Must point to a std::string variable so that the resolved path can be stored. If NULL, ResolvePath() will work as normal and return a valid error code without the result string."/>
+    <ai:i n="Result" t="STRING *" c="Refer to a string variable so that the resolved path can be stored. If NULL, ResolvePath() will work as normal and return a valid error code without the result string. The value is unchanged if the error code is not ERR::Okay."/>
     <ai:e c="Okay"/>
+    <ai:e c="InvalidData"/>
     <ai:e c="Search"/>
     <ai:e c="FileNotFound"/>
-    <ai:e c="LockFailed"/>
-    <ai:e c="AllocMemory"/>
+    <ai:e c="InvalidPath"/>
+    <ai:e c="SystemLocked"/>
+    <ai:e c="VirtualVolume"/>
     <ai:e c="Loop"/>
-    <ai:e c="NullArgs"/>
+    <ai:e c="LoadModule"/>
   </ai:f>
   <ai:f n="ResolveUserID" c="Converts a user ID to its corresponding name." p="CSTRING ResolveUserID(INT User)" r="CSTRING">
     <ai:i n="User" t="INT" c="The user ID."/>
@@ -421,38 +419,43 @@
     <ai:i n="Info" t="struct DirInfo *" c="Pointer to a DirInfo structure for storing scan results."/>
     <ai:e c="Okay"/>
     <ai:e c="DirEmpty"/>
+    <ai:e c="InvalidData"/>
     <ai:e c="Args"/>
-  </ai:f>
-  <ai:f n="ScanMessages" c="Scans a message queue for multiple occurrences of a message type." p="ERR ScanMessages(INT * Handle, MSGID Type, APTR Buffer, INT Size)" r="ERR">
-    <ai:i n="Handle" t="INT *" c="Pointer to a 32-bit value that must initially be set to zero. The ScanMessages() function will automatically update this variable with each call so that it can remember its analysis position."/>
-    <ai:i n="Type" t="MSGID" c="The message type to filter for, or zero to scan all messages in the queue."/>
-    <ai:i n="Buffer" t="APTR" c="Optional pointer to a buffer that is large enough to hold any message data."/>
-    <ai:i n="Size" t="INT" c="The byte-size of the supplied Buffer."/>
-    <ai:e c="Okay"/>
-    <ai:e c="Search"/>
+    <ai:e c="NoSupport"/>
+    <ai:e c="SystemLocked"/>
     <ai:e c="NullArgs"/>
   </ai:f>
-  <ai:f n="SendMessage" c="Add a message to the local message queue." p="ERR SendMessage(MSGID Type, MSF Flags, APTR Data, INT Size)" r="ERR">
+  <ai:f n="ScanMessages" c="Scans a message queue for multiple occurrences of a message type." p="ERR ScanMessages(INT * Handle, MSGID Type, const std::span&lt;int8_t&gt; &amp;Buffer)" r="ERR">
+    <ai:i n="Handle" t="INT *" c="Pointer to a 32-bit value that must initially be set to zero. The ScanMessages() function will automatically update this variable with each call so that it can remember its analysis position."/>
+    <ai:i n="Type" t="MSGID" c="The message type to filter for, or zero to scan all messages in the queue."/>
+    <ai:i n="Buffer" t="std::span&lt;int8_t&gt;" c="Optional buffer that is large enough to hold a Message header and any message data."/>
+    <ai:e c="Okay"/>
+    <ai:e c="Search"/>
+    <ai:e c="Args"/>
+    <ai:e c="OutOfRange"/>
+    <ai:e c="NullArgs"/>
+  </ai:f>
+  <ai:f n="SendMessage" c="Add a message to the local message queue." p="ERR SendMessage(MSGID Type, MSF Flags, const std::span&lt;const int8_t&gt; &amp;Data)" r="ERR">
     <ai:i n="Type" t="MSGID" c="The message Type/ID being sent. Unique type ID's can be obtained from AllocateID."/>
     <ai:i n="Flags" t="MSF" c="Optional flags."/>
-    <ai:i n="Data" t="APTR" c="Pointer to the data that will be written to the queue. Set to NULL if there is no data to write."/>
-    <ai:i n="Size" t="INT" c="The byte-size of the Data being written to the message queue."/>
+    <ai:i n="Data" t="std::span&lt;const int8_t&gt;" c="Optional data to copy to the message queue. An empty buffer sends a message without payload data."/>
     <ai:e c="Okay"/>
     <ai:e c="Args"/>
-  </ai:f>
-  <ai:f n="SetContext" c="Declares the owner of future allocated resources." p="OBJECTPTR SetContext(OBJECTPTR Object)" r="OBJECTPTR">
-    <ai:i n="Object" t="OBJECTPTR" c="Pointer to the object that will take on the new context. If NULL, no change to the context will be made."/>
   </ai:f>
   <ai:f n="SetDefaultPermissions" c="Forces the user and group permissions to be applied to new files and folders." p="void SetDefaultPermissions(INT User, INT Group, PERMIT Permissions)">
     <ai:i n="User" t="INT" c="User ID to apply to new files."/>
     <ai:i n="Group" t="INT" c="Group ID to apply to new files."/>
     <ai:i n="Permissions" t="PERMIT" c="Permission flags to be applied to new files."/>
   </ai:f>
-  <ai:f n="SetName" c="Sets the name of an object." p="ERR SetName(OBJECTPTR Object, CSTRING Name)" r="ERR">
+  <ai:f n="SetLogCallback" c="Register a callback for log messages." p="void SetLogCallback(APTR Callback, INT DepthLimit, INT LogLimit)">
+    <ai:i n="Callback" t="APTR" c="Pointer to the log callback function to register."/>
+    <ai:i n="DepthLimit" t="INT" c="Maximum branch depth to forward to the callback."/>
+    <ai:i n="LogLimit" t="INT" c="Maximum message log level to forward to the callback."/>
+  </ai:f>
+  <ai:f n="SetName" c="Sets the name of an object." p="ERR SetName(OBJECTPTR Object, STRVIEW Name)" r="ERR">
     <ai:i n="Object" t="OBJECTPTR" c="The target object."/>
-    <ai:i n="Name" t="CSTRING" c="The new name for the object."/>
+    <ai:i n="Name" t="STRVIEW" c="The new name for the object, or an empty string to clear an existing name."/>
     <ai:e c="Okay"/>
-    <ai:e c="Search"/>
     <ai:e c="LockFailed"/>
     <ai:e c="NullArgs"/>
   </ai:f>
@@ -460,30 +463,33 @@
     <ai:i n="Object" t="OBJECTPTR" c="The object to modify."/>
     <ai:i n="Owner" t="OBJECTPTR" c="The new owner for the Object."/>
     <ai:e c="Okay"/>
-    <ai:e c="Args"/>
+    <ai:e c="NoSupport"/>
+    <ai:e c="SystemCorrupt"/>
     <ai:e c="SystemLocked"/>
+    <ai:e c="OwnerPassThrough"/>
     <ai:e c="NullArgs"/>
     <ai:e c="Recursion"/>
   </ai:f>
-  <ai:f n="SetResource" c="Sets miscellaneous resource identifiers." p="INT64 SetResource(RES Resource, INT64 Value)" r="INT64">
-    <ai:i n="Resource" t="RES" c="The ID of the resource to be set."/>
-    <ai:i n="Value" t="INT64" c="The new value to set for the resource."/>
+  <ai:f n="SetResource" c="Updates a writable Core resource value." p="INT64 SetResource(RES Resource, INT64 Value)" r="INT64">
+    <ai:i n="Resource" t="RES" c="The writable resource identifier."/>
+    <ai:i n="Value" t="INT64" c="The value to assign to the resource."/>
   </ai:f>
-  <ai:f n="SetResourcePath" c="Redefines the location of a system resource path." p="ERR SetResourcePath(RP PathType, CSTRING Path)" r="ERR">
+  <ai:f n="SetResourcePath" c="Redefines the location of a system resource path." p="ERR SetResourcePath(RP PathType, STRVIEW Path)" r="ERR">
     <ai:i n="PathType" t="RP" c="The ID of the resource path to set."/>
-    <ai:i n="Path" t="CSTRING" c="The new location to set for the resource path."/>
+    <ai:i n="Path" t="STRVIEW" c="The new location to set for the resource path."/>
     <ai:e c="Okay"/>
+    <ai:e c="Args"/>
     <ai:e c="NullArgs"/>
   </ai:f>
-  <ai:f n="SetVolume" c="Create or modify a filesystem volume." p="ERR SetVolume(CSTRING Name, CSTRING Path, CSTRING Icon, CSTRING Label, CSTRING Device, VOLUME Flags)" r="ERR">
-    <ai:i n="Name" t="CSTRING" c="Required. The name of the volume."/>
-    <ai:i n="Path" t="CSTRING" c="Required. The path to be associated with the volume. If setting multiple paths, separate each path with a semi-colon character. Each path must terminate with a forward slash to denote a folder."/>
-    <ai:i n="Icon" t="CSTRING" c="An icon can be associated with the volume so that it has graphical representation when viewed in the UI. The required icon string format is category/name."/>
-    <ai:i n="Label" t="CSTRING" c="An optional label or short comment may be applied to the volume. This may be useful if the volume name has little meaning to the user (e.g. drive1, drive2 ...)."/>
-    <ai:i n="Device" t="CSTRING" c="If the volume references the root of a device, specify a device name of portable, fixed, cd, network or usb."/>
+  <ai:f n="SetVolume" c="Create or modify a filesystem volume." p="ERR SetVolume(STRVIEW Name, STRVIEW Path, STRVIEW Icon, STRVIEW Label, STRVIEW Device, VOLUME Flags)" r="ERR">
+    <ai:i n="Name" t="STRVIEW" c="Required. The name of the volume."/>
+    <ai:i n="Path" t="STRVIEW" c="Required. The path to be associated with the volume. If setting multiple paths, separate each path with a semi-colon character. Each path must terminate with a forward slash to denote a folder."/>
+    <ai:i n="Icon" t="STRVIEW" c="An icon can be associated with the volume so that it has graphical representation when viewed in the UI. The required icon string format is category/name."/>
+    <ai:i n="Label" t="STRVIEW" c="An optional label or short comment may be applied to the volume. This may be useful if the volume name has little meaning to the user (e.g. drive1, drive2 ...)."/>
+    <ai:i n="Device" t="STRVIEW" c="If the volume references the root of a device, specify a device name of portable, fixed, cd, network or usb."/>
     <ai:i n="Flags" t="VOLUME" c="Optional flags."/>
     <ai:e c="Okay"/>
-    <ai:e c="LockFailed"/>
+    <ai:e c="SystemLocked"/>
     <ai:e c="NullArgs"/>
   </ai:f>
   <ai:f n="SubscribeAction" c="Monitor action calls made against an object." p="ERR SubscribeAction(OBJECTPTR Object, AC Action, FUNCTION * Callback)" r="ERR">
@@ -500,6 +506,7 @@
     <ai:i n="Callback" t="FUNCTION *" c="The function that will be subscribed to the event."/>
     <ai:i n="Handle" t="APTR *" c="Pointer to an address that will receive the event handle."/>
     <ai:e c="Okay"/>
+    <ai:e c="Args"/>
     <ai:e c="AllocMemory"/>
     <ai:e c="NullArgs"/>
   </ai:f>
@@ -509,17 +516,26 @@
     <ai:i n="Subscription" t="APTR *" c="Optional. The subscription will be assigned an identifier that is returned in this parameter."/>
     <ai:e c="Okay"/>
     <ai:e c="Args"/>
-    <ai:e c="ArrayFull"/>
     <ai:e c="SystemLocked"/>
     <ai:e c="InvalidState"/>
+    <ai:e c="NullArgs"/>
+  </ai:f>
+  <ai:f n="TrackResource" c="Assign a resource manager to an address, or update an existing one." p="ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, struct ResourceManager * Manager)" r="ERR">
+    <ai:i n="ResourceID" t="RESOURCEID" c="Unique identifier for the resource to register or replace."/>
+    <ai:i n="Address" t="APTR" c="Address of the resource, or NULL to preserve an existing address."/>
+    <ai:i n="OwnerID" t="RESOURCEID" c="Optional owning resource ID, normally an object. Use 0 when the resource is not owned."/>
+    <ai:i n="Manager" t="struct ResourceManager *" c="Resource manager used to release the resource."/>
+    <ai:e c="Okay"/>
+    <ai:e c="InUse"/>
     <ai:e c="NullArgs"/>
   </ai:f>
   <ai:f n="UnloadFile" c="Unloads files from the file cache." p="void UnloadFile(struct CacheFile * Cache)">
     <ai:i n="Cache" t="struct CacheFile *" c="A pointer to a CacheFile structure returned from LoadFile."/>
   </ai:f>
-  <ai:f n="UnsubscribeAction" c="Terminates action subscriptions." p="ERR UnsubscribeAction(OBJECTPTR Object, AC Action)" r="ERR">
+  <ai:f n="UnsubscribeAction" c="Terminates action subscriptions." p="ERR UnsubscribeAction(OBJECTPTR Object, AC Action, FUNCTION * Callback)" r="ERR">
     <ai:i n="Object" t="OBJECTPTR" c="The object that you are unsubscribing from."/>
     <ai:i n="Action" t="AC" c="The ID of the action that will be unsubscribed, or zero for all actions."/>
+    <ai:i n="Callback" t="FUNCTION *" c="The original callback reference, or NULL to affect all registrations for the Object/Action combo."/>
     <ai:e c="Okay"/>
     <ai:e c="Args"/>
     <ai:e c="NullArgs"/>
@@ -527,39 +543,49 @@
   <ai:f n="UnsubscribeEvent" c="Removes an event subscription." p="void UnsubscribeEvent(APTR Handle)">
     <ai:i n="Handle" t="APTR" c="An event handle returned from SubscribeEvent"/>
   </ai:f>
-  <ai:f n="UpdateMessage" c="Updates the data of any message that is queued." p="ERR UpdateMessage(INT Message, MSGID Type, APTR Data, INT Size)" r="ERR">
+  <ai:f n="UpdateMessage" c="Updates the data of any message that is queued." p="ERR UpdateMessage(INT Message, MSGID Type, const std::span&lt;const int8_t&gt; &amp;Data)" r="ERR">
     <ai:i n="Message" t="INT" c="The ID of the message that will be updated."/>
     <ai:i n="Type" t="MSGID" c="The type of the message."/>
-    <ai:i n="Data" t="APTR" c="Pointer to a buffer that contains the new data for the message."/>
-    <ai:i n="Size" t="INT" c="The byte-size of the Data that has been supplied. It must not exceed the size of the message that is being updated."/>
+    <ai:i n="Data" t="std::span&lt;const int8_t&gt;" c="Optional replacement data for the message. An empty buffer leaves the existing payload unchanged."/>
     <ai:e c="Okay"/>
     <ai:e c="Search"/>
-    <ai:e c="AccessMemory"/>
+    <ai:e c="Args"/>
     <ai:e c="NullArgs"/>
   </ai:f>
   <ai:f n="UpdateTimer" c="Modify or remove a subscription created by SubscribeTimer()." p="ERR UpdateTimer(APTR Subscription, DOUBLE Interval)" r="ERR">
     <ai:i n="Subscription" t="APTR" c="The timer subscription to modify."/>
     <ai:i n="Interval" t="DOUBLE" c="The new interval for the timer (measured in seconds), or zero to remove."/>
     <ai:e c="Okay"/>
-    <ai:e c="Search"/>
     <ai:e c="SystemLocked"/>
     <ai:e c="NullArgs"/>
+    <ai:e c="AlreadyLocked"/>
   </ai:f>
   <ai:f n="WaitForObjects" c="Process incoming messages while waiting on objects to complete their activities." p="ERR WaitForObjects(PMF Flags, INT TimeOut, struct ObjectSignal * ObjectSignals)" r="ERR">
     <ai:i n="Flags" t="PMF" c="Optional flags are specified here."/>
     <ai:i n="TimeOut" t="INT" c="A time-out value measured in milliseconds. If this value is negative then no time-out applies and the function will not return until an incoming message or signal breaks it."/>
     <ai:i n="ObjectSignals" t="struct ObjectSignal *" c="A null-terminated array of objects to monitor for signals."/>
     <ai:e c="Okay"/>
-    <ai:e c="Failed"/>
+    <ai:e c="Terminate"/>
+    <ai:e c="ExceptionThreshold"/>
     <ai:e c="TimeOut"/>
-    <ai:e c="NullArgs"/>
+    <ai:e c="SystemLocked"/>
+    <ai:e c="Recursion"/>
     <ai:e c="OutsideMainThread"/>
+    <ai:e c="MessageOperation"/>
   </ai:f>
-  <ai:f n="WaitTime" c="Waits for a specified amount of seconds and/or microseconds." p="void WaitTime(INT Seconds, INT MicroSeconds)">
-    <ai:i n="Seconds" t="INT" c="The number of seconds to wait for."/>
-    <ai:i n="MicroSeconds" t="INT" c="The number of microseconds to wait for. Please note that a microsecond is one-millionth of a second - 1/1000000. The value cannot exceed 999999."/>
+  <ai:f n="WaitTime" c="Waits for a specified amount of seconds." p="ERR WaitTime(DOUBLE Seconds)" r="ERR">
+    <ai:i n="Seconds" t="DOUBLE" c="The number of seconds to wait for. Fractional values are supported for sub-second precision."/>
+    <ai:e c="Okay"/>
+    <ai:e c="Cancelled"/>
+    <ai:e c="Terminate"/>
   </ai:f>
-  <ai:c l="AC" c="Action identifiers.">
+  <ai:f n="WakeThread" c="Interrupt a sleeping thread." p="ERR WakeThread(INT Thread, INT Stop)" r="ERR">
+    <ai:i n="Thread" t="INT" c="The target thread's unique ID, as returned by GetThreadID()."/>
+    <ai:i n="Stop" t="INT" c="If true, the target thread will be put into a stopping state."/>
+    <ai:e c="Okay"/>
+    <ai:e c="Search"/>
+  </ai:f>
+  <ai:c l="AC" c="Action identifiers">
     <ai:k n="Activate"/>
     <ai:k n="Clear"/>
     <ai:k n="Clipboard"/>
@@ -584,10 +610,9 @@
     <ai:k n="MoveToBack"/>
     <ai:k n="MoveToFront"/>
     <ai:k n="MoveToPoint"/>
+    <ai:k n="New"/>
     <ai:k n="NewChild"/>
-    <ai:k n="NewObject"/>
     <ai:k n="NewOwner"/>
-    <ai:k n="NewPlacement"/>
     <ai:k n="Next"/>
     <ai:k n="Prev"/>
     <ai:k n="Query"/>
@@ -610,520 +635,87 @@
     <ai:k n="Unlock"/>
     <ai:k n="Write"/>
   </ai:c>
-  <ai:c l="ALIGN" c="Universal values for alignment of graphics and text">
-    <ai:k n="BOTTOM" c="Align to bottom"/>
-    <ai:k n="CENTER" c="Synonym for HORIZONTAL | VERTICAL"/>
-    <ai:k n="HORIZONTAL" c="Align to horizontal center"/>
-    <ai:k n="LEFT" c="Align to left"/>
-    <ai:k n="MIDDLE" c="Synonym for HORIZONTAL | VERTICAL"/>
-    <ai:k n="RIGHT" c="Align to right"/>
-    <ai:k n="TOP" c="Align to top"/>
-    <ai:k n="VERTICAL" c="Align to vertical center"/>
-  </ai:c>
   <ai:c l="CCF" c="Class categories">
-    <ai:k n="AUDIO" c="Audio classes interface with audio hardware and drivers for audio playback and recording purposes."/>
-    <ai:k n="COMMAND" c="Command classes perform specific procedures, like copying or moving a file, managing volumes or executing a program."/>
-    <ai:k n="DATA" c="Data classes parse, query and manipulate data."/>
-    <ai:k n="FILESYSTEM" c="FileSystem classes are based on file management and interaction with file based data."/>
-    <ai:k n="GRAPHICS" c="Graphics classes provide graphics management and drawing services."/>
-    <ai:k n="GUI" c="GUI classes are used in the development of graphical user interfaces."/>
-    <ai:k n="IO" c="I/O classes manage hardware and software based input and output."/>
-    <ai:k n="MISC" c="Miscellaneous classes do not fit into any of the other available categories."/>
-    <ai:k n="MULTIMEDIA" c="Classes that represent more than one media type, e.g. video files."/>
-    <ai:k n="NETWORK" c="Network classes interface with system drivers to simplify network communications."/>
-    <ai:k n="SYSTEM" c="System classes are designed to provide low-level services related to system management."/>
-    <ai:k n="TOOL" c="Tools provide interactive services for the user."/>
+    <ai:k n="AUDIO" c="Audio classes interface with audio hardware and drivers for audio playback and recording purposes"/>
+    <ai:k n="COMMAND" c="Command classes perform specific procedures, like copying or moving a file, managing volumes or executing a program"/>
+    <ai:k n="DATA" c="Data classes parse, query and manipulate data"/>
+    <ai:k n="FILESYSTEM" c="FileSystem classes are based on file management and interaction with file based data"/>
+    <ai:k n="GRAPHICS" c="Graphics classes provide graphics management and drawing services"/>
+    <ai:k n="GUI" c="GUI classes are used in the development of graphical user interfaces"/>
+    <ai:k n="IO" c="I/O classes manage hardware and software based input and output"/>
+    <ai:k n="MISC" c="Miscellaneous classes do not fit into any of the other available categories"/>
+    <ai:k n="MULTIMEDIA" c="Classes that represent more than one media type, e.g. video files"/>
+    <ai:k n="NETWORK" c="Network classes interface with system drivers to simplify network communications"/>
+    <ai:k n="SYSTEM" c="System classes are designed to provide low-level services related to system management"/>
+    <ai:k n="TOOL" c="Tools provide interactive services for the user"/>
   </ai:c>
-  <ai:c l="CF" c="Compression stream formats">
-    <ai:k n="DEFLATE" c="The 'deflate' format"/>
-    <ai:k n="GZIP" c="The 'gzip' format"/>
-    <ai:k n="ZLIB" c="The 'zlib' format"/>
+  <ai:c l="CONTYPE" c="Console types">
+    <ai:k n="HANDLE" c="Redirected to a handle"/>
+    <ai:k n="MANUAL" c="Console created manually"/>
+    <ai:k n="NONE" c="No console available"/>
+    <ai:k n="TERMINAL" c="Launched from a terminal"/>
   </ai:c>
-  <ai:c l="CLF" c="Flags for the MetaClass.">
-    <ai:k n="INHERIT_LOCAL" c="Inherit the functionality of local objects defined in the class spec."/>
-    <ai:k n="NO_OWNERSHIP" c="Objects created will not be tracked to the creating process, nor any parent object (SetOwner will not work either)."/>
-  </ai:c>
-  <ai:c l="CLIPMODE" c="Clipboard modes">
-    <ai:k n="COPY" c="Copy from the clipboard."/>
-    <ai:k n="CUT" c="Cut from the clipboard."/>
-    <ai:k n="PASTE" c="Paste from the clipboard."/>
-  </ai:c>
-  <ai:c l="CMF" c="Compression flags">
-    <ai:k n="APPLY_SECURITY" c="When decompressing, apply individual file permissions if they are available in the compression file."/>
-    <ai:k n="CREATE_FILE" c="Create a new archive only if the source file does not already exist."/>
-    <ai:k n="NEW" c="Force the creation of a new file archive. Any existing file data at the target location will be destroyed."/>
-    <ai:k n="NO_LINKS" c="Treat symbolic links as normal files/folders."/>
-    <ai:k n="PASSWORD" c="A password has been set on the object."/>
-    <ai:k n="READ_ONLY" c="Forces read-only access, which is strongly recommended if an existing archive is being opened with no modifications intended. If this flag is not set, initialisation can fail if the user does not have write access to the source file."/>
-  </ai:c>
-  <ai:c l="CNF" c="Flags for the Config class.">
-    <ai:k n="AUTO_SAVE" c="When the configuration object is freed, automatically save the configuration data back to the original file source."/>
-    <ai:k n="NEW" c="On initialisation, do not load any data from the referenced configuration file."/>
-    <ai:k n="OPTIONAL_FILES" c="Files are optional (do not fail if a requested file does not exist)."/>
-    <ai:k n="STRIP_QUOTES" c="Removes quotes from key values that are quote-encapsulated."/>
-  </ai:c>
-  <ai:c l="CON" c="Gamepad controller buttons.">
-    <ai:k n="DPAD_DOWN" c="Directional pad down."/>
-    <ai:k n="DPAD_LEFT" c="Directional pad left."/>
-    <ai:k n="DPAD_RIGHT" c="Directional pad right."/>
-    <ai:k n="DPAD_UP" c="Directional pad up."/>
-    <ai:k n="GAMEPAD_E" c="East button (B)"/>
-    <ai:k n="GAMEPAD_N" c="North button (Y)"/>
-    <ai:k n="GAMEPAD_S" c="South button (A)"/>
-    <ai:k n="GAMEPAD_W" c="West button (X)"/>
-    <ai:k n="LEFT_BUMPER_1" c="Gamepad left-hand bumper 1 (top, primary)."/>
-    <ai:k n="LEFT_BUMPER_2" c="Gamepad left-hand bumper 2 (lower)."/>
-    <ai:k n="LEFT_THUMB" c="Left thumb stick depressed."/>
-    <ai:k n="RIGHT_BUMPER_1" c="Gamepad right-hand bumper 1 (top, primary)."/>
-    <ai:k n="RIGHT_BUMPER_2" c="Gamepad right-hand bumper 2 (lower)."/>
-    <ai:k n="RIGHT_THUMB" c="Right thumb stick depressed."/>
-    <ai:k n="SELECT" c="Gamepad select or back button."/>
-    <ai:k n="START" c="Gamepad start button."/>
-  </ai:c>
-  <ai:c l="DATA" c="Data codes">
-    <ai:k n="AUDIO" c="Audio file data, recognised by the Sound class"/>
-    <ai:k n="CONTENT" c="Document content (between XML tags) - sent by document objects only"/>
-    <ai:k n="DEVICE_INPUT" c="Device activity"/>
-    <ai:k n="FILE" c="File location (the data will reflect the complete file path)"/>
-    <ai:k n="IMAGE" c="Image file data, recognised by the Image class"/>
-    <ai:k n="INPUT_READY" c="Device input that has been transformed into user input"/>
-    <ai:k n="RAW" c="Raw unprocessed data"/>
-    <ai:k n="RECEIPT" c="Receipt for item data, in response to an earlier request"/>
-    <ai:k n="RECORD" c="Database record"/>
-    <ai:k n="REQUEST" c="Make a request for item data"/>
-    <ai:k n="TEXT" c="Standard ASCII text"/>
-    <ai:k n="XML" c="Markup based text data. NOTE - For clipboard data, the top-level encapsulating tag must declare the type of XML, e.g. 'html', 'ripple'. For plain XML, use 'xml'"/>
-  </ai:c>
-  <ai:c l="DEVICE">
-    <ai:k n="BOOKMARK" c="This marker indicates that the presented volume is a bookmark and not a device name."/>
-    <ai:k n="COMPACT_DISC" c="Compact disc style device"/>
-    <ai:k n="FIXED" c="Catch-all for fixed media devices that are not directly identifiable."/>
-    <ai:k n="FLOPPY_DISK" c="Floppy disk style device"/>
-    <ai:k n="HARD_DISK" c="Hard disk style device"/>
-    <ai:k n="MEMORY" c="Device is RAM, ROM, WORM, NVRAM, flashdisk or other form of memory. Does not guarantee a fast connection as it could be over a slow USB 1.1 connection for example"/>
-    <ai:k n="MODEM" c="Device is a modem."/>
-    <ai:k n="NETWORK" c="Device represents a network link"/>
-    <ai:k n="PRINTER" c="Device is a paper-based printer."/>
-    <ai:k n="PRINTER_3D" c="Device is a three dimensional printer."/>
-    <ai:k n="READ" c="Device is readable"/>
-    <ai:k n="REMOVABLE" c="Device media is removable from the hardware"/>
-    <ai:k n="REMOVEABLE" c="Device media is removable from the hardware"/>
-    <ai:k n="SCANNER" c="Device is a two dimensional scanner."/>
-    <ai:k n="SCANNER_3D" c="Device is a three dimensional scanner."/>
-    <ai:k n="SOFTWARE" c="Device is virtual/software defined"/>
-    <ai:k n="TAPE" c="Tape/Stream style device"/>
-    <ai:k n="TEMPORARY" c="All storage is temporary"/>
-    <ai:k n="USB" c="Removable USB storage device. May be further qualified by HARD_DISK, FLOPPY_DISK etc"/>
-    <ai:k n="WRITE" c="Device is writeable"/>
-  </ai:c>
-  <ai:c l="DMF">
-    <ai:k n="FIXED_CENTER_X" c="The CenterX field is a fixed size."/>
-    <ai:k n="FIXED_CENTER_Y" c="The CenterY field is a fixed size."/>
-    <ai:k n="FIXED_DEPTH" c="The Depth field is a fixed size."/>
-    <ai:k n="FIXED_HEIGHT" c="The Height field is a fixed size."/>
-    <ai:k n="FIXED_RADIUS_X" c="The RadiusX field is a fixed size."/>
-    <ai:k n="FIXED_RADIUS_Y" c="The RadiusY field is a fixed size."/>
-    <ai:k n="FIXED_WIDTH" c="The Width field is a fixed suze."/>
-    <ai:k n="FIXED_X" c="The X field is a fixed coordinate."/>
-    <ai:k n="FIXED_X_OFFSET" c="The XOffset field is a fixed coordinate."/>
-    <ai:k n="FIXED_Y" c="The Y field is a fixed coordinate."/>
-    <ai:k n="FIXED_Y_OFFSET" c="The YOffset field is a fixed coordinate."/>
-    <ai:k n="FIXED_Z" c="The Z field is a fixed coordinate."/>
-    <ai:k n="SCALED_CENTER_X" c="The CenterX field is scaled to this object's parent."/>
-    <ai:k n="SCALED_CENTER_Y" c="The CenterY field is scaled to this object's parent."/>
-    <ai:k n="SCALED_DEPTH" c="The Depth field is scaled to this object's parent."/>
-    <ai:k n="SCALED_HEIGHT" c="The Height field is scaled to this object's parent."/>
-    <ai:k n="SCALED_RADIUS_X" c="The RadiusX field is scaled to this object's parent."/>
-    <ai:k n="SCALED_RADIUS_Y" c="The RadiusY field is a scaled size to this object's parent."/>
-    <ai:k n="SCALED_WIDTH" c="The Width field is scaled to this object's parent."/>
-    <ai:k n="SCALED_X" c="The X field is scaled to this object's parent."/>
-    <ai:k n="SCALED_X_OFFSET" c="The XOffset field is scaled to this object's parent."/>
-    <ai:k n="SCALED_Y" c="The Y field is scaled to this object's parent."/>
-    <ai:k n="SCALED_Y_OFFSET" c="The YOffset field is scaled to this object's parent."/>
-    <ai:k n="SCALED_Z" c="The Z field is a scaled coordinate to this object's parent."/>
-    <ai:k n="STATUS_CHANGE_H"/>
-    <ai:k n="STATUS_CHANGE_V"/>
-  </ai:c>
-  <ai:c l="DRL" c="Compass directions.">
-    <ai:k n="EAST"/>
-    <ai:k n="NORTH"/>
-    <ai:k n="NORTH_EAST"/>
-    <ai:k n="NORTH_WEST"/>
-    <ai:k n="SOUTH"/>
-    <ai:k n="SOUTH_EAST"/>
-    <ai:k n="SOUTH_WEST"/>
-    <ai:k n="WEST"/>
-  </ai:c>
-  <ai:c l="EDGE" c="Edge flags">
-    <ai:k n="ALL"/>
-    <ai:k n="BOTTOM"/>
-    <ai:k n="BOTTOM_LEFT"/>
-    <ai:k n="BOTTOM_RIGHT"/>
-    <ai:k n="LEFT"/>
-    <ai:k n="RIGHT"/>
-    <ai:k n="TOP"/>
-    <ai:k n="TOP_LEFT"/>
-    <ai:k n="TOP_RIGHT"/>
-  </ai:c>
-  <ai:c l="EVG" c="Event categories.">
-    <ai:k n="ANDROID" c="Android specific events that do not already fit existing categories."/>
+  <ai:c l="EVG" c="Event categories">
+    <ai:k n="ANDROID" c="Android specific events that do not already fit existing categories"/>
     <ai:k n="APP" c="Custom event dispatched from an application"/>
-    <ai:k n="AUDIO" c="Audio system events."/>
+    <ai:k n="AUDIO" c="Audio system events"/>
     <ai:k n="CLASS" c="Custom event dispatched from a class that doesn't fit within the rest of the event framework"/>
-    <ai:k n="DISPLAY" c="Video display events."/>
-    <ai:k n="FILESYSTEM" c="File system events."/>
-    <ai:k n="GUI" c="Events generated by the Graphical User Interface."/>
-    <ai:k n="HARDWARE" c="Hardware device events that are not covered by other types."/>
-    <ai:k n="IO" c="Input/Output events."/>
-    <ai:k n="NETWORK" c="Network events."/>
-    <ai:k n="POWER" c="Power Management - can also include app-specific events relating to resource management."/>
+    <ai:k n="DISPLAY" c="Video display events"/>
+    <ai:k n="FILESYSTEM" c="File system events"/>
+    <ai:k n="GUI" c="Events generated by the Graphical User Interface"/>
+    <ai:k n="HARDWARE" c="Hardware device events that are not covered by other types"/>
+    <ai:k n="IO" c="Input/Output events"/>
+    <ai:k n="NETWORK" c="Network events"/>
+    <ai:k n="POWER" c="Power Management - can also include app-specific events relating to resource management"/>
     <ai:k n="SYSTEM" c="System-wide events"/>
-    <ai:k n="USER" c="User activity events (such as user login)."/>
+    <ai:k n="USER" c="User activity events (such as user login)"/>
   </ai:c>
   <ai:c l="FBK" c="Flags for file feedback.">
     <ai:k n="COPY_FILE" c="A file is to be, or has been copied."/>
     <ai:k n="DELETE_FILE" c="A file is to be, or has been deleted."/>
     <ai:k n="MOVE_FILE" c="A file is to be, or has been moved."/>
   </ai:c>
-  <ai:c l="FD" c="Field descriptors.">
-    <ai:k n="ALLOC" c="CLASSDEF Indicates the returned value is a dynamic allocation that needs to be manually freed (by default is a memory pointer, can be an object if combined with FD_OBJECT)"/>
-    <ai:k n="ARRAY" c="Indicates an array of values. Follow with ARRAYSIZE if used in a function."/>
-    <ai:k n="ARRAYSIZE" c="FUNCDEF Overrides LOOKUP. Pair with ARRAY to indicate total elements in the array. It is preferred that any null terminator is not counted. If ARRAYSIZE not specified, ARRAY must be null-terminated."/>
-    <ai:k n="BUFFER" c="FUNCDEF Overrides WRITE. Indicates a buffer that can be filled with data by the function if paired with RESULT; must be paired with BUFSIZE in second argument."/>
-    <ai:k n="BUFSIZE" c="FUNCDEF Overrides LOOKUP. Pair with BUFFER to indicate the byte size of the buffer memory."/>
-    <ai:k n="BYTE" c="8 bit integer."/>
-    <ai:k n="CPP" c="Use the C++ variant of the indicated type, e.g. ARRAY is a std::vector."/>
-    <ai:k n="CUSTOM"/>
-    <ai:k n="DOUBLE" c="64 bit float."/>
-    <ai:k n="DOUBLERESULT" c="For actions and methods"/>
-    <ai:k n="ERROR" c="FUNCDEF"/>
-    <ai:k n="FLAGS" c="CLASSDEF"/>
-    <ai:k n="FLOAT" c="32 bit float. Not valid for use in class definitions."/>
-    <ai:k n="FUNCTION" c="Intended for callbacks, uses the rkFunction structure."/>
-    <ai:k n="FUNCTIONPTR" c="Synonym for PTR | FUNCTION"/>
-    <ai:k n="I" c="Synonym for INIT"/>
-    <ai:k n="INIT" c="CLASSDEF"/>
-    <ai:k n="INT" c="32 bit integer."/>
-    <ai:k n="INT64" c="64 bit integer."/>
-    <ai:k n="INT64RESULT" c="For actions and methods"/>
-    <ai:k n="INTRESULT" c="For actions and methods"/>
-    <ai:k n="LOCAL" c="CLASSDEF Pointer to an object that is local to the class"/>
-    <ai:k n="LOOKUP" c="CLASSDEF"/>
-    <ai:k n="OBJECT" c="Supplementary, can be used with ints (for IDs) or pointers"/>
-    <ai:k n="OBJECTID" c="Synonym for INT | OBJECT"/>
-    <ai:k n="OBJECTPTR" c="Synonym for PTR | OBJECT"/>
-    <ai:k n="POINTER" c="Pointer (32 or 64 bit)."/>
-    <ai:k n="PRIVATE" c="Synonym for SYSTEM"/>
-    <ai:k n="PTR" c="Synonym for POINTER"/>
-    <ai:k n="PTRBUFFER" c="The next argument should be INT|BUFSIZE"/>
-    <ai:k n="PTRRESULT" c="Use for pointer-based value results only"/>
-    <ai:k n="PTRSIZE" c="Synonym for BUFSIZE"/>
-    <ai:k n="PTR_DOUBLERESULT" c="Use for pointer-based value results only."/>
-    <ai:k n="PTR_INT64RESULT" c="Use for pointer-based value results only."/>
-    <ai:k n="PTR_INTRESULT" c="Use for pointer-based value results only."/>
-    <ai:k n="R" c="Synonym for READ"/>
-    <ai:k n="READ" c="CLASSDEF"/>
-    <ai:k n="RESOURCE" c="The referenced struct or pointer is a special resource. Changes some behaviours, e.g. a resourced struct will use direct value references rather than being copied in Tiri."/>
-    <ai:k n="RESULT" c="FUNCDEF Overrides READ"/>
-    <ai:k n="RGB" c="Supplementary, if an int type then format is 0xAARRGGBB, if pointer then refers to an RGB structure."/>
-    <ai:k n="RI" c="Synonym for READ | INIT"/>
-    <ai:k n="RW" c="Synonym for READ | WRITE"/>
-    <ai:k n="SCALED" c="Supplementary, indicates a float value for multiplicative scaling."/>
-    <ai:k n="STR" c="Synonym for STRING"/>
-    <ai:k n="STRING" c="Pointer to a string."/>
-    <ai:k n="STRRESULT" c="Synonym for STR | RESULT"/>
-    <ai:k n="STRUCT" c="Supplementary, defines the field as a structure reference. MUST be combined with FD_POINTER. If used in a class, it is possible to name the structure definition in field-&gt;Arg"/>
-    <ai:k n="SYNONYM" c="CLASSDEF Use to declare fields that duplicate the functionality of another field."/>
-    <ai:k n="SYSTEM" c="CLASSDEF System, internal and private fields."/>
-    <ai:k n="TAGS" c="FUNCDEF Overrides INIT"/>
-    <ai:k n="UNIT" c="A value that describes a display unit."/>
-    <ai:k n="UNSIGNED" c="Supplementary, integer value is unsigned."/>
-    <ai:k n="VARTAGS" c="FUNCDEF Overrides FLAGS. Use for 64-bit taglists that require value definitions, e.g. TDOUBLE, TINT etc."/>
-    <ai:k n="VIRTUAL" c="CLASSDEF Ensures that the field has no physical representation in the structure."/>
-    <ai:k n="VOID"/>
-    <ai:k n="VOLATILE" c="[Not yet allocated a bit] Used on result pointers, usually strings, to indicate that the consecutive reads will overwrite the content of previous return values. This indicates to scripting languages to make a copy of the data before the next interaction with the object."/>
-    <ai:k n="W" c="Synonym for WRITE"/>
-    <ai:k n="WORD" c="16 bit integer."/>
-    <ai:k n="WRITE" c="CLASSDEF"/>
-  </ai:c>
-  <ai:c l="FDB" c="Feedback event indicators.">
-    <ai:k n="COMPRESS_FILE"/>
-    <ai:k n="DECOMPRESS_FILE"/>
-    <ai:k n="DECOMPRESS_OBJECT"/>
-    <ai:k n="REMOVE_FILE"/>
-  </ai:c>
-  <ai:c l="FDL" c="Options for the File Delete() method.">
-    <ai:k n="FEEDBACK" c="Automatically manage user feedback for deleting files by presenting dialog boxes."/>
-  </ai:c>
-  <ai:c l="FDT" c="Flags for the SetDate() file method.">
-    <ai:k n="ACCESSED" c="The date on which the file was last accessed by a user or application."/>
-    <ai:k n="ARCHIVED" c="The date on which the file was most recently archived. Not supported by most filesystems."/>
-    <ai:k n="CREATED" c="The date on which the file was created. On some host platforms this datestamp may be read-only."/>
-    <ai:k n="MODIFIED" c="The date on which the file was last modified."/>
-  </ai:c>
-  <ai:c l="FFR" c="Return codes available to the feedback routine">
-    <ai:k n="ABORT" c="Abort the entire operation."/>
-    <ai:k n="OKAY" c="Continue processing uninterrupted."/>
-    <ai:k n="SKIP" c="Skip processing of this entity."/>
-  </ai:c>
-  <ai:c l="FL" c="File flags">
-    <ai:k n="APPROXIMATE" c="Allows fuzzy matching of the file path when opening an existing file. This means that the file extension will be ignored; for instance attempting to open a file of 'screenshot.png' when only a file name of 'screenshot.jpg' exists in the same folder, the 'screenshot.jpg' file will be opened instead. If multiple files could potentially match to the file name, the file object will select the first match that is encountered."/>
-    <ai:k n="BUFFER" c="Activates a special mode in which the file data is stored in a memory buffer rather than a disk file. Set the Size field to a value of at least 1 so that the initial buffer size is configured. In this mode many of the available file operations are meaningless except for the Read, Write and Seek actions."/>
-    <ai:k n="DEVICE" c="The file is a system device (must set if opening a device for read/write operations)"/>
-    <ai:k n="DIRECTORY" c="The file object represents a folder."/>
-    <ai:k n="EXCLUDE_FILES" c="Exclude files when scanning this folder."/>
-    <ai:k n="EXCLUDE_FOLDERS" c="Exclude folders when scanning this folder."/>
-    <ai:k n="FILE" c="Explicitly declares the file object as an entity that stores content (as opposed to a device or folder for example)."/>
-    <ai:k n="FOLDER" c="The file object represents a folder."/>
-    <ai:k n="LINK" c="Read-Only. Indicates that the file is a symbolic link or shortcut to another file."/>
-    <ai:k n="LOOP" c="In loop mode, the file object's position marker for read/write operations is allowed to extend past the actual file size. Any read/write operation beyond the file size will loop back to the file at a corrected offset - for example, reading position 330 of a 100 byte file will start the operation from the 30th byte. Loop mode does not affect any other area besides the read, write and seek operations. The loop feature is typically used to create multimedia data streams with minimal effort."/>
-    <ai:k n="NEW" c="Required when creating a new file. If a file with the same name exists, its contents will be destroyed. If however the existing file is locked, the initalisation process will fail."/>
-    <ai:k n="READ" c="Required if the file needs to be opened for read access."/>
-    <ai:k n="RESET_DATE" c="For internal use only"/>
-    <ai:k n="STREAM" c="File data is streamed (e.g. PIPE, FIFO, socket) and may be accessed locally or via a network."/>
-    <ai:k n="WRITE" c="Prepares a file for writing data, starting at byte position 0. To start writing from the end of a file, use the Seek action after the file has been initialised."/>
-  </ai:c>
-  <ai:c l="FOF" c="Flags that can be passed to FindObject()">
-    <ai:k n="SMART_NAMES" c="Parse numeric object names as ID references and support use of the 'Owner' reserved keyword."/>
-  </ai:c>
   <ai:c l="IDTYPE" c="Types for AllocateID()">
-    <ai:k n="FUNCTION" c="Function ID's are used to track FUNCTION types and are assigned to the function ID field."/>
-    <ai:k n="GLOBAL" c="Global ID's have no specific association with anything."/>
-    <ai:k n="MESSAGE" c="Message ID's are allocated for the purpose of sending uniquely identifiable messages between tasks."/>
+    <ai:k n="FUNCTION" c="Function IDs are used to track FUNCTION types and are assigned to the function ID field."/>
+    <ai:k n="GLOBAL" c="Global IDs have no specific association with anything."/>
+    <ai:k n="MESSAGE" c="Message IDs are allocated for the purpose of sending uniquely identifiable messages between tasks."/>
+    <ai:k n="RESOURCE" c="Resource identifier for TrackResource()"/>
   </ai:c>
   <ai:c l="JET" c="JET constants are documented in GetInputEvent()">
-    <ai:k n="ABS_XY" c="The X, Y values are defined as absolute coordinates, relative to the top-left of the display."/>
-    <ai:k n="BUTTON_1" c="Left mouse button; XBox A button, PS square button. Value is pressure sensitive, ranging between 0 - 1.0 (0 is released, 1.0 is fully depressed)."/>
-    <ai:k n="BUTTON_10" c="Non-specific button assignment."/>
-    <ai:k n="BUTTON_2" c="Right mouse button; XBox X button, PS cross button."/>
-    <ai:k n="BUTTON_3" c="Middle mouse button; XBox Y button, PS triangle."/>
-    <ai:k n="BUTTON_4" c="Alt. mouse button 1; XBox B button, PS circle."/>
-    <ai:k n="BUTTON_5" c="Alt. mouse button 2."/>
-    <ai:k n="BUTTON_6" c="Non-specific button assignment."/>
-    <ai:k n="BUTTON_7" c="Non-specific button assignment."/>
-    <ai:k n="BUTTON_8" c="Non-specific button assignment."/>
-    <ai:k n="BUTTON_9" c="Non-specific button assignment."/>
-    <ai:k n="CROSSED_IN" c="This message is sent by the input system when the mouse pointer enters an area for the first time. The message value refers to the object ID of the container being monitored for movement."/>
-    <ai:k n="CROSSED_OUT" c="This message is sent by the input system when the mouse pointer leaves an area. The message value refers to the object ID of the container being monitored for movement."/>
+    <ai:k n="ABS_XY" c="The X, Y values are defined as absolute coordinates, relative to the top-left of the display"/>
+    <ai:k n="BUTTON_1" c="Left mouse button; XBox A button, PS square button. Value is pressure sensitive, ranging between 0 - 1.0 (0 is released, 1.0 is fully depressed)"/>
+    <ai:k n="BUTTON_10" c="Non-specific button assignment"/>
+    <ai:k n="BUTTON_2" c="Right mouse button; XBox X button, PS cross button"/>
+    <ai:k n="BUTTON_3" c="Middle mouse button; XBox Y button, PS triangle"/>
+    <ai:k n="BUTTON_4" c="Alt. mouse button 1; XBox B button, PS circle"/>
+    <ai:k n="BUTTON_5" c="Alt. mouse button 2"/>
+    <ai:k n="BUTTON_6" c="Non-specific button assignment"/>
+    <ai:k n="BUTTON_7" c="Non-specific button assignment"/>
+    <ai:k n="BUTTON_8" c="Non-specific button assignment"/>
+    <ai:k n="BUTTON_9" c="Non-specific button assignment"/>
+    <ai:k n="CROSSED_IN" c="This message is sent by the input system when the mouse pointer enters an area for the first time. The message value refers to the object ID of the container being monitored for movement"/>
+    <ai:k n="CROSSED_OUT" c="This message is sent by the input system when the mouse pointer leaves an area. The message value refers to the object ID of the container being monitored for movement"/>
     <ai:k n="DEVICE_TILT_XY" c="Controller tilted on the X/Y axis. Value indicates angle, -ve = left, +ve = right"/>
     <ai:k n="DEVICE_TILT_Z" c="Controller is rising or falling. Value expressed as 'speed',"/>
-    <ai:k n="DISPLAY_EDGE" c="Recently supplied input occurred at the edge of the display."/>
-    <ai:k n="PEN_TILT_XY" c="For pen-based input, this type indicates the vertical tilt of the pen device. A value of 0 indicates that the pen is laid flat with nib at the bottom, 0.5 is 90 degrees, 1.0 is laid flat with nib at the top."/>
+    <ai:k n="DISPLAY_EDGE" c="Recently supplied input occurred at the edge of the display"/>
+    <ai:k n="PEN_TILT_XY" c="Pen tilt angle. 0 is pointing down directly with nib at bottom, 0.5 is 90 degrees, 1.0 is inversed (eraser at bottom)"/>
     <ai:k n="PRESSURE" c="Amount of pressure applied, ranges from 0 (none) to 1.0 (normal) and possibly higher if user presses hard enough"/>
-    <ai:k n="WHEEL" c="Mouse wheel rotation - the value generally reflects the number of 'clicks' rotated on the wheel."/>
+    <ai:k n="WHEEL" c="Mouse wheel rotation - the value generally reflects the number of 'clicks' rotated on the wheel"/>
     <ai:k n="WHEEL_TILT" c="Some mouse wheels can be tilted to the left or right. Ranges from -1.0 to +1.0"/>
   </ai:c>
-  <ai:c l="JTYPE" c="JTYPE flags are used to categorise input types.">
+  <ai:c l="JTYPE" c="JTYPE flags are used to categorise input types">
     <ai:k n="ANALOG" c="Analog movement (ranging from -1.0 to 1.0)"/>
     <ai:k n="ANCHORED" c="Cursor has been anchored with LockCursor()"/>
     <ai:k n="BUTTON" c="Input is a physical button or switch"/>
-    <ai:k n="CROSSING" c="Crossing events manage the entering and leaving of an area."/>
-    <ai:k n="DBL_CLICK" c="Set by the input system if the Type is a button and the button has been clicked in quick succession so as to be classed as a double-click."/>
+    <ai:k n="CROSSING" c="Crossing events manage the entering and leaving of an area"/>
+    <ai:k n="DBL_CLICK" c="Set by the input system if the Type is a button and the button has been clicked in quick succession so as to be classed as a double-click"/>
     <ai:k n="DIGITAL" c="D-Pad or digital joystick source (restricted to +/- 1)"/>
-    <ai:k n="DRAGGED" c="Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference)."/>
-    <ai:k n="DRAG_ITEM" c="This special flag is set by the input system if the pointer is click-dragging an object at the time of the event."/>
-    <ai:k n="EXT_MOVEMENT" c="Extended or indirect movement information. This covers all types of movement that are unconnected to coordinate positioning - mouse wheel movement and pen tilt are two such examples."/>
-    <ai:k n="MOVEMENT" c="X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system."/>
+    <ai:k n="DRAGGED" c="Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference)"/>
+    <ai:k n="DRAG_ITEM" c="This special flag is set by the input system if the pointer is click-dragging an object at the time of the event"/>
+    <ai:k n="EXT_MOVEMENT" c="Extended or indirect movement information. This covers all types of movement that are unconnected to coordinate positioning - mouse wheel movement and pen tilt are two such examples"/>
+    <ai:k n="MOVEMENT" c="X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system"/>
     <ai:k n="REPEATED" c="Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)"/>
     <ai:k n="SECONDARY" c="Indicates to the receiver of this message that it is not the primary/original recipient"/>
-  </ai:c>
-  <ai:c l="KEY" c="Raw key codes">
-    <ai:k n="A"/>
-    <ai:k n="APOSTROPHE"/>
-    <ai:k n="AT"/>
-    <ai:k n="B"/>
-    <ai:k n="BACK"/>
-    <ai:k n="BACKSPACE"/>
-    <ai:k n="BACK_SLASH"/>
-    <ai:k n="BREAK"/>
-    <ai:k n="C"/>
-    <ai:k n="CALL"/>
-    <ai:k n="CAMERA"/>
-    <ai:k n="CANCEL"/>
-    <ai:k n="CAPS_LOCK"/>
-    <ai:k n="CLEAR"/>
-    <ai:k n="COMMA"/>
-    <ai:k n="D"/>
-    <ai:k n="DELETE"/>
-    <ai:k n="DOT"/>
-    <ai:k n="DOWN"/>
-    <ai:k n="E"/>
-    <ai:k n="EIGHT"/>
-    <ai:k n="END"/>
-    <ai:k n="END_CALL"/>
-    <ai:k n="ENTER"/>
-    <ai:k n="EQUALS"/>
-    <ai:k n="ESCAPE"/>
-    <ai:k n="EXECUTE"/>
-    <ai:k n="F"/>
-    <ai:k n="F1"/>
-    <ai:k n="F10"/>
-    <ai:k n="F11"/>
-    <ai:k n="F12"/>
-    <ai:k n="F13"/>
-    <ai:k n="F14"/>
-    <ai:k n="F15"/>
-    <ai:k n="F16"/>
-    <ai:k n="F17"/>
-    <ai:k n="F18"/>
-    <ai:k n="F19"/>
-    <ai:k n="F2"/>
-    <ai:k n="F20"/>
-    <ai:k n="F3"/>
-    <ai:k n="F4"/>
-    <ai:k n="F5"/>
-    <ai:k n="F6"/>
-    <ai:k n="F7"/>
-    <ai:k n="F8"/>
-    <ai:k n="F9"/>
-    <ai:k n="FIND"/>
-    <ai:k n="FIVE"/>
-    <ai:k n="FORWARD"/>
-    <ai:k n="FOUR"/>
-    <ai:k n="G"/>
-    <ai:k n="H"/>
-    <ai:k n="HELP"/>
-    <ai:k n="HOME"/>
-    <ai:k n="I"/>
-    <ai:k n="INSERT"/>
-    <ai:k n="J"/>
-    <ai:k n="K"/>
-    <ai:k n="L"/>
-    <ai:k n="LEFT"/>
-    <ai:k n="LENS_FOCUS"/>
-    <ai:k n="LESS_GREATER"/>
-    <ai:k n="LIST_END"/>
-    <ai:k n="L_ALT"/>
-    <ai:k n="L_COMMAND"/>
-    <ai:k n="L_CONTROL"/>
-    <ai:k n="L_SHIFT"/>
-    <ai:k n="L_SQUARE"/>
-    <ai:k n="M"/>
-    <ai:k n="MACRO"/>
-    <ai:k n="MENU"/>
-    <ai:k n="MINUS"/>
-    <ai:k n="MUTE"/>
-    <ai:k n="N"/>
-    <ai:k n="NEXT"/>
-    <ai:k n="NINE"/>
-    <ai:k n="NP_0"/>
-    <ai:k n="NP_1"/>
-    <ai:k n="NP_2"/>
-    <ai:k n="NP_3"/>
-    <ai:k n="NP_4"/>
-    <ai:k n="NP_5"/>
-    <ai:k n="NP_6"/>
-    <ai:k n="NP_7"/>
-    <ai:k n="NP_8"/>
-    <ai:k n="NP_9"/>
-    <ai:k n="NP_BAR"/>
-    <ai:k n="NP_DECIMAL"/>
-    <ai:k n="NP_DIVIDE"/>
-    <ai:k n="NP_DOT"/>
-    <ai:k n="NP_ENTER"/>
-    <ai:k n="NP_MINUS"/>
-    <ai:k n="NP_MULTIPLY"/>
-    <ai:k n="NP_PLUS"/>
-    <ai:k n="NP_PLUS_MINUS"/>
-    <ai:k n="NP_SEPARATOR"/>
-    <ai:k n="NUM_LOCK"/>
-    <ai:k n="O"/>
-    <ai:k n="ONE"/>
-    <ai:k n="P"/>
-    <ai:k n="PAGE_DOWN"/>
-    <ai:k n="PAGE_UP"/>
-    <ai:k n="PAUSE"/>
-    <ai:k n="PERIOD"/>
-    <ai:k n="PLAY"/>
-    <ai:k n="PLUS"/>
-    <ai:k n="POUND"/>
-    <ai:k n="POWER"/>
-    <ai:k n="PREVIOUS"/>
-    <ai:k n="PRINT"/>
-    <ai:k n="PRT_SCR"/>
-    <ai:k n="Q"/>
-    <ai:k n="R"/>
-    <ai:k n="REDO"/>
-    <ai:k n="REVERSE_QUOTE"/>
-    <ai:k n="REWIND"/>
-    <ai:k n="RIGHT"/>
-    <ai:k n="R_ALT"/>
-    <ai:k n="R_COMMAND"/>
-    <ai:k n="R_CONTROL"/>
-    <ai:k n="R_SHIFT"/>
-    <ai:k n="R_SQUARE"/>
-    <ai:k n="S"/>
-    <ai:k n="SCR_LOCK"/>
-    <ai:k n="SELECT"/>
-    <ai:k n="SEMI_COLON"/>
-    <ai:k n="SEVEN"/>
-    <ai:k n="SIX"/>
-    <ai:k n="SLASH"/>
-    <ai:k n="SLEEP"/>
-    <ai:k n="SPACE"/>
-    <ai:k n="STAR"/>
-    <ai:k n="STOP"/>
-    <ai:k n="SYSRQ"/>
-    <ai:k n="T"/>
-    <ai:k n="TAB"/>
-    <ai:k n="THREE"/>
-    <ai:k n="TWO"/>
-    <ai:k n="U"/>
-    <ai:k n="UNDO"/>
-    <ai:k n="UP"/>
-    <ai:k n="V"/>
-    <ai:k n="VOLUME_DOWN"/>
-    <ai:k n="VOLUME_UP"/>
-    <ai:k n="W"/>
-    <ai:k n="WAKE"/>
-    <ai:k n="WIN_CONTROL"/>
-    <ai:k n="X"/>
-    <ai:k n="Y"/>
-    <ai:k n="Z"/>
-    <ai:k n="ZERO"/>
-  </ai:c>
-  <ai:c l="KQ" c="Special qualifier flags">
-    <ai:k n="ALT" c="Synonym for L_ALT | R_ALT"/>
-    <ai:k n="ALTGR" c="Synonym for R_ALT"/>
-    <ai:k n="CAPS_LOCK" c="Caps-Lock is on"/>
-    <ai:k n="COMMAND" c="Synonym for L_COMMAND | R_COMMAND"/>
-    <ai:k n="CONTROL" c="Synonym for L_CONTROL | R_CONTROL"/>
-    <ai:k n="CTRL" c="Synonym for L_CONTROL | R_CONTROL"/>
-    <ai:k n="DEAD_KEY" c="This key will be affected by a previously pressed dead-key"/>
-    <ai:k n="INFO" c="Synonym for REPEAT | RELEASED | PRESSED | NOT_PRINTABLE | CAPS_LOCK"/>
-    <ai:k n="INSTRUCTION_KEYS" c="Synonym for ALT | CONTROL"/>
-    <ai:k n="L_ALT" c="Left Alt is held"/>
-    <ai:k n="L_COMMAND" c="Left Logo/Special"/>
-    <ai:k n="L_CONTROL" c="Control Key is held"/>
-    <ai:k n="L_CTRL" c="Control Key is held"/>
-    <ai:k n="L_SHIFT" c="Left Shift is held"/>
-    <ai:k n="NOT_PRINTABLE" c="The represented key value is not printable"/>
-    <ai:k n="NUM_LOCK" c="NumLock is on"/>
-    <ai:k n="NUM_PAD" c="Identifies numeric keypad keys"/>
-    <ai:k n="PRESSED" c="Key is being held or tapped"/>
-    <ai:k n="QUALIFIERS" c="Synonym for SHIFT | COMMAND | ALT | CONTROL"/>
-    <ai:k n="RELEASED" c="The key is being released"/>
-    <ai:k n="REPEAT" c="This is a repeated key"/>
-    <ai:k n="R_ALT" c="Right Alt is held"/>
-    <ai:k n="R_COMMAND" c="Right Logo/Special"/>
-    <ai:k n="R_CONTROL" c="Control Key is held"/>
-    <ai:k n="R_CTRL" c="Control Key is held"/>
-    <ai:k n="R_SHIFT" c="Right Shift is held"/>
-    <ai:k n="SCR_LOCK" c="Scroll Lock is on"/>
-    <ai:k n="SHIFT" c="Synonym for L_SHIFT | R_SHIFT"/>
-  </ai:c>
-  <ai:c l="LAYOUT" c="Universal values for alignment of graphic layouts in documents.">
-    <ai:k n="BACKGROUND" c="Graphic is placed behind text. The text will not be wrapped around the object"/>
-    <ai:k n="EMBEDDED" c="Graphic is embedded in the text stream (treated as a character). The height of the line can be extended to match the height of the graphic in this mode."/>
-    <ai:k n="FOREGROUND" c="Graphic is placed in front of the text. The text will not be wrapped around the object"/>
-    <ai:k n="IGNORE_CURSOR" c="The object has a fixed X/Y position, unrelated to the cursor"/>
-    <ai:k n="LEFT" c="The text boundary is extended to the left edge of the page."/>
-    <ai:k n="LOCK" c="Lock the position of the graphic to the top left of the view and not the scrolling position of the page."/>
-    <ai:k n="RIGHT" c="The text boundary is extended to the right edge of the page."/>
-    <ai:k n="SQUARE" c="The default. Text will clip around the image's border"/>
-    <ai:k n="TIGHT" c="Text wraps to the shape of the image (alpha blended/masked images only)"/>
-    <ai:k n="TILE" c="The graphic will be tiled. Tiled graphics also meet the BACKGROUND criteria (no wrapping)."/>
-    <ai:k n="WIDE" c="The text boundary is extended to the left and right edges of the page."/>
   </ai:c>
   <ai:c l="LDF" c="Flags for LoadFile()">
     <ai:k n="CHECK_EXISTS" c="Limits the routine to checking the file cache for the existence of the file. If found, the relevant cache entry is returned. The open count is not incremented by this action (it is therefore unnecessary to follow-up with a call to UnloadFile()). If no up-to-date cache entry is available, ERR::Search is returned."/>
@@ -1133,71 +725,12 @@
     <ai:k n="FILE" c="The path refers to a file."/>
     <ai:k n="VOLUME" c="The path refers to a volume name."/>
   </ai:c>
-  <ai:c l="MAX">
-    <ai:k n="FILENAME"/>
-    <ai:k n="NAME_LEN"/>
-  </ai:c>
-  <ai:c l="MEM" c="Memory types used by AllocMemory(). The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.">
-    <ai:k n="AUDIO" c="The memory space is reserved by an audio device such as a sound card."/>
-    <ai:k n="CALLER" c="This flag is usable only in routines that are supporting a class method. It forces the memory allocation to be tracked to the object that made the method call. This is particularly important in methods that return memory blocks that do not form a part of the object itself."/>
-    <ai:k n="CODE" c="Set if the memory will contain executable program code."/>
-    <ai:k n="DATA" c="The default type, DATA, is used to indicate a standard memory allocation from system RAM."/>
-    <ai:k n="HIDDEN" c="Hidden blocks are not recorded and are excluded from resource tracking."/>
-    <ai:k n="MANAGED" c="Enables custom resource management for the memory block. The start of the block will need to be reserved with a pointer to a ResourceManager structure, which is included as part of the block's declared Size. The Free() callback will be called when the block is removed."/>
-    <ai:k n="NO_BLOCK" c="Permanently turn off all accesses to this memory block. This means that multiple threads can have full read/write access to the memory block at once regardless of other acces flags."/>
-    <ai:k n="NO_BLOCKING" c="Permanently turn off all accesses to this memory block. This means that multiple threads can have full read/write access to the memory block at once regardless of other acces flags."/>
-    <ai:k n="NO_CLEAR" c="Do not clear the memory on allocation (saves time)."/>
-    <ai:k n="NO_LOCK" c="For AllocMemory() only, indicates that the (private) memory block should not be locked on return."/>
-    <ai:k n="NO_POOL" c="Gives a hint to the allocator to allocate the block outside of the memory pool."/>
-    <ai:k n="READ" c="The memory is explicitly marked as readable."/>
-    <ai:k n="READ_WRITE" c="Synonym for READ | WRITE"/>
-    <ai:k n="STRING" c="Identifies the memory content as a null terminated string. Useful for debugging and run-time type identification in scripts."/>
-    <ai:k n="TEXTURE" c="The memory space is reserved by a video driver for hosting texture graphics."/>
-    <ai:k n="TMP_LOCK" c="Enables temporary locking restrictions. Prevents processes from sleeping while holding a lock on the memory block."/>
-    <ai:k n="UNTRACKED" c="Allocating an untracked memory block will prevent the memory block from being tracked back to the object holding the current context."/>
-    <ai:k n="VIDEO" c="The memory space is reserved by a video device such as a graphics card for display purposes, e.g. framebuffer."/>
-    <ai:k n="WRITE" c="The memory is explicitly marked as writeable."/>
-  </ai:c>
-  <ai:c l="MFF" c="Flags for the File Watch() method.">
-    <ai:k n="ATTRIB" c="File permissions or datestamp changed."/>
-    <ai:k n="CLOSED" c="An opened file has been closed."/>
-    <ai:k n="CREATE" c="New file/link created or renamed in folder."/>
-    <ai:k n="DEEP" c="Receive notifications from sub-folders (Windows only)."/>
-    <ai:k n="DELETE" c="Existing file deleted"/>
-    <ai:k n="FILE" c="File identifier; if passed to File.Watch() then indicates a preference for file events only."/>
-    <ai:k n="FOLDER" c="Folder identifier; if passed to File.Watch() then indicates a preference for folder events only."/>
-    <ai:k n="MODIFY" c="File modified via write or truncation."/>
-    <ai:k n="MOVED" c="Existing file moved or renamed."/>
-    <ai:k n="OPENED" c="Existing file was opened."/>
-    <ai:k n="READ" c="File was accessed (read)."/>
-    <ai:k n="RENAME" c="Existing file moved or renamed."/>
-    <ai:k n="SELF" c="Event applies to the monitored folder and not a contained item"/>
-    <ai:k n="UNMOUNT" c="Host filesystem was unmounted."/>
-    <ai:k n="WRITE" c="File modified via write or truncation."/>
-  </ai:c>
-  <ai:c l="MHF" c="Internal options for requesting function tables from modules.">
-    <ai:k n="DEFAULT" c="Use structures to group exported functions (Linux, C/C++ standard)"/>
-    <ai:k n="STATIC" c="Keep the module code in memory"/>
-    <ai:k n="STRUCTURE" c="Use structures to group exported functions (Linux, C/C++ standard)"/>
-  </ai:c>
-  <ai:c l="MOF" c="Module flags">
-    <ai:k n="LINK_LIBRARY" c="Module refers to a symbolic link library (e.g. libz DLL or SO)"/>
-    <ai:k n="STATIC" c="This flag prevents the loaded module code from being unloaded when the module object is freed. This may be needed in cases where a module is designed with the presumption that it will remain in memory after being loaded by the developer."/>
-    <ai:k n="SYSTEM_PROBE" c="Indicates that the module is being probed. Do not use outside of the core library."/>
-  </ai:c>
-  <ai:c l="MOVE" c="Generic flags for controlling movement.">
-    <ai:k n="ALL" c="Synonym for DOWN | UP | LEFT | RIGHT"/>
-    <ai:k n="DOWN"/>
-    <ai:k n="LEFT"/>
-    <ai:k n="RIGHT"/>
-    <ai:k n="UP"/>
+  <ai:c l="MEM" c="Memory flags">
+    <ai:k n="NO_CLEAR" c="Do not clear the memory on allocation (saves time)"/>
   </ai:c>
   <ai:c l="MSF" c="Message flags.">
-    <ai:k n="ADD" c="The default behaviour - this will add the message to the end of the queue."/>
-    <ai:k n="MESSAGE_ID" c="The Type parameter refers to a unique message ID rather than a message type for this call."/>
     <ai:k n="NO_DUPLICATE" c="If the Type parameter matches a message already inside the queue, the new message will not be added and the function will immediately return with ERR::Okay."/>
     <ai:k n="UPDATE" c="If Type matches a queued message, update that message's data in place."/>
-    <ai:k n="WAIT" c="Wait before inserting the message if the queue is at maximum capacity."/>
   </ai:c>
   <ai:c l="MSGID" c="Reserved message ID's that are handled internally.">
     <ai:k n="ACTION"/>
@@ -1206,44 +739,29 @@
     <ai:k n="CORE_END"/>
     <ai:k n="DEBUG"/>
     <ai:k n="EVENT"/>
-    <ai:k n="FLUID_THREAD_CALLBACK"/>
     <ai:k n="FREE"/>
     <ai:k n="QUIT"/>
     <ai:k n="THREAD_ACTION"/>
     <ai:k n="THREAD_CALLBACK"/>
+    <ai:k n="TIRI_THREAD_CALLBACK"/>
     <ai:k n="VALIDATE_PROCESS"/>
     <ai:k n="WAIT_FOR_OBJECTS"/>
   </ai:c>
-  <ai:c l="MTF" c="MoveToPoint flags">
-    <ai:k n="ANIM"/>
-    <ai:k n="RELATIVE"/>
-    <ai:k n="X"/>
-    <ai:k n="Y"/>
-    <ai:k n="Z"/>
-  </ai:c>
-  <ai:c l="NETMSG">
-    <ai:k n="END"/>
-    <ai:k n="START"/>
-  </ai:c>
   <ai:c l="NF" c="Flags that can be passed to NewObject(). If a flag needs to be stored with the object, it must be specified in the lower word.">
-    <ai:k n="COLLECT" c="Marked for garbage collection."/>
+    <ai:k n="ASYNC_ACTIVE" c="Read-only indicator that asynchronous actions are queued or executing against this object."/>
     <ai:k n="FREE" c="Read-only indicator for when the object is being freed."/>
-    <ai:k n="FREE_ON_UNLOCK" c="Read-only indicator for when the object is marked for deletion."/>
+    <ai:k n="FREE_ON_UNLOCK" c="Set if FreeResource() was called on an object under lock conditions. Immediately collects when unlocked."/>
     <ai:k n="INITIALISED" c="Read-only indicator if the object has been initialised."/>
     <ai:k n="LOCAL" c="Classes can allocate local objects to stop them from being associated with the client."/>
-    <ai:k n="MESSAGE" c="Action has been called against the object through the message system (managed by ProcessMessages)."/>
-    <ai:k n="NAME" c="Use the Name parameter to name the created object. This flag is not required if using UNIQUE."/>
     <ai:k n="PRIVATE"/>
-    <ai:k n="RECLASSED" c="The object switched from the base-class to a sub-class during initialisation."/>
+    <ai:k n="RECLASSED" c="The object switched from the base-class to a derived class during initialisation."/>
     <ai:k n="SIGNALLED" c="The object has been signalled and is awaiting processing."/>
     <ai:k n="TIMER_SUB" c="The object is subscribed to a timer interval."/>
-    <ai:k n="UNIQUE" c="Use to allocate an object that has a guaranteed unique name. This will prevent code from shadowing any object that exists with the same name, which can be imperative when creating shared objects. If it is discovered that an identically named object exists, NewObject will return ERR::ObjectExists. This flag works in conjunction with the Name parameter."/>
     <ai:k n="UNTRACKED" c="An object created with this flag will not be tracked back to the object that created it."/>
   </ai:c>
   <ai:c l="OPF">
     <ai:k n="ARGS"/>
     <ai:k n="DETAIL"/>
-    <ai:k n="ERROR"/>
     <ai:k n="MAX_DEPTH"/>
     <ai:k n="MODULE_PATH"/>
     <ai:k n="OPTIONS"/>
@@ -1260,82 +778,56 @@
     <ai:k n="ALL_EXEC" c="Synonym for EVERYONE_EXEC"/>
     <ai:k n="ALL_READ" c="Synonym for EVERYONE_READ"/>
     <ai:k n="ALL_WRITE" c="Synonym for EVERYONE_WRITE"/>
-    <ai:k n="ARCHIVE" c="Marks the file for future backup. The flag should be cleared after the backup has succeeded."/>
-    <ai:k n="DELETE" c="Owner can delete. If the file system does not support this, deletion is enabled via the WRITE flag."/>
+    <ai:k n="ARCHIVE" c="Marks the file for future backup. The flag should be cleared after the backup has succeeded"/>
+    <ai:k n="DELETE" c="Owner can delete. If the file system does not support this, deletion is enabled via the WRITE flag"/>
     <ai:k n="EVERYONE_ACCESS" c="Synonym for EVERYONE_READ | EVERYONE_WRITE | EVERYONE_EXEC | EVERYONE_DELETE"/>
     <ai:k n="EVERYONE_DELETE" c="Synonym for DELETE | GROUP_DELETE | OTHERS_DELETE"/>
     <ai:k n="EVERYONE_EXEC" c="Synonym for EXEC | GROUP_EXEC | OTHERS_EXEC"/>
     <ai:k n="EVERYONE_READ" c="Synonym for READ | GROUP_READ | OTHERS_READ"/>
     <ai:k n="EVERYONE_READWRITE" c="Synonym for EVERYONE_READ | EVERYONE_WRITE"/>
     <ai:k n="EVERYONE_WRITE" c="Synonym for WRITE | GROUP_WRITE | OTHERS_WRITE"/>
-    <ai:k n="EXEC" c="User/Owner can execute."/>
+    <ai:k n="EXEC" c="User/Owner can execute"/>
     <ai:k n="GROUP" c="Synonym for GROUP_READ | GROUP_WRITE | GROUP_EXEC | GROUP_DELETE"/>
-    <ai:k n="GROUPID" c="Allows executables to run with a set group id."/>
-    <ai:k n="GROUP_DELETE" c="Group members can delete."/>
-    <ai:k n="GROUP_EXEC" c="Group members can execute."/>
-    <ai:k n="GROUP_READ" c="Group members can read."/>
-    <ai:k n="GROUP_WRITE" c="Group members can write."/>
-    <ai:k n="HIDDEN" c="Recommends that the file is hidden from view by default."/>
-    <ai:k n="INHERIT" c="Inherit permissions from parent folder and logical OR them with preset permission flags."/>
-    <ai:k n="NETWORK" c="File is hosted on another machine."/>
-    <ai:k n="OFFLINE" c="File content for this networked file has not been cached on the local PC."/>
+    <ai:k n="GROUPID" c="Allows executables to run with a set group id"/>
+    <ai:k n="GROUP_DELETE" c="Group members can delete"/>
+    <ai:k n="GROUP_EXEC" c="Group members can execute"/>
+    <ai:k n="GROUP_READ" c="Group members can read"/>
+    <ai:k n="GROUP_WRITE" c="Group members can write"/>
+    <ai:k n="HIDDEN" c="Recommends that the file is hidden from view by default"/>
+    <ai:k n="INHERIT" c="Inherit permissions from parent folder and logical OR them with preset permission flags"/>
+    <ai:k n="META" c="Synonym for HIDDEN | PASSWORD | OFFLINE | NETWORK"/>
+    <ai:k n="NETWORK" c="File is hosted on another machine"/>
+    <ai:k n="OFFLINE" c="File content for this networked file has not been cached on the local PC"/>
     <ai:k n="OTHERS" c="Synonym for OTHERS_READ | OTHERS_WRITE | OTHERS_EXEC | OTHERS_DELETE"/>
-    <ai:k n="OTHERS_DELETE" c="Others can delete."/>
-    <ai:k n="OTHERS_EXEC" c="Others can execute."/>
-    <ai:k n="OTHERS_READ" c="Others can read."/>
-    <ai:k n="OTHERS_WRITE" c="Others can write."/>
-    <ai:k n="PASSWORD" c="File is password protected."/>
-    <ai:k n="READ" c="User/Owner has read access. This will not allow compiled code to be executed."/>
+    <ai:k n="OTHERS_DELETE" c="Others can delete"/>
+    <ai:k n="OTHERS_EXEC" c="Others can execute"/>
+    <ai:k n="OTHERS_READ" c="Others can read"/>
+    <ai:k n="OTHERS_WRITE" c="Others can write"/>
+    <ai:k n="PASSWORD" c="File is password protected"/>
+    <ai:k n="READ" c="User/Owner has read access. This will not allow compiled code to be executed"/>
     <ai:k n="USER" c="Synonym for READ | WRITE | EXEC | DELETE"/>
-    <ai:k n="USERID" c="Allows executables to run with a set user id."/>
+    <ai:k n="USERID" c="Allows executables to run with a set user id"/>
     <ai:k n="USER_EXEC" c="Synonym for EXEC"/>
     <ai:k n="USER_READ" c="Synonym for READ"/>
     <ai:k n="USER_WRITE" c="Synonym for WRITE"/>
-    <ai:k n="WRITE" c="User/Owner can write."/>
+    <ai:k n="WRITE" c="User/Owner can write"/>
   </ai:c>
-  <ai:c l="PMF" c="Flags for ProcessMessages"/>
-  <ai:c l="PTC" c="Predefined cursor styles">
-    <ai:k n="CROSSHAIR" c="The cross hair is used for targeting specific pixel points (common in paint programs)."/>
-    <ai:k n="CUSTOM" c="Works in conjunction with the SetCustomCursor() function to represent a program defined bitmap."/>
-    <ai:k n="DEFAULT" c="The default cursor (usually an arrow pointing to the upper left)."/>
-    <ai:k n="DRAGGABLE" c="Used to indicate that a surface or object can be dragged by the user."/>
-    <ai:k n="END"/>
-    <ai:k n="HAND" c="The hand cursor is often used for indicating click-able content (hyper-links, icons etc)."/>
-    <ai:k n="HAND_LEFT" c="Similar to the standard hand cursor, but points to the left."/>
-    <ai:k n="HAND_RIGHT" c="Similar to the standard hand cursor, but points to the right."/>
-    <ai:k n="INVISIBLE" c="The cursor graphic is invisible (but will continue to operate as normal in all other respects)."/>
-    <ai:k n="MAGNIFIER" c="Represents a magnifying glass."/>
-    <ai:k n="NO_CHANGE"/>
-    <ai:k n="PAINTBRUSH" c="The paintbrush cursor is typically employed by paint programs."/>
-    <ai:k n="SIZE_BOTTOM" c="Sizing cursor - for resizing the bottom edge of any rectangular area."/>
-    <ai:k n="SIZE_BOTTOM_LEFT" c="Sizing cursor - for resizing the bottom left corner of any rectangular area."/>
-    <ai:k n="SIZE_BOTTOM_RIGHT" c="Sizing cursor - for resizing the bottom right corner of any rectangular area."/>
-    <ai:k n="SIZE_LEFT" c="Sizing cursor - for resizing the left edge of any rectangular area."/>
-    <ai:k n="SIZE_RIGHT" c="Sizing cursor - for resizing the right edge of any rectangular area."/>
-    <ai:k n="SIZE_TOP" c="Sizing cursor - for resizing the top edge of any rectangular area."/>
-    <ai:k n="SIZE_TOP_LEFT" c="Sizing cursor - for resizing the top left corner of any rectangular area."/>
-    <ai:k n="SIZE_TOP_RIGHT" c="Sizing cursor - for resizing the top right corner of any rectangular area."/>
-    <ai:k n="SIZING" c="Multi-directional sizing cursor - for resizing in any direction."/>
-    <ai:k n="SLEEP" c="The sleep cursor is used to inform the user that the computer is busy."/>
-    <ai:k n="SPLIT_HORIZONTAL" c="The horizontal split cursor is typically used for splitting rectangles in half, or dragging a horizontal split within a large rectangular space."/>
-    <ai:k n="SPLIT_VERTICAL" c="The vertical split cursor is typically used for splitting rectangles in half, or dragging a vertical split within a large rectangular space."/>
-    <ai:k n="STOP" c="The stop cursor is used to inform the user that an operation is not possible (e.g. drag and drop to an unsupported object area)."/>
-    <ai:k n="TEXT" c="The text cursor is popular for the precise positioning of text cursors."/>
+  <ai:c l="PMF" c="Flags for ProcessMessages">
+    <ai:k n="ANY_SIGNAL" c="Return from WaitForObjects() when any monitored object is signalled."/>
+    <ai:k n="EVENT_LOOP" c="Set if this is the program's main event loop. Should be accompanied with an infinite timeout."/>
   </ai:c>
   <ai:c l="RDF" c="Flags for the OpenDir() function.">
-    <ai:k n="ARCHIVE" c="Feedback only - archive bit is set."/>
     <ai:k n="DATE" c="Retrieve the date stamp of each file."/>
     <ai:k n="FILE" c="Read all files in the folder."/>
     <ai:k n="FILES" c="Read all files in the folder."/>
     <ai:k n="FOLDER" c="Read all folders/volumes in the folder."/>
     <ai:k n="FOLDERS" c="Read all folders/volumes in the folder."/>
-    <ai:k n="HIDDEN" c="Feedback only - file/folder is hidden."/>
     <ai:k n="LINK" c="Feedback only - file/folder is actually a link to another location."/>
     <ai:k n="PERMISSIONS" c="Get permission/security information."/>
     <ai:k n="QUALIFIED" c="Return fully qualified folder names (i.e. trailing slash or colon for each name)."/>
     <ai:k n="QUALIFY" c="Return fully qualified folder names (i.e. trailing slash or colon for each name)."/>
     <ai:k n="READ_ALL" c="Synonym for SIZE | DATE | PERMISSIONS | FILES | FOLDERS"/>
-    <ai:k n="READ_ONLY" c="Read-only (not permissions related and might indicate read-only media)."/>
+    <ai:k n="READ_ONLY" c="Read-only (not permissions related, can indicate read-only media)."/>
     <ai:k n="SIZE" c="Retrieve the byte size of each file."/>
     <ai:k n="STREAM" c="Path is connected via a stream, e.g. network connection."/>
     <ai:k n="TAGS" c="Receive additional information for each file, such as comments, author and copyright. The results are stored in the Tags field of each file."/>
@@ -1344,7 +836,6 @@
     <ai:k n="VOLUME" c="Feedback only - indicates a volume."/>
   </ai:c>
   <ai:c l="RES">
-    <ai:k n="CORE_IDL" c="Refers to the Core module's compressed IDL string."/>
     <ai:k n="CPU_SPEED" c="The average top-speed of all CPU cores in Mhz."/>
     <ai:k n="FREE_MEMORY" c="The total amount of free memory."/>
     <ai:k n="FREE_SWAP" c="The total amount of free swap memory."/>
@@ -1352,17 +843,17 @@
     <ai:k n="KEY_STATE" c="Maintains the state of key qualifiers such as caps-lock and the shift keys."/>
     <ai:k n="LOG_DEPTH" c="The current depth of log messages."/>
     <ai:k n="LOG_LEVEL" c="The current level of log detail (larger numbers indicate more detail)."/>
-    <ai:k n="MAX_PROCESSES" c="The maximum number of processes that can be supported at any time."/>
+    <ai:k n="MAIN_THREAD" c="Read-only, returns true if called from the main thread."/>
+    <ai:k n="MAIN_THREAD_ID" c="Read-only, returns the ID of the main thread."/>
     <ai:k n="MEMORY_USAGE" c="The total amount of memory used by the current process, in bytes."/>
-    <ai:k n="OPEN_INFO" c="Pointer to the OpenInfo structure originally used to initialise the system."/>
     <ai:k n="PRIVILEGED" c="This is set to true if the process has elevated privileges (such as superuser or administrative rights)."/>
     <ai:k n="PRIVILEGED_USER" c="If this value is set to 1, the process will operate in privileged mode (typically this enables full administrator rights). This feature will only work for Unix processes that are granted admin rights when launched. Setting the Value to 0 reverts to the user's permission settings. SetResource() will return an error code indicating the level of success."/>
     <ai:k n="PROCESS_STATE" c="Life-cycle stage of the running process"/>
-    <ai:k n="STATIC_BUILD" c="Returns true if the runtime is a statically linked build."/>
-    <ai:k n="THREAD_ID" c="Return the ID of the current thread."/>
+    <ai:k n="STRUCT_DB" c="Returns a map of hashed struct names and corresponding struct sizes."/>
     <ai:k n="TOTAL_MEMORY" c="The total amount of installed memory."/>
     <ai:k n="TOTAL_SHARED_MEMORY" c="The total amount of shared memory in use (system wide)."/>
     <ai:k n="TOTAL_SWAP" c="The total amount of available swap space."/>
+    <ai:k n="WINDOWS_ICON" c="The Microsoft Windows resource icon ID for this process."/>
   </ai:c>
   <ai:c l="RFD" c="Flags for RegisterFD()">
     <ai:k n="ALWAYS_CALL" c="Always call this FD's handler prior to the process going to sleep."/>
@@ -1375,7 +866,7 @@
   </ai:c>
   <ai:c l="RP" c="Path types for SetResourcePath()">
     <ai:k n="MODULE_PATH" c="An alternative path leading to the system modules (normally system:modules/). Introduced for platforms such as Android, where modules are stored in asset folders."/>
-    <ai:k n="ROOT_PATH" c="Overrides the root path, which defaults to the location at which Kotuku is installed."/>
+    <ai:k n="ROOT_PATH" c="Overrides the root path, which defaults to the location at which Kōtuku is installed."/>
     <ai:k n="SYSTEM_PATH" c="The path of the system: volume, which otherwise defaults to [root]:system/."/>
   </ai:c>
   <ai:c l="RSF" c="Flags for ResolvePath()">
@@ -1386,84 +877,12 @@
     <ai:k n="NO_FILE_CHECK" c="Do not test for the existence of the targeted file or folder during the resolution process."/>
     <ai:k n="PATH" c="Use the PATH environment variable to resolve the file name in the Path parameter."/>
   </ai:c>
-  <ai:c l="SCF" c="Script flags">
-    <ai:k n="EXIT_ON_ERROR" c="The script will automatically terminate its execution process if an error is detected."/>
-    <ai:k n="LOG_ALL" c="Enables execution debugging. More information will be printed to the console in this mode."/>
-  </ai:c>
-  <ai:c l="SEEK" c="Seek positions">
-    <ai:k n="CURRENT" c="Use an index at the end of the last read/write operation."/>
-    <ai:k n="END" c="Use an index at the end of the data buffer."/>
-    <ai:k n="RELATIVE" c="The index is between 0 and 1.0 and relative to the data size."/>
-    <ai:k n="START" c="Use an index at position zero."/>
-  </ai:c>
-  <ai:c l="STR">
-    <ai:k n="CASE" c="Perform a case-sensitive match."/>
-    <ai:k n="MATCH_CASE" c="Perform a case-sensitive match."/>
-    <ai:k n="MATCH_LEN" c="The strings must be of equal length to be matched."/>
-  </ai:c>
-  <ai:c l="STT" c="Types for StrDatatype().">
-    <ai:k n="FLOAT" c="The string represents a floating point number."/>
-    <ai:k n="HEX" c="The string represents a hexadecimal number."/>
-    <ai:k n="NUMBER" c="The string represents a whole number."/>
-    <ai:k n="STRING" c="The string represents plain-text."/>
-  </ai:c>
-  <ai:c l="THF" c="Thread flags">
-    <ai:k n="AUTO_FREE" c="Automatically destroy the Thread object when the user routine has completed."/>
-  </ai:c>
   <ai:c l="TOI">
     <ai:k n="ANDROID_ASSETMGR"/>
     <ai:k n="ANDROID_CLASS"/>
     <ai:k n="ANDROID_ENV"/>
     <ai:k n="LOCAL_CACHE"/>
     <ai:k n="LOCAL_STORAGE"/>
-  </ai:c>
-  <ai:c l="TSF" c="Task flags">
-    <ai:k n="ATTACHED" c="Forces the new process to be attached to the parent (child will close when parent closes)."/>
-    <ai:k n="DETACHED" c="Forces the new process to be detached from the parent."/>
-    <ai:k n="PIPE" c="Enable the output pipe to the launched process so that it can read data."/>
-    <ai:k n="PRIVILEGED" c="The child process will inherit the system privileges of its parent."/>
-    <ai:k n="QUIET" c="Divert all process output to /dev/null or the nearest equivalent for non-Unix systems."/>
-    <ai:k n="RESET_PATH" c="The new process will start in its own folder and not the folder of the parent process."/>
-    <ai:k n="SHELL" c="Enables shell mode. On Unix systems, this means that a shell (usually BASH) will be used to launch the process."/>
-    <ai:k n="VERBOSE" c="Enable verbose logging."/>
-    <ai:k n="WAIT" c="The parent process will halt when the task is running. Control is returned to the parent process once the child process terminates."/>
-  </ai:c>
-  <ai:c l="TSTATE" c="Indicates the state of a process.">
-    <ai:k n="PAUSED" c="The process is asleep."/>
-    <ai:k n="RUNNING" c="The process is currently executing code."/>
-    <ai:k n="STOPPING" c="The process is in its termination phase."/>
-    <ai:k n="TERMINATED" c="The process has closed."/>
-  </ai:c>
-  <ai:c l="VAS" c="For use by VirtualVolume()">
-    <ai:k n="CASE_SENSITIVE" c="Set to true if the volume's paths are case-sensitive."/>
-    <ai:k n="CLOSE_DIR"/>
-    <ai:k n="CREATE_LINK"/>
-    <ai:k n="DELETE"/>
-    <ai:k n="DEREGISTER" c="Remove the virtual volume from the system."/>
-    <ai:k n="DRIVER_SIZE"/>
-    <ai:k n="GET_DEVICE_INFO"/>
-    <ai:k n="GET_INFO"/>
-    <ai:k n="IDENTIFY_FILE"/>
-    <ai:k n="IGNORE_FILE"/>
-    <ai:k n="MAKE_DIR"/>
-    <ai:k n="OPEN_DIR"/>
-    <ai:k n="READ_LINK"/>
-    <ai:k n="RENAME"/>
-    <ai:k n="SAME_FILE"/>
-    <ai:k n="SCAN_DIR"/>
-    <ai:k n="TEST_PATH"/>
-    <ai:k n="WATCH_PATH"/>
-  </ai:c>
-  <ai:c l="VLF" c="VlogF flags">
-    <ai:k n="API"/>
-    <ai:k n="BRANCH"/>
-    <ai:k n="CRITICAL"/>
-    <ai:k n="DETAIL"/>
-    <ai:k n="ERROR"/>
-    <ai:k n="FUNCTION"/>
-    <ai:k n="INFO"/>
-    <ai:k n="TRACE"/>
-    <ai:k n="WARNING"/>
   </ai:c>
   <ai:c l="VOLUME" c="Options for SetVolume()">
     <ai:k n="HIDDEN" c="Hides the volume so that it will not show up when reading volumes from the root path :."/>
@@ -1485,6 +904,17 @@
     <ai:f n="ObjectID" t="OBJECTID" c="Object ID"/>
     <ai:f n="ClassID" t="CLASSID" c="The class ID of the referenced object."/>
   </ai:s>
+  <ai:s n="ClassRecord">
+    <ai:f n="ClassID" t="CLASSID" c="Unique class identifier (hash of Name)"/>
+    <ai:f n="ParentID" t="CLASSID" c="Parent class ID if this is a derived class"/>
+    <ai:f n="Category" t="CCF" c="Assigned category"/>
+    <ai:f n="Name" t="STRING" c="Name of the class"/>
+    <ai:f n="Path" t="STRING" c="Path to the class file"/>
+    <ai:f n="Extension" t="STRING" c="Wildcards for matching by file extension, e.g. jpeg|jpg"/>
+    <ai:f n="Header" t="STRING" c="File identification instruction, e.g. [0:$89504e470d0a1a0a]"/>
+    <ai:f n="Icon" t="STRING" c="Icon reference in group/name format"/>
+    <ai:f n="Description" t="STRING" c="File description"/>
+  </ai:s>
   <ai:s n="ClipRectangle">
     <ai:f n="Left" t="INT" c="Left-most coordinate"/>
     <ai:f n="Top" t="INT" c="Top coordinate"/>
@@ -1505,34 +935,6 @@
     <ai:f n="BluePos" t="UINT8" c="Left shift/positional value for blue"/>
     <ai:f n="AlphaPos" t="UINT8" c="Left shift/positional value for alpha"/>
     <ai:f n="BitsPerPixel" t="UINT8" c="Number of bits per pixel for this format."/>
-  </ai:s>
-  <ai:s n="CompressedItem">
-    <ai:f n="OriginalSize" t="INT64" c="Original size of the file"/>
-    <ai:f n="CompressedSize" t="INT64" c="Compressed size of the file"/>
-    <ai:f n="Next" t="struct CompressedItem *" c="Used only if this is a linked-list."/>
-    <ai:f n="Path" t="CSTRING" c="Path to the file (includes folder prefixes). Archived folders will include the trailing slash."/>
-    <ai:f n="Permissions" t="PERMIT" c="Original permissions - see PERMIT flags."/>
-    <ai:f n="UserID" t="INT" c="Original user ID"/>
-    <ai:f n="GroupID" t="INT" c="Original group ID"/>
-    <ai:f n="OthersID" t="INT" c="Original others ID"/>
-    <ai:f n="Flags" t="FL" c="FL flags"/>
-    <ai:f n="Created" t="struct DateTime" c="Date and time of the file's creation."/>
-    <ai:f n="Modified" t="struct DateTime" c="Date and time last modified."/>
-  </ai:s>
-  <ai:s n="CompressionFeedback">
-    <ai:f n="FeedbackID" t="FDB" c="Set to one of the FDB event indicators"/>
-    <ai:f n="Index" t="INT" c="Index of the current file"/>
-    <ai:f n="Path" t="CSTRING" c="Name of the current file/path in the archive"/>
-    <ai:f n="Dest" t="CSTRING" c="Destination file/path during decompression"/>
-    <ai:f n="Progress" t="INT64" c="Progress indicator (byte position for the file being de/compressed)."/>
-    <ai:f n="OriginalSize" t="INT64" c="Original size of the file"/>
-    <ai:f n="CompressedSize" t="INT64" c="Compressed size of the file"/>
-    <ai:f n="Year" t="INT16" c="Year of the original file's datestamp."/>
-    <ai:f n="Month" t="INT16" c="Month of the original file's datestamp."/>
-    <ai:f n="Day" t="INT16" c="Day of the original file's datestamp."/>
-    <ai:f n="Hour" t="INT16" c="Hour of the original file's datestamp."/>
-    <ai:f n="Minute" t="INT16" c="Minute of the original file's datestamp."/>
-    <ai:f n="Second" t="INT16" c="Second of the original file's datestamp."/>
   </ai:s>
   <ai:s n="DateTime">
     <ai:f n="Year" t="INT16" c="Year"/>
@@ -1559,12 +961,12 @@
     <ai:f n="Alpha" t="FLOAT" c="Alpha component value"/>
   </ai:s>
   <ai:s n="Field">
-    <ai:f n="Arg" t="MAXINT" c="An option to complement the field type. Can be a pointer or an integer value"/>
-    <ai:f n="GetValue" t="FUNCTION *" c="A virtual function that will retrieve the value for this field."/>
-    <ai:f n="SetValue" t="APTR" c="A virtual function that will set the value for this field."/>
-    <ai:f n="WriteValue" t="FUNCTION *" c="An internal function for writing to this field."/>
+    <ai:f n="Arg" t="INT64" c="An option to complement the field type. Can be a pointer or an integer value"/>
+    <ai:f n="GetValue" t="FUNCTION *" c="A virtual function that will retrieve the value for this field"/>
+    <ai:f n="SetValue" t="FUNCTION *" c="A virtual function that will set the value for this field"/>
+    <ai:f n="WriteValue" t="FUNCTION *" c="An internal function for writing to this field"/>
     <ai:f n="Name" t="CSTRING" c="The English name for the field, e.g. Width"/>
-    <ai:f n="FieldID" t="UINT" c="Provides a fast way of finding fields, e.g. FID_Width"/>
+    <ai:f n="FieldID" t="UINT" c="32-bit hash from fieldhash()"/>
     <ai:f n="Offset" t="UINT16" c="Field offset within the object"/>
     <ai:f n="Index" t="UINT16" c="Field array index"/>
     <ai:f n="Flags" t="UINT" c="Special flags that describe the field"/>
@@ -1573,7 +975,7 @@
     <ai:f n="Name" t="CSTRING" c="The name of the field, e.g. Width"/>
     <ai:f n="GetField" t="APTR"/>
     <ai:f n="SetField" t="APTR"/>
-    <ai:f n="Arg" t="MAXINT" c="Can be a pointer or an integer value"/>
+    <ai:f n="Arg" t="INT64" c="Can be a pointer or an integer value"/>
     <ai:f n="Flags" t="UINT" c="Special flags that describe the field"/>
   </ai:s>
   <ai:s n="FieldDef">
@@ -1590,7 +992,7 @@
   </ai:s>
   <ai:s n="FileInfo">
     <ai:f n="Size" t="INT64" c="The size of the file's content."/>
-    <ai:f n="TimeStamp" t="INT64" c="64-bit time stamp - usable only for comparison (e.g. sorting)."/>
+    <ai:f n="Timestamp" t="INT64" c="64-bit time stamp - usable only for comparison (e.g. sorting)."/>
     <ai:f n="Next" t="struct FileInfo *" c="Next structure in the list, or NULL."/>
     <ai:f n="Name" t="STRING" c="The name of the file."/>
     <ai:f n="Flags" t="RDF" c="Additional flags to describe the file."/>
@@ -1600,20 +1002,16 @@
     <ai:f n="Created" t="struct DateTime" c="The date/time of the file's creation."/>
     <ai:f n="Modified" t="struct DateTime" c="The date/time of the last file modification."/>
   </ai:s>
-  <ai:s n="Function">
-    <ai:f n="Address" t="APTR" c="Pointer to the function entry point"/>
-    <ai:f n="Name" t="CSTRING" c="Name of the function"/>
-    <ai:f n="Args" t="const struct FunctionField *" c="A list of parameters accepted by the function"/>
-  </ai:s>
   <ai:s n="FunctionField">
     <ai:f n="Name" t="CSTRING" c="Name of the field"/>
     <ai:f n="Type" t="UINT" c="Type of the field"/>
+    <ai:f n="SpanOps" t="const struct SpanFieldOps *" c="Optional operations for an embedded std::span field"/>
   </ai:s>
   <ai:s n="HSV">
     <ai:f n="Hue" t="DOUBLE" c="Between 0 and 359.999"/>
     <ai:f n="Saturation" t="DOUBLE" c="Between 0 and 1.0"/>
     <ai:f n="Value" t="DOUBLE" c="Between 0 and 1.0. Corresponds to Value, Lightness or Brightness"/>
-    <ai:f n="Alpha" t="DOUBLE" c="Alpha blending value from 0 to 1.0."/>
+    <ai:f n="Alpha" t="DOUBLE" c="Alpha blending value from 0 to 1.0"/>
   </ai:s>
   <ai:s n="InputEvent">
     <ai:f n="Next" t="const struct InputEvent *" c="Next event in the chain"/>
@@ -1630,14 +1028,6 @@
     <ai:f n="Flags" t="JTYPE" c="Broad descriptors for the given Type (see JTYPE flags). Automatically defined when delivered to the pointer object"/>
     <ai:f n="Mask" t="JTYPE" c="Mask to use for checking against subscribers"/>
   </ai:s>
-  <ai:s n="MemInfo">
-    <ai:f n="Start" t="APTR" c="The starting address of the memory block (does not apply to shared blocks)."/>
-    <ai:f n="ObjectID" t="OBJECTID" c="The object that owns the memory block."/>
-    <ai:f n="Size" t="UINT" c="The size of the memory block."/>
-    <ai:f n="Flags" t="MEM" c="The type of memory."/>
-    <ai:f n="MemoryID" t="MEMORYID" c="The unique ID for this block."/>
-    <ai:f n="AccessCount" t="INT16" c="Total number of active locks on this block."/>
-  </ai:s>
   <ai:s n="Message">
     <ai:f n="Time" t="INT64" c="A timestamp acquired from PreciseTime when the message was first passed to SendMessage."/>
     <ai:f n="UID" t="INT" c="A unique identifier automatically created by SendMessage."/>
@@ -1646,6 +1036,21 @@
   </ai:s>
   <ai:s n="ObjectSignal">
     <ai:f n="Object" t="OBJECTPTR" c="Reference to an object to monitor."/>
+  </ai:s>
+  <ai:s n="OpenInfo">
+    <ai:f n="Name" t="STRING" c="Program name"/>
+    <ai:f n="SystemPath" t="STRING" c="Path to system files"/>
+    <ai:f n="ModulePath" t="STRING" c="Path to module files"/>
+    <ai:f n="RootPath" t="STRING" c="Kotuku root directory"/>
+    <ai:f n="*Args" t="CSTRING" c="Command-line arguments"/>
+    <ai:f n="Options" t="const struct OpenTag *" c="Tag-list of additional options. Typecast to va_list"/>
+    <ai:f n="Flags" t="OPF" c="Client flags indicating the values that have been defined in this structure"/>
+    <ai:f n="MaxDepth" t="INT" c="Maximum debug depth"/>
+    <ai:f n="Detail" t="INT" c="Debug detail level (0 none - 9 trace)"/>
+    <ai:f n="ArgCount" t="INT" c="Total arguments in Args"/>
+  </ai:s>
+  <ai:s n="OpenTag">
+    <ai:f n="Tag" t="TOI" c="Tag identifier"/>
   </ai:s>
   <ai:s n="RGB16">
     <ai:f n="Red" t="UINT16" c="Red component value"/>
@@ -1669,10 +1074,23 @@
     <ai:f n="AmtColours" t="INT" c="Total colours"/>
     <ai:f n="Col" t="struct RGB8" s="256" c="RGB Palette"/>
   </ai:s>
+  <ai:s n="ResourceRecord">
+    <ai:f n="Address" t="APTR" c="Direct pointer to the resource (optional, can rely on ResourceID instead)"/>
+    <ai:f n="Manager" t="struct ResourceManager *" c="Reference to the resource manager for this record"/>
+    <ai:f n="ResourceID" t="RESOURCEID" c="Unique identifier"/>
+    <ai:f n="OwnerID" t="INT" c="Owner of the resource, could be another resource or object"/>
+    <ai:f n="CollectOnUnlock" t="BOOL" c="Resource is locked; manager will collect immediately once unlocked"/>
+    <ai:f n="Terminating" t="BOOL" c="A FreeResource() call currently owns the destruction path"/>
+  </ai:s>
   <ai:s n="SystemState">
     <ai:f n="Platform" t="CSTRING" c="String-based field indicating the user's platform. Currently returns Native, Windows, OSX or Linux."/>
+    <ai:f n="IDL" t="CSTRING" c="The Core module's compressed IDL string"/>
+    <ai:f n="OpenInfo" t="const struct OpenInfo *" c="The OpenInfo structure originally used to initialise the system"/>
     <ai:f n="ConsoleFD" t="HOSTHANDLE" c="Internal"/>
-    <ai:f n="Stage" t="INT" c="The current operating stage. -1 = Initialising, 0 indicates normal operating status; 1 means that the program is shutting down; 2 indicates a program restart; 3 is for mode switches."/>
+    <ai:f n="ConsoleType" t="CONTYPE" c="The console type for stdout and stderr, if any"/>
+    <ai:f n="Stage" t="INT16" c="The current operating stage. -1 = Initialising, 0 indicates normal operating status; 1 means that the program is shutting down; 2 indicates a program restart; 3 is for mode switches."/>
+    <ai:f n="ReleaseBuild" t="UINT8" c="1 = Release build, 0 = Debug build"/>
+    <ai:f n="StaticBuild" t="UINT8" c="1 = Static build, 0 = Dynamic build"/>
   </ai:s>
   <ai:s n="Unit">
     <ai:f n="Value" t="DOUBLE" c="The unit value."/>

@@ -879,7 +879,7 @@ static ERR HTTP_Activate(extHTTP *Self)
 
    // Buffer the HTTP command string to the socket (will write on connect if we're not connected already).
 
-   if (!acWrite(Self->Socket, cstr.c_str(), cstr.length())) {
+   if (!acWrite(Self->Socket, std::span<const int8_t>((const int8_t *)cstr.data(), cstr.size()))) {
       if (Self->Socket->State IS NTC::DISCONNECTED) {
          const auto server_host = Self->ProxyServer.empty() ? std::string_view(Self->Host) :
             std::string_view(Self->ProxyServer);
@@ -1047,13 +1047,14 @@ static ERR HTTP_SetKey(extHTTP *Self, struct acSetKey *Args)
 
 static ERR HTTP_Write(extHTTP *Self, struct acWrite *Args)
 {
-   if ((!Args) or (!Args->Buffer)) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
-   if (auto len = Args->Length; len > 0) {
+   if (auto len = Args->Buffer.size(); len > 0) {
+      if (len > size_t(INT_MAX)) return ERR::OutOfRange;
       auto offset = Self->WriteBuffer.size();
       Self->WriteBuffer.resize(Self->WriteBuffer.size() + len);
-      kt::copymem(Args->Buffer, Self->WriteBuffer.data() + offset, len);
-      Args->Result = len;
+      kt::copymem(Args->Buffer.data(), Self->WriteBuffer.data() + offset, len);
+      Args->Result = int(len);
       return ERR::Okay;
    }
    else {

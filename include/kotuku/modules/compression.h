@@ -87,15 +87,15 @@ struct CompressedItem {
 // Compression methods
 
 namespace cmp {
-struct CompressBuffer { APTR Input; int InputSize; APTR Output; int OutputSize; int Result; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct CompressBuffer { std::span<const int8_t> Input; std::span<int8_t> Output; int Result; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct CompressFile { std::string_view Location; std::string_view Path; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DecompressBuffer { APTR Input; APTR Output; int OutputSize; int Result; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DecompressBuffer { std::span<const int8_t> Input; std::span<int8_t> Output; int Result; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DecompressFile { std::string_view Path; std::string_view Dest; int Flags; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct RemoveFile { std::string_view Path; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct CompressStream { APTR Input; int Length; FUNCTION Callback; APTR Output; int OutputSize; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct DecompressStream { APTR Input; int Length; FUNCTION Callback; APTR Output; int OutputSize; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct CompressStream { std::span<const int8_t> Input; FUNCTION Callback; std::span<int8_t> Output; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct DecompressStream { std::span<const int8_t> Input; FUNCTION Callback; std::span<int8_t> Output; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct CompressStreamStart { static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct CompressStreamEnd { FUNCTION Callback; APTR Output; int OutputSize; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct CompressStreamEnd { FUNCTION Callback; std::span<int8_t> Output; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DecompressStreamEnd { FUNCTION Callback; static const AC id = AC(-10); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DecompressStreamStart { static const AC id = AC(-11); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DecompressObject { std::string_view Path; OBJECTPTR Object; static const AC id = AC(-12); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
@@ -127,8 +127,8 @@ class objCompression : public Object {
 
    inline ERR flush() noexcept { return Action(AC::Flush, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
-   inline ERR compressBuffer(APTR Input, int InputSize, APTR Output, int OutputSize, int * Result) noexcept {
-      struct cmp::CompressBuffer args = { Input, InputSize, Output, OutputSize, (int)0 };
+   inline ERR compressBuffer(std::span<const int8_t> Input, std::span<int8_t> Output, int * Result) noexcept {
+      struct cmp::CompressBuffer args = { Input, Output, (int)0 };
       ERR error = Action(AC(-1), this, &args);
       if (Result) *Result = args.Result;
       return error;
@@ -137,8 +137,8 @@ class objCompression : public Object {
       struct cmp::CompressFile args = { Location, Path };
       return Action(AC(-2), this, &args);
    }
-   inline ERR decompressBuffer(APTR Input, APTR Output, int OutputSize, int * Result) noexcept {
-      struct cmp::DecompressBuffer args = { Input, Output, OutputSize, (int)0 };
+   inline ERR decompressBuffer(std::span<const int8_t> Input, std::span<int8_t> Output, int * Result) noexcept {
+      struct cmp::DecompressBuffer args = { Input, Output, (int)0 };
       ERR error = Action(AC(-3), this, &args);
       if (Result) *Result = args.Result;
       return error;
@@ -151,19 +151,19 @@ class objCompression : public Object {
       struct cmp::RemoveFile args = { Path };
       return Action(AC(-5), this, &args);
    }
-   inline ERR compressStream(APTR Input, int Length, FUNCTION Callback, APTR Output, int OutputSize) noexcept {
-      struct cmp::CompressStream args = { Input, Length, Callback, Output, OutputSize };
+   inline ERR compressStream(std::span<const int8_t> Input, FUNCTION Callback, std::span<int8_t> Output) noexcept {
+      struct cmp::CompressStream args = { Input, Callback, Output };
       return Action(AC(-6), this, &args);
    }
-   inline ERR decompressStream(APTR Input, int Length, FUNCTION Callback, APTR Output, int OutputSize) noexcept {
-      struct cmp::DecompressStream args = { Input, Length, Callback, Output, OutputSize };
+   inline ERR decompressStream(std::span<const int8_t> Input, FUNCTION Callback, std::span<int8_t> Output) noexcept {
+      struct cmp::DecompressStream args = { Input, Callback, Output };
       return Action(AC(-7), this, &args);
    }
    inline ERR compressStreamStart() noexcept {
       return Action(AC(-8), this, nullptr);
    }
-   inline ERR compressStreamEnd(FUNCTION Callback, APTR Output, int OutputSize) noexcept {
-      struct cmp::CompressStreamEnd args = { Callback, Output, OutputSize };
+   inline ERR compressStreamEnd(FUNCTION Callback, std::span<int8_t> Output) noexcept {
+      struct cmp::CompressStreamEnd args = { Callback, Output };
       return Action(AC(-9), this, &args);
    }
    inline ERR decompressStreamEnd(FUNCTION Callback) noexcept {
@@ -331,21 +331,17 @@ class objCompressedStream : public Object {
    // Action stubs
 
    inline ERR init() noexcept { return InitObject(this); }
-   template <class T, class U> ERR read(APTR Buffer, T Size, U *Result) noexcept {
-      static_assert(std::is_integral<U>::value, "Result value must be an integer type");
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
+      static_assert(std::is_integral<T>::value, "Result value must be an integer type");
+      struct acRead read = { Buffer };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
-         *Result = U(read.Result);
+         *Result = T(read.Result);
          return ERR::Okay;
       }
       else { *Result = 0; return error; }
    }
-   template <class T> ERR read(APTR Buffer, T Size) noexcept {
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   inline ERR read(std::span<int8_t> Buffer) noexcept {
+      struct acRead read = { Buffer };
       return Action(AC::Read, this, &read);
    }
    inline ERR reset() noexcept { return Action(AC::Reset, this, nullptr); }
@@ -356,8 +352,8 @@ class objCompressedStream : public Object {
    inline ERR seekStart(double Offset) noexcept { return seek(Offset, SEEK::START); }
    inline ERR seekEnd(double Offset) noexcept { return seek(Offset, SEEK::END); }
    inline ERR seekCurrent(double Offset) noexcept { return seek(Offset, SEEK::CURRENT); }
-   inline ERR write(CPTR Buffer, int Size, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
+   inline ERR write(std::span<const int8_t> Buffer, int *Result = nullptr) noexcept {
+      struct acWrite write = { Buffer };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -368,7 +364,7 @@ class objCompressedStream : public Object {
       }
    }
    inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer.c_str(), int(Buffer.size()) };
+      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()) };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;

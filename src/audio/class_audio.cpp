@@ -207,7 +207,6 @@ The `Loop1Type` and `Loop2Type` fields alter the style of the loop.  These can b
 func OnStop: This optional callback function will be called when the stream stops playing.
 int(SFM) SampleFormat: Indicates the format of the sample data that you are adding.
 buf(ptr) Data: Points to the address of the sample data.
-bufsize DataSize: Size of the sample data, in bytes.
 struct(*AudioLoop) Loop: Optional sample loop information.
 structsize LoopSize: Must be set to `sizeof(AudioLoop)` if `Loop` is defined.
 &int Result: The resulting sample handle will be returned in this parameter.
@@ -230,7 +229,9 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
 
    if (!Args) return log.warning(ERR::NullArgs);
 
-   log.branch("Data: %p, Length: %d", Args->Data, Args->DataSize);
+   log.branch("Data: %p, Length: %zu", Args->Data.data(), Args->Data.size_bytes());
+
+   if (Args->Data.size_bytes() > size_t(INT_MAX)) return log.warning(ERR::Args);
 
    // Find an unused sample block.  If there is none, increase the size of the sample management area.
 
@@ -246,7 +247,7 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
    auto &sample = Self->Samples[idx];
    deref_audio_sample(sample);
    sample.SampleType   = Args->SampleFormat;
-   sample.SampleLength = SAMPLE(Args->DataSize >> shift);
+   sample.SampleLength = SAMPLE(Args->Data.size_bytes() >> shift);
    sample.BufferedLength = BYTELEN(0);
    sample.OnStop       = Args->OnStop;
    if (sample.OnStop.defined()) sample.OnStop.pin();
@@ -269,12 +270,12 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
       sample.Loop2Type = LTYPE::NIL;
    }
 
-   if ((sample.SampleType IS SFM::NIL) or (Args->DataSize <= 0) or (!Args->Data)) {
+   if ((sample.SampleType IS SFM::NIL) or Args->Data.empty()) {
       sample.Data.clear();
    }
    else {
-      sample.Data.resize(Args->DataSize);
-      copymem(Args->Data, sample.Data.data(), Args->DataSize);
+      sample.Data.resize(Args->Data.size_bytes());
+      copymem(Args->Data.data(), sample.Data.data(), Args->Data.size_bytes());
    }
 
    Args->Result = idx;

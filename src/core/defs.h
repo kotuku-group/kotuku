@@ -633,92 +633,92 @@ struct extClassRecord : public ClassRecord {
    }
 
    inline ERR write(objFile *File) {
-      if (File->write(&ClassID, sizeof(ClassID), nullptr) != ERR::Okay) return ERR::Write;
-      if (File->write(&ParentID, sizeof(ParentID), nullptr) != ERR::Okay) return ERR::Write;
-      if (File->write(&Category, sizeof(Category), nullptr) != ERR::Okay) return ERR::Write;
+      if (File->write(std::span((const int8_t *)&ClassID, sizeof(ClassID))) != ERR::Okay) return ERR::Write;
+      if (File->write(std::span((const int8_t *)&ParentID, sizeof(ParentID))) != ERR::Okay) return ERR::Write;
+      if (File->write(std::span((const int8_t *)&Category, sizeof(Category))) != ERR::Okay) return ERR::Write;
 
       auto size = int(Name.size());
-      File->write(&size, sizeof(size));
-      File->write(Name.c_str(), size);
+      File->write(std::span((const int8_t *)&size, sizeof(size)));
+      File->write(std::span((const int8_t *)Name.data(), Name.size()));
 
       size = Path.size();
-      File->write(&size, sizeof(size));
-      if (size) File->write(Path.c_str(), size);
+      File->write(std::span((const int8_t *)&size, sizeof(size)));
+      if (size) File->write(std::span((const int8_t *)Path.data(), Path.size()));
 
       size = Extension.size();
-      File->write(&size, sizeof(size));
-      if (size) File->write(Extension.c_str(), size);
+      File->write(std::span((const int8_t *)&size, sizeof(size)));
+      if (size) File->write(std::span((const int8_t *)Extension.data(), Extension.size()));
 
       size = Header.size();
-      File->write(&size, sizeof(size));
-      if (size) File->write(Header.c_str(), size);
+      File->write(std::span((const int8_t *)&size, sizeof(size)));
+      if (size) File->write(std::span((const int8_t *)Header.data(), Header.size()));
 
       size = Icon.size();
-      File->write(&size, sizeof(size));
-      if (size) File->write(Icon.c_str(), size);
+      File->write(std::span((const int8_t *)&size, sizeof(size)));
+      if (size) File->write(std::span((const int8_t *)Icon.data(), Icon.size()));
 
       size = Description.size();
-      File->write(&size, sizeof(size));
-      if (size) File->write(Description.c_str(), size);
+      File->write(std::span((const int8_t *)&size, sizeof(size)));
+      if (size) File->write(std::span((const int8_t *)Description.data(), Description.size()));
       return ERR::Okay;
    }
 
    inline ERR read(objFile *File) {
-      if (File->read(&ClassID, sizeof(ClassID)) != ERR::Okay) return ERR::Read;
-      if (File->read(&ParentID, sizeof(ParentID)) != ERR::Okay) return ERR::Read;
-      if (File->read(&Category, sizeof(Category)) != ERR::Okay) return ERR::Read;
+      if (File->read(std::span((int8_t *)&ClassID, sizeof(ClassID))) != ERR::Okay) return ERR::Read;
+      if (File->read(std::span((int8_t *)&ParentID, sizeof(ParentID))) != ERR::Okay) return ERR::Read;
+      if (File->read(std::span((int8_t *)&Category, sizeof(Category))) != ERR::Okay) return ERR::Read;
 
       char buffer[256];
       int size = 0;
-      File->read(&size, sizeof(size));
+      File->read(std::span((int8_t *)&size, sizeof(size)));
       if (size < std::ssize(buffer)) {
          if (size > 0) {
-            File->read(buffer, size);
+            File->read(std::span((int8_t *)buffer, size));
             Name.assign(buffer, size);
          }
       }
       else return ERR::BufferOverflow;
 
-      File->read(&size, sizeof(size));
+      File->read(std::span((int8_t *)&size, sizeof(size)));
       if (size < std::ssize(buffer)) {
          if (size > 0) {
-            File->read(buffer, size);
+            File->read(std::span((int8_t *)buffer, size));
             Path.assign(buffer, size);
          }
       }
       else return ERR::BufferOverflow;
 
-      File->read(&size, sizeof(size));
+      File->read(std::span((int8_t *)&size, sizeof(size)));
       if (size < std::ssize(buffer)) {
          if (size > 0) {
-            File->read(buffer, size);
+            File->read(std::span((int8_t *)buffer, size));
             Extension.assign(buffer, size);
          }
       }
       else return ERR::BufferOverflow;
 
-      File->read(&size, sizeof(size));
+      File->read(std::span((int8_t *)&size, sizeof(size)));
       if (size < std::ssize(buffer)) {
          if (size > 0) {
-            File->read(buffer, size);
+            File->read(std::span((int8_t *)buffer, size));
             Header.assign(buffer, size);
          }
       }
       else return ERR::BufferOverflow;
 
-      File->read(&size, sizeof(size));
+      File->read(std::span((int8_t *)&size, sizeof(size)));
       if (size < std::ssize(buffer)) {
          if (size > 0) {
-            File->read(buffer, size);
+            File->read(std::span((int8_t *)buffer, size));
             Icon.assign(buffer, size);
          }
       }
       else return ERR::BufferOverflow;
 
-      File->read(&size, sizeof(size));
+      File->read(std::span((int8_t *)&size, sizeof(size)));
       if (size < std::ssize(buffer)) {
          if (size > 0) {
-            File->read(buffer, size);
+            File->read(std::span((int8_t *)buffer, size));
             Description.assign(buffer, size);
          }
       }
@@ -1179,8 +1179,8 @@ APTR   build_jump_table(const Function *);
 void   stop_async_actions(void);
 ERR    copy_args(const FunctionField *, int, int8_t *, std::vector<int8_t> &);
 void   release_copied_args(const FunctionField *, int, int8_t *, bool, FUNCTION * = nullptr);
-void   make_args_relative(const FunctionField *, int, int8_t *);
-void   make_args_absolute(const FunctionField *, int, int8_t *);
+ERR    make_args_relative(const FunctionField *, int, int8_t *, size_t);
+ERR    make_args_absolute(const FunctionField *, int, int8_t *, size_t);
 ERR    create_archive_volume(void);
 void   dispatch_queued_action(OBJECTID);
 ERR    delete_tree(std::string &, FUNCTION *, FileFeedback *);

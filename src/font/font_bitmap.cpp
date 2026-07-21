@@ -97,13 +97,14 @@ static ERR read_winfont_entries(objFile *File, std::vector<winFont> &Fonts)
    Fonts.clear();
 
    winmz_header_fields mz_header;
-   if (File->read(&mz_header, sizeof(mz_header)) != ERR::Okay) return ERR::Read;
+   if (File->read(std::span<int8_t>((int8_t *)&mz_header, sizeof(mz_header))) != ERR::Okay) return ERR::Read;
    if (mz_header.magic != ID_WINMZ) return ERR::NoSupport;
 
    File->seekStart(mz_header.lfanew);
 
    winne_header_fields ne_header;
-   if ((File->read(&ne_header, sizeof(ne_header)) != ERR::Okay) or (ne_header.magic != ID_WINNE)) {
+   if ((File->read(std::span<int8_t>((int8_t *)&ne_header, sizeof(ne_header))) != ERR::Okay) or
+       (ne_header.magic != ID_WINNE)) {
       return ERR::NoSupport;
    }
 
@@ -267,7 +268,7 @@ public:
             return;
          }
 
-         if (!(File->read(mData.data(), size, &result)) and (result IS size)) {
+         if (!(File->read(std::span<int8_t>((int8_t *)mData.data(), size), &result)) and (result IS size)) {
             for (int16_t i=0; i < 256; i++) {
                if (!Chars[i].Width) continue;
 

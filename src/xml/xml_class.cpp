@@ -1357,7 +1357,9 @@ static ERR XML_SaveToObject(extXML *Self, struct acSaveToObject *Args)
 
    std::string str;
    if (auto error = Self->serialise(0, XMF::READABLE|XMF::INCLUDE_SIBLINGS, str); !error) {
-      if (acWrite(Args->Dest, str.c_str(), int(str.size()), nullptr) != ERR::Okay) error = ERR::Write;
+      if (acWrite(Args->Dest, std::span<const int8_t>((const int8_t *)str.data(), str.size())) != ERR::Okay) {
+         error = ERR::Write;
+      }
       return error;
    }
    else return error;

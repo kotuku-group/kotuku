@@ -336,14 +336,14 @@ static ERR FILE_BufferContent(extFile *Self)
       // If the file has no size, it could be a stream (or simply empty).  This routine handles this situation.
 
       char ch;
-      if (!acRead(Self, &ch, 1, &len)) {
+      if (!acRead(Self, std::span<int8_t>((int8_t *)&ch, 1), &len)) {
          Self->Flags |= FL::STREAM;
          // Allocate a 1 MB memory block, read the stream into it, then reallocate the block to the correct size.
 
          kt::vector<int8_t> buffer;
          buffer.resize((1024 * 1024) + 1);
          Self->seekStart(0);
-         acRead(Self, buffer.data(), 1024 * 1024, &len);
+         acRead(Self, std::span<int8_t>(buffer.data(), 1024 * 1024), &len);
          if (len > 0) {
             buffer.resize(len + 1);
             buffer[len] = 0;
@@ -359,7 +359,7 @@ static ERR FILE_BufferContent(extFile *Self)
       kt::vector<int8_t> buffer;
       buffer.resize(Self->Size + 1);
       buffer[Self->Size] = 0;
-      if (!acRead(Self, buffer.data(), Self->Size, &len)) {
+      if (!acRead(Self, std::span<int8_t>(buffer.data(), size_t(Self->Size)), &len)) {
          Self->Buffer.swap(buffer);
       }
       else return log.warning(ERR::Read);
@@ -394,10 +394,10 @@ static ERR FILE_DataFeed(extFile *Self, struct acDataFeed *Args)
 
    if ((not Args) or (not Args->Buffer)) return log.warning(ERR::NullArgs);
 
-   if (Args->Size) return acWrite(Self, Args->Buffer, Args->Size, nullptr);
+   if (Args->Size) return acWrite(Self, std::span<const int8_t>((const int8_t *)Args->Buffer, Args->Size));
    else {
       auto input = std::string_view((const char *)Args->Buffer);
-      return acWrite(Self, Args->Buffer, int(input.size()), nullptr);
+      return acWrite(Self, std::span<const int8_t>((const int8_t *)Args->Buffer, input.size()));
    }
 }
 
@@ -1064,9 +1064,10 @@ static ERR FILE_Read(extFile *Self, struct acRead *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Buffer)) return log.warning(ERR::NullArgs);
-   else if (Args->Length IS 0) return ERR::Okay;
-   else if (Args->Length < 0) return ERR::OutOfRange;
+   if ((not Args) or (not Args->Buffer.data())) return log.warning(ERR::NullArgs);
+   if (Args->Buffer.size() > size_t(INT_MAX)) return ERR::OutOfRange;
+   const int length = int(Args->Buffer.size());
+   if (not length) return ERR::Okay;
 
    if ((Self->Flags & FL::READ) IS FL::NIL) return log.warning(ERR::FileReadFlag);
 
@@ -1075,9 +1076,9 @@ static ERR FILE_Read(extFile *Self, struct acRead *Args)
          // In loop mode, we must make the file buffer appear to be of infinite length in terms of the read/write
          // position marker.
 
-         auto dest = (int8_t *)Args->Buffer;
+         auto dest = Args->Buffer.data();
          int len;
-         for (int readlen=Args->Length; readlen > 0; readlen -= len) {
+         for (int readlen=length; readlen > 0; readlen -= len) {
             if (Self->Size) len = Self->Size - (Self->Position % Self->Size); // Calculate amount of space ahead of us.
             else len = 0; // Avoid division by zero if the file size is zero.
             if (len > readlen) len = readlen; // Restrict the length of the read operation to the length of the destination.
@@ -1086,13 +1087,13 @@ static ERR FILE_Read(extFile *Self, struct acRead *Args)
             dest += len;
             Self->Position += len;
          }
-         Args->Result = Args->Length;
+         Args->Result = length;
          return ERR::Okay;
       }
       else {
-         if (Self->Position + Args->Length > Self->Size) Args->Result = Self->Size - Self->Position;
-         else Args->Result = Args->Length;
-         copymem(Self->Buffer.data() + Self->Position, Args->Buffer, Args->Result);
+         if (Self->Position + length > Self->Size) Args->Result = Self->Size - Self->Position;
+         else Args->Result = length;
+         copymem(Self->Buffer.data() + Self->Position, Args->Buffer.data(), Args->Result);
          Self->Position += Args->Result;
          return ERR::Okay;
       }
@@ -1102,18 +1103,18 @@ static ERR FILE_Read(extFile *Self, struct acRead *Args)
 
    if (Self->Handle IS -1) return ERR::NotInitialised;
 
-   Args->Result = read(Self->Handle, Args->Buffer, (int)Args->Length);
+   Args->Result = read(Self->Handle, Args->Buffer.data(), length);
 
-   if (Args->Result != Args->Length) {
+   if (Args->Result != length) {
       if (Args->Result IS -1) {
-         log.msg("Failed to read %d bytes from the file.", Args->Length);
+         log.msg("Failed to read %d bytes from the file.", length);
          Args->Result = 0;
          return ERR::SystemCall;
       }
 
       // Return ERR::Okay because even though not all data was read, this was not due to a failure.
 
-      log.trace("%d of the requested %d bytes were read from the file.", Args->Result, Args->Length);
+      log.trace("%d of the requested %d bytes were read from the file.", Args->Result, length);
       Self->Position += Args->Result;
       return ERR::Okay;
    }
@@ -1660,7 +1661,9 @@ static ERR FILE_Write(extFile *Self, struct acWrite *Args)
    kt::Log log;
 
    if (not Args) return log.warning(ERR::NullArgs);
-   if (Args->Length <= 0) return ERR::Args;
+   if (Args->Buffer.size() > size_t(INT_MAX)) return ERR::OutOfRange;
+   const int length = int(Args->Buffer.size());
+   if (not length) return ERR::Args;
    if ((Self->Flags & FL::WRITE) IS FL::NIL) return log.warning(ERR::FileWriteFlag);
 
    if ((Self->Flags & FL::BUFFER) != FL::NIL) {
@@ -1668,9 +1671,9 @@ static ERR FILE_Write(extFile *Self, struct acWrite *Args)
          // In loop mode, we must make the file buffer appear to be of infinite length in terms of the read/write
          // position marker.
 
-         auto src = (const int8_t *)Args->Buffer;
+         auto src = Args->Buffer.data();
          int len;
-         for (int writelen=Args->Length; writelen > 0; writelen -= len) {
+         for (int writelen=length; writelen > 0; writelen -= len) {
             len = Self->Size - (Self->Position % Self->Size); // Calculate amount of space ahead of us.
             if (len > writelen) len = writelen; // Restrict the length to the requested amount to write.
 
@@ -1679,21 +1682,21 @@ static ERR FILE_Write(extFile *Self, struct acWrite *Args)
             Self->Position += len;
          }
 
-         Args->Result = Args->Length;
+         Args->Result = length;
          return ERR::Okay;
       }
       else {
-         if (Self->Position + Args->Length > Self->Size) {
+         if (Self->Position + length > Self->Size) {
             // Increase the size of the buffer to cater for the write.  A null byte (not included in the official size)
             // is always placed at the end.
-            Self->Buffer.resize(Self->Position + Args->Length + 1);
-            Self->Size = Self->Position + Args->Length;
+            Self->Buffer.resize(Self->Position + length + 1);
+            Self->Size = Self->Position + length;
             Self->Buffer[Self->Size] = 0;
          }
 
-         Args->Result = Args->Length;
+         Args->Result = length;
 
-         copymem(Args->Buffer, Self->Buffer.data() + Self->Position, Args->Result);
+         copymem(Args->Buffer.data(), Self->Buffer.data() + Self->Position, Args->Result);
 
          Self->Position += Args->Result;
          return ERR::Okay;
@@ -1706,10 +1709,10 @@ static ERR FILE_Write(extFile *Self, struct acWrite *Args)
 
    // If no buffer was supplied then we will write out null values to a limit indicated by the Length field.
 
-   if (not Args->Buffer) {
+   if (not Args->Buffer.data()) {
       uint8_t nullbyte = 0;
       Args->Result = 0;
-      for (int i=0; i < Args->Length; i++) {
+      for (int i=0; i < length; i++) {
          int result = write(Self->Handle, &nullbyte, 1);
          if (result IS -1) break;
          else {
@@ -1721,7 +1724,7 @@ static ERR FILE_Write(extFile *Self, struct acWrite *Args)
       if (Self->Position > Self->Size) Self->Size = Self->Position;
    }
    else {
-      Args->Result = write(Self->Handle, Args->Buffer, Args->Length);
+      Args->Result = write(Self->Handle, Args->Buffer.data(), length);
 
       if (Args->Result > -1) {
          Self->Position += Args->Result;
@@ -1730,8 +1733,8 @@ static ERR FILE_Write(extFile *Self, struct acWrite *Args)
       else Args->Result = 0;
    }
 
-   if (Args->Result != Args->Length) {
-      log.msg("%d of the intended %d bytes were written to the file.", Args->Result, Args->Length);
+   if (Args->Result != length) {
+      log.msg("%d of the intended %d bytes were written to the file.", Args->Result, length);
       return ERR::LimitedSuccess;
    }
 

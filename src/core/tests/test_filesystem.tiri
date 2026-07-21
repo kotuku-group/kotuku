@@ -22,7 +22,7 @@ end
 
 function writeFile(Path:str, Content:str)
    file = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
-   file.acWrite(Content, #Content)
+   file.acWrite(Content)
    file.free()
 end
 
@@ -39,7 +39,7 @@ end
    mSys.DeleteFile(glTempRoot)
    ensureFolder(glTempRoot)
    out = obj.new('file', { src=glRawPath, flags=FL_NEW|FL_WRITE } )
-   out.acWrite('ABCD', 4)
+   out.acWrite('ABCD')
    out = nil
    processing.collect()
 end
@@ -131,7 +131,7 @@ end
 @Test function Stringify()
    fl = obj.new('file', { src=glRawPath, flags=FL_READ|FL_WRITE } )
    buf = string.alloc(fl.size)
-   err, result = fl.acRead(buf, fl.size)
+   err, result = fl.acRead(buf)
    assert(err is ERR_Okay, 'Failed to read file ' .. fl.path)
 
    fl.acSeek(SEEK_START, 0)
@@ -189,17 +189,10 @@ end
       error('acRead() should reject interned strings for mutable buffers')
    end
 
-   try
-      fl.acSeek(SEEK_START, 0)
-      fl.acRead(buffer, #buffer + 1)
-   success
-      error('acRead() should reject sizes larger than the supplied buffer')
-   end
-
    write_path = glTempRoot .. 'immutable_string_write.txt'
    resetPath(write_path)
    write_file = obj.new('file', { src=write_path, flags=FL_NEW|FL_WRITE } )
-   err, result = write_file.acWrite('ordinary input', #'ordinary input')
+   err, result = write_file.acWrite('ordinary input')
    assert(err is ERR_Okay, 'acWrite() should continue accepting ordinary immutable strings.')
    write_file.free()
    assert(readFile(write_path) is 'ordinary input', 'Immutable string write did not persist expected content.')
@@ -214,7 +207,7 @@ end
    assert(fl.size is 2, 'Buffered file should honour the initial Size field.')
    assert(#fl.buffer is 2, 'Public Buffer length should match the initial Size field.')
 
-   err, result = fl.acWrite(expected, #expected)
+   err, result = fl.acWrite(expected)
    assert(err is ERR_Okay, 'Buffered acWrite() failed: ' .. mSys.GetErrorMsg(err))
    assert(result is #expected, 'Buffered acWrite() returned an unexpected byte count.')
    assert(fl.size is #expected, 'Buffered file Size should grow to match the write length.')
@@ -224,7 +217,7 @@ end
    assert(err is ERR_Okay, 'Buffered acSeek() failed: ' .. mSys.GetErrorMsg(err))
 
    buffer = string.alloc(#expected)
-   err, result = fl.acRead(buffer, #expected)
+   err, result = fl.acRead(buffer)
    assert(err is ERR_Okay, 'Buffered acRead() failed: ' .. mSys.GetErrorMsg(err))
    assert(result is #expected, 'Buffered acRead() returned an unexpected byte count.')
    assert(string.substr(buffer, 0, result) is expected, 'Buffered acRead() returned unexpected content.')
@@ -255,7 +248,7 @@ end
    err = fl.acSeek(SEEK_START, 0)
    assert(err is ERR_Okay, 'Buffered physical acSeek() failed: ' .. mSys.GetErrorMsg(err))
 
-   err, result = fl.acWrite('RAM', 3)
+   err, result = fl.acWrite('RAM')
    assert(err is ERR_Okay, 'Buffered physical acWrite() failed: ' .. mSys.GetErrorMsg(err))
    assert(result is 3, 'Buffered physical acWrite() returned an unexpected byte count.')
 
@@ -312,7 +305,7 @@ end
    assert(#fl.buffer is 0, 'Public Buffer length for an empty buffered file should be zero.')
 
    buffer = string.alloc(1)
-   err, result = fl.acRead(buffer, 1)
+   err, result = fl.acRead(buffer)
    assert(err is ERR_Okay, 'Reading an empty buffered file should succeed: ' .. mSys.GetErrorMsg(err))
    assert(result is 0, 'Reading an empty buffered file should return zero bytes.')
 end
@@ -576,7 +569,7 @@ end
    watchFile = 'temp:watch_test.tmp'
 
    out = obj.new('file', { src=watchFile, flags=FL_NEW|FL_WRITE })
-   out.acWrite('XYZ', 3)
+   out.acWrite('XYZ')
    out.free()
 
    -- Pump the message queue so inotify / ReadDirectoryChangesW events are delivered.

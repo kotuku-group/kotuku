@@ -540,7 +540,7 @@ static int file_read(lua_State *Lua)
                      if (remaining > 0) {
                         std::string buffer(remaining, '\0');
                         int bytes_read;
-                        if (!acRead(file, buffer.data(), remaining, &bytes_read)) {
+                        if (!acRead(file, std::span<int8_t>((int8_t *)buffer.data(), size_t(remaining)), &bytes_read)) {
                            buffer.resize(bytes_read);
                            lua_pushlstring(Lua, buffer.data(), bytes_read);
                         }
@@ -570,7 +570,8 @@ static int file_read(lua_State *Lua)
             if (bytes_to_read > 0) {
                std::string buffer(bytes_to_read, '\0');
                int bytes_read;
-               if ((!acRead(file, buffer.data(), bytes_to_read, &bytes_read)) and bytes_read > 0) {
+               if ((!acRead(file, std::span<int8_t>((int8_t *)buffer.data(), size_t(bytes_to_read)), &bytes_read)) and
+                   bytes_read > 0) {
                   buffer.resize(bytes_read);
                   lua_pushlstring(Lua, buffer.data(), bytes_read);
                }
@@ -601,7 +602,8 @@ static int file_write(lua_State *Lua)
          auto str = luaL_checklstring(Lua, i, &len);
 
          int result;
-         if (auto error = acWrite(file, str, len, &result); error != ERR::Okay) {
+         if (auto error = acWrite(file, std::span<const int8_t>((const int8_t *)str, len), &result);
+             error != ERR::Okay) {
             luaL_error(Lua, error, "Failed to write to file.");
          }
 
@@ -708,7 +710,8 @@ static int io_readAll(lua_State *Lua)
    if (file_size > 0) {
       std::string buffer(file_size, '\0');
       int bytes_read;
-      if ((!file->read(buffer.data(), file_size, &bytes_read)) and bytes_read IS file_size) {
+      if ((!file->read(std::span<int8_t>((int8_t *)buffer.data(), size_t(file_size)), &bytes_read)) and
+          bytes_read IS file_size) {
          lua_pushlstring(Lua, buffer.data(), bytes_read);
          return 1;
       }
@@ -737,7 +740,7 @@ static int io_writeAll(lua_State *Lua)
    }
 
    int result;
-   if (file->write(content, len, &result) != ERR::Okay) {
+   if (file->write(std::span<const int8_t>((const int8_t *)content, len), &result) != ERR::Okay) {
       file.~Create();
       luaL_error(Lua, ERR::Write, "Failed to write to file: %s", path);
    }

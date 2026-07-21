@@ -1,10 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="VectorPath" mod="Vector" c="Extends the Vector class with support for generating custom paths." cat="Graphics" id="51b8d205" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="VectorPath" mod="Vector" c="Extends the Vector class with support for generating custom paths." cat="Graphics" id="ecf78098" v="1">
   <ai:a n="Clear" c="Clears an object's data." p="ERR acClear(*Object)"/>
   <ai:a n="Flush" c="Flush buffered data from an object." p="ERR acFlush(*Object)"/>
-  <ai:m n="AddCommand" c="Add one or more commands to the end of the path sequence." p="ERR vp::AddCommand(OBJECTPTR Object, struct PathCommand * Commands, INT Size)">
-    <ai:i n="Commands" t="struct PathCommand *" c="Array of commands to add to the path."/>
-    <ai:i n="Size" t="INT" c="The size of the Commands buffer, in bytes."/>
+  <ai:a n="Move" c="Moves the path to a new position." p="ERR acMove(*Object, DOUBLE DeltaX, DOUBLE DeltaY, DOUBLE DeltaZ)">
+    <ai:i n="DeltaX" t="DOUBLE" c="The number of units to move along the X axis."/>
+    <ai:i n="DeltaY" t="DOUBLE" c="The number of units to move along the Y axis."/>
+    <ai:i n="DeltaZ" t="DOUBLE" c="The number of units to move along the Z axis."/>
+  </ai:a>
+  <ai:a n="MoveToPoint" c="Moves the path to a new fixed position." p="ERR acMoveToPoint(*Object, DOUBLE X, DOUBLE Y, DOUBLE Z, MTF Flags)">
+    <ai:i n="X" t="DOUBLE" c="The new X position to move the object to."/>
+    <ai:i n="Y" t="DOUBLE" c="The new Y position to move the object to."/>
+    <ai:i n="Z" t="DOUBLE" c="The new Z position to move the object to."/>
+    <ai:i n="Flags" t="MTF" c="Set the relevant MTF flag for each provided parameter."/>
+  </ai:a>
+  <ai:m n="AddCommand" c="Add one or more commands to the end of the path sequence." p="ERR vp::AddCommand(OBJECTPTR Object, std::span&lt;const struct PathCommand&gt; Commands)">
+    <ai:i n="Commands" t="std::span&lt;const struct PathCommand&gt;" c="Array of commands to add to the path."/>
   </ai:m>
   <ai:m n="GetCommand" c="Retrieve a specific command from the path sequence." p="ERR vp::GetCommand(OBJECTPTR Object, INT Index, struct PathCommand ** Command)">
     <ai:i n="Index" t="INT" c="The index of the command to retrieve."/>
@@ -14,17 +24,17 @@
     <ai:i n="Index" t="INT" c="The index of the command to remove."/>
     <ai:i n="Total" t="INT" c="The total number of commands to remove, starting from the given Index."/>
   </ai:m>
-  <ai:m n="SetCommand" c="Copies one or more commands into an existing path." p="ERR vp::SetCommand(OBJECTPTR Object, INT Index, struct PathCommand * Command, INT Size)">
+  <ai:m n="SetCommand" c="Copies one or more commands into an existing path." p="ERR vp::SetCommand(OBJECTPTR Object, INT Index, std::span&lt;const struct PathCommand&gt; Command)">
     <ai:i n="Index" t="INT" c="The index of the command that is to be set."/>
-    <ai:i n="Command" t="struct PathCommand *" c="An array of commands to set in the path."/>
-    <ai:i n="Size" t="INT" c="The size of the Command buffer, in bytes."/>
+    <ai:i n="Command" t="std::span&lt;const struct PathCommand&gt;" c="An array of commands to set in the path."/>
   </ai:m>
-  <ai:m n="SetCommandList" c="The fastest available mechanism for setting a series of path instructions." p="ERR vp::SetCommandList(OBJECTPTR Object, APTR Commands, INT Size)">
-    <ai:i n="Commands" t="APTR" c="An array of PathCommand structures."/>
-    <ai:i n="Size" t="INT" c="The byte size of the Commands buffer."/>
+  <ai:m n="SetCommandList" c="The fastest available mechanism for setting a series of path instructions." p="ERR vp::SetCommandList(OBJECTPTR Object, std::span&lt;const struct PathCommand&gt; Commands)">
+    <ai:i n="Commands" t="std::span&lt;const struct PathCommand&gt;" c="An array of PathCommand structures."/>
   </ai:m>
-  <ai:f n="Commands" c="Direct pointer to the PathCommand array." t="STRUCT []" a="GS"/>
+  <ai:f n="Commands" c="Direct pointer to the PathCommand array." t="PathCommand[]" a="GS"/>
   <ai:f n="PathLength" c="Calibrates the user agent's distance-along-a-path calculations with that of the author." t="INT" a="GS"/>
   <ai:f n="Sequence" c="A sequence of points and instructions that will define the path." t="STRING" a="GS"/>
   <ai:f n="TotalCommands" c="The total number of points defined in the path sequence." t="INT" a="GS"/>
+  <ai:f n="X" c="The left-side of the path. Can be expressed as a fixed or scaled coordinate." t="UNIT" a="GS"/>
+  <ai:f n="Y" c="The top of the path. Can be expressed as a fixed or scaled coordinate." t="UNIT" a="GS"/>
 </ai:cl>

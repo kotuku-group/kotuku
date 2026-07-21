@@ -38,7 +38,7 @@ static ERR server_incoming(objNetServer *Server, objClientSocket *Client, APTR M
    std::array<char, 4096> buffer;
    int len = 0;
 
-   auto error = Client->read(buffer.data(), buffer.size(), &len);
+   auto error = Client->read(std::span<int8_t>((int8_t *)buffer.data(), buffer.size()), &len);
    if (error IS ERR::Disconnected) return ERR::Terminate;
    if (error != ERR::Okay) return error;
    if (not len) return ERR::Okay;

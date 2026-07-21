@@ -1218,7 +1218,9 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
          if (file.ok()) {
             auto write_string = [](objFile *File, CSTRING String) {
-               struct acWrite write = { .Buffer = String, .Length = int(strlen(String)) };
+               struct acWrite write = {
+                  .Buffer = std::span<const int8_t>((const int8_t *)String, strlen(String))
+               };
                Action(AC::Write, File, &write);
             };
 

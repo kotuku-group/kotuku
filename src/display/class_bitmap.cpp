@@ -1538,12 +1538,12 @@ OutOfRange
 static ERR BITMAP_Read(extBitmap *Self, struct acRead *Args)
 {
    if (not Self->Data) return ERR::NoData;
-   if ((not Args) or (not Args->Buffer)) return ERR::NullArgs;
-   if (Args->Length < 0) return ERR::OutOfRange;
+   if ((not Args) or (not Args->Buffer.data())) return ERR::NullArgs;
+   if (Args->Buffer.size() > size_t(INT_MAX)) return ERR::OutOfRange;
 
-   int len = Args->Length;
+   int len = int(Args->Buffer.size());
    if (Self->Position + len > Self->Size) len = Self->Size - Self->Position;
-   copymem(Self->Data + Self->Position, Args->Buffer, len);
+   copymem(Self->Data + Self->Position, Args->Buffer.data(), len);
    Self->Position += len;
    Args->Result = len;
    return ERR::Okay;
@@ -1785,7 +1785,7 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
    {
       const auto buffer_size = size_t(width) * size_t(height) * size_t(pcx.NumPlanes) * 2;
       std::vector<uint8_t> buffer(buffer_size);
-      auto write_error = acWrite(Args->Dest, &pcx, sizeof(pcx), nullptr);
+      auto write_error = acWrite(Args->Dest, std::span<const int8_t>((const int8_t *)&pcx, sizeof(pcx)));
       if (write_error != ERR::Okay) return log.warning(write_error);
 
       int dp = 0;
@@ -1881,7 +1881,7 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
          }
       }
 
-      write_error = acWrite(Args->Dest, buffer.data(), dp, nullptr);
+      write_error = acWrite(Args->Dest, std::span<const int8_t>((const int8_t *)buffer.data(), dp));
       if (write_error != ERR::Okay) return log.warning(write_error);
 
       // Setup palette
@@ -1896,7 +1896,7 @@ static ERR BITMAP_SaveImage(extBitmap *Self, struct acSaveImage *Args)
             palette[j++] = Self->Palette->Col[i].Blue;
          }
 
-         write_error = acWrite(Args->Dest, palette, sizeof(palette), nullptr);
+         write_error = acWrite(Args->Dest, std::span<const int8_t>((const int8_t *)palette, sizeof(palette)));
          if (write_error != ERR::Okay) return log.warning(write_error);
       }
 
@@ -2008,16 +2008,18 @@ static ERR BITMAP_Write(extBitmap *Self, struct acWrite *Args)
    Args->Result = 0;
 
    if (not Self->Data) return ERR::NoData;
-   if (Args->Length <= 0) return ERR::Okay;
-   if (not Args->Buffer) return ERR::NullArgs;
+   if (Args->Buffer.empty()) return ERR::Okay;
+   if (not Args->Buffer.data()) return ERR::NullArgs;
+   if (Args->Buffer.size() > size_t(INT_MAX)) return ERR::OutOfRange;
+   const int length = int(Args->Buffer.size());
 
    int available = Self->Size - Self->Position;
    if (available <= 0) return ERR::OutOfSpace;
-   if (Args->Length > available) return ERR::OutOfSpace;
+   if (length > available) return ERR::OutOfSpace;
 
-   copymem(Args->Buffer, Self->Data + Self->Position, Args->Length);
-   Self->Position += Args->Length;
-   Args->Result = Args->Length;
+   copymem(Args->Buffer.data(), Self->Data + Self->Position, length);
+   Self->Position += length;
+   Args->Result = length;
 
    return ERR::Okay;
 }

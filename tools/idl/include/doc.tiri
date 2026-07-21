@@ -276,11 +276,10 @@ setAction('Query', {
 
 setAction('Read', {
    comment   = 'Reads raw data information from objects.',
-   prototype = 'ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)',
-   tiriPrototype = 'err, Result:num = Object.acRead(Buffer:str, Length:num)',
+   prototype = 'ERR acRead(*Object, std::span<int8_t> Buffer, INT *Result)',
+   tiriPrototype = 'err, Result:num = Object.acRead(Buffer:array)',
    params    = {
-      { name='Buffer', type='APTR', comment='Points a buffer that will receive the data.' },
-      { name='Length', type='INT', comment='The total number of bytes to read from the object.  This value cannot exceed the size of the Buffer.' },
+      { name='Buffer', type='std::span<int8_t>', comment='A mutable buffer that will receive the data.' },
       { name='Result', type='INT', comment='The Read action will write this parameter with the total number of bytes read into the Buffer.' }
    }
 })
@@ -407,11 +406,11 @@ setAction('Unlock', {
 
 setAction('Write', {
    comment   = 'Writes data to objects that provide storage or output services.',
-   prototype = 'ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)',
-   tiriPrototype = 'err, Result:num = Object.acWrite(Buffer:str, Length:num)',
+   prototype = 'ERR acWrite(*Object, std::span<const int8_t> Buffer, INT *Result)',
+   tiriPrototype = 'err, Result:num = Object.acWrite(Buffer:str)',
    params    = {
-      { name='Buffer', type='APTR', comment='A buffer containing the data that will be written to the object.' },
-      { name='Length', type='INT', comment='The total number of bytes to write to the object.' },
+      { name='Buffer', type='std::span<const int8_t>',
+         comment='A buffer containing the data that will be written to the object.' },
       { name='Result', type='INT', comment='This parameter with be updated with the total number of bytes written from the Buffer.' }
    }
 })

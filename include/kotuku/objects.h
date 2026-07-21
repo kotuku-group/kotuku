@@ -1009,7 +1009,7 @@ struct acMove          { static const AC id = AC::Move; double DeltaX; double De
 struct acMoveToPoint   { static const AC id = AC::MoveToPoint; double X; double Y; double Z; MTF Flags; };
 struct acNewChild      { static const AC id = AC::NewChild; OBJECTPTR Object; };
 struct acNewOwner      { static const AC id = AC::NewOwner; OBJECTPTR NewOwner; };
-struct acRead          { static const AC id = AC::Read; APTR Buffer; int Length; int Result; };
+struct acRead          { static const AC id = AC::Read; std::span<int8_t> Buffer; int Result; };
 struct acRedimension   { static const AC id = AC::Redimension; double X; double Y; double Z; double Width; double Height; double Depth; };
 struct acRedo          { static const AC id = AC::Redo; int Steps; };
 struct acRename        { static const AC id = AC::Rename; std::string_view Name; };
@@ -1019,7 +1019,7 @@ struct acSaveToObject  { static const AC id = AC::SaveToObject; OBJECTPTR Dest; 
 struct acSeek          { static const AC id = AC::Seek; double Offset; SEEK Position; };
 struct acSetKey        { static const AC id = AC::SetKey; std::string_view Key; std::string_view Value; };
 struct acUndo          { static const AC id = AC::Undo; int Steps; };
-struct acWrite         { static const AC id = AC::Write; CPTR Buffer; int Length; int Result; };
+struct acWrite         { static const AC id = AC::Write; std::span<const int8_t> Buffer; int Result; };
 
 // Action Macros
 
@@ -1078,8 +1078,8 @@ inline ERR acMove(OBJECTPTR Object, double X, double Y, double Z) {
    return Action(AC::Move, Object, &args);
 }
 
-inline ERR acRead(OBJECTPTR Object, APTR Buffer, int Bytes, int *Read) {
-   struct acRead read = { (int8_t *)Buffer, Bytes };
+inline ERR acRead(OBJECTPTR Object, std::span<int8_t> Buffer, int *Read = nullptr) {
+   struct acRead read = { Buffer };
    if (auto error = Action(AC::Read, Object, &read); error IS ERR::Okay) {
       if (Read) *Read = read.Result;
       return ERR::Okay;
@@ -1135,8 +1135,8 @@ inline ERR acUndo(OBJECTPTR Object, int Steps) {
    return Action(AC::Undo, Object, &args);
 }
 
-inline ERR acWrite(OBJECTPTR Object, CPTR Buffer, int Bytes, int *Result = nullptr) {
-   struct acWrite write = { (int8_t *)Buffer, Bytes };
+inline ERR acWrite(OBJECTPTR Object, std::span<const int8_t> Buffer, int *Result = nullptr) {
+   struct acWrite write = { Buffer };
    if (auto error = Action(AC::Write, Object, &write); error IS ERR::Okay) {
       if (Result) *Result = write.Result;
       return error;
@@ -1147,8 +1147,8 @@ inline ERR acWrite(OBJECTPTR Object, CPTR Buffer, int Bytes, int *Result = nullp
    }
 }
 
-inline int acWriteResult(OBJECTPTR Object, CPTR Buffer, int Bytes) {
-   struct acWrite write = { (int8_t *)Buffer, Bytes };
+inline int acWriteResult(OBJECTPTR Object, std::span<const int8_t> Buffer) {
+   struct acWrite write = { Buffer };
    if (Action(AC::Write, Object, &write) IS ERR::Okay) return write.Result;
    else return 0;
 }

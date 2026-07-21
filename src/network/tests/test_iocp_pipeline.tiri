@@ -313,7 +313,7 @@ function PendingOperationTeardown()
       name = 'IocpPendingTeardownClient',
       feedback = function(Socket, State)
          if State is NTC_CONNECTED then
-            Socket.acWrite(string.rep('T', 262144))
+            Socket.acWrite(string.rep('T'))
          end
       end
    })

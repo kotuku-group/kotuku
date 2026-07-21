@@ -142,7 +142,8 @@ static bool parse_id3v1(objMP3 *Self)
    prv->File->seekEnd(sizeof(id3));
 
    int result;
-   if ((!prv->File->read(&id3, sizeof(id3), &result)) and (result IS sizeof(id3))) {
+   if ((!prv->File->read(std::span<int8_t>((int8_t *)&id3, sizeof(id3)), &result)) and
+       (result IS sizeof(id3))) {
       if (!strncmp("TAG", (STRING)&id3, 3)) {
          char buffer[sizeof(id3)];
 
@@ -364,7 +365,8 @@ static ERR MP3_Init(objMP3 *Self)
    // Process ID3V2 and Xing VBR headers if present.
 
    int result = 0;
-   if (auto error = prv->File->read(prv->Input.data(), prv->Input.size(), &result); error != ERR::Okay) {
+   if (auto error = prv->File->read(std::span<int8_t>((int8_t *)prv->Input.data(), prv->Input.size()), &result);
+       error != ERR::Okay) {
       return init_error(Self, error);
    }
 
@@ -374,7 +376,8 @@ static ERR MP3_Init(objMP3 *Self)
       if (auto error = prv->File->seekStart(prv->SeekOffset); error != ERR::Okay) {
          return init_error(Self, error);
       }
-      if (auto error = prv->File->read(prv->Input.data(), prv->Input.size(), &result); error != ERR::Okay) {
+      if (auto error = prv->File->read(std::span<int8_t>((int8_t *)prv->Input.data(), prv->Input.size()), &result);
+          error != ERR::Okay) {
          return init_error(Self, error);
       }
    }
@@ -424,9 +427,10 @@ static ERR MP3_Read(objMP3 *Self, struct acRead *Args)
    if (!Args) return log.warning(ERR::NullArgs);
 
    Args->Result = 0;
-   if (Args->Length < 0) return log.warning(ERR::OutOfRange);
-   if (!Args->Length) return ERR::Okay;
-   if (!Args->Buffer) return log.warning(ERR::NullArgs);
+   if (Args->Buffer.empty()) return ERR::Okay;
+   if (not Args->Buffer.data()) return log.warning(ERR::NullArgs);
+   if (Args->Buffer.size() > size_t(INT_MAX)) return log.warning(ERR::OutOfRange);
+   const int length = int(Args->Buffer.size());
 
    auto prv = (prvMP3 *)Self->DerivedPtr;
 
@@ -437,14 +441,14 @@ static ERR MP3_Read(objMP3 *Self, struct acRead *Args)
    auto write_offset  = prv->WriteOffset;
    bool no_more_input = false;
    ERR read_error = ERR::Okay;
-   while ((prv->WriteOffset < Self->Length) and (!prv->EndOfFile) and (pos < Args->Length)) {
+   while ((prv->WriteOffset < Self->Length) and (!prv->EndOfFile) and (pos < length)) {
       // Previously decoded bytes that overflowed have priority.
 
       if ((prv->OverflowSize) and (prv->OverflowPos < prv->OverflowSize)) {
          int to_copy = prv->OverflowSize - prv->OverflowPos;
-         if (pos + to_copy > Args->Length) to_copy = Args->Length - pos;
+         if (pos + to_copy > length) to_copy = length - pos;
          if (to_copy > Self->Length - prv->WriteOffset) to_copy = int(Self->Length - prv->WriteOffset);
-         copymem(prv->Overflow.data() + prv->OverflowPos, (uint8_t *)Args->Buffer + pos, to_copy);
+         copymem(prv->Overflow.data() + prv->OverflowPos, Args->Buffer.data() + pos, to_copy);
          prv->OverflowPos += to_copy;
          prv->WriteOffset += to_copy;
          pos += to_copy;
@@ -457,11 +461,14 @@ static ERR MP3_Read(objMP3 *Self, struct acRead *Args)
 
       // Read as much input as possible.
 
-      log.trace("Writing %" PF64 " max bytes to %d, Avail. Compressed: %d bytes", (long long)Args->Length-pos, prv->WriteOffset, prv->CompressedOffset);
+      log.trace("Writing %" PF64 " max bytes to %d, Avail. Compressed: %d bytes", (long long)length-pos,
+         prv->WriteOffset, prv->CompressedOffset);
 
       if ((prv->CompressedOffset < (int)prv->Input.size()) and (!prv->EndOfFile) and (!no_more_input)) {
          int result;
-         if (auto error = prv->File->read(prv->Input.data() + prv->CompressedOffset, prv->Input.size() - prv->CompressedOffset, &result); error != ERR::Okay) {
+         auto input = std::span<int8_t>((int8_t *)prv->Input.data() + prv->CompressedOffset,
+            prv->Input.size() - prv->CompressedOffset);
+         if (auto error = prv->File->read(input, &result); error != ERR::Okay) {
             log.warning("File read error: %s", GetErrorMsg(error));
             read_error = error;
             break;
@@ -476,10 +483,10 @@ static ERR MP3_Read(objMP3 *Self, struct acRead *Args)
 
       int in = 0; // Always start from zero
 
-      while ((prv->WriteOffset < Self->Length) and (in < (int)prv->Input.size() - (8 * 1024)) and (pos < Args->Length)) {
+      while ((prv->WriteOffset < Self->Length) and (in < (int)prv->Input.size() - (8 * 1024)) and (pos < length)) {
          int decoded_samples;
 
-         if ((pos + MAX_FRAME_BYTES > Args->Length) or
+         if ((pos + MAX_FRAME_BYTES > length) or
              (prv->WriteOffset + MAX_FRAME_BYTES > Self->Length)) {
             // Buffer overflow management - necessary if we need to decode more data than what the output buffer can support.
 
@@ -491,16 +498,16 @@ static ERR MP3_Read(objMP3 *Self, struct acRead *Args)
                   decoded_bytes = int(Self->Length - prv->WriteOffset);
                }
 
-               if (pos + decoded_bytes > Args->Length) {
+               if (pos + decoded_bytes > length) {
                   // We can't write the full amount, store the rest in overflow.  It is presumed that Length
                   // is sample-aligned, i.e. sample_size * channel_size; so usually 4 bytes.
                   prv->OverflowPos  = 0;
-                  prv->OverflowSize = pos + decoded_bytes - Args->Length;
-                  decoded_bytes = Args->Length - pos;
+                  prv->OverflowSize = pos + decoded_bytes - length;
+                  decoded_bytes = length - pos;
                   copymem((uint8_t *)pcm + decoded_bytes, prv->Overflow.data(), prv->OverflowSize);
                }
 
-               copymem(pcm, (uint8_t *)Args->Buffer + pos, decoded_bytes);
+               copymem(pcm, Args->Buffer.data() + pos, decoded_bytes);
 
                prv->FramesProcessed++;
                prv->WriteOffset += decoded_bytes;
@@ -509,7 +516,8 @@ static ERR MP3_Read(objMP3 *Self, struct acRead *Args)
             }
          }
          else {
-            decoded_samples = mp3dec_decode_frame(&prv->mp3d, prv->Input.data() + in, prv->CompressedOffset - in, (int16_t *)((uint8_t *)Args->Buffer + pos), &prv->info);
+            decoded_samples = mp3dec_decode_frame(&prv->mp3d, prv->Input.data() + in, prv->CompressedOffset - in,
+               (int16_t *)(Args->Buffer.data() + pos), &prv->info);
 
             if (decoded_samples) {
                prv->FramesProcessed++;
@@ -732,7 +740,8 @@ static ERR calc_length(objMP3 *Self, int ReduceEnd, int64_t *Length)
 
       std::vector<uint8_t> buffer(SIZE_BUFFER);
       if (auto error = prv->File->seekStart(prv->SeekOffset); error != ERR::Okay) return error;
-      if (auto error = prv->File->read(buffer.data(), SIZE_CBR_BUFFER, &buffer_size); error != ERR::Okay) return error;
+      if (auto error = prv->File->read(std::span<int8_t>((int8_t *)buffer.data(), SIZE_CBR_BUFFER), &buffer_size);
+          error != ERR::Okay) return error;
 
       // Find the start of the frame data
 
@@ -760,7 +769,8 @@ static ERR calc_length(objMP3 *Self, int ReduceEnd, int64_t *Length)
             if (pos + frame_size > buffer_size) {
                if ((prv->VBR) and (buffer_size IS SIZE_CBR_BUFFER)) {
                   int result = 0;
-                  if (auto error = prv->File->read(buffer.data() + buffer_size, SIZE_BUFFER - buffer_size, &result);
+                  if (auto error = prv->File->read(
+                      std::span<int8_t>((int8_t *)buffer.data() + buffer_size, SIZE_BUFFER - buffer_size), &result);
                       error != ERR::Okay) return error;
                   buffer_size += result;
                   if (pos + frame_size <= buffer_size) continue;
@@ -797,7 +807,8 @@ static ERR calc_length(objMP3 *Self, int ReduceEnd, int64_t *Length)
             if ((prv->VBR) and (buffer_size IS SIZE_CBR_BUFFER)) {
                // Read more file data so that we can calculate the vbr more accurately
                int result = 0;
-               if (auto error = prv->File->read(buffer.data() + buffer_size, SIZE_BUFFER - buffer_size, &result);
+               if (auto error = prv->File->read(
+                   std::span<int8_t>((int8_t *)buffer.data() + buffer_size, SIZE_BUFFER - buffer_size), &result);
                    error != ERR::Okay) return error;
                buffer_size += result;
             }

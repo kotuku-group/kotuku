@@ -1072,7 +1072,7 @@ static ERR analyse_bmp_font(std::string_view Path, winfnt_header_fields *Header,
 
       for (auto &font : fonts) {
          file->seekStart(font.Offset);
-         if (!file->read(Header, sizeof(winfnt_header_fields))) {
+         if (!file->read(std::span<int8_t>((int8_t *)Header, sizeof(winfnt_header_fields)))) {
             Points.push_back(Header->nominal_point_size);
          }
       }
@@ -1081,7 +1081,7 @@ static ERR analyse_bmp_font(std::string_view Path, winfnt_header_fields *Header,
 
       file->seekStart(fonts[0].Offset);
 
-      if (file->read(Header, sizeof(winfnt_header_fields)) != ERR::Okay) return ERR::Read;
+      if (file->read(std::span<int8_t>((int8_t *)Header, sizeof(winfnt_header_fields))) != ERR::Okay) return ERR::Read;
 
       if (auto error = validate_winfnt_header(*Header, Path); error != ERR::Okay) return error;
 
@@ -1091,7 +1091,7 @@ static ERR analyse_bmp_font(std::string_view Path, winfnt_header_fields *Header,
 
       int i;
       for (i=0; (size_t)i < sizeof(face)-1; i++) {
-         ERR result = file->read(face+i, 1);
+         ERR result = file->read(std::span<int8_t>((int8_t *)face + i, 1));
          if ((result != ERR::Okay) or (not face[i])) break;
       }
       face[i] = 0;

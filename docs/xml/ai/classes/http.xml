@@ -1,30 +1,34 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="HTTP" mod="HTTP" c="Provides a complete working implementation of HTTP." cat="Network" id="7c9813c5" v="1">
-  <ai:a n="Activate" c="Executes an HTTP method." p="ERR acActivate(*Object)">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="HTTP" mod="HTTP" c="Provides a complete working implementation of HTTP." cat="Network" id="8ab62046" v="1">
+  <ai:a n="Activate" c="Sends an HTTP request to the host." p="ERR acActivate(*Object)">
     <ai:e c="Okay"/>
     <ai:e c="Failed"/>
     <ai:e c="File"/>
+    <ai:e c="NoData"/>
     <ai:e c="Write"/>
+    <ai:e c="Lock"/>
+    <ai:e c="FieldNotSet"/>
     <ai:e c="CreateObject"/>
+    <ai:e c="NotInitialised"/>
     <ai:e c="HostNotFound"/>
+    <ai:e c="ConnectionRefused"/>
+    <ai:e c="Recursion"/>
+    <ai:e c="NoSecureSockets"/>
   </ai:a>
-  <ai:a n="Deactivate" c="Cancels the current download. Can also signal the end to a download if subscribed." p="ERR acDeactivate(*Object)"/>
-  <ai:a n="GetKey" c="Entries in the HTTP response header can be read as key-values." p="ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)">
-    <ai:i n="Key" t="CSTRING" c="The name of a key value."/>
+  <ai:a n="Deactivate" c="Ends the current HTTP request." p="ERR acDeactivate(*Object)"/>
+  <ai:a n="GetKey" c="Entries in the HTTP response header can be read as key-values." p="ERR acGetKey(*Object, std::string_view Key, std::string &amp;Value)">
+    <ai:i n="Key" t="STRVIEW" c="The name of a key value."/>
     <ai:i n="Value" t="STRING" c="Pointer to a buffer space large enough to hold the retrieved value."/>
-    <ai:i n="Size" t="INT" c="Indicates the byte size of the Buffer."/>
   </ai:a>
-  <ai:a n="SetKey" c="Options to pass in the HTTP method header can be set as key-values." p="ERR acSetKey(*Object, CSTRING Key, CSTRING Value)">
-    <ai:i n="Key" t="CSTRING" c="The name of the target key."/>
-    <ai:i n="Value" t="CSTRING" c="The string value to associate with Key."/>
+  <ai:a n="SetKey" c="Options for the HTTP header can be set as key-values." p="ERR acSetKey(*Object, std::string_view Key, std::string_view Value)">
+    <ai:i n="Key" t="STRVIEW" c="The name of the target key."/>
+    <ai:i n="Value" t="STRVIEW" c="The string value to associate with Key."/>
   </ai:a>
-  <ai:a n="Write" c="Writes data to objects that provide storage or output services." p="ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)">
-    <ai:i n="Buffer" t="APTR" c="A buffer containing the data that will be written to the object."/>
-    <ai:i n="Length" t="INT" c="The total number of bytes to write to the object."/>
+  <ai:a n="Write" c="Writes data to objects that provide storage or output services." p="ERR acWrite(*Object, std::span&lt;const int8_t&gt; Buffer, INT *Result)">
+    <ai:i n="Buffer" t="std::span&lt;const int8_t&gt;" c="A buffer containing the data that will be written to the object."/>
     <ai:i n="Result" t="INT" c="This parameter with be updated with the total number of bytes written from the Buffer."/>
   </ai:a>
   <ai:f n="BufferSize" c="Indicates the preferred buffer size for data operations." t="INT" a="RS"/>
-  <ai:f n="ClientData" c="This unused field value can be used for storing private data." t="APTR" a="RW"/>
   <ai:f n="ConnectTimeout" c="The initial connection timeout value, measured in seconds." t="DOUBLE" a="RW"/>
   <ai:f n="ContentLength" c="The byte length of incoming or outgoing content." t="INT64" a="RW"/>
   <ai:f n="ContentType" c="Defines the content-type for PUT and POST methods." t="STRING" a="GS"/>
@@ -35,25 +39,26 @@
   <ai:f n="Flags" c="Optional flags." t="HTF" a="RW"/>
   <ai:f n="Host" c="The targeted HTTP server is specified here, either by name or IP address." t="STRING" a="RS"/>
   <ai:f n="Incoming" c="A callback routine can be defined here for incoming data." t="FUNCTION" a="GS"/>
-  <ai:f n="Index" c="Indicates download progress in terms of bytes received." t="INT64" a="RW"/>
+  <ai:f n="Index" c="Indicates the total bytes received during content transfer." t="INT64" a="RW"/>
   <ai:f n="InputFile" c="To upload HTTP content from a file, set a file path here." t="STRING" a="RS"/>
   <ai:f n="InputObject" c="Allows data to be sent from an object on execution of a POST command." t="OBJECTID" a="RW"/>
   <ai:f n="Location" c="A valid HTTP URI must be specified here." t="STRING" a="GS"/>
-  <ai:f n="Method" c="The HTTP instruction to execute is defined here (defaults to GET)." t="HTM" a="RS"/>
+  <ai:f n="Method" c="The HTTP instruction to execute (defaults to GET)." t="HTM" a="RS"/>
   <ai:f n="ObjectMode" c="The transfer mode used when passing data to a targeted object." t="HOM" a="RW"/>
   <ai:f n="Outgoing" c="Outgoing data can be sent procedurally using this callback." t="FUNCTION" a="GS"/>
   <ai:f n="OutputFile" c="To download HTTP content to a file, set a file path here." t="STRING" a="RS"/>
   <ai:f n="OutputObject" c="Incoming data can be sent to the object referenced in this field." t="OBJECTID" a="RW"/>
   <ai:f n="Password" c="The password to use when authenticating access to the server." t="STRING" a="S"/>
   <ai:f n="Path" c="The HTTP path targeted at the host server." t="STRING" a="RS"/>
-  <ai:f n="Port" c="The HTTP port to use when targeting a server." t="INT" a="RW"/>
-  <ai:f n="ProxyPort" c="The port to use when communicating with the proxy server." t="INT" a="RW"/>
-  <ai:f n="ProxyServer" c="The targeted HTTP server is specified here, either by name or IP address." t="STRING" a="RS"/>
+  <ai:f n="Port" c="The HTTP port to use when targeting a host." t="INT" a="RW"/>
+  <ai:f n="ProxyPort" c="The port to use when communicating with a proxy server." t="INT" a="RW"/>
+  <ai:f n="ProxyServer" c="Route the HTTP request through the proxy server defined here." t="STRING" a="RS"/>
   <ai:f n="Realm" c="Identifies the realm during HTTP authentication." t="STRING" a="GS"/>
   <ai:f n="RecvBuffer" c="Refers to a data buffer that is used to store all incoming content." t="INT8 []" a="G"/>
+  <ai:f n="ResponseKeys" c="Returns a string list of received response keys." t="kt::vector&lt;std::string&gt;" a="G"/>
   <ai:f n="Size" c="Set this field to define the length of a data transfer when issuing a POST command." t="INT64" a="RW"/>
-  <ai:f n="StateChanged" c="A callback routine can be defined here for monitoring changes to the HTTP state." t="FUNCTION" a="GS"/>
+  <ai:f n="StateChanged" c="This callback reports changes to the HTTP state." t="FUNCTION" a="GS"/>
   <ai:f n="Status" c="Indicates the HTTP status code returned on completion of an HTTP request." t="HTS" a="RW"/>
-  <ai:f n="UserAgent" c="Specifies the name of the user-agent string that is sent in HTTP requests." t="STRING" a="RS"/>
+  <ai:f n="UserAgent" c="Specifies the name of the user-agent string that is sent in HTTP requests." t="STRING" a="GS"/>
   <ai:f n="Username" c="The username to use when authenticating access to the server." t="STRING" a="S"/>
 </ai:cl>

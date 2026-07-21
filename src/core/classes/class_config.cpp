@@ -196,7 +196,7 @@ static ERR parse_file(extConfig *Self, std::string_view Path)
 
          if (filesize > 0) {
             std::string data(filesize + 1, '\0');
-            file->read(data.data(), filesize); // Read the entire file
+            file->read(std::span<int8_t>((int8_t *)data.data(), filesize)); // Read the entire file
             data[filesize] = '\n';
             error = parse_config(Self, data);
          }
@@ -572,12 +572,12 @@ static ERR CONFIG_SaveToObject(extConfig *Self, struct acSaveToObject *Args)
    for (auto & [group, keys] : Self->Groups) {
       buffer.clear();
       buffer += "\n[" + group + "]\n";
-      acWrite(Args->Dest, buffer.c_str(), buffer.size(), nullptr);
+      acWrite(Args->Dest, std::span<const int8_t>((const int8_t *)buffer.data(), buffer.size()));
 
       for (auto & [k, v] : keys) {
          buffer.clear();
          buffer += k + " = " + v + '\n';
-         acWrite(Args->Dest, buffer.c_str(), buffer.size(), nullptr);
+         acWrite(Args->Dest, std::span<const int8_t>((const int8_t *)buffer.data(), buffer.size()));
       }
    }
 

@@ -996,7 +996,7 @@ global function klass(Name, Options:table, Spec, Private, Custom)
       function actionStorageType(Param:table):str
          local param_type = Param.basicType
 
-         if Param.isComplex then
+         if Param.isComplex and not Param.isSpan then
             -- std::string is not embeddable, convert to `std::string *`
             param_type = param_type .. ' *'
          end
@@ -1015,6 +1015,8 @@ global function klass(Name, Options:table, Spec, Private, Custom)
          elseif Param.resultValue and Param.mutable and Param.type:endsWith('*') then
             Param.byRef = true
             return Param.type:sub(0,-2) .. '&'
+         elseif Param.isSpan then
+            return Param.type .. ' '
          elseif Param.isComplex then
             Param.byRef = true
             return Param.type .. ' &'
@@ -1039,11 +1041,13 @@ global function klass(Name, Options:table, Spec, Private, Custom)
                   if v?? then
                      local param = { }
                      param.type, param.name = rx_type_name.extract(v)
-                     cType(param, 'Method ' .. method.name)
+                     cType(param, f'Method:{Name}.{method.name}')
                      table.insert(method.params, param)
                   end
                end
             end
+
+            validateMethodInputs(method.params, Name, method.name)
 
             method.tags = getTagsFromCollection(method.tags, method.params)
 
@@ -1071,10 +1075,7 @@ global function klass(Name, Options:table, Spec, Private, Custom)
             params = ''
             if method.params then
                for param in values(method.params) do
-                  local storage_type = param.basicType
-                  if param.isComplex then -- Complex types are not embeddable in structs
-                     storage_type ..= ' *'
-                  end
+                  local storage_type = actionStorageType(param)
 
                   struct_params ..= storage_type
                   if not (storage_type:endsWith('*') or storage_type:endsWith('&')) then
@@ -1097,7 +1098,7 @@ global function klass(Name, Options:table, Spec, Private, Custom)
                      else
                         if v?? then v ..= ', ' end
 
-                        if (param.resultValue and param.mutable) or param.isComplex then
+                        if (param.resultValue and param.mutable) or (param.isComplex and not param.isSpan) then
                            -- Client must provide an empty collection, e.g. std::string or kt::vector
                            v ..= f'&{pName(param)}'
                            results = true
@@ -1191,7 +1192,7 @@ global function klass(Name, Options:table, Spec, Private, Custom)
          if not table.empty(cl.methods) then
             for m in values(cl.methods) do
                if not table.empty(m.params) then
-                  mdef ..= f'FDEF ma{m.name}[] = {{ {buildInputParameters(m.params)} }};\n'
+                  mdef ..= f'FDEF ma{m.name}[] = {{ {buildInputParameters(m.params, true)} }};\n'
                end
             end
             mdef ..= '\n'

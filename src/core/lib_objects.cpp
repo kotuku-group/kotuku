@@ -2433,7 +2433,12 @@ ERR QueueAction(ACTIONID ActionID, OBJECTID ObjectID, APTR Args)
    // The buffer is duplicated byte-for-byte into the message queue, so self-referential argument pointers must be
    // converted to offsets.  The receiver (msg_action) rebases them against its copy with make_args_absolute().
 
-   if (action.SendArgs) make_args_relative(fields, args_size, buffer.data());
+   if (action.SendArgs) {
+      if (auto error = make_args_relative(fields, args_size, buffer.data(), buffer.size()); error != ERR::Okay) {
+         release_copied_args(fields, args_size, buffer.data(), false);
+         return error;
+      }
+   }
 
    buffer.insert(buffer.begin(), (int8_t *)&action, (int8_t *)&action + sizeof(ActionMessage));
 

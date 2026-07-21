@@ -35,14 +35,14 @@ function rawProxyRequestOnPort(ProxyPort:num, Request:str, Timeout:num):str
    local socket = obj.new('netsocket', {
       feedback = function(Socket, State)
          if State is NTC_CONNECTED then
-            check Socket.acWrite(Request, #Request)
+            check Socket.acWrite(Request)
          elseif State is NTC_DISCONNECTED then
             Socket.acSignal()
          end
       end,
       incoming = function(Socket)
          local buffer = string.alloc(32768)
-         local err, read_len = Socket.acRead(buffer, 32768)
+         local err, read_len = Socket.acRead(buffer)
          if err is ERR_Okay then
             if read_len > 0 then response ..= buffer:substr(0, read_len) end
          elseif err is ERR_Disconnected then
@@ -122,7 +122,7 @@ end
 
 function writeTextFile(Path:str, Content:str)
    local file = obj.new('file', { path = Path, flags = FL_NEW|FL_WRITE })
-   local err, written = file.acWrite(Content, #Content)
+   local err, written = file.acWrite(Content)
    file.free()
    assert(err is ERR_Okay and written is #Content, 'Failed to write test file: ' .. Path)
 end
@@ -157,11 +157,11 @@ end
 function echoIncoming(Server:obj, Client:obj)
    while true do
       local buffer = string.alloc(4096)
-      local err, read_len = Client.acRead(buffer, 4096)
+      local err, read_len = Client.acRead(buffer)
       if err is ERR_Okay then
          if read_len is 0 then return end
          local chunk = buffer:substr(0, read_len)
-         check Client.acWrite(chunk, #chunk)
+         check Client.acWrite(chunk)
       elseif err is ERR_Disconnected then
          return
       else
@@ -183,7 +183,7 @@ end
 
 function stalledOriginIncoming(Server:obj, Client:obj)
    local buffer = string.alloc(4096)
-   local err, read_len = Client.acRead(buffer, 4096)
+   local err, read_len = Client.acRead(buffer)
    if err != ERR_Okay and err != ERR_TimeOut and err != ERR_Disconnected then
       error('Stalled origin read failed: ' .. mSys.GetErrorMsg(err))
    end
@@ -202,13 +202,13 @@ function upstreamProxyIncoming(Server:obj, Client:obj)
 
    while true do
       local buffer = string.alloc(32768)
-      local err, read_len = Client.acRead(buffer, 32768)
+      local err, read_len = Client.acRead(buffer)
       if err is ERR_Okay then
          if read_len is 0 then return end
 
          local data = buffer:substr(0, read_len)
          if state.tunnelling then
-            check Client.acWrite(data, #data)
+            check Client.acWrite(data)
             continue
          end
 
@@ -223,17 +223,17 @@ function upstreamProxyIncoming(Server:obj, Client:obj)
          if header_block:startsWith('CONNECT ') then
             if glUpstreamProxyRejectConnect then
                local response = 'HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'
-               check Client.acWrite(response, #response)
+               check Client.acWrite(response)
                Server.mtDisconnectSocket(Client)
                glUpstreamProxyBuffers[key] = nil
                return
             end
 
             local response = 'HTTP/1.1 200 Connection Established\r\nConnection: close\r\n\r\n'
-            check Client.acWrite(response, #response)
+            check Client.acWrite(response)
             state.tunnelling = true
 
-            if body_prefix != '' then check Client.acWrite(body_prefix, #body_prefix) end
+            if body_prefix != '' then check Client.acWrite(body_prefix) end
             return
          end
 
@@ -243,7 +243,7 @@ function upstreamProxyIncoming(Server:obj, Client:obj)
             'Content-Type: text/plain\r\n' ..
             'Content-Length: ' .. #response_body .. '\r\n\r\n' ..
             response_body
-         check Client.acWrite(response, #response)
+         check Client.acWrite(response)
          Server.mtDisconnectSocket(Client)
          glUpstreamProxyBuffers[key] = nil
          return
@@ -270,14 +270,14 @@ function connectTunnelRoundTripOnProxy(ProxyPort:num, Port:num, Payload:str, Coa
    local socket = obj.new('netsocket', {
       feedback = function(Socket, State)
          if State is NTC_CONNECTED then
-            check Socket.acWrite(connect_request, #connect_request)
+            check Socket.acWrite(connect_request)
          elseif State is NTC_DISCONNECTED then
             Socket.acSignal()
          end
       end,
       incoming = function(Socket)
          local buffer = string.alloc(32768)
-         local err, read_len = Socket.acRead(buffer, 32768)
+         local err, read_len = Socket.acRead(buffer)
          if err is ERR_Okay then
             if read_len is 0 then return end
 
@@ -293,7 +293,7 @@ function connectTunnelRoundTripOnProxy(ProxyPort:num, Port:num, Payload:str, Coa
                   proxy_headers = proxy_headers:substr(0, header_end + 4)
 
                   if not sent_payload then
-                     check Socket.acWrite(Payload, #Payload)
+                     check Socket.acWrite(Payload)
                      sent_payload = true
                   end
                end
@@ -701,7 +701,7 @@ function ConnectTunnelPassesSSLHandshake()
       flags   = NSF_SSL,
       incoming = function(Server, Client)
          local buffer = string.alloc(2048)
-         local err, read_len = Client.acRead(buffer, 2048)
+         local err, read_len = Client.acRead(buffer)
          if err is ERR_Okay then
             if read_len is 0 then return end
 
@@ -709,7 +709,7 @@ function ConnectTunnelPassesSSLHandshake()
             if received is ssl_payload then
                ssl_server_done = true
                local response = 'SSL_TUNNEL_ECHO:' .. received
-               check Client.acWrite(response, #response)
+               check Client.acWrite(response)
                Server.mtDisconnectSocket(Client)
             end
          elseif err != ERR_Disconnected then
@@ -728,10 +728,10 @@ function ConnectTunnelPassesSSLHandshake()
                local connect_request = 'CONNECT 127.0.0.1:' .. SSL_TUNNEL_PORT .. ' HTTP/1.1\r\n' ..
                   'Host: 127.0.0.1:' .. SSL_TUNNEL_PORT .. '\r\n\r\n'
                wrote_connect = true
-               check Socket.acWrite(connect_request, #connect_request)
+               check Socket.acWrite(connect_request)
             elseif connect_established and not ssl_payload_sent then
                ssl_payload_sent = true
-               check Socket.acWrite(ssl_payload, #ssl_payload)
+               check Socket.acWrite(ssl_payload)
             end
          elseif State is NTC_DISCONNECTED then
             Socket.acSignal()
@@ -739,7 +739,7 @@ function ConnectTunnelPassesSSLHandshake()
       end,
       incoming = function(Socket)
          local buffer = string.alloc(4096)
-         local err, read_len = Socket.acRead(buffer, 4096)
+         local err, read_len = Socket.acRead(buffer)
          if err is ERR_Okay then
             if read_len is 0 then return end
 

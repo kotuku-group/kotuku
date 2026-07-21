@@ -123,7 +123,7 @@ function sendHttpRequest(Host:str, Port:num, Request:str):str
       name = 'HTTPTestClient',
       feedback = function(Socket:obj, State:num)
          if State is NTC_CONNECTED then
-            local err, len = Socket.acWrite(Request, #Request)
+            local err, len = Socket.acWrite(Request)
             if err != ERR_Okay then
                error('Failed to send HTTP request: ' .. mSys.GetErrorMsg(err))
             end
@@ -133,7 +133,7 @@ function sendHttpRequest(Host:str, Port:num, Request:str):str
       end,
       incoming = function(Socket:obj)
          local buffer = string.alloc(32768)
-         local err, bytes_read = Socket.acRead(buffer, 32768)
+         local err, bytes_read = Socket.acRead(buffer)
          if err is ERR_Okay then
             if bytes_read > 0 then response ..= buffer:substr(0, bytes_read) end
             if isCompleteResponse(response) then Socket.acSignal() end

@@ -2108,7 +2108,7 @@ static ERR load_pic(extSVG *Self, std::string Path, objImage **Image, Unit Width
                Path = "temp:svg.img";
                if ((file = objFile::create::local(fl::Path(Path), fl::Flags(FL::NEW|FL::WRITE)))) {
                   int result;
-                  file->write(output.data(), written, &result);
+                  file->write(std::span<const int8_t>((const int8_t *)output.data(), size_t(written)), &result);
                }
                else error = ERR::File;
             }

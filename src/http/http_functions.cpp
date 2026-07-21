@@ -88,7 +88,8 @@ static void socket_feedback(objNetSocket *Socket, NTC State, APTR Meta)
                }
 
                int bytes_read;
-               if ((Self->Error = acRead(Socket, buffer.data(), len, &bytes_read)) != ERR::Okay) {
+               if ((Self->Error = acRead(Socket, std::span<int8_t>((int8_t *)buffer.data(), size_t(len)),
+                   &bytes_read)) != ERR::Okay) {
                   log.warning("Read() returned error: %s", GetErrorMsg(Self->Error));
                }
 
@@ -209,7 +210,8 @@ static ERR socket_outgoing(objNetSocket *Socket)
 
       int offset = (Self->Chunked ? CHUNK_LENGTH_OFFSET : 0);
       Self->WriteBuffer.resize(Self->BufferSize + offset);
-      error = acRead(Self->flInput, Self->WriteBuffer.data() + offset, std::ssize(Self->WriteBuffer) - offset, &client_bytes_written);
+      error = acRead(Self->flInput, std::span<int8_t>((int8_t *)Self->WriteBuffer.data() + offset,
+         Self->WriteBuffer.size() - offset), &client_bytes_written);
 
       if (((!error) or (error IS ERR::Terminate)) and (client_bytes_written >= 0)) {
          Self->WriteBuffer.resize(client_bytes_written + offset);
@@ -238,7 +240,8 @@ static ERR socket_outgoing(objNetSocket *Socket)
       if (object.granted()) {
          int offset = (Self->Chunked ? CHUNK_LENGTH_OFFSET : 0);
          Self->WriteBuffer.resize(Self->BufferSize + offset);
-         error = acRead(*object, Self->WriteBuffer.data() + offset, std::ssize(Self->WriteBuffer) - offset, &client_bytes_written);
+         error = acRead(*object, std::span<int8_t>((int8_t *)Self->WriteBuffer.data() + offset,
+            Self->WriteBuffer.size() - offset), &client_bytes_written);
          if (((!error) or (error IS ERR::Terminate)) and (client_bytes_written >= 0)) {
             Self->WriteBuffer.resize(client_bytes_written + offset);
          }
@@ -286,7 +289,8 @@ static ERR socket_outgoing(objNetSocket *Socket)
       log.trace("Writing %" PRId64 " bytes (of expected %" PRId64 ") to socket.  Chunked: %d",
          write_length, Self->ContentLength, Self->Chunked);
 
-      write_error = acWrite(Self->Socket, Self->WriteBuffer.data(), write_length, &bytes_sent);
+      write_error = acWrite(Self->Socket,
+         std::span<const int8_t>((int8_t *)Self->WriteBuffer.data(), write_length), &bytes_sent);
 
       if ((write_error IS ERR::Okay) and (bytes_sent IS write_length)) {
          if (Self->Chunked) bytes_sent -= CHUNK_LENGTH_OFFSET + 2; // Discount chunk information
@@ -338,7 +342,8 @@ static ERR socket_outgoing(objNetSocket *Socket)
          int result;
 
          if (Self->Chunked) {
-            auto write_error = acWrite(Self->Socket, (uint8_t *)"0\r\n\r\n", 5, &result);
+            auto write_error = acWrite(Self->Socket, std::span<const int8_t>((const int8_t *)"0\r\n\r\n", 5),
+               &result);
             if ((write_error != ERR::Okay) or (result != 5)) {
                Self->Error = (write_error != ERR::Okay) ? write_error : ERR::Write;
                Self->setCurrentState(HGS::TERMINATED);

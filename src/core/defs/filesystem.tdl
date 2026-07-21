@@ -84,7 +84,7 @@ namespace fl {
 template<class T> ERR ReadLE(OBJECTPTR Object, T *Result)
 {
    uint8_t data[sizeof(T)];
-   struct acRead read = { .Buffer = data, .Length = sizeof(T) };
+   struct acRead read = { .Buffer = std::span<int8_t>((int8_t *)data, sizeof(T)) };
    if (!Action(AC::Read, Object, &read)) {
       if (read.Result IS sizeof(T)) {
          if constexpr (std::endian::native IS std::endian::little) {
@@ -108,7 +108,7 @@ template<class T> ERR ReadLE(OBJECTPTR Object, T *Result)
 template<class T> ERR ReadBE(OBJECTPTR Object, T *Result)
 {
    uint8_t data[sizeof(T)];
-   struct acRead read = { .Buffer = data, .Length = sizeof(T) };
+   struct acRead read = { .Buffer = std::span<int8_t>((int8_t *)data, sizeof(T)) };
    if (!Action(AC::Read, Object, &read)) {
       if (read.Result IS sizeof(T)) {
          if constexpr (std::endian::native IS std::endian::little) {

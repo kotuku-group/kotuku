@@ -601,7 +601,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
          file->getSize(filesize);
 
          int hdr;
-         file->read(&hdr, sizeof(hdr));
+         file->read(std::span((int8_t *)&hdr, sizeof(hdr)));
          if (hdr IS CLASSDB_HEADER) {
             ERR error = ERR::Okay;
             while (file->Position + extClassRecord::MIN_SIZE < filesize) {

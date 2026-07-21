@@ -240,7 +240,7 @@ global function processIncoming(Self:table, ClientSocket:obj)
 
    -- Read available data
    buffer = string.alloc(8192)
-   err, bytes_read = ClientSocket.acRead(buffer, 8192)
+   err, bytes_read = ClientSocket.acRead(buffer)
 
    if err != ERR_Okay then
       if err != ERR_Disconnected then

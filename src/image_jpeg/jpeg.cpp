@@ -60,7 +60,7 @@ METHODDEF(boolean) fill_kotuku_input_buffer(j_decompress_ptr cinfo) {
    kotuku_src_ptr src = (kotuku_src_ptr)cinfo->src;
    int nbytes;
 
-   if (src->infile->read(src->buffer, INPUT_BUF_SIZE, &nbytes) != ERR::Okay) {
+   if (src->infile->read(std::span<int8_t>((int8_t *)src->buffer, INPUT_BUF_SIZE), &nbytes) != ERR::Okay) {
       if (src->start_of_file) ERREXIT(cinfo, JERR_INPUT_EMPTY);
       WARNMS(cinfo, JWRN_JPEG_EOF);
       src->buffer[0] = 0xFF;
@@ -143,7 +143,7 @@ METHODDEF(void) init_kotuku_destination(j_compress_ptr cinfo) {
 METHODDEF(boolean) empty_kotuku_output_buffer(j_compress_ptr cinfo) {
    kotuku_dest_ptr dest = (kotuku_dest_ptr)cinfo->dest;
 
-   if (dest->outfile->write(dest->buffer, OUTPUT_BUF_SIZE) != ERR::Okay) {
+   if (dest->outfile->write(std::span<const int8_t>((const int8_t *)dest->buffer, OUTPUT_BUF_SIZE)) != ERR::Okay) {
       ERREXIT(cinfo, JERR_FILE_WRITE);
    }
 
@@ -159,7 +159,7 @@ METHODDEF(void) term_kotuku_destination(j_compress_ptr cinfo) {
    int datacount = OUTPUT_BUF_SIZE - dest->pub.free_in_buffer;
 
    if (datacount > 0) {
-      if (dest->outfile->write(dest->buffer, datacount) != ERR::Okay) {
+      if (dest->outfile->write(std::span<const int8_t>((const int8_t *)dest->buffer, datacount)) != ERR::Okay) {
          ERREXIT(cinfo, JERR_FILE_WRITE);
       }
    }

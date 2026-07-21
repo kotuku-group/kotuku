@@ -310,7 +310,8 @@ function readChunkedRequestBody(Client:obj, MaxSize:num, TimeoutSeconds:num):<st
       chunkSizeLine = ''
       char = ''
       while not chunkSizeLine:endsWith('\r\n') do
-         err, bytes_read = Client.acRead(buffer, 1)
+         buffer = string.alloc(1)
+         err, bytes_read = Client.acRead(buffer)
          if err != ERR_Okay then
             if err is ERR_TimeOut then
                return nil, 'timeout', false
@@ -357,7 +358,8 @@ function readChunkedRequestBody(Client:obj, MaxSize:num, TimeoutSeconds:num):<st
       -- If chunk size is 0, we've reached the end
       if chunkSize is 0 then
          -- Read trailing CRLF after last chunk (if present)
-         err, bytes_read = Client.acRead(buffer, 2)
+         buffer = string.alloc(2)
+         err, bytes_read = Client.acRead(buffer)
          -- Ignore any errors here - the 0 chunk is sufficient termination
          break  -- Normal termination
       end
@@ -373,7 +375,8 @@ function readChunkedRequestBody(Client:obj, MaxSize:num, TimeoutSeconds:num):<st
       chunkRead = 0
       while chunkRead < chunkSize do
          toRead = math.min(8192, chunkSize - chunkRead)
-         err, bytes_read = Client.acRead(buffer, toRead)
+         buffer = string.alloc(toRead)
+         err, bytes_read = Client.acRead(buffer)
          if err != ERR_Okay then
             if err is ERR_TimeOut then
                return nil, 'timeout', false
@@ -414,7 +417,8 @@ function readChunkedRequestBody(Client:obj, MaxSize:num, TimeoutSeconds:num):<st
       crlf = ''
       crlf_attempts = 0
       while #crlf < 2 and crlf_attempts < 2 do
-         err, bytes_read = Client.acRead(buffer, 1)
+         buffer = string.alloc(1)
+         err, bytes_read = Client.acRead(buffer)
          crlf_attempts++
          if err != ERR_Okay then
             if err is ERR_TimeOut then
@@ -925,7 +929,8 @@ function streamFileBody(self:table, ClientSocket:obj, File:obj, Length:num):bool
 
    while total_sent < Length do
       to_read = math.min(self.fileChunkSize, Length - total_sent)
-      err, bytes_read = File.acRead(buffer, to_read)
+      buffer = string.alloc(to_read)
+      err, bytes_read = File.acRead(buffer)
 
       if err != ERR_Okay then
          logMessage(self, 'Error streaming file: ' .. mSys.GetErrorMsg(err))
@@ -1564,7 +1569,7 @@ function serverIncoming(self, ClientSocket)
    end
 
    buffer = string.alloc(8192)
-   err, bytes_read = ClientSocket.acRead(buffer, 8192)
+   err, bytes_read = ClientSocket.acRead(buffer)
 
    if err != ERR_Okay then
       logMessage(self, 'Failed to read from client: ' .. mSys.GetErrorMsg(err))

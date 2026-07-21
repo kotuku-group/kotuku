@@ -14,7 +14,7 @@ FDEF argsMove[]          = { { "DeltaX", FD_DOUBLE }, { "DeltaY", FD_DOUBLE }, {
 FDEF argsMoveToPoint[]   = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Z", FD_DOUBLE }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF argsNewChild[]      = { { "NewChild", FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsNewOwner[]      = { { "NewOwner", FD_OBJECTPTR }, { 0, 0 } };
-FDEF argsRead[]          = { { "Buffer", FD_PTRBUFFER|FD_MUTABLE }, { "Length", FD_INT|FD_BUFSIZE }, { "Result", FD_INT|FD_RESULT }, { 0, 0 } };
+FDEF argsRead[]          = { { "Buffer", FDF_SPAN|FD_MUTABLE|FD_PTR }, { "Result", FD_INT|FD_RESULT }, { 0, 0 } };
 FDEF argsRedimension[]   = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Z", FD_DOUBLE }, { "Width", FD_DOUBLE }, { "Height", FD_DOUBLE }, { "Depth", FD_DOUBLE }, { 0, 0 } };
 FDEF argsRedo[]          = { { "Steps", FD_INT }, { 0, 0 } };
 FDEF argsRename[]        = { { "Name", FDF_CPPSTRING }, { 0, 0 } };
@@ -24,7 +24,7 @@ FDEF argsSaveToObject[]  = { { "Dest", FD_OBJECTPTR }, { "Class", FD_INT }, { 0,
 FDEF argsSeek[]          = { { "Offset", FD_DOUBLE }, { "Position", FD_INT }, { 0, 0 } };
 FDEF argsSetKey[]        = { { "Field", FDF_CPPSTRING }, { "Value", FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsUndo[]          = { { "Steps", FD_INT }, { 0, 0 } };
-FDEF argsWrite[]         = { { "Buffer", FD_PTRBUFFER }, { "Length", FD_INT|FD_BUFSIZE }, { "Result", FD_INT|FD_RESULT }, { 0, 0 } };
+FDEF argsWrite[]         = { { "Buffer", FDF_SPAN|FD_PTR }, { "Result", FD_INT|FD_RESULT }, { 0, 0 } };
 
 extern "C" const struct ActionTable ActionTable[] = { // Sorted by action ID.
    { 0, 0, 0, 0 },
