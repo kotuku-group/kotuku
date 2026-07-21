@@ -130,7 +130,7 @@ end
          outputCallback = function(Task, Data)
             -- Critical: Pandoc needs stdout to be consumed in Windows or it doesn't work
          end,
-         timeOut = 20
+         timeout = 20
       })
 
       task.acActivate()

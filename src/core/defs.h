@@ -558,7 +558,7 @@ class extTask : public objTask {
    std::array<ActionEntry, int(AC::END)> Actions; // Action routines to be intercepted by the program
 
    extTask(objMetaClass *pClass, OBJECTID pUID) : objTask(pClass, pUID) {
-      TimeOut = 60 * 60 * 24;
+      Timeout = 60 * 60 * 24;
    }
 
    ~extTask();

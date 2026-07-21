@@ -1488,7 +1488,7 @@ struct CoreBase {
    ERR (*_NewObject)(CLASSID ClassID, NF Flags, OBJECTPTR *Object);
    void (*_NotifySubscribers)(OBJECTPTR Object, AC Action, APTR Args, ERR Error);
    ERR (*_CopyFile)(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback);
-   ERR (*_ProcessMessages)(PMF Flags, int TimeOut);
+   ERR (*_ProcessMessages)(PMF Flags, int Timeout);
    ERR (*_IdentifyFile)(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
    CLASSID (*_ResolveClassName)(const std::string_view &Name);
    ERR (*_SendMessage)(MSGID Type, MSF Flags, const std::span<const int8_t> &Data);
@@ -1511,7 +1511,7 @@ struct CoreBase {
    int64_t (*_GetResource)(RES Resource);
    int64_t (*_SetResource)(RES Resource, int64_t Value);
    ERR (*_ScanMessages)(int *Handle, MSGID Type, const std::span<int8_t> &Buffer);
-   ERR (*_WaitForObjects)(PMF Flags, int TimeOut, struct ObjectSignal *ObjectSignals);
+   ERR (*_WaitForObjects)(PMF Flags, int Timeout, struct ObjectSignal *ObjectSignals);
    void (*_UnloadFile)(struct CacheFile *Cache);
    ERR (*_CreateFolder)(const std::string_view &Path, PERMIT Permissions);
    ERR (*_LoadFile)(const std::string_view &Path, LDF Flags, struct CacheFile **Cache);
@@ -1544,7 +1544,7 @@ struct CoreBase {
    ERR (*_WakeThread)(int Thread, int Stop);
    ERR (*_AsyncCancel)(kt::vector<OBJECTID> &Objects);
    int (*_AsyncPending)(OBJECTID Object);
-   ERR (*_AsyncWait)(kt::vector<OBJECTID> &Objects, int TimeOut);
+   ERR (*_AsyncWait)(kt::vector<OBJECTID> &Objects, int Timeout);
    ERR (*_ClassDatabase)(kt::vector<ClassRecord *> *Classes);
    int (*_GetThreadID)(void);
    void (*_UnitTests)(CSTRING Options, int *Passed, int *Total);
@@ -1586,7 +1586,7 @@ inline ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID
 inline ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object) { return CoreBase->_NewObject(ClassID,Flags,Object); }
 inline void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Error) { return CoreBase->_NotifySubscribers(Object,Action,Args,Error); }
 inline ERR CopyFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback) { return CoreBase->_CopyFile(Source,Dest,Callback); }
-inline ERR ProcessMessages(PMF Flags, int TimeOut) { return CoreBase->_ProcessMessages(Flags,TimeOut); }
+inline ERR ProcessMessages(PMF Flags, int Timeout) { return CoreBase->_ProcessMessages(Flags,Timeout); }
 inline ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass) { return CoreBase->_IdentifyFile(Path,Filter,Class,SubClass); }
 inline CLASSID ResolveClassName(const std::string_view &Name) { return CoreBase->_ResolveClassName(Name); }
 inline ERR SendMessage(MSGID Type, MSF Flags, const std::span<const int8_t> &Data) { return CoreBase->_SendMessage(Type,Flags,Data); }
@@ -1609,7 +1609,7 @@ inline uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length) { return Core
 inline int64_t GetResource(RES Resource) { return CoreBase->_GetResource(Resource); }
 inline int64_t SetResource(RES Resource, int64_t Value) { return CoreBase->_SetResource(Resource,Value); }
 inline ERR ScanMessages(int *Handle, MSGID Type, const std::span<int8_t> &Buffer) { return CoreBase->_ScanMessages(Handle,Type,Buffer); }
-inline ERR WaitForObjects(PMF Flags, int TimeOut, struct ObjectSignal *ObjectSignals) { return CoreBase->_WaitForObjects(Flags,TimeOut,ObjectSignals); }
+inline ERR WaitForObjects(PMF Flags, int Timeout, struct ObjectSignal *ObjectSignals) { return CoreBase->_WaitForObjects(Flags,Timeout,ObjectSignals); }
 inline void UnloadFile(struct CacheFile *Cache) { return CoreBase->_UnloadFile(Cache); }
 inline ERR CreateFolder(const std::string_view &Path, PERMIT Permissions) { return CoreBase->_CreateFolder(Path,Permissions); }
 inline ERR LoadFile(const std::string_view &Path, LDF Flags, struct CacheFile **Cache) { return CoreBase->_LoadFile(Path,Flags,Cache); }
@@ -1642,7 +1642,7 @@ inline OBJECTPTR ParentContext(void) { return CoreBase->_ParentContext(); }
 inline ERR WakeThread(int Thread, int Stop) { return CoreBase->_WakeThread(Thread,Stop); }
 inline ERR AsyncCancel(kt::vector<OBJECTID> &Objects) { return CoreBase->_AsyncCancel(Objects); }
 inline int AsyncPending(OBJECTID Object) { return CoreBase->_AsyncPending(Object); }
-inline ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut) { return CoreBase->_AsyncWait(Objects,TimeOut); }
+inline ERR AsyncWait(kt::vector<OBJECTID> &Objects, int Timeout) { return CoreBase->_AsyncWait(Objects,Timeout); }
 inline ERR ClassDatabase(kt::vector<ClassRecord *> *Classes) { return CoreBase->_ClassDatabase(Classes); }
 inline int GetThreadID(void) { return CoreBase->_GetThreadID(); }
 inline void UnitTests(CSTRING Options, int *Passed, int *Total) { return CoreBase->_UnitTests(Options,Passed,Total); }
@@ -1680,7 +1680,7 @@ extern "C" ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID Own
 extern "C" ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object);
 extern "C" void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Error);
 extern "C" ERR CopyFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback);
-extern "C" ERR ProcessMessages(PMF Flags, int TimeOut);
+extern "C" ERR ProcessMessages(PMF Flags, int Timeout);
 extern "C" ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
 extern "C" CLASSID ResolveClassName(const std::string_view &Name);
 extern "C" ERR SendMessage(MSGID Type, MSF Flags, const std::span<const int8_t> &Data);
@@ -1703,7 +1703,7 @@ extern "C" uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length);
 extern "C" int64_t GetResource(RES Resource);
 extern "C" int64_t SetResource(RES Resource, int64_t Value);
 extern "C" ERR ScanMessages(int *Handle, MSGID Type, const std::span<int8_t> &Buffer);
-extern "C" ERR WaitForObjects(PMF Flags, int TimeOut, struct ObjectSignal *ObjectSignals);
+extern "C" ERR WaitForObjects(PMF Flags, int Timeout, struct ObjectSignal *ObjectSignals);
 extern "C" void UnloadFile(struct CacheFile *Cache);
 extern "C" ERR CreateFolder(const std::string_view &Path, PERMIT Permissions);
 extern "C" ERR LoadFile(const std::string_view &Path, LDF Flags, struct CacheFile **Cache);
@@ -1736,7 +1736,7 @@ extern "C" OBJECTPTR ParentContext(void);
 extern "C" ERR WakeThread(int Thread, int Stop);
 extern "C" ERR AsyncCancel(kt::vector<OBJECTID> &Objects);
 extern "C" int AsyncPending(OBJECTID Object);
-extern "C" ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut);
+extern "C" ERR AsyncWait(kt::vector<OBJECTID> &Objects, int Timeout);
 extern "C" ERR ClassDatabase(kt::vector<ClassRecord *> *Classes);
 extern "C" int GetThreadID(void);
 extern "C" void UnitTests(CSTRING Options, int *Passed, int *Total);

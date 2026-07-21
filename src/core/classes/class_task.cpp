@@ -654,7 +654,7 @@ static void task_process_end(WINHANDLE FD, extTask *Task)
 
    // Send a break if we're waiting for this process to end
 
-   if (((Task->Flags & TSF::WAIT) != TSF::NIL) and (Task->TimeOut > 0)) SendMessage(glProcessBreak, MSF::NIL, {});
+   if (((Task->Flags & TSF::WAIT) != TSF::NIL) and (Task->Timeout > 0)) SendMessage(glProcessBreak, MSF::NIL, {});
 }
 #endif
 
@@ -687,7 +687,7 @@ On successful execution, the ProcessID will refer to the ID of the executed proc
 hosting platform's unique process numbers.
 
 If the `WAIT` flag is specified, this action will not return until the executed process has returned or the
-#TimeOut (if specified) has expired.  Messages are processed as normal during this time, ensuring that your
+#Timeout (if specified) has expired.  Messages are processed as normal during this time, ensuring that your
 process remains responsive while waiting.
 
 The process' return code can be read from the #ReturnCode field after the process has completed its execution.
@@ -704,7 +704,7 @@ DOS window from appearing.  The DOS window will also be hidden if the stdout or 
 Okay
 MissingPath: The Location field has not been set.
 Failed
-TimeOut:     Can be returned if the `WAIT` flag is used.  Indicates that the process was launched, but the timeout expired before the process returned.
+Timeout:     Can be returned if the `WAIT` flag is used.  Indicates that the process was launched, but the timeout expired before the process returned.
 ProcessCreation
 
 -END-
@@ -874,13 +874,13 @@ static ERR TASK_Activate(extTask *Self)
          (not redirect_stderr.empty()) ? redirect_stderr.data() : nullptr, &Self->ProcessID))) {
 
       error = ERR::Okay;
-      if (((Self->Flags & TSF::WAIT) != TSF::NIL) and (Self->TimeOut > 0)) {
-         log.msg("Waiting for process to exit.  TimeOut: %.2f sec", Self->TimeOut);
+      if (((Self->Flags & TSF::WAIT) != TSF::NIL) and (Self->Timeout > 0)) {
+         log.msg("Waiting for process to exit.  Timeout: %.2f sec", Self->Timeout);
 
          //if (not glProcessBreak) glProcessBreak = AllocateID(IDTYPE_MESSAGE);
          glProcessBreak = MSGID::BREAK;
 
-         auto wait_error = ProcessMessages(PMF::NIL, Self->TimeOut * 1000.0);
+         auto wait_error = ProcessMessages(PMF::NIL, Self->Timeout * 1000.0);
          if (wait_error != ERR::Okay) error = wait_error;
 
          if ((not Self->ReturnCodeSet) and (Self->Platform)) {
@@ -1084,20 +1084,20 @@ static ERR TASK_Activate(extTask *Self)
 
       error = ERR::Okay;
       if ((Self->Flags & TSF::WAIT) != TSF::NIL) {
-         log.branch("Waiting for process to turn into a zombie in %.2fs.", Self->TimeOut);
+         log.branch("Waiting for process to turn into a zombie in %.2fs.", Self->Timeout);
 
          // Wait for the child process to turn into a zombie.  NB: A parent process or our own child handler may
          // potentially pick this up but that's fine as waitpid() will just fail with -1 in that case.
 
          int status = 0;
          int wait_result = 0;
-         int64_t ticks = PreciseTime() + int64_t(Self->TimeOut * 1000000.0);
+         int64_t ticks = PreciseTime() + int64_t(Self->Timeout * 1000000.0);
          while ((wait_result = waitpid(pid, &status, WNOHANG)) IS 0) {
             ProcessMessages(PMF::NIL, 100);
 
             auto remaining = ticks - PreciseTime();
             if (remaining <= 0) {
-               error = log.warning(ERR::TimeOut);
+               error = log.warning(ERR::Timeout);
                break;
             }
          }
@@ -2434,7 +2434,7 @@ static ERR SET_ReturnCode(extTask *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
-TimeOut: Limits the amount of time to wait for a launched process to return.
+Timeout: Limits the amount of time to wait for a launched process to return.
 
 This field can be set in conjunction with the `WAIT` flag to define the time limit when waiting for a launched
 process to return.  The time out is defined in seconds.
@@ -2481,7 +2481,7 @@ static const FieldArray clFields[] = {
    { "Src",             FDF_SYNONYM },
    { "Path",            FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
    { "ProcessPath",     FDF_CPPSTRING|FDF_R },
-   { "TimeOut",         FDF_DOUBLE|FDF_RW },
+   { "Timeout",         FDF_DOUBLE|FDF_RW },
    { "Parameters",      FDF_VECTOR|FDF_CPPSTRING|FDF_RW },
    { "Flags",           FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clTaskFlags },
    { "ReturnCode",      FDF_INT|FDF_RW, GET_ReturnCode, SET_ReturnCode },

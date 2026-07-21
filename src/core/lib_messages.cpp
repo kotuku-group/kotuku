@@ -261,7 +261,7 @@ If a message with a `MSGID::QUIT` ID is found on the queue, then the function re
 
 -INPUT-
 int(PMF) Flags: Optional flags are specified here (clients should set a value of zero).
-int TimeOut: A TimeOut value, measured in milliseconds.  If zero, the function will return as soon as all messages on the queue are processed.  If less than zero, the function does not return until a request for termination is received or a user message requires processing.
+int Timeout: A Timeout value, measured in milliseconds.  If zero, the function will return as soon as all messages on the queue are processed.  If less than zero, the function does not return until a request for termination is received or a user message requires processing.
 
 -ERRORS-
 Okay:
@@ -269,7 +269,7 @@ OutsideMainThread:
 Recursion:
 SystemLocked:
 Terminate: A `MSGID::QUIT` message type was found on the message queue.
-TimeOut:
+Timeout:
 AccessObject
 NoSupport
 
@@ -279,7 +279,7 @@ main-thread-only, blocking, callback-inlines
 
 *********************************************************************************************************************/
 
-ERR ProcessMessages(PMF Flags, int TimeOut)
+ERR ProcessMessages(PMF Flags, int Timeout)
 {
    kt::Log log(__FUNCTION__);
 
@@ -310,10 +310,10 @@ ERR ProcessMessages(PMF Flags, int TimeOut)
    tlMsgRecursion++;
 
    int64_t timeout_end;
-   if (TimeOut IS -1) timeout_end = 0x7fffffffffffffffLL; // Infinite loop
-   else timeout_end = PreciseTime() + ((int64_t)TimeOut * 1000LL);
+   if (Timeout IS -1) timeout_end = 0x7fffffffffffffffLL; // Infinite loop
+   else timeout_end = PreciseTime() + ((int64_t)Timeout * 1000LL);
 
-   log.traceBranch("Flags: $%.8x, TimeOut: %d", int(Flags), TimeOut);
+   log.traceBranch("Flags: $%.8x, Timeout: %d", int(Flags), Timeout);
 
    ERR returncode = ERR::Okay;
    bool breaking = false;
@@ -572,9 +572,9 @@ timer_cycle:
          break;
       }
       else if (PreciseTime() >= timeout_end) {
-         if (TimeOut) {
-            log.trace("Breaking message loop - timeout of %dms.", TimeOut);
-            if (timeout_end > 0) returncode = ERR::TimeOut;
+         if (Timeout) {
+            log.trace("Breaking message loop - timeout of %dms.", Timeout);
+            if (timeout_end > 0) returncode = ERR::Timeout;
          }
          break;
       }
@@ -755,7 +755,7 @@ affected by subsequent calls.
 
 -INPUT-
 int(PMF) Flags: Optional flags are specified here.
-int TimeOut: A time-out value measured in milliseconds.  If this value is negative then no time-out applies and the function will not return until an incoming message or signal breaks it.
+int Timeout: A time-out value measured in milliseconds.  If this value is negative then no time-out applies and the function will not return until an incoming message or signal breaks it.
 struct(*ObjectSignal) ObjectSignals: A null-terminated array of objects to monitor for signals.
 
 -ERRORS-
@@ -765,7 +765,7 @@ MessageOperation
 Recursion
 SystemLocked
 Terminate
-TimeOut
+Timeout
 ExceptionThreshold
 
 -TAGS-
@@ -775,7 +775,7 @@ main-thread-only, blocking, callback-inlines
 
 *********************************************************************************************************************/
 
-ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
+ERR WaitForObjects(PMF Flags, int Timeout, ObjectSignal *ObjectSignals)
 {
    // Refer to the Task class for the message interception routines
    kt::Log log(__FUNCTION__);
@@ -787,7 +787,7 @@ ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
    // Message processing is only possible from the main thread (for system design and synchronisation reasons)
    if (!tlMainThread) return log.warning(ERR::OutsideMainThread);
 
-   log.branch("Flags: $%.8x, Timeout: %d, Signals: %p", int(Flags), TimeOut, ObjectSignals);
+   log.branch("Flags: $%.8x, Timeout: %d, Signals: %p", int(Flags), Timeout, ObjectSignals);
 
    // Set the current task as the context to ensure predictable behaviour.  Note: Don't use SwitchContext here as
    // it retains a lock on the task and we don't want that.
@@ -832,14 +832,14 @@ ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
    }
 
    if ((!error) and (not glWFOSignalReceived) and (not glWFOList.empty())) {
-      if (TimeOut < 0) { // No time-out will apply
+      if (Timeout < 0) { // No time-out will apply
          while ((not glWFOSignalReceived) and (not glWFOList.empty()) and (!error)) {
             error = ProcessMessages(Flags, -1);
          }
       }
       else {
          auto current_time = PreciseTime();
-         auto end_time = current_time + (TimeOut * 1000LL);
+         auto end_time = current_time + (Timeout * 1000LL);
          while ((not glWFOSignalReceived) and (not glWFOList.empty()) and (current_time < end_time) and (!error)) {
             log.detail("Waiting on %d objects.", (int)glWFOList.size());
             error = ProcessMessages(Flags, (end_time - current_time) / 1000LL);
@@ -847,7 +847,7 @@ ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
          }
       }
 
-      if ((!error) and (not glWFOSignalReceived) and (not glWFOList.empty())) error = ERR::TimeOut;
+      if ((!error) and (not glWFOSignalReceived) and (not glWFOList.empty())) error = ERR::Timeout;
    }
    else {
       // At least one call to ProcessMessages() is needed (the caller's message loop may
@@ -872,7 +872,7 @@ ERR WaitForObjects(PMF Flags, int TimeOut, ObjectSignal *ObjectSignals)
    glWFOAnySignal = saved_any_signal;
    glWFOSignalReceived = saved_signal_received;
 
-   if ((error > ERR::ExceptionThreshold) and (error != ERR::TimeOut)) log.warning(error);
+   if ((error > ERR::ExceptionThreshold) and (error != ERR::Timeout)) log.warning(error);
 
    tlContext.pop_back();
    return error;
@@ -952,7 +952,7 @@ ERR write_nonblock(int Handle, APTR Data, int Size, int64_t EndTime)
                tv.tv_usec = 0;
                int total = select(Handle + 1, nullptr, &wfds, nullptr, &tv);
                if (total IS -1) error = ERR::SystemCall;
-               else if (!total) error = ERR::TimeOut;
+               else if (!total) error = ERR::Timeout;
                else break;
             }
          }
@@ -961,7 +961,7 @@ ERR write_nonblock(int Handle, APTR Data, int Size, int64_t EndTime)
       }
 
       if ((PreciseTime() / 1000LL) > EndTime) {
-         error = ERR::TimeOut;
+         error = ERR::Timeout;
          break;
       }
    }

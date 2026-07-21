@@ -86,7 +86,7 @@ end
 
          local parameters = '-o ' .. res_output .. ' ' .. resolved_xsl .. ' ' .. res_src_path
          msg('xsltproc ' .. parameters)
-         local task = obj.new('task', { src = 'xsltproc', args  = parameters, flags = TSF_WAIT, timeOut = 10 })
+         local task = obj.new('task', { src = 'xsltproc', args  = parameters, flags = TSF_WAIT, timeout = 10 })
 
          if task.acActivate() != ERR_Okay then
             print('Failed to run xsltproc for ' .. FileName)
@@ -112,7 +112,7 @@ end
 
          local parameters = f'-o {res_output} {resolved_xsl} {res_src_path}'
          msg('xsltproc ' .. parameters)
-         local task = obj.new('task', { src = 'xsltproc', args  = parameters, flags = TSF_WAIT, timeOut = 10 })
+         local task = obj.new('task', { src = 'xsltproc', args  = parameters, flags = TSF_WAIT, timeout = 10 })
 
          if task.acActivate() != ERR_Okay then
             print('Failed to run xsltproc for ' .. FileName)

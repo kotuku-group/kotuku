@@ -32,7 +32,7 @@
       <description>
 <p>Activating a task results in the execution of the file referenced in the <fl>Location</fl> field.</p>
 <p>On successful execution, the ProcessID will refer to the ID of the executed process.  This ID is compatible with the hosting platform's unique process numbers.</p>
-<p>If the <code>WAIT</code> flag is specified, this action will not return until the executed process has returned or the <fl>TimeOut</fl> (if specified) has expired.  Messages are processed as normal during this time, ensuring that your process remains responsive while waiting.</p>
+<p>If the <code>WAIT</code> flag is specified, this action will not return until the executed process has returned or the <fl>Timeout</fl> (if specified) has expired.  Messages are processed as normal during this time, ensuring that your process remains responsive while waiting.</p>
 <p>The process' return code can be read from the <fl>ReturnCode</fl> field after the process has completed its execution.</p>
 <p>In Microsoft Windows, output can be redirected to a file if the redirection symbol is used to direct output in one of the task arguments.  For instance <code>&gt;C:\output.txt</code> will redirect both stderr and stdout to <code>c:\output.txt</code>.  The use of <code>1&gt;</code> to redirect stdout and <code>2&gt;</code> to redirect stderr independently of each other is also acceptable.</p>
 <p>When running a DOS program in Microsoft Windows, the <code>SHELL</code> flag can be set in the <fl>Flags</fl> field to prevent the DOS window from appearing.  The DOS window will also be hidden if the stdout or stderr pipes are redirected.</p>
@@ -40,7 +40,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Failed">General failure</error>
-        <error code="TimeOut">Can be returned if the <code>WAIT</code> flag is used.  Indicates that the process was launched, but the timeout expired before the process returned.</error>
+        <error code="Timeout">Can be returned if the <code>WAIT</code> flag is used.  Indicates that the process was launched, but the timeout expired before the process returned.</error>
         <error code="ProcessCreation">Process creation has failed</error>
         <error code="MissingPath">The Location field has not been set.</error>
       </result>
@@ -426,7 +426,7 @@ end
     </field>
 
     <field>
-      <name>TimeOut</name>
+      <name>Timeout</name>
       <comment>Limits the amount of time to wait for a launched process to return.</comment>
       <access read="R" write="W">Read/Write</access>
       <type>DOUBLE</type>

@@ -1335,11 +1335,11 @@ Only one AsyncWait() call may be active at any time.  If a second call is made w
 
 -INPUT-
 vector(oid) Objects: A list of object IDs to wait on.
-int TimeOut: Maximum time to wait in milliseconds, or `-1` for an indefinite wait.
+int Timeout: Maximum time to wait in milliseconds, or `-1` for an indefinite wait.
 
 -ERRORS-
 Okay: All async actions completed.
-TimeOut: The timeout expired before all actions completed.
+Timeout: The timeout expired before all actions completed.
 NullArgs
 InUse: Another AsyncWait() call is already active.
 OutsideMainThread:
@@ -1353,7 +1353,7 @@ main-thread-only, blocking, callback-inlines
 
 *********************************************************************************************************************/
 
-ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut)
+ERR AsyncWait(kt::vector<OBJECTID> &Objects, int Timeout)
 {
    kt::Log log(__FUNCTION__);
 
@@ -1388,10 +1388,10 @@ ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut)
    }
 
    int pending = glAsyncWaitCounter.load(std::memory_order_relaxed);
-   log.branch("Objects: %d, Pending: %d, Timeout: %d ms", int(glAsyncWaitTargets.size()), pending, TimeOut);
+   log.branch("Objects: %d, Pending: %d, Timeout: %d ms", int(glAsyncWaitTargets.size()), pending, Timeout);
 
    ERR error;
-   if (pending) error = ProcessMessages(PMF::NIL, TimeOut);
+   if (pending) error = ProcessMessages(PMF::NIL, Timeout);
    else error = ERR::Okay;
 
    glAsyncWaiting.store(false, std::memory_order_relaxed);
