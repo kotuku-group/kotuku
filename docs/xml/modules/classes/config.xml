@@ -52,13 +52,12 @@ print('The Action class is located at ' .. str)
     <action>
       <name>DataFeed</name>
       <comment>Data can be added to a Config object through this action.</comment>
-      <prototype>ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)</prototype>
+      <prototype>ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, std::span&lt;const int8_t&gt; Buffer)</prototype>
       <tiriPrototype>err = Object.acDataFeed(Object:obj, Datatype:DATA, Buffer:str)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Object">Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID.</param>
         <param type="DATA" name="Datatype" lookup="DATA">The type of data being sent.</param>
-        <param type="APTR" name="Buffer">The data being sent to the target object.</param>
-        <param type="INT" name="Size">The size of the data in Buffer.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Buffer">The data being sent to the target object.</param>
       </input>
       <description>
 <p>This action will accept configuration data in <code>TEXT</code> format.  Any existing data that matches to the new group keys will be overwritten with new values.</p>

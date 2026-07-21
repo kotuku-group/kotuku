@@ -144,7 +144,7 @@ end
       name = 'DataFeedClient',
       feedback = function(Socket:obj, State:num)
          if State is NTC_CONNECTED then
-            err = Socket.acDataFeed(nil, DATA_TEXT, expected_msg, #expected_msg)
+            err = Socket.acDataFeed(nil, DATA_TEXT, expected_msg)
             assert(err is ERR_Okay, '[Client] Failed to feed socket data: ' .. mSys.GetErrorMsg(err))
          end
       end,

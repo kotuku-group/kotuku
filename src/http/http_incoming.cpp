@@ -892,7 +892,8 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
       if (Self->ObjectMode IS HOM::DATA_FEED) {
          kt::ScopedObjectLock output(Self->OutputObjectID);
          if (output.granted()) {
-            if (auto error = acDataFeed(*output, Self, Self->Datatype, Buffer, Length); error != ERR::Okay) {
+            if (auto error = acDataFeed(*output, Self, Self->Datatype,
+                  std::span<const int8_t>((const int8_t *)Buffer, size_t(Length))); error != ERR::Okay) {
                Self->Error = error;
                return Self->Error;
             }

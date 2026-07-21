@@ -144,8 +144,8 @@ class objDocument : public Object {
       struct acClipboard args = { Mode };
       return Action(AC::Clipboard, this, &args);
    }
-   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, const void *Buffer, int Size) noexcept {
-      struct acDataFeed args = { Object, Datatype, Buffer, Size };
+   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, std::span<const int8_t> Buffer) noexcept {
+      struct acDataFeed args = { Object, Datatype, Buffer };
       return Action(AC::DataFeed, this, &args);
    }
    inline ERR disable() noexcept { return Action(AC::Disable, this, nullptr); }

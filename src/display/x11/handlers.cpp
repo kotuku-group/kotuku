@@ -218,7 +218,8 @@ void handle_button_press(XEvent *xevent)
             .Type      = JET::WHEEL
          };
 
-         acDataFeed(pointer, nullptr, DATA::DEVICE_INPUT, &input, sizeof(input));
+         acDataFeed(pointer, nullptr, DATA::DEVICE_INPUT,
+            std::span<const int8_t>((const int8_t *)&input, sizeof(input)));
       }
       else {
          struct dcDeviceInput input;
@@ -241,7 +242,8 @@ void handle_button_press(XEvent *xevent)
             input.Flags = glInputType[int(input.Type)].Flags;
             input.Timestamp = PreciseTime();
 
-            acDataFeed(pointer, nullptr, DATA::DEVICE_INPUT, &input, sizeof(input));
+            acDataFeed(pointer, nullptr, DATA::DEVICE_INPUT,
+               std::span<const int8_t>((const int8_t *)&input, sizeof(input)));
          }
       }
 
@@ -267,7 +269,10 @@ void handle_button_release(XEvent *xevent)
       else if (xevent->xbutton.button IS 2) input.Type  = JET::BUTTON_3;
       else if (xevent->xbutton.button IS 3) input.Type  = JET::BUTTON_2;
 
-      if (input.Type != JET::NIL) acDataFeed(pointer, nullptr, DATA::DEVICE_INPUT, &input, sizeof(input));
+      if (input.Type != JET::NIL) {
+         acDataFeed(pointer, nullptr, DATA::DEVICE_INPUT,
+            std::span<const int8_t>((const int8_t *)&input, sizeof(input)));
+      }
       ReleaseObject(pointer);
    }
 
@@ -712,18 +717,14 @@ void process_movement(Window Window, int X, int Y)
 
       // Refer to the handler code in the Display class to see how the HostX and HostY fields are updated from afar.
 
-      struct acDataFeed feed;
       struct dcDeviceInput input;
-      feed.Object   = nullptr;
-      feed.Datatype = DATA::DEVICE_INPUT;
-      feed.Buffer   = &input;
-      feed.Size     = sizeof(input);
       input.Type      = JET::ABS_XY;
       input.Flags     = JTYPE::NIL;
       input.Values[0] = X;
       input.Values[1] = Y;
       input.Timestamp = PreciseTime();
-      Action(AC::DataFeed, pointer, &feed);
+      acDataFeed(pointer, nullptr, DATA::DEVICE_INPUT,
+         std::span<const int8_t>((const int8_t *)&input, sizeof(input)));
 
       ReleaseObject(pointer);
    }

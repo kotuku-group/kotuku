@@ -150,7 +150,8 @@ void doc_menu::refresh()
 
    acClear(m_doc);
    auto bufstr = buf.str();
-   m_doc->dataFeed(m_doc, DATA::XML, bufstr.c_str(), bufstr.size());
+   m_doc->dataFeed(m_doc, DATA::XML,
+      std::span<const int8_t>((const int8_t *)bufstr.data(), bufstr.size()));
 
    // Resize the menu to match the new content.  If the height of the menu is excessive (relative to the height
    // of the display), we reduce it and utilise a scrollbar to see all menu items.

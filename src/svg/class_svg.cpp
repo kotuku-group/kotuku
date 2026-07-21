@@ -118,7 +118,8 @@ static ERR SVG_DataFeed(extSVG *Self, struct acDataFeed *Args)
    if (!Args) return ERR::NullArgs;
 
    if (Args->Datatype IS DATA::XML) {
-      return parse_svg(Self, std::string_view{}, std::string_view((const char *)Args->Buffer, Args->Size));
+      return parse_svg(Self, std::string_view{},
+         std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size()));
    }
 
    return ERR::Okay;

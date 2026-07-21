@@ -392,13 +392,10 @@ static ERR FILE_DataFeed(extFile *Self, struct acDataFeed *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Buffer)) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
+   if ((not Args->Buffer.data()) and (not Args->Buffer.empty())) return log.warning(ERR::NullArgs);
 
-   if (Args->Size) return acWrite(Self, std::span<const int8_t>((const int8_t *)Args->Buffer, Args->Size));
-   else {
-      auto input = std::string_view((const char *)Args->Buffer);
-      return acWrite(Self, std::span<const int8_t>((const int8_t *)Args->Buffer, input.size()));
-   }
+   return acWrite(Self, Args->Buffer);
 }
 
 /*********************************************************************************************************************

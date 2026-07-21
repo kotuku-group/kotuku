@@ -6,7 +6,7 @@
 
 FDEF argsClipboard[]     = { { "Mode", FD_INT }, { 0, 0 } };
 FDEF argsCopyData[]      = { { "Dest", FD_OBJECTPTR  }, { 0, 0 } };
-FDEF argsDataFeed[]      = { { "Object", FD_OBJECTPTR }, { "Datatype", FD_INT }, { "Buffer", FD_PTR }, { "Size", FD_INT|FD_PTRSIZE }, { 0, 0 } };
+FDEF argsDataFeed[]      = { { "Object", FD_OBJECTPTR }, { "Datatype", FD_INT }, { "Buffer", FDF_SPAN|FD_PTR }, { 0, 0 } };
 FDEF argsDragDrop[]      = { { "Source", FD_OBJECTPTR }, { "Item", FD_INT }, { "Datatype", FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsDraw[]          = { { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, { "Height", FD_INT }, { 0, 0 } };
 FDEF argsGetKey[]        = { { "Field", FDF_CPPSTRING }, { "Value", FDF_CPPSTRING|FD_RESULT|FD_MUTABLE }, { 0, 0 } };

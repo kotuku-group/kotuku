@@ -287,12 +287,8 @@ static void notify_dragdrop(OBJECTPTR Object, ACTIONID ActionID, ERR Result, str
    request.Preference[1] = int8_t(DATA::TEXT);
    request.Preference[2] = 0;
 
-   struct acDataFeed dc;
-   dc.Object   = Self;
-   dc.Datatype = DATA::REQUEST;
-   dc.Buffer   = &request;
-   dc.Size     = sizeof(request);
-   if (!Action(AC::DataFeed, Args->Source, &dc)) {
+   if (!acDataFeed(Args->Source, Self, DATA::REQUEST,
+         std::span<const int8_t>((const int8_t *)&request, sizeof(request)))) {
       // The source will return a DATA::RECEIPT for the items that we've asked for (see the DataFeed action).
    }
 }
@@ -385,7 +381,8 @@ static void notify_write(OBJECTPTR Object, ACTIONID ActionID, ERR Result, struct
    SCICALL(SCI_SETUNDOCOLLECTION, 0UL); // Turn off undo
 
    if (Args->Buffer) {
-      acDataFeed(Self, Self, DATA::TEXT, Args->Buffer, Args->Result);
+      acDataFeed(Self, Self, DATA::TEXT,
+         std::span<const int8_t>((const int8_t *)Args->Buffer, size_t(Args->Result)));
    }
    else { // We have to read the data from the file stream
    }
@@ -449,19 +446,14 @@ static ERR SCINTILLA_DataFeed(extScintilla *Self, struct acDataFeed *Args)
    if (!Args) return log.warning(ERR::NullArgs);
 
    if (Args->Datatype IS DATA::TEXT) {
-      CSTRING str;
-
       // Incoming text is appended to the end of the document
-
-      if (!Args->Buffer) str = "";
-      else str = (CSTRING)Args->Buffer;
-
-      SCICALL(SCI_APPENDTEXT, strlen(str), str);
+      SCICALL(SCI_APPENDTEXT, Args->Buffer.size(), (const char *)Args->Buffer.data());
    }
    else if (Args->Datatype IS DATA::RECEIPT) {
       log.msg("Received item receipt from object %d.", Args->Object ? Args->Object->UID : 0);
 
-      objXML::create xml = { fl::Statement((CSTRING)Args->Buffer) };
+      objXML::create xml = { fl::Statement(
+         std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size())) };
       if (xml.ok()) {
          for (auto &tag : xml->Tags) {
             if (iequals("file", tag.name())) {
