@@ -442,8 +442,9 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
    if (Args->Datatype IS DATA::TEXT) {
       log.msg("Copying text to the clipboard.");
 
-      if (not Args->Buffer) return log.warning(ERR::NullArgs);
-      if (auto error = add_text_to_host(Self, std::string_view((CSTRING)Args->Buffer, size_t(Args->Size)));
+      if ((not Args->Buffer.data()) and (not Args->Buffer.empty())) return log.warning(ERR::NullArgs);
+      if (auto error = add_text_to_host(Self,
+            std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size()));
             (error != ERR::Okay) and (error != ERR::NoSupport)) {
          return log.warning(error);
       }
@@ -452,7 +453,7 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
       if (auto error = add_clip(CLIPTYPE::TEXT, items); !error) {
          auto file = objFile::create { fl::Path(items[0].Path), fl::Flags(FL::NEW|FL::WRITE), fl::Permissions(PERMIT::READ|PERMIT::WRITE) };
          if (file.ok()) {
-            if (file->write(std::span<const int8_t>((const int8_t *)Args->Buffer, Args->Size)) != ERR::Okay) {
+            if (file->write(Args->Buffer) != ERR::Okay) {
                return log.warning(ERR::Write);
             }
             return ERR::Okay;
@@ -462,10 +463,13 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
       else return log.warning(error);
    }
    else if ((Args->Datatype IS DATA::REQUEST) and ((Self->Flags & CPF::DRAG_DROP) != CPF::NIL))  {
-      if ((not Args->Buffer) or (not Args->Object)) return log.warning(ERR::NullArgs);
+      if ((not Args->Buffer.data()) or (not Args->Object)) return log.warning(ERR::NullArgs);
+      if (Args->Buffer.size() < sizeof(struct dcRequest)) return log.warning(ERR::Args);
 
-      auto request = (struct dcRequest *)Args->Buffer;
-      log.branch("Data request from #%d received for item %d, datatype %d", Args->Object->UID, request->Item, request->Preference[0]);
+      struct dcRequest request;
+      copymem(Args->Buffer.data(), &request, sizeof(request));
+      log.branch("Data request from #%d received for item %d, datatype %d", Args->Object->UID, request.Item,
+         request.Preference[0]);
 
       ERR error = ERR::Okay;
       if (Self->RequestHandler.stale()) {
@@ -476,15 +480,15 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
       if (Self->RequestHandler.isC()) {
          auto routine = (ERR (*)(objClipboard *, OBJECTPTR, int, char *, APTR))Self->RequestHandler.Routine;
          kt::SwitchContext ctx(Self->RequestHandler.Context);
-         error = routine(Self, Args->Object, request->Item, request->Preference, Self->RequestHandler.Meta);
+         error = routine(Self, Args->Object, request.Item, request.Preference, Self->RequestHandler.Meta);
       }
       else if (Self->RequestHandler.isScript()) {
          if (sc::Call(Self->RequestHandler, std::to_array<ScriptArg>({
             { "Clipboard", Self, FD_OBJECTPTR },
             { "Requester", Args->Object, FD_OBJECTPTR },
-            { "Item",      request->Item },
-            { "Datatypes", request->Preference, FD_ARRAY|FD_BYTE },
-            { "Size",      int(std::ssize(request->Preference)), FD_INT|FD_ARRAYSIZE }
+            { "Item",      request.Item },
+            { "Datatypes", request.Preference, FD_ARRAY|FD_BYTE },
+            { "Size",      int(std::ssize(request.Preference)), FD_INT|FD_ARRAYSIZE }
          }), error) != ERR::Okay) error = ERR::Terminate;
       }
       else error = log.warning(ERR::FieldNotSet);

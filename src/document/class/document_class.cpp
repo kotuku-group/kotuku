@@ -383,7 +383,8 @@ static ERR DOCUMENT_Clipboard(extDocument *Self, struct acClipboard *Args)
                      int result;
                      if (!(error = file->read(std::span<int8_t>((int8_t *)buffer, size_t(size)), &result))) {
                         buffer[result] = 0;
-                        error = Self->dataFeed(Self, DATA::TEXT, buffer, result);
+                        error = Self->dataFeed(Self, DATA::TEXT,
+                           std::span<const int8_t>((const int8_t *)buffer, size_t(result)));
                      }
                      else error_dialog("Clipboard Paste Error", ERR::Read);
                      delete[] buffer;
@@ -435,7 +436,8 @@ static ERR DOCUMENT_DataFeed(extDocument *Self, struct acDataFeed *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Buffer)) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
+   if ((not Args->Buffer.data()) and (not Args->Buffer.empty())) return log.warning(ERR::NullArgs);
 
    if ((Args->Datatype IS DATA::TEXT) or (Args->Datatype IS DATA::XML)) {
       // Incoming data is translated on the fly and added to the end of the current document page.  The original XML
@@ -448,7 +450,7 @@ static ERR DOCUMENT_DataFeed(extDocument *Self, struct acDataFeed *Args)
 
       objXML::create xml = {
          fl::Flags(XMF::INCLUDE_WHITESPACE|XMF::PARSE_HTML|XMF::STRIP_HEADERS|XMF::WELL_FORMED|XMF::READ_ONLY),
-         fl::Statement(CSTRING(Args->Buffer))
+         fl::Statement(std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size()))
       };
 
       if (xml.ok()) {

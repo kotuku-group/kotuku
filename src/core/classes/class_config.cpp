@@ -236,12 +236,10 @@ be overwritten with new values.
 
 static ERR CONFIG_DataFeed(extConfig *Self, struct acDataFeed *Args)
 {
-   kt::Log log;
-
-   if (not Args) return log.warning(ERR::NullArgs);
+   if (not Args) return ERR::NullArgs;
 
    if (Args->Datatype IS DATA::TEXT) {
-      auto buf = (Args->Size > 0) ? std::string_view((CSTRING)Args->Buffer, Args->Size) : std::string_view((CSTRING)Args->Buffer);
+      auto buf = std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size());
       if (auto error = parse_config(Self, buf); !error) {
          apply_filters(Self);
       }
@@ -361,23 +359,19 @@ pure-query, object-owns-result, null-terminated-result
 
 static ERR CONFIG_GetGroupFromIndex(extConfig *Self, struct cfg::GetGroupFromIndex *Args)
 {
-   kt::Log log;
-
-   if ((not Args) or (Args->Index < 0)) return log.warning(ERR::Args);
+   if (not Args) return ERR::Args;
 
    if ((Args->Index >= 0) and (Args->Index < (int)Self->Groups.size())) {
       Args->Group = std::string_view(Self->Groups[Args->Index].first);
       return ERR::Okay;
    }
-   else return log.warning(ERR::OutOfRange);
+   else return kt::Log().warning(ERR::OutOfRange);
 }
 
 //********************************************************************************************************************
 
 static ERR CONFIG_Init(extConfig *Self)
 {
-   kt::Log log;
-
    if ((Self->Flags & CNF::NEW) != CNF::NIL) return ERR::Okay; // Do not load any data even if the path is defined.
 
    ERR error = ERR::Okay;
@@ -498,9 +492,7 @@ pure-query, object-owns-result, null-terminated-result
 
 static ERR CONFIG_ReadValue(extConfig *Self, struct cfg::ReadValue *Args)
 {
-   kt::Log log;
-
-   if (not Args) return log.warning(ERR::NullArgs);
+   if (not Args) return ERR::NullArgs;
 
    for (auto & [group, keys] : Self->Groups) {
       if ((not Args->Group.empty()) and (group != Args->Group)) continue;
@@ -516,7 +508,6 @@ static ERR CONFIG_ReadValue(extConfig *Self, struct cfg::ReadValue *Args)
       }
    }
 
-   log.trace("Could not find key %.*s : %.*s.", int(Args->Group.size()), Args->Group.data(), int(Args->Key.size()), Args->Key.data());
    Args->Data = std::string_view{};
    return ERR::Search;
 }

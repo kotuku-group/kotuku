@@ -1001,7 +1001,7 @@ inline void SharedObjectAccess::release() {
 
 struct acClipboard     { static const AC id = AC::Clipboard; CLIPMODE Mode; };
 struct acCopyData      { static const AC id = AC::CopyData; OBJECTPTR Dest; };
-struct acDataFeed      { static const AC id = AC::DataFeed; OBJECTPTR Object; DATA Datatype; const void *Buffer; int Size; };
+struct acDataFeed      { static const AC id = AC::DataFeed; OBJECTPTR Object; DATA Datatype; std::span<const int8_t> Buffer; };
 struct acDragDrop      { static const AC id = AC::DragDrop; OBJECTPTR Source; int Item; std::string_view Datatype; };
 struct acDraw          { static const AC id = AC::Draw; int X; int Y; int Width; int Height; };
 struct acGetKey        { static const AC id = AC::GetKey; std::string_view Key; std::string *Value; };
@@ -1061,8 +1061,8 @@ inline ERR acDrawArea(OBJECTPTR Object, int X, int Y, int Width, int Height) {
    return Action(AC::Draw, Object, &args);
 }
 
-inline ERR acDataFeed(OBJECTPTR Object, OBJECTPTR Sender, DATA Datatype, const void *Buffer, int Size) {
-   struct acDataFeed args = { Sender, Datatype, Buffer, Size };
+inline ERR acDataFeed(OBJECTPTR Object, OBJECTPTR Sender, DATA Datatype, std::span<const int8_t> Buffer) {
+   struct acDataFeed args = { Sender, Datatype, Buffer };
    return Action(AC::DataFeed, Object, &args);
 }
 

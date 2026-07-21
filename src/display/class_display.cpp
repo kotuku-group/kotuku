@@ -234,17 +234,20 @@ static ERR DISPLAY_DataFeed(extDisplay *Self, struct acDataFeed *Args)
    if (Args->Datatype IS DATA::REQUEST) {
       // Supported for handling the windows clipboard
 
-      if ((not Args->Buffer) or (not Args->Object)) return log.warning(ERR::NullArgs);
-      auto request = (struct dcRequest *)Args->Buffer;
+      if ((not Args->Buffer.data()) or (not Args->Object)) return log.warning(ERR::NullArgs);
+      if (Args->Buffer.size() < sizeof(struct dcRequest)) return log.warning(ERR::Args);
+      struct dcRequest request;
+      copymem(Args->Buffer.data(), &request, sizeof(request));
 
-      log.traceBranch("Received data request from object %d, item %d", Args->Object ? Args->Object->UID : 0, request->Item);
+      log.traceBranch("Received data request from object %d, item %d", Args->Object ? Args->Object->UID : 0,
+         request.Item);
 
       #ifdef WIN_DRAGDROP
       struct WinDT *data;
       int total_items;
-      if (not winGetData(request->Preference, &data, &total_items)) {
+      if (not winGetData(request.Preference, &data, &total_items)) {
          std::ostringstream xml;
-         xml << "<receipt totalitems=\"" << total_items << "\" id=\"" << request->Item << "\">";
+         xml << "<receipt totalitems=\"" << total_items << "\" id=\"" << request.Item << "\">";
          for (int i=0; i < total_items; i++) {
             if (DATA(data[i].Datatype) IS DATA::FILE) {
                xml << "<file path=\"" << (CSTRING)data[i].Data << "\"/>";
@@ -256,14 +259,9 @@ static ERR DISPLAY_DataFeed(extDisplay *Self, struct acDataFeed *Args)
          }
          xml << "</receipt>";
 
-         struct acDataFeed dc;
          auto result = xml.str();
-         dc.Object   = Self;
-         dc.Datatype = DATA::RECEIPT;
-         dc.Buffer   = result.c_str();
-         dc.Size     = result.size() + 1;
-         auto error = Action(AC::DataFeed, Args->Object, &dc);
-         return error;
+         return acDataFeed(Args->Object, Self, DATA::RECEIPT,
+            std::span<const int8_t>((const int8_t *)result.data(), result.size()));
       }
       else return log.warning(ERR::NoSupport);
       #endif

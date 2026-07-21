@@ -361,11 +361,8 @@ static ERR TIRI_DataFeed(extTiri *Self, struct acDataFeed *Args)
 
    if (not Args) return ERR::NullArgs;
 
-   if (Args->Datatype IS DATA::TEXT) {
-      Self->setStatement((CSTRING)Args->Buffer);
-   }
-   else if (Args->Datatype IS DATA::XML) {
-      Self->setStatement((CSTRING)Args->Buffer);
+   if ((Args->Datatype IS DATA::TEXT) or (Args->Datatype IS DATA::XML)) {
+      Self->setStatement(std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size()));
    }
    else if (Args->Datatype IS DATA::RECEIPT) {
       log.branch("Incoming data receipt from #%d", Args->Object ? Args->Object->UID : 0);
@@ -379,7 +376,8 @@ static ERR TIRI_DataFeed(extTiri *Self, struct acDataFeed *Args)
                lua_rawgeti(Self->Lua, LUA_REGISTRYINDEX, it->Callback); // +1 Reference to callback
                lua_newtable(Self->Lua); // +1 Item table
 
-               if (auto xml = objXML::create::local(fl::Statement((CSTRING)Args->Buffer))) {
+               if (auto xml = objXML::create::local(fl::Statement(
+                     std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size())))) {
                   // <file path="blah.exe"/> becomes { item='file', path='blah.exe' }
 
                   if (not xml->Tags.empty()) {

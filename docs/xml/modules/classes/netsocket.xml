@@ -35,16 +35,15 @@ initially fill the internal write buffer, thereafter it will be called whenever 
     <action>
       <name>DataFeed</name>
       <comment>Streams raw data to the socket for writing.</comment>
-      <prototype>ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)</prototype>
+      <prototype>ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, std::span&lt;const int8_t&gt; Buffer)</prototype>
       <tiriPrototype>err = Object.acDataFeed(Object:obj, Datatype:DATA, Buffer:str)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Object">Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID.</param>
         <param type="DATA" name="Datatype" lookup="DATA">The type of data being sent.</param>
-        <param type="APTR" name="Buffer">The data being sent to the target object.</param>
-        <param type="INT" name="Size">The size of the data in Buffer.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Buffer">The data being sent to the target object.</param>
       </input>
       <description>
-<p>Data sent to a NetSocket through this action is written using the same buffered behaviour as <action>Write</action>.  If the feed size is zero, the buffer is treated as null-terminated text.</p>
+<p>Data sent to a NetSocket through this action is written using the same buffered behaviour as <action>Write</action>.</p>
       </description>
     </action>
 

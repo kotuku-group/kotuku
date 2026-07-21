@@ -145,7 +145,8 @@ void ScintillaKTK::AddToPopUp(const char *label, int cmD, bool enabled)
 
    if (auto menu = OBJECTPTR(popup.GetID()); menu) {
       auto buffer = std::format("<item text=\"{}\"></item>", label);
-      acDataFeed(menu, nullptr, DATA::XML, buffer.c_str(), buffer.size());
+      acDataFeed(menu, nullptr, DATA::XML,
+         std::span<const int8_t>((const int8_t *)buffer.data(), buffer.size()));
    }
 }
 

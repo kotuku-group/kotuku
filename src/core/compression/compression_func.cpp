@@ -17,7 +17,8 @@ static void print(extCompression *Self, CSTRING Buffer)
 
    if (Self->OutputID) {
       kt::ScopedObjectLock output(Self->OutputID);
-      if (output.granted()) acDataFeed(*output, Self, DATA::TEXT, Buffer, strlen(Buffer) + 1);
+      if (output.granted()) acDataFeed(*output, Self, DATA::TEXT,
+         std::span<const int8_t>((const int8_t *)Buffer, strlen(Buffer)));
    }
    else log.msg("%s", Buffer);
 }
@@ -28,7 +29,8 @@ static void print(extCompression *Self, std::string Buffer)
 
    if (Self->OutputID) {
       kt::ScopedObjectLock output(Self->OutputID);
-      if (output.granted()) acDataFeed(*output, Self, DATA::TEXT, Buffer.c_str(), Buffer.length() + 1);
+      if (output.granted()) acDataFeed(*output, Self, DATA::TEXT,
+         std::span<const int8_t>((const int8_t *)Buffer.data(), Buffer.size()));
    }
    else log.msg("%s", Buffer.c_str());
 }

@@ -31,13 +31,12 @@
     <action>
       <name>DataFeed</name>
       <comment>Data can be streamed to any file as a method of writing content.</comment>
-      <prototype>ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)</prototype>
+      <prototype>ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, std::span&lt;const int8_t&gt; Buffer)</prototype>
       <tiriPrototype>err = Object.acDataFeed(Object:obj, Datatype:DATA, Buffer:str)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Object">Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID.</param>
         <param type="DATA" name="Datatype" lookup="DATA">The type of data being sent.</param>
-        <param type="APTR" name="Buffer">The data being sent to the target object.</param>
-        <param type="INT" name="Size">The size of the data in Buffer.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Buffer">The data being sent to the target object.</param>
       </input>
       <description>
 <p>Streaming data of any type to a file will result in the content being written to the file at the current seek <fl>Position</fl>.</p>

@@ -102,13 +102,12 @@ setAction('CopyData', {
 
 setAction('DataFeed', {
    comment   = 'Provides a mechanism for feeding data to objects.',
-   prototype = 'ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)',
+   prototype = 'ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, std::span<const int8_t> Buffer)',
    tiriPrototype = 'err = Object.acDataFeed(Object:obj, Datatype:DATA, Buffer:str)',
    params    = {
       { name='Object', type='OBJECTID', comment='Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID.' },
       { name='Datatype', type='DATA', lookup='DATA', comment='The type of data being sent.' },
-      { name='Buffer', type='APTR', comment='The data being sent to the target object.' },
-      { name='Size', type='INT', comment='The size of the data in Buffer.' }
+      { name='Buffer', type='std::span<const int8_t>', comment='The data being sent to the target object.' }
    }
 })
 

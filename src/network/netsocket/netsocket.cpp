@@ -369,8 +369,7 @@ static ERR connect_timeout_handler(OBJECTPTR Subscriber, int64_t TimeElapsed, in
 -ACTION-
 DataFeed: Streams raw data to the socket for writing.
 
-Data sent to a NetSocket through this action is written using the same buffered behaviour as #Write().  If the feed
-size is zero, the buffer is treated as null-terminated text.
+Data sent to a NetSocket through this action is written using the same buffered behaviour as #Write().
 
 *********************************************************************************************************************/
 
@@ -378,10 +377,9 @@ static ERR NETSOCKET_DataFeed(extNetSocket *Self, struct acDataFeed *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Buffer)) return log.warning(ERR::NullArgs);
-
-   if (not Args->Size) return ERR::Okay;
-   if (Args->Size < 0) return log.warning(ERR::Args);
+   if (not Args) return log.warning(ERR::NullArgs);
+   if ((not Args->Buffer.data()) and (not Args->Buffer.empty())) return log.warning(ERR::NullArgs);
+   if (Args->Buffer.empty()) return ERR::Okay;
 
    switch(Args->Datatype) {
       case DATA::TEXT:
@@ -389,10 +387,11 @@ static ERR NETSOCKET_DataFeed(extNetSocket *Self, struct acDataFeed *Args)
       case DATA::XML:
       case DATA::AUDIO:
       case DATA::IMAGE:
-         return acWrite(Self, std::span<const int8_t>((const int8_t *)Args->Buffer, Args->Size));
+         return acWrite(Self, Args->Buffer);
 
       case DATA::FILE: { // File path
-         auto file = objFile::create({ fl::Path(CSTRING(Args->Buffer)), fl::Flags(FL::READ) });
+         auto path = std::string((const char *)Args->Buffer.data(), Args->Buffer.size());
+         auto file = objFile::create({ fl::Path(path), fl::Flags(FL::READ) });
          if (file.ok()) {
             int64_t size;
             file->getSize(size);

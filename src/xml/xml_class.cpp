@@ -147,13 +147,15 @@ static ERR XML_DataFeed(extXML *Self, struct acDataFeed *Args)
       if ((Self->Flags & XMF::READ_ONLY) != XMF::NIL) return log.warning(ERR::ReadOnly);
 
       if (Self->Tags.empty()) {
-         if (auto error = txt_to_xml(Self, Self->Tags, std::string_view((char *)Args->Buffer, Args->Size)); error != ERR::Okay) {
+         if (auto error = txt_to_xml(Self, Self->Tags,
+               std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size())); error != ERR::Okay) {
             return log.warning(error);
          }
       }
       else {
          TAGS tags;
-         if (auto error = txt_to_xml(Self, tags, std::string_view((char *)Args->Buffer, Args->Size)); error != ERR::Okay) {
+         if (auto error = txt_to_xml(Self, tags,
+               std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size())); error != ERR::Okay) {
             return log.warning(error);
          }
 

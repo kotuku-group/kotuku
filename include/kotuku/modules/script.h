@@ -89,8 +89,8 @@ class objScript : public Object {
    // Action stubs
 
    inline ERR activate() noexcept { return Action(AC::Activate, this, nullptr); }
-   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, const void *Buffer, int Size) noexcept {
-      struct acDataFeed args = { Object, Datatype, Buffer, Size };
+   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, std::span<const int8_t> Buffer) noexcept {
+      struct acDataFeed args = { Object, Datatype, Buffer };
       return Action(AC::DataFeed, this, &args);
    }
    inline ERR getKey(std::string_view Key, std::string &Value) noexcept {

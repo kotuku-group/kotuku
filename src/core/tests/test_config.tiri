@@ -37,7 +37,7 @@ end
 
 function new_config()
    cfg = obj.new('config', { })
-   err = cfg.acDataFeed(nil, DATA_TEXT, glLegalData, 0)
+   err = cfg.acDataFeed(nil, DATA_TEXT, glLegalData)
    assert(err is ERR_Okay, 'DataFeed() returned ' .. mSys.GetErrorMsg(err))
    return cfg
 end
@@ -130,7 +130,7 @@ end
    cfg = new_config()
 
    cfgMerge = obj.new('config', { })
-   err = cfgMerge.acDataFeed(nil, DATA_TEXT, glMerge, 0)
+   err = cfgMerge.acDataFeed(nil, DATA_TEXT, glMerge)
    assert(err is ERR_Okay, 'DataFeed() returned ' .. mSys.GetErrorMsg(err))
 
    err = cfg.mtMerge(cfgMerge);
