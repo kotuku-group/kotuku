@@ -16,11 +16,14 @@ struct pending_function_arg {
    Release = false;
 
    if (auto direct = direct_object_ptr(Def)) return Action(ActionID, direct, Args);
-   else if (auto obj = access_object(Def)) {
+
+   OBJECTPTR obj;
+   auto error = access_object(Def, obj);
+   if (error IS ERR::Okay) {
       Release = true;
       return Action(ActionID, obj, Args);
    }
-   else return ERR::AccessObject;
+   else return error;
 }
 
 //********************************************************************************************************************
@@ -269,11 +272,14 @@ static ERR copy_object_cpp_array_arg(GCarray *Array, kt::vector<OBJECTPTR> *Vect
 
       auto obj_ref = gco_to_object(gcref(refs[i]));
       if (auto direct = direct_object_ptr(obj_ref)) Vector->push_back(direct);
-      else if (auto ptr_obj = access_object(obj_ref)) {
-         Vector->push_back(ptr_obj);
-         release_object(obj_ref);
+      else {
+         OBJECTPTR ptr_obj;
+         if (!access_object(obj_ref, ptr_obj)) {
+            Vector->push_back(ptr_obj);
+            release_object(obj_ref);
+         }
+         else Vector->push_back(nullptr);
       }
-      else Vector->push_back(nullptr);
    }
 
    return ERR::Okay;
@@ -685,7 +691,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
                if (auto direct = direct_object_ptr(obj_ref)) {
                   ((OBJECTPTR *)(ArgBuffer + j))[0] = direct;
                }
-               else if ((ptr_obj = access_object(obj_ref))) {
+               else if (!access_object(obj_ref, ptr_obj)) {
                   ((OBJECTPTR *)(ArgBuffer + j))[0] = ptr_obj;
                   release_object(obj_ref);
                }

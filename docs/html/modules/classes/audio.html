@@ -70,24 +70,18 @@
 <tr data-bs-toggle="collapse" data-bs-target="#fl-PeriodSize" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-PeriodSize"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">PeriodSize</th><td class="col-md-1"><span class="text-nowrap">INT</span></td><td>Defines the byte size of each period allocated to the internal audio buffer.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-PeriodSize" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>The PeriodSize field determines the granularity of audio buffer management, affecting system responsiveness, processing efficiency, and overall audio quality. This setting works in conjunction with the <a data-bs-toggle="tooltip" title="Defines the number of periods that make up the internal audio buffer." href="#tf-Periods">Periods</a> field to define the complete buffering architecture.</p>
 <ul>
-<li>
-<b>Minimum</b>: 1024 bytes (1KB) - Enables very low latency but requires high-performance processing.</li>
-<li>
-<b>Maximum</b>: 16384 bytes (16KB) - Provides maximum buffering and processing time per period.</li>
-<li>
-<b>Recommended</b>: 2048 bytes (2KB) - Optimal balance for most applications and hardware configurations.</li>
+<li><b>Minimum</b>: 1024 bytes (1KB) - Enables very low latency but requires high-performance processing.</li>
+<li><b>Maximum</b>: 16384 bytes (16KB) - Provides maximum buffering and processing time per period.</li>
+<li><b>Recommended</b>: 2048 bytes (2KB) - Optimal balance for most applications and hardware configurations.</li>
 </ul>
 <p>Period latency (in seconds) = <code>PeriodSize ÷ (SampleRate × Channels × BytesPerSample)</code></p>
 <p>For example, with a 2048-byte period at 44100Hz stereo 16-bit <code>Latency = 2048 ÷ (44100 × 2 × 2) = 11.6ms per period</code></p>
 <p>The combination of PeriodSize and <a data-bs-toggle="tooltip" title="Defines the number of periods that make up the internal audio buffer." href="#tf-Periods">Periods</a> creates a multi-stage buffering system where audio data flows through sequential periods, providing time for processing whilst maintaining continuous playback.</p>
 <h4>Application Guidelines</h4>
 <ul>
-<li>
-<b>Real-time applications</b>: Use smaller periods (1-2KB) with fewer periods for minimal latency.</li>
-<li>
-<b>General applications</b>: Use medium periods (2-4KB) with 4 periods for reliable performance.</li>
-<li>
-<b>Background audio</b>: Use larger periods (8-16KB) with more periods for maximum efficiency.</li>
+<li><b>Real-time applications</b>: Use smaller periods (1-2KB) with fewer periods for minimal latency.</li>
+<li><b>General applications</b>: Use medium periods (2-4KB) with 4 periods for reliable performance.</li>
+<li><b>Background audio</b>: Use larger periods (8-16KB) with more periods for maximum efficiency.</li>
 </ul>
       
 </div></div></td></tr>
@@ -95,12 +89,9 @@
 <p>The Periods field controls the segmentation of the internal audio buffer, directly affecting latency, performance, and audio continuity. This setting is particularly relevant for ALSA-based systems where period-based buffering is fundamental to audio driver operation.</p>
 <p>The total audio buffer is divided into discrete periods, each representing a contiguous block of audio data. The audio system processes data period by period, allowing for predictable latency characteristics and efficient interrupt handling.</p>
 <ul>
-<li>
-<b>Minimum</b>: 2 periods (provides double-buffering for basic audio continuity)</li>
-<li>
-<b>Maximum</b>: 16 periods (enables extensive buffering for demanding applications)</li>
-<li>
-<b>Recommended</b>: 4 periods (balances latency and reliability for most use cases)</li>
+<li><b>Minimum</b>: 2 periods (provides double-buffering for basic audio continuity)</li>
+<li><b>Maximum</b>: 16 periods (enables extensive buffering for demanding applications)</li>
+<li><b>Recommended</b>: 4 periods (balances latency and reliability for most use cases)</li>
 </ul>
 <p>Fewer periods reduce overall system latency but increase the risk of audio dropouts if processing cannot keep pace with audio consumption. More periods provide greater buffering security at the cost of increased latency.</p>
       
@@ -110,14 +101,10 @@
 <p>The value range spans from 0 (minimal processing) to 100 (maximum fidelity), with recommended settings between 70-80 for most applications. This range provides an optimal balance between audio clarity and system performance.</p>
 <p>Setting the Quality value automatically adjusts the following processing flags:</p>
 <ul>
-<li>
-<b>Quality 0-9</b>: Minimal processing, no filtering or oversampling applied.</li>
-<li>
-<b>Quality 10-32</b>: Enables <code>ADF::FILTER_LOW</code> for basic output filtering.</li>
-<li>
-<b>Quality 33-65</b>: Activates <code>ADF::FILTER_HIGH</code> for enhanced frequency response.</li>
-<li>
-<b>Quality 66-100</b>: Implements <code>ADF::OVER_SAMPLING</code> and <code>ADF::FILTER_HIGH</code> for maximum fidelity.</li>
+<li><b>Quality 0-9</b>: Minimal processing, no filtering or oversampling applied.</li>
+<li><b>Quality 10-32</b>: Enables <code>ADF::FILTER_LOW</code> for basic output filtering.</li>
+<li><b>Quality 33-65</b>: Activates <code>ADF::FILTER_HIGH</code> for enhanced frequency response.</li>
+<li><b>Quality 66-100</b>: Implements <code>ADF::OVER_SAMPLING</code> and <code>ADF::FILTER_HIGH</code> for maximum fidelity.</li>
 </ul>
       
 </div></div></td></tr>
@@ -182,8 +169,8 @@
 <tr><th class="col-md-1">AllocMemory</th><td>Failed to allocate enough memory to hold the sample data.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Required parameters are null or missing.</td></tr>
 </tbody></table></div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-AddStream" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">AddStream</th><td id="tm-AddStream">Adds a new sample-stream to an Audio object for channel-based playback.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-AddStream" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR snd::AddStream(OBJECTPTR Object, FUNCTION Callback, FUNCTION OnStop, SFM SampleFormat, INT SampleLength, INT PlayOffset, struct AudioLoop * Loop, INT LoopSize, INT * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Callback</td><td>This callback function must be able to return raw audio data for streaming.</td></tr>
-<tr><td>OnStop</td><td>This optional callback function will be called when the stream stops playing.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-AddStream" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">AddStream</th><td id="tm-AddStream">Adds a new sample-stream to an Audio object for channel-based playback.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-AddStream" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR snd::AddStream(OBJECTPTR Object, FUNCTION Callback, FUNCTION OnStop, SFM SampleFormat, INT SampleLength, INT PlayOffset, struct AudioLoop * Loop, INT LoopSize, INT * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Callback</td><td>This callback function must be able to return raw audio data for streaming.  The function context will be pinned as a safety measure.</td></tr>
+<tr><td>OnStop</td><td>This optional callback function will be called when the stream stops playing.  The function context will be pinned as a safety measure.</td></tr>
 <tr><td><a href="?page=SFM">SampleFormat</a></td><td>Indicates the format of the sample data that you are adding.</td></tr>
 <tr><td>SampleLength</td><td>Total byte-length of the sample data that is being streamed.  May be set to zero if the length is infinite or unknown.</td></tr>
 <tr><td>PlayOffset</td><td>Offset the playing position by this byte index.</td></tr>

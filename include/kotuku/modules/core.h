@@ -21,7 +21,6 @@
 #include <bit>
 #include <atomic>
 #include <array>
-#include <span>
 #include <charconv>
 #include <sstream>
 #include <cmath>
@@ -29,7 +28,7 @@
 #include "ankerl/unordered_dense.h"
 #endif
 
-#define CORE_BUILD_DATE 20260716
+#define CORE_BUILD_DATE 20260721
 class objMetaClass;
 
 // Predefined cursor styles
@@ -651,7 +650,7 @@ enum class CCF : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(CCF)
 
-// Action identifiers.
+// Action identifiers
 
 enum class AC : int {
    NIL = 0,
@@ -787,7 +786,7 @@ enum class KQ : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(KQ)
 
-// Memory flags.
+// Memory flags
 
 enum class MEM : uint32_t {
    NIL = 0,
@@ -796,7 +795,7 @@ enum class MEM : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(MEM)
 
-// Event categories.
+// Event categories
 
 enum class EVG : int {
    NIL = 0,
@@ -834,7 +833,7 @@ enum class DATA : int {
    INPUT_READY = 12,
 };
 
-// JTYPE flags are used to categorise input types.
+// JTYPE flags are used to categorise input types
 
 enum class JTYPE : uint32_t {
    NIL = 0,
@@ -884,7 +883,7 @@ enum class JET : int {
    END = 21,
 };
 
-// Field descriptors.
+// Field descriptors
 
 #define FD_DOUBLERESULT 0x80000100
 #define FD_PTR_DOUBLERESULT 0x88000100
@@ -892,34 +891,35 @@ enum class JET : int {
 #define FD_VOID 0x00000000
 #define FD_OBJECT 0x00000001
 #define FD_LOCAL 0x00000002
-#define FD_VIRTUAL 0x00000008
 #define FD_MUTABLE 0x00000008
+#define FD_VIRTUAL 0x00000008
 #define FD_STRUCT 0x00000010
 #define FD_ALLOC 0x00000020
+#define FD_STORE 0x00000020
 #define FD_FLAGS 0x00000040
 #define FD_VARTAGS 0x00000040
 #define FD_PTRSIZE 0x00000080
+#define FD_BUFSIZE 0x00000080
 #define FD_ARRAYSIZE 0x00000080
 #define FD_LOOKUP 0x00000080
-#define FD_BUFSIZE 0x00000080
-#define FD_R 0x00000100
 #define FD_READ 0x00000100
 #define FD_RESULT 0x00000100
-#define FD_WRITE 0x00000200
+#define FD_R 0x00000100
 #define FD_W 0x00000200
 #define FD_BUFFER 0x00000200
+#define FD_WRITE 0x00000200
 #define FD_RW 0x00000300
-#define FD_I 0x00000400
-#define FD_TAGS 0x00000400
 #define FD_INIT 0x00000400
+#define FD_TAGS 0x00000400
+#define FD_I 0x00000400
 #define FD_RI 0x00000500
 #define FD_ERROR 0x00000800
 #define FD_ARRAY 0x00001000
 #define FD_RESOURCE 0x00002000
 #define FD_CPP 0x00004000
 #define FD_CUSTOM 0x00008000
-#define FD_SYSTEM 0x00010000
 #define FD_PRIVATE 0x00010000
+#define FD_SYSTEM 0x00010000
 #define FD_SYNONYM 0x00020000
 #define FD_UNSIGNED 0x00040000
 #define FD_PURE 0x00100000
@@ -1213,20 +1213,19 @@ struct OpenInfo {
 };
 
 struct ResourceRecord {
-   APTR     Address;                    // Direct pointer to the resource (optional, can rely on ResourceID instead)
+   APTR Address;                        // Direct pointer to the resource (optional, can rely on ResourceID instead)
    struct ResourceManager * Manager;    // Reference to the resource manager for this record
    RESOURCEID ResourceID;               // Unique identifier
-   OBJECTID OwnerID;                    // Owner of the resource
-   bool     CollectOnUnlock;            // Resource is locked; manager will collect immediately once unlocked
-   bool     Terminating;                // A FreeResource() call currently owns the destruction path
-   bool     OwnerManagesChildren;       // True if the current OwnerID manages its child resources
+   int  OwnerID;                        // Owner of the resource, could be another resource or object
+   bool CollectOnUnlock;                // Resource is locked; manager will collect immediately once unlocked
+   bool Terminating;                    // A FreeResource() call currently owns the destruction path
    ResourceRecord() :
       Address(nullptr), Manager(nullptr), ResourceID(0), OwnerID(0), CollectOnUnlock(false),
-      Terminating(false), OwnerManagesChildren(false) { };
+      Terminating(false) { };
 
-   ResourceRecord(RESOURCEID pResourceID, APTR pAddress, OBJECTID pOwnerID, ResourceManager *pManager) :
+   ResourceRecord(RESOURCEID pResourceID, APTR pAddress, int pOwnerID, ResourceManager *pManager) :
       Address(pAddress), Manager(pManager), ResourceID(pResourceID), OwnerID(pOwnerID), CollectOnUnlock(false),
-      Terminating(false), OwnerManagesChildren(false) { };
+      Terminating(false) { };
 };
 
 struct ObjectSignal {
@@ -1234,11 +1233,9 @@ struct ObjectSignal {
 };
 
 struct ResourceManager {
-   CSTRING Name;                                                              // The name of the resource
-   ERR (*Free)(struct ResourceRecord &, APTR);                                // A function that will remove the resource's content when terminated
-   void (*AddChild)(struct ResourceRecord &, struct ResourceRecord &);        // Optional function for tracking child resources
-   void (*RemoveChild)(struct ResourceRecord &, struct ResourceRecord &);     // Optional function to remove tracking of child resources
-   bool    CanBlock;                                                          // True if the Free callback might wait on locks, callbacks or external resources
+   CSTRING Name;                                   // The name of the resource
+   ERR (*Free)(struct ResourceRecord &, APTR);     // A function that will remove the resource's content when terminated
+   bool    CanBlock;                               // True if the Free callback might wait on locks, callbacks or external resources
 };
 
 struct FieldArray {
@@ -1465,7 +1462,7 @@ struct CoreBase {
    ERR (*_DeleteFile)(const std::string_view &Path, FUNCTION *Callback);
    CSTRING (*_ResolveClassID)(CLASSID ID);
    int (*_AllocateID)(IDTYPE Type);
-   ERR (*_AllocMemory)(int64_t Size, MEM Flags, APTR *Address);
+   ERR (*_AllocResource)(int64_t Size, MEM Flags, APTR *Address, struct ResourceManager *Manager);
    ERR (*_AccessObject)(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result);
    ERR (*_CheckAction)(OBJECTPTR Object, AC Action);
    ERR (*_CheckResourceExists)(RESOURCEID ID);
@@ -1474,7 +1471,7 @@ struct CoreBase {
    OBJECTPTR (*_CurrentContext)(void);
    void (*_SetLogCallback)(APTR Callback, int DepthLimit, int LogLimit);
    int (*_AdjustLogLevel)(int Delta);
-   ERR (*_ReadFileToBuffer)(const std::string_view &Path, APTR Buffer, int BufferSize, int *Result);
+   ERR (*_ReadFileToBuffer)(const std::string_view &Path, const std::span<int8_t> &Buffer, int *Result);
    ERR (*_FindObject)(const std::string_view &Name, CLASSID ClassID, OBJECTID *ObjectID);
    objMetaClass * (*_FindClass)(CLASSID ClassID);
    ERR (*_AnalysePath)(const std::string_view &Path, LOC *Type);
@@ -1494,7 +1491,7 @@ struct CoreBase {
    ERR (*_ProcessMessages)(PMF Flags, int TimeOut);
    ERR (*_IdentifyFile)(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
    CLASSID (*_ResolveClassName)(const std::string_view &Name);
-   ERR (*_SendMessage)(MSGID Type, MSF Flags, APTR Data, int Size);
+   ERR (*_SendMessage)(MSGID Type, MSF Flags, const std::span<const int8_t> &Data);
    ERR (*_SetOwner)(OBJECTPTR Object, OBJECTPTR Owner);
    void (*_SetObjectContext)(OBJECTPTR Object, const struct Field *Field, AC ActionID);
    CSTRING (*_FieldName)(uint32_t FieldID);
@@ -1513,7 +1510,7 @@ struct CoreBase {
    uint32_t (*_GenCRC32)(uint32_t CRC, APTR Data, uint32_t Length);
    int64_t (*_GetResource)(RES Resource);
    int64_t (*_SetResource)(RES Resource, int64_t Value);
-   ERR (*_ScanMessages)(int *Handle, MSGID Type, APTR Buffer, int Size);
+   ERR (*_ScanMessages)(int *Handle, MSGID Type, const std::span<int8_t> &Buffer);
    ERR (*_WaitForObjects)(PMF Flags, int TimeOut, struct ObjectSignal *ObjectSignals);
    void (*_UnloadFile)(struct CacheFile *Cache);
    ERR (*_CreateFolder)(const std::string_view &Path, PERMIT Permissions);
@@ -1521,7 +1518,7 @@ struct CoreBase {
    ERR (*_SetVolume)(const std::string_view &Name, const std::string_view &Path, const std::string_view &Icon, const std::string_view &Label, const std::string_view &Device, VOLUME Flags);
    ERR (*_DeleteVolume)(const std::string_view &Name);
    ERR (*_MoveFile)(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback);
-   ERR (*_UpdateMessage)(int Message, MSGID Type, APTR Data, int Size);
+   ERR (*_UpdateMessage)(int Message, MSGID Type, const std::span<const int8_t> &Data);
    ERR (*_AddMsgHandler)(MSGID MsgType, FUNCTION *Routine, struct MsgHandler **Handle);
    ERR (*_QueueAction)(AC Action, OBJECTID Object, APTR Args);
    int64_t (*_PreciseTime)(void);
@@ -1552,6 +1549,7 @@ struct CoreBase {
    int (*_GetThreadID)(void);
    void (*_UnitTests)(CSTRING Options, int *Passed, int *Total);
    OBJECTPTR (*_PinWeakObject)(OBJECTID Object);
+   ERR (*_FreeObject)(OBJECTID ObjectID);
 #endif // KOTUKU_STATIC
 };
 
@@ -1562,7 +1560,7 @@ inline void ActionList(struct ActionTable **Actions, int *Size) { return CoreBas
 inline ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback) { return CoreBase->_DeleteFile(Path,Callback); }
 inline CSTRING ResolveClassID(CLASSID ID) { return CoreBase->_ResolveClassID(ID); }
 inline int AllocateID(IDTYPE Type) { return CoreBase->_AllocateID(Type); }
-inline ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address) { return CoreBase->_AllocMemory(Size,Flags,Address); }
+inline ERR AllocResource(int64_t Size, MEM Flags, APTR *Address, struct ResourceManager *Manager) { return CoreBase->_AllocResource(Size,Flags,Address,Manager); }
 inline ERR AccessObject(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result) { return CoreBase->_AccessObject(Object,MilliSeconds,Result); }
 inline ERR CheckAction(OBJECTPTR Object, AC Action) { return CoreBase->_CheckAction(Object,Action); }
 inline ERR CheckResourceExists(RESOURCEID ID) { return CoreBase->_CheckResourceExists(ID); }
@@ -1571,7 +1569,7 @@ template<class... Args> ERR VirtualVolume(const std::string_view &Name, Args... 
 inline OBJECTPTR CurrentContext(void) { return CoreBase->_CurrentContext(); }
 inline void SetLogCallback(APTR Callback, int DepthLimit, int LogLimit) { return CoreBase->_SetLogCallback(Callback,DepthLimit,LogLimit); }
 inline int AdjustLogLevel(int Delta) { return CoreBase->_AdjustLogLevel(Delta); }
-inline ERR ReadFileToBuffer(const std::string_view &Path, APTR Buffer, int BufferSize, int *Result) { return CoreBase->_ReadFileToBuffer(Path,Buffer,BufferSize,Result); }
+inline ERR ReadFileToBuffer(const std::string_view &Path, const std::span<int8_t> &Buffer, int *Result) { return CoreBase->_ReadFileToBuffer(Path,Buffer,Result); }
 inline ERR FindObject(const std::string_view &Name, CLASSID ClassID, OBJECTID *ObjectID) { return CoreBase->_FindObject(Name,ClassID,ObjectID); }
 inline objMetaClass * FindClass(CLASSID ClassID) { return CoreBase->_FindClass(ClassID); }
 inline ERR AnalysePath(const std::string_view &Path, LOC *Type) { return CoreBase->_AnalysePath(Path,Type); }
@@ -1591,7 +1589,7 @@ inline ERR CopyFile(const std::string_view &Source, const std::string_view &Dest
 inline ERR ProcessMessages(PMF Flags, int TimeOut) { return CoreBase->_ProcessMessages(Flags,TimeOut); }
 inline ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass) { return CoreBase->_IdentifyFile(Path,Filter,Class,SubClass); }
 inline CLASSID ResolveClassName(const std::string_view &Name) { return CoreBase->_ResolveClassName(Name); }
-inline ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size) { return CoreBase->_SendMessage(Type,Flags,Data,Size); }
+inline ERR SendMessage(MSGID Type, MSF Flags, const std::span<const int8_t> &Data) { return CoreBase->_SendMessage(Type,Flags,Data); }
 inline ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner) { return CoreBase->_SetOwner(Object,Owner); }
 inline void SetObjectContext(OBJECTPTR Object, const struct Field *Field, AC ActionID) { return CoreBase->_SetObjectContext(Object,Field,ActionID); }
 inline CSTRING FieldName(uint32_t FieldID) { return CoreBase->_FieldName(FieldID); }
@@ -1610,7 +1608,7 @@ inline int64_t GetEventID(EVG Group, const std::string_view &SubGroup, const std
 inline uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length) { return CoreBase->_GenCRC32(CRC,Data,Length); }
 inline int64_t GetResource(RES Resource) { return CoreBase->_GetResource(Resource); }
 inline int64_t SetResource(RES Resource, int64_t Value) { return CoreBase->_SetResource(Resource,Value); }
-inline ERR ScanMessages(int *Handle, MSGID Type, APTR Buffer, int Size) { return CoreBase->_ScanMessages(Handle,Type,Buffer,Size); }
+inline ERR ScanMessages(int *Handle, MSGID Type, const std::span<int8_t> &Buffer) { return CoreBase->_ScanMessages(Handle,Type,Buffer); }
 inline ERR WaitForObjects(PMF Flags, int TimeOut, struct ObjectSignal *ObjectSignals) { return CoreBase->_WaitForObjects(Flags,TimeOut,ObjectSignals); }
 inline void UnloadFile(struct CacheFile *Cache) { return CoreBase->_UnloadFile(Cache); }
 inline ERR CreateFolder(const std::string_view &Path, PERMIT Permissions) { return CoreBase->_CreateFolder(Path,Permissions); }
@@ -1618,7 +1616,7 @@ inline ERR LoadFile(const std::string_view &Path, LDF Flags, struct CacheFile **
 inline ERR SetVolume(const std::string_view &Name, const std::string_view &Path, const std::string_view &Icon, const std::string_view &Label, const std::string_view &Device, VOLUME Flags) { return CoreBase->_SetVolume(Name,Path,Icon,Label,Device,Flags); }
 inline ERR DeleteVolume(const std::string_view &Name) { return CoreBase->_DeleteVolume(Name); }
 inline ERR MoveFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback) { return CoreBase->_MoveFile(Source,Dest,Callback); }
-inline ERR UpdateMessage(int Message, MSGID Type, APTR Data, int Size) { return CoreBase->_UpdateMessage(Message,Type,Data,Size); }
+inline ERR UpdateMessage(int Message, MSGID Type, const std::span<const int8_t> &Data) { return CoreBase->_UpdateMessage(Message,Type,Data); }
 inline ERR AddMsgHandler(MSGID MsgType, FUNCTION *Routine, struct MsgHandler **Handle) { return CoreBase->_AddMsgHandler(MsgType,Routine,Handle); }
 inline ERR QueueAction(AC Action, OBJECTID Object, APTR Args) { return CoreBase->_QueueAction(Action,Object,Args); }
 inline int64_t PreciseTime(void) { return CoreBase->_PreciseTime(); }
@@ -1649,13 +1647,14 @@ inline ERR ClassDatabase(kt::vector<ClassRecord *> *Classes) { return CoreBase->
 inline int GetThreadID(void) { return CoreBase->_GetThreadID(); }
 inline void UnitTests(CSTRING Options, int *Passed, int *Total) { return CoreBase->_UnitTests(Options,Passed,Total); }
 inline OBJECTPTR PinWeakObject(OBJECTID Object) { return CoreBase->_PinWeakObject(Object); }
+inline ERR FreeObject(OBJECTID ObjectID) { return CoreBase->_FreeObject(ObjectID); }
 #else
 extern "C" ERR Action(AC Action, OBJECTPTR Object, APTR Parameters);
 extern "C" void ActionList(struct ActionTable **Actions, int *Size);
 extern "C" ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback);
 extern "C" CSTRING ResolveClassID(CLASSID ID);
 extern "C" int AllocateID(IDTYPE Type);
-extern "C" ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address);
+extern "C" ERR AllocResource(int64_t Size, MEM Flags, APTR *Address, struct ResourceManager *Manager);
 extern "C" ERR AccessObject(OBJECTID Object, int MilliSeconds, OBJECTPTR *Result);
 extern "C" ERR CheckAction(OBJECTPTR Object, AC Action);
 extern "C" ERR CheckResourceExists(RESOURCEID ID);
@@ -1664,7 +1663,7 @@ extern "C" ERR VirtualVolume(const std::string_view &Name, ...);
 extern "C" OBJECTPTR CurrentContext(void);
 extern "C" void SetLogCallback(APTR Callback, int DepthLimit, int LogLimit);
 extern "C" int AdjustLogLevel(int Delta);
-extern "C" ERR ReadFileToBuffer(const std::string_view &Path, APTR Buffer, int BufferSize, int *Result);
+extern "C" ERR ReadFileToBuffer(const std::string_view &Path, const std::span<int8_t> &Buffer, int *Result);
 extern "C" ERR FindObject(const std::string_view &Name, CLASSID ClassID, OBJECTID *ObjectID);
 extern "C" objMetaClass * FindClass(CLASSID ClassID);
 extern "C" ERR AnalysePath(const std::string_view &Path, LOC *Type);
@@ -1684,7 +1683,7 @@ extern "C" ERR CopyFile(const std::string_view &Source, const std::string_view &
 extern "C" ERR ProcessMessages(PMF Flags, int TimeOut);
 extern "C" ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
 extern "C" CLASSID ResolveClassName(const std::string_view &Name);
-extern "C" ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size);
+extern "C" ERR SendMessage(MSGID Type, MSF Flags, const std::span<const int8_t> &Data);
 extern "C" ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner);
 extern "C" void SetObjectContext(OBJECTPTR Object, const struct Field *Field, AC ActionID);
 extern "C" CSTRING FieldName(uint32_t FieldID);
@@ -1703,7 +1702,7 @@ extern "C" int64_t GetEventID(EVG Group, const std::string_view &SubGroup, const
 extern "C" uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length);
 extern "C" int64_t GetResource(RES Resource);
 extern "C" int64_t SetResource(RES Resource, int64_t Value);
-extern "C" ERR ScanMessages(int *Handle, MSGID Type, APTR Buffer, int Size);
+extern "C" ERR ScanMessages(int *Handle, MSGID Type, const std::span<int8_t> &Buffer);
 extern "C" ERR WaitForObjects(PMF Flags, int TimeOut, struct ObjectSignal *ObjectSignals);
 extern "C" void UnloadFile(struct CacheFile *Cache);
 extern "C" ERR CreateFolder(const std::string_view &Path, PERMIT Permissions);
@@ -1711,7 +1710,7 @@ extern "C" ERR LoadFile(const std::string_view &Path, LDF Flags, struct CacheFil
 extern "C" ERR SetVolume(const std::string_view &Name, const std::string_view &Path, const std::string_view &Icon, const std::string_view &Label, const std::string_view &Device, VOLUME Flags);
 extern "C" ERR DeleteVolume(const std::string_view &Name);
 extern "C" ERR MoveFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback);
-extern "C" ERR UpdateMessage(int Message, MSGID Type, APTR Data, int Size);
+extern "C" ERR UpdateMessage(int Message, MSGID Type, const std::span<const int8_t> &Data);
 extern "C" ERR AddMsgHandler(MSGID MsgType, FUNCTION *Routine, struct MsgHandler **Handle);
 extern "C" ERR QueueAction(AC Action, OBJECTID Object, APTR Args);
 extern "C" int64_t PreciseTime(void);
@@ -1742,6 +1741,7 @@ extern "C" ERR ClassDatabase(kt::vector<ClassRecord *> *Classes);
 extern "C" int GetThreadID(void);
 extern "C" void UnitTests(CSTRING Options, int *Passed, int *Total);
 extern "C" OBJECTPTR PinWeakObject(OBJECTID Object);
+extern "C" ERR FreeObject(OBJECTID ObjectID);
 #endif // KOTUKU_STATIC
 
 
@@ -1788,7 +1788,7 @@ inline ERR UnsubscribeAction(OBJECTPTR Object, ACTIONID ActionID) {
 
 template <pcObject T> inline ERR FreeResource(T *Object) {
    if (not Object) return ERR::NullArgs;
-   return FreeResource(Object->UID);
+   return FreeObject(Object->UID);
 }
 
 template <class T> requires ((not pcComplete<T>) and (not std::is_void_v<std::remove_cv_t<T>>))
@@ -1879,6 +1879,7 @@ typedef std::vector<obj_write> WRITE_TABLE;
 
 namespace mc {
 struct FindField { int ID; struct Field *Field; objMetaClass *Source; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetMembers { kt::vector<OBJECTID> *List; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -1921,6 +1922,11 @@ class objMetaClass : public Object {
       ERR error = Action(AC(-1), this, &args);
       if (Field) *Field = args.Field;
       if (Source) *Source = args.Source;
+      return error;
+   }
+   inline ERR getMembers(kt::vector<OBJECTID> &List) noexcept {
+      struct mc::GetMembers args = { &List };
+      ERR error = Action(AC(-2), this, &args);
       return error;
    }
 
@@ -2036,15 +2042,6 @@ class objMetaClass : public Object {
       auto field = &this->Class->Dictionary[25];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
-      RestoreObjectContext();
-      return error;
-   }
-
-   inline ERR getObjects(std::span<int> &Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
-      SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::span<int> &))field->GetValue;
       auto error = get_field(this, Value);
       RestoreObjectContext();
       return error;

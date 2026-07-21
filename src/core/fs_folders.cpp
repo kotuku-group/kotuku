@@ -107,7 +107,7 @@ static ERR folder_free(ResourceRecord &Resource, APTR Address)
    return ERR::Terminate;
 }
 
-static ResourceManager glResourceFolder = { "Folder", &folder_free, nullptr, nullptr, true };
+static ResourceManager glResourceFolder = { "Folder", &folder_free, true };
 
 /*********************************************************************************************************************
 
@@ -157,12 +157,11 @@ ERR OpenDir(const std::string_view &Path, RDF Flags, DirInfo **Result)
       auto vd = get_fs(resolved_path);
 
       extDirInfo *dir;
-      if (AllocMemory(sizeof(extDirInfo), MEM::NIL, (APTR *)&dir) != ERR::Okay) {
+      if (AllocResource(sizeof(extDirInfo), MEM::NIL, (APTR *)&dir, &glResourceFolder) != ERR::Okay) {
          return ERR::AllocMemory;
       }
 
       new (dir) extDirInfo();
-      TrackResource(GetMemoryID(dir), dir, RESOURCEID_INHERIT, &glResourceFolder);
       if (auto error = dir->initialise(Path, resolved_path, Flags, vd.DriverSize); error != ERR::Okay) {
          FreeResource(dir);
          return error;

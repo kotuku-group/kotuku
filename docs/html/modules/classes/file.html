@@ -89,39 +89,39 @@
 <tr><th class="col-md-1">PERMIT::ALL_EXEC</th><td>Synonym for <code>EVERYONE_EXEC</code></td></tr>
 <tr><th class="col-md-1">PERMIT::ALL_READ</th><td>Synonym for <code>EVERYONE_READ</code></td></tr>
 <tr><th class="col-md-1">PERMIT::ALL_WRITE</th><td>Synonym for <code>EVERYONE_WRITE</code></td></tr>
-<tr><th class="col-md-1">PERMIT::ARCHIVE</th><td>Marks the file for future backup.  The flag should be cleared after the backup has succeeded.</td></tr>
-<tr><th class="col-md-1">PERMIT::DELETE</th><td>Owner can delete.  If the file system does not support this, deletion is enabled via the <code>WRITE</code> flag.</td></tr>
+<tr><th class="col-md-1">PERMIT::ARCHIVE</th><td>Marks the file for future backup.  The flag should be cleared after the backup has succeeded</td></tr>
+<tr><th class="col-md-1">PERMIT::DELETE</th><td>Owner can delete.  If the file system does not support this, deletion is enabled via the <code>WRITE</code> flag</td></tr>
 <tr><th class="col-md-1">PERMIT::EVERYONE_ACCESS</th><td>Synonym for <code>EVERYONE_READ | EVERYONE_WRITE | EVERYONE_EXEC | EVERYONE_DELETE</code></td></tr>
 <tr><th class="col-md-1">PERMIT::EVERYONE_DELETE</th><td>Synonym for <code>DELETE | GROUP_DELETE | OTHERS_DELETE</code></td></tr>
 <tr><th class="col-md-1">PERMIT::EVERYONE_EXEC</th><td>Synonym for <code>EXEC | GROUP_EXEC | OTHERS_EXEC</code></td></tr>
 <tr><th class="col-md-1">PERMIT::EVERYONE_READ</th><td>Synonym for <code>READ | GROUP_READ | OTHERS_READ</code></td></tr>
 <tr><th class="col-md-1">PERMIT::EVERYONE_READWRITE</th><td>Synonym for <code>EVERYONE_READ | EVERYONE_WRITE</code></td></tr>
 <tr><th class="col-md-1">PERMIT::EVERYONE_WRITE</th><td>Synonym for <code>WRITE | GROUP_WRITE | OTHERS_WRITE</code></td></tr>
-<tr><th class="col-md-1">PERMIT::EXEC</th><td>User/Owner can execute.</td></tr>
+<tr><th class="col-md-1">PERMIT::EXEC</th><td>User/Owner can execute</td></tr>
 <tr><th class="col-md-1">PERMIT::GROUP</th><td>Synonym for <code>GROUP_READ | GROUP_WRITE | GROUP_EXEC | GROUP_DELETE</code></td></tr>
-<tr><th class="col-md-1">PERMIT::GROUPID</th><td>Allows executables to run with a set group id.</td></tr>
-<tr><th class="col-md-1">PERMIT::GROUP_DELETE</th><td>Group members can delete.</td></tr>
-<tr><th class="col-md-1">PERMIT::GROUP_EXEC</th><td>Group members can execute.</td></tr>
-<tr><th class="col-md-1">PERMIT::GROUP_READ</th><td>Group members can read.</td></tr>
-<tr><th class="col-md-1">PERMIT::GROUP_WRITE</th><td>Group members can write.</td></tr>
-<tr><th class="col-md-1">PERMIT::HIDDEN</th><td>Recommends that the file is hidden from view by default.</td></tr>
-<tr><th class="col-md-1">PERMIT::INHERIT</th><td>Inherit permissions from parent folder and logical OR them with preset permission flags.</td></tr>
+<tr><th class="col-md-1">PERMIT::GROUPID</th><td>Allows executables to run with a set group id</td></tr>
+<tr><th class="col-md-1">PERMIT::GROUP_DELETE</th><td>Group members can delete</td></tr>
+<tr><th class="col-md-1">PERMIT::GROUP_EXEC</th><td>Group members can execute</td></tr>
+<tr><th class="col-md-1">PERMIT::GROUP_READ</th><td>Group members can read</td></tr>
+<tr><th class="col-md-1">PERMIT::GROUP_WRITE</th><td>Group members can write</td></tr>
+<tr><th class="col-md-1">PERMIT::HIDDEN</th><td>Recommends that the file is hidden from view by default</td></tr>
+<tr><th class="col-md-1">PERMIT::INHERIT</th><td>Inherit permissions from parent folder and logical OR them with preset permission flags</td></tr>
 <tr><th class="col-md-1">PERMIT::META</th><td>Synonym for <code>HIDDEN | PASSWORD | OFFLINE | NETWORK</code></td></tr>
-<tr><th class="col-md-1">PERMIT::NETWORK</th><td>File is hosted on another machine.</td></tr>
-<tr><th class="col-md-1">PERMIT::OFFLINE</th><td>File content for this networked file has not been cached on the local PC.</td></tr>
+<tr><th class="col-md-1">PERMIT::NETWORK</th><td>File is hosted on another machine</td></tr>
+<tr><th class="col-md-1">PERMIT::OFFLINE</th><td>File content for this networked file has not been cached on the local PC</td></tr>
 <tr><th class="col-md-1">PERMIT::OTHERS</th><td>Synonym for <code>OTHERS_READ | OTHERS_WRITE | OTHERS_EXEC | OTHERS_DELETE</code></td></tr>
-<tr><th class="col-md-1">PERMIT::OTHERS_DELETE</th><td>Others can delete.</td></tr>
-<tr><th class="col-md-1">PERMIT::OTHERS_EXEC</th><td>Others can execute.</td></tr>
-<tr><th class="col-md-1">PERMIT::OTHERS_READ</th><td>Others can read.</td></tr>
-<tr><th class="col-md-1">PERMIT::OTHERS_WRITE</th><td>Others can write.</td></tr>
-<tr><th class="col-md-1">PERMIT::PASSWORD</th><td>File is password protected.</td></tr>
-<tr><th class="col-md-1">PERMIT::READ</th><td>User/Owner has read access.  This will not allow compiled code to be executed.</td></tr>
+<tr><th class="col-md-1">PERMIT::OTHERS_DELETE</th><td>Others can delete</td></tr>
+<tr><th class="col-md-1">PERMIT::OTHERS_EXEC</th><td>Others can execute</td></tr>
+<tr><th class="col-md-1">PERMIT::OTHERS_READ</th><td>Others can read</td></tr>
+<tr><th class="col-md-1">PERMIT::OTHERS_WRITE</th><td>Others can write</td></tr>
+<tr><th class="col-md-1">PERMIT::PASSWORD</th><td>File is password protected</td></tr>
+<tr><th class="col-md-1">PERMIT::READ</th><td>User/Owner has read access.  This will not allow compiled code to be executed</td></tr>
 <tr><th class="col-md-1">PERMIT::USER</th><td>Synonym for <code>READ | WRITE | EXEC | DELETE</code></td></tr>
-<tr><th class="col-md-1">PERMIT::USERID</th><td>Allows executables to run with a set user id.</td></tr>
+<tr><th class="col-md-1">PERMIT::USERID</th><td>Allows executables to run with a set user id</td></tr>
 <tr><th class="col-md-1">PERMIT::USER_EXEC</th><td>Synonym for <code>EXEC</code></td></tr>
 <tr><th class="col-md-1">PERMIT::USER_READ</th><td>Synonym for <code>READ</code></td></tr>
 <tr><th class="col-md-1">PERMIT::USER_WRITE</th><td>Synonym for <code>WRITE</code></td></tr>
-<tr><th class="col-md-1">PERMIT::WRITE</th><td>User/Owner can write.</td></tr>
+<tr><th class="col-md-1">PERMIT::WRITE</th><td>User/Owner can write</td></tr>
 </tbody></table>
       
 </div></div></td></tr>
@@ -290,8 +290,7 @@
 <tr data-bs-toggle="collapse" data-bs-target="#tmx-ReadLine" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">ReadLine</th><td id="tm-ReadLine">Reads the next line from the file.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-ReadLine" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR fl::ReadLine(OBJECTPTR Object, STRING * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Result</td><td>The string provided in this parameter will be updated with the line read from the file.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>Reads one line from the file into a provided string buffer, which is required in the Result argument.  Reading a line will increase the <a data-bs-toggle="tooltip" title="The current read/write byte position in a file." href="#tf-Position">Position</a> field by the amount of bytes read from the file.  You must have set the <code>FL::READ</code> bit in the <a data-bs-toggle="tooltip" title="File flags and options." href="#tf-Flags">Flags</a> field when you initialised the file, or the call will fail.</p>
-<p>
-<code>ERR::NoData</code> is returned once all lines have been read.</p>
+<p><code>ERR::NoData</code> is returned once all lines have been read.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The file information was read into the buffer.</td></tr>
 <tr><th class="col-md-1">Failed</th><td>The file object refers to a folder.</td></tr>
@@ -362,7 +361,7 @@
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
 <tr><th class="col-md-1">NoSupport</th><td>Operation not supported</td></tr>
-<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
+<tr><th class="col-md-1">AllocMemory</th><td>Failed to create a new memory block</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
 </tbody></table><div class="footer copyright text-right">File class documentation © Paul Manias © 1996-2026</div></div><div class="docs-content" style="display:none;" id="FDT"><h1>FDT Type</h1><p class="lead">Flags for the SetDate() file method.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>FDT::ACCESSED</th><td>The date on which the file was last accessed by a user or application.</td></tr>
@@ -407,39 +406,39 @@
 <tr><th>PERMIT::ALL_EXEC</th><td>Synonym for <code>EVERYONE_EXEC</code></td></tr>
 <tr><th>PERMIT::ALL_READ</th><td>Synonym for <code>EVERYONE_READ</code></td></tr>
 <tr><th>PERMIT::ALL_WRITE</th><td>Synonym for <code>EVERYONE_WRITE</code></td></tr>
-<tr><th>PERMIT::ARCHIVE</th><td>Marks the file for future backup.  The flag should be cleared after the backup has succeeded.</td></tr>
-<tr><th>PERMIT::DELETE</th><td>Owner can delete.  If the file system does not support this, deletion is enabled via the <code>WRITE</code> flag.</td></tr>
+<tr><th>PERMIT::ARCHIVE</th><td>Marks the file for future backup.  The flag should be cleared after the backup has succeeded</td></tr>
+<tr><th>PERMIT::DELETE</th><td>Owner can delete.  If the file system does not support this, deletion is enabled via the <code>WRITE</code> flag</td></tr>
 <tr><th>PERMIT::EVERYONE_ACCESS</th><td>Synonym for <code>EVERYONE_READ | EVERYONE_WRITE | EVERYONE_EXEC | EVERYONE_DELETE</code></td></tr>
 <tr><th>PERMIT::EVERYONE_DELETE</th><td>Synonym for <code>DELETE | GROUP_DELETE | OTHERS_DELETE</code></td></tr>
 <tr><th>PERMIT::EVERYONE_EXEC</th><td>Synonym for <code>EXEC | GROUP_EXEC | OTHERS_EXEC</code></td></tr>
 <tr><th>PERMIT::EVERYONE_READ</th><td>Synonym for <code>READ | GROUP_READ | OTHERS_READ</code></td></tr>
 <tr><th>PERMIT::EVERYONE_READWRITE</th><td>Synonym for <code>EVERYONE_READ | EVERYONE_WRITE</code></td></tr>
 <tr><th>PERMIT::EVERYONE_WRITE</th><td>Synonym for <code>WRITE | GROUP_WRITE | OTHERS_WRITE</code></td></tr>
-<tr><th>PERMIT::EXEC</th><td>User/Owner can execute.</td></tr>
+<tr><th>PERMIT::EXEC</th><td>User/Owner can execute</td></tr>
 <tr><th>PERMIT::GROUP</th><td>Synonym for <code>GROUP_READ | GROUP_WRITE | GROUP_EXEC | GROUP_DELETE</code></td></tr>
-<tr><th>PERMIT::GROUPID</th><td>Allows executables to run with a set group id.</td></tr>
-<tr><th>PERMIT::GROUP_DELETE</th><td>Group members can delete.</td></tr>
-<tr><th>PERMIT::GROUP_EXEC</th><td>Group members can execute.</td></tr>
-<tr><th>PERMIT::GROUP_READ</th><td>Group members can read.</td></tr>
-<tr><th>PERMIT::GROUP_WRITE</th><td>Group members can write.</td></tr>
-<tr><th>PERMIT::HIDDEN</th><td>Recommends that the file is hidden from view by default.</td></tr>
-<tr><th>PERMIT::INHERIT</th><td>Inherit permissions from parent folder and logical OR them with preset permission flags.</td></tr>
+<tr><th>PERMIT::GROUPID</th><td>Allows executables to run with a set group id</td></tr>
+<tr><th>PERMIT::GROUP_DELETE</th><td>Group members can delete</td></tr>
+<tr><th>PERMIT::GROUP_EXEC</th><td>Group members can execute</td></tr>
+<tr><th>PERMIT::GROUP_READ</th><td>Group members can read</td></tr>
+<tr><th>PERMIT::GROUP_WRITE</th><td>Group members can write</td></tr>
+<tr><th>PERMIT::HIDDEN</th><td>Recommends that the file is hidden from view by default</td></tr>
+<tr><th>PERMIT::INHERIT</th><td>Inherit permissions from parent folder and logical OR them with preset permission flags</td></tr>
 <tr><th>PERMIT::META</th><td>Synonym for <code>HIDDEN | PASSWORD | OFFLINE | NETWORK</code></td></tr>
-<tr><th>PERMIT::NETWORK</th><td>File is hosted on another machine.</td></tr>
-<tr><th>PERMIT::OFFLINE</th><td>File content for this networked file has not been cached on the local PC.</td></tr>
+<tr><th>PERMIT::NETWORK</th><td>File is hosted on another machine</td></tr>
+<tr><th>PERMIT::OFFLINE</th><td>File content for this networked file has not been cached on the local PC</td></tr>
 <tr><th>PERMIT::OTHERS</th><td>Synonym for <code>OTHERS_READ | OTHERS_WRITE | OTHERS_EXEC | OTHERS_DELETE</code></td></tr>
-<tr><th>PERMIT::OTHERS_DELETE</th><td>Others can delete.</td></tr>
-<tr><th>PERMIT::OTHERS_EXEC</th><td>Others can execute.</td></tr>
-<tr><th>PERMIT::OTHERS_READ</th><td>Others can read.</td></tr>
-<tr><th>PERMIT::OTHERS_WRITE</th><td>Others can write.</td></tr>
-<tr><th>PERMIT::PASSWORD</th><td>File is password protected.</td></tr>
-<tr><th>PERMIT::READ</th><td>User/Owner has read access.  This will not allow compiled code to be executed.</td></tr>
+<tr><th>PERMIT::OTHERS_DELETE</th><td>Others can delete</td></tr>
+<tr><th>PERMIT::OTHERS_EXEC</th><td>Others can execute</td></tr>
+<tr><th>PERMIT::OTHERS_READ</th><td>Others can read</td></tr>
+<tr><th>PERMIT::OTHERS_WRITE</th><td>Others can write</td></tr>
+<tr><th>PERMIT::PASSWORD</th><td>File is password protected</td></tr>
+<tr><th>PERMIT::READ</th><td>User/Owner has read access.  This will not allow compiled code to be executed</td></tr>
 <tr><th>PERMIT::USER</th><td>Synonym for <code>READ | WRITE | EXEC | DELETE</code></td></tr>
-<tr><th>PERMIT::USERID</th><td>Allows executables to run with a set user id.</td></tr>
+<tr><th>PERMIT::USERID</th><td>Allows executables to run with a set user id</td></tr>
 <tr><th>PERMIT::USER_EXEC</th><td>Synonym for <code>EXEC</code></td></tr>
 <tr><th>PERMIT::USER_READ</th><td>Synonym for <code>READ</code></td></tr>
 <tr><th>PERMIT::USER_WRITE</th><td>Synonym for <code>WRITE</code></td></tr>
-<tr><th>PERMIT::WRITE</th><td>User/Owner can write.</td></tr>
+<tr><th>PERMIT::WRITE</th><td>User/Owner can write</td></tr>
 </tbody></table><div class="footer copyright text-right">File module documentation © Paul Manias © 1996-2026</div></div>
 </div></div></div><script type="text/javascript" src="../../js/bootstrap.bundle.min.js"></script><script type="text/javascript" src="../../js/base.js"></script><script type="text/javascript">
 const ready = fn => document.readyState !== 'loading' ? fn() : document.addEventListener('DOMContentLoaded', fn);

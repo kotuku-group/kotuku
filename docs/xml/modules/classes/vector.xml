@@ -222,7 +222,7 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object, callback-held</tags>
@@ -247,7 +247,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="FieldNotSet">The VectorScene has no reference to a Surface.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="Function">A call to <function module="Display">SubscribeInput</function> failed.</error>
       </result>
@@ -265,14 +265,13 @@
       <description>
 <p>The SubscribeKeyboard() method provides a callback mechanism for handling keyboard events.  Events are reported when the vector or one of its children has the user focus.  It is a pre-requisite that the associated <class name="VectorScene">VectorScene</class> has been linked to a <class name="Surface">Surface</class>.</p>
 <p>The prototype for the callback is as follows, whereby <code>Qualifers</code> are <code>KQ</code> flags and the Code is a <code>K</code> constant representing the raw key value.  The <code>Unicode</code> value is the resulting character when the qualifier and code are translated through the user's keymap.</p>
-<p>
-<code>ERR callback(*Viewport, INT Qualifiers, INT Code, INT Unicode);</code></p>
+<p><code>ERR callback(*Viewport, INT Qualifiers, INT Code, INT Unicode);</code></p>
 <p>If the callback returns <code>ERR::Terminate</code> then the subscription will be ended.  All other error codes are ignored.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="FieldNotSet">The <class name="VectorScene" field="Surface">VectorScene.Surface</class> field has not been defined.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="Function">A call to <function module="Display">SubscribeInput</function> failed.</error>
       </result>
@@ -573,8 +572,7 @@
       <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>The overall opacity of a vector can be defined here using a value between 0 and 1.0.  The value will be multiplied with other opacity settings as required during rendering.  For instance, when filling a vector the opacity will be calculated as <code>
-<fl>FillOpacity</fl> * Opacity</code>.</p>
+<p>The overall opacity of a vector can be defined here using a value between 0 and 1.0.  The value will be multiplied with other opacity settings as required during rendering.  For instance, when filling a vector the opacity will be calculated as <code><fl>FillOpacity</fl> * Opacity</code>.</p>
       </description>
     </field>
 
@@ -759,17 +757,17 @@ Z: Close Path
       <const name="PATH_CHANGED">The vector path has been modified or affected by a transform.</const>
     </constants>
 
-    <constants lookup="JTYPE" comment="JTYPE flags are used to categorise input types.">
+    <constants lookup="JTYPE" comment="JTYPE flags are used to categorise input types">
       <const name="ANALOG">Analog movement (ranging from -1.0 to 1.0)</const>
       <const name="ANCHORED">Cursor has been anchored with LockCursor()</const>
       <const name="BUTTON">Input is a physical button or switch</const>
-      <const name="CROSSING">Crossing events manage the entering and leaving of an area.</const>
-      <const name="DBL_CLICK">Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click.</const>
+      <const name="CROSSING">Crossing events manage the entering and leaving of an area</const>
+      <const name="DBL_CLICK">Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click</const>
       <const name="DIGITAL">D-Pad or digital joystick source (restricted to +/- 1)</const>
-      <const name="DRAGGED">Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference).</const>
-      <const name="DRAG_ITEM">This special flag is set by the input system if the pointer is click-dragging an object at the time of the event.</const>
-      <const name="EXT_MOVEMENT">Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples.</const>
-      <const name="MOVEMENT">X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system.</const>
+      <const name="DRAGGED">Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference)</const>
+      <const name="DRAG_ITEM">This special flag is set by the input system if the pointer is click-dragging an object at the time of the event</const>
+      <const name="EXT_MOVEMENT">Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples</const>
+      <const name="MOVEMENT">X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system</const>
       <const name="REPEATED">Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)</const>
       <const name="SECONDARY">Indicates to the receiver of this message that it is not the primary/original recipient</const>
     </constants>

@@ -541,6 +541,11 @@ function customCertificateFilesAvailable(CertPath, KeyPath)
    return true
 end
 
+function requireCustomCertificateFile(CertPath)
+   assert(mSys.AnalysePath(CertPath) is ERR_Okay,
+      'Required PKCS#12 test certificate is not installed: ' .. CertPath)
+end
+
 function runCustomCertificateHandshake(TestName, CertPath, KeyPath, KeyPassword)
    custom_cert_test_complete = false
    handshake_successful = false
@@ -607,7 +612,7 @@ end
 @Test(priority=40); @Requires(ssl=true)
 function CustomCertificate()
    cert_path = 'config:ssl/localhost.p12'
-   if not customCertificateFilesAvailable(cert_path, nil) then return end
+   requireCustomCertificateFile(cert_path)
 
    runCustomCertificateHandshake('CustomCert', cert_path, nil, nil)
 end
@@ -615,7 +620,7 @@ end
 @Test(priority=41); @Requires(ssl=true)
 function PasswordProtectedCustomCertificate()
    cert_path = 'config:ssl/localhost-password.p12'
-   if not customCertificateFilesAvailable(cert_path, nil) then return end
+   requireCustomCertificateFile(cert_path)
 
    runCustomCertificateHandshake('PasswordCert', cert_path, nil, 'kotuku-test')
 end
@@ -623,7 +628,7 @@ end
 @Test(priority=42); @Requires(ssl=true)
 function PasswordProtectedCustomCertificateRejectsWrongPassword()
    cert_path = 'config:ssl/localhost-password.p12'
-   if not customCertificateFilesAvailable(cert_path, nil) then return end
+   requireCustomCertificateFile(cert_path)
 
    glPort++
 
@@ -678,4 +683,62 @@ function TraditionalECPEMCustomCertificate()
    if not customCertificateFilesAvailable(cert_path, key_path) then return end
 
    runCustomCertificateHandshake('TraditionalECCert', cert_path, key_path, nil)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(priority=46); @Requires(network=true, ssl=true, windows_platform=true)
+function PendingSSLFreeDropsCompletion()
+   glPort++
+   port                  = glPort
+   client_freed          = false
+   late_client_callbacks = 0
+
+   server = obj.new('netserver', {
+      name    = 'IocpPendingSSLFreeServer',
+      address = '127.0.0.1',
+      port    = port,
+      flags   = NSF_SSL,
+      feedback = function(Socket, Client, State)
+         if State is NTC_CONNECTED then
+            Client.acWrite('ssl-late-read-trigger')
+         end
+      end,
+      incoming = function(Socket, Client)
+         buffer = array<byte, 256>
+         err, read_len = Client.acRead(buffer)
+         if (err != ERR_Okay) and (err != ERR_Disconnected) and (err != ERR_InvalidState) then
+            error('SSL server read failed during pending SSL free test: ' .. mSys.GetErrorMsg(err))
+         end
+      end
+   })
+
+   client = obj.new('netsocket', {
+      name  = 'IocpPendingSSLFreeClient',
+      flags = NSF_SSL|NSF_DISABLE_SERVER_VERIFY,
+      feedback = function(Socket, State)
+         if client_freed then late_client_callbacks++ end
+      end,
+      incoming = function(Socket)
+         if client_freed then late_client_callbacks++ end
+         buffer = array<byte, 256>
+         err, read_len = Socket.acRead(buffer)
+         if (err != ERR_Okay) and (err != ERR_Disconnected) and (err != ERR_InvalidState) then
+            error('SSL client read failed during pending SSL free test: ' .. mSys.GetErrorMsg(err))
+         end
+      end
+   })
+
+   check client.mtConnect('127.0.0.1', port)
+   processing.halt(0.05)
+
+   client_freed = true
+   client.free()
+   client = nil
+
+   processing.collect()
+   processing.halt(1.0)
+   server.acDeactivate()
+
+   assert(late_client_callbacks is 0, 'Freed SSL client received a late handshake or read callback')
 end

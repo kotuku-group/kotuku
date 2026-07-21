@@ -5,6 +5,9 @@ static void fill_gouraud(VectorState &, const TClipRectangle<double> &, double, 
    agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &, SceneRenderer *);
 static void fill_mesh(VectorState &, const TClipRectangle<double> &, double, double, extGradientMesh &, double,
    agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &, SceneRenderer *);
+static void fill_diffusion(VectorState &, const TClipRectangle<double> &, double, double, extGradientDiffusion &,
+   double, agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &,
+   SceneRenderer *);
 
 //********************************************************************************************************************
 
@@ -61,6 +64,11 @@ void SceneRenderer::render_fill(VectorState &State, extVector &Vector, agg::rast
       }
       else if (gradient.classID() IS CLASSID::GRADIENTMESH) {
          fill_mesh(State, Vector.Bounds, mView->vpFixedWidth, mView->vpFixedHeight, (extGradientMesh &)gradient,
+            State.mOpacity * Vector.FillOpacity, mRenderBase, Raster,
+            build_fill_transform(Vector, gradient.Units IS VUNIT::USERSPACE, State), this);
+      }
+      else if (gradient.classID() IS CLASSID::GRADIENTDIFFUSION) {
+         fill_diffusion(State, Vector.Bounds, mView->vpFixedWidth, mView->vpFixedHeight, (extGradientDiffusion &)gradient,
             State.mOpacity * Vector.FillOpacity, mRenderBase, Raster,
             build_fill_transform(Vector, gradient.Units IS VUNIT::USERSPACE, State), this);
       }
@@ -290,6 +298,99 @@ static bool build_gouraud_path_mask(agg::rasterizer_scanline_aa<> &Raster,
 //   * VCS::LINEAR_RGB -> colours are decoded to linear here, so span_gouraud_rgba_linear interpolates in linear
 //     space and re-encodes each output pixel back to sRGB for storage.
 
+// Positive-area overlap requires ordered source-over compositing, while triangles that only share edges or vertices
+// can use the seamless compound path.  Sweep along the mesh's widest axis to discard most pairs cheaply, then use a
+// strict separating-axis test for candidates whose bounding boxes overlap.
+
+static bool gouraud_triangles_overlap(const std::vector<GouraudTriangle> &Triangles)
+{
+   if (Triangles.size() < 2) return false;
+
+   constexpr double overlap_epsilon = 1e-7;
+
+   struct TriangleBounds {
+      size_t triangle;
+      double min_x, max_x, min_y, max_y;
+   };
+
+   std::vector<TriangleBounds> bounds;
+   bounds.reserve(Triangles.size());
+   for (size_t i=0; i < Triangles.size(); i++) {
+      const auto &tri = Triangles[i];
+      bounds.push_back({ i,
+         std::min({ tri.x[0], tri.x[1], tri.x[2] }), std::max({ tri.x[0], tri.x[1], tri.x[2] }),
+         std::min({ tri.y[0], tri.y[1], tri.y[2] }), std::max({ tri.y[0], tri.y[1], tri.y[2] }) });
+   }
+
+   double mesh_min_x = bounds[0].min_x, mesh_max_x = bounds[0].max_x;
+   double mesh_min_y = bounds[0].min_y, mesh_max_y = bounds[0].max_y;
+   for (auto &item : bounds) {
+      mesh_min_x = std::min(mesh_min_x, item.min_x);
+      mesh_max_x = std::max(mesh_max_x, item.max_x);
+      mesh_min_y = std::min(mesh_min_y, item.min_y);
+      mesh_max_y = std::max(mesh_max_y, item.max_y);
+   }
+   const bool sweep_x = (mesh_max_x - mesh_min_x) >= (mesh_max_y - mesh_min_y);
+
+   std::sort(bounds.begin(), bounds.end(), [&](const TriangleBounds &A, const TriangleBounds &B) {
+      return sweep_x ? (A.min_x < B.min_x) : (A.min_y < B.min_y);
+   });
+
+   auto interiors_overlap = [&](const GouraudTriangle &A, const GouraudTriangle &B) {
+      auto separated_by_edge = [&](const GouraudTriangle &AxisTriangle, int Edge) {
+         const int next = (Edge + 1) % 3;
+         double axis_x = -(AxisTriangle.y[next] - AxisTriangle.y[Edge]);
+         double axis_y = AxisTriangle.x[next] - AxisTriangle.x[Edge];
+         const double axis_length = std::hypot(axis_x, axis_y);
+         if (axis_length <= overlap_epsilon) return false;
+         axis_x /= axis_length;
+         axis_y /= axis_length;
+
+         auto project = [&](const GouraudTriangle &Triangle) {
+            double minimum = (Triangle.x[0] * axis_x) + (Triangle.y[0] * axis_y);
+            double maximum = minimum;
+            for (int i=1; i < 3; i++) {
+               const double value = (Triangle.x[i] * axis_x) + (Triangle.y[i] * axis_y);
+               minimum = std::min(minimum, value);
+               maximum = std::max(maximum, value);
+            }
+            return std::pair(minimum, maximum);
+         };
+
+         const auto [a_min, a_max] = project(A);
+         const auto [b_min, b_max] = project(B);
+         return (a_max <= b_min + overlap_epsilon) or (b_max <= a_min + overlap_epsilon);
+      };
+
+      for (int edge=0; edge < 3; edge++) if (separated_by_edge(A, edge)) return false;
+      for (int edge=0; edge < 3; edge++) if (separated_by_edge(B, edge)) return false;
+      return true;
+   };
+
+   std::vector<size_t> active;
+   for (size_t i=0; i < bounds.size(); i++) {
+      const auto &current = bounds[i];
+      std::erase_if(active, [&](size_t Active) {
+         return sweep_x ? (bounds[Active].max_x <= current.min_x + overlap_epsilon) :
+            (bounds[Active].max_y <= current.min_y + overlap_epsilon);
+      });
+
+      for (auto active_index : active) {
+         const auto &candidate = bounds[active_index];
+         if (sweep_x) {
+            if ((candidate.max_y <= current.min_y + overlap_epsilon) or
+                (current.max_y <= candidate.min_y + overlap_epsilon)) continue;
+         }
+         else if ((candidate.max_x <= current.min_x + overlap_epsilon) or
+                  (current.max_x <= candidate.min_x + overlap_epsilon)) continue;
+         if (interiors_overlap(Triangles[candidate.triangle], Triangles[current.triangle])) return true;
+      }
+      active.push_back(i);
+   }
+
+   return false;
+}
+
 static void rebuild_gouraud_cache(GouraudCache &Cache, const GouraudMesh &Mesh, const agg::trans_affine &Transform,
    double Opacity, VCS ColourSpace, uint64_t MeshHash)
 {
@@ -317,6 +418,7 @@ static void rebuild_gouraud_cache(GouraudCache &Cache, const GouraudMesh &Mesh, 
 
    Cache.Triangles.clear();
    Cache.Triangles.reserve(tri_count);
+   Cache.Translucent = false;
 
    auto fetch = [&](size_t Tri, int Corner) -> const PreparedVertex & {
       const int idx = Mesh.Indices.empty() ? int(Tri * 3 + Corner) : Mesh.Indices[Tri * 3 + Corner];
@@ -338,7 +440,11 @@ static void rebuild_gouraud_cache(GouraudCache &Cache, const GouraudMesh &Mesh, 
       tri.x[1] = b.x; tri.y[1] = b.y; tri.colour[1] = b.colour;
       tri.x[2] = c.x; tri.y[2] = c.y; tri.colour[2] = c.colour;
       Cache.Triangles.push_back(tri);
+
+      if ((a.colour.a < 0xff) or (b.colour.a < 0xff) or (c.colour.a < 0xff)) Cache.Translucent = true;
    }
+
+   Cache.Overlapping = Cache.Translucent and gouraud_triangles_overlap(Cache.Triangles);
 
    Cache.Transform   = Transform;
    Cache.MeshHash    = MeshHash;
@@ -346,6 +452,50 @@ static void rebuild_gouraud_cache(GouraudCache &Cache, const GouraudMesh &Mesh, 
    Cache.ColourSpace = ColourSpace;
    Cache.Valid       = true;
 }
+
+// The compound rasteriser stores style ids in int16 cells, so a single pass supports at most ~32k styles (one per
+// triangle).  fill_mesh() reduces its tessellation density to stay under this cap when the translucent path will be
+// taken; render_gouraud_triangles() additionally guards against oversized caches by falling back to the dilated path.
+
+constexpr size_t GOURAUD_COMPOUND_STYLE_LIMIT = 32000;
+
+//********************************************************************************************************************
+// Style handler for the compound (translucent) Gouraud render path.  One span generator is pre-built and prepared
+// per triangle, indexed by the triangle's compound style id, so generate_span() performs no per-span setup.
+// Generators are constructed with zero dilation: the compound rasteriser partitions coverage exactly along shared
+// edges, so no overlap is needed to seal seams.
+
+template<class SpanGen> class GouraudStyleHandler {
+public:
+   GouraudStyleHandler(const std::vector<GouraudTriangle> &Triangles, int Levels) {
+      generators.reserve(Triangles.size());
+      for (auto &tri : Triangles) {
+         // The quantising wrapper takes a trailing 'levels' argument that the plain/linear generators do not.
+         if constexpr (requires { SpanGen(tri.colour[0], tri.colour[1], tri.colour[2],
+            tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], 0.0, Levels); }) {
+            generators.emplace_back(tri.colour[0], tri.colour[1], tri.colour[2],
+               tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], 0.0, Levels);
+         }
+         else {
+            generators.emplace_back(tri.colour[0], tri.colour[1], tri.colour[2],
+               tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2], 0.0);
+         }
+         generators.back().prepare();
+      }
+   }
+
+   bool is_solid(unsigned) const { return false; }
+   agg::rgba8 color(unsigned) const { return agg::rgba8(0, 0, 0, 0); }
+
+   void generate_span(agg::rgba8 *Span, int X, int Y, unsigned Len, unsigned Style) {
+      generators[Style].generate(Span, X, Y, Len);
+   }
+
+private:
+   std::vector<SpanGen> generators;
+};
+
+//********************************************************************************************************************
 
 static void render_gouraud_triangles(const GouraudCache &Cache, double Resolution, VCS ColourSpace,
    agg::renderer_base<agg::pixfmt_psl> &RenderBase, agg::rendering_buffer &PathMaskBuffer)
@@ -366,15 +516,13 @@ static void render_gouraud_triangles(const GouraudCache &Cache, double Resolutio
    const int levels = int(std::clamp(level_count, 2.0, 256.0));
    const bool quantise = (levels < 256);
 
-   // Render every cached triangle through the chosen Gouraud span generator.  The cache stores colours in the
-   // encoding the generator expects (sRGB-encoded for the plain generator, linear-decoded for the linear one).
-   //
-   // Each triangle is rendered as a separate anti-aliased scanline pass, so the partial edge coverage of adjacent
-   // triangles does not sum to full opacity along a shared edge.  That leaves a faint translucent seam where the
-   // background bleeds through.  span_gouraud dilates the triangle outward by 'd' into a 6-vertex polygon (colours
-   // are still interpolated from the original vertices via miter joins), so feeding the rasteriser that dilated
-   // outline makes adjacent triangles overlap by ~'d' pixels.  Because shared edges carry identical colours on both
-   // sides, the overlap blends invisibly and seals the seam.
+   // Fast (opaque) path: every cached triangle is rendered as a separate anti-aliased scanline pass, so the partial
+   // edge coverage of adjacent triangles does not sum to full opacity along a shared edge.  That leaves a faint
+   // translucent seam where the background bleeds through.  span_gouraud dilates the triangle outward by 'd' into a
+   // 6-vertex polygon (colours are still interpolated from the original vertices via miter joins), so feeding the
+   // rasteriser that dilated outline makes adjacent triangles overlap by ~'d' pixels.  Because shared edges carry
+   // identical colours on both sides, the overlap blends invisibly and seals the seam.  The cache stores colours in
+   // the encoding the generator expects (sRGB-encoded for the plain generator, linear-decoded for the linear one).
 
    auto render_triangles = [&]<typename SpanGen>() {
       constexpr double DILATION = 0.5; // px; ~half a pixel of overlap is enough to cover the AA gap
@@ -399,13 +547,58 @@ static void render_gouraud_triangles(const GouraudCache &Cache, double Resolutio
       }
    };
 
+   // Slow (translucent) path: the dilation trick fails when vertex alpha < 255 because the ~1px overlap band is
+   // source-over blended twice, roughly doubling its opacity and exposing the tessellation grid as dark seams.
+   // For a non-overlapping mesh, all triangles are fed into a single compound rasterisation pass as per-triangle
+   // styles: coverage at shared edges is partitioned exactly between neighbours and each destination pixel is blended
+   // exactly once, so no dilation is required and any alpha renders correctly.  Overlapping triangles retain the
+   // ordered path above because their translucent layers must source-over composite.  The compound pass writes
+   // directly to the destination through an alpha-mask adaptor over the existing path mask.
+
+   const auto &clip = RenderBase.clip_box();
+
+   auto render_compound = [&]<typename SpanGen>() {
+      GouraudStyleHandler<SpanGen> handler(Cache.Triangles, levels);
+
+      agg::rasterizer_compound_aa<> compound_raster;
+      compound_raster.clip_box(clip.x1, clip.y1, clip.x2 + 1, clip.y2 + 1);
+      compound_raster.layer_order(agg::layer_direct);
+
+      for (size_t i=0; i < Cache.Triangles.size(); i++) {
+         auto &tri = Cache.Triangles[i];
+         const double area = ((tri.x[1] - tri.x[0]) * (tri.y[2] - tri.y[0])) -
+            ((tri.x[2] - tri.x[0]) * (tri.y[1] - tri.y[0]));
+         if (area > 0) compound_raster.styles(int(i), -1);
+         else compound_raster.styles(-1, int(i));
+         compound_raster.move_to_d(tri.x[0], tri.y[0]);
+         compound_raster.line_to_d(tri.x[1], tri.y[1]);
+         compound_raster.line_to_d(tri.x[2], tri.y[2]);
+         compound_raster.line_to_d(tri.x[0], tri.y[0]);
+      }
+
+      agg::pixfmt_amask_adaptor<agg::pixfmt_psl, agg::alpha_mask_gray8> masked_pixels(RenderBase.ren(), alpha_mask);
+      agg::renderer_base<agg::pixfmt_amask_adaptor<agg::pixfmt_psl, agg::alpha_mask_gray8>> masked_base(masked_pixels);
+      masked_base.clip_box_naked(clip);
+
+      agg::scanline_u8 scanline;
+      agg::render_scanlines_compound_layered(compound_raster, scanline, masked_base, span_allocator, handler);
+   };
+
+   const bool compound = Cache.Translucent and (not Cache.Overlapping) and
+      (Cache.Triangles.size() <= GOURAUD_COMPOUND_STYLE_LIMIT);
+
+   auto dispatch = [&]<typename SpanGen>() {
+      if (compound) render_compound.template operator()<SpanGen>();
+      else render_triangles.template operator()<SpanGen>();
+   };
+
    if (ColourSpace IS VCS::LINEAR_RGB) {
-      if (quantise) render_triangles.template operator()<agg::span_gouraud_rgba_quantise<agg::span_gouraud_rgba_linear<agg::rgba8>>>();
-      else render_triangles.template operator()<agg::span_gouraud_rgba_linear<agg::rgba8>>();
+      if (quantise) dispatch.template operator()<agg::span_gouraud_rgba_quantise<agg::span_gouraud_rgba_linear<agg::rgba8>>>();
+      else dispatch.template operator()<agg::span_gouraud_rgba_linear<agg::rgba8>>();
    }
    else {
-      if (quantise) render_triangles.template operator()<agg::span_gouraud_rgba_quantise<agg::span_gouraud_rgba<agg::rgba8>>>();
-      else render_triangles.template operator()<agg::span_gouraud_rgba<agg::rgba8>>();
+      if (quantise) dispatch.template operator()<agg::span_gouraud_rgba_quantise<agg::span_gouraud_rgba<agg::rgba8>>>();
+      else dispatch.template operator()<agg::span_gouraud_rgba<agg::rgba8>>();
    }
 }
 
@@ -656,6 +849,8 @@ static void mesh_push_triangle(GouraudCache &Cache, const MeshPreparedVertex &A,
    tri.x[1] = B.x; tri.y[1] = B.y; tri.colour[1] = B.colour;
    tri.x[2] = C.x; tri.y[2] = C.y; tri.colour[2] = C.colour;
    Cache.Triangles.push_back(tri);
+
+   if ((A.colour.a < 0xff) or (B.colour.a < 0xff) or (C.colour.a < 0xff)) Cache.Translucent = true;
 }
 
 static void rebuild_mesh_cache(GouraudCache &Cache, const MeshGradient &Mesh, const agg::trans_affine &Transform,
@@ -673,6 +868,7 @@ static void rebuild_mesh_cache(GouraudCache &Cache, const MeshGradient &Mesh, co
 
    Cache.Triangles.clear();
    Cache.Triangles.reserve(Mesh.patches.size() * size_t(Segments) * size_t(Segments) * 2);
+   Cache.Translucent = false;
 
    for (size_t p=0; p < Mesh.patches.size(); p++) {
       const auto &patch = Mesh.patches[p];
@@ -707,6 +903,8 @@ static void rebuild_mesh_cache(GouraudCache &Cache, const MeshGradient &Mesh, co
       }
    }
 
+   Cache.Overlapping = Cache.Translucent and gouraud_triangles_overlap(Cache.Triangles);
+
    Cache.Transform   = Transform;
    Cache.MeshHash    = MeshHash;
    Cache.Opacity     = Opacity;
@@ -738,7 +936,28 @@ static void fill_mesh(VectorState &State, const TClipRectangle<double> &Bounds, 
    transform *= Transform;
 
    const double resolution = std::clamp(Gradient.Resolution, 0.0, 1.0);
-   const int segments = int(std::clamp(std::round(4.0 + (resolution * 28.0)), 1.0, 64.0));
+   int segments = int(std::clamp(std::round(4.0 + (resolution * 28.0)), 1.0, 64.0));
+
+   // A translucent mesh renders through the compound rasteriser, which stores per-triangle style ids as int16 and
+   // caps a single pass at GOURAUD_COMPOUND_STYLE_LIMIT triangles.  Reduce the per-patch tessellation density until
+   // the projected triangle count fits; the quality impact is negligible and seam correctness is preserved because
+   // everything still renders in one pass.
+
+   auto translucent = [&]() {
+      if (Opacity < 1.0) return true;
+      for (auto &patch : Gradient.Mesh->patches) {
+         for (auto &corner : patch.corner) if (corner.Alpha < 1.0) return true;
+      }
+      return false;
+   };
+
+   if (translucent()) {
+      const size_t patches = Gradient.Mesh->patches.size();
+      while ((segments > 1) and ((patches * size_t(segments) * size_t(segments) * 2) > GOURAUD_COMPOUND_STYLE_LIMIT)) {
+         segments--;
+      }
+   }
+
    const VCS colour_space = Gradient.ColourSpace;
    const uint64_t mesh_hash = mesh_gradient_fingerprint(*Gradient.Mesh, segments);
    if (!Gradient.MeshTriangles.matches(mesh_hash, transform, Opacity, colour_space)) {
@@ -746,6 +965,118 @@ static void fill_mesh(VectorState &State, const TClipRectangle<double> &Bounds, 
    }
 
    render_gouraud_triangles(Gradient.MeshTriangles, Gradient.Resolution, colour_space, RenderBase, path_mask_buffer);
+}
+
+//********************************************************************************************************************
+// Diffusion curves fill.  The gradient's cached colour field (solved in painters/gradient_diffusion.cpp) is sampled
+// as an image through a bilinear span filter with the standard inverse fill transform, reusing the machinery of
+// fill_image().  Unlike the scalar span gradients there is no 1D colour ramp; every pixel receives a full RGBA value
+// from the solved field.
+
+class DiffusionSpanConverter {
+   public:
+   explicit DiffusionSpanConverter(bool Linear) : linear(Linear) { }
+
+   void prepare() { }
+
+   void generate(agg::rgba8 *Span, int, int, unsigned Length) const {
+      do {
+         const int alpha = Span->a;
+         if (alpha > 0) {
+            Span->r = unpremultiply(Span->r, alpha);
+            Span->g = unpremultiply(Span->g, alpha);
+            Span->b = unpremultiply(Span->b, alpha);
+            if (linear) {
+               Span->r = glLinearRGB.invert(Span->r);
+               Span->g = glLinearRGB.invert(Span->g);
+               Span->b = glLinearRGB.invert(Span->b);
+            }
+         }
+         else Span->r = Span->g = Span->b = 0;
+         Span++;
+      } while (--Length);
+   }
+
+   private:
+   bool linear;
+
+   static uint8_t unpremultiply(uint8_t Colour, int Alpha) {
+      return uint8_t(std::min(255, ((int(Colour) * 255) + (Alpha / 2)) / Alpha));
+   }
+};
+
+static void fill_diffusion(VectorState &State, const TClipRectangle<double> &Bounds, double ViewWidth,
+   double ViewHeight, extGradientDiffusion &Gradient, double Opacity,
+   agg::renderer_base<agg::pixfmt_psl> &RenderBase, agg::rasterizer_scanline_aa<> &Raster,
+   const agg::trans_affine &Transform, SceneRenderer *Render)
+{
+   if (Gradient.Curves.empty()) return;
+
+   // The solve rectangle is the region the colour field covers in the gradient's coordinate space.  BOUNDING_BOX
+   // solves over the normalised unit square (so a pure translation of the path never re-solves); USERSPACE solves
+   // over the target path's bounds in viewport coordinates.
+
+   TClipRectangle<double> solve_rect;
+   if (Gradient.Units IS VUNIT::USERSPACE) solve_rect = Bounds;
+   else solve_rect = { 0.0, 0.0, 1.0, 1.0 };
+
+   const double rect_width  = solve_rect.width();
+   const double rect_height = solve_rect.height();
+   if ((rect_width <= 0) or (rect_height <= 0)) return;
+
+   // Resolution scales the solve grid: 128 texels on the longest axis at 0, up to 512 at 1.0.  The short axis
+   // scales proportionally with a floor of 16 texels.
+
+   const double resolution = std::clamp(Gradient.Resolution, 0.0, 1.0);
+   const int grid_max = int(std::round(128.0 + (resolution * 384.0)));
+   int grid_width, grid_height;
+   if (rect_width >= rect_height) {
+      grid_width  = grid_max;
+      grid_height = std::max(16, int(std::round(double(grid_max) * rect_height / rect_width)));
+   }
+   else {
+      grid_height = grid_max;
+      grid_width  = std::max(16, int(std::round(double(grid_max) * rect_width / rect_height)));
+   }
+
+   Gradient.refresh_field(grid_width, grid_height, solve_rect);
+   if (Gradient.FieldBuffer.empty()) return;
+
+   // Build the grid-to-scene transform, then invert it for span sampling - the same sequence as fill_image().
+
+   agg::trans_affine transform;
+   transform.scale(rect_width / double(grid_width), rect_height / double(grid_height));
+   transform.translate(solve_rect.left, solve_rect.top);
+   if (Gradient.Units IS VUNIT::BOUNDING_BOX) {
+      transform.scale(Bounds.width(), Bounds.height());
+      transform.translate(Bounds.left, Bounds.top);
+   }
+   apply_transforms(Gradient, transform);
+   transform *= Transform;
+   transform.invert();
+
+   // Wrap the solved field in a pixel format and sample it bilinearly.  The clone accessor clamps reads at the
+   // field edges, so the fill extends the boundary colours rather than darkening toward transparent black.
+
+   agg::rendering_buffer field_buffer((agg::int8u *)Gradient.FieldBuffer.data(), grid_width, grid_height,
+      grid_width * 4);
+   agg::pixfmt_rgba32 field_pixels(field_buffer);
+   agg::image_accessor_clone<agg::pixfmt_rgba32> source(field_pixels);
+   agg::span_interpolator_linear<> interpolator(transform);
+   agg::span_image_filter_rgba_bilinear<agg::image_accessor_clone<agg::pixfmt_rgba32>,
+      agg::span_interpolator_linear<>> span_gen(source, interpolator);
+   DiffusionSpanConverter span_converter(Gradient.ColourSpace IS VCS::LINEAR_RGB);
+   agg::span_converter converted_span(span_gen, span_converter);
+
+   if ((Render) and (!Render->clip_stack_empty())) {
+      agg::alpha_mask_gray8 alpha_mask(Render->clip_stack_top().m_renderer);
+      agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
+      drawBitmapRender(masked_scanline, RenderBase, Raster, converted_span, Opacity);
+   }
+   else {
+      agg::scanline_u8 scanline;
+      drawBitmapRender(scanline, RenderBase, Raster, converted_span, Opacity);
+   }
 }
 
 //********************************************************************************************************************

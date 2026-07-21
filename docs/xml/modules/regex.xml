@@ -41,7 +41,7 @@
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+      <error code="AllocMemory">Failed to create a new memory block</error>
       <error code="Syntax">Invalid syntax detected</error>
     </result>
   </function>

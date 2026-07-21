@@ -29,6 +29,13 @@
 #include <map>
 #include <string>
 #include <cmath>
+#include <span>
+
+#if defined(_WIN32)
+   #include <kotuku/system/windows_class_offsets.h>
+#elif defined(__linux__) and not defined(__ANDROID__)
+   #include <kotuku/system/linux_class_offsets.h>
+#endif
 
 #ifndef STRINGIFY
 #define STRINGIFY(x) #x

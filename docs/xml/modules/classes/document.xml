@@ -348,7 +348,7 @@
         <error code="Args">Invalid arguments passed to function</error>
         <error code="NoData">No data was extractable - applies to XML type only; other types return an empty string.</error>
         <error code="OutOfRange">The Start index is not within the stream.</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>pure-query, mutates-input</tags>
@@ -590,12 +590,9 @@
       <type>STRING</type>
       <description>
 <p>To load a document file into a document object, set the Path field.  Valid string formats for setting the path are:</p>
-<p>
-<code>volume:folder/filename.rpl</code></p>
-<p>
-<code>#page_name?param1&amp;param2=value</code></p>
-<p>
-<code>volume:folder/filename.rpl#page_name?param1&amp;param2=value</code></p>
+<p><code>volume:folder/filename.rpl</code></p>
+<p><code>#page_name?param1&amp;param2=value</code></p>
+<p><code>volume:folder/filename.rpl#page_name?param1&amp;param2=value</code></p>
 <p>Setting this field post-initialisation will cause a complete reload unless the path begins with a hash to signal a change to the current page and parameters.  Note: if a requested page does not exist in the currently loaded document, a dialog is displayed to bring the error to the user's attention).</p>
 <p>To leap to a bookmark in the page that has been specified with the <code>&lt;index&gt;</code> element, use the colon as a separator after the pagename, i.e. <code>#pagename:bookmark</code>.</p>
 <p>Other means of opening a document include loading the data manually and passing it via the <action>DataFeed</action> action.</p>
@@ -608,8 +605,7 @@
       <access write="S">Set</access>
       <type>STRING</type>
       <description>
-<p>Use the Pretext field to execute document code prior to the loading of a new document.  This feature is commonly used to configure a document in advance, such as setting default font values and background graphics.  It is functionally equivalent to embedding an <code>
-<include/></code> statement at the top of a document, but with the benefit of guaranteeing continued execution if the user navigates away from the first page.</p>
+<p>Use the Pretext field to execute document code prior to the loading of a new document.  This feature is commonly used to configure a document in advance, such as setting default font values and background graphics.  It is functionally equivalent to embedding an <code><include/></code> statement at the top of a document, but with the benefit of guaranteeing continued execution if the user navigates away from the first page.</p>
 <p>A Pretext will always survive document unloading and resets.  It can be removed only by setting this field with <code>NULL</code>.</p>
       </description>
     </field>

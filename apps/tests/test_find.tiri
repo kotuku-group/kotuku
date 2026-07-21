@@ -1,0 +1,109 @@
+-- Flute tests for the Find command-line file search tool.
+
+glTask = mSys.CurrentTask()
+
+function resolveFirstPath(Candidates:array):str
+   for candidate in values(Candidates) do
+      err, resolved = mSys.ResolvePath(candidate, RSF_APPROXIMATE)
+      if err is ERR_Okay then return resolved end
+   end
+
+   error('Unable to resolve any candidate path')
+end
+
+@BeforeAll function init(State)
+   global glOrigoPath = resolveFirstPath(array<string> {
+      glTask.processPath .. 'origo',
+      'sdk:build/agents-install/origo',
+      'origo'
+   })
+   global glFindPath = resolveFirstPath(array<string> {
+      'sdk:apps/find.tiri',
+   })
+   global glAppsPath = [*_]io.splitPath(glFindPath)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function quoteTaskParam(Param:str):str
+   if Param:find(' ') is nil and Param:find('"') is nil then
+      return Param
+   end
+
+   return '"' .. Param:replace('"', '\\"') .. '"'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function runFind(Parameters:array):table
+   local output = ''
+   local errors = ''
+   local task_params = array<string> { quoteTaskParam(glFindPath:replace('\\', '/')) }
+
+   for param in values(Parameters) do
+      task_params:push(quoteTaskParam(param))
+   end
+   task_params:push('--log-warning')
+   task_params:push('--no-console')
+
+   local task = obj.new('task', {
+      src = glOrigoPath,
+      args = task_params:concat(' '),
+      flags = TSF_WAIT|TSF_SHELL,
+      timeOut = 10,
+      outputCallback = function(Task:obj, Buffer:array)
+         output ..= Buffer:getString()
+      end,
+      errorCallback = function(Task:obj, Buffer:array)
+         errors ..= Buffer:getString()
+      end
+   })
+
+   check task.acActivate()
+
+   return {
+      returnCode = task.returnCode,
+      output     = output,
+      errors     = errors,
+      text       = output .. errors
+   }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ContentOptionMatchesLiteralText()
+   result = runFind(array<string> {
+      'path=' .. glAppsPath,
+      'name=find.tiri',
+      'content=Match files containing the specified literal text.',
+      'output=name'
+   })
+
+   assert(result.returnCode is 0, 'Content search should return 0: ' .. result.errors)
+   assert(result.text:find('find.tiri') != nil, 'Content search returned unexpected output: ' .. result.text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ContentOptionRejectsMissingText()
+   result = runFind(array<string> {
+      'path=' .. glAppsPath,
+      'name=find.tiri',
+      'content=definitely_absent_find_fixture',
+      'count'
+   })
+
+   assert(result.returnCode is 0, 'Non-matching content search should return 0: ' .. result.errors)
+   assert(result.text:find('0') != nil, 'Non-matching content search should report zero: ' .. result.text)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function HelpDocumentsContentOption()
+   result = runFind(array<string> { 'help' })
+
+   assert(result.returnCode is 0, 'Help should return 0: ' .. result.errors)
+   assert(result.text:find('content=CONTENT'), 'Help should list the content option')
+   assert(result.text:find('Match files containing the specified literal text.'),
+      'Help should describe literal content matching')
+end

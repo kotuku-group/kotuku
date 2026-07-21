@@ -339,23 +339,16 @@ static ERR init_audio(extAudio *Self)
                setvol.Flags   = SVF::NIL;
                setvol.Channel = -1;
                setvol.Volume  = oldctl[j].Channels[0];
-               if ((oldctl[j].Flags & VCF::MUTE) != VCF::NIL) setvol.Flags |= SVF::MUTE;
-               else setvol.Flags |= SVF::UNMUTE;
-               Action(snd::SetVolume::id, Self, &setvol);
+               if (setvol.Volume >= 0) {
+                  if ((oldctl[j].Flags & VCF::MUTE) != VCF::NIL) setvol.Flags |= SVF::MUTE;
+                  else setvol.Flags |= SVF::UNMUTE;
+                  Action(snd::SetVolume::id, Self, &setvol);
+               }
                break;
             }
          }
 
-         // If the user has no volume defined for a mixer, set our own.
-
-         if (j IS std::ssize(oldctl)) {
-            setvol.Index   = i;
-            setvol.Name    = std::string_view{};
-            setvol.Flags   = SVF::NIL;
-            setvol.Channel = -1;
-            setvol.Volume  = 0.8;
-            Action(snd::SetVolume::id, Self, &setvol);
-         }
+         // Mixers without user configuration retain their current system volume and mute state.
       }
    }
    else {

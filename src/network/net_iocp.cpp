@@ -166,7 +166,9 @@ static ERR iocp_completion_receiver(APTR Custom, MSGID MsgID, int MsgType, APTR 
 
 static ERR post_iocp_completion(int MsgID, const void *Message, int Size)
 {
-   return SendMessage(MSGID(MsgID), MSF::NIL, (APTR)Message, Size);
+   if ((Size < 0) or ((not Message) and Size)) return ERR::Args;
+   if (!Size) return SendMessage(MSGID(MsgID), MSF::NIL, {});
+   return SendMessage(MSGID(MsgID), MSF::NIL, std::span((const int8_t *)Message, size_t(Size)));
 }
 
 //********************************************************************************************************************

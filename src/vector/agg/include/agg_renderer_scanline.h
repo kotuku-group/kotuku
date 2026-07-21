@@ -324,7 +324,6 @@ namespace agg
             unsigned style;
             bool     solid;
             while ((num_styles = ras.sweep_styles()) > 0) {
-                typename ScanlineAA::const_iterator span_aa;
                 if (num_styles == 1) { // Optimization for a single style. Happens often
                     if (ras.sweep_scanline(sl_aa, 0)) {
                         style = ras.style(0);
@@ -332,7 +331,7 @@ namespace agg
                             render_scanline_aa_solid(sl_aa, ren, sh.color(style));
                         }
                         else { // Arbitrary span generator
-                            span_aa   = sl_aa.begin();
+                            auto span_aa = sl_aa.begin();
                             num_spans = sl_aa.num_spans();
                             for (;;) {
                                 len = span_aa->len;
@@ -347,12 +346,14 @@ namespace agg
                 else {
                     if (ras.sweep_scanline(sl_bin, -1)) {
                         // Clear the spans of the mix_buffer
-                        typename ScanlineBin::const_iterator span_bin = sl_bin.begin();
-                        num_spans = sl_bin.num_spans();
-                        for(;;) {
-                            memset(mix_buffer + span_bin->x - min_x, 0, span_bin->len * sizeof(color_type));
-                            if (--num_spans == 0) break;
-                            ++span_bin;
+                        {
+                            auto span_bin = sl_bin.begin();
+                            num_spans = sl_bin.num_spans();
+                            for(;;) {
+                                memset(mix_buffer + span_bin->x - min_x, 0, span_bin->len * sizeof(color_type));
+                                if (--num_spans == 0) break;
+                                ++span_bin;
+                            }
                         }
 
                         unsigned i;
@@ -364,7 +365,7 @@ namespace agg
                                 color_type* colors;
                                 color_type* cspan;
                                 typename ScanlineAA::cover_type* covers;
-                                span_aa   = sl_aa.begin();
+                                auto span_aa = sl_aa.begin();
                                 num_spans = sl_aa.num_spans();
                                 if (solid) {
                                     for(;;) {
@@ -407,7 +408,7 @@ namespace agg
 
                         // Emit the blended result as a color hspan
 
-                        span_bin = sl_bin.begin();
+                        auto span_bin = sl_bin.begin();
                         num_spans = sl_bin.num_spans();
                         for(;;) {
                             ren.blend_color_hspan(span_bin->x, sl_bin.y(), span_bin->len, mix_buffer + span_bin->x - min_x, 0, cover_full);
@@ -438,7 +439,6 @@ namespace agg
          unsigned style;
          bool     solid;
          while ((num_styles = ras.sweep_styles()) > 0) {
-             typename ScanlineAA::const_iterator span_aa;
              if (num_styles == 1) { // Optimization for a single style. Happens often
                  if (ras.sweep_scanline(sl_aa, 0)) {
                      style = ras.style(0);
@@ -446,7 +446,7 @@ namespace agg
                         render_scanline_aa_solid(sl_aa, ren, sh.color(style));
                      }
                      else { // Arbitrary span generator
-                         span_aa   = sl_aa.begin();
+                         auto span_aa = sl_aa.begin();
                          num_spans = sl_aa.num_spans();
                          for(;;) {
                              len = span_aa->len;
@@ -479,7 +479,7 @@ namespace agg
                              color_type* cspan;
                              cover_type* src_covers;
                              cover_type* dst_covers;
-                             span_aa   = sl_aa.begin();
+                             auto span_aa = sl_aa.begin();
                              num_spans = sl_aa.num_spans();
                              sl_y      = sl_aa.y();
                              if (solid) {

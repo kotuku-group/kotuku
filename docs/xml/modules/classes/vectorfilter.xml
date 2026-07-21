@@ -63,7 +63,7 @@
       <access read="G">Get</access>
       <type>STRING</type>
       <description>
-<p>This field value will return a purpose-built string that defines the filter's effects in SVG compliant XML.  The string is allocated and must be freed once no longer in use.</p>
+<p>This field value will return a purpose-built string that defines the filter's effects in SVG compliant XML.</p>
       </description>
       <tags>caller-owns-result</tags>
     </field>

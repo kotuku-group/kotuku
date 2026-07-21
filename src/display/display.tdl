@@ -2,7 +2,7 @@
 
 module({
     name="Display", copyright="Paul Manias © 2003-2026", version=1.0, status="stable", prefix="gfx", timestamp=20240611,
-    src={ "display-driver.cpp", "lib_bitmap.cpp", "lib_display.cpp", "lib_cursor.cpp", "lib_input.cpp", "lib_surfaces.cpp" }
+    src={ "display.cpp", "lib_bitmap.cpp", "lib_display.cpp", "lib_cursor.cpp", "lib_input.cpp", "lib_surfaces.cpp" }
   }, function()
 
   restrict(function()
@@ -391,7 +391,7 @@ module({
     fptr(void obj(Bitmap) int int struct(*RGB8)) ReadUCRPixel
     fptr(void obj(Bitmap) ptr(uchar) struct(*RGB8)) ReadUCRIndex
     fptr(void obj(Bitmap) ptr(uchar) struct(*RGB8)) DrawUCRIndex
-    ptr(uchar) Data             # Pointer to bitmap data area
+    array(uchar) Data           # Bitmap data area
     int   Width                 # Width
     int   ByteWidth             # Byte width (not including padding - see `LineWidth`)
     int   Height                # Height

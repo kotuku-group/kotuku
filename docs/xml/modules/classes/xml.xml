@@ -19,8 +19,7 @@
 <p>XML data can be loaded from a file path, from an in-memory XML statement or from another object that supports the Read action.  Set <fl>Path</fl> to load from the file system, <fl>Statement</fl> to parse an XML string, or <fl>Source</fl> to read from another object.  When <fl>Path</fl> or <fl>Statement</fl> is changed after initialisation, the object clears the previous document and parses the new source.</p>
 <p>Parsed content is available through <fl>Tags</fl>.  Each <st>XTag</st> stores the element name, attributes, child tags, content nodes, line number and namespace ID.  C++ callers can traverse the hierarchy directly through <code>kt::vector&lt;XTag&gt;</code>; Tiri callers should cache <fl>Tags</fl> only while the XML object remains unchanged because reading the field copies the structure.</p>
 <p>Use the XML object's methods when changing the tree so that modification timestamps and derived state remain consistent.  Direct read access to <st>XTag</st> is appropriate for traversal and high-volume inspection.</p>
-<p>
-<b>Not supported:</b> DTD validation is not implemented.  The parser records DOCTYPE declarations and selected entity, notation and identifier data, but it does not load or validate external DTDs.  Use XML Schema (XSD) validation instead.</p></description>
+<p><b>Not supported:</b> DTD validation is not implemented.  The parser records DOCTYPE declarations and selected entity, notation and identifier data, but it does not load or validate external DTDs.  Use XML Schema (XSD) validation instead.</p></description>
     <source>
       <file>xml_class.cpp</file>
     </source>

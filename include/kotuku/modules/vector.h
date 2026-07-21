@@ -25,6 +25,7 @@ class objGradientDiamond;
 class objGradientContour;
 class objGradientGouraud;
 class objGradientMesh;
+class objGradientDiffusion;
 class objGradientDistal;
 class objGradientVoronoi;
 class objFilterEffect;
@@ -609,6 +610,14 @@ struct MeshPatchRecord {
    struct FRGB BottomLeft;       // Colour assigned to the bottom-left patch corner.
 };
 
+struct DiffusionCurveRecord {
+   struct MeshControl Curve;    // Cubic Bezier geometry for this curve segment.
+   struct FRGB LeftStart;       // Colour on the left side at the start of the curve.
+   struct FRGB LeftEnd;         // Colour on the left side at the end of the curve.
+   struct FRGB RightStart;      // Colour on the right side at the start of the curve.
+   struct FRGB RightEnd;        // Colour on the right side at the end of the curve.
+};
+
 struct Transition {
    double Offset;            // An offset from 0.0 to 1.0 at which to apply the transform.
    std::string Transform;    // A transform string, as per SVG guidelines.
@@ -999,12 +1008,12 @@ class objVectorImage : public Object {
    // Customised field getting
 
    inline ERR getX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 96));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 0));
       return ERR::Okay;
    }
 
    inline ERR getY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 112));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 16));
       return ERR::Okay;
    }
 
@@ -1120,27 +1129,27 @@ class objVectorPattern : public Object {
    // Customised field getting
 
    inline ERR getX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 96));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 0));
       return ERR::Okay;
    }
 
    inline ERR getY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 112));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 16));
       return ERR::Okay;
    }
 
    inline ERR getWidth(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 128));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 32));
       return ERR::Okay;
    }
 
    inline ERR getHeight(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 144));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 48));
       return ERR::Okay;
    }
 
    inline ERR getMatrices(std::span<VectorMatrix> &Value) noexcept {
-      auto ktv = (kt::vector<VectorMatrix> *)(((int8_t *)this) + 160);
+      auto ktv = (kt::vector<VectorMatrix> *)(((int8_t *)this) + CLASS_OFFSET + 64);
       Value = std::span<VectorMatrix>(ktv->data(), ktv->size());
       return ERR::Okay;
    }
@@ -1290,13 +1299,13 @@ class objGradient : public Object {
    // Customised field getting
 
    inline ERR getMatrices(std::span<VectorMatrix> &Value) noexcept {
-      auto ktv = (kt::vector<VectorMatrix> *)(((int8_t *)this) + 96);
+      auto ktv = (kt::vector<VectorMatrix> *)(((int8_t *)this) + CLASS_OFFSET + 0);
       Value = std::span<VectorMatrix>(ktv->data(), ktv->size());
       return ERR::Okay;
    }
 
    inline ERR getStops(std::span<GradientStop> &Value) noexcept {
-      auto ktv = (kt::vector<GradientStop> *)(((int8_t *)this) + 120);
+      auto ktv = (kt::vector<GradientStop> *)(((int8_t *)this) + CLASS_OFFSET + 24);
       Value = std::span<GradientStop>(ktv->data(), ktv->size());
       return ERR::Okay;
    }
@@ -1449,22 +1458,22 @@ class objGradientLinear : public objGradient {
    // Customised field getting
 
    inline ERR getX1(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 288));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 0));
       return ERR::Okay;
    }
 
    inline ERR getY1(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 304));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 16));
       return ERR::Okay;
    }
 
    inline ERR getX2(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 320));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 32));
       return ERR::Okay;
    }
 
    inline ERR getY2(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 336));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 48));
       return ERR::Okay;
    }
 
@@ -1519,37 +1528,37 @@ class objGradientRadial : public objGradient {
    // Customised field getting
 
    inline ERR getCX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 288));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 0));
       return ERR::Okay;
    }
 
    inline ERR getCY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 304));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 16));
       return ERR::Okay;
    }
 
    inline ERR getFX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 320));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 32));
       return ERR::Okay;
    }
 
    inline ERR getFY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 336));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 48));
       return ERR::Okay;
    }
 
    inline ERR getRadius(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 352));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 64));
       return ERR::Okay;
    }
 
    inline ERR getFocalRadius(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 368));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 80));
       return ERR::Okay;
    }
 
    inline ERR getContainFocal(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 384));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 96));
       return ERR::Okay;
    }
 
@@ -1619,22 +1628,22 @@ class objGradientConic : public objGradient {
    // Customised field getting
 
    inline ERR getCX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 288));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 0));
       return ERR::Okay;
    }
 
    inline ERR getCY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 304));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 16));
       return ERR::Okay;
    }
 
    inline ERR getRadius(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 320));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 32));
       return ERR::Okay;
    }
 
    inline ERR getSpan(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 336));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 48));
       return ERR::Okay;
    }
 
@@ -1689,17 +1698,17 @@ class objGradientDiamond : public objGradient {
    // Customised field getting
 
    inline ERR getCX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 288));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 0));
       return ERR::Okay;
    }
 
    inline ERR getCY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 304));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 16));
       return ERR::Okay;
    }
 
    inline ERR getRadius(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 320));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 32));
       return ERR::Okay;
    }
 
@@ -1749,12 +1758,12 @@ class objGradientContour : public objGradient {
    // Customised field getting
 
    inline ERR getFloor(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 288));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 0));
       return ERR::Okay;
    }
 
    inline ERR getMultiplier(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 296));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 8));
       return ERR::Okay;
    }
 
@@ -1854,7 +1863,7 @@ class objGradientMesh : public objGradient {
    }
 
    inline ERR getMode(GMT &Value) noexcept {
-      Value = *((GMT *)(((int8_t *)this) + 288));
+      Value = *((GMT *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 0));
       return ERR::Okay;
    }
 
@@ -1896,6 +1905,47 @@ class objGradientMesh : public objGradient {
 
 };
 
+// GradientDiffusion class definition
+
+#define VER_GRADIENTDIFFUSION (1.000000)
+
+class objGradientDiffusion : public objGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTDIFFUSION;
+   static constexpr CSTRING CLASS_NAME = "GradientDiffusion";
+
+   using create = kt::Create<objGradientDiffusion>;
+   objGradientDiffusion(objMetaClass *pClass, OBJECTID pUID) noexcept : objGradient(pClass, pUID) {}
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+   inline ERR getCurves(std::span<DiffusionCurveRecord> &Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      auto get_field = (ERR (*)(APTR, std::span<DiffusionCurveRecord> &))field->GetValue;
+      return get_field(this, Value);
+   }
+
+   inline ERR getXMLDef(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[8];
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
+      return error;
+   }
+
+
+   // Customised field setting
+
+   inline ERR setCurves(const std::span<const DiffusionCurveRecord> Value) noexcept {
+      auto field = &this->Class->Dictionary[19];
+      return field->WriteValue(this, field, 0x00105318, &Value);
+   }
+
+};
+
 // GradientDistal class definition
 
 #define VER_GRADIENTDISTAL (1.000000)
@@ -1915,32 +1965,32 @@ class objGradientDistal : public objGradient {
    // Customised field getting
 
    inline ERR getFloor(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 288));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 0));
       return ERR::Okay;
    }
 
    inline ERR getMultiplier(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 296));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 8));
       return ERR::Okay;
    }
 
    inline ERR getRadius(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 304));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 16));
       return ERR::Okay;
    }
 
    inline ERR getInnerRadius(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 320));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 32));
       return ERR::Okay;
    }
 
    inline ERR getInnerFall(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 336));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 48));
       return ERR::Okay;
    }
 
    inline ERR getOuterFall(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 340));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 52));
       return ERR::Okay;
    }
 
@@ -2005,53 +2055,53 @@ class objGradientVoronoi : public objGradient {
    // Customised field getting
 
    inline ERR getPoints(std::span<VoronoiPoint> &Value) noexcept {
-      auto ktv = (kt::vector<VoronoiPoint> *)(((int8_t *)this) + 304);
+      auto ktv = (kt::vector<VoronoiPoint> *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 16);
       Value = std::span<VoronoiPoint>(ktv->data(), ktv->size());
       return ERR::Okay;
    }
 
    inline ERR getWorleyMode(WLF &Value) noexcept {
-      Value = *((WLF *)(((int8_t *)this) + 364));
+      Value = *((WLF *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 76));
       return ERR::Okay;
    }
 
    inline ERR getWorleyMetric(WLM &Value) noexcept {
-      Value = *((WLM *)(((int8_t *)this) + 368));
+      Value = *((WLM *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 80));
       return ERR::Okay;
    }
 
    inline ERR getFloor(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 288));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 0));
       return ERR::Okay;
    }
 
    inline ERR getMultiplier(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 296));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 8));
       return ERR::Okay;
    }
 
    inline ERR getHeightMin(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 328));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 40));
       return ERR::Okay;
    }
 
    inline ERR getHeightMax(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 336));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 48));
       return ERR::Okay;
    }
 
    inline ERR getJitter(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 344));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 56));
       return ERR::Okay;
    }
 
    inline ERR getSeed(int64_t &Value) noexcept {
-      Value = *((int64_t *)(((int8_t *)this) + 352));
+      Value = *((int64_t *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 64));
       return ERR::Okay;
    }
 
    inline ERR getPointCount(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 360));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_GRADIENT + 72));
       return ERR::Okay;
    }
 
@@ -2168,22 +2218,22 @@ class objFilterEffect : public Object {
    }
 
    inline ERR getX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 136));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 40));
       return ERR::Okay;
    }
 
    inline ERR getY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 152));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 56));
       return ERR::Okay;
    }
 
    inline ERR getWidth(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 168));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 72));
       return ERR::Okay;
    }
 
    inline ERR getHeight(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 184));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 88));
       return ERR::Okay;
    }
 
@@ -2294,17 +2344,17 @@ class objImageFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getResampleMethod(VSM &Value) noexcept {
-      Value = *((VSM *)(((int8_t *)this) + 228));
+      Value = *((VSM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 4));
       return ERR::Okay;
    }
 
    inline ERR getAspectRatio(ARF &Value) noexcept {
-      Value = *((ARF *)(((int8_t *)this) + 224));
+      Value = *((ARF *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
    }
 
    inline ERR getBitmap(OBJECTPTR &Value) noexcept {
-      Value = *((OBJECTPTR *)(((int8_t *)this) + 232));
+      Value = *((OBJECTPTR *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 8));
       return ERR::Okay;
    }
 
@@ -2368,7 +2418,7 @@ class objSourceFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getAspectRatio(ARF &Value) noexcept {
-      Value = *((ARF *)(((int8_t *)this) + 224));
+      Value = *((ARF *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
    }
 
@@ -2428,12 +2478,12 @@ class objBlurFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getSX(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 224));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
    }
 
    inline ERR getSY(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 232));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 8));
       return ERR::Okay;
    }
 
@@ -2483,7 +2533,7 @@ class objColourFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getMode(CM &Value) noexcept {
-      Value = *((CM *)(((int8_t *)this) + 224));
+      Value = *((CM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
    }
 
@@ -2540,27 +2590,27 @@ class objCompositeFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getOperator(OP &Value) noexcept {
-      Value = *((OP *)(((int8_t *)this) + 256));
+      Value = *((OP *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 32));
       return ERR::Okay;
    }
 
    inline ERR getK1(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 224));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
    }
 
    inline ERR getK2(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 232));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 8));
       return ERR::Okay;
    }
 
    inline ERR getK3(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 240));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 16));
       return ERR::Okay;
    }
 
    inline ERR getK4(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 248));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 24));
       return ERR::Okay;
    }
 
@@ -2625,27 +2675,27 @@ class objConvolveFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getEdgeMode(EM &Value) noexcept {
-      Value = *((EM *)(((int8_t *)this) + 240));
+      Value = *((EM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 16));
       return ERR::Okay;
    }
 
    inline ERR getBias(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 224));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
    }
 
    inline ERR getDivisor(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 232));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 8));
       return ERR::Okay;
    }
 
    inline ERR getMatrixRows(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 244));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 20));
       return ERR::Okay;
    }
 
    inline ERR getMatrixColumns(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 248));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 24));
       return ERR::Okay;
    }
 
@@ -2656,27 +2706,27 @@ class objConvolveFX : public objFilterEffect {
    }
 
    inline ERR getPreserveAlpha(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 252));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 28));
       return ERR::Okay;
    }
 
    inline ERR getTargetX(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 256));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 32));
       return ERR::Okay;
    }
 
    inline ERR getTargetY(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 260));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 36));
       return ERR::Okay;
    }
 
    inline ERR getUnitX(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 264));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 40));
       return ERR::Okay;
    }
 
    inline ERR getUnitY(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 272));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 48));
       return ERR::Okay;
    }
 
@@ -2773,22 +2823,22 @@ class objDisplacementFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getResampleMethod(VSM &Value) noexcept {
-      Value = *((VSM *)(((int8_t *)this) + 232));
+      Value = *((VSM *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 8));
       return ERR::Okay;
    }
 
    inline ERR getXChannel(CMP &Value) noexcept {
-      Value = *((CMP *)(((int8_t *)this) + 236));
+      Value = *((CMP *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 12));
       return ERR::Okay;
    }
 
    inline ERR getYChannel(CMP &Value) noexcept {
-      Value = *((CMP *)(((int8_t *)this) + 240));
+      Value = *((CMP *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 16));
       return ERR::Okay;
    }
 
    inline ERR getScale(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 224));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
    }
 
@@ -2848,12 +2898,12 @@ class objFloodFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getColour(struct FRGB * &Value) noexcept {
-      Value = ((struct FRGB *)(((int8_t *)this) + 224));
+      Value = ((struct FRGB *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
    }
 
    inline ERR getOpacity(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 240));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 16));
       return ERR::Okay;
    }
 
@@ -2924,37 +2974,37 @@ class objLightingFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getColour(struct FRGB * &Value) noexcept {
-      Value = ((struct FRGB *)(((int8_t *)this) + 224));
+      Value = ((struct FRGB *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
    }
 
    inline ERR getType(LT &Value) noexcept {
-      Value = *((LT *)(((int8_t *)this) + 280));
+      Value = *((LT *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 56));
       return ERR::Okay;
    }
 
    inline ERR getConstant(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 240));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 16));
       return ERR::Okay;
    }
 
    inline ERR getExponent(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 248));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 24));
       return ERR::Okay;
    }
 
    inline ERR getScale(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 256));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 32));
       return ERR::Okay;
    }
 
    inline ERR getUnitX(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 264));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 40));
       return ERR::Okay;
    }
 
    inline ERR getUnitY(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 272));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 48));
       return ERR::Okay;
    }
 
@@ -3075,17 +3125,17 @@ class objMorphologyFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getOperator(MOP &Value) noexcept {
-      Value = *((MOP *)(((int8_t *)this) + 232));
+      Value = *((MOP *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 8));
       return ERR::Okay;
    }
 
    inline ERR getRadiusX(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 224));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
    }
 
    inline ERR getRadiusY(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 228));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 4));
       return ERR::Okay;
    }
 
@@ -3140,12 +3190,12 @@ class objOffsetFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getXOffset(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 224));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
    }
 
    inline ERR getYOffset(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 228));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 4));
       return ERR::Okay;
    }
 
@@ -3273,32 +3323,32 @@ class objTurbulenceFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getType(TB &Value) noexcept {
-      Value = *((TB *)(((int8_t *)this) + 252));
+      Value = *((TB *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 28));
       return ERR::Okay;
    }
 
    inline ERR getFX(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 224));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
    }
 
    inline ERR getFY(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 232));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 8));
       return ERR::Okay;
    }
 
    inline ERR getOctaves(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 240));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 16));
       return ERR::Okay;
    }
 
    inline ERR getSeed(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 244));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 20));
       return ERR::Okay;
    }
 
    inline ERR getStitch(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 248));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 24));
       return ERR::Okay;
    }
 
@@ -3368,43 +3418,43 @@ class objWaveFunctionFX : public objFilterEffect {
    // Customised field getting
 
    inline ERR getStops(std::span<GradientStop> &Value) noexcept {
-      auto ktv = (kt::vector<GradientStop> *)(((int8_t *)this) + 264);
+      auto ktv = (kt::vector<GradientStop> *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 40);
       Value = std::span<GradientStop>(ktv->data(), ktv->size());
       return ERR::Okay;
    }
 
    inline ERR getAspectRatio(ARF &Value) noexcept {
-      Value = *((ARF *)(((int8_t *)this) + 288));
+      Value = *((ARF *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 64));
       return ERR::Okay;
    }
 
    inline ERR getColourMap(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 224));
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 0));
       return ERR::Okay;
    }
 
    inline ERR getScale(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 256));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 32));
       return ERR::Okay;
    }
 
    inline ERR getN(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 292));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 68));
       return ERR::Okay;
    }
 
    inline ERR getL(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 296));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 72));
       return ERR::Okay;
    }
 
    inline ERR getM(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 300));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 76));
       return ERR::Okay;
    }
 
    inline ERR getResolution(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 304));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_FILTEREFFECT + 80));
       return ERR::Okay;
    }
 
@@ -3556,22 +3606,22 @@ class objVectorFilter : public Object {
    // Customised field getting
 
    inline ERR getX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 96));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 0));
       return ERR::Okay;
    }
 
    inline ERR getY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 112));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 16));
       return ERR::Okay;
    }
 
    inline ERR getWidth(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 128));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 32));
       return ERR::Okay;
    }
 
    inline ERR getHeight(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 144));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET + 48));
       return ERR::Okay;
    }
 
@@ -3899,52 +3949,52 @@ class objVector : public Object {
    }
 
    inline ERR getFillRule(VFR &Value) noexcept {
-      Value = *((VFR *)(((int8_t *)this) + 368));
+      Value = *((VFR *)(((int8_t *)this) + CLASS_OFFSET + 272));
       return ERR::Okay;
    }
 
    inline ERR getClipRule(VFR &Value) noexcept {
-      Value = *((VFR *)(((int8_t *)this) + 372));
+      Value = *((VFR *)(((int8_t *)this) + CLASS_OFFSET + 276));
       return ERR::Okay;
    }
 
    inline ERR getGuideFlags(VMF &Value) noexcept {
-      Value = *((VMF *)(((int8_t *)this) + 388));
+      Value = *((VMF *)(((int8_t *)this) + CLASS_OFFSET + 292));
       return ERR::Okay;
    }
 
    inline ERR getLineJoin(VLJ &Value) noexcept {
-      Value = *((VLJ *)(((int8_t *)this) + 376));
+      Value = *((VLJ *)(((int8_t *)this) + CLASS_OFFSET + 280));
       return ERR::Okay;
    }
 
    inline ERR getLineCap(VLC &Value) noexcept {
-      Value = *((VLC *)(((int8_t *)this) + 380));
+      Value = *((VLC *)(((int8_t *)this) + CLASS_OFFSET + 284));
       return ERR::Okay;
    }
 
    inline ERR getInnerJoin(VIJ &Value) noexcept {
-      Value = *((VIJ *)(((int8_t *)this) + 384));
+      Value = *((VIJ *)(((int8_t *)this) + CLASS_OFFSET + 288));
       return ERR::Okay;
    }
 
    inline ERR getStroke(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 208));
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 112));
       return ERR::Okay;
    }
 
    inline ERR getFill(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 240));
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 144));
       return ERR::Okay;
    }
 
    inline ERR getFilter(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 272));
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 176));
       return ERR::Okay;
    }
 
    inline ERR getSID(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 304));
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 208));
       return ERR::Okay;
    }
 
@@ -4716,67 +4766,67 @@ class objVectorWave : public objVector {
    // Customised field getting
 
    inline ERR getFrequencyEnd(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1064));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 88));
       return ERR::Okay;
    }
 
    inline ERR getNoise(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1080));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 104));
       return ERR::Okay;
    }
 
    inline ERR getEnvelope(WVE &Value) noexcept {
-      Value = *((WVE *)(((int8_t *)this) + 1096));
+      Value = *((WVE *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 120));
       return ERR::Okay;
    }
 
    inline ERR getClose(WVC &Value) noexcept {
-      Value = *((WVC *)(((int8_t *)this) + 1100));
+      Value = *((WVC *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 124));
       return ERR::Okay;
    }
 
    inline ERR getType(WVT &Value) noexcept {
-      Value = *((WVT *)(((int8_t *)this) + 1104));
+      Value = *((WVT *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 128));
       return ERR::Okay;
    }
 
    inline ERR getX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 976));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 0));
       return ERR::Okay;
    }
 
    inline ERR getY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 992));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 16));
       return ERR::Okay;
    }
 
    inline ERR getLength(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1008));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 32));
       return ERR::Okay;
    }
 
    inline ERR getAmplitude(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1024));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 48));
       return ERR::Okay;
    }
 
    inline ERR getThickness(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1040));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 64));
       return ERR::Okay;
    }
 
    inline ERR getFrequency(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1056));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 80));
       return ERR::Okay;
    }
 
    inline ERR getDecay(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1072));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 96));
       return ERR::Okay;
    }
 
    inline ERR getPhase(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1088));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 112));
       return ERR::Okay;
    }
 
@@ -5111,62 +5161,62 @@ class objVectorShape : public objVector {
    // Customised field getting
 
    inline ERR getM(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 976));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 0));
       return ERR::Okay;
    }
 
    inline ERR getN1(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 984));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 8));
       return ERR::Okay;
    }
 
    inline ERR getN2(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 992));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 16));
       return ERR::Okay;
    }
 
    inline ERR getN3(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1000));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 24));
       return ERR::Okay;
    }
 
    inline ERR getA(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1008));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 32));
       return ERR::Okay;
    }
 
    inline ERR getB(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1016));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 40));
       return ERR::Okay;
    }
 
    inline ERR getPhi(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1024));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 48));
       return ERR::Okay;
    }
 
    inline ERR getVertices(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 1032));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 56));
       return ERR::Okay;
    }
 
    inline ERR getSpiral(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 1036));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 60));
       return ERR::Okay;
    }
 
    inline ERR getRepeat(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 1040));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 64));
       return ERR::Okay;
    }
 
    inline ERR getClose(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 1044));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 68));
       return ERR::Okay;
    }
 
    inline ERR getMod(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 1048));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 72));
       return ERR::Okay;
    }
 
@@ -5284,37 +5334,37 @@ class objVectorSpiral : public objVector {
    // Customised field getting
 
    inline ERR getSpacing(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 976));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 0));
       return ERR::Okay;
    }
 
    inline ERR getOffset(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 984));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 8));
       return ERR::Okay;
    }
 
    inline ERR getStep(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 992));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 16));
       return ERR::Okay;
    }
 
    inline ERR getLoopLimit(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1000));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 24));
       return ERR::Okay;
    }
 
    inline ERR getRadius(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1008));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 32));
       return ERR::Okay;
    }
 
    inline ERR getCX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1024));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 48));
       return ERR::Okay;
    }
 
    inline ERR getCY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1040));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 64));
       return ERR::Okay;
    }
 
@@ -5415,27 +5465,27 @@ class objVectorEllipse : public objVector {
    // Customised field getting
 
    inline ERR getCX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 976));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 0));
       return ERR::Okay;
    }
 
    inline ERR getCY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 992));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 16));
       return ERR::Okay;
    }
 
    inline ERR getRadiusX(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1008));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 32));
       return ERR::Okay;
    }
 
    inline ERR getRadiusY(Unit &Value) noexcept {
-      Value = *((Unit *)(((int8_t *)this) + 1024));
+      Value = *((Unit *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 48));
       return ERR::Okay;
    }
 
    inline ERR getVertices(int &Value) noexcept {
-      Value = *((int *)(((int8_t *)this) + 1040));
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 64));
       return ERR::Okay;
    }
 
@@ -5539,7 +5589,7 @@ class objVectorViewport : public objVector {
    // Customised field getting
 
    inline ERR getAspectRatio(ARF &Value) noexcept {
-      Value = *((ARF *)(((int8_t *)this) + 1016));
+      Value = *((ARF *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 40));
       return ERR::Okay;
    }
 
@@ -5549,37 +5599,37 @@ class objVectorViewport : public objVector {
    }
 
    inline ERR getOverflowX(VOF &Value) noexcept {
-      Value = *((VOF *)(((int8_t *)this) + 1020));
+      Value = *((VOF *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 44));
       return ERR::Okay;
    }
 
    inline ERR getOverflowY(VOF &Value) noexcept {
-      Value = *((VOF *)(((int8_t *)this) + 1024));
+      Value = *((VOF *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 48));
       return ERR::Okay;
    }
 
    inline ERR getBuffer(OBJECTPTR &Value) noexcept {
-      Value = *((OBJECTPTR *)(((int8_t *)this) + 976));
+      Value = *((OBJECTPTR *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 0));
       return ERR::Okay;
    }
 
    inline ERR getViewX(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 984));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 8));
       return ERR::Okay;
    }
 
    inline ERR getViewY(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 992));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 16));
       return ERR::Okay;
    }
 
    inline ERR getViewWidth(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1000));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 24));
       return ERR::Okay;
    }
 
    inline ERR getViewHeight(double &Value) noexcept {
-      Value = *((double *)(((int8_t *)this) + 1008));
+      Value = *((double *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 32));
       return ERR::Okay;
    }
 

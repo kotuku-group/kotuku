@@ -201,6 +201,97 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+-- Regression coverage for comments, empty attributes and readable formatting.
+
+@Test function SerialisationPreservesComments()
+   local xml = obj.new("xml", {
+      statement = '<root><!-- note --><a>text</a></root>',
+      flags = XMF_WELL_FORMED|XMF_INCLUDE_COMMENTS
+   })
+
+   local err, result = xml.mtSerialise(0, XMF_INCLUDE_SIBLINGS)
+   assert(err is ERR_Okay, "Comment serialisation should succeed")
+   assert(result is '<root><!-- note --><a>text</a></root>', "Comments should retain their XML markers")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function SerialisationPreservesCDATA()
+   local xml = obj.new("xml", {
+      statement = '<root>before<![CDATA[Some <special> & content]]>after</root>',
+      flags = XMF_WELL_FORMED
+   })
+
+   local err, result = xml.mtSerialise(0, XMF_INCLUDE_SIBLINGS)
+   assert(err is ERR_Okay, "CDATA serialisation should succeed")
+   assert(result is '<root>before<![CDATA[Some <special> & content]]>after</root>', "CDATA should be preserved")
+
+   err, result = xml.mtSerialise(0, XMF_INCLUDE_SIBLINGS|XMF_STRIP_CDATA)
+   assert(err is ERR_Okay, "Stripped CDATA serialisation should succeed")
+   assert(result is '<root>beforeafter</root>', "STRIP_CDATA should omit CDATA markers and content")
+
+   local reparsed = obj.new("xml", { statement = result, flags = XMF_WELL_FORMED })
+   assert(reparsed != nil, "Stripped CDATA output should remain well-formed XML")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function SerialisationPreservesEmptyAttributes()
+   local xml = obj.new("xml", {
+      statement = '<root attr="" other="x"/>',
+      flags = XMF_WELL_FORMED
+   })
+
+   local err, result = xml.mtSerialise(0, XMF_INCLUDE_SIBLINGS)
+   assert(err is ERR_Okay, "Empty attribute serialisation should succeed")
+   assert(result is '<root attr="" other="x"/>', "Empty attributes should retain their quoted values")
+
+   local reparsed = obj.new("xml", { statement = result, flags = XMF_WELL_FORMED })
+   assert(reparsed != nil, "Serialised empty attributes should remain well-formed XML")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function CompactSerialisationHasNoFormattingWhitespace()
+   local xml = obj.new("xml", {
+      statement = '<root><a><b/></a></root>',
+      flags = XMF_WELL_FORMED
+   })
+
+   local err, result = xml.mtSerialise(0, XMF_INCLUDE_SIBLINGS)
+   assert(err is ERR_Okay, "Compact serialisation should succeed")
+   assert(result is '<root><a><b/></a></root>', "Compact serialisation should not insert newlines")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ReadableSerialisationIndentsElements()
+   local xml = obj.new("xml", {
+      statement = '<root><a><b/></a></root>',
+      flags = XMF_WELL_FORMED
+   })
+
+   local err, result = xml.mtSerialise(0, XMF_INCLUDE_SIBLINGS|XMF_READABLE)
+   local expected = '<root>\n   <a>\n      <b/>\n   </a>\n</root>\n'
+   assert(err is ERR_Okay, "Readable serialisation should succeed")
+   assert(result is expected, "Readable serialisation should indent nested elements by three spaces")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ReadableSerialisationKeepsMixedContentInline()
+   local xml = obj.new("xml", {
+      statement = '<root><a>before<b/>after</a></root>',
+      flags = XMF_WELL_FORMED
+   })
+
+   local err, result = xml.mtSerialise(0, XMF_INCLUDE_SIBLINGS|XMF_READABLE)
+   local expected = '<root>\n   <a>before<b/>after</a>\n</root>\n'
+   assert(err is ERR_Okay, "Readable mixed-content serialisation should succeed")
+   assert(result is expected, "Readable serialisation should not add whitespace inside mixed content")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 -- Test GetContent vs deep content extraction
 
 @Test function ContentExtraction()

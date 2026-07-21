@@ -689,7 +689,7 @@ end
 @Test(priority=30,hotpath=false) function ErrorCodeRaised()
    try
       -- Trigger an ERR_Args exception
-      err = mSys.AllocMemory(-1024, 0)
+      err = mSys.AllocResource(-1024, 0)
    except e when ERR_Args
       -- Expected result
    except e
@@ -698,14 +698,14 @@ end
       error("Error should have been raised by faulty system call.")
    end
 
-   -- Try can only check ERR codes in its immediate scope, so the AllocMemory() result would not be tested in this case
+   -- Try can only check ERR codes in its immediate scope, so the AllocResource() result would not be tested in this case
    try
       function internal()
-         mSys.AllocMemory(-1024, 0)
+         mSys.AllocResource(-1024, 0)
       end
       internal()
    except e
-      error(f"AllocMemory() should not have its ERR code tested.")
+      error(f"AllocResource() should not have its ERR code tested.")
    end
 
    t = obj.new('time', { })
@@ -1532,7 +1532,7 @@ end
    try
       check mSys.AnalysePath(sentinel)
    except e
-      assert(e.code is ERR_DoesNotExist, "Expected ERR_DoesNotExist, got " .. tostring(e.code))
+      assert(e.code is ERR_FileNotFound, "Expected ERR_FileNotFound, got " .. tostring(e.code))
       assert(e.message != sentinel, "Module call error message must not be replaced by the string argument")
       assert(e.message:find("AnalysePath() failed:"), "Module call error should identify the function")
       assert(e.message:find(mSys.GetErrorMsg(e.code)), "Module call error should include the official message")

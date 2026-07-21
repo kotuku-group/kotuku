@@ -75,7 +75,8 @@ extern OBJECTPTR clVectorScene, clVectorViewport, clVectorGroup, clVectorColour;
 extern OBJECTPTR clVectorEllipse, clVectorRectangle, clVectorPath, clVectorWave;
 extern OBJECTPTR clVectorFilter, clVectorPolygon, clVectorText, clVectorClip;
 extern OBJECTPTR clGradient, clGradientLinear, clGradientRadial, clGradientConic, clGradientDiamond, clGradientContour;
-extern OBJECTPTR clGradientGouraud, clGradientMesh, clGradientDistal, clGradientVoronoi, clVectorImage, clVectorPattern, clVector;
+extern OBJECTPTR clGradientGouraud, clGradientMesh, clGradientDiffusion, clGradientDistal, clGradientVoronoi;
+extern OBJECTPTR clVectorImage, clVectorPattern, clVector;
 extern OBJECTPTR clVectorSpiral, clVectorShape, clVectorTransition, clImageFX, clSourceFX, clWaveFunctionFX;
 extern OBJECTPTR clBlurFX, clColourFX, clCompositeFX, clConvolveFX, clFilterEffect, clDisplacementFX;
 extern OBJECTPTR clFloodFX, clMergeFX, clMorphologyFX, clOffsetFX, clTurbulenceFX, clRemapFX, clLightingFX;
@@ -387,6 +388,15 @@ struct MeshGradient {
    GMT mode = GMT::LINEAR;
 };
 
+// One diffusion curve: a cubic Bezier carrying independent start/end colours on each side of the curve.  "Left" is
+// the side pointed to by the normal (-dy, dx) when travelling from p0 to p1.  Internal mirror of the public
+// DiffusionCurveRecord structure.
+
+struct DiffusionCurve {
+   agg::point_d p0, c0, c1, p1;
+   FRGB left_start, left_end, right_start, right_end;
+};
+
 // One mesh triangle after coordinate transformation and colour conversion, ready to hand to a Gouraud span.
 
 struct GouraudTriangle {
@@ -407,6 +417,8 @@ struct GouraudCache {
    uint64_t MeshHash = 0;       // Fingerprint of the source mesh (positions, colours, indices)
    double Opacity = -1.0;       // Fill opacity the colours were built with (-1 => never built)
    VCS ColourSpace = VCS::INHERIT; // Colour space the vertex colours were encoded for
+   bool Translucent = false;    // Any vertex alpha < 255; may select the seamless compound render path
+   bool Overlapping = false;    // Triangle interiors overlap; requires ordered source-over compositing
    bool Valid = false;
 
    bool matches(uint64_t pMeshHash, const agg::trans_affine &pTransform, double pOpacity, VCS pColourSpace) const {
@@ -600,6 +612,28 @@ class extGradientMesh : public extGradient {
    GouraudCache MeshTriangles; // Cached tessellated/coloured triangle list.
 
    extGradientMesh(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
+};
+
+class extGradientDiffusion : public extGradient {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::GRADIENTDIFFUSION;
+   static constexpr CSTRING CLASS_NAME = "GradientDiffusion";
+   using create = kt::Create<extGradientDiffusion>;
+
+   std::vector<DiffusionCurve> Curves;
+
+   // Solved colour field, cached until the fingerprint changes (cf. ContourCache/WorleyCache).  The buffer holds
+   // premultiplied rgba8 texels sized FieldWidth * FieldHeight, optionally in linear RGB space.  Sampling stays
+   // premultiplied until the filtered span is converted for rendering, avoiding fringes around translucent curves.
+   std::vector<agg::rgba8> FieldBuffer;
+   int FieldWidth = 0, FieldHeight = 0;
+   uint64_t FieldHash = 0; // Fingerprint of the curves, grid dimensions, solve rectangle and colour space
+
+   extGradientDiffusion(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
+
+   // Ensures FieldBuffer holds the solved colour field for the given grid dimensions and solve rectangle
+   // (gradient-space).  Implemented in painters/gradient_diffusion.cpp.
+   void refresh_field(int GridWidth, int GridHeight, const TClipRectangle<double> &SolveRect);
 };
 
 class extGradientDistal : public extGradient {

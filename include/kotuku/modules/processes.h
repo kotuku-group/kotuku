@@ -158,7 +158,7 @@ class objTask : public Object {
    }
 
    inline ERR getParameters(std::span<std::string> &Value) noexcept {
-      auto ktv = (kt::vector<std::string> *)(((int8_t *)this) + 264);
+      auto ktv = (kt::vector<std::string> *)(((int8_t *)this) + CLASS_OFFSET + 168);
       Value = std::span<std::string>(ktv->data(), ktv->size());
       return ERR::Okay;
    }
@@ -357,7 +357,7 @@ class objThread : public Object {
    }
 
    inline ERR getData(std::span<int8_t> &Value) noexcept {
-      auto ktv = (kt::vector<int8_t> *)(((int8_t *)this) + 160);
+      auto ktv = (kt::vector<int8_t> *)(((int8_t *)this) + CLASS_OFFSET + 64);
       Value = std::span<int8_t>(ktv->data(), ktv->size());
       return ERR::Okay;
    }

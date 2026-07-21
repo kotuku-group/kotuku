@@ -6,7 +6,8 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
         "../fs_identify.cpp", "../fs_resolution.cpp", "../fs_volumes.cpp"
   } }, function()
   c_include("<stdarg.h>", "<inttypes.h>", "<string.h>", "<stdlib.h>")
-  cpp_include("<list>", "<map>", "<string>", "<set>", "<vector>", "<unordered_map>", "<bit>", "<atomic>", "<array>", "<span>", "<charconv>", "<sstream>", "<cmath>", "<type_traits>", "ankerl/unordered_dense.h")
+  cpp_include("<list>", "<map>", "<string>", "<set>", "<vector>", "<unordered_map>", "<bit>", "<atomic>",
+     "<array>", "<charconv>", "<sstream>", "<cmath>", "<type_traits>", "ankerl/unordered_dense.h")
 
   privateNames({ "CoreBase", "DateTime", "ResourceManager" })
 
@@ -452,19 +453,18 @@ class objTask;
      ptr Address               # Direct pointer to the resource (optional, can rely on ResourceID instead)
      struct(*ResourceManager) Manager # Reference to the resource manager for this record
      res ResourceID            # Unique identifier
-     oid OwnerID               # Owner of the resource
+     int OwnerID               # Owner of the resource, could be another resource or object
      bool CollectOnUnlock      # Resource is locked; manager will collect immediately once unlocked
      bool Terminating          # A FreeResource() call currently owns the destruction path
-     bool OwnerManagesChildren # True if the current OwnerID manages its child resources
   ]],
   [[
    ResourceRecord() :
       Address(nullptr), Manager(nullptr), ResourceID(0), OwnerID(0), CollectOnUnlock(false),
-      Terminating(false), OwnerManagesChildren(false) { };
+      Terminating(false) { };
 
-   ResourceRecord(RESOURCEID pResourceID, APTR pAddress, OBJECTID pOwnerID, ResourceManager *pManager) :
+   ResourceRecord(RESOURCEID pResourceID, APTR pAddress, int pOwnerID, ResourceManager *pManager) :
       Address(pAddress), Manager(pManager), ResourceID(pResourceID), OwnerID(pOwnerID), CollectOnUnlock(false),
-      Terminating(false), OwnerManagesChildren(false) { };
+      Terminating(false) { };
   ]])
 
   structdef("ObjectSignal", { comment="Required in calls to WaitForObjects()." }, [[
@@ -474,8 +474,6 @@ class objTask;
   structdef("ResourceManager", { comment="Defines custom cleanup behaviour for resources registered with TrackResource().", restrict="c" }, [[
      cstr Name             # The name of the resource
      fptr(error struct(&ResourceRecord) ptr) Free  # A function that will remove the resource's content when terminated
-     fptr(void struct(&ResourceRecord) struct(&ResourceRecord)) AddChild # Optional function for tracking child resources
-     fptr(void struct(&ResourceRecord) struct(&ResourceRecord)) RemoveChild # Optional function to remove tracking of child resources
      bool CanBlock         # True if the Free callback might wait on locks, callbacks or external resources
   ]])
 
@@ -719,7 +717,7 @@ class objTask;
     "DeleteFile",
     "ResolveClassID",
     "AllocateID",
-    "AllocMemory",
+    "AllocResource",
     "AccessObject",
     "CheckAction",
     "CheckResourceExists",
@@ -805,7 +803,8 @@ class objTask;
     "ClassDatabase",
     "GetThreadID",
     "UnitTests",
-    "PinWeakObject")
+    "PinWeakObject",
+    "FreeObject")
 
   c_insert([==[
 
@@ -852,7 +851,7 @@ inline ERR UnsubscribeAction(OBJECTPTR Object, ACTIONID ActionID) {
 
 template <pcObject T> inline ERR FreeResource(T *Object) {
    if (not Object) return ERR::NullArgs;
-   return FreeResource(Object->UID);
+   return FreeObject(Object->UID);
 }
 
 template <class T> requires ((not pcComplete<T>) and (not std::is_void_v<std::remove_cv_t<T>>))
@@ -950,7 +949,8 @@ typedef std::vector<obj_write> WRITE_TABLE;
   klass("Module")
 
   methods("MetaClass", "mc", {
-    { id=1, name="FindField" }
+    { id=1, name="FindField" },
+    { id=2, name="GetMembers" }
   })
 
   klass("MetaClass", { src="../classes/class_metaclass.cpp" }, [[

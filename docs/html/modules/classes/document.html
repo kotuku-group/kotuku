@@ -97,20 +97,16 @@
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Path" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Path"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Path</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Identifies the location of a document file to load.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Path" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>To load a document file into a document object, set the Path field.  Valid string formats for setting the path are:</p>
-<p>
-<code>volume:folder/filename.rpl</code></p>
-<p>
-<code>#page_name?param1&amp;param2=value</code></p>
-<p>
-<code>volume:folder/filename.rpl#page_name?param1&amp;param2=value</code></p>
+<p><code>volume:folder/filename.rpl</code></p>
+<p><code>#page_name?param1&amp;param2=value</code></p>
+<p><code>volume:folder/filename.rpl#page_name?param1&amp;param2=value</code></p>
 <p>Setting this field post-initialisation will cause a complete reload unless the path begins with a hash to signal a change to the current page and parameters.  Note: if a requested page does not exist in the currently loaded document, a dialog is displayed to bring the error to the user's attention).</p>
 <p>To leap to a bookmark in the page that has been specified with the <code>&lt;index&gt;</code> element, use the colon as a separator after the pagename, i.e. <code>#pagename:bookmark</code>.</p>
 <p>Other means of opening a document include loading the data manually and passing it via the <a data-bs-toggle="tooltip" title="Document data can be sent and consumed via feeds." href="#ta-DataFeed">DataFeed()</a> action.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Pretext" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Pretext"><i class="bi bi-dash-circle text-secondary" data-bs-toggle="tooltip" title="Not readable"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Pretext</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Execute the XML defined here prior to loading new pages.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Pretext" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<p>Use the Pretext field to execute document code prior to the loading of a new document.  This feature is commonly used to configure a document in advance, such as setting default font values and background graphics.  It is functionally equivalent to embedding an <code>
-<code></code></code> statement at the top of a document, but with the benefit of guaranteeing continued execution if the user navigates away from the first page.</p>
+<p>Use the Pretext field to execute document code prior to the loading of a new document.  This feature is commonly used to configure a document in advance, such as setting default font values and background graphics.  It is functionally equivalent to embedding an <code><code></code></code> statement at the top of a document, but with the benefit of guaranteeing continued execution if the user navigates away from the first page.</p>
 <p>A Pretext will always survive document unloading and resets.  It can be removed only by setting this field with <code>NULL</code>.</p>
       
 </div></div></td></tr>
@@ -285,7 +281,7 @@
 <tr><th class="col-md-1">Args</th><td>Invalid arguments passed to function</td></tr>
 <tr><th class="col-md-1">NoData</th><td>No data was extractable - applies to XML type only; other types return an empty string.</td></tr>
 <tr><th class="col-md-1">OutOfRange</th><td>The Start index is not within the stream.</td></tr>
-<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
+<tr><th class="col-md-1">AllocMemory</th><td>Failed to create a new memory block</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tmx-RemoveContent" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">RemoveContent</th><td id="tm-RemoveContent">Removes content from a loaded document.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-RemoveContent" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR doc::RemoveContent(OBJECTPTR Object, INT Start, INT End)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Start</td><td>The byte position at which to start the removal.</td></tr>

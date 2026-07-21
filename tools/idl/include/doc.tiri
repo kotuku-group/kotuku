@@ -8,6 +8,7 @@
 
 global docModuleHeader, docFunction, docTypes, docStructures, docClass
 global substituteReferences
+extern functionParameterType
 
 rx_all_anchored = <{ regex.new([[^!([\w]*)$]]) }>
 rx_paragraph    = <{ regex.new([[^<[A-Za-z]+(.*?)>.*?<\/[A-Za-z]*?>.*?$]]) }>
@@ -1106,6 +1107,8 @@ global function docFunctionPrototype(Function)
 
          if param.type is '...' then
             proto ..= '...'
+         elseif param.isSpan then
+            proto ..= functionParameterType(param) .. cName(param)
          else
             proto ..= docFieldType(param) .. ' ' .. cName(param)
          end

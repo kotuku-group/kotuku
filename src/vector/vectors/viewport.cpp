@@ -110,7 +110,7 @@ static ERR VECTORVIEWPORT_Clear(extVectorViewport *Self)
 {
    kt::vector<ChildEntry> list;
    if (!ListChildren(Self->UID, &list)) {
-      for (unsigned i=0; i < list.size(); i++) FreeResource(list[i].ObjectID);
+      for (unsigned i=0; i < list.size(); i++) FreeObject(list[i].ObjectID);
    }
 
    return ERR::Okay;

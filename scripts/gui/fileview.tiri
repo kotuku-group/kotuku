@@ -167,22 +167,22 @@ end
 
 function file_to_info(Path:str):table
    try
-      file = obj.new('file', { path=Path })
+      local fl = obj.new('file', { path=Path })
 
-      local folder_name, file_name = io.splitPath(file.path)
+      local folder_name, file_name = io.splitPath(fl.path)
 
       info = {
          name        = file_name,
-         size        = file.size,
-         timestamp   = file.timestamp,
-         modified    = file.date,
-         permissions = file.permissions,
-         userID      = file.user,
-         groupID     = file.group,
+         size        = fl.size,
+         timestamp   = fl.timestamp,
+         modified    = fl.date,
+         permissions = fl.permissions,
+         userID      = fl.user,
+         groupID     = fl.group,
          flags       = 0
       }
 
-      file_flags = file.flags
+      file_flags = fl.flags
       if file_flags has FL_FILE    then info.flags = info.flags | RDF_FILE end
       if file_flags has FL_FOLDER  then info.flags = info.flags | RDF_FOLDER end
       if file_flags has FL_LINK    then info.flags = info.flags | RDF_LINK end
@@ -192,6 +192,8 @@ function file_to_info(Path:str):table
       if Path:endsWith(':') then info.flags = info.flags | RDF_VOLUME end
 
       return info
+   except ex
+      msg('file_to_info() failed for ' .. Path .. ' with exception: ' .. ex.message)
    end
 end
 
@@ -777,7 +779,7 @@ gui.fileview = function(Options)
       if sort then self.view.sort() end
    end
 
-   function pathWatch(MonitoredFile, Path, Flags)
+   function pathWatch(MonitoredFile, Path:str, Flags:num)
       if self.inRefresh then return end
 
       if Flags is 0 then -- No flags means a change has occurred but the host is unable to tell us what happened.
@@ -842,7 +844,7 @@ gui.fileview = function(Options)
             end
             self.view.sort()
          else
-            msg('Attrib change misreported - file does not exist.')
+            msg(f'Attrib change for "{Path}" misreported, error {mSys.GetErrorMsg(info_err)}')
             deleteItem(Path)
          end
       end

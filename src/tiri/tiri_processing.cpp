@@ -268,7 +268,8 @@ static int processing_flush(lua_State *Lua)
             lua_rawgeti(Lua, LUA_REGISTRYINDEX, ref);
             if (lua_type(Lua, -1) IS LUA_TOBJECT) {
                auto object = lua_toobject(Lua, -1);
-               if (auto obj = access_object(object)) {
+               OBJECTPTR obj;
+               if (access_object(object, obj) IS ERR::Okay) {
                   obj->clearFlag(NF::SIGNALLED);
                   release_object(object);
                }
@@ -463,7 +464,7 @@ static int processing_delayed_call(lua_State *Lua)
 {
    if (lua_type(Lua, 1) IS LUA_TFUNCTION) {
       delay_msg msg = { Lua, luaL_ref(Lua, LUA_REGISTRYINDEX) };
-      if (SendMessage(glDelayedCallMsgID, MSF::NIL, &msg, sizeof(msg)) != ERR::Okay) {
+      if (SendMessage(glDelayedCallMsgID, MSF::NIL, std::span((const int8_t *)&msg, sizeof(msg))) != ERR::Okay) {
          luaL_unref(Lua, LUA_REGISTRYINDEX, msg.ref);
          luaL_error(Lua, ERR::MessageOperation);
       }

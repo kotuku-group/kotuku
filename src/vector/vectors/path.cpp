@@ -722,7 +722,7 @@ extVectorPath::extVectorPath(objMetaClass *ClassPtr, OBJECTID ObjectID) : extVec
 //********************************************************************************************************************
 
 static const FieldArray clPathFields[] = {
-   { "Sequence",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_RW, VECTOR_GET_Sequence, VECTORPATH_SET_Sequence },
+   { "Sequence",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_RW, VECTOR_GET_Sequence, VECTORPATH_SET_Sequence },
    { "X",             FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATH_GET_X, VECTORPATH_SET_X },
    { "Y",             FDF_VIRTUAL|FD_UNIT|FDF_SCALED|FDF_RW|FDF_PURE, VECTORPATH_GET_Y, VECTORPATH_SET_Y },
    { "TotalCommands", FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VECTORPATH_GET_TotalCommands, VECTORPATH_SET_TotalCommands },

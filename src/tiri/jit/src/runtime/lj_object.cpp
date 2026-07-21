@@ -41,13 +41,12 @@ void lj_object_finalize(lua_State *L, GCobject *obj)
    while (obj->accesscount > 0) release_object(obj); // Critical for recovering from exceptions
 
    if ((not obj->is_detached()) and obj->uid) {
-      // Non-detached GCobjects are owned by Tiri.  Do not call GetObjectPtr() here; FreeResource() may have dropped
-      // the memory lock while an object is being torn down, leaving the lookup table observable in an intermediate
-      // state during forced collection.
+      // Non-detached GCobjects are owned by Tiri.  Do not call GetObjectPtr() here; object teardown drops the registry
+      // lock while class cleanup runs, so a separate lookup would not keep the object stable through forced collection.
       kt::Log log("obj.destruct");
       log.traceBranch("Freeing Tiri-owned object #%d.", obj->uid);
 
-      auto error = FreeResource(obj->uid);
+      auto error = FreeObject(obj->uid);
       if ((!error) or (error IS ERR::DoesNotExist)) {
          if (obj->is_pinned()) {
             obj->ptr->unpinWeak();
@@ -246,7 +245,8 @@ extern "C" void bc_object_getfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
    if (func->Call(L, *func, Obj) > 0) copyTV(L, Dest, L->top - 1);
    else { // An error occurred and is stored in L->CaughtError
       if (L->CaughtError > ERR::ExceptionThreshold) {
-         luaL_error(L, L->CaughtError, "Read failure: %s.%s: %s", cl->ClassName.c_str(), luaL_checkstring(L, 2), GetErrorMsg(L->CaughtError));
+         luaL_error(L, L->CaughtError, "Read failure: %s.%s: %s", cl->ClassName.c_str(), strdata(Key),
+            GetErrorMsg(L->CaughtError));
       }
 
       setnilV(Dest);
@@ -322,16 +322,17 @@ extern "C" void bc_object_setfield(lua_State *L, GCobject *Obj, GCstr *Key, TVal
       func = found;
    }
 
-   if (auto pobj = access_object(Obj)) {
+   OBJECTPTR pobj;
+   if (auto error = access_object(Obj, pobj); !error) {
       auto stack_idx = int(val_ptr - L->base) + 1;
-      ERR error = func->Call(L, pobj, func->Field, stack_idx);
+      error = func->Call(L, pobj, func->Field, stack_idx);
       L->base = saved_base;
       L->top = saved_top;
       release_object(Obj);
 
       if (error >= ERR::ExceptionThreshold) luaL_error(L, error);
    }
-   else luaL_error(L, ERR::AccessObject);
+   else luaL_error(L, error);
 }
 
 //********************************************************************************************************************

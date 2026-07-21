@@ -427,7 +427,7 @@ int64_t GetResource(RES Resource)
          char str[2048];
          int result;
          int64_t freemem = 0;
-         if (!ReadFileToBuffer("/proc/meminfo", str, sizeof(str)-1, &result)) {
+         if (!ReadFileToBuffer("/proc/meminfo", std::span((int8_t *)str, sizeof(str) - 1), &result)) {
             int i = 0;
             while (i < result) {
                if (startswith("Cached", str+i)) freemem += strtoll(str+i, nullptr, 0) * 1024LL;
@@ -782,24 +782,34 @@ ERR SetResourcePath(RP PathType, const std::string_view &Path)
 /*********************************************************************************************************************
 
 -FUNCTION-
-SetResource: Sets miscellaneous resource identifiers.
+SetResource: Updates a writable Core resource value.
 
-The SetResource() function is used to manipulate miscellaneous system resources.  Currently the following resources
-are supported:
+SetResource() updates Core state selected by a !RES identifier.  The following identifiers are writable:
 
-<types lookup="RES" type="Resource">
-<type name="ALLOC_MEM_LIMIT">Adjusts the memory limit imposed on ~AllocMemory().  The `Value` specifies the memory limit in bytes.</>
-<type name="LOG_LEVEL">Adjusts the current debug level.  The `Value` must be between 0 and 9, where 1 is the lowest level of debug output (errors only) and 0 is off.</>
-<type name="PRIVILEGED_USER">If the `Value` is set to 1, this resource option puts the process in privileged mode (typically this enables full administrator rights).  This feature will only work for Unix processes that are granted admin rights when launched.  Setting the Value to 0 reverts to the user's permission settings.  SetResource() will return an error code indicating the level of success.</>
-<type name="LOG_DEPTH">Changes the branch depth of the log output (affects indenting).</>
-</>
+<list type="bullet">
+<li>`LOG_LEVEL` sets the logging detail from 0 (disabled) to 9 (maximum detail).  Values outside this range are
+ignored.</li>
+<li>`LOG_DEPTH` sets the logging branch depth for the current thread.  This controls indentation of subsequent log
+output.</li>
+<li>`PRIVILEGED_USER` enables elevated Unix privileges when `Value` is non-zero and releases one level of privilege
+when it is zero.  Elevation is available only when the process was launched with suitable privileges.  Calls may be
+nested; privileges are released after the corresponding number of disable requests.  On non-Unix platforms this
+identifier has no effect.</li>
+<li>`WINDOWS_ICON` sets the Microsoft Windows resource icon ID for the process.</li>
+<li>`CONSOLE_FD` and `JNI_ENV` update internal host integration values.</li>
+</list>
+
+Other !RES identifiers are read-only or unsupported by this function.
+
+For `PRIVILEGED_USER`, the result is an `ERR` value indicating whether the request succeeded.  All other supported
+resources return 0.  Unsupported identifiers also return 0 after writing a warning to the log.
 
 -INPUT-
-int(RES) Resource: The ID of the resource to be set.
-large Value:    The new value to set for the resource.
+int(RES) Resource: The writable resource identifier.
+large Value: The value to assign to the resource.
 
 -RESULT-
-large: Returns the previous value of the `Resource`.  If the `Resource` value is invalid, `NULL` is returned.
+large: Result code is dependent on the targeted resource.
 -END-
 
 *********************************************************************************************************************/
@@ -958,7 +968,6 @@ ERR SubscribeTimer(double Interval, FUNCTION *Callback, APTR *Subscription)
       }
 
       auto it = glTimers.emplace(glTimers.end());
-      it->SubscriberID    = subscriber->UID;
       it->Interval        = usInterval;
       it->PendingInterval = 0;
       it->LastCall        = subscribed;
@@ -969,8 +978,13 @@ ERR SubscribeTimer(double Interval, FUNCTION *Callback, APTR *Subscription)
 
       it->Routine.pin();
 
-      if (subscriber->UID > 0) it->Subscriber = subscriber;
-      else it->Subscriber = nullptr;
+      if (subscriber->UID) {
+         // The weak pin keeps the subscriber's header readable so that the dispatcher can detect and remove
+         // orphaned subscriptions if the object_free() cleanup misses them due to a glmTimer lock timeout.
+         it->Subscriber = subscriber;
+         subscriber->pinWeak();
+      }
+      else it->Subscriber = nullptr; // Subscribed from the dummy context; internal subscriptions have no subscriber
 
       // This flag lets object_free() cheaply detect and remove abandoned timer subscriptions.
       subscriber->setFlag(NF::TIMER_SUB);
@@ -1051,6 +1065,7 @@ ERR UpdateTimer(APTR Subscription, double Interval)
 
          for (auto it=glTimers.begin(); it != glTimers.end(); it++) {
             if (timer IS &(*it)) {
+               if (it->Subscriber) it->Subscriber->unpinWeak();
                glTimers.erase(it);
                break;
             }

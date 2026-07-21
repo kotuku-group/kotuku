@@ -405,6 +405,42 @@ static void save_mesh_patch(objXML *XML, int RowIndex, int ColIndex, int Parent,
    }
 }
 
+//*********************************************************************************************************************
+// Diffusion gradients are saved as a custom <diffusionGradient> element with one <curve> child per record; there is
+// no W3C element for diffusion curves.
+
+static void save_diffusion_curve_colour(XTag *Tag, CSTRING Name, const FRGB &Colour)
+{
+   std::stringstream buffer;
+   buffer << "rgb(" << Colour.Red * 255.0 << "," << Colour.Green * 255.0 << "," << Colour.Blue * 255.0;
+   if (Colour.Alpha != 1.0) buffer << "," << Colour.Alpha;
+   buffer << ")";
+   xml::NewAttrib(Tag, Name, buffer.str());
+}
+
+static void save_diffusion_gradient(objXML *XML, XTag *Tag, objGradientDiffusion *Gradient)
+{
+   std::span<DiffusionCurveRecord> curves;
+   if ((Gradient->getCurves(curves) != ERR::Okay) or curves.empty()) return;
+
+   for (auto &record : curves) {
+      int curve_index;
+      if (XML->insertXML(Tag->ID, XMI::CHILD_END, "<curve/>", &curve_index) != ERR::Okay) return;
+
+      XTag *curve_tag;
+      if (XML->getTag(curve_index, &curve_tag) != ERR::Okay) return;
+
+      xml::NewAttrib(curve_tag, "d", std::format("M {},{} C {},{} {},{} {},{}",
+         record.Curve.StartX, record.Curve.StartY, record.Curve.X1, record.Curve.Y1,
+         record.Curve.X2, record.Curve.Y2, record.Curve.EndX, record.Curve.EndY));
+
+      save_diffusion_curve_colour(curve_tag, "left-start", record.LeftStart);
+      save_diffusion_curve_colour(curve_tag, "left-end", record.LeftEnd);
+      save_diffusion_curve_colour(curve_tag, "right-start", record.RightStart);
+      save_diffusion_curve_colour(curve_tag, "right-end", record.RightEnd);
+   }
+}
+
 static void save_mesh_gradient(objXML *XML, XTag *Tag, objGradientMesh *Mesh)
 {
    std::span<MeshPatchRecord> patches;
@@ -510,6 +546,9 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
             if (def->classID() IS CLASSID::GRADIENTMESH) {
                save_mesh_gradient(XML, tag, (objGradientMesh *)gradient);
             }
+            else if (def->classID() IS CLASSID::GRADIENTDIFFUSION) {
+               save_diffusion_gradient(XML, tag, (objGradientDiffusion *)gradient);
+            }
 
             std::span<VectorMatrix> transform;
             if ((!error) and (!gradient->getMatrices(transform)) and (not transform.empty())) {
@@ -520,7 +559,8 @@ static ERR save_svg_defs(extSVG *Self, objXML *XML, objVectorScene *Scene, int P
             }
 
             std::span<GradientStop> stops;
-            if ((def->classID() != CLASSID::GRADIENTMESH) and (!gradient->getStops(stops))) {
+            if ((def->classID() != CLASSID::GRADIENTMESH) and (def->classID() != CLASSID::GRADIENTDIFFUSION) and
+                (!gradient->getStops(stops))) {
                for (size_t s=0; (s < stops.size()) and (!error); s++) {
                   auto &stop = stops[s];
                   int stop_index;

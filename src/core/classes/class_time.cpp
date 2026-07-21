@@ -46,7 +46,7 @@ static ERR tzi_free(ResourceRecord &Resource, APTR Address)
    return ERR::Terminate;
 }
 
-static ResourceManager glTimeZoneHandler = { "TimeZoneInfo", &tzi_free, nullptr, nullptr, false };
+static ResourceManager glTimeZoneHandler = { "TimeZoneInfo", &tzi_free, false };
 
 static constexpr int TIMEZONE_MIN_YEAR = 1601;
 static constexpr int TIMEZONE_MAX_YEAR = 9999;
@@ -833,9 +833,8 @@ static ERR TIME_GetTimeZoneInfo(objTime *Self, struct pt::GetTimeZoneInfo *Args)
    if (not valid_timezone_year_range(Args->StartYear, Args->EndYear)) return log.warning(ERR::OutOfRange);
 
    struct TimeZoneInfo *tz;
-   if (!AllocMemory(sizeof(struct TimeZoneInfo), MEM::NO_CLEAR, (APTR *)&tz)) {
+   if (!AllocResource(sizeof(struct TimeZoneInfo), MEM::NO_CLEAR, (APTR *)&tz, &glTimeZoneHandler)) {
       new (tz) struct TimeZoneInfo;
-      TrackResource(GetMemoryID(tz), tz, RESOURCEID_INHERIT, &glTimeZoneHandler);
 
       const std::string_view zone_id = Args->ZoneID;
       if (is_utc_zone(zone_id)) {

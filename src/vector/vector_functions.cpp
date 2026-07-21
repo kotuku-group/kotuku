@@ -28,13 +28,12 @@ static ERR simplevector_free(ResourceRecord &Resource, APTR Address) {
    return ERR::Terminate;
 }
 
-static ResourceManager glResourceSimpleVector = { "SimpleVector", &simplevector_free, nullptr, nullptr, false };
+static ResourceManager glResourceSimpleVector = { "SimpleVector", &simplevector_free, false };
 
 static SimpleVector * new_simplevector(void)
 {
    SimpleVector *vector;
-   if (AllocMemory(sizeof(SimpleVector), MEM::NIL, (APTR *)&vector) != ERR::Okay) return nullptr;
-   TrackResource(GetMemoryID(vector), vector, RESOURCEID_INHERIT, &glResourceSimpleVector);
+   if (AllocResource(sizeof(SimpleVector), MEM::NIL, (APTR *)&vector, &glResourceSimpleVector) != ERR::Okay) return nullptr;
    new(vector) SimpleVector;
    return vector;
 }

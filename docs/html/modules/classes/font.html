@@ -27,19 +27,14 @@
 <p>To draw a string, set <a data-bs-toggle="tooltip" title="The destination Bitmap to use when drawing a font." href="#tf-Bitmap">Bitmap</a> and <a data-bs-toggle="tooltip" title="The string to use when drawing a Font." href="#tf-String">String</a>, then call <a data-bs-toggle="tooltip" title="Draws a font to a Bitmap." href="#ta-Draw">Draw()</a>.  The <a data-bs-toggle="tooltip" title="The starting horizontal position when drawing the font string." href="#tf-X">X</a> and <a data-bs-toggle="tooltip" title="The starting vertical position when drawing the font string." href="#tf-Y">Y</a> fields set the starting position.  Use <a data-bs-toggle="tooltip" title="Sets the position of a font string to an abstract alignment." href="#tf-Align">Align</a> together with <a data-bs-toggle="tooltip" title="The width to use when aligning the font string." href="#tf-AlignWidth">AlignWidth</a> and <a data-bs-toggle="tooltip" title="The height to use when aligning the font string." href="#tf-AlignHeight">AlignHeight</a> when text needs to be positioned within a larger surface area.</p>
 <p>This documentation uses the following font terminology:</p>
 <ul>
-<li>
-<code>Point</code> is the requested size of the font.  It is relative to other point sizes of the same face; two faces at the
+<li><code>Point</code> is the requested size of the font.  It is relative to other point sizes of the same face; two faces at the
 same point size are not necessarily the same pixel height.</li>
-<li>
-<code>Height</code> is the vertical bearing of the font expressed in pixels.  It excludes top leading and the gutter used by
+<li><code>Height</code> is the vertical bearing of the font expressed in pixels.  It excludes top leading and the gutter used by
 descending glyphs.</li>
-<li>
-<code>Gutter</code> is the space below the baseline used by descending glyphs such as <code>g</code> and <code>y</code>.  It is also known as the
+<li><code>Gutter</code> is the space below the baseline used by descending glyphs such as <code>g</code> and <code>y</code>.  It is also known as the
 external leading or descent.</li>
-<li>
-<code>LineSpacing</code> is the recommended pixel distance from one baseline to the next.</li>
-<li>
-<code>Glyph</code> is a single rendered character image.</li>
+<li><code>LineSpacing</code> is the recommended pixel distance from one baseline to the next.</li>
+<li><code>Glyph</code> is a single rendered character image.</li>
 </ul>
 <p>Use <a href="vectortext.html">VectorText</a> for most display text.  The Font class draws directly to a <a href="bitmap.html">Bitmap</a> and is not integrated with the display vector scene graph.</p>
 <h3>Structure</h3><p>The Font class consists of the following fields:</p><table class="table"><thead><th class="col-md-1"><div data-bs-toggle="tooltip" title="Read/Write access indicators are listed below">Access</div></th><th class="col-md-1">Name</th><th class="col-md-1">Type</th><th>Comment</th></thead><tbody><tr data-bs-toggle="collapse" data-bs-target="#fl-Align" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Align"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"></i></td><th class="col-md-1">Align</th><td class="col-md-1"><span class="text-nowrap">ALIGN</span></td><td>Sets the position of a font string to an abstract alignment.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Align" class="accordion-body collapse"><div class="doc-content" style="margin:20px">

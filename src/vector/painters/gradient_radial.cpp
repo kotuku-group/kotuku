@@ -160,7 +160,7 @@ static const FieldArray clGradientRadialFields[] = {
    { "Radius",       FDF_UNIT|FDF_RW, nullptr, GRADIENTRADIAL_SET_Radius },
    { "FocalRadius",  FDF_UNIT|FDF_RW, nullptr, GRADIENTRADIAL_SET_FocalRadius },
    { "ContainFocal", FDF_INT|FDF_RW, nullptr, GRADIENTRADIAL_SET_ContainFocal },
-   { "XMLDef",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, GRADIENTRADIAL_GET_XMLDef },
+   { "XMLDef",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, GRADIENTRADIAL_GET_XMLDef },
    END_FIELD
 };
 

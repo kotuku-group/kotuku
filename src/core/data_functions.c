@@ -10,7 +10,7 @@ FDEF argsActionList[] = { { "Void", FD_VOID }, { "ActionTable:Actions", FD_RESUL
 FDEF argsAddInfoTag[] = { { "Error", FD_INT|FD_ERROR }, { "FileInfo:Info", FD_PTR|FD_STRUCT }, { "Name", FDF_CPPSTRING }, { "Value", FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsAddMsgHandler[] = { { "Error", FD_INT|FD_ERROR }, { "MsgType", FD_INT }, { "Routine", FD_FUNCTIONPTR }, { "MsgHandler:Handle", FD_RESULT|FD_PTR|FD_STRUCT|FD_RESOURCE|FD_ALLOC }, { 0, 0 } };
 FDEF argsAdjustLogLevel[] = { { "Result", FD_INT }, { "Delta", FD_INT }, { 0, 0 } };
-FDEF argsAllocMemory[] = { { "Error", FD_INT|FD_ERROR }, { "Size", FD_INT64 }, { "Flags", FD_INT }, { "Address", FD_RESULT|FD_PTR }, { 0, 0 } };
+FDEF argsAllocResource[] = { { "Error", FD_INT|FD_ERROR }, { "Size", FD_INT64 }, { "Flags", FD_INT }, { "Address", FD_RESULT|FD_PTR }, { "ResourceManager:Manager", FD_PTR|FD_STRUCT }, { 0, 0 } };
 FDEF argsAllocateID[] = { { "Result", FD_INT }, { "Type", FD_INT }, { 0, 0 } };
 FDEF argsAnalysePath[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPSTRING }, { "Type", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF argsAsyncAction[] = { { "Error", FD_INT|FD_ERROR }, { "Action", FD_INT }, { "Object", FD_OBJECTPTR }, { "Args", FD_PTR }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
@@ -33,6 +33,7 @@ FDEF argsFieldName[] = { { "Result", FD_STR }, { "FieldID", FD_INT|FD_UNSIGNED }
 FDEF argsFindClass[] = { { "Object", FD_OBJECTPTR }, { "ClassID", FD_INT|FD_UNSIGNED }, { 0, 0 } };
 FDEF argsFindField[] = { { "Field", FD_PTR|FD_STRUCT }, { "Object", FD_OBJECTPTR }, { "FieldID", FD_INT|FD_UNSIGNED }, { "Target", FD_RESULT|FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsFindObject[] = { { "Error", FD_INT|FD_ERROR }, { "Name", FDF_CPPSTRING }, { "ClassID", FD_INT|FD_UNSIGNED }, { "ObjectID", FD_RESULT|FD_OBJECTID }, { 0, 0 } };
+FDEF argsFreeObject[] = { { "Error", FD_INT|FD_ERROR }, { "ObjectID", FD_OBJECTID }, { 0, 0 } };
 FDEF argsFreeResource[] = { { "Error", FD_INT|FD_ERROR }, { "ID", FD_INT }, { 0, 0 } };
 FDEF argsFuncError[] = { { "Error", FD_INT|FD_ERROR }, { "Header", FD_STR }, { "Error", FD_INT|FD_ERROR }, { 0, 0 } };
 FDEF argsGenCRC32[] = { { "Result", FD_INT|FD_UNSIGNED }, { "CRC", FD_INT|FD_UNSIGNED }, { "Data", FD_PTR }, { "Length", FD_INT|FD_UNSIGNED }, { 0, 0 } };
@@ -60,7 +61,7 @@ FDEF argsPinWeakObject[] = { { "Object", FD_OBJECTPTR }, { "Object", FD_OBJECTID
 FDEF argsPreciseTime[] = { { "Result", FD_INT64 }, { 0, 0 } };
 FDEF argsProcessMessages[] = { { "Error", FD_INT|FD_ERROR }, { "Flags", FD_INT }, { "TimeOut", FD_INT }, { 0, 0 } };
 FDEF argsQueueAction[] = { { "Error", FD_INT|FD_ERROR }, { "Action", FD_INT }, { "Object", FD_OBJECTID }, { "Args", FD_PTR }, { 0, 0 } };
-FDEF argsReadFileToBuffer[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPSTRING }, { "Buffer", FD_BUFFER|FD_MUTABLE|FD_PTR }, { "BufferSize", FD_INT|FD_BUFSIZE }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF argsReadFileToBuffer[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPSTRING }, { "Buffer", FDF_SPAN|FD_MUTABLE|FD_PTR }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF argsReadInfoTag[] = { { "Error", FD_INT|FD_ERROR }, { "FileInfo:Info", FD_PTR|FD_STRUCT }, { "Name", FDF_CPPSTRING }, { "Value", FD_RESULT|FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsRegisterFD[] = { { "Error", FD_INT|FD_ERROR }, { "FD", FD_PTR }, { "Flags", FD_INT }, { "Routine", FD_PTR }, { "Data", FD_PTR }, { 0, 0 } };
 FDEF argsReleaseObject[] = { { "Void", FD_VOID }, { "Object", FD_OBJECTPTR }, { 0, 0 } };
@@ -71,8 +72,8 @@ FDEF argsResolveGroupID[] = { { "Result", FD_STR }, { "Group", FD_INT }, { 0, 0 
 FDEF argsResolvePath[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPSTRING }, { "Flags", FD_INT }, { "Result", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsResolveUserID[] = { { "Result", FD_STR }, { "User", FD_INT }, { 0, 0 } };
 FDEF argsScanDir[] = { { "Error", FD_INT|FD_ERROR }, { "DirInfo:Info", FD_PTR|FD_STRUCT|FD_RESOURCE }, { 0, 0 } };
-FDEF argsScanMessages[] = { { "Error", FD_INT|FD_ERROR }, { "Handle", FD_RESULT|FD_INT }, { "Type", FD_INT }, { "Buffer", FD_BUFFER|FD_MUTABLE|FD_PTR }, { "Size", FD_INT|FD_BUFSIZE }, { 0, 0 } };
-FDEF argsSendMessage[] = { { "Error", FD_INT|FD_ERROR }, { "Type", FD_INT }, { "Flags", FD_INT }, { "Data", FD_BUFFER|FD_PTR }, { "Size", FD_INT|FD_BUFSIZE }, { 0, 0 } };
+FDEF argsScanMessages[] = { { "Error", FD_INT|FD_ERROR }, { "Handle", FD_RESULT|FD_INT }, { "Type", FD_INT }, { "Buffer", FDF_SPAN|FD_MUTABLE|FD_PTR }, { 0, 0 } };
+FDEF argsSendMessage[] = { { "Error", FD_INT|FD_ERROR }, { "Type", FD_INT }, { "Flags", FD_INT }, { "Data", FDF_SPAN|FD_PTR }, { 0, 0 } };
 FDEF argsSetDefaultPermissions[] = { { "Void", FD_VOID }, { "User", FD_INT }, { "Group", FD_INT }, { "Permissions", FD_INT }, { 0, 0 } };
 FDEF argsSetLogCallback[] = { { "Void", FD_VOID }, { "Callback", FD_PTR }, { "DepthLimit", FD_INT }, { "LogLimit", FD_INT }, { 0, 0 } };
 FDEF argsSetName[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTPTR }, { "Name", FDF_CPPSTRING }, { 0, 0 } };
@@ -89,7 +90,7 @@ FDEF argsUnitTests[] = { { "Void", FD_VOID }, { "Options", FD_STR }, { "Passed",
 FDEF argsUnloadFile[] = { { "Void", FD_VOID }, { "CacheFile:Cache", FD_PTR|FD_STRUCT|FD_RESOURCE }, { 0, 0 } };
 FDEF argsUnsubscribeAction[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTPTR }, { "Action", FD_INT }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
 FDEF argsUnsubscribeEvent[] = { { "Void", FD_VOID }, { "Handle", FD_PTR }, { 0, 0 } };
-FDEF argsUpdateMessage[] = { { "Error", FD_INT|FD_ERROR }, { "Message", FD_INT }, { "Type", FD_INT }, { "Data", FD_BUFFER|FD_PTR }, { "Size", FD_INT|FD_BUFSIZE }, { 0, 0 } };
+FDEF argsUpdateMessage[] = { { "Error", FD_INT|FD_ERROR }, { "Message", FD_INT }, { "Type", FD_INT }, { "Data", FDF_SPAN|FD_PTR }, { 0, 0 } };
 FDEF argsUpdateTimer[] = { { "Error", FD_INT|FD_ERROR }, { "Subscription", FD_PTR }, { "Interval", FD_DOUBLE }, { 0, 0 } };
 FDEF argsVLogF[] = { { "Void", FD_VOID }, { "Flags", FD_INT }, { "Header", FD_STR }, { "Message", FD_STR }, { "Args", FD_PTR }, { 0, 0 } };
 FDEF argsVirtualVolume[] = { { "Error", FD_INT|FD_ERROR }, { "Name", FDF_CPPSTRING }, { "Tags", FD_TAGS }, { 0, 0 } };
@@ -103,7 +104,7 @@ const struct Function glFunctions[] = {
    { (APTR)DeleteFile, "DeleteFile", argsDeleteFile },
    { (APTR)ResolveClassID, "ResolveClassID", argsResolveClassID },
    { (APTR)AllocateID, "AllocateID", argsAllocateID },
-   { (APTR)AllocMemory, "AllocMemory", argsAllocMemory },
+   { (APTR)AllocResource, "AllocResource", argsAllocResource },
    { (APTR)AccessObject, "AccessObject", argsAccessObject },
    { (APTR)CheckAction, "CheckAction", argsCheckAction },
    { (APTR)CheckResourceExists, "CheckResourceExists", argsCheckResourceExists },
@@ -190,6 +191,7 @@ const struct Function glFunctions[] = {
    { (APTR)GetThreadID, "GetThreadID", argsGetThreadID },
    { (APTR)UnitTests, "UnitTests", argsUnitTests },
    { (APTR)PinWeakObject, "PinWeakObject", argsPinWeakObject },
+   { (APTR)FreeObject, "FreeObject", argsFreeObject },
    { nullptr, nullptr, nullptr }
 };
 

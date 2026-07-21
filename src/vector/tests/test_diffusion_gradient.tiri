@@ -1,0 +1,280 @@
+   include 'display', 'vector'
+
+   mGfx ?= mod.load('display')
+
+function newBitmap(Width: num, Height: num)
+   local bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   return bmp
+end
+
+-- Build a DiffusionCurveRecord for a straight line from (X0,Y0) to (X1,Y1) with the given per-side colours.
+-- Each colour is a 4-element table { r, g, b, a }.
+
+function lineCurve(X0: num, Y0: num, X1: num, Y1: num, LeftStart: table, LeftEnd: table, RightStart: table, RightEnd: table)
+   local rec = struct.new('DiffusionCurveRecord')
+   local dx = X1 - X0
+   local dy = Y1 - Y0
+   rec.curve.StartX = X0
+   rec.curve.StartY = Y0
+   rec.curve.X1 = X0 + (dx / 3.0)
+   rec.curve.Y1 = Y0 + (dy / 3.0)
+   rec.curve.X2 = X0 + (dx * 2.0 / 3.0)
+   rec.curve.Y2 = Y0 + (dy * 2.0 / 3.0)
+   rec.curve.EndX = X1
+   rec.curve.EndY = Y1
+
+   local function setColour(Field, Colour: table)
+      Field.red   = Colour[0]
+      Field.green = Colour[1]
+      Field.blue  = Colour[2]
+      Field.alpha = Colour[3] ?? 1.0
+   end
+
+   setColour(rec.leftStart, LeftStart)
+   setColour(rec.leftEnd, LeftEnd)
+   setColour(rec.rightStart, RightStart)
+   setColour(rec.rightEnd, RightEnd)
+   return rec
+end
+
+RED  = { 1.0, 0.0, 0.0 }
+BLUE = { 0.0, 0.0, 1.0 }
+
+function newDiffusionScene(Curves: table, Fields: table)
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local fields = Fields ?? { }
+   fields.units ??= VUNIT_USERSPACE
+   if Curves != nil then fields.curves = Curves end
+
+   local gradient = scene.new('GradientDiffusion', fields)
+   check scene.mtAddDef('diffusion', gradient)
+   local rect = viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='url(#diffusion)' })
+   return scene, gradient, rect
+end
+
+function drawScene(Scene, Bitmap)
+   Bitmap.acClear()
+   Scene.bitmap = Bitmap
+   check Scene.acDraw()
+end
+
+function drawHash(Scene, Bitmap)
+   drawScene(Scene, Bitmap)
+   return mSys.GenCRC32(0, Bitmap.data, Bitmap.size)
+end
+
+-- A vertical curve down the middle: red on the left side, blue on the right.
+
+function verticalCurves()
+   return { lineCurve(50, 0, 50, 100, RED, RED, BLUE, BLUE) }
+end
+
+@Test function BasicDiffusion()
+   -- A full-height vertical curve at x=50 splits the fill: predominantly red on the left, blue on the right,
+   -- with a hard separation across the curve because it acts as a diffusion barrier.
+
+   local scene = newDiffusionScene(verticalCurves())
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   local left = mGfx.ReadRGBPixel(bmp, 10, 50)
+   local right = mGfx.ReadRGBPixel(bmp, 90, 50)
+
+   assert(left.red > 200 and left.blue < 50,
+      f"Left region should be predominantly red (r={left.red} b={left.blue})")
+   assert(right.blue > 200 and right.red < 50,
+      f"Right region should be predominantly blue (r={right.red} b={right.blue})")
+end
+
+@Test function DiffusionBlendsBeyondCurveEnds()
+   -- A short vertical curve (y=35..65) leaves open space above and below.  Red and blue must flow around the
+   -- curve ends and genuinely blend - a sample far above the curve carries both channels, proving diffusion
+   -- rather than a hard region fill.
+
+   local scene = newDiffusionScene({ lineCurve(50, 35, 50, 65, RED, RED, BLUE, BLUE) })
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   local above = mGfx.ReadRGBPixel(bmp, 50, 5)
+   assert(above.red > 40 and above.blue > 40,
+      f"Open space above the curve should blend both sides (r={above.red} b={above.blue})")
+
+   -- Directly adjacent to the curve the separation must remain sharp.
+   local near_left = mGfx.ReadRGBPixel(bmp, 40, 50)
+   local near_right = mGfx.ReadRGBPixel(bmp, 60, 50)
+   assert(near_left.red > near_left.blue + 100,
+      f"Left of the curve should stay red-dominant (r={near_left.red} b={near_left.blue})")
+   assert(near_right.blue > near_right.red + 100,
+      f"Right of the curve should stay blue-dominant (r={near_right.red} b={near_right.blue})")
+end
+
+@Test function ColourInterpolationAlongCurve()
+   -- LeftStart differs from LeftEnd: the left side ramps from red at the top to blue at the bottom, so samples
+   -- near the two ends must differ in the expected direction.
+
+   local curves = { lineCurve(50, 0, 50, 100, RED, BLUE, RED, RED) }
+   local scene = newDiffusionScene(curves)
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   local top = mGfx.ReadRGBPixel(bmp, 40, 8)
+   local bottom = mGfx.ReadRGBPixel(bmp, 40, 92)
+
+   assert(top.red > top.blue + 80,
+      f"Left side near the curve start should be red-dominant (r={top.red} b={top.blue})")
+   assert(bottom.blue > bottom.red + 80,
+      f"Left side near the curve end should be blue-dominant (r={bottom.red} b={bottom.blue})")
+end
+
+@Test function CacheInvalidationOnCurveChange()
+   local scene, gradient = newDiffusionScene(verticalCurves())
+   local bmp = newBitmap(100, 100)
+   local before = drawHash(scene, bmp)
+
+   gradient.curves = { lineCurve(50, 0, 50, 100, BLUE, BLUE, RED, RED) } -- Swap the side colours
+
+   local after = drawHash(scene, bmp)
+   assert(before != after, 'Mutating curve colours should invalidate the cached colour field')
+end
+
+@Test function UnitsProduceEquivalentOutput()
+   -- The same curve expressed in userspace coordinates (100x100 viewport) and normalised bounding-box
+   -- coordinates must produce equivalent output when the fill target covers the full viewport.
+
+   local user_scene = newDiffusionScene(verticalCurves(), { units=VUNIT_USERSPACE })
+   local bb_scene = newDiffusionScene({ lineCurve(0.5, 0, 0.5, 1.0, RED, RED, BLUE, BLUE) },
+      { units=VUNIT_BOUNDING_BOX })
+
+   local user_bmp = newBitmap(100, 100)
+   local bb_bmp = newBitmap(100, 100)
+   drawScene(user_scene, user_bmp)
+   drawScene(bb_scene, bb_bmp)
+
+   for _, point in ipairs({ { 10, 50 }, { 90, 50 }, { 30, 20 }, { 70, 80 } }) do
+      local a = mGfx.ReadRGBPixel(user_bmp, point[0], point[1])
+      local b = mGfx.ReadRGBPixel(bb_bmp, point[0], point[1])
+      local dr = math.abs(a.red - b.red)
+      local db = math.abs(a.blue - b.blue)
+      assert(dr <= 12 and db <= 12,
+         f"USERSPACE and BOUNDING_BOX output should correspond at ({point[0]},{point[1]}): dr={dr} db={db}")
+   end
+end
+
+@Test function UnsupportedFieldsAreRejected()
+   local scene, gradient = newDiffusionScene(verticalCurves())
+
+   local function expectRejection(Name: str, Setter: func)
+      local rejected = false
+      try
+         Setter()
+      except _
+         rejected = true
+      end
+      assert(rejected, f"GradientDiffusion should reject the inherited {Name} field")
+   end
+
+   expectRejection('ColourMap', function() gradient.colourMap = 'cmap:magma' end)
+   expectRejection('SpreadMethod', function() gradient.spreadMethod = VSPREAD_REFLECT end)
+   expectRejection('Stops', function() gradient.stops = { { offset=0, rgb={ red=1, green=0, blue=0, alpha=1 } } } end)
+end
+
+@Test function EmptyCurvesAssignmentClearsGradient()
+   local scene, gradient = newDiffusionScene(verticalCurves())
+   gradient.curves = { }
+   assert(#gradient.curves is 0, 'Assigning an empty Curves array should clear the gradient')
+end
+
+@Test function NoCurvesRendersNothing()
+   -- Init succeeds with zero curves and rendering draws nothing (background shows through, no crash).
+
+   local scene = newDiffusionScene(nil)
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   local sample = mGfx.ReadRGBPixel(bmp, 50, 50)
+   assert(sample.red is 0 and sample.green is 0 and sample.blue is 0,
+      f"An empty curve set should render nothing (r={sample.red} g={sample.green} b={sample.blue})")
+end
+
+@Test function DegenerateCurveIsSkipped()
+   -- A zero-length segment is skipped at rasterisation; the remaining valid curve still renders.
+
+   local curves = { lineCurve(20, 20, 20, 20, RED, RED, RED, RED),
+      lineCurve(50, 0, 50, 100, RED, RED, BLUE, BLUE) }
+   local scene = newDiffusionScene(curves)
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   local left = mGfx.ReadRGBPixel(bmp, 10, 50)
+   local right = mGfx.ReadRGBPixel(bmp, 90, 50)
+   assert(left.red > 200, f"Valid curve should still render with a degenerate sibling (r={left.red})")
+   assert(right.blue > 200, f"Valid curve should still render with a degenerate sibling (b={right.blue})")
+end
+
+@Test function CurvesOutsideSolveDomainAreIgnored()
+   local scene = newDiffusionScene({ lineCurve(150, 0, 150, 100, RED, RED, BLUE, BLUE) })
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   local sample = mGfx.ReadRGBPixel(bmp, 90, 50)
+   assert(sample.red is 0 and sample.green is 0 and sample.blue is 0,
+      f"An off-domain curve should not constrain the field (r={sample.red} g={sample.green} b={sample.blue})")
+end
+
+@Test function OpacityScalesOutput()
+   local scene, gradient, rect = newDiffusionScene(verticalCurves())
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+   local full = mGfx.ReadRGBPixel(bmp, 10, 50).red
+
+   rect.fillOpacity = 0.5
+   drawScene(scene, bmp)
+   local half = mGfx.ReadRGBPixel(bmp, 10, 50).red
+
+   -- The renderer composites in linear-light, so 50% alpha over black yields ~181 for a 249 source rather
+   -- than a naive sRGB halving; require a meaningful darkening instead of an exact ratio.
+   assert(half < full - 40,
+      f"Halving fill opacity should darken the composited result (full={full} half={half})")
+end
+
+@Test function ColourSpaceAffectsBlend()
+   -- Linear-RGB diffusion produces a measurably different (brighter) mid-blend than sRGB where opposing
+   -- colours meet beyond the curve ends.
+
+   local curves = { lineCurve(50, 35, 50, 65, RED, RED, BLUE, BLUE) }
+   local srgb_scene = newDiffusionScene(curves, { colourSpace=VCS_SRGB })
+   local linear_scene = newDiffusionScene(curves, { colourSpace=VCS_LINEAR_RGB })
+
+   local srgb_bmp = newBitmap(100, 100)
+   local linear_bmp = newBitmap(100, 100)
+   drawScene(srgb_scene, srgb_bmp)
+   drawScene(linear_scene, linear_bmp)
+
+   local srgb_mix = mGfx.ReadRGBPixel(srgb_bmp, 50, 5)
+   local linear_mix = mGfx.ReadRGBPixel(linear_bmp, 50, 5)
+
+   local srgb_sum = srgb_mix.red + srgb_mix.blue
+   local linear_sum = linear_mix.red + linear_mix.blue
+   assert(linear_sum > srgb_sum + 25,
+      f"Linear RGB blending should brighten the mixed region (linear={linear_sum} srgb={srgb_sum})")
+end
+
+@Test function CurvesRoundTrip()
+   local scene, gradient = newDiffusionScene(verticalCurves())
+   local curves = gradient.curves
+   assert(#curves is 1, 'Expected one curve record from the getter')
+   assert(math.abs(curves[0].curve.startX - 50) < 0.001, 'Curve geometry should round-trip')
+   assert(math.abs(curves[0].leftStart.red - 1.0) < 0.001, 'Curve colours should round-trip')
+   assert(math.abs(curves[0].rightStart.blue - 1.0) < 0.001, 'Curve colours should round-trip')
+end
+
+@Test function ColourComponentsAreClamped()
+   local curves = { lineCurve(50, 0, 50, 100, { 2.5, -1.0, 0.0 }, RED, BLUE, BLUE) }
+   local scene, gradient = newDiffusionScene(curves)
+   local read_back = gradient.curves
+   assert(read_back[0].leftStart.red <= 1.0, 'Colour components above 1.0 should be clamped at assignment')
+   assert(read_back[0].leftStart.green >= 0.0, 'Negative colour components should be clamped at assignment')
+end

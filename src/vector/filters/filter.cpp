@@ -704,8 +704,7 @@ Note that if SVG compatibility is required, linear RGB must be used as the defau
 -FIELD-
 EffectXML: Returns a SVG XML string that defines the filter's effects.
 
-This field value will return a purpose-built string that defines the filter's effects in SVG compliant XML.  The string
-is allocated and must be freed once no longer in use.
+This field value will return a purpose-built string that defines the filter's effects in SVG compliant XML.
 
 *********************************************************************************************************************/
 
@@ -874,7 +873,7 @@ static const FieldArray clFilterFields[] = {
    { "ColourSpace",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorFilterColourSpace },
    { "AspectRatio",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorFilterAspectRatio },
    // Virtual fields
-   { "EffectXML",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, VECTORFILTER_GET_EffectXML },
+   { "EffectXML",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, VECTORFILTER_GET_EffectXML },
    END_FIELD
 };
 

@@ -27,6 +27,7 @@ static ERR init_gradient_diamond(void);
 static ERR init_gradient_contour(void);
 static ERR init_gradient_gouraud(void);
 static ERR init_gradient_mesh(void);
+static ERR init_gradient_diffusion(void);
 static ERR init_gradient_distal(void);
 static ERR init_gradient_voronoi(void);
 
@@ -614,7 +615,7 @@ static const FieldArray clGradientFields[] = {
    { "NumericID",    FDF_INT|FDF_RW,            nullptr, GRADIENT_SET_NumericID },
    // Virtual fields
    { "Transform",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_W, nullptr, GRADIENT_SET_Transform },
-   { "XMLDef",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_R|FDF_PURE, GRADIENT_GET_XMLDef },
+   { "XMLDef",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, GRADIENT_GET_XMLDef },
    END_FIELD
 };
 
@@ -641,6 +642,7 @@ ERR init_gradient(void) // The gradient is a definition type for creating gradie
    if ((error = init_gradient_contour()) != ERR::Okay) return error;
    if ((error = init_gradient_gouraud()) != ERR::Okay) return error;
    if ((error = init_gradient_mesh()) != ERR::Okay) return error;
+   if ((error = init_gradient_diffusion()) != ERR::Okay) return error;
    if ((error = init_gradient_distal()) != ERR::Okay) return error;
    if ((error = init_gradient_voronoi()) != ERR::Okay) return error;
 

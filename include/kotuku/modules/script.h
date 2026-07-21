@@ -168,7 +168,7 @@ class objScript : public Object {
    }
 
    inline ERR getResults(std::span<std::string> &Value) noexcept {
-      auto ktv = (kt::vector<std::string> *)(((int8_t *)this) + 288);
+      auto ktv = (kt::vector<std::string> *)(((int8_t *)this) + CLASS_OFFSET + 192);
       Value = std::span<std::string>(ktv->data(), ktv->size());
       return ERR::Okay;
    }

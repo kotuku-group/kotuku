@@ -214,7 +214,7 @@ struct FunctionField argsResize[] = {
     <result type="ERR">
       <error code="Okay">Message handler successfully processed.</error>
       <error code="Lock">Failed to lock a required resource</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+      <error code="AllocMemory">Failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -239,29 +239,27 @@ struct FunctionField argsResize[] = {
   </function>
 
   <function>
-    <name>AllocMemory</name>
+    <name>AllocResource</name>
     <category>Memory</category>
     <comment>Allocates a managed memory block on the heap.</comment>
-    <prototype>ERR AllocMemory(INT64 Size, MEM Flags, APTR * Address)</prototype>
-    <tiriPrototype>err, Address:any = AllocMemory(Size:num, Flags:num)</tiriPrototype>
+    <prototype>ERR AllocResource(INT64 Size, MEM Flags, APTR * Address, struct ResourceManager * Manager)</prototype>
+    <tiriPrototype>err, Address:any = AllocResource(Size:num, Flags:num, Manager:any)</tiriPrototype>
     <tags>caller-owns-result, creates-resource, blocking</tags>
     <input>
       <param type="INT64" name="Size">The size of the memory block in bytes. Must be greater than zero.</param>
       <param type="MEM" name="Flags" lookup="MEM">Optional allocation flags controlling behaviour and ownership.</param>
       <param type="APTR *" name="Address">Pointer to store the address of the allocated memory block.</param>
+      <param type="struct ResourceManager *" name="Manager">Resource manager used to release the resource.</param>
     </input>
     <description>
-<p>AllocMemory() provides comprehensive memory allocation with automatic ownership tracking, resource management, and debugging features. The function allocates a new block of memory and associates it with the current execution context, allowing it to be automatically cleaned up when the context is destroyed.</p>
+<p>AllocResource() reserves an area of memory of <code>Size</code> bytes and tracks it using the supplied resource manager.  If no <code>Manager</code> is provided, the default memory manager is used.  The function returns a pointer to the allocated memory block in <code>Address</code>.  The allocated memory is automatically associated with the current execution context, allowing it to be automatically cleaned up when the context is destroyed.</p>
 <p>Example usage:</p>
 <pre>APTR address;
-if (!AllocMemory(1000, MEM::NIL, &amp;address)) {
+if (!AllocResource(1000, MEM::NIL, &amp;address, nullptr)) {
    // Use memory block...
    FreeResource(address);
 }
 </pre>
-<p>Memory allocation behaviour is controlled through MEM flags:</p>
-<types lookup="MEM"/>
-<p>The resulting memory block is zero-initialised unless the <code>MEM::NO_CLEAR</code> flag is specified.  For large allocations where initialisation overhead is a concern, utilising <code>MEM::NO_CLEAR</code> is recommended.</p>
 <p>Memory blocks are automatically associated with their owning object context, enabling automatic cleanup when the owner is destroyed. This prevents memory leaks in object-oriented code.</p>
     </description>
     <result type="ERR">
@@ -307,8 +305,8 @@ if (!AllocMemory(1000, MEM::NIL, &amp;address)) {
     </description>
     <result type="ERR">
       <error code="Okay">The path was analysed and the result is stored in the <code>Type</code> variable.</error>
+      <error code="FileNotFound">File not found</error>
       <error code="NoSupport">Operation not supported</error>
-      <error code="DoesNotExist">Resource does not exist</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -471,7 +469,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
       <param type="RESOURCEID" name="ID">The unique identifier of the resource to verify.</param>
     </input>
     <description>
-<p>CheckResourceExists() verifies whether a resource with the specified identifier still exists in the system's resource tracking collection. This function is useful for defensive programming when working with resources such as memory or objects that may have been freed by other code paths.</p>
+<p>CheckResourceExists() verifies whether a resource with the specified identifier still exists in the system's object or resource registry. This function is useful for defensive programming when working with resources such as memory or objects that may have been freed by other code paths.  Objects that are terminating or awaiting deferred collection are reported as unavailable.</p>
     </description>
     <result type="ERR">
       <error code="True">The resource exists and is valid.</error>
@@ -544,8 +542,7 @@ typedef struct { EVENTID EventID; OBJECTID TaskID; OBJECTID ProcessID; } evTaskR
 <p>This function will overwrite any destination file(s) that already exist.</p>
 <p>The Source parameter should always clarify the type of location that is being copied.  For example if copying a folder, a forward slash must terminate the string or it will be assumed that a file is the source.</p>
 <p>The Callback parameter can be set with a function that matches this prototype:</p>
-<p>
-<code>INT Callback(FileFeedback *)</code></p>
+<p><code>INT Callback(FileFeedback *)</code></p>
 <p>For each file that is processed during the copy operation, a &amp;FileFeedback structure is passed that describes the source file and its target.  The callback must return a constant value that can potentially affect file processing. Valid values are <code>FFR::Okay</code> (copy the file), <code>FFR::Skip</code> (do not copy the file) and <code>FFR::Abort</code> (abort the process completely and return <code>ERR::Cancelled</code> as an error code).</p>
     </description>
     <result type="ERR">
@@ -775,9 +772,30 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
   </function>
 
   <function>
+    <name>FreeObject</name>
+    <category>Objects</category>
+    <comment>Terminates an object by its unique identifier.</comment>
+    <prototype>ERR FreeObject(OBJECTID ObjectID)</prototype>
+    <tiriPrototype>err = FreeObject(ObjectID:obj)</tiriPrototype>
+    <tags>closes-handle, blocking</tags>
+    <input>
+      <param type="OBJECTID" name="ObjectID">The unique identifier of the object to terminate.</param>
+    </input>
+    <description>
+<p>FreeObject() starts the destruction process for the object identified by <code>ObjectID</code>.  If the object is locked or strongly pinned, destruction is deferred until the final lock or pin is released.  Once termination has started, new access through <function>AccessObject</function> is rejected.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">The object was terminated successfully.</error>
+      <error code="InUse">The object is already terminating, or destruction has been deferred until it is unlocked.</error>
+      <error code="AccessObject">The object could not be accessed for destruction.</error>
+      <error code="DoesNotExist">The object identifier is not registered.</error>
+    </result>
+  </function>
+
+  <function>
     <name>FreeResource</name>
     <category>Memory</category>
-    <comment>Safely deallocates resources allocated by AllocMemory() and similar functions.</comment>
+    <comment>Safely deallocates resources allocated by AllocResource() and similar functions.</comment>
     <prototype>ERR FreeResource(RESOURCEID ID)</prototype>
     <tiriPrototype>err = FreeResource(ID:num)</tiriPrototype>
     <tags>closes-handle, blocking</tags>
@@ -786,6 +804,7 @@ FindObject(&quot;SystemPointer&quot;, CLASSID::POINTER, &amp;id);
     </input>
     <description>
 <p>FreeResource() provides safe deallocation of resources with comprehensive validation and cleanup. The function accepts resource identifiers for optimal safety, though C++ headers also provide pointer-based variants for convenience.</p>
+<p>Object identifiers are detected in the object registry and dispatched to <function>FreeObject</function>.  All other identifiers are resolved through the non-object resource registry and its associated <code>ResourceManager</code>.</p>
 <p>The deallocation process includes lock-aware deallocation that respects access counting, resource manager integration for managed memory blocks, and automatic cleanup of ownership tracking structures.</p>
 <p>If a resource is locked at the time of the call, it is marked for delayed collection only. This prevents use-after-free errors while ensuring eventual cleanup when all references are released.</p>
     </description>
@@ -1119,8 +1138,7 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
 <p>This function will overwrite the destination location if it already exists.</p>
 <p>The <code>Source</code> argument should always clarify the type of location that is being copied - e.g. if you are copying a folder, you must specify a forward slash at the end of the string or the function will assume that you are moving a file.</p>
 <p>The <code>Callback</code> parameter can be set with a function that matches this prototype:</p>
-<p>
-<code>INT Callback(*FileFeedback)</code></p>
+<p><code>INT Callback(*FileFeedback)</code></p>
 <p>For each file that is processed during the move operation, a <st>FileFeedback</st> structure is passed that describes the source file and its target.  The callback must return a constant value that can potentially affect file processing. Valid values are <code>FFR::Okay</code> (move the file), <code>FFR::Skip</code> (do not move the file) and <code>FFR::Abort</code> (abort the process completely and return <code>ERR::Cancelled</code> as an error code).</p>
     </description>
     <result type="ERR">
@@ -1151,7 +1169,7 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="MissingClass">The <code>ClassID</code> is invalid or refers to a class that is not installed.</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+      <error code="AllocMemory">Failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1208,7 +1226,7 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
       <error code="Okay">Operation successful.</error>
       <error code="DirEmpty">The folder is empty</error>
       <error code="Args">Invalid arguments passed to function</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+      <error code="AllocMemory">Failed to create a new memory block</error>
       <error code="ResolvePath">A volume could not be resolved</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
@@ -1298,13 +1316,12 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
     <name>ReadFileToBuffer</name>
     <category>Files</category>
     <comment>Reads a file into a buffer.</comment>
-    <prototype>ERR ReadFileToBuffer(STRVIEW Path, APTR Buffer, INT BufferSize, INT * Result)</prototype>
-    <tiriPrototype>err, Result:num = ReadFileToBuffer(Path:str, Buffer:any, BufferSize:num)</tiriPrototype>
+    <prototype>ERR ReadFileToBuffer(STRVIEW Path, const std::span&lt;int8_t&gt; &amp;Buffer, INT * Result)</prototype>
+    <tiriPrototype>err, Result:num = ReadFileToBuffer(Path:str, Buffer:array)</tiriPrototype>
     <tags>mutates-input, blocking, path-resolved</tags>
     <input>
       <param type="STRVIEW" name="Path">The path of the file.</param>
-      <param type="APTR" name="Buffer">Pointer to a buffer that will receive the file content.</param>
-      <param type="INT" name="BufferSize">The byte size of the <code>Buffer</code>.</param>
+      <param type="std::span&lt;int8_t&gt;" name="Buffer">Buffer that will receive the file content.</param>
       <param type="INT *" name="Result">The total number of bytes read into the <code>Buffer</code> will be returned here (optional).</param>
     </input>
     <description>
@@ -1526,27 +1543,27 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <name>ScanMessages</name>
     <category>Messages</category>
     <comment>Scans a message queue for multiple occurrences of a message type.</comment>
-    <prototype>ERR ScanMessages(INT * Handle, MSGID Type, APTR Buffer, INT Size)</prototype>
-    <tiriPrototype>err, Handle:num = ScanMessages(Type:num, Buffer:any, Size:num)</tiriPrototype>
+    <prototype>ERR ScanMessages(INT * Handle, MSGID Type, const std::span&lt;int8_t&gt; &amp;Buffer)</prototype>
+    <tiriPrototype>err, Handle:num = ScanMessages(Type:num, Buffer:array)</tiriPrototype>
     <tags>mutates-input, blocking</tags>
     <input>
       <param type="INT *" name="Handle">Pointer to a 32-bit value that must initially be set to zero.  The ScanMessages() function will automatically update this variable with each call so that it can remember its analysis position.</param>
       <param type="MSGID" name="Type" lookup="MSGID">The message type to filter for, or zero to scan all messages in the queue.</param>
-      <param type="APTR" name="Buffer">Optional pointer to a buffer that is large enough to hold any message data.</param>
-      <param type="INT" name="Size">The byte-size of the supplied <code>Buffer</code>.</param>
+      <param type="std::span&lt;int8_t&gt;" name="Buffer">Optional buffer that is large enough to hold a <st>Message</st> header and any message data.</param>
     </input>
     <description>
 <p>Use the ScanMessages() function to scan the local message queue for information without affecting the state of the queue.  To use this function effectively, make repeated calls to ScanMessages() to analyse the queue until it returns an error code other than <code>ERR::Okay</code>.</p>
 <p>The following example illustrates a scan for <code>MSGID::QUIT</code> messages:</p>
-<pre>while (!ScanMessages(&amp;handle, MSGID::QUIT, nullptr, nullptr)) {
+<pre>while (!ScanMessages(&amp;handle, MSGID::QUIT, {})) {
    ...
 }
 </pre>
-<p>Messages will often (but not always) carry data that is relevant to the message type.  To retrieve this data a buffer must be supplied.  If the <code>Buffer</code> is too small as indicated by the <code>Size</code>, the message data will be trimmed to fit without any further indication.</p>
+<p>Messages will often (but not always) carry data that is relevant to the message type.  To retrieve this data a buffer must be supplied.  If the <code>Buffer</code> is too small, the message data will be trimmed to fit without any further indication.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Search">No more messages are left on the queue, or no messages that match the given <code>Type</code> are on the queue.</error>
+      <error code="Args">The supplied buffer is too large for the internal message interface.</error>
       <error code="OutOfRange">A value is outside of the valid range</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
@@ -1556,14 +1573,13 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <name>SendMessage</name>
     <category>Messages</category>
     <comment>Add a message to the local message queue.</comment>
-    <prototype>ERR SendMessage(MSGID Type, MSF Flags, APTR Data, INT Size)</prototype>
-    <tiriPrototype>err = SendMessage(Type:num, Flags:num, Data:any, Size:num)</tiriPrototype>
+    <prototype>ERR SendMessage(MSGID Type, MSF Flags, const std::span&lt;const int8_t&gt; &amp;Data)</prototype>
+    <tiriPrototype>err = SendMessage(Type:num, Flags:num, Data:array)</tiriPrototype>
     <tags>copies-input, blocking</tags>
     <input>
       <param type="MSGID" name="Type" lookup="MSGID">The message Type/ID being sent.  Unique type ID's can be obtained from <function>AllocateID</function>.</param>
       <param type="MSF" name="Flags" lookup="MSF">Optional flags.</param>
-      <param type="APTR" name="Data">Pointer to the data that will be written to the queue.  Set to <code>NULL</code> if there is no data to write.</param>
-      <param type="INT" name="Size">The byte-size of the <code>Data</code> being written to the message queue.</param>
+      <param type="std::span&lt;const int8_t&gt;" name="Data">Optional data to copy to the message queue.  An empty buffer sends a message without payload data.</param>
     </input>
     <description>
 <p>The SendMessage() function will add a message to the end of the local message queue.  Messages must be associated with a <code>Type</code> identifier and this can help the receiver process any accompanying Data.  Some common message types are pre-defined, such as <code>MSGID::QUIT</code>.  Custom messages should use a unique type ID obtained from <function>AllocateID</function>.</p>
@@ -1668,23 +1684,31 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
   <function>
     <name>SetResource</name>
     <category>System</category>
-    <comment>Sets miscellaneous resource identifiers.</comment>
+    <comment>Updates a writable Core resource value.</comment>
     <prototype>INT64 SetResource(RES Resource, INT64 Value)</prototype>
     <tiriPrototype>num = SetResource(Resource:num, Value:num)</tiriPrototype>
     <input>
-      <param type="RES" name="Resource" lookup="RES">The ID of the resource to be set.</param>
-      <param type="INT64" name="Value">The new value to set for the resource.</param>
+      <param type="RES" name="Resource" lookup="RES">The writable resource identifier.</param>
+      <param type="INT64" name="Value">The value to assign to the resource.</param>
     </input>
     <description>
-<p>The SetResource() function is used to manipulate miscellaneous system resources.  Currently the following resources are supported:</p>
-<types lookup="RES" type="Resource">
-<type name="ALLOC_MEM_LIMIT">Adjusts the memory limit imposed on <function>AllocMemory</function>.  The <code>Value</code> specifies the memory limit in bytes.</type>
-<type name="LOG_LEVEL">Adjusts the current debug level.  The <code>Value</code> must be between 0 and 9, where 1 is the lowest level of debug output (errors only) and 0 is off.</type>
-<type name="PRIVILEGED_USER">If the <code>Value</code> is set to 1, this resource option puts the process in privileged mode (typically this enables full administrator rights).  This feature will only work for Unix processes that are granted admin rights when launched.  Setting the Value to 0 reverts to the user's permission settings.  SetResource() will return an error code indicating the level of success.</type>
-<type name="LOG_DEPTH">Changes the branch depth of the log output (affects indenting).</type>
-</types>
+<p>SetResource() updates Core state selected by a <lk>RES</lk> identifier.  The following identifiers are writable:</p>
+<list type="bullet">
+<li><code>LOG_LEVEL</code> sets the logging detail from 0 (disabled) to 9 (maximum detail).  Values outside this range are
+ignored.</li>
+<li><code>LOG_DEPTH</code> sets the logging branch depth for the current thread.  This controls indentation of subsequent log
+output.</li>
+<li><code>PRIVILEGED_USER</code> enables elevated Unix privileges when <code>Value</code> is non-zero and releases one level of privilege
+when it is zero.  Elevation is available only when the process was launched with suitable privileges.  Calls may be
+nested; privileges are released after the corresponding number of disable requests.  On non-Unix platforms this
+identifier has no effect.</li>
+<li><code>WINDOWS_ICON</code> sets the Microsoft Windows resource icon ID for the process.</li>
+<li><code>CONSOLE_FD</code> and <code>JNI_ENV</code> update internal host integration values.</li>
+</list>
+<p>Other <lk>RES</lk> identifiers are read-only or unsupported by this function.</p>
+<p>For <code>PRIVILEGED_USER</code>, the result is an <code>ERR</code> value indicating whether the request succeeded.  All other supported resources return 0.  Unsupported identifiers also return 0 after writing a warning to the log.</p>
     </description>
-    <result type="INT64">Returns the previous value of the <code>Resource</code>.  If the <code>Resource</code> value is invalid, <code>NULL</code> is returned.</result>
+    <result type="INT64">Result code is dependent on the targeted resource.</result>
   </function>
 
   <function>
@@ -1796,7 +1820,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Args">Invalid arguments passed to function</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+      <error code="AllocMemory">Failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -1844,7 +1868,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     </input>
     <description>
 <p>TrackResource() registers a resource identifier with the memory manager so that later calls to <function>FreeResource</function> can dispatch cleanup through the supplied <code>ResourceManager</code>.  If the resource identifier is already registered, the existing record is updated with the non-zero values provided by the caller.</p>
-<p>The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is tracked, or until the record is replaced or removed.  When an <code>OwnerID</code> is supplied for a non-object resource, the resource is added to the owner's resource list so it can be removed during owner cleanup.  Use <code>RESOURCEID_INHERIT</code> to preserve the existing owner when updating a resource, or to inherit the current context when registering a new resource.</p>
+<p>The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is tracked, or until the record is replaced or removed.  When an <code>OwnerID</code> names an object, the resource is added directly to that object's resource list so it can be removed during object cleanup.  Use <code>RESOURCEID_INHERIT</code> to preserve the existing owner when updating a resource, or to inherit the current context when registering a new resource.</p>
 <p>A unique <code>ResourceID</code> can be obtained from <function>AllocateID</function> by using <code>IDTYPE::RESOURCE</code>.</p>
     </description>
     <result type="ERR">
@@ -1912,22 +1936,21 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <name>UpdateMessage</name>
     <category>Messages</category>
     <comment>Updates the data of any message that is queued.</comment>
-    <prototype>ERR UpdateMessage(INT Message, MSGID Type, APTR Data, INT Size)</prototype>
-    <tiriPrototype>err = UpdateMessage(Message:num, Type:num, Data:any, Size:num)</tiriPrototype>
+    <prototype>ERR UpdateMessage(INT Message, MSGID Type, const std::span&lt;const int8_t&gt; &amp;Data)</prototype>
+    <tiriPrototype>err = UpdateMessage(Message:num, Type:num, Data:array)</tiriPrototype>
     <tags>copies-input, blocking</tags>
     <input>
       <param type="INT" name="Message">The ID of the message that will be updated.</param>
       <param type="MSGID" name="Type" lookup="MSGID">The type of the message.</param>
-      <param type="APTR" name="Data">Pointer to a buffer that contains the new data for the message.</param>
-      <param type="INT" name="Size">The byte-size of the <code>Data</code> that has been supplied.  It must not exceed the size of the message that is being updated.</param>
+      <param type="std::span&lt;const int8_t&gt;" name="Data">Optional replacement data for the message.  An empty buffer leaves the existing payload unchanged.</param>
     </input>
     <description>
-<p>The UpdateMessage() function provides a facility for updating the content of existing messages on the local queue. The client must provide the ID of the message to update and the new message Type and/or Data to set against the message.</p>
-<p>If <code>Data</code> is defined, its size should equal that of the data already set against the message.  The size will be trimmed if it exceeds that of the existing message, as this function cannot expand the size of the queue.</p>
+<p>The UpdateMessage() function provides a facility for updating the content of existing messages on the local queue. The client must provide the ID of the message to update and the new message Type and/or Data to set against the message. Non-empty <code>Data</code> replaces the complete existing payload, while an empty buffer leaves that payload unchanged.</p>
     </description>
     <result type="ERR">
       <error code="Okay">The message was successfully updated.</error>
       <error code="Search">The supplied <code>Message</code> ID does not refer to a message in the queue.</error>
+      <error code="Args">The supplied data is too large for the internal message interface.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -2029,7 +2052,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
   </function>
 
   <types>
-    <constants lookup="AC" comment="Action identifiers.">
+    <constants lookup="AC" comment="Action identifiers">
       <const name="Activate"/>
       <const name="Clear"/>
       <const name="Clipboard"/>
@@ -2081,18 +2104,18 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     </constants>
 
     <constants lookup="CCF" comment="Class categories">
-      <const name="AUDIO">Audio classes interface with audio hardware and drivers for audio playback and recording purposes.</const>
-      <const name="COMMAND">Command classes perform specific procedures, like copying or moving a file, managing volumes or executing a program.</const>
-      <const name="DATA">Data classes parse, query and manipulate data.</const>
-      <const name="FILESYSTEM">FileSystem classes are based on file management and interaction with file based data.</const>
-      <const name="GRAPHICS">Graphics classes provide graphics management and drawing services.</const>
-      <const name="GUI">GUI classes are used in the development of graphical user interfaces.</const>
-      <const name="IO">I/O classes manage hardware and software based input and output.</const>
-      <const name="MISC">Miscellaneous classes do not fit into any of the other available categories.</const>
-      <const name="MULTIMEDIA">Classes that represent more than one media type, e.g. video files.</const>
-      <const name="NETWORK">Network classes interface with system drivers to simplify network communications.</const>
-      <const name="SYSTEM">System classes are designed to provide low-level services related to system management.</const>
-      <const name="TOOL">Tools provide interactive services for the user.</const>
+      <const name="AUDIO">Audio classes interface with audio hardware and drivers for audio playback and recording purposes</const>
+      <const name="COMMAND">Command classes perform specific procedures, like copying or moving a file, managing volumes or executing a program</const>
+      <const name="DATA">Data classes parse, query and manipulate data</const>
+      <const name="FILESYSTEM">FileSystem classes are based on file management and interaction with file based data</const>
+      <const name="GRAPHICS">Graphics classes provide graphics management and drawing services</const>
+      <const name="GUI">GUI classes are used in the development of graphical user interfaces</const>
+      <const name="IO">I/O classes manage hardware and software based input and output</const>
+      <const name="MISC">Miscellaneous classes do not fit into any of the other available categories</const>
+      <const name="MULTIMEDIA">Classes that represent more than one media type, e.g. video files</const>
+      <const name="NETWORK">Network classes interface with system drivers to simplify network communications</const>
+      <const name="SYSTEM">System classes are designed to provide low-level services related to system management</const>
+      <const name="TOOL">Tools provide interactive services for the user</const>
     </constants>
 
     <constants lookup="CONTYPE" comment="Console types">
@@ -2102,20 +2125,20 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="TERMINAL">Launched from a terminal</const>
     </constants>
 
-    <constants lookup="EVG" comment="Event categories.">
-      <const name="ANDROID">Android specific events that do not already fit existing categories.</const>
+    <constants lookup="EVG" comment="Event categories">
+      <const name="ANDROID">Android specific events that do not already fit existing categories</const>
       <const name="APP">Custom event dispatched from an application</const>
-      <const name="AUDIO">Audio system events.</const>
+      <const name="AUDIO">Audio system events</const>
       <const name="CLASS">Custom event dispatched from a class that doesn't fit within the rest of the event framework</const>
-      <const name="DISPLAY">Video display events.</const>
-      <const name="FILESYSTEM">File system events.</const>
-      <const name="GUI">Events generated by the Graphical User Interface.</const>
-      <const name="HARDWARE">Hardware device events that are not covered by other types.</const>
-      <const name="IO">Input/Output events.</const>
-      <const name="NETWORK">Network events.</const>
-      <const name="POWER">Power Management - can also include app-specific events relating to resource management.</const>
+      <const name="DISPLAY">Video display events</const>
+      <const name="FILESYSTEM">File system events</const>
+      <const name="GUI">Events generated by the Graphical User Interface</const>
+      <const name="HARDWARE">Hardware device events that are not covered by other types</const>
+      <const name="IO">Input/Output events</const>
+      <const name="NETWORK">Network events</const>
+      <const name="POWER">Power Management - can also include app-specific events relating to resource management</const>
       <const name="SYSTEM">System-wide events</const>
-      <const name="USER">User activity events (such as user login).</const>
+      <const name="USER">User activity events (such as user login)</const>
     </constants>
 
     <constants lookup="FBK" comment="Flags for file feedback.">
@@ -2132,39 +2155,39 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     </constants>
 
     <constants lookup="JET" comment="JET constants are documented in GetInputEvent()">
-      <const name="ABS_XY">The X, Y values are defined as absolute coordinates, relative to the top-left of the display.</const>
-      <const name="BUTTON_1">Left mouse button; XBox A button, PS square button.  Value is pressure sensitive, ranging between 0 - 1.0 (0 is released, 1.0 is fully depressed).</const>
-      <const name="BUTTON_10">Non-specific button assignment.</const>
-      <const name="BUTTON_2">Right mouse button; XBox X button, PS cross button.</const>
-      <const name="BUTTON_3">Middle mouse button; XBox Y button, PS triangle.</const>
-      <const name="BUTTON_4">Alt. mouse button 1; XBox B button, PS circle.</const>
-      <const name="BUTTON_5">Alt. mouse button 2.</const>
-      <const name="BUTTON_6">Non-specific button assignment.</const>
-      <const name="BUTTON_7">Non-specific button assignment.</const>
-      <const name="BUTTON_8">Non-specific button assignment.</const>
-      <const name="BUTTON_9">Non-specific button assignment.</const>
-      <const name="CROSSED_IN">This message is sent by the input system when the mouse pointer enters an area for the first time.  The message value refers to the object ID of the container being monitored for movement.</const>
-      <const name="CROSSED_OUT">This message is sent by the input system when the mouse pointer leaves an area.  The message value refers to the object ID of the container being monitored for movement.</const>
+      <const name="ABS_XY">The X, Y values are defined as absolute coordinates, relative to the top-left of the display</const>
+      <const name="BUTTON_1">Left mouse button; XBox A button, PS square button.  Value is pressure sensitive, ranging between 0 - 1.0 (0 is released, 1.0 is fully depressed)</const>
+      <const name="BUTTON_10">Non-specific button assignment</const>
+      <const name="BUTTON_2">Right mouse button; XBox X button, PS cross button</const>
+      <const name="BUTTON_3">Middle mouse button; XBox Y button, PS triangle</const>
+      <const name="BUTTON_4">Alt. mouse button 1; XBox B button, PS circle</const>
+      <const name="BUTTON_5">Alt. mouse button 2</const>
+      <const name="BUTTON_6">Non-specific button assignment</const>
+      <const name="BUTTON_7">Non-specific button assignment</const>
+      <const name="BUTTON_8">Non-specific button assignment</const>
+      <const name="BUTTON_9">Non-specific button assignment</const>
+      <const name="CROSSED_IN">This message is sent by the input system when the mouse pointer enters an area for the first time.  The message value refers to the object ID of the container being monitored for movement</const>
+      <const name="CROSSED_OUT">This message is sent by the input system when the mouse pointer leaves an area.  The message value refers to the object ID of the container being monitored for movement</const>
       <const name="DEVICE_TILT_XY">Controller tilted on the X/Y axis.  Value indicates angle, -ve = left, +ve = right</const>
       <const name="DEVICE_TILT_Z">Controller is rising or falling.  Value expressed as 'speed',</const>
-      <const name="DISPLAY_EDGE">Recently supplied input occurred at the edge of the display.</const>
+      <const name="DISPLAY_EDGE">Recently supplied input occurred at the edge of the display</const>
       <const name="PEN_TILT_XY">Pen tilt angle.  0 is pointing down directly with nib at bottom, 0.5 is 90 degrees, 1.0 is inversed (eraser at bottom)</const>
       <const name="PRESSURE">Amount of pressure applied, ranges from 0 (none) to 1.0 (normal) and possibly higher if user presses hard enough</const>
-      <const name="WHEEL">Mouse wheel rotation - the value generally reflects the number of 'clicks' rotated on the wheel.</const>
+      <const name="WHEEL">Mouse wheel rotation - the value generally reflects the number of 'clicks' rotated on the wheel</const>
       <const name="WHEEL_TILT">Some mouse wheels can be tilted to the left or right.  Ranges from -1.0 to +1.0</const>
     </constants>
 
-    <constants lookup="JTYPE" comment="JTYPE flags are used to categorise input types.">
+    <constants lookup="JTYPE" comment="JTYPE flags are used to categorise input types">
       <const name="ANALOG">Analog movement (ranging from -1.0 to 1.0)</const>
       <const name="ANCHORED">Cursor has been anchored with LockCursor()</const>
       <const name="BUTTON">Input is a physical button or switch</const>
-      <const name="CROSSING">Crossing events manage the entering and leaving of an area.</const>
-      <const name="DBL_CLICK">Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click.</const>
+      <const name="CROSSING">Crossing events manage the entering and leaving of an area</const>
+      <const name="DBL_CLICK">Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click</const>
       <const name="DIGITAL">D-Pad or digital joystick source (restricted to +/- 1)</const>
-      <const name="DRAGGED">Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference).</const>
-      <const name="DRAG_ITEM">This special flag is set by the input system if the pointer is click-dragging an object at the time of the event.</const>
-      <const name="EXT_MOVEMENT">Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples.</const>
-      <const name="MOVEMENT">X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system.</const>
+      <const name="DRAGGED">Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference)</const>
+      <const name="DRAG_ITEM">This special flag is set by the input system if the pointer is click-dragging an object at the time of the event</const>
+      <const name="EXT_MOVEMENT">Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples</const>
+      <const name="MOVEMENT">X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system</const>
       <const name="REPEATED">Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)</const>
       <const name="SECONDARY">Indicates to the receiver of this message that it is not the primary/original recipient</const>
     </constants>
@@ -2179,8 +2202,8 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="VOLUME">The path refers to a volume name.</const>
     </constants>
 
-    <constants lookup="MEM" comment="Memory flags.">
-      <const name="NO_CLEAR">Do not clear the memory on allocation (saves time).</const>
+    <constants lookup="MEM" comment="Memory flags">
+      <const name="NO_CLEAR">Do not clear the memory on allocation (saves time)</const>
     </constants>
 
     <constants lookup="MSF" comment="Message flags.">
@@ -2237,39 +2260,39 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <const name="ALL_EXEC">Synonym for <code>EVERYONE_EXEC</code></const>
       <const name="ALL_READ">Synonym for <code>EVERYONE_READ</code></const>
       <const name="ALL_WRITE">Synonym for <code>EVERYONE_WRITE</code></const>
-      <const name="ARCHIVE">Marks the file for future backup.  The flag should be cleared after the backup has succeeded.</const>
-      <const name="DELETE">Owner can delete.  If the file system does not support this, deletion is enabled via the <code>WRITE</code> flag.</const>
+      <const name="ARCHIVE">Marks the file for future backup.  The flag should be cleared after the backup has succeeded</const>
+      <const name="DELETE">Owner can delete.  If the file system does not support this, deletion is enabled via the <code>WRITE</code> flag</const>
       <const name="EVERYONE_ACCESS">Synonym for <code>EVERYONE_READ | EVERYONE_WRITE | EVERYONE_EXEC | EVERYONE_DELETE</code></const>
       <const name="EVERYONE_DELETE">Synonym for <code>DELETE | GROUP_DELETE | OTHERS_DELETE</code></const>
       <const name="EVERYONE_EXEC">Synonym for <code>EXEC | GROUP_EXEC | OTHERS_EXEC</code></const>
       <const name="EVERYONE_READ">Synonym for <code>READ | GROUP_READ | OTHERS_READ</code></const>
       <const name="EVERYONE_READWRITE">Synonym for <code>EVERYONE_READ | EVERYONE_WRITE</code></const>
       <const name="EVERYONE_WRITE">Synonym for <code>WRITE | GROUP_WRITE | OTHERS_WRITE</code></const>
-      <const name="EXEC">User/Owner can execute.</const>
+      <const name="EXEC">User/Owner can execute</const>
       <const name="GROUP">Synonym for <code>GROUP_READ | GROUP_WRITE | GROUP_EXEC | GROUP_DELETE</code></const>
-      <const name="GROUPID">Allows executables to run with a set group id.</const>
-      <const name="GROUP_DELETE">Group members can delete.</const>
-      <const name="GROUP_EXEC">Group members can execute.</const>
-      <const name="GROUP_READ">Group members can read.</const>
-      <const name="GROUP_WRITE">Group members can write.</const>
-      <const name="HIDDEN">Recommends that the file is hidden from view by default.</const>
-      <const name="INHERIT">Inherit permissions from parent folder and logical OR them with preset permission flags.</const>
+      <const name="GROUPID">Allows executables to run with a set group id</const>
+      <const name="GROUP_DELETE">Group members can delete</const>
+      <const name="GROUP_EXEC">Group members can execute</const>
+      <const name="GROUP_READ">Group members can read</const>
+      <const name="GROUP_WRITE">Group members can write</const>
+      <const name="HIDDEN">Recommends that the file is hidden from view by default</const>
+      <const name="INHERIT">Inherit permissions from parent folder and logical OR them with preset permission flags</const>
       <const name="META">Synonym for <code>HIDDEN | PASSWORD | OFFLINE | NETWORK</code></const>
-      <const name="NETWORK">File is hosted on another machine.</const>
-      <const name="OFFLINE">File content for this networked file has not been cached on the local PC.</const>
+      <const name="NETWORK">File is hosted on another machine</const>
+      <const name="OFFLINE">File content for this networked file has not been cached on the local PC</const>
       <const name="OTHERS">Synonym for <code>OTHERS_READ | OTHERS_WRITE | OTHERS_EXEC | OTHERS_DELETE</code></const>
-      <const name="OTHERS_DELETE">Others can delete.</const>
-      <const name="OTHERS_EXEC">Others can execute.</const>
-      <const name="OTHERS_READ">Others can read.</const>
-      <const name="OTHERS_WRITE">Others can write.</const>
-      <const name="PASSWORD">File is password protected.</const>
-      <const name="READ">User/Owner has read access.  This will not allow compiled code to be executed.</const>
+      <const name="OTHERS_DELETE">Others can delete</const>
+      <const name="OTHERS_EXEC">Others can execute</const>
+      <const name="OTHERS_READ">Others can read</const>
+      <const name="OTHERS_WRITE">Others can write</const>
+      <const name="PASSWORD">File is password protected</const>
+      <const name="READ">User/Owner has read access.  This will not allow compiled code to be executed</const>
       <const name="USER">Synonym for <code>READ | WRITE | EXEC | DELETE</code></const>
-      <const name="USERID">Allows executables to run with a set user id.</const>
+      <const name="USERID">Allows executables to run with a set user id</const>
       <const name="USER_EXEC">Synonym for <code>EXEC</code></const>
       <const name="USER_READ">Synonym for <code>READ</code></const>
       <const name="USER_WRITE">Synonym for <code>WRITE</code></const>
-      <const name="WRITE">User/Owner can write.</const>
+      <const name="WRITE">User/Owner can write</const>
     </constants>
 
     <constants lookup="PMF" comment="Flags for ProcessMessages">
@@ -2412,7 +2435,7 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="BitsPerPixel" type="UINT8">Number of bits per pixel for this format.</field>
     </struct>
 
-    <struct name="DateTime" comment="Generic structure for date-time management.">
+    <struct name="DateTime" comment="Generic structure for date-time management">
       <field name="Year" type="INT16">Year</field>
       <field name="Month" type="INT8">Month 1 to 12</field>
       <field name="Day" type="INT8">Day 1 to 31</field>
@@ -2573,10 +2596,9 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
       <field name="Address" type="APTR">Direct pointer to the resource (optional, can rely on ResourceID instead)</field>
       <field name="Manager" type="struct ResourceManager *">Reference to the resource manager for this record</field>
       <field name="ResourceID" type="RESOURCEID">Unique identifier</field>
-      <field name="OwnerID" type="OBJECTID">Owner of the resource</field>
+      <field name="OwnerID" type="INT">Owner of the resource, could be another resource or object</field>
       <field name="CollectOnUnlock" type="BOOL">Resource is locked; manager will collect immediately once unlocked</field>
       <field name="Terminating" type="BOOL">A FreeResource() call currently owns the destruction path</field>
-      <field name="OwnerManagesChildren" type="BOOL">True if the current OwnerID manages its child resources</field>
     </struct>
 
     <struct name="SystemState" comment="Returned by the GetSystemState() function.">

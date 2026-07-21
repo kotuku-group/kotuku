@@ -174,14 +174,14 @@ namespace agg
         }
 
     public:
-        AGG_INLINE const int8u* span(int x, int y, unsigned len)
+        AGG_INLINE const int8u* span(int X, int Y, unsigned Len)
         {
-            m_x = m_x0 = x;
-            m_y = y;
-            if(y >= 0 && y < (int)m_pixf->height() &&
-               x >= 0 && x+len <= (int)m_pixf->width())
+            m_x = m_x0 = X;
+            m_y = Y;
+            if ((Y >= 0) and (Y < int(m_pixf->height())) and (X >= 0) and
+               (unsigned(X) <= m_pixf->width()) and (Len <= m_pixf->width() - unsigned(X)))
             {
-                return m_pix_ptr = m_pixf->pix_ptr(x, y);
+                return m_pix_ptr = m_pixf->pix_ptr(X, Y);
             }
             m_pix_ptr = 0;
             return pixel();

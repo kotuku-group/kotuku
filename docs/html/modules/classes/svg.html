@@ -36,8 +36,7 @@
 <p>Please refer to the W3C's online documentation for exhaustive information on the SVG standard.</p>
 <h3>Structure</h3><p>The SVG class consists of the following fields:</p><table class="table"><thead><th class="col-md-1"><div data-bs-toggle="tooltip" title="Read/Write access indicators are listed below">Access</div></th><th class="col-md-1">Name</th><th class="col-md-1">Type</th><th>Comment</th></thead><tbody><tr data-bs-toggle="collapse" data-bs-target="#fl-Colour" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Colour"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"></i></td><th class="col-md-1">Colour</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Defines the default fill to use for <code>currentColor</code> references.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Colour" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>Set the Colour value to alter the default fill that is used for <code>currentColor</code> references.  Typically a standard RGB painter fill reference should be used for this purpose, e.g. <code>rgb(255,255,255)</code>.  It is however, also acceptable to use URL references to named definitions such as gradients and images.  This will work as long as the named definition is registered in the top-level <a href="vectorscene.html">VectorScene</a> object.</p>
-<p>
-<b>Supported formats:</b></p>
+<p><b>Supported formats:</b></p>
 <ul>
 <li>RGB values: <code>rgb(red, green, blue)</code></li>
 <li>Hexadecimal notation: six-digit triplets or three-digit shorthand triplets</li>
@@ -61,48 +60,36 @@
 <tr data-bs-toggle="collapse" data-bs-target="#fl-FrameCallback" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-FrameCallback"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">FrameCallback</th><td class="col-md-1"><span class="text-nowrap">FUNCTION</span></td><td>Function callback executed after each animation frame preparation.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-FrameCallback" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>This field enables integration of custom logic into the animation processing pipeline by specifying a callback function that executes after each animation frame is computed.  The callback mechanism provides precise timing for implementing custom rendering workflows, frame capture systems, or animation synchronisation logic.</p>
 <p>The callback function receives a pointer to the SVG object, enabling access to the current scene state and rendering control.  This is commonly used for rendering the animated SVG content to target bitmaps, implementing video capture, or synchronising with external animation systems.</p>
-<p>
-<b>Timing behaviour:</b> The callback executes immediately after frame preparation but before automatic scene redrawing, ensuring that custom logic can modify or capture the scene state at the optimal moment.</p>
-<p>
-<b>Animation dependency:</b> Callbacks are only triggered for SVG documents containing SMIL animation features. Static documents will not invoke the callback function.</p>
-<p>
-<b>Function prototype:</b> <code>void Function(*SVG)</code></p>
+<p><b>Timing behaviour:</b> The callback executes immediately after frame preparation but before automatic scene redrawing, ensuring that custom logic can modify or capture the scene state at the optimal moment.</p>
+<p><b>Animation dependency:</b> Callbacks are only triggered for SVG documents containing SMIL animation features. Static documents will not invoke the callback function.</p>
+<p><b>Function prototype:</b> <code>void Function(*SVG)</code></p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-FrameRate" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-FrameRate"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">FrameRate</th><td class="col-md-1"><span class="text-nowrap">INT</span></td><td>Controls the maximum frame rate for SVG animation playback.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-FrameRate" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>This field establishes the upper limit for animation frame processing, measured in frames per second.  The frame rate directly impacts animation smoothness and system resource consumption, requiring careful balance between visual quality and performance efficiency.</p>
-<p>
-<b>Recommended ranges:</b></p>
+<p><b>Recommended ranges:</b></p>
 <ul>
-<li>
-<b>Standard displays:</b> 60 FPS matches most modern display refresh rates</li>
-<li>
-<b>Balanced performance:</b> 30-50 FPS provides smooth animation with moderate resource usage</li>
-<li>
-<b>Low-power devices:</b> 20-30 FPS conserves battery while maintaining acceptable quality</li>
+<li><b>Standard displays:</b> 60 FPS matches most modern display refresh rates</li>
+<li><b>Balanced performance:</b> 30-50 FPS provides smooth animation with moderate resource usage</li>
+<li><b>Low-power devices:</b> 20-30 FPS conserves battery while maintaining acceptable quality</li>
 </ul>
-<p>
-<b>Performance considerations:</b> Higher frame rates increase CPU usage proportionately.  A frame rate of 100 FPS consumes approximately twice the processing power of 50 FPS, with corresponding impact on power consumption and thermal characteristics.</p>
-<p>
-<b>Valid range:</b> 20-1000 FPS, though values above 120 FPS rarely provide perceptible improvements on standard displays.</p>
+<p><b>Performance considerations:</b> Higher frame rates increase CPU usage proportionately.  A frame rate of 100 FPS consumes approximately twice the processing power of 50 FPS, with corresponding impact on power consumption and thermal characteristics.</p>
+<p><b>Valid range:</b> 20-1000 FPS, though values above 120 FPS rarely provide perceptible improvements on standard displays.</p>
 <p>The frame rate only affects animated SVG documents containing SMIL features.  Static documents are unaffected by this setting.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Path" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Path"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Path</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>File system path to the source SVG document.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Path" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>This field specifies the location of the SVG file to be loaded and processed during object initialisation.  The path supports both absolute and relative file references, with relative paths resolved according to the current working directory context.</p>
 <p>The loading process occurs automatically during initialisation when a valid path is specified.  The referenced file must contain well-formed SVG content that conforms to W3C SVG standards for successful parsing.</p>
-<p>
-<b>Supported file types:</b> Standard SVG files (*.svg) and compressed SVG files (*.svgz) are both supported, with automatic decompression handling for compressed formats.</p>
-<p>
-<b>Path resolution:</b> The file system path is resolved through the standard Kotuku file access mechanisms, supporting virtual file systems, archives, and network-accessible resources where configured.</p>
+<p><b>Supported file types:</b> Standard SVG files (*.svg) and compressed SVG files (*.svgz) are both supported, with automatic decompression handling for compressed formats.</p>
+<p><b>Path resolution:</b> The file system path is resolved through the standard Kotuku file access mechanisms, supporting virtual file systems, archives, and network-accessible resources where configured.</p>
 <p>When both <a data-bs-toggle="tooltip" title="File system path to the source SVG document." href="#tf-Path">Path</a> and <a data-bs-toggle="tooltip" title="String containing complete SVG document markup." href="#tf-Statement">Statement</a> are specified, the Path field takes precedence and the Statement content is ignored during initialisation.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Scene" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Scene"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">Scene</th><td class="col-md-1"><span class="text-nowrap"><a href="vectorscene.html">*VectorScene</a></span></td><td>Reference to the <a href="vectorscene.html">VectorScene</a> object containing the SVG scene graph.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Scene" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>This read-only field provides direct access to the <a href="vectorscene.html">VectorScene</a> object that manages the complete SVG scene graph structure.  The scene object serves as the root container for all generated vector elements and provides essential rendering coordination.</p>
 <p>The scene reference remains valid throughout the SVG object's lifetime and enables direct manipulation of scene-wide properties including page dimensions, rendering settings, and global definitions.  This field simplifies access to the scene graph for applications requiring programmatic control over the complete document structure.</p>
-<p>
-<b>Scene relationship:</b> When a <a data-bs-toggle="tooltip" title="Destination container for the generated SVG scene graph elements." href="#tf-Target">Target</a> is specified, the Scene field references the <a href="vectorscene.html">VectorScene</a> that owns the target object.  For automatically generated scenes, this field references the internally created scene object.</p>
+<p><b>Scene relationship:</b> When a <a data-bs-toggle="tooltip" title="Destination container for the generated SVG scene graph elements." href="#tf-Target">Target</a> is specified, the Scene field references the <a href="vectorscene.html">VectorScene</a> that owns the target object.  For automatically generated scenes, this field references the internally created scene object.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Statement" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Statement"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"></i></td><th class="col-md-1">Statement</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>String containing complete SVG document markup.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Statement" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
@@ -112,14 +99,10 @@
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Target" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Target"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Target</th><td class="col-md-1"><span class="text-nowrap">OBJECTPTR</span></td><td>Destination container for the generated SVG scene graph elements.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Target" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>This field redirects the generated SVG scene graph to an existing container object instead of creating an independent scene structure.  The target approach enables seamless integration of SVG content into established UI hierarchies and composite scene graphs.</p>
-<p>
-<b>Default behaviour:</b> When no target is specified, the SVG object creates and manages a dedicated <a href="vectorviewport.html">VectorViewport</a> to contain the generated content.  This viewport and its children remain under direct SVG object ownership.</p>
-<p>
-<b>Target requirements:</b> The target object must be part of an existing scene graph owned by a <a href="vectorscene.html">VectorScene</a> object. While any vector object can serve as a target, <a href="vectorviewport.html">VectorViewport</a> objects are recommended for optimal compatibility and performance.</p>
-<p>
-<b>Ownership implications:</b> Specifying a target makes the generated scene graph independent of the SVG object lifecycle.  The SVG object can be terminated without affecting the created vector elements, enabling flexible resource management patterns.</p>
-<p>
-<b>Resource tracking:</b> When independent operation is not desired, enable the <code>ENFORCE_TRACKING</code> flag to maintain resource tracking relationships between the SVG object and generated definitions, ensuring proper cleanup on object destruction.</p>
+<p><b>Default behaviour:</b> When no target is specified, the SVG object creates and manages a dedicated <a href="vectorviewport.html">VectorViewport</a> to contain the generated content.  This viewport and its children remain under direct SVG object ownership.</p>
+<p><b>Target requirements:</b> The target object must be part of an existing scene graph owned by a <a href="vectorscene.html">VectorScene</a> object. While any vector object can serve as a target, <a href="vectorviewport.html">VectorViewport</a> objects are recommended for optimal compatibility and performance.</p>
+<p><b>Ownership implications:</b> Specifying a target makes the generated scene graph independent of the SVG object lifecycle.  The SVG object can be terminated without affecting the created vector elements, enabling flexible resource management patterns.</p>
+<p><b>Resource tracking:</b> When independent operation is not desired, enable the <code>ENFORCE_TRACKING</code> flag to maintain resource tracking relationships between the SVG object and generated definitions, ensuring proper cleanup on object destruction.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Title" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Title"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct write access"></i></td><th class="col-md-1">Title</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>The title of the SVG document.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Title" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
@@ -133,8 +116,7 @@
 </tbody></table><h3>Actions</h3><p>The following actions are currently supported:</p><table class="table"><tbody><tr data-bs-toggle="collapse" data-bs-target="#tac-Activate" style="scroll-margin:3em;" id="ta-Activate" role="button"><td style="width:1%; border-top-style: none; border-bottom-style: none;"><i class="bi bi-chevron-double-right text-secondary"></i></td><th class="col-md-1 text-primary">Activate</th><td>Initiates playback of SVG animations.</td></tr><tr><td class="hiddenRow" style="width:1%; border-top-style: none; border-bottom-style: none;"></td><td colspan="2" class="hiddenRow"><div id="tac-Activate" class="collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR acActivate(*Object)</samp></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>SVG documents containing SMIL animation features will remain static until activated through this action.  Upon activation, the animation system begins processing animation sequences in the background according to the configured <a data-bs-toggle="tooltip" title="Controls the maximum frame rate for SVG animation playback." href="#tf-FrameRate">FrameRate</a>.  The <a data-bs-toggle="tooltip" title="Reference to the VectorScene object containing the SVG scene graph." href="#tf-Scene">Scene</a> will be automatically redrawn as each frame is computed, ensuring smooth visual transitions.</p>
 <p>To integrate custom rendering logic with the animation cycle, configure the <a data-bs-toggle="tooltip" title="Function callback executed after each animation frame preparation." href="#tf-FrameCallback">FrameCallback</a> field with an appropriate function.  This callback will be triggered after each frame preparation, enabling applications to implement custom rendering workflows or capture animation frames.</p>
-<p>
-<b>Note:</b> If the SVG document contains no animation elements, this action completes successfully but has no visual effect.</p>
+<p><b>Note:</b> If the SVG document contains no animation elements, this action completes successfully but has no visual effect.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tac-DataFeed" style="scroll-margin:3em;" id="ta-DataFeed" role="button"><td style="width:1%; border-top-style: none; border-bottom-style: none;"><i class="bi bi-chevron-double-right text-secondary"></i></td><th class="col-md-1 text-primary">DataFeed</th><td>Processes SVG data streams for incremental document parsing.</td></tr><tr><td class="hiddenRow" style="width:1%; border-top-style: none; border-bottom-style: none;"></td><td colspan="2" class="hiddenRow"><div id="tac-DataFeed" class="collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Object</td><td>Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID.</td></tr>
@@ -144,8 +126,7 @@
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>The DataFeed action enables real-time processing of SVG data streams, allowing documents to be parsed incrementally as data becomes available.  This is particularly useful for network-based loading scenarios or when processing large SVG documents that may arrive in segments.</p>
 <p>The action accepts XML data streams and integrates them into the existing document structure.  Multiple DataFeed calls can be made to build up complex SVG documents progressively.</p>
-<p>
-<b>Supported data types:</b> <code>DATA::XML</code> for SVG content streams.</p>
+<p><b>Supported data types:</b> <code>DATA::XML</code> for SVG content streams.</p>
 <p>This mechanism provides an alternative to the static <a data-bs-toggle="tooltip" title="String containing complete SVG document markup." href="#tf-Statement">Statement</a> field for scenarios requiring dynamic content loading or streaming workflows.</p>
       
 </div></div></td></tr>
@@ -194,8 +175,7 @@
 <p>This method executes complete rasterisation of the SVG scene graph, producing a pixel-based representation within the specified target bitmap.  The rendering process handles all vector elements, gradients, filters, and effects with full anti-aliasing and precision.</p>
 <p>The rendered output is positioned at coordinates <code>(X,Y)</code> within the target bitmap and scaled to the specified <code>(Width,Height)</code> dimensions.  The scaling operation maintains aspect ratios and applies appropriate filtering to ensure optimal visual quality.</p>
 <p>The scene's page dimensions are temporarily adjusted to match the specified width and height, ensuring that the entire document content is properly scaled and positioned within the target area.  This approach enables flexible rendering at arbitrary resolutions without affecting the original scene graph.</p>
-<p>
-<b>Performance considerations:</b> Rendering complex SVG documents with multiple effects and high resolutions may require significant processing time.  Consider using appropriate dimensions that balance quality requirements with performance constraints.</p>
+<p><b>Performance considerations:</b> Rendering complex SVG documents with multiple effects and high resolutions may require significant processing time.  Consider using appropriate dimensions that balance quality requirements with performance constraints.</p>
       
 </div></div></td></tr>
 </tbody></table><div class="footer copyright text-right">SVG class documentation © Paul Manias © 2010-2026</div></div><div class="docs-content" style="display:none;" id="SVF"><h1>SVF Type</h1><p class="lead">SVG flags.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>SVF::ALPHA</th><td>Generate an alpha channel in the rendered image.</td></tr>

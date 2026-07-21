@@ -26,6 +26,7 @@
       <class>GradientConic</class>
       <class>GradientContour</class>
       <class>GradientDiamond</class>
+      <class>GradientDiffusion</class>
       <class>GradientDistal</class>
       <class>GradientGouraud</class>
       <class>GradientLinear</class>
@@ -272,7 +273,7 @@ Z: Close Path
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="InvalidData">There is an error in the provided data</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+      <error code="AllocMemory">Failed to create a new memory block</error>
       <error code="BufferOverflow">A buffer overflow has occurred</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
       <error code="InvalidValue">A required value was not within expected constraints</error>
@@ -326,7 +327,7 @@ Z: Close Path
       <error code="Search">A search routine in this function failed</error>
       <error code="Args">Invalid arguments passed to function</error>
       <error code="AccessObject">Attempting to lock an object failed</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+      <error code="AllocMemory">Failed to create a new memory block</error>
       <error code="ResolvePath">A volume could not be resolved</error>
       <error code="CreateObject">A call to CreateObject() failed</error>
     </result>
@@ -737,39 +738,39 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
     </constants>
 
     <constants lookup="JET" comment="JET constants are documented in GetInputEvent()">
-      <const name="ABS_XY">The X, Y values are defined as absolute coordinates, relative to the top-left of the display.</const>
-      <const name="BUTTON_1">Left mouse button; XBox A button, PS square button.  Value is pressure sensitive, ranging between 0 - 1.0 (0 is released, 1.0 is fully depressed).</const>
-      <const name="BUTTON_10">Non-specific button assignment.</const>
-      <const name="BUTTON_2">Right mouse button; XBox X button, PS cross button.</const>
-      <const name="BUTTON_3">Middle mouse button; XBox Y button, PS triangle.</const>
-      <const name="BUTTON_4">Alt. mouse button 1; XBox B button, PS circle.</const>
-      <const name="BUTTON_5">Alt. mouse button 2.</const>
-      <const name="BUTTON_6">Non-specific button assignment.</const>
-      <const name="BUTTON_7">Non-specific button assignment.</const>
-      <const name="BUTTON_8">Non-specific button assignment.</const>
-      <const name="BUTTON_9">Non-specific button assignment.</const>
-      <const name="CROSSED_IN">This message is sent by the input system when the mouse pointer enters an area for the first time.  The message value refers to the object ID of the container being monitored for movement.</const>
-      <const name="CROSSED_OUT">This message is sent by the input system when the mouse pointer leaves an area.  The message value refers to the object ID of the container being monitored for movement.</const>
+      <const name="ABS_XY">The X, Y values are defined as absolute coordinates, relative to the top-left of the display</const>
+      <const name="BUTTON_1">Left mouse button; XBox A button, PS square button.  Value is pressure sensitive, ranging between 0 - 1.0 (0 is released, 1.0 is fully depressed)</const>
+      <const name="BUTTON_10">Non-specific button assignment</const>
+      <const name="BUTTON_2">Right mouse button; XBox X button, PS cross button</const>
+      <const name="BUTTON_3">Middle mouse button; XBox Y button, PS triangle</const>
+      <const name="BUTTON_4">Alt. mouse button 1; XBox B button, PS circle</const>
+      <const name="BUTTON_5">Alt. mouse button 2</const>
+      <const name="BUTTON_6">Non-specific button assignment</const>
+      <const name="BUTTON_7">Non-specific button assignment</const>
+      <const name="BUTTON_8">Non-specific button assignment</const>
+      <const name="BUTTON_9">Non-specific button assignment</const>
+      <const name="CROSSED_IN">This message is sent by the input system when the mouse pointer enters an area for the first time.  The message value refers to the object ID of the container being monitored for movement</const>
+      <const name="CROSSED_OUT">This message is sent by the input system when the mouse pointer leaves an area.  The message value refers to the object ID of the container being monitored for movement</const>
       <const name="DEVICE_TILT_XY">Controller tilted on the X/Y axis.  Value indicates angle, -ve = left, +ve = right</const>
       <const name="DEVICE_TILT_Z">Controller is rising or falling.  Value expressed as 'speed',</const>
-      <const name="DISPLAY_EDGE">Recently supplied input occurred at the edge of the display.</const>
+      <const name="DISPLAY_EDGE">Recently supplied input occurred at the edge of the display</const>
       <const name="PEN_TILT_XY">Pen tilt angle.  0 is pointing down directly with nib at bottom, 0.5 is 90 degrees, 1.0 is inversed (eraser at bottom)</const>
       <const name="PRESSURE">Amount of pressure applied, ranges from 0 (none) to 1.0 (normal) and possibly higher if user presses hard enough</const>
-      <const name="WHEEL">Mouse wheel rotation - the value generally reflects the number of 'clicks' rotated on the wheel.</const>
+      <const name="WHEEL">Mouse wheel rotation - the value generally reflects the number of 'clicks' rotated on the wheel</const>
       <const name="WHEEL_TILT">Some mouse wheels can be tilted to the left or right.  Ranges from -1.0 to +1.0</const>
     </constants>
 
-    <constants lookup="JTYPE" comment="JTYPE flags are used to categorise input types.">
+    <constants lookup="JTYPE" comment="JTYPE flags are used to categorise input types">
       <const name="ANALOG">Analog movement (ranging from -1.0 to 1.0)</const>
       <const name="ANCHORED">Cursor has been anchored with LockCursor()</const>
       <const name="BUTTON">Input is a physical button or switch</const>
-      <const name="CROSSING">Crossing events manage the entering and leaving of an area.</const>
-      <const name="DBL_CLICK">Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click.</const>
+      <const name="CROSSING">Crossing events manage the entering and leaving of an area</const>
+      <const name="DBL_CLICK">Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click</const>
       <const name="DIGITAL">D-Pad or digital joystick source (restricted to +/- 1)</const>
-      <const name="DRAGGED">Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference).</const>
-      <const name="DRAG_ITEM">This special flag is set by the input system if the pointer is click-dragging an object at the time of the event.</const>
-      <const name="EXT_MOVEMENT">Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples.</const>
-      <const name="MOVEMENT">X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system.</const>
+      <const name="DRAGGED">Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference)</const>
+      <const name="DRAG_ITEM">This special flag is set by the input system if the pointer is click-dragging an object at the time of the event</const>
+      <const name="EXT_MOVEMENT">Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples</const>
+      <const name="MOVEMENT">X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system</const>
       <const name="REPEATED">Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)</const>
       <const name="SECONDARY">Indicates to the receiver of this message that it is not the primary/original recipient</const>
     </constants>
@@ -810,6 +811,14 @@ Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, precede
 
   </types>
   <structs>
+    <struct name="DiffusionCurveRecord" comment="Describes one curve for the GradientDiffusion Curves field.">
+      <field name="Curve" type="struct MeshControl">Cubic Bezier geometry for this curve segment.</field>
+      <field name="LeftStart" type="struct FRGB">Colour on the left side at the start of the curve.</field>
+      <field name="LeftEnd" type="struct FRGB">Colour on the left side at the end of the curve.</field>
+      <field name="RightStart" type="struct FRGB">Colour on the right side at the start of the curve.</field>
+      <field name="RightEnd" type="struct FRGB">Colour on the right side at the end of the curve.</field>
+    </struct>
+
     <struct name="FontMetrics" comment="Font metrics, measured in pixels relative to the display">
       <field name="Height" type="INT">Full font height equivalent to <code>Ascent (cap-height) + Descent (gutter)</code>.  Does NOT include accents.</field>
       <field name="LineSpacing" type="INT">Vertical advance from one line to the next.  Includes coverage for accents and additional whitespace.</field>

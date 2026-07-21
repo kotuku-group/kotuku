@@ -427,7 +427,7 @@ strview Path: The path to analyse.
 -ERRORS-
 Okay: The path was analysed and the result is stored in the `Type` variable.
 NullArgs:
-DoesNotExist:
+FileNotFound:
 NoSupport:
 
 -TAGS-
@@ -466,7 +466,7 @@ ERR AnalysePath(const std::string_view &Path, LOC *PathType)
             return ERR::Okay;
          }
       }
-      return ERR::DoesNotExist;
+      return ERR::FileNotFound;
    }
 
    std::string test_path;
@@ -483,7 +483,7 @@ ERR AnalysePath(const std::string_view &Path, LOC *PathType)
    }
    else {
       log.trace("Path '%.*s' does not exist.", int(path.size()), path.data());
-      return ERR::DoesNotExist;
+      return ERR::FileNotFound;
    }
 }
 
@@ -1156,8 +1156,7 @@ matched to `photo.jpg` in the same folder).
 
 -INPUT-
 strview Path: The path of the file.
-^buf(ptr) Buffer: Pointer to a buffer that will receive the file content.
-bufsize BufferSize: The byte size of the `Buffer`.
+^buf(ptr) Buffer: Buffer that will receive the file content.
 &int Result: The total number of bytes read into the `Buffer` will be returned here (optional).
 
 -ERRORS-
@@ -1176,15 +1175,16 @@ mutates-input, blocking, path-resolved
 
 *********************************************************************************************************************/
 
-ERR ReadFileToBuffer(const std::string_view &Path, APTR Buffer, int BufferSize, int *BytesRead)
+ERR ReadFileToBuffer(const std::string_view &Path, const std::span<int8_t> &Buffer, int *Result)
 {
    kt::Log log(__FUNCTION__);
 
-   log.traceBranch("Path: %.*s, Buffer Size: %d", int(Path.size()), Path.data(), BufferSize);
+   log.traceBranch("Path: %.*s, Buffer Size: %zu", int(Path.size()), Path.data(), Buffer.size_bytes());
 
-#if defined(__unix__) || defined(_WIN32)
-   if ((Path.empty()) or (BufferSize <= 0) or (not Buffer)) return ERR::Args;
+   if (Result) *Result = 0;
+   if ((Path.empty()) or (Buffer.empty()) or (not span_size_fits_int(Buffer.size_bytes()))) return ERR::Args;
 
+   const auto buffer_size = int(Buffer.size_bytes());
    bool approx;
    auto path = Path;
    if (path.starts_with('~')) {
@@ -1193,17 +1193,16 @@ ERR ReadFileToBuffer(const std::string_view &Path, APTR Buffer, int BufferSize, 
    }
    else approx = false;
 
-   if (BytesRead) *BytesRead = 0;
-
+#if defined(__unix__) or defined(_WIN32)
    std::string res_path;
    if (auto error = ResolvePath(path, RSF::CHECK_VIRTUAL | (approx ? RSF::APPROXIMATE : RSF::NIL), &res_path); !error) {
       if (res_path.starts_with("/dev/")) return ERR::InvalidPath;
       else if (auto handle = open(res_path.c_str(), O_RDONLY|O_NONBLOCK|O_LARGEFILE|WIN32OPEN, nullptr); handle != -1) {
-         if (auto result = read(handle, Buffer, BufferSize); result IS -1) {
+         if (auto result = read(handle, Buffer.data(), buffer_size); result IS -1) {
             close(handle);
             return ERR::Read;
          }
-         else if (BytesRead) *BytesRead = result;
+         else if (Result) *Result = int(result);
 
          close(handle);
          return ERR::Okay;
@@ -1213,7 +1212,7 @@ ERR ReadFileToBuffer(const std::string_view &Path, APTR Buffer, int BufferSize, 
    else if (error IS ERR::VirtualVolume) {
       extFile::create file = { fl::Path(res_path), fl::Flags(FL::READ|FL::FILE|(approx ? FL::APPROXIMATE : FL::NIL)) };
 
-      if (file.ok()) return file->read(Buffer, BufferSize, BytesRead);
+      if (file.ok()) return file->read(Buffer.data(), buffer_size, Result);
       else return ERR::File;
    }
    else return ERR::FileNotFound;
@@ -1224,8 +1223,8 @@ ERR ReadFileToBuffer(const std::string_view &Path, APTR Buffer, int BufferSize, 
 
    if (file.ok()) {
       int result;
-      if (not file->read(Buffer, BufferSize, &result)) {
-         if (BytesRead) *BytesRead = result;
+      if (not file->read(Buffer.data(), buffer_size, &result)) {
+         if (Result) *Result = result;
          return ERR::Okay;
       }
       else return ERR::Read;

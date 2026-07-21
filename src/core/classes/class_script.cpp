@@ -316,7 +316,7 @@ static ERR SCRIPT_GetProcedureID(objScript *Self, struct sc::GetProcedureID *Arg
 
 /*********************************************************************************************************************
 -ACTION-
-GetKey: Script parameters can be retrieved through this action.
+GetKey: Script parameters defined by SetKey() can be retrieved through this action.
 -END-
 *********************************************************************************************************************/
 
@@ -362,7 +362,13 @@ static ERR SCRIPT_Reset(objScript *Self)
 
 /*********************************************************************************************************************
 -ACTION-
-SetKey: Script parameters can be set through this action.
+SetKey: Script parameters can be set as key-values through this action.
+
+Use SetKey() to define global parameters that the executed script can access.  The parameters are stored as key-value
+pairs and can be retrieved through the #GetKey() action.
+
+In Tiri, key-values can be retrieved through the `arg()` function.
+
 -END-
 *********************************************************************************************************************/
 

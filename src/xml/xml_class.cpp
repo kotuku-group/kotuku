@@ -2320,7 +2320,7 @@ static const FieldArray clFields[] = {
    { "ParseError", FDF_INT|FD_PRIVATE|FDF_R },
    { "LineNo",     FDF_INT|FD_PRIVATE|FDF_R },
    // Virtual fields
-   { "Statement",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_ALLOC|FDF_RW, GET_Statement, SET_Statement },
+   { "Statement",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_RW, GET_Statement, SET_Statement },
    { "Tags",       FDF_VIRTUAL|FDF_ARRAY|FDF_STRUCT|FDF_R|FDF_PURE, GET_Tags, nullptr, "XTag" },
    { "StatementView", FDF_VIRTUAL|FDF_CPPSTRING|FD_PRIVATE|FDF_R, GET_StatementView },
    END_FIELD

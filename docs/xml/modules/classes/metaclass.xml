@@ -40,6 +40,20 @@
       <tags>pure-query, object-owns-result</tags>
     </method>
 
+    <method>
+      <name>GetMembers</name>
+      <comment>Returns a list of all objects that are members of the class.</comment>
+      <prototype>ERR mc::GetMembers(OBJECTPTR Object, kt::vector&lt;OBJECTID&gt; List)</prototype>
+      <tiriPrototype>err = GetMembers(List:array)</tiriPrototype>
+      <input>
+        <param type="kt::vector&lt;OBJECTID&gt;" name="List">Pointer to an array of object IDs that will be filled with the results.</param>
+      </input>
+      <description>
+<p>This method will compile a list of all objects that are members of the class.  The list is unordered, but identifier values reflect their age with lower IDs being older.</p>
+      </description>
+      <tags>mutates-input</tags>
+    </method>
+
   </methods>
 
   <fields>
@@ -237,18 +251,6 @@
     </field>
 
     <field>
-      <name>Objects</name>
-      <comment>Returns an allocated list of all objects that belong to this class.</comment>
-      <access read="G">Get</access>
-      <type>INT []</type>
-      <description>
-<p>This field will compile a list of all objects that belong to the class.  The list is sorted with the oldest object appearing first.</p>
-<p>The resulting array must be terminated with <function>FreeResource</function> after use.</p>
-      </description>
-      <tags>caller-owns-result</tags>
-    </field>
-
-    <field>
       <name>OpenCount</name>
       <comment>The total number of active objects that are linked back to the MetaClass.</comment>
       <access read="R">Read</access>
@@ -309,18 +311,18 @@
   </fields>
   <types>
     <constants lookup="CCF" comment="Class categories">
-      <const name="AUDIO">Audio classes interface with audio hardware and drivers for audio playback and recording purposes.</const>
-      <const name="COMMAND">Command classes perform specific procedures, like copying or moving a file, managing volumes or executing a program.</const>
-      <const name="DATA">Data classes parse, query and manipulate data.</const>
-      <const name="FILESYSTEM">FileSystem classes are based on file management and interaction with file based data.</const>
-      <const name="GRAPHICS">Graphics classes provide graphics management and drawing services.</const>
-      <const name="GUI">GUI classes are used in the development of graphical user interfaces.</const>
-      <const name="IO">I/O classes manage hardware and software based input and output.</const>
-      <const name="MISC">Miscellaneous classes do not fit into any of the other available categories.</const>
-      <const name="MULTIMEDIA">Classes that represent more than one media type, e.g. video files.</const>
-      <const name="NETWORK">Network classes interface with system drivers to simplify network communications.</const>
-      <const name="SYSTEM">System classes are designed to provide low-level services related to system management.</const>
-      <const name="TOOL">Tools provide interactive services for the user.</const>
+      <const name="AUDIO">Audio classes interface with audio hardware and drivers for audio playback and recording purposes</const>
+      <const name="COMMAND">Command classes perform specific procedures, like copying or moving a file, managing volumes or executing a program</const>
+      <const name="DATA">Data classes parse, query and manipulate data</const>
+      <const name="FILESYSTEM">FileSystem classes are based on file management and interaction with file based data</const>
+      <const name="GRAPHICS">Graphics classes provide graphics management and drawing services</const>
+      <const name="GUI">GUI classes are used in the development of graphical user interfaces</const>
+      <const name="IO">I/O classes manage hardware and software based input and output</const>
+      <const name="MISC">Miscellaneous classes do not fit into any of the other available categories</const>
+      <const name="MULTIMEDIA">Classes that represent more than one media type, e.g. video files</const>
+      <const name="NETWORK">Network classes interface with system drivers to simplify network communications</const>
+      <const name="SYSTEM">System classes are designed to provide low-level services related to system management</const>
+      <const name="TOOL">Tools provide interactive services for the user</const>
     </constants>
 
     <constants lookup="CLF" comment="Flags for the MetaClass.">

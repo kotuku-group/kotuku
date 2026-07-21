@@ -213,7 +213,7 @@ static void async_wait_callback(OBJECTID ObjectID, bool Active)
       break_wait = (glAsyncWaitCounter.load(std::memory_order_relaxed) IS 0);
    }
 
-   if (break_wait) SendMessage(MSGID::BREAK, MSF::NIL, nullptr, 0);
+   if (break_wait) SendMessage(MSGID::BREAK, MSF::NIL, {});
 }
 
 //********************************************************************************************************************
@@ -320,38 +320,28 @@ static ERR set_owner(OBJECTPTR Object, OBJECTPTR Owner)
       }
    }
 
-   // Track the object resource record to the new owner.  Owner resource managers update their own child lists.
+   std::lock_guard lock(glmObjects);
+   auto object_rec = glObjects.find(Object->UID);
+   auto owner_rec = glObjects.find(Owner->UID);
+   if ((object_rec IS glObjects.end()) or (owner_rec IS glObjects.end())) return ERR::SystemCorrupt;
 
-   std::unique_lock lock(glmResources);
-   std::lock_guard object_lock(glmObjects);
-   auto object_rec   = glObjects.find(Object->UID);
-   auto resource_rec = glResources.find(Object->UID);
-   auto owner_rec    = glResources.find(Owner->UID);
-
-   if ((object_rec IS glObjects.end()) or (resource_rec IS glResources.end())) return ERR::SystemCorrupt;
-
-   if ((owner_rec IS glResources.end()) or (not owner_rec->second.Manager) or
-      (not owner_rec->second.Manager->AddChild)) {
-      return ERR::SystemCorrupt;
+   if (auto previous_owner = object_rec->second.Owner) {
+      if (auto previous_rec = glObjects.find(previous_owner->UID); previous_rec != glObjects.end()) {
+         previous_rec->second.Children.erase(Object);
+      }
    }
 
-   auto &resource = resource_rec->second;
-
-   object_rec->second.OwnerID = Owner->UID;
-   resource.OwnerID = Owner->UID;
-   resource.OwnerManagesChildren = false;
+   object_rec->second.Owner = Owner;
    Object->Owner = Owner;
-
-   owner_rec->second.Manager->AddChild(owner_rec->second, resource);
-   resource.OwnerManagesChildren = true;
+   owner_rec->second.Children.insert(Object);
 
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
-// Object termination hook for FreeResource()
+// Object destruction path for FreeObject().
 
-ERR object_free(ResourceRecord &Resource, Object *Object)
+static ERR object_free(ObjectRecord &, Object *Object)
 {
    kt::Log log("Free");
 
@@ -370,7 +360,6 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
          log.detail("Object #%d locked/pinned; marking for deletion.", Object->UID);
          if ((Object->Owner) and (Object->Owner->collecting())) Object->Owner = nullptr; // The Owner pointer is no longer safe to use
          Object->setFlag(NF::FREE_ON_UNLOCK);
-         Resource.CollectOnUnlock = true; // Defer destruction until the object is unlocked
          return ERR::InUse;
       }
 
@@ -459,13 +448,17 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 
          if (auto lock = std::unique_lock{glmTimer, 1000ms}) {
             for (auto it=glTimers.begin(); it != glTimers.end(); ) {
-               if (it->SubscriberID IS Object->UID) {
+               if ((it->Subscriber IS Object) and (not it->Locked)) {
+                  // Locked entries are in use by the timer dispatcher, which holds an iterator to them; erasing
+                  // one here would invalidate it.  The dispatcher detects the terminated subscriber on its next
+                  // cycle and removes the entry itself.
                   log.warning("%s object #%d has an unfreed timer subscription, routine %p, interval %" PF64,
                      mc->ClassName.c_str(), Object->UID, &it->Routine, (long long)it->Interval);
                   if (it->Routine.isScript() and (not it->Routine.stale()) and (it->Routine.Context != Object)) {
                      script_routines.emplace_back(it->Routine);
                   }
                   if (it->Routine.defined()) it->Routine.unpin();
+                  it->Subscriber->unpinWeak();
                   it = glTimers.erase(it);
                }
                else it++;
@@ -487,15 +480,36 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
          }
       }
 
-      // Clear the object header to help raise use-after-free errors.
+      {
+         std::lock_guard object_lock(glmObjects);
+         if (auto object_rec = glObjects.find(Object->UID); object_rec != glObjects.end()) {
+            // The owner's Children entry must be removed before the object block can be released, so that
+            // pointers held in Children remain valid for as long as glmObjects is held.
+            if (auto owner = object_rec->second.Owner) {
+               if (auto owner_rec = glObjects.find(owner->UID); owner_rec != glObjects.end()) {
+                  owner_rec->second.Children.erase(Object);
+               }
+            }
+
+            // Any children still present at this point survived free_children() due to deferred collection.
+            // Their Owner references must be nulled before this object's block can be released.
+
+            for (auto child : object_rec->second.Children) {
+               if (auto child_rec = glObjects.find(child->UID); child_rec != glObjects.end()) {
+                  child_rec->second.Owner = nullptr;
+               }
+            }
+
+            glObjects.erase(object_rec);
+         }
+      }
+
+      // Clear the object header to help raise use-after-free errors.  The UID must remain valid until after the
+      // critical section above; a child completing deferred collection on another thread resolves this object's
+      // record via glObjects.find(Owner->UID) to remove itself from the Children set.
 
       Object->Class = nullptr;
       Object->UID   = 0;
-
-      {
-         std::lock_guard lock(glmObjects);
-         glObjects.erase(Resource.ResourceID);
-      }
    } // Object lock
 
    Object->setFlag(NF::ZOMBIE);
@@ -518,30 +532,61 @@ ERR object_free(ResourceRecord &Resource, Object *Object)
 
 //********************************************************************************************************************
 
-void object_add_child(ResourceRecord &Parent, ResourceRecord &Child)
-{
-   std::lock_guard lock(glmObjects);
+/*********************************************************************************************************************
 
-   if (auto parent_object = glObjects.find(Parent.ResourceID); parent_object != glObjects.end()) {
-      if (Child.Manager IS &glResourceObject) parent_object->second.Children.insert(Child.ResourceID);
-      else parent_object->second.Resources.insert(Child.ResourceID);
+-FUNCTION-
+FreeObject: Terminates an object by its unique identifier.
+
+FreeObject() starts the destruction process for the object identified by `ObjectID`.  If the object is locked or
+strongly pinned, destruction is deferred until the final lock or pin is released.  Once termination has started, new
+access through ~AccessObject() is rejected.
+
+-INPUT-
+oid ObjectID: The unique identifier of the object to terminate.
+
+-ERRORS-
+Okay: The object was terminated successfully.
+DoesNotExist: The object identifier is not registered.
+InUse: The object is already terminating, or destruction has been deferred until it is unlocked.
+AccessObject: The object could not be accessed for destruction.
+
+-TAGS-
+closes-handle, blocking
+-END-
+
+*********************************************************************************************************************/
+
+ERR FreeObject(OBJECTID ObjectID)
+{
+   ObjectRecord *record;
+   OBJECTPTR object;
+
+   {
+      std::lock_guard lock(glmObjects);
+      auto object_it = glObjects.find(ObjectID);
+      if ((object_it IS glObjects.end()) or (not object_it->second.Object)) return ERR::DoesNotExist;
+      if (object_it->second.Terminating) return ERR::InUse;
+
+      object_it->second.Terminating = true;
+      record = &object_it->second;
+      object = record->Object;
    }
+
+   auto error = object_free(*record, object);
+   if (error != ERR::Okay) {
+      std::lock_guard lock(glmObjects);
+      if (auto object_it = glObjects.find(ObjectID); object_it != glObjects.end()) {
+         if ((error IS ERR::InUse) and object->defined(NF::FREE_ON_UNLOCK)) {
+            object_it->second.CollectOnUnlock = true;
+         }
+         object_it->second.Terminating = false;
+      }
+   }
+
+   return error;
 }
 
 //********************************************************************************************************************
-
-void object_remove_child(ResourceRecord &Parent, ResourceRecord &Child)
-{
-   std::lock_guard lock(glmObjects);
-
-   if (auto object_rec = glObjects.find(Parent.ResourceID); object_rec != glObjects.end()) {
-      object_rec->second.Resources.erase(Child.ResourceID);
-      object_rec->second.Children.erase(Child.ResourceID);
-   }
-}
-
-//********************************************************************************************************************
-
 constexpr CSTRING action_name(OBJECTPTR Object, ACTIONID ActionID)
 {
    if (ActionID > AC::NIL) {
@@ -573,11 +618,9 @@ static void free_children(OBJECTPTR Object)
       // Free all children associated with this object.
 
       if (not object_rec->second.Children.empty()) {
-         for (const auto id : object_rec->second.Children) {
-            auto child_rec = glObjects.find(id);
-            if ((child_rec IS glObjects.end()) or (not child_rec->second.Object)) continue;
-
-            auto child = child_rec->second.Object;
+         // Snapshot UIDs rather than pointers; freeing one child can cascade-free a sibling, and a
+         // subsequent FreeResource() on a stale UID is a safe no-op.
+         for (const auto child : object_rec->second.Children) {
             if (not child->collecting()) {
                if (child->defined(NF::LOCAL)) {
                   log.warning("Found unfreed child object #%d (class %s) belonging to %s object #%d.", child->UID, ResolveClassID(child->classID()), Object->className(), Object->UID);
@@ -669,7 +712,7 @@ void dispatch_queued_action(OBJECTID ObjectID)
                .Callback = next.Callback,
                .DispatchNext = false
             };
-            SendMessage(MSGID::THREAD_ACTION, MSF::NIL, &msg, sizeof(msg));
+            SendMessage(MSGID::THREAD_ACTION, MSF::NIL, std::span((const int8_t *)&msg, sizeof(msg)));
          }
 
          drain_action_queue(ObjectID);
@@ -694,7 +737,7 @@ void dispatch_queued_action(OBJECTID ObjectID)
             .Callback = next.Callback,
             .DispatchNext = false
          };
-         SendMessage(MSGID::THREAD_ACTION, MSF::NIL, &msg, sizeof(msg));
+         SendMessage(MSGID::THREAD_ACTION, MSF::NIL, std::span((const int8_t *)&msg, sizeof(msg)));
       }
 
       drain_action_queue(ObjectID, true);
@@ -750,7 +793,7 @@ static void drain_action_queue(OBJECTID ObjectID, bool Terminating, bool Preserv
             .Callback = action.Callback,
             .DispatchNext = false
          };
-         SendMessage(MSGID::THREAD_ACTION, MSF::NIL, &msg, sizeof(msg));
+         SendMessage(MSGID::THREAD_ACTION, MSF::NIL, std::span((const int8_t *)&msg, sizeof(msg)));
       }
    }
 }
@@ -815,7 +858,7 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
             .Callback = Callback,
             .DeferredFunction = deferred_function
          };
-         SendMessage(MSGID::THREAD_ACTION, MSF::NIL, &msg, sizeof(msg));
+         SendMessage(MSGID::THREAD_ACTION, MSF::NIL, std::span((const int8_t *)&msg, sizeof(msg)));
          cleanup();
          return;
       }
@@ -851,7 +894,7 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
          .Callback = Callback,
          .DeferredFunction = deferred_function
       };
-      SendMessage(MSGID::THREAD_ACTION, MSF::NIL, &msg, sizeof(msg));
+      SendMessage(MSGID::THREAD_ACTION, MSF::NIL, std::span((const int8_t *)&msg, sizeof(msg)));
 
       cleanup();
    });
@@ -2051,12 +2094,7 @@ ERR ListChildren(OBJECTID ObjectID, kt::vector<ChildEntry> *List)
 
    std::unique_lock lock(glmObjects);
    if (auto object_rec = glObjects.find(ObjectID); object_rec != glObjects.end()) {
-      for (const auto id : object_rec->second.Children) {
-         auto child_rec = glObjects.find(id);
-         if (child_rec IS glObjects.end()) continue;
-
-         auto child = child_rec->second.Object;
-         if (not child) continue;
+      for (const auto child : object_rec->second.Children) {
          if (not child->defined(NF::LOCAL)) {
             List->emplace_back(child->UID, child->classID());
          }
@@ -2131,7 +2169,7 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
       log.branch("%s #%d, Flags: $%x", mc->ClassName.c_str(), glResourceID.load(std::memory_order_relaxed), int(Flags));
    }
 
-   // Object memory is allocated directly on the heap and tracked through glResources/glObjects.
+   // Object memory is allocated directly on the heap and tracked through glObjects.
    // Only 8-byte alignment is required for the object header.
 
    if (auto head = (OBJECTPTR)aligned_block_alloc(mc->Size, OBJECT_ALIGNMENT)) {
@@ -2175,9 +2213,7 @@ ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object)
       // Track the object prior to New so that action calls will work correctly.
 
       {
-         std::lock_guard resource_lock(glmResources);
          std::lock_guard object_lock(glmObjects);
-         glResources.insert_or_assign(object_id, ResourceRecord(object_id, head, 0, &glResourceObject));
          glObjects.insert_or_assign(object_id, ObjectRecord(head));
       }
 
@@ -2401,7 +2437,7 @@ ERR QueueAction(ACTIONID ActionID, OBJECTID ObjectID, APTR Args)
 
    buffer.insert(buffer.begin(), (int8_t *)&action, (int8_t *)&action + sizeof(ActionMessage));
 
-   if (auto error = SendMessage(MSGID::ACTION, MSF::NIL, buffer.data(), buffer.size()); error != ERR::Okay) {
+   if (auto error = SendMessage(MSGID::ACTION, MSF::NIL, buffer); error != ERR::Okay) {
       release_copied_args(fields, args_size, buffer.data() + sizeof(ActionMessage), false);
       return error;
    }
@@ -2543,41 +2579,20 @@ ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner)
 
    //if (Object->Owner) log.trace("SetOwner:","Changing the owner for object %d from %d to %d.", Object->UID, Object->ownerID(), Owner->UID);
 
-   // Track the object resource record to the new owner.  Owner resource managers update their own child lists.
+   std::lock_guard lock(glmObjects);
+   auto object_rec = glObjects.find(Object->UID);
+   auto owner_rec = glObjects.find(Owner->UID);
+   if ((object_rec IS glObjects.end()) or (owner_rec IS glObjects.end())) return log.warning(ERR::SystemCorrupt);
 
-   std::unique_lock lock(glmResources);
-   std::lock_guard object_lock(glmObjects);
-   auto object_rec   = glObjects.find(Object->UID);
-   auto resource_rec = glResources.find(Object->UID);
-   auto owner_rec    = glResources.find(Owner->UID);
-
-   if ((object_rec IS glObjects.end()) or (resource_rec IS glResources.end())) return log.warning(ERR::SystemCorrupt);
-
-   if ((owner_rec IS glResources.end()) or (not owner_rec->second.Manager) or
-      (not owner_rec->second.Manager->AddChild)) {
-      return log.warning(ERR::SystemCorrupt);
-   }
-
-   auto &resource = resource_rec->second;
-
-   if (resource.OwnerManagesChildren) {
-      if (auto previous_owner = glResources.find(resource.OwnerID);
-         (previous_owner != glResources.end()) and (previous_owner->second.Manager) and
-         (previous_owner->second.Manager->RemoveChild)) {
-         previous_owner->second.Manager->RemoveChild(previous_owner->second, resource);
+   if (auto previous_owner = object_rec->second.Owner) {
+      if (auto previous_rec = glObjects.find(previous_owner->UID); previous_rec != glObjects.end()) {
+         previous_rec->second.Children.erase(Object);
       }
    }
-   else if (auto previous_owner = glObjects.find(object_rec->second.OwnerID); previous_owner != glObjects.end()) {
-      previous_owner->second.Children.erase(Object->UID);
-   }
 
-   object_rec->second.OwnerID = Owner->UID;
-   resource.OwnerID = Owner->UID;
-   resource.OwnerManagesChildren = false;
+   object_rec->second.Owner = Owner;
    Object->Owner = Owner;
-
-   owner_rec->second.Manager->AddChild(owner_rec->second, resource);
-   resource.OwnerManagesChildren = true;
+   owner_rec->second.Children.insert(Object);
 
    return ERR::Okay;
 }

@@ -365,6 +365,59 @@ function findDictionaryFieldIndex(Meta, FieldID)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Determine the first byte used for fields owned by a compiled class.  Derived-class layout follows field_setup() in
+-- class_metaclass.cpp.  Root classes start after Object; the minimum offset across the complete compiled field list
+-- includes private fields and therefore does not depend on the public/generated subset.
+
+function classStorageOrigin(Class:table):num
+   if not Class.meta then
+      error(f"Cannot determine the storage origin for {glModule.name}.{Class.name}: " ..
+         'live class metadata is unavailable.')
+   end
+
+   if Class.meta.classID != Class.meta.baseClassID then
+      local base = mSys.FindClass(Class.meta.baseClassID, 0)
+      if not base then
+         error(f"Cannot determine the storage origin for {glModule.name}.{Class.name}: " ..
+            'base class metadata is unavailable.')
+      end
+
+      Class.storageOffsetSymbol = 'CLASS_OFFSET_' .. base.className:upper()
+      return (base.publicSize != 0) ? base.publicSize :> base.size
+   end
+
+   Class.storageOffsetSymbol = 'CLASS_OFFSET'
+
+   local origin
+   local meta_fields = Class.meta.fields
+   if meta_fields then
+      for i=0,#meta_fields-1 do
+         local meta_field = meta_fields[i]
+         local err, compiled_field, _ = Class.meta.mtFindField(calcFieldHash(meta_field.name))
+         if (err is ERR_Okay) and compiled_field and not (compiled_field.flags has FD_VIRTUAL) then
+            if (not origin) or (compiled_field.offset < origin) then origin = compiled_field.offset end
+         end
+      end
+   end
+
+   if not origin then
+      error(f"Cannot determine the storage origin for root class {glModule.name}.{Class.name}.")
+   end
+
+   return origin
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Return true when outputFieldGetter() will require pointer arithmetic into compiled class storage.
+
+function fieldNeedsClassOffset(Field:table):bool
+   if not Field.read or (Field.read is 'Get') or Field.private then return false end
+
+   return Field.virtual or (Field.flags has (FD_ARRAY|FD_UNIT)) or
+      ((Field.flags has FD_STRING) and (Field.flags has FD_ALLOC))
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Process the formal field definitions in a class spec.
 
 global function parseClassFields(Class:table, ClientSpec:str)
@@ -426,6 +479,21 @@ global function parseClassFields(Class:table, ClientSpec:str)
             if err is ERR_Okay then
                f.offset = cf.offset
                f.index  = findDictionaryFieldIndex(Class.meta, field_id) ?? cf.index
+            end
+         end
+
+         f.needsClassOffset = fieldNeedsClassOffset(f)
+         if f.needsClassOffset then
+            if f.offset is nil then
+               error(f"Cannot generate direct access for {glModule.name}.{Class.name}.{f.name}: " ..
+                  'live field metadata is unavailable.')
+            end
+
+            Class.storageOrigin ?= classStorageOrigin(Class)
+            f.relativeOffset = f.offset - Class.storageOrigin
+            if (f.relativeOffset < 0) or (f.offset >= Class.meta.size) then
+               error(f"Invalid live offset {f.offset} for {glModule.name}.{Class.name}.{f.name} " ..
+                  f"(storage origin {Class.storageOrigin}, class size {Class.meta.size}).")
             end
          end
 

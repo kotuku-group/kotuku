@@ -321,8 +321,8 @@ currently supported for streams.  For that reason, set the type variables to eit
 `LTYPE::UNIDIRECTIONAL`.
 
 -INPUT-
-func Callback: This callback function must be able to return raw audio data for streaming.
-func OnStop: This optional callback function will be called when the stream stops playing.
+func Callback: This callback function must be able to return raw audio data for streaming.  The function context will be pinned as a safety measure.
+func OnStop: This optional callback function will be called when the stream stops playing.  The function context will be pinned as a safety measure.
 int(SFM) SampleFormat: Indicates the format of the sample data that you are adding.
 int SampleLength: Total byte-length of the sample data that is being streamed.  May be set to zero if the length is infinite or unknown.
 int PlayOffset: Offset the playing position by this byte index.
@@ -1346,6 +1346,7 @@ extAudio::extAudio(objMetaClass *ClassPtr, OBJECTID ObjectID) : objAudio(ClassPt
    PeriodSize  = 2048;
    MaxChannels = 8;
    Device      = glAudioDevice.empty() ? "default" : glAudioDevice;
+   MasterVolume = 1.0;
 
    const SystemState *state = GetSystemState();
    if ((iequals(state->Platform, "Native")) or (iequals(state->Platform, "Linux"))) {
@@ -1357,10 +1358,8 @@ extAudio::extAudio(objMetaClass *ClassPtr, OBJECTID ObjectID) : objAudio(ClassPt
 #ifdef __linux__
    Volumes.resize(2);
    Volumes[0].Name = "Master";
-   for (int i=0; i < std::ssize(Volumes[0].Channels); i++) Volumes[0].Channels[i] = 1.0;
 
    Volumes[1].Name = "PCM";
-   for (int i=0; i < std::ssize(Volumes[1].Channels); i++) Volumes[1].Channels[i] = 1.0;
 #else
    Volumes.resize(1);
    Volumes[0].Name = "Master";

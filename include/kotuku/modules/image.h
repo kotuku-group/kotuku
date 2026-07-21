@@ -147,32 +147,32 @@ class objImage : public Object {
    }
 
    inline ERR getAuthor(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 160));
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 64));
       return ERR::Okay;
    }
 
    inline ERR getCopyright(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 192));
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 96));
       return ERR::Okay;
    }
 
    inline ERR getTitle(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 224));
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 128));
       return ERR::Okay;
    }
 
    inline ERR getSoftware(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 256));
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 160));
       return ERR::Okay;
    }
 
    inline ERR getDescription(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 288));
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 192));
       return ERR::Okay;
    }
 
    inline ERR getDisclaimer(std::string_view &Value) noexcept {
-      Value = *((std::string *)(((int8_t *)this) + 320));
+      Value = *((std::string *)(((int8_t *)this) + CLASS_OFFSET + 224));
       return ERR::Okay;
    }
 

@@ -112,8 +112,8 @@
       <prototype>ERR snd::AddStream(OBJECTPTR Object, FUNCTION Callback, FUNCTION OnStop, SFM SampleFormat, INT SampleLength, INT PlayOffset, struct AudioLoop * Loop, INT LoopSize, INT * Result)</prototype>
       <tiriPrototype>err, Result:num = AddStream(Callback:func, OnStop:func, SampleFormat:num, SampleLength:num, PlayOffset:num, Loop:any, LoopSize:num)</tiriPrototype>
       <input>
-        <param type="FUNCTION" name="Callback">This callback function must be able to return raw audio data for streaming.</param>
-        <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.</param>
+        <param type="FUNCTION" name="Callback">This callback function must be able to return raw audio data for streaming.  The function context will be pinned as a safety measure.</param>
+        <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.  The function context will be pinned as a safety measure.</param>
         <param type="SFM" name="SampleFormat" lookup="SFM">Indicates the format of the sample data that you are adding.</param>
         <param type="INT" name="SampleLength">Total byte-length of the sample data that is being streamed.  May be set to zero if the length is infinite or unknown.</param>
         <param type="INT" name="PlayOffset">Offset the playing position by this byte index.</param>
@@ -375,24 +375,18 @@
       <description>
 <p>The PeriodSize field determines the granularity of audio buffer management, affecting system responsiveness, processing efficiency, and overall audio quality. This setting works in conjunction with the <fl>Periods</fl> field to define the complete buffering architecture.</p>
 <list type="bullet">
-<li>
-<b>Minimum</b>: 1024 bytes (1KB) - Enables very low latency but requires high-performance processing.</li>
-<li>
-<b>Maximum</b>: 16384 bytes (16KB) - Provides maximum buffering and processing time per period.</li>
-<li>
-<b>Recommended</b>: 2048 bytes (2KB) - Optimal balance for most applications and hardware configurations.</li>
+<li><b>Minimum</b>: 1024 bytes (1KB) - Enables very low latency but requires high-performance processing.</li>
+<li><b>Maximum</b>: 16384 bytes (16KB) - Provides maximum buffering and processing time per period.</li>
+<li><b>Recommended</b>: 2048 bytes (2KB) - Optimal balance for most applications and hardware configurations.</li>
 </list>
 <p>Period latency (in seconds) = <code>PeriodSize ÷ (SampleRate × Channels × BytesPerSample)</code></p>
 <p>For example, with a 2048-byte period at 44100Hz stereo 16-bit <code>Latency = 2048 ÷ (44100 × 2 × 2) = 11.6ms per period</code></p>
 <p>The combination of PeriodSize and <fl>Periods</fl> creates a multi-stage buffering system where audio data flows through sequential periods, providing time for processing whilst maintaining continuous playback.</p>
 <header>Application Guidelines</header>
 <list type="bullet">
-<li>
-<b>Real-time applications</b>: Use smaller periods (1-2KB) with fewer periods for minimal latency.</li>
-<li>
-<b>General applications</b>: Use medium periods (2-4KB) with 4 periods for reliable performance.</li>
-<li>
-<b>Background audio</b>: Use larger periods (8-16KB) with more periods for maximum efficiency.</li>
+<li><b>Real-time applications</b>: Use smaller periods (1-2KB) with fewer periods for minimal latency.</li>
+<li><b>General applications</b>: Use medium periods (2-4KB) with 4 periods for reliable performance.</li>
+<li><b>Background audio</b>: Use larger periods (8-16KB) with more periods for maximum efficiency.</li>
 </list>
       </description>
     </field>
@@ -406,12 +400,9 @@
 <p>The Periods field controls the segmentation of the internal audio buffer, directly affecting latency, performance, and audio continuity. This setting is particularly relevant for ALSA-based systems where period-based buffering is fundamental to audio driver operation.</p>
 <p>The total audio buffer is divided into discrete periods, each representing a contiguous block of audio data. The audio system processes data period by period, allowing for predictable latency characteristics and efficient interrupt handling.</p>
 <list type="bullet">
-<li>
-<b>Minimum</b>: 2 periods (provides double-buffering for basic audio continuity)</li>
-<li>
-<b>Maximum</b>: 16 periods (enables extensive buffering for demanding applications)</li>
-<li>
-<b>Recommended</b>: 4 periods (balances latency and reliability for most use cases)</li>
+<li><b>Minimum</b>: 2 periods (provides double-buffering for basic audio continuity)</li>
+<li><b>Maximum</b>: 16 periods (enables extensive buffering for demanding applications)</li>
+<li><b>Recommended</b>: 4 periods (balances latency and reliability for most use cases)</li>
 </list>
 <p>Fewer periods reduce overall system latency but increase the risk of audio dropouts if processing cannot keep pace with audio consumption. More periods provide greater buffering security at the cost of increased latency.</p>
       </description>
@@ -427,14 +418,10 @@
 <p>The value range spans from 0 (minimal processing) to 100 (maximum fidelity), with recommended settings between 70-80 for most applications. This range provides an optimal balance between audio clarity and system performance.</p>
 <p>Setting the Quality value automatically adjusts the following processing flags:</p>
 <list type="bullet">
-<li>
-<b>Quality 0-9</b>: Minimal processing, no filtering or oversampling applied.</li>
-<li>
-<b>Quality 10-32</b>: Enables <code>ADF::FILTER_LOW</code> for basic output filtering.</li>
-<li>
-<b>Quality 33-65</b>: Activates <code>ADF::FILTER_HIGH</code> for enhanced frequency response.</li>
-<li>
-<b>Quality 66-100</b>: Implements <code>ADF::OVER_SAMPLING</code> and <code>ADF::FILTER_HIGH</code> for maximum fidelity.</li>
+<li><b>Quality 0-9</b>: Minimal processing, no filtering or oversampling applied.</li>
+<li><b>Quality 10-32</b>: Enables <code>ADF::FILTER_LOW</code> for basic output filtering.</li>
+<li><b>Quality 33-65</b>: Activates <code>ADF::FILTER_HIGH</code> for enhanced frequency response.</li>
+<li><b>Quality 66-100</b>: Implements <code>ADF::OVER_SAMPLING</code> and <code>ADF::FILTER_HIGH</code> for maximum fidelity.</li>
 </list>
       </description>
     </field>

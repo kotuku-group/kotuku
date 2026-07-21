@@ -85,21 +85,21 @@
   </fields>
   <types>
     <constants lookup="DEVICE">
-      <const name="BOOKMARK">This marker indicates that the presented volume is a bookmark and not a device name.</const>
+      <const name="BOOKMARK">This marker indicates that the presented volume is a bookmark and not a device name</const>
       <const name="COMPACT_DISC">Compact disc style device</const>
-      <const name="FIXED">Catch-all for fixed media devices that are not directly identifiable.</const>
+      <const name="FIXED">Catch-all for fixed media devices that are not directly identifiable</const>
       <const name="FLOPPY_DISK">Floppy disk style device</const>
       <const name="HARD_DISK">Hard disk style device</const>
       <const name="MEMORY">Device is RAM, ROM, WORM, NVRAM, flashdisk or other form of memory.  Does not guarantee a fast connection as it could be over a slow USB 1.1 connection for example</const>
-      <const name="MODEM">Device is a modem.</const>
+      <const name="MODEM">Device is a modem</const>
       <const name="NETWORK">Device represents a network link</const>
-      <const name="PRINTER">Device is a paper-based printer.</const>
-      <const name="PRINTER_3D">Device is a three dimensional printer.</const>
+      <const name="PRINTER">Device is a paper-based printer</const>
+      <const name="PRINTER_3D">Device is a three dimensional printer</const>
       <const name="READ">Device is readable</const>
       <const name="REMOVABLE">Device media is removable from the hardware</const>
       <const name="REMOVEABLE">Device media is removable from the hardware</const>
-      <const name="SCANNER">Device is a two dimensional scanner.</const>
-      <const name="SCANNER_3D">Device is a three dimensional scanner.</const>
+      <const name="SCANNER">Device is a two dimensional scanner</const>
+      <const name="SCANNER_3D">Device is a three dimensional scanner</const>
       <const name="SOFTWARE">Device is virtual/software defined</const>
       <const name="TAPE">Tape/Stream style device</const>
       <const name="TEMPORARY">All storage is temporary</const>

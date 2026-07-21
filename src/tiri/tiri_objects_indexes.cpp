@@ -195,12 +195,13 @@ static ERR object_set_function(lua_State *Lua, OBJECTPTR Object, const Field *Fi
 static ERR object_set_object(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
 {
    if (auto def = lua_toobject(Lua, ValueIndex)) {
-      if (auto ptr_obj = access_object(def)) {
-         ERR error = Object->set(Field, ptr_obj);
+      OBJECTPTR ptr_obj;
+      if (auto error = access_object(def, ptr_obj); error IS ERR::Okay) {
+         error = Object->set(Field, ptr_obj);
          release_object(def);
          return error;
       }
-      else return ERR::AccessObject;
+      else return error;
    }
    else return Object->set(Field, (APTR)nullptr);
 }
@@ -446,9 +447,9 @@ static int object_get(lua_State *Lua)
    if (luaL_checkstring(Lua, 1, fieldname)) {
       auto def = object_context(Lua);
 
-      auto obj = access_object(def);
-      if (not obj) {
-         Lua->CaughtError = ERR::AccessObject;
+      OBJECTPTR obj;
+      if (auto error = access_object(def, obj); error != ERR::Okay) {
+         Lua->CaughtError = error;
          lua_pushvalue(Lua, 2); // Push the client's default value
          return 1;
       }
@@ -468,7 +469,7 @@ static int object_get(lua_State *Lua)
             result = object_get_struct(Lua, obj_read(0, nullptr, (APTR)field), def);
          }
          else if (field->Flags & FD_STRING) {
-            if (field->Flags & FD_ALLOC) result = object_get_cppstring(Lua, obj_read(0, nullptr, (APTR)field), def);
+            if (field->Flags & FD_STORE) result = object_get_cppstring(Lua, obj_read(0, nullptr, (APTR)field), def);
             else result = object_get_string(Lua, obj_read(0, nullptr, (APTR)field), def);
          }
          else if (field->Flags & FD_POINTER) {
@@ -524,15 +525,15 @@ static int object_getkey(lua_State *Lua)
    std::string_view fieldname;
    if (luaL_checkstring(Lua, 1, fieldname)) {
       auto def = object_context(Lua);
-      ERR error;
-      if (auto obj = access_object(def)) {
+      OBJECTPTR obj;
+      ERR error = access_object(def, obj);
+      if (error IS ERR::Okay) {
          std::string buffer;
          if (!(error = acGetKey(obj, fieldname, buffer))) {
             lua_pushstring(Lua, buffer);
          }
          release_object(def);
       }
-      else error = ERR::AccessObject;
 
       if (error != ERR::Okay) {
          if (lua_gettop(Lua) >= 2) lua_pushvalue(Lua, 2);
@@ -554,7 +555,8 @@ static int object_set(lua_State *Lua)
    std::string_view fieldname;
    if (not luaL_checkstring(Lua, 1, fieldname)) return 0;
 
-   if (auto obj = access_object(def)) {
+   OBJECTPTR obj;
+   if (access_object(def, obj) IS ERR::Okay) {
       int type = lua_type(Lua, 2);
 
       OBJECTPTR target;
@@ -589,7 +591,8 @@ static int object_setkey(lua_State *Lua)
    std::string_view fieldname;
    if (luaL_checkstring(Lua, 1, fieldname)) {
       auto value = luaL_optstring(Lua, 2, nullptr);
-      if (auto obj = access_object(def)) {
+      OBJECTPTR obj;
+      if (access_object(def, obj) IS ERR::Okay) {
          ERR error = acSetKey(obj, fieldname, value);
          release_object(def);
          lua_pushinteger(Lua, int(error));
@@ -659,13 +662,13 @@ static ERR set_object_field(lua_State *Lua, OBJECTPTR Object, uint32_t FieldHash
 template <class Callback> static int object_get_field(lua_State *Lua, const obj_read &Handle, GCobject *Def,
    Callback GetValue)
 {
-   ERR error;
-   if (auto obj = access_object(Def)) {
+   OBJECTPTR obj;
+   ERR error = access_object(Def, obj);
+   if (error IS ERR::Okay) {
       auto field = (Field *)(Handle.Data);
       error = GetValue(obj, field);
       release_object(Def);
    }
-   else error = ERR::AccessObject;
 
    Lua->CaughtError = error;
    return error != ERR::Okay ? 0 : 1;
@@ -688,8 +691,9 @@ static int object_get_array(lua_State *Lua, const obj_read &Handle, GCobject *De
             if (!(error = Object->get(Field->FieldID, values))) {
                kt::vector<std::string> strings(values.data(), values.data() + values.size());
                GCarray *array = lj_array_new(Lua, values.size(), AET::STR_CPP, (void *)&strings, ARRAY_CACHED, "");
-               lj_gc_check(Lua);
+               // Anchor before the GC check so the unreferenced array cannot be swept by a white flip.
                setarrayV(Lua, Lua->top++, array);
+               lj_gc_check(Lua);
             }
          }
          else {
@@ -731,15 +735,15 @@ static int object_get_struct(lua_State *Lua, const obj_read &Handle, GCobject *D
          APTR result;
          if (!(error = Object->get(Field->FieldID, result))) {
             if (result) {
-               // Object fields expose non-owning live views.  Resource fields may transfer ownership when FD_ALLOC is
+               // Object fields expose non-owning live views.  Resource fields may transfer ownership when FD_STORE is
                // set, matching other struct-returning API bridges.
                //
                // Non-owning views are bound to the object's lifecycle: access after the object is destroyed raises
                // a catchable script error via lj_struct_stale() rather than dereferencing freed memory.  The guard
-               // is specific to lifecycle-bound structs - owned copies (FD_ALLOC transfers) and inline structs carry
+               // is specific to lifecycle-bound structs - owned copies (FD_STORE transfers) and inline structs carry
                // no dependency and skip it, and a JIT-compiled access would compile the guard out in that case.
                bool is_resource = Field->Flags & FD_RESOURCE;
-               bool owns_copy = is_resource and (Field->Flags & FD_ALLOC);
+               bool owns_copy = is_resource and (Field->Flags & FD_STORE);
                if (not push_struct(Lua->script, result, (CSTRING)Field->Arg, owns_copy, is_resource,
                      owns_copy ? nullptr : Object)) {
                   error = ERR::Search;
@@ -779,7 +783,6 @@ static int object_get_string(lua_State *Lua, const obj_read &Handle, GCobject *D
       if (!(error = Object->get(Field->FieldID, result))) {
          if (result.empty()) lua_pushnil(Lua);
          else lua_pushlstring(Lua, result.data(), result.size());
-         if (Field->Flags & FD_ALLOC) FreeResource(result.data());
       }
       return error;
    });

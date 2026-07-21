@@ -98,7 +98,7 @@
       <error code="Okay">Operation successful.</error>
       <error code="Search">Unable to find a suitable font.</error>
       <error code="AccessObject">Access to the font database was denied, or the object does not exist.</error>
-      <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+      <error code="AllocMemory">Failed to create a new memory block</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>

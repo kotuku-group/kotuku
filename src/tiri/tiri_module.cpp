@@ -22,6 +22,7 @@
 #include <set>
 #include <mutex>
 #include <new>
+#include <limits>
 
 struct module {
    const struct Function *Functions = nullptr;
@@ -41,6 +42,46 @@ constexpr int MAX_MODULE_ARGS = 16;
 constexpr size_t BUFFER_ELEMENT_SIZE = 16;
 constexpr size_t BUFFER_SIZE = MAX_MODULE_ARGS * BUFFER_ELEMENT_SIZE;
 constexpr size_t MAX_STRING_PREFIX_LENGTH = 200;
+
+struct module_span_arg {
+   std::span<const int8_t> ConstBytes;
+   std::span<int8_t> MutableBytes;
+   std::span<const char> ConstChars;
+   std::span<char> MutableChars;
+
+   APTR set_const_bytes(CPTR Data, size_t Size) noexcept {
+      ConstBytes = std::span<const int8_t>((const int8_t *)Data, Size);
+      return &ConstBytes;
+   }
+
+   APTR set_mutable_bytes(APTR Data, size_t Size) noexcept {
+      MutableBytes = std::span<int8_t>((int8_t *)Data, Size);
+      return &MutableBytes;
+   }
+
+   APTR set_const_chars(CSTRING Data, size_t Size) noexcept {
+      ConstChars = std::span<const char>(Data, Size);
+      return &ConstChars;
+   }
+
+   APTR set_mutable_chars(STRING Data, size_t Size) noexcept {
+      MutableChars = std::span<char>(Data, Size);
+      return &MutableChars;
+   }
+};
+
+// Return the complete byte extent of an array without allowing multiplication to wrap.
+
+[[nodiscard]] static ERR array_byte_extent(const GCarray *Array, size_t *Extent) noexcept
+{
+   if (Array->len and (size_t(Array->elemsize) > (std::numeric_limits<size_t>::max() / Array->len))) {
+      return ERR::Args;
+   }
+
+   *Extent = size_t(Array->len) * Array->elemsize;
+   return ERR::Okay;
+}
+
 struct CaseInsensitiveCompare {
    using is_transparent = void;
 
@@ -513,8 +554,9 @@ static int module_index(lua_State *Lua)
 // PTR|STRUCT   = Struct *.  Accepts an existing Tiri struct or converts a Tiri table to a temporary struct.
 // OBJECT|PTR   = OBJECTPTR.  Accepts a Tiri object and resolves it to an object pointer.
 // ARRAY        = Type *.  Accepts a Tiri array and passes its data pointer.  ARRAYSIZE can follow.
-// ARRAY|BUFFER = Type *.  Accepts a Tiri array and treats ARRAYSIZE/BUFSIZE as byte capacity.
 // ARRAY|CPP    = Unsupported as input.  kt::vector<> input marshalling is not implemented for module calls.
+// SPAN         = const std::span<int8_t/char> &.  Accepts complete Tiri array or string storage, or an empty value.
+// SPAN|MUTABLE = const std::span<int8_t/char> &.  Requires writable array or mutable string storage.
 // FUNCTION     = FUNCTION *.  Accepts a Tiri function or global function name.
 //
 // Mutable combinations.  User is expected to supply a reference to a suitable storage area, as defined by the type
@@ -543,10 +585,6 @@ static int module_index(lua_State *Lua)
 // RESULT|ARRAY      = Type **.  Function writes an array pointer; returned to Tiri as an array.  ARRAYSIZE may
 //                     follow to define element count.
 // RESULT|ARRAY|CPP  = kt::vector<> *.  Tiri provides an empty kt::vector<>; returned to Tiri as an array.
-// RESULT|BUFFER     = APTR.  Caller supplies a mutable Tiri buffer or array for the function to fill; BUFSIZE
-//                     must follow.
-// RESULT|BUFFER|CPP = Unsupported.  kt::vector<> output marshalling is not implemented for module calls.
-//
 // Mixed direction:
 //
 // MUTABLE|RESULT|CPP = An empty C++ buffer is supplied as input (e.g. std::string or kt::vector<>) and it will be
@@ -569,7 +607,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 {
    kt::Log log("module_call");
 
-   uint8_t buffer[MAX_MODULE_ARGS * 16]; // 16 bytes seems overkill but some parameters output meta information (e.g. size).
+   uint8_t buffer[BUFFER_SIZE]; // 16 bytes per argument accommodates output metadata such as sizes.
    int i;
 
    // Track dynamically allocated objects for cleanup
@@ -628,6 +666,8 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    std::vector<allocated_struct_ref> allocated_structs;
    std::vector<mutable_cpp_string_ref> mutable_cpp_strings;
    std::vector<cpp_array_result> cpp_arrays;
+   std::array<module_span_arg, MAX_MODULE_ARGS> span_args;
+   size_t span_count = 0;
    strings.reserve(8); // Keep the collection stable
    string_views.reserve(8);
 
@@ -713,7 +753,95 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
       //log.trace("%s() Arg: %s, Offset: %d, Type: $%.8x (received %s)", mod->Functions[index].Name, args[i].Name, j, argtype, lua_typename(Lua, lua_type(Lua, i)));
 
-      if (argtype & FD_RESULT) {
+      if ((argtype & FDF_SPAN) IS FDF_SPAN) {
+         if (span_count >= span_args.size()) {
+            ErrorMsg = "Too many span arguments.";
+            return ERR::Args;
+         }
+
+         if (argtype & (FD_RESULT|FD_ALLOC)) {
+            ErrorMsg = std::format("Function '{}' uses an unsupported span result.", mod->Functions[index].Name);
+            return ERR::NoSupport;
+         }
+
+         if (argtype & FD_STRUCT) {
+            ErrorMsg = std::format("Function '{}' uses an unsupported typed structure span.",
+               mod->Functions[index].Name);
+            return ERR::NoSupport;
+         }
+
+         bool mutable_span = argtype & FD_MUTABLE;
+         bool char_span = argtype & FD_STR;
+         bool raw_span = argtype & FD_PTR;
+         if (not char_span and not raw_span) {
+            ErrorMsg = std::format("Function '{}' uses an unsupported typed span.", mod->Functions[index].Name);
+            return ERR::NoSupport;
+         }
+
+         APTR span_address = nullptr;
+         auto &span_arg = span_args[span_count++];
+         auto value_type = lua_type(Lua, i);
+
+         if (value_type IS LUA_TARRAY) {
+            auto array = arrayV(Lua, i);
+            if (mutable_span and array->is_readonly()) {
+               ErrorMsg = std::format("Arg #{} ({}) requires a writable array.", i, args[i].Name);
+               return ERR::InvalidType;
+            }
+
+            size_t extent;
+            if (auto error = array_byte_extent(array, &extent); error != ERR::Okay) {
+               ErrorMsg = std::format("Arg #{} ({}) array extent is too large.", i, args[i].Name);
+               return error;
+            }
+
+            if (char_span) {
+               if (mutable_span) span_address = span_arg.set_mutable_chars((STRING)array->arraydata(), extent);
+               else span_address = span_arg.set_const_chars((CSTRING)array->arraydata(), extent);
+            }
+            else {
+               if (mutable_span) span_address = span_arg.set_mutable_bytes(array->arraydata(), extent);
+               else span_address = span_arg.set_const_bytes(array->arraydata(), extent);
+            }
+         }
+         else if (value_type IS LUA_TSTRING) {
+            auto string = string_arg(Lua, i);
+            if (mutable_span and not lj_str_ismutable(string)) {
+               ErrorMsg = std::format("Arg #{} ({}) requires a mutable string buffer.", i, args[i].Name);
+               return ERR::InvalidType;
+            }
+
+            if (char_span) {
+               if (mutable_span) span_address = span_arg.set_mutable_chars(strdatawr(string), string->len);
+               else span_address = span_arg.set_const_chars(strdata(string), string->len);
+            }
+            else {
+               if (mutable_span) span_address = span_arg.set_mutable_bytes((APTR)strdatawr(string), string->len);
+               else span_address = span_arg.set_const_bytes(strdata(string), string->len);
+            }
+         }
+         else if ((value_type IS LUA_TNIL) or (value_type IS LUA_TNONE)) {
+            if (char_span) {
+               if (mutable_span) span_address = span_arg.set_mutable_chars(nullptr, 0);
+               else span_address = span_arg.set_const_chars(nullptr, 0);
+            }
+            else {
+               if (mutable_span) span_address = span_arg.set_mutable_bytes(nullptr, 0);
+               else span_address = span_arg.set_const_bytes(nullptr, 0);
+            }
+         }
+         else {
+            ErrorMsg = std::format("Arg #{} ({}) expected an array, string or nil for a span, got {}.", i,
+               args[i].Name, lua_typename(Lua, value_type));
+            return ERR::InvalidType;
+         }
+
+         ((APTR *)(buffer + j))[0] = span_address;
+         arg_values[in] = buffer + j;
+         arg_types[in++] = &ffi_type_pointer;
+         j += sizeof(APTR);
+      }
+      else if (argtype & FD_RESULT) {
          // Result arguments are stored in the buffer with a pointer to an empty variable space (stored at the end of
          // the buffer)
 
@@ -741,83 +869,6 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             else {
                ErrorMsg = std::format("Function '{}' uses an unsupported C++ array result type.", mod->Functions[index].Name);
                return error;
-            }
-         }
-         else if (argtype & FD_BUFFER) { // For fixed-size buffers; the next parameter must indicate the size.
-            // The client must supply an argument that will store a buffer result.  This is a different case to the
-            // storage of type values.  Buffers can be combined with FD_ARRAY to store more than one element.
-
-            if (argtype & FD_CPP) {
-               ErrorMsg = "No support for calls utilising C++ arrays.";
-               return ERR::NoSupport;
-            }
-
-            if (lua_type(Lua, i) IS LUA_TARRAY) {
-               GCarray *arr = arrayV(Lua, i);
-               ((APTR *)(buffer + j))[0] = arr->arraydata();
-               arg_values[in] = buffer + j;
-               arg_types[in++] = &ffi_type_pointer;
-               j += sizeof(APTR);
-
-               if (args[i+1].Type & (FD_BUFSIZE|FD_ARRAYSIZE)) {
-                  if (args[i+1].Type & FD_INT) {
-                     ((int *)(buffer + j))[0] = arr->len * arr->elemsize;
-                     arg_values[in]  = buffer + j;
-                     arg_types[in++] = &ffi_type_sint32;
-                     i++;
-                     j += sizeof(int);
-                  }
-                  else if (args[i+1].Type & FD_INT64) {
-                     ((int64_t *)(buffer + j))[0] = arr->len * arr->elemsize;
-                     arg_values[in]  = buffer + j;
-                     arg_types[in++] = &ffi_type_sint64;
-                     i++;
-                     j += sizeof(int64_t);
-                  }
-                  else log.warning("Integer type unspecified for BUFSIZE argument in %s()", mod->Functions[index].Name);
-               }
-               else {
-                  ErrorMsg = std::format("Function '{}' is not compatible with Tiri.", mod->Functions[index].Name);
-                  return ERR::InvalidType;
-               }
-            }
-            else if (lua_type(Lua, i) IS LUA_TSTRING) {
-               GCstr *string = string_arg(Lua, i);
-               if (not lj_str_ismutable(string)) {
-                  ErrorMsg = std::format("Arg #{} requires a mutable buffer.", i);
-                  return ERR::InvalidType;
-               }
-
-               ((APTR *)(buffer + j))[0] = strdatawr(string);
-               arg_values[in] = buffer + j;
-               arg_types[in++] = &ffi_type_pointer;
-               j += sizeof(APTR);
-
-               if (args[i+1].Type & (FD_BUFSIZE|FD_ARRAYSIZE)) {
-                  if (args[i+1].Type & FD_INT) {
-                     ((int *)(buffer + j))[0] = int(string->len);
-                     arg_values[in]  = buffer + j;
-                     arg_types[in++] = &ffi_type_sint32;
-                     i++;
-                     j += sizeof(int);
-                  }
-                  else if (args[i+1].Type & FD_INT64) {
-                     ((int64_t *)(buffer + j))[0] = string->len;
-                     arg_values[in]  = buffer + j;
-                     arg_types[in++] = &ffi_type_sint64;
-                     i++;
-                     j += sizeof(int64_t);
-                  }
-                  else log.warning("Integer type unspecified for BUFSIZE argument in %s()", mod->Functions[index].Name);
-               }
-               else {
-                  ErrorMsg = std::format("Function '{}' is not compatible with Tiri.", mod->Functions[index].Name);
-                  return ERR::InvalidType;
-               }
-            }
-            else {
-               ErrorMsg = std::format("A memory buffer is required in arg #{}.", i);
-               return ERR::Args;
             }
          }
          else if (argtype & FD_STR) { // FD_RESULT
@@ -1012,14 +1063,14 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                }
                else {
                   if (args[i+1].Type & FD_INT) {
-                     ((int *)(buffer + j))[0] = (argtype & FD_BUFFER) ? arr->len * arr->elemsize : arr->len;
+                     ((int *)(buffer + j))[0] = arr->len;
                      arg_values[in] = buffer + j;
                      arg_types[in++] = &ffi_type_sint32;
                      j += sizeof(int);
                      i++;
                   }
                   else if (args[i+1].Type & FD_INT64) {
-                     ((int64_t *)(buffer + j))[0] = (argtype & FD_BUFFER) ? arr->len * arr->elemsize : arr->len;
+                     ((int64_t *)(buffer + j))[0] = arr->len;
                      arg_values[in] = buffer + j;
                      arg_types[in++] = &ffi_type_sint64;
                      j += sizeof(int64_t);
@@ -1109,13 +1160,17 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             if (auto direct = direct_object_ptr(obj)) {
                ((OBJECTPTR *)(buffer + j))[0] = direct;
             }
-            else if (auto ptr_obj = (OBJECTPTR)access_object(obj)) {
-               ((OBJECTPTR *)(buffer + j))[0] = ptr_obj;
-               release_object(obj);
-            }
             else {
-               log.warning("Unable to resolve object pointer for #%d.", obj->uid);
-               ((OBJECTPTR *)(buffer + j))[0] = nullptr;
+               OBJECTPTR ptr_obj;
+               if (auto error = access_object(obj, ptr_obj); error IS ERR::Okay) {
+                  ((OBJECTPTR *)(buffer + j))[0] = ptr_obj;
+                  release_object(obj);
+               }
+               else {
+                  // Referenced object probably does not exist
+                  ErrorMsg = std::format("Unable to resolve object #{}: {}", obj->uid, GetErrorMsg(error));
+                  return error;
+               }
             }
 
             arg_values[in] = buffer + j;
@@ -1331,7 +1386,7 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
    for (int i=1; args[i].Name; i++) {
       const auto argtype = args[i].Type;
 
-      if ((argtype & FD_ARRAY) and (not (argtype & FD_BUFFER))) {
+      if (argtype & FD_ARRAY) {
          if (argtype & FD_RESULT) {
             auto var = ((APTR *)scan)[0];
             scan += sizeof(APTR);
@@ -1387,7 +1442,7 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
          }
          scan += sizeof(APTR);
       }
-      else if (argtype & (FD_PTR|FD_BUFFER|FD_STRUCT)) {
+      else if (argtype & (FD_PTR|FD_STRUCT)) {
          if (argtype & FD_RESULT) {
             auto var = ((APTR *)scan)[0];
             scan += sizeof(APTR);

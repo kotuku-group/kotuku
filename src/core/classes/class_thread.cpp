@@ -179,7 +179,7 @@ static ERR THREAD_Activate(extThread *Self)
       // if the client routine is persistently running during shutdown.
 
       // See msg_threadcallback()
-      SendMessage(MSGID::THREAD_CALLBACK, MSF::NIL, &msg, sizeof(msg));
+      SendMessage(MSGID::THREAD_CALLBACK, MSF::NIL, std::span((const int8_t *)&msg, sizeof(msg)));
 
       // Reset the crash indicators and invoke the cleanup code.
       tlThreadRef     = nullptr;

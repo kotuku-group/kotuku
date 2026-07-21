@@ -34,13 +34,10 @@ using namespace kt;
 
 static void erase_resource(ResourceRecord &Resource)
 {
-   if (not glCrashStatus) {
-      if (Resource.OwnerManagesChildren) {
-         auto parent = glResources.find(Resource.OwnerID);
-         if ((parent != glResources.end()) and (parent->second.Manager) and (parent->second.Manager->RemoveChild)) {
-            parent->second.Manager->RemoveChild(parent->second, Resource);
-         }
-         Resource.OwnerManagesChildren = false;
+   if ((not glCrashStatus) and Resource.OwnerID) {
+      std::lock_guard object_lock(glmObjects);
+      if (auto owner = glObjects.find(Resource.OwnerID); owner != glObjects.end()) {
+         owner->second.Resources.erase(Resource.ResourceID);
       }
    }
 
@@ -72,14 +69,14 @@ static ERR free_private_memory_resource(MEMORYID MemoryID)
 }
 
 //********************************************************************************************************************
-// Resource manager for AllocMemory()
+// Resource manager for AllocResource()
 
 static ERR memory_resource_free(ResourceRecord &Resource, APTR Address)
 {
    return free_private_memory_resource(Resource.ResourceID);
 }
 
-static ResourceManager glResourceMemoryHandler = { "Memory", &memory_resource_free, nullptr, nullptr, false };
+static ResourceManager glResourceMemoryHandler = { "Memory", &memory_resource_free, false };
 
 //********************************************************************************************************************
 
@@ -97,28 +94,22 @@ void UntrackResource(RESOURCEID ResourceID)
 /*********************************************************************************************************************
 
 -FUNCTION-
-AllocMemory: Allocates a managed memory block on the heap.
+AllocResource: Allocates a managed memory block on the heap.
 
-AllocMemory() provides comprehensive memory allocation with automatic ownership tracking, resource management, and
-debugging features. The function allocates a new block of memory and associates it with the current execution context,
+AllocResource() reserves an area of memory of `Size` bytes and tracks it using the supplied resource manager.  If
+no `Manager` is provided, the default memory manager is used.  The function returns a pointer to the allocated memory
+block in `Address`.  The allocated memory is automatically associated with the current execution context,
 allowing it to be automatically cleaned up when the context is destroyed.
 
 Example usage:
 
 <pre>
 APTR address;
-if (!AllocMemory(1000, MEM::NIL, &address)) {
+if (!AllocResource(1000, MEM::NIL, &address, nullptr)) {
    // Use memory block...
    FreeResource(address);
 }
 </pre>
-
-Memory allocation behaviour is controlled through MEM flags:
-
-<types lookup="MEM"/>
-
-The resulting memory block is zero-initialised unless the `MEM::NO_CLEAR` flag is specified.  For large
-allocations where initialisation overhead is a concern, utilising `MEM::NO_CLEAR` is recommended.
 
 Memory blocks are automatically associated with their owning object context, enabling automatic cleanup when
 the owner is destroyed. This prevents memory leaks in object-oriented code.
@@ -127,6 +118,7 @@ the owner is destroyed. This prevents memory leaks in object-oriented code.
 large Size:     The size of the memory block in bytes. Must be greater than zero.
 int(MEM) Flags: Optional allocation flags controlling behaviour and ownership.
 &ptr Address: Pointer to store the address of the allocated memory block.
+struct(ResourceManager) Manager: Resource manager used to release the resource.
 
 -ERRORS-
 Okay: Memory block successfully allocated.
@@ -139,7 +131,7 @@ caller-owns-result, creates-resource, blocking
 
 *********************************************************************************************************************/
 
-ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
+ERR AllocResource(int64_t Size, MEM Flags, APTR *Address, ResourceManager *Manager)
 {
    if ((Size <= 0) or (not Address)) return kt::Log(__FUNCTION__).warning(ERR::Args);
 
@@ -168,7 +160,9 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
    else if (glCurrentTask) owner_id = glCurrentTask->UID;
    else owner_id = 0;
 
-   if (auto error = TrackResource(unique_id, data_start, owner_id, &glResourceMemoryHandler); error != ERR::Okay) {
+   if (Manager IS nullptr) Manager = &glResourceMemoryHandler;
+
+   if (auto error = TrackResource(unique_id, data_start, owner_id, Manager); error != ERR::Okay) {
       #ifdef _WIN32
          _aligned_free(start_mem);
       #else
@@ -187,8 +181,9 @@ ERR AllocMemory(int64_t Size, MEM Flags, APTR *Address)
 CheckResourceExists: Verifies the existence of a resource.
 
 CheckResourceExists() verifies whether a resource with the specified identifier still exists in the system's
-resource tracking collection. This function is useful for defensive programming when working with resources
-such as memory or objects that may have been freed by other code paths.
+object or resource registry. This function is useful for defensive programming when working with resources such as
+memory or objects that may have been freed by other code paths.  Objects that are terminating or awaiting deferred
+collection are reported as unavailable.
 
 -INPUT-
 res ID: The unique identifier of the resource to verify.
@@ -205,7 +200,15 @@ blocking, pure-query
 
 ERR CheckResourceExists(RESOURCEID ResourceID)
 {
-   std::unique_lock lock(glmResources);
+   {
+      std::lock_guard lock(glmObjects);
+      if (auto it = glObjects.find(ResourceID); it != glObjects.end()) {
+         if ((it->second.Terminating) or (it->second.CollectOnUnlock)) return ERR::False;
+         return ERR::True;
+      }
+   }
+
+   std::lock_guard lock(glmResources);
    if (auto it = glResources.find(ResourceID); it != glResources.end()) {
       if ((it->second.Terminating) or (it->second.CollectOnUnlock)) return ERR::False;
       return ERR::True;
@@ -216,10 +219,13 @@ ERR CheckResourceExists(RESOURCEID ResourceID)
 /*********************************************************************************************************************
 
 -FUNCTION-
-FreeResource: Safely deallocates resources allocated by AllocMemory() and similar functions.
+FreeResource: Safely deallocates resources allocated by AllocResource() and similar functions.
 
 FreeResource() provides safe deallocation of resources with comprehensive validation and cleanup. The function
 accepts resource identifiers for optimal safety, though C++ headers also provide pointer-based variants for convenience.
+
+Object identifiers are detected in the object registry and dispatched to ~FreeObject().  All other identifiers are
+resolved through the non-object resource registry and its associated `ResourceManager`.
 
 The deallocation process includes lock-aware deallocation that respects access counting, resource manager integration
 for managed memory blocks, and automatic cleanup of ownership tracking structures.
@@ -244,6 +250,13 @@ closes-handle, blocking
 
 ERR FreeResource(RESOURCEID ResourceID)
 {
+   bool is_object;
+   {
+      std::lock_guard lock(glmObjects);
+      is_object = glObjects.contains(ResourceID);
+   }
+   if (is_object) return FreeObject(ResourceID);
+
    // Resource pointers are assumed to remain stable according to the map rules.
    // The Terminating flag is set to true to prevent other threads from interfering with the deallocation process.
 
@@ -251,7 +264,7 @@ ERR FreeResource(RESOURCEID ResourceID)
    //
    // ERR::Okay      - The manager deallocated the resource, return to user immediately
    // ERR::InUse     - Resource cannot be deallocated yet, do nothing and return error to user
-   // ERR::Terminate - Deallocate the resource as a memory block originating from AllocMemory()
+   // ERR::Terminate - Deallocate the resource as a memory block originating from AllocResource()
    // ERR::*         - Return code to user
 
    ResourceRecord *resource;
@@ -284,7 +297,7 @@ ERR FreeResource(RESOURCEID ResourceID)
       if (not glCrashStatus) {
          error = resource->Manager->Free(*resource, resource->Address);
 
-         if (error IS ERR::Terminate) { // Manager requested regular memory cleanup, as per AllocMemory().
+         if (error IS ERR::Terminate) { // Manager requested regular memory cleanup, as per AllocResource().
             free_private_memory_resource(ResourceID);
             error = ERR::Okay;
          }
@@ -310,9 +323,9 @@ dispatch cleanup through the supplied `ResourceManager`.  If the resource identi
 record is updated with the non-zero values provided by the caller.
 
 The supplied address and manager are retained as references only.  They must remain valid for as long as the resource is
-tracked, or until the record is replaced or removed.  When an `OwnerID` is supplied for a non-object resource, the
-resource is added to the owner's resource list so it can be removed during owner cleanup.  Use `RESOURCEID_INHERIT` to
-preserve the existing owner when updating a resource, or to inherit the current context when registering a new resource.
+tracked, or until the record is replaced or removed.  When an `OwnerID` names an object, the resource is added directly
+to that object's resource list so it can be removed during object cleanup.  Use `RESOURCEID_INHERIT` to preserve the
+existing owner when updating a resource, or to inherit the current context when registering a new resource.
 
 A unique `ResourceID` can be obtained from ~AllocateID() by using `IDTYPE::RESOURCE`.
 
@@ -351,21 +364,19 @@ ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, Resou
       const auto new_owner = (OwnerID IS RESOURCEID_INHERIT) ? record.OwnerID : OwnerID;
 
       if (record.OwnerID != new_owner) {
-         if (record.OwnerManagesChildren) {
-            auto current_owner = glResources.find(record.OwnerID);
-            if ((current_owner != glResources.end()) and (current_owner->second.Manager->RemoveChild)) {
-               current_owner->second.Manager->RemoveChild(current_owner->second, record);
+         std::lock_guard object_lock(glmObjects);
+
+         if (record.OwnerID) {
+            if (auto current_owner = glObjects.find(record.OwnerID); current_owner != glObjects.end()) {
+               current_owner->second.Resources.erase(ResourceID);
             }
          }
 
          record.OwnerID = new_owner;
-         record.OwnerManagesChildren = false; // Revert to standard behaviour
 
          if (new_owner) {
-            auto owner_record = glResources.find(OwnerID);
-            if ((owner_record != glResources.end()) and (owner_record->second.Manager->AddChild)) {
-               owner_record->second.Manager->AddChild(owner_record->second, record);
-               record.OwnerManagesChildren = true;
+            if (auto owner = glObjects.find(new_owner); owner != glObjects.end()) {
+               owner->second.Resources.insert(ResourceID);
             }
          }
       }
@@ -379,13 +390,12 @@ ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID, Resou
          else OwnerID = 0;
       }
 
-      auto resource = glResources.insert_or_assign(ResourceID, ResourceRecord(ResourceID, Address, OwnerID, Manager));
+      glResources.insert_or_assign(ResourceID, ResourceRecord(ResourceID, Address, OwnerID, Manager));
 
       if (OwnerID) {
-         auto owner_record = glResources.find(OwnerID);
-         if ((owner_record != glResources.end()) and (owner_record->second.Manager->AddChild)) {
-            owner_record->second.Manager->AddChild(owner_record->second, resource.first->second);
-            resource.first->second.OwnerManagesChildren = true;
+         std::lock_guard object_lock(glmObjects);
+         if (auto owner = glObjects.find(OwnerID); owner != glObjects.end()) {
+            owner->second.Resources.insert(ResourceID);
          }
       }
    }

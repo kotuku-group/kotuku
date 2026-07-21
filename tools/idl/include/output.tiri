@@ -3,6 +3,9 @@ rx_comment_chars  = <{ regex.new('[`!@#]') }>
 rx_lowercase_id   = <{ regex.new([[^[a-z]ID$]]) }>
 rx_empty_lines    = <{ regex.new([[^\n*$]]) }>
 rx_strip_newlines = <{ regex.new([[^\n*(.*\S)]], regex.DOT_ALL) }>
+rx_offset_section_start = <{ regex.new([[^// (.+) module start$]]) }>
+rx_offset_section_end   = <{ regex.new([[^// (.+) module end$]]) }>
+rx_offset_constant      = <{ regex.new([[^inline constexpr int32_t (CLASS_OFFSET(?:_[A-Z0-9_]+)?) = ([0-9]+);$]]) }>
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Return true when the class owns at least one concrete storage field.
@@ -289,6 +292,32 @@ function outputGetValueCall(Field:table, FieldType:str, Indent:str)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Register a class-relative direct field and format the corresponding C++ offset expression.
+
+function classOffsetExpression(Class:table, Field:table):str
+   if not Field.needsClassOffset or (Field.relativeOffset is nil) or (Class.storageOrigin is nil) then
+      error(f"Missing class-relative offset metadata for {glModule.name}.{Class.name}.{Field.name}.")
+   end
+
+   local symbol = Class.storageOffsetSymbol
+   if not symbol then
+      error(f"Missing storage-owner metadata for {glModule.name}.{Class.name}.{Field.name}.")
+   end
+
+   local entry = glClassOffsets[symbol]
+   if entry then
+      if entry.origin != Class.storageOrigin then
+         error(f"Conflicting storage origins collected for {glModule.name}.{Class.name}.")
+      end
+   else
+      entry = { symbol=symbol, origin=Class.storageOrigin }
+      glClassOffsets[symbol] = entry
+   end
+
+   return f'{symbol} + {Field.relativeOffset}'
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Emit a complete getter body that delegates reads to the field description.
 
 function outputFieldReadGetter(Class:table, Field:table, FidName:str, FieldType:str, Indent:str)
@@ -300,7 +329,7 @@ function outputFieldReadGetter(Class:table, Field:table, FidName:str, FieldType:
       outputGetValueCall(Field, FieldType, Indent)
    else
       -- Direct access to value
-      offset = tostring(Field.offset)
+      local offset = classOffsetExpression(Class, Field)
 
       if Field.flags has FD_ARRAY then
          if Field.flags has FD_CPP then -- Embedded kt::vector
@@ -641,6 +670,158 @@ function buildFunctionTableOutput():str
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Parse and validate the replaceable module sections in a platform class-offset header.
+
+function parseClassOffsetSections(Content:str, Path:str):table
+   local sections = { }
+   local open_section
+   local cursor = 0
+
+   for _, line in Content:split('\n') do
+      local start_name = rx_offset_section_start.extract(line)
+      local end_name = rx_offset_section_end.extract(line)
+
+      if start_name then
+         if open_section then
+            error(f"Malformed class-offset markers in {Path}: module {start_name} starts inside {open_section.name}.")
+         end
+         if sections[start_name] then
+            error(f"Duplicate class-offset section for module {start_name} in {Path}.")
+         end
+         open_section = { name=start_name, start=cursor }
+      elseif end_name then
+         if not open_section then
+            error(f"Malformed class-offset markers in {Path}: module {end_name} ends without a start marker.")
+         end
+         if end_name != open_section.name then
+            error(f"Malformed class-offset markers in {Path}: module {open_section.name} ends as {end_name}.")
+         end
+         open_section.finish = cursor + #line
+         sections[open_section.name] = open_section
+         open_section = nil
+      end
+
+      cursor += #line + 1
+   end
+
+   if open_section then
+      error(f"Malformed class-offset markers in {Path}: module {open_section.name} has no end marker.")
+   end
+
+   return sections
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Extract all constants from an offset header.
+
+function parseClassOffsetEntries(Content:str, Path:str):table
+   local constants = { }
+
+   for _, line in Content:split('\n') do
+      local symbol, value = rx_offset_constant.extract(line)
+      if symbol then
+         if constants[symbol] then error(f"Duplicate class-offset constant {symbol} in {Path}.") end
+         constants[symbol] = { value=tonumber(value) }
+      end
+   end
+
+   return constants
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Render the current module's class offsets.
+
+function renderClassOffsetSection(ModuleName:str):str
+   local out = f'// {ModuleName} module start\n'
+
+   for symbol, entry in table.sortByKeys(glClassOffsets) do
+      if symbol != 'CLASS_OFFSET' then
+         out ..= f'inline constexpr int32_t {symbol} = {entry.origin};\n'
+      end
+   end
+
+   out ..= f'// {ModuleName} module end'
+   return out
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Replace the current module section, or insert it in module-name order when first introduced.
+
+function replaceClassOffsetSection(Content:str, ModuleName:str, Sections:table, Section:str):str
+   local existing = Sections[ModuleName]
+   if existing then
+      return Content:substr(0, existing.start) .. Section .. Content:substr(existing.finish)
+   end
+
+   local insert_at
+   for module_name, candidate in pairs(Sections) do
+      if (ModuleName < module_name) and ((insert_at is nil) or (candidate.start < insert_at)) then
+         insert_at = candidate.start
+      end
+   end
+
+   if insert_at != nil then
+      return Content:substr(0, insert_at) .. Section .. '\n\n' .. Content:substr(insert_at)
+   end
+
+   local separator = Content:endsWith('\n') ? '\n' :> '\n\n'
+   return Content .. separator .. Section .. '\n'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Use the public module name for module TDL files and the source name for standalone generated core headers.
+
+function classOffsetModuleName():str
+   if glModule.exportXML then return glModule.name end
+
+   local _, source_name = io.splitPath(glSource)
+   return source_name:replace('.tdl', ''):cap()
+end
+
+-- Ensure every origin collected from live metadata matches the active platform table.
+
+function validateCollectedClassOffsets(Content:str, Path:str)
+   local constants = parseClassOffsetEntries(Content, Path)
+
+   for symbol, collected in pairs(glClassOffsets) do
+      local stored = constants[symbol]
+      if not stored then error(f"Class-offset constant {symbol} is missing from {Path}.") end
+      if stored.value != collected.origin then
+         error(f"Class-offset constant {symbol} is {stored.value} in {Path}, but live metadata reports " ..
+            f'{collected.origin}.')
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Prepare the active platform offset table without writing it, so validation precedes both output writes.
+
+function prepareClassOffsetOutput():table
+   local state = mSys.GetSystemState()
+   local active_path
+
+   if state.platform is 'Windows' then
+      active_path = 'sdk:include/kotuku/system/windows_class_offsets.h'
+   elseif state.platform is 'Linux' then
+      active_path = 'sdk:include/kotuku/system/linux_class_offsets.h'
+   else
+      if table.empty(glClassOffsets) then return nil end
+      error(f"No generated class-offset table is available for platform {state.platform}.")
+   end
+
+   if table.empty(glClassOffsets) then return nil end
+
+   local active_content = readTextFile(active_path, 'active platform class-offset table')
+   local active_sections = parseClassOffsetSections(active_content, active_path)
+   local module_name = classOffsetModuleName()
+
+   local rendered = renderClassOffsetSection(module_name)
+   local updated = replaceClassOffsetSection(active_content, module_name, active_sections, rendered)
+   validateCollectedClassOffsets(updated, active_path)
+   return { path=active_path, content=updated }
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Save the generated C++ header content, preserving existing files when unchanged.
 
 global function saveOutput()
@@ -672,6 +853,11 @@ global function saveOutput()
    end
 
    if content:endsWith('\n\n') then content = content:sub(0, -3) end
+
+   local offset_output = prepareClassOffsetOutput()
+   if offset_output then
+      saveIfModified(offset_output.path, offset_output.content, 'platform class-offset table')
+   end
 
    saveIfModified(outPath, content, 'C header output')
 end

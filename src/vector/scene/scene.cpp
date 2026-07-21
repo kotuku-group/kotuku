@@ -36,6 +36,8 @@ Vector definitions can be saved and loaded from permanent storage by using the @
 #include "agg_span_gouraud_rgba.h"
 #include "agg_span_gouraud_rgba_linear.h"
 #include "agg_span_gouraud_rgba_quantise.h"
+#include "agg_rasterizer_compound_aa.h"
+#include "agg_pixfmt_amask_adaptor.h"
 #include "agg_conv_contour.h"
 
 //#include "../vector.h"
@@ -59,6 +61,10 @@ static void fill_gouraud(VectorState &, const TClipRectangle<double> &, double, 
 
 static void fill_mesh(VectorState &, const TClipRectangle<double> &, double, double, extGradientMesh &, double,
    agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &,
+   SceneRenderer *Render = nullptr);
+
+static void fill_diffusion(VectorState &, const TClipRectangle<double> &, double, double, extGradientDiffusion &,
+   double, agg::renderer_base<agg::pixfmt_psl> &, agg::rasterizer_scanline_aa<> &, const agg::trans_affine &,
    SceneRenderer *Render = nullptr);
 
 static void fill_pattern(VectorState &, const TClipRectangle<double> &, agg::path_storage *,

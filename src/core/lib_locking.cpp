@@ -108,11 +108,11 @@ struct WaitLock {
    #ifdef _WIN32
    WINHANDLE Lock;
    #endif
-   int64_t WaitingTime;
+   int64_t  WaitingTime;
    THREADID WaitingForThreadID;
-   int  WaitingForResourceID;
-   int  WaitingForResourceType;
-   uint8_t Flags; // WLF flags
+   int      WaitingForResourceID;
+   int      WaitingForResourceType;
+   uint8_t  Flags; // WLF flags
 
    #define WLF_REMOVED 0x01  // Set if the resource was removed by the thread that was holding it.
 
@@ -373,14 +373,13 @@ ERR AccessObject(OBJECTID ObjectID, int MilliSeconds, OBJECTPTR *Result)
    OBJECTPTR object = nullptr;
 
    {
-      std::lock_guard lock(glmResources);
+      std::lock_guard lock(glmObjects);
 
-      auto resource = glResources.find(ObjectID);
-      if ((resource IS glResources.end()) or (not resource->second.Address)) return ERR::NoMatchingObject;
-      if (resource->second.Manager != &glResourceObject) return ERR::NoMatchingObject;
-      if (resource->second.CollectOnUnlock or resource->second.Terminating) return ERR::MarkedForDeletion;
+      auto object_rec = glObjects.find(ObjectID);
+      if ((object_rec IS glObjects.end()) or (not object_rec->second.Object)) return ERR::NoMatchingObject;
+      if (object_rec->second.CollectOnUnlock or object_rec->second.Terminating) return ERR::MarkedForDeletion;
 
-      object = (OBJECTPTR)resource->second.Address;
+      object = object_rec->second.Object;
       if (object->collecting()) return ERR::MarkedForDeletion;
 
       object->pin();

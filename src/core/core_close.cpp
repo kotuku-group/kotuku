@@ -134,7 +134,7 @@ void CloseCore(void)
                // to stop foreign processes that we've launched.
                kill(task.ProcessID, SIGHUP);
             #else
-               SendMessage(MSGID::QUIT, MSF::NIL, nullptr, 0);
+               SendMessage(MSGID::QUIT, MSF::NIL, {});
             #endif
 
             WaitTime(-0.1); // Wait 0.1 seconds without processing messages
@@ -205,7 +205,9 @@ void CloseCore(void)
          {
             std::lock_guard lock(glmObjects);
             if (auto object_rec = glObjects.find(glCurrentTask->UID); object_rec != glObjects.end()) {
-               children.assign(object_rec->second.Children.begin(), object_rec->second.Children.end());
+               // Snapshot UIDs rather than pointers; freeing one child can cascade-free another and
+               // FreeResource() on a stale UID is a safe no-op.
+               for (const auto child : object_rec->second.Children) children.push_back(child->UID);
             }
          }
 
@@ -294,13 +296,19 @@ void CloseCore(void)
       // It is assumed that no threads are running by this point in the shutdown process
 
       if (not glCrashStatus) {
-         log.branch("Checking for orphaned resources...");
+         log.branch("Checking for orphaned objects and resources...");
 
          // Print warnings only.  Resource managers like a stable system environment, and additionally
          // because modules have been expunged by this point, they can be unsafe to call or inspect.
          for (const auto & [ id, resource ] : glResources) {
             if (not resource.Address) continue;
             log.warning("Unfreed resource #%d/%p, Owner: #%d.", id, resource.Address, resource.OwnerID);
+         }
+
+         for (const auto & [ id, record ] : glObjects) {
+            if (not record.Object) continue;
+            auto owner_id = record.Owner ? record.Owner->UID : 0;
+            log.warning("Unfreed object #%d/%p, Owner: #%d.", id, record.Object, owner_id);
          }
       }
    }
@@ -374,11 +382,7 @@ __export void Expunge(int16_t Force)
             {
                std::lock_guard lock(glmObjects);
                if (auto object_rec = glObjects.find(mod_master->UID); object_rec != glObjects.end()) {
-                  for (const auto id : object_rec->second.Children) {
-                     if (auto child_rec = glObjects.find(id); child_rec != glObjects.end()) {
-                        if (child_rec->second.Object) children.push_back(child_rec->second.Object);
-                     }
-                  }
+                  children.assign(object_rec->second.Children.begin(), object_rec->second.Children.end());
                }
             }
 
@@ -459,11 +463,7 @@ __export void Expunge(int16_t Force)
                {
                   std::lock_guard lock(glmObjects);
                   if (auto object_rec = glObjects.find(mod_master->UID); object_rec != glObjects.end()) {
-                     for (const auto id : object_rec->second.Children) {
-                        if (auto child_rec = glObjects.find(id); child_rec != glObjects.end()) {
-                           if (child_rec->second.Object) children.push_back(child_rec->second.Object);
-                        }
-                     }
+                     children.assign(object_rec->second.Children.begin(), object_rec->second.Children.end());
                   }
                }
 

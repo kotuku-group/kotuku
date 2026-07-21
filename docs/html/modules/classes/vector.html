@@ -211,8 +211,7 @@
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Opacity" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Opacity"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional write access"></i></td><th class="col-md-1">Opacity</th><td class="col-md-1"><span class="text-nowrap">DOUBLE</span></td><td>Defines an overall opacity for the vector's graphics.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Opacity" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
-<p>The overall opacity of a vector can be defined here using a value between 0 and 1.0.  The value will be multiplied with other opacity settings as required during rendering.  For instance, when filling a vector the opacity will be calculated as <code>
-<a data-bs-toggle="tooltip" title="The opacity to use when filling the vector." href="#tf-FillOpacity">FillOpacity</a> * Opacity</code>.</p>
+<p>The overall opacity of a vector can be defined here using a value between 0 and 1.0.  The value will be multiplied with other opacity settings as required during rendering.  For instance, when filling a vector the opacity will be calculated as <code><a data-bs-toggle="tooltip" title="The opacity to use when filling the vector." href="#tf-FillOpacity">FillOpacity</a> * Opacity</code>.</p>
       
 </div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#fl-Parent" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Parent"><i class="bi bi-check-circle-fill text-success" data-bs-toggle="tooltip" title="Direct read access"></i> <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">Parent</th><td class="col-md-1"><span class="text-nowrap">OBJECTPTR</span></td><td>The parent of the vector, or NULL if this is the top-most vector.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Parent" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
@@ -386,7 +385,7 @@ Z: Close Path
 <p>The prototype for the <code>Callback</code> is <code>ERR callback(*Vector, FM Event)</code></p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
-<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
+<tr><th class="col-md-1">AllocMemory</th><td>Failed to create a new memory block</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
 <tr data-bs-toggle="collapse" data-bs-target="#tmx-SubscribeInput" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">SubscribeInput</th><td id="tm-SubscribeInput">Create a subscription for input events that relate to the vector.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-SubscribeInput" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR vec::SubscribeInput(OBJECTPTR Object, JTYPE Mask, FUNCTION Callback)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a href="?page=JTYPE">Mask</a></td><td>Combine <code>JTYPE</code> flags to define the input messages required by the client.  Set to zero to remove an existing subscription.</td></tr>
@@ -400,7 +399,7 @@ Z: Close Path
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">FieldNotSet</th><td>The VectorScene has no reference to a Surface.</td></tr>
-<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
+<tr><th class="col-md-1">AllocMemory</th><td>Failed to create a new memory block</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 <tr><th class="col-md-1">Function</th><td>A call to <a href="display.html?page=SubscribeInput">SubscribeInput()</a> failed.</td></tr>
 </tbody></table></div></div></td></tr>
@@ -408,13 +407,12 @@ Z: Close Path
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>The SubscribeKeyboard() method provides a callback mechanism for handling keyboard events.  Events are reported when the vector or one of its children has the user focus.  It is a pre-requisite that the associated <a href="vectorscene.html">VectorScene</a> has been linked to a <a href="surface.html">Surface</a>.</p>
 <p>The prototype for the callback is as follows, whereby <code>Qualifers</code> are <code>KQ</code> flags and the Code is a <code>K</code> constant representing the raw key value.  The <code>Unicode</code> value is the resulting character when the qualifier and code are translated through the user's keymap.</p>
-<p>
-<code>ERR callback(*Viewport, INT Qualifiers, INT Code, INT Unicode);</code></p>
+<p><code>ERR callback(*Viewport, INT Qualifiers, INT Code, INT Unicode);</code></p>
 <p>If the callback returns <code>ERR::Terminate</code> then the subscription will be ended.  All other error codes are ignored.</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">FieldNotSet</th><td>The <a href="vectorscene.html#tf-Surface">VectorScene⇒Surface</a> field has not been defined.</td></tr>
-<tr><th class="col-md-1">AllocMemory</th><td>AllocMemory() failed to create a new memory block</td></tr>
+<tr><th class="col-md-1">AllocMemory</th><td>Failed to create a new memory block</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 <tr><th class="col-md-1">Function</th><td>A call to <a href="display.html?page=SubscribeInput">SubscribeInput()</a> failed.</td></tr>
 </tbody></table></div></div></td></tr>
@@ -437,16 +435,16 @@ Z: Close Path
 <tr><th>FM::LOST_FOCUS</th><td>The vector has lost the user focus.</td></tr>
 <tr><th>FM::PATH_CHANGED</th><td>The vector path has been modified or affected by a transform.</td></tr>
 </tbody></table><div class="footer copyright text-right">Vector module documentation © Paul Manias © 2010-2026</div></div>
-<div class="docs-content" style="display:none;" id="JTYPE"><h1>JTYPE Type</h1><p class="lead">JTYPE flags are used to categorise input types.</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>JTYPE::ANALOG</th><td>Analog movement (ranging from -1.0 to 1.0)</td></tr>
+<div class="docs-content" style="display:none;" id="JTYPE"><h1>JTYPE Type</h1><p class="lead">JTYPE flags are used to categorise input types</p><table class="table"><thead><tr><th class="col-md-1">Name</th><th>Description</th></tr></thead><tbody><tr><th>JTYPE::ANALOG</th><td>Analog movement (ranging from -1.0 to 1.0)</td></tr>
 <tr><th>JTYPE::ANCHORED</th><td>Cursor has been anchored with LockCursor()</td></tr>
 <tr><th>JTYPE::BUTTON</th><td>Input is a physical button or switch</td></tr>
-<tr><th>JTYPE::CROSSING</th><td>Crossing events manage the entering and leaving of an area.</td></tr>
-<tr><th>JTYPE::DBL_CLICK</th><td>Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click.</td></tr>
+<tr><th>JTYPE::CROSSING</th><td>Crossing events manage the entering and leaving of an area</td></tr>
+<tr><th>JTYPE::DBL_CLICK</th><td>Set by the input system if the <code>Type</code> is a button and the button has been clicked in quick succession so as to be classed as a double-click</td></tr>
 <tr><th>JTYPE::DIGITAL</th><td>D-Pad or digital joystick source (restricted to +/- 1)</td></tr>
-<tr><th>JTYPE::DRAGGED</th><td>Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference).</td></tr>
-<tr><th>JTYPE::DRAG_ITEM</th><td>This special flag is set by the input system if the pointer is click-dragging an object at the time of the event.</td></tr>
-<tr><th>JTYPE::EXT_MOVEMENT</th><td>Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples.</td></tr>
-<tr><th>JTYPE::MOVEMENT</th><td>X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system.</td></tr>
+<tr><th>JTYPE::DRAGGED</th><td>Set if sufficient movement occurred between the original click and its point of release (usually requires a 3 or more pixel difference)</td></tr>
+<tr><th>JTYPE::DRAG_ITEM</th><td>This special flag is set by the input system if the pointer is click-dragging an object at the time of the event</td></tr>
+<tr><th>JTYPE::EXT_MOVEMENT</th><td>Extended or indirect movement information.  This covers all types of movement that are unconnected to coordinate positioning -  mouse wheel movement and pen tilt are two such examples</td></tr>
+<tr><th>JTYPE::MOVEMENT</th><td>X/Y coordinate movement only. Movement such as the wheel mouse spinning is not covered by this type as it does not influence the coordinate system</td></tr>
 <tr><th>JTYPE::REPEATED</th><td>Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)</td></tr>
 <tr><th>JTYPE::SECONDARY</th><td>Indicates to the receiver of this message that it is not the primary/original recipient</td></tr>
 </tbody></table><div class="footer copyright text-right">Vector module documentation © Paul Manias © 2010-2026</div></div>

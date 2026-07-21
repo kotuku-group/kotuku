@@ -213,6 +213,9 @@ bool svgState::parse_gradient_href(const std::string &Value, objGradient *Gradie
       else if ((svg_tag_is(*other, SVF_meshgradient)) and (Gradient->classID() IS CLASSID::GRADIENTMESH)) {
          parse_meshgradient(*other, (objGradientMesh *)Gradient, dummy);
       }
+      else if ((svg_tag_is(*other, SVF_diffusionGradient)) and (Gradient->classID() IS CLASSID::GRADIENTDIFFUSION)) {
+         parse_diffusiongradient(*other, (objGradientDiffusion *)Gradient, dummy);
+      }
    }
 
    return true;
@@ -683,6 +686,176 @@ ERR svgState::proc_meshgradient(const XTag &Tag) noexcept
       gradient->setUnits(VUNIT::BOUNDING_BOX);
 
       state.parse_meshgradient(Tag, gradient, id);
+
+      if (!InitObject(gradient)) {
+         if (!id.empty()) {
+            SetName(gradient, id.c_str());
+            track_object(Self, gradient);
+            return Self->Scene->addDef(id.c_str(), gradient);
+         }
+         else return ERR::Okay;
+      }
+      else return ERR::Init;
+   }
+   else return ERR::NewObject;
+}
+
+//********************************************************************************************************************
+// Diffusion gradient parsing.  <diffusionGradient> is a Kotuku extension (there is no W3C element for diffusion
+// curves).  Each <curve> child carries a single-segment path in 'd' ("M x,y C x1,y1 x2,y2 x,y" or "M x,y L x,y")
+// plus per-side colours in 'left-start', 'left-end', 'right-start' and 'right-end'.
+
+static const char * parse_diffusion_curve_path(const std::string &Path, MeshControl &Curve) noexcept
+{
+   std::string_view scan(Path);
+   auto skip_separators = [](std::string_view &Scan) noexcept {
+      while ((not Scan.empty()) and ((Scan.front() <= 0x20) or (Scan.front() IS ','))) Scan.remove_prefix(1);
+   };
+
+   auto read_numbers = [&](int Count, double *Out) noexcept -> bool {
+      for (int i=0; i < Count; i++) {
+         skip_separators(scan);
+         if (scan.empty()) return false;
+         char *end = nullptr;
+         const double value = std::strtod(scan.data(), &end);
+         if ((end IS scan.data()) or (not std::isfinite(value))) return false;
+         Out[i] = value;
+         scan.remove_prefix(size_t(end - scan.data()));
+      }
+      return true;
+   };
+
+   skip_separators(scan);
+   if ((scan.empty()) or (scan.front() != 'M')) return "curve path must start with 'M'";
+   scan.remove_prefix(1);
+
+   double start[2];
+   if (not read_numbers(2, start)) return "unreadable start point";
+   Curve.StartX = start[0];
+   Curve.StartY = start[1];
+
+   skip_separators(scan);
+   if (scan.empty()) return "curve path requires a 'C' or 'L' segment";
+
+   const char cmd = scan.front();
+   scan.remove_prefix(1);
+
+   if (cmd IS 'C') {
+      double numbers[6];
+      if (not read_numbers(6, numbers)) return "curve commands require six numbers";
+      Curve.X1 = numbers[0];   Curve.Y1 = numbers[1];
+      Curve.X2 = numbers[2];   Curve.Y2 = numbers[3];
+      Curve.EndX = numbers[4]; Curve.EndY = numbers[5];
+   }
+   else if (cmd IS 'L') {
+      double numbers[2];
+      if (not read_numbers(2, numbers)) return "line commands require two numbers";
+      const double dx = numbers[0] - Curve.StartX;
+      const double dy = numbers[1] - Curve.StartY;
+      Curve.X1 = Curve.StartX + (dx / 3.0);
+      Curve.Y1 = Curve.StartY + (dy / 3.0);
+      Curve.X2 = Curve.StartX + (dx * 2.0 / 3.0);
+      Curve.Y2 = Curve.StartY + (dy * 2.0 / 3.0);
+      Curve.EndX = numbers[0];
+      Curve.EndY = numbers[1];
+   }
+   else return "unsupported curve path command";
+
+   skip_separators(scan);
+   if (not scan.empty()) return "multi-segment curve paths are not supported";
+   return nullptr;
+}
+
+void svgState::parse_diffusiongradient(const XTag &Tag, objGradientDiffusion *Gradient, std::string &ID) noexcept
+{
+   kt::Log log(__FUNCTION__);
+
+   bool process_stops = false;
+   parse_gradient_hrefs(Tag, Gradient, process_stops);
+   set_gradient_units(Tag, Gradient);
+
+   for (int a=1; a < std::ssize(Tag.Attribs); a++) {
+      auto &val = Tag.Attribs[a].Value;
+      if (val.empty()) continue;
+
+      auto attrib = strhash(Tag.Attribs[a].Name);
+      parse_gradient_defaults(log, Tag, Gradient, attrib, Tag.Attribs[a].Name, val, ID);
+   }
+
+   auto read_colour = [&](const XTag &Curve, CSTRING Name, FRGB &Colour) noexcept -> bool {
+      for (int a=1; a < std::ssize(Curve.Attribs); a++) {
+         if (iequals(Name, Curve.Attribs[a].Name)) {
+            VectorPainter painter;
+            if (vec::ReadPainter(Self->Scene, Curve.Attribs[a].Value, &painter, nullptr) != ERR::Okay) {
+               log.warning("Ignoring invalid diffusion curve colour '%s'.", Curve.Attribs[a].Value.c_str());
+               return false;
+            }
+            Colour = painter.Colour;
+            return true;
+         }
+      }
+      return false;
+   };
+
+   std::vector<DiffusionCurveRecord> records;
+   const char *fault = nullptr;
+
+   for (auto &child : Tag.Children) {
+      if (svg_tag_hash(child) != kt::strhash("curve")) continue;
+
+      DiffusionCurveRecord record = {};
+
+      std::string path;
+      for (int a=1; a < std::ssize(child.Attribs); a++) {
+         if (iequals("d", child.Attribs[a].Name)) { path = child.Attribs[a].Value; break; }
+      }
+
+      if (path.empty()) { fault = "missing or empty 'd' attribute"; }
+      else fault = parse_diffusion_curve_path(path, record.Curve);
+
+      if (fault) {
+         log.warning("Discarding <diffusionGradient> @ line %d: %s", child.LineNo, fault);
+         break;
+      }
+
+      // A missing end colour inherits the matching start colour; a missing start colour defaults to opaque black.
+
+      if (not read_colour(child, "left-start", record.LeftStart)) record.LeftStart = FRGB(0, 0, 0, 1);
+      if (not read_colour(child, "left-end", record.LeftEnd)) record.LeftEnd = record.LeftStart;
+      if (not read_colour(child, "right-start", record.RightStart)) record.RightStart = FRGB(0, 0, 0, 1);
+      if (not read_colour(child, "right-end", record.RightEnd)) record.RightEnd = record.RightStart;
+
+      records.push_back(record);
+   }
+
+   if (fault) {
+      // A malformed curve invalidates the whole gradient, matching SVG's in-error paint server behaviour.
+      Gradient->setCurves(std::span<const DiffusionCurveRecord>());
+      return;
+   }
+
+   if (not records.empty()) {
+      std::span<DiffusionCurveRecord> span(records.data(), records.size());
+      Gradient->setCurves(span);
+   }
+}
+
+//********************************************************************************************************************
+
+ERR svgState::proc_diffusiongradient(const XTag &Tag) noexcept
+{
+   objGradientDiffusion *gradient;
+   std::string id;
+
+   auto state = *this;
+   state.applyTag(Tag);
+
+   if (!NewObject(CLASSID::GRADIENTDIFFUSION, &gradient)) {
+      SetOwner(gradient, Self->Scene);
+      gradient->setName("SVGDiffusionGrad");
+      gradient->setUnits(VUNIT::BOUNDING_BOX);
+
+      state.parse_diffusiongradient(Tag, gradient, id);
 
       if (!InitObject(gradient)) {
          if (!id.empty()) {

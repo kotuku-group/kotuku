@@ -137,12 +137,12 @@ static int action_activate(lua_State *Lua)
    ERR error = ERR::Okay;
    bool release = false;
 
+   OBJECTPTR obj;
    if (auto direct = direct_object_ptr(obj_ref)) error = Action(AC::Activate, direct, nullptr);
-   else if (auto obj = access_object(obj_ref)) {
+   else if (error = access_object(obj_ref, obj); error IS ERR::Okay) {
       error = Action(AC::Activate, obj, nullptr);
       release = true;
    }
-   else error = ERR::AccessObject;
 
    lua_pushinteger(Lua, int(error));
    if (release) release_object(obj_ref);
@@ -170,12 +170,12 @@ static int action_draw(lua_State *Lua)
    }
 
    bool release = false;
+   OBJECTPTR obj;
    if (auto direct = direct_object_ptr(obj_ref)) error = Action(AC::Draw, direct, argbuffer);
-   else if (auto obj = access_object(obj_ref)) {
+   else if (error = access_object(obj_ref, obj); error IS ERR::Okay) {
       error = Action(AC::Draw, obj, argbuffer);
       release = true;
    }
-   else error = ERR::AccessObject;
 
    lua_pushinteger(Lua, int(error));
    if (release) release_object(obj_ref);
@@ -442,10 +442,10 @@ extern int object_newindex(lua_State *Lua)
 {
    if (auto def = lj_get_object_fast(Lua, 1)) {
       if (auto hash = luaL_checkstringhash(Lua, 2)) {
-         if (auto obj = access_object(def)) {
+         OBJECTPTR obj;
+         if (auto error = access_object(def, obj); error IS ERR::Okay) {
             auto jt = get_write_table(def->classptr);
 
-            ERR error;
             auto func = std::lower_bound(jt->begin(), jt->end(), obj_write(hash), write_hash);
             if ((func != jt->end()) and (func->Hash IS hash)) {
                // All fields in the table are writable, but init checks are still required.
@@ -458,6 +458,10 @@ extern int object_newindex(lua_State *Lua)
             if (error >= ERR::ExceptionThreshold) {
                luaL_error(Lua, error, "Write failure: %s.%s: %s", def->classptr->ClassName.c_str(), luaL_checkstring(Lua, 2), GetErrorMsg(error));
             }
+         }
+         else { // Report why the object could not be accessed rather than dropping the write silently.
+            luaL_error(Lua, error, "Write failure: %s.%s: %s", def->classptr->ClassName.c_str(),
+               luaL_checkstring(Lua, 2), GetErrorMsg(error));
          }
       }
    }
@@ -852,7 +856,8 @@ static int object_exists(lua_State *Lua)
    auto def = object_context(Lua);
 
    if (object_is_dead(def)) {
-      access_object(def); // Clears the stale UID and releases the wrapper's weak pin.
+      OBJECTPTR obj;
+      access_object(def, obj); // Clears the stale UID and releases the wrapper's weak pin.
       lua_pushboolean(Lua, false);
       return 1;
    }
@@ -863,7 +868,8 @@ static int object_exists(lua_State *Lua)
       return 1;
    }
 
-   if (access_object(def)) {
+   OBJECTPTR obj;
+   if (!access_object(def, obj)) {
       release_object(def);
       lua_pushboolean(Lua, true);
       return 1;
@@ -887,7 +893,7 @@ static int object_subscribe(lua_State *Lua)
    if (action_id IS AC::NIL) luaL_argerror(Lua, 1, "Action/Method name is invalid.");
 
    OBJECTPTR obj;
-   if (not (obj = access_object(def))) luaL_error(Lua, ERR::AccessObject);
+   if (auto error = access_object(def, obj); error != ERR::Okay) luaL_error(Lua, error);
 
    kt::Log log("obj.subscribe");
    log.trace("Object: %d, Action: %s (ID %d)", def->uid, action, action_id);
@@ -955,9 +961,9 @@ static int object_free(lua_State *Lua)
 {
    auto def = object_context(Lua);
 
-   def->flags |= GCOBJ_DETACHED; // Prevents double FreeResource() at finalise.
+   def->flags |= GCOBJ_DETACHED; // Prevents a second object free at finalise.
 
-   if (FreeResource(def->uid) IS ERR::InUse) {
+   if (FreeObject(def->uid) IS ERR::InUse) {
       // The object has been marked for termination, automatically freeing it once it has been unlocked and unpinned.
       // Clearing the definition would have adverse effects on any areas that have pinned the object in a thread or
       // closure.
@@ -982,13 +988,14 @@ static int object_init(lua_State *Lua)
 {
    auto def = object_context(Lua);
 
-   if (auto obj = access_object(def)) {
-      auto error = InitObject(obj);
+   OBJECTPTR obj;
+   if (auto error = access_object(def, obj); error IS ERR::Okay) {
+      error = InitObject(obj);
       report_action_error(Lua, def, "Init", error);
       lua_pushinteger(Lua, int(error));
       release_object(def);
    }
-   else luaL_error(Lua, ERR::AccessObject);
+   else luaL_error(Lua, error);
    return 1;
 }
 
@@ -1013,7 +1020,10 @@ static int object_close_handler(lua_State *Lua)
 static int object_with_lock(lua_State *Lua)
 {
    if (auto *def = lj_get_object_fast(Lua, 1)) {
-      if (not access_object(def)) luaL_error(Lua, ERR::AccessObject, "Failed to lock object for 'with' statement.");
+      OBJECTPTR obj;
+      if (auto error = access_object(def, obj); error != ERR::Okay) {
+         luaL_error(Lua, error, "Failed to access object for 'with' statement.");
+      }
       lua_pushvalue(Lua, 1); // Return the object
    }
    else luaL_argerror(Lua, 1, "Object expected for 'with' statement.");
