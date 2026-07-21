@@ -163,7 +163,7 @@ struct AudioLoop {
 namespace snd {
 struct OpenChannels { int Total; int Result; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct CloseChannels { int Handle; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct AddSample { FUNCTION OnStop; SFM SampleFormat; APTR Data; int DataSize; struct AudioLoop *Loop; int LoopSize; int Result; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddSample { FUNCTION OnStop; SFM SampleFormat; std::span<const int8_t> Data; struct AudioLoop *Loop; int LoopSize; int Result; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct RemoveSample { int Handle; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SetSampleLength { int Sample; int64_t Length; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct AddStream { FUNCTION Callback; FUNCTION OnStop; SFM SampleFormat; int SampleLength; int PlayOffset; struct AudioLoop *Loop; int LoopSize; int Result; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
@@ -208,8 +208,8 @@ class objAudio : public Object {
       struct snd::CloseChannels args = { Handle };
       return Action(AC(-2), this, &args);
    }
-   inline ERR addSample(FUNCTION OnStop, SFM SampleFormat, APTR Data, int DataSize, struct AudioLoop * Loop, int LoopSize, int * Result) noexcept {
-      struct snd::AddSample args = { OnStop, SampleFormat, Data, DataSize, Loop, LoopSize, (int)0 };
+   inline ERR addSample(FUNCTION OnStop, SFM SampleFormat, std::span<const int8_t> Data, struct AudioLoop * Loop, int LoopSize, int * Result) noexcept {
+      struct snd::AddSample args = { OnStop, SampleFormat, Data, Loop, LoopSize, (int)0 };
       ERR error = Action(AC(-3), this, &args);
       if (Result) *Result = args.Result;
       return error;
@@ -413,21 +413,17 @@ class objSound : public Object {
       return error;
    }
    inline ERR init() noexcept { return InitObject(this); }
-   template <class T, class U> ERR read(APTR Buffer, T Size, U *Result) noexcept {
-      static_assert(std::is_integral<U>::value, "Result value must be an integer type");
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
+      static_assert(std::is_integral<T>::value, "Result value must be an integer type");
+      struct acRead read = { Buffer };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
-         *Result = U(read.Result);
+         *Result = T(read.Result);
          return ERR::Okay;
       }
       else { *Result = 0; return error; }
    }
-   template <class T> ERR read(APTR Buffer, T Size) noexcept {
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   inline ERR read(std::span<int8_t> Buffer) noexcept {
+      struct acRead read = { Buffer };
       return Action(AC::Read, this, &read);
    }
    inline ERR saveToObject(OBJECTPTR Dest, CLASSID ClassID = CLASSID::NIL) noexcept {

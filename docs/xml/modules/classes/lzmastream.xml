@@ -30,11 +30,10 @@ err, len = lz.acRead(buffer)
     <action>
       <name>Read</name>
       <comment>Decompress data from the input stream and write it to the supplied buffer.</comment>
-      <prototype>ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)</prototype>
-      <tiriPrototype>err, Result:num = Object.acRead(Buffer:str, Length:num)</tiriPrototype>
+      <prototype>ERR acRead(*Object, std::span&lt;int8_t&gt; Buffer, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acRead(Buffer:array)</tiriPrototype>
       <input>
-        <param type="APTR" name="Buffer">Points a buffer that will receive the data.</param>
-        <param type="INT" name="Length">The total number of bytes to read from the object.  This value cannot exceed the size of the Buffer.</param>
+        <param type="std::span&lt;int8_t&gt;" name="Buffer">A mutable buffer that will receive the data.</param>
         <param type="INT" name="Result">The Read action will write this parameter with the total number of bytes read into the Buffer.</param>
       </input>
       <description>
@@ -66,11 +65,10 @@ err, len = lz.acRead(buffer)
     <action>
       <name>Write</name>
       <comment>Not supported.  LZMAStream is decode-only.</comment>
-      <prototype>ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)</prototype>
-      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str, Length:num)</tiriPrototype>
+      <prototype>ERR acWrite(*Object, std::span&lt;const int8_t&gt; Buffer, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str)</tiriPrototype>
       <input>
-        <param type="APTR" name="Buffer">A buffer containing the data that will be written to the object.</param>
-        <param type="INT" name="Length">The total number of bytes to write to the object.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Buffer">A buffer containing the data that will be written to the object.</param>
         <param type="INT" name="Result">This parameter with be updated with the total number of bytes written from the Buffer.</param>
       </input>
     </action>

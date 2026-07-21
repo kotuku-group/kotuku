@@ -51,6 +51,70 @@
 #define FDF_FIELDTYPES  (FD_INT|FD_DOUBLE|FD_INT64|FD_POINTER|FD_UNIT|FD_BYTE|FD_ARRAY|FD_FUNCTION)
 
 //********************************************************************************************************************
+// Embedded std::span argument metadata.  The operations are specialised for the concrete span member so generic
+// argument walkers never depend on a standard library's private std::span representation.
+
+struct SpanFieldValue {
+   CPTR   Data;
+   size_t Extent;
+};
+
+struct SpanFieldOps {
+   size_t Size;
+   size_t Alignment;
+   size_t ElementSize;
+   SpanFieldValue (*Read)(CPTR Storage);
+   void (*Construct)(APTR Storage, CPTR Data, size_t Extent);
+   void (*Rebind)(APTR Storage, CPTR Data, size_t Extent);
+};
+
+namespace kt::detail {
+
+template <class Span> struct SpanFieldTraits {
+   static constexpr bool IsSpan = false;
+};
+
+template <class Element, size_t Extent> struct SpanFieldTraits<std::span<Element, Extent>> {
+   static constexpr bool IsSpan = true;
+   using ElementType = Element;
+};
+
+template <class Span> [[nodiscard]] SpanFieldValue read_span_field(CPTR Storage) noexcept
+{
+   const auto &span = *(const Span *)Storage;
+   return { span.data(), span.size() };
+}
+
+template <class Span> void construct_span_field(APTR Storage, CPTR Data, size_t Extent) noexcept
+{
+   using element_type = typename SpanFieldTraits<Span>::ElementType;
+   new (Storage) Span((element_type *)Data, Extent);
+}
+
+template <class Span> void rebind_span_field(APTR Storage, CPTR Data, size_t Extent) noexcept
+{
+   using element_type = typename SpanFieldTraits<Span>::ElementType;
+   *(Span *)Storage = Span((element_type *)Data, Extent);
+}
+
+template <class Span> consteval SpanFieldOps make_span_field_ops()
+{
+   static_assert(SpanFieldTraits<Span>::IsSpan, "Span field operations require std::span.");
+   static_assert(Span::extent IS std::dynamic_extent, "Only dynamic-extent span fields are supported.");
+
+   using element_type = typename SpanFieldTraits<Span>::ElementType;
+   return {
+      sizeof(Span), alignof(Span), sizeof(std::remove_cv_t<element_type>),
+      read_span_field<Span>, construct_span_field<Span>, rebind_span_field<Span>
+   };
+}
+
+} // namespace kt::detail
+
+template <class Element> inline constexpr SpanFieldOps glSpanFieldOps =
+   kt::detail::make_span_field_ops<std::span<Element>>();
+
+//********************************************************************************************************************
 // For testing if type T can be matched to an FD flag.  Integral types are mapped by storage width so that typed spans
 // match byte, word, int and large field definitions.
 
@@ -1009,7 +1073,7 @@ struct acMove          { static const AC id = AC::Move; double DeltaX; double De
 struct acMoveToPoint   { static const AC id = AC::MoveToPoint; double X; double Y; double Z; MTF Flags; };
 struct acNewChild      { static const AC id = AC::NewChild; OBJECTPTR Object; };
 struct acNewOwner      { static const AC id = AC::NewOwner; OBJECTPTR NewOwner; };
-struct acRead          { static const AC id = AC::Read; APTR Buffer; int Length; int Result; };
+struct acRead          { static const AC id = AC::Read; std::span<int8_t> Buffer; int Result; };
 struct acRedimension   { static const AC id = AC::Redimension; double X; double Y; double Z; double Width; double Height; double Depth; };
 struct acRedo          { static const AC id = AC::Redo; int Steps; };
 struct acRename        { static const AC id = AC::Rename; std::string_view Name; };
@@ -1019,7 +1083,7 @@ struct acSaveToObject  { static const AC id = AC::SaveToObject; OBJECTPTR Dest; 
 struct acSeek          { static const AC id = AC::Seek; double Offset; SEEK Position; };
 struct acSetKey        { static const AC id = AC::SetKey; std::string_view Key; std::string_view Value; };
 struct acUndo          { static const AC id = AC::Undo; int Steps; };
-struct acWrite         { static const AC id = AC::Write; CPTR Buffer; int Length; int Result; };
+struct acWrite         { static const AC id = AC::Write; std::span<const int8_t> Buffer; int Result; };
 
 // Action Macros
 
@@ -1078,8 +1142,8 @@ inline ERR acMove(OBJECTPTR Object, double X, double Y, double Z) {
    return Action(AC::Move, Object, &args);
 }
 
-inline ERR acRead(OBJECTPTR Object, APTR Buffer, int Bytes, int *Read) {
-   struct acRead read = { (int8_t *)Buffer, Bytes };
+inline ERR acRead(OBJECTPTR Object, std::span<int8_t> Buffer, int *Read = nullptr) {
+   struct acRead read = { Buffer };
    if (auto error = Action(AC::Read, Object, &read); error IS ERR::Okay) {
       if (Read) *Read = read.Result;
       return ERR::Okay;
@@ -1135,8 +1199,8 @@ inline ERR acUndo(OBJECTPTR Object, int Steps) {
    return Action(AC::Undo, Object, &args);
 }
 
-inline ERR acWrite(OBJECTPTR Object, CPTR Buffer, int Bytes, int *Result = nullptr) {
-   struct acWrite write = { (int8_t *)Buffer, Bytes };
+inline ERR acWrite(OBJECTPTR Object, std::span<const int8_t> Buffer, int *Result = nullptr) {
+   struct acWrite write = { Buffer };
    if (auto error = Action(AC::Write, Object, &write); error IS ERR::Okay) {
       if (Result) *Result = write.Result;
       return error;
@@ -1147,8 +1211,8 @@ inline ERR acWrite(OBJECTPTR Object, CPTR Buffer, int Bytes, int *Result = nullp
    }
 }
 
-inline int acWriteResult(OBJECTPTR Object, CPTR Buffer, int Bytes) {
-   struct acWrite write = { (int8_t *)Buffer, Bytes };
+inline int acWriteResult(OBJECTPTR Object, std::span<const int8_t> Buffer) {
+   struct acWrite write = { Buffer };
    if (Action(AC::Write, Object, &write) IS ERR::Okay) return write.Result;
    else return 0;
 }

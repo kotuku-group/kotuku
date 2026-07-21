@@ -287,7 +287,7 @@ static void release_backstage_websockets()
 static ERR websocket_write_raw(objClientSocket *Client, const std::string &Data)
 {
    int result = 0;
-   auto error = Client->write(Data.data(), int(Data.size()), &result);
+   auto error = Client->write(std::span<const int8_t>((const int8_t *)Data.data(), Data.size()), &result);
    if (error != ERR::Okay) return error;
    if (result != int(Data.size())) return ERR::BufferOverflow;
    return ERR::Okay;
@@ -701,7 +701,7 @@ static BackstageHttpResponse backstage_websocket_upgrade(objClientSocket *Client
    response.append("\r\n\r\n");
 
    int result = 0;
-   if (Client->write(response.data(), int(response.size()), &result) != ERR::Okay) {
+   if (Client->write(std::span<const int8_t>((const int8_t *)response.data(), response.size()), &result) != ERR::Okay) {
       return BackstageHttpResponse::plain(500, "WebSocket handshake failed");
    }
 

@@ -33,7 +33,7 @@ namespace fs = std::filesystem;
       buffer.resize(file_size);
       if (not buffer.empty()) {
          size_t bytes_read = 0;
-         if ((file->read(buffer.data(), buffer.size(), &bytes_read) != ERR::Okay) or
+         if ((file->read(std::span<int8_t>((int8_t *)buffer.data(), buffer.size()), &bytes_read) != ERR::Okay) or
              (bytes_read != buffer.size())) return false;
       }
       Eval.text_cache[URI] = std::move(normalise_newlines(buffer));

@@ -441,9 +441,16 @@ static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int Msg
    const FunctionField *copied_fields = nullptr;
    bool executed = false;
 
-   if (not (action = (ActionMessage *)Message)) {
+   if ((not Message) or (MsgSize < int(sizeof(ActionMessage)))) {
       log.warning("No data attached to MSGID::ACTION message.");
-      return ERR::Okay;
+      return ERR::InvalidData;
+   }
+   action = (ActionMessage *)Message;
+
+   const auto payload_size = size_t(MsgSize) - sizeof(ActionMessage);
+   if (action->SendArgs and ((action->ArgsSize <= 0) or (size_t(action->ArgsSize) > payload_size))) {
+      log.warning("MSGID::ACTION contains a truncated argument record.");
+      return ERR::InvalidData;
    }
 
    copied_fields = action->Fields;
@@ -472,13 +479,18 @@ static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int Msg
 
             if (fields) {
                // Argument pointers were serialised as offsets by QueueAction(); rebase them against this copy.
-               make_args_absolute(fields, action->ArgsSize, (int8_t *)(action + 1));
-               glCurrentActionMsg = action;
-               Action(action->ActionID, obj, action+1);
-               executed = true;
-               glCurrentActionMsg = nullptr;
+               if (make_args_absolute(fields, action->ArgsSize, (int8_t *)(action + 1), payload_size) != ERR::Okay) {
+                  log.warning("MSGID::ACTION contains invalid serialised argument pointers.");
+               }
+               else {
+                  glCurrentActionMsg = action;
+                  Action(action->ActionID, obj, action+1);
+                  executed = true;
+                  glCurrentActionMsg = nullptr;
+               }
                ReleaseObject(obj);
             }
+            else ReleaseObject(obj);
          }
       }
       else if ((error != ERR::NoMatchingObject) and (error != ERR::MarkedForDeletion)) {
@@ -1807,7 +1819,9 @@ static ERR TASK_Write(extTask *Task, struct acWrite *Args)
 
 #ifdef _WIN32
    if (Task->Platform) {
-      if (auto winerror = winWriteStd(Task->Platform, Args->Buffer, Args->Length); !winerror) {
+      if (Args->Buffer.size() > size_t(INT_MAX)) return log.warning(ERR::OutOfRange);
+      if (auto winerror = winWriteStd(Task->Platform, Args->Buffer.data(), int(Args->Buffer.size())); !winerror) {
+         Args->Result = int(Args->Buffer.size());
          return ERR::Okay;
       }
       else return log.warning(ERR::Write);

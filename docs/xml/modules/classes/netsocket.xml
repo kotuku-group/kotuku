@@ -66,11 +66,10 @@ initially fill the internal write buffer, thereafter it will be called whenever 
     <action>
       <name>Read</name>
       <comment>Read information from the socket.</comment>
-      <prototype>ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)</prototype>
-      <tiriPrototype>err, Result:num = Object.acRead(Buffer:str, Length:num)</tiriPrototype>
+      <prototype>ERR acRead(*Object, std::span&lt;int8_t&gt; Buffer, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acRead(Buffer:array)</tiriPrototype>
       <input>
-        <param type="APTR" name="Buffer">Points a buffer that will receive the data.</param>
-        <param type="INT" name="Length">The total number of bytes to read from the object.  This value cannot exceed the size of the Buffer.</param>
+        <param type="std::span&lt;int8_t&gt;" name="Buffer">A mutable buffer that will receive the data.</param>
         <param type="INT" name="Result">The Read action will write this parameter with the total number of bytes read into the Buffer.</param>
       </input>
       <description>
@@ -91,11 +90,10 @@ initially fill the internal write buffer, thereafter it will be called whenever 
     <action>
       <name>Write</name>
       <comment>Writes data to the socket.</comment>
-      <prototype>ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)</prototype>
-      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str, Length:num)</tiriPrototype>
+      <prototype>ERR acWrite(*Object, std::span&lt;const int8_t&gt; Buffer, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str)</tiriPrototype>
       <input>
-        <param type="APTR" name="Buffer">A buffer containing the data that will be written to the object.</param>
-        <param type="INT" name="Length">The total number of bytes to write to the object.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Buffer">A buffer containing the data that will be written to the object.</param>
         <param type="INT" name="Result">This parameter with be updated with the total number of bytes written from the Buffer.</param>
       </input>
       <description>
@@ -200,12 +198,11 @@ initially fill the internal write buffer, thereafter it will be called whenever 
     <method>
       <name>RecvFrom</name>
       <comment>Receive a datagram packet from any address (UDP only).</comment>
-      <prototype>ERR ns::RecvFrom(OBJECTPTR Object, struct IPAddress * Source, APTR Buffer, INT BufferSize, INT * BytesRead)</prototype>
-      <tiriPrototype>err, BytesRead:num = RecvFrom(Source:any, Buffer:any, BufferSize:num)</tiriPrototype>
+      <prototype>ERR ns::RecvFrom(OBJECTPTR Object, struct IPAddress * Source, std::span&lt;int8_t&gt; Buffer, INT * BytesRead)</prototype>
+      <tiriPrototype>err, BytesRead:num = RecvFrom(Source:any, Buffer:array)</tiriPrototype>
       <input>
         <param type="struct IPAddress *" name="Source">Source IP address of the received packet.</param>
-        <param type="APTR" name="Buffer">Output buffer for received data.</param>
-        <param type="INT" name="BufferSize">Size of the receive buffer in bytes.</param>
+        <param type="std::span&lt;int8_t&gt;" name="Buffer">Output buffer for received data.</param>
         <param type="INT *" name="BytesRead">Number of bytes actually received.</param>
       </input>
       <description>
@@ -227,12 +224,11 @@ initially fill the internal write buffer, thereafter it will be called whenever 
     <method>
       <name>SendTo</name>
       <comment>Send a datagram packet to a specific address (UDP only).</comment>
-      <prototype>ERR ns::SendTo(OBJECTPTR Object, struct IPAddress * Dest, APTR Data, INT Length, INT * BytesSent)</prototype>
-      <tiriPrototype>err, BytesSent:num = SendTo(Dest:any, Data:any, Length:num)</tiriPrototype>
+      <prototype>ERR ns::SendTo(OBJECTPTR Object, struct IPAddress * Dest, std::span&lt;const int8_t&gt; Data, INT * BytesSent)</prototype>
+      <tiriPrototype>err, BytesSent:num = SendTo(Dest:any, Data:array)</tiriPrototype>
       <input>
         <param type="struct IPAddress *" name="Dest">The destination IP address (IPv4 or IPv6) and port number.</param>
-        <param type="APTR" name="Data">Pointer to the data buffer to send.</param>
-        <param type="INT" name="Length">Number of bytes to send from Data.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Data">Pointer to the data buffer to send.</param>
         <param type="INT *" name="BytesSent">Number of bytes actually sent.</param>
       </input>
       <description>

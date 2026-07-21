@@ -79,16 +79,19 @@ static ERR COMPRESSEDSTREAM_Read(extCompressedStream *Self, struct acRead *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Buffer)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Buffer.data())) return log.warning(ERR::NullArgs);
    if (!Self->initialised()) return log.warning(ERR::NotInitialised);
 
    Args->Result = 0;
-   if (Args->Length <= 0) return ERR::Okay;
+   if (Args->Buffer.empty()) return ERR::Okay;
+   if (Args->Buffer.size() > size_t(INT_MAX)) return log.warning(ERR::OutOfRange);
 
    uint8_t inputstream[2048];
    int length;
 
-   if (acRead(Self->Input, inputstream, sizeof(inputstream), &length) != ERR::Okay) return ERR::Read;
+   if (acRead(Self->Input, std::span<int8_t>((int8_t *)inputstream, sizeof(inputstream)), &length) != ERR::Okay) {
+      return ERR::Read;
+   }
 
    if (length <= 0) return ERR::Okay;
 
@@ -113,8 +116,8 @@ static ERR COMPRESSEDSTREAM_Read(extCompressedStream *Self, struct acRead *Args)
       }
    }
 
-   APTR output = Args->Buffer;
-   int outputsize = Args->Length;
+   APTR output = Args->Buffer.data();
+   int outputsize = int(Args->Buffer.size());
    if (outputsize < MIN_OUTPUT_SIZE) {
       // An internal buffer will need to be allocated if the one supplied to Read() is not large enough.
       outputsize = MIN_OUTPUT_SIZE;
@@ -200,8 +203,8 @@ static ERR COMPRESSEDSTREAM_Seek(extCompressedStream *Self, struct acSeek *Args)
 
    uint8_t buffer[1024];
    while (pos > 0) {
-      struct acRead read = { .Buffer = buffer, .Length = (int)pos };
-      if ((size_t)read.Length > sizeof(buffer)) read.Length = sizeof(buffer);
+      auto read_size = std::min<size_t>(size_t(pos), sizeof(buffer));
+      struct acRead read = { .Buffer = std::span<int8_t>((int8_t *)buffer, read_size) };
       if (Action(AC::Read, Self, &read) != ERR::Okay) return ERR::Decompression;
       pos -= read.Result;
    }
@@ -219,8 +222,9 @@ static ERR COMPRESSEDSTREAM_Write(extCompressedStream *Self, struct acWrite *Arg
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Buffer)) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
    if (!Self->initialised()) return log.warning(ERR::NotInitialised);
+   if (Args->Buffer.size() > size_t(UINT_MAX)) return log.warning(ERR::OutOfRange);
 
    if (!Self->Stream.active()) {
       switch (Self->Format) {
@@ -249,17 +253,9 @@ static ERR COMPRESSEDSTREAM_Write(extCompressedStream *Self, struct acWrite *Arg
    if (Self->OutputBuffer.empty()) Self->OutputBuffer.resize(MIN_OUTPUT_SIZE);
 
    Args->Result = 0;
-   int mode;
-   if (Args->Length IS -1) { // A length of -1 is a signal to complete the compression process.
-      mode = Z_FINISH;
-      Self->Stream->next_in  = Self->OutputBuffer.data();
-      Self->Stream->avail_in = 0;
-   }
-   else {
-      mode = Z_NO_FLUSH;
-      Self->Stream->next_in  = (Bytef *)Args->Buffer;
-      Self->Stream->avail_in = Args->Length;
-   }
+   int mode = Z_NO_FLUSH;
+   Self->Stream->next_in  = (Bytef *)Args->Buffer.data();
+   Self->Stream->avail_in = uInt(Args->Buffer.size());
 
    // If zlib succeeds but sets avail_out to zero, this means that data was written to the output buffer, but the
    // output buffer is not large enough (so keep calling until avail_out > 0).
@@ -279,7 +275,7 @@ static ERR COMPRESSEDSTREAM_Write(extCompressedStream *Self, struct acWrite *Arg
       if (len > 0) {
          Self->TotalOutput += len;
          log.trace("%d bytes (total %" PF64 ") were compressed.", len, Self->TotalOutput);
-         acWrite(Self->Output, Self->OutputBuffer.data(), len, nullptr);
+         acWrite(Self->Output, std::span<const int8_t>((int8_t *)Self->OutputBuffer.data(), len));
       }
       else {
          // deflate() may not output anything if it needs more data to fill up a compression frame.  Return ERR::Okay
@@ -289,8 +285,6 @@ static ERR COMPRESSEDSTREAM_Write(extCompressedStream *Self, struct acWrite *Arg
          break;
       }
    }
-
-   if (mode IS Z_FINISH) Self->Stream.reset();
 
    return ERR::Okay;
 }

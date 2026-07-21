@@ -381,7 +381,7 @@ static ERR DOCUMENT_Clipboard(extDocument *Self, struct acClipboard *Args)
 
                   if (auto buffer = new (std::nothrow) char[size+1]) {
                      int result;
-                     if (!(error = file->read(buffer, size, &result))) {
+                     if (!(error = file->read(std::span<int8_t>((int8_t *)buffer, size_t(size)), &result))) {
                         buffer[result] = 0;
                         error = Self->dataFeed(Self, DATA::TEXT, buffer, result);
                      }
@@ -1924,7 +1924,7 @@ static ERR DOCUMENT_SaveToObject(extDocument *Self, struct acSaveToObject *Args)
    std::string result;
    doc::ReadContent read = { DATA::XML, 0, int(Self->Stream.size()), &result };
    if (auto error = DOCUMENT_ReadContent(Self, &read); !error) {
-      error = acWrite(Args->Dest, result.data(), result.size(), nullptr);
+      error = acWrite(Args->Dest, std::span<const int8_t>((const int8_t *)result.data(), result.size()));
       if (!error) return ERR::Okay;
       else return log.warning(ERR::Write);
    }

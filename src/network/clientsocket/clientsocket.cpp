@@ -538,20 +538,20 @@ Args
 static ERR CLIENTSOCKET_Read(extClientSocket *Self, struct acRead *Args)
 {
    kt::Log log;
-   if ((not Args) or (not Args->Buffer)) return log.error(ERR::NullArgs);
+   if ((not Args) or (not Args->Buffer.data())) return log.error(ERR::NullArgs);
    Args->Result = 0;
-   if (Args->Length < 0) return log.warning(ERR::Args);
+   if (Args->Buffer.size() > size_t(INT_MAX)) return log.warning(ERR::OutOfRange);
    if (Self->Handle.is_invalid()) {
       // Lack of a handle means that disconnection has already been processed, so the client code
       // shouldn't be calling us (client probably needs to be plugged into the feedback mechanisms)
       return log.warning(ERR::Disconnected);
    }
    Self->ReadCalled = true;
-   if (not Args->Length) { Args->Result = 0; return ERR::Okay; }
+   if (Args->Buffer.empty()) { Args->Result = 0; return ERR::Okay; }
 
    size_t result = 0;
-   auto error = receive_from_client(Self, Args->Buffer, Args->Length, &result);
-   Args->Result = result;
+   auto error = receive_from_client(Self, Args->Buffer.data(), Args->Buffer.size(), &result);
+   Args->Result = int(result);
 
    if (error IS ERR::Disconnected) {
       // Detecting a disconnection on read is normal, now handle disconnection gracefully.
@@ -582,9 +582,9 @@ static ERR CLIENTSOCKET_Write(extClientSocket *Self, struct acWrite *Args)
 
    if (not Args) return ERR::NullArgs;
    Args->Result = 0;
-   if (Args->Length < 0) return log.warning(ERR::Args);
-   if (!Args->Length) return ERR::Okay;
-   if (not Args->Buffer) return ERR::NullArgs;
+   if (Args->Buffer.size() > size_t(INT_MAX)) return log.warning(ERR::OutOfRange);
+   if (Args->Buffer.empty()) return ERR::Okay;
+   if (not Args->Buffer.data()) return ERR::NullArgs;
 
    auto server = (extNetSocket *)(Self->Client->Owner);
 
@@ -597,9 +597,9 @@ static ERR CLIENTSOCKET_Write(extClientSocket *Self, struct acWrite *Args)
    bool fatal_error = false;
    if (auto error = write_connected_socket_data(Self, Args, server->MsgLimit, &clientsocket_outgoing, fatal_error);
        error != ERR::Okay) return error;
-   else log.trace("Wrote all %d bytes to the server.", Args->Length);
+   else log.trace("Wrote all %d bytes to the server.", int(Args->Buffer.size()));
 
-   Args->Result = Args->Length;
+   Args->Result = int(Args->Buffer.size());
    return ERR::Okay;
 }
 

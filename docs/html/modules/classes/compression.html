@@ -150,10 +150,8 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
       
 </div></div></td></tr>
 </tbody></table><h3>Actions</h3><p>The following actions are currently supported:</p><table class="table"><tbody><tr data-bs-toggle="collapse" data-bs-target="#tac-Flush" style="scroll-margin:3em;" id="ta-Flush"><td style="width:1%; border-top-style: none; border-bottom-style: none;"></td><th class="col-md-1 text-primary">Flush</th><td>Flushes all pending actions.</td></tr>
-</tbody></table><h3>Methods</h3><p>The following methods are currently supported:</p><table class="table"><tbody><tr data-bs-toggle="collapse" data-bs-target="#tmx-CompressBuffer" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">CompressBuffer</th><td id="tm-CompressBuffer">Compresses a plain memory area into an empty buffer.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-CompressBuffer" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::CompressBuffer(OBJECTPTR Object, APTR Input, INT InputSize, APTR Output, INT OutputSize, INT * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Input</td><td>Pointer to the source data.</td></tr>
-<tr><td>InputSize</td><td>Byte length of the source data.</td></tr>
+</tbody></table><h3>Methods</h3><p>The following methods are currently supported:</p><table class="table"><tbody><tr data-bs-toggle="collapse" data-bs-target="#tmx-CompressBuffer" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">CompressBuffer</th><td id="tm-CompressBuffer">Compresses a plain memory area into an empty buffer.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-CompressBuffer" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::CompressBuffer(OBJECTPTR Object, std::span&lt;const int8_t&gt; Input, std::span&lt;int8_t&gt; Output, INT * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Input</td><td>Pointer to the source data.</td></tr>
 <tr><td>Output</td><td>Pointer to a destination buffer.</td></tr>
-<tr><td>OutputSize</td><td>Available space in the destination buffer.</td></tr>
 <tr><td>Result</td><td>The size of the compressed data will be returned in this parameter.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>This method provides a simple way of compressing a memory area into a buffer.  It requires a reference to the source data and a buffer large enough to accept the compressed information.  Generally the destination buffer should be no smaller than 75% of the size of the source data.  If the destination buffer is not large enough, an error of <code>ERR::BufferOverflow</code> will be returned.  The size of the compressed data will be returned in the Result parameter.</p>
@@ -182,11 +180,9 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
 <tr><th class="col-md-1">MissingPath</th><td>The object is missing a path reference</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table></div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-CompressStream" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">CompressStream</th><td id="tm-CompressStream">Compresses streamed data into a buffer.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-CompressStream" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::CompressStream(OBJECTPTR Object, APTR Input, INT Length, FUNCTION Callback, APTR Output, INT OutputSize)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Input</td><td>Pointer to the source data.</td></tr>
-<tr><td>Length</td><td>Amount of data to compress, in bytes.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-CompressStream" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">CompressStream</th><td id="tm-CompressStream">Compresses streamed data into a buffer.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-CompressStream" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::CompressStream(OBJECTPTR Object, std::span&lt;const int8_t&gt; Input, FUNCTION Callback, std::span&lt;int8_t&gt; Output)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Input</td><td>Pointer to the source data.</td></tr>
 <tr><td>Callback</td><td>This callback function will be called with a pointer to the compressed data.</td></tr>
 <tr><td>Output</td><td>Optional.  Points to a buffer that will receive the compressed data.  Must be equal to or larger than the <a data-bs-toggle="tooltip" title="Indicates the minimum output buffer size that will be needed during de/compression." href="#tf-MinOutputSize">MinOutputSize</a> field.</td></tr>
-<tr><td>OutputSize</td><td>Indicates the size of the <code>Output</code> buffer, otherwise set to zero.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>Use the CompressStream method to compress incoming streams of data whilst using a minimal amount of memory.  The compression process is handled in three phases of Start, Compress and End.  The methods provided for each phase are <a data-bs-toggle="tooltip" title="Initialises a new compression stream." href="#tm-CompressStreamStart">CompressStreamStart()</a>, <a data-bs-toggle="tooltip" title="Compresses streamed data into a buffer." href="#tm-CompressStream">CompressStream()</a> and <a data-bs-toggle="tooltip" title="Ends the compression of an open stream." href="#tm-CompressStreamEnd">CompressStreamEnd()</a>.</p>
 <p>A compression object can manage only one compression stream at any given time.  If it is necessary to compress multiple streams at once, create a compression object for each individual stream.</p>
@@ -196,23 +192,23 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
    int len;
    int cmpsize = 0;
    uint8_t input[4096];
-   while (!(error = acRead(file, input, sizeof(input), &amp;len))) {
+   while (!(error = acRead(file, std::span&lt;int8_t&gt;((int8_t *)input, sizeof(input)), &amp;len))) {
       if (!len) break; // No more data to read.
 
-      error = mtCompressStream(compress, input, len, callback, nullptr, 0);
+      error = mtCompressStream(compress, std::span&lt;const int8_t&gt;((int8_t *)input, len), callback, {});
       if (error != ERR::Okay) break;
 
       if (result &gt; 0) {
          cmpsize += result;
-         error = acWrite(outfile, output, result, &amp;len);
+         error = acWrite(outfile, std::span&lt;const int8_t&gt;((int8_t *)output, result), &amp;len);
          if (error != ERR::Okay) break;
       }
    }
 
    if (!error) {
-      if (!(error = mtCompressStreamEnd(compress, callback, nullptr, 0))) {
+      if (!(error = mtCompressStreamEnd(compress, callback, {}))) {
          cmpsize += result;
-         error = acWrite(outfile, output, result, &amp;len);
+         error = acWrite(outfile, std::span&lt;const int8_t&gt;((int8_t *)output, result), &amp;len);
       }
    }
 }
@@ -228,9 +224,8 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 <tr><th class="col-md-1">Function</th><td>A function call failed</td></tr>
 </tbody></table></div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-CompressStreamEnd" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">CompressStreamEnd</th><td id="tm-CompressStreamEnd">Ends the compression of an open stream.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-CompressStreamEnd" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::CompressStreamEnd(OBJECTPTR Object, FUNCTION Callback, APTR Output, INT OutputSize)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Callback</td><td>Refers to a function that will be called for each compressed block of data.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-CompressStreamEnd" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">CompressStreamEnd</th><td id="tm-CompressStreamEnd">Ends the compression of an open stream.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-CompressStreamEnd" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::CompressStreamEnd(OBJECTPTR Object, FUNCTION Callback, std::span&lt;int8_t&gt; Output)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Callback</td><td>Refers to a function that will be called for each compressed block of data.</td></tr>
 <tr><td>Output</td><td>Optional pointer to a buffer that will receive the compressed data.  If not set, the compression object will use its own buffer.</td></tr>
-<tr><td>OutputSize</td><td>Size of the <code>Output</code> buffer (ignored if Output is <code>NULL</code>).</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>To end the compression process, this method must be called to write any final blocks of data and remove the resources that were allocated.</p>
 <p>The expected format of the <code>Callback</code> function is specified in the <a data-bs-toggle="tooltip" title="Compresses streamed data into a buffer." href="#tm-CompressStream">CompressStream()</a> method.</p>
@@ -248,9 +243,8 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
 <tr><th class="col-md-1">Failed</th><td>Failed to initialise the decompression process.</td></tr>
 <tr><th class="col-md-1">InvalidCompression</th><td>The compression data is invalid or corrupted</td></tr>
 </tbody></table></div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-DecompressBuffer" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">DecompressBuffer</th><td id="tm-DecompressBuffer">Decompresses data originating from the <a data-bs-toggle="tooltip" title="Compresses a plain memory area into an empty buffer." href="#tm-CompressBuffer">CompressBuffer()</a> method.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-DecompressBuffer" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::DecompressBuffer(OBJECTPTR Object, APTR Input, APTR Output, INT OutputSize, INT * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Input</td><td>Pointer to the compressed data.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-DecompressBuffer" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">DecompressBuffer</th><td id="tm-DecompressBuffer">Decompresses data originating from the <a data-bs-toggle="tooltip" title="Compresses a plain memory area into an empty buffer." href="#tm-CompressBuffer">CompressBuffer()</a> method.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-DecompressBuffer" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::DecompressBuffer(OBJECTPTR Object, std::span&lt;const int8_t&gt; Input, std::span&lt;int8_t&gt; Output, INT * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Input</td><td>Pointer to the compressed data.</td></tr>
 <tr><td>Output</td><td>Pointer to the decompression buffer.</td></tr>
-<tr><td>OutputSize</td><td>Size of the decompression buffer.</td></tr>
 <tr><td>Result</td><td>The amount of bytes decompressed will be returned in this parameter.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>This method is used to decompress data that has been packed using the <a data-bs-toggle="tooltip" title="Compresses a plain memory area into an empty buffer." href="#tm-CompressBuffer">CompressBuffer()</a> method.  A pointer to the compressed data and an output buffer large enough to contain the decompressed data are required.  If the output buffer is not large enough to contain the data, the method will write out as much information as it can and then return with an error code of <code>ERR::BufferOverflow</code>.</p>
@@ -303,13 +297,11 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
 <tr><th class="col-md-1">Decompression</th><td>Unspecified failure during decompression of a data stream</td></tr>
 <tr><th class="col-md-1">InvalidCompression</th><td>The compression data is invalid or corrupted</td></tr>
 </tbody></table></div></div></td></tr>
-<tr data-bs-toggle="collapse" data-bs-target="#tmx-DecompressStream" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">DecompressStream</th><td id="tm-DecompressStream">Decompresses streamed data to an output buffer.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-DecompressStream" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::DecompressStream(OBJECTPTR Object, APTR Input, INT Length, FUNCTION Callback, APTR Output, INT OutputSize)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Input</td><td>Pointer to data to decompress.</td></tr>
-<tr><td>Length</td><td>Amount of data to decompress from the Input parameter.</td></tr>
+<tr data-bs-toggle="collapse" data-bs-target="#tmx-DecompressStream" role="button" style="scroll-margin:3em;"><th class="col-md-1 text-primary">DecompressStream</th><td id="tm-DecompressStream">Decompresses streamed data to an output buffer.</td></tr><tr><td colspan="2" class="hiddenRow"><div id="tmx-DecompressStream" class="accordion-body collapse"><div class="card" style="border-radius: 0;"><div class="card-header action-header" style="border-radius: 0;"><samp>ERR cmp::DecompressStream(OBJECTPTR Object, std::span&lt;const int8_t&gt; Input, FUNCTION Callback, std::span&lt;int8_t&gt; Output)</samp></div><div class="card-body" style="padding:0px"><table class="table"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Input</td><td>Pointer to data to decompress.</td></tr>
 <tr><td>Callback</td><td>Refers to a function that will be called for each decompressed block of information.</td></tr>
 <tr><td>Output</td><td>Optional pointer to a buffer that will receive the decompressed data.  If not set, the compression object will use its own buffer.</td></tr>
-<tr><td>OutputSize</td><td>Size of the buffer specified in Output (value ignored if <code>Output</code> is <code>NULL</code>).</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
-<p>Call DecompressStream repeatedly to decompress a data stream and process the results in a callback routine.  The client will need to provide a pointer to the data in the <code>Input</code> parameter and indicate its size in <code>Length</code>.  The decompression routine will call the routine that was specified in <code>Callback</code> for each block that is decompressed.</p>
+<p>Call DecompressStream repeatedly to decompress a data stream and process the results in a callback routine.  The client provides the data in the <code>Input</code> parameter.  The decompression routine will call the routine that was specified in <code>Callback</code> for each block that is decompressed.</p>
 <p>The format of the <code>Callback</code> routine is <code>ERR Function(*Compression, APTR Buffer, LONG Length)</code></p>
 <p>The <code>Buffer</code> will refer to the start of the decompressed data and its size will be indicated in <code>Length</code>.  If the <code>Callback</code> routine returns an error of any kind, the decompression process will be stopped and the error code will be immediately returned by the method.</p>
 <p>Optionally, the client can specify an output buffer in the <code>Output</code> parameter.  This can be a valuable optimisation technique, as it will eliminate the need to copy data out of the compression object's internal buffer.</p>

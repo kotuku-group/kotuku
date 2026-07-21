@@ -449,7 +449,7 @@ ERR CLASS_Init(extMetaClass *Self)
             glClassFile = file;
 
             int hdr = CLASSDB_HEADER;
-            glClassFile->write(&hdr, sizeof(hdr));
+            glClassFile->write(std::span((const int8_t *)&hdr, sizeof(hdr)));
          }
 
          if (glClassFile) {

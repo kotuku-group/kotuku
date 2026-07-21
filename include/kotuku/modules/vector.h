@@ -4241,11 +4241,11 @@ class objVector : public Object {
 // VectorPath methods
 
 namespace vp {
-struct AddCommand { struct PathCommand *Commands; int Size; static const AC id = AC(-30); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddCommand { std::span<const struct PathCommand> Commands; static const AC id = AC(-30); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct RemoveCommand { int Index; int Total; static const AC id = AC(-31); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SetCommand { int Index; struct PathCommand *Command; int Size; static const AC id = AC(-32); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetCommand { int Index; std::span<const struct PathCommand> Command; static const AC id = AC(-32); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetCommand { int Index; struct PathCommand *Command; static const AC id = AC(-33); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SetCommandList { APTR Commands; int Size; static const AC id = AC(-34); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetCommandList { std::span<const struct PathCommand> Commands; static const AC id = AC(-34); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -4270,16 +4270,16 @@ class objVectorPath : public objVector {
       return Action(AC::MoveToPoint, this, &moveto);
    }
    inline ERR init() noexcept { return InitObject(this); }
-   inline ERR addCommand(struct PathCommand * Commands, int Size) noexcept {
-      struct vp::AddCommand args = { Commands, Size };
+   inline ERR addCommand(std::span<const struct PathCommand> Commands) noexcept {
+      struct vp::AddCommand args = { Commands };
       return Action(AC(-30), this, &args);
    }
    inline ERR removeCommand(int Index, int Total) noexcept {
       struct vp::RemoveCommand args = { Index, Total };
       return Action(AC(-31), this, &args);
    }
-   inline ERR setCommand(int Index, struct PathCommand * Command, int Size) noexcept {
-      struct vp::SetCommand args = { Index, Command, Size };
+   inline ERR setCommand(int Index, std::span<const struct PathCommand> Command) noexcept {
+      struct vp::SetCommand args = { Index, Command };
       return Action(AC(-32), this, &args);
    }
    inline ERR getCommand(int Index, struct PathCommand ** Command) noexcept {
@@ -4288,8 +4288,8 @@ class objVectorPath : public objVector {
       if (Command) *Command = args.Command;
       return error;
    }
-   inline ERR setCommandList(APTR Commands, int Size) noexcept {
-      struct vp::SetCommandList args = { Commands, Size };
+   inline ERR setCommandList(std::span<const struct PathCommand> Commands) noexcept {
+      struct vp::SetCommandList args = { Commands };
       return Action(AC(-34), this, &args);
    }
 

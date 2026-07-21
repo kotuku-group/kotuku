@@ -51,14 +51,14 @@ static const struct FieldDef clCompressionPermissions[] = {
    { nullptr, 0 }
 };
 
-FDEF maCompressBuffer[] = { { "Input", FD_BUFFER|FD_PTR }, { "InputSize", FD_INT|FD_BUFSIZE }, { "Output", FD_BUFFER|FD_MUTABLE|FD_PTR }, { "OutputSize", FD_INT|FD_BUFSIZE }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maCompressBuffer[] = { { "Input", FDF_SPAN|FD_PTR, &glSpanFieldOps<const int8_t> }, { "Output", FDF_SPAN|FD_MUTABLE|FD_PTR, &glSpanFieldOps<int8_t> }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF maCompressFile[] = { { "Location", FDF_CPPSTRING }, { "Path", FDF_CPPSTRING }, { 0, 0 } };
-FDEF maDecompressBuffer[] = { { "Input", FD_BUFFER|FD_PTR }, { "Output", FD_BUFFER|FD_MUTABLE|FD_PTR }, { "OutputSize", FD_INT|FD_BUFSIZE }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maDecompressBuffer[] = { { "Input", FDF_SPAN|FD_PTR, &glSpanFieldOps<const int8_t> }, { "Output", FDF_SPAN|FD_MUTABLE|FD_PTR, &glSpanFieldOps<int8_t> }, { "Result", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF maDecompressFile[] = { { "Path", FDF_CPPSTRING }, { "Dest", FDF_CPPSTRING }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maRemoveFile[] = { { "Path", FDF_CPPSTRING }, { 0, 0 } };
-FDEF maCompressStream[] = { { "Input", FD_BUFFER|FD_PTR }, { "Length", FD_INT|FD_BUFSIZE }, { "Callback", FD_FUNCTION }, { "Output", FD_BUFFER|FD_MUTABLE|FD_PTR }, { "OutputSize", FD_INT|FD_BUFSIZE }, { 0, 0 } };
-FDEF maDecompressStream[] = { { "Input", FD_BUFFER|FD_PTR }, { "Length", FD_INT|FD_BUFSIZE }, { "Callback", FD_FUNCTION }, { "Output", FD_BUFFER|FD_MUTABLE|FD_PTR }, { "OutputSize", FD_INT|FD_BUFSIZE }, { 0, 0 } };
-FDEF maCompressStreamEnd[] = { { "Callback", FD_FUNCTION }, { "Output", FD_BUFFER|FD_MUTABLE|FD_PTR }, { "OutputSize", FD_INT|FD_BUFSIZE }, { 0, 0 } };
+FDEF maCompressStream[] = { { "Input", FDF_SPAN|FD_PTR, &glSpanFieldOps<const int8_t> }, { "Callback", FD_FUNCTION }, { "Output", FDF_SPAN|FD_MUTABLE|FD_PTR, &glSpanFieldOps<int8_t> }, { 0, 0 } };
+FDEF maDecompressStream[] = { { "Input", FDF_SPAN|FD_PTR, &glSpanFieldOps<const int8_t> }, { "Callback", FD_FUNCTION }, { "Output", FDF_SPAN|FD_MUTABLE|FD_PTR, &glSpanFieldOps<int8_t> }, { 0, 0 } };
+FDEF maCompressStreamEnd[] = { { "Callback", FD_FUNCTION }, { "Output", FDF_SPAN|FD_MUTABLE|FD_PTR, &glSpanFieldOps<int8_t> }, { 0, 0 } };
 FDEF maDecompressStreamEnd[] = { { "Callback", FD_FUNCTION }, { 0, 0 } };
 FDEF maDecompressObject[] = { { "Path", FDF_CPPSTRING }, { "Object", FD_OBJECTPTR }, { 0, 0 } };
 FDEF maScan[] = { { "Folder", FDF_CPPSTRING }, { "Filter", FDF_CPPSTRING }, { "Callback", FD_FUNCTION }, { 0, 0 } };

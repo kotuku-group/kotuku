@@ -1,62 +1,96 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Bitmap" mod="Display" c="Manages bitmap graphics and provides drawing functionality." cat="Graphics" id="f42617e2" v="2">
-  <ai:a n="Clear" c="Clears a bitmap's image to BkgdIndex." p="ERR acClear(*Object)"/>
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Bitmap" mod="Display" c="Represents a pixel buffer used for drawing, image transfer and display backing." cat="Graphics" id="ff557b59" v="1">
+  <ai:a n="Clear" c="Clears the bitmap image to BkgdIndex." p="ERR acClear(*Object)">
+    <ai:e c="Okay"/>
+    <ai:e c="LockFailed"/>
+  </ai:a>
   <ai:a n="CopyData" c="Copies bitmap image data to other bitmaps with colour remapping enabled." p="ERR acCopyData(*Object, OBJECTID Dest)">
     <ai:i n="Dest" t="OBJECTID" c="The unique ID of the destination object."/>
+    <ai:e c="Okay"/>
+    <ai:e c="Args"/>
+    <ai:e c="NullArgs"/>
   </ai:a>
-  <ai:a n="Draw" c="Clears a bitmap's image to BkgdIndex." p="ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)">
+  <ai:a n="Draw" c="Clears the bitmap image to BkgdIndex." p="ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)">
     <ai:i n="X" t="INT" c="The X position of the region to be drawn."/>
     <ai:i n="Y" t="INT" c="The Y position of the region to be drawn."/>
     <ai:i n="Width" t="INT" c="The width of the region to be drawn."/>
     <ai:i n="Height" t="INT" c="The height of the region to be drawn."/>
   </ai:a>
   <ai:a n="Flush" c="Flushes pending graphics operations and returns when the accelerator is idle." p="ERR acFlush(*Object)"/>
-  <ai:a n="Init" c="Initialises a bitmap." p="ERR InitObject(*Object)"/>
-  <ai:a n="Lock" c="Locks the bitmap surface for direct read/write access." p="ERR acLock(*Object)"/>
-  <ai:a n="Query" c="Populates a bitmap with pre-initialised/default values prior to initialisation." p="ERR acQuery(*Object)"/>
-  <ai:a n="Read" c="Reads raw image data from a bitmap object." p="ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)">
-    <ai:i n="Buffer" t="APTR" c="Points a buffer that will receive the data."/>
-    <ai:i n="Length" t="INT" c="The total number of bytes to read from the object. This value cannot exceed the size of the Buffer."/>
+  <ai:a n="Init" c="Initialises a bitmap." p="ERR InitObject(*Object)">
+    <ai:e c="Okay"/>
+    <ai:e c="NoSupport"/>
+    <ai:e c="Query"/>
+    <ai:e c="FieldNotSet"/>
+    <ai:e c="AllocMemory"/>
+    <ai:e c="SystemCall"/>
+  </ai:a>
+  <ai:a n="Lock" c="Locks the bitmap surface for direct read/write access." p="ERR acLock(*Object)">
+    <ai:e c="Okay"/>
+    <ai:e c="NoData"/>
+    <ai:e c="LockFailed"/>
+    <ai:e c="NoSupport"/>
+    <ai:e c="FieldNotSet"/>
+    <ai:e c="AllocMemory"/>
+    <ai:e c="SystemCall"/>
+    <ai:e c="CreateResource"/>
+  </ai:a>
+  <ai:a n="Query" c="Populates a bitmap with pre-initialised/default values prior to initialisation." p="ERR acQuery(*Object)">
+    <ai:e c="Okay"/>
+    <ai:e c="InvalidDimension"/>
+  </ai:a>
+  <ai:a n="Read" c="Reads raw image data from a bitmap object." p="ERR acRead(*Object, std::span&lt;int8_t&gt; Buffer, INT *Result)">
+    <ai:i n="Buffer" t="std::span&lt;int8_t&gt;" c="A mutable buffer that will receive the data."/>
     <ai:i n="Result" t="INT" c="The Read action will write this parameter with the total number of bytes read into the Buffer."/>
+    <ai:e c="Okay"/>
+    <ai:e c="NoData"/>
+    <ai:e c="OutOfRange"/>
+    <ai:e c="NullArgs"/>
   </ai:a>
   <ai:a n="Resize" c="Resizes a bitmap object's dimensions." p="ERR acResize(*Object, DOUBLE Width, DOUBLE Height, DOUBLE Depth)">
     <ai:i n="Width" t="DOUBLE" c="The new width of the object."/>
     <ai:i n="Height" t="DOUBLE" c="The new height of the object."/>
     <ai:i n="Depth" t="DOUBLE" c="The new depth of the object."/>
     <ai:e c="Okay"/>
-    <ai:e c="FieldNotSet"/>
+    <ai:e c="Args"/>
+    <ai:e c="NoSupport"/>
+    <ai:e c="UndefinedField"/>
     <ai:e c="AllocMemory"/>
     <ai:e c="NullArgs"/>
+    <ai:e c="Notified"/>
   </ai:a>
-  <ai:a n="SaveImage" c="Saves a bitmap's image to a data object of your choosing in PCX format." p="ERR acSaveImage(*Object, OBJECTID Dest, CLASSID ClassID)">
+  <ai:a n="SaveImage" c="Saves the bitmap image to a writable object in PCX format." p="ERR acSaveImage(*Object, OBJECTID Dest, CLASSID ClassID)">
     <ai:i n="Dest" t="OBJECTID" c="Refers to an object that will receive the encoded image data."/>
-    <ai:i n="ClassID" t="CLASSID" c="The Picture class to use for encoding the image data."/>
+    <ai:i n="ClassID" t="CLASSID" c="The Image class to use for encoding the image data."/>
+    <ai:e c="Okay"/>
+    <ai:e c="BufferOverflow"/>
+    <ai:e c="NullArgs"/>
   </ai:a>
   <ai:a n="Seek" c="Changes the current byte position for read/write operations." p="ERR acSeek(*Object, DOUBLE Offset, INT Position)">
     <ai:i n="Offset" t="DOUBLE" c="The desired offset to seek to, relative to the Position parameter."/>
     <ai:i n="Position" t="POS" c="The position that defines the starting point for Offset."/>
-  </ai:a>
-  <ai:a n="Unlock" c="Unlocks the bitmap surface once direct access is no longer required." p="ERR acUnlock(*Object)"/>
-  <ai:a n="Write" c="Writes raw image data to a bitmap object." p="ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)">
-    <ai:i n="Buffer" t="APTR" c="A buffer containing the data that will be written to the object."/>
-    <ai:i n="Length" t="INT" c="The total number of bytes to write to the object."/>
-    <ai:i n="Result" t="INT" c="This parameter with be updated with the total number of bytes written from the Buffer."/>
-  </ai:a>
-  <ai:m n="Compress" c="Compresses bitmap data to save memory." p="ERR bmp::Compress(OBJECTPTR Object, INT Level)">
-    <ai:i n="Level" t="INT" c="Level of compression. Zero uses a default setting (recommended), the maximum is 10."/>
     <ai:e c="Okay"/>
-    <ai:e c="AllocMemory"/>
-    <ai:e c="ReallocMemory"/>
-    <ai:e c="CreateObject"/>
+    <ai:e c="Args"/>
     <ai:e c="NullArgs"/>
-  </ai:m>
-  <ai:m n="ConvertToLinear" c="Convert a bitmap's colour space to linear RGB." p="ERR bmp::ConvertToLinear(OBJECTPTR Object)">
+  </ai:a>
+  <ai:a n="Unlock" c="Unlocks the bitmap surface once direct access is no longer required." p="ERR acUnlock(*Object)">
+    <ai:e c="Okay"/>
+  </ai:a>
+  <ai:a n="Write" c="Writes raw image data to a bitmap object." p="ERR acWrite(*Object, std::span&lt;const int8_t&gt; Buffer, INT *Result)">
+    <ai:i n="Buffer" t="std::span&lt;const int8_t&gt;" c="A buffer containing the data that will be written to the object."/>
+    <ai:i n="Result" t="INT" c="This parameter with be updated with the total number of bytes written from the Buffer."/>
+    <ai:e c="Okay"/>
+    <ai:e c="NoData"/>
+    <ai:e c="OutOfSpace"/>
+    <ai:e c="NullArgs"/>
+  </ai:a>
+  <ai:m n="ConvertToLinear" c="Converts a bitmap's colour space to linear RGB." p="ERR bmp::ConvertToLinear(OBJECTPTR Object)">
     <ai:e c="Okay"/>
     <ai:e c="NothingDone"/>
     <ai:e c="InvalidDimension"/>
     <ai:e c="InvalidState"/>
   </ai:m>
-  <ai:m n="ConvertToRGB" c="Convert a bitmap's colour space to standard RGB." p="ERR bmp::ConvertToRGB(OBJECTPTR Object)">
+  <ai:m n="ConvertToRGB" c="Converts a bitmap's colour space to standard RGB." p="ERR bmp::ConvertToRGB(OBJECTPTR Object)">
     <ai:e c="Okay"/>
     <ai:e c="NothingDone"/>
     <ai:e c="InvalidDimension"/>
@@ -75,14 +109,10 @@
     <ai:e c="Mismatch"/>
     <ai:e c="NullArgs"/>
   </ai:m>
-  <ai:m n="Decompress" c="Decompresses a compressed bitmap." p="ERR bmp::Decompress(OBJECTPTR Object, INT RetainData)">
-    <ai:i n="RetainData" t="INT" c="Retains the compression data if true."/>
-    <ai:e c="Okay"/>
-    <ai:e c="AllocMemory"/>
-  </ai:m>
   <ai:m n="Demultiply" c="Reverses the conversion process performed by Premultiply()." p="ERR bmp::Demultiply(OBJECTPTR Object)">
     <ai:e c="Okay"/>
     <ai:e c="NothingDone"/>
+    <ai:e c="AllocMemory"/>
     <ai:e c="InvalidDimension"/>
     <ai:e c="InvalidState"/>
   </ai:m>
@@ -94,7 +124,7 @@
     <ai:i n="Colour" t="UINT" c="The colour index to use for the rectangle."/>
     <ai:i n="Flags" t="BAF" c="Supports FILL and BLEND."/>
     <ai:e c="Okay"/>
-    <ai:e c="Args"/>
+    <ai:e c="NullArgs"/>
   </ai:m>
   <ai:m n="GetColour" c="Converts Red, Green, Blue components into a single colour value." p="ERR bmp::GetColour(OBJECTPTR Object, INT Red, INT Green, INT Blue, INT Alpha, UINT * Colour)">
     <ai:i n="Red" t="INT" c="Red component from 0 - 255."/>
@@ -111,38 +141,37 @@
     <ai:e c="InvalidDimension"/>
     <ai:e c="InvalidState"/>
   </ai:m>
-  <ai:m n="SetClipRegion" c="Sets a clipping region for a bitmap object." p="ERR bmp::SetClipRegion(OBJECTPTR Object, INT Number, INT Left, INT Top, INT Right, INT Bottom, INT Terminate)">
-    <ai:i n="Number" t="INT" c="The number of the clip region to set."/>
+  <ai:m n="SetClipRegion" c="Sets a clipping region for a bitmap object." p="ERR bmp::SetClipRegion(OBJECTPTR Object, INT Left, INT Top, INT Right, INT Bottom)">
     <ai:i n="Left" t="INT" c="The horizontal start of the clip region."/>
     <ai:i n="Top" t="INT" c="The vertical start of the clip region."/>
-    <ai:i n="Right" t="INT" c="The right-most edge of the clip region."/>
-    <ai:i n="Bottom" t="INT" c="The bottom-most edge of the clip region."/>
-    <ai:i n="Terminate" t="INT" c="Set to true if this is the last clip region in the list, otherwise false."/>
+    <ai:i n="Right" t="INT" c="The exclusive right edge of the clip region."/>
+    <ai:i n="Bottom" t="INT" c="The exclusive bottom edge of the clip region."/>
     <ai:e c="Okay"/>
     <ai:e c="NullArgs"/>
   </ai:m>
-  <ai:f n="AmtColours" c="The maximum number of displayable colours." t="INT" a="RI"/>
-  <ai:f n="BitsPerPixel" c="The number of bits per pixel" t="INT" a="RI"/>
-  <ai:f n="Bkgd" c="The bitmap's background colour is defined here in RGB format." t="RGB8" a="RS"/>
-  <ai:f n="BkgdIndex" c="The bitmap's background colour is defined here as a colour index." t="INT" a="RS"/>
+  <ai:f n="AmtColours" c="The maximum number of colours represented by the bitmap format." t="INT" a="RI"/>
+  <ai:f n="BitsPerPixel" c="The number of bits used to represent each pixel." t="INT" a="RI"/>
+  <ai:f n="Bkgd" c="Background colour in RGB format." t="RGB8" a="RS"/>
+  <ai:f n="BkgdIndex" c="Background colour as a packed pixel value or palette index." t="INT" a="RS"/>
   <ai:f n="BlendMode" c="Defines the blending algorithm to use when rendering transparent pixels." t="BLM" a="RW"/>
   <ai:f n="ByteWidth" c="The width of the bitmap, in bytes." t="INT" a="R"/>
   <ai:f n="BytesPerPixel" c="The number of bytes per pixel." t="INT" a="RI"/>
   <ai:f n="Clip" c="Defines the bitmap's clipping region." t="struct ClipRectangle" a="GS"/>
-  <ai:f n="ClipBottom" c="The bottom-most edge of bitmap's clipping region." t="INT" a="RW"/>
+  <ai:f n="ClipBottom" c="The exclusive bottom edge of the bitmap clipping region." t="INT" a="RW"/>
   <ai:f n="ClipLeft" c="The left-most edge of a bitmap's clipping region." t="INT" a="RW"/>
-  <ai:f n="ClipRight" c="The right-most edge of a bitmap's clipping region." t="INT" a="RW"/>
+  <ai:f n="ClipRight" c="The exclusive right edge of the bitmap clipping region." t="INT" a="RW"/>
   <ai:f n="ClipTop" c="The top-most edge of a bitmap's clipping region." t="INT" a="RW"/>
   <ai:f n="ColourFormat" c="Describes the colour format used to construct each bitmap pixel." t="struct ColourFormat *" a="R"/>
   <ai:f n="ColourSpace" c="Defines the colour space for RGB values." t="CS" a="RW"/>
-  <ai:f n="Data" c="Pointer to a bitmap's data area." t="UINT8 *" a="RS"/>
-  <ai:f n="DataFlags" c="Defines the memory flags to use in allocating a bitmap's data area." t="MEM" a="RI"/>
+  <ai:f n="Data" c="Provides direct access to the bitmap's data area." t="UINT8[]" a="GS"/>
   <ai:f n="DrawUCPixel" c="Points to a C function that draws pixels to the bitmap using colour indexes." t="FUNCTION *" a="R"/>
   <ai:f n="DrawUCRIndex" c="Points to a C function that draws pixels to the bitmap in RGB format." t="FUNCTION *" a="R"/>
   <ai:f n="DrawUCRPixel" c="Points to a C function that draws pixels to the bitmap in RGB format." t="FUNCTION *" a="R"/>
   <ai:f n="Flags" c="Optional flags." t="BMF" a="RI"/>
+  <ai:f n="Handle" c="Platform-dependent field for referencing video memory." t="APTR" a="GS"/>
   <ai:f n="Height" c="The height of the bitmap, in pixels." t="INT" a="RI"/>
   <ai:f n="LineWidth" c="The length of each bitmap line in bytes, including alignment." t="INT" a="R"/>
+  <ai:f n="MemType" c="Defines the memory type used to host a bitmap's data area." t="BMT" a="RI"/>
   <ai:f n="Opacity" c="Determines the translucency setting to use in drawing operations." t="INT" a="RW"/>
   <ai:f n="Palette" c="Points to a bitmap's colour palette." t="struct RGBPalette *" a="RS"/>
   <ai:f n="PlaneMod" c="The differential between each bitmap plane." t="INT" a="R"/>

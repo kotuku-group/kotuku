@@ -203,25 +203,21 @@ class objClientSocket : public Object {
 
    inline ERR deactivate() noexcept { return Action(AC::Deactivate, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
-   template <class T, class U> ERR read(APTR Buffer, T Size, U *Result) noexcept {
-      static_assert(std::is_integral<U>::value, "Result value must be an integer type");
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
+      static_assert(std::is_integral<T>::value, "Result value must be an integer type");
+      struct acRead read = { Buffer };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
-         *Result = U(read.Result);
+         *Result = T(read.Result);
          return ERR::Okay;
       }
       else { *Result = 0; return error; }
    }
-   template <class T> ERR read(APTR Buffer, T Size) noexcept {
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   inline ERR read(std::span<int8_t> Buffer) noexcept {
+      struct acRead read = { Buffer };
       return Action(AC::Read, this, &read);
    }
-   inline ERR write(CPTR Buffer, int Size, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
+   inline ERR write(std::span<const int8_t> Buffer, int *Result = nullptr) noexcept {
+      struct acWrite write = { Buffer };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -232,7 +228,7 @@ class objClientSocket : public Object {
       }
    }
    inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer.c_str(), int(Buffer.size()) };
+      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()) };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -546,8 +542,8 @@ class objNetLookup : public Object {
 namespace ns {
 struct Connect { std::string_view Address; int Port; double Timeout; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetLocalIPAddress { struct IPAddress *Address; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SendTo { struct IPAddress *Dest; APTR Data; int Length; int BytesSent; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct RecvFrom { struct IPAddress *Source; APTR Buffer; int BufferSize; int BytesRead; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SendTo { struct IPAddress *Dest; std::span<const int8_t> Data; int BytesSent; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct RecvFrom { struct IPAddress *Source; std::span<int8_t> Buffer; int BytesRead; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct JoinMulticastGroup { std::string_view Group; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct LeaveMulticastGroup { std::string_view Group; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
@@ -579,25 +575,21 @@ class objNetSocket : public Object {
    }
    inline ERR disable() noexcept { return Action(AC::Disable, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
-   template <class T, class U> ERR read(APTR Buffer, T Size, U *Result) noexcept {
-      static_assert(std::is_integral<U>::value, "Result value must be an integer type");
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
+      static_assert(std::is_integral<T>::value, "Result value must be an integer type");
+      struct acRead read = { Buffer };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
-         *Result = U(read.Result);
+         *Result = T(read.Result);
          return ERR::Okay;
       }
       else { *Result = 0; return error; }
    }
-   template <class T> ERR read(APTR Buffer, T Size) noexcept {
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   inline ERR read(std::span<int8_t> Buffer) noexcept {
+      struct acRead read = { Buffer };
       return Action(AC::Read, this, &read);
    }
-   inline ERR write(CPTR Buffer, int Size, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
+   inline ERR write(std::span<const int8_t> Buffer, int *Result = nullptr) noexcept {
+      struct acWrite write = { Buffer };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -608,7 +600,7 @@ class objNetSocket : public Object {
       }
    }
    inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer.c_str(), int(Buffer.size()) };
+      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()) };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -626,14 +618,14 @@ class objNetSocket : public Object {
       struct ns::GetLocalIPAddress args = { Address };
       return Action(AC(-2), this, &args);
    }
-   inline ERR sendTo(struct IPAddress * Dest, APTR Data, int Length, int * BytesSent) noexcept {
-      struct ns::SendTo args = { Dest, Data, Length, (int)0 };
+   inline ERR sendTo(struct IPAddress * Dest, std::span<const int8_t> Data, int * BytesSent) noexcept {
+      struct ns::SendTo args = { Dest, Data, (int)0 };
       ERR error = Action(AC(-3), this, &args);
       if (BytesSent) *BytesSent = args.BytesSent;
       return error;
    }
-   inline ERR recvFrom(struct IPAddress * Source, APTR Buffer, int BufferSize, int * BytesRead) noexcept {
-      struct ns::RecvFrom args = { Source, Buffer, BufferSize, (int)0 };
+   inline ERR recvFrom(struct IPAddress * Source, std::span<int8_t> Buffer, int * BytesRead) noexcept {
+      struct ns::RecvFrom args = { Source, Buffer, (int)0 };
       ERR error = Action(AC(-4), this, &args);
       if (BytesRead) *BytesRead = args.BytesRead;
       return error;
@@ -833,25 +825,21 @@ class objNetServer : public objNetSocket {
    // Action stubs
 
    inline ERR init() noexcept { return InitObject(this); }
-   template <class T, class U> ERR read(APTR Buffer, T Size, U *Result) noexcept {
-      static_assert(std::is_integral<U>::value, "Result value must be an integer type");
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
+      static_assert(std::is_integral<T>::value, "Result value must be an integer type");
+      struct acRead read = { Buffer };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
-         *Result = U(read.Result);
+         *Result = T(read.Result);
          return ERR::Okay;
       }
       else { *Result = 0; return error; }
    }
-   template <class T> ERR read(APTR Buffer, T Size) noexcept {
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   inline ERR read(std::span<int8_t> Buffer) noexcept {
+      struct acRead read = { Buffer };
       return Action(AC::Read, this, &read);
    }
-   inline ERR write(CPTR Buffer, int Size, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
+   inline ERR write(std::span<const int8_t> Buffer, int *Result = nullptr) noexcept {
+      struct acWrite write = { Buffer };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -862,7 +850,7 @@ class objNetServer : public objNetSocket {
       }
    }
    inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer.c_str(), int(Buffer.size()) };
+      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()) };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;

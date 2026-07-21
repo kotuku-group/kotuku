@@ -199,8 +199,8 @@ function WaveSave()
 
       original_data = string.alloc(read_size)
       saved_data = string.alloc(read_size)
-      err, size_a = original_file.acRead(original_data, read_size)
-      err, size_b = saved_file.acRead(saved_data, read_size)
+      err, size_a = original_file.acRead(original_data)
+      err, size_b = saved_file.acRead(saved_data)
 
       assert(original_data, 'Failed to read from original file at offset ' .. bytes_compared)
       assert(saved_data, 'Failed to read from saved file at offset ' .. bytes_compared)

@@ -128,7 +128,7 @@ function writeTaskQueryFixture(Path)
 
    mSys.DeleteFile(Path)
    local file = obj.new('file', { src=Path, flags=FL_NEW|FL_WRITE })
-   check file.acWrite(content:getString(), #content)
+   check file.acWrite(content:getString())
    file = nil
    processing.collect()
 end
@@ -184,7 +184,7 @@ end
 
    mSys.DeleteFile(invalid_path)
    local invalid_file = obj.new('file', { src=invalid_path, flags=FL_NEW|FL_WRITE })
-   check invalid_file.acWrite('not a PE file', #'not a PE file')
+   check invalid_file.acWrite('not a PE file')
    invalid_file = nil
    processing.collect()
 

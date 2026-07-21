@@ -74,13 +74,12 @@
     <method>
       <name>AddSample</name>
       <comment>Adds a new sample to an audio object for channel-based playback.</comment>
-      <prototype>ERR snd::AddSample(OBJECTPTR Object, FUNCTION OnStop, SFM SampleFormat, APTR Data, INT DataSize, struct AudioLoop * Loop, INT LoopSize, INT * Result)</prototype>
-      <tiriPrototype>err, Result:num = AddSample(OnStop:func, SampleFormat:num, Data:any, DataSize:num, Loop:any, LoopSize:num)</tiriPrototype>
+      <prototype>ERR snd::AddSample(OBJECTPTR Object, FUNCTION OnStop, SFM SampleFormat, std::span&lt;const int8_t&gt; Data, struct AudioLoop * Loop, INT LoopSize, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = AddSample(OnStop:func, SampleFormat:num, Data:array, Loop:any, LoopSize:num)</tiriPrototype>
       <input>
         <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.</param>
         <param type="SFM" name="SampleFormat" lookup="SFM">Indicates the format of the sample data that you are adding.</param>
-        <param type="APTR" name="Data">Points to the address of the sample data.</param>
-        <param type="INT" name="DataSize">Size of the sample data, in bytes.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Data">Points to the address of the sample data.</param>
         <param type="struct AudioLoop *" name="Loop">Optional sample loop information.</param>
         <param type="INT" name="LoopSize">Must be set to <code>sizeof(AudioLoop)</code> if <code>Loop</code> is defined.</param>
         <param type="INT *" name="Result">The resulting sample handle will be returned in this parameter.</param>

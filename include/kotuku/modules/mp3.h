@@ -31,21 +31,17 @@ class objMP3 : public objSound {
    // Action stubs
 
    inline ERR init() noexcept { return InitObject(this); }
-   template <class T, class U> ERR read(APTR Buffer, T Size, U *Result) noexcept {
-      static_assert(std::is_integral<U>::value, "Result value must be an integer type");
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
+      static_assert(std::is_integral<T>::value, "Result value must be an integer type");
+      struct acRead read = { Buffer };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
-         *Result = U(read.Result);
+         *Result = T(read.Result);
          return ERR::Okay;
       }
       else { *Result = 0; return error; }
    }
-   template <class T> ERR read(APTR Buffer, T Size) noexcept {
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   inline ERR read(std::span<int8_t> Buffer) noexcept {
+      struct acRead read = { Buffer };
       return Action(AC::Read, this, &read);
    }
    inline ERR seek(double Offset, SEEK Position = SEEK::CURRENT) noexcept {

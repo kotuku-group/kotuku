@@ -1,6 +1,8 @@
 // Refer: lib_object.cpp
 
 #include <new>
+#include <array>
+#include <limits>
 #include <vector>
 
 struct pending_function_arg {
@@ -355,6 +357,174 @@ static bool push_cpp_array_arg(lua_State *Lua, int Type, std::string_view Name, 
    return true;
 }
 
+//********************************************************************************************************************
+// Embedded spans use typed operations supplied by generated method metadata.  Validate that metadata against Tiri's
+// backing storage before constructing the concrete std::span specialisation in the argument record.
+
+static ERR span_storage_bounds(const FunctionField &Field, size_t Offset, size_t Capacity, size_t *AlignedOffset,
+   size_t *EndOffset)
+{
+   if ((Field.Type & FDF_SPAN) != FDF_SPAN) return ERR::InvalidData;
+   if ((not Field.SpanOps) or (not Field.SpanOps->Size) or (not Field.SpanOps->Alignment) or
+       (not Field.SpanOps->ElementSize) or (not Field.SpanOps->Read) or (not Field.SpanOps->Construct) or
+       (not Field.SpanOps->Rebind)) return ERR::InvalidData;
+
+   const auto alignment = Field.SpanOps->Alignment;
+   if (alignment & (alignment - 1)) return ERR::InvalidData;
+   if (Offset > std::numeric_limits<size_t>::max() - (alignment - 1)) return ERR::OutOfRange;
+
+   const auto aligned_offset = (Offset + alignment - 1) & ~(alignment - 1);
+   if (aligned_offset > std::numeric_limits<size_t>::max() - Field.SpanOps->Size) return ERR::OutOfRange;
+   const auto end_offset = aligned_offset + Field.SpanOps->Size;
+   if (end_offset > Capacity) return ERR::OutOfRange;
+
+   *AlignedOffset = aligned_offset;
+   *EndOffset = end_offset;
+   return ERR::Okay;
+}
+
+static ERR span_element_metadata(lua_State *Lua, const FunctionField &Field, AET *ElementType,
+   struct_record **StructDef, bool *RawBytes)
+{
+   *StructDef = nullptr;
+   *RawBytes = false;
+
+   size_t element_size;
+   if (Field.Type & FD_STRUCT) {
+      if ((not Field.Name) or (not valid_struct_name(Field.Name))) return ERR::InvalidData;
+      auto definition = find_struct(Lua, struct_name_prefix(Field.Name));
+      if (not definition) return ERR::Search;
+      if ((definition->Size <= 0) or (size_t(definition->Size) != Field.SpanOps->ElementSize)) {
+         return ERR::InvalidData;
+      }
+      *ElementType = AET::STRUCT;
+      *StructDef = definition;
+      return ERR::Okay;
+   }
+
+   const int type_count = bool(Field.Type & FD_DOUBLE) + bool(Field.Type & FD_INT64) +
+      bool(Field.Type & FD_FLOAT) + bool(Field.Type & FD_INT) + bool(Field.Type & FD_WORD) +
+      bool(Field.Type & FD_BYTE) + bool(Field.Type & FD_PTR) + bool(Field.Type & FD_STR);
+   if (type_count != 1) return ERR::InvalidData;
+
+   if (Field.Type & FD_DOUBLE) { *ElementType = AET::DOUBLE; element_size = sizeof(double); }
+   else if (Field.Type & FD_INT64) { *ElementType = AET::INT64; element_size = sizeof(int64_t); }
+   else if (Field.Type & FD_FLOAT) { *ElementType = AET::FLOAT; element_size = sizeof(float); }
+   else if (Field.Type & FD_INT) { *ElementType = AET::INT32; element_size = sizeof(int); }
+   else if (Field.Type & FD_WORD) { *ElementType = AET::INT16; element_size = sizeof(int16_t); }
+   else {
+      *ElementType = AET::BYTE;
+      element_size = sizeof(int8_t);
+      *RawBytes = bool(Field.Type & FD_PTR);
+   }
+
+   return (element_size IS Field.SpanOps->ElementSize) ? ERR::Okay : ERR::InvalidData;
+}
+
+static ERR build_span_arg(lua_State *Lua, int StackIndex, const FunctionField &Field, int8_t *ArgBuffer,
+   size_t Offset, size_t Capacity, size_t *EndOffset, CSTRING *ErrorMsg)
+{
+   if (Field.Type & (FD_RESULT|FD_ALLOC)) {
+      *ErrorMsg = "Result and allocated spans are not supported.";
+      return ERR::NoSupport;
+   }
+
+   size_t aligned_offset;
+   if (auto error = span_storage_bounds(Field, Offset, Capacity, &aligned_offset, EndOffset); error != ERR::Okay) {
+      *ErrorMsg = "Span metadata exceeds the argument record.";
+      return error;
+   }
+
+   AET element_type;
+   struct_record *struct_def;
+   bool raw_bytes;
+   if (auto error = span_element_metadata(Lua, Field, &element_type, &struct_def, &raw_bytes); error != ERR::Okay) {
+      *ErrorMsg = (error IS ERR::Search) ? "Unknown span structure metadata." : "Invalid span element metadata.";
+      return error;
+   }
+
+   CPTR data = nullptr;
+   size_t extent = 0;
+   const bool mutable_span = Field.Type & FD_MUTABLE;
+   const auto value_type = lua_type(Lua, StackIndex);
+
+   if ((value_type IS LUA_TNIL) or (value_type IS LUA_TNONE)) {
+      // The canonical empty span is constructed below.
+   }
+   else if (value_type IS LUA_TARRAY) {
+      auto array = lua_toarray(Lua, StackIndex);
+      if (mutable_span and array->is_readonly()) {
+         *ErrorMsg = "Mutable span requires writable array storage.";
+         return ERR::Immutable;
+      }
+
+      if (raw_bytes) {
+         if (array->len and (array->elemsize > std::numeric_limits<size_t>::max() / array->len)) {
+            *ErrorMsg = "Array backing storage is too large for the span extent.";
+            return ERR::OutOfRange;
+         }
+         extent = size_t(array->len) * array->elemsize;
+      }
+      else {
+         if ((array->elemtype != element_type) or (size_t(array->elemsize) != Field.SpanOps->ElementSize)) {
+            *ErrorMsg = "Array element type does not match the span element type.";
+            return ERR::InvalidType;
+         }
+         if ((element_type IS AET::STRUCT) and (array->structdef != struct_def)) {
+            *ErrorMsg = "Structure array type does not match the span structure type.";
+            return ERR::InvalidType;
+         }
+         extent = array->len;
+      }
+      data = array->arraydata();
+   }
+   else if (value_type IS LUA_TSTRING) {
+      if (not (element_type IS AET::BYTE)) {
+         *ErrorMsg = "String storage is compatible only with byte or character spans.";
+         return ERR::InvalidType;
+      }
+
+      auto string = strV(Lua->base + StackIndex - 1);
+      if (mutable_span and not lj_str_ismutable(string)) {
+         *ErrorMsg = "Mutable span requires string.alloc() storage.";
+         return ERR::Immutable;
+      }
+      data = mutable_span ? CPTR(strdatawr(string)) : CPTR(strdata(string));
+      extent = string->len;
+   }
+   else if (auto native_struct = lua_isstruct(Lua, StackIndex) ? lua_tostruct(Lua, StackIndex) : nullptr) {
+      if (not (element_type IS AET::STRUCT)) {
+         *ErrorMsg = "Structure storage requires a matching structure span.";
+         return ERR::InvalidType;
+      }
+      if (lj_struct_stale(native_struct)) {
+         *ErrorMsg = "Struct's providing object has been destroyed.";
+         return ERR::DoesNotExist;
+      }
+      if ((native_struct->def != struct_def) or (native_struct->structsize != Field.SpanOps->ElementSize)) {
+         *ErrorMsg = "Structure type does not match the span structure type.";
+         return ERR::InvalidType;
+      }
+      if (not native_struct->data) {
+         *ErrorMsg = "Structure span storage is unavailable.";
+         return ERR::InvalidData;
+      }
+      data = native_struct->data;
+      extent = 1;
+   }
+   else {
+      *ErrorMsg = "Span requires a compatible array, string, structure or nil.";
+      return ERR::InvalidType;
+   }
+
+   if (extent and not data) {
+      *ErrorMsg = "Non-empty span storage is unavailable.";
+      return ERR::InvalidData;
+   }
+   Field.SpanOps->Construct(ArgBuffer + aligned_offset, data, extent);
+   return ERR::Okay;
+}
+
 // Cleans up allocations held by an argument buffer.
 // If ReleaseFunctions is true, also releases any FD_FUNCTION Lua registry references.
 void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int ArgsSize, int8_t *ArgBuffer,
@@ -365,7 +535,14 @@ void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int ArgsSize, 
    for (int i=0, j=0; (Args[i].Name) and (j < ArgsSize); i++) {
       const int type = Args[i].Type;
 
-      if (type & FD_RESULT) {
+      if ((type & FDF_SPAN) IS FDF_SPAN) {
+         size_t aligned_offset, end_offset;
+         if (span_storage_bounds(Args[i], size_t(j), size_t(ArgsSize), &aligned_offset, &end_offset) != ERR::Okay) {
+            return;
+         }
+         j = int(end_offset);
+      }
+      else if (type & FD_RESULT) {
          if (type & FD_ARRAY) {
             j = ALIGN64(j);
             if ((type & FD_CPP) and (j + int(sizeof(APTR)) <= ArgsSize)) {
@@ -407,9 +584,6 @@ void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int ArgsSize, 
             ((APTR *)(ArgBuffer + j))[0] = nullptr;
          }
          j += sizeof(APTR);
-      }
-      else if ((type & FD_BUFFER) or (Args[i+1].Type & FD_BUFSIZE)) {
-         j = ALIGN64(j) + sizeof(APTR);
       }
       else if (type & FD_STR) {
          j = ALIGN64(j);
@@ -488,7 +662,23 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
    for (i=0,n=1; (Args[i].Name) and (j < ArgsSize); i++) {
       if (not (Args[i].Type & FD_BUFSIZE)) buffer_capacity_known = false;
 
-      if (Args[i].Type & FD_RESULT) {
+      if ((Args[i].Type & FDF_SPAN) IS FDF_SPAN) {
+         size_t end_offset;
+         CSTRING span_error = nullptr;
+         auto error = build_span_arg(Lua, n, Args[i], ArgBuffer, size_t(j), size_t(ArgsSize), &end_offset,
+            &span_error);
+         if (error != ERR::Okay) {
+            cleanup_argbuffer(Lua, Args, ArgsSize, ArgBuffer, true);
+            ErrorArg = n;
+            ErrorMsg = span_error;
+            return error;
+         }
+         j = int(end_offset);
+         n++;
+         if (top > 0) top--;
+         continue;
+      }
+      else if (Args[i].Type & FD_RESULT) {
          resultcount++;
 
          if (Args[i].Type & FD_ARRAY) {
@@ -573,66 +763,54 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
             }
          }
       }
-      else if ((Args[i].Type & FD_BUFFER) or (Args[i+1].Type & FD_BUFSIZE)) {
+      else if ((Args[i].Type & FD_PTR) and (Args[i+1].Type & FD_PTRSIZE)) {
          j = ALIGN64(j);
          if (type IS LUA_TARRAY) {
-            //log.trace("Arg: %s, Value: Buffer (Source is Memory)", Args[i].Name);
+            auto array = lua_toarray(Lua, n);
+            if (array->len and (array->elemsize > std::numeric_limits<size_t>::max() / array->len)) {
+               return fail_arg(n, "Array backing storage is too large for the pointer-size contract.");
+            }
 
-            auto array = lua_toarray(Lua, n); // Safe (confirmed array type)
             ((APTR *)(ArgBuffer + j))[0] = array->arraydata();
             j += sizeof(APTR);
 
-            if (Args[i+1].Type & FD_BUFSIZE) {
-               // Buffer size is optional (can be nil), so set the buffer size parameter by default.  The user can override it if
-               // more arguments are specified in the function call.
-
-               size_t memsize = array->len * array->elemsize;
-               buffer_capacity = memsize;
-               buffer_capacity_known = true;
-               if (Args[i+1].Type & FD_INT)  ((int *)(ArgBuffer + j))[0] = int(memsize);
-               else if (Args[i+1].Type & FD_INT64) ((int64_t *)(ArgBuffer + j))[0] = int64_t(memsize);
+            const size_t memsize = size_t(array->len) * array->elemsize;
+            buffer_capacity = memsize;
+            buffer_capacity_known = true;
+            if ((Args[i+1].Type & FD_INT) and (memsize <= size_t(INT_MAX))) {
+               ((int *)(ArgBuffer + j))[0] = int(memsize);
             }
+            else if (Args[i+1].Type & FD_INT64) ((int64_t *)(ArgBuffer + j))[0] = int64_t(memsize);
+            else return fail_arg(n, "Array backing storage exceeds the pointer-size field.");
          }
          else if (auto native_struct = lua_isstruct(Lua, n) ? lua_tostruct(Lua, n) : nullptr) {
-            //log.trace("Arg: %s, Value: Buffer (Source is a struct)", Args[i].Name);
-
-            // Guard specific to lifecycle-bound struct views; structs without an object dependency skip it.
             if (lj_struct_stale(native_struct)) return fail_arg(n, "Struct's providing object has been destroyed.");
             ((APTR *)(ArgBuffer + j))[0] = native_struct->data;
             j += sizeof(APTR);
 
-            if (Args[i+1].Type & FD_BUFSIZE) {
-               // Buffer size is optional (can be nil), so set the buffer size parameter by default.
-               // The user can override it if more arguments are specified in the function call.
-
-               buffer_capacity = ALIGN64(native_struct->structsize);
-               buffer_capacity_known = true;
-               if (Args[i+1].Type & FD_INT) ((int *)(ArgBuffer + j))[0] = ALIGN64(native_struct->structsize);
-               else if (Args[i+1].Type & FD_INT64) ((int64_t *)(ArgBuffer + j))[0] = ALIGN64(native_struct->structsize);
-            }
-            n--; // Adjustment required due to successful get_meta()
+            buffer_capacity = native_struct->structsize;
+            buffer_capacity_known = true;
+            if (Args[i+1].Type & FD_INT) ((int *)(ArgBuffer + j))[0] = int(native_struct->structsize);
+            else if (Args[i+1].Type & FD_INT64) ((int64_t *)(ArgBuffer + j))[0] = int64_t(native_struct->structsize);
          }
          else if (type IS LUA_TSTRING) {
-            //log.trace("Arg: %s, Value: Buffer (Source is String)", Args[i].Name);
             auto string = strV(Lua->base + n - 1);
             if ((Args[i].Type & FD_MUTABLE) and (not lj_str_ismutable(string))) {
                return fail_arg(n, "Mutable buffer required.");
             }
-            size_t len = string->len;
-            CSTRING str = (Args[i].Type & FD_MUTABLE) ? strdatawr(string) : strdata(string);
-            ((CSTRING *)(ArgBuffer + j))[0] = str;
+
+            ((CSTRING *)(ArgBuffer + j))[0] = (Args[i].Type & FD_MUTABLE) ? strdatawr(string) : strdata(string);
             j += sizeof(APTR);
 
-            if (Args[i+1].Type & FD_BUFSIZE) {
-               buffer_capacity = len;
-               buffer_capacity_known = true;
-               if (Args[i+1].Type & FD_INT) ((int *)(ArgBuffer + j))[0] = len;
-               else if (Args[i+1].Type & FD_INT64) ((int64_t *)(ArgBuffer + j))[0] = len;
+            buffer_capacity = string->len;
+            buffer_capacity_known = true;
+            if ((Args[i+1].Type & FD_INT) and (string->len <= size_t(INT_MAX))) {
+               ((int *)(ArgBuffer + j))[0] = int(string->len);
             }
+            else if (Args[i+1].Type & FD_INT64) ((int64_t *)(ArgBuffer + j))[0] = int64_t(string->len);
+            else return fail_arg(n, "String storage exceeds the pointer-size field.");
          }
-         else if (type IS LUA_TNUMBER) return fail_arg(n, "Cannot use a number as a buffer pointer.");
          else {
-            //log.trace("Arg: %s, Value: Buffer", Args[i].Name);
             ((APTR *)(ArgBuffer + j))[0] = lua_touserdata(Lua, n);
             j += sizeof(APTR);
          }
@@ -766,7 +944,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
             ((int *)(ArgBuffer + j))[0] = value;
          }
          else if (Args[i].Type & (FD_BUFSIZE|FD_ARRAYSIZE)) {
-            buffer_capacity_known = false; // Do not alter as the FD_BUFFER support would have managed it
+            buffer_capacity_known = false; // An inferred array extent is no longer being validated.
          }
          else ((int *)(ArgBuffer + j))[0] = 0; // Value is nil
          //log.trace("Arg: %s, Value: %d / $%.8x", Args[i].Name, ((int *)(ArgBuffer + j))[0], ((int *)(ArgBuffer + j))[0]);
@@ -827,7 +1005,16 @@ static int get_results(lua_State *Lua, const FunctionField *Args, const int8_t *
    int of = 0;
    for (i=0; Args[i].Name; i++) {
       const int type = Args[i].Type;
-      if (type & FD_ARRAY) { // Pointer to an array.
+      if ((type & FDF_SPAN) IS FDF_SPAN) {
+         size_t aligned_offset, end_offset;
+         if (span_storage_bounds(Args[i], size_t(of), size_t(std::numeric_limits<int>::max()), &aligned_offset,
+             &end_offset) != ERR::Okay) {
+            log.warning("Invalid embedded span metadata for arg %s.", Args[i].Name);
+            break;
+         }
+         of = int(end_offset);
+      }
+      else if (type & FD_ARRAY) { // Pointer to an array.
          of = ALIGN64(of);
          if (type & FD_CPP) {
             auto slot = (APTR *)(ArgBuf + of);
@@ -993,3 +1180,263 @@ static int get_results(lua_State *Lua, const FunctionField *Args, const int8_t *
    RMSG("get_results: Wrote %d Args.", total);
    return total;
 }
+
+#ifdef UNIT_TESTS
+
+namespace {
+
+static extTiri *glObjectCallTestScript = nullptr;
+
+struct span_result_args {
+   std::span<const int> Values;
+   int Result;
+};
+
+static bool typed_span_call_test(kt::Log &Log)
+{
+   auto lua = glObjectCallTestScript->Lua;
+   lua_settop(lua, 0);
+
+   const std::array<int, 3> values = { 11, 22, 33 };
+   lua_createarray(lua, values.size(), AET::INT32, (void *)values.data(), ARRAY_CACHED);
+   auto array = arrayV(lua, 1);
+
+   const FunctionField fields[] = {
+      { "Values", FDF_SPAN|FD_INT, &glSpanFieldOps<const int> },
+      { "Result", FD_RESULT|FD_INT },
+      { nullptr, 0 }
+   };
+   alignas(span_result_args) std::array<int8_t, sizeof(span_result_args)> buffer;
+   int result_count = 0;
+   int error_arg = 0;
+   CSTRING error_msg = nullptr;
+   auto error = build_args(lua, "TypedSpanTest", fields, buffer.size(), buffer.data(), &result_count, error_arg,
+      error_msg);
+   if (error != ERR::Okay) {
+      Log.error("typed span build failed: %s", error_msg ? error_msg : GetErrorMsg(error));
+      return false;
+   }
+
+   auto args = (span_result_args *)buffer.data();
+   if ((args->Values.data() != array->arraydata()) or (args->Values.size() != values.size())) {
+      Log.error("typed span did not bind the complete compatible array");
+      return false;
+   }
+   if (result_count != 1) {
+      Log.error("typed span call reported %d results instead of one", result_count);
+      return false;
+   }
+
+   args->Result = 73;
+   if ((get_results(lua, fields, buffer.data()) != 1) or (lua_tointeger(lua, -1) != 73)) {
+      Log.error("result traversal after an embedded span used the wrong offset");
+      return false;
+   }
+   cleanup_argbuffer(lua, fields, buffer.size(), buffer.data(), true);
+   return true;
+}
+
+static bool raw_byte_span_call_test(kt::Log &Log)
+{
+   auto lua = glObjectCallTestScript->Lua;
+   lua_settop(lua, 0);
+
+   const std::array<int16_t, 3> values = { 1, 2, 3 };
+   lua_createarray(lua, values.size(), AET::INT16, (void *)values.data(), ARRAY_CACHED);
+   auto array = arrayV(lua, 1);
+
+   const FunctionField fields[] = {
+      { "Bytes", FDF_SPAN|FD_PTR, &glSpanFieldOps<const int8_t> },
+      { nullptr, 0 }
+   };
+   alignas(std::span<const int8_t>) std::array<int8_t, sizeof(std::span<const int8_t>)> buffer;
+   int error_arg = 0;
+   CSTRING error_msg = nullptr;
+   auto error = build_args(lua, "RawSpanTest", fields, buffer.size(), buffer.data(), nullptr, error_arg, error_msg);
+   if (error != ERR::Okay) {
+      Log.error("raw byte span build failed: %s", error_msg ? error_msg : GetErrorMsg(error));
+      return false;
+   }
+
+   auto span = (std::span<const int8_t> *)buffer.data();
+   if ((span->data() != array->arraydata()) or (span->size() != values.size() * sizeof(int16_t))) {
+      Log.error("raw byte span did not cover the array's complete backing storage");
+      return false;
+   }
+
+   lua_settop(lua, 0);
+   lua_pushnil(lua);
+   error = build_args(lua, "RawSpanTest", fields, buffer.size(), buffer.data(), nullptr, error_arg, error_msg);
+   if (error != ERR::Okay) {
+      Log.error("raw byte span rejected nil: %s", error_msg ? error_msg : GetErrorMsg(error));
+      return false;
+   }
+   if ((span->data() != nullptr) or (span->size() != 0)) {
+      Log.error("nil did not construct a canonical empty span");
+      return false;
+   }
+   return true;
+}
+
+static bool mutable_span_storage_test(kt::Log &Log)
+{
+   auto lua = glObjectCallTestScript->Lua;
+   const FunctionField fields[] = {
+      { "Bytes", FDF_SPAN|FD_MUTABLE|FD_PTR, &glSpanFieldOps<int8_t> },
+      { nullptr, 0 }
+   };
+   alignas(std::span<int8_t>) std::array<int8_t, sizeof(std::span<int8_t>)> buffer;
+   int error_arg = 0;
+   CSTRING error_msg = nullptr;
+
+   lua_settop(lua, 0);
+   lua_pushlstring(lua, "fixed", 5);
+   auto error = build_args(lua, "MutableSpanTest", fields, buffer.size(), buffer.data(), nullptr, error_arg,
+      error_msg);
+   if ((error != ERR::Immutable) or (error_arg != 1)) {
+      Log.error("mutable span accepted immutable string storage");
+      return false;
+   }
+
+   std::array<int8_t, 4> readonly_values = { 1, 2, 3, 4 };
+   lua_settop(lua, 0);
+   lua_createarray(lua, readonly_values.size(), AET::BYTE, readonly_values.data(),
+      ARRAY_EXTERNAL|ARRAY_READONLY);
+   error = build_args(lua, "MutableSpanTest", fields, buffer.size(), buffer.data(), nullptr, error_arg, error_msg);
+   if (error != ERR::Immutable) {
+      Log.error("mutable span accepted a read-only array");
+      return false;
+   }
+
+   lua_settop(lua, 0);
+   auto string = lj_str_newbuf(lua, 7);
+   setstrV(lua, lua->top, string);
+   incr_top(lua);
+   error_arg = 0;
+   error_msg = nullptr;
+   error = build_args(lua, "MutableSpanTest", fields, buffer.size(), buffer.data(), nullptr, error_arg, error_msg);
+   if (error != ERR::Okay) {
+      Log.error("mutable span rejected string.alloc() storage: %s", error_msg ? error_msg : GetErrorMsg(error));
+      return false;
+   }
+
+   auto span = (std::span<int8_t> *)buffer.data();
+   if ((span->data() != (int8_t *)strdatawr(string)) or (span->size() != string->len)) {
+      Log.error("mutable span did not bind string.alloc() storage");
+      return false;
+   }
+
+   const FunctionField typed_fields[] = {
+      { "Values", FDF_SPAN|FD_INT, &glSpanFieldOps<const int> },
+      { nullptr, 0 }
+   };
+   const std::array<double, 2> incompatible_values = { 1.0, 2.0 };
+   lua_settop(lua, 0);
+   lua_createarray(lua, incompatible_values.size(), AET::DOUBLE, (void *)incompatible_values.data(), ARRAY_CACHED);
+   error = build_args(lua, "TypedSpanMismatchTest", typed_fields, buffer.size(), buffer.data(), nullptr, error_arg,
+      error_msg);
+   if (error != ERR::InvalidType) {
+      Log.error("typed span accepted an incompatible array element type");
+      return false;
+   }
+   return true;
+}
+
+static bool struct_span_call_test(kt::Log &Log)
+{
+   auto lua = glObjectCallTestScript->Lua;
+   lua_settop(lua, 0);
+
+   auto record_it = lua->struct_declarations.try_emplace(struct_key("RGB8"), "RGB8").first;
+   auto &record = record_it->second;
+   record.Size = sizeof(RGB8);
+   record.Alignment = alignof(RGB8);
+
+   const std::array<RGB8, 2> values = { RGB8{ 1, 2, 3, 4 }, RGB8{ 5, 6, 7, 8 } };
+   lua_createarray(lua, values.size(), AET::STRUCT, (void *)values.data(), ARRAY_CACHED, "RGB8", &record);
+   auto array = arrayV(lua, 1);
+
+   const FunctionField fields[] = {
+      { "RGB8:Values", FDF_SPAN|FD_PTR|FD_STRUCT, &glSpanFieldOps<const RGB8> },
+      { nullptr, 0 }
+   };
+   alignas(std::span<const RGB8>) std::array<int8_t, sizeof(std::span<const RGB8>)> buffer;
+   int error_arg = 0;
+   CSTRING error_msg = nullptr;
+   auto error = build_args(lua, "StructSpanTest", fields, buffer.size(), buffer.data(), nullptr, error_arg,
+      error_msg);
+   if (error != ERR::Okay) {
+      Log.error("structure span build failed: %s", error_msg ? error_msg : GetErrorMsg(error));
+      return false;
+   }
+
+   auto span = (std::span<const RGB8> *)buffer.data();
+   if ((span->data() != array->arraydata()) or (span->size() != values.size())) {
+      Log.error("structure span did not bind the compatible structure array");
+      return false;
+   }
+
+   RGB8 single_value = { 9, 10, 11, 12 };
+   lua_settop(lua, 0);
+   lua_pushstruct(lua, record, &single_value, STRUCT_EXTERNAL, nullptr, nullptr);
+   error = build_args(lua, "StructSpanTest", fields, buffer.size(), buffer.data(), nullptr, error_arg, error_msg);
+   if (error != ERR::Okay) {
+      Log.error("structure span rejected a compatible structure: %s", error_msg ? error_msg : GetErrorMsg(error));
+      return false;
+   }
+   if ((span->data() != &single_value) or (span->size() != 1)) {
+      Log.error("structure span did not bind a single compatible structure");
+      return false;
+   }
+
+   lua_settop(lua, 0);
+   lua_pushnil(lua);
+   const FunctionField unknown_fields[] = {
+      { "UnknownSpanType:Values", FDF_SPAN|FD_PTR|FD_STRUCT, &glSpanFieldOps<const RGB8> },
+      { nullptr, 0 }
+   };
+   error = build_args(lua, "UnknownStructSpanTest", unknown_fields, buffer.size(), buffer.data(), nullptr,
+      error_arg, error_msg);
+   if (error != ERR::Search) {
+      Log.error("unknown structure span metadata was not rejected");
+      return false;
+   }
+   return true;
+}
+
+} // namespace
+
+void object_call_unit_tests(int &Passed, int &Total)
+{
+   struct test_case {
+      CSTRING Name;
+      bool (*Routine)(kt::Log &Log);
+   };
+   constexpr std::array tests = {
+      test_case{ "typed_span_call", typed_span_call_test },
+      test_case{ "raw_byte_span_call", raw_byte_span_call_test },
+      test_case{ "mutable_span_storage", mutable_span_storage_test },
+      test_case{ "struct_span_call", struct_span_call_test }
+   };
+
+   if (NewObject(CLASSID::TIRI, &glObjectCallTestScript) != ERR::Okay) return;
+   glObjectCallTestScript->setStatement("");
+   if (Action(AC::Init, glObjectCallTestScript, nullptr) != ERR::Okay) {
+      FreeResource(glObjectCallTestScript);
+      glObjectCallTestScript = nullptr;
+      return;
+   }
+
+   for (const auto &test : tests) {
+      kt::Log log("ObjectCallTests");
+      log.branch("Running %s", test.Name);
+      Total++;
+      if (test.Routine(log)) Passed++;
+      else log.error("%s failed", test.Name);
+   }
+
+   FreeResource(glObjectCallTestScript);
+   glObjectCallTestScript = nullptr;
+}
+
+#endif // UNIT_TESTS

@@ -389,7 +389,7 @@ static ERR NETSOCKET_DataFeed(extNetSocket *Self, struct acDataFeed *Args)
       case DATA::XML:
       case DATA::AUDIO:
       case DATA::IMAGE:
-         return acWrite(Self, Args->Buffer, Args->Size, nullptr);
+         return acWrite(Self, std::span<const int8_t>((const int8_t *)Args->Buffer, Args->Size));
 
       case DATA::FILE: { // File path
          auto file = objFile::create({ fl::Path(CSTRING(Args->Buffer)), fl::Flags(FL::READ) });
@@ -397,8 +397,8 @@ static ERR NETSOCKET_DataFeed(extNetSocket *Self, struct acDataFeed *Args)
             int64_t size;
             file->getSize(size);
             std::vector<int8_t> buf(size);
-            if (!file->read(buf.data(), size)) {
-               return acWrite(Self, buf.data(), size, nullptr);
+            if (!file->read(buf)) {
+               return acWrite(Self, buf);
             }
             else return log.warning(ERR::Read);
          }
@@ -717,15 +717,15 @@ static ERR NETSOCKET_Read(extNetSocket *Self, struct acRead *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Buffer)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Buffer.data())) return log.warning(ERR::NullArgs);
    Args->Result = 0;
-   if (Args->Length < 0) return log.warning(ERR::Args);
+   if (Args->Buffer.size() > size_t(INT_MAX)) return log.warning(ERR::OutOfRange);
 
    if (Self->Handle.is_invalid()) return log.warning(ERR::Disconnected);
 
    Self->ReadCalled = true;
 
-   if (!Args->Length) return ERR::Okay;
+   if (Args->Buffer.empty()) return ERR::Okay;
 
 #ifndef DISABLE_SSL
    if (Self->TLS.Handle) {
@@ -743,7 +743,8 @@ static ERR NETSOCKET_Read(extNetSocket *Self, struct acRead *Args)
          }
 
          int bytes_read = 0;
-         if (auto error = ssl_read(Self->TLS.Handle, Args->Buffer, Args->Length, &bytes_read); error IS SSL_OK) {
+         if (auto error = ssl_read(Self->TLS.Handle, Args->Buffer.data(), int(Args->Buffer.size()), &bytes_read);
+             error IS SSL_OK) {
             Args->Result = bytes_read;
             return ERR::Okay;
          }
@@ -765,12 +766,12 @@ static ERR NETSOCKET_Read(extNetSocket *Self, struct acRead *Args)
             return ERR::Okay;
          }
 
-         auto Buffer = Args->Buffer;
-         auto BufferSize = Args->Length;
+         auto buffer = Args->Buffer.data();
+         auto buffer_size = int(Args->Buffer.size());
          do {
             read_blocked = false;
             ssl_clear_error_queue();
-            if (auto result = SSL_read(Self->TLS.Handle, Buffer, BufferSize); result <= 0) {
+            if (auto result = SSL_read(Self->TLS.Handle, buffer, buffer_size); result <= 0) {
                auto ssl_error = SSL_get_error(Self->TLS.Handle, result);
                switch (ssl_error) {
                   case SSL_ERROR_ZERO_RETURN:
@@ -809,12 +810,12 @@ static ERR NETSOCKET_Read(extNetSocket *Self, struct acRead *Args)
             }
             else {
                Args->Result += result;
-               Buffer = (APTR)((char *)Buffer + result);
-               BufferSize -= result;
+               buffer += result;
+               buffer_size -= result;
             }
-         } while ((pending = SSL_pending(Self->TLS.Handle)) and (!read_blocked) and (BufferSize > 0));
+         } while ((pending = SSL_pending(Self->TLS.Handle)) and (!read_blocked) and (buffer_size > 0));
 
-         log.trace("Pending: %d, BufSize: %d, Blocked: %d", pending, BufferSize, read_blocked);
+         log.trace("Pending: %d, BufSize: %d, Blocked: %d", pending, buffer_size, read_blocked);
 
          if (pending) {
             // With regards to non-blocking SSL sockets, be aware that a socket can be empty in terms of incoming data,
@@ -834,7 +835,8 @@ static ERR NETSOCKET_Read(extNetSocket *Self, struct acRead *Args)
 #endif
 
    size_t bytes_received = 0;
-   auto receive_error = network_platform().receive(Self->Handle, Args->Buffer, Args->Length, bytes_received);
+   auto receive_error = network_platform().receive(Self->Handle, Args->Buffer.data(), Args->Buffer.size(),
+      bytes_received);
    Args->Result = int(bytes_received);
 
    if (receive_error IS ERR::Disconnected) {
@@ -865,13 +867,13 @@ static ERR queue_socket_write(T *Self, struct acWrite *Args, size_t MsgLimit)
 {
    kt::Log log(__FUNCTION__);
 
-   log.trace("Saving %d bytes to queue.", Args->Length);
+   log.trace("Saving %" PRIu64 " bytes to queue.", uint64_t(Args->Buffer.size()));
 
-   auto len = std::min<size_t>(Args->Length, MsgLimit);
-   if (auto error = Self->WriteQueue.write(Args->Buffer, len); error != ERR::Okay) return error;
+   auto len = std::min(Args->Buffer.size(), MsgLimit);
+   if (auto error = Self->WriteQueue.write(Args->Buffer.data(), len); error != ERR::Okay) return error;
 
    Args->Result = int(len);
-   return (len < size_t(Args->Length)) ? ERR::BufferOverflow : ERR::Okay;
+   return (len < Args->Buffer.size()) ? ERR::BufferOverflow : ERR::Okay;
 }
 
 template <class T>
@@ -890,15 +892,15 @@ static ERR write_connected_socket_data(T *Self, struct acWrite *Args, size_t Msg
    ERR error;
 
    if (Self->WriteQueue.Buffer.empty()) {
-      len = Args->Length;
-      error = send_data(Self, Args->Buffer, &len);
+      len = Args->Buffer.size();
+      error = send_data(Self, Args->Buffer.data(), &len);
    }
    else {
       len = 0;
       error = ERR::BufferOverflow;
    }
 
-   if ((!error) and (len >= size_t(Args->Length))) return ERR::Okay;
+   if ((!error) and (len >= Args->Buffer.size())) return ERR::Okay;
 
    bool ssl_read_blocked = false;
    bool ssl_write_blocked = false;
@@ -910,13 +912,13 @@ static ERR write_connected_socket_data(T *Self, struct acWrite *Args, size_t Msg
    #endif
 
    if ((error IS ERR::DataSize) or (error IS ERR::BufferOverflow) or (ssl_read_blocked) or (len > 0)) {
-      auto remaining = size_t(Args->Length) - len;
+      auto remaining = Args->Buffer.size() - len;
 
       log.trace("Error: '%s', queuing %d/%d bytes for transfer...", GetErrorMsg(error), int(remaining),
-         Args->Length);
+         int(Args->Buffer.size()));
 
       auto queue_len = std::min<size_t>(remaining, MsgLimit);
-      if (auto queue_error = Self->WriteQueue.write((int8_t *)Args->Buffer + len, queue_len);
+      if (auto queue_error = Self->WriteQueue.write(Args->Buffer.data() + len, queue_len);
           queue_error != ERR::Okay) {
          Args->Result = int(len);
          return queue_error;
@@ -946,8 +948,8 @@ static ERR NETSOCKET_Write(extNetSocket *Self, struct acWrite *Args)
    if (!Args) return log.warning(ERR::NullArgs);
 
    Args->Result = 0;
-   if (Args->Length < 0) return log.warning(ERR::Args);
-   if ((!Args->Buffer) and (Args->Length > 0)) return log.warning(ERR::NullArgs);
+   if (Args->Buffer.size() > size_t(INT_MAX)) return log.warning(ERR::OutOfRange);
+   if ((not Args->Buffer.data()) and (not Args->Buffer.empty())) return log.warning(ERR::NullArgs);
 
 
    if ((Self->Handle.is_invalid()) or (Self->State != NTC::CONNECTED)) { // Queue the write prior to server connection
@@ -965,9 +967,9 @@ static ERR NETSOCKET_Write(extNetSocket *Self, struct acWrite *Args)
       return error;
    }
    else if (error != ERR::Okay) return error;
-   else log.trace("Successfully wrote all %d bytes to the server.", Args->Length);
+   else log.trace("Successfully wrote all %d bytes to the server.", int(Args->Buffer.size()));
 
-   Args->Result = Args->Length;
+   Args->Result = int(Args->Buffer.size());
    return ERR::Okay;
 }
 
@@ -990,7 +992,6 @@ For TCP sockets, use the standard Read action instead.
 -INPUT-
 ptr(struct(IPAddress)) Source: Source IP address of the received packet.
 ^buf(ptr) Buffer:   Output buffer for received data.
-bufsize BufferSize: Size of the receive buffer in bytes.
 &int BytesRead:     Number of bytes actually received.
 
 -ERRORS-
@@ -1012,8 +1013,8 @@ static ERR NETSOCKET_RecvFrom(extNetSocket *Self, struct ns::RecvFrom *Args)
 
    if (!Args) return log.warning(ERR::NullArgs);
    if ((Self->Flags & NSF::UDP) IS NSF::NIL) return log.warning(ERR::NoSupport);
-   if ((!Args->Buffer) or (!Args->Source)) return log.warning(ERR::NullArgs);
-   if (Args->BufferSize <= 0) return log.warning(ERR::Args);
+   if (Args->Buffer.empty() or (!Args->Source)) return log.warning(ERR::NullArgs);
+   if (Args->Buffer.size_bytes() > size_t(INT_MAX)) return log.warning(ERR::Args);
 
    Self->ReadCalled = true;
 
@@ -1022,8 +1023,9 @@ static ERR NETSOCKET_RecvFrom(extNetSocket *Self, struct ns::RecvFrom *Args)
    size_t bytes_read = 0;
    IPAddress source_address;
 
-   auto error = network_platform().receive_from(Self->Handle, Args->Buffer, Args->BufferSize, bytes_read,
+   auto error = network_platform().receive_from(Self->Handle, Args->Buffer.data(), Args->Buffer.size_bytes(), bytes_read,
       source_address);
+   if (bytes_read > size_t(INT_MAX)) return log.warning(ERR::DataSize);
    Args->BytesRead = int(bytes_read);
    if (error != ERR::Okay) return error;
 
@@ -1049,7 +1051,6 @@ For TCP sockets, use the standard Write action instead.
 -INPUT-
 ptr(struct(IPAddress)) Dest: The destination IP address (IPv4 or IPv6) and port number.
 buf(ptr) Data:  Pointer to the data buffer to send.
-bufsize Length: Number of bytes to send from Data.
 &int BytesSent: Number of bytes actually sent.
 
 -ERRORS-
@@ -1074,17 +1075,17 @@ static ERR NETSOCKET_SendTo(extNetSocket *Self, struct ns::SendTo *Args)
 
    if (!Args) return log.warning(ERR::NullArgs);
    if ((Self->Flags & NSF::UDP) IS NSF::NIL) return log.warning(ERR::InvalidState);
-   if ((!Args->Dest) or (!Args->Data) or (!Args->Length)) return log.warning(ERR::NullArgs);
-   if (Args->Length <= 0) return log.warning(ERR::Args);
+   if ((!Args->Dest) or Args->Data.empty()) return log.warning(ERR::NullArgs);
+   if (Args->Data.size_bytes() > size_t(INT_MAX)) return log.warning(ERR::Args);
    if (Args->Dest->Port <= 0 or Args->Dest->Port > 65535) return log.warning(ERR::OutOfRange);
 
    // Enforce max packet size (optional safety)
-   if (Self->MaxPacketSize and Args->Length > Self->MaxPacketSize) {
-      log.warning("Packet length %d exceeds MaxPacketSize %d", Args->Length, Self->MaxPacketSize);
+   if (Self->MaxPacketSize and Args->Data.size_bytes() > size_t(Self->MaxPacketSize)) {
+      log.warning("Packet length %zu exceeds MaxPacketSize %d", Args->Data.size_bytes(), Self->MaxPacketSize);
       return ERR::DataSize;
    }
 
-   log.branch("%d bytes", Args->Length);
+   log.branch("%zu bytes", Args->Data.size_bytes());
 
    Args->BytesSent = 0;
 
@@ -1092,9 +1093,9 @@ static ERR NETSOCKET_SendTo(extNetSocket *Self, struct ns::SendTo *Args)
    if (auto error = network_platform().build_address(*Args->Dest, Args->Dest->Port, Self->IPV6, dest_addr);
       error != ERR::Okay) return log.warning(error);
 
-   size_t bytes_to_send = Args->Length;
+   size_t bytes_to_send = Args->Data.size_bytes();
 
-   auto error = network_platform().send_to(Self->Handle, Args->Data, bytes_to_send, dest_addr);
+   auto error = network_platform().send_to(Self->Handle, Args->Data.data(), bytes_to_send, dest_addr);
    if (!error) Args->BytesSent = int(bytes_to_send);
    return error;
 }

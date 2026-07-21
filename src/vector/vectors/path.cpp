@@ -347,7 +347,6 @@ Calling this method will also result in the path being recomputed for the next r
 
 -INPUT-
 buf(struct(*PathCommand)) Commands: Array of commands to add to the path.
-bufsize Size: The size of the `Commands` buffer, in bytes.
 
 -RESULT-
 Okay
@@ -362,14 +361,14 @@ static ERR VECTORPATH_AddCommand(extVectorPath *Self, struct vp::AddCommand *Arg
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Commands)) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Commands.empty()) return log.warning(ERR::NullArgs);
 
-   const int total_cmds = Args->Size / sizeof(PathCommand);
+   const size_t total_cmds = Args->Commands.size();
 
-   if ((total_cmds <= 0) or (total_cmds > 1000000)) return log.warning(ERR::Args);
+   if (total_cmds > 1000000) return log.warning(ERR::Args);
 
-   auto list = Args->Commands;
-   for (int i=0; i < total_cmds; i++) {
+   auto list = Args->Commands.data();
+   for (size_t i=0; i < total_cmds; i++) {
       Self->Commands.push_back(list[i]);
    }
 
@@ -459,7 +458,6 @@ Use SetCommand() to copy one or more commands into an existing path.
 -INPUT-
 int Index: The index of the command that is to be set.
 buf(struct(*PathCommand)) Command: An array of commands to set in the path.
-bufsize Size: The size of the `Command` buffer, in bytes.
 
 -RESULT-
 Okay
@@ -474,13 +472,19 @@ mutates-object, copies-input
 
 static ERR VECTORPATH_SetCommand(extVectorPath *Self, struct vp::SetCommand *Args)
 {
-   if ((not Args) or (not Args->Command)) return ERR::NullArgs;
+   if ((not Args) or Args->Command.empty()) return ERR::NullArgs;
    if (Args->Index < 0) return ERR::OutOfRange;
 
-   const int total_cmds = Args->Size / sizeof(PathCommand);
-   if ((size_t)Args->Index + total_cmds > Self->Commands.size()) Self->Commands.resize(Args->Index + total_cmds);
+   const size_t total_cmds = Args->Command.size();
+   if (total_cmds > 1000000) return ERR::Args;
 
-   copymem(Args->Command, &Self->Commands[Args->Index], total_cmds * sizeof(PathCommand));
+   const size_t index = size_t(Args->Index);
+   if (index > 1000000 - total_cmds) return ERR::BufferOverflow;
+   if (index > Self->Commands.max_size() - total_cmds) return ERR::BufferOverflow;
+   const size_t required_size = index + total_cmds;
+   if (required_size > Self->Commands.size()) Self->Commands.resize(required_size);
+
+   std::copy(Args->Command.begin(), Args->Command.end(), Self->Commands.begin() + index);
 
    Self->CommandsChanged = true;
    reset_path(Self);
@@ -496,11 +500,8 @@ SetCommandList: The fastest available mechanism for setting a series of path ins
 Use SetCommandList() to copy a series of path commands to a @VectorPath object.  All existing commands will be
 cleared as a result of this process.
 
-NOTE: This method is not compatible with Tiri calls.
-
 -INPUT-
-buf(ptr) Commands: An array of !PathCommand structures.
-bufsize Size: The byte size of the `Commands` buffer.
+buf(struct(*PathCommand)) Commands: An array of !PathCommand structures.
 
 -RESULT-
 Okay
@@ -517,18 +518,13 @@ static ERR VECTORPATH_SetCommandList(extVectorPath *Self, struct vp::SetCommandL
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Size)) return log.warning(ERR::NullArgs);
+   if ((not Args) or Args->Commands.empty()) return log.warning(ERR::NullArgs);
    if (not Self->initialised()) return log.warning(ERR::NotInitialised);
 
-   const int total_cmds = Args->Size / sizeof(PathCommand);
-   if ((total_cmds < 0) or (total_cmds > 1000000)) return log.warning(ERR::Args);
+   const size_t total_cmds = Args->Commands.size();
+   if (total_cmds > 1000000) return log.warning(ERR::Args);
 
-   Self->Commands.clear();
-
-   auto list = (PathCommand *)Args->Commands;
-   for (int i=0; i < total_cmds; i++) {
-      Self->Commands.push_back(list[i]);
-   }
+   Self->Commands.assign(Args->Commands.begin(), Args->Commands.end());
 
    Self->CommandsChanged = true;
    reset_path(Self);

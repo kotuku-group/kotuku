@@ -348,6 +348,6 @@ void BackstageHttpResponse::write(objClientSocket *Client) const
    response.append(body);
 
    int result;
-   Client->write(response.c_str(), int(response.size()), &result);
+   Client->write(std::span<const int8_t>((const int8_t *)response.data(), response.size()), &result);
    Client->deactivate();
 }

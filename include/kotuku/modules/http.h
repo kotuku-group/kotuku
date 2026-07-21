@@ -185,8 +185,8 @@ class objHTTP : public Object {
       struct acSetKey args = { FieldName, Value };
       return Action(AC::SetKey, this, &args);
    }
-   inline ERR write(CPTR Buffer, int Size, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
+   inline ERR write(std::span<const int8_t> Buffer, int *Result = nullptr) noexcept {
+      struct acWrite write = { Buffer };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -197,7 +197,7 @@ class objHTTP : public Object {
       }
    }
    inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer.c_str(), int(Buffer.size()) };
+      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()) };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;

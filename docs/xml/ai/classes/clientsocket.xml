@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="ClientSocket" mod="Network" c="Represents a single socket connection to a client IP address." cat="Network" id="a14972ed" v="1">
-  <ai:a n="Read" c="Read incoming data from a client socket." p="ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)">
-    <ai:i n="Buffer" t="APTR" c="Points a buffer that will receive the data."/>
-    <ai:i n="Length" t="INT" c="The total number of bytes to read from the object. This value cannot exceed the size of the Buffer."/>
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="ClientSocket" mod="Network" c="Represents a single socket connection to a client IP address." cat="Network" id="84601faf" v="1">
+  <ai:a n="Deactivate" c="Disconnects the socket and changes the State to DISCONNECTED." p="ERR acDeactivate(*Object)"/>
+  <ai:a n="Read" c="Read incoming data from a client socket." p="ERR acRead(*Object, std::span&lt;int8_t&gt; Buffer, INT *Result)">
+    <ai:i n="Buffer" t="std::span&lt;int8_t&gt;" c="A mutable buffer that will receive the data."/>
     <ai:i n="Result" t="INT" c="The Read action will write this parameter with the total number of bytes read into the Buffer."/>
     <ai:e c="Okay"/>
     <ai:e c="Failed"/>
+    <ai:e c="Args"/>
     <ai:e c="Disconnected"/>
     <ai:e c="NullArgs"/>
   </ai:a>
-  <ai:a n="Write" c="Writes data to the socket." p="ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)">
-    <ai:i n="Buffer" t="APTR" c="A buffer containing the data that will be written to the object."/>
-    <ai:i n="Length" t="INT" c="The total number of bytes to write to the object."/>
+  <ai:a n="Write" c="Writes data to the socket." p="ERR acWrite(*Object, std::span&lt;const int8_t&gt; Buffer, INT *Result)">
+    <ai:i n="Buffer" t="std::span&lt;const int8_t&gt;" c="A buffer containing the data that will be written to the object."/>
     <ai:i n="Result" t="INT" c="This parameter with be updated with the total number of bytes written from the Buffer."/>
   </ai:a>
   <ai:f n="Client" c="Parent client object (IP address)." t="*NetClient" a="R"/>

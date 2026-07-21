@@ -127,11 +127,10 @@ http.acActivate()
     <action>
       <name>Write</name>
       <comment>Writes data to objects that provide storage or output services.</comment>
-      <prototype>ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)</prototype>
-      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str, Length:num)</tiriPrototype>
+      <prototype>ERR acWrite(*Object, std::span&lt;const int8_t&gt; Buffer, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str)</tiriPrototype>
       <input>
-        <param type="APTR" name="Buffer">A buffer containing the data that will be written to the object.</param>
-        <param type="INT" name="Length">The total number of bytes to write to the object.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Buffer">A buffer containing the data that will be written to the object.</param>
         <param type="INT" name="Result">This parameter with be updated with the total number of bytes written from the Buffer.</param>
       </input>
     </action>

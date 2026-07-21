@@ -44,7 +44,7 @@ end
 
 function write_temp_file(Path, Content)
    file = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
-   err, written = file.acWrite(Content, #Content)
+   err, written = file.acWrite(Content)
    assert(err is ERR_Okay, 'Write() returned ' .. mSys.GetErrorMsg(err))
    assert(written is #Content, 'Wrote ' .. tostring(written) .. ' bytes, expected ' .. tostring(#Content))
    file = nil
@@ -383,7 +383,7 @@ end
 
    file = obj.new('file', { path='temp:test-write.cfg', flags=FL_READ })
    buf = string.alloc(file.size)
-   err, result = file.acRead(buf, file.size)
+   err, result = file.acRead(buf)
    check(err)
 
    expected_output = [[

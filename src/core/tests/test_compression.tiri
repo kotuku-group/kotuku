@@ -229,7 +229,7 @@ end
       while err is ERR_Okay do
          err, len = file.acRead(input)
          if (err != ERR_Okay) or (len <= 0) then break end
-         err = cmp.mtCompressStream(input, len, 'streamedOutput')
+         err = cmp.mtCompressStream(string.substr(input, 0, len), 'streamedOutput')
       end
 
       assert(err is ERR_Okay, 'Inner compression loop failed: ' .. mSys.GetErrorMsg(err))
@@ -297,7 +297,7 @@ end
       err, len = file.acRead(input)
       if err is ERR_Okay then
          if len <= 0 then break end
-         err = cmp.mtDecompressStream(input, len, 'streamedOutput')
+         err = cmp.mtDecompressStream(string.substr(input, 0, len), 'streamedOutput')
       end
    end
 
@@ -320,4 +320,34 @@ end
    assert(mSys.ReadFileToBuffer('scripts:gui.tiri', source_data) is ERR_Okay, 'Failed to read source data.')
    assert(mSys.ReadFileToBuffer('temp:gui.tiri', output_data) is ERR_Okay, 'Failed to read decompressed output.')
    assert(output_data:getString() is source_data:getString(), 'Round-tripped stream output does not match the source.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Exercise span-only buffer methods, including output capacity and encoded input validation.
+
+@Test(priority=10) function BufferCompression()
+   cmp = obj.new('compression')
+   source_data = array<byte> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }
+   compressed = array<byte, 128>
+
+   err, compressed_size = cmp.mtCompressBuffer(source_data, compressed)
+   assert(err is ERR_Okay, 'CompressBuffer() failed: ' .. mSys.GetErrorMsg(err))
+   assert(compressed_size > 8, 'CompressBuffer() did not return a complete encoded buffer.')
+
+   restored = array<byte, 64>
+   err, restored_size = cmp.mtDecompressBuffer(compressed, restored)
+   assert(err is ERR_Okay, 'DecompressBuffer() failed: ' .. mSys.GetErrorMsg(err))
+   assert(restored_size is #source_data,
+      f'DecompressBuffer() returned {restored_size} bytes, expected {#source_data}.')
+   assert(restored:getString(0, restored_size) is source_data:getString(),
+      'Buffer compression round-trip changed the input.')
+
+   short_output = array<byte, 9>
+   err = cmp.mtCompressBuffer(source_data, short_output)
+   assert(err is ERR_BufferOverflow, 'A short compression output span should return BufferOverflow.')
+
+   truncated_size = compressed_size - 1
+   truncated = compressed:slice({0 to truncated_size})
+   err = cmp.mtDecompressBuffer(truncated, restored)
+   assert(err is ERR_InvalidCompression, 'A truncated encoded input span should return InvalidCompression.')
 end

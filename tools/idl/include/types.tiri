@@ -91,7 +91,7 @@ function fieldStructType(Option:any):str
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Return the C++ element type represented by the inner declaration of a module-function buffer.
+-- Return the C++ element type represented by the inner declaration of a function or method buffer.
 
 function spanElementType(Value:table, DeclaredType:str):str
    local element_type
@@ -121,6 +121,25 @@ global function validateFunctionInputs(Inputs:table, FunctionName:str)
       if param.defType is 'bufsize' then
          error(f"Module function {FunctionName}() parameter '{param.name}' cannot use `bufsize`; the preceding " ..
             "`buf(...)` parameter resolves to a span and owns its extent.")
+      end
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Reject obsolete method buffer-size parameters after all span declarations have been resolved.
+
+global function validateMethodInputs(Inputs:table, ClassName:str, MethodName:str)
+   Inputs ?! return
+
+   local owning_span
+
+   for param in values(Inputs) do
+      if param.isSpan then
+         owning_span = param.name
+      elseif param.defType is 'bufsize' then
+         local owner = owning_span ?? 'unknown'
+         error(f"Method {ClassName}.{MethodName}() parameter '{param.name}' cannot use `bufsize`; span " ..
+            f"'{owner}' owns its extent.")
       end
    end
 end
@@ -616,7 +635,7 @@ global function cType(Value:table, Origin:str):table
          Value.type     = buf_type
          Value          = cType(Value, Origin)
 
-         if Origin:startsWith('Function:') then
+         if Value.isFunction or Value.isMethod then
             assert(not Value.allocated, f'Allocated span results are not supported for {Origin}.')
             assert(not result_value, f'Span result parameters are not supported for {Origin}.')
             assert(Value.arraySize is nil, f'Fixed-extent spans are not supported for {Origin}.')

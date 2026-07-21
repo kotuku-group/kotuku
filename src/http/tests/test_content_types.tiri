@@ -291,7 +291,7 @@ end
       end,
       outgoing = function(HTTP)
          assert(binarySent != true, 'Binary upload body requested more than once.')
-         HTTP.acWrite(binaryData, binaryData:len())
+         HTTP.acWrite(binaryData)
          binarySent = true
          check ERR_Terminate
       end,

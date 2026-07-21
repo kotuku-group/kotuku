@@ -502,17 +502,22 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Build C parameter definitions for a function or method
 
-global function buildInputParameters(List)
+global function buildInputParameters(List, MethodSpans)
    plist = ''
    if List then
       for param in values(List) do
          fd = param.fullType.fd
          if param.allocated then fd ..= '|FD_ALLOC' end
          if param.struct then
-            plist ..= f'{{ "{param.struct}:{param.name}", {fd} }}, '
+            plist ..= f'{{ "{param.struct}:{param.name}", {fd}'
          else
-            plist ..= f'{{ "{param.name}", {fd} }}, '
+            plist ..= f'{{ "{param.name}", {fd}'
          end
+
+         if MethodSpans and param.isSpan then
+            plist ..= f', &glSpanFieldOps<{param.innerType}>'
+         end
+         plist ..= ' }, '
       end
    end
    return plist .. "{ 0, 0 }"

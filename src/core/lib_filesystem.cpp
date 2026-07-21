@@ -993,7 +993,7 @@ ERR LoadFile(const std::string_view &Path, LDF Flags, CacheFile **Cache)
 
       if (file_size) {
          int result;
-         error = file->read(loaded_cache->Data, file_size, &result);
+         error = file->read(std::span<int8_t>((int8_t *)loaded_cache->Data, size_t(file_size)), &result);
          if ((!error) and (file_size != result)) error = ERR::Read;
       }
 
@@ -1212,7 +1212,7 @@ ERR ReadFileToBuffer(const std::string_view &Path, const std::span<int8_t> &Buff
    else if (error IS ERR::VirtualVolume) {
       extFile::create file = { fl::Path(res_path), fl::Flags(FL::READ|FL::FILE|(approx ? FL::APPROXIMATE : FL::NIL)) };
 
-      if (file.ok()) return file->read(Buffer.data(), buffer_size, Result);
+      if (file.ok()) return file->read(Buffer.first(buffer_size), Result);
       else return ERR::File;
    }
    else return ERR::FileNotFound;
@@ -1674,7 +1674,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
       int64_t time = PreciseTime() / 1000LL;
       while (srcfile->Position < srcfile->Size) {
          int len;
-         error = srcfile->read(data.data(), bufsize, &len);
+         error = srcfile->read(data, &len);
          if (error != ERR::Okay) {
             log.warning("acRead() failed: %s", GetErrorMsg(error));
             return error;
@@ -1696,7 +1696,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
 
          while (len > 0) {
             int result;
-            if (acWrite(*destfile, data.data(), len, &result) != ERR::Okay) return ERR::Write;
+            if (acWrite(*destfile, std::span<const int8_t>(data.data(), len), &result) != ERR::Okay) return ERR::Write;
 
             if (result) time = (PreciseTime() / 1000LL);
             else if ((PreciseTime() / 1000LL) - time > STREAM_TIMEOUT) {

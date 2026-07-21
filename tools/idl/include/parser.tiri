@@ -328,7 +328,7 @@ global function parseMethod(Class:table, Extract:str)
       for content in values(input:split('\n')) do
          local param = parseParameterString(content)
          if param then
-            cType(param, f'Method:{name}')
+            cType(param, f'Method:{Class.name}.{name}')
             table.insert(method.params, param)
 
             if param.lookup then

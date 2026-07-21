@@ -1091,7 +1091,7 @@ static void write_row_callback(png_structp write_ptr, png_uint_32 row, int pass)
 
 void kotuku_read_callback(png_structp png, png_bytep data, png_size_t length)
 {
-   struct acRead read = { data, (int)length };
+   struct acRead read = { std::span<int8_t>((int8_t *)data, length) };
    if ((Action(AC::Read, (OBJECTPTR)png_get_io_ptr(png), &read) != ERR::Okay) or ((png_size_t)read.Result != length)) {
       png_error(png, "File read error");
    }
@@ -1102,7 +1102,7 @@ void kotuku_read_callback(png_structp png, png_bytep data, png_size_t length)
 
 void kotuku_write_callback(png_structp png, png_bytep data, png_size_t length)
 {
-   struct acWrite write = { data, (int)length };
+   struct acWrite write = { std::span<const int8_t>((const int8_t *)data, length) };
    if ((Action(AC::Write, (OBJECTPTR)png_get_io_ptr(png), &write) != ERR::Okay) or ((png_size_t)write.Result != length)) {
       png_error(png, "File write error");
    }

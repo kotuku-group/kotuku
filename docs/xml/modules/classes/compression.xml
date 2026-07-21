@@ -53,13 +53,11 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <method>
       <name>CompressBuffer</name>
       <comment>Compresses a plain memory area into an empty buffer.</comment>
-      <prototype>ERR cmp::CompressBuffer(OBJECTPTR Object, APTR Input, INT InputSize, APTR Output, INT OutputSize, INT * Result)</prototype>
-      <tiriPrototype>err, Result:num = CompressBuffer(Input:any, InputSize:num, Output:any, OutputSize:num)</tiriPrototype>
+      <prototype>ERR cmp::CompressBuffer(OBJECTPTR Object, std::span&lt;const int8_t&gt; Input, std::span&lt;int8_t&gt; Output, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = CompressBuffer(Input:array, Output:array)</tiriPrototype>
       <input>
-        <param type="APTR" name="Input">Pointer to the source data.</param>
-        <param type="INT" name="InputSize">Byte length of the source data.</param>
-        <param type="APTR" name="Output">Pointer to a destination buffer.</param>
-        <param type="INT" name="OutputSize">Available space in the destination buffer.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Input">Pointer to the source data.</param>
+        <param type="std::span&lt;int8_t&gt;" name="Output">Pointer to a destination buffer.</param>
         <param type="INT *" name="Result">The size of the compressed data will be returned in this parameter.</param>
       </input>
       <description>
@@ -107,14 +105,12 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <method>
       <name>CompressStream</name>
       <comment>Compresses streamed data into a buffer.</comment>
-      <prototype>ERR cmp::CompressStream(OBJECTPTR Object, APTR Input, INT Length, FUNCTION Callback, APTR Output, INT OutputSize)</prototype>
-      <tiriPrototype>err = CompressStream(Input:any, Length:num, Callback:func, Output:any, OutputSize:num)</tiriPrototype>
+      <prototype>ERR cmp::CompressStream(OBJECTPTR Object, std::span&lt;const int8_t&gt; Input, FUNCTION Callback, std::span&lt;int8_t&gt; Output)</prototype>
+      <tiriPrototype>err = CompressStream(Input:array, Callback:func, Output:array)</tiriPrototype>
       <input>
-        <param type="APTR" name="Input">Pointer to the source data.</param>
-        <param type="INT" name="Length">Amount of data to compress, in bytes.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Input">Pointer to the source data.</param>
         <param type="FUNCTION" name="Callback">This callback function will be called with a pointer to the compressed data.</param>
-        <param type="APTR" name="Output">Optional.  Points to a buffer that will receive the compressed data.  Must be equal to or larger than the <fl>MinOutputSize</fl> field.</param>
-        <param type="INT" name="OutputSize">Indicates the size of the <code>Output</code> buffer, otherwise set to zero.</param>
+        <param type="std::span&lt;int8_t&gt;" name="Output">Optional.  Points to a buffer that will receive the compressed data.  Must be equal to or larger than the <fl>MinOutputSize</fl> field.</param>
       </input>
       <description>
 <p>Use the CompressStream method to compress incoming streams of data whilst using a minimal amount of memory.  The compression process is handled in three phases of Start, Compress and End.  The methods provided for each phase are <method>CompressStreamStart</method>, <method>CompressStream</method> and <method>CompressStreamEnd</method>.</p>
@@ -125,23 +121,23 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
    int len;
    int cmpsize = 0;
    uint8_t input[4096];
-   while (!(error = acRead(file, input, sizeof(input), &amp;len))) {
+   while (!(error = acRead(file, std::span&lt;int8_t&gt;((int8_t *)input, sizeof(input)), &amp;len))) {
       if (!len) break; // No more data to read.
 
-      error = mtCompressStream(compress, input, len, callback, nullptr, 0);
+      error = mtCompressStream(compress, std::span&lt;const int8_t&gt;((int8_t *)input, len), callback, {});
       if (error != ERR::Okay) break;
 
       if (result &gt; 0) {
          cmpsize += result;
-         error = acWrite(outfile, output, result, &amp;len);
+         error = acWrite(outfile, std::span&lt;const int8_t&gt;((int8_t *)output, result), &amp;len);
          if (error != ERR::Okay) break;
       }
    }
 
    if (!error) {
-      if (!(error = mtCompressStreamEnd(compress, callback, nullptr, 0))) {
+      if (!(error = mtCompressStreamEnd(compress, callback, {}))) {
          cmpsize += result;
-         error = acWrite(outfile, output, result, &amp;len);
+         error = acWrite(outfile, std::span&lt;const int8_t&gt;((int8_t *)output, result), &amp;len);
       }
    }
 }
@@ -164,12 +160,11 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <method>
       <name>CompressStreamEnd</name>
       <comment>Ends the compression of an open stream.</comment>
-      <prototype>ERR cmp::CompressStreamEnd(OBJECTPTR Object, FUNCTION Callback, APTR Output, INT OutputSize)</prototype>
-      <tiriPrototype>err = CompressStreamEnd(Callback:func, Output:any, OutputSize:num)</tiriPrototype>
+      <prototype>ERR cmp::CompressStreamEnd(OBJECTPTR Object, FUNCTION Callback, std::span&lt;int8_t&gt; Output)</prototype>
+      <tiriPrototype>err = CompressStreamEnd(Callback:func, Output:array)</tiriPrototype>
       <input>
         <param type="FUNCTION" name="Callback">Refers to a function that will be called for each compressed block of data.</param>
-        <param type="APTR" name="Output">Optional pointer to a buffer that will receive the compressed data.  If not set, the compression object will use its own buffer.</param>
-        <param type="INT" name="OutputSize">Size of the <code>Output</code> buffer (ignored if Output is <code>NULL</code>).</param>
+        <param type="std::span&lt;int8_t&gt;" name="Output">Optional pointer to a buffer that will receive the compressed data.  If not set, the compression object will use its own buffer.</param>
       </input>
       <description>
 <p>To end the compression process, this method must be called to write any final blocks of data and remove the resources that were allocated.</p>
@@ -204,12 +199,11 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <method>
       <name>DecompressBuffer</name>
       <comment>Decompresses data originating from the <method>CompressBuffer</method> method.</comment>
-      <prototype>ERR cmp::DecompressBuffer(OBJECTPTR Object, APTR Input, APTR Output, INT OutputSize, INT * Result)</prototype>
-      <tiriPrototype>err, Result:num = DecompressBuffer(Input:any, Output:any, OutputSize:num)</tiriPrototype>
+      <prototype>ERR cmp::DecompressBuffer(OBJECTPTR Object, std::span&lt;const int8_t&gt; Input, std::span&lt;int8_t&gt; Output, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = DecompressBuffer(Input:array, Output:array)</tiriPrototype>
       <input>
-        <param type="APTR" name="Input">Pointer to the compressed data.</param>
-        <param type="APTR" name="Output">Pointer to the decompression buffer.</param>
-        <param type="INT" name="OutputSize">Size of the decompression buffer.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Input">Pointer to the compressed data.</param>
+        <param type="std::span&lt;int8_t&gt;" name="Output">Pointer to the decompression buffer.</param>
         <param type="INT *" name="Result">The amount of bytes decompressed will be returned in this parameter.</param>
       </input>
       <description>
@@ -292,17 +286,15 @@ err = cmp.mtDecompressFile('*.def', 'temp:')
     <method>
       <name>DecompressStream</name>
       <comment>Decompresses streamed data to an output buffer.</comment>
-      <prototype>ERR cmp::DecompressStream(OBJECTPTR Object, APTR Input, INT Length, FUNCTION Callback, APTR Output, INT OutputSize)</prototype>
-      <tiriPrototype>err = DecompressStream(Input:any, Length:num, Callback:func, Output:any, OutputSize:num)</tiriPrototype>
+      <prototype>ERR cmp::DecompressStream(OBJECTPTR Object, std::span&lt;const int8_t&gt; Input, FUNCTION Callback, std::span&lt;int8_t&gt; Output)</prototype>
+      <tiriPrototype>err = DecompressStream(Input:array, Callback:func, Output:array)</tiriPrototype>
       <input>
-        <param type="APTR" name="Input">Pointer to data to decompress.</param>
-        <param type="INT" name="Length">Amount of data to decompress from the Input parameter.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Input">Pointer to data to decompress.</param>
         <param type="FUNCTION" name="Callback">Refers to a function that will be called for each decompressed block of information.</param>
-        <param type="APTR" name="Output">Optional pointer to a buffer that will receive the decompressed data.  If not set, the compression object will use its own buffer.</param>
-        <param type="INT" name="OutputSize">Size of the buffer specified in Output (value ignored if <code>Output</code> is <code>NULL</code>).</param>
+        <param type="std::span&lt;int8_t&gt;" name="Output">Optional pointer to a buffer that will receive the decompressed data.  If not set, the compression object will use its own buffer.</param>
       </input>
       <description>
-<p>Call DecompressStream repeatedly to decompress a data stream and process the results in a callback routine.  The client will need to provide a pointer to the data in the <code>Input</code> parameter and indicate its size in <code>Length</code>.  The decompression routine will call the routine that was specified in <code>Callback</code> for each block that is decompressed.</p>
+<p>Call DecompressStream repeatedly to decompress a data stream and process the results in a callback routine.  The client provides the data in the <code>Input</code> parameter.  The decompression routine will call the routine that was specified in <code>Callback</code> for each block that is decompressed.</p>
 <p>The format of the <code>Callback</code> routine is <code>ERR Function(*Compression, APTR Buffer, LONG Length)</code></p>
 <p>The <code>Buffer</code> will refer to the start of the decompressed data and its size will be indicated in <code>Length</code>.  If the <code>Callback</code> routine returns an error of any kind, the decompression process will be stopped and the error code will be immediately returned by the method.</p>
 <p>Optionally, the client can specify an output buffer in the <code>Output</code> parameter.  This can be a valuable optimisation technique, as it will eliminate the need to copy data out of the compression object's internal buffer.</p>

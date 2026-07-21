@@ -176,7 +176,8 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
       }
 
       int len;
-      Self->Error = acRead(Socket, Self->Response.data() + Self->ResponseIndex, Self->Response.size() - Self->ResponseIndex, &len);
+      Self->Error = acRead(Socket, std::span<int8_t>((int8_t *)Self->Response.data() + Self->ResponseIndex,
+         Self->Response.size() - Self->ResponseIndex), &len);
 
       if (Self->Error != ERR::Okay) {
          log.warning(Self->Error);
@@ -491,7 +492,8 @@ static ERR read_incoming_chunks(extHTTP *Self, objNetSocket *Socket)
 
       if (Self->ChunkBuffered < int(Self->Chunk.size())) {
          int read_bytes;
-         Self->Error = acRead(Socket, Self->Chunk.data() + Self->ChunkBuffered, Self->Chunk.size() - Self->ChunkBuffered, &read_bytes);
+         Self->Error = acRead(Socket, std::span<int8_t>((int8_t *)Self->Chunk.data() + Self->ChunkBuffered,
+            Self->Chunk.size() - Self->ChunkBuffered), &read_bytes);
 
          #ifdef DEBUG_SOCKET
             write_debug_socket_data(Self->Chunk.data() + Self->ChunkBuffered, read_bytes);
@@ -655,7 +657,7 @@ static ERR read_incoming_content(extHTTP *Self, objNetSocket *Socket)
          if (len > Self->ContentLength - Self->Index) len = Self->ContentLength - Self->Index;
       }
 
-      if ((Self->Error = acRead(Socket, buffer.data(), len, &len)) != ERR::Okay) {
+      if ((Self->Error = acRead(Socket, std::span<int8_t>((int8_t *)buffer.data(), len), &len)) != ERR::Okay) {
          #ifdef DEBUG_SOCKET
             write_debug_socket_data(buffer.data(), len);
          #endif
@@ -839,7 +841,8 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
 
    if (Self->flOutput) {
       int result = 0;
-      if (auto error = Self->flOutput->write(Buffer, Length, &result); error != ERR::Okay) {
+      if (auto error = Self->flOutput->write(std::span<const int8_t>((const int8_t *)Buffer, Length), &result);
+          error != ERR::Okay) {
          Self->Error = error;
          return Self->Error;
       }
@@ -903,7 +906,8 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
          kt::ScopedObjectLock output(Self->OutputObjectID);
          if (output.granted()) {
             int result = 0;
-            if (auto error = acWrite(*output, Buffer, Length, &result); error != ERR::Okay) {
+            if (auto error = acWrite(*output, std::span<const int8_t>((const int8_t *)Buffer, Length), &result);
+                error != ERR::Okay) {
                Self->Error = error;
                return Self->Error;
             }
@@ -972,7 +976,7 @@ restart:
       std::string buffer;
       buffer.resize(512);
       int len;
-      if ((!acRead(Socket, buffer.data(), buffer.size(), &len)) and (len > 0)) {
+      if ((!acRead(Socket, std::span<int8_t>((int8_t *)buffer.data(), buffer.size()), &len)) and (len > 0)) {
          log.warning("WARNING: Received data whilst in state %d.", int(Self->CurrentState));
          log.warning("Content (%d bytes) Follows:\n%.80s", len, buffer.c_str());
       }
