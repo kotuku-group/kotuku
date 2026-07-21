@@ -21,7 +21,6 @@
 #include <bit>
 #include <atomic>
 #include <array>
-#include <span>
 #include <charconv>
 #include <sstream>
 #include <cmath>
@@ -29,7 +28,7 @@
 #include "ankerl/unordered_dense.h"
 #endif
 
-#define CORE_BUILD_DATE 20260720
+#define CORE_BUILD_DATE 20260721
 class objMetaClass;
 
 // Predefined cursor styles
@@ -1472,7 +1471,7 @@ struct CoreBase {
    OBJECTPTR (*_CurrentContext)(void);
    void (*_SetLogCallback)(APTR Callback, int DepthLimit, int LogLimit);
    int (*_AdjustLogLevel)(int Delta);
-   ERR (*_ReadFileToBuffer)(const std::string_view &Path, APTR Buffer, int BufferSize, int *Result);
+   ERR (*_ReadFileToBuffer)(const std::string_view &Path, const std::span<int8_t> &Buffer, int *Result);
    ERR (*_FindObject)(const std::string_view &Name, CLASSID ClassID, OBJECTID *ObjectID);
    objMetaClass * (*_FindClass)(CLASSID ClassID);
    ERR (*_AnalysePath)(const std::string_view &Path, LOC *Type);
@@ -1492,7 +1491,7 @@ struct CoreBase {
    ERR (*_ProcessMessages)(PMF Flags, int TimeOut);
    ERR (*_IdentifyFile)(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
    CLASSID (*_ResolveClassName)(const std::string_view &Name);
-   ERR (*_SendMessage)(MSGID Type, MSF Flags, APTR Data, int Size);
+   ERR (*_SendMessage)(MSGID Type, MSF Flags, const std::span<const int8_t> &Data);
    ERR (*_SetOwner)(OBJECTPTR Object, OBJECTPTR Owner);
    void (*_SetObjectContext)(OBJECTPTR Object, const struct Field *Field, AC ActionID);
    CSTRING (*_FieldName)(uint32_t FieldID);
@@ -1511,7 +1510,7 @@ struct CoreBase {
    uint32_t (*_GenCRC32)(uint32_t CRC, APTR Data, uint32_t Length);
    int64_t (*_GetResource)(RES Resource);
    int64_t (*_SetResource)(RES Resource, int64_t Value);
-   ERR (*_ScanMessages)(int *Handle, MSGID Type, APTR Buffer, int Size);
+   ERR (*_ScanMessages)(int *Handle, MSGID Type, const std::span<int8_t> &Buffer);
    ERR (*_WaitForObjects)(PMF Flags, int TimeOut, struct ObjectSignal *ObjectSignals);
    void (*_UnloadFile)(struct CacheFile *Cache);
    ERR (*_CreateFolder)(const std::string_view &Path, PERMIT Permissions);
@@ -1519,7 +1518,7 @@ struct CoreBase {
    ERR (*_SetVolume)(const std::string_view &Name, const std::string_view &Path, const std::string_view &Icon, const std::string_view &Label, const std::string_view &Device, VOLUME Flags);
    ERR (*_DeleteVolume)(const std::string_view &Name);
    ERR (*_MoveFile)(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback);
-   ERR (*_UpdateMessage)(int Message, MSGID Type, APTR Data, int Size);
+   ERR (*_UpdateMessage)(int Message, MSGID Type, const std::span<const int8_t> &Data);
    ERR (*_AddMsgHandler)(MSGID MsgType, FUNCTION *Routine, struct MsgHandler **Handle);
    ERR (*_QueueAction)(AC Action, OBJECTID Object, APTR Args);
    int64_t (*_PreciseTime)(void);
@@ -1570,7 +1569,7 @@ template<class... Args> ERR VirtualVolume(const std::string_view &Name, Args... 
 inline OBJECTPTR CurrentContext(void) { return CoreBase->_CurrentContext(); }
 inline void SetLogCallback(APTR Callback, int DepthLimit, int LogLimit) { return CoreBase->_SetLogCallback(Callback,DepthLimit,LogLimit); }
 inline int AdjustLogLevel(int Delta) { return CoreBase->_AdjustLogLevel(Delta); }
-inline ERR ReadFileToBuffer(const std::string_view &Path, APTR Buffer, int BufferSize, int *Result) { return CoreBase->_ReadFileToBuffer(Path,Buffer,BufferSize,Result); }
+inline ERR ReadFileToBuffer(const std::string_view &Path, const std::span<int8_t> &Buffer, int *Result) { return CoreBase->_ReadFileToBuffer(Path,Buffer,Result); }
 inline ERR FindObject(const std::string_view &Name, CLASSID ClassID, OBJECTID *ObjectID) { return CoreBase->_FindObject(Name,ClassID,ObjectID); }
 inline objMetaClass * FindClass(CLASSID ClassID) { return CoreBase->_FindClass(ClassID); }
 inline ERR AnalysePath(const std::string_view &Path, LOC *Type) { return CoreBase->_AnalysePath(Path,Type); }
@@ -1590,7 +1589,7 @@ inline ERR CopyFile(const std::string_view &Source, const std::string_view &Dest
 inline ERR ProcessMessages(PMF Flags, int TimeOut) { return CoreBase->_ProcessMessages(Flags,TimeOut); }
 inline ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass) { return CoreBase->_IdentifyFile(Path,Filter,Class,SubClass); }
 inline CLASSID ResolveClassName(const std::string_view &Name) { return CoreBase->_ResolveClassName(Name); }
-inline ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size) { return CoreBase->_SendMessage(Type,Flags,Data,Size); }
+inline ERR SendMessage(MSGID Type, MSF Flags, const std::span<const int8_t> &Data) { return CoreBase->_SendMessage(Type,Flags,Data); }
 inline ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner) { return CoreBase->_SetOwner(Object,Owner); }
 inline void SetObjectContext(OBJECTPTR Object, const struct Field *Field, AC ActionID) { return CoreBase->_SetObjectContext(Object,Field,ActionID); }
 inline CSTRING FieldName(uint32_t FieldID) { return CoreBase->_FieldName(FieldID); }
@@ -1609,7 +1608,7 @@ inline int64_t GetEventID(EVG Group, const std::string_view &SubGroup, const std
 inline uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length) { return CoreBase->_GenCRC32(CRC,Data,Length); }
 inline int64_t GetResource(RES Resource) { return CoreBase->_GetResource(Resource); }
 inline int64_t SetResource(RES Resource, int64_t Value) { return CoreBase->_SetResource(Resource,Value); }
-inline ERR ScanMessages(int *Handle, MSGID Type, APTR Buffer, int Size) { return CoreBase->_ScanMessages(Handle,Type,Buffer,Size); }
+inline ERR ScanMessages(int *Handle, MSGID Type, const std::span<int8_t> &Buffer) { return CoreBase->_ScanMessages(Handle,Type,Buffer); }
 inline ERR WaitForObjects(PMF Flags, int TimeOut, struct ObjectSignal *ObjectSignals) { return CoreBase->_WaitForObjects(Flags,TimeOut,ObjectSignals); }
 inline void UnloadFile(struct CacheFile *Cache) { return CoreBase->_UnloadFile(Cache); }
 inline ERR CreateFolder(const std::string_view &Path, PERMIT Permissions) { return CoreBase->_CreateFolder(Path,Permissions); }
@@ -1617,7 +1616,7 @@ inline ERR LoadFile(const std::string_view &Path, LDF Flags, struct CacheFile **
 inline ERR SetVolume(const std::string_view &Name, const std::string_view &Path, const std::string_view &Icon, const std::string_view &Label, const std::string_view &Device, VOLUME Flags) { return CoreBase->_SetVolume(Name,Path,Icon,Label,Device,Flags); }
 inline ERR DeleteVolume(const std::string_view &Name) { return CoreBase->_DeleteVolume(Name); }
 inline ERR MoveFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback) { return CoreBase->_MoveFile(Source,Dest,Callback); }
-inline ERR UpdateMessage(int Message, MSGID Type, APTR Data, int Size) { return CoreBase->_UpdateMessage(Message,Type,Data,Size); }
+inline ERR UpdateMessage(int Message, MSGID Type, const std::span<const int8_t> &Data) { return CoreBase->_UpdateMessage(Message,Type,Data); }
 inline ERR AddMsgHandler(MSGID MsgType, FUNCTION *Routine, struct MsgHandler **Handle) { return CoreBase->_AddMsgHandler(MsgType,Routine,Handle); }
 inline ERR QueueAction(AC Action, OBJECTID Object, APTR Args) { return CoreBase->_QueueAction(Action,Object,Args); }
 inline int64_t PreciseTime(void) { return CoreBase->_PreciseTime(); }
@@ -1664,7 +1663,7 @@ extern "C" ERR VirtualVolume(const std::string_view &Name, ...);
 extern "C" OBJECTPTR CurrentContext(void);
 extern "C" void SetLogCallback(APTR Callback, int DepthLimit, int LogLimit);
 extern "C" int AdjustLogLevel(int Delta);
-extern "C" ERR ReadFileToBuffer(const std::string_view &Path, APTR Buffer, int BufferSize, int *Result);
+extern "C" ERR ReadFileToBuffer(const std::string_view &Path, const std::span<int8_t> &Buffer, int *Result);
 extern "C" ERR FindObject(const std::string_view &Name, CLASSID ClassID, OBJECTID *ObjectID);
 extern "C" objMetaClass * FindClass(CLASSID ClassID);
 extern "C" ERR AnalysePath(const std::string_view &Path, LOC *Type);
@@ -1684,7 +1683,7 @@ extern "C" ERR CopyFile(const std::string_view &Source, const std::string_view &
 extern "C" ERR ProcessMessages(PMF Flags, int TimeOut);
 extern "C" ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
 extern "C" CLASSID ResolveClassName(const std::string_view &Name);
-extern "C" ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size);
+extern "C" ERR SendMessage(MSGID Type, MSF Flags, const std::span<const int8_t> &Data);
 extern "C" ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner);
 extern "C" void SetObjectContext(OBJECTPTR Object, const struct Field *Field, AC ActionID);
 extern "C" CSTRING FieldName(uint32_t FieldID);
@@ -1703,7 +1702,7 @@ extern "C" int64_t GetEventID(EVG Group, const std::string_view &SubGroup, const
 extern "C" uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length);
 extern "C" int64_t GetResource(RES Resource);
 extern "C" int64_t SetResource(RES Resource, int64_t Value);
-extern "C" ERR ScanMessages(int *Handle, MSGID Type, APTR Buffer, int Size);
+extern "C" ERR ScanMessages(int *Handle, MSGID Type, const std::span<int8_t> &Buffer);
 extern "C" ERR WaitForObjects(PMF Flags, int TimeOut, struct ObjectSignal *ObjectSignals);
 extern "C" void UnloadFile(struct CacheFile *Cache);
 extern "C" ERR CreateFolder(const std::string_view &Path, PERMIT Permissions);
@@ -1711,7 +1710,7 @@ extern "C" ERR LoadFile(const std::string_view &Path, LDF Flags, struct CacheFil
 extern "C" ERR SetVolume(const std::string_view &Name, const std::string_view &Path, const std::string_view &Icon, const std::string_view &Label, const std::string_view &Device, VOLUME Flags);
 extern "C" ERR DeleteVolume(const std::string_view &Name);
 extern "C" ERR MoveFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback);
-extern "C" ERR UpdateMessage(int Message, MSGID Type, APTR Data, int Size);
+extern "C" ERR UpdateMessage(int Message, MSGID Type, const std::span<const int8_t> &Data);
 extern "C" ERR AddMsgHandler(MSGID MsgType, FUNCTION *Routine, struct MsgHandler **Handle);
 extern "C" ERR QueueAction(AC Action, OBJECTID Object, APTR Args);
 extern "C" int64_t PreciseTime(void);

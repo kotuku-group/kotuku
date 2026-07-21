@@ -26,7 +26,7 @@ static ERR SURFACE_Redimension(extSurface *Self, struct acRedimension *Args)
    if (Self->visible()) { // Visibility check because this sub-routine doesn't play nice with hidden surfaces.
       uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage)];
       int index = 0;
-      while (!ScanMessages(&index, MSGID::ACTION, msgbuffer, sizeof(msgbuffer))) {
+      while (!ScanMessages(&index, MSGID::ACTION, std::span((int8_t *)msgbuffer, sizeof(msgbuffer)))) {
          auto action = (ActionMessage *)(msgbuffer + sizeof(Message));
          if ((action->ActionID IS AC::Redimension) and (action->ObjectID IS Self->UID)) {
             return ERR::Okay|ERR::Notified;

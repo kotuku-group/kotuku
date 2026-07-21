@@ -469,7 +469,7 @@ static ERR NETSOCKET_FreeWarning(extNetSocket *Self)
       if (!Self->Terminating) { // Check terminating state to prevent flooding of the message queue
          kt::Log().msg("NetSocket in use, cannot free yet (request delayed).");
          Self->Terminating = true;
-         SendMessage(MSGID::FREE, MSF::NIL, &Self->UID, sizeof(OBJECTID));
+         SendMessage(MSGID::FREE, MSF::NIL, std::span((const int8_t *)&Self->UID, sizeof(OBJECTID)));
       }
       return ERR::InUse;
    }

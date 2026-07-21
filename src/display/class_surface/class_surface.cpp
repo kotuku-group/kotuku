@@ -444,7 +444,9 @@ static void notify_free_parent(OBJECTPTR Object, ACTIONID ActionID, ERR Result)
 
    Self->Flags &= ~RNF::VISIBLE;
    UpdateSurfaceField(Self, &SurfaceRecord::Flags, Self->Flags);
-   if (Self->defined(NF::LOCAL)) SendMessage(MSGID::FREE, MSF::NIL, &Self->UID, sizeof(Self->UID)); // If the object is a child of something, give the parent object time to do the deallocation itself
+   if (Self->defined(NF::LOCAL)) { // Give the parent object time to perform the deallocation itself.
+      SendMessage(MSGID::FREE, MSF::NIL, std::span((const int8_t *)&Self->UID, sizeof(Self->UID)));
+   }
    else FreeResource(Self);
 }
 
@@ -930,7 +932,7 @@ extSurface::~extSurface()
 
    if ((Flags & RNF::AUTO_QUIT) != RNF::NIL) {
       kt::Log().msg("Posting a quit message due to use of AUTOQUIT.");
-      SendMessage(MSGID::QUIT, MSF::NIL, nullptr, 0);
+      SendMessage(MSGID::QUIT, MSF::NIL, {});
    }
 
    if (InputHandle) gfx::UnsubscribeInput(InputHandle);
@@ -1541,7 +1543,7 @@ static ERR SURFACE_Move(extSurface *Self, struct acMove *Args)
 
    int index = 0;
    uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage) + sizeof(struct acMove)];
-   while (!ScanMessages(&index, MSGID::ACTION, msgbuffer, sizeof(msgbuffer))) {
+   while (!ScanMessages(&index, MSGID::ACTION, std::span((int8_t *)msgbuffer, sizeof(msgbuffer)))) {
       auto action = (ActionMessage *)(msgbuffer + sizeof(Message));
 
       if ((action->ActionID IS AC::MoveToPoint) and (action->ObjectID IS Self->UID)) {
@@ -1554,7 +1556,8 @@ static ERR SURFACE_Move(extSurface *Self, struct acMove *Args)
          msgmove->DeltaY += Args->DeltaY;
          msgmove->DeltaZ += Args->DeltaZ;
 
-         UpdateMessage(((Message *)msgbuffer)->UID, MSGID::NIL, action, sizeof(ActionMessage) + sizeof(struct acMove));
+         UpdateMessage(((Message *)msgbuffer)->UID, MSGID::NIL,
+            std::span((const int8_t *)action, sizeof(ActionMessage) + sizeof(struct acMove)));
 
          return ERR::Okay|ERR::Notified;
       }

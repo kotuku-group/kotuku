@@ -14,7 +14,7 @@ extern "C" ERR VirtualVolume(const std::string_view & Name, ...);
 extern "C" OBJECTPTR CurrentContext();
 extern "C" void SetLogCallback(APTR Callback, int DepthLimit, int LogLimit);
 extern "C" int AdjustLogLevel(int Delta);
-extern "C" ERR ReadFileToBuffer(const std::string_view & Path, APTR Buffer, int BufferSize, int * Result);
+extern "C" ERR ReadFileToBuffer(const std::string_view & Path, const std::span<int8_t> &Buffer, int * Result);
 extern "C" ERR FindObject(const std::string_view & Name, CLASSID ClassID, OBJECTID * ObjectID);
 extern "C" objMetaClass * FindClass(CLASSID ClassID);
 extern "C" ERR AnalysePath(const std::string_view & Path, LOC * Type);
@@ -34,7 +34,7 @@ extern "C" ERR CopyFile(const std::string_view & Source, const std::string_view 
 extern "C" ERR ProcessMessages(PMF Flags, int TimeOut);
 extern "C" ERR IdentifyFile(const std::string_view & Path, CLASSID Filter, CLASSID * Class, CLASSID * SubClass);
 extern "C" CLASSID ResolveClassName(const std::string_view & Name);
-extern "C" ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size);
+extern "C" ERR SendMessage(MSGID Type, MSF Flags, const std::span<const int8_t> &Data);
 extern "C" ERR SetOwner(OBJECTPTR Object, OBJECTPTR Owner);
 extern "C" void SetObjectContext(OBJECTPTR Object, const struct Field * Field, AC ActionID);
 extern "C" CSTRING FieldName(uint32_t FieldID);
@@ -53,7 +53,7 @@ extern "C" int64_t GetEventID(EVG Group, const std::string_view & SubGroup, cons
 extern "C" uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length);
 extern "C" int64_t GetResource(RES Resource);
 extern "C" int64_t SetResource(RES Resource, int64_t Value);
-extern "C" ERR ScanMessages(int * Handle, MSGID Type, APTR Buffer, int Size);
+extern "C" ERR ScanMessages(int * Handle, MSGID Type, const std::span<int8_t> &Buffer);
 extern "C" ERR WaitForObjects(PMF Flags, int TimeOut, struct ObjectSignal * ObjectSignals);
 extern "C" void UnloadFile(struct CacheFile * Cache);
 extern "C" ERR CreateFolder(const std::string_view & Path, PERMIT Permissions);
@@ -61,7 +61,7 @@ extern "C" ERR LoadFile(const std::string_view & Path, LDF Flags, struct CacheFi
 extern "C" ERR SetVolume(const std::string_view & Name, const std::string_view & Path, const std::string_view & Icon, const std::string_view & Label, const std::string_view & Device, VOLUME Flags);
 extern "C" ERR DeleteVolume(const std::string_view & Name);
 extern "C" ERR MoveFile(const std::string_view & Source, const std::string_view & Dest, FUNCTION * Callback);
-extern "C" ERR UpdateMessage(int Message, MSGID Type, APTR Data, int Size);
+extern "C" ERR UpdateMessage(int Message, MSGID Type, const std::span<const int8_t> &Data);
 extern "C" ERR AddMsgHandler(MSGID MsgType, FUNCTION * Routine, struct MsgHandler ** Handle);
 extern "C" ERR QueueAction(AC Action, OBJECTID Object, APTR Args);
 extern "C" int64_t PreciseTime();

@@ -19,6 +19,7 @@
 #include <optional>
 #include <memory>
 #include <new>
+#include <limits>
 #include <string_view>
 #include <ankerl/unordered_dense.h>
 #include <unordered_set>
@@ -50,6 +51,11 @@ using namespace std::chrono_literals;
 // See the makefile for optional defines
 
 constexpr int MAX_THREADS   = 20;  // Maximum number of threads per process.
+
+[[nodiscard]] constexpr bool span_size_fits_int(size_t Size)
+{
+   return Size <= size_t(std::numeric_limits<int>::max());
+}
 
 #define CLASSDB_HEADER 0x7f887f89
 

@@ -118,7 +118,8 @@ ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *ClassID,
       if (*ClassID IS CLASSID::NIL) {
          log.trace("Loading file header to identify '%s' against class registry", res_path);
 
-         if ((!ReadFileToBuffer(res_path, buffer, HEADER_SIZE, &bytes_read)) and (bytes_read >= 4)) {
+         if ((!ReadFileToBuffer(res_path, std::span((int8_t *)buffer, size_t(HEADER_SIZE)), &bytes_read)) and
+             (bytes_read >= 4)) {
             log.trace("Checking file header data (%d bytes) against %d classes....", bytes_read, glClassDB.size());
             for (auto it = glClassDB.begin(); it != glClassDB.end(); it++) {
                auto &rec = it->second;

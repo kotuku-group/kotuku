@@ -322,7 +322,7 @@ static ERR NETLOOKUP_ResolveAddress(extNetLookup *Self, struct nl::ResolveAddres
          DNSEntry dummy;
          rb.Error = resolve_address(rb.Address, &rb.IP, dummy);
          auto ser = rb.serialise();
-         if (auto error = SendMessage(glResolveAddrMsgID, MSF::NIL, ser.data(), ser.size()); error != ERR::Okay) {
+         if (auto error = SendMessage(glResolveAddrMsgID, MSF::NIL, ser); error != ERR::Okay) {
             kt::Log(__FUNCTION__).warning("Failed to queue address resolution result: %s", GetErrorMsg(error));
          }
       }, std::move(rb))));
@@ -389,7 +389,7 @@ static ERR NETLOOKUP_ResolveName(extNetLookup *Self, struct nl::ResolveName *Arg
       DNSEntry dummy;
       rb.Error = resolve_name(rb.Address, dummy);
       auto ser = rb.serialise();
-      if (auto error = SendMessage(glResolveNameMsgID, MSF::NIL, ser.data(), ser.size()); error != ERR::Okay) {
+      if (auto error = SendMessage(glResolveNameMsgID, MSF::NIL, ser); error != ERR::Okay) {
          kt::Log(__FUNCTION__).warning("Failed to queue name resolution result: %s", GetErrorMsg(error));
       }
    }, std::move(rb))));

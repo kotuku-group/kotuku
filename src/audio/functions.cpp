@@ -394,7 +394,7 @@ static ERR audio_timer(extAudio *Self, int64_t Elapsed, int64_t CurrentTime)
 
          if (Self->activate() != ERR::Okay) {
             log.warning("Audio error is terminal, self-destructing...");
-            SendMessage(MSGID::FREE, MSF::NIL, &Self->UID, sizeof(OBJECTID));
+            SendMessage(MSGID::FREE, MSF::NIL, std::span((const int8_t *)&Self->UID, sizeof(OBJECTID)));
             return ERR::Failed;
          }
       }

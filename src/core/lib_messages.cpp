@@ -84,7 +84,8 @@ static void notify_signal_wfo(OBJECTPTR Object, ACTIONID ActionID, ERR Result, A
       // Signals and frees can be initiated from any thread, but glWFOList is owned by the main thread.  Defer
       // processing by posting the object ID back to the main queue; see msg_waitforobjects() for the follow-up.
       OBJECTID object_id = Object->UID;
-      SendMessage(MSGID::WAIT_FOR_OBJECTS, MSF::NIL, &object_id, sizeof(object_id));
+      SendMessage(MSGID::WAIT_FOR_OBJECTS, MSF::NIL,
+         std::span((const int8_t *)&object_id, sizeof(object_id)));
       return;
    }
 
@@ -104,7 +105,7 @@ static void notify_signal_wfo(OBJECTPTR Object, ACTIONID ActionID, ERR Result, A
       if ((glWFOAnySignal) or (glWFOList.empty())) {
          glWFOSignalReceived = true;
          log.trace(glWFOAnySignal ? "An object was signalled." : "All objects signalled.");
-         SendMessage(MSGID::WAIT_FOR_OBJECTS, MSF::NIL, nullptr, 0); // Will result in ProcessMessages() terminating
+         SendMessage(MSGID::WAIT_FOR_OBJECTS, MSF::NIL, {}); // Will result in ProcessMessages() terminating
       }
    }
 }
@@ -146,7 +147,8 @@ ERR msg_waitforobjects(APTR Custom, int MsgID, int MsgType, APTR Message, int Ms
             // A transient lock failure (e.g. time-out).  Requeue the deferral so that the wake-up is not lost;
             // an indefinite WaitForObjects() would otherwise sleep forever on an already-signalled object.
             log.trace("Deferred signal for object #%d requeued (%s).", object_id, GetErrorMsg(lock.error));
-            SendMessage(MSGID::WAIT_FOR_OBJECTS, MSF::NIL, &object_id, sizeof(object_id));
+            SendMessage(MSGID::WAIT_FOR_OBJECTS, MSF::NIL,
+               std::span((const int8_t *)&object_id, sizeof(object_id)));
          }
 
          if (((glWFOAnySignal) and (signal_received)) or (glWFOList.empty())) {
@@ -597,24 +599,23 @@ an error code other than `ERR::Okay`.
 The following example illustrates a scan for `MSGID::QUIT` messages:
 
 <pre>
-while (!ScanMessages(&handle, MSGID::QUIT, nullptr, nullptr)) {
+while (!ScanMessages(&handle, MSGID::QUIT, {})) {
    ...
 }
 </pre>
 
 Messages will often (but not always) carry data that is relevant to the message type.  To retrieve this data a buffer
-must be supplied.  If the `Buffer` is too small as indicated by the `Size`, the message data will be trimmed to fit
-without any further indication.
+must be supplied.  If the `Buffer` is too small, the message data will be trimmed to fit without any further indication.
 
 -INPUT-
 &int Handle: Pointer to a 32-bit value that must initially be set to zero.  The ScanMessages() function will automatically update this variable with each call so that it can remember its analysis position.
 int(MSGID) Type:   The message type to filter for, or zero to scan all messages in the queue.
-^buf(ptr) Buffer: Optional pointer to a buffer that is large enough to hold any message data.
-bufsize Size: The byte-size of the supplied `Buffer`.
+^buf(ptr) Buffer: Optional buffer that is large enough to hold a !Message header and any message data.
 
 -ERRORS-
 Okay:
 NullArgs:
+Args: The supplied buffer is too large for the internal message interface.
 OutOfRange:
 Search: No more messages are left on the queue, or no messages that match the given `Type` are on the queue.
 
@@ -624,12 +625,12 @@ mutates-input, blocking
 
 *********************************************************************************************************************/
 
-ERR ScanMessages(int *Handle, MSGID Type, APTR Buffer, int BufferSize)
+ERR ScanMessages(int *Handle, MSGID Type, const std::span<int8_t> &Buffer)
 {
    kt::Log log(__FUNCTION__);
 
    if (!Handle) return log.warning(ERR::NullArgs);
-   if (!Buffer) BufferSize = 0;
+   if (not span_size_fits_int(Buffer.size_bytes())) return log.warning(ERR::Args);
 
    if (*Handle < 0) {
       *Handle = -1;
@@ -643,18 +644,17 @@ ERR ScanMessages(int *Handle, MSGID Type, APTR Buffer, int BufferSize)
 
    for (auto it = glQueue.begin() + index; it != glQueue.end(); it++) {
       if ((it->Type != MSGID::NIL) and ((it->Type IS Type) or (Type IS MSGID::NIL))) {
-         if ((Buffer) and ((size_t)BufferSize >= sizeof(Message))) {
-            ((Message *)Buffer)->UID  = it->UID;
-            ((Message *)Buffer)->Type = it->Type;
-            ((Message *)Buffer)->Size = it->Size;
-            ((Message *)Buffer)->Time = it->Time;
+         if (Buffer.size_bytes() >= sizeof(Message)) {
+            const auto payload_capacity = Buffer.size_bytes() - sizeof(Message);
+            const auto payload_size = std::min(payload_capacity, size_t(it->Size));
 
-            BufferSize -= sizeof(Message);
-            if (BufferSize < it->Size) {
-               ((Message *)Buffer)->Size = BufferSize;
-               copymem(it->getBuffer(), ((int8_t *)Buffer) + sizeof(Message), BufferSize);
-            }
-            else copymem(it->getBuffer(), ((int8_t *)Buffer) + sizeof(Message), it->Size);
+            Message message = {};
+            message.UID  = it->UID;
+            message.Type = it->Type;
+            message.Size = int(payload_size);
+            message.Time = it->Time;
+            copymem(&message, Buffer.data(), sizeof(message));
+            copymem(it->getBuffer(), Buffer.data() + sizeof(Message), payload_size);
          }
 
          *Handle = int(std::distance(glQueue.begin(), it)) + 1;
@@ -678,8 +678,7 @@ pre-defined, such as `MSGID::QUIT`.  Custom messages should use a unique type ID
 -INPUT-
 int(MSGID) Type:  The message Type/ID being sent.  Unique type ID's can be obtained from ~AllocateID().
 int(MSF) Flags: Optional flags.
-buf(ptr) Data:  Pointer to the data that will be written to the queue.  Set to `NULL` if there is no data to write.
-bufsize Size:   The byte-size of the `Data` being written to the message queue.
+buf(ptr) Data: Optional data to copy to the message queue.  An empty buffer sends a message without payload data.
 
 -ERRORS-
 Okay: The message was successfully written to the message queue.
@@ -691,19 +690,25 @@ copies-input, blocking
 
 *********************************************************************************************************************/
 
-ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size)
+ERR SendMessage(MSGID Type, MSF Flags, const std::span<const int8_t> &Data)
 {
    kt::Log log(__FUNCTION__);
 
-   if (glLogLevel >= 9) {
-      if (Type IS MSGID::ACTION) {
-         auto action = (ActionMessage *)Data;
-         if (action->ActionID > AC::NIL) log.branch("Action: %s, Object: %d, Size: %d", ActionTable[int(action->ActionID)].Name, action->ObjectID, Size);
-      }
-      else log.branch("Type: %d, Data: %p, Size: %d", int(Type), Data, Size);
-   }
+   if ((Type IS MSGID::NIL) or (not span_size_fits_int(Data.size_bytes()))) return log.warning(ERR::Args);
 
-   if ((Type IS MSGID::NIL) or (Size < 0)) return log.warning(ERR::Args);
+   const auto data_size = int(Data.size_bytes());
+
+   if (glLogLevel >= 9) {
+      if ((Type IS MSGID::ACTION) and (Data.size_bytes() >= sizeof(ActionMessage))) {
+         ActionMessage action = {};
+         copymem(Data.data(), &action, sizeof(action));
+         if (action.ActionID > AC::NIL) {
+            log.branch("Action: %s, Object: %d, Size: %d", ActionTable[int(action.ActionID)].Name,
+               action.ObjectID, data_size);
+         }
+      }
+      else log.branch("Type: %d, Data: %p, Size: %d", int(Type), Data.data(), data_size);
+   }
 
    {
       const std::lock_guard<std::mutex> lock(glQueueLock);
@@ -713,14 +718,14 @@ ERR SendMessage(MSGID Type, MSF Flags, APTR Data, int Size)
             if (it->Type IS Type) {
                if ((Flags & MSF::NO_DUPLICATE) != MSF::NIL) return ERR::Okay;
                else {
-                  it->setBuffer(Data, Size);
+                  it->setBuffer((APTR)Data.data(), data_size);
                   return ERR::Okay;
                }
             }
          }
       }
 
-      glQueue.emplace_back(Type, Data, Size); // Deque keeps message storage stable for re-entrant handlers.
+      glQueue.emplace_back(Type, (APTR)Data.data(), data_size); // Deque keeps storage stable for re-entrant handlers.
       glQueuedMessages.fetch_add(1, std::memory_order_release);
    }
 
@@ -971,21 +976,18 @@ ERR write_nonblock(int Handle, APTR Data, int Size, int64_t EndTime)
 UpdateMessage: Updates the data of any message that is queued.
 
 The UpdateMessage() function provides a facility for updating the content of existing messages on the local queue.
-The client must provide the ID of the message to update and the new message Type and/or Data to set against the
-message.
-
-If `Data` is defined, its size should equal that of the data already set against the message.  The size will be trimmed
-if it exceeds that of the existing message, as this function cannot expand the size of the queue.
+The client must provide the ID of the message to update and the new message Type and/or Data to set against the message.
+Non-empty `Data` replaces the complete existing payload, while an empty buffer leaves that payload unchanged.
 
 -INPUT-
 int Message:   The ID of the message that will be updated.
 int(MSGID) Type: The type of the message.
-buf(ptr) Data: Pointer to a buffer that contains the new data for the message.
-bufsize Size:  The byte-size of the `Data` that has been supplied.  It must not exceed the size of the message that is being updated.
+buf(ptr) Data: Optional replacement data for the message.  An empty buffer leaves the existing payload unchanged.
 
 -ERRORS-
 Okay:   The message was successfully updated.
 NullArgs:
+Args: The supplied data is too large for the internal message interface.
 Search: The supplied `Message` ID does not refer to a message in the queue.
 
 -TAGS-
@@ -994,15 +996,18 @@ copies-input, blocking
 
 *********************************************************************************************************************/
 
-ERR UpdateMessage(int MessageID, MSGID Type, APTR Buffer, int BufferSize)
+ERR UpdateMessage(int MessageID, MSGID Type, const std::span<const int8_t> &Data)
 {
    if (!MessageID) return ERR::NullArgs;
+   if (not span_size_fits_int(Data.size_bytes())) return ERR::Args;
+
+   const auto data_size = int(Data.size_bytes());
 
    const std::lock_guard<std::mutex> lock(glQueueLock);
 
    for (auto it=glQueue.begin(); it != glQueue.end(); it++) {
       if (it->UID != MessageID) continue;
-      if (Buffer) it->setBuffer(Buffer, BufferSize);
+      if (not Data.empty()) it->setBuffer((APTR)Data.data(), data_size);
       if (Type != MSGID::NIL) it->Type = Type;
       return ERR::Okay;
    }

@@ -213,7 +213,7 @@ static void async_wait_callback(OBJECTID ObjectID, bool Active)
       break_wait = (glAsyncWaitCounter.load(std::memory_order_relaxed) IS 0);
    }
 
-   if (break_wait) SendMessage(MSGID::BREAK, MSF::NIL, nullptr, 0);
+   if (break_wait) SendMessage(MSGID::BREAK, MSF::NIL, {});
 }
 
 //********************************************************************************************************************
@@ -712,7 +712,7 @@ void dispatch_queued_action(OBJECTID ObjectID)
                .Callback = next.Callback,
                .DispatchNext = false
             };
-            SendMessage(MSGID::THREAD_ACTION, MSF::NIL, &msg, sizeof(msg));
+            SendMessage(MSGID::THREAD_ACTION, MSF::NIL, std::span((const int8_t *)&msg, sizeof(msg)));
          }
 
          drain_action_queue(ObjectID);
@@ -737,7 +737,7 @@ void dispatch_queued_action(OBJECTID ObjectID)
             .Callback = next.Callback,
             .DispatchNext = false
          };
-         SendMessage(MSGID::THREAD_ACTION, MSF::NIL, &msg, sizeof(msg));
+         SendMessage(MSGID::THREAD_ACTION, MSF::NIL, std::span((const int8_t *)&msg, sizeof(msg)));
       }
 
       drain_action_queue(ObjectID, true);
@@ -793,7 +793,7 @@ static void drain_action_queue(OBJECTID ObjectID, bool Terminating, bool Preserv
             .Callback = action.Callback,
             .DispatchNext = false
          };
-         SendMessage(MSGID::THREAD_ACTION, MSF::NIL, &msg, sizeof(msg));
+         SendMessage(MSGID::THREAD_ACTION, MSF::NIL, std::span((const int8_t *)&msg, sizeof(msg)));
       }
    }
 }
@@ -858,7 +858,7 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
             .Callback = Callback,
             .DeferredFunction = deferred_function
          };
-         SendMessage(MSGID::THREAD_ACTION, MSF::NIL, &msg, sizeof(msg));
+         SendMessage(MSGID::THREAD_ACTION, MSF::NIL, std::span((const int8_t *)&msg, sizeof(msg)));
          cleanup();
          return;
       }
@@ -894,7 +894,7 @@ static void launch_async_thread(OBJECTPTR Object, ACTIONID ActionID, int ArgsSiz
          .Callback = Callback,
          .DeferredFunction = deferred_function
       };
-      SendMessage(MSGID::THREAD_ACTION, MSF::NIL, &msg, sizeof(msg));
+      SendMessage(MSGID::THREAD_ACTION, MSF::NIL, std::span((const int8_t *)&msg, sizeof(msg)));
 
       cleanup();
    });
@@ -2437,7 +2437,7 @@ ERR QueueAction(ACTIONID ActionID, OBJECTID ObjectID, APTR Args)
 
    buffer.insert(buffer.begin(), (int8_t *)&action, (int8_t *)&action + sizeof(ActionMessage));
 
-   if (auto error = SendMessage(MSGID::ACTION, MSF::NIL, buffer.data(), buffer.size()); error != ERR::Okay) {
+   if (auto error = SendMessage(MSGID::ACTION, MSF::NIL, buffer); error != ERR::Okay) {
       release_copied_args(fields, args_size, buffer.data() + sizeof(ActionMessage), false);
       return error;
    }

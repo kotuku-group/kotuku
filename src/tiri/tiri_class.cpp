@@ -76,7 +76,7 @@ static ERR read_file_to_string(const std::string_view &Path, int64_t Size, std::
    int bytes_read = 0;
    Buffer.resize(read_size);
 
-   auto error = ReadFileToBuffer(Path, Buffer.data(), read_size, &bytes_read);
+   auto error = ReadFileToBuffer(Path, std::span((int8_t *)Buffer.data(), size_t(read_size)), &bytes_read);
    if (!error) {
       Buffer.resize(bytes_read);
       if (BytesRead) *BytesRead = bytes_read;

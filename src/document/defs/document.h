@@ -617,11 +617,11 @@ public:
    void release() {
       if ((type IS RTD::PERSISTENT_SCRIPT) or (type IS RTD::PERSISTENT_OBJECT)) {
          if (terminate) FreeResource(object_id);
-         else SendMessage(MSGID::FREE, MSF::NIL, &object_id, sizeof(OBJECTID));
+         else SendMessage(MSGID::FREE, MSF::NIL, std::span((const int8_t *)&object_id, sizeof(OBJECTID)));
       }
       else if (type IS RTD::OBJECT_UNLOAD_DELAY) {
          if (terminate) FreeResource(object_id);
-         else SendMessage(MSGID::FREE, MSF::NIL, &object_id, sizeof(OBJECTID));
+         else SendMessage(MSGID::FREE, MSF::NIL, std::span((const int8_t *)&object_id, sizeof(OBJECTID)));
       }
       else if (type != RTD::NIL) FreeResource(object_id);
       type = RTD::NIL;

@@ -29,6 +29,7 @@
 #include <map>
 #include <string>
 #include <cmath>
+#include <span>
 
 #if defined(_WIN32)
    #include <kotuku/system/windows_class_offsets.h>

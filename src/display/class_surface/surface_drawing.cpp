@@ -301,7 +301,7 @@ ERR SURFACE_Draw(extSurface *Self, struct acDraw *Args)
 
    uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage) + sizeof(struct acDraw)];
    int msgindex = 0;
-   while (!ScanMessages(&msgindex, MSGID::ACTION, msgbuffer, sizeof(msgbuffer))) {
+   while (!ScanMessages(&msgindex, MSGID::ACTION, std::span((int8_t *)msgbuffer, sizeof(msgbuffer)))) {
       auto action = (ActionMessage *)(msgbuffer + sizeof(Message));
 
       if ((action->ActionID IS drw::InvalidateRegion::id) and (action->ObjectID IS Self->UID)) {
@@ -329,7 +329,8 @@ ERR SURFACE_Draw(extSurface *Self, struct acDraw *Args)
                msgdraw->Height = bottom - msgdraw->Y;
             }
 
-            UpdateMessage(((Message *)msgbuffer)->UID, MSGID::NIL, action, sizeof(ActionMessage) + sizeof(struct acDraw));
+            UpdateMessage(((Message *)msgbuffer)->UID, MSGID::NIL,
+               std::span((const int8_t *)action, sizeof(ActionMessage) + sizeof(struct acDraw)));
          }
          else {
             // We do nothing here because the next draw message will draw everything.
@@ -385,7 +386,7 @@ static ERR SURFACE_ExposeToDisplay(extSurface *Self, struct drw::ExposeToDisplay
 
    uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage) + sizeof(*Args)];
    int msgindex = 0;
-   while (!ScanMessages(&msgindex, MSGID::ACTION, msgbuffer, sizeof(msgbuffer))) {
+   while (!ScanMessages(&msgindex, MSGID::ACTION, std::span((int8_t *)msgbuffer, sizeof(msgbuffer)))) {
       auto action = (ActionMessage *)(msgbuffer + sizeof(Message));
 
       if ((action->ActionID IS drw::ExposeToDisplay::id) and (action->ObjectID IS Self->UID)) {
@@ -419,7 +420,8 @@ static ERR SURFACE_ExposeToDisplay(extSurface *Self, struct drw::ExposeToDisplay
                msgexpose->Flags  |= Args->Flags;
             }
 
-            UpdateMessage(((Message *)msgbuffer)->UID, MSGID::NIL, action, sizeof(ActionMessage) + sizeof(struct drw::ExposeToDisplay));
+            UpdateMessage(((Message *)msgbuffer)->UID, MSGID::NIL,
+               std::span((const int8_t *)action, sizeof(ActionMessage) + sizeof(struct drw::ExposeToDisplay)));
          }
          else {
             // We do nothing here because the next expose message will draw everything.
@@ -484,7 +486,7 @@ static ERR SURFACE_InvalidateRegion(extSurface *Self, struct drw::InvalidateRegi
 
    int msgindex = 0;
    uint8_t msgbuffer[sizeof(Message) + sizeof(ActionMessage) + sizeof(*Args)];
-   while (!ScanMessages(&msgindex, MSGID::ACTION, msgbuffer, sizeof(msgbuffer))) {
+   while (!ScanMessages(&msgindex, MSGID::ACTION, std::span((int8_t *)msgbuffer, sizeof(msgbuffer)))) {
       auto action = (ActionMessage *)(msgbuffer + sizeof(Message));
       if ((action->ActionID IS drw::InvalidateRegion::id) and (action->ObjectID IS Self->UID)) {
          if (action->SendArgs IS TRUE) {
@@ -506,7 +508,8 @@ static ERR SURFACE_InvalidateRegion(extSurface *Self, struct drw::InvalidateRegi
                msginvalid->Height = bottom - msginvalid->Y;
             }
 
-            UpdateMessage(((Message *)msgbuffer)->UID, MSGID::NIL, action, sizeof(ActionMessage) + sizeof(struct drw::InvalidateRegion));
+            UpdateMessage(((Message *)msgbuffer)->UID, MSGID::NIL,
+               std::span((const int8_t *)action, sizeof(ActionMessage) + sizeof(struct drw::InvalidateRegion)));
          }
          else { } // We do nothing here because the next invalidation message will draw everything.
 
