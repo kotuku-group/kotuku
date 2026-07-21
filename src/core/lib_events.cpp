@@ -108,7 +108,7 @@ ERR BroadcastEvent(APTR Event, int EventSize)
       log.trace("Broadcasting event $%.8x%.8x",
          (uint32_t)(((kt::Event *)Event)->EventID>>32 & 0xffffffff),
          (uint32_t)(((kt::Event *)Event)->EventID));
-      SendMessage(MSGID::EVENT, MSF::NIL, Event, EventSize);
+      SendMessage(MSGID::EVENT, MSF::NIL, std::span((const int8_t *)Event, size_t(EventSize)));
    }
 
    return ERR::Okay;

@@ -464,7 +464,7 @@ static int processing_delayed_call(lua_State *Lua)
 {
    if (lua_type(Lua, 1) IS LUA_TFUNCTION) {
       delay_msg msg = { Lua, luaL_ref(Lua, LUA_REGISTRYINDEX) };
-      if (SendMessage(glDelayedCallMsgID, MSF::NIL, &msg, sizeof(msg)) != ERR::Okay) {
+      if (SendMessage(glDelayedCallMsgID, MSF::NIL, std::span((const int8_t *)&msg, sizeof(msg))) != ERR::Okay) {
          luaL_unref(Lua, LUA_REGISTRYINDEX, msg.ref);
          luaL_error(Lua, ERR::MessageOperation);
       }

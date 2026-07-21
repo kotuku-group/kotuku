@@ -276,8 +276,8 @@ if (!AllocResource(1000, MEM::NIL, &amp;address, nullptr)) {
 <p>To check if a volume name is valid, call <a href="?page=ResolvePath">ResolvePath()</a> first and then pass the resulting path to this function.</p>
 <p>If the queried path does not exist, a fail code is returned.  This behaviour makes the AnalysePath() function a good candidate for testing the validity of a path string.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The path was analysed and the result is stored in the <code>Type</code> variable.</td></tr>
+<tr><th class="col-md-1">FileNotFound</th><td>File not found</td></tr>
 <tr><th class="col-md-1">NoSupport</th><td>Operation not supported</td></tr>
-<tr><th class="col-md-1">DoesNotExist</th><td>Resource does not exist</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="AsyncAction"><h2>AsyncAction()</h2><p class="lead">Submit an action for asynchronous execution against an object.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR AsyncAction(AC Action, OBJECTPTR Object, APTR Args, FUNCTION * Callback)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a onclick="showPage('AC');">Action</a></td><td>An action or method ID must be specified here.</td></tr>
@@ -741,9 +741,8 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
 <tr><th class="col-md-1">MissingClass</th><td>The class could not be found in the system</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="ReadFileToBuffer"><h2>ReadFileToBuffer()</h2><p class="lead">Reads a file into a buffer.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR ReadFileToBuffer(STRVIEW Path, APTR Buffer, INT BufferSize, INT * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Path</td><td>The path of the file.</td></tr>
-<tr><td>Buffer</td><td>Pointer to a buffer that will receive the file content.</td></tr>
-<tr><td>BufferSize</td><td>The byte size of the <code>Buffer</code>.</td></tr>
+<div class="docs-content" style="display:none;" id="ReadFileToBuffer"><h2>ReadFileToBuffer()</h2><p class="lead">Reads a file into a buffer.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR ReadFileToBuffer(STRVIEW Path, const std::span&lt;int8_t&gt; &amp;Buffer, INT * Result)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Path</td><td>The path of the file.</td></tr>
+<tr><td>Buffer</td><td>Buffer that will receive the file content.</td></tr>
 <tr><td>Result</td><td>The total number of bytes read into the <code>Buffer</code> will be returned here (optional).</td></tr>
 </tbody></table></div></div>
 <p>This function provides a simple method for reading file content into a <code>Buffer</code>.  In some cases this procedure may be optimised for the host platform, which makes it the fastest way to read file content in simple cases.</p>
@@ -851,27 +850,26 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
 <tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="ScanMessages"><h2>ScanMessages()</h2><p class="lead">Scans a message queue for multiple occurrences of a message type.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR ScanMessages(INT * Handle, MSGID Type, APTR Buffer, INT Size)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Handle</td><td>Pointer to a 32-bit value that must initially be set to zero.  The ScanMessages() function will automatically update this variable with each call so that it can remember its analysis position.</td></tr>
+<div class="docs-content" style="display:none;" id="ScanMessages"><h2>ScanMessages()</h2><p class="lead">Scans a message queue for multiple occurrences of a message type.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR ScanMessages(INT * Handle, MSGID Type, const std::span&lt;int8_t&gt; &amp;Buffer)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Handle</td><td>Pointer to a 32-bit value that must initially be set to zero.  The ScanMessages() function will automatically update this variable with each call so that it can remember its analysis position.</td></tr>
 <tr><td><a onclick="showPage('MSGID');">Type</a></td><td>The message type to filter for, or zero to scan all messages in the queue.</td></tr>
-<tr><td>Buffer</td><td>Optional pointer to a buffer that is large enough to hold any message data.</td></tr>
-<tr><td>Size</td><td>The byte-size of the supplied <code>Buffer</code>.</td></tr>
+<tr><td>Buffer</td><td>Optional buffer that is large enough to hold a <a data-toggle="tooltip" title="" href="?page=struct-Message">Message</a> header and any message data.</td></tr>
 </tbody></table></div></div>
 <p>Use the ScanMessages() function to scan the local message queue for information without affecting the state of the queue.  To use this function effectively, make repeated calls to ScanMessages() to analyse the queue until it returns an error code other than <code>ERR::Okay</code>.</p>
 <p>The following example illustrates a scan for <code>MSGID::QUIT</code> messages:</p>
-<pre>while (!ScanMessages(&amp;handle, MSGID::QUIT, nullptr, nullptr)) {
+<pre>while (!ScanMessages(&amp;handle, MSGID::QUIT, {})) {
    ...
 }
 </pre>
-<p>Messages will often (but not always) carry data that is relevant to the message type.  To retrieve this data a buffer must be supplied.  If the <code>Buffer</code> is too small as indicated by the <code>Size</code>, the message data will be trimmed to fit without any further indication.</p>
+<p>Messages will often (but not always) carry data that is relevant to the message type.  To retrieve this data a buffer must be supplied.  If the <code>Buffer</code> is too small, the message data will be trimmed to fit without any further indication.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Search</th><td>No more messages are left on the queue, or no messages that match the given <code>Type</code> are on the queue.</td></tr>
+<tr><th class="col-md-1">Args</th><td>The supplied buffer is too large for the internal message interface.</td></tr>
 <tr><th class="col-md-1">OutOfRange</th><td>A value is outside of the valid range</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="SendMessage"><h2>SendMessage()</h2><p class="lead">Add a message to the local message queue.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR SendMessage(MSGID Type, MSF Flags, APTR Data, INT Size)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a onclick="showPage('MSGID');">Type</a></td><td>The message Type/ID being sent.  Unique type ID's can be obtained from <a href="?page=AllocateID">AllocateID()</a>.</td></tr>
+<div class="docs-content" style="display:none;" id="SendMessage"><h2>SendMessage()</h2><p class="lead">Add a message to the local message queue.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR SendMessage(MSGID Type, MSF Flags, const std::span&lt;const int8_t&gt; &amp;Data)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a onclick="showPage('MSGID');">Type</a></td><td>The message Type/ID being sent.  Unique type ID's can be obtained from <a href="?page=AllocateID">AllocateID()</a>.</td></tr>
 <tr><td><a onclick="showPage('MSF');">Flags</a></td><td>Optional flags.</td></tr>
-<tr><td>Data</td><td>Pointer to the data that will be written to the queue.  Set to <code>NULL</code> if there is no data to write.</td></tr>
-<tr><td>Size</td><td>The byte-size of the <code>Data</code> being written to the message queue.</td></tr>
+<tr><td>Data</td><td>Optional data to copy to the message queue.  An empty buffer sends a message without payload data.</td></tr>
 </tbody></table></div></div>
 <p>The SendMessage() function will add a message to the end of the local message queue.  Messages must be associated with a <code>Type</code> identifier and this can help the receiver process any accompanying Data.  Some common message types are pre-defined, such as <code>MSGID::QUIT</code>.  Custom messages should use a unique type ID obtained from <a href="?page=AllocateID">AllocateID()</a>.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The message was successfully written to the message queue.</td></tr>
@@ -1052,15 +1050,14 @@ identifier has no effect.</li>
 </tbody></table></div></div>
 <p>Use UnsubscribeEvent() to remove an existing event subscription.  A valid handle returned from the <a href="?page=SubscribeEvent">SubscribeEvent()</a> function must be provided.</p>
     <div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="UpdateMessage"><h2>UpdateMessage()</h2><p class="lead">Updates the data of any message that is queued.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR UpdateMessage(INT Message, MSGID Type, APTR Data, INT Size)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Message</td><td>The ID of the message that will be updated.</td></tr>
+<div class="docs-content" style="display:none;" id="UpdateMessage"><h2>UpdateMessage()</h2><p class="lead">Updates the data of any message that is queued.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR UpdateMessage(INT Message, MSGID Type, const std::span&lt;const int8_t&gt; &amp;Data)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Message</td><td>The ID of the message that will be updated.</td></tr>
 <tr><td><a onclick="showPage('MSGID');">Type</a></td><td>The type of the message.</td></tr>
-<tr><td>Data</td><td>Pointer to a buffer that contains the new data for the message.</td></tr>
-<tr><td>Size</td><td>The byte-size of the <code>Data</code> that has been supplied.  It must not exceed the size of the message that is being updated.</td></tr>
+<tr><td>Data</td><td>Optional replacement data for the message.  An empty buffer leaves the existing payload unchanged.</td></tr>
 </tbody></table></div></div>
-<p>The UpdateMessage() function provides a facility for updating the content of existing messages on the local queue. The client must provide the ID of the message to update and the new message Type and/or Data to set against the message.</p>
-<p>If <code>Data</code> is defined, its size should equal that of the data already set against the message.  The size will be trimmed if it exceeds that of the existing message, as this function cannot expand the size of the queue.</p>
+<p>The UpdateMessage() function provides a facility for updating the content of existing messages on the local queue. The client must provide the ID of the message to update and the new message Type and/or Data to set against the message. Non-empty <code>Data</code> replaces the complete existing payload, while an empty buffer leaves that payload unchanged.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>The message was successfully updated.</td></tr>
 <tr><th class="col-md-1">Search</th><td>The supplied <code>Message</code> ID does not refer to a message in the queue.</td></tr>
+<tr><th class="col-md-1">Args</th><td>The supplied data is too large for the internal message interface.</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="UpdateTimer"><h2>UpdateTimer()</h2><p class="lead">Modify or remove a subscription created by SubscribeTimer().</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR UpdateTimer(APTR Subscription, DOUBLE Interval)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Subscription</td><td>The timer subscription to modify.</td></tr>

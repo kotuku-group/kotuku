@@ -642,7 +642,7 @@ static void task_process_end(WINHANDLE FD, extTask *Task)
 
    // Send a break if we're waiting for this process to end
 
-   if (((Task->Flags & TSF::WAIT) != TSF::NIL) and (Task->TimeOut > 0)) SendMessage(glProcessBreak, MSF::NIL, nullptr, 0);
+   if (((Task->Flags & TSF::WAIT) != TSF::NIL) and (Task->TimeOut > 0)) SendMessage(glProcessBreak, MSF::NIL, {});
 }
 #endif
 
@@ -1639,7 +1639,7 @@ static ERR TASK_Quit(extTask *Self)
    }
    else {
       log.branch("Sending QUIT message to self.");
-      SendMessage(MSGID::QUIT, MSF::NIL, nullptr, 0);
+      SendMessage(MSGID::QUIT, MSF::NIL, {});
    }
 
    return ERR::Okay;

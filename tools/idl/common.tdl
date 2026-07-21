@@ -233,9 +233,13 @@ flags("FD", { weak=true, comment="Field descriptors", module="Core" },
   { OBJECT     = "0x00000001: Supplementary, can be used with ints (for IDs) or pointers" },
   { ERROR      = "0x00000800: FUNCDEF" },
   { TAGS       = "0x00000400: FUNCDEF Overrides `INIT`" },
-  { BUFFER     = "0x00000200: FUNCDEF Overrides `WRITE`.  Indicates a buffer that can be filled with data by the function if paired with `RESULT`; must be paired with `BUFSIZE` in second argument" },
+  { BUFFER     = "0x00000200: FUNCDEF Overrides `WRITE`.  Common buffer semantic flag.  " ..
+      "`FDF_SPAN` (`CPP|BUFFER`) represents a C++ module-function buffer whose `std::span` carries its pointer and " ..
+      "extent.  Legacy action and method buffers without `CPP` must be followed by `BUFSIZE`" },
   { RESULT     = "0x00000100: FUNCDEF Overrides `READ`" },
-  { BUFSIZE    = "0x00000080: FUNCDEF Overrides `LOOKUP`.  Pair with `BUFFER` to indicate the byte size of the buffer memory" },
+  { BUFSIZE    = "0x00000080: FUNCDEF Overrides `LOOKUP`.  Pair with a legacy action or method `BUFFER` to indicate " ..
+      "the byte size of the buffer memory.  `FDF_SPAN` module-function parameters carry their own extent and do not " ..
+      "use `BUFSIZE`" },
   { ARRAYSIZE  = "0x00000080: FUNCDEF Overrides `LOOKUP`.  Pair with `ARRAY` to indicate total elements in the array.  It is preferred that any null terminator is not counted.  If `ARRAYSIZE` not specified, `ARRAY` must be null-terminated" },
   { VARTAGS    = "0x00000040: FUNCDEF Overrides `FLAGS`.  Use for 64-bit taglists that require value definitions, e.g. `TDOUBLE`, `TINT` etc" },
   { MUTABLE    = "0x00000008: FUNCDEF Overrides `VIRTUAL`.  The function will overwrite incoming BUFFER or STRING content.  If used in conjunction with the RESULT flag, an empty buffer is expected for output" },

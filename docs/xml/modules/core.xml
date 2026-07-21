@@ -1316,13 +1316,12 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
     <name>ReadFileToBuffer</name>
     <category>Files</category>
     <comment>Reads a file into a buffer.</comment>
-    <prototype>ERR ReadFileToBuffer(STRVIEW Path, APTR Buffer, INT BufferSize, INT * Result)</prototype>
-    <tiriPrototype>err, Result:num = ReadFileToBuffer(Path:str, Buffer:any, BufferSize:num)</tiriPrototype>
+    <prototype>ERR ReadFileToBuffer(STRVIEW Path, const std::span&lt;int8_t&gt; &amp;Buffer, INT * Result)</prototype>
+    <tiriPrototype>err, Result:num = ReadFileToBuffer(Path:str, Buffer:array)</tiriPrototype>
     <tags>mutates-input, blocking, path-resolved</tags>
     <input>
       <param type="STRVIEW" name="Path">The path of the file.</param>
-      <param type="APTR" name="Buffer">Pointer to a buffer that will receive the file content.</param>
-      <param type="INT" name="BufferSize">The byte size of the <code>Buffer</code>.</param>
+      <param type="std::span&lt;int8_t&gt;" name="Buffer">Buffer that will receive the file content.</param>
       <param type="INT *" name="Result">The total number of bytes read into the <code>Buffer</code> will be returned here (optional).</param>
     </input>
     <description>
@@ -1544,27 +1543,27 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <name>ScanMessages</name>
     <category>Messages</category>
     <comment>Scans a message queue for multiple occurrences of a message type.</comment>
-    <prototype>ERR ScanMessages(INT * Handle, MSGID Type, APTR Buffer, INT Size)</prototype>
-    <tiriPrototype>err, Handle:num = ScanMessages(Type:num, Buffer:any, Size:num)</tiriPrototype>
+    <prototype>ERR ScanMessages(INT * Handle, MSGID Type, const std::span&lt;int8_t&gt; &amp;Buffer)</prototype>
+    <tiriPrototype>err, Handle:num = ScanMessages(Type:num, Buffer:array)</tiriPrototype>
     <tags>mutates-input, blocking</tags>
     <input>
       <param type="INT *" name="Handle">Pointer to a 32-bit value that must initially be set to zero.  The ScanMessages() function will automatically update this variable with each call so that it can remember its analysis position.</param>
       <param type="MSGID" name="Type" lookup="MSGID">The message type to filter for, or zero to scan all messages in the queue.</param>
-      <param type="APTR" name="Buffer">Optional pointer to a buffer that is large enough to hold any message data.</param>
-      <param type="INT" name="Size">The byte-size of the supplied <code>Buffer</code>.</param>
+      <param type="std::span&lt;int8_t&gt;" name="Buffer">Optional buffer that is large enough to hold a <st>Message</st> header and any message data.</param>
     </input>
     <description>
 <p>Use the ScanMessages() function to scan the local message queue for information without affecting the state of the queue.  To use this function effectively, make repeated calls to ScanMessages() to analyse the queue until it returns an error code other than <code>ERR::Okay</code>.</p>
 <p>The following example illustrates a scan for <code>MSGID::QUIT</code> messages:</p>
-<pre>while (!ScanMessages(&amp;handle, MSGID::QUIT, nullptr, nullptr)) {
+<pre>while (!ScanMessages(&amp;handle, MSGID::QUIT, {})) {
    ...
 }
 </pre>
-<p>Messages will often (but not always) carry data that is relevant to the message type.  To retrieve this data a buffer must be supplied.  If the <code>Buffer</code> is too small as indicated by the <code>Size</code>, the message data will be trimmed to fit without any further indication.</p>
+<p>Messages will often (but not always) carry data that is relevant to the message type.  To retrieve this data a buffer must be supplied.  If the <code>Buffer</code> is too small, the message data will be trimmed to fit without any further indication.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="Search">No more messages are left on the queue, or no messages that match the given <code>Type</code> are on the queue.</error>
+      <error code="Args">The supplied buffer is too large for the internal message interface.</error>
       <error code="OutOfRange">A value is outside of the valid range</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
@@ -1574,14 +1573,13 @@ if (not OpenDir(path, RDF::FILE|RDF::FOLDER, &amp;info)) {
     <name>SendMessage</name>
     <category>Messages</category>
     <comment>Add a message to the local message queue.</comment>
-    <prototype>ERR SendMessage(MSGID Type, MSF Flags, APTR Data, INT Size)</prototype>
-    <tiriPrototype>err = SendMessage(Type:num, Flags:num, Data:any, Size:num)</tiriPrototype>
+    <prototype>ERR SendMessage(MSGID Type, MSF Flags, const std::span&lt;const int8_t&gt; &amp;Data)</prototype>
+    <tiriPrototype>err = SendMessage(Type:num, Flags:num, Data:array)</tiriPrototype>
     <tags>copies-input, blocking</tags>
     <input>
       <param type="MSGID" name="Type" lookup="MSGID">The message Type/ID being sent.  Unique type ID's can be obtained from <function>AllocateID</function>.</param>
       <param type="MSF" name="Flags" lookup="MSF">Optional flags.</param>
-      <param type="APTR" name="Data">Pointer to the data that will be written to the queue.  Set to <code>NULL</code> if there is no data to write.</param>
-      <param type="INT" name="Size">The byte-size of the <code>Data</code> being written to the message queue.</param>
+      <param type="std::span&lt;const int8_t&gt;" name="Data">Optional data to copy to the message queue.  An empty buffer sends a message without payload data.</param>
     </input>
     <description>
 <p>The SendMessage() function will add a message to the end of the local message queue.  Messages must be associated with a <code>Type</code> identifier and this can help the receiver process any accompanying Data.  Some common message types are pre-defined, such as <code>MSGID::QUIT</code>.  Custom messages should use a unique type ID obtained from <function>AllocateID</function>.</p>
@@ -1938,22 +1936,21 @@ identifier has no effect.</li>
     <name>UpdateMessage</name>
     <category>Messages</category>
     <comment>Updates the data of any message that is queued.</comment>
-    <prototype>ERR UpdateMessage(INT Message, MSGID Type, APTR Data, INT Size)</prototype>
-    <tiriPrototype>err = UpdateMessage(Message:num, Type:num, Data:any, Size:num)</tiriPrototype>
+    <prototype>ERR UpdateMessage(INT Message, MSGID Type, const std::span&lt;const int8_t&gt; &amp;Data)</prototype>
+    <tiriPrototype>err = UpdateMessage(Message:num, Type:num, Data:array)</tiriPrototype>
     <tags>copies-input, blocking</tags>
     <input>
       <param type="INT" name="Message">The ID of the message that will be updated.</param>
       <param type="MSGID" name="Type" lookup="MSGID">The type of the message.</param>
-      <param type="APTR" name="Data">Pointer to a buffer that contains the new data for the message.</param>
-      <param type="INT" name="Size">The byte-size of the <code>Data</code> that has been supplied.  It must not exceed the size of the message that is being updated.</param>
+      <param type="std::span&lt;const int8_t&gt;" name="Data">Optional replacement data for the message.  An empty buffer leaves the existing payload unchanged.</param>
     </input>
     <description>
-<p>The UpdateMessage() function provides a facility for updating the content of existing messages on the local queue. The client must provide the ID of the message to update and the new message Type and/or Data to set against the message.</p>
-<p>If <code>Data</code> is defined, its size should equal that of the data already set against the message.  The size will be trimmed if it exceeds that of the existing message, as this function cannot expand the size of the queue.</p>
+<p>The UpdateMessage() function provides a facility for updating the content of existing messages on the local queue. The client must provide the ID of the message to update and the new message Type and/or Data to set against the message. Non-empty <code>Data</code> replaces the complete existing payload, while an empty buffer leaves that payload unchanged.</p>
     </description>
     <result type="ERR">
       <error code="Okay">The message was successfully updated.</error>
       <error code="Search">The supplied <code>Message</code> ID does not refer to a message in the queue.</error>
+      <error code="Args">The supplied data is too large for the internal message interface.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>

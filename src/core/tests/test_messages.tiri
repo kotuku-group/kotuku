@@ -21,15 +21,15 @@ end
 @Test function ScanMessagesAndDrain()
    local msg_id = new_message_id()
 
-   check mSys.SendMessage(msg_id, 0, nil, 0)
+   check mSys.SendMessage(msg_id, 0)
 
-   local err, handle = mSys.ScanMessages(msg_id, nil, 0)
+   local err, handle = mSys.ScanMessages(msg_id)
    assert(err is ERR_Okay, 'ScanMessages() did not find the queued message: ' .. mSys.GetErrorMsg(err))
    assert(handle is 1, 'ScanMessages() returned an unexpected handle: ' .. tostring(handle))
 
    drain_messages()
 
-   err, handle = mSys.ScanMessages(msg_id, nil, 0)
+   err, handle = mSys.ScanMessages(msg_id)
    assert((err is ERR_Search) or (err is ERR_OutOfRange), 'ProcessMessages() did not drain the queued message.')
 end
 
@@ -50,8 +50,8 @@ end
    assert(err is ERR_Okay, 'AddMsgHandler() failed: ' .. mSys.GetErrorMsg(err))
    defer free_handler(handler) end
 
-   check mSys.SendMessage(msg_id, 0, 'first', 5)
-   check mSys.SendMessage(msg_id, MSF_NO_DUPLICATE, 'second', 6)
+   check mSys.SendMessage(msg_id, 0, 'first')
+   check mSys.SendMessage(msg_id, MSF_NO_DUPLICATE, 'second')
 
    drain_messages()
 
@@ -85,12 +85,12 @@ end
    assert(err is ERR_Okay, 'AddMsgHandler() for the retargeted message failed: ' .. mSys.GetErrorMsg(err))
    defer free_handler(target_handler) end
 
-   check mSys.SendMessage(calibrate_id, 0, nil, 0)
+   check mSys.SendMessage(calibrate_id, 0)
    drain_messages()
    assert(last_uid > 0, 'Calibration message did not expose a message UID.')
 
-   check mSys.SendMessage(source_id, 0, nil, 0)
-   err = mSys.UpdateMessage(last_uid + 1, target_id, nil, 0)
+   check mSys.SendMessage(source_id, 0)
+   err = mSys.UpdateMessage(last_uid + 1, target_id)
    assert(err is ERR_Okay, 'UpdateMessage() failed to retarget the queued message: ' .. mSys.GetErrorMsg(err))
 
    drain_messages()
@@ -126,9 +126,9 @@ end
    assert(err is ERR_Okay, 'AddMsgHandler() for the second message failed: ' .. mSys.GetErrorMsg(err))
    defer free_handler(second_handler) end
 
-   check mSys.SendMessage(first_id, 0, 'first', 5)
-   check mSys.SendMessage(second_id, 0, 'middle', 6)
-   check mSys.SendMessage(first_id, MSF_UPDATE, 'updated', 7)
+   check mSys.SendMessage(first_id, 0, 'first')
+   check mSys.SendMessage(second_id, 0, 'middle')
+   check mSys.SendMessage(first_id, MSF_UPDATE, 'updated')
 
    drain_messages()
 

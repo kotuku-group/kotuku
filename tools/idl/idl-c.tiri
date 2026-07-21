@@ -135,6 +135,22 @@ global function parseTDLFile(Source:str)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+
+global function functionParameterType(Param:table):str
+   if Param.isSpan then
+      assert(not (Param.type:endsWith('&') or Param.type:endsWith('*')),
+         f"Span parameter '{Param.name}' already carries a reference or pointer marker.")
+      return 'const ' .. Param.type .. ' &'
+   elseif Param.type is 'std::string_view' then
+      return 'const std::string_view &'
+   elseif Param.isComplex and not (Param.type:endsWith('&') or Param.type:endsWith('*')) then
+      return Param.type .. ' &'
+   else
+      return Param.type
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Function definitions can be embedded into source code with the idlFunction() routine.
 
 global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Description:str, Def:table)
@@ -216,21 +232,19 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
                outValues ..= 'Tags...'
                variadic = true
             else
-               local p_type
-               if param.type is 'std::string_view' then
-                  p_type = 'const std::string_view &'
-               elseif param.isComplex and not (param.type:endsWith('&') or param.type:endsWith('*')) then
-                  p_type = param.type .. ' &'
-               else
-                  p_type = param.type
-               end
+               local p_type = functionParameterType(param)
 
                argSeq ..= p_type
                if not (argSeq:endsWith('*') or argSeq:endsWith('&')) then argSeq ..= ' ' end
                argSeq ..= cName(param)
 
-               proto     ..= (param.extType ?? p_type) .. ' ' .. cName(param)
-               doc_proto ..= (param.docType ?? p_type) .. ' ' .. cName(param)
+               if param.isSpan then
+                  proto     ..= p_type .. cName(param)
+                  doc_proto ..= p_type .. cName(param)
+               else
+                  proto     ..= (param.extType ?? p_type) .. ' ' .. cName(param)
+                  doc_proto ..= (param.docType ?? p_type) .. ' ' .. cName(param)
+               end
                outValues ..= param.name
             end
 
@@ -239,6 +253,8 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
             error(f"Unable to process line '{content}' for function '{Name}'")
          end
       end
+
+      validateFunctionInputs(func.input, Name)
    end
 
    response = func.result

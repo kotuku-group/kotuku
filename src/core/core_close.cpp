@@ -134,7 +134,7 @@ void CloseCore(void)
                // to stop foreign processes that we've launched.
                kill(task.ProcessID, SIGHUP);
             #else
-               SendMessage(MSGID::QUIT, MSF::NIL, nullptr, 0);
+               SendMessage(MSGID::QUIT, MSF::NIL, {});
             #endif
 
             WaitTime(-0.1); // Wait 0.1 seconds without processing messages

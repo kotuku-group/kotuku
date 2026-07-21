@@ -462,7 +462,7 @@ static ERR IMAGE_Init(extImage *Self)
       if (!ResolvePath(Self->Path, RSF::APPROXIMATE, &Self->Path)) {
          int result;
 
-         if (!ReadFileToBuffer(Self->Path, Self->prvHeader, sizeof(Self->prvHeader)-1, &result)) {
+         if (!ReadFileToBuffer(Self->Path, std::span(Self->prvHeader, sizeof(Self->prvHeader) - 1), &result)) {
             Self->prvHeader[result] = 0;
 
             auto buffer = (uint8_t *)Self->prvHeader;
