@@ -1178,8 +1178,6 @@ APTR   build_jump_table(const Function *);
 #endif
 void   stop_async_actions(void);
 ERR    copy_args(const FunctionField *, int, int8_t *, std::vector<int8_t> &);
-ERR    span_field_layout(const FunctionField &, size_t, size_t *, size_t *);
-ERR    span_field_value(const FunctionField &, CPTR, SpanFieldValue *, size_t *);
 void   release_copied_args(const FunctionField *, int, int8_t *, bool, FUNCTION * = nullptr);
 ERR    make_args_relative(const FunctionField *, int, int8_t *, size_t);
 ERR    make_args_absolute(const FunctionField *, int, int8_t *, size_t);

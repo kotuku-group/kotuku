@@ -16,7 +16,7 @@
     <description>
 <p>Use the CompressedStream class to compress and decompress data on the fly without the need for a temporary storage area.  The default compression algorithm is DEFLATE with gzip header data.  It is compatible with common command-line tools such as gzip.</p>
 <p>To decompress data, set the <fl>Input</fl> field with a source object that supports the Read() action, such as a <class name="File">File</class>. Repeatedly reading from the CompressedStream will automatically handle the decompression process.  If the decompressed size of the incoming data is defined in the source header, it will be reflected in the <fl>Size</fl> field.</p>
-<p>To compress data, set the <fl>Output</fl> field with a source object that supports the Write() action, such as a <class name="File">File</class>. Repeatedly writing to the CompressedStream with raw data will automatically handle the compression process for you. Once all of the data has been written, call the <action>Write</action> action with a <code>Buffer</code> of <code>NULL</code> and <code>Length</code> <code>-1</code> to signal an end to the streaming process.</p></description>
+<p>To compress data, set the <fl>Output</fl> field with a source object that supports the Write() action, such as a <class name="File">File</class>. Repeatedly writing to the CompressedStream with raw data will automatically handle the compression process for you. Once all of the data has been written, call the <action>Write</action> action with a null empty <code>Buffer</code> to finalise the stream.  In Tiri, call <code>acWrite(nil)</code>.</p></description>
     <source>
       <file path="../compression/">class_compressed_stream.cpp</file>
     </source>

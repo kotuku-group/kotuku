@@ -1150,9 +1150,8 @@ struct DateTime {
 };
 
 struct FunctionField {
-   CSTRING  Name;                          // Name of the field
-   uint32_t Type;                          // Type of the field
-   const struct SpanFieldOps * SpanOps;    // Optional operations for an embedded std::span field
+   CSTRING  Name;   // Name of the field
+   uint32_t Type;   // Type of the field
 };
 
 struct ActionEntry {

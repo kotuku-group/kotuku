@@ -24,8 +24,8 @@ static const struct FieldDef clNetSocketFlags[] = {
 
 FDEF maConnect[] = { { "Address", FDF_CPPSTRING }, { "Port", FD_INT }, { "Timeout", FD_DOUBLE }, { 0, 0 } };
 FDEF maGetLocalIPAddress[] = { { "IPAddress:Address", FD_PTR|FD_STRUCT }, { 0, 0 } };
-FDEF maSendTo[] = { { "Dest", FD_PTR }, { "Data", FDF_SPAN|FD_PTR, &glSpanFieldOps<const int8_t> }, { "BytesSent", FD_RESULT|FD_INT }, { 0, 0 } };
-FDEF maRecvFrom[] = { { "Source", FD_PTR }, { "Buffer", FDF_SPAN|FD_MUTABLE|FD_PTR, &glSpanFieldOps<int8_t> }, { "BytesRead", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maSendTo[] = { { "Dest", FD_PTR }, { "Data", FDF_SPAN|FD_PTR }, { "BytesSent", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maRecvFrom[] = { { "Source", FD_PTR }, { "Buffer", FDF_SPAN|FD_MUTABLE|FD_PTR }, { "BytesRead", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF maJoinMulticastGroup[] = { { "Group", FDF_CPPSTRING }, { 0, 0 } };
 FDEF maLeaveMulticastGroup[] = { { "Group", FDF_CPPSTRING }, { 0, 0 } };
 

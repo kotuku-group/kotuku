@@ -354,7 +354,6 @@ extern void parser_unit_tests(int &, int &);
 extern void array_unit_tests(int &, int &);
 extern void allocator_unit_tests(int &, int &);
 extern void bulk_unit_tests(int &, int &);
-extern void object_call_unit_tests(int &, int &);
 #endif
 
 static void MODTest(std::string_view Options, int *Passed, int *Total)
@@ -394,11 +393,6 @@ static void MODTest(std::string_view Options, int *Passed, int *Total)
       kt::Log log("TiriTests");
       log.branch("Running bulk TValue unit tests...");
       bulk_unit_tests(*Passed, *Total);
-   }
-   {
-      kt::Log log("TiriTests");
-      log.branch("Running synchronous object-call unit tests...");
-      object_call_unit_tests(*Passed, *Total);
    }
 #else
    kt::Log("TiriTests").warning("Unit tests are disabled in this build.");

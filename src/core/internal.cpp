@@ -126,40 +126,43 @@ static ERR span_descriptor_element_layout(const FunctionField &Field, size_t *El
    return ERR::Okay;
 }
 
-ERR span_field_layout(const FunctionField &Field, size_t Offset, size_t *AlignedOffset, size_t *EndOffset)
+using GenericSpan = std::span<int8_t>;
+
+static ERR span_field_layout(const FunctionField &Field, size_t Offset, size_t *AlignedOffset, size_t *EndOffset)
 {
    if ((Field.Type & FDF_SPAN) != FDF_SPAN) return ERR::InvalidData;
-   if ((not Field.SpanOps) or (not Field.SpanOps->Size) or (not Field.SpanOps->Alignment) or
-       (not Field.SpanOps->ElementSize) or (not Field.SpanOps->Read) or (not Field.SpanOps->Construct) or
-       (not Field.SpanOps->Rebind)) return ERR::InvalidData;
-
-   size_t descriptor_size, descriptor_alignment;
-   if (span_descriptor_element_layout(Field, &descriptor_size, &descriptor_alignment) != ERR::Okay) {
-      return ERR::InvalidData;
-   }
-   if (descriptor_size != Field.SpanOps->ElementSize) return ERR::InvalidData;
 
    size_t aligned_offset;
-   if (not align_arg_offset(Offset, Field.SpanOps->Alignment, &aligned_offset)) return ERR::InvalidData;
-   if (aligned_offset > std::numeric_limits<size_t>::max() - Field.SpanOps->Size) return ERR::InvalidData;
+   if (not align_arg_offset(Offset, alignof(GenericSpan), &aligned_offset)) return ERR::InvalidData;
+   if (aligned_offset > std::numeric_limits<size_t>::max() - sizeof(GenericSpan)) return ERR::InvalidData;
 
    if (AlignedOffset) *AlignedOffset = aligned_offset;
-   if (EndOffset) *EndOffset = aligned_offset + Field.SpanOps->Size;
+   if (EndOffset) *EndOffset = aligned_offset + sizeof(GenericSpan);
    return ERR::Okay;
 }
 
-ERR span_field_value(const FunctionField &Field, CPTR Storage, SpanFieldValue *Value, size_t *ByteSize)
+static ERR span_field_value(const FunctionField &Field, CPTR Storage, GenericSpan *Value, size_t *ByteSize)
 {
    if ((not Storage) or (not Value) or (not ByteSize)) return ERR::NullArgs;
    if (span_field_layout(Field, 0, nullptr, nullptr) != ERR::Okay) return ERR::InvalidData;
 
-   const auto value = Field.SpanOps->Read(Storage);
-   if ((not value.Data) and value.Extent) return ERR::InvalidData;
-   if (value.Extent > std::numeric_limits<size_t>::max() / Field.SpanOps->ElementSize) return ERR::InvalidData;
+   size_t element_size, element_alignment;
+   if (span_descriptor_element_layout(Field, &element_size, &element_alignment) != ERR::Okay) {
+      return ERR::InvalidData;
+   }
+
+   const auto value = *(const GenericSpan *)Storage;
+   if ((not value.data()) and value.size()) return ERR::InvalidData;
+   if (value.size() > std::numeric_limits<size_t>::max() / element_size) return ERR::InvalidData;
 
    *Value = value;
-   *ByteSize = value.Extent * Field.SpanOps->ElementSize;
+   *ByteSize = value.size() * element_size;
    return ERR::Okay;
+}
+
+static void rebind_span_field(APTR Storage, CPTR Data, size_t Extent)
+{
+   *(GenericSpan *)Storage = GenericSpan((int8_t *)Data, Extent);
 }
 
 static int argument_end_offset(const FunctionField &Field, int Offset)
@@ -414,7 +417,7 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
          if ((span_field_layout(Args[i], size_t(pos), &aligned_offset, &end_offset) != ERR::Okay) or
              (end_offset > size_t(ArgsSize))) return log.warning(ERR::InvalidData);
 
-         SpanFieldValue value;
+         GenericSpan value;
          size_t byte_size;
          if (span_field_value(Args[i], Parameters + aligned_offset, &value, &byte_size) != ERR::Okay) {
             return log.warning(ERR::InvalidData);
@@ -524,7 +527,7 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
          if ((span_field_layout(Args[i], size_t(pos), &aligned_offset, &end_offset) != ERR::Okay) or
              (end_offset > size_t(ArgsSize))) return ERR::InvalidData;
 
-         SpanFieldValue value;
+         GenericSpan value;
          size_t byte_size;
          if (span_field_value(Args[i], Parameters + aligned_offset, &value, &byte_size) != ERR::Okay) {
             return ERR::InvalidData;
@@ -540,10 +543,10 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
             const auto payload_end = payload_offset + byte_size;
             Buffer.resize(payload_end);
             auto payload = Buffer.data() + payload_offset;
-            if (not (type & FD_MUTABLE)) copymem(value.Data, payload, byte_size);
-            Args[i].SpanOps->Construct(Buffer.data() + aligned_offset, payload, value.Extent);
+            if (not (type & FD_MUTABLE)) copymem(value.data(), payload, byte_size);
+            rebind_span_field(Buffer.data() + aligned_offset, payload, value.size());
          }
-         else Args[i].SpanOps->Construct(Buffer.data() + aligned_offset, nullptr, 0);
+         else rebind_span_field(Buffer.data() + aligned_offset, nullptr, 0);
 
          pos = int(end_offset);
       }
@@ -662,20 +665,20 @@ ERR make_args_relative(const FunctionField *Args, int ArgsSize, int8_t *Buffer, 
          if ((span_field_layout(Args[i], size_t(pos), &aligned_offset, &end_offset) != ERR::Okay) or
              (end_offset > size_t(ArgsSize))) return ERR::InvalidData;
 
-         SpanFieldValue value;
+         GenericSpan value;
          size_t byte_size;
          auto storage = Buffer + aligned_offset;
          if (span_field_value(Args[i], storage, &value, &byte_size) != ERR::Okay) return ERR::InvalidData;
-         if (not value.Extent) Args[i].SpanOps->Rebind(storage, nullptr, 0);
+         if (value.empty()) rebind_span_field(storage, nullptr, 0);
          else {
             const auto base_address = uintptr_t(Buffer);
-            const auto data_address = uintptr_t(value.Data);
+            const auto data_address = uintptr_t(value.data());
             if ((data_address < base_address) or (data_address - base_address < size_t(ArgsSize))) {
                return ERR::InvalidData;
             }
             const auto payload_offset = data_address - base_address;
             if ((payload_offset > BufferSize) or (byte_size > BufferSize - payload_offset)) return ERR::InvalidData;
-            Args[i].SpanOps->Rebind(storage, (CPTR)payload_offset, value.Extent);
+            rebind_span_field(storage, (CPTR)payload_offset, value.size());
          }
          pos = int(end_offset);
          continue;
@@ -720,15 +723,15 @@ ERR make_args_absolute(const FunctionField *Args, int ArgsSize, int8_t *Buffer, 
              (end_offset > size_t(ArgsSize))) return ERR::InvalidData;
 
          auto storage = Buffer + aligned_offset;
-         SpanFieldValue value;
+         GenericSpan value;
          size_t byte_size;
          if (span_field_value(Args[i], storage, &value, &byte_size) != ERR::Okay) return ERR::InvalidData;
-         if (not value.Extent) Args[i].SpanOps->Rebind(storage, nullptr, 0);
+         if (value.empty()) rebind_span_field(storage, nullptr, 0);
          else {
-            const auto payload_offset = uintptr_t(value.Data);
+            const auto payload_offset = uintptr_t(value.data());
             if ((payload_offset < size_t(ArgsSize)) or (payload_offset > BufferSize) or
                 (byte_size > BufferSize - payload_offset)) return ERR::InvalidData;
-            Args[i].SpanOps->Rebind(storage, Buffer + payload_offset, value.Extent);
+            rebind_span_field(storage, Buffer + payload_offset, value.size());
          }
          pos = int(end_offset);
          continue;

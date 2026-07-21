@@ -514,9 +514,6 @@ global function buildInputParameters(List, MethodSpans)
             plist ..= f'{{ "{param.name}", {fd}'
          end
 
-         if MethodSpans and param.isSpan then
-            plist ..= f', &glSpanFieldOps<{param.innerType}>'
-         end
          plist ..= ' }, '
       end
    end

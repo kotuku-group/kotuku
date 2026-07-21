@@ -2513,7 +2513,6 @@ identifier has no effect.</li>
     <struct name="FunctionField" comment="Used by ActionTable and Function structures to declare lists of parameters.">
       <field name="Name" type="CSTRING">Name of the field</field>
       <field name="Type" type="UINT">Type of the field</field>
-      <field name="SpanOps" type="const struct SpanFieldOps *">Optional operations for an embedded std::span field</field>
     </struct>
 
     <struct name="HSV" comment="Colour structure for Hue, Saturation and Value/Light components.">
