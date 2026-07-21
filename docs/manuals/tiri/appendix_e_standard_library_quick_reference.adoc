@@ -15,7 +15,7 @@ indexterm:[global functions] See <<ch-basic-syntax>>, <<ch-types-and-values>>, <
 |`type(Value)`                   |Returns the type name of `Value` as a string.
 |`tonumber(Value, [Base])`       |Converts `Value` to a number.  Returns `nil` on failure.
 |`tostring(Value)`               |Converts `Value` to a string.
-|`print(pass:[...])`             |Writes arguments to stderr, separated by tabs.
+|`print(pass:[...])`             |Writes arguments to stderr, values are serialised without a separator.
 |`msg(pass:[...])`               |Writes arguments to the Kōtuku log at API level.
 |`pairs(Table)`                  |Returns an iterator over all key-value pairs.
 |`ipairs(Table)`                 |Returns an iterator over sequential integer keys.

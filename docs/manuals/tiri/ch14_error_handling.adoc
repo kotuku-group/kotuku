@@ -504,7 +504,7 @@ check ERR_Failed             -- raises exception
 check ERR_Okay               -- no effect (safe code)
 
 -- raises on error; passes results through
-err, bytes = check file.acRead(file, buffer)
+err, bytes = check file.acRead(buffer)
 ----
 
 [discrete]

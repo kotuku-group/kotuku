@@ -61,7 +61,7 @@ Named arguments are passed as key-value pairs after the script path:
 origo myscript.tiri name='John' surname=Bloggs
 ----
 
-These arguments are accessible within the script as pre-defined local variables.
+These arguments are accessible within the script via the `arg()` function.
 
 To enable diagnostic log output, append `--log-warning` for warnings or `--log-api` for detailed API-level logging.
 Log output is directed to standard error.  Run `origo --help` for the full list of available options.
@@ -96,4 +96,4 @@ Tiri source files use the `.tiri` file extension.  To completely avoid ambiguity
 -- $TIRI
 ----
 
-Th `$TIRI` marker allows tools, editors, and the runtime to distinguish Tiri scripts where they might not have access to the file name.
+The `$TIRI` marker allows tools, editors, and the runtime to distinguish Tiri scripts where they might not have access to the file name.

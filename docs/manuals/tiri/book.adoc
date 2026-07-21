@@ -9,7 +9,7 @@ Paul Manias
 :imagesdir: images/
 :title-logo-image: image:tiri.svg[Tiri,200]
 :source-highlighter: rouge
-:source-language: lua
+:source-language: tiri
 :icons: font
 :revnumber: 0.2
 :revdate: May 2026

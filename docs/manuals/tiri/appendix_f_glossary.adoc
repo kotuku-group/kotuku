@@ -69,7 +69,7 @@ Extended falsiness::
 The broader falsiness rules used by the `??` and `??=` operators.  Under extended falsiness, `nil`, `false`, `0`, `""`, and empty collections evaluate as falsey.  See <<sec-conditional-operators>>.
 
 Field::
-A named property of an object or a string-keyed entry in a table.  Object fields are accessed as lower snake_case names via dot notation.  See <<sec-field-access>>.
+A named property of an object or a string-keyed entry in a table.  Object fields are accessed as lower camel case names via dot notation.  See <<sec-field-access>>.
 
 Flute::
 The Tiri test framework.  Test files use annotations to declare test functions and are executed by the Flute test runner (`tools/flute.tiri`).
@@ -144,7 +144,7 @@ Regular expression::
 A pattern-matching facility provided by the `regex` library.  Replaces the deprecated Lua pattern system.  See <<ch-regular-expressions>>.
 
 Result filter operator::
-The `=>` operator used in assignment context to filter error codes from function results, separating successful values from error indicators.  See <<sec-result-filter-operator>>.
+The `[mask]` operator used in assignment context to filter error codes from function results, separating successful values from error indicators.  See <<sec-result-filter-operator>>.
 
 Safe navigation::
 A family of nil-safe operators (`?.`, `?:`, `?[]`) that return `nil` instead of raising an error when the receiver is `nil`.  See <<sec-safe-navigation>>.

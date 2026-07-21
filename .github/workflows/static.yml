@@ -34,11 +34,11 @@ jobs:
       - name: Install Asciidoctor
         run: gem install asciidoctor asciidoctor-pdf rouge
 
-      - name: Build Fluid Manual (HTML)
+      - name: Build Tiri Reference Manual (HTML)
         run: >
           asciidoctor -b html5 -a source-highlighter=rouge -r docs/manuals/tiri/tiri_lexer.rb -o docs/html/manuals/tiri-manual.html docs/manuals/tiri/book.adoc
 
-      - name: Build Fluid Manual (PDF)
+      - name: Build Tiri Reference Manual (PDF)
         run: >
           asciidoctor-pdf -a source-highlighter=rouge -r docs/manuals/tiri/tiri_lexer.rb -o docs/html/manuals/tiri-manual.pdf docs/manuals/tiri/book.adoc
 
