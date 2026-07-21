@@ -19,8 +19,8 @@ field.
 
 To compress data, set the #Output field with a source object that supports the Write() action, such as a @File.
 Repeatedly writing to the CompressedStream with raw data will automatically handle the compression process for you.
-Once all of the data has been written, call the #Write() action with a `Buffer` of `NULL` and `Length` `-1` to
-signal an end to the streaming process.
+Once all of the data has been written, call the #Write() action with a null empty `Buffer` to finalise the stream.  In
+Tiri, call `acWrite(nil)`.
 
 -END-
 
@@ -226,25 +226,28 @@ static ERR COMPRESSEDSTREAM_Write(extCompressedStream *Self, struct acWrite *Arg
    if (!Self->initialised()) return log.warning(ERR::NotInitialised);
    if (Args->Buffer.size() > size_t(UINT_MAX)) return log.warning(ERR::OutOfRange);
 
+   const bool finishing = (not Args->Buffer.data()) and Args->Buffer.empty();
+   if ((not Args->Buffer.data()) and (not finishing)) return log.warning(ERR::NullArgs);
+
    if (!Self->Stream.active()) {
+      int window_bits;
       switch (Self->Format) {
          case CF::ZLIB:
-            if (Self->Stream.deflate_init(9, MAX_WBITS)) {
-               return log.warning(ERR::Compression);
-            }
+            window_bits = MAX_WBITS;
             break;
 
          case CF::DEFLATE:
-            if (Self->Stream.deflate_init(9, -MAX_WBITS)) {
-               return log.warning(ERR::Compression);
-            }
+            window_bits = -MAX_WBITS;
             break;
 
          case CF::GZIP:
          default:
-            if (Self->Stream.deflate_init(9, 15 + 32)) {
-               return log.warning(ERR::Compression);
-            }
+            window_bits = 15 + 16;
+      }
+
+      if (auto result = Self->Stream.deflate_init(9, window_bits); result != Z_OK) {
+         log.warning("deflateInit2() failed with zlib error %d.", result);
+         return log.warning(ERR::Compression);
       }
 
       Self->TotalOutput = 0;
@@ -253,21 +256,23 @@ static ERR COMPRESSEDSTREAM_Write(extCompressedStream *Self, struct acWrite *Arg
    if (Self->OutputBuffer.empty()) Self->OutputBuffer.resize(MIN_OUTPUT_SIZE);
 
    Args->Result = 0;
-   int mode = Z_NO_FLUSH;
+   const int mode = finishing ? Z_FINISH : Z_NO_FLUSH;
    Self->Stream->next_in  = (Bytef *)Args->Buffer.data();
    Self->Stream->avail_in = uInt(Args->Buffer.size());
 
    // If zlib succeeds but sets avail_out to zero, this means that data was written to the output buffer, but the
    // output buffer is not large enough (so keep calling until avail_out > 0).
 
-   Self->Stream->avail_out = 0;
-   while (Self->Stream->avail_out IS 0) {
+   int result;
+   do {
       Self->Stream->next_out  = Self->OutputBuffer.data();
       Self->Stream->avail_out = MIN_OUTPUT_SIZE;
 
-      if ((deflate(Self->Stream.get(), mode))) {
+      result = deflate(Self->Stream.get(), mode);
+      if ((result != Z_OK) and (result != Z_STREAM_END)) {
          Self->Stream.reset();
-         return ERR::BufferOverflow;
+         log.warning("deflate() failed with zlib error %d.", result);
+         return log.warning(ERR::Compression);
       }
 
       const int len = MIN_OUTPUT_SIZE - Self->Stream->avail_out; // Get number of compressed bytes that were output
@@ -275,16 +280,22 @@ static ERR COMPRESSEDSTREAM_Write(extCompressedStream *Self, struct acWrite *Arg
       if (len > 0) {
          Self->TotalOutput += len;
          log.trace("%d bytes (total %" PF64 ") were compressed.", len, Self->TotalOutput);
-         acWrite(Self->Output, std::span<const int8_t>((int8_t *)Self->OutputBuffer.data(), len));
+         if (acWrite(Self->Output, std::span<const int8_t>((int8_t *)Self->OutputBuffer.data(), len)) != ERR::Okay) {
+            Self->Stream.reset();
+            return log.warning(ERR::Write);
+         }
       }
       else {
          // deflate() may not output anything if it needs more data to fill up a compression frame.  Return ERR::Okay
          // and wait for more data, or for the developer to end the stream.
 
          //log.trace("No data output on this cycle.");
-         break;
+         if (not finishing) break;
       }
-   }
+   } while ((Self->Stream->avail_out IS 0) or (finishing and (result != Z_STREAM_END)));
+
+   if (finishing) Self->Stream.reset();
+   else Args->Result = int(Args->Buffer.size() - Self->Stream->avail_in);
 
    return ERR::Okay;
 }

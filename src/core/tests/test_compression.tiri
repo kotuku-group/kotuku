@@ -12,6 +12,7 @@ global glScanCount = 0
    mSys.DeleteFile('temp:cmp_empty_args.zip')
    mSys.DeleteFile('temp:cmp_decompress_object.tiri')
    mSys.DeleteFile('temp:scripts.gz')
+   mSys.DeleteFile('temp:compressed_stream.gz')
    mSys.DeleteFile('temp:gui.tiri')
    mSys.DeleteFile('temp:window.tiri')
 end
@@ -350,4 +351,32 @@ end
    truncated = compressed:slice({0 to truncated_size})
    err = cmp.mtDecompressBuffer(truncated, restored)
    assert(err is ERR_InvalidCompression, 'A truncated encoded input span should return InvalidCompression.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A null empty write must finish the compressed stream so its trailer is available to a decoder.
+
+@Test(priority=11) function CompressedStreamFinalisation()
+   local source = 'Finalised compressed streams include a complete trailer.'
+   local output = obj.new('file', { path='temp:compressed_stream.gz', flags=FL_WRITE|FL_NEW })
+   local encoder = obj.new('compressedstream', { output=output })
+
+   local err, written = encoder.acWrite(source)
+   assert(err is ERR_Okay, 'CompressedStream write failed: ' .. mSys.GetErrorMsg(err))
+   assert(written is #source, f'CompressedStream consumed {written} bytes, expected {#source}.')
+
+   err = encoder.acWrite(nil)
+   assert(err is ERR_Okay, 'CompressedStream finalisation failed: ' .. mSys.GetErrorMsg(err))
+
+   encoder = nil
+   output = nil
+   processing.collect()
+
+   local input = obj.new('file', { path='temp:compressed_stream.gz', flags=FL_READ })
+   local decoder = obj.new('compressedstream', { input=input })
+   local restored = string.alloc(65536)
+   local restored_size
+   err, restored_size = decoder.acRead(restored)
+   assert(err is ERR_Okay, 'Finalised stream could not be decompressed: ' .. mSys.GetErrorMsg(err))
+   assert(restored:substr(0, restored_size) is source, 'Finalised compressed stream did not round-trip correctly.')
 end
