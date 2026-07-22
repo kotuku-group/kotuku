@@ -42,7 +42,6 @@ endif ()
 
 # Audio tests should be manually enabled if working on the Audio module.
 # flute_test (audio "tests/test_audio.tiri")
-flute_test(audio_add_sample_span "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_add_sample_span.tiri")
 
 if (BUILD_TESTS)
    add_executable (test_audio_mixers tests/test_mixers.cpp)
