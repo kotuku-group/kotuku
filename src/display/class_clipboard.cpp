@@ -483,12 +483,12 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
          error = routine(Self, Args->Object, request.Item, request.Preference, Self->RequestHandler.Meta);
       }
       else if (Self->RequestHandler.isScript()) {
+         std::span<char> span(request.Preference, sizeof(request.Preference));
          if (sc::Call(Self->RequestHandler, std::to_array<ScriptArg>({
             { "Clipboard", Self, FD_OBJECTPTR },
             { "Requester", Args->Object, FD_OBJECTPTR },
             { "Item",      request.Item },
-            { "Datatypes", request.Preference, FD_ARRAY|FD_BYTE },
-            { "Size",      int(std::ssize(request.Preference)), FD_INT|FD_ARRAYSIZE }
+            { "Datatypes", &span, FDF_SPAN }
          }), error) != ERR::Okay) error = ERR::Terminate;
       }
       else error = log.warning(ERR::FieldNotSet);

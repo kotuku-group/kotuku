@@ -171,11 +171,11 @@ static BYTELEN fill_stream_buffer(int Handle, AudioSample &Sample, int Offset)
       return routine(Handle, Offset, Sample.Data.data(), Sample.SampleLength<<sample_shift(Sample.SampleType), Sample.Callback.Meta);
    }
    else if (Sample.Callback.isScript()) {
+      std::span span(Sample.Data.data(), Sample.SampleLength<<sample_shift(Sample.SampleType));
       const auto args = std::to_array<ScriptArg>({
          { "Handle", Handle },
          { "Offset", Offset },
-         { "Buffer", Sample.Data.data(), FD_BUFFER },
-         { "Length", Sample.SampleLength<<sample_shift(Sample.SampleType), FD_BUFSIZE|FD_INT }
+         { "Buffer", &span, FDF_SPAN }
       });
 
       ERR result;
