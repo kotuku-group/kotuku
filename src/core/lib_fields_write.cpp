@@ -470,7 +470,7 @@ static ERR set_or_write_vector(OBJECTPTR Object, const Field *Field, int Flags, 
 {
    FieldContext ctx(Object, Field);
 
-   if (Flags & FD_ARRAY) {
+   if ((Flags & FDF_SPAN) IS FDF_SPAN) {
       if (Field->SetValue) {
          // Basic type checking
          int src_type = Flags & (FD_INT|FD_INT64|FD_FLOAT|FD_DOUBLE|FD_POINTER|FD_BYTE|FD_WORD|FD_STRUCT);
@@ -518,7 +518,7 @@ static ERR set_or_write_vector(OBJECTPTR Object, const Field *Field, int Flags, 
       return ERR::FieldTypeMismatch;
    }
    else {
-      kt::Log(__FUNCTION__).warning("Arrays can only be set using the FD_ARRAY type.");
+      kt::Log(__FUNCTION__).warning("Arrays can only be set using the FDF_SPAN type.");
       return ERR::SetValueNotArray;
    }
 }
@@ -529,7 +529,7 @@ static ERR set_or_write_array(OBJECTPTR Object, const Field *Field, int Flags, C
 {
    FieldContext ctx(Object, Field);
 
-   if (Flags & FD_ARRAY) {
+   if ((Flags & FDF_SPAN) IS FDF_SPAN) {
       // Basic type checking
       int src_type = Flags & (FD_INT|FD_INT64|FD_FLOAT|FD_DOUBLE|FD_POINTER|FD_BYTE|FD_WORD|FD_STRUCT);
       if (src_type) {

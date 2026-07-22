@@ -39,8 +39,8 @@
 #define FDF_INIT        FD_INIT                 // Field can only be written prior to Init()
 #define FDF_SYSTEM      FD_SYSTEM
 #define FDF_ERROR       (FD_INT|FD_ERROR)
-#define FDF_VECTOR      (FD_CPP|FD_ARRAY)
-#define FDF_SPAN        (FD_CPP|FD_BUFFER)
+#define FDF_VECTOR      (FD_CPP|FD_ARRAY)   // Field is an embedded kt::vector
+#define FDF_SPAN        (FD_CPP|FD_BUFFER)  // Value is a std::span carrying a pointer and element count
 #define FDF_R           FD_READ
 #define FDF_W           FD_WRITE
 #define FDF_RW          (FD_READ|FD_WRITE)
@@ -103,7 +103,7 @@ struct FieldValue {
    constexpr FieldValue(uint32_t pFID, CPTR pValue, int pCustom) : FieldID(pFID), Type(pCustom), CPointer(pValue) { };
 
    template <class T> constexpr FieldValue(uint32_t pFID, std::span<const T> pValue)
-      : FieldID(pFID), Type(FD_ARRAY | FIELD_TYPECHECK<T>()),
+      : FieldID(pFID), Type(FDF_SPAN | FIELD_TYPECHECK<T>()),
         Span((const uint8_t *)pValue.data(), pValue.size()) { }
 
    constexpr FieldValue(std::string_view pFID, const std::string_view pValue) : FieldID(kt::fieldhash(pFID)), Type(FD_STRING|FD_CPP), CPPString(pValue) { };
@@ -403,10 +403,10 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
    public:
 
-   // set() support for array fields
+   // Span-based writes to array fields.
 
    template <class T> ERR set(const struct Field *Field, const std::span<const T> &Value, int Type = FIELD_TYPECHECK<T>()) {
-      return Field->WriteValue(this, Field, FD_ARRAY|Type, &Value);
+      return Field->WriteValue(this, Field, FDF_SPAN|Type, &Value);
    }
 
    // Mutable-span callers forward to the const-span overload (the value is only read).
@@ -781,11 +781,11 @@ struct alignas(8) Object { // Must be 64-bit aligned
 namespace kt {
 
 inline ERR write_field_value(OBJECTPTR Target, const struct Field *FieldPtr, const FieldValue &Value) {
-   if ((Value.Type & FD_STRING) and (Value.Type & FD_CPP)) {
-      return FieldPtr->WriteValue(Target, FieldPtr, Value.Type, &Value.CPPString);
-   }
-   else if (Value.Type & FD_ARRAY) {
+   if ((Value.Type & FDF_SPAN) IS FDF_SPAN) {
       return FieldPtr->WriteValue(Target, FieldPtr, Value.Type, &Value.Span);
+   }
+   else if ((Value.Type & FD_STRING) and (Value.Type & FD_CPP)) {
+      return FieldPtr->WriteValue(Target, FieldPtr, Value.Type, &Value.CPPString);
    }
    else if (Value.Type & (FD_POINTER|FD_STRING|FD_FUNCTION|FD_UNIT)) {
       return FieldPtr->WriteValue(Target, FieldPtr, Value.Type, Value.Pointer);
