@@ -553,7 +553,7 @@ static int module_index(lua_State *Lua)
 //                backing storage depending on the call.
 // PTR|STRUCT   = Struct *.  Accepts an existing Tiri struct or converts a Tiri table to a temporary struct.
 // OBJECT|PTR   = OBJECTPTR.  Accepts a Tiri object and resolves it to an object pointer.
-// ARRAY        = Type *.  Accepts a Tiri array and passes its data pointer.  ARRAYSIZE can follow.
+// ARRAY        = Unsupported.  Raw pointer-array marshalling has been removed.
 // ARRAY|CPP    = Unsupported as input.  kt::vector<> input marshalling is not implemented for module calls.
 // SPAN         = const std::span<int8_t/char> &.  Accepts complete Tiri array or string storage, or an empty value.
 // SPAN|MUTABLE = const std::span<int8_t/char> &.  Requires writable array or mutable string storage.
@@ -582,8 +582,7 @@ static int module_index(lua_State *Lua)
 //                     available, then freed.
 // RESULT|PTR|STRUCT = Struct **.  Function writes a struct pointer; returned as a Tiri table, or as a managed
 //                     struct when RESOURCE is set.
-// RESULT|ARRAY      = Type **.  Function writes an array pointer; returned to Tiri as an array.  ARRAYSIZE may
-//                     follow to define element count.
+// RESULT|ARRAY      = Unsupported.  Raw pointer-array marshalling has been removed.
 // RESULT|ARRAY|CPP  = kt::vector<> *.  Tiri provides an empty kt::vector<>; returned to Tiri as an array.
 // Mixed direction:
 //
@@ -718,6 +717,14 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       return ERR::Okay;
    }
 
+   for (int arg=1; args[arg].Name; arg++) {
+      if ((args[arg].Type & FD_ARRAY) and (not (args[arg].Type & FD_CPP))) {
+         ErrorMsg = std::format("Function '{}' uses unsupported pointer array arg '{}'.",
+            mod->Functions[index].Name, args[arg].Name);
+         return ERR::NoSupport;
+      }
+   }
+
    APTR function = mod->Functions[index].Address;
    FUNCTION func;
 
@@ -847,7 +854,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
          RMSG("Result for arg %d stored at %p", i, end);
 
-         if ((argtype & FD_CPP) and (argtype & FD_ARRAY) and (argtype & FD_MUTABLE)) {
+         if (((argtype & FDF_VECTOR) IS FDF_VECTOR) and (argtype & FD_MUTABLE)) {
             // Applicable to RESULT|MUTABLE only, which requires the client to provide an empty kt::vector<> to the function.
             // We set this up here, then convert the resulting values to a Tiri array when the function returns.
             cpp_array_result result_ref = { };
@@ -901,7 +908,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                j += sizeof(APTR);
             }
          }
-         else if (argtype & (FD_PTR|FD_ARRAY)) { // FD_RESULT
+         else if (argtype & FD_PTR) { // FD_RESULT
             end -= sizeof(APTR);
             ((APTR *)(buffer + j))[0] = end;
             ((APTR *)end)[0] = nullptr;
@@ -1023,75 +1030,9 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          arg_types[in++] = &ffi_type_pointer;
          j += type_size;
       }
-      else if (argtype & FD_ARRAY) { // Pass array data pointer
-         if (argtype & FD_CPP) {
-            ErrorMsg = "No support for calls utilising C++ arrays.";
-            return ERR::NoSupport;
-         }
-
-         if (lua_type(Lua, i) IS LUA_TARRAY) {
-            GCarray *arr = arrayV(Lua, i);
-            ((APTR *)(buffer + j))[0] = arr->arraydata();
-            arg_values[in] = buffer + j;
-            arg_types[in++] = &ffi_type_pointer;
-            j += sizeof(APTR);
-
-            if (args[i+1].Type & FD_ARRAYSIZE) {
-               if (args[i+1].Type & FD_RESULT) {
-                  if (args[i+1].Type & FD_INT) {
-                     end -= sizeof(int);
-                     ((int *)end)[0] = arr->len;
-                     ((APTR *)(buffer + j))[0] = end;
-                     arg_values[in] = buffer + j;
-                     arg_types[in++] = &ffi_type_pointer;
-                     j += sizeof(APTR);
-                     i++;
-                  }
-                  else if (args[i+1].Type & FD_INT64) {
-                     end -= sizeof(int64_t);
-                     ((int64_t *)end)[0] = arr->len;
-                     ((APTR *)(buffer + j))[0] = end;
-                     arg_values[in] = buffer + j;
-                     arg_types[in++] = &ffi_type_pointer;
-                     j += sizeof(APTR);
-                     i++;
-                  }
-                  else {
-                     ErrorMsg = std::format("Function '{}' is not compatible with Tiri.", mod->Functions[index].Name);
-                     return ERR::NoSupport;
-                  }
-               }
-               else {
-                  if (args[i+1].Type & FD_INT) {
-                     ((int *)(buffer + j))[0] = arr->len;
-                     arg_values[in] = buffer + j;
-                     arg_types[in++] = &ffi_type_sint32;
-                     j += sizeof(int);
-                     i++;
-                  }
-                  else if (args[i+1].Type & FD_INT64) {
-                     ((int64_t *)(buffer + j))[0] = arr->len;
-                     arg_values[in] = buffer + j;
-                     arg_types[in++] = &ffi_type_sint64;
-                     j += sizeof(int64_t);
-                     i++;
-                  }
-                  else {
-                     ErrorMsg = std::format("Function '{}' is not compatible with Tiri.", mod->Functions[index].Name);
-                     return ERR::NoSupport;
-                  }
-               }
-            }
-            else {
-               ErrorMsg = std::format("Function '{}' is not compatible with Tiri.", mod->Functions[index].Name);
-               return ERR::NoSupport;
-            }
-         }
-         else {
-            ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected array, got '{}'.", i, args[i].Name,
-               lua_typename(Lua, lua_type(Lua, i)));
-            return ERR::InvalidType;
-         }
+      else if ((argtype & FDF_VECTOR) IS FDF_VECTOR) {
+         ErrorMsg = "C++ array inputs are not supported.";
+         return ERR::NoSupport;
       }
       else if (argtype & FD_PTR) {
          auto arg_type = lua_type(Lua, i);
@@ -1329,34 +1270,15 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
    for (int i=1; args[i].Name; i++) {
       const auto argtype = args[i].Type;
 
-      if (argtype & FD_ARRAY) {
+      if ((argtype & FDF_VECTOR) IS FDF_VECTOR) {
          if (argtype & FD_RESULT) {
             auto var = ((APTR *)scan)[0];
             scan += sizeof(APTR);
             if (var) {
                std::string_view argname(args[i].Name);
-               if (argtype & FD_CPP) {
-                  if (not push_cpp_array_result(lua, argtype, argname, var)) {
-                     log.warning("Unsupported C++ array result arg %s, flags $%.8x", args[i].Name, argtype);
-                     lua_pushnil(lua);
-                  }
-               }
-               else {
-                  APTR values = ((APTR *)var)[0];
-                  int total_elements = -1; // If -1, make_any_table() assumes the array is null terminated.
-
-                  if (args[i+1].Type & FD_ARRAYSIZE) {
-                     CPTR size_var = ((APTR *)scan)[0];
-                     if (args[i+1].Type & FD_INT) total_elements = ((int *)size_var)[0];
-                     else if (args[i+1].Type & FD_INT64) total_elements = ((int64_t *)size_var)[0];
-                     else log.warning("Invalid arg %s, flags $%.8x", args[i+1].Name, args[i+1].Type);
-                  }
-
-                  if (values) {
-                     make_any_array(lua, argtype, argname, total_elements, values);
-                     if (argtype & FD_ALLOC) FreeResource(values);
-                  }
-                  else lua_pushnil(lua);
+               if (not push_cpp_array_result(lua, argtype, argname, var)) {
+                  log.warning("Unsupported C++ array result arg %s, flags $%.8x", args[i].Name, argtype);
+                  lua_pushnil(lua);
                }
             }
             else lua_pushnil(lua);

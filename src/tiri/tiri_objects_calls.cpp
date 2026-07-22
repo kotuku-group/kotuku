@@ -539,9 +539,9 @@ void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int ArgsSize, 
          j = int(end_offset);
       }
       else if (type & FD_RESULT) {
-         if (type & FD_ARRAY) {
+         if ((type & FDF_VECTOR) IS FDF_VECTOR) {
             j = ALIGN64(j);
-            if ((type & FD_CPP) and (j + int(sizeof(APTR)) <= ArgsSize)) {
+            if (j + int(sizeof(APTR)) <= ArgsSize) {
                delete_cpp_array_arg(type, ((APTR *)(ArgBuffer + j))[0]);
                ((APTR *)(ArgBuffer + j))[0] = nullptr;
             }
@@ -573,9 +573,9 @@ void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int ArgsSize, 
          continue;
       }
 
-      if (type & FD_ARRAY) {
+      if ((type & FDF_VECTOR) IS FDF_VECTOR) {
          j = ALIGN64(j);
-         if ((type & FD_CPP) and (j + int(sizeof(APTR)) <= ArgsSize)) {
+         if (j + int(sizeof(APTR)) <= ArgsSize) {
             delete_cpp_array_arg(type, ((APTR *)(ArgBuffer + j))[0]);
             ((APTR *)(ArgBuffer + j))[0] = nullptr;
          }
@@ -620,6 +620,14 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
    int top = lua_gettop(Lua);
 
    log.traceBranch("%d, %p, Top: %d", ArgsSize, ArgBuffer, top);
+
+   for (int i=0; Args[i].Name; i++) {
+      if ((Args[i].Type & FD_ARRAY) and (not (Args[i].Type & FD_CPP))) {
+         log.warning("Pointer array arg %s.%s is not supported.", Name, Args[i].Name);
+         ErrorMsg = "Pointer arrays are not supported for actions or methods.";
+         return ERR::NoSupport;
+      }
+   }
 
    if (top > 0) {
       if (int failed = lua_resolve_thunks(Lua, 1, top)) {
@@ -668,14 +676,10 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
       else if (Args[i].Type & FD_RESULT) {
          resultcount++;
 
-         if (Args[i].Type & FD_ARRAY) {
+         if ((Args[i].Type & FDF_VECTOR) IS FDF_VECTOR) {
             j = ALIGN64(j);
-
-            if (Args[i].Type & FD_CPP) { // kt::vector<> *
-               auto error = make_cpp_array_arg(Args[i].Type, (APTR *)(ArgBuffer + j));
-               if (error != ERR::Okay) return fail(error);
-            }
-
+            auto error = make_cpp_array_arg(Args[i].Type, (APTR *)(ArgBuffer + j));
+            if (error != ERR::Okay) return fail(error);
             j += sizeof(APTR);
          }
          else if ((Args[i].Type & FD_PTR) or (Args[i].Type & FD_STRUCT)) {
@@ -722,29 +726,17 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
 
       //log.trace("Processing arg %s, type $%.8x", Args[i].Name, Args[i].Type);
 
-      if (Args[i].Type & FD_ARRAY) {
+      if ((Args[i].Type & FDF_VECTOR) IS FDF_VECTOR) {
          j = ALIGN64(j);
          if (type != LUA_TARRAY) return fail_arg(n, "Array required.");
 
          auto array = lua_toarray(Lua, n); // Safe (confirmed array type)
-         if (Args[i].Type & FD_CPP) {
-            APTR vector = nullptr;
-            auto error = copy_cpp_array_arg(Args[i].Type, array, &vector);
-            if (error IS ERR::InvalidType) return fail_arg(n, "Array element type mismatch.");
-            else if (error != ERR::Okay) return fail(error);
-            ((APTR *)(ArgBuffer + j))[0] = vector;
-            j += sizeof(APTR);
-         }
-         else {
-            ((APTR *)(ArgBuffer + j))[0] = array->arraydata();
-            j += sizeof(APTR);
-
-            if (Args[i+1].Type & FD_ARRAYSIZE) {
-               size_t total = array->len;
-               if (Args[i+1].Type & FD_INT) ((int *)(ArgBuffer + j))[0] = int(total);
-               else if (Args[i+1].Type & FD_INT64) ((int64_t *)(ArgBuffer + j))[0] = int64_t(total);
-            }
-         }
+         APTR vector = nullptr;
+         auto error = copy_cpp_array_arg(Args[i].Type, array, &vector);
+         if (error IS ERR::InvalidType) return fail_arg(n, "Array element type mismatch.");
+         else if (error != ERR::Okay) return fail(error);
+         ((APTR *)(ArgBuffer + j))[0] = vector;
+         j += sizeof(APTR);
       }
       else if (Args[i].Type & FD_STR) {
          j = ALIGN64(j);
@@ -862,8 +854,6 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
             auto value = lua_tointeger(Lua, n);
             ((int *)(ArgBuffer + j))[0] = value;
          }
-         // A nil array-size argument preserves the extent inferred from the preceding array.
-         else if (not (Args[i].Type & FD_ARRAYSIZE)) ((int *)(ArgBuffer + j))[0] = 0;
          //log.trace("Arg: %s, Value: %d / $%.8x", Args[i].Name, ((int *)(ArgBuffer + j))[0], ((int *)(ArgBuffer + j))[0]);
          j += sizeof(int);
       }
@@ -875,8 +865,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
       }
       else if (Args[i].Type & FD_INT64) {
          j = ALIGN64(j);
-         // A nil array-size argument preserves the extent inferred from the preceding array.
-         if ((type != LUA_TNIL) or (not (Args[i].Type & FD_ARRAYSIZE))) {
+         if (type != LUA_TNIL) {
             auto value = lua_tointeger(Lua, n);
             ((int64_t *)(ArgBuffer + j))[0] = value;
          }
@@ -923,41 +912,23 @@ static int get_results(lua_State *Lua, const FunctionField *Args, const int8_t *
          }
          of = int(end_offset);
       }
-      else if (type & FD_ARRAY) { // Pointer to an array.
+      else if ((type & FDF_VECTOR) IS FDF_VECTOR) {
          of = ALIGN64(of);
-         if (type & FD_CPP) {
-            auto slot = (APTR *)(ArgBuf + of);
-            APTR vector = slot[0];
-            if (type & FD_RESULT) {
-               if (vector) {
-                  if (not push_cpp_array_arg(Lua, type, Args[i].Name, vector)) {
-                     log.warning("Unsupported C++ array result arg %s, flags $%.8x", Args[i].Name, type);
-                     lua_pushnil(Lua);
-                  }
+         auto slot = (APTR *)(ArgBuf + of);
+         APTR vector = slot[0];
+         if (type & FD_RESULT) {
+            if (vector) {
+               if (not push_cpp_array_arg(Lua, type, Args[i].Name, vector)) {
+                  log.warning("Unsupported C++ array result arg %s, flags $%.8x", Args[i].Name, type);
+                  lua_pushnil(Lua);
                }
-               else lua_pushnil(Lua);
-               total++;
-            }
-
-            delete_cpp_array_arg(type, vector);
-            slot[0] = nullptr;
-         }
-         else if (type & FD_RESULT) {
-            int total_elements = -1;  // If -1, make_any_array() assumes the array is null terminated.
-            if (Args[i+1].Type & FD_ARRAYSIZE) {
-               CPTR size_var = ArgBuf + of + sizeof(APTR);
-               if (Args[i+1].Type & FD_INT) total_elements = ((int *)size_var)[0];
-               else if (Args[i+1].Type & FD_INT64) total_elements = ((int64_t *)size_var)[0];
-               else log.warning("Invalid parameter definition for '%s' of $%.8x", Args[i+1].Name, Args[i+1].Type);
-            }
-
-            if (CPTR values = ((APTR *)(ArgBuf + of))[0]) {
-               make_any_array(Lua, type, Args[i].Name, total_elements, values);
-               if (type & FD_ALLOC) FreeResource(values);
             }
             else lua_pushnil(Lua);
             total++;
          }
+
+         delete_cpp_array_arg(type, vector);
+         slot[0] = nullptr;
          of += sizeof(APTR);
       }
       else if (type & FD_STR) {
