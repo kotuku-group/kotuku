@@ -1036,7 +1036,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             arg_types[in++] = &ffi_type_pointer;
             j += sizeof(APTR);
 
-            if (args[i+1].Type & (FD_BUFSIZE|FD_ARRAYSIZE)) {
+            if (args[i+1].Type & FD_ARRAYSIZE) {
                if (args[i+1].Type & FD_RESULT) {
                   if (args[i+1].Type & FD_INT) {
                      end -= sizeof(int);
@@ -1103,28 +1103,10 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                return ERR::InvalidType;
             }
 
-            size_t strlen = string->len;
             ((CSTRING *)(buffer + j))[0] = (argtype & FD_MUTABLE) ? strdatawr(string) : strdata(string);
             arg_values[in] = buffer + j;
             arg_types[in++] = &ffi_type_pointer;
             j += sizeof(CSTRING);
-
-            if (args[i+1].Type & FD_BUFSIZE) {
-               if (args[i+1].Type & FD_INT) {
-                  ((int *)(buffer + j))[0] = strlen;
-                  i++;
-                  arg_values[in] = buffer + j;
-                  arg_types[in++] = &ffi_type_sint32;
-                  j += sizeof(int);
-               }
-               else if (args[i+1].Type & FD_INT64) {
-                  ((int64_t *)(buffer + j))[0] = strlen;
-                  i++;
-                  arg_values[in] = buffer + j;
-                  arg_types[in++] = &ffi_type_sint64;
-                  j += sizeof(int64_t);
-               }
-            }
          }
          else if (auto native_struct = lua_isstruct(Lua, i) ? lua_tostruct(Lua, i) : nullptr) {
             // Guard specific to lifecycle-bound struct views; structs without an object dependency skip it.
@@ -1138,22 +1120,6 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             j += sizeof(APTR);
 
             log.trace("Struct address %p inserted to arg offset %d", native_struct->data, j);
-            if (args[i+1].Type & FD_BUFSIZE) {
-               if (args[i+1].Type & FD_INT) {
-                  ((int *)(buffer + j))[0] = ALIGN64(native_struct->structsize);
-                  i++;
-                  arg_values[in] = buffer + j;
-                  arg_types[in++] = &ffi_type_sint32;
-                  j += sizeof(int);
-               }
-               else if (args[i+1].Type & FD_INT64) {
-                  ((int64_t *)(buffer + j))[0] = ALIGN64(native_struct->structsize);
-                  i++;
-                  arg_values[in] = buffer + j;
-                  arg_types[in++] = &ffi_type_sint64;
-                  j += sizeof(int64_t);
-               }
-            }
          }
          else if (arg_type IS LUA_TOBJECT) {
             auto obj = lua_toobject(Lua, i);
@@ -1184,23 +1150,6 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             arg_values[in] = buffer + j;
             arg_types[in++] = &ffi_type_pointer;
             j += sizeof(APTR);
-
-            if (args[i+1].Type & FD_BUFSIZE) {
-               if (args[i+1].Type & FD_INT) {
-                  ((int *)(buffer + j))[0] = array->len * array->elemsize;
-                  i++;
-                  arg_values[in] = buffer + j;
-                  arg_types[in++] = &ffi_type_sint32;
-                  j += sizeof(int);
-               }
-               else if (args[i+1].Type & FD_INT64) {
-                  ((int64_t *)(buffer + j))[0] = array->len * array->elemsize;
-                  i++;
-                  arg_values[in] = buffer + j;
-                  arg_types[in++] = &ffi_type_sint64;
-                  j += sizeof(int64_t);
-               }
-            }
          }
          else if (arg_type IS LUA_TTABLE) {
             if (args[i].Type & FD_STRUCT) {
@@ -1258,12 +1207,6 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          arg_values[in] = buffer + j;
          arg_types[in++] = &ffi_type_sint64;
          j += sizeof(int64_t);
-      }
-      else if (argtype & FD_PTRSIZE) {
-         ((int *)(buffer + j))[0] = lua_tointeger(Lua, i);
-         arg_values[in] = buffer + j;
-         arg_types[in++] = &ffi_type_sint32;
-         j += sizeof(int);
       }
       else if (argtype & (FD_TAGS|FD_VARTAGS)) {
          ErrorMsg = "Functions using tags are not supported.";
@@ -1465,20 +1408,6 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
                      }
                   }
                   else lua_pushnil(lua);
-               }
-               else if (args[i+1].Type & FD_BUFSIZE) {
-                  int64_t size = 0;
-                  CPTR size_var = ((APTR *)scan)[0];
-                  if (args[i+1].Type & FD_INT) size = ((int *)size_var)[0];
-                  else if (args[i+1].Type & FD_INT64) size = ((int64_t *)size_var)[0];
-                  else log.warning("Invalid arg %s, flags $%.8x", args[i+1].Name, args[i+1].Type);
-
-                  if (size > 0) lua_createarray(lua, size, AET::BYTE, ((APTR *)var)[0], ARRAY_CACHED);
-                  else lua_pushnil(lua);
-
-                  if (argtype & FD_ALLOC) {
-                     if (((APTR *)var)[0]) FreeResource(((APTR *)var)[0]);
-                  }
                }
                else if (argtype & FD_ALLOC) {
                   // Misconfigured or unsupported parameter

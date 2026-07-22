@@ -600,11 +600,6 @@ void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int ArgsSize, 
    }
 }
 
-inline bool check_buffer_size_arg(int64_t Size, size_t Capacity)
-{
-   return (Size >= 0) and (uint64_t(Size) <= uint64_t(Capacity));
-}
-
 //********************************************************************************************************************
 // Build an argument buffer for actions and methods.  This follows the FD parsing logic of module_call() for the most
 // part, as that is the base-line for argument parsing.  However, some differences apply in part due to the fact that
@@ -652,12 +647,8 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
    int i, n;
    int resultcount = 0;
    int j = 0;
-   size_t buffer_capacity = 0;
-   bool buffer_capacity_known = false;
    std::vector<pending_function_arg> pending_functions;
    for (i=0,n=1; (Args[i].Name) and (j < ArgsSize); i++) {
-      if (not (Args[i].Type & FD_BUFSIZE)) buffer_capacity_known = false;
-
       if ((Args[i].Type & FDF_SPAN) IS FDF_SPAN) {
          size_t end_offset;
          CSTRING span_error = nullptr;
@@ -748,67 +739,11 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
             ((APTR *)(ArgBuffer + j))[0] = array->arraydata();
             j += sizeof(APTR);
 
-            if (Args[i+1].Type & (FD_BUFSIZE|FD_ARRAYSIZE)) {
-               size_t total = (Args[i+1].Type & FD_BUFSIZE) ? array->len * array->elemsize : array->len;
-               if (Args[i+1].Type & FD_BUFSIZE) {
-                  buffer_capacity = total;
-                  buffer_capacity_known = true;
-               }
+            if (Args[i+1].Type & FD_ARRAYSIZE) {
+               size_t total = array->len;
                if (Args[i+1].Type & FD_INT) ((int *)(ArgBuffer + j))[0] = int(total);
                else if (Args[i+1].Type & FD_INT64) ((int64_t *)(ArgBuffer + j))[0] = int64_t(total);
             }
-         }
-      }
-      else if ((Args[i].Type & FD_PTR) and (Args[i+1].Type & FD_PTRSIZE)) {
-         j = ALIGN64(j);
-         if (type IS LUA_TARRAY) {
-            auto array = lua_toarray(Lua, n);
-            if (array->len and (array->elemsize > std::numeric_limits<size_t>::max() / array->len)) {
-               return fail_arg(n, "Array backing storage is too large for the pointer-size contract.");
-            }
-
-            ((APTR *)(ArgBuffer + j))[0] = array->arraydata();
-            j += sizeof(APTR);
-
-            const size_t memsize = size_t(array->len) * array->elemsize;
-            buffer_capacity = memsize;
-            buffer_capacity_known = true;
-            if ((Args[i+1].Type & FD_INT) and (memsize <= size_t(INT_MAX))) {
-               ((int *)(ArgBuffer + j))[0] = int(memsize);
-            }
-            else if (Args[i+1].Type & FD_INT64) ((int64_t *)(ArgBuffer + j))[0] = int64_t(memsize);
-            else return fail_arg(n, "Array backing storage exceeds the pointer-size field.");
-         }
-         else if (auto native_struct = lua_isstruct(Lua, n) ? lua_tostruct(Lua, n) : nullptr) {
-            if (lj_struct_stale(native_struct)) return fail_arg(n, "Struct's providing object has been destroyed.");
-            ((APTR *)(ArgBuffer + j))[0] = native_struct->data;
-            j += sizeof(APTR);
-
-            buffer_capacity = native_struct->structsize;
-            buffer_capacity_known = true;
-            if (Args[i+1].Type & FD_INT) ((int *)(ArgBuffer + j))[0] = int(native_struct->structsize);
-            else if (Args[i+1].Type & FD_INT64) ((int64_t *)(ArgBuffer + j))[0] = int64_t(native_struct->structsize);
-         }
-         else if (type IS LUA_TSTRING) {
-            auto string = strV(Lua->base + n - 1);
-            if ((Args[i].Type & FD_MUTABLE) and (not lj_str_ismutable(string))) {
-               return fail_arg(n, "Mutable buffer required.");
-            }
-
-            ((CSTRING *)(ArgBuffer + j))[0] = (Args[i].Type & FD_MUTABLE) ? strdatawr(string) : strdata(string);
-            j += sizeof(APTR);
-
-            buffer_capacity = string->len;
-            buffer_capacity_known = true;
-            if ((Args[i+1].Type & FD_INT) and (string->len <= size_t(INT_MAX))) {
-               ((int *)(ArgBuffer + j))[0] = int(string->len);
-            }
-            else if (Args[i+1].Type & FD_INT64) ((int64_t *)(ArgBuffer + j))[0] = int64_t(string->len);
-            else return fail_arg(n, "String storage exceeds the pointer-size field.");
-         }
-         else {
-            ((APTR *)(ArgBuffer + j))[0] = lua_touserdata(Lua, n);
-            j += sizeof(APTR);
          }
       }
       else if (Args[i].Type & FD_STR) {
@@ -918,12 +853,6 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          }
          else if (type IS LUA_TBOOLEAN) {
             auto value = lua_toboolean(Lua, n);
-            if ((Args[i].Type & FD_BUFSIZE) and buffer_capacity_known) {
-               if (not check_buffer_size_arg(value, buffer_capacity)) {
-                  return fail_arg(n, "Buffer size exceeds supplied buffer capacity.");
-               }
-               buffer_capacity_known = false;
-            }
             ((int *)(ArgBuffer + j))[0] = value;
          }
          else if ((type IS LUA_TUSERDATA) or (type IS LUA_TLIGHTUSERDATA)) {
@@ -931,18 +860,10 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          }
          else if (type != LUA_TNIL) { // Attempt numeric conversion
             auto value = lua_tointeger(Lua, n);
-            if ((Args[i].Type & FD_BUFSIZE) and buffer_capacity_known) {
-               if (not check_buffer_size_arg(value, buffer_capacity)) {
-                  return fail_arg(n, "Buffer size exceeds supplied buffer capacity.");
-               }
-               buffer_capacity_known = false;
-            }
             ((int *)(ArgBuffer + j))[0] = value;
          }
-         else if (Args[i].Type & (FD_BUFSIZE|FD_ARRAYSIZE)) {
-            buffer_capacity_known = false; // An inferred array extent is no longer being validated.
-         }
-         else ((int *)(ArgBuffer + j))[0] = 0; // Value is nil
+         // A nil array-size argument preserves the extent inferred from the preceding array.
+         else if (not (Args[i].Type & FD_ARRAYSIZE)) ((int *)(ArgBuffer + j))[0] = 0;
          //log.trace("Arg: %s, Value: %d / $%.8x", Args[i].Name, ((int *)(ArgBuffer + j))[0], ((int *)(ArgBuffer + j))[0]);
          j += sizeof(int);
       }
@@ -954,17 +875,9 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
       }
       else if (Args[i].Type & FD_INT64) {
          j = ALIGN64(j);
-         if ((Args[i].Type & (FD_BUFSIZE|FD_ARRAYSIZE)) and (type IS LUA_TNIL)) {
-            buffer_capacity_known = false;
-         }
-         else {
+         // A nil array-size argument preserves the extent inferred from the preceding array.
+         if ((type != LUA_TNIL) or (not (Args[i].Type & FD_ARRAYSIZE))) {
             auto value = lua_tointeger(Lua, n);
-            if ((Args[i].Type & FD_BUFSIZE) and buffer_capacity_known) {
-               if (not check_buffer_size_arg(value, buffer_capacity)) {
-                  return fail_arg(n, "Buffer size exceeds supplied buffer capacity.");
-               }
-               buffer_capacity_known = false;
-            }
             ((int64_t *)(ArgBuffer + j))[0] = value;
          }
          //log.trace("Arg: %s, Value: %" PF64, Args[i].Name, ((LARGE *)(ArgBuffer + j))[0]);

@@ -458,13 +458,9 @@ static ERR SOUND_Activate(extSound *Self)
             if (Self->LoopEnd) loop.Loop1End = Self->LoopEnd;
             else loop.Loop1End = Self->Length;
 
-            stream.Loop     = &loop;
-            stream.LoopSize = sizeof(loop);
+            stream.Loop = &loop;
          }
-         else {
-            stream.Loop     = nullptr;
-            stream.LoopSize = 0;
-         }
+         else stream.Loop = nullptr;
 
          if (Self->OnStop.defined()) stream.OnStop = C_FUNCTION(onstop_event);
          else stream.OnStop.clear();
@@ -508,13 +504,9 @@ static ERR SOUND_Activate(extSound *Self)
                if (Self->LoopEnd) loop.Loop1End = Self->LoopEnd;
                else loop.Loop1End = Self->Length;
 
-               add.Loop     = &loop;
-               add.LoopSize = sizeof(loop);
+               add.Loop = &loop;
             }
-            else {
-               add.Loop     = nullptr;
-               add.LoopSize = 0;
-            }
+            else add.Loop = nullptr;
 
             if (Self->OnStop.defined()) add.OnStop = C_FUNCTION(onstop_event);
             else add.OnStop.clear();

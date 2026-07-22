@@ -156,15 +156,18 @@ struct FunctionField argsResize[] = {
 };
 </pre>
 <p>The argument types that can be used by actions are limited to those listed in the following table:</p>
-<types lookup="FD">
-<type name="INT">A 32-bit integer value ranging from -2,147,483,647 to 2,147,483,648.</type>
-<type name="INT64">A 64-bit integer value.</type>
-<type name="PTR">A standard address space pointer.</type>
-<type name="STRING">A pointer to a null-terminated string.</type>
+<types lookup="FDF">
+<type name="INT">A 32-bit integer value.</type>
 <type name="DOUBLE">A 64-bit floating point value.</type>
-<type name="OBJECT">This flag is sometimes set in conjunction with the <code>FD_INT</code> type.  It indicates that the argument refers to an object ID.</type>
-<type name="PTRSIZE">This argument type can only be used if it follows an <code>FD_PTR</code> type, and if the argument itself is intended to reflect the size of the buffer referred to by the previous <code>FD_PTR</code> argument.</type>
-<type name="RESULT">This special flag is set in conjunction with the other data-based argument types. Example: If the developer is required to supply a pointer to an <code>int</code> field in which the function will store a result, the correct argument definition will be <code>FD_RESULT|FD_INT|FD_PTR</code>. To make the definition of these argument types easier, <code>FD_PTRRESULT</code> and <code>FD_INTRESULT</code> macros are also available for use.</type>
+<type name="PTR">A standard address space pointer.</type>
+<type name="OBJECTPTR">A pointer to an object.  This is defined as <code>FD_PTR|FD_OBJECT</code> and its convenience macro is <code>FD_OBJECTPTR</code>.</type>
+<type name="CPPSTRING">A C++ <code>std::string</code>, defined as <code>FD_CPP|FD_STRING</code> with the convenience macro <code>FDF_CPPSTRING</code>.</type>
+<type name="SPAN">A byte span describing a contiguous block of memory, defined as <code>FD_CPP|FD_BUFFER</code> with the convenience macro <code>FDF_SPAN</code>.  It is paired with <code>FD_PTR</code> and combined with <code>FD_MUTABLE</code> when the span is writable.</type>
+</types>
+<p>Supplementary flags can be combined with the above types to provide additional information about the argument:</p>
+<types lookup="FD">
+<type name="MUTABLE">This flag indicates that the referenced memory is writable by the function.  It is most commonly combined with <code>FDF_SPAN</code> for output buffers.</type>
+<type name="RESULT">This flag indicates that the parameter is used for storing function output. Example: If the developer is required to supply a pointer to an <code>int</code> field in which the function will store a result, the correct argument definition will be <code>FDF_RESULT|FDF_INT</code>.</type>
 </types>
     </description>
   </function>

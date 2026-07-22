@@ -604,7 +604,7 @@
       <access write="S">Set</access>
       <type>STRING</type>
       <description>
-<p>Use the Pretext field to execute document code prior to the loading of a new document.  This feature is commonly used to configure a document in advance, such as setting default font values and background graphics.  It is functionally equivalent to embedding an <code><include/></code> statement at the top of a document, but with the benefit of guaranteeing continued execution if the user navigates away from the first page.</p>
+<p>Use the Pretext field to execute document code prior to the loading of a new document.  This feature is commonly used to configure a document in advance, such as setting default font values and background graphics.  It is functionally equivalent to embedding an <code>&lt;include/&gt;</code> statement at the top of a document, but with the benefit of guaranteeing continued execution if the user navigates away from the first page.</p>
 <p>A Pretext will always survive document unloading and resets.  It can be removed only by setting this field with <code>NULL</code>.</p>
       </description>
     </field>
