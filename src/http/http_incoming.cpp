@@ -871,10 +871,10 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
 
          log.trace("Calling script procedure %" PRId64, Self->Incoming.ProcedureID);
 
+         std::span<std::byte> span((std::byte *)(Buffer), Length);
          if (sc::Call(Self->Incoming, std::to_array<ScriptArg>({
-               { "HTTP",       Self,   FD_OBJECTPTR },
-               { "Buffer",     Buffer, FD_PTRBUFFER },
-               { "BufferSize", Length, FD_INT|FD_BUFSIZE }
+               { "HTTP",   Self, FD_OBJECTPTR },
+               { "Buffer", &span, FDF_SPAN }
             }), error) != ERR::Okay) error = ERR::Terminate;
       }
       else error = ERR::InvalidValue;

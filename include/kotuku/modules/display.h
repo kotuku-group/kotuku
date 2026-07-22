@@ -2310,7 +2310,7 @@ struct DisplayBase {
    void (*_DrawRectangle)(objBitmap *Bitmap, int X, int Y, int Width, int Height, uint32_t Colour, BAF Flags);
    ERR (*_ExposeSurface)(OBJECTID Surface, int X, int Y, int Width, int Height, EXF Flags);
    void (*_GetColourFormat)(struct ColourFormat *Format, int BitsPerPixel, int RedMask, int GreenMask, int BlueMask, int AlphaMask);
-   ERR (*_GetCursorInfo)(struct CursorInfo *Info, int Size);
+   ERR (*_GetCursorInfo)(struct CursorInfo *Info);
    ERR (*_GetCursorPos)(double *X, double *Y);
    ERR (*_GetDisplayInfo)(OBJECTID Display, struct DisplayInfo **Info);
    DT (*_GetDisplayType)(void);
@@ -2357,7 +2357,7 @@ inline void DrawRGBPixel(objBitmap *Bitmap, int X, int Y, struct RGB8 *RGB) { re
 inline void DrawRectangle(objBitmap *Bitmap, int X, int Y, int Width, int Height, uint32_t Colour, BAF Flags) { return DisplayBase->_DrawRectangle(Bitmap,X,Y,Width,Height,Colour,Flags); }
 inline ERR ExposeSurface(OBJECTID Surface, int X, int Y, int Width, int Height, EXF Flags) { return DisplayBase->_ExposeSurface(Surface,X,Y,Width,Height,Flags); }
 inline void GetColourFormat(struct ColourFormat *Format, int BitsPerPixel, int RedMask, int GreenMask, int BlueMask, int AlphaMask) { return DisplayBase->_GetColourFormat(Format,BitsPerPixel,RedMask,GreenMask,BlueMask,AlphaMask); }
-inline ERR GetCursorInfo(struct CursorInfo *Info, int Size) { return DisplayBase->_GetCursorInfo(Info,Size); }
+inline ERR GetCursorInfo(struct CursorInfo *Info) { return DisplayBase->_GetCursorInfo(Info); }
 inline ERR GetCursorPos(double *X, double *Y) { return DisplayBase->_GetCursorPos(X,Y); }
 inline ERR GetDisplayInfo(OBJECTID Display, struct DisplayInfo **Info) { return DisplayBase->_GetDisplayInfo(Display,Info); }
 inline DT GetDisplayType(void) { return DisplayBase->_GetDisplayType(); }
@@ -2401,7 +2401,7 @@ extern void DrawRGBPixel(objBitmap *Bitmap, int X, int Y, struct RGB8 *RGB);
 extern void DrawRectangle(objBitmap *Bitmap, int X, int Y, int Width, int Height, uint32_t Colour, BAF Flags);
 extern ERR ExposeSurface(OBJECTID Surface, int X, int Y, int Width, int Height, EXF Flags);
 extern void GetColourFormat(struct ColourFormat *Format, int BitsPerPixel, int RedMask, int GreenMask, int BlueMask, int AlphaMask);
-extern ERR GetCursorInfo(struct CursorInfo *Info, int Size);
+extern ERR GetCursorInfo(struct CursorInfo *Info);
 extern ERR GetCursorPos(double *X, double *Y);
 extern ERR GetDisplayInfo(OBJECTID Display, struct DisplayInfo **Info);
 extern DT GetDisplayType(void);

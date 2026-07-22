@@ -490,16 +490,19 @@ timer_cycle:
                auto result = ERR::NoSupport;
                if (hdl->Function.stale()) continue;
                else if (hdl->Function.isC()) {
-                  auto msghandler = (ERR (*)(APTR, int, MSGID, APTR, int))hdl->Function.Routine;
-                  if (msg.Size) result = msghandler(hdl->Function.Meta, msg.UID, msg.Type, msg.getBuffer(), msg.Size);
-                  else result = msghandler(hdl->Function.Meta, msg.UID, msg.Type, nullptr, 0);
+                  auto msghandler = (ERR (*)(APTR, int, MSGID, std::span<std::byte>))hdl->Function.Routine;
+                  if (msg.Size) {
+                     result = msghandler(hdl->Function.Meta, msg.UID, msg.Type,
+                        std::span<std::byte>((std::byte *)msg.getBuffer(), msg.Size));
+                  }
+                  else result = msghandler(hdl->Function.Meta, msg.UID, msg.Type, std::span<std::byte>());
                }
                else if (hdl->Function.isScript()) {
+                  std::span<std::byte> span((std::byte *)msg.getBuffer(), msg.Size);
                   if (sc::Call(hdl->Function, std::to_array<ScriptArg>({
                      { "UID",  msg.UID },
                      { "Type", int(msg.Type) },
-                     { "Data", msg.getBuffer(), FD_PTR|FD_BUFFER },
-                     { "Size", msg.Size, FD_INT|FD_BUFSIZE }
+                     { "Data", &span, FDF_SPAN }
                   }), result) != ERR::Okay) result = ERR::Terminate;
                }
 

@@ -37,6 +37,7 @@ struct ScriptArg { // For use with sc::Exec
    ScriptArg(CSTRING pName, uint32_t pValue, uint32_t pType = FD_INT) : Name(pName), Type(pType), Int(pValue) { }
    ScriptArg(CSTRING pName, int64_t pValue, uint32_t pType = FD_INT64) : Name(pName), Type(pType), Int64(pValue) { }
    ScriptArg(CSTRING pName, double pValue, uint32_t pType = FD_DOUBLE) : Name(pName), Type(pType), Double(pValue) { }
+   template<typename T> ScriptArg(CSTRING pName, std::span<T> pValue, uint32_t pType = FDF_SPAN) : Name(pName), Type(pType), Address(&pValue) { }
 };
 
 // Script class definition
