@@ -74,7 +74,7 @@
     <text x="20" y="30" class="text text-bold">Exit when:</text>
     <text x="20" y="55" class="text">- QUIT message received: ERR_Terminate</text>
     <text x="20" y="80" class="text">- All signals fired: ERR_Okay</text>
-    <text x="20" y="105" class="text">- Timeout: ERR_TimeOut</text>
+    <text x="20" y="105" class="text">- Timeout: ERR_Timeout</text>
   </g>
 
   <path class="arrow" d="M400,60 L400,90" />
