@@ -234,9 +234,10 @@ flags("FD", { weak=true, comment="Field descriptors", module="Core" },
   { OBJECT     = "0x00000001: Supplementary, can be used with ints (for IDs) or pointers" },
   { ERROR      = "0x00000800: FUNCDEF" },
   { TAGS       = "0x00000400: FUNCDEF Overrides `INIT`" },
-  { BUFFER     = "0x00000200: FUNCDEF Overrides `WRITE`.  Common buffer semantic flag.  " ..
+  { SPAN       = "0x00080000: Synonym for BUFFER" },
+  { BUFFER     = "0x00080000: Common buffer semantic flag.  " ..
       "`FDF_SPAN` (`CPP|BUFFER`) represents a C++ module-function span reference or an embedded action/method span " ..
-      "value whose `std::span` carries its pointer and extent.  Non-span `BUFFER` descriptors are legacy" },
+      "value whose `std::span` carries its pointer and extent." },
   { RESULT     = "0x00000100: FUNCDEF Overrides `READ`" },
   { VARTAGS    = "0x00000040: FUNCDEF Overrides `FLAGS`.  Use for 64-bit taglists that require value definitions, e.g. `TDOUBLE`, `TINT` etc" },
   { MUTABLE    = "0x00000008: FUNCDEF Overrides `VIRTUAL`.  The function will overwrite incoming BUFFER or STRING content.  If used in conjunction with the RESULT flag, an empty buffer is expected for output" },

@@ -127,6 +127,7 @@ ERR writeval_default(OBJECTPTR Object, const Field *Field, int flags, CPTR Data)
          if (Field->Flags & FD_CPP) error = set_or_write_vector(Object, Field, flags, Data);
          else error = set_or_write_array(Object, Field, flags, Data);
       }
+      else if (Field->Flags & FD_SPAN)     error = set_or_write_array(Object, Field, flags, Data);
       else if (Field->Flags & FD_INT)      error = writeval_long(Object, Field, flags, Data);
       else if (Field->Flags & FD_INT64)    error = writeval_large(Object, Field, flags, Data);
       else if (Field->Flags & (FD_DOUBLE|FD_FLOAT)) error = writeval_double(Object, Field, flags, Data);
@@ -147,6 +148,7 @@ ERR writeval_default(OBJECTPTR Object, const Field *Field, int flags, CPTR Data)
          if (Field->Flags & FD_CPP) return set_or_write_vector(Object, Field, flags, Data);
          else return set_or_write_array(Object, Field, flags, Data);
       }
+	  else if (Field->Flags & FD_SPAN)     return set_or_write_array(Object, Field, flags, Data);
       else if (Field->Flags & FD_FUNCTION) return setval_function(Object, Field, flags, Data);
       else if (Field->Flags & FD_INT)      return setval_long(Object, Field, flags, Data);
       else if (Field->Flags & (FD_DOUBLE|FD_FLOAT)) return setval_double(Object, Field, flags, Data);
@@ -466,11 +468,13 @@ static ERR assign_vector_field(OBJECTPTR Object, const Field *Field, CPTR Data)
    return ERR::Okay;
 }
 
+// Target is kt::vector<>; Incoming data must be a std::span<>
+
 static ERR set_or_write_vector(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
 {
    FieldContext ctx(Object, Field);
 
-   if ((Flags & FDF_SPAN) IS FDF_SPAN) {
+   if (Flags & FD_SPAN) {
       if (Field->SetValue) {
          // Basic type checking
          int src_type = Flags & (FD_INT|FD_INT64|FD_FLOAT|FD_DOUBLE|FD_POINTER|FD_BYTE|FD_WORD|FD_STRUCT);
@@ -518,7 +522,7 @@ static ERR set_or_write_vector(OBJECTPTR Object, const Field *Field, int Flags, 
       return ERR::FieldTypeMismatch;
    }
    else {
-      kt::Log(__FUNCTION__).warning("Arrays can only be set using the FDF_SPAN type.");
+      kt::Log(__FUNCTION__).warning("Arrays can only be set using the FDF_SPAN type.  Field: %s.%s", Object->className(), Field->Name);
       return ERR::SetValueNotArray;
    }
 }
@@ -529,7 +533,7 @@ static ERR set_or_write_array(OBJECTPTR Object, const Field *Field, int Flags, C
 {
    FieldContext ctx(Object, Field);
 
-   if ((Flags & FDF_SPAN) IS FDF_SPAN) {
+   if (Flags & FD_SPAN) {
       // Basic type checking
       int src_type = Flags & (FD_INT|FD_INT64|FD_FLOAT|FD_DOUBLE|FD_POINTER|FD_BYTE|FD_WORD|FD_STRUCT);
       if (src_type) {
@@ -567,9 +571,8 @@ static ERR set_or_write_array(OBJECTPTR Object, const Field *Field, int Flags, C
       else return ERR::FieldTypeMismatch;
    }
    else if (Flags & FD_STRING) { // Incoming CSV string - DEPRECATED
-      kt::Log(__FUNCTION__).warning("CSV support for arrays is deprecated.");
-      std::abort();
-      return ERR::Failed;
+      kt::Log(__FUNCTION__).warning("CSV support for arrays is deprecated.  Field: %s.%s", Object->className(), Field->Name);
+      return ERR::SetValueNotArray;
    }
    else return kt::Log(__FUNCTION__).warning(ERR::SetValueNotArray);
 }
@@ -704,7 +707,8 @@ void optimise_write_field(Field &Field)
    if (Field.Flags & FD_FLAGS)       Field.WriteValue = writeval_flags;
    else if (Field.Flags & FD_LOOKUP) Field.WriteValue = writeval_lookup;
    else if (not Field.SetValue) {
-      if (Field.Flags & FD_ARRAY) {
+      if (Field.Flags & FD_SPAN) Field.WriteValue = set_or_write_array;
+      else if (Field.Flags & FD_ARRAY) {
          Field.WriteValue = (Field.Flags & FD_CPP) ? set_or_write_vector : set_or_write_array;
       }
       else if (Field.Flags & FD_INT)   Field.WriteValue = writeval_long;
@@ -721,7 +725,8 @@ void optimise_write_field(Field &Field)
       else log.warning("Invalid field flags for %s.%s: $%.8x.", ((objMetaClass *)(tlContext.back().obj))->ClassName.c_str(), Field.Name, Field.Flags);
    }
    else {
-      if (Field.Flags & FD_UNIT)          Field.WriteValue = setval_unit;
+      if (Field.Flags & FD_UNIT)      Field.WriteValue = setval_unit;
+      else if (Field.Flags & FD_SPAN) Field.WriteValue = set_or_write_array;
       else if (Field.Flags & FD_ARRAY) {
          Field.WriteValue = (Field.Flags & FD_CPP) ? set_or_write_vector : set_or_write_array;
       }
