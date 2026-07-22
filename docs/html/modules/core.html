@@ -202,14 +202,16 @@ struct FunctionField argsResize[] = {
 };
 </pre>
 <p>The argument types that can be used by actions are limited to those listed in the following table:</p>
-<table class="table"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">FD::INT</th><td>A 32-bit integer value ranging from -2,147,483,647 to 2,147,483,648.</td></tr>
-<tr><th class="col-md-1">FD::INT64</th><td>A 64-bit integer value.</td></tr>
-<tr><th class="col-md-1">FD::PTR</th><td>A standard address space pointer.</td></tr>
-<tr><th class="col-md-1">FD::STRING</th><td>A pointer to a null-terminated string.</td></tr>
-<tr><th class="col-md-1">FD::DOUBLE</th><td>A 64-bit floating point value.</td></tr>
-<tr><th class="col-md-1">FD::OBJECT</th><td>This flag is sometimes set in conjunction with the <code>FD_INT</code> type.  It indicates that the argument refers to an object ID.</td></tr>
-<tr><th class="col-md-1">FD::PTRSIZE</th><td>This argument type can only be used if it follows an <code>FD_PTR</code> type, and if the argument itself is intended to reflect the size of the buffer referred to by the previous <code>FD_PTR</code> argument.</td></tr>
-<tr><th class="col-md-1">FD::RESULT</th><td>This special flag is set in conjunction with the other data-based argument types. Example: If the developer is required to supply a pointer to an <code>int</code> field in which the function will store a result, the correct argument definition will be <code>FD_RESULT|FD_INT|FD_PTR</code>. To make the definition of these argument types easier, <code>FD_PTRRESULT</code> and <code>FD_INTRESULT</code> macros are also available for use.</td></tr>
+<table class="table"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">FDF::INT</th><td>A 32-bit integer value.</td></tr>
+<tr><th class="col-md-1">FDF::DOUBLE</th><td>A 64-bit floating point value.</td></tr>
+<tr><th class="col-md-1">FDF::PTR</th><td>A standard address space pointer.</td></tr>
+<tr><th class="col-md-1">FDF::OBJECTPTR</th><td>A pointer to an object.  This is defined as <code>FD_PTR|FD_OBJECT</code> and its convenience macro is <code>FD_OBJECTPTR</code>.</td></tr>
+<tr><th class="col-md-1">FDF::CPPSTRING</th><td>A C++ <code>std::string</code>, defined as <code>FD_CPP|FD_STRING</code> with the convenience macro <code>FDF_CPPSTRING</code>.</td></tr>
+<tr><th class="col-md-1">FDF::SPAN</th><td>A byte span describing a contiguous block of memory, defined as <code>FD_CPP|FD_BUFFER</code> with the convenience macro <code>FDF_SPAN</code>.  It is paired with <code>FD_PTR</code> and combined with <code>FD_MUTABLE</code> when the span is writable.</td></tr>
+</tbody></table>
+<p>Supplementary flags can be combined with the above types to provide additional information about the argument:</p>
+<table class="table"><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody><tr><th class="col-md-1">FD::MUTABLE</th><td>This flag indicates that the referenced memory is writable by the function.  It is most commonly combined with <code>FDF_SPAN</code> for output buffers.</td></tr>
+<tr><th class="col-md-1">FD::RESULT</th><td>This flag indicates that the parameter is used for storing function output. Example: If the developer is required to supply a pointer to an <code>int</code> field in which the function will store a result, the correct argument definition will be <code>FDF_RESULT|FDF_INT</code>.</td></tr>
 </tbody></table>
     <div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="AddInfoTag"><h2>AddInfoTag()</h2><p class="lead">Adds new tags to FileInfo structures.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR AddInfoTag(struct FileInfo * Info, STRVIEW Name, STRVIEW Value)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Info</td><td>Pointer to a valid <a data-toggle="tooltip" title="" href="?page=struct-FileInfo">FileInfo</a> structure.</td></tr>
@@ -311,15 +313,15 @@ if (!AllocResource(1000, MEM::NIL, &amp;address, nullptr)) {
 <p>Call AsyncPending() to query the total number of asynchronous actions that are either currently executing or waiting in the queue for a given object.  The returned count includes the in-flight action (if any) plus all queued actions that have not yet been dispatched.</p>
 <p>A return value of zero indicates that no async activity is associated with the object.</p>
     <h3>Result</h3><p>The number of pending async actions (in-flight + queued), or zero if none.</p><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="AsyncWait"><h2>AsyncWait()</h2><p class="lead">Block until all queued async actions for the listed objects have completed.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR AsyncWait(kt::vector&lt;OBJECTID&gt; Objects, INT TimeOut)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Objects</td><td>A list of object IDs to wait on.</td></tr>
-<tr><td>TimeOut</td><td>Maximum time to wait in milliseconds, or <code>-1</code> for an indefinite wait.</td></tr>
+<div class="docs-content" style="display:none;" id="AsyncWait"><h2>AsyncWait()</h2><p class="lead">Block until all queued async actions for the listed objects have completed.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR AsyncWait(kt::vector&lt;OBJECTID&gt; Objects, INT Timeout)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Objects</td><td>A list of object IDs to wait on.</td></tr>
+<tr><td>Timeout</td><td>Maximum time to wait in milliseconds, or <code>-1</code> for an indefinite wait.</td></tr>
 </tbody></table></div></div>
 <p>Call AsyncWait() to suspend the current thread until every asynchronous action that is executing or queued against the listed objects has finished.  Messages continue to be processed while waiting, so async completion callbacks fire normally.</p>
 <p>Only one AsyncWait() call may be active at any time.  If a second call is made while the first is still blocking, <code>ERR::InUse</code> is returned.</p>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>All async actions completed.</td></tr>
 <tr><th class="col-md-1">Terminate</th><td>Termination requested</td></tr>
 <tr><th class="col-md-1">InUse</th><td>Another AsyncWait() call is already active.</td></tr>
-<tr><th class="col-md-1">TimeOut</th><td>The timeout expired before all actions completed.</td></tr>
+<tr><th class="col-md-1">Timeout</th><td>The timeout expired before all actions completed.</td></tr>
 <tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 <tr><th class="col-md-1">Recursion</th><td>Detected a recursive function call</td></tr>
@@ -714,8 +716,8 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
 <div class="docs-content" style="display:none;" id="PreciseTime"><h2>PreciseTime()</h2><p class="lead">Returns the current system time, in microseconds.</p><div class="card card-info mb-3"><div class="card-header"><samp>INT64 PreciseTime()</samp></div></div>
 <p>This function returns the current 'system time' in microseconds (1 millionth of a second).  The value is monotonic if the host platform allows it (typically expressed as the amount of time that has elapsed since the system was switched on).  The benefit of monotonic time is that it is unaffected by changes to the system clock, such as daylight savings adjustments or manual changes by the user.</p>
     <h3>Result</h3><p>Returns the system time in microseconds.  Could return zero in the extremely unlikely event of an error.</p><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="ProcessMessages"><h2>ProcessMessages()</h2><p class="lead">Processes system messages that are queued in the task's message buffer.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR ProcessMessages(PMF Flags, INT TimeOut)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a onclick="showPage('PMF');">Flags</a></td><td>Optional flags are specified here (clients should set a value of zero).</td></tr>
-<tr><td>TimeOut</td><td>A TimeOut value, measured in milliseconds.  If zero, the function will return as soon as all messages on the queue are processed.  If less than zero, the function does not return until a request for termination is received or a user message requires processing.</td></tr>
+<div class="docs-content" style="display:none;" id="ProcessMessages"><h2>ProcessMessages()</h2><p class="lead">Processes system messages that are queued in the task's message buffer.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR ProcessMessages(PMF Flags, INT Timeout)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a onclick="showPage('PMF');">Flags</a></td><td>Optional flags are specified here (clients should set a value of zero).</td></tr>
+<tr><td>Timeout</td><td>A Timeout value, measured in milliseconds.  If zero, the function will return as soon as all messages on the queue are processed.  If less than zero, the function does not return until a request for termination is received or a user message requires processing.</td></tr>
 </tbody></table></div></div>
 <p>The ProcessMessages() function is used to process the task's message queue.  Messages are dispatched to message handlers in the order in which they arrived and the queue is emptied so that space is available for more messages.</p>
 <p>Responding to incoming messages is a vital process - the queue is the standard means of communication between your task and the rest of the system and other tasks within it.  Failing to call the ProcessMessages() function on a regular basis may cause a back-log of messages to be generated, as well as causing problems with areas such as the graphical interface. If an area of your program is likely to loop continuously for a measurable period of time without returning, consider calling ProcessMessages() at a rate of 50 times per second to ensure that incoming messages are processed.</p>
@@ -724,7 +726,7 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Terminate</th><td>A <code>MSGID::QUIT</code> message type was found on the message queue.</td></tr>
 <tr><th class="col-md-1">NoSupport</th><td>Operation not supported</td></tr>
-<tr><th class="col-md-1">TimeOut</th><td>Function timed-out before successful completion</td></tr>
+<tr><th class="col-md-1">Timeout</th><td>Function timed-out before successful completion</td></tr>
 <tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
 <tr><th class="col-md-1">AccessObject</th><td>Attempting to lock an object failed</td></tr>
 <tr><th class="col-md-1">Recursion</th><td>Detected a recursive function call</td></tr>
@@ -1069,8 +1071,8 @@ identifier has no effect.</li>
 <tr><th class="col-md-1">NullArgs</th><td>Function call missing argument value(s)</td></tr>
 <tr><th class="col-md-1">AlreadyLocked</th><td>Object or resource has already been locked</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
-<div class="docs-content" style="display:none;" id="WaitForObjects"><h2>WaitForObjects()</h2><p class="lead">Process incoming messages while waiting on objects to complete their activities.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR WaitForObjects(PMF Flags, INT TimeOut, struct ObjectSignal * ObjectSignals)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a onclick="showPage('PMF');">Flags</a></td><td>Optional flags are specified here.</td></tr>
-<tr><td>TimeOut</td><td>A time-out value measured in milliseconds.  If this value is negative then no time-out applies and the function will not return until an incoming message or signal breaks it.</td></tr>
+<div class="docs-content" style="display:none;" id="WaitForObjects"><h2>WaitForObjects()</h2><p class="lead">Process incoming messages while waiting on objects to complete their activities.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR WaitForObjects(PMF Flags, INT Timeout, struct ObjectSignal * ObjectSignals)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td><a onclick="showPage('PMF');">Flags</a></td><td>Optional flags are specified here.</td></tr>
+<tr><td>Timeout</td><td>A time-out value measured in milliseconds.  If this value is negative then no time-out applies and the function will not return until an incoming message or signal breaks it.</td></tr>
 <tr><td>ObjectSignals</td><td>A null-terminated array of objects to monitor for signals.</td></tr>
 </tbody></table></div></div>
 <p>WaitForObjects() acts as a front-end to <a href="?page=ProcessMessages">ProcessMessages()</a>, with an ability to wait for a list of objects that are expected to signal an end to their activities.  An object can be signalled via the Signal() action, or via termination. By default, this function will only return once ALL of the objects are signalled or a time-out occurs.  Use the <code>PMF::ANY_SIGNAL</code> flag to return once ANY of the objects are signalled.</p>
@@ -1080,7 +1082,7 @@ identifier has no effect.</li>
     <h3>Error Codes</h3><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Terminate</th><td>Termination requested</td></tr>
 <tr><th class="col-md-1">ExceptionThreshold</th><td>Termination requested</td></tr>
-<tr><th class="col-md-1">TimeOut</th><td>Function timed-out before successful completion</td></tr>
+<tr><th class="col-md-1">Timeout</th><td>Function timed-out before successful completion</td></tr>
 <tr><th class="col-md-1">SystemLocked</th><td>Part of the system is unreachable due to a persistent lock</td></tr>
 <tr><th class="col-md-1">Recursion</th><td>Detected a recursive function call</td></tr>
 <tr><th class="col-md-1">OutsideMainThread</th><td>Operation permitted from the main thread only</td></tr>
@@ -1484,7 +1486,6 @@ identifier has no effect.</li>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-FunctionField"><h1>FunctionField Structure</h1><p class="lead">Used by ActionTable and Function structures to declare lists of parameters.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Name</th><td><span class="text-nowrap">CSTRING</span></td><td>Name of the field</td></tr>
 <tr><th>Type</th><td><span class="text-nowrap">UINT</span></td><td>Type of the field</td></tr>
-<tr><th>SpanOps</th><td><span class="text-nowrap">const struct SpanFieldOps *</span></td><td>Optional operations for an embedded std::span field</td></tr>
 </tbody></table><div class="footer copyright text-right">Core module documentation © Paul Manias 1996-2026</div></div>
 <div class="docs-content" style="display:none;" id="struct-HSV"><h1>HSV Structure</h1><p class="lead">Colour structure for Hue, Saturation and Value/Light components.</p><table class="table"><thead><tr><th class="col-md-1">Field</th><th class="col-md-1">Type</th><th>Description</th></tr></thead><tbody><tr><th>Hue</th><td><span class="text-nowrap">DOUBLE</span></td><td>Between 0 and 359.999</td></tr>
 <tr><th>Saturation</th><td><span class="text-nowrap">DOUBLE</span></td><td>Between 0 and 1.0</td></tr>

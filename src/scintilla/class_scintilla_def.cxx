@@ -47,7 +47,7 @@ FDEF maReplaceText[] = { { "Find", FDF_CPPSTRING }, { "Replace", FDF_CPPSTRING }
 FDEF maDeleteLine[] = { { "Line", FD_INT }, { 0, 0 } };
 FDEF maSelectRange[] = { { "Start", FD_INT }, { "End", FD_INT }, { 0, 0 } };
 FDEF maInsertText[] = { { "String", FDF_CPPSTRING }, { "Pos", FD_INT }, { 0, 0 } };
-FDEF maGetLine[] = { { "Line", FD_INT }, { "Buffer", FD_BUFFER|FD_STR }, { "Length", FD_INT|FD_BUFSIZE }, { 0, 0 } };
+FDEF maGetLine[] = { { "Line", FD_INT }, { "Buffer", FDF_SPAN|FD_MUTABLE|FD_BYTE }, { 0, 0 } };
 FDEF maReplaceLine[] = { { "Line", FD_INT }, { "String", FDF_CPPSTRING }, { "Length", FD_INT }, { 0, 0 } };
 FDEF maGotoLine[] = { { "Line", FD_INT }, { 0, 0 } };
 FDEF maGetPos[] = { { "Line", FD_INT }, { "Column", FD_INT }, { "Pos", FD_RESULT|FD_INT }, { 0, 0 } };
@@ -97,4 +97,3 @@ static const struct ActionArray clScintillaActions[] = {
    { AC::Undo, SCINTILLA_Undo },
    { AC::NIL, nullptr }
 };
-

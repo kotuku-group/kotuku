@@ -1074,15 +1074,20 @@ struct FunctionField argsResize[] = {
 
 The argument types that can be used by actions are limited to those listed in the following table:
 
-<types lookup="FD">
-<type name="INT">A 32-bit integer value ranging from -2,147,483,647 to 2,147,483,648.</>
-<type name="INT64">A 64-bit integer value.</>
-<type name="PTR">A standard address space pointer.</>
-<type name="STRING">A pointer to a null-terminated string.</>
+<types lookup="FDF">
+<type name="INT">A 32-bit integer value.</>
 <type name="DOUBLE">A 64-bit floating point value.</>
-<type name="OBJECT">This flag is sometimes set in conjunction with the `FD_INT` type.  It indicates that the argument refers to an object ID.</>
-<type name="PTRSIZE">This argument type can only be used if it follows an `FD_PTR` type, and if the argument itself is intended to reflect the size of the buffer referred to by the previous `FD_PTR` argument.</>
-<type name="RESULT">This special flag is set in conjunction with the other data-based argument types. Example: If the developer is required to supply a pointer to an `int` field in which the function will store a result, the correct argument definition will be `FD_RESULT|FD_INT|FD_PTR`. To make the definition of these argument types easier, `FD_PTRRESULT` and `FD_INTRESULT` macros are also available for use.</>
+<type name="PTR">A standard address space pointer.</>
+<type name="OBJECTPTR">A pointer to an object.  This is defined as `FD_PTR|FD_OBJECT` and its convenience macro is `FD_OBJECTPTR`.</>
+<type name="CPPSTRING">A C++ `std::string`, defined as `FD_CPP|FD_STRING` with the convenience macro `FDF_CPPSTRING`.</>
+<type name="SPAN">A byte span describing a contiguous block of memory, defined as `FD_CPP|FD_BUFFER` with the convenience macro `FDF_SPAN`.  It is paired with `FD_PTR` and combined with `FD_MUTABLE` when the span is writable.</>
+</>
+
+Supplementary flags can be combined with the above types to provide additional information about the argument:
+
+<types lookup="FD">
+<type name="MUTABLE">This flag indicates that the referenced memory is writable by the function.  It is most commonly combined with `FDF_SPAN` for output buffers.</>
+<type name="RESULT">This flag indicates that the parameter is used for storing function output. Example: If the developer is required to supply a pointer to an `int` field in which the function will store a result, the correct argument definition will be `FDF_RESULT|FDF_INT`.</>
 </>
 
 -INPUT-

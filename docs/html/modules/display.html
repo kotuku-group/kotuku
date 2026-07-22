@@ -193,8 +193,7 @@ Blue   = CFUnpackBlue(Format,Colour)
 Alpha  = CFUnpackAlpha(Format,Colour)
 </pre>
     <div class="footer copyright text-right">Display module documentation © Paul Manias © 2003-2026</div></div>
-<div class="docs-content" style="display:none;" id="GetCursorInfo"><h2>GetCursorInfo()</h2><p class="lead">Retrieves graphics information from the active mouse cursor.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR gfx::GetCursorInfo(struct CursorInfo * Info, INT Size)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Info</td><td>Pointer to a <a data-toggle="tooltip" title="" href="?page=struct-CursorInfo">CursorInfo</a> structure.</td></tr>
-<tr><td>Size</td><td>The byte-size of the <code>Info</code> structure.</td></tr>
+<div class="docs-content" style="display:none;" id="GetCursorInfo"><h2>GetCursorInfo()</h2><p class="lead">Retrieves graphics information from the active mouse cursor.</p><div class="card card-info mb-3"><div class="card-header"><samp>ERR gfx::GetCursorInfo(struct CursorInfo * Info)</samp></div><div class="card-body" style="padding:0px"><table class="table mb-3 thead-light"><thead><tr><th class="col-md-1">Parameter</th><th>Description</th></tr></thead><tbody><tr><td>Info</td><td>Pointer to a <a data-toggle="tooltip" title="" href="?page=struct-CursorInfo">CursorInfo</a> structure.</td></tr>
 </tbody></table></div></div>
 <p>The GetCursorInfo() function is used to retrieve useful information on the graphics structure of the mouse cursor.  It will return the maximum possible dimensions for custom cursor graphics and indicates the optimal bits-per-pixel setting for the hardware cursor.</p>
 <p>If there is no cursor (e.g. this is likely on touch-screen devices) then all field values will be set to zero.</p>

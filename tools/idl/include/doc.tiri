@@ -7,7 +7,7 @@
 --   table will be substituted in its place.
 
 global docModuleHeader, docFunction, docTypes, docStructures, docClass
-global substituteReferences
+global substituteReferenceMatches, substituteReferences
 extern functionParameterType
 
 rx_all_anchored = <{ regex.new([[^!([\w]*)$]]) }>
@@ -492,6 +492,10 @@ global function extractParagraph(Input:str, Caller:str, References:table)
 
    Input = Input:trim()
 
+   Input = substituteReferenceMatches(Input, rx_inline_code, function(Cap, Match)
+      return '<code>' .. Cap[0]:unescapeXML():escXML() .. '</code>'
+   end)
+
    -- Convert dangling XML characters: < > &
 
    Input = rx_lt_sign.replace(Input, '&lt;$1') -- Less than signs
@@ -501,7 +505,6 @@ global function extractParagraph(Input:str, Caller:str, References:table)
 
    Input = rx_pre_section.replace(Input, '<pre>$1</pre>')
    Input = rx_md_codeblock.replace(Input, '<pre>$1</pre>')
-   Input = rx_inline_code.replace(Input, '<code>$1</code>')
 
    -- Wrap each line inside a <p> tag and take into account lines that start with XML tags such as <pre> or otherwise
    -- need special treatment.
@@ -610,7 +613,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function substituteReferenceMatches(Input:str, Pattern, Handler:func):str
+global function substituteReferenceMatches(Input:str, Pattern, Handler:func):str
    local result = ''
    local last_end = 0
 

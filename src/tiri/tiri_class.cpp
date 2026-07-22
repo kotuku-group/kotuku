@@ -866,15 +866,7 @@ static ERR run_script(extTiri *Self)
                   // disallowed within Lua).
 
                   log.trace("Setting arg '%s', Value: %p", args->Name, args->Address);
-                  if ((type & FD_BUFFER) and (i+1 < Self->TotalArgs) and (args[1].Type & FD_BUFSIZE)) {
-                     // Buffers are considered to be directly writable regions of memory, so the array interface is
-                     // used to represent them.
-                     if (args[1].Type & FD_INT) lua_createarray(Self->Lua, args[1].Int, AET::BYTE, (APTR *)args->Address, ARRAY_EXTERNAL);
-                     else if (args[1].Type & FD_INT64) lua_createarray(Self->Lua, args[1].Int64, AET::BYTE, (APTR *)args->Address, ARRAY_EXTERNAL);
-                     else lua_pushnil(Self->Lua);
-                     i++; args++; // Because we took the buffer-size parameter into account
-                  }
-                  else if (type & FD_OBJECT) {
+                  if (type & FD_OBJECT) {
                      // Pushing direct object pointers is considered safe because they are treated as detached, then
                      // a lock is gained for the duration of the call that is then released on return.  This is a
                      // solid optimisation that also protects the object from unwarranted termination during the call.
