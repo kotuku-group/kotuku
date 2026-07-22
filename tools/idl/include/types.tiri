@@ -34,8 +34,6 @@ global glTypes = {
    -- t_type: Tiri type
    -- c_type: C/C++ type to use in building function signatures
    -- doc_type: Simplified type for documentation
-   arraysize  = { fd='FD_INT|FD_ARRAYSIZE',   t_type='num', c_type='int', doc_type='INT' },
-   bufsize    = { fd='FD_INT|FD_BUFSIZE',     t_type='num', c_type='int', doc_type='INT' },
    char       = { fd='FD_BYTE',               t_type='num', c_type='int8_t', doc_type='INT8' },
    cid        = { fd='FD_INT|FD_UNSIGNED',    t_type='num', c_type='CLASSID' },
    cptr       = { fd='FD_PTR',                t_type='any', c_type='const void *', doc_type='PTR' },
@@ -65,7 +63,6 @@ global glTypes = {
    string     = { fd='FDF_CPPSTRING',         t_type='str', c_type='std::string', doc_type='STRING' },
    str        = { fd='FD_STR',                t_type='str', c_type='STRING', doc_type='STRING' },
    struct     = { fd='FD_STRUCT',             t_type='any', c_type='APTR' },
-   structsize = { fd='FD_INT|FD_BUFSIZE',     t_type='num', c_type='int', doc_type='INT' },
    tags       = { fd='FD_TAGS',               t_type=nil, c_type='...' },
    uchar      = { fd='FD_BYTE',               t_type='num', c_type='uint8_t', doc_type='UINT8' },
    uint       = { fd='FD_INT|FD_UNSIGNED',    t_type='num', c_type='uint32_t', doc_type='UINT' },
@@ -111,37 +108,6 @@ function spanElementType(Value:table, DeclaredType:str):str
    end
 
    return element_type
-end
-
------------------------------------------------------------------------------------------------------------------------
--- Validate constraints shared by all exported module-function inputs after their types have been resolved.
-
-global function validateFunctionInputs(Inputs:table, FunctionName:str)
-   for param in values(Inputs) do
-      if param.defType is 'bufsize' then
-         error(f"Module function {FunctionName}() parameter '{param.name}' cannot use `bufsize`; the preceding " ..
-            "`buf(...)` parameter resolves to a span and owns its extent.")
-      end
-   end
-end
-
------------------------------------------------------------------------------------------------------------------------
--- Reject obsolete method buffer-size parameters after all span declarations have been resolved.
-
-global function validateMethodInputs(Inputs:table, ClassName:str, MethodName:str)
-   Inputs ?! return
-
-   local owning_span
-
-   for param in values(Inputs) do
-      if param.isSpan then
-         owning_span = param.name
-      elseif param.defType is 'bufsize' then
-         local owner = owning_span ?? 'unknown'
-         error(f"Method {ClassName}.{MethodName}() parameter '{param.name}' cannot use `bufsize`; span " ..
-            f"'{owner}' owns its extent.")
-      end
-   end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -290,7 +256,7 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Returns { type, fullType, docType, defType, sizeof, ref, lookup, bits, name, comment, basicType, allocated, resultValue }
+-- Returns { type, fullType, docType, defType, ref, lookup, bits, name, comment, basicType, allocated, resultValue }
 
 global function cType(Value:table, Origin:str):table
    assert(Value.type, f"Value definition incorrect, missing 'type' value for '{Origin}'")
@@ -315,10 +281,6 @@ global function cType(Value:table, Origin:str):table
       if special:find('^') then Value.mutable = true end
       if special:find('~') then Value.virtual = true end
       Value.type = rest_type
-   end
-
-   if Value.type:startsWith('structsize') then
-      Value.sizeof = true
    end
 
    -- This defer() section performs final mutations of the Value prior to returning.

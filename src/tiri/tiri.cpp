@@ -232,7 +232,10 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
 
    modTiri = (OBJECTPTR)((objModule *)argModule)->Root;
 
-   ActionList(&glActions, nullptr); // Get the global action table from the Core
+   kt::vector<ActionTable *> actions;
+   ActionList(&actions);
+   if (actions.empty()) return log.warning(ERR::NoData);
+   glActions = actions[0]; // The action records have process lifetime.
 
    glStructSizes = (ankerl::unordered_dense::map<uint32_t, StructInfo> *)GetResourcePtr(RES::STRUCT_DB);
 

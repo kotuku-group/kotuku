@@ -539,9 +539,9 @@ void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int ArgsSize, 
          j = int(end_offset);
       }
       else if (type & FD_RESULT) {
-         if (type & FD_ARRAY) {
+         if ((type & FDF_VECTOR) IS FDF_VECTOR) {
             j = ALIGN64(j);
-            if ((type & FD_CPP) and (j + int(sizeof(APTR)) <= ArgsSize)) {
+            if (j + int(sizeof(APTR)) <= ArgsSize) {
                delete_cpp_array_arg(type, ((APTR *)(ArgBuffer + j))[0]);
                ((APTR *)(ArgBuffer + j))[0] = nullptr;
             }
@@ -573,9 +573,9 @@ void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int ArgsSize, 
          continue;
       }
 
-      if (type & FD_ARRAY) {
+      if ((type & FDF_VECTOR) IS FDF_VECTOR) {
          j = ALIGN64(j);
-         if ((type & FD_CPP) and (j + int(sizeof(APTR)) <= ArgsSize)) {
+         if (j + int(sizeof(APTR)) <= ArgsSize) {
             delete_cpp_array_arg(type, ((APTR *)(ArgBuffer + j))[0]);
             ((APTR *)(ArgBuffer + j))[0] = nullptr;
          }
@@ -600,11 +600,6 @@ void cleanup_argbuffer(lua_State *Lua, const FunctionField *Args, int ArgsSize, 
    }
 }
 
-inline bool check_buffer_size_arg(int64_t Size, size_t Capacity)
-{
-   return (Size >= 0) and (uint64_t(Size) <= uint64_t(Capacity));
-}
-
 //********************************************************************************************************************
 // Build an argument buffer for actions and methods.  This follows the FD parsing logic of module_call() for the most
 // part, as that is the base-line for argument parsing.  However, some differences apply in part due to the fact that
@@ -625,6 +620,14 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
    int top = lua_gettop(Lua);
 
    log.traceBranch("%d, %p, Top: %d", ArgsSize, ArgBuffer, top);
+
+   for (int i=0; Args[i].Name; i++) {
+      if ((Args[i].Type & FD_ARRAY) and (not (Args[i].Type & FD_CPP))) {
+         log.warning("Pointer array arg %s.%s is not supported.", Name, Args[i].Name);
+         ErrorMsg = "Pointer arrays are not supported for actions or methods.";
+         return ERR::NoSupport;
+      }
+   }
 
    if (top > 0) {
       if (int failed = lua_resolve_thunks(Lua, 1, top)) {
@@ -652,12 +655,8 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
    int i, n;
    int resultcount = 0;
    int j = 0;
-   size_t buffer_capacity = 0;
-   bool buffer_capacity_known = false;
    std::vector<pending_function_arg> pending_functions;
    for (i=0,n=1; (Args[i].Name) and (j < ArgsSize); i++) {
-      if (not (Args[i].Type & FD_BUFSIZE)) buffer_capacity_known = false;
-
       if ((Args[i].Type & FDF_SPAN) IS FDF_SPAN) {
          size_t end_offset;
          CSTRING span_error = nullptr;
@@ -677,14 +676,10 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
       else if (Args[i].Type & FD_RESULT) {
          resultcount++;
 
-         if (Args[i].Type & FD_ARRAY) {
+         if ((Args[i].Type & FDF_VECTOR) IS FDF_VECTOR) {
             j = ALIGN64(j);
-
-            if (Args[i].Type & FD_CPP) { // kt::vector<> *
-               auto error = make_cpp_array_arg(Args[i].Type, (APTR *)(ArgBuffer + j));
-               if (error != ERR::Okay) return fail(error);
-            }
-
+            auto error = make_cpp_array_arg(Args[i].Type, (APTR *)(ArgBuffer + j));
+            if (error != ERR::Okay) return fail(error);
             j += sizeof(APTR);
          }
          else if ((Args[i].Type & FD_PTR) or (Args[i].Type & FD_STRUCT)) {
@@ -731,85 +726,17 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
 
       //log.trace("Processing arg %s, type $%.8x", Args[i].Name, Args[i].Type);
 
-      if (Args[i].Type & FD_ARRAY) {
+      if ((Args[i].Type & FDF_VECTOR) IS FDF_VECTOR) {
          j = ALIGN64(j);
          if (type != LUA_TARRAY) return fail_arg(n, "Array required.");
 
          auto array = lua_toarray(Lua, n); // Safe (confirmed array type)
-         if (Args[i].Type & FD_CPP) {
-            APTR vector = nullptr;
-            auto error = copy_cpp_array_arg(Args[i].Type, array, &vector);
-            if (error IS ERR::InvalidType) return fail_arg(n, "Array element type mismatch.");
-            else if (error != ERR::Okay) return fail(error);
-            ((APTR *)(ArgBuffer + j))[0] = vector;
-            j += sizeof(APTR);
-         }
-         else {
-            ((APTR *)(ArgBuffer + j))[0] = array->arraydata();
-            j += sizeof(APTR);
-
-            if (Args[i+1].Type & (FD_BUFSIZE|FD_ARRAYSIZE)) {
-               size_t total = (Args[i+1].Type & FD_BUFSIZE) ? array->len * array->elemsize : array->len;
-               if (Args[i+1].Type & FD_BUFSIZE) {
-                  buffer_capacity = total;
-                  buffer_capacity_known = true;
-               }
-               if (Args[i+1].Type & FD_INT) ((int *)(ArgBuffer + j))[0] = int(total);
-               else if (Args[i+1].Type & FD_INT64) ((int64_t *)(ArgBuffer + j))[0] = int64_t(total);
-            }
-         }
-      }
-      else if ((Args[i].Type & FD_PTR) and (Args[i+1].Type & FD_PTRSIZE)) {
-         j = ALIGN64(j);
-         if (type IS LUA_TARRAY) {
-            auto array = lua_toarray(Lua, n);
-            if (array->len and (array->elemsize > std::numeric_limits<size_t>::max() / array->len)) {
-               return fail_arg(n, "Array backing storage is too large for the pointer-size contract.");
-            }
-
-            ((APTR *)(ArgBuffer + j))[0] = array->arraydata();
-            j += sizeof(APTR);
-
-            const size_t memsize = size_t(array->len) * array->elemsize;
-            buffer_capacity = memsize;
-            buffer_capacity_known = true;
-            if ((Args[i+1].Type & FD_INT) and (memsize <= size_t(INT_MAX))) {
-               ((int *)(ArgBuffer + j))[0] = int(memsize);
-            }
-            else if (Args[i+1].Type & FD_INT64) ((int64_t *)(ArgBuffer + j))[0] = int64_t(memsize);
-            else return fail_arg(n, "Array backing storage exceeds the pointer-size field.");
-         }
-         else if (auto native_struct = lua_isstruct(Lua, n) ? lua_tostruct(Lua, n) : nullptr) {
-            if (lj_struct_stale(native_struct)) return fail_arg(n, "Struct's providing object has been destroyed.");
-            ((APTR *)(ArgBuffer + j))[0] = native_struct->data;
-            j += sizeof(APTR);
-
-            buffer_capacity = native_struct->structsize;
-            buffer_capacity_known = true;
-            if (Args[i+1].Type & FD_INT) ((int *)(ArgBuffer + j))[0] = int(native_struct->structsize);
-            else if (Args[i+1].Type & FD_INT64) ((int64_t *)(ArgBuffer + j))[0] = int64_t(native_struct->structsize);
-         }
-         else if (type IS LUA_TSTRING) {
-            auto string = strV(Lua->base + n - 1);
-            if ((Args[i].Type & FD_MUTABLE) and (not lj_str_ismutable(string))) {
-               return fail_arg(n, "Mutable buffer required.");
-            }
-
-            ((CSTRING *)(ArgBuffer + j))[0] = (Args[i].Type & FD_MUTABLE) ? strdatawr(string) : strdata(string);
-            j += sizeof(APTR);
-
-            buffer_capacity = string->len;
-            buffer_capacity_known = true;
-            if ((Args[i+1].Type & FD_INT) and (string->len <= size_t(INT_MAX))) {
-               ((int *)(ArgBuffer + j))[0] = int(string->len);
-            }
-            else if (Args[i+1].Type & FD_INT64) ((int64_t *)(ArgBuffer + j))[0] = int64_t(string->len);
-            else return fail_arg(n, "String storage exceeds the pointer-size field.");
-         }
-         else {
-            ((APTR *)(ArgBuffer + j))[0] = lua_touserdata(Lua, n);
-            j += sizeof(APTR);
-         }
+         APTR vector = nullptr;
+         auto error = copy_cpp_array_arg(Args[i].Type, array, &vector);
+         if (error IS ERR::InvalidType) return fail_arg(n, "Array element type mismatch.");
+         else if (error != ERR::Okay) return fail(error);
+         ((APTR *)(ArgBuffer + j))[0] = vector;
+         j += sizeof(APTR);
       }
       else if (Args[i].Type & FD_STR) {
          j = ALIGN64(j);
@@ -918,12 +845,6 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          }
          else if (type IS LUA_TBOOLEAN) {
             auto value = lua_toboolean(Lua, n);
-            if ((Args[i].Type & FD_BUFSIZE) and buffer_capacity_known) {
-               if (not check_buffer_size_arg(value, buffer_capacity)) {
-                  return fail_arg(n, "Buffer size exceeds supplied buffer capacity.");
-               }
-               buffer_capacity_known = false;
-            }
             ((int *)(ArgBuffer + j))[0] = value;
          }
          else if ((type IS LUA_TUSERDATA) or (type IS LUA_TLIGHTUSERDATA)) {
@@ -931,18 +852,8 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
          }
          else if (type != LUA_TNIL) { // Attempt numeric conversion
             auto value = lua_tointeger(Lua, n);
-            if ((Args[i].Type & FD_BUFSIZE) and buffer_capacity_known) {
-               if (not check_buffer_size_arg(value, buffer_capacity)) {
-                  return fail_arg(n, "Buffer size exceeds supplied buffer capacity.");
-               }
-               buffer_capacity_known = false;
-            }
             ((int *)(ArgBuffer + j))[0] = value;
          }
-         else if (Args[i].Type & (FD_BUFSIZE|FD_ARRAYSIZE)) {
-            buffer_capacity_known = false; // An inferred array extent is no longer being validated.
-         }
-         else ((int *)(ArgBuffer + j))[0] = 0; // Value is nil
          //log.trace("Arg: %s, Value: %d / $%.8x", Args[i].Name, ((int *)(ArgBuffer + j))[0], ((int *)(ArgBuffer + j))[0]);
          j += sizeof(int);
       }
@@ -954,17 +865,8 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
       }
       else if (Args[i].Type & FD_INT64) {
          j = ALIGN64(j);
-         if ((Args[i].Type & (FD_BUFSIZE|FD_ARRAYSIZE)) and (type IS LUA_TNIL)) {
-            buffer_capacity_known = false;
-         }
-         else {
+         if (type != LUA_TNIL) {
             auto value = lua_tointeger(Lua, n);
-            if ((Args[i].Type & FD_BUFSIZE) and buffer_capacity_known) {
-               if (not check_buffer_size_arg(value, buffer_capacity)) {
-                  return fail_arg(n, "Buffer size exceeds supplied buffer capacity.");
-               }
-               buffer_capacity_known = false;
-            }
             ((int64_t *)(ArgBuffer + j))[0] = value;
          }
          //log.trace("Arg: %s, Value: %" PF64, Args[i].Name, ((LARGE *)(ArgBuffer + j))[0]);
@@ -1010,41 +912,23 @@ static int get_results(lua_State *Lua, const FunctionField *Args, const int8_t *
          }
          of = int(end_offset);
       }
-      else if (type & FD_ARRAY) { // Pointer to an array.
+      else if ((type & FDF_VECTOR) IS FDF_VECTOR) {
          of = ALIGN64(of);
-         if (type & FD_CPP) {
-            auto slot = (APTR *)(ArgBuf + of);
-            APTR vector = slot[0];
-            if (type & FD_RESULT) {
-               if (vector) {
-                  if (not push_cpp_array_arg(Lua, type, Args[i].Name, vector)) {
-                     log.warning("Unsupported C++ array result arg %s, flags $%.8x", Args[i].Name, type);
-                     lua_pushnil(Lua);
-                  }
+         auto slot = (APTR *)(ArgBuf + of);
+         APTR vector = slot[0];
+         if (type & FD_RESULT) {
+            if (vector) {
+               if (not push_cpp_array_arg(Lua, type, Args[i].Name, vector)) {
+                  log.warning("Unsupported C++ array result arg %s, flags $%.8x", Args[i].Name, type);
+                  lua_pushnil(Lua);
                }
-               else lua_pushnil(Lua);
-               total++;
-            }
-
-            delete_cpp_array_arg(type, vector);
-            slot[0] = nullptr;
-         }
-         else if (type & FD_RESULT) {
-            int total_elements = -1;  // If -1, make_any_array() assumes the array is null terminated.
-            if (Args[i+1].Type & FD_ARRAYSIZE) {
-               CPTR size_var = ArgBuf + of + sizeof(APTR);
-               if (Args[i+1].Type & FD_INT) total_elements = ((int *)size_var)[0];
-               else if (Args[i+1].Type & FD_INT64) total_elements = ((int64_t *)size_var)[0];
-               else log.warning("Invalid parameter definition for '%s' of $%.8x", Args[i+1].Name, Args[i+1].Type);
-            }
-
-            if (CPTR values = ((APTR *)(ArgBuf + of))[0]) {
-               make_any_array(Lua, type, Args[i].Name, total_elements, values);
-               if (type & FD_ALLOC) FreeResource(values);
             }
             else lua_pushnil(Lua);
             total++;
          }
+
+         delete_cpp_array_arg(type, vector);
+         slot[0] = nullptr;
          of += sizeof(APTR);
       }
       else if (type & FD_STR) {

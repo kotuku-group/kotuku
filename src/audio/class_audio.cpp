@@ -208,7 +208,6 @@ func OnStop: This optional callback function will be called when the stream stop
 int(SFM) SampleFormat: Indicates the format of the sample data that you are adding.
 buf(ptr) Data: Points to the address of the sample data.
 struct(*AudioLoop) Loop: Optional sample loop information.
-structsize LoopSize: Must be set to `sizeof(AudioLoop)` if `Loop` is defined.
 &int Result: The resulting sample handle will be returned in this parameter.
 
 -ERRORS-
@@ -328,7 +327,6 @@ int(SFM) SampleFormat: Indicates the format of the sample data that you are addi
 int SampleLength: Total byte-length of the sample data that is being streamed.  May be set to zero if the length is infinite or unknown.
 int PlayOffset: Offset the playing position by this byte index.
 struct(*AudioLoop) Loop: Refers to sample loop information, or `NULL` if no loop is required.
-structsize LoopSize: Must be set to `sizeof(AudioLoop)`.
 &int Result: The resulting sample handle will be returned in this parameter.
 
 -ERRORS-

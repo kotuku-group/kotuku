@@ -253,8 +253,6 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
             error(f"Unable to process line '{content}' for function '{Name}'")
          end
       end
-
-      validateFunctionInputs(func.input, Name)
    end
 
    response = func.result

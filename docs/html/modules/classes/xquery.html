@@ -172,8 +172,7 @@ if (query.ok()) {
 <p>Use InspectFunctions to retrieve metadata about user-defined or standard XQuery functions available in the compiled XQuery object.  The function name can include wildcards to match multiple functions.</p>
 <p>The ResultFlags parameter controls which pieces of information are included in the output XML document.  If no flags are specified, all available information is returned.</p>
 <p>The structure of the returned XML document is as follows, with each matching function returned in series:</p>
-<pre>
-&lt;function&gt;
+<pre>&lt;function&gt;
   &lt;name&gt;function-name&lt;/name&gt;
   &lt;parameters&gt;
     &lt;parameter&gt;
@@ -187,7 +186,7 @@ if (query.ok()) {
   &lt;signature&gt;function-signature&lt;/signature&gt;
   &lt;ast&gt;... serialized function body AST ...&lt;/ast&gt;
 &lt;/function&gt;
- </pre>
+</pre>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">Search</th><td>A search routine in this function failed</td></tr>
@@ -197,9 +196,8 @@ if (query.ok()) {
 <tr><td>Callback</td><td>The callback function to register for FunctionName.</td></tr>
 </tbody></table></div></div><div class="docs-content" style="margin:1em .5em 1em .5em;">
 <p>Use RegisterFunction to define a custom function that can be invoked within XQuery expressions.  The function will be associated with the specified name and can be called like any standard XQuery function.</p>
-<p>The C++ function prototype is <code>ERR (*XQuery, std::string_view FunctionName, const std::vector &amp;Args, XPathValue &amp;Result, APTR Meta))</code>
+<p>The C++ function prototype is <code>ERR (*XQuery, std::string_view FunctionName, const std::vector&lt;XPathValue&gt; &amp;Args, XPathValue &amp;Result, APTR Meta))</code></p>
 <p>Script callbacks are not currently supported.</p>
-</p>
       
 <div class="sub-header">Error Codes</div><table class="table table-sm borderless"><tbody><tr><th class="col-md-1">Okay</th><td>Operation successful.</td></tr>
 <tr><th class="col-md-1">NoSupport</th><td>The provided callback is not a C function reference.</td></tr>

@@ -606,13 +606,12 @@ static ERR SCINTILLA_Focus(extScintilla *Self)
 -METHOD-
 GetLine: Copies the text content of any line to a user-supplied buffer.
 
-This method will retrieve the string for a `Line` at a given index.  The string is copied to a user supplied
-`Buffer` of the indicated `Length` (in bytes).
+This method retrieves the string for a `Line` at a given index.  The string is copied to the supplied `Buffer`, which
+must have enough space for the line content and a terminating null byte.
 
 -INPUT-
 int Line: The index of the line to retrieve.
-buf(str) Buffer: The destination buffer.
-bufsize Length: The byte size of the `Buffer`.
+^buf(char) Buffer: The destination buffer.
 
 -RESULT-
 Okay:
@@ -626,12 +625,13 @@ static ERR SCINTILLA_GetLine(extScintilla *Self, struct sci::GetLine *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Buffer)) return log.warning(ERR::NullArgs);
-   if ((Args->Line < 0) or (Args->Length < 1)) return log.warning(ERR::OutOfRange);
+   if ((!Args) or (not Args->Buffer.data())) return log.warning(ERR::NullArgs);
+   if ((Args->Line < 0) or Args->Buffer.empty()) return log.warning(ERR::OutOfRange);
 
-   int len = SCICALL(SCI_LINELENGTH, Args->Line); // Returns the length of the line (in bytes) including line-end characters (NB: there could be more than one line-end character!)
-   if (Args->Length > len) {
-      SCICALL(SCI_GETLINE, Args->Line, Args->Buffer);
+   // Includes line-end characters, of which there may be more than one.
+   int len = SCICALL(SCI_LINELENGTH, Args->Line);
+   if (std::ssize(Args->Buffer) > len) {
+      SCICALL(SCI_GETLINE, Args->Line, (const char *)Args->Buffer.data());
       Args->Buffer[len] = 0;
       return ERR::Okay;
    }

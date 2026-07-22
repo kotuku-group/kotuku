@@ -1047,8 +1047,6 @@ global function klass(Name, Options:table, Spec, Private, Custom)
                end
             end
 
-            validateMethodInputs(method.params, Name, method.name)
-
             method.tags = getTagsFromCollection(method.tags, method.params)
 
             -- Generate a modified C method name for the function declaration if the method shares a name with an existing

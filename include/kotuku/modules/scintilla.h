@@ -93,7 +93,7 @@ struct ReplaceText { std::string_view Find; std::string_view Replace; STF Flags;
 struct DeleteLine { int Line; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct SelectRange { int Start; int End; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct InsertText { std::string_view String; int Pos; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetLine { int Line; STRING Buffer; int Length; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct GetLine { int Line; std::span<int8_t> Buffer; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct ReplaceLine { int Line; std::string_view String; int Length; static const AC id = AC(-7); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GotoLine { int Line; static const AC id = AC(-8); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct TrimWhitespace { static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
@@ -185,8 +185,8 @@ class objScintilla : public Object {
       struct sci::InsertText args = { String, Pos };
       return Action(AC(-5), this, &args);
    }
-   inline ERR getLine(int Line, STRING Buffer, int Length) noexcept {
-      struct sci::GetLine args = { Line, Buffer, Length };
+   inline ERR getLine(int Line, std::span<int8_t> Buffer) noexcept {
+      struct sci::GetLine args = { Line, Buffer };
       return Action(AC(-6), this, &args);
    }
    inline ERR replaceLine(int Line, const std::string_view &String, int Length) noexcept {

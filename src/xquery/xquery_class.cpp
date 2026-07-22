@@ -66,12 +66,12 @@ function for each matching node, enabling streaming processing of large result s
 Compiling and evaluating queries:
 
 <pre>
-objXQuery::create query { statement="/bookstore/book[@price &lt; 10]/title" };
+objXQuery::create query { statement="/bookstore/book[@price < 10]/title" };
 if (query.ok()) {
    XPathValue *result;
-   if (!query-&gt;evaluate(xml)) {
+   if (!query->evaluate(xml)) {
       std::string_view str;
-      query-&gt;getResultString(str);
+      query->getResultString(str);
       log.msg("Got: %s", str.data());
    }
 }
@@ -83,7 +83,7 @@ Node iteration with callbacks:
 objXQuery::create query { statement="//chapter[@status='draft']" };
 if (query.ok()) {
    auto callback = C_FUNCTION(process_node);
-   query-&gt;search(xml, &callback);
+   query->search(xml, &callback);
 }
 </pre>
 
@@ -486,7 +486,7 @@ no flags are specified, all available information is returned.
 
 The structure of the returned XML document is as follows, with each matching function returned in series:
 
-```
+<pre>
 &lt;function&gt;
   &lt;name&gt;function-name&lt;/name&gt;
   &lt;parameters&gt;
@@ -501,7 +501,7 @@ The structure of the returned XML document is as follows, with each matching fun
   &lt;signature&gt;function-signature&lt;/signature&gt;
   &lt;ast&gt;... serialized function body AST ...&lt;/ast&gt;
 &lt;/function&gt;
- ```
+</pre>
 
 -INPUT-
 strview Name: The name of the function or functions to inspect (supports wildcards).
