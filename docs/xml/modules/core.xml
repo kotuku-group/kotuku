@@ -132,16 +132,16 @@
   <function>
     <name>ActionList</name>
     <category>Objects</category>
-    <comment>Returns a pointer to the global action table.</comment>
-    <prototype>void ActionList(struct ActionTable ** Actions, INT * Size)</prototype>
-    <tiriPrototype>Actions:array, Size:num = ActionList()</tiriPrototype>
-    <tags>static-result, non-null-result, pure-query</tags>
+    <comment>Returns the global action table.</comment>
+    <prototype>void ActionList(kt::vector&lt;ActionTable *&gt; * Actions)</prototype>
+    <tiriPrototype>Actions:array = ActionList()</tiriPrototype>
+    <tags>static-result, non-null-result, pure-query, mutates-input</tags>
     <input>
-      <param type="struct ActionTable **" name="Actions">A pointer to the Core's action table <code>struct ActionTable *</code> is returned. Please note that the first entry in the <code>ActionTable</code> list has all fields driven to <code>NULL</code>, because valid action ID's start from one, not zero.  The final action in the list is also terminated with <code>NULL</code> fields in order to indicate an end to the list.  Knowing this is helpful when scanning the list or calculating the total number of actions supported by the Core.</param>
-      <param type="INT *" name="Size">Total number of elements in the returned list.</param>
+      <param type="kt::vector&lt;ActionTable *&gt; *" name="Actions">Receives pointers to the Core's static action records, indexed by action ID.</param>
     </input>
     <description>
 <p>This function returns an array of all actions supported by the Core, including name, arguments and structure size.  The ID of each action is indicated by its index within the array.</p>
+<p>Index zero is an empty record because valid action IDs start from one rather than zero.</p>
 <p>The <code>Name</code> field specifies the name of the action.  The <code>Args</code> field refers to the action's argument definition structure, which lists the argument names and their relevant types.  This is matched by the <code>Size</code> field, which indicates the byte-size of the action's related argument structure.  If the action does not support arguments, the <code>Args</code> and <code>Size</code> fields will be set to <code>NULL</code>.  The following illustrates two argument definition examples:</p>
 <pre>struct FunctionField argsCopyData[] = {
    { &quot;Destination&quot;, FD_INT  },

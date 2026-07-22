@@ -886,7 +886,6 @@ enum class JET : int {
 // Field descriptors
 
 #define FD_DOUBLERESULT 0x80000100
-#define FD_PTR_DOUBLERESULT 0x88000100
 #define FD_CLASS_TYPES 0xffc05001
 #define FD_VOID 0x00000000
 #define FD_OBJECT 0x00000001
@@ -898,20 +897,17 @@ enum class JET : int {
 #define FD_STORE 0x00000020
 #define FD_FLAGS 0x00000040
 #define FD_VARTAGS 0x00000040
-#define FD_PTRSIZE 0x00000080
-#define FD_BUFSIZE 0x00000080
-#define FD_ARRAYSIZE 0x00000080
 #define FD_LOOKUP 0x00000080
 #define FD_READ 0x00000100
 #define FD_RESULT 0x00000100
 #define FD_R 0x00000100
+#define FD_WRITE 0x00000200
 #define FD_W 0x00000200
 #define FD_BUFFER 0x00000200
-#define FD_WRITE 0x00000200
 #define FD_RW 0x00000300
-#define FD_INIT 0x00000400
-#define FD_TAGS 0x00000400
 #define FD_I 0x00000400
+#define FD_TAGS 0x00000400
+#define FD_INIT 0x00000400
 #define FD_RI 0x00000500
 #define FD_ERROR 0x00000800
 #define FD_ARRAY 0x00001000
@@ -933,19 +929,16 @@ enum class JET : int {
 #define FD_FUNCTION 0x02000000
 #define FD_INT64 0x04000000
 #define FD_INT64RESULT 0x04000100
-#define FD_POINTER 0x08000000
 #define FD_PTR 0x08000000
+#define FD_POINTER 0x08000000
 #define FD_OBJECTPTR 0x08000001
 #define FD_PTRRESULT 0x08000100
-#define FD_PTRBUFFER 0x08000200
 #define FD_FUNCTIONPTR 0x0a000000
-#define FD_PTR_INT64RESULT 0x0c000100
 #define FD_FLOAT 0x10000000
 #define FD_UNIT 0x20000000
 #define FD_INT 0x40000000
 #define FD_OBJECTID 0x40000001
 #define FD_INTRESULT 0x40000100
-#define FD_PTR_INTRESULT 0x48000100
 #define FD_DOUBLE 0x80000000
 
 // File flags
@@ -1458,7 +1451,7 @@ struct ClassRecord {
 struct CoreBase {
 #ifndef KOTUKU_STATIC
    ERR (*_Action)(AC Action, OBJECTPTR Object, APTR Parameters);
-   void (*_ActionList)(struct ActionTable **Actions, int *Size);
+   void (*_ActionList)(kt::vector<ActionTable *> *Actions);
    ERR (*_DeleteFile)(const std::string_view &Path, FUNCTION *Callback);
    CSTRING (*_ResolveClassID)(CLASSID ID);
    int (*_AllocateID)(IDTYPE Type);
@@ -1556,7 +1549,7 @@ struct CoreBase {
 #if !defined(KOTUKU_STATIC) and !defined(PRV_CORE_MODULE)
 extern struct CoreBase *CoreBase;
 inline ERR Action(AC Action, OBJECTPTR Object, APTR Parameters) { return CoreBase->_Action(Action,Object,Parameters); }
-inline void ActionList(struct ActionTable **Actions, int *Size) { return CoreBase->_ActionList(Actions,Size); }
+inline void ActionList(kt::vector<ActionTable *> *Actions) { return CoreBase->_ActionList(Actions); }
 inline ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback) { return CoreBase->_DeleteFile(Path,Callback); }
 inline CSTRING ResolveClassID(CLASSID ID) { return CoreBase->_ResolveClassID(ID); }
 inline int AllocateID(IDTYPE Type) { return CoreBase->_AllocateID(Type); }
@@ -1650,7 +1643,7 @@ inline OBJECTPTR PinWeakObject(OBJECTID Object) { return CoreBase->_PinWeakObjec
 inline ERR FreeObject(OBJECTID ObjectID) { return CoreBase->_FreeObject(ObjectID); }
 #else
 extern "C" ERR Action(AC Action, OBJECTPTR Object, APTR Parameters);
-extern "C" void ActionList(struct ActionTable **Actions, int *Size);
+extern "C" void ActionList(kt::vector<ActionTable *> *Actions);
 extern "C" ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback);
 extern "C" CSTRING ResolveClassID(CLASSID ID);
 extern "C" int AllocateID(IDTYPE Type);

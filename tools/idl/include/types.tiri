@@ -34,7 +34,6 @@ global glTypes = {
    -- t_type: Tiri type
    -- c_type: C/C++ type to use in building function signatures
    -- doc_type: Simplified type for documentation
-   arraysize  = { fd='FD_INT|FD_ARRAYSIZE',   t_type='num', c_type='int', doc_type='INT' },
    char       = { fd='FD_BYTE',               t_type='num', c_type='int8_t', doc_type='INT8' },
    cid        = { fd='FD_INT|FD_UNSIGNED',    t_type='num', c_type='CLASSID' },
    cptr       = { fd='FD_PTR',                t_type='any', c_type='const void *', doc_type='PTR' },

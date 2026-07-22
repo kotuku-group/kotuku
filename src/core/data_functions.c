@@ -6,7 +6,7 @@
 
 FDEF argsAccessObject[] = { { "Error", FD_INT|FD_ERROR }, { "Object", FD_OBJECTID }, { "MilliSeconds", FD_INT }, { "Result", FD_RESULT|FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsAction[] = { { "Error", FD_INT|FD_ERROR }, { "Action", FD_INT }, { "Object", FD_OBJECTPTR }, { "Parameters", FD_PTR }, { 0, 0 } };
-FDEF argsActionList[] = { { "Void", FD_VOID }, { "ActionTable:Actions", FD_RESULT|FD_ARRAY|FD_STRUCT }, { "Size", FD_RESULT|FD_INT|FD_ARRAYSIZE }, { 0, 0 } };
+FDEF argsActionList[] = { { "Void", FD_VOID }, { "ActionTable:Actions", FD_RESULT|FDF_VECTOR|FD_MUTABLE|FD_PTR|FD_STRUCT }, { 0, 0 } };
 FDEF argsAddInfoTag[] = { { "Error", FD_INT|FD_ERROR }, { "FileInfo:Info", FD_PTR|FD_STRUCT }, { "Name", FDF_CPPSTRING }, { "Value", FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsAddMsgHandler[] = { { "Error", FD_INT|FD_ERROR }, { "MsgType", FD_INT }, { "Routine", FD_FUNCTIONPTR }, { "MsgHandler:Handle", FD_RESULT|FD_PTR|FD_STRUCT|FD_RESOURCE|FD_ALLOC }, { 0, 0 } };
 FDEF argsAdjustLogLevel[] = { { "Result", FD_INT }, { "Delta", FD_INT }, { 0, 0 } };

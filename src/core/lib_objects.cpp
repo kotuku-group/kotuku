@@ -1048,10 +1048,12 @@ ERR Action(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters)
 /*********************************************************************************************************************
 
 -FUNCTION-
-ActionList: Returns a pointer to the global action table.
+ActionList: Returns the global action table.
 
 This function returns an array of all actions supported by the Core, including name, arguments and structure
 size.  The ID of each action is indicated by its index within the array.
+
+Index zero is an empty record because valid action IDs start from one rather than zero.
 
 The `Name` field specifies the name of the action.  The `Args` field refers to the action's argument definition structure,
 which lists the argument names and their relevant types.  This is matched by the `Size` field, which indicates the
@@ -1091,18 +1093,20 @@ Supplementary flags can be combined with the above types to provide additional i
 </>
 
 -INPUT-
-&array(struct(ActionTable)) Actions: A pointer to the Core's action table `struct ActionTable *` is returned. Please note that the first entry in the `ActionTable` list has all fields driven to `NULL`, because valid action ID's start from one, not zero.  The final action in the list is also terminated with `NULL` fields in order to indicate an end to the list.  Knowing this is helpful when scanning the list or calculating the total number of actions supported by the Core.
-&arraysize Size: Total number of elements in the returned list.
+^&vector(struct(*ActionTable)) Actions: Receives pointers to the Core's static action records, indexed by action ID.
 
 -TAGS-
 static-result, non-null-result, pure-query
 
 *********************************************************************************************************************/
 
-void ActionList(struct ActionTable **List, int *Size)
+void ActionList(kt::vector<struct ActionTable *> *List)
 {
-   if (List) *List = (struct ActionTable *)ActionTable;
-   if (Size) *Size = int(AC::END);
+   if (List) {
+      List->clear();
+      List->reserve(int(AC::END));
+      for (int i=0; i < int(AC::END); i++) List->push_back((struct ActionTable *)&ActionTable[i]);
+   }
 }
 
 /*********************************************************************************************************************
