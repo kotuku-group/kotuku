@@ -822,7 +822,12 @@ static ERR run_script(extTiri *Self)
             for (int i=0; i < Self->TotalArgs; i++, args++) {
                int type = args->Type;
 
-               if (type & FD_ARRAY) {
+               if ((type & FDF_SPAN) IS FDF_SPAN) {
+                  auto span = (std::span<std::byte> *)args->Address;
+                  if (span) lua_createarray(Self->Lua, span->size(), AET::BYTE, span->data(), ARRAY_EXTERNAL);
+                  else lua_pushnil(Self->Lua);
+               }
+               else if (type & FD_ARRAY) {
                   log.trace("Setting arg '%s', Array: %p", args->Name, args->Address);
 
                   APTR values = args->Address;

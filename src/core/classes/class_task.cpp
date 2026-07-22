@@ -168,14 +168,14 @@ static void task_stdinput_callback(HOSTHANDLE FD, void *Task)
 
    if (Self->InputCallback.stale()) clear_callback(Self->InputCallback);
    else if (Self->InputCallback.isC()) {
-      auto routine = (void (*)(extTask *, APTR, int, ERR, APTR))Self->InputCallback.Routine;
-      routine(Self, buffer, bytes_read, error, Self->InputCallback.Meta);
+      auto routine = (void (*)(extTask *, std::span<std::byte>, ERR, APTR))Self->InputCallback.Routine;
+      routine(Self, std::span<std::byte>((std::byte *)buffer, bytes_read), error, Self->InputCallback.Meta);
    }
    else if (Self->InputCallback.isScript()) {
+      std::span<std::byte> span((std::byte *)buffer, bytes_read);
       sc::Call(Self->InputCallback, std::to_array<ScriptArg>({
          { "Task",       Self },
-         { "Buffer",     buffer, FD_PTRBUFFER },
-         { "BufferSize", bytes_read, FD_INT|FD_BUFSIZE },
+         { "Buffer",     &span, FDF_SPAN },
          { "Status",     int(error), FD_ERROR }
       }));
    }
@@ -219,14 +219,14 @@ static int read_task_stdout(HOSTHANDLE FD, APTR Task)
       auto task = (extTask *)Task;
       if (task->OutputCallback.stale()) clear_callback(task->OutputCallback);
       else if (task->OutputCallback.isC()) {
-         auto routine = (void (*)(extTask *, APTR, int, APTR))task->OutputCallback.Routine;
-         routine(task, buffer, len, task->OutputCallback.Meta);
+         auto routine = (void (*)(extTask *, std::span<std::byte>, APTR))task->OutputCallback.Routine;
+         routine(task, std::span<std::byte>((std::byte *)buffer, len), task->OutputCallback.Meta);
       }
       else if (task->OutputCallback.isScript()) {
+         std::span<std::byte> span((std::byte *)buffer, len);
          sc::Call(task->OutputCallback, std::to_array<ScriptArg>({
-            { "Task",       Task,   FD_OBJECTPTR },
-            { "Buffer",     buffer, FD_PTRBUFFER },
-            { "BufferSize", len,    FD_INT|FD_BUFSIZE }
+            { "Task",   Task, FD_OBJECTPTR },
+            { "Buffer", &span, FDF_SPAN }
          }));
       }
    }
@@ -279,14 +279,14 @@ static int read_task_stderr(HOSTHANDLE FD, APTR Task)
       auto task = (extTask *)Task;
       if (task->ErrorCallback.stale()) clear_callback(task->ErrorCallback);
       else if (task->ErrorCallback.isC()) {
-         auto routine = (void (*)(extTask *, APTR, int, APTR))task->ErrorCallback.Routine;
-         routine(task, buffer, len, task->ErrorCallback.Meta);
+         auto routine = (void (*)(extTask *, std::span<std::byte>, APTR))task->ErrorCallback.Routine;
+         routine(task, std::span<std::byte>((std::byte *)buffer, len), task->ErrorCallback.Meta);
       }
       else if (task->ErrorCallback.isScript()) {
+         std::span<std::byte> span((std::byte *)buffer, len);
          sc::Call(task->ErrorCallback, std::to_array<ScriptArg>({
             { "Task", Task, FD_OBJECTPTR },
-            { "Data", buffer, FD_PTRBUFFER },
-            { "Size", len, FD_INT|FD_BUFSIZE }
+            { "Data", &span, FDF_SPAN }
          }));
       }
    }
@@ -337,14 +337,14 @@ static bool drain_task_stderr(HOSTHANDLE FD, APTR Task)
 static void output_callback(extTask *Task, FUNCTION *Callback, APTR Buffer, int Size)
 {
    if (Callback->isC()) {
-      auto routine = (void (*)(extTask *, APTR, int, APTR))Callback->Routine;
-      routine(Task, Buffer, Size, Callback->Meta);
+      auto routine = (void (*)(extTask *, std::span<std::byte>, APTR))Callback->Routine;
+      routine(Task, std::span<std::byte>((std::byte *)Buffer, Size), Callback->Meta);
    }
    else if (Callback->isScript()) {
+      std::span<std::byte> span((std::byte *)Buffer, Size);
       sc::Call(*Callback, std::to_array<ScriptArg>({
          { "Task", Task, FD_OBJECTPTR },
-         { "Data", Buffer, FD_PTRBUFFER },
-         { "Size", Size, FD_INT|FD_BUFSIZE }
+         { "Data", &span, FDF_SPAN }
       }));
    }
 }

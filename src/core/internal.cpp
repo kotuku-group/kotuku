@@ -362,27 +362,7 @@ This function searches an argument structure for pointer and string types.  If i
 convert them to a format that can be passed to other memory spaces.  Note: The canonical interpreter for these
 structures is in Tiri - for the most part this function should be kept in sync with it.
 
-A PTR|RESULT or PTR|MUTABLE followed by a PTRSIZE indicates that the user has to supply a buffer to the function.  It is
-assumed that the function will fill the buffer with data, so the caller's initial buffer content is not serialised.
-Example:
-
-<pre>
-Read(Bytes (FD_INT), Buffer (FD_PTRRESULT), BufferSize (FD_PTRSIZE), &BytesRead (FD_INTRESULT));
-</pre>
-
-A standard PTR followed by a PTRSIZE indicates that the user has to supply a buffer to the function.  It is assumed
-that this is one-way traffic only, and the function will not fill the buffer with data if FD_MUTABLE is not set.
-Example:
-
-<pre>
-Write(Bytes (FD_INT), Buffer (FD_PTRBUFFER), BufferSize (FD_PTRSIZE), &BytesWritten (FD_INTRESULT));
-</pre>
-
-If the function will return a memory block of its own, it must return the block as a MEMORYID, not a PTR.  The
-allocation must be made using the object's MemFlags, as the action messaging functions will change between
-public|untracked and private memory flags as necessary.  Example:
-
-  Read(Bytes (FD_INT), &BufferMID (FD_INTRESULT), &BufferSize (FD_INTRESULT));
+If passing buffers, use FDF_SPAN.
 
 *********************************************************************************************************************/
 
@@ -468,15 +448,6 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
       else if (type & FD_PTR) {
          pos = align_arg_offset(pos);
          if (pos < 0) return log.warning(ERR::InvalidData);
-         if ((not (type & (FD_OBJECT|FD_RESULT))) and (Args[i+1].Type & FD_PTRSIZE)) {
-            int64_t memsize;
-            if (Args[i+1].Type & FD_INT64) memsize = *(int64_t *)(Parameters + pos + sizeof(APTR));
-            else memsize = *(int *)(Parameters + pos + sizeof(APTR));
-            if ((memsize < 0) or (size > max_copy_size) or (uint64_t(memsize) > max_copy_size - size)) {
-               return log.warning(ERR::InvalidData);
-            }
-            size += size_t(memsize);
-         }
          else if (not (type & (FD_OBJECT|FD_RESULT))) return log.warning(ERR::NoSupport);
          pos += sizeof(APTR);
       }
@@ -609,28 +580,6 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
             }
          }
          else if (type & FD_RESULT) *param = nullptr;
-         else if (Args[i+1].Type & FD_PTRSIZE) {
-            int64_t memsize;
-            if (Args[i+1].Type & FD_INT64) memsize = *(int64_t *)(Parameters + pos + sizeof(APTR));
-            else memsize = *(int *)(Parameters + pos + sizeof(APTR));
-            if (memsize > 0) {
-               if (type & FD_MUTABLE) { // Receive buffer
-                  auto insert = Buffer.data() + Buffer.size();
-                  *param = insert;
-                  Buffer.resize(Buffer.size() + memsize);
-               }
-               else { // Send buffer
-                  if (int8_t *src = *(int8_t **)(Parameters + pos)) {
-                     auto insert = Buffer.data() + Buffer.size();
-                     *param = insert;
-                     Buffer.resize(Buffer.size() + memsize);
-                     copymem(src, insert, memsize);
-                  }
-                  else *param = nullptr;
-               }
-            }
-            else *param = nullptr;
-         }
          pos += sizeof(APTR);
       }
       else {
@@ -698,9 +647,6 @@ ERR make_args_relative(const FunctionField *Args, int ArgsSize, int8_t *Buffer, 
       else if (type & FD_PTR) {
          pos = align_arg_offset(pos);
          if (pos < 0) return ERR::InvalidData;
-         if ((not (type & (FD_OBJECT|FD_RESULT))) and (Args[i+1].Type & FD_PTRSIZE)) {
-            if (auto ptr = (int8_t **)(Buffer + pos); *ptr) *ptr = (int8_t *)(*ptr - Buffer);
-         }
       }
       pos = argument_end_offset(Args[i], pos);
       if ((pos < 0) or (pos > ArgsSize)) return ERR::InvalidData;
@@ -751,9 +697,6 @@ ERR make_args_absolute(const FunctionField *Args, int ArgsSize, int8_t *Buffer, 
       else if (type & FD_PTR) {
          pos = align_arg_offset(pos);
          if (pos < 0) return ERR::InvalidData;
-         if ((not (type & (FD_OBJECT|FD_RESULT))) and (Args[i+1].Type & FD_PTRSIZE)) {
-            if (auto ptr = (int8_t **)(Buffer + pos); *ptr) *ptr = Buffer + (MAXINT)*ptr;
-         }
       }
       pos = argument_end_offset(Args[i], pos);
       if ((pos < 0) or (pos > ArgsSize)) return ERR::InvalidData;

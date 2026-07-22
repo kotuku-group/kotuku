@@ -920,14 +920,14 @@ static ERR COMPRESSION_CompressStream(extCompression *Self, struct cmp::Compress
 
          if (Args->Callback.isC()) {
             kt::SwitchContext context(Args->Callback.Context);
-            auto routine = (ERR (*)(extCompression *, APTR, int, APTR))Args->Callback.Routine;
-            error = routine(Self, output, len, Args->Callback.Meta);
+            auto routine = (ERR (*)(extCompression *, std::span<std::byte>, APTR))Args->Callback.Routine;
+            error = routine(Self, std::span<std::byte>((std::byte *)output, len), Args->Callback.Meta);
          }
          else if (Args->Callback.isScript()) {
+            std::span<std::byte> span((std::byte *)output, len);
             if (sc::Call(Args->Callback, std::to_array<ScriptArg>({
-                  { "Compression",  Self, FD_OBJECTPTR },
-                  { "Output",       output, FD_BUFFER },
-                  { "OutputLength", int64_t(len), FD_INT64|FD_BUFSIZE }
+                  { "Compression", Self,  FD_OBJECTPTR },
+                  { "Output",      &span, FDF_SPAN }
                }), error) != ERR::Okay) error = ERR::Function;
          }
          else {
@@ -1020,14 +1020,15 @@ static ERR COMPRESSION_CompressStreamEnd(extCompression *Self, struct cmp::Compr
 
       if (Args->Callback.isC()) {
          kt::SwitchContext context(Args->Callback.Context);
-         auto routine = (ERR (*)(extCompression *, APTR, int, APTR Meta))Args->Callback.Routine;
-         error = routine(Self, output, outputsize - Self->Deflate->avail_out, Args->Callback.Meta);
+         auto routine = (ERR (*)(extCompression *, std::span<std::byte>, APTR Meta))Args->Callback.Routine;
+         error = routine(Self, std::span<std::byte>((std::byte *)output, outputsize - Self->Deflate->avail_out),
+            Args->Callback.Meta);
       }
       else if (Args->Callback.isScript()) {
+         std::span<std::byte> span((std::byte *)output, outputsize - Self->Deflate->avail_out);
          if (sc::Call(Args->Callback, std::to_array<ScriptArg>({
-            { "Compression",  Self,   FD_OBJECTPTR },
-            { "Output",       output, FD_BUFFER },
-            { "OutputLength", int64_t(outputsize - Self->Deflate->avail_out), FD_INT64|FD_BUFSIZE }
+            { "Compression", Self,  FD_OBJECTPTR },
+            { "Output",      &span, FDF_SPAN }
          }), error) != ERR::Okay) error = ERR::Function;
       }
       else error = ERR::Okay;
@@ -1172,14 +1173,14 @@ static ERR COMPRESSION_DecompressStream(extCompression *Self, struct cmp::Decomp
       if (len > 0) {
          if (Args->Callback.isC()) {
             kt::SwitchContext context(Args->Callback.Context);
-            auto routine = (ERR (*)(extCompression *, APTR, int, APTR))Args->Callback.Routine;
-            error = routine(Self, output, len, Args->Callback.Meta);
+            auto routine = (ERR (*)(extCompression *, std::span<std::byte>, APTR))Args->Callback.Routine;
+            error = routine(Self, std::span<std::byte>((std::byte *)output, len), Args->Callback.Meta);
          }
          else if (Args->Callback.isScript()) {
+            std::span<std::byte> span((std::byte *)output, len);
             if (sc::Call(Args->Callback, std::to_array<ScriptArg>({
-               { "Compression",  Self,   FD_OBJECTPTR },
-               { "Output",       output, FD_BUFFER },
-               { "OutputLength", len,    FD_INT|FD_BUFSIZE }
+               { "Compression", Self,  FD_OBJECTPTR },
+               { "Output",      &span, FDF_SPAN }
             }), error) != ERR::Okay) error = ERR::Function;
          }
          else {
