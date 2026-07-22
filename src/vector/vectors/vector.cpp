@@ -2357,7 +2357,7 @@ static const FieldArray clVectorFields[] = {
    { "InnerJoin",    FD_INT|FD_LOOKUP|FDF_RW,   nullptr, VECTOR_SET_InnerJoin, &clVectorVIJ },
    { "GuideFlags",   FDF_INTFLAGS|FDF_RW,       nullptr, VECTOR_SET_GuideFlags, &clVectorVMF },
    // Virtual fields
-   { "DashArray",    FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FD_RW|FDF_PURE, VECTOR_GET_DashArray, VECTOR_SET_DashArray },
+   { "DashArray",    FDF_VIRTUAL|FDF_SPAN|FDF_DOUBLE|FD_RW|FDF_PURE, VECTOR_GET_DashArray, VECTOR_SET_DashArray },
    { "DisplayScale", FDF_VIRTUAL|FDF_DOUBLE|FDF_R,              VECTOR_GET_DisplayScale },
    { "Matrices",     FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_R|FDF_PURE, VECTOR_GET_Matrices, nullptr, "VectorMatrix" },
    { "ResizeEvent",  FDF_VIRTUAL|FDF_FUNCTION|FDF_W,            nullptr, VECTOR_SET_ResizeEvent },

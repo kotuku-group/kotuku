@@ -918,7 +918,7 @@ class objBitmap : public Object {
 
    inline ERR setData(std::span<const uint8_t> Value) noexcept {
       auto field = &this->Class->Dictionary[27];
-      return field->WriteValue(this, field, 0x01001500, &Value);
+      return field->WriteValue(this, field, 0x01081500, &Value);
    }
 
    inline ERR setWidth(const int Value) noexcept {
@@ -1412,7 +1412,7 @@ class objDisplay : public Object {
 
    inline ERR setGamma(std::span<const double> Value) noexcept {
       auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(this, field, 0x80101508, &Value);
+      return field->WriteValue(this, field, 0x80181508, &Value);
    }
 
    inline ERR setHDensity(const int Value) noexcept {
