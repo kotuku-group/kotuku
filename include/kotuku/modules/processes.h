@@ -62,7 +62,7 @@ class objTask : public Object {
    std::string Location;                  // Location of an executable file to launch.
    std::string Path;                      // The current working folder of the active process.
    std::string ProcessPath;               // The path of the executable that is associated with the task.
-   double TimeOut;                        // Limits the amount of time to wait for a launched process to return.
+   double Timeout;                        // Limits the amount of time to wait for a launched process to return.
    kt::vector<std::string> Parameters;    // Command line arguments (list format).
    TSF    Flags;                          // Optional flags.
    int    ReturnCode;                     // The task's return code can be retrieved following execution.
@@ -152,8 +152,8 @@ class objTask : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getTimeOut(double &Value) noexcept {
-      Value = this->TimeOut;
+   inline ERR getTimeout(double &Value) noexcept {
+      Value = this->Timeout;
       return ERR::Okay;
    }
 
@@ -169,7 +169,7 @@ class objTask : public Object {
    }
 
    inline ERR getReturnCode(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -182,18 +182,18 @@ class objTask : public Object {
    }
 
    inline ERR getActions(std::span<struct ActionEntry> &Value) noexcept {
-      auto field = &this->Class->Dictionary[8];
+      auto field = &this->Class->Dictionary[9];
       auto get_field = (ERR (*)(APTR, std::span<struct ActionEntry> &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getAffinityMask(int64_t &Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
+      auto field = &this->Class->Dictionary[6];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getKeys(std::span<std::string> &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[23];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, std::span<std::string> &))field->GetValue;
       auto error = get_field(this, Value);
@@ -202,31 +202,31 @@ class objTask : public Object {
    }
 
    inline ERR getErrorCallback(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getExitCallback(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
+      auto field = &this->Class->Dictionary[8];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getInputCallback(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
+      auto field = &this->Class->Dictionary[15];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getOutputCallback(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
+      auto field = &this->Class->Dictionary[4];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getPriority(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
+      auto field = &this->Class->Dictionary[7];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -247,17 +247,17 @@ class objTask : public Object {
    }
 
    inline ERR setLocation(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
    inline ERR setPath(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[9];
+      auto field = &this->Class->Dictionary[10];
       return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
-   inline ERR setTimeOut(const double Value) noexcept {
-      this->TimeOut = Value;
+   inline ERR setTimeout(const double Value) noexcept {
+      this->Timeout = Value;
       return ERR::Okay;
    }
 
@@ -273,7 +273,7 @@ class objTask : public Object {
    }
 
    inline ERR setReturnCode(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -284,37 +284,37 @@ class objTask : public Object {
    }
 
    inline ERR setAffinityMask(const int64_t Value) noexcept {
-      auto field = &this->Class->Dictionary[5];
+      auto field = &this->Class->Dictionary[6];
       return field->WriteValue(this, field, FD_INT64, &Value);
    }
 
    inline ERR setArgs(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
+      auto field = &this->Class->Dictionary[14];
       return field->WriteValue(this, field, 0x00804208, &Value);
    }
 
    inline ERR setErrorCallback(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setExitCallback(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
+      auto field = &this->Class->Dictionary[8];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setInputCallback(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
+      auto field = &this->Class->Dictionary[15];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setOutputCallback(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[3];
+      auto field = &this->Class->Dictionary[4];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setPriority(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[6];
+      auto field = &this->Class->Dictionary[7];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 

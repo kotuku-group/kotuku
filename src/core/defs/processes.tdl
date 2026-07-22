@@ -35,7 +35,7 @@ header({ module="Core", copyright="Paul Manias © 1996-2026", timestamp=20240611
     string Location
     string Path
     string ProcessPath
-    double TimeOut
+    double Timeout
     vector(string) Parameters
     int(TSF) Flags
     int ReturnCode

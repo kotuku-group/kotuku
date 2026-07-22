@@ -299,7 +299,7 @@ Examples:
          space = cmd:find(' ')
          exec_opts = {
             flags = TSF_WAIT,
-            timeOut = 10,
+            timeout = 10,
             outputCallback = function(Task, Buffer)
                print(Buffer:getString())
             end
