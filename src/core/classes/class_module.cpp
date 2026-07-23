@@ -318,7 +318,9 @@ static ERR MODULE_Init(extModule *Self)
          root->Flags   = table->Flags;
 
          if (auto structs = table->StructDefs) {
-            for (auto &s : structs[0]) glStructSizes[kt::strhash(s.first)] = s.second;
+            for (auto &s : structs[0]) {
+               glStructSizes[kt::strhash(s.first)] = { s.second.Size, s.second.Alignment, s.first };
+            }
          }
       }
 

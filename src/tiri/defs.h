@@ -420,6 +420,7 @@ extern ERR delayed_msg_handler(APTR Meta, int MsgID, int MsgType, APTR Message, 
 extern int object_index(lua_State *);
 extern int object_newindex(lua_State *);
 GCstruct * push_struct(extTiri *, APTR, std::string_view, bool, bool, OBJECTPTR Lifecycle = nullptr);
+GCstruct * push_struct(extTiri *, APTR, uint32_t, bool, bool, OBJECTPTR Lifecycle = nullptr);
 extern void register_io_class(lua_State *);
 extern void register_input_class(lua_State *);
 extern void register_module_class(lua_State *);

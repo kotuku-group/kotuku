@@ -92,7 +92,8 @@ std::unordered_map<OBJECTID, int> glAsyncObjectThreads;
 // metaclass can position FD_STRUCT fields at the offsets the compiler actually uses (alignment cannot be
 // derived from size alone).
 
-#define REG_STRUCT(name) { kt::strhash(#name), { uint16_t(sizeof(name)), uint16_t(alignof(name)) } }
+#define REG_STRUCT(name) \
+   { kt::strhash(#name), { uint16_t(sizeof(name)), uint16_t(alignof(name)), #name } }
 
 ankerl::unordered_dense::map<uint32_t, StructInfo> glStructSizes = {
    REG_STRUCT(ActionArray),
@@ -118,7 +119,8 @@ ankerl::unordered_dense::map<uint32_t, StructInfo> glStructSizes = {
    REG_STRUCT(InputEvent),
    REG_STRUCT(Message),
    REG_STRUCT(MethodEntry),
-   { kt::strhash("ModHeader"), { uint16_t(sizeof(struct ModHeader)), uint16_t(alignof(struct ModHeader)) } },
+   { kt::strhash("ModHeader"),
+      { uint16_t(sizeof(struct ModHeader)), uint16_t(alignof(struct ModHeader)), "ModHeader" } },
    REG_STRUCT(MsgHandler),
    REG_STRUCT(ObjectSignal),
    REG_STRUCT(RGB16),

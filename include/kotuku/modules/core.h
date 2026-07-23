@@ -25,6 +25,10 @@
 #include <sstream>
 #include <cmath>
 #include <type_traits>
+#ifndef STRINGS_HPP
+#include <kotuku/strings.hpp>
+#endif
+
 #include "ankerl/unordered_dense.h"
 #endif
 
@@ -1157,6 +1161,7 @@ typedef AC ACTIONID;
 struct StructInfo {
    uint16_t Size;       // Byte size of the structure (sizeof)
    uint16_t Alignment;  // Alignment requirement of the structure (alignof)
+   std::string Name;     // Readable structure name
 };
 
 using LOG_CALLBACK = void(*)(CSTRING Header, CSTRING Message, int Depth, int MsgLevel, int LogLevel);
@@ -1237,9 +1242,18 @@ struct FieldArray {
    APTR     SetField; // ERR SetField(*Object, APTR Value);
    int64_t  Arg;    // Can be a pointer or an integer value
    uint32_t Flags;  // Special flags that describe the field
-  template <class G = APTR, class S = APTR, class T = MAXINT> FieldArray(CSTRING pName, uint32_t pFlags, G pGetField = nullptr, S pSetField = nullptr, T pArg = 0) :
-     Name(pName), GetField((APTR)pGetField), SetField((APTR)pSetField), Arg((MAXINT)pArg), Flags(pFlags)
-     { }
+   template <class T> static int64_t encode_arg(uint32_t Flags, T Arg) {
+      if constexpr (std::is_convertible_v<T, CSTRING>) {
+         if ((Flags & FD_STRUCT) and CSTRING(Arg)) return int64_t(uint32_t(kt::strhash(CSTRING(Arg))));
+      }
+      return int64_t((MAXINT)Arg);
+   }
+
+   template <class G = APTR, class S = APTR, class T = MAXINT>
+   FieldArray(CSTRING FieldName, uint32_t FieldFlags, G GetFieldFn = nullptr, S SetFieldFn = nullptr,
+      T FieldArg = 0) :
+      Name(FieldName), GetField((APTR)GetFieldFn), SetField((APTR)SetFieldFn),
+      Arg(encode_arg(FieldFlags, FieldArg)), Flags(FieldFlags) { }
 };
 
 struct FieldDef {

@@ -7,7 +7,8 @@ module({ name="Core", copyright="Paul Manias 1996-2026", timestamp=20241015,
   } }, function()
   c_include("<stdarg.h>", "<inttypes.h>", "<string.h>", "<stdlib.h>")
   cpp_include("<list>", "<map>", "<string>", "<set>", "<vector>", "<unordered_map>", "<bit>", "<atomic>",
-     "<array>", "<charconv>", "<sstream>", "<cmath>", "<type_traits>", "ankerl/unordered_dense.h")
+     "<array>", "<charconv>", "<sstream>", "<cmath>", "<type_traits>", "<kotuku/strings.hpp>",
+     "ankerl/unordered_dense.h")
 
   privateNames({ "CoreBase", "DateTime", "ResourceManager" })
 
@@ -398,6 +399,7 @@ typedef AC ACTIONID;
 struct StructInfo {
    uint16_t Size;       // Byte size of the structure (sizeof)
    uint16_t Alignment;  // Alignment requirement of the structure (alignof)
+   std::string Name;     // Readable structure name
 };
 
 using LOG_CALLBACK = void(*)(CSTRING Header, CSTRING Message, int Depth, int MsgLevel, int LogLevel);
@@ -485,9 +487,18 @@ class objTask;
     uint  Flags     # Special flags that describe the field
   ]],
   [[
-  template <class G = APTR, class S = APTR, class T = MAXINT> FieldArray(CSTRING pName, uint32_t pFlags, G pGetField = nullptr, S pSetField = nullptr, T pArg = 0) :
-     Name(pName), GetField((APTR)pGetField), SetField((APTR)pSetField), Arg((MAXINT)pArg), Flags(pFlags)
-     { }
+   template <class T> static int64_t encode_arg(uint32_t Flags, T Arg) {
+      if constexpr (std::is_convertible_v<T, CSTRING>) {
+         if ((Flags & FD_STRUCT) and CSTRING(Arg)) return int64_t(uint32_t(kt::strhash(CSTRING(Arg))));
+      }
+      return int64_t((MAXINT)Arg);
+   }
+
+   template <class G = APTR, class S = APTR, class T = MAXINT>
+   FieldArray(CSTRING FieldName, uint32_t FieldFlags, G GetFieldFn = nullptr, S SetFieldFn = nullptr,
+      T FieldArg = 0) :
+      Name(FieldName), GetField((APTR)GetFieldFn), SetField((APTR)SetFieldFn),
+      Arg(encode_arg(FieldFlags, FieldArg)), Flags(FieldFlags) { }
   ]])
 
   structdef("FieldDef", { comment="Used to define constants for field references." }, [[

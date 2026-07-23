@@ -113,8 +113,11 @@ static const FieldDef CategoryTable[] = {
 static const std::vector<Field> glMetaFieldsPreset = {
    // If you adjust this table, remember to adjust the index numbers and the byte offsets into the structure.
    { 0, nullptr, nullptr, writeval_default, "ClassVersion",    strhash("classVersion"), glMetaClassVersionOffset, 0, FDF_DOUBLE|FDF_RI },
-   { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_Fields, (ERR (*)(APTR, APTR))SET_Fields, writeval_default, "Fields", strhash("fields"), glMetaFieldsOffset, 1, FDF_ARRAY|FD_STRUCT|FDF_RI },
-   { MAXINT("Field"),      (ERR (*)(APTR, APTR))GET_Dictionary, nullptr, writeval_default, "Dictionary", strhash("dictionary"), glMetaDictionaryOffset, 2, FDF_ARRAY|FD_STRUCT|FDF_R },
+   { int64_t(uint32_t(strhash("FieldArray"))), (ERR (*)(APTR, APTR))GET_Fields,
+      (ERR (*)(APTR, APTR))SET_Fields, writeval_default, "Fields", strhash("fields"), glMetaFieldsOffset, 1,
+      FDF_ARRAY|FD_STRUCT|FDF_RI },
+   { int64_t(uint32_t(strhash("Field"))), (ERR (*)(APTR, APTR))GET_Dictionary, nullptr, writeval_default,
+      "Dictionary", strhash("dictionary"), glMetaDictionaryOffset, 2, FDF_ARRAY|FD_STRUCT|FDF_R },
    { 0, nullptr, nullptr, writeval_default, "ClassName",       strhash("className"),       glMetaClassNameOffset,        3,  FDF_CPPSTRING|FDF_RI|FDF_PURE },
    { 0, nullptr, nullptr, writeval_default, "FileExtension",   strhash("fileExtension"),   glMetaFileExtensionOffset,    4,  FDF_CPPSTRING|FDF_RI|FDF_PURE },
    { 0, nullptr, nullptr, writeval_default, "FileDescription", strhash("fileDescription"), glMetaFileDescriptionOffset,  5,  FDF_CPPSTRING|FDF_RI|FDF_PURE },
@@ -129,14 +132,17 @@ static const std::vector<Field> glMetaFieldsPreset = {
    { MAXINT(&CategoryTable), nullptr, nullptr, writeval_default, "Category",  strhash("category"), glMetaCategoryOffset, 14, FDF_INT|FDF_LOOKUP|FDF_RI },
    { 0, nullptr, nullptr, writeval_default, "PublicSize",      strhash("publicSize"),      glMetaPublicSizeOffset,       15, FDF_INT|FDF_RI },
    // Virtual fields
-   { MAXINT("MethodEntry"), (ERR (*)(APTR, APTR))GET_Methods, (ERR (*)(APTR, APTR))SET_Methods, writeval_default, "Methods", strhash("methods"), sizeof(Object), 16, FDF_ARRAY|FD_STRUCT|FDF_RI },
+   { int64_t(uint32_t(strhash("MethodEntry"))), (ERR (*)(APTR, APTR))GET_Methods,
+      (ERR (*)(APTR, APTR))SET_Methods, writeval_default, "Methods", strhash("methods"), sizeof(Object), 16,
+      FDF_ARRAY|FD_STRUCT|FDF_RI },
    { 0, nullptr, (ERR (*)(APTR, APTR))SET_Actions, writeval_default,  "Actions",           strhash("actions"),         sizeof(Object), 17, FDF_POINTER|FDF_I },
    { 0, (ERR (*)(APTR, APTR))GET_ActionTable, 0,  writeval_default,   "ActionTable",       strhash("actionTable"),     sizeof(Object), 18, FDF_ARRAY|FDF_POINTER|FDF_R },
    { 0, (ERR (*)(APTR, APTR))GET_Location, 0,     writeval_default,   "Location",          strhash("location"),        sizeof(Object), 19, FDF_CPPSTRING|FDF_R|FDF_PURE },
    { 0, (ERR (*)(APTR, APTR))GET_ClassName, (ERR (*)(APTR, APTR))SET_ClassName, writeval_default, "Name", strhash("name"), sizeof(Object), 20, FDF_CPPSTRING|FDF_SYSTEM|FDF_RI|FDF_PURE },
    { 0, (ERR (*)(APTR, APTR))GET_Module, 0,       writeval_default,   "Module",            strhash("module"),          sizeof(Object), 21, FDF_CPPSTRING|FDF_R },
    { MAXINT(CLASSID::METACLASS), (ERR (*)(APTR, APTR))GET_SubClasses, nullptr, writeval_default, "SubClasses", strhash("subClasses"), sizeof(Object), 22, FDF_ARRAY|FD_OBJECT|FDF_R },
-   { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_SubFields, 0, writeval_default, "SubFields", strhash("subFields"), sizeof(Object), 23, FDF_ARRAY|FD_STRUCT|FDF_SYSTEM|FDF_R },
+   { int64_t(uint32_t(strhash("FieldArray"))), (ERR (*)(APTR, APTR))GET_SubFields, 0, writeval_default,
+      "SubFields", strhash("subFields"), sizeof(Object), 23, FDF_ARRAY|FD_STRUCT|FDF_SYSTEM|FDF_R },
    { MAXINT(CLASSID::ROOTMODULE), (ERR (*)(APTR, APTR))GET_RootModule, 0, writeval_default, "RootModule", strhash("rootModule"), sizeof(Object), 24, FDF_OBJECT|FDF_R },
    { 0, (ERR (*)(APTR, APTR))OBJECT_GetID, 0,     writeval_default,   "ID",                strhash("id"),              sizeof(Object), 25, FDF_INT|FDF_SYSTEM|FDF_R },
    { 0, 0, 0, nullptr, "", 0, 0, 0,  0 }
@@ -1230,17 +1236,16 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
    }
    else if (field.Flags & FD_STRUCT) {
       if (field.Arg) {
-         CSTRING struct_name = CSTRING(field.Arg);
-         if (struct_name) {
-            auto struct_hash = kt::strhash(struct_name);
-            if (auto it = glStructSizes.find(struct_hash); it != glStructSizes.end()) {
-               field_size      = it->second.Size;
-               field_alignment = it->second.Alignment;
-               field_type      = struct_name;
-            }
-            else log.warning("%s.%s field refers to unknown struct name '%s'.", Class->ClassName.c_str(), field.Name, CSTRING(field.Arg));
+         auto struct_hash = uint32_t(field.Arg);
+         if (auto it = glStructSizes.find(struct_hash); it != glStructSizes.end()) {
+            field_size      = it->second.Size;
+            field_alignment = it->second.Alignment;
+            field_type      = it->second.Name.c_str();
          }
-         else log.warning("%s.%s field requires a struct name reference.", Class->ClassName.c_str(), field.Name);
+         else {
+            log.warning("%s.%s field refers to unknown struct hash $%.8x.", Class->ClassName.c_str(), field.Name,
+               struct_hash);
+         }
       }
       else log.warning("%s.%s field requires a struct name.", Class->ClassName.c_str(), field.Name);
    }
