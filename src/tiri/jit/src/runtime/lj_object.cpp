@@ -29,14 +29,12 @@ const std::string field_typename(const Field &Field)
    else if (Field.Flags & FD_OBJECT)   result = "object";
    else if (Field.Flags & FD_UNIT)     result = "unit";
    else if (Field.Flags & FD_FUNCTION) result = "function";
-   esle if (Field.Flags & FD_POINTER)  return = "pointer";
+   else if (Field.Flags & FD_POINTER)  result = "pointer";
    else return "unknown";
 
    if (Field.Flags & FD_UNSIGNED) result = "u" + result;
    if (Field.Flags & FD_ARRAY)    result = "array<" + result + ">";
-   if (Field.Flags & FD_POINTER) {
-      result += "*";
-   }
+   if (Field.Flags & FD_POINTER)  result += "*";
    return result;
 }
 
