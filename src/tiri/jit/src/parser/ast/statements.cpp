@@ -455,7 +455,8 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
                std::format("Unknown array element type '{}'", element_name));
          }
 
-         field.Type |= FD_CPP|FD_ARRAY;
+         field.Type |= FD_VECTOR;
+         if (field.Type & FD_STRING) field.Type |= FD_CPP;
          field.ArraySize = 1;
          type_display = std::format("array<{}>", element_name);
       }

@@ -84,7 +84,7 @@ template <typename T> static void copy_array_to_vector(APTR Address, GCarray *So
 
 static void write_array_field(lua_State *L, APTR Address, const struct_field &Field, int StackIndex, CSTRING FieldName)
 {
-   if ((Field.Type & FD_CUSTOM) and (Field.Type & FD_BYTE) and (not (Field.Type & FD_CPP)) and
+   if ((Field.Type & FD_CUSTOM) and (Field.Type & FD_BYTE) and (not (Field.Type & FD_VECTOR)) and
          lua_isstring(L, StackIndex)) {
       size_t length = 0;
       auto source = lua_tolstring(L, StackIndex, &length);
@@ -101,7 +101,7 @@ static void write_array_field(lua_State *L, APTR Address, const struct_field &Fi
    auto source = lua_toarray(L, StackIndex);
    auto expected_type = ff_to_aet(Field.Type);
 
-   if ((Field.Type & FD_CPP) and (Field.Type & FD_STRUCT) and (not (Field.Type & FD_PTR))) {
+   if ((Field.Type & FD_VECTOR) and (Field.Type & FD_STRUCT) and (not (Field.Type & FD_PTR))) {
       if (not Field.TrivialElements) {
          luaL_error(L, ERR::NoSupport, "Array field '%s' has a non-trivial legacy struct element type.", FieldName);
       }
@@ -144,7 +144,7 @@ static void write_array_field(lua_State *L, APTR Address, const struct_field &Fi
       luaL_error(L, ERR::NoSupport, "Raw C string array field '%s' does not support assignment.", FieldName);
    }
 
-   if ((Field.Type & FD_STRING) and (Field.Type & FD_CPP)) {
+   if ((Field.Type & FD_STRING) and (Field.Type & FD_VECTOR)) {
       if ((source->elemtype != AET::STR_GC) and (source->elemtype != AET::CSTR) and
             (source->elemtype != AET::STR_CPP)) {
          luaL_error(L, ERR::InvalidType, "Array field '%s' requires string elements.", FieldName);
@@ -167,7 +167,7 @@ static void write_array_field(lua_State *L, APTR Address, const struct_field &Fi
       luaL_error(L, ERR::InvalidType, "Array field '%s' has an incompatible element type.", FieldName);
    }
 
-   if (Field.Type & FD_CPP) {
+   if (Field.Type & FD_VECTOR) {
       if (Field.Type & FD_FLOAT) copy_array_to_vector<float>(Address, source);
       else if (Field.Type & FD_DOUBLE) copy_array_to_vector<double>(Address, source);
       else if (Field.Type & FD_INT64) copy_array_to_vector<int64_t>(Address, source);
@@ -197,12 +197,12 @@ static void write_field(lua_State *L, APTR Address, const struct_field &Field, i
       ((APTR *)Address)[0] = lua_touserdata(L, StackIndex);
       return;
    }
-   else if (Field.Type & FD_ARRAY) {
+   else if (Field.Type & (FD_ARRAY|FD_VECTOR)) {
       write_array_field(L, Address, Field, StackIndex, FieldName);
       return;
    }
    else if (Field.Type & FD_STRING) {
-      if ((Field.Type & FD_CPP) and (not (Field.Type & FD_ARRAY))) {
+      if ((Field.Type & FD_CPP) and (not (Field.Type & FD_VECTOR))) {
          size_t length;
          auto value = luaL_checklstring(L, StackIndex, &length);
          ((std::string *)Address)[0].assign(value, length);
@@ -245,11 +245,11 @@ static void write_field(lua_State *L, APTR Address, const struct_field &Field, i
 static bool struct_has_unsupported_cpp_arrays(lua_State *L, const struct_record &Def)
 {
    for (auto &field : Def.Fields) {
-      if ((field.Type & FD_CPP) and (field.Type & FD_ARRAY) and
+      if ((field.Type & FD_VECTOR) and
             (not (field.Type & (FD_STRUCT|FD_STRING|FD_FLOAT|FD_DOUBLE|FD_INT64|FD_INT|FD_WORD|FD_BYTE)))) return true;
-      if ((field.Type & FD_CPP) and (field.Type & FD_ARRAY) and (field.Type & FD_STRUCT) and
+      if ((field.Type & FD_VECTOR) and (field.Type & FD_STRUCT) and
             (not field.TrivialElements)) return true;
-      if ((field.Type & FD_STRUCT) and (not (field.Type & FD_PTR)) and (not (field.Type & FD_CPP)) and
+      if ((field.Type & FD_STRUCT) and (not (field.Type & FD_PTR)) and (not (field.Type & FD_VECTOR)) and
             (field.StructRef != 0)) {
          if (auto child = field.StructDefinition ? field.StructDefinition :
                find_struct_reference(L, Def, field.StructRef)) {
@@ -265,7 +265,7 @@ static void copy_cpp_fields(lua_State *L, const struct_record &Def, APTR Dest, C
    for (auto &field : Def.Fields) {
       auto dest = (int8_t *)Dest + field.Offset;
       auto source = (const int8_t *)Source + field.Offset;
-      if ((field.Type & FD_CPP) and (field.Type & FD_ARRAY)) {
+      if (field.Type & FD_VECTOR) {
          if ((field.Type & FD_STRUCT) and (not (field.Type & FD_PTR))) {
             copy_trivial_struct_vector(dest, source, field.ElementStride);
          }
@@ -485,7 +485,7 @@ void lj_struct_getfield_core(lua_State *L, GCstruct *Struct, struct_field &Field
       field_def = find_struct_reference(L, *Struct->def, Field.StructRef);
    }
 
-   if ((Field.Type & FD_CPP) and (Field.Type & FD_ARRAY) and (Field.StructRef != 0) and
+   if ((Field.Type & FD_VECTOR) and (Field.StructRef != 0) and
          (not (Field.Type & FD_PTR))) {
       if (not field_def) {
          luaL_error(L, ERR::Search, "Failed to find struct referenced by field '%s'.", Field.Name.c_str());
@@ -498,8 +498,8 @@ void lj_struct_getfield_core(lua_State *L, GCstruct *Struct, struct_field &Field
          if (not field_def) {
             luaL_error(L, ERR::Search, "Failed to find struct referenced by field '%s'.", Field.Name.c_str());
          }
-         if (Field.Type & FD_ARRAY) {
-            if (Field.Type & FD_CPP) {
+         if (Field.Type & (FD_ARRAY|FD_VECTOR)) {
+            if (Field.Type & FD_VECTOR) {
                // A vector of struct pointers - kt::vector<StructName *>
                auto vector = (kt::vector<int> *)Address;
                lua_createarray(L, vector->size(), ff_to_element(Field.Type), (APTR *)vector->data(), ARRAY_CACHED,
@@ -515,11 +515,11 @@ void lj_struct_getfield_core(lua_State *L, GCstruct *Struct, struct_field &Field
       }
       else lua_pushnil(L);
    }
-   else if ((Field.Type & FD_STRUCT) and (Field.Type & FD_ARRAY)) {
+   else if ((Field.Type & FD_STRUCT) and (Field.Type & (FD_ARRAY|FD_VECTOR))) {
       if (not field_def) {
          luaL_error(L, ERR::Search, "Failed to find struct referenced by field '%s'.", Field.Name.c_str());
       }
-      if (Field.Type & FD_CPP) {
+      if (Field.Type & FD_VECTOR) {
          make_struct_array(L, field_def->Name, int(trivial_struct_vector_size(Address)),
             trivial_struct_vector_data(Address), Field.ElementStride, field_def);
       }
@@ -531,7 +531,7 @@ void lj_struct_getfield_core(lua_State *L, GCstruct *Struct, struct_field &Field
       }
       else lua_pushnil(L);
    }
-   else if ((Field.Type & FD_CPP) and (Field.Type & FD_ARRAY) and (not (Field.Type & FD_STRING))) {
+   else if ((Field.Type & FD_VECTOR) and (not (Field.Type & FD_STRING))) {
       if (Field.Type & FD_FLOAT) push_vector_array<float>(L, Address, AET::FLOAT);
       else if (Field.Type & FD_DOUBLE) push_vector_array<double>(L, Address, AET::DOUBLE);
       else if (Field.Type & FD_INT64) push_vector_array<int64_t>(L, Address, AET::INT64);
@@ -556,8 +556,8 @@ void lj_struct_getfield_core(lua_State *L, GCstruct *Struct, struct_field &Field
       }
    }
    else if (Field.Type & FD_STRING) {
-      if (Field.Type & FD_ARRAY) {
-         if (Field.Type & FD_CPP) {
+      if (Field.Type & (FD_ARRAY|FD_VECTOR)) {
+         if (Field.Type & FD_VECTOR) {
             auto vector = (kt::vector<std::string> *)Address;
             lua_createarray(L, vector->size(), AET::STR_CPP, vector, ARRAY_CACHED);
          }

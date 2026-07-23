@@ -2896,7 +2896,7 @@ static TRef rec_object_get(jit_State *J, RecordOps *ops)
    if (field_type < 0) lj_trace_err(J, LJ_TRERR_BADTYPE);  // Unknown field type (could be a action/method) - abort recording
 
    if (field_offset and obj->is_pinned()) {
-      constexpr uint32_t unsupported = FD_ARRAY|FD_STRUCT|FD_UNSIGNED|FD_CPP;
+      constexpr uint32_t unsupported = FD_ARRAY|FD_VECTOR|FD_STRUCT|FD_UNSIGNED|FD_CPP;
       if (not (field_flags & unsupported)) {
          TRef ptr_ref;
          rec_object_liveness_guard(J, obj_ref, ptr_ref);
@@ -2973,7 +2973,7 @@ static TRef rec_object_set(jit_State *J, RecordOps *ops)
    int field_type = ir_object_field_type_write(obj, key, field_offset, field_flags);
 
    if (field_type >= 0 and field_offset and obj->is_pinned()) {
-      constexpr uint32_t unsupported = FD_ARRAY|FD_STRUCT|FD_UNSIGNED|FD_CPP;
+      constexpr uint32_t unsupported = FD_ARRAY|FD_VECTOR|FD_STRUCT|FD_UNSIGNED|FD_CPP;
       if (not (field_flags & unsupported)) {
          constexpr uint32_t supported_numeric = FD_DOUBLE|FD_INT64|FD_INT;
          if ((field_flags & supported_numeric) and not (field_flags & FD_POINTER) and tref_isnumber(val_ref)) {
@@ -3046,7 +3046,7 @@ static TRef rec_struct_payload_guard(jit_State *J, TRef StructRef, GCstruct *Val
 static bool rec_struct_scalar_field(uint32_t FieldFlags)
 {
    constexpr uint32_t supported = FD_FLOAT|FD_DOUBLE|FD_INT64|FD_INT|FD_WORD|FD_BYTE;
-   constexpr uint32_t unsupported = FD_ARRAY|FD_STRUCT|FD_POINTER|FD_STRING|FD_OBJECT|FD_FUNCTION|FD_CPP;
+   constexpr uint32_t unsupported = FD_ARRAY|FD_VECTOR|FD_STRUCT|FD_POINTER|FD_STRING|FD_OBJECT|FD_FUNCTION|FD_CPP;
    if (FieldFlags & unsupported) return false;
    if ((FieldFlags & FD_UNSIGNED) and not (FieldFlags & (FD_WORD|FD_BYTE))) return false;
    return (FieldFlags & supported) != 0;

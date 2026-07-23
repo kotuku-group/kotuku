@@ -45,6 +45,10 @@ struct DeclaredNonTrivialVectorElement
    Name: string
 end
 
+struct DeclaredVectorOwner
+   Values: array<int>
+end
+
 function declared_user_age(Value: struct<DeclaredUser>):num
    return Value.Age
 end
@@ -289,6 +293,16 @@ end
       struct.new('LegacyBadOwnedElementVector').values = array<table> { { name='unsafe' } }
    success
       error('Legacy non-trivial struct vectors should reject type-erased assignment')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructArrayRejectsVectorFields()
+   try
+      local values = array<struct<DeclaredVectorOwner>, 1>
+   success
+      error('Owned struct arrays should reject element layouts containing vectors')
    end
 end
 

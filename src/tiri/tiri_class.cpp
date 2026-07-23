@@ -827,7 +827,7 @@ static ERR run_script(extTiri *Self)
                   if (span) lua_createarray(Self->Lua, span->size(), AET::BYTE, span->data(), ARRAY_EXTERNAL);
                   else lua_pushnil(Self->Lua);
                }
-               else if (type & FD_ARRAY) {
+               else if (type & (FD_ARRAY|FD_VECTOR)) {
                   log.trace("Setting arg '%s', Array: %p", args->Name, args->Address);
 
                   APTR values = args->Address;
@@ -1038,7 +1038,7 @@ static ERR GET_Procedures(extTiri *, std::span<std::string> &);
 
 static const FieldArray clFields[] = {
    { "JitOptions", FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, GET_JitOptions, SET_JitOptions, &clTiriJOF },
-   { "Procedures", FDF_VIRTUAL|FDF_ARRAY|FDF_CPPSTRING|FDF_R, GET_Procedures },
+   { "Procedures", FDF_VIRTUAL|FDF_VECTOR|FDF_CPPSTRING|FDF_R, GET_Procedures },
    END_FIELD
 };
 

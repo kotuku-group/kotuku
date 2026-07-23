@@ -122,63 +122,63 @@ global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
       else
          Def.type = 'APTR'
       end
+   elseif Type has FD_VECTOR then
+      if Type has FD_BYTE then
+         Def.innerType = 'int8_t'
+      elseif Type has FD_WORD then
+         Def.innerType = 'int16_t'
+      elseif Type has FD_INT then
+         Def.innerType = 'int'
+      elseif Type has FD_INT64 then
+         Def.innerType = 'int64_t'
+      elseif Type has FD_FLOAT then
+         Def.innerType = 'float'
+      elseif Type has FD_DOUBLE then
+         Def.innerType = 'double'
+      elseif Type has FD_STRING then
+         Def.innerType = 'std::string'
+      elseif Type has FD_POINTER then
+         Def.innerType = 'APTR'
+      elseif Type has FD_STRUCT then
+         Def.innerType = fieldStructType(Option)
+      else
+         Def.innerType = 'UNDEFINED'
+      end
+      Def.type = f'kt::vector<{Def.innerType}>'
    elseif Type has FD_ARRAY then
       -- All arrays are pointers, with additional information indicating the type of values in the array.
 
-      if Type has FD_CPP then
-         if Type has FD_BYTE then
-            Def.innerType = 'int8_t'
-         elseif Type has FD_WORD then
-            Def.innerType = 'int16_t'
-         elseif Type has FD_INT then
-            Def.innerType = 'int'
-         elseif Type has FD_FLOAT then
-            Def.innerType = 'float'
-         elseif Type has FD_DOUBLE then
-            Def.innerType = 'double'
-         elseif Type has FD_STRING then
-            Def.innerType = 'std::string'
-         elseif Type has FD_POINTER then
-            Def.innerType = 'APTR'
-         elseif Type has FD_STRUCT then
-            Def.innerType = fieldStructType(Option)
-         else
-            Def.innerType = 'UNDEFINED'
-         end
-         Def.type = f'kt::vector<{Def.innerType}>'
+      if Type has FD_BYTE then
+         Def.type = 'int8_t'
+         Def.doc_type = 'INT8 []'
+      elseif Type has FD_WORD then
+         Def.type = 'int16_t'
+         Def.doc_type = 'INT16 []'
+      elseif Type has FD_INT then
+         Def.type = 'int'
+         Def.doc_type = 'INT []'
+      elseif Type has FD_FLOAT then
+         Def.type = 'float'
+         Def.doc_type = 'FLOAT []'
+      elseif Type has FD_DOUBLE then
+         Def.type = 'double'
+         Def.doc_type = 'DOUBLE []'
+      elseif Type has FD_STRING then
+         Def.type = 'STRING'
+         Def.doc_type = 'STRING []'
+      elseif Type has FD_POINTER then
+         Def.type = 'APTR'
+         Def.doc_type = 'APTR []'
+      elseif Type has FD_STRUCT then
+         Def.type = fieldStructType(Option) .. ''
+      elseif Type has FD_OBJECT then
+         Def.type = 'OBJECTPTR'
+         Def.doc_type = 'OBJECTPTR []'
+      elseif Type has FD_UNIT then
+         Def.type = 'Unit'
+         Def.doc_type = 'Unit []'
       else
-         if Type has FD_BYTE then
-            Def.type = 'int8_t'
-            Def.doc_type = 'INT8 []'
-         elseif Type has FD_WORD then
-            Def.type = 'int16_t'
-            Def.doc_type = 'INT16 []'
-         elseif Type has FD_INT then
-            Def.type = 'int'
-            Def.doc_type = 'INT []'
-         elseif Type has FD_FLOAT then
-            Def.type = 'float'
-            Def.doc_type = 'FLOAT []'
-         elseif Type has FD_DOUBLE then
-            Def.type = 'double'
-            Def.doc_type = 'DOUBLE []'
-         elseif Type has FD_STRING then
-            Def.type = 'STRING'
-            Def.doc_type = 'STRING []'
-         elseif Type has FD_POINTER then
-            Def.type = 'APTR'
-            Def.doc_type = 'APTR []'
-         elseif Type has FD_STRUCT then
-            Def.type = fieldStructType(Option) .. ''
-         elseif Type has FD_OBJECT then
-            Def.type = 'OBJECTPTR'
-            Def.doc_type = 'OBJECTPTR []'
-         elseif Type has FD_UNIT then
-            Def.type = 'Unit'
-            Def.doc_type = 'Unit []'
-         else
-            Def.type = 'UNKNOWN_ARRAY_TYPE'
-         end
+         Def.type = 'UNKNOWN_ARRAY_TYPE'
       end
    elseif Type has FD_STRING then
       Def.type = 'STRING'

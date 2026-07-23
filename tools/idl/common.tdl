@@ -217,10 +217,9 @@ flags("FD", { weak=true, comment="Field descriptors", module="Core" },
   { SYNONYM    = "0x00020000: CLASSDEF Use to declare fields that duplicate the functionality of another field" },
   { SYSTEM     = "0x00010000: CLASSDEF System, internal and private fields" },
   { CUSTOM     =  0x00008000 },
-  { CPP        = "0x00004000: Use the C++ variant of the indicated type, e.g. `ARRAY` is a `kt::vector`" },
+  { CPP        = "0x00004000: Use the C++ variant of the indicated type, e.g. `std::string`" },
   { RESOURCE   = "0x00002000: The referenced struct or pointer is a special resource.  Changes some behaviours, e.g. a resourced struct will use direct value references rather than being copied in Tiri" },
-  { ARRAY      = "0x00001000: Indicates an array of values.  Function descriptors must combine this flag with `CPP` " ..
-      "to represent a `kt::vector`; raw pointer arrays are unsupported for calls" },
+  { ARRAY      = "0x00001000: Indicates a raw or fixed array of values.  Raw pointer arrays are unsupported for calls" },
   { INIT       = "0x00000400: CLASSDEF" },
   { WRITE      = "0x00000200: CLASSDEF" },
   { READ       = "0x00000100: CLASSDEF" },
@@ -234,6 +233,7 @@ flags("FD", { weak=true, comment="Field descriptors", module="Core" },
   { OBJECT     = "0x00000001: Supplementary, can be used with ints (for IDs) or pointers" },
   { ERROR      = "0x00000800: FUNCDEF" },
   { TAGS       = "0x00000400: FUNCDEF Overrides `INIT`" },
+  { VECTOR     = "0x00080000: A `kt::vector` type" },
   { BUFFER     = "0x00000200: FUNCDEF Overrides `WRITE`.  Common buffer semantic flag.  " ..
       "`FDF_SPAN` (`CPP|BUFFER`) represents a C++ module-function span reference or an embedded action/method span " ..
       "value whose `std::span` carries its pointer and extent.  Non-span `BUFFER` descriptors are legacy" },
@@ -258,7 +258,7 @@ flags("FD", { weak=true, comment="Field descriptors", module="Core" },
   { RW            = "READ|WRITE" },
   { RI            = "READ|INIT" },
   { I             = "INIT" },
-  { CLASS_TYPES      = "DOUBLE|FLOAT|POINTER|INT|INT64|STRING|FUNCTION|UNIT|OBJECT|BYTE|WORD|CPP|ARRAY: All types that directly contribute to the core definition of a C/C++ type" }
+  { CLASS_TYPES      = "DOUBLE|FLOAT|POINTER|INT|INT64|STRING|FUNCTION|UNIT|OBJECT|BYTE|WORD|CPP|ARRAY|VECTOR: All types that directly contribute to the core definition of a C/C++ type" }
 )
 
   structdef("InputEvent", { module="Core" }, [[

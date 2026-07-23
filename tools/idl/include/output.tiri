@@ -120,6 +120,20 @@ function fieldSetIDName(FieldName:str):str
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Return true when a field is represented by a kt::vector.
+
+function fieldIsVector(Field:table):bool
+   return Field.flags has FD_VECTOR
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Return true when a field exposes a sequence of elements.
+
+function fieldIsSequence(Field:table):bool
+   return Field.flags has (FD_ARRAY|FD_VECTOR)
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Select the C++ argument type used by generated set-field functions.
 
 function fieldSetType(Field:table):str
@@ -129,7 +143,7 @@ function fieldSetType(Field:table):str
 
    if field_type:startsWith('const ') then return field_type end
 
-   if (Field.flags has FD_STRING) and (not (Field.flags has FD_ARRAY)) then
+   if (Field.flags has FD_STRING) and (not fieldIsSequence(Field)) then
       if field_type:startsWith('STRING') or field_type:startsWith('CSTRING') then return 'T &&' end
       return f'const {field_type}'
    elseif Field.flags has (FD_POINTER | FD_OBJECT) then
@@ -176,9 +190,10 @@ function fieldGetType(Field:table):str
 
    if field_type:startsWith('STRUCT') then return 'APTR' end -- Unnamed structs must be converted to PTR.
 
-   if Field.flags has FD_ARRAY then
-      if (Field.flags has FD_CPP) and (Field.read is 'Get') then return Field.innerType end
-      if Field.flags has FD_CPP then return field_type end
+   if fieldIsVector(Field) then
+      if Field.read is 'Get' then return Field.innerType end
+      return field_type
+   elseif Field.flags has FD_ARRAY then
       return fieldArrayElementType(Field)
    elseif Field.flags has FD_STRING then
       if Field.flags has FD_ALLOC then return 'std::string' end
@@ -207,7 +222,7 @@ end
 -- Return true when a getter must route through the field read API rather than direct assignment.
 
 function useFieldGetValue(Field:table):bool
-   return (Field.read is 'Get') or Field.virtual or (Field.flags has (FD_ARRAY|FD_UNIT)) or
+   return (Field.read is 'Get') or Field.virtual or (Field.flags has (FD_ARRAY|FD_VECTOR|FD_UNIT)) or
       ((Field.flags has FD_STRING) and (Field.flags has FD_ALLOC))
 end
 
@@ -217,7 +232,7 @@ end
 function outputFieldGetSignature(Field:table, Name:str, FieldType:str, Reader:str)
    -- Reader is 'Get' or 'Read'
 
-   if Field.flags has FD_ARRAY then
+   if fieldIsSequence(Field) then
       if Field.innerType then
          FieldType = f'std::span<{Field.innerType}>'
       else
@@ -262,7 +277,7 @@ function outputGetValueCall(Field:table, FieldType:str, Indent:str)
    elseif Field.flags has FD_UNIT then
       outputResult('field->GetValue(this, &Value);')
       return
-   elseif Field.flags has FD_ARRAY then
+   elseif fieldIsSequence(Field) then
       output(Indent .. f'auto get_field = (ERR (*)(APTR, std::span<{Field.innerType ?? Field.type}> &))field->GetValue;')
       outputResult('get_field(this, Value);')
       return
@@ -331,8 +346,8 @@ function outputFieldReadGetter(Class:table, Field:table, FidName:str, FieldType:
       -- Direct access to value
       local offset = classOffsetExpression(Class, Field)
 
-      if Field.flags has FD_ARRAY then
-         if Field.flags has FD_CPP then -- Embedded kt::vector
+      if fieldIsSequence(Field) then
+         if fieldIsVector(Field) then -- Embedded kt::vector
             output(Indent .. f'auto ktv = ({FieldType} *)(((int8_t *)this) + {offset});')
             output(Indent .. f'Value = std::span<{Field.innerType}>(ktv->data(), ktv->size());')
          else -- Embedded primitive array []
@@ -374,7 +389,7 @@ function outputFieldGetter(Class:table, Field:table)
    local field_type = fieldGetType(Field)
    local indent = '      '
 
-   virtual = (Field.read is 'Get') or Field.virtual or (Field.flags has (FD_ARRAY|FD_UNIT)) or
+   virtual = (Field.read is 'Get') or Field.virtual or (Field.flags has (FD_ARRAY|FD_VECTOR|FD_UNIT)) or
       ((Field.flags has FD_STRING) and (Field.flags has FD_ALLOC))
 
    if virtual then
@@ -416,8 +431,8 @@ end
 -- Emit the opening signature for a direct-assignment field setter.
 
 function outputDirectSetSignature(Field:table, FidName:str, FieldType:str)
-   if Field.flags has FD_ARRAY then
-      if Field.flags has FD_CPP then -- Embedded kt::vector
+   if fieldIsSequence(Field) then
+      if fieldIsVector(Field) then -- Embedded kt::vector
          output(f'   inline ERR set{FidName}({FieldType} &Value) noexcept {{')
       else
          output(f'   inline ERR set{FidName}(std::span<{fieldArraySetterElementType(Field)}> Value) noexcept {{')
@@ -437,8 +452,8 @@ end
 -- Emit the opening signature for a setter that calls FIELD::WriteValue().
 
 function outputFieldSetterSignature(Field:table, FidName:str, FieldType:str)
-   if Field.flags has FD_ARRAY then
-      if Field.flags has FD_CPP then -- Virtual kt::vector; the setter function will still be in C format for type compatibility
+   if fieldIsSequence(Field) then
+      if fieldIsVector(Field) then -- Virtual kt::vector; the setter function will still be in C format for type compatibility
          assert(Field.innerType, f'Missing innerType for virtual kt::vector {FidName}')
          output(f'   inline ERR set{FidName}(const std::span<const {Field.innerType}> Value) noexcept {{')
       else
@@ -460,7 +475,7 @@ end
 -- Emit a complete setter body that delegates assignment to FIELD::WriteValue().
 
 function outputFieldWriteSetter(Class:table, Field:table, FidName:str, FieldType:str, Indent:str)
-   if Field.struct and not (Field.flags has FD_ARRAY) and not FieldType:endsWith('*') then
+   if Field.struct and not fieldIsSequence(Field) and not FieldType:endsWith('*') then
       if Field.flags has FD_POINTER then
          FieldType ..= ' *'
       else
@@ -480,13 +495,12 @@ function outputFieldWriteSetter(Class:table, Field:table, FidName:str, FieldType
       output(Indent .. 'return field->WriteValue(this, field, FD_UNIT, &var);')
    elseif Field.flags has FD_UNIT then
       output(Indent .. 'return field->WriteValue(this, field, FD_UNIT, &Value);')
+   elseif fieldIsVector(Field) then
+      local flags = fieldFlagsHex((Field.flags & ~FD_VECTOR) | FD_ARRAY)
+      output(Indent .. 'return field->WriteValue(this, field, 0x' .. flags .. ', &Value);')
    elseif Field.flags has FD_ARRAY then
       local flags = fieldFlagsHex(Field.flags)
-      if Field.flags has FD_CPP then -- Virtual kt::vector; setter will match the regular C signature for type compatibility
-         output(Indent .. 'return field->WriteValue(this, field, 0x' .. flags .. ', &Value);')
-      else
-         output(Indent .. 'return field->WriteValue(this, field, 0x' .. flags .. ', &Value);')
-      end
+      output(Indent .. 'return field->WriteValue(this, field, 0x' .. flags .. ', &Value);')
    elseif Field.flags has FD_FUNCTION then
       output(Indent .. 'return field->WriteValue(this, field, FD_FUNCTION, &Value);')
    elseif Field.flags has FD_STRING then -- Embedded std::string, or std::string_view set-value.

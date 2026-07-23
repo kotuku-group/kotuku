@@ -177,7 +177,7 @@ static int argument_end_offset(const FunctionField &Field, int Offset)
       size_t aligned_offset = size_t(Offset);
       size_t field_size;
 
-      if (Field.Type & FD_ARRAY) field_size = sizeof(APTR);
+      if (Field.Type & FD_VECTOR) field_size = sizeof(APTR);
       else if (Field.Type & FD_STR) {
          field_size = ((Field.Type & FD_CPP) and (not (Field.Type & FD_MUTABLE))) ?
             sizeof(std::string_view) : sizeof(APTR);
@@ -386,7 +386,7 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
       if (pos >= ArgsSize) return ERR::InvalidData; // Sanity check, the pos can't exceed ArgsSize.
 
       int type = Args[i].Type;
-      if ((type & FD_ARRAY) and (!(type & FD_CPP))) {
+      if (type & FD_ARRAY) {
          // Array parameters are considered legacy and effectively unused in the current system.
          return ERR::NoSupport;
       }
@@ -473,7 +473,7 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
    for (int i=0; Args[i].Name; i++) {
       int type = Args[i].Type;
       if ((type & FDF_SPAN) IS FDF_SPAN); // Embedded value; payload ownership is handled below.
-      else if (type & FD_ARRAY) {
+      else if (type & FD_VECTOR) {
          pos = align_arg_offset(pos);
          if (pos < 0) return ERR::InvalidData;
          APTR copy = nullptr;
@@ -521,7 +521,7 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
 
          pos = int(end_offset);
       }
-      else if (type & FD_ARRAY) {
+      else if (type & FD_VECTOR) {
          pos = align_arg_offset(pos);
          if (pos < 0) return ERR::InvalidData;
          auto param = (APTR *)(Buffer.data() + pos);
@@ -632,7 +632,7 @@ ERR make_args_relative(const FunctionField *Args, int ArgsSize, int8_t *Buffer, 
          pos = int(end_offset);
          continue;
       }
-      else if (type & FD_ARRAY); // Owned heap copy; position independent
+      else if (type & FD_VECTOR); // Owned heap copy; position independent
       else if (type & FD_STR) {
          pos = align_arg_offset(pos);
          if (pos < 0) return ERR::InvalidData;
@@ -682,7 +682,7 @@ ERR make_args_absolute(const FunctionField *Args, int ArgsSize, int8_t *Buffer, 
          pos = int(end_offset);
          continue;
       }
-      else if (type & FD_ARRAY); // Owned heap copy; position independent
+      else if (type & FD_VECTOR); // Owned heap copy; position independent
       else if (type & FD_STR) {
          pos = align_arg_offset(pos);
          if (pos < 0) return ERR::InvalidData;
@@ -719,7 +719,7 @@ void release_copied_args(const FunctionField *Args, int ArgsSize, int8_t *Parame
          pos = argument_end_offset(Args[i], pos);
          if ((pos < 0) or (pos > ArgsSize)) return;
       }
-      else if (type & FD_ARRAY) {
+      else if (type & FD_VECTOR) {
          pos = align_arg_offset(pos);
          if (pos < 0) return;
          auto array = *(APTR *)(Parameters + pos);

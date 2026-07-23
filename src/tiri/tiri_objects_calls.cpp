@@ -622,7 +622,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
    log.traceBranch("%d, %p, Top: %d", ArgsSize, ArgBuffer, top);
 
    for (int i=0; Args[i].Name; i++) {
-      if ((Args[i].Type & FD_ARRAY) and (not (Args[i].Type & FD_CPP))) {
+      if (Args[i].Type & FD_ARRAY) {
          log.warning("Pointer array arg %s.%s is not supported.", Name, Args[i].Name);
          ErrorMsg = "Pointer arrays are not supported for actions or methods.";
          return ERR::NoSupport;

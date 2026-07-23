@@ -33,7 +33,7 @@ const std::string field_typename(const Field &Field)
    else return "unknown";
 
    if (Field.Flags & FD_UNSIGNED) result = "u" + result;
-   if (Field.Flags & FD_ARRAY)    result = "array<" + result + ">";
+   if (Field.Flags & (FD_ARRAY|FD_VECTOR)) result = "array<" + result + ">";
    if (Field.Flags & FD_POINTER)  result += "*";
    return result;
 }
@@ -381,7 +381,7 @@ extern "C" int ir_object_field_type(GCobject *Obj, GCstr *Key, int &Offset, uint
       FieldFlags = flags;
 
       // NB: Order is important
-      if (flags & FD_ARRAY) return IRT_ARRAY;
+      if (flags & (FD_ARRAY|FD_VECTOR)) return IRT_ARRAY;
       else if (flags & FD_STRING) { FieldFlags &= ~FD_POINTER; return IRT_STR; }
       else if (flags & (FD_DOUBLE|FD_INT64)) return IRT_NUM;
       else if (flags & (FD_OBJECT|FD_LOCAL)) return IRT_OBJECT;

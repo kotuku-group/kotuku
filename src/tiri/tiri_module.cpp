@@ -718,7 +718,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    }
 
    for (int arg=1; args[arg].Name; arg++) {
-      if ((args[arg].Type & FD_ARRAY) and (not (args[arg].Type & FD_CPP))) {
+      if (args[arg].Type & FD_ARRAY) {
          ErrorMsg = std::format("Function '{}' uses unsupported pointer array arg '{}'.",
             mod->Functions[index].Name, args[arg].Name);
          return ERR::NoSupport;

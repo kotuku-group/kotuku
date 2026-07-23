@@ -413,7 +413,7 @@ end
 function fieldNeedsClassOffset(Field:table):bool
    if not Field.read or (Field.read is 'Get') or Field.private then return false end
 
-   return Field.virtual or (Field.flags has (FD_ARRAY|FD_UNIT)) or
+   return Field.virtual or (Field.flags has (FD_ARRAY|FD_VECTOR|FD_UNIT)) or
       ((Field.flags has FD_STRING) and (Field.flags has FD_ALLOC))
 end
 
