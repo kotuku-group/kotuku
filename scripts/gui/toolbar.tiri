@@ -178,7 +178,7 @@ gui.toolbar = function(Options)
 
             seq = string.format('M%f,%f l0,%f', x+(item.width-1) * 0.5, y+1, item.height)
             self.vg.new('VectorPath', {
-               name = 'break', stroke = self._groupBorder, sequence = seq, dashArray = '1, 1'
+               name = 'break', stroke = self._groupBorder, sequence = seq, dashArray = array<double> { 1, 1 }
             })
 
             if self._horizontal then

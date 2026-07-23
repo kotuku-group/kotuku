@@ -68,7 +68,7 @@ static constexpr uint32_t OJH_unsubscribe = simple_hash("unsubscribe");
 [[nodiscard]] static int object_action_call(lua_State *);
 [[nodiscard]] static int object_method_call(lua_State *);
 [[nodiscard]] static int get_results(lua_State *, const FunctionField *, const int8_t *);
-[[nodiscard]] static ERR set_object_field(lua_State *, OBJECTPTR, uint32_t, int);
+[[nodiscard]] static ERR set_object_field(lua_State *, OBJECTPTR, uint32_t, int, const Field ** = nullptr);
 
 [[nodiscard]] static int object_children(lua_State *);
 [[nodiscard]] static int object_detach(lua_State *);
@@ -445,9 +445,11 @@ extern int object_newindex(lua_State *Lua)
          OBJECTPTR obj;
          if (auto error = access_object(def, obj); error IS ERR::Okay) {
             auto jt = get_write_table(def->classptr);
+            const Field *write_field = nullptr;
 
             auto func = std::lower_bound(jt->begin(), jt->end(), obj_write(hash), write_hash);
             if ((func != jt->end()) and (func->Hash IS hash)) {
+               write_field = func->Field;
                // All fields in the table are writable, but init checks are still required.
                if ((func->Field->Flags & FD_INIT) and obj->initialised()) error = ERR::NoFieldAccess;
                else error = func->Call(Lua, obj, func->Field, 3);
@@ -456,7 +458,9 @@ extern int object_newindex(lua_State *Lua)
             release_object(def);
 
             if (error >= ERR::ExceptionThreshold) {
-               luaL_error(Lua, error, "Write failure: %s.%s: %s", def->classptr->ClassName.c_str(), luaL_checkstring(Lua, 2), GetErrorMsg(error));
+               auto field_type = write_field ? field_typename(*write_field) : "unknown";
+               luaL_error(Lua, error, "Failed to set %s %s.%s field: %s", field_type.c_str(),
+                  def->classptr->ClassName.c_str(), luaL_checkstring(Lua, 2), GetErrorMsg(error));
             }
          }
          else { // Report why the object could not be accessed rather than dropping the write silently.
@@ -574,12 +578,14 @@ LJLIB_CF(object_new)
       if (lua_istable(L, 2)) {
          ERR field_error    = ERR::Okay;
          CSTRING field_name = nullptr;
+         const Field *failed_field = nullptr;
          int failed_type    = LUA_TNONE;
          lua_pushnil(L);
          while (lua_next(L, 2) != 0) {
+            failed_field = nullptr;
             if ((field_name = luaL_checkstring(L, -2))) {
                if (iequals("owner", field_name)) field_error = ERR::UnsupportedOwner;
-               else field_error = set_object_field(L, obj, fieldhash(field_name), -1);
+               else field_error = set_object_field(L, obj, fieldhash(field_name), -1, &failed_field);
             }
             else field_error = ERR::UnsupportedField;
 
@@ -592,11 +598,13 @@ LJLIB_CF(object_new)
          }
 
          if ((field_error != ERR::Okay) or ((error = InitObject(obj)) != ERR::Okay)) {
-            class_name = obj->className();
+            auto class_name = obj->className();
             FreeResource(obj);
 
             if (field_error != ERR::Okay) {
-               luaL_error(L, field_error, "obj.new() failed to set field '%s.%s' with %s, error: %s", class_name, field_name, lua_typename(L, failed_type), GetErrorMsg(field_error));
+               auto field_type = failed_field ? field_typename(*failed_field) : "unknown";
+               luaL_error(L, field_error, "Failed to set %s %s.%s field with %s: %s",
+                  field_type.c_str(), class_name, field_name, lua_typename(L, failed_type), GetErrorMsg(field_error));
             }
             else luaL_error(L, error, "obj.new() failed to Init() %s: %s", class_name, GetErrorMsg(error));
 
@@ -772,15 +780,19 @@ static int object_newchild(lua_State *Lua)
       if (lua_istable(Lua, 2)) {
          ERR field_error = ERR::Okay;
          std::string_view field_name;
+         const Field *failed_field = nullptr;
+         auto failed_type = LUA_TNONE;
          lua_pushnil(Lua);
          while (lua_next(Lua, 2) != 0) {
+            failed_field = nullptr;
             if (field_name = luaL_checkstring(Lua, -2); not field_name.empty()) {
                if (iequals("owner", field_name)) field_error = ERR::UnsupportedOwner; // Setting the owner field in this situation is illegal
-               else field_error = set_object_field(Lua, obj, fieldhash(field_name), -1);
+               else field_error = set_object_field(Lua, obj, fieldhash(field_name), -1, &failed_field);
             }
             else field_error = ERR::UnsupportedField;
 
             if (field_error != ERR::Okay) {
+               failed_type = lua_type(Lua, -1);
                lua_pop(Lua, 2);
                break;
             }
@@ -788,10 +800,14 @@ static int object_newchild(lua_State *Lua)
          }
 
          if ((field_error != ERR::Okay) or ((error = InitObject(obj)) != ERR::Okay)) {
+            auto class_name = obj->className();
             FreeResource(obj);
 
             if (field_error != ERR::Okay) {
-               luaL_error(Lua, field_error, "Failed to set field '%.*s', error: %s", int(field_name.size()), field_name.data(), GetErrorMsg(field_error));
+               auto field_type = failed_field ? field_typename(*failed_field) : "unknown";
+               luaL_error(Lua, field_error, "Failed to set %s %s.%.*s with %s: %s",
+                  field_type.c_str(), class_name, int(field_name.size()), field_name.data(),
+                  lua_typename(Lua, failed_type), GetErrorMsg(field_error));
             }
             else luaL_error(Lua, ERR::Init, "Failed to Init() object '%s', error: %s", class_name, GetErrorMsg(error));
          }
