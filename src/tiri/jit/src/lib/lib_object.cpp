@@ -327,7 +327,7 @@ READ_TABLE * get_read_table(objMetaClass *Class)
          auto hash = field.FieldID;
          auto field_ptr = (APTR)&field;
 
-         if (field.Flags & FD_ARRAY) {
+         if (field.Flags & (FD_ARRAY|FD_VECTOR)) {
             jmp.push_back(obj_read(hash, object_get_array, field_ptr));
          }
          else if (field.Flags & FD_STRUCT) jmp.push_back(obj_read(hash, object_get_struct, field_ptr));
@@ -389,7 +389,7 @@ WRITE_TABLE * get_write_table(objMetaClass *Class)
          if ((ch[0] >= 'A') and (ch[0] <= 'Z')) ch[0] = ch[0] - 'A' + 'a';
          auto hash = simple_hash(field.Name+1, simple_hash(ch));
 
-         if (field.Flags & FD_ARRAY) {
+         if (field.Flags & (FD_ARRAY|FD_VECTOR)) {
             jmp.push_back(obj_write(hash, object_set_array, &field));
          }
          else if (field.Flags & FD_FUNCTION) {

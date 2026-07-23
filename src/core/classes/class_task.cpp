@@ -175,7 +175,7 @@ static void task_stdinput_callback(HOSTHANDLE FD, void *Task)
       std::span<std::byte> span((std::byte *)buffer, bytes_read);
       sc::Call(Self->InputCallback, std::to_array<ScriptArg>({
          { "Task",       Self },
-         { "Buffer",     &span, FDF_SPAN },
+         { "Buffer",     &span, FDF_SPAN|FD_BYTE },
          { "Status",     int(error), FD_ERROR }
       }));
    }
@@ -226,7 +226,7 @@ static int read_task_stdout(HOSTHANDLE FD, APTR Task)
          std::span<std::byte> span((std::byte *)buffer, len);
          sc::Call(task->OutputCallback, std::to_array<ScriptArg>({
             { "Task",   Task, FD_OBJECTPTR },
-            { "Buffer", &span, FDF_SPAN }
+            { "Buffer", &span, FDF_SPAN|FD_BYTE }
          }));
       }
    }
@@ -286,7 +286,7 @@ static int read_task_stderr(HOSTHANDLE FD, APTR Task)
          std::span<std::byte> span((std::byte *)buffer, len);
          sc::Call(task->ErrorCallback, std::to_array<ScriptArg>({
             { "Task", Task, FD_OBJECTPTR },
-            { "Data", &span, FDF_SPAN }
+            { "Data", &span, FDF_SPAN|FD_BYTE }
          }));
       }
    }
@@ -344,7 +344,7 @@ static void output_callback(extTask *Task, FUNCTION *Callback, APTR Buffer, int 
       std::span<std::byte> span((std::byte *)Buffer, Size);
       sc::Call(*Callback, std::to_array<ScriptArg>({
          { "Task", Task, FD_OBJECTPTR },
-         { "Data", &span, FDF_SPAN }
+         { "Data", &span, FDF_SPAN|FD_BYTE }
       }));
    }
 }

@@ -541,8 +541,8 @@ The compression method used to compress the data will be identified in the first
 `ZLIB`.  The following 32 bits will indicate the length of the compressed data section, followed by the data itself.
 
 -INPUT-
-buf(ptr) Input: Pointer to the source data.
-^buf(ptr) Output: Pointer to a destination buffer.
+array(char) Input: Pointer to the source data.
+^array(char) Output: Pointer to a destination buffer.
 &int Result: The size of the compressed data will be returned in this parameter.
 
 -ERRORS-
@@ -838,9 +838,9 @@ function, either set a flag in the callback function or compare the #TotalOutput
 before CompressStream was called.
 
 -INPUT-
-buf(ptr) Input: Pointer to the source data.
+array(char) Input: Pointer to the source data.
 func Callback: This callback function will be called with a pointer to the compressed data.
-^buf(ptr) Output: Optional.  Points to a buffer that will receive the compressed data.  Must be equal to or larger than the #MinOutputSize field.
+^array(char) Output: Optional.  Points to a buffer that will receive the compressed data.  Must be equal to or larger than the #MinOutputSize field.
 
 -ERRORS-
 Okay
@@ -927,7 +927,7 @@ static ERR COMPRESSION_CompressStream(extCompression *Self, struct cmp::Compress
             std::span<std::byte> span((std::byte *)output, len);
             if (sc::Call(Args->Callback, std::to_array<ScriptArg>({
                   { "Compression", Self,  FD_OBJECTPTR },
-                  { "Output",      &span, FDF_SPAN }
+                  { "Output",      &span, FDF_SPAN|FD_BYTE }
                }), error) != ERR::Okay) error = ERR::Function;
          }
          else {
@@ -960,7 +960,7 @@ The expected format of the `Callback` function is specified in the #CompressStre
 
 -INPUT-
 func Callback: Refers to a function that will be called for each compressed block of data.
-^buf(ptr) Output: Optional pointer to a buffer that will receive the compressed data.  If not set, the compression object will use its own buffer.
+^array(char) Output: Optional pointer to a buffer that will receive the compressed data.  If not set, the compression object will use its own buffer.
 
 -ERRORS-
 Okay
@@ -1028,7 +1028,7 @@ static ERR COMPRESSION_CompressStreamEnd(extCompression *Self, struct cmp::Compr
          std::span<std::byte> span((std::byte *)output, outputsize - Self->Deflate->avail_out);
          if (sc::Call(Args->Callback, std::to_array<ScriptArg>({
             { "Compression", Self,  FD_OBJECTPTR },
-            { "Output",      &span, FDF_SPAN }
+            { "Output",      &span, FDF_SPAN|FD_BYTE }
          }), error) != ERR::Okay) error = ERR::Function;
       }
       else error = ERR::Okay;
@@ -1103,9 +1103,9 @@ When there is no more data in the decompression stream or if an error has occurr
 #DecompressStreamEnd().
 
 -INPUT-
-buf(ptr) Input: Pointer to data to decompress.
+array(char) Input: Pointer to data to decompress.
 func Callback: Refers to a function that will be called for each decompressed block of information.
-^buf(ptr) Output: Optional pointer to a buffer that will receive the decompressed data.  If not set, the compression object will use its own buffer.
+^array(char) Output: Optional pointer to a buffer that will receive the decompressed data.  If not set, the compression object will use its own buffer.
 
 -ERRORS-
 Okay
@@ -1180,7 +1180,7 @@ static ERR COMPRESSION_DecompressStream(extCompression *Self, struct cmp::Decomp
             std::span<std::byte> span((std::byte *)output, len);
             if (sc::Call(Args->Callback, std::to_array<ScriptArg>({
                { "Compression", Self,  FD_OBJECTPTR },
-               { "Output",      &span, FDF_SPAN }
+               { "Output",      &span, FDF_SPAN|FD_BYTE }
             }), error) != ERR::Okay) error = ERR::Function;
          }
          else {
@@ -1246,8 +1246,8 @@ is not large enough to contain the data, the method will write out as much infor
 an error code of `ERR::BufferOverflow`.
 
 -INPUT-
-buf(ptr) Input: Pointer to the compressed data.
-^buf(ptr) Output: Pointer to the decompression buffer.
+array(char) Input: Pointer to the compressed data.
+^array(char) Output: Pointer to the decompression buffer.
 &int Result: The amount of bytes decompressed will be returned in this parameter.
 
 -ERRORS-

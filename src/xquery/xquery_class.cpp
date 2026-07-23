@@ -1105,8 +1105,8 @@ static const FieldArray clFields[] = {
    { "FeatureFlags",    FDF_VIRTUAL|FDF_INTFLAGS|FDF_PURE|FDF_R, GET_FeatureFlags, nullptr, &clXQueryXQF },
    { "ResultType",      FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_PURE|FDF_R, GET_ResultType, nullptr, &clXQueryXPVT },
    { "ResolveVariable", FDF_VIRTUAL|FDF_FUNCTION|FDF_PURE|FDF_RW, GET_ResolveVariable, SET_ResolveVariable },
-   { "Functions",       FDF_VIRTUAL|FDF_ARRAY|FDF_CPPSTRING|FDF_R, GET_Functions },
-   { "Variables",       FDF_VIRTUAL|FDF_ARRAY|FDF_CPPSTRING|FDF_R, GET_Variables },
+   { "Functions",       FDF_VIRTUAL|FDF_VECTOR|FDF_CPPSTRING|FDF_R, GET_Functions },
+   { "Variables",       FDF_VIRTUAL|FDF_VECTOR|FDF_CPPSTRING|FDF_R, GET_Variables },
    END_FIELD
 };
 

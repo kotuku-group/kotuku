@@ -2,10 +2,12 @@
 
 #include <kotuku/main.h>
 
+#include <span>
+
 int UTF8Copy(CSTRING String, STRING Dest, int Chars, int Size);
 uint32_t UTF8ReadValue(CSTRING String, int *Length);
 //CSTRING UTF8ValidEncoding(CSTRING String, CSTRING Encoding);
-int UTF8WriteValue(int Value, STRING String, int StringSize);
+int UTF8WriteValue(int Value, std::span<int8_t> Buffer);
 
 /*********************************************************************************************************************
 

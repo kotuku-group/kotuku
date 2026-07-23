@@ -39,8 +39,8 @@
 #define FDF_INIT        FD_INIT                 // Field can only be written prior to Init()
 #define FDF_SYSTEM      FD_SYSTEM
 #define FDF_ERROR       (FD_INT|FD_ERROR)
-#define FDF_VECTOR      (FD_CPP|FD_ARRAY)
-#define FDF_SPAN        (FD_CPP|FD_BUFFER)
+#define FDF_VECTOR      FD_VECTOR
+#define FDF_SPAN        (FD_CPP|FD_ARRAY)
 #define FDF_R           FD_READ
 #define FDF_W           FD_WRITE
 #define FDF_RW          (FD_READ|FD_WRITE)
@@ -48,7 +48,7 @@
 #define FDF_I           FD_INIT
 #define FDF_VIRTUAL     FD_VIRTUAL
 #define FDF_INTFLAGS    (FDF_INT|FDF_FLAGS)
-#define FDF_FIELDTYPES  (FD_INT|FD_DOUBLE|FD_INT64|FD_POINTER|FD_UNIT|FD_BYTE|FD_ARRAY|FD_FUNCTION)
+#define FDF_FIELDTYPES  (FD_INT|FD_DOUBLE|FD_INT64|FD_POINTER|FD_UNIT|FD_BYTE|FD_ARRAY|FD_VECTOR|FD_FUNCTION)
 
 //********************************************************************************************************************
 // For testing if type T can be matched to an FD flag.  Integral types are mapped by storage width so that typed spans
@@ -534,7 +534,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
          auto flags = field->Flags;
 
-         if (flags & FD_ARRAY) return ERR::UnsupportedField;
+         if (flags & (FD_ARRAY|FD_VECTOR)) return ERR::UnsupportedField;
 
          if (flags & FD_UNIT) {
             double num;
@@ -752,7 +752,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
       Object *target;
       Value = std::span<T>();
       if (auto field = FindField(this, FieldID, &target)) {
-         if ((not field->readable()) or (not (field->Flags & FD_ARRAY))) return ERR::NoFieldAccess;
+         if ((not field->readable()) or (not (field->Flags & (FD_ARRAY|FD_VECTOR)))) return ERR::NoFieldAccess;
 
          if ((TypeCheck) and (not (field->Flags & FIELD_TYPECHECK<T>()))) return ERR::FieldTypeMismatch;
 
@@ -763,7 +763,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
             if (not field->pure()) RestoreObjectContext();
             return error;
          }
-         else if (field->Flags & FD_CPP) { // Embedded kt::vector<T>
+         else if (field->Flags & FD_VECTOR) { // Embedded kt::vector<T>
             auto vec = (kt::vector<T> *)(((int8_t *)target) + field->Offset);
             Value = std::span<T>(vec->data(), vec->size());
             return ERR::Okay;
@@ -784,7 +784,7 @@ inline ERR write_field_value(OBJECTPTR Target, const struct Field *FieldPtr, con
    if ((Value.Type & FD_STRING) and (Value.Type & FD_CPP)) {
       return FieldPtr->WriteValue(Target, FieldPtr, Value.Type, &Value.CPPString);
    }
-   else if (Value.Type & FD_ARRAY) {
+   else if (Value.Type & (FD_ARRAY|FD_VECTOR)) {
       return FieldPtr->WriteValue(Target, FieldPtr, Value.Type, &Value.Span);
    }
    else if (Value.Type & (FD_POINTER|FD_STRING|FD_FUNCTION|FD_UNIT)) {

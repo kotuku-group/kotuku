@@ -510,8 +510,9 @@ end
    writeFile(read_path, expected)
 
    buffer = array<byte, #expected>
-   err = mSys.ReadFileToBuffer(read_path, buffer)
+   err, result = mSys.ReadFileToBuffer(read_path, buffer)
    assert(err is ERR_Okay, 'ReadFileToBuffer() failed: ' .. mSys.GetErrorMsg(err))
+   assert(result is #expected, 'ReadFileToBuffer() returned an incorrect byte count.')
    assert(buffer:getString() is expected, 'ReadFileToBuffer() did not return the expected text.')
 
    approx_buffer = array<byte, #expected>
@@ -528,6 +529,13 @@ end
       mSys.ReadFileToBuffer(read_path, 'literal')
    success
       error('ReadFileToBuffer() should reject interned strings for mutable buffers')
+   end
+
+   wrong_type = array<int, #expected>
+   try
+      mSys.ReadFileToBuffer(read_path, wrong_type)
+   success
+      error('ReadFileToBuffer() should reject an array with the wrong element type')
    end
 end
 

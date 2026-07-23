@@ -110,7 +110,7 @@ static ERR span_descriptor_element_layout(const FunctionField &Field, size_t *El
    else {
       const int type_count = bool(Field.Type & FD_DOUBLE) + bool(Field.Type & FD_INT64) +
          bool(Field.Type & FD_FLOAT) + bool(Field.Type & FD_INT) + bool(Field.Type & FD_WORD) +
-         bool(Field.Type & FD_BYTE) + bool(Field.Type & FD_PTR) + bool(Field.Type & FD_STR);
+         bool(Field.Type & FD_BYTE) + bool(Field.Type & FD_PTR);
       if (type_count != 1) return ERR::InvalidData;
 
       if (Field.Type & FD_DOUBLE) { *ElementSize = sizeof(double); *ElementAlignment = alignof(double); }
@@ -118,7 +118,8 @@ static ERR span_descriptor_element_layout(const FunctionField &Field, size_t *El
       else if (Field.Type & FD_FLOAT) { *ElementSize = sizeof(float); *ElementAlignment = alignof(float); }
       else if (Field.Type & FD_INT) { *ElementSize = sizeof(int); *ElementAlignment = alignof(int); }
       else if (Field.Type & FD_WORD) { *ElementSize = sizeof(int16_t); *ElementAlignment = alignof(int16_t); }
-      else { *ElementSize = sizeof(int8_t); *ElementAlignment = alignof(int8_t); }
+      else if (Field.Type & FD_BYTE) { *ElementSize = sizeof(int8_t); *ElementAlignment = alignof(int8_t); }
+      else { *ElementSize = sizeof(APTR); *ElementAlignment = alignof(APTR); }
    }
 
    if ((not *ElementSize) or (not *ElementAlignment) or
@@ -177,7 +178,7 @@ static int argument_end_offset(const FunctionField &Field, int Offset)
       size_t aligned_offset = size_t(Offset);
       size_t field_size;
 
-      if (Field.Type & FD_ARRAY) field_size = sizeof(APTR);
+      if (Field.Type & FD_VECTOR) field_size = sizeof(APTR);
       else if (Field.Type & FD_STR) {
          field_size = ((Field.Type & FD_CPP) and (not (Field.Type & FD_MUTABLE))) ?
             sizeof(std::string_view) : sizeof(APTR);
@@ -386,7 +387,7 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
       if (pos >= ArgsSize) return ERR::InvalidData; // Sanity check, the pos can't exceed ArgsSize.
 
       int type = Args[i].Type;
-      if ((type & FD_ARRAY) and (!(type & FD_CPP))) {
+      if ((type & FD_ARRAY) and ((type & FDF_SPAN) != FDF_SPAN)) {
          // Array parameters are considered legacy and effectively unused in the current system.
          return ERR::NoSupport;
       }
@@ -473,7 +474,7 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
    for (int i=0; Args[i].Name; i++) {
       int type = Args[i].Type;
       if ((type & FDF_SPAN) IS FDF_SPAN); // Embedded value; payload ownership is handled below.
-      else if (type & FD_ARRAY) {
+      else if (type & FD_VECTOR) {
          pos = align_arg_offset(pos);
          if (pos < 0) return ERR::InvalidData;
          APTR copy = nullptr;
@@ -521,7 +522,7 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
 
          pos = int(end_offset);
       }
-      else if (type & FD_ARRAY) {
+      else if (type & FD_VECTOR) {
          pos = align_arg_offset(pos);
          if (pos < 0) return ERR::InvalidData;
          auto param = (APTR *)(Buffer.data() + pos);
@@ -632,7 +633,7 @@ ERR make_args_relative(const FunctionField *Args, int ArgsSize, int8_t *Buffer, 
          pos = int(end_offset);
          continue;
       }
-      else if (type & FD_ARRAY); // Owned heap copy; position independent
+      else if (type & FD_VECTOR); // Owned heap copy; position independent
       else if (type & FD_STR) {
          pos = align_arg_offset(pos);
          if (pos < 0) return ERR::InvalidData;
@@ -682,7 +683,7 @@ ERR make_args_absolute(const FunctionField *Args, int ArgsSize, int8_t *Buffer, 
          pos = int(end_offset);
          continue;
       }
-      else if (type & FD_ARRAY); // Owned heap copy; position independent
+      else if (type & FD_VECTOR); // Owned heap copy; position independent
       else if (type & FD_STR) {
          pos = align_arg_offset(pos);
          if (pos < 0) return ERR::InvalidData;
@@ -719,7 +720,7 @@ void release_copied_args(const FunctionField *Args, int ArgsSize, int8_t *Parame
          pos = argument_end_offset(Args[i], pos);
          if ((pos < 0) or (pos > ArgsSize)) return;
       }
-      else if (type & FD_ARRAY) {
+      else if (type & FD_VECTOR) {
          pos = align_arg_offset(pos);
          if (pos < 0) return;
          auto array = *(APTR *)(Parameters + pos);

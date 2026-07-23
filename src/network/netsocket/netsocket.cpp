@@ -990,7 +990,7 @@ For TCP sockets, use the standard Read action instead.
 
 -INPUT-
 ptr(struct(IPAddress)) Source: Source IP address of the received packet.
-^buf(ptr) Buffer:   Output buffer for received data.
+^array(char) Buffer: Output buffer for received data.
 &int BytesRead:     Number of bytes actually received.
 
 -ERRORS-
@@ -1049,7 +1049,7 @@ For TCP sockets, use the standard Write action instead.
 
 -INPUT-
 ptr(struct(IPAddress)) Dest: The destination IP address (IPv4 or IPv6) and port number.
-buf(ptr) Data:  Pointer to the data buffer to send.
+array(char) Data: Pointer to the data buffer to send.
 &int BytesSent: Number of bytes actually sent.
 
 -ERRORS-

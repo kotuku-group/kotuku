@@ -379,13 +379,12 @@ static ERR span_storage_bounds(size_t Offset, size_t Capacity, size_t *AlignedOf
 }
 
 static ERR span_element_metadata(lua_State *Lua, const FunctionField &Field, AET *ElementType,
-   size_t *ElementSize, struct_record **StructDef, bool *RawBytes)
+   size_t *ElementSize, struct_record **StructDef)
 {
    *StructDef = nullptr;
-   *RawBytes = false;
 
    if (Field.Type & FD_STRUCT) {
-      if ((not Field.Name) or (not valid_struct_name(Field.Name))) return ERR::InvalidData;
+      if ((Field.Type & FD_PTR) or (not Field.Name) or (not valid_struct_name(Field.Name))) return ERR::InvalidData;
       auto definition = find_struct(Lua, struct_name_prefix(Field.Name));
       if (not definition) return ERR::Search;
       if (definition->Size <= 0) return ERR::InvalidData;
@@ -397,7 +396,7 @@ static ERR span_element_metadata(lua_State *Lua, const FunctionField &Field, AET
 
    const int type_count = bool(Field.Type & FD_DOUBLE) + bool(Field.Type & FD_INT64) +
       bool(Field.Type & FD_FLOAT) + bool(Field.Type & FD_INT) + bool(Field.Type & FD_WORD) +
-      bool(Field.Type & FD_BYTE) + bool(Field.Type & FD_PTR) + bool(Field.Type & FD_STR);
+      bool(Field.Type & FD_BYTE) + bool(Field.Type & FD_PTR);
    if (type_count != 1) return ERR::InvalidData;
 
    if (Field.Type & FD_DOUBLE) { *ElementType = AET::DOUBLE; *ElementSize = sizeof(double); }
@@ -405,12 +404,8 @@ static ERR span_element_metadata(lua_State *Lua, const FunctionField &Field, AET
    else if (Field.Type & FD_FLOAT) { *ElementType = AET::FLOAT; *ElementSize = sizeof(float); }
    else if (Field.Type & FD_INT) { *ElementType = AET::INT32; *ElementSize = sizeof(int); }
    else if (Field.Type & FD_WORD) { *ElementType = AET::INT16; *ElementSize = sizeof(int16_t); }
-   else if (Field.Type & (FD_BYTE|FD_PTR)) {
-      *ElementType = AET::BYTE;
-      *ElementSize = sizeof(int8_t);
-      *RawBytes = bool(Field.Type & FD_PTR);
-   }
-   else return ERR::InvalidData;
+   else if (Field.Type & FD_BYTE) { *ElementType = AET::BYTE; *ElementSize = sizeof(int8_t); }
+   else { *ElementType = AET::PTR; *ElementSize = sizeof(APTR); }
 
    return ERR::Okay;
 }
@@ -432,8 +427,7 @@ static ERR build_span_arg(lua_State *Lua, int StackIndex, const FunctionField &F
    AET element_type;
    size_t element_size;
    struct_record *struct_def;
-   bool raw_bytes;
-   if (auto error = span_element_metadata(Lua, Field, &element_type, &element_size, &struct_def, &raw_bytes);
+   if (auto error = span_element_metadata(Lua, Field, &element_type, &element_size, &struct_def);
        error != ERR::Okay) {
       *ErrorMsg = (error IS ERR::Search) ? "Unknown span structure metadata." : "Invalid span element metadata.";
       return error;
@@ -454,24 +448,15 @@ static ERR build_span_arg(lua_State *Lua, int StackIndex, const FunctionField &F
          return ERR::Immutable;
       }
 
-      if (raw_bytes) {
-         if (array->len and (array->elemsize > std::numeric_limits<size_t>::max() / array->len)) {
-            *ErrorMsg = "Array backing storage is too large for the span extent.";
-            return ERR::OutOfRange;
-         }
-         extent = size_t(array->len) * array->elemsize;
+      if ((array->elemtype != element_type) or (size_t(array->elemsize) != element_size)) {
+         *ErrorMsg = "Array element type does not match the span element type.";
+         return ERR::InvalidType;
       }
-      else {
-         if ((array->elemtype != element_type) or (size_t(array->elemsize) != element_size)) {
-            *ErrorMsg = "Array element type does not match the span element type.";
-            return ERR::InvalidType;
-         }
-         if ((element_type IS AET::STRUCT) and (array->structdef != struct_def)) {
-            *ErrorMsg = "Structure array type does not match the span structure type.";
-            return ERR::InvalidType;
-         }
-         extent = array->len;
+      if ((element_type IS AET::STRUCT) and (array->structdef != struct_def)) {
+         *ErrorMsg = "Structure array type does not match the span structure type.";
+         return ERR::InvalidType;
       }
+      extent = array->len;
       data = array->arraydata();
    }
    else if (value_type IS LUA_TSTRING) {
@@ -622,7 +607,7 @@ ERR build_args(lua_State *Lua, CSTRING Name, const FunctionField *Args, int Args
    log.traceBranch("%d, %p, Top: %d", ArgsSize, ArgBuffer, top);
 
    for (int i=0; Args[i].Name; i++) {
-      if ((Args[i].Type & FD_ARRAY) and (not (Args[i].Type & FD_CPP))) {
+      if ((Args[i].Type & FD_ARRAY) and ((Args[i].Type & FDF_SPAN) != FDF_SPAN)) {
          log.warning("Pointer array arg %s.%s is not supported.", Name, Args[i].Name);
          ErrorMsg = "Pointer arrays are not supported for actions or methods.";
          return ERR::NoSupport;

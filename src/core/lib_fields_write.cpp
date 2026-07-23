@@ -123,10 +123,8 @@ ERR writeval_default(OBJECTPTR Object, const Field *Field, int flags, CPTR Data)
 
    if (not Field->SetValue) {
       ERR error = ERR::Okay;
-      if (Field->Flags & FD_ARRAY) {
-         if (Field->Flags & FD_CPP) error = set_or_write_vector(Object, Field, flags, Data);
-         else error = set_or_write_array(Object, Field, flags, Data);
-      }
+      if (Field->Flags & FD_VECTOR) error = set_or_write_vector(Object, Field, flags, Data);
+      else if (Field->Flags & FD_ARRAY) error = set_or_write_array(Object, Field, flags, Data);
       else if (Field->Flags & FD_INT)      error = writeval_long(Object, Field, flags, Data);
       else if (Field->Flags & FD_INT64)    error = writeval_large(Object, Field, flags, Data);
       else if (Field->Flags & (FD_DOUBLE|FD_FLOAT)) error = writeval_double(Object, Field, flags, Data);
@@ -143,10 +141,8 @@ ERR writeval_default(OBJECTPTR Object, const Field *Field, int flags, CPTR Data)
    }
    else {
       if (Field->Flags & FD_UNIT)          return setval_unit(Object, Field, flags, Data);
-      else if (Field->Flags & FD_ARRAY) {
-         if (Field->Flags & FD_CPP) return set_or_write_vector(Object, Field, flags, Data);
-         else return set_or_write_array(Object, Field, flags, Data);
-      }
+      else if (Field->Flags & FD_VECTOR) return set_or_write_vector(Object, Field, flags, Data);
+      else if (Field->Flags & FD_ARRAY) return set_or_write_array(Object, Field, flags, Data);
       else if (Field->Flags & FD_FUNCTION) return setval_function(Object, Field, flags, Data);
       else if (Field->Flags & FD_INT)      return setval_long(Object, Field, flags, Data);
       else if (Field->Flags & (FD_DOUBLE|FD_FLOAT)) return setval_double(Object, Field, flags, Data);
@@ -481,7 +477,7 @@ static ERR set_or_write_vector(OBJECTPTR Object, const Field *Field, int Flags, 
          // Vector arrays are fed direct data pointers and element counts to avoid conversion complications
          return ((ERR (*)(APTR, APTR))(Field->SetValue))(Object, (APTR)Data);
       }
-      else if (Field->Flags & FD_CPP) { // Embedded kt::vector<>
+      else if (Field->Flags & FD_VECTOR) { // Embedded kt::vector<>
          if (Field->Flags & FD_STRING) {
             if (not (Flags & FD_STRING)) return ERR::SetValueNotArray;
             return assign_vector_field<std::string>(Object, Field, Data);
@@ -704,9 +700,8 @@ void optimise_write_field(Field &Field)
    if (Field.Flags & FD_FLAGS)       Field.WriteValue = writeval_flags;
    else if (Field.Flags & FD_LOOKUP) Field.WriteValue = writeval_lookup;
    else if (not Field.SetValue) {
-      if (Field.Flags & FD_ARRAY) {
-         Field.WriteValue = (Field.Flags & FD_CPP) ? set_or_write_vector : set_or_write_array;
-      }
+      if (Field.Flags & FD_VECTOR) Field.WriteValue = set_or_write_vector;
+      else if (Field.Flags & FD_ARRAY) Field.WriteValue = set_or_write_array;
       else if (Field.Flags & FD_INT)   Field.WriteValue = writeval_long;
       else if (Field.Flags & FD_INT64) Field.WriteValue = writeval_large;
       else if (Field.Flags & (FD_DOUBLE|FD_FLOAT)) Field.WriteValue = writeval_double;
@@ -722,9 +717,8 @@ void optimise_write_field(Field &Field)
    }
    else {
       if (Field.Flags & FD_UNIT)          Field.WriteValue = setval_unit;
-      else if (Field.Flags & FD_ARRAY) {
-         Field.WriteValue = (Field.Flags & FD_CPP) ? set_or_write_vector : set_or_write_array;
-      }
+      else if (Field.Flags & FD_VECTOR) Field.WriteValue = set_or_write_vector;
+      else if (Field.Flags & FD_ARRAY) Field.WriteValue = set_or_write_array;
       else if (Field.Flags & FD_FUNCTION) Field.WriteValue = setval_function;
       else if (Field.Flags & FD_INT)      Field.WriteValue = setval_long;
       else if (Field.Flags & (FD_DOUBLE|FD_FLOAT)) Field.WriteValue = setval_double;

@@ -188,10 +188,10 @@ static bool test_struct_pointer_array_sentinel(kt::Log &Log)
 }
 
 //********************************************************************************************************************
-// struct_to_table() receives the address of a native structure rather than using the struct field getter.  C++ string
-// arrays require the vector object itself because the array cache reads std::string elements through its vector header.
+// struct_to_table() receives the address of a native structure rather than using the struct field getter.  String
+// vectors require the vector object itself because the array cache reads std::string elements through its vector header.
 
-static bool test_struct_to_table_cpp_string_array(kt::Log &Log)
+static bool test_struct_to_table_string_vector(kt::Log &Log)
 {
    LuaStateHolder holder;
    lua_State *lua = holder.get();
@@ -208,13 +208,13 @@ static bool test_struct_to_table_cpp_string_array(kt::Log &Log)
    def.Size = int(sizeof(names));
    struct_field field;
    field.Name = "Names";
-   field.Type = FD_CPP|FD_ARRAY|FD_STRING;
+   field.Type = FD_VECTOR|FD_CPP|FD_STRING;
    field.ArraySize = 1;
    def.Fields.push_back(field);
 
    std::vector<lua_ref> references;
    if (struct_to_table(lua, references, def, &names) != ERR::Okay) {
-      Log.error("failed to convert native structure containing a C++ string array");
+      Log.error("failed to convert native structure containing a string vector");
       unref_struct_references(lua, references);
       return false;
    }
@@ -222,13 +222,13 @@ static bool test_struct_to_table_cpp_string_array(kt::Log &Log)
 
    lua_getfield(lua, -1, "Names");
    if (not lua_isarray(lua, -1)) {
-      Log.error("C++ string array field did not produce an array");
+      Log.error("string vector field did not produce an array");
       return false;
    }
 
    auto array = lua_toarray(lua, -1);
    if ((array->len != 2) or (array->elemtype != AET::CSTR)) {
-      Log.error("C++ string array field produced length %d and type %d", array->len, int(array->elemtype));
+      Log.error("string vector field produced length %d and type %d", array->len, int(array->elemtype));
       return false;
    }
 
@@ -1158,7 +1158,7 @@ void array_unit_tests(int &Passed, int &Total)
       { "array_creation_byte", test_array_creation_byte },
       { "array_creation_int32", test_array_creation_int32 },
       { "struct_pointer_array_sentinel", test_struct_pointer_array_sentinel },
-      { "struct_to_table_cpp_string_array", test_struct_to_table_cpp_string_array },
+      { "struct_to_table_string_vector", test_struct_to_table_string_vector },
       { "array_creation_double", test_array_creation_double },
       { "array_index_access", test_array_index_access },
       { "array_elemsize", test_array_elemsize },

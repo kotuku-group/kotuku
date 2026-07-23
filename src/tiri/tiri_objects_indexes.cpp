@@ -327,7 +327,7 @@ static ERR object_set_number(lua_State *Lua, OBJECTPTR Object, const Field *Fiel
 
 static ERR parse_csv_struct(std::string_view String, struct_record &Def, APTR Dest)
 {
-   constexpr int UNSUPPORTED = FD_STRING|FD_POINTER|FD_STRUCT|FD_ARRAY|FD_FUNCTION|FD_OBJECT;
+   constexpr int UNSUPPORTED = FD_STRING|FD_POINTER|FD_STRUCT|FD_ARRAY|FD_VECTOR|FD_FUNCTION|FD_OBJECT;
 
    for (auto &field : Def.Fields) {
       if (field.Type & UNSUPPORTED) return ERR::NoSupport;
@@ -462,7 +462,7 @@ static int object_get(lua_State *Lua)
       }
       else if (auto field = FindField(obj, fieldhash(fieldname), &target)) {
          int result = 0;
-         if (field->Flags & FD_ARRAY) {
+         if (field->Flags & (FD_ARRAY|FD_VECTOR)) {
             result = object_get_array(Lua, obj_read(0, nullptr, (APTR)field), def);
          }
          else if (field->Flags & FD_STRUCT) {
@@ -616,7 +616,7 @@ static ERR set_object_field(lua_State *Lua, OBJECTPTR Object, uint32_t FieldHash
       if (not field->writeable()) return ERR::NoFieldAccess;
       else if ((field->Flags & FD_INIT) and target->initialised()) return ERR::NoFieldAccess;
 
-      if (field->Flags & FD_ARRAY) {
+      if (field->Flags & (FD_ARRAY|FD_VECTOR)) {
          return object_set_array(Lua, target, field, ValueIndex);
       }
       else if (field->Flags & FD_FUNCTION) {
@@ -690,7 +690,7 @@ static int object_get_array(lua_State *Lua, const obj_read &Handle, GCobject *De
    return object_get_field(Lua, Handle, Def, [Lua](OBJECTPTR Object, const Field *Field) -> ERR {
       ERR error;
       std::span<int> span;
-      if (Field->Flags & FD_CPP) { // kt::vector<>
+      if (Field->Flags & FD_VECTOR) { // kt::vector<>
          if (Field->Flags & FD_STRING) { // kt::vector<std::string>
             std::span<std::string> values;
             if (!(error = Object->get(Field->FieldID, values))) {

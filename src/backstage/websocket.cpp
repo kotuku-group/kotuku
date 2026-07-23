@@ -184,7 +184,8 @@ static bool websocket_key_is_valid(std::string_view Key)
    kt::BASE64DECODE state;
    int64_t written = 0;
 
-   if (kt::Base64Decode(&state, Key, decoded.data(), &written) != ERR::Okay) {
+   if (kt::Base64Decode(&state, Key, std::span<int8_t>((int8_t *)decoded.data(), decoded.size()), &written) !=
+       ERR::Okay) {
       return false;
    }
 

@@ -142,7 +142,7 @@ static std::string_view array_struct_name(lua_State *L, int NArg)
 static bool array_struct_is_trivial(const struct_record &Def)
 {
    for (auto &field : Def.Fields) {
-      if (field.Type & (FD_CPP|FD_STRING|FD_FUNCTION|FD_OBJECT)) return false;
+      if (field.Type & (FD_CPP|FD_VECTOR|FD_STRING|FD_FUNCTION|FD_OBJECT)) return false;
       if ((field.Type & FD_STRUCT) and (not (field.Type & FD_PTR))) {
          if ((not field.StructDefinition) or (not array_struct_is_trivial(*field.StructDefinition))) return false;
       }

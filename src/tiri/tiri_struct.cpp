@@ -127,7 +127,7 @@ static void process_struct_cpp_strings(lua_State *Lua, const struct_record &Stru
       APTR field_address = (int8_t *)Address + field->Offset;
       auto type = field->Type;
 
-      if ((type & FD_STRUCT) and (not (type & FD_PTR)) and (not (type & FD_CPP)) and
+      if ((type & FD_STRUCT) and (not (type & FD_PTR)) and (not (type & FD_VECTOR)) and
             (field->StructRef != 0)) {
          auto def = field->StructDefinition ? field->StructDefinition :
             find_struct_reference(Lua, StructDef, field->StructRef);
@@ -143,12 +143,12 @@ static void process_struct_cpp_strings(lua_State *Lua, const struct_record &Stru
          }
       }
 
-      if ((type & FD_STRING) and (type & FD_CPP) and (not (type & FD_ARRAY))) {
+      if ((type & FD_STRING) and (type & FD_CPP) and (not (type & FD_VECTOR))) {
          if (Construct) new (field_address) std::string();
          else ((std::string *)field_address)->~basic_string();
       }
 
-      if ((type & FD_CPP) and (type & FD_ARRAY)) {
+      if (type & FD_VECTOR) {
          if ((type & FD_STRUCT) and (not (type & FD_PTR))) {
             if (Construct) construct_trivial_struct_vector(field_address);
             else destroy_trivial_struct_vector(field_address);
@@ -395,8 +395,8 @@ static ERR value_to_cpp_vector(lua_State *Lua, int StackIndex, int Type, APTR Ad
                APTR address = memory.get() + field.Offset;
                auto type = field.Type;
 
-               if (type & FD_ARRAY) {
-                  if ((type & FD_CPP) and (type & FD_STRUCT)) {
+               if (type & (FD_ARRAY|FD_VECTOR)) {
+                  if ((type & FD_VECTOR) and (type & FD_STRUCT)) {
                      if (not field.TrivialElements) {
                         destroy_struct_cpp_strings(Lua, struct_def, memory.get());
                         return ERR::NoSupport;
@@ -428,7 +428,7 @@ static ERR value_to_cpp_vector(lua_State *Lua, int StackIndex, int Type, APTR Ad
                      }
                      assign_trivial_struct_vector(address, serial.data(), source->len, field.ElementStride);
                   }
-                  else if (type & FD_CPP) {
+                  else if (type & FD_VECTOR) {
                      if (auto error = value_to_cpp_vector(Lua, -1, type, address); error != ERR::Okay) {
                         destroy_struct_cpp_strings(Lua, struct_def, memory.get());
                         return error;
@@ -501,8 +501,8 @@ static ERR value_to_cpp_vector(lua_State *Lua, int StackIndex, int Type, APTR Ad
          field_def = find_struct_reference(Lua, StructDef, field.StructRef);
       }
 
-      if (type & FD_ARRAY) {
-         if (type & FD_CPP) { // kt::vector<ANY>
+      if (type & (FD_ARRAY|FD_VECTOR)) {
+         if (type & FD_VECTOR) { // kt::vector<ANY>
             if (type & FD_STRUCT) {
                if (field_def) {
                   make_struct_array(Lua, field_def->Name, int(trivial_struct_vector_size(address)),
@@ -680,7 +680,7 @@ static void make_camel_case(std::string &String)
 
 static int struct_field_alignment(const struct_field &Field, int Type, int FieldSize)
 {
-   if ((Type & FD_CPP) and (Type & FD_ARRAY)) return alignof(kt::vector<int>);
+   if (Type & FD_VECTOR) return alignof(kt::vector<int>);
    if (Type & (FD_POINTER|FD_OBJECT|FD_FUNCTION)) return alignof(APTR);
    if ((Type & FD_STRUCT) and (not (Type & FD_PTR)) and Field.StructDefinition) {
       return Field.StructDefinition->Alignment;
@@ -699,7 +699,10 @@ static ERR layout_struct_field(struct_field &Field, int Type, int FieldSize, int
    // Offset is a uint16_t in struct_field, so oversized fixed arrays must be rejected rather than silently wrapped.
 
    uint64_t storage_size = uint64_t(FieldSize);
-   if (Type & FD_ARRAY) {
+   if (Type & FD_VECTOR) {
+      storage_size = sizeof(kt::vector<int>);
+   }
+   else if (Type & FD_ARRAY) {
       storage_size = (ArraySize > 0) ? uint64_t(FieldSize) * uint64_t(ArraySize) : sizeof(APTR);
    }
    if ((uint64_t(Offset) + storage_size) > std::numeric_limits<uint16_t>::max()) {
@@ -819,12 +822,16 @@ static bool struct_is_trivial(lua_State *Lua, const struct_record &Record, std::
       int array_size = 1;
       if (Sequence[pos] IS '[') {
          pos++;
-         type |= FD_ARRAY;
-         if (type & FD_CPP) { // In the case of kt::vector, fixed array sizes are meaningless
+         if (type & FD_CPP) { // The 'z' prefix combined with an array suffix identifies a kt::vector.
+            type |= FD_VECTOR;
+            if (not (type & FD_STRING)) type &= ~FD_CPP;
             field_size = sizeof(kt::vector<int>);
          }
-         else if ((Sequence[pos] >= '0') and (Sequence[pos] <= '9')) { // Sanity check
-            array_size = strtol(Sequence.c_str() + pos, nullptr, 0);
+         else {
+            type |= FD_ARRAY;
+            if ((Sequence[pos] >= '0') and (Sequence[pos] <= '9')) { // Sanity check
+               array_size = strtol(Sequence.c_str() + pos, nullptr, 0);
+            }
          }
          pos = Sequence.find_first_of("],", pos);
          if (pos IS std::string::npos) pos = Sequence.size();
@@ -855,7 +862,7 @@ static bool struct_is_trivial(lua_State *Lua, const struct_record &Record, std::
    }
 
    for (auto &field : Record.Fields) {
-      if ((field.Type & FD_CPP) and (field.Type & FD_ARRAY) and (field.Type & FD_STRUCT) and
+      if ((field.Type & FD_VECTOR) and (field.Type & FD_STRUCT) and
             (not (field.Type & FD_PTR)) and field.StructDefinition) {
          field.ElementStride = field.StructDefinition->Size;
          std::string offending;
@@ -958,7 +965,7 @@ static bool struct_is_trivial(lua_State *Lua, const struct_record &Record, std::
 
 static int declared_field_size(lua_State *Lua, const struct_field &Field)
 {
-   if ((Field.Type & FD_CPP) and (Field.Type & FD_ARRAY)) return sizeof(kt::vector<int>);
+   if (Field.Type & FD_VECTOR) return sizeof(kt::vector<int>);
    // FD_PTR is an alias of FD_POINTER, so this only matches a struct embedded inline rather than by reference.
 
    if ((Field.Type & FD_STRUCT) and (not (Field.Type & FD_PTR))) {
@@ -1004,7 +1011,7 @@ static bool identical_struct_layout(const struct_record &Left, const struct_reco
 static bool struct_is_trivial(lua_State *Lua, const struct_record &Record, std::string &Offending)
 {
    for (auto &field : Record.Fields) {
-      if ((field.Type & FD_CPP) and ((field.Type & FD_STRING) or (field.Type & FD_ARRAY))) {
+      if (((field.Type & FD_CPP) and (field.Type & FD_STRING)) or (field.Type & FD_VECTOR)) {
          Offending = field.Name;
          return false;
       }
@@ -1035,7 +1042,7 @@ static bool struct_is_trivial(lua_State *Lua, const struct_record &Record, std::
       int field_size = declared_field_size(Lua, field);
       if (field_size <= 0) return ERR::NotFound;
 
-      if ((field.Type & FD_CPP) and (field.Type & FD_ARRAY) and (field.Type & FD_STRUCT) and
+      if ((field.Type & FD_VECTOR) and (field.Type & FD_STRUCT) and
             (not (field.Type & FD_PTR))) {
          auto child = field.StructDefinition ? field.StructDefinition : find_struct(Lua, field.StructRef);
          std::string offending;

@@ -346,7 +346,7 @@ provided as a sequential array.  No checks will be performed to confirm the vali
 Calling this method will also result in the path being recomputed for the next redraw.
 
 -INPUT-
-buf(struct(*PathCommand)) Commands: Array of commands to add to the path.
+array(struct(PathCommand)) Commands: Array of commands to add to the path.
 
 -RESULT-
 Okay
@@ -457,7 +457,7 @@ Use SetCommand() to copy one or more commands into an existing path.
 
 -INPUT-
 int Index: The index of the command that is to be set.
-buf(struct(*PathCommand)) Command: An array of commands to set in the path.
+array(struct(PathCommand)) Command: An array of commands to set in the path.
 
 -RESULT-
 Okay
@@ -501,7 +501,7 @@ Use SetCommandList() to copy a series of path commands to a @VectorPath object. 
 cleared as a result of this process.
 
 -INPUT-
-buf(struct(*PathCommand)) Commands: An array of !PathCommand structures.
+array(struct(PathCommand)) Commands: An array of !PathCommand structures.
 
 -RESULT-
 Okay

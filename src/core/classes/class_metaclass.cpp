@@ -1135,48 +1135,44 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
          log.warning("Virtual field %s.%s is writeable with no setter.", Class->ClassName.c_str(), field.Name);
       }
    }
+   else if (field.Flags & FD_VECTOR) {
+      field_size      = sizeof(kt::vector<int>);
+      field_alignment = alignof(kt::vector<int>);
+      field_type      = "kt::vector";
+   }
    else if (field.Flags & FD_ARRAY) {
       // Standard array declarations are assumed to be pointers to data by default.
       // FD_VIRTUAL arrays are always referenced as pointers via Get/Set
-      // CPP arrays are kt::vector<> types; note that the selected type doesn't impact its size
-
-      if (field.Flags & FD_CPP) { // Embedded kt::vector<> array (the declared type doesn't contribute to size)
-         field_size      = sizeof(kt::vector<int>);
-         field_alignment = alignof(kt::vector<int>);
-         field_type      = "kt::vector";
-      }
-      else { // Standard embedded array (since FD_VIRTUAL wasn't set)
-         if (field.Arg) { // Arg is set if the array is embedded in the object
-            if (field.Flags & FD_INT) {
-               field_size      = sizeof(int) * field.Arg;
-               field_alignment = alignof(int);
-            }
-            else if (field.Flags & FD_DOUBLE) {
-               field_size      = sizeof(double) * field.Arg;
-               field_alignment = alignof(double);
-            }
-            else if (field.Flags & FD_BYTE) {
-               field_size      = sizeof(uint8_t) * field.Arg;
-               field_alignment = alignof(uint8_t);
-            }
-            else if (field.Flags & FD_INT64) {
-               field_size      = sizeof(int64_t) * field.Arg;
-               field_alignment = alignof(int64_t);
-            }
-            else {
-               // Only primitive types are supported for embedded arrays, kt::vector should otherwise be used
-               log.warning("Invalid array flags for %s: $%.8x.", field.Name, field.Flags);
-               field_size      = 0;
-               field_alignment = 0;
-            }
-
-            field_type = "array";
+      if (field.Arg) { // Arg is set if the array is embedded in the object
+         if (field.Flags & FD_INT) {
+            field_size      = sizeof(int) * field.Arg;
+            field_alignment = alignof(int);
+         }
+         else if (field.Flags & FD_DOUBLE) {
+            field_size      = sizeof(double) * field.Arg;
+            field_alignment = alignof(double);
+         }
+         else if (field.Flags & FD_BYTE) {
+            field_size      = sizeof(uint8_t) * field.Arg;
+            field_alignment = alignof(uint8_t);
+         }
+         else if (field.Flags & FD_INT64) {
+            field_size      = sizeof(int64_t) * field.Arg;
+            field_alignment = alignof(int64_t);
          }
          else {
-            field_size = sizeof(APTR);
-            field_alignment = alignof(APTR);
-            field_type = "pointer";
+            // Only primitive types are supported for embedded arrays, kt::vector should otherwise be used
+            log.warning("Invalid array flags for %s: $%.8x.", field.Name, field.Flags);
+            field_size      = 0;
+            field_alignment = 0;
          }
+
+         field_type = "array";
+      }
+      else {
+         field_size = sizeof(APTR);
+         field_alignment = alignof(APTR);
+         field_type = "pointer";
       }
    }
    else if (field.Flags & FD_STRING) {

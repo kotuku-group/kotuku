@@ -2544,7 +2544,7 @@ static void apply_struct_field_metadata(ExpDesc &Expression, struct_record *Stru
       Expression.struct_def = nullptr;
       Expression.object_class_id = CLASSID::NIL;
 
-      if (field.Type & FD_ARRAY) Expression.result_type = TiriType::Array;
+      if (field.Type & (FD_ARRAY|FD_VECTOR)) Expression.result_type = TiriType::Array;
       else if ((field.Type & FD_STRUCT) and not (field.Type & FD_POINTER)) {
          Expression.result_type = TiriType::Struct;
          Expression.struct_def = field.StructDefinition;

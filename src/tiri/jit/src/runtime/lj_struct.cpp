@@ -170,7 +170,7 @@ extern "C" int ir_struct_field_type(GCstruct *Struct, GCstr *Key, int &Offset, u
 
       // Order is significant because array, struct and object fields also carry element/storage flags.
       if ((flags & FD_CUSTOM) and (flags & FD_BYTE) and (flags & FD_ARRAY)) return IRT_STR;
-      else if (flags & FD_ARRAY) return IRT_ARRAY;
+      else if (flags & (FD_ARRAY|FD_VECTOR)) return IRT_ARRAY;
       else if (flags & FD_STRING) return IRT_STR;
       else if (flags & FD_STRUCT) return IRT_STRUCT;
       else if (flags & FD_OBJECT) return IRT_OBJECT;

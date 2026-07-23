@@ -523,7 +523,8 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
                                              buffer[out++] = ' ';
                                           }
                                        }
-                                       out += UTF8WriteValue(unicode, buffer+out, std::ssize(buffer)-out);
+                                       out += UTF8WriteValue(unicode,
+                                          std::span<int8_t>((int8_t *)(buffer + out), std::size(buffer) - size_t(out)));
                                        prev_unicode = unicode;
                                     }
                                     buffer[out] = 0;

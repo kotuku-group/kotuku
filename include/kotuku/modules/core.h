@@ -28,7 +28,7 @@
 #include "ankerl/unordered_dense.h"
 #endif
 
-#define CORE_BUILD_DATE 20260722
+#define CORE_BUILD_DATE 20260723
 class objMetaClass;
 
 // Predefined cursor styles
@@ -886,7 +886,7 @@ enum class JET : int {
 // Field descriptors
 
 #define FD_DOUBLERESULT 0x80000100
-#define FD_CLASS_TYPES 0xffc05001
+#define FD_CLASS_TYPES 0xffc85001
 #define FD_VOID 0x00000000
 #define FD_OBJECT 0x00000001
 #define FD_LOCAL 0x00000002
@@ -895,19 +895,18 @@ enum class JET : int {
 #define FD_STRUCT 0x00000010
 #define FD_ALLOC 0x00000020
 #define FD_STORE 0x00000020
-#define FD_FLAGS 0x00000040
 #define FD_VARTAGS 0x00000040
+#define FD_FLAGS 0x00000040
 #define FD_LOOKUP 0x00000080
-#define FD_READ 0x00000100
 #define FD_RESULT 0x00000100
+#define FD_READ 0x00000100
 #define FD_R 0x00000100
 #define FD_WRITE 0x00000200
 #define FD_W 0x00000200
-#define FD_BUFFER 0x00000200
 #define FD_RW 0x00000300
-#define FD_I 0x00000400
-#define FD_TAGS 0x00000400
 #define FD_INIT 0x00000400
+#define FD_TAGS 0x00000400
+#define FD_I 0x00000400
 #define FD_RI 0x00000500
 #define FD_ERROR 0x00000800
 #define FD_ARRAY 0x00001000
@@ -918,12 +917,13 @@ enum class JET : int {
 #define FD_SYSTEM 0x00010000
 #define FD_SYNONYM 0x00020000
 #define FD_UNSIGNED 0x00040000
+#define FD_VECTOR 0x00080000
 #define FD_PURE 0x00100000
 #define FD_SCALED 0x00200000
 #define FD_NORMALISED 0x00200000
 #define FD_WORD 0x00400000
-#define FD_STRING 0x00800000
 #define FD_STR 0x00800000
+#define FD_STRING 0x00800000
 #define FD_STRRESULT 0x00800100
 #define FD_BYTE 0x01000000
 #define FD_FUNCTION 0x02000000
