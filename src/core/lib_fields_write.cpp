@@ -352,7 +352,7 @@ static ERR writeval_struct(OBJECTPTR Object, const Field *Field, int Flags, CPTR
 {
    if (Flags & FD_STRUCT) {
       // Possibly dangerous if the struct happens to contain C++ classes, but otherwise works.
-      if (auto it = glStructSizes.find(kt::strhash(CSTRING(Field->Arg))); it != glStructSizes.end()) {
+      if (auto it = glStructSizes.find(uint32_t(Field->Arg)); it != glStructSizes.end()) {
          auto struct_size = it->second.Size;
          auto offset = ((int8_t *)Object + Field->Offset);
          copymem(Data, offset, struct_size);

@@ -611,6 +611,32 @@ GCstruct * push_struct(extTiri *Self, APTR Address, std::string_view StructName,
 }
 
 //********************************************************************************************************************
+// Use this for creating a struct on the Lua stack from a pre-hashed structure name.
+
+GCstruct * push_struct(extTiri *Self, APTR Address, uint32_t StructKey, bool Deallocate, bool AllowEmpty,
+   OBJECTPTR Lifecycle)
+{
+   kt::Log log(__FUNCTION__);
+
+   log.traceBranch("Struct: $%.8x, Address: %p, Deallocate: %d", StructKey, Address, Deallocate);
+
+   if (auto def = find_struct(Self->Lua, StructKey)) {
+      return push_struct_def(Self->Lua, Address, *def, Deallocate, Lifecycle);
+   }
+   else if (AllowEmpty) {
+      // Preserve the name-based overload's fallback for resource structs that Tiri does not know about.
+
+      static struct_record empty("");
+      return push_struct_def(Self->Lua, Address, empty, false, Lifecycle);
+   }
+   else {
+      if (Deallocate) FreeResource(Address);
+      log.warning("Unrecognised struct hash $%.8x", StructKey);
+      return nullptr;
+   }
+}
+
+//********************************************************************************************************************
 // structdef = MAKESTRUCT(Name, Sequence)
 //
 // This function makes a structure definition which can be passed to struct.new()

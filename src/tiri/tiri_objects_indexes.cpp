@@ -50,7 +50,7 @@ static ERR set_array_from_table(lua_State *Lua, OBJECTPTR Object, const Field *F
    else if (Field->Flags & FD_STRUCT) {
       // Array structs can be set if the Lua table consists of Tiri.struct types.
 
-      if (auto def = find_struct(Lua, (CSTRING)Field->Arg)) {
+      if (auto def = find_struct(Lua, uint32_t(Field->Arg))) {
          int aligned_size = ALIGN64(def->Size);
          auto structbuf = std::make_unique<uint8_t[]>(total * aligned_size);
 
@@ -364,7 +364,7 @@ static struct_record * lookup_struct_field_def(lua_State *Lua, const Field *Fiel
 {
    if (not Field->Arg) return nullptr;
 
-   return find_struct(Lua, (CSTRING)Field->Arg);
+   return find_struct(Lua, uint32_t(Field->Arg));
 }
 
 static ERR object_set_struct(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
@@ -679,10 +679,23 @@ template <class Callback> static int object_get_field(lua_State *Lua, const obj_
    return error != ERR::Okay ? 0 : 1;
 }
 
-static std::string_view object_field_struct_name(const Field *Field)
+static ERR make_object_field_array(lua_State *Lua, const Field *Field, size_t Elements, CPTR Values)
 {
-   if (Field->Flags & FD_STRUCT) return std::string_view((CSTRING)Field->Arg);
-   else return std::string_view {};
+   struct_record *struct_def = nullptr;
+   std::string_view struct_name;
+
+   if (Field->Flags & FD_STRUCT) {
+      struct_def = find_struct(Lua, uint32_t(Field->Arg));
+      if (not struct_def) {
+         kt::Log("make_object_field_array").warning("Struct hash $%.8x not found for field '%s'.",
+            uint32_t(Field->Arg), Field->Name);
+         return ERR::Search;
+      }
+      struct_name = struct_def->Name;
+   }
+
+   make_any_array(Lua, Field->Flags, struct_name, int(Elements), Values, struct_def);
+   return ERR::Okay;
 }
 
 static int object_get_array(lua_State *Lua, const obj_read &Handle, GCobject *Def)
@@ -705,8 +718,7 @@ static int object_get_array(lua_State *Lua, const obj_read &Handle, GCobject *De
             // For kt::vector primitives we can just convert to a raw data array.
             std::span<int> values; // The type doesn't matter.
             if (!(error = Object->get(Field->FieldID, values, false))) {
-               std::string_view struct_name = object_field_struct_name(Field);
-               make_any_array(Lua, Field->Flags, struct_name, values.size(), values.data());
+               error = make_object_field_array(Lua, Field, values.size(), values.data());
             }
          }
       }
@@ -718,8 +730,7 @@ static int object_get_array(lua_State *Lua, const obj_read &Handle, GCobject *De
             make_array(Lua, AET::OBJECT, span.size(), span.data());
          }
          else if (Field->Flags & (FD_INT|FD_INT64|FD_FLOAT|FD_DOUBLE|FD_POINTER|FD_BYTE|FD_WORD|FD_STRUCT)) {
-            std::string_view struct_name = object_field_struct_name(Field);
-            make_any_array(Lua, Field->Flags, struct_name, span.size(), span.data());
+            error = make_object_field_array(Lua, Field, span.size(), span.data());
          }
          else {
             kt::Log("object_get_array").warning("Invalid array type for '%s', flags: $%.8x", Field->Name,
@@ -749,7 +760,7 @@ static int object_get_struct(lua_State *Lua, const obj_read &Handle, GCobject *D
                // no dependency and skip it, and a JIT-compiled access would compile the guard out in that case.
                bool is_resource = Field->Flags & FD_RESOURCE;
                bool owns_copy = is_resource and (Field->Flags & FD_STORE);
-               if (not push_struct(Lua->script, result, (CSTRING)Field->Arg, owns_copy, is_resource,
+               if (not push_struct(Lua->script, result, uint32_t(Field->Arg), owns_copy, is_resource,
                      owns_copy ? nullptr : Object)) {
                   error = ERR::Search;
                }
