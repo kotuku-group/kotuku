@@ -852,7 +852,7 @@ static ERR run_script(extTiri *Self)
                   }
                   else lua_pushnil(Self->Lua);
                }
-               else if (type & (FD_PTR|FD_BUFFER)) {
+               else if (type & FD_PTR) {
                   // Try and make the pointer safer/more usable by translating it into a buffer, object ID or whatever.
                   // (In a secure environment, pointers may be passed around but may be useless if their use is
                   // disallowed within Lua).

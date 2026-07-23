@@ -160,7 +160,7 @@ static ERR key_event(objVectorViewport *Viewport, KQ Flags, KEY Value, int Unico
          // Output the character
 
          char string[12];
-         UTF8WriteValue(Unicode, string, sizeof(string));
+         UTF8WriteValue(Unicode, std::span<int8_t>((int8_t *)string, sizeof(string)));
          Self->insertText(string, Self->CursorIndex.index, Self->CursorIndex.offset, true); // Will set UpdatingLayout to true
          Self->CursorIndex += std::string_view(string).size(); // Reposition the cursor
 

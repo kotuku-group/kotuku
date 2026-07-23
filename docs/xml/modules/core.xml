@@ -162,7 +162,7 @@ struct FunctionField argsResize[] = {
 <type name="PTR">A standard address space pointer.</type>
 <type name="OBJECTPTR">A pointer to an object.  This is defined as <code>FD_PTR|FD_OBJECT</code> and its convenience macro is <code>FD_OBJECTPTR</code>.</type>
 <type name="CPPSTRING">A C++ <code>std::string</code>, defined as <code>FD_CPP|FD_STRING</code> with the convenience macro <code>FDF_CPPSTRING</code>.</type>
-<type name="SPAN">A byte span describing a contiguous block of memory, defined as <code>FD_CPP|FD_BUFFER</code> with the convenience macro <code>FDF_SPAN</code>.  It is paired with <code>FD_PTR</code> and combined with <code>FD_MUTABLE</code> when the span is writable.</type>
+<type name="SPAN">A typed span describing contiguous callable array storage, defined as <code>FD_CPP|FD_ARRAY</code> with the convenience macro <code>FDF_SPAN</code>.  Combine it with the element type and <code>FD_MUTABLE</code> when the span is writable.</type>
 </types>
 <p>Supplementary flags can be combined with the above types to provide additional information about the argument:</p>
 <types lookup="FD">

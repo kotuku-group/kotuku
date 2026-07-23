@@ -1082,7 +1082,7 @@ The argument types that can be used by actions are limited to those listed in th
 <type name="PTR">A standard address space pointer.</>
 <type name="OBJECTPTR">A pointer to an object.  This is defined as `FD_PTR|FD_OBJECT` and its convenience macro is `FD_OBJECTPTR`.</>
 <type name="CPPSTRING">A C++ `std::string`, defined as `FD_CPP|FD_STRING` with the convenience macro `FDF_CPPSTRING`.</>
-<type name="SPAN">A byte span describing a contiguous block of memory, defined as `FD_CPP|FD_BUFFER` with the convenience macro `FDF_SPAN`.  It is paired with `FD_PTR` and combined with `FD_MUTABLE` when the span is writable.</>
+<type name="SPAN">A typed span describing contiguous callable array storage, defined as `FD_CPP|FD_ARRAY` with the convenience macro `FDF_SPAN`.  Combine it with the element type and `FD_MUTABLE` when the span is writable.</>
 </>
 
 Supplementary flags can be combined with the above types to provide additional information about the argument:

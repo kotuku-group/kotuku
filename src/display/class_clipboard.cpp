@@ -488,7 +488,7 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
             { "Clipboard", Self, FD_OBJECTPTR },
             { "Requester", Args->Object, FD_OBJECTPTR },
             { "Item",      request.Item },
-            { "Datatypes", &span, FDF_SPAN }
+            { "Datatypes", &span, FDF_SPAN|FD_BYTE }
          }), error) != ERR::Okay) error = ERR::Terminate;
       }
       else error = log.warning(ERR::FieldNotSet);

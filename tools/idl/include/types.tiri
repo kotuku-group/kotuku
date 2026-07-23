@@ -18,7 +18,6 @@ rx_int_array       = <{ regex.new([[^(u?)int\((\d+)\)]]) }>
 rx_double_array    = <{ regex.new([[^double\((.+)\)]]) }>
 rx_float_array     = <{ regex.new([[^float\((.+)\)]]) }>
 rx_ptr_type        = <{ regex.new([[^(c?)ptr\((.+)\)]]) }>
-rx_buf_type        = <{ regex.new([[^buf\((.+)\)]]) }>
 rx_array_sized     = <{ regex.new([[^array\((.+),(\d+)\)$]]) }>
 rx_array_unsized   = <{ regex.new([[^array\((.+)\)$]]) }>
 rx_vector          = <{ regex.new([[^vector\((.+)\)$]]) }>
@@ -87,30 +86,6 @@ function fieldStructType(Option:any):str
    return 'STRUCT'
 end
 
------------------------------------------------------------------------------------------------------------------------
--- Return the C++ element type represented by the inner declaration of a function or method buffer.
-
-function spanElementType(Value:table, DeclaredType:str):str
-   local element_type
-
-   if DeclaredType is 'ptr' or DeclaredType is 'cptr' then
-      element_type = 'int8_t'
-   elseif rx_string_type.test(DeclaredType) then
-      element_type = 'char'
-   elseif Value.isPointer and (Value.type:endsWith(' *') or Value.type:endsWith(' &')) then
-      element_type = Value.type:substr(0, -2):trim()
-   else
-      element_type = Value.type
-   end
-
-   if not Value.mutable and not element_type:startsWith('const ') then
-      element_type = 'const ' .. element_type
-   end
-
-   return element_type
-end
-
------------------------------------------------------------------------------------------------------------------------
 -- Convert FD flags into a printable C type.  Used by getMetaFieldDefinition() for classes.
 
 global function getFieldType(Def:table, Type:num, CustomName:str, Option:any)
@@ -591,48 +566,18 @@ global function cType(Value:table, Origin:str):table
       end
    end
 
-   do
-      local buf_type = rx_buf_type.extract(Value.type)
-      if buf_type then
-         Value.type     = buf_type
-         Value          = cType(Value, Origin)
-
-         if Value.isFunction or Value.isMethod then
-            assert(not Value.allocated, f'Allocated span results are not supported for {Origin}.')
-            assert(not result_value, f'Span result parameters are not supported for {Origin}.')
-            assert(Value.arraySize is nil, f'Fixed-extent spans are not supported for {Origin}.')
-
-            local inner_fd = Value.fullType.fd
-            local inner_c_type = Value.fullType.c_type
-            local element_type = spanElementType(Value, buf_type)
-
-            Value.type       = f'std::span<{element_type}>'
-            Value.docType    = Value.type
-            Value.innerType  = element_type
-            Value.isSpan     = true
-            Value.isComplex  = true
-            Value.isCompound = true
-            Value.fullType   = {
-               fd       = 'FDF_SPAN|' .. inner_fd,
-               c_type   = inner_c_type,
-               t_type   = 'array'
-            }
-         else
-            Value.fullType = { fd='FD_BUFFER|' .. Value.fullType.fd, c_type='APTR', t_type='any' }
-         end
-         return Value
-      end
-   end
-
    -- ARRAY CLIENT NOTES
    -- For primitive embedded array types, use 'type(n)' such as 'int(4)'.  See above patterns for details.
-   -- To describe a pointer to an array of any type, use 'array(type)' such as 'array(cstr)'
+   -- Callable array(type) declarations use std::span and preserve the declared element type.
+   -- For stored fields, array(type) describes a pointer to an array, such as array(cstr).
    -- To describe a pointer to a null-terminated array, use 'array(type,0)'
    -- To describe complex embedded types of fixed size, use 'array(type,n)' such as 'array(struct(RGB8),256)'
 
    do -- Array (pre-sized)
       local array_type, array_size = rx_array_sized.extract(Value.type)
       if array_size then
+         assert(not (Value.isFunction or Value.isMethod),
+            f'Fixed and null-terminated arrays are not supported for callable {Origin}.')
          array_size = tonumber(array_size)
          Value.isArray = true
          if array_size is 0 then
@@ -664,6 +609,44 @@ global function cType(Value:table, Origin:str):table
          Value.isArray = true
          Value.type    = array_type
          Value         = cType(Value, Origin) -- Inner type will amend the value definition
+
+         if Value.isFunction or Value.isMethod then
+            assert(not Value.allocated, f'Allocated span results are not supported for {Origin}.')
+            assert(not result_value, f'Span result parameters are not supported for {Origin}.')
+
+            local inner_fd = Value.fullType.fd
+            assert(not inner_fd:find('FD_STRING'), f'String element spans are not supported for {Origin}.')
+            assert(not inner_fd:find('FD_OBJECT'), f'Object element spans are not supported for {Origin}.')
+            assert(not inner_fd:find('FD_FUNCTION'), f'Function element spans are not supported for {Origin}.')
+            assert(not inner_fd:find('FD_UNIT'), f'Unit element spans are not supported for {Origin}.')
+            assert(not inner_fd:find('FD_ARRAY'), f'Nested array spans are not supported for {Origin}.')
+            assert(not inner_fd:find('FD_VECTOR'), f'Nested vector spans are not supported for {Origin}.')
+            assert(not (Value.struct and Value.isPointer),
+               f'Pointer-qualified structure spans are not supported for {Origin}.')
+
+            local element_type = Value.type
+            if not Value.mutable then
+               if element_type:endsWith(' *') then
+                  element_type ..= ' const'
+               elseif not element_type:startsWith('const ') then
+                  element_type = 'const ' .. element_type
+               end
+            end
+
+            Value.type       = f'std::span<{element_type}>'
+            Value.docType    = Value.type
+            Value.innerType  = element_type
+            Value.isSpan     = true
+            Value.isComplex  = true
+            Value.isCompound = true
+            Value.fullType   = {
+               fd       = 'FDF_SPAN|' .. inner_fd,
+               c_type   = Value.fullType.c_type,
+               t_type   = 'array'
+            }
+            return Value
+         end
+
          local inner_type = Value.struct ?? 'struct ' .. Value.struct :> Value.type
          if Value.isConst then inner_type = 'const ' .. inner_type end
 

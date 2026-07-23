@@ -110,7 +110,7 @@ static ERR span_descriptor_element_layout(const FunctionField &Field, size_t *El
    else {
       const int type_count = bool(Field.Type & FD_DOUBLE) + bool(Field.Type & FD_INT64) +
          bool(Field.Type & FD_FLOAT) + bool(Field.Type & FD_INT) + bool(Field.Type & FD_WORD) +
-         bool(Field.Type & FD_BYTE) + bool(Field.Type & FD_PTR) + bool(Field.Type & FD_STR);
+         bool(Field.Type & FD_BYTE) + bool(Field.Type & FD_PTR);
       if (type_count != 1) return ERR::InvalidData;
 
       if (Field.Type & FD_DOUBLE) { *ElementSize = sizeof(double); *ElementAlignment = alignof(double); }
@@ -118,7 +118,8 @@ static ERR span_descriptor_element_layout(const FunctionField &Field, size_t *El
       else if (Field.Type & FD_FLOAT) { *ElementSize = sizeof(float); *ElementAlignment = alignof(float); }
       else if (Field.Type & FD_INT) { *ElementSize = sizeof(int); *ElementAlignment = alignof(int); }
       else if (Field.Type & FD_WORD) { *ElementSize = sizeof(int16_t); *ElementAlignment = alignof(int16_t); }
-      else { *ElementSize = sizeof(int8_t); *ElementAlignment = alignof(int8_t); }
+      else if (Field.Type & FD_BYTE) { *ElementSize = sizeof(int8_t); *ElementAlignment = alignof(int8_t); }
+      else { *ElementSize = sizeof(APTR); *ElementAlignment = alignof(APTR); }
    }
 
    if ((not *ElementSize) or (not *ElementAlignment) or
@@ -386,7 +387,7 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
       if (pos >= ArgsSize) return ERR::InvalidData; // Sanity check, the pos can't exceed ArgsSize.
 
       int type = Args[i].Type;
-      if (type & FD_ARRAY) {
+      if ((type & FD_ARRAY) and ((type & FDF_SPAN) != FDF_SPAN)) {
          // Array parameters are considered legacy and effectively unused in the current system.
          return ERR::NoSupport;
       }

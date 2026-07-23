@@ -38,9 +38,9 @@ struct ScriptArg { // For use with sc::Exec
    ScriptArg(CSTRING pName, int64_t pValue, uint32_t pType = FD_INT64) : Name(pName), Type(pType), Int64(pValue) { }
    ScriptArg(CSTRING pName, double pValue, uint32_t pType = FD_DOUBLE) : Name(pName), Type(pType), Double(pValue) { }
    // The span descriptor must outlive sc::Call(), so we store the address of a caller-owned span.
-   // Binding to a temporary span is deleted to prevent a dangling descriptor.
-   template<typename T> ScriptArg(CSTRING pName, const std::span<T> &pValue, uint32_t pType = FDF_SPAN) : Name(pName), Type(pType), Address((APTR)&pValue) { }
-   template<typename T> ScriptArg(CSTRING pName, std::span<T> &&pValue, uint32_t pType = FDF_SPAN) = delete;
+   // The caller supplies exact element metadata; binding to a temporary is deleted to prevent a dangling descriptor.
+   template<typename T> ScriptArg(CSTRING pName, const std::span<T> &pValue, uint32_t pType) : Name(pName), Type(pType), Address((APTR)&pValue) { }
+   template<typename T> ScriptArg(CSTRING pName, std::span<T> &&pValue, uint32_t pType) = delete;
 };
 
 // Script class definition

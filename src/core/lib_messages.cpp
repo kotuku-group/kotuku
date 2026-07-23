@@ -502,7 +502,7 @@ timer_cycle:
                   if (sc::Call(hdl->Function, std::to_array<ScriptArg>({
                      { "UID",  msg.UID },
                      { "Type", int(msg.Type) },
-                     { "Data", &span, FDF_SPAN }
+                     { "Data", &span, FDF_SPAN|FD_BYTE }
                   }), result) != ERR::Okay) result = ERR::Terminate;
                }
 
@@ -613,7 +613,7 @@ must be supplied.  If the `Buffer` is too small, the message data will be trimme
 -INPUT-
 &int Handle: Pointer to a 32-bit value that must initially be set to zero.  The ScanMessages() function will automatically update this variable with each call so that it can remember its analysis position.
 int(MSGID) Type:   The message type to filter for, or zero to scan all messages in the queue.
-^buf(ptr) Buffer: Optional buffer that is large enough to hold a !Message header and any message data.
+^array(char) Buffer: Optional buffer that is large enough to hold a !Message header and any message data.
 
 -ERRORS-
 Okay:
@@ -681,7 +681,7 @@ pre-defined, such as `MSGID::QUIT`.  Custom messages should use a unique type ID
 -INPUT-
 int(MSGID) Type:  The message Type/ID being sent.  Unique type ID's can be obtained from ~AllocateID().
 int(MSF) Flags: Optional flags.
-buf(ptr) Data: Optional data to copy to the message queue.  An empty buffer sends a message without payload data.
+array(char) Data: Optional data to copy to the message queue.  An empty buffer sends a message without payload data.
 
 -ERRORS-
 Okay: The message was successfully written to the message queue.
@@ -985,7 +985,7 @@ Non-empty `Data` replaces the complete existing payload, while an empty buffer l
 -INPUT-
 int Message:   The ID of the message that will be updated.
 int(MSGID) Type: The type of the message.
-buf(ptr) Data: Optional replacement data for the message.  An empty buffer leaves the existing payload unchanged.
+array(char) Data: Optional replacement data for the message.  An empty buffer leaves the existing payload unchanged.
 
 -ERRORS-
 Okay:   The message was successfully updated.

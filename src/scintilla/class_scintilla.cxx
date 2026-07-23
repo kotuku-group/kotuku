@@ -611,7 +611,7 @@ must have enough space for the line content and a terminating null byte.
 
 -INPUT-
 int Line: The index of the line to retrieve.
-^buf(char) Buffer: The destination buffer.
+^array(char) Buffer: The destination buffer.
 
 -RESULT-
 Okay:
@@ -2124,7 +2124,8 @@ static void key_event(evKey *Event, int Size, extScintilla *Self)
       string[0] = 0;
 
       if ((Event->Qualifiers & KQ::NOT_PRINTABLE) IS KQ::NIL) {
-         int16_t out = UTF8WriteValue(Event->Unicode, string, sizeof(string)-1);
+         int16_t out = UTF8WriteValue(Event->Unicode,
+            std::span<int8_t>((int8_t *)string, sizeof(string) - 1));
          if (out >= 0) string[out] = 0;
       }
 

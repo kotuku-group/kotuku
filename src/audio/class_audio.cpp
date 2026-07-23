@@ -206,7 +206,7 @@ The `Loop1Type` and `Loop2Type` fields alter the style of the loop.  These can b
 -INPUT-
 func OnStop: This optional callback function will be called when the stream stops playing.
 int(SFM) SampleFormat: Indicates the format of the sample data that you are adding.
-buf(ptr) Data: Points to the address of the sample data.
+array(char) Data: Points to the address of the sample data.
 struct(*AudioLoop) Loop: Optional sample loop information.
 &int Result: The resulting sample handle will be returned in this parameter.
 

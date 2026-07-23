@@ -44,41 +44,45 @@ constexpr size_t BUFFER_SIZE = MAX_MODULE_ARGS * BUFFER_ELEMENT_SIZE;
 constexpr size_t MAX_STRING_PREFIX_LENGTH = 200;
 
 struct module_span_arg {
-   std::span<const int8_t> ConstBytes;
-   std::span<int8_t> MutableBytes;
-   std::span<const char> ConstChars;
-   std::span<char> MutableChars;
+   std::span<int8_t> Span;
 
-   APTR set_const_bytes(CPTR Data, size_t Size) noexcept {
-      ConstBytes = std::span<const int8_t>((const int8_t *)Data, Size);
-      return &ConstBytes;
-   }
-
-   APTR set_mutable_bytes(APTR Data, size_t Size) noexcept {
-      MutableBytes = std::span<int8_t>((int8_t *)Data, Size);
-      return &MutableBytes;
-   }
-
-   APTR set_const_chars(CSTRING Data, size_t Size) noexcept {
-      ConstChars = std::span<const char>(Data, Size);
-      return &ConstChars;
-   }
-
-   APTR set_mutable_chars(STRING Data, size_t Size) noexcept {
-      MutableChars = std::span<char>(Data, Size);
-      return &MutableChars;
+   APTR set(CPTR Data, size_t Extent) noexcept {
+      Span = std::span<int8_t>((int8_t *)Data, Extent);
+      return &Span;
    }
 };
 
-// Return the complete byte extent of an array without allowing multiplication to wrap.
+// Resolve and validate the element metadata for a callable array.
 
-[[nodiscard]] static ERR array_byte_extent(const GCarray *Array, size_t *Extent) noexcept
+static ERR module_span_element_metadata(lua_State *Lua, const FunctionField &Field, AET *ElementType,
+   size_t *ElementSize, struct_record **StructDef)
 {
-   if (Array->len and (size_t(Array->elemsize) > (std::numeric_limits<size_t>::max() / Array->len))) {
-      return ERR::Args;
+   *StructDef = nullptr;
+
+   if (Field.Type & FD_STRUCT) {
+      if ((Field.Type & FD_PTR) or (not Field.Name) or (not valid_struct_name(Field.Name))) return ERR::InvalidData;
+      auto definition = find_struct(Lua, struct_name_prefix(Field.Name));
+      if (not definition) return ERR::Search;
+      if (definition->Size <= 0) return ERR::InvalidData;
+      *ElementType = AET::STRUCT;
+      *ElementSize = size_t(definition->Size);
+      *StructDef = definition;
+      return ERR::Okay;
    }
 
-   *Extent = size_t(Array->len) * Array->elemsize;
+   const int type_count = bool(Field.Type & FD_DOUBLE) + bool(Field.Type & FD_INT64) +
+      bool(Field.Type & FD_FLOAT) + bool(Field.Type & FD_INT) + bool(Field.Type & FD_WORD) +
+      bool(Field.Type & FD_BYTE) + bool(Field.Type & FD_PTR);
+   if (type_count != 1) return ERR::InvalidData;
+
+   if (Field.Type & FD_DOUBLE) { *ElementType = AET::DOUBLE; *ElementSize = sizeof(double); }
+   else if (Field.Type & FD_INT64) { *ElementType = AET::INT64; *ElementSize = sizeof(int64_t); }
+   else if (Field.Type & FD_FLOAT) { *ElementType = AET::FLOAT; *ElementSize = sizeof(float); }
+   else if (Field.Type & FD_INT) { *ElementType = AET::INT32; *ElementSize = sizeof(int); }
+   else if (Field.Type & FD_WORD) { *ElementType = AET::INT16; *ElementSize = sizeof(int16_t); }
+   else if (Field.Type & FD_BYTE) { *ElementType = AET::BYTE; *ElementSize = sizeof(int8_t); }
+   else { *ElementType = AET::PTR; *ElementSize = sizeof(APTR); }
+
    return ERR::Okay;
 }
 
@@ -555,8 +559,8 @@ static int module_index(lua_State *Lua)
 // OBJECT|PTR   = OBJECTPTR.  Accepts a Tiri object and resolves it to an object pointer.
 // ARRAY        = Unsupported.  Raw pointer-array marshalling has been removed.
 // ARRAY|CPP    = Unsupported as input.  kt::vector<> input marshalling is not implemented for module calls.
-// SPAN         = const std::span<int8_t/char> &.  Accepts complete Tiri array or string storage, or an empty value.
-// SPAN|MUTABLE = const std::span<int8_t/char> &.  Requires writable array or mutable string storage.
+// SPAN         = const std::span<T> &.  Accepts matching Tiri array or structure storage, byte strings or an empty value.
+// SPAN|MUTABLE = const std::span<T> &.  Requires writable array, structure or mutable byte-string storage.
 // FUNCTION     = FUNCTION *.  Accepts a Tiri function or global function name.
 //
 // Mutable combinations.  User is expected to supply a reference to a suitable storage area, as defined by the type
@@ -718,7 +722,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    }
 
    for (int arg=1; args[arg].Name; arg++) {
-      if (args[arg].Type & FD_ARRAY) {
+      if ((args[arg].Type & FD_ARRAY) and ((args[arg].Type & FDF_SPAN) != FDF_SPAN)) {
          ErrorMsg = std::format("Function '{}' uses unsupported pointer array arg '{}'.",
             mod->Functions[index].Name, args[arg].Name);
          return ERR::NoSupport;
@@ -771,21 +775,21 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             return ERR::NoSupport;
          }
 
-         if (argtype & FD_STRUCT) {
-            ErrorMsg = std::format("Function '{}' uses an unsupported typed structure span.",
-               mod->Functions[index].Name);
-            return ERR::NoSupport;
-         }
-
          bool mutable_span = argtype & FD_MUTABLE;
-         bool char_span = argtype & FD_STR;
-         bool raw_span = argtype & FD_PTR;
-         if (not char_span and not raw_span) {
-            ErrorMsg = std::format("Function '{}' uses an unsupported typed span.", mod->Functions[index].Name);
-            return ERR::NoSupport;
+
+         AET element_type;
+         size_t element_size;
+         struct_record *struct_def;
+         if (auto error = module_span_element_metadata(Lua, args[i], &element_type, &element_size, &struct_def);
+             error != ERR::Okay) {
+            ErrorMsg = (error IS ERR::Search) ?
+               std::format("Function '{}' references an unknown span structure.", mod->Functions[index].Name) :
+               std::format("Function '{}' uses invalid span element metadata.", mod->Functions[index].Name);
+            return error;
          }
 
-         APTR span_address = nullptr;
+         CPTR data = nullptr;
+         size_t extent = 0;
          auto &span_arg = span_args[span_count++];
          auto value_type = lua_type(Lua, i);
 
@@ -796,53 +800,66 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                return ERR::InvalidType;
             }
 
-            size_t extent;
-            if (auto error = array_byte_extent(array, &extent); error != ERR::Okay) {
-               ErrorMsg = std::format("Arg #{} ({}) array extent is too large.", i, args[i].Name);
-               return error;
+            if ((array->elemtype != element_type) or (size_t(array->elemsize) != element_size)) {
+               ErrorMsg = std::format("Arg #{} ({}) array element type does not match the span.", i, args[i].Name);
+               return ERR::InvalidType;
             }
-
-            if (char_span) {
-               if (mutable_span) span_address = span_arg.set_mutable_chars((STRING)array->arraydata(), extent);
-               else span_address = span_arg.set_const_chars((CSTRING)array->arraydata(), extent);
+            if ((element_type IS AET::STRUCT) and (array->structdef != struct_def)) {
+               ErrorMsg = std::format("Arg #{} ({}) structure array type does not match the span.", i, args[i].Name);
+               return ERR::InvalidType;
             }
-            else {
-               if (mutable_span) span_address = span_arg.set_mutable_bytes(array->arraydata(), extent);
-               else span_address = span_arg.set_const_bytes(array->arraydata(), extent);
-            }
+            data = array->arraydata();
+            extent = array->len;
          }
          else if (value_type IS LUA_TSTRING) {
+            if (element_type != AET::BYTE) {
+               ErrorMsg = std::format("Arg #{} ({}) only accepts string storage for a byte span.", i, args[i].Name);
+               return ERR::InvalidType;
+            }
+
             auto string = string_arg(Lua, i);
             if (mutable_span and not lj_str_ismutable(string)) {
                ErrorMsg = std::format("Arg #{} ({}) requires a mutable string buffer.", i, args[i].Name);
                return ERR::InvalidType;
             }
-
-            if (char_span) {
-               if (mutable_span) span_address = span_arg.set_mutable_chars(strdatawr(string), string->len);
-               else span_address = span_arg.set_const_chars(strdata(string), string->len);
-            }
-            else {
-               if (mutable_span) span_address = span_arg.set_mutable_bytes((APTR)strdatawr(string), string->len);
-               else span_address = span_arg.set_const_bytes(strdata(string), string->len);
-            }
+            data = mutable_span ? CPTR(strdatawr(string)) : CPTR(strdata(string));
+            extent = string->len;
          }
          else if ((value_type IS LUA_TNIL) or (value_type IS LUA_TNONE)) {
-            if (char_span) {
-               if (mutable_span) span_address = span_arg.set_mutable_chars(nullptr, 0);
-               else span_address = span_arg.set_const_chars(nullptr, 0);
+            // The canonical empty span is constructed below.
+         }
+         else if (auto native_struct = lua_isstruct(Lua, i) ? lua_tostruct(Lua, i) : nullptr) {
+            if (element_type != AET::STRUCT) {
+               ErrorMsg = std::format("Arg #{} ({}) requires matching array storage.", i, args[i].Name);
+               return ERR::InvalidType;
             }
-            else {
-               if (mutable_span) span_address = span_arg.set_mutable_bytes(nullptr, 0);
-               else span_address = span_arg.set_const_bytes(nullptr, 0);
+            if (lj_struct_stale(native_struct)) {
+               ErrorMsg = std::format("Arg #{} ({}) structure storage is stale.", i, args[i].Name);
+               return ERR::DoesNotExist;
             }
+            if ((native_struct->def != struct_def) or (size_t(native_struct->structsize) != element_size)) {
+               ErrorMsg = std::format("Arg #{} ({}) structure type does not match the span.", i, args[i].Name);
+               return ERR::InvalidType;
+            }
+            if (not native_struct->data) {
+               ErrorMsg = std::format("Arg #{} ({}) structure storage is unavailable.", i, args[i].Name);
+               return ERR::InvalidData;
+            }
+            data = native_struct->data;
+            extent = 1;
          }
          else {
-            ErrorMsg = std::format("Arg #{} ({}) expected an array, string or nil for a span, got {}.", i,
+            ErrorMsg = std::format("Arg #{} ({}) expected an array, string, structure or nil for a span, got {}.", i,
                args[i].Name, lua_typename(Lua, value_type));
             return ERR::InvalidType;
          }
 
+         if (extent and not data) {
+            ErrorMsg = std::format("Arg #{} ({}) span storage is unavailable.", i, args[i].Name);
+            return ERR::InvalidData;
+         }
+
+         auto span_address = span_arg.set(data, extent);
          ((APTR *)(buffer + j))[0] = span_address;
          arg_values[in] = buffer + j;
          arg_types[in++] = &ffi_type_pointer;
@@ -1270,7 +1287,10 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
    for (int i=1; args[i].Name; i++) {
       const auto argtype = args[i].Type;
 
-      if ((argtype & FDF_VECTOR) IS FDF_VECTOR) {
+      if ((argtype & FDF_SPAN) IS FDF_SPAN) {
+         scan += sizeof(APTR);
+      }
+      else if ((argtype & FDF_VECTOR) IS FDF_VECTOR) {
          if (argtype & FD_RESULT) {
             auto var = ((APTR *)scan)[0];
             scan += sizeof(APTR);

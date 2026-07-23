@@ -40,7 +40,7 @@
 #define FDF_SYSTEM      FD_SYSTEM
 #define FDF_ERROR       (FD_INT|FD_ERROR)
 #define FDF_VECTOR      FD_VECTOR
-#define FDF_SPAN        (FD_CPP|FD_BUFFER)
+#define FDF_SPAN        (FD_CPP|FD_ARRAY)
 #define FDF_R           FD_READ
 #define FDF_W           FD_WRITE
 #define FDF_RW          (FD_READ|FD_WRITE)

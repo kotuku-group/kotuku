@@ -175,7 +175,7 @@ static BYTELEN fill_stream_buffer(int Handle, AudioSample &Sample, int Offset)
       const auto args = std::to_array<ScriptArg>({
          { "Handle", Handle },
          { "Offset", Offset },
-         { "Buffer", &span, FDF_SPAN }
+         { "Buffer", &span, FDF_SPAN|FD_BYTE }
       });
 
       ERR result;

@@ -1156,7 +1156,7 @@ matched to `photo.jpg` in the same folder).
 
 -INPUT-
 strview Path: The path of the file.
-^buf(ptr) Buffer: Buffer that will receive the file content.
+^array(char) Buffer: Buffer that will receive the file content.
 &int Result: The total number of bytes read into the `Buffer` will be returned here (optional).
 
 -ERRORS-

@@ -6,7 +6,7 @@
 
 FDEF argsClipboard[]     = { { "Mode", FD_INT }, { 0, 0 } };
 FDEF argsCopyData[]      = { { "Dest", FD_OBJECTPTR  }, { 0, 0 } };
-FDEF argsDataFeed[]      = { { "Object", FD_OBJECTPTR }, { "Datatype", FD_INT }, { "Buffer", FDF_SPAN|FD_PTR }, { 0, 0 } };
+FDEF argsDataFeed[]      = { { "Object", FD_OBJECTPTR }, { "Datatype", FD_INT }, { "Buffer", FDF_SPAN|FD_BYTE }, { 0, 0 } };
 FDEF argsDragDrop[]      = { { "Source", FD_OBJECTPTR }, { "Item", FD_INT }, { "Datatype", FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsDraw[]          = { { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, { "Height", FD_INT }, { 0, 0 } };
 FDEF argsGetKey[]        = { { "Field", FDF_CPPSTRING }, { "Value", FDF_CPPSTRING|FD_RESULT|FD_MUTABLE }, { 0, 0 } };
@@ -14,7 +14,7 @@ FDEF argsMove[]          = { { "DeltaX", FD_DOUBLE }, { "DeltaY", FD_DOUBLE }, {
 FDEF argsMoveToPoint[]   = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Z", FD_DOUBLE }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF argsNewChild[]      = { { "NewChild", FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsNewOwner[]      = { { "NewOwner", FD_OBJECTPTR }, { 0, 0 } };
-FDEF argsRead[]          = { { "Buffer", FDF_SPAN|FD_MUTABLE|FD_PTR }, { "Result", FD_INT|FD_RESULT }, { 0, 0 } };
+FDEF argsRead[]          = { { "Buffer", FDF_SPAN|FD_MUTABLE|FD_BYTE }, { "Result", FD_INT|FD_RESULT }, { 0, 0 } };
 FDEF argsRedimension[]   = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "Z", FD_DOUBLE }, { "Width", FD_DOUBLE }, { "Height", FD_DOUBLE }, { "Depth", FD_DOUBLE }, { 0, 0 } };
 FDEF argsRedo[]          = { { "Steps", FD_INT }, { 0, 0 } };
 FDEF argsRename[]        = { { "Name", FDF_CPPSTRING }, { 0, 0 } };
@@ -24,7 +24,7 @@ FDEF argsSaveToObject[]  = { { "Dest", FD_OBJECTPTR }, { "Class", FD_INT }, { 0,
 FDEF argsSeek[]          = { { "Offset", FD_DOUBLE }, { "Position", FD_INT }, { 0, 0 } };
 FDEF argsSetKey[]        = { { "Field", FDF_CPPSTRING }, { "Value", FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsUndo[]          = { { "Steps", FD_INT }, { 0, 0 } };
-FDEF argsWrite[]         = { { "Buffer", FDF_SPAN|FD_PTR }, { "Result", FD_INT|FD_RESULT }, { 0, 0 } };
+FDEF argsWrite[]         = { { "Buffer", FDF_SPAN|FD_BYTE }, { "Result", FD_INT|FD_RESULT }, { 0, 0 } };
 
 extern "C" const struct ActionTable ActionTable[] = { // Sorted by action ID.
    { 0, 0, 0, 0 },
