@@ -164,7 +164,7 @@ static ERR object_set_array(lua_State *Lua, OBJECTPTR Object, const Field *Field
       else return ERR::BufferOverflow;
    }
    else if (type IS LUA_TARRAY) {
-      GCarray *arr = arrayV(Lua, ValueIndex);
+      GCarray *arr = lua_toarray(Lua, ValueIndex);
       std::span<int> span((int *)arr->arraydata(), arr->len);
       return Object->set(Field, span, arr->type_flags());
    }
@@ -607,10 +607,12 @@ static int object_setkey(lua_State *Lua)
 //********************************************************************************************************************
 // Used by obj.new() exclusively.
 
-static ERR set_object_field(lua_State *Lua, OBJECTPTR Object, uint32_t FieldHash, int ValueIndex)
+static ERR set_object_field(lua_State *Lua, OBJECTPTR Object, uint32_t FieldHash, int ValueIndex,
+   const Field **ResolvedField)
 {
    OBJECTPTR target;
    if (auto field = FindField(Object, FieldHash, &target)) {
+      if (ResolvedField) *ResolvedField = field;
       if (not field->writeable()) return ERR::NoFieldAccess;
       else if ((field->Flags & FD_INIT) and target->initialised()) return ERR::NoFieldAccess;
 
@@ -653,7 +655,10 @@ static ERR set_object_field(lua_State *Lua, OBJECTPTR Object, uint32_t FieldHash
       }
       else return ERR::UnsupportedField;
    }
-   else return ERR::UnsupportedField;
+   else {
+      if (ResolvedField) *ResolvedField = nullptr;
+      return ERR::UnsupportedField;
+   }
 }
 
 //********************************************************************************************************************

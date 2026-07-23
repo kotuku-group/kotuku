@@ -40,7 +40,7 @@ function setFont(Face, Size)
       -- METRICS ASCENT: BLUE DOTTED
       -- The ascent is the distance from the baseline to the top of the font, NOT including accents.  Generally very
       -- reliable, the margin of error is reasonably tight for our fonts.
-      global glAscent = glViewport.new('vectorpolygon', { x1 = 0, y1 = 0, x2 = '100%', y2 = 0, stroke='rgb(0,0,255,128)', dashArray="4,4" })
+      global glAscent = glViewport.new('vectorpolygon', { x1 = 0, y1 = 0, x2 = '100%', y2 = 0, stroke='rgb(0,0,255,128)', dashArray=array<double> { 4,4 } })
    end
 
    baseline = glTextY + Size

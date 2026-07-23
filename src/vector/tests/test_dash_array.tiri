@@ -1,0 +1,80 @@
+   include 'vector'
+
+function newViewport()
+   scene = obj.new('VectorScene')
+   viewport = scene.new('VectorViewport')
+   check scene.init()
+   check viewport.init()
+   return scene, viewport
+end
+
+function assertDashArray(Vector, Expected)
+   actual = Vector.dashArray
+   assert(#actual is #Expected, 'DashArray should preserve the number of values.')
+   for i in {0 to #Expected} do
+      assert(actual[i] ≈ Expected[i], f'DashArray value {i} should match the typed array input.')
+   end
+end
+
+@Test function TypedDashArrayInObjectInitialiser()
+   scene, viewport = newViewport()
+   expected = array<double> { 4, 6 }
+   polygon = viewport.new('VectorPolygon', {
+      x1 = 0, y1 = 0, x2 = 10, y2 = 0,
+      stroke = 'blue',
+      dashArray = expected
+   })
+
+   assertDashArray(polygon, expected)
+end
+
+@Test function TypedDashArrayInFieldAssignment()
+   scene, viewport = newViewport()
+   polygon = viewport.new('VectorPolygon', {
+      x1 = 0, y1 = 0, x2 = 10, y2 = 0,
+      stroke = 'blue'
+   })
+   expected = array<double> { 2.5, 3.5 }
+
+   polygon.dashArray = expected
+
+   assertDashArray(polygon, expected)
+end
+
+@Test function InitialiserTypeMismatchNamesExpectedArrayType()
+   scene, viewport = newViewport()
+   local caught = false
+
+   try
+      viewport.new('VectorPolygon', {
+         x1 = 0, y1 = 0, x2 = 10, y2 = 0,
+         stroke = 'blue',
+         dashArray = array<int> { 2, 3 }
+      })
+   except e when ERR_SetValueNotArray
+      caught = true
+      assert(e.message:contains('array<double>'),
+         'The DashArray type mismatch should identify array<double> as the expected field type.')
+   end
+
+   assert(caught, 'An array<int> should not be accepted by the DashArray field.')
+end
+
+@Test function AssignmentTypeMismatchNamesExpectedArrayType()
+   scene, viewport = newViewport()
+   polygon = viewport.new('VectorPolygon', {
+      x1 = 0, y1 = 0, x2 = 10, y2 = 0,
+      stroke = 'blue'
+   })
+   local caught = false
+
+   try
+      polygon.dashArray = array<int> { 2, 3 }
+   except e when ERR_SetValueNotArray
+      caught = true
+      assert(e.message:contains('array<double>'),
+         'The DashArray type mismatch should identify array<double> as the expected field type.')
+   end
+
+   assert(caught, 'An array<int> should not be accepted by the DashArray field.')
+end

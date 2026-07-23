@@ -82,3 +82,4 @@ flute_test(vector_isolated_bitmap_pool "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_i
 flute_test(vector_shared_invalidation "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_shared_invalidation.tiri")
 flute_test(vector_callback_lifetimes "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_callback_lifetimes.tiri")
 flute_test(vector_path_command_spans "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_path_command_spans.tiri")
+flute_test(vector_dash_array "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_dash_array.tiri")
