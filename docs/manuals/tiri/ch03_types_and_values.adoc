@@ -1,0 +1,224 @@
+// VERIFIED: 2026-02-10
+// UPDATED: 2026-06-30 — Extended falsiness now treats empty tables as falsey; described as empty collections.
+// UPDATED: 2026-07-13 — Structures are now a first-class 'struct' type; added to type() and a new Structures subsection.
+// UPDATED: 2026-07-16 — Objects and structs are distinct first-class types, no longer specialised userdata; promoted to top-level sections.
+
+[[ch-types-and-values]]
+== Types & Values
+indexterm:[types] indexterm:[values] Tiri is dynamically typed: every value carries its type at runtime, and variables do not require explicit type declarations.  However, Tiri enforces type consistency through _sticky types_: when a variable receives its first non-`nil` value, the variable commits to that value's type.  All subsequent non-`nil` assignments must match the committed type; assigning a value of a different type produces a compile-time or runtime error.  Assigning `nil` is always permitted, acting as a "clear" operation that preserves the type constraint.  The `:any` annotation opts a variable out of type fixing entirely.  See <<ch-type-system>> for the complete rules governing type inference, explicit annotations, and the `any` escape hatch.
+
+Tiri defines the following types: nil, boolean, number, string, table, array, function, userdata, object and struct.
+
+[[sec-nil]]
+=== Nil
+indexterm:[nil] The type `nil` has exactly one value, also called `nil`.  It represents the absence of a useful value.
+
+Unassigned variables evaluate to `nil`.  Setting a table field to `nil` removes that field from the table.
+
+`nil` is falsey in all boolean contexts (see <<sec-truthiness>>).
+
+[[sec-booleans]]
+=== Booleans
+indexterm:[booleans] The type `boolean` has exactly two values: `true` and `false`.
+
+Booleans are the natural result of comparison and logical expressions.  Conditional constructs (`if`, `while`) accept any value, not only booleans; see <<sec-truthiness>> for the evaluation rules.
+
+[[sec-numbers]]
+=== Numbers
+indexterm:[numbers] Tiri uses a dual-number representation.  A single `number` type encompasses both integers and floating-point values.  The `type()` function returns `"number"` for both.
+
+Integers are stored as signed 32-bit values (range: −2,147,483,648 to 2,147,483,647).  Floating-point values are stored as 64-bit IEEE 754 doubles.  The runtime promotes integers to doubles transparently when an operation requires it.
+
+Numeric literal syntax is defined in <<sec-lexical-conventions>>.
+
+[source,tiri]
+----
+x = 42        -- stored as integer
+y = 3.14      -- stored as double
+z = x + y     -- z is 45.14 (double)
+type(x)       -- 'number'
+type(y)       -- 'number'
+----
+
+Arithmetic operations that produce results outside the 32-bit signed integer range produce double values.
+
+[[sec-strings-overview]]
+=== Strings
+indexterm:[strings] Strings are immutable sequences of bytes.  Identical strings are interned: two strings with the same content share the same internal object.  Comparison with `is` compares content.
+
+Strings have no inherent encoding.  They can hold arbitrary binary data, including embedded zero bytes.  In practice, most strings contain UTF-8 encoded text.
+
+The `#` operator returns the length in bytes.
+
+[source,tiri]
+----
+s = 'hello'
+print(#s)       -- 5
+print(type(s))  -- 'string'
+----
+
+All string indexing and standard library operations use zero-based indices.  See <<ch-strings>> for the complete string library.
+
+[[sec-tables-overview]]
+=== Tables
+indexterm:[tables] Tables are mutable associative key-value stores.  Any non-`nil` value can serve as a key; any value can serve as a value.  Tables are the primary compound data structure in Tiri, used to represent records, dictionaries, and ad-hoc objects.  Although tables can be used as arrays, the dedicated `array` type is more efficient for that purpose.
+
+Tables are reference types.  Assigning a table to another variable creates a second reference to the same table, not a copy.  Two distinct tables are never equal under `is`, even if they contain identical entries; `is` compares table identity.
+
+[source,tiri]
+----
+t = { name = 'Alice', age = 30 }
+print(t.name)     -- 'Alice'
+print(type(t))    -- 'table'
+
+a = t
+a.name = 'Bob'
+print(t.name)     -- 'Bob' (same table)
+----
+
+Sequential integer keys use zero-based indexing.  Setting a key's value to `nil` removes that entry from the table.  The `#` operator returns the length of the sequential (integer-keyed) portion.
+
+Field access is O(1) average case.  The iteration order of `pairs()` over non-integer keys is unspecified and may vary between runs.
+
+See <<ch-tables>> for the complete table library.
+
+[[sec-arrays-overview]]
+=== Arrays
+indexterm:[arrays] Arrays are mutable, typed, contiguous sequences of elements.  Each array holds elements of a single declared type.  Arrays are a distinct type from tables, purpose-built for sequential data storage with efficient memory layout and direct access.
+
+Arrays are reference types, but unlike other reference types, the `is` operator compares arrays by content rather than identity: two arrays are equal if they have the same element type, length, and contents.  This is a deliberate design decision — see <<sec-comparison-operators>> for the rationale and a comparison with table identity semantics.  Elements are stored in sequential order from index 0; iteration order matches storage order.
+
+[source,tiri]
+----
+nums = array<int> { 10, 20, 30 }
+print(nums[0])      -- 10
+print(#nums)        -- 3
+print(type(nums))   -- 'array'
+----
+
+Arrays use zero-based indexing.  The `#` operator returns the element count.  Element access by index is O(1).  The `ipairs()`, `pairs()`, and `values()` functions work identically on arrays and tables.
+
+See <<ch-arrays>> for the complete array library, including supported element types and construction syntax.
+
+[[sec-functions-overview]]
+=== Functions
+indexterm:[functions] Functions are first-class values.  They can be stored in variables, passed as arguments, and returned from other functions.
+
+[source,tiri]
+----
+function add(A, B)
+   return A + B
+end
+
+print(type(add))  -- 'function'
+
+op = add
+print(op(2, 3))   -- 5
+----
+
+Tiri also supports concise arrow function syntax for anonymous functions:
+
+[source,tiri]
+----
+double = n => n * 2
+print(double(5))  -- 10
+----
+
+See <<ch-functions>> for function declarations, closures, and parameter rules.
+
+[[sec-objects]]
+=== Objects
+indexterm:[objects] Kōtuku framework objects are a distinct reference type.  They represent C++ objects exposed through the Kōtuku API and support field access, method calls, and action invocations.
+
+[source,tiri]
+----
+file = obj.new('file', { src = 'temp:data.txt' })
+print(type(file))  -- 'object'
+----
+
+See <<ch-the-object-system>> for the full object interface.
+
+[[sec-structs-type]]
+=== Structures
+indexterm:[structures] A structure is a first-class value that maps a fixed set of named, typed fields onto memory with a C/C++ compatible layout.  Structures are a distinct reference type: they are not tables, and the `type()` function returns `"struct"` for them.  Definitions are registered with the `struct` declaration statement or by Kōtuku modules; instances are created by calling a declared name or `struct.new()`, iterated with `pairs()`, and formatted with `tostring()`.
+
+Although structs are most often used as a compatibility layer between Tiri and compiled programs, they also offer a compact data layout option for storage, and access to values is optimised by the JIT compiler.  Accessing non-existent keys will also throw errors, preventing common typos.
+
+[source,tiri]
+----
+include 'vector'
+stop = struct.new('GradientStop')
+print(type(stop))  -- 'struct'
+----
+
+See <<ch-structs>> for the full structure interface.
+
+[[sec-userdata]]
+=== Userdata
+indexterm:[userdata] Userdata values represent opaque C data managed outside the Tiri runtime.  They cannot be created or modified directly from Tiri code; they are produced by C/C++ host functions.
+
+The `type()` function returns `"userdata"` for userdata values.  Ranges are implemented as userdata internally, but `type()` returns `"range"` for them.  See <<ch-ranges>> for range semantics.
+
+[[sec-truthiness]]
+=== Truthiness and Falsiness
+indexterm:[truthiness] indexterm:[falsiness] Tiri defines two sets of falsiness rules.
+
+Standard falsiness::
+The values `nil` and `false` are falsey.  All other values -- including `0`, `""`, and empty tables -- are truthy.  The `and`, `or`, `not` operators, `if`, and `while` all use standard falsiness.
+
+Extended falsiness::
+The `??` operator and its postfix form `??` use a broader definition.  The values `nil`, `false`, `0` (integer zero and floating-point zero), `""` (the empty string), and empty collections (arrays or tables with no entries) are falsey under extended semantics.  All other values are truthy.  See <<ch-operators>> for the `??` operator.
+
+[[sec-type-inspection]]
+=== Type Inspection
+==== type()
+
+indexterm:[type inspection] `result = type(Value)`
+
+Returns a string naming the type of `Value`.  The returned string is one of: "nil", "boolean", "number", "string", "table", "array", "function", "userdata", "range", "object", "struct".
+
+[source,tiri]
+----
+type(nil)           -- 'nil'
+type(true)          -- 'boolean'
+type(42)            -- 'number'
+type(3.14)          -- 'number'
+type('hello')       -- 'string'
+type({})            -- 'table'
+type(array<int>)    -- 'array'
+type(print)         -- 'function'
+type(range(0, 5))   -- 'range'
+type(struct.new('GradientStop')) -- 'struct'
+----
+
+When called on a thunk (deferred expression), `type()` returns the declared type of the thunk without evaluating it.
+
+==== tostring()
+
+`result = tostring(Value)`
+
+Converts `Value` to a string.  If `Value` has a `__tostring` metamethod, calls it and returns the result.  Otherwise produces a default representation: numbers yield their decimal form, booleans yield `"true"` or `"false"`, `nil` yields `"nil"`, and reference types (tables, arrays, functions, userdata, objects, structs) yield the type name followed by a memory address.
+
+[source,tiri]
+----
+tostring(42)      -- '42'
+tostring(3.14)    -- '3.14'
+tostring(true)    -- 'true'
+tostring(nil)     -- 'nil'
+----
+
+==== tonumber()
+
+`result = tonumber(Value, [Base])`
+
+Converts `Value` to a number.  Returns `nil` if the conversion fails.
+
+With the default base (10), accepts strings and numbers.  With an explicit `Base` (2-36), `Value` must be a string and is interpreted in the given base.  Raises an error if `Base` is outside the range 2-36.
+
+[source,tiri]
+----
+tonumber('42')        -- 42
+tonumber('3.14')      -- 3.14
+tonumber('ff', 16)    -- 255
+tonumber('hello')     -- nil
+----

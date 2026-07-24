@@ -1,0 +1,158 @@
+// VERIFIED: 2026-03-11
+
+[[ch-logging-and-diagnostics]]
+== Logging & Diagnostics
+indexterm:[logging] indexterm:[diagnostics] _This chapter includes documentation for extensions that are not part of the language specification._
+
+Tiri provides two primary output functions for writing diagnostic information: `print()` and `msg()`.  For structured runtime inspection, the `DebugLog` method on Script objects offers comprehensive state dumping.  Exception handling supports optional stack trace capture through the `try<trace>` syntax.
+
+[[sec-print-and-msg]]
+=== Print & Msg
+[discrete]
+==== print()
+
+[.api]`print(pass:[...])`
+
+indexterm:[print] indexterm:[msg] Writes each argument to standard error (stderr) after converting it to a string via `tostring()`.  No word-breaks are inserted between parameters.  A newline is appended after the final argument.
+
+[source,tiri]
+----
+print('count:', 42, true)   -- "count:42true"
+----
+
+Throws an error if `tostring()` does not return a string for any argument.
+
+On Android, output is redirected to the platform logging system.
+
+TIP: Tiri's default output policy is that program generated output is directed to standard output (stdout), while all general messages and logs are directed to standard error.  If printing to standard output is desired, calling `io.write()` is the recommended approach.
+
+[discrete]
+==== msg()
+
+[.api]`msg(pass:[...])`
+
+Writes each argument to the Kōtuku logging system at API level, under the `Tiri` header.  Each argument is converted to a string via `tostring()`.  No word-breaks are inserted between parameters.
+
+[source,tiri]
+----
+msg('request received')
+msg(f'status: {result}') -- Inline formatting with f-strings
+msg('status: ', result)  -- Multiple arguments concatenated without spaces
+----
+
+`msg()` is the recommended function for diagnostic output.  It integrates with Kōtuku's log filtering and is visible when running with `--log-api` or higher verbosity.  Output from `msg()` is directed to stderr alongside all other log messages.
+
+Throws an error if `tostring()` does not return a string for any argument.
+
+[[sec-log-levels]]
+=== Log Levels
+indexterm:[log levels] Kōtuku's logging system organises output by severity.  Log messages are written to stderr.  The following log levels are defined, from most to least verbose:
+
+[cols="1,2a,2a",options="header"]
+|===
+|Level |Description |Command-line flag
+
+|Trace
+|Extremely verbose debug output.  Available in Debug builds only when built with `-DKOTUKU_VLOG=ON`, and requires `--log-trace` or `--log-all` at runtime.
+|`--log-trace` / `--log-all`
+
+|Detail
+|Extended log level for API modules (C++) and Tiri libraries.  For in-depth module diagnostics.
+|`--log-xapi`
+
+|API
+|The standard level for API modules (C++) and Tiri libraries.  This is the level used by `msg()`.
+|`--log-api`
+
+|Info
+|The standard level for log messages originating from the client program.
+|`--log-info`
+
+|Warning
+|Non-catastrophic errors are printed as warnings.  API errors are always printed at this level (elevation to the user is at the program's discretion).
+|`--log-warning`
+
+|Error
+|Error conditions intended for end-user visibility.
+|`--log-error`
+|===
+
+Each command-line flag enables its level and all levels above it.  For example, `--log-warning` displays warnings and errors.
+
+`--log-none` suppresses all non-critical log output (including errors).
+
+[source,bash]
+----
+origo script.tiri --log-warning   # Warnings and errors
+origo script.tiri --log-api       # API messages and above
+----
+
+When debugging thread-related issues, append `--log-threads` to include thread identification in log output.
+
+[[sec-debug-logging]]
+=== Debug Logging
+Calling the `DebugLog()` method on Script objects provides structured inspection of the Tiri runtime state.
+
+[discrete]
+==== script.mtDebugLog()
+
+[.api]`err, result = script.mtDebugLog([Options])`
+
+Captures a snapshot of the script's runtime state and returns it as a formatted string.  `Options` is a comma-separated string specifying which categories of information to include.  If `Options` is omitted, only the call stack is returned.
+
+[cols="1,3a",options="header"]
+|===
+|Option |Description
+
+|`stack`
+|Call stack trace with source locations and line numbers.
+
+|`locals`
+|Local variables in the current scope, with names, types and values.
+
+|`upvalues`
+|Upvalue variables captured by the current closure.
+
+|`globals`
+|Global variables, with names and values.
+
+|`memory`
+|Memory usage information including heap allocation.
+
+|`state`
+|VM state information including stack top.
+
+|`funcinfo`
+|Function metadata: parameter count, vararg flag, stack slots, bytecode count, constants and upvalue count.
+
+|`disasm`
+|Bytecode disassembly of the current function.
+
+|`dump`
+|Binary dump of the function's bytecode in hexadecimal format.
+
+|`all`
+|All of the above categories.
+
+|`compact`
+|Compact output mode.  Combine with other options to reduce verbosity.
+|===
+
+[source,tiri]
+----
+self = obj.find('self')
+
+-- Capture call stack and local variables
+err, result = self.mtDebugLog('stack,locals')
+print(result)
+
+-- Capture everything in compact form
+err, result = self.mtDebugLog('all,compact')
+----
+
+String values longer than 40 characters are truncated with an ellipsis in the output.
+
+[[sec-interactive-debugging]]
+=== Interactive Debugging
+
+Interactive debugging, such as setting breakpoints and stepping through code, is not yet supported.

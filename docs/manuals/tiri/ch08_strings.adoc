@@ -1,0 +1,526 @@
+// VERIFIED: 2026-02-11
+// UPDATED: 2026-05-18 - Updated negative index slicing to reflect corrected inclusive/exclusive stop semantics (commit 15d3bed4)
+
+[[ch-strings]]
+== Strings
+indexterm:[strings] This chapter defines the string library: the built-in functions for creating, inspecting, searching, modifying, and encoding strings.  For string literal syntax, escape sequences, and type semantics see <<sec-strings-overview>> and <<sec-lexical-conventions>>.
+
+Strings are immutable.  Every string operation that appears to modify a string produces a new string value.  Identical strings are interned: two strings with the same byte content share the same internal object.
+
+All string indexing is zero-based.  Index 0 refers to the first byte, index `#s - 1` to the last.  Negative indices count backwards from the end: index `-1` is the last byte, `-2` the second-to-last.
+
+All string library functions raise a type error if a required string argument is not a string.  Functions that accept optional parameters treat missing arguments as described in each function's specification.
+
+String functions are accessed through the `string` namespace or via method-call syntax on string values:
+
+[source,tiri]
+----
+string.upper('hello')   -- 'HELLO'
+'hello':upper()         -- 'HELLO'
+----
+
+Both forms are equivalent.  Method-call syntax is preferred for readability.
+
+[[sec-character-access]]
+=== Character Access
+
+Individual characters are accessed by indexing a string with an integer.  The result is a one-character string.  Out-of-bounds indices return `nil`.
+
+[source,tiri]
+----
+s = 'hello'
+s[0]    -- 'h'
+s[4]    -- 'o'
+s[-1]   -- 'o'
+s[10]   -- nil
+----
+
+Negative indices count from the end: `s[-1]` is equivalent to `s[#s - 1]`.
+
+[[sec-string-interpolation]]
+=== String Interpolation
+indexterm:[strings, interpolation] Tiri supports f-strings for embedding expressions directly within string literals.  An `f` prefix before a short string enables interpolation.  Expressions enclosed in `{` and `}` are evaluated and converted to strings via `tostring()`.
+
+[%unbreakable]
+[source,tiri]
+----
+name = 'World'
+greeting = f'Hello, {name}!'   -- 'Hello, World!'
+
+a = 10
+b = 20
+result = f'{a} + {b} = {a + b}'   -- '10 + 20 = 30'
+----
+
+Both single-quote and double-quote delimiters are supported.
+
+[discrete]
+==== Expression Support
+
+Any valid Tiri expression is permitted inside the braces:
+
+[source,tiri]
+----
+f'Result: {1 + 2 * 3}'              -- 'Result: 7'
+f'Upper: {string.upper("hello")}'   -- 'Upper: HELLO'
+
+user = { name = 'Alice', age = 30 }
+f'{user.name} is {user.age}'        -- 'Alice is 30'
+
+f'Your name is {user.name ?? "unknown"}'
+----
+
+The `??` operator is recommended for nil-safe interpolation when the data originates from outside the script.
+
+[discrete]
+==== Automatic Type Conversion
+
+All interpolated expressions are wrapped in `tostring()` automatically:
+
+[source,tiri]
+----
+f'{nil}'    -- 'nil'
+f'{true}'   -- 'true'
+f'{42}'     -- '42'
+f'{3.14}'   -- '3.14'
+----
+
+[discrete]
+==== Escaping Braces
+
+Literal braces are produced by doubling them:
+
+[source,tiri]
+----
+f'Use {{braces}} for interpolation'
+-- 'Use {braces} for interpolation'
+----
+
+[discrete]
+==== Restrictions
+
+- Long-string syntax is not supported: `f[[...]]` is invalid.
+- Empty expressions `{}` or whitespace-only expressions `{   }` are syntax errors.
+
+[[sec-core-string-methods]]
+=== Core String Methods
+
+[[sec-string-alloc]]
+==== string.alloc()
+
+[.api]`str = string.alloc(Size)`
+
+Creates a string of `Size` bytes with uninitialised content.  Intended for creating sized data buffers that are passed to Kōtuku interfaces.  Raises an error if `Size` is negative.
+
+[source,tiri]
+----
+buf = string.alloc(1024)
+#buf   -- 1024
+----
+
+[[sec-string-byte]]
+==== string.byte()
+
+[.api]`pass:[...] = string.byte(String, [Start], [Stop])`
+
+Returns the byte values of characters from index `Start` to `Stop` (inclusive).  `Start` defaults to `0`.  `Stop` defaults to `Start`, returning a single byte value.  Negative indices count from the end.
+
+If `Start` exceeds `Stop` after index resolution, returns no values.  Raises an error if the requested range would exceed the stack limit.
+
+[source,tiri]
+----
+string.byte('ABC')         -- 65
+string.byte('ABC', 0)      -- 65
+string.byte('ABC', 0, 2)   -- 65, 66, 67
+string.byte('ABC', -1)     -- 67
+----
+
+[[sec-string-char]]
+==== string.char()
+
+[.api]`str = string.char(pass:[...])`
+
+Creates a string from one or more byte values.  Each argument must be an integer in the range 0-255.  Raises an error if any argument is outside this range.
+
+[source,tiri]
+----
+string.char(72, 101, 108, 108, 111)   -- 'Hello'
+string.char(65)                       -- 'A'
+----
+
+//[[sec-string-dump]]
+//==== string.dump()
+
+//`str = string.dump(Function, [Strip])`
+
+//Serialises `Function` into a binary bytecode string.  If `Strip` is true, debug information is removed from the output.  Only Tiri functions can be dumped; passing a C function raises an error.
+
+//The resulting string can be loaded with `load()` to recreate the function.
+
+[[sec-string-format]]
+==== string.format()
+
+[.api]`str = string.format(Format, pass:[...])`
+
+Formats values according to a C-style format string.  The `Format` string contains literal text and conversion specifiers.  Each specifier consumes the next argument in order.
+
+Supported conversion specifiers: `%d` (integer), `%i` (integer), `%u` (unsigned integer), `%f` (floating-point), `%e`/`%E` (scientific notation), `%g`/`%G` (compact floating-point), `%x`/`%X` (hexadecimal), `%o` (octal), `%s` (string), `%c` (character from byte value), `%q` (quoted string), `%%` (literal percent sign).
+
+Width, precision, and flag modifiers follow standard C `printf` conventions.
+
+[source,tiri]
+----
+string.format('%d + %d = %d', 1, 2, 3)  -- '1 + 2 = 3'
+string.format('%.2f', 3.14159)          -- '3.14'
+string.format('%06x', 255)              -- '0000ff'
+string.format('%-10s|', 'left')         -- 'left      |'
+----
+
+F-string interpolation (see <<sec-string-interpolation>>) is preferred over `string.format()` for readability.
+
+[[sec-string-len]]
+==== string.len()
+
+[.api]`length = string.len(String)`
+
+Returns the length of `String` in bytes.  Equivalent to the `#` operator.
+
+[source,tiri]
+----
+string.len('hello')   -- 5
+#'hello'              -- 5
+string.len('')        -- 0
+----
+
+[[sec-string-lower]]
+==== string.lower()
+
+[.api]`str = string.lower(String)`
+
+Returns a copy of `String` with all ASCII uppercase letters converted to lowercase.  Non-ASCII bytes are unchanged.
+
+[[sec-string-rep]]
+==== string.rep()
+
+[.api]`str = string.rep(String, Count, [Separator])`
+
+Repeats `String` a total of `Count` times.  If `Separator` is provided, it is inserted between each repetition.
+
+[source,tiri]
+----
+string.rep('ab', 3)         -- 'ababab'
+string.rep('ab', 3, '-')    -- 'ab-ab-ab'
+string.rep('x', 0)          -- ''
+----
+
+[[sec-string-reverse]]
+==== string.reverse()
+
+[.api]`str = string.reverse(String)`
+
+Returns a new string with the bytes in reverse order.
+
+[source,tiri]
+----
+'hello':reverse()   -- 'olleh'
+----
+
+[[sec-string-substr]]
+==== string.substr()
+
+[.api]`str = string.substr(String, Start, [End])`
+
+Extracts a substring from `Start` up to but not including `End` (exclusive).  If `End` is not specified, the substring extends to the end of the string.  Negative indices count from the end.
+
+[source,tiri]
+----
+'hello world':substr(0, 5)    -- 'hello'
+'hello world':substr(6)       -- 'world'
+'hello world':substr(-5)      -- 'world'
+'hello world':substr(0, -6)   -- 'hello'
+----
+
+[[sec-string-upper]]
+==== string.upper()
+
+[.api]`str = string.upper(String)`
+
+Returns a copy of `String` with all ASCII lowercase letters converted to uppercase.  Non-ASCII bytes are unchanged.
+
+[[sec-searching-and-extraction]]
+=== Searching & Extraction
+[[sec-string-count]]
+==== string.count()
+
+[.api]`count = string.count(String, Keyword)`
+
+indexterm:[strings, searching] indexterm:[strings, extraction] Counts the number of non-overlapping occurrences of `Keyword` in `String`.  Returns `0` if either string is empty or if `Keyword` is not found.
+
+[%unbreakable]
+[source,tiri]
+----
+'hello world hello':count('hello')   -- 2
+'aaa':count('aa')                    -- 1 (non-overlapping)
+'abcabc':count('abc')                -- 2
+'':count('x')                        -- 0
+----
+
+[[sec-string-find]]
+==== string.find()
+
+[.api]`start, stop = string.find(String, Keyword, [Start])`
+
+Searches for the literal string `Keyword` within `String`, beginning at index `Start` (default `0`).  Negative `Start` values count from the end of the string.
+
+If found, returns two values: the zero-based start index and the end index (inclusive).  If not found, returns `nil`.
+
+[%unbreakable]
+[source,tiri]
+----
+'hello world':find('world')      -- 6, 10
+'hello world':find('xyz')        -- nil
+'hello world':find('o', 5)       -- 7, 7
+'hello world':find('o')          -- 4, 4
+----
+
+[%unbreakable]
+TIP: `string.find()` performs literal matching only.  For pattern matching with regular expressions, see <<ch-regular-expressions>>.
+
+[[sec-modification-methods]]
+=== Modification Methods
+
+[[sec-string-cap]]
+==== string.cap()
+
+[.api]`str = string.cap(String)`
+
+Returns a copy of `String` with the first character converted to uppercase.  Only ASCII letters (`a`-`z`) are affected.  The remainder of the string is unchanged.
+
+[[sec-string-decap]]
+==== string.decap()
+
+[.api]`str = string.decap(String)`
+
+Returns a copy of `String` with the first character converted to lowercase.  Only ASCII letters (`A`-`Z`) are affected.  The remainder of the string is unchanged.
+
+[[sec-string-pop]]
+==== string.pop()
+
+[.api]`str = string.pop(String, [Count])`
+
+Returns `String` with `Count` characters removed from the end.  `Count` defaults to `1`.
+
+If `Count` is zero or negative, the original string is returned unchanged.  If `Count` is greater than or equal to the string length, an empty string is returned.
+
+[source,tiri]
+----
+'hello':pop()      -- 'hell'
+'hello':pop(2)     -- 'hel'
+'hello':pop(10)    -- ''
+'hello':pop(0)     -- 'hello'
+----
+
+[[sec-string-replace]]
+==== string.replace()
+
+[.api]`result, count = string.replace(String, Search, Replacement, [Limit])`
+
+Replaces occurrences of the literal string `Search` with `Replacement`.  `Limit` restricts the total number of replacements; the default of `-1` replaces all occurrences.
+
+Returns two values: the modified string and the number of replacements made.  If `Search` is empty, returns the original string unchanged with a count of `0`.
+
+[source,tiri]
+----
+result, n = 'hello world':replace('o', '0')
+-- result = 'hell0 w0rld', n = 2
+
+result, n = 'aaa':replace('a', 'b', 1)
+-- result = 'baa', n = 1
+----
+
+For regular expression replacement, use the `regex` library (see <<ch-regular-expressions>>).
+
+[[sec-string-trim]]
+==== string.trim()
+
+[.api]`str = string.trim(String)`
+
+Removes leading and trailing whitespace from `String`.  Whitespace characters are: space, tab, newline, and carriage return.  Returns an empty string if `String` is `nil` or contains only whitespace.
+
+[[sec-string-rtrim]]
+==== string.rtrim()
+
+[.api]`str = string.rtrim(String)`
+
+Removes trailing whitespace from `String`.  Leading whitespace is preserved.  Whitespace characters are: space, tab, newline, and carriage return.
+
+[[sec-splitting]]
+=== Splitting
+[[sec-string-split]]
+==== string.split()
+
+[.api]`arr = string.split(String, [Separator])`
+
+indexterm:[strings, splitting] Splits `String` into an array of substrings.  Returns a value of type `array<string>`.
+
+If `Separator` is a single character, each occurrence of that character splits the string.  If `Separator` is a multi-character string, it is matched as a whole delimiter.
+
+If `Separator` is not specified, the string is split on any individual whitespace character (space, tab, newline, carriage return).  Each whitespace character acts as a separate split point; consecutive whitespace characters produce empty-string elements in the result array.
+
+Splitting an empty string returns an empty array.
+
+[source,tiri]
+----
+'a,b,c':split(',')      -- array: {'a', 'b', 'c'}
+'hello world':split()   -- array: {'hello', 'world'}
+'a::b::c':split('::')   -- array: {'a', 'b', 'c'}
+'':split(',')           -- array: {}
+----
+
+[[sec-predicate-methods]]
+=== Predicate Methods
+
+[[sec-string-endsWith]]
+==== string.endsWith()
+
+[.api]`result = string.endsWith(String, Suffix)`
+
+Returns `true` if `String` ends with `Suffix`.  An empty `Suffix` always returns `true`.  A `Suffix` longer than `String` always returns `false`.  Comparison is case-sensitive.
+
+[source,tiri]
+----
+'hello':endsWith('llo')   -- true
+'hello':endsWith('LLO')   -- false
+'hello':endsWith('')      -- true
+----
+
+[[sec-string-startsWith]]
+==== string.startsWith()
+
+[.api]`result = string.startsWith(String, Prefix)`
+
+Returns `true` if `String` begins with `Prefix`.  An empty `Prefix` always returns `true`.  A `Prefix` longer than `String` always returns `false`.  Comparison is case-sensitive.
+
+[source,tiri]
+----
+'hello':startsWith('hel')   -- true
+'hello':startsWith('HEL')   -- false
+'hello':startsWith('')      -- true
+----
+
+[[sec-encoding]]
+=== Encoding
+[[sec-string-escXML]]
+==== string.escXML()
+
+[.api]`str = string.escXML(String)`
+
+indexterm:[strings, encoding] indexterm:[XML escaping] Escapes `String` for safe inclusion in XML content or attribute values.  The following characters are replaced:
+
+[cols="2,3",options="header"]
+|===
+|Character |Replacement
+|`&`       |`+&amp;+`
+|`<`       |`+&lt;+`
+|`>`       |`+&gt;+`
+|===
+
+Quote characters (`"` and `'`) are not escaped.  `string.unescapeXML()` decodes a wider set of entities including `&quot;` and `&apos;`.  Returns an empty string if `String` is `nil`.
+
+[source,tiri]
+----
+'<div>Hello & World</div>':escXML()
+-- '&lt;div&gt;Hello &amp; World&lt;/div&gt;'
+----
+
+[[sec-string-hash]]
+==== string.hash()
+
+[.api]`hash = string.hash(String, [CaseSensitive])`
+
+Returns a 32-bit integer hash value for `String`.  If `CaseSensitive` is `false` (the default), the hash is case-insensitive.  If `CaseSensitive` is `true`, the hash distinguishes between uppercase and lowercase letters.
+
+[source,tiri]
+----
+'hello':hash()          -- case-insensitive hash
+'hello':hash(true)      -- case-sensitive hash
+'Hello':hash()          -- same as 'hello':hash()
+----
+
+TIP: The hash algorithm is compatible with Kōtuku's string hashing, ensuring hashes generated between Tiri and C++ code are interchangeable.
+
+[[sec-string-unescapeXML]]
+==== string.unescapeXML()
+
+[.api]`str = string.unescapeXML(String)`
+
+Decodes XML entities in `String`, returning the unescaped result.  The following entities are recognised:
+
+[cols="2,3",options="header"]
+|===
+|Entity     |Character
+|`+&lt;+`     |`<`
+|`+&gt;+`     |`>`
+|`+&amp;+`    |`&`
+|`+&quot;+`   |`"`
+|`+&apos;+`   |`'`
+|===
+
+Returns an empty string if `String` is `nil`.  Unrecognised `&` sequences are passed through unchanged.
+
+[source,tiri]
+----
+'&lt;div&gt;Hello &amp; World&lt;/div&gt;':unescapeXML()
+-- '<div>Hello & World</div>'
+----
+
+[[sec-string-slicing-with-ranges]]
+=== Slicing with Ranges
+indexterm:[strings, slicing] indexterm:[ranges, string slicing] Strings support range objects as indices for substring extraction.  Indexing is zero-based.
+
+[source,tiri]
+----
+s = 'Hello, World!'
+
+s[{0 to 5}]     -- 'Hello'   (exclusive: indices 0-4)
+s[{7 to 12}]    -- 'World'   (exclusive: indices 7-11)
+s[{0 into 4}]    -- 'Hello'   (inclusive: indices 0-4)
+s[{-6 into -1}]  -- 'World!'  (negative inclusive)
+s[{-6 to -1}]   -- 'World'   (negative exclusive)
+----
+
+The `to` keyword creates an exclusive range where the stop index is not included.  The `into` keyword creates an inclusive range where the stop index is included.
+
+[discrete]
+==== Negative Indices
+
+Negative indices count backwards from the end of the string: `-1` is the last character, `-2` the second-to-last.  The exclusive/inclusive semantics of the range operator are preserved with negative indices.  `to` remains exclusive and `into` remains inclusive.
+
+[source,tiri]
+----
+s = 'Hello, World!'
+s[{-6 into -1}]   -- 'World!'  (inclusive: last 6 characters)
+s[{-6 to -1}]    -- 'World'   (exclusive: stop not included)
+s[{0 into -1}]    -- 'Hello, World!'  (inclusive)
+s[{0 to -1}]     -- 'Hello, World'   (exclusive)
+----
+
+[discrete]
+==== Stepped Slicing
+
+Range literals with a `by` clause extract characters at step intervals:
+
+[source,tiri]
+----
+s = 'abcdef'
+s[{0 to 6 by 2}]       -- 'ace'
+s[{5 into 0 by -2}]    -- 'fdb'
+----
+
+[discrete]
+==== Edge Cases
+
+- Ranges entirely beyond the string length return an empty string.
+- An exclusive range where `start` equals `stop` yields an empty string.
+- An inclusive single-element range returns the corresponding character.
+- Out-of-bounds indices are clamped to the string boundaries.

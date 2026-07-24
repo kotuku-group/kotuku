@@ -1,0 +1,480 @@
+// VERIFIED: 2026-02-11
+
+[[ch-functions]]
+== Functions
+indexterm:[functions] This chapter defines the syntax and semantics of functions in Tiri: declarations, parameters, return values, variadic forms, arrow functions, closures, tail calls, and recursion.
+
+Functions are first-class values.  A function definition produces a value of type `function` that can be assigned to variables, passed as arguments, returned from other functions, and stored in tables.  All functions are closures (see <<sec-closures>>).
+
+Functions are local by default.  A bare `function` declaration creates a local binding in the enclosing scope.  Use the `global` keyword to store a function in the global table, or `local` for explicit local declarations.
+
+[[sec-function-definitions]]
+=== Function Definitions
+
+[source,ebnf]
+----
+function_stmt     = [ "local" | "global" ] "function" function_name
+                    "(" [ parameter_list ] ")" [ return_type ] block "end" ;
+function_name     = identifier { "." identifier } [ ":" identifier ] ;
+parameter_list    = parameter { "," parameter } [ "," "..." ] | "..." ;
+parameter         = identifier [ ":" type_name ] ;
+return_type       = ":" type_name | ":" "<" type_list ">" ;
+type_list         = type_name { "," type_name } [ "," "..." ] ;
+----
+
+A function definition evaluates to a function value and binds it to the specified name.
+
+[source,tiri]
+----
+function greet(Name)
+   print('Hello, ' .. Name)
+end
+----
+
+==== Locality
+
+Functions declared without a qualifier are local to the enclosing scope:
+
+[source,tiri]
+----
+function helper()       -- local by default
+   return 42
+end
+----
+
+The `local` keyword makes locality explicit and is required for forward declarations and multi-assignment patterns:
+
+[source,tiri]
+----
+local isOdd              -- forward declaration
+
+function isEven(N: num):bool
+   if N is 0 then return true end
+   return isOdd(N - 1)
+end
+
+isOdd = function(N: num):bool
+   if N is 0 then return false end
+   return isEven(N - 1)
+end
+----
+
+The `global` keyword makes a function accessible to the parent scope and to nested functions that reference it by name:
+
+[source,tiri]
+----
+global function configure()
+   return { debug = true }
+end
+----
+
+==== Method Syntax
+
+The colon syntax declares a method that receives an implicit `self` parameter as its first argument:
+
+[source,tiri]
+----
+function obj:getName()
+   return self.name
+end
+
+-- Equivalent to:
+function obj.getName(self)
+   return self.name
+end
+----
+
+Dot syntax stores the function as a table field without an implicit `self`.
+
+==== Anonymous Functions
+
+Omitting the function name produces an anonymous function expression:
+
+[source,tiri]
+----
+callback = function(X)
+   return X * 2
+end
+
+table.sort(items, function(A, B) return A < B end)
+----
+
+[[sec-parameters-and-arguments]]
+=== Parameters & Arguments
+==== Parameter Passing
+
+indexterm:[functions, parameters] indexterm:[functions, arguments] All arguments are passed by value.  Tables and objects pass a reference to the value, so mutations to the contents of a table inside a function are visible to the caller, but reassigning the parameter itself does not affect the caller's variable.
+
+[source,tiri]
+----
+function modify(T)
+   T.x = 10     -- visible to caller (mutates shared table)
+   T = {}       -- not visible to caller (rebinds local parameter)
+end
+----
+
+==== Type Annotations
+
+Parameters accept optional type annotations after a colon.  Annotations constrain the expected argument type and enable compile-time diagnostics:
+
+[source,tiri]
+----
+function process(Path: str, Count: num, Options: table)
+   -- Path must be a string, Count a number, Options a table
+end
+----
+
+Supported type names include: `any`, `num`, `str`, `bool`, `table`, `array`, `func`, `obj`.  An unknown type name raises a parse error.
+
+See <<ch-type-system>> for the full type annotation specification.
+
+When a type is not declared, the compiler infers the parameter type from usage.  If inference fails, the parameter defaults to `any`.  In cases where the type is ambiguous, providing explicit type annotations to maximise performance is recommended.
+
+==== Argument Count Mismatch
+
+Extra arguments are silently discarded.  Missing arguments receive `nil`:
+
+[source,tiri]
+----
+function f(A, B, C)
+   print(A, B, C)
+end
+
+f(1, 2)        -- prints: 1  2  nil
+f(1, 2, 3, 4)  -- prints: 1  2  3  (4 is discarded)
+----
+
+[[sec-multiple-return-values]]
+=== Multiple Return Values
+indexterm:[functions, multiple return values] A function can return zero or more values.  Multiple return values are separated by commas:
+
+[breakable]
+[source,tiri]
+----
+function swap(A, B)
+   return B, A
+end
+
+x, y = swap(1, 2)   -- x=2, y=1
+----
+
+When a function call appears as the last expression in an assignment, argument list, or return statement, all its return values are used.  In any other position, the call is adjusted to produce exactly one value.
+
+[source,tiri]
+----
+function multi()
+   return 1, 2, 3
+end
+
+a, b, c = multi()           -- a=1, b=2, c=3
+a, b = multi()              -- a=1, b=2 (third discarded)
+a = multi()                 -- a=1
+
+t = { multi() }             -- t = {1, 2, 3}
+t = { multi(), 'end' }      -- t = {1, 'end'} (adjusted to 1 value)
+print(multi())              -- prints: 1  2  3
+print(multi(), 'end')       -- prints: 1  end
+----
+
+If fewer values are returned than expected, the remaining targets receive `nil`:
+
+[source,tiri]
+----
+function one()
+   return 42
+end
+
+a, b = one()   -- a=42, b=nil
+----
+
+==== Return Type Annotations
+
+Functions accept optional return type annotations after the parameter list.  A single return type uses `:type` syntax.  Multiple return types use `:<type1, type2>` syntax:
+
+[source,tiri]
+----
+function double(X: num):num
+   return X * 2
+end
+
+function divmod(A: num, B: num):<num, num>
+   return math.floor(A / B), A % B
+end
+----
+
+The compiler validates that return statements match the declared types.  A type mismatch raises a compile-time error.  Returning fewer values than declared is permitted; excess positions receive `nil`.  Returning more values than declared raises a compile-time error.
+
+The variadic marker `pass:[...]` in a return type list indicates that additional return values of the preceding type are permitted:
+
+[source,tiri]
+----
+function manyNums():<num, ...>
+   return 1, 2, 3
+end
+----
+
+The maximum number of typed return positions is 8.  Types beyond the 8th position are treated as `any`.
+
+==== Return Type Inference
+
+When no return type annotation is provided, the compiler infers the return type from the first `return` statement.  Subsequent `return` statements in the same function must return consistent types:
+
+[source,tiri]
+----
+function add(A, B)
+   return A + B      -- inferred as num
+end
+----
+
+A function with inconsistent return types across branches (e.g. returning a number in one branch and a string in another) raises a compile-time error.  Use the `any` return type to opt out of this restriction:
+
+[source,tiri]
+----
+function flexible(X):any
+   if X > 0 then return 42 end
+   return 'negative'
+end
+----
+
+==== Blank Identifier
+
+The blank identifier `_` discards unwanted return values without allocating a variable:
+
+[source,tiri]
+----
+_, result = getStatus()
+----
+
+==== Result Filter
+
+The result filter operator `[mask]` provides selective extraction of return values.  The mask uses `_` (drop) and `*` (keep) characters:
+
+[source,tiri]
+----
+content = [_*]file.acRead()   -- skip error code value, retain the buffer
+----
+
+See <<ch-result-management>> for the full result filter specification.
+
+[[sec-variadic-functions]]
+=== Variadic Functions
+[source,ebnf]
+----
+variadic_parameter = "..." ;
+----
+
+indexterm:[functions, variadic] The `pass:[...]` token declares a variadic parameter.  It must appear as the last parameter.  Inside the function body, `pass:[...]` expands to the extra arguments:
+
+[source,tiri]
+----
+function sum(...)
+   total = 0
+   for _, v in ipairs({...}) do
+      total += v
+   end
+   return total
+end
+
+sum(1, 2, 3)   -- 6
+----
+
+[discrete]
+==== Named Parameters with Varargs
+
+Named parameters precede the `pass:[...]` token.  Extra arguments beyond the named parameters are captured by `pass:[...]`:
+
+[source,tiri]
+----
+function log(Level, ...)
+   args = {...}
+   -- Level is the first argument; args contains the rest
+end
+----
+
+[discrete]
+==== Forwarding Varargs
+
+Varargs can be forwarded to another function call:
+
+[source,tiri]
+----
+function wrapper(...)
+   return inner(...)
+end
+----
+
+When `pass:[...]` appears as the last argument in a function call, all variadic values are passed.  In any other position, `pass:[...]` is adjusted to produce one value.
+
+[[sec-arrow-functions]]
+=== Arrow Functions
+[source,ebnf]
+----
+arrow_expression  = parameter_expr "=>" expression ;
+arrow_block       = parameter_expr "=>" "do" block "end" ;
+parameter_expr    = identifier | "(" [ identifier_list ] ")" ;
+----
+
+indexterm:[arrow functions] The `\=>` operator provides concise anonymous function syntax.
+
+[discrete]
+==== Expression Body
+
+A single-expression body is implicitly returned:
+
+[source,tiri]
+----
+double = n => n * 2
+add = (a, b) => a + b
+constant = () => 42
+----
+
+A single parameter does not require parentheses.  Multiple parameters or zero parameters must be parenthesised.
+
+[discrete]
+==== Block Body
+
+For multi-statement bodies, use `do pass:[...] end` with an explicit `return`:
+
+[source,tiri]
+----
+process = i => do
+   doubled = i * 2
+   return doubled + 1
+end
+----
+
+[discrete]
+==== Return Type Annotation
+
+Arrow functions accept an optional return type annotation between `\=>` and the expression, using `type:` syntax:
+
+[source,tiri]
+----
+double = (x => num: x * 2)
+greet = (name => str: 'Hello, ' .. name)
+----
+
+[discrete]
+==== Restrictions
+
+Arrow functions do not support varargs.  Use `function(pass:[...])` when variadic arguments are required.
+
+Arrow function bodies bind loosely -- the expression after `\=>` extends as far right as possible.  Compound assignment operators (`+=`, `-=`, etc.) are not permitted in expression-body arrow functions; use the block form instead.
+
+[[sec-closures]]
+=== Closures
+indexterm:[closures] Every function in Tiri is a closure.  A closure captures variables from its enclosing scope as upvalues.  Captured variables are shared by reference: modifications inside the closure are visible outside, and vice versa.
+
+[source,tiri]
+----
+function makeCounter()
+   count = 0
+   return function()
+      count++
+      return count
+   end
+end
+
+c = makeCounter()
+print(c())   -- 1
+print(c())   -- 2
+----
+
+Multiple closures created in the same scope share the same upvalues:
+
+[source,tiri]
+----
+function pair()
+   value = 0
+   getter = () => value
+   setter = v => do value = v end
+   return getter, setter
+end
+
+get, set = pair()
+set(42)
+print(get())   -- 42
+----
+
+Arrow functions capture upvalues identically to `function` declarations.
+
+[[sec-tail-calls]]
+=== Tail Calls
+indexterm:[tail calls] A tail call occurs when a function call is the last action in a function -- specifically, when `return f()` is the only expression in a `return` statement.  Tiri optimises tail calls to reuse the current stack frame, preventing stack growth for indefinite call chains.
+
+[source,tiri]
+----
+function chase(N)
+   if N is 0 then return 'done' end
+   return chase(N - 1)   -- tail call: no stack growth
+end
+----
+
+[discrete]
+==== Requirements
+
+Tail call optimisation applies when all of the following conditions hold:
+
+- The return statement contains exactly one expression.
+- That expression is a function call.
+- The return statement is not inside a `try` block.
+- The function does not have typed return values that require validation.
+
+If any condition is not met, the call uses a standard call-and-return sequence.
+
+[source,tiri]
+----
+-- NOT a tail call: additional work after the call
+function notTail(N)
+   return chase(N) + 1
+end
+
+-- NOT a tail call: multiple return values
+function notTail2(N)
+   return chase(N), 0
+end
+
+-- NOT a tail call: inside a try block
+function notTail3(N)
+   try
+      return chase(N)
+   end
+end
+----
+
+[[sec-recursive-functions]]
+=== Recursive Functions
+
+Tiri supports both direct and mutual recursion.  Recursive functions that call themselves must declare an explicit return type annotation so that the compiler can determine the return type before analysing the recursive call:
+
+[source,tiri]
+----
+function factorial(N: num):num
+   if N <= 1 then return 1 end
+   return N * factorial(N - 1)
+end
+----
+
+A recursive function without a return type annotation raises a compile-time error.
+
+[discrete]
+==== Mutual Recursion
+
+Mutually recursive functions require forward declaration of at least one function so that both names are visible at the point of call:
+
+[source,tiri]
+----
+local isOdd
+
+function isEven(N: num):bool
+   if N is 0 then return true end
+   return isOdd(N - 1)
+end
+
+isOdd = function(N: num):bool
+   if N is 0 then return false end
+   return isEven(N - 1)
+end
+----
+
+Both functions in a mutually recursive pair must declare explicit return types.

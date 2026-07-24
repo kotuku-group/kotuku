@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 950">
+  <style>
+    .box { fill: #f8f9fa; stroke: #343a40; stroke-width: 2; rx: 4; }
+    .highlight { fill: #e7f1ff; stroke: #007bff; stroke-width: 2; rx: 4; }
+    .text { font-family: 'Segoe UI', Roboto, sans-serif; font-size: 14px; fill: #212529; }
+    .text-bold { font-weight: bold; }
+    .arrow { fill: none; stroke: #495057; stroke-width: 2; marker-end: url(#arrowhead); }
+    .line { fill: none; stroke: #495057; stroke-width: 2; }
+    .label-bg { fill: white; font-size: 12px; font-weight: bold; }
+  </style>
+
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#495057" />
+    </marker>
+  </defs>
+
+  <g transform="translate(300, 20)">
+    <rect class="box" width="200" height="40" />
+    <text x="100" y="25" text-anchor="middle" class="text text-bold">processing.sleep()</text>
+  </g>
+
+  <g transform="translate(300, 90)">
+    <rect class="box" width="200" height="50" />
+    <text x="100" y="22" text-anchor="middle" class="text">Run full GC</text>
+    <text x="100" y="40" text-anchor="middle" class="text">cycle</text>
+  </g>
+
+  <g transform="translate(300, 180)">
+    <rect class="highlight" width="200" height="50" id="wait-node" />
+    <text x="100" y="22" text-anchor="middle" class="text">Wait for</text>
+    <text x="100" y="40" text-anchor="middle" class="text">events</text>
+  </g>
+
+  <g transform="translate(300, 270)">
+    <rect class="box" width="200" height="50" />
+    <text x="100" y="22" text-anchor="middle" class="text">Dispatch</text>
+    <text x="100" y="40" text-anchor="middle" class="text">event</text>
+  </g>
+
+  <g transform="translate(50, 380)">
+    <rect class="box" width="120" height="60" />
+    <text x="60" y="25" text-anchor="middle" class="text">Msg</text>
+    <text x="60" y="45" text-anchor="middle" class="text">queue</text>
+  </g>
+
+  <g transform="translate(200, 380)">
+    <rect class="box" width="120" height="60" />
+    <text x="60" y="25" text-anchor="middle" class="text">Timer</text>
+    <text x="60" y="45" text-anchor="middle" class="text">callback</text>
+  </g>
+
+  <g transform="translate(350, 380)">
+    <rect class="box" width="130" height="80" />
+    <text x="65" y="22" text-anchor="middle" class="text">Platform</text>
+    <text x="65" y="42" text-anchor="middle" class="text">event</text>
+    <text x="65" y="62" text-anchor="middle" class="text" font-size="11">(repaint, etc)</text>
+  </g>
+
+  <g transform="translate(510, 380)">
+    <rect class="box" width="120" height="60" />
+    <text x="60" y="25" text-anchor="middle" class="text">Signal</text>
+    <text x="60" y="45" text-anchor="middle" class="text">received</text>
+  </g>
+
+  <g transform="translate(300, 520)">
+    <rect class="box" width="200" height="50" />
+    <text x="100" y="22" text-anchor="middle" class="text">Check exit</text>
+    <text x="100" y="40" text-anchor="middle" class="text">conditions</text>
+  </g>
+
+  <g transform="translate(250, 700)">
+    <rect class="box" width="350" height="120" stroke-dasharray="4" />
+    <text x="20" y="30" class="text text-bold">Exit when:</text>
+    <text x="20" y="55" class="text">- QUIT message received: ERR_Terminate</text>
+    <text x="20" y="80" class="text">- All signals fired: ERR_Okay</text>
+    <text x="20" y="105" class="text">- Timeout: ERR_Timeout</text>
+  </g>
+
+  <path class="arrow" d="M400,60 L400,90" />
+  <path class="arrow" d="M400,140 L400,180" />
+  <path class="arrow" d="M400,230 L400,270" />
+
+  <!-- Upper mid -->
+  <path class="line" d="M400,320 L400,350" />
+  <path class="line" d="M110,350 L570,350" />
+  <path class="arrow" d="M110,350 L110,380" />
+  <path class="arrow" d="M260,350 L260,380" />
+  <path class="arrow" d="M415,350 L415,380" />
+  <path class="arrow" d="M570,350 L570,380" />
+
+  <!-- Lower mid -->
+  <path class="line" d="M110,440 L110,490" />
+  <path class="line" d="M260,440 L260,490" />
+  <path class="line" d="M415,460 L415,490" />
+  <path class="line" d="M570,440 L570,490" />
+  <path class="line" d="M110,490 L570,490" />
+  <path class="arrow" d="M400,490 L400,520" />
+
+  <!-- Right -->
+  <path class="line" d="M400,570 L400,620" />
+  <path class="arrow" d="M400,620 L720,620 L720,205 L500,205" />
+  <text x="710" y="420" class="text" transform="rotate(-90 710 420)" fill="#007bff">Continue</text>
+
+  <path class="arrow" d="M400,620 L400,700" />
+  <text x="360" y="640" class="text" fill="#dc3545" font-weight="bold">Exit</text>
+
+  <path class="arrow" d="M400,820 L400,880" />
+  <text x="400" y="910" text-anchor="middle" class="text text-bold">Return ERR code</text>
+</svg>

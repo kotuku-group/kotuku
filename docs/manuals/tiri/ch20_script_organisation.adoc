@@ -1,0 +1,302 @@
+// CHANGED: 2026-07-07 - Documented comma-separated import lists and their restrictions (#1618).
+// CHANGED: 2026-06-28 - Documented parent-relative ('../') import resolution.
+// VERIFIED: 2026-02-13
+
+[[ch-script-management]]
+== Script Management
+indexterm:[script management] Tiri programs are organised through a combination of compile-time directives and runtime loading functions.  The `import` directive inlines library scripts at parse time, and the runtime functions `loadFile()` and `exec()` provide dynamic loading and evaluation.  User interactivity is possible via the `arg()` function, which allows command-line parameters to be passed through to the script.
+
+[[sec-the-import-directive]]
+=== The import Directive
+[.api]`import 'Name' [as Alias]` +
+[.api]`import 'Name'[, 'Name' pass:[...]]`
+
+indexterm:[import directive] The `import` directive loads and inlines a Tiri script at parse time.  The imported script's bytecode is merged into the importing script during compilation, enabling the parser to produce optimised code across library boundaries.
+
+[discrete]
+==== Resolution Rules
+
+The `Name` argument identifies the library to import.  Resolution follows these rules:
+
+. Names must be alphanumeric with optional `/` separators for nested modules.  File extensions are not permitted.
+. The default search location is the `scripts:` volume.
+. Nested modules use `/` folder separators.
+. To import from the local directory, prefix with `./`. For example, a name of `./lib/mylib` resolves relative to the importing script.
+. To import from a parent directory, prefix with one or more `../` segments.  For example, `../shared/util` resolves relative to the importing script's parent directory.
+. Each library is imported at most once per compilation unit.  Subsequent `import` calls for the same library are silently ignored.
+
+[source,tiri]
+----
+import 'json'             -- scripts:json.tiri
+import 'gui/button'       -- scripts:gui/button.tiri
+import './helpers'        -- ./helpers.tiri (relative to script)
+import '../shared/util'   -- ../shared/util.tiri (relative to script's parent)
+----
+
+[discrete]
+==== Import Lists
+
+A single `import` statement imports multiple libraries as a comma-separated list of string literals.  Each entry is resolved and inlined from left to right, following the same order as an equivalent sequence of individual `import` statements.
+
+[source,tiri]
+----
+import 'json', 'options', 'gui/window'
+----
+
+The following restrictions apply to import lists:
+
+. Every list item must be a string literal.  A non-string entry or a trailing comma raises a parse error.
+. The `as` clause is not permitted in a list.
+. Duplicate entries are silently ignored.
+
+[discrete]
+==== Scope Rules
+
+`import` can only appear at the top-level scope of a script.  Attempting to use `import` inside a function or block raises a parse error.
+
+NOTE: The imported code executes in the calling script's context.  `global` variables and functions in the imported file are accessible to the caller post-import.  `local` variables in the imported file remain private and do not pollute the importing script's namespace.
+
+.helpers.tiri
+[source,tiri]
+----
+global function formatDate(Timestamp:str):str
+   return Timestamp:substr(0, 10)
+end
+
+global HELPER_VERSION <const> = '1.0'
+
+cache = {}  -- Private to helpers.tiri
+----
+
+.main.tiri
+[source,tiri]
+----
+import './helpers'
+
+print(formatDate('2026-02-13T10:30:00'))   -- '2026-02-13'
+print(HELPER_VERSION)                       -- '1.0'
+-- cache is not accessible here
+----
+
+[discrete]
+==== Namespaces
+
+Libraries declare a default namespace with the `namespace` keyword.  The importing script accesses the library's exports through the namespace table:
+
+[%unbreakable]
+[source,tiri]
+----
+import 'json'
+
+data = json.decode('{"key":"value"}')
+output = json.encode(data)
+----
+
+To assign a custom namespace alias, use the `as` clause:
+
+[%unbreakable]
+[source,tiri]
+----
+import 'json' as j
+
+data = j.decode('{"key":"value"}')
+----
+
+The `as` clause changes only the local alias; the library's internal namespace declaration is unaffected.
+
+==== Writing a Library
+
+A library declares its namespace and populates an export table using two predefined variables:
+
+`_NS`:: A constant string containing the declared namespace name.
+`_LIB`:: A global table that stores all library export tables, keyed by namespace.
+
+The standard pattern is:
+
+[source,tiri]
+----
+namespace 'mylib'
+
+_LIB[_NS] = {
+   version = '1.0'
+}
+
+mylib = _LIB[_NS]
+
+mylib.greet = function(Name:str):str
+   return 'Hello, ' .. Name
+end
+----
+
+The `namespace` declaration creates the `_NS` constant.  The library initialises its export table in `_LIB[_NS]` and creates a local convenience alias (`mylib` in this case) for defining additional functions and fields.
+
+[discrete]
+===== Modular Libraries
+
+Multiple files can contribute to the same namespace.  A sub-module imports the parent library and re-declares the same namespace:
+
+.mylib/extra.tiri
+[source,tiri]
+----
+import 'mylib'
+
+namespace 'mylib'
+
+mylib.extraFeature = function()
+   return 'extra'
+end
+----
+
+The caller imports both files:
+
+[source,tiri]
+----
+import 'mylib'
+import 'mylib/extra'
+
+mylib.greet('World')
+mylib.extraFeature()
+----
+
+[discrete]
+===== Avoid Using `global` for Exports
+
+The `namespace` feature is provided to avoid conflict between scripts.  Declaring `global` functions and variables in a library makes them accessible to the importing script, risking silent shadowing and unexpected read/write operations.  Limit the use of `global` exports to local scripts over which you have full control.
+
+==== Conditional Pre-Processing
+
+Imported files can detect whether they are being imported or executed directly using the `@if(imported=true)` and `@if(imported=false)` annotations:
+
+.library.tiri
+[source,tiri]
+----
+namespace 'mylib'
+
+_LIB[_NS] = {}
+mylib = _LIB[_NS]
+
+mylib.compute = function(X:num):num
+   return X * 2
+end
+
+@if(imported=false)
+   -- Runs only when library.tiri is executed directly
+   print(mylib.compute(21))
+@end
+----
+
+This pattern allows libraries to include self-test or demonstration code that does not execute when the library is imported by another script.  See <<ch-annotations-and-preprocessing>> for the full annotation reference.
+
+[[sec-dynamic-loading]]
+=== Dynamic Loading
+==== loadFile()
+
+[.api]`resultspass:[...] = loadFile(Path)`
+
+indexterm:[dynamic loading] Loads, parses, and executes a Tiri script at runtime.  `Path` is a string specifying the file location.  If the path is not fully qualified, it is resolved relative to the current working directory of the process.
+
+If `Path` begins with `./` or `../`, it is resolved relative to the directory of the calling script.  If the calling script's directory is not available, the current working directory is used as a fallback.  This makes it possible to load companion files from the same directory as the caller regardless of the process working directory.
+
+`loadFile()` raises an exception if the file cannot be opened, parsed, or if execution fails.
+
+[source,tiri]
+----
+loadFile('scripts:tools/helper.tiri')
+----
+
+If the executed script ends with a `return` statement, the returned values are forwarded to the caller:
+
+[%unbreakable]
+.config.tiri
+[source,tiri]
+----
+return {
+   host = 'localhost',
+   port = 8080
+}
+----
+
+[%unbreakable]
+.main.tiri — loads config.tiri from the same directory as main.tiri
+[source,tiri]
+----
+config = loadFile('./config.tiri')
+print(config.host)   -- 'localhost'
+----
+
+[discrete]
+===== Performance
+
+Code loaded via `loadFile()` is parsed and compiled at runtime.  It does not benefit from the compile-time optimisations afforded by `import`.  Prefer `import` for shared library code; reserve `loadFile()` for cases where runtime flexibility is required.
+
+==== exec()
+
+[.api]`resultspass:[...] = exec(Code)`
+
+Parses and executes a string containing Tiri source code.  Raises an exception if the code is unparseable or if execution fails.  Returns any values produced by the executed code.
+
+[%unbreakable]
+[source,tiri]
+----
+exec([[ print('Hello World') ]])
+
+result = exec([[ return 40 + 2 ]])   -- result is 42
+----
+
+`exec()` is intended for dynamic code generation and evaluation.  Avoid it in performance-sensitive paths because the string is parsed and compiled on every call.
+
+[[sec-loading-comparison]]
+=== Comparison of Loading Mechanisms
+
+The following table summarises the available mechanisms for loading and executing Tiri code:
+
+[cols="1,1,1,1,1a",options="header"]
+|===
+|Mechanism |Timing |Caching |Returns Values |Scope Restriction
+
+|`import`
+|Compile-time
+|Per-compilation
+|No
+|Top-level only
+
+|`loadFile()`
+|Runtime
+|None
+|Yes
+|None
+
+|`exec()`
+|Runtime
+|None
+|Yes
+|None
+|===
+
+`import` produces the most efficient code because the imported source is inlined during compilation.  `loadFile()` and `exec()` provide maximum flexibility at the cost of runtime parsing overhead.
+
+[[sec-script-parameters]]
+=== Script Parameters
+==== arg()
+
+[.api]`value = arg(Key, [Default])`
+
+indexterm:[script parameters] Retrieves a named argument passed to the script on the command line.  If `Key` is not found and `Default` is provided, returns `Default`.  If `Key` is not found and no default is provided, returns `nil`.
+
+Arguments are passed to the Origo executable as `key=value` pairs after the script path:
+
+[source,bash]
+----
+origo myscript.tiri width=1024 mode=fast name='John Smith'
+----
+
+[%unbreakable]
+[source,tiri]
+----
+width = tonumber(arg('width', '800'))   -- 1024
+mode = arg('mode')                      -- 'fast'
+name = arg('name', 'Anonymous')         -- 'John Smith'
+missing = arg('debug')                  -- nil
+----
+
+All argument values are strings regardless of their apparent type.  Use `tonumber()` for numeric conversion.

@@ -1,0 +1,426 @@
+// CREATED: 2026-07-15 — Struct documentation relocated from the former Modules & Structures chapter.  Added the native 'struct' declaration syntax, the official field type table and typed reference annotations (commit 9279202).  Removed the internal MAKESTRUCT interface and its shorthand field definitions.
+// UPDATED: 2026-07-16 — Dynamically sized array<type> fields can now be declared in native structs (commit 408def84d).
+// UPDATED: 2026-07-17 — Declarations are now 'end'-terminated blocks rather than brace-delimited (commit 56400bb).  Declarations no longer bind a constructor; instances are constructed only through the explicit struct<Name> { ... } form (commit 41b2c10).
+
+[[ch-structs]]
+== Structs
+indexterm:[structs] indexterm:[structures] A struct is a first-class value that maps a fixed set of named, typed fields onto a contiguous block of memory with a C/C++ compatible layout.  The `type()` function returns `"struct"` for a struct instance (see <<sec-structs-type>>).  A struct is a reference type: assigning it to another variable copies the reference, not the payload.  Field access is provided directly on the instance; a struct is not a table and does not respond to table operations other than those defined in this chapter.
+
+Struct definitions originate from two sources:
+
+* The `struct` declaration statement, which defines a new layout directly in Tiri source (see <<sec-struct-declarations>>).
+* Kōtuku module IDL definitions, registered through an `include` directive or a `mod.load()` call (see <<ch-modules>>).  Many class and module functions use structs for returning condensed information.
+
+Both sources produce identical struct values and share the `struct` namespace functions defined in <<sec-struct-namespace>>.
+
+[cols="1,3a",options="header"]
+|===
+|Property |Guarantee
+
+|Mutation
+|Field writes modify the backing memory in place.  Reads and writes to a field are visible through every reference to the same instance.
+
+|Ordering
+|Fields have a fixed order determined by the struct definition.  `pairs()` visits fields in declaration order.
+
+|Iteration
+|`pairs()` yields each field name and its current value.  The set of fields is fixed by the definition and does not change during iteration.
+
+|Identity
+|Two references are equal via `is` when they refer to the same instance.  Distinct instances are never equal, even when their payloads are identical.
+
+|Equality
+|Structs are compared by reference identity.  Field-by-field comparison is not performed.
+
+|Performance
+|Field access by name is O(1).  Reads and writes of scalar fields on a value annotated as `struct` compile to dedicated bytecodes (see <<ch-performance-and-the-jit>>).
+|===
+
+[[sec-struct-declarations]]
+=== Struct Declarations
+indexterm:[struct declarations] The `struct` declaration statement registers a new struct definition.  The declaration begins with the `struct` keyword and the definition name, lists the fields, and terminates with the `end` keyword:
+
+[source,tiri]
+----
+struct User
+   Name: string
+   Age: int
+   Enabled: bool
+end
+
+user = struct<User> { Name='Alice', Age=30 }
+print(user.Name, user.Age)   -- Alice  30
+----
+
+Each field is declared as `Name: type`, where `type` is one of the official field types listed in <<sec-struct-field-types>>.  Fields are separated by commas or newlines; both separators are interchangeable within the same declaration.
+
+A declaration does not bind the definition name as a variable or constructor.  Instances are constructed through the explicit `struct<Name> { ... }` form described in <<sec-struct-construction>>, or through the `struct` namespace functions in <<sec-struct-namespace>>.  Braces are reserved for construction and cannot delimit a declaration.
+
+[discrete]
+==== Semantics
+
+* Declarations are permitted at the top-level scope of a source file only.  A declaration inside a function or block raises a parse error.
+* The definition is registered at parse time for the current script.  A declaration binds no variable and emits no bytecode; it registers the layout only.
+* The definition interoperates with the `struct` namespace: `struct.new('User')` and `struct.size('User')` resolve declarations by name.
+* Re-declaring a name with an identical layout is permitted and has no effect.  Re-declaring a name with a different layout raises a parse error that reports the location of the original declaration.
+* `struct` is not a reserved word.  The declaration form is recognised contextually at statement position, and `struct` remains usable as an identifier.
+
+[discrete]
+==== Errors
+
+The following conditions raise a parse error:
+
+* A definition name containing non-alphanumeric characters.
+* A brace following the definition name.  Declarations use `end` termination; braces are reserved for `struct<Name> { ... }` construction.
+* A declaration with no fields.
+* Two field names that collide case-insensitively.
+* An unrecognised field type name.
+* A `struct<Name>` or `ptr<Name>` reference to a definition that has not been registered yet.  Forward references are not supported; declarations must precede use.
+* An `array<type>` field with an unsupported element type or a declared dimension (see <<sec-struct-dynamic-arrays>>).
+* A layout whose total size exceeds the supported struct size range.
+
+[[sec-struct-construction]]
+[discrete]
+==== Construction
+
+[.api]`instance = struct<Name> { [Fields] }`
+
+The explicit `struct<Name>` construction form creates an instance of the declared layout `Name`.  This is the only construction syntax bound to a declaration; the definition name is not itself callable.  `Name` must reference a definition that has already been registered.  A `struct<Name>` reference with no following initialiser table raises a parse error, as does a reference to an unregistered definition.
+
+The initialiser table is mandatory.  An empty table constructs a zero-initialised instance: numeric fields read `0`, `bool` fields read `false`, string fields read `''`, object and pointer fields read `nil`, and dynamic array fields read as empty arrays.  When `Fields` is present, its key-value pairs are applied to the corresponding fields after zero-initialisation.  Field values are subject to the assignment rules defined in <<sec-struct-field-access>>; a value that the target field does not accept raises an exception.
+
+[source,tiri]
+----
+empty = struct<User> { }
+user  = struct<User> { Name='Alice', Age=30, Enabled=true }
+----
+
+`struct<Name> { Fields }` is equivalent to `struct.new('Name', Fields)` (see <<sec-struct-namespace>>).
+
+[[sec-struct-field-types]]
+=== Field Types
+
+[cols="2,4a,1",options="header"]
+|===
+|Type |Description |Size (bytes)
+
+|`bool`
+|Boolean.
+|1
+
+|`char`
+|8-bit character code, read and written as a number.  A fixed array `char[N]` declares a character buffer that is read as a string.
+|1
+
+|`int8`
+|Signed 8-bit integer.
+|1
+
+|`byte`, `uint8`
+|Unsigned 8-bit integer.
+|1
+
+|`int16`
+|Signed 16-bit integer.
+|2
+
+|`uint16`
+|Unsigned 16-bit integer.
+|2
+
+|`int`, `int32`
+|Signed 32-bit integer.
+|4
+
+|`uint`, `uint32`
+|Unsigned 32-bit integer.
+|4
+
+|`int64`
+|Signed 64-bit integer.
+|8
+
+|`uint64`
+|Unsigned 64-bit integer.
+|8
+
+|`float`
+|32-bit floating point.
+|4
+
+|`double`
+|64-bit floating point.
+|8
+
+|`string`
+|Owned string.  The struct owns the string storage.
+|Implementation-defined
+
+|`cstr`
+|Read-only C string pointer.
+|8
+
+|`ptr`
+|Untyped pointer.
+|8
+
+|`ptr<type>`
+|Typed pointer to a scalar type or a registered struct definition, e.g. `ptr<int>`, `ptr<User>`.
+|8
+
+|`ptr<type[]>`
+|Pointer to a null-terminated array of the given element type, e.g. `ptr<int[]>`.
+|8
+
+|`obj`
+|Object reference.
+|8
+
+|`obj<Class>`
+|Object reference constrained to the named class.  Accepts instances of that class or a sub-class of it.
+|8
+
+|`func`
+|Function reference.
+|Implementation-defined
+
+|`struct<Name>`
+|Embedded struct.  `Name` must reference a registered definition.
+|Size of `Name`
+
+|`array<type>`
+|Dynamically sized array owned by the struct (a C++ vector).  See <<sec-struct-dynamic-arrays>> for the permitted element types.
+|Implementation-defined
+|===
+
+[discrete]
+==== Fixed Arrays
+
+Append `[N]` to a type to declare a fixed-size array of `N` elements, where `N` is a positive integer:
+
+[source,tiri]
+----
+struct Sample
+   Buffer: char[16]
+   Fixed: int[3]
+end
+----
+
+Fixed arrays of `string` are not supported and raise a parse error.
+
+[[sec-struct-dynamic-arrays]]
+[discrete]
+==== Dynamic Arrays
+
+indexterm:[struct array fields] The `array<type>` field type declares a dynamically sized array whose storage is owned by the struct and resizes on assignment:
+
+[source,tiri]
+----
+struct Palette
+   Names:  array<string>
+   Values: array<int>
+end
+
+palette = struct<Palette> { Values=array<int> { 1, 2, 3 } }
+palette.Values = array<int> { 8, 9, 10, 11, 12 }   -- resizes to five elements
+----
+
+The element type may be any scalar numeric type from the table above, `string`, or `struct<Name>` where `Name` references a registered definition whose fields are all trivially owned (a definition containing owned `string` or `array` fields is rejected).  Element types that own external resources -- `cstr`, `ptr`, `obj`, `func` and nested `array` types -- raise a parse error.
+
+A dynamic array field cannot declare a dimension: both `array<type, N>` and `array<type>[N]` raise a parse error.  A newly constructed instance reads dynamic array fields as empty arrays.
+
+Reading a dynamic array field produces an array holding a copy of the field's current elements; the result does not track subsequent changes to the field.  `struct.clone()` and `struct.copy()` deep-copy dynamic array fields, so the copy holds independent storage.
+
+[[sec-struct-typed-references]]
+=== Typed References
+indexterm:[struct annotations] The annotation `struct<Name>` constrains a local variable, function parameter or return value to instances of the declared layout `Name`.  The plain `struct` annotation accepts any struct instance.  See <<ch-type-system>> for general annotation semantics.
+
+[source,tiri]
+----
+function age(Value: struct<User>): num
+   return Value.Age
+end
+
+local typed: struct<User> = struct<User> { Age=30 }
+----
+
+Annotating a value with its layout enables the compiler to resolve field offsets statically (see <<ch-performance-and-the-jit>>).
+
+[[sec-struct-namespace]]
+=== The struct Namespace
+
+==== struct.new()
+
+[.api]`instance = struct.new(StructName, [Fields])` +
+[.api]`instance = struct.new(StructName, Address)`
+
+Creates a new struct instance from a registered definition identified by `StructName`.  The definition must have been registered through an `include` directive, a `mod.load()` call, or a `struct` declaration (<<sec-struct-declarations>>).  Raises an exception if the definition is not found.  Returns a value whose `type()` is `"struct"`.
+
+If `Fields` is a table, the key-value pairs are applied to the corresponding struct fields during creation.  Field values are subject to the assignment rules defined in <<sec-struct-field-access>>; a value that the target field does not accept raises an exception.
+
+If `Address` is provided as a pointer value, the struct references existing memory at that address instead of allocating new memory.
+
+[source,tiri]
+----
+include 'vector'
+
+-- Create with default (zeroed) values
+stop = struct.new('GradientStop')
+stop.offset    = 0.5
+stop.rgb.red   = 1.0
+stop.rgb.green = 0.0
+stop.rgb.blue  = 0.0
+stop.rgb.alpha = 1.0
+
+-- Create with initial field values
+stop = struct.new('GradientStop', { offset = 0.5 })
+
+-- Create from an existing memory address
+tag = struct.new('XMLTag', address)
+----
+
+==== struct.size()
+
+[.api]`bytes = struct.size(StructName)`
+
+Returns the byte size of the struct definition identified by `StructName`.  Does not create a struct instance.  Raises an exception if the definition is not found.
+
+==== struct.clone()
+
+[.api]`copy = struct.clone(Source)`
+
+Creates a new struct instance of the same definition as `Source` and deep-copies its payload into the new instance.  Owned C++ string and vector fields are duplicated so that the copy holds independent storage; subsequent modifications to `Source` do not affect the returned instance.  Raises an exception if `Source` holds an unsupported C++ array field type.
+
+[source,tiri]
+----
+source = struct.new('CopyRecord', { count = 12, name = 'source' })
+copy   = struct.clone(source)
+source.name = 'changed'
+print(copy.name)   -- 'source'
+----
+
+==== struct.copy()
+
+[.api]`dest = struct.copy(Dest, Source)`
+
+Deep-copies the payload of `Source` into the existing `Dest` instance and returns `Dest`.  `Dest` and `Source` must share the same definition; a mismatch raises an exception with `ERR_Mismatch`.  Raises an exception if either payload is null, if the payloads overlap in memory, or if the definition holds an unsupported C++ array field type.
+
+=== Instance Methods
+
+==== structSize() Method
+
+[.api]`bytes = inst.structSize()`
+
+Returns the byte size of the struct instance.  Be wary of confusing this method with `size()`, which does not exist in this context (`size` is a common field name).
+
+==== ptr() Method
+
+[.api]`address = inst.ptr()` +
+[.api]`old_address = inst.ptr(NewAddress)`
+
+Retrieves or replaces the memory address backing the struct.  Returns `nil` if the current address is zero.
+
+Changing the address avoids allocating a new struct instance for each pointer to be processed.  This is useful when iterating over arrays of structs in memory:
+
+[source,tiri]
+----
+tag = struct.new('XMLTag', first_address)
+-- Process tag...
+tag.ptr(next_address)
+-- Process next tag using the same instance...
+----
+
+WARNING: Modifying the pointer referenced by the struct is dangerous.  Alternative usage patterns are usually available so that this anti-pattern can be avoided.
+
+==== Length Operator
+
+The `#` operator returns the total number of fields in the struct.
+
+[[sec-struct-field-access]]
+=== Field Access
+
+Fields are read and written directly on the instance using dot notation.  Field names are matched against the definition case-insensitively.  Reading or writing a name that the definition does not declare raises an exception.
+
+The value produced by a read, and the values accepted by a write, depend on the field's declared type:
+
+[cols="1,3a",options="header"]
+|===
+|Field category |Behaviour
+
+|Boolean (`bool`)
+|Reads and writes a boolean.
+
+|Scalar numeric (`char`, `int8`, `byte`, `int16`, `int`, `int64`, `float`, `double` and unsigned variants)
+|Reads and writes a number.  Unsigned fields preserve the full unsigned range of the storage width.
+
+|Object (`obj`, `obj<Class>`)
+|Reads as a native object (`type()` is `"object"`), or `nil` when unset.  Accepts an object or `nil` on assignment; assigning `nil` clears the field.  A constrained field (`obj<Class>`) accepts instances of the named class or a sub-class of it; any other class raises an exception.  Assigning a detached object wrapper raises an exception.
+
+|Owned string (`string`)
+|Reads and writes a string.  The struct owns the string storage.
+
+|Raw C string (`cstr`)
+|Reads a string.  Assignment is not supported and raises an exception.
+
+|Character buffer (`char[N]`)
+|Reads as a string.  Accepts a string or byte array on assignment.
+
+|Pointer (`ptr`)
+|A null pointer reads as `nil`; a non-null pointer reads as userdata.  Accepts userdata or `nil` on assignment.
+
+|Struct pointer (`ptr<Name>`)
+|A null pointer reads as `nil`; a non-null pointer reads as a struct view over the referenced memory.
+
+|Array pointer (`ptr<type[]>`)
+|A null pointer reads as `nil`; a non-null pointer reads as an array over the null-terminated elements.
+
+|Function reference (`func`)
+|Reads as `nil`.  Assignment is not supported and raises an exception.
+
+|Embedded struct (`struct<Name>`)
+|Reads as a struct view over the embedded field, or an array of views for an embedded array.  The view keeps the enclosing instance alive.
+
+|Dynamic array (`array<type>`)
+|Reads as an array holding a copy of the current elements.  Accepts an array or sequential table on assignment; the field resizes to match the source and copies its elements.
+|===
+
+Array fields accept an array value on assignment:
+
+* A fixed array (`type[N]`) copies elements from the source array.  A source shorter than `N` clears the remaining elements; an empty array clears the field.  A source longer than `N` raises an exception.
+* A dynamic array field (`array<type>`, or a C++ vector in a module-defined struct) resizes to match the source array and copies its elements.
+* A dynamic array of struct elements (`array<struct<Name>>`) accepts an array of tables, where each table's key-value pairs populate the fields of the corresponding element.
+* An element type that does not match the field's declared type raises an exception.
+
+[source,tiri]
+----
+value.fixed = array<int> { 4, 5, 6 }    -- copies three elements
+value.fixed = array<int> { 9 }          -- { 9, 0, 0 }
+value.dynamic = array<int> { 8, 9, 10 } -- resizes and copies
+value.points = array<table> {           -- struct element vector
+   { red=1, green=2, blue=3 },
+   { red=4, green=5, blue=6 }
+}
+----
+
+[[sec-struct-iteration]]
+=== Iteration
+
+`pairs()` iterates the fields of a struct in declaration order, yielding each field name and its current value.
+
+[source,tiri]
+----
+value = struct.new('IterableRecord', { count = 7, name = 'sample' })
+for name, field_value in pairs(value) do
+   print(name, field_value)
+end
+----
+
+[[sec-struct-tostring]]
+=== String Representation
+
+`tostring()` produces a string in the form `StructName: 0xADDRESS`, where `StructName` is the definition name and `ADDRESS` is the payload address in hexadecimal.
+
+[source,tiri]
+----
+tostring(struct.new('IterableRecord'))  -- 'IterableRecord: 0x...'
+----

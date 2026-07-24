@@ -1,0 +1,899 @@
+// UPDATED: 2026-07-06 -- Documented extern declarations and protected host globals.
+// UPDATED: 2026-04-03 -- Documented `is not` as an alternative inequality form.
+[[appendix-migration-from-lua]]
+[appendix]
+== Migration from Lua
+indexterm:[Lua, migration] This appendix provides a systematic guide for developers migrating existing Lua 5.1/5.2 code to Tiri.  Each section identifies a breaking change, explains the rationale, and shows the equivalent Tiri construct.
+
+[[sec-migration-breaking-changes]]
+=== Summary of Breaking Changes
+indexterm:[Lua, breaking changes] The following table lists all incompatible changes between standard Lua and Tiri.  Entries are grouped by category and cross-referenced to the relevant manual sections.
+
+[cols="3,3,2"]
+|===
+|Lua |Tiri |Reference
+
+|`==`
+|`is`
+|<<sec-migration-equality>>
+
+|`~=`
+|`is not` / `!=`
+|<<sec-migration-equality>>
+
+|`^` (exponentiation)
+|`**`
+|<<sec-migration-operators>>
+
+|`goto` / `::label::`
+|Removed; use `continue`, `break`, `defer`
+|<<sec-migration-control-flow>>
+
+|`pcall()` / `xpcall()`
+|`try pass:[...] except`
+|<<sec-migration-exception-handling>>
+
+|`select()`
+|Result filter `[mask]`
+|<<ch-result-management>>
+
+|`loadstring()`
+|`load()`
+|<<sec-migration-removed-functions>>
+
+|`dofile()`
+|`loadFile()`
+|<<sec-migration-removed-functions>>
+
+|`unpack()`
+|Removed
+|<<sec-migration-removed-functions>>
+
+|`getfenv()` / `setfenv()`
+|Removed
+|<<sec-migration-removed-functions>>
+
+|`gcinfo()` / `table.maxn()`
+|Removed
+|<<sec-migration-removed-functions>>
+
+|`string.sub()`
+|`string.substr()`
+|<<sec-migration-string-functions>>
+
+|`string.gsub()` / `string.match()` / `string.gmatch()`
+|`regex.*` methods
+|<<sec-migration-pattern-matching>>
+
+|Lua patterns
+|Regular expressions
+|<<sec-migration-pattern-matching>>
+
+|`bit.*` library
+|Native bitwise operators `&`, `\|`, `^`, `~`, `<<`, `>>`
+|<<sec-migration-operators>>
+
+|One-based indexing
+|Zero-based indexing
+|<<sec-migration-indexing>>
+
+|Variables global by default
+|Variables local by default
+|<<sec-migration-scoping>>
+
+|Implicit reads of unknown globals
+|Use `global` or `extern`
+|<<sec-migration-scoping>>
+
+|Tables for sequential data
+|Arrays (distinct type)
+|<<sec-migration-arrays>>
+
+|Package library
+|`include` / `import`
+|<<sec-migration-removed-libraries>>
+
+|OS library
+|Kōtuku API equivalents
+|<<sec-migration-removed-libraries>>
+
+|Debug library (introspective)
+|Reduced; see <<ch-the-debug-library>>
+|<<sec-migration-removed-libraries>>
+
+|`io.*` returns error codes
+|`io.*` throws exceptions
+|<<sec-migration-exception-handling>>
+|===
+
+[[sec-migration-equality]]
+=== Equality and Inequality Operators
+Lua's `==` operator is replaced by the `is` keyword.  The `~=` inequality operator is replaced by `!=`.
+
+[source,tiri]
+----
+-- Lua
+if x == nil then ... end
+if y ~= 0 then ... end
+
+-- Tiri
+if x is nil then ... end
+if y is not 0 then ... end
+if y != 0 then ... end
+----
+
+The semantics are identical to Lua's equality: two values are equal if they have the same type and the same value, or if a `__eq` metamethod returns true.  See <<ch-operators>> for the complete operator reference.
+
+[[sec-migration-operators]]
+=== Changed Operators
+
+[discrete]
+==== Exponentiation
+
+In standard Lua, `^` is the exponentiation operator.  In Tiri, `^` is bitwise XOR and `**` is exponentiation.
+
+[source,tiri]
+----
+-- Lua
+result = 2 ^ 10       -- 1024
+
+-- Tiri
+result = 2 ** 10      -- 1024
+result = 0xFF ^ 0x0F  -- bitwise XOR: 240
+----
+
+[discrete]
+==== Bitwise Operators
+
+The `bit.*` library is removed.  Tiri provides native C-style bitwise operators on 32-bit integers:
+
+[cols="2,3"]
+|===
+|Operator |Description
+
+|`~x`     |Bitwise NOT
+|`a & b`  |Bitwise AND
+|`a \| b` |Bitwise OR
+|`a ^ b`  |Bitwise XOR
+|`a << b` |Left shift
+|`a >> b` |Right shift
+|===
+
+[source,tiri]
+----
+-- Lua (with bit library)
+local masked = bit.band(flags, 0xFF)
+local shifted = bit.lshift(1, 4)
+
+-- Tiri
+masked = flags & 0xFF
+shifted = 1 << 4
+----
+
+Compound bitwise assignment operators (`&=`, `|=`, `^=`) do not exist.  Use `x = x & y` instead.
+
+[[sec-migration-indexing]]
+=== Zero-Based Indexing
+indexterm:[Lua, indexing] Tiri uses zero-based indexing for tables, strings and arrays.  In standard Lua, the first element of a table is at index 1 and `string.sub()` starts at position 1.  In Tiri, the first element is at index 0.
+
+[source,tiri]
+----
+-- Lua: first element is t[1]
+-- Tiri: first element is t[0]
+t = { 'a', 'b', 'c' }
+print(t[0])   -- 'a'
+print(t[1])   -- 'b'
+
+-- Lua: string.sub(s, 1, 3)
+-- Tiri: string.substr(s, 0, 3)
+s = 'hello'
+print(s:substr(0, 3))   -- 'hel'
+----
+
+This change affects all table constructors, `ipairs()` iteration, string functions and array access.  When migrating numeric `for` loops that iterate over tables, adjust the start index from 1 to 0 and the end condition accordingly.
+
+[[sec-migration-scoping]]
+=== Variable Scoping
+
+In standard Lua, an undeclared variable is implicitly global.  In Tiri, assignments to undeclared names create locals, and reads of undeclared names are compile-time errors.  Use the `global` keyword to declare globals created by the script.  Use `extern` for symbols supplied by another parsed file or by the embedding host.
+
+[source,tiri]
+----
+-- Lua
+counter = 0              -- implicitly global
+function inc()
+   counter = counter + 1 -- accesses global
+end
+
+-- Tiri
+global glCounter = 0     -- explicitly global
+function inc()
+   glCounter++           -- accesses global
+end
+
+extern hostValue
+print(hostValue)         -- host-supplied global
+----
+
+The `local` keyword remains available for explicit scope control and multi-variable declarations.
+
+[source,tiri]
+----
+local a, b, c = 1, 2, 3
+----
+
+Host-registered built-in names are protected from rebinding.  Replace a built-in name only by creating an explicit local shadow:
+
+[source,tiri]
+----
+math = {}                -- error: protected built-in global
+local math = {}          -- valid local shadow
+----
+
+See <<ch-variables-and-scoping>> for the full scoping rules, including `global`, `extern`, protected globals, and naming conventions.
+
+[[sec-migration-exception-handling]]
+=== Exception Handling
+
+`pcall()` and `xpcall()` are deprecated.  Tiri provides structured exception handling through `try-except`:
+
+[source,tiri]
+----
+-- Lua
+local ok, err = pcall(function()
+   risky_operation()
+end)
+if not ok then
+   print('Error: ' .. err)
+end
+
+-- Tiri
+try
+   risky_operation()
+except e
+   print('Error: ' .. e.message)
+end
+----
+
+`try-except` supports filtered handlers with the `when` clause to catch specific `ERR` codes, a `success` block that runs when no exception occurred, and optional stack trace capture with `try<trace>`.
+
+The `io.*` library functions now throw exceptions on error instead of returning error codes.  Code that previously checked return values from `io.open()` or `file:read()` can be replaced with `try-except` blocks:
+
+[source,tiri]
+----
+-- Lua
+local file, err = io.open('data.txt', 'r')
+if not file then
+   print('Failed: ' .. err)
+   return
+end
+
+-- Tiri
+try
+   file = io.open('data.txt', 'r')
+except e
+   print('Failed: ' .. e.message)
+   return
+end
+----
+
+See <<ch-error-handling>> for the complete exception handling reference, including `raise`, `check`, `error()` and filtered handlers.
+
+[[sec-migration-control-flow]]
+=== Control Flow Changes
+
+[discrete]
+==== The goto Statement
+
+The `goto` statement and `::label::` syntax are removed.  The constructs that `goto` is commonly used for in Lua are replaced by dedicated statements:
+
+[cols="2,3"]
+|===
+|Lua Pattern |Tiri Replacement
+
+|Skip to next iteration
+|`continue`
+
+|Break out of a loop
+|`break`
+
+|Cleanup before return
+|`defer`
+|===
+
+[source,tiri]
+----
+-- Lua: skip even numbers with goto
+for i = 1, 10 do
+   if i % 2 == 0 then goto continue end
+   print(i)
+   ::continue::
+end
+
+-- Tiri
+for i in {0 to 10} do
+   if i % 2 is 0 then continue end
+   print(i)
+end
+----
+
+[discrete]
+==== The continue Statement
+
+`continue` skips the remainder of the current loop body and advances to the next iteration.  It works in `for`, `while` and `repeat` loops.  See <<ch-control-flow>> for details.
+
+[[sec-migration-string-functions]]
+=== String Function Changes
+
+[discrete]
+==== Renamed Functions
+
+`string.sub()` is renamed to `string.substr()`.  Indices are zero-based, and the end index is exclusive (Lua's end index is inclusive).
+
+[source,tiri]
+----
+-- Lua
+string.sub('hello', 1, 3)    -- 'hel'
+
+-- Tiri
+string.substr('hello', 0, 3) -- 'hel'
+----
+
+[discrete]
+==== Index Migration Note
+
+When migrating code that computes substring bounds dynamically, remember that Lua uses 1-based indices with an inclusive end, while Tiri uses 0-based indices with an exclusive end.  A direct translation is:
+
+[source,tiri]
+----
+-- Lua
+part = string.sub(s, Start, Stop)      -- Start/Stop are 1-based, Stop inclusive
+
+-- Tiri
+part = string.substr(s, Start - 1, Stop) -- Start is 0-based, Stop is exclusive
+----
+
+[discrete]
+==== Removed Functions
+
+The following Lua string functions are removed:
+
+[cols="2,3"]
+|===
+|Function |Replacement
+
+|`string.gsub()`
+|`regex.new(Pattern).replace(Text, Replacement)` or `string.replace()` (literal only)
+
+|`string.match()`
+|`regex.new(Pattern).extract(Text)` or `regex.new(Pattern).findFirst(Text)`
+
+|`string.gmatch()`
+|`regex.new(Pattern).findAll(Text)`
+
+|`string.find()` with patterns
+|`regex.new(Pattern).findFirst(Text)` or `string.find()` (literal only)
+|===
+
+See <<sec-migration-pattern-matching>> for the pattern-to-regex migration guide.
+
+[[sec-migration-pattern-matching]]
+=== Migration from Lua Patterns
+indexterm:[Lua, patterns] Lua patterns are deprecated in favour of ECMAScript-compatible regular expressions compiled with `regex.new()`.  The following table maps common Lua pattern constructs to their regex equivalents:
+
+[cols="2,2,3"]
+|===
+|Lua Pattern |Regex Equivalent |Description
+
+|`%a`
+|`[a-zA-Z]` or `[[:alpha:]]`
+|Letters
+
+|`%d`
+|`\d` or `[0-9]`
+|Digits
+
+|`%w`
+|`\w` or `[a-zA-Z0-9_]`
+|Alphanumeric characters
+
+|`%s`
+|`\s` or `[ \t\n\r\f\v]`
+|Whitespace
+
+|`%l`
+|`[a-z]`
+|Lower-case letters
+
+|`%u`
+|`[A-Z]`
+|Upper-case letters
+
+|`%p`
+|`[[:punct:]]`
+|Punctuation
+
+|`%c`
+|`[[:cntrl:]]`
+|Control characters
+
+|`.`
+|`.`
+|Any character (identical)
+
+|`%b()`
+|No direct equivalent
+|Balanced match (use recursive patterns or manual parsing)
+|===
+
+Capitalised Lua pattern classes (e.g. `%A`, `%D`) represent the complement set.  In regex, use `[^pass:[...]]` or the capitalised shorthand (`\D`, `\W`, `\S`).
+
+[discrete]
+==== Quantifiers
+
+[cols="2,2"]
+|===
+|Lua |Regex
+
+|`*`  |`*`
+|`+`  |`+`
+|`-`  |`*?` (lazy)
+|`?`  |`?`
+|===
+
+Lua's `-` quantifier (lazy match) maps to `*?` in regex.
+
+[discrete]
+==== Captures
+
+Lua patterns use `()` for captures.  Regular expressions use the same syntax; in Tiri, prefer `rx.extract()` for `string.match()`-style capture extraction:
+
+[source,tiri]
+----
+-- Lua
+local year, month, day = string.match(date, '(%d+)-(%d+)-(%d+)')
+
+-- Tiri
+rx = regex.new([[(\d+)-(\d+)-(\d+)]])
+year, month, day = rx.extract(date)
+----
+
+[discrete]
+==== Anchors
+
+Lua uses `^` and `$` for start-of-string and end-of-string anchors.  Regular expressions use the same anchors.
+
+[discrete]
+==== Common Migration Examples
+
+[source,tiri]
+----
+-- Lua: strip whitespace
+s = string.gsub(s, '^%s+', '')
+s = string.gsub(s, '%s+$', '')
+
+-- Tiri
+s = s:trim()
+-- Or with regex:
+s = regex.new([[^\s+]]).replace(s, '')
+s = regex.new([[\s+$]]).replace(s, '')
+----
+
+[source,tiri]
+----
+-- Lua: split on comma
+for item in string.gmatch(csv, '([^,]+)') do
+   process(item)
+end
+
+-- Tiri
+items = csv:split(',')
+for i, item in ipairs(items) do
+   process(item)
+end
+----
+
+[source,tiri]
+----
+-- Lua: replace all occurrences
+result = string.gsub(text, 'old', 'new')
+
+-- Tiri
+result = text:replace('old', 'new')
+-- Or with regex for pattern-based replacement:
+result = regex.new([[pattern]]).replace(text, 'replacement')
+----
+
+See <<ch-regular-expressions>> and <<ch-strings>> for the complete API references.
+
+[[sec-migration-removed-functions]]
+=== Removed and Replaced Functions
+
+The following standard Lua functions are removed or replaced:
+
+[cols="2,3"]
+|===
+|Function |Replacement
+
+|`loadstring(Code)`
+|`load(Code)` compiles and returns a function from a string.
+
+|`dofile(Path)`
+|`loadFile(Path)` loads and executes a file.
+
+|`select(N, pass:[...])`
+|Result filter operator `[mask]`.  See <<ch-result-management>>.
+
+|`unpack(Table)`
+|Removed.  Use multiple assignment or `table.unpack()` if available.
+
+|`getfenv()` / `setfenv()`
+|Removed.  Environment manipulation is not supported.
+
+|`gcinfo()`
+|Removed.  Use the garbage collector interface if memory reporting is needed.
+
+|`table.maxn()`
+|Removed.  Use `#t` for the length of a table or array.
+|===
+
+[[sec-migration-removed-libraries]]
+=== Removed Libraries
+
+The following standard Lua libraries are removed because their functionality is provided by the Kōtuku framework:
+
+[discrete]
+==== Package Library
+
+The `package` library (`require`, `module`, `package.path`, etc.) is removed.  Tiri provides `include` and `import` for script organisation.  See <<ch-script-management>>.
+
+[source,tiri]
+----
+-- Lua
+local json = require('json')
+
+-- Tiri
+import 'json' as json
+----
+
+[discrete]
+==== OS Library
+
+The `os` library is removed.  Time, date and filesystem operations are provided by Kōtuku classes:
+
+[cols="2,3"]
+|===
+|Lua Function |Kōtuku Equivalent
+
+|`os.time()`
+|Kōtuku Time class
+
+|`os.date()`
+|Kōtuku Time class
+
+|`os.clock()`
+|Kōtuku Time class
+
+|`os.execute()`
+|Kōtuku Task class
+
+|`os.remove()` / `os.rename()`
+|Kōtuku File class
+|===
+
+[discrete]
+==== Debug Library
+
+The standard Lua debug library is restructured.  Several functions are renamed to follow Tiri's camelCase convention, some are removed, and new diagnostic functions are added.
+
+The following table maps standard Lua debug functions to their Tiri equivalents:
+
+[cols="2,2,2"]
+|===
+|Lua |Tiri |Status
+
+|`debug.getinfo()`
+|`debug.getInfo()`
+|Renamed.  The `what` field returns `'Tiri'` instead of `'Lua'`.  Adds `fileIndex` field (with the `S` option).
+
+|`debug.getlocal()`
+|`debug.getLocal()`
+|Renamed.  Index is 0-based.
+
+|`debug.setlocal()`
+|`debug.setLocal()`
+|Renamed.  Index is 0-based.
+
+|`debug.getupvalue()`
+|`debug.getUpvalue()`
+|Renamed.  Index is 0-based.
+
+|`debug.setupvalue()`
+|`debug.setUpvalue()`
+|Renamed.  Index is 0-based.
+
+|`debug.upvalueid()`
+|`debug.upvalueID()`
+|Renamed.
+
+|`debug.upvaluejoin()`
+|`debug.upvalueJoin()`
+|Renamed.
+
+|`debug.getmetatable()`
+|`debug.getMetatable()`
+|Renamed.
+
+|`debug.setmetatable()`
+|`debug.setMetatable()`
+|Renamed.
+
+|`debug.getfenv()`
+|`debug.getEnv()`
+|Renamed.
+
+|`debug.setfenv()`
+|`debug.setEnv()`
+|Renamed.
+
+|`debug.sethook()`
+|`debug.setHook()`
+|Renamed.
+
+|`debug.gethook()`
+|`debug.getHook()`
+|Renamed.
+
+|`debug.traceback()`
+|`debug.traceback()`
+|Unchanged.
+
+|`debug.getregistry()`
+|`debug.getRegistry()`
+|Renamed.
+
+|`debug.getuservalue()`
+|`debug.getUserValue()`
+|Renamed.
+
+|`debug.setuservalue()`
+|`debug.setUserValue()`
+|Renamed.
+
+|`debug.debug()`
+|—
+|Removed.
+|===
+
+Tiri adds the following functions with no Lua equivalent:
+
+[cols="2,3"]
+|===
+|Function |Description
+
+|`debug.fileSources()`
+|Returns an array of all registered source files for the current script execution.
+
+|`debug.validate()`
+|Parses Tiri code without executing it and returns diagnostics.
+
+|`debug.locality()`
+|Returns how a variable name is resolved (`'local'`, `'upvalue'`, `'global'`, or `'nil'`).
+
+|`debug.anno`
+|Sub-table providing programmatic access to the annotation system.
+|===
+
+See <<ch-the-debug-library>> for the complete API reference.
+
+[[sec-migration-arrays]]
+=== Arrays as a Distinct Type
+indexterm:[Lua, arrays] Lua uses tables for both associative maps and sequential data.  Tiri introduces arrays as a separate, performance-optimised type for sequential (integer-indexed) data.  Prefer arrays over tables when storing ordered, numerically indexed data.
+
+[source,tiri]
+----
+-- Lua: sequential table
+local items = { 'a', 'b', 'c' }
+table.insert(items, 'd')
+
+-- Tiri: use an array
+items = array<string> { 'a', 'b', 'c' }
+items:push('d')
+----
+
+Arrays are zero-indexed, support dedicated methods (`push`, `pop`, `map`, `filter`, `sort`, etc.) and offer better iteration performance than tables.  See <<ch-arrays>> for the complete API.
+
+[[sec-migration-new-features]]
+=== New Features with No Lua Equivalent
+
+The following Tiri features have no counterpart in standard Lua.  They do not require migration but are available to improve code that was previously limited by Lua's feature set:
+
+* **Compound assignment**: `+=`, `-=`, `*=`, `/=`, `%=`, `..=` (see <<ch-variables-and-scoping>>)
+* **Postfix increment**: `counter++` (see <<ch-operators>>)
+* **Arrow functions**: `n pass:[=>] n * 2` (see <<ch-functions>>)
+* **String interpolation**: `f'Hello {name}'` (see <<sec-string-interpolation>>)
+* **Safe navigation**: `obj?.field` (see <<ch-operators>>)
+* **Ternary operator**: `cond ? a :> b` (see <<ch-operators>>)
+* **If-nil assignment**: `x ?= default` (see <<ch-operators>>)
+* **If-empty operator**: `value ?? default` (see <<ch-operators>>)
+* **If-empty assignment**: `x ??= default` (see <<ch-operators>>)
+* **Ranges**: `{0 to 10}`, `{0 into 10}` (see <<ch-ranges>>)
+* **Type annotations**: `local x:num = 0` (see <<ch-type-system>>)
+* **Constant variables**: `local x <const> = 42` (see <<ch-variables-and-scoping>>)
+* **Enum declarations**: `enum PREFIX { MEMBER, pass:[...] }` (see <<sec-enum-declarations>>)
+* **External declarations**: `extern hostValue` (see <<sec-the-extern-keyword>>)
+* **To-be-closed variables**: `resource <close> = pass:[...]` (see <<ch-resource-management>>)
+* **Defer statement**: `defer pass:[...] end` (see <<ch-resource-management>>)
+* **Choose expressions**: `choose x from pass:[...] end` (see <<ch-pattern-matching>>)
+* **Result filter**: `[_*]func()` (see <<ch-result-management>>)
+* **Pipe operator**: `x |> func()` (see <<ch-result-management>>)
+* **Deferred expressions**: `<{ expr }>` (see <<ch-resource-management>>)
+* **Thunk functions**: `thunk name():type pass:[...] end` (see <<ch-resource-management>>)
+* **Unicode operators**: `≠`, `≤`, `≥`, `×`, `÷`, `↑` (see <<ch-operators>>)
+
+The following subsections illustrate how selected features replace common verbose Lua patterns.  Each example shows the Lua idiom followed by the equivalent Tiri code.  Refer to the cross-referenced chapters for the complete specification.
+
+[discrete]
+==== If-Nil and If-Empty Assignment
+
+The `?=` operator assigns a value only when the variable is `nil`.  The `??=` variant assigns when the variable is falsey under extended semantics (`nil`, `false`, `0` or `""`).  Both replace the common Lua pattern of checking before assigning defaults.
+
+[source,tiri]
+----
+-- Lua
+function initialise(options)
+   if options == nil then
+      options = {}
+   end
+   if options.timeout == nil then
+      options.timeout = 30
+   end
+end
+
+-- Tiri
+function initialise(Options)
+   Options ?= {}
+   Options.timeout ?= 30
+end
+----
+
+[discrete]
+==== Ternary Operator
+
+The ternary operator `condition ? a :> b` replaces four-line if-then-else blocks when selecting between two values.  Only the selected branch is evaluated.
+
+[source,tiri]
+----
+-- Lua
+local label
+if count > 1 then
+   label = 'items'
+else
+   label = 'item'
+end
+
+-- Tiri
+label = count > 1 ? 'items' :> 'item'
+----
+
+[discrete]
+==== Safe Navigation
+
+The `?.` operator short-circuits to `nil` when the left-hand side is `nil`, eliminating nested guard clauses.
+
+[source,tiri]
+----
+-- Lua
+local city = nil
+if user ~= nil then
+   if user.profile ~= nil then
+      if user.profile.address ~= nil then
+         city = user.profile.address.city
+      end
+   end
+end
+
+-- Tiri
+city = user?.profile?.address?.city
+----
+
+The same safe-nav operators may also guard assignments:
+
+[source,tiri]
+----
+user?.profile?.name = 'Guest'
+user?.stats?.count += 1
+user?.profile?.nickname ?= 'Anonymous'
+user?.profile?.tag ??= 'new'
+----
+
+If a guarded hop is `nil`, that assignment is skipped.  For a single target, the RHS is not evaluated when the guarded store is skipped.
+
+[discrete]
+==== If-Empty Operator
+
+The `??` operator returns the right-hand operand when the left-hand side is falsey under extended semantics.  Unlike Lua's `or`, it correctly handles `0` and `""` as falsey values.
+
+[source,tiri]
+----
+-- Lua: the 'x and x or y' idiom fails when x is 0 or false
+local width = opts.width or 100  -- broken if opts.width is 0
+
+-- Tiri: ?? treats 0 and "" as falsey
+width = opts.width ?? 100        -- correctly defaults when 0
+name = user?.name ?? 'Guest'     -- combines with safe navigation
+----
+
+[discrete]
+==== String Interpolation
+
+Interpolated strings prefixed with `f` embed expressions directly, replacing long concatenation chains.
+
+[source,tiri]
+----
+-- Lua
+print('Hello, ' .. name .. '! You scored ' .. tostring(score) .. ' points.')
+
+-- Tiri
+print(f'Hello, {name}! You scored {score} points.')
+----
+
+[discrete]
+==== Arrow Functions
+
+Arrow functions provide concise syntax for anonymous functions, particularly useful with higher-order operations on arrays and ranges.
+
+[source,tiri]
+----
+-- Lua
+table.sort(items, function(a, b)
+   return a.name < b.name
+end)
+
+-- Tiri
+items:sort((a, b) => a.name < b.name)
+----
+
+[discrete]
+==== Defer
+
+The `defer` statement schedules cleanup code to run when the enclosing scope exits, regardless of whether the exit is normal, a `return` or an exception.  This replaces the Lua pattern of manually closing resources at every exit point.
+
+[source,tiri]
+----
+-- Lua
+function readConfig(path)
+   local file, err = io.open(path, 'r')
+   if not file then return nil, err end
+   local ok, content = pcall(file.read, file, '*a')
+   file:close()           -- must remember to close before every return
+   if not ok then return nil, content end
+   return content
+end
+
+-- Tiri
+function readConfig(Path)
+   file = io.open(Path, 'r')
+   defer
+      file:close()        -- runs automatically when scope exits
+   end
+   return file:read('*a')
+end
+----
+
+[discrete]
+==== Ranges
+
+Range literals replace manually constructed numeric `for` loops and support functional methods like `map`, `filter` and `reduce`.
+
+[source,tiri]
+----
+-- Lua
+local squares = {}
+for i = 0, 9 do
+   squares[i + 1] = i * i
+end
+
+-- Tiri
+squares = {0 to 10}:map(i => i * i)
+----

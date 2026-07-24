@@ -1,0 +1,462 @@
+[[appendix-standard-library-quick-reference]]
+[appendix]
+== Standard Library Quick Reference
+indexterm:[library, standard] This appendix provides a compact reference of all built-in Tiri functions organised by library.  For full semantics, see the referenced chapters.  All string and table indexing is zero-based.  String and array methods support method-call syntax: `s:upper()` is equivalent to `string.upper(s)`.
+
+=== Global Functions
+indexterm:[global functions] See <<ch-basic-syntax>>, <<ch-types-and-values>>, <<ch-error-handling>>.
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`assert(Condition, [Message])`  |Raises an exception if `Condition` is false.
+|`error(Message, [Level])`       |Raises an exception with `Message`.
+|`type(Value)`                   |Returns the type name of `Value` as a string.
+|`tonumber(Value, [Base])`       |Converts `Value` to a number.  Returns `nil` on failure.
+|`tostring(Value)`               |Converts `Value` to a string.
+|`print(pass:[...])`             |Writes arguments to stderr, values are serialised without a separator.
+|`msg(pass:[...])`               |Writes arguments to the Kōtuku log at API level.
+|`pairs(Table)`                  |Returns an iterator over all key-value pairs.
+|`ipairs(Table)`                 |Returns an iterator over sequential integer keys.
+|`values(Table)`                 |Returns an iterator over values only.
+|`keys(Table)`                   |Returns an iterator over keys only.
+|`next(Table, [PrevKey])`        |Returns the next key-value pair after `PrevKey`.
+|`rawget(Table, Key)`            |Gets a value bypassing metamethods.
+|`rawset(Table, Key, Value)`     |Sets a value bypassing metamethods.
+|`rawequal(Value1, Value2)`      |Checks equality bypassing metamethods.
+|`rawlen(Table)`                 |Returns length bypassing metamethods.
+|`setmetatable(Table, Metatable)`|Sets the metatable.  See <<ch-metatables-and-metamethods>>.
+|`getmetatable(Value)`           |Returns the metatable.
+|`newproxy([Metatable])`         |Creates a proxy object.
+|`isthunk(Value)`                |Returns `true` if `Value` is a thunk.
+|`resolve(Thunk)`                |Evaluates and returns the value of a thunk.
+|===
+
+<<<
+=== String Library
+indexterm:[library, string] See <<ch-strings>>.
+
+==== Core Methods
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`string.alloc(Size)`                    |Creates a pre-allocated string buffer.
+|`string.byte(String, [Start], [Stop])`  |Returns byte values of characters.
+|`string.char(pass:[...])`               |Creates a string from byte values.
+|`string.format(Format, pass:[...])`     |C-style printf formatting.
+|`string.len(String)`                    |Returns the byte length.  Equivalent to `#String`.
+|`string.lower(String)`                  |Converts to lowercase.
+|`string.rep(String, Count, [Separator])`|Repeats `String` `Count` times.
+|`string.reverse(String)`                |Reverses the byte order.
+|`string.substr(String, Start, [End])`   |Extracts a substring.
+|`string.upper(String)`                  |Converts to uppercase.
+|===
+
+==== Search and Modification
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`string.find(String, Needle, [Start])`                |Returns `start, stop` of a literal match.
+|`string.count(String, Keyword)`                       |Counts non-overlapping occurrences.
+|`string.replace(String, Search, Replacement, [Limit])`|Literal replacement.  Returns `result, count`.
+|`string.cap(String)`                                  |Capitalises the first character.
+|`string.decap(String)`                                |Lowercases the first character.
+|`string.pop(String, [Count])`                         |Removes trailing characters.
+|`string.trim(String)`                                 |Removes leading and trailing whitespace.
+|`string.rtrim(String)`                                |Removes trailing whitespace.
+|`string.split(String, [Separator])`                   |Splits into an array.
+|===
+
+==== Predicates and Encoding
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`string.startsWith(String, Prefix)`   |Returns `true` if `String` begins with `Prefix`.
+|`string.endsWith(String, Suffix)`     |Returns `true` if `String` ends with `Suffix`.
+|`string.escXML(String)`               |Escapes for XML output.
+|`string.unescapeXML(String)`          |Decodes XML entities.
+|`string.hash(String, [CaseSensitive])`|Returns a 32-bit hash.
+|`string.translate(Text)`              |Translates via system translation tables.
+|`string.translateRefresh()`           |Reloads translation tables.
+|===
+
+<<<
+=== Table Library
+indexterm:[library, table] See <<ch-tables>>.
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`table.new(ArraySize, HashSize)`                    |Creates a pre-allocated table.
+|`table.insert(Table, [Pos,] Value)`                 |Inserts an element.
+|`table.remove(Table, [Pos])`                        |Removes and returns an element.
+|`table.move(Table, Start, End, Target, [DestTable])`|Copies a range of elements.
+|`table.concat(Table, [Sep, Start, End])`            |Concatenates elements into a string.
+|`table.sort(Table, [Comparator])`                   |Sorts the array portion in-place.
+|`table.sortByKeys(Table, [Comparator])`             |Iterates in sorted key order.
+|`table.slice(Table, Range)`                         |Extracts a subsequence.
+|`table.clear(Table)`                                |Removes all entries.
+|`table.empty(Table)`                                |Returns `true` if the table has no entries.
+|`table.toXML(Table)`                                |Converts to an XML string.
+|===
+
+=== Array Library
+indexterm:[library, array] See <<ch-arrays>>.
+
+==== Creation
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`array.new(Size, Type)`            |Creates a typed array with `Size` elements.
+|`array.of(Type, Value, pass:[...])`|Creates a typed array from values.
+|===
+
+Typed literal syntax is also supported: `array<int> { 10, 20, 30 }`
+
+==== Access and Query
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`arr:type()`              |Returns the element type as a string.
+|`arr:readOnly()`          |Returns `true` if the array is read-only.
+|`arr:first()`             |Returns the first element.
+|`arr:last()`              |Returns the last element.
+|`arr:find(Value, [Start])`|Returns the index of `Value`, or `nil` if not found.
+|`arr:find(Value, Range)`  |Searches within a range.
+|===
+
+==== Mutation
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`arr:push(Value, pass:[...])`         |Appends elements.  Returns the new length.
+|`arr:pop([Count])`                    |Removes and returns elements from the end.
+|`arr:insert(Index, Value, pass:[...])`|Inserts elements at `Index`.
+|`arr:remove(Index, [Count])`          |Removes elements at `Index`.
+|`arr:fill(Value, [Start, Count])`     |Fills elements with `Value`.
+|`arr:fill(Value, Range)`              |Fills elements within a range.
+|`arr:sort([Descending])`              |Sorts in-place.
+|`arr:sort(ComparatorFn)`              |Sorts with a custom comparator.
+|`arr:reverse()`                       |Reverses in-place.
+|`arr:clear()`                         |Resets the length to zero.
+|`arr:resize(NewSize)`                 |Changes the length.
+|===
+
+==== Copying, Slicing, and Conversion
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`arr:clone()`                                   |Returns a shallow copy.
+|`arr:slice(Range)`                              |Extracts a subsequence.
+|`arr:copy(Source, [DestIndex, SrcIndex, Count])`|Copies elements from another array.
+|`arr:table()`                                   |Converts to a table.
+|`arr:getString([Start, Length])`                |Byte/char arrays only.  Extracts a string.
+|`arr:setString(String, [Start])`                |Byte/char arrays only.  Writes a string.
+|`arr:concat(Format, [Separator])`               |Formats and concatenates elements.
+|`arr:join([Separator])`                         |Concatenates elements with a separator.
+|===
+
+==== Functional Methods
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`arr:each(Callback)`          |Calls `Callback` for each element.
+|`arr:map(Callback)`           |Returns a new array of transformed elements.
+|`arr:filter(Predicate)`       |Returns a new array of elements matching `Predicate`.
+|`arr:reduce(Initial, Reducer)`|Folds elements into a single value.
+|`arr:any(Predicate)`          |Returns `true` if any element matches.
+|`arr:all(Predicate)`          |Returns `true` if all elements match.
+|===
+
+<<<
+=== Range Library
+indexterm:[library, range] See <<ch-ranges>>.
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`range(Start, Stop, [Inclusive], [Step])`    |Creates a range.
+|`range.new(Start, Stop, [Inclusive], [Step])`|Alias for `range()`.
+|`range.slice(Object, Range)`|Extracts a slice from an object using a range.
+|`r:toArray()`               |Converts the range to an array.
+|`r:contains(Value)`         |Returns `true` if `Value` is within the range.
+|`r:each(Callback)`          |Calls `Callback` for each value in the range.
+|`r:map(Transform)`          |Returns an array of transformed values.
+|`r:filter(Predicate)`       |Returns an array of matching values.
+|`r:reduce(Initial, Reducer)`|Folds values into a single result.
+|`r:take(Count)`             |Returns an array of the first `Count` values.
+|`r:any(Predicate)`          |Returns `true` if any value matches.
+|`r:all(Predicate)`          |Returns `true` if all values match.
+|`r:find(Predicate)`         |Returns the first value matching `Predicate`.
+|===
+
+Range literal syntax: `{0 to 5}` (exclusive), `{0 into 5}` (inclusive).
+
+Read-only properties: `r.start`, `r.stop`, `r.step`, `r.inclusive`, `r.length`.
+
+=== Math Library
+indexterm:[library, math] See <<ch-mathematics>>.
+
+==== Arithmetic
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`math.abs(X)`                   |Absolute value.
+|`math.floor(X)`                 |Rounds towards negative infinity.
+|`math.ceil(X)`                  |Rounds towards positive infinity.
+|`math.round(X, [DecimalPlaces])`|Rounds to the nearest integer or decimal place.
+|`math.fmod(X, Y)`               |Floating-point remainder.
+|`math.modf(X)`                  |Returns integer and fractional parts.
+|`math.min(X, pass:[...])`       |Returns the smallest argument.
+|`math.max(X, pass:[...])`       |Returns the largest argument.
+|===
+
+==== Trigonometry
+
+All trigonometric functions operate in radians.
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`math.sin(X)`, `math.cos(X)`, `math.tan(X)`   |Sine, cosine, tangent.
+|`math.asin(X)`, `math.acos(X)`, `math.atan(X)`|Inverse sine, cosine, tangent.
+|`math.atan2(Y, X)`                            |Two-argument inverse tangent.
+|`math.sinh(X)`, `math.cosh(X)`, `math.tanh(X)`|Hyperbolic sine, cosine, tangent.
+|===
+
+==== Exponentials, Logarithms, and Conversion
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`math.exp(X)`                   |Returns _e_ raised to the power `X`.
+|`math.log(X, [Base])`           |Natural logarithm, or logarithm to `Base`.
+|`math.log10(X)`                 |Base-10 logarithm.
+|`math.pow(X, Y)`                |Returns `X` raised to the power `Y`.
+|`math.sqrt(X)`                  |Square root.
+|`math.ldexp(Mantissa, Exponent)`|Returns `Mantissa` x 2^`Exponent`.
+|`math.frexp(X)`                 |Returns mantissa and exponent.
+|`math.deg(X)`                   |Converts radians to degrees.
+|`math.rad(X)`                   |Converts degrees to radians.
+|===
+
+==== Random Numbers
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`math.random([Low], [High])`|Returns a pseudo-random number.
+|`math.randomSeed(Seed)`     |Seeds the random number generator.
+|===
+
+==== Constants
+
+[cols="2,5"]
+|===
+|Constant |Value
+
+|`math.pi`   |The ratio of a circle's circumference to its diameter (approximately 3.14159265358979).
+|`math.huge` |Positive infinity.
+|===
+
+<<<
+=== Regex Library
+indexterm:[library, regex] See <<ch-regular-expressions>>.
+
+==== Creation
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`regex.new(Pattern, [Flags])`|Compiles a regular expression.
+|`regex.escape(Text)`         |Escapes special characters in `Text`.
+|===
+
+==== Matching and Searching
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`rx.test(Text, [Flags])`               |Returns `true` if a match exists.
+|`rx.findFirst(Text, [Offset], [Flags])`|Returns `start, stop, captures` for the first match.
+|`rx.findAll(Text, [Offset], [Flags])`  |Returns an iterator over all matches.
+|`rx.extract(Text, [Offset], [Flags])`  |Returns captured groups from the first match.
+|`rx.match(Text, [Flags])`              |Whole-string match.  Returns match data.
+|`rx.search(Text, [Flags])`             |Returns all matches as a result set.
+|===
+
+==== Replacement and Splitting
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`rx.replace(Text, Replacement, [Flags])`|Replaces matches.
+|`rx.split(Text, [Flags])`               |Splits `Text` at match boundaries.
+|===
+
+==== Compilation Flags
+
+`regex.ICASE`, `regex.MULTILINE`, `regex.DOT_ALL`.
+
+==== Match Flags
+
+`regex.NOT_BEGIN_OF_LINE`, `regex.NOT_END_OF_LINE`, `regex.NOT_BEGIN_OF_WORD`, `regex.NOT_END_OF_WORD`, `regex.NOT_NULL`, `regex.CONTINUOUS`, `regex.PREV_AVAILABLE`, `regex.REPLACE_NO_COPY`, `regex.REPLACE_FIRST_ONLY`.
+
+Read-only properties: `rx.pattern`, `rx.flags`, `rx.error`.
+
+=== I/O Library
+indexterm:[library, I/O] See <<ch-file-io>>.
+
+==== File Operations
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`io.open(Path, [Mode])`        |Opens a file.  Modes: `r`, `w`, `a`, `+`.
+|`io.close([File])`             |Closes a file handle.
+|`io.read([Format, pass:[...]])`|Reads from the default input.
+|`io.write(Data, pass:[...])`   |Writes to the default output.
+|`io.flush()`                   |Flushes the output buffer.
+|`io.input([Source])`           |Gets or sets the default input.
+|`io.output([Source])`          |Gets or sets the default output.
+|`io.lines([Source])`           |Returns a line iterator.
+|`io.type(Value)`               |Returns `"file"`, `"closed file"`, or `nil`.
+|`io.tempFile()`                |Creates an in-memory file buffer.
+|`io.readAll(Path)`             |Reads an entire file into a string.
+|`io.writeAll(Path, Content)`   |Writes a string to a file.
+|===
+
+==== Path Utilities
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`io.isFolder(Path)`       |Returns `true` if `Path` ends with a separator.
+|`io.splitPath(Path)`      |Returns `dir, file` components.
+|`io.sanitisePath(Path)`   |Removes repeated separators.
+|===
+
+==== I/O Extension Functions
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`io.search(Path, Options)`|Searches for files matching criteria.  Requires `import 'io/filesearch'`.
+|`io.ui.copy(Source, Dest, [Move])`|Copies or moves files with file-transfer UI.  Requires `import 'io/filemgr'`.
+|`io.ui.paste(Dest)`|Pastes clipboard files to `Dest`.  Requires `import 'io/filemgr'`.
+|`io.ui.delete(Paths)`|Deletes one or more paths with file-transfer UI.  Requires `import 'io/filemgr'`.
+|===
+
+==== File Handle Methods
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`file:read([Format, pass:[...]])`|Reads data.  Formats: `*l` (line), `*a` (all), `*n` (number), or byte count.
+|`file:write(Data, pass:[...])`   |Writes data.
+|`file:seek([Whence, [Offset]])`  |Sets or gets position.  `Whence`: `"set"`, `"cur"`, `"end"`.
+|`file:close()`                   |Closes the handle.
+|`file:flush()`                   |Flushes the write buffer.
+|`file:lines()`                   |Returns a line iterator.
+|===
+
+Standard streams: `io.stdin`, `io.stdout`, `io.stderr`.
+
+=== Struct Library
+indexterm:[library, struct] See <<ch-structs>>.
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`struct.new(StructName, [Fields])`   |Creates a structure instance, optionally initialised from a table.
+|`struct.new(StructName, Address)`    |Creates a structure that references existing memory.
+|`struct.size(StructName)`            |Returns the byte size of a structure definition.
+|`struct.clone(Source)`               |Returns a deep copy of a structure instance.
+|`struct.copy(Dest, Source)`          |Deep-copies `Source` into `Dest` and returns `Dest`.
+|===
+
+==== Instance Methods
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`inst.structSize()`  |Returns the byte size of the instance.
+|`inst.ptr([Address])`|Retrieves or replaces the backing memory address.
+|===
+
+Instances support `#inst` (field count), `pairs(inst)` (declaration-order iteration), and `tostring(inst)`.
+
+=== Debug Library
+indexterm:[library, debug] See <<ch-the-debug-library>>.
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`debug.getInfo(Target, [What])`          |Returns function or stack frame information.
+|`debug.getLocal(Level, Index)`           |Returns the name and value of a local variable.
+|`debug.setLocal(Level, Index, Value)`    |Sets a local variable.
+|`debug.getUpvalue(Func, Index)`          |Returns the name and value of an upvalue.
+|`debug.setUpvalue(Func, Index, Value)`   |Sets an upvalue.
+|`debug.upvalueID(Func, Index)`           |Returns a unique identifier for an upvalue.
+|`debug.upvalueJoin(Func1, N1, Func2, N2)`|Joins two upvalues to share the same slot.
+|`debug.getMetatable(Object)`             |Returns the metatable (bypasses `__metatable`).
+|`debug.setMetatable(Object, Table)`      |Sets the metatable (bypasses `__metatable`).
+|`debug.getEnv(Object)`                   |Returns the environment table.
+|`debug.setEnv(Object, Table)`            |Sets the environment table.
+|`debug.getRegistry()`                    |Returns the registry table.
+|`debug.traceback([Message, [Level]])`    |Returns a stack trace string.
+|`debug.setHook(Hook, Mask, [Count])`     |Sets a debug hook.
+|`debug.getHook()`                        |Returns the current hook, mask, and count.
+|`debug.getUserValue(Userdata)`           |Returns the user value table.
+|`debug.setUserValue(Userdata, Table)`    |Sets the user value table.
+|`debug.fileSources()`                    |Returns an array of loaded file sources.
+|`debug.validate(Code, [Options])`        |Validates Tiri source code without executing it.
+|`debug.locality(Name, [Level])`          |Checks if a name is a local, upvalue, or global.
+|===
+
+=== JIT Library
+indexterm:[library, JIT] See <<ch-performance-and-the-jit>>.
+
+[cols="4,5"]
+|===
+|Signature |Description
+
+|`jit.on()`                |Enables JIT compilation.
+|`jit.off()`               |Disables JIT compilation.
+|`jit.flush()`             |Clears all compiled code.
+|`jit.status()`            |Returns the JIT status and active optimisation flags.
+|===

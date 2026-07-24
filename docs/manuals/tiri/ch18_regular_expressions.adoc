@@ -1,0 +1,494 @@
+// VERIFIED: 2026-02-13
+// UPDATED: 2026-05-24 — Added regex string shorthand section documenting r'...' syntax.
+
+[[ch-regular-expressions]]
+== Regular Expressions
+indexterm:[regular expressions] indexterm:[regex] Tiri provides a compiled regular expression interface through the `regex` module.  Pattern objects are compiled once from an ECMAScript-compatible pattern string and reused for matching, searching, replacing, and splitting operations.  The underlying engine supports full Unicode via UTF-8, named and numbered capture groups, lookahead and lookbehind assertions, and inline flag modifiers.
+
+This chapter documents the Tiri API for creating and using regex objects.  For comprehensive coverage of regex syntax, character classes, quantifiers, assertions, Unicode properties, and advanced pattern features, refer to the https://github.com/parasol-framework/kotuku/wiki/Regex-Manual[Regex Manual] in the project wiki.
+
+[[sec-creating-a-regex]]
+=== Creating a Regular Expression
+==== regex.new()
+
+[.api]`rx = regex.new(Pattern, [Flags])`
+
+indexterm:[regex, creation] Compiles `Pattern` into a reusable regex object.  `Flags` is an optional bitmask of compilation flags (see <<sec-flags-and-options>>).  If `Pattern` is syntactically invalid, an exception is thrown with error code `ERR_Syntax` and a descriptive message.
+
+[source,tiri]
+----
+digits = regex.new([[\d+]])
+email  = regex.new([[\w[\w._%+-]*@[\w.-]+\.[A-Za-z]{2,}]], regex.ICASE)
+----
+
+Wrap construction in a `try` block when patterns originate from untested or user-supplied input (see <<ch-error-handling>>):
+
+[source,tiri]
+----
+try
+   rx = regex.new(user_pattern)
+except e
+   print('Invalid pattern: ' .. e.message)
+end
+----
+
+[discrete]
+==== Writing Pattern Strings
+
+Regex patterns contain frequent backslash sequences (`\d`, `\w`, `\s`, `\b`, etc.).  In a quoted string, the backslash is the Tiri escape character, so every regex backslash must be doubled:
+
+[source,tiri]
+----
+rx = regex.new('\\d+')       -- quoted: each \\ produces a single \
+----
+
+Long-string literals (`pass:[[[...]]]`) do not interpret escape sequences.  This makes them the preferred form for regex patterns because the pattern reads exactly as written:
+
+[source,tiri]
+----
+rx = regex.new([[\d+]])      -- long string: \d passes through unchanged
+----
+
+The long-string form eliminates a common class of errors where a missing backslash silently produces the wrong pattern.  Use quoted strings only when the pattern itself must contain the sequence `]]`.
+
+[cols="1,1a",options="header"]
+|===
+|Quoted String |Long String Equivalent
+
+|`'\\d+'`
+|`pass:[[[\d+]]]`
+
+|`'\\bcat\\b'`
+|`pass:[[[\bcat\b]]]`
+
+|`'(\\w+)\\s*=\\s*(\\w+)'`
+|`pass:[[[(\w+)\s*=\s*(\w+)]]]`
+|===
+
+[discrete]
+==== Regex String Shorthand
+
+indexterm:[regex, shorthand] The `r` prefix creates a regex object directly from a string literal, combining declaration and compilation into a single expression.  The content is treated as a raw string: backslash sequences are not interpreted as escape characters.
+
+[.api]`rx = r'Pattern'`
+
+The expression `r'...'` is equivalent to `regex.new('...')` with the escaping convenience of a long string.  Single-quoted, double-quoted, long-bracket, and levelled long-bracket delimiters are all supported:
+
+[source,tiri]
+----
+digits = r'\d+'          -- single-quoted raw string
+word   = r"\w+"          -- double-quoted raw string
+ws     = r[[\s+]]        -- long-bracket raw string
+level  = r[=[\d{2}]=]    -- levelled long-bracket raw string
+----
+
+The result is a compiled regex object, not a string.  All regex methods can be called on it directly, including suffix chaining:
+
+[source,tiri]
+----
+r'\d+'.test('abc123')    -- true
+name, id = r'(\w+)-(\d+)'.extract('item-42')
+----
+
+If the pattern is syntactically invalid, an exception is thrown at runtime during the implicit `regex.new()` call.  Wrap in a `try` block when the pattern may be incorrect (see <<ch-error-handling>>).
+
+The `r` prefix does not conflict with variables named `r`.  The lexer recognises the regex shorthand only when `r` is immediately followed by a quote character (`'`, `"`) or an opening long-bracket (`[`).  An `r` followed by whitespace, an index operator, or any other token is parsed as an identifier:
+
+[source,tiri]
+----
+r = { 'zero' }
+print(r[0])              -- 'zero' (table index, not regex)
+
+r = function(V) return V end
+print(r 'text')          -- 'text' (function call, not regex)
+----
+
+==== regex.escape()
+
+[.api]`escaped = regex.escape(Text)`
+
+Returns a copy of `Text` with all regex metacharacters escaped so the string matches literally.  The escaped characters are: `\ ^ $ . | ? * + ( ) [ ] { } -`.
+
+Use `regex.escape()` when constructing patterns from dynamic data or user input that may contain special characters.
+
+[[sec-matching-and-searching]]
+=== Matching and Searching
+==== regex.test()
+
+[.api]`result = rx.test(Text, [Flags])`
+
+indexterm:[regex, matching] indexterm:[regex, searching] Returns `true` if the pattern matches anywhere in `Text`, otherwise `false`.  This is the fastest method for a simple presence check; it does not extract match positions or captures.
+
+[source,tiri]
+----
+rx = regex.new([[\d+]])
+rx.test('abc123')      -- true
+rx.test('no digits')   -- false
+----
+
+==== regex.findFirst()
+
+[.api]`start, stop, captures = rx.findFirst(Text, [Offset], [Flags])`
+
+Locates the first match in `Text` and returns the byte position of the match start and the byte position immediately after the match end.  If no match is found, no values are returned.  The optional `Offset` specifies the byte position at which to begin searching (default `0`).
+
+If the pattern contains capturing groups, the third return value is an array of captured strings (excluding the full match, which is already represented by the start/stop positions).  If no capturing groups are defined, the third return value is `nil`.
+
+[source,tiri]
+----
+rx = regex.new([[\d+]])
+start, stop = rx.findFirst('abc123def')
+-- start = 3, stop = 6
+
+-- Resume searching from a later position
+start, stop = rx.findFirst('abc123def456', 6)
+-- start = 9, stop = 12
+
+-- With captures
+rx = regex.new([[(\w+)-(\d+)]])
+start, stop, caps = rx.findFirst('item-42')
+-- start = 0, stop = 7, caps[0] = 'item', caps[1] = '42'
+----
+
+==== regex.findAll()
+
+[.api]`iter = rx.findAll(Text, [Offset], [Flags])`
+
+Returns an iterator for use in `for` loops.  Each iteration yields three values: the match start position, the match stop position, and a capture array (or `nil` if no groups are defined).
+
+[source,tiri]
+----
+rx = regex.new([[\d+]])
+for start, stop in rx.findAll('abc123def456') do
+   print(f'Match at [{start}..{stop})')
+end
+
+-- With capture groups
+rx = regex.new([[([a-z]+)([0-9]+)]])
+for start, stop, caps in rx.findAll('abc123def456') do
+   print(f'Letters: {caps[0]}, Digits: {caps[1]}')
+end
+----
+
+Zero-width matches advance by at least one character to prevent infinite loops.
+
+==== regex.extract()
+
+[.api]`capture, ... = rx.extract(Text, [Offset], [Flags])`
+
+Extracts captures from the first match and returns them as individual string values.  Unlike `findFirst()`, the match positions are omitted, making `extract()` a convenient shorthand when only the captured content is needed.
+
+If no match is found, no values are returned.  Unmatched optional groups return empty strings.
+
+[source,tiri]
+----
+rx = regex.new([[(\w+)-(\d+)]])
+name, id = rx.extract('item-42')
+-- name = 'item', id = '42'
+----
+
+==== regex.match()
+
+[.api]`matches = rx.match(Text, [Flags])`
+
+Performs a whole-string match.  The pattern must match the entire `Text`; partial matches return `nil`.  On success, returns an array where index `0` is the full match and indices `1`, `2`, ... correspond to capturing groups.  Unmatched optional groups are normalised to empty strings.
+
+[source,tiri]
+----
+rx = regex.new([[(https?)://([^/]+)(.*)]])
+m = rx.match('https://example.com/path')
+-- m[0] = 'https://example.com/path'
+-- m[1] = 'https'
+-- m[2] = 'example.com'
+-- m[3] = '/path'
+
+rx.match('not a url')   -- nil (no whole-string match)
+----
+
+==== regex.search()
+
+[.api]`results = rx.search(Text, [Flags])`
+
+Finds all matches in `Text`.  Returns an array of match arrays, where each inner array follows the same structure as the return value of `match()` (index `0` is the full match, subsequent indices are captures).  Returns `nil` if no matches are found.
+
+[source,tiri]
+----
+rx = regex.new([[<(\w+)>]])
+results = rx.search('<hello> <world>')
+-- results[0][0] = '<hello>', results[0][1] = 'hello'
+-- results[1][0] = '<world>', results[1][1] = 'world'
+----
+
+[[sec-replacement-and-splitting]]
+=== Replacement and Splitting
+==== regex.replace()
+
+[.api]`result = rx.replace(Text, Replacement, [Flags])`
+
+indexterm:[regex, replacement] indexterm:[regex, splitting] Replaces all matches in `Text` with the `Replacement` string.  By default, all matches are replaced; pass `regex.REPLACE_FIRST_ONLY` in `Flags` to replace only the first occurrence.  If no matches are found, `Text` is returned unchanged.
+
+The `Replacement` string supports the following placeholders:
+
+[cols="1,3a",options="header"]
+|===
+|Placeholder |Description
+
+|`$0` or `$&`
+|The full matched text.
+
+|`$1`, `$2`, ...
+|The text captured by the numbered group.
+
+|`$<name>`
+|The text captured by the named group `name`.
+
+|`pass:[$`]`
+|The text preceding the match in the original string.
+
+|`$'`
+|The text following the match in the original string.
+
+|`$$`
+|A literal dollar sign.
+|===
+
+[source,tiri]
+----
+rx = regex.new([[(\d{3})-(\d{3})-(\d{4})]])
+rx.replace('555-123-4567', '($1) $2-$3')
+-- '(555) 123-4567'
+
+rx = regex.new([[\d+]])
+rx.replace('a1b22c333', '<$&>')
+-- 'a<1>b<22>c<333>'
+
+-- Replace first only
+rx = regex.new([[\d+]])
+rx.replace('1-2-3', 'X', regex.REPLACE_FIRST_ONLY)
+-- 'X-2-3'
+
+-- Named captures
+rx = regex.new([[(?<area>\d{3})-(?<local>\d{4})]])
+rx.replace('555-1234', '$<area>/$<local>')
+-- '555/1234'
+
+-- Literal dollar sign
+rx = regex.new([[(\d+)]])
+rx.replace('Cost 15', '$$$1')
+-- 'Cost $15'
+----
+
+==== regex.split()
+
+[.api]`parts = rx.split(Text, [Flags])`
+
+Splits `Text` at every match of the pattern and returns an array of the parts between matches.  Consecutive delimiters produce empty strings in the result.  If the pattern matches at the beginning or end of the text, the corresponding array element is an empty string.  If no matches are found, the result is an array containing the original text.
+
+[source,tiri]
+----
+rx = regex.new([[,\s*]])
+parts = rx.split('apple, banana,  cherry')
+-- parts[0] = 'apple', parts[1] = 'banana', parts[2] = 'cherry'
+
+-- Consecutive delimiters
+rx = regex.new(',')
+parts = rx.split('a,,b')
+-- parts[0] = 'a', parts[1] = '', parts[2] = 'b'
+
+-- Whitespace split
+rx = regex.new([[\s+]])
+parts = rx.split("line1\nline2\tline3")
+-- parts[0] = 'line1', parts[1] = 'line2', parts[2] = 'line3'
+----
+
+[[sec-flags-and-options]]
+=== Flags and Options
+==== Compilation Flags
+
+indexterm:[regex, flags] Compilation flags modify how the pattern is interpreted and are specified as the second argument to `regex.new()`.  Multiple flags are combined with the bitwise OR operator.
+
+[cols="1,3a",options="header"]
+|===
+|Flag |Effect
+
+|`regex.ICASE`
+|Case-insensitive matching using Unicode case-folding rules.
+
+|`regex.MULTILINE`
+|The `^` and `$` anchors match at line boundaries (after/before line terminators) in addition to the start and end of the string.
+
+|`regex.DOT_ALL`
+|The `.` metacharacter matches line terminators (`\n`, `\r`, U+2028, U+2029) in addition to all other characters.
+|===
+
+[source,tiri]
+----
+rx = regex.new([[hello]], regex.ICASE)
+rx.test('HELLO')   -- true
+
+rx = regex.new([[^\w+]], regex.MULTILINE)
+rx.search("first\nsecond\nthird")
+-- Matches 'first', 'second', 'third'
+
+rx = regex.new([[.*]], regex.DOT_ALL)
+rx.match("line1\nline2")
+-- Matches the entire string including the newline
+----
+
+==== Match Flags
+
+Match flags modify the behaviour of individual method calls and are passed as the final argument to `test()`, `findFirst()`, `findAll()`, `extract()`, `match()`, `search()`, `replace()`, and `split()`.  Compilation flags and match flags are distinct sets; do not combine them in the same bitmask.
+
+[cols="1,3a",options="header"]
+|===
+|Flag |Effect
+
+|`regex.NOT_BEGIN_OF_LINE`
+|Do not treat the first character of the text as the beginning of a line.  Prevents `^` from matching at position 0 in multiline mode.
+
+|`regex.NOT_END_OF_LINE`
+|Do not treat the last character of the text as the end of a line.  Prevents `$` from matching at the end in multiline mode.
+
+|`regex.NOT_BEGIN_OF_WORD`
+|Do not treat the first character as the beginning of a word.  Affects `\b` word boundary matching.
+
+|`regex.NOT_END_OF_WORD`
+|Do not treat the last character as the end of a word.  Affects `\b` word boundary matching.
+
+|`regex.NOT_NULL`
+|Reject zero-length (empty) matches.
+
+|`regex.CONTINUOUS`
+|The match must start at position 0 of the text (anchored matching).
+
+|`regex.PREV_AVAILABLE`
+|A valid character exists before the first position in the text, enabling correct look-behind and boundary assertions when matching a substring of a larger text.
+
+|`regex.REPLACE_NO_COPY`
+|In `replace()`, do not copy non-matching portions of the text to the output.  Only replacement strings for matched regions are included.
+
+|`regex.REPLACE_FIRST_ONLY`
+|In `replace()`, replace only the first match and leave subsequent matches unchanged.
+|===
+
+[source,tiri]
+----
+rx = regex.new([[\d+]])
+
+-- Anchored search: match must start at position 0
+rx.test('  123', regex.CONTINUOUS)   -- false (digits not at position 0)
+rx.test('123abc', regex.CONTINUOUS)  -- true
+
+-- Reject empty matches
+rx = regex.new([[a*]])
+rx.test('', regex.NOT_NULL)   -- false
+
+-- Output matched regions only
+rx = regex.new([[\d+]])
+rx.replace('abc123def456', '#', regex.REPLACE_NO_COPY)   -- '##'
+----
+
+[[sec-regex-properties]]
+=== Regex Properties
+indexterm:[regex, properties] Compiled regex objects expose the following read-only properties:
+
+[cols="1,1,3a",options="header"]
+|===
+|Property |Type |Description
+
+|`pattern`
+|string
+|The original pattern string passed to `regex.new()`.
+
+|`flags`
+|integer
+|The compilation flags bitmask.  `0` when no flags were specified.
+
+|`error`
+|string or nil
+|Always `nil` for regex objects accessible to scripts.  Invalid patterns throw an exception during construction rather than producing an object with an error state.
+|===
+
+[source,tiri]
+----
+rx = regex.new([[\d+]], regex.ICASE)
+print(rx.pattern)   -- '\d+'
+print(rx.flags)     -- value of regex.ICASE
+print(rx.error)     -- nil
+----
+
+The `tostring()` function produces a human-readable description of the regex object:
+
+[source,tiri]
+----
+rx = regex.new([[words?]], regex.ICASE)
+print(tostring(rx))   -- 'regex(words?, flags=1)'
+----
+
+[[sec-regex-performance-considerations]]
+=== Performance Considerations
+[discrete]
+==== Compile Once, Reuse Many Times
+
+indexterm:[regex, performance] Pattern compilation involves parsing and optimisation.  Compiling the same pattern repeatedly in a loop is redundant.  Compile the pattern once and store the object in a variable:
+
+[source,tiri]
+----
+-- Correct: compile once
+rx = regex.new([[\d+]])
+for line in values(lines) do
+   if rx.test(line) then process(line) end
+end
+
+-- Redundant: recompiles on every iteration
+for line in values(lines) do
+   rx = regex.new([[\d+]])
+   if rx.test(line) then process(line) end
+end
+----
+
+For patterns that are used across the lifetime of a script but may never be needed, store the regex in a deferred expression (see <<sec-deferred-expressions>>).  The pattern is compiled on first access and cached thereafter:
+
+[source,tiri]
+----
+global rx_email = <{ regex.new([[\w[\w._%+-]*@[\w.-]+\.[A-Za-z]{2,}]]) }>
+
+-- rx_email is compiled only if and when it is first accessed
+if rx_email.test(input) then
+   process_email(input)
+end
+----
+
+[discrete]
+==== Choose the Right Method
+
+Each method is optimised for a specific use case.  Selecting the correct method avoids unnecessary work:
+
+[cols="1,3a",options="header"]
+|===
+|Method |Best For
+
+|`test()`
+|Boolean presence checks.  Does not extract positions or captures.
+
+|`findFirst()`
+|Locating the position of the first match.  Fastest position-returning method.
+
+|`findAll()`
+|Iterating over all match positions in sequence.
+
+|`extract()`
+|Extracting capture group content without position information.
+
+|`match()`
+|Whole-string validation with access to captures.
+
+|`search()`
+|Collecting all matches and their captures into an array.
+
+|`replace()`
+|Text transformation with pattern-based substitution.
+
+|`split()`
+|Tokenising text on a delimiter pattern.
+|===

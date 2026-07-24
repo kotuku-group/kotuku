@@ -1,0 +1,308 @@
+// VERIFIED: 2026-02-10
+// UPDATED: 2026-06-30 — Shorthand guard falsey set now includes empty tables; described as empty collections.
+
+[[ch-control-flow]]
+== Control Flow
+indexterm:[control flow] This chapter defines the control flow statements in Tiri: conditionals, loops, loop control, and return.  All blocks are delimited by keywords (`then`/`do`/`repeat`) and terminated by `end` or `until`.
+
+Only `nil` and `false` are false when evaluating conditions.  All other values -- including `0`, `""`, and empty tables -- are considered true.  All condition statements in this chapter follow this rule.  Using the <<sec-conditional-operators,conditional operator>> `??` is the standard approach to overcoming this restriction, at a slight cost to performance.
+
+[[sec-if-elseif-else]]
+=== If / Elseif / Else
+[source,ebnf]
+----
+if_statement = "if" expression "then" block
+               { "elseif" expression "then" block }
+               [ "else" block ]
+               "end" ;
+----
+
+indexterm:[if statements] Evaluates `expression` and executes the associated `block` if the result is true.  If the condition is false, subsequent `elseif` clauses are tested in order.  If no condition is true and an `else` clause is present, its block executes.  At most one block executes per `if` statement.
+
+[source,tiri]
+----
+if x > 0 then
+   print('positive')
+elseif x is 0 then
+   print('zero')
+else
+   print('negative')
+end
+----
+
+Each `block` introduces a new scope.  Variables declared inside a branch are not visible outside the `if` statement.
+
+[[sec-while-loop]]
+=== While Loop
+[source,ebnf]
+----
+while_statement = "while" expression "do" block "end" ;
+----
+
+indexterm:[loops, while] Evaluates `expression` before each iteration.  If the result is true, `block` executes and the condition is re-evaluated.  If the result is false, the loop terminates.  If the condition is false on the first evaluation, the body never executes.
+
+[source,tiri]
+----
+i = 0
+while i < 5 do
+   print(i)
+   i++
+end
+----
+
+The loop body introduces a new scope.  `break` and `continue` are permitted (see <<sec-break-and-continue>>).
+
+[[sec-repeat-until-loop]]
+=== Repeat-Until Loop
+[source,ebnf]
+----
+repeat_statement = "repeat" block "until" expression ;
+----
+
+indexterm:[loops, repeat until] Executes `block` and then evaluates `expression`.  If the result is false, the loop iterates again.  If the result is true, the loop terminates.  The body always executes at least once.
+
+[source,tiri]
+----
+i = 0
+repeat
+   print(i)
+   i++
+until i >= 5
+----
+
+The scope of the `block` extends to include the `until` condition.  Variables declared inside the body are visible in the condition expression.
+
+[source,tiri]
+----
+repeat
+   line = read_line()
+until line is 'quit'
+----
+
+`break` and `continue` are permitted.  `continue` jumps to the `until` condition check.
+
+[[sec-numeric-for-loop]]
+=== Numeric For Loop
+[source,ebnf]
+----
+numeric_for = "for" identifier "=" expression "," expression [ "," expression ] "do" block "end" ;
+----
+
+indexterm:[loops, numeric for] `for Name = Start, Stop [, Step] do pass:[...] end`
+
+Evaluates `Start`, `Stop`, and `Step` once before the loop begins.  If `Step` is omitted, it defaults to `1`.  On each iteration, the loop variable `Name` is set to the current value.  The loop terminates when `Name` exceeds `Stop` (for a positive `Step`) or falls below `Stop` (for a negative `Step`).
+
+[source,tiri]
+----
+for i = 0, 4 do
+   print(i)   -- 0, 1, 2, 3, 4
+end
+
+for i = 10, 1, -2 do
+   print(i)   -- 10, 8, 6, 4, 2
+end
+----
+
+The loop variable is local to the loop body and is not accessible after the loop terminates.  Assigning to the loop variable inside the body does not affect iteration.
+
+==== Range Iteration
+
+A range literal can be used with `in` to iterate over a sequence of integers:
+
+[source,tiri]
+----
+for i in {0 to 5} do
+   print(i)   -- 0, 1, 2, 3, 4
+end
+
+for i in {1 into 5} do
+   print(i)   -- 1, 2, 3, 4, 5
+end
+----
+
+`{Start to Stop}` is an exclusive range: the stop value is not included.  `{Start into Stop}` is an inclusive range: the stop value is included.  The step direction is determined automatically from the start and stop values.
+
+When a single loop variable iterates over a range literal with constant bounds, the compiler optimises this into a numeric for loop.  Variable bounds use the generic iterator path.
+
+[source,tiri]
+----
+for i in {10 to 0} do
+   print(i)   -- 10, 9, 8, ..., 1  (exclusive of 0)
+end
+
+for i in {5 into 1} do
+   print(i)   -- 5, 4, 3, 2, 1  (inclusive)
+end
+----
+
+See <<ch-ranges>> for the full range type specification.
+
+==== Anonymous For Loop
+
+The loop variable can be omitted when only the iteration count matters:
+
+[source,tiri]
+----
+for {0 to 5} do
+   print('hello')   -- prints 5 times
+end
+----
+
+The anonymous form accepts the same range syntax as the named form.  `break` and `continue` are permitted.
+
+WARNING: A zero `Step` produces an infinite loop.
+
+[[sec-generic-for-loop]]
+=== Generic For Loop
+[source,ebnf]
+----
+generic_for = "for" identifier_list "in" expression_list "do" block "end" ;
+identifier_list = identifier { "," identifier } ;
+----
+
+indexterm:[loops, generic for] `for Var1 [, Var2, pass:[...]] in iterator_expr do pass:[...] end`
+
+Evaluates `iterator_expr` once to obtain an iterator function, an invariant state, and an initial control variable.  On each iteration, the iterator function is called with the state and current control variable.  If the first return value is `nil`, the loop terminates.  Otherwise, the return values are assigned to the loop variables.
+
+[source,tiri]
+----
+for i, v in ipairs({10, 20, 30}) do
+   print(i, v)   -- 0 10, 1 20, 2 30
+end
+----
+
+The loop variables are local to the loop body.
+
+==== Standard Iterators
+
+`pairs(Table)`::
+Returns an iterator that produces `key, value` pairs for every entry in `Table`, including both integer and string keys.  Iteration order is unspecified.
+
+`ipairs(Table)`::
+Returns an iterator that produces `index, value` pairs for consecutive integer keys starting at `0`.  Iteration stops at the first `nil` value.
+
+`values(Container)`::
+Returns an iterator that produces each value in `Container` (table or array), without its key.  For tables, yields values for all keys.  For arrays, yields elements in order.
+
+`keys(Table)`::
+Returns an iterator that produces each key in `Table`, without its value.  Iteration order is unspecified.
+
+[source,tiri]
+----
+for k, v in pairs({x = 1, y = 2}) do
+   print(k, v)
+end
+
+for v in values({10, 20, 30}) do
+   print(v)   -- 10, 20, 30
+end
+
+for k in keys({x = 1, y = 2}) do
+   print(k)   -- 'x', 'y' (order unspecified)
+end
+----
+
+==== Range Iterators
+
+Ranges (see <<ch-ranges>>) are callable.  Calling a range returns an iterator function suitable for use with `for pass:[...] in`:
+
+[source,tiri]
+----
+r = {1 to 10}
+for i in r() do
+   print(i)
+end
+----
+
+When a range literal appears directly after `in`, the call is implicit -- the compiler wraps it automatically.  When using a range stored in a variable, invoke it explicitly with `()`.
+
+[[sec-break-and-continue]]
+=== Break & Continue
+==== Break
+
+indexterm:[break statement] indexterm:[continue statement] `break` terminates the innermost enclosing loop immediately.  Execution resumes at the first statement after the loop.
+
+[source,tiri]
+----
+for i = 0, 100 do
+   if i is 5 then break end
+end
+----
+
+`break` is valid inside `while`, `repeat`, and all `for` loop forms.  Using `break` outside a loop raises a parse error.
+
+In nested loops, `break` exits only the innermost loop:
+
+[source,tiri]
+----
+for i = 0, 4 do
+   for j = 0, 4 do
+      if j is 2 then break end
+   end
+   -- continues here after inner break
+end
+----
+
+==== Continue
+
+`continue` skips the remainder of the current iteration and advances to the next iteration of the innermost enclosing loop.
+
+[source,tiri]
+----
+for i = 0, 9 do
+   if i % 2 is 0 then continue end
+   print(i)   -- 1, 3, 5, 7, 9
+end
+----
+
+In a `while` loop, `continue` jumps to the condition check.  In a `repeat pass:[...] until` loop, `continue` jumps to the `until` condition check.  In a `for` loop, `continue` advances the loop variable and re-evaluates the loop condition.
+
+`continue` is valid inside `while`, `repeat`, and all `for` loop forms.  Using `continue` outside a loop raises a parse error.
+
+==== Conditional Shorthand
+
+The `?!` operator can be used as a falsey guard when combined with `break`, `continue`, `return` or `raise` on a single line:
+
+[source,tiri]
+----
+value ?! return
+value ?! break
+value ?! continue
+value ?! raise ERR_Failed
+----
+
+The shorthand executes the statement when `value` is falsey under the extended definition: `nil`, `false`, `0`, `""`, or an empty collection.  The `return` form accepts optional return values on the same line:
+
+[source,tiri]
+----
+result ?! return -1
+----
+
+This is equivalent to `if not result?? then return -1 end`.
+
+[[sec-return]]
+=== Return
+[source,ebnf]
+----
+return_statement = "return" [ expression_list ] [ ";" ] ;
+----
+
+indexterm:[return statement] `return` exits the current function and returns zero or more values to the caller.  `return` with no values returns `nil`.
+
+[%unbreakable]
+[source,tiri]
+----
+function add(A, B)
+   return A + B
+end
+
+function swap(A, B)
+   return B, A
+end
+----
+
+`return` must be the last statement in a block.  Statements after `return` in the same block raise a parse error (unreachable code).
+
+At the top level of a script, `return` terminates the script.  Using `return` at the top level of an imported file emits a warning, as it terminates the importing script's scope.
+
+An optional trailing semicolon is permitted after the return values.

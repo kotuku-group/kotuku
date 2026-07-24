@@ -1,0 +1,734 @@
+// CHANGED: 2026-06-28 - Updated debug.validate() symbol-extraction calls to the { symbols=true } options form.
+// CHANGED: 2026-05-02 - Added parser annotation expressions and parser symbol metadata extraction.
+// VERIFIED: 2026-03-05
+
+[[ch-annotations-and-preprocessing]]
+== Annotations & Preprocessing
+indexterm:[annotations] indexterm:[preprocessing] Tiri provides three parsing-related mechanisms: _annotations_, _parser annotation expressions_, and _preprocessor directives_.  Annotations attach structured metadata to function declarations.  Parser annotation expressions expand to literal source metadata while expressions are parsed.  Preprocessor directives conditionally include or exclude blocks of source code based on the execution environment.
+
+All three features use `@` syntax, but they do not behave identically afterwards.  Source annotations are parsed with the function declaration, then registered into the global `_ANNO` table later when that declaration executes via emitted `debug.anno.set(...)` bytecode.  They are accessible at runtime through the `debug.anno` interface (see <<sec-the-debug-anno-interface>>).  Parser annotation expressions are replaced with ordinary literal values during parsing and produce no annotation entry.  Preprocessor directives produce no runtime artefacts; excluded blocks are discarded during parsing.
+
+[[sec-annotation-syntax]]
+=== Annotation Syntax
+indexterm:[annotations, syntax] An annotation begins with `@` followed by an identifier and an optional parenthesised argument list.  Annotations can only precede function declarations (`function`, `local function`, `global function`, or `thunk`).  Placing an annotation before any other statement raises a parse error.
+
+[source,ebnf]
+----
+annotation       = "@" identifier [ "(" argument_list ")" ] ;
+argument_list    = argument { "," argument } ;
+argument         = identifier "=" value
+                 | identifier ;
+value            = string_literal | number_literal | boolean_literal | array_literal | identifier ;
+array_literal    = ( "[" | "{" ) [ value { "," value } ] ( "]" | "}" ) ;
+annotated_stmt   = annotation { ";" annotation } function_decl ;
+----
+
+Multiple annotations are separated by semicolons.  A bare identifier without `=` in an argument list is treated as a boolean with the value `true`.
+
+[source,tiri]
+----
+@Test
+function SimpleTest()
+   assert(1 + 1 is 2)
+end
+
+@Test(name='Addition', priority=1, labels=['math', 'basic'])
+function AdditionTest()
+   assert(2 + 3 is 5)
+end
+
+@Test(priority=1); @Requires(display=true)
+function UITest()
+   -- multiple annotations on one function
+end
+----
+
+==== Value Types
+
+Annotation arguments accept the following value types:
+
+[cols="1,2a,2a",options="header"]
+|===
+|Type |Syntax |Example
+
+|String
+|Single or double quotes
+|`name='My Test'`
+
+|Number
+|Integer or floating-point literal
+|`priority=1`, `timeout=3.5`
+
+|Boolean
+|`true` or `false`
+|`enabled=true`
+
+|Array
+|`[...]` or `{...}`
+|`labels=['unit', 'smoke']`
+
+|Bare identifier
+|Identifier without `=`
+|`@SuppressWarnings(unused, deprecated)`
+|===
+
+A bare identifier in an argument list is equivalent to setting that key to `true`.  The following two forms are identical:
+
+[source,tiri]
+----
+@SuppressWarnings(unused, deprecated)
+@SuppressWarnings(unused=true, deprecated=true)
+----
+
+==== Scope
+
+Annotations attach to the immediately following function declaration.  They do not attach to variable declarations, assignments, or control flow statements.  The following raises a parse error:
+
+[source,tiri]
+----
+@Cached <1>
+x = compute()
+----
+<1> Error: annotations must precede a function declaration
+
+[[sec-parser-annotation-expressions]]
+=== Parser Annotation Expressions
+indexterm:[parser annotation expressions] Parser annotation expressions begin with `@` and appear where an expression is permitted.  The parser resolves each expression to a literal value before bytecode is emitted.
+
+[source,ebnf]
+----
+parser_annotation_expr = "@FunctionName" | "@SourceFile" | "@SourceLine" ;
+----
+
+Parser annotation expressions do not accept arguments.  Using an unknown parser annotation expression raises a parse error.  Declaration annotations with unknown names remain valid when they precede a function declaration.
+
+[cols="1,1,3a",options="header"]
+|===
+|Expression |Result Type |Value
+
+|`@FunctionName`
+|String
+|Current function name.  Top-level code resolves to `'Main'`.  Anonymous function expressions and arrow functions resolve to `'Anonymous'`.  Named functions, local functions, global functions and method declarations resolve to the nearest enclosing function's simple declared name.  Method declarations use the method segment.
+
+|`@SourceFile`
+|String
+|Current parser source path.  The value is `'<runtime>'` when the parser has no source path.
+
+|`@SourceLine`
+|Number
+|Current 1-based source line number at the `@SourceLine` token.
+|===
+
+Parser annotation expressions are source metadata expressions, not function declaration annotations.  They are not reported by `debug.anno.get()` and are not stored in `_ANNO`.
+
+[[sec-standard-annotations]]
+=== Standard Annotations
+indexterm:[annotations, standard] The following annotations are recognised by standard Tiri tooling:
+
+[cols="1,3a",options="header"]
+|===
+|Annotation |Purpose
+
+|`@Doc`
+|Attaches documentation text to a function for parser tooling.  The documentation text is read by `debug.validate(Code, { symbols=true })` when it extracts symbol metadata (see <<sec-parser-symbol-metadata>>).  During normal source execution, a source-declared `@Doc` annotation is registered in `_ANNO` by name, but its argument payload is omitted.
+
+|`@Disabled`
+|Marks a function as disabled.  Recognised by the Flute test runner, which omits functions bearing this annotation from the discovered test list.
+
+|`@SuppressWarnings`
+|Documents intentional suppression of warnings.  Accepts bare identifiers naming the suppressed warnings: `@SuppressWarnings(unused, deprecated)`.
+|===
+
+Annotations that are not recognised by any tool are silently retained in the `_ANNO` table and have no effect on compilation or execution.
+
+[[sec-doc-annotation]]
+==== @Doc
+
+Attaches documentation text to a function for parser tooling.  The `text` argument must be a string when documentation metadata is required.
+
+[source,tiri]
+----
+@Doc(text=[[
+   Returns a greeting.
+
+   -INPUT-
+   Name: Person to greet
+
+   -RESULTS-
+   str: Greeting text
+]])
+function greet(Name: str):str
+   return 'Hello ' .. Name
+end
+----
+
+`@Doc` has two registration behaviours:
+
+[cols="1,3a",options="header"]
+|===
+|Context |Behaviour
+
+|Normal source execution
+|Registers the `Doc` annotation by name in `_ANNO`, but omits its arguments.
+
+|Doc parsing enabled
+|Preserves `text` so that `debug.validate(Code, { symbols=true })` can populate symbol documentation.
+
+|Programmatic `debug.anno.set()`
+|Stores the supplied annotation data exactly as provided.
+|===
+
+The runtime omission applies only to source-declared `@Doc` arguments.  Other source annotations retain their arguments
+in `_ANNO`.
+
+`@Doc(text=...)` supports marker and compact documentation forms when parsed for symbol metadata.  See <<sec-doc-parser>>.
+
+[[sec-test-framework-annotations]]
+=== Test Framework Annotations
+indexterm:[annotations, test framework] The Flute test runner (see <<ch-flute>>) recognises the following annotations.  These annotations control test
+discovery, lifecycle, filtering, and execution.
+
+==== @Test
+
+Marks a function as a test case.
+
+[source,tiri]
+----
+@Test function BasicTest()
+   assert(true)
+end
+
+@Test(name='Custom Name', priority=1, labels=['unit', 'smoke'])
+function PriorityTest()
+   assert(1 is 1)
+end
+----
+
+Accepted arguments:
+
+[cols="1,1,3a",options="header"]
+|===
+|Argument |Type |Description
+
+|`name`
+|String
+|Display name for the test.  Defaults to the function name.
+
+|`timeout`
+|Number
+|Fails the test if its execution time exceeds the specified number of seconds.
+
+|`priority`
+|Number
+|Execution order.  Tests are sorted by priority in ascending order before execution.
+
+|`labels`
+|Array
+|String labels for filtering.  The Flute runner accepts `labels=unit,smoke` on the command line to run only matching tests, or `labels=~slow` to exclude tests with a given label.
+
+|`hotpath`
+|Number
+|Executes the test the specified number of times to exercise JIT compilation paths.
+|===
+
+==== @BeforeAll
+
+Runs once before the discovered tests in the file.  If multiple `@BeforeAll` functions are present, Flute executes all of them.
+
+[source,tiri]
+----
+@BeforeAll
+function InitialiseTestSuite()
+   -- one-time setup
+end
+----
+
+==== @AfterAll
+
+Runs once after all tests in the file have completed.
+
+[source,tiri]
+----
+@AfterAll
+function CleanUpTestSuite()
+   -- one-time teardown
+end
+----
+
+==== @BeforeEach
+
+Runs before each `@Test` function in the file.
+
+[source,tiri]
+----
+@BeforeEach
+function SetUpTest()
+   -- per-test setup
+end
+----
+
+Accepted arguments:
+
+[cols="1,1,3a",options="header"]
+|===
+|Argument |Type |Description
+
+|`hotpath`
+|Boolean
+|If `true`, marks all tests in the file for hot-path execution.  Each test runs multiple times to allow JIT compilation to engage.
+|===
+
+==== @AfterEach
+
+Runs after each `@Test` function in the file.
+
+[source,tiri]
+----
+@AfterEach
+function TearDownTest()
+   -- per-test cleanup
+end
+----
+
+==== @Requires
+
+Conditionally disables a test if the specified runtime requirements are not met.  Attach alongside `@Test`:
+
+[source,tiri]
+----
+@Test; @Requires(display=true, network=false)
+function GraphicsOnlyTest()
+   -- runs only when display is available and network is not required
+end
+----
+
+Accepted arguments:
+
+[cols="1,1,3a",options="header"]
+|===
+|Argument |Type |Description
+
+|`network`
+|Boolean
+|Requires the network module to be available.
+
+|`ssl`
+|Boolean
+|Requires SSL support to be available.
+
+|`font`
+|Boolean
+|Requires the font module to be available.
+
+|`audio`
+|Boolean
+|Requires the audio module to be available.
+
+|`display`
+|Boolean
+|Requires the display module to be available.
+
+|`platform_linux`
+|Boolean
+|Requires a Linux operating system.
+
+|`platform_windows`
+|Boolean
+|Requires a Microsoft Windows operating system.
+|===
+
+If a requirement evaluates to `false`, Flute omits the test from the discovered test list.
+
+==== @Disabled
+
+Marks a test so that Flute omits it from the discovered test list.
+
+[source,tiri]
+----
+@Test; @Disabled
+function BrokenTest()
+   -- skipped until fixed
+end
+----
+
+[[sec-compile-time-preprocessor]]
+=== Compile-Time Preprocessor
+indexterm:[preprocessor] The `@if` and `@end` directives conditionally include or exclude source code at parse time.  Excluded code is never compiled and produces no bytecode.
+
+[source,ebnf]
+----
+compile_if = "@if" "(" condition ")" { statement } "@end" ;
+condition  = identifier "=" ( boolean_literal | string_literal ) ;
+----
+
+The condition is a single `key=value` pair.  The parser evaluates the condition immediately and either parses the enclosed statements or skips them entirely.
+
+[source,tiri]
+----
+@if(imported=false)
+   print('Running as main script')
+@end
+
+@if(platform='linux')
+   global linuxSpecificSetup = true
+@end
+----
+
+==== Supported Conditions
+
+[cols="1,1,1,3a",options="header"]
+|===
+|Condition |Value Type |Values |Description
+
+|`imported`
+|Boolean
+|`true`, `false`
+|`true` when the current file is being loaded via `import`.  `false` when the file is the entry-point script.
+
+|`debug`
+|Boolean
+|`true`, `false`
+|`true` when the runtime log level is greater than 2 (i.e. verbose logging is active).  `false` otherwise.
+
+|`platform`
+|String
+|`'windows'`, `'linux'`, `'osx'`, `'native'`
+|Matches against the current operating system.  Comparison is case-insensitive.
+
+|`exists`
+|String
+|File or directory path
+|`true` when the specified path exists.  The path is resolved relative to the directory containing the current script.
+|===
+
+Providing a value of the wrong type for a condition raises a parse error.  For example, `@if(platform=true)` is invalid because `platform` requires a string.
+
+==== Nesting
+
+`@if` blocks can be nested.  The parser tracks nesting depth and correctly matches each `@end` to its corresponding `@if`:
+
+[source,tiri]
+----
+@if(imported=false)
+   print('Main script')
+   @if(platform='linux')
+      print('Linux main script')
+   @end
+@end
+----
+
+==== Import Guarding
+
+A common use of `@if` is to separate code that executes only when a file is run directly from code that is available when the file is imported:
+
+[source,tiri]
+----
+-- Exported functions (always available)
+global function add(A, B) return A + B end
+global function multiply(A, B) return A * B end
+
+@if(imported=false)
+   -- Entry point: runs only when executed directly
+   print(add(2, 3))
+@end
+
+@if(imported=true)
+   -- Initialisation for importers only
+   print('Module loaded')
+@end
+----
+
+[[sec-the-debug-anno-interface]]
+=== The debug.anno Interface
+indexterm:[debug.anno] The `debug.anno` interface provides runtime access to function annotations.  All annotations, whether registered programmatically or declared in source code, are stored in the global `_ANNO` table indexed by function reference.  For source annotations, the `_ANNO` entry appears when the annotated declaration executes, not merely when the file is parsed.
+
+==== debug.anno.get()
+
+[.api]`Entry = debug.anno.get(Func)`
+
+Returns the annotation entry for `Func`, or `nil` if no annotations are registered.
+
+[source,tiri]
+----
+@Test(name='Example')
+function myTest()
+   return 42
+end
+
+entry = debug.anno.get(myTest)
+print(entry.name)                  -- 'myTest'
+print(entry.source)                -- source file path
+print(#entry.annotations)          -- 1
+print(entry.annotations[0].name)   -- 'Test'
+print(entry.annotations[0].args.name) -- 'Example'
+----
+
+==== debug.anno.set()
+
+[.api]`Entry = debug.anno.set(Func, Annotations, [Source], [Name])`
+
+Sets annotations for `Func`.  `Annotations` is either an `array<table>` of annotation objects or a string in annotation syntax.  `Source` defaults to `'<runtime>'`.  `Name` defaults to the function's debug name, or `'<anonymous>'` if unavailable.  Returns the created annotation entry.
+
+Calling `debug.anno.set()` on a function that already has annotations overwrites the previous entry.
+
+**Array input:**
+
+[source,tiri]
+----
+function target() end
+
+debug.anno.set(target, array<table> {
+   { name = 'Test', args = { name = 'My Test', labels = { 'unit', 'smoke' } } },
+   { name = 'Requires', args = { network = false } }
+}, 'test_file.tiri', 'target')
+----
+
+**String input:**
+
+[source,tiri]
+----
+function target() end
+
+debug.anno.set(target, '@Test(name="My Test"); @Requires(network=false)')
+----
+
+The string parser accepts the same syntax as source-level annotations, including arrays, numbers, booleans, and bare identifiers.
+
+==== debug.anno.list()
+
+[.api]`AllEntries = debug.anno.list()`
+
+Returns a shallow copy of the entire `_ANNO` table.  The returned table is indexed by function references; each value is an annotation entry.  Modifying the returned table does not affect the `_ANNO` table.
+
+Returns an empty table if no annotations have been registered.
+
+[source,tiri]
+----
+all = debug.anno.list()
+for func, entry in pairs(all) do
+   print(entry.name, #entry.annotations, 'annotations')
+end
+----
+
+==== Annotation Entry Structure
+
+Each entry in the `_ANNO` table has the following structure:
+
+[source,tiri]
+----
+{
+   name = 'functionName',        -- function name or '<anonymous>'
+   source = 'path/to/file.tiri', -- source file or '<runtime>'
+   annotations = array<table> {
+      {
+         name = 'Test',          -- annotation name
+         args = {                -- key-value argument table
+            name = 'My Test',
+            labels = { 'unit', 'smoke' }
+         }
+      }
+   }
+}
+----
+
+Each annotation contains a `name` field (the annotation identifier) and an `args` table (the key-value arguments, which
+is empty if no arguments were provided).
+
+[[sec-parser-symbol-metadata]]
+=== Parser Symbol Metadata
+indexterm:[parser symbol metadata] `debug.validate(Code, { symbols=true })` parses `Code` without executing it and returns parser-derived symbol metadata in the
+`symbols` field.  This mode enables documentation processing while the source is parsed.
+
+[.api]`Result = debug.validate(Code, { symbols=true })`
+
+When parsing succeeds, `Result.success` is `true` and `Result.symbols` is an array of symbol entries.  When parsing
+fails, diagnostics are returned as defined in <<sec-validation-and-diagnostics>>.
+
+[source,tiri]
+----
+code = [=[
+@Doc(text=[[
+Returns a greeting.
+
+-INPUT-
+Name: Person to greet
+
+-RESULTS-
+str: Greeting text
+]])
+function greet(Name: str):str
+   return 'Hello ' .. Name
+end
+]=]
+
+result = debug.validate(code, { symbols=true })
+symbol = result.symbols[0]
+print(symbol.signature)       -- 'greet(Name: str):str'
+print(symbol.doc.summary)     -- 'Returns a greeting.'
+print(symbol.params[0].doc)   -- 'Person to greet'
+----
+
+The parser emits symbol entries for function declarations and function expressions assigned to variables or members.
+Nested functions are emitted in the same zero-indexed `symbols` array.
+
+==== Symbol Entry Structure
+
+Each symbol entry has the following fields:
+
+[cols="1,1,3a",options="header"]
+|===
+|Field |Type |Description
+
+|`name`
+|String
+|Function or thunk name.
+
+|`kind`
+|String
+|`'function'` or `'thunk'`.
+
+|`signature`
+|String
+|Function signature derived from the parser, including parameter and result type annotations.
+
+|`line`, `column`
+|Number
+|0-based start position.
+
+|`endLine`, `endColumn`
+|Number
+|0-based end position.
+
+|`annotations`
+|Array
+|Annotation metadata attached to the function.  Argument values are string representations.
+
+|`doc`
+|Table
+|Documentation block metadata.  See <<sec-doc-parser>>.
+
+|`params`
+|Array
+|Parameter metadata.  Each entry contains `name`, `type`, `doc` and `inferred`.
+
+|`results`
+|Array
+|Result metadata.  Each entry contains `type`, `doc` and `inferred`.
+
+|`errors`
+|Array
+|Documented error metadata.  Each entry contains `code`, `doc` and `inferred`.
+|===
+
+[source,tiri]
+----
+{
+   name = 'greet',
+   kind = 'function',
+   signature = 'greet(Name: str):str',
+   line = 0,
+   column = 0,
+   endLine = 8,
+   endColumn = 1,
+   annotations = array<table> {
+      { name = 'Doc', args = { text = '...' } }
+   },
+   doc = {
+      summary = 'Returns a greeting.',
+      body = 'Returns a greeting.',
+      raw = '...',
+      examples = {}
+   },
+   params = array<table> {
+      { name = 'Name', type = 'str', doc = 'Person to greet', inferred = false }
+   },
+   results = array<table> {
+      { type = 'str', doc = 'Greeting text', inferred = false }
+   },
+   errors = {}
+}
+----
+
+[[sec-doc-parser]]
+==== Documentation Parser
+
+The documentation parser reads the first `@Doc` annotation whose `text` argument is a string.  Leading and trailing whitespace is ignored.
+
+The `doc` field contains:
+
+[cols="1,1,3a",options="header"]
+|===
+|Field |Type |Description
+
+|`summary`
+|String
+|First description line in marker form, or the first `@desc` payload in compact form.
+
+|`body`
+|String
+|Joined description text in marker form, or joined `@desc` payloads in compact form.
+
+|`raw`
+|String
+|Original `text` argument.
+
+|`examples`
+|Array
+|Example blocks collected from `-EXAMPLE-` sections in marker form.
+|===
+
+Marker form uses section markers:
+
+[cols="1,3a",options="header"]
+|===
+|Marker |Effect
+
+|N/A
+|Text before the first marker is processed as the description.  The first non-empty line becomes `doc.summary`; the joined description becomes `doc.body`.
+
+|`-INPUT-`
+|Each non-empty line is parsed as `Name: Description` and matched to a parameter by name.
+
+|`-RESULTS-`
+|Each non-empty line is parsed as `Type: Description` and matched to results by position.
+
+|`-ERRORS-`
+|Each non-empty line is parsed as `Code: Description` and emitted as an error entry.  Codes should match to `ERR` constants, omitting the `ERR_` prefix for brevity.
+
+|`-EXAMPLE-`
+|All following lines, up to the next marker or the end of the block, are joined and appended to `doc.examples`.
+|===
+
+Compact form is selected when the first non-empty documentation line starts with `@`.  Compact tags are exact and lower-case:
+
+[cols="1,3a",options="header"]
+|===
+|Tag |Effect
+
+|`@desc`
+|Defines summary and body text.
+
+|`@input`
+|Each input declaration is parsed sequentially, with the provided description being matched to the corresponding parameter index.
+
+|`@result`
+|Each result declaration is parsed sequentially, with the provided description being matched to the corresponding result index.
+
+|`@error`
+|Parses `Code: Description` and emits an error entry.
+|===
+
+[source,tiri]
+----
+@Doc(text=[[
+@desc Returns a greeting.
+@input Person to greet
+@result Greeting text
+@error Args: If the name is invalid
+]])
+function greetCompact(Name: str):str
+   return 'Hello ' .. Name
+end
+----
+
+Type annotations in the function signature are essential when using compact `@input` and `@result` annotations.  If the parser is unable to determine the type of an input parameter or result value, a default of `any` will be applied.

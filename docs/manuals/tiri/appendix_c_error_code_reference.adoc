@@ -1,0 +1,324 @@
+[[appendix-error-code-reference]]
+[appendix]
+== Error Code Reference
+indexterm:[error codes] Kōtuku uses a unified set of integer error codes for all API functions.  Error codes are exposed to Tiri as global constants following the `ERR_` naming convention (e.g. `ERR_Okay`, `ERR_Failed`, `ERR_Args`).  See <<ch-error-handling>> for full error handling semantics.
+
+[[sec-exception-threshold]]
+=== Exception Threshold
+Error codes are divided into two categories based on their numeric value:
+
+Minor codes (0--8)::
+Control flow indicators that do not represent failures.  These codes do not trigger exceptions when used with `check` or inside `try` blocks.
+
+Exception codes (9 and above)::
+Represent genuine errors.  When a Kōtuku API function returns one of these codes inside a `try` block, the error is automatically promoted to an exception.  The `check` statement also raises an exception for any code at or above the threshold.
+
+The threshold boundary is `ERR_Terminate` (value 9).
+
+=== Error Code Table
+
+The following tables list the exported error codes referenced in this manual, with their constant names and descriptions.  Aliases are listed in parentheses where applicable.
+
+[discrete]
+==== Minor Codes
+
+[cols="1,3,5"]
+|===
+|Value |Constant |Description
+
+|0 |`ERR_Okay` (`ERR_True`) |Operation successful.
+|1 |`ERR_False` |The result is false.  Not an error condition.
+|2 |`ERR_LimitedSuccess` |Operation partially succeeded.
+|3 |`ERR_Cancelled` |Operation was cancelled by the caller or user.
+|4 |`ERR_NothingDone` |No operation was performed.
+|5 |`ERR_Continue` |Continue processing.
+|6 |`ERR_Skip` |Skip the current item.
+|7 |`ERR_Retry` |Retry the operation.
+|8 |`ERR_DirEmpty` |Directory is empty.
+|===
+
+[discrete]
+==== General Errors
+
+[cols="2,5"]
+|===
+|Constant |Description
+
+|`ERR_Terminate` |Terminate processing.  Marks the exception threshold boundary.
+|`ERR_Failed` |General failure with no specific cause.
+|`ERR_Args` |Invalid arguments passed to a function.
+|`ERR_Init` |Initialisation error.
+|`ERR_OutOfRange` |A value is outside the valid range.
+|`ERR_OutOfBounds` |Index or value is out of bounds.
+|`ERR_Mismatch` |A mismatch was detected between expected and actual values.
+|`ERR_NotInitialised` |Object or resource has not been initialised.
+|`ERR_EmptyString` |An empty string was provided where a non-empty string is required.
+|`ERR_InvalidState` |Object is in an incorrect state for the requested operation.
+|`ERR_NullArgs` |Required arguments are null.
+|`ERR_InvalidValue` |An invalid value was provided.
+|`ERR_Exception` |Generic exception code.  Assigned to runtime errors and `error()` calls.
+|`ERR_WrongType` |The expected type was not provided.
+|`ERR_Immutable` |Object or resource is immutable and cannot be modified.
+|`ERR_Obsolete` |The requested feature is obsolete.
+|`ERR_NotPossible` |The operation is not possible in the current context.
+|`ERR_InvalidType` |An invalid type was specified.
+|===
+
+[discrete]
+==== Data and I/O Errors
+
+[cols="2,5"]
+|===
+|Constant |Description
+
+|`ERR_File` |General file operation error.
+|`ERR_InvalidData` |Data is invalid or corrupt.
+|`ERR_FileNotFound` (`ERR_FileDoesNotExist`) |The specified file does not exist.
+|`ERR_NoData` |No data is available.
+|`ERR_Read` |Error reading data from a source.
+|`ERR_Write` |Error writing data to a destination.
+|`ERR_InvalidPath` |The specified path is invalid.
+|`ERR_FileReadFlag` |File does not have read permission.
+|`ERR_FileWriteFlag` |File does not have write permission.
+|`ERR_MissingPath` |A required path was not provided.
+|`ERR_BufferOverflow` |A buffer overflow was detected.
+|`ERR_Seek` |A seek operation failed.
+|`ERR_FileExists` |The file already exists.
+|`ERR_ResolvePath` |Failed to resolve the specified path.
+|`ERR_ExpectedFile` |A file path was expected but a directory or other type was provided.
+|`ERR_CreateFile` |File creation failed.
+|`ERR_DeleteFile` |File deletion failed.
+|`ERR_OpenFile` |Failed to open the file.
+|`ERR_ReadOnly` |A write operation was attempted on a read-only resource.
+|`ERR_IdenticalPaths` |Source and destination paths are identical.
+|`ERR_OutOfSpace` |Insufficient storage space.
+|`ERR_Finished` (`ERR_EndOfFile`, `ERR_OutOfData`) |End of file or data stream reached.
+|`ERR_DataSize` |Data size is incorrect or exceeds limits.
+|`ERR_InputOutput` |General I/O error.
+|`ERR_ExpectedFolder` |A folder path was expected but a file or other type was provided.
+|`ERR_ReadFileToBuffer` |Failed to read file contents into a buffer.
+|===
+
+[discrete]
+==== Search and Lookup Errors
+
+[cols="2,5"]
+|===
+|Constant |Description
+
+|`ERR_Search` (`ERR_NotFound`) |A search operation found no matching result.
+|`ERR_Query` |A query operation failed.
+|`ERR_FieldSearch` |A field search operation failed.
+|`ERR_NoMatchingObject` |No object matching the criteria was found.
+|`ERR_NoSearchResult` |A search produced no results.
+|`ERR_DoesNotExist` |The requested item does not exist.
+|===
+
+[discrete]
+==== Object and Class Errors
+
+[cols="2,5"]
+|===
+|Constant |Description
+
+|`ERR_LostClass` |Lost reference to the object's class.
+|`ERR_MissingClassName` |A required class name was not provided.
+|`ERR_LostOwner` |Lost reference to the owning object.
+|`ERR_SetField` |Failed to set an object field.
+|`ERR_MarkedForDeletion` |Object is marked for deletion and cannot be accessed.
+|`ERR_AddClass` |Failed to register a new class.
+|`ERR_Activate` |Object activation failed.
+|`ERR_DoubleInit` |Object was initialised more than once.
+|`ERR_UndefinedField` (`ERR_FieldNotSet`) |The specified field is not defined or has not been set.
+|`ERR_MissingClass` |The required class is not available.
+|`ERR_ObjectCorrupt` |Object data is corrupt.
+|`ERR_UnsupportedOwner` |The owner type is not supported for this object.
+|`ERR_ExclusiveDenied` (`ERR_AccessObject`) |Exclusive access to the object was denied.
+|`ERR_NewObject` |Object creation failed.
+|`ERR_GetField` |Failed to read an object field.
+|`ERR_NoFieldAccess` |Access to the specified field is denied.
+|`ERR_FieldTypeMismatch` |The field value type does not match the expected type.
+|`ERR_UnsupportedField` |The specified field is not supported.
+|`ERR_CreateObject` |Object creation failed.
+|`ERR_ResourceExists` |The resource already exists.
+|`ERR_ObjectExists` |An object with the same identity already exists.
+|`ERR_Exists` |The item already exists.
+|`ERR_InvalidObject` (`ERR_WrongObjectType`, `ERR_WrongClass`) |The object is invalid or of the wrong type.
+|`ERR_Deactivated` |The object has been deactivated.
+|`ERR_InvalidReference` |An invalid object reference was provided.
+|`ERR_UseSubClass` |The operation requires a subclass implementation.
+|`ERR_AlreadyDefined` |The item has already been defined.
+|===
+
+[discrete]
+==== Memory Errors
+
+[cols="2,5"]
+|===
+|Constant |Description
+
+|`ERR_NoMemory` |Memory allocation failed.
+|`ERR_NoPointer` |A null pointer was encountered.
+|`ERR_Memory` |General memory error.
+|`ERR_MemoryCorrupt` |Memory corruption detected.
+|`ERR_MemoryDoesNotExist` |The referenced memory block does not exist.
+|`ERR_AccessMemory` |Memory access error.
+|`ERR_AllocMemory` |Memory allocation error.
+|`ERR_ReallocMemory` |Memory reallocation failed.
+|`ERR_MemoryInfo` |Failed to retrieve memory information.
+|===
+
+[discrete]
+==== Module and System Errors
+
+[cols="2,5"]
+|===
+|Constant |Description
+
+|`ERR_InUse` |The resource is currently in use.
+|`ERR_InitModule` |Module initialisation failed.
+|`ERR_WrongVersion` |Version mismatch detected.
+|`ERR_NoAction` |The requested action is not available.
+|`ERR_NoSupport` |The requested feature is not supported.
+|`ERR_SystemCorrupt` |System corruption detected.
+|`ERR_CoreVersion` |Core framework version mismatch.
+|`ERR_IllegalMethodID` |An illegal method ID was specified.
+|`ERR_IllegalActionID` |An illegal action ID was specified.
+|`ERR_ModuleOpenFailed` |Failed to open a module binary.
+|`ERR_IllegalActionAttempt` |An illegal action was attempted.
+|`ERR_ModuleMissingInit` |Module is missing its initialisation routine.
+|`ERR_ModuleInitFailed` |Module initialisation routine failed.
+|`ERR_SystemLocked` |The system is locked and cannot accept the operation.
+|`ERR_ModuleMissingName` |Module is missing its name identifier.
+|`ERR_SystemCall` |A system call failed.
+|`ERR_LoadModule` |Failed to load a module binary.
+|`ERR_ServiceUnavailable` |The requested service is unavailable.
+|`ERR_ResolveSymbol` |Failed to resolve a symbol within a module.
+|===
+
+[discrete]
+==== Security and Permission Errors
+
+[cols="2,5"]
+|===
+|Constant |Description
+
+|`ERR_NoPermission` (`ERR_Permissions`, `ERR_PermissionDenied`) |Insufficient permissions or a security violation occurred.
+|`ERR_ExecViolation` |An execution violation was detected.
+|`ERR_Security` |A security error occurred.
+|===
+
+[discrete]
+==== Concurrency Errors
+
+[cols="2,5"]
+|===
+|Constant |Description
+
+|`ERR_LockFailed` (`ERR_Lock`) |A lock operation failed.
+|`ERR_DeadLock` |A deadlock was detected.
+|`ERR_NotLocked` |The resource is not locked when a lock is required.
+|`ERR_AllocSemaphore` |Semaphore allocation failed.
+|`ERR_Busy` |The resource is busy.
+|`ERR_LockRequired` |A lock is required before performing this operation.
+|`ERR_AlreadyLocked` (`ERR_Locked`) |The resource is already locked.
+|`ERR_ThreadAlreadyActive` |The thread is already active.
+|`ERR_OutsideMainThread` |The operation must be performed on the main thread.
+|`ERR_ThreadNotLocked` |The thread is not locked when a lock is required.
+|===
+
+[discrete]
+==== Network Errors
+
+[cols="2,5"]
+|===
+|Constant |Description
+
+|`ERR_TimeOut` |The operation timed out before completion.
+|`ERR_HostNotFound` |The specified host was not found.
+|`ERR_InvalidURI` |The URI is invalid.
+|`ERR_ConnectionRefused` |The connection was refused by the remote host.
+|`ERR_NetworkUnreachable` |The network is unreachable.
+|`ERR_HostUnreachable` |The remote host is unreachable.
+|`ERR_Disconnected` |The connection was disconnected.
+|`ERR_ConnectionAborted` |The connection was aborted.
+|`ERR_WouldBlock` |The operation would block on a non-blocking socket.
+|`ERR_ProxySSLTunnel` |Failed to establish an SSL tunnel through a proxy.
+|`ERR_InvalidHTTPResponse` |An invalid HTTP response was received.
+|===
+
+[discrete]
+==== Syntax and Parsing Errors
+
+[cols="2,5"]
+|===
+|Constant |Description
+
+|`ERR_Syntax` (`ERR_StringFormat`) |Invalid syntax or string format detected.
+|`ERR_IntegrityViolation` (`ERR_ConstraintViolation`) |A data integrity or constraint violation occurred.
+|`ERR_SchemaViolation` |A schema violation was detected.
+|`ERR_UnbalancedXML` |Unbalanced XML tags were detected.
+|===
+
+[discrete]
+==== Graphics and Display Errors
+
+[cols="2,5"]
+|===
+|Constant |Description
+
+|`ERR_NeedOwner` |The object requires an owner to be set.
+|`ERR_OwnerNeedsBitmap` |The owner requires a bitmap surface.
+|`ERR_NeedWidthHeight` |Width and height values are required.
+|`ERR_Draw` |A drawing operation failed.
+|`ERR_InvalidDimension` |An invalid dimension was specified.
+|`ERR_Resize` |A resize operation failed.
+|`ERR_Redimension` |A redimension operation failed.
+|`ERR_GetSurfaceInfo` |Failed to retrieve surface information.
+|`ERR_OpenGL` |An OpenGL error occurred.
+|===
+
+[discrete]
+==== Compression Errors
+
+[cols="2,5"]
+|===
+|Constant |Description
+
+|`ERR_Decompression` |A decompression error occurred.
+|`ERR_Compression` |A compression error occurred.
+|===
+
+[discrete]
+==== Miscellaneous Errors
+
+[cols="2,5"]
+|===
+|Constant |Description
+
+|`ERR_ExamineFailed` |An examine operation failed.
+|`ERR_NoStats` |Statistics are unavailable.
+|`ERR_LowCapacity` |Insufficient capacity.
+|`ERR_ObtainMethod` |Failed to obtain a method reference.
+|`ERR_ArrayFull` |The array is full and cannot accept new elements.
+|`ERR_DoNotExpunge` |The object must not be expunged.
+|`ERR_EntryMissingHeader` |An entry is missing its header.
+|`ERR_NoMethods` |No methods are available for the object.
+|`ERR_StatementUnsatisfied` |A statement condition was not satisfied.
+|`ERR_OwnerPassThrough` |The operation was passed through to the owner.
+|`ERR_VirtualVolume` |A virtual volume error occurred.
+|`ERR_UnrecognisedFieldType` |The field type is not recognised.
+|`ERR_Loop` |A loop error was detected.
+|`ERR_Refresh` |A refresh operation failed.
+|`ERR_ListChildren` |Failed to list child objects.
+|`ERR_SmallMask` |The mask is too small.
+|`ERR_SanityFailure` |A sanity check failed.
+|`ERR_TaskStillExists` |A task still exists when it was expected to have terminated.
+|`ERR_Recursion` |A recursion limit was exceeded.
+|`ERR_IllegalAddress` |An illegal address was specified.
+|`ERR_InvalidHandle` |An invalid handle was provided.
+|`ERR_NoMediaInserted` |No media is inserted in the device.
+|`ERR_SetVolume` |Failed to set the volume path.
+|`ERR_CreateResource` |Resource creation failed.
+|`ERR_Function` |A function error occurred.
+|===

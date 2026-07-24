@@ -1,0 +1,548 @@
+// UPDATED: 2026-07-06 -- Documented extern declarations and protected host globals.
+// VERIFIED: 2026-02-10
+
+[[ch-variables-and-scoping]]
+== Variables & Scoping
+
+indexterm:[variables] indexterm:[scoping] This chapter defines how variables are declared, assigned, and scoped in Tiri.  Tiri enforces local-by-default scoping, a significant departure from standard Lua where undeclared variables are implicitly global.
+
+[[sec-local-by-default]]
+=== Local by Default
+
+Any assignment to an undeclared name creates a new local variable in the current scope.  Functions follow the same rule: a `function` declaration without the `global` keyword creates a local binding.
+
+[source,tiri]
+----
+counter = 0              -- creates local 'counter'
+name = 'Alice'           -- creates local 'name'
+
+function greet(Name)     -- creates local function 'greet'
+   msg = f'Hello, {Name}'
+   print(msg)
+end
+----
+
+A bare identifier without an assignment is a parse error:
+
+[source,tiri]
+----
+bare_var                 -- error: expected assignment
+a, b, c                  -- error: use 'local a, b, c' or assign values
+----
+
+Reading an undeclared identifier is a compile-time error unless the name resolves to an existing local, upvalue, global, host-registered global, or <<sec-the-extern-keyword,external declaration>>.  This rule catches misspelt names before execution.
+
+[[sec-the-local-keyword]]
+=== The local Keyword
+
+indexterm:[local variables] The `local` keyword explicitly declares one or more local variables in the current scope.  It is required when declaring multiple variables on a single line and when declaring a variable without an initial value.
+
+[source,tiri]
+----
+local config                -- nil, no type commitment
+local a, b, c = 1, 2, 3     -- multiple locals
+local limit:num             -- typed, starts as nil
+local max <const> = 100     -- constant (see <<sec-constant-variables>>)
+----
+
+A `local` declaration without an initialiser sets the variable to `nil`.  Multiple variables on the left receive values from the right in left-to-right order; excess variables receive `nil` and excess values are discarded.
+
+[source,tiri]
+----
+local x, y = 10          -- x is 10, y is nil
+local a, b = 1, 2, 3     -- a is 1, b is 2, 3 is discarded
+----
+
+==== The Blank Identifier
+
+The single underscore `_` is the blank identifier.  It discards a value without allocating a variable or consuming a register.  It can appear multiple times in the same statement and cannot be read.
+
+[source,tiri]
+----
+_, result = getValues()   -- discard first return value
+local x, _, y = 1, 2, 3   -- x is 1, y is 3
+
+for _, value in ipairs(items) do -- discard index
+   print(value)
+end
+----
+
+[[sec-the-global-keyword]]
+=== The global Keyword
+
+indexterm:[global variables] The `global` keyword declares a variable or function in the global scope.  Global declarations must precede any use of the variable name.
+
+[source,tiri]
+----
+global DEBUG_MODE = true
+global APP_VERSION
+
+global function configure()
+   APP_VERSION = '1.0'
+end
+----
+
+A local variable can shadow a global with the same name if explicitly declared with `local`:
+
+[source,tiri]
+----
+global VERBOSE = true
+
+function run()
+   local VERBOSE = false   -- shadows the global within this scope
+   print(VERBOSE)          -- 'false'
+end
+print(VERBOSE)             -- 'true'
+----
+
+Global variables are accessible from nested functions without re-declaration.  The `global` keyword can appear at any scope level, but the variable becomes globally visible.
+
+[[sec-the-extern-keyword]]
+=== The extern Keyword
+
+indexterm:[extern declarations] indexterm:[external symbols] The `extern` keyword declares that a name is supplied by another parsed file or by the embedding host.  An extern declaration emits no bytecode and creates no variable.  It only authorises strict name resolution to treat an otherwise unresolved name as a global reference.
+
+==== Syntax
+
+[source,ebnf]
+----
+extern_declaration = "extern" ( "*" | extern_name_list ) ;
+extern_name_list   = identifier { "," identifier } ;
+----
+
+[source,tiri]
+----
+extern runTest, assertEqual
+
+function run()
+   runTest(assertEqual)
+end
+----
+
+The declaration applies to the current parse and to functions nested inside it.  It does not persist across separate validation or compilation runs.
+
+==== Wildcard Extern
+
+`extern *` turns off name protection in the current parse, allowing unresolved identifiers to resolve as a global reference:
+
+[source,tiri]
+----
+extern *
+
+value = unknown_value -- Now legal, value is set to 'nil'
+----
+
+Use named extern declarations when the expected external surface is known.  Use `extern *` only for code that is intentionally compiled against an open host environment.
+
+==== Global Functions
+
+Declaring a function with `global` exposes it to the parent scope.  This allows library scripts to make functions available to the caller:
+
+[source,tiri]
+----
+global function loadConfig(Path)
+   return io.open(Path, 'r')
+end
+----
+
+==== Naming Conventions
+
+It is common practice to declare global mutable variables with the `glCamelCase` naming convention.  Global constants use `UPPER_CASE`.
+
+[source,tiri]
+----
+global glWindowTitle = 'My App'
+global MAX_RETRIES <const> = 5
+----
+
+[[sec-protected-host-globals]]
+=== Protected Host Globals
+
+indexterm:[protected globals] indexterm:[built-in globals] Host-registered global names are protected from rebinding.  This includes built-in functions and library or interface tables such as `math`, `table`, `string`, `obj`, and `tostring`.  A script cannot replace a protected binding through direct assignment, a `global` declaration, a `global function` declaration, or a direct protected-key write through the real `_G` table.  Computed writes through the real `_G` table are rejected because the target key cannot be proven unprotected.
+
+[source,tiri]
+----
+math = {}                    -- error: cannot override built-in 'math'
+global table = {}            -- error: cannot override built-in 'table'
+global function tostring()   -- error: cannot override built-in 'tostring'
+end
+_G.tostring = nil            -- error: cannot override built-in 'tostring'
+_G['math'] = nil             -- error: cannot override built-in 'math'
+_G[name] = value             -- error: computed global-environment store
+----
+
+A local binding may shadow a protected global within its lexical scope.  Variables use an explicit `local` declaration; unqualified function declarations are local by default:
+
+[source,tiri]
+----
+local math = 'local value'
+
+function tostring()
+   return 'local value'
+end
+
+print(_G.tostring(5))        -- '5'
+----
+
+Protected global bindings prevent replacement of the interface name.  They do not freeze the table or object stored in
+that binding:
+
+[source,tiri]
+----
+math.custom = 5              -- valid: member store into protected table
+math.custom = nil
+----
+
+If `_G` is explicitly shadowed by a local variable, writes to that local table follow ordinary table assignment rules.
+
+[[sec-assignment]]
+=== Assignment
+
+==== Simple Assignment
+
+indexterm:[assignment] Assignment stores a value in a variable.  If the target is undeclared, a new local is created (see <<sec-local-by-default>>).  If the target is an existing local, upvalue, or global, the stored value is updated.
+
+[source,tiri]
+----
+x = 10
+t.name = 'Alice'
+arr[0] = 42
+----
+
+==== Multiple Assignment
+
+Multiple targets and values are matched left-to-right.  Excess targets receive `nil`; excess values are discarded.  Multiple assignment to undeclared names requires the `local` keyword.
+
+[source,tiri]
+----
+a, b = b, a           -- swap two existing variables
+local x, y, z = f()   -- f() may return multiple values
+----
+
+Safe-navigation targets are not permitted in multi-assignment statements.  Use separate assignments instead:
+
+[source,tiri]
+----
+a?.x, b = 10, 20     -- compile-time error
+a?.x = 10            -- OK: single target
+b = 20
+----
+
+==== Compound Assignment
+
+Compound assignment operators evaluate the right-hand side exactly once and apply the operation to the target.  If the RHS is a function call or vararg, only the first return value is used.  Using a non-assignable LHS (a constant or a function call result) is an error.
+
+[cols="2,5a",options="header"]
+|===
+|Operator |Effect
+
+|`+=`     |Addition
+|`-=`     |Subtraction
+|`*=`     |Multiplication
+|`/=`     |Division
+|`%=`     |Modulo
+|`..=`    |String concatenation
+|`??=`    |If-empty assignment (assigns only if current value is falsey under extended semantics; see <<sec-truthiness>>)
+|`?=`     |If-nil assignment (assigns only if current value is `nil`)
+|===
+
+[source,tiri]
+----
+count += 1
+name ..= ' Jr.'
+config ?= load_defaults()
+settings?.timeout ?= 30
+----
+
+Safe navigation is permitted on assignment targets.  The assignment is skipped when a guarded hop yields `nil`.
+
+[source,tiri]
+----
+config?.theme = 'dark'       -- plain assignment
+stats?.count += 1            -- compound assignment
+opts?.timeout ?= 30          -- if-nil assignment
+opts?.label ??= 'untitled'   -- if-empty assignment
+----
+
+For a single target, a failed safe-nav hop short-circuits both the store and the RHS evaluation:
+
+[source,tiri]
+----
+config?.theme = load_theme()   -- function is not called if config is nil
+----
+
+Bitwise compound variants (`&=`, `|=`, `^=`) do not exist.  Use `x = x & y` instead.
+
+==== Compound Assignment on Undeclared Variables
+
+Compound assignment (`+=`, `-=`, etc.) on an undeclared variable is an error.  The variable must exist before a compound operator can modify it.
+
+[[sec-type-annotations-on-variables]]
+=== Type Annotations
+
+indexterm:[type annotations] indexterm:[variables, type annotations] Variables can carry an optional type annotation using the `:type` syntax after the variable name.  This pre-declares the type constraint for the variable.
+
+[source,tiri]
+----
+local limit:num       -- constrained to number
+message:str = ''      -- constrained to string
+variant:any = 0       -- unconstrained (accepts any type)
+----
+
+Supported type names: `any`, `nil`, `bool` (or `boolean`), `num` (or `number`), `str` (or `string`), `table`, `array`, `func` (or `function`), `obj` (or `object`).  An unrecognised type name raises a parse-time diagnostic.
+
+The type annotation can appear before or after a `<const>` or `<close>` attribute:
+
+[source,tiri]
+----
+x <const>:num = 42   -- attribute before type
+y:num <const> = 42   -- type before attribute
+----
+
+Type annotations interact with the type inference system.  See <<ch-type-system>> for sticky types, implicit type fixing, and the `any` escape hatch.
+
+[[sec-constant-variables]]
+=== Constant Variables
+
+indexterm:[constant variables] The `<const>` attribute prevents reassignment after initialisation.  It applies to both `local` and `global` declarations.  For local variables, the `local` keyword is optional — the presence of `<const>` implicitly creates a local variable under the local-by-default rule.  The compiler enforces the constant constraint at parse time.
+
+[source,tiri]
+----
+local max_size <const> = 100
+global DEBUG <const> = false
+----
+
+==== Initialiser Requirement
+
+A `<const>` variable must have an initialiser.  Declaring a constant without a value is a compile-time error:
+
+[source,tiri]
+----
+local x <const>      -- error: const 'x' requires an initialiser
+----
+
+==== Reassignment Prevention
+
+Assigning to a `<const>` variable is a compile-time error:
+
+[source,tiri]
+----
+x <const> = 1
+x = 2           -- error: cannot assign to const local 'x'
+----
+
+==== Binding Immutability
+
+The `<const>` attribute protects the variable binding, not the contents of the value.  Table and object contents remain mutable:
+
+[source,tiri]
+----
+data <const> = { x = 1 }
+data.x = 999       -- valid: modifying table contents
+data = {}          -- error: cannot reassign the binding
+----
+
+==== Multiple Declarations with <const>
+
+Each variable in a multiple declaration independently carries the attribute:
+
+[source,tiri]
+----
+local a <const>, b, c <const> = 1, 2, 3
+b = 20             -- valid
+a = 10             -- error: cannot assign to const local 'a'
+----
+
+==== Shadowing
+
+A `<const>` variable follows normal scoping rules.  An inner scope can shadow a constant with a new variable:
+
+[source,tiri]
+----
+x <const> = 1
+do
+   local x = 2       -- valid: shadows outer const
+   x = 3             -- valid: inner x is mutable
+end
+-- outer x is still 1, still const
+----
+
+[[sec-enum-declarations]]
+=== Enum Declarations
+
+indexterm:[enum declarations] indexterm:[enumerations] indexterm:[constants, enum] The `enum` keyword declares a group of named integer constants from a shared prefix.  Each generated constant is registered in a global constant registry at parse time and substituted inline as numeric literals during compilation, eliminating the variable lookup overhead that `<const>` variables incur.  Enum constants do not create runtime variable bindings.
+
+==== Syntax
+
+[source,ebnf]
+----
+enum_declaration = [ "global" ] "enum" prefix "{" member_list "}" ;
+prefix           = UPPER_IDENTIFIER ;
+member_list      = member { "," member } [ "," ] ;
+member           = UPPER_IDENTIFIER [ "=" integer_literal ] ;
+integer_literal  = [ "+" | "-" ] ( decimal_number | hex_number ) ;
+----
+
+The prefix and all member names must use uppercase identifier style: uppercase letters, digits, and underscores only, with at least one uppercase letter.  Each member generates a constant named `PREFIX_MEMBER`.
+
+[source,tiri]
+----
+enum HTTP_METHOD {
+   GET = 0,
+   POST,
+   PUT,
+   DELETE,
+}
+
+-- Generates: HTTP_METHOD_GET = 0, HTTP_METHOD_POST = 1,
+--            HTTP_METHOD_PUT = 2, HTTP_METHOD_DELETE = 3
+----
+
+==== Value Assignment
+
+If the first member has no explicit value, it starts at `0`.  Members without explicit values increment from the previous member's value.  Explicit values must be integer literals; signed decimal and hexadecimal forms are accepted.
+
+[source,tiri]
+----
+enum PRIORITY {
+   LOW = -2,
+   NORMAL,
+   HIGH = 5,
+}
+-- PRIORITY_LOW = -2, PRIORITY_NORMAL = -1, PRIORITY_HIGH = 5
+----
+
+[source,tiri]
+----
+enum MASK {
+   NONE = 0x0,
+   READ = 0x1,
+   WRITE = 0x2,
+   ALL = 0x3,
+}
+----
+
+==== Scope
+
+Enum declarations are permitted at the top level of a script only.  Declaring an enum inside a function, loop, conditional, or any nested block is a compile-time error.
+
+[source,tiri]
+----
+enum STATE { IDLE, RUNNING }  -- valid: top-level
+
+function setup()
+   enum MODE { FAST, SLOW }   -- error: not at top-level scope
+end
+----
+
+The `global` modifier may precede the `enum` keyword.  The `local` modifier is not supported with `enum` and raises a compile-time error.
+
+[source,tiri]
+----
+global enum ERR { OKAY = 0, FAIL } -- valid: global enum
+local enum BAD { ONE }             -- error: local enum not supported
+----
+
+==== Compile-Time Constants
+
+Enum constants are resolved at parse time and recorded in a global constant registry.  References to enum constants are substituted as numeric literals during compilation, enabling constant folding.  No runtime variable is created for the prefix or any member.
+
+[source,tiri]
+----
+enum FLAGS {
+   LEFT = 4,
+   RIGHT = 8,
+}
+
+combined = FLAGS_LEFT | FLAGS_RIGHT  -- constant-folded to 12
+----
+
+==== Restrictions
+
+The following constraints apply to enum declarations:
+
+* The prefix cannot carry a type annotation (`:type`).
+* The prefix cannot use the `<const>` or `<close>` attributes.
+* The declaration must contain at least one member.
+* Member names within a single enum must be unique.
+* The fully qualified constant name (`PREFIX_MEMBER`) must not duplicate a constant already registered by a previous enum declaration.
+* Non-integer values (e.g. `1.5`) are rejected.
+
+[[sec-close-variables]]
+=== To-Be-Closed Variables
+
+indexterm:[to-be-closed variables] indexterm:[close variables] The `<close>` attribute marks a local variable for automatic cleanup when its scope exits.  The runtime invokes the value's `__close` metamethod on scope exit, whether normal or due to an error.  As with `<const>`, the `local` keyword is optional — the presence of `<close>` implicitly creates a local variable.
+
+[source,tiri]
+----
+resource <close> = acquire_resource()       -- implicit local
+local resource <close> = acquire_resource() -- equivalent explicit form
+-- resource.__close(resource, nil) called when scope ends
+----
+
+==== Close Handler Signature
+
+The `__close` metamethod receives two arguments: the value being closed and an error value.  The error is `nil` for normal scope exit, or the error object when an exception is unwinding.
+
+==== Execution Order
+
+Close handlers execute in LIFO (last-declared first) order and run before `defer` blocks in the same scope (which also execute in LIFO order).  Close handlers trigger on normal scope exit, `return`, `break`, `continue`, and error unwinding.
+
+==== Primitive Values
+
+The runtime ignores values without metatables (`nil`, `false`, strings, numbers) and raises no error if the value lacks a `__close` metamethod.
+
+==== Error-Aware Cleanup
+
+[source,tiri]
+----
+try
+   file <close> = open_file()
+   risky_operation() <1>
+end
+----
+<1> if this throws, `file.__close` still runs
+
+The close handler receives the active error as its second argument, enabling error-aware cleanup logic.
+
+See <<ch-resource-management>> for further patterns using `<close>` and `defer`.
+
+[[sec-upvalues-and-closures]]
+=== Upvalues & Closures
+
+indexterm:[upvalues] indexterm:[closures] When a function references a variable from an enclosing scope, that variable is captured as an upvalue.  The function and its captured upvalues together form a closure.
+
+[source,tiri]
+----
+function make_counter()
+   count = 0
+   return () => do
+      count += 1
+      return count
+   end
+end
+
+tick = make_counter()
+print(tick())   -- 1
+print(tick())   -- 2
+----
+
+Upvalues reference the original variable, not a copy.  Multiple closures that capture the same variable share it:
+
+[source,tiri]
+----
+function make_pair()
+   value = 0
+   getter = () => value
+   setter = n => do value = n end
+   return getter, setter
+end
+
+get, set = make_pair()
+set(42)
+print(get())    -- 42
+----
+
+When the scope that owns a local variable exits, any upvalue referencing it is closed over -- the value is moved from the stack to a heap-allocated cell.  The closure continues to read and write through that cell.
+
+TIP: Upvalues are a powerful tool but also carry a performance penalty when referencing local variables.  A local that is referenced as an upvalue has performance equivalent to a globally scoped variable.

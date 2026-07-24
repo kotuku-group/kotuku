@@ -1,0 +1,110 @@
+// UPDATED: 2026-07-06 -- Added the `extern` keyword.
+// UPDATED: 2026-04-03 -- Clarified `is not` as an inequality form using reserved words.
+[[appendix-reserved-words]]
+[appendix]
+== Reserved Words & Keywords
+indexterm:[reserved words] indexterm:[keywords] This appendix provides a quick-reference for all reserved words in Tiri.  Reserved words cannot be used as identifiers.  All reserved words are case-sensitive; `and` is reserved but `And` and `AND` are valid identifiers.  See <<sec-keywords>> for the normative definition.
+
+=== Reserved Word List
+
+[cols="6*"]
+|===
+|`and`      |`as`      |`break`   |`check`    |`choose`  |`continue`
+|`defer`    |`do`      |`else`    |`elseif`   |`end`     |`enum`
+|`except`   |`extern`  |`false`   |`for`      |`from`    |`function`
+|`global`   |`has`     |`if`      |`import`   |`in`      |`is`
+|`local`    |`namespace`|`nil`    |`not`      |`or`      |`raise`
+|`repeat`   |`return`  |`success` |`then`     |`thunk`   |`true`
+|`try`      |`until`   |`when`    |`while`    |`with`    |
+|===
+
+=== Reference by Category
+
+==== Literals
+
+[cols="2,5"]
+|===
+|Keyword |Description
+
+|`nil`   |The nil value.  Represents the absence of a value.
+|`true`  |Boolean true literal.
+|`false` |Boolean false literal.
+|===
+
+==== Variable and Function Declaration
+
+[cols="2,5"]
+|===
+|Keyword |Description
+
+|`local`    |Declares a variable or function with local scope.  See <<ch-variables-and-scoping>>.
+|`global`   |Declares a variable or function with global scope.  See <<ch-variables-and-scoping>>.
+|`extern`   |Declares that a symbol is supplied externally and resolves as a global reference.  See <<sec-the-extern-keyword>>.
+|`enum`     |Declares a group of named integer constants.  See <<sec-enum-declarations>>.
+|`function` |Declares a named or anonymous function.  See <<ch-functions>>.
+|`return`   |Returns values from a function.  See <<ch-functions>>.
+|`thunk`    |Declares a lazily evaluated expression.
+|===
+
+==== Control Flow
+
+[cols="2,5"]
+|===
+|Keyword |Description
+
+|`if`       |Begins a conditional statement.  See <<ch-control-flow>>.
+|`then`     |Separates the condition from the body in `if` and `elseif` clauses.
+|`else`     |Introduces the alternative branch of an `if` statement.
+|`elseif`   |Introduces an additional condition in an `if` chain.
+|`end`      |Terminates a block (`if`, `for`, `while`, `do`, `function`, `try`, `choose`, `with`).
+|`do`       |Introduces an anonymous block or the body of a `for`/`while` loop.
+|`for`      |Begins a loop.  See <<ch-control-flow>>.
+|`in`       |Separates the iterator variable from the iterator expression in a `for` loop.  Also the membership operator (see <<sec-membership-operator>>).
+|`while`    |Begins a condition-tested loop.  See <<ch-control-flow>>.
+|`repeat`   |Begins a `repeat`/`until` loop.  See <<ch-control-flow>>.
+|`until`    |Terminates a `repeat` loop and specifies its exit condition.
+|`break`    |Exits the innermost enclosing loop.  See <<ch-control-flow>>.
+|`continue` |Skips to the next iteration of the innermost enclosing loop.  See <<ch-control-flow>>.
+|`choose`   |Begins a pattern-matching statement.  See <<ch-pattern-matching>>.
+|`from`     |Specifies the scrutinee in a `choose` statement.
+|===
+
+==== Logical Operators
+
+[cols="2,5"]
+|===
+|Keyword |Description
+
+|`and` |Logical AND.  Short-circuits; returns the first false operand or the last operand.  See <<sec-logical-operators>>.
+|`or`  |Logical OR.  Short-circuits; returns the first true operand or the last operand.  See <<sec-logical-operators>>.
+|`not` |Logical negation.  Returns `true` if the operand is false; `false` otherwise.  See <<sec-logical-operators>>.
+|`is`  |Equality comparison.  Replaces `==` from standard Lua.  Combines with `not` as `is not` for inequality.  See <<sec-comparison-operators>>.
+|`has` |Bitwise flag testing.  Returns `true` if any flags in the right operand are set in the left operand.  See <<sec-flag-testing-operator>>.
+|===
+
+==== Exception Handling
+
+[cols="2,5"]
+|===
+|Keyword |Description
+
+|`try`     |Begins an exception-handling block.  See <<ch-error-handling>>.
+|`except`  |Catches exceptions raised within a `try` block.
+|`success` |Executes when a `try` block completes without raising an exception.
+|`when`    |Filters exceptions by error code in an `except` clause.
+|`raise`   |Raises an exception with a specific error code and optional message.
+|`check`   |Evaluates an error code and raises an exception if it is at or above the exception threshold.
+|===
+
+==== Scoping and Organisation
+
+[cols="2,5"]
+|===
+|Keyword |Description
+
+|`with`      |Introduces a scoped block with context bindings.
+|`namespace` |Declares a namespace for organising related definitions.  See <<ch-script-management>>.
+|`import`    |Imports a module or namespace.  See <<ch-script-management>>.
+|`as`        |Provides an alias in `import` statements or performs type conversion.
+|`defer`     |Registers code to execute when the enclosing scope exits.  See <<ch-resource-management>>.
+|===
