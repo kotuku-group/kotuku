@@ -1,6 +1,9 @@
 -- Flute tests that need to exercise the JIT in specific ways.
 
 local glCfg
+local ir_ult <const> = 4  -- IRDEF order; unsigned less-than guard.
+local ir_abc <const> = 10  -- IRDEF order; array bounds check.
+local ir_loop <const> = 17  -- IRDEF order; loop body boundary.
 local ir_min <const> = 50  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
 local ir_max <const> = 51  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
 local ir_xload <const> = 70  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
@@ -91,6 +94,58 @@ end
    assert(disassembly:find('OBGETF') != nil, 'obj<Class> metadata should specialise chained object field access')
 end
 
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayParameterAndLengthRangeBytecode()
+   local script = obj.new('tiri', { statement=[[
+global glBytecodeValues:array = array<int> { 1, 2, 3 }
+
+function increment(Array:array)
+   for index in {0 to #Array} do
+      Array[index] += 1
+   end
+end
+
+function incrementInTry(Array:array)
+   try
+      for index in {0 to #Array} do
+         Array[index] += 1
+      end
+   success
+   end
+end
+
+function localArrayInTry()
+   try
+      local values = array<int> { 1, 2, 3 }
+      for index in {0 to #values} do
+         values[index] += 1
+      end
+   success
+   end
+end
+
+function sumGlobal():num
+   local total = 0
+   for index in {0 to #glBytecodeValues} do
+      total += glBytecodeValues[index]
+   end
+   return total
+end
+]] })
+   check script.acQuery()
+   check script.acActivate()
+   local _, disassembly = script.mtDebugLog('disasm')
+
+   assert(disassembly:find('FORI') != nil and disassembly:find('FORL') != nil,
+      'A canonical array-length range should emit numeric loop bytecode')
+   assert(disassembly:find('ITERC') is nil and disassembly:find('ITERA') is nil and
+      disassembly:find('ITERL') is nil,
+      'Canonical parameter, nested and global array-length ranges should not construct generic range iterators')
+   assert(disassembly:find('AGETV') != nil and disassembly:find('ASETV') != nil,
+      'An array-annotated parameter should emit specialised array bytecode')
+end
+
 @AfterAll
 function TeardownJitTests()
    jit.opt.start()
@@ -152,6 +207,14 @@ function count_trace_opcode(TraceNo, Info, Opcode)
    return count
 end
 
+function first_trace_opcode(TraceNo, Info, Opcode)
+   for idx = 1, Info.nins do
+      local _, ir_ot = jit.util.traceIR(TraceNo, idx)
+      if ir_ot != nil and ir_opcode(ir_ot) is Opcode then return idx end
+   end
+   return nil
+end
+
 function count_jit_traces(MaxTraceNo)
    local count = 0
    for trace_no = 1, MaxTraceNo do
@@ -163,6 +226,93 @@ end
 function count_trace_calls(TraceNo, Info)
    return count_trace_opcode(TraceNo, Info, ir_calln) + count_trace_opcode(TraceNo, Info, ir_calla) +
       count_trace_opcode(TraceNo, Info, ir_calll) + count_trace_opcode(TraceNo, Info, ir_calls)
+end
+
+function canonical_array_workload(Count)
+   local values = array<int> { 1, 2, 3, 4, 5, 6, 7, 8 }
+
+   for pass = 1, Count do
+      for index in {0 to #values} do
+         values[index] += 1
+      end
+   end
+
+   return values:concat(',', '%d')
+end
+
+function canonical_array_try_workload(Count)
+   local values = array<int, 8>
+
+   try
+      for pass = 1, Count do
+         for index in {0 to #values} do
+            values[index] += 1
+         end
+      end
+   success
+   end
+
+   return values:concat(',', '%d')
+end
+
+global glCanonicalArrayRangeValues:array = array<int> { 1, 2, 3, 4, 5, 6, 7, 8 }
+
+function canonical_global_array_workload(Count)
+   local total = 0
+   for pass = 1, Count do
+      for index in {0 to #glCanonicalArrayRangeValues} do
+         total += glCanonicalArrayRangeValues[index]
+      end
+   end
+   return total
+end
+
+function find_array_bounds_trace(MaxTraceNo)
+   for trace_no = 1, MaxTraceNo do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil then
+         local abc_count = count_trace_opcode(trace_no, info, ir_abc)
+         local load_count = count_trace_opcode(trace_no, info, ir_xload)
+         local store_count = count_trace_opcode(trace_no, info, ir_xstore)
+         if abc_count > 0 and load_count > 0 and store_count > 0 then
+            return trace_no, info, abc_count
+         end
+      end
+   end
+
+   return nil, nil, 0
+end
+
+function resize_during_array_loop(Array:array, Shrink:bool)
+   local alias = Array
+   for index in {0 to #Array} do
+      if Shrink and index is 16 then alias:resize(8) end
+      Array[index] += 1
+   end
+end
+
+function clear_during_array_loop(Array:array, Clear:bool)
+   local alias = Array
+   for index in {0 to #Array} do
+      if Clear and index is 16 then alias:clear() end
+      Array[index] += 1
+   end
+end
+
+function reassign_during_array_loop(Array:array, Reassign:bool)
+   for index in {0 to #Array} do
+      if Reassign and index is 16 then Array = array<int, 8> end
+      Array[index] += 1
+   end
+end
+
+function push_during_array_loop(Array:array)
+   local original_length = #Array
+   for index in {0 to #Array} do
+      if index is 0 then Array:push(99) end
+      Array[index] += 1
+   end
+   return original_length, #Array, Array[#Array - 1]
 end
 
 function run_array_method_trace(Workload, Count)
@@ -179,6 +329,166 @@ function run_array_method_trace(Workload, Count)
    end
 
    return expected, result, count_jit_traces(30)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function CanonicalArrayRangeMatchesInterpreter()
+   jit.flush()
+   jit.off()
+   local expected = canonical_array_workload(12)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local result = nil
+   for repeat_no = 1, 20 do
+      result = canonical_array_workload(12)
+   end
+
+   assert(result is expected, f"JIT array range result '{result}' should match interpreter result '{expected}'")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function CanonicalArrayRangeInsideTryMatchesInterpreter()
+   jit.flush()
+   jit.off()
+   local expected = canonical_array_try_workload(10)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local result = nil
+   for repeat_no = 1, 20 do
+      result = canonical_array_try_workload(10)
+   end
+
+   assert(result is expected,
+      f"JIT nested array range result '{result}' should match interpreter result '{expected}'")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function CanonicalGlobalArrayRangeMatchesInterpreter()
+   jit.flush()
+   jit.off()
+   local expected = canonical_global_array_workload(12)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local result = nil
+   for repeat_no = 1, 20 do
+      result = canonical_global_array_workload(12)
+   end
+
+   assert(result is expected,
+      f"JIT global array range result '{result}' should match interpreter result '{expected}'")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function CanonicalArrayRangeHoistsBoundsCheck()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   for repeat_no = 1, 20 do
+      canonical_array_workload(12)
+   end
+
+   local trace_no, info, abc_count = find_array_bounds_trace(40)
+   assert(trace_no != nil and info != nil, 'Expected a traced typed-array loop with direct element access')
+   assert(abc_count is 1, f'Expected one invariant array bounds check, found {abc_count}')
+
+   local abc_position = first_trace_opcode(trace_no, info, ir_abc)
+   local loop_position = first_trace_opcode(trace_no, info, ir_loop)
+   assert(abc_position != nil and loop_position != nil, 'Expected both ABC and LOOP instructions in the array trace')
+   assert(abc_position < loop_position,
+      f'Expected invariant ABC before LOOP, found ABC at {abc_position} and LOOP at {loop_position}')
+
+   local ult_count = count_trace_opcode(trace_no, info, ir_ult)
+   assert(ult_count is 0, f'Expected no loop-resident ULT array bounds guard, found {ult_count}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayResizeInvalidatesBoundsProof()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   for repeat_no = 1, 20 do
+      local values = array<int, 32>
+      resize_during_array_loop(values, false)
+   end
+
+   local values = array<int, 32>
+   try
+      resize_during_array_loop(values, true)
+   success
+      error('Shrinking an aliased array during traversal should invalidate the bounds proof')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayClearInvalidatesBoundsProof()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   for repeat_no = 1, 20 do
+      local values = array<int, 32>
+      clear_during_array_loop(values, false)
+   end
+
+   local values = array<int, 32>
+   try
+      clear_during_array_loop(values, true)
+   success
+      error('Clearing an aliased array during traversal should invalidate the bounds proof')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayReassignmentInvalidatesBoundsProof()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   for repeat_no = 1, 20 do
+      local values = array<int, 32>
+      reassign_during_array_loop(values, false)
+   end
+
+   local values = array<int, 32>
+   try
+      reassign_during_array_loop(values, true)
+   success
+      error('Reassigning the traversed array should invalidate the bounds proof')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayGrowthKeepsCapturedRangeBound()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   for repeat_no = 1, 20 do
+      local values = array<int, 32>
+      local original_length, final_length, appended = push_during_array_loop(values)
+      assert(original_length is 32, 'The original array length should be captured before traversal')
+      assert(final_length is 33, 'Pushing during traversal should grow the array once')
+      assert(appended is 99, 'The appended element should remain outside the captured traversal bound')
+   end
 end
 
 function traced_clamp_sum(Count)

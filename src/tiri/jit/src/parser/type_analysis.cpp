@@ -93,7 +93,7 @@ public:
    explicit TypeAnalyser(ParserContext &Context) : ctx_(Context) {}
 
    // Entry point: analyse an entire module (top-level block)
-   void analyse_module(const BlockStmt &);
+   void analyse_module(BlockStmt &);
 
    // Access collected type diagnostics after analysis
    [[nodiscard]] const std::vector<TypeDiagnostic> & diagnostics() const { return this->diagnostics_; }
@@ -115,8 +115,13 @@ private:
    [[nodiscard]] const FunctionContext* current_function() const;
 
    // AST traversal methods - recursively analyse each node type
-   void analyse_block(const BlockStmt &);
-   void analyse_statement(const StmtNode &);
+   void analyse_block(BlockStmt &);
+   void analyse_statement(StmtNode &);
+   bool lower_array_length_range(StmtNode &);
+   void lower_unanalysed_block(BlockStmt &);
+   void lower_unanalysed_except_clause(ExceptClause &);
+   void lower_unanalysed_function(const FunctionExprPayload &);
+   void lower_unanalysed_statement(StmtNode &);
    void analyse_assignment(const AssignmentStmtPayload &);
    void analyse_local_decl(const LocalDeclStmtPayload &);
    void analyse_global_decl(const GlobalDeclStmtPayload &);
@@ -163,13 +168,15 @@ private:
 
    #ifdef INCLUDE_TIPS
    // Tip gating - tips carry no file attribution, so they are suppressed entirely while analysing
-   // imported statements to avoid misattributing library internals to the importing file
+   // imported statements to avoid misattributing library internals to the importing file.  They are also
+   // suppressed during reduced traversal, which declares variables without observing their uses and would
+   // otherwise report false unused-variable tips.
    [[nodiscard]] bool should_emit_tip(uint8_t Priority) const {
-      return this->import_depth_ IS 0 and this->ctx_.should_emit_tip(Priority);
+      return this->import_depth_ IS 0 and this->unanalysed_depth_ IS 0 and this->ctx_.should_emit_tip(Priority);
    }
 
    void emit_tip(uint8_t Priority, TipCategory Category, std::string Message, const Token &Location) {
-      if (this->import_depth_ != 0) return;
+      if (this->import_depth_ != 0 or this->unanalysed_depth_ != 0) return;
       this->ctx_.emit_tip(Priority, Category, std::move(Message), Location);
    }
    #endif
@@ -257,6 +264,7 @@ private:
    std::vector<TypeDiagnostic> diagnostics_{};      // Collected type errors and warnings
    uint32_t loop_depth_{0};                         // Current loop nesting depth for performance tip
    uint32_t import_depth_{0};                       // Import nesting depth; non-zero suppresses tips
+   uint32_t unanalysed_depth_{0};                   // Reduced-traversal nesting depth; non-zero suppresses tips
    uint8_t current_file_index_{0};                  // FileSource index of the file being analysed
    ankerl::unordered_dense::map<GCstr*, GlobalTypeInfo> global_types_{};  // Type info for global variables
    #ifdef INCLUDE_TIPS
@@ -538,7 +546,7 @@ const FunctionContext* TypeAnalyser::current_function() const
    return &this->function_stack_.back();
 }
 
-void TypeAnalyser::analyse_module(const BlockStmt &Module)
+void TypeAnalyser::analyse_module(BlockStmt &Module)
 {
    // For loadFile sources the whole chunk carries a single non-zero FileSource index
    this->current_file_index_ = this->ctx_.lex().current_file_index;
@@ -547,11 +555,254 @@ void TypeAnalyser::analyse_module(const BlockStmt &Module)
    this->pop_scope();
 }
 
-void TypeAnalyser::analyse_block(const BlockStmt &Block)
+void TypeAnalyser::analyse_block(BlockStmt &Block)
 {
-   for (const auto &statement : Block.view()) {
-      this->analyse_statement(statement);
+   for (auto &statement : Block.statements) {
+      if (statement) this->analyse_statement(*statement);
    }
+}
+
+//********************************************************************************************************************
+// Lowers `{0 to #array}` only after semantic analysis has proved that the length operand is a native array.  Keeping
+// unknown and non-array operands on the generic range path preserves custom __len direction and validation semantics.
+
+bool TypeAnalyser::lower_array_length_range(StmtNode &Statement)
+{
+   if (Statement.kind != AstNodeKind::GenericForStmt) return false;
+
+   auto *generic = std::get_if<GenericForStmtPayload>(&Statement.data);
+   if (not generic or generic->names.size() != 1 or generic->iterators.size() != 1 or not generic->body) return false;
+
+   ExprNode *iterator = generic->iterators[0].get();
+   if (not iterator or iterator->kind != AstNodeKind::CallExpr) return false;
+
+   auto *call = std::get_if<CallExprPayload>(&iterator->data);
+   if (not call or not call->arguments.empty()) return false;
+
+   auto *direct = std::get_if<DirectCallTarget>(&call->target);
+   if (not direct or not direct->callable or direct->callable->kind != AstNodeKind::RangeExpr) return false;
+
+   auto *range = std::get_if<RangeExprPayload>(&direct->callable->data);
+   if (not range or range->inclusive or range->step or not range->start or not range->stop) return false;
+
+   const auto *start = std::get_if<LiteralValue>(&range->start->data);
+   if (range->start->kind != AstNodeKind::LiteralExpr or not start or start->kind != LiteralKind::Number or
+       start->number_value != 0) {
+      return false;
+   }
+
+   auto *length = std::get_if<UnaryExprPayload>(&range->stop->data);
+   if (range->stop->kind != AstNodeKind::UnaryExpr or not length or
+       length->op != AstUnaryOperator::Length or not length->operand) {
+      return false;
+   }
+
+   InferredType operand_type = this->infer_expression_type(*length->operand);
+   if (operand_type.primary != TiriType::Array) return false;
+
+   SourceSpan span = direct->callable->span;
+   Identifier control = std::move(generic->names[0]);
+   ExprNodePtr start_expr = std::move(range->start);
+   ExprNodePtr stop_expr = std::move(range->stop);
+   ExprNodePtr one_expr = make_literal_expr(span, LiteralValue::number(1));
+   ExprNodePtr final_stop_expr = make_binary_expr(
+      span, AstBinaryOperator::Subtract, std::move(stop_expr), std::move(one_expr));
+   ExprNodePtr step_expr = make_literal_expr(span, LiteralValue::number(1));
+   std::unique_ptr<BlockStmt> body = std::move(generic->body);
+
+   Statement.kind = AstNodeKind::NumericForStmt;
+   Statement.data.emplace<NumericForStmtPayload>(std::move(control), std::move(start_expr),
+      std::move(final_stop_expr), std::move(step_expr), std::move(body));
+   return true;
+}
+
+//********************************************************************************************************************
+// Some statement forms deliberately bypass ordinary type diagnostics so runtime type failures inside them remain
+// catchable.  This reduced traversal tracks only the lexical types needed for safe array-range lowering.  Each
+// entry point raises unanalysed_depth_ so tip emission stays suppressed: the traversal declares variables but
+// never observes their uses, so unused-variable reporting on scope exit would be a false positive.
+
+void TypeAnalyser::lower_unanalysed_block(BlockStmt &Block)
+{
+   this->unanalysed_depth_++;
+   this->push_scope();
+   for (auto &statement : Block.statements) {
+      if (statement) this->lower_unanalysed_statement(*statement);
+   }
+   this->pop_scope();
+   this->unanalysed_depth_--;
+}
+
+//********************************************************************************************************************
+
+void TypeAnalyser::lower_unanalysed_except_clause(ExceptClause &Clause)
+{
+   if (not Clause.block) return;
+
+   this->unanalysed_depth_++;
+   this->push_scope();
+   if (Clause.exception_var and Clause.exception_var->symbol) {
+      this->current_scope().declare_local(
+         Clause.exception_var->symbol, InferredType(TiriType::Any), Clause.exception_var->span);
+   }
+   for (auto &statement : Clause.block->statements) {
+      if (statement) this->lower_unanalysed_statement(*statement);
+   }
+   this->pop_scope();
+   this->unanalysed_depth_--;
+}
+
+//********************************************************************************************************************
+
+void TypeAnalyser::lower_unanalysed_function(const FunctionExprPayload &Function)
+{
+   this->unanalysed_depth_++;
+   this->push_scope();
+   for (const FunctionParameter &param : Function.parameters) {
+      this->current_scope().declare_parameter(param.name.symbol, param.type, param.struct_def, param.name.span);
+   }
+   if (Function.body) {
+      for (auto &statement : Function.body->statements) {
+         if (statement) this->lower_unanalysed_statement(*statement);
+      }
+   }
+   this->pop_scope();
+   this->unanalysed_depth_--;
+}
+
+//********************************************************************************************************************
+
+void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
+{
+   this->unanalysed_depth_++;
+   this->lower_array_length_range(Statement);
+
+   switch (Statement.kind) {
+      case AstNodeKind::LocalDeclStmt: {
+         auto *payload = std::get_if<LocalDeclStmtPayload>(&Statement.data);
+         if (not payload) break;
+
+         std::vector<InferredType> inferred_types;
+         inferred_types.reserve(payload->names.size());
+         for (size_t i = 0; i < payload->names.size(); ++i) {
+            InferredType inferred;
+            if (payload->names[i].type != TiriType::Unknown) {
+               inferred.primary = payload->names[i].type;
+               inferred.struct_def = payload->names[i].struct_def;
+               inferred.is_fixed = inferred.primary != TiriType::Any;
+            }
+            else if (i < payload->values.size() and payload->values[i]) {
+               // Unlike analyse_local_decl this marks Unknown inferences as fixed, which is harmless here:
+               // these scopes only feed the Array check in lower_array_length_range, never diagnostics.
+               inferred = this->infer_expression_type(*payload->values[i]);
+               inferred.is_fixed = inferred.primary != TiriType::Nil and inferred.primary != TiriType::Any;
+            }
+            inferred_types.push_back(inferred);
+         }
+
+         for (size_t i = 0; i < payload->names.size(); ++i) {
+            const Identifier &name = payload->names[i];
+            this->current_scope().declare_local(name.symbol, inferred_types[i], name.span, name.has_const);
+         }
+         break;
+      }
+      case AstNodeKind::LocalFunctionStmt: {
+         auto *payload = std::get_if<LocalFunctionStmtPayload>(&Statement.data);
+         if (payload and payload->function) {
+            this->current_scope().declare_function(
+               payload->name.symbol, payload->function.get(), payload->name.span);
+            this->lower_unanalysed_function(*payload->function);
+         }
+         break;
+      }
+      case AstNodeKind::FunctionStmt: {
+         auto *payload = std::get_if<FunctionStmtPayload>(&Statement.data);
+         if (payload and payload->function) this->lower_unanalysed_function(*payload->function);
+         break;
+      }
+      case AstNodeKind::IfStmt: {
+         auto *payload = std::get_if<IfStmtPayload>(&Statement.data);
+         if (payload) {
+            for (auto &clause : payload->clauses) {
+               if (clause.block) this->lower_unanalysed_block(*clause.block);
+            }
+         }
+         break;
+      }
+      case AstNodeKind::WhileStmt:
+      case AstNodeKind::RepeatStmt: {
+         auto *payload = std::get_if<LoopStmtPayload>(&Statement.data);
+         if (payload and payload->body) this->lower_unanalysed_block(*payload->body);
+         break;
+      }
+      case AstNodeKind::NumericForStmt: {
+         auto *payload = std::get_if<NumericForStmtPayload>(&Statement.data);
+         if (payload and payload->body) {
+            this->push_scope();
+            InferredType control_type(TiriType::Num);
+            this->current_scope().declare_local(
+               payload->control.symbol, control_type, payload->control.span);
+            for (auto &statement : payload->body->statements) {
+               if (statement) this->lower_unanalysed_statement(*statement);
+            }
+            this->pop_scope();
+         }
+         break;
+      }
+      case AstNodeKind::GenericForStmt: {
+         auto *payload = std::get_if<GenericForStmtPayload>(&Statement.data);
+         if (payload and payload->body) {
+            this->push_scope();
+            for (const Identifier &name : payload->names) {
+               this->current_scope().declare_local(name.symbol, InferredType(TiriType::Any), name.span);
+            }
+            for (auto &statement : payload->body->statements) {
+               if (statement) this->lower_unanalysed_statement(*statement);
+            }
+            this->pop_scope();
+         }
+         break;
+      }
+      case AstNodeKind::DoStmt: {
+         auto *payload = std::get_if<DoStmtPayload>(&Statement.data);
+         if (payload and payload->block) this->lower_unanalysed_block(*payload->block);
+         break;
+      }
+      case AstNodeKind::ConditionalShorthandStmt: {
+         auto *payload = std::get_if<ConditionalShorthandStmtPayload>(&Statement.data);
+         if (payload and payload->body) this->lower_unanalysed_statement(*payload->body);
+         break;
+      }
+      case AstNodeKind::TryExceptStmt: {
+         auto *payload = std::get_if<TryExceptPayload>(&Statement.data);
+         if (payload) {
+            if (payload->try_block) this->lower_unanalysed_block(*payload->try_block);
+            for (auto &clause : payload->except_clauses) {
+               this->lower_unanalysed_except_clause(clause);
+            }
+            if (payload->success_block) this->lower_unanalysed_block(*payload->success_block);
+         }
+         break;
+      }
+      case AstNodeKind::ImportStmt: {
+         auto *payload = std::get_if<ImportStmtPayload>(&Statement.data);
+         if (payload) {
+            for (auto &entry : payload->entries) {
+               if (entry.inlined_body) this->lower_unanalysed_block(*entry.inlined_body);
+            }
+         }
+         break;
+      }
+      case AstNodeKind::WithStmt: {
+         auto *payload = std::get_if<WithStmtPayload>(&Statement.data);
+         if (payload and payload->block) this->lower_unanalysed_block(*payload->block);
+         break;
+      }
+      default:
+         break;
+   }
+
+   this->unanalysed_depth_--;
 }
 
 //********************************************************************************************************************
@@ -560,8 +811,10 @@ void TypeAnalyser::analyse_block(const BlockStmt &Block)
 // Dispatches to the appropriate handler based on statement type.
 // Each handler may push/pop scopes, declare variables, or analyse nested expressions.
 
-void TypeAnalyser::analyse_statement(const StmtNode &Statement)
+void TypeAnalyser::analyse_statement(StmtNode &Statement)
 {
+   this->lower_array_length_range(Statement);
+
    switch (Statement.kind) {
       case AstNodeKind::AssignmentStmt: {
          auto *payload = std::get_if<AssignmentStmtPayload>(&Statement.data);
@@ -693,6 +946,22 @@ void TypeAnalyser::analyse_statement(const StmtNode &Statement)
          }
          break;
       }
+      case AstNodeKind::ConditionalShorthandStmt: {
+         auto *payload = std::get_if<ConditionalShorthandStmtPayload>(&Statement.data);
+         if (payload and payload->body) this->lower_unanalysed_statement(*payload->body);
+         break;
+      }
+      case AstNodeKind::TryExceptStmt: {
+         auto *payload = std::get_if<TryExceptPayload>(&Statement.data);
+         if (payload) {
+            if (payload->try_block) this->lower_unanalysed_block(*payload->try_block);
+            for (auto &clause : payload->except_clauses) {
+               this->lower_unanalysed_except_clause(clause);
+            }
+            if (payload->success_block) this->lower_unanalysed_block(*payload->success_block);
+         }
+         break;
+      }
       case AstNodeKind::ExpressionStmt: {
          auto *payload = std::get_if<ExpressionStmtPayload>(&Statement.data);
          if (payload and payload->expression) this->analyse_expression(*payload->expression);
@@ -715,6 +984,11 @@ void TypeAnalyser::analyse_statement(const StmtNode &Statement)
                this->pop_scope();
             }
          }
+         break;
+      }
+      case AstNodeKind::WithStmt: {
+         auto *payload = std::get_if<WithStmtPayload>(&Statement.data);
+         if (payload and payload->block) this->lower_unanalysed_block(*payload->block);
          break;
       }
       default:
@@ -1619,6 +1893,8 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
             this->mark_identifier_used(payload->identifier.symbol);
             auto resolved = this->resolve_identifier(payload->identifier.symbol);
             if (resolved) return *resolved;
+            resolved = this->lookup_global_type(payload->identifier.symbol);
+            if (resolved) return *resolved;
          }
          break;
       }
@@ -2496,7 +2772,7 @@ void TypeAnalyser::publish_global_type_hints(LexState &Lex) const
 
 //********************************************************************************************************************
 
-void run_type_analysis(ParserContext& Context, const BlockStmt& Module)
+void run_type_analysis(ParserContext& Context, BlockStmt& Module)
 {
    TypeAnalyser analyser(Context);
    analyser.analyse_module(Module);

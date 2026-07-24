@@ -2816,7 +2816,7 @@ static TRef rec_array_op(jit_State *J, RecordOps *ops)
    }
 
    TRef len_ref = ir.fload_int(array_ref, IRFL_ARRAY_LEN);
-   ir.guard_int(IR_ULT, idx_ref, len_ref);
+   rec_idx_abc(J, len_ref, idx_ref, arrayV(ops->rbv())->len);
 
    if (is_get) {
       GCarray *arr = arrayV(ops->rbv());

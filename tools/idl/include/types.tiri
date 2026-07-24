@@ -621,8 +621,7 @@ global function cType(Value:table, Origin:str):table
             assert(not inner_fd:find('FD_UNIT'), f'Unit element spans are not supported for {Origin}.')
             assert(not inner_fd:find('FD_ARRAY'), f'Nested array spans are not supported for {Origin}.')
             assert(not inner_fd:find('FD_VECTOR'), f'Nested vector spans are not supported for {Origin}.')
-            assert(not (Value.struct and Value.isPointer),
-               f'Pointer-qualified structure spans are not supported for {Origin}.')
+            assert(not (Value.struct and Value.isPointer), f'Pointer-qualified structure spans are not supported for {Origin}.')
 
             local element_type = Value.type
             if not Value.mutable then
