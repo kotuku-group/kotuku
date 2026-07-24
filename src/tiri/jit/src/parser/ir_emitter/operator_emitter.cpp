@@ -87,82 +87,6 @@ static CSTRING get_expkind_name(ExpKind k)
 }
 
 //********************************************************************************************************************
-// Bytecode emitter for operators - constant folding
-
-// Try constant-folding of arithmetic operators.
-
-[[nodiscard]] static int foldarith(BinOpr opr, ExpDesc* e1, ExpDesc* e2)
-{
-   TValue o;
-   lua_Number n;
-   if (!e1->is_num_constant_nojump() or !e2->is_num_constant_nojump()) [[likely]] return 0;
-   n = lj_vm_foldarith(e1->number_value(), e2->number_value(), to_arith_offset(opr));
-   setnumV(&o, n);
-   if (tvisnan(&o) or tvismzero(&o)) [[unlikely]] return 0;  // Avoid NaN and -0 as consts.
-   if (LJ_DUALNUM) {
-      int32_t k = lj_num2int(n);
-      if (lua_Number(k) IS n) {
-         setintV(&e1->u.nval, k);
-         return 1;
-      }
-   }
-   setnumV(&e1->u.nval, n);
-   return 1;
-}
-
-//********************************************************************************************************************
-// Try constant-folding of bitwise operators.
-// Bitwise operations in Lua/LuaJIT operate on 32-bit integers.
-
-[[nodiscard]] static int foldbitwise(BinOpr opr, ExpDesc* e1, ExpDesc* e2)
-{
-   if (!e1->is_num_constant_nojump() or !e2->is_num_constant_nojump()) [[likely]] return 0;
-
-   // Convert to 32-bit integers using lj_num2bit() to match bit library semantics
-   auto k1 = lj_num2bit(e1->number_value());
-   auto k2 = lj_num2bit(e2->number_value());
-   int32_t result;
-
-   switch (opr) {
-      case BinOpr::BitAnd: result = k1 & k2; break;
-      case BinOpr::BitOr:  result = k1 | k2; break;
-      case BinOpr::BitXor: result = k1 ^ k2; break;
-      case BinOpr::ShiftLeft:  result = k1 << (k2 & 31); break;  // Mask shift count to 0-31
-      case BinOpr::ShiftRight:  result = int32_t(uint32_t(k1) >> (k2 & 31)); break;  // Unsigned right shift
-      default: return 0;
-   }
-
-   // Store result as integer if possible, otherwise as number
-
-   if (LJ_DUALNUM) setintV(&e1->u.nval, result);
-   else setnumV(&e1->u.nval, lua_Number(result));
-
-   e1->k = ExpKind::Num;
-   return 1;
-}
-
-//********************************************************************************************************************
-// Try constant-folding of unary bitwise NOT.
-
-[[nodiscard]] static int foldbitnot(ExpDesc* e)
-{
-   if (!e->is_num_constant_nojump()) [[likely]] return 0;
-
-   // Convert to 32-bit integer using lj_num2bit() and apply bitwise NOT
-
-   auto k = lj_num2bit(e->number_value());
-   int32_t result = ~k;
-
-   // Store result as integer if possible, otherwise as number
-
-   if (LJ_DUALNUM) setintV(&e->u.nval, result);
-   else setnumV(&e->u.nval, lua_Number(result));
-
-   e->k = ExpKind::Num;
-   return 1;
-}
-
-//********************************************************************************************************************
 // Emit arithmetic operator.
 
 static void bcemit_arith(FuncState* fs, BinOpr opr, ExpDesc* e1, ExpDesc* e2)
@@ -170,8 +94,6 @@ static void bcemit_arith(FuncState* fs, BinOpr opr, ExpDesc* e1, ExpDesc* e2)
    RegisterAllocator allocator(fs);
    BCREG rb, rc, t;
    uint32_t op;
-
-   if (foldarith(opr, e1, e2)) return;
 
    if (opr IS BinOpr::Pow) {
       op = BC_POW;
@@ -225,29 +147,11 @@ static void bcemit_arith(FuncState* fs, BinOpr opr, ExpDesc* e1, ExpDesc* e2)
 //********************************************************************************************************************
 // Emit comparison operator.
 
-static constexpr lua_Number TIRI_APPROX_TOLERANCE = 1e-5;
-
-//********************************************************************************************************************
-// Try constant-folding of approximate equality.
-
-[[nodiscard]] static int foldapprox(ExpDesc* e1, ExpDesc* e2)
-{
-   if (!e1->is_num_constant_nojump() or !e2->is_num_constant_nojump()) [[likely]] return 0;
-
-   lua_Number delta = e1->number_value() - e2->number_value();
-   bool result = delta <= TIRI_APPROX_TOLERANCE and delta >= -TIRI_APPROX_TOLERANCE;
-   *e1 = ExpDesc(result);
-   e1->result_type = TiriType::Bool;
-   return 1;
-}
-
 //********************************************************************************************************************
 // Emit approximate equality: `(lhs - rhs) <= tolerance and (lhs - rhs) >= -tolerance`.
 
 static void bcemit_approx(FuncState* fs, ExpDesc* e1, ExpDesc* e2)
 {
-   if (foldapprox(e1, e2)) return;
-
    RegisterAllocator allocator(fs);
 
    bcemit_arith(fs, BinOpr::Sub, e1, e2);
@@ -687,21 +591,11 @@ void OperatorEmitter::emit_unary(int op, ExprValue operand)
 }
 
 //********************************************************************************************************************
-// Emit bitwise NOT operator (~)
-// Performs constant folding when possible, otherwise calls bit.bnot library function
+// Emit bitwise NOT operator (~).
 
 void OperatorEmitter::emit_bitnot(ExprValue operand)
 {
    ExpDesc* e = operand.raw();
-
-   // Try constant folding first
-   if (foldbitnot(e)) {
-      if (should_trace_operators(this->func_state)) {
-         kt::Log("Parser").msg("[%d] operator ~: constant-folded to %d", this->func_state->ls->linenumber.lineNumber(),
-            int32_t(e->number_value()));
-      }
-      return;
-   }
 
    if (should_trace_operators(this->func_state)) {
       kt::Log("Parser").msg("[%d] operator ~: calling bit.bnot, operand kind=%s", this->func_state->ls->linenumber.lineNumber(),
@@ -770,21 +664,11 @@ void OperatorEmitter::emit_comparison(BinOpr opr, ExprValue left, ExpDesc right)
 }
 
 //********************************************************************************************************************
-// Emit bitwise binary operator
-// Performs constant folding when possible, otherwise emits function calls to bit.* library
+// Emit bitwise binary operator via the bit library.
 
 void OperatorEmitter::emit_binary_bitwise(BinOpr opr, ExprValue left, ExpDesc right)
 {
    ExpDesc* lhs = left.raw();
-
-   // Try constant folding first
-   if (foldbitwise(opr, lhs, &right)) {
-      if (should_trace_operators(this->func_state)) {
-         kt::Log("Parser").msg("[%d] operator %s: constant-folded to %d", this->func_state->ls->linenumber.lineNumber(),
-            get_binop_name(opr), int32_t(lhs->number_value()));
-      }
-      return;
-   }
 
    CSTRING op_name = priority[int(opr)].name;
    size_t op_name_len = priority[int(opr)].name_len;
@@ -859,15 +743,6 @@ void OperatorEmitter::complete_bitwise(BinOpr opr, ExprValue left, ExpDesc right
 {
    ExpDesc* lhs = left.raw();
    FuncState* fs = this->func_state;
-
-   // Try constant folding first - if both operands are constants, we can fold
-   if (foldbitwise(opr, lhs, &right)) {
-      if (should_trace_operators(fs)) {
-         kt::Log("Parser").msg("[%d] complete_bitwise %s: constant-folded to %d",
-            fs->ls->linenumber.lineNumber(), get_binop_name(opr), int32_t(lhs->number_value()));
-      }
-      return;
-   }
 
    // Get the base register from aux field (set by prepare_bitwise)
 
