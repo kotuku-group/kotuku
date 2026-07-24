@@ -550,36 +550,37 @@ struct FalseyJumpOptions {
 };
 
 static ControlFlowEdge emit_falsey_jumps(
-   FuncState &State, LexState &Lexer, ControlFlowGraph &Graph, BCREG Register, FalseyJumpOptions Options)
+   FuncState &State, ControlFlowGraph &Graph, BCREG Register, FalseyJumpOptions Options,
+   TiriType ResultType = TiriType::Unknown)
 {
    ControlFlowEdge edge = Graph.make_unconditional();
 
-   ExpDesc nilv(ExpKind::Nil);
-   bcemit_INS(&State, BCINS_AD(BC_ISEQP, Register, const_pri(&nilv)));
+   uint16_t mask = 0;
+   if (Options.include_false) mask |= ISFALSEY_FALSE;
+   if (Options.include_zero) mask |= ISFALSEY_ZERO;
+   if (Options.include_empty_string) mask |= ISFALSEY_EMPTY_STR;
+   if (Options.include_empty_array) mask |= ISFALSEY_EMPTY_COLL;
+
+   switch (ResultType) {
+      case TiriType::Num:    mask &= ISFALSEY_ZERO; break;
+      case TiriType::Str:    mask &= ISFALSEY_EMPTY_STR; break;
+      case TiriType::Bool:   mask &= ISFALSEY_FALSE; break;
+      case TiriType::Array:
+      case TiriType::Table:  mask &= ISFALSEY_EMPTY_COLL; break;
+      case TiriType::Object:
+      case TiriType::Func:
+      case TiriType::Struct: mask = 0; break;
+      default: break;
+   }
+
+   if (mask) {
+      bcemit_INS(&State, BCINS_AD(BC_ISFALSEY, Register, mask));
+   }
+   else {
+      ExpDesc nilv(ExpKind::Nil);
+      bcemit_INS(&State, BCINS_AD(BC_ISEQP, Register, const_pri(&nilv)));
+   }
    edge.append(BCPos(bcemit_jmp(&State)));
-
-   if (Options.include_false) {
-      ExpDesc falsev(ExpKind::False);
-      bcemit_INS(&State, BCINS_AD(BC_ISEQP, Register, const_pri(&falsev)));
-      edge.append(BCPos(bcemit_jmp(&State)));
-   }
-
-   if (Options.include_zero) {
-      ExpDesc zerov(0.0);
-      bcemit_INS(&State, BCINS_AD(BC_ISEQN, Register, const_num(&State, &zerov)));
-      edge.append(BCPos(bcemit_jmp(&State)));
-   }
-
-   if (Options.include_empty_string) {
-      ExpDesc emptyv(Lexer.intern_empty_string());
-      bcemit_INS(&State, BCINS_AD(BC_ISEQS, Register, const_str(&State, &emptyv)));
-      edge.append(BCPos(bcemit_jmp(&State)));
-   }
-
-   if (Options.include_empty_array) {
-      bcemit_INS(&State, BCINS_AD(BC_ISEMPTYARR, Register, 0));
-      edge.append(BCPos(bcemit_jmp(&State)));
-   }
 
    return edge;
 }
@@ -894,7 +895,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_conditional_shorthand_stmt(const Condit
    FalseyJumpOptions options;
    options.include_empty_array = true;
    ControlFlowEdge falsey_edge = emit_falsey_jumps(
-      this->func_state, this->lex_state, this->control_flow, cond_reg, options);
+      this->func_state, this->control_flow, cond_reg, options, condition.result_type);
 
    ControlFlowEdge skip_body = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
 
@@ -2439,7 +2440,7 @@ ParserResult<ExpDesc> IrEmitter::emit_if_empty_expr(ExpDesc lhs, const ExprNode&
    FalseyJumpOptions options;
    options.include_empty_array = true;
    ControlFlowEdge falsey_edge = emit_falsey_jumps(
-      this->func_state, this->lex_state, this->control_flow, lhs_reg, options);
+      this->func_state, this->control_flow, lhs_reg, options, lhs.result_type);
 
    // LHS is truthy - it's already in lhs_reg, just skip RHS
    ControlFlowEdge skip_rhs = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
@@ -2731,7 +2732,8 @@ ParserResult<ExpDesc> IrEmitter::emit_ternary_expr(const TernaryExprPayload &Pay
       FalseyJumpOptions options;
       options.include_empty_array = true;
       false_edge.append(emit_falsey_jumps(
-         this->func_state, this->lex_state, this->control_flow, condition_reg, options));
+         this->func_state, this->control_flow, condition_reg, options,
+         condition_result.value_ref().result_type));
    }
    else {
       ExpDesc condition = condition_result.value_ref();

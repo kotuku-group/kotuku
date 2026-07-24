@@ -1017,21 +1017,15 @@ void OperatorEmitter::prepare_if_empty(ExprValue left)
          BCReg reg = left_inner.discharge_to_any_reg(local_alloc);
          *left_desc = left_inner.legacy();
 
-         // Extended falsey check sequence
-         // ISEQ* skips the JMP when values ARE equal (falsey), executes JMP when NOT equal (truthy)
-         // Strategy: When value is truthy, NO checks match → all JMPs execute → skip RHS
-         //          When value is falsey, ONE check matches → that JMP skipped → fall through to RHS
+         // A selected falsey value executes the following JMP; a truthy value skips it.
 
          FalseyJumpOptions options;
          options.include_empty_array = true;
          ControlFlowEdge skip_rhs = emit_falsey_jumps(
-            *this->func_state, *this->func_state->ls, *this->cfg, reg, options);
+            *this->func_state, *this->cfg, reg, options, left_desc->result_type);
 
          // RHS will be emitted after this prepare phase
-         // The jumps above will skip RHS when value is truthy (all JMPs execute)
-         // Fall through to RHS when value is falsey (one JMP is skipped)
-
-         // Collect all these jumps - they should skip RHS when value is truthy
+         // Collect the falsey edge so the finish phase can patch it to the RHS.
          pc = skip_rhs.head().raw();
 
          // Mark that we need to preserve LHS value and reserve register for RHS
@@ -1217,7 +1211,7 @@ void OperatorEmitter::emit_presence_check(ExprValue operand)
 
    FalseyJumpOptions options;
    options.include_empty_array = true;
-   ControlFlowEdge falsey_edge = emit_falsey_jumps(*fs, *fs->ls, *this->cfg, reg, options);
+   ControlFlowEdge falsey_edge = emit_falsey_jumps(*fs, *this->cfg, reg, options, e->result_type);
 
    expr_free(fs, e);  // Free the expression register
 

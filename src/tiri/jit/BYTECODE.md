@@ -75,7 +75,7 @@ Operand suffixes: V=variable slot, S=string const, N=number const, P=primitive (
 | `ISF` | D | Skip next if R(D) is falsey |
 | `ISTYPE` | A D | Assert R(A) is type D (debug) |
 | `ISNUM` | A D | Assert R(A) is number (debug) |
-| `ISEMPTYARR` | A | R(A) is an empty array or table → execute next JMP; else skip JMP |
+| `ISFALSEY` | A D | Execute next JMP if R(A) is nil or matches falsey mask D; otherwise skip JMP |
 
 #### Unary Ops
 | Opcode | Format | Description |
@@ -466,15 +466,20 @@ end:
 
 ### 7.3 Presence Operator (`x?`) – Extended Falsey Check
 - Falsey set: `nil`, `false`, numeric zero, empty string, empty arrays, and empty tables. If operand is in this set, result is `false` and RHS (if any) is skipped.
-- Emission: chain `BC_ISEQP`/`BC_ISEQN`/`BC_ISEQS`/`BC_ISEMPTYARR` comparisons, each followed by a `JMP` to the falsey path. A matching equality branches to that path; non-matching comparisons fall through to the next check. If all checks fall through (truthy value), execution continues past the chain.
-- Jump lists patch the falsey exit after the chain; truthy fallthrough sets the result and collapses `freereg`.
-- `BC_ISEMPTYARR` is used to check if the value is an empty collection. Semantics: if `R(A)` is a native array with `len == 0` or a table with no entries, execute the following `JMP` (falsey); otherwise skip the `JMP` (truthy).
+- Emission: one `BC_ISFALSEY` followed by a `JMP` to the falsey path. Nil is always checked. Its D operand is a
+  mask containing `ISFALSEY_FALSE` (0x1), `ISFALSEY_ZERO` (0x2), `ISFALSEY_EMPTY_STR` (0x4), and
+  `ISFALSEY_EMPTY_COLL` (0x8).
+- Known operand types narrow the mask to the one applicable value check. Object, function, and struct operands
+  degrade to the existing nil-only `BC_ISEQP` check.
+- The JIT recorder specialises on the observed runtime type and records at most one value guard. Empty tables retain
+  the previous NYI behaviour because determining table emptiness requires traversal.
+- The falsey jump is patched after the truthy result path; truthy fallthrough sets the result and collapses `freereg`.
 
 ### 7.4 If-Empty Operator (`lhs ?? rhs`) – Short-Circuiting with Extended Falsey Semantics
 - Evaluate `lhs`; if it is nil/false/0/""/empty array/empty table, evaluate `rhs` and return it; otherwise return `lhs` without touching `rhs`.
-- Implemented in `IrEmitter::emit_if_empty_expr` plus helper routines in `operator_emitter.cpp`. The compare chain mirrors the presence operator: a matching falsey value branches to RHS evaluation; a truthy value falls through all checks and skips RHS entirely.
+- Implemented in `IrEmitter::emit_if_empty_expr` plus helper routines in `operator_emitter.cpp`. `BC_ISFALSEY`
+  branches directly to RHS evaluation for a selected falsey value; a truthy value skips the following `JMP`.
 - The result register is the original `lhs` slot; RHS evaluation reuses it and collapses `freereg` afterward to avoid leaked arguments or vararg tails.
-- Uses `BC_ISEMPTYARR` to check for empty arrays and tables as part of the extended falsey semantics. If `R(A)` is a native array with `len == 0` or a table with no entries, the following `JMP` is executed (falsey path); otherwise the `JMP` is skipped (truthy path).
 
 ## 8. Register Semantics and Multi-Value Behaviour
 ### 8.1 Register Lifetimes, `freereg`, and `nactvar`
@@ -495,7 +500,9 @@ end:
 ## 9. Common Emission Patterns and Anti-Patterns
 ### 9.1 Canonical Patterns (Do This)
 - Compare + `JMP` for "branch on not-equal": `ISEQP A,const; JMP target` with true skipping the jump; see the relevant compare/jump emission logic in `operator_emitter.cpp`.
-- Presence / if-empty chains: sequential `ISEQP/ISEQN/ISEQS/ISEMPTYARR` with shared jump list patched to the truthy or RHS path; see `operator_emitter.emit_presence_check` (called from `IrEmitter::emit_presence_expr`) and `IrEmitter::emit_if_empty_expr`.
+- Presence / if-empty checks: `ISFALSEY A,mask; JMP target`, with nil-only cases using
+  `ISEQP A,nil; JMP target`; see `operator_emitter.emit_presence_check` (called from
+  `IrEmitter::emit_presence_expr`) and `IrEmitter::emit_if_empty_expr`.
 - Logical short-circuit: `a or b` uses compare + `JMP` into RHS only when falsey; `a and b` jumps over RHS when falsey. Implemented via general binary operator emission in `operator_emitter.cpp` and `ir_emitter.cpp`.
 - Ternary layout: condition in place, compare chain, then true/false blocks writing back into the same register, with end jump to merge; see `IrEmitter::emit_ternary_expr`.
 

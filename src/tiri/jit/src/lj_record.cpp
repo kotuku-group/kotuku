@@ -3366,29 +3366,41 @@ void lj_record_ins(jit_State *J)
       J->base[bc_a(ins)] = ra;
       break;
 
-   case BC_ISEMPTYARR: {
-      // Empty collection check for ?? operator.
-      // If value is an array, we must guard on its length being 0 or non-zero.
-      // Table emptiness needs full traversal, so leave that path to the interpreter.
-      if (bc_a(pc[1]) < J->maxslot) J->maxslot = bc_a(pc[1]);  // Shrink used slots.
-      if (tref_isarray(ra)) {
-         // Load array length and compare to 0
-         TRef arrlen = emitir(IRTI(IR_FLOAD), ra, IRFL_ARRAY_LEN);
-         TRef zero = lj_ir_kint(J, 0);
-         // Determine if array is empty at recording time
-         GCarray *arr = arrayV(rav);
-         int is_empty = (arr->len IS 0);
+   case BC_ISFALSEY: {
+      // Type specialisation reduces this instruction to at most one value guard.
+      if (bc_a(pc[1]) < J->maxslot) J->maxslot = bc_a(pc[1]);
+
+      int is_falsey = tref_isnil(ra) or (tref_isfalse(ra) and (rc & ISFALSEY_FALSE));
+
+      if (tref_isnumber(ra) and (rc & ISFALSEY_ZERO)) {
+         IRType number_type = tref_isinteger(ra) ? IRT_INT : IRT_NUM;
+         TRef zero = number_type IS IRT_INT ? lj_ir_kint(J, 0) : lj_ir_knum_zero(J);
+         is_falsey = numberVnum(rav) IS 0.0;
          rec_comp_prep(J);
-         // Emit EQ comparison (arrlen == 0)
-         // If array was empty when recorded, guard that it stays empty
-         // If array was non-empty when recorded, guard that it stays non-empty
-         emitir(IRTG(is_empty ? IR_EQ : IR_NE, IRT_INT), arrlen, zero);
-         rec_comp_fixup(J, J->pc, !is_empty);
+         emitir(IRTG(is_falsey ? IR_EQ : IR_NE, number_type), ra, zero);
+         rec_comp_fixup(J, J->pc, not is_falsey);
       }
-      else if (tref_istab(ra)) {
+      else if (tref_isstr(ra) and (rc & ISFALSEY_EMPTY_STR)) {
+         TRef length = emitir(IRTI(IR_FLOAD), ra, IRFL_STR_LEN);
+         is_falsey = strV(rav)->len IS 0;
+         rec_comp_prep(J);
+         emitir(IRTG(is_falsey ? IR_EQ : IR_NE, IRT_INT), length, lj_ir_kint(J, 0));
+         rec_comp_fixup(J, J->pc, not is_falsey);
+      }
+      else if (tref_isarray(ra) and (rc & ISFALSEY_EMPTY_COLL)) {
+         TRef length = emitir(IRTI(IR_FLOAD), ra, IRFL_ARRAY_LEN);
+         is_falsey = arrayV(rav)->len IS 0;
+         rec_comp_prep(J);
+         emitir(IRTG(is_falsey ? IR_EQ : IR_NE, IRT_INT), length, lj_ir_kint(J, 0));
+         rec_comp_fixup(J, J->pc, not is_falsey);
+      }
+      else if (tref_istab(ra) and (rc & ISFALSEY_EMPTY_COLL)) {
          lj_trace_err_info(J, LJ_TRERR_NYIBC);
       }
-      // For other non-arrays, no additional guard needed - type specialisation handles it
+      else {
+         rec_comp_prep(J);
+         rec_comp_fixup(J, J->pc, not is_falsey);
+      }
       break;
    }
 
