@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "../ast/nodes.h"
+#include "../constant_evaluator.h"
 #include "operator_emitter.h"
 #include "../parser_context.h"
 #include "../parse_control_flow.h"
@@ -23,6 +24,7 @@ struct LocalBindingEntry {
    GCstr *symbol = nullptr;
    BCReg slot = BCReg(0);
    uint32_t depth = 0;
+   std::optional<CompileTimeValue> compile_time_value;
 };
 
 //********************************************************************************************************************
@@ -44,14 +46,14 @@ public:
    }
 
    void pop_scope();
-   void add(GCstr *, BCReg);
+   void add(GCstr *, BCReg, std::optional<CompileTimeValue> = std::nullopt);
 
-   [[nodiscard]] inline std::optional<BCReg> resolve(GCstr *symbol) const {
-      if (not symbol) return std::nullopt;
+   [[nodiscard]] inline const LocalBindingEntry * resolve(GCstr *Symbol) const {
+      if (not Symbol) return nullptr;
       for (auto it = this->bindings.rbegin(); it != this->bindings.rend(); ++it) {
-         if (it->symbol IS symbol) return it->slot;
+         if (it->symbol IS Symbol) return &*it;
       }
-      return std::nullopt;
+      return nullptr;
    }
 
 private:
@@ -154,6 +156,7 @@ private:
    ControlFlowGraph  control_flow;
    OperatorEmitter   operator_emitter;
    LocalBindingTable binding_table;
+   ConstantEvaluator constant_evaluator;
 
    ParserResult<IrEmitUnit> emit_block(const BlockStmt& block, FuncScopeFlag flags = FuncScopeFlag::None);
    ParserResult<IrEmitUnit> emit_block_with_bindings(const BlockStmt& block, FuncScopeFlag flags, std::span<const BlockBinding> bindings);
@@ -227,12 +230,22 @@ private:
    void optimise_assert(ExprNodeList &Args);
    void apply_inferred_local_type(BCReg Slot, const ExprNode& Value);
    BCReg finalise_pending_local_assignment(PreparedAssignment& Target);
+   [[nodiscard]] bool can_elide_expression(const ExprNode &Expression) const;
+   [[nodiscard]] bool can_elide_statement(const StmtNode &Statement, bool InLoop) const;
+   [[nodiscard]] bool can_elide_block(const BlockStmt &Block, bool InLoop = false) const;
 
    ParserResult<IrEmitUnit> unsupported_stmt(AstNodeKind kind, const SourceSpan& span);
    ParserResult<ExpDesc> unsupported_expr(AstNodeKind kind, const SourceSpan& span);
 
-   inline std::optional<BCReg> resolve_local(GCstr *symbol) const { return this->binding_table.resolve(symbol); }
-   inline void update_local_binding(GCstr *symbol, BCReg slot) { this->binding_table.add(symbol, slot); }
+   [[nodiscard]] std::optional<CompileTimeValue> resolve_compile_time_value(const NameRef &Reference) const;
+   inline std::optional<BCReg> resolve_local(GCstr *Symbol) const {
+      const LocalBindingEntry *entry = this->binding_table.resolve(Symbol);
+      return entry ? std::optional<BCReg>(entry->slot) : std::nullopt;
+   }
+   inline void update_local_binding(
+      GCstr *Symbol, BCReg Slot, std::optional<CompileTimeValue> Value = std::nullopt) {
+      this->binding_table.add(Symbol, Slot, std::move(Value));
+   }
    inline void release_expression(ExpDesc &expression, std::string_view usage) { expr_free(&this->func_state, &expression); this->ensure_register_floor(usage); }
 
    struct LoopContext {

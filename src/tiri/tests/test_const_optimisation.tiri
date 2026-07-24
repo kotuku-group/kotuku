@@ -1,0 +1,579 @@
+-- Regression tests for local <const> code generation and primitive literal folding.
+
+local ir_add <const> = 41
+local ir_mul <const> = 43
+local ir_sload <const> = 71
+
+@BeforeEach(hotpath=true)
+function EnableHotPath()
+end
+
+@AfterEach
+function ResetJit()
+   jit.on()
+   jit.opt.start()
+end
+
+function disassemble(Statement:str):str
+   local script = obj.new('tiri', { statement = Statement })
+   check script.acQuery()
+   check script.acActivate()
+   local _, result = script.mtDebugLog('disasm')
+   script.free()
+   return result
+end
+
+function disassembly_has_line(Disassembly:str, Opcode:str, Operand:str):bool
+   for line in values(Disassembly:split('\n')) do
+      if line:find(Opcode) != nil and line:find(Operand) != nil then return true end
+   end
+   return false
+end
+
+function expect_undeclared_diagnostic(Source:str)
+   try
+      exec(Source)
+   except ex
+      assert(ex.message:find('Undeclared variable') != nil,
+         f'Elided control flow should retain source diagnostics: {ex.message}')
+      return
+   end
+   error('An undeclared name in elided control flow should still fail compilation')
+end
+
+function count_trace_opcode(TraceNo:num, Info:table, Opcode:num):num
+   local count = 0
+   for index = 1, Info.nins do
+      local _, ir_ot = jit.util.traceIR(TraceNo, index)
+      if ir_ot != nil and (ir_ot >> 8) is Opcode then count++ end
+   end
+   return count
+end
+
+function first_trace_metrics():table
+   for trace_no = 1, 20 do
+      local info = jit.util.traceInfo(trace_no)
+      if info then
+         return {
+            instructions = info.nins,
+            loads = count_trace_opcode(trace_no, info, ir_sload),
+            adds = count_trace_opcode(trace_no, info, ir_add),
+            multiplies = count_trace_opcode(trace_no, info, ir_mul)
+         }
+      end
+   end
+   error('Failed to record a JIT trace for const optimisation baseline')
+end
+
+function local_workload(Count:num):num
+   local factor = 7
+   local offset = 3
+   local total = 0
+   for index = 1, Count do
+      total += (index * factor) + offset
+   end
+   return total
+end
+
+function const_workload(Count:num):num
+   local factor <const> = 7
+   local offset <const> = 3
+   local total = 0
+   for index = 1, Count do
+      total += (index * factor) + offset
+   end
+   return total
+end
+
+function record_local_metrics():table
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   for run = 1, 80 do local_workload(40) end
+   return first_trace_metrics()
+end
+
+function record_const_metrics():table
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   for run = 1, 80 do const_workload(40) end
+   return first_trace_metrics()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConstLocalPropagationBytecode()
+   local mutable = disassemble([[
+function sample()
+   local value = 10
+   return value * 2 + value
+end
+]])
+   local immutable = disassemble([[
+function sample()
+   local value <const> = 10
+   return value * 2 + value
+end
+]])
+
+   assert(mutable:find('MULVN') != nil and mutable:find('ADDVV') != nil,
+      'Mutable primitive locals should retain their runtime arithmetic')
+   assert(immutable:find('MULVN') is nil and immutable:find('ADDVV') is nil,
+      'A primitive const expression should fold after local substitution')
+   assert(immutable:find('D=#10') != nil, 'The const local slot should remain materialised in Phase 2')
+   assert(immutable:find('D=#30') != nil, 'The propagated expression should emit its final constant')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function PrimitiveLiteralFoldingBytecode()
+   local result = disassemble([[
+global glBaselineValue <const> = 10 + 20
+
+function numericInitialiser()
+   local value <const> = (10 + 20) * 2 - 5
+   return value
+end
+
+function constReuse()
+   local value <const> = 10
+   return value * 2 + value
+end
+
+function stringLiterals()
+   return ('a' .. 'b') .. 'c'
+end
+
+function literalComparison()
+   return 10 < 20
+end
+
+function literalBitwise()
+   return (15 & 7) << 2
+end
+
+function constBranch()
+   local enabled <const> = false
+   if enabled then return 1 else return 2 end
+end
+
+function globalReuse()
+   return glBaselineValue * 2
+end
+]])
+
+   assert(result:find('D=#55') != nil, 'Numeric literal arithmetic should fold to 55')
+   assert(result:find('K"abc"') != nil, 'Literal string concatenation should fold to one string constant')
+   assert(result:find('CAT') is nil, 'Literal string concatenation should not retain CAT bytecode')
+   assert(result:find('ISLT') is nil, 'Literal comparison should not retain comparison bytecode')
+   assert(result:find('K"bit"') is nil, 'Literal bitwise operations should not retain a bit-library lookup')
+   assert(result:find('D=#2') != nil,
+      'The selected const-controlled branch should remain in bytecode')
+   assert(disassembly_has_line(result, 'GGET', 'K"glBaselineValue"'),
+      'Global const reuse should retain a lookup of glBaselineValue')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function PrimitiveConstPropagationCoverage()
+   local result = disassemble([[
+function sample()
+   local number <const> = 10
+   local text <const> = 'a'
+   local enabled <const> = true
+   local missing <const> = nil
+   return number * 3, text .. 'b', enabled and 7, missing ?? 9
+end
+]])
+
+   assert(result:find('D=#30') != nil, 'A propagated numeric const should fold later arithmetic')
+   assert(result:find('K"ab"') != nil, 'A propagated string const should fold later concatenation')
+   assert(result:find('MUL') is nil and result:find('CAT') is nil,
+      'Primitive const reads should not retain arithmetic or concatenation bytecode')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function MultipleConstDeclarationsPropagate()
+   local result = disassemble([[
+function sample()
+   local first <const>, second <const> = 10, 20
+   return first + second
+end
+]])
+
+   assert(result:find('D=#30') != nil, 'One-to-one multiple const initialisers should propagate')
+   assert(result:find('ADD') is nil, 'Propagated multiple const declarations should fold later arithmetic')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function MultiResultTailIsNotPropagated()
+   local result = disassemble([[
+function pair()
+   return 20, 30
+end
+
+function sample()
+   local first <const>, second <const> = 10, pair()
+   return first + second
+end
+]])
+
+   assert(result:find('CALL') != nil, 'A multi-result tail initialiser should still execute at runtime')
+   assert(result:find('ADD') != nil, 'A const value sourced from a call should retain its local read')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function MutableShadowBlocksPropagation()
+   local result = disassemble([[
+function sample()
+   local value <const> = 10
+   do
+      local value = 20
+      return value * 2
+   end
+end
+]])
+
+   assert(result:find('MULVN') != nil, 'A mutable inner binding should block substitution of an outer const')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function CapturedAndNonPrimitiveConstsRetainReads()
+   local captured = disassemble([[
+function sample()
+   local value <const> = 37
+   return function()
+      return value
+   end
+end
+]])
+   local non_primitive = disassemble([[
+function sample()
+   local value <const> = { count = 1 }
+   value.count++
+   return value.count
+end
+]])
+
+   assert(captured:find('UGET') != nil, 'A nested function should continue reading a captured const as an upvalue')
+   assert(non_primitive:find('TGETS') != nil,
+      'A const table binding should retain runtime reads because its contents remain mutable')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function PrimitiveLiteralFoldingCoverage()
+   local result = disassemble([[
+function foldedValues()
+   return 2 + 3 * 4, 20 / 4, 20 % 6, 2 ** 5, -7, ~0,
+      (15 & 7) << 2, 8 | 3 ^ 1, 'a' .. 'b' .. 'c',
+      10 < 20, 'a' <= 'b', 4 is 4, 4 != 5, 1.0 ≈ 1.000001, 7 has 3,
+      false and 41, true or 42, 0 ?? 9,
+      true ? 11 :> 12, '' ?? 14 :> 13
+end
+]])
+
+   assert(result:find('K"abc"') != nil, 'An adjacent literal concatenation run should become one constant')
+   assert(result:find('K"bit"') is nil, 'Folded bitwise expressions should not load the bit library')
+   assert(result:find('CAT') is nil, 'Folded concatenation should not emit CAT')
+   assert(result:find('CALL') is nil, 'Folded primitive expressions should not emit calls')
+   assert(result:find('ISLT') is nil and result:find('ISLE') is nil,
+      'Folded relational expressions should not emit comparisons')
+   assert(result:find('ADD') is nil and result:find('MUL') is nil and result:find('DIV') is nil,
+      'Folded numeric expressions should not emit arithmetic instructions')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConstantControlFlowBytecode()
+   local branch = disassemble([[
+function sample(flag)
+   if flag then
+      return 'phase3_unknown'
+   elseif false then
+      print('phase3_false')
+   elseif true then
+      return 'phase3_selected'
+   else
+      print('phase3_after_true')
+   end
+end
+]])
+   local while_loop = disassemble([[
+function sample()
+   while false do
+      print('phase3_while')
+   end
+   return 7
+end
+]])
+   local repeat_loop = disassemble([[
+function sample()
+   local count = 0
+   repeat
+      count++
+   until true
+   return count
+end
+]])
+
+   assert(branch:find('K"phase3_unknown"') != nil,
+      'A dynamic leading branch should remain in bytecode')
+   assert(branch:find('K"phase3_selected"') != nil,
+      'The first constant-true branch should become the final branch')
+   assert(branch:find('phase3_false') is nil and branch:find('phase3_after_true') is nil,
+      'False branches and clauses after a constant-true branch should be omitted')
+   assert(while_loop:find('phase3_while') is nil,
+      'A while false body should be omitted from bytecode')
+   assert(while_loop:find('LOOP') is nil,
+      'A while false loop should not retain loop bytecode')
+   assert(repeat_loop:find('LOOP') is nil,
+      'A repeat until true loop should not retain a back-edge')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConstantControlFlowRuntimeSemantics()
+   local function select(Value:bool):str
+      if Value then
+         return 'dynamic'
+      elseif false then
+         return 'false'
+      elseif true then
+         return 'selected'
+      else
+         return 'after'
+      end
+   end
+
+   assert(select(true) is 'dynamic' and select(false) is 'selected',
+      'Mixed dynamic and constant if clauses should retain source order')
+
+   local while_count = 0
+   while false do while_count++ end
+   assert(while_count is 0, 'A while false body should never execute')
+
+   local repeat_count = 0
+   repeat repeat_count++ until true
+   assert(repeat_count is 1, 'A repeat until true body should execute exactly once')
+
+   local continue_count = 0
+   repeat
+      continue_count++
+      continue
+      continue_count += 100
+   until true
+   assert(continue_count is 1, 'Continue should exit a one-pass repeat after running scope cleanup')
+
+   local break_count = 0
+   repeat
+      break_count++
+      break
+      break_count += 100
+   until true
+   assert(break_count is 1, 'Break should exit a one-pass repeat immediately')
+
+   local deferred_count = 0
+   repeat
+      defer
+         deferred_count++
+      end
+   until true
+   assert(deferred_count is 1, 'A one-pass repeat should run deferred work exactly once')
+
+   local deferred_continue_count = 0
+   repeat
+      defer
+         deferred_continue_count += 10
+      end
+      deferred_continue_count++
+      continue
+   until true
+   assert(deferred_continue_count is 11,
+      'Continue should run deferred work once before leaving a one-pass repeat')
+
+   local deferred_break_count = 0
+   repeat
+      defer
+         deferred_break_count += 10
+      end
+      deferred_break_count++
+      break
+   until true
+   assert(deferred_break_count is 11,
+      'Break should run deferred work once before leaving a one-pass repeat')
+
+   local try_count = 0
+   repeat
+      try
+         try_count++
+      except ex
+         error(ex)
+      end
+   until true
+   assert(try_count is 1, 'A one-pass repeat should preserve try block execution')
+
+   local try_continue_count = 0
+   repeat
+      try
+         try_continue_count++
+         continue
+      except ex
+         error(ex)
+      end
+   until true
+   assert(try_continue_count is 1, 'Continue from try should leave a one-pass repeat cleanly')
+
+   local function return_from_branch():num
+      if true then return 4 else return 5 end
+   end
+   assert(return_from_branch() is 4, 'A return in a selected constant branch should retain its value')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConstantControlFlowPreservesDiagnostics()
+   expect_undeclared_diagnostic([[if false then missing_phase3_branch() end]])
+   expect_undeclared_diagnostic([[if true or missing_phase3_condition() then print('selected') end]])
+   expect_undeclared_diagnostic([[while false do missing_phase3_while() end]])
+   expect_undeclared_diagnostic([[repeat print('body') until true or missing_phase3_repeat()]])
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function PrimitiveLiteralFoldingRuntimeSemantics()
+   assert(2 + 3 * 4 is 14, 'Arithmetic folding should preserve precedence')
+   assert(20 / 4 is 5 and 20 % 6 is 2 and 2 ** 5 is 32, 'Arithmetic folding should preserve VM results')
+   assert(-7 is 0 - 7 and ~0 is bit.bnot(0), 'Unary folding should preserve numeric and bitwise results')
+   assert(1 / -0.0 is -math.huge, 'Unary folding should preserve the sign of negative zero')
+   assert((15 & 7) << 2 is bit.lshift(bit.band(15, 7), 2),
+      'Bitwise folding should preserve 32-bit conversion and shift behaviour')
+   assert('a' .. 'b' .. 'c' is 'abc', 'String-only concatenation should preserve content')
+   assert(10 < 20 and 'a' <= 'b' and 4 is 4 and 4 != 5, 'Comparison folding should preserve results')
+   assert(1.0 ≈ 1.000001 and 7 has 3, 'Approximate equality and has should preserve results')
+   assert((false and 41) is false, 'Logical and should return its known left value')
+   assert((true or 42) is true, 'Logical or should return its known left value')
+   assert((0 ?? 9) is 9 and ('' ?? 8) is 8, 'If-empty folding should use extended falseyness')
+   assert((true ? 11 :> 12) is 11, 'Standard ternary folding should select the reachable value')
+   assert(('' ?? 14 :> 13) is 13, 'Extended ternary folding should use extended falseyness')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function FoldingPreservesUnreachableExpressionDiagnostics()
+   try
+      exec([[local value = false and missing_const_fold_name()]])
+   except ex
+      assert(ex.message:find('Undeclared variable') != nil,
+         f'An unreachable expression should retain its source diagnostics: {ex.message}')
+      return
+   end
+   error('An undeclared name in an unreachable expression should still fail compilation')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConstRuntimeSemanticsBaseline()
+   local initialiser_calls = 0
+
+   local function initialise(Value:num):num
+      initialiser_calls++
+      return Value
+   end
+
+   local first <const>, second <const> = initialise(11), initialise(22)
+   assert(first is 11 and second is 22, 'Multiple const declaration should preserve initialiser values')
+   assert(initialiser_calls is 2, 'Each side-effecting const initialiser should execute exactly once')
+
+   local explicit_nil <const> = nil
+   assert(explicit_nil is nil, 'An explicit nil const initialiser should remain distinct from a missing initialiser')
+
+   local outer <const> = 7
+   do
+      local outer = 9
+      outer++
+      assert(outer is 10, 'A mutable inner binding should shadow an outer const')
+   end
+   assert(outer is 7, 'Leaving a shadowing scope should restore the outer const binding')
+
+   local capture
+   do
+      local captured <const> = 37
+      capture = function():num
+         return captured
+      end
+   end
+   assert(capture() is 37, 'A nested function should capture a const local as an upvalue')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function PrimitiveConstPropagationRuntimeSemantics()
+   local first <const>, second <const> = 10, 20
+   assert(first + second is 30, 'Multiple primitive const declarations should retain their values')
+
+   local value <const> = 7
+   do
+      local value <const>, sibling <const> = 11, value + 1
+      assert(value is 11 and sibling is 8,
+         'Sibling initialisers should resolve against the environment before declaration activation')
+   end
+
+   do
+      local value = 9
+      value++
+      assert(value is 10, 'A mutable shadow should retain its own storage')
+   end
+   assert(value * 3 is 21, 'Leaving a mutable shadow should restore outer const propagation')
+
+   do
+      local value <const> = 11
+      assert(value * 2 is 22, 'An inner const should propagate independently of an outer const')
+   end
+   assert(value is 7, 'Leaving an inner const scope should restore the outer const value')
+
+   local record_value <const> = { count = 1 }
+   record_value.count++
+   assert(record_value.count is 2, 'Const propagation must not freeze or substitute mutable table contents')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConstJitAndInterpreterResultsMatch()
+   jit.off()
+   local interpreted = const_workload(100)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   local compiled = 0
+   for run = 1, 80 do
+      compiled = const_workload(100)
+   end
+
+   assert(compiled is interpreted, 'Const workload should return the same result with JIT enabled and disabled')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConstPropagationImprovesJitIr()
+   local mutable = record_local_metrics()
+   local immutable = record_const_metrics()
+
+   assert(mutable.loads > 0 and mutable.adds > 0 and mutable.multiplies > 0,
+      'The baseline trace should contain the measured local loads and arithmetic operations')
+   assert(immutable.instructions < mutable.instructions,
+      f'Const propagation should reduce trace instructions: {immutable.instructions} >= {mutable.instructions}')
+   assert(immutable.loads < mutable.loads,
+      f'Const propagation should reduce stack loads: {immutable.loads} >= {mutable.loads}')
+   assert(immutable.adds is mutable.adds,
+      f'Const propagation should preserve required loop additions: {immutable.adds} != {mutable.adds}')
+   assert(immutable.multiplies is mutable.multiplies,
+      f'Const propagation should preserve required loop multiplications: ' ..
+      f'{immutable.multiplies} != {mutable.multiplies}')
+end

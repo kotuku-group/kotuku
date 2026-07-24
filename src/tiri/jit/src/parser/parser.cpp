@@ -61,6 +61,7 @@ static const struct {
 #include "ast/builder.cpp"
 #include "parser_symbols.cpp"
 #include "parse_control_flow.cpp"
+#include "constant_evaluator.cpp"
 #include "ir_emitter/ir_emitter.cpp"
 #include "parse_constants.cpp"
 #include "parse_scope.cpp"

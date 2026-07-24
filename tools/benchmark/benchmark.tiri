@@ -96,6 +96,7 @@ Examples:
    import './benchmark_control'
    import './benchmark_object'
    import './benchmark_struct'
+   import './benchmark_const_optimisation'
 
 function logMessage(message)
    print(message)
