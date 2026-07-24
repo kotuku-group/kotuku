@@ -749,6 +749,64 @@ return sum
    return true;
 }
 
+//********************************************************************************************************************
+
+static bool test_array_length_range_for_ast(kt::Log &Log)
+{
+   constexpr const char *source = R"(
+local values = array<int> { 1, 2, 3 }
+for index in {0 to #values} do
+   values[index] += 1
+end
+)";
+
+   auto result = build_ast_from_source(source);
+   if (not result.chunk.ok()) {
+      Log.error("failed to parse array-length range loop");
+      log_diagnostics(result.diagnostics, Log);
+      return false;
+   }
+
+   StatementListView statements = result.chunk.value_ref()->view();
+   if (statements.size() != 2) {
+      Log.error("expected local declaration and range loop; got %" PRId64, int64_t(statements.size()));
+      return false;
+   }
+
+   const StmtNode &loop = statements[1];
+   if (loop.kind != AstNodeKind::GenericForStmt) {
+      Log.error("array-length range should remain generic until semantic type analysis");
+      return false;
+   }
+
+   const auto *payload = std::get_if<GenericForStmtPayload>(&loop.data);
+   if (not payload or payload->iterators.size() != 1) {
+      Log.error("generic array-length range should retain one iterator");
+      return false;
+   }
+
+   const ExprNode *iterator = payload->iterators[0].get();
+   if (not iterator or iterator->kind != AstNodeKind::CallExpr) {
+      Log.error("generic array-length range should retain its iterator call");
+      return false;
+   }
+
+   const auto *call = std::get_if<CallExprPayload>(&iterator->data);
+   const auto *direct = call ? std::get_if<DirectCallTarget>(&call->target) : nullptr;
+   if (not direct or not direct->callable or direct->callable->kind != AstNodeKind::RangeExpr) {
+      Log.error("generic iterator should retain the source range expression");
+      return false;
+   }
+
+   const auto *range = std::get_if<RangeExprPayload>(&direct->callable->data);
+   if (not range or not range->stop or range->stop->kind != AstNodeKind::UnaryExpr) {
+      Log.error("source range should retain its length stop expression");
+      return false;
+   }
+
+   return true;
+}
+
 static bool test_generic_for_ast(kt::Log &log)
 {
    constexpr const char* source = R"(
@@ -2011,7 +2069,7 @@ static bool test_ternary_falsey_semantics(kt::Log &log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 24> tests = { {
+   constexpr std::array<TestCase, 25> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -2023,6 +2081,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "local_function_table_ast", test_local_function_table_ast },
       { "ast_statement_matrix", test_ast_statement_matrix },
       { "numeric_for_ast", test_numeric_for_ast },
+      { "array_length_range_for_ast", test_array_length_range_for_ast },
       { "generic_for_ast", test_generic_for_ast },
       { "repeat_defer_ast", test_repeat_defer_ast },
       { "ternary_presence_expr_ast", test_ternary_presence_expr_ast },

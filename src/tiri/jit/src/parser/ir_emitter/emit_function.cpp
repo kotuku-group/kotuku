@@ -130,7 +130,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    auto base = BCReg(child_state.varmap.size() - param_count.raw());
    for (auto i = BCReg(0); i < param_count; ++i) {
       const FunctionParameter &param = Payload.parameters[i.raw()];
-      if (param.type IS TiriType::Struct) {
+      if (param.type != TiriType::Unknown and param.type != TiriType::Any) {
          auto &param_info = child_state.var_get(base.raw() + i.raw());
          param_info.fixed_type = param.type;
          param_info.struct_def = param.struct_def;

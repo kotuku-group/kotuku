@@ -936,6 +936,56 @@ end
    assert(value is 5, "single element should be 5")
 end
 
+@Test function ArrayLengthRangeIterationBoundaries()
+   local empty = array<int>
+   local empty_count = 0
+   for index in {0 to #empty} do
+      empty_count += 1
+   end
+   assert(empty_count is 0, 'An empty array length range should not iterate')
+
+   local single = array<int> { 41 }
+   for index in {0 to #single} do
+      single[index] += 1
+   end
+   assert(single[0] is 42, 'A single-element array length range should visit index zero exactly once')
+end
+
+@Test function NonArrayLengthRangePreservesDynamicDirection()
+   local value = setmetatable({}, { __len = function() return -2 end })
+
+   local direct = {}
+   for index in {0 to #value} do
+      direct[#direct] = index
+   end
+
+   local length = #value
+   local indirect = {}
+   for index in {0 to length} do
+      indirect[#indirect] = index
+   end
+
+   assert(#direct is 2 and direct[0] is 0 and direct[1] is -1,
+      'Direct custom __len range should infer descending direction')
+   assert(#indirect is 2 and indirect[0] is 0 and indirect[1] is -1,
+      'Direct and captured custom __len ranges should have identical semantics')
+end
+
+@Test function NonArrayLengthRangeInsideTryPreservesDynamicDirection()
+   local visited = {}
+
+   try
+      local value = setmetatable({}, { __len = function() return -2 end })
+      for index in {0 to #value} do
+         visited[#visited] = index
+      end
+   success
+   end
+
+   assert(#visited is 2 and visited[0] is 0 and visited[1] is -1,
+      'A custom __len range inside try should retain generic descending semantics')
+end
+
 @Test function RangeIterationWithVariable()
    -- Test iteration using range stored in variable
    r = {0 to 5}
