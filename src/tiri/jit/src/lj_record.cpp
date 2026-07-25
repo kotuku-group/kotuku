@@ -1079,6 +1079,15 @@ static void rec_isarr(jit_State *J, BCREG ra)
 //********************************************************************************************************************
 // Record calls and returns
 
+// Preserve the prototype specialisation previously implied by PROTO_TYPEFIX sharing the closure-count flag range.
+
+static bool rec_proto_specialise_by_prototype(const GCproto *Proto)
+{
+   if (Proto->flags >= PROTO_CLC_POLY) return true;
+   const auto signature = proto_signature(Proto);
+   return signature and (signature->flags & proto_signature_flag(ProtoSignatureFlag::DynamicResults));
+}
+
 // Specialise to the runtime value of the called function or its prototype.
 
 static TRef rec_call_specialise(jit_State *J, GCfunc* fn, TRef tr)
@@ -1088,7 +1097,7 @@ static TRef rec_call_specialise(jit_State *J, GCfunc* fn, TRef tr)
    if (isluafunc(fn)) {
       GCproto* pt = funcproto(fn);
       // Too many closures created? Probably not a monomorphic function.
-      if (pt->flags >= PROTO_CLC_POLY) {  // Specialise to prototype instead.
+      if (rec_proto_specialise_by_prototype(pt)) {  // Specialise to prototype instead.
          TRef trpt = ir.fload_ptr(tr, IRFL_FUNC_PC);
          ir.guard_eq(trpt, ir.kptr(proto_bc(pt)), IRT_PGC);
          (void)lj_ir_kgc(J, obj2gco(pt), IRT_PROTO);  //  Prevent GC of proto.
@@ -2055,7 +2064,7 @@ static TRef rec_upvalue(jit_State *J, uint32_t uv, TRef val)
       TRef tr, kfunc;
       lj_assertJ(val IS 0, "bad usage");
       if (not tref_isk(fn)) {  // Late specialisation of current function.
-         if (J->pt->flags >= PROTO_CLC_POLY) goto noconstify;
+         if (rec_proto_specialise_by_prototype(J->pt)) goto noconstify;
          kfunc = ir.kfunc(J->fn);
          ir.guard_eq(fn, kfunc, IRT_FUNC);
          J->base[-2] = kfunc;
@@ -3655,22 +3664,10 @@ void lj_record_ins(jit_State *J)
 
       // Type fixing
 
-   case BC_TYPEFIX: {
-      // BC_TYPEFIX is a one-time operation that mutates the prototype.
-      // After first execution, it becomes a no-op. For JIT recording:
-      // - If types are already fixed (common case), treat as no-op
-      // - If types not fixed, skip during recording (mutation is safe for interpreter)
-
-      GCproto *pt = funcproto(curr_func(J->L));
-      if (proto_result_type(pt, 0).type IS TiriType::Unknown) {
-         // Types not yet fixed.  We can leave it for the interpreter and keep recording
-         // TODO: Need to consider if it is viable to mutate the function prototype (set the result types) here during recording.
-         // It could also be considered a red-flag if the interpreter hasn't mutated the function by this point, even if only
-         // setting the result type to TiriType::Any.
-         break;
-      }
-      else break; // Types already fixed - no-op, continue recording
-   }
+   case BC_TYPEFIX:
+      // Result inference changes prototype metadata rather than trace values.  Dynamic-result calls are guarded by the
+      // prototype-specialisation policy above, independently of whether each result entry has already been inferred.
+      break;
 
       // Loops and branches
 
