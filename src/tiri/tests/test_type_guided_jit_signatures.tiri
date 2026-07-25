@@ -1,6 +1,13 @@
 -- Interpreter/JIT parity for exact runtime contracts that previously disabled tracing.
 
 local ir_fload <const> = 69
+local ir_eq <const> = 8
+local ir_ne <const> = 9
+
+local irfl_tab_meta <const> = 5
+local irfl_udata_meta <const> = 11
+local irfl_udata_udtype <const> = 12
+local irfl_struct_def <const> = 31
 
 struct JitContractAlpha
    Value: int
@@ -43,7 +50,34 @@ function trace_metrics():table
          if (ir_ot >> 8) is ir_fload then result.fieldLoads++ end
       end
    end
+   jit.on()
    return result
+end
+
+function count_guarded_field(Field:num, GuardOpcode:num):num
+   jit.off()
+   local count = 0
+
+   for trace_no = 1, 100 do
+      local info = jit.util.traceInfo(trace_no)
+      if info is nil then continue end
+
+      local field_loads = {}
+      for instruction = 1, info.nins do
+         local _, ir_ot, _, ir_op2 = jit.util.traceIR(trace_no, instruction)
+         if ir_ot != nil and (ir_ot >> 8) is ir_fload and ir_op2 is Field then
+            field_loads[instruction] = true
+         end
+      end
+
+      for instruction = 1, info.nins do
+         local _, ir_ot, ir_op1, ir_op2 = jit.util.traceIR(trace_no, instruction)
+         if ir_ot != nil and (ir_ot >> 8) is GuardOpcode and
+            (field_loads[ir_op1] or field_loads[ir_op2]) then count++ end
+      end
+   end
+   jit.on()
+   return count
 end
 
 function prepare_contract_trace()
@@ -76,6 +110,8 @@ end
    assert(total is 840, 'A traced named-structure contract should preserve matching values')
    assert(metrics.traces > 0 and metrics.fieldLoads > 0 and metrics.guards > 0,
       'A named-structure contract should emit a guarded trace')
+   assert(count_guarded_field(irfl_struct_def, ir_eq) > 0,
+      'A named-structure contract should guard the exact GCstruct definition field')
    expect_jit_contract_failure(function() callback(dynamic_contract_value(bravo)) end, 'JitContractAlpha')
 end
 
@@ -93,6 +129,8 @@ end
    local metrics = trace_metrics()
    assert(total is 960 and metrics.traces > 0 and metrics.fieldLoads > 0,
       'A matching range contract should trace with its metatable predicate')
+   assert(count_guarded_field(irfl_udata_meta, ir_eq) > 0,
+      'A range contract should guard the exact userdata metatable field')
 
    expect_jit_contract_failure(function() callback(dynamic_contract_value(newproxy(true))) end, 'range')
 
@@ -131,6 +169,10 @@ end
    local metrics = trace_metrics()
    assert(metrics.traces > 0 and metrics.fieldLoads > 0 and metrics.snapshots > 0,
       'Full and light userdata contracts should remain traceable')
+   assert(count_guarded_field(irfl_udata_udtype, ir_ne) > 0,
+      'A userdata contract should reject thunks through the exact userdata subtype field')
+   assert(count_guarded_field(irfl_udata_meta, ir_ne) > 0,
+      'A userdata contract should reject ranges through the exact userdata metatable field')
    expect_jit_contract_failure(function() callback(dynamic_contract_value({0 to 2})) end, 'userdata')
 end
 
@@ -154,12 +196,50 @@ end
    local metrics = trace_metrics()
    assert(metrics.traces > 0 and metrics.fieldLoads > 0 and metrics.guards > 0,
       'A callable-table contract should trace its metatable lookup')
+   assert(count_guarded_field(irfl_tab_meta, ir_ne) > 0,
+      'A callable contract should guard the exact table metatable field')
 
    local saved_call = metatable.__call
    metatable.__call = false
    expect_jit_contract_failure(function() callback(callable) end, 'func')
    metatable.__call = saved_call
    assert(callback(callable)(4) is 9, 'Restoring __call should restore the callable contract')
+end
+
+@Test function ComplexContractGuardExitRestoresCallerState()
+   function accept_alpha(Value:struct<JitContractAlpha>):struct<JitContractAlpha>
+      return Value
+   end
+
+   function call_with_live_state(Value:any):<num, str, bool>
+      local live_number = 37
+      local live_text = 'snapshot-live'
+      local live_table = { offset=5 }
+      try
+         local checked = accept_alpha(Value)
+         return live_number + live_table.offset + checked.Value, live_text, false
+      except e
+         return live_number + live_table.offset, live_text, e.message:find('JitContractAlpha') != nil
+      end
+   end
+
+   local alpha = struct<JitContractAlpha> { Value=7 }
+   local bravo = struct<JitContractBravo> { Value=9 }
+   prepare_contract_trace()
+
+   for _ in {0 to 120} do
+      local value, text, failed = call_with_live_state(alpha)
+      assert(value is 49 and text is 'snapshot-live' and not failed,
+         'The traced success path should preserve caller locals')
+   end
+
+   local restored_number, restored_text, failed = call_with_live_state(dynamic_contract_value(bravo))
+   assert(restored_number is 42 and restored_text is 'snapshot-live' and failed,
+      'A complex contract guard exit should restore live numeric, string and table-backed caller state')
+
+   local retry_number, retry_text, retry_failed = call_with_live_state(alpha)
+   assert(retry_number is 49 and retry_text is 'snapshot-live' and not retry_failed,
+      'Execution should recover after a failed complex contract guard')
 end
 
 @Test function NullableComplexContractUsesSideTraces()
@@ -227,4 +307,73 @@ end
    assert(total is 2280 and metrics.traces > 0,
       'A stripped reloaded named-structure contract should remain traceable')
    expect_jit_contract_failure(function() restored(dynamic_contract_value(bravo)) end, 'JitContractAlpha')
+end
+
+@Test function ComplexContractInterpreterJitParity()
+   function accept_alpha(Value:struct<JitContractAlpha>):struct<JitContractAlpha> return Value end
+   function accept_range(Value:range):range return Value end
+   function accept_userdata(Value:userdata):userdata return Value end
+   function accept_callable(Value:func):func return Value end
+
+   function run_valid_contracts(Count:num, Alpha:struct<JitContractAlpha>, Sequence:range, Proxy:userdata,
+      Callable:func):num
+      local total = 0
+      for _ in {0 to Count} do
+         total += accept_alpha(Alpha).Value
+         total += #accept_range(Sequence)
+         assert(accept_userdata(Proxy) is Proxy, 'A userdata contract should preserve identity')
+         total += accept_callable(Callable)(1)
+      end
+      return total
+   end
+
+   function failure_after_warm(Callback:func, Good:any, Bad:any, Count:num):str
+      for index in {0 to Count} do
+         local value:any = index is Count - 1 ? Bad :> Good
+         try
+            Callback(value)
+         except e
+            return e.message
+         end
+      end
+      return ''
+   end
+
+   local alpha = struct<JitContractAlpha> { Value=3 }
+   local bravo = struct<JitContractBravo> { Value=5 }
+   local sequence = {0 to 4}
+   local proxy = newproxy(true)
+   local callable = setmetatable({ offset=2 }, {
+      __call = function(Self, Value) return Self.offset + Value end
+   })
+
+   jit.off()
+   local interpreted_total = run_valid_contracts(20, alpha, sequence, proxy, callable)
+   local interpreted_messages = {
+      failure_after_warm(accept_alpha, alpha, bravo, 1),
+      failure_after_warm(accept_range, sequence, proxy, 1),
+      failure_after_warm(accept_userdata, proxy, sequence, 1),
+      failure_after_warm(accept_callable, callable, {}, 1)
+   }
+
+   prepare_contract_trace()
+   local compiled_total = run_valid_contracts(120, alpha, sequence, proxy, callable)
+   prepare_contract_trace()
+   local compiled_alpha_message = failure_after_warm(accept_alpha, alpha, bravo, 120)
+   prepare_contract_trace()
+   local compiled_range_message = failure_after_warm(accept_range, sequence, proxy, 120)
+   prepare_contract_trace()
+   local compiled_userdata_message = failure_after_warm(accept_userdata, proxy, sequence, 120)
+   prepare_contract_trace()
+   local compiled_callable_message = failure_after_warm(accept_callable, callable, {}, 120)
+   local compiled_messages = {
+      compiled_alpha_message, compiled_range_message, compiled_userdata_message, compiled_callable_message
+   }
+
+   assert(interpreted_total is 200 and compiled_total is 1200,
+      'Interpreter and JIT paths should produce the same per-iteration specialised contract result')
+   for index in {0 to 4} do
+      assert(interpreted_messages[index] is compiled_messages[index],
+         f"Interpreter and JIT contract diagnostics should match for specialised path {index}")
+   end
 end

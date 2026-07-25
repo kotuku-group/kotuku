@@ -225,6 +225,55 @@ end
    expect_contract_failure(function() typed_struct_result() end, 'result')
 end
 
+@Test function ReturnContractMatrix()
+   function checked_nil(Value:any):nil return dynamic_value(Value) end
+   function checked_bool(Value:any):bool return dynamic_value(Value) end
+   function checked_num(Value:any):num return dynamic_value(Value) end
+   function checked_str(Value:any):str return dynamic_value(Value) end
+   function checked_table(Value:any):table return dynamic_value(Value) end
+   function checked_array(Value:any):array return dynamic_value(Value) end
+   function checked_func(Value:any):func return dynamic_value(Value) end
+   function checked_struct(Value:any):struct return dynamic_value(Value) end
+   function checked_alpha(Value:any):struct<ContractAlpha> return dynamic_value(Value) end
+   function checked_obj(Value:any):obj return dynamic_value(Value) end
+   function checked_range(Value:any):range return dynamic_value(Value) end
+   function checked_userdata(Value:any):userdata return dynamic_value(Value) end
+
+   local native_array = array<int> { 1, 2 }
+   local alpha = struct<ContractAlpha> { Value=3 }
+   local bravo = struct<ContractBravo> { Value=5 }
+   local object = obj.new('time')
+   local sequence = {0 to 3}
+   local proxy = newproxy(true)
+   local callable = setmetatable({}, { __call = function() return true end })
+
+   assert(checked_nil(nil) is nil, 'nil should satisfy a nil result contract')
+   assert(checked_bool(true), 'bool should satisfy a bool result contract')
+   assert(checked_num(7) is 7, 'num should satisfy a num result contract')
+   assert(checked_str('text') is 'text', 'str should satisfy a str result contract')
+   assert(type(checked_table({})) is 'table', 'table should satisfy a table result contract')
+   assert(checked_array(native_array) is native_array, 'array should satisfy an array result contract')
+   assert(checked_func(callable) is callable, 'callable tables should satisfy a func result contract')
+   assert(checked_struct(alpha) is alpha, 'a native structure should satisfy a struct result contract')
+   assert(checked_alpha(alpha) is alpha, 'a matching layout should satisfy a named-structure result contract')
+   assert(checked_obj(object) is object, 'a Kōtuku object should satisfy an obj result contract')
+   assert(checked_range(sequence) is sequence, 'a range should satisfy a range result contract')
+   assert(checked_userdata(proxy) is proxy, 'full userdata should satisfy a userdata result contract')
+
+   expect_contract_failure(function() checked_nil(false) end, 'result')
+   expect_contract_failure(function() checked_bool(1) end, 'result')
+   expect_contract_failure(function() checked_num('7') end, 'result')
+   expect_contract_failure(function() checked_str(7) end, 'result')
+   expect_contract_failure(function() checked_table(native_array) end, 'result')
+   expect_contract_failure(function() checked_array({}) end, 'result')
+   expect_contract_failure(function() checked_func({}) end, 'result')
+   expect_contract_failure(function() checked_struct({}) end, 'result')
+   expect_contract_failure(function() checked_alpha(bravo) end, 'result')
+   expect_contract_failure(function() checked_obj({}) end, 'result')
+   expect_contract_failure(function() checked_range(proxy) end, 'result')
+   expect_contract_failure(function() checked_userdata(sequence) end, 'result')
+end
+
 @Test function VariadicReturnSuffix()
    function dynamic_variadic():<any, any, any> return 1, 2, 'wrong' end
    function typed_variadic():<num, ...> return dynamic_variadic() end

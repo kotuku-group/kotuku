@@ -1250,11 +1250,13 @@ static bool test_signature_metadata_roundtrip(kt::Log &Log)
    ProtoTypeEntry *mutable_outer_params = proto_parameter_types(outer);
    mutable_outer_params[4].flags =
       proto_type_flags(false, true, ProtoTypeOrigin::Declared, ProtoTypeStrength::Checked);
-   mutable_outer_params[5].constraint = 0xf17e1234;
+   mutable_outer_params[5].constraint = uint32_t(CLASSID::TIME);
    mutable_outer_params[5].flags =
       proto_type_flags(true, false, ProtoTypeOrigin::Declared, ProtoTypeStrength::Trusted);
    if (proto_type_nullable(mutable_outer_params[4]) or not proto_type_required(mutable_outer_params[4]) or
-       proto_type_strength(mutable_outer_params[5]) != ProtoTypeStrength::Trusted) {
+       proto_type_strength(mutable_outer_params[5]) != ProtoTypeStrength::Trusted or
+       CLASSID(mutable_outer_params[5].constraint) != CLASSID::TIME or
+       not ResolveClassID(CLASSID(mutable_outer_params[5].constraint))) {
       Log.error("reserved signature entry states are not independently representable");
       return false;
    }
