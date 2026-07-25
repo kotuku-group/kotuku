@@ -959,14 +959,9 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
    if (cleanup_temp_regs > 0) return_allocator.reserve(BCReg(cleanup_temp_regs + 1));
    BCREG return_base = this->func_state.freereg;
 
-   // Check if function needs runtime type inference (no explicit return types declared)
-   bool needs_typefix = true;
-   for (size_t i = 0; i < this->func_state.return_types.size(); ++i) {
-      if (this->func_state.return_types[i] != TiriType::Unknown) {
-         needs_typefix = false;
-         break;
-      }
-   }
+   // Runtime inference applies only when there is no explicit result declaration. This distinguishes explicit void
+   // (`:<>`) from an unannotated function even though both have no stored concrete result types.
+   bool needs_typefix = not this->func_state.return_contract_explicit;
 
    if (Payload.values.empty()) {
       ins = BCINS_AD(BC_RET0, 0, 1);
@@ -1074,7 +1069,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
       }
    }
 
-   if (truncate_return_results and bc_op(ins) IS BC_RET) {
+   if (truncate_return_results and this->func_state.return_declared_count IS 0) {
+      ins = BCINS_AD(BC_RET0, 0, 1);
+   }
+   else if (truncate_return_results and bc_op(ins) IS BC_RET) {
       BCREG result_count = this->func_state.return_declared_count;
       if (bc_d(ins) - 1 > result_count) setbc_d(&ins, result_count + 1);
    }

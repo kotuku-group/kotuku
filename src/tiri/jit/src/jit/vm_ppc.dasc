@@ -5997,13 +5997,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  // BC_TYPEFIX: Fix function return types at runtime
     |  // RA = base register index (rbase*8), RD = count of values to fix
     |  ins_AD
-    |  // Fast path: check if prototype has PROTO_TYPEFIX flag set
-    |  lwz LFUNC:TMP1, FRAME_FUNC(BASE)     // Get current function from frame
-    |  lwz TMP1, LFUNC:TMP1->pc             // Get prototype pointer
-    |  lbz TMP2, PC2PROTO(flags)(TMP1)
-    |  andi. TMP2, TMP2, PROTO_TYPEFIX
-    |  beq >1                               // Skip if no type inference needed
-    |  // Slow path: call C helper to fix types
+    |  // Call the helper; the canonical signature decides whether inference is active.
     |  mr CARG1, L
     |   stp BASE, L->base                   // Save BASE
     |  add CARG2, BASE, RA                  // Compute pointer to first return value (RA already *8)
@@ -6011,7 +6005,6 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |   stw PC, SAVE_PC
     |  bl extern lj_meta_typefix            // (lua_State *L, TValue *base, uint32_t count)
     |  lp BASE, L->base                     // Restore BASE
-    |1:
     |  ins_next
     break;
 

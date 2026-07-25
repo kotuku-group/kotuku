@@ -1768,6 +1768,7 @@ LexState::LexState(lua_State* L, const char* BytecodePtr, GCstr* ChunkName)
    , pending_token_offset(0)
    , active_context(nullptr)
 {
+   this->bytecode_version = BCDUMP_VERSION;
    lj_buf_init(L, &this->sb);
    setnilV(&this->tokval);
    setnilV(&this->lookaheadval);

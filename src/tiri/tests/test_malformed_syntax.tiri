@@ -112,6 +112,10 @@ end
          source = "function bad():<str,> return 'x' end"
       },
       {
+         name = 'variadic return without a base type',
+         source = "function bad():<...> return 1 end"
+      },
+      {
          name = 'unterminated multi-return type list',
          source = "function bad():<str, num return 'x', 1 end"
       },

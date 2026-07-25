@@ -38,6 +38,20 @@ function expect_diagnostic_failure(Callback:func)
    assert(failed, 'Expected a diagnostic contract failure')
 end
 
+function expect_userdata_diagnostic(Callback:func, Actual:str)
+   local failed = false
+   try
+      Callback()
+   except e
+      failed = true
+      assert(e.message:find('expected userdata') != nil,
+         'The message should identify the userdata contract: ' .. e.message)
+      assert(e.message:find('got ' .. Actual) != nil,
+         'The message should identify the actual type: ' .. e.message)
+   end
+   assert(failed, 'Expected a userdata diagnostic contract failure')
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Parameter matrix and exact, non-coercing predicates.
 
@@ -52,11 +66,16 @@ end
    function accept_struct(Value:struct) return Value end
    function accept_obj(Value:obj) return Value end
    function accept_range(Value:range) return Value end
+   function accept_userdata(Value:userdata) return Value end
 
    local native_array = array<int> { 1, 2 }
    local native_struct = struct<ContractAlpha> { Value=1 }
    local object = obj.new('time')
    local sequence = {0 to 2}
+   local proxy = newproxy(true)
+   local captured = 1
+   function capture() return captured end
+   local pointer = debug.upvalueID(capture, 0)
    local callable = setmetatable({}, { __call = function(Self) return Self end })
 
    assert(accept_nil(nil) is nil, 'nil should satisfy nil')
@@ -71,6 +90,9 @@ end
    assert(accept_struct(native_struct) is native_struct, 'native structure should satisfy struct')
    assert(accept_obj(object) is object, 'Kōtuku object should satisfy obj')
    assert(accept_range(sequence) is sequence, 'range should satisfy range')
+   assert(accept_userdata(proxy) is proxy, 'full userdata should satisfy userdata')
+   assert(accept_userdata(pointer) is pointer, 'light userdata should satisfy userdata')
+   assert(accept_userdata(nil) is nil, 'nil should satisfy a nullable userdata contract')
 
    expect_contract_failure(function() accept_nil(dynamic_value(false)) end, 'parameter')
    expect_contract_failure(function() accept_bool(dynamic_value(1)) end, 'parameter')
@@ -82,6 +104,9 @@ end
    expect_contract_failure(function() accept_struct(dynamic_value({})) end, 'parameter')
    expect_contract_failure(function() accept_obj(dynamic_value({})) end, 'parameter')
    expect_contract_failure(function() accept_range(dynamic_value(native_struct)) end, 'parameter')
+   expect_userdata_diagnostic(function() accept_userdata(dynamic_value(sequence)) end, 'range')
+   expect_contract_failure(function() accept_userdata(dynamic_value({})) end, 'parameter')
+   expect_contract_failure(function() accept_range(dynamic_value(proxy)) end, 'parameter')
 end
 
 @Test function NamedStructIdentity()
@@ -169,7 +194,7 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Explicit return contracts validate declared positions without constraining result count.
+-- Explicit fixed return contracts validate declared positions and truncate undeclared results.
 
 @Test function DynamicReturnContracts()
    function wrong_single():any return 'wrong' end
@@ -182,8 +207,8 @@ end
 
    function extra_results():num return 1, 'extra', false end
    local first, second, third = extra_results()
-   assert(first is 1 and second is 'extra' and third is false,
-      'A fixed return declaration must not constrain or discard extra results')
+   assert(first is 1 and second is nil and third is nil,
+      'A fixed return declaration must truncate extra results')
 
    function missing_result():<num, str> return 2 end
    local number, missing = missing_result()
@@ -204,6 +229,11 @@ end
    function dynamic_variadic():<any, any, any> return 1, 2, 'wrong' end
    function typed_variadic():<num, ...> return dynamic_variadic() end
    expect_contract_failure(function() typed_variadic() end, 'result')
+
+   function valid_variadic():<num, ...> return 1, 2, 3 end
+   local first, second, third = valid_variadic()
+   assert(first is 1 and second is 2 and third is 3,
+      'A variadic return declaration must preserve and validate additional results')
 end
 
 @Test function ReturnContractAfterTryAndDefer()
@@ -232,8 +262,8 @@ end
       return extra_source()
    end
    local first, second, third = checked_extra()
-   assert(first is 4 and second is 'extra' and third is false,
-      'Cleanup must preserve unconstrained extra dynamic results')
+   assert(first is 4 and second is nil and third is nil,
+      'Cleanup must preserve the declared result while truncating extra dynamic results')
 
    function checked_table():table
       local result = {}
@@ -288,16 +318,70 @@ end
    assert(glContractAny is 'allowed', 'Explicit any remains the global contract opt-out')
 end
 
+@Test function UserdataContractBoundaries()
+   function userdata_source():any return newproxy(true) end
+   function typed_userdata_result():userdata return userdata_source() end
+
+   local first = typed_userdata_result()
+   assert(type(first) is 'userdata', 'a userdata result contract should preserve full userdata')
+
+   local typed_local:userdata = first
+   typed_local = userdata_source()
+   expect_contract_failure(function() typed_local = dynamic_value({}) end, 'local')
+
+   local captured:userdata = userdata_source()
+   function write_userdata(Value:any)
+      captured = Value
+   end
+   write_userdata(userdata_source())
+   expect_contract_failure(function() write_userdata('wrong') end, 'upvalue')
+   assert(type(captured) is 'userdata', 'a rejected userdata upvalue store must preserve its value')
+
+   global glContractUserdata:userdata = userdata_source()
+   glContractUserdata = userdata_source()
+   expect_contract_failure(function() glContractUserdata = dynamic_value(3) end, 'global')
+   assert(type(glContractUserdata) is 'userdata', 'a rejected userdata global store must preserve its value')
+
+   function wrong_userdata_result():userdata return dynamic_value({}) end
+   expect_contract_failure(function() wrong_userdata_result() end, 'result')
+end
+
+@Test function DeferredUserdataContracts()
+   function accept_userdata(Value:userdata):userdata return Value end
+
+   local deferred_proxy = <{ newproxy(true) }>
+   assert(type(deferred_proxy) is 'userdata', 'a typed deferred proxy should advertise userdata')
+   local resolved_proxy = accept_userdata(deferred_proxy)
+   assert(type(resolved_proxy) is 'userdata', 'a deferred proxy should resolve before its contract')
+
+   local captured = 2
+   function capture() return captured end
+   local deferred_pointer = <{ debug.upvalueID(capture, 0) }>
+   assert(type(accept_userdata(deferred_pointer)) is 'userdata',
+      'deferred light userdata should satisfy userdata after resolution')
+
+   local deferred_range = <{ {0 to 2} }>
+   expect_contract_failure(function() accept_userdata(deferred_range) end, 'parameter')
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Interpreter/JIT parity, disassembly and bytecode persistence.
 
 @Test function HotContractParity()
    function hot(Value:num):num return Value + 1 end
+   function hot_results(Value:num):<num, str> return Value, 'kept', false end
+   function hot_userdata(Value:userdata):userdata return Value end
    local dynamic:any = hot
+   local proxy = newproxy(true)
    for i = 0, 200 do
       assert(dynamic(i) is i + 1, 'Valid hot call should preserve its argument')
+      local value, text, extra = hot_results(i)
+      assert(value is i and text is 'kept' and extra is nil,
+         'Hot fixed return contracts must truncate additional results')
+      assert(hot_userdata(proxy) is proxy, 'userdata contracts must remain stable on hot paths')
    end
    expect_contract_failure(function() dynamic('wrong') end, 'parameter')
+   expect_contract_failure(function() hot_userdata(dynamic_value({0 to 2})) end, 'parameter')
 end
 
 @Test function ContractDisassemblyOrder()

@@ -619,6 +619,94 @@ inline constexpr uint8_t TRY_FLAG_TRACE = 0x01;  // Capture stack trace on excep
 
 inline constexpr int LJ_MAX_TRY_DEPTH = 32;
 
+// Function signature metadata.  Entries contain only state-portable identifiers: struct constraints use struct_key()
+// and object constraints use CLASSID.  Parameter entries are stored first, followed by result entries.
+
+inline constexpr uint8_t PROTO_SIGNATURE_VERSION = 1;
+
+enum class ProtoTypeOrigin : uint8_t {
+   Unspecified = 0,
+   Declared,
+   Inferred
+};
+
+enum class ProtoTypeStrength : uint8_t {
+   Advisory = 0,
+   Checked,
+   Trusted
+};
+
+enum class ProtoSignatureFlag : uint8_t {
+   None = 0,
+   ParameterVariadic = 1 << 0,
+   ResultVariadic = 1 << 1,
+   ExplicitResults = 1 << 2,
+   DynamicResults = 1 << 3
+};
+
+inline constexpr uint8_t PROTO_TYPE_NULLABLE = 1 << 0;
+inline constexpr uint8_t PROTO_TYPE_REQUIRED = 1 << 1;
+inline constexpr uint8_t PROTO_TYPE_ORIGIN_SHIFT = 2;
+inline constexpr uint8_t PROTO_TYPE_ORIGIN_MASK = 3 << PROTO_TYPE_ORIGIN_SHIFT;
+inline constexpr uint8_t PROTO_TYPE_STRENGTH_SHIFT = 4;
+inline constexpr uint8_t PROTO_TYPE_STRENGTH_MASK = 3 << PROTO_TYPE_STRENGTH_SHIFT;
+
+struct ProtoTypeEntry {
+   uint32_t constraint = 0;
+   TiriType type = TiriType::Unknown;
+   uint8_t flags = 0;
+   uint16_t reserved = 0;
+};
+
+struct ProtoSignature {
+   uint8_t version = PROTO_SIGNATURE_VERSION;
+   uint8_t flags = 0;
+   uint8_t parameter_count = 0;
+   uint8_t result_count = 0;
+   uint8_t result_entry_count = 0;
+   uint8_t reserved[3] = {};
+};
+
+static_assert(sizeof(ProtoTypeEntry) IS 8, "ProtoTypeEntry must remain compact");
+static_assert(sizeof(ProtoSignature) IS 8, "ProtoSignature header must remain compact");
+
+[[nodiscard]] constexpr inline uint8_t proto_signature_flag(ProtoSignatureFlag Flag) noexcept
+{
+   return uint8_t(Flag);
+}
+
+[[nodiscard]] constexpr inline uint8_t proto_type_flags(bool Nullable, bool Required, ProtoTypeOrigin Origin,
+   ProtoTypeStrength Strength) noexcept
+{
+   return uint8_t((Nullable ? PROTO_TYPE_NULLABLE : 0) | (Required ? PROTO_TYPE_REQUIRED : 0) |
+      (uint8_t(Origin) << PROTO_TYPE_ORIGIN_SHIFT) | (uint8_t(Strength) << PROTO_TYPE_STRENGTH_SHIFT));
+}
+
+[[nodiscard]] constexpr inline ProtoTypeOrigin proto_type_origin(const ProtoTypeEntry &Entry) noexcept
+{
+   return ProtoTypeOrigin((Entry.flags & PROTO_TYPE_ORIGIN_MASK) >> PROTO_TYPE_ORIGIN_SHIFT);
+}
+
+[[nodiscard]] constexpr inline ProtoTypeStrength proto_type_strength(const ProtoTypeEntry &Entry) noexcept
+{
+   return ProtoTypeStrength((Entry.flags & PROTO_TYPE_STRENGTH_MASK) >> PROTO_TYPE_STRENGTH_SHIFT);
+}
+
+[[nodiscard]] constexpr inline bool proto_type_nullable(const ProtoTypeEntry &Entry) noexcept
+{
+   return (Entry.flags & PROTO_TYPE_NULLABLE) != 0;
+}
+
+[[nodiscard]] constexpr inline bool proto_type_required(const ProtoTypeEntry &Entry) noexcept
+{
+   return (Entry.flags & PROTO_TYPE_REQUIRED) != 0;
+}
+
+[[nodiscard]] constexpr inline size_t proto_signature_size(size_t ParameterCount, size_t ResultEntryCount) noexcept
+{
+   return sizeof(ProtoSignature) + (ParameterCount + ResultEntryCount) * sizeof(ProtoTypeEntry);
+}
+
 // Exception frame for try-except blocks (runtime state)
 // Note: frame_base and saved_top are offsets from L->stack (not absolute pointers) because the Lua stack can be
 // reallocated during execution.  Use savestack(L, ptr) to convert to offset, restorestack(L, offset) to convert back.
@@ -663,8 +751,8 @@ typedef struct GCproto {
    MRef   uvinfo;     //  Upvalue names.
    MRef   varinfo;    //  Names and compressed extents of local variables.
    uint64_t closeslots;  //  Bitmap of locals with <close> attribute (max 64 slots)
-   // Return type information for runtime type checking
-   std::array<TiriType, PROTO_MAX_RETURN_TYPES> result_types{};  // Return types, set by fs_finish()
+   MRef signature;       // Co-located ProtoSignature and positional ProtoTypeEntry records.
+   uint16_t signature_size; // Total byte size of signature, or zero when absent.
    // Try-except exception handling metadata
    TryBlockDesc   *try_blocks;        // Array of try block descriptors (nullptr if none)
    TryHandlerDesc *try_handlers;      // Array of handler descriptors (nullptr if none)
@@ -681,7 +769,6 @@ inline constexpr uint8_t PROTO_ILOOP        = 0x10;   //  Patched bytecode with 
 // Only used during parsing.
 inline constexpr uint8_t PROTO_HAS_RETURN   = 0x20;   //  Already emitted a return.
 inline constexpr uint8_t PROTO_FIXUP_RETURN = 0x40;   //  Need to fixup emitted returns.
-inline constexpr uint8_t PROTO_TYPEFIX      = 0x80;   //  Runtime type inference enabled (no explicit return types).
 // Top bits used for counting created closures.
 inline constexpr uint8_t PROTO_CLCOUNT      = 0x20;   //  Base of saturating 3 bit counter.
 inline constexpr int PROTO_CLC_BITS         = 3;
@@ -709,6 +796,75 @@ inline constexpr uint16_t PROTO_UV_IMMUTABLE = 0x4000;   //  Immutable upvalue.
 
 [[nodiscard]] inline uint16_t* proto_uv(const GCproto* pt) noexcept {
    return pt->uv.get<uint16_t>();
+}
+
+[[nodiscard]] inline ProtoSignature * proto_signature(GCproto *Proto) noexcept
+{
+   return Proto->signature.get<ProtoSignature>();
+}
+
+[[nodiscard]] inline const ProtoSignature * proto_signature(const GCproto *Proto) noexcept
+{
+   return Proto->signature.get<const ProtoSignature>();
+}
+
+[[nodiscard]] inline ProtoTypeEntry * proto_parameter_types(GCproto *Proto) noexcept
+{
+   auto signature = proto_signature(Proto);
+   return signature ? (ProtoTypeEntry *)(signature + 1) : nullptr;
+}
+
+[[nodiscard]] inline const ProtoTypeEntry * proto_parameter_types(const GCproto *Proto) noexcept
+{
+   auto signature = proto_signature(Proto);
+   return signature ? (const ProtoTypeEntry *)(signature + 1) : nullptr;
+}
+
+[[nodiscard]] inline ProtoTypeEntry * proto_result_types(GCproto *Proto) noexcept
+{
+   auto signature = proto_signature(Proto);
+   return signature ? proto_parameter_types(Proto) + signature->parameter_count : nullptr;
+}
+
+[[nodiscard]] inline const ProtoTypeEntry * proto_result_types(const GCproto *Proto) noexcept
+{
+   auto signature = proto_signature(Proto);
+   return signature ? proto_parameter_types(Proto) + signature->parameter_count : nullptr;
+}
+
+[[nodiscard]] inline ProtoTypeEntry proto_result_type(const GCproto *Proto, size_t Position) noexcept
+{
+   const auto signature = proto_signature(Proto);
+   if (not signature) return {};
+   const auto results = proto_result_types(Proto);
+   if (Position < signature->result_entry_count) return results[Position];
+   if ((signature->flags & proto_signature_flag(ProtoSignatureFlag::ResultVariadic)) and
+       signature->result_entry_count > 0) {
+      return results[signature->result_entry_count - 1];
+   }
+   if (Position < signature->result_count) {
+      return ProtoTypeEntry{
+         .constraint = 0,
+         .type = TiriType::Any,
+         .flags = proto_type_flags(true, false, ProtoTypeOrigin::Declared, ProtoTypeStrength::Advisory)
+      };
+   }
+   return {};
+}
+
+inline void proto_metadata_init(GCproto *Proto) noexcept
+{
+   Proto->file_source_idx = 0;
+   setmref(Proto->lineinfo, nullptr);
+   setmref(Proto->uvinfo, nullptr);
+   setmref(Proto->varinfo, nullptr);
+   Proto->closeslots = 0;
+   setmref(Proto->signature, nullptr);
+   Proto->signature_size = 0;
+   Proto->try_blocks = nullptr;
+   Proto->try_handlers = nullptr;
+   Proto->try_block_count = 0;
+   Proto->try_handler_count = 0;
 }
 
 // Forward declarations - defined after GCobj is complete

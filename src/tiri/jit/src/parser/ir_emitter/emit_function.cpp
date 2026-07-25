@@ -130,6 +130,24 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    }
 
    child_state.numparams = uint8_t(param_count.raw());
+   child_state.signature_parameters.reserve(param_count.raw());
+   if (Payload.is_vararg) {
+      child_state.signature_flags |= proto_signature_flag(ProtoSignatureFlag::ParameterVariadic);
+   }
+   for (auto i = BCReg(0); i < param_count; ++i) {
+      const FunctionParameter &param = Payload.parameters[i.raw()];
+      ProtoTypeOrigin origin = param.type_is_explicit ? ProtoTypeOrigin::Declared : ProtoTypeOrigin::Unspecified;
+      ProtoTypeStrength strength = (param.type_is_explicit and param.type != TiriType::Any and
+         param.type != TiriType::Unknown) ? ProtoTypeStrength::Checked : ProtoTypeStrength::Advisory;
+      uint32_t constraint = (param.struct_def and param.type IS TiriType::Struct) ?
+         struct_key(param.struct_def->Name) : 0;
+      child_state.signature_parameters.push_back(ProtoTypeEntry{
+         .constraint = constraint,
+         .type = param.type,
+         .flags = proto_type_flags(true, false, origin, strength)
+      });
+   }
+
    this->lex_state.var_add(param_count);
    auto base = BCReg(child_state.varmap.size() - param_count.raw());
    for (auto i = BCReg(0); i < param_count; ++i) {
@@ -183,9 +201,25 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       child_state.return_contract_count = uint8_t(std::min<size_t>(
          Payload.return_types.count, child_state.return_types.size()));
       child_state.return_contract_variadic = Payload.return_types.is_variadic;
+      child_state.signature_flags |= proto_signature_flag(ProtoSignatureFlag::ExplicitResults);
+      if (Payload.return_types.is_variadic) {
+         child_state.signature_flags |= proto_signature_flag(ProtoSignatureFlag::ResultVariadic);
+      }
+      child_state.signature_result_count = Payload.return_types.count;
+      child_state.signature_result_entry_count = uint8_t(std::min<size_t>(
+         Payload.return_types.count, child_state.signature_results.size()));
       for (size_t i = 0; i < Payload.return_types.count and i < child_state.return_types.size(); ++i) {
          child_state.return_types[i] = Payload.return_types.types[i];
          child_state.return_struct_defs[i] = Payload.return_types.struct_defs[i];
+         auto type = Payload.return_types.types[i];
+         auto struct_def = Payload.return_types.struct_defs[i];
+         child_state.signature_results[i] = ProtoTypeEntry{
+            .constraint = (struct_def and type IS TiriType::Struct) ? struct_key(struct_def->Name) : 0,
+            .type = type,
+            .flags = proto_type_flags(true, false, ProtoTypeOrigin::Declared,
+               (type IS TiriType::Any or type IS TiriType::Unknown) ?
+                  ProtoTypeStrength::Advisory : ProtoTypeStrength::Checked)
+         };
       }
    }
 

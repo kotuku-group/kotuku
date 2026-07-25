@@ -1161,6 +1161,470 @@ static int bytecode_writer(lua_State *, const void *Data, size_t Size, void *Con
    return 0;
 }
 
+static GCproto * first_child_proto(GCproto *Proto)
+{
+   for (ptrdiff_t i = -ptrdiff_t(Proto->sizekgc); i < 0; ++i) {
+      GCobj *object = proto_kgc(Proto, i);
+      if (object->gch.gct IS uint8_t(~LJ_TPROTO)) return gco_to_proto(object);
+   }
+   return nullptr;
+}
+
+static bool compare_proto_signatures(const GCproto *Left, const GCproto *Right)
+{
+   if (not Left or not Right or Left->signature_size != Right->signature_size) return false;
+   if (Left->signature_size > 0 and
+       memcmp(proto_signature(Left), proto_signature(Right), Left->signature_size) != 0) return false;
+
+   std::vector<const GCproto *> left_children;
+   std::vector<const GCproto *> right_children;
+   for (ptrdiff_t i = -ptrdiff_t(Left->sizekgc); i < 0; ++i) {
+      GCobj *object = proto_kgc(Left, i);
+      if (object->gch.gct IS uint8_t(~LJ_TPROTO)) left_children.push_back(gco_to_proto(object));
+   }
+   for (ptrdiff_t i = -ptrdiff_t(Right->sizekgc); i < 0; ++i) {
+      GCobj *object = proto_kgc(Right, i);
+      if (object->gch.gct IS uint8_t(~LJ_TPROTO)) right_children.push_back(gco_to_proto(object));
+   }
+   if (left_children.size() != right_children.size()) return false;
+   for (size_t i = 0; i < left_children.size(); ++i) {
+      if (not compare_proto_signatures(left_children[i], right_children[i])) return false;
+   }
+   return true;
+}
+
+static bool test_signature_metadata_roundtrip(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   constexpr std::string_view source =
+      "struct SignatureLayout\n"
+      "   Value: int\n"
+      "end\n"
+      "local function outer(Value:num, Flexible:any, Untyped, Item:struct<SignatureLayout>, Generic:struct, "
+      "Object:obj, ...):func\n"
+      "   local function inner(Text:str):<str, num, ...>\n"
+      "      return Text, Value, Value\n"
+      "   end\n"
+      "   return inner\n"
+      "end\n"
+      "return outer\n";
+
+   if (lua_load(L, source, "signature-roundtrip")) {
+      Log.error("failed to compile signature source: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *root = funcproto(funcV(L->top - 1));
+   GCproto *outer = first_child_proto(root);
+   GCproto *inner = outer ? first_child_proto(outer) : nullptr;
+   if (not outer or not inner) {
+      Log.error("signature source did not produce the expected nested prototypes");
+      return false;
+   }
+
+   const ProtoSignature *outer_signature = proto_signature(outer);
+   const ProtoSignature *inner_signature = proto_signature(inner);
+   if (not outer_signature or outer_signature->parameter_count != 6 or outer_signature->result_count != 1 or
+       not (outer_signature->flags & proto_signature_flag(ProtoSignatureFlag::ExplicitResults)) or
+       not (outer_signature->flags & proto_signature_flag(ProtoSignatureFlag::ParameterVariadic))) {
+      Log.error("outer prototype signature header is incomplete");
+      return false;
+   }
+
+   const ProtoTypeEntry *outer_params = proto_parameter_types(outer);
+   if (outer_params[0].type != TiriType::Num or
+       proto_type_origin(outer_params[0]) != ProtoTypeOrigin::Declared or
+       proto_type_strength(outer_params[0]) != ProtoTypeStrength::Checked or
+       outer_params[1].type != TiriType::Any or
+       proto_type_origin(outer_params[1]) != ProtoTypeOrigin::Declared or
+       proto_type_origin(outer_params[2]) != ProtoTypeOrigin::Unspecified or
+       outer_params[3].constraint != struct_key("SignatureLayout") or outer_params[4].type != TiriType::Struct or
+       outer_params[4].constraint != 0 or outer_params[5].type != TiriType::Object or outer_params[5].constraint != 0) {
+      Log.error("outer prototype parameter entries lost type, provenance, strength or constraint data");
+      return false;
+   }
+
+   // Exercise reserved schema states that ordinary annotations do not manufacture in this phase.
+   ProtoTypeEntry *mutable_outer_params = proto_parameter_types(outer);
+   mutable_outer_params[4].flags =
+      proto_type_flags(false, true, ProtoTypeOrigin::Declared, ProtoTypeStrength::Checked);
+   mutable_outer_params[5].constraint = 0xf17e1234;
+   mutable_outer_params[5].flags =
+      proto_type_flags(true, false, ProtoTypeOrigin::Declared, ProtoTypeStrength::Trusted);
+   if (proto_type_nullable(mutable_outer_params[4]) or not proto_type_required(mutable_outer_params[4]) or
+       proto_type_strength(mutable_outer_params[5]) != ProtoTypeStrength::Trusted) {
+      Log.error("reserved signature entry states are not independently representable");
+      return false;
+   }
+
+   if (not inner_signature or inner_signature->parameter_count != 1 or inner_signature->result_count != 2 or
+       inner_signature->result_entry_count != 2 or
+       not (inner_signature->flags & proto_signature_flag(ProtoSignatureFlag::ResultVariadic))) {
+      Log.error("inner prototype result signature is incomplete");
+      return false;
+   }
+
+   for (int strip : { 0, 1 }) {
+      std::string dump;
+      if (lj_bcwrite(L, root, bytecode_writer, &dump, strip) != 0) {
+         Log.error("failed to write %s signature dump", strip ? "stripped" : "unstripped");
+         return false;
+      }
+      if (dump.size() < 4 or uint8_t(dump[3]) != BCDUMP_VERSION) {
+         Log.error("signature dump has the wrong private format version");
+         return false;
+      }
+      if (lua_load(L, std::string_view(dump.data(), dump.size()), "signature-roundtrip")) {
+         Log.error("failed to reload %s signature dump: %s", strip ? "stripped" : "unstripped",
+            lua_tostring(L, -1));
+         return false;
+      }
+      GCproto *restored = funcproto(funcV(L->top - 1));
+      bool equal = compare_proto_signatures(root, restored);
+      lua_pop(L, 1);
+      if (not equal) {
+         Log.error("%s signature dump changed prototype metadata", strip ? "stripped" : "unstripped");
+         return false;
+      }
+   }
+
+   lua_pop(L, 1);
+   return true;
+}
+
+static bool test_legacy_signature_defaults(kt::Log &Log)
+{
+   // Generated by the 0x81 writer from:
+   // function legacy(Value:num):num return Value end
+   // SHA-256: 91f984a833f8a8045e736aea956813bf9e6f18ffc6b6bee8d5a5f55f7534d250
+   constexpr uint8_t legacy_dump[] = {
+      0x1b, 0x4c, 0x4a, 0x81, 0x08, 0x07, 0x3d, 0x73, 0x63, 0x72, 0x69, 0x70,
+      0x74, 0x5e, 0x00, 0x01, 0x02, 0x00, 0x02, 0x00, 0x04, 0x19, 0x01, 0x00,
+      0x74, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x13, 0x01, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x74, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x5a, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0f, 0x01, 0x02, 0x00,
+      0x01, 0x01, 0x03, 0x01, 0x01, 0x00, 0x00, 0x14, 0x01, 0x01, 0x00, 0x01,
+      0x01, 0x03, 0x01, 0x01, 0x00, 0x05, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x01,
+      0x00, 0x00, 0xff, 0x01, 0x00, 0x00, 0xff, 0x01, 0x00, 0x00, 0xff, 0x01,
+      0x00, 0x00, 0xff, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x00, 0x01, 0x04, 0x00,
+      0x00
+   };
+
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   std::string_view dump((const char *)legacy_dump, sizeof(legacy_dump));
+   if (lua_load(L, dump, "legacy-signature")) {
+      Log.error("failed to load the 0x81 signature fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *restored = funcproto(funcV(L->top - 1));
+   const ProtoSignature *signature = proto_signature(restored);
+   const ProtoTypeEntry *parameters = proto_parameter_types(restored);
+   if (not signature or signature->parameter_count != 1 or signature->result_entry_count != 0 or
+       parameters[0].type != TiriType::Any or
+       proto_type_origin(parameters[0]) != ProtoTypeOrigin::Unspecified or
+       proto_type_strength(parameters[0]) != ProtoTypeStrength::Advisory) {
+      Log.error("the 0x81 fixture did not receive safe advisory signature defaults");
+      return false;
+   }
+
+   lua_pushstring(L, "wrong");
+   if (lua_pcall(L, 1, 1, 0) IS 0) {
+      Log.error("legacy BC_CONTRACT enforcement was lost");
+      return false;
+   }
+   lua_pop(L, 1);
+   return true;
+}
+
+static bool test_signature_runtime_inference(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   constexpr std::string_view source = "return function(Value) return Value end";
+   if (lua_load(L, source, "signature-inference") or lua_pcall(L, 0, 1, 0)) {
+      Log.error("failed to create the inference function: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCfunc *function = funcV(L->top - 1);
+   GCproto *prototype = funcproto(function);
+   lua_pushvalue(L, -1);
+   lua_pushnumber(L, 7);
+   if (lua_pcall(L, 1, 1, 0)) {
+      Log.error("failed to execute the inference function: %s", lua_tostring(L, -1));
+      return false;
+   }
+   lua_pop(L, 1);
+
+   ProtoTypeEntry inferred = proto_result_type(prototype, 0);
+   if (inferred.type != TiriType::Num or proto_type_origin(inferred) != ProtoTypeOrigin::Inferred or
+       proto_type_strength(inferred) != ProtoTypeStrength::Advisory) {
+      Log.error("runtime inference did not remain advisory");
+      return false;
+   }
+
+   std::string dump;
+   if (lj_bcwrite(L, prototype, bytecode_writer, &dump, 1) != 0) {
+      Log.error("failed to write the inferred signature");
+      return false;
+   }
+   if (lua_load(L, std::string_view(dump.data(), dump.size()), "signature-inference")) {
+      Log.error("failed to round-trip the inferred signature: %s", lua_tostring(L, -1));
+      return false;
+   }
+   GCproto *restored = funcproto(funcV(L->top - 1));
+   bool equal = compare_proto_signatures(prototype, restored);
+   lua_pop(L, 2);
+   if (not equal) {
+      Log.error("runtime-inferred signature changed during serialisation");
+      return false;
+   }
+   return true;
+}
+
+static bool test_signature_void_and_bare_return(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+
+   constexpr std::string_view empty_source = "return function() local value = 1 end";
+   if (lua_load(L, empty_source, "signature-empty") or lua_pcall(L, 0, 1, 0)) {
+      Log.error("failed to create the empty-signature function: %s", lua_tostring(L, -1));
+      return false;
+   }
+   GCproto *empty_proto = funcproto(funcV(L->top - 1));
+   if (proto_signature(empty_proto)) {
+      Log.error("an untyped function without formal parameters or result observations received a signature");
+      return false;
+   }
+   std::string empty_dump;
+   if (lj_bcwrite(L, empty_proto, bytecode_writer, &empty_dump, 1) != 0 or
+       lua_load(L, std::string_view(empty_dump.data(), empty_dump.size()), "signature-empty")) {
+      Log.error("failed to round-trip the empty signature");
+      return false;
+   }
+   GCproto *restored_empty = funcproto(funcV(L->top - 1));
+   if (not compare_proto_signatures(empty_proto, restored_empty)) {
+      Log.error("the empty signature changed during serialisation");
+      return false;
+   }
+   lua_pop(L, 2);
+
+   constexpr std::string_view void_source = "return function():<> return 17 end";
+   if (lua_load(L, void_source, "signature-void") or lua_pcall(L, 0, 1, 0)) {
+      Log.error("failed to create the explicit-void function: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *void_proto = funcproto(funcV(L->top - 1));
+   const ProtoSignature *void_signature = proto_signature(void_proto);
+   if (not void_signature or void_signature->result_count != 0 or void_signature->result_entry_count != 0 or
+       not (void_signature->flags & proto_signature_flag(ProtoSignatureFlag::ExplicitResults)) or
+       (void_signature->flags & proto_signature_flag(ProtoSignatureFlag::DynamicResults))) {
+      Log.error("explicit void was not preserved as a distinct signature");
+      return false;
+   }
+
+   lua_pushvalue(L, -1);
+   if (lua_pcall(L, 0, 1, 0) or not lua_isnil(L, -1)) {
+      Log.error("the explicit-void function did not truncate its result");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   std::string void_dump;
+   if (lj_bcwrite(L, void_proto, bytecode_writer, &void_dump, 1) != 0 or
+       lua_load(L, std::string_view(void_dump.data(), void_dump.size()), "signature-void")) {
+      Log.error("failed to round-trip the explicit-void signature");
+      return false;
+   }
+   GCproto *restored_void = funcproto(funcV(L->top - 1));
+   if (not compare_proto_signatures(void_proto, restored_void)) {
+      Log.error("the explicit-void signature changed during serialisation");
+      return false;
+   }
+   lua_pop(L, 2);
+
+   constexpr std::string_view bare_source = "return function() return end";
+   if (lua_load(L, bare_source, "signature-bare-return") or lua_pcall(L, 0, 1, 0)) {
+      Log.error("failed to create the bare-return function: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *bare_proto = funcproto(funcV(L->top - 1));
+   const ProtoSignature *bare_signature = proto_signature(bare_proto);
+   if (not bare_signature or
+       not (bare_signature->flags & proto_signature_flag(ProtoSignatureFlag::DynamicResults))) {
+      Log.error("a bare return did not retain its dynamic advisory result signature");
+      return false;
+   }
+
+   std::string bare_dump;
+   if (lj_bcwrite(L, bare_proto, bytecode_writer, &bare_dump, 1) != 0 or
+       lua_load(L, std::string_view(bare_dump.data(), bare_dump.size()), "signature-bare-return")) {
+      Log.error("failed to round-trip the bare-return signature");
+      return false;
+   }
+   GCproto *restored_bare = funcproto(funcV(L->top - 1));
+   bool equal = compare_proto_signatures(bare_proto, restored_bare);
+   lua_pop(L, 2);
+   if (not equal) {
+      Log.error("the bare-return signature changed during serialisation");
+      return false;
+   }
+
+   constexpr std::string_view wide_source =
+      "return function():<num, num, num, num, num, num, num, num, num>\n"
+      "   return 1, 2, 3, 4, 5, 6, 7, 8, 9\n"
+      "end";
+   if (lua_load(L, wide_source, "signature-wide-results") or lua_pcall(L, 0, 1, 0)) {
+      Log.error("failed to create the wide-result function: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *wide_proto = funcproto(funcV(L->top - 1));
+   const ProtoSignature *wide_signature = proto_signature(wide_proto);
+   ProtoTypeEntry implicit_result = proto_result_type(wide_proto, 8);
+   if (not wide_signature or wide_signature->result_count != 9 or
+       wide_signature->result_entry_count != PROTO_MAX_RETURN_TYPES or implicit_result.type != TiriType::Any or
+       proto_type_origin(implicit_result) != ProtoTypeOrigin::Declared or
+       proto_type_strength(implicit_result) != ProtoTypeStrength::Advisory) {
+      Log.error("the wide-result signature did not preserve complete arity and its implicit any suffix");
+      return false;
+   }
+
+   std::string wide_dump;
+   if (lj_bcwrite(L, wide_proto, bytecode_writer, &wide_dump, 1) != 0 or
+       lua_load(L, std::string_view(wide_dump.data(), wide_dump.size()), "signature-wide-results")) {
+      Log.error("failed to round-trip the wide-result signature");
+      return false;
+   }
+   GCproto *restored_wide = funcproto(funcV(L->top - 1));
+   equal = compare_proto_signatures(wide_proto, restored_wide);
+   lua_pop(L, 2);
+   if (not equal) {
+      Log.error("the wide-result signature changed during serialisation");
+      return false;
+   }
+   return true;
+}
+
+static bool test_malformed_signature_rejected(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   constexpr std::string_view source = "return function(Value:num):num return Value end";
+   if (lua_load(L, source, "signature-malformed") or lua_pcall(L, 0, 1, 0)) {
+      Log.error("failed to create the malformed-signature fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   std::string dump;
+   if (lj_bcwrite(L, funcproto(funcV(L->top - 1)), bytecode_writer, &dump, 1) != 0) {
+      Log.error("failed to write the malformed-signature fixture");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   auto read_uleb = [&dump](size_t &Position, uint32_t &Value) {
+      Value = 0;
+      uint32_t shift = 0;
+      for (uint32_t count = 0; count < 5 and Position < dump.size(); ++count) {
+         uint8_t byte = uint8_t(dump[Position++]);
+         Value |= uint32_t(byte & 0x7f) << shift;
+         if (not (byte & 0x80)) return true;
+         shift += 7;
+      }
+      return false;
+   };
+
+   size_t position = 5;
+   uint32_t value = 0;
+   if (not read_uleb(position, value) or position + 4 > dump.size()) {
+      Log.error("could not locate the prototype header in the malformed-signature fixture");
+      return false;
+   }
+   position += 4;
+   size_t signature_length_offset = 0;
+   for (int field = 0; field < 4; ++field) {
+      if (field IS 3) signature_length_offset = position;
+      if (not read_uleb(position, value)) {
+         Log.error("could not locate the signature in the malformed-signature fixture");
+         return false;
+      }
+   }
+   size_t signature_offset = position;
+   if (signature_offset + 5 >= dump.size()) {
+      Log.error("malformed-signature fixture has no signature payload");
+      return false;
+   }
+
+   std::string bad_version = dump;
+   bad_version[signature_offset] = char(0xff);
+   if (lua_load(L, std::string_view(bad_version.data(), bad_version.size()), "signature-bad-version") IS 0) {
+      Log.error("the bytecode reader accepted an unsupported signature version");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   size_t entry_offset = signature_offset + 2;
+   for (int field = 0; field < 3; ++field) {
+      if (not read_uleb(entry_offset, value)) {
+         Log.error("could not locate the first signature entry");
+         return false;
+      }
+   }
+
+   std::string bad_flags = dump;
+   bad_flags[entry_offset + 1] = char(PROTO_TYPE_NULLABLE | PROTO_TYPE_REQUIRED);
+   if (lua_load(L, std::string_view(bad_flags.data(), bad_flags.size()), "signature-bad-flags") IS 0) {
+      Log.error("the bytecode reader accepted contradictory signature entry flags");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   std::string bad_constraint = dump;
+   bad_constraint[entry_offset + 2] = char(1);
+   if (lua_load(L, std::string_view(bad_constraint.data(), bad_constraint.size()), "signature-bad-constraint") IS 0) {
+      Log.error("the bytecode reader accepted a constraint on a scalar signature entry");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   std::string bad_parameter_count = dump;
+   bad_parameter_count[signature_offset + 2] = char(2);
+   if (lua_load(L, std::string_view(bad_parameter_count.data(), bad_parameter_count.size()),
+       "signature-bad-parameter-count") IS 0) {
+      Log.error("the bytecode reader accepted a signature parameter-count mismatch");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   if (uint8_t(dump[signature_length_offset]) >= 0x7f) {
+      Log.error("the malformed-signature fixture unexpectedly uses a multi-byte signature length");
+      return false;
+   }
+   std::string trailing_data = dump;
+   trailing_data[signature_length_offset] = char(uint8_t(trailing_data[signature_length_offset]) + 1);
+   if (lua_load(L, std::string_view(trailing_data.data(), trailing_data.size()), "signature-trailing-data") IS 0) {
+      Log.error("the bytecode reader accepted trailing signature data");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   std::string bad_type = dump;
+   bad_type[entry_offset] = char(0xff);
+   if (lua_load(L, std::string_view(bad_type.data(), bad_type.size()), "signature-bad-type") IS 0) {
+      Log.error("the bytecode reader accepted an invalid signature type");
+      return false;
+   }
+   lua_pop(L, 1);
+   return true;
+}
+
 static bool snapshot_has_opcode(const BytecodeSnapshot &Snapshot, BCOp Opcode)
 {
    for (BCIns instruction : Snapshot.instructions) {
@@ -2151,7 +2615,7 @@ static bool test_ternary_falsey_semantics(kt::Log &log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 27> tests = { {
+   constexpr std::array<TestCase, 32> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -2170,6 +2634,11 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "return_lowering", test_return_lowering },
       { "ast_call_lowering", test_ast_call_lowering },
       { "bytecode_equivalence", test_bytecode_equivalence },
+      { "signature_metadata_roundtrip", test_signature_metadata_roundtrip },
+      { "legacy_signature_defaults", test_legacy_signature_defaults },
+      { "signature_runtime_inference", test_signature_runtime_inference },
+      { "signature_void_and_bare_return", test_signature_void_and_bare_return },
+      { "malformed_signature_rejected", test_malformed_signature_rejected },
       { "contract_bytecode_roundtrip", test_contract_bytecode_roundtrip },
       { "userdata_type_annotations", test_userdata_type_annotations },
       { "state_local_struct_declarations", test_state_local_struct_declarations },

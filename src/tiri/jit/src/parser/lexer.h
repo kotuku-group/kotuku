@@ -126,6 +126,7 @@ public:
    BCInsLine* bc_stack;       // Stack for bytecode instructions/line numbers.
    MSize      size_bc_stack;  // Size of bytecode stack.
    uint32_t   level;          // Syntactical nesting level.
+   uint8_t    bytecode_version = 0; // Private bytecode format version while reading a binary chunk.
    uint32_t   ternary_depth;  // Number of pending ternary operators.
    uint8_t    pending_if_empty_colon; // Tracks ?: misuse after ??.
    int        is_bytecode;    // Set to 1 if input is bytecode, 0 if source text.

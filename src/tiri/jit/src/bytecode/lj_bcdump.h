@@ -14,9 +14,11 @@
 ** dump   = header proto+ 0U
 ** header = ESC 'L' 'J' versionB flagsU [namelenU nameB*]
 ** proto  = lengthU pdata
-** pdata  = phead bcinsW* uvdataH* kgc* knum* [debugB*]
-** phead  = flagsB numparamsB framesizeB numuvB numkgcU numknU numbcU
+** pdata  = phead signatureB* bcinsW* uvdataH* kgc* knum* [debugB*]
+** phead  = flagsB numparamsB framesizeB numuvB numkgcU numknU numbcU siglenU
 **          [debuglenU [firstlineU numlineU]]
+** signature = sigversionB sigflagsB paramcountU resultcountU resultentriesU typeentry*
+** typeentry = typeB metaflagsB constraintU
 ** kgc    = kgctypeU { ktab | (loU hiU) | (rloU rhiU iloU ihiU) | strB* }
 ** knum   = intU0 | (loU1 hiU)
 ** ktab   = narrayU nhashU karray* khash*
@@ -35,7 +37,8 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // If you perform *any* kind of private modifications to the bytecode itself
 // or to the dump format, you *must* set BCDUMP_VERSION to 0x80 or higher.
 
-constexpr int BCDUMP_VERSION = 0x81;
+constexpr uint8_t BCDUMP_VERSION_LEGACY = 0x81;
+constexpr uint8_t BCDUMP_VERSION = 0x82;
 
 // Compatibility flags.
 

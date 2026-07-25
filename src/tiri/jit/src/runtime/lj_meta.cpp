@@ -950,13 +950,14 @@ void lj_meta_typefix(lua_State *L, TValue *base, uint32_t count)
 
    GCproto *pt = funcproto(fn);
 
-   // Only process if PROTO_TYPEFIX is set (function has no explicit return types)
-   if (not (pt->flags & PROTO_TYPEFIX)) return;
+   auto signature = proto_signature(pt);
+   if (not signature or not (signature->flags & proto_signature_flag(ProtoSignatureFlag::DynamicResults))) return;
+   auto result_types = proto_result_types(pt);
 
    // Process each return value position
-   for (uint32_t pos = 0; pos < count and pos < PROTO_MAX_RETURN_TYPES; ++pos) {
+   for (uint32_t pos = 0; pos < count and pos < signature->result_entry_count; ++pos) {
       // Only fix if type is currently Unknown
-      if (pt->result_types[pos] != TiriType::Unknown) continue;
+      if (result_types[pos].type != TiriType::Unknown) continue;
 
       // Get the value being returned
       TValue *val = base + pos;
@@ -970,11 +971,9 @@ void lj_meta_typefix(lua_State *L, TValue *base, uint32_t count)
       if (tvisnumber(val)) inferred = TiriType::Num;
       else inferred = lj_tag_to_tiri_type(itype(val));
 
-      // Fix the type in the prototype
-      // Note: This is a mutation of the prototype. For thread safety, this relies on
-      // the fact that the write is atomic at the byte level and idempotent (same value
-      // would be written by any thread inferring the same type).
+      // Fix the type in the state-owned prototype. Asynchronous workers use separate Tiri states and prototype graphs,
+      // so this metadata is not published for concurrent mutation.
 
-      pt->result_types[pos] = inferred;
+      result_types[pos].type = inferred;
    }
 }

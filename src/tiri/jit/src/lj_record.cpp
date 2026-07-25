@@ -3662,7 +3662,7 @@ void lj_record_ins(jit_State *J)
       // - If types not fixed, skip during recording (mutation is safe for interpreter)
 
       GCproto *pt = funcproto(curr_func(J->L));
-      if (pt->result_types[0] IS TiriType::Unknown) {
+      if (proto_result_type(pt, 0).type IS TiriType::Unknown) {
          // Types not yet fixed.  We can leave it for the interpreter and keep recording
          // TODO: Need to consider if it is viable to mutate the function prototype (set the result types) here during recording.
          // It could also be considered a red-flag if the interpreter hasn't mutated the function by this point, even if only

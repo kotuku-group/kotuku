@@ -278,6 +278,7 @@ struct FunctionParameter {
    Identifier name;
    TiriType type = TiriType::Any;
    struct_record *struct_def = nullptr;
+   bool type_is_explicit = false;
    bool is_self = false;
 };
 

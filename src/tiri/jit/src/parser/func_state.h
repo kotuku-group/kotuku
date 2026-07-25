@@ -75,6 +75,14 @@ struct FuncState {
    bool return_contract_variadic = false;
    bool return_contract_explicit = false;
 
+   // Canonical prototype signature under construction.  Parameter entries are populated before body emission.
+   // Result entries are populated from explicit declarations or reserved for BC_TYPEFIX in fs_finish().
+   std::vector<ProtoTypeEntry> signature_parameters;
+   std::array<ProtoTypeEntry, MAX_RETURN_TYPES> signature_results{};
+   uint8_t signature_result_count = 0;
+   uint8_t signature_result_entry_count = 0;
+   uint8_t signature_flags = 0;
+
    // Try-except metadata for bytecode-level exception handling.
    // These are populated during emit_try_except_stmt and copied to GCproto during fs_finish.
    std::vector<TryBlockDesc>   try_blocks;    // Try block descriptors
