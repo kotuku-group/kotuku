@@ -1,0 +1,230 @@
+-- Interpreter/JIT parity for exact runtime contracts that previously disabled tracing.
+
+local ir_fload <const> = 69
+
+struct JitContractAlpha
+   Value: int
+end
+
+struct JitContractBravo
+   Value: int
+end
+
+function dynamic_contract_value(Value):any
+   return Value
+end
+
+function expect_jit_contract_failure(Callback:func, Expected:str)
+   local failed = false
+   try
+      Callback()
+   except e
+      failed = true
+      assert(e.message:find(Expected) != nil,
+         f"Expected contract diagnostic to contain '{Expected}', got '{e.message}'")
+   end
+   assert(failed, f"Expected a catchable contract failure for {Expected}")
+end
+
+function trace_metrics():table
+   jit.off()
+   local result = { traces=0, fieldLoads=0, guards=0, snapshots=0 }
+
+   for trace_no = 1, 100 do
+      local info = jit.util.traceInfo(trace_no)
+      if info is nil then continue end
+
+      result.traces++
+      result.snapshots += info.nexit
+      for instruction = 1, info.nins do
+         local _, ir_ot = jit.util.traceIR(trace_no, instruction)
+         if ir_ot is nil then continue end
+         if (ir_ot & 0x80) != 0 then result.guards++ end
+         if (ir_ot >> 8) is ir_fload then result.fieldLoads++ end
+      end
+   end
+   return result
+end
+
+function prepare_contract_trace()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+end
+
+@AfterEach
+function reset_contract_jit()
+   jit.on()
+   jit.flush()
+   jit.opt.start()
+end
+
+@Test function NamedStructureContractTracesAndRejectsAfterCompilation()
+   function accept_alpha(Value:struct<JitContractAlpha>):struct<JitContractAlpha>
+      return Value
+   end
+
+   local alpha = struct<JitContractAlpha> { Value=7 }
+   local bravo = struct<JitContractBravo> { Value=9 }
+   local callback:any = accept_alpha
+
+   prepare_contract_trace()
+   local total = 0
+   for _ in {0 to 120} do total += callback(alpha).Value end
+
+   local metrics = trace_metrics()
+   assert(total is 840, 'A traced named-structure contract should preserve matching values')
+   assert(metrics.traces > 0 and metrics.fieldLoads > 0 and metrics.guards > 0,
+      'A named-structure contract should emit a guarded trace')
+   expect_jit_contract_failure(function() callback(dynamic_contract_value(bravo)) end, 'JitContractAlpha')
+end
+
+@Test function RangeContractTracksRegistryIdentity()
+   function accept_range(Value:range):range
+      return Value
+   end
+
+   local sequence = {0 to 8}
+   local callback:any = accept_range
+   prepare_contract_trace()
+
+   local total = 0
+   for _ in {0 to 120} do total += #callback(sequence) end
+   local metrics = trace_metrics()
+   assert(total is 960 and metrics.traces > 0 and metrics.fieldLoads > 0,
+      'A matching range contract should trace with its metatable predicate')
+
+   expect_jit_contract_failure(function() callback(dynamic_contract_value(newproxy(true))) end, 'range')
+
+   local registry = debug.getRegistry()
+   local saved_metatable = registry['Tiri.range']
+   registry['Tiri.range'] = {}
+   local failed = false
+   try
+      callback(sequence)
+   except e
+      failed = e.message:find('range') != nil
+   end
+   registry['Tiri.range'] = saved_metatable
+   assert(failed, 'Changing the registered range metatable should invalidate the compiled contract guard')
+   assert(callback(sequence) is sequence, 'Restoring the range registry should restore the contract')
+end
+
+@Test function UserdataContractTracesFullAndLightValues()
+   function accept_userdata(Value:userdata):userdata
+      return Value
+   end
+
+   local proxy = newproxy(true)
+   local captured = 3
+   function capture() return captured end
+   local pointer = debug.upvalueID(capture, 0)
+   local callback:any = accept_userdata
+   prepare_contract_trace()
+
+   local result
+   for _ in {0 to 120} do result = callback(proxy) end
+   assert(result is proxy, 'A full userdata contract should preserve its value on a trace')
+   for _ in {0 to 120} do result = callback(pointer) end
+   assert(result is pointer, 'A light userdata contract should preserve its value on a side trace')
+
+   local metrics = trace_metrics()
+   assert(metrics.traces > 0 and metrics.fieldLoads > 0 and metrics.snapshots > 0,
+      'Full and light userdata contracts should remain traceable')
+   expect_jit_contract_failure(function() callback(dynamic_contract_value({0 to 2})) end, 'userdata')
+end
+
+@Test function CallableContractTracksMetamethodMutation()
+   function accept_callable(Value:func):func
+      return Value
+   end
+
+   local metatable = {
+      __call = function(Self, Value)
+         return Self.offset + Value
+      end
+   }
+   local callable = setmetatable({ offset=5 }, metatable)
+   local callback:any = accept_callable
+   prepare_contract_trace()
+
+   local result
+   for _ in {0 to 120} do result = callback(callable) end
+   assert(result(4) is 9, 'A callable-table contract should preserve normal dispatch')
+   local metrics = trace_metrics()
+   assert(metrics.traces > 0 and metrics.fieldLoads > 0 and metrics.guards > 0,
+      'A callable-table contract should trace its metatable lookup')
+
+   local saved_call = metatable.__call
+   metatable.__call = false
+   expect_jit_contract_failure(function() callback(callable) end, 'func')
+   metatable.__call = saved_call
+   assert(callback(callable)(4) is 9, 'Restoring __call should restore the callable contract')
+end
+
+@Test function NullableComplexContractUsesSideTraces()
+   function read_optional(Value:struct<JitContractAlpha>):num
+      if Value is nil then return 0 end
+      return Value.Value
+   end
+
+   local alpha = struct<JitContractAlpha> { Value=11 }
+   local callback:any = read_optional
+   prepare_contract_trace()
+
+   local total = 0
+   for index in {0 to 240} do
+      total += callback(index % 2 is 0 ? alpha :> nil)
+   end
+
+   local metrics = trace_metrics()
+   assert(total is 1320, 'Nullable named-structure calls should preserve nil and concrete paths')
+   assert(metrics.traces > 1 and metrics.snapshots > 0,
+      'Alternating nil and named structures should create restorable trace paths')
+end
+
+@Test function ComplexResultContractsTraceAndReject()
+   function dynamic_result(Value):any return Value end
+   function checked_structure(Value:any):struct<JitContractAlpha>
+      return dynamic_result(Value)
+   end
+   function checked_range(Value:any):range
+      return dynamic_result(Value)
+   end
+
+   local alpha = struct<JitContractAlpha> { Value=13 }
+   local bravo = struct<JitContractBravo> { Value=17 }
+   local sequence = {0 to 4}
+   prepare_contract_trace()
+
+   local total = 0
+   for _ in {0 to 120} do
+      total += checked_structure(alpha).Value
+      total += #checked_range(sequence)
+   end
+   local metrics = trace_metrics()
+   assert(total is 2040 and metrics.traces > 0,
+      'Named-structure and range result contracts should remain traceable')
+   expect_jit_contract_failure(function() checked_structure(bravo) end, 'JitContractAlpha')
+   expect_jit_contract_failure(function() checked_range(newproxy(true)) end, 'range')
+end
+
+@Test function ReloadedComplexContractRetainsTracingAndIdentity()
+   function factory():func
+      return function(Value:struct<JitContractAlpha>):struct<JitContractAlpha>
+         return Value
+      end
+   end
+
+   local restored = exec(string.dump(factory, true))
+   local alpha = struct<JitContractAlpha> { Value=19 }
+   local bravo = struct<JitContractBravo> { Value=23 }
+   prepare_contract_trace()
+
+   local total = 0
+   for _ in {0 to 120} do total += restored(alpha).Value end
+   local metrics = trace_metrics()
+   assert(total is 2280 and metrics.traces > 0,
+      'A stripped reloaded named-structure contract should remain traceable')
+   expect_jit_contract_failure(function() restored(dynamic_contract_value(bravo)) end, 'JitContractAlpha')
+end

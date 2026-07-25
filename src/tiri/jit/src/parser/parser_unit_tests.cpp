@@ -11,6 +11,7 @@
 #include "lj_bc.h"
 #include "lj_obj.h"
 #include "bytecode/lj_bcdump.h"
+#include "runtime/lj_contract.h"
 #include "runtime/lj_str.h"
 
 #include <array>
@@ -1672,6 +1673,126 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
    return true;
 }
 
+static bool test_runtime_contract_decoder(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   std::string encoded{
+      char(TIRI_CONTRACT_VERSION),
+      char(uint8_t(ContractBoundary::Parameter)),
+      char(0),
+      char(1),
+      char(1),
+      char(uint8_t(TiriType::Struct)),
+      char(contract_flag(ContractEntryFlag::Nullable)),
+      char(1),
+      char(5)
+   };
+   encoded += "Point";
+   encoded.push_back(char(5));
+   encoded += "Value";
+
+   RuntimeContractDescriptor decoded;
+   GCstr *descriptor = lj_str_new(lua, encoded.data(), encoded.size());
+   if (not decode_runtime_contract(descriptor, decoded) or
+       decoded.boundary != ContractBoundary::Parameter or decoded.dynamic_count() or decoded.variadic() or
+       decoded.static_value_count != 1 or decoded.contract_count != 1 or
+       decoded.entries[0].type != TiriType::Struct or decoded.entries[0].position != 1 or
+       decoded.entries[0].struct_name != "Point" or decoded.entries[0].label != "Value") {
+      Log.error("valid runtime contract descriptor did not round-trip through the shared decoder");
+      return false;
+   }
+
+   auto rejected = [lua](std::string Bytes) {
+      RuntimeContractDescriptor result;
+      GCstr *value = lj_str_new(lua, Bytes.data(), Bytes.size());
+      return not decode_runtime_contract(value, result);
+   };
+
+   std::string invalid_descriptor_flags = encoded;
+   invalid_descriptor_flags[2] = char(0x80);
+   std::string invalid_entry_flags = encoded;
+   invalid_entry_flags[6] = char(0x80);
+   std::string invalid_position = encoded;
+   invalid_position[7] = char(0);
+   std::string invalid_constraint = encoded;
+   invalid_constraint[5] = char(uint8_t(TiriType::Num));
+   std::string trailing = encoded + "x";
+   std::string truncated = encoded.substr(0, encoded.size() - 1);
+
+   if (not rejected(invalid_descriptor_flags) or not rejected(invalid_entry_flags) or
+       not rejected(invalid_position) or not rejected(invalid_constraint) or not rejected(trailing) or
+       not rejected(truncated)) {
+      Log.error("shared runtime contract decoder accepted malformed input");
+      return false;
+   }
+
+   constexpr std::string_view wide_source =
+      "return function():<num,num,num,num,num,num,num,num,str>\n"
+      "   return 1,2,3,4,5,6,7,8,'ninth',false\n"
+      "end\n";
+   if (lua_load(lua, wide_source, "wide-runtime-contract")) {
+      Log.error("failed to compile a wide runtime contract: %s", lua_tostring(lua, -1));
+      return false;
+   }
+
+   GCproto *wide = first_child_proto(funcproto(funcV(lua->top - 1)));
+   GCstr *wide_descriptor = nullptr;
+   for (uint32_t i = 1; wide and i < wide->sizebc; ++i) {
+      BCIns instruction = proto_bc(wide)[i];
+      if (bc_op(instruction) IS BC_CONTRACT) {
+         wide_descriptor = gco_to_string(proto_kgc(wide, ~(ptrdiff_t)bc_d(instruction)));
+         break;
+      }
+   }
+   RuntimeContractDescriptor wide_decoded;
+   if (not wide_descriptor or not decode_runtime_contract(wide_descriptor, wide_decoded) or
+       wide_decoded.static_value_count != 9 or wide_decoded.contract_count != MAX_RETURN_TYPES) {
+      Log.error("a valid contract with more values than stored entries failed shared decoding");
+      return false;
+   }
+   lua_pop(lua, 1);
+   return true;
+}
+
+static bool test_complex_contract_jit_eligibility(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   auto compile_child = [lua, &Log](std::string_view Source, const char *Label) -> GCproto * {
+      if (lua_load(lua, Source, Label)) {
+         Log.error("%s failed to compile: %s", Label, lua_tostring(lua, -1));
+         lua_pop(lua, 1);
+         return nullptr;
+      }
+
+      GCproto *child = first_child_proto(funcproto(funcV(lua->top - 1)));
+      lua->top--;
+      return child;
+   };
+
+   GCproto *fixed = compile_child(
+      "return function(Value:func):func\n"
+      "   return Value\n"
+      "end\n",
+      "fixed-complex-contract");
+   if (not fixed or (fixed->flags & PROTO_NOJIT)) {
+      Log.error("a fixed complex contract remained interpreter-only");
+      return false;
+   }
+
+   GCproto *dynamic = compile_child(
+      "return function(...):<num, ...>\n"
+      "   return ...\n"
+      "end\n",
+      "dynamic-result-contract");
+   if (not dynamic or not (dynamic->flags & PROTO_NOJIT)) {
+      Log.error("a dynamic-result contract became JIT-eligible without exact multi-result recorder support");
+      return false;
+   }
+   return true;
+}
+
 //********************************************************************************************************************
 
 static bool test_userdata_type_annotations(kt::Log &Log)
@@ -2857,7 +2978,7 @@ static bool test_type_guided_emission(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 35> tests = { {
+   constexpr std::array<TestCase, 37> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -2882,6 +3003,8 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "signature_void_and_bare_return", test_signature_void_and_bare_return },
       { "malformed_signature_rejected", test_malformed_signature_rejected },
       { "contract_bytecode_roundtrip", test_contract_bytecode_roundtrip },
+      { "runtime_contract_decoder", test_runtime_contract_decoder },
+      { "complex_contract_jit_eligibility", test_complex_contract_jit_eligibility },
       { "userdata_type_annotations", test_userdata_type_annotations },
       { "state_local_struct_declarations", test_state_local_struct_declarations },
       { "struct_declaration_syntax", test_struct_declaration_syntax },

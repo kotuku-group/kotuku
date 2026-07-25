@@ -833,7 +833,7 @@ set (TIRI_TESTS
    try_except import include_list processing metatables with thunk_table_index debug malformed_syntax numeric_limits return_types url tips tempus
    comparison_chaining reserved_keywords compile_if_import overflow protected_globals constant_shadowing config_library
    object_pinning import_type_analysis global_types type_contracts thunk_contract_argument type_signature_dumps
-   type_guided_emission
+   type_guided_emission type_guided_jit_signatures
 )
 
 foreach (TEST_NAME ${TIRI_TESTS})

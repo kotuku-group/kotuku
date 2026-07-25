@@ -547,18 +547,9 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
 {
    if (Contracts.empty()) return;
 
-   // Predicates without exact trace IR guards remain interpreter-only in Phase 1.
-   bool interpreter_only = DynamicCount;
-   for (const RuntimeContract &contract : Contracts) {
-      if (contract.type IS TiriType::Range or
-          contract.type IS TiriType::Userdata or
-          (contract.type IS TiriType::Struct and contract.struct_def) or
-          contract.type IS TiriType::Func) {
-         interpreter_only = true;
-         break;
-      }
-   }
-   if (interpreter_only) fs->flags |= PROTO_NOJIT;
+   // Dynamic result counts still require interpreter-only MRSAVE/MRRESTORE handling.  Fixed contracts have exact
+   // recorder predicates, including callable values, named structures, ranges and userdata.
+   if (DynamicCount) fs->flags |= PROTO_NOJIT;
 
    std::string descriptor;
    descriptor.reserve(5 + Contracts.size() * 8);

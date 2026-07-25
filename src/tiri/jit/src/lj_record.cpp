@@ -33,6 +33,9 @@
 #include "runtime/lj_struct.h"
 #include "runtime/lj_state.h"
 #include "runtime/lj_contract.h"
+#include "runtime/lj_thunk.h"
+#include "lib/lib_range.h"
+#include "../../defs.h"
 
 // Some local macros to save typing. Undef'd at the end.
 #define IR(ref)         (&J->cur.ir[(ref)])
@@ -199,96 +202,6 @@ enum class RecordedContract : uint8_t {
    Invalid
 };
 
-static RecordedContract rec_contract_classify(cTValue *Base, GCstr *Descriptor, uint8_t &ValueCount)
-{
-   const uint8_t *cursor = (const uint8_t *)strdata(Descriptor);
-   const uint8_t *end = cursor + Descriptor->len;
-   auto read_byte = [&cursor, end](uint8_t &Value) {
-      if (cursor >= end) return false;
-      Value = *cursor++;
-      return true;
-   };
-   auto skip_text = [&cursor, end](uint8_t &Length) {
-      if (cursor >= end) return false;
-      Length = *cursor++;
-      if (size_t(end - cursor) < Length) return false;
-      cursor += Length;
-      return true;
-   };
-
-   uint8_t version;
-   uint8_t boundary;
-   uint8_t descriptor_flags;
-   uint8_t static_count;
-   uint8_t contract_count;
-   if (not read_byte(version) or version != TIRI_CONTRACT_VERSION or not read_byte(boundary) or
-       boundary < uint8_t(ContractBoundary::Parameter) or boundary > uint8_t(ContractBoundary::Global) or
-       not read_byte(descriptor_flags) or not read_byte(static_count) or not read_byte(contract_count) or
-       contract_count > MAX_RETURN_TYPES) {
-      return RecordedContract::Invalid;
-   }
-   if (descriptor_flags & contract_flag(ContractDescriptorFlag::DynamicCount)) return RecordedContract::Complex;
-
-   struct Entry {
-      TiriType type;
-      uint8_t flags;
-      uint8_t struct_name_length;
-   };
-   std::array<Entry, MAX_RETURN_TYPES> entries;
-   for (uint8_t i = 0; i < contract_count; ++i) {
-      uint8_t type;
-      uint8_t position;
-      uint8_t label_length;
-      if (not read_byte(type) or type > uint8_t(TiriType::Unknown) or not read_byte(entries[i].flags) or
-          not read_byte(position) or not skip_text(entries[i].struct_name_length) or not skip_text(label_length)) {
-         return RecordedContract::Invalid;
-      }
-      entries[i].type = TiriType(type);
-   }
-
-   bool variadic = (descriptor_flags & contract_flag(ContractDescriptorFlag::Variadic)) != 0;
-   ValueCount = static_count;
-   for (uint8_t i = 0; i < static_count; ++i) {
-      uint8_t contract_index;
-      if (i < contract_count) contract_index = i;
-      else if (variadic and contract_count > 0) contract_index = contract_count - 1;
-      else continue;
-
-      const Entry &entry = entries[contract_index];
-      cTValue *value = Base + i;
-      bool nullable = (entry.flags & contract_flag(ContractEntryFlag::Nullable)) != 0;
-      bool required = (entry.flags & contract_flag(ContractEntryFlag::Required)) != 0;
-      if (tvisnil(value)) {
-         if (not nullable or required) return RecordedContract::Mismatch;
-         continue;
-      }
-
-      bool matches = true;
-      switch (entry.type) {
-         case TiriType::Any:
-         case TiriType::Unknown: break;
-         case TiriType::Nil:     matches = false; break;
-         case TiriType::Bool:    matches = tvisbool(value); break;
-         case TiriType::Num:     matches = tvisnumber(value); break;
-         case TiriType::Str:     matches = tvisstr(value); break;
-         case TiriType::Table:   matches = tvistab(value); break;
-         case TiriType::Array:   matches = tvisarray(value); break;
-         case TiriType::Object:  matches = tvisobject(value); break;
-         case TiriType::Func:
-            if (not tvisfunc(value)) return RecordedContract::Complex;
-            break;
-         case TiriType::Struct:
-            if (entry.struct_name_length > 0) return RecordedContract::Complex;
-            matches = tvisstruct(value);
-            break;
-         case TiriType::Range: return RecordedContract::Complex;
-         case TiriType::Userdata: return RecordedContract::Complex;
-      }
-      if (not matches) return RecordedContract::Mismatch;
-   }
-   return RecordedContract::Basic;
-}
-
 //********************************************************************************************************************
 // Sanity checks
 
@@ -450,6 +363,152 @@ static TRef sload(jit_State *J, int32_t slot)
 #define getslot(J, s)   (J->base[(s)] ? J->base[(s)] : sload(J, (int32_t)(s)))
 // Note: getslot macro retained for compatibility; SlotView can be used for new code:
 //   SlotView slots(J); TRef tr = slots.is_loaded(s) ? slots[s] : sload(J, s);
+
+//********************************************************************************************************************
+// Record exact runtime contracts.  Stack specialisation handles simple TValue tags.  Predicates that refine a tag
+// emit their own guards so a failed guard resumes at BC_CONTRACT and preserves the interpreter's diagnostic.
+
+static TRef rec_contract_range_metatable(jit_State *J)
+{
+   IRBuilder ir(J);
+   GCtab *registry_table = tabV(registry(J->L));
+   GCstr *range_name = lj_str_newz(J->L, RANGE_METATABLE);
+
+   RecordIndex lookup{};
+   settabV(J->L, &lookup.tabv, registry_table);
+   setstrV(J->L, &lookup.keyv, range_name);
+   lookup.tab = ir.ktab(registry_table);
+   lookup.key = ir.kstr(range_name);
+   return lj_record_idx(J, &lookup);
+}
+
+static bool rec_contract_is_range(jit_State *J, cTValue *Value)
+{
+   if (not tvisudata(Value)) return false;
+   GCtab *metatable = tabref(udataV(Value)->metatable);
+   if (not metatable) return false;
+
+   cTValue *registered = lj_tab_getstr(tabV(registry(J->L)), lj_str_newz(J->L, RANGE_METATABLE));
+   return registered and tvistab(registered) and tabV(registered) IS metatable;
+}
+
+static RecordedContract rec_contract_guard_range(jit_State *J, TRef ValueRef, cTValue *Value, bool Expected)
+{
+   bool is_range = rec_contract_is_range(J, Value);
+   if (is_range != Expected) return RecordedContract::Mismatch;
+
+   TRef registered_ref = rec_contract_range_metatable(J);
+   if (not tref_istab(registered_ref)) return RecordedContract::Mismatch;
+
+   IRBuilder ir(J);
+   TRef metatable_ref = ir.fload_tab(ValueRef, IRFL_UDATA_META);
+   if (Expected) ir.guard_eq(metatable_ref, registered_ref, IRT_TAB);
+   else ir.guard_ne(metatable_ref, registered_ref, IRT_TAB);
+   return RecordedContract::Basic;
+}
+
+static RecordedContract rec_contract_guard_callable(jit_State *J, TRef ValueRef, cTValue *Value)
+{
+   if (tvisfunc(Value)) return RecordedContract::Basic;
+
+   RecordIndex lookup{};
+   lookup.tab = ValueRef;
+   copyTV(J->L, &lookup.tabv, Value);
+   if (not lj_record_mm_lookup(J, &lookup, MM_call) or not tref_isfunc(lookup.mobj)) {
+      return RecordedContract::Mismatch;
+   }
+   return RecordedContract::Basic;
+}
+
+static RecordedContract rec_contract_guard_struct(
+   jit_State *J, TRef ValueRef, cTValue *Value, std::string_view Name)
+{
+   if (not tvisstruct(Value)) return RecordedContract::Mismatch;
+   if (Name.empty()) return RecordedContract::Basic;
+
+   struct_record *definition = find_struct(J->L, Name);
+   if (not definition or structV(Value)->def != definition) return RecordedContract::Mismatch;
+
+   IRBuilder ir(J);
+   TRef definition_ref = ir.fload(ValueRef, IRFL_STRUCT_DEF, IRT_PTR);
+   ir.guard_eq(definition_ref, ir.kkptr(definition), IRT_PTR);
+   return RecordedContract::Basic;
+}
+
+static RecordedContract rec_contract_guard_userdata(jit_State *J, TRef ValueRef, cTValue *Value)
+{
+   if (tvislightud(Value)) return RecordedContract::Basic;
+   if (not tvisudata(Value) or lj_is_thunk(Value)) return RecordedContract::Mismatch;
+
+   IRBuilder ir(J);
+   TRef userdata_type = ir.fload(ValueRef, IRFL_UDATA_UDTYPE, IRT_U8);
+   ir.guard_ne_int(userdata_type, ir.kint(UDTYPE_THUNK));
+   return rec_contract_guard_range(J, ValueRef, Value, false);
+}
+
+static RecordedContract rec_contract_record(jit_State *J, BCREG Base, GCstr *Encoded)
+{
+   RuntimeContractDescriptor descriptor;
+   if (not decode_runtime_contract(Encoded, descriptor)) return RecordedContract::Invalid;
+   if (descriptor.dynamic_count()) return RecordedContract::Complex;
+
+   for (uint8_t i = 0; i < descriptor.static_value_count; ++i) {
+      const RuntimeContractEntry *entry = descriptor.entry_for(i);
+      if (not entry) continue;
+
+      cTValue *value = J->L->base + Base + i;
+      bool nullable = (entry->flags & contract_flag(ContractEntryFlag::Nullable)) != 0;
+      bool required = (entry->flags & contract_flag(ContractEntryFlag::Required)) != 0;
+      if (tvisnil(value)) {
+         if (not nullable or required) return RecordedContract::Mismatch;
+         (void)getslot(J, Base + i);
+         continue;
+      }
+
+      if (lj_is_thunk(value)) return RecordedContract::Complex;
+
+      TRef value_ref = getslot(J, Base + i);
+      RecordedContract result = RecordedContract::Basic;
+      switch (entry->type) {
+         case TiriType::Any:
+         case TiriType::Unknown: break;
+         case TiriType::Nil:     result = RecordedContract::Mismatch; break;
+         case TiriType::Bool:
+            if (not tvisbool(value)) result = RecordedContract::Mismatch;
+            break;
+         case TiriType::Num:
+            if (not tvisnumber(value)) result = RecordedContract::Mismatch;
+            break;
+         case TiriType::Str:
+            if (not tvisstr(value)) result = RecordedContract::Mismatch;
+            break;
+         case TiriType::Table:
+            if (not tvistab(value)) result = RecordedContract::Mismatch;
+            break;
+         case TiriType::Array:
+            if (not tvisarray(value)) result = RecordedContract::Mismatch;
+            break;
+         case TiriType::Object:
+            if (not tvisobject(value)) result = RecordedContract::Mismatch;
+            break;
+         case TiriType::Func:
+            result = rec_contract_guard_callable(J, value_ref, value);
+            break;
+         case TiriType::Struct:
+            result = rec_contract_guard_struct(J, value_ref, value, entry->struct_name);
+            break;
+         case TiriType::Range:
+            if (not tvisudata(value)) result = RecordedContract::Mismatch;
+            else result = rec_contract_guard_range(J, value_ref, value, true);
+            break;
+         case TiriType::Userdata:
+            result = rec_contract_guard_userdata(J, value_ref, value);
+            break;
+      }
+      if (result != RecordedContract::Basic) return result;
+   }
+   return RecordedContract::Basic;
+}
 
 //********************************************************************************************************************
 // Get TRef for current function.
@@ -3766,10 +3825,8 @@ void lj_record_ins(jit_State *J)
 
    case BC_CONTRACT:
    {
-      uint8_t value_count = 0;
-      RecordedContract contract = rec_contract_classify(lbase + bc_a(ins), strV(rcv), value_count);
+      RecordedContract contract = rec_contract_record(J, bc_a(ins), strV(rcv));
       if (contract IS RecordedContract::Basic) {
-         for (uint8_t i = 0; i < value_count; ++i) (void)getslot(J, bc_a(ins) + i);
          J->needsnap = 1;
          break;
       }

@@ -161,11 +161,13 @@ end
       entry = anno[func]
 
       if rx_test then
-         if not rx_test.match(name) then continue end
+         if not rx_test.test(name) then continue end
       end
 
       local eval
       try<trace>
+         -- Keep each benchmark independent from trace limits, blacklisting and side traces created by earlier cases.
+         jit.flush()
          eval = bmark.run({
             duration     = duration,
             warmupCalls  = warmup,
@@ -177,7 +179,9 @@ end
          logMessage(f'Error in benchmark {name}: {ex.message}')
          logMessage(ex.stackTrace)
       success
-         logMessage(string.format('%s() Calls Per Second: %d; Total Calls: %d, Fastest: %.3f ms', name, eval.callsPerSecond, eval.benchmarkCalls, eval.stats.min))
+         logMessage(string.format(
+            '%s() Calls Per Second: %d; Total Calls: %d, Fastest: %.3f ms, Median: %.3f ms, Trimmed Tail: %.3f ms',
+            name, eval.callsPerSecond, eval.benchmarkCalls, eval.stats.min, eval.stats.median, eval.stats.max))
          if eval.memoryLeakRate / eval.callsPerSecond > 512 then
             logMessage(string.format('Leak Rate:  %d bytes per call', eval.memoryLeakRate / eval.callsPerSecond))
          end

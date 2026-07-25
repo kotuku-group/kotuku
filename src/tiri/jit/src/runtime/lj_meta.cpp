@@ -600,52 +600,6 @@ void lj_meta_istype(lua_State *L, BCREG ra, BCREG tp)
 
 namespace {
 
-struct RuntimeContractEntry {
-   TiriType type = TiriType::Unknown;
-   uint8_t flags = 0;
-   uint8_t position = 0;
-   std::string_view struct_name;
-   std::string_view label;
-};
-
-class RuntimeContractReader {
-public:
-   explicit RuntimeContractReader(GCstr *Descriptor)
-      : cursor(reinterpret_cast<const uint8_t *>(strdata(Descriptor))),
-        end(cursor + Descriptor->len) {}
-
-   [[nodiscard]] bool read_byte(uint8_t &Value)
-   {
-      if (this->cursor >= this->end) return false;
-      Value = *this->cursor++;
-      return true;
-   }
-
-   [[nodiscard]] bool read_text(std::string_view &Value)
-   {
-      uint8_t length;
-      if (not this->read_byte(length) or size_t(this->end - this->cursor) < length) return false;
-      Value = std::string_view(reinterpret_cast<const char *>(this->cursor), length);
-      this->cursor += length;
-      return true;
-   }
-
-   [[nodiscard]] bool read_entry(RuntimeContractEntry &Entry)
-   {
-      uint8_t type;
-      if (not this->read_byte(type) or not this->read_byte(Entry.flags) or not this->read_byte(Entry.position) or
-          not this->read_text(Entry.struct_name) or not this->read_text(Entry.label)) {
-         return false;
-      }
-      Entry.type = TiriType(type);
-      return type <= uint8_t(TiriType::Unknown);
-   }
-
-private:
-   const uint8_t *cursor;
-   const uint8_t *end;
-};
-
 [[nodiscard]] static bool contract_is_range(lua_State *L, cTValue *Value)
 {
    if (not tvisudata(Value)) return false;
@@ -769,40 +723,23 @@ static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractE
 extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCount, GCstr *Descriptor)
 {
    L->top = curr_topL(L);
-   RuntimeContractReader reader(Descriptor);
-   uint8_t version;
-   uint8_t boundary_value;
-   uint8_t descriptor_flags;
-   uint8_t static_count;
-   uint8_t contract_count;
-   if (not reader.read_byte(version) or version != TIRI_CONTRACT_VERSION or
-       not reader.read_byte(boundary_value) or
-       boundary_value < uint8_t(ContractBoundary::Parameter) or
-       boundary_value > uint8_t(ContractBoundary::Global) or
-       not reader.read_byte(descriptor_flags) or not reader.read_byte(static_count) or
-       not reader.read_byte(contract_count) or contract_count > MAX_RETURN_TYPES) {
-      lj_err_callermsg(L, "invalid runtime type-contract descriptor");
+   RuntimeContractDescriptor descriptor;
+   RuntimeContractDecodeError decode_error;
+   if (not decode_runtime_contract(Descriptor, descriptor, &decode_error)) {
+      if (decode_error IS RuntimeContractDecodeError::Entry) {
+         lj_err_callermsg(L, "invalid runtime type-contract entry");
+      }
+      else lj_err_callermsg(L, "invalid runtime type-contract descriptor");
    }
 
-   std::array<RuntimeContractEntry, MAX_RETURN_TYPES> entries;
-   for (uint8_t i = 0; i < contract_count; ++i) {
-      if (not reader.read_entry(entries[i])) lj_err_callermsg(L, "invalid runtime type-contract entry");
-   }
-
-   uint32_t value_count = (descriptor_flags & contract_flag(ContractDescriptorFlag::DynamicCount)) ?
-      DynamicCount + static_count : static_count;
-   bool variadic = (descriptor_flags & contract_flag(ContractDescriptorFlag::Variadic)) != 0;
-   auto boundary = ContractBoundary(boundary_value);
+   uint32_t value_count = descriptor.dynamic_count() ?
+      DynamicCount + descriptor.static_value_count : descriptor.static_value_count;
    ptrdiff_t base_offset = savestack(L, Base);
 
    for (uint32_t i = 0; i < value_count; ++i) {
-      uint32_t contract_index;
-      if (i < contract_count) contract_index = i;
-      else if (variadic and contract_count > 0) contract_index = contract_count - 1;
-      else continue;
-
-      const RuntimeContractEntry &entry = entries[contract_index];
-      if (entry.type IS TiriType::Any or entry.type IS TiriType::Unknown) continue;
+      const RuntimeContractEntry *entry = descriptor.entry_for(i);
+      if (not entry) continue;
+      if (entry->type IS TiriType::Any or entry->type IS TiriType::Unknown) continue;
 
       Base = restorestack(L, base_offset);
       TValue *value = Base + i;
@@ -813,9 +750,9 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
          copyTV(L, value, resolved);
       }
 
-      if (not contract_matches(L, value, entry)) {
-         uint32_t position = boundary IS ContractBoundary::Result ? i + 1 : entry.position;
-         contract_error(L, value, boundary, entry, position);
+      if (not contract_matches(L, value, *entry)) {
+         uint32_t position = descriptor.boundary IS ContractBoundary::Result ? i + 1 : entry->position;
+         contract_error(L, value, descriptor.boundary, *entry, position);
       }
    }
 }
