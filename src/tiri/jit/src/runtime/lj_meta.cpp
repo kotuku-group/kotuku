@@ -755,6 +755,14 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
          contract_error(L, value, descriptor.boundary, *entry, position);
       }
    }
+
+   if (descriptor.boundary IS ContractBoundary::Global and descriptor.contract_count IS 1) {
+      const RuntimeContractEntry &entry = descriptor.entries[0];
+      if (not entry.label.empty()) {
+         GCstr *name = lj_str_new(L, entry.label.data(), entry.label.size());
+         lj_tab_set_global_contract(L, tabref(curr_func(L)->c.env), name, Descriptor);
+      }
+   }
 }
 
 extern "C" void lj_meta_contract_pc(lua_State *L, const BCIns *PC, uint32_t DynamicCount)

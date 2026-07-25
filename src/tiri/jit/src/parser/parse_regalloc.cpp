@@ -605,16 +605,17 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
    return false;
 }
 
-static void bcemit_value_contract(FuncState *fs, ExpDesc *Value, const RuntimeContract &Contract)
+static void bcemit_value_contract(
+   FuncState *fs, ExpDesc *Value, const RuntimeContract &Contract, bool ForceRuntimeCheck = false)
 {
    if (Contract.type IS TiriType::Unknown or Contract.type IS TiriType::Any) return;
-   if (contract_literal_proved(fs, Value, Contract.type)) return;
+   if (contract_literal_proved(fs, Value, Contract.type) and not ForceRuntimeCheck) return;
    if (Value->static_value and fs->ls->active_context) {
       const auto &descriptor = fs->ls->active_context->descriptors().value(Value->static_value);
       bool same_type = descriptor.primary IS Contract.type;
       bool same_struct = Contract.type != TiriType::Struct or descriptor.struct_def IS Contract.struct_def;
       bool same_nullability = descriptor.nullable IS Contract.nullable;
-      if (same_type and same_struct and same_nullability and descriptor.proved()) return;
+      if (same_type and same_struct and same_nullability and descriptor.proved() and not ForceRuntimeCheck) return;
    }
 
    BCREG source = expr_toanyreg(fs, Value);
@@ -684,7 +685,16 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
             .boundary = ContractBoundary::Global,
             .position = 1
          };
-         bcemit_value_contract(fs, RHS, contract);
+         // Global contracts must execute even for statically proved literals so the declaration is attached to the
+         // runtime environment for separately compiled chunks.
+         bcemit_value_contract(fs, RHS, contract, true);
+      }
+      else if (GCstr *contract = lj_tab_get_global_contract(tabref(fs->L->env), LHS->u.sval)) {
+         BCREG source = expr_toanyreg(fs, RHS);
+         ExpDesc descriptor(contract);
+         bcemit_AD(fs, BC_CONTRACT, source, const_str(fs, &descriptor));
+         RHS->k = ExpKind::NonReloc;
+         RHS->u.s.info = source;
       }
       BCREG ra = expr_toanyreg(fs, RHS);
       ins = BCINS_AD(BC_GSET, ra, const_str(fs, LHS));

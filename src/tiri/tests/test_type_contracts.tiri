@@ -362,6 +362,17 @@ end
    expect_contract_failure(function() glContractNumber = dynamic_value('wrong') end, 'global')
    assert(glContractNumber is 3, 'A rejected global store must preserve the previous value')
 
+   expect_contract_failure(function() exec("glContractNumber = 'wrong'") end, 'global')
+   assert(glContractNumber is 3, 'A rejected store from a separately compiled chunk must preserve the global value')
+
+   global glContractArray:array = array<int> { 4, 8 }
+   function read_contract_array()
+      return glContractArray[1]
+   end
+   expect_contract_failure(function() exec("glContractArray = {}") end, 'global')
+   assert(read_contract_array() is 8,
+      'A separately compiled store must not invalidate an already-compiled specialised global reader')
+
    global glContractAny:any = 1
    glContractAny = 'allowed'
    assert(glContractAny is 'allowed', 'Explicit any remains the global contract opt-out')
