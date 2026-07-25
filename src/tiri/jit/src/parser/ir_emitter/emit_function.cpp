@@ -95,6 +95,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    ParserAllocator allocator = ParserAllocator::from(this->lex_state.L);
    ParserConfig inherited = this->ctx.config();
    ParserContext child_ctx = ParserContext::from(this->lex_state, child_state, allocator, inherited);
+   child_ctx.share_descriptors(this->ctx);
    ParserSession session(child_ctx, inherited);
 
    // Inherit declared globals from parent so nested functions recognize them
@@ -157,6 +158,9 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
          param_info.fixed_type = param.type;
          param_info.struct_def = param.struct_def;
       }
+      auto &param_info = child_state.var_get(base.raw() + i.raw());
+      param_info.binding_id = param.name.binding_id;
+      param_info.static_value = param.name.static_value;
    }
 
    if (child_state.varmap.size() > 0) {
@@ -375,10 +379,10 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
             : this->emit_expression(*payload.table);
          if (not table_result.ok()) return table_result;
          ExpDesc table = table_result.value_ref();
+         StaticValueHandle receiver_descriptor = table.static_value;
 
          // Save the emitted expression's result_type before discharge operations may modify it.
          // This captures type information propagated from VarInfo during variable lookup.
-         TiriType emitted_base_type = table.result_type;
          struct_record *emitted_struct_def = table.struct_def;
 
          ExpressionValue table_toval(&this->func_state, table);
@@ -395,14 +399,18 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          // Propagate known base type information for downstream optimizations.
          // When base_type is Object, emit specialised BC_OBSETF bytecodes via IndexedObject.
          // Check both AST-level base_type AND emitted expression's result_type.
-         if (payload.base_type IS TiriType::Object or emitted_base_type IS TiriType::Object) {
+         bool proved_object = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Object, true);
+         bool proved_struct = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Struct, true);
+         if (proved_object) {
             table.result_type = TiriType::Object;
             // Only use IndexedObject for string keys (member access always uses string keys)
             if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
                table.k = ExpKind::IndexedObject;
             }
          }
-         else if (payload.base_type IS TiriType::Struct or emitted_base_type IS TiriType::Struct) {
+         else if (proved_struct) {
             table.result_type = TiriType::Struct;
             if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
                table.k = ExpKind::IndexedStruct;
@@ -423,11 +431,10 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          if (not table_result.ok()) return table_result;
 
          ExpDesc table = table_result.value_ref();
+         StaticValueHandle receiver_descriptor = table.static_value;
 
          // Save the emitted expression's result_type before discharge operations may modify it.
          // This captures type information propagated from VarInfo during variable lookup.
-         TiriType emitted_base_type = table.result_type;
-
          // Materialize table BEFORE evaluating key, so nested index expressions emit bytecode in
          // the correct order (table first, then key)
 
@@ -449,19 +456,25 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
 
          // Propagate known base type information for downstream optimizations.
          // Check both AST-level base_type AND emitted expression's result_type.
-         if (payload.base_type IS TiriType::Array or emitted_base_type IS TiriType::Array) {
+         bool proved_array = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Array, true);
+         bool proved_object = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Object, true);
+         bool proved_struct = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Struct, true);
+         if (proved_array) {
             // Arrays don't support string keys, so only change kind for numeric indexing
             if (int32_t(table.u.s.aux) >= 0) {
                table.k = ExpKind::IndexedArray;
             }
          }
-         else if (payload.base_type IS TiriType::Object or emitted_base_type IS TiriType::Object) {
+         else if (proved_object) {
             // Objects use string field access - only change kind for string const keys
             if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
                table.k = ExpKind::IndexedObject;
             }
          }
-         else if (payload.base_type IS TiriType::Struct or emitted_base_type IS TiriType::Struct) {
+         else if (proved_struct) {
             table.result_type = TiriType::Struct;
             if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
                table.k = ExpKind::IndexedStruct;
@@ -483,8 +496,8 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          auto table_result = this->emit_lvalue_expr(*payload.table, false, SafeNavSkip);
          if (not table_result.ok()) return table_result;
          ExpDesc table = table_result.value_ref();
+         StaticValueHandle receiver_descriptor = table.static_value;
 
-         TiriType emitted_base_type = table.result_type;
          struct_record *emitted_struct_def = table.struct_def;
 
          ExpressionValue table_toval(&this->func_state, table);
@@ -503,13 +516,17 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          key.u.sval = payload.member.symbol;
          expr_index(&this->func_state, &table, &key);
 
-         if (payload.base_type IS TiriType::Object or emitted_base_type IS TiriType::Object) {
+         bool proved_object = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Object, true);
+         bool proved_struct = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Struct, true);
+         if (proved_object) {
             table.result_type = TiriType::Object;
             if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
                table.k = ExpKind::IndexedObject;
             }
          }
-         else if (payload.base_type IS TiriType::Struct or emitted_base_type IS TiriType::Struct) {
+         else if (proved_struct) {
             table.result_type = TiriType::Struct;
             if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
                table.k = ExpKind::IndexedStruct;
@@ -532,8 +549,7 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          auto table_result = this->emit_lvalue_expr(*payload.table, false, SafeNavSkip);
          if (not table_result.ok()) return table_result;
          ExpDesc table = table_result.value_ref();
-
-         TiriType emitted_base_type = table.result_type;
+         StaticValueHandle receiver_descriptor = table.static_value;
 
          ExpressionValue table_toval_idx(&this->func_state, table);
          table_toval_idx.to_val();
@@ -556,17 +572,23 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          key = key_toval_idx.legacy();
          expr_index(&this->func_state, &table, &key);
 
-         if (payload.base_type IS TiriType::Array or emitted_base_type IS TiriType::Array) {
+         bool proved_array = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Array, true);
+         bool proved_object = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Object, true);
+         bool proved_struct = can_use_static_receiver(
+            this->ctx.descriptors(), receiver_descriptor, TiriType::Struct, true);
+         if (proved_array) {
             if (int32_t(table.u.s.aux) >= 0) {
                table.k = ExpKind::IndexedArray;
             }
          }
-         else if (payload.base_type IS TiriType::Object or emitted_base_type IS TiriType::Object) {
+         else if (proved_object) {
             if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
                table.k = ExpKind::IndexedObject;
             }
          }
-         else if (payload.base_type IS TiriType::Struct or emitted_base_type IS TiriType::Struct) {
+         else if (proved_struct) {
             table.result_type = TiriType::Struct;
             if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
                table.k = ExpKind::IndexedStruct;
@@ -608,6 +630,13 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_function_stmt(const LocalFunction
    VarInfo &var_info = this->func_state.var_get(this->func_state.varmap.size() - 1);
    var_info.startpc = this->func_state.pc;
    var_info.fixed_type = TiriType::Func;  // Function declarations have known type
+   var_info.binding_id = Payload.name.binding_id;
+   var_info.static_value = Payload.name.static_value;
+   if (Payload.name.binding_id) {
+      const auto &binding = this->ctx.descriptors().binding(Payload.name.binding_id);
+      var_info.static_callable = binding.callable;
+      if (binding.callable) var_info.static_results = this->ctx.descriptors().callable(binding.callable).results;
+   }
    if (Payload.name.symbol and not Payload.name.is_blank) this->update_local_binding(Payload.name.symbol, slot);
 
    // Copy function return types to VarInfo for compile-time type checking at call sites
@@ -700,6 +729,13 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
       VarInfo &var_info = this->func_state.var_get(this->func_state.varmap.size() - 1);
       var_info.startpc = this->func_state.pc;
       var_info.fixed_type = TiriType::Func;  // Function declarations have known type
+      var_info.binding_id = first_segment.binding_id;
+      var_info.static_value = first_segment.static_value;
+      if (first_segment.binding_id) {
+         const auto &binding = this->ctx.descriptors().binding(first_segment.binding_id);
+         var_info.static_callable = binding.callable;
+         if (binding.callable) var_info.static_results = this->ctx.descriptors().callable(binding.callable).results;
+      }
       this->update_local_binding(symbol, slot);
 
       // Copy function return types to VarInfo for compile-time type checking at call sites

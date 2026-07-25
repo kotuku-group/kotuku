@@ -50,6 +50,8 @@ static const struct {
 #include "parse_internal.h"
 #include "parser_symbols.h"
 #include "parser_profiler.h"
+#include "static_type_descriptor.h"
+#include "static_descriptor_analysis.h"
 #include "value_categories.h"
 #include "../../../defs.h"
 
@@ -57,6 +59,8 @@ static const struct {
 #include "token_stream.cpp"
 #include "parser_diagnostics.cpp"
 #include "parser_context.cpp"
+#include "static_type_descriptor.cpp"
+#include "static_descriptor_analysis.cpp"
 #include "ast/nodes.cpp"
 #include "ast/builder.cpp"
 #include "parser_symbols.cpp"
@@ -191,6 +195,7 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
 
    trace_ast_boundary(Context, *chunk, "parse");
    collect_parser_symbols(Context.lua(), Context.lex(), *chunk);
+   discover_static_bindings(Context, *chunk);
 
    if (Context.config().enable_type_analysis) {
       ParserProfiler::StageTimer type_timer = Profiler.stage("type_analysis");
@@ -206,6 +211,8 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
          return;
       }
    }
+
+   propagate_static_descriptors(Context, *chunk);
 
    // Emit bytecode instructions
 

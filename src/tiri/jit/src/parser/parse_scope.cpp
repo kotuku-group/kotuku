@@ -105,6 +105,10 @@ void LexState::var_add(BCREG nvars)
       v->object_class_id = CLASSID::NIL;
       v->struct_def = nullptr;
       v->result_types.fill(TiriType::Unknown);  // No return type info for non-functions
+      v->static_value = 0;
+      v->static_results = 0;
+      v->static_callable = 0;
+      v->binding_id = 0;
    }
 }
 
@@ -191,6 +195,8 @@ static MSize var_lookup_(LexState* ls, GCstr* name, ExpDesc* e)
          e->result_type = vinfo.fixed_type;
          e->object_class_id = vinfo.object_class_id;
          e->struct_def = vinfo.struct_def;
+         e->static_value = vinfo.static_value;
+         e->static_results = vinfo.static_results;
 
          // If found in outer function, create upvalues in all intervening functions
          if (not is_current) {

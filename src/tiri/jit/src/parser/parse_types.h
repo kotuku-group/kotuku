@@ -16,6 +16,7 @@
 #include <ranges>
 #include "../bytecode/lj_bc.h"
 #include "../runtime/lj_contract.h"
+#include "static_type_descriptor.h"
 
 // Forward declarations
 class LexState;
@@ -233,6 +234,8 @@ struct ExpDesc {
    TiriType result_type = TiriType::Unknown;  // Known result type (for Call: callee's first return type)
    CLASSID object_class_id = CLASSID::NIL; // CLASSID for Object result types
    struct_record *struct_def = nullptr; // Resolved layout for Struct result types
+   StaticValueHandle static_value = 0;
+   StaticResultSetHandle static_results = 0;
    uint32_t struct_field_index = 0xFFFFFFFFu; // Pre-resolved field index for STGETF/STSETF
    bool type_confirmed = false;  // True if result_type is confirmed from class dictionary lookup
    BCPOS t;        // True condition jump list.
@@ -295,6 +298,8 @@ struct ExpDesc {
       this->u.s.info = info;
       this->flags = ExprFlag::None;
       this->result_type = TiriType::Unknown;
+      this->static_value = 0;
+      this->static_results = 0;
       this->f = this->t = NO_JMP;
    }
 

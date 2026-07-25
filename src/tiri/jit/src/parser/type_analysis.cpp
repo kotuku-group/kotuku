@@ -146,7 +146,7 @@ private:
 
    // Symbol resolution - looks up variables and functions in scope stack
    [[nodiscard]] std::optional<InferredType> resolve_identifier(GCstr *) const;
-   [[nodiscard]] const FunctionExprPayload * resolve_call_target(const CallTarget &) const;
+   [[nodiscard]] const FunctionExprPayload * resolve_call_target(const CallExprPayload &) const;
    [[nodiscard]] const FunctionExprPayload * resolve_function(GCstr *) const;
 
    // Const checking - checks if a local variable has <const> attribute
@@ -1818,7 +1818,7 @@ void TypeAnalyser::analyse_call_expr(const CallExprPayload &Call)
       this->analyse_expression(*argument);
    }
 
-   const FunctionExprPayload* target = this->resolve_call_target(Call.target);
+   const FunctionExprPayload* target = this->resolve_call_target(Call);
    if (target) {
       if (Call.result_type IS TiriType::Unknown and target->return_types.is_explicit and
           target->return_types.count > 0) {
@@ -1940,7 +1940,7 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                return result;
             }
             // Otherwise try to infer from the function's declared return type
-            const FunctionExprPayload* target = this->resolve_call_target(payload->target);
+            const FunctionExprPayload* target = this->resolve_call_target(*payload);
             if (target and target->return_types.is_explicit and target->return_types.count > 0) {
                result.primary = target->return_types.types[0];
                result.struct_def = target->return_types.struct_defs[0];
@@ -2130,7 +2130,7 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
    auto *payload = std::get_if<CallExprPayload>(&Expr.data);
    if (not payload) return result;
 
-   const FunctionExprPayload* target = this->resolve_call_target(payload->target);
+   const FunctionExprPayload* target = this->resolve_call_target(*payload);
    if (not target) return result;
 
    if (not target->return_types.is_explicit) return result;
@@ -2193,8 +2193,14 @@ void TypeAnalyser::mark_identifier_used(GCstr *Name)
 // Resolve the target of a function call to get its FunctionExprPayload.  Handles direct calls (func()) and
 // identifier references (myFunc()).
 
-const FunctionExprPayload * TypeAnalyser::resolve_call_target(const CallTarget &Target) const
+const FunctionExprPayload * TypeAnalyser::resolve_call_target(const CallExprPayload &Call) const
 {
+   if (Call.callable) {
+      const auto &callable = this->ctx_.descriptors().callable(Call.callable);
+      if (callable.immutable and callable.function) return callable.function;
+   }
+
+   const CallTarget &Target = Call.target;
    if (std::holds_alternative<DirectCallTarget>(Target)) {
       const auto &direct = std::get<DirectCallTarget>(Target);
       if (direct.callable) {

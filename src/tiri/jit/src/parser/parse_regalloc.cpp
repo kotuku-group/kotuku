@@ -618,6 +618,13 @@ static void bcemit_value_contract(FuncState *fs, ExpDesc *Value, const RuntimeCo
 {
    if (Contract.type IS TiriType::Unknown or Contract.type IS TiriType::Any) return;
    if (contract_literal_proved(fs, Value, Contract.type)) return;
+   if (Value->static_value and fs->ls->active_context) {
+      const auto &descriptor = fs->ls->active_context->descriptors().value(Value->static_value);
+      bool same_type = descriptor.primary IS Contract.type;
+      bool same_struct = Contract.type != TiriType::Struct or descriptor.struct_def IS Contract.struct_def;
+      bool same_nullability = descriptor.nullable IS Contract.nullable;
+      if (same_type and same_struct and same_nullability and descriptor.proved()) return;
+   }
 
    BCREG source = expr_toanyreg(fs, Value);
    bcemit_contract(fs, source, std::span(&Contract, 1), 1);

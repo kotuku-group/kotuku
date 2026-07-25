@@ -26,6 +26,7 @@
 #include "lj_struct.h"
 #include "lib.h"
 #include "lib_range.h"
+#include "../parser/static_type_descriptor.h"
 
 #include <cstdio>
 #include <cstring>
@@ -98,28 +99,8 @@ static OBJECTID object_uid_from_value(lua_State *L, int ArgIndex)
 static AET parse_elemtype(lua_State *L, int NArg)
 {
    GCstr *type_str = lj_lib_checkstr(L, NArg);
-
    std::string_view type_name(strdata(type_str), type_str->len);
-   if (type_name.starts_with("struct<") and type_name.ends_with('>') and (type_name.size() > 8)) {
-      return AET::STRUCT;
-   }
-
-   switch (type_str->hash) {
-      case HASH_INT:     return AET::INT32;
-      case HASH_BYTE:    return AET::BYTE;
-      case HASH_CHAR:    return AET::BYTE;
-      case HASH_INT16:   return AET::INT16;
-      case HASH_INT64:   return AET::INT64;
-      case HASH_FLOAT:   return AET::FLOAT;
-      case HASH_DOUBLE:  return AET::DOUBLE;
-      case HASH_STRING:  return AET::STR_GC;
-      case HASH_STRUCT:  return AET::STRUCT;
-      case HASH_POINTER: return AET::PTR;
-      case HASH_OBJECT:  return AET::OBJECT;
-      case HASH_TABLE:   return AET::TABLE;
-      case HASH_ARRAY:   return AET::ARRAY;
-      case HASH_ANY:     return AET::ANY;
-   }
+   if (auto descriptor = describe_array_element(type_name, L)) return descriptor->storage;
 
    lj_err_argv(L, NArg, ErrMsg::BADTYPE, "valid array type", strdata(type_str));
    return AET(0);  // unreachable

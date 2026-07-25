@@ -1,0 +1,174 @@
+-- Behaviour and interpreter/JIT parity for parse-time type-guided emission.
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath()
+end
+
+struct EmissionPoint
+   Value: int
+end
+
+glEmissionStructureSequence = 0
+
+function disassemble_source(Source:str):str
+   local script = obj.new('tiri', { statement=Source })
+   check script.acQuery()
+   check script.acActivate()
+   local _, disassembly = script.mtDebugLog('disasm')
+   script.free()
+   return disassembly
+end
+
+function typed_increment(Value:num):num
+   return Value + 1
+end
+
+function make_point_pair():<str, struct<EmissionPoint>>
+   return 'point', struct<EmissionPoint> { Value=37 }
+end
+
+function make_number_array():array
+   return array<int> { 5, 10, 15 }
+end
+
+@Test function StableLocalAlias()
+   local callback = typed_increment
+   local callback_two = callback
+   assert(callback_two(41) is 42, 'Stable alias chains should preserve callable behaviour')
+end
+
+@Test function CapturedImplicitStructRetainsDescriptor()
+   glEmissionStructureSequence++
+   local structure_name = 'CapturedImplicitPoint' .. glEmissionStructureSequence
+   local disassembly = disassemble_source(string.format([[
+MAKESTRUCT('%s', 'lValue')
+captured_point = struct.new('%s')
+function read_point()
+   return captured_point.value
+end
+function write_point()
+   captured_point.value = 42
+end
+]], structure_name, structure_name))
+   assert(disassembly:find('STGETF') != nil,
+      'A captured implicit struct local should retain specialised reads, got:\n' .. disassembly)
+   assert(disassembly:find('STSETF') != nil,
+      'A captured implicit struct local should retain specialised writes, got:\n' .. disassembly)
+end
+
+@Test function ImmutableCapturedAlias()
+   local callback <const> = typed_increment
+
+   local function make_callback():func
+      return (Value => callback(Value))
+   end
+
+   local captured = make_callback()
+   assert(captured(9) is 10, 'Immutable captured aliases should preserve callable behaviour')
+end
+
+@Test function MutableAliasFallbacks()
+   local callback = typed_increment
+   local replacement = (Value => Value + 10)
+   local replace = true
+   if replace then callback = replacement end
+   assert(callback(5) is 15, 'A branch write should use the replacement callable')
+
+   local loop_callback = typed_increment
+   local result = 0
+   for index = 0, 2 do
+      result = loop_callback(index)
+      loop_callback = replacement
+   end
+   assert(result is 12, 'A loop back-edge write must not leave stale callable metadata')
+end
+
+@Test function ArrayLogicalElementTypes()
+   local numbers = array<int> { 3, 7 }
+   local strings = array<string> { 'a', 'b' }
+   local tables = array<table> { { value=11 } }
+   local nested = array<array> { array<int> { 19 } }
+   local points = array<struct<EmissionPoint>> { struct<EmissionPoint> { Value=29 } }
+   local clock = obj.new('time')
+   local objects = array<object> { clock }
+
+   assert(numbers[1] is 7, 'array<int> indexing should return a number')
+   assert(strings[0] is 'a', 'array<string> indexing should return a string')
+   assert(tables[0].value is 11, 'array<table> indexing should retain table behaviour')
+   assert(nested[0][0] is 19, 'array<array> indexing should retain nested array behaviour')
+   assert(points[0].Value is 29, 'named struct-array indexing should retain its layout')
+   assert(objects[0].id is clock.id, 'array<object> indexing should retain object behaviour')
+   clock.free()
+end
+
+@Test function ArrayPropagationPaths()
+   local values = array<int> { 2, 4, 6 }
+   local alias = values
+
+   local function captured_sum():num
+      local total = 0
+      for _, value in alias do total += value end
+      return total
+   end
+
+   local clone = alias:clone()
+   local mapped = clone:map(Value => Value * 2)
+   local returned = make_number_array()
+   assert(captured_sum() is 12, 'Array element descriptors should survive immutable capture and iteration')
+   assert(mapped[2] is 12, 'Array element descriptors should survive preserving methods')
+   assert(returned[1] is 10, 'Array element descriptors should survive function result propagation')
+end
+
+@Test function ArrayDescriptorInvalidation()
+   local values = array<int> { 1 }
+   values = array<string> { 'changed' }
+   assert(values[0] is 'changed', 'Conflicting array reassignment must not retain a stale numeric descriptor')
+
+   local branch_values = array<int> { 2 }
+   if true then branch_values = array<table> { { value=23 } } end
+   assert(branch_values[0].value is 23, 'A conflicting branch assignment must degrade the element descriptor')
+end
+
+@Test function PositionalAndFilteredStructResults()
+   local label, point = make_point_pair()
+   assert(label is 'point' and point.Value is 37,
+      'A constrained non-first result should retain its struct layout')
+
+   local filtered = [_*]make_point_pair()
+   assert(filtered.Value is 37, 'A result filter should preserve the retained position descriptor')
+end
+
+@Test function SafeIndexAndCallResults()
+   local missing
+   assert(missing?[0] is nil, 'A safe index should return nil for a nil receiver')
+
+   local holder
+   assert(holder?:unknown() is nil, 'A safe call should return nil for a nil receiver')
+end
+
+@Test function InterpreterAndJitParity()
+   local function run_case():num
+      local values = array<int> { 1, 2, 3, 4 }
+      local callback = typed_increment
+      local total = 0
+      for pass = 0, 120 do
+         total += callback(values[pass % 4])
+      end
+      return total
+   end
+
+   jit.off()
+   local interpreted = run_case()
+   jit.on()
+   local compiled = run_case()
+   assert(compiled is interpreted, 'Interpreter and JIT executions should agree for specialised paths')
+end
+
+@Test function CallableMetamethodRemainsGeneric()
+   local callable = setmetatable({ offset=8 }, {
+      __call = function(Self, Value)
+         return Self.offset + Value
+      end
+   })
+   assert(callable(4) is 12, 'Callable table metamethod semantics must remain unchanged')
+end

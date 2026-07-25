@@ -654,6 +654,8 @@ void IrEmitter::apply_inferred_local_type(BCReg Slot, const ExprNode& Value)
    info->fixed_type = inferred.type;
    info->object_class_id = (inferred.type IS TiriType::Object) ? inferred.object_class_id : CLASSID::NIL;
    info->struct_def = inferred.struct_def;
+   info->static_value = Value.static_value;
+   info->static_results = Value.static_results;
 }
 
 BCReg IrEmitter::finalise_pending_local_assignment(PreparedAssignment& Target)
@@ -1217,6 +1219,15 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
    for (auto i = BCReg(0); i < nvars; ++i) {
       const Identifier& identifier = Payload.names[i.raw()];
       VarInfo* info = &this->func_state.var_get(base.raw() + i.raw());
+      info->binding_id = identifier.binding_id;
+      info->static_value = identifier.static_value;
+      if (identifier.binding_id) {
+         const auto &binding = this->ctx.descriptors().binding(identifier.binding_id);
+         info->static_callable = binding.callable;
+         if (binding.callable) {
+            info->static_results = this->ctx.descriptors().callable(binding.callable).results;
+         }
+      }
 
       if (identifier.type != TiriType::Unknown) {
          // Explicit type annotation takes precedence
@@ -1790,6 +1801,15 @@ ParserResult<IrEmitUnit> IrEmitter::emit_generic_for_stmt(const GenericForStmtPa
       loop_bindings.reserve(visible.raw());
       for (auto i = BCReg(0); i < visible; ++i) {
          const Identifier& identifier = Payload.names[i.raw()];
+         auto &variable = fs->var_get(base.raw() + i.raw());
+         variable.binding_id = identifier.binding_id;
+         variable.static_value = identifier.static_value;
+         if (identifier.static_value) {
+            const auto &descriptor = this->ctx.descriptors().value(identifier.static_value);
+            variable.fixed_type = descriptor.primary;
+            variable.object_class_id = descriptor.object_class_id;
+            variable.struct_def = descriptor.struct_def;
+         }
          if (identifier.symbol and not identifier.is_blank) {
             BlockBinding binding;
             binding.symbol = identifier.symbol;
@@ -2128,31 +2148,92 @@ ParserResult<ExpDesc> IrEmitter::emit_expression(const ExprNode& expr)
       return this->emit_literal_expr(constant->to_literal());
    }
 
+   ParserResult<ExpDesc> result;
    switch (expr.kind) {
-      case AstNodeKind::LiteralExpr:      return this->emit_literal_expr(std::get<LiteralValue>(expr.data));
-      case AstNodeKind::IdentifierExpr:   return this->emit_identifier_expr(std::get<NameRef>(expr.data));
-      case AstNodeKind::VarArgExpr:       return this->emit_vararg_expr();
-      case AstNodeKind::UnaryExpr:        return this->emit_unary_expr(std::get<UnaryExprPayload>(expr.data));
-      case AstNodeKind::UpdateExpr:       return this->emit_update_expr(std::get<UpdateExprPayload>(expr.data));
-      case AstNodeKind::BinaryExpr:       return this->emit_binary_expr(std::get<BinaryExprPayload>(expr.data));
+      case AstNodeKind::LiteralExpr:
+         result = this->emit_literal_expr(std::get<LiteralValue>(expr.data));
+         break;
+      case AstNodeKind::IdentifierExpr:
+         result = this->emit_identifier_expr(std::get<NameRef>(expr.data));
+         break;
+      case AstNodeKind::VarArgExpr:
+         result = this->emit_vararg_expr();
+         break;
+      case AstNodeKind::UnaryExpr:
+         result = this->emit_unary_expr(std::get<UnaryExprPayload>(expr.data));
+         break;
+      case AstNodeKind::UpdateExpr:
+         result = this->emit_update_expr(std::get<UpdateExprPayload>(expr.data));
+         break;
+      case AstNodeKind::BinaryExpr:
+         result = this->emit_binary_expr(std::get<BinaryExprPayload>(expr.data));
+         break;
       case AstNodeKind::ComparisonChainExpr:
-         return this->emit_comparison_chain_expr(std::get<ComparisonChainExprPayload>(expr.data));
-      case AstNodeKind::TernaryExpr:      return this->emit_ternary_expr(std::get<TernaryExprPayload>(expr.data));
-      case AstNodeKind::PresenceExpr:     return this->emit_presence_expr(std::get<PresenceExprPayload>(expr.data));
-      case AstNodeKind::PipeExpr:         return this->emit_pipe_expr(std::get<PipeExprPayload>(expr.data));
-      case AstNodeKind::MemberExpr:       return this->emit_member_expr(std::get<MemberExprPayload>(expr.data));
-      case AstNodeKind::IndexExpr:        return this->emit_index_expr(std::get<IndexExprPayload>(expr.data));
-      case AstNodeKind::SafeMemberExpr:   return this->emit_safe_member_expr(std::get<SafeMemberExprPayload>(expr.data));
-      case AstNodeKind::SafeIndexExpr:    return this->emit_safe_index_expr(std::get<SafeIndexExprPayload>(expr.data));
-      case AstNodeKind::SafeCallExpr:     return this->emit_safe_call_expr(std::get<CallExprPayload>(expr.data));
-      case AstNodeKind::CallExpr:         return this->emit_call_expr(std::get<CallExprPayload>(expr.data));
-      case AstNodeKind::ResultFilterExpr: return this->emit_result_filter_expr(std::get<ResultFilterPayload>(expr.data));
-      case AstNodeKind::TableExpr:        return this->emit_table_expr(std::get<TableExprPayload>(expr.data));
-      case AstNodeKind::RangeExpr:        return this->emit_range_expr(std::get<RangeExprPayload>(expr.data));
-      case AstNodeKind::ChooseExpr:       return this->emit_choose_expr(std::get<ChooseExprPayload>(expr.data));
-      case AstNodeKind::FunctionExpr:     return this->emit_function_expr(std::get<FunctionExprPayload>(expr.data));
-      default: return this->unsupported_expr(expr.kind, expr.span);
+         result = this->emit_comparison_chain_expr(std::get<ComparisonChainExprPayload>(expr.data));
+         break;
+      case AstNodeKind::TernaryExpr:
+         result = this->emit_ternary_expr(std::get<TernaryExprPayload>(expr.data));
+         break;
+      case AstNodeKind::PresenceExpr:
+         result = this->emit_presence_expr(std::get<PresenceExprPayload>(expr.data));
+         break;
+      case AstNodeKind::PipeExpr:
+         result = this->emit_pipe_expr(std::get<PipeExprPayload>(expr.data));
+         break;
+      case AstNodeKind::MemberExpr:
+         result = this->emit_member_expr(std::get<MemberExprPayload>(expr.data));
+         break;
+      case AstNodeKind::IndexExpr:
+         result = this->emit_index_expr(std::get<IndexExprPayload>(expr.data));
+         break;
+      case AstNodeKind::SafeMemberExpr:
+         result = this->emit_safe_member_expr(std::get<SafeMemberExprPayload>(expr.data));
+         break;
+      case AstNodeKind::SafeIndexExpr:
+         result = this->emit_safe_index_expr(std::get<SafeIndexExprPayload>(expr.data));
+         break;
+      case AstNodeKind::SafeCallExpr:
+         result = this->emit_safe_call_expr(std::get<CallExprPayload>(expr.data));
+         break;
+      case AstNodeKind::CallExpr:
+         result = this->emit_call_expr(std::get<CallExprPayload>(expr.data));
+         break;
+      case AstNodeKind::ResultFilterExpr:
+         result = this->emit_result_filter_expr(std::get<ResultFilterPayload>(expr.data));
+         break;
+      case AstNodeKind::TableExpr:
+         result = this->emit_table_expr(std::get<TableExprPayload>(expr.data));
+         break;
+      case AstNodeKind::RangeExpr:
+         result = this->emit_range_expr(std::get<RangeExprPayload>(expr.data));
+         break;
+      case AstNodeKind::ChooseExpr:
+         result = this->emit_choose_expr(std::get<ChooseExprPayload>(expr.data));
+         break;
+      case AstNodeKind::FunctionExpr:
+         result = this->emit_function_expr(std::get<FunctionExprPayload>(expr.data));
+         break;
+      default:
+         result = this->unsupported_expr(expr.kind, expr.span);
+         break;
    }
+
+   if (result.ok()) {
+      ExpDesc &emitted = result.value_ref();
+      if (expr.static_value) {
+         emitted.static_value = expr.static_value;
+         const auto &descriptor = this->ctx.descriptors().value(expr.static_value);
+         emitted.result_type = descriptor.primary;
+         emitted.object_class_id = descriptor.object_class_id;
+         emitted.struct_def = descriptor.struct_def;
+      }
+      // Identifier lookup can recover a descriptor from VarInfo or an upvalue even when binding analysis has no
+      // handle.  For compound expressions, an unclaimed handle describes an operand and must not leak to the result.
+      else if (expr.kind != AstNodeKind::IdentifierExpr) emitted.static_value = 0;
+      if (expr.static_results) emitted.static_results = expr.static_results;
+      else if (expr.kind != AstNodeKind::IdentifierExpr) emitted.static_results = 0;
+   }
+   return result;
 }
 
 //********************************************************************************************************************
@@ -2945,7 +3026,6 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
    // Save the emitted expression's result_type and object_class_id before discharge operations may modify it.
    // This captures type information propagated from VarInfo during variable lookup.
 
-   TiriType emitted_base_type = table.result_type;
    CLASSID emitted_class_id = table.object_class_id;
    struct_record *emitted_struct_def = table.struct_def;
 
@@ -2961,7 +3041,12 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
    // to IndexedObject.  Check both AST-level base_type AND emitted expression's result_type (the latter captures
    // type info from variable declarations like `fl = obj.new(...)`).
 
-   if (Payload.base_type IS TiriType::Object or emitted_base_type IS TiriType::Object) {
+   bool proved_object = can_use_static_receiver(
+      this->ctx.descriptors(), table.static_value, TiriType::Object, true);
+   bool proved_struct = can_use_static_receiver(
+      this->ctx.descriptors(), table.static_value, TiriType::Struct, true);
+
+   if (proved_object) {
       table.result_type = TiriType::Object;
       // Only use IndexedObject for string keys (member access always uses string keys)
 
@@ -2990,7 +3075,7 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
          // If is_call_target is true, skip type checking and let runtime handle the method/action call
       }
    }
-   else if (Payload.base_type IS TiriType::Struct or emitted_base_type IS TiriType::Struct) {
+   else if (proved_struct) {
       table.result_type = TiriType::Struct;
       if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) table.k = ExpKind::IndexedStruct;
       apply_struct_field_metadata(table, emitted_struct_def, Payload.member.symbol);
@@ -3024,8 +3109,6 @@ ParserResult<ExpDesc> IrEmitter::emit_index_expr(const IndexExprPayload &Payload
 
    // Save the emitted expression's result_type before discharge operations may modify it.
    // This captures type information propagated from VarInfo during variable lookup.
-   TiriType emitted_base_type = table.result_type;
-
    // Materialize table BEFORE evaluating key, so nested index expressions emit bytecode in
    // the correct order (table first, then key)
    RegisterAllocator allocator(&this->func_state);
@@ -3042,7 +3125,14 @@ ParserResult<ExpDesc> IrEmitter::emit_index_expr(const IndexExprPayload &Payload
 
    // If base type is known to be an array, use array-specific bytecodes
    // Check both AST-level base_type AND emitted expression's result_type.
-   if (Payload.base_type IS TiriType::Array or emitted_base_type IS TiriType::Array) {
+   bool proved_array = can_use_static_receiver(
+      this->ctx.descriptors(), table.static_value, TiriType::Array, true);
+   bool proved_object = can_use_static_receiver(
+      this->ctx.descriptors(), table.static_value, TiriType::Object, true);
+   bool proved_struct = can_use_static_receiver(
+      this->ctx.descriptors(), table.static_value, TiriType::Struct, true);
+
+   if (proved_array) {
       // Arrays don't support string keys, so only change kind for numeric indexing
       // (aux >= 0 means numeric index, aux < 0 means string const key)
       if (int32_t(table.u.s.aux) >= 0) {
@@ -3051,14 +3141,14 @@ ParserResult<ExpDesc> IrEmitter::emit_index_expr(const IndexExprPayload &Payload
    }
    // If base type is known to be an object with a string key, use object-specific bytecodes
    // Check both AST-level base_type AND emitted expression's result_type.
-   else if (Payload.base_type IS TiriType::Object or emitted_base_type IS TiriType::Object) {
+   else if (proved_object) {
       // Objects use string field access - only change kind for string const keys
       // (aux < 0 means string const key)
       if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
          table.k = ExpKind::IndexedObject;
       }
    }
-   else if (Payload.base_type IS TiriType::Struct or emitted_base_type IS TiriType::Struct) {
+   else if (proved_struct) {
       if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
          table.k = ExpKind::IndexedStruct;
       }
@@ -3140,6 +3230,7 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
 
    auto table_result = this->emit_expression(*Payload.table);
    if (not table_result.ok()) return table_result;
+   StaticValueHandle receiver_descriptor = table_result.value_ref().static_value;
 
    NilShortCircuitGuard guard(this, table_result.value_ref());
    if (not guard.ok()) return guard.error<ExpDesc>();
@@ -3151,14 +3242,21 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
 
    // Propagate known base type information for downstream optimizations.
    // When base_type is Object and class_id is set, field-level type resolution may be possible.
-   if (Payload.base_type IS TiriType::Object) {
+   bool proved_object = can_use_static_receiver(
+      this->ctx.descriptors(), receiver_descriptor, TiriType::Object, true);
+   bool proved_struct = can_use_static_receiver(
+      this->ctx.descriptors(), receiver_descriptor, TiriType::Struct, true);
+
+   if (proved_object) {
       table.result_type = TiriType::Object;
       table.object_class_id = CLASSID::NIL;
+      if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) table.k = ExpKind::IndexedObject;
 
       // Look up the field type from the class dictionary for compile-time type checking.
 
-      if (Payload.class_id != CLASSID::NIL and Payload.member.symbol) {
-         auto field_info = lookup_field_type(Payload.class_id, Payload.member.symbol->hash);
+      CLASSID class_id = this->ctx.descriptors().value(receiver_descriptor).object_class_id;
+      if (class_id != CLASSID::NIL and Payload.member.symbol) {
+         auto field_info = lookup_field_type(class_id, Payload.member.symbol->hash);
          bool is_field = field_info.has_value() and (field_info->type != TiriType::Unknown);
 
          if (is_field) {
@@ -3167,7 +3265,7 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
             table.type_confirmed  = true;  // Type is confirmed from class dictionary lookup
          }
          else if (not Payload.is_call_target) {
-            auto *meta_class = FindClass(Payload.class_id);
+            auto *meta_class = FindClass(class_id);
             const char *class_name = meta_class ? meta_class->ClassName.c_str() : "Unknown";
             lj_lex_error(this->func_state.ls, 0, ErrMsg::BADFIELD, strdata(Payload.member.symbol), class_name);
             return this->unsupported_expr(AstNodeKind::SafeMemberExpr, Payload.member.span);
@@ -3175,7 +3273,7 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
          // If is_call_target is true, skip type checking and let runtime handle the method/action call
       }
    }
-   else if (table.result_type IS TiriType::Struct or emitted_struct_def) {
+   else if (proved_struct) {
       table.result_type = TiriType::Struct;
       if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) table.k = ExpKind::IndexedStruct;
       apply_struct_field_metadata(table, emitted_struct_def, Payload.member.symbol);

@@ -2611,11 +2611,253 @@ static bool test_ternary_falsey_semantics(kt::Log &log)
    return true;
 }
 
+//********************************************************************************************************************
+
+static bool test_static_descriptor_model(kt::Log &Log)
+{
+   StaticValueDescriptor unknown_array;
+   unknown_array.primary = TiriType::Array;
+   unknown_array.proof = StaticProof::Checked;
+
+   StaticValueDescriptor any_array = unknown_array;
+   any_array.array_element = { AET::ANY, TiriType::Any, CLASSID::NIL, nullptr, true };
+   if (unknown_array IS any_array or unknown_array.array_element.known or not any_array.array_element.known) {
+      Log.error("unknown array storage was not distinguished from array<any>");
+      return false;
+   }
+
+   StaticValueDescriptor number;
+   number.primary = TiriType::Num;
+   number.proof = StaticProof::Closed;
+   StaticValueDescriptor checked_number = number;
+   checked_number.proof = StaticProof::Checked;
+   checked_number.nullable = true;
+
+   StaticValueDescriptor joined = join_static_descriptors(number, checked_number);
+   if (joined.primary != TiriType::Num or not joined.nullable or joined.proof != StaticProof::Checked) {
+      Log.error("matching descriptor join lost type, nullability or weakest proof");
+      return false;
+   }
+
+   StaticValueDescriptor text;
+   text.primary = TiriType::Str;
+   text.proof = StaticProof::Closed;
+   joined = join_static_descriptors(number, text);
+   if (joined.primary != TiriType::Any or joined.proof != StaticProof::Advisory) {
+      Log.error("conflicting descriptor join did not degrade to advisory any");
+      return false;
+   }
+
+   struct ArrayMapping {
+      std::string_view name;
+      AET storage;
+      TiriType logical_type;
+   };
+   constexpr std::array<ArrayMapping, 14> mappings = { {
+      { "byte", AET::BYTE, TiriType::Num },
+      { "char", AET::BYTE, TiriType::Num },
+      { "int16", AET::INT16, TiriType::Num },
+      { "int", AET::INT32, TiriType::Num },
+      { "int64", AET::INT64, TiriType::Num },
+      { "float", AET::FLOAT, TiriType::Num },
+      { "double", AET::DOUBLE, TiriType::Num },
+      { "string", AET::STR_GC, TiriType::Str },
+      { "table", AET::TABLE, TiriType::Table },
+      { "array", AET::ARRAY, TiriType::Array },
+      { "object", AET::OBJECT, TiriType::Object },
+      { "any", AET::ANY, TiriType::Any },
+      { "pointer", AET::PTR, TiriType::Any },
+      { "struct<Missing>", AET::STRUCT, TiriType::Struct }
+   } };
+   for (const auto &mapping : mappings) {
+      auto element = describe_array_element(mapping.name, nullptr);
+      if (not element or element->storage != mapping.storage or element->logical_type != mapping.logical_type) {
+         Log.error("array source/storage/logical type mapping is incomplete for %s",
+            std::string(mapping.name).c_str());
+         return false;
+      }
+   }
+   if (describe_array_element("unsupported", nullptr)) {
+      Log.error("unsupported array storage name unexpectedly produced a descriptor");
+      return false;
+   }
+   return true;
+}
+
+static bool test_static_result_set_model(kt::Log &Log)
+{
+   StaticResultSet fixed;
+   fixed.declared_count = 3;
+   fixed.stored_count = 3;
+   fixed.values[0] = StaticValueDescriptor{ .primary = TiriType::Num, .proof = StaticProof::Checked };
+   fixed.values[1] = StaticValueDescriptor{ .primary = TiriType::Str, .proof = StaticProof::Checked };
+   fixed.values[2] = StaticValueDescriptor{ .primary = TiriType::Table, .proof = StaticProof::Checked };
+
+   if (fixed.value_at(3).primary != TiriType::Nil or not fixed.value_at(3).nullable) {
+      Log.error("fixed result set did not return closed nil beyond its arity");
+      return false;
+   }
+
+   fixed.variadic = true;
+   if (fixed.value_at(7).primary != TiriType::Table) {
+      Log.error("variadic result set did not repeat its suffix descriptor");
+      return false;
+   }
+
+   fixed.variadic = false;
+   fixed.dynamic = true;
+   if (fixed.value_at(7).primary != TiriType::Any or fixed.value_at(7).proof != StaticProof::Advisory) {
+      Log.error("dynamic result set did not return advisory any beyond stored positions");
+      return false;
+   }
+
+   fixed.dynamic = false;
+   StaticResultSet filtered = map_static_result_filter(fixed, uint64_t(0b101), 3, false);
+   if (filtered.stored_count != 2 or filtered.value_at(0).primary != TiriType::Num or
+       filtered.value_at(1).primary != TiriType::Table) {
+      Log.error("result filter mapping shifted or lost positional descriptors");
+      return false;
+   }
+   return true;
+}
+
+static size_t count_opcode(const BytecodeSnapshot &Snapshot, BCOp Opcode)
+{
+   size_t count = 0;
+   for (BCIns instruction : Snapshot.instructions) {
+      if (bc_op(instruction) IS Opcode) ++count;
+   }
+   return count;
+}
+
+static size_t count_opcode_tree(const BytecodeSnapshot &Snapshot, BCOp Opcode)
+{
+   size_t count = count_opcode(Snapshot, Opcode);
+   for (const auto &child : Snapshot.children) count += count_opcode_tree(child, Opcode);
+   return count;
+}
+
+static bool test_type_guided_emission(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   std::string error;
+   constexpr std::string_view source =
+      "extern array\n"
+      "local function read(Values:array):num\n"
+      "   return Values[0]\n"
+      "end\n"
+      "local alias = read\n"
+      "local alias_two = alias\n"
+      "local result:num = 0\n"
+      "result = alias_two(array<int> { 7 })\n"
+      "return result\n";
+
+   auto snapshot = compile_snapshot(L, source, true, error);
+   if (not snapshot or snapshot->children.empty()) {
+      Log.error("failed to compile stable-alias emission fixture: %s", error.c_str());
+      return false;
+   }
+   if (count_opcode(snapshot->children.front(), BC_AGETB) + count_opcode(snapshot->children.front(), BC_AGETV) IS 0) {
+      Log.error("checked array parameter did not select specialised array access");
+      return false;
+   }
+   if (count_opcode(*snapshot, BC_CONTRACT) != 0) {
+      Log.error("stable checked call result retained a redundant local store contract");
+      return false;
+   }
+
+   constexpr std::string_view mismatch =
+      "local function typed(Value:num):num return Value end\n"
+      "local callback = typed\n"
+      "return callback('wrong')\n";
+   if (compile_snapshot(L, mismatch, true, error)) {
+      Log.error("stable callable alias lost compile-time argument diagnostics");
+      return false;
+   }
+
+   constexpr std::string_view mutable_alias =
+      "local function typed(Value:num):num return Value end\n"
+      "local function invoke(Replace:any)\n"
+      "   local callback = typed\n"
+      "   if Replace then callback = (Value => Value) end\n"
+      "   return callback('runtime checked')\n"
+      "end\n"
+      "return invoke(true)\n";
+   if (not compile_snapshot(L, mutable_alias, true, error)) {
+      Log.error("mutable callable alias was incorrectly treated as a stable target: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view dead_write =
+      "local function typed(Value:num):num return Value end\n"
+      "local callback = typed\n"
+      "if false then callback = (Value => Value) end\n"
+      "return callback('still checked')\n";
+   if (compile_snapshot(L, dead_write, true, error)) {
+      Log.error("dead branch write incorrectly invalidated a stable callable alias");
+      return false;
+   }
+
+   constexpr std::string_view specialised_accesses =
+      "extern array\n"
+      "extern obj\n"
+      "struct GuidedLayout Value: int end\n"
+      "local function update_array(Values:array):num\n"
+      "   Values[0] = Values[0] + 1\n"
+      "   return Values?[0]\n"
+      "end\n"
+      "local function update_struct(Value:struct<GuidedLayout>):num\n"
+      "   Value.Value = Value.Value + 1\n"
+      "   return Value.Value\n"
+      "end\n"
+      "local function update_object():num\n"
+      "   local value = obj.new('config')\n"
+      "   value.flags = 1\n"
+      "   return value.flags\n"
+      "end\n";
+   snapshot = compile_snapshot(L, specialised_accesses, true, error);
+   if (not snapshot or count_opcode_tree(*snapshot, BC_AGETB) IS 0 or
+       count_opcode_tree(*snapshot, BC_ASETB) IS 0 or count_opcode_tree(*snapshot, BC_ASGETB) IS 0 or
+       count_opcode_tree(*snapshot, BC_STGETF) IS 0 or count_opcode_tree(*snapshot, BC_STSETF) IS 0 or
+       count_opcode_tree(*snapshot, BC_OBGETF) IS 0 or count_opcode_tree(*snapshot, BC_OBSETF) IS 0) {
+      Log.error("proved receivers did not select the complete specialised access families: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view generic_accesses =
+      "local function update(Value:any, Key:any)\n"
+      "   Value.field = 1\n"
+      "   Value[Key] = Value[Key]\n"
+      "   return Value.field\n"
+      "end\n";
+   snapshot = compile_snapshot(L, generic_accesses, true, error);
+   if (not snapshot or count_opcode_tree(*snapshot, BC_TGETS) IS 0 or
+       count_opcode_tree(*snapshot, BC_TSETS) IS 0 or count_opcode_tree(*snapshot, BC_TGETV) IS 0 or
+       count_opcode_tree(*snapshot, BC_TSETV) IS 0 or count_opcode_tree(*snapshot, BC_AGETB) != 0 or
+       count_opcode_tree(*snapshot, BC_STGETF) != 0 or count_opcode_tree(*snapshot, BC_OBGETF) != 0) {
+      Log.error("unproved receivers did not retain generic access bytecodes: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view dynamic_contract =
+      "local function store(Value:any):num\n"
+      "   local result:num = Value\n"
+      "   return result\n"
+      "end\n";
+   snapshot = compile_snapshot(L, dynamic_contract, true, error);
+   if (not snapshot or count_opcode_tree(*snapshot, BC_CONTRACT) IS 0) {
+      Log.error("an advisory call result incorrectly removed its local store contract: %s", error.c_str());
+      return false;
+   }
+   return true;
+}
+
 }  // namespace
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 32> tests = { {
+   constexpr std::array<TestCase, 35> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -2647,7 +2889,10 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "struct_declaration_metadata", test_struct_declaration_metadata },
       { "expdesc_is_falsey", test_expdesc_is_falsey },
       { "if_empty_operator_constants", test_if_empty_operator_constants },
-      { "ternary_falsey_semantics", test_ternary_falsey_semantics }
+      { "ternary_falsey_semantics", test_ternary_falsey_semantics },
+      { "static_descriptor_model", test_static_descriptor_model },
+      { "static_result_set_model", test_static_result_set_model },
+      { "type_guided_emission", test_type_guided_emission }
    } };
 
    // A dummy object is required to manage state.

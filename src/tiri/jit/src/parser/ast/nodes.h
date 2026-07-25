@@ -43,6 +43,7 @@
 #include <vector>
 
 #include "lexer.h"
+#include "../static_type_descriptor.h"
 
 class ParserDiagnostics;
 
@@ -60,6 +61,7 @@ using StmtNodeList = std::vector<StmtNodePtr>;
 struct FunctionReturnTypes {
    std::array<TiriType, MAX_RETURN_TYPES> types{};  // Return types (Unknown = unused slot)
    std::array<struct_record *, MAX_RETURN_TYPES> struct_defs{}; // Resolved layouts for struct<Name> results
+   std::array<StaticValueHandle, MAX_RETURN_TYPES> descriptors{};
    uint8_t count = 0;           // Number of declared types (0 = not declared)
    bool is_variadic = false;    // True if declaration ends with ... (last type repeats)
    bool is_explicit = false;    // True if explicitly declared, false if inferred
@@ -209,6 +211,8 @@ struct Identifier {
    bool is_future_reserved = false;  // True when parsed from a keyword reserved for future syntax
    TiriType type = TiriType::Unknown;  // Explicit type annotation (Unknown = no annotation)
    struct_record *struct_def = nullptr; // Resolved layout for struct<Name> annotations
+   mutable StaticBindingID binding_id = 0;
+   mutable StaticValueHandle static_value = 0;
 
    // Default constructor
    Identifier() = default;
@@ -235,6 +239,7 @@ struct NameRef {
    Identifier identifier;
    NameResolution resolution = NameResolution::Unresolved;
    uint16_t slot = 0;
+   mutable StaticBindingID binding_id = 0;
 };
 
 struct LiteralValue {
@@ -412,6 +417,8 @@ struct CallExprPayload {
    mutable TiriType result_type = TiriType::Unknown;  // Inferred return type (e.g., Object for obj.new())
    mutable CLASSID object_class_id = CLASSID::NIL; // CLASSID if result is Object
    mutable struct_record *struct_def = nullptr; // Resolved layout if result is Struct, or callable struct definition
+   mutable StaticCallableHandle callable = 0;
+   mutable StaticResultSetHandle results = 0;
    ~CallExprPayload();
 };
 
@@ -519,6 +526,7 @@ struct FunctionExprPayload {
    bool is_thunk = false;              // Marks function as thunk
    TiriType thunk_return_type = TiriType::Any;  // Return type for thunk (kept for IR emission compatibility)
    FunctionReturnTypes return_types{};            // General return type tracking for type checking
+   mutable StaticCallableHandle callable = 0;
    std::unique_ptr<BlockStmt> body;
    std::vector<AnnotationEntry> annotations;  // Annotations attached to this function
    ~FunctionExprPayload();
@@ -613,6 +621,8 @@ struct ExprNode {
    AstNodeKind kind = AstNodeKind::LiteralExpr;
    SourceSpan span{};
    bool is_grouped = false;
+   mutable StaticValueHandle static_value = 0;
+   mutable StaticResultSetHandle static_results = 0;
    std::variant<LiteralValue, NameRef, VarArgExprPayload, UnaryExprPayload,
       UpdateExprPayload, BinaryExprPayload, ComparisonChainExprPayload, TernaryExprPayload,
       PresenceExprPayload, PipeExprPayload, CallExprPayload, MemberExprPayload,
