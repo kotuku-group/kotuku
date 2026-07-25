@@ -15,6 +15,7 @@
 #include <variant>
 #include <ranges>
 #include "../bytecode/lj_bc.h"
+#include "../runtime/lj_contract.h"
 
 // Forward declarations
 class LexState;
@@ -78,6 +79,19 @@ enum class VarInfoFlag : uint8_t {
    DeferArg = 0x10u,
    Close = 0x20u,
    Const = 0x40u  // Variable is const (cannot be reassigned)
+};
+
+// Transient parser-side form of a runtime contract.  The raw structure definition is used only while compiling;
+// bcemit_contract() serialises its stable name into an interned descriptor before emitting bytecode.
+
+struct RuntimeContract {
+   TiriType type = TiriType::Unknown;
+   struct_record *struct_def = nullptr;
+   GCstr *label = nullptr;
+   ContractBoundary boundary = ContractBoundary::Local;
+   uint8_t position = 0;
+   bool nullable = true;
+   bool required = false;
 };
 
 // Concept for flag types that support bitwise operations

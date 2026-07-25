@@ -149,14 +149,39 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       child_emitter.update_local_binding(param.name.symbol, BCReg(base.raw() + i.raw()));
    }
 
+   // Parameter contracts execute inside the callee after local bindings exist and before any user statement.
+   // Blank parameters still have a boundary and must be checked.
+
+   for (auto i = BCReg(0); i < param_count; ++i) {
+      const FunctionParameter &param = Payload.parameters[i.raw()];
+      if (param.type IS TiriType::Unknown or param.type IS TiriType::Any) continue;
+
+      RuntimeContract contract{
+         .type = param.type,
+         .struct_def = param.struct_def,
+         .label = param.name.is_blank ? nullptr : param.name.symbol,
+         .boundary = ContractBoundary::Parameter,
+         .position = uint8_t(i.raw() + 1),
+         .nullable = true,
+         .required = false
+      };
+      bcemit_contract(&child_state, base + i, std::span(&contract, 1), 1);
+   }
+
    // Copy explicit return types to the function state BEFORE emitting the body.
    // This ensures emit_return_stmt can see the types when deciding whether to use tail-calls
    // and whether to emit BC_TYPEFIX instructions.
 
    child_state.funcname = funcname;
    if (Payload.return_types.is_explicit) {
+      child_state.return_contract_explicit = true;
+      child_state.return_declared_count = Payload.return_types.count;
+      child_state.return_contract_count = uint8_t(std::min<size_t>(
+         Payload.return_types.count, child_state.return_types.size()));
+      child_state.return_contract_variadic = Payload.return_types.is_variadic;
       for (size_t i = 0; i < Payload.return_types.count and i < child_state.return_types.size(); ++i) {
          child_state.return_types[i] = Payload.return_types.types[i];
+         child_state.return_struct_defs[i] = Payload.return_types.struct_defs[i];
       }
    }
 

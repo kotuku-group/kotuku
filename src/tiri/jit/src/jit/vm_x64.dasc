@@ -5469,6 +5469,32 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  jmp <2
     break;
 
+  case BC_CONTRACT:
+    |  mov L:RB, SAVE_L
+    |  mov L:RB->base, BASE
+    |  mov CARG2, PC
+    |  mov CARG3d, MULTRES
+    |  sub CARG3d, 1
+    |  mov L:CARG1, L:RB
+    |  mov SAVE_PC, PC
+    |  call extern lj_meta_contract_pc
+    |  mov BASE, L:RB->base
+    |  ins_next
+    break;
+
+  case BC_MRSAVE:
+    |  mov RCd, MULTRES
+    |  setint RC
+    |  mov [BASE+RA*8], RC
+    |  ins_next
+    break;
+
+  case BC_MRRESTORE:
+    |  mov RCd, [BASE+RA*8]
+    |  mov MULTRES, RCd
+    |  ins_next
+    break;
+
   //  ----------------------------------------------------------------------
 
   default:

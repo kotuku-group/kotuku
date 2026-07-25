@@ -707,22 +707,6 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- A struct annotation is a parser optimisation hint, not a replacement for runtime type dispatch. Non-struct values
--- must still fall back to the normal table metamethod path in the VM.
-
-function access_annotated_fallback(Value:struct):num
-   Value.value = 73
-   return Value.value
-end
-
-@Test function AnnotatedStructFallbackUsesTablePath()
-   local value = {}
-   local call = { access_annotated_fallback }
-   assert(call[0](value) is 73, 'A table at a struct-typed access site should use vmeta fallback')
-   assert(value.value is 73, 'The fallback setter should update the table')
-end
-
------------------------------------------------------------------------------------------------------------------------
 
 @Test function FastFieldErrorsAndHelpers()
    MAKESTRUCT('FastFieldErrors', 'lValue')

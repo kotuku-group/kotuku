@@ -2240,7 +2240,7 @@ LJLIB_CF(array_each)
       lua_pushvalue(L, 2);            // Push the callback function
       array_push_element(L, arr, i);  // Push value
       lua_pushinteger(L, i);          // Push index
-      lua_call(L, 2, 0);              // Call callback(value, index)
+      if (lua_pcall(L, 2, 0, 0) != 0) lua_error(L);
    }
 
    // Return the array for chaining

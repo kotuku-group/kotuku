@@ -646,3 +646,14 @@ Enables type inference for untyped functions, allowing the VM to optimize subseq
 - `PROTO_TYPEFIX`: flag indicating runtime type inference is enabled for function return types.
 - `TryBlockDesc`: metadata for try blocks stored in `GCproto.try_blocks[]`.
 - `TryHandlerDesc`: metadata for exception handlers stored in `GCproto.try_handlers[]`.
+
+### Runtime Type Contracts
+- `CONTRACT A, D`: validates values starting at register `A` using the portable descriptor string at constant `D`.
+  Descriptors encode the boundary, exact Tiri types, nullable/required flags, labels, named-structure identity and
+  fixed or dynamic result shape.
+- `MRSAVE A` / `MRRESTORE A`: preserve the VM multi-result count in register `A` while return-path `<close>` and
+  `defer` handlers execute. Return values are allocated above the cleanup scratch area.
+- Basic tag contracts use trace slot specialisation. Prototypes needing structure identity, range metatable,
+  callable-value or dynamic-result predicates remain interpreter-only until those predicates have dedicated trace IR
+  guards.
+- The private bytecode dump version is `0x80`; older dumps are intentionally rejected and must be regenerated.

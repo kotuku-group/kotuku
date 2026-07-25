@@ -233,7 +233,7 @@ end
 
 -- Convert internal parameter records to LSP ParameterInformation records.
 
-function signatureBuildParameterInfo(Params:array):array
+function signatureBuildParameterInfo(Params:any):array
    result = array<table>
    for param in values(Params or array<table>) do
       label = param.label or signatureParamLabel(param)
@@ -246,7 +246,7 @@ end
 
 -- Build an LSP SignatureInformation record from a label, documentation and parameter list.
 
-function signatureBuildInfo(Label:str, Documentation:str, Params:array):table
+function signatureBuildInfo(Label:str, Documentation:str, Params:any):table
    info = {
       label = Label or '',
       parameters = signatureBuildParameterInfo(Params)
@@ -258,7 +258,7 @@ end
 
 -- Keep the active parameter index inside the bounds of the signature parameter list.
 
-function signatureClampActiveParameter(Active:num, Params:array):num
+function signatureClampActiveParameter(Active:num, Params:any):num
    if not Params or #Params is 0 then return 0 end
    if Active < 0 then return 0 end
    if Active >= #Params then return #Params - 1 end
@@ -341,7 +341,7 @@ end
 
 -- Get cached parser symbols for the document, refreshing them when the document content has changed.
 
-function signatureGetDocumentSymbols(Doc:table):array
+function signatureGetDocumentSymbols(Doc:table):table
    if Doc.signatureSymbolsContent is Doc.content and Doc.signatureSymbols then return Doc.signatureSymbols end
 
    local result
@@ -528,7 +528,7 @@ end
 
 -- Copy parameter documentation from generated API metadata onto parsed prototype parameters.
 
-function signatureCopyParamDocs(Params:array, SourceParams:array):array
+function signatureCopyParamDocs(Params:array, SourceParams:any):array
    if not SourceParams then return Params end
 
    for param in values(Params or array<table>) do

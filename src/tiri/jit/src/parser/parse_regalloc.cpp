@@ -9,6 +9,7 @@
 
 #include <kotuku/main.h>
 #include <format>
+#include <string>
 
 #include "ast/nodes.h"  // For TiriType, tiri_type_to_lj_tag(), type_name()
 #include "lj_err.h"     // For lj_err_throw, ErrMsg
@@ -25,13 +26,9 @@ static void err_type_mismatch(FuncState *fs, TiriType actual_type, TiriType expe
    lj_lex_error(fs->ls, 0, ErrMsg::BADASSIGN, type_name(actual_type).data(), type_name(expected_type).data());
 }
 
-//********************************************************************************************************************
-// Emit a compile-time object class mismatch error.
-// This is called when both LHS and RHS are Object types but have different class IDs.
-
-static void err_object_class_mismatch(FuncState *fs, CLASSID actual_class_id, CLASSID expected_class_id)
+static void err_object_class_mismatch(FuncState *Fs, CLASSID ActualClassId, CLASSID ExpectedClassId)
 {
-   lj_lex_error(fs->ls, 0, ErrMsg::BADCLASS, ResolveClassID(expected_class_id), ResolveClassID(actual_class_id));
+   lj_lex_error(Fs->ls, 0, ErrMsg::BADCLASS, ResolveClassID(ExpectedClassId), ResolveClassID(ActualClassId));
 }
 
 [[nodiscard]] inline bool is_register_key(int32_t Aux) { return (Aux >= 0) and (Aux <= BCMAX_C); }
@@ -535,6 +532,107 @@ static void expr_toval(FuncState *fs, ExpDesc *e)
 }
 
 //********************************************************************************************************************
+// Encode and emit one portable runtime contract descriptor.
+
+static void contract_append_text(FuncState *fs, std::string &Descriptor, std::string_view Text,
+   const char *Description)
+{
+   if (Text.size() > UINT8_MAX) err_limit(fs, UINT8_MAX, Description);
+   Descriptor.push_back(char(uint8_t(Text.size())));
+   Descriptor.append(Text);
+}
+
+static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeContract> Contracts,
+   BCREG StaticValueCount, bool DynamicCount, bool Variadic)
+{
+   if (Contracts.empty()) return;
+
+   // Predicates without exact trace IR guards remain interpreter-only in Phase 1.
+   bool interpreter_only = DynamicCount;
+   for (const RuntimeContract &contract : Contracts) {
+      if (contract.type IS TiriType::Range or
+          (contract.type IS TiriType::Struct and contract.struct_def) or
+          contract.type IS TiriType::Func) {
+         interpreter_only = true;
+         break;
+      }
+   }
+   if (interpreter_only) fs->flags |= PROTO_NOJIT;
+
+   std::string descriptor;
+   descriptor.reserve(5 + Contracts.size() * 8);
+   descriptor.push_back(char(TIRI_CONTRACT_VERSION));
+   descriptor.push_back(char(uint8_t(Contracts.front().boundary)));
+
+   uint8_t descriptor_flags = 0;
+   if (DynamicCount) descriptor_flags |= contract_flag(ContractDescriptorFlag::DynamicCount);
+   if (Variadic) descriptor_flags |= contract_flag(ContractDescriptorFlag::Variadic);
+   descriptor.push_back(char(descriptor_flags));
+   descriptor.push_back(char(uint8_t(StaticValueCount)));
+   descriptor.push_back(char(uint8_t(Contracts.size())));
+
+   for (const RuntimeContract &contract : Contracts) {
+      descriptor.push_back(char(uint8_t(contract.type)));
+      uint8_t entry_flags = 0;
+      if (contract.nullable) entry_flags |= contract_flag(ContractEntryFlag::Nullable);
+      if (contract.required) entry_flags |= contract_flag(ContractEntryFlag::Required);
+      descriptor.push_back(char(entry_flags));
+      descriptor.push_back(char(contract.position));
+
+      std::string_view struct_name;
+      if (contract.struct_def) struct_name = contract.struct_def->Name;
+      contract_append_text(fs, descriptor, struct_name, "runtime contract structure name");
+
+      std::string_view label;
+      if (contract.label and contract.label != NAME_BLANK) {
+         label = std::string_view(strdata(contract.label), contract.label->len);
+      }
+      contract_append_text(fs, descriptor, label, "runtime contract label");
+   }
+
+   GCstr *encoded = fs->ls->keepstr(std::string_view(descriptor.data(), descriptor.size()));
+   ExpDesc constant(encoded);
+   bcemit_AD(fs, BC_CONTRACT, Base, const_str(fs, &constant));
+}
+
+//********************************************************************************************************************
+// Literal values are closed proofs.  Every other ExpDesc type is advisory and receives a runtime check.
+
+[[nodiscard]] static bool contract_literal_proved(FuncState *fs, ExpDesc *Value, TiriType Expected)
+{
+   if (Value->k IS ExpKind::Nil) return true;
+
+   TiriType actual = TiriType::Unknown;
+   if (Value->k IS ExpKind::False or Value->k IS ExpKind::True) actual = TiriType::Bool;
+   else if (Value->k IS ExpKind::Str) actual = TiriType::Str;
+   else if (Value->k IS ExpKind::Num) actual = TiriType::Num;
+   else return false;
+
+   if (actual IS Expected) return true;
+   err_type_mismatch(fs, actual, Expected);
+   return false;
+}
+
+static void bcemit_value_contract(FuncState *fs, ExpDesc *Value, const RuntimeContract &Contract)
+{
+   if (Contract.type IS TiriType::Unknown or Contract.type IS TiriType::Any) return;
+   if (contract_literal_proved(fs, Value, Contract.type)) return;
+
+   BCREG source = expr_toanyreg(fs, Value);
+   bcemit_contract(fs, source, std::span(&Contract, 1), 1);
+   Value->k = ExpKind::NonReloc;
+   Value->u.s.info = source;
+}
+
+static void check_object_class_assignment(FuncState *Fs, const VarInfo &Variable, const ExpDesc &Value)
+{
+   if (Variable.fixed_type IS TiriType::Object and Variable.object_class_id != CLASSID::NIL and
+       Value.result_type IS TiriType::Object and Value.object_class_id != Variable.object_class_id) {
+      err_object_class_mismatch(Fs, Value.object_class_id, Variable.object_class_id);
+   }
+}
+
+//********************************************************************************************************************
 // Emit store for LHS expression.
 
 static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
@@ -543,103 +641,15 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
    if (LHS->k IS ExpKind::Local) {
       fs->ls->vstack[LHS->u.s.aux].info |= VarInfoFlag::VarReadWrite;
       VarInfo *vinfo = &fs->ls->vstack[LHS->u.s.aux];
-      TiriType fixed = vinfo->fixed_type;
-
-      // Check if this variable has a defined type and needs runtime type checking
-      if ((fixed != TiriType::Unknown) and (fixed != TiriType::Any)) {
-         bool needs_check = true;
-         TiriType static_rhs_type = TiriType::Unknown; // TODO: needs_check can emit simpler tests when RHS type is known.
-
-         // Check for statically-known types - either from literals or from expression result types
-         if (RHS->k IS ExpKind::Nil) {
-            needs_check = false;  // nil is always allowed (clears the variable)
-         }
-         else if (RHS->k IS ExpKind::False or RHS->k IS ExpKind::True) {
-            static_rhs_type = TiriType::Bool;
-            if (fixed IS TiriType::Bool) needs_check = false;
-            else err_type_mismatch(fs, TiriType::Bool, fixed);
-         }
-         else if (RHS->k IS ExpKind::Str) {
-            static_rhs_type = TiriType::Str;
-            if (fixed IS TiriType::Str) needs_check = false;
-            else err_type_mismatch(fs, TiriType::Str, fixed);
-         }
-         else if (RHS->k IS ExpKind::Num) {
-            static_rhs_type = TiriType::Num;
-            if (fixed IS TiriType::Num) needs_check = false;
-            else err_type_mismatch(fs, TiriType::Num, fixed);
-         }
-         // Check if expression has known result type (e.g., from function call with declared return type,
-         // or operators with statically known result types like arithmetic, comparison, concatenation)
-         else if (RHS->result_type != TiriType::Unknown and RHS->result_type != TiriType::Any) {
-            // TODO: For maxing optimisation, uncomment this assert to help find areas where type checks aren't
-            // being handled by the compiler.  Ideally we would handle all type checking at compile time, in which
-            // case this assert is never raised.
-            //fs_check_assert(fs, RHS->result_type IS fixed, "expected function return type (RHS) to match variable (LHS)");
-
-            static_rhs_type = RHS->result_type;
-
-            // If the RHS result type matches the variable's fixed type, skip runtime check
-            // Otherwise, fall through to runtime check (we don't emit compile-time errors for
-            // expression results unless type_confirmed is set, because source location tracking
-            // isn't accurate at this point)
-            needs_check = (RHS->result_type != fixed);
-
-            // For object field accesses with confirmed types from class dictionary lookups,
-            // emit compile-time type mismatch error
-            if (needs_check and RHS->type_confirmed) {
-               err_type_mismatch(fs, RHS->result_type, fixed);
-            }
-
-            // For Object types with known class IDs, check for class mismatch at compile time
-            if (not needs_check and fixed IS TiriType::Object and vinfo->object_class_id != CLASSID::NIL) {
-               if (vinfo->object_class_id != RHS->object_class_id) {
-                  // Object class mismatch - emit compile-time error
-                  err_object_class_mismatch(fs, RHS->object_class_id, vinfo->object_class_id);
-               }
-            }
-         }
-
-         if (needs_check) {
-            // For dynamic values, emit runtime type check
-            // First materialise value to a register
-
-            BCREG src_reg = expr_toanyreg(fs, RHS);
-
-            // Skip type check for nil values (nil is always allowed as a "clear" operation)
-            // BC_ISNEP checks if value != nil, skips next instruction if true (not nil)
-            // We want to skip BC_ISTYPE when value IS nil, so use BC_ISEQP with nil primitive
-
-            ExpDesc nilv(ExpKind::Nil);
-            bcemit_INS(fs, BCINS_AD(BC_ISEQP, src_reg, const_pri(&nilv)));
-            BCPOS skip_pos = bcemit_jmp(fs);
-
-            // Emit type check instruction
-            // For numbers, use BC_ISNUM (because BC_ISTYPE doesn't work for numbers without LJ_DUALNUM)
-            // For other types, use BC_ISTYPE with (base_tag + 1) as the D operand
-
-            if (fixed IS TiriType::Num) {
-               // BC_ISNUM checks if value is a number (any floating point value)
-               // The D operand should be ~LJ_TNUMX + 2 = 16 (see lj_meta_istype which does tp--)
-               bcemit_AD(fs, BC_ISNUM, src_reg, ~LJ_TNUMX + 2);
-            }
-            else {
-               // BC_ISTYPE - the D operand is (base_tag + 1) to match the VM's itype comparison:
-               //   itype = ~base = -(base+1), so itype + (base+1) = 0 when types match
-               uint8_t lj_tag = tiri_type_to_lj_tag(fixed);
-               bcemit_AD(fs, BC_ISTYPE, src_reg, lj_tag + 1);
-            }
-
-            // Patch jump to skip over BC_ISTYPE when value is nil
-            ControlFlowGraph cfg(fs);
-            ControlFlowEdge skip_edge = cfg.make_unconditional(BCPos(skip_pos));
-            skip_edge.patch_here();
-
-            // Update expression state - value is now in src_reg
-            RHS->k = ExpKind::NonReloc;
-            RHS->u.s.info = src_reg;
-         }
-      }
+      check_object_class_assignment(fs, *vinfo, *RHS);
+      RuntimeContract contract{
+         .type = vinfo->fixed_type,
+         .struct_def = vinfo->struct_def,
+         .label = strref(vinfo->name),
+         .boundary = ContractBoundary::Local,
+         .position = uint8_t(vinfo->slot + 1)
+      };
+      bcemit_value_contract(fs, RHS, contract);
 
       expr_free(fs, RHS);
       expr_toreg(fs, RHS, LHS->u.s.info);
@@ -647,6 +657,16 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
    }
    else if (LHS->k IS ExpKind::Upval) {
       fs->ls->vstack[LHS->u.s.aux].info |= VarInfoFlag::VarReadWrite;
+      VarInfo *vinfo = &fs->ls->vstack[LHS->u.s.aux];
+      check_object_class_assignment(fs, *vinfo, *RHS);
+      RuntimeContract contract{
+         .type = vinfo->fixed_type,
+         .struct_def = vinfo->struct_def,
+         .label = strref(vinfo->name),
+         .boundary = ContractBoundary::Upvalue,
+         .position = uint8_t(LHS->u.s.info + 1)
+      };
+      bcemit_value_contract(fs, RHS, contract);
       expr_toval(fs, RHS);
       if (RHS->k <= ExpKind::True) ins = BCINS_AD(BC_USETP, LHS->u.s.info, const_pri(RHS));
       else if (RHS->k IS ExpKind::Str) ins = BCINS_AD(BC_USETS, LHS->u.s.info, const_str(fs, RHS));
@@ -656,6 +676,17 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
    else if (LHS->k IS ExpKind::Global or LHS->k IS ExpKind::Unscoped) {
       // Note: Const global reassignment is checked during type analysis phase
       // Unscoped should normally be resolved in emit_lvalue_expr(), but handle it here defensively
+      if (auto found = fs->ls->global_type_hints.find(LHS->u.sval);
+          found != fs->ls->global_type_hints.end() and found->second.explicit_contract) {
+         RuntimeContract contract{
+            .type = found->second.primary,
+            .struct_def = found->second.struct_def,
+            .label = LHS->u.sval,
+            .boundary = ContractBoundary::Global,
+            .position = 1
+         };
+         bcemit_value_contract(fs, RHS, contract);
+      }
       BCREG ra = expr_toanyreg(fs, RHS);
       ins = BCINS_AD(BC_GSET, ra, const_str(fs, LHS));
    }

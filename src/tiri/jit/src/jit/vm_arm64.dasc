@@ -4525,6 +4525,32 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  b <2
     break;
 
+  case BC_CONTRACT:
+    |  str BASE, L->base
+    |  mov CARG2, PC
+    |  ldr CARG3w, SAVE_MULTRES
+    |  lsr CARG3w, CARG3w, #3
+    |  sub CARG3w, CARG3w, #1
+    |  mov CARG1, L
+    |  str PC, SAVE_PC
+    |  bl extern lj_meta_contract_pc
+    |  ldr BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_MRSAVE:
+    |  ldr TMP0w, SAVE_MULTRES
+    |  add TMP0, TMP0, TISNUM
+    |  str TMP0, [BASE, RA, lsl #3]
+    |  ins_next
+    break;
+
+  case BC_MRRESTORE:
+    |  ldr TMP0w, [BASE, RA, lsl #3]
+    |  str TMP0w, SAVE_MULTRES
+    |  ins_next
+    break;
+
   //  ----------------------------------------------------------------------
 
   default:

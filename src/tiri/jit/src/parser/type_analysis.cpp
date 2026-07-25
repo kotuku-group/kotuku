@@ -246,9 +246,11 @@ private:
       const FunctionExprPayload* function = nullptr;  // Non-null if declared as global function
       bool is_const = false;  // True if declared with <const> attribute
       bool implicit = false;  // True if inferred from a plain assignment rather than a 'global' declaration
+      bool explicit_contract = false; // True only for an explicit non-any annotation
    };
 
-   void declare_global(GCstr *Name, const InferredType &Type, SourceSpan Location, bool IsConst = false);
+   void declare_global(GCstr *Name, const InferredType &Type, SourceSpan Location, bool IsConst = false,
+      bool ExplicitContract = false);
    void declare_global_function(GCstr *Name, const FunctionExprPayload *Function, SourceSpan Location);
    void declare_implicit_global(GCstr *Name, const ExprNode *Value, SourceSpan Location);
    [[nodiscard]] std::optional<InferredType> lookup_global_type(GCstr *Name) const;
@@ -1126,12 +1128,9 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
             else if (existing->primary IS TiriType::Object and value_type.primary IS TiriType::Object and
                existing->object_class_id != CLASSID::NIL) {
                if (existing->object_class_id != value_type.object_class_id) {
-                  // Conflicting object classes on an implicit global clear the class association.
-                  if (is_global and this->is_implicit_global(name)) {
-                     this->fix_global_type(name, TiriType::Object, CLASSID::NIL);
-                     continue;
-                  }
-
+                  // Object class identity remains sticky after inference, including for implicit globals.  Advisory
+                  // global typing permits unrelated value types to degrade to 'any'; it does not permit an Object
+                  // variable to silently change class.
                   TypeDiagnostic diag;
                   diag.location = target.span;
                   diag.expected = TiriType::Object;
@@ -1387,7 +1386,8 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
          inferred.is_fixed = false;
       }
 
-      this->declare_global(name.symbol, inferred, name.span, name.has_const);
+      this->declare_global(name.symbol, inferred, name.span, name.has_const,
+         name.type != TiriType::Unknown and name.type != TiriType::Any);
    }
 
    #ifdef INCLUDE_TIPS
@@ -2253,13 +2253,15 @@ void TypeAnalyser::fix_local_type(GCstr *Name, TiriType Type, CLASSID ObjectClas
 // Unlike locals which use scope-based tracking, globals use a flat map since they persist for
 // the entire script lifetime.
 
-void TypeAnalyser::declare_global(GCstr *Name, const InferredType &Type, SourceSpan Location, bool IsConst)
+void TypeAnalyser::declare_global(GCstr *Name, const InferredType &Type, SourceSpan Location, bool IsConst,
+   bool ExplicitContract)
 {
    if (not Name) return;
    GlobalTypeInfo info;
    info.type = Type;
    info.location = Location;
    info.is_const = IsConst;
+   info.explicit_contract = ExplicitContract;
    this->global_types_[Name] = info;
    this->trace_decl(this->ctx_.lex().linenumber, Name, Type.primary, Type.is_fixed);
 }
@@ -2358,7 +2360,7 @@ bool TypeAnalyser::is_global_const(GCstr *Name) const
 //
 // It implements:
 // - Type mismatch detection between returned values and declared types
-// - Return count validation (too many values returned)
+// - Declared-position validation without constraining result count
 // - First-wins inference rule for functions without explicit return type declarations
 // - Nil is always allowed as a valid return value for any type slot
 
@@ -2371,16 +2373,6 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
 
    if (ctx->expected_returns.is_explicit) {
       // Explicit declaration: validate against declared types
-
-      // Check for too many return values (unless variadic)
-      if (not ctx->expected_returns.is_variadic and return_count > ctx->expected_returns.count) {
-         TypeDiagnostic diag;
-         diag.location = Location;
-         diag.code     = ParserErrorCode::ReturnCountMismatch;
-         diag.message  = std::format("too many return values: function declares {} but {} returned",
-            ctx->expected_returns.count, return_count);
-         this->record_diagnostic(std::move(diag));
-      }
 
       // Validate type of each returned value
       for (size_t i = 0; i < return_count and i < MAX_RETURN_TYPES; ++i) {
@@ -2751,18 +2743,26 @@ static void publish_type_diagnostics(ParserContext& Context, const std::vector<T
 // instance, runs analysis on the module, and publishes any collected diagnostics.
 
 // Publish fixed global types to the lexer state so that IR emission (which runs after analysis) can attach type
-// metadata to global identifier reads.  Only the container types with specialised access bytecodes are published;
-// scalar hints have no emitter consumers and are withheld to avoid altering unrelated emission paths.
+// metadata to global identifier reads and explicit runtime contracts to every global store.  Inferred scalar types
+// remain advisory and have no emitter consumer.
 
 void TypeAnalyser::publish_global_type_hints(LexState &Lex) const
 {
    for (const auto &[name, info] : this->global_types_) {
       if (not info.type.is_fixed) continue;
+      if (info.explicit_contract) {
+         Lex.global_type_hints[name] = {
+            info.type.primary, info.type.object_class_id, info.type.struct_def, true
+         };
+         continue;
+      }
       switch (info.type.primary) {
          case TiriType::Struct:
          case TiriType::Object:
          case TiriType::Array:
-            Lex.global_type_hints[name] = { info.type.primary, info.type.object_class_id, info.type.struct_def };
+            Lex.global_type_hints[name] = {
+               info.type.primary, info.type.object_class_id, info.type.struct_def, false
+            };
             break;
          default:
             break;

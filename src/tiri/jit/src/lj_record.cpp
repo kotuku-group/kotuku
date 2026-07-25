@@ -32,6 +32,7 @@
 #include "runtime/lj_object.h"
 #include "runtime/lj_struct.h"
 #include "runtime/lj_state.h"
+#include "runtime/lj_contract.h"
 
 // Some local macros to save typing. Undef'd at the end.
 #define IR(ref)         (&J->cur.ir[(ref)])
@@ -185,6 +186,107 @@ struct RecordOps {
    TValue *rbv() { return &ix.tabv; }
    TValue *rcv() { return &ix.keyv; }
 };
+
+//********************************************************************************************************************
+// Classify a runtime contract while recording.  Exact TValue tag checks are already represented by trace slot
+// specialisation.  Identity and metatable predicates require dedicated IR guards, so prototypes containing those
+// predicates remain interpreter-only for now.
+
+enum class RecordedContract : uint8_t {
+   Basic,
+   Complex,
+   Mismatch,
+   Invalid
+};
+
+static RecordedContract rec_contract_classify(cTValue *Base, GCstr *Descriptor, uint8_t &ValueCount)
+{
+   const uint8_t *cursor = (const uint8_t *)strdata(Descriptor);
+   const uint8_t *end = cursor + Descriptor->len;
+   auto read_byte = [&cursor, end](uint8_t &Value) {
+      if (cursor >= end) return false;
+      Value = *cursor++;
+      return true;
+   };
+   auto skip_text = [&cursor, end](uint8_t &Length) {
+      if (cursor >= end) return false;
+      Length = *cursor++;
+      if (size_t(end - cursor) < Length) return false;
+      cursor += Length;
+      return true;
+   };
+
+   uint8_t version;
+   uint8_t boundary;
+   uint8_t descriptor_flags;
+   uint8_t static_count;
+   uint8_t contract_count;
+   if (not read_byte(version) or version != TIRI_CONTRACT_VERSION or not read_byte(boundary) or
+       boundary < uint8_t(ContractBoundary::Parameter) or boundary > uint8_t(ContractBoundary::Global) or
+       not read_byte(descriptor_flags) or not read_byte(static_count) or not read_byte(contract_count) or
+       contract_count > MAX_RETURN_TYPES) {
+      return RecordedContract::Invalid;
+   }
+   if (descriptor_flags & contract_flag(ContractDescriptorFlag::DynamicCount)) return RecordedContract::Complex;
+
+   struct Entry {
+      TiriType type;
+      uint8_t flags;
+      uint8_t struct_name_length;
+   };
+   std::array<Entry, MAX_RETURN_TYPES> entries;
+   for (uint8_t i = 0; i < contract_count; ++i) {
+      uint8_t type;
+      uint8_t position;
+      uint8_t label_length;
+      if (not read_byte(type) or type > uint8_t(TiriType::Unknown) or not read_byte(entries[i].flags) or
+          not read_byte(position) or not skip_text(entries[i].struct_name_length) or not skip_text(label_length)) {
+         return RecordedContract::Invalid;
+      }
+      entries[i].type = TiriType(type);
+   }
+
+   bool variadic = (descriptor_flags & contract_flag(ContractDescriptorFlag::Variadic)) != 0;
+   ValueCount = static_count;
+   for (uint8_t i = 0; i < static_count; ++i) {
+      uint8_t contract_index;
+      if (i < contract_count) contract_index = i;
+      else if (variadic and contract_count > 0) contract_index = contract_count - 1;
+      else continue;
+
+      const Entry &entry = entries[contract_index];
+      cTValue *value = Base + i;
+      bool nullable = (entry.flags & contract_flag(ContractEntryFlag::Nullable)) != 0;
+      bool required = (entry.flags & contract_flag(ContractEntryFlag::Required)) != 0;
+      if (tvisnil(value)) {
+         if (not nullable or required) return RecordedContract::Mismatch;
+         continue;
+      }
+
+      bool matches = true;
+      switch (entry.type) {
+         case TiriType::Any:
+         case TiriType::Unknown: break;
+         case TiriType::Nil:     matches = false; break;
+         case TiriType::Bool:    matches = tvisbool(value); break;
+         case TiriType::Num:     matches = tvisnumber(value); break;
+         case TiriType::Str:     matches = tvisstr(value); break;
+         case TiriType::Table:   matches = tvistab(value); break;
+         case TiriType::Array:   matches = tvisarray(value); break;
+         case TiriType::Object:  matches = tvisobject(value); break;
+         case TiriType::Func:
+            if (not tvisfunc(value)) return RecordedContract::Complex;
+            break;
+         case TiriType::Struct:
+            if (entry.struct_name_length > 0) return RecordedContract::Complex;
+            matches = tvisstruct(value);
+            break;
+         case TiriType::Range: return RecordedContract::Complex;
+      }
+      if (not matches) return RecordedContract::Mismatch;
+   }
+   return RecordedContract::Basic;
+}
 
 //********************************************************************************************************************
 // Sanity checks
@@ -3662,6 +3764,30 @@ void lj_record_ins(jit_State *J)
       // clean handoff without corrupting interpreter state.
       lj_snap_add(J);
       lj_record_stop(J, TraceLink::INTERP, 0);
+      break;
+
+   case BC_CONTRACT:
+   {
+      uint8_t value_count = 0;
+      RecordedContract contract = rec_contract_classify(lbase + bc_a(ins), strV(rcv), value_count);
+      if (contract IS RecordedContract::Basic) {
+         for (uint8_t i = 0; i < value_count; ++i) (void)getslot(J, bc_a(ins) + i);
+         J->needsnap = 1;
+         break;
+      }
+      if (contract IS RecordedContract::Complex) {
+         J->pt->flags |= PROTO_NOJIT;
+         lj_trace_err(J, LJ_TRERR_CJITOFF);
+      }
+      setintV(&J->errinfo, int32_t(op));
+      lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      break;
+   }
+
+   case BC_MRSAVE:
+   case BC_MRRESTORE:
+      J->pt->flags |= PROTO_NOJIT;
+      lj_trace_err(J, LJ_TRERR_CJITOFF);
       break;
 
    default:

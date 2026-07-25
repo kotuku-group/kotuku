@@ -10,6 +10,7 @@
 
 #include "lj_bc.h"
 #include "lj_obj.h"
+#include "bytecode/lj_bcdump.h"
 #include "runtime/lj_str.h"
 
 #include <array>
@@ -1153,6 +1154,60 @@ static std::optional<BytecodeSnapshot> compile_snapshot(lua_State* L, std::strin
    return snapshot;
 }
 
+static int bytecode_writer(lua_State *, const void *Data, size_t Size, void *Context)
+{
+   auto *dump = (std::string *)Context;
+   dump->append((const char *)Data, Size);
+   return 0;
+}
+
+static bool snapshot_has_opcode(const BytecodeSnapshot &Snapshot, BCOp Opcode)
+{
+   for (BCIns instruction : Snapshot.instructions) {
+      if (bc_op(instruction) IS Opcode) return true;
+   }
+   for (const BytecodeSnapshot &child : Snapshot.children) {
+      if (snapshot_has_opcode(child, Opcode)) return true;
+   }
+   return false;
+}
+
+static bool test_contract_bytecode_roundtrip(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   constexpr std::string_view source = "function typed(Value:num):num return Value end";
+   if (lua_load(L, source, "contract-roundtrip")) {
+      Log.error("failed to compile contract source: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   std::string dump;
+   if (lua_dump(L, bytecode_writer, &dump) != 0) {
+      Log.error("failed to write contract bytecode");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   if (dump.size() < 4 or uint8_t(dump[3]) != BCDUMP_VERSION) {
+      Log.error("contract bytecode has the wrong private format version");
+      return false;
+   }
+   if (lua_load(L, std::string_view(dump.data(), dump.size()), "contract-roundtrip")) {
+      Log.error("failed to reload contract bytecode: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *restored_proto = funcproto(funcV(L->top - 1));
+   BytecodeSnapshot restored = snapshot_proto(restored_proto);
+   lua_pop(L, 1);
+   if (not snapshot_has_opcode(restored, BC_CONTRACT)) {
+      Log.error("reloaded bytecode lost BC_CONTRACT");
+      return false;
+   }
+   return true;
+}
+
 static bool parse_struct_source(lua_State *L, std::string_view Source, std::string &Error)
 {
    StringReaderCtx reader = { Source.data(), Source.size() };
@@ -2069,7 +2124,7 @@ static bool test_ternary_falsey_semantics(kt::Log &log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 25> tests = { {
+   constexpr std::array<TestCase, 26> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -2088,6 +2143,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "return_lowering", test_return_lowering },
       { "ast_call_lowering", test_ast_call_lowering },
       { "bytecode_equivalence", test_bytecode_equivalence },
+      { "contract_bytecode_roundtrip", test_contract_bytecode_roundtrip },
       { "state_local_struct_declarations", test_state_local_struct_declarations },
       { "struct_declaration_syntax", test_struct_declaration_syntax },
       { "struct_field_documentation", test_struct_field_documentation },

@@ -298,6 +298,13 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
       MSize i;
       for (i = 1; i < sizebc; i++) bc[i] = lj_bswap64(bc[i]);
    }
+   for (MSize i = 1; i < sizebc; ++i) {
+      BCOp op = bc_op(bc[i]);
+      if (op IS BC_MRSAVE or op IS BC_MRRESTORE) {
+         pt->flags |= PROTO_NOJIT;
+         break;
+      }
+   }
 }
 
 //********************************************************************************************************************

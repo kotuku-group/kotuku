@@ -1,0 +1,316 @@
+-- Runtime contracts for parameters, explicit returns, typed stores and indirect call routes.
+
+import './type_contract_fixture'
+
+struct ContractAlpha
+   Value: int
+end
+
+struct ContractBravo
+   Value: int
+end
+
+function dynamic_value(Value):any
+   return Value
+end
+
+function expect_contract_failure(Callback:func, Boundary:str)
+   local failed = false
+   try
+      Callback()
+   except e
+      failed = true
+      assert(e.message != nil, 'A contract failure must carry a message')
+   end
+   assert(failed, 'Expected a catchable ' .. Boundary .. ' contract failure')
+end
+
+function expect_diagnostic_failure(Callback:func)
+   local failed = false
+   try
+      Callback()
+   except e
+      failed = true
+      assert(e.message:find('parameter 1') != nil, 'The message should identify parameter 1: ' .. e.message)
+      assert(e.message:find('expected num') != nil, 'The message should identify the expected type: ' .. e.message)
+      assert(e.message:find('got string') != nil, 'The message should identify the actual type: ' .. e.message)
+   end
+   assert(failed, 'Expected a diagnostic contract failure')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Parameter matrix and exact, non-coercing predicates.
+
+@Test function ParameterContractMatrix()
+   function accept_nil(Value:nil) return Value end
+   function accept_bool(Value:bool) return Value end
+   function accept_num(Value:num) return Value end
+   function accept_str(Value:str) return Value end
+   function accept_table(Value:table) return Value end
+   function accept_array(Value:array) return Value end
+   function accept_func(Value:func) return Value end
+   function accept_struct(Value:struct) return Value end
+   function accept_obj(Value:obj) return Value end
+   function accept_range(Value:range) return Value end
+
+   local native_array = array<int> { 1, 2 }
+   local native_struct = struct<ContractAlpha> { Value=1 }
+   local object = obj.new('time')
+   local sequence = {0 to 2}
+   local callable = setmetatable({}, { __call = function(Self) return Self end })
+
+   assert(accept_nil(nil) is nil, 'nil should satisfy nil')
+   assert(accept_bool(true) is true, 'true should satisfy bool')
+   assert(accept_bool(false) is false, 'false should satisfy bool')
+   assert(accept_num(3.5) is 3.5, 'number should satisfy num')
+   assert(accept_str('text') is 'text', 'string should satisfy str')
+   assert(accept_table({}) != nil, 'table should satisfy table')
+   assert(accept_array(native_array) is native_array, 'native array should satisfy array')
+   assert(type(accept_func(function() end)) is 'function', 'function should satisfy func')
+   assert(accept_func(callable) is callable, 'callable value should satisfy func')
+   assert(accept_struct(native_struct) is native_struct, 'native structure should satisfy struct')
+   assert(accept_obj(object) is object, 'Kōtuku object should satisfy obj')
+   assert(accept_range(sequence) is sequence, 'range should satisfy range')
+
+   expect_contract_failure(function() accept_nil(dynamic_value(false)) end, 'parameter')
+   expect_contract_failure(function() accept_bool(dynamic_value(1)) end, 'parameter')
+   expect_contract_failure(function() accept_num(dynamic_value('1')) end, 'parameter')
+   expect_contract_failure(function() accept_str(dynamic_value(1)) end, 'parameter')
+   expect_contract_failure(function() accept_table(dynamic_value(native_array)) end, 'parameter')
+   expect_contract_failure(function() accept_array(dynamic_value({})) end, 'parameter')
+   expect_contract_failure(function() accept_func(dynamic_value({})) end, 'parameter')
+   expect_contract_failure(function() accept_struct(dynamic_value({})) end, 'parameter')
+   expect_contract_failure(function() accept_obj(dynamic_value({})) end, 'parameter')
+   expect_contract_failure(function() accept_range(dynamic_value(native_struct)) end, 'parameter')
+end
+
+@Test function NamedStructIdentity()
+   function accept_alpha(Value:struct<ContractAlpha>)
+      return Value.Value
+   end
+
+   local alpha = struct<ContractAlpha> { Value=7 }
+   local bravo = struct<ContractBravo> { Value=7 }
+   assert(accept_alpha(alpha) is 7, 'Matching named structure should pass')
+   expect_contract_failure(function() accept_alpha(dynamic_value(bravo)) end, 'parameter')
+end
+
+@Test function NilMissingAndExtraArguments()
+   function optional(Value:num) return Value end
+   assert(optional() is nil, 'A missing argument should arrive as acceptable nil')
+   assert(optional(nil) is nil, 'Explicit nil should satisfy a non-required contract')
+   assert(optional(4, 'ignored') is 4, 'Extra arguments should remain unchanged and ignored')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Every call route must enter the same callee-side guard.
+
+@Test function IndirectCallRoutes()
+   function typed(Value:num):num return Value end
+   local alias:any = typed
+   local holder = { callback = typed }
+
+   expect_contract_failure(function() typed(dynamic_value('wrong')) end, 'parameter')
+   expect_contract_failure(function() alias('wrong') end, 'parameter')
+   expect_contract_failure(function() holder.callback('wrong') end, 'parameter')
+   expect_contract_failure(function() imported_typed(dynamic_value('wrong')) end, 'parameter')
+
+   local values = array<any> { 'wrong' }
+   function native_callback(Value:num) return Value end
+   expect_contract_failure(function() values:each(native_callback) end, 'parameter')
+end
+
+@Test function SpecialParameterForms()
+   function blank(_:num) return true end
+   local blank_alias:any = blank
+   expect_contract_failure(function() blank_alias('wrong') end, 'parameter')
+
+   local methods = {}
+   function methods:typed(Value:num) return Value end
+   local method_alias:any = methods.typed
+   assert(methods:typed(8) is 8, 'Method self and typed argument should pass')
+   expect_contract_failure(function() method_alias(methods, 'wrong') end, 'parameter')
+
+   function recurse(Value:num):num
+      if Value <= 0 then return 0 end
+      return recurse(Value - 1)
+   end
+   assert(recurse(4) is 0, 'Recursive typed parameters should pass')
+
+   thunk deferred(Value:num):num
+      return Value
+   end
+   local thunk_alias:any = deferred
+   expect_contract_failure(function() thunk_alias('wrong') end, 'parameter')
+
+   global contract_mutual_odd
+   global function contract_mutual_even(Value:num):bool
+      if Value is 0 then return true end
+      return contract_mutual_odd(Value - 1)
+   end
+   global function contract_mutual_odd(Value:num):bool
+      if Value is 0 then return false end
+      return contract_mutual_even(Value - 1)
+   end
+   assert(contract_mutual_even(4), 'Mutually recursive typed parameters should pass')
+   local mutual_alias:any = contract_mutual_even
+   expect_contract_failure(function() mutual_alias('wrong') end, 'parameter')
+end
+
+@Test function GuardPrecedesSpecialisedMutation()
+   function increment(Values:array)
+      Values[0] += 1
+   end
+
+   local plain = { 10 }
+   local indirect:any = increment
+   expect_contract_failure(function() indirect(plain) end, 'parameter')
+   assert(plain[0] is 10, 'The function body must not mutate before its parameter guard')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Explicit return contracts validate declared positions without constraining result count.
+
+@Test function DynamicReturnContracts()
+   function wrong_single():any return 'wrong' end
+   function typed_single():num return wrong_single() end
+   expect_contract_failure(function() typed_single() end, 'result')
+
+   function dynamic_pair():<any, any> return 1, false end
+   function typed_pair():<num, str> return dynamic_pair() end
+   expect_contract_failure(function() typed_pair() end, 'result')
+
+   function extra_results():num return 1, 'extra', false end
+   local first, second, third = extra_results()
+   assert(first is 1 and second is 'extra' and third is false,
+      'A fixed return declaration must not constrain or discard extra results')
+
+   function missing_result():<num, str> return 2 end
+   local number, missing = missing_result()
+   assert(number is 2 and missing is nil, 'Missing declared results should remain acceptable nil')
+
+   function filter_source():<any, any> return 'dropped', 'kept' end
+   function filtered_ok():str return [_*]filter_source() end
+   assert(filtered_ok() is 'kept', 'A return contract should inspect the filtered result')
+   function filtered_wrong():num return [*_]filter_source() end
+   expect_contract_failure(function() filtered_wrong() end, 'result')
+
+   function wrong_struct_result():any return struct<ContractBravo> { Value=5 } end
+   function typed_struct_result():struct<ContractAlpha> return wrong_struct_result() end
+   expect_contract_failure(function() typed_struct_result() end, 'result')
+end
+
+@Test function VariadicReturnSuffix()
+   function dynamic_variadic():<any, any, any> return 1, 2, 'wrong' end
+   function typed_variadic():<num, ...> return dynamic_variadic() end
+   expect_contract_failure(function() typed_variadic() end, 'result')
+end
+
+@Test function ReturnContractAfterTryAndDefer()
+   global glContractCleanup:bool = false
+
+   function source():any return 'wrong' end
+   function checked():num
+      defer
+         glContractCleanup = true
+      end
+      try
+         return source()
+      except e
+         return 0
+      end
+   end
+
+   expect_contract_failure(function() checked() end, 'result')
+   assert(glContractCleanup is true, 'Defer cleanup must execute before a return contract fails')
+
+   function extra_source():<any, any, any> return 4, 'extra', false end
+   function checked_extra():num
+      defer
+         glContractCleanup = true
+      end
+      return extra_source()
+   end
+   local first, second, third = checked_extra()
+   assert(first is 4 and second is 'extra' and third is false,
+      'Cleanup must preserve unconstrained extra dynamic results')
+
+   function checked_table():table
+      local result = {}
+      defer
+         local marker = 'cleanup'
+         assert(marker is 'cleanup')
+      end
+      return result
+   end
+   assert(type(checked_table()) is 'table', 'Defer cleanup must preserve a fixed table result')
+
+   global glContractClosed:bool = false
+   function checked_close():num
+      local resource <close> = setmetatable({}, {
+         __close = function(Self, Error)
+            glContractClosed = true
+         end
+      })
+      return source()
+   end
+   expect_contract_failure(function() checked_close() end, 'result')
+   assert(glContractClosed, '<close> cleanup must execute before a return contract fails')
+end
+
+@Test function ContractDiagnostic()
+   function diagnostic(Value:num):num return Value end
+   expect_diagnostic_failure(function() diagnostic(dynamic_value('wrong')) end)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Other approved write boundaries.
+
+@Test function TypedLocalAndCapturedUpvalueStores()
+   local typed:num = 1
+   expect_contract_failure(function() typed = dynamic_value('wrong') end, 'local')
+
+   local captured:num = 2
+   function write_captured(Value:any)
+      captured = Value
+   end
+   expect_contract_failure(function() write_captured('wrong') end, 'upvalue')
+   assert(captured is 2, 'A rejected upvalue store must preserve the previous value')
+end
+
+@Test function ExplicitGlobalStores()
+   global glContractNumber:num = 3
+   expect_contract_failure(function() glContractNumber = dynamic_value('wrong') end, 'global')
+   assert(glContractNumber is 3, 'A rejected global store must preserve the previous value')
+
+   global glContractAny:any = 1
+   glContractAny = 'allowed'
+   assert(glContractAny is 'allowed', 'Explicit any remains the global contract opt-out')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Interpreter/JIT parity, disassembly and bytecode persistence.
+
+@Test function HotContractParity()
+   function hot(Value:num):num return Value + 1 end
+   local dynamic:any = hot
+   for i = 0, 200 do
+      assert(dynamic(i) is i + 1, 'Valid hot call should preserve its argument')
+   end
+   expect_contract_failure(function() dynamic('wrong') end, 'parameter')
+end
+
+@Test function ContractDisassemblyOrder()
+   local script = obj.new('tiri', { statement = [[
+function first(Values:array)
+   return Values[0]
+end
+]] })
+   script.acQuery()
+   script.acActivate()
+   local _, disassembly = script.mtDebugLog('disasm')
+   local guard = disassembly:find('CONTRACT')
+   local access = disassembly:find('AGET')
+   assert(guard != nil and access != nil and guard < access,
+      'CONTRACT must precede specialised array access, got:\n' .. disassembly)
+end

@@ -29,7 +29,7 @@ global glConstants = { }
 global substituteReferences, sequenceStruct
 global function c_include(...) end
 global function cpp_include(...) end
-global function klass(Name:str, Options:table, Def:str, Private:bool) end
+global function klass(Name:str, Options:table, Def:str, Private:str, Custom:str) end
 global function functionNames(Prefix:str, ...) end
 global function methods(ClassName:str, Prefix:str, Methods:table) end
 global function c_insert(Raw:str) end

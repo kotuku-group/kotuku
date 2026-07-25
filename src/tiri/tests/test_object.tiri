@@ -313,24 +313,27 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Compile-time field type checking: assigning string field to number variable should fail
+-- Typed assignment checking: assigning a string field to a number variable should fail
 
 @Test function FieldTypeCheckStrToNum()
    try
       exec([[
          c = obj.new('config')
-         count = 0
-         count = c.path
+         c.path = 'kotuku:test.cfg'
+         local count:num = 0
+         local wrong:any = c.path
+         count = wrong
       ]])
    except ex
-      assert(ex.message:find('Type mismatch'), "Expected type mismatch error, got: " .. ex.message)
+      assert(ex.message:find('Type mismatch') or ex.message:find('type contract failed'),
+         "Expected type mismatch error, got: " .. ex.message)
    success
-      error("Expected compile-time error when assigning str field to num variable")
+      error("Expected type error when assigning str field to num variable")
    end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Compile-time field type checking: assigning number field to string variable should fail
+-- Typed assignment checking: assigning a number field to a string variable should fail
 
 @Test function FieldTypeCheckNumToStr()
    try
@@ -340,9 +343,10 @@ end
          name = c.totalKeys
       ]])
    except ex
-      assert(ex.message:find('Type mismatch'), "Expected type mismatch error, got: " .. ex.message)
+      assert(ex.message:find('Type mismatch') or ex.message:find('type contract failed'),
+         "Expected type mismatch error, got: " .. ex.message)
    success
-      error("Expected compile-time error when assigning num field to str variable")
+      error("Expected type error when assigning num field to str variable")
    end
 end
 

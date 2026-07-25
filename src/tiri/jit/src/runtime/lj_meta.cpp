@@ -23,8 +23,14 @@
 #include "lj_strfmt.h"
 #include "lj_thunk.h"
 #include "lj_object.h"
+#include "lj_contract.h"
 #include "stack_helpers.h"
 #include "lib.h"
+#include "lib_range.h"
+#include "../../../defs.h"
+
+#include <cstdio>
+#include <string_view>
 
 //********************************************************************************************************************
 // Convert LuaJIT internal type tag to TiriType for runtime type inference.
@@ -581,6 +587,232 @@ void lj_meta_istype(lua_State *L, BCREG ra, BCREG tp)
       if (not tvisbool(o)) lj_err_assigntype(L, int(ra) - 1, "boolean");
    }
    else lj_err_assigntype(L, int(ra) - 1, lj_obj_itypename[tp]);
+}
+
+//********************************************************************************************************************
+// Exact runtime type contracts.  The descriptor is an interned byte string, so it remains portable across bytecode
+// dump/write/read boundaries.  Layout:
+//
+//   version, boundary, descriptor_flags, static_value_count, contract_count,
+//   repeated { type, entry_flags, position, struct_name_length, struct_name_bytes,
+//              label_length, label_bytes }
+
+namespace {
+
+struct RuntimeContractEntry {
+   TiriType type = TiriType::Unknown;
+   uint8_t flags = 0;
+   uint8_t position = 0;
+   std::string_view struct_name;
+   std::string_view label;
+};
+
+class RuntimeContractReader {
+public:
+   explicit RuntimeContractReader(GCstr *Descriptor)
+      : cursor(reinterpret_cast<const uint8_t *>(strdata(Descriptor))),
+        end(cursor + Descriptor->len) {}
+
+   [[nodiscard]] bool read_byte(uint8_t &Value)
+   {
+      if (this->cursor >= this->end) return false;
+      Value = *this->cursor++;
+      return true;
+   }
+
+   [[nodiscard]] bool read_text(std::string_view &Value)
+   {
+      uint8_t length;
+      if (not this->read_byte(length) or size_t(this->end - this->cursor) < length) return false;
+      Value = std::string_view(reinterpret_cast<const char *>(this->cursor), length);
+      this->cursor += length;
+      return true;
+   }
+
+   [[nodiscard]] bool read_entry(RuntimeContractEntry &Entry)
+   {
+      uint8_t type;
+      if (not this->read_byte(type) or not this->read_byte(Entry.flags) or not this->read_byte(Entry.position) or
+          not this->read_text(Entry.struct_name) or not this->read_text(Entry.label)) {
+         return false;
+      }
+      Entry.type = TiriType(type);
+      return type <= uint8_t(TiriType::Unknown);
+   }
+
+private:
+   const uint8_t *cursor;
+   const uint8_t *end;
+};
+
+[[nodiscard]] static bool contract_is_range(lua_State *L, cTValue *Value)
+{
+   if (not tvisudata(Value)) return false;
+   GCtab *metatable = tabref(udataV(Value)->metatable);
+   if (not metatable) return false;
+
+   cTValue *registered = lj_tab_getstr(tabV(registry(L)), lj_str_newz(L, RANGE_METATABLE));
+   return registered and tvistab(registered) and tabV(registered) IS metatable;
+}
+
+[[nodiscard]] static bool contract_is_callable(lua_State *L, cTValue *Value)
+{
+   if (tvisfunc(Value)) return true;
+   cTValue *call = lj_meta_lookup(L, Value, MM_call);
+   return call and tvisfunc(call);
+}
+
+[[nodiscard]] static bool contract_matches(lua_State *L, cTValue *Value, const RuntimeContractEntry &Entry)
+{
+   bool nullable = (Entry.flags & contract_flag(ContractEntryFlag::Nullable)) != 0;
+   bool required = (Entry.flags & contract_flag(ContractEntryFlag::Required)) != 0;
+   if (tvisnil(Value)) return nullable and not required;
+
+   switch (Entry.type) {
+      case TiriType::Any:
+      case TiriType::Unknown: return true;
+      case TiriType::Nil:     return false;
+      case TiriType::Bool:    return tvisbool(Value);
+      case TiriType::Num:     return tvisnumber(Value);
+      case TiriType::Str:     return tvisstr(Value);
+      case TiriType::Table:   return tvistab(Value);
+      case TiriType::Array:   return tvisarray(Value);
+      case TiriType::Func:    return contract_is_callable(L, Value);
+      case TiriType::Struct: {
+         if (not tvisstruct(Value)) return false;
+         if (Entry.struct_name.empty()) return true;
+         struct_record *definition = find_struct(L, Entry.struct_name);
+         return definition and structV(Value)->def IS definition;
+      }
+      case TiriType::Object: return tvisobject(Value);
+      case TiriType::Range:  return contract_is_range(L, Value);
+   }
+   return false;
+}
+
+[[nodiscard]] static const char * contract_boundary_name(ContractBoundary Boundary)
+{
+   switch (Boundary) {
+      case ContractBoundary::Parameter: return "parameter";
+      case ContractBoundary::Result:    return "result";
+      case ContractBoundary::Local:     return "local";
+      case ContractBoundary::Upvalue:   return "upvalue";
+      case ContractBoundary::Global:    return "global";
+   }
+   return "value";
+}
+
+static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractEntry &Entry)
+{
+   if (Entry.type IS TiriType::Struct and not Entry.struct_name.empty()) {
+      std::snprintf(Buffer, Size, "struct<%.*s>", int(Entry.struct_name.size()), Entry.struct_name.data());
+      return;
+   }
+
+   const char *name = "any";
+   switch (Entry.type) {
+      case TiriType::Nil:     name = "nil"; break;
+      case TiriType::Bool:    name = "bool"; break;
+      case TiriType::Num:     name = "num"; break;
+      case TiriType::Str:     name = "str"; break;
+      case TiriType::Table:   name = "table"; break;
+      case TiriType::Array:   name = "array"; break;
+      case TiriType::Func:    name = "func"; break;
+      case TiriType::Struct:  name = "struct"; break;
+      case TiriType::Object:  name = "obj"; break;
+      case TiriType::Range:   name = "range"; break;
+      case TiriType::Any:
+      case TiriType::Unknown: break;
+   }
+   std::snprintf(Buffer, Size, "%s", name);
+}
+
+[[noreturn]] static void contract_error(lua_State *L, cTValue *Value, ContractBoundary Boundary,
+   const RuntimeContractEntry &Entry, uint32_t Position)
+{
+   char expected[280];
+   char actual[280];
+   contract_type_name(expected, sizeof(expected), Entry);
+
+   if (tvisstruct(Value) and structV(Value)->def) {
+      const auto &name = structV(Value)->def->Name;
+      std::snprintf(actual, sizeof(actual), "struct<%.*s>", int(name.size()), name.data());
+   }
+   else if (contract_is_range(L, Value)) std::snprintf(actual, sizeof(actual), "range");
+   else std::snprintf(actual, sizeof(actual), "%s", lj_typename(Value));
+
+   const char *boundary = contract_boundary_name(Boundary);
+   if (not Entry.label.empty()) {
+      CSTRING message = lj_strfmt_pushf(L, "type contract failed for %s %u ('%.*s'): expected %s, got %s",
+         boundary, Position, int(Entry.label.size()), Entry.label.data(), expected, actual);
+      lj_err_callermsg(L, message);
+   }
+   else {
+      CSTRING message = lj_strfmt_pushf(L, "type contract failed for %s %u: expected %s, got %s",
+         boundary, Position, expected, actual);
+      lj_err_callermsg(L, message);
+   }
+}
+
+} // namespace
+
+extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCount, GCstr *Descriptor)
+{
+   L->top = curr_topL(L);
+   RuntimeContractReader reader(Descriptor);
+   uint8_t version;
+   uint8_t boundary_value;
+   uint8_t descriptor_flags;
+   uint8_t static_count;
+   uint8_t contract_count;
+   if (not reader.read_byte(version) or version != TIRI_CONTRACT_VERSION or
+       not reader.read_byte(boundary_value) or
+       boundary_value < uint8_t(ContractBoundary::Parameter) or
+       boundary_value > uint8_t(ContractBoundary::Global) or
+       not reader.read_byte(descriptor_flags) or not reader.read_byte(static_count) or
+       not reader.read_byte(contract_count) or contract_count > MAX_RETURN_TYPES) {
+      lj_err_callermsg(L, "invalid runtime type-contract descriptor");
+   }
+
+   std::array<RuntimeContractEntry, MAX_RETURN_TYPES> entries;
+   for (uint8_t i = 0; i < contract_count; ++i) {
+      if (not reader.read_entry(entries[i])) lj_err_callermsg(L, "invalid runtime type-contract entry");
+   }
+
+   uint32_t value_count = (descriptor_flags & contract_flag(ContractDescriptorFlag::DynamicCount)) ?
+      DynamicCount + static_count : static_count;
+   bool variadic = (descriptor_flags & contract_flag(ContractDescriptorFlag::Variadic)) != 0;
+   auto boundary = ContractBoundary(boundary_value);
+
+   for (uint32_t i = 0; i < value_count; ++i) {
+      uint32_t contract_index;
+      if (i < contract_count) contract_index = i;
+      else if (variadic and contract_count > 0) contract_index = contract_count - 1;
+      else continue;
+
+      const RuntimeContractEntry &entry = entries[contract_index];
+      if (entry.type IS TiriType::Any or entry.type IS TiriType::Unknown) continue;
+      if (not contract_matches(L, Base + i, entry)) {
+         uint32_t position = boundary IS ContractBoundary::Result ? i + 1 : entry.position;
+         contract_error(L, Base + i, boundary, entry, position);
+      }
+   }
+}
+
+extern "C" void lj_meta_contract_pc(lua_State *L, const BCIns *PC, uint32_t DynamicCount)
+{
+   GCproto *prototype = funcproto(curr_func(L));
+   const BCIns *begin = proto_bc(prototype) + 1;
+   const BCIns *cursor = PC;
+   while (cursor > begin) {
+      BCIns instruction = *--cursor;
+      if (bc_op(instruction) IS BC_CONTRACT) {
+         GCstr *descriptor = gco_to_string(proto_kgc(prototype, ~(ptrdiff_t)bc_d(instruction)));
+         lj_meta_contract(L, L->base + bc_a(instruction), DynamicCount, descriptor);
+         return;
+      }
+   }
+   lj_err_callermsg(L, "invalid runtime type-contract resume point");
 }
 
 //********************************************************************************************************************

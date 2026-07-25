@@ -1721,8 +1721,8 @@ LexState::LexState(lua_State* L, std::string_view Source, std::string_view Chunk
          lj_err_throw(L, LUA_ERRSYNTAX);
       }
       this->is_bytecode = 1;
-      // Set up p/pe for bytecode reader compatibility (lj_bcread uses these)
-      this->p = this->source.data();
+      // The signature byte is already held in c, matching the streaming lexer contract expected by lj_bcread.
+      this->p = this->source.data() + 1;
       this->pe = this->source.data() + this->source.size();
    }
 }

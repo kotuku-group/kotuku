@@ -158,6 +158,7 @@ public:
       TiriType primary = TiriType::Unknown;
       CLASSID  object_class_id = CLASSID::NIL;
       struct_record *struct_def = nullptr;
+      bool explicit_contract = false;
    };
    ankerl::unordered_dense::map<GCstr*, GlobalTypeHint> global_type_hints;
    std::vector<StructFieldDocumentation> struct_field_documentation;

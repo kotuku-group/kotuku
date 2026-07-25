@@ -159,6 +159,26 @@ static bool has_close_variables(FuncState* fs)
    return false;
 }
 
+static constexpr BCREG CLOSE_HANDLER_TEMP_REGS = 5 + LJ_FR2;
+
+static BCREG return_cleanup_temp_regs(FuncState *fs)
+{
+   BCREG required = has_close_variables(fs) ? CLOSE_HANDLER_TEMP_REGS : 0;
+   BCREG defer_args = 0;
+   for (BCREG i = fs->varmap.size(); i > 0;) {
+      VarInfo *variable = &fs->var_get(--i);
+      if (has_flag(variable->info, VarInfoFlag::DeferArg)) {
+         defer_args++;
+      }
+      else if (has_flag(variable->info, VarInfoFlag::Defer)) {
+         // Keep one slot beyond the call frame: CALL may initialise the callee base even when no results are requested.
+         required = std::max(required, BCREG(defer_args + 2 + LJ_FR2));
+         defer_args = 0;
+      }
+   }
+   return required;
+}
+
 //********************************************************************************************************************
 // Snapshot return register state.
 // Used by ir_emitter for return statement handling.
@@ -167,8 +187,6 @@ static bool has_close_variables(FuncState* fs)
 // Close handlers (bcemit_close) use temporary registers starting at freereg (which is set to varmap.size()).
 // They reserve 5+LJ_FR2 registers for: getmetatable function, metatable result, __close function, args.
 // If return values overlap with these temporary registers, they must be moved to safe slots.
-
-static constexpr BCREG CLOSE_HANDLER_TEMP_REGS = 5 + LJ_FR2;
 
 static void snapshot_return_regs(FuncState* fs, BCIns* ins)
 {
@@ -919,7 +937,27 @@ ParserResult<IrEmitUnit> IrEmitter::emit_conditional_shorthand_stmt(const Condit
 ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Payload)
 {
    BCIns ins;
+   RegisterAllocator return_allocator(&this->func_state);
+
    this->func_state.flags |= PROTO_HAS_RETURN;
+   bool has_return_contract = false;
+   if (this->func_state.return_contract_explicit) {
+      for (uint8_t i = 0; i < this->func_state.return_contract_count; ++i) {
+         TiriType type = this->func_state.return_types[i];
+         if (type != TiriType::Unknown and type != TiriType::Any) {
+            has_return_contract = true;
+            break;
+         }
+      }
+   }
+
+   bool truncate_return_results =
+      this->func_state.return_contract_explicit and not this->func_state.return_contract_variadic;
+   BCREG cleanup_temp_regs =
+      (has_return_contract or truncate_return_results) ? return_cleanup_temp_regs(&this->func_state) : 0;
+   BCREG multres_slot = BCREG(this->func_state.varmap.size() + cleanup_temp_regs);
+   if (cleanup_temp_regs > 0) return_allocator.reserve(BCReg(cleanup_temp_regs + 1));
+   BCREG return_base = this->func_state.freereg;
 
    // Check if function needs runtime type inference (no explicit return types declared)
    bool needs_typefix = true;
@@ -943,7 +981,14 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
       // Handle tail-call case: return f() or return f(...)
       if (count IS 1 and last.k IS ExpKind::Call) {
          BCIns* ip = ir_bcptr(&this->func_state, &last);
-         if (this->func_state.try_depth > 0) {
+         if (truncate_return_results) {
+            BCREG result_count = this->func_state.return_declared_count;
+            setbc_b(ip, result_count + 1);
+            ins = result_count > 0 ?
+               BCINS_AD(BC_RET, last.u.s.aux, result_count + 1) :
+               BCINS_AD(BC_RET0, 0, 1);
+         }
+         else if (this->func_state.try_depth > 0) {
             // DISABLE TAIL-CALL inside try blocks: use CALL + RET instead of CALLT.
             // CALLT doesn't return to the caller, so if the called function throws an exception, it happens after
             // TRYLEAVE has popped the try frame - the exception escapes.  By using CALL + RET, the exception occurs
@@ -951,13 +996,18 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
 
             setbc_b(ip, 0);  // Request all results (MULTRES)
             if (needs_typefix) bcemit_AD(&this->func_state, BC_TYPEFIX, last.u.s.aux, 1);
-            ins = BCINS_AD(BC_RETM, this->func_state.varmap.size(), last.u.s.aux - this->func_state.varmap.size());
+            ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
+         }
+         else if (has_return_contract) {
+            // A return contract must observe dynamic results inside this function, so tail-call conversion is unsafe.
+            setbc_b(ip, 0);
+            ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
          else if (bc_op(*ip) IS BC_VARG) {
             // Variadic return: return ...
             setbc_b(ir_bcptr(&this->func_state, &last), 0);
             // For VARG returns, we can't know count at compile time - skip typefix
-            ins = BCINS_AD(BC_RETM, this->func_state.varmap.size(), last.u.s.aux - this->func_state.varmap.size());
+            ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
          else if (needs_typefix and bc_op(*ip) IS BC_CALL) {
             // DISABLE TAIL-CALL: emit BC_CALL + BC_TYPEFIX + BC_RET instead of BC_CALLT
@@ -975,7 +1025,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
                // No close handlers: Safe to use RETM with all results
                setbc_b(ip, 0);  // Request all results (MULTRES)
                bcemit_AD(&this->func_state, BC_TYPEFIX, last.u.s.aux, 1);
-               ins = BCINS_AD(BC_RETM, this->func_state.varmap.size(), last.u.s.aux - this->func_state.varmap.size());
+               ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
             }
          }
          else {
@@ -998,22 +1048,41 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
       else {
          // Multiple return values
          if (last.k IS ExpKind::Call) {
-            setbc_b(ir_bcptr(&this->func_state, &last), 0);
-            // Variadic tail - count unknown, skip typefix for safety
-            ins = BCINS_AD(BC_RETM, this->func_state.varmap.size(), last.u.s.aux - this->func_state.varmap.size());
+            if (truncate_return_results) {
+               BCREG result_count = this->func_state.return_declared_count;
+               BCREG fixed_count = last.u.s.aux - return_base;
+               BCREG call_count = result_count > fixed_count ? result_count - fixed_count : 0;
+               setbc_b(ir_bcptr(&this->func_state, &last), call_count + 1);
+               ins = result_count > 0 ?
+                  BCINS_AD(BC_RET, return_base, result_count + 1) :
+                  BCINS_AD(BC_RET0, 0, 1);
+            }
+            else {
+               setbc_b(ir_bcptr(&this->func_state, &last), 0);
+               // Variadic tail - count unknown, skip typefix for safety
+               ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
+            }
          }
          else {
             this->materialise_to_next_reg(last, "return tail value");
             if (needs_typefix) {
                auto typefix_count = std::min(count.raw(), BCREG(PROTO_MAX_RETURN_TYPES));
-               bcemit_AD(&this->func_state, BC_TYPEFIX, this->func_state.varmap.size(), typefix_count);
+               bcemit_AD(&this->func_state, BC_TYPEFIX, return_base, typefix_count);
             }
-            ins = BCINS_AD(BC_RET, this->func_state.varmap.size(), count + 1);
+            ins = BCINS_AD(BC_RET, return_base, count + 1);
          }
       }
    }
 
+   if (truncate_return_results and bc_op(ins) IS BC_RET) {
+      BCREG result_count = this->func_state.return_declared_count;
+      if (bc_d(ins) - 1 > result_count) setbc_d(&ins, result_count + 1);
+   }
+
    snapshot_return_regs(&this->func_state, &ins);
+   bool preserve_multres = bc_op(ins) IS BC_RETM and cleanup_temp_regs > 0;
+   if (preserve_multres) bcemit_AD(&this->func_state, BC_MRSAVE, multres_slot, 0);
+   if (preserve_multres) this->func_state.freereg = BCREG(this->func_state.varmap.size());
    // Both __close and defer handlers must run before returning from function.
    // Order: closes before defers (LIFO - most recently declared runs first).
    execute_closes(&this->func_state, 0);
@@ -1033,6 +1102,35 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
    }
 
    if (this->func_state.flags & PROTO_CHILD) bcemit_AJ(&this->func_state, BC_UCLO, 0, 0);
+   if (preserve_multres) bcemit_AD(&this->func_state, BC_MRRESTORE, multres_slot, 0);
+
+   if (has_return_contract and bc_op(ins) != BC_RET0) {
+      std::array<RuntimeContract, MAX_RETURN_TYPES> contracts;
+      for (uint8_t i = 0; i < this->func_state.return_contract_count; ++i) {
+         contracts[i] = RuntimeContract{
+            .type = this->func_state.return_types[i],
+            .struct_def = this->func_state.return_struct_defs[i],
+            .label = nullptr,
+            .boundary = ContractBoundary::Result,
+            .position = uint8_t(i + 1),
+            .nullable = true,
+            .required = false
+         };
+      }
+
+      BCOp return_op = bc_op(ins);
+      BCREG return_base = bc_a(ins);
+      bool dynamic_count = return_op IS BC_RETM;
+      BCREG static_count = 0;
+      if (return_op IS BC_RET1) static_count = 1;
+      else if (return_op IS BC_RET) static_count = bc_d(ins) - 1;
+      else if (return_op IS BC_RETM) static_count = bc_d(ins);
+
+      bcemit_contract(&this->func_state, return_base,
+         std::span(contracts.data(), this->func_state.return_contract_count), static_count, dynamic_count,
+         this->func_state.return_contract_variadic);
+   }
+
    bcemit_INS(&this->func_state, ins);
    this->func_state.reset_freereg();
    return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
