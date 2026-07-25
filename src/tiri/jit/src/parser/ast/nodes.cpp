@@ -23,7 +23,8 @@ TiriType parse_type_name(std::string_view Name)
       { "struct",    TiriType::Struct },
       { "obj",       TiriType::Object },
       { "object",    TiriType::Object },
-      { "range",     TiriType::Range }
+      { "range",     TiriType::Range },
+      { "userdata",  TiriType::Userdata }
    };
 
    auto it = type_map.find(Name);
@@ -33,16 +34,17 @@ TiriType parse_type_name(std::string_view Name)
 std::string_view type_name(TiriType Type)
 {
    switch (Type) {
-      case TiriType::Nil:    return "nil";
-      case TiriType::Bool:   return "bool";
-      case TiriType::Num:    return "num";
-      case TiriType::Str:    return "str";
-      case TiriType::Table:  return "table";
-      case TiriType::Array:  return "array";
-      case TiriType::Func:   return "func";
-      case TiriType::Struct: return "struct";
-      case TiriType::Object: return "obj";
-      case TiriType::Range:  return "range";
+      case TiriType::Nil:      return "nil";
+      case TiriType::Bool:     return "bool";
+      case TiriType::Num:      return "num";
+      case TiriType::Str:      return "str";
+      case TiriType::Table:    return "table";
+      case TiriType::Array:    return "array";
+      case TiriType::Func:     return "func";
+      case TiriType::Struct:   return "struct";
+      case TiriType::Object:   return "obj";
+      case TiriType::Range:    return "range";
+      case TiriType::Userdata: return "userdata";
       case TiriType::Any:
       default: return "any";
    }
@@ -68,6 +70,7 @@ uint8_t tiri_type_to_lj_tag(TiriType Type)
       case TiriType::Range:  return 12;  // ~12 = LJ_TUDATA (ranges are userdata at runtime)
       case TiriType::Array:  return 13;  // ~13 = LJ_TARRAY
       case TiriType::Num:    return 14;  // ~14 = LJ_TNUMX
+      case TiriType::Userdata:
       case TiriType::Any:
       case TiriType::Unknown:
       default: return 0xFF;  // Unknown - needs evaluation

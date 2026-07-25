@@ -1176,7 +1176,7 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
 {
    LuaStateHolder state;
    lua_State *L = state.get();
-   constexpr std::string_view source = "function typed(Value:num):num return Value end";
+   constexpr std::string_view source = "function typed(Value:userdata):userdata return Value end";
    if (lua_load(L, source, "contract-roundtrip")) {
       Log.error("failed to compile contract source: %s", lua_tostring(L, -1));
       return false;
@@ -1203,6 +1203,33 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
    lua_pop(L, 1);
    if (not snapshot_has_opcode(restored, BC_CONTRACT)) {
       Log.error("reloaded bytecode lost BC_CONTRACT");
+      return false;
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool test_userdata_type_annotations(kt::Log &Log)
+{
+   if (parse_type_name("userdata") != TiriType::Userdata or type_name(TiriType::Userdata) != "userdata") {
+      Log.error("userdata type name does not round-trip");
+      return false;
+   }
+   if (uint8_t(TiriType::Range) != 10 or uint8_t(TiriType::Userdata) != 11) {
+      Log.error("userdata changed an existing concrete contract type identifier");
+      return false;
+   }
+
+   constexpr std::string_view source =
+      "function identity(Value:userdata):userdata\n"
+      "   local result:userdata = Value\n"
+      "   return result\n"
+      "end";
+   auto result = build_ast_from_source(source);
+   if (not result.chunk.ok()) {
+      Log.error("failed to parse userdata annotations");
+      log_diagnostics(result.diagnostics, Log);
       return false;
    }
    return true;
@@ -2124,7 +2151,7 @@ static bool test_ternary_falsey_semantics(kt::Log &log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 26> tests = { {
+   constexpr std::array<TestCase, 27> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -2144,6 +2171,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "ast_call_lowering", test_ast_call_lowering },
       { "bytecode_equivalence", test_bytecode_equivalence },
       { "contract_bytecode_roundtrip", test_contract_bytecode_roundtrip },
+      { "userdata_type_annotations", test_userdata_type_annotations },
       { "state_local_struct_declarations", test_state_local_struct_declarations },
       { "struct_declaration_syntax", test_struct_declaration_syntax },
       { "struct_field_documentation", test_struct_field_documentation },

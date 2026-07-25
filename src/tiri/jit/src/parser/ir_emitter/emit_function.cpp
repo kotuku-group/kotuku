@@ -21,7 +21,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       //
       // Into:
       //   function compute(x, y)
-      //      return __create_thunk(function() return x * y end, type_tag)
+      //      return __create_thunk(function() return x * y end, logical_type)
       //   end
 
       // Use lastline which was set by emit_expression() to the function definition line,
@@ -48,8 +48,12 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       create_thunk_ref.resolution = NameResolution::Unresolved;
       ExprNodePtr create_thunk_fn = make_identifier_expr(span, create_thunk_ref);
 
-      // Type tag argument
-      ExprNodePtr type_arg = make_literal_expr(span, LiteralValue::number(double(tiri_type_to_lj_tag(Payload.thunk_return_type))));
+      // Logical type argument.  A VM tag cannot distinguish range from full userdata or represent both full and
+      // light userdata, so deferred values retain the language-level type.
+
+      uint8_t logical_type = (Payload.thunk_return_type IS TiriType::Any or
+         Payload.thunk_return_type IS TiriType::Unknown) ? 0xff : uint8_t(Payload.thunk_return_type);
+      ExprNodePtr type_arg = make_literal_expr(span, LiteralValue::number(double(logical_type)));
 
       // Build argument list
       ExprNodeList call_args;

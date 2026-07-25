@@ -134,6 +134,7 @@ enum class TiriType : uint8_t {
    Struct,       // Kotuku struct (LJ_TSTRUCT)
    Object,       // Kotuku object (LT_TOBJECT)
    Range,        // Range expression (runtime: LJ_TUDATA)
+   Userdata,     // Ordinary full or light userdata
    Unknown
 };
 
@@ -484,7 +485,7 @@ typedef struct ThunkPayload {
    GCRef deferred_func;    // The deferred closure (GCfunc)
    TValue cached_value;    // Cached resolved value
    uint8_t resolved;       // Resolution flag (0 = not resolved, 1 = resolved)
-   uint8_t expected_type;  // LJ type tag for type() (LUA_TSTRING, LUA_TNUMBER, etc.)
+   uint8_t expected_type;  // Logical TiriType declared for the deferred result
    uint16_t padding;       // Padding for alignment
 } ThunkPayload;
 

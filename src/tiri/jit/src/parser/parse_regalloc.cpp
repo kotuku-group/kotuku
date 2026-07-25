@@ -551,6 +551,7 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
    bool interpreter_only = DynamicCount;
    for (const RuntimeContract &contract : Contracts) {
       if (contract.type IS TiriType::Range or
+          contract.type IS TiriType::Userdata or
           (contract.type IS TiriType::Struct and contract.struct_def) or
           contract.type IS TiriType::Func) {
          interpreter_only = true;

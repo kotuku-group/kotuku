@@ -680,7 +680,7 @@ void register_regex_class(lua_State *Lua)
    lua_pop(Lua, 2); // Drop the Tiri.regex metatable and the regex library table
 
    // Register regex interface prototypes for compile-time type inference
-   reg_iface_prototype("regex", "new", { TiriType::Any }, { TiriType::Str, TiriType::Num });
+   reg_iface_prototype("regex", "new", { TiriType::Userdata }, { TiriType::Str, TiriType::Num });
    reg_iface_prototype("regex", "escape", { TiriType::Str }, { TiriType::Str });
    reg_iface_prototype("regex", "test", { TiriType::Bool }, { TiriType::Str, TiriType::Num });
    reg_iface_prototype("regex", "match", { TiriType::Array }, { TiriType::Str, TiriType::Num });

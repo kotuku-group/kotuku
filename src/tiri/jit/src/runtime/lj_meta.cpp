@@ -47,7 +47,8 @@ static TiriType lj_tag_to_tiri_type(uint32_t tag)
       case LJ_TFUNC:   return TiriType::Func;
       case LJ_TOBJECT: return TiriType::Object;
       case LJ_TTAB:    return TiriType::Table;
-      case LJ_TUDATA:  return TiriType::Object;
+      case LJ_TLIGHTUD:
+      case LJ_TUDATA:  return TiriType::Userdata;
       case LJ_TARRAY:  return TiriType::Array;
       default:         return TiriType::Num;  // Numbers have itype < LJ_TISNUM
    }
@@ -662,6 +663,13 @@ private:
    return call and tvisfunc(call);
 }
 
+[[nodiscard]] static bool contract_is_userdata(lua_State *L, cTValue *Value)
+{
+   if (tvislightud(Value)) return true;
+   if (not tvisudata(Value) or lj_is_thunk(Value)) return false;
+   return not contract_is_range(L, Value);
+}
+
 [[nodiscard]] static bool contract_matches(lua_State *L, cTValue *Value, const RuntimeContractEntry &Entry)
 {
    bool nullable = (Entry.flags & contract_flag(ContractEntryFlag::Nullable)) != 0;
@@ -684,8 +692,9 @@ private:
          struct_record *definition = find_struct(L, Entry.struct_name);
          return definition and structV(Value)->def IS definition;
       }
-      case TiriType::Object: return tvisobject(Value);
-      case TiriType::Range:  return contract_is_range(L, Value);
+      case TiriType::Object:   return tvisobject(Value);
+      case TiriType::Range:    return contract_is_range(L, Value);
+      case TiriType::Userdata: return contract_is_userdata(L, Value);
    }
    return false;
 }
@@ -718,9 +727,10 @@ static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractE
       case TiriType::Table:   name = "table"; break;
       case TiriType::Array:   name = "array"; break;
       case TiriType::Func:    name = "func"; break;
-      case TiriType::Struct:  name = "struct"; break;
-      case TiriType::Object:  name = "obj"; break;
-      case TiriType::Range:   name = "range"; break;
+      case TiriType::Struct:   name = "struct"; break;
+      case TiriType::Object:   name = "obj"; break;
+      case TiriType::Range:    name = "range"; break;
+      case TiriType::Userdata: name = "userdata"; break;
       case TiriType::Any:
       case TiriType::Unknown: break;
    }
@@ -783,6 +793,7 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
       DynamicCount + static_count : static_count;
    bool variadic = (descriptor_flags & contract_flag(ContractDescriptorFlag::Variadic)) != 0;
    auto boundary = ContractBoundary(boundary_value);
+   ptrdiff_t base_offset = savestack(L, Base);
 
    for (uint32_t i = 0; i < value_count; ++i) {
       uint32_t contract_index;
@@ -792,9 +803,19 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
 
       const RuntimeContractEntry &entry = entries[contract_index];
       if (entry.type IS TiriType::Any or entry.type IS TiriType::Unknown) continue;
-      if (not contract_matches(L, Base + i, entry)) {
+
+      Base = restorestack(L, base_offset);
+      TValue *value = Base + i;
+      if (lj_is_thunk(value)) {
+         TValue *resolved = lj_thunk_resolve(L, udataV(value));
+         Base = restorestack(L, base_offset);
+         value = Base + i;
+         copyTV(L, value, resolved);
+      }
+
+      if (not contract_matches(L, value, entry)) {
          uint32_t position = boundary IS ContractBoundary::Result ? i + 1 : entry.position;
-         contract_error(L, Base + i, boundary, entry, position);
+         contract_error(L, value, boundary, entry, position);
       }
    }
 }

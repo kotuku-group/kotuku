@@ -656,4 +656,4 @@ Enables type inference for untyped functions, allowing the VM to optimize subseq
 - Basic tag contracts use trace slot specialisation. Prototypes needing structure identity, range metatable,
   callable-value or dynamic-result predicates remain interpreter-only until those predicates have dedicated trace IR
   guards.
-- The private bytecode dump version is `0x80`; older dumps are intentionally rejected and must be regenerated.
+- The private bytecode dump version is `0x81`; older dumps are intentionally rejected and must be regenerated.

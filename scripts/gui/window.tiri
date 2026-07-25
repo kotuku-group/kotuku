@@ -20,7 +20,7 @@ lStyle = (function()
    end
 end)()
 
-function hosted(self:table):bool
+function hosted(self:userdata):bool
    self.hosted ?= self.surface and self.surface.parent ? false :> true
    return self.hosted
 end
@@ -46,7 +46,7 @@ gui.window = function(Options:table)
       viewport     = nil -- The window's top-level viewport
    }
 
-   self.clientViewport = function(self:table, Options:table)
+   self.clientViewport = function(self:userdata, Options:table)
       if self._clientViewport then return self._clientViewport end
       Options ?= { }
 
@@ -69,7 +69,7 @@ gui.window = function(Options:table)
       return self._clientViewport
    end
 
-   self.getSize = function(self:table)
+   self.getSize = function(self:userdata)
       if hosted(self) then
          return {
             x      = self.surface.x - self.client.left,
@@ -84,7 +84,7 @@ gui.window = function(Options:table)
       end
    end
 
-   self.getClientSize = function(self:table)
+   self.getClientSize = function(self:userdata)
       if hosted(self) then
          return {
             x = self.surface.x, y = self.surface.y, width = self.surface.width, height = self.surface.height
@@ -100,7 +100,7 @@ gui.window = function(Options:table)
 
    -- Resize the window via the client area
 
-   self.resizeClientArea = function(self:table, ClientWidth:num, ClientHeight:num)
+   self.resizeClientArea = function(self:userdata, ClientWidth:num, ClientHeight:num)
       if not ClientWidth then
          ClientWidth = self.surface.width
          if not hosted(self) then ClientWidth -= self.client.left + self.client.right end
@@ -121,7 +121,7 @@ gui.window = function(Options:table)
    -- Changes the size of the position of the window in relation to its parent.  All dimensions refer to the
    -- border of the window.
 
-   self.resize = function(self:table, X:num, Y:num, Width:num, Height:num)
+   self.resize = function(self:userdata, X:num, Y:num, Width:num, Height:num)
       Width ?= self.surface.width
       Height ?= self.surface.height
 
@@ -144,7 +144,7 @@ gui.window = function(Options:table)
 
    -- Define window sizing limits.
 
-   self.sizeHints = function(self:table, MinWidth, MinHeight, MaxWidth, MaxHeight, EnforceAspect)
+   self.sizeHints = function(self:userdata, MinWidth, MinHeight, MaxWidth, MaxHeight, EnforceAspect)
       if self.surface.display.mtSizeHints(MinWidth, MinHeight, MaxWidth, MaxHeight, EnforceAspect) != ERR_Okay then
          self.surface.maxWidth  = MaxWidth
          self.surface.minWidth  = MinWidth
@@ -155,7 +155,7 @@ gui.window = function(Options:table)
 
    -- Smart limits are used to prevent the window from moving completely outside of the visible display area.
 
-   self.applySmartLimits = function(self:table)
+   self.applySmartLimits = function(self:userdata)
       self.smartLimitsEnabled = true
       if not hosted(self) then
          err, info = mGfx.GetSurfaceInfo(self.surface.parent)
@@ -170,7 +170,7 @@ gui.window = function(Options:table)
 
    -- Run the minimise procedure for the window (environment dependent).
 
-   self.minimise = function(self:table)
+   self.minimise = function(self:userdata)
       if self.MinimiseEnabled then
          self?.events?.minimise(self)
       end
@@ -182,7 +182,7 @@ gui.window = function(Options:table)
    --
    -- If Toggle is true, the window is restored to its original position if the window is already maximised.
 
-   self.maximise = function(self:table, Toggle)
+   self.maximise = function(self:userdata, Toggle)
       if not self.maximiseEnabled then
          msg('Maximisation for this window is turned off.')
          return
@@ -199,15 +199,15 @@ gui.window = function(Options:table)
       end
    end
 
-   self.moveToBack = function(self:table)
+   self.moveToBack = function(self:userdata)
       self.surface.acMoveToBack()
    end
 
-   self.moveToFront = function(self:table)
+   self.moveToFront = function(self:userdata)
       self.surface.acMoveToFront()
    end
 
-   self.parentSize = function(self:table)
+   self.parentSize = function(self:userdata)
       if hosted(self) then
          err, info = mGfx.getDisplayInfo(self.surface.display)
          return info.monitorWidth, info.monitorHeight
@@ -217,7 +217,7 @@ gui.window = function(Options:table)
       end
    end
 
-   self.show = function(self:table, Centre:bool)
+   self.show = function(self:userdata, Centre:bool)
       if Centre then
          x, y = (function()
             if self.surface.popOver then
@@ -269,13 +269,13 @@ gui.window = function(Options:table)
       self.events?.show(self)
    end
 
-   self.hide = function(self:table)
+   self.hide = function(self:userdata)
       self.visible = false
       self.surface.acHide()
       self.events?.hide(self)
    end
 
-   self.setTitle = function(self:table, Title:str)
+   self.setTitle = function(self:userdata, Title:str)
       if hosted(self) then
          self.surface.display.title = Title
       end

@@ -282,6 +282,7 @@ static RecordedContract rec_contract_classify(cTValue *Base, GCstr *Descriptor, 
             matches = tvisstruct(value);
             break;
          case TiriType::Range: return RecordedContract::Complex;
+         case TiriType::Userdata: return RecordedContract::Complex;
       }
       if (not matches) return RecordedContract::Mismatch;
    }
