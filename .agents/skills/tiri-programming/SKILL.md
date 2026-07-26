@@ -95,8 +95,8 @@ search tools, and mixed editor environments.
 ## Ranges And Collections
 
 - Range literals use `{Start to Stop}` for exclusive stop and `{Start into Stop}` for inclusive stop.
-- Range literals do not support step expressions; use `range(Start, Stop, Inclusive, Step)` for stepped ranges.
-- Range operands can be variables but not arbitrary expressions.
+- Range literals support finite fractional bounds and steps, for example `{0 to 1 by 0.2}`.
+- Range operands and steps can be general expressions.
 - Negative indices in slicing count from the end and preserve `..` exclusive or `...` inclusive stop semantics.
 - Ranges can iterate, slice strings/tables/arrays, test membership with `in`, and provide functional methods such as
   `each`, `map`, `filter`, `reduce`, `take`, `any`, `all`, and `find`.
