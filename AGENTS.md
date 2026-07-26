@@ -14,14 +14,14 @@ This file provides guidance to Agentic programs when working with code in this r
 - To build an individual module, append `--target [module]` to the build command, e.g. `--target network`.  In static builds, use `--target [module] origo_cmd` to ensure that the origo executable is rebuilt to include the changes.
 
 **Testing:**
-- **ALWAYS** install your latest build before running `ctest`.
+- Always install your latest build before running `ctest`.
 - Run all integration tests: `ctest --build-config Debug --test-dir build/agents --output-on-failure`
 - Run single integration test: `ctest --build-config Debug --test-dir build/agents --output-on-failure -L TEST_LABEL`
-- **ALWAYS** write Tiri tests using Flute unless instructed otherwise.
+- Tiri tests are always written for the Flute tool.
 - Use the `flute-testing` skill before writing, reviewing, planning, or running Flute tests.
-- When running the Origo executable for individual tests, **ALWAYS** append `--log-warning` at a minimum for log messages, or `--log-api` if more detail is required.  Log output is directed to stderr.
-- Statements can be tested on the commandline with `--statement`, e.g. `origo --statement "print('Hello')"`
-- If modifying files in the `scripts` folder, **ALWAYS** append `--set-volume scripts=/absolute/path/to/project/scripts` to ensure your modified files are being loaded over the installed versions.
+- When running the Origo executable for individual tests, append `--log-warning` at a minimum for log messages, or `--log-api` if more detail is required.  Log output is directed to stderr.
+- For ad-hoc testing, statements can be tested on the commandline with `--statement`, e.g. `origo --statement "print('Hello')"`
+- If modifying files in the `scripts` folder, **ALWAYS** append `--set-volume scripts=/absolute/path/to/project/scripts` to ensure your modified files are given priority over the installed versions.
 - If debugging issues involving threads, add `--log-threads` for improved log output.
 
 **Verify:**
@@ -40,8 +40,7 @@ Key build options (use with `-D` flag):
 
 When working in ephemeral cloud environments:
 
-- Prefer the pre-created build tree at `build/agents` and install tree at `build/agents-install` to avoid the expense of repeated configuration.  If the directory exists you can immediately run `cmake --build build/agents --config Debug --parallel`.
-- If you must reconfigure, clean only the affected cache entries with `cmake -S . -B build/agents -DCMAKE_BUILD_TYPE=Debug ...` rather than deleting the entire build tree.
+- Prefer the pre-created build tree at `build/agents` and install tree at `build/agents-install` to avoid the expense of repeated configuration.  If the directory exists you can update it with `cmake --build build/agents --config Debug --parallel`.
 - If `origo` is not already installed at `build/agents-install` then performing the build and install process is essential if intending to run `origo` for Tiri scripts and Flute tests.
 - If configuring a build, disabling unnecessary modules like Audio and Graphics features (if they are not relevant) will speed up compilation.  If *certain* that the environment is cloud-based, you can consider including the following with your CMake build configuration: `-DDISABLE_AUDIO=ON -DDISABLE_X11=ON -DDISABLE_DISPLAY=ON -DDISABLE_FONT=ON`
 
