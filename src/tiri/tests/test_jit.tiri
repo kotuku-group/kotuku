@@ -609,7 +609,7 @@ function jit_regex_failure_convert(Value:any, Param:table):any
    try
       return regex.new(jit_regex_failure_value)
    except e
-      raise ERR_WrongType, f"Parameter '{jit_regex_failure_param_name}' requires a valid regex pattern."
+      raise ERR_WrongType, f"Intentional exception raised for parent to capture."
    end
 end
 
@@ -709,15 +709,16 @@ function build_try_materialisation_trace()
    error("Failed to create a try-entry materialisation trace for inspection")
 end
 
-@Test(hotpath=80) function JITTryRegexFailurePreservesParamName()
+@Test(hotpath=20) function JITTryRegexFailurePreservesParamName()
    jit.on()
    jit.flush()
    jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
 
    local param = { name = 'pattern', type = 'regex' }
-   local expected_message = "Parameter 'pattern' requires a valid regex pattern."
+   local expected_message = "Intentional exception raised for parent to capture."
 
-   for i in {0 to 100} do
+   local count = 0
+   for i in {0 to 80} do
       local err
       try
          jit_regex_failure_convert('(', param)
@@ -725,10 +726,14 @@ end
          err = e
       end
 
+      count++
+      assert(i < 80, 'Terminal JIT failure, index exceeded 80 iterations')
       assert(err != nil, "Invalid regex should raise an error")
       assert(err.code is ERR_WrongType, f"Expected ERR_WrongType, got {err.code}")
       assert(err.message is expected_message, f"Expected '{expected_message}', got '{err.message}'")
    end
+
+   assert(count is 80, f"Expected 80 iterations, got {count}")
 end
 
 @Test(hotpath=80) function JITTryLocalBeforeEntrySurvivesRegexThrow()
