@@ -64,6 +64,7 @@ static CSTRING error_code_name(ParserErrorCode Code)
       case ParserErrorCode::DeferredTypeRequired:   return "Deferred type required";
       case ParserErrorCode::UndefinedVariable:      return "Undefined variable";
       case ParserErrorCode::ThunkDirectCall:        return "Thunk direct call";
+      case ParserErrorCode::FunctionSignatureMismatch: return "Function signature mismatch";
       case ParserErrorCode::RecoverySkippedTokens:  return "Recovery skipped tokens";
       case ParserErrorCode::AssignToConstant:       return "Assign to constant";
       case ParserErrorCode::ConstRequiresInitialiser: return "Const requires initialiser";
