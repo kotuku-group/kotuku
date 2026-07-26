@@ -32,6 +32,7 @@ ParserContext & ParserContext::operator=(ParserContext &&other) noexcept
       this->previous_context = other.previous_context;
       this->error_rollback_callback = other.error_rollback_callback;
       this->error_rollback_user_data = other.error_rollback_user_data;
+      this->descriptors_ = std::move(other.descriptors_);
       if (this->lex_state) this->lex_state->active_context = this;
       other.lex_state        = nullptr;
       other.func_state       = nullptr;

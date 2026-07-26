@@ -892,7 +892,7 @@ void register_io_class(lua_State *Lua)
    lua_pop(Lua, 3); // Drop the Tiri.file metatable, Tiri.io metatable, and io library table
 
    // Register io interface prototypes for compile-time type inference
-   reg_iface_prototype("io", "open", { TiriType::Any }, { TiriType::Str, TiriType::Str });
+   reg_iface_prototype("io", "open", { TiriType::Userdata }, { TiriType::Str, TiriType::Str });
    reg_iface_prototype("io", "close", { TiriType::Bool }, { TiriType::Any });
    reg_iface_prototype("io", "read", { TiriType::Any }, { TiriType::Any });
    reg_iface_prototype("io", "write", {}, { TiriType::Any });
@@ -900,7 +900,7 @@ void register_io_class(lua_State *Lua)
    reg_iface_prototype("io", "input", { TiriType::Any }, { TiriType::Any });
    reg_iface_prototype("io", "output", { TiriType::Any }, { TiriType::Any });
    reg_iface_prototype("io", "lines", { TiriType::Func }, { TiriType::Any });
-   reg_iface_prototype("io", "tempFile", { TiriType::Any }, {});
+   reg_iface_prototype("io", "tempFile", { TiriType::Userdata }, {});
    reg_iface_prototype("io", "type", { TiriType::Str }, { TiriType::Any });
    reg_iface_prototype("io", "readAll", { TiriType::Str }, { TiriType::Str });
    reg_iface_prototype("io", "writeAll", {}, { TiriType::Str, TiriType::Str });

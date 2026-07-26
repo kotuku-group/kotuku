@@ -126,6 +126,7 @@ public:
    BCInsLine* bc_stack;       // Stack for bytecode instructions/line numbers.
    MSize      size_bc_stack;  // Size of bytecode stack.
    uint32_t   level;          // Syntactical nesting level.
+   uint8_t    bytecode_version = 0; // Private bytecode format version while reading a binary chunk.
    uint32_t   ternary_depth;  // Number of pending ternary operators.
    uint8_t    pending_if_empty_colon; // Tracks ?: misuse after ??.
    int        is_bytecode;    // Set to 1 if input is bytecode, 0 if source text.
@@ -158,6 +159,7 @@ public:
       TiriType primary = TiriType::Unknown;
       CLASSID  object_class_id = CLASSID::NIL;
       struct_record *struct_def = nullptr;
+      bool explicit_contract = false;
    };
    ankerl::unordered_dense::map<GCstr*, GlobalTypeHint> global_type_hints;
    std::vector<StructFieldDocumentation> struct_field_documentation;

@@ -233,7 +233,26 @@ static void recff_assert(jit_State* J, RecordFFData* rd)
 
 constexpr uint32_t TYPE_NAME_USERDATA = 3;
 constexpr uint32_t TYPE_NAME_RANGE = 15;
-constexpr uint8_t TIRI_TYPE_RANGE_TAG = uint8_t(~LJ_TUDATA);
+
+static uint32_t recff_type_name_index(TiriType Type)
+{
+   switch (Type) {
+      case TiriType::Nil:      return 0;
+      case TiriType::Bool:     return 2;
+      case TiriType::Str:      return 4;
+      case TiriType::Struct:   return 6;
+      case TiriType::Func:     return 8;
+      case TiriType::Object:   return 10;
+      case TiriType::Table:    return 11;
+      case TiriType::Array:    return 13;
+      case TiriType::Num:      return 14;
+      case TiriType::Range:    return TYPE_NAME_RANGE;
+      case TiriType::Userdata: return TYPE_NAME_USERDATA;
+      case TiriType::Any:
+      case TiriType::Unknown:  return TYPE_NAME_USERDATA;
+   }
+   return TYPE_NAME_USERDATA;
+}
 
 static bool recff_is_range_userdata(jit_State *J, GCudata *Userdata)
 {
@@ -261,9 +280,8 @@ static void recff_type(jit_State* J, RecordFFData* rd)
       else if (ud->udtype IS UDTYPE_THUNK) {
          ThunkPayload *payload = thunk_payload(ud);
          if (payload->expected_type != 0xFF) {
-            // Use the declared type instead of userdata
-            t = payload->expected_type;
-            if (t IS TIRI_TYPE_RANGE_TAG) t = TYPE_NAME_RANGE;
+            // Use the declared logical type instead of the thunk container's userdata tag.
+            t = recff_type_name_index(TiriType(payload->expected_type));
          }
       }
       else {

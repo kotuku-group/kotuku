@@ -105,6 +105,10 @@ void LexState::var_add(BCREG nvars)
       v->object_class_id = CLASSID::NIL;
       v->struct_def = nullptr;
       v->result_types.fill(TiriType::Unknown);  // No return type info for non-functions
+      v->static_value = 0;
+      v->static_results = 0;
+      v->static_callable = 0;
+      v->binding_id = 0;
    }
 }
 
@@ -191,6 +195,8 @@ static MSize var_lookup_(LexState* ls, GCstr* name, ExpDesc* e)
          e->result_type = vinfo.fixed_type;
          e->object_class_id = vinfo.object_class_id;
          e->struct_def = vinfo.struct_def;
+         e->static_value = vinfo.static_value;
+         e->static_results = vinfo.static_results;
 
          // If found in outer function, create upvalues in all intervening functions
          if (not is_current) {
@@ -898,12 +904,36 @@ GCproto * LexState::fs_finish(BCLine Line)
    if (min_line < fs->linedefined) fs->linedefined = min_line;
 
    BCLine numline = line - fs->linedefined;
-   size_t sizept, ofsk, ofsuv, ofsli, ofsdbg, ofsvar;
+   size_t sizept, ofsk, ofsuv, ofssig, ofsli, ofsdbg, ofsvar;
    GCproto *pt;
 
    // Apply final fixups.
 
    fs_fixup_ret(fs);
+
+   // Finalise the canonical result signature.  Unannotated functions reserve the bounded result prefix used by
+   // BC_TYPEFIX; provenance and strength are fixed before publication so runtime inference mutates only the type byte.
+
+   if (not fs->return_contract_explicit and (fs->flags & PROTO_HAS_RETURN)) {
+      fs->signature_flags |= proto_signature_flag(ProtoSignatureFlag::DynamicResults);
+      fs->signature_result_count = 0;
+      fs->signature_result_entry_count = uint8_t(fs->signature_results.size());
+      for (auto &entry : fs->signature_results) {
+         entry = ProtoTypeEntry{
+            .constraint = 0,
+            .type = TiriType::Unknown,
+            .flags = proto_type_flags(true, false, ProtoTypeOrigin::Inferred, ProtoTypeStrength::Advisory)
+         };
+      }
+   }
+
+   lj_assertX(fs->signature_parameters.size() IS fs->numparams,
+      "prototype signature parameter count does not match numparams");
+   const bool has_signature = not fs->signature_parameters.empty() or fs->signature_result_entry_count > 0 or
+      fs->signature_flags != 0;
+   const size_t signature_size = has_signature ?
+      proto_signature_size(fs->signature_parameters.size(), fs->signature_result_entry_count) : 0;
+   lj_assertX(signature_size <= UINT16_MAX, "prototype signature size exceeds uint16_t");
 
    // Capture variable declarations if JOF::DIAGNOSE is enabled.
 
@@ -952,6 +982,9 @@ GCproto * LexState::fs_finish(BCLine Line)
    sizept += fs->nkn * sizeof(TValue);
    ofsuv  = sizept;
    sizept += ((fs->nuv + 1) & ~1) * 2;
+   ofssig = sizept;
+   lj_assertX((ofssig % alignof(ProtoTypeEntry)) IS 0, "prototype signature is not naturally aligned");
+   sizept += signature_size;
    ofsli  = sizept;
    sizept += fs_prep_line(fs);
    ofsdbg = sizept;
@@ -960,6 +993,7 @@ GCproto * LexState::fs_finish(BCLine Line)
    // Allocate prototype and initialize its fields.
 
    pt = (GCproto *)lj_mem_newgco(L, MSize(sizept));
+   proto_metadata_init(pt);
    pt->gct       = ~LJ_TPROTO;
    pt->sizept    = MSize(sizept);
    pt->trace     = 0;
@@ -968,6 +1002,28 @@ GCproto * LexState::fs_finish(BCLine Line)
    pt->framesize = fs->framesize;
    pt->file_source_idx = this->current_file_index;  // FileSource tracking for error reporting
    setgcref(pt->chunk_name, obj2gco(this->chunk_name));
+
+   if (has_signature) {
+      auto signature = (ProtoSignature *)((char *)pt + ofssig);
+      signature->version = PROTO_SIGNATURE_VERSION;
+      signature->flags = fs->signature_flags;
+      signature->parameter_count = uint8_t(fs->signature_parameters.size());
+      signature->result_count = fs->signature_result_count;
+      signature->result_entry_count = fs->signature_result_entry_count;
+      memset(signature->reserved, 0, sizeof(signature->reserved));
+
+      auto parameters = (ProtoTypeEntry *)(signature + 1);
+      if (not fs->signature_parameters.empty()) {
+         memcpy(parameters, fs->signature_parameters.data(),
+            fs->signature_parameters.size() * sizeof(ProtoTypeEntry));
+      }
+      if (fs->signature_result_entry_count > 0) {
+         memcpy(parameters + fs->signature_parameters.size(), fs->signature_results.data(),
+            fs->signature_result_entry_count * sizeof(ProtoTypeEntry));
+      }
+      setmref(pt->signature, signature);
+      pt->signature_size = uint16_t(signature_size);
+   }
 
    // Register the function name if one was provided (for named function declarations).
 
@@ -985,8 +1041,6 @@ GCproto * LexState::fs_finish(BCLine Line)
          pt->closeslots |= (1ULL << slot);
       }
    }
-
-   pt->result_types = fs->return_types;
 
    // Copy try-except metadata to prototype.  These arrays are allocated separately and freed with the proto via the GC.
 
@@ -1009,20 +1063,6 @@ GCproto * LexState::fs_finish(BCLine Line)
       pt->try_block_count   = 0;
       pt->try_handler_count = 0;
    }
-
-   // Set PROTO_TYPEFIX flag for runtime type inference if:
-   // 1. The function has NO explicit return type annotations, AND
-   // 2. At least one return statement exists (has values to infer)
-
-   bool has_explicit = false;
-   for (size_t i = 0; i < fs->return_types.size(); ++i) {
-      if (fs->return_types[i] != TiriType::Unknown) {
-         has_explicit = true;
-         break;
-      }
-   }
-
-   if (not has_explicit and (fs->flags & PROTO_HAS_RETURN)) pt->flags |= PROTO_TYPEFIX;
 
    // Close potentially uninitialized gap between bc and kgc.
 

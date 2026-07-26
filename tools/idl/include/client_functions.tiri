@@ -428,8 +428,8 @@ end
 @input Names to hash into enum values
 ]])
 global function typedHash(Prefix:str, Type:str, ...)
-   Type = cType({ type=Type }, Prefix)
-   output(f'enum class {Prefix} : {Type.type} {{')
+   local ctype = cType({ type=Type }, Prefix)
+   output(f'enum class {Prefix} : {ctype.type} {{')
    output('   NIL = 0,')
    for v in values({...}) do
       local hash_name = rx_non_word.replace(v, '_')
@@ -839,8 +839,8 @@ end
 @input Private class data specification
 @input Optional custom C++ text for the generated class
 ]])
-global function klass(Name, Options:table, Spec, Private, Custom)
-   verbose('Processing class ' .. tostring(Name))
+global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str)
+   verbose('Processing class ' .. Name)
 
    forward_declared = false
    if not Options then
@@ -1057,7 +1057,7 @@ global function klass(Name, Options:table, Spec, Private, Custom)
                method.funcName ..= Name
             end
 
-            function pName(Param:str):str
+            function pName(Param:table):str
                name = Param.name
                if (Param.type is 'OBJECTID') or (Param.type is 'MEMORYID') then
                   if name:sub(-2) != 'ID' then
@@ -1281,7 +1281,7 @@ end
 @input Method definition table
 ]])
 global function methods(ClassName:str, Prefix:str, Methods)
-   verbose(<{ f'Processing {#Methods} methods for class {ClassName}' }>)
+   verbose(f'Processing {#Methods} methods for class {ClassName}')
 
    local cl = registerClass(ClassName)
    cl.methodPrefix = Prefix

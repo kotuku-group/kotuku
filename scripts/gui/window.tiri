@@ -20,11 +20,6 @@ lStyle = (function()
    end
 end)()
 
-function hosted(self:table):bool
-   self.hosted ?= self.surface and self.surface.parent ? false :> true
-   return self.hosted
-end
-
 gui.window = function(Options:table)
    self = { -- Public variables
       events       = Options.events ?? { },
@@ -46,105 +41,62 @@ gui.window = function(Options:table)
       viewport     = nil -- The window's top-level viewport
    }
 
-   self.clientViewport = function(self:table, Options:table)
+   self.clientViewport = function(self:userdata, Options:table)
       if self._clientViewport then return self._clientViewport end
       Options ?= { }
 
       Options.aspectRatio ?= 'XMin|YMin|Meet'
 
-      if hosted(self) then
-         Options.x = 0
-         Options.y = 0
-         Options.xOffset = 0
-         Options.yOffset = 0
-      else
-         Options.x = self.margins.left
-         Options.y = self.margins.top
-         Options.xOffset = self.margins.right
-         Options.yOffset = self.margins.bottom
-      end
+      Options.x = 0
+      Options.y = 0
+      Options.xOffset = 0
+      Options.yOffset = 0
 
       self._clientViewport = self.viewport.new('VectorViewport', Options)
 
       return self._clientViewport
    end
 
-   self.getSize = function(self:table)
-      if hosted(self) then
-         return {
-            x      = self.surface.x - self.client.left,
-            y      = self.surface.y - self.client.top,
-            width  = self.surface.width + self.client.left + self.client.right,
-            height =  self.surface.height + self.client.top + self.client.bottom
-         }
-      else
-         return {
-            x = self.surface.x, y = self.surface.y, width = self.surface.width, height = self.surface.height
-         }
-      end
+   self.getSize = function(self:userdata)
+      return {
+         x      = self.surface.x - self.client.left,
+         y      = self.surface.y - self.client.top,
+         width  = self.surface.width + self.client.left + self.client.right,
+         height =  self.surface.height + self.client.top + self.client.bottom
+      }
    end
 
-   self.getClientSize = function(self:table)
-      if hosted(self) then
-         return {
-            x = self.surface.x, y = self.surface.y, width = self.surface.width, height = self.surface.height
-         }
-      else
-         return {
-            x = self.surface.x + self.client.left, y = self.surface.y + self.client.top,
-            width = self.surface.width - self.client.left - self.client.right,
-            height = self.surface.height - self.client.top - self.client.bottom
-         }
-      end
+   self.getClientSize = function(self:userdata)
+      return {
+         x = self.surface.x, y = self.surface.y, width = self.surface.width, height = self.surface.height
+      }
    end
 
    -- Resize the window via the client area
 
-   self.resizeClientArea = function(self:table, ClientWidth:num, ClientHeight:num)
-      if not ClientWidth then
-         ClientWidth = self.surface.width
-         if not hosted(self) then ClientWidth -= self.client.left + self.client.right end
-      end
-
-      if not ClientHeight then
-         ClientHeight = self.surface.height
-         if not hosted(self) then ClientHeight -= self.client.top + self.client.bottom end
-      end
-
-      if hosted(self) then
-         self.surface.acResize(ClientWidth, ClientHeight, 0)
-      else
-         self.surface.acResize(ClientWidth + self.client.left + self.client.right, ClientHeight + self.client.top + self.client.bottom, 0)
-      end
+   self.resizeClientArea = function(self:userdata, ClientWidth:num, ClientHeight:num)
+      ClientWidth ?= self.surface.width
+      ClientHeight ?= self.surface.height
+      self.surface.acResize(ClientWidth, ClientHeight, 0)
    end
 
    -- Changes the size of the position of the window in relation to its parent.  All dimensions refer to the
    -- border of the window.
 
-   self.resize = function(self:table, X:num, Y:num, Width:num, Height:num)
+   self.resize = function(self:userdata, X:num, Y:num, Width:num, Height:num)
       Width ?= self.surface.width
       Height ?= self.surface.height
 
-      if hosted(self) then
-         X ?= self.surface.x
-         Y ?= self.surface.y
-         self.surface.acRedimension(X + self.client.left, Y + self.client.top, 0,
-            Width - self.client.left - self.client.right,
-            Height - self.client.top - self.client.bottom, 0)
-      else
-         if X or Y then
-            X ?= self.surface.x
-            Y ?= self.surface.y
-            self.surface.acRedimension(X, Y, 0, Width, Height, 0)
-         else
-            self.surface.acResize(Width, Height, 0)
-         end
-      end
+      X ?= self.surface.x
+      Y ?= self.surface.y
+      self.surface.acRedimension(X + self.client.left, Y + self.client.top, 0,
+         Width - self.client.left - self.client.right,
+         Height - self.client.top - self.client.bottom, 0)
    end
 
    -- Define window sizing limits.
 
-   self.sizeHints = function(self:table, MinWidth, MinHeight, MaxWidth, MaxHeight, EnforceAspect)
+   self.sizeHints = function(self:userdata, MinWidth, MinHeight, MaxWidth, MaxHeight, EnforceAspect)
       if self.surface.display.mtSizeHints(MinWidth, MinHeight, MaxWidth, MaxHeight, EnforceAspect) != ERR_Okay then
          self.surface.maxWidth  = MaxWidth
          self.surface.minWidth  = MinWidth
@@ -155,22 +107,13 @@ gui.window = function(Options:table)
 
    -- Smart limits are used to prevent the window from moving completely outside of the visible display area.
 
-   self.applySmartLimits = function(self:table)
+   self.applySmartLimits = function(self:userdata)
       self.smartLimitsEnabled = true
-      if not hosted(self) then
-         err, info = mGfx.GetSurfaceInfo(self.surface.parent)
-         if err is ERR_Okay then
-            self.surface.topLimit    = 0
-            self.surface.bottomLimit = -self.surface.height + self.surface.topMargin
-            self.surface.leftLimit   = -(self.surface.width * 0.75)
-            self.surface.rightLimit  = -(self.surface.width * 0.75)
-         end
-      end
    end
 
    -- Run the minimise procedure for the window (environment dependent).
 
-   self.minimise = function(self:table)
+   self.minimise = function(self:userdata)
       if self.MinimiseEnabled then
          self?.events?.minimise(self)
       end
@@ -182,7 +125,7 @@ gui.window = function(Options:table)
    --
    -- If Toggle is true, the window is restored to its original position if the window is already maximised.
 
-   self.maximise = function(self:table, Toggle)
+   self.maximise = function(self:userdata, Toggle)
       if not self.maximiseEnabled then
          msg('Maximisation for this window is turned off.')
          return
@@ -192,32 +135,25 @@ gui.window = function(Options:table)
          self.events.maximise(self)
       end
 
-      if hosted(self) then -- Send the maximisation request to the display
-         display = obj.find(self.surface.display)
-         display.flags = display.flags | SCR_MAXIMISE
-         return
-      end
+      -- Send the maximisation request to the display
+      display = obj.find(self.surface.display)
+      display.flags = display.flags | SCR_MAXIMISE
    end
 
-   self.moveToBack = function(self:table)
+   self.moveToBack = function(self:userdata)
       self.surface.acMoveToBack()
    end
 
-   self.moveToFront = function(self:table)
+   self.moveToFront = function(self:userdata)
       self.surface.acMoveToFront()
    end
 
-   self.parentSize = function(self:table)
-      if hosted(self) then
-         err, info = mGfx.getDisplayInfo(self.surface.display)
-         return info.monitorWidth, info.monitorHeight
-      else
-         x, y, width, height = mGfx.getSurfaceCoords(self.surface.parent)
-         return width, height
-      end
+   self.parentSize = function(self:any)
+      err, info = mGfx.getDisplayInfo(self.surface.display)
+      return info.monitorWidth, info.monitorHeight
    end
 
-   self.show = function(self:table, Centre:bool)
+   self.show = function(self:userdata, Centre:bool)
       if Centre then
          x, y = (function()
             if self.surface.popOver then
@@ -269,16 +205,14 @@ gui.window = function(Options:table)
       self.events?.show(self)
    end
 
-   self.hide = function(self:table)
+   self.hide = function(self:userdata)
       self.visible = false
       self.surface.acHide()
       self.events?.hide(self)
    end
 
-   self.setTitle = function(self:table, Title:str)
-      if hosted(self) then
-         self.surface.display.title = Title
-      end
+   self.setTitle = function(self:userdata, Title:str)
+      self.surface.display.title = Title
       self.title = Title
    end
 
@@ -296,19 +230,9 @@ gui.window = function(Options:table)
       popOver   = Options.popOver,
       flags = (function()
          local flags = 0
-
-         if not hosted(self) then
-            if Options.enableVideo then -- Allow video surface buffers when in full screen mode
-               flags = flags | RNF_VIDEO
-            end
-
-            flags = flags | RNF_PERVASIVE_COPY
-         end
-
          if Options.aspectRatio then
             flags = flags | RNF_ASPECT_RATIO
          end
-
          return flags
       end)()
    }
@@ -338,7 +262,8 @@ gui.window = function(Options:table)
 
    if Options.noMargins or Options.borderless then
       self.margins = { left = 0, top = 0, right = 0, bottom = 0 }
-   elseif hosted(self) then -- Windows, X11 etc
+      self.client = { left = 0, top = 0, right = 0, bottom = 0 }
+   else
       self.margins = { left = 6, top = 6, right = 6, bottom = 6 }
       self.client = { -- Retrieve the available client area from the host
          left   = self.surface.display.leftMargin,
@@ -346,8 +271,6 @@ gui.window = function(Options:table)
          right  = self.surface.display.rightMargin,
          bottom = self.surface.display.bottomMargin
       }
-   else
-      self.margins = { left = 6, top = 6, right = 6, bottom = 6 }
    end
 
    self.scene = self.surface.new('VectorScene', { flags=VPF_RESIZE, surface=self.surface })
@@ -360,26 +283,18 @@ gui.window = function(Options:table)
       x = 0, y = 0, width = '100%', height = '100%', aspectRatio = 'XMin|YMin|Meet'
    })
 
-   if hosted(self) then
-      self.bkgd = self.viewport.new('VectorRectangle', {
-         fill = self.theme.window.bkgd, x = 0, y = 0, width = '100%', height = '100%'
-      })
-   elseif mGfx.GetDisplayType() is DT_NATIVE then
-      -- Full-screen mode (for video playback or gaming), do nothing.
-   else
-      lStyle.initialise(self)
-      lStyle.frame(self)
-      lStyle.titlebar(self)
-   end
+   self.bkgd = self.viewport.new('VectorRectangle', {
+      fill = self.theme.window.bkgd, x = 0, y = 0, width = '100%', height = '100%'
+   })
 
-   self:setTitle(self.title)
+   self.surface.display.title = self.title
 
    if Options.insideWidth then
-      self.surface.width = hosted(self) ? Options.insideWidth :> Options.insideWidth + self.client.left + self.client.right
+      self.surface.width = Options.insideWidth
    end
 
    if Options.insideHeight then
-      self.surface.height = hosted(self) ? Options.insideHeight :> Options.insideHeight + self.client.top + self.client.bottom
+      self.surface.height = Options.insideHeight
    end
 
    if self.surface.popOver != 0 then

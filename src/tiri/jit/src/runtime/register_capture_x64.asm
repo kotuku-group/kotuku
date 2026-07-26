@@ -269,4 +269,38 @@ asm_call_and_capture PROC
     ret
 asm_call_and_capture ENDP
 
+;------------------------------------------------------------------------------
+; void asm_call_cpuid_and_capture(RegisterSnapshot* before, RegisterSnapshot* after,
+;    int (*fn)(uint32_t, uint32_t*), uint32_t* results)
+;
+; Captures registers immediately around two CPUID helper calls. Keeping this
+; sequence in assembly prevents compiler register allocation from changing the
+; snapshots between calls in optimised builds.
+;------------------------------------------------------------------------------
+asm_call_cpuid_and_capture PROC
+    ; RCX=before, RDX=after, R8=fn, R9=results
+    sub     rsp, 72                  ; shadow space, saved arguments, and alignment
+    mov     QWORD PTR [rsp + 32], rcx
+    mov     QWORD PTR [rsp + 40], rdx
+    mov     QWORD PTR [rsp + 48], r8
+    mov     QWORD PTR [rsp + 56], r9
+
+    mov     rcx, QWORD PTR [rsp + 32]
+    call    asm_capture_registers
+
+    xor     ecx, ecx
+    mov     rdx, QWORD PTR [rsp + 56]
+    call    QWORD PTR [rsp + 48]
+
+    mov     ecx, 1
+    mov     rdx, QWORD PTR [rsp + 56]
+    call    QWORD PTR [rsp + 48]
+
+    mov     rcx, QWORD PTR [rsp + 40]
+    call    asm_capture_registers
+
+    add     rsp, 72
+    ret
+asm_call_cpuid_and_capture ENDP
+
 END

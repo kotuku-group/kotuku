@@ -776,6 +776,88 @@ end
    end
 end
 
+@Test function JITDynamicResultInsideTryDoesNotRestartHandler()
+   local script = obj.new('tiri', { statement=[[
+result = 0
+
+for outer_index in {0 to 120} do
+   local function compute(Value)
+      if Value < 0 then error("Negative value not allowed") end
+      return Value * Value
+   end
+
+   local function fetch_data(Id)
+      if Id is 0 then error("Invalid ID") end
+      return { id = Id, value = Id * 10 }
+   end
+
+   for index in {0 to 300} do
+      local result = 0
+
+      try
+         result = compute(index)
+      except e
+         result = -1
+      success
+         result++
+      end
+
+      local data = nil
+      try
+         data = fetch_data(index % 100)
+      except e
+         data = { id = 0, value = 0 }
+      success
+         data.value *= 2
+      end
+
+      local first, second
+      try
+         first = compute(index)
+         second = compute(index + 1)
+      except e
+         result = 0
+      success
+         result = (first + second) * 2
+      end
+
+      local resource_acquired = false
+      try
+         resource_acquired = true
+         result = compute(index)
+      except e
+         result = -1
+      success
+         result += 100
+      end
+
+      try
+         try
+            result = compute(index)
+         except inner
+            result = 0
+         success
+            result += 10
+         end
+      except outer
+         result = -1
+      success
+         result += 20
+      end
+   end
+end
+
+local trace_count = 0
+for trace_no in {1 to 101} do
+   if jit.util.traceInfo(trace_no) != nil then trace_count++ end
+end
+assert(trace_count > 0, "Dynamic result calls inside try blocks should remain JIT traceable")
+]] })
+
+   check script.acQuery()
+   check script.acActivate()
+end
+
 @Test(hotpath=80) function JITMathClampEmitsMinMax()
    cached_trace_no = nil
    cached_trace_info = nil

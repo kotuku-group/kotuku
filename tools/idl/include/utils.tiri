@@ -139,7 +139,7 @@ end
 
 local cxml
 
-global function cleanXMLString(String:str, Caller:str):str
+global function cleanXMLString(String:str):str
    String ?! return ''
 
    if rx_angle_brackets.test(String) then
@@ -156,7 +156,7 @@ global function cleanXMLString(String:str, Caller:str):str
          local extracted = rx_root_extract.extract(clean_str)
          if extracted then String = extracted:trim() end
       except ex
-         error(f'Failed to parse XML for {Caller ?? "undefined"}: {ex.message}')
+         error(f'Failed to parse XML: {ex.message}\n' .. debug.traceback())
       end
    end
 

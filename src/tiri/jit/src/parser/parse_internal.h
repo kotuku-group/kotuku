@@ -98,6 +98,8 @@ static void bcreg_bump(FuncState *, BCREG n);
 static void bcreg_reserve(FuncState *, BCREG n);
 static void bcreg_free(FuncState *, BCREG reg);
 static void expr_free(FuncState *, ExpDesc* e);
+static void bcemit_contract(FuncState *, BCREG, std::span<const RuntimeContract>, BCREG, bool = false,
+   bool = false);
 
 // Bytecode emission (lj_parse_regalloc.cpp)
 

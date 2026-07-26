@@ -4134,14 +4134,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  // BC_TYPEFIX: Fix function return types at runtime
     |  // RA = base register index (rbase), RD = count of values to fix
     |  ins_AD
-    |  // Fast path: check if prototype has PROTO_TYPEFIX flag set
-    |  ldr LFUNC:CARG1, [BASE, FRAME_FUNC]  // Get current function from frame
-    |  and CARG1, CARG1, #LJ_GCVMASK        // Clear type bits
-    |  ldr CARG1, LFUNC:CARG1->pc           // Get prototype pointer
-    |  ldrb CARG1w, [CARG1, #PC2PROTO(flags)]
-    |  tst CARG1w, #PROTO_TYPEFIX
-    |  beq >1                               // Skip if no type inference needed
-    |  // Slow path: call C helper to fix types
+    |  // Call the helper; the canonical signature decides whether inference is active.
     |   str BASE, L->base                   // Save BASE
     |  add CARG2, BASE, RA, lsl #3          // Compute pointer to first return value
     |  mov CARG3w, RCw                      // count (RC == RD after ins_AD)
@@ -4149,7 +4142,6 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |   str PC, SAVE_PC
     |  bl extern lj_meta_typefix            // (lua_State *L, TValue *base, uint32_t count)
     |  ldr BASE, L->base                    // Restore BASE
-    |1:
     |  ins_next
     break;
 
@@ -4523,6 +4515,32 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  mov RAw, #162                   // ERR_Exception = 162
     |  str RAw, [L, #L_CAUGHTERROR_OFS]  // Set L->CaughtError
     |  b <2
+    break;
+
+  case BC_CONTRACT:
+    |  str BASE, L->base
+    |  mov CARG2, PC
+    |  ldr CARG3w, SAVE_MULTRES
+    |  lsr CARG3w, CARG3w, #3
+    |  sub CARG3w, CARG3w, #1
+    |  mov CARG1, L
+    |  str PC, SAVE_PC
+    |  bl extern lj_meta_contract_pc
+    |  ldr BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_MRSAVE:
+    |  ldr TMP0w, SAVE_MULTRES
+    |  add TMP0, TMP0, TISNUM
+    |  str TMP0, [BASE, RA, lsl #3]
+    |  ins_next
+    break;
+
+  case BC_MRRESTORE:
+    |  ldr TMP0w, [BASE, RA, lsl #3]
+    |  str TMP0w, SAVE_MULTRES
+    |  ins_next
     break;
 
   //  ----------------------------------------------------------------------

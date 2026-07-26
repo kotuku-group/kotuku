@@ -4968,13 +4968,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  // BC_TYPEFIX: Fix function return types at runtime
     |  // RA = base register index (rbase), RD = count of values to fix
     |  ins_AD
-    |  // Fast path: check if prototype has PROTO_TYPEFIX flag set
-    |  mov LFUNC:RB, [BASE-16]       // Get current function from frame
-    |  cleartp LFUNC:RB
-    |  mov TMPR, LFUNC:RB->pc        // Get prototype pointer
-    |  test byte [TMPR+PC2PROTO(flags)], PROTO_TYPEFIX
-    |  jz >1                         // Skip if no type inference needed
-    |  // Slow path: call C helper to fix types
+    |  // Call the helper; the canonical signature decides whether inference is active.
     |  mov L:RB, SAVE_L
     |  mov L:RB->base, BASE          // Save BASE before potential clobber
     |  lea CARG2, [BASE+RA*8]        // Compute pointer to first return value
@@ -4983,7 +4977,6 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  mov SAVE_PC, PC
     |  call extern lj_meta_typefix   // (lua_State *L, TValue *base, uint32_t count)
     |  mov BASE, L:RB->base          // Restore BASE
-    |1:
     |  ins_next
     break;
 
@@ -5467,6 +5460,32 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |3:
     |  mov RAd, 162                     // ERR_Exception = 162
     |  jmp <2
+    break;
+
+  case BC_CONTRACT:
+    |  mov L:RB, SAVE_L
+    |  mov L:RB->base, BASE
+    |  mov CARG2, PC
+    |  mov CARG3d, MULTRES
+    |  sub CARG3d, 1
+    |  mov L:CARG1, L:RB
+    |  mov SAVE_PC, PC
+    |  call extern lj_meta_contract_pc
+    |  mov BASE, L:RB->base
+    |  ins_next
+    break;
+
+  case BC_MRSAVE:
+    |  mov RCd, MULTRES
+    |  setint RC
+    |  mov [BASE+RA*8], RC
+    |  ins_next
+    break;
+
+  case BC_MRRESTORE:
+    |  mov RCd, [BASE+RA*8]
+    |  mov MULTRES, RCd
+    |  ins_next
     break;
 
   //  ----------------------------------------------------------------------

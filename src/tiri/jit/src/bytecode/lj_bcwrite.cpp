@@ -230,11 +230,61 @@ static char * bcwrite_bytecode(BCWriteCtx *ctx, char *p, GCproto *pt)
 }
 
 //********************************************************************************************************************
+// Calculate and write the portable prototype signature.
+
+static MSize bcwrite_uleb128_size(uint32_t Value)
+{
+   MSize size = 1;
+   while (Value >= 0x80) {
+      Value >>= 7;
+      size++;
+   }
+   return size;
+}
+
+static MSize bcwrite_signature_size(const GCproto *Proto)
+{
+   const auto signature = proto_signature(Proto);
+   if (not signature) return 0;
+
+   MSize size = 2 + bcwrite_uleb128_size(signature->parameter_count) +
+      bcwrite_uleb128_size(signature->result_count) + bcwrite_uleb128_size(signature->result_entry_count);
+   auto entries = proto_parameter_types(Proto);
+   MSize entry_count = MSize(signature->parameter_count) + signature->result_entry_count;
+   for (MSize i = 0; i < entry_count; ++i) {
+      size += 2 + bcwrite_uleb128_size(entries[i].constraint);
+   }
+   return size;
+}
+
+static char * bcwrite_signature(char *Buffer, const GCproto *Proto)
+{
+   const auto signature = proto_signature(Proto);
+   if (not signature) return Buffer;
+
+   *Buffer++ = signature->version;
+   *Buffer++ = signature->flags;
+   Buffer = lj_strfmt_wuleb128(Buffer, signature->parameter_count);
+   Buffer = lj_strfmt_wuleb128(Buffer, signature->result_count);
+   Buffer = lj_strfmt_wuleb128(Buffer, signature->result_entry_count);
+
+   auto entries = proto_parameter_types(Proto);
+   MSize entry_count = MSize(signature->parameter_count) + signature->result_entry_count;
+   for (MSize i = 0; i < entry_count; ++i) {
+      *Buffer++ = uint8_t(entries[i].type);
+      *Buffer++ = entries[i].flags;
+      Buffer = lj_strfmt_wuleb128(Buffer, entries[i].constraint);
+   }
+   return Buffer;
+}
+
+//********************************************************************************************************************
 // Write prototype.
 
 static void bcwrite_proto(BCWriteCtx *ctx, GCproto *pt)
 {
    MSize sizedbg = 0;
+   MSize sizesig = bcwrite_signature_size(pt);
    char *p;
 
    // Recursively write children of prototype.
@@ -248,7 +298,8 @@ static void bcwrite_proto(BCWriteCtx *ctx, GCproto *pt)
    }
 
    // Start writing the prototype info to a buffer.
-   p = lj_buf_need(&ctx->sb, 5 + 4 + 6 * 5 + (pt->sizebc - 1) * (MSize)sizeof(BCIns) + pt->sizeuv * 2);
+   p = lj_buf_need(&ctx->sb, 5 + 4 + 7 * 5 + sizesig +
+      (pt->sizebc - 1) * (MSize)sizeof(BCIns) + pt->sizeuv * 2);
    p += 5;  //  Leave room for final size.
 
    // Write prototype header.
@@ -259,6 +310,7 @@ static void bcwrite_proto(BCWriteCtx *ctx, GCproto *pt)
    p = lj_strfmt_wuleb128(p, pt->sizekgc);
    p = lj_strfmt_wuleb128(p, pt->sizekn);
    p = lj_strfmt_wuleb128(p, pt->sizebc - 1);
+   p = lj_strfmt_wuleb128(p, sizesig);
    if (!ctx->strip) {
       if (proto_lineinfo(pt)) sizedbg = pt->sizept - (MSize)((char*)proto_lineinfo(pt) - (char*)pt);
       p = lj_strfmt_wuleb128(p, sizedbg);
@@ -267,6 +319,8 @@ static void bcwrite_proto(BCWriteCtx *ctx, GCproto *pt)
          p = lj_strfmt_wuleb128(p, pt->numline);
       }
    }
+
+   p = bcwrite_signature(p, pt);
 
    // Write bytecode instructions and upvalue refs.
    p = bcwrite_bytecode(ctx, p, pt);

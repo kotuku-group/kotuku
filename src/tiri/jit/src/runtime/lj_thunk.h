@@ -6,10 +6,10 @@
 #include "lj_obj.h"
 
 // Create a new thunk userdata on the stack
-// func: The deferred closure
-// expected_type: LJ type tag (LUA_TNUMBER, LUA_TSTRING, etc., or LUA_TNIL for unknown)
+// Func: The deferred closure
+// ExpectedType: Logical TiriType value, or 0xff when the result is not declared
 
-LJ_FUNC void lj_thunk_new(lua_State *L, GCfunc *func, int expected_type);
+LJ_FUNC void lj_thunk_new(lua_State *L, GCfunc *Func, uint8_t ExpectedType);
 
 // Resolve a thunk if not already resolved
 // thunk_udata: The thunk userdata (must be UDTYPE_THUNK)
