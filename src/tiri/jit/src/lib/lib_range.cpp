@@ -115,21 +115,26 @@ static bool fp_range_in_bounds(const tiri_range *Range, lua_Number Value)
    return Range->inclusive ? Value >= Range->stop : Value > Range->stop;
 }
 
-static bool fp_range_aligned_ordinal(const tiri_range *Range, size_t *Ordinal)
+static bool fp_range_nearest_ordinal(long double Distance, size_t *Ordinal)
 {
-   long double distance = ((long double)Range->stop - (long double)Range->start) / (long double)Range->step;
-   if (distance < 0) return false;
+   if (not std::isfinite(Distance) or Distance < 0) return false;
 
-   long double nearest = std::round(distance);
+   long double nearest = std::round(Distance);
    long double tolerance = std::min(0.25L, 8.0L * (long double)std::numeric_limits<lua_Number>::epsilon() *
-      std::max(1.0L, std::abs(distance)));
-   if (std::abs(distance - nearest) > tolerance or nearest < 0 or
+      std::max(1.0L, std::abs(Distance)));
+   if (std::abs(Distance - nearest) > tolerance or nearest < 0 or
        nearest > (long double)std::numeric_limits<lua_Integer>::max()) {
       return false;
    }
 
    *Ordinal = size_t(nearest);
    return true;
+}
+
+static bool fp_range_aligned_ordinal(const tiri_range *Range, size_t *Ordinal)
+{
+   long double distance = ((long double)Range->stop - (long double)Range->start) / (long double)Range->step;
+   return fp_range_nearest_ordinal(distance, Ordinal);
 }
 
 static bool fp_range_generated_in_bounds(const tiri_range *Range, lua_Number Value)
@@ -139,6 +144,25 @@ static bool fp_range_generated_in_bounds(const tiri_range *Range, lua_Number Val
 
    size_t ordinal;
    return fp_range_aligned_ordinal(Range, &ordinal) and Value IS fp_range_value(Range, ordinal);
+}
+
+static bool fp_range_step_representable(const tiri_range *Range, size_t Count)
+{
+   if (Count < 2) return true;
+
+   long double maximum_exact_ordinal = std::ldexp(1.0L, std::numeric_limits<lua_Number>::digits);
+   if ((long double)(Count - 1) > maximum_exact_ordinal) return false;
+
+   lua_Number direction = Range->step > 0 ? std::numeric_limits<lua_Number>::infinity() :
+      -std::numeric_limits<lua_Number>::infinity();
+   lua_Number first = fp_range_value(Range, 0);
+   lua_Number second = fp_range_value(Range, 1);
+   lua_Number penultimate = fp_range_value(Range, Count - 2);
+   lua_Number last = fp_range_value(Range, Count - 1);
+   lua_Number first_spacing = std::abs(std::nextafter(first, direction) - first);
+   lua_Number last_spacing = std::abs(std::nextafter(last, -direction) - last);
+
+   return std::abs(Range->step) >= std::max(first_spacing, last_spacing) and first != second and penultimate != last;
 }
 
 static size_t fp_range_count(lua_State *L, const tiri_range *Range, bool ForAllocation)
@@ -163,6 +187,8 @@ static size_t fp_range_count(lua_State *L, const tiri_range *Range, bool ForAllo
       if (count >= size_t(std::numeric_limits<lua_Integer>::max())) lj_err_caller(L, ErrMsg::NUMRNG);
       count++;
    }
+
+   if (not fp_range_step_representable(Range, count)) lj_err_caller(L, ErrMsg::NUMRNG);
 
    if (ForAllocation and count > FP_RANGE_MAX_ARRAY_COUNT) {
       lj_err_caller(L, ErrMsg::NUMRNG);
@@ -448,25 +474,21 @@ static int fp_range_contains(lua_State *L)
       lua_pushboolean(L, 0);
       return 1;
    }
-   lua_Number ordinal_value = (value - range->start) / range->step;
-   if (not std::isfinite(ordinal_value) or ordinal_value < 0) {
+
+   size_t ordinal;
+   long double distance = ((long double)value - (long double)range->start) / (long double)range->step;
+   if (not fp_range_nearest_ordinal(distance, &ordinal)) {
       lua_pushboolean(L, 0);
       return 1;
    }
-   lua_Number nearest = std::round(ordinal_value);
-   if (nearest > lua_Number(std::numeric_limits<lua_Integer>::max())) {
+
+   size_t count = fp_range_count(L, range, false);
+   if (ordinal >= count) {
       lua_pushboolean(L, 0);
       return 1;
    }
-   lua_Number reconstructed = fp_range_value(range, size_t(nearest));
-   if (not fp_range_generated_in_bounds(range, reconstructed)) {
-      lua_pushboolean(L, 0);
-      return 1;
-   }
-   lua_Number scale = std::max({ 1.0, std::abs(value), std::abs(reconstructed), std::abs(range->start),
-      std::abs(range->step * nearest) });
-   lua_Number tolerance = 8.0 * std::numeric_limits<lua_Number>::epsilon() * scale;
-   lua_pushboolean(L, std::abs(value - reconstructed) <= tolerance);
+
+   lua_pushboolean(L, 1);
    return 1;
 }
 

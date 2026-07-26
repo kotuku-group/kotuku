@@ -1565,6 +1565,36 @@ end
    assert(#fractions is 5 and approximately(fractions[4], 0.5))
 end
 
+@Test function FloatingRangeMembershipUsesOrdinalTolerance()
+   large_start = 1e15
+   translated = range(large_start, large_start + 10, false, 1)
+
+   assert(translated:contains(large_start + 2), "aligned values should remain members of translated ranges")
+   assert(not translated:contains(large_start + 0.5), "half-step values should not be admitted near the start")
+   assert(not translated:contains(large_start + 1.5), "half-step values should not be admitted inside the range")
+end
+
+@Test function FloatingRangeRejectsUnrepresentableSteps()
+   try
+      tmp = range(1e15, 1e15 + 1, false, 0.1):toArray()
+   success
+      error("materialising a range with repeated generated values should fail")
+   end
+
+   try
+      for value in range(1e15 + 1, 1e15, false, -0.1)() do
+      end
+   success
+      error("iterating a reverse range with repeated generated values should fail")
+   end
+
+   try
+      tmp = range(-9007199254740992, 9007199254740992, false, 1).length
+   success
+      error("ranges with ordinals beyond exact floating-point integers should fail")
+   end
+end
+
 @Test function FloatingRangeRejectsInvalidNumbers()
    try
       range(0, 1, false, 0)
