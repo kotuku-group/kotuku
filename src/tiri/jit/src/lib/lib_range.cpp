@@ -202,12 +202,6 @@ static void fp_range_push(lua_State *L, lua_Number Value)
    else lua_pushnumber(L, Value);
 }
 
-static void fp_range_set(TValue *Target, lua_Number Value)
-{
-   if (fp_range_is_int32(Value)) setintV(Target, int32_t(Value));
-   else setnumV(Target, Value);
-}
-
 static bool fp_range_integer_array(const tiri_range *Range)
 {
    return fp_range_is_int32(Range->start) and fp_range_is_int32(Range->stop) and fp_range_is_int32(Range->step);
@@ -296,15 +290,19 @@ static int fp_range_filter(lua_State *L)
    auto range = get_range(L, 1);
    luaL_checktype(L, 2, LUA_TFUNCTION);
    size_t count = fp_range_count(L, range, true);
-   GCarray *array = lj_array_new(L, uint32_t(count), AET::ANY);
-   TValue *data = array->get<TValue>();
+   bool integer_array = fp_range_integer_array(range);
+   GCarray *array = lj_array_new(L, uint32_t(count), integer_array ? AET::INT32 : AET::DOUBLE);
    uint32_t result_index = 0;
    for (size_t ordinal = 0; ordinal < count; ordinal++) {
       lua_Number value = fp_range_value(range, ordinal);
       lua_pushvalue(L, 2);
       fp_range_push(L, value);
       lua_call(L, 1, 1);
-      if (lua_toboolean(L, -1)) fp_range_set(&data[result_index++], value);
+      if (lua_toboolean(L, -1)) {
+         if (integer_array) array->get<int32_t>()[result_index] = int32_t(value);
+         else array->get<double>()[result_index] = value;
+         result_index++;
+      }
       lua_pop(L, 1);
    }
    array->len = result_index;
