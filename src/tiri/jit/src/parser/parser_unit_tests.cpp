@@ -3093,6 +3093,21 @@ static bool test_type_guided_emission(kt::Log &Log)
       return false;
    }
 
+   constexpr std::string_view safe_object_call =
+      "extern obj\n"
+      "try\n"
+      "   global guided_object = obj.new('time')\n"
+      "end\n"
+      "local function query_object()\n"
+      "   return guided_object?.acQuery()\n"
+      "end\n";
+   snapshot = compile_snapshot(L, safe_object_call, true, error);
+   if (not snapshot or count_opcode_tree(*snapshot, BC_TGETS) < 2 or
+       count_opcode_tree(*snapshot, BC_OBGETF) != 0) {
+      Log.error("safe object call target bypassed generic metatable lookup: %s", error.c_str());
+      return false;
+   }
+
    constexpr std::string_view generic_accesses =
       "local function update(Value:any, Key:any)\n"
       "   Value.field = 1\n"
