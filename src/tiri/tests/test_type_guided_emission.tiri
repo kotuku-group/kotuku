@@ -146,6 +146,34 @@ end
    assert(holder?:unknown() is nil, 'A safe call should return nil for a nil receiver')
 end
 
+@Test function SafeObjectCallTargetUsesMetamethod()
+   local disassembly = disassemble_source([[
+try
+   global glEmissionSafeObject = obj.new('time')
+end
+function query_safe_object()
+   return glEmissionSafeObject?.acQuery()
+end
+]])
+   assert(disassembly:find('OBGETF') is nil,
+      'A safe object call target must not use field-only object lookup, got:\n' .. disassembly)
+   assert(disassembly:find('TGETS') != nil,
+      'A safe object call target should retain generic metatable lookup, got:\n' .. disassembly)
+
+   try
+      global glEmissionSafeRuntimeObject = obj.new('time')
+   end
+
+   local function query_safe_runtime_object()
+      return glEmissionSafeRuntimeObject?.acQuery()
+   end
+
+   assert(query_safe_runtime_object() is ERR_Okay,
+      'Safe navigation should invoke an action on an object declared inside try')
+   glEmissionSafeRuntimeObject.free()
+   glEmissionSafeRuntimeObject = nil
+end
+
 @Test function InterpreterAndJitParity()
    local function run_case():num
       local values = array<int> { 1, 2, 3, 4 }

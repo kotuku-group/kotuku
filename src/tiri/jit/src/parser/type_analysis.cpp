@@ -68,6 +68,91 @@
    return literal.string_value;
 }
 
+[[nodiscard]] static bool is_function_forward_declaration(const FunctionExprPayload &Function)
+{
+   return Function.body and Function.body->statements.empty();
+}
+
+[[nodiscard]] static std::optional<std::string> function_signature_mismatch(
+   const FunctionExprPayload &Expected, const FunctionExprPayload &Actual)
+{
+   if (Expected.is_thunk != Actual.is_thunk) {
+      return std::format("callable kind differs (expected {}, got {})",
+         Expected.is_thunk ? "thunk" : "function", Actual.is_thunk ? "thunk" : "function");
+   }
+
+   if (Expected.parameters.size() != Actual.parameters.size()) {
+      return std::format("parameter count differs (expected {}, got {})",
+         Expected.parameters.size(), Actual.parameters.size());
+   }
+
+   if (Expected.is_vararg != Actual.is_vararg) {
+      return std::format("variadic parameter marker differs (expected {}, got {})",
+         Expected.is_vararg ? "variadic" : "fixed", Actual.is_vararg ? "variadic" : "fixed");
+   }
+
+   for (size_t i = 0; i < Expected.parameters.size(); ++i) {
+      const FunctionParameter &expected = Expected.parameters[i];
+      const FunctionParameter &actual = Actual.parameters[i];
+
+      if (expected.type_is_explicit != actual.type_is_explicit) {
+         return std::format("parameter {} annotation differs (expected {}, got {})", i + 1,
+            expected.type_is_explicit ? type_name(expected.type) : "untyped",
+            actual.type_is_explicit ? type_name(actual.type) : "untyped");
+      }
+
+      if (expected.type != actual.type) {
+         return std::format("parameter {} has type '{}', expected '{}'",
+            i + 1, type_name(actual.type), type_name(expected.type));
+      }
+
+      if (expected.struct_def != actual.struct_def) {
+         std::string_view expected_name = expected.struct_def ? expected.struct_def->Name : "struct";
+         std::string_view actual_name = actual.struct_def ? actual.struct_def->Name : "struct";
+         return std::format("parameter {} has struct type '{}', expected '{}'",
+            i + 1, actual_name, expected_name);
+      }
+   }
+
+   const FunctionReturnTypes &expected_results = Expected.return_types;
+   const FunctionReturnTypes &actual_results = Actual.return_types;
+   if (expected_results.is_explicit != actual_results.is_explicit) {
+      return std::format("return annotation differs (expected {}, got {})",
+         expected_results.is_explicit ? "explicit" : "inferred",
+         actual_results.is_explicit ? "explicit" : "inferred");
+   }
+
+   if (expected_results.count != actual_results.count) {
+      return std::format("return count differs (expected {}, got {})",
+         expected_results.count, actual_results.count);
+   }
+
+   if (expected_results.is_variadic != actual_results.is_variadic) {
+      return std::format("variadic return marker differs (expected {}, got {})",
+         expected_results.is_variadic ? "variadic" : "fixed",
+         actual_results.is_variadic ? "variadic" : "fixed");
+   }
+
+   size_t result_count = std::min<size_t>(expected_results.count, MAX_RETURN_TYPES);
+   for (size_t i = 0; i < result_count; ++i) {
+      if (expected_results.types[i] != actual_results.types[i]) {
+         return std::format("return {} has type '{}', expected '{}'",
+            i + 1, type_name(actual_results.types[i]), type_name(expected_results.types[i]));
+      }
+
+      if (expected_results.struct_defs[i] != actual_results.struct_defs[i]) {
+         std::string_view expected_name = expected_results.struct_defs[i] ?
+            expected_results.struct_defs[i]->Name : "struct";
+         std::string_view actual_name = actual_results.struct_defs[i] ?
+            actual_results.struct_defs[i]->Name : "struct";
+         return std::format("return {} has struct type '{}', expected '{}'",
+            i + 1, actual_name, expected_name);
+      }
+   }
+
+   return std::nullopt;
+}
+
 // Helper to check if type tracing is enabled
 
 [[nodiscard]] inline bool should_trace_types(lua_State *L)
@@ -244,6 +329,7 @@ private:
       InferredType type{};
       SourceSpan location{};
       const FunctionExprPayload* function = nullptr;  // Non-null if declared as global function
+      const FunctionExprPayload* forward_declaration = nullptr; // Original empty declaration used as the contract
       bool is_const = false;  // True if declared with <const> attribute
       bool implicit = false;  // True if inferred from a plain assignment rather than a 'global' declaration
       bool explicit_contract = false; // True only for an explicit non-any annotation
@@ -2275,11 +2361,37 @@ void TypeAnalyser::declare_global(GCstr *Name, const InferredType &Type, SourceS
 void TypeAnalyser::declare_global_function(GCstr *Name, const FunctionExprPayload *Function, SourceSpan Location)
 {
    if (not Name) return;
+
+   const FunctionExprPayload *forward_declaration = nullptr;
+   if (auto existing = this->global_types_.find(Name); existing != this->global_types_.end()) {
+      forward_declaration = existing->second.forward_declaration;
+      if (not forward_declaration and existing->second.function and
+          is_function_forward_declaration(*existing->second.function)) {
+         forward_declaration = existing->second.function;
+      }
+   }
+
+   if (forward_declaration and Function) {
+      if (auto mismatch = function_signature_mismatch(*forward_declaration, *Function)) {
+         TypeDiagnostic diag;
+         diag.location = Location;
+         diag.code = ParserErrorCode::FunctionSignatureMismatch;
+         diag.message = std::format("signature for global function '{}' does not match its forward declaration: {}",
+            std::string_view(strdata(Name), Name->len), *mismatch);
+         this->record_diagnostic(std::move(diag));
+         return;
+      }
+   }
+
    GlobalTypeInfo info;
    info.type.primary = TiriType::Func;
    info.type.is_fixed = true;  // Functions have fixed type
    info.location = Location;
    info.function = Function;
+   info.forward_declaration = forward_declaration;
+   if (not info.forward_declaration and Function and is_function_forward_declaration(*Function)) {
+      info.forward_declaration = Function;
+   }
    this->global_types_[Name] = info;
    this->trace_decl(this->ctx_.lex().linenumber, Name, TiriType::Func, true);
 }

@@ -370,7 +370,7 @@ end
 @desc Mark private type names that should not produce unknown-reference warnings
 @input List of names to treat as private
 ]])
-global function privateNames(List)
+global function privateNames(List:table)
    for v in values(List) do
       glPrivateNames[v] = true
    end
@@ -1247,7 +1247,7 @@ end
 @input Function name prefix used for generated client wrappers
 @input Exported function names
 ]])
-global function functionNames(Prefix, ...)
+global function functionNames(Prefix:str, ...)
    global glFunctionPrefix = Prefix ?? ''
    for fname in values({...}) do
       if rx_non_word.test(fname) then
@@ -1280,7 +1280,7 @@ end
 @input Prefix used for generated method C symbols
 @input Method definition table
 ]])
-global function methods(ClassName:str, Prefix:str, Methods)
+global function methods(ClassName:str, Prefix:str, Methods:table)
    verbose(f'Processing {#Methods} methods for class {ClassName}')
 
    local cl = registerClass(ClassName)
@@ -1300,7 +1300,7 @@ end
 @desc Insert raw C or C++ source text into generated output
 @input Raw source text to insert
 ]])
-global function c_insert(Raw)
+global function c_insert(Raw:str)
    if glRestrict then return end
    output(Raw)
 end
