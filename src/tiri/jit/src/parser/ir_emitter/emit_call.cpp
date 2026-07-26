@@ -287,8 +287,15 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
    CLASSID callee_object_class_id = CLASSID::NIL;  // CLASSID if return type is Object
    struct_record *callee_struct_def = nullptr;
 
+   if (Payload.results) {
+      const auto &descriptor = this->ctx.descriptors().results(Payload.results).value_at(0);
+      callee_return_type = descriptor.primary;
+      callee_object_class_id = descriptor.object_class_id;
+      callee_struct_def = descriptor.struct_def;
+   }
+
    // Check if the AST has pre-computed type info (e.g., from obj.new() pattern detection)
-   if (Payload.result_type != TiriType::Unknown) {
+   if (callee_return_type IS TiriType::Unknown and Payload.result_type != TiriType::Unknown) {
       callee_return_type = Payload.result_type;
       callee_object_class_id = Payload.object_class_id;
       callee_struct_def = Payload.struct_def;
@@ -443,6 +450,7 @@ ParserResult<ExpDesc> IrEmitter::emit_call_expr(const CallExprPayload &Payload)
    result.result_type = callee_return_type;  // Propagate known return type
    result.object_class_id = callee_object_class_id;  // Propagate object class ID for Object types
    result.struct_def = callee_struct_def;
+   result.static_results = Payload.results;
    this->func_state.freereg = base + 1;
    return ParserResult<ExpDesc>::success(result);
 }

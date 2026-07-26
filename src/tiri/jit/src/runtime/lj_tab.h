@@ -101,6 +101,12 @@ LJ_FUNCA TValue* lj_tab_setinth(lua_State* L, GCtab* t, int32_t key);
 LJ_FUNC TValue* lj_tab_setstr(lua_State* L, GCtab* t, const GCstr* key);
 LJ_FUNC TValue* lj_tab_set(lua_State* L, GCtab* t, cTValue* key);
 
+// Explicit global type contracts are attached to the environment table so separately compiled chunks that share
+// that environment can enforce the declaration.
+LJ_FUNC [[nodiscard]] GCstr* lj_tab_get_global_contract(GCtab* Environment, const GCstr* Name);
+LJ_FUNC void lj_tab_set_global_contract(
+   lua_State* L, GCtab* Environment, const GCstr* Name, GCstr* Descriptor);
+
 // 0-based indexing: valid array indices are [0, asize)
 #define inarray(t, key)      ((MSize)(key) < (MSize)(t)->asize)
 #define arrayslot(t, i)      (&tvref((t)->array)[(i)])

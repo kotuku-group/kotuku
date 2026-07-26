@@ -32,6 +32,10 @@
 #include "runtime/lj_object.h"
 #include "runtime/lj_struct.h"
 #include "runtime/lj_state.h"
+#include "runtime/lj_contract.h"
+#include "runtime/lj_thunk.h"
+#include "lib/lib_range.h"
+#include "../../defs.h"
 
 // Some local macros to save typing. Undef'd at the end.
 #define IR(ref)         (&J->cur.ir[(ref)])
@@ -184,6 +188,18 @@ struct RecordOps {
    TValue *rav() { return &ix.valv; }
    TValue *rbv() { return &ix.tabv; }
    TValue *rcv() { return &ix.keyv; }
+};
+
+//********************************************************************************************************************
+// Classify a runtime contract while recording.  Exact TValue tag checks are already represented by trace slot
+// specialisation.  Identity and metatable predicates require dedicated IR guards, so prototypes containing those
+// predicates remain interpreter-only for now.
+
+enum class RecordedContract : uint8_t {
+   Basic,
+   Complex,
+   Mismatch,
+   Invalid
 };
 
 //********************************************************************************************************************
@@ -347,6 +363,152 @@ static TRef sload(jit_State *J, int32_t slot)
 #define getslot(J, s)   (J->base[(s)] ? J->base[(s)] : sload(J, (int32_t)(s)))
 // Note: getslot macro retained for compatibility; SlotView can be used for new code:
 //   SlotView slots(J); TRef tr = slots.is_loaded(s) ? slots[s] : sload(J, s);
+
+//********************************************************************************************************************
+// Record exact runtime contracts.  Stack specialisation handles simple TValue tags.  Predicates that refine a tag
+// emit their own guards so a failed guard resumes at BC_CONTRACT and preserves the interpreter's diagnostic.
+
+static TRef rec_contract_range_metatable(jit_State *J)
+{
+   IRBuilder ir(J);
+   GCtab *registry_table = tabV(registry(J->L));
+   GCstr *range_name = lj_str_newz(J->L, RANGE_METATABLE);
+
+   RecordIndex lookup{};
+   settabV(J->L, &lookup.tabv, registry_table);
+   setstrV(J->L, &lookup.keyv, range_name);
+   lookup.tab = ir.ktab(registry_table);
+   lookup.key = ir.kstr(range_name);
+   return lj_record_idx(J, &lookup);
+}
+
+static bool rec_contract_is_range(jit_State *J, cTValue *Value)
+{
+   if (not tvisudata(Value)) return false;
+   GCtab *metatable = tabref(udataV(Value)->metatable);
+   if (not metatable) return false;
+
+   cTValue *registered = lj_tab_getstr(tabV(registry(J->L)), lj_str_newz(J->L, RANGE_METATABLE));
+   return registered and tvistab(registered) and tabV(registered) IS metatable;
+}
+
+static RecordedContract rec_contract_guard_range(jit_State *J, TRef ValueRef, cTValue *Value, bool Expected)
+{
+   bool is_range = rec_contract_is_range(J, Value);
+   if (is_range != Expected) return RecordedContract::Mismatch;
+
+   TRef registered_ref = rec_contract_range_metatable(J);
+   if (not tref_istab(registered_ref)) return RecordedContract::Mismatch;
+
+   IRBuilder ir(J);
+   TRef metatable_ref = ir.fload_tab(ValueRef, IRFL_UDATA_META);
+   if (Expected) ir.guard_eq(metatable_ref, registered_ref, IRT_TAB);
+   else ir.guard_ne(metatable_ref, registered_ref, IRT_TAB);
+   return RecordedContract::Basic;
+}
+
+static RecordedContract rec_contract_guard_callable(jit_State *J, TRef ValueRef, cTValue *Value)
+{
+   if (tvisfunc(Value)) return RecordedContract::Basic;
+
+   RecordIndex lookup{};
+   lookup.tab = ValueRef;
+   copyTV(J->L, &lookup.tabv, Value);
+   if (not lj_record_mm_lookup(J, &lookup, MM_call) or not tref_isfunc(lookup.mobj)) {
+      return RecordedContract::Mismatch;
+   }
+   return RecordedContract::Basic;
+}
+
+static RecordedContract rec_contract_guard_struct(
+   jit_State *J, TRef ValueRef, cTValue *Value, std::string_view Name)
+{
+   if (not tvisstruct(Value)) return RecordedContract::Mismatch;
+   if (Name.empty()) return RecordedContract::Basic;
+
+   struct_record *definition = find_struct(J->L, Name);
+   if (not definition or structV(Value)->def != definition) return RecordedContract::Mismatch;
+
+   IRBuilder ir(J);
+   TRef definition_ref = ir.fload(ValueRef, IRFL_STRUCT_DEF, IRT_PTR);
+   ir.guard_eq(definition_ref, ir.kkptr(definition), IRT_PTR);
+   return RecordedContract::Basic;
+}
+
+static RecordedContract rec_contract_guard_userdata(jit_State *J, TRef ValueRef, cTValue *Value)
+{
+   if (tvislightud(Value)) return RecordedContract::Basic;
+   if (not tvisudata(Value) or lj_is_thunk(Value)) return RecordedContract::Mismatch;
+
+   IRBuilder ir(J);
+   TRef userdata_type = ir.fload(ValueRef, IRFL_UDATA_UDTYPE, IRT_U8);
+   ir.guard_ne_int(userdata_type, ir.kint(UDTYPE_THUNK));
+   return rec_contract_guard_range(J, ValueRef, Value, false);
+}
+
+static RecordedContract rec_contract_record(jit_State *J, BCREG Base, GCstr *Encoded)
+{
+   RuntimeContractDescriptor descriptor;
+   if (not decode_runtime_contract(Encoded, descriptor)) return RecordedContract::Invalid;
+   if (descriptor.dynamic_count()) return RecordedContract::Complex;
+
+   for (uint8_t i = 0; i < descriptor.static_value_count; ++i) {
+      const RuntimeContractEntry *entry = descriptor.entry_for(i);
+      if (not entry) continue;
+
+      cTValue *value = J->L->base + Base + i;
+      bool nullable = (entry->flags & contract_flag(ContractEntryFlag::Nullable)) != 0;
+      bool required = (entry->flags & contract_flag(ContractEntryFlag::Required)) != 0;
+      if (tvisnil(value)) {
+         if (not nullable or required) return RecordedContract::Mismatch;
+         (void)getslot(J, Base + i);
+         continue;
+      }
+
+      if (lj_is_thunk(value)) return RecordedContract::Complex;
+
+      TRef value_ref = getslot(J, Base + i);
+      RecordedContract result = RecordedContract::Basic;
+      switch (entry->type) {
+         case TiriType::Any:
+         case TiriType::Unknown: break;
+         case TiriType::Nil:     result = RecordedContract::Mismatch; break;
+         case TiriType::Bool:
+            if (not tvisbool(value)) result = RecordedContract::Mismatch;
+            break;
+         case TiriType::Num:
+            if (not tvisnumber(value)) result = RecordedContract::Mismatch;
+            break;
+         case TiriType::Str:
+            if (not tvisstr(value)) result = RecordedContract::Mismatch;
+            break;
+         case TiriType::Table:
+            if (not tvistab(value)) result = RecordedContract::Mismatch;
+            break;
+         case TiriType::Array:
+            if (not tvisarray(value)) result = RecordedContract::Mismatch;
+            break;
+         case TiriType::Object:
+            if (not tvisobject(value)) result = RecordedContract::Mismatch;
+            break;
+         case TiriType::Func:
+            result = rec_contract_guard_callable(J, value_ref, value);
+            break;
+         case TiriType::Struct:
+            result = rec_contract_guard_struct(J, value_ref, value, entry->struct_name);
+            break;
+         case TiriType::Range:
+            if (not tvisudata(value)) result = RecordedContract::Mismatch;
+            else result = rec_contract_guard_range(J, value_ref, value, true);
+            break;
+         case TiriType::Userdata:
+            result = rec_contract_guard_userdata(J, value_ref, value);
+            break;
+      }
+      if (result != RecordedContract::Basic) return result;
+   }
+   return RecordedContract::Basic;
+}
 
 //********************************************************************************************************************
 // Get TRef for current function.
@@ -976,6 +1138,15 @@ static void rec_isarr(jit_State *J, BCREG ra)
 //********************************************************************************************************************
 // Record calls and returns
 
+// Preserve the prototype specialisation previously implied by PROTO_TYPEFIX sharing the closure-count flag range.
+
+static bool rec_proto_specialise_by_prototype(const GCproto *Proto)
+{
+   if (Proto->flags >= PROTO_CLC_POLY) return true;
+   const auto signature = proto_signature(Proto);
+   return signature and (signature->flags & proto_signature_flag(ProtoSignatureFlag::DynamicResults));
+}
+
 // Specialise to the runtime value of the called function or its prototype.
 
 static TRef rec_call_specialise(jit_State *J, GCfunc* fn, TRef tr)
@@ -985,7 +1156,7 @@ static TRef rec_call_specialise(jit_State *J, GCfunc* fn, TRef tr)
    if (isluafunc(fn)) {
       GCproto* pt = funcproto(fn);
       // Too many closures created? Probably not a monomorphic function.
-      if (pt->flags >= PROTO_CLC_POLY) {  // Specialise to prototype instead.
+      if (rec_proto_specialise_by_prototype(pt)) {  // Specialise to prototype instead.
          TRef trpt = ir.fload_ptr(tr, IRFL_FUNC_PC);
          ir.guard_eq(trpt, ir.kptr(proto_bc(pt)), IRT_PGC);
          (void)lj_ir_kgc(J, obj2gco(pt), IRT_PROTO);  //  Prevent GC of proto.
@@ -1952,7 +2123,7 @@ static TRef rec_upvalue(jit_State *J, uint32_t uv, TRef val)
       TRef tr, kfunc;
       lj_assertJ(val IS 0, "bad usage");
       if (not tref_isk(fn)) {  // Late specialisation of current function.
-         if (J->pt->flags >= PROTO_CLC_POLY) goto noconstify;
+         if (rec_proto_specialise_by_prototype(J->pt)) goto noconstify;
          kfunc = ir.kfunc(J->fn);
          ir.guard_eq(fn, kfunc, IRT_FUNC);
          J->base[-2] = kfunc;
@@ -3564,22 +3735,10 @@ void lj_record_ins(jit_State *J)
 
       // Type fixing
 
-   case BC_TYPEFIX: {
-      // BC_TYPEFIX is a one-time operation that mutates the prototype.
-      // After first execution, it becomes a no-op. For JIT recording:
-      // - If types are already fixed (common case), treat as no-op
-      // - If types not fixed, skip during recording (mutation is safe for interpreter)
-
-      GCproto *pt = funcproto(curr_func(J->L));
-      if (pt->result_types[0] IS TiriType::Unknown) {
-         // Types not yet fixed.  We can leave it for the interpreter and keep recording
-         // TODO: Need to consider if it is viable to mutate the function prototype (set the result types) here during recording.
-         // It could also be considered a red-flag if the interpreter hasn't mutated the function by this point, even if only
-         // setting the result type to TiriType::Any.
-         break;
-      }
-      else break; // Types already fixed - no-op, continue recording
-   }
+   case BC_TYPEFIX:
+      // Result inference changes prototype metadata rather than trace values.  Dynamic-result calls are guarded by the
+      // prototype-specialisation policy above, independently of whether each result entry has already been inferred.
+      break;
 
       // Loops and branches
 
@@ -3674,6 +3833,28 @@ void lj_record_ins(jit_State *J)
       // clean handoff without corrupting interpreter state.
       lj_snap_add(J);
       lj_record_stop(J, TraceLink::INTERP, 0);
+      break;
+
+   case BC_CONTRACT:
+   {
+      RecordedContract contract = rec_contract_record(J, bc_a(ins), strV(rcv));
+      if (contract IS RecordedContract::Basic) {
+         J->needsnap = 1;
+         break;
+      }
+      if (contract IS RecordedContract::Complex) {
+         J->pt->flags |= PROTO_NOJIT;
+         lj_trace_err(J, LJ_TRERR_CJITOFF);
+      }
+      setintV(&J->errinfo, int32_t(op));
+      lj_trace_err_info(J, LJ_TRERR_NYIBC);
+      break;
+   }
+
+   case BC_MRSAVE:
+   case BC_MRRESTORE:
+      J->pt->flags |= PROTO_NOJIT;
+      lj_trace_err(J, LJ_TRERR_CJITOFF);
       break;
 
    default:

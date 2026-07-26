@@ -159,7 +159,7 @@ struct XPathArrayStorage;]])
   structdef("XPathValue", { type="XPathValue" }, [[
     int(XPVT) Type         # Identifies the type of value stored
     double    NumberValue  # Defined if the type is Number or Boolean
-    string  StringValue  # Defined if the type is String
+    string  StringValue    # Defined if the type is String
   ]],
   [[
    kt::vector<XTag *> node_set; // Defined if the type is NodeSet

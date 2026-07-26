@@ -1439,6 +1439,6 @@ void register_module_class(lua_State *Lua)
    if (stack_delta) log.warning("Module registration left %d value(s) on the Lua stack.", stack_delta);
 
    // Register mod interface prototypes for compile-time type inference
-   reg_iface_prototype("mod", "load", { TiriType::Any }, { TiriType::Str });
+   reg_iface_prototype("mod", "load", { TiriType::Userdata }, { TiriType::Str });
    reg_iface_prototype("mod", "test", { TiriType::Num, TiriType::Num }, { TiriType::Any, TiriType::Str });
 }

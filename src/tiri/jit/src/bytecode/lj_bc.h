@@ -265,7 +265,12 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   _(TRYENTER, base,  ___, lit, ___) \
   _(TRYLEAVE, base,  ___, ___, ___) \
   _(CHECK,    var,   ___, lit, ___) \
-  _(RAISE,    var,   ___, var, ___)
+  _(RAISE,    var,   ___, var, ___) \
+  \
+  /* Portable runtime type contracts. */ \
+  _(CONTRACT, rbase, ___, str, ___) \
+  _(MRSAVE,   rbase, ___, ___, ___) \
+  _(MRRESTORE,rbase, ___, ___, ___)
 
 // Bytecode opcode numbers.
 // Explicitly enumerated for debugger visibility and easy value lookup.
@@ -418,7 +423,12 @@ typedef enum {
    BC_CHECK  = 114,  // Check error code, raise if >= threshold
    BC_RAISE  = 115,  // Raise exception with error code and optional message
 
-   BC__MAX   = 116
+   // Runtime contracts (appended to preserve every existing opcode number)
+   BC_CONTRACT = 116,
+   BC_MRSAVE = 117,
+   BC_MRRESTORE = 118,
+
+   BC__MAX   = 119
 } BCOp;
 
 [[nodiscard]] inline constexpr bool bc_is_func_header(BCOp Op) noexcept

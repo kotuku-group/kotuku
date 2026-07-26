@@ -1614,7 +1614,7 @@ extern int luaopen_debug(lua_State *L)
    reg_iface_prototype("debug", "setLocal", { TiriType::Str }, { TiriType::Num, TiriType::Num, TiriType::Any });
    reg_iface_prototype("debug", "getUpvalue", { TiriType::Str, TiriType::Any }, { TiriType::Func, TiriType::Num });
    reg_iface_prototype("debug", "setUpvalue", { TiriType::Str }, { TiriType::Func, TiriType::Num, TiriType::Any });
-   reg_iface_prototype("debug", "upvalueID", { TiriType::Any }, { TiriType::Func, TiriType::Num });
+   reg_iface_prototype("debug", "upvalueID", { TiriType::Userdata }, { TiriType::Func, TiriType::Num });
    reg_iface_prototype("debug", "upvalueJoin", {}, { TiriType::Func, TiriType::Num, TiriType::Func, TiriType::Num });
    reg_iface_prototype("debug", "getUserValue", { TiriType::Table }, { TiriType::Any });
    reg_iface_prototype("debug", "setUserValue", { TiriType::Any }, { TiriType::Any, TiriType::Table });

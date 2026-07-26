@@ -485,7 +485,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Parse JSON body
 
-function parseJsonBody(Body:str):table
+function parseJsonBody(Body:str):any
    Body ?! return {}
 
    try

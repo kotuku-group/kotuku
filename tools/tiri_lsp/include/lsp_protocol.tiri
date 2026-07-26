@@ -94,7 +94,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Send an LSP notification (no response expected)
 
-global function sendNotification(Self:table, ClientSocket:obj, Method, Params)
+global function sendNotification(Self:table, ClientSocket:any, Method, Params)
    notification = {
       jsonrpc = '2.0',
       method = Method,
@@ -151,7 +151,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Incoming Data Handling
 
-function initClientState(Self:table, ClientSocket:obj)
+function initClientState(Self:table, ClientSocket:any)
    state = ClientSocket._state()
 
    if not state.initialised then
@@ -169,7 +169,7 @@ function initClientState(Self:table, ClientSocket:obj)
    return state
 end
 
-global function processIncomingData(Self:table, ClientSocket:obj, Data:str)
+global function processIncomingData(Self:table, ClientSocket:any, Data:str)
    state = initClientState(Self, ClientSocket)
 
    if not Data or #Data is 0 then return end
@@ -235,7 +235,7 @@ global function processIncomingData(Self:table, ClientSocket:obj, Data:str)
    end
 end
 
-global function processIncoming(Self:table, ClientSocket:obj)
+global function processIncoming(Self:table, ClientSocket:any)
    state = initClientState(Self, ClientSocket)
 
    -- Read available data

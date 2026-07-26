@@ -23,6 +23,7 @@
 #include "filesource.h"
 #include "token_types.h"
 #include "parse_types.h"
+#include "../parser/ast/nodes.h"
 #include "dump_bytecode.h"
 #include "../../../defs.h"
 
@@ -291,6 +292,75 @@ static BytecodeInfo extract_instruction_info(BCIns Ins)
 
 //********************************************************************************************************************
 
+static std::string_view signature_origin_name(ProtoTypeOrigin Origin)
+{
+   switch (Origin) {
+      case ProtoTypeOrigin::Declared: return "declared";
+      case ProtoTypeOrigin::Inferred: return "inferred";
+      default: return "unspecified";
+   }
+}
+
+static std::string_view signature_strength_name(ProtoTypeStrength Strength)
+{
+   switch (Strength) {
+      case ProtoTypeStrength::Checked: return "checked";
+      case ProtoTypeStrength::Trusted: return "trusted";
+      default: return "advisory";
+   }
+}
+
+static std::string signature_type_name(lua_State *L, const ProtoTypeEntry &Entry)
+{
+   std::string name(type_name(Entry.type));
+   if (not Entry.constraint) return name;
+
+   if (Entry.type IS TiriType::Struct) {
+      if (auto definition = find_struct(L, Entry.constraint)) return std::format("struct<{}>", definition->Name);
+      return std::format("struct<#{:08x}>", Entry.constraint);
+   }
+   if (Entry.type IS TiriType::Object) {
+      if (auto class_name = ResolveClassID(CLASSID(Entry.constraint))) return std::format("obj<{}>", class_name);
+      return std::format("obj<#{:08x}>", Entry.constraint);
+   }
+   return name;
+}
+
+static void trace_proto_signature(lua_State *L, const GCproto *Proto, BytecodeLogger Logger, void *Meta,
+   std::string_view Indent)
+{
+   const auto signature = proto_signature(Proto);
+   if (not signature) {
+      Logger(std::format("{}Signature: <none>", Indent), Meta);
+      return;
+   }
+
+   std::string flags;
+   if (signature->flags & proto_signature_flag(ProtoSignatureFlag::ParameterVariadic)) flags += " param-variadic";
+   if (signature->flags & proto_signature_flag(ProtoSignatureFlag::ResultVariadic)) flags += " result-variadic";
+   if (signature->flags & proto_signature_flag(ProtoSignatureFlag::ExplicitResults)) flags += " explicit-results";
+   if (signature->flags & proto_signature_flag(ProtoSignatureFlag::DynamicResults)) flags += " dynamic-results";
+   if (flags.empty()) flags = " none";
+
+   Logger(std::format("{}Signature: params={}, results={}, stored-results={}, flags:{}",
+      Indent, signature->parameter_count, signature->result_count, signature->result_entry_count, flags), Meta);
+
+   auto log_entries = [&](std::string_view Prefix, const ProtoTypeEntry *Entries, size_t Count) {
+      for (size_t i = 0; i < Count; ++i) {
+         const auto &entry = Entries[i];
+         Logger(std::format("{}  {}{}:{} [{},{},{},{}]", Indent, Prefix, i + 1,
+            signature_type_name(L, entry), proto_type_nullable(entry) ? "nullable" : "non-null",
+            proto_type_required(entry) ? "required" : "optional", signature_origin_name(proto_type_origin(entry)),
+            signature_strength_name(proto_type_strength(entry))), Meta);
+      }
+   };
+
+   log_entries("P", proto_parameter_types(Proto), signature->parameter_count);
+   log_entries("R", proto_result_types(Proto), signature->result_entry_count);
+}
+
+//********************************************************************************************************************
+
 void format_bc_line(lua_State *L, BCLine Line, int FileWidth, BytecodeLogger Logger, std::string_view Indent, BCPOS pc,
    const std::string &Operands, void *Meta, BytecodeInfo &Info, bool JumpTarget, bool Verbose)
 {
@@ -368,6 +438,8 @@ void trace_proto_bytecode(lua_State *L, GCproto *Proto, BytecodeLogger Logger, v
       Logger(std::format("{}--- Nested function: lines {}-{}, {} bytecodes ---",
          indent_str, first_line, last_line, int(Proto->sizebc)), Meta);
    }
+
+   trace_proto_signature(L, Proto, Logger, Meta, indent_str);
 
    auto file_width = widest_file_source(L, false);
 

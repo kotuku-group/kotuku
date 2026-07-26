@@ -677,14 +677,14 @@ global function lspStart(Options)
       self._socket = obj.new('netserver', {
          port = self.port,
          flags = NSF_MULTI_CONNECT,
-         feedback = function(Server:obj, ClientSocket:obj, State:num)
+         feedback = function(Server:obj, ClientSocket:any, State:num)
             if State is NTC_CONNECTED then
                logMessage(self, 'LSP client connected')
             elseif State is NTC_DISCONNECTED then
                logMessage(self, 'LSP client disconnected')
             end
          end,
-         incoming = function(Server:obj, ClientSocket:obj)
+         incoming = function(Server:obj, ClientSocket:any)
             processIncoming(self, ClientSocket)
          end
       })

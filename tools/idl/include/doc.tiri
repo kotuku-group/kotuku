@@ -474,7 +474,7 @@ global function saveDocuments()
                print(f'Saving XML class documentation to "{fl.path}"')
                fl.acWrite(out)
             except ex
-               print('Failed to produce documentation for class ' .. className .. ': ' .. ex.message)
+               print(f'[{ex.source}:{ex.line}] Failed to produce documentation for class ' .. className .. ': ' .. ex.message)
             end
          elseif not cl.forwardDeclared then
             print('No meta information for class ' .. className)
@@ -487,7 +487,7 @@ end
 -- Used for extracting descriptions, notes etc.  NB: <pre> should be used for multi-line preformatting, while <code>
 -- should be used for in-place code formatting.
 
-global function extractParagraph(Input:str, Caller:str, References:table)
+global function extractParagraph(Input:str, Context:table, References:table)
    assert(Input, 'No Input provided to extractParagraph()')
 
    Input = Input:trim()
@@ -599,13 +599,13 @@ global function extractParagraph(Input:str, Caller:str, References:table)
    -- Handle <field>, <method> and <action> references
 
    if output?? and output:len() > 12 then
-      if Caller and Caller.meta then
-         output = substituteReferences(output, Caller)
+      if Context and Context.meta then
+         output = substituteReferences(output, Context)
       else
          output = substituteReferences(output, nil)
       end
 
-      return cleanXMLString(output, Caller)
+      return cleanXMLString(output)
    else
       return ''
    end
@@ -655,6 +655,7 @@ global function substituteReferences(String:str, Class:table):str
    String = substituteReferenceMatches(String, rx_action_method, function(Cap, Match)
       local call_name = Cap[0]
       if not Class then
+         print('Missing class association for action/method reference "' .. call_name .. '"')
          return f'<action>{call_name}</action>'
       elseif Class.lookupMethods?[call_name] then
          return f'<method>{call_name}</method>'
@@ -692,6 +693,7 @@ global function substituteReferences(String:str, Class:table):str
 
    String = substituteReferenceMatches(String, rx_ext_func_ref, function(Cap, Match)
       -- TODO: Validate that the module and function actually exist.  Easiest way is with mod.load()
+      -- and build a cache of the function list.
       return f'<function module="{Cap[0]}">{Cap[1]}</function>'
    end)
 
@@ -1172,7 +1174,7 @@ global function docFunction(Function)
    -- Description
 
    if Function.description?? then
-      out ..= f'    <description>\n{extractParagraph(Function.description, Function)}\n    </description>\n'
+      out ..= f'    <description>\n{extractParagraph(Function.description, Function, Function.references)}\n    </description>\n'
    else
       error(f'{Function.name}() has no description.')
    end

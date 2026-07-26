@@ -90,6 +90,7 @@ static GCtab * newtab(lua_State *L, uint32_t asize, uint32_t hbits)
       t->colo = (int8_t)asize;
       setmref(t->array, (TValue*)((char*)t + sizeof(GCtab)));
       setgcrefnull(t->metatable);
+      setgcrefnull(t->global_type_contracts);
       t->asize = asize;
       t->hmask = 0;
       nilnode = &G(L)->nilnode;
@@ -104,6 +105,7 @@ static GCtab * newtab(lua_State *L, uint32_t asize, uint32_t hbits)
       t->colo = 0;
       setmref(t->array, nullptr);
       setgcrefnull(t->metatable);
+      setgcrefnull(t->global_type_contracts);
       t->asize = 0;  //  In case the array allocation fails.
       t->hmask = 0;
       nilnode = &G(L)->nilnode;
@@ -575,6 +577,37 @@ TValue * lj_tab_set(lua_State *L, GCtab *t, cTValue *key)
       if (lj_obj_equal(&n->key, key)) return &n->val;
    } while ((n = nextnode(n)));
    return lj_tab_newkey(L, t, key);
+}
+
+//********************************************************************************************************************
+// Retrieve an explicit global type contract attached to an environment table.
+
+GCstr * lj_tab_get_global_contract(GCtab *Environment, const GCstr *Name)
+{
+   if (not Environment or not Name) return nullptr;
+   GCtab *contracts = tabref(Environment->global_type_contracts);
+   if (not contracts) return nullptr;
+
+   cTValue *value = lj_tab_getstr(contracts, Name);
+   return value and tvisstr(value) ? strV(value) : nullptr;
+}
+
+//********************************************************************************************************************
+// Attach an explicit global type contract to an environment table.
+
+void lj_tab_set_global_contract(lua_State *L, GCtab *Environment, const GCstr *Name, GCstr *Descriptor)
+{
+   if (not Environment or not Name or not Descriptor) return;
+
+   GCtab *contracts = tabref(Environment->global_type_contracts);
+   if (not contracts) {
+      contracts = lj_tab_new(L, 0, 1);
+      setgcref(Environment->global_type_contracts, obj2gco(contracts));
+      lj_gc_objbarrier(L, Environment, contracts);
+   }
+
+   setstrV(L, lj_tab_setstr(L, contracts, Name), Descriptor);
+   lj_gc_anybarriert(L, contracts);
 }
 
 //********************************************************************************************************************

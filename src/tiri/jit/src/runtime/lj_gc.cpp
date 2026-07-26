@@ -406,6 +406,7 @@ static int gc_traverse_tab(global_State *g, GCtab* t)
    GCtab *mt = tabref(t->metatable);
 
    if (mt) gc_markobj(g, mt);
+   if (GCtab *contracts = tabref(t->global_type_contracts)) gc_markobj(g, contracts);
 
    mode = lj_meta_fastg(g, mt, MM_mode);
    if (mode and tvisstr(mode)) {  // Valid __mode field?

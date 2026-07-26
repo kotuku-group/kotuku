@@ -559,18 +559,46 @@ Each `TryHandlerDesc` contains:
 
 **Opcode semantics:**
 - `BC_TYPEFIX A, D`: Fixes return types at runtime. `A` is the base register, `D` is the count of return values to process.
-- Fast path: checks if `PROTO_TYPEFIX` flag is set in the function prototype. If not set, this is a no-op.
-- Slow path: calls `lj_meta_typefix(L, base, count)` to infer and record types based on actual runtime values.
+- The VM calls `lj_meta_typefix(L, base, count)`. The helper returns immediately unless the prototype signature has
+  `DynamicResults` set.
+- Each non-`nil` observation can replace an unknown result entry's type. Its inferred provenance and advisory strength
+  remain unchanged.
 
 **When emitted:**
-The parser sets the `PROTO_TYPEFIX` flag (defined in [lj_obj.h:623](src/tiri/jit/src/runtime/lj_obj.h#L623)) on function prototypes when:
+The parser sets the canonical signature's `DynamicResults` flag on function prototypes when:
 1. The function has NO explicit return type annotations, AND
 2. At least one return statement exists
 
 **Purpose:**
-Enables type inference for untyped functions, allowing the VM to optimize subsequent calls based on observed return types. The inferred types are stored in `GCproto.result_types[]` (up to `PROTO_MAX_RETURN_TYPES` positions).
+Enables type inference for untyped functions, allowing the VM to optimise subsequent calls based on observed return
+types. The inferred types are stored in the canonical signature's result entries (up to
+`PROTO_MAX_RETURN_TYPES` positions).
 
 **Implementation:** See [vm_x64.dasc:4901-4922](src/tiri/jit/src/jit/vm_x64.dasc#L4901-L4922), [lj_meta.cpp:664-685](src/tiri/jit/src/runtime/lj_meta.cpp#L664-L685), [parse_scope.cpp:1012-1024](src/tiri/jit/src/parser/parse_scope.cpp#L1012-L1024).
+
+The update is state-owned: a prototype belongs to its Tiri state and is not published for concurrent mutation by
+another state. Asynchronous workers use their own state and prototype graph.
+
+### 10.3 Prototype Signatures
+
+Every typed function prototype carries one versioned signature containing:
+
+- complete fixed parameter and semantic result counts;
+- stored positional parameter and result entries;
+- parameter/result variadic, explicit-result and dynamic-result flags;
+- each entry's nominal type, portable structure or class constraint, nullability, required state, provenance and
+  strength.
+
+Constraints use stable 32-bit structure keys or class identifiers, never process-local pointers. Declared non-`any`
+contracts have checked strength, while omitted, explicit `any` and runtime-inferred positions remain advisory.
+`BC_TYPEFIX` changes only the type of a reserved inferred result entry.
+
+The signature is stored in the prototype allocation between upvalue descriptors and debug metadata. Its fields are
+written explicitly because bytecode-loaded prototypes are allocated as raw GC memory. Both stripped and unstripped
+bytecode dumps retain signatures, and nested prototypes are handled recursively.
+
+Debug bytecode output prints a deterministic signature header and one line for every stored parameter and result
+entry. It resolves known constraint names when possible and otherwise prints the stable identifier.
 
 ## 11. Testing, Debugging, and Tooling
 ### 11.1 Using Flute and Tiri Tests
@@ -650,6 +678,18 @@ Enables type inference for untyped functions, allowing the VM to optimize subseq
 - `STGETF`/`STSETF`: named field access with a P32 field-index cache and generic metamethod fallback.
 
 ### Exception Handling
-- `PROTO_TYPEFIX`: flag indicating runtime type inference is enabled for function return types.
 - `TryBlockDesc`: metadata for try blocks stored in `GCproto.try_blocks[]`.
 - `TryHandlerDesc`: metadata for exception handlers stored in `GCproto.try_handlers[]`.
+
+### Runtime Type Contracts
+- `CONTRACT A, D`: validates values starting at register `A` using the portable descriptor string at constant `D`.
+  Descriptors encode the boundary, exact Tiri types, nullable/required flags, labels, named-structure identity and
+  fixed or dynamic result shape.
+- `MRSAVE A` / `MRRESTORE A`: preserve the VM multi-result count in register `A` while return-path `<close>` and
+  `defer` handlers execute. Return values are allocated above the cleanup scratch area.
+- Basic tag contracts use trace slot specialisation. Prototypes needing structure identity, range metatable,
+  callable-value or dynamic-result predicates remain interpreter-only until those predicates have dedicated trace IR
+  guards.
+- The private bytecode dump version is `0x82`. It includes a length-delimited, schema-versioned signature before each
+  prototype's bytecode. Version `0x81` dumps remain loadable and receive conservative advisory defaults; older versions
+  are rejected and must be regenerated.
