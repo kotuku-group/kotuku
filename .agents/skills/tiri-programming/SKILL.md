@@ -61,6 +61,7 @@ Recognise and use these Tiri extensions where they match local code style:
 - Constants: `local name <const> = value`
 - Anonymous function expressions: `(value => print(value))`
 - Ranges: `for i in {0 to 10} do`
+- The `for` range syntax replaces the Lua `for i=0,10 do` style.
 - String interpolation with expressions: `f"My {expression} here"`
 - Pipe operator: `value |> transform()` and limited multi-result forwarding with `|N>`
 - Result filter operator: `[_*]function_call()` to drop or keep selected return values

@@ -308,7 +308,7 @@ if x == 1 then
    print(x)
 end
 
-for i = 0, 10 do
+for i in {0 into 10} do
    total += i
 end
 ]])

@@ -309,7 +309,7 @@ end
       end
       table.insert(seen, i)
    end
-   assert(#seen is 4, 'continue should skip entries in numeric for loop')
+   assert(#seen is 4, 'continue should skip entries in range loop')
    assert(seen[3] is 4, 'continue should skip the value equal to 3')
 
    attempts = 0

@@ -87,7 +87,7 @@ function getRainbowBitmap()
    glRainbowBitmap = obj.new('bitmap', { width=size, height=size, bitsPerPixel=32 })
 
    val = glRainbowBitmap.height / 2
-   for y=0, (glRainbowBitmap.height / 2) - 1 do
+   for y in {0 to (glRainbowBitmap.height / 2)} do
       s = 1 - (val / (glRainbowBitmap.height / 2))
       v = 1
       for x in {0 to glRainbowBitmap.width} do
@@ -115,7 +115,7 @@ function getRainbowBitmap()
    end
 
    val = glRainbowBitmap.height / 2
-   for y=glRainbowBitmap.height/2, glRainbowBitmap.height-1 do
+   for y in {glRainbowBitmap.height / 2 to glRainbowBitmap.height} do
       s = val / (glRainbowBitmap.height / 2)
       v = val / (glRainbowBitmap.height / 2)
       for x in {0 to glRainbowBitmap.width} do

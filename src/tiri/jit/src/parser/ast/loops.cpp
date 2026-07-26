@@ -2,7 +2,7 @@
 // Copyright © 2025-2026 Paul Manias
 //
 // This file contains parsers for loop constructs:
-// - Numeric for loops (for i = start, stop, step)
+// - Optimised numeric loop nodes lowered from range syntax
 // - Generic for loops (for k, v in iterator)
 // - Anonymous for loops (for {range} do)
 // - Range literal optimisation for JIT compilation
@@ -89,7 +89,7 @@ static bool range_literal_numeric_loop_safe(lua_Number Start, lua_Number Stop, l
 }
 
 //********************************************************************************************************************
-// Parses for loops, handling both numeric (for i=start,stop,step) and generic (for k,v in iterator) forms.
+// Parses generic, range and anonymous for loops.  Lua-style numeric headers are rejected.
 
 ParserResult<StmtNodePtr> AstBuilder::parse_for()
 {
@@ -105,28 +105,10 @@ ParserResult<StmtNodePtr> AstBuilder::parse_for()
    auto name_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
    if (not name_token.ok()) return ParserResult<StmtNodePtr>::failure(name_token.error_ref());
 
-   if (this->ctx.match(TokenKind::Equals).ok()) {
-      auto start = this->parse_expression();
-      if (not start.ok()) return ParserResult<StmtNodePtr>::failure(start.error_ref());
-      this->ctx.consume(TokenKind::Comma, ParserErrorCode::ExpectedToken);
-      auto stop = this->parse_expression();
-      if (not stop.ok()) return ParserResult<StmtNodePtr>::failure(stop.error_ref());
-      ExprNodePtr step_expr;
-      if (this->ctx.match(TokenKind::Comma).ok()) {
-         auto step = this->parse_expression();
-         if (not step.ok()) return ParserResult<StmtNodePtr>::failure(step.error_ref());
-         step_expr = std::move(step.value_ref());
-      }
-      this->ctx.consume(TokenKind::DoToken, ParserErrorCode::ExpectedToken);
-      auto body = this->parse_scoped_block({ TokenKind::EndToken });
-      if (not body.ok()) return ParserResult<StmtNodePtr>::failure(body.error_ref());
-      this->ctx.consume(TokenKind::EndToken, ParserErrorCode::ExpectedToken);
-
-      auto stmt = std::make_unique<StmtNode>(AstNodeKind::NumericForStmt, token.span());
-      NumericForStmtPayload payload(make_identifier(name_token.value_ref()),
-         std::move(start.value_ref()), std::move(stop.value_ref()), std::move(step_expr), std::move(body.value_ref()));
-      stmt->data = std::move(payload);
-      return ParserResult<StmtNodePtr>::success(std::move(stmt));
+   if (this->ctx.check(TokenKind::Equals)) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::DeprecatedSyntax, this->ctx.tokens().current(),
+         "Lua-style numeric 'for' syntax is no longer supported; use an inclusive range such as "
+         "'for i in {0 into 8} do'");
    }
 
    std::vector<Identifier> names;
@@ -167,8 +149,8 @@ ParserResult<StmtNodePtr> AstBuilder::parse_for()
    // This allows the JIT to compile `for i in {1 to 10} do` into optimised BC_FORI/BC_FORL bytecode
    // instead of the slower generic iterator path (BC_ITERC/BC_ITERL).
    //
-   // Conversion: for i in {start to stop} do   =>  for i = start, stop-1, step do  (exclusive)
-   //             for i in {start into stop} do =>  for i = start, stop, step do    (inclusive)
+   // Lowering: for i in {start to stop} do   => NumericForStmt(start, stop-1, step)  (exclusive)
+   //           for i in {start into stop} do => NumericForStmt(start, stop, step)    (inclusive)
    //
    // Step is inferred from start/stop direction unless an explicit literal step is supplied.
 
