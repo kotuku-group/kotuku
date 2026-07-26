@@ -235,7 +235,7 @@ end
 global function str_to_bytes(String:str):str
    local list
    String = String:replace("\\n", string.char(10))
-   for i = 0, #String - 1 do
+   for i in {0 to #String} do
       if list then
          list ..= string.format(',%d', String:byte(i))
       else

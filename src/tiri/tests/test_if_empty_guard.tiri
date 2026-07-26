@@ -65,7 +65,7 @@ end
    iterations = 0
    local values = { 1, 2, 0, 4, 5 }  -- 0 at index 2 should break
 
-   for i = 0, #values - 1 do
+   for i in {0 to #values} do
       values[i] ?! break
       iterations++
    end
@@ -78,7 +78,7 @@ end
    sum = 0
    local values = { 1, 0, 2, "", 3 }  -- Skip falsey values
 
-   for i = 0, #values - 1 do
+   for i in {0 to #values} do
       values[i] ?! continue
       sum += values[i]
    end
@@ -155,7 +155,7 @@ end
 
    iterations = 0
    total = 0
-   for i = 0, #values - 1 do
+   for i in {0 to #values} do
       values[i] ?! break
       iterations++
       total += #values[i]
@@ -175,7 +175,7 @@ end
 
    iterations = 0
    total = 0
-   for i = 0, #values - 1 do
+   for i in {0 to #values} do
       values[i] ?! continue
       iterations++
       total += #values[i]

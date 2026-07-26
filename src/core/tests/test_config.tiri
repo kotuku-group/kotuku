@@ -399,7 +399,7 @@ Styles = Bold,Bold Italic,Italic,Regular
 
    assert(buf:len() is expected_output:len(), 'Wrote ' .. file.size .. ' bytes, expected ' .. expected_output:len())
 
-   for i=0,buf:len()-1 do
+   for i in {0 to buf:len()} do
       if buf:byte(i) != expected_output:byte(i) then
          error('Written output is invalid:\n---\n' .. buf .. '---\n' .. expected_output .. '---\n')
       end

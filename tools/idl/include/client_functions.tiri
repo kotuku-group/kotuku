@@ -292,7 +292,7 @@ global function flags(Prefix, Options:table, ...)
    lookup = { }
    local flags = {...}
    f = 0
-   for a=0, #flags - 1 do
+   for a in {0 to #flags} do
       if type(flags[a]) is 'string' then
          local key, comment = rx_key_comment.extract(flags[a])
          key ??= flags[a]

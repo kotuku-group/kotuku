@@ -297,14 +297,14 @@ end
    -- A continuous grey ramp split across two patches at x=50.  Walking a scanline across the shared edge
    -- must show no step beyond the ramp's natural slope (2.55 per pixel) plus AA tolerance, in both modes.
 
-   for mode=0, 1 do
+   for mode in {0 to 2} do
       local scene = newPatchesScene({ greyColumnPatch(0, 50, 0.0, 0.5), greyColumnPatch(50, 100, 0.5, 1.0) },
          mode is 1)
       local bmp = newBitmap(100, 100)
       drawScene(scene, bmp)
 
       local prev = -1
-      for x=40, 60 do
+      for x in {40 to 61} do
          local value = mGfx.ReadRGBPixel(bmp, x, 50).red
          if prev >= 0 then
             local delta = value - prev

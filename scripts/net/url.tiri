@@ -60,7 +60,7 @@ url.encode = function(String:str, ExtraChars:str):str
 
    -- Simple character-by-character encoding to avoid pattern issues
    result = array<string>
-   for i = 0, #String-1 do
+   for i in {0 to #String} do
       c = String:sub(i, i+1)
       if chars_to_encode:find(c, 0, true) then
          result:push(string.format('%%%02X', string.byte(c)))

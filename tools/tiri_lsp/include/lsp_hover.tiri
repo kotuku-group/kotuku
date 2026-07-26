@@ -127,7 +127,7 @@ function buildStructTypeMap(Doc:table, Position:table):table
    total_lines = getTotalLines(Doc)
    if Position and Position.line + 1 < total_lines then total_lines = Position.line + 1 end
 
-   for line_num = 0, total_lines - 1 do
+   for line_num in {0 to total_lines} do
       line_text = getLine(Doc, line_num)
       if Position and line_num is Position.line then
          line_text = line_text:sub(0, utf16ColToByteCol(line_text, Position.character))

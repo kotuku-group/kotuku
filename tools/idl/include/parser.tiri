@@ -358,7 +358,7 @@ function findDictionaryFieldIndex(Meta, FieldID)
    local dictionary = Meta.dictionary
    dictionary ?! return nil
 
-   for i=0,#dictionary-1 do
+   for i in {0 to #dictionary} do
       local field = dictionary[i]
       if field and field.fieldID is FieldID then return i end
    end
@@ -391,7 +391,7 @@ function classStorageOrigin(Class:table):num
    local origin
    local meta_fields = Class.meta.fields
    if meta_fields then
-      for i=0,#meta_fields-1 do
+      for i in {0 to #meta_fields} do
          local meta_field = meta_fields[i]
          local err, compiled_field, _ = Class.meta.mtFindField(calcFieldHash(meta_field.name))
          if (err is ERR_Okay) and compiled_field and not (compiled_field.flags has FD_VIRTUAL) then
@@ -441,7 +441,7 @@ global function parseClassFields(Class:table, ClientSpec:str)
       end
 
       if metaFields?? then
-         for i=0,#metaFields-1 do
+         for i in {0 to #metaFields} do
             f = metaFields[i]
             def = getMetaFieldDefinition(f)
             if def and def.synonym != true then

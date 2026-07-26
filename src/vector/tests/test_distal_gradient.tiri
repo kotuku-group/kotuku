@@ -198,7 +198,7 @@ end
    -- (within a small tolerance for anti-aliasing / rounding).
    local prev_blue = -1
    local prev_green = 1000
-   for y = 24, 60, 4 do
+   for y in {24 into 60 by 4} do
       local c = mGfx.ReadRGBPixel(bmp, 60, y)
       assert(c.blue >= prev_blue - 6, 'Blue channel should rise monotonically toward the interior (y=' .. y .. ')')
       assert(c.green <= prev_green + 6, 'Green channel should fall monotonically toward the interior (y=' .. y .. ')')
@@ -285,7 +285,7 @@ end
    -- Walk outward from just beyond the edge toward the padding edge; the red channel (a proxy for how much white
    -- shows through the fading green) must rise monotonically.
    local prev_red = -1
-   for y = 28, 14, -2 do
+   for y in {28 into 14 by -2} do
       local c = mGfx.ReadRGBPixel(bmp, 60, y)
       assert(c.red >= prev_red - 4, 'Exterior glow should fade outward (red rising toward white) at y=' .. y)
       prev_red = c.red
@@ -637,7 +637,7 @@ end
    -- green row (low red).  Red is used as the proxy because the faded state reads as white, whose green is also 255.
    local found_white = false
    local restart_red = 999
-   for y = 84, 64, -1 do
+   for y in {84 into 64 by -1} do
       local c = mGfx.ReadRGBPixel(bmp, 100, y)
       if (not found_white) then
          if c.red > 245 then found_white = true end -- cycle tail faded to (near) white

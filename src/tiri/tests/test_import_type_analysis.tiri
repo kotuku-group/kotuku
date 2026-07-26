@@ -74,7 +74,7 @@ import './import_type_revalidate_helper'
 local y:num = reval_add(1, 2)
 ]]
 
-   for pass = 1, 2 do
+   for pass in {1 to 3} do
       local result = validate_here(source)
       assert(result.success is false,
          f"Pass {pass}: a type error inside an imported file should fail validation")
@@ -98,7 +98,7 @@ local total:num = diamond_a_fn(1) + diamond_b_fn(2)
 print(total)
 ]]
 
-   for pass = 1, 2 do
+   for pass in {1 to 3} do
       local result = validate_here(source)
       assert(result.success is false,
          f"Pass {pass}: the inner helper's type error should fail validation")

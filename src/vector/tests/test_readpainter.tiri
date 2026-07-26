@@ -448,7 +448,7 @@ end
       results[i] = p
    end
 
-   for i = 0, #results - 2 do
+   for i in {0 to #results - 1} do
       local a = results[i].colour
       local b = results[i + 1].colour
       assert((a.red ≈ b.red) and (a.green ≈ b.green) and (a.blue ≈ b.blue),

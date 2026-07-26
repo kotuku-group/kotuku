@@ -30,7 +30,7 @@ This code illustrates how to read environment variables (any platform) and Windo
       if err is ERR_Okay then
          print('User environment registry values:\n')
          parts = string.split(entries, '\t')
-         for i = 0, #parts-1 do
+         for i in {0 to #parts} do
             if parts[i]:endsWith('\\') then
                print(f"  [folder] {parts[i]}")
             else

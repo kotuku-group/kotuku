@@ -179,7 +179,7 @@ function parseHttpRequest(Data:str):table
 
    headers = {}
 
-   for i = 1, #lines-1 do
+   for i in {1 to #lines} do
       local line = lines[i]
       local name, value = rxHeaderPair.extract(line)
       if name and value then
@@ -214,7 +214,7 @@ function parseHttpResponse(Data:str):table
 
    headers = {}
 
-   for i = 1, #lines-1 do
+   for i in {1 to #lines} do
       line = lines[i]
       name, value = rxHeaderPair.extract(line)
       if name and value then

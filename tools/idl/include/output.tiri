@@ -618,7 +618,7 @@ end
 -- Append all lines in an output array while carrying blank-line state.
 
 function appendOutputArray(Content:str, Blank:num, List:any)
-   for a=0, #List-1 do
+   for a in {0 to #List} do
       Content, Blank = appendOutputLine(Content, Blank, List[a])
    end
 
@@ -858,7 +858,7 @@ global function saveOutput()
    content, blank = appendOutputArray(content, blank, glHeader)
    content, blank = appendOutputArray(content, blank, glConstants)
 
-   for a=0, #glOutput-1 do
+   for a in {0 to #glOutput} do
       if glOutput[a] is '__FUNCTION_TABLE__' then
          content ..= buildFunctionTableOutput()
       else

@@ -708,7 +708,7 @@ global function cType(Value:table, Origin:str):table
             Value.type ..= '(void)'
          else
             params = ''
-            for i=1, #arglist-1 do
+            for i in {1 to #arglist} do
                if params?? then params ..= ', ' end
                params ..=  cType({ type=arglist[i], name='' }, Origin).type
             end

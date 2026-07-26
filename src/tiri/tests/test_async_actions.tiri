@@ -104,7 +104,7 @@ end
    completed = 0
    expected = 8
 
-   for i = 0, expected - 1 do
+   for i in {0 to expected} do
       async.action(pic, 'Activate', function(ActionID, Object, Error, Key)
          table.insert(order_log, Key)
          completed++
@@ -118,7 +118,7 @@ end
    assert(completed is expected, f'Expected {expected} completions, got {completed}')
 
    -- Verify FIFO ordering: keys should arrive in submission order (0, 1, 2, ..., 7)
-   for i = 0, #order_log - 1 do
+   for i in {0 to #order_log} do
       assert(order_log[i] is i, f'Expected key {i} at position {i}, got {order_log[i]}')
    end
 end

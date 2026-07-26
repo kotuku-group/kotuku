@@ -624,7 +624,7 @@ function parseHttpRequest(Req)
    end
 
    headers = {}
-   for i = 1, #lines-1 do -- Skip the METHOD
+   for i in {1 to #lines} do -- Skip the METHOD
       line = lines[i]
       name, value = rxHeaderLine.extract(line)
       if name and value then

@@ -96,7 +96,7 @@ end
 @Test function ForLoopVariableCanShadowConstant()
    local sum = 0
 
-   for ERR_Okay = 1, 3 do
+   for ERR_Okay in {1 into 3} do
       sum += ERR_Okay
    end
 

@@ -37,6 +37,7 @@
 #include "../../../defs.h"
 
 static extTiri *glTestScript = nullptr;
+extern "C" int luaopen_range(lua_State *L);
 
 namespace {
 
@@ -2860,6 +2861,69 @@ static size_t count_opcode_tree(const BytecodeSnapshot &Snapshot, BCOp Opcode)
    return count;
 }
 
+static bool test_runtime_range_for_emission(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaopen_range(L);
+   lua_setglobal(L, "range");
+   std::string error;
+   constexpr std::string_view source =
+      "local start = 0.0\n"
+      "local stop = 1.0\n"
+      "local step = 0.2\n"
+      "local count = 0\n"
+      "for value in {start to stop by step} do count += 1 end\n"
+      "for value in {stop into start by -step} do count += 1 end\n"
+      "for {start to stop by step} do count += 1 end\n"
+      "for value in {0.0 to 1.0 by 0.2} do count += 1 end\n"
+      "return count\n";
+
+   auto snapshot = compile_snapshot(L, source, true, error);
+   if (not snapshot) {
+      Log.error("failed to compile runtime-bound range loops: %s", error.c_str());
+      return false;
+   }
+
+   if (count_opcode_tree(*snapshot, BC_FORI) != 0 or count_opcode_tree(*snapshot, BC_FORL) != 0) {
+      Log.error("runtime fractional ranges used numeric loop bytecode without safe exclusive-limit preparation");
+      return false;
+   }
+
+   if (count_opcode_tree(*snapshot, BC_ITERL) != 4) {
+      Log.error("fractional ranges did not retain four generic iterator loops");
+      return false;
+   }
+
+   if (lua_load(L, source, "runtime-range-for") != 0 or lua_pcall(L, 0, 1, 0) != 0) {
+      Log.error("failed to execute runtime-bound range loops: %s", lua_tostring(L, -1));
+      lua_pop(L, 1);
+      return false;
+   }
+
+   if (lua_tointeger(L, -1) != 21) {
+      Log.error("runtime fractional range loops produced %lld iterations", (long long)lua_tointeger(L, -1));
+      lua_pop(L, 1);
+      return false;
+   }
+   lua_pop(L, 1);
+
+   constexpr std::string_view invalid_source =
+      "local start = 0 / 0\n"
+      "for value in {start to 1} do end\n";
+   if (lua_load(L, invalid_source, "runtime-invalid-range") != 0) {
+      Log.error("failed to compile invalid runtime range coverage: %s", lua_tostring(L, -1));
+      lua_pop(L, 1);
+      return false;
+   }
+   if (lua_pcall(L, 0, 0, 0) IS 0) {
+      Log.error("runtime range accepted a non-finite bound");
+      return false;
+   }
+   lua_pop(L, 1);
+   return true;
+}
+
 static bool test_type_guided_emission(kt::Log &Log)
 {
    LuaStateHolder state;
@@ -2980,7 +3044,7 @@ static bool test_type_guided_emission(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 37> tests = { {
+   constexpr std::array<TestCase, 38> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -3017,6 +3081,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "ternary_falsey_semantics", test_ternary_falsey_semantics },
       { "static_descriptor_model", test_static_descriptor_model },
       { "static_result_set_model", test_static_result_set_model },
+      { "runtime_range_for_emission", test_runtime_range_for_emission },
       { "type_guided_emission", test_type_guided_emission }
    } };
 

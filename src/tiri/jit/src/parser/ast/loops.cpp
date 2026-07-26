@@ -7,6 +7,9 @@
 // - Anonymous for loops (for {range} do)
 // - Range literal optimisation for JIT compilation
 
+#include <cmath>
+#include <limits>
+
 //********************************************************************************************************************
 // Parses a range expression already confirmed by scan_range_literal(): {expr to expr} or {expr into expr}, with an
 // optional `by` step expression.
@@ -73,8 +76,16 @@ static bool range_literal_number(const ExprNodePtr &Expr, lua_Number &Value)
 
 static bool range_literal_valid_step(lua_Number Value)
 {
-   auto int_value = int32_t(Value);
-   return Value != 0 and lua_Number(int_value) IS Value;
+   return std::isfinite(Value) and Value != 0;
+}
+
+static bool range_literal_numeric_loop_safe(lua_Number Start, lua_Number Stop, lua_Number Step)
+{
+   constexpr lua_Number minimum = lua_Number(std::numeric_limits<int32_t>::min());
+   constexpr lua_Number maximum = lua_Number(std::numeric_limits<int32_t>::max());
+   return std::trunc(Start) IS Start and std::trunc(Stop) IS Stop and std::trunc(Step) IS Step and
+      Start >= minimum and Start <= maximum and Stop >= minimum and Stop <= maximum and
+      Step >= minimum and Step <= maximum;
 }
 
 //********************************************************************************************************************
@@ -185,7 +196,8 @@ ParserResult<StmtNodePtr> AstBuilder::parse_for()
                step_is_num = true;
             }
 
-            if (start_is_num and stop_is_num and step_is_num) {
+            if (start_is_num and stop_is_num and step_is_num and std::isfinite(start_val) and
+                std::isfinite(stop_val) and range_literal_numeric_loop_safe(start_val, stop_val, step_val)) {
                ExprNodePtr start_expr = std::move(range_payload->start);
                ExprNodePtr stop_expr = std::move(range_payload->stop);
                range_payload->step = nullptr;
@@ -193,7 +205,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_for()
                // For exclusive ranges, adjust stop
                lua_Number final_stop = stop_val;
                if (not range_payload->inclusive) {
-                  final_stop = (step_val > 0) ? (stop_val - 1) : (stop_val + 1);
+                  final_stop = step_val > 0 ? stop_val - 1.0 : stop_val + 1.0;
                }
 
                // Create literals for stop and step
@@ -211,6 +223,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_for()
                stmt->data = std::move(payload);
                return ParserResult<StmtNodePtr>::success(std::move(stmt));
             }
+
          }
       }
    }
@@ -303,11 +316,12 @@ ParserResult<StmtNodePtr> AstBuilder::parse_anonymous_for(const Token& ForToken)
             step_is_num = true;
          }
 
-         if (start_is_num and stop_is_num and step_is_num) {
+         if (start_is_num and stop_is_num and step_is_num and std::isfinite(start_val) and std::isfinite(stop_val) and
+             range_literal_numeric_loop_safe(start_val, stop_val, step_val)) {
             // For exclusive ranges, adjust stop
             lua_Number final_stop = stop_val;
             if (not range_payload->inclusive) {
-               final_stop = (step_val > 0) ? (stop_val - 1) : (stop_val + 1);
+               final_stop = step_val > 0 ? stop_val - 1.0 : stop_val + 1.0;
             }
 
             // Move the start expression from the range
@@ -328,6 +342,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_anonymous_for(const Token& ForToken)
                std::move(final_stop_expr), std::move(step_expr), std::move(body.value_ref()));
             return ParserResult<StmtNodePtr>::success(std::move(stmt));
          }
+
       }
    }
 

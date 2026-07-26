@@ -25,7 +25,7 @@ end
 end
 
 @Test function RegexObjectsSurviveGarbageCollection()
-   for index = 1, 50 do
+   for index in {1 into 50} do
       matcher = regex.new("item" .. index)
       assert(matcher.test("item" .. index), "Compiled regex should operate before GC")
    end

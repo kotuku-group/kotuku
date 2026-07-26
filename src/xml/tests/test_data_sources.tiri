@@ -130,7 +130,7 @@ end
 @Test(priority=7) function LargeFileLoading()
    -- Generate large XML content
    parts = {'<largeRoot>'}
-   for i = 0, 499 do
+   for i in {0 to 500} do
       table.insert(parts, '<item id="' .. i .. '">Content for item ' .. i .. '</item>')
    end
    table.insert(parts, '</largeRoot>')

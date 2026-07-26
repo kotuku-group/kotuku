@@ -47,7 +47,7 @@ UDP Performance and Stress Test
 
    -- Send messages rapidly
    startTime = mSys.PreciseTime()
-   for i = 1, targetMessages do
+   for i in {0 to targetMessages} do
       message = 'Message #' .. i
       err, bytesSent = client.mtSendTo(dest, message)
       assert(err is ERR_Okay, 'Failed to send message #' .. i .. ': ' .. mSys.GetErrorMsg(err))
@@ -173,7 +173,7 @@ end
 
    -- Create multiple client sockets
    clients = {}
-   for i = 1, targetClients do
+   for i in {0 to targetClients} do
       clients[i] = obj.new('netsocket', {
          flags = 'UDP'
       })
@@ -184,8 +184,8 @@ end
    dest.port = server.port
 
    -- Each client sends multiple messages
-   for clientId = 1, targetClients do
-      for msgId = 1, messagesPerClient do
+   for clientId in {0 to targetClients} do
+      for msgId in {0 to messagesPerClient} do
          message = 'Client' .. clientId .. '_Msg' .. msgId
          err, bytesSent = clients[clientId].mtSendTo(dest, message)
          assert(err is ERR_Okay, 'Client ' .. clientId .. ' failed to send message ' .. msgId)
@@ -221,7 +221,7 @@ end
    check(mNet.StrToAddress('127.0.0.1', dest))
    dest.port = 12345
 
-   for i = 1, rapidMessages do
+   for i in {0 to rapidMessages} do
       message = 'Rapid message #' .. i
       err, bytesSent = client.mtSendTo(dest, message)  -- Non-existent server
 

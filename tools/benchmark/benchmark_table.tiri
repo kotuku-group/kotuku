@@ -12,7 +12,7 @@
 
       -- Create multiple in sequence
       local tables = {}
-      for j = 0, 9 do
+      for j in {0 to 10} do
          tables[j] = {}
       end
    end
@@ -125,7 +125,7 @@ end
 
       -- Build table with inserts
       local built = {}
-      for j = 0, 19 do
+      for j in {0 to 20} do
          table.insert(built, j * 10)
       end
 

@@ -54,14 +54,14 @@ end
 
 function symbolCountChar(LineCode:str, Char:str):num
    count = 0
-   for i = 0, #LineCode - 1 do
+   for i in {0 to #LineCode} do
       if LineCode:sub(i, i + 1) is Char then count++ end
    end
    return count
 end
 
 function symbolCurrentParent(Stack:array):table
-   for i = #Stack - 1, 0, -1 do
+   for i in {#Stack - 1 into 0 by -1} do
       if Stack[i].symbol then return Stack[i].symbol end
    end
    return nil
@@ -347,13 +347,13 @@ function symbolPushBlockFrames(Stack:array, LineCode:str, FunctionFrame:table)
    function_count = symbolCountBlockKeyword(LineCode, 'function') + symbolCountBlockKeyword(LineCode, 'thunk')
    if FunctionFrame and function_count > 0 then function_count -= 1 end
 
-   for i = 1, function_count do
+   for i in {1 to function_count+1} do
       Stack:push({ kind = 'function' })
    end
 
    if symbolCountBlockKeyword(LineCode, 'then') > 0 then
       if_count = symbolCountBlockKeyword(LineCode, 'if')
-      for i = 1, if_count do
+      for i in {1 to if_count+1} do
          Stack:push({ kind = 'block' })
       end
    end
@@ -361,28 +361,28 @@ function symbolPushBlockFrames(Stack:array, LineCode:str, FunctionFrame:table)
    if symbolCountBlockKeyword(LineCode, 'do') > 0 then
       for_count = symbolCountBlockKeyword(LineCode, 'for')
       while_count = symbolCountBlockKeyword(LineCode, 'while')
-      for i = 1, for_count do
+      for i in {1 to for_count+1} do
          Stack:push({ kind = 'block' })
       end
-      for i = 1, while_count do
+      for i in {1 to while_count+1} do
          Stack:push({ kind = 'block' })
       end
    end
 
    repeat_count = symbolCountBlockKeyword(LineCode, 'repeat')
-   for i = 1, repeat_count do
+   for i in {1 to repeat_count+1} do
       Stack:push({ kind = 'repeat' })
    end
 
    defer_count = symbolCountBlockKeyword(LineCode, 'defer')
-   for i = 1, defer_count do
+   for i in {1 to defer_count+1} do
       Stack:push({ kind = 'block' })
    end
 end
 
 function symbolCloseBlockFrames(Stack:array, LineCode:str, LineNo:num, LineText:str)
    close_count = symbolCountBlockKeyword(LineCode, 'end') + symbolCountBlockKeyword(LineCode, 'until')
-   for i = 1, close_count do
+   for i in {1 to close_count+1} do
       if #Stack > 0 then
          frame = Stack:pop()
          symbolCloseFrame(frame, LineNo, LineText)
@@ -395,7 +395,7 @@ function symbolIsBraceFrame(Frame:table):bool
 end
 
 function symbolFindTopTableFrame(Stack:array):table
-   for i = #Stack - 1, 0, -1 do
+   for i in {#Stack - 1 into 0 by -1} do
       frame = Stack[i]
       if symbolIsBraceFrame(frame) then
          return frame
@@ -416,7 +416,7 @@ function symbolCloseTables(Stack:array, LineCode:str, LineNo:num, LineText:str)
    table_frame.brace_depth += symbolCountChar(LineCode, '{') - symbolCountChar(LineCode, '}')
    if table_frame.brace_depth > 0 then return end
 
-   for i = #Stack - 1, 0, -1 do
+   for i in {#Stack - 1 into 0 by -1} do
       frame = Stack[i]
       if symbolIsBraceFrame(frame) then
          Stack:remove(i)
@@ -444,7 +444,7 @@ global function extractDocumentSymbols(Doc:table):array
    in_block_comment = false
    pending_annotations = array<table>
 
-   for line_num = 0, total_lines - 1 do
+   for line_num in {0 to total_lines} do
       line_text = getLine(Doc, line_num)
       line_code, in_block_comment = maskNonCode(line_text, in_block_comment)
       trimmed = rx_symbol_trim.extract(line_code)

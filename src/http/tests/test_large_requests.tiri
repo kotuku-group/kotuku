@@ -74,7 +74,7 @@ SERVER_PORT <const> = 18944
             handler = function(req, res)
                -- Simulate streaming by sending data in chunks
                streamData = ''
-               for i = 1, 10 do
+               for i in {1 to 11} do
                   streamData = streamData .. 'Chunk ' .. i .. ': ' .. string.rep('streaming data ', 20) .. '\n'
                end
                res.header('Content-Type', 'text/plain')

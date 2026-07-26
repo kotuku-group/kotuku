@@ -37,13 +37,13 @@ function trace_metrics():table
    jit.off()
    local result = { traces=0, fieldLoads=0, guards=0, snapshots=0 }
 
-   for trace_no = 1, 100 do
+   for trace_no in {1 into 100} do
       local info = jit.util.traceInfo(trace_no)
       if info is nil then continue end
 
       result.traces++
       result.snapshots += info.nexit
-      for instruction = 1, info.nins do
+      for instruction in {1 into info.nins} do
          local _, ir_ot = jit.util.traceIR(trace_no, instruction)
          if ir_ot is nil then continue end
          if (ir_ot & 0x80) != 0 then result.guards++ end
@@ -58,19 +58,19 @@ function count_guarded_field(Field:num, GuardOpcode:num):num
    jit.off()
    local count = 0
 
-   for trace_no = 1, 100 do
+   for trace_no in {1 into 100} do
       local info = jit.util.traceInfo(trace_no)
       if info is nil then continue end
 
       local field_loads = {}
-      for instruction = 1, info.nins do
+      for instruction in {1 into info.nins} do
          local _, ir_ot, _, ir_op2 = jit.util.traceIR(trace_no, instruction)
          if ir_ot != nil and (ir_ot >> 8) is ir_fload and ir_op2 is Field then
             field_loads[instruction] = true
          end
       end
 
-      for instruction = 1, info.nins do
+      for instruction in {1 into info.nins} do
          local _, ir_ot, ir_op1, ir_op2 = jit.util.traceIR(trace_no, instruction)
          if ir_ot != nil and (ir_ot >> 8) is GuardOpcode and
             (field_loads[ir_op1] or field_loads[ir_op2]) then count++ end

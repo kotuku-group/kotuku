@@ -88,7 +88,7 @@ function makeStarSequence(CentreX:num, CentreY:num, Radius:num)
    local inner_radius = Radius * 0.38196601125
    local sequence = ''
 
-   for i=0,9 do
+   for i in {0 to 10} do
       angle = -PI * 0.5 + i * PI / 5
       radius = (i % 2 is 0) ? Radius :> inner_radius
       x = CentreX + math.cos(angle) * radius
@@ -230,7 +230,7 @@ function timer(Subscriber, Elapsed, Current)
          local fps
          totalTime = 0
          bestTime = 0x7ffffff
-         for frame=0,#glFrameStats.times-1 do
+         for frame in {0 to #glFrameStats.times} do
             time = glFrameStats.times[frame]
 
             if time < bestTime then bestTime = time end
@@ -351,7 +351,7 @@ end
    max = glArgs.maxParticles
    if max < 100 then max = 100 end
    glParticles = array<table, max>
-   for i=0,#glParticles-1 do
+   for i in {0 to #glParticles} do
       glParticles[i] = newParticle()
    end
 
