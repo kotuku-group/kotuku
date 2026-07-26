@@ -434,7 +434,7 @@ end
    -- string.substr(s, start, end) extracts chars from start to end-1
    s = "hello world"
 
-   for i=0,1000 do
+   for i in {0 to 1000} do
       -- Basic substring
       sub = string.substr(s, 0, 5) -- Indices 0,1,2,3,4 (not 5)
       assert(sub is "hello", "Expected 'hello', got '" .. sub .. "'")
@@ -475,7 +475,7 @@ end
 end
 
 @Test function Byte()
-   for i=0,1000 do
+   for i in {0 to 1000} do
       -- Single character (zero-indexed)
       b = string.byte("hello", 0)
       assert(b is 104, "Expected 104 (h), got " .. b)
@@ -510,7 +510,7 @@ end
 end
 
 @Test function Char()
-   for i=0,1000 do
+   for i in {0 to 1000} do
       -- Single character
       c = string.char(65)
       assert(c is "A", "Expected 'A', got '" .. c .. "'")
@@ -537,7 +537,7 @@ end
 end
 
 @Test function Rep()
-   for i=0,1000 do
+   for i in {0 to 1000} do
       -- Basic repetition
       rep = string.rep("ab", 3)
       assert(rep is "ababab", "Expected 'ababab', got '" .. rep .. "'")
@@ -774,7 +774,7 @@ end
 end
 
 @Test function Format()
-   for i=0,1000 do
+   for i in {0 to 1000} do
       -- Basic integer
       f1 = string.format("value: %d", 42)
       assert(f1 is "value: 42", "Expected 'value: 42', got '" .. f1 .. "'")

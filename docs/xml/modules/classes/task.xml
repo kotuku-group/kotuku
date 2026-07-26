@@ -32,7 +32,7 @@
       <description>
 <p>Activating a task results in the execution of the file referenced in the <fl>Location</fl> field.</p>
 <p>On successful execution, the ProcessID will refer to the ID of the executed process.  This ID is compatible with the hosting platform's unique process numbers.</p>
-<p>If the <code>WAIT</code> flag is specified, this action will not return until the executed process has returned or the <fl>TimeOut</fl> (if specified) has expired.  Messages are processed as normal during this time, ensuring that your process remains responsive while waiting.</p>
+<p>If the <code>WAIT</code> flag is specified, this action will not return until the executed process has returned or the <fl>Timeout</fl> (if specified) has expired.  Messages are processed as normal during this time, ensuring that your process remains responsive while waiting.</p>
 <p>The process' return code can be read from the <fl>ReturnCode</fl> field after the process has completed its execution.</p>
 <p>In Microsoft Windows, output can be redirected to a file if the redirection symbol is used to direct output in one of the task arguments.  For instance <code>&gt;C:\output.txt</code> will redirect both stderr and stdout to <code>c:\output.txt</code>.  The use of <code>1&gt;</code> to redirect stdout and <code>2&gt;</code> to redirect stderr independently of each other is also acceptable.</p>
 <p>When running a DOS program in Microsoft Windows, the <code>SHELL</code> flag can be set in the <fl>Flags</fl> field to prevent the DOS window from appearing.  The DOS window will also be hidden if the stdout or stderr pipes are redirected.</p>
@@ -40,7 +40,7 @@
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Failed">General failure</error>
-        <error code="TimeOut">Can be returned if the <code>WAIT</code> flag is used.  Indicates that the process was launched, but the timeout expired before the process returned.</error>
+        <error code="Timeout">Can be returned if the <code>WAIT</code> flag is used.  Indicates that the process was launched, but the timeout expired before the process returned.</error>
         <error code="ProcessCreation">Process creation has failed</error>
         <error code="MissingPath">The Location field has not been set.</error>
       </result>
@@ -89,11 +89,10 @@
     <action>
       <name>Write</name>
       <comment>Send raw data to a launched process' stdin descriptor.</comment>
-      <prototype>ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)</prototype>
-      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str, Length:num)</tiriPrototype>
+      <prototype>ERR acWrite(*Object, std::span&lt;const int8_t&gt; Buffer, INT *Result)</prototype>
+      <tiriPrototype>err, Result:num = Object.acWrite(Buffer:str)</tiriPrototype>
       <input>
-        <param type="APTR" name="Buffer">A buffer containing the data that will be written to the object.</param>
-        <param type="INT" name="Length">The total number of bytes to write to the object.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Buffer">A buffer containing the data that will be written to the object.</param>
         <param type="INT" name="Result">This parameter with be updated with the total number of bytes written from the Buffer.</param>
       </input>
       <description>
@@ -267,8 +266,8 @@
       <access read="G" write="S">Get/Set</access>
       <type>FUNCTION</type>
       <description>
-<p>The ErrorCallback field can be set with a function reference that will be called when an active process sends data via STDERR.  The callback must follow the prototype <code>Function(*Task, APTR Data, int Size)</code></p>
-<p>The information read from STDERR will be returned in the Data pointer and the byte-length of the data will be indicated by the <code>Size</code>.  The data pointer is temporary and will be invalid once the callback function has returned.</p>
+<p>The ErrorCallback field can be set with a function reference that will be called when an active process sends data via STDERR.  The callback must follow the prototype <code>Function(*Task, std::span&lt;std::byte&gt; Data)</code></p>
+<p>The information read from STDERR will be returned in the Data span.  The reference is temporary and will be invalid once the callback function has returned.</p>
       </description>
     </field>
 
@@ -299,8 +298,8 @@
       <access read="G" write="S">Get/Set</access>
       <type>FUNCTION</type>
       <description>
-<p>The InputCallback field is available to the active task object only (i.e. the current process). The referenced function will be called when process receives data from STDIN.  The callback must match the prototype <code>void Function(*Task, APTR Data, int Size, ERR Status)</code>.  In Tiri the prototype is 'function callback(Task, Array, Status)<code> where </code>Array<code> is an array interface.</code>
-<p>The information read from STDOUT will be returned in the </p>Data<code> pointer and the byte-length of the data will be indicated by the </code>Size<code>.  The data buffer is temporary and will be invalid once the callback function has returned.</code>
+<p>The InputCallback field is available to the active task object only (i.e. the current process). The referenced function will be called when process receives data from STDIN.  The callback must match the prototype <code>void Function(*Task, std::span&lt;std::byte&gt; Data, ERR Status)</code>.  In Tiri the prototype is 'function callback(Task, Array, Status)<code> where </code>Array<code> is an array interface.</code>
+<p>The information read from STDOUT will be returned in the </p>Data<code> span reference.  The data buffer is temporary and will be invalid once the callback function has returned.</code>
 <p>A status of </p>ERR::Finished` is sent if the stdinput handle has been closed.</p>
       </description>
     </field>
@@ -349,8 +348,8 @@
       <access read="G" write="S">Get/Set</access>
       <type>FUNCTION</type>
       <description>
-<p>The OutputCallback field can be set with a function reference that will be called when an active process sends data via STDOUT.  For C++ the callback must match the prototype <code>void Function(*Task, APTR Data, int Size)</code>.  In Tiri the prototype is 'function callback(Task, Array)<code> where </code>Array<code> is an array interface.</code>
-<p>The information read from STDOUT will be returned in the </p>Data<code> pointer and the byte-length of the data will be indicated by the </code>Size<code>.  The </code>Data` pointer is temporary and will be invalid once the callback function has returned.</p>
+<p>The OutputCallback field can be set with a function reference that will be called when an active process sends data via STDOUT.  For C++ the callback must match the prototype <code>void Function(*Task, std::span&lt;std::byte&gt; Data)</code>.  In Tiri the prototype is 'function callback(Task, Array)<code> where </code>Array<code> is an array interface.</code>
+<p>The information read from STDOUT will be returned in the </p>Data<code> reference.  The </code>Data` buffer is temporary and will be invalid once the callback function has returned.</p>
       </description>
     </field>
 
@@ -427,7 +426,7 @@ end
     </field>
 
     <field>
-      <name>TimeOut</name>
+      <name>Timeout</name>
       <comment>Limits the amount of time to wait for a launched process to return.</comment>
       <access read="R" write="W">Read/Write</access>
       <type>DOUBLE</type>

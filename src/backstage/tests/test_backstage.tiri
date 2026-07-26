@@ -107,7 +107,7 @@ function websocket_frame(Payload:str, Opcode:num):str
 
    frame ..= mask
 
-   for i = 0, len - 1 do
+   for i in {0 to len} do
       frame ..= string.char(Payload:byte(i) ^ mask:byte(i % 4))
    end
 

@@ -1,0 +1,101 @@
+----------------------------------------------------------------------------------------------------------------------
+-- CONST LOCAL COMPARISONS
+----------------------------------------------------------------------------------------------------------------------
+-- Matched benchmarks for primitive local <const> propagation.  Each pair performs identical work and differs only in
+-- the declaration attributes applied to its constants.
+
+@Test function ConstBindingLocal()
+   local offset = 3
+   local factor_a = 7
+   local factor_b = 2
+   local factor_c = 4.3
+   local factor_d = 7
+   local factor_e = 2
+   local factor_f = 4.3
+   local total = 0
+
+   for index in {0 to 10000000} do
+      total += (factor_a * factor_b * factor_c * factor_d * factor_e * factor_f) + offset
+   end
+
+   return total
+end
+
+@Test function ConstBindingAnnotated()
+   local offset <const> = 3
+   local factor_a <const> = 7
+   local factor_b <const> = 2
+   local factor_c <const> = 4.3
+   local factor_d <const> = 7
+   local factor_e <const> = 2
+   local factor_f <const> = 4.3
+   local total = 0
+
+   for index in {0 to 10000000} do
+      total += (factor_a * factor_b * factor_c * factor_d * factor_e * factor_f) + offset
+   end
+
+   return total
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConstNumericLocal()
+   local factor = 7
+   local offset = 3
+   local total = 0
+
+   for index in {0 to 10000000} do
+      total += (index * factor) + offset
+   end
+
+   return total
+end
+
+@Test function ConstNumericAnnotated()
+   local factor <const> = 7
+   local offset <const> = 3
+   local total = 0
+
+   for index in {0 to 10000000} do
+      total += (index * factor) + offset
+   end
+
+   return total
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConstSizingLocal()
+   local base_width = 320
+   local base_height = 180
+   local padding = 12
+   local border = 2
+   local total = 0
+
+   for index in {0 to 100000} do
+      local scale = 1 + ((index % 4) * 0.25)
+      local width = (base_width * scale) + (padding * 2) + (border * 2)
+      local height = (base_height * scale) + (padding * 2) + (border * 2)
+      total += width + height
+   end
+
+   return total
+end
+
+@Test function ConstSizingAnnotated()
+   local base_width <const> = 320
+   local base_height <const> = 180
+   local padding <const> = 12
+   local border <const> = 2
+   local total = 0
+
+   for index in {0 to 100000} do
+      local scale = 1 + ((index % 4) * 0.25)
+      local width = (base_width * scale) + (padding * 2) + (border * 2)
+      local height = (base_height * scale) + (padding * 2) + (border * 2)
+      total += width + height
+   end
+
+   return total
+end

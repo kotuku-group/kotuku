@@ -37,6 +37,10 @@ struct ScriptArg { // For use with sc::Exec
    ScriptArg(CSTRING pName, uint32_t pValue, uint32_t pType = FD_INT) : Name(pName), Type(pType), Int(pValue) { }
    ScriptArg(CSTRING pName, int64_t pValue, uint32_t pType = FD_INT64) : Name(pName), Type(pType), Int64(pValue) { }
    ScriptArg(CSTRING pName, double pValue, uint32_t pType = FD_DOUBLE) : Name(pName), Type(pType), Double(pValue) { }
+   // The span descriptor must outlive sc::Call(), so we store the address of a caller-owned span.
+   // The caller supplies exact element metadata; binding to a temporary is deleted to prevent a dangling descriptor.
+   template<typename T> ScriptArg(CSTRING pName, const std::span<T> &pValue, uint32_t pType) : Name(pName), Type(pType), Address((APTR)&pValue) { }
+   template<typename T> ScriptArg(CSTRING pName, std::span<T> &&pValue, uint32_t pType) = delete;
 };
 
 // Script class definition
@@ -89,8 +93,8 @@ class objScript : public Object {
    // Action stubs
 
    inline ERR activate() noexcept { return Action(AC::Activate, this, nullptr); }
-   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, const void *Buffer, int Size) noexcept {
-      struct acDataFeed args = { Object, Datatype, Buffer, Size };
+   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, std::span<const int8_t> Buffer) noexcept {
+      struct acDataFeed args = { Object, Datatype, Buffer };
       return Action(AC::DataFeed, this, &args);
    }
    inline ERR getKey(std::string_view Key, std::string &Value) noexcept {

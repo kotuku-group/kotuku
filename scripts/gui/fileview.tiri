@@ -25,7 +25,7 @@ glCopyList <const> = [[
    glList = array<string>
    if source_size?? then
       source_size = tonumber(source_size)
-      for i=0, source_size-1 do
+      for i in {0 to source_size} do
          glList:push(arg('source(' .. i .. ')'))
       end
    else
@@ -676,7 +676,7 @@ gui.fileview = function(Options)
       sort = false
 
       dirinfo = lDir
-      for filecount=0,5 do
+      for filecount in {0 to 6} do
          if mSys.ScanDir(dirinfo) != ERR_Okay then
             -- Reached end of the folder - reset the scan
             lDir = nil

@@ -59,7 +59,8 @@ void MsgMovement(OBJECTID SurfaceID, double AbsX, double AbsY, int WinX, int Win
          .Flags = NonClient ? JTYPE::SECONDARY : JTYPE::NIL,
          .Type  = JET::ABS_XY
       };
-      acDataFeed(pointer, nullptr, DATA::DEVICE_INPUT, &joy, sizeof(joy));
+      acDataFeed(pointer, nullptr, DATA::DEVICE_INPUT,
+         std::span<const int8_t>((const int8_t *)&joy, sizeof(joy)));
       ReleaseObject(pointer);
    }
 }
@@ -80,7 +81,8 @@ void MsgWheelMovement(OBJECTID SurfaceID, float Wheel)
          .Type      = JET::WHEEL
       };
 
-      acDataFeed(pointer, nullptr, DATA::DEVICE_INPUT, &joy, sizeof(joy));
+      acDataFeed(pointer, nullptr, DATA::DEVICE_INPUT,
+         std::span<const int8_t>((const int8_t *)&joy, sizeof(joy)));
       ReleaseObject(pointer);
    }
 }
@@ -153,7 +155,8 @@ void MsgButtonPress(int button, int State)
          i++;
       }
 
-      if (i) acDataFeed(pointer, nullptr, DATA::DEVICE_INPUT, &joy, sizeof(struct dcDeviceInput) * i);
+      if (i) acDataFeed(pointer, nullptr, DATA::DEVICE_INPUT,
+         std::span<const int8_t>((const int8_t *)&joy, sizeof(struct dcDeviceInput) * i));
 
       ReleaseObject(pointer);
    }

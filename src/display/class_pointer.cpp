@@ -133,7 +133,8 @@ static ERR POINTER_DataFeed(extPointer *Self, struct acDataFeed *Args)
    if (!Args) return log.warning(ERR::NullArgs);
 
    if (Args->Datatype IS DATA::DEVICE_INPUT) {
-      if (auto input = (struct dcDeviceInput *)Args->Buffer) {
+      if (Args->Buffer.size() % sizeof(struct dcDeviceInput)) return log.warning(ERR::Args);
+      if (Args->Buffer.data()) {
          // Remove any stale objects
          for (int i=0; i < std::ssize(Self->ButtonClicks); i++) {
             if (Self->ButtonClicks[i].LastClicked) {
@@ -141,16 +142,18 @@ static ERR POINTER_DataFeed(extPointer *Self, struct acDataFeed *Args)
             }
          }
 
-         for (auto i=sizeof(struct dcDeviceInput); i <= (size_t)Args->Size; i+=sizeof(struct dcDeviceInput), input++) {
-            if ((int(input->Type) < 1) or (int(input->Type) >= int(JET::END))) continue;
+         for (size_t offset=0; offset < Args->Buffer.size(); offset+=sizeof(struct dcDeviceInput)) {
+            struct dcDeviceInput input;
+            copymem(Args->Buffer.data() + offset, &input, sizeof(input));
+            if ((int(input.Type) < 1) or (int(input.Type) >= int(JET::END))) continue;
 
-            input->Flags |= glInputType[int(input->Type)].Flags;
+            input.Flags |= glInputType[int(input.Type)].Flags;
 
             //log.traceBranch("Incoming Input: %s, Value: %.2f, Flags: $%.8x, Time: %" PF64, (input->Type < JET::END) ? glInputNames[input->Type] : (STRING)"", input->Value, input->Flags, input->Timestamp);
 
-            if (input->Type IS JET::WHEEL) process_ptr_wheel(Self, input);
-            else if ((input->Flags & JTYPE::BUTTON) != JTYPE::NIL) process_ptr_button(Self, input);
-            else process_ptr_movement(Self, input);
+            if (input.Type IS JET::WHEEL) process_ptr_wheel(Self, &input);
+            else if ((input.Flags & JTYPE::BUTTON) != JTYPE::NIL) process_ptr_button(Self, &input);
+            else process_ptr_movement(Self, &input);
          }
       }
    }

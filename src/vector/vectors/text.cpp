@@ -1974,7 +1974,7 @@ static void insert_char(extVectorText *Self, int Unicode, int Column)
    mark_dirty(Self, RC::BASE_PATH);
 
    char buffer[6];
-   int charlen = UTF8WriteValue(Unicode, buffer, 6);
+   int charlen = UTF8WriteValue(Unicode, std::span<int8_t>((int8_t *)buffer, 6));
 
    if (Self->txLines.empty()) {
       Self->txLines.emplace_back(std::string(buffer, charlen));

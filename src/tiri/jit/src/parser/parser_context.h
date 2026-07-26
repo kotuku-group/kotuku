@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -9,6 +10,7 @@
 #include "parser/parser_diagnostics.h"
 #include "parser/token_stream.h"
 #include "parser/parser_profiler.h"
+#include "parser/static_type_descriptor.h"
 
 #ifdef INCLUDE_TIPS
 class TipEmitter;
@@ -104,6 +106,7 @@ public:
       ParserAllocator allocator, ParserConfig config)
       : lex_state(&lex_state), func_state(&func_state), lua_state(&lua_state), allocator(allocator)
       , current_config(config), token_stream(lex_state)
+      , descriptors_(std::make_shared<StaticDescriptorCatalogue>())
    {
       this->diag.set_limit(config.max_diagnostics);
       this->attach_to_lex();
@@ -122,6 +125,7 @@ public:
       , token_stream(other.token_stream), previous_context(other.previous_context)
       , error_rollback_callback(other.error_rollback_callback)
       , error_rollback_user_data(other.error_rollback_user_data)
+      , descriptors_(std::move(other.descriptors_))
    {
       if (this->lex_state) this->lex_state->active_context = this;
       other.lex_state = nullptr;
@@ -150,6 +154,9 @@ public:
    inline TokenStreamAdapter & tokens() { return this->token_stream; }
    inline const TokenStreamAdapter & tokens() const { return this->token_stream; }
    inline const ParserConfig & config() const { return this->current_config; }
+   inline StaticDescriptorCatalogue & descriptors() { return *this->descriptors_; }
+   inline const StaticDescriptorCatalogue & descriptors() const { return *this->descriptors_; }
+   inline void share_descriptors(const ParserContext &Parent) { this->descriptors_ = Parent.descriptors_; }
    inline ParserProfilingResult & profiling_result() { return this->current_config.profiling_result; }
    inline const ParserProfilingResult & profiling_result() const { return this->current_config.profiling_result; }
    inline void override_config(const ParserConfig& config) { this->current_config = config; this->diag.set_limit(config.max_diagnostics); }
@@ -210,6 +217,7 @@ private:
    ErrorRollbackCallback error_rollback_callback = nullptr;
    void *error_rollback_user_data = nullptr;
    std::vector<std::string> import_stack_;  // Stack of imported file paths for circular dependency detection
+   std::shared_ptr<StaticDescriptorCatalogue> descriptors_;
 };
 
 //********************************************************************************************************************

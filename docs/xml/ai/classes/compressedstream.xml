@@ -1,5 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="CompressedStream" mod="Core" c="Acts as a proxy for decompressing and compressing data streams between objects." cat="Data" id="2144cb86" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="CompressedStream" mod="Core" c="Acts as a proxy for decompressing and compressing data streams between objects." cat="Data" id="6e56d1fb" v="1">
+  <ai:a n="Read" c="Decompress data from the input stream and write it to the supplied buffer." p="ERR acRead(*Object, std::span&lt;int8_t&gt; Buffer, INT *Result)">
+    <ai:i n="Buffer" t="std::span&lt;int8_t&gt;" c="A mutable buffer that will receive the data."/>
+    <ai:i n="Result" t="INT" c="The Read action will write this parameter with the total number of bytes read into the Buffer."/>
+  </ai:a>
+  <ai:a n="Reset" c="Reset the state of the stream." p="ERR acReset(*Object)"/>
+  <ai:a n="Seek" c="For use in decompressing streams only. Seeks to a position within the stream." p="ERR acSeek(*Object, DOUBLE Offset, INT Position)">
+    <ai:i n="Offset" t="DOUBLE" c="The desired offset to seek to, relative to the Position parameter."/>
+    <ai:i n="Position" t="POS" c="The position that defines the starting point for Offset."/>
+  </ai:a>
+  <ai:a n="Write" c="Compress raw data in a buffer and write it to the Output object." p="ERR acWrite(*Object, std::span&lt;const int8_t&gt; Buffer, INT *Result)">
+    <ai:i n="Buffer" t="std::span&lt;const int8_t&gt;" c="A buffer containing the data that will be written to the object."/>
+    <ai:i n="Result" t="INT" c="This parameter with be updated with the total number of bytes written from the Buffer."/>
+  </ai:a>
   <ai:f n="Format" c="The format of the compressed stream. The default is GZIP." t="CF" a="RI"/>
   <ai:f n="Input" c="An input object that will supply data for decompression." t="OBJECTPTR" a="RI"/>
   <ai:f n="Output" c="A target object that will receive data compressed by the stream." t="OBJECTPTR" a="RI"/>

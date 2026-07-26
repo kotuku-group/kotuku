@@ -180,8 +180,7 @@
 
     <constants lookup="FD" comment="Field descriptors.">
       <const name="ALLOC">Indicates the returned value is a dynamic allocation that needs to be manually freed (by default is a memory pointer, can be an object if combined with <code>FD_OBJECT</code>)</const>
-      <const name="ARRAY">Indicates an array of values.  Follow with <code>ARRAYSIZE</code> if used in a function.</const>
-      <const name="ARRAYSIZE">FUNCDEF Overrides <code>LOOKUP</code>.  Pair with <code>ARRAY</code> to indicate total elements in the array.  It is preferred that any null terminator is not counted.  If <code>ARRAYSIZE</code> not specified, <code>ARRAY</code> must be null-terminated.</const>
+      <const name="ARRAY">Indicates an array of values.  Function descriptors must combine this flag with <code>CPP</code> to represent a <code>kt::vector</code>; raw pointer arrays are unsupported for calls.</const>
       <const name="BUFFER">FUNCDEF Overrides <code>WRITE</code>.  Indicates a buffer that can be filled with data by the function if paired with <code>RESULT</code>; must be paired with <code>BUFSIZE</code> in second argument.</const>
       <const name="BUFSIZE">FUNCDEF Overrides <code>LOOKUP</code>.  Pair with <code>BUFFER</code> to indicate the byte size of the buffer memory.</const>
       <const name="BYTE">8 bit integer.</const>

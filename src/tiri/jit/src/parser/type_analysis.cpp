@@ -93,7 +93,7 @@ public:
    explicit TypeAnalyser(ParserContext &Context) : ctx_(Context) {}
 
    // Entry point: analyse an entire module (top-level block)
-   void analyse_module(const BlockStmt &);
+   void analyse_module(BlockStmt &);
 
    // Access collected type diagnostics after analysis
    [[nodiscard]] const std::vector<TypeDiagnostic> & diagnostics() const { return this->diagnostics_; }
@@ -115,8 +115,13 @@ private:
    [[nodiscard]] const FunctionContext* current_function() const;
 
    // AST traversal methods - recursively analyse each node type
-   void analyse_block(const BlockStmt &);
-   void analyse_statement(const StmtNode &);
+   void analyse_block(BlockStmt &);
+   void analyse_statement(StmtNode &);
+   bool lower_array_length_range(StmtNode &);
+   void lower_unanalysed_block(BlockStmt &);
+   void lower_unanalysed_except_clause(ExceptClause &);
+   void lower_unanalysed_function(const FunctionExprPayload &);
+   void lower_unanalysed_statement(StmtNode &);
    void analyse_assignment(const AssignmentStmtPayload &);
    void analyse_local_decl(const LocalDeclStmtPayload &);
    void analyse_global_decl(const GlobalDeclStmtPayload &);
@@ -141,7 +146,7 @@ private:
 
    // Symbol resolution - looks up variables and functions in scope stack
    [[nodiscard]] std::optional<InferredType> resolve_identifier(GCstr *) const;
-   [[nodiscard]] const FunctionExprPayload * resolve_call_target(const CallTarget &) const;
+   [[nodiscard]] const FunctionExprPayload * resolve_call_target(const CallExprPayload &) const;
    [[nodiscard]] const FunctionExprPayload * resolve_function(GCstr *) const;
 
    // Const checking - checks if a local variable has <const> attribute
@@ -163,13 +168,15 @@ private:
 
    #ifdef INCLUDE_TIPS
    // Tip gating - tips carry no file attribution, so they are suppressed entirely while analysing
-   // imported statements to avoid misattributing library internals to the importing file
+   // imported statements to avoid misattributing library internals to the importing file.  They are also
+   // suppressed during reduced traversal, which declares variables without observing their uses and would
+   // otherwise report false unused-variable tips.
    [[nodiscard]] bool should_emit_tip(uint8_t Priority) const {
-      return this->import_depth_ IS 0 and this->ctx_.should_emit_tip(Priority);
+      return this->import_depth_ IS 0 and this->unanalysed_depth_ IS 0 and this->ctx_.should_emit_tip(Priority);
    }
 
    void emit_tip(uint8_t Priority, TipCategory Category, std::string Message, const Token &Location) {
-      if (this->import_depth_ != 0) return;
+      if (this->import_depth_ != 0 or this->unanalysed_depth_ != 0) return;
       this->ctx_.emit_tip(Priority, Category, std::move(Message), Location);
    }
    #endif
@@ -239,9 +246,11 @@ private:
       const FunctionExprPayload* function = nullptr;  // Non-null if declared as global function
       bool is_const = false;  // True if declared with <const> attribute
       bool implicit = false;  // True if inferred from a plain assignment rather than a 'global' declaration
+      bool explicit_contract = false; // True only for an explicit non-any annotation
    };
 
-   void declare_global(GCstr *Name, const InferredType &Type, SourceSpan Location, bool IsConst = false);
+   void declare_global(GCstr *Name, const InferredType &Type, SourceSpan Location, bool IsConst = false,
+      bool ExplicitContract = false);
    void declare_global_function(GCstr *Name, const FunctionExprPayload *Function, SourceSpan Location);
    void declare_implicit_global(GCstr *Name, const ExprNode *Value, SourceSpan Location);
    [[nodiscard]] std::optional<InferredType> lookup_global_type(GCstr *Name) const;
@@ -257,6 +266,7 @@ private:
    std::vector<TypeDiagnostic> diagnostics_{};      // Collected type errors and warnings
    uint32_t loop_depth_{0};                         // Current loop nesting depth for performance tip
    uint32_t import_depth_{0};                       // Import nesting depth; non-zero suppresses tips
+   uint32_t unanalysed_depth_{0};                   // Reduced-traversal nesting depth; non-zero suppresses tips
    uint8_t current_file_index_{0};                  // FileSource index of the file being analysed
    ankerl::unordered_dense::map<GCstr*, GlobalTypeInfo> global_types_{};  // Type info for global variables
    #ifdef INCLUDE_TIPS
@@ -538,7 +548,7 @@ const FunctionContext* TypeAnalyser::current_function() const
    return &this->function_stack_.back();
 }
 
-void TypeAnalyser::analyse_module(const BlockStmt &Module)
+void TypeAnalyser::analyse_module(BlockStmt &Module)
 {
    // For loadFile sources the whole chunk carries a single non-zero FileSource index
    this->current_file_index_ = this->ctx_.lex().current_file_index;
@@ -547,11 +557,254 @@ void TypeAnalyser::analyse_module(const BlockStmt &Module)
    this->pop_scope();
 }
 
-void TypeAnalyser::analyse_block(const BlockStmt &Block)
+void TypeAnalyser::analyse_block(BlockStmt &Block)
 {
-   for (const auto &statement : Block.view()) {
-      this->analyse_statement(statement);
+   for (auto &statement : Block.statements) {
+      if (statement) this->analyse_statement(*statement);
    }
+}
+
+//********************************************************************************************************************
+// Lowers `{0 to #array}` only after semantic analysis has proved that the length operand is a native array.  Keeping
+// unknown and non-array operands on the generic range path preserves custom __len direction and validation semantics.
+
+bool TypeAnalyser::lower_array_length_range(StmtNode &Statement)
+{
+   if (Statement.kind != AstNodeKind::GenericForStmt) return false;
+
+   auto *generic = std::get_if<GenericForStmtPayload>(&Statement.data);
+   if (not generic or generic->names.size() != 1 or generic->iterators.size() != 1 or not generic->body) return false;
+
+   ExprNode *iterator = generic->iterators[0].get();
+   if (not iterator or iterator->kind != AstNodeKind::CallExpr) return false;
+
+   auto *call = std::get_if<CallExprPayload>(&iterator->data);
+   if (not call or not call->arguments.empty()) return false;
+
+   auto *direct = std::get_if<DirectCallTarget>(&call->target);
+   if (not direct or not direct->callable or direct->callable->kind != AstNodeKind::RangeExpr) return false;
+
+   auto *range = std::get_if<RangeExprPayload>(&direct->callable->data);
+   if (not range or range->inclusive or range->step or not range->start or not range->stop) return false;
+
+   const auto *start = std::get_if<LiteralValue>(&range->start->data);
+   if (range->start->kind != AstNodeKind::LiteralExpr or not start or start->kind != LiteralKind::Number or
+       start->number_value != 0) {
+      return false;
+   }
+
+   auto *length = std::get_if<UnaryExprPayload>(&range->stop->data);
+   if (range->stop->kind != AstNodeKind::UnaryExpr or not length or
+       length->op != AstUnaryOperator::Length or not length->operand) {
+      return false;
+   }
+
+   InferredType operand_type = this->infer_expression_type(*length->operand);
+   if (operand_type.primary != TiriType::Array) return false;
+
+   SourceSpan span = direct->callable->span;
+   Identifier control = std::move(generic->names[0]);
+   ExprNodePtr start_expr = std::move(range->start);
+   ExprNodePtr stop_expr = std::move(range->stop);
+   ExprNodePtr one_expr = make_literal_expr(span, LiteralValue::number(1));
+   ExprNodePtr final_stop_expr = make_binary_expr(
+      span, AstBinaryOperator::Subtract, std::move(stop_expr), std::move(one_expr));
+   ExprNodePtr step_expr = make_literal_expr(span, LiteralValue::number(1));
+   std::unique_ptr<BlockStmt> body = std::move(generic->body);
+
+   Statement.kind = AstNodeKind::NumericForStmt;
+   Statement.data.emplace<NumericForStmtPayload>(std::move(control), std::move(start_expr),
+      std::move(final_stop_expr), std::move(step_expr), std::move(body));
+   return true;
+}
+
+//********************************************************************************************************************
+// Some statement forms deliberately bypass ordinary type diagnostics so runtime type failures inside them remain
+// catchable.  This reduced traversal tracks only the lexical types needed for safe array-range lowering.  Each
+// entry point raises unanalysed_depth_ so tip emission stays suppressed: the traversal declares variables but
+// never observes their uses, so unused-variable reporting on scope exit would be a false positive.
+
+void TypeAnalyser::lower_unanalysed_block(BlockStmt &Block)
+{
+   this->unanalysed_depth_++;
+   this->push_scope();
+   for (auto &statement : Block.statements) {
+      if (statement) this->lower_unanalysed_statement(*statement);
+   }
+   this->pop_scope();
+   this->unanalysed_depth_--;
+}
+
+//********************************************************************************************************************
+
+void TypeAnalyser::lower_unanalysed_except_clause(ExceptClause &Clause)
+{
+   if (not Clause.block) return;
+
+   this->unanalysed_depth_++;
+   this->push_scope();
+   if (Clause.exception_var and Clause.exception_var->symbol) {
+      this->current_scope().declare_local(
+         Clause.exception_var->symbol, InferredType(TiriType::Any), Clause.exception_var->span);
+   }
+   for (auto &statement : Clause.block->statements) {
+      if (statement) this->lower_unanalysed_statement(*statement);
+   }
+   this->pop_scope();
+   this->unanalysed_depth_--;
+}
+
+//********************************************************************************************************************
+
+void TypeAnalyser::lower_unanalysed_function(const FunctionExprPayload &Function)
+{
+   this->unanalysed_depth_++;
+   this->push_scope();
+   for (const FunctionParameter &param : Function.parameters) {
+      this->current_scope().declare_parameter(param.name.symbol, param.type, param.struct_def, param.name.span);
+   }
+   if (Function.body) {
+      for (auto &statement : Function.body->statements) {
+         if (statement) this->lower_unanalysed_statement(*statement);
+      }
+   }
+   this->pop_scope();
+   this->unanalysed_depth_--;
+}
+
+//********************************************************************************************************************
+
+void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
+{
+   this->unanalysed_depth_++;
+   this->lower_array_length_range(Statement);
+
+   switch (Statement.kind) {
+      case AstNodeKind::LocalDeclStmt: {
+         auto *payload = std::get_if<LocalDeclStmtPayload>(&Statement.data);
+         if (not payload) break;
+
+         std::vector<InferredType> inferred_types;
+         inferred_types.reserve(payload->names.size());
+         for (size_t i = 0; i < payload->names.size(); ++i) {
+            InferredType inferred;
+            if (payload->names[i].type != TiriType::Unknown) {
+               inferred.primary = payload->names[i].type;
+               inferred.struct_def = payload->names[i].struct_def;
+               inferred.is_fixed = inferred.primary != TiriType::Any;
+            }
+            else if (i < payload->values.size() and payload->values[i]) {
+               // Unlike analyse_local_decl this marks Unknown inferences as fixed, which is harmless here:
+               // these scopes only feed the Array check in lower_array_length_range, never diagnostics.
+               inferred = this->infer_expression_type(*payload->values[i]);
+               inferred.is_fixed = inferred.primary != TiriType::Nil and inferred.primary != TiriType::Any;
+            }
+            inferred_types.push_back(inferred);
+         }
+
+         for (size_t i = 0; i < payload->names.size(); ++i) {
+            const Identifier &name = payload->names[i];
+            this->current_scope().declare_local(name.symbol, inferred_types[i], name.span, name.has_const);
+         }
+         break;
+      }
+      case AstNodeKind::LocalFunctionStmt: {
+         auto *payload = std::get_if<LocalFunctionStmtPayload>(&Statement.data);
+         if (payload and payload->function) {
+            this->current_scope().declare_function(
+               payload->name.symbol, payload->function.get(), payload->name.span);
+            this->lower_unanalysed_function(*payload->function);
+         }
+         break;
+      }
+      case AstNodeKind::FunctionStmt: {
+         auto *payload = std::get_if<FunctionStmtPayload>(&Statement.data);
+         if (payload and payload->function) this->lower_unanalysed_function(*payload->function);
+         break;
+      }
+      case AstNodeKind::IfStmt: {
+         auto *payload = std::get_if<IfStmtPayload>(&Statement.data);
+         if (payload) {
+            for (auto &clause : payload->clauses) {
+               if (clause.block) this->lower_unanalysed_block(*clause.block);
+            }
+         }
+         break;
+      }
+      case AstNodeKind::WhileStmt:
+      case AstNodeKind::RepeatStmt: {
+         auto *payload = std::get_if<LoopStmtPayload>(&Statement.data);
+         if (payload and payload->body) this->lower_unanalysed_block(*payload->body);
+         break;
+      }
+      case AstNodeKind::NumericForStmt: {
+         auto *payload = std::get_if<NumericForStmtPayload>(&Statement.data);
+         if (payload and payload->body) {
+            this->push_scope();
+            InferredType control_type(TiriType::Num);
+            this->current_scope().declare_local(
+               payload->control.symbol, control_type, payload->control.span);
+            for (auto &statement : payload->body->statements) {
+               if (statement) this->lower_unanalysed_statement(*statement);
+            }
+            this->pop_scope();
+         }
+         break;
+      }
+      case AstNodeKind::GenericForStmt: {
+         auto *payload = std::get_if<GenericForStmtPayload>(&Statement.data);
+         if (payload and payload->body) {
+            this->push_scope();
+            for (const Identifier &name : payload->names) {
+               this->current_scope().declare_local(name.symbol, InferredType(TiriType::Any), name.span);
+            }
+            for (auto &statement : payload->body->statements) {
+               if (statement) this->lower_unanalysed_statement(*statement);
+            }
+            this->pop_scope();
+         }
+         break;
+      }
+      case AstNodeKind::DoStmt: {
+         auto *payload = std::get_if<DoStmtPayload>(&Statement.data);
+         if (payload and payload->block) this->lower_unanalysed_block(*payload->block);
+         break;
+      }
+      case AstNodeKind::ConditionalShorthandStmt: {
+         auto *payload = std::get_if<ConditionalShorthandStmtPayload>(&Statement.data);
+         if (payload and payload->body) this->lower_unanalysed_statement(*payload->body);
+         break;
+      }
+      case AstNodeKind::TryExceptStmt: {
+         auto *payload = std::get_if<TryExceptPayload>(&Statement.data);
+         if (payload) {
+            if (payload->try_block) this->lower_unanalysed_block(*payload->try_block);
+            for (auto &clause : payload->except_clauses) {
+               this->lower_unanalysed_except_clause(clause);
+            }
+            if (payload->success_block) this->lower_unanalysed_block(*payload->success_block);
+         }
+         break;
+      }
+      case AstNodeKind::ImportStmt: {
+         auto *payload = std::get_if<ImportStmtPayload>(&Statement.data);
+         if (payload) {
+            for (auto &entry : payload->entries) {
+               if (entry.inlined_body) this->lower_unanalysed_block(*entry.inlined_body);
+            }
+         }
+         break;
+      }
+      case AstNodeKind::WithStmt: {
+         auto *payload = std::get_if<WithStmtPayload>(&Statement.data);
+         if (payload and payload->block) this->lower_unanalysed_block(*payload->block);
+         break;
+      }
+      default:
+         break;
+   }
+
+   this->unanalysed_depth_--;
 }
 
 //********************************************************************************************************************
@@ -560,8 +813,10 @@ void TypeAnalyser::analyse_block(const BlockStmt &Block)
 // Dispatches to the appropriate handler based on statement type.
 // Each handler may push/pop scopes, declare variables, or analyse nested expressions.
 
-void TypeAnalyser::analyse_statement(const StmtNode &Statement)
+void TypeAnalyser::analyse_statement(StmtNode &Statement)
 {
+   this->lower_array_length_range(Statement);
+
    switch (Statement.kind) {
       case AstNodeKind::AssignmentStmt: {
          auto *payload = std::get_if<AssignmentStmtPayload>(&Statement.data);
@@ -693,6 +948,22 @@ void TypeAnalyser::analyse_statement(const StmtNode &Statement)
          }
          break;
       }
+      case AstNodeKind::ConditionalShorthandStmt: {
+         auto *payload = std::get_if<ConditionalShorthandStmtPayload>(&Statement.data);
+         if (payload and payload->body) this->lower_unanalysed_statement(*payload->body);
+         break;
+      }
+      case AstNodeKind::TryExceptStmt: {
+         auto *payload = std::get_if<TryExceptPayload>(&Statement.data);
+         if (payload) {
+            if (payload->try_block) this->lower_unanalysed_block(*payload->try_block);
+            for (auto &clause : payload->except_clauses) {
+               this->lower_unanalysed_except_clause(clause);
+            }
+            if (payload->success_block) this->lower_unanalysed_block(*payload->success_block);
+         }
+         break;
+      }
       case AstNodeKind::ExpressionStmt: {
          auto *payload = std::get_if<ExpressionStmtPayload>(&Statement.data);
          if (payload and payload->expression) this->analyse_expression(*payload->expression);
@@ -715,6 +986,11 @@ void TypeAnalyser::analyse_statement(const StmtNode &Statement)
                this->pop_scope();
             }
          }
+         break;
+      }
+      case AstNodeKind::WithStmt: {
+         auto *payload = std::get_if<WithStmtPayload>(&Statement.data);
+         if (payload and payload->block) this->lower_unanalysed_block(*payload->block);
          break;
       }
       default:
@@ -852,12 +1128,9 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
             else if (existing->primary IS TiriType::Object and value_type.primary IS TiriType::Object and
                existing->object_class_id != CLASSID::NIL) {
                if (existing->object_class_id != value_type.object_class_id) {
-                  // Conflicting object classes on an implicit global clear the class association.
-                  if (is_global and this->is_implicit_global(name)) {
-                     this->fix_global_type(name, TiriType::Object, CLASSID::NIL);
-                     continue;
-                  }
-
+                  // Object class identity remains sticky after inference, including for implicit globals.  Advisory
+                  // global typing permits unrelated value types to degrade to 'any'; it does not permit an Object
+                  // variable to silently change class.
                   TypeDiagnostic diag;
                   diag.location = target.span;
                   diag.expected = TiriType::Object;
@@ -1113,7 +1386,8 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
          inferred.is_fixed = false;
       }
 
-      this->declare_global(name.symbol, inferred, name.span, name.has_const);
+      this->declare_global(name.symbol, inferred, name.span, name.has_const,
+         name.type != TiriType::Unknown and name.type != TiriType::Any);
    }
 
    #ifdef INCLUDE_TIPS
@@ -1544,7 +1818,7 @@ void TypeAnalyser::analyse_call_expr(const CallExprPayload &Call)
       this->analyse_expression(*argument);
    }
 
-   const FunctionExprPayload* target = this->resolve_call_target(Call.target);
+   const FunctionExprPayload* target = this->resolve_call_target(Call);
    if (target) {
       if (Call.result_type IS TiriType::Unknown and target->return_types.is_explicit and
           target->return_types.count > 0) {
@@ -1619,6 +1893,8 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
             this->mark_identifier_used(payload->identifier.symbol);
             auto resolved = this->resolve_identifier(payload->identifier.symbol);
             if (resolved) return *resolved;
+            resolved = this->lookup_global_type(payload->identifier.symbol);
+            if (resolved) return *resolved;
          }
          break;
       }
@@ -1664,7 +1940,7 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                return result;
             }
             // Otherwise try to infer from the function's declared return type
-            const FunctionExprPayload* target = this->resolve_call_target(payload->target);
+            const FunctionExprPayload* target = this->resolve_call_target(*payload);
             if (target and target->return_types.is_explicit and target->return_types.count > 0) {
                result.primary = target->return_types.types[0];
                result.struct_def = target->return_types.struct_defs[0];
@@ -1854,7 +2130,7 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
    auto *payload = std::get_if<CallExprPayload>(&Expr.data);
    if (not payload) return result;
 
-   const FunctionExprPayload* target = this->resolve_call_target(payload->target);
+   const FunctionExprPayload* target = this->resolve_call_target(*payload);
    if (not target) return result;
 
    if (not target->return_types.is_explicit) return result;
@@ -1917,8 +2193,14 @@ void TypeAnalyser::mark_identifier_used(GCstr *Name)
 // Resolve the target of a function call to get its FunctionExprPayload.  Handles direct calls (func()) and
 // identifier references (myFunc()).
 
-const FunctionExprPayload * TypeAnalyser::resolve_call_target(const CallTarget &Target) const
+const FunctionExprPayload * TypeAnalyser::resolve_call_target(const CallExprPayload &Call) const
 {
+   if (Call.callable) {
+      const auto &callable = this->ctx_.descriptors().callable(Call.callable);
+      if (callable.immutable and callable.function) return callable.function;
+   }
+
+   const CallTarget &Target = Call.target;
    if (std::holds_alternative<DirectCallTarget>(Target)) {
       const auto &direct = std::get<DirectCallTarget>(Target);
       if (direct.callable) {
@@ -1977,13 +2259,15 @@ void TypeAnalyser::fix_local_type(GCstr *Name, TiriType Type, CLASSID ObjectClas
 // Unlike locals which use scope-based tracking, globals use a flat map since they persist for
 // the entire script lifetime.
 
-void TypeAnalyser::declare_global(GCstr *Name, const InferredType &Type, SourceSpan Location, bool IsConst)
+void TypeAnalyser::declare_global(GCstr *Name, const InferredType &Type, SourceSpan Location, bool IsConst,
+   bool ExplicitContract)
 {
    if (not Name) return;
    GlobalTypeInfo info;
    info.type = Type;
    info.location = Location;
    info.is_const = IsConst;
+   info.explicit_contract = ExplicitContract;
    this->global_types_[Name] = info;
    this->trace_decl(this->ctx_.lex().linenumber, Name, Type.primary, Type.is_fixed);
 }
@@ -2082,7 +2366,7 @@ bool TypeAnalyser::is_global_const(GCstr *Name) const
 //
 // It implements:
 // - Type mismatch detection between returned values and declared types
-// - Return count validation (too many values returned)
+// - Declared-position validation without constraining result count
 // - First-wins inference rule for functions without explicit return type declarations
 // - Nil is always allowed as a valid return value for any type slot
 
@@ -2095,16 +2379,6 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
 
    if (ctx->expected_returns.is_explicit) {
       // Explicit declaration: validate against declared types
-
-      // Check for too many return values (unless variadic)
-      if (not ctx->expected_returns.is_variadic and return_count > ctx->expected_returns.count) {
-         TypeDiagnostic diag;
-         diag.location = Location;
-         diag.code     = ParserErrorCode::ReturnCountMismatch;
-         diag.message  = std::format("too many return values: function declares {} but {} returned",
-            ctx->expected_returns.count, return_count);
-         this->record_diagnostic(std::move(diag));
-      }
 
       // Validate type of each returned value
       for (size_t i = 0; i < return_count and i < MAX_RETURN_TYPES; ++i) {
@@ -2475,18 +2749,26 @@ static void publish_type_diagnostics(ParserContext& Context, const std::vector<T
 // instance, runs analysis on the module, and publishes any collected diagnostics.
 
 // Publish fixed global types to the lexer state so that IR emission (which runs after analysis) can attach type
-// metadata to global identifier reads.  Only the container types with specialised access bytecodes are published;
-// scalar hints have no emitter consumers and are withheld to avoid altering unrelated emission paths.
+// metadata to global identifier reads and explicit runtime contracts to every global store.  Inferred scalar types
+// remain advisory and have no emitter consumer.
 
 void TypeAnalyser::publish_global_type_hints(LexState &Lex) const
 {
    for (const auto &[name, info] : this->global_types_) {
       if (not info.type.is_fixed) continue;
+      if (info.explicit_contract) {
+         Lex.global_type_hints[name] = {
+            info.type.primary, info.type.object_class_id, info.type.struct_def, true
+         };
+         continue;
+      }
       switch (info.type.primary) {
          case TiriType::Struct:
          case TiriType::Object:
          case TiriType::Array:
-            Lex.global_type_hints[name] = { info.type.primary, info.type.object_class_id, info.type.struct_def };
+            Lex.global_type_hints[name] = {
+               info.type.primary, info.type.object_class_id, info.type.struct_def, false
+            };
             break;
          default:
             break;
@@ -2496,7 +2778,7 @@ void TypeAnalyser::publish_global_type_hints(LexState &Lex) const
 
 //********************************************************************************************************************
 
-void run_type_analysis(ParserContext& Context, const BlockStmt& Module)
+void run_type_analysis(ParserContext& Context, BlockStmt& Module)
 {
    TypeAnalyser analyser(Context);
    analyser.analyse_module(Module);

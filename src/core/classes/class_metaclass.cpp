@@ -113,8 +113,11 @@ static const FieldDef CategoryTable[] = {
 static const std::vector<Field> glMetaFieldsPreset = {
    // If you adjust this table, remember to adjust the index numbers and the byte offsets into the structure.
    { 0, nullptr, nullptr, writeval_default, "ClassVersion",    strhash("classVersion"), glMetaClassVersionOffset, 0, FDF_DOUBLE|FDF_RI },
-   { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_Fields, (ERR (*)(APTR, APTR))SET_Fields, writeval_default, "Fields", strhash("fields"), glMetaFieldsOffset, 1, FDF_ARRAY|FD_STRUCT|FDF_RI },
-   { MAXINT("Field"),      (ERR (*)(APTR, APTR))GET_Dictionary, nullptr, writeval_default, "Dictionary", strhash("dictionary"), glMetaDictionaryOffset, 2, FDF_ARRAY|FD_STRUCT|FDF_R },
+   { int64_t(uint32_t(strhash("FieldArray"))), (ERR (*)(APTR, APTR))GET_Fields,
+      (ERR (*)(APTR, APTR))SET_Fields, writeval_default, "Fields", strhash("fields"), glMetaFieldsOffset, 1,
+      FDF_ARRAY|FD_STRUCT|FDF_RI },
+   { int64_t(uint32_t(strhash("Field"))), (ERR (*)(APTR, APTR))GET_Dictionary, nullptr, writeval_default,
+      "Dictionary", strhash("dictionary"), glMetaDictionaryOffset, 2, FDF_ARRAY|FD_STRUCT|FDF_R },
    { 0, nullptr, nullptr, writeval_default, "ClassName",       strhash("className"),       glMetaClassNameOffset,        3,  FDF_CPPSTRING|FDF_RI|FDF_PURE },
    { 0, nullptr, nullptr, writeval_default, "FileExtension",   strhash("fileExtension"),   glMetaFileExtensionOffset,    4,  FDF_CPPSTRING|FDF_RI|FDF_PURE },
    { 0, nullptr, nullptr, writeval_default, "FileDescription", strhash("fileDescription"), glMetaFileDescriptionOffset,  5,  FDF_CPPSTRING|FDF_RI|FDF_PURE },
@@ -129,14 +132,17 @@ static const std::vector<Field> glMetaFieldsPreset = {
    { MAXINT(&CategoryTable), nullptr, nullptr, writeval_default, "Category",  strhash("category"), glMetaCategoryOffset, 14, FDF_INT|FDF_LOOKUP|FDF_RI },
    { 0, nullptr, nullptr, writeval_default, "PublicSize",      strhash("publicSize"),      glMetaPublicSizeOffset,       15, FDF_INT|FDF_RI },
    // Virtual fields
-   { MAXINT("MethodEntry"), (ERR (*)(APTR, APTR))GET_Methods, (ERR (*)(APTR, APTR))SET_Methods, writeval_default, "Methods", strhash("methods"), sizeof(Object), 16, FDF_ARRAY|FD_STRUCT|FDF_RI },
+   { int64_t(uint32_t(strhash("MethodEntry"))), (ERR (*)(APTR, APTR))GET_Methods,
+      (ERR (*)(APTR, APTR))SET_Methods, writeval_default, "Methods", strhash("methods"), sizeof(Object), 16,
+      FDF_ARRAY|FD_STRUCT|FDF_RI },
    { 0, nullptr, (ERR (*)(APTR, APTR))SET_Actions, writeval_default,  "Actions",           strhash("actions"),         sizeof(Object), 17, FDF_POINTER|FDF_I },
    { 0, (ERR (*)(APTR, APTR))GET_ActionTable, 0,  writeval_default,   "ActionTable",       strhash("actionTable"),     sizeof(Object), 18, FDF_ARRAY|FDF_POINTER|FDF_R },
    { 0, (ERR (*)(APTR, APTR))GET_Location, 0,     writeval_default,   "Location",          strhash("location"),        sizeof(Object), 19, FDF_CPPSTRING|FDF_R|FDF_PURE },
    { 0, (ERR (*)(APTR, APTR))GET_ClassName, (ERR (*)(APTR, APTR))SET_ClassName, writeval_default, "Name", strhash("name"), sizeof(Object), 20, FDF_CPPSTRING|FDF_SYSTEM|FDF_RI|FDF_PURE },
    { 0, (ERR (*)(APTR, APTR))GET_Module, 0,       writeval_default,   "Module",            strhash("module"),          sizeof(Object), 21, FDF_CPPSTRING|FDF_R },
    { MAXINT(CLASSID::METACLASS), (ERR (*)(APTR, APTR))GET_SubClasses, nullptr, writeval_default, "SubClasses", strhash("subClasses"), sizeof(Object), 22, FDF_ARRAY|FD_OBJECT|FDF_R },
-   { MAXINT("FieldArray"), (ERR (*)(APTR, APTR))GET_SubFields, 0, writeval_default, "SubFields", strhash("subFields"), sizeof(Object), 23, FDF_ARRAY|FD_STRUCT|FDF_SYSTEM|FDF_R },
+   { int64_t(uint32_t(strhash("FieldArray"))), (ERR (*)(APTR, APTR))GET_SubFields, 0, writeval_default,
+      "SubFields", strhash("subFields"), sizeof(Object), 23, FDF_ARRAY|FD_STRUCT|FDF_SYSTEM|FDF_R },
    { MAXINT(CLASSID::ROOTMODULE), (ERR (*)(APTR, APTR))GET_RootModule, 0, writeval_default, "RootModule", strhash("rootModule"), sizeof(Object), 24, FDF_OBJECT|FDF_R },
    { 0, (ERR (*)(APTR, APTR))OBJECT_GetID, 0,     writeval_default,   "ID",                strhash("id"),              sizeof(Object), 25, FDF_INT|FDF_SYSTEM|FDF_R },
    { 0, 0, 0, nullptr, "", 0, 0, 0,  0 }
@@ -449,7 +455,7 @@ ERR CLASS_Init(extMetaClass *Self)
             glClassFile = file;
 
             int hdr = CLASSDB_HEADER;
-            glClassFile->write(&hdr, sizeof(hdr));
+            glClassFile->write(std::span((const int8_t *)&hdr, sizeof(hdr)));
          }
 
          if (glClassFile) {
@@ -1135,48 +1141,44 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
          log.warning("Virtual field %s.%s is writeable with no setter.", Class->ClassName.c_str(), field.Name);
       }
    }
+   else if (field.Flags & FD_VECTOR) {
+      field_size      = sizeof(kt::vector<int>);
+      field_alignment = alignof(kt::vector<int>);
+      field_type      = "kt::vector";
+   }
    else if (field.Flags & FD_ARRAY) {
       // Standard array declarations are assumed to be pointers to data by default.
       // FD_VIRTUAL arrays are always referenced as pointers via Get/Set
-      // CPP arrays are kt::vector<> types; note that the selected type doesn't impact its size
-
-      if (field.Flags & FD_CPP) { // Embedded kt::vector<> array (the declared type doesn't contribute to size)
-         field_size      = sizeof(kt::vector<int>);
-         field_alignment = alignof(kt::vector<int>);
-         field_type      = "kt::vector";
-      }
-      else { // Standard embedded array (since FD_VIRTUAL wasn't set)
-         if (field.Arg) { // Arg is set if the array is embedded in the object
-            if (field.Flags & FD_INT) {
-               field_size      = sizeof(int) * field.Arg;
-               field_alignment = alignof(int);
-            }
-            else if (field.Flags & FD_DOUBLE) {
-               field_size      = sizeof(double) * field.Arg;
-               field_alignment = alignof(double);
-            }
-            else if (field.Flags & FD_BYTE) {
-               field_size      = sizeof(uint8_t) * field.Arg;
-               field_alignment = alignof(uint8_t);
-            }
-            else if (field.Flags & FD_INT64) {
-               field_size      = sizeof(int64_t) * field.Arg;
-               field_alignment = alignof(int64_t);
-            }
-            else {
-               // Only primitive types are supported for embedded arrays, kt::vector should otherwise be used
-               log.warning("Invalid array flags for %s: $%.8x.", field.Name, field.Flags);
-               field_size      = 0;
-               field_alignment = 0;
-            }
-
-            field_type = "array";
+      if (field.Arg) { // Arg is set if the array is embedded in the object
+         if (field.Flags & FD_INT) {
+            field_size      = sizeof(int) * field.Arg;
+            field_alignment = alignof(int);
+         }
+         else if (field.Flags & FD_DOUBLE) {
+            field_size      = sizeof(double) * field.Arg;
+            field_alignment = alignof(double);
+         }
+         else if (field.Flags & FD_BYTE) {
+            field_size      = sizeof(uint8_t) * field.Arg;
+            field_alignment = alignof(uint8_t);
+         }
+         else if (field.Flags & FD_INT64) {
+            field_size      = sizeof(int64_t) * field.Arg;
+            field_alignment = alignof(int64_t);
          }
          else {
-            field_size = sizeof(APTR);
-            field_alignment = alignof(APTR);
-            field_type = "pointer";
+            // Only primitive types are supported for embedded arrays, kt::vector should otherwise be used
+            log.warning("Invalid array flags for %s: $%.8x.", field.Name, field.Flags);
+            field_size      = 0;
+            field_alignment = 0;
          }
+
+         field_type = "array";
+      }
+      else {
+         field_size = sizeof(APTR);
+         field_alignment = alignof(APTR);
+         field_type = "pointer";
       }
    }
    else if (field.Flags & FD_STRING) {
@@ -1234,17 +1236,16 @@ static void add_field(extMetaClass *Class, std::vector<Field> &Fields, const Fie
    }
    else if (field.Flags & FD_STRUCT) {
       if (field.Arg) {
-         CSTRING struct_name = CSTRING(field.Arg);
-         if (struct_name) {
-            auto struct_hash = kt::strhash(struct_name);
-            if (auto it = glStructSizes.find(struct_hash); it != glStructSizes.end()) {
-               field_size      = it->second.Size;
-               field_alignment = it->second.Alignment;
-               field_type      = struct_name;
-            }
-            else log.warning("%s.%s field refers to unknown struct name '%s'.", Class->ClassName.c_str(), field.Name, CSTRING(field.Arg));
+         auto struct_hash = uint32_t(field.Arg);
+         if (auto it = glStructSizes.find(struct_hash); it != glStructSizes.end()) {
+            field_size      = it->second.Size;
+            field_alignment = it->second.Alignment;
+            field_type      = it->second.Name.c_str();
          }
-         else log.warning("%s.%s field requires a struct name reference.", Class->ClassName.c_str(), field.Name);
+         else {
+            log.warning("%s.%s field refers to unknown struct hash $%.8x.", Class->ClassName.c_str(), field.Name,
+               struct_hash);
+         }
       }
       else log.warning("%s.%s field requires a struct name.", Class->ClassName.c_str(), field.Name);
    }

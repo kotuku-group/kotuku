@@ -77,7 +77,7 @@ end
    TOTAL_REQ <const> = 10
    wait_http = nil
 
-   for i = 0, TOTAL_REQ-1 do
+   for i in {0 to TOTAL_REQ} do
       results[i] = {}
       results[i].http = obj.new('http', {
          src    = f'http://127.0.0.1:{SERVER_PORT}/api/parallel/{i}',
@@ -103,7 +103,7 @@ end
 
    proc = processing.new({ timeout = 5.0, signals = array<object> { wait_http } })
 
-   for i = 0, TOTAL_REQ-1 do
+   for i in {0 to TOTAL_REQ} do
       assert(results[i].http.acActivate() is ERR_Okay, "Parallel request " .. i .. " failed to activate")
    end
 
@@ -113,7 +113,7 @@ end
    assert(completed is TOTAL_REQ, 'Not all parallel requests completed: ' .. completed .. '/' .. TOTAL_REQ)
 
    -- Verify all responses
-   for i = 0, TOTAL_REQ-1 do
+   for i in {0 to TOTAL_REQ} do
       assert(results[i].data, 'No response for request ' .. i)
       response = json.decode(results[i].data)
       assert(response.requestId is tostring(i), 'Request ID mismatch for request ' .. i)
@@ -130,7 +130,7 @@ end
    total_posts = 3
    wait_http = nil
 
-   for i = 0, total_posts-1 do
+   for i in {0 to total_posts} do
       test_data = f'{{"id":{i},"data":"test_data_{i}"}}'
       results[i] = {}
       results[i].http = obj.new('http', {
@@ -158,7 +158,7 @@ end
 
    proc = processing.new({ timeout = 10.0, signals = array<object> { wait_http } })
 
-   for i = 0, total_posts-1 do
+   for i in {0 to total_posts} do
       assert(results[i].http.acActivate() is ERR_Okay, "Concurrent POST " .. i .. " failed to activate")
    end
 
@@ -167,7 +167,7 @@ end
    assert(completed is total_posts, 'Not all concurrent POSTs completed: ' .. completed .. '/' .. total_posts)
 
    -- Verify all POST responses
-   for i = 0, total_posts-1 do
+   for i in {0 to total_posts} do
       response = json.decode(results[i].data)
       assert(response.receivedId is i, 'POST ID mismatch for request ' .. i)
    end
@@ -185,7 +185,7 @@ end
 
    print('Starting high load test with ' .. TOTAL_REQ .. ' requests...')
 
-   for i = 0, TOTAL_REQ-1 do
+   for i in {0 to TOTAL_REQ} do
       results[i] = {}
       results[i].http = obj.new('http', {
          src            = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/load-test/' .. i,
@@ -210,7 +210,7 @@ end
 
    proc = processing.new({ timeout = 5.0, signals = array<object> { wait_http } })
 
-   for i = 0, TOTAL_REQ-1 do
+   for i in {0 to TOTAL_REQ} do
       assert(results[i].http.acActivate() is ERR_Okay, "High load request " .. i .. " failed to activate")
 
       -- Small delay to stagger requests slightly

@@ -1071,7 +1071,8 @@ static ERR parse_source(extXML *Self)
          // Read directly into the buffer
          buffer.resize(current_size + growth_threshold);
          int result;
-         if (acRead(Self->Source, buffer.data() + current_size, growth_threshold, &result) != ERR::Okay) {
+         if (acRead(Self->Source,
+             std::span<int8_t>((int8_t *)buffer.data() + current_size, growth_threshold), &result) != ERR::Okay) {
             Self->ParseError = ERR::Read;
             break;
          }

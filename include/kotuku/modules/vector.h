@@ -810,7 +810,7 @@ class objVectorTransition : public Object {
 
    inline ERR setStops(const std::span<const Transition> Value) noexcept {
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(this, field, 0x00005218, &Value);
+      return field->WriteValue(this, field, 0x00001218, &Value);
    }
 
 };
@@ -1214,7 +1214,7 @@ class objVectorPattern : public Object {
 
    inline ERR setMatrices(const std::span<const VectorMatrix> Value) noexcept {
       auto field = &this->Class->Dictionary[6];
-      return field->WriteValue(this, field, 0x00005310, &Value);
+      return field->WriteValue(this, field, 0x00001310, &Value);
    }
 
    inline ERR setOpacity(const double Value) noexcept {
@@ -1372,12 +1372,12 @@ class objGradient : public Object {
 
    inline ERR setMatrices(const std::span<const VectorMatrix> Value) noexcept {
       auto field = &this->Class->Dictionary[10];
-      return field->WriteValue(this, field, 0x00005310, &Value);
+      return field->WriteValue(this, field, 0x00001310, &Value);
    }
 
    inline ERR setStops(const std::span<const GradientStop> Value) noexcept {
       auto field = &this->Class->Dictionary[17];
-      return field->WriteValue(this, field, 0x00005310, &Value);
+      return field->WriteValue(this, field, 0x00001310, &Value);
    }
 
    inline ERR setSID(const std::string_view &Value) noexcept {
@@ -1824,12 +1824,12 @@ class objGradientGouraud : public objGradient {
 
    inline ERR setVertices(const std::span<const GouraudVertex> Value) noexcept {
       auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, 0x00105318, &Value);
+      return field->WriteValue(this, field, 0x00101318, &Value);
    }
 
    inline ERR setIndices(const std::span<const int> Value) noexcept {
       auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(this, field, 0x40105308, &Value);
+      return field->WriteValue(this, field, 0x40101308, &Value);
    }
 
 };
@@ -1900,7 +1900,7 @@ class objGradientMesh : public objGradient {
 
    inline ERR setPatches(const std::span<const MeshPatchRecord> Value) noexcept {
       auto field = &this->Class->Dictionary[22];
-      return field->WriteValue(this, field, 0x00105318, &Value);
+      return field->WriteValue(this, field, 0x00101318, &Value);
    }
 
 };
@@ -1941,7 +1941,7 @@ class objGradientDiffusion : public objGradient {
 
    inline ERR setCurves(const std::span<const DiffusionCurveRecord> Value) noexcept {
       auto field = &this->Class->Dictionary[19];
-      return field->WriteValue(this, field, 0x00105318, &Value);
+      return field->WriteValue(this, field, 0x00101318, &Value);
    }
 
 };
@@ -2110,7 +2110,7 @@ class objGradientVoronoi : public objGradient {
 
    inline ERR setPoints(const std::span<const VoronoiPoint> Value) noexcept {
       auto field = &this->Class->Dictionary[20];
-      return field->WriteValue(this, field, 0x00005310, &Value);
+      return field->WriteValue(this, field, 0x00001310, &Value);
    }
 
    inline ERR setWorleyMode(const WLF Value) noexcept {
@@ -3470,7 +3470,7 @@ class objWaveFunctionFX : public objFilterEffect {
 
    inline ERR setStops(const std::span<const GradientStop> Value) noexcept {
       auto field = &this->Class->Dictionary[24];
-      return field->WriteValue(this, field, 0x00005310, &Value);
+      return field->WriteValue(this, field, 0x00001310, &Value);
    }
 
    inline ERR setAspectRatio(const ARF Value) noexcept {
@@ -4241,11 +4241,11 @@ class objVector : public Object {
 // VectorPath methods
 
 namespace vp {
-struct AddCommand { struct PathCommand *Commands; int Size; static const AC id = AC(-30); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct AddCommand { std::span<const struct PathCommand> Commands; static const AC id = AC(-30); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct RemoveCommand { int Index; int Total; static const AC id = AC(-31); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SetCommand { int Index; struct PathCommand *Command; int Size; static const AC id = AC(-32); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetCommand { int Index; std::span<const struct PathCommand> Command; static const AC id = AC(-32); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetCommand { int Index; struct PathCommand *Command; static const AC id = AC(-33); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct SetCommandList { APTR Commands; int Size; static const AC id = AC(-34); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetCommandList { std::span<const struct PathCommand> Commands; static const AC id = AC(-34); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -4270,16 +4270,16 @@ class objVectorPath : public objVector {
       return Action(AC::MoveToPoint, this, &moveto);
    }
    inline ERR init() noexcept { return InitObject(this); }
-   inline ERR addCommand(struct PathCommand * Commands, int Size) noexcept {
-      struct vp::AddCommand args = { Commands, Size };
+   inline ERR addCommand(std::span<const struct PathCommand> Commands) noexcept {
+      struct vp::AddCommand args = { Commands };
       return Action(AC(-30), this, &args);
    }
    inline ERR removeCommand(int Index, int Total) noexcept {
       struct vp::RemoveCommand args = { Index, Total };
       return Action(AC(-31), this, &args);
    }
-   inline ERR setCommand(int Index, struct PathCommand * Command, int Size) noexcept {
-      struct vp::SetCommand args = { Index, Command, Size };
+   inline ERR setCommand(int Index, std::span<const struct PathCommand> Command) noexcept {
+      struct vp::SetCommand args = { Index, Command };
       return Action(AC(-32), this, &args);
    }
    inline ERR getCommand(int Index, struct PathCommand ** Command) noexcept {
@@ -4288,8 +4288,8 @@ class objVectorPath : public objVector {
       if (Command) *Command = args.Command;
       return error;
    }
-   inline ERR setCommandList(APTR Commands, int Size) noexcept {
-      struct vp::SetCommandList args = { Commands, Size };
+   inline ERR setCommandList(std::span<const struct PathCommand> Commands) noexcept {
+      struct vp::SetCommandList args = { Commands };
       return Action(AC(-34), this, &args);
    }
 

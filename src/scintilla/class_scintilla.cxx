@@ -287,12 +287,8 @@ static void notify_dragdrop(OBJECTPTR Object, ACTIONID ActionID, ERR Result, str
    request.Preference[1] = int8_t(DATA::TEXT);
    request.Preference[2] = 0;
 
-   struct acDataFeed dc;
-   dc.Object   = Self;
-   dc.Datatype = DATA::REQUEST;
-   dc.Buffer   = &request;
-   dc.Size     = sizeof(request);
-   if (!Action(AC::DataFeed, Args->Source, &dc)) {
+   if (!acDataFeed(Args->Source, Self, DATA::REQUEST,
+         std::span<const int8_t>((const int8_t *)&request, sizeof(request)))) {
       // The source will return a DATA::RECEIPT for the items that we've asked for (see the DataFeed action).
    }
 }
@@ -385,7 +381,8 @@ static void notify_write(OBJECTPTR Object, ACTIONID ActionID, ERR Result, struct
    SCICALL(SCI_SETUNDOCOLLECTION, 0UL); // Turn off undo
 
    if (Args->Buffer) {
-      acDataFeed(Self, Self, DATA::TEXT, Args->Buffer, Args->Result);
+      acDataFeed(Self, Self, DATA::TEXT,
+         std::span<const int8_t>((const int8_t *)Args->Buffer, size_t(Args->Result)));
    }
    else { // We have to read the data from the file stream
    }
@@ -449,19 +446,14 @@ static ERR SCINTILLA_DataFeed(extScintilla *Self, struct acDataFeed *Args)
    if (!Args) return log.warning(ERR::NullArgs);
 
    if (Args->Datatype IS DATA::TEXT) {
-      CSTRING str;
-
       // Incoming text is appended to the end of the document
-
-      if (!Args->Buffer) str = "";
-      else str = (CSTRING)Args->Buffer;
-
-      SCICALL(SCI_APPENDTEXT, strlen(str), str);
+      SCICALL(SCI_APPENDTEXT, Args->Buffer.size(), (const char *)Args->Buffer.data());
    }
    else if (Args->Datatype IS DATA::RECEIPT) {
       log.msg("Received item receipt from object %d.", Args->Object ? Args->Object->UID : 0);
 
-      objXML::create xml = { fl::Statement((CSTRING)Args->Buffer) };
+      objXML::create xml = { fl::Statement(
+         std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size())) };
       if (xml.ok()) {
          for (auto &tag : xml->Tags) {
             if (iequals("file", tag.name())) {
@@ -614,13 +606,12 @@ static ERR SCINTILLA_Focus(extScintilla *Self)
 -METHOD-
 GetLine: Copies the text content of any line to a user-supplied buffer.
 
-This method will retrieve the string for a `Line` at a given index.  The string is copied to a user supplied
-`Buffer` of the indicated `Length` (in bytes).
+This method retrieves the string for a `Line` at a given index.  The string is copied to the supplied `Buffer`, which
+must have enough space for the line content and a terminating null byte.
 
 -INPUT-
 int Line: The index of the line to retrieve.
-buf(str) Buffer: The destination buffer.
-bufsize Length: The byte size of the `Buffer`.
+^array(char) Buffer: The destination buffer.
 
 -RESULT-
 Okay:
@@ -634,12 +625,13 @@ static ERR SCINTILLA_GetLine(extScintilla *Self, struct sci::GetLine *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Buffer)) return log.warning(ERR::NullArgs);
-   if ((Args->Line < 0) or (Args->Length < 1)) return log.warning(ERR::OutOfRange);
+   if ((!Args) or (not Args->Buffer.data())) return log.warning(ERR::NullArgs);
+   if ((Args->Line < 0) or Args->Buffer.empty()) return log.warning(ERR::OutOfRange);
 
-   int len = SCICALL(SCI_LINELENGTH, Args->Line); // Returns the length of the line (in bytes) including line-end characters (NB: there could be more than one line-end character!)
-   if (Args->Length > len) {
-      SCICALL(SCI_GETLINE, Args->Line, Args->Buffer);
+   // Includes line-end characters, of which there may be more than one.
+   int len = SCICALL(SCI_LINELENGTH, Args->Line);
+   if (std::ssize(Args->Buffer) > len) {
+      SCICALL(SCI_GETLINE, Args->Line, (const char *)Args->Buffer.data());
       Args->Buffer[len] = 0;
       return ERR::Okay;
    }
@@ -2132,7 +2124,8 @@ static void key_event(evKey *Event, int Size, extScintilla *Self)
       string[0] = 0;
 
       if ((Event->Qualifiers & KQ::NOT_PRINTABLE) IS KQ::NIL) {
-         int16_t out = UTF8WriteValue(Event->Unicode, string, sizeof(string)-1);
+         int16_t out = UTF8WriteValue(Event->Unicode,
+            std::span<int8_t>((int8_t *)string, sizeof(string) - 1));
          if (out >= 0) string[out] = 0;
       }
 

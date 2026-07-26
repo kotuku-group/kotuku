@@ -179,7 +179,6 @@ wanted.  The mask colour for the bitmap must refer to colour index 0.
 
 -INPUT-
 struct(*CursorInfo) Info: Pointer to a !CursorInfo structure.
-structsize Size: The byte-size of the `Info` structure.
 
 -ERRORS-
 Okay:
@@ -191,7 +190,7 @@ mutates-input, pure-query
 
 *********************************************************************************************************************/
 
-ERR GetCursorInfo(CursorInfo *Info, int Size)
+ERR GetCursorInfo(CursorInfo *Info)
 {
    if (!Info) return ERR::NullArgs;
 

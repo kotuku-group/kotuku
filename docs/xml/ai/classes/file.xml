@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="File" mod="Core" c="Enables access to the file system." cat="System" id="7c96cb25" v="1.2">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="File" mod="Core" c="Enables access to the file system." cat="System" id="4ca5c5b3" v="1.2">
   <ai:a n="Activate" c="Opens the file. Performed automatically if NEW, READ or WRITE flags were specified on initialisation." p="ERR acActivate(*Object)"/>
   <ai:a n="DataFeed" c="Data can be streamed to any file as a method of writing content." p="ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)">
     <ai:i n="Object" t="OBJECTID" c="Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID."/>
@@ -7,19 +7,25 @@
     <ai:i n="Buffer" t="APTR" c="The data being sent to the target object."/>
     <ai:i n="Size" t="INT" c="The size of the data in Buffer."/>
   </ai:a>
+  <ai:a n="Flush" c="Flushes all pending write operations." p="ERR acFlush(*Object)"/>
   <ai:a n="Init" c="Initialises a file." p="ERR InitObject(*Object)">
     <ai:e c="Okay"/>
+    <ai:e c="File"/>
     <ai:e c="Search"/>
     <ai:e c="FileNotFound"/>
     <ai:e c="NoPermission"/>
+    <ai:e c="InvalidPath"/>
     <ai:e c="SetField"/>
     <ai:e c="MissingPath"/>
+    <ai:e c="VirtualVolume"/>
     <ai:e c="ResolvePath"/>
+    <ai:e c="ExpectedFile"/>
+    <ai:e c="CreateFile"/>
+    <ai:e c="UseDerived"/>
   </ai:a>
   <ai:a n="Query" c="Read a file's meta information from source." p="ERR acQuery(*Object)"/>
-  <ai:a n="Read" c="Reads data from a file." p="ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)">
-    <ai:i n="Buffer" t="APTR" c="Points a buffer that will receive the data."/>
-    <ai:i n="Length" t="INT" c="The total number of bytes to read from the object. This value cannot exceed the size of the Buffer."/>
+  <ai:a n="Read" c="Reads data from a file." p="ERR acRead(*Object, std::span&lt;int8_t&gt; Buffer, INT *Result)">
+    <ai:i n="Buffer" t="std::span&lt;int8_t&gt;" c="A mutable buffer that will receive the data."/>
     <ai:i n="Result" t="INT" c="The Read action will write this parameter with the total number of bytes read into the Buffer."/>
     <ai:e c="Okay"/>
     <ai:e c="Failed"/>
@@ -27,66 +33,69 @@
     <ai:e c="OutOfRange"/>
     <ai:e c="FileReadFlag"/>
     <ai:e c="NotInitialised"/>
+    <ai:e c="SystemCall"/>
+    <ai:e c="ExpectedFile"/>
     <ai:e c="NullArgs"/>
     <ai:e c="ExpectedFolder"/>
   </ai:a>
-  <ai:a n="Rename" c="Changes the name of a file." p="ERR acRename(*Object, CSTRING Name)">
-    <ai:i n="Name" t="CSTRING" c="The new name for the object."/>
+  <ai:a n="Rename" c="Changes the name of a file." p="ERR acRename(*Object, std::string_view Name)">
+    <ai:i n="Name" t="STRVIEW" c="The new name for the object."/>
   </ai:a>
-  <ai:a n="Reset" c="If the file represents a folder, the file list index is reset by this action." p="ERR acRefresh(*Object)"/>
+  <ai:a n="Reset" c="If the file represents a folder, the file list index is reset by this action." p="ERR acReset(*Object)"/>
   <ai:a n="Seek" c="Seeks to a new read/write position within a file." p="ERR acSeek(*Object, DOUBLE Offset, INT Position)">
     <ai:i n="Offset" t="DOUBLE" c="The desired offset to seek to, relative to the Position parameter."/>
     <ai:i n="Position" t="POS" c="The position that defines the starting point for Offset."/>
   </ai:a>
-  <ai:a n="Write" c="Writes data to a file." p="ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)">
-    <ai:i n="Buffer" t="APTR" c="A buffer containing the data that will be written to the object."/>
-    <ai:i n="Length" t="INT" c="The total number of bytes to write to the object."/>
+  <ai:a n="Write" c="Writes data to a file." p="ERR acWrite(*Object, std::span&lt;const int8_t&gt; Buffer, INT *Result)">
+    <ai:i n="Buffer" t="std::span&lt;const int8_t&gt;" c="A buffer containing the data that will be written to the object."/>
     <ai:i n="Result" t="INT" c="This parameter with be updated with the total number of bytes written from the Buffer."/>
     <ai:e c="Okay"/>
     <ai:e c="LimitedSuccess"/>
     <ai:e c="Args"/>
     <ai:e c="FileWriteFlag"/>
     <ai:e c="ObjectCorrupt"/>
-    <ai:e c="ReallocMemory"/>
     <ai:e c="ExpectedFile"/>
     <ai:e c="NullArgs"/>
   </ai:a>
   <ai:m n="BufferContent" c="Reads all file content into a local memory buffer." p="ERR fl::BufferContent(OBJECTPTR Object)">
     <ai:e c="Okay"/>
+    <ai:e c="NothingDone"/>
     <ai:e c="Read"/>
-    <ai:e c="AllocMemory"/>
+    <ai:e c="InvalidState"/>
   </ai:m>
-  <ai:m n="Copy" c="Copies the data of a file to another location." p="ERR fl::Copy(OBJECTPTR Object, CSTRING Dest, FUNCTION * Callback)">
-    <ai:i n="Dest" t="CSTRING" c="The destination file path for the copy operation."/>
-    <ai:i n="Callback" t="FUNCTION *" c="Optional callback for receiving feedback during the operation."/>
+  <ai:m n="Copy" c="Copies the data of a file to another location." p="ERR fl::Copy(OBJECTPTR Object, STRVIEW Dest, FUNCTION Callback)">
+    <ai:i n="Dest" t="STRVIEW" c="The destination file path for the copy operation."/>
+    <ai:i n="Callback" t="FUNCTION" c="Optional callback for receiving feedback during the operation."/>
     <ai:e c="Okay"/>
     <ai:e c="Failed"/>
     <ai:e c="Args"/>
     <ai:e c="Read"/>
     <ai:e c="Write"/>
     <ai:e c="FieldNotSet"/>
-    <ai:e c="AllocMemory"/>
     <ai:e c="Loop"/>
     <ai:e c="ResolvePath"/>
     <ai:e c="NullArgs"/>
   </ai:m>
-  <ai:m n="Delete" c="Deletes a file from its source location." p="ERR fl::Delete(OBJECTPTR Object, FUNCTION * Callback)">
-    <ai:i n="Callback" t="FUNCTION *" c="Optional callback for receiving feedback during the operation."/>
+  <ai:m n="Delete" c="Deletes a file from its source location." p="ERR fl::Delete(OBJECTPTR Object, FUNCTION Callback)">
+    <ai:i n="Callback" t="FUNCTION" c="Optional callback for receiving feedback during the operation."/>
     <ai:e c="Okay"/>
+    <ai:e c="Cancelled"/>
     <ai:e c="Failed"/>
     <ai:e c="NoPermission"/>
     <ai:e c="MissingPath"/>
     <ai:e c="BufferOverflow"/>
     <ai:e c="ResolvePath"/>
+    <ai:e c="SystemCall"/>
+    <ai:e c="DeleteFile"/>
     <ai:e c="ReadOnly"/>
     <ai:e c="Locked"/>
   </ai:m>
-  <ai:m n="Move" c="Moves a file to a new location." p="ERR fl::Move(OBJECTPTR Object, CSTRING Dest, FUNCTION * Callback)">
-    <ai:i n="Dest" t="CSTRING" c="The desired path for the file."/>
-    <ai:i n="Callback" t="FUNCTION *" c="Optional callback for receiving feedback during the operation."/>
+  <ai:m n="Move" c="Moves a file to a new location." p="ERR fl::Move(OBJECTPTR Object, STRVIEW Dest, FUNCTION Callback)">
+    <ai:i n="Dest" t="STRVIEW" c="The desired path for the file."/>
+    <ai:i n="Callback" t="FUNCTION" c="Optional callback for receiving feedback during the operation."/>
     <ai:e c="Okay"/>
-    <ai:e c="Failed"/>
     <ai:e c="Args"/>
+    <ai:e c="InvalidPath"/>
     <ai:e c="FieldNotSet"/>
     <ai:e c="NullArgs"/>
   </ai:m>
@@ -95,10 +104,12 @@
     <ai:e c="Okay"/>
     <ai:e c="DirEmpty"/>
     <ai:e c="Args"/>
+    <ai:e c="CreateObject"/>
     <ai:e c="NullArgs"/>
+    <ai:e c="ExpectedFolder"/>
   </ai:m>
   <ai:m n="ReadLine" c="Reads the next line from the file." p="ERR fl::ReadLine(OBJECTPTR Object, STRING * Result)">
-    <ai:i n="Result" t="STRING *" c="The resulting string is returned in this parameter."/>
+    <ai:i n="Result" t="STRING *" c="The string provided in this parameter will be updated with the line read from the file."/>
     <ai:e c="Okay"/>
     <ai:e c="Failed"/>
     <ai:e c="Args"/>
@@ -106,6 +117,8 @@
     <ai:e c="FileReadFlag"/>
     <ai:e c="ObjectCorrupt"/>
     <ai:e c="BufferOverflow"/>
+    <ai:e c="ExpectedFile"/>
+    <ai:e c="NullArgs"/>
   </ai:m>
   <ai:m n="SetDate" c="Sets the date on a file." p="ERR fl::SetDate(OBJECTPTR Object, INT Year, INT Month, INT Day, INT Hour, INT Minute, INT Second, FDT Type)">
     <ai:i n="Year" t="INT" c="Year (-ve for BC, +ve for AD)."/>
@@ -128,35 +141,35 @@
     <ai:e c="Okay"/>
     <ai:e c="Args"/>
     <ai:e c="NoSupport"/>
+    <ai:e c="NullArgs"/>
   </ai:m>
   <ai:m n="StopStream" c="Stops streaming data from a file source." p="ERR fl::StopStream(OBJECTPTR Object)">
     <ai:e c="Okay"/>
     <ai:e c="Args"/>
     <ai:e c="NoSupport"/>
   </ai:m>
-  <ai:m n="Watch" c="Monitors files and folders for file system events." p="ERR fl::Watch(OBJECTPTR Object, FUNCTION * Callback, INT64 Custom, MFF Flags)">
-    <ai:i n="Callback" t="FUNCTION *" c="The routine that will be called when a file change is triggered by the system."/>
-    <ai:i n="Custom" t="INT64" c="A custom 64-bit value that will passed to the Callback routine as a parameter."/>
+  <ai:m n="Watch" c="Monitors files and folders for file system events." p="ERR fl::Watch(OBJECTPTR Object, FUNCTION Callback, MFF Flags)">
+    <ai:i n="Callback" t="FUNCTION" c="The routine that will be called when a file change is triggered by the system."/>
     <ai:i n="Flags" t="MFF" c="Filter events to those indicated in these flags."/>
     <ai:e c="Okay"/>
     <ai:e c="Args"/>
+    <ai:e c="NoSupport"/>
+    <ai:e c="AllocMemory"/>
     <ai:e c="NullArgs"/>
   </ai:m>
-  <ai:f n="Buffer" c="Points to the internal data buffer if the file content is held in memory." t="INT8 *" a="G"/>
-  <ai:f n="Created" c="The creation date stamp for the file." t="APTR" a="GW"/>
-  <ai:f n="Date" c="The 'last modified' date stamp on the file." t="APTR" a="GS"/>
-  <ai:f n="Flags" c="File flags and options." t="FL" a="RI"/>
+  <ai:f n="Buffer" c="Points to the internal data buffer if the file content is held in memory." t="kt::vector&lt;int8_t&gt;" a="G"/>
+  <ai:f n="Created" c="The creation date stamp for the file." t="struct DateTime" a="G"/>
+  <ai:f n="Date" c="The 'last modified' date stamp on the file." t="struct DateTime" a="GS"/>
+  <ai:f n="Flags" c="File flags and options." t="FL" a="RS"/>
   <ai:f n="Group" c="Retrieve or change the group ID of a file." t="INT" a="GS"/>
   <ai:f n="Handle" c="The native system handle for the file opened by the file object." t="INT64" a="G"/>
   <ai:f n="Icon" c="Returns an icon reference that is suitable for this file in the UI." t="STRING" a="G"/>
   <ai:f n="Link" c="Returns the link path for symbolically linked files." t="STRING" a="GS"/>
-  <ai:f n="Path" c="Specifies the location of a file or folder." t="STRING" a="GS"/>
-  <ai:f n="Permissions" c="Manages the permissions of a file." t="INT" a="GS"/>
+  <ai:f n="Path" c="Specifies the location of a file or folder." t="STRING" a="RS"/>
+  <ai:f n="Permissions" c="Manages the permissions of a file." t="PERMIT" a="GS"/>
   <ai:f n="Position" c="The current read/write byte position in a file." t="INT64" a="RS"/>
   <ai:f n="ResolvedPath" c="Returns a resolved copy of the Path string." t="STRING" a="G"/>
   <ai:f n="Size" c="The byte size of a file." t="INT64" a="GS"/>
-  <ai:f n="Static" c="Set to true if a file object should be static." t="INT" a="RI"/>
-  <ai:f n="Target" c="Specifies a surface ID to target for user feedback and dialog boxes." t="OBJECTID" a="RW"/>
-  <ai:f n="TimeStamp" c="The last modification time set on a file, represented as a 64-bit integer." t="INT64" a="G"/>
+  <ai:f n="Timestamp" c="The last modification time set on a file, represented as a 64-bit integer." t="INT64" a="G"/>
   <ai:f n="User" c="Retrieve or change the user ID of a file." t="INT" a="GS"/>
 </ai:cl>

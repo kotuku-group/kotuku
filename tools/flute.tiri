@@ -320,7 +320,7 @@ function runTests()
          local succeeded = true
          success_count = 0
 
-         for i=0,stop-1 do
+         for i in {0 to stop} do
             try
                test.func()
                success_count++

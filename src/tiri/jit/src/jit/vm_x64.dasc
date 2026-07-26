@@ -3286,35 +3286,86 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_next
     break;
 
-  case BC_ISEMPTYARR:
-    // Check if RA is an empty array or table. Used by ?? operator for extended falsey semantics.
-    // Empty collections execute the following JMP (value is falsey); all other values skip it.
-    |  ins_AD  // RA = src, followed by JMP with RD = target
+  case BC_ISFALSEY:
+    // Execute the following JMP when RA matches one of the falsey conditions selected by RD.
+    // Nil is always falsey; the mask controls false, zero, empty string, and empty collection checks.
+    |  ins_AD  // RA = src, RD = falsey mask, followed by JMP
     |  mov RB, [BASE+RA*8]
+    |  mov RCd, RDd
     |  mov ITYPE, RB
-    |  add PC, 8        // Advance past following JMP
+    |  add PC, 8        // Advance past following JMP.
     |  sar ITYPE, 47
-    |  cmp ITYPEd, LJ_TARRAY
+    |  cmp ITYPEd, LJ_TNIL
+    |  je >9
+    |  cmp ITYPEd, LJ_TFALSE
     |  je >2
+    |  cmp ITYPEd, LJ_TISNUM
+    |  jbe >3
+    |  cmp ITYPEd, LJ_TSTR
+    |  je >4
+    |  cmp ITYPEd, LJ_TUDATA
+    |  je >7
+    |  cmp ITYPEd, LJ_TARRAY
+    |  je >5
     |  cmp ITYPEd, LJ_TTAB
-    |  jne >1        // Not a collection - skip JMP (truthy)
+    |  jne >1
+    |  test RCd, ISFALSEY_EMPTY_COLL
+    |  jz >1
     |  mov CARG1, RB
     |  cleartp CARG1
     |  mov RB, BASE
     |  call extern lj_tab_empty
     |  mov BASE, RB
     |  test RDd, RDd
-    |  jz >1         // Non-empty table - skip JMP (truthy)
-    |  jmp >3        // Empty table - execute JMP (falsey)
+    |  jnz >9
+    |  jmp >1
     |2:
+    |  test RCd, ISFALSEY_FALSE
+    |  jnz >9
+    |  jmp >1
+    |3:
+    |  test RCd, ISFALSEY_ZERO
+    |  jz >1
+    |.if DUALNUM
+    |  cmp ITYPEd, LJ_TISNUM
+    |  jne >6
+    |  test RBd, RBd
+    |  jz >9
+    |  jmp >1
+    |6:
+    |.endif
+    |  shl RB, 1
+    |  jz >9
+    |  jmp >1
+    |4:
+    |  test RCd, ISFALSEY_EMPTY_STR
+    |  jz >1
+    |  cleartp RB
+    |  cmp dword STR:RB->len, 0
+    |  je >9
+    |  jmp >1
+    |5:
+    |  test RCd, ISFALSEY_EMPTY_COLL
+    |  jz >1
     |  cleartp RB
     |  cmp dword ARRAY:RB->len, 0
-    |  jne >1        // Non-empty array - skip JMP (truthy)
-    |3:
-    |  // Empty collection - execute JMP (falsey)
+    |  jne >1
+    |  jmp >9
+    |7:
+    |  mov L:RB, SAVE_L
+    |  mov L:RB->base, BASE
+    |  mov CARG1, L:RB
+    |  mov CARG2, qword [PC-16]
+    |  mov SAVE_PC, PC
+    |  call extern lj_meta_isfalsey  // (lua_State *L, BCIns ins)
+    |  mov BASE, L:RB->base
+    |  test RCd, RCd
+    |  jnz >9
+    |  jmp >1
+    |9:
     |  movzx RDd, PC_RD
     |  branchPC RD
-    |1:           // Fallthrough - skip the JMP
+    |1:
     |  ins_next
     break;
 
@@ -4968,13 +5019,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  // BC_TYPEFIX: Fix function return types at runtime
     |  // RA = base register index (rbase), RD = count of values to fix
     |  ins_AD
-    |  // Fast path: check if prototype has PROTO_TYPEFIX flag set
-    |  mov LFUNC:RB, [BASE-16]       // Get current function from frame
-    |  cleartp LFUNC:RB
-    |  mov TMPR, LFUNC:RB->pc        // Get prototype pointer
-    |  test byte [TMPR+PC2PROTO(flags)], PROTO_TYPEFIX
-    |  jz >1                         // Skip if no type inference needed
-    |  // Slow path: call C helper to fix types
+    |  // Call the helper; the canonical signature decides whether inference is active.
     |  mov L:RB, SAVE_L
     |  mov L:RB->base, BASE          // Save BASE before potential clobber
     |  lea CARG2, [BASE+RA*8]        // Compute pointer to first return value
@@ -4983,7 +5028,6 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  mov SAVE_PC, PC
     |  call extern lj_meta_typefix   // (lua_State *L, TValue *base, uint32_t count)
     |  mov BASE, L:RB->base          // Restore BASE
-    |1:
     |  ins_next
     break;
 
@@ -5467,6 +5511,32 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |3:
     |  mov RAd, 162                     // ERR_Exception = 162
     |  jmp <2
+    break;
+
+  case BC_CONTRACT:
+    |  mov L:RB, SAVE_L
+    |  mov L:RB->base, BASE
+    |  mov CARG2, PC
+    |  mov CARG3d, MULTRES
+    |  sub CARG3d, 1
+    |  mov L:CARG1, L:RB
+    |  mov SAVE_PC, PC
+    |  call extern lj_meta_contract_pc
+    |  mov BASE, L:RB->base
+    |  ins_next
+    break;
+
+  case BC_MRSAVE:
+    |  mov RCd, MULTRES
+    |  setint RC
+    |  mov [BASE+RA*8], RC
+    |  ins_next
+    break;
+
+  case BC_MRRESTORE:
+    |  mov RCd, [BASE+RA*8]
+    |  mov MULTRES, RCd
+    |  ins_next
     break;
 
   //  ----------------------------------------------------------------------

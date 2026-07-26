@@ -21,7 +21,7 @@ function enforce_hotpath() end
 
    -- Verify that garbage collection doesn't invalidate the thread while it's running
 
-   for i=1,100 do
+   for i in {0 to 100} do
       do
          script = obj.new('tiri', { statement=[[ msg('Thread is now in session.') ]] })
          async.script(script, callback)
@@ -38,7 +38,7 @@ function enforce_hotpath() end
 
    script = obj.new('tiri', { statement=[[ msg('Thread is now in session.') ]] })
 
-   for i=1,100 do -- Run enough times to sufficiently test thread locking and the JIT
+   for i in {0 to 100} do -- Run enough times to sufficiently test thread locking and the JIT
       async.script(script, callback)
 
       msg('Sleeping....')
@@ -84,7 +84,7 @@ end
    proc = processing.new({ timeout=5.0, signals = array<object> { signal } })
 
    scripts = array<object>
-   for i=0, total-1 do
+   for i in {0 to total} do
       scripts:push(obj.new('tiri', { statement = [[ msg('Queued script ]] .. i .. [[ running.') ]] }))
    end
 
@@ -111,7 +111,7 @@ end
    -- Create a bunch of worker scripts that return a result
 
    scripts = array<object> { }
-   for i in {1 into 10} do
+   for i in {0 into 10} do
       scripts:push(obj.new('tiri', { statement = [[ print('Pipe worker ]] .. i .. [[ running.'); return ]] .. i }))
    end
 
@@ -411,7 +411,7 @@ end
    signal = obj.new('time', { })
    proc = processing.new({ timeout=5.0, signals = array<object> { signal } })
 
-   for i=0, total-1 do
+   for i in {0 to total} do
       script = obj.new('tiri', { statement = f"for j=0,99 do async.pool.counter = {i} * 100 + j end" })
       async.script(script, function(Object)
          check Object.error
@@ -451,7 +451,7 @@ end
 
    proc = processing.new({ timeout=1.0, signals = work_list })
 
-   for i=1,100 do
+   for i in {0 to 100} do
       script.setKey('Iteration', i)
       async.script(script)
       check proc.sleep()
@@ -508,7 +508,7 @@ end
 
    glCancelCallbackCount = 0
 
-   for i=0, 4 do
+   for i in {0 to 5} do
       async.script(script, function(Object)
          glCancelCallbackCount++
       end)

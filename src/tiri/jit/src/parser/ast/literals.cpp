@@ -278,6 +278,7 @@ ParserResult<AstBuilder::ParameterListResult> AstBuilder::parse_parameter_list(b
             this->ctx.tokens().advance();
             auto parsed = this->parse_type_annotation(param.type, param.struct_def);
             if (not parsed.ok()) return ParserResult<ParameterListResult>::failure(parsed.error_ref());
+            param.type_is_explicit = true;
          }
          else { // No type annotation provided - emit tips for untyped parameter
             if (param.name.symbol) {
@@ -546,12 +547,22 @@ ParserResult<FunctionReturnTypes> AstBuilder::parse_return_type_annotation()
    if (current.raw() IS '<') {
       this->ctx.tokens().advance();  // consume '<'
 
+      // An empty list is an explicit void declaration.
+      if (this->ctx.tokens().current().raw() IS '>') {
+         this->ctx.tokens().advance();
+         return ParserResult<FunctionReturnTypes>::success(result);
+      }
+
       // Parse comma-separated type list
       do {
          current = this->ctx.tokens().current();
 
          // Check for variadic marker ...
          if (current.kind() IS TokenKind::Dots) {
+            if (result.count IS 0) {
+               return this->fail<FunctionReturnTypes>(ParserErrorCode::ExpectedToken, current,
+                  "variadic result marker requires a preceding result type");
+            }
             this->ctx.tokens().advance();
             result.is_variadic = true;
             break;  // ... must be last

@@ -62,7 +62,7 @@ return {
             end
             lVec.freePath(path)
          end
-         for y=1,Surface.height,2 do
+         for y in {1 into Surface.height by 2} do
             err, colShade = Bitmap.mtGetColour(0, 0, 0, 40)
             Bitmap.mtDrawRectangle(0, y, Surface.width, 1, colShade, BAF_FILL | BAF_BLEND)
          end

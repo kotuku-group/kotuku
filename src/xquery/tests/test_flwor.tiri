@@ -91,7 +91,7 @@ end
                   '</library>'
    })
 
-   for iteration = 0, 24 do
+   for iteration in {0 to 25} do
       local collected = {}
       local err = xml.mtSearch('for $book in /library/book let $genre := $book/@genre return $book[$genre = "fiction"]',
          function(XML, TagID)

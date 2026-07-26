@@ -15,6 +15,8 @@
 #include <variant>
 #include <ranges>
 #include "../bytecode/lj_bc.h"
+#include "../runtime/lj_contract.h"
+#include "static_type_descriptor.h"
 
 // Forward declarations
 class LexState;
@@ -78,6 +80,19 @@ enum class VarInfoFlag : uint8_t {
    DeferArg = 0x10u,
    Close = 0x20u,
    Const = 0x40u  // Variable is const (cannot be reassigned)
+};
+
+// Transient parser-side form of a runtime contract.  The raw structure definition is used only while compiling;
+// bcemit_contract() serialises its stable name into an interned descriptor before emitting bytecode.
+
+struct RuntimeContract {
+   TiriType type = TiriType::Unknown;
+   struct_record *struct_def = nullptr;
+   GCstr *label = nullptr;
+   ContractBoundary boundary = ContractBoundary::Local;
+   uint8_t position = 0;
+   bool nullable = true;
+   bool required = false;
 };
 
 // Concept for flag types that support bitwise operations
@@ -219,6 +234,8 @@ struct ExpDesc {
    TiriType result_type = TiriType::Unknown;  // Known result type (for Call: callee's first return type)
    CLASSID object_class_id = CLASSID::NIL; // CLASSID for Object result types
    struct_record *struct_def = nullptr; // Resolved layout for Struct result types
+   StaticValueHandle static_value = 0;
+   StaticResultSetHandle static_results = 0;
    uint32_t struct_field_index = 0xFFFFFFFFu; // Pre-resolved field index for STGETF/STSETF
    bool type_confirmed = false;  // True if result_type is confirmed from class dictionary lookup
    BCPOS t;        // True condition jump list.
@@ -281,6 +298,8 @@ struct ExpDesc {
       this->u.s.info = info;
       this->flags = ExprFlag::None;
       this->result_type = TiriType::Unknown;
+      this->static_value = 0;
+      this->static_results = 0;
       this->f = this->t = NO_JMP;
    }
 

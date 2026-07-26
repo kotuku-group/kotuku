@@ -70,13 +70,13 @@ end
       incoming = function(Socket, Client)
          if Client then
             local buffer = string.alloc(256)
-            local err, bytes = Client.acRead(buffer, string.len(buffer))
+            local err, bytes = Client.acRead(buffer)
             if err is ERR_Okay and bytes > 0 then
                message = string.substr(buffer, 0, bytes)
                logOutput('[Server] Received from client: ' .. message)
 
                -- Echo back
-               Client.acWrite('IPv6 Server Echo: ' .. message, string.len('IPv6 Server Echo: ' .. message))
+               Client.acWrite('IPv6 Server Echo: ' .. message)
             end
          end
          return ERR_Okay
@@ -94,12 +94,12 @@ end
          logOutput('[Client] State: ' .. State)
          if State is NTC_CONNECTED then
             logOutput('[Client] Connected to IPv6 server')
-            Socket.acWrite('Hello IPv6 World!', string.len('Hello IPv6 World!'))
+            Socket.acWrite('Hello IPv6 World!')
          end
       end,
       incoming = function(Socket)
          local buffer = string.alloc(256)
-         local err, bytes = Socket.acRead(buffer, string.len(buffer))
+         local err, bytes = Socket.acRead(buffer)
          if err is ERR_Okay and bytes > 0 then
             local response = string.substr(buffer, 0, bytes)
             logOutput('[Client] Received response: ' .. response)

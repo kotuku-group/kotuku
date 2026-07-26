@@ -125,7 +125,7 @@ static ERR FONT_Init(extFont *Self)
             file->seekStart(fonts[i].Offset);
 
             winfnt_header_fields header;
-            if (!file->read(&header, sizeof(header))) {
+            if (!file->read(std::span<int8_t>((int8_t *)&header, sizeof(header)))) {
                if (auto error = validate_winfnt_header(header, ""); error != ERR::Okay) {
                   return log.warning(error);
                }

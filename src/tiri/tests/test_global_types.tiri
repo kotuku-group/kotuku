@@ -136,7 +136,7 @@ global glGTFunctional = struct.new('GTFunctionalRec')
    assert(glGTFunctional.delta is 2.5, 'Expected delta field write/read through global to return 2.5')
 
    local total = 0
-   for i = 1, 100 do
+   for i in {1 into 100} do
       glGTFunctional.alpha = i
       total += glGTFunctional.alpha
    end

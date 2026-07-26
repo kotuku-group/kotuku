@@ -176,7 +176,7 @@ end
    first_query_us = time_obj.microSecond
 
    -- Brief delay (but not enough to change microseconds in most cases)
-   for i = 1, 1000 do end
+   for i in {0 to 1000} do end
 
    time_obj.acQuery()
    second_query_us = time_obj.microSecond
@@ -236,7 +236,7 @@ end
    time_obj = obj.new('time')
    aliases = { 'Etc/UTC', 'Etc/GMT', 'GMT', 'Zulu' }
 
-   for i=0,#aliases-1 do
+   for i in {0 to #aliases} do
       err, info = time_obj.mtGetTimeZoneInfo(aliases[i], 2024, 2024)
 
       assert(err is ERR_Okay, aliases[i] .. ' alias should resolve to UTC: ' .. mSys.GetErrorMsg(err))

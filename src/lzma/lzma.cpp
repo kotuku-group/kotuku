@@ -122,11 +122,13 @@ static ERR LZMASTREAM_Read(extLZMAStream *Self, struct acRead *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Buffer)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Buffer.data())) return log.warning(ERR::NullArgs);
    if (!Self->initialised()) return log.warning(ERR::NotInitialised);
 
    Args->Result = 0;
-   if (Args->Length <= 0) return ERR::Okay;
+   if (Args->Buffer.empty()) return ERR::Okay;
+   if (Args->Buffer.size() > size_t(INT_MAX)) return log.warning(ERR::OutOfRange);
+   const int length = int(Args->Buffer.size());
 
    // Nothing left to do once the full output has been both decoded and delivered.
    if ((Self->TotalOutput >= Self->Size) and (Self->PendingLength <= 0)) return ERR::Okay;
@@ -136,7 +138,9 @@ static ERR LZMASTREAM_Read(extLZMAStream *Self, struct acRead *Args)
    if (!Self->Decoder.active()) {
       Byte props[LZMA_PROPS_SIZE];
       int result;
-      if (acRead(Self->Input, props, LZMA_PROPS_SIZE, &result) != ERR::Okay) return log.warning(ERR::Read);
+      if (acRead(Self->Input, std::span<int8_t>((int8_t *)props, sizeof(props)), &result) != ERR::Okay) {
+         return log.warning(ERR::Read);
+      }
       if (result != LZMA_PROPS_SIZE) {
          log.warning("Failed to read the %d-byte LZMA properties header (got %d).", LZMA_PROPS_SIZE, result);
          return ERR::Decompression;
@@ -148,16 +152,16 @@ static ERR LZMASTREAM_Read(extLZMAStream *Self, struct acRead *Args)
       Self->PendingBuf.resize(PENDING_CHUNK);
    }
 
-   auto out      = (uint8_t *)Args->Buffer;
+   auto out      = (uint8_t *)Args->Buffer.data();
    int  copied   = 0;
    bool no_input = false;
 
-   while ((copied < Args->Length) and ((Self->PendingLength > 0) or (Self->TotalOutput < Self->Size))) {
+   while ((copied < length) and ((Self->PendingLength > 0) or (Self->TotalOutput < Self->Size))) {
       // Deliver any previously decoded bytes that are awaiting collection.
 
       if (Self->PendingLength > 0) {
          int to_copy = Self->PendingLength;
-         if (copied + to_copy > Args->Length) to_copy = Args->Length - copied;
+         if (copied + to_copy > length) to_copy = length - copied;
          copymem(Self->PendingBuf.data() + Self->PendingOffset, out + copied, to_copy);
          Self->PendingOffset += to_copy;
          Self->PendingLength -= to_copy;
@@ -169,7 +173,8 @@ static ERR LZMASTREAM_Read(extLZMAStream *Self, struct acRead *Args)
 
       if (Self->InputLength <= 0) {
          int result;
-         if (acRead(Self->Input, Self->InputBuf.data(), INPUT_CHUNK, &result) != ERR::Okay) {
+         if (acRead(Self->Input, std::span<int8_t>((int8_t *)Self->InputBuf.data(), INPUT_CHUNK), &result) !=
+             ERR::Okay) {
             return log.warning(ERR::Read);
          }
 

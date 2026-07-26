@@ -139,7 +139,7 @@ end
 
 local cxml
 
-global function cleanXMLString(String:str, Caller:str):str
+global function cleanXMLString(String:str):str
    String ?! return ''
 
    if rx_angle_brackets.test(String) then
@@ -156,7 +156,7 @@ global function cleanXMLString(String:str, Caller:str):str
          local extracted = rx_root_extract.extract(clean_str)
          if extracted then String = extracted:trim() end
       except ex
-         error(f'Failed to parse XML for {Caller ?? "undefined"}: {ex.message}')
+         error(f'Failed to parse XML: {ex.message}\n' .. debug.traceback())
       end
    end
 
@@ -234,7 +234,7 @@ global function loadActions()
    verbose("Loading core actions...")
    global glActions = { }
    list = mSys.ActionList()
-   for id=1, #list-1 do
+   for id in {1 to #list} do
       if list[id].name?? then
          glActions[list[id].name] = { name=list[id].name, input=list[id].args, hash=list[id].hash, id=id }
       end
@@ -291,7 +291,7 @@ global function parseIDL(ModuleName:str):table
    matcher = regex.new("c\\.([A-Z]+):(.+)")
    match_list = matcher.search(defs)
 
-   for i=0, #match_list-1 do
+   for i in {0 to #match_list} do
       prefix = match_list[i][1]
       extract = match_list[i][2]
       constants[prefix] = { }

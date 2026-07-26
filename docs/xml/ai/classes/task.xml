@@ -1,67 +1,77 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Task" mod="Core" c="System processes are managed by the Task class." cat="System" id="7c9e5758" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Task" mod="Core" c="System processes are managed by the Task class." cat="System" id="56332d91" v="1">
   <ai:a n="Activate" c="Activating a task object will execute it." p="ERR acActivate(*Object)">
     <ai:e c="Okay"/>
     <ai:e c="Failed"/>
     <ai:e c="TimeOut"/>
-    <ai:e c="FieldNotSet"/>
+    <ai:e c="ProcessCreation"/>
+    <ai:e c="MissingPath"/>
   </ai:a>
-  <ai:a n="GetKey" c="Retrieves custom key values." p="ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)">
-    <ai:i n="Key" t="CSTRING" c="The name of a key value."/>
+  <ai:a n="GetKey" c="Retrieves custom key values." p="ERR acGetKey(*Object, std::string_view Key, std::string &amp;Value)">
+    <ai:i n="Key" t="STRVIEW" c="The name of a key value."/>
     <ai:i n="Value" t="STRING" c="Pointer to a buffer space large enough to hold the retrieved value."/>
-    <ai:i n="Size" t="INT" c="Indicates the byte size of the Buffer."/>
   </ai:a>
-  <ai:a n="SetKey" c="Variable fields are supported for the general storage of program variables." p="ERR acSetKey(*Object, CSTRING Key, CSTRING Value)">
-    <ai:i n="Key" t="CSTRING" c="The name of the target key."/>
-    <ai:i n="Value" t="CSTRING" c="The string value to associate with Key."/>
+  <ai:a n="Query" c="Reads executable metadata from the file referenced in Location." p="ERR acQuery(*Object)">
+    <ai:e c="Okay"/>
+    <ai:e c="File"/>
+    <ai:e c="Query"/>
+    <ai:e c="MissingPath"/>
   </ai:a>
-  <ai:a n="Write" c="Send raw data to a launched process' stdin descriptor." p="ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)">
-    <ai:i n="Buffer" t="APTR" c="A buffer containing the data that will be written to the object."/>
-    <ai:i n="Length" t="INT" c="The total number of bytes to write to the object."/>
+  <ai:a n="SetKey" c="Variable fields are supported for the general storage of program variables." p="ERR acSetKey(*Object, std::string_view Key, std::string_view Value)">
+    <ai:i n="Key" t="STRVIEW" c="The name of the target key."/>
+    <ai:i n="Value" t="STRVIEW" c="The string value to associate with Key."/>
+  </ai:a>
+  <ai:a n="Write" c="Send raw data to a launched process' stdin descriptor." p="ERR acWrite(*Object, std::span&lt;const int8_t&gt; Buffer, INT *Result)">
+    <ai:i n="Buffer" t="std::span&lt;const int8_t&gt;" c="A buffer containing the data that will be written to the object."/>
     <ai:i n="Result" t="INT" c="This parameter with be updated with the total number of bytes written from the Buffer."/>
   </ai:a>
-  <ai:m n="AddArgument" c="Adds a new argument to the Parameters field." p="ERR task::AddArgument(OBJECTPTR Object, CSTRING Argument)">
-    <ai:i n="Argument" t="CSTRING" c="The new argument string."/>
+  <ai:m n="AddArgument" c="Adds a new argument to the Parameters field." p="ERR task::AddArgument(OBJECTPTR Object, STRVIEW Argument)">
+    <ai:i n="Argument" t="STRVIEW" c="The new argument string."/>
     <ai:e c="Okay"/>
     <ai:e c="NullArgs"/>
   </ai:m>
   <ai:m n="Expunge" c="Forces a Task to expunge unused code." p="ERR task::Expunge(OBJECTPTR Object)">
     <ai:e c="Okay"/>
   </ai:m>
-  <ai:m n="GetEnv" c="Retrieves environment variables for the active process." p="ERR task::GetEnv(OBJECTPTR Object, CSTRING Name, CSTRING * Value)">
-    <ai:i n="Name" t="CSTRING" c="The name of the environment variable to retrieve."/>
-    <ai:i n="Value" t="CSTRING *" c="The value of the environment variable is returned in this parameter."/>
+  <ai:m n="GetEnv" c="Retrieves environment variables for the active process." p="ERR task::GetEnv(OBJECTPTR Object, STRVIEW Name, STRING * Value)">
+    <ai:i n="Name" t="STRVIEW" c="The name of the environment variable to retrieve."/>
+    <ai:i n="Value" t="STRING *" c="The value of the environment variable is returned in this parameter."/>
     <ai:e c="Okay"/>
-    <ai:e c="Args"/>
     <ai:e c="NoSupport"/>
     <ai:e c="DoesNotExist"/>
+    <ai:e c="Syntax"/>
+    <ai:e c="NullArgs"/>
+    <ai:e c="ExecViolation"/>
   </ai:m>
   <ai:m n="Quit" c="Sends a quit message to a task." p="ERR task::Quit(OBJECTPTR Object)">
     <ai:e c="Okay"/>
   </ai:m>
-  <ai:m n="SetEnv" c="Sets environment variables for the active process." p="ERR task::SetEnv(OBJECTPTR Object, CSTRING Name, CSTRING Value)">
-    <ai:i n="Name" t="CSTRING" c="The name of the environment variable to set."/>
-    <ai:i n="Value" t="CSTRING" c="The value to assign to the environment variable."/>
+  <ai:m n="SetEnv" c="Sets environment variables for the active process." p="ERR task::SetEnv(OBJECTPTR Object, STRVIEW Name, STRVIEW Value)">
+    <ai:i n="Name" t="STRVIEW" c="The name of the environment variable to set."/>
+    <ai:i n="Value" t="STRVIEW" c="The value to assign to the environment variable. If empty, the variable is removed."/>
     <ai:e c="Okay"/>
-    <ai:e c="Args"/>
     <ai:e c="NoSupport"/>
+    <ai:e c="Syntax"/>
+    <ai:e c="NullArgs"/>
+    <ai:e c="TaskExecutionFailed"/>
   </ai:m>
-  <ai:f n="Actions" c="Used to gain direct access to a task's actions." t="APTR" a="G"/>
+  <ai:f n="Actions" c="Used to gain direct access to a task's actions." t="ActionEntry[]" a="G"/>
   <ai:f n="AffinityMask" c="Controls which CPU cores the process can run on." t="INT64" a="GS"/>
   <ai:f n="Args" c="Command line arguments (string format)." t="STRING" a="S"/>
   <ai:f n="ErrorCallback" c="This callback returns incoming data from STDERR." t="FUNCTION" a="GS"/>
   <ai:f n="ExitCallback" c="The callback is activated when the process is terminated." t="FUNCTION" a="GS"/>
   <ai:f n="Flags" c="Optional flags." t="TSF" a="RI"/>
   <ai:f n="InputCallback" c="This callback returns incoming data from STDIN." t="FUNCTION" a="GS"/>
-  <ai:f n="LaunchPath" c="Launched executables will start in the path specified here." t="STRING" a="GS"/>
-  <ai:f n="Location" c="Location of an executable file to launch." t="STRING" a="GS"/>
-  <ai:f n="Name" c="Name of the task." t="STRING" a="GS"/>
+  <ai:f n="Keys" c="Returns a list of all key names available to the GetKeys() action." t="kt::vector&lt;std::string&gt;" a="G"/>
+  <ai:f n="LaunchPath" c="Launched executables will start in the path specified here." t="STRING" a="RW"/>
+  <ai:f n="Location" c="Location of an executable file to launch." t="STRING" a="RS"/>
+  <ai:f n="Name" c="Name of the task." t="STRING" a="RW"/>
   <ai:f n="OutputCallback" c="This callback returns incoming data from STDOUT." t="FUNCTION" a="GS"/>
-  <ai:f n="Parameters" c="Command line arguments (list format)." t="pf::vector&lt;std::string&gt;" a="GS"/>
-  <ai:f n="Path" c="The current working folder of the active process." t="STRING" a="GS"/>
+  <ai:f n="Parameters" c="Command line arguments (list format)." t="kt::vector&lt;std::string&gt;" a="RW"/>
+  <ai:f n="Path" c="The current working folder of the active process." t="STRING" a="RS"/>
   <ai:f n="Priority" c="The task priority in relation to other tasks is be defined here." t="INT" a="GS"/>
   <ai:f n="ProcessID" c="Reflects the process ID when an executable is launched." t="INT" a="RI"/>
-  <ai:f n="ProcessPath" c="The path of the executable that is associated with the task." t="STRING" a="G"/>
+  <ai:f n="ProcessPath" c="The path of the executable that is associated with the task." t="STRING" a="R"/>
   <ai:f n="ReturnCode" c="The task's return code can be retrieved following execution." t="INT" a="GS"/>
   <ai:f n="TimeOut" c="Limits the amount of time to wait for a launched process to return." t="DOUBLE" a="RW"/>
 </ai:cl>

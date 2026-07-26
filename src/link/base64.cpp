@@ -187,7 +187,7 @@ To use this function effectively, call it repeatedly in a loop until all of the 
 -INPUT-
 resource(BASE64DECODE) State: Pointer to a BASE64DECODE structure, initialised to zero.
 strview Input: A base 64 input string.
-^buf(ptr) Output:  The output buffer.  The size of the buffer must be greater or equal to the size of Input.
+^array(char) Output: The output buffer.  Its size must be greater than or equal to the size of Input.
 &large Written: The total number of bytes written to `Output` is returned here.
 
 -ERRORS-
@@ -202,10 +202,10 @@ mutates-input
 
 **********************************************************************************************************************/
 
-ERR Base64Decode(BASE64DECODE *State, std::string_view Input, APTR Output, int64_t *Written)
+ERR Base64Decode(BASE64DECODE *State, std::string_view Input, std::span<int8_t> Output, int64_t *Written)
 {
-   if ((!State) or (Input.empty()) or (!Output) or (!Written)) return ERR::NullArgs;
-   if (Input.size() < 4) return ERR::Args;
+   if ((!State) or (Input.empty()) or Output.empty() or (!Written)) return ERR::NullArgs;
+   if ((Input.size() < 4) or (Output.size() < Input.size())) return ERR::Args;
    if (!base64_valid_input(Input)) return ERR::Args;
 
    if (!State->Initialised) {
@@ -214,7 +214,7 @@ ERR Base64Decode(BASE64DECODE *State, std::string_view Input, APTR Output, int64
       State->PlainChar   = 0;
    }
 
-   *Written = base64_decode_block(Input, (char *)Output, State);
+   *Written = base64_decode_block(Input, (char *)Output.data(), State);
    return ERR::Okay;
 }
 

@@ -132,16 +132,16 @@
   <function>
     <name>ActionList</name>
     <category>Objects</category>
-    <comment>Returns a pointer to the global action table.</comment>
-    <prototype>void ActionList(struct ActionTable ** Actions, INT * Size)</prototype>
-    <tiriPrototype>Actions:array, Size:num = ActionList()</tiriPrototype>
-    <tags>static-result, non-null-result, pure-query</tags>
+    <comment>Returns the global action table.</comment>
+    <prototype>void ActionList(kt::vector&lt;ActionTable *&gt; * Actions)</prototype>
+    <tiriPrototype>Actions:array = ActionList()</tiriPrototype>
+    <tags>static-result, non-null-result, pure-query, mutates-input</tags>
     <input>
-      <param type="struct ActionTable **" name="Actions">A pointer to the Core's action table <code>struct ActionTable *</code> is returned. Please note that the first entry in the <code>ActionTable</code> list has all fields driven to <code>NULL</code>, because valid action ID's start from one, not zero.  The final action in the list is also terminated with <code>NULL</code> fields in order to indicate an end to the list.  Knowing this is helpful when scanning the list or calculating the total number of actions supported by the Core.</param>
-      <param type="INT *" name="Size">Total number of elements in the returned list.</param>
+      <param type="kt::vector&lt;ActionTable *&gt; *" name="Actions">Receives pointers to the Core's static action records, indexed by action ID.</param>
     </input>
     <description>
 <p>This function returns an array of all actions supported by the Core, including name, arguments and structure size.  The ID of each action is indicated by its index within the array.</p>
+<p>Index zero is an empty record because valid action IDs start from one rather than zero.</p>
 <p>The <code>Name</code> field specifies the name of the action.  The <code>Args</code> field refers to the action's argument definition structure, which lists the argument names and their relevant types.  This is matched by the <code>Size</code> field, which indicates the byte-size of the action's related argument structure.  If the action does not support arguments, the <code>Args</code> and <code>Size</code> fields will be set to <code>NULL</code>.  The following illustrates two argument definition examples:</p>
 <pre>struct FunctionField argsCopyData[] = {
    { &quot;Destination&quot;, FD_INT  },
@@ -156,15 +156,18 @@ struct FunctionField argsResize[] = {
 };
 </pre>
 <p>The argument types that can be used by actions are limited to those listed in the following table:</p>
-<types lookup="FD">
-<type name="INT">A 32-bit integer value ranging from -2,147,483,647 to 2,147,483,648.</type>
-<type name="INT64">A 64-bit integer value.</type>
-<type name="PTR">A standard address space pointer.</type>
-<type name="STRING">A pointer to a null-terminated string.</type>
+<types lookup="FDF">
+<type name="INT">A 32-bit integer value.</type>
 <type name="DOUBLE">A 64-bit floating point value.</type>
-<type name="OBJECT">This flag is sometimes set in conjunction with the <code>FD_INT</code> type.  It indicates that the argument refers to an object ID.</type>
-<type name="PTRSIZE">This argument type can only be used if it follows an <code>FD_PTR</code> type, and if the argument itself is intended to reflect the size of the buffer referred to by the previous <code>FD_PTR</code> argument.</type>
-<type name="RESULT">This special flag is set in conjunction with the other data-based argument types. Example: If the developer is required to supply a pointer to an <code>int</code> field in which the function will store a result, the correct argument definition will be <code>FD_RESULT|FD_INT|FD_PTR</code>. To make the definition of these argument types easier, <code>FD_PTRRESULT</code> and <code>FD_INTRESULT</code> macros are also available for use.</type>
+<type name="PTR">A standard address space pointer.</type>
+<type name="OBJECTPTR">A pointer to an object.  This is defined as <code>FD_PTR|FD_OBJECT</code> and its convenience macro is <code>FD_OBJECTPTR</code>.</type>
+<type name="CPPSTRING">A C++ <code>std::string</code>, defined as <code>FD_CPP|FD_STRING</code> with the convenience macro <code>FDF_CPPSTRING</code>.</type>
+<type name="SPAN">A typed span describing contiguous callable array storage, defined as <code>FD_CPP|FD_ARRAY</code> with the convenience macro <code>FDF_SPAN</code>.  Combine it with the element type and <code>FD_MUTABLE</code> when the span is writable.</type>
+</types>
+<p>Supplementary flags can be combined with the above types to provide additional information about the argument:</p>
+<types lookup="FD">
+<type name="MUTABLE">This flag indicates that the referenced memory is writable by the function.  It is most commonly combined with <code>FDF_SPAN</code> for output buffers.</type>
+<type name="RESULT">This flag indicates that the parameter is used for storing function output. Example: If the developer is required to supply a pointer to an <code>int</code> field in which the function will store a result, the correct argument definition will be <code>FDF_RESULT|FDF_INT</code>.</type>
 </types>
     </description>
   </function>
@@ -384,12 +387,12 @@ if (!AllocResource(1000, MEM::NIL, &amp;address, nullptr)) {
     <name>AsyncWait</name>
     <category>Objects</category>
     <comment>Block until all queued async actions for the listed objects have completed.</comment>
-    <prototype>ERR AsyncWait(kt::vector&lt;OBJECTID&gt; Objects, INT TimeOut)</prototype>
-    <tiriPrototype>err = AsyncWait(Objects:array, TimeOut:num)</tiriPrototype>
+    <prototype>ERR AsyncWait(kt::vector&lt;OBJECTID&gt; Objects, INT Timeout)</prototype>
+    <tiriPrototype>err = AsyncWait(Objects:array, Timeout:num)</tiriPrototype>
     <tags>main-thread-only, blocking, callback-inlines</tags>
     <input>
       <param type="kt::vector&lt;OBJECTID&gt;" name="Objects">A list of object IDs to wait on.</param>
-      <param type="INT" name="TimeOut">Maximum time to wait in milliseconds, or <code>-1</code> for an indefinite wait.</param>
+      <param type="INT" name="Timeout">Maximum time to wait in milliseconds, or <code>-1</code> for an indefinite wait.</param>
     </input>
     <description>
 <p>Call AsyncWait() to suspend the current thread until every asynchronous action that is executing or queued against the listed objects has finished.  Messages continue to be processed while waiting, so async completion callbacks fire normally.</p>
@@ -399,7 +402,7 @@ if (!AllocResource(1000, MEM::NIL, &amp;address, nullptr)) {
       <error code="Okay">All async actions completed.</error>
       <error code="Terminate">Termination requested</error>
       <error code="InUse">Another AsyncWait() call is already active.</error>
-      <error code="TimeOut">The timeout expired before all actions completed.</error>
+      <error code="Timeout">The timeout expired before all actions completed.</error>
       <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
       <error code="Recursion">Detected a recursive function call</error>
@@ -1263,12 +1266,12 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
     <name>ProcessMessages</name>
     <category>Messages</category>
     <comment>Processes system messages that are queued in the task's message buffer.</comment>
-    <prototype>ERR ProcessMessages(PMF Flags, INT TimeOut)</prototype>
-    <tiriPrototype>err = ProcessMessages(Flags:num, TimeOut:num)</tiriPrototype>
+    <prototype>ERR ProcessMessages(PMF Flags, INT Timeout)</prototype>
+    <tiriPrototype>err = ProcessMessages(Flags:num, Timeout:num)</tiriPrototype>
     <tags>main-thread-only, blocking, callback-inlines</tags>
     <input>
       <param type="PMF" name="Flags" lookup="PMF">Optional flags are specified here (clients should set a value of zero).</param>
-      <param type="INT" name="TimeOut">A TimeOut value, measured in milliseconds.  If zero, the function will return as soon as all messages on the queue are processed.  If less than zero, the function does not return until a request for termination is received or a user message requires processing.</param>
+      <param type="INT" name="Timeout">A Timeout value, measured in milliseconds.  If zero, the function will return as soon as all messages on the queue are processed.  If less than zero, the function does not return until a request for termination is received or a user message requires processing.</param>
     </input>
     <description>
 <p>The ProcessMessages() function is used to process the task's message queue.  Messages are dispatched to message handlers in the order in which they arrived and the queue is emptied so that space is available for more messages.</p>
@@ -1280,7 +1283,7 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
       <error code="Okay">Operation successful.</error>
       <error code="Terminate">A <code>MSGID::QUIT</code> message type was found on the message queue.</error>
       <error code="NoSupport">Operation not supported</error>
-      <error code="TimeOut">Function timed-out before successful completion</error>
+      <error code="Timeout">Function timed-out before successful completion</error>
       <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="AccessObject">Attempting to lock an object failed</error>
       <error code="Recursion">Detected a recursive function call</error>
@@ -1981,12 +1984,12 @@ identifier has no effect.</li>
     <name>WaitForObjects</name>
     <category>Messages</category>
     <comment>Process incoming messages while waiting on objects to complete their activities.</comment>
-    <prototype>ERR WaitForObjects(PMF Flags, INT TimeOut, struct ObjectSignal * ObjectSignals)</prototype>
-    <tiriPrototype>err = WaitForObjects(Flags:num, TimeOut:num, ObjectSignals:any)</tiriPrototype>
+    <prototype>ERR WaitForObjects(PMF Flags, INT Timeout, struct ObjectSignal * ObjectSignals)</prototype>
+    <tiriPrototype>err = WaitForObjects(Flags:num, Timeout:num, ObjectSignals:any)</tiriPrototype>
     <tags>main-thread-only, blocking, callback-inlines</tags>
     <input>
       <param type="PMF" name="Flags" lookup="PMF">Optional flags are specified here.</param>
-      <param type="INT" name="TimeOut">A time-out value measured in milliseconds.  If this value is negative then no time-out applies and the function will not return until an incoming message or signal breaks it.</param>
+      <param type="INT" name="Timeout">A time-out value measured in milliseconds.  If this value is negative then no time-out applies and the function will not return until an incoming message or signal breaks it.</param>
       <param type="struct ObjectSignal *" name="ObjectSignals">A null-terminated array of objects to monitor for signals.</param>
     </input>
     <description>
@@ -1999,7 +2002,7 @@ identifier has no effect.</li>
       <error code="Okay">Operation successful.</error>
       <error code="Terminate">Termination requested</error>
       <error code="ExceptionThreshold">Termination requested</error>
-      <error code="TimeOut">Function timed-out before successful completion</error>
+      <error code="Timeout">Function timed-out before successful completion</error>
       <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="Recursion">Detected a recursive function call</error>
       <error code="OutsideMainThread">Operation permitted from the main thread only</error>

@@ -302,20 +302,23 @@ static ERR ASSET_Read(objFile *Self, struct acRead *Args)
    kt::Log log(__FUNCTION__);
    prvFileAsset *prv = Self->DerivedPtr;
 
+   if ((not Args) or (not Args->Buffer.data())) return log.warning(ERR::NullArgs);
+   if (Args->Buffer.size() > size_t(INT_MAX)) return ERR::OutOfRange;
+   const int length = int(Args->Buffer.size());
    if (!(Self->Flags & FL::READ)) return log.warning(ERR::FileReadFlag);
 
-   Args->Result = AAsset_read(prv->Asset, Args->Buffer, Args->Length);
+   Args->Result = AAsset_read(prv->Asset, Args->Buffer.data(), length);
 
-   if (Args->Result != Args->Length) {
+   if (Args->Result != length) {
       if (Args->Result IS -1) {
-         log.msg("Failed to read %d bytes from the file.", Args->Length);
+         log.msg("Failed to read %d bytes from the file.", length);
          Args->Result = 0;
          return ERR::Read;
       }
 
       // Return ERR::Okay even though not all data was read, because this was not due to a failure.
 
-      log.msg("%d of the intended %d bytes were read from the file.", Args->Result, Args->Length);
+      log.msg("%d of the intended %d bytes were read from the file.", Args->Result, length);
       Self->Position += Args->Result;
       return ERR::Okay;
    }

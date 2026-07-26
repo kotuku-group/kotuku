@@ -25,6 +25,8 @@ extern void lj_object_free(global_State *, GCobject *);
 extern int lj_object_pairs(lua_State *);
 extern int lj_object_ipairs(lua_State *);
 
+extern const std::string field_typename(const Field &);
+
 // Fast path bytecode handlers for BC_OBGETF and BC_OBSETF.
 // Ins points to the current instruction for inline caching (nullptr disables caching in JIT traces).
 

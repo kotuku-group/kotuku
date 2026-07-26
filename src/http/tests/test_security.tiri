@@ -198,7 +198,7 @@ end
    rateLimited = 0
    successful = 0
 
-   for i = 1, totalRequests do
+   for i in {1 into totalRequests} do
       status, response = rawHttpRequest('GET', '/api/rate-test/' .. i)
       if status is 429 then
          rateLimited++

@@ -221,7 +221,7 @@ restart:
       int total = 0;
       int result;
       do {
-         error = acRead(Self, buffer.data(), buffer.size(), &result);
+         error = acRead(Self, std::span<int8_t>((int8_t *)buffer.data(), buffer.size()), &result);
          total += result;
       } while (result > 0);
 

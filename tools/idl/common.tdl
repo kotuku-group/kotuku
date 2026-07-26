@@ -217,9 +217,10 @@ flags("FD", { weak=true, comment="Field descriptors", module="Core" },
   { SYNONYM    = "0x00020000: CLASSDEF Use to declare fields that duplicate the functionality of another field" },
   { SYSTEM     = "0x00010000: CLASSDEF System, internal and private fields" },
   { CUSTOM     =  0x00008000 },
-  { CPP        = "0x00004000: Use the C++ variant of the indicated type, e.g. `ARRAY` is a `kt::vector`" },
+  { CPP        = "0x00004000: Use the C++ variant of the indicated type, e.g. `std::string`" },
   { RESOURCE   = "0x00002000: The referenced struct or pointer is a special resource.  Changes some behaviours, e.g. a resourced struct will use direct value references rather than being copied in Tiri" },
-  { ARRAY      = "0x00001000: Indicates an array of values.  Follow with `ARRAYSIZE` if used in a function" },
+  { ARRAY      = "0x00001000: Indicates an array of values.  `CPP|ARRAY` identifies a callable `std::span`; " ..
+      "otherwise it describes raw, null-terminated or fixed array storage" },
   { INIT       = "0x00000400: CLASSDEF" },
   { WRITE      = "0x00000200: CLASSDEF" },
   { READ       = "0x00000100: CLASSDEF" },
@@ -233,25 +234,18 @@ flags("FD", { weak=true, comment="Field descriptors", module="Core" },
   { OBJECT     = "0x00000001: Supplementary, can be used with ints (for IDs) or pointers" },
   { ERROR      = "0x00000800: FUNCDEF" },
   { TAGS       = "0x00000400: FUNCDEF Overrides `INIT`" },
-  { BUFFER     = "0x00000200: FUNCDEF Overrides `WRITE`.  Common buffer semantic flag.  " ..
-      "`FDF_SPAN` (`CPP|BUFFER`) represents a C++ module-function buffer whose `std::span` carries its pointer and " ..
-      "extent.  Legacy action and method buffers without `CPP` must be followed by `BUFSIZE`" },
+  { VECTOR     = "0x00080000: A `kt::vector` type" },
   { RESULT     = "0x00000100: FUNCDEF Overrides `READ`" },
-  { BUFSIZE    = "0x00000080: FUNCDEF Overrides `LOOKUP`.  Pair with a legacy action or method `BUFFER` to indicate " ..
-      "the byte size of the buffer memory.  `FDF_SPAN` module-function parameters carry their own extent and do not " ..
-      "use `BUFSIZE`" },
-  { ARRAYSIZE  = "0x00000080: FUNCDEF Overrides `LOOKUP`.  Pair with `ARRAY` to indicate total elements in the array.  It is preferred that any null terminator is not counted.  If `ARRAYSIZE` not specified, `ARRAY` must be null-terminated" },
   { VARTAGS    = "0x00000040: FUNCDEF Overrides `FLAGS`.  Use for 64-bit taglists that require value definitions, e.g. `TDOUBLE`, `TINT` etc" },
-  { MUTABLE    = "0x00000008: FUNCDEF Overrides `VIRTUAL`.  The function will overwrite incoming BUFFER or STRING content.  If used in conjunction with the RESULT flag, an empty buffer is expected for output" },
+  { MUTABLE    = "0x00000008: FUNCDEF Overrides `VIRTUAL`.  The function will overwrite incoming span or string " ..
+      "content.  If used in conjunction with the RESULT flag, empty storage is expected for output" },
   { PRIVATE       = "SYSTEM" },
   { STR           = "STRING" },
   { PTR           = "POINTER" },
-  { PTRSIZE       = "BUFSIZE" },
   { VOID          = 0 },
   { FUNCTIONPTR   = "PTR|FUNCTION" },
   { OBJECTPTR     = "PTR|OBJECT" },
   { OBJECTID      = "INT|OBJECT" },
-  { PTRBUFFER     = "PTR|BUFFER: The next argument should be `INT|BUFSIZE`" },
   { STRRESULT     = "STR|RESULT" },
   { PTRRESULT     = "PTR|RESULT: Use for pointer-based value results only" },
   { INTRESULT     = "INT|RESULT: For actions and methods" },
@@ -263,10 +257,7 @@ flags("FD", { weak=true, comment="Field descriptors", module="Core" },
   { RW            = "READ|WRITE" },
   { RI            = "READ|INIT" },
   { I             = "INIT" },
-  { PTR_INTRESULT    = "INT|PTR|RESULT: Use for pointer-based value results only" },
-  { PTR_INT64RESULT  = "INT64|PTR|RESULT: Use for pointer-based value results only" },
-  { PTR_DOUBLERESULT = "DOUBLE|PTR|RESULT: Use for pointer-based value results only" },
-  { CLASS_TYPES      = "DOUBLE|FLOAT|POINTER|INT|INT64|STRING|FUNCTION|UNIT|OBJECT|BYTE|WORD|CPP|ARRAY: All types that directly contribute to the core definition of a C/C++ type" }
+  { CLASS_TYPES      = "DOUBLE|FLOAT|POINTER|INT|INT64|STRING|FUNCTION|UNIT|OBJECT|BYTE|WORD|CPP|ARRAY|VECTOR: All types that directly contribute to the core definition of a C/C++ type" }
 )
 
   structdef("InputEvent", { module="Core" }, [[

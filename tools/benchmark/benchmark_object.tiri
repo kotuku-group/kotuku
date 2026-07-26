@@ -9,7 +9,7 @@
    local glXML = obj.new('xml')
 
 @Test function ObjectReadDirectFields()
-   for i = 0,100000 do
+   for i in {0 to 100000} do
       local h = glTime.hour
       local m = glTime.minute
       local s = glTime.second
@@ -21,7 +21,7 @@ end
 @Test function ObjectReadDirectStrings()
    local val
    glConfig.path = 'temp:config.cfg'
-   for i = 0,100000 do
+   for i in {0 to 100000} do
       val = glConfig.path
    end
 end
@@ -29,7 +29,7 @@ end
 @Test function ObjectReadDirectObject()
    local val
    glXML.source = glConfig
-   for i = 0,100000 do
+   for i in {0 to 100000} do
       val = glXML.source
    end
 end
@@ -38,14 +38,14 @@ end
    local val
    glXML.source = glConfig
    with glXML do
-      for i = 0,100000 do
+      for i in {0 to 100000} do
          val = glXML.source
       end
    end
 end
 
 @Test function ObjectWriteDirectFields()
-   for i=0,100000 do
+   for i in {0 to 100000} do
       glTime.hour   = 1
       glTime.minute = 2
       glTime.second = 3
@@ -55,7 +55,7 @@ end
 -- Read from the stamp field, which is backed by a function.
 
 @Test function ObjectReadIndirectFields()
-   for i = 0,100000 do
+   for i in {0 to 100000} do
       local tm = glTime.timestamp
    end
 end
@@ -64,13 +64,13 @@ end
 
 @Test function ObjectWriteIndirectFields()
    local bmp = obj.new('bitmap')
-   for i = 0,100000 do
+   for i in {0 to 100000} do
       bmp.transIndex = 1
    end
 end
 
 @Test function ObjectWriteIndirectStrings()
-   for i = 0,100000 do
+   for i in {0 to 100000} do
       glConfig.keyFilter = 'None'
    end
 end

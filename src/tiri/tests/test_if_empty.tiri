@@ -211,10 +211,40 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Deferred values must be resolved before the consolidated falsey bytecode tests their logical value.
+
+@Test function ThunkFalseyChecks()
+   evaluation_count = 0
+   available = thunk():bool
+      evaluation_count++
+      return true
+   end
+
+   function accept(Value):bool
+      Value ?! return false
+      return true
+   end
+
+   assert(accept(available), "A truthy thunk must not activate a falsey guard")
+   assert(evaluation_count is 1, "The falsey guard must resolve its thunk exactly once")
+
+   missing = thunk():bool
+      return false
+   end
+   result = missing ?? "fallback"
+   assert(result is "fallback", "A thunk returning false must select the fallback")
+
+   zero = thunk():num
+      return 0
+   end
+   assert((zero??) is false, "A thunk returning zero must fail a postfix presence check")
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Test the use of if-empty within a function
 
 @Test function IfEmptyArgumentLeakCapture()
-   Function = { status = 'Hello' }
+   local function_value = { status = 'Hello' }
    capture_record = { count = 0, first = nil, second = nil }
 
    function capture(...)
@@ -224,7 +254,7 @@ end
       capture_record.second = args[1]
    end
 
-   capture(Function.status ?? 'then')
+   capture(function_value.status ?? 'then')
 
    assert(capture_record.count is 1,
       "Expected a single argument after fixing the leak, got '" .. tostring(capture_record.count) .. "'")
@@ -235,9 +265,9 @@ end
 end
 
 @Test function IfEmptyStringFindError()
-   Function = { status = 'Hello' }
+   local function_value = { status = 'Hello' }
 
-   start_index, end_index = string.find((Function.status ?? 'then'), 'e')
+   start_index, end_index = string.find((function_value.status ?? 'then'), 'e')
    assert(start_index is 1, "Expected search to start at index 1, got '" .. tostring(start_index) .. "'")
    assert(end_index is 1, "Expected search to end at index 1, got '" .. tostring(end_index) .. "'")
 end
@@ -345,10 +375,10 @@ end
 end
 
 @Test function InFunction()
-   Function = { status = 'Hello' }
+   local function_value = { status = 'Hello' }
 
    -- If-empty operator within a function
-   result = string.find((Function.status ?? 'then'), 'e')
+   result = string.find((function_value.status ?? 'then'), 'e')
    assert(result is 1, "Failed test: expected 1, got " .. tostring(result))
 end
 

@@ -50,7 +50,7 @@ function runFind(Parameters:array):table
       src = glOrigoPath,
       args = task_params:concat(' '),
       flags = TSF_WAIT|TSF_SHELL,
-      timeOut = 10,
+      timeout = 10,
       outputCallback = function(Task:obj, Buffer:array)
          output ..= Buffer:getString()
       end,

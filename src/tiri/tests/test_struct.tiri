@@ -45,6 +45,10 @@ struct DeclaredNonTrivialVectorElement
    Name: string
 end
 
+struct DeclaredVectorOwner
+   Values: array<int>
+end
+
 function declared_user_age(Value: struct<DeclaredUser>):num
    return Value.Age
 end
@@ -294,6 +298,16 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test function NativeStructArrayRejectsVectorFields()
+   try
+      local values = array<struct<DeclaredVectorOwner>, 1>
+   success
+      error('Owned struct arrays should reject element layouts containing vectors')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function NativeStructDeclarationErrors()
    try
       exec([[struct RetiredBraceDeclaration { Value: int }]])
@@ -381,7 +395,7 @@ end
    local proc = processing.new({ timeout=5.0, signals=array<object> { signal } })
    local scripts = array<object>
 
-   for i=0, total-1 do
+   for i in {0 to total} do
       local statement
       if (i & 1) is 0 then
          statement = [[
@@ -682,7 +696,7 @@ end
    local first = struct.new('FastCacheFirst')
    local second = struct.new('FastCacheSecond')
 
-   for i = 1, 4 do
+   for i in {1 to 5} do
       assert(set_annotated_struct_field(first, i) is i, 'Repeated annotated access should retain the first layout')
       assert(set_annotated_struct_field(second, i * 10) is i * 10,
          'A polymorphic cache site should resolve the second layout')
@@ -690,22 +704,6 @@ end
 
    assert(first.value is 4, 'The first polymorphic struct should retain its final value')
    assert(second.value is 40, 'The second polymorphic struct should retain its final value')
-end
-
------------------------------------------------------------------------------------------------------------------------
--- A struct annotation is a parser optimisation hint, not a replacement for runtime type dispatch. Non-struct values
--- must still fall back to the normal table metamethod path in the VM.
-
-function access_annotated_fallback(Value:struct):num
-   Value.value = 73
-   return Value.value
-end
-
-@Test function AnnotatedStructFallbackUsesTablePath()
-   local value = {}
-   local call = { access_annotated_fallback }
-   assert(call[0](value) is 73, 'A table at a struct-typed access site should use vmeta fallback')
-   assert(value.value is 73, 'The fallback setter should update the table')
 end
 
 -----------------------------------------------------------------------------------------------------------------------

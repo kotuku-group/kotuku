@@ -232,7 +232,10 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
 
    modTiri = (OBJECTPTR)((objModule *)argModule)->Root;
 
-   ActionList(&glActions, nullptr); // Get the global action table from the Core
+   kt::vector<ActionTable *> actions;
+   ActionList(&actions);
+   if (actions.empty()) return log.warning(ERR::NoData);
+   glActions = actions[0]; // The action records have process lifetime.
 
    glStructSizes = (ankerl::unordered_dense::map<uint32_t, StructInfo> *)GetResourcePtr(RES::STRUCT_DB);
 
@@ -715,7 +718,7 @@ int code_writer_id(lua_State *Lua, CPTR Data, size_t Size, void *FileID)
 
    kt::ScopedObjectLock file((MAXINT)FileID);
    if (file.granted()) {
-      if (!acWrite(*file, (APTR)Data, Size)) return 0;
+      if (!acWrite(*file, std::span<const int8_t>((const int8_t *)Data, Size))) return 0;
    }
 
    kt::Log("code_writer").warning("Failed writing %d bytes.", (int)Size);
@@ -729,7 +732,7 @@ int code_writer(lua_State *Lua, CPTR Data, size_t Size, OBJECTPTR File)
    if (Size <= 0) return 0; // Ignore bad size requests
 
    int result;
-   if (!acWrite(File, (APTR)Data, Size, &result)) {
+   if (!acWrite(File, std::span<const int8_t>((const int8_t *)Data, Size), &result)) {
       if ((size_t)result != Size) {
          log.warning("Wrote %d bytes instead of %d.", result, (int)Size);
          return 1;
@@ -749,7 +752,8 @@ CSTRING code_reader(lua_State *Lua, void *Handle, size_t *Size)
 {
    auto handle = (code_reader_handle *)Handle;
    int result;
-   if (auto error = acRead(handle->File, handle->Buffer, SIZE_READ, &result); error IS ERR::Okay) {
+   if (auto error = acRead(handle->File, std::span<int8_t>((int8_t *)handle->Buffer, SIZE_READ), &result);
+       error IS ERR::Okay) {
       *Size = result;
       return (CSTRING)handle->Buffer;
    }

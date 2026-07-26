@@ -27,6 +27,12 @@ constexpr uint16_t BCBIAS_J = 0x8000;
 constexpr uint8_t  NO_REG = BCMAX_A;
 #define NO_JMP      (~(BCPOS)0)
 
+// Mask bits for BC_ISFALSEY. Nil is always tested.
+#define ISFALSEY_FALSE       0x01
+#define ISFALSEY_ZERO        0x02
+#define ISFALSEY_EMPTY_STR   0x04
+#define ISFALSEY_EMPTY_COLL  0x08
+
 // Inline functions to get instruction fields (defined after BCOp enum).
 
 #define bc_op(i)   ((BCOp)((i)&0xff))
@@ -127,7 +133,7 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   _(ISF,    ___, ___, var, ___) \
   _(ISTYPE, var, ___, lit, ___) \
   _(ISNUM,  var, ___, lit, ___) \
-  _(ISEMPTYARR, var, ___, ___, ___) \
+  _(ISFALSEY, var, ___, lit, ___) \
   \
   /* Unary ops. */ \
   _(MOV, dst, ___, var, ___) \
@@ -259,7 +265,12 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   _(TRYENTER, base,  ___, lit, ___) \
   _(TRYLEAVE, base,  ___, ___, ___) \
   _(CHECK,    var,   ___, lit, ___) \
-  _(RAISE,    var,   ___, var, ___)
+  _(RAISE,    var,   ___, var, ___) \
+  \
+  /* Portable runtime type contracts. */ \
+  _(CONTRACT, rbase, ___, str, ___) \
+  _(MRSAVE,   rbase, ___, ___, ___) \
+  _(MRRESTORE,rbase, ___, ___, ___)
 
 // Bytecode opcode numbers.
 // Explicitly enumerated for debugger visibility and easy value lookup.
@@ -285,7 +296,7 @@ typedef enum {
    BC_ISF     = 15,
    BC_ISTYPE  = 16,
    BC_ISNUM   = 17,
-   BC_ISEMPTYARR = 18,  // Check if RA is an empty array or table (for ?? operator)
+   BC_ISFALSEY = 18,  // Check RA against the falsey conditions selected by RD; nil is always checked
 
    // Unary ops (19-22)
    BC_MOV     = 19,
@@ -412,7 +423,12 @@ typedef enum {
    BC_CHECK  = 114,  // Check error code, raise if >= threshold
    BC_RAISE  = 115,  // Raise exception with error code and optional message
 
-   BC__MAX   = 116
+   // Runtime contracts (appended to preserve every existing opcode number)
+   BC_CONTRACT = 116,
+   BC_MRSAVE = 117,
+   BC_MRRESTORE = 118,
+
+   BC__MAX   = 119
 } BCOp;
 
 [[nodiscard]] inline constexpr bool bc_is_func_header(BCOp Op) noexcept

@@ -276,7 +276,8 @@ static void release_input_subscription(lua_State *Lua, struct finput *Input)
             .Preference = { char(datatype), 0 }
          };
 
-         auto error = acDataFeed(*src, Lua->script, DATA::REQUEST, &dcr, sizeof(dcr));
+         auto error = acDataFeed(*src, Lua->script, DATA::REQUEST,
+            std::span<const int8_t>((const int8_t *)&dcr, sizeof(dcr)));
          if (error != ERR::Okay) {
             if (callback_ref) {
                bool request_found = false;

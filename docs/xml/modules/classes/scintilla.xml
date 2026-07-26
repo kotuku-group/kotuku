@@ -130,15 +130,14 @@
     <method>
       <name>GetLine</name>
       <comment>Copies the text content of any line to a user-supplied buffer.</comment>
-      <prototype>ERR sci::GetLine(OBJECTPTR Object, INT Line, STRING Buffer, INT Length)</prototype>
-      <tiriPrototype>err = GetLine(Line:num, Buffer:any, Length:num)</tiriPrototype>
+      <prototype>ERR sci::GetLine(OBJECTPTR Object, INT Line, std::span&lt;int8_t&gt; Buffer)</prototype>
+      <tiriPrototype>err = GetLine(Line:num, Buffer:array)</tiriPrototype>
       <input>
         <param type="INT" name="Line">The index of the line to retrieve.</param>
-        <param type="STRING" name="Buffer">The destination buffer.</param>
-        <param type="INT" name="Length">The byte size of the <code>Buffer</code>.</param>
+        <param type="std::span&lt;int8_t&gt;" name="Buffer">The destination buffer.</param>
       </input>
       <description>
-<p>This method will retrieve the string for a <code>Line</code> at a given index.  The string is copied to a user supplied <code>Buffer</code> of the indicated <code>Length</code> (in bytes).</p>
+<p>This method retrieves the string for a <code>Line</code> at a given index.  The string is copied to the supplied <code>Buffer</code>, which must have enough space for the line content and a terminating null byte.</p>
       </description>
     </method>
 

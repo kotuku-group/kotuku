@@ -23,8 +23,10 @@
 #include "lj_array.h"
 #include "lj_bulk.h"
 #include "lj_meta.h"
+#include "lj_struct.h"
 #include "lib.h"
 #include "lib_range.h"
+#include "../parser/static_type_descriptor.h"
 
 #include <cstdio>
 #include <cstring>
@@ -32,6 +34,8 @@
 #include <string_view>
 #include <kotuku/strings.hpp>
 #include <kotuku/main.h>
+
+#include "../../defs.h"
 
 #define LJLIB_MODULE_array
 
@@ -95,26 +99,36 @@ static OBJECTID object_uid_from_value(lua_State *L, int ArgIndex)
 static AET parse_elemtype(lua_State *L, int NArg)
 {
    GCstr *type_str = lj_lib_checkstr(L, NArg);
-
-   switch (type_str->hash) {
-      case HASH_INT:     return AET::INT32;
-      case HASH_BYTE:    return AET::BYTE;
-      case HASH_CHAR:    return AET::BYTE;
-      case HASH_INT16:   return AET::INT16;
-      case HASH_INT64:   return AET::INT64;
-      case HASH_FLOAT:   return AET::FLOAT;
-      case HASH_DOUBLE:  return AET::DOUBLE;
-      case HASH_STRING:  return AET::STR_GC;
-      case HASH_STRUCT:  return AET::STRUCT;
-      case HASH_POINTER: return AET::PTR;
-      case HASH_OBJECT:  return AET::OBJECT;
-      case HASH_TABLE:   return AET::TABLE;
-      case HASH_ARRAY:   return AET::ARRAY;
-      case HASH_ANY:     return AET::ANY;
-   }
+   std::string_view type_name(strdata(type_str), type_str->len);
+   if (auto descriptor = describe_array_element(type_name, L)) return descriptor->storage;
 
    lj_err_argv(L, NArg, ErrMsg::BADTYPE, "valid array type", strdata(type_str));
    return AET(0);  // unreachable
+}
+
+static std::string_view array_struct_name(lua_State *L, int NArg)
+{
+   GCstr *type_str = lj_lib_checkstr(L, NArg);
+   std::string_view type_name(strdata(type_str), type_str->len);
+   if (type_name.starts_with("struct<") and type_name.ends_with('>') and (type_name.size() > 8)) {
+      return type_name.substr(7, type_name.size() - 8);
+   }
+   return {};
+}
+
+// Owned structure arrays use byte-wise element storage.  Reject layouts that require construction, destruction,
+// garbage-collector ownership or managed-object lifetime tracking.  Embedded structures are safe only when every
+// nested field satisfies the same contract.
+
+static bool array_struct_is_trivial(const struct_record &Def)
+{
+   for (auto &field : Def.Fields) {
+      if (field.Type & (FD_CPP|FD_VECTOR|FD_STRING|FD_FUNCTION|FD_OBJECT)) return false;
+      if ((field.Type & FD_STRUCT) and (not (field.Type & FD_PTR))) {
+         if ((not field.StructDefinition) or (not array_struct_is_trivial(*field.StructDefinition))) return false;
+      }
+   }
+   return true;
 }
 
 //********************************************************************************************************************
@@ -246,9 +260,16 @@ LJLIB_CF(array_new)      LJLIB_REC(.)
       auto elem_type = parse_elemtype(L, 2);
 
       if (elem_type IS AET::PTR) lj_err_argv(L, 2, ErrMsg::ARRTYPE); // For Kotuku functions only
-      else if (elem_type IS AET::STRUCT) lj_err_argv(L, 2, ErrMsg::ARRTYPE); // For Kotuku functions only (for now)
-
-      arr = lj_array_new(L, uint32_t(size), elem_type);
+      else if (elem_type IS AET::STRUCT) {
+         auto struct_name = array_struct_name(L, 2);
+         if (struct_name.empty()) lj_err_argv(L, 2, ErrMsg::ARRTYPE);
+         auto struct_def = find_struct(L, struct_name);
+         if ((not struct_def) or (not array_struct_is_trivial(*struct_def))) {
+            lj_err_argv(L, 2, ErrMsg::ARRTYPE);
+         }
+         arr = lj_array_new(L, uint32_t(size), elem_type, nullptr, 0, struct_name, struct_def);
+      }
+      else arr = lj_array_new(L, uint32_t(size), elem_type);
    }
 
    // Per-instance metatable is null - base metatable will be used automatically
@@ -273,14 +294,23 @@ LJLIB_CF(array_of)
    auto elem_type = parse_elemtype(L, 1);
 
    if (elem_type IS AET::PTR) lj_err_argv(L, 1, ErrMsg::BADTYPE, "non-pointer type", "pointer");
-   if (elem_type IS AET::STRUCT) lj_err_argv(L, 1, ErrMsg::BADTYPE, "non-struct type", "struct");
 
    // Count number of values provided (all arguments after the type string)
 
    int num_values = lua_gettop(L) - 1;
    if (num_values < 1) luaL_error(L, ERR::Args, "array.of() requires at least one value");
 
-   GCarray *arr = lj_array_new(L, uint32_t(num_values), elem_type);
+   GCarray *arr;
+   if (elem_type IS AET::STRUCT) {
+      auto struct_name = array_struct_name(L, 1);
+      if (struct_name.empty()) lj_err_argv(L, 1, ErrMsg::ARRTYPE);
+      auto struct_def = find_struct(L, struct_name);
+      if ((not struct_def) or (not array_struct_is_trivial(*struct_def))) {
+         lj_err_argv(L, 1, ErrMsg::ARRTYPE);
+      }
+      arr = lj_array_new(L, uint32_t(num_values), elem_type, nullptr, 0, struct_name, struct_def);
+   }
+   else arr = lj_array_new(L, uint32_t(num_values), elem_type);
    setarrayV(L, L->top++, arr);
 
    // Populate the array with provided values
@@ -301,6 +331,15 @@ LJLIB_CF(array_of)
          case AET::INT32:  arr->get<int32_t>()[i] = int32_t(luaL_checkinteger(L, arg_idx)); break;
          case AET::INT16:  arr->get<int16_t>()[i] = int16_t(luaL_checkinteger(L, arg_idx)); break;
          case AET::BYTE:   arr->get<uint8_t>()[i] = uint8_t(luaL_checkinteger(L, arg_idx)); break;
+
+         case AET::STRUCT: {
+            auto source = lj_lib_checkstruct(L, arg_idx, true);
+            if ((source->def != arr->structdef) or (source->structsize != arr->elemsize)) {
+               lj_err_argv(L, arg_idx, ErrMsg::ARRTYPE);
+            }
+            memcpy(arr->get<uint8_t>() + (size_t(i) * arr->elemsize), source->data, arr->elemsize);
+            break;
+         }
 
          case AET::OBJECT: {
             if (not lua_isobject(L, arg_idx)) {
@@ -423,14 +462,16 @@ static array_count_span array_clamped_count_span(lua_State *L, int32_t Start, in
    return { start, count };
 }
 
-static array_range_span array_range_to_span(const tiri_range *Range, MSize Length)
+static array_range_span array_range_to_span(lua_State *L, const tiri_range *Range, MSize Length)
 {
+   tiri_index_range index_range;
+   range_check_index(L, Range, &index_range);
    int32_t len = int32_t(Length);
-   int32_t start = Range->start;
-   int32_t stop = Range->stop;
-   int32_t step = Range->step;
+   int32_t start = index_range.start;
+   int32_t stop = index_range.stop;
+   int32_t step = index_range.step;
 
-   bool use_inclusive = Range->inclusive;
+   bool use_inclusive = index_range.inclusive;
    if (start < 0 or stop < 0) {
       use_inclusive = true;
       if (start < 0) start += len;
@@ -1525,7 +1566,7 @@ LJLIB_CF(array_fill)
    // Check if third argument is a range
    tiri_range *r = check_range(L, 3);
    if (r) {
-      auto span = array_range_to_span(r, arr->len);
+      auto span = array_range_to_span(L, r, arr->len);
       if (span.empty) return 0;
 
       fill_array_elements(arr, value, span.start, span.stop, span.step);
@@ -1696,7 +1737,7 @@ LJLIB_CF(array_find)
    if (arr->elemtype IS AET::OBJECT) {
       auto search_uid = object_uid_from_value(L, 2);
       if (tiri_range *r = check_range(L, 3)) {
-         auto span = array_range_to_span(r, arr->len);
+         auto span = array_range_to_span(L, r, arr->len);
          if (span.empty) return array_push_find_result(L, -1);
          return array_push_find_result(L, find_object_in_array(arr, search_uid, span.start, span.stop, span.step));
       }
@@ -1709,7 +1750,7 @@ LJLIB_CF(array_find)
       GCstr *search_str = lj_lib_checkstr(L, 2);
 
       if (tiri_range *r = check_range(L, 3)) {
-         auto span = array_range_to_span(r, arr->len);
+         auto span = array_range_to_span(L, r, arr->len);
          if (span.empty) return array_push_find_result(L, -1);
          return array_push_find_result(L, find_string_in_array(arr, search_str, span.start, span.stop, span.step));
       }
@@ -1724,7 +1765,7 @@ LJLIB_CF(array_find)
    if (not ok) luaL_error(L, "Unsupported value type '%s'", lua_typename(L, lua_type(L, 2)));
 
    if (tiri_range *r = check_range(L, 3)) {
-      auto span = array_range_to_span(r, arr->len);
+      auto span = array_range_to_span(L, r, arr->len);
       if (span.empty) return array_push_find_result(L, -1);
       return array_push_find_result(L, find_in_array(arr, value, span.start, span.stop, span.step));
    }
@@ -2078,6 +2119,12 @@ static void array_push_element(lua_State *L, GCarray *Arr, MSize Idx)
          copyTV(L, L->top++, source);
          break;
       }
+      case AET::STRUCT: {
+         auto value = lj_struct_new(L, *Arr->structdef);
+         memcpy(value->data, elem, Arr->elemsize);
+         setstructV(L, L->top++, value);
+         break;
+      }
       default: lua_pushnil(L); break;
    }
 }
@@ -2176,7 +2223,7 @@ LJLIB_CF(array_each)
       lua_pushvalue(L, 2);            // Push the callback function
       array_push_element(L, arr, i);  // Push value
       lua_pushinteger(L, i);          // Push index
-      lua_call(L, 2, 0);              // Call callback(value, index)
+      if (lua_pcall(L, 2, 0, 0) != 0) lua_error(L);
    }
 
    // Return the array for chaining

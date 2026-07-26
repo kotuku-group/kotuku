@@ -7,7 +7,7 @@
    field_names = { }
    metaFile = mSys.FindClass('File':hash(), 0)
    fields = metaFile.fields
-   for i=0,#fields-1 do
+   for i in {0 to #fields} do
       print(i .. ' ' .. fields[i].name)
       field_names[fields[i].name] = true
    end

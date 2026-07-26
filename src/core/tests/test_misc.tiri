@@ -12,7 +12,7 @@ end
 
 @Test function ActionList()
    actions = mSys.ActionList()
-   for id=0,#actions-1 do
+   for id in {0 to #actions} do
       if actions[id].name?? then
          print(string.format('%d: $%.8x: %s', id-1, actions[id].hash, actions[id].name))
       end
@@ -128,7 +128,7 @@ function writeTaskQueryFixture(Path)
 
    mSys.DeleteFile(Path)
    local file = obj.new('file', { src=Path, flags=FL_NEW|FL_WRITE })
-   check file.acWrite(content:getString(), #content)
+   check file.acWrite(content:getString())
    file = nil
    processing.collect()
 end
@@ -184,7 +184,7 @@ end
 
    mSys.DeleteFile(invalid_path)
    local invalid_file = obj.new('file', { src=invalid_path, flags=FL_NEW|FL_WRITE })
-   check invalid_file.acWrite('not a PE file', #'not a PE file')
+   check invalid_file.acWrite('not a PE file')
    invalid_file = nil
    processing.collect()
 
@@ -319,7 +319,7 @@ end
 
    -- Test ListChildren()
 
-   for i=0,8 do
+   for i in {0 to 9} do
       local obj = parent.new('xml', { name='TestFO', flags=XMF_NEW })
       table.insert(objects, obj)
    end
@@ -330,11 +330,11 @@ end
    assert(#children is 10, 'Parent object listed ' .. #children .. ' objects.')
 
    chk = { }
-   for i=0,9 do
+   for i in {0 to 10} do
       chk[objects[i].id] = true
    end
 
-   for i=0,9 do
+   for i in {0 to 10} do
       assert(chk[children[i]] is true, "Object tables don't match")
    end
 end

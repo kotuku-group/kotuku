@@ -61,11 +61,8 @@ static ERR SCRIPT_DataFeed(objScript *Self, struct acDataFeed *Args)
 {
    if (not Args) return ERR::NullArgs;
 
-   if (Args->Datatype IS DATA::XML) {
-      Self->setStatement((STRING)Args->Buffer);
-   }
-   else if (Args->Datatype IS DATA::TEXT) {
-      Self->setStatement((STRING)Args->Buffer);
+   if ((Args->Datatype IS DATA::XML) or (Args->Datatype IS DATA::TEXT)) {
+      Self->setStatement(std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size()));
    }
 
    return ERR::Okay;

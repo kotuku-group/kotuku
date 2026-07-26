@@ -482,7 +482,7 @@ bmark.histogram = function(Values:array, BinCount:num):table
    local bins = {}
 
    -- Initialise bins
-   for i = 0, BinCount - 1 do
+   for i in {0 to BinCount} do
       local lower = min_val + (i * bin_width)
       local upper = min_val + ((i + 1) * bin_width)
       bins[i] = {
@@ -503,14 +503,14 @@ bmark.histogram = function(Values:array, BinCount:num):table
    end
 
    -- Calculate frequencies
-   for i = 0, BinCount - 1 do
+   for i in {0 to BinCount} do
       bins[i].frequency = bins[i].count / n
    end
 
    -- Find mode (bin with highest count)
    local mode_bin = 0
    local max_count = 0
-   for i = 0, BinCount - 1 do
+   for i in {0 to BinCount} do
       if bins[i].count > max_count then
          max_count = bins[i].count
          mode_bin = i
@@ -542,14 +542,14 @@ bmark.histogramText = function(Histogram:table, Width:num):array
 
    -- Find max count for scaling
    local max_count = 0
-   for i = 0, Histogram.binCount - 1 do
+   for i in {0 to Histogram.binCount} do
       if Histogram.bins[i].count > max_count then
          max_count = Histogram.bins[i].count
       end
    end
 
    -- Generate bars
-   for i = 0, Histogram.binCount - 1 do
+   for i in {0 to Histogram.binCount} do
       local bin = Histogram.bins[i]
       local bar_len = max_count > 0 and math.floor((bin.count / max_count) * Width) or 0
       local bar = string.rep('█', bar_len) .. string.rep('░', Width - bar_len)

@@ -116,7 +116,7 @@ end
             print(Buffer:getString())
          end,
          flags   = TSF_WAIT,
-         timeOut = 20
+         timeout = 20
       })
 
       task.acActivate()

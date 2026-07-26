@@ -1,21 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Audio" mod="Audio" c="Supports a machine's audio hardware and provides a client-server audio management service." cat="Audio" id="0f1c28b7" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Audio" mod="Audio" c="Supports a machine's audio hardware and provides a client-server audio management service." cat="Audio" id="eb1aa922" v="1">
   <ai:a n="Activate" c="Enables access to the audio hardware and initialises the mixer." p="ERR acActivate(*Object)">
     <ai:e c="Okay"/>
     <ai:e c="Failed"/>
-    <ai:e c="AllocMemory"/>
   </ai:a>
   <ai:a n="Deactivate" c="Disables the audio mixer and returns device resources to the system." p="ERR acDeactivate(*Object)"/>
   <ai:a n="SaveSettings" c="Saves the current audio settings." p="ERR acSaveSettings(*Object)"/>
   <ai:a n="SaveToObject" c="Saves the current audio settings to another object." p="ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)">
     <ai:i n="Dest" t="OBJECTID" c="Refers to an object that will receive the encoded data."/>
-    <ai:i n="ClassID" t="CLASSID" c="Can refer to a sub-class that should be used when encoding the data."/>
+    <ai:i n="ClassID" t="CLASSID" c="Can refer to a derived class that should be used when encoding the data."/>
   </ai:a>
-  <ai:m n="AddSample" c="Adds a new sample to an audio object for channel-based playback." p="ERR snd::AddSample(OBJECTPTR Object, FUNCTION OnStop, SFM SampleFormat, APTR Data, INT DataSize, struct AudioLoop * Loop, INT LoopSize, INT * Result)">
+  <ai:m n="AddSample" c="Adds a new sample to an audio object for channel-based playback." p="ERR snd::AddSample(OBJECTPTR Object, FUNCTION OnStop, SFM SampleFormat, std::span&lt;const int8_t&gt; Data, struct AudioLoop * Loop, INT LoopSize, INT * Result)">
     <ai:i n="OnStop" t="FUNCTION" c="This optional callback function will be called when the stream stops playing."/>
     <ai:i n="SampleFormat" t="SFM" c="Indicates the format of the sample data that you are adding."/>
-    <ai:i n="Data" t="APTR" c="Points to the address of the sample data."/>
-    <ai:i n="DataSize" t="INT" c="Size of the sample data, in bytes."/>
+    <ai:i n="Data" t="std::span&lt;const int8_t&gt;" c="Points to the address of the sample data."/>
     <ai:i n="Loop" t="struct AudioLoop *" c="Optional sample loop information."/>
     <ai:i n="LoopSize" t="INT" c="Must be set to sizeof(AudioLoop) if Loop is defined."/>
     <ai:i n="Result" t="INT *" c="The resulting sample handle will be returned in this parameter."/>
@@ -25,8 +23,8 @@
     <ai:e c="NullArgs"/>
   </ai:m>
   <ai:m n="AddStream" c="Adds a new sample-stream to an Audio object for channel-based playback." p="ERR snd::AddStream(OBJECTPTR Object, FUNCTION Callback, FUNCTION OnStop, SFM SampleFormat, INT SampleLength, INT PlayOffset, struct AudioLoop * Loop, INT LoopSize, INT * Result)">
-    <ai:i n="Callback" t="FUNCTION" c="This callback function must be able to return raw audio data for streaming."/>
-    <ai:i n="OnStop" t="FUNCTION" c="This optional callback function will be called when the stream stops playing."/>
+    <ai:i n="Callback" t="FUNCTION" c="This callback function must be able to return raw audio data for streaming. The function context will be pinned as a safety measure."/>
+    <ai:i n="OnStop" t="FUNCTION" c="This optional callback function will be called when the stream stops playing. The function context will be pinned as a safety measure."/>
     <ai:i n="SampleFormat" t="SFM" c="Indicates the format of the sample data that you are adding."/>
     <ai:i n="SampleLength" t="INT" c="Total byte-length of the sample data that is being streamed. May be set to zero if the length is infinite or unknown."/>
     <ai:i n="PlayOffset" t="INT" c="Offset the playing position by this byte index."/>
@@ -74,15 +72,18 @@
     <ai:e c="Args"/>
     <ai:e c="NullArgs"/>
   </ai:m>
-  <ai:m n="SetVolume" c="Sets the volume for input and output mixers." p="ERR snd::SetVolume(OBJECTPTR Object, INT Index, CSTRING Name, SVF Flags, INT Channel, DOUBLE Volume)">
+  <ai:m n="SetVolume" c="Sets the volume for input and output mixers." p="ERR snd::SetVolume(OBJECTPTR Object, INT Index, STRVIEW Name, SVF Flags, INT Channel, DOUBLE Volume)">
     <ai:i n="Index" t="INT" c="The index of the mixer that you want to set."/>
-    <ai:i n="Name" t="CSTRING" c="If the correct index number is unknown, the name of the mixer may be set here."/>
+    <ai:i n="Name" t="STRVIEW" c="If the correct index number is unknown, the name of the mixer may be set here."/>
     <ai:i n="Flags" t="SVF" c="Optional flags."/>
     <ai:i n="Channel" t="INT" c="A specific channel to modify (e.g. 0 for left, 1 for right). If -1, all channels are affected."/>
     <ai:i n="Volume" t="DOUBLE" c="The volume to set for the mixer, from 0 to 1.0. If -1, the current volume values are retained."/>
     <ai:e c="Okay"/>
+    <ai:e c="Search"/>
     <ai:e c="Args"/>
+    <ai:e c="NoSupport"/>
     <ai:e c="OutOfRange"/>
+    <ai:e c="NotInitialised"/>
     <ai:e c="NullArgs"/>
   </ai:m>
   <ai:f n="BitDepth" c="The bit depth affects the overall quality of audio input and output." t="INT" a="RS"/>

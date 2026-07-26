@@ -44,41 +44,45 @@ constexpr size_t BUFFER_SIZE = MAX_MODULE_ARGS * BUFFER_ELEMENT_SIZE;
 constexpr size_t MAX_STRING_PREFIX_LENGTH = 200;
 
 struct module_span_arg {
-   std::span<const int8_t> ConstBytes;
-   std::span<int8_t> MutableBytes;
-   std::span<const char> ConstChars;
-   std::span<char> MutableChars;
+   std::span<int8_t> Span;
 
-   APTR set_const_bytes(CPTR Data, size_t Size) noexcept {
-      ConstBytes = std::span<const int8_t>((const int8_t *)Data, Size);
-      return &ConstBytes;
-   }
-
-   APTR set_mutable_bytes(APTR Data, size_t Size) noexcept {
-      MutableBytes = std::span<int8_t>((int8_t *)Data, Size);
-      return &MutableBytes;
-   }
-
-   APTR set_const_chars(CSTRING Data, size_t Size) noexcept {
-      ConstChars = std::span<const char>(Data, Size);
-      return &ConstChars;
-   }
-
-   APTR set_mutable_chars(STRING Data, size_t Size) noexcept {
-      MutableChars = std::span<char>(Data, Size);
-      return &MutableChars;
+   APTR set(CPTR Data, size_t Extent) noexcept {
+      Span = std::span<int8_t>((int8_t *)Data, Extent);
+      return &Span;
    }
 };
 
-// Return the complete byte extent of an array without allowing multiplication to wrap.
+// Resolve and validate the element metadata for a callable array.
 
-[[nodiscard]] static ERR array_byte_extent(const GCarray *Array, size_t *Extent) noexcept
+static ERR module_span_element_metadata(lua_State *Lua, const FunctionField &Field, AET *ElementType,
+   size_t *ElementSize, struct_record **StructDef)
 {
-   if (Array->len and (size_t(Array->elemsize) > (std::numeric_limits<size_t>::max() / Array->len))) {
-      return ERR::Args;
+   *StructDef = nullptr;
+
+   if (Field.Type & FD_STRUCT) {
+      if ((Field.Type & FD_PTR) or (not Field.Name) or (not valid_struct_name(Field.Name))) return ERR::InvalidData;
+      auto definition = find_struct(Lua, struct_name_prefix(Field.Name));
+      if (not definition) return ERR::Search;
+      if (definition->Size <= 0) return ERR::InvalidData;
+      *ElementType = AET::STRUCT;
+      *ElementSize = size_t(definition->Size);
+      *StructDef = definition;
+      return ERR::Okay;
    }
 
-   *Extent = size_t(Array->len) * Array->elemsize;
+   const int type_count = bool(Field.Type & FD_DOUBLE) + bool(Field.Type & FD_INT64) +
+      bool(Field.Type & FD_FLOAT) + bool(Field.Type & FD_INT) + bool(Field.Type & FD_WORD) +
+      bool(Field.Type & FD_BYTE) + bool(Field.Type & FD_PTR);
+   if (type_count != 1) return ERR::InvalidData;
+
+   if (Field.Type & FD_DOUBLE) { *ElementType = AET::DOUBLE; *ElementSize = sizeof(double); }
+   else if (Field.Type & FD_INT64) { *ElementType = AET::INT64; *ElementSize = sizeof(int64_t); }
+   else if (Field.Type & FD_FLOAT) { *ElementType = AET::FLOAT; *ElementSize = sizeof(float); }
+   else if (Field.Type & FD_INT) { *ElementType = AET::INT32; *ElementSize = sizeof(int); }
+   else if (Field.Type & FD_WORD) { *ElementType = AET::INT16; *ElementSize = sizeof(int16_t); }
+   else if (Field.Type & FD_BYTE) { *ElementType = AET::BYTE; *ElementSize = sizeof(int8_t); }
+   else { *ElementType = AET::PTR; *ElementSize = sizeof(APTR); }
+
    return ERR::Okay;
 }
 
@@ -553,10 +557,10 @@ static int module_index(lua_State *Lua)
 //                backing storage depending on the call.
 // PTR|STRUCT   = Struct *.  Accepts an existing Tiri struct or converts a Tiri table to a temporary struct.
 // OBJECT|PTR   = OBJECTPTR.  Accepts a Tiri object and resolves it to an object pointer.
-// ARRAY        = Type *.  Accepts a Tiri array and passes its data pointer.  ARRAYSIZE can follow.
+// ARRAY        = Unsupported.  Raw pointer-array marshalling has been removed.
 // ARRAY|CPP    = Unsupported as input.  kt::vector<> input marshalling is not implemented for module calls.
-// SPAN         = const std::span<int8_t/char> &.  Accepts complete Tiri array or string storage, or an empty value.
-// SPAN|MUTABLE = const std::span<int8_t/char> &.  Requires writable array or mutable string storage.
+// SPAN         = const std::span<T> &.  Accepts matching Tiri array or structure storage, byte strings or an empty value.
+// SPAN|MUTABLE = const std::span<T> &.  Requires writable array, structure or mutable byte-string storage.
 // FUNCTION     = FUNCTION *.  Accepts a Tiri function or global function name.
 //
 // Mutable combinations.  User is expected to supply a reference to a suitable storage area, as defined by the type
@@ -582,8 +586,7 @@ static int module_index(lua_State *Lua)
 //                     available, then freed.
 // RESULT|PTR|STRUCT = Struct **.  Function writes a struct pointer; returned as a Tiri table, or as a managed
 //                     struct when RESOURCE is set.
-// RESULT|ARRAY      = Type **.  Function writes an array pointer; returned to Tiri as an array.  ARRAYSIZE may
-//                     follow to define element count.
+// RESULT|ARRAY      = Unsupported.  Raw pointer-array marshalling has been removed.
 // RESULT|ARRAY|CPP  = kt::vector<> *.  Tiri provides an empty kt::vector<>; returned to Tiri as an array.
 // Mixed direction:
 //
@@ -718,6 +721,14 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       return ERR::Okay;
    }
 
+   for (int arg=1; args[arg].Name; arg++) {
+      if ((args[arg].Type & FD_ARRAY) and ((args[arg].Type & FDF_SPAN) != FDF_SPAN)) {
+         ErrorMsg = std::format("Function '{}' uses unsupported pointer array arg '{}'.",
+            mod->Functions[index].Name, args[arg].Name);
+         return ERR::NoSupport;
+      }
+   }
+
    APTR function = mod->Functions[index].Address;
    FUNCTION func;
 
@@ -764,21 +775,21 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             return ERR::NoSupport;
          }
 
-         if (argtype & FD_STRUCT) {
-            ErrorMsg = std::format("Function '{}' uses an unsupported typed structure span.",
-               mod->Functions[index].Name);
-            return ERR::NoSupport;
-         }
-
          bool mutable_span = argtype & FD_MUTABLE;
-         bool char_span = argtype & FD_STR;
-         bool raw_span = argtype & FD_PTR;
-         if (not char_span and not raw_span) {
-            ErrorMsg = std::format("Function '{}' uses an unsupported typed span.", mod->Functions[index].Name);
-            return ERR::NoSupport;
+
+         AET element_type;
+         size_t element_size;
+         struct_record *struct_def;
+         if (auto error = module_span_element_metadata(Lua, args[i], &element_type, &element_size, &struct_def);
+             error != ERR::Okay) {
+            ErrorMsg = (error IS ERR::Search) ?
+               std::format("Function '{}' references an unknown span structure.", mod->Functions[index].Name) :
+               std::format("Function '{}' uses invalid span element metadata.", mod->Functions[index].Name);
+            return error;
          }
 
-         APTR span_address = nullptr;
+         CPTR data = nullptr;
+         size_t extent = 0;
          auto &span_arg = span_args[span_count++];
          auto value_type = lua_type(Lua, i);
 
@@ -789,53 +800,66 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                return ERR::InvalidType;
             }
 
-            size_t extent;
-            if (auto error = array_byte_extent(array, &extent); error != ERR::Okay) {
-               ErrorMsg = std::format("Arg #{} ({}) array extent is too large.", i, args[i].Name);
-               return error;
+            if ((array->elemtype != element_type) or (size_t(array->elemsize) != element_size)) {
+               ErrorMsg = std::format("Arg #{} ({}) array element type does not match the span.", i, args[i].Name);
+               return ERR::InvalidType;
             }
-
-            if (char_span) {
-               if (mutable_span) span_address = span_arg.set_mutable_chars((STRING)array->arraydata(), extent);
-               else span_address = span_arg.set_const_chars((CSTRING)array->arraydata(), extent);
+            if ((element_type IS AET::STRUCT) and (array->structdef != struct_def)) {
+               ErrorMsg = std::format("Arg #{} ({}) structure array type does not match the span.", i, args[i].Name);
+               return ERR::InvalidType;
             }
-            else {
-               if (mutable_span) span_address = span_arg.set_mutable_bytes(array->arraydata(), extent);
-               else span_address = span_arg.set_const_bytes(array->arraydata(), extent);
-            }
+            data = array->arraydata();
+            extent = array->len;
          }
          else if (value_type IS LUA_TSTRING) {
+            if (element_type != AET::BYTE) {
+               ErrorMsg = std::format("Arg #{} ({}) only accepts string storage for a byte span.", i, args[i].Name);
+               return ERR::InvalidType;
+            }
+
             auto string = string_arg(Lua, i);
             if (mutable_span and not lj_str_ismutable(string)) {
                ErrorMsg = std::format("Arg #{} ({}) requires a mutable string buffer.", i, args[i].Name);
                return ERR::InvalidType;
             }
-
-            if (char_span) {
-               if (mutable_span) span_address = span_arg.set_mutable_chars(strdatawr(string), string->len);
-               else span_address = span_arg.set_const_chars(strdata(string), string->len);
-            }
-            else {
-               if (mutable_span) span_address = span_arg.set_mutable_bytes((APTR)strdatawr(string), string->len);
-               else span_address = span_arg.set_const_bytes(strdata(string), string->len);
-            }
+            data = mutable_span ? CPTR(strdatawr(string)) : CPTR(strdata(string));
+            extent = string->len;
          }
          else if ((value_type IS LUA_TNIL) or (value_type IS LUA_TNONE)) {
-            if (char_span) {
-               if (mutable_span) span_address = span_arg.set_mutable_chars(nullptr, 0);
-               else span_address = span_arg.set_const_chars(nullptr, 0);
+            // The canonical empty span is constructed below.
+         }
+         else if (auto native_struct = lua_isstruct(Lua, i) ? lua_tostruct(Lua, i) : nullptr) {
+            if (element_type != AET::STRUCT) {
+               ErrorMsg = std::format("Arg #{} ({}) requires matching array storage.", i, args[i].Name);
+               return ERR::InvalidType;
             }
-            else {
-               if (mutable_span) span_address = span_arg.set_mutable_bytes(nullptr, 0);
-               else span_address = span_arg.set_const_bytes(nullptr, 0);
+            if (lj_struct_stale(native_struct)) {
+               ErrorMsg = std::format("Arg #{} ({}) structure storage is stale.", i, args[i].Name);
+               return ERR::DoesNotExist;
             }
+            if ((native_struct->def != struct_def) or (size_t(native_struct->structsize) != element_size)) {
+               ErrorMsg = std::format("Arg #{} ({}) structure type does not match the span.", i, args[i].Name);
+               return ERR::InvalidType;
+            }
+            if (not native_struct->data) {
+               ErrorMsg = std::format("Arg #{} ({}) structure storage is unavailable.", i, args[i].Name);
+               return ERR::InvalidData;
+            }
+            data = native_struct->data;
+            extent = 1;
          }
          else {
-            ErrorMsg = std::format("Arg #{} ({}) expected an array, string or nil for a span, got {}.", i,
+            ErrorMsg = std::format("Arg #{} ({}) expected an array, string, structure or nil for a span, got {}.", i,
                args[i].Name, lua_typename(Lua, value_type));
             return ERR::InvalidType;
          }
 
+         if (extent and not data) {
+            ErrorMsg = std::format("Arg #{} ({}) span storage is unavailable.", i, args[i].Name);
+            return ERR::InvalidData;
+         }
+
+         auto span_address = span_arg.set(data, extent);
          ((APTR *)(buffer + j))[0] = span_address;
          arg_values[in] = buffer + j;
          arg_types[in++] = &ffi_type_pointer;
@@ -847,7 +871,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
          RMSG("Result for arg %d stored at %p", i, end);
 
-         if ((argtype & FD_CPP) and (argtype & FD_ARRAY) and (argtype & FD_MUTABLE)) {
+         if (((argtype & FDF_VECTOR) IS FDF_VECTOR) and (argtype & FD_MUTABLE)) {
             // Applicable to RESULT|MUTABLE only, which requires the client to provide an empty kt::vector<> to the function.
             // We set this up here, then convert the resulting values to a Tiri array when the function returns.
             cpp_array_result result_ref = { };
@@ -901,7 +925,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                j += sizeof(APTR);
             }
          }
-         else if (argtype & (FD_PTR|FD_ARRAY)) { // FD_RESULT
+         else if (argtype & FD_PTR) { // FD_RESULT
             end -= sizeof(APTR);
             ((APTR *)(buffer + j))[0] = end;
             ((APTR *)end)[0] = nullptr;
@@ -1023,75 +1047,9 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          arg_types[in++] = &ffi_type_pointer;
          j += type_size;
       }
-      else if (argtype & FD_ARRAY) { // Pass array data pointer
-         if (argtype & FD_CPP) {
-            ErrorMsg = "No support for calls utilising C++ arrays.";
-            return ERR::NoSupport;
-         }
-
-         if (lua_type(Lua, i) IS LUA_TARRAY) {
-            GCarray *arr = arrayV(Lua, i);
-            ((APTR *)(buffer + j))[0] = arr->arraydata();
-            arg_values[in] = buffer + j;
-            arg_types[in++] = &ffi_type_pointer;
-            j += sizeof(APTR);
-
-            if (args[i+1].Type & (FD_BUFSIZE|FD_ARRAYSIZE)) {
-               if (args[i+1].Type & FD_RESULT) {
-                  if (args[i+1].Type & FD_INT) {
-                     end -= sizeof(int);
-                     ((int *)end)[0] = arr->len;
-                     ((APTR *)(buffer + j))[0] = end;
-                     arg_values[in] = buffer + j;
-                     arg_types[in++] = &ffi_type_pointer;
-                     j += sizeof(APTR);
-                     i++;
-                  }
-                  else if (args[i+1].Type & FD_INT64) {
-                     end -= sizeof(int64_t);
-                     ((int64_t *)end)[0] = arr->len;
-                     ((APTR *)(buffer + j))[0] = end;
-                     arg_values[in] = buffer + j;
-                     arg_types[in++] = &ffi_type_pointer;
-                     j += sizeof(APTR);
-                     i++;
-                  }
-                  else {
-                     ErrorMsg = std::format("Function '{}' is not compatible with Tiri.", mod->Functions[index].Name);
-                     return ERR::NoSupport;
-                  }
-               }
-               else {
-                  if (args[i+1].Type & FD_INT) {
-                     ((int *)(buffer + j))[0] = arr->len;
-                     arg_values[in] = buffer + j;
-                     arg_types[in++] = &ffi_type_sint32;
-                     j += sizeof(int);
-                     i++;
-                  }
-                  else if (args[i+1].Type & FD_INT64) {
-                     ((int64_t *)(buffer + j))[0] = arr->len;
-                     arg_values[in] = buffer + j;
-                     arg_types[in++] = &ffi_type_sint64;
-                     j += sizeof(int64_t);
-                     i++;
-                  }
-                  else {
-                     ErrorMsg = std::format("Function '{}' is not compatible with Tiri.", mod->Functions[index].Name);
-                     return ERR::NoSupport;
-                  }
-               }
-            }
-            else {
-               ErrorMsg = std::format("Function '{}' is not compatible with Tiri.", mod->Functions[index].Name);
-               return ERR::NoSupport;
-            }
-         }
-         else {
-            ErrorMsg = std::format("Type mismatch, arg #{} ({}) expected array, got '{}'.", i, args[i].Name,
-               lua_typename(Lua, lua_type(Lua, i)));
-            return ERR::InvalidType;
-         }
+      else if ((argtype & FDF_VECTOR) IS FDF_VECTOR) {
+         ErrorMsg = "C++ array inputs are not supported.";
+         return ERR::NoSupport;
       }
       else if (argtype & FD_PTR) {
          auto arg_type = lua_type(Lua, i);
@@ -1103,28 +1061,10 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                return ERR::InvalidType;
             }
 
-            size_t strlen = string->len;
             ((CSTRING *)(buffer + j))[0] = (argtype & FD_MUTABLE) ? strdatawr(string) : strdata(string);
             arg_values[in] = buffer + j;
             arg_types[in++] = &ffi_type_pointer;
             j += sizeof(CSTRING);
-
-            if (args[i+1].Type & FD_BUFSIZE) {
-               if (args[i+1].Type & FD_INT) {
-                  ((int *)(buffer + j))[0] = strlen;
-                  i++;
-                  arg_values[in] = buffer + j;
-                  arg_types[in++] = &ffi_type_sint32;
-                  j += sizeof(int);
-               }
-               else if (args[i+1].Type & FD_INT64) {
-                  ((int64_t *)(buffer + j))[0] = strlen;
-                  i++;
-                  arg_values[in] = buffer + j;
-                  arg_types[in++] = &ffi_type_sint64;
-                  j += sizeof(int64_t);
-               }
-            }
          }
          else if (auto native_struct = lua_isstruct(Lua, i) ? lua_tostruct(Lua, i) : nullptr) {
             // Guard specific to lifecycle-bound struct views; structs without an object dependency skip it.
@@ -1138,22 +1078,6 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             j += sizeof(APTR);
 
             log.trace("Struct address %p inserted to arg offset %d", native_struct->data, j);
-            if (args[i+1].Type & FD_BUFSIZE) {
-               if (args[i+1].Type & FD_INT) {
-                  ((int *)(buffer + j))[0] = ALIGN64(native_struct->structsize);
-                  i++;
-                  arg_values[in] = buffer + j;
-                  arg_types[in++] = &ffi_type_sint32;
-                  j += sizeof(int);
-               }
-               else if (args[i+1].Type & FD_INT64) {
-                  ((int64_t *)(buffer + j))[0] = ALIGN64(native_struct->structsize);
-                  i++;
-                  arg_values[in] = buffer + j;
-                  arg_types[in++] = &ffi_type_sint64;
-                  j += sizeof(int64_t);
-               }
-            }
          }
          else if (arg_type IS LUA_TOBJECT) {
             auto obj = lua_toobject(Lua, i);
@@ -1184,23 +1108,6 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             arg_values[in] = buffer + j;
             arg_types[in++] = &ffi_type_pointer;
             j += sizeof(APTR);
-
-            if (args[i+1].Type & FD_BUFSIZE) {
-               if (args[i+1].Type & FD_INT) {
-                  ((int *)(buffer + j))[0] = array->len * array->elemsize;
-                  i++;
-                  arg_values[in] = buffer + j;
-                  arg_types[in++] = &ffi_type_sint32;
-                  j += sizeof(int);
-               }
-               else if (args[i+1].Type & FD_INT64) {
-                  ((int64_t *)(buffer + j))[0] = array->len * array->elemsize;
-                  i++;
-                  arg_values[in] = buffer + j;
-                  arg_types[in++] = &ffi_type_sint64;
-                  j += sizeof(int64_t);
-               }
-            }
          }
          else if (arg_type IS LUA_TTABLE) {
             if (args[i].Type & FD_STRUCT) {
@@ -1258,12 +1165,6 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          arg_values[in] = buffer + j;
          arg_types[in++] = &ffi_type_sint64;
          j += sizeof(int64_t);
-      }
-      else if (argtype & FD_PTRSIZE) {
-         ((int *)(buffer + j))[0] = lua_tointeger(Lua, i);
-         arg_values[in] = buffer + j;
-         arg_types[in++] = &ffi_type_sint32;
-         j += sizeof(int);
       }
       else if (argtype & (FD_TAGS|FD_VARTAGS)) {
          ErrorMsg = "Functions using tags are not supported.";
@@ -1386,34 +1287,18 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
    for (int i=1; args[i].Name; i++) {
       const auto argtype = args[i].Type;
 
-      if (argtype & FD_ARRAY) {
+      if ((argtype & FDF_SPAN) IS FDF_SPAN) {
+         scan += sizeof(APTR);
+      }
+      else if ((argtype & FDF_VECTOR) IS FDF_VECTOR) {
          if (argtype & FD_RESULT) {
             auto var = ((APTR *)scan)[0];
             scan += sizeof(APTR);
             if (var) {
                std::string_view argname(args[i].Name);
-               if (argtype & FD_CPP) {
-                  if (not push_cpp_array_result(lua, argtype, argname, var)) {
-                     log.warning("Unsupported C++ array result arg %s, flags $%.8x", args[i].Name, argtype);
-                     lua_pushnil(lua);
-                  }
-               }
-               else {
-                  APTR values = ((APTR *)var)[0];
-                  int total_elements = -1; // If -1, make_any_table() assumes the array is null terminated.
-
-                  if (args[i+1].Type & FD_ARRAYSIZE) {
-                     CPTR size_var = ((APTR *)scan)[0];
-                     if (args[i+1].Type & FD_INT) total_elements = ((int *)size_var)[0];
-                     else if (args[i+1].Type & FD_INT64) total_elements = ((int64_t *)size_var)[0];
-                     else log.warning("Invalid arg %s, flags $%.8x", args[i+1].Name, args[i+1].Type);
-                  }
-
-                  if (values) {
-                     make_any_array(lua, argtype, argname, total_elements, values);
-                     if (argtype & FD_ALLOC) FreeResource(values);
-                  }
-                  else lua_pushnil(lua);
+               if (not push_cpp_array_result(lua, argtype, argname, var)) {
+                  log.warning("Unsupported C++ array result arg %s, flags $%.8x", args[i].Name, argtype);
+                  lua_pushnil(lua);
                }
             }
             else lua_pushnil(lua);
@@ -1465,20 +1350,6 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
                      }
                   }
                   else lua_pushnil(lua);
-               }
-               else if (args[i+1].Type & FD_BUFSIZE) {
-                  int64_t size = 0;
-                  CPTR size_var = ((APTR *)scan)[0];
-                  if (args[i+1].Type & FD_INT) size = ((int *)size_var)[0];
-                  else if (args[i+1].Type & FD_INT64) size = ((int64_t *)size_var)[0];
-                  else log.warning("Invalid arg %s, flags $%.8x", args[i+1].Name, args[i+1].Type);
-
-                  if (size > 0) lua_createarray(lua, size, AET::BYTE, ((APTR *)var)[0], ARRAY_CACHED);
-                  else lua_pushnil(lua);
-
-                  if (argtype & FD_ALLOC) {
-                     if (((APTR *)var)[0]) FreeResource(((APTR *)var)[0]);
-                  }
                }
                else if (argtype & FD_ALLOC) {
                   // Misconfigured or unsupported parameter
@@ -1568,6 +1439,6 @@ void register_module_class(lua_State *Lua)
    if (stack_delta) log.warning("Module registration left %d value(s) on the Lua stack.", stack_delta);
 
    // Register mod interface prototypes for compile-time type inference
-   reg_iface_prototype("mod", "load", { TiriType::Any }, { TiriType::Str });
+   reg_iface_prototype("mod", "load", { TiriType::Userdata }, { TiriType::Str });
    reg_iface_prototype("mod", "test", { TiriType::Num, TiriType::Num }, { TiriType::Any, TiriType::Str });
 }

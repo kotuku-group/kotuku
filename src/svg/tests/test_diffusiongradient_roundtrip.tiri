@@ -123,15 +123,15 @@ function assertCurvesMatch(Actual: obj, Expected: obj, Label: str)
    local colours = { 'leftStart', 'leftEnd', 'rightStart', 'rightEnd' }
    local channels = { 'red', 'green', 'blue', 'alpha' }
 
-   for i=0, #expected_curves - 1 do
-      for c=0, #coords - 1 do
+   for i in {0 to #expected_curves} do
+      for c in {0 to #coords} do
          local field = coords[c]
          assertNear(actual_curves[i].curve[field], expected_curves[i].curve[field],
             Label .. '.curve' .. i .. '.' .. field)
       end
-      for c=0, #colours - 1 do
+      for c in {0 to #colours} do
          local side = colours[c]
-         for ch=0, #channels - 1 do
+         for ch in {0 to #channels} do
             local channel = channels[ch]
             assertChannel(actual_curves[i][side][channel], expected_curves[i][side][channel],
                Label .. '.curve' .. i .. '.' .. side .. '.' .. channel)
@@ -222,7 +222,7 @@ end
 
 @Test function MalformedCurvesDiscardGradient()
    local cases = { 'Q 10 0 20 0', 'M 10,10 C 1 2 3 4', 'M 10,10', 'C 1 2 3 4 5 6', 'M 10,10 L 20,20 L 30,30' }
-   for i=0, #cases - 1 do
+   for i in {0 to #cases} do
       local path = f"temp:diffusiongradient_malformed_{i}.svg"
       io.writeAll(path, malformedDocument(cases[i]))
       glFiles:push(path)

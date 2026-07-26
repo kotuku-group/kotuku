@@ -78,7 +78,7 @@ end
 end
 
 @Test function FilterWithMethodCalls()
-   for i=0,100 do -- JIT warmup
+   for i in {0 to 100} do -- JIT warmup
       a = [_*]obj:method()
       assert(a is 20, "filter with method: expected 20, got " .. tostring(a))
    end
@@ -173,7 +173,7 @@ end
       return 1, 2, 3, 4, 5, 6
    end
 
-   for i=0,100 do -- JIT warmup
+   for i in {0 to 100} do -- JIT warmup
       a, b, c = [*_*_*_]six()  -- Keep 1, 3, 5
       assert(a is 1, "alternating: expected a=1, got " .. tostring(a))
       assert(b is 3, "alternating: expected b=3, got " .. tostring(b))

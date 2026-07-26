@@ -345,7 +345,8 @@ CSTRING UTF8ValidEncoding(std::string_view String, std::string_view Encoding)
                   // Failed to convert character.  Unknown characters are converted to 0xFFFD (the UTF-8 'replacement
                   // character'
 
-                  out += UTF8WriteValue(0xfffd, glIconvBuffer + out, buffersize - out);
+                  out += UTF8WriteValue(0xfffd,
+                     std::span<int8_t>((int8_t *)(glIconvBuffer + out), size_t(buffersize - out)));
                }
 
                in++;
@@ -382,8 +383,7 @@ This function will not add a null terminator to the end of the UTF-8 string.
 
 -INPUT-
 int Value:  A 32-bit unicode value.
-buf(str) Buffer: Pointer to a string buffer that will hold the UTF-8 characters.
-bufsize Size:   The size of the destination string buffer (does not need to be any larger than 6 bytes).
+^array(char) Buffer: Character buffer that will receive the UTF-8 value.  It does not need to exceed six bytes.
 
 -RESULT-
 int: Returns the total amount of characters written to the string buffer.
@@ -395,68 +395,71 @@ mutates-input
 
 *********************************************************************************************************************/
 
-int UTF8WriteValue(int Value, STRING String, int StringSize)
+int UTF8WriteValue(int Value, std::span<int8_t> Buffer)
 {
-   if ((!String) or (StringSize < 1)) return 0;
+   if (Buffer.empty()) return 0;
+
+   auto string = Buffer.data();
+   const auto string_size = int(Buffer.size());
 
    if (Value < 128) {
       if (Value < 0) return 0;
-      *String = (uint8_t)Value;
+      *string = int8_t(Value);
       return 1;
    }
    else if (Value < 0x800) {
-      if (StringSize < 2) return 0;
-      String[1] = (Value & 0x3f) | 0x80;
+      if (string_size < 2) return 0;
+      string[1] = int8_t((Value & 0x3f) | 0x80);
       Value  = Value>>6;
-      String[0] = Value | 0xc0;
+      string[0] = int8_t(Value | 0xc0);
       return 2;
    }
    else if (Value < 0x10000) {
-      if (StringSize < 3) return 0;
-      String[2] = (Value & 0x3f)|0x80;
+      if (string_size < 3) return 0;
+      string[2] = int8_t((Value & 0x3f)|0x80);
       Value  = Value>>6;
-      String[1] = (Value & 0x3f)|0x80;
+      string[1] = int8_t((Value & 0x3f)|0x80);
       Value  = Value>>6;
-      String[0] = Value | 0xe0;
+      string[0] = int8_t(Value | 0xe0);
       return 3;
    }
    else if (Value < 0x200000) {
-      if (StringSize < 4) return 0;
-      String[3] = (Value & 0x3f)|0x80;
+      if (string_size < 4) return 0;
+      string[3] = int8_t((Value & 0x3f)|0x80);
       Value  = Value>>6;
-      String[2] = (Value & 0x3f)|0x80;
+      string[2] = int8_t((Value & 0x3f)|0x80);
       Value  = Value>>6;
-      String[1] = (Value & 0x3f)|0x80;
+      string[1] = int8_t((Value & 0x3f)|0x80);
       Value  = Value>>6;
-      String[0] = Value | 0xf0;
+      string[0] = int8_t(Value | 0xf0);
       return 4;
    }
    else if (Value < 0x4000000) {
-      if (StringSize < 5) return 0;
-      String[4]  = (Value & 0x3f)|0x80;
+      if (string_size < 5) return 0;
+      string[4]  = int8_t((Value & 0x3f)|0x80);
       Value = Value>>6;
-      String[3]  = (Value & 0x3f)|0x80;
+      string[3]  = int8_t((Value & 0x3f)|0x80);
       Value = Value>>6;
-      String[2]  = (Value & 0x3f)|0x80;
+      string[2]  = int8_t((Value & 0x3f)|0x80);
       Value = Value>>6;
-      String[1]  = (Value & 0x3f)|0x80;
+      string[1]  = int8_t((Value & 0x3f)|0x80);
       Value = Value>>6;
-      String[0]  = Value | 0xf8;
+      string[0]  = int8_t(Value | 0xf8);
       return 5;
    }
    else {
-      if (StringSize < 6) return 0;
-      String[5]  = (Value & 0x3f)|0x80;
+      if (string_size < 6) return 0;
+      string[5]  = int8_t((Value & 0x3f)|0x80);
       Value = Value>>6;
-      String[4]  = (Value & 0x3f)|0x80;
+      string[4]  = int8_t((Value & 0x3f)|0x80);
       Value = Value>>6;
-      String[3]  = (Value & 0x3f)|0x80;
+      string[3]  = int8_t((Value & 0x3f)|0x80);
       Value = Value>>6;
-      String[2]  = (Value & 0x3f)|0x80;
+      string[2]  = int8_t((Value & 0x3f)|0x80);
       Value = Value>>6;
-      String[1]  = (Value & 0x3f)|0x80;
+      string[1]  = int8_t((Value & 0x3f)|0x80);
       Value = Value>>6;
-      String[0]  = Value | 0xfc;
+      string[0]  = int8_t(Value | 0xfc);
       return 6;
    }
 }

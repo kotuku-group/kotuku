@@ -328,7 +328,7 @@ global function parseMethod(Class:table, Extract:str)
       for content in values(input:split('\n')) do
          local param = parseParameterString(content)
          if param then
-            cType(param, f'Method:{name}')
+            cType(param, f'Method:{Class.name}.{name}')
             table.insert(method.params, param)
 
             if param.lookup then
@@ -358,7 +358,7 @@ function findDictionaryFieldIndex(Meta, FieldID)
    local dictionary = Meta.dictionary
    dictionary ?! return nil
 
-   for i=0,#dictionary-1 do
+   for i in {0 to #dictionary} do
       local field = dictionary[i]
       if field and field.fieldID is FieldID then return i end
    end
@@ -391,7 +391,7 @@ function classStorageOrigin(Class:table):num
    local origin
    local meta_fields = Class.meta.fields
    if meta_fields then
-      for i=0,#meta_fields-1 do
+      for i in {0 to #meta_fields} do
          local meta_field = meta_fields[i]
          local err, compiled_field, _ = Class.meta.mtFindField(calcFieldHash(meta_field.name))
          if (err is ERR_Okay) and compiled_field and not (compiled_field.flags has FD_VIRTUAL) then
@@ -413,7 +413,7 @@ end
 function fieldNeedsClassOffset(Field:table):bool
    if not Field.read or (Field.read is 'Get') or Field.private then return false end
 
-   return Field.virtual or (Field.flags has (FD_ARRAY|FD_UNIT)) or
+   return Field.virtual or (Field.flags has (FD_ARRAY|FD_VECTOR|FD_UNIT)) or
       ((Field.flags has FD_STRING) and (Field.flags has FD_ALLOC))
 end
 
@@ -441,7 +441,7 @@ global function parseClassFields(Class:table, ClientSpec:str)
       end
 
       if metaFields?? then
-         for i=0,#metaFields-1 do
+         for i in {0 to #metaFields} do
             f = metaFields[i]
             def = getMetaFieldDefinition(f)
             if def and def.synonym != true then

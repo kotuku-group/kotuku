@@ -158,10 +158,14 @@ static_assert(offsetof(RegisterSnapshot, xmm15) IS 224, "RegisterSnapshot xmm15 
 static_assert(sizeof(RegisterSnapshot) IS 240, "RegisterSnapshot size mismatch");
 
 // External MASM functions defined in register_capture_x64.asm
-extern "C" void asm_capture_registers(RegisterSnapshot* snap);
-extern "C" int asm_verify_registers(const RegisterSnapshot* before, const RegisterSnapshot* after);
-extern "C" int asm_call_and_capture(RegisterSnapshot* before, RegisterSnapshot* after,
-   bool (*fn)(void*), void* ctx);
+extern "C" void asm_capture_registers(RegisterSnapshot* Snap);
+extern "C" int asm_verify_registers(const RegisterSnapshot* Before, const RegisterSnapshot* After);
+extern "C" int asm_call_and_capture(RegisterSnapshot* Before, RegisterSnapshot* After,
+   bool (*Fn)(void*), void* Context);
+extern "C" void asm_call_cpuid_and_capture(RegisterSnapshot* Before, RegisterSnapshot* After,
+   int (*Fn)(uint32_t, uint32_t*), uint32_t* Results);
+
+#define HAS_CPUID_DIRECT_CAPTURE
 
 static constexpr bool glHasRegisterCapture = true;
 
@@ -215,6 +219,46 @@ struct RegisterSnapshot {
 };
 
 static constexpr bool glHasRegisterCapture = true;
+
+#if !defined(_WIN32)
+// Capture immediately around the calls so compiler register allocation cannot alter the snapshots.
+static __attribute__((naked, noinline)) void asm_call_cpuid_and_capture(RegisterSnapshot*, RegisterSnapshot*,
+   int (*)(uint32_t, uint32_t*), uint32_t*)
+{
+   __asm__ __volatile__(
+      "subq $40, %rsp\n\t"
+      "movq %rdi, 0(%rsp)\n\t"
+      "movq %rsi, 8(%rsp)\n\t"
+      "movq %rdx, 16(%rsp)\n\t"
+      "movq %rcx, 24(%rsp)\n\t"
+      "movq 0(%rsp), %rax\n\t"
+      "movq %rbx, 0(%rax)\n\t"
+      "movq %rbp, 8(%rax)\n\t"
+      "movq %r12, 16(%rax)\n\t"
+      "movq %r13, 24(%rax)\n\t"
+      "movq %r14, 32(%rax)\n\t"
+      "movq %r15, 40(%rax)\n\t"
+      "movq %rsp, 48(%rax)\n\t"
+      "xorl %edi, %edi\n\t"
+      "movq 24(%rsp), %rsi\n\t"
+      "call *16(%rsp)\n\t"
+      "movl $1, %edi\n\t"
+      "movq 24(%rsp), %rsi\n\t"
+      "call *16(%rsp)\n\t"
+      "movq 8(%rsp), %rax\n\t"
+      "movq %rbx, 0(%rax)\n\t"
+      "movq %rbp, 8(%rax)\n\t"
+      "movq %r12, 16(%rax)\n\t"
+      "movq %r13, 24(%rax)\n\t"
+      "movq %r14, 32(%rax)\n\t"
+      "movq %r15, 40(%rax)\n\t"
+      "movq %rsp, 48(%rax)\n\t"
+      "addq $40, %rsp\n\t"
+      "ret\n\t"
+   );
+}
+#define HAS_CPUID_DIRECT_CAPTURE
+#endif
 
 static void capture_registers(RegisterSnapshot* Snap)
 {
@@ -895,17 +939,22 @@ static bool test_cpuid_register_preservation(kt::Log& Log)
    }
 
    RegisterSnapshot before, after;
-   capture_registers(&before);
-
    uint32_t res[4];
+
+#if defined(HAS_CPUID_DIRECT_CAPTURE)
+   asm_call_cpuid_and_capture(&before, &after, lj_vm_cpuid, res);
+#else
+   capture_registers(&before);
    volatile int ret1 = lj_vm_cpuid(0, res);
    volatile int ret2 = lj_vm_cpuid(1, res);
    (void)ret1; (void)ret2;
-
    capture_registers(&after);
+#endif
 
    return verify_registers(&before, &after, Log);
 }
+
+#undef HAS_CPUID_DIRECT_CAPTURE
 
 #endif // LJ_TARGET_X86ORX64
 

@@ -68,11 +68,10 @@
     <method>
       <name>AddCommand</name>
       <comment>Add one or more commands to the end of the path sequence.</comment>
-      <prototype>ERR vp::AddCommand(OBJECTPTR Object, struct PathCommand * Commands, INT Size)</prototype>
-      <tiriPrototype>err = AddCommand(Commands:any, Size:num)</tiriPrototype>
+      <prototype>ERR vp::AddCommand(OBJECTPTR Object, std::span&lt;const struct PathCommand&gt; Commands)</prototype>
+      <tiriPrototype>err = AddCommand(Commands:array)</tiriPrototype>
       <input>
-        <param type="struct PathCommand *" name="Commands">Array of commands to add to the path.</param>
-        <param type="INT" name="Size">The size of the <code>Commands</code> buffer, in bytes.</param>
+        <param type="std::span&lt;const struct PathCommand&gt;" name="Commands">Array of commands to add to the path.</param>
       </input>
       <description>
 <p>This method will add a series of commands to the end of a Vector's existing path sequence.  The commands must be provided as a sequential array.  No checks will be performed to confirm the validity of the sequence.</p>
@@ -114,12 +113,11 @@
     <method>
       <name>SetCommand</name>
       <comment>Copies one or more commands into an existing path.</comment>
-      <prototype>ERR vp::SetCommand(OBJECTPTR Object, INT Index, struct PathCommand * Command, INT Size)</prototype>
-      <tiriPrototype>err = SetCommand(Index:num, Command:any, Size:num)</tiriPrototype>
+      <prototype>ERR vp::SetCommand(OBJECTPTR Object, INT Index, std::span&lt;const struct PathCommand&gt; Command)</prototype>
+      <tiriPrototype>err = SetCommand(Index:num, Command:array)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The index of the command that is to be set.</param>
-        <param type="struct PathCommand *" name="Command">An array of commands to set in the path.</param>
-        <param type="INT" name="Size">The size of the <code>Command</code> buffer, in bytes.</param>
+        <param type="std::span&lt;const struct PathCommand&gt;" name="Command">An array of commands to set in the path.</param>
       </input>
       <description>
 <p>Use SetCommand() to copy one or more commands into an existing path.</p>
@@ -130,15 +128,13 @@
     <method>
       <name>SetCommandList</name>
       <comment>The fastest available mechanism for setting a series of path instructions.</comment>
-      <prototype>ERR vp::SetCommandList(OBJECTPTR Object, APTR Commands, INT Size)</prototype>
-      <tiriPrototype>err = SetCommandList(Commands:any, Size:num)</tiriPrototype>
+      <prototype>ERR vp::SetCommandList(OBJECTPTR Object, std::span&lt;const struct PathCommand&gt; Commands)</prototype>
+      <tiriPrototype>err = SetCommandList(Commands:array)</tiriPrototype>
       <input>
-        <param type="APTR" name="Commands">An array of <st>PathCommand</st> structures.</param>
-        <param type="INT" name="Size">The byte size of the <code>Commands</code> buffer.</param>
+        <param type="std::span&lt;const struct PathCommand&gt;" name="Commands">An array of <st>PathCommand</st> structures.</param>
       </input>
       <description>
 <p>Use SetCommandList() to copy a series of path commands to a <class name="VectorPath">VectorPath</class> object.  All existing commands will be cleared as a result of this process.</p>
-<p>NOTE: This method is not compatible with Tiri calls.</p>
       </description>
       <tags>mutates-object, copies-input</tags>
     </method>

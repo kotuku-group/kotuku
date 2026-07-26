@@ -73,7 +73,7 @@ end
    assert(err is ERR_Okay, 'attribute::* should enumerate attribute nodes: ' .. mSys.GetErrorMsg(err))
 
    local foundCategory, foundId = false, false
-   for index = 0, #attributeNames-1 do
+   for index in {0 to #attributeNames} do
       if attributeNames[index] is 'category' then foundCategory = true end
       if attributeNames[index] is 'id' then foundId = true end
    end

@@ -25,10 +25,14 @@
 #include <sstream>
 #include <cmath>
 #include <type_traits>
+#ifndef STRINGS_HPP
+#include <kotuku/strings.hpp>
+#endif
+
 #include "ankerl/unordered_dense.h"
 #endif
 
-#define CORE_BUILD_DATE 20260721
+#define CORE_BUILD_DATE 20260725
 class objMetaClass;
 
 // Predefined cursor styles
@@ -886,8 +890,7 @@ enum class JET : int {
 // Field descriptors
 
 #define FD_DOUBLERESULT 0x80000100
-#define FD_PTR_DOUBLERESULT 0x88000100
-#define FD_CLASS_TYPES 0xffc05001
+#define FD_CLASS_TYPES 0xffc85001
 #define FD_VOID 0x00000000
 #define FD_OBJECT 0x00000001
 #define FD_LOCAL 0x00000002
@@ -896,18 +899,14 @@ enum class JET : int {
 #define FD_STRUCT 0x00000010
 #define FD_ALLOC 0x00000020
 #define FD_STORE 0x00000020
-#define FD_FLAGS 0x00000040
 #define FD_VARTAGS 0x00000040
-#define FD_PTRSIZE 0x00000080
-#define FD_BUFSIZE 0x00000080
-#define FD_ARRAYSIZE 0x00000080
+#define FD_FLAGS 0x00000040
 #define FD_LOOKUP 0x00000080
-#define FD_READ 0x00000100
 #define FD_RESULT 0x00000100
+#define FD_READ 0x00000100
 #define FD_R 0x00000100
-#define FD_W 0x00000200
-#define FD_BUFFER 0x00000200
 #define FD_WRITE 0x00000200
+#define FD_W 0x00000200
 #define FD_RW 0x00000300
 #define FD_INIT 0x00000400
 #define FD_TAGS 0x00000400
@@ -922,30 +921,28 @@ enum class JET : int {
 #define FD_SYSTEM 0x00010000
 #define FD_SYNONYM 0x00020000
 #define FD_UNSIGNED 0x00040000
+#define FD_VECTOR 0x00080000
 #define FD_PURE 0x00100000
 #define FD_SCALED 0x00200000
 #define FD_NORMALISED 0x00200000
 #define FD_WORD 0x00400000
-#define FD_STRING 0x00800000
 #define FD_STR 0x00800000
+#define FD_STRING 0x00800000
 #define FD_STRRESULT 0x00800100
 #define FD_BYTE 0x01000000
 #define FD_FUNCTION 0x02000000
 #define FD_INT64 0x04000000
 #define FD_INT64RESULT 0x04000100
-#define FD_POINTER 0x08000000
 #define FD_PTR 0x08000000
+#define FD_POINTER 0x08000000
 #define FD_OBJECTPTR 0x08000001
 #define FD_PTRRESULT 0x08000100
-#define FD_PTRBUFFER 0x08000200
 #define FD_FUNCTIONPTR 0x0a000000
-#define FD_PTR_INT64RESULT 0x0c000100
 #define FD_FLOAT 0x10000000
 #define FD_UNIT 0x20000000
 #define FD_INT 0x40000000
 #define FD_OBJECTID 0x40000001
 #define FD_INTRESULT 0x40000100
-#define FD_PTR_INTRESULT 0x48000100
 #define FD_DOUBLE 0x80000000
 
 // File flags
@@ -1164,6 +1161,7 @@ typedef AC ACTIONID;
 struct StructInfo {
    uint16_t Size;       // Byte size of the structure (sizeof)
    uint16_t Alignment;  // Alignment requirement of the structure (alignof)
+   std::string Name;     // Readable structure name
 };
 
 using LOG_CALLBACK = void(*)(CSTRING Header, CSTRING Message, int Depth, int MsgLevel, int LogLevel);
@@ -1244,9 +1242,18 @@ struct FieldArray {
    APTR     SetField; // ERR SetField(*Object, APTR Value);
    int64_t  Arg;    // Can be a pointer or an integer value
    uint32_t Flags;  // Special flags that describe the field
-  template <class G = APTR, class S = APTR, class T = MAXINT> FieldArray(CSTRING pName, uint32_t pFlags, G pGetField = nullptr, S pSetField = nullptr, T pArg = 0) :
-     Name(pName), GetField((APTR)pGetField), SetField((APTR)pSetField), Arg((MAXINT)pArg), Flags(pFlags)
-     { }
+   template <class T> static int64_t encode_arg(uint32_t Flags, T Arg) {
+      if constexpr (std::is_convertible_v<T, CSTRING>) {
+         if ((Flags & FD_STRUCT) and CSTRING(Arg)) return int64_t(uint32_t(kt::strhash(CSTRING(Arg))));
+      }
+      return int64_t((MAXINT)Arg);
+   }
+
+   template <class G = APTR, class S = APTR, class T = MAXINT>
+   FieldArray(CSTRING FieldName, uint32_t FieldFlags, G GetFieldFn = nullptr, S SetFieldFn = nullptr,
+      T FieldArg = 0) :
+      Name(FieldName), GetField((APTR)GetFieldFn), SetField((APTR)SetFieldFn),
+      Arg(encode_arg(FieldFlags, FieldArg)), Flags(FieldFlags) { }
 };
 
 struct FieldDef {
@@ -1458,7 +1465,7 @@ struct ClassRecord {
 struct CoreBase {
 #ifndef KOTUKU_STATIC
    ERR (*_Action)(AC Action, OBJECTPTR Object, APTR Parameters);
-   void (*_ActionList)(struct ActionTable **Actions, int *Size);
+   void (*_ActionList)(kt::vector<ActionTable *> *Actions);
    ERR (*_DeleteFile)(const std::string_view &Path, FUNCTION *Callback);
    CSTRING (*_ResolveClassID)(CLASSID ID);
    int (*_AllocateID)(IDTYPE Type);
@@ -1488,7 +1495,7 @@ struct CoreBase {
    ERR (*_NewObject)(CLASSID ClassID, NF Flags, OBJECTPTR *Object);
    void (*_NotifySubscribers)(OBJECTPTR Object, AC Action, APTR Args, ERR Error);
    ERR (*_CopyFile)(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback);
-   ERR (*_ProcessMessages)(PMF Flags, int TimeOut);
+   ERR (*_ProcessMessages)(PMF Flags, int Timeout);
    ERR (*_IdentifyFile)(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
    CLASSID (*_ResolveClassName)(const std::string_view &Name);
    ERR (*_SendMessage)(MSGID Type, MSF Flags, const std::span<const int8_t> &Data);
@@ -1511,7 +1518,7 @@ struct CoreBase {
    int64_t (*_GetResource)(RES Resource);
    int64_t (*_SetResource)(RES Resource, int64_t Value);
    ERR (*_ScanMessages)(int *Handle, MSGID Type, const std::span<int8_t> &Buffer);
-   ERR (*_WaitForObjects)(PMF Flags, int TimeOut, struct ObjectSignal *ObjectSignals);
+   ERR (*_WaitForObjects)(PMF Flags, int Timeout, struct ObjectSignal *ObjectSignals);
    void (*_UnloadFile)(struct CacheFile *Cache);
    ERR (*_CreateFolder)(const std::string_view &Path, PERMIT Permissions);
    ERR (*_LoadFile)(const std::string_view &Path, LDF Flags, struct CacheFile **Cache);
@@ -1544,7 +1551,7 @@ struct CoreBase {
    ERR (*_WakeThread)(int Thread, int Stop);
    ERR (*_AsyncCancel)(kt::vector<OBJECTID> &Objects);
    int (*_AsyncPending)(OBJECTID Object);
-   ERR (*_AsyncWait)(kt::vector<OBJECTID> &Objects, int TimeOut);
+   ERR (*_AsyncWait)(kt::vector<OBJECTID> &Objects, int Timeout);
    ERR (*_ClassDatabase)(kt::vector<ClassRecord *> *Classes);
    int (*_GetThreadID)(void);
    void (*_UnitTests)(CSTRING Options, int *Passed, int *Total);
@@ -1556,7 +1563,7 @@ struct CoreBase {
 #if !defined(KOTUKU_STATIC) and !defined(PRV_CORE_MODULE)
 extern struct CoreBase *CoreBase;
 inline ERR Action(AC Action, OBJECTPTR Object, APTR Parameters) { return CoreBase->_Action(Action,Object,Parameters); }
-inline void ActionList(struct ActionTable **Actions, int *Size) { return CoreBase->_ActionList(Actions,Size); }
+inline void ActionList(kt::vector<ActionTable *> *Actions) { return CoreBase->_ActionList(Actions); }
 inline ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback) { return CoreBase->_DeleteFile(Path,Callback); }
 inline CSTRING ResolveClassID(CLASSID ID) { return CoreBase->_ResolveClassID(ID); }
 inline int AllocateID(IDTYPE Type) { return CoreBase->_AllocateID(Type); }
@@ -1586,7 +1593,7 @@ inline ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID OwnerID
 inline ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object) { return CoreBase->_NewObject(ClassID,Flags,Object); }
 inline void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Error) { return CoreBase->_NotifySubscribers(Object,Action,Args,Error); }
 inline ERR CopyFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback) { return CoreBase->_CopyFile(Source,Dest,Callback); }
-inline ERR ProcessMessages(PMF Flags, int TimeOut) { return CoreBase->_ProcessMessages(Flags,TimeOut); }
+inline ERR ProcessMessages(PMF Flags, int Timeout) { return CoreBase->_ProcessMessages(Flags,Timeout); }
 inline ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass) { return CoreBase->_IdentifyFile(Path,Filter,Class,SubClass); }
 inline CLASSID ResolveClassName(const std::string_view &Name) { return CoreBase->_ResolveClassName(Name); }
 inline ERR SendMessage(MSGID Type, MSF Flags, const std::span<const int8_t> &Data) { return CoreBase->_SendMessage(Type,Flags,Data); }
@@ -1609,7 +1616,7 @@ inline uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length) { return Core
 inline int64_t GetResource(RES Resource) { return CoreBase->_GetResource(Resource); }
 inline int64_t SetResource(RES Resource, int64_t Value) { return CoreBase->_SetResource(Resource,Value); }
 inline ERR ScanMessages(int *Handle, MSGID Type, const std::span<int8_t> &Buffer) { return CoreBase->_ScanMessages(Handle,Type,Buffer); }
-inline ERR WaitForObjects(PMF Flags, int TimeOut, struct ObjectSignal *ObjectSignals) { return CoreBase->_WaitForObjects(Flags,TimeOut,ObjectSignals); }
+inline ERR WaitForObjects(PMF Flags, int Timeout, struct ObjectSignal *ObjectSignals) { return CoreBase->_WaitForObjects(Flags,Timeout,ObjectSignals); }
 inline void UnloadFile(struct CacheFile *Cache) { return CoreBase->_UnloadFile(Cache); }
 inline ERR CreateFolder(const std::string_view &Path, PERMIT Permissions) { return CoreBase->_CreateFolder(Path,Permissions); }
 inline ERR LoadFile(const std::string_view &Path, LDF Flags, struct CacheFile **Cache) { return CoreBase->_LoadFile(Path,Flags,Cache); }
@@ -1642,7 +1649,7 @@ inline OBJECTPTR ParentContext(void) { return CoreBase->_ParentContext(); }
 inline ERR WakeThread(int Thread, int Stop) { return CoreBase->_WakeThread(Thread,Stop); }
 inline ERR AsyncCancel(kt::vector<OBJECTID> &Objects) { return CoreBase->_AsyncCancel(Objects); }
 inline int AsyncPending(OBJECTID Object) { return CoreBase->_AsyncPending(Object); }
-inline ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut) { return CoreBase->_AsyncWait(Objects,TimeOut); }
+inline ERR AsyncWait(kt::vector<OBJECTID> &Objects, int Timeout) { return CoreBase->_AsyncWait(Objects,Timeout); }
 inline ERR ClassDatabase(kt::vector<ClassRecord *> *Classes) { return CoreBase->_ClassDatabase(Classes); }
 inline int GetThreadID(void) { return CoreBase->_GetThreadID(); }
 inline void UnitTests(CSTRING Options, int *Passed, int *Total) { return CoreBase->_UnitTests(Options,Passed,Total); }
@@ -1650,7 +1657,7 @@ inline OBJECTPTR PinWeakObject(OBJECTID Object) { return CoreBase->_PinWeakObjec
 inline ERR FreeObject(OBJECTID ObjectID) { return CoreBase->_FreeObject(ObjectID); }
 #else
 extern "C" ERR Action(AC Action, OBJECTPTR Object, APTR Parameters);
-extern "C" void ActionList(struct ActionTable **Actions, int *Size);
+extern "C" void ActionList(kt::vector<ActionTable *> *Actions);
 extern "C" ERR DeleteFile(const std::string_view &Path, FUNCTION *Callback);
 extern "C" CSTRING ResolveClassID(CLASSID ID);
 extern "C" int AllocateID(IDTYPE Type);
@@ -1680,7 +1687,7 @@ extern "C" ERR TrackResource(RESOURCEID ResourceID, APTR Address, RESOURCEID Own
 extern "C" ERR NewObject(CLASSID ClassID, NF Flags, OBJECTPTR *Object);
 extern "C" void NotifySubscribers(OBJECTPTR Object, AC Action, APTR Args, ERR Error);
 extern "C" ERR CopyFile(const std::string_view &Source, const std::string_view &Dest, FUNCTION *Callback);
-extern "C" ERR ProcessMessages(PMF Flags, int TimeOut);
+extern "C" ERR ProcessMessages(PMF Flags, int Timeout);
 extern "C" ERR IdentifyFile(const std::string_view &Path, CLASSID Filter, CLASSID *Class, CLASSID *SubClass);
 extern "C" CLASSID ResolveClassName(const std::string_view &Name);
 extern "C" ERR SendMessage(MSGID Type, MSF Flags, const std::span<const int8_t> &Data);
@@ -1703,7 +1710,7 @@ extern "C" uint32_t GenCRC32(uint32_t CRC, APTR Data, uint32_t Length);
 extern "C" int64_t GetResource(RES Resource);
 extern "C" int64_t SetResource(RES Resource, int64_t Value);
 extern "C" ERR ScanMessages(int *Handle, MSGID Type, const std::span<int8_t> &Buffer);
-extern "C" ERR WaitForObjects(PMF Flags, int TimeOut, struct ObjectSignal *ObjectSignals);
+extern "C" ERR WaitForObjects(PMF Flags, int Timeout, struct ObjectSignal *ObjectSignals);
 extern "C" void UnloadFile(struct CacheFile *Cache);
 extern "C" ERR CreateFolder(const std::string_view &Path, PERMIT Permissions);
 extern "C" ERR LoadFile(const std::string_view &Path, LDF Flags, struct CacheFile **Cache);
@@ -1736,7 +1743,7 @@ extern "C" OBJECTPTR ParentContext(void);
 extern "C" ERR WakeThread(int Thread, int Stop);
 extern "C" ERR AsyncCancel(kt::vector<OBJECTID> &Objects);
 extern "C" int AsyncPending(OBJECTID Object);
-extern "C" ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut);
+extern "C" ERR AsyncWait(kt::vector<OBJECTID> &Objects, int Timeout);
 extern "C" ERR ClassDatabase(kt::vector<ClassRecord *> *Classes);
 extern "C" int GetThreadID(void);
 extern "C" void UnitTests(CSTRING Options, int *Passed, int *Total);

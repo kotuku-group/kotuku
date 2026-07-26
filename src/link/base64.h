@@ -24,6 +24,6 @@ struct BASE64ENCODE {
 const int CHARS_PER_LINE = 72;
 
 int64_t Base64Encode(BASE64ENCODE *, std::span<const char>, std::span<char>);
-ERR Base64Decode(BASE64DECODE *, std::string_view, APTR, int64_t *);
+ERR Base64Decode(BASE64DECODE *, std::string_view, std::span<int8_t>, int64_t *);
 
 };

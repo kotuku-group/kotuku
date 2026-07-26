@@ -168,14 +168,14 @@ static void task_stdinput_callback(HOSTHANDLE FD, void *Task)
 
    if (Self->InputCallback.stale()) clear_callback(Self->InputCallback);
    else if (Self->InputCallback.isC()) {
-      auto routine = (void (*)(extTask *, APTR, int, ERR, APTR))Self->InputCallback.Routine;
-      routine(Self, buffer, bytes_read, error, Self->InputCallback.Meta);
+      auto routine = (void (*)(extTask *, std::span<std::byte>, ERR, APTR))Self->InputCallback.Routine;
+      routine(Self, std::span<std::byte>((std::byte *)buffer, bytes_read), error, Self->InputCallback.Meta);
    }
    else if (Self->InputCallback.isScript()) {
+      std::span<std::byte> span((std::byte *)buffer, bytes_read);
       sc::Call(Self->InputCallback, std::to_array<ScriptArg>({
          { "Task",       Self },
-         { "Buffer",     buffer, FD_PTRBUFFER },
-         { "BufferSize", bytes_read, FD_INT|FD_BUFSIZE },
+         { "Buffer",     &span, FDF_SPAN|FD_BYTE },
          { "Status",     int(error), FD_ERROR }
       }));
    }
@@ -219,14 +219,14 @@ static int read_task_stdout(HOSTHANDLE FD, APTR Task)
       auto task = (extTask *)Task;
       if (task->OutputCallback.stale()) clear_callback(task->OutputCallback);
       else if (task->OutputCallback.isC()) {
-         auto routine = (void (*)(extTask *, APTR, int, APTR))task->OutputCallback.Routine;
-         routine(task, buffer, len, task->OutputCallback.Meta);
+         auto routine = (void (*)(extTask *, std::span<std::byte> Buffer, APTR Meta))task->OutputCallback.Routine;
+         routine(task, std::span<std::byte>((std::byte *)buffer, len), task->OutputCallback.Meta);
       }
       else if (task->OutputCallback.isScript()) {
+         std::span<std::byte> span((std::byte *)buffer, len);
          sc::Call(task->OutputCallback, std::to_array<ScriptArg>({
-            { "Task",       Task,   FD_OBJECTPTR },
-            { "Buffer",     buffer, FD_PTRBUFFER },
-            { "BufferSize", len,    FD_INT|FD_BUFSIZE }
+            { "Task",   Task, FD_OBJECTPTR },
+            { "Buffer", &span, FDF_SPAN|FD_BYTE }
          }));
       }
    }
@@ -279,14 +279,14 @@ static int read_task_stderr(HOSTHANDLE FD, APTR Task)
       auto task = (extTask *)Task;
       if (task->ErrorCallback.stale()) clear_callback(task->ErrorCallback);
       else if (task->ErrorCallback.isC()) {
-         auto routine = (void (*)(extTask *, APTR, int, APTR))task->ErrorCallback.Routine;
-         routine(task, buffer, len, task->ErrorCallback.Meta);
+         auto routine = (void (*)(extTask *, std::span<std::byte>, APTR))task->ErrorCallback.Routine;
+         routine(task, std::span<std::byte>((std::byte *)buffer, len), task->ErrorCallback.Meta);
       }
       else if (task->ErrorCallback.isScript()) {
+         std::span<std::byte> span((std::byte *)buffer, len);
          sc::Call(task->ErrorCallback, std::to_array<ScriptArg>({
             { "Task", Task, FD_OBJECTPTR },
-            { "Data", buffer, FD_PTRBUFFER },
-            { "Size", len, FD_INT|FD_BUFSIZE }
+            { "Data", &span, FDF_SPAN|FD_BYTE }
          }));
       }
    }
@@ -337,14 +337,14 @@ static bool drain_task_stderr(HOSTHANDLE FD, APTR Task)
 static void output_callback(extTask *Task, FUNCTION *Callback, APTR Buffer, int Size)
 {
    if (Callback->isC()) {
-      auto routine = (void (*)(extTask *, APTR, int, APTR))Callback->Routine;
-      routine(Task, Buffer, Size, Callback->Meta);
+      auto routine = (void (*)(extTask *, std::span<std::byte>, APTR))Callback->Routine;
+      routine(Task, std::span<std::byte>((std::byte *)Buffer, Size), Callback->Meta);
    }
    else if (Callback->isScript()) {
+      std::span<std::byte> span((std::byte *)Buffer, Size);
       sc::Call(*Callback, std::to_array<ScriptArg>({
          { "Task", Task, FD_OBJECTPTR },
-         { "Data", Buffer, FD_PTRBUFFER },
-         { "Size", Size, FD_INT|FD_BUFSIZE }
+         { "Data", &span, FDF_SPAN|FD_BYTE }
       }));
    }
 }
@@ -441,9 +441,16 @@ static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int Msg
    const FunctionField *copied_fields = nullptr;
    bool executed = false;
 
-   if (not (action = (ActionMessage *)Message)) {
+   if ((not Message) or (MsgSize < int(sizeof(ActionMessage)))) {
       log.warning("No data attached to MSGID::ACTION message.");
-      return ERR::Okay;
+      return ERR::InvalidData;
+   }
+   action = (ActionMessage *)Message;
+
+   const auto payload_size = size_t(MsgSize) - sizeof(ActionMessage);
+   if (action->SendArgs and ((action->ArgsSize <= 0) or (size_t(action->ArgsSize) > payload_size))) {
+      log.warning("MSGID::ACTION contains a truncated argument record.");
+      return ERR::InvalidData;
    }
 
    copied_fields = action->Fields;
@@ -472,13 +479,18 @@ static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int Msg
 
             if (fields) {
                // Argument pointers were serialised as offsets by QueueAction(); rebase them against this copy.
-               make_args_absolute(fields, action->ArgsSize, (int8_t *)(action + 1));
-               glCurrentActionMsg = action;
-               Action(action->ActionID, obj, action+1);
-               executed = true;
-               glCurrentActionMsg = nullptr;
+               if (make_args_absolute(fields, action->ArgsSize, (int8_t *)(action + 1), payload_size) != ERR::Okay) {
+                  log.warning("MSGID::ACTION contains invalid serialised argument pointers.");
+               }
+               else {
+                  glCurrentActionMsg = action;
+                  Action(action->ActionID, obj, action+1);
+                  executed = true;
+                  glCurrentActionMsg = nullptr;
+               }
                ReleaseObject(obj);
             }
+            else ReleaseObject(obj);
          }
       }
       else if ((error != ERR::NoMatchingObject) and (error != ERR::MarkedForDeletion)) {
@@ -642,7 +654,7 @@ static void task_process_end(WINHANDLE FD, extTask *Task)
 
    // Send a break if we're waiting for this process to end
 
-   if (((Task->Flags & TSF::WAIT) != TSF::NIL) and (Task->TimeOut > 0)) SendMessage(glProcessBreak, MSF::NIL, {});
+   if (((Task->Flags & TSF::WAIT) != TSF::NIL) and (Task->Timeout > 0)) SendMessage(glProcessBreak, MSF::NIL, {});
 }
 #endif
 
@@ -675,7 +687,7 @@ On successful execution, the ProcessID will refer to the ID of the executed proc
 hosting platform's unique process numbers.
 
 If the `WAIT` flag is specified, this action will not return until the executed process has returned or the
-#TimeOut (if specified) has expired.  Messages are processed as normal during this time, ensuring that your
+#Timeout (if specified) has expired.  Messages are processed as normal during this time, ensuring that your
 process remains responsive while waiting.
 
 The process' return code can be read from the #ReturnCode field after the process has completed its execution.
@@ -692,7 +704,7 @@ DOS window from appearing.  The DOS window will also be hidden if the stdout or 
 Okay
 MissingPath: The Location field has not been set.
 Failed
-TimeOut:     Can be returned if the `WAIT` flag is used.  Indicates that the process was launched, but the timeout expired before the process returned.
+Timeout:     Can be returned if the `WAIT` flag is used.  Indicates that the process was launched, but the timeout expired before the process returned.
 ProcessCreation
 
 -END-
@@ -862,13 +874,13 @@ static ERR TASK_Activate(extTask *Self)
          (not redirect_stderr.empty()) ? redirect_stderr.data() : nullptr, &Self->ProcessID))) {
 
       error = ERR::Okay;
-      if (((Self->Flags & TSF::WAIT) != TSF::NIL) and (Self->TimeOut > 0)) {
-         log.msg("Waiting for process to exit.  TimeOut: %.2f sec", Self->TimeOut);
+      if (((Self->Flags & TSF::WAIT) != TSF::NIL) and (Self->Timeout > 0)) {
+         log.msg("Waiting for process to exit.  Timeout: %.2f sec", Self->Timeout);
 
          //if (not glProcessBreak) glProcessBreak = AllocateID(IDTYPE_MESSAGE);
          glProcessBreak = MSGID::BREAK;
 
-         auto wait_error = ProcessMessages(PMF::NIL, Self->TimeOut * 1000.0);
+         auto wait_error = ProcessMessages(PMF::NIL, Self->Timeout * 1000.0);
          if (wait_error != ERR::Okay) error = wait_error;
 
          if ((not Self->ReturnCodeSet) and (Self->Platform)) {
@@ -1072,20 +1084,20 @@ static ERR TASK_Activate(extTask *Self)
 
       error = ERR::Okay;
       if ((Self->Flags & TSF::WAIT) != TSF::NIL) {
-         log.branch("Waiting for process to turn into a zombie in %.2fs.", Self->TimeOut);
+         log.branch("Waiting for process to turn into a zombie in %.2fs.", Self->Timeout);
 
          // Wait for the child process to turn into a zombie.  NB: A parent process or our own child handler may
          // potentially pick this up but that's fine as waitpid() will just fail with -1 in that case.
 
          int status = 0;
          int wait_result = 0;
-         int64_t ticks = PreciseTime() + int64_t(Self->TimeOut * 1000000.0);
+         int64_t ticks = PreciseTime() + int64_t(Self->Timeout * 1000000.0);
          while ((wait_result = waitpid(pid, &status, WNOHANG)) IS 0) {
             ProcessMessages(PMF::NIL, 100);
 
             auto remaining = ticks - PreciseTime();
             if (remaining <= 0) {
-               error = log.warning(ERR::TimeOut);
+               error = log.warning(ERR::Timeout);
                break;
             }
          }
@@ -1807,7 +1819,9 @@ static ERR TASK_Write(extTask *Task, struct acWrite *Args)
 
 #ifdef _WIN32
    if (Task->Platform) {
-      if (auto winerror = winWriteStd(Task->Platform, Args->Buffer, Args->Length); !winerror) {
+      if (Args->Buffer.size() > size_t(INT_MAX)) return log.warning(ERR::OutOfRange);
+      if (auto winerror = winWriteStd(Task->Platform, Args->Buffer.data(), int(Args->Buffer.size())); !winerror) {
+         Args->Result = int(Args->Buffer.size());
          return ERR::Okay;
       }
       else return log.warning(ERR::Write);
@@ -1984,10 +1998,10 @@ static ERR SET_Args(extTask *Self, const std::string_view &Value)
 ErrorCallback: This callback returns incoming data from STDERR.
 
 The ErrorCallback field can be set with a function reference that will be called when an active process sends data via
-STDERR.  The callback must follow the prototype `Function(*Task, APTR Data, int Size)`
+STDERR.  The callback must follow the prototype `Function(*Task, std::span<std::byte> Data)`
 
-The information read from STDERR will be returned in the Data pointer and the byte-length of the data will be
-indicated by the `Size`.  The data pointer is temporary and will be invalid once the callback function has returned.
+The information read from STDERR will be returned in the Data span.  The reference is temporary and will be invalid
+once the callback function has returned.
 
 *********************************************************************************************************************/
 
@@ -2065,11 +2079,11 @@ InputCallback: This callback returns incoming data from STDIN.
 
 The InputCallback field is available to the active task object only (i.e. the current process).
 The referenced function will be called when process receives data from STDIN.  The callback must match the
-prototype `void Function(*Task, APTR Data, int Size, ERR Status)`.  In Tiri the prototype is
+prototype `void Function(*Task, std::span<std::byte> Data, ERR Status)`.  In Tiri the prototype is
 'function callback(Task, Array, Status)` where `Array` is an array interface.
 
-The information read from STDOUT will be returned in the `Data` pointer and the byte-length of the data will be indicated
-by the `Size`.  The data buffer is temporary and will be invalid once the callback function has returned.
+The information read from STDOUT will be returned in the `Data` span reference.  The data buffer is temporary and
+will be invalid once the callback function has returned.
 
 A status of `ERR::Finished` is sent if the stdinput handle has been closed.
 
@@ -2119,11 +2133,11 @@ static ERR SET_InputCallback(extTask *Self, FUNCTION *Value)
 OutputCallback: This callback returns incoming data from STDOUT.
 
 The OutputCallback field can be set with a function reference that will be called when an active process sends data via
-STDOUT.  For C++ the callback must match the prototype `void Function(*Task, APTR Data, int Size)`.  In Tiri the
+STDOUT.  For C++ the callback must match the prototype `void Function(*Task, std::span<std::byte> Data)`.  In Tiri the
 prototype is 'function callback(Task, Array)` where `Array` is an array interface.
 
-The information read from STDOUT will be returned in the `Data` pointer and the byte-length of the data will be indicated
-by the `Size`.  The `Data` pointer is temporary and will be invalid once the callback function has returned.
+The information read from STDOUT will be returned in the `Data` reference.  The `Data` buffer is temporary and will
+be invalid once the callback function has returned.
 
 *********************************************************************************************************************/
 
@@ -2420,7 +2434,7 @@ static ERR SET_ReturnCode(extTask *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
-TimeOut: Limits the amount of time to wait for a launched process to return.
+Timeout: Limits the amount of time to wait for a launched process to return.
 
 This field can be set in conjunction with the `WAIT` flag to define the time limit when waiting for a launched
 process to return.  The time out is defined in seconds.
@@ -2467,7 +2481,7 @@ static const FieldArray clFields[] = {
    { "Src",             FDF_SYNONYM },
    { "Path",            FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
    { "ProcessPath",     FDF_CPPSTRING|FDF_R },
-   { "TimeOut",         FDF_DOUBLE|FDF_RW },
+   { "Timeout",         FDF_DOUBLE|FDF_RW },
    { "Parameters",      FDF_VECTOR|FDF_CPPSTRING|FDF_RW },
    { "Flags",           FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clTaskFlags },
    { "ReturnCode",      FDF_INT|FDF_RW, GET_ReturnCode, SET_ReturnCode },

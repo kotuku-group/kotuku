@@ -114,7 +114,7 @@ end
 @Test function InteroperatesWithConfigClass()
    local encoded = config.encode({ Font={ Name='Clean', Points=8, Scalable=true } })
    local cfg = obj.new('config')
-   check(cfg.acDataFeed(nil, DATA_TEXT, encoded, 0))
+   check(cfg.acDataFeed(nil, DATA_TEXT, encoded))
 
    local name = [_*]cfg.mtReadValue('Font', 'Name')
    local points = [_*]cfg.mtReadValue('Font', 'Points')

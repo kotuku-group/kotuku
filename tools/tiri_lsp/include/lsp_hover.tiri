@@ -127,7 +127,7 @@ function buildStructTypeMap(Doc:table, Position:table):table
    total_lines = getTotalLines(Doc)
    if Position and Position.line + 1 < total_lines then total_lines = Position.line + 1 end
 
-   for line_num = 0, total_lines - 1 do
+   for line_num in {0 to total_lines} do
       line_text = getLine(Doc, line_num)
       if Position and line_num is Position.line then
          line_text = line_text:sub(0, utf16ColToByteCol(line_text, Position.character))
@@ -234,7 +234,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Doc(text="Hover Support - Current Document Symbols")
-function hoverGetDocumentSymbols(Doc:table):array
+function hoverGetDocumentSymbols(Doc:table):table
    if Doc.hoverSymbolsContent is Doc.content and Doc.hoverSymbols then return Doc.hoverSymbols end
 
    local result
@@ -271,7 +271,7 @@ function hoverSymbolMatches(Symbol:table, TokenInfo:table):bool
    return false
 end
 
-function hoverAppendParamSection(Markdown:str, Params:array):str
+function hoverAppendParamSection(Markdown:str, Params:any):str
    lines = array<string>
 
    for param in values(Params or array<table>) do
@@ -292,7 +292,7 @@ function hoverAppendParamSection(Markdown:str, Params:array):str
    return Markdown
 end
 
-function hoverAppendResultSection(Markdown:str, Results:array):str
+function hoverAppendResultSection(Markdown:str, Results:any):str
    lines = array<string>
 
    for result in values(Results or array<table>) do
@@ -311,7 +311,7 @@ function hoverAppendResultSection(Markdown:str, Results:array):str
    return Markdown
 end
 
-function hoverAppendErrorSection(Markdown:str, Errors:array):str
+function hoverAppendErrorSection(Markdown:str, Errors:any):str
    lines = array<string>
 
    for err in values(Errors or array<table>) do
@@ -330,7 +330,7 @@ function hoverAppendErrorSection(Markdown:str, Errors:array):str
    return Markdown
 end
 
-function hoverAppendFieldSection(Markdown:str, Fields:array):str
+function hoverAppendFieldSection(Markdown:str, Fields:any):str
    lines = array<string>
 
    for field in values(Fields or array<table>) do

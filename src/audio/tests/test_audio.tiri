@@ -115,7 +115,7 @@ function Volume()
 
    proc = processing.new({ signals = array<object> { snd } })
 
-   for i=1,4 do
+   for i in {1 to 5} do
       snd.volume = 1.0 * (i / 4)
       active_time = mSys.PreciseTime()
       check snd.acActivate()
@@ -143,7 +143,7 @@ function Tones()
       proc.signal()
    end
 
-   for i=1,8 do
+   for i in {1 to 9} do
       snd.note = i
       active_time = mSys.PreciseTime()
       check snd.acActivate()
@@ -199,15 +199,15 @@ function WaveSave()
 
       original_data = string.alloc(read_size)
       saved_data = string.alloc(read_size)
-      err, size_a = original_file.acRead(original_data, read_size)
-      err, size_b = saved_file.acRead(saved_data, read_size)
+      err, size_a = original_file.acRead(original_data)
+      err, size_b = saved_file.acRead(saved_data)
 
       assert(original_data, 'Failed to read from original file at offset ' .. bytes_compared)
       assert(saved_data, 'Failed to read from saved file at offset ' .. bytes_compared)
       assert(size_a is size_b, 'Read size mismatch at offset ' .. bytes_compared)
 
       -- Compare byte by byte
-      for i = 0, read_size-1 do
+      for i in {0 to read_size} do
          orig_byte = string.byte(original_data, i)
          saved_byte = string.byte(saved_data, i)
          if orig_byte != saved_byte then

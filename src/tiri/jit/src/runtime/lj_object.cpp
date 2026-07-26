@@ -13,6 +13,32 @@
 #include "../../defs.h"
 
 //********************************************************************************************************************
+
+const std::string field_typename(const Field &Field)
+{
+   std::string result;
+
+   if (Field.Flags & FD_STRING)        result = "string";
+   else if (Field.Flags & FD_DOUBLE)   result = "double";
+   else if (Field.Flags & FD_FLOAT)    result = "float";
+   else if (Field.Flags & FD_INT64)    result = "int64";
+   else if (Field.Flags & FD_INT)      result = "int";
+   else if (Field.Flags & FD_WORD)     result = "int16";
+   else if (Field.Flags & FD_BYTE)     result = "byte";
+   else if (Field.Flags & FD_STRUCT)   result = "struct";
+   else if (Field.Flags & FD_OBJECT)   result = "object";
+   else if (Field.Flags & FD_UNIT)     result = "unit";
+   else if (Field.Flags & FD_FUNCTION) result = "function";
+   else if (Field.Flags & FD_POINTER)  result = "pointer";
+   else return "unknown";
+
+   if (Field.Flags & FD_UNSIGNED) result = "u" + result;
+   if (Field.Flags & (FD_ARRAY|FD_VECTOR)) result = "array<" + result + ">";
+   if (Field.Flags & FD_POINTER)  result += "*";
+   return result;
+}
+
+//********************************************************************************************************************
 // Create a new GCobject for a Kotuku object reference.  The object is allocated via the GC.
 
 GCobject * lj_object_new(lua_State *L, OBJECTID UID, OBJECTPTR Ptr, objMetaClass *ClassPtr, uint8_t Flags)
@@ -355,7 +381,7 @@ extern "C" int ir_object_field_type(GCobject *Obj, GCstr *Key, int &Offset, uint
       FieldFlags = flags;
 
       // NB: Order is important
-      if (flags & FD_ARRAY) return IRT_ARRAY;
+      if (flags & (FD_ARRAY|FD_VECTOR)) return IRT_ARRAY;
       else if (flags & FD_STRING) { FieldFlags &= ~FD_POINTER; return IRT_STR; }
       else if (flags & (FD_DOUBLE|FD_INT64)) return IRT_NUM;
       else if (flags & (FD_OBJECT|FD_LOCAL)) return IRT_OBJECT;

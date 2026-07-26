@@ -12,6 +12,7 @@
 #include "lj_array.h"
 #include "lj_str.h"
 #include "lj_strfmt.h"
+#include "lj_struct.h"
 #include "lj_buf.h"
 #include "lj_vmarray.h"
 #include "lj_vm.h"
@@ -101,6 +102,13 @@ static void arr_load_elem(lua_State *L, GCarray *Array, uint32_t Idx, TValue *Re
          break;
       }
 
+      case AET::STRUCT: {
+         auto value = lj_struct_new(L, *Array->structdef);
+         memcpy(value->data, elem, Array->elemsize);
+         setstructV(L, Result, value);
+         break;
+      }
+
       default: setnilV(Result); break;
    }
 }
@@ -143,6 +151,16 @@ static void arr_store_elem(lua_State *L, GCarray *Array, uint32_t Idx, cTValue *
             if (tvislightud(Val)) { // Extract raw pointer (note: lightudV on 64-bit requires global_State)
                *(void**)elem = (void*)(Val->u64 & LJ_GCVMASK);
                return;
+            }
+            break;
+
+         case AET::STRUCT:
+            if (tvisstruct(Val)) {
+               auto source = structV(Val);
+               if ((source->def IS Array->structdef) and (source->structsize IS Array->elemsize)) {
+                  memcpy(elem, source->data, Array->elemsize);
+                  return;
+               }
             }
             break;
 

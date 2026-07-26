@@ -678,7 +678,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_empty_assignment(PreparedAssignment 
    FalseyJumpOptions options;
    options.include_empty_array = true;
    ControlFlowEdge falsey_edge = emit_falsey_jumps(
-      this->func_state, this->lex_state, this->control_flow, lhs_reg, options);
+      this->func_state, this->control_flow, lhs_reg, options);
 
    // Safe-nav targets may already carry a skip edge from target preparation. Those jumps bypass this
    // whole conditional-assignment block. The checks below are only for the terminal lvalue once the
@@ -763,7 +763,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_nil_assignment(PreparedAssignment ta
    nil_only.include_zero = false;
    nil_only.include_empty_string = false;
    ControlFlowEdge check_nil = emit_falsey_jumps(
-      this->func_state, this->lex_state, this->control_flow, lhs_reg, nil_only);
+      this->func_state, this->control_flow, lhs_reg, nil_only);
 
    // As with ??= above, any safe-nav skip edge lands after this emitter's store path. The nil check here
    // runs only when target preparation proved that the guarded chain itself was non-nil.

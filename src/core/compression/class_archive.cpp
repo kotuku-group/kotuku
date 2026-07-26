@@ -288,16 +288,17 @@ static ERR ARCHIVE_Read(objFile *Self, struct acRead *Args)
 {
    Log log;
 
-   if ((!Args) or (!Args->Buffer)) return log.warning(ERR::NullArgs);
-   else if (Args->Length IS 0) return ERR::Okay;
-   else if (Args->Length < 0) return ERR::OutOfRange;
+   if ((not Args) or (not Args->Buffer.data())) return log.warning(ERR::NullArgs);
+   if (Args->Buffer.empty()) return ERR::Okay;
+   if (Args->Buffer.size() > size_t(INT_MAX)) return ERR::OutOfRange;
+   const int length = int(Args->Buffer.size());
 
    auto prv = (prvFileArchive *)Self->DerivedPtr;
 
    if (prv->InvalidState) return ERR::InvalidState;
 
    if (prv->Info.DeflateMethod IS 0) {
-      ERR error = acRead(prv->FileStream, Args->Buffer, Args->Length, &Args->Result);
+      ERR error = acRead(prv->FileStream, Args->Buffer, &Args->Result);
       if (!error) Self->Position += Args->Result;
       return error;
    }
@@ -306,12 +307,12 @@ static ERR ARCHIVE_Read(objFile *Self, struct acRead *Args)
 
       auto &zf = prv->Info;
 
-      //log.trace("Decompressing %d bytes to %d, buffer size %d", zf.CompressedSize, zf.OriginalSize, Args->Length);
+      //log.trace("Decompressing %d bytes to %d, buffer size %d", zf.CompressedSize, zf.OriginalSize, length);
 
       if ((prv->Inflate.active()) and (!prv->Inflate->avail_in)) { // Initial setup
          struct acRead read = {
-            .Buffer = prv->InputBuffer,
-            .Length = (zf.CompressedSize < SIZE_COMPRESSION_BUFFER) ? (int)zf.CompressedSize : SIZE_COMPRESSION_BUFFER
+            .Buffer = std::span<int8_t>((int8_t *)prv->InputBuffer,
+               (zf.CompressedSize < SIZE_COMPRESSION_BUFFER) ? size_t(zf.CompressedSize) : SIZE_COMPRESSION_BUFFER)
          };
 
          if (Action(AC::Read, prv->FileStream, &read) != ERR::Okay) return ERR::Read;
@@ -329,8 +330,8 @@ static ERR ARCHIVE_Read(objFile *Self, struct acRead *Args)
          // Output any buffered data to the client first
          if (prv->ReadPtr < (uint8_t *)prv->Inflate->next_out) {
             int len = (int)(prv->Inflate->next_out - (Bytef *)prv->ReadPtr);
-            if (len > Args->Length) len = Args->Length;
-            copymem(prv->ReadPtr, (char *)Args->Buffer + Args->Result, len);
+            if (len > length) len = length;
+            copymem(prv->ReadPtr, Args->Buffer.data() + Args->Result, len);
             prv->ReadPtr   += len;
             Args->Result   += len;
             Self->Position += len;
@@ -339,7 +340,7 @@ static ERR ARCHIVE_Read(objFile *Self, struct acRead *Args)
          // Stop if necessary
 
          if (prv->Inflate->total_out IS zf.OriginalSize) break; // All data decompressed
-         if (Args->Result >= Args->Length) return ERR::Okay;
+         if (Args->Result >= length) return ERR::Okay;
          if (!prv->Inflate.active()) return ERR::Okay;
 
          // Reset the output buffer and decompress more data
@@ -359,10 +360,9 @@ static ERR ARCHIVE_Read(objFile *Self, struct acRead *Args)
          // Read more data from the source if necessary
 
          if ((prv->Inflate->avail_in <= 0) and (prv->InputLength > 0) and (result != Z_STREAM_END)) {
-            struct acRead read = { .Buffer = prv->InputBuffer };
-
-            if (prv->InputLength < SIZE_COMPRESSION_BUFFER) read.Length = prv->InputLength;
-            else read.Length = SIZE_COMPRESSION_BUFFER;
+            auto read_size = (prv->InputLength < SIZE_COMPRESSION_BUFFER) ? size_t(prv->InputLength) :
+               size_t(SIZE_COMPRESSION_BUFFER);
+            struct acRead read = { .Buffer = std::span<int8_t>((int8_t *)prv->InputBuffer, read_size) };
 
             if (Action(AC::Read, prv->FileStream, &read) != ERR::Okay) return ERR::Read;
             if (read.Result <= 0) return ERR::Read;
@@ -404,8 +404,8 @@ static ERR ARCHIVE_Seek(objFile *Self, struct acSeek *Args)
 
    uint8_t buffer[2048];
    while (Self->Position < pos) {
-      struct acRead read = { .Buffer = buffer, .Length = (int)(pos - Self->Position) };
-      if ((size_t)read.Length > sizeof(buffer)) read.Length = sizeof(buffer);
+      auto read_size = std::min<size_t>(size_t(pos - Self->Position), sizeof(buffer));
+      struct acRead read = { .Buffer = std::span<int8_t>((int8_t *)buffer, read_size) };
       if (Action(AC::Read, Self, &read) != ERR::Okay) return ERR::Decompression;
    }
 

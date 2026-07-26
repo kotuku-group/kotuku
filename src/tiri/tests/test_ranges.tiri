@@ -328,19 +328,11 @@ end
    assert(r2.length is 6, ".length should return 6 for inclusive range 0 into 5")
 end
 
-@Test function RangeErrorNonInteger()
-   -- Test that non-integer values throw errors
-   try
-      tmp = range(1.5, 5)
-   success
-      error("non-integer start should throw error")
-   end
-
-   try
-      range(0, 5.5)
-   success
-      error("non-integer stop should throw error")
-   end
+@Test function RangeAcceptsFractionalNumbers()
+   first = range(1.5, 5)
+   second = range(0, 5.5)
+   assert(first.start is 1.5 and first.stop is 5)
+   assert(second.start is 0 and second.stop is 5.5)
 end
 
 @Test function RangeErrorNilValues()
@@ -782,18 +774,14 @@ end
       error("range with string arguments should throw")
    end
 
-   -- Non-integer numeric values in literals
-   try
-      tmp = {1.5 to 5}
-   success
-      error("range literal with non-integer start should throw")
-   end
+   fractional = {1.5 to 5}
+   assert(fractional.start is 1.5 and fractional.stop is 5,
+      "range literals should accept finite fractional operands")
 
-   try
-      tmp = {0 to 5.5}
-   success
-      error("range literal with non-integer stop should throw")
-   end
+   fractional_stop = {0 to 5.5}
+   fractional_step = {0 to 10 by 1.5}
+   assert(fractional_stop.stop is 5.5, "range literals should accept fractional stops")
+   assert(fractional_step.step is 1.5, "range literals should accept fractional steps")
 
    try
       result = {nil to 5}
@@ -813,11 +801,6 @@ end
       error("range literal with zero step should throw")
    end
 
-   try
-      result = {0 to 10 by 1.5}
-   success
-      error("range literal with non-integer step should throw")
-   end
 end
 
 @Test function StringIndexOutOfBounds()
@@ -934,6 +917,56 @@ end
    end
    assert(count is 1, "single element range {5 into 5} should iterate once, got " .. count)
    assert(value is 5, "single element should be 5")
+end
+
+@Test function ArrayLengthRangeIterationBoundaries()
+   local empty = array<int>
+   local empty_count = 0
+   for index in {0 to #empty} do
+      empty_count += 1
+   end
+   assert(empty_count is 0, 'An empty array length range should not iterate')
+
+   local single = array<int> { 41 }
+   for index in {0 to #single} do
+      single[index] += 1
+   end
+   assert(single[0] is 42, 'A single-element array length range should visit index zero exactly once')
+end
+
+@Test function NonArrayLengthRangePreservesDynamicDirection()
+   local value = setmetatable({}, { __len = function() return -2 end })
+
+   local direct = {}
+   for index in {0 to #value} do
+      direct[#direct] = index
+   end
+
+   local length = #value
+   local indirect = {}
+   for index in {0 to length} do
+      indirect[#indirect] = index
+   end
+
+   assert(#direct is 2 and direct[0] is 0 and direct[1] is -1,
+      'Direct custom __len range should infer descending direction')
+   assert(#indirect is 2 and indirect[0] is 0 and indirect[1] is -1,
+      'Direct and captured custom __len ranges should have identical semantics')
+end
+
+@Test function NonArrayLengthRangeInsideTryPreservesDynamicDirection()
+   local visited = {}
+
+   try
+      local value = setmetatable({}, { __len = function() return -2 end })
+      for index in {0 to #value} do
+         visited[#visited] = index
+      end
+   success
+   end
+
+   assert(#visited is 2 and visited[0] is 0 and visited[1] is -1,
+      'A custom __len range inside try should retain generic descending semantics')
 end
 
 @Test function RangeIterationWithVariable()
@@ -1461,4 +1494,190 @@ end
    s = "Hello, World!"
    result = s[{0 to 5}]
    assert(result is "Hello", "simple forward slice should return 'Hello', got: " .. result)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Floating-point range coverage
+
+function approximately(Left, Right)
+   return math.abs(Left - Right) <= 1e-12
+end
+
+@Test function FloatingRangeConstructionAndBoundaries()
+   exclusive = range(0.0, 1.0, false, 0.1)
+   literal = {0.0 to 1.0 by 0.1}
+   assert(exclusive is literal, "fractional constructor and literal ranges should be equal")
+   assert(range.new(0.0, 1.0, false, 0.1) is exclusive, "range.new() should share constructor semantics")
+   assert(exclusive.start is 0 and exclusive.stop is 1 and approximately(exclusive.step, 0.1))
+   assert(#exclusive is 10 and exclusive.length is 10, "exclusive fractional range should contain ten values")
+   assert(tostring(exclusive) is "{0 to 1 by 0.1}", "fractional tostring should use normal number formatting")
+
+   aligned = {0 into 1 by 0.25}
+   unaligned = {0 into 1 by 0.3}
+   assert(#aligned is 5 and aligned:contains(1), "aligned inclusive stop should be present")
+   assert(#unaligned is 4 and not unaligned:contains(1), "unreachable inclusive stop should not be forced")
+   assert(exclusive:contains(0.3), "contains should tolerate normal floating-point representation error")
+   assert(not exclusive:contains(1), "exclusive stop should never be admitted by tolerance")
+
+   reverse = range(1.0, 0.0, false, -0.2)
+   assert(#reverse is 5 and approximately(reverse:find(v => v < 0.7), 0.6))
+   assert(#range(0.0, 1.0, false, -0.1) is 0, "a step pointing away from the stop should be empty")
+   assert(#range(0.5, 0.5) is 0 and #range(0.5, 0.5, true) is 1)
+end
+
+@Test function FloatingRangeIterationAndFunctionalMethods()
+   generic_values = array<double>
+   generic_range = range(0, 1, false, 0.2)
+   for value in generic_range() do
+      generic_values:push(value)
+   end
+   assert(#generic_values is 5 and approximately(generic_values[3], 0.6))
+
+   literal_values = array<double>
+   for value in {0 to 1 by 0.2} do
+      literal_values:push(value)
+   end
+   assert(#literal_values is #generic_values)
+   for i in {0 to #generic_values} do
+      assert(approximately(generic_values[i], literal_values[i]), "literal and generic iteration should agree")
+   end
+
+   each_sum = 0
+   generic_range:each(v => do each_sum += v end)
+   assert(approximately(each_sum, 2.0))
+
+   filtered = {0 to 1 by 0.2}:filter(v => v >= 0.4)
+   mapped = {0 to 1 by 0.25}:map(v => v * 2)
+   taken = {0 to 1 by 0.2}:take(3)
+   assert(#filtered is 3 and approximately(filtered[0], 0.4))
+   assert(#mapped is 4 and approximately(mapped[3], 1.5))
+   assert(taken:type() is "double" and #taken is 3 and approximately(taken[2], 0.4))
+   assert(approximately({0 to 1 by 0.25}:reduce(0, (acc, v) => acc + v), 1.5))
+   assert({0 to 1 by 0.2}:any(v => v > 0.7))
+   assert({0 to 1 by 0.2}:all(v => v < 1))
+end
+
+@Test function FloatingRangeMaterialisationTypes()
+   integers = range(0.0, 5.0, false, 1.0):toArray()
+   fractions = range(-0.5, 0.6, false, 0.25):toArray()
+   assert(integers:type() is "int", "legacy integral ranges should materialise as array<int>")
+   assert(fractions:type() is "double", "fractional ranges should materialise as array<double>")
+   assert(#fractions is 5 and approximately(fractions[4], 0.5))
+end
+
+@Test function FloatingRangeMembershipUsesOrdinalTolerance()
+   large_start = 1e15
+   translated = range(large_start, large_start + 10, false, 1)
+
+   assert(translated:contains(large_start + 2), "aligned values should remain members of translated ranges")
+   assert(not translated:contains(large_start + 0.5), "half-step values should not be admitted near the start")
+   assert(not translated:contains(large_start + 1.5), "half-step values should not be admitted inside the range")
+end
+
+@Test function FloatingRangeRejectsUnrepresentableSteps()
+   try
+      tmp = range(1e15, 1e15 + 1, false, 0.1):toArray()
+   success
+      error("materialising a range with repeated generated values should fail")
+   end
+
+   try
+      for value in range(1e15 + 1, 1e15, false, -0.1)() do
+      end
+   success
+      error("iterating a reverse range with repeated generated values should fail")
+   end
+
+   try
+      tmp = range(-9007199254740992, 9007199254740992, false, 1).length
+   success
+      error("ranges with ordinals beyond exact floating-point integers should fail")
+   end
+end
+
+@Test function FloatingRangeRejectsInvalidNumbers()
+   try
+      range(0, 1, false, 0)
+   success
+      error("positive zero step should fail")
+   end
+   try
+      range(0, 1, false, -0.0)
+   success
+      error("negative zero step should fail")
+   end
+   try
+      range(0 / 0, 1)
+   success
+      error("NaN bounds should fail")
+   end
+   try
+      range(0, math.huge)
+   success
+      error("infinite bounds should fail")
+   end
+   try
+      tmp = range(0, 1e20).length
+   success
+      error("ranges too large for a Lua integer should fail")
+   end
+   try
+      tmp = range(0, 4294967297):toArray()
+   success
+      error("ranges too large for a native array should fail before allocation")
+   end
+end
+
+@Test function FloatingRangesAreNotCollectionIndices()
+   whole = range(0.0, 6.0, false, 2.0)
+   assert("abcdef"[whole] is "ace", "whole-valued floating-point indices should remain valid")
+
+   try
+      tmp = "abcdef"[range(0, 4, false, 0.5)]
+   success
+      error("fractional string index ranges should fail")
+   end
+   data_table = {10, 20, 30}
+   try
+      tmp = range.slice(data_table, range(0.5, 2))
+   success
+      error("fractional table index ranges should fail")
+   end
+
+   data_values = array<int> { 1, 2, 3, 4 }
+   try
+      data_values:fill(0, range(0, 4, false, 0.5))
+   success
+      error("array.fill should reject fractional ranges")
+   end
+   try
+      data_values:find(2, range(0.5, 4))
+   success
+      error("array.find should reject fractional ranges")
+   end
+   try
+      tmp = range.slice(data_values, range(0, 4, false, 0.5))
+   success
+      error("array slicing should reject fractional ranges")
+   end
+end
+
+@Test function FloatingRangeJitParity()
+   jit.off()
+   interpreter_sum = 0
+   for value in {0 to 1 by 0.1} do
+      interpreter_sum += value
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+   compiled_sum = 0
+   for repetition in {0 to 80} do
+      compiled_sum = 0
+      for value in {0 to 1 by 0.1} do
+         compiled_sum += value
+      end
+   end
+   assert(approximately(interpreter_sum, compiled_sum), "JIT and interpreter range sequences should agree")
 end

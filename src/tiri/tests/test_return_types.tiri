@@ -226,16 +226,14 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- RETURN COUNT VALIDATION
 
-@Test function TooManyReturnsError()
-   try
-      exec([[
-         function bad():<num, str>
-            return 1, "a", "extra"
-         end
-      ]])
-   success
-      error("should detect too many return values")
+@Test function AdditionalReturnsAreTruncated()
+   function additional():<num, str>
+      return 1, "a", false
    end
+   local number, text, extra = additional()
+   assert(number is 1, "first declared result should be preserved")
+   assert(text is "a", "second declared result should be preserved")
+   assert(extra is nil, "additional undeclared results should be truncated")
 end
 
 @Test function FewerReturnsAllowed()
@@ -498,12 +496,13 @@ end
    -- 9th+ types should be treated as 'any' (no type checking)
    function manyReturns():<num, num, num, num, num, num, num, num, str>
       -- 9th type (str) should be treated as any due to MAX_RETURN_TYPES = 8
-      return 1, 2, 3, 4, 5, 6, 7, 8, "ninth"
+      return 1, 2, 3, 4, 5, 6, 7, 8, "ninth", false
    end
-   a, b, c, d, e, f, g, h, i = manyReturns()
+   a, b, c, d, e, f, g, h, i, j = manyReturns()
    assert(a is 1, "1st return should be 1")
    assert(h is 8, "8th return should be 8")
    assert(i is "ninth", "9th return should work (treated as any)")
+   assert(j is nil, "10th undeclared return should be truncated")
 end
 
 ----------------------------------------------------------------------------------------------------------------------

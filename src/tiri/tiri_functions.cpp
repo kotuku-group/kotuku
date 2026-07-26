@@ -27,7 +27,7 @@ static int lua_load(lua_State *Lua, class objFile *File, CSTRING SourceName)
    buffer.resize(filesize);
 
    int bytes_read = 0;
-   if (File->read(buffer.data(), filesize, &bytes_read) != ERR::Okay) return 1;
+   if (File->read(std::span<int8_t>((int8_t *)buffer.data(), size_t(filesize)), &bytes_read) != ERR::Okay) return 1;
    buffer.resize(bytes_read); // Guard against a short read leaving uninitialised tail bytes
 
    return lua_load(Lua, std::string_view(buffer.data(), buffer.size()), SourceName);
@@ -358,7 +358,7 @@ int fcmd_loadfile(lua_State *Lua)
       {
          int len, i;
          char header[256];
-         if (!file->read(header, sizeof(header), &len)) {
+         if (!file->read(std::span<int8_t>((int8_t *)header, sizeof(header)), &len)) {
             if (kt::startswith(LUA_COMPILED, std::string_view(header, sizeof(header)))) {
                recompile = false; // Do not recompile that which is already compiled
                for (i=sizeof(LUA_COMPILED)-1; (i < len) and (header[i]); i++);

@@ -1048,10 +1048,12 @@ ERR Action(ACTIONID ActionID, OBJECTPTR Object, APTR Parameters)
 /*********************************************************************************************************************
 
 -FUNCTION-
-ActionList: Returns a pointer to the global action table.
+ActionList: Returns the global action table.
 
 This function returns an array of all actions supported by the Core, including name, arguments and structure
 size.  The ID of each action is indicated by its index within the array.
+
+Index zero is an empty record because valid action IDs start from one rather than zero.
 
 The `Name` field specifies the name of the action.  The `Args` field refers to the action's argument definition structure,
 which lists the argument names and their relevant types.  This is matched by the `Size` field, which indicates the
@@ -1074,30 +1076,37 @@ struct FunctionField argsResize[] = {
 
 The argument types that can be used by actions are limited to those listed in the following table:
 
-<types lookup="FD">
-<type name="INT">A 32-bit integer value ranging from -2,147,483,647 to 2,147,483,648.</>
-<type name="INT64">A 64-bit integer value.</>
-<type name="PTR">A standard address space pointer.</>
-<type name="STRING">A pointer to a null-terminated string.</>
+<types lookup="FDF">
+<type name="INT">A 32-bit integer value.</>
 <type name="DOUBLE">A 64-bit floating point value.</>
-<type name="OBJECT">This flag is sometimes set in conjunction with the `FD_INT` type.  It indicates that the argument refers to an object ID.</>
-<type name="PTRSIZE">This argument type can only be used if it follows an `FD_PTR` type, and if the argument itself is intended to reflect the size of the buffer referred to by the previous `FD_PTR` argument.</>
-<type name="RESULT">This special flag is set in conjunction with the other data-based argument types. Example: If the developer is required to supply a pointer to an `int` field in which the function will store a result, the correct argument definition will be `FD_RESULT|FD_INT|FD_PTR`. To make the definition of these argument types easier, `FD_PTRRESULT` and `FD_INTRESULT` macros are also available for use.</>
+<type name="PTR">A standard address space pointer.</>
+<type name="OBJECTPTR">A pointer to an object.  This is defined as `FD_PTR|FD_OBJECT` and its convenience macro is `FD_OBJECTPTR`.</>
+<type name="CPPSTRING">A C++ `std::string`, defined as `FD_CPP|FD_STRING` with the convenience macro `FDF_CPPSTRING`.</>
+<type name="SPAN">A typed span describing contiguous callable array storage, defined as `FD_CPP|FD_ARRAY` with the convenience macro `FDF_SPAN`.  Combine it with the element type and `FD_MUTABLE` when the span is writable.</>
+</>
+
+Supplementary flags can be combined with the above types to provide additional information about the argument:
+
+<types lookup="FD">
+<type name="MUTABLE">This flag indicates that the referenced memory is writable by the function.  It is most commonly combined with `FDF_SPAN` for output buffers.</>
+<type name="RESULT">This flag indicates that the parameter is used for storing function output. Example: If the developer is required to supply a pointer to an `int` field in which the function will store a result, the correct argument definition will be `FDF_RESULT|FDF_INT`.</>
 </>
 
 -INPUT-
-&array(struct(ActionTable)) Actions: A pointer to the Core's action table `struct ActionTable *` is returned. Please note that the first entry in the `ActionTable` list has all fields driven to `NULL`, because valid action ID's start from one, not zero.  The final action in the list is also terminated with `NULL` fields in order to indicate an end to the list.  Knowing this is helpful when scanning the list or calculating the total number of actions supported by the Core.
-&arraysize Size: Total number of elements in the returned list.
+^&vector(struct(*ActionTable)) Actions: Receives pointers to the Core's static action records, indexed by action ID.
 
 -TAGS-
 static-result, non-null-result, pure-query
 
 *********************************************************************************************************************/
 
-void ActionList(struct ActionTable **List, int *Size)
+void ActionList(kt::vector<struct ActionTable *> *List)
 {
-   if (List) *List = (struct ActionTable *)ActionTable;
-   if (Size) *Size = int(AC::END);
+   if (List) {
+      List->clear();
+      List->reserve(int(AC::END));
+      for (int i=0; i < int(AC::END); i++) List->push_back((struct ActionTable *)&ActionTable[i]);
+   }
 }
 
 /*********************************************************************************************************************
@@ -1335,11 +1344,11 @@ Only one AsyncWait() call may be active at any time.  If a second call is made w
 
 -INPUT-
 vector(oid) Objects: A list of object IDs to wait on.
-int TimeOut: Maximum time to wait in milliseconds, or `-1` for an indefinite wait.
+int Timeout: Maximum time to wait in milliseconds, or `-1` for an indefinite wait.
 
 -ERRORS-
 Okay: All async actions completed.
-TimeOut: The timeout expired before all actions completed.
+Timeout: The timeout expired before all actions completed.
 NullArgs
 InUse: Another AsyncWait() call is already active.
 OutsideMainThread:
@@ -1353,7 +1362,7 @@ main-thread-only, blocking, callback-inlines
 
 *********************************************************************************************************************/
 
-ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut)
+ERR AsyncWait(kt::vector<OBJECTID> &Objects, int Timeout)
 {
    kt::Log log(__FUNCTION__);
 
@@ -1388,10 +1397,10 @@ ERR AsyncWait(kt::vector<OBJECTID> &Objects, int TimeOut)
    }
 
    int pending = glAsyncWaitCounter.load(std::memory_order_relaxed);
-   log.branch("Objects: %d, Pending: %d, Timeout: %d ms", int(glAsyncWaitTargets.size()), pending, TimeOut);
+   log.branch("Objects: %d, Pending: %d, Timeout: %d ms", int(glAsyncWaitTargets.size()), pending, Timeout);
 
    ERR error;
-   if (pending) error = ProcessMessages(PMF::NIL, TimeOut);
+   if (pending) error = ProcessMessages(PMF::NIL, Timeout);
    else error = ERR::Okay;
 
    glAsyncWaiting.store(false, std::memory_order_relaxed);
@@ -2433,7 +2442,12 @@ ERR QueueAction(ACTIONID ActionID, OBJECTID ObjectID, APTR Args)
    // The buffer is duplicated byte-for-byte into the message queue, so self-referential argument pointers must be
    // converted to offsets.  The receiver (msg_action) rebases them against its copy with make_args_absolute().
 
-   if (action.SendArgs) make_args_relative(fields, args_size, buffer.data());
+   if (action.SendArgs) {
+      if (auto error = make_args_relative(fields, args_size, buffer.data(), buffer.size()); error != ERR::Okay) {
+         release_copied_args(fields, args_size, buffer.data(), false);
+         return error;
+      }
+   }
 
    buffer.insert(buffer.begin(), (int8_t *)&action, (int8_t *)&action + sizeof(ActionMessage));
 

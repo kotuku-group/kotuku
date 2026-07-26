@@ -37,14 +37,14 @@ end
 
 function new_config()
    cfg = obj.new('config', { })
-   err = cfg.acDataFeed(nil, DATA_TEXT, glLegalData, 0)
+   err = cfg.acDataFeed(nil, DATA_TEXT, glLegalData)
    assert(err is ERR_Okay, 'DataFeed() returned ' .. mSys.GetErrorMsg(err))
    return cfg
 end
 
 function write_temp_file(Path, Content)
    file = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
-   err, written = file.acWrite(Content, #Content)
+   err, written = file.acWrite(Content)
    assert(err is ERR_Okay, 'Write() returned ' .. mSys.GetErrorMsg(err))
    assert(written is #Content, 'Wrote ' .. tostring(written) .. ' bytes, expected ' .. tostring(#Content))
    file = nil
@@ -130,7 +130,7 @@ end
    cfg = new_config()
 
    cfgMerge = obj.new('config', { })
-   err = cfgMerge.acDataFeed(nil, DATA_TEXT, glMerge, 0)
+   err = cfgMerge.acDataFeed(nil, DATA_TEXT, glMerge)
    assert(err is ERR_Okay, 'DataFeed() returned ' .. mSys.GetErrorMsg(err))
 
    err = cfg.mtMerge(cfgMerge);
@@ -383,7 +383,7 @@ end
 
    file = obj.new('file', { path='temp:test-write.cfg', flags=FL_READ })
    buf = string.alloc(file.size)
-   err, result = file.acRead(buf, file.size)
+   err, result = file.acRead(buf)
    check(err)
 
    expected_output = [[
@@ -399,7 +399,7 @@ Styles = Bold,Bold Italic,Italic,Regular
 
    assert(buf:len() is expected_output:len(), 'Wrote ' .. file.size .. ' bytes, expected ' .. expected_output:len())
 
-   for i=0,buf:len()-1 do
+   for i in {0 to buf:len()} do
       if buf:byte(i) != expected_output:byte(i) then
          error('Written output is invalid:\n---\n' .. buf .. '---\n' .. expected_output .. '---\n')
       end

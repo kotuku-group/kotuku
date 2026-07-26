@@ -28,7 +28,7 @@ using std::pow;
 //********************************************************************************************************************
 // Create a new thunk userdata
 
-void lj_thunk_new(lua_State *L, GCfunc *func, int expected_type)
+void lj_thunk_new(lua_State *L, GCfunc *Func, uint8_t ExpectedType)
 {
    // Allocate userdata with ThunkPayload - use global environment for GC traversal
    GCudata *ud = lj_udata_new(L, sizeof(ThunkPayload), tabref(L->env));
@@ -36,10 +36,10 @@ void lj_thunk_new(lua_State *L, GCfunc *func, int expected_type)
 
    // Initialize payload
    ThunkPayload *payload = thunk_payload(ud);
-   setgcref(payload->deferred_func, obj2gco(func));
+   setgcref(payload->deferred_func, obj2gco(Func));
    setnilV(&payload->cached_value);
    payload->resolved = 0;
-   payload->expected_type = (uint8_t)expected_type;
+   payload->expected_type = ExpectedType;
    payload->padding = 0;
 
    // Set metatable from registry
@@ -53,7 +53,7 @@ void lj_thunk_new(lua_State *L, GCfunc *func, int expected_type)
    incr_top(L);
 
    // GC barrier for the function reference
-   lj_gc_objbarrier(L, obj2gco(ud), obj2gco(func));
+   lj_gc_objbarrier(L, obj2gco(ud), obj2gco(Func));
 }
 
 //********************************************************************************************************************

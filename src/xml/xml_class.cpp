@@ -147,13 +147,15 @@ static ERR XML_DataFeed(extXML *Self, struct acDataFeed *Args)
       if ((Self->Flags & XMF::READ_ONLY) != XMF::NIL) return log.warning(ERR::ReadOnly);
 
       if (Self->Tags.empty()) {
-         if (auto error = txt_to_xml(Self, Self->Tags, std::string_view((char *)Args->Buffer, Args->Size)); error != ERR::Okay) {
+         if (auto error = txt_to_xml(Self, Self->Tags,
+               std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size())); error != ERR::Okay) {
             return log.warning(error);
          }
       }
       else {
          TAGS tags;
-         if (auto error = txt_to_xml(Self, tags, std::string_view((char *)Args->Buffer, Args->Size)); error != ERR::Okay) {
+         if (auto error = txt_to_xml(Self, tags,
+               std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size())); error != ERR::Okay) {
             return log.warning(error);
          }
 
@@ -1357,7 +1359,9 @@ static ERR XML_SaveToObject(extXML *Self, struct acSaveToObject *Args)
 
    std::string str;
    if (auto error = Self->serialise(0, XMF::READABLE|XMF::INCLUDE_SIBLINGS, str); !error) {
-      if (acWrite(Args->Dest, str.c_str(), int(str.size()), nullptr) != ERR::Okay) error = ERR::Write;
+      if (acWrite(Args->Dest, std::span<const int8_t>((const int8_t *)str.data(), str.size())) != ERR::Okay) {
+         error = ERR::Write;
+      }
       return error;
    }
    else return error;

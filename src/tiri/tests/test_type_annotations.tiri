@@ -75,3 +75,22 @@ end
       error("Expected unknown type name to prevent compilation")
    end
 end
+
+@Test function MistypedArrayArgumentRaisesCleanly()
+   -- Annotated parameters emit specialised bytecode, so passing a mismatched value must raise a
+   -- catchable error rather than crash or silently operate on the wrong type.
+   function increment(Values:array)
+      for index in {0 to #Values} do
+         Values[index] += 1
+      end
+   end
+
+   local plain_table = { 1, 2, 3 }
+   try
+      increment(plain_table)
+      error("Expected a table argument to an array-annotated parameter to raise")
+   except e
+      assert(e.message != nil, "The mistyped argument error should carry a message")
+   end
+   assert(plain_table[0] is 1, "A rejected table argument should remain unmodified")
+end

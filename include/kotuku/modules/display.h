@@ -675,21 +675,17 @@ class objBitmap : public Object {
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR lock() noexcept { return Action(AC::Lock, this, nullptr); }
    inline ERR query() noexcept { return Action(AC::Query, this, nullptr); }
-   template <class T, class U> ERR read(APTR Buffer, T Size, U *Result) noexcept {
-      static_assert(std::is_integral<U>::value, "Result value must be an integer type");
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
+      static_assert(std::is_integral<T>::value, "Result value must be an integer type");
+      struct acRead read = { Buffer };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
-         *Result = U(read.Result);
+         *Result = T(read.Result);
          return ERR::Okay;
       }
       else { *Result = 0; return error; }
    }
-   template <class T> ERR read(APTR Buffer, T Size) noexcept {
-      static_assert(std::is_integral<T>::value, "Size value must be an integer type");
-      const int bytes = (Size > 0x7fffffff) ? 0x7fffffff : Size;
-      struct acRead read = { (int8_t *)Buffer, bytes };
+   inline ERR read(std::span<int8_t> Buffer) noexcept {
+      struct acRead read = { Buffer };
       return Action(AC::Read, this, &read);
    }
    inline ERR resize(double Width, double Height, double Depth = 0) noexcept {
@@ -708,8 +704,8 @@ class objBitmap : public Object {
    inline ERR seekEnd(double Offset) noexcept { return seek(Offset, SEEK::END); }
    inline ERR seekCurrent(double Offset) noexcept { return seek(Offset, SEEK::CURRENT); }
    inline ERR unlock() noexcept { return Action(AC::Unlock, this, nullptr); }
-   inline ERR write(CPTR Buffer, int Size, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer, Size };
+   inline ERR write(std::span<const int8_t> Buffer, int *Result = nullptr) noexcept {
+      struct acWrite write = { Buffer };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -720,7 +716,7 @@ class objBitmap : public Object {
       }
    }
    inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { (int8_t *)Buffer.c_str(), int(Buffer.size()) };
+      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()) };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -1095,8 +1091,8 @@ class objDisplay : public Object {
 
    inline ERR activate() noexcept { return Action(AC::Activate, this, nullptr); }
    inline ERR clear() noexcept { return Action(AC::Clear, this, nullptr); }
-   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, const void *Buffer, int Size) noexcept {
-      struct acDataFeed args = { Object, Datatype, Buffer, Size };
+   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, std::span<const int8_t> Buffer) noexcept {
+      struct acDataFeed args = { Object, Datatype, Buffer };
       return Action(AC::DataFeed, this, &args);
    }
    inline ERR disable() noexcept { return Action(AC::Disable, this, nullptr); }
@@ -1479,8 +1475,8 @@ class objClipboard : public Object {
    // Action stubs
 
    inline ERR clear() noexcept { return Action(AC::Clear, this, nullptr); }
-   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, const void *Buffer, int Size) noexcept {
-      struct acDataFeed args = { Object, Datatype, Buffer, Size };
+   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, std::span<const int8_t> Buffer) noexcept {
+      struct acDataFeed args = { Object, Datatype, Buffer };
       return Action(AC::DataFeed, this, &args);
    }
    inline ERR init() noexcept { return InitObject(this); }
@@ -1663,8 +1659,8 @@ class objPointer : public Object {
 
    // Action stubs
 
-   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, const void *Buffer, int Size) noexcept {
-      struct acDataFeed args = { Object, Datatype, Buffer, Size };
+   inline ERR dataFeed(OBJECTPTR Object, DATA Datatype, std::span<const int8_t> Buffer) noexcept {
+      struct acDataFeed args = { Object, Datatype, Buffer };
       return Action(AC::DataFeed, this, &args);
    }
    inline ERR hide() noexcept { return Action(AC::Hide, this, nullptr); }
@@ -2314,7 +2310,7 @@ struct DisplayBase {
    void (*_DrawRectangle)(objBitmap *Bitmap, int X, int Y, int Width, int Height, uint32_t Colour, BAF Flags);
    ERR (*_ExposeSurface)(OBJECTID Surface, int X, int Y, int Width, int Height, EXF Flags);
    void (*_GetColourFormat)(struct ColourFormat *Format, int BitsPerPixel, int RedMask, int GreenMask, int BlueMask, int AlphaMask);
-   ERR (*_GetCursorInfo)(struct CursorInfo *Info, int Size);
+   ERR (*_GetCursorInfo)(struct CursorInfo *Info);
    ERR (*_GetCursorPos)(double *X, double *Y);
    ERR (*_GetDisplayInfo)(OBJECTID Display, struct DisplayInfo **Info);
    DT (*_GetDisplayType)(void);
@@ -2361,7 +2357,7 @@ inline void DrawRGBPixel(objBitmap *Bitmap, int X, int Y, struct RGB8 *RGB) { re
 inline void DrawRectangle(objBitmap *Bitmap, int X, int Y, int Width, int Height, uint32_t Colour, BAF Flags) { return DisplayBase->_DrawRectangle(Bitmap,X,Y,Width,Height,Colour,Flags); }
 inline ERR ExposeSurface(OBJECTID Surface, int X, int Y, int Width, int Height, EXF Flags) { return DisplayBase->_ExposeSurface(Surface,X,Y,Width,Height,Flags); }
 inline void GetColourFormat(struct ColourFormat *Format, int BitsPerPixel, int RedMask, int GreenMask, int BlueMask, int AlphaMask) { return DisplayBase->_GetColourFormat(Format,BitsPerPixel,RedMask,GreenMask,BlueMask,AlphaMask); }
-inline ERR GetCursorInfo(struct CursorInfo *Info, int Size) { return DisplayBase->_GetCursorInfo(Info,Size); }
+inline ERR GetCursorInfo(struct CursorInfo *Info) { return DisplayBase->_GetCursorInfo(Info); }
 inline ERR GetCursorPos(double *X, double *Y) { return DisplayBase->_GetCursorPos(X,Y); }
 inline ERR GetDisplayInfo(OBJECTID Display, struct DisplayInfo **Info) { return DisplayBase->_GetDisplayInfo(Display,Info); }
 inline DT GetDisplayType(void) { return DisplayBase->_GetDisplayType(); }
@@ -2405,7 +2401,7 @@ extern void DrawRGBPixel(objBitmap *Bitmap, int X, int Y, struct RGB8 *RGB);
 extern void DrawRectangle(objBitmap *Bitmap, int X, int Y, int Width, int Height, uint32_t Colour, BAF Flags);
 extern ERR ExposeSurface(OBJECTID Surface, int X, int Y, int Width, int Height, EXF Flags);
 extern void GetColourFormat(struct ColourFormat *Format, int BitsPerPixel, int RedMask, int GreenMask, int BlueMask, int AlphaMask);
-extern ERR GetCursorInfo(struct CursorInfo *Info, int Size);
+extern ERR GetCursorInfo(struct CursorInfo *Info);
 extern ERR GetCursorPos(double *X, double *Y);
 extern ERR GetDisplayInfo(OBJECTID Display, struct DisplayInfo **Info);
 extern DT GetDisplayType(void);

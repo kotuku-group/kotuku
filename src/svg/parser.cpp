@@ -2104,11 +2104,12 @@ static ERR load_pic(extSVG *Self, std::string Path, objImage **Image, Unit Width
 
             std::vector<uint8_t> output(val.size());
             int64_t written;
-            if (!(error = kt::Base64Decode(&state, val, output.data(), &written))) {
+            if (!(error = kt::Base64Decode(&state, val,
+                     std::span<int8_t>((int8_t *)output.data(), output.size()), &written))) {
                Path = "temp:svg.img";
                if ((file = objFile::create::local(fl::Path(Path), fl::Flags(FL::NEW|FL::WRITE)))) {
                   int result;
-                  file->write(output.data(), written, &result);
+                  file->write(std::span<const int8_t>((const int8_t *)output.data(), size_t(written)), &result);
                }
                else error = ERR::File;
             }

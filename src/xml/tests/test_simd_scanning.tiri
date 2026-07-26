@@ -71,7 +71,7 @@ end
    -- tag.LineNo must reflect it.  A miscount in countNewlines() (or a scan that overruns a block) would shift these.
    local parts = { '<root>' } -- source line 1
    local expected = {}
-   for i = 1, 20 do
+   for i in {1 into 20} do
       -- A comment wider than 16 bytes (its own source line), then the item on its own source line.  Comments are
       -- stripped from the tree but still occupy a source line, so item i lands on source line (2*i + 1).
       table.insert(parts, '<!-- padding-comment-' .. i .. '-with-extra-width -->')

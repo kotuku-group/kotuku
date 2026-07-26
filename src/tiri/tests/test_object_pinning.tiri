@@ -47,7 +47,7 @@ end
    target.hour = 7
    handle = obj.find(target.id)
 
-   for i = 0, 10000 do
+   for i in {0 to 10000} do
       assert(handle.hour is 7, 'Expected cached detached access to retain the correct value')
    end
 end

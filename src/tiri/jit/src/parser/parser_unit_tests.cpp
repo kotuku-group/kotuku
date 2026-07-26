@@ -10,6 +10,8 @@
 
 #include "lj_bc.h"
 #include "lj_obj.h"
+#include "bytecode/lj_bcdump.h"
+#include "runtime/lj_contract.h"
 #include "runtime/lj_str.h"
 
 #include <array>
@@ -35,6 +37,7 @@
 #include "../../../defs.h"
 
 static extTiri *glTestScript = nullptr;
+extern "C" int luaopen_range(lua_State *L);
 
 namespace {
 
@@ -749,6 +752,64 @@ return sum
    return true;
 }
 
+//********************************************************************************************************************
+
+static bool test_array_length_range_for_ast(kt::Log &Log)
+{
+   constexpr const char *source = R"(
+local values = array<int> { 1, 2, 3 }
+for index in {0 to #values} do
+   values[index] += 1
+end
+)";
+
+   auto result = build_ast_from_source(source);
+   if (not result.chunk.ok()) {
+      Log.error("failed to parse array-length range loop");
+      log_diagnostics(result.diagnostics, Log);
+      return false;
+   }
+
+   StatementListView statements = result.chunk.value_ref()->view();
+   if (statements.size() != 2) {
+      Log.error("expected local declaration and range loop; got %" PRId64, int64_t(statements.size()));
+      return false;
+   }
+
+   const StmtNode &loop = statements[1];
+   if (loop.kind != AstNodeKind::GenericForStmt) {
+      Log.error("array-length range should remain generic until semantic type analysis");
+      return false;
+   }
+
+   const auto *payload = std::get_if<GenericForStmtPayload>(&loop.data);
+   if (not payload or payload->iterators.size() != 1) {
+      Log.error("generic array-length range should retain one iterator");
+      return false;
+   }
+
+   const ExprNode *iterator = payload->iterators[0].get();
+   if (not iterator or iterator->kind != AstNodeKind::CallExpr) {
+      Log.error("generic array-length range should retain its iterator call");
+      return false;
+   }
+
+   const auto *call = std::get_if<CallExprPayload>(&iterator->data);
+   const auto *direct = call ? std::get_if<DirectCallTarget>(&call->target) : nullptr;
+   if (not direct or not direct->callable or direct->callable->kind != AstNodeKind::RangeExpr) {
+      Log.error("generic iterator should retain the source range expression");
+      return false;
+   }
+
+   const auto *range = std::get_if<RangeExprPayload>(&direct->callable->data);
+   if (not range or not range->stop or range->stop->kind != AstNodeKind::UnaryExpr) {
+      Log.error("source range should retain its length stop expression");
+      return false;
+   }
+
+   return true;
+}
+
 static bool test_generic_for_ast(kt::Log &log)
 {
    constexpr const char* source = R"(
@@ -1093,6 +1154,673 @@ static std::optional<BytecodeSnapshot> compile_snapshot(lua_State* L, std::strin
    BytecodeSnapshot snapshot = snapshot_proto(funcproto(fn));
    L->top--;
    return snapshot;
+}
+
+static int bytecode_writer(lua_State *, const void *Data, size_t Size, void *Context)
+{
+   auto *dump = (std::string *)Context;
+   dump->append((const char *)Data, Size);
+   return 0;
+}
+
+static GCproto * first_child_proto(GCproto *Proto)
+{
+   for (ptrdiff_t i = -ptrdiff_t(Proto->sizekgc); i < 0; ++i) {
+      GCobj *object = proto_kgc(Proto, i);
+      if (object->gch.gct IS uint8_t(~LJ_TPROTO)) return gco_to_proto(object);
+   }
+   return nullptr;
+}
+
+static bool compare_proto_signatures(const GCproto *Left, const GCproto *Right)
+{
+   if (not Left or not Right or Left->signature_size != Right->signature_size) return false;
+   if (Left->signature_size > 0 and
+       memcmp(proto_signature(Left), proto_signature(Right), Left->signature_size) != 0) return false;
+
+   std::vector<const GCproto *> left_children;
+   std::vector<const GCproto *> right_children;
+   for (ptrdiff_t i = -ptrdiff_t(Left->sizekgc); i < 0; ++i) {
+      GCobj *object = proto_kgc(Left, i);
+      if (object->gch.gct IS uint8_t(~LJ_TPROTO)) left_children.push_back(gco_to_proto(object));
+   }
+   for (ptrdiff_t i = -ptrdiff_t(Right->sizekgc); i < 0; ++i) {
+      GCobj *object = proto_kgc(Right, i);
+      if (object->gch.gct IS uint8_t(~LJ_TPROTO)) right_children.push_back(gco_to_proto(object));
+   }
+   if (left_children.size() != right_children.size()) return false;
+   for (size_t i = 0; i < left_children.size(); ++i) {
+      if (not compare_proto_signatures(left_children[i], right_children[i])) return false;
+   }
+   return true;
+}
+
+static bool test_signature_metadata_roundtrip(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   constexpr std::string_view source =
+      "struct SignatureLayout\n"
+      "   Value: int\n"
+      "end\n"
+      "local function outer(Value:num, Flexible:any, Untyped, Item:struct<SignatureLayout>, Generic:struct, "
+      "Object:obj, ...):func\n"
+      "   local function inner(Text:str):<str, num, ...>\n"
+      "      return Text, Value, Value\n"
+      "   end\n"
+      "   return inner\n"
+      "end\n"
+      "return outer\n";
+
+   if (lua_load(L, source, "signature-roundtrip")) {
+      Log.error("failed to compile signature source: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *root = funcproto(funcV(L->top - 1));
+   GCproto *outer = first_child_proto(root);
+   GCproto *inner = outer ? first_child_proto(outer) : nullptr;
+   if (not outer or not inner) {
+      Log.error("signature source did not produce the expected nested prototypes");
+      return false;
+   }
+
+   const ProtoSignature *outer_signature = proto_signature(outer);
+   const ProtoSignature *inner_signature = proto_signature(inner);
+   if (not outer_signature or outer_signature->parameter_count != 6 or outer_signature->result_count != 1 or
+       not (outer_signature->flags & proto_signature_flag(ProtoSignatureFlag::ExplicitResults)) or
+       not (outer_signature->flags & proto_signature_flag(ProtoSignatureFlag::ParameterVariadic))) {
+      Log.error("outer prototype signature header is incomplete");
+      return false;
+   }
+
+   const ProtoTypeEntry *outer_params = proto_parameter_types(outer);
+   if (outer_params[0].type != TiriType::Num or
+       proto_type_origin(outer_params[0]) != ProtoTypeOrigin::Declared or
+       proto_type_strength(outer_params[0]) != ProtoTypeStrength::Checked or
+       outer_params[1].type != TiriType::Any or
+       proto_type_origin(outer_params[1]) != ProtoTypeOrigin::Declared or
+       proto_type_origin(outer_params[2]) != ProtoTypeOrigin::Unspecified or
+       outer_params[3].constraint != struct_key("SignatureLayout") or outer_params[4].type != TiriType::Struct or
+       outer_params[4].constraint != 0 or outer_params[5].type != TiriType::Object or outer_params[5].constraint != 0) {
+      Log.error("outer prototype parameter entries lost type, provenance, strength or constraint data");
+      return false;
+   }
+
+   // Exercise reserved schema states that ordinary annotations do not manufacture in this phase.
+   ProtoTypeEntry *mutable_outer_params = proto_parameter_types(outer);
+   mutable_outer_params[4].flags =
+      proto_type_flags(false, true, ProtoTypeOrigin::Declared, ProtoTypeStrength::Checked);
+   mutable_outer_params[5].constraint = uint32_t(CLASSID::TIME);
+   mutable_outer_params[5].flags =
+      proto_type_flags(true, false, ProtoTypeOrigin::Declared, ProtoTypeStrength::Trusted);
+   if (proto_type_nullable(mutable_outer_params[4]) or not proto_type_required(mutable_outer_params[4]) or
+       proto_type_strength(mutable_outer_params[5]) != ProtoTypeStrength::Trusted or
+       CLASSID(mutable_outer_params[5].constraint) != CLASSID::TIME or
+       not ResolveClassID(CLASSID(mutable_outer_params[5].constraint))) {
+      Log.error("reserved signature entry states are not independently representable");
+      return false;
+   }
+
+   if (not inner_signature or inner_signature->parameter_count != 1 or inner_signature->result_count != 2 or
+       inner_signature->result_entry_count != 2 or
+       not (inner_signature->flags & proto_signature_flag(ProtoSignatureFlag::ResultVariadic))) {
+      Log.error("inner prototype result signature is incomplete");
+      return false;
+   }
+
+   for (int strip : { 0, 1 }) {
+      std::string dump;
+      if (lj_bcwrite(L, root, bytecode_writer, &dump, strip) != 0) {
+         Log.error("failed to write %s signature dump", strip ? "stripped" : "unstripped");
+         return false;
+      }
+      if (dump.size() < 4 or uint8_t(dump[3]) != BCDUMP_VERSION) {
+         Log.error("signature dump has the wrong private format version");
+         return false;
+      }
+      if (lua_load(L, std::string_view(dump.data(), dump.size()), "signature-roundtrip")) {
+         Log.error("failed to reload %s signature dump: %s", strip ? "stripped" : "unstripped",
+            lua_tostring(L, -1));
+         return false;
+      }
+      GCproto *restored = funcproto(funcV(L->top - 1));
+      bool equal = compare_proto_signatures(root, restored);
+      lua_pop(L, 1);
+      if (not equal) {
+         Log.error("%s signature dump changed prototype metadata", strip ? "stripped" : "unstripped");
+         return false;
+      }
+   }
+
+   lua_pop(L, 1);
+   return true;
+}
+
+static bool test_legacy_signature_defaults(kt::Log &Log)
+{
+   // Generated by the 0x81 writer from:
+   // function legacy(Value:num):num return Value end
+   // SHA-256: 91f984a833f8a8045e736aea956813bf9e6f18ffc6b6bee8d5a5f55f7534d250
+   constexpr uint8_t legacy_dump[] = {
+      0x1b, 0x4c, 0x4a, 0x81, 0x08, 0x07, 0x3d, 0x73, 0x63, 0x72, 0x69, 0x70,
+      0x74, 0x5e, 0x00, 0x01, 0x02, 0x00, 0x02, 0x00, 0x04, 0x19, 0x01, 0x00,
+      0x74, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x13, 0x01, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x74, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x5a, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0f, 0x01, 0x02, 0x00,
+      0x01, 0x01, 0x03, 0x01, 0x01, 0x00, 0x00, 0x14, 0x01, 0x01, 0x00, 0x01,
+      0x01, 0x03, 0x01, 0x01, 0x00, 0x05, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x01,
+      0x00, 0x00, 0xff, 0x01, 0x00, 0x00, 0xff, 0x01, 0x00, 0x00, 0xff, 0x01,
+      0x00, 0x00, 0xff, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x00, 0x01, 0x04, 0x00,
+      0x00
+   };
+
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   std::string_view dump((const char *)legacy_dump, sizeof(legacy_dump));
+   if (lua_load(L, dump, "legacy-signature")) {
+      Log.error("failed to load the 0x81 signature fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *restored = funcproto(funcV(L->top - 1));
+   const ProtoSignature *signature = proto_signature(restored);
+   const ProtoTypeEntry *parameters = proto_parameter_types(restored);
+   if (not signature or signature->parameter_count != 1 or signature->result_entry_count != 0 or
+       parameters[0].type != TiriType::Any or
+       proto_type_origin(parameters[0]) != ProtoTypeOrigin::Unspecified or
+       proto_type_strength(parameters[0]) != ProtoTypeStrength::Advisory) {
+      Log.error("the 0x81 fixture did not receive safe advisory signature defaults");
+      return false;
+   }
+
+   lua_pushstring(L, "wrong");
+   if (lua_pcall(L, 1, 1, 0) IS 0) {
+      Log.error("legacy BC_CONTRACT enforcement was lost");
+      return false;
+   }
+   lua_pop(L, 1);
+   return true;
+}
+
+static bool test_signature_runtime_inference(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   constexpr std::string_view source = "return function(Value) return Value end";
+   if (lua_load(L, source, "signature-inference") or lua_pcall(L, 0, 1, 0)) {
+      Log.error("failed to create the inference function: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCfunc *function = funcV(L->top - 1);
+   GCproto *prototype = funcproto(function);
+   lua_pushvalue(L, -1);
+   lua_pushnumber(L, 7);
+   if (lua_pcall(L, 1, 1, 0)) {
+      Log.error("failed to execute the inference function: %s", lua_tostring(L, -1));
+      return false;
+   }
+   lua_pop(L, 1);
+
+   ProtoTypeEntry inferred = proto_result_type(prototype, 0);
+   if (inferred.type != TiriType::Num or proto_type_origin(inferred) != ProtoTypeOrigin::Inferred or
+       proto_type_strength(inferred) != ProtoTypeStrength::Advisory) {
+      Log.error("runtime inference did not remain advisory");
+      return false;
+   }
+
+   std::string dump;
+   if (lj_bcwrite(L, prototype, bytecode_writer, &dump, 1) != 0) {
+      Log.error("failed to write the inferred signature");
+      return false;
+   }
+   if (lua_load(L, std::string_view(dump.data(), dump.size()), "signature-inference")) {
+      Log.error("failed to round-trip the inferred signature: %s", lua_tostring(L, -1));
+      return false;
+   }
+   GCproto *restored = funcproto(funcV(L->top - 1));
+   bool equal = compare_proto_signatures(prototype, restored);
+   lua_pop(L, 2);
+   if (not equal) {
+      Log.error("runtime-inferred signature changed during serialisation");
+      return false;
+   }
+   return true;
+}
+
+static bool test_signature_void_and_bare_return(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+
+   constexpr std::string_view empty_source = "return function() local value = 1 end";
+   if (lua_load(L, empty_source, "signature-empty") or lua_pcall(L, 0, 1, 0)) {
+      Log.error("failed to create the empty-signature function: %s", lua_tostring(L, -1));
+      return false;
+   }
+   GCproto *empty_proto = funcproto(funcV(L->top - 1));
+   if (proto_signature(empty_proto)) {
+      Log.error("an untyped function without formal parameters or result observations received a signature");
+      return false;
+   }
+   std::string empty_dump;
+   if (lj_bcwrite(L, empty_proto, bytecode_writer, &empty_dump, 1) != 0 or
+       lua_load(L, std::string_view(empty_dump.data(), empty_dump.size()), "signature-empty")) {
+      Log.error("failed to round-trip the empty signature");
+      return false;
+   }
+   GCproto *restored_empty = funcproto(funcV(L->top - 1));
+   if (not compare_proto_signatures(empty_proto, restored_empty)) {
+      Log.error("the empty signature changed during serialisation");
+      return false;
+   }
+   lua_pop(L, 2);
+
+   constexpr std::string_view void_source = "return function():<> return 17 end";
+   if (lua_load(L, void_source, "signature-void") or lua_pcall(L, 0, 1, 0)) {
+      Log.error("failed to create the explicit-void function: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *void_proto = funcproto(funcV(L->top - 1));
+   const ProtoSignature *void_signature = proto_signature(void_proto);
+   if (not void_signature or void_signature->result_count != 0 or void_signature->result_entry_count != 0 or
+       not (void_signature->flags & proto_signature_flag(ProtoSignatureFlag::ExplicitResults)) or
+       (void_signature->flags & proto_signature_flag(ProtoSignatureFlag::DynamicResults))) {
+      Log.error("explicit void was not preserved as a distinct signature");
+      return false;
+   }
+
+   lua_pushvalue(L, -1);
+   if (lua_pcall(L, 0, 1, 0) or not lua_isnil(L, -1)) {
+      Log.error("the explicit-void function did not truncate its result");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   std::string void_dump;
+   if (lj_bcwrite(L, void_proto, bytecode_writer, &void_dump, 1) != 0 or
+       lua_load(L, std::string_view(void_dump.data(), void_dump.size()), "signature-void")) {
+      Log.error("failed to round-trip the explicit-void signature");
+      return false;
+   }
+   GCproto *restored_void = funcproto(funcV(L->top - 1));
+   if (not compare_proto_signatures(void_proto, restored_void)) {
+      Log.error("the explicit-void signature changed during serialisation");
+      return false;
+   }
+   lua_pop(L, 2);
+
+   constexpr std::string_view bare_source = "return function() return end";
+   if (lua_load(L, bare_source, "signature-bare-return") or lua_pcall(L, 0, 1, 0)) {
+      Log.error("failed to create the bare-return function: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *bare_proto = funcproto(funcV(L->top - 1));
+   const ProtoSignature *bare_signature = proto_signature(bare_proto);
+   if (not bare_signature or
+       not (bare_signature->flags & proto_signature_flag(ProtoSignatureFlag::DynamicResults))) {
+      Log.error("a bare return did not retain its dynamic advisory result signature");
+      return false;
+   }
+
+   std::string bare_dump;
+   if (lj_bcwrite(L, bare_proto, bytecode_writer, &bare_dump, 1) != 0 or
+       lua_load(L, std::string_view(bare_dump.data(), bare_dump.size()), "signature-bare-return")) {
+      Log.error("failed to round-trip the bare-return signature");
+      return false;
+   }
+   GCproto *restored_bare = funcproto(funcV(L->top - 1));
+   bool equal = compare_proto_signatures(bare_proto, restored_bare);
+   lua_pop(L, 2);
+   if (not equal) {
+      Log.error("the bare-return signature changed during serialisation");
+      return false;
+   }
+
+   constexpr std::string_view wide_source =
+      "return function():<num, num, num, num, num, num, num, num, num>\n"
+      "   return 1, 2, 3, 4, 5, 6, 7, 8, 9\n"
+      "end";
+   if (lua_load(L, wide_source, "signature-wide-results") or lua_pcall(L, 0, 1, 0)) {
+      Log.error("failed to create the wide-result function: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *wide_proto = funcproto(funcV(L->top - 1));
+   const ProtoSignature *wide_signature = proto_signature(wide_proto);
+   ProtoTypeEntry implicit_result = proto_result_type(wide_proto, 8);
+   if (not wide_signature or wide_signature->result_count != 9 or
+       wide_signature->result_entry_count != PROTO_MAX_RETURN_TYPES or implicit_result.type != TiriType::Any or
+       proto_type_origin(implicit_result) != ProtoTypeOrigin::Declared or
+       proto_type_strength(implicit_result) != ProtoTypeStrength::Advisory) {
+      Log.error("the wide-result signature did not preserve complete arity and its implicit any suffix");
+      return false;
+   }
+
+   std::string wide_dump;
+   if (lj_bcwrite(L, wide_proto, bytecode_writer, &wide_dump, 1) != 0 or
+       lua_load(L, std::string_view(wide_dump.data(), wide_dump.size()), "signature-wide-results")) {
+      Log.error("failed to round-trip the wide-result signature");
+      return false;
+   }
+   GCproto *restored_wide = funcproto(funcV(L->top - 1));
+   equal = compare_proto_signatures(wide_proto, restored_wide);
+   lua_pop(L, 2);
+   if (not equal) {
+      Log.error("the wide-result signature changed during serialisation");
+      return false;
+   }
+   return true;
+}
+
+static bool test_malformed_signature_rejected(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   constexpr std::string_view source = "return function(Value:num):num return Value end";
+   if (lua_load(L, source, "signature-malformed") or lua_pcall(L, 0, 1, 0)) {
+      Log.error("failed to create the malformed-signature fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   std::string dump;
+   if (lj_bcwrite(L, funcproto(funcV(L->top - 1)), bytecode_writer, &dump, 1) != 0) {
+      Log.error("failed to write the malformed-signature fixture");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   auto read_uleb = [&dump](size_t &Position, uint32_t &Value) {
+      Value = 0;
+      uint32_t shift = 0;
+      for (uint32_t count = 0; count < 5 and Position < dump.size(); ++count) {
+         uint8_t byte = uint8_t(dump[Position++]);
+         Value |= uint32_t(byte & 0x7f) << shift;
+         if (not (byte & 0x80)) return true;
+         shift += 7;
+      }
+      return false;
+   };
+
+   size_t position = 5;
+   uint32_t value = 0;
+   if (not read_uleb(position, value) or position + 4 > dump.size()) {
+      Log.error("could not locate the prototype header in the malformed-signature fixture");
+      return false;
+   }
+   position += 4;
+   size_t signature_length_offset = 0;
+   for (int field = 0; field < 4; ++field) {
+      if (field IS 3) signature_length_offset = position;
+      if (not read_uleb(position, value)) {
+         Log.error("could not locate the signature in the malformed-signature fixture");
+         return false;
+      }
+   }
+   size_t signature_offset = position;
+   if (signature_offset + 5 >= dump.size()) {
+      Log.error("malformed-signature fixture has no signature payload");
+      return false;
+   }
+
+   std::string bad_version = dump;
+   bad_version[signature_offset] = char(0xff);
+   if (lua_load(L, std::string_view(bad_version.data(), bad_version.size()), "signature-bad-version") IS 0) {
+      Log.error("the bytecode reader accepted an unsupported signature version");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   size_t entry_offset = signature_offset + 2;
+   for (int field = 0; field < 3; ++field) {
+      if (not read_uleb(entry_offset, value)) {
+         Log.error("could not locate the first signature entry");
+         return false;
+      }
+   }
+
+   std::string bad_flags = dump;
+   bad_flags[entry_offset + 1] = char(PROTO_TYPE_NULLABLE | PROTO_TYPE_REQUIRED);
+   if (lua_load(L, std::string_view(bad_flags.data(), bad_flags.size()), "signature-bad-flags") IS 0) {
+      Log.error("the bytecode reader accepted contradictory signature entry flags");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   std::string bad_constraint = dump;
+   bad_constraint[entry_offset + 2] = char(1);
+   if (lua_load(L, std::string_view(bad_constraint.data(), bad_constraint.size()), "signature-bad-constraint") IS 0) {
+      Log.error("the bytecode reader accepted a constraint on a scalar signature entry");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   std::string bad_parameter_count = dump;
+   bad_parameter_count[signature_offset + 2] = char(2);
+   if (lua_load(L, std::string_view(bad_parameter_count.data(), bad_parameter_count.size()),
+       "signature-bad-parameter-count") IS 0) {
+      Log.error("the bytecode reader accepted a signature parameter-count mismatch");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   if (uint8_t(dump[signature_length_offset]) >= 0x7f) {
+      Log.error("the malformed-signature fixture unexpectedly uses a multi-byte signature length");
+      return false;
+   }
+   std::string trailing_data = dump;
+   trailing_data[signature_length_offset] = char(uint8_t(trailing_data[signature_length_offset]) + 1);
+   if (lua_load(L, std::string_view(trailing_data.data(), trailing_data.size()), "signature-trailing-data") IS 0) {
+      Log.error("the bytecode reader accepted trailing signature data");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   std::string bad_type = dump;
+   bad_type[entry_offset] = char(0xff);
+   if (lua_load(L, std::string_view(bad_type.data(), bad_type.size()), "signature-bad-type") IS 0) {
+      Log.error("the bytecode reader accepted an invalid signature type");
+      return false;
+   }
+   lua_pop(L, 1);
+   return true;
+}
+
+static bool snapshot_has_opcode(const BytecodeSnapshot &Snapshot, BCOp Opcode)
+{
+   for (BCIns instruction : Snapshot.instructions) {
+      if (bc_op(instruction) IS Opcode) return true;
+   }
+   for (const BytecodeSnapshot &child : Snapshot.children) {
+      if (snapshot_has_opcode(child, Opcode)) return true;
+   }
+   return false;
+}
+
+static bool test_contract_bytecode_roundtrip(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   constexpr std::string_view source = "function typed(Value:userdata):userdata return Value end";
+   if (lua_load(L, source, "contract-roundtrip")) {
+      Log.error("failed to compile contract source: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   std::string dump;
+   if (lua_dump(L, bytecode_writer, &dump) != 0) {
+      Log.error("failed to write contract bytecode");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   if (dump.size() < 4 or uint8_t(dump[3]) != BCDUMP_VERSION) {
+      Log.error("contract bytecode has the wrong private format version");
+      return false;
+   }
+   if (lua_load(L, std::string_view(dump.data(), dump.size()), "contract-roundtrip")) {
+      Log.error("failed to reload contract bytecode: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *restored_proto = funcproto(funcV(L->top - 1));
+   BytecodeSnapshot restored = snapshot_proto(restored_proto);
+   lua_pop(L, 1);
+   if (not snapshot_has_opcode(restored, BC_CONTRACT)) {
+      Log.error("reloaded bytecode lost BC_CONTRACT");
+      return false;
+   }
+   return true;
+}
+
+static bool test_runtime_contract_decoder(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   std::string encoded{
+      char(TIRI_CONTRACT_VERSION),
+      char(uint8_t(ContractBoundary::Parameter)),
+      char(0),
+      char(1),
+      char(1),
+      char(uint8_t(TiriType::Struct)),
+      char(contract_flag(ContractEntryFlag::Nullable)),
+      char(1),
+      char(5)
+   };
+   encoded += "Point";
+   encoded.push_back(char(5));
+   encoded += "Value";
+
+   RuntimeContractDescriptor decoded;
+   GCstr *descriptor = lj_str_new(lua, encoded.data(), encoded.size());
+   if (not decode_runtime_contract(descriptor, decoded) or
+       decoded.boundary != ContractBoundary::Parameter or decoded.dynamic_count() or decoded.variadic() or
+       decoded.static_value_count != 1 or decoded.contract_count != 1 or
+       decoded.entries[0].type != TiriType::Struct or decoded.entries[0].position != 1 or
+       decoded.entries[0].struct_name != "Point" or decoded.entries[0].label != "Value") {
+      Log.error("valid runtime contract descriptor did not round-trip through the shared decoder");
+      return false;
+   }
+
+   auto rejected = [lua](std::string Bytes) {
+      RuntimeContractDescriptor result;
+      GCstr *value = lj_str_new(lua, Bytes.data(), Bytes.size());
+      return not decode_runtime_contract(value, result);
+   };
+
+   std::string invalid_descriptor_flags = encoded;
+   invalid_descriptor_flags[2] = char(0x80);
+   std::string invalid_entry_flags = encoded;
+   invalid_entry_flags[6] = char(0x80);
+   std::string invalid_position = encoded;
+   invalid_position[7] = char(0);
+   std::string invalid_constraint = encoded;
+   invalid_constraint[5] = char(uint8_t(TiriType::Num));
+   std::string trailing = encoded + "x";
+   std::string truncated = encoded.substr(0, encoded.size() - 1);
+
+   if (not rejected(invalid_descriptor_flags) or not rejected(invalid_entry_flags) or
+       not rejected(invalid_position) or not rejected(invalid_constraint) or not rejected(trailing) or
+       not rejected(truncated)) {
+      Log.error("shared runtime contract decoder accepted malformed input");
+      return false;
+   }
+
+   constexpr std::string_view wide_source =
+      "return function():<num,num,num,num,num,num,num,num,str>\n"
+      "   return 1,2,3,4,5,6,7,8,'ninth',false\n"
+      "end\n";
+   if (lua_load(lua, wide_source, "wide-runtime-contract")) {
+      Log.error("failed to compile a wide runtime contract: %s", lua_tostring(lua, -1));
+      return false;
+   }
+
+   GCproto *wide = first_child_proto(funcproto(funcV(lua->top - 1)));
+   GCstr *wide_descriptor = nullptr;
+   for (uint32_t i = 1; wide and i < wide->sizebc; ++i) {
+      BCIns instruction = proto_bc(wide)[i];
+      if (bc_op(instruction) IS BC_CONTRACT) {
+         wide_descriptor = gco_to_string(proto_kgc(wide, ~(ptrdiff_t)bc_d(instruction)));
+         break;
+      }
+   }
+   RuntimeContractDescriptor wide_decoded;
+   if (not wide_descriptor or not decode_runtime_contract(wide_descriptor, wide_decoded) or
+       wide_decoded.static_value_count != 9 or wide_decoded.contract_count != MAX_RETURN_TYPES) {
+      Log.error("a valid contract with more values than stored entries failed shared decoding");
+      return false;
+   }
+   lua_pop(lua, 1);
+   return true;
+}
+
+static bool test_complex_contract_jit_eligibility(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   auto compile_child = [lua, &Log](std::string_view Source, const char *Label) -> GCproto * {
+      if (lua_load(lua, Source, Label)) {
+         Log.error("%s failed to compile: %s", Label, lua_tostring(lua, -1));
+         lua_pop(lua, 1);
+         return nullptr;
+      }
+
+      GCproto *child = first_child_proto(funcproto(funcV(lua->top - 1)));
+      lua->top--;
+      return child;
+   };
+
+   GCproto *fixed = compile_child(
+      "return function(Value:func):func\n"
+      "   return Value\n"
+      "end\n",
+      "fixed-complex-contract");
+   if (not fixed or (fixed->flags & PROTO_NOJIT)) {
+      Log.error("a fixed complex contract remained interpreter-only");
+      return false;
+   }
+
+   GCproto *dynamic = compile_child(
+      "return function(...):<num, ...>\n"
+      "   return ...\n"
+      "end\n",
+      "dynamic-result-contract");
+   if (not dynamic or not (dynamic->flags & PROTO_NOJIT)) {
+      Log.error("a dynamic-result contract became JIT-eligible without exact multi-result recorder support");
+      return false;
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool test_userdata_type_annotations(kt::Log &Log)
+{
+   if (parse_type_name("userdata") != TiriType::Userdata or type_name(TiriType::Userdata) != "userdata") {
+      Log.error("userdata type name does not round-trip");
+      return false;
+   }
+   if (uint8_t(TiriType::Range) != 10 or uint8_t(TiriType::Userdata) != 11) {
+      Log.error("userdata changed an existing concrete contract type identifier");
+      return false;
+   }
+
+   constexpr std::string_view source =
+      "function identity(Value:userdata):userdata\n"
+      "   local result:userdata = Value\n"
+      "   return result\n"
+      "end";
+   auto result = build_ast_from_source(source);
+   if (not result.chunk.ok()) {
+      Log.error("failed to parse userdata annotations");
+      log_diagnostics(result.diagnostics, Log);
+      return false;
+   }
+   return true;
 }
 
 static bool parse_struct_source(lua_State *L, std::string_view Source, std::string &Error)
@@ -2007,11 +2735,316 @@ static bool test_ternary_falsey_semantics(kt::Log &log)
    return true;
 }
 
+//********************************************************************************************************************
+
+static bool test_static_descriptor_model(kt::Log &Log)
+{
+   StaticValueDescriptor unknown_array;
+   unknown_array.primary = TiriType::Array;
+   unknown_array.proof = StaticProof::Checked;
+
+   StaticValueDescriptor any_array = unknown_array;
+   any_array.array_element = { AET::ANY, TiriType::Any, CLASSID::NIL, nullptr, true };
+   if (unknown_array IS any_array or unknown_array.array_element.known or not any_array.array_element.known) {
+      Log.error("unknown array storage was not distinguished from array<any>");
+      return false;
+   }
+
+   StaticValueDescriptor number;
+   number.primary = TiriType::Num;
+   number.proof = StaticProof::Closed;
+   StaticValueDescriptor checked_number = number;
+   checked_number.proof = StaticProof::Checked;
+   checked_number.nullable = true;
+
+   StaticValueDescriptor joined = join_static_descriptors(number, checked_number);
+   if (joined.primary != TiriType::Num or not joined.nullable or joined.proof != StaticProof::Checked) {
+      Log.error("matching descriptor join lost type, nullability or weakest proof");
+      return false;
+   }
+
+   StaticValueDescriptor text;
+   text.primary = TiriType::Str;
+   text.proof = StaticProof::Closed;
+   joined = join_static_descriptors(number, text);
+   if (joined.primary != TiriType::Any or joined.proof != StaticProof::Advisory) {
+      Log.error("conflicting descriptor join did not degrade to advisory any");
+      return false;
+   }
+
+   struct ArrayMapping {
+      std::string_view name;
+      AET storage;
+      TiriType logical_type;
+   };
+   constexpr std::array<ArrayMapping, 14> mappings = { {
+      { "byte", AET::BYTE, TiriType::Num },
+      { "char", AET::BYTE, TiriType::Num },
+      { "int16", AET::INT16, TiriType::Num },
+      { "int", AET::INT32, TiriType::Num },
+      { "int64", AET::INT64, TiriType::Num },
+      { "float", AET::FLOAT, TiriType::Num },
+      { "double", AET::DOUBLE, TiriType::Num },
+      { "string", AET::STR_GC, TiriType::Str },
+      { "table", AET::TABLE, TiriType::Table },
+      { "array", AET::ARRAY, TiriType::Array },
+      { "object", AET::OBJECT, TiriType::Object },
+      { "any", AET::ANY, TiriType::Any },
+      { "pointer", AET::PTR, TiriType::Any },
+      { "struct<Missing>", AET::STRUCT, TiriType::Struct }
+   } };
+   for (const auto &mapping : mappings) {
+      auto element = describe_array_element(mapping.name, nullptr);
+      if (not element or element->storage != mapping.storage or element->logical_type != mapping.logical_type) {
+         Log.error("array source/storage/logical type mapping is incomplete for %s",
+            std::string(mapping.name).c_str());
+         return false;
+      }
+   }
+   if (describe_array_element("unsupported", nullptr)) {
+      Log.error("unsupported array storage name unexpectedly produced a descriptor");
+      return false;
+   }
+   return true;
+}
+
+static bool test_static_result_set_model(kt::Log &Log)
+{
+   StaticResultSet fixed;
+   fixed.declared_count = 3;
+   fixed.stored_count = 3;
+   fixed.values[0] = StaticValueDescriptor{ .primary = TiriType::Num, .proof = StaticProof::Checked };
+   fixed.values[1] = StaticValueDescriptor{ .primary = TiriType::Str, .proof = StaticProof::Checked };
+   fixed.values[2] = StaticValueDescriptor{ .primary = TiriType::Table, .proof = StaticProof::Checked };
+
+   if (fixed.value_at(3).primary != TiriType::Nil or not fixed.value_at(3).nullable) {
+      Log.error("fixed result set did not return closed nil beyond its arity");
+      return false;
+   }
+
+   fixed.variadic = true;
+   if (fixed.value_at(7).primary != TiriType::Table) {
+      Log.error("variadic result set did not repeat its suffix descriptor");
+      return false;
+   }
+
+   fixed.variadic = false;
+   fixed.dynamic = true;
+   if (fixed.value_at(7).primary != TiriType::Any or fixed.value_at(7).proof != StaticProof::Advisory) {
+      Log.error("dynamic result set did not return advisory any beyond stored positions");
+      return false;
+   }
+
+   fixed.dynamic = false;
+   StaticResultSet filtered = map_static_result_filter(fixed, uint64_t(0b101), 3, false);
+   if (filtered.stored_count != 2 or filtered.value_at(0).primary != TiriType::Num or
+       filtered.value_at(1).primary != TiriType::Table) {
+      Log.error("result filter mapping shifted or lost positional descriptors");
+      return false;
+   }
+   return true;
+}
+
+static size_t count_opcode(const BytecodeSnapshot &Snapshot, BCOp Opcode)
+{
+   size_t count = 0;
+   for (BCIns instruction : Snapshot.instructions) {
+      if (bc_op(instruction) IS Opcode) ++count;
+   }
+   return count;
+}
+
+static size_t count_opcode_tree(const BytecodeSnapshot &Snapshot, BCOp Opcode)
+{
+   size_t count = count_opcode(Snapshot, Opcode);
+   for (const auto &child : Snapshot.children) count += count_opcode_tree(child, Opcode);
+   return count;
+}
+
+static bool test_runtime_range_for_emission(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaopen_range(L);
+   lua_setglobal(L, "range");
+   std::string error;
+   constexpr std::string_view source =
+      "local start = 0.0\n"
+      "local stop = 1.0\n"
+      "local step = 0.2\n"
+      "local count = 0\n"
+      "for value in {start to stop by step} do count += 1 end\n"
+      "for value in {stop into start by -step} do count += 1 end\n"
+      "for {start to stop by step} do count += 1 end\n"
+      "for value in {0.0 to 1.0 by 0.2} do count += 1 end\n"
+      "return count\n";
+
+   auto snapshot = compile_snapshot(L, source, true, error);
+   if (not snapshot) {
+      Log.error("failed to compile runtime-bound range loops: %s", error.c_str());
+      return false;
+   }
+
+   if (count_opcode_tree(*snapshot, BC_FORI) != 0 or count_opcode_tree(*snapshot, BC_FORL) != 0) {
+      Log.error("runtime fractional ranges used numeric loop bytecode without safe exclusive-limit preparation");
+      return false;
+   }
+
+   if (count_opcode_tree(*snapshot, BC_ITERL) != 4) {
+      Log.error("fractional ranges did not retain four generic iterator loops");
+      return false;
+   }
+
+   if (lua_load(L, source, "runtime-range-for") != 0 or lua_pcall(L, 0, 1, 0) != 0) {
+      Log.error("failed to execute runtime-bound range loops: %s", lua_tostring(L, -1));
+      lua_pop(L, 1);
+      return false;
+   }
+
+   if (lua_tointeger(L, -1) != 21) {
+      Log.error("runtime fractional range loops produced %lld iterations", (long long)lua_tointeger(L, -1));
+      lua_pop(L, 1);
+      return false;
+   }
+   lua_pop(L, 1);
+
+   constexpr std::string_view invalid_source =
+      "local start = 0 / 0\n"
+      "for value in {start to 1} do end\n";
+   if (lua_load(L, invalid_source, "runtime-invalid-range") != 0) {
+      Log.error("failed to compile invalid runtime range coverage: %s", lua_tostring(L, -1));
+      lua_pop(L, 1);
+      return false;
+   }
+   if (lua_pcall(L, 0, 0, 0) IS 0) {
+      Log.error("runtime range accepted a non-finite bound");
+      return false;
+   }
+   lua_pop(L, 1);
+   return true;
+}
+
+static bool test_type_guided_emission(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   std::string error;
+   constexpr std::string_view source =
+      "extern array\n"
+      "local function read(Values:array):num\n"
+      "   return Values[0]\n"
+      "end\n"
+      "local alias = read\n"
+      "local alias_two = alias\n"
+      "local result:num = 0\n"
+      "result = alias_two(array<int> { 7 })\n"
+      "return result\n";
+
+   auto snapshot = compile_snapshot(L, source, true, error);
+   if (not snapshot or snapshot->children.empty()) {
+      Log.error("failed to compile stable-alias emission fixture: %s", error.c_str());
+      return false;
+   }
+   if (count_opcode(snapshot->children.front(), BC_AGETB) + count_opcode(snapshot->children.front(), BC_AGETV) IS 0) {
+      Log.error("checked array parameter did not select specialised array access");
+      return false;
+   }
+   if (count_opcode(*snapshot, BC_CONTRACT) != 0) {
+      Log.error("stable checked call result retained a redundant local store contract");
+      return false;
+   }
+
+   constexpr std::string_view mismatch =
+      "local function typed(Value:num):num return Value end\n"
+      "local callback = typed\n"
+      "return callback('wrong')\n";
+   if (compile_snapshot(L, mismatch, true, error)) {
+      Log.error("stable callable alias lost compile-time argument diagnostics");
+      return false;
+   }
+
+   constexpr std::string_view mutable_alias =
+      "local function typed(Value:num):num return Value end\n"
+      "local function invoke(Replace:any)\n"
+      "   local callback = typed\n"
+      "   if Replace then callback = (Value => Value) end\n"
+      "   return callback('runtime checked')\n"
+      "end\n"
+      "return invoke(true)\n";
+   if (not compile_snapshot(L, mutable_alias, true, error)) {
+      Log.error("mutable callable alias was incorrectly treated as a stable target: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view dead_write =
+      "local function typed(Value:num):num return Value end\n"
+      "local callback = typed\n"
+      "if false then callback = (Value => Value) end\n"
+      "return callback('still checked')\n";
+   if (compile_snapshot(L, dead_write, true, error)) {
+      Log.error("dead branch write incorrectly invalidated a stable callable alias");
+      return false;
+   }
+
+   constexpr std::string_view specialised_accesses =
+      "extern array\n"
+      "extern obj\n"
+      "struct GuidedLayout Value: int end\n"
+      "local function update_array(Values:array):num\n"
+      "   Values[0] = Values[0] + 1\n"
+      "   return Values?[0]\n"
+      "end\n"
+      "local function update_struct(Value:struct<GuidedLayout>):num\n"
+      "   Value.Value = Value.Value + 1\n"
+      "   return Value.Value\n"
+      "end\n"
+      "local function update_object():num\n"
+      "   local value = obj.new('config')\n"
+      "   value.flags = 1\n"
+      "   return value.flags\n"
+      "end\n";
+   snapshot = compile_snapshot(L, specialised_accesses, true, error);
+   if (not snapshot or count_opcode_tree(*snapshot, BC_AGETB) IS 0 or
+       count_opcode_tree(*snapshot, BC_ASETB) IS 0 or count_opcode_tree(*snapshot, BC_ASGETB) IS 0 or
+       count_opcode_tree(*snapshot, BC_STGETF) IS 0 or count_opcode_tree(*snapshot, BC_STSETF) IS 0 or
+       count_opcode_tree(*snapshot, BC_OBGETF) IS 0 or count_opcode_tree(*snapshot, BC_OBSETF) IS 0) {
+      Log.error("proved receivers did not select the complete specialised access families: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view generic_accesses =
+      "local function update(Value:any, Key:any)\n"
+      "   Value.field = 1\n"
+      "   Value[Key] = Value[Key]\n"
+      "   return Value.field\n"
+      "end\n";
+   snapshot = compile_snapshot(L, generic_accesses, true, error);
+   if (not snapshot or count_opcode_tree(*snapshot, BC_TGETS) IS 0 or
+       count_opcode_tree(*snapshot, BC_TSETS) IS 0 or count_opcode_tree(*snapshot, BC_TGETV) IS 0 or
+       count_opcode_tree(*snapshot, BC_TSETV) IS 0 or count_opcode_tree(*snapshot, BC_AGETB) != 0 or
+       count_opcode_tree(*snapshot, BC_STGETF) != 0 or count_opcode_tree(*snapshot, BC_OBGETF) != 0) {
+      Log.error("unproved receivers did not retain generic access bytecodes: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view dynamic_contract =
+      "local function store(Value:any):num\n"
+      "   local result:num = Value\n"
+      "   return result\n"
+      "end\n";
+   snapshot = compile_snapshot(L, dynamic_contract, true, error);
+   if (not snapshot or count_opcode_tree(*snapshot, BC_CONTRACT) IS 0) {
+      Log.error("an advisory call result incorrectly removed its local store contract: %s", error.c_str());
+      return false;
+   }
+   return true;
+}
+
 }  // namespace
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 24> tests = { {
+   constexpr std::array<TestCase, 38> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -2023,19 +3056,33 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "local_function_table_ast", test_local_function_table_ast },
       { "ast_statement_matrix", test_ast_statement_matrix },
       { "numeric_for_ast", test_numeric_for_ast },
+      { "array_length_range_for_ast", test_array_length_range_for_ast },
       { "generic_for_ast", test_generic_for_ast },
       { "repeat_defer_ast", test_repeat_defer_ast },
       { "ternary_presence_expr_ast", test_ternary_presence_expr_ast },
       { "return_lowering", test_return_lowering },
       { "ast_call_lowering", test_ast_call_lowering },
       { "bytecode_equivalence", test_bytecode_equivalence },
+      { "signature_metadata_roundtrip", test_signature_metadata_roundtrip },
+      { "legacy_signature_defaults", test_legacy_signature_defaults },
+      { "signature_runtime_inference", test_signature_runtime_inference },
+      { "signature_void_and_bare_return", test_signature_void_and_bare_return },
+      { "malformed_signature_rejected", test_malformed_signature_rejected },
+      { "contract_bytecode_roundtrip", test_contract_bytecode_roundtrip },
+      { "runtime_contract_decoder", test_runtime_contract_decoder },
+      { "complex_contract_jit_eligibility", test_complex_contract_jit_eligibility },
+      { "userdata_type_annotations", test_userdata_type_annotations },
       { "state_local_struct_declarations", test_state_local_struct_declarations },
       { "struct_declaration_syntax", test_struct_declaration_syntax },
       { "struct_field_documentation", test_struct_field_documentation },
       { "struct_declaration_metadata", test_struct_declaration_metadata },
       { "expdesc_is_falsey", test_expdesc_is_falsey },
       { "if_empty_operator_constants", test_if_empty_operator_constants },
-      { "ternary_falsey_semantics", test_ternary_falsey_semantics }
+      { "ternary_falsey_semantics", test_ternary_falsey_semantics },
+      { "static_descriptor_model", test_static_descriptor_model },
+      { "static_result_set_model", test_static_result_set_model },
+      { "runtime_range_for_emission", test_runtime_range_for_emission },
+      { "type_guided_emission", test_type_guided_emission }
    } };
 
    // A dummy object is required to manage state.

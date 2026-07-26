@@ -480,7 +480,7 @@ function assertPatchNear(Actual, Expected, Label:str)
    local coords = { 'startX', 'startY', 'x1', 'y1', 'x2', 'y2', 'endX', 'endY' }
    local colours = { 'topLeft', 'topRight', 'bottomRight', 'bottomLeft' }
 
-   for i=0, #coords - 1 do
+   for i in {0 to #coords} do
       local field = coords[i]
 
       assertNear(Actual.top[field], Expected.top[field], Label .. '.' .. field)
@@ -489,14 +489,14 @@ function assertPatchNear(Actual, Expected, Label:str)
       assertNear(Actual.left[field], Expected.left[field], Label .. '.' .. field)
    end
 
-   for i=0, #colours - 1 do
+   for i in {0 to #colours} do
       local field = colours[i]
       assertColourNear(Actual[field], Expected[field], Label .. '.' .. field)
    end
 end
 
 function assertPatchesMatch(Actual:obj, Expected:obj, Label:str)
-   for i=0, #Expected.patches - 1 do
+   for i in {0 to #Expected.patches} do
       assertPatchNear(Actual.patches[i], Expected.patches[i], Label .. '.patch' .. i)
    end
 end

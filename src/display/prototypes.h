@@ -11,7 +11,7 @@ extern void DrawRGBPixel(objBitmap * Bitmap, int X, int Y, struct RGB8 * RGB);
 extern void DrawRectangle(objBitmap * Bitmap, int X, int Y, int Width, int Height, uint32_t Colour, BAF Flags);
 extern ERR ExposeSurface(OBJECTID Surface, int X, int Y, int Width, int Height, EXF Flags);
 extern void GetColourFormat(struct ColourFormat * Format, int BitsPerPixel, int RedMask, int GreenMask, int BlueMask, int AlphaMask);
-extern ERR GetCursorInfo(struct CursorInfo * Info, int Size);
+extern ERR GetCursorInfo(struct CursorInfo * Info);
 extern ERR GetCursorPos(double * X, double * Y);
 extern ERR GetDisplayInfo(OBJECTID Display, struct DisplayInfo ** Info);
 extern DT GetDisplayType();

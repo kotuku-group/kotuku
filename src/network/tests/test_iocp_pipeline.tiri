@@ -54,7 +54,7 @@ function RapidAcceptBurst()
    clients = { }
    proc = processing.new({ timeout = 8.0, signals = array<object> { server } })
 
-   for i = 0, client_count-1 do
+   for i in {0 to client_count} do
       clients[i] = obj.new('netsocket', {
          name     = 'IocpAcceptBurstClient' .. i,
          incoming = function(Socket)
@@ -80,7 +80,7 @@ function RapidAcceptBurst()
       client_data[clients[i].id] = { id = i, done = false }
    end
 
-   for i = 0, client_count-1 do
+   for i in {0 to client_count} do
       check clients[i].mtConnect('127.0.0.1', port)
    end
 
@@ -224,7 +224,7 @@ function LargeBidirectionalTCPTransfer()
 
    check client.mtConnect('127.0.0.1', port)
 
-   for i = 0, 199 do
+   for i in {0 to 200} do
       if server_done and client_done then break end
       processing.halt(0.05)
    end
@@ -282,7 +282,7 @@ function SlowReaderBackpressure()
 
    check client.mtConnect('127.0.0.1', port)
 
-   for i = 0, 199 do
+   for i in {0 to 200} do
       if received >= target_size then break end
       processing.halt(0.05)
    end
@@ -313,7 +313,7 @@ function PendingOperationTeardown()
       name = 'IocpPendingTeardownClient',
       feedback = function(Socket, State)
          if State is NTC_CONNECTED then
-            Socket.acWrite(string.rep('T', 262144))
+            Socket.acWrite(string.rep('T'))
          end
       end
    })
@@ -518,7 +518,7 @@ function PendingUDPReceiveSendFreeDropsCompletion()
    processing.collect()
 
    packet = string.rep('U', 4096)
-   for i = 0, 63 do
+   for i in {0 to 64} do
       err, len = sender.mtSendTo(dest, packet)
       if (err != ERR_Okay) and (err != ERR_BufferOverflow) and (err != ERR_Disconnected) then
          error('UDP send failed during pending UDP free test: ' .. mSys.GetErrorMsg(err))

@@ -1,0 +1,116 @@
+-- Behavioural coverage for persistent function signatures in stripped and unstripped bytecode dumps.
+
+struct SignatureDumpRecord
+   Value: int
+end
+
+function dynamic_value(Value):any
+   return Value
+end
+
+function expect_contract_failure(Callback:func)
+   local failed = false
+   try
+      Callback()
+   except e
+      failed = true
+      assert(e.message != nil, 'A reloaded contract failure must carry a message')
+   end
+   assert(failed, 'Expected a reloaded function to reject the mismatching value')
+end
+
+function reload_factory(Factory:func, Stripped:bool):func
+   return exec(string.dump(Factory, Stripped))
+end
+
+@Test function ParameterAndResultRoundTrips()
+   function factory():func
+      return function(Value:num):num
+         return Value + 1
+      end
+   end
+
+   for stripped in values({ false, true }) do
+      local restored = reload_factory(factory, stripped)
+      assert(restored(4) is 5, 'A reloaded typed function must preserve matching values')
+      local dynamic:any = restored
+      expect_contract_failure(function() dynamic('wrong') end)
+   end
+end
+
+@Test function FixedAndVariadicResults()
+   function fixed_factory():func
+      return function():<num, str>
+         return 3, 'kept', false
+      end
+   end
+
+   function variadic_factory():func
+      return function():<num, ...>
+         return 1, 2, 3, 4
+      end
+   end
+
+   local restored_fixed = reload_factory(fixed_factory, true)
+   local first, second, extra = restored_fixed()
+   assert(first is 3 and second is 'kept' and extra is nil,
+      'A reloaded fixed signature must preserve its declared arity')
+
+   local restored_variadic = reload_factory(variadic_factory, false)
+   local one, two, three, four = restored_variadic()
+   assert(one is 1 and two is 2 and three is 3 and four is 4,
+      'A reloaded variadic signature must preserve and validate its suffix')
+end
+
+@Test function ExplicitVoidResult()
+   function factory():func
+      return function():<>
+         return 99
+      end
+   end
+
+   local restored = reload_factory(factory, true)
+   assert(restored() is nil, 'A reloaded explicit-void signature must truncate all results')
+end
+
+@Test function NamedStructRoundTrip()
+   function factory():func
+      return function(Value:struct<SignatureDumpRecord>):struct<SignatureDumpRecord>
+         return Value
+      end
+   end
+
+   local restored = reload_factory(factory, true)
+   local item = struct<SignatureDumpRecord> { Value=7 }
+   assert(restored(item) is item, 'A reloaded named-struct signature must accept the registered layout')
+   expect_contract_failure(function() restored(dynamic_value({})) end)
+end
+
+@Test function NestedPrototypeRoundTrip()
+   function outer_factory():func
+      return function():func
+         return function(Value:str):str
+            return Value
+         end
+      end
+   end
+
+   local restored_factory = reload_factory(outer_factory, true)
+   local restored_child = restored_factory()
+   assert(restored_child('nested') is 'nested', 'A nested signature must survive recursive serialisation')
+   expect_contract_failure(function() restored_child(dynamic_value(9)) end)
+end
+
+@Test function HotReloadedFunction()
+   function factory():func
+      return function(Value:num):num
+         return Value + 1
+      end
+   end
+
+   local restored = reload_factory(factory, true)
+   for i in {0 to 250} do
+      assert(restored(i) is i+1, 'A hot reloaded signature must remain semantically stable')
+   end
+   expect_contract_failure(function() restored(dynamic_value('wrong')) end)
+end

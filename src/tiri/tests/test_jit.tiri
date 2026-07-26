@@ -1,6 +1,9 @@
 -- Flute tests that need to exercise the JIT in specific ways.
 
 local glCfg
+local ir_ult <const> = 4  -- IRDEF order; unsigned less-than guard.
+local ir_abc <const> = 10  -- IRDEF order; array bounds check.
+local ir_loop <const> = 17  -- IRDEF order; loop body boundary.
 local ir_min <const> = 50  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
 local ir_max <const> = 51  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
 local ir_xload <const> = 70  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
@@ -23,6 +26,39 @@ function SetupJitTests()
       'lPadding,lValue,dRatio,xLarge,fSingle,fIntegral,wWord,bByte,uwUnsignedWord,ucUnsignedByte')
    MAKESTRUCT('JITStructTraceChild', 'lValue')
    MAKESTRUCT('JITStructComplexFields', 'zsName,lValues[2],eChild:JITStructTraceChild,oOwner')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function FalseyBytecodeDisassembly()
+   local script = obj.new('tiri', { statement=[[
+function numberPresent(Value:num):bool return Value?? end
+function stringPresent(Value:str):bool return Value?? end
+function booleanPresent(Value:bool):bool return Value?? end
+function arrayPresent(Value:array):bool return Value?? end
+function tablePresent(Value:table):bool return Value?? end
+function anyPresent(Value:any):bool return Value?? end
+]] })
+   check script.acQuery()
+   check script.acActivate()
+   local _, disassembly = script.mtDebugLog('disasm')
+
+   assert(disassembly:count('ISFALSEY') is 6,
+      'Each runtime presence check should emit one ISFALSEY instruction')
+   assert(disassembly:count('ISFALSEY  A=R0 D=#1\n') is 1,
+      'A boolean operand should narrow the falsey mask to false')
+   assert(disassembly:count('ISFALSEY  A=R0 D=#2\n') is 1,
+      'A numeric operand should narrow the falsey mask to zero')
+   assert(disassembly:count('ISFALSEY  A=R0 D=#4\n') is 1,
+      'A string operand should narrow the falsey mask to empty string')
+   assert(disassembly:count('ISFALSEY  A=R0 D=#8\n') is 2,
+      'Array and table operands should narrow the falsey mask to empty collection')
+   assert(disassembly:count('ISFALSEY  A=R0 D=#15\n') is 1,
+      'An any operand should retain the full falsey mask')
+   assert(disassembly:find('ISEMPTYARR') is nil,
+      'The retired collection-only falsey instruction must not be emitted')
+   assert(disassembly:find('ISEQN') is nil and disassembly:find('ISEQS') is nil,
+      'Presence checks must not emit the former numeric and string comparison cascade')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -91,6 +127,58 @@ end
    assert(disassembly:find('OBGETF') != nil, 'obj<Class> metadata should specialise chained object field access')
 end
 
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayParameterAndLengthRangeBytecode()
+   local script = obj.new('tiri', { statement=[[
+global glBytecodeValues:array = array<int> { 1, 2, 3 }
+
+function increment(Array:array)
+   for index in {0 to #Array} do
+      Array[index] += 1
+   end
+end
+
+function incrementInTry(Array:array)
+   try
+      for index in {0 to #Array} do
+         Array[index] += 1
+      end
+   success
+   end
+end
+
+function localArrayInTry()
+   try
+      local values = array<int> { 1, 2, 3 }
+      for index in {0 to #values} do
+         values[index] += 1
+      end
+   success
+   end
+end
+
+function sumGlobal():num
+   local total = 0
+   for index in {0 to #glBytecodeValues} do
+      total += glBytecodeValues[index]
+   end
+   return total
+end
+]] })
+   check script.acQuery()
+   check script.acActivate()
+   local _, disassembly = script.mtDebugLog('disasm')
+
+   assert(disassembly:find('FORI') != nil and disassembly:find('FORL') != nil,
+      'A canonical array-length range should emit numeric loop bytecode')
+   assert(disassembly:find('ITERC') is nil and disassembly:find('ITERA') is nil and
+      disassembly:find('ITERL') is nil,
+      'Canonical parameter, nested and global array-length ranges should not construct generic range iterators')
+   assert(disassembly:find('AGETV') != nil and disassembly:find('ASETV') != nil,
+      'An array-annotated parameter should emit specialised array bytecode')
+end
+
 @AfterAll
 function TeardownJitTests()
    jit.opt.start()
@@ -108,17 +196,17 @@ function build_trace()
 
    function traced_sum(Count)
       running_total = 0
-      for i = 1, Count do
+      for i in {1 into Count} do
          running_total += i
       end
       return running_total
    end
 
-   for i = 1, 80 do
+   for i in {1 into 80} do
       traced_sum(10)
    end
 
-   for trace_no = 1, 20 do
+   for trace_no in {1 into 20} do
       info = jit.util.traceInfo(trace_no)
       if info then
          cached_trace_no = trace_no
@@ -143,7 +231,7 @@ end
 
 function count_trace_opcode(TraceNo, Info, Opcode)
    local count = 0
-   for idx = 1, Info.nins do
+   for idx in {1 into Info.nins} do
       local _, ir_ot = jit.util.traceIR(TraceNo, idx)
       if ir_ot != nil and ir_opcode(ir_ot) is Opcode then
          count++
@@ -152,9 +240,17 @@ function count_trace_opcode(TraceNo, Info, Opcode)
    return count
 end
 
+function first_trace_opcode(TraceNo, Info, Opcode)
+   for idx in {1 into Info.nins} do
+      local _, ir_ot = jit.util.traceIR(TraceNo, idx)
+      if ir_ot != nil and ir_opcode(ir_ot) is Opcode then return idx end
+   end
+   return nil
+end
+
 function count_jit_traces(MaxTraceNo)
    local count = 0
-   for trace_no = 1, MaxTraceNo do
+   for trace_no in {1 into MaxTraceNo} do
       if jit.util.traceInfo(trace_no) != nil then count++ end
    end
    return count
@@ -163,6 +259,93 @@ end
 function count_trace_calls(TraceNo, Info)
    return count_trace_opcode(TraceNo, Info, ir_calln) + count_trace_opcode(TraceNo, Info, ir_calla) +
       count_trace_opcode(TraceNo, Info, ir_calll) + count_trace_opcode(TraceNo, Info, ir_calls)
+end
+
+function canonical_array_workload(Count)
+   local values = array<int> { 1, 2, 3, 4, 5, 6, 7, 8 }
+
+   for pass in {1 into Count} do
+      for index in {0 to #values} do
+         values[index] += 1
+      end
+   end
+
+   return values:concat(',', '%d')
+end
+
+function canonical_array_try_workload(Count)
+   local values = array<int, 8>
+
+   try
+      for pass in {1 into Count} do
+         for index in {0 to #values} do
+            values[index] += 1
+         end
+      end
+   success
+   end
+
+   return values:concat(',', '%d')
+end
+
+global glCanonicalArrayRangeValues:array = array<int> { 1, 2, 3, 4, 5, 6, 7, 8 }
+
+function canonical_global_array_workload(Count)
+   local total = 0
+   for pass in {1 into Count} do
+      for index in {0 to #glCanonicalArrayRangeValues} do
+         total += glCanonicalArrayRangeValues[index]
+      end
+   end
+   return total
+end
+
+function find_array_bounds_trace(MaxTraceNo)
+   for trace_no in {1 into MaxTraceNo} do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil then
+         local abc_count = count_trace_opcode(trace_no, info, ir_abc)
+         local load_count = count_trace_opcode(trace_no, info, ir_xload)
+         local store_count = count_trace_opcode(trace_no, info, ir_xstore)
+         if abc_count > 0 and load_count > 0 and store_count > 0 then
+            return trace_no, info, abc_count
+         end
+      end
+   end
+
+   return nil, nil, 0
+end
+
+function resize_during_array_loop(Array:array, Shrink:bool)
+   local alias = Array
+   for index in {0 to #Array} do
+      if Shrink and index is 16 then alias:resize(8) end
+      Array[index] += 1
+   end
+end
+
+function clear_during_array_loop(Array:array, Clear:bool)
+   local alias = Array
+   for index in {0 to #Array} do
+      if Clear and index is 16 then alias:clear() end
+      Array[index] += 1
+   end
+end
+
+function reassign_during_array_loop(Array:array, Reassign:bool)
+   for index in {0 to #Array} do
+      if Reassign and index is 16 then Array = array<int, 8> end
+      Array[index] += 1
+   end
+end
+
+function push_during_array_loop(Array:array)
+   local original_length = #Array
+   for index in {0 to #Array} do
+      if index is 0 then Array:push(99) end
+      Array[index] += 1
+   end
+   return original_length, #Array, Array[#Array - 1]
 end
 
 function run_array_method_trace(Workload, Count)
@@ -174,16 +357,176 @@ function run_array_method_trace(Workload, Count)
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
 
    local result = nil
-   for i = 1, 80 do
+   for i in {0 to 80} do
       result = Workload(Count)
    end
 
    return expected, result, count_jit_traces(30)
 end
 
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function CanonicalArrayRangeMatchesInterpreter()
+   jit.flush()
+   jit.off()
+   local expected = canonical_array_workload(12)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local result = nil
+   for repeat_no in {1 into 20} do
+      result = canonical_array_workload(12)
+   end
+
+   assert(result is expected, f"JIT array range result '{result}' should match interpreter result '{expected}'")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function CanonicalArrayRangeInsideTryMatchesInterpreter()
+   jit.flush()
+   jit.off()
+   local expected = canonical_array_try_workload(10)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local result = nil
+   for repeat_no in {1 into 20} do
+      result = canonical_array_try_workload(10)
+   end
+
+   assert(result is expected,
+      f"JIT nested array range result '{result}' should match interpreter result '{expected}'")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function CanonicalGlobalArrayRangeMatchesInterpreter()
+   jit.flush()
+   jit.off()
+   local expected = canonical_global_array_workload(12)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local result = nil
+   for repeat_no in {1 into 20} do
+      result = canonical_global_array_workload(12)
+   end
+
+   assert(result is expected,
+      f"JIT global array range result '{result}' should match interpreter result '{expected}'")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function CanonicalArrayRangeHoistsBoundsCheck()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   for repeat_no in {1 into 20} do
+      canonical_array_workload(12)
+   end
+
+   local trace_no, info, abc_count = find_array_bounds_trace(40)
+   assert(trace_no != nil and info != nil, 'Expected a traced typed-array loop with direct element access')
+   assert(abc_count is 1, f'Expected one invariant array bounds check, found {abc_count}')
+
+   local abc_position = first_trace_opcode(trace_no, info, ir_abc)
+   local loop_position = first_trace_opcode(trace_no, info, ir_loop)
+   assert(abc_position != nil and loop_position != nil, 'Expected both ABC and LOOP instructions in the array trace')
+   assert(abc_position < loop_position,
+      f'Expected invariant ABC before LOOP, found ABC at {abc_position} and LOOP at {loop_position}')
+
+   local ult_count = count_trace_opcode(trace_no, info, ir_ult)
+   assert(ult_count is 0, f'Expected no loop-resident ULT array bounds guard, found {ult_count}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayResizeInvalidatesBoundsProof()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   for repeat_no in {1 into 20} do
+      local values = array<int, 32>
+      resize_during_array_loop(values, false)
+   end
+
+   local values = array<int, 32>
+   try
+      resize_during_array_loop(values, true)
+   success
+      error('Shrinking an aliased array during traversal should invalidate the bounds proof')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayClearInvalidatesBoundsProof()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   for repeat_no in {1 into 20} do
+      local values = array<int, 32>
+      clear_during_array_loop(values, false)
+   end
+
+   local values = array<int, 32>
+   try
+      clear_during_array_loop(values, true)
+   success
+      error('Clearing an aliased array during traversal should invalidate the bounds proof')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayReassignmentInvalidatesBoundsProof()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   for repeat_no in {1 into 20} do
+      local values = array<int, 32>
+      reassign_during_array_loop(values, false)
+   end
+
+   local values = array<int, 32>
+   try
+      reassign_during_array_loop(values, true)
+   success
+      error('Reassigning the traversed array should invalidate the bounds proof')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ArrayGrowthKeepsCapturedRangeBound()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   for repeat_no in {1 into 20} do
+      local values = array<int, 32>
+      local original_length, final_length, appended = push_during_array_loop(values)
+      assert(original_length is 32, 'The original array length should be captured before traversal')
+      assert(final_length is 33, 'Pushing during traversal should grow the array once')
+      assert(appended is 99, 'The appended element should remain outside the captured traversal bound')
+   end
+end
+
 function traced_clamp_sum(Count)
    local total = 0
-   for i = 1, Count do
+   for i in {1 into Count} do
       local value = i - 8
       total += math.clamp(value, -3, 4)
    end
@@ -212,7 +555,7 @@ end
 function array_method_clear_workload(Count)
    local result = array.new("")
 
-   for i = 1, Count do
+   for i in {1 into Count} do
       result:clear()
       array.push(result, "clear")
    end
@@ -223,7 +566,7 @@ end
 function array_method_resize_workload(Count)
    local result = array.new("abcdef")
 
-   for i = 1, Count do
+   for i in {1 into Count} do
       result:resize(0)
       array.push(result, "resize")
    end
@@ -234,7 +577,7 @@ end
 function array_method_push_workload(Count)
    local result = array.new("")
 
-   for i = 1, Count do
+   for i in {1 into Count} do
       result:push("push")
    end
 
@@ -245,7 +588,7 @@ function array_unknown_method_workload(Count)
    local arr = array<int> { 1, 2, 3 }
    local total = 0
 
-   for i = 1, Count do
+   for i in {1 into Count} do
       total += arr[0]
       if i is Count then arr:missingPhaseOneMethod() end
    end
@@ -300,7 +643,7 @@ function jit_try_repeated_throwable_helpers(Pattern)
    local compiled = nil
 
    try
-      for i = 0, 5 do
+      for i in {0 to 5} do
          compiled = regex.new("a+")
       end
       regex.new(Pattern)
@@ -351,12 +694,12 @@ function build_try_materialisation_trace()
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
 
-   for i = 0, 99 do
+   for i in {0 to 100} do
       local result = jit_try_forced_materialisation_probe(i)
       assert(result is "entry", f"Expected materialisation probe to return entry local, got '{result}'")
    end
 
-   for trace_no = 1, 30 do
+   for trace_no in {0 to 30} do
       local info = jit.util.traceInfo(trace_no)
       if info != nil and info.tryEnterStores > 0 then
          return trace_no, info
@@ -374,7 +717,7 @@ end
    local param = { name = 'pattern', type = 'regex' }
    local expected_message = "Parameter 'pattern' requires a valid regex pattern."
 
-   for i = 0, 99 do
+   for i in {0 to 100} do
       local err
       try
          jit_regex_failure_convert('(', param)
@@ -393,7 +736,7 @@ end
    jit.flush()
    jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
 
-   for i = 0, 99 do
+   for i in {0 to 100} do
       result = jit_try_local_before_entry("(")
       assert(result is "before-entry", f"Expected local captured before try entry, got '{result}'")
    end
@@ -404,7 +747,7 @@ end
    jit.flush()
    jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
 
-   for i = 0, 99 do
+   for i in {0 to 100} do
       expected = "mutated-" .. tostring(i % 5)
       result = jit_try_mutated_local_before_throw("(", i)
       assert(result is expected, f"Expected handler to see '{expected}', got '{result}'")
@@ -416,7 +759,7 @@ end
    jit.flush()
    jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
 
-   for i = 0, 99 do
+   for i in {0 to 100} do
       label, compiled = jit_try_repeated_throwable_helpers("(")
       assert(label is "stable-local", f"Expected stable local after repeated helpers, got '{label}'")
       assert(compiled is true, "Successful repeated regex.new() calls should update their local")
@@ -428,7 +771,7 @@ end
    jit.flush()
    jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
 
-   for i = 0, 99 do
+   for i in {0 to 100} do
       local expected = "entry-" .. tostring(i % 7)
       local result = jit_try_inner_locals_preserve_entry_local("(", i)
       assert(result is expected, f"Expected handler to see entry local '{expected}', got '{result}'")
@@ -449,13 +792,13 @@ end
    local trace_no, info = build_try_materialisation_trace()
 
    assert(info.nexit > 0, "Try materialisation trace should expose snapshots")
-   for snap_no = 0, info.nexit - 1 do
+   for snap_no in {0 to info.nexit} do
       local snapshot = jit.util.traceSnap(trace_no, snap_no)
       assert(snapshot != nil, f"Expected snapshot {snap_no} for try materialisation trace")
       local nslots = snapshot[1]
       assert(type(nslots) is "number" and nslots >= 0, f"Snapshot {snap_no} should report a slot count")
 
-      for entry_idx = 2, #snapshot - 1 do
+      for entry_idx in {2 to #snapshot} do
          local slot = snapshot[entry_idx] >> 24
          if slot is 255 then
             continue
@@ -464,6 +807,88 @@ end
             f"Snapshot {snap_no} entry {entry_idx} slot {slot} should be below nslots {nslots}")
       end
    end
+end
+
+@Test function JITDynamicResultInsideTryDoesNotRestartHandler()
+   local script = obj.new('tiri', { statement=[[
+result = 0
+
+for outer_index in {0 to 120} do
+   local function compute(Value)
+      if Value < 0 then error("Negative value not allowed") end
+      return Value * Value
+   end
+
+   local function fetch_data(Id)
+      if Id is 0 then error("Invalid ID") end
+      return { id = Id, value = Id * 10 }
+   end
+
+   for index in {0 to 300} do
+      local result = 0
+
+      try
+         result = compute(index)
+      except e
+         result = -1
+      success
+         result++
+      end
+
+      local data = nil
+      try
+         data = fetch_data(index % 100)
+      except e
+         data = { id = 0, value = 0 }
+      success
+         data.value *= 2
+      end
+
+      local first, second
+      try
+         first = compute(index)
+         second = compute(index + 1)
+      except e
+         result = 0
+      success
+         result = (first + second) * 2
+      end
+
+      local resource_acquired = false
+      try
+         resource_acquired = true
+         result = compute(index)
+      except e
+         result = -1
+      success
+         result += 100
+      end
+
+      try
+         try
+            result = compute(index)
+         except inner
+            result = 0
+         success
+            result += 10
+         end
+      except outer
+         result = -1
+      success
+         result += 20
+      end
+   end
+end
+
+local trace_count = 0
+for trace_no in {1 to 101} do
+   if jit.util.traceInfo(trace_no) != nil then trace_count++ end
+end
+assert(trace_count > 0, "Dynamic result calls inside try blocks should remain JIT traceable")
+]] })
+
+   check script.acQuery()
+   check script.acActivate()
 end
 
 @Test(hotpath=80) function JITMathClampEmitsMinMax()
@@ -475,7 +900,7 @@ end
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
 
    local result = 0
-   for i = 1, 80 do
+   for i in {0 to 80} do
       result = traced_clamp_sum(40)
    end
 
@@ -483,7 +908,7 @@ end
 
    local clamp_trace_no = nil
    local clamp_trace_info = nil
-   for trace_no = 1, 30 do
+   for trace_no in {1 into 30} do
       local info = jit.util.traceInfo(trace_no)
       if info != nil then
          local min_count = count_trace_opcode(trace_no, info, ir_min)
@@ -514,7 +939,7 @@ end
    local keys = { 0.5, 1.5, 65536.5, 131072.5 }
 
    total = 0
-   for i = 0, 199 do
+   for i in {0 to 200} do
       key = keys[i % 4]
       total += lookup[key]
    end
@@ -535,7 +960,7 @@ end
    local keys = { key_one, key_two }
 
    total = 0
-   for i = 0, 199 do
+   for i in {0 to 200} do
       key = keys[i % 2]
       total += lookup[key]
    end
@@ -598,7 +1023,7 @@ end
 
    constants = { }
    numeric_count = 0
-   for idx = 0, info.nConsts - 1 do
+   for idx in {0 to info.nConsts} do
       value = jit.util.funcK(constant_target, idx)
       if value != nil then
          constants[numeric_count] = value
@@ -607,14 +1032,14 @@ end
    end
 
    found_number = false
-   for i = 0, numeric_count - 1 do
+   for i in {0 to numeric_count} do
       if type(constants[i]) is "number" then found_number = true end
    end
    assert(found_number is true, "jit.util.funcK should expose numeric constants")
 
    gc_values = { }
    gc_count = 0
-   for idx = -1, -info.gcConsts, -1 do
+   for idx in {-1 into -info.gcConsts by -1} do
       value = jit.util.funcK(constant_target, idx)
       if value != nil then
          gc_values[gc_count] = value
@@ -623,7 +1048,7 @@ end
    end
 
    found_label = false
-   for i = 0, gc_count - 1 do
+   for i in {0 to gc_count} do
       if type(gc_values[i]) is "string" then found_label = true end
    end
    assert(found_label is true, "jit.util.funcK should expose GC constants")
@@ -674,7 +1099,7 @@ end
    end
 
    k_value, k_type, k_slot = nil, nil, nil
-   for idx = -info.nk, -1 do
+   for idx in {-info.nk to 0} do
       value, kind, slot = jit.util.traceK(trace_no, idx)
       if value != nil then
          k_value, k_type, k_slot = value, kind, slot
@@ -721,23 +1146,7 @@ end
    assert(invalid is nil, "Out-of-range irCallAddr should return nil")
 end
 
---[[
-The JitAttachTraceEvent() test has been observed to intermittently trigger this LuaJIT assertion failure:
-
-LuaJIT ASSERT FAILED: /home/paul/kotuku/src/tiri/jit/src/lj_trace.cpp:798: lj_trace_ins: trace recorder mutated stack
-
-This means lj_trace_ins saw L->base or L->top change across the trace recorder call, which shouldn't happen unless the recorder aborted. The rarity points to stack growth or re-entrancy triggered only in some runs.  So far this problem has only been noticed in Linux and ignorance of the assert does not cause a crash in release builds.
-
-Areas for investigation:
-
-- src/tiri/jit/src/lj_trace.cpp:779 - lj_trace_ins snapshots base/top and asserts if they change while J->state is still recording; check what trace_state does for the failing event.
-- src/tiri/jit/src/runtime/lj_vmevent.cpp:19 - lj_vmevent_prepare calls lj_state_checkstack, which can grow the stack and move L->base/L->top; if a vmevent fires during recording (e.g., jit.attach), this can trip the assert without a logical stack leak.
-- src/tiri/jit/src/lib/lib_jit.cpp:117 and the JitAttachTraceEvent test code - confirm the event handler is stack-neutral (no extra pushes, no yields/errors) and doesn't indirectly trigger stack growth.
-- src/tiri/jit/src/runtime/lj_state.cpp:145 - stack growth routine; if any trace-time path can call lj_state_checkstack, pointer changes are expected and the assert may be too strict for that case.
-- src/tiri/jit/src/lj_record.cpp plus generated src/tiri/jit/src/lj_bcdef.h - verify any custom bytecodes or modified stack effects are reflected in the recorder; a mismatched stack effect can show up as a base/top change under recording.
---]]
-
-@Test(hotpath=1000) function JitAttachTraceEvent()
+@Test(hotpath=100) function JitAttachTraceEvent()
    cached_trace_no = nil
    cached_trace_info = nil
 
@@ -753,7 +1162,7 @@ Areas for investigation:
    assert(trace_events > 0, "Trace handler should run at least once")
 end
 
-@Test(hotpath=1000) function JitAttachTraceEventAllocatingHandler()
+@Test(hotpath=100) function JitAttachTraceEventAllocatingHandler()
    cached_trace_no = nil
    cached_trace_info = nil
 
@@ -784,7 +1193,7 @@ end
       function traced_loop(Count)
          arr = array<int> { 1, 2, 3, 4 }
          sum = 0
-         for i = 1, Count do
+         for i in {1 into Count} do
             for idx, val in IterFunc(arr) do
                sum += val
             end
@@ -792,11 +1201,11 @@ end
          return sum
       end
 
-      for i = 1, 80 do
+      for i in {0 to 80} do
          traced_loop(3)
       end
 
-      for trace_no = 1, 20 do
+      for trace_no in {1 into 20} do
          info = jit.util.traceInfo(trace_no)
          if info != nil then
             return true
@@ -848,7 +1257,7 @@ end
    local saw_error = false
    local message = ""
 
-   for i = 1, 80 do
+   for i in {0 to 80} do
       try
          array_unknown_method_workload(6)
       except e
@@ -870,7 +1279,7 @@ end
    local arr = array.new("")
    local result = ""
 
-   for i = 1, 80 do
+   for i in {0 to 80} do
       result = array_clear_then_push(arr)
    end
 
@@ -890,7 +1299,7 @@ end
    debug.setMetatable(arr, nil)
    jit.flush()
 
-   for i = 1, 80 do
+   for i in {0 to 80} do
       result = array_clear_then_push(arr)
    end
 
@@ -913,7 +1322,7 @@ end
    debug.setMetatable(arr, mt)
 
    local result = ""
-   for i = 1, 80 do
+   for i in {0 to 80} do
       result = array_clear_then_push(arr)
    end
 
@@ -946,7 +1355,7 @@ end
    local original_clear = base_mt.clear
    local result = ""
 
-   for i = 1, 80 do
+   for i in {0 to 80} do
       result = array_clear_then_push(arr)
    end
 
@@ -979,7 +1388,7 @@ end
 
    function traced_array_new(Count)
       local total = 0
-      for i = 1, Count do
+      for i in {1 into Count} do
          local arr = array.new(i % 5, "int")
          total += #arr
       end
@@ -987,14 +1396,14 @@ end
    end
 
    local result = 0
-   for i = 1, 80 do
+   for i in {0 to 80} do
       result = traced_array_new(10)
    end
 
    assert(result is 20, f"Expected recorded array.new() loop to total 20, got {result}")
 
    local trace_found = false
-   for trace_no = 1, 20 do
+   for trace_no in {1 into 20} do
       local info = jit.util.traceInfo(trace_no)
       if info != nil then
          trace_found = true
@@ -1017,7 +1426,7 @@ end
       local arr = array<int> { 1, 2, 3, 4 }
       local total = 0
 
-      for i = 1, Count do
+      for i in {1 into Count} do
          total += #arr
          arr:clear()
          total += #arr
@@ -1029,7 +1438,7 @@ end
 
    local total = 0
    local len = 0
-   for i = 1, 80 do
+   for i in {0 to 80} do
       total, len = traced_array_clear(10)
    end
 
@@ -1037,7 +1446,7 @@ end
    assert(len is 1, f"Expected final array length 1 after clear/push loop, got {len}")
 
    local trace_found = false
-   for trace_no = 1, 20 do
+   for trace_no in {1 into 20} do
       local info = jit.util.traceInfo(trace_no)
       if info != nil then
          trace_found = true
@@ -1061,7 +1470,7 @@ end
       local total = 0
       local result = 0
 
-      for i = 1, Count do
+      for i in {1 into Count} do
          total += #arr
          result = arr:resize((i % 4) + 1)
          total += #arr
@@ -1074,7 +1483,7 @@ end
    local result = 0
    local len = 0
    local expanded_value = 0
-   for i = 1, 80 do
+   for i in {0 to 80} do
       total, result, len, expanded_value = traced_array_resize(10)
    end
 
@@ -1084,7 +1493,7 @@ end
    assert(expanded_value is 0, f"Expected grown array slot to be zero-filled, got {expanded_value}")
 
    local trace_found = false
-   for trace_no = 1, 20 do
+   for trace_no in {1 into 20} do
       local info = jit.util.traceInfo(trace_no)
       if info != nil then
          trace_found = true
@@ -1107,7 +1516,7 @@ end
       local arr = array.new("abcdef")
       local total = 0
 
-      for i = 1, Count do
+      for i in {1 into Count} do
          arr:resize((i % 4) + 2)
          total += #arr:getString(1)
          total += #arr:getString(0, 1)
@@ -1118,7 +1527,7 @@ end
 
    local total = 0
    local final_remaining = 0
-   for i = 1, 80 do
+   for i in {0 to 80} do
       total, final_remaining = traced_array_get_string(10)
    end
 
@@ -1126,7 +1535,7 @@ end
    assert(final_remaining is 3, f"Expected final remaining string length 3, got {final_remaining}")
 
    local trace_found = false
-   for trace_no = 1, 20 do
+   for trace_no in {1 into 20} do
       local info = jit.util.traceInfo(trace_no)
       if info != nil then
          trace_found = true
@@ -1150,7 +1559,7 @@ end
       local total = 0
       local result = 0
 
-      for i = 1, Count do
+      for i in {1 into Count} do
          result = arr:push("xy")
          total += result
       end
@@ -1161,7 +1570,7 @@ end
    local total = 0
    local result = 0
    local len = 0
-   for i = 1, 80 do
+   for i in {0 to 80} do
       total, result, len = traced_array_push(10)
    end
 
@@ -1170,7 +1579,7 @@ end
    assert(len is 20, f"Expected final array length 20 after push loop, got {len}")
 
    local trace_found = false
-   for trace_no = 1, 20 do
+   for trace_no in {1 into 20} do
       local info = jit.util.traceInfo(trace_no)
       if info != nil then
          trace_found = true
@@ -1192,7 +1601,7 @@ end
    function traced_array_append_concat(Count)
       local arr = array<byte>
 
-      for i = 1, Count do
+      for i in {1 into Count} do
          arr ..= "a" .. 65 .. "b" .. 6.5
       end
 
@@ -1201,7 +1610,7 @@ end
 
    local final = ""
    local len = 0
-   for i = 1, 80 do
+   for i in {0 to 80} do
       final, len = traced_array_append_concat(10)
    end
 
@@ -1210,7 +1619,7 @@ end
    assert(len is 70, f"Expected flattened append result length 70, got {len}")
 
    local trace_found = false
-   for trace_no = 1, 20 do
+   for trace_no in {1 into 20} do
       local info = jit.util.traceInfo(trace_no)
       if info != nil then
          trace_found = true
@@ -1232,6 +1641,8 @@ end
    function traced_array_append_dynamic(Count)
       local arr = array<byte>
 
+      -- Deliberately retains the deprecated numeric-for: the range-loop form records BUFSTR
+      -- (buffer interning) and breaks the buffered-append IR assertions below.
       for i = 1, Count do
          arr ..= "x" .. i .. "y"
       end
@@ -1241,7 +1652,7 @@ end
 
    local final = ""
    local len = 0
-   for i = 1, 80 do
+   for i in {0 to 80} do
       final, len = traced_array_append_dynamic(10)
    end
 
@@ -1250,7 +1661,7 @@ end
    assert(len is 31, f"Expected buffered append trace length 31, got {len}")
 
    local buffer_trace_found = false
-   for trace_no = 1, 30 do
+   for trace_no in {1 into 30} do
       local info = jit.util.traceInfo(trace_no)
       if info != nil then
          local bufput_count = count_trace_opcode(trace_no, info, ir_bufput)
@@ -1282,7 +1693,7 @@ end
    -- Hot loop accessing object fields - should trigger JIT trace recording
    function traced_field_access(Count)
       sum = 0
-      for i = 1, Count do
+      for i in {1 into Count} do
          p = glCfg.path   -- BC_OBGETF
          f = glCfg.flags  -- BC_OBGETF
          sum += 1
@@ -1290,13 +1701,13 @@ end
       return sum
    end
 
-   for i = 1, 20 do
+   for i in {0 to 20} do
       traced_field_access(10)
    end
 
    -- Check if a trace was created
    trace_found = false
-   for trace_no = 1, 30 do
+   for trace_no in {1 into 30} do
       info = jit.util.traceInfo(trace_no)
       if info != nil then
          trace_found = true
@@ -1320,19 +1731,19 @@ end
 
    -- Hot loop writing object fields - should trigger JIT trace recording
    function traced_field_set(Count)
-      for i = 1, Count do
+      for i in {1 into Count} do
          glCfg.flags = 0 -- BC_OBSETF
          glCfg.path = "temp:test.cfg"
       end
    end
 
-   for i = 1, 20 do
+   for i in {1 into 20} do
       traced_field_set(10)
    end
 
    -- Check if a trace was created
    trace_found = false
-   for trace_no = 1, 30 do
+   for trace_no in {1 into 30} do
       info = jit.util.traceInfo(trace_no)
       if info != nil then
          trace_found = true
@@ -1348,7 +1759,7 @@ end
 
 function traced_struct_numeric_read(Value:struct, Count:num):num
    local total = 0
-   for i = 1, Count do
+   for i in {1 into Count} do
       total += Value.value + Value.ratio + Value.large + Value.single + Value.integral + Value.word + Value.byte +
          Value.unsignedWord + Value.unsignedByte
    end
@@ -1356,7 +1767,7 @@ function traced_struct_numeric_read(Value:struct, Count:num):num
 end
 
 function traced_struct_numeric_write(Value:struct, Count:num)
-   for i = 1, Count do
+   for i in {1 into Count} do
       Value.value = i + 0.75
       Value.ratio = i + 0.5
       Value.large = (i * 1000000) + 0.75
@@ -1377,7 +1788,7 @@ end
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
 
-   for i = 1, 20 do
+   for i in {1 into 20} do
       traced_struct_numeric_write(value, 10)
    end
 
@@ -1394,7 +1805,7 @@ end
       f"Expected traced qualified byte write to wrap to 4, got {value.unsignedByte}")
 
    local store_trace_found = false
-   for trace_no = 1, 30 do
+   for trace_no in {1 into 30} do
       local info = jit.util.traceInfo(trace_no)
       if info != nil and count_trace_opcode(trace_no, info, ir_xstore) >= 9 then
          store_trace_found = true
@@ -1405,7 +1816,7 @@ end
    assert(store_trace_found, "Expected scalar struct writes to emit direct XSTORE instructions")
 
    -- Reuse the compiled access sites with a different definition whose fields have different offsets.
-   for i = 1, 20 do
+   for i in {1 into 20} do
       traced_struct_numeric_write(alternate, 10)
    end
    assert(alternate.padding is 0, "Expected the struct definition guard to preserve the alternate padding field")
@@ -1429,13 +1840,13 @@ end
 
    jit.flush()
    local result = 0
-   for i = 1, 20 do
+   for i in {0 to 20} do
       result = traced_struct_numeric_read(value, 10)
    end
    assert(result is 100655737.5, f"Expected traced scalar struct sum 100655737.5, got {result}")
 
    local load_trace_found = false
-   for trace_no = 1, 30 do
+   for trace_no in {1 into 30} do
       local info = jit.util.traceInfo(trace_no)
       if info != nil and count_trace_opcode(trace_no, info, ir_xload) >= 9 then
          load_trace_found = true
@@ -1458,7 +1869,7 @@ function traced_struct_complex(Value:struct, Count:num):num
    local values = nil
    local child = nil
    local owner = nil
-   for i = 1, Count do
+   for i in {1 into Count} do
       Value.name = "trace"
       name = Value.name
       values = Value.values
@@ -1483,7 +1894,7 @@ end
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
 
    local result = 0
-   for i = 1, 20 do
+   for i in {1 into 20} do
       result = traced_struct_complex(value, 10)
    end
 
@@ -1505,14 +1916,14 @@ end
 
    -- Hot loop writing integer fields - exercises the FD_INT XSTORE path
    function traced_int_write(Count)
-      for i = 1, Count do
+      for i in {1 into Count} do
          t.year = i
          t.month = 6
          t.day = i + 10
       end
    end
 
-   for i = 1, 20 do
+   for i in {1 into 20} do
       traced_int_write(10)
    end
 
@@ -1523,7 +1934,7 @@ end
 
    -- Check if a trace was created
    trace_found = false
-   for trace_no = 1, 30 do
+   for trace_no in {1 into 30} do
       info = jit.util.traceInfo(trace_no)
       if info != nil then
          trace_found = true
@@ -1548,12 +1959,12 @@ end
 
    -- Hot loop writing int64 fields - exercises the FD_INT64 XSTORE path
    function traced_int64_write(Count)
-      for i = 1, Count do
+      for i in {1 into Count} do
          t.systemTime = i * 1000000
       end
    end
 
-   for i = 1, 20 do
+   for i in {1 into 20} do
       traced_int64_write(10)
    end
 
@@ -1562,14 +1973,14 @@ end
 
    -- Test double-to-integer truncation (3.7 should become 3 for int fields)
    function traced_double_to_int(Count)
-      for i = 1, Count do
+      for i in {1 into Count} do
          t.year = 2025.7
          t.month = 11.9
       end
    end
 
    jit.flush()
-   for i = 1, 20 do
+   for i in {1 into 20} do
       traced_double_to_int(10)
    end
 

@@ -275,12 +275,11 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <name>GetCursorInfo</name>
     <category>Cursor</category>
     <comment>Retrieves graphics information from the active mouse cursor.</comment>
-    <prototype>ERR gfx::GetCursorInfo(struct CursorInfo * Info, INT Size)</prototype>
-    <tiriPrototype>err = GetCursorInfo(Info:any, Size:num)</tiriPrototype>
+    <prototype>ERR gfx::GetCursorInfo(struct CursorInfo * Info)</prototype>
+    <tiriPrototype>err = GetCursorInfo(Info:any)</tiriPrototype>
     <tags>mutates-input, pure-query</tags>
     <input>
       <param type="struct CursorInfo *" name="Info">Pointer to a <st>CursorInfo</st> structure.</param>
-      <param type="INT" name="Size">The byte-size of the <code>Info</code> structure.</param>
     </input>
     <description>
 <p>The GetCursorInfo() function is used to retrieve useful information on the graphics structure of the mouse cursor.  It will return the maximum possible dimensions for custom cursor graphics and indicates the optimal bits-per-pixel setting for the hardware cursor.</p>

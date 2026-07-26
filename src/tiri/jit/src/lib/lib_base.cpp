@@ -130,7 +130,26 @@ LJLIB_ASM(assert)      LJLIB_REC(.)
 
 constexpr uint32_t TYPE_NAME_USERDATA = 3;
 constexpr uint32_t TYPE_NAME_RANGE = 15;
-constexpr uint8_t TIRI_TYPE_RANGE_TAG = uint8_t(~LJ_TUDATA);
+
+static uint32_t tiri_type_name_index(TiriType Type)
+{
+   switch (Type) {
+      case TiriType::Nil:      return 0;
+      case TiriType::Bool:     return 2;
+      case TiriType::Str:      return 4;
+      case TiriType::Struct:   return 6;
+      case TiriType::Func:     return 8;
+      case TiriType::Object:   return 10;
+      case TiriType::Table:    return 11;
+      case TiriType::Array:    return 13;
+      case TiriType::Num:      return 14;
+      case TiriType::Range:    return TYPE_NAME_RANGE;
+      case TiriType::Userdata: return TYPE_NAME_USERDATA;
+      case TiriType::Any:
+      case TiriType::Unknown:  return TYPE_NAME_USERDATA;
+   }
+   return TYPE_NAME_USERDATA;
+}
 
 static bool is_range_userdata(lua_State *L, GCudata *Userdata)
 {
@@ -171,9 +190,8 @@ LJLIB_ASM(type)      LJLIB_REC(.)
       else if (ud->udtype IS UDTYPE_THUNK) {
          ThunkPayload *payload = thunk_payload(ud);
          if (payload->expected_type != 0xFF) {
-            // Use the declared type string from the upvalue array
-            uint32_t type_index = payload->expected_type;
-            if (type_index IS TIRI_TYPE_RANGE_TAG) type_index = TYPE_NAME_RANGE;
+            // Use the declared logical type rather than the thunk container's userdata tag.
+            uint32_t type_index = tiri_type_name_index(TiriType(payload->expected_type));
             GCstr *type_str = strV(&fn->c.upvalue[type_index]);
             setstrV(L, L->base - 1 - LJ_FR2, type_str);
             return FFH_RES(1);
@@ -805,8 +823,12 @@ LJLIB_CF(resolve)
 LJLIB_CF(__create_thunk)
 {
    GCfunc *fn = lj_lib_checkfunc(L, 1);
-   int expected_type = (int)lj_lib_checkint(L, 2);
-   lj_thunk_new(L, fn, expected_type);
+   int expected_type = int(lj_lib_checkint(L, 2));
+   if (expected_type != 0xff and
+       (expected_type < int(TiriType::Nil) or expected_type > int(TiriType::Userdata))) {
+      lj_err_argv(L, 2, ErrMsg::BADTYPE, "valid logical type code", "number");
+   }
+   lj_thunk_new(L, fn, uint8_t(expected_type));
    return 1;
 }
 
@@ -1019,7 +1041,7 @@ extern int luaopen_base(lua_State* L)
    reg_func_prototype("setmetatable", { TiriType::Table }, { TiriType::Table, TiriType::Table });
    reg_func_prototype("select", { TiriType::Any }, { TiriType::Any }, FProtoFlags::Variadic);
    reg_func_prototype("next", { TiriType::Any, TiriType::Any }, { TiriType::Table, TiriType::Any });
-   reg_func_prototype("newproxy", { TiriType::Any }, { TiriType::Any });
+   reg_func_prototype("newproxy", { TiriType::Userdata }, { TiriType::Any });
    reg_func_prototype("__create_thunk", { TiriType::Any }, { TiriType::Func, TiriType::Num });
    reg_func_prototype("ltr", { TiriType::Str }, { TiriType::Str });
 

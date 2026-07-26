@@ -164,7 +164,7 @@ end
    -- Pass typed array as function argument
    function sum_array(a)
       total = 0
-      for i = 0, #a - 1 do
+      for i in {0 to #a} do
          total += a[i]
       end
       return total
@@ -381,7 +381,7 @@ end
    -- Function returning typed array
    function makeNumbers(n)
       result = array<int, n>
-      for i = 0, n - 1 do
+      for i in {0 to n} do
          result[i] = i + 1
       end
       return result
@@ -416,7 +416,7 @@ end
    arr[2] = { x = 5, y = 6 }
 
    total = 0
-   for i = 0, 2 do
+   for i in {0 to 3} do
       total += arr[i].x + arr[i].y
    end
    assert(total is 21, "Sum of all x and y should be 21, got " .. total)
@@ -429,7 +429,7 @@ end
    -- Numeric for loop iteration
    arr = array<int> { 10, 20, 30, 40, 50 }
    sum = 0
-   for i = 0, #arr - 1 do
+   for i in {0 to #arr} do
       sum += arr[i]
    end
    assert(sum is 150, "Sum should be 150, got " .. sum)

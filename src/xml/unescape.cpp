@@ -54,7 +54,7 @@ bool decode_numeric_reference(const char *Start, size_t Length, char *Buffer, si
       position++;
    }
 
-   ResultLength = UTF8WriteValue(unicode, Buffer, 6);
+   ResultLength = UTF8WriteValue(unicode, std::span<int8_t>((int8_t *)Buffer, 6));
    return true;
 }
 
@@ -360,7 +360,8 @@ static void xml_unescape(extXML *Self, std::string &String)
                if (glHTML.contains(lookup)) {
                   auto unicode = glHTML[lookup];
                   char unichar[6];
-                  auto unilen = UTF8WriteValue(unicode, unichar, sizeof(unichar));
+                  auto unilen = UTF8WriteValue(unicode,
+                     std::span<int8_t>((int8_t *)unichar, sizeof(unichar)));
                   String.replace(c, end - c, unichar, unilen);
                   c += unilen;
                }

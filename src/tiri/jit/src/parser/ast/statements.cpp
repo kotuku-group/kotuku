@@ -455,7 +455,8 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
                std::format("Unknown array element type '{}'", element_name));
          }
 
-         field.Type |= FD_CPP|FD_ARRAY;
+         field.Type |= FD_VECTOR;
+         if (field.Type & FD_STRING) field.Type |= FD_CPP;
          field.ArraySize = 1;
          type_display = std::format("array<{}>", element_name);
       }
@@ -1698,7 +1699,7 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
    std::string source;
    source.resize(size_t(file_size));
    int bytes_read = 0;
-   ERR err = file->read(source.data(), file_size, &bytes_read);
+   ERR err = file->read(std::span<int8_t>((int8_t *)source.data(), size_t(file_size)), &bytes_read);
 
    if (err != ERR::Okay or bytes_read <= 0) {
       this->ctx.pop_import();

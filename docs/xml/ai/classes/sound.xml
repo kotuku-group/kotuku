@@ -1,30 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Sound" mod="Audio" c="High-level audio sample playback interface with intelligent resource management and format detection." cat="Audio" id="105ee06e" v="1">
+<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="Sound" mod="Audio" c="High-level audio sample playback interface with intelligent resource management and format detection." cat="Audio" id="825a6b79" v="1">
   <ai:a n="Activate" c="Plays the audio sample." p="ERR acActivate(*Object)"/>
   <ai:a n="Deactivate" c="Stops the audio sample and resets the playback position." p="ERR acDeactivate(*Object)"/>
   <ai:a n="Disable" c="Disable playback of an active audio sample, equivalent to pausing." p="ERR acDisable(*Object)"/>
   <ai:a n="Enable" c="Continues playing a sound if it has been disabled." p="ERR acEnable(*Object)"/>
-  <ai:a n="GetKey" c="Retrieve custom key values." p="ERR acGetKey(*Object, CSTRING Key, STRING Value, INT Size)">
-    <ai:i n="Key" t="CSTRING" c="The name of a key value."/>
+  <ai:a n="GetKey" c="Retrieve custom key values." p="ERR acGetKey(*Object, std::string_view Key, std::string &amp;Value)">
+    <ai:i n="Key" t="STRVIEW" c="The name of a key value."/>
     <ai:i n="Value" t="STRING" c="Pointer to a buffer space large enough to hold the retrieved value."/>
-    <ai:i n="Size" t="INT" c="Indicates the byte size of the Buffer."/>
   </ai:a>
-  <ai:a n="Read" c="Read decoded audio from the sound sample." p="ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)">
-    <ai:i n="Buffer" t="APTR" c="Points a buffer that will receive the data."/>
-    <ai:i n="Length" t="INT" c="The total number of bytes to read from the object. This value cannot exceed the size of the Buffer."/>
+  <ai:a n="Read" c="Read decoded audio from the sound sample." p="ERR acRead(*Object, std::span&lt;int8_t&gt; Buffer, INT *Result)">
+    <ai:i n="Buffer" t="std::span&lt;int8_t&gt;" c="A mutable buffer that will receive the data."/>
     <ai:i n="Result" t="INT" c="The Read action will write this parameter with the total number of bytes read into the Buffer."/>
   </ai:a>
   <ai:a n="SaveToObject" c="Saves audio sample data to an object." p="ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)">
     <ai:i n="Dest" t="OBJECTID" c="Refers to an object that will receive the encoded data."/>
-    <ai:i n="ClassID" t="CLASSID" c="Can refer to a sub-class that should be used when encoding the data."/>
+    <ai:i n="ClassID" t="CLASSID" c="Can refer to a derived class that should be used when encoding the data."/>
   </ai:a>
   <ai:a n="Seek" c="Moves the cursor position for reading data." p="ERR acSeek(*Object, DOUBLE Offset, INT Position)">
     <ai:i n="Offset" t="DOUBLE" c="The desired offset to seek to, relative to the Position parameter."/>
     <ai:i n="Position" t="POS" c="The position that defines the starting point for Offset."/>
   </ai:a>
-  <ai:a n="SetKey" c="Define custom tags that will be saved with the sample data." p="ERR acSetKey(*Object, CSTRING Key, CSTRING Value)">
-    <ai:i n="Key" t="CSTRING" c="The name of the target key."/>
-    <ai:i n="Value" t="CSTRING" c="The string value to associate with Key."/>
+  <ai:a n="SetKey" c="Define custom tags that will be saved with the sample data." p="ERR acSetKey(*Object, std::string_view Key, std::string_view Value)">
+    <ai:i n="Key" t="STRVIEW" c="The name of the target key."/>
+    <ai:i n="Value" t="STRVIEW" c="The string value to associate with Key."/>
   </ai:a>
   <ai:f n="Active" c="Returns true if the sound sample is being played back." t="INT" a="G"/>
   <ai:f n="Audio" c="Refers to the audio object/device to use for playback." t="OBJECTID" a="RI"/>
@@ -33,6 +31,7 @@
   <ai:f n="ChannelIndex" c="Refers to the channel that the sound is playing through." t="INT" a="R"/>
   <ai:f n="Compression" c="Determines the amount of compression used when saving an audio sample." t="INT" a="RW"/>
   <ai:f n="Duration" c="Returns the duration of the sample, measured in seconds." t="DOUBLE" a="G"/>
+  <ai:f n="Elapsed" c="Returns the elapsed playback time, measured in seconds." t="DOUBLE" a="G"/>
   <ai:f n="Flags" c="Optional initialisation flags." t="SDF" a="RS"/>
   <ai:f n="Frequency" c="The frequency of a sampled sound is specified here." t="INT" a="RI"/>
   <ai:f n="Header" c="Contains the first 128 bytes of data in a sample's file header." t="INT8 []" a="G"/>
@@ -43,10 +42,13 @@
   <ai:f n="Octave" c="The octave to use for sample playback." t="INT" a="RS"/>
   <ai:f n="OnStop" c="This callback is triggered when sample playback stops." t="FUNCTION" a="GS"/>
   <ai:f n="Pan" c="Determines the horizontal position of a sound when played through stereo speakers." t="DOUBLE" a="RS"/>
-  <ai:f n="Path" c="Location of the audio sample data." t="STRING" a="GS"/>
+  <ai:f n="Path" c="Location of the audio sample data." t="STRING" a="RI"/>
+  <ai:f n="PlayPosition" c="Returns the current playback position, measured in bytes." t="INT64" a="G"/>
   <ai:f n="Playback" c="The playback frequency of the sound sample can be defined here." t="INT" a="RS"/>
   <ai:f n="Position" c="The current playback position." t="INT64" a="RS"/>
   <ai:f n="Priority" c="The priority of a sound in relation to other sound samples being played." t="INT" a="RS"/>
+  <ai:f n="Progress" c="Returns the current playback progress as a normalised value." t="DOUBLE" a="G"/>
+  <ai:f n="Remaining" c="Returns the remaining playback time, measured in seconds." t="DOUBLE" a="G"/>
   <ai:f n="Stream" c="Defines the preferred streaming method for the sample." t="STREAM" a="RW"/>
   <ai:f n="Volume" c="The volume to use when playing the sound sample." t="DOUBLE" a="RS"/>
 </ai:cl>

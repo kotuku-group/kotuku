@@ -7,7 +7,7 @@
 --   table will be substituted in its place.
 
 global docModuleHeader, docFunction, docTypes, docStructures, docClass
-global substituteReferences
+global substituteReferenceMatches, substituteReferences
 extern functionParameterType
 
 rx_all_anchored = <{ regex.new([[^!([\w]*)$]]) }>
@@ -102,13 +102,12 @@ setAction('CopyData', {
 
 setAction('DataFeed', {
    comment   = 'Provides a mechanism for feeding data to objects.',
-   prototype = 'ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, APTR Buffer, INT Size)',
+   prototype = 'ERR acDataFeed(*Object, OBJECTID Object, DATA Datatype, std::span<const int8_t> Buffer)',
    tiriPrototype = 'err = Object.acDataFeed(Object:obj, Datatype:DATA, Buffer:str)',
    params    = {
       { name='Object', type='OBJECTID', comment='Must refer to the unique ID of the object that you represent. If you do not represent an object, set this parameter to the current task ID.' },
       { name='Datatype', type='DATA', lookup='DATA', comment='The type of data being sent.' },
-      { name='Buffer', type='APTR', comment='The data being sent to the target object.' },
-      { name='Size', type='INT', comment='The size of the data in Buffer.' }
+      { name='Buffer', type='std::span<const int8_t>', comment='The data being sent to the target object.' }
    }
 })
 
@@ -276,11 +275,10 @@ setAction('Query', {
 
 setAction('Read', {
    comment   = 'Reads raw data information from objects.',
-   prototype = 'ERR acRead(*Object, APTR Buffer, INT Length, INT *Result)',
-   tiriPrototype = 'err, Result:num = Object.acRead(Buffer:str, Length:num)',
+   prototype = 'ERR acRead(*Object, std::span<int8_t> Buffer, INT *Result)',
+   tiriPrototype = 'err, Result:num = Object.acRead(Buffer:array)',
    params    = {
-      { name='Buffer', type='APTR', comment='Points a buffer that will receive the data.' },
-      { name='Length', type='INT', comment='The total number of bytes to read from the object.  This value cannot exceed the size of the Buffer.' },
+      { name='Buffer', type='std::span<int8_t>', comment='A mutable buffer that will receive the data.' },
       { name='Result', type='INT', comment='The Read action will write this parameter with the total number of bytes read into the Buffer.' }
    }
 })
@@ -407,11 +405,11 @@ setAction('Unlock', {
 
 setAction('Write', {
    comment   = 'Writes data to objects that provide storage or output services.',
-   prototype = 'ERR acWrite(*Object, APTR Buffer, INT Length, INT Result)',
-   tiriPrototype = 'err, Result:num = Object.acWrite(Buffer:str, Length:num)',
+   prototype = 'ERR acWrite(*Object, std::span<const int8_t> Buffer, INT *Result)',
+   tiriPrototype = 'err, Result:num = Object.acWrite(Buffer:str)',
    params    = {
-      { name='Buffer', type='APTR', comment='A buffer containing the data that will be written to the object.' },
-      { name='Length', type='INT', comment='The total number of bytes to write to the object.' },
+      { name='Buffer', type='std::span<const int8_t>',
+         comment='A buffer containing the data that will be written to the object.' },
       { name='Result', type='INT', comment='This parameter with be updated with the total number of bytes written from the Buffer.' }
    }
 })
@@ -476,7 +474,7 @@ global function saveDocuments()
                print(f'Saving XML class documentation to "{fl.path}"')
                fl.acWrite(out)
             except ex
-               print('Failed to produce documentation for class ' .. className .. ': ' .. ex.message)
+               print(f'[{ex.source}:{ex.line}] Failed to produce documentation for class ' .. className .. ': ' .. ex.message)
             end
          elseif not cl.forwardDeclared then
             print('No meta information for class ' .. className)
@@ -489,10 +487,14 @@ end
 -- Used for extracting descriptions, notes etc.  NB: <pre> should be used for multi-line preformatting, while <code>
 -- should be used for in-place code formatting.
 
-global function extractParagraph(Input:str, Caller:str, References:table)
+global function extractParagraph(Input:str, Context:table, References:table)
    assert(Input, 'No Input provided to extractParagraph()')
 
    Input = Input:trim()
+
+   Input = substituteReferenceMatches(Input, rx_inline_code, function(Cap, Match)
+      return '<code>' .. Cap[0]:unescapeXML():escXML() .. '</code>'
+   end)
 
    -- Convert dangling XML characters: < > &
 
@@ -503,7 +505,6 @@ global function extractParagraph(Input:str, Caller:str, References:table)
 
    Input = rx_pre_section.replace(Input, '<pre>$1</pre>')
    Input = rx_md_codeblock.replace(Input, '<pre>$1</pre>')
-   Input = rx_inline_code.replace(Input, '<code>$1</code>')
 
    -- Wrap each line inside a <p> tag and take into account lines that start with XML tags such as <pre> or otherwise
    -- need special treatment.
@@ -598,13 +599,13 @@ global function extractParagraph(Input:str, Caller:str, References:table)
    -- Handle <field>, <method> and <action> references
 
    if output?? and output:len() > 12 then
-      if Caller and Caller.meta then
-         output = substituteReferences(output, Caller)
+      if Context and Context.meta then
+         output = substituteReferences(output, Context)
       else
          output = substituteReferences(output, nil)
       end
 
-      return cleanXMLString(output, Caller)
+      return cleanXMLString(output)
    else
       return ''
    end
@@ -612,7 +613,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function substituteReferenceMatches(Input:str, Pattern, Handler:func):str
+global function substituteReferenceMatches(Input:str, Pattern, Handler:func):str
    local result = ''
    local last_end = 0
 
@@ -654,6 +655,7 @@ global function substituteReferences(String:str, Class:table):str
    String = substituteReferenceMatches(String, rx_action_method, function(Cap, Match)
       local call_name = Cap[0]
       if not Class then
+         print('Missing class association for action/method reference "' .. call_name .. '"')
          return f'<action>{call_name}</action>'
       elseif Class.lookupMethods?[call_name] then
          return f'<method>{call_name}</method>'
@@ -691,6 +693,7 @@ global function substituteReferences(String:str, Class:table):str
 
    String = substituteReferenceMatches(String, rx_ext_func_ref, function(Cap, Match)
       -- TODO: Validate that the module and function actually exist.  Easiest way is with mod.load()
+      -- and build a cache of the function list.
       return f'<function module="{Cap[0]}">{Cap[1]}</function>'
    end)
 
@@ -1171,7 +1174,7 @@ global function docFunction(Function)
    -- Description
 
    if Function.description?? then
-      out ..= f'    <description>\n{extractParagraph(Function.description, Function)}\n    </description>\n'
+      out ..= f'    <description>\n{extractParagraph(Function.description, Function, Function.references)}\n    </description>\n'
    else
       error(f'{Function.name}() has no description.')
    end
