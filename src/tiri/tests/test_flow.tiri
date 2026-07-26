@@ -58,32 +58,32 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Numeric for loop tests
+-- Range loop tests
 
-@Test function numericForBreak()
+@Test function rangeForBreak()
    result = 0
-   for i = 1, 10 do
+   for i in {1 into 10} do
       result += i
       if i is 5 then break end
    end
    assert(result is 15, 'Break should stop at 5, result=' .. result)
 end
 
-@Test function numericForContinue()
+@Test function rangeForContinue()
    result = 0
-   for i = 1, 10 do
+   for i in {1 into 10} do
       if i > 5 then continue end
       result += i
    end
    assert(result is 15, 'Continue should skip i > 5, result=' .. result)
 end
 
-@Test function numericForNestedBreak()
+@Test function rangeForNestedBreak()
    outer_last = 0
    inner_last = 0
-   for i = 1, 5 do
+   for i in {1 into 5} do
       outer_last = i
-      for j = 1, 5 do
+      for j in {1 into 5} do
          inner_last = j
          if j is 3 then break end
       end
@@ -93,10 +93,10 @@ end
    assert(inner_last is 3, 'Inner loop should stop at 3')
 end
 
-@Test function numericForNestedContinue()
+@Test function rangeForNestedContinue()
    sum = 0
-   for i = 1, 3 do
-      for j = 1, 4 do
+   for i in {1 into 3} do
+      for j in {1 into 4} do
          if j is 2 then continue end
          sum += j
       end
@@ -105,9 +105,9 @@ end
    assert(sum is 24, 'Nested continue should skip j=2, sum=' .. sum)
 end
 
-@Test function numericForWithStep()
+@Test function rangeForWithStep()
    result = 0
-   for i = 10, 1, -2 do
+   for i in {10 into 1 by -2} do
       result += i
       if i is 4 then break end
    end
@@ -210,7 +210,7 @@ end
 
 @Test function mixedLoopBreak()
    result = 0
-   for i = 1, 5 do
+   for i in {1 into 5} do
       j = 0
       while j < 10 do
          j++
@@ -220,7 +220,7 @@ end
       if i is 2 then break end
    end
    -- 2 outer iterations * 3 inner iterations = 6
-   assert(result is 6, 'Mixed numeric for/while break, result=' .. result)
+   assert(result is 6, 'Mixed range/while break, result=' .. result)
 end
 
 @Test function mixedLoopContinue()
@@ -228,20 +228,20 @@ end
    i = 0
    while i < 3 do
       i++
-      for j = 1, 4 do
+      for j in {1 into 4} do
          if j is 2 then continue end
          result++
       end
    end
    -- 3 outer * 3 inner (skipping j=2) = 9
-   assert(result is 9, 'Mixed while/numeric for continue, result=' .. result)
+   assert(result is 9, 'Mixed while/range continue, result=' .. result)
 end
 
 @Test function tripleNestedBreak()
    count = 0
-   for i = 1, 10 do
-      for j = 1, 10 do
-         for k = 1, 10 do
+   for i in {1 into 10} do
+      for j in {1 into 10} do
+         for k in {1 into 10} do
             count++
             if k is 2 then break end
          end
@@ -255,7 +255,7 @@ end
 
 @Test function breakAfterContinue()
    result = 0
-   for i = 1, 10 do
+   for i in {1 into 10} do
       if i % 2 is 0 then continue end
       result += i
       if i is 7 then break end
@@ -266,8 +266,8 @@ end
 
 @Test function continueAfterNestedBreak()
    sum = 0
-   for i = 1, 5 do
-      for j = 1, 5 do
+   for i in {1 into 5} do
+      for j in {1 into 5} do
          if j is 2 then break end
          sum += j
       end

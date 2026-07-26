@@ -1063,7 +1063,7 @@ static bool test_lib_array_fill(kt::Log &Log)
       local arr = array.new(10, "int")
       array.fill(arr, 42)
       local ok = true
-      for i = 0, 9 do
+      for i in {0 into 9} do
          if arr[i] != 42 then ok = false end
       end
       return ok

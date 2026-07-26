@@ -693,7 +693,7 @@ static bool test_numeric_for_ast(kt::Log &log)
    constexpr const char* source = R"(
 local limit = 5
 local sum = 0
-for index = 1, limit, 2 do
+for index in {1 into 5 by 2} do
    sum += index
 end
 return sum
@@ -747,6 +747,63 @@ return sum
    if (not add_payload or not (add_payload->op IS AssignmentOperator::Add)) {
       log.error("expected compound add assignment inside loop");
       return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool test_deprecated_numeric_for_rejected(kt::Log &Log)
+{
+   struct DeprecatedForCase {
+      std::string_view source;
+      int expected_column;
+   };
+
+   constexpr std::array<DeprecatedForCase, 3> cases = { {
+      { "for i = 0, 8 do end", 7 },
+      { "for i=0,8 do end", 6 },
+      { "for i = start, stop, step do end", 7 }
+   } };
+
+   for (const auto &test_case : cases) {
+      auto result = build_ast_from_source(test_case.source, true);
+      size_t deprecated_count = 0;
+
+      for (const ParserDiagnostic &diagnostic : result.diagnostics) {
+         if (diagnostic.code != ParserErrorCode::DeprecatedSyntax) continue;
+
+         deprecated_count++;
+         if (diagnostic.severity != ParserDiagnosticSeverity::Error or
+             diagnostic.token.kind() != TokenKind::Equals or
+             diagnostic.token.span().line.lineNumber() != 1 or
+             diagnostic.token.span().column.lineNumber() != test_case.expected_column or
+             diagnostic.file_index != 0) {
+            Log.error("deprecated numeric for diagnostic has the wrong severity, token or source location");
+            log_diagnostics(result.diagnostics, Log);
+            return false;
+         }
+
+         if (diagnostic.message.find("inclusive range") IS std::string::npos) {
+            Log.error("deprecated numeric for diagnostic does not identify the supported inclusive range syntax");
+            return false;
+         }
+      }
+
+      if (deprecated_count != 1) {
+         Log.error("expected one deprecated numeric for diagnostic, got %" PRId64, int64_t(deprecated_count));
+         log_diagnostics(result.diagnostics, Log);
+         return false;
+      }
+   }
+
+   auto range_result = build_ast_from_source("for i in {0 into 8} do end", true);
+   for (const ParserDiagnostic &diagnostic : range_result.diagnostics) {
+      if (diagnostic.code IS ParserErrorCode::DeprecatedSyntax) {
+         Log.error("supported range loop emitted a deprecated syntax diagnostic");
+         return false;
+      }
    }
 
    return true;
@@ -2382,7 +2439,7 @@ static bool test_ast_statement_matrix(kt::Log &log)
    constexpr std::array<PipelineSnippet, 4> snippets = { {
       { "control_flow_ladder", R"(
 local total = 0
-for i = 1, 4 do
+for i in {1 into 4} do
    if i % 2 is 0 then
       total += i
    elseif i > 3 then
@@ -2446,7 +2503,7 @@ return fn(3, 4)
       // )" },
       { "continue_ladder", R"(
 local value = 0
-for i = 1, 3 do
+for i in {1 into 3} do
    value += 1
    if i < 3 then
       continue
@@ -3068,7 +3125,7 @@ static bool test_type_guided_emission(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 38> tests = { {
+   constexpr std::array<TestCase, 39> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -3080,6 +3137,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "local_function_table_ast", test_local_function_table_ast },
       { "ast_statement_matrix", test_ast_statement_matrix },
       { "numeric_for_ast", test_numeric_for_ast },
+      { "deprecated_numeric_for_rejected", test_deprecated_numeric_for_rejected },
       { "array_length_range_for_ast", test_array_length_range_for_ast },
       { "generic_for_ast", test_generic_for_ast },
       { "repeat_defer_ast", test_repeat_defer_ast },

@@ -800,7 +800,7 @@ LJFOLDF(kfold_conv_knum_int_num)
       /* We're about to create a guard which always fails, like CONV +1.5.
       ** Some pathological loops cause this during LICM, e.g.:
       **   local x,k,t = 0,1.5,{1,[1.5]=2}
-      **   for i=1,200 do x = x+ t[k]; k = k == 1 and 1.5 or 1 end
+      **   for i in {1 into 200} do x = x + t[k]; k = k is 1 and 1.5 or 1 end
       **   assert(x == 300)
       */
       return FAILFOLD;

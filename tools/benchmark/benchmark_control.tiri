@@ -156,35 +156,35 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Goal: Execute numeric for loops with start, end, step
+-- Goal: Execute range loops with start, end, step
 
 @Test function ControlForNumericLoop()
    for i in {0 to 10000} do
       local sum = 0
 
       -- Simple ascending loop
-      for j = 0, 99 do
+      for j in {0 into 99} do
          sum += j
       end
 
       -- Loop with step
-      for j = 0, 99, 2 do
+      for j in {0 into 99 by 2} do
          sum += j
       end
 
       -- Descending loop
-      for j = 99, 0, -1 do
+      for j in {99 into 0 by -1} do
          sum += j
       end
 
       -- Descending with step
-      for j = 100, 0, -5 do
+      for j in {100 into 0 by -5} do
          sum += j
       end
 
       -- Nested numeric loops
-      for x = 0, 9 do
-         for y = 0, 9 do
+      for x in {0 into 9} do
+         for y in {0 into 9} do
             sum += x * y
          end
       end
@@ -192,7 +192,7 @@ end
       -- Loop with computed bounds
       local start = i % 10
       local finish = start + 50
-      for j = start, finish do
+      for j in {start into finish} do
          sum += 1
       end
    end
@@ -353,7 +353,7 @@ end
       local count = 0
 
       -- Break from for loop
-      for j = 0, 999 do
+      for j in {0 into 999} do
          if j >= 100 then
             break
          end
@@ -361,7 +361,7 @@ end
       end
 
       -- Continue in for loop (skip even numbers)
-      for j = 0, 99 do
+      for j in {0 into 99} do
          if j % 2 is 0 then
             continue
          end
@@ -388,8 +388,8 @@ end
       end
 
       -- Break from nested loop (inner only)
-      for x = 0, 9 do
-         for y = 0, 99 do
+      for x in {0 into 9} do
+         for y in {0 into 99} do
             if y >= 10 then
                break
             end
@@ -398,8 +398,8 @@ end
       end
 
       -- Continue in nested loop
-      for x = 0, 9 do
-         for y = 0, 9 do
+      for x in {0 into 9} do
+         for y in {0 into 9} do
             if y % 2 is 0 then
                continue
             end

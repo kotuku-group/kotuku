@@ -48,6 +48,26 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Removed Lua-style numeric for syntax
+
+@Test function ValidateDeprecatedNumericForDiagnostic()
+   result = debug.validate("for i = 0, 8 do print(i) end")
+   assert(result.success is false, "Lua-style numeric for syntax should fail validation")
+   assert(#result.diagnostics > 0, "Lua-style numeric for syntax should produce a diagnostic")
+
+   diag = result.diagnostics[0]
+   assert(diag.code is 'DeprecatedSyntax', f"Expected DeprecatedSyntax, got {diag.code}")
+   assert(diag.severity is 2, f"Expected error severity, got {diag.severity}")
+   assert(diag.line is 0, f"Expected diagnostic on line 0, got {diag.line}")
+   assert(diag.column is 6, f"Expected diagnostic on '=' at column 6, got {diag.column}")
+   assert(diag.message:find('inclusive range'), "Diagnostic should identify inclusive range syntax")
+
+   replacement = debug.validate("for i in {0 into 8} do print(i) end")
+   assert(replacement.success is true, "Supported range loop should validate")
+   assert(#replacement.diagnostics is 0, "Supported range loop should not retain stale diagnostics")
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Undefined identifier reads
 
 @Test function ValidateUndefinedIdentifierReads()
@@ -317,14 +337,6 @@ end
          source = "repeat print('x') until"
       },
       {
-         name = 'numeric for missing limit',
-         source = "for i = 1 do print(i) end"
-      },
-      {
-         name = 'numeric for missing expression after comma',
-         source = "for i = 1, do print(i) end"
-      },
-      {
          name = 'generic for missing variable',
          source = "for in values({1, 2}) do print(i) end"
       },
@@ -582,7 +594,7 @@ end
       },
       {
          name = 'enum inside loop',
-         source = "for i = 1, 1 do enum LOOP_ENUM { ONE } end"
+         source = "for i in {1 into 1} do enum LOOP_ENUM { ONE } end"
       },
       {
          name = 'enum inside function',

@@ -10,15 +10,15 @@
 -- Script that uses string concatenation in various loop constructs
 
 glConcatScript = [[
-   -- Basic concatenation in numeric for loop (should warn)
+   -- Basic concatenation in range loop (should warn)
    result = ''
-   for i = 0, 10 do
+   for i in {0 into 10} do
       result = result .. tostring(i)  -- Warning: concat in loop
    end
 
    -- Compound concatenation in loop (should warn)
    result2 = ''
-   for i = 0, 10 do
+   for i in {0 into 10} do
       result2 ..= tostring(i)  -- Warning: compound concat in loop
    end
 
@@ -42,7 +42,7 @@ glConcatScript = [[
 
    -- Using table.concat (should NOT warn - this is the recommended approach)
    items = {}
-   for i = 0, 10 do
+   for i in {0 into 10} do
       items[#items + 1] = tostring(i)  -- Collect in table - no warning
    end
    final = table.concat(items, ', ')  -- Single concat outside loop - no warning
@@ -52,8 +52,8 @@ glConcatScript = [[
 -- Script that defines functions inside loops (should warn)
 
 glFunctionLoopScript = [[
-   -- Function expression in numeric for loop (should warn)
-   for i = 0, 10 do
+   -- Function expression in range loop (should warn)
+   for i in {0 into 10} do
       callback = function() return i end
    end
 
@@ -71,19 +71,19 @@ glFunctionLoopScript = [[
    end
 
    -- Arrow function in loop (should warn)
-   for i = 0, 5 do
+   for i in {0 into 5} do
       transform = (x => x * 2)
    end
 
    -- Function defined OUTSIDE loop, used inside (should NOT warn)
    local helper = function() return 42 end
-   for i = 0, 10 do
+   for i in {0 into 10} do
       _ = helper()
    end
 
    -- Named function defined outside loop (should NOT warn)
    function compute(x) return x * 2 end
-   for i = 0, 10 do
+   for i in {0 into 10} do
       _ = compute(i)
    end
 ]]
@@ -95,8 +95,8 @@ glGlobalScript = [[
    global glGlobalVar = 100  -- Explicit global declaration
    local_var = 50            -- Implicit local (Tiri default)
 
-   -- Numeric for loop with global access (should warn)
-   for i = 0, 10 do
+   -- Range loop with global access (should warn)
+   for i in {0 into 10} do
       _ = glGlobalVar  -- Warning expected: global in loop
    end
 
@@ -121,7 +121,7 @@ glGlobalScript = [[
 
    -- Correctly cached local (should NOT warn)
    local cached = glGlobalVar
-   for i = 0, 10 do
+   for i in {0 into 10} do
       _ = cached  -- No warning - local variable
    end
 
@@ -129,7 +129,7 @@ glGlobalScript = [[
    _ = glGlobalVar
 
    -- Implicit local in loop (should NOT warn - Tiri default is local)
-   for i = 0, 10 do
+   for i in {0 into 10} do
       _ = local_var  -- No warning - implicit local variable
    end
 ]]
@@ -160,10 +160,10 @@ end
 @Test function NestedLoops()
    statement = [[
    outer_result = ''
-   for i = 0, 3 do
+   for i in {0 into 3} do
       outer_result = outer_result .. '['  -- Warning: concat in outer loop
       inner = ''
-      for j = 0, 3 do
+      for j in {0 into 3} do
          inner = inner .. tostring(j)  -- Warning: concat in inner loop
       end
       outer_result = outer_result .. inner .. ']'  -- Warning: concat in outer loop (2 times)
@@ -181,7 +181,7 @@ end
 
 glChainedConcatScript = [[
    result = ''
-   for i = 0, 5 do
+   for i in {0 into 5} do
       -- Chained concatenation should warn for each .. operator
       result = result .. 'a' .. 'b' .. 'c'
    end
@@ -226,9 +226,9 @@ end
    global glOuter = 1  -- Explicit global
    global glInner = 2  -- Explicit global
 
-   for i = 0, 3 do
+   for i in {0 into 3} do
       _ = glOuter  -- Warning: global in loop (outer)
-      for j = 0, 3 do
+      for j in {0 into 3} do
          _ = glInner  -- Warning: global in loop (inner)
          _ = glOuter  -- Warning: global in loop (inner accessing outer global)
       end
@@ -266,9 +266,9 @@ end
 
 @Test function NestedLoops()
    statement = [[
-   for i = 0, 3 do
+   for i in {0 into 3} do
       outer_fn = function() return i end  -- Warning: function in loop
-      for j = 0, 3 do
+      for j in {0 into 3} do
          inner_fn = function() return i + j end  -- Warning: function in nested loop
       end
    end
@@ -286,7 +286,7 @@ end
 @Test function CallbackInLoop()
    statement = [[
    data = { { val = 3 }, { val = 1 }, { val = 2 } }
-   for i = 0, 5 do
+   for i in {0 into 5} do
       -- This is a common anti-pattern: sorting with inline comparator in loop
       table.sort(data, function(a, b) return a.val < b.val end)
    end
