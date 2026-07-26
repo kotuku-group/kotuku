@@ -3252,7 +3252,14 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
    if (proved_object) {
       table.result_type = TiriType::Object;
       table.object_class_id = CLASSID::NIL;
-      if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) table.k = ExpKind::IndexedObject;
+
+      // Call targets must retain generic lookup so the object metatable can resolve actions, methods and helpers.
+      // Unlike ordinary member expressions, safe member expressions materialise the lookup before emit_call_expr()
+      // can downgrade specialised expression kinds.
+
+      if (not Payload.is_call_target and table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+         table.k = ExpKind::IndexedObject;
+      }
 
       // Look up the field type from the class dictionary for compile-time type checking.
 
@@ -3277,7 +3284,9 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
    }
    else if (proved_struct) {
       table.result_type = TiriType::Struct;
-      if (table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) table.k = ExpKind::IndexedStruct;
+      if (not Payload.is_call_target and table.k IS ExpKind::Indexed and int32_t(table.u.s.aux) < 0) {
+         table.k = ExpKind::IndexedStruct;
+      }
       apply_struct_field_metadata(table, emitted_struct_def, Payload.member.symbol);
    }
 
