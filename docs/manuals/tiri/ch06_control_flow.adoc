@@ -1,5 +1,7 @@
 // VERIFIED: 2026-02-10
 // UPDATED: 2026-06-30 — Shorthand guard falsey set now includes empty tables; described as empty collections.
+// UPDATED: 2026-07-26 - Range iteration generalised to fractional operands; clarified the numeric for loop optimisation criteria (commit 687f1eb7)
+// UPDATED: 2026-07-26 - Replaced the Numeric For Loop section with Range For Loop following removal of the Lua-style numeric for syntax (commit 1f23b978)
 
 [[ch-control-flow]]
 == Control Flow
@@ -81,33 +83,22 @@ until line is 'quit'
 
 `break` and `continue` are permitted.  `continue` jumps to the `until` condition check.
 
-[[sec-numeric-for-loop]]
-=== Numeric For Loop
+[[sec-range-for-loop]]
+=== Range For Loop
 [source,ebnf]
 ----
-numeric_for = "for" identifier "=" expression "," expression [ "," expression ] "do" block "end" ;
+range_for = "for" [ identifier "in" ] range_literal "do" block "end" ;
 ----
 
-indexterm:[loops, numeric for] `for Name = Start, Stop [, Step] do pass:[...] end`
+indexterm:[loops, range for] `for Name in {Start to Stop [by Step]} do pass:[...] end`
 
-Evaluates `Start`, `Stop`, and `Step` once before the loop begins.  If `Step` is omitted, it defaults to `1`.  On each iteration, the loop variable `Name` is set to the current value.  The loop terminates when `Name` exceeds `Stop` (for a positive `Step`) or falls below `Stop` (for a negative `Step`).
-
-[source,tiri]
-----
-for i = 0, 4 do
-   print(i)   -- 0, 1, 2, 3, 4
-end
-
-for i = 10, 1, -2 do
-   print(i)   -- 10, 8, 6, 4, 2
-end
-----
+Counted iteration is expressed with a range literal.  `Start`, `Stop` and `Step` are evaluated once before the loop begins.  On each iteration, the loop variable `Name` is set to the current value.  The loop terminates when the sequence defined by the range is exhausted.
 
 The loop variable is local to the loop body and is not accessible after the loop terminates.  Assigning to the loop variable inside the body does not affect iteration.
 
 ==== Range Iteration
 
-A range literal can be used with `in` to iterate over a sequence of integers:
+A range literal can be used with `in` to iterate over a numeric sequence:
 
 [source,tiri]
 ----
@@ -120,9 +111,16 @@ for i in {1 into 5} do
 end
 ----
 
-`{Start to Stop}` is an exclusive range: the stop value is not included.  `{Start into Stop}` is an inclusive range: the stop value is included.  The step direction is determined automatically from the start and stop values.
+`{Start to Stop}` is an exclusive range: the stop value is not included.  `{Start into Stop}` is an inclusive range: the stop value is included.  The step direction is determined automatically from the start and stop values.  Operands can be fractional:
 
-When a single loop variable iterates over a range literal with constant bounds, the compiler optimises this into a numeric for loop.  Variable bounds use the generic iterator path.
+[source,tiri]
+----
+for i in {0 to 1 by 0.25} do
+   print(i)   -- 0, 0.25, 0.5, 0.75
+end
+----
+
+When a single loop variable iterates over a range literal whose bounds are constant whole numbers within the signed 32-bit integer range, the compiler lowers it to an optimised counted loop.  Variable bounds and fractional operands use the generic iterator path.  Both paths produce the same sequence.
 
 [source,tiri]
 ----
@@ -224,7 +222,7 @@ indexterm:[break statement] indexterm:[continue statement] `break` terminates th
 
 [source,tiri]
 ----
-for i = 0, 100 do
+for i in {0 to 100} do
    if i is 5 then break end
 end
 ----
@@ -235,8 +233,8 @@ In nested loops, `break` exits only the innermost loop:
 
 [source,tiri]
 ----
-for i = 0, 4 do
-   for j = 0, 4 do
+for i in {0 to 5} do
+   for j in {0 to 5} do
       if j is 2 then break end
    end
    -- continues here after inner break
@@ -249,7 +247,7 @@ end
 
 [source,tiri]
 ----
-for i = 0, 9 do
+for i in {0 to 10} do
    if i % 2 is 0 then continue end
    print(i)   -- 1, 3, 5, 7, 9
 end

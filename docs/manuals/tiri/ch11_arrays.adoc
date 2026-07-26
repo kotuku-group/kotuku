@@ -2,6 +2,7 @@
 // UPDATED: 2026-05-18 - Updated negative index slicing to reflect corrected inclusive/exclusive stop semantics (commit 15d3bed4)
 // UPDATED: 2026-05-20 - Updated concat() with new API (separator-first, optional format, range support); removed join() which was merged into concat() (commit 2fbf2ea0)
 // UPDATED: 2026-07-02 - Documented in-place ..= append, byte-array string pushes, and array<char> as the preferred string-buffer builder (commit 1dc290463)
+// UPDATED: 2026-07-26 - Range arguments to fill(), find() and slice() must be whole-numbered; fractional ranges raise an error (commit 687f1eb7)
 
 [[ch-arrays]]
 == Arrays
@@ -422,7 +423,7 @@ arr:remove(1, 2)    -- arr = {1, 5}
 [.api]`arr:fill(Value, [Start, Count])` +
 [.api]`arr:fill(Value, Range)`
 
-Sets elements to `Value`.  With no additional arguments, fills the entire array.  With `Start` and `Count`, fills `Count` elements beginning at `Start`.  With a range, fills the elements selected by the range (supports exclusive, inclusive, negative, and stepped ranges).
+Sets elements to `Value`.  With no additional arguments, fills the entire array.  With `Start` and `Count`, fills `Count` elements beginning at `Start`.  With a range, fills the elements selected by the range (supports exclusive, inclusive, negative, and stepped ranges).  The range must be whole-numbered as defined in <<sec-range-index-requirement>>; a fractional range raises an error.
 
 [source,tiri]
 ----
@@ -505,7 +506,7 @@ Changes the array length to `NewSize`.  When growing, new elements are zero-init
 [.api]`index = arr:find(Value, [Start])` +
 [.api]`index = arr:find(Value, Range)`
 
-indexterm:[arrays, searching] indexterm:[arrays, querying] Searches for `Value` and returns its zero-based index, or `nil` if not found.  With a numeric `Start`, the search begins at that index.  With a range, the search is restricted to the indices selected by the range (supports exclusive, inclusive, negative, stepped, and reverse ranges).
+indexterm:[arrays, searching] indexterm:[arrays, querying] Searches for `Value` and returns its zero-based index, or `nil` if not found.  With a numeric `Start`, the search begins at that index.  With a range, the search is restricted to the indices selected by the range (supports exclusive, inclusive, negative, stepped, and reverse ranges).  The range must be whole-numbered as defined in <<sec-range-index-requirement>>; a fractional range raises an error.
 
 For `object` arrays, `Value` can be an object or a numeric UID.
 
@@ -540,7 +541,7 @@ indexterm:[arrays, copying] indexterm:[arrays, slicing] Creates a new array with
 
 [.api]`result = arr:slice(Range)`
 
-Returns a new array containing the elements selected by `Range`.  The result has the same element type as the source.  Supports exclusive, inclusive, negative, reverse, and stepped ranges.  Out-of-bounds indices are clamped.
+Returns a new array containing the elements selected by `Range`.  The result has the same element type as the source.  Supports exclusive, inclusive, negative, reverse, and stepped ranges.  Out-of-bounds indices are clamped.  The range must be whole-numbered as defined in <<sec-range-index-requirement>>; a fractional range raises an error.
 
 [source,tiri]
 ----

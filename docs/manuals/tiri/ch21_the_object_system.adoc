@@ -1,4 +1,5 @@
 // VERIFIED: 2026-02-13
+// UPDATED: 2026-07-26 - Migrated examples to range loops following removal of the Lua-style numeric for syntax (commit 1f23b978)
 
 [[ch-the-object-system]]
 == The Object System
@@ -376,7 +377,7 @@ Performance:: Locking an object keeps it in an accessible state, avoiding repeat
 xml = obj.new('xml', { source = myfile })
 
 with xml do
-   for i = 0, 100000 do
+   for i in {0 to 100000} do
       val = xml.source   -- immediate access, no per-field lock overhead
    end
 end

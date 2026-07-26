@@ -1,3 +1,5 @@
+// UPDATED: 2026-07-26 - Replaced numeric for loop guidance with range loops (commit 1f23b978)
+
 [[ch-performance-and-the-jit]]
 == Performance & the JIT
 indexterm:[performance] indexterm:[JIT] **Implementation-specific.** This chapter documents behaviour specific to the JIT (Just-In-Time) compiler as of March 2026 and is not part of the language specification.
@@ -673,7 +675,7 @@ result = tostring(buf) <2>
 
 Certain operations are not yet implemented in the JIT compiler.  When the trace recorder encounters a NYI operation, it aborts recording and the code falls back to the interpreter.  Common NYI triggers include:
 
-* `pairs()` and `next()` iteration — use `ipairs()`, `values()`, or numeric `for` loops where possible.
+* `pairs()` and `next()` iteration — use `ipairs()`, `values()`, or range loops where possible.
 * `table.sort()` with complex comparison functions.
 
 Use `jit.off()` on functions that unavoidably contain NYI operations to prevent the JIT from repeatedly attempting and failing to compile them.

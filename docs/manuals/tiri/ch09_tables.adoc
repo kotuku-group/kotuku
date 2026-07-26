@@ -1,5 +1,6 @@
 // VERIFIED: 2026-02-11
 // UPDATED: 2026-05-18 - Updated negative index slicing to reflect corrected inclusive/exclusive stop semantics (commit 15d3bed4)
+// UPDATED: 2026-07-26 - Range indices must be whole-numbered; fractional ranges raise an error (commit 687f1eb7)
 
 [[ch-tables]]
 == Tables
@@ -417,7 +418,7 @@ table.toXML({ item = { [0] = 'a&b' } })
 
 [[sec-table-slicing-with-ranges]]
 === Table Slicing with Ranges
-indexterm:[tables, slicing] indexterm:[ranges, table slicing] Tables support range objects as indices to extract subsequences.  Indexing is zero-based and follows inclusive/exclusive semantics consistent with string slicing (see <<sec-string-slicing-with-ranges>>).  Table slices always return a new table containing copies of the selected elements; modifying the result does not affect the original.
+indexterm:[tables, slicing] indexterm:[ranges, table slicing] Tables support range objects as indices to extract subsequences.  Indexing is zero-based and follows inclusive/exclusive semantics consistent with string slicing (see <<sec-string-slicing-with-ranges>>).  Table slices always return a new table containing copies of the selected elements; modifying the result does not affect the original.  The range must be whole-numbered as defined in <<sec-range-index-requirement>>; a fractional range raises an error.
 
 ==== Exclusive and Inclusive Ranges
 

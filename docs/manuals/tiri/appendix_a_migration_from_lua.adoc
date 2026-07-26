@@ -1,4 +1,5 @@
 // UPDATED: 2026-07-06 -- Documented extern declarations and protected host globals.
+// UPDATED: 2026-07-26 -- Documented removal of the Lua-style numeric for syntax (commit 1f23b978)
 // UPDATED: 2026-04-03 -- Documented `is not` as an alternative inequality form.
 [[appendix-migration-from-lua]]
 [appendix]
@@ -24,6 +25,10 @@ indexterm:[Lua, breaking changes] The following table lists all incompatible cha
 |`^` (exponentiation)
 |`**`
 |<<sec-migration-operators>>
+
+|`for i = Start, Stop [, Step]`
+|Removed; use `for i in {Start into Stop [by Step]}`
+|<<sec-migration-numeric-for>>
 
 |`goto` / `::label::`
 |Removed; use `continue`, `break`, `defer`
@@ -281,6 +286,43 @@ See <<ch-error-handling>> for the complete exception handling reference, includi
 
 [[sec-migration-control-flow]]
 === Control Flow Changes
+
+[[sec-migration-numeric-for]]
+[discrete]
+==== Numeric For Loops
+
+indexterm:[Lua, numeric for] The Lua numeric loop header `for Name = Start, Stop [, Step]` is removed.  Counted iteration is expressed with a range literal instead.  A numeric header raises a `DeprecatedSyntax` parse error that names the replacement form.
+
+Lua's numeric loop is inclusive of `Stop`, so `{Start into Stop}` is the direct equivalent.  Use `{Start to Stop}` when the stop value is to be excluded, and the `by` clause in place of the third header expression:
+
+[cols="2,3"]
+|===
+|Lua |Tiri
+
+|`for i = 0, 9 do`
+|`for i in {0 into 9} do` or `for i in {0 to 10} do`
+
+|`for i = 1, 10, 2 do`
+|`for i in {1 into 10 by 2} do`
+
+|`for i = 10, 1, -1 do`
+|`for i in {10 into 1} do`
+|===
+
+[source,tiri]
+----
+-- Lua
+for i = 1, 10, 2 do
+   print(i)
+end
+
+-- Tiri
+for i in {1 into 10 by 2} do
+   print(i)
+end
+----
+
+Unlike the Lua header, the step direction is inferred from `Start` and `Stop`, so a descending range does not require a negative step.  See <<sec-range-for-loop>> and <<ch-ranges>>.
 
 [discrete]
 ==== The goto Statement

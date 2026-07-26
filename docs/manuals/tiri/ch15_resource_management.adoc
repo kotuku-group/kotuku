@@ -1,4 +1,5 @@
 // VERIFIED: 2026-02-12
+// UPDATED: 2026-07-26 - Migrated examples to range loops following removal of the Lua-style numeric for syntax (commit 1f23b978)
 
 [[ch-resource-management]]
 == Resource Management
@@ -111,7 +112,7 @@ function early_return()
    return 42 -- defer executes before returning
 end
 
-for i = 1, 3 do
+for i in {1 into 3} do
    defer
       print('iter ' .. tostring(i))
    end
@@ -372,19 +373,19 @@ function on_return()
 end
 
 -- On break
-for i = 1, 10 do
+for i in {1 into 10} do
    r <close> = setmetatable({}, mt)
    if i is 3 then break end
 end
 
 -- On continue
-for i = 1, 3 do
+for i in {1 into 3} do
    r <close> = setmetatable({}, mt)
    if i is 2 then continue end
 end
 
 -- Per iteration
-for i = 1, 3 do
+for i in {1 into 3} do
    r <close> = setmetatable({}, mt)
 end -- closed three times, once per iteration
 ----
