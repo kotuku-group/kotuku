@@ -41,7 +41,8 @@ enum class ParserErrorCode : uint16_t {
    ConstRequiresInitialiser, // Const variable requires an initialiser
    OverrideProtectedGlobal, // Cannot override a host pre-registered global
    InvalidAssignment,       // Assignment form is syntactically valid but semantically forbidden
-   DeprecatedSyntax         // Removed source syntax with a targeted replacement diagnostic
+   DeprecatedSyntax,        // Removed source syntax with a targeted replacement diagnostic
+   FunctionSignatureMismatch // Function definition does not match an earlier forward declaration
 };
 
 struct ParserDiagnostic {
