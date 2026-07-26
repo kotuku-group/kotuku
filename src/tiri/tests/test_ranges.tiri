@@ -1146,10 +1146,17 @@ end
 
 @Test function RangeFilterBasic()
    result = {1 to 10}:filter(i => i % 2 is 0)
+   assert(result:type() is "int", "filtering an integral range should return array<int>")
    assert(#result is 4, "filter even numbers from {1 to 10} should have 4 elements, got " .. #result)
    assert(result[0] is 2, "first even should be 2")
    assert(result[1] is 4, "second even should be 4")
    assert(result[3] is 8, "fourth even should be 8")
+end
+
+@Test function RangeFilterPreservesIntegerType()
+   result = {0 to 10}:filter(v => v % 2)
+   assert(tostring(result) is "array<int, 10>",
+      "filtering an integral range should preserve its storage type, got " .. tostring(result))
 end
 
 @Test function RangeFilterNoneMatch()
@@ -1549,7 +1556,7 @@ end
    filtered = {0 to 1 by 0.2}:filter(v => v >= 0.4)
    mapped = {0 to 1 by 0.25}:map(v => v * 2)
    taken = {0 to 1 by 0.2}:take(3)
-   assert(#filtered is 3 and approximately(filtered[0], 0.4))
+   assert(filtered:type() is "double" and #filtered is 3 and approximately(filtered[0], 0.4))
    assert(#mapped is 4 and approximately(mapped[3], 1.5))
    assert(taken:type() is "double" and #taken is 3 and approximately(taken[2], 0.4))
    assert(approximately({0 to 1 by 0.25}:reduce(0, (acc, v) => acc + v), 1.5))

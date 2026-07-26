@@ -23,6 +23,7 @@ public:
    void discover(BlockStmt &Module)
    {
       this->scopes_.clear();
+      this->global_names_.clear();
       this->scopes_.push_back(BindingScope{});
       this->discover_block(Module, false);
       this->resolve_all_callables();
@@ -44,6 +45,11 @@ private:
          }
       }
       return 0;
+   }
+
+   [[nodiscard]] bool is_declared_global(GCstr *Name) const
+   {
+      return std::find(this->global_names_.begin(), this->global_names_.end(), Name) != this->global_names_.end();
    }
 
    StaticBindingID declare(Identifier &Name, const ExprNode *Initialiser, uint8_t ResultPosition,
@@ -242,12 +248,43 @@ private:
          case AstNodeKind::AssignmentStmt: {
             auto &payload = std::get<AssignmentStmtPayload>(Statement.data);
             for (auto &value : payload.values) if (value) this->discover_expression(*value);
-            for (auto &target : payload.targets) if (target) this->discover_expression(*target, true);
+            for (size_t i = 0; i < payload.targets.size(); ++i) {
+               auto &target = payload.targets[i];
+               if (not target) continue;
+
+               if (payload.op IS AssignmentOperator::Plain and target->kind IS AstNodeKind::IdentifierExpr) {
+                  auto &reference = std::get<NameRef>(target->data);
+                  GCstr *name = reference.identifier.symbol;
+                  bool protected_global = name and ((name->flags & STRFLAG_PROTECTED_GLOBAL) != 0);
+                  if (name and not reference.identifier.is_blank and not protected_global and
+                      not this->is_declared_global(name) and not this->resolve(name)) {
+                     const ExprNode *initialiser = i < payload.values.size() ? payload.values[i].get() :
+                        (payload.values.empty() ? nullptr : payload.values.back().get());
+                     uint8_t position = i < payload.values.size() ? 0 :
+                        uint8_t(i - payload.values.size() + 1);
+                     reference.binding_id = this->declare(
+                        reference.identifier, initialiser, position);
+                     continue;
+                  }
+               }
+
+               this->discover_expression(*target, true);
+            }
             break;
          }
          case AstNodeKind::GlobalDeclStmt: {
             auto &payload = std::get<GlobalDeclStmtPayload>(Statement.data);
             for (auto &value : payload.values) if (value) this->discover_expression(*value);
+            for (auto &name : payload.names) {
+               if (name.symbol) this->global_names_.push_back(name.symbol);
+            }
+            break;
+         }
+         case AstNodeKind::ExternStmt: {
+            auto &payload = std::get<ExternDeclStmtPayload>(Statement.data);
+            for (auto &name : payload.names) {
+               if (name.symbol) this->global_names_.push_back(name.symbol);
+            }
             break;
          }
          case AstNodeKind::LocalFunctionStmt: {
@@ -261,6 +298,10 @@ private:
             bool local = not payload.name.is_explicit_global and payload.name.segments.size() IS 1 and
                not payload.name.method.has_value();
             if (local) this->declare(payload.name.segments.front(), nullptr, 0, payload.function.get());
+            else if (payload.name.is_explicit_global and not payload.name.segments.empty() and
+                     payload.name.segments.front().symbol) {
+               this->global_names_.push_back(payload.name.segments.front().symbol);
+            }
             if (payload.function) this->discover_function(*payload.function);
             break;
          }
@@ -694,14 +735,75 @@ private:
       return {};
    }
 
-   [[nodiscard]] StaticValueDescriptor array_method_descriptor(const CallExprPayload &Call) const
+   struct ArrayFilterCall {
+      ExprNode *source = nullptr;
+      size_t predicate_index = 0;
+   };
+
+   [[nodiscard]] static bool array_interface_member(
+      const DirectCallTarget &Direct, uint32_t MemberHash)
    {
-      const MethodCallTarget *method = std::get_if<MethodCallTarget>(&Call.target);
-      if (not method or not method->receiver or not method->method.symbol) return {};
-      StaticValueDescriptor receiver = this->descriptor_of(*method->receiver);
+      if (not Direct.callable or Direct.callable->kind != AstNodeKind::MemberExpr) return false;
+      const auto &member = std::get<MemberExprPayload>(Direct.callable->data);
+      if (not member.table or member.table->kind != AstNodeKind::IdentifierExpr or
+          not member.member.symbol or member.member.symbol->hash != MemberHash) return false;
+      const auto &base = std::get<NameRef>(member.table->data);
+      return not base.binding_id and base.identifier.symbol and
+         base.identifier.symbol->hash IS kt::strhash("array");
+   }
+
+   [[nodiscard]] static std::optional<ArrayFilterCall> array_filter_call(CallExprPayload &Call)
+   {
+      if (auto *method = std::get_if<MethodCallTarget>(&Call.target)) {
+         if (method->receiver and method->method.symbol and
+             method->method.symbol->hash IS kt::strhash("filter") and not Call.arguments.empty()) {
+            return ArrayFilterCall{ method->receiver.get(), 0 };
+         }
+      }
+      else if (auto *method = std::get_if<SafeMethodCallTarget>(&Call.target)) {
+         if (method->receiver and method->method.symbol and
+             method->method.symbol->hash IS kt::strhash("filter") and not Call.arguments.empty()) {
+            return ArrayFilterCall{ method->receiver.get(), 0 };
+         }
+      }
+      else if (auto *direct = std::get_if<DirectCallTarget>(&Call.target)) {
+         if (array_interface_member(*direct, kt::strhash("filter")) and Call.arguments.size() > 1) {
+            return ArrayFilterCall{ Call.arguments[0].get(), 1 };
+         }
+      }
+      return std::nullopt;
+   }
+
+   [[nodiscard]] StaticValueDescriptor array_preserving_call_descriptor(const CallExprPayload &Call) const
+   {
+      const ExprNode *source = nullptr;
+      GCstr *operation = nullptr;
+
+      if (const auto *method = std::get_if<MethodCallTarget>(&Call.target)) {
+         source = method->receiver.get();
+         operation = method->method.symbol;
+      }
+      else if (const auto *method = std::get_if<SafeMethodCallTarget>(&Call.target)) {
+         source = method->receiver.get();
+         operation = method->method.symbol;
+      }
+      else if (const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+               direct and direct->callable and direct->callable->kind IS AstNodeKind::MemberExpr) {
+         const auto &member = std::get<MemberExprPayload>(direct->callable->data);
+         const auto *base = member.table and member.table->kind IS AstNodeKind::IdentifierExpr ?
+            std::get_if<NameRef>(&member.table->data) : nullptr;
+         if (base and not base->binding_id and base->identifier.symbol and
+             base->identifier.symbol->hash IS kt::strhash("array") and not Call.arguments.empty()) {
+            source = Call.arguments.front().get();
+            operation = member.member.symbol;
+         }
+      }
+
+      if (not source or not operation) return {};
+      StaticValueDescriptor receiver = this->descriptor_of(*source);
       if (receiver.primary != TiriType::Array or not receiver.array_element.known) return {};
 
-      switch (method->method.symbol->hash) {
+      switch (operation->hash) {
          case kt::strhash("each"):
          case kt::strhash("map"):
          case kt::strhash("filter"):
@@ -714,11 +816,74 @@ private:
       }
    }
 
+   [[nodiscard]] static StaticValueDescriptor array_element_value(
+      const ArrayElementDescriptor &Element)
+   {
+      StaticValueDescriptor result;
+      result.primary = Element.logical_type;
+      result.object_class_id = Element.object_class_id;
+      result.struct_def = Element.struct_def;
+      result.proof = StaticProof::Trusted;
+      result.nullable = Element.storage IS AET::STR_GC or Element.storage IS AET::OBJECT or
+         Element.storage IS AET::TABLE or Element.storage IS AET::ARRAY;
+      return result;
+   }
+
+   void propagate_function_expression(
+      ExprNode &Expression, std::span<const StaticValueDescriptor> ContextParameters)
+   {
+      auto &function = std::get<FunctionExprPayload>(Expression.data);
+      StaticValueDescriptor value;
+      value.primary = TiriType::Func;
+      value.proof = StaticProof::Closed;
+      this->function_callable(function);
+      this->propagate_function(function, ContextParameters);
+      Expression.static_value = this->add_value(value);
+      Expression.static_results = 0;
+   }
+
+   void propagate_call_children(CallExprPayload &Call)
+   {
+      if (auto *direct = std::get_if<DirectCallTarget>(&Call.target)) {
+         if (direct->callable) this->propagate_expression(*direct->callable);
+      }
+      else if (auto *method = std::get_if<MethodCallTarget>(&Call.target)) {
+         if (method->receiver) this->propagate_expression(*method->receiver);
+      }
+      else if (auto *method = std::get_if<SafeMethodCallTarget>(&Call.target)) {
+         if (method->receiver) this->propagate_expression(*method->receiver);
+      }
+
+      auto filter = array_filter_call(Call);
+      for (size_t i = 0; i < Call.arguments.size(); ++i) {
+         auto &argument = Call.arguments[i];
+         if (not argument) continue;
+
+         bool contextual_filter = filter and i IS filter->predicate_index and filter->source and
+            argument->kind IS AstNodeKind::FunctionExpr;
+         StaticValueDescriptor source = contextual_filter ? this->descriptor_of(*filter->source) :
+            StaticValueDescriptor{};
+         if (contextual_filter and source.primary IS TiriType::Array and source.array_element.known) {
+            std::array<StaticValueDescriptor, 2> parameters;
+            parameters[0] = array_element_value(source.array_element);
+            parameters[1].primary = TiriType::Num;
+            parameters[1].proof = StaticProof::Trusted;
+            this->propagate_function_expression(*argument, parameters);
+         }
+         else this->propagate_expression(*argument);
+      }
+   }
+
    void propagate_expression(ExprNode &Expression)
    {
-      this->walk_expression_children(Expression, [this](ExprNode &Child) {
-         this->propagate_expression(Child);
-      });
+      if (Expression.kind IS AstNodeKind::CallExpr or Expression.kind IS AstNodeKind::SafeCallExpr) {
+         this->propagate_call_children(std::get<CallExprPayload>(Expression.data));
+      }
+      else {
+         this->walk_expression_children(Expression, [this](ExprNode &Child) {
+            this->propagate_expression(Child);
+         });
+      }
 
       StaticValueDescriptor value;
       StaticResultSetHandle results = 0;
@@ -749,7 +914,7 @@ private:
          case AstNodeKind::SafeCallExpr: {
             auto &call = std::get<CallExprPayload>(Expression.data);
             value = this->call_descriptor(call, Expression.kind IS AstNodeKind::SafeCallExpr);
-            StaticValueDescriptor transferred = this->array_method_descriptor(call);
+            StaticValueDescriptor transferred = this->array_preserving_call_descriptor(call);
             if (transferred.primary != TiriType::Unknown) {
                transferred.nullable = value.nullable;
                value = transferred;
@@ -908,19 +1073,28 @@ private:
 
       auto &binding = this->catalogue_.binding(reference.binding_id);
       StaticValueDescriptor previous = this->catalogue_.value(binding.value);
-      StaticValueDescriptor joined = join_static_descriptors(previous, Assigned);
+      StaticValueDescriptor joined = previous.primary IS TiriType::Unknown and not previous.array_element.known ?
+         Assigned : join_static_descriptors(previous, Assigned);
       binding.value = this->add_value(joined);
       binding.callable = 0;
       reference.identifier.static_value = binding.value;
       Target.static_value = binding.value;
    }
 
-   void propagate_function(FunctionExprPayload &Function)
+   void propagate_function(
+      FunctionExprPayload &Function, std::span<const StaticValueDescriptor> ContextParameters = {})
    {
-      for (auto &parameter : Function.parameters) {
+      for (size_t i = 0; i < Function.parameters.size(); ++i) {
+         auto &parameter = Function.parameters[i];
          if (not parameter.name.binding_id) continue;
-         auto value = this->declared_descriptor(parameter.type, parameter.struct_def,
-            parameter.type IS TiriType::Any ? StaticProof::Advisory : StaticProof::Checked);
+         StaticValueDescriptor value;
+         if (not parameter.type_is_explicit and i < ContextParameters.size()) {
+            value = ContextParameters[i];
+         }
+         else {
+            value = this->declared_descriptor(parameter.type, parameter.struct_def,
+               parameter.type IS TiriType::Any ? StaticProof::Advisory : StaticProof::Checked);
+         }
          auto &binding = this->catalogue_.binding(parameter.name.binding_id);
          binding.value = this->add_value(value);
          parameter.name.static_value = binding.value;
@@ -1316,6 +1490,7 @@ private:
    StaticDescriptorCatalogue &catalogue_;
    std::vector<BindingScope> scopes_;
    std::vector<std::pair<GCstr *, StaticValueHandle>> global_values_;
+   std::vector<GCstr *> global_names_;
    uint16_t function_depth_ = 0;
 };
 

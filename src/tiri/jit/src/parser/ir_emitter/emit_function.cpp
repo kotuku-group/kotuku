@@ -137,14 +137,27 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    }
    for (auto i = BCReg(0); i < param_count; ++i) {
       const FunctionParameter &param = Payload.parameters[i.raw()];
+      TiriType parameter_type = param.type;
+      struct_record *parameter_struct = param.struct_def;
       ProtoTypeOrigin origin = param.type_is_explicit ? ProtoTypeOrigin::Declared : ProtoTypeOrigin::Unspecified;
       ProtoTypeStrength strength = (param.type_is_explicit and param.type != TiriType::Any and
          param.type != TiriType::Unknown) ? ProtoTypeStrength::Checked : ProtoTypeStrength::Advisory;
-      uint32_t constraint = (param.struct_def and param.type IS TiriType::Struct) ?
-         struct_key(param.struct_def->Name) : 0;
+
+      if (not param.type_is_explicit and param.name.static_value) {
+         const auto &descriptor = this->ctx.descriptors().value(param.name.static_value);
+         if (descriptor.primary != TiriType::Unknown and descriptor.primary != TiriType::Any) {
+            parameter_type = descriptor.primary;
+            parameter_struct = descriptor.struct_def;
+            origin = ProtoTypeOrigin::Inferred;
+            strength = descriptor.proved() ? ProtoTypeStrength::Trusted : ProtoTypeStrength::Advisory;
+         }
+      }
+
+      uint32_t constraint = (parameter_struct and parameter_type IS TiriType::Struct) ?
+         struct_key(parameter_struct->Name) : 0;
       child_state.signature_parameters.push_back(ProtoTypeEntry{
          .constraint = constraint,
-         .type = param.type,
+         .type = parameter_type,
          .flags = proto_type_flags(true, false, origin, strength)
       });
    }
@@ -153,12 +166,18 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    auto base = BCReg(child_state.varmap.size() - param_count.raw());
    for (auto i = BCReg(0); i < param_count; ++i) {
       const FunctionParameter &param = Payload.parameters[i.raw()];
+      auto &param_info = child_state.var_get(base.raw() + i.raw());
       if (param.type != TiriType::Unknown and param.type != TiriType::Any) {
-         auto &param_info = child_state.var_get(base.raw() + i.raw());
          param_info.fixed_type = param.type;
          param_info.struct_def = param.struct_def;
       }
-      auto &param_info = child_state.var_get(base.raw() + i.raw());
+      else if (param.name.static_value) {
+         const auto &descriptor = this->ctx.descriptors().value(param.name.static_value);
+         if (descriptor.primary != TiriType::Unknown and descriptor.primary != TiriType::Any) {
+            param_info.fixed_type = descriptor.primary;
+            param_info.struct_def = descriptor.struct_def;
+         }
+      }
       param_info.binding_id = param.name.binding_id;
       param_info.static_value = param.name.static_value;
    }
