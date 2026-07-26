@@ -3925,6 +3925,8 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ble >3
     |  cmpwi TMP0, LJ_TSTR
     |  beq >4
+    |  cmpwi TMP0, LJ_TUDATA
+    |  beq >7
     |  checkarray TMP0
     |  beq >5
     |  checktab TMP0
@@ -4002,6 +4004,19 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  lwz TMP2, ARRAY:TMP1->len
     |  cmpwi TMP2, 0
     |  bne >1
+    |  b >9
+    |7:
+    |  mr SAVE0, INS
+    |  ld CARG2, -16(PC)
+    |  stp BASE, L->base
+    |  mr CARG1, L
+    |  stw PC, SAVE_PC
+    |  bl extern lj_meta_isfalsey  // (lua_State *L, BCIns ins)
+    |  mr INS, SAVE0
+    |  lp BASE, L->base
+    |  cmpwi CRET1, 0
+    |  bne >9
+    |  b >1
     |9:
     |  decode_RD8 TMP2, INS
     |  addis TMP2, TMP2, -(BCBIAS_J*8 >> 16)

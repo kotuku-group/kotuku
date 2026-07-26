@@ -2703,6 +2703,8 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  bls >3
     |  cmn ITYPE, #-LJ_TSTR
     |  beq >4
+    |  cmn ITYPE, #-LJ_TUDATA
+    |  beq >7
     |  cmn ITYPE, #-LJ_TARRAY
     |  beq >5
     |  cmn ITYPE, #-LJ_TTAB
@@ -2743,6 +2745,16 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  and CARG1, CARG1, #LJ_GCVMASK
     |  ldr TMP0w, ARRAY:CARG1->len
     |  cbnz TMP0w, >1
+    |  b >9
+    |7:
+    |  str BASE, L->base
+    |  mov CARG1, L
+    |  ldr CARG2, [PC, #-16]
+    |  str PC, SAVE_PC
+    |  bl extern lj_meta_isfalsey  // (lua_State *L, BCIns ins)
+    |  ldr BASE, L->base
+    |  cbnz CRET1w, >9
+    |  b >1
     |9:
     |  ldrh RCw, [PC, #-6]		// Load RD from JMP at [PC-8+OFS_RD]
     |  add PC, PC, RC, lsl #3		// Branch target: PC + RD*8

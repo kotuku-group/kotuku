@@ -3541,6 +3541,10 @@ void lj_record_ins(jit_State *J)
       // Type specialisation reduces this instruction to at most one value guard.
       if (bc_a(pc[1]) < J->maxslot) J->maxslot = bc_a(pc[1]);
 
+      // Thunk resolution enters a protected call and cannot be recorded.  Abort this trace so the interpreter can
+      // resolve the deferred value before applying the falsey mask.
+      if (tref_isudata(ra) and lj_is_thunk(rav)) lj_trace_err_info(J, LJ_TRERR_NYIBC);
+
       int is_falsey = tref_isnil(ra) or (tref_isfalse(ra) and (rc & ISFALSEY_FALSE));
 
       if (tref_isnumber(ra) and (rc & ISFALSEY_ZERO)) {

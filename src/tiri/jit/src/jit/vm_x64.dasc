@@ -3303,6 +3303,8 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  jbe >3
     |  cmp ITYPEd, LJ_TSTR
     |  je >4
+    |  cmp ITYPEd, LJ_TUDATA
+    |  je >7
     |  cmp ITYPEd, LJ_TARRAY
     |  je >5
     |  cmp ITYPEd, LJ_TTAB
@@ -3348,6 +3350,18 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  cleartp RB
     |  cmp dword ARRAY:RB->len, 0
     |  jne >1
+    |  jmp >9
+    |7:
+    |  mov L:RB, SAVE_L
+    |  mov L:RB->base, BASE
+    |  mov CARG1, L:RB
+    |  mov CARG2, qword [PC-16]
+    |  mov SAVE_PC, PC
+    |  call extern lj_meta_isfalsey  // (lua_State *L, BCIns ins)
+    |  mov BASE, L:RB->base
+    |  test RCd, RCd
+    |  jnz >9
+    |  jmp >1
     |9:
     |  movzx RDd, PC_RD
     |  branchPC RD
