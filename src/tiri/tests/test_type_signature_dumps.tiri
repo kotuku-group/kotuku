@@ -109,8 +109,8 @@ end
    end
 
    local restored = reload_factory(factory, true)
-   for i = 0, 250 do
-      assert(restored(i) is i + 1, 'A hot reloaded signature must remain semantically stable')
+   for i in {0 to 250} do
+      assert(restored(i) is i+1, 'A hot reloaded signature must remain semantically stable')
    end
    expect_contract_failure(function() restored(dynamic_value('wrong')) end)
 end

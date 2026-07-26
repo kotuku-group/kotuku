@@ -7,7 +7,7 @@ function max_call_c_operand(Func)
    local info = jit.util.funcInfo(Func, 0)
    local largest: any = nil
 
-   for pc = 0, info.byteCodes - 1 do
+   for pc in {0 to info.byteCodes} do
       local ins = jit.util.funcBC(Func, pc)
       if ins != nil and (ins & 255) is 78 then
          local operand_count = (ins >> 16) & 255
@@ -303,7 +303,7 @@ end
    assert(total is 9, 'continue should skip to next loop iteration')
 
    seen = {}
-   for i = 0, 4 do
+   for i in {0 to 5} do
       if i is 2 then
          continue
       end

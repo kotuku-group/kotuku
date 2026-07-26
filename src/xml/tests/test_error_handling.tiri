@@ -37,7 +37,7 @@ end
 @Test function LargeDocument()
    -- Generate a large XML document
    parts = {'<root>'}
-   for i = 1, 1000 do
+   for i in {1 into 1000} do
       table.insert(parts, '<item id="' .. i .. '">Content ' .. i .. '</item>')
    end
    table.insert(parts, '</root>')
@@ -153,7 +153,7 @@ end
 
 @Test function MemoryHandling()
    -- Test creating and destroying many XML objects
-   for i = 1, 100 do
+   for i in {1 into 100} do
       xml = obj.new("xml", {
          statement = '<root><data>' .. string.rep("x", 1000) .. '</data></root>'
       })
@@ -205,11 +205,11 @@ end
    parts = {}
    depth = 100
 
-   for i = 1, depth do
+   for i in {1 into depth} do
       table.insert(parts, '<level' .. i .. '>')
    end
    table.insert(parts, 'Deep content')
-   for i = depth, 1, -1 do
+   for i in {depth into 1 by -1} do
       table.insert(parts, '</level' .. i .. '>')
    end
 
@@ -220,7 +220,7 @@ end
 
    -- Test deep XPath navigation
    deepPath = '/level1'
-   for i = 2, depth do
+   for i in {2 into depth} do
       deepPath = deepPath .. '/level' .. i
    end
 
@@ -234,7 +234,7 @@ end
 @Test function AttributeLimits()
    -- Create element with many attributes
    parts = {'<root'}
-   for i = 1, 100 do
+   for i in {1 into 100} do
       table.insert(parts, ' attr' .. i .. '="value' .. i .. '"')
    end
    table.insert(parts, '/>')

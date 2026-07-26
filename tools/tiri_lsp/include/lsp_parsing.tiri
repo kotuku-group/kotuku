@@ -852,7 +852,7 @@ global function extractFoldingRanges(Doc:table):array
    in_block_comment = false
    block_comment_start = 0
 
-   for line_num = 0, total_lines - 1 do
+   for line_num in {0 to total_lines} do
       line_text = getLine(Doc, line_num)
 
       -- Handle block comments --[[ ... ]]
@@ -1009,7 +1009,7 @@ global function computeTokenEdits(OldData:array, NewData:array):array
    while prefix_tokens < max_prefix do
       idx = prefix_tokens * 5
       match = true
-      for i = 0, 4 do
+      for i in {0 to 5} do
          if OldData[idx + i] != NewData[idx + i] then
             match = false
             break
@@ -1029,7 +1029,7 @@ global function computeTokenEdits(OldData:array, NewData:array):array
       old_idx = old_len - (suffix_tokens + 1) * 5
       new_idx = new_len - (suffix_tokens + 1) * 5
       match = true
-      for i = 0, 4 do
+      for i in {0 to 5} do
          if OldData[old_idx + i] != NewData[new_idx + i] then
             match = false
             break
@@ -1061,7 +1061,7 @@ global function computeTokenEdits(OldData:array, NewData:array):array
    -- Include new data if we're inserting anything
    if insert_count > 0 then
       edit.data = array<int>
-      for i = prefix_ints, prefix_ints + insert_count - 1 do
+      for i in {prefix_ints to prefix_ints + insert_count} do
          edit.data:push(NewData[i])
       end
    end

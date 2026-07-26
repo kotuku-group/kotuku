@@ -87,7 +87,7 @@ end
    -- Create multiple clients
    clients = {}
    client_data = { }
-   for i = 0, glMaxSockets-1 do
+   for i in {0 to glMaxSockets} do
       clients[i] = obj.new('netsocket', {
          name = 'ConcurrentClient' .. i,
          feedback = function(Socket, Client, State)
@@ -138,7 +138,7 @@ end
 
    -- Connect all clients as fast as possible
 
-   for i = 0, glMaxSockets-1 do
+   for i in {0 to glMaxSockets} do
       err = clients[i].mtConnect('127.0.0.1', glPort)
       assert(err is ERR_Okay, '[Client ' .. i .. '] Failed to connect: ' .. mSys.GetErrorMsg(err))
       glClientsCreated++
@@ -182,7 +182,7 @@ end
 
    -- Create more clients than the limit allows
    clients = {}
-   for i = 0, connectAttempts-1 do
+   for i in {0 to connectAttempts} do
       clients[i] = obj.new('netsocket', {
          name = 'LimitTestClient' .. i,
          feedback = function(Socket, Client, State)
@@ -196,7 +196,7 @@ end
    end
 
    -- Attempt connections rapidly
-   for i = 0, connectAttempts-1 do
+   for i in {0 to connectAttempts} do
       err = clients[i].mtConnect('127.0.0.1', glPort)
       if err != ERR_Okay then
          rejectedConnections++
@@ -222,9 +222,9 @@ end
    glPort++
 
    -- Initialize expected messages
-   for i = 0, clientCount-1 do
+   for i in {0 to clientCount} do
       clientMessages:push(array<string>)
-      for j = 0, messagesPerClient-1 do
+      for j in {0 to messagesPerClient} do
          clientMessages[i]:push(f'ISOLATED_CLIENT_{i}_MESSAGE_{j}')
       end
    end
@@ -263,7 +263,7 @@ end
    signal = obj.new('time', { })
    proc = processing.new({ timeout = 3.0, signals = array<object> { signal } })
 
-   for i = 0, clientCount-1 do
+   for i in {0 to clientCount} do
       clients[i] = { }
       clients[i].socket = obj.new('netsocket', {
          name = 'IsolationClient' .. i,
@@ -305,7 +305,7 @@ end
    end
 
    -- Connect all clients
-   for i = 0, clientCount-1 do
+   for i in {0 to clientCount} do
       clients[i].socket.mtConnect('127.0.0.1', glPort)
    end
 

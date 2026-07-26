@@ -225,7 +225,7 @@ end
    -- Test thunk containing a loop
    thunk sum_to(n):num
       total = 0
-      for i = 1, n do
+      for i in {1 into n} do
          total += i
       end
       return total

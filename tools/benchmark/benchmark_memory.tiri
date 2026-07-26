@@ -7,17 +7,17 @@
    for i in {0 to 100} do
       -- Create empty tables
       local tables = {}
-      for j = 0, 99 do
+      for j in {0 to 100} do
          tables[j] = {}
       end
 
       -- Create tables with initial values
-      for j = 0, 99 do
+      for j in {0 to 100} do
          tables[j] = { a = 1, b = 2, c = 3 }
       end
 
       -- Create nested table structures
-      for j = 0, 49 do
+      for j in {0 to 50} do
          tables[j] = {
             inner = {
                value = j,
@@ -27,16 +27,16 @@
       end
 
       -- Create tables with varying sizes
-      for j = 0, 19 do
+      for j in {0 to 20} do
          local t = {}
-         for k = 0, j do
+         for k in {0 to j+1} do
             t[k] = k
          end
          tables[j] = t
       end
 
       -- Create and immediately discard tables
-      for j = 0, 99 do
+      for j in {0 to 100} do
          local temp = { value = j, name = "temp" }
          local _ = temp.value
       end
@@ -50,39 +50,39 @@ end
    for i in {0 to 500} do
       -- Create short strings
       local strings = {}
-      for j = 0, 99 do
+      for j in {0 to 100} do
          strings[j] = "str"
       end
 
       -- Create strings via concatenation
-      for j = 0, 49 do
+      for j in {0 to 50} do
          strings[j] = "prefix_" .. tostring(j) .. "_suffix"
       end
 
       -- Create strings via string.format
-      for j = 0, 49 do
+      for j in {0 to 50} do
          strings[j] = string.format("item_%03d", j)
       end
 
       -- Create strings via interpolation
-      for j = 0, 49 do
+      for j in {0 to 50} do
          strings[j] = f"value_{j}_data"
       end
 
       -- Create strings of varying lengths
-      for j = 0, 19 do
+      for j in {0 to 20} do
          strings[j] = string.rep("x", j + 1)
       end
 
       -- Create and immediately discard strings
-      for j = 0, 99 do
+      for j in {0 to 100} do
          local temp = "temporary_" .. tostring(j)
          local _ = #temp
       end
 
       -- Substring operations creating new strings
       local source = "The quick brown fox jumps over the lazy dog"
-      for j = 0, 19 do
+      for j in {0 to 20} do
          local sub = string.substr(source, j + 1, j + 10)
       end
    end
@@ -95,19 +95,19 @@ end
    for i in {0 to 10} do
       -- Create typed integer arrays
       local int_arrays = array<array>
-      for j = 0, 49 do
+      for j in {0 to 50} do
          int_arrays:push(array<int, 100>)
       end
 
       -- Create typed double arrays
       local dbl_arrays = array<array>
-      for j = 0, 49 do
+      for j in {0 to 50} do
          dbl_arrays:push(array<double, 100>)
       end
 
       -- Create typed string arrays
       local str_arrays = {}
-      for j = 0, 49 do
+      for j in {0 to 50} do
          str_arrays[j] = array<string, 50>
       end
    end
@@ -119,7 +119,7 @@ end
 @Test function MemoryTypedArrayFilled()
    for i in {0 to 100} do
       local int_arrays = array<array>
-      for j = 0, 100 do
+      for j in {0 to 101} do
          int_arrays:push(array<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 })
       end
    end
@@ -128,7 +128,7 @@ end
 @Test function MemoryUntypedArrayFilled()
    for i in {0 to 100} do
       local any_arrays = array<array>
-      for j = 0, 100 do
+      for j in {0 to 101} do
          any_arrays:push(array<any> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 })
       end
    end
@@ -140,19 +140,19 @@ end
 @Test function MemoryGCPressure()
    for i in {0 to 100} do
       -- Rapid allocation and discard of tables
-      for j = 0, 199 do
+      for j in {0 to 200} do
          local t = { a = j, b = j * 2, c = j * 3 }
          local sum = t.a + t.b + t.c
       end
 
       -- Rapid allocation and discard of strings
-      for j = 0, 199 do
+      for j in {0 to 200} do
          local s = "item_" .. tostring(j) .. "_value"
          local len = #s
       end
 
       -- Nested allocations
-      for j = 0, 49 do
+      for j in {0 to 50} do
          local outer = {
             inner1 = { value = j },
             inner2 = { value = j * 2 },
@@ -162,7 +162,7 @@ end
       end
 
       -- Mixed type allocations
-      for j = 0, 49 do
+      for j in {0 to 50} do
          local mixed = {
             num = j,
             str = f"string_{j}",
@@ -172,21 +172,21 @@ end
       end
 
       -- Array allocation pressure
-      for j = 0, 49 do
+      for j in {0 to 50} do
          local arr = array<int> { j, j+1, j+2, j+3, j+4 }
          local sum = arr[0] + arr[4]
       end
 
       -- String building pressure
-      for j = 0, 19 do
+      for j in {0 to 20} do
          local result = ""
-         for k = 0, 9 do
+         for k in {0 to 10} do
             result ..= tostring(k)
          end
       end
 
       -- Closure allocation pressure
-      for j = 0, 49 do
+      for j in {0 to 50} do
          local captured = j
          local fn = function()
             return captured * 2

@@ -76,7 +76,7 @@ end
 
    local loop_callback = typed_increment
    local result = 0
-   for index = 0, 2 do
+   for index in {0 to 3} do
       result = loop_callback(index)
       loop_callback = replacement
    end
@@ -151,7 +151,7 @@ end
       local values = array<int> { 1, 2, 3, 4 }
       local callback = typed_increment
       local total = 0
-      for pass = 0, 120 do
+      for pass in {0 to 120} do
          total += callback(values[pass % 4])
       end
       return total

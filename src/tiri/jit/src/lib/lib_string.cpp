@@ -852,33 +852,8 @@ static int string_index_handler(lua_State *L)
    // Check for the range type (substring extraction)
 
    if (tiri_range *r = get_range_from_tvalue(L, key)) {
-      int32_t start = r->start;
-      int32_t stop = r->stop;
-
-      // Resolve negative indices while preserving the range's inclusive/exclusive mode.
-      bool use_inclusive = r->inclusive;
-      if (start < 0 or stop < 0) {
-         if (start < 0) start += len;
-         if (stop < 0) stop += len;
-      }
-
-      // Apply exclusive semantics if not inclusive
-      int32_t effective_stop = stop;
-      if (not use_inclusive) effective_stop = stop - 1;
-
-      // Bounds checking
-      if (start < 0) start = 0;
-      if (effective_stop >= len) effective_stop = len - 1;
-
-      // Handle empty/invalid ranges
-      if (start > effective_stop or start >= len) {
-         lua_pushstring(L, "");
-         return 1;
-      }
-
-      int32_t sublen = effective_stop - start + 1;
-      lua_pushlstring(L, strdata(str) + start, (size_t)sublen);
-      return 1;
+      (void)r;
+      return lj_range_slice(L);
    }
 
    // Check for string key (method lookup)

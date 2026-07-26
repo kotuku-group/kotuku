@@ -266,7 +266,7 @@ end
 
 @Test function ArrayAnyGCStress()
    -- Create many any arrays with GC objects to stress-test garbage collection
-   for i = 0, 100 do
+   for i in {0 to 100} do
       arr = array<any> { { x = i }, 'str' .. i, { y = i * 2 } }
       local t = array.table(arr)
       assert(t[0].x is i, "table x should match i")

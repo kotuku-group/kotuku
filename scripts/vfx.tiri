@@ -569,7 +569,7 @@ vfx.wipes.radial.init = function(State, Options)
       cx = State.cx, cy = State.cy, rx = 0.01, ry = 0.01, visibility = VIS_HIDDEN, fill='rgb(255,255,255)'
    })
 
-   for i=1,State.segments-1 do
+   for i in {1 to State.segments} do
       radius = State.stroke_size + ((State.max_radius - State.stroke_size)) * (i / (State.segments-1)) -
          (State.stroke_size * 0.5)
       State.ellipses:push(State.clip.viewport.new('VectorEllipse', {
@@ -585,7 +585,7 @@ vfx.wipes.radial.animate = function(State, Options, Progress)
    State.center.radius = size
    State.center.visibility = VIS_VISIBLE
 
-   for i=1,State.segments-1 do
+   for i in {1 to State.segments} do
       size = (Progress / (i * State.interval)) * State.stroke_size
       if size > State.stroke_size + 0.25 then size = State.stroke_size + 0.25 end
       State.ellipses[i-1].strokeWidth = size
@@ -645,7 +645,7 @@ vfx.wipes.shutter.animate = function(State, Options, Progress)
    State.clip_path ?= State.clip.viewport.new('VectorPath', { })
 
    State.clip_path.acClear()
-   for i=0,segments-1 do
+   for i in {0 to segments} do
       bar_pos = i * bar_height
       height  = (Progress / ((i * interval) + interval)) * bar_height
 

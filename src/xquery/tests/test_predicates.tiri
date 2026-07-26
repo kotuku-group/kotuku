@@ -530,9 +530,9 @@ end
 @Test function PerformanceScenarios()
    -- Build a larger XML document for performance testing
    local xmlContent = '<root>'
-   for i = 1, 50 do  -- Reduced from 100 to 50 for faster testing
+   for i in {1 into 50} do  -- Reduced from 100 to 50 for faster testing
       xmlContent = xmlContent .. '<section id="' .. i .. '">'
-      for j = 1, 5 do  -- Reduced from 10 to 5 for faster testing
+      for j in {1 into 5} do  -- Reduced from 10 to 5 for faster testing
          xmlContent = xmlContent .. '<item type="' .. (j % 3 is 0 and "special" or "normal") .. '" value="' .. (i * 10 + j) .. '">Content ' .. i .. '.' .. j .. '</item>'
       end
       xmlContent = xmlContent .. '</section>'

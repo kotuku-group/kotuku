@@ -395,7 +395,7 @@ end
    local proc = processing.new({ timeout=5.0, signals=array<object> { signal } })
    local scripts = array<object>
 
-   for i=0, total-1 do
+   for i in {0 to total} do
       local statement
       if (i & 1) is 0 then
          statement = [[
@@ -696,7 +696,7 @@ end
    local first = struct.new('FastCacheFirst')
    local second = struct.new('FastCacheSecond')
 
-   for i = 1, 4 do
+   for i in {1 to 5} do
       assert(set_annotated_struct_field(first, i) is i, 'Repeated annotated access should retain the first layout')
       assert(set_annotated_struct_field(second, i * 10) is i * 10,
          'A polymorphic cache site should resolve the second layout')

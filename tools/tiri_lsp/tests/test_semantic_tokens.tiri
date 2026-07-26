@@ -217,7 +217,7 @@ end
    tokens = tokenizeTiri(source)
 
    -- The operator occupies UTF-16 column 4 with a width of one unit on every line.
-   for line = 0, 2 do
+   for line in {0 to 3} do
       op = nil
       for token in values(tokens) do
          if token.line is line and token.char is 4 then op = token end
@@ -227,7 +227,7 @@ end
    end
 
    -- The trailing number aligns to UTF-16 column 6 on every line, independent of the operator's byte width.
-   for line = 0, 2 do
+   for line in {0 to 3} do
       number = findToken(tokens, line, 6, '2.0')
       assert(number and number.type is 5,
          'Number after a multi-byte operator on line ' .. line .. ' should keep its UTF-16 alignment.')

@@ -28,7 +28,7 @@ function makeDocAtMarker(Content:str):<table,table>
 
    line = 0
    character = 0
-   for i = 0, marker_pos - 1 do
+   for i in {0 to marker_pos} do
       c = Content:sub(i, i + 1)
       if c is '\n' then
          line++

@@ -43,7 +43,7 @@ end
 
 function count_trace_opcode(TraceNo:num, Info:table, Opcode:num):num
    local count = 0
-   for index = 1, Info.nins do
+   for index in {0 to Info.nins} do
       local _, ir_ot = jit.util.traceIR(TraceNo, index)
       if ir_ot != nil and (ir_ot >> 8) is Opcode then count++ end
    end
@@ -51,7 +51,7 @@ function count_trace_opcode(TraceNo:num, Info:table, Opcode:num):num
 end
 
 function first_trace_metrics():table
-   for trace_no = 1, 20 do
+   for trace_no in {0 to 20} do
       local info = jit.util.traceInfo(trace_no)
       if info then
          return {
@@ -69,7 +69,7 @@ function local_workload(Count:num):num
    local factor = 7
    local offset = 3
    local total = 0
-   for index = 1, Count do
+   for index in {1 into Count} do
       total += (index * factor) + offset
    end
    return total
@@ -79,7 +79,7 @@ function const_workload(Count:num):num
    local factor <const> = 7
    local offset <const> = 3
    local total = 0
-   for index = 1, Count do
+   for index in {1 into Count} do
       total += (index * factor) + offset
    end
    return total
@@ -89,7 +89,7 @@ function record_local_metrics():table
    jit.on()
    jit.flush()
    jit.opt.start('hotloop=1', 'hotexit=1')
-   for run = 1, 80 do local_workload(40) end
+   for run in {0 to 80} do local_workload(40) end
    return first_trace_metrics()
 end
 
@@ -97,7 +97,7 @@ function record_const_metrics():table
    jit.on()
    jit.flush()
    jit.opt.start('hotloop=1', 'hotexit=1')
-   for run = 1, 80 do const_workload(40) end
+   for run in {0 to 80} do const_workload(40) end
    return first_trace_metrics()
 end
 
@@ -552,7 +552,7 @@ end
    jit.flush()
    jit.opt.start('hotloop=1', 'hotexit=1')
    local compiled = 0
-   for run = 1, 80 do
+   for run in {0 to 80} do
       compiled = const_workload(100)
    end
 

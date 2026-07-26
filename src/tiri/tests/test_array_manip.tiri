@@ -338,13 +338,13 @@ end
    arr = array<int>
 
    -- Build up array
-   for i = 0, 9 do
+   for i in {0 to 10} do
       arr:push(i * 10)
    end
    assert(#arr is 10, 'Array should have 10 elements')
 
    -- Pop half
-   for i = 0, 4 do
+   for i in {0 to 5} do
       arr:pop()
    end
    assert(#arr is 5, 'Array should have 5 elements after pops')
@@ -383,13 +383,13 @@ end
    arr = array<int>
 
    -- Push many elements
-   for i = 0, 999 do
+   for i in {0 to 1000} do
       arr:push(i)
    end
    assert(#arr is 1000, 'Array should have 1000 elements')
 
    -- Verify contents
-   for i = 0, 999 do
+   for i in {0 to 1000} do
       assert(arr[i] is i, 'arr[' .. i .. '] should be ' .. i)
    end
 
@@ -827,7 +827,7 @@ end
    copy = original:clone()
 
    assert(#copy is 5, "Clone should have same length")
-   for i = 0, 4 do
+   for i in {0 to 5} do
       assert(copy[i] is original[i], "Clone should have same values at index " .. i)
    end
 
@@ -857,7 +857,7 @@ end
    copy = original:clone()
 
    assert(#copy is 3, "Clone should have same length")
-   for i = 0, 2 do
+   for i in {0 to 3} do
       assert(math.abs(copy[i] - original[i]) < 0.0001, "Clone should have same float values")
    end
 end
@@ -1016,7 +1016,7 @@ end
 
 @Test function ArrayCloneLarge()
    original = array<int, 1000>
-   for i = 0, 999 do
+   for i in {0 to 1000} do
       original[i] = i * 2
    end
 
@@ -1071,12 +1071,12 @@ end
 @Test function ArrayBuildWithInsert()
    -- Build array using insert instead of push
    arr = array<int>
-   for i = 0, 4 do
+   for i in {0 to 5} do
       arr:insert(0, 4 - i)  -- Insert at start each time
    end
 
    assert(#arr is 5, "Array should have 5 elements")
-   for i = 0, 4 do
+   for i in {0 to 5} do
       assert(arr[i] is i, "arr[" .. i .. "] should be " .. i)
    end
 end
@@ -1161,13 +1161,13 @@ end
 
 @Test function ArraySortAlreadySorted()
    arr = array<int, 5>
-   for i = 0, 4 do
+   for i in {0 to 5} do
       arr[i] = i
    end
 
    arr:sort()
 
-   for i = 0, 4 do
+   for i in {0 to 5} do
       assert(arr[i] is i, "already sorted array should remain unchanged")
    end
 end
@@ -1257,7 +1257,7 @@ end
    arr = array<int> { 1, 2, 3, 4, 5 }
    arr:sort((a, b) => a < b)
 
-   for i = 0, 4 do
+   for i in {0 to 5} do
       assert(arr[i] is i + 1, "comparator already sorted: arr[" .. i .. "] should be " .. (i + 1))
    end
 end
@@ -1304,13 +1304,13 @@ end
 
 @Test function ArraySortComparatorLarge()
    arr = array<int, 100>
-   for i = 0, 99 do
+   for i in {0 to 100} do
       arr[i] = 99 - i
    end
 
    arr:sort((a, b) => a < b)
 
-   for i = 0, 99 do
+   for i in {0 to 100} do
       assert(arr[i] is i, "comparator large sort: arr[" .. i .. "] should be " .. i)
    end
 end

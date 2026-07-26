@@ -71,7 +71,7 @@ end
               isBinary = false
               if req.body then
                  -- Check for binary data (non-printable characters)
-                 for i = 0, math.min(req.body:len(), 100) - 1 do
+                 for i in {0 to math.min(req.body:len(), 100)} do
                     byte = req.body:byte(i)
                     if byte < 32 and byte != 9 and byte != 10 and byte != 13 then
                        isBinary = true

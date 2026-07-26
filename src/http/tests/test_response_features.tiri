@@ -161,7 +161,7 @@ end
             handler = function(req, res)
                -- Generate large response
                largeData = {}
-               for i = 1, 100 do
+               for i in {1 to 101} do
                   table.insert(largeData, {
                      id = i,
                      name = 'Item ' .. i,

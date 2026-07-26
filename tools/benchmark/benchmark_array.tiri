@@ -41,12 +41,12 @@ local glStrArray = array<string, 100>
 local glIntTable = { }
 local glStrTable = { }
 
-for i = 0, 999 do
+for i in {0 to 1000} do
    glIntArray[i] = i
    table.insert(glIntTable, i)
 end
 
-for i = 0, 99 do
+for i in {0 to 100} do
    glStrArray[i] = f"item_{i}"
    table.insert(glStrTable, f"item_{i}")
 end
@@ -91,17 +91,17 @@ end
 @Test function ArrayPushElements()
    for i in {0 to 100} do
       local int_arr = array<int>
-      for j = 0, 99 do
+      for j in {0 to 100} do
          int_arr:push(j * 10)
       end
 
       local dbl_arr = array<double>
-      for j = 0, 99 do
+      for j in {0 to 100} do
          dbl_arr:push(j * 1.5)
       end
 
       local str_arr = array<string>
-      for j = 0, 49 do
+      for j in {0 to 50} do
          str_arr:push(f"item_{j}")
       end
    end
@@ -110,17 +110,17 @@ end
 @Test function TablePushElements()
    for i in {0 to 100} do
       local int_arr = {}
-      for j = 0, 99 do
+      for j in {0 to 100} do
          table.insert(int_arr, j * 10)
       end
 
       local dbl_arr = {}
-      for j = 0, 99 do
+      for j in {0 to 100} do
          table.insert(dbl_arr, j * 1.5)
       end
 
       local str_arr = {}
-      for j = 0, 49 do
+      for j in {0 to 50} do
          table.insert(str_arr, f"item_{j}")
       end
    end
@@ -133,19 +133,19 @@ end
    for i in {0 to 1000} do
       -- Pop integers
       local int_arr = array<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }
-      for j = 0, 9 do
+      for j in {0 to 10} do
          local val = int_arr:pop()
       end
 
       -- Pop doubles
       local dbl_arr = array<double> { 1.1, 2.2, 3.3, 4.4, 5.5 }
-      for j = 0, 4 do
+      for j in {0 to 5} do
          local val = dbl_arr:pop()
       end
 
       -- Pop strings
       local str_arr = array<string> { "a", "b", "c", "d", "e" }
-      for j = 0, 4 do
+      for j in {0 to 5} do
          local val = str_arr:pop()
       end
    end
@@ -160,7 +160,7 @@ end
    local str_arr = array<string> { "apple", "banana", "cherry", "date", "elderberry",
       "fig", "grape", "honeydew", "kiwi", "lemon" }
 
-   for i = 0, 999 do
+   for i in {0 to 1000} do
       int_arr[i] = i * 10
       dbl_arr[i] = i * 1.5
    end
@@ -487,7 +487,7 @@ end
    for i in {0 to 10} do
       -- Create and fill large array
       local arr = array<int, 10000>
-      for j = 0, 9999 do
+      for j in {0 to 10000} do
          arr[j] = j
       end
 
@@ -518,7 +518,7 @@ end
       local stack = array<int>
 
       -- Push 100 items
-      for j = 0, 99 do
+      for j in {0 to 100} do
          stack:push(j)
       end
 
@@ -548,7 +548,7 @@ end
       local queue = array<int>
 
       -- Enqueue items
-      for j = 0, 49 do
+      for j in {0 to 50} do
          queue:push(j)
       end
 

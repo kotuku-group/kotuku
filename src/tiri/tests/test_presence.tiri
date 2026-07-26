@@ -198,7 +198,7 @@ end
 
    function countNumericPresence(Count:num):num
       local total = 0
-      for index = 0, Count - 1 do
+      for index in {0 to Count} do
          local value:num = index % 2
          if value?? then total++ end
       end
@@ -208,7 +208,7 @@ end
    function countMixedPresence(Count:num):num
       local total = 0
       local value:any
-      for index = 0, Count - 1 do
+      for index in {0 to Count} do
          local selector = index % 3
          if selector is 0 then value = 0
          elseif selector is 1 then value = ''

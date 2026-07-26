@@ -314,7 +314,7 @@ end
 @Test function MemoryManagement()
    -- Create many regex objects to test memory handling
    regex_list = {}
-   for i = 0, 99 do
+   for i in {0 to 100} do
       regex_list[i] = regex.new("pattern" .. i)
    end
 

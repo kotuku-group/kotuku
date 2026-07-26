@@ -462,14 +462,16 @@ static array_count_span array_clamped_count_span(lua_State *L, int32_t Start, in
    return { start, count };
 }
 
-static array_range_span array_range_to_span(const tiri_range *Range, MSize Length)
+static array_range_span array_range_to_span(lua_State *L, const tiri_range *Range, MSize Length)
 {
+   tiri_index_range index_range;
+   range_check_index(L, Range, &index_range);
    int32_t len = int32_t(Length);
-   int32_t start = Range->start;
-   int32_t stop = Range->stop;
-   int32_t step = Range->step;
+   int32_t start = index_range.start;
+   int32_t stop = index_range.stop;
+   int32_t step = index_range.step;
 
-   bool use_inclusive = Range->inclusive;
+   bool use_inclusive = index_range.inclusive;
    if (start < 0 or stop < 0) {
       use_inclusive = true;
       if (start < 0) start += len;
@@ -1564,7 +1566,7 @@ LJLIB_CF(array_fill)
    // Check if third argument is a range
    tiri_range *r = check_range(L, 3);
    if (r) {
-      auto span = array_range_to_span(r, arr->len);
+      auto span = array_range_to_span(L, r, arr->len);
       if (span.empty) return 0;
 
       fill_array_elements(arr, value, span.start, span.stop, span.step);
@@ -1735,7 +1737,7 @@ LJLIB_CF(array_find)
    if (arr->elemtype IS AET::OBJECT) {
       auto search_uid = object_uid_from_value(L, 2);
       if (tiri_range *r = check_range(L, 3)) {
-         auto span = array_range_to_span(r, arr->len);
+         auto span = array_range_to_span(L, r, arr->len);
          if (span.empty) return array_push_find_result(L, -1);
          return array_push_find_result(L, find_object_in_array(arr, search_uid, span.start, span.stop, span.step));
       }
@@ -1748,7 +1750,7 @@ LJLIB_CF(array_find)
       GCstr *search_str = lj_lib_checkstr(L, 2);
 
       if (tiri_range *r = check_range(L, 3)) {
-         auto span = array_range_to_span(r, arr->len);
+         auto span = array_range_to_span(L, r, arr->len);
          if (span.empty) return array_push_find_result(L, -1);
          return array_push_find_result(L, find_string_in_array(arr, search_str, span.start, span.stop, span.step));
       }
@@ -1763,7 +1765,7 @@ LJLIB_CF(array_find)
    if (not ok) luaL_error(L, "Unsupported value type '%s'", lua_typename(L, lua_type(L, 2)));
 
    if (tiri_range *r = check_range(L, 3)) {
-      auto span = array_range_to_span(r, arr->len);
+      auto span = array_range_to_span(L, r, arr->len);
       if (span.empty) return array_push_find_result(L, -1);
       return array_push_find_result(L, find_in_array(arr, value, span.start, span.stop, span.step));
    }

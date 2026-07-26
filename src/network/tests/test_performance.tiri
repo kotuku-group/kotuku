@@ -95,7 +95,7 @@ end
             logOutput('[Client] Connected, starting throughput test...')
             start_time = mSys.PreciseTime()
 
-            for i = 1, target_messages do
+            for i in {0 to target_messages} do
                local msg = 'THROUGHPUT_MSG_' .. i
                local err, len = Socket.acWrite(msg)
                if (err is ERR_Okay) then
@@ -268,7 +268,7 @@ end
       name = 'ScalingTestServer',
       feedback = function(Socket, Client, State)
          if (State is NTC_CONNECTED) then
-            connected_clients = connected_clients + 1
+            connected_clients++
             logOutput('[Server] Client ' .. connected_clients .. ' connected')
 
             if (connected_clients >= max_clients) then
@@ -277,7 +277,7 @@ end
                Socket.acSignal()
             end
          elseif (State is NTC_DISCONNECTED) then
-            connected_clients = connected_clients - 1
+            connected_clients -= 1
          end
       end,
       port = glPort + 2,
@@ -292,7 +292,7 @@ end
    clients = {}
    start_time = mSys.PreciseTime()
 
-   for i = 1, max_clients do
+   for i in {0 to max_clients} do
       clients[i] = obj.new('netsocket', {
          name = 'ScalingClient' .. i,
          feedback = function(Socket, Client, State)
@@ -315,7 +315,7 @@ end
    end
 
    check proc.sleep()
-   assert(clients[max_clients] != nil, 'Scaling clients were released before the test completed')
+   assert(clients[max_clients-1] != nil, 'Scaling clients were released before the test completed')
 
    assert(scaling_complete, 'Not all clients connected within timeout')
 
@@ -394,7 +394,7 @@ end
             local start_time = mSys.PreciseTime()
 
             -- Rapidly queue many messages without waiting
-            for i = 1, queue_messages do
+            for i in {0 to queue_messages} do
                local msg = 'QUEUE_TEST_' .. i .. '_' .. string.rep('DATA', 10)
                local err, len = Socket.acWrite(msg)
                if (err is ERR_Okay) then
@@ -448,11 +448,11 @@ end
    iterations = 50
    objects_per_iteration = 5
 
-   for iter = 1, iterations do
+   for iter in {0 to iterations} do
       temp_objects = {}
 
       -- Create multiple network objects
-      for i = 1, objects_per_iteration do
+      for i in {0 to objects_per_iteration} do
          temp_objects[i] = obj.new('netserver', {
             name = 'MemTestSocket' .. iter .. '_' .. i,
             port = glPort + 100 + (iter * objects_per_iteration) + i,
@@ -463,7 +463,7 @@ end
       processing.halt(0.01)
 
       -- Destroy objects
-      for i = 1, objects_per_iteration do
+      for i in {0 to objects_per_iteration} do
          temp_objects[i] = nil
       end
 

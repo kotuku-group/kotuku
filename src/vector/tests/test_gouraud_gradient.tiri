@@ -244,7 +244,7 @@ end
 function distinctGreys(Bitmap)
    local seen = { }
    local count = 0
-   for x = 2, 97 do
+   for x in {2 to 98} do
       local r = mGfx.ReadRGBPixel(Bitmap, x, 50).red
       if seen[r] is nil then
          seen[r] = true
@@ -319,7 +319,7 @@ end
    -- Walk the row at y=50 across the diagonal (near x=50) and track the largest single-pixel brightness drop.
    local previous = -1
    local worst_drop = 0
-   for x = 40, 60 do
+   for x in {40 to 61} do
       local c = mGfx.ReadRGBPixel(bmp, x, 50)
       local brightness = c.red + c.green + c.blue
       if previous >= 0 then
@@ -536,7 +536,7 @@ end
    local bmp = obj.new('bitmap', { width=100, height=100, bitsPerPixel=32, bkgd='255,255,255,255' })
    drawScene(scene, bmp)
 
-   for x = 40, 60 do
+   for x in {40 to 61} do
       local c = mGfx.ReadRGBPixel(bmp, x, 100 - x)  -- track the diagonal x+y=100
       assert((c.green > 165) and (c.green < 205),
          'Translucent shared edge must blend exactly once (green ' .. c.green .. ' at ' .. x .. ',' .. (100 - x) .. ')')

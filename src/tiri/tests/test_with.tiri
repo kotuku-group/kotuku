@@ -64,7 +64,7 @@ end
 
 @Test function WithBreak()
    t = obj.new('time', { })
-   for i = 0, 9 do
+   for i in {0 to 10} do
       with t do
          t.hour = i
          if i is 3 then break end
@@ -80,7 +80,7 @@ end
 
 @Test function WithContinue()
    t = obj.new('time', { })
-   for i = 0, 4 do
+   for i in {0 to 5} do
       with t do
          if i is 2 then continue end
          t.hour = i
@@ -174,7 +174,7 @@ end
    t = obj.new('time', { })
    t.acQuery()
    with t do
-      for i = 0, 10000 do
+      for i in {0 to 10000} do
          val = t.hour
       end
    end

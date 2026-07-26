@@ -137,7 +137,7 @@ end
 
 function selectPrev(View:table, Filter)
    if not View.sItem then
-      for i=1, #View.items do
+      for i in {1 into #View.items} do
          item = View.items[#View.items - i]
          if (not item.hidden) and Filter(item) then
             simpleSelect(View, item)
@@ -146,7 +146,7 @@ function selectPrev(View:table, Filter)
       end
    else
       found = false
-      for i=1, #View.items do
+      for i in {1 into #View.items} do
          item = View.items[#View.items - i]
          if item is View.sItem then
             found = true
@@ -352,7 +352,7 @@ gui.initView = function(Options:table, BuildUI, NewItems)
 
    vw.lowerItem = function(Item)
       assert(Item, 'No Item provided')
-      for i=0, #vw.items-2 do
+      for i in {0 to #vw.items - 1} do
          if vw.items[i] is Item then
             vw.items[i] = vw.items[i+1]
             vw.items[i+1] = Item
@@ -366,7 +366,7 @@ gui.initView = function(Options:table, BuildUI, NewItems)
 
    vw.raiseItem = function(Item)
       assert(Item, 'No Item provided')
-      for i=1, #vw.items-1 do
+      for i in {1 to #vw.items} do
          if vw.items[i] is Item then
             vw.items[i] = vw.items[i-1]
             vw.items[i-1] = Item
@@ -395,7 +395,7 @@ gui.initView = function(Options:table, BuildUI, NewItems)
          reportActiveChange(vw, 'manual', nil)
       end
 
-      for i=0, #vw.items-1 do
+      for i in {0 to #vw.items} do
          if vw.items[i] is Item then
             table.remove(vw.items, i)
             break

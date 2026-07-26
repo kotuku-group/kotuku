@@ -120,7 +120,7 @@ end
          counter++
          return counter
       end
-      for j = 0, 9 do
+      for j in {0 to 10} do
          increment()
       end
 
@@ -333,7 +333,7 @@ end
 
       -- Chain-like method usage
       Counter:reset()
-      for j = 0, 9 do
+      for j in {0 to 10} do
          Counter:increment()
       end
       local final = Counter:getValue()

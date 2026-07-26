@@ -131,7 +131,7 @@ end
             logOutput('[Server] Client connected, sending large data burst...')
 
             -- Send multiple large messages rapidly to test buffer limits
-            for i = 1, 10 do
+            for i in {0 to 10} do
                local err, len = Client.acWrite(large_msg)
                if err != ERR_Okay then
                   logOutput('[Server] Write failed at message ' .. i .. ': ' .. mSys.GetErrorMsg(err))
@@ -356,7 +356,7 @@ end
    -- Create and destroy multiple sockets rapidly to test cleanup
    -- (puts pressure on threaded socket closures)
 
-   for i = 1, 20 do
+   for i in {0 to 20} do
       server = obj.new('netserver', {
          name = 'CleanupTestServer' .. i,
          port = glPort + 20 + i,

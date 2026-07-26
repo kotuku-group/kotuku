@@ -141,7 +141,7 @@ end
 @Test function PrecisionOfRoundTrip()
    -- Values that should round-trip exactly
    exact_values = { 0.5, 0.25, 0.125, 0.0625 }  -- Powers of 2 fractions
-   for i = 0, #exact_values - 1 do
+   for i in {0 to #exact_values} do
       v = exact_values[i]
       assert(v * 2 / 2 is v, f'Power-of-2 fraction {v} should round-trip exactly')
    end

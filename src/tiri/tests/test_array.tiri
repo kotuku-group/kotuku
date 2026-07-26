@@ -371,7 +371,7 @@ end
    arr:copy(table_data)
 
    -- Verify values were copied correctly
-   for i = 0, 4 do
+   for i in {0 to 5} do
       assert(arr[i] is table_data[i], 'Table to integer array copy failed at index ' .. i)
    end
 end
@@ -383,7 +383,7 @@ end
    arr:copy(table_data)
 
    -- Check with small tolerance for float comparison
-   for i = 0, 3 do
+   for i in {0 to 4} do
       diff = math.abs(arr[i] - table_data[i])
       assert(diff < 0.0001, 'Table to float array copy failed at index ' .. i)
    end
@@ -395,7 +395,7 @@ end
 
    arr:copy(table_data)
 
-   for i = 0, 3 do
+   for i in {0 to 4} do
       assert(arr[i] is table_data[i], 'Table to byte array copy failed at index ' .. i)
    end
 end
@@ -406,7 +406,7 @@ end
 
    arr:copy(table_data)
 
-   for i = 0, 2 do
+   for i in {0 to 3} do
       diff = math.abs(arr[i] - table_data[i])
       assert(diff < 0.000000001, 'Table to double array copy failed at index ' .. i)
    end
@@ -418,7 +418,7 @@ end
 
    arr:copy(table_data)
 
-   for i = 0, 2 do
+   for i in {0 to 3} do
       assert(arr[i] is table_data[i], 'Table to int16 array copy failed at index ' .. i)
    end
 end
@@ -427,7 +427,7 @@ end
    arr = array<int, 6>
 
    -- Initialize array with different values
-   for i = 0, 5 do
+   for i in {0 to 6} do
       arr[i] = i
    end
 
@@ -643,7 +643,7 @@ end
 
 @Test function ArrayFind()
    arr = array<int, 10>
-   for i = 0, 9 do
+   for i in {0 to 10} do
       arr[i] = i * 10
    end
 
@@ -692,7 +692,7 @@ end
 
 @Test function ArrayReverse()
    arr = array<int, 5>
-   for i = 0, 4 do
+   for i in {0 to 5} do
       arr[i] = i
    end
 
@@ -707,7 +707,7 @@ end
 
 @Test function ArrayReverseOddLength()
    arr = array<int, 5>
-   for i = 0, 4 do
+   for i in {0 to 5} do
       arr[i] = i + 1
    end
 
@@ -739,7 +739,7 @@ end
 
 @Test function ArraySlice()
    arr = array<int, 10>
-   for i = 0, 9 do
+   for i in {0 to 10} do
       arr[i] = i * 10
    end
 
@@ -764,7 +764,7 @@ end
 
 @Test function ArraySliceNegativeIndices()
    arr = array<int, 5>
-   for i = 0, 4 do
+   for i in {0 to 5} do
       arr[i] = i
    end
 
@@ -790,7 +790,7 @@ end
 
 @Test function ArraySliceEdgeCases()
    arr = array<int, 5>
-   for i = 0, 4 do
+   for i in {0 to 5} do
       arr[i] = i
    end
 
@@ -811,7 +811,7 @@ end
 
 @Test function ArraySliceWithStep()
    arr = array<int, 10>
-   for i = 0, 9 do
+   for i in {0 to 10} do
       arr[i] = i
    end
 
@@ -837,7 +837,7 @@ end
 
 @Test function ArrayFindWithRange()
    arr = array<int, 10>
-   for i = 0, 9 do
+   for i in {0 to 10} do
       arr[i] = i * 10
    end
 
@@ -851,7 +851,7 @@ end
 
 @Test function ArrayFindWithInclusiveRange()
    arr = array<int, 10>
-   for i = 0, 9 do
+   for i in {0 to 10} do
       arr[i] = i * 10
    end
 
@@ -888,7 +888,7 @@ end
 
 @Test function ArrayFindWithSteppedRange()
    arr = array<int, 10>
-   for i = 0, 9 do
+   for i in {0 to 10} do
       arr[i] = (i % 2 is 0) ? 100 :> i * 10
    end
    -- arr = {100, 10, 100, 30, 100, 50, 100, 70, 100, 90}
@@ -901,7 +901,7 @@ end
 @Test function ArrayFindOriginalSyntax()
    -- Verify original syntax still works
    arr = array<int, 10>
-   for i = 0, 9 do
+   for i in {0 to 10} do
       arr[i] = i * 10
    end
 
@@ -1029,7 +1029,7 @@ end
    arr = array<int, 1000>
 
    -- Fill it
-   for i = 0, 999 do
+   for i in {0 to 1000} do
       arr[i] = i
    end
 
@@ -1051,14 +1051,14 @@ end
    arr = array<int, 100>
 
    -- Fill with descending values
-   for i = 0, 99 do
+   for i in {0 to 100} do
       arr[i] = 99 - i
    end
 
    arr:sort()
 
    -- Verify sorted order
-   for i = 0, 99 do
+   for i in {0 to 100} do
       assert(arr[i] is i, "sorted large array element " .. i .. " should be " .. i)
    end
 end
@@ -1219,7 +1219,7 @@ end
 @Test function TableArrayGCStress()
    -- Create table array and populate with many tables
    arr = array<table, 100>
-   for i = 0, 99 do
+   for i in {0 to 100} do
       arr[i] = {value = i * 10}
    end
 
@@ -1228,7 +1228,7 @@ end
    processing.collect()
 
    -- Verify all tables are still accessible
-   for i = 0, 99 do
+   for i in {0 to 100} do
       expected = i * 10
       assert(arr[i].value is expected, "GC stress: arr[" .. i .. "].value should be " .. expected)
    end
@@ -1600,7 +1600,7 @@ end
 
 @Test function ArrayIterationLarge()
    arr = array<int, 1000>
-   for i = 0, 999 do
+   for i in {0 to 1000} do
       arr[i] = i
    end
 
@@ -2190,23 +2190,23 @@ end
    -- Store freshly-allocated strings into an array in a hot loop, interleaving
    -- GC collection to trigger the write barrier while traces are active.
    arr = array<string, 200>
-   for i = 0, 199 do
+   for i in {0 to 200} do
       arr[i] = f"item-{i}"
    end
    processing.collect('full')
 
    -- Verify all strings survived collection
-   for i = 0, 199 do
+   for i in {0 to 200} do
       assert(arr[i] is f"item-{i}", f"String at [{i}] corrupted after GC: got '{arr[i]}'")
    end
 
    -- Overwrite with new strings (JIT trace should be compiled by now) and collect again
-   for i = 0, 199 do
+   for i in {0 to 200} do
       arr[i] = f"replaced-{i}"
    end
    processing.collect('full')
 
-   for i = 0, 199 do
+   for i in {0 to 200} do
       assert(arr[i] is f"replaced-{i}", f"Replaced string at [{i}] corrupted after GC: got '{arr[i]}'")
    end
 end
@@ -2214,23 +2214,23 @@ end
 @Test function JITTableArrayGCBarrier()
    -- Same pattern for table arrays: hot-loop stores + GC + verification
    arr = array<table, 200>
-   for i = 0, 199 do
+   for i in {0 to 200} do
       arr[i] = { id = i, label = f"t-{i}" }
    end
    processing.collect('full')
 
-   for i = 0, 199 do
+   for i in {0 to 200} do
       assert(arr[i].id is i, f"Table at [{i}].id corrupted after GC: got {arr[i].id}")
       assert(arr[i].label is f"t-{i}", f"Table at [{i}].label corrupted after GC")
    end
 
    -- Overwrite and collect again
-   for i = 0, 199 do
+   for i in {0 to 200} do
       arr[i] = { id = i + 1000 }
    end
    processing.collect('full')
 
-   for i = 0, 199 do
+   for i in {0 to 200} do
       assert(arr[i].id is i + 1000, f"Replaced table at [{i}].id corrupted after GC")
    end
 end
@@ -2239,7 +2239,7 @@ end
    -- Interleave GC steps with stores in a hot loop to maximise the chance of
    -- the write barrier firing during incremental marking.
    arr = array<string, 300>
-   for i = 0, 299 do
+   for i in {0 to 300} do
       arr[i] = f"val-{i}"
       if i % 50 is 0 then
          processing.collect('step')
@@ -2247,7 +2247,7 @@ end
    end
    processing.collect('full')
 
-   for i = 0, 299 do
+   for i in {0 to 300} do
       assert(arr[i] is f"val-{i}", f"Interleaved string at [{i}] corrupted: got '{arr[i]}'")
    end
 end
@@ -2255,7 +2255,7 @@ end
 @Test function JITTableArrayGCInterleaved()
    -- Interleave GC steps with table stores
    arr = array<table, 300>
-   for i = 0, 299 do
+   for i in {0 to 300} do
       arr[i] = { n = i }
       if i % 50 is 0 then
          processing.collect('step')
@@ -2263,7 +2263,7 @@ end
    end
    processing.collect('full')
 
-   for i = 0, 299 do
+   for i in {0 to 300} do
       assert(arr[i].n is i, f"Interleaved table at [{i}].n corrupted: got {arr[i].n}")
    end
 end
@@ -2271,17 +2271,17 @@ end
 @Test function JITStringArrayNilStoreGC()
    -- Verify nil stores (clearing slots) work correctly under GC pressure
    arr = array<string, 100>
-   for i = 0, 99 do
+   for i in {0 to 100} do
       arr[i] = f"temp-{i}"
    end
 
    -- Nil out every other element in a hot loop
-   for i = 0, 99, 2 do
+   for i in {0 into 99 by 2} do
       arr[i] = nil
    end
    processing.collect('full')
 
-   for i = 0, 99 do
+   for i in {0 to 100} do
       if i % 2 is 0 then
          assert(arr[i] is nil, f"Nil'd string at [{i}] should be nil, got '{arr[i]}'")
       else
@@ -2293,16 +2293,16 @@ end
 @Test function JITTableArrayNilStoreGC()
    -- Verify nil stores work correctly for table arrays under GC pressure
    arr = array<table, 100>
-   for i = 0, 99 do
+   for i in {0 to 100} do
       arr[i] = { v = i }
    end
 
-   for i = 0, 99, 2 do
+   for i in {0 into 99 by 2} do
       arr[i] = nil
    end
    processing.collect('full')
 
-   for i = 0, 99 do
+   for i in {0 to 100} do
       if i % 2 is 0 then
          assert(arr[i] is nil, f"Nil'd table at [{i}] should be nil")
       else
@@ -2315,8 +2315,8 @@ end
    -- Verify JIT-compiled reads of string arrays survive GC cycles.
    -- The read loop should compile to inline XLOAD with null-guard.
    arr = array<string> { 'alpha', 'bravo', 'charlie', 'delta', 'echo' }
-   for round = 0, 99 do
-      for i = 0, 4 do
+   for round in {0 to 100} do
+      for i in {0 to 5} do
          s = arr[i]
       end
       if round % 20 is 0 then
@@ -2332,11 +2332,11 @@ end
 @Test function JITTableArrayReadGCStress()
    -- Verify JIT-compiled reads of table arrays survive GC cycles.
    arr = array<table, 5>
-   for i = 0, 4 do
+   for i in {0 to 5} do
       arr[i] = { k = i * 7 }
    end
-   for round = 0, 99 do
-      for i = 0, 4 do
+   for round in {0 to 100} do
+      for i in {0 to 5} do
          t = arr[i]
          assert(t.k is i * 7, f"Read stress round {round}: arr[{i}].k wrong")
       end

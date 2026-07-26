@@ -125,7 +125,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
 
    function showFontSizes(List)
       sizes = array<table> { }
-      for i=0,#List-1 do
+      for i in {0 to #List} do
          sizes:push({ id=List[i], name=List[i] })
       end
       vwSize.loadItems(sizes)
@@ -145,7 +145,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
    function highlightSize(Size)
       Size ?! return
       selectSize = Size
-      for i=0,#lSizes-1 do
+      for i in {0 to #lSizes} do
          if lSizes[i] <= Size then
             selectSize = lSizes[i]
          else

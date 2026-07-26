@@ -90,7 +90,7 @@ function getRainbowBitmap()
    for y=0, (glRainbowBitmap.height / 2) - 1 do
       s = 1 - (val / (glRainbowBitmap.height / 2))
       v = 1
-      for x=0, glRainbowBitmap.width-1 do
+      for x in {0 to glRainbowBitmap.width} do
          h = x * 6 / glRainbowBitmap.width
          i = math.floor(h)
          f = h - i
@@ -118,7 +118,7 @@ function getRainbowBitmap()
    for y=glRainbowBitmap.height/2, glRainbowBitmap.height-1 do
       s = val / (glRainbowBitmap.height / 2)
       v = val / (glRainbowBitmap.height / 2)
-      for x=0, glRainbowBitmap.width-1 do
+      for x in {0 to glRainbowBitmap.width} do
          h = x * 6.0 / glRainbowBitmap.width
          i = math.floor(h)
          f = h - i
@@ -172,9 +172,9 @@ function buildLayout(self, Options)
 
    y = dy
    colour = 0
-   for row=0, 6 do
+   for row in {0 to 7} do
       x = WIDGET_GAP - 1
-      for col=0, 7 do
+      for col in {0 to 8} do
          rgb = gui.strToRGB(f'rgb({COMMON[colour]})')
 
          vec = self.viewport.new('VectorRectangle', {
@@ -222,9 +222,9 @@ function buildLayout(self, Options)
    dy += gui.getFontHeight(gui.fonts.window) + WIDGET_GAP
    y = dy
    ci = 0
-   for row=1, 2 do
+   for row in {1 to 3} do
       x = dx
-      for column=1, 7 do
+      for column in {1 to 8} do
          rgb = self._userColours?[ci] ?? gui.srgb(255, 255, 255, 255)
          rgb.r ?= 1
          rgb.g ?= 1
