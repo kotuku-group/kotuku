@@ -2954,6 +2954,30 @@ static bool test_type_guided_emission(kt::Log &Log)
       return false;
    }
 
+   constexpr std::string_view implicit_filter =
+      "extern array\n"
+      "inner = array<int> { 1 }\n"
+      "items = array<array> { inner }\n"
+      "filtered = items:filter(Value => Value[0] > 0)\n"
+      "return filtered[0][0]\n";
+   snapshot = compile_snapshot(L, implicit_filter, true, error);
+   if (not snapshot or count_opcode_tree(*snapshot, BC_AGETB) < 3) {
+      Log.error("array filter lost implicit-local result or predicate element descriptors: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view direct_filter =
+      "extern array\n"
+      "local inner = array<int> { 1 }\n"
+      "local items = array<array> { inner }\n"
+      "local filtered = array.filter(items, Value => true)\n"
+      "return filtered[0][0]\n";
+   snapshot = compile_snapshot(L, direct_filter, true, error);
+   if (not snapshot or count_opcode_tree(*snapshot, BC_AGETB) < 2) {
+      Log.error("direct array.filter call lost its source element descriptor: %s", error.c_str());
+      return false;
+   }
+
    constexpr std::string_view mismatch =
       "local function typed(Value:num):num return Value end\n"
       "local callback = typed\n"
