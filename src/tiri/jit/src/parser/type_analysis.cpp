@@ -329,6 +329,7 @@ private:
       InferredType type{};
       SourceSpan location{};
       const FunctionExprPayload* function = nullptr;  // Non-null if declared as global function
+      const FunctionExprPayload* forward_declaration = nullptr; // Original empty declaration used as the contract
       bool is_const = false;  // True if declared with <const> attribute
       bool implicit = false;  // True if inferred from a plain assignment rather than a 'global' declaration
       bool explicit_contract = false; // True only for an explicit non-any annotation
@@ -2361,10 +2362,17 @@ void TypeAnalyser::declare_global_function(GCstr *Name, const FunctionExprPayloa
 {
    if (not Name) return;
 
-   if (auto existing = this->global_types_.find(Name);
-       existing != this->global_types_.end() and existing->second.function and Function and
-       is_function_forward_declaration(*existing->second.function)) {
-      if (auto mismatch = function_signature_mismatch(*existing->second.function, *Function)) {
+   const FunctionExprPayload *forward_declaration = nullptr;
+   if (auto existing = this->global_types_.find(Name); existing != this->global_types_.end()) {
+      forward_declaration = existing->second.forward_declaration;
+      if (not forward_declaration and existing->second.function and
+          is_function_forward_declaration(*existing->second.function)) {
+         forward_declaration = existing->second.function;
+      }
+   }
+
+   if (forward_declaration and Function) {
+      if (auto mismatch = function_signature_mismatch(*forward_declaration, *Function)) {
          TypeDiagnostic diag;
          diag.location = Location;
          diag.code = ParserErrorCode::FunctionSignatureMismatch;
@@ -2380,6 +2388,10 @@ void TypeAnalyser::declare_global_function(GCstr *Name, const FunctionExprPayloa
    info.type.is_fixed = true;  // Functions have fixed type
    info.location = Location;
    info.function = Function;
+   info.forward_declaration = forward_declaration;
+   if (not info.forward_declaration and Function and is_function_forward_declaration(*Function)) {
+      info.forward_declaration = Function;
+   }
    this->global_types_[Name] = info;
    this->trace_decl(this->ctx_.lex().linenumber, Name, TiriType::Func, true);
 }

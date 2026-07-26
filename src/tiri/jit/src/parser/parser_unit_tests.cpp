@@ -1391,6 +1391,35 @@ static bool test_forward_declaration_signature_validation(kt::Log &Log)
    }
 
    lua_pop(L, 1);
+
+   constexpr std::string_view conditional_mismatch_source =
+      "global function routed(Value:num) end\n"
+      "if true then\n"
+      "   global function routed(Value:num)\n"
+      "      return Value\n"
+      "   end\n"
+      "else\n"
+      "   global function routed(Value:str)\n"
+      "      return Value\n"
+      "   end\n"
+      "end\n";
+
+   if (lua_load(L, conditional_mismatch_source, "conditional-forward-signature") IS 0) {
+      Log.error("a conditional definition bypassed its original forward declaration");
+      lua_pop(L, 1);
+      return false;
+   }
+
+   message = lua_tostring(L, -1);
+   if (message.find("signature for global function 'routed' does not match its forward declaration") IS
+       std::string_view::npos or message.find("parameter 1 has type 'str', expected 'num'") IS
+       std::string_view::npos) {
+      Log.error("conditional forward declaration produced the wrong diagnostic: %s", lua_tostring(L, -1));
+      lua_pop(L, 1);
+      return false;
+   }
+
+   lua_pop(L, 1);
    return true;
 }
 
