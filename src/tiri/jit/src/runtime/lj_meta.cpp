@@ -538,6 +538,31 @@ TValue * lj_meta_equal_thunk(lua_State *L, BCIns ins)
 }
 
 //********************************************************************************************************************
+// Resolve a thunk before applying the extended falsey test.  BC_ISFALSEY handles ordinary values inline in the VM
+// and calls this helper only for userdata, since a thunk's container is userdata but its logical value may be falsey.
+
+int lj_meta_isfalsey(lua_State *L, BCIns Ins)
+{
+   VMHelperGuard guard(L);
+
+   cTValue *value = &L->base[bc_a(Ins)];
+   if (not lj_is_thunk(value)) return 0;
+
+   value = lj_thunk_resolve(L, udataV(value));
+   uint32_t mask = bc_d(Ins);
+
+   if (tvisnil(value)) return 1;
+   if (tvisfalse(value)) return (mask & ISFALSEY_FALSE) != 0;
+   if (tvisnumber(value)) {
+      return (mask & ISFALSEY_ZERO) and (tvisint(value) ? intV(value) IS 0 : tviszero(value));
+   }
+   if (tvisstr(value)) return (mask & ISFALSEY_EMPTY_STR) and strV(value)->len IS 0;
+   if (tvisarray(value)) return (mask & ISFALSEY_EMPTY_COLL) and arrayV(value)->len IS 0;
+   if (tvistab(value)) return (mask & ISFALSEY_EMPTY_COLL) and lj_tab_empty(tabV(value));
+   return 0;
+}
+
+//********************************************************************************************************************
 // Helper for ordered comparisons. String compare, __lt/__le metamethods.
 
 TValue * lj_meta_comp(lua_State *L, cTValue *o1, cTValue *o2, int op)

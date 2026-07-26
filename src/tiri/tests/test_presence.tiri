@@ -191,36 +191,70 @@ end
    assert((v2??) is false, "Failed negative zero test: expected false for -0.0")
 end
 
--- Tests to verify bytecode semantics claimed in PR comment
--- PR comment claims: BC_ISEQP/BC_ISEQN/BC_ISEQS skip next instruction when comparison succeeds
--- These tests verify the actual runtime behavior
+@Test(hotpath=50) function JitFalseySideExits()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   function countNumericPresence(Count:num):num
+      local total = 0
+      for index = 0, Count - 1 do
+         local value:num = index % 2
+         if value?? then total++ end
+      end
+      return total
+   end
+
+   function countMixedPresence(Count:num):num
+      local total = 0
+      local value:any
+      for index = 0, Count - 1 do
+         local selector = index % 3
+         if selector is 0 then value = 0
+         elseif selector is 1 then value = ''
+         else value = 'present' end
+         if value?? then total++ end
+      end
+      return total
+   end
+
+   assert(countNumericPresence(300) is 150,
+      'Numeric falsey guards should side-exit correctly when zero and non-zero values alternate')
+   assert(countMixedPresence(300) is 100,
+      'Type-specialised falsey traces should side-exit correctly when the runtime type changes')
+
+   jit.flush()
+   jit.opt.start()
+end
+
+-- Runtime checks for the falsey bytecode's branch polarity and type dispatch.
 
 -- Test: Verify truthy string returns true (proves jumps don't fire incorrectly)
 @Test function BytecodeSemanticsTruthyString()
    s = "test"
    result = s??
-   assert(result is true, "Truthy string must return true - if false, BC_ISEQS may be skipping when equal (wrong)")
+   assert(result is true, "Truthy string must return true")
 end
 
 -- Test: Verify truthy number returns true
 @Test function BytecodeSemanticsTruthyNumber()
    n = 42
    result = n??
-   assert(result is true, "Truthy number must return true - if false, BC_ISEQN may be skipping when equal (wrong)")
+   assert(result is true, "Truthy number must return true")
 end
 
 -- Test: Verify falsey string returns false (proves jumps fire correctly)
 @Test function BytecodeSemanticsFalseyString()
    s = ""
    result = s??
-   assert(result is false, "Falsey string must return false - if true, BC_ISEQS may not be jumping when equal")
+   assert(result is false, "Falsey string must return false")
 end
 
 -- Test: Verify falsey number returns false
 @Test function BytecodeSemanticsFalseyNumber()
    n = 0
    result = n??
-   assert(result is false, "Falsey number must return false - if true, BC_ISEQN may not be jumping when equal")
+   assert(result is false, "Falsey number must return false")
 end
 
 -- Test: Verify type mismatch doesn't cause false positives (string vs number comparison)
@@ -243,14 +277,14 @@ end
 @Test function BytecodeSemanticsNil()
    v = nil
    result = v??
-   assert(result is false, "Nil must return false - verifies BC_ISEQP behavior")
+   assert(result is false, "Nil must return false")
 end
 
 -- Test: Verify false returns false correctly
 @Test function BytecodeSemanticsFalse()
    v = false
    result = v??
-   assert(result is false, "False must return false - verifies BC_ISEQP behavior")
+   assert(result is false, "False must return false")
 end
 
 -- Test: Comprehensive runtime truthy values

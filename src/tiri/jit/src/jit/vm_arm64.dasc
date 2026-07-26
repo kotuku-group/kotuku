@@ -2688,27 +2688,74 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_next
     break;
 
-  case BC_ISEMPTYARR:
-    // Check if RA is an empty array or table. Used by ?? operator for extended falsey semantics.
-    // Empty collections execute the following JMP (value is falsey); all other values skip it.
-    |  // RA = src, followed by JMP with RC = target
+  case BC_ISFALSEY:
+    // Execute the following JMP when RA matches one of the falsey conditions selected by RC.
+    // Nil is always falsey; the mask controls false, zero, empty string, and empty collection checks.
+    |  // RA = src, RC = falsey mask, followed by JMP
     |  ldr CARG1, [BASE, RA, lsl #3]
-    |  add PC, PC, #8			// Advance past following JMP (64-bit BCIns)
+    |  add PC, PC, #8			// Advance past following JMP (64-bit BCIns).
     |  asr ITYPE, CARG1, #47
-    |  cmn ITYPE, #-LJ_TARRAY
+    |  cmn ITYPE, #-LJ_TNIL
+    |  beq >9
+    |  cmn ITYPE, #-LJ_TFALSE
     |  beq >2
+    |  cmn ITYPE, #-LJ_TISNUM
+    |  bls >3
+    |  cmn ITYPE, #-LJ_TSTR
+    |  beq >4
+    |  cmn ITYPE, #-LJ_TUDATA
+    |  beq >7
+    |  cmn ITYPE, #-LJ_TARRAY
+    |  beq >5
     |  cmn ITYPE, #-LJ_TTAB
-    |  bne >1				// Not a collection - skip JMP (truthy)
+    |  bne >1
+    |  tst RCw, #ISFALSEY_EMPTY_COLL
+    |  beq >1
     |  and CARG1, CARG1, #LJ_GCVMASK
     |  bl extern lj_tab_empty
-    |  cbz CRET1w, >1			// Non-empty table - skip JMP (truthy)
-    |  b >3				// Empty table - execute JMP (falsey)
+    |  cbnz CRET1w, >9
+    |  b >1
     |2:
+    |  tst RCw, #ISFALSEY_FALSE
+    |  bne >9
+    |  b >1
+    |3:
+    |  tst RCw, #ISFALSEY_ZERO
+    |  beq >1
+    |.if DUALNUM
+    |  cmn ITYPE, #-LJ_TISNUM
+    |  bne >6
+    |  cbz CARG1w, >9
+    |  b >1
+    |6:
+    |.endif
+    |  lsl TMP0, CARG1, #1
+    |  cbz TMP0, >9
+    |  b >1
+    |4:
+    |  tst RCw, #ISFALSEY_EMPTY_STR
+    |  beq >1
+    |  and CARG1, CARG1, #LJ_GCVMASK
+    |  ldr TMP0w, STR:CARG1->len
+    |  cbz TMP0w, >9
+    |  b >1
+    |5:
+    |  tst RCw, #ISFALSEY_EMPTY_COLL
+    |  beq >1
     |  and CARG1, CARG1, #LJ_GCVMASK
     |  ldr TMP0w, ARRAY:CARG1->len
-    |  cbnz TMP0w, >1			// Non-empty array - skip JMP (truthy)
-    |3:
-    |  // Empty collection - execute JMP (falsey)
+    |  cbnz TMP0w, >1
+    |  b >9
+    |7:
+    |  str BASE, L->base
+    |  mov CARG1, L
+    |  ldr CARG2, [PC, #-16]
+    |  str PC, SAVE_PC
+    |  bl extern lj_meta_isfalsey  // (lua_State *L, BCIns ins)
+    |  ldr BASE, L->base
+    |  cbnz CRET1w, >9
+    |  b >1
+    |9:
     |  ldrh RCw, [PC, #-6]		// Load RD from JMP at [PC-8+OFS_RD]
     |  add PC, PC, RC, lsl #3		// Branch target: PC + RD*8
     |  sub PC, PC, #0x40000		// Subtract BCBIAS_J*8

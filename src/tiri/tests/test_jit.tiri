@@ -30,6 +30,39 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 
+@Test function FalseyBytecodeDisassembly()
+   local script = obj.new('tiri', { statement=[[
+function numberPresent(Value:num):bool return Value?? end
+function stringPresent(Value:str):bool return Value?? end
+function booleanPresent(Value:bool):bool return Value?? end
+function arrayPresent(Value:array):bool return Value?? end
+function tablePresent(Value:table):bool return Value?? end
+function anyPresent(Value:any):bool return Value?? end
+]] })
+   check script.acQuery()
+   check script.acActivate()
+   local _, disassembly = script.mtDebugLog('disasm')
+
+   assert(disassembly:count('ISFALSEY') is 6,
+      'Each runtime presence check should emit one ISFALSEY instruction')
+   assert(disassembly:count('ISFALSEY  A=R0 D=#1\n') is 1,
+      'A boolean operand should narrow the falsey mask to false')
+   assert(disassembly:count('ISFALSEY  A=R0 D=#2\n') is 1,
+      'A numeric operand should narrow the falsey mask to zero')
+   assert(disassembly:count('ISFALSEY  A=R0 D=#4\n') is 1,
+      'A string operand should narrow the falsey mask to empty string')
+   assert(disassembly:count('ISFALSEY  A=R0 D=#8\n') is 2,
+      'Array and table operands should narrow the falsey mask to empty collection')
+   assert(disassembly:count('ISFALSEY  A=R0 D=#15\n') is 1,
+      'An any operand should retain the full falsey mask')
+   assert(disassembly:find('ISEMPTYARR') is nil,
+      'The retired collection-only falsey instruction must not be emitted')
+   assert(disassembly:find('ISEQN') is nil and disassembly:find('ISEQS') is nil,
+      'Presence checks must not emit the former numeric and string comparison cascade')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
 @Test function LayoutAwareStructBytecodeDisassembly()
    local script = obj.new('tiri', { statement=[[
 struct PhaseTwoLayout First: int, Second: int end

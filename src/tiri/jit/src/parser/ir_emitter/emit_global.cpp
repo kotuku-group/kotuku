@@ -77,7 +77,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
       FalseyJumpOptions options;
       options.include_empty_array = true;
       ControlFlowEdge falsey_edge = emit_falsey_jumps(
-         this->func_state, this->lex_state, this->control_flow, lhs_reg, options);
+         this->func_state, this->control_flow, lhs_reg, options);
 
       // Skip assignment if not empty
 
@@ -148,7 +148,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
       nil_only.include_zero = false;
       nil_only.include_empty_string = false;
       ControlFlowEdge check_nil = emit_falsey_jumps(
-         this->func_state, this->lex_state, this->control_flow, lhs_reg, nil_only);
+         this->func_state, this->control_flow, lhs_reg, nil_only);
 
       // Skip assignment if not nil
 

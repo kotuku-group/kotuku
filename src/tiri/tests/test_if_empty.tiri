@@ -211,6 +211,36 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Deferred values must be resolved before the consolidated falsey bytecode tests their logical value.
+
+@Test function ThunkFalseyChecks()
+   evaluation_count = 0
+   available = thunk():bool
+      evaluation_count++
+      return true
+   end
+
+   function accept(Value):bool
+      Value ?! return false
+      return true
+   end
+
+   assert(accept(available), "A truthy thunk must not activate a falsey guard")
+   assert(evaluation_count is 1, "The falsey guard must resolve its thunk exactly once")
+
+   missing = thunk():bool
+      return false
+   end
+   result = missing ?? "fallback"
+   assert(result is "fallback", "A thunk returning false must select the fallback")
+
+   zero = thunk():num
+      return 0
+   end
+   assert((zero??) is false, "A thunk returning zero must fail a postfix presence check")
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Test the use of if-empty within a function
 
 @Test function IfEmptyArgumentLeakCapture()
