@@ -236,7 +236,7 @@ end
 @Test function EnumInsideLoopError()
    try
       exec([[
-for i = 1, 1 do
+for i in {1 into 1} do
    enum LOOP_ENUM { ONE }
 end
 ]])

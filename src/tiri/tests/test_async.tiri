@@ -412,7 +412,7 @@ end
    proc = processing.new({ timeout=5.0, signals = array<object> { signal } })
 
    for i in {0 to total} do
-      script = obj.new('tiri', { statement = f"for j=0,99 do async.pool.counter = {i} * 100 + j end" })
+      script = obj.new('tiri', { statement = f"for j in {{0 into 99}} do async.pool.counter = {i} * 100 + j end" })
       async.script(script, function(Object)
          check Object.error
          completed++

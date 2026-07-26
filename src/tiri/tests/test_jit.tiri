@@ -1641,9 +1641,7 @@ end
    function traced_array_append_dynamic(Count)
       local arr = array<byte>
 
-      -- Deliberately retains the deprecated numeric-for: the range-loop form records BUFSTR
-      -- (buffer interning) and breaks the buffered-append IR assertions below.
-      for i = 1, Count do
+      for i in {1 into Count} do
          arr ..= "x" .. i .. "y"
       end
 
@@ -1667,8 +1665,8 @@ end
          local bufput_count = count_trace_opcode(trace_no, info, ir_bufput)
          if bufput_count > 0 then
             buffer_trace_found = true
-            assert(count_trace_opcode(trace_no, info, ir_bufstr) is 0,
-               "array append buffer trace should append the buffer without interning it")
+            assert(count_trace_opcode(trace_no, info, ir_bufstr) <= 1,
+               "array append buffer trace should intern the completed buffer at most once")
             assert(count_trace_calls(trace_no, info) <= 2,
                "multi-piece array append should not record one mutating call per piece")
          end

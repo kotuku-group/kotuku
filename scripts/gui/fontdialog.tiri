@@ -66,7 +66,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
 
          x1 = gap
          x2 = pageWidth - gap
-         for y = baseline, self.examplePage.height, spacing do
+         for y in {baseline into self.examplePage.height by spacing} do
             seq ..= string.format('M%f,%f L%f,%f ', x1, y, x2, y)
          end
          self.guidelines.sequence = seq

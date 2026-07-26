@@ -56,8 +56,8 @@
 ** ------------------------------------------------------------------------
 
 $ cat >x.lua
-for outer=1,100 do
-  for inner=1,100 do end
+for outer in {1 into 100} do
+  for inner in {1 into 100} do end
 end
 ^D
 
@@ -73,10 +73,10 @@ Temporary breakpoint 1 (TRACE_1) pending.
 Starting program: luajit x.lua
 
 Temporary breakpoint 1, TRACE_1 () at x.lua:2
-2     for inner=1,100 do end
+2     for inner in {1 into 100} do end
 (gdb) list
-1   for outer=1,100 do
-2     for inner=1,100 do end
+1   for outer in {1 into 100} do
+2     for inner in {1 into 100} do end
 3   end
 (gdb) bt
 #0  TRACE_1 () at x.lua:2
@@ -97,7 +97,7 @@ Temporary breakpoint 2 (TRACE_2) pending.
 Continuing.
 
 Temporary breakpoint 2, TRACE_2 () at x.lua:1
-1   for outer=1,100 do
+1   for outer in {1 into 100} do
 (gdb) info frame
 Stack level 0, frame at 0xffffd7c0:
  eip = 0xf7fd9f60 in TRACE_2 (x.lua:1); saved eip 0x8053690

@@ -166,6 +166,18 @@ end
    assert(#result.diagnostics is 0, 'LSP diagnostics should accept current to/into/by range syntax.')
 end
 
+@Test function RemovedNumericForProducesLspDiagnostic()
+   doc = makeDoc('for i = 0, 8 do\n   print(i)\nend\n')
+   result = computeDiagnostics(doc)
+
+   assert(#result.diagnostics > 0, 'Removed numeric for syntax should produce an LSP diagnostic.')
+   diagnostic = result.diagnostics[0]
+   assert(diagnostic.code is 'DeprecatedSyntax', 'LSP should preserve the DeprecatedSyntax diagnostic code.')
+   assert(diagnostic.severity is 1, 'Removed numeric for syntax should be an LSP error.')
+   assert(diagnostic.range.start.line is 0, 'Removed numeric for diagnostic should identify the loop header.')
+   assert(diagnostic.range.start.character is 6, "Removed numeric for diagnostic should start at '='.")
+end
+
 @Test function TernaryModesReceiveSemanticTokens()
    source = 'standard = value ? \'yes\' :> \'no\'\n' ..
       'extended = value ?? \'yes\' :> \'no\'\n' ..
