@@ -7,7 +7,7 @@ io.ui ?= { }
 
 rxCopy = <{ regex.new('^[A-Z].+') }>
 
-local progress_status, progress_dialog, progress_time
+local progress_status, progress_dialog:table, progress_time
 
 -- copyFeedback() is called for every file that is copied, or multiple times for large files.
 
@@ -99,7 +99,7 @@ io.ui.copy = function(Source:any, Dest:str, Move:bool)
 
    progress_time = mSys.PreciseTime()
    local response = 'yes'
-   local err = ERR_Okay
+   local err:num = ERR_Okay
    for src_path in values(Source) do
       if response != 'yes-all' and response != 'no-all' then response = 'yes' end -- Reset to the default
 

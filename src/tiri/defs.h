@@ -31,6 +31,8 @@ constexpr int SIZE_READ = 1024;
 using namespace kt;
 
 class extTiri; // Internal extended Tiri class (full definition below); derives from objTiri
+struct static_module_signature;
+using StaticModuleHandle = const static_module_signature *;
 
 template <class T> T ALIGN64(T a) { return (((a) + 7) & (~7)); }
 template <class T> T ALIGN32(T a) { return (((a) + 3) & (~3)); }
@@ -389,6 +391,9 @@ void get_line(extTiri *, int, STRING, int);
 APTR get_meta(lua_State *Lua, int Arg, CSTRING);
 [[maybe_unused]] void hook_debug(lua_State *, lua_Debug *);
 ERR load_include(extTiri *, std::string_view);
+[[nodiscard]] StaticModuleHandle static_module_from_value(lua_State *, cTValue *) noexcept;
+[[nodiscard]] StaticModuleHandle static_module_by_name(std::string_view) noexcept;
+[[nodiscard]] const FunctionField * static_module_function(StaticModuleHandle, std::string_view) noexcept;
 int MAKESTRUCT(lua_State *);
 [[maybe_unused]] void make_any_array(lua_State *, int, std::string_view, int, CPTR, struct_record * = nullptr);
 [[maybe_unused]] void make_array(lua_State *, AET, int = 0, CPTR = nullptr, std::string_view = {});

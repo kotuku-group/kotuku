@@ -77,6 +77,18 @@ void TypeCheckScope::fix_local_type(GCstr *Name, TiriType Type, CLASSID ObjectCl
    }
 }
 
+void TypeCheckScope::mark_dynamic_ingress(GCstr *Name)
+{
+   for (auto it = this->variables_.rbegin(); it != this->variables_.rend(); ++it) {
+      if (it->name IS Name and not it->is_parameter) {
+         it->type.primary = TiriType::Any;
+         it->type.is_fixed = false;
+         it->type.requires_destination_type = true;
+         return;
+      }
+   }
+}
+
 void TypeCheckScope::mark_used(GCstr *Name)
 {
    if (not Name) return;

@@ -128,7 +128,7 @@ end
 
    assert(path.totalCommands is 3, f'Curve path should apply as three commands, got {path.totalCommands}')
 
-   local command
+   local command:table
    err, command = path.mtGetCommand(1)
    assert(err is ERR_Okay, f'curve command: GetCommand failed with {mSys.GetErrorMsg(err)}')
    assert(command.type is PE_Curve, 'Cubic curve should remain editable as a cubic command')

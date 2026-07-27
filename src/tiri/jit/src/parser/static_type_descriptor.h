@@ -13,6 +13,7 @@
 #include "../runtime/lj_obj.h"
 
 struct ExprNode;
+struct FunctionField;
 struct FunctionExprPayload;
 struct struct_field;
 struct struct_record;
@@ -21,6 +22,8 @@ using StaticValueHandle = uint32_t;
 using StaticResultSetHandle = uint32_t;
 using StaticCallableHandle = uint32_t;
 using StaticBindingID = uint32_t;
+struct static_module_signature;
+using StaticModuleHandle = const static_module_signature *;
 
 enum class StaticProof : uint8_t {
    Advisory,
@@ -43,6 +46,7 @@ struct StaticValueDescriptor {
    TiriType primary = TiriType::Unknown;
    CLASSID object_class_id = CLASSID::NIL;
    struct_record *struct_def = nullptr;
+   StaticModuleHandle module = nullptr;
    ArrayElementDescriptor array_element{};
    StaticProof proof = StaticProof::Advisory;
    bool nullable = false;
@@ -122,6 +126,17 @@ private:
    const StaticValueDescriptor &, const StaticValueDescriptor &);
 [[nodiscard]] StaticResultSet map_static_result_filter(
    const StaticResultSet &, uint64_t KeepMask, uint8_t ExplicitCount, bool TrailingKeep);
+enum class ObjectCallMemberKind : uint8_t {
+   None,
+   Action,
+   Method
+};
+[[nodiscard]] ObjectCallMemberKind classify_object_call_member(std::string_view);
+[[nodiscard]] StaticResultSet describe_native_prototype_results(const fprototype *);
+[[nodiscard]] StaticResultSet describe_object_call_results(const FunctionField *);
+[[nodiscard]] StaticResultSet describe_module_call_results(
+   const FunctionField *, lua_State *State = nullptr);
+[[nodiscard]] StaticValueDescriptor describe_struct_field(const struct_record *, GCstr *);
 [[nodiscard]] std::optional<ArrayElementDescriptor> describe_array_element(
    std::string_view Name, lua_State *State = nullptr);
 [[nodiscard]] std::optional<ArrayElementDescriptor> describe_array_element(const struct_field &);

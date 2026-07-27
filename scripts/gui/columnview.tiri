@@ -17,8 +17,8 @@ rx_datetime <const> = <{ regex.new([[^(\d{4}-\d{1,2}-\d{1,2})[\sT]?(.*)$]]) }>
 rx_date <const> = <{ regex.new([[^(\d+)-(\d+)-(\d+)$]]) }>
 rx_time <const> = <{ regex.new([[^(\d{2}):(\d{2}):?(\d{0,2})$]]) }>
 
-local LINE_HEIGHT, FONT_HEIGHT, LINE_HEIGHT, FONT_HEIGHT, MARGIN
-local ICON_OFFSET, LINE_OFFSET, BANNER_HEIGHT, lEnableTextGradients
+local LINE_HEIGHT:num, FONT_HEIGHT:num, LINE_HEIGHT:num, FONT_HEIGHT:num, MARGIN:num
+local ICON_OFFSET:num, LINE_OFFSET:num, BANNER_HEIGHT:num, lEnableTextGradients:bool
 
 glIconSize = 16
 glCounter = 1

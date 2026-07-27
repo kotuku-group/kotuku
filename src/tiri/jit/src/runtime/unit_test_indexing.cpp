@@ -148,7 +148,7 @@ static bool test_ipairs_starting_index(kt::Log& Log)
    // First, check what ipairs() returns as the initial control variable
    std::string Error;
    const char* CheckInit = R"(
-      local iter, t, init = ipairs({10, 20, 30})
+      local iter:func, t:table, init:num = ipairs({10, 20, 30})
       return init
    )";
 
@@ -162,8 +162,8 @@ static bool test_ipairs_starting_index(kt::Log& Log)
 
    // Now check the first call to ipairs_aux
    const char* CheckFirstCall = R"(
-      local iter, t, init = ipairs({10, 20, 30})
-      local idx, val = iter(t, init)
+      local iter:func, t:table, init:num = ipairs({10, 20, 30})
+      local idx:num, val:num = iter(t, init)
       return idx, val
    )";
 
@@ -178,7 +178,7 @@ static bool test_ipairs_starting_index(kt::Log& Log)
 
    // Now run the full iteration test
    const char* Code = R"(
-      local first = nil
+      local first:num = nil
       local count = 0
       for i, v in ipairs({10, 20, 30}) do
          if not first then first = i end

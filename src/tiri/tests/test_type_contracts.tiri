@@ -136,8 +136,8 @@ end
    local holder = { callback = typed }
 
    expect_contract_failure(function() typed(dynamic_value('wrong')) end, 'parameter')
-   expect_contract_failure(function() alias('wrong') end, 'parameter')
-   expect_contract_failure(function() holder.callback('wrong') end, 'parameter')
+   expect_contract_failure(function() alias(dynamic_value('wrong')) end, 'parameter')
+   expect_contract_failure(function() holder.callback(dynamic_value('wrong')) end, 'parameter')
    expect_contract_failure(function() imported_typed(dynamic_value('wrong')) end, 'parameter')
 
    local values = array<any> { 'wrong' }
@@ -148,7 +148,7 @@ end
 @Test function SpecialParameterForms()
    function blank(_:num) return true end
    local blank_alias:any = blank
-   expect_contract_failure(function() blank_alias('wrong') end, 'parameter')
+   expect_contract_failure(function() blank_alias(dynamic_value('wrong')) end, 'parameter')
 
    local methods = {}
    function methods:typed(Value:num) return Value end
@@ -166,7 +166,7 @@ end
       return Value
    end
    local thunk_alias:any = deferred
-   expect_contract_failure(function() thunk_alias('wrong') end, 'parameter')
+   expect_contract_failure(function() thunk_alias(dynamic_value('wrong')) end, 'parameter')
 
    global contract_mutual_odd
    global function contract_mutual_even(Value:num):bool
@@ -189,7 +189,7 @@ end
 
    local plain = { 10 }
    local indirect:any = increment
-   expect_contract_failure(function() indirect(plain) end, 'parameter')
+   expect_contract_failure(function() indirect(dynamic_value(plain)) end, 'parameter')
    assert(plain[0] is 10, 'The function body must not mutate before its parameter guard')
 end
 
@@ -596,7 +596,7 @@ end
       'deferred light userdata should satisfy userdata after resolution')
 
    local deferred_range = <{ {0 to 2} }>
-   expect_contract_failure(function() accept_userdata(deferred_range) end, 'parameter')
+   expect_contract_failure(function() accept_userdata(dynamic_value(deferred_range)) end, 'parameter')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -621,7 +621,7 @@ end
       assert(hot_userdata(proxy) is proxy, 'userdata contracts must remain stable on hot paths')
       assert(store_hot_global(i) is i, 'An inferred global contract should preserve valid values on hot paths')
    end
-   expect_contract_failure(function() dynamic('wrong') end, 'parameter')
+   expect_contract_failure(function() dynamic(dynamic_value('wrong')) end, 'parameter')
    expect_contract_failure(function() hot_userdata(dynamic_value({0 to 2})) end, 'parameter')
    expect_contract_failure(function() store_hot_global('wrong') end, 'global')
 end

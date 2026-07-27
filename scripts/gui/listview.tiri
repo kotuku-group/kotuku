@@ -13,7 +13,7 @@ ICON_SIZE <const> = 16
 VSPACING  <const> = 1
 EDGE      <const> = 4
 
-local LINE_HEIGHT, FONT_HEIGHT, LINE_OFFSET
+local LINE_HEIGHT:num, FONT_HEIGHT:num, LINE_OFFSET:num
 
 extern itemHoverCallback
 

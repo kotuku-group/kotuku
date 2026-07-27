@@ -278,7 +278,7 @@ end
    assert(xq.resultString is 'One', 'Unscoped indexed absolute paths should not be limited to the selected subtree')
 
    xq.statement = '..'
-   local escapedId = nil
+   local escapedId:num = nil
    err = xq.mtSearch(xml, function(XML, TagID)
       escapedId = TagID
    end, chapterId)

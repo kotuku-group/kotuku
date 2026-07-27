@@ -1044,6 +1044,7 @@ extern int luaopen_base(lua_State* L)
    reg_func_prototype("newproxy", { TiriType::Userdata }, { TiriType::Any });
    reg_func_prototype("__create_thunk", { TiriType::Any }, { TiriType::Func, TiriType::Num });
    reg_func_prototype("ltr", { TiriType::Str }, { TiriType::Str });
+   reg_func_prototype("resolve", { TiriType::Any }, { TiriType::Any });
 
    return 2;
 }

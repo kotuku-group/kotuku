@@ -549,7 +549,7 @@ function add_result_value(Result:table, ArgNames:table, Presence:table, Param:ta
    IsExplicit:bool):table
 
    if Param.multiple then
-      local param_values = Result[Param.name]
+      local param_values:array = Result[Param.name]
       if param_values is nil then
          param_values = array<any>
          Result[Param.name] = param_values
@@ -1480,7 +1480,7 @@ function validate_scalar_value(Param:table, Value:any)
    end
 
    if Param.pattern then
-      local pattern = Param._pattern
+      local pattern:any = Param._pattern
       if pattern is nil or Param._pattern_source != Param.pattern then
          pattern = Param.pattern
          if type(pattern) is 'string' then
