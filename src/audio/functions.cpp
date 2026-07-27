@@ -208,7 +208,7 @@ static BYTELEN fill_stream_buffer(int Handle, AudioSample &Sample, int Offset)
 extern "C" int dsReadData(Object *Self, void *Buffer, int Length) {
    if (Self->Class->BaseClassID IS CLASSID::SOUND) {
       int result;
-      if (((objSound *)Self)->read(Buffer, Length, &result) != ERR::Okay) return 0;
+      if (((objSound *)Self)->read(std::span<int8_t>((int8_t *)Buffer, Length), &result) != ERR::Okay) return 0;
       else return result;
    }
    else if (Self->Class->BaseClassID IS CLASSID::AUDIO) {
