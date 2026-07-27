@@ -1,3 +1,5 @@
+// CHANGED: 2026-07-27 — Declared globals carry sticky contracts; added Declared global and Variant global (commit 997f6b551).
+
 [[appendix-glossary]]
 [appendix]
 == Glossary
@@ -49,6 +51,9 @@ A variable declared with the `<const>` attribute.  Prevents reassignment after i
 
 Defer statement::
 Registers a code block for execution when the enclosing scope exits via normal completion, `return`, `break`, or `continue`.  Does not execute during error unwinding; use `<close>` for error-safe cleanup.  Multiple defers execute in LIFO order.  See <<sec-defer-statement>>.
+
+Declared global::
+A global introduced by a `global` declaration, as distinct from a name registered in the global environment by the host.  A declared global carries a sticky type contract enforced at runtime unless it is annotated `:any`.  See <<sec-global-contracts>>.
 
 Error code::
 A 16-bit integer constant (prefixed with `ERR_`) indicating the result of an operation.  Codes below the exception threshold are safe codes; codes at or above the threshold are exception codes.  See <<sec-the-exception-model>>.
@@ -168,7 +173,7 @@ Standard falsiness::
 The conservative falsiness rules used by `and`, `or`, `not`, and `if` conditions.  Under standard falsiness, only `nil` and `false` are falsey; all other values (including `0` and `""`) are truthy.  See <<sec-truthiness>>.
 
 Sticky type::
-Tiri's type inference mechanism in which a variable commits to the type of its first non-`nil` assignment.  Subsequent non-`nil` assignments of a different type raise an error, except on unannotated globals where the inferred type is advisory.  Assigning `nil` is always permitted, acting as a "clear" operation that preserves the type constraint.  See <<sec-sticky-types>>.
+Tiri's type inference mechanism in which a variable commits to the type of its first non-`nil` assignment.  Subsequent non-`nil` assignments of a different type raise an error.  Applies to locals, upvalues and globals introduced by a `global` declaration.  Assigning `nil` is always permitted, acting as a "clear" operation that preserves the type constraint.  See <<sec-sticky-types>>.
 
 String::
 An immutable sequence of bytes.  Strings with identical content share the same internal object (interning).  Zero-based indexing.  See <<ch-strings>>.
@@ -207,7 +212,7 @@ Type annotation::
 An optional declaration constraining a variable's type, written as `:type` after the variable name.  Enables both static (parse-time) and runtime type checking.  See <<sec-explicit-type-annotations>>.
 
 Type contract::
-A type constraint validated by the runtime as a value crosses a boundary: a function parameter, a declared result, a typed local, a typed upvalue or an annotated global.  A contract cannot be bypassed by reaching the boundary indirectly, accepts `nil`, and performs no coercion.  See <<sec-runtime-type-contracts>>.
+A type constraint validated by the runtime as a value crosses a boundary: a function parameter, a declared result, a typed local, a typed upvalue or a declared global.  A contract cannot be bypassed by reaching the boundary indirectly, accepts `nil`, and performs no coercion.  See <<sec-runtime-type-contracts>>.
 
 Upvalue::
 A local variable from an enclosing scope that is captured by a nested function.  The upvalue persists as long as any closure referencing it remains alive.  See <<sec-upvalues-and-closures>>.
@@ -217,6 +222,9 @@ An opaque C data value managed outside the Tiri runtime.  Ranges are implemented
 
 Value type::
 A value whose variable holds the data directly rather than a reference.  Nil, booleans, numbers, and strings are value types.  Assignment copies the value.  See <<ch-types-and-values>>.
+
+Variant global::
+A global declared with an explicit `:any` annotation, opting the name out of sticky typing.  The opt-out persists in the environment and supersedes a concrete contract established by an earlier declaration of the same name.  See <<sec-global-contracts>>.
 
 Variadic function::
 A function that accepts a variable number of arguments via the `pass:[...]` parameter.  Extra arguments beyond declared parameters are collected into the variadic list.  See <<sec-variadic-functions>>.

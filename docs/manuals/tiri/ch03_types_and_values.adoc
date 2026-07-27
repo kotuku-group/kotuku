@@ -2,11 +2,11 @@
 // UPDATED: 2026-06-30 — Extended falsiness now treats empty tables as falsey; described as empty collections.
 // UPDATED: 2026-07-13 — Structures are now a first-class 'struct' type; added to type() and a new Structures subsection.
 // UPDATED: 2026-07-16 — Objects and structs are distinct first-class types, no longer specialised userdata; promoted to top-level sections.
-// CHANGED: 2026-07-27 — Qualified the sticky-type guarantee: inferred types on unannotated globals are advisory.
+// CHANGED: 2026-07-27 — Sticky types apply uniformly to locals, upvalues and declared globals (commit 997f6b551).
 
 [[ch-types-and-values]]
 == Types & Values
-indexterm:[types] indexterm:[values] Tiri is dynamically typed: every value carries its type at runtime, and variables do not require explicit type declarations.  However, Tiri enforces type consistency through _sticky types_: when a variable receives its first non-`nil` value, the variable commits to that value's type.  All subsequent non-`nil` assignments must match the committed type; assigning a value of a different type produces a compile-time or runtime error.  The exception is an unannotated global, whose inferred type constrains compile-time diagnostics only.  Assigning `nil` is always permitted, acting as a "clear" operation that preserves the type constraint.  The `:any` annotation opts a variable out of type fixing entirely.  See <<ch-type-system>> for the complete rules governing type inference, explicit annotations, runtime type contracts, and the `any` escape hatch.
+indexterm:[types] indexterm:[values] Tiri is dynamically typed: every value carries its type at runtime, and variables do not require explicit type declarations.  However, Tiri enforces type consistency through _sticky types_: when a variable receives its first non-`nil` value, the variable commits to that value's type.  All subsequent non-`nil` assignments must match the committed type; assigning a value of a different type produces a compile-time or runtime error.  This applies to locals, to upvalues and to globals introduced by a `global` declaration.  Assigning `nil` is always permitted, acting as a "clear" operation that preserves the type constraint.  The `:any` annotation opts a variable out of type fixing entirely.  See <<ch-type-system>> for the complete rules governing type inference, explicit annotations, runtime type contracts, and the `any` escape hatch.
 
 Tiri defines the following types: nil, boolean, number, string, table, array, function, userdata, object and struct.
 

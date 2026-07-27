@@ -1,4 +1,5 @@
 // CHANGED: 2026-07-27 — Completed the annotation type-name list and noted runtime contract enforcement for annotated variables.
+// CHANGED: 2026-07-27 — Documented sticky contracts on 'global' declarations and the ':any' variant opt-out (commit 997f6b551).
 // UPDATED: 2026-07-06 -- Documented extern declarations and protected host globals.
 // VERIFIED: 2026-02-10
 
@@ -97,6 +98,15 @@ print(VERBOSE)             -- 'true'
 ----
 
 Global variables are accessible from nested functions without re-declaration.  The `global` keyword can appear at any scope level, but the variable becomes globally visible.
+
+A `global` declaration also makes the variable sticky.  The declared or inferred type becomes a runtime contract on the name, enforced for every later store including those made from nested functions and from separately compiled chunks.  Declare the variable `:any` to opt out:
+
+[source,tiri]
+----
+global glTitle = 'Untitled'   -- sticky: constrained to 'string'
+global glPayload:any          -- variant: accepts any type
+----
+
 
 [[sec-the-extern-keyword]]
 === The extern Keyword
@@ -302,7 +312,7 @@ y:num <const> = 42   -- type before attribute
 
 Type annotations interact with the type inference system.  See <<ch-type-system>> for sticky types, implicit type fixing, and the `any` escape hatch.
 
-An annotation on a local, on a local captured as an upvalue, or on a global declared with `global` is enforced at runtime as a type contract.  An unannotated global is constrained by compile-time diagnostics only.  See <<sec-runtime-type-contracts>>.
+An annotation on a local, on a local captured as an upvalue, or on a global declared with `global` is enforced at runtime as a type contract.  A `global` declaration carries a contract whether its type is annotated or inferred; only an explicit `:any` annotation opts it out.  See <<sec-runtime-type-contracts>> and <<sec-global-contracts>>.
 
 [[sec-constant-variables]]
 === Constant Variables

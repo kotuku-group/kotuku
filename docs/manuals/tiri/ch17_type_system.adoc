@@ -1,5 +1,6 @@
 // VERIFIED: 2026-02-12
-// CHANGED: 2026-07-27 — Added sec-runtime-type-contracts; documented userdata annotations, exact contract identity, and the advisory status of inferred globals.
+// CHANGED: 2026-07-27 — Added sec-runtime-type-contracts; documented userdata annotations and exact contract identity.
+// CHANGED: 2026-07-27 — Declared globals now carry enforced sticky contracts whether annotated or inferred; ':any' is the persistent variant opt-out (commit 997f6b551).
 
 [[ch-type-system]]
 == Type System
@@ -11,7 +12,7 @@ Type checking operates at two levels.  The compiler performs static analysis dur
 === Sticky Types (Type Inference)
 indexterm:[sticky types] indexterm:[type inference] Sticky types are Tiri's core type inference mechanism.  When a local, global, or upvalue variable receives its first non-nil value, the variable's type becomes _fixed_ to that value's type.  All subsequent non-nil assignments must match the fixed type.  Assigning a value of a different type produces a compile-time or runtime error.
 
-An inferred type is enforced at runtime for locals and for upvalues captured from typed locals.  An inferred type on an unannotated global constrains compile-time diagnostics only; a value delivered through an `any` expression is not rejected at runtime.  See <<sec-runtime-type-contracts>>.
+An inferred type is enforced at runtime for locals, for upvalues captured from typed locals, and for globals introduced by a `global` declaration.  A name that enters the global environment without a `global` declaration -- one supplied by the embedding host -- is constrained by compile-time diagnostics only.  See <<sec-runtime-type-contracts>>.
 
 [source,tiri]
 ----
@@ -338,6 +339,229 @@ function get_any(): any
 end
 
 local y: num = get_any()      -- runtime check: return type is 'any'
+----
+
+[[sec-runtime-type-contracts]]
+=== Runtime Type Contracts
+indexterm:[type contracts] indexterm:[runtime type contracts] A _runtime type contract_ is a type constraint that the runtime validates as values cross a program boundary.  A contract cannot be bypassed by reaching the boundary indirectly: the check belongs to the boundary, not to the call site or the assignment site that the compiler can see.
+
+[discrete]
+==== Contract Boundaries
+
+The following boundaries carry contracts:
+
+[cols="1,1a,2a",options="header"]
+|===
+|Boundary |Source |Validation point
+
+|Parameter |Annotated function parameter |On entry to the function, before the body executes
+|Result    |Declared return type |As the function returns, for values whose type is not proved at compile time
+|Local     |Annotated or inferred local |On assignment of a value whose type is not proved at compile time
+|Upvalue   |Typed local captured by a closure |On assignment through the closure
+|Global    |Global introduced by a `global` declaration, whether annotated or inferred |On assignment, before the global is updated
+|===
+
+Unannotated parameters, unannotated return values, globals that were never declared with `global`, and every declaration annotated `:any` impose no contract.
+
+[discrete]
+==== Enforcement is Independent of the Call Route
+
+A contract is enforced for direct calls, calls through variables of type `any`, functions held in tables or arrays, functions passed as callbacks, imported functions, and calls made by host (C/C++) code:
+
+[source,tiri]
+----
+function identity(Value:num):num
+   return Value
+end
+
+local dynamic:any = identity
+dynamic('wrong')            -- error: contract failure on parameter 1
+
+local handlers = { run = identity }
+handlers.run('wrong')       -- error: contract failure on parameter 1
+----
+
+[[sec-global-contracts]]
+[discrete]
+==== Global Contracts
+
+indexterm:[global variables, type contracts] A `global` declaration creates a contract from its declared or inferred type.  An inferred global is therefore enforced on the same terms as an inferred local; the annotation is a way to state the type early, not a way to switch enforcement on:
+
+[source,tiri]
+----
+global glName = 'a'          -- contract: str, inferred from the initialiser
+global glCount:num = 0       -- contract: num, from the annotation
+global glVariant:any = 'a'   -- no contract, see the variant opt-out below
+
+local dynamic:any = 42
+glName = dynamic             -- error: type contract failed for global ('glName'): expected str, got number
+----
+
+Each variable in a multiple declaration carries its own contract, taken from the corresponding declared result type:
+
+[source,tiri]
+----
+function pair():<num, str>
+   return 2, 'text'
+end
+
+global glNumber, glText = pair()   -- contracts: num and str respectively
+----
+
+The contract is attached to the environment when the declaration executes, and it belongs to the name rather than to the chunk that declared it.  Stores made from a nested function, and stores made from a separately compiled chunk, are validated against the same contract:
+
+[source,tiri]
+----
+global glName = 'a'
+
+function write(Value:any)
+   glName = Value             -- validated against the str contract
+end
+
+exec('glName = 42')           -- error: the contract is enforced across chunks
+----
+
+The check runs before the store, so a rejected assignment leaves the previous value in place:
+
+[source,tiri]
+----
+global glName = 'a'
+try
+   glName = dynamic_value(42)
+except e
+end
+print(glName)                 -- 'a'
+----
+
+[discrete]
+===== When a Global Type Becomes Fixed
+
+A declaration fixes its type immediately when the initialiser has a statically concrete type that is neither `nil` nor `any`.  Otherwise the global remains unfixed and acquires its contract from the first later assignment whose type is statically concrete:
+
+[source,tiri]
+----
+global glResult              -- declared, type not yet fixed
+glResult = nil               -- still unfixed
+glResult = 42                -- fixed to 'num'; the contract applies from here on
+glResult = 'text'            -- error: compile-time diagnostic
+----
+
+A value whose static type is `any` never fixes the type, because its runtime type is not provable at compile time.  Once a global is fixed, assigning `nil` clears the value without clearing the contract, in line with <<sec-nil-semantics-in-typed-code>>.
+
+[discrete]
+===== The Variant Opt-Out
+
+An explicit `:any` annotation is the only way to declare a variant global.  The opt-out persists in the environment and supersedes a contract established by an earlier declaration of the same name, including one made by another chunk.  Code that was already compiled against the earlier concrete contract observes the change:
+
+[source,tiri]
+----
+global glValue:num = 1
+exec("global glValue:any = 'variant'")
+glValue = { }                -- accepted: the concrete contract has been replaced
+----
+
+No object-class or structure specialisation survives the opt-out.
+
+[discrete]
+===== Undeclared Globals
+
+A name that reaches the global environment without a `global` declaration -- one registered by the embedding host -- carries no contract, and an assignment to it is checked by compile-time diagnostics alone.  Such a name opts into enforcement by being declared with `global`.
+
+Enforcement also requires the declaration to have executed.  Bytecode compiled before the contract exists does not acquire a guard retroactively, which is the practical reason a global declaration must precede any use of the name (see <<sec-the-global-keyword>>).
+
+[discrete]
+==== Nil and Missing Values
+
+`nil` satisfies every contract.  A missing argument, a cleared variable and a missing return value are therefore all accepted:
+
+[source,tiri]
+----
+function scale(Value:num):num
+   if Value is nil then return nil end
+   return Value * 2
+end
+
+scale()          -- valid: Value is nil
+scale(nil)       -- valid: returns nil
+----
+
+Contracts consequently express optional values without a separate nullable annotation, matching the rules in <<sec-nil-semantics-in-typed-code>>.
+
+[discrete]
+==== Contracts Do Not Coerce
+
+A contract compares the runtime type of the value exactly.  No conversion is attempted, so a numeric string does not satisfy `num` and a number does not satisfy `str`:
+
+[source,tiri]
+----
+function count(Value:num):num
+   return Value
+end
+
+local dynamic:any = '42'
+count(dynamic)   -- error: expected num, got string
+----
+
+[discrete]
+==== Contract Identity
+
+Contracts distinguish types that are related in the underlying representation:
+
+* `table` and `array` are mutually exclusive.  An array does not satisfy `table` and a table does not satisfy `array`.
+* `struct<Name>` requires an instance of the declared layout `Name`.  An instance of a different layout is rejected even when the two layouts declare identical fields.  The plain `struct` annotation accepts any struct instance.
+* `range` requires a range value.  `userdata` accepts other userdata values but rejects ranges and thunks, even though ranges are userdata at runtime (see <<sec-userdata>>).
+* `func` accepts any value that normal call dispatch supports, which includes a table or userdata carrying a `pass:[__]call` metamethod.
+* `num` accepts every number, without distinguishing integer and floating-point representations.
+
+[source,tiri]
+----
+struct Alpha
+   Value: int
+end
+
+struct Beta
+   Value: int
+end
+
+function value_of(Item:struct<Alpha>):num
+   return Item.Value
+end
+
+local dynamic:any = struct<Beta> { Value=7 }
+value_of(dynamic)   -- error: expected struct<Alpha>, got struct<Beta>
+----
+
+[discrete]
+==== Failure Behaviour
+
+A contract failure raises a standard Tiri exception at the point of the boundary.  The message names the boundary, the position, the declared type and the type supplied:
+
+----
+type contract failed for parameter 1 ('Value'): expected num, got string
+----
+
+Contract failures are catchable with `try` (see <<ch-error-handling>>) and behave identically in the interpreter and in compiled traces.  No dedicated error code is assigned; handlers must catch the exception rather than filter on an `ERR` name:
+
+[source,tiri]
+----
+try
+   dynamic('wrong')
+except e
+   print(e.message)
+end
+----
+
+[discrete]
+==== Migration
+
+Annotations are enforced regardless of how a value reaches the boundary, so code that relied on an annotation being advisory now raises an error.  Where a boundary genuinely accepts several types, annotate it `:any` or state the exact type that the caller supplies.
+
+The same applies to a `global` declaration with no annotation.  Its inferred type was previously advisory at runtime, and a value arriving through an `any` expression was accepted; it is now rejected.  A global that is intended to hold values of more than one type must be declared `:any`:
+
+[source,tiri]
+----
+global glState:any = 'idle'   -- was: global glState = 'idle'
+glState = 42                  -- accepted
 ----
 
 [[sec-the-any-type]]

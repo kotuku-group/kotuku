@@ -1,4 +1,5 @@
 // CHANGED: 2026-07-27 — Updated annotation guidance for type-guided emission and exact contract recording.
+// CHANGED: 2026-07-27 — Noted the store-side contract cost on declared globals (commit 997f6b551).
 // UPDATED: 2026-07-26 - Replaced numeric for loop guidance with range loops (commit 1f23b978)
 
 [[ch-performance-and-the-jit]]
@@ -100,7 +101,7 @@ Type annotations (see <<sec-explicit-type-annotations>>) influence performance i
 
 Scalar annotations such as `num` and `str` do not remove type guards.  A guard is retained unless a dominating runtime check or an immutable contract proves the type, so an annotated loop and an equivalent unannotated loop compile to the same guard sequence.  The performance benefit of scalar annotations comes from the type stability they enforce (see <<sec-runtime-type-contracts>>), not from guard elimination.
 
-Annotated parameters, results, globals and upvalues add a runtime check at their boundary.  The cost is incurred once per boundary crossing and is not repeated inside a compiled loop body.
+Annotated parameters, results and upvalues, and every global introduced by a `global` declaration, add a runtime check at their boundary.  The cost is incurred once per boundary crossing and is not repeated inside a compiled loop body.  A hot loop that repeatedly stores to a declared global therefore pays the contract on each store; hoisting the value into a local (see <<sec-avoid-global-lookups>>) avoids both the lookup and the check.
 
 Write type-stable code to maximise JIT effectiveness:
 
@@ -638,6 +639,7 @@ end
 
 Ensure that variables within hot loops maintain a consistent type throughout all iterations.
 
+[[sec-avoid-global-lookups]]
 ==== Global Variable Access in Hot Paths
 
 Accessing global variables requires a hash table lookup on every access.  In performance-critical loops, cache globals in local variables.
