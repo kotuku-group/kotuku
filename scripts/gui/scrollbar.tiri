@@ -30,7 +30,7 @@ gui.scrollbar = function(Options)
          return 0, 0
       end
 
-      local offset
+      local offset:num
       min_size = 20
       if slider_size < min_size then -- Fixed slider calculation
          slider_size = min_size
@@ -117,7 +117,7 @@ gui.scrollbar = function(Options)
    end
 
    function createScrollbar(Direction:str)
-      local bar
+      local bar:table
 
       if Direction is 'V' then
          vp = lTarget.new('VectorViewport', { name='VBarVP', y = 0, xOffset = 0, yOffset = 0, width = lBreadth, overflow = VOF_HIDDEN })

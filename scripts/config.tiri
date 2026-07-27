@@ -99,8 +99,8 @@ config.decode = function(String:str):table
       local key = line:substr(0, equals_pos):rtrim()
       if key is '' then continue end
 
-      local value = line:substr(equals_pos + 1)
-      local value_start = first_non_space(value)
+      local value:str = line:substr(equals_pos + 1)
+      local value_start:num = first_non_space(value)
       if value_start is nil then value = ''
       else value = value:substr(value_start) end
 

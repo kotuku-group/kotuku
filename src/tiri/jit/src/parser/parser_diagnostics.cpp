@@ -49,27 +49,27 @@ static CSTRING severity_name(ParserDiagnosticSeverity Severity)
 static CSTRING error_code_name(ParserErrorCode Code)
 {
    switch (Code) {
-      case ParserErrorCode::None:                   return "None";
-      case ParserErrorCode::UnexpectedToken:        return "Unexpected Token";
-      case ParserErrorCode::DeprecatedSyntax:       return "Deprecated syntax";
-      case ParserErrorCode::ExpectedToken:          return "Expected Token";
-      case ParserErrorCode::ExpectedIdentifier:     return "Expected Identifier";
-      case ParserErrorCode::UnexpectedEndOfFile:    return "Unexpected EOF";
-      case ParserErrorCode::InternalInvariant:      return "Internal invariant";
-      case ParserErrorCode::ExpectedTypeName:       return "Expected type name";
-      case ParserErrorCode::UnknownTypeName:        return "Unknown type name";
-      case ParserErrorCode::TypeMismatchArgument:   return "Type mismatch (argument)";
-      case ParserErrorCode::TypeMismatchAssignment: return "Type mismatch (assignment)";
-      case ParserErrorCode::TypeMismatchReturn:     return "Type mismatch (return)";
-      case ParserErrorCode::DeferredTypeRequired:   return "Deferred type required";
-      case ParserErrorCode::UndefinedVariable:      return "Undefined variable";
-      case ParserErrorCode::ThunkDirectCall:        return "Thunk direct call";
+      case ParserErrorCode::None:                      return "None";
+      case ParserErrorCode::UnexpectedToken:           return "Unexpected Token";
+      case ParserErrorCode::DeprecatedSyntax:          return "Deprecated syntax";
+      case ParserErrorCode::ExpectedToken:             return "Expected Token";
+      case ParserErrorCode::ExpectedIdentifier:        return "Expected Identifier";
+      case ParserErrorCode::UnexpectedEndOfFile:       return "Unexpected EOF";
+      case ParserErrorCode::InternalInvariant:         return "Internal invariant";
+      case ParserErrorCode::ExpectedTypeName:          return "Expected type name";
+      case ParserErrorCode::UnknownTypeName:           return "Unknown type name";
+      case ParserErrorCode::TypeMismatchArgument:      return "Type mismatch (argument)";
+      case ParserErrorCode::TypeMismatchAssignment:    return "Type mismatch (assignment)";
+      case ParserErrorCode::TypeMismatchReturn:        return "Type mismatch (return)";
+      case ParserErrorCode::DeferredTypeRequired:      return "Preset type required";
+      case ParserErrorCode::UndefinedVariable:         return "Undefined variable";
+      case ParserErrorCode::ThunkDirectCall:           return "Thunk direct call";
       case ParserErrorCode::FunctionSignatureMismatch: return "Function signature mismatch";
-      case ParserErrorCode::RecoverySkippedTokens:  return "Recovery skipped tokens";
-      case ParserErrorCode::AssignToConstant:       return "Assign to constant";
-      case ParserErrorCode::ConstRequiresInitialiser: return "Const requires initialiser";
-      case ParserErrorCode::OverrideProtectedGlobal: return "Override protected global";
-      case ParserErrorCode::InvalidAssignment:       return "Invalid assignment";
+      case ParserErrorCode::RecoverySkippedTokens:     return "Recovery skipped tokens";
+      case ParserErrorCode::AssignToConstant:          return "Assign to constant";
+      case ParserErrorCode::ConstRequiresInitialiser:  return "Const requires initialiser";
+      case ParserErrorCode::OverrideProtectedGlobal:   return "Override protected global";
+      case ParserErrorCode::InvalidAssignment:         return "Invalid assignment";
       default: return "Unknown";
    }
 }

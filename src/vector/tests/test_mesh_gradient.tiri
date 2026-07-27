@@ -304,7 +304,7 @@ end
       drawScene(scene, bmp)
 
       local prev = -1
-      for x in {40 to 61} do
+      for x in {40 into 60} do
          local value = mGfx.ReadRGBPixel(bmp, x, 50).red
          if prev >= 0 then
             local delta = value - prev

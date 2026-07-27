@@ -36,7 +36,7 @@ gui.fontList = thunk():table
 
    -- Merge
    for group_name, option_group in pairs(options) do
-      local cat_group = catalogue[group_name]
+      local cat_group:table = catalogue[group_name]
       if cat_group is nil then
          cat_group = { }
          catalogue[group_name] = cat_group
@@ -228,7 +228,7 @@ end
 -- Return the light value of an RGB colour (i.e. the V in HSV)
 
 function gui.mtRGB:brightness():num
-   local max = self.b
+   local max:num = self.b
    if self.g > max then max = self.g end
    if self.r > max then max = self.r end
    return max
@@ -250,11 +250,11 @@ end
 -- h is hue in degrees [0,360), s and l are in [0,1].
 
 function gui.mtRGB:toHSL():table
-   local r = self.r
-   local g = self.g
-   local b = self.b
+   local r:num = self.r
+   local g:num = self.g
+   local b:num = self.b
 
-   local max = r
+   local max:num = r
    if g > max then max = g end
    if b > max then max = b end
 
@@ -590,7 +590,7 @@ end
 -- display Window).  NB: If a viewport is provided then the nearest parent scene is queried.
 
 gui.getTheme = function(Object:obj):table
-   local scene
+   local scene:obj
 
    if not Object then
       return gui.themes[gui.theme]
@@ -625,7 +625,7 @@ gui.setTheme = function(Object:obj, Theme:str):table
 
    local state
    if Object then
-      local scene
+      local scene:obj
       if obj.class(Object).name is 'VectorViewport' then
          scene = Object.scene
       elseif obj.class(Object).name is 'VectorScene' then

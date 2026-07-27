@@ -21,7 +21,7 @@ function newClipScene(Units)
    scene = obj.new('VectorScene', { pageWidth=120, pageHeight=80 })
    viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    clip = scene.new('VectorClip', { flags=VCLF_APPLY_FILLS, units=Units })
-   local mask_shape
+   local mask_shape:obj
 
    if Units is VUNIT_BOUNDING_BOX then
       clip.viewport.viewWidth = 1

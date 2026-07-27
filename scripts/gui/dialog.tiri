@@ -148,7 +148,7 @@ gui.dialog.message = function(Options)
 
       icon = Options.image ?? defaultIcon(self)
       icon = rx_sanitise_icon.replace(icon, '$1/$2')
-      local msg = self.fmtMessage
+      local msg:str = self.fmtMessage
       if not msg?? then
          msg = string.escXML(self.message ?? '')
          msg = string.replace(msg, '\n', '<br/>')

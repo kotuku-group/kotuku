@@ -11,6 +11,7 @@
 #include "lj_obj.h"
 #include "lj_str.h"
 #include "lj_struct.h"
+#include "lj_tab.h"
 
 #include "defs.h"
 #include "lj_proto_registry.h"
@@ -24,9 +25,25 @@
 #include <new>
 #include <limits>
 
+struct static_module_function_signature {
+   std::string Name;
+   std::vector<std::string> FieldNames;
+   std::vector<FunctionField> Fields;
+};
+
+struct static_module_signature {
+   std::string Name;
+   std::vector<std::unique_ptr<static_module_function_signature>> Functions;
+   ankerl::unordered_dense::map<uint32_t, static_module_function_signature *> FunctionMap;
+};
+
+static std::mutex glModuleSignatureMutex;
+static ankerl::unordered_dense::map<uint32_t, std::shared_ptr<const static_module_signature>> glModuleSignatures;
+
 struct module {
    const struct Function *Functions = nullptr;
    objModule *Module = nullptr;
+   std::shared_ptr<const static_module_signature> Signature;
    ankerl::unordered_dense::map<uint32_t, int> FunctionMap; // Hash map for O(1) function lookup
 
    ~module() {
@@ -105,6 +122,83 @@ static std::set<std::string, CaseInsensitiveCompare> glLoadedConstants; // Store
 static int module_call(lua_State *);
 static ERR module_call_inner(lua_State *, std::string &, int &);
 static int process_results(extTiri *, APTR, const FunctionField *);
+
+static std::shared_ptr<const static_module_signature> register_module_signature(
+   std::string_view Name, const Function *Functions)
+{
+   if (not Functions) return {};
+
+   auto signature = std::make_shared<static_module_signature>();
+   signature->Name = Name;
+
+   size_t function_count = 0;
+   while (Functions[function_count].Name) function_count++;
+   signature->Functions.reserve(function_count);
+
+   for (size_t i = 0; i < function_count; ++i) {
+      auto entry = std::make_unique<static_module_function_signature>();
+      entry->Name = Functions[i].Name;
+
+      if (const FunctionField *fields = Functions[i].Args) {
+         size_t field_count = 0;
+         while (fields[field_count].Name) field_count++;
+         entry->FieldNames.reserve(field_count);
+         entry->Fields.reserve(field_count + 1);
+         for (size_t j = 0; j < field_count; ++j) entry->FieldNames.emplace_back(fields[j].Name);
+         for (size_t j = 0; j < field_count; ++j) {
+            entry->Fields.push_back({ entry->FieldNames[j].c_str(), fields[j].Type });
+         }
+         entry->Fields.push_back({ nullptr, 0 });
+      }
+      else entry->Fields.push_back({ nullptr, 0 });
+
+      static_module_function_signature *stored = entry.get();
+      signature->FunctionMap[kt::strihash(entry->Name)] = stored;
+      signature->Functions.push_back(std::move(entry));
+   }
+
+   std::lock_guard lock(glModuleSignatureMutex);
+   auto hash = kt::strihash(Name);
+   if (auto existing = glModuleSignatures.find(hash); existing != glModuleSignatures.end()) {
+      return existing->second;
+   }
+   glModuleSignatures[hash] = signature;
+   return signature;
+}
+
+StaticModuleHandle static_module_from_value(lua_State *Lua, cTValue *Value) noexcept
+{
+   if (not Lua or not Value or not tvisudata(Value)) return nullptr;
+   GCudata *userdata = udataV(Value);
+   if (userdata->len != sizeof(module)) return nullptr;
+
+   cTValue *registered = lj_tab_getstr(
+      tabV(registry(Lua)), lj_str_newlit(Lua, "Tiri.mod"));
+   if (not registered or not tvistab(registered) or
+       tabref(userdata->metatable) != tabV(registered)) return nullptr;
+
+   auto *mod = (module *)uddata(userdata);
+   return mod->Signature.get();
+}
+
+StaticModuleHandle static_module_by_name(std::string_view Name) noexcept
+{
+   std::lock_guard lock(glModuleSignatureMutex);
+   if (auto found = glModuleSignatures.find(kt::strihash(Name)); found != glModuleSignatures.end()) {
+      return found->second.get();
+   }
+   return nullptr;
+}
+
+const FunctionField * static_module_function(
+   StaticModuleHandle Module, std::string_view Name) noexcept
+{
+   if (not Module) return nullptr;
+   if (auto found = Module->FunctionMap.find(kt::strihash(Name)); found != Module->FunctionMap.end()) {
+      return found->second->Fields.data();
+   }
+   return nullptr;
+}
 
 //********************************************************************************************************************
 // Support for mutable array results
@@ -344,7 +438,12 @@ static ERR process_module_defs(extTiri *Script, objModule *module, std::string_v
       AdjustLogLevel(1);
 
          objModule::create module = { fl::Name(Module) };
-         if (module.ok()) error = process_module_defs(Script, *module, Module);
+         if (module.ok()) {
+            const Function *functions = nullptr;
+            module->getFunctionList(functions);
+            register_module_signature(Module, functions);
+            error = process_module_defs(Script, *module, Module);
+         }
          else error = ERR::CreateObject;
 
       AdjustLogLevel(-1);
@@ -404,6 +503,9 @@ void new_module(lua_State *Lua, objModule *Module)
 
    mod->Module = Module;
    Module->getFunctionList(mod->Functions);
+   std::string_view module_name;
+   if (Module->getName(module_name) != ERR::Okay) module_name = {};
+   mod->Signature = register_module_signature(module_name, mod->Functions);
 
    // Build hash map for O(1) function lookups
    if (mod->Functions) {

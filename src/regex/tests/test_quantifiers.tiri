@@ -5,7 +5,7 @@
    local lazy = regex.new("<.+?>")
    local text = "<em>bold</em>"
 
-   local match = greedy.search(text)
+   local match:array = greedy.search(text)
    assert(match[0][0] is "<em>bold</em>", "Greedy quantifier should consume closing tag, got " .. tostring(match[0][0]))
 
    match = lazy.search(text)

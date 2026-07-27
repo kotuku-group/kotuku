@@ -251,8 +251,8 @@ function compare_time_fields(A:table, B:table):num
 end
 
 function normalise_second_nano(Seconds:any, Nano:any):<num, num>
-   local seconds = tempus._requireInteger('seconds', Seconds)
-   local nano = tempus._requireInteger('nano', Nano ?? 0)
+   local seconds:num = tempus._requireInteger('seconds', Seconds)
+   local nano:num = tempus._requireInteger('nano', Nano ?? 0)
 
    if nano <= -NANOS_PER_SECOND or nano >= NANOS_PER_SECOND then
       local extra = math.floor(nano / NANOS_PER_SECOND)
@@ -662,8 +662,8 @@ end
 
 function convert_time_zone_info(Info:table):table
    local transitions = array<table> {}
-   local source_transitions = Info.transitions
-   if source_transitions is nil then source_transitions = {} end
+   local source_transitions:array = Info.transitions
+   if source_transitions is nil then source_transitions = array<table> {} end
 
    for _, transition in ipairs(source_transitions) do
       transitions:push(convert_time_zone_transition(transition))
@@ -744,7 +744,7 @@ function zone_info_for_local_date_time(ZoneFields:table, LocalDateTime:table):ta
 end
 
 function transition_offset_at(Info:table, Instant:table):table
-   local offset = Info.base_offset
+   local offset:table = Info.base_offset
    for transition in values(Info.transitions) do
       if compare_instants(transition.instant, Instant) <= 0 then offset = transition.offset_after
       else break end
@@ -753,7 +753,7 @@ function transition_offset_at(Info:table, Instant:table):table
 end
 
 function transition_name_at(Info:table, Instant:table):str
-   local name = Info.id
+   local name:str = Info.id
    if Info.id is 'UTC' then name = 'UTC' end
 
    for transition in values(Info.transitions) do
@@ -814,7 +814,7 @@ function resolve_transition_local_date_time(LocalDateTime:table, Zone:table, Inf
          if is_local_pair_in_range(TargetSeconds, TargetNano, start_seconds, start_nano, stop_seconds, stop_nano) then
             if ResolverName is 'reject' then rejected_local_time(LocalDateTime, Zone, 'is ambiguous') end
 
-            local selected_offset = transition.offset_before
+            local selected_offset:table = transition.offset_before
             if ResolverName is 'later' then selected_offset = transition.offset_after end
             return true, new_zoned_date_time(new_instant(TargetSeconds - require_offset(selected_offset).seconds,
                TargetNano), Zone)

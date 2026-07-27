@@ -1922,6 +1922,40 @@ static bool test_complex_contract_jit_eligibility(kt::Log &Log)
    return true;
 }
 
+static bool test_parser_diagnostics_reset_per_load(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+
+   constexpr std::string_view invalid =
+      "local value:str = 'text'\n"
+      "value = 1\n";
+   if (lua_load(lua, invalid, "diagnostic-reset-invalid") IS 0) {
+      Log.error("invalid source compiled while testing parser diagnostic reset");
+      lua_pop(lua, 1);
+      return false;
+   }
+   if (not lua->parser_diagnostics or not lua->parser_diagnostics->has_errors()) {
+      Log.error("invalid source did not publish parser diagnostics");
+      lua_pop(lua, 1);
+      return false;
+   }
+   lua_pop(lua, 1);
+
+   if (lua_load(lua, "return 1", "diagnostic-reset-valid")) {
+      Log.error("valid source failed after an earlier parser diagnostic: %s", lua_tostring(lua, -1));
+      lua_pop(lua, 1);
+      return false;
+   }
+   if (lua->parser_diagnostics) {
+      Log.error("a successful parse retained diagnostics from an earlier load");
+      lua_pop(lua, 1);
+      return false;
+   }
+   lua_pop(lua, 1);
+   return true;
+}
+
 //********************************************************************************************************************
 
 static bool test_userdata_type_annotations(kt::Log &Log)
@@ -2543,7 +2577,7 @@ end
 return sum
 )" },
       { "function_stmt_closure", R"(
-local function outer(flag)
+local function outer(flag):any
    local function helper(value)
       return value * 2
    end
@@ -2557,7 +2591,7 @@ local function outer(flag)
    end
 end
 
-local fn = outer(false)
+local fn:func = outer(false)
 return fn(3, 4)
 )" },
       // NOTE: table_assignment_matrix temporarily disabled due to deliberate register
@@ -2971,6 +3005,92 @@ static bool test_static_result_set_model(kt::Log &Log)
    return true;
 }
 
+static size_t count_opcode_tree(const BytecodeSnapshot &, BCOp);
+
+static bool test_native_prototype_result_descriptors(kt::Log &Log)
+{
+   fprototype prototype{};
+   prototype.result_count = 3;
+   prototype.result_types[0] = TiriType::Num;
+   prototype.result_types[1] = TiriType::Any;
+   prototype.result_types[2] = TiriType::Str;
+
+   StaticResultSet results = describe_native_prototype_results(&prototype);
+   if (results.declared_count != 3 or results.stored_count != 3 or results.dynamic or results.variadic) {
+      Log.error("native prototype did not produce a closed result tuple");
+      return false;
+   }
+   if (results.value_at(0).primary != TiriType::Num or
+       results.value_at(0).proof != StaticProof::Trusted or
+       not results.value_at(0).nullable or
+       results.value_at(1).primary != TiriType::Any or
+       results.value_at(1).proof != StaticProof::Advisory or
+       results.value_at(2).primary != TiriType::Str or
+       results.value_at(2).proof != StaticProof::Trusted) {
+      Log.error("native prototype result types, proof or nullability were not preserved");
+      return false;
+   }
+
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   lua_protect_globals(L);
+
+   std::string error;
+   constexpr std::string_view builtins =
+      "local sin_value = tonumber('43')\n"
+      "sin_value = tonumber('44')\n"
+      "local wave = math.sin(sin_value)\n"
+      "wave = math.cos(wave)\n"
+      "local text = string.trim(' value ')\n"
+      "text = string.upper(text)\n"
+      "local first, last = string.find('abc', 'b')\n"
+      "first = first + 1\n"
+      "last = last + 1\n"
+      "local values = array.of('int', 1, 2)\n"
+      "values[0] = values[0] + 1\n"
+      "struct NativePrototypeLayout Value: int end\n"
+      "local native_record = struct.new('NativePrototypeLayout')\n"
+      "native_record.Value = values[0]\n"
+      "return wave, text, first, last, native_record.Value\n";
+   auto snapshot = compile_snapshot(L, builtins, true, error);
+   if (not snapshot) {
+      Log.error("native prototype results did not reach type analysis: %s", error.c_str());
+      return false;
+   }
+   if (count_opcode_tree(*snapshot, BC_AGETB) IS 0 or
+       count_opcode_tree(*snapshot, BC_STGETF) IS 0) {
+      Log.error("native prototypes masked specialised array or struct constructor descriptors");
+      return false;
+   }
+
+   constexpr std::string_view shadowed =
+      "local function tonumber(Value:any):str return tostring(Value) end\n"
+      "local local_result = tonumber(1)\n"
+      "local_result = tonumber(2)\n"
+      "local function replacement(Value:any):str return tostring(Value) end\n"
+      "local math = { sin = replacement }\n"
+      "local member_result:str = math.sin(1)\n"
+      "member_result = math.sin(2)\n"
+      "return local_result, member_result\n";
+   if (not compile_snapshot(L, shadowed, true, error)) {
+      Log.error("shadowed built-in names were incorrectly resolved as native prototypes: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view dynamic_result =
+      "local value = rawget({}, 'missing')\n"
+      "value = rawget({}, 'missing')\n";
+   error.clear();
+   if (compile_snapshot(L, dynamic_result, true, error) or
+       error.find("cannot infer type of local 'value'") IS std::string::npos) {
+      Log.error("an any-valued native prototype was incorrectly treated as a fixed type: %s", error.c_str());
+      return false;
+   }
+
+   return true;
+}
+
 static bool test_object_call_result_descriptors(kt::Log &Log)
 {
    if (classify_object_call_member("acGetKey") != ObjectCallMemberKind::Action or
@@ -3061,6 +3181,100 @@ static bool test_object_call_result_descriptors(kt::Log &Log)
    results = describe_object_call_results(wide.data());
    if (results.declared_count != wide.size() or results.stored_count != MAX_RETURN_TYPES) {
       Log.error("wide object result signature lost its closed declared count or exceeded descriptor storage");
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_module_call_result_descriptors(kt::Log &Log)
+{
+   constexpr FunctionField fields[] = {
+      { "Error", FD_ERROR|FD_INT },
+      { "Text", FD_RESULT|FD_STR },
+      { "Object", FD_RESULT|FD_PTR|FD_OBJECT },
+      { "Resource:Handle", FD_RESULT|FD_PTR|FD_STRUCT|FD_RESOURCE },
+      { "Record:Value", FD_RESULT|FD_PTR|FD_STRUCT },
+      { "Pointer", FD_RESULT|FD_PTR },
+      { "Allocated", FD_RESULT|FD_PTR|FD_ALLOC },
+      { "Integer", FD_RESULT|FD_INT },
+      { "Double", FD_RESULT|FD_DOUBLE },
+      { "Large", FD_RESULT|FD_INT64 },
+      { nullptr, 0 }
+   };
+   StaticResultSet results = describe_module_call_results(fields);
+   constexpr std::array<TiriType, 10> expected = {
+      TiriType::Num, TiriType::Str, TiriType::Object, TiriType::Struct, TiriType::Table,
+      TiriType::Userdata, TiriType::Nil, TiriType::Num, TiriType::Num, TiriType::Num
+   };
+   if (results.declared_count != expected.size() or results.dynamic or results.variadic) {
+      Log.error("module result tuple count or closure did not match the native signature");
+      return false;
+   }
+   for (size_t i = 0; i < results.stored_count; ++i) {
+      if (results.value_at(i).primary != expected[i] or
+          results.value_at(i).proof != StaticProof::Trusted) {
+         Log.error("module result descriptor at position %" PRId64 " had the wrong type or proof",
+            int64_t(i));
+         return false;
+      }
+   }
+   if (results.value_at(0).nullable or not results.value_at(1).nullable or
+       not results.value_at(9).nullable) {
+      Log.error("module result nullability did not match direct and appended result behaviour");
+      return false;
+   }
+
+   constexpr FunctionField direct_values[][2] = {
+      { { "Text", FD_STR }, { nullptr, 0 } },
+      { { "Object", FD_OBJECT }, { nullptr, 0 } },
+      { { "Pointer", FD_PTR }, { nullptr, 0 } },
+      { { "Integer", FD_INT }, { nullptr, 0 } },
+      { { "Double", FD_DOUBLE }, { nullptr, 0 } },
+      { { "Large", FD_INT64 }, { nullptr, 0 } }
+   };
+   constexpr std::array<TiriType, 6> direct_types = {
+      TiriType::Str, TiriType::Object, TiriType::Userdata,
+      TiriType::Num, TiriType::Num, TiriType::Num
+   };
+   for (size_t i = 0; i < direct_types.size(); ++i) {
+      results = describe_module_call_results(direct_values[i]);
+      if (results.declared_count != 1 or results.value_at(0).primary != direct_types[i]) {
+         Log.error("module direct return mapping failed at position %" PRId64, int64_t(i));
+         return false;
+      }
+   }
+
+   constexpr FunctionField vector_result[] = {
+      { "Void", FD_VOID },
+      { "Items", FD_RESULT|FDF_VECTOR|FD_INT },
+      { nullptr, 0 }
+   };
+   results = describe_module_call_results(vector_result);
+   if (results.declared_count != 1 or results.value_at(0).primary != TiriType::Array or
+       not results.value_at(0).array_element.known or
+       results.value_at(0).array_element.logical_type != TiriType::Num) {
+      Log.error("void module return incorrectly introduced a result before a vector output");
+      return false;
+   }
+
+   constexpr FunctionField void_result[] = {
+      { "Void", FD_VOID },
+      { nullptr, 0 }
+   };
+   results = describe_module_call_results(void_result);
+   if (results.declared_count != 0 or results.stored_count != 0 or
+       results.value_at(0).primary != TiriType::Nil) {
+      Log.error("void module function did not produce a closed empty result tuple");
+      return false;
+   }
+
+   std::array<FunctionField, MAX_RETURN_TYPES + 3> wide{};
+   wide[0] = { "Void", FD_VOID };
+   for (size_t i = 1; i < wide.size() - 1; ++i) wide[i] = { "Value", FD_INT|FD_RESULT };
+   results = describe_module_call_results(wide.data());
+   if (results.declared_count != wide.size() - 2 or results.stored_count != MAX_RETURN_TYPES) {
+      Log.error("wide module result signature lost its closed declared count or exceeded descriptor storage");
       return false;
    }
 
@@ -3298,6 +3512,32 @@ static bool test_type_guided_emission(kt::Log &Log)
       Log.error("an advisory call result incorrectly removed its local store contract: %s", error.c_str());
       return false;
    }
+
+   constexpr std::string_view member_inference =
+      "extern struct\n"
+      "struct DescriptorMember Value: int end\n"
+      "local item = struct.new('DescriptorMember')\n"
+      "item.Value = 12\n"
+      "local first = item.Value\n"
+      "local second = item?.Value\n"
+      "local delta = first - second\n"
+      "delta = item.Value - item.Value\n"
+      "return delta\n";
+   snapshot = compile_snapshot(L, member_inference, true, error);
+   if (not snapshot or count_opcode_tree(*snapshot, BC_STGETF) < 4) {
+      Log.error("static member descriptors did not reach semantic expression inference: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view callable_table =
+      "local function accept(Value:func):func return Value end\n"
+      "local callable = {}\n"
+      "return accept(callable)\n";
+   snapshot = compile_snapshot(L, callable_table, true, error);
+   if (not snapshot or count_opcode_tree(*snapshot, BC_CONTRACT) < 2) {
+      Log.error("callable-table compatibility bypassed runtime func contracts: %s", error.c_str());
+      return false;
+   }
    return true;
 }
 
@@ -3305,7 +3545,7 @@ static bool test_type_guided_emission(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 41> tests = { {
+   constexpr std::array<TestCase, 44> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -3334,6 +3574,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "contract_bytecode_roundtrip", test_contract_bytecode_roundtrip },
       { "runtime_contract_decoder", test_runtime_contract_decoder },
       { "complex_contract_jit_eligibility", test_complex_contract_jit_eligibility },
+      { "parser_diagnostics_reset_per_load", test_parser_diagnostics_reset_per_load },
       { "userdata_type_annotations", test_userdata_type_annotations },
       { "state_local_struct_declarations", test_state_local_struct_declarations },
       { "struct_declaration_syntax", test_struct_declaration_syntax },
@@ -3344,7 +3585,9 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "ternary_falsey_semantics", test_ternary_falsey_semantics },
       { "static_descriptor_model", test_static_descriptor_model },
       { "static_result_set_model", test_static_result_set_model },
+      { "native_prototype_result_descriptors", test_native_prototype_result_descriptors },
       { "object_call_result_descriptors", test_object_call_result_descriptors },
+      { "module_call_result_descriptors", test_module_call_result_descriptors },
       { "runtime_range_for_emission", test_runtime_range_for_emission },
       { "type_guided_emission", test_type_guided_emission }
    } };

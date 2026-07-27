@@ -33,7 +33,7 @@ return {
       })
    end,
    menubar = function(Window:obj)
-      local menubar
+      local menubar:obj
       if (Window.surface.parent != nil) then -- Window is in the native desktop
          menubar = Window.surface.new('menubar', { x=5, y=Window.clientTop, xOffset=5, target=Window.surface.parent, path=Window.menu })
       else -- Window is in a hosted environment (e.g. X11, Windows)

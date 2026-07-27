@@ -157,7 +157,7 @@ gui.toolbar = function(Options)
 
       item = self._first
 
-      local x, y
+      local x:num, y:num
       if self._horizontal then
          x = 0
          y = groupOffset

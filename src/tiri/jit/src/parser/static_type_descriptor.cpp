@@ -160,6 +160,7 @@ StaticValueDescriptor join_static_descriptors(
    result.proof = weaker_proof(Left.proof, Right.proof);
    if (Left.object_class_id != Right.object_class_id) result.object_class_id = CLASSID::NIL;
    if (Left.struct_def != Right.struct_def) result.struct_def = nullptr;
+   if (Left.module != Right.module) result.module = nullptr;
    if (not (Left.array_element IS Right.array_element)) result.array_element = {};
    return result;
 }
@@ -192,6 +193,23 @@ ObjectCallMemberKind classify_object_call_member(std::string_view Name)
    if (Name.starts_with("ac")) return ObjectCallMemberKind::Action;
    if (Name.starts_with("mt")) return ObjectCallMemberKind::Method;
    return ObjectCallMemberKind::None;
+}
+
+StaticResultSet describe_native_prototype_results(const fprototype *Prototype)
+{
+   StaticResultSet result;
+   if (not Prototype) return result;
+
+   result.declared_count = Prototype->result_count;
+   result.stored_count = uint8_t(std::min<size_t>(Prototype->result_count, MAX_RETURN_TYPES));
+   for (size_t i = 0; i < result.stored_count; ++i) {
+      StaticValueDescriptor &value = result.values[i];
+      value.primary = Prototype->result_types[i];
+      value.nullable = true;
+      if (value.primary IS TiriType::Unknown) value.primary = TiriType::Any;
+      value.proof = value.primary IS TiriType::Any ? StaticProof::Advisory : StaticProof::Trusted;
+   }
+   return result;
 }
 
 StaticResultSet describe_object_call_results(const FunctionField *Fields)
@@ -251,6 +269,179 @@ StaticResultSet describe_object_call_results(const FunctionField *Fields)
       if (type & FD_RESULT) append(value);
    }
 
+   return result;
+}
+
+StaticResultSet describe_module_call_results(const FunctionField *Fields, lua_State *State)
+{
+   StaticResultSet result;
+
+   auto append = [&result](StaticValueDescriptor Value) {
+      if (result.declared_count < MAX_RETURN_TYPES) {
+         result.values[result.declared_count] = Value;
+         result.stored_count++;
+      }
+      result.declared_count++;
+   };
+
+   auto resolve_struct = [State](const FunctionField &Field) -> struct_record * {
+      if (not State or not Field.Name or not valid_struct_name(Field.Name)) return nullptr;
+      return find_struct(State, struct_name_prefix(Field.Name));
+   };
+
+   auto describe_pointer = [&resolve_struct](const FunctionField &Field) {
+      StaticValueDescriptor value;
+      value.proof = StaticProof::Trusted;
+      value.nullable = true;
+      if (Field.Type & FD_OBJECT) value.primary = TiriType::Object;
+      else if (Field.Type & FD_STRUCT) {
+         value.primary = (Field.Type & FD_RESOURCE) ? TiriType::Struct : TiriType::Table;
+         value.struct_def = resolve_struct(Field);
+      }
+      else value.primary = TiriType::Userdata;
+      return value;
+   };
+
+   auto describe_vector_element = [&resolve_struct](const FunctionField &Field) {
+      ArrayElementDescriptor element;
+      element.known = true;
+      if (Field.Type & FD_STRUCT) {
+         element.storage = AET::STRUCT;
+         element.logical_type = TiriType::Struct;
+         element.struct_def = resolve_struct(Field);
+      }
+      else if (Field.Type & FD_OBJECT) {
+         element.storage = AET::OBJECT;
+         element.logical_type = TiriType::Object;
+      }
+      else if (Field.Type & FD_STR) {
+         element.storage = AET::STR_GC;
+         element.logical_type = TiriType::Str;
+      }
+      else if (Field.Type & FD_DOUBLE) {
+         element.storage = AET::DOUBLE;
+         element.logical_type = TiriType::Num;
+      }
+      else if (Field.Type & FD_INT64) {
+         element.storage = AET::INT64;
+         element.logical_type = TiriType::Num;
+      }
+      else if (Field.Type & FD_INT) {
+         element.storage = AET::INT32;
+         element.logical_type = TiriType::Num;
+      }
+      else if (Field.Type & FD_WORD) {
+         element.storage = AET::INT16;
+         element.logical_type = TiriType::Num;
+      }
+      else if (Field.Type & FD_BYTE) {
+         element.storage = AET::BYTE;
+         element.logical_type = TiriType::Num;
+      }
+      else if (Field.Type & FD_PTR) {
+         element.storage = AET::PTR;
+         element.logical_type = TiriType::Userdata;
+      }
+      else element = {};
+      return element;
+   };
+
+   if (not Fields or not Fields[0].Name) return result;
+
+   const FunctionField &direct = Fields[0];
+   if (direct.Type & FD_STR) {
+      append(StaticValueDescriptor{
+         .primary = TiriType::Str,
+         .proof = StaticProof::Trusted,
+         .nullable = true
+      });
+   }
+   else if (direct.Type & FD_OBJECT) {
+      append(StaticValueDescriptor{
+         .primary = TiriType::Object,
+         .proof = StaticProof::Trusted,
+         .nullable = true
+      });
+   }
+   else if (direct.Type & FD_PTR) {
+      StaticValueDescriptor value = describe_pointer(direct);
+      if ((direct.Type & FD_STRUCT) and not (direct.Type & FD_RESOURCE) and not value.struct_def) {
+         value.primary = TiriType::Userdata;
+      }
+      append(value);
+   }
+   else if (direct.Type & (FD_INT|FD_ERROR|FD_DOUBLE|FD_INT64)) {
+      append(StaticValueDescriptor{
+         .primary = TiriType::Num,
+         .proof = StaticProof::Trusted
+      });
+   }
+
+   for (size_t i = 1; Fields[i].Name; ++i) {
+      const FunctionField &field = Fields[i];
+      uint32_t type = field.Type;
+      if (not (type & FD_RESULT)) continue;
+
+      StaticValueDescriptor value;
+      value.proof = StaticProof::Trusted;
+      value.nullable = true;
+
+      if ((type & FDF_SPAN) IS FDF_SPAN) continue;
+      if ((type & FDF_VECTOR) IS FDF_VECTOR) {
+         value.primary = TiriType::Array;
+         value.array_element = describe_vector_element(field);
+         append(value);
+      }
+      else if (type & FD_STR) {
+         value.primary = TiriType::Str;
+         append(value);
+      }
+      else if (type & (FD_PTR|FD_STRUCT)) {
+         if ((type & FD_PTR) and not (type & (FD_OBJECT|FD_STRUCT)) and (type & FD_ALLOC)) {
+            value.primary = TiriType::Nil;
+         }
+         else value = describe_pointer(field);
+         append(value);
+      }
+      else if (type & (FD_INT|FD_DOUBLE|FD_INT64)) {
+         value.primary = TiriType::Num;
+         append(value);
+      }
+      else break;
+   }
+
+   return result;
+}
+
+StaticValueDescriptor describe_struct_field(const struct_record *StructDef, GCstr *FieldName)
+{
+   StaticValueDescriptor result;
+   if (not StructDef or not FieldName) return result;
+
+   for (const auto &field : StructDef->Fields) {
+      if (field.nameHash() != kt::strihash(strdata(FieldName))) continue;
+      result.proof = StaticProof::Trusted;
+      if (field.Type & (FD_ARRAY|FD_VECTOR)) {
+         result.primary = TiriType::Array;
+         if (auto element = describe_array_element(field)) result.array_element = *element;
+      }
+      else if ((field.Type & FD_STRUCT) and not (field.Type & FD_POINTER)) {
+         result.primary = TiriType::Struct;
+         result.struct_def = field.StructDefinition;
+      }
+      else if (field.Type & FD_OBJECT) {
+         result.primary = TiriType::Object;
+         result.object_class_id = field.ObjectClassID;
+      }
+      else if (field.Type & FD_STRING) result.primary = TiriType::Str;
+      else if (field.NativeType IS NativeStructType::Bool) result.primary = TiriType::Bool;
+      else if (field.Type & (FD_FLOAT|FD_DOUBLE|FD_INT64|FD_INT|FD_WORD|FD_BYTE)) {
+         result.primary = TiriType::Num;
+      }
+      else if (field.Type & FD_FUNCTION) result.primary = TiriType::Func;
+      else result.primary = TiriType::Any;
+      return result;
+   }
    return result;
 }
 

@@ -191,7 +191,7 @@ end
 
 function upstreamProxyIncoming(Server:obj, Client:obj)
    local key = tostring(Client)
-   local state = glUpstreamProxyBuffers[key]
+   local state:table = glUpstreamProxyBuffers[key]
    if not state then
       state = {
          buffer = '',
@@ -848,7 +848,7 @@ end
    })
 
    assert(limited_proxy.loadFlows(FLOW_IMPORT_FILE) is true, 'Limited proxy should import persisted flows')
-   local flows = limited_proxy.getFlows()
+   local flows:table = limited_proxy.getFlows()
    assert(flowCount(flows) is 2, 'Import should prune to maxFlows')
    assert(flows[1] is nil and flows[2] != nil and flows[3] != nil, 'Import should keep newest flow IDs')
 

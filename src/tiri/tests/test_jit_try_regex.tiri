@@ -1,0 +1,43 @@
+-- Dedicated test for JIT regex failure handling and parameter name preservation.
+-- Isolated due to it printing many log messages.
+
+@BeforeEach
+function SetupJitTests()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
+end
+
+function jit_regex_failure_convert(Value:any, Param:table):any
+   global jit_regex_failure_param_name = Param.name
+   global jit_regex_failure_value = Value
+
+   try
+      return regex.new(jit_regex_failure_value)
+   except e
+      raise ERR_WrongType, f"Intentional exception raised for parent to capture."
+   end
+end
+
+@Test(hotpath=30) function JITTryRegexFailurePreservesParamName()
+   local param = { name = 'pattern', type = 'regex' }
+   local expected_message = "Intentional exception raised for parent to capture."
+
+   local count = 0
+   for i in {0 to 80} do
+      local err
+      try
+         jit_regex_failure_convert('(', param)
+      except e
+         err = e
+      end
+
+      count++
+      assert(i < 80, 'Terminal JIT failure, index exceeded 80 iterations')
+      assert(err != nil, "Invalid regex should raise an error")
+      assert(err.code is ERR_WrongType, f"Expected ERR_WrongType, got {err.code}")
+      assert(err.message is expected_message, f"Expected '{expected_message}', got '{err.message}'")
+   end
+
+   assert(count is 80, f"Expected 80 iterations, got {count}")
+end

@@ -22,7 +22,7 @@
    global glDocuments = { }
 
    -- Documentation cache and static definitions for hover
-   global glDocCache = nil
+   global glDocCache:table = nil
    global glDefs = nil
 
    extern lspUriToPath, registerCoreHandlers

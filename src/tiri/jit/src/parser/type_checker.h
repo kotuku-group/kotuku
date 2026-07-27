@@ -12,6 +12,7 @@ struct InferredType {
    bool is_constant = false;
    bool is_nullable = false;
    bool is_fixed = false;  // Type is locked, cannot change
+   bool requires_destination_type = false; // Dynamic ingress cannot be replaced by a concrete type without annotation
    CLASSID object_class_id = CLASSID::NIL;  // CLASSID for Object types
    struct_record *struct_def = nullptr; // Resolved layout for Struct types and definition callables
 
@@ -26,6 +27,9 @@ struct InferredType {
       if (Expected IS TiriType::Any) return true;
       if (this->primary IS TiriType::Any) return true;
       if (this->primary IS TiriType::Nil) return true;  // nil matches any type (represents "no value")
+      if (Expected IS TiriType::Func and this->primary IS TiriType::Table) {
+         return true;  // Runtime func contracts accept tables whose metatable provides __call.
+      }
       return this->primary IS Expected;
    }
 };
@@ -75,6 +79,7 @@ public:
    void declare_function(GCstr *, const FunctionExprPayload *, SourceSpan Location = {});
    void fix_local_type(GCstr *, TiriType Type, CLASSID ObjectClassId = CLASSID::NIL,
       struct_record *StructDef = nullptr);
+   void mark_dynamic_ingress(GCstr *);
 
    // Mark a variable as used (called when variable is referenced)
    void mark_used(GCstr *);
