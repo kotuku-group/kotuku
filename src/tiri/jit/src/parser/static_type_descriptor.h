@@ -13,6 +13,7 @@
 #include "../runtime/lj_obj.h"
 
 struct ExprNode;
+struct FunctionField;
 struct FunctionExprPayload;
 struct struct_field;
 struct struct_record;
@@ -122,6 +123,13 @@ private:
    const StaticValueDescriptor &, const StaticValueDescriptor &);
 [[nodiscard]] StaticResultSet map_static_result_filter(
    const StaticResultSet &, uint64_t KeepMask, uint8_t ExplicitCount, bool TrailingKeep);
+enum class ObjectCallMemberKind : uint8_t {
+   None,
+   Action,
+   Method
+};
+[[nodiscard]] ObjectCallMemberKind classify_object_call_member(std::string_view);
+[[nodiscard]] StaticResultSet describe_object_call_results(const FunctionField *);
 [[nodiscard]] std::optional<ArrayElementDescriptor> describe_array_element(
    std::string_view Name, lua_State *State = nullptr);
 [[nodiscard]] std::optional<ArrayElementDescriptor> describe_array_element(const struct_field &);

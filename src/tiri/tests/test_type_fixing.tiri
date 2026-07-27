@@ -130,6 +130,47 @@ end
    assert(fn() is "replaced", "reassignment to different function should work")
 end
 
+@Test function NativeObjectCallResultTypes()
+   local task = obj.new('task')
+   check task.acSetKey('ProductName', 'Kotuku')
+   check task.acSetKey('FileVersion', '2026.7')
+   local err, value = task.acGetKey('ProductName')
+   assert(type(err) is 'number', 'Action error result should be numeric')
+   assert(type(value) is 'string', 'Action value result should be a string')
+
+   err, value = task.acGetKey('FileVersion')
+   assert(type(err) is 'number', 'Reassigned action error result should remain numeric')
+   assert(value is nil or type(value) is 'string', 'Reassigned action value should be a nullable string')
+
+   local method_err, environment = task.mtGetEnv('PATH')
+   assert(type(method_err) is 'number', 'Method error result should be numeric')
+   assert(environment is nil or type(environment) is 'string', 'Method value should be a nullable string')
+   environment = 'replacement'
+   task.free()
+end
+
+@Test function NativeObjectCallResultTypeMismatch()
+   try
+      exec([[
+local task = obj.new('task')
+local err, value = task.acGetKey('ProductName')
+value = 1
+]])
+   success
+      error('Action string result should reject a later numeric assignment')
+   end
+
+   try
+      exec([[
+local task = obj.new('task')
+local err, value = task.mtGetEnv('PATH')
+value = 1
+]])
+   success
+      error('Method string result should reject a later numeric assignment')
+   end
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- NIL SEMANTICS
 

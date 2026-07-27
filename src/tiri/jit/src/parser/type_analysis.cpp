@@ -47,6 +47,16 @@
    return result;
 }
 
+[[nodiscard]] static InferredType inferred_type_from_descriptor(const StaticValueDescriptor &Descriptor)
+{
+   InferredType result;
+   result.primary = Descriptor.primary;
+   result.is_nullable = Descriptor.nullable;
+   result.object_class_id = Descriptor.object_class_id;
+   result.struct_def = Descriptor.struct_def;
+   return result;
+}
+
 [[nodiscard]] static bool type_identifier_name_is(GCstr *Name, std::string_view Text)
 {
    return Name and std::string_view(strdata(Name), Name->len) IS Text;
@@ -228,6 +238,7 @@ private:
    // Type inference - determines types from expressions and context
    [[nodiscard]] InferredType infer_expression_type(const ExprNode &);
    [[nodiscard]] InferredType infer_call_return_type(const ExprNode &, size_t Position) const;
+   [[nodiscard]] InferredType infer_result_position(const ExprNode &, size_t Position);
 
    // Symbol resolution - looks up variables and functions in scope stack
    [[nodiscard]] std::optional<InferredType> resolve_identifier(GCstr *) const;
@@ -1176,8 +1187,10 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
             continue;  // Skip further checking for this target
          }
 
-         if (i >= Payload.values.size()) continue;
-         InferredType value_type = this->infer_expression_type(*Payload.values[i]);
+         if (Payload.values.empty()) continue;
+         size_t source = std::min(i, Payload.values.size() - 1);
+         size_t result_position = source IS Payload.values.size() - 1 ? i - source : 0;
+         InferredType value_type = this->infer_result_position(*Payload.values[source], result_position);
 
          if (existing->is_fixed) {
             // Fixed type: check compatibility
@@ -1298,7 +1311,9 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
          have_value_type = true;
 
          // If this is the last value and it's a call expression, it may provide multiple returns
-         if (value_index == Payload.values.size() - 1 and value_expr.kind IS AstNodeKind::CallExpr) {
+         if (value_index IS Payload.values.size() - 1 and
+             (value_expr.kind IS AstNodeKind::CallExpr or value_expr.kind IS AstNodeKind::SafeCallExpr or
+              value_expr.static_results)) {
             multi_return_call = &value_expr;
             call_return_index = 0;
          }
@@ -1309,7 +1324,7 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
          // No more explicit values, but we have a trailing function call
          // Use the next return value position from the multi-return call
          call_return_index += 1;
-         value_type = this->infer_call_return_type(*multi_return_call, call_return_index);
+         value_type = this->infer_result_position(*multi_return_call, call_return_index);
          have_value_type = (value_type.primary != TiriType::Any);
       }
 
@@ -1464,7 +1479,9 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
          value_type = this->infer_expression_type(value_expr);
          have_value_type = true;
 
-         if (value_index IS Payload.values.size() - 1 and value_expr.kind IS AstNodeKind::CallExpr) {
+         if (value_index IS Payload.values.size() - 1 and
+             (value_expr.kind IS AstNodeKind::CallExpr or value_expr.kind IS AstNodeKind::SafeCallExpr or
+              value_expr.static_results)) {
             multi_return_call = &value_expr;
             call_return_index = 0;
          }
@@ -1473,7 +1490,7 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
       }
       else if (multi_return_call) {
          call_return_index += 1;
-         value_type = this->infer_call_return_type(*multi_return_call, call_return_index);
+         value_type = this->infer_result_position(*multi_return_call, call_return_index);
          have_value_type = (value_type.primary != TiriType::Any);
       }
 
@@ -1778,7 +1795,8 @@ void TypeAnalyser::analyse_expression(const ExprNode &Expression)
          if (payload and payload->value) this->analyse_expression(*payload->value);
          break;
       }
-      case AstNodeKind::CallExpr: {
+      case AstNodeKind::CallExpr:
+      case AstNodeKind::SafeCallExpr: {
          auto *payload = std::get_if<CallExprPayload>(&Expression.data);
          if (payload) this->analyse_call_expr(*payload);
          break;
@@ -2016,10 +2034,17 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
       case AstNodeKind::FunctionExpr:
          result.primary = TiriType::Func;
          break;
-      case AstNodeKind::CallExpr: {
+      case AstNodeKind::CallExpr:
+      case AstNodeKind::SafeCallExpr: {
          // For call expressions, try to infer from the function's declared return type
          auto *payload = std::get_if<CallExprPayload>(&Expr.data);
          if (payload) {
+            if (Expr.static_results) {
+               const StaticResultSet &results = this->ctx_.descriptors().results(Expr.static_results);
+               if (results.value_at(0).proof IS StaticProof::Trusted) {
+                  return inferred_type_from_descriptor(results.value_at(0));
+               }
+            }
             if (const auto *direct = std::get_if<DirectCallTarget>(&payload->target);
                 direct and direct->callable and direct->callable->kind IS AstNodeKind::IdentifierExpr) {
                const auto &name_ref = std::get<NameRef>(direct->callable->data);
@@ -2237,7 +2262,14 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
    InferredType result;
    result.primary = TiriType::Any;
 
-   if (Expr.kind != AstNodeKind::CallExpr) return result;
+   if (Expr.static_results) {
+      const StaticResultSet &results = this->ctx_.descriptors().results(Expr.static_results);
+      if (results.value_at(0).proof IS StaticProof::Trusted) {
+         return inferred_type_from_descriptor(results.value_at(Position));
+      }
+   }
+
+   if (Expr.kind != AstNodeKind::CallExpr and Expr.kind != AstNodeKind::SafeCallExpr) return result;
 
    auto *payload = std::get_if<CallExprPayload>(&Expr.data);
    if (not payload) return result;
@@ -2257,6 +2289,12 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
    }
 
    return result;
+}
+
+InferredType TypeAnalyser::infer_result_position(const ExprNode &Expr, size_t Position)
+{
+   if (Position IS 0) return this->infer_expression_type(Expr);
+   return this->infer_call_return_type(Expr, Position);
 }
 
 //********************************************************************************************************************

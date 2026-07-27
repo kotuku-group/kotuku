@@ -2971,6 +2971,102 @@ static bool test_static_result_set_model(kt::Log &Log)
    return true;
 }
 
+static bool test_object_call_result_descriptors(kt::Log &Log)
+{
+   if (classify_object_call_member("acGetKey") != ObjectCallMemberKind::Action or
+       classify_object_call_member("mtGetEnv") != ObjectCallMemberKind::Method or
+       classify_object_call_member("account") != ObjectCallMemberKind::None or
+       classify_object_call_member("mtime") != ObjectCallMemberKind::None or
+       classify_object_call_member("acgetKey") != ObjectCallMemberKind::None or
+       classify_object_call_member("mtgetEnv") != ObjectCallMemberKind::None) {
+      Log.error("object call member classification did not enforce the exposed ac[A-Z]/mt[A-Z] contract");
+      return false;
+   }
+
+   constexpr FunctionField fields[] = {
+      { "Input", FDF_CPPSTRING },
+      { "Vector", FDF_VECTOR|FD_RESULT },
+      { "Text", FDF_CPPSTRING|FD_MUTABLE|FD_RESULT },
+      { "Resource", FD_STRUCT|FD_RESOURCE|FD_RESULT },
+      { "Record", FD_STRUCT|FD_RESULT },
+      { "Object", FD_PTR|FD_OBJECT|FD_RESULT },
+      { "Pointer", FD_PTR|FD_RESULT },
+      { "Integer", FD_INT|FD_RESULT },
+      { "Double", FD_DOUBLE|FD_RESULT },
+      { "Large", FD_INT64|FD_RESULT },
+      { nullptr, 0 }
+   };
+   StaticResultSet results = describe_object_call_results(fields);
+   constexpr std::array<TiriType, 10> expected = {
+      TiriType::Num, TiriType::Array, TiriType::Str, TiriType::Struct, TiriType::Table,
+      TiriType::Object, TiriType::Userdata, TiriType::Num, TiriType::Num, TiriType::Num
+   };
+   if (results.declared_count != expected.size() or
+       results.stored_count != std::min<size_t>(expected.size(), MAX_RETURN_TYPES)) {
+      Log.error("object call result descriptor count did not match runtime-pushed values");
+      return false;
+   }
+   for (size_t i = 0; i < results.stored_count; ++i) {
+      if (results.value_at(i).primary != expected[i] or
+          results.value_at(i).proof != StaticProof::Trusted) {
+         Log.error("object call result descriptor at position %" PRId64 " had the wrong type or proof",
+            int64_t(i));
+         return false;
+      }
+   }
+   if (results.value_at(0).nullable or not results.value_at(1).nullable or
+       not results.value_at(2).nullable or results.value_at(7).nullable) {
+      Log.error("object call result nullability did not match runtime storage");
+      return false;
+   }
+
+   constexpr FunctionField numeric_fields[] = {
+      { "Integer", FD_INT|FD_RESULT },
+      { "Double", FD_DOUBLE|FD_RESULT },
+      { "Large", FD_INT64|FD_RESULT },
+      { nullptr, 0 }
+   };
+   results = describe_object_call_results(numeric_fields);
+   if (results.declared_count != 4 or results.value_at(1).primary != TiriType::Num or
+       results.value_at(2).primary != TiriType::Num or results.value_at(3).primary != TiriType::Num) {
+      Log.error("numeric object result flags did not map to numeric descriptors");
+      return false;
+   }
+
+   constexpr FunctionField ignored_then_numeric[] = {
+      { "Span", FDF_SPAN|FD_RESULT },
+      { "Callback", FD_FUNCTION|FD_RESULT },
+      { "Value", FD_INT|FD_RESULT },
+      { nullptr, 0 }
+   };
+   results = describe_object_call_results(ignored_then_numeric);
+   if (results.declared_count != 2 or results.value_at(1).primary != TiriType::Num) {
+      Log.error("ignored object result categories shifted or stopped supported later results");
+      return false;
+   }
+
+   constexpr FunctionField unsupported_then_numeric[] = {
+      { "Byte", FD_BYTE|FD_RESULT },
+      { "Value", FD_INT|FD_RESULT },
+      { nullptr, 0 }
+   };
+   results = describe_object_call_results(unsupported_then_numeric);
+   if (results.declared_count != 1) {
+      Log.error("unsupported object result category did not stop descriptor dissemination");
+      return false;
+   }
+
+   std::array<FunctionField, MAX_RETURN_TYPES + 3> wide{};
+   for (size_t i = 0; i < wide.size() - 1; ++i) wide[i] = { "Value", FD_INT|FD_RESULT };
+   results = describe_object_call_results(wide.data());
+   if (results.declared_count != wide.size() or results.stored_count != MAX_RETURN_TYPES) {
+      Log.error("wide object result signature lost its closed declared count or exceeded descriptor storage");
+      return false;
+   }
+
+   return true;
+}
+
 static size_t count_opcode(const BytecodeSnapshot &Snapshot, BCOp Opcode)
 {
    size_t count = 0;
@@ -3209,7 +3305,7 @@ static bool test_type_guided_emission(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 40> tests = { {
+   constexpr std::array<TestCase, 41> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -3248,6 +3344,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "ternary_falsey_semantics", test_ternary_falsey_semantics },
       { "static_descriptor_model", test_static_descriptor_model },
       { "static_result_set_model", test_static_result_set_model },
+      { "object_call_result_descriptors", test_object_call_result_descriptors },
       { "runtime_range_for_emission", test_runtime_range_for_emission },
       { "type_guided_emission", test_type_guided_emission }
    } };

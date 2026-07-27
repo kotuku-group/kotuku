@@ -8,6 +8,7 @@
 #include "ast/nodes.h"
 #include "field_type_lookup.h"
 #include "parser_context.h"
+#include "../../../defs.h"
 
 namespace {
 
@@ -17,8 +18,8 @@ struct BindingScope {
 
 class StaticDescriptorAnalyser {
 public:
-   explicit StaticDescriptorAnalyser(ParserContext &Context)
-      : context_(Context), catalogue_(Context.descriptors()) {}
+   explicit StaticDescriptorAnalyser(ParserContext &Context, bool NativeCallsOnly = false)
+      : context_(Context), catalogue_(Context.descriptors()), native_calls_only_(NativeCallsOnly) {}
 
    void discover(BlockStmt &Module)
    {
@@ -32,7 +33,7 @@ public:
 
    void propagate(BlockStmt &Module)
    {
-      this->refresh_callables();
+      if (not this->native_calls_only_) this->refresh_callables();
       this->propagate_block(Module);
    }
 
@@ -526,6 +527,70 @@ private:
          }
       }
       if (Call.callable) Call.results = this->catalogue_.callable(Call.callable).results;
+      if (not Call.results) Call.results = this->object_call_results(Call);
+   }
+
+   [[nodiscard]] StaticResultSetHandle object_call_results(CallExprPayload &Call)
+   {
+      const ExprNode *receiver = nullptr;
+      GCstr *member = nullptr;
+
+      if (const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+          direct and direct->callable) {
+         if (direct->callable->kind IS AstNodeKind::MemberExpr) {
+            const auto &payload = std::get<MemberExprPayload>(direct->callable->data);
+            receiver = payload.table.get();
+            member = payload.member.symbol;
+         }
+         else if (direct->callable->kind IS AstNodeKind::SafeMemberExpr) {
+            const auto &payload = std::get<SafeMemberExprPayload>(direct->callable->data);
+            receiver = payload.table.get();
+            member = payload.member.symbol;
+         }
+      }
+      else if (const auto *method = std::get_if<MethodCallTarget>(&Call.target)) {
+         receiver = method->receiver.get();
+         member = method->method.symbol;
+      }
+      else if (const auto *method = std::get_if<SafeMethodCallTarget>(&Call.target)) {
+         receiver = method->receiver.get();
+         member = method->method.symbol;
+      }
+
+      if (not receiver or not member) return 0;
+      StaticValueDescriptor base = this->descriptor_of(*receiver);
+      if (base.primary != TiriType::Object or not base.proved()) return 0;
+
+      std::string_view exposed_name(strdata(member), member->len);
+      ObjectCallMemberKind kind = classify_object_call_member(exposed_name);
+      if (kind IS ObjectCallMemberKind::None) return 0;
+      std::string_view native_name = exposed_name.substr(2);
+      const FunctionField *fields = nullptr;
+
+      if (kind IS ObjectCallMemberKind::Action) {
+         if (not glActions) return 0;
+         for (size_t i = 1; glActions[i].Name; ++i) {
+            if (std::string_view(glActions[i].Name) IS native_name) {
+               fields = glActions[i].Args;
+               return this->catalogue_.add_results(describe_object_call_results(fields));
+            }
+         }
+         return 0;
+      }
+
+      if (base.object_class_id IS CLASSID::NIL) return 0;
+      auto *meta_class = FindClass(base.object_class_id);
+      if (not meta_class) return 0;
+
+      std::span<MethodEntry> methods;
+      if (meta_class->getMethods(methods) != ERR::Okay) return 0;
+      for (size_t i = 1; i < methods.size(); ++i) {
+         if (methods[i].Name and std::string_view(methods[i].Name) IS native_name) {
+            fields = methods[i].Args;
+            return this->catalogue_.add_results(describe_object_call_results(fields));
+         }
+      }
+      return 0;
    }
 
    void annotate_callables_expression(ExprNode &Expression)
@@ -627,7 +692,10 @@ private:
 
    [[nodiscard]] StaticValueDescriptor call_descriptor(CallExprPayload &Call, bool Safe)
    {
-      this->annotate_call(Call);
+      if (this->native_calls_only_) {
+         if (not Call.results) Call.results = this->object_call_results(Call);
+      }
+      else this->annotate_call(Call);
       StaticValueDescriptor result;
 
       if (Call.results) {
@@ -1492,6 +1560,7 @@ private:
    std::vector<std::pair<GCstr *, StaticValueHandle>> global_values_;
    std::vector<GCstr *> global_names_;
    uint16_t function_depth_ = 0;
+   bool native_calls_only_ = false;
 };
 
 } // namespace
@@ -1505,5 +1574,11 @@ void discover_static_bindings(ParserContext &Context, BlockStmt &Module)
 void propagate_static_descriptors(ParserContext &Context, BlockStmt &Module)
 {
    StaticDescriptorAnalyser analyser(Context);
+   analyser.propagate(Module);
+}
+
+void propagate_native_object_descriptors(ParserContext &Context, BlockStmt &Module)
+{
+   StaticDescriptorAnalyser analyser(Context, true);
    analyser.propagate(Module);
 }

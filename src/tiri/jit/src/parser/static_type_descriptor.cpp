@@ -4,6 +4,9 @@
 
 #include <algorithm>
 
+#include <kotuku/main.h>
+#include <kotuku/objects.h>
+
 #include "ast/nodes.h"
 #include "../runtime/lj_struct.h"
 
@@ -180,6 +183,74 @@ StaticResultSet map_static_result_filter(
    result.variadic = TrailingKeep and Source.variadic;
    result.dynamic = TrailingKeep and Source.dynamic;
    if (result.variadic or result.dynamic) result.declared_count = Source.declared_count;
+   return result;
+}
+
+ObjectCallMemberKind classify_object_call_member(std::string_view Name)
+{
+   if (Name.size() < 3 or Name[2] < 'A' or Name[2] > 'Z') return ObjectCallMemberKind::None;
+   if (Name.starts_with("ac")) return ObjectCallMemberKind::Action;
+   if (Name.starts_with("mt")) return ObjectCallMemberKind::Method;
+   return ObjectCallMemberKind::None;
+}
+
+StaticResultSet describe_object_call_results(const FunctionField *Fields)
+{
+   StaticResultSet result;
+
+   auto append = [&result](StaticValueDescriptor Value) {
+      if (result.declared_count < MAX_RETURN_TYPES) {
+         result.values[result.declared_count] = Value;
+         result.stored_count++;
+      }
+      result.declared_count++;
+   };
+
+   append(StaticValueDescriptor{
+      .primary = TiriType::Num,
+      .proof = StaticProof::Trusted
+   });
+
+   if (not Fields) return result;
+
+   for (size_t i = 0; Fields[i].Name; ++i) {
+      uint32_t type = Fields[i].Type;
+      StaticValueDescriptor value;
+      value.proof = StaticProof::Trusted;
+
+      if ((type & FDF_SPAN) IS FDF_SPAN) continue;
+      else if ((type & FDF_VECTOR) IS FDF_VECTOR) {
+         value.primary = TiriType::Array;
+         value.nullable = true;
+      }
+      else if (type & FD_STR) {
+         value.primary = TiriType::Str;
+         value.nullable = not (type & FD_CPP) or (type & FD_MUTABLE);
+      }
+      else if (type & FD_STRUCT) {
+         value.primary = (type & FD_RESOURCE) ? TiriType::Struct : TiriType::Table;
+         value.nullable = true;
+      }
+      else if (type & FD_FUNCTION) {
+         continue;
+      }
+      else if (type & FD_PTR) {
+         value.primary = (type & FD_OBJECT) ? TiriType::Object : TiriType::Userdata;
+         value.nullable = true;
+      }
+      else if (type & (FD_INT|FD_DOUBLE|FD_INT64)) {
+         value.primary = TiriType::Num;
+      }
+      else if (type & FD_TAGS) {
+         break;
+      }
+      else {
+         break;
+      }
+
+      if (type & FD_RESULT) append(value);
+   }
+
    return result;
 }
 
