@@ -1431,6 +1431,10 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
       this->analyse_expression(*value);
    }
 
+   size_t value_index = 0;
+   size_t call_return_index = 0;
+   const ExprNode *multi_return_call = nullptr;
+
    // Track global variable types for type checking on subsequent assignments
    for (size_t i = 0; i < Payload.names.size(); ++i) {
       const auto &name = Payload.names[i];
@@ -1452,6 +1456,26 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
       }
 
       InferredType inferred;
+      InferredType value_type;
+      bool have_value_type = false;
+
+      if (value_index < Payload.values.size()) {
+         const ExprNode &value_expr = *Payload.values[value_index];
+         value_type = this->infer_expression_type(value_expr);
+         have_value_type = true;
+
+         if (value_index IS Payload.values.size() - 1 and value_expr.kind IS AstNodeKind::CallExpr) {
+            multi_return_call = &value_expr;
+            call_return_index = 0;
+         }
+
+         value_index += 1;
+      }
+      else if (multi_return_call) {
+         call_return_index += 1;
+         value_type = this->infer_call_return_type(*multi_return_call, call_return_index);
+         have_value_type = (value_type.primary != TiriType::Any);
+      }
 
       // Explicit type annotation takes precedence
       if (name.type != TiriType::Unknown) {
@@ -1459,9 +1483,9 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
          inferred.struct_def = name.struct_def;
          inferred.is_fixed = (name.type != TiriType::Any);
       }
-      else if (i < Payload.values.size()) {
+      else if (have_value_type) {
          // Infer type from initial value
-         inferred = this->infer_expression_type(*Payload.values[i]);
+         inferred = value_type;
          // Non-nil, non-any initial values fix the type
          if (inferred.primary != TiriType::Nil and inferred.primary != TiriType::Any) {
             inferred.is_fixed = true;

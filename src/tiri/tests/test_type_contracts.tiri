@@ -413,6 +413,50 @@ end
    assert(glInferredContract is 'nested', 'A rejected nested-function store must preserve the inferred global value')
 end
 
+@Test function GlobalContractRedeclarationPolicy()
+   global glContractRedeclaration = 1
+
+   exec('global glContractRedeclaration = 2')
+   assert(glContractRedeclaration is 2, 'A matching concrete redeclaration should preserve the sticky contract')
+
+   expect_contract_failure(
+      function() exec("global glContractRedeclaration = 'wrong'") end, 'global')
+   assert(glContractRedeclaration is 2,
+      'A rejected concrete redeclaration must preserve the global value and its existing contract')
+end
+
+@Test function CompiledGlobalWriterObservesVariantPolicy()
+   global glContractWriter:num = 1
+
+   function write_contract_global(Value:any)
+      glContractWriter = Value
+   end
+
+   for i in {0 to 200} do
+      write_contract_global(i)
+   end
+
+   exec("global glContractWriter:any = 'variant'")
+   write_contract_global('allowed')
+   assert(glContractWriter is 'allowed',
+      'A writer compiled against an older concrete contract must observe a later explicit any declaration')
+end
+
+@Test function MultiReturnGlobalContracts()
+   function global_contract_pair():<num, str>
+      return 2, 'text'
+   end
+
+   global glContractPairNumber, glContractPairText = global_contract_pair()
+
+   exec('glContractPairText = "updated"')
+   assert(glContractPairText is 'updated', 'A matching store should satisfy the secondary global contract')
+
+   expect_contract_failure(function() exec('glContractPairText = 42') end, 'global')
+   assert(glContractPairText is 'updated',
+      'A rejected store must preserve a secondary multi-return global and its contract')
+end
+
 @Test function UserdataContractBoundaries()
    function userdata_source():any return newproxy(true) end
    function typed_userdata_result():userdata return userdata_source() end
