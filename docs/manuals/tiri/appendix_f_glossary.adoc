@@ -77,6 +77,9 @@ The Tiri test framework.  Test files use annotations to declare test functions a
 Guard::
 A boolean expression following `if` in a `from` clause of a `choose` expression.  The guard must evaluate to `true` for the pattern to match.  See <<sec-guards>>.
 
+Forward declaration::
+A `global function` declaration with an empty body, published ahead of the full definition.  Later definitions of the same name must match the declared signature.  See <<sec-forward-declarations>>.
+
 Hash part::
 The non-sequential and string-keyed portion of a table.  Iteration order over the hash part is unspecified.  See <<sec-table-fundamentals>>.
 
@@ -165,7 +168,7 @@ Standard falsiness::
 The conservative falsiness rules used by `and`, `or`, `not`, and `if` conditions.  Under standard falsiness, only `nil` and `false` are falsey; all other values (including `0` and `""`) are truthy.  See <<sec-truthiness>>.
 
 Sticky type::
-Tiri's type inference mechanism in which a variable commits to the type of its first non-`nil` assignment.  Subsequent non-`nil` assignments of a different type raise an error.  Assigning `nil` is always permitted, acting as a "clear" operation that preserves the type constraint.  See <<sec-sticky-types>>.
+Tiri's type inference mechanism in which a variable commits to the type of its first non-`nil` assignment.  Subsequent non-`nil` assignments of a different type raise an error, except on unannotated globals where the inferred type is advisory.  Assigning `nil` is always permitted, acting as a "clear" operation that preserves the type constraint.  See <<sec-sticky-types>>.
 
 String::
 An immutable sequence of bytes.  Strings with identical content share the same internal object (interning).  Zero-based indexing.  See <<ch-strings>>.
@@ -202,6 +205,9 @@ The evaluation of a value in boolean context.  Under standard falsiness rules, o
 
 Type annotation::
 An optional declaration constraining a variable's type, written as `:type` after the variable name.  Enables both static (parse-time) and runtime type checking.  See <<sec-explicit-type-annotations>>.
+
+Type contract::
+A type constraint validated by the runtime as a value crosses a boundary: a function parameter, a declared result, a typed local, a typed upvalue or an annotated global.  A contract cannot be bypassed by reaching the boundary indirectly, accepts `nil`, and performs no coercion.  See <<sec-runtime-type-contracts>>.
 
 Upvalue::
 A local variable from an enclosing scope that is captured by a nested function.  The upvalue persists as long as any closure referencing it remains alive.  See <<sec-upvalues-and-closures>>.

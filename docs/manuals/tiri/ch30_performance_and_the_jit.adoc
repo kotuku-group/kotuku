@@ -1,3 +1,4 @@
+// CHANGED: 2026-07-27 — Updated annotation guidance for type-guided emission and exact contract recording.
 // UPDATED: 2026-07-26 - Replaced numeric for loop guidance with range loops (commit 1f23b978)
 
 [[ch-performance-and-the-jit]]
@@ -91,7 +92,15 @@ Recording also aborts on encountering operations that the JIT compiler does not 
 === Type Annotations for Performance
 indexterm:[type annotations, performance] The JIT compiler achieves peak performance when types are stable across loop iterations.  Every type change at a guard causes a side exit, and repeated type instability prevents trace compilation entirely.
 
-Type annotations (see <<ch-annotations-and-preprocessing>>) provide metadata that the compiler uses for type inference and validation.  While the JIT does not consume annotations directly, the parser's type analysis pass uses them to detect type inconsistencies at compile time — before code ever reaches the JIT.
+Type annotations (see <<sec-explicit-type-annotations>>) influence performance in three ways:
+
+. **Compile-time diagnostics** — the parser's type analysis pass uses them to detect type inconsistencies before code reaches the JIT.
+. **Specialised bytecode** — when analysis proves a type, the emitter selects specialised array, object, struct and scalar bytecodes in place of generic ones.  The trace recorder consumes those bytecodes, so annotations reach compiled code indirectly.
+. **Exact contract recording** — annotations naming a fixed complex type (`struct<Name>`, `range`, `userdata` and callable contracts) are recorded as exact predicates with ordinary trace exits, which removes the interpreted fallback these contracts previously caused on hot paths.
+
+Scalar annotations such as `num` and `str` do not remove type guards.  A guard is retained unless a dominating runtime check or an immutable contract proves the type, so an annotated loop and an equivalent unannotated loop compile to the same guard sequence.  The performance benefit of scalar annotations comes from the type stability they enforce (see <<sec-runtime-type-contracts>>), not from guard elimination.
+
+Annotated parameters, results, globals and upvalues add a runtime check at their boundary.  The cost is incurred once per boundary crossing and is not repeated inside a compiled loop body.
 
 Write type-stable code to maximise JIT effectiveness:
 

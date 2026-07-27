@@ -1,4 +1,6 @@
 // VERIFIED: 2026-02-11
+// CHANGED: 2026-07-27 - Added sec-forward-declarations documenting empty-bodied global function declarations and signature validation.
+// CHANGED: 2026-07-27 - Parameter and return annotations documented as runtime contracts; corrected the excess-result rule to truncation.
 
 [[ch-functions]]
 == Functions
@@ -68,6 +70,60 @@ global function configure()
 end
 ----
 
+[[sec-forward-declarations]]
+==== Forward Declarations
+
+indexterm:[functions, forward declarations] indexterm:[forward declarations] A `global function` declaration with an empty body is a forward declaration.  It publishes the name and signature of a function whose full definition appears later in the same chunk:
+
+[source,tiri]
+----
+global function transform(Value:str, Options:table):<str, num> end
+
+global function transform(Value:str, Options:table):<str, num>
+   return Value:upper(), #Value
+end
+----
+
+A forward declaration is a complete function definition, so it binds a function value to the global name immediately.  Calling that value before the full definition executes runs the empty body and returns no values.
+
+Every subsequent `global function` definition of the same name must match the signature of the forward declaration.  The compiler compares:
+
+* The callable kind, `function` or `thunk`.
+* The parameter count and the presence of the variadic marker `pass:[...]`.
+* For each parameter, whether a type annotation is present, and the annotated type, including the struct definition for `struct` and `ptr` types.
+* Whether a return type annotation is present, the declared return count, the presence of a variadic return marker, and each declared return type.
+
+Parameter names are excluded from the comparison, so the definition is free to rename its parameters:
+
+[source,tiri]
+----
+global function encode(Input:str):str end
+
+global function encode(Source:str):str   -- accepted, names are not part of the contract
+   return Source
+end
+----
+
+A mismatch raises a compile-time error that identifies the parameter or return position at fault:
+
+[source,tiri]
+----
+global function encode(Input:str):str end
+
+global function encode(Source:num):num   -- error
+   return Source
+end
+----
+
+----
+signature for global function 'encode' does not match its forward declaration:
+parameter 1 has type 'num', expected 'str'
+----
+
+The contract is enforced for the remainder of the chunk and is not scope-sensitive.  A definition nested inside a conditional branch is validated against the original forward declaration in the same way as a definition at the top level.
+
+Forward declaration checking applies to `global function` declarations only.  A local forward declaration takes the form of a `local` variable that is assigned a function value later (see <<sec-recursive-functions>>), and carries no signature contract.
+
 ==== Method Syntax
 
 The colon syntax declares a method that receives an implicit `self` parameter as its first argument:
@@ -115,7 +171,7 @@ end
 
 ==== Type Annotations
 
-Parameters accept optional type annotations after a colon.  Annotations constrain the expected argument type and enable compile-time diagnostics:
+Parameters accept optional type annotations after a colon.  An annotation is a runtime contract: the argument is validated on entry to the function, regardless of how the function is reached (see <<sec-runtime-type-contracts>>).  Mismatches that are visible in the source are reported as compile-time diagnostics instead:
 
 [source,tiri]
 ----
@@ -124,11 +180,9 @@ function process(Path: str, Count: num, Options: table)
 end
 ----
 
-Supported type names include: `any`, `num`, `str`, `bool`, `table`, `array`, `func`, `obj`.  An unknown type name raises a parse error.
+See <<sec-explicit-type-annotations>> for the list of supported type names.  An unknown type name raises a parse error.
 
-See <<ch-type-system>> for the full type annotation specification.
-
-When a type is not declared, the compiler infers the parameter type from usage.  If inference fails, the parameter defaults to `any`.  In cases where the type is ambiguous, providing explicit type annotations to maximise performance is recommended.
+When a type is not declared, the compiler infers the parameter type from usage.  If inference fails, the parameter defaults to `any` and no contract is enforced.  In cases where the type is ambiguous, providing explicit type annotations to maximise performance is recommended.
 
 ==== Argument Count Mismatch
 
@@ -142,6 +196,17 @@ end
 
 f(1, 2)        -- prints: 1  2  nil
 f(1, 2, 3, 4)  -- prints: 1  2  3  (4 is discarded)
+----
+
+A missing argument satisfies an annotated parameter, because `nil` satisfies every type contract:
+
+[source,tiri]
+----
+function g(A: num, B: num)
+   print(A, B)
+end
+
+g(1)           -- prints: 1  nil (no contract failure for B)
 ----
 
 [[sec-multiple-return-values]]
@@ -202,14 +267,29 @@ function divmod(A: num, B: num):<num, num>
 end
 ----
 
-The compiler validates that return statements match the declared types.  A type mismatch raises a compile-time error.  Returning fewer values than declared is permitted; excess positions receive `nil`.  Returning more values than declared raises a compile-time error.
+A declared return type is a runtime contract.  The compiler validates return statements whose types are statically known and raises a compile-time error on mismatch; values whose types cannot be proved at compile time are validated as the function returns (see <<sec-runtime-type-contracts>>).
 
-The variadic marker `pass:[...]` in a return type list indicates that additional return values of the preceding type are permitted:
+Returning fewer values than declared is permitted; the undeclared positions read as `nil`.  A declaration without the variadic marker also fixes the result count: values returned beyond the declared positions are discarded rather than passed to the caller.
+
+[source,tiri]
+----
+function one(V: num):num
+   return V, 'text'
+end
+
+a, b = one(5)   -- a=5, b=nil ('text' is discarded)
+----
+
+The variadic marker `pass:[...]` in a return type list indicates that additional return values are permitted.  Each additional value must satisfy the last declared type:
 
 [source,tiri]
 ----
 function manyNums():<num, ...>
-   return 1, 2, 3
+   return 1, 2, 3         -- valid
+end
+
+function badNums():<num, ...>
+   return 1, 'two'        -- error: return type mismatch at position 2
 end
 ----
 
@@ -478,3 +558,5 @@ end
 ----
 
 Both functions in a mutually recursive pair must declare explicit return types.
+
+Global functions can achieve the same result with an empty-bodied forward declaration, which additionally binds the pair to a checked signature (see <<sec-forward-declarations>>).

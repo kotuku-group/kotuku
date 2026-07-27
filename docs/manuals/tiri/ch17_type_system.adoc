@@ -1,4 +1,5 @@
 // VERIFIED: 2026-02-12
+// CHANGED: 2026-07-27 — Added sec-runtime-type-contracts; documented userdata annotations, exact contract identity, and the advisory status of inferred globals.
 
 [[ch-type-system]]
 == Type System
@@ -9,6 +10,8 @@ Type checking operates at two levels.  The compiler performs static analysis dur
 [[sec-sticky-types]]
 === Sticky Types (Type Inference)
 indexterm:[sticky types] indexterm:[type inference] Sticky types are Tiri's core type inference mechanism.  When a local, global, or upvalue variable receives its first non-nil value, the variable's type becomes _fixed_ to that value's type.  All subsequent non-nil assignments must match the fixed type.  Assigning a value of a different type produces a compile-time or runtime error.
+
+An inferred type is enforced at runtime for locals and for upvalues captured from typed locals.  An inferred type on an unannotated global constrains compile-time diagnostics only; a value delivered through an `any` expression is not rejected at runtime.  See <<sec-runtime-type-contracts>>.
 
 [source,tiri]
 ----
@@ -153,7 +156,8 @@ local_declaration = "local" identifier ":" type_name [ "=" expression ] ;
 type_name         = "any" | "nil" | "bool" | "boolean"
                   | "num" | "number" | "str" | "string"
                   | "table" | "array" | "func" | "function"
-                  | "obj" | "object" | "range" ;
+                  | "obj" | "object" | "range" | "userdata"
+                  | "struct" | "struct" "<" identifier ">" ;
 ----
 
 [discrete]
@@ -196,11 +200,12 @@ local count: num = 'text'  -- error: cannot assign 'string' to 'number'
 |`func`, `function` |Function
 |`obj`, `object`    |Object
 |`range`            |Range
+|`userdata`         |Userdata with client-side origins (see <<sec-userdata>>)
 |`struct`           |Structure (see <<ch-structs>>)
 |`struct<Name>`     |Structure constrained to the declared layout `Name` (see <<sec-struct-typed-references>>)
 |===
 
-Short and long forms are interchangeable.  An unrecognised type name raises a parse-time diagnostic.
+Short and long forms are interchangeable.  An unrecognised type name raises a parse-time diagnostic.  Native array element types are not part of the annotation grammar: `array` is the only array annotation, and `array<int>` in a type position raises a parse error.
 
 [discrete]
 ==== Interaction with Attributes
@@ -237,7 +242,7 @@ local typed: num, untyped = 10, 'hello'
 [discrete]
 ==== Function Parameters
 
-Type annotations on function parameters serve as guards that validate incoming arguments at call time.  Unlike local variable type fixing (which is deferred until the first non-nil assignment), parameter annotations are checked immediately when the function is called:
+Type annotations on function parameters are runtime contracts that validate incoming arguments at call time (see <<sec-runtime-type-contracts>>).  Unlike local variable type fixing (which is deferred until the first non-nil assignment), parameter annotations are checked immediately when the function is called, before the body executes:
 
 [source,tiri]
 ----
@@ -265,7 +270,7 @@ end
 [discrete]
 ==== Function Return Types
 
-Return type declarations appear after the parameter list.  A single return type uses `:type`; multiple return types use `:<type1, type2, ...>`:
+Return type declarations appear after the parameter list and are runtime contracts (see <<sec-runtime-type-contracts>>).  A single return type uses `:type`; multiple return types use `:<type1, type2, ...>`:
 
 [source,tiri]
 ----

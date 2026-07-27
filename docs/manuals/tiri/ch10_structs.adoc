@@ -1,3 +1,4 @@
+// CHANGED: 2026-07-27 — struct<Name> documented as an exact runtime contract.
 // CREATED: 2026-07-15 — Struct documentation relocated from the former Modules & Structures chapter.  Added the native 'struct' declaration syntax, the official field type table and typed reference annotations (commit 9279202).  Removed the internal MAKESTRUCT interface and its shorthand field definitions.
 // UPDATED: 2026-07-16 — Dynamically sized array<type> fields can now be declared in native structs (commit 408def84d).
 // UPDATED: 2026-07-17 — Declarations are now 'end'-terminated blocks rather than brace-delimited (commit 56400bb).  Declarations no longer bind a constructor; instances are constructed only through the explicit struct<Name> { ... } form (commit 41b2c10).
@@ -234,6 +235,8 @@ Reading a dynamic array field produces an array holding a copy of the field's cu
 [[sec-struct-typed-references]]
 === Typed References
 indexterm:[struct annotations] The annotation `struct<Name>` constrains a local variable, function parameter or return value to instances of the declared layout `Name`.  The plain `struct` annotation accepts any struct instance.  See <<ch-type-system>> for general annotation semantics.
+
+`struct<Name>` is an exact runtime contract: the value must be an instance of the registered definition `Name`.  An instance of a different definition is rejected even when both definitions declare identical fields.  A mismatch raises a catchable exception naming both layouts (see <<sec-runtime-type-contracts>>).
 
 [source,tiri]
 ----

@@ -1,3 +1,4 @@
+// CHANGED: 2026-07-27 — Completed the annotation type-name list and noted runtime contract enforcement for annotated variables.
 // UPDATED: 2026-07-06 -- Documented extern declarations and protected host globals.
 // VERIFIED: 2026-02-10
 
@@ -289,7 +290,7 @@ message:str = ''      -- constrained to string
 variant:any = 0       -- unconstrained (accepts any type)
 ----
 
-Supported type names: `any`, `nil`, `bool` (or `boolean`), `num` (or `number`), `str` (or `string`), `table`, `array`, `func` (or `function`), `obj` (or `object`).  An unrecognised type name raises a parse-time diagnostic.
+Supported type names: `any`, `nil`, `bool` (or `boolean`), `num` (or `number`), `str` (or `string`), `table`, `array`, `func` (or `function`), `obj` (or `object`), `range`, `userdata`, `struct` and `struct<Name>`.  An unrecognised type name raises a parse-time diagnostic.
 
 The type annotation can appear before or after a `<const>` or `<close>` attribute:
 
@@ -300,6 +301,8 @@ y:num <const> = 42   -- type before attribute
 ----
 
 Type annotations interact with the type inference system.  See <<ch-type-system>> for sticky types, implicit type fixing, and the `any` escape hatch.
+
+An annotation on a local, on a local captured as an upvalue, or on a global declared with `global` is enforced at runtime as a type contract.  An unannotated global is constrained by compile-time diagnostics only.  See <<sec-runtime-type-contracts>>.
 
 [[sec-constant-variables]]
 === Constant Variables
