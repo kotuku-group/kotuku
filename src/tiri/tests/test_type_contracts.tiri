@@ -376,6 +376,41 @@ end
    global glContractAny:any = 1
    glContractAny = 'allowed'
    assert(glContractAny is 'allowed', 'Explicit any remains the global contract opt-out')
+
+   global glContractRedeclared:num = 1
+   exec("global glContractRedeclared:any = 'variant'")
+   exec("glContractRedeclared = {}")
+   assert(type(glContractRedeclared) is 'table',
+      'An explicit any redeclaration must replace a previously persisted concrete contract')
+end
+
+@Test function InferredGlobalStores()
+   global glInferredContract = 'original'
+
+   local matching:any = 'updated'
+   glInferredContract = matching
+   assert(glInferredContract is 'updated', 'A matching dynamic value should satisfy an inferred global contract')
+
+   local wrong:any = 42
+   expect_contract_failure(function() glInferredContract = wrong end, 'global')
+   assert(glInferredContract is 'updated', 'A rejected inferred global store must preserve the previous value')
+
+   glInferredContract = nil
+   assert(glInferredContract is nil, 'Nil should clear an inferred global without removing its contract')
+   glInferredContract = dynamic_value('restored')
+   assert(glInferredContract is 'restored', 'The inferred global contract should survive a nil clear')
+
+   expect_contract_failure(function() exec('glInferredContract = 42') end, 'global')
+   assert(glInferredContract is 'restored',
+      'A separately compiled rejected store must preserve the inferred global value')
+
+   function write_inferred_global(Value:any)
+      glInferredContract = Value
+   end
+   write_inferred_global('nested')
+   assert(glInferredContract is 'nested', 'A matching nested-function store should satisfy the inferred contract')
+   expect_contract_failure(function() write_inferred_global(false) end, 'global')
+   assert(glInferredContract is 'nested', 'A rejected nested-function store must preserve the inferred global value')
 end
 
 @Test function UserdataContractBoundaries()
@@ -431,6 +466,11 @@ end
    function hot(Value:num):num return Value + 1 end
    function hot_results(Value:num):<num, str> return Value, 'kept', false end
    function hot_userdata(Value:userdata):userdata return Value end
+   global glHotInferredContract = 0
+   function store_hot_global(Value:any):num
+      glHotInferredContract = Value
+      return glHotInferredContract
+   end
    local dynamic:any = hot
    local proxy = newproxy(true)
    for i in {0 to 200} do
@@ -439,9 +479,11 @@ end
       assert(value is i and text is 'kept' and extra is nil,
          'Hot fixed return contracts must truncate additional results')
       assert(hot_userdata(proxy) is proxy, 'userdata contracts must remain stable on hot paths')
+      assert(store_hot_global(i) is i, 'An inferred global contract should preserve valid values on hot paths')
    end
    expect_contract_failure(function() dynamic('wrong') end, 'parameter')
    expect_contract_failure(function() hot_userdata(dynamic_value({0 to 2})) end, 'parameter')
+   expect_contract_failure(function() store_hot_global('wrong') end, 'global')
 end
 
 @Test function ContractDisassemblyOrder()

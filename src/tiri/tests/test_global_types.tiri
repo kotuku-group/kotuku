@@ -1,7 +1,7 @@
 -----------------------------------------------------------------------------------------------------------------------
 -- Global type propagation: member access on typed globals must select specialised bytecode (STGETF/STSETF for
 -- structs, OBGETF for objects, AGETB/AGETV for arrays) instead of generic table access.  Types are recorded by the
--- type analyser from explicit 'global' declarations, then attached to global identifier reads during IR emission.
+-- type analyser from 'global' declarations, then attached to global identifier reads and stores during IR emission.
 --
 -- Bytecode assertions compile a nested tiri object and inspect its disassembly; acQuery() must precede
 -- acActivate() so the main chunk reference is retained for DebugLog('disasm').
@@ -13,6 +13,21 @@ local function disassemble(Statement)
    local _, disasm = script.mtDebugLog('disasm')
    assert(disasm != nil, 'Expected DebugLog to return a disassembly')
    return disasm
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Inferred scalar globals must emit sticky contracts for their declaration and later dynamic stores.
+
+@Test function InferredScalarGlobalContractBytecode()
+   local disasm = disassemble([[
+global glGTSticky = 'first'
+local dynamic:any = 'second'
+glGTSticky = dynamic
+]])
+   assert(disasm:count('CONTRACT') is 2,
+      'An inferred global declaration and dynamic store must each emit CONTRACT, got:\n' .. disasm)
+   assert(disasm:count('GSET') is 2,
+      'The inferred global declaration and reassignment should each emit GSET, got:\n' .. disasm)
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -29,6 +44,7 @@ function writeField()
    glGTRec.bravo = 5
 end
 ]])
+   assert(disasm:find('CONTRACT') != nil, 'Inferred global struct declaration should emit CONTRACT, got:\n' .. disasm)
    assert(disasm:find('STGETF') != nil, 'Global struct read should emit STGETF, got:\n' .. disasm)
    assert(disasm:find('STSETF') != nil, 'Global struct write should emit STSETF, got:\n' .. disasm)
 end
@@ -73,6 +89,7 @@ function readYear()
    return glGTTime.year
 end
 ]])
+   assert(disasm:find('CONTRACT') != nil, 'Inferred global object declaration should emit CONTRACT, got:\n' .. disasm)
    assert(disasm:find('OBGETF') != nil, 'Global object field read should emit OBGETF, got:\n' .. disasm)
 end
 
@@ -100,6 +117,7 @@ function readNum()
    return glGTNums[1]
 end
 ]])
+   assert(disasm:find('CONTRACT') != nil, 'Inferred global array declaration should emit CONTRACT, got:\n' .. disasm)
    assert(disasm:find('AGETB') != nil or disasm:find('AGETV') != nil,
       'Global array indexing should emit AGETB/AGETV, got:\n' .. disasm)
 end

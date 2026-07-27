@@ -252,8 +252,8 @@ end
    assert(gTestNilVar2 is 'existing', 'global ?= should not overwrite existing value')
 
    -- Test global ?= does not overwrite false (unlike ??=)
-   global gTestNilVar3 = false
-   global gTestNilVar3 ?= 'from-false'
+   global gTestNilVar3:any = false
+   gTestNilVar3 ?= 'from-false'
    assert(gTestNilVar3 is false, 'global ?= should not overwrite false')
 
    -- Test global ?= does not overwrite 0 (unlike ??=)
@@ -670,8 +670,8 @@ end
    assert(gEmptyVar is 'from empty', 'global ??= should assign when value is empty string')
 
    -- Test global ??= assigns when value is an empty table
-   global gEmptyTableVar = { }
-   global gEmptyTableVar ??= 'from empty table'
+   global gEmptyTableVar:any = { }
+   gEmptyTableVar ??= 'from empty table'
    assert(gEmptyTableVar is 'from empty table', 'global ??= should assign when value is an empty table')
 end
 

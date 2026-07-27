@@ -263,6 +263,28 @@ end
 end
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test function TypeMismatchWithInferredGlobal()
+   try
+      exec("global glStickyMismatch = 'text'; glStickyMismatch = 42")
+   success
+      error("should have thrown type error for inferred global")
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function InferredGlobalFixesAfterNil()
+   exec([[
+global glStickyDeferred
+glStickyDeferred = nil
+glStickyDeferred = 'first'
+glStickyDeferred = 'second'
+assert(glStickyDeferred is 'second', 'The first concrete global assignment should fix its sticky type')
+]])
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function TypeMismatchInitialValue()
    -- Explicit annotation with mismatched initial value
    try

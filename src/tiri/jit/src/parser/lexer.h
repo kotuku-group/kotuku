@@ -47,6 +47,12 @@ struct LocalDeclResult {
    BCREG initialised = 0;
 };
 
+enum class GlobalContractPolicy : uint8_t {
+   Advisory,
+   Enforced,
+   Variant
+};
+
 // Lua lexer state.
 
 class LexState {
@@ -152,14 +158,14 @@ public:
    bool diagnose_mode = false;  // When true, lexer errors are collected instead of thrown
    bool had_lex_error = false;  // Set when a recoverable lexer error occurred
 
-   // Global type hints published by the type analyser after analysis completes and consumed by the IR emitter
-   // when resolving global identifier reads.  Entries exist only for globals whose type is fixed for the whole
-   // chunk, allowing member access on typed globals to select specialised bytecode (STGETF, OBGETF, AGETV).
+   // Global type hints published by the type analyser after analysis completes and consumed by the IR emitter.
+   // Fixed declared globals carry enforced sticky contracts, while explicitly variant globals suppress stale
+   // environment contracts.  Advisory entries only guide safe specialised access for host-provided globals.
    struct GlobalTypeHint {
       TiriType primary = TiriType::Unknown;
       CLASSID  object_class_id = CLASSID::NIL;
       struct_record *struct_def = nullptr;
-      bool explicit_contract = false;
+      GlobalContractPolicy contract_policy = GlobalContractPolicy::Advisory;
    };
    ankerl::unordered_dense::map<GCstr*, GlobalTypeHint> global_type_hints;
    std::vector<StructFieldDocumentation> struct_field_documentation;
