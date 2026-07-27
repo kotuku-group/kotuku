@@ -743,18 +743,46 @@ static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractE
    }
 }
 
+static void decode_contract_or_error(lua_State *L, GCstr *Descriptor, RuntimeContractDescriptor &Result)
+{
+   RuntimeContractDecodeError decode_error;
+   if (decode_runtime_contract(Descriptor, Result, &decode_error)) return;
+
+   if (decode_error IS RuntimeContractDecodeError::Entry) {
+      lj_err_callermsg(L, "invalid runtime type-contract entry");
+   }
+   else lj_err_callermsg(L, "invalid runtime type-contract descriptor");
+}
+
 } // namespace
 
 extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCount, GCstr *Descriptor)
 {
    L->top = curr_topL(L);
    RuntimeContractDescriptor descriptor;
-   RuntimeContractDecodeError decode_error;
-   if (not decode_runtime_contract(Descriptor, descriptor, &decode_error)) {
-      if (decode_error IS RuntimeContractDecodeError::Entry) {
-         lj_err_callermsg(L, "invalid runtime type-contract entry");
+   decode_contract_or_error(L, Descriptor, descriptor);
+
+   GCtab *environment = nullptr;
+   GCstr *global_name = nullptr;
+   bool publish_global_contract = false;
+
+   if (descriptor.boundary IS ContractBoundary::Global and descriptor.contract_count IS 1) {
+      const RuntimeContractEntry &incoming = descriptor.entries[0];
+      if (not incoming.label.empty()) {
+         environment = tabref(curr_func(L)->c.env);
+         global_name = lj_str_new(L, incoming.label.data(), incoming.label.size());
+
+         if (incoming.type IS TiriType::Any) {
+            // An explicit 'any' declaration is the only ordinary operation that relaxes a sticky global contract.
+            lj_tab_set_global_contract(L, environment, global_name, Descriptor);
+         }
+         else if (GCstr *current = lj_tab_get_global_contract(environment, global_name)) {
+            // Bytecode may outlive the declaration policy it was compiled against.  The environment policy is
+            // authoritative for ordinary stores and concrete redeclarations.
+            if (current != Descriptor) decode_contract_or_error(L, current, descriptor);
+         }
+         else publish_global_contract = true;
       }
-      else lj_err_callermsg(L, "invalid runtime type-contract descriptor");
    }
 
    uint32_t value_count = descriptor.dynamic_count() ?
@@ -781,13 +809,7 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
       }
    }
 
-   if (descriptor.boundary IS ContractBoundary::Global and descriptor.contract_count IS 1) {
-      const RuntimeContractEntry &entry = descriptor.entries[0];
-      if (not entry.label.empty()) {
-         GCstr *name = lj_str_new(L, entry.label.data(), entry.label.size());
-         lj_tab_set_global_contract(L, tabref(curr_func(L)->c.env), name, Descriptor);
-      }
-   }
+   if (publish_global_contract) lj_tab_set_global_contract(L, environment, global_name, Descriptor);
 }
 
 extern "C" void lj_meta_contract_pc(lua_State *L, const BCIns *PC, uint32_t DynamicCount)

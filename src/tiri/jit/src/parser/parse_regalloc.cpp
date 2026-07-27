@@ -608,7 +608,15 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
 static void bcemit_value_contract(
    FuncState *fs, ExpDesc *Value, const RuntimeContract &Contract, bool ForceRuntimeCheck = false)
 {
-   if (Contract.type IS TiriType::Unknown or Contract.type IS TiriType::Any) return;
+   if (Contract.type IS TiriType::Unknown) return;
+   if (Contract.type IS TiriType::Any) {
+      if (not ForceRuntimeCheck) return;
+      BCREG source = expr_toanyreg(fs, Value);
+      bcemit_contract(fs, source, std::span(&Contract, 1), 1);
+      Value->k = ExpKind::NonReloc;
+      Value->u.s.info = source;
+      return;
+   }
    if (contract_literal_proved(fs, Value, Contract.type) and not ForceRuntimeCheck) return;
    if (Value->static_value and fs->ls->active_context) {
       const auto &descriptor = fs->ls->active_context->descriptors().value(Value->static_value);
@@ -676,8 +684,9 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
    else if (LHS->k IS ExpKind::Global or LHS->k IS ExpKind::Unscoped) {
       // Note: Const global reassignment is checked during type analysis phase
       // Unscoped should normally be resolved in emit_lvalue_expr(), but handle it here defensively
-      if (auto found = fs->ls->global_type_hints.find(LHS->u.sval);
-          found != fs->ls->global_type_hints.end() and found->second.explicit_contract) {
+      auto found = fs->ls->global_type_hints.find(LHS->u.sval);
+      if (found != fs->ls->global_type_hints.end() and
+          found->second.contract_policy != GlobalContractPolicy::Advisory) {
          RuntimeContract contract{
             .type = found->second.primary,
             .struct_def = found->second.struct_def,
@@ -685,8 +694,8 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
             .boundary = ContractBoundary::Global,
             .position = 1
          };
-         // Global contracts must execute even for statically proved literals so the declaration is attached to the
-         // runtime environment for separately compiled chunks.
+         // Declared global contracts must execute even when no predicate is required.  Concrete contracts and the
+         // explicit 'any' opt-out are both attached to the environment for separately compiled chunks.
          bcemit_value_contract(fs, RHS, contract, true);
       }
       else if (GCstr *contract = lj_tab_get_global_contract(tabref(fs->L->env), LHS->u.sval)) {

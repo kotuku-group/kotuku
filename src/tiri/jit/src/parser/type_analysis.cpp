@@ -332,11 +332,11 @@ private:
       const FunctionExprPayload* forward_declaration = nullptr; // Original empty declaration used as the contract
       bool is_const = false;  // True if declared with <const> attribute
       bool implicit = false;  // True if inferred from a plain assignment rather than a 'global' declaration
-      bool explicit_contract = false; // True only for an explicit non-any annotation
+      GlobalContractPolicy contract_policy = GlobalContractPolicy::Advisory;
    };
 
    void declare_global(GCstr *Name, const InferredType &Type, SourceSpan Location, bool IsConst = false,
-      bool ExplicitContract = false);
+      GlobalContractPolicy ContractPolicy = GlobalContractPolicy::Advisory);
    void declare_global_function(GCstr *Name, const FunctionExprPayload *Function, SourceSpan Location);
    void declare_implicit_global(GCstr *Name, const ExprNode *Value, SourceSpan Location);
    [[nodiscard]] std::optional<InferredType> lookup_global_type(GCstr *Name) const;
@@ -1431,6 +1431,10 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
       this->analyse_expression(*value);
    }
 
+   size_t value_index = 0;
+   size_t call_return_index = 0;
+   const ExprNode *multi_return_call = nullptr;
+
    // Track global variable types for type checking on subsequent assignments
    for (size_t i = 0; i < Payload.names.size(); ++i) {
       const auto &name = Payload.names[i];
@@ -1452,6 +1456,26 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
       }
 
       InferredType inferred;
+      InferredType value_type;
+      bool have_value_type = false;
+
+      if (value_index < Payload.values.size()) {
+         const ExprNode &value_expr = *Payload.values[value_index];
+         value_type = this->infer_expression_type(value_expr);
+         have_value_type = true;
+
+         if (value_index IS Payload.values.size() - 1 and value_expr.kind IS AstNodeKind::CallExpr) {
+            multi_return_call = &value_expr;
+            call_return_index = 0;
+         }
+
+         value_index += 1;
+      }
+      else if (multi_return_call) {
+         call_return_index += 1;
+         value_type = this->infer_call_return_type(*multi_return_call, call_return_index);
+         have_value_type = (value_type.primary != TiriType::Any);
+      }
 
       // Explicit type annotation takes precedence
       if (name.type != TiriType::Unknown) {
@@ -1459,9 +1483,9 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
          inferred.struct_def = name.struct_def;
          inferred.is_fixed = (name.type != TiriType::Any);
       }
-      else if (i < Payload.values.size()) {
+      else if (have_value_type) {
          // Infer type from initial value
-         inferred = this->infer_expression_type(*Payload.values[i]);
+         inferred = value_type;
          // Non-nil, non-any initial values fix the type
          if (inferred.primary != TiriType::Nil and inferred.primary != TiriType::Any) {
             inferred.is_fixed = true;
@@ -1472,8 +1496,10 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
          inferred.is_fixed = false;
       }
 
-      this->declare_global(name.symbol, inferred, name.span, name.has_const,
-         name.type != TiriType::Unknown and name.type != TiriType::Any);
+      GlobalContractPolicy contract_policy = GlobalContractPolicy::Advisory;
+      if (name.type IS TiriType::Any) contract_policy = GlobalContractPolicy::Variant;
+      else if (inferred.is_fixed) contract_policy = GlobalContractPolicy::Enforced;
+      this->declare_global(name.symbol, inferred, name.span, name.has_const, contract_policy);
    }
 
    #ifdef INCLUDE_TIPS
@@ -2346,14 +2372,14 @@ void TypeAnalyser::fix_local_type(GCstr *Name, TiriType Type, CLASSID ObjectClas
 // the entire script lifetime.
 
 void TypeAnalyser::declare_global(GCstr *Name, const InferredType &Type, SourceSpan Location, bool IsConst,
-   bool ExplicitContract)
+   GlobalContractPolicy ContractPolicy)
 {
    if (not Name) return;
    GlobalTypeInfo info;
    info.type = Type;
    info.location = Location;
    info.is_const = IsConst;
-   info.explicit_contract = ExplicitContract;
+   info.contract_policy = ContractPolicy;
    this->global_types_[Name] = info;
    this->trace_decl(this->ctx_.lex().linenumber, Name, Type.primary, Type.is_fixed);
 }
@@ -2461,6 +2487,7 @@ void TypeAnalyser::fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectCla
       it->second.type.is_fixed = true;
       it->second.type.object_class_id = ObjectClassId;
       it->second.type.struct_def = StructDef;
+      if (not it->second.implicit) it->second.contract_policy = GlobalContractPolicy::Enforced;
       this->trace_fix(this->ctx_.lex().linenumber, Name, Type);
    }
 }
@@ -2860,17 +2887,22 @@ static void publish_type_diagnostics(ParserContext& Context, const std::vector<T
 // Entry Point: Called from the parser after AST construction to run semantic type analysis.  Creates a TypeAnalyser
 // instance, runs analysis on the module, and publishes any collected diagnostics.
 
-// Publish fixed global types to the lexer state so that IR emission (which runs after analysis) can attach type
-// metadata to global identifier reads and explicit runtime contracts to every global store.  Inferred scalar types
-// remain advisory and have no emitter consumer.
+// Publish global type policy to the lexer state so that IR emission can attach metadata to global reads, enforce
+// sticky contracts for declared globals, and preserve explicit 'any' as the variant opt-out.
 
 void TypeAnalyser::publish_global_type_hints(LexState &Lex) const
 {
    for (const auto &[name, info] : this->global_types_) {
-      if (not info.type.is_fixed) continue;
-      if (info.explicit_contract) {
+      if (info.contract_policy IS GlobalContractPolicy::Variant) {
          Lex.global_type_hints[name] = {
-            info.type.primary, info.type.object_class_id, info.type.struct_def, true
+            TiriType::Any, CLASSID::NIL, nullptr, GlobalContractPolicy::Variant
+         };
+         continue;
+      }
+      if (not info.type.is_fixed) continue;
+      if (info.contract_policy IS GlobalContractPolicy::Enforced) {
+         Lex.global_type_hints[name] = {
+            info.type.primary, info.type.object_class_id, info.type.struct_def, GlobalContractPolicy::Enforced
          };
          continue;
       }
@@ -2879,7 +2911,7 @@ void TypeAnalyser::publish_global_type_hints(LexState &Lex) const
          case TiriType::Object:
          case TiriType::Array:
             Lex.global_type_hints[name] = {
-               info.type.primary, info.type.object_class_id, info.type.struct_def, false
+               info.type.primary, info.type.object_class_id, info.type.struct_def, GlobalContractPolicy::Advisory
             };
             break;
          default:
