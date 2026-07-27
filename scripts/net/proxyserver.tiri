@@ -116,7 +116,7 @@ function reportProxyError(self, Code:str, Message:str, State:table, Cause:any):t
 
    if Cause then error_info.error = exceptionMessage(Cause) end
 
-   local log_text = error_info.message
+   local log_text:str = error_info.message
    if error_info.error then log_text ..= ': ' .. error_info.error end
    logMessage(self, 'ERROR', log_text)
 
@@ -635,9 +635,9 @@ end
 -- Core Proxy Server Implementation
 
 function getClientIP(ClientSocket:obj):str
-   local ip = ClientSocket.client?.ip
-   if ip then
-      err, ip = mNet.AddressToStr(ip)
+   local ipaddr:struct = ClientSocket.client?.ip
+   if ipaddr then
+      local err, ip = mNet.AddressToStr(ipaddr)
       return ip ?? 'unknown'
    end
 
@@ -654,7 +654,7 @@ end
 
 function createProxyConnectionState(self, ClientSocket:obj):table
    local connection_key = clientConnectionKey(ClientSocket)
-   local state = self._connections[connection_key]
+   local state:table = self._connections[connection_key]
    if state then return state end
 
    state = {
@@ -1184,8 +1184,8 @@ function upstreamProxyConnectIncoming(self, State:table, UpstreamSocket:obj)
 end
 
 function connectUpstream(self, State:table):bool
-   local connect_host = State.targetHost
-   local connect_port = State.targetPort
+   local connect_host:str = State.targetHost
+   local connect_port:num = State.targetPort
 
    if State.usingUpstreamProxy and self._upstreamProxy then
       connect_host = self._upstreamProxy.host

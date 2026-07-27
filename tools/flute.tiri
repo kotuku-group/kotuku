@@ -327,6 +327,7 @@ function runTests()
             except e
                succeeded = false
                error_msg = e.message
+               break
             end
          end
 

@@ -130,8 +130,8 @@ end
 -- Direct field access (most optimal route)
 
 @Test(hotpath=true) function ObjGetSetDirect()
-   t = obj.new('time', { })
-   f = obj.new('file')
+   local t = obj.new('time', { })
+   local f = obj.new('file')
 
    -- Set and get string field that has function backing
 
@@ -142,15 +142,15 @@ end
 
    t.year = 2025
 
-   year = t.year
+   local year = t.year
    assert(type(year) is 'number', "Expected get('year') to return a number")
    assert(year is 2025, "Expected year field to be 2025, got " .. tostring(year))
 
    -- Test compile-time detection of non-existent field (read)
    try
       exec([[
-         t = obj.new('time')
-         invalid = t.not_a_field
+         local tm = obj.new('time')
+         local invalid = tm.not_a_field
       ]])
    except ex
       -- exec() doesn't preserve full error details, just check parsing failed
@@ -172,7 +172,7 @@ end
    -- Test compile-time detection of non-existent field (write)
    try
       exec([[
-         t = obj.new('time')
+         local t = obj.new('time')
          t.does_not_exist = print
       ]])
    except ex

@@ -199,7 +199,7 @@ end
       }
    })
 
-   local args = parser.process(array<string> { })
+   local args:table = parser.process(array<string> { })
    assert(args.enabled is false, 'False default should be applied')
    assert(args.count is 0, 'Zero default should be applied')
    assert(args.label is '', 'Empty string default should be applied')
@@ -232,7 +232,7 @@ end
       }
    })
 
-   local args = parser.process(array<string> { 'verbose', 'no-dry-run' })
+   local args:table = parser.process(array<string> { 'verbose', 'no-dry-run' })
    assert(args.verbose is true, 'Bare flag should parse as true')
    assert(args['dry-run'] is false, 'no- flag should parse as false')
    assert(args.browser is true, 'Flag default should convert to a boolean when type is omitted')

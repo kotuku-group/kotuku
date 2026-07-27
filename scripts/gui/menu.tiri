@@ -235,7 +235,7 @@ gui.menu = function(Options)
                -- Determine the position at which the pop-up menu will open at, relative to the parent surface.
                -- Notice that we don't want the menu to appear off the edge of the parent if we can help it.
 
-               local x
+               local x:num
                if self.reverseX then
                   x = cursor_x - parent.absX - 1 - surface.width + gui.sizing.widget.margin
                   if x < 0 then

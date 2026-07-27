@@ -18,6 +18,39 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 
+@Test function ModuleResultSignatures()
+   local sys <const> = mSys
+   local precise_time = sys.preciseTime()
+   assert(precise_time > 0, 'Case-insensitive module lookup or immutable alias typing failed.')
+
+   local safe_time = mSys?.PreciseTime()
+   assert(safe_time > 0, 'Safe module calls did not retain their nullable result signature.')
+
+   local actions = mSys.ActionList()
+   assert(type(actions) is 'array', 'ActionList() did not return its vector result as an array.')
+
+   local no_result = mSys.LogReturn()
+   assert(no_result is nil, 'LogReturn() did not produce a closed empty result tuple.')
+
+   local core <const> = mod.load('core')
+   local loaded_time = core.PreciseTime()
+   assert(loaded_time > 0, "A registered literal mod.load('core') did not retain module result metadata.")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function FilteredModuleResults()
+   local msg_id = new_message_id()
+   check mSys.SendMessage(msg_id, 0)
+
+   local handle = [_*]mSys.ScanMessages(msg_id)
+   assert(handle is 1, 'A result filter did not select the secondary module result.')
+
+   drain_messages()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
 @Test function ScanMessagesAndDrain()
    local msg_id = new_message_id()
 

@@ -521,7 +521,7 @@ function createFileItem(self, Info)
          freespace   = free_space
       }
    elseif Info.flags has RDF_FOLDER then
-      local display_name = self.view.noIcons ? Info.name :> rxStripFolder.extract(Info.name)
+      local display_name:str = self.view.noIcons ? Info.name :> rxStripFolder.extract(Info.name)
 
       if not Info.name:endsWith('/') then
          display_name ..= '/'
@@ -800,7 +800,7 @@ gui.fileview = function(Options)
          return
       end
 
-      local info, info_err
+      local info, info_err:num
       if not (Flags has MFF_DELETE) then
          info = file_to_info(self.path .. Path)
          if info then

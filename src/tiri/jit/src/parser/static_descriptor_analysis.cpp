@@ -3,11 +3,15 @@
 #include "static_descriptor_analysis.h"
 
 #include <algorithm>
+#include <string>
 #include <utility>
 
 #include "ast/nodes.h"
 #include "field_type_lookup.h"
 #include "parser_context.h"
+#include "../../../defs.h"
+#include "../runtime/lj_proto_registry.h"
+#include "../runtime/lj_tab.h"
 
 namespace {
 
@@ -17,8 +21,8 @@ struct BindingScope {
 
 class StaticDescriptorAnalyser {
 public:
-   explicit StaticDescriptorAnalyser(ParserContext &Context)
-      : context_(Context), catalogue_(Context.descriptors()) {}
+   explicit StaticDescriptorAnalyser(ParserContext &Context, bool NativeCallsOnly = false)
+      : context_(Context), catalogue_(Context.descriptors()), native_calls_only_(NativeCallsOnly) {}
 
    void discover(BlockStmt &Module)
    {
@@ -32,7 +36,7 @@ public:
 
    void propagate(BlockStmt &Module)
    {
-      this->refresh_callables();
+      if (not this->native_calls_only_) this->refresh_callables();
       this->propagate_block(Module);
    }
 
@@ -252,11 +256,14 @@ private:
                auto &target = payload.targets[i];
                if (not target) continue;
 
-               if (payload.op IS AssignmentOperator::Plain and target->kind IS AstNodeKind::IdentifierExpr) {
+               if (target->kind IS AstNodeKind::IdentifierExpr) {
                   auto &reference = std::get<NameRef>(target->data);
                   GCstr *name = reference.identifier.symbol;
                   bool protected_global = name and ((name->flags & STRFLAG_PROTECTED_GLOBAL) != 0);
-                  if (name and not reference.identifier.is_blank and not protected_global and
+                  bool creates_local = payload.op IS AssignmentOperator::Plain or
+                     payload.op IS AssignmentOperator::IfEmpty or payload.op IS AssignmentOperator::IfNil;
+                  if (creates_local and
+                      name and not reference.identifier.is_blank and not protected_global and
                       not this->is_declared_global(name) and not this->resolve(name)) {
                      const ExprNode *initialiser = i < payload.values.size() ? payload.values[i].get() :
                         (payload.values.empty() ? nullptr : payload.values.back().get());
@@ -526,6 +533,167 @@ private:
          }
       }
       if (Call.callable) Call.results = this->catalogue_.callable(Call.callable).results;
+      if (not Call.results) Call.results = this->native_prototype_results(Call);
+      if (not Call.results) Call.results = this->native_call_results(Call);
+   }
+
+   struct NativeInterface {
+      GCtab *table = nullptr;
+      std::string name;
+   };
+
+   [[nodiscard]] cTValue * protected_global_value(GCstr *Name) const
+   {
+      if (not Name or (Name->flags & STRFLAG_PROTECTED_GLOBAL) IS 0) return nullptr;
+      return lj_tab_getstr(tabref(this->context_.lua().env), Name);
+   }
+
+   [[nodiscard]] std::optional<NativeInterface> native_interface(const ExprNode &Expression) const
+   {
+      if (Expression.kind IS AstNodeKind::IdentifierExpr) {
+         const auto &reference = std::get<NameRef>(Expression.data);
+         if (reference.binding_id or not reference.identifier.symbol) return std::nullopt;
+         cTValue *value = this->protected_global_value(reference.identifier.symbol);
+         if (not value or not tvistab(value)) return std::nullopt;
+         return NativeInterface{
+            .table = tabV(value),
+            .name = std::string(strdata(reference.identifier.symbol), reference.identifier.symbol->len)
+         };
+      }
+
+      if (Expression.kind != AstNodeKind::MemberExpr) return std::nullopt;
+      const auto &member = std::get<MemberExprPayload>(Expression.data);
+      if (not member.table or not member.member.symbol) return std::nullopt;
+      auto parent = this->native_interface(*member.table);
+      if (not parent) return std::nullopt;
+      cTValue *value = lj_tab_getstr(parent->table, member.member.symbol);
+      if (not value or not tvistab(value)) return std::nullopt;
+      parent->table = tabV(value);
+      parent->name.append(".");
+      parent->name.append(strdata(member.member.symbol), member.member.symbol->len);
+      return parent;
+   }
+
+   [[nodiscard]] StaticResultSetHandle native_prototype_results(CallExprPayload &Call)
+   {
+      const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+      if (not direct or not direct->callable) return 0;
+
+      const fprototype *prototype = nullptr;
+      if (direct->callable->kind IS AstNodeKind::IdentifierExpr) {
+         const auto &reference = std::get<NameRef>(direct->callable->data);
+         if (reference.binding_id or not reference.identifier.symbol) return 0;
+         cTValue *value = this->protected_global_value(reference.identifier.symbol);
+         if (not value or not tvisfunc(value) or isluafunc(funcV(value))) return 0;
+         prototype = get_func_prototype_by_hash(reference.identifier.symbol->hash);
+      }
+      else if (direct->callable->kind IS AstNodeKind::MemberExpr or
+          direct->callable->kind IS AstNodeKind::SafeMemberExpr) {
+         ExprNode *receiver = nullptr;
+         GCstr *member = nullptr;
+         if (direct->callable->kind IS AstNodeKind::MemberExpr) {
+            const auto &payload = std::get<MemberExprPayload>(direct->callable->data);
+            receiver = payload.table.get();
+            member = payload.member.symbol;
+         }
+         else {
+            const auto &payload = std::get<SafeMemberExprPayload>(direct->callable->data);
+            receiver = payload.table.get();
+            member = payload.member.symbol;
+         }
+         if (not receiver or not member) return 0;
+         auto interface = this->native_interface(*receiver);
+         if (not interface) return 0;
+         cTValue *value = lj_tab_getstr(interface->table, member);
+         if (not value or not tvisfunc(value) or isluafunc(funcV(value))) return 0;
+         prototype = get_prototype(interface->name, std::string_view(strdata(member), member->len));
+      }
+
+      if (not prototype) return 0;
+      StaticResultSet results = describe_native_prototype_results(prototype);
+      if (results.stored_count > 0) {
+         if (results.values[0].primary IS TiriType::Object and Call.object_class_id != CLASSID::NIL) {
+            results.values[0].object_class_id = Call.object_class_id;
+         }
+         if ((results.values[0].primary IS TiriType::Struct or
+             results.values[0].primary IS TiriType::Func) and Call.struct_def) {
+            results.values[0].struct_def = Call.struct_def;
+         }
+      }
+      return this->catalogue_.add_results(results);
+   }
+
+   [[nodiscard]] StaticResultSetHandle native_call_results(CallExprPayload &Call)
+   {
+      const ExprNode *receiver = nullptr;
+      GCstr *member = nullptr;
+      bool direct_member = false;
+
+      if (const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+          direct and direct->callable) {
+         if (direct->callable->kind IS AstNodeKind::MemberExpr) {
+            const auto &payload = std::get<MemberExprPayload>(direct->callable->data);
+            receiver = payload.table.get();
+            member = payload.member.symbol;
+            direct_member = true;
+         }
+         else if (direct->callable->kind IS AstNodeKind::SafeMemberExpr) {
+            const auto &payload = std::get<SafeMemberExprPayload>(direct->callable->data);
+            receiver = payload.table.get();
+            member = payload.member.symbol;
+            direct_member = true;
+         }
+      }
+      else if (const auto *method = std::get_if<MethodCallTarget>(&Call.target)) {
+         receiver = method->receiver.get();
+         member = method->method.symbol;
+      }
+      else if (const auto *method = std::get_if<SafeMethodCallTarget>(&Call.target)) {
+         receiver = method->receiver.get();
+         member = method->method.symbol;
+      }
+
+      if (not receiver or not member) return 0;
+      StaticValueDescriptor base = this->descriptor_of(*receiver);
+      if (base.primary IS TiriType::Object and base.proved()) {
+         std::string_view exposed_name(strdata(member), member->len);
+         ObjectCallMemberKind kind = classify_object_call_member(exposed_name);
+         if (kind IS ObjectCallMemberKind::None) return 0;
+         std::string_view native_name = exposed_name.substr(2);
+         const FunctionField *fields = nullptr;
+
+         if (kind IS ObjectCallMemberKind::Action) {
+            if (not glActions) return 0;
+            for (size_t i = 1; glActions[i].Name; ++i) {
+               if (std::string_view(glActions[i].Name) IS native_name) {
+                  fields = glActions[i].Args;
+                  return this->catalogue_.add_results(describe_object_call_results(fields));
+               }
+            }
+            return 0;
+         }
+
+         if (base.object_class_id IS CLASSID::NIL) return 0;
+         auto *meta_class = FindClass(base.object_class_id);
+         if (not meta_class) return 0;
+
+         std::span<MethodEntry> methods;
+         if (meta_class->getMethods(methods) != ERR::Okay) return 0;
+         for (size_t i = 1; i < methods.size(); ++i) {
+            if (methods[i].Name and std::string_view(methods[i].Name) IS native_name) {
+               fields = methods[i].Args;
+               return this->catalogue_.add_results(describe_object_call_results(fields));
+            }
+         }
+         return 0;
+      }
+
+      if (not direct_member or base.primary != TiriType::Userdata or not base.proved() or not base.module) return 0;
+      const FunctionField *fields = static_module_function(
+         base.module, std::string_view(strdata(member), member->len));
+      if (not fields) return 0;
+      return this->catalogue_.add_results(
+         describe_module_call_results(fields, &this->context_.lua()));
    }
 
    void annotate_callables_expression(ExprNode &Expression)
@@ -561,6 +729,19 @@ private:
          if (entry->first IS Name) return this->catalogue_.value(entry->second);
       }
       return {};
+   }
+
+   [[nodiscard]] StaticValueDescriptor environment_global_value(GCstr *Name) const
+   {
+      StaticValueDescriptor result;
+      cTValue *global = this->protected_global_value(Name);
+      if (not global) return result;
+      StaticModuleHandle module = static_module_from_value(&this->context_.lua(), global);
+      if (not module) return result;
+      result.primary = TiriType::Userdata;
+      result.module = module;
+      result.proof = StaticProof::Trusted;
+      return result;
    }
 
    [[nodiscard]] StaticValueDescriptor literal_descriptor(const LiteralValue &Literal) const
@@ -625,21 +806,51 @@ private:
       return std::pair(std::string_view(strdata(literal.string_value), literal.string_value->len), true);
    }
 
+   [[nodiscard]] StaticModuleHandle literal_module_load(const CallExprPayload &Call) const
+   {
+      const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+      if (not direct or not direct->callable or direct->callable->kind != AstNodeKind::MemberExpr or
+          Call.arguments.size() != 1) return nullptr;
+      const auto &member = std::get<MemberExprPayload>(direct->callable->data);
+      if (not member.table or member.table->kind != AstNodeKind::IdentifierExpr or not member.member.symbol or
+          member.member.symbol->hash != kt::strhash("load")) return nullptr;
+      const auto &base = std::get<NameRef>(member.table->data);
+      if (base.binding_id or not base.identifier.symbol or base.identifier.symbol->hash != kt::strhash("mod")) {
+         return nullptr;
+      }
+      const ExprNode &argument = *Call.arguments.front();
+      if (argument.kind != AstNodeKind::LiteralExpr) return nullptr;
+      const auto &literal = std::get<LiteralValue>(argument.data);
+      if (literal.kind != LiteralKind::String or not literal.string_value) return nullptr;
+      return static_module_by_name(
+         std::string_view(strdata(literal.string_value), literal.string_value->len));
+   }
+
    [[nodiscard]] StaticValueDescriptor call_descriptor(CallExprPayload &Call, bool Safe)
    {
-      this->annotate_call(Call);
+      if (this->native_calls_only_) {
+         if (not Call.results) Call.results = this->native_call_results(Call);
+      }
+      else this->annotate_call(Call);
       StaticValueDescriptor result;
 
       if (Call.results) {
          result = this->catalogue_.results(Call.results).value_at(0);
       }
-      else if (auto array_type = this->array_constructor_type(Call)) {
+      if (auto array_type = this->array_constructor_type(Call)) {
          auto element = describe_array_element(array_type->first, &this->context_.lua());
          if (element) {
             result.primary = TiriType::Array;
             result.array_element = *element;
             result.proof = StaticProof::Closed;
+            result.nullable = false;
          }
+      }
+      else if (StaticModuleHandle mod = this->literal_module_load(Call);
+          mod and (result.primary IS TiriType::Unknown or result.primary IS TiriType::Userdata)) {
+         result.primary = TiriType::Userdata;
+         result.module = mod;
+         result.proof = StaticProof::Trusted;
       }
       else if (const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
           direct and direct->callable and direct->callable->kind IS AstNodeKind::MemberExpr) {
@@ -653,12 +864,14 @@ private:
                result.primary = TiriType::Object;
                result.object_class_id = Call.object_class_id;
                result.proof = StaticProof::Closed;
+               result.nullable = false;
             }
             else if (base->identifier.symbol->hash IS kt::strhash("struct") and
                 Call.result_type IS TiriType::Struct) {
                result.primary = TiriType::Struct;
                result.struct_def = Call.struct_def;
                result.proof = StaticProof::Closed;
+               result.nullable = false;
             }
          }
       }
@@ -668,6 +881,13 @@ private:
          result.object_class_id = Call.object_class_id;
          result.struct_def = Call.struct_def;
          result.proof = StaticProof::Advisory;
+      }
+
+      if (Call.results and this->catalogue_.results(Call.results).stored_count > 0 and
+          this->catalogue_.results(Call.results).value_at(0) != result) {
+         StaticResultSet enriched_results = this->catalogue_.results(Call.results);
+         enriched_results.values[0] = result;
+         Call.results = this->catalogue_.add_results(enriched_results);
       }
 
       if (Safe) {
@@ -684,44 +904,13 @@ private:
       return result;
    }
 
-   [[nodiscard]] StaticValueDescriptor struct_field_descriptor(
-      struct_record *StructDef, GCstr *FieldName) const
-   {
-      StaticValueDescriptor result;
-      if (not StructDef or not FieldName) return result;
-
-      for (const auto &field : StructDef->Fields) {
-         if (field.nameHash() != kt::strihash(strdata(FieldName))) continue;
-         result.proof = StaticProof::Trusted;
-         if (field.Type & (FD_ARRAY|FD_VECTOR)) {
-            result.primary = TiriType::Array;
-            if (auto element = describe_array_element(field)) result.array_element = *element;
-         }
-         else if ((field.Type & FD_STRUCT) and not (field.Type & FD_POINTER)) {
-            result.primary = TiriType::Struct;
-            result.struct_def = field.StructDefinition;
-         }
-         else if (field.Type & FD_OBJECT) {
-            result.primary = TiriType::Object;
-            result.object_class_id = field.ObjectClassID;
-         }
-         else if (field.Type & FD_STRING) result.primary = TiriType::Str;
-         else if (field.NativeType IS NativeStructType::Bool) result.primary = TiriType::Bool;
-         else if (field.Type & (FD_FLOAT|FD_DOUBLE|FD_INT64|FD_INT|FD_WORD|FD_BYTE)) {
-            result.primary = TiriType::Num;
-         }
-         else if (field.Type & FD_FUNCTION) result.primary = TiriType::Func;
-         else result.primary = TiriType::Any;
-         return result;
-      }
-      return result;
-   }
-
    [[nodiscard]] StaticValueDescriptor member_descriptor(
       const StaticValueDescriptor &Base, GCstr *Member) const
    {
       if (not Base.proved()) return {};
-      if (Base.primary IS TiriType::Struct) return this->struct_field_descriptor(Base.struct_def, Member);
+      if ((Base.primary IS TiriType::Struct or Base.primary IS TiriType::Table) and Base.struct_def) {
+         return describe_struct_field(Base.struct_def, Member);
+      }
       if (Base.primary IS TiriType::Object and Base.object_class_id != CLASSID::NIL and Member) {
          auto field = lookup_field_type(Base.object_class_id, Member->hash);
          if (field and field->type != TiriType::Unknown) {
@@ -895,7 +1084,12 @@ private:
             const auto &reference = std::get<NameRef>(Expression.data);
             if (reference.binding_id) value = this->catalogue_.value(
                this->catalogue_.binding(reference.binding_id).value);
-            else value = this->global_value(reference.identifier.symbol);
+            else {
+               value = this->global_value(reference.identifier.symbol);
+               if (value.primary IS TiriType::Unknown) {
+                  value = this->environment_global_value(reference.identifier.symbol);
+               }
+            }
             break;
          }
          case AstNodeKind::TableExpr:
@@ -1060,6 +1254,7 @@ private:
          else value = this->descriptor_of(*Initialiser);
       }
 
+      if (value.module and not binding.immutable) value.module = nullptr;
       if (not binding.immutable) binding.callable = 0;
       binding.value = this->add_value(value);
       Name.static_value = binding.value;
@@ -1211,10 +1406,22 @@ private:
             auto &payload = std::get<AssignmentStmtPayload>(Statement.data);
             for (auto &value : payload.values) if (value) this->propagate_expression(*value);
             for (auto &target : payload.targets) if (target) this->propagate_expression(*target);
-            if (payload.op IS AssignmentOperator::Plain) {
+            if (payload.op IS AssignmentOperator::Plain or
+                payload.op IS AssignmentOperator::IfEmpty or payload.op IS AssignmentOperator::IfNil) {
                for (size_t i = 0; i < payload.targets.size(); ++i) {
                   if (not payload.targets[i] or payload.values.empty()) continue;
                   size_t source = std::min(i, payload.values.size() - 1);
+                  bool update = payload.op IS AssignmentOperator::Plain;
+                  bool initialises_binding = false;
+                  if (payload.targets[i]->kind IS AstNodeKind::IdentifierExpr) {
+                     const auto &reference = std::get<NameRef>(payload.targets[i]->data);
+                     if (reference.binding_id) {
+                        const auto &binding = this->catalogue_.binding(reference.binding_id);
+                        initialises_binding = binding.initialiser IS payload.values[source].get();
+                        if (not update) update = initialises_binding;
+                     }
+                  }
+                  if (not update) continue;
                   StaticValueDescriptor assigned;
                   if (source IS payload.values.size() - 1 and i >= payload.values.size() and
                       payload.values[source]->static_results) {
@@ -1222,7 +1429,16 @@ private:
                         payload.values[source]->static_results).value_at(i - source);
                   }
                   else assigned = this->descriptor_of(*payload.values[source]);
-                  this->update_assigned_binding(*payload.targets[i], assigned);
+                  if (initialises_binding) {
+                     auto &reference = std::get<NameRef>(payload.targets[i]->data);
+                     auto &binding = this->catalogue_.binding(reference.binding_id);
+                     if (assigned.module and not binding.immutable) assigned.module = nullptr;
+                     binding.value = this->add_value(assigned);
+                     binding.callable = 0;
+                     reference.identifier.static_value = binding.value;
+                     payload.targets[i]->static_value = binding.value;
+                  }
+                  else this->update_assigned_binding(*payload.targets[i], assigned);
                }
             }
             break;
@@ -1271,6 +1487,7 @@ private:
                         payload.values[source]->static_results).value_at(i - source);
                   }
                }
+               if (value.module and not name.has_const) value.module = nullptr;
                if (value.primary IS TiriType::Unknown or value.primary IS TiriType::Any) continue;
                name.static_value = this->add_value(value);
                this->global_values_.emplace_back(name.symbol, name.static_value);
@@ -1492,6 +1709,7 @@ private:
    std::vector<std::pair<GCstr *, StaticValueHandle>> global_values_;
    std::vector<GCstr *> global_names_;
    uint16_t function_depth_ = 0;
+   bool native_calls_only_ = false;
 };
 
 } // namespace
@@ -1505,5 +1723,11 @@ void discover_static_bindings(ParserContext &Context, BlockStmt &Module)
 void propagate_static_descriptors(ParserContext &Context, BlockStmt &Module)
 {
    StaticDescriptorAnalyser analyser(Context);
+   analyser.propagate(Module);
+}
+
+void propagate_native_object_descriptors(ParserContext &Context, BlockStmt &Module)
+{
+   StaticDescriptorAnalyser analyser(Context, true);
    analyser.propagate(Module);
 }

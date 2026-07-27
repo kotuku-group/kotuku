@@ -21,6 +21,7 @@
 #include "lj_frame.h"
 #include "lj_vm.h"
 #include "../parser/lexer.h"
+#include "../parser/parser_diagnostics.h"
 #include "lj_bcdump.h"
 #include "../parser/parser.h"
 #include "../../defs.h"
@@ -54,6 +55,11 @@ static TValue * cpparser(lua_State *L, lua_CFunction dummy, APTR ud)
 
 extern int lua_load(lua_State *Lua, std::string_view Source, CSTRING SourceName)
 {
+   if (Lua->parser_diagnostics) {
+      delete Lua->parser_diagnostics;
+      Lua->parser_diagnostics = nullptr;
+   }
+
    auto *ls = new LexState(Lua, Source, SourceName, std::nullopt);
 
    // Set diagnose mode if enabled - this allows lexer to collect errors instead of throwing

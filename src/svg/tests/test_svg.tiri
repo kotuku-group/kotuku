@@ -88,7 +88,7 @@ function pHash(Bitmap:obj):array
          local luminance = 0
 
          for y in {y_start to y_end} do
-            local pixel = (y * Bitmap.lineWidth) + (x_start * bytes_per_pixel)
+            local pixel:num = (y * Bitmap.lineWidth) + (x_start * bytes_per_pixel)
             for x in {x_start to x_end} do
                luminance += (77 * pixels[pixel + red_offset]) + (150 * pixels[pixel + green_offset]) +
                   (29 * pixels[pixel + blue_offset])

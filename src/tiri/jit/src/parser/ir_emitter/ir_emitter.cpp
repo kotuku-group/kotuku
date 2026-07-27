@@ -1185,6 +1185,43 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
    this->lex_state.var_add(nvars);
    auto base = BCReg(this->func_state.varmap.size() - nvars.raw());
 
+   // Declaration initialisers are placed directly into their local slots, so they do not pass through
+   // bcemit_store().  Validate every concrete annotation after result-count adjustment and before publishing the
+   // binding's checked metadata.  This also covers values supplied by calls, varargs and result filters.
+   for (auto i = BCReg(0); i < nvars; ++i) {
+      const Identifier &identifier = Payload.names[i.raw()];
+      if (identifier.type IS TiriType::Unknown or identifier.type IS TiriType::Any) continue;
+
+      StaticValueDescriptor initialiser;
+      if (Payload.values.empty()) {
+         initialiser.primary = TiriType::Nil;
+         initialiser.proof = StaticProof::Closed;
+         initialiser.nullable = true;
+      }
+      else {
+         size_t source = std::min(size_t(i.raw()), Payload.values.size() - 1);
+         const ExprNode &value = *Payload.values[source];
+         if (source IS Payload.values.size() - 1 and i.raw() >= Payload.values.size() and value.static_results) {
+            initialiser = this->ctx.descriptors().results(value.static_results).value_at(i.raw() - source);
+         }
+         else if (value.static_value) initialiser = this->ctx.descriptors().value(value.static_value);
+      }
+
+      bool matching_type = initialiser.primary IS TiriType::Nil or initialiser.primary IS identifier.type;
+      bool matching_struct = identifier.type != TiriType::Struct or initialiser.primary IS TiriType::Nil or
+         initialiser.struct_def IS identifier.struct_def;
+      if (initialiser.proved() and matching_type and matching_struct) continue;
+
+      RuntimeContract contract{
+         .type = identifier.type,
+         .struct_def = identifier.struct_def,
+         .label = is_blank_symbol(identifier) ? nullptr : identifier.symbol,
+         .boundary = ContractBoundary::Local,
+         .position = uint8_t(base.raw() + i.raw() + 1)
+      };
+      bcemit_contract(&this->func_state, base + i, std::span(&contract, 1), 1);
+   }
+
    for (auto i = BCReg(0); i < nvars; ++i) {
       const Identifier& identifier = Payload.names[i.raw()];
       if (not identifier.has_close) continue;

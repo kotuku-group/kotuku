@@ -103,7 +103,7 @@ gui.icon = function(Options)
          lIconWidth = widest_word + (MARGIN * 2)
       end
 
-      local current_line
+      local current_line:str
       for word in values(lWords) do
          if not current_line then
             current_line = word.word

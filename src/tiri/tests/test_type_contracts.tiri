@@ -136,8 +136,8 @@ end
    local holder = { callback = typed }
 
    expect_contract_failure(function() typed(dynamic_value('wrong')) end, 'parameter')
-   expect_contract_failure(function() alias('wrong') end, 'parameter')
-   expect_contract_failure(function() holder.callback('wrong') end, 'parameter')
+   expect_contract_failure(function() alias(dynamic_value('wrong')) end, 'parameter')
+   expect_contract_failure(function() holder.callback(dynamic_value('wrong')) end, 'parameter')
    expect_contract_failure(function() imported_typed(dynamic_value('wrong')) end, 'parameter')
 
    local values = array<any> { 'wrong' }
@@ -148,7 +148,7 @@ end
 @Test function SpecialParameterForms()
    function blank(_:num) return true end
    local blank_alias:any = blank
-   expect_contract_failure(function() blank_alias('wrong') end, 'parameter')
+   expect_contract_failure(function() blank_alias(dynamic_value('wrong')) end, 'parameter')
 
    local methods = {}
    function methods:typed(Value:num) return Value end
@@ -166,7 +166,7 @@ end
       return Value
    end
    local thunk_alias:any = deferred
-   expect_contract_failure(function() thunk_alias('wrong') end, 'parameter')
+   expect_contract_failure(function() thunk_alias(dynamic_value('wrong')) end, 'parameter')
 
    global contract_mutual_odd
    global function contract_mutual_even(Value:num):bool
@@ -189,7 +189,7 @@ end
 
    local plain = { 10 }
    local indirect:any = increment
-   expect_contract_failure(function() indirect(plain) end, 'parameter')
+   expect_contract_failure(function() indirect(dynamic_value(plain)) end, 'parameter')
    assert(plain[0] is 10, 'The function body must not mutate before its parameter guard')
 end
 
@@ -344,6 +344,102 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Other approved write boundaries.
+
+@Test function TypedLocalInitialiserContracts()
+   expect_contract_failure(function()
+      local value:num = dynamic_value('wrong')
+   end, 'local initialiser')
+
+   expect_contract_failure(function()
+      local value <const>:num = dynamic_value('wrong')
+   end, 'const local initialiser')
+
+   function dynamic_pair():<any, any>
+      return 1, 'wrong'
+   end
+   expect_contract_failure(function()
+      local first:num, second:num = dynamic_pair()
+   end, 'secondary local initialiser')
+
+   function dynamic_single():any
+      return 1
+   end
+   local present:num, absent:str = dynamic_single()
+   assert(present is 1 and absent is nil,
+      'Result-count adjustment should supply an acceptable nil to a missing annotated position')
+
+   function dynamic_triple():<any, any, any>
+      return 'drop', 2, 'wrong'
+   end
+   expect_contract_failure(function()
+      local first:num, second:num = [_*]dynamic_triple()
+   end, 'filtered local initialiser')
+
+   function accept_varargs(...)
+      local first:num, second:num = ...
+      return first + second
+   end
+   assert(accept_varargs(2, 3) is 5, 'Matching vararg initialisers should pass local contracts')
+   expect_contract_failure(function() accept_varargs(2, 'wrong') end, 'vararg local initialiser')
+
+   local holder:any = { value='wrong' }
+   expect_contract_failure(function()
+      local value:num = holder.value
+   end, 'direct local initialiser expression')
+
+   local bravo = struct<ContractBravo> { Value=7 }
+   expect_contract_failure(function()
+      local value:struct<ContractAlpha> = dynamic_value(bravo)
+   end, 'named-structure local initialiser')
+
+   local missing:num = dynamic_value(nil)
+   assert(missing is nil, 'Nil should remain valid for a concrete local annotation')
+
+   local variant:any = dynamic_value('text')
+   variant = 42
+   assert(variant is 42, 'Explicit any local initialisers must remain variant')
+
+   function typed_initialiser(Value:any):num
+      local result:num = Value
+      return result
+   end
+   for i in {0 to 200} do
+      assert(typed_initialiser(i) is i, 'Matching initialisers should remain valid on a hot path')
+   end
+   expect_contract_failure(function() typed_initialiser('wrong') end, 'hot local initialiser')
+
+   local closed = false
+   expect_contract_failure(function()
+      local resource <close>:num = dynamic_value(setmetatable({}, {
+         __close = function(Self, Error)
+            closed = true
+         end
+      }))
+   end, 'to-be-closed local initialiser')
+   assert(closed, 'A rejected local initialiser must unwind its <close> value')
+
+   local initialiser_deferred = false
+   function fail_initialiser()
+      defer
+         initialiser_deferred = true
+      end
+      local value:num = dynamic_value('wrong')
+   end
+
+   local assignment_deferred = false
+   function fail_assignment()
+      defer
+         assignment_deferred = true
+      end
+      local value:num = 1
+      value = dynamic_value('wrong')
+   end
+
+   expect_contract_failure(fail_initialiser, 'deferred local initialiser')
+   expect_contract_failure(fail_assignment, 'deferred local assignment')
+   assert(initialiser_deferred is assignment_deferred,
+      'Initialiser and assignment contract failures must unwind defer state consistently')
+end
 
 @Test function TypedLocalAndCapturedUpvalueStores()
    local typed:num = 1
@@ -500,7 +596,7 @@ end
       'deferred light userdata should satisfy userdata after resolution')
 
    local deferred_range = <{ {0 to 2} }>
-   expect_contract_failure(function() accept_userdata(deferred_range) end, 'parameter')
+   expect_contract_failure(function() accept_userdata(dynamic_value(deferred_range)) end, 'parameter')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -525,7 +621,7 @@ end
       assert(hot_userdata(proxy) is proxy, 'userdata contracts must remain stable on hot paths')
       assert(store_hot_global(i) is i, 'An inferred global contract should preserve valid values on hot paths')
    end
-   expect_contract_failure(function() dynamic('wrong') end, 'parameter')
+   expect_contract_failure(function() dynamic(dynamic_value('wrong')) end, 'parameter')
    expect_contract_failure(function() hot_userdata(dynamic_value({0 to 2})) end, 'parameter')
    expect_contract_failure(function() store_hot_global('wrong') end, 'global')
 end

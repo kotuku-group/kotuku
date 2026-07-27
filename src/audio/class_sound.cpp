@@ -800,7 +800,7 @@ static ERR SOUND_Init(extSound *Self)
 
    WAVEFormat WAVE;
    int result;
-   if ((Self->File->read(&WAVE, len, &result) != ERR::Okay) or (result != len)) {
+   if ((Self->File->read(std::span<int8_t>((int8_t *)&WAVE, len), &result) != ERR::Okay) or (result != len)) {
       return log.warning(ERR::Read);
    }
 

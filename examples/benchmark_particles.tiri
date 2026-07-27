@@ -10,7 +10,7 @@ Particle Graphics Benchmark
 
    lVec = mVec
 
-   local glWinWidth, glWinHeight, glColours, glMode, glShape, glWindow, glSurface, glParticles, glViewport, glScene
+   local glWinWidth:num, glWinHeight:num, glColours, glMode, glShape, glWindow, glSurface:obj, glParticles, glViewport, glScene
    local glTimerHandle, glFPS, glPrinted, glArgs
    local PI = math.pi
    glFrameStats = { avg = 0, best = 0, times = array<int> }
@@ -138,7 +138,7 @@ function newParticle()
       end
    elseif glMode is MODE_DIRECTVECTOR then
       particle.colour = glColours[(math.floor(math.random() * #glColours))]
-      local err
+      local err:num
       if glShape is 'star' then
          err, particle.path = lVec.GeneratePath(makeStarSequence(particle.x+particle.radius, particle.y+particle.radius, particle.radius))
       else
