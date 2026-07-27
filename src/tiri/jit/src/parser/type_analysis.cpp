@@ -1180,10 +1180,24 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
 
          if (Payload.values.empty()) continue;
          size_t source = std::min(i, Payload.values.size() - 1);
-         size_t result_position = source IS Payload.values.size() - 1 ? i - source : 0;
-         InferredType value_type = result_position ?
-            this->infer_call_return_type(*Payload.values[source], result_position) :
-            this->infer_expression_type(*Payload.values[source]);
+         size_t result_position = i - source;
+         InferredType value_type;
+         if (result_position IS 0) value_type = this->infer_expression_type(*Payload.values[source]);
+         else {
+            const ExprNode &value_expr = *Payload.values[source];
+            bool provides_multiple_results = value_expr.kind IS AstNodeKind::CallExpr or
+               value_expr.kind IS AstNodeKind::SafeCallExpr or
+               (value_expr.static_results and
+                (this->ctx_.descriptors().results(value_expr.static_results).declared_count > 1 or
+                 this->ctx_.descriptors().results(value_expr.static_results).variadic));
+            if (provides_multiple_results) {
+               value_type = this->infer_call_return_type(value_expr, result_position);
+            }
+            else {
+               value_type.primary = TiriType::Nil;
+               value_type.is_nullable = true;
+            }
+         }
 
          if (existing->requires_destination_type) {
             if (value_type.primary != TiriType::Nil) {

@@ -185,6 +185,15 @@ end
    assert(result is 100, "reassignment same type should work")
 end
 
+@Test function UnmatchedScalarAssignmentRemainsUnfixed()
+   local first, second
+   first, second = 1
+   assert(first is 1, "explicit target should receive the scalar value")
+   assert(second is nil, "unmatched target should receive nil")
+   second = 2
+   assert(second is 2, "unmatched nil should not prevent later type fixation")
+end
+
 @Test function NilClearsValue()
    local x = 10
    assert(x is 10, "initial value")
