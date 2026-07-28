@@ -119,6 +119,7 @@ struct PreparedAssignment {
    bool newly_created = false;   // True if a new local was created for an undeclared variable
    bool needs_var_add = false;   // True if var_add() must be called after expression evaluation
    GCstr* pending_symbol = nullptr;  // Symbol name for deferred var_add
+   StaticBindingID binding_id = 0;
    BCLine pending_line = 0;      // Line number for deferred variable declaration
    BCLine pending_column = 0;    // Column number for deferred variable declaration
    ControlFlowEdge safe_nav_skip;
@@ -229,6 +230,8 @@ private:
    void ensure_register_balance(std::string_view usage);
    void optimise_assert(ExprNodeList &Args);
    void apply_inferred_local_type(BCReg Slot, const ExprNode& Value);
+   bool apply_analysed_local_type(BCReg Slot, StaticBindingID Binding);
+   void assert_analysed_local_type(BCReg Slot, StaticBindingID Binding) const;
    BCReg finalise_pending_local_assignment(PreparedAssignment& Target);
    [[nodiscard]] bool can_elide_expression(const ExprNode &Expression) const;
    [[nodiscard]] bool can_elide_statement(const StmtNode &Statement, bool InLoop) const;

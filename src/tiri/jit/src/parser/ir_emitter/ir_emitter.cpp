@@ -659,6 +659,39 @@ void IrEmitter::apply_inferred_local_type(BCReg Slot, const ExprNode& Value)
    info->static_results = Value.static_results;
 }
 
+bool IrEmitter::apply_analysed_local_type(BCReg Slot, StaticBindingID Binding)
+{
+   if (not Binding) return false;
+
+   const auto &binding = this->ctx.descriptors().binding(Binding);
+   if (not binding.analysed_value) return false;
+
+   const auto &value = this->ctx.descriptors().value(binding.analysed_value);
+   if (value.primary IS TiriType::Unknown or value.primary IS TiriType::Any or
+       value.primary IS TiriType::Nil) return false;
+
+   VarInfo *info = &this->func_state.var_get(Slot.raw());
+   info->fixed_type = value.primary;
+   info->object_class_id = value.object_class_id;
+   info->struct_def = value.struct_def;
+   this->assert_analysed_local_type(Slot, Binding);
+   return true;
+}
+
+void IrEmitter::assert_analysed_local_type(BCReg Slot, StaticBindingID Binding) const
+{
+   if (not Binding) return;
+
+   const auto &binding = this->ctx.descriptors().binding(Binding);
+   if (not binding.analysed_value) return;
+
+   const auto &value = this->ctx.descriptors().value(binding.analysed_value);
+   const VarInfo &info = this->func_state.var_get(Slot.raw());
+   lj_assertX(info.fixed_type IS value.primary, "analysed and emitted binding types diverged");
+   lj_assertX(info.object_class_id IS value.object_class_id, "analysed and emitted binding object classes diverged");
+   lj_assertX(info.struct_def IS value.struct_def, "analysed and emitted binding structures diverged");
+}
+
 BCReg IrEmitter::finalise_pending_local_assignment(PreparedAssignment& Target)
 {
    if (not Target.needs_var_add or not Target.pending_symbol) return BCReg(NO_REG);
@@ -672,6 +705,9 @@ BCReg IrEmitter::finalise_pending_local_assignment(PreparedAssignment& Target)
    Target.needs_var_add = false;
    Target.newly_created = false;
 
+   VarInfo *info = &this->func_state.var_get(slot.raw());
+   info->binding_id = Target.binding_id;
+   this->apply_analysed_local_type(slot, Target.binding_id);
    this->update_local_binding(Target.pending_symbol, slot);
    return slot;
 }
@@ -1272,11 +1308,15 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
          info->fixed_type = identifier.type;
          info->struct_def = identifier.struct_def;
       }
+      else if (this->apply_analysed_local_type(base + i, identifier.binding_id)) {
+         // The analyser owns sticky fixation.  Its per-binding result covers deferred and secondary values.
+      }
       else if (i.raw() < Payload.values.size()) {
          // No explicit annotation - infer type from initialiser expression
          // Note: Nil is excluded because it represents absence of value, not a type constraint
          this->apply_inferred_local_type(base + i, *Payload.values[i.raw()]);
       }
+      this->assert_analysed_local_type(base + i, identifier.binding_id);
       // If no initialiser and no annotation, fixed_type remains Unknown (set in var_add)
    }
 

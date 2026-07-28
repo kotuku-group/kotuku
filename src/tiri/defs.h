@@ -421,7 +421,7 @@ void make_struct_serial_array(lua_State *, std::string_view, int, CPTR, struct_r
 void notify_action(OBJECTPTR, ACTIONID, ERR, APTR);
 void process_error(extTiri *, CSTRING);
 ERR push_object_id(lua_State *, OBJECTID ObjectID);
-extern ERR delayed_msg_handler(APTR Meta, int MsgID, int MsgType, APTR Message, int MsgSize);
+extern ERR delayed_msg_handler(APTR Meta, int MsgID, MSGID MsgType, std::span<std::byte> Message);
 extern int object_index(lua_State *);
 extern int object_newindex(lua_State *);
 GCstruct * push_struct(extTiri *, APTR, std::string_view, bool, bool, OBJECTPTR Lifecycle = nullptr);

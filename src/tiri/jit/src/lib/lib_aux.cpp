@@ -272,6 +272,12 @@ extern int luaL_ref(lua_State* L, int t)
       return LUA_REFNIL;  //  `nil' has a unique fixed reference
    }
    lua_rawgeti(L, t, FREELIST_REF);  //  get first free element
+   if (lua_isnil(L, -1)) {
+      // First use: claim slot 0 for the freelist so allocated references never alias FREELIST_REF.  Without this,
+      // 0-based objlen() hands out ref 0, which both corrupts the freelist and reads as "no reference" to callers.
+      lua_pushinteger(L, 0);
+      lua_rawseti(L, t, FREELIST_REF);
+   }
    ref = (int)lua_tointeger(L, -1);  //  ref = t[FREELIST_REF]
    lua_pop(L, 1);  //  remove it from stack
    if (ref != 0) {  // any free element?

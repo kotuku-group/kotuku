@@ -106,6 +106,14 @@ LJ_FUNC TValue* lj_tab_set(lua_State* L, GCtab* t, cTValue* key);
 LJ_FUNC [[nodiscard]] GCstr* lj_tab_get_global_contract(GCtab* Environment, const GCstr* Name);
 LJ_FUNC void lj_tab_set_global_contract(
    lua_State* L, GCtab* Environment, const GCstr* Name, GCstr* Descriptor);
+LJ_FUNC void lj_env_mark(lua_State* L, GCtab* Environment);
+
+// A non-null contracts table doubles as the runtime marker for "this table is a global environment": every store
+// route (VM fast path, C API, rawset, JIT) must validate marked tables through lj_env_check().
+[[nodiscard]] inline bool lj_tab_is_environment(const GCtab* Table) noexcept
+{
+   return tabref(Table->global_type_contracts) != nullptr;
+}
 
 // 0-based indexing: valid array indices are [0, asize)
 #define inarray(t, key)      ((MSize)(key) < (MSize)(t)->asize)

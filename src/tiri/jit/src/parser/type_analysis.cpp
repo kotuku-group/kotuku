@@ -217,9 +217,7 @@ private:
    void analyse_call_expr(const CallExprPayload &);
    [[nodiscard]] bool is_global_environment_reference(const ExprNode &) const;
    [[nodiscard]] GCstr * protected_global_store_key(const ExprNode &) const;
-   [[nodiscard]] bool computed_global_environment_store(const ExprNode &) const;
    void report_protected_global_override(GCstr *, SourceSpan);
-   void report_computed_global_environment_store(SourceSpan);
    void report_dynamic_destination_required(GCstr *, SourceSpan, bool IsGlobal);
 
    // Argument type checking for function calls
@@ -239,8 +237,9 @@ private:
    [[nodiscard]] bool is_local_const(GCstr *) const;
 
    // Type fixation - locks variable type after first concrete assignment
-   void fix_local_type(GCstr *, TiriType, CLASSID ObjectClassId = CLASSID::NIL,
+   void fix_local_type(GCstr *, StaticBindingID, TiriType, CLASSID ObjectClassId = CLASSID::NIL,
       struct_record *StructDef = nullptr);
+   void publish_binding_type(StaticBindingID, const InferredType &);
 
    // Usage tracking - marks variables as used for unused variable detection
    void mark_identifier_used(GCstr *);
@@ -1113,10 +1112,8 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
       if (not target_ptr) continue;
       const auto &target = *target_ptr;
 
-      if (this->computed_global_environment_store(target)) {
-         this->report_computed_global_environment_store(target.span);
-         continue;
-      }
+      // Computed '_G[key]' assignment is permitted: the runtime environment mutation boundary enforces sticky
+      // contracts and protected built-ins for every environment store.
 
       if (GCstr *protected_name = this->protected_global_store_key(target)) {
          this->report_protected_global_override(protected_name, target.span);
@@ -1156,6 +1153,24 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
          else is_const = this->is_local_const(name);
 
          if (not existing) {
+            if (name_ref->binding_id and not Payload.values.empty()) {
+               size_t source = std::min(i, Payload.values.size() - 1);
+               size_t result_position = i - source;
+               InferredType inferred;
+               if (result_position IS 0) inferred = this->infer_expression_type(*Payload.values[source]);
+               else inferred = this->infer_call_return_type(*Payload.values[source], result_position);
+
+               inferred.requires_destination_type =
+                  inferred.primary IS TiriType::Any or inferred.primary IS TiriType::Unknown;
+               inferred.is_fixed = inferred.primary != TiriType::Nil and inferred.primary != TiriType::Any and
+                  inferred.primary != TiriType::Unknown;
+               if (Payload.op != AssignmentOperator::Plain and not inferred.requires_destination_type) {
+                  this->current_scope().declare_local(name, inferred, target.span);
+                  this->publish_binding_type(name_ref->binding_id, inferred);
+                  continue;
+               }
+            }
+
             // The name is neither a local nor a known global.  A plain assignment to a name that already exists in
             // the environment table updates that global at runtime, so record an implicit global type for it.  Only
             // simple '=' assignments are used for inference; compound operators require an existing value and never
@@ -1282,7 +1297,8 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
                   this->fix_global_type(name, value_type.primary, value_type.object_class_id, value_type.struct_def);
                }
                else {
-                  this->fix_local_type(name, value_type.primary, value_type.object_class_id, value_type.struct_def);
+                  this->fix_local_type(name, name_ref->binding_id, value_type.primary,
+                     value_type.object_class_id, value_type.struct_def);
                }
             }
          }
@@ -1411,6 +1427,7 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
       #endif
 
       this->current_scope().declare_local(name.symbol, inferred, name.span, name.has_const);
+      this->publish_binding_type(name.binding_id, inferred);
       this->trace_decl(this->ctx_.lex().linenumber, name.symbol, inferred.primary, inferred.is_fixed);
    }
 
@@ -1671,17 +1688,6 @@ GCstr * TypeAnalyser::protected_global_store_key(const ExprNode &Expr) const
    return nullptr;
 }
 
-bool TypeAnalyser::computed_global_environment_store(const ExprNode &Expr) const
-{
-   if (Expr.kind != AstNodeKind::IndexExpr) return false;
-
-   const auto &payload = std::get<IndexExprPayload>(Expr.data);
-   if (not payload.table or not payload.index or
-      not this->is_global_environment_reference(*payload.table)) return false;
-
-   return type_literal_string_key(*payload.index) IS nullptr;
-}
-
 void TypeAnalyser::report_protected_global_override(GCstr *Name, SourceSpan Location)
 {
    if (not Name) return;
@@ -1690,15 +1696,6 @@ void TypeAnalyser::report_protected_global_override(GCstr *Name, SourceSpan Loca
    diag.location = Location;
    diag.code = ParserErrorCode::OverrideProtectedGlobal;
    diag.message = std::format("cannot override built-in '{}'", std::string_view(strdata(Name), Name->len));
-   this->record_diagnostic(std::move(diag));
-}
-
-void TypeAnalyser::report_computed_global_environment_store(SourceSpan Location)
-{
-   TypeDiagnostic diag;
-   diag.location = Location;
-   diag.code = ParserErrorCode::OverrideProtectedGlobal;
-   diag.message = "cannot override built-in through computed _G key";
    this->record_diagnostic(std::move(diag));
 }
 
@@ -2509,12 +2506,30 @@ bool TypeAnalyser::is_local_const(GCstr *Name) const
    return false;
 }
 
-void TypeAnalyser::fix_local_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId, struct_record *StructDef)
+void TypeAnalyser::publish_binding_type(StaticBindingID Binding, const InferredType &Type)
+{
+   if (not Binding or not Type.is_fixed or Type.primary IS TiriType::Unknown or
+       Type.primary IS TiriType::Any or Type.primary IS TiriType::Nil) return;
+
+   StaticValueDescriptor value;
+   value.primary = Type.primary;
+   value.object_class_id = Type.object_class_id;
+   value.struct_def = Type.struct_def;
+   value.nullable = Type.is_nullable;
+   value.proof = StaticProof::Advisory;
+   this->ctx_.descriptors().binding(Binding).analysed_value = this->ctx_.descriptors().add_value(value);
+}
+
+void TypeAnalyser::fix_local_type(GCstr *Name, StaticBindingID Binding, TiriType Type,
+   CLASSID ObjectClassId, struct_record *StructDef)
 {
    for (auto it = this->scope_stack_.rbegin(); it != this->scope_stack_.rend(); ++it) {
       auto existing = it->lookup_local_type(Name);
       if (existing) {
          it->fix_local_type(Name, Type, ObjectClassId, StructDef);
+         InferredType fixed(Type, false, false, true, ObjectClassId);
+         fixed.struct_def = StructDef;
+         this->publish_binding_type(Binding, fixed);
          this->trace_fix(this->ctx_.lex().linenumber, Name, Type);
          return;
       }

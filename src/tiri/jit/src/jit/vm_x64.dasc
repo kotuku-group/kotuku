@@ -862,6 +862,25 @@ static void build_subroutines(BuildCtx *ctx)
   |
   |//-----------------------------------------------------------------------
   |
+  |->vmeta_envcheck:
+  |  // Marked-environment check from BC_TSETS_Z: RB = GCtab *, RC = GCstr *, value at BASE[RA].
+  |  // The ordinary store path resumes afterwards so __newindex dispatch remains intact.
+  |  movzx RAd, PC_RA
+  |  lea ITYPE, [BASE+RA*8]
+  |  mov TMPR, STR:RC
+  |  mov L:CARG1, SAVE_L
+  |  mov L:CARG1->base, BASE
+  |  mov SAVE_PC, PC
+  |  mov CARG2, TAB:RB
+  |  mov CARG3, TMPR
+  |  mov CARG4, ITYPE
+  |  call extern lj_vm_envcheck    // (lua_State *L, GCtab *t, GCstr *k, TValue *v)
+  |  mov L:CARG1, SAVE_L
+  |  mov BASE, L:CARG1->base
+  |  movzx RAd, PC_RA
+  |  // lj_vm_envcheck() returns the string key in RC; RB is callee-saved.
+  |  jmp ->BC_TSETS_ENV
+  |
   |->vmeta_tsets:
   |  settp STR:RC, LJ_TSTR    // STR:RC = GCstr *
   |  mov TMP1, STR:RC
@@ -4054,6 +4073,10 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  mov STR:RC, [KBASE+RC*8]
     |  checktab TAB:RB, ->vmeta_tsets
     |->BC_TSETS_Z:   // RB = GCtab *, RC = GCstr *
+    |  mov TMPR, TAB:RB->global_type_contracts
+    |  test TMPR, TMPR
+    |  jnz ->vmeta_envcheck   // Marked environment: validate global policy centrally.
+    |->BC_TSETS_ENV:
     |  mov TMPRd, TAB:RB->hmask
     |  and TMPRd, STR:RC->sid
     |  imul TMPRd, #NODE

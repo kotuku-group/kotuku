@@ -31,7 +31,7 @@ Gamepad demonstration
       x=win.margins.left, y=110, string='Buttons:', face='Noto Sans', fontSize=20, fill='rgb(0,0,0)'
    })
 
-   hardness = tonumber(arg('hardness', 0.75)) or 0.75
+   hardness = 0.75
    if hardness < 0 then
       hardness = 0
    elseif hardness > 1 then

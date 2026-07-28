@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<ai:cl xmlns:ai="http://kotuku.dev/ai-docs" n="NetClient" mod="Network" c="Represents a single client IP address." cat="Network" id="05bdfa0b" v="1">
-  <ai:f n="ClientData" c="A custom pointer available for userspace." t="APTR" a="RW"/>
-  <ai:f n="Connections" c="Pointer to the first established socket connection for the client IP." t="*ClientSocket" a="R"/>
-  <ai:f n="IP" c="The IP address of the client." t="INT8" a="R"/>
-  <ai:f n="Next" c="The next client IP with connections to the server socket." t="*NetClient" a="R"/>
-  <ai:f n="Prev" c="The previous client IP with connections to the server socket." t="*NetClient" a="R"/>
-  <ai:f n="TotalConnections" c="The total number of current socket connections for the IP address." t="INT" a="R"/>
-</ai:cl>

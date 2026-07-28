@@ -290,7 +290,12 @@ LJLIB_CF(table_empty)
 
 LJLIB_CF(table_clear)   LJLIB_REC(.)
 {
-   lj_tab_clear(lj_lib_checktab(L, 1));
+   GCtab *table = lj_lib_checktab(L, 1);
+   if (lj_tab_is_environment(table)) {
+      lj_err_callermsg(L, "cannot clear a global environment");
+   }
+
+   lj_tab_clear(table);
    return 0;
 }
 

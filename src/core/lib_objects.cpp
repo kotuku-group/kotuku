@@ -219,11 +219,13 @@ static void async_wait_callback(OBJECTID ObjectID, bool Active)
 //********************************************************************************************************************
 // Hook for MSGID::FREE, used for delaying collection until the next message processing cycle.
 
-ERR msg_free(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
+ERR msg_free(APTR Custom, int MsgID, MSGID MsgType, std::span<std::byte> Message)
 {
+   if (Message.size() < sizeof(OBJECTID)) return ERR::Okay;
+
    // Lock the object via conventional means to guarantee thread safety.
    OBJECTPTR obj;
-   if (!AccessObject(((OBJECTID *)Message)[0], 10000, &obj)) {
+   if (!AccessObject(((OBJECTID *)Message.data())[0], 10000, &obj)) {
       // Use PermitTerminate to inform object_free() that the object can be terminated safely while the lock is held.
       obj->setFlag(NF::PERMIT_TERMINATE);
       FreeResource(obj);
@@ -1419,9 +1421,10 @@ ERR AsyncWait(kt::vector<OBJECTID> &Objects, int Timeout)
 // async action thread on completion.  After processing the callback, the next queued action for the same
 // object is dispatched.
 
-ERR msg_threadaction(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
+ERR msg_threadaction(APTR Custom, int MsgID, MSGID MsgType, std::span<std::byte> Message)
 {
-   auto msg = (ThreadActionMessage *)Message;
+   if (Message.size() < sizeof(ThreadActionMessage)) return ERR::Okay;
+   auto msg = (ThreadActionMessage *)Message.data();
    if (not msg) return ERR::Okay;
 
    release_owned_callback(msg->DeferredFunction);

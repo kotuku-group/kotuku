@@ -449,7 +449,7 @@ ERR copy_args(const FunctionField *Args, int ArgsSize, int8_t *Parameters, std::
       else if (type & FD_PTR) {
          pos = align_arg_offset(pos);
          if (pos < 0) return log.warning(ERR::InvalidData);
-         else if (not (type & (FD_OBJECT|FD_RESULT))) return log.warning(ERR::NoSupport);
+         if (not (type & (FD_OBJECT|FD_RESULT))) return log.warning(ERR::NoSupport);
          pos += sizeof(APTR);
       }
       else if (type & (FD_DOUBLE|FD_INT64|FD_INT)) {

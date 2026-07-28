@@ -480,6 +480,13 @@ int fcmd_arg(lua_State *Lua)
    auto key = lua_tostring(Lua, 1);
    if (not key) luaL_argerror(Lua, 1, "Argument name required.");
 
+   if (args > 1) {
+      int default_type = lua_type(Lua, 2);
+      if ((default_type != LUA_TNIL) and (default_type != LUA_TSTRING)) {
+         luaL_argerror(Lua, 2, "Default value must be nil or a string.");
+      }
+   }
+
    if (auto it = Self->Vars.find(key); it != Self->Vars.end()) {
       lua_pushstring(Lua, it->second.c_str());
       return 1;
