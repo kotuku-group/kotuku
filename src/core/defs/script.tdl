@@ -32,6 +32,7 @@ struct ScriptArg { // For use with sc::Exec
    // The span descriptor must outlive sc::Call(), so we store the address of a caller-owned span.
    // The caller supplies exact element metadata; binding to a temporary is deleted to prevent a dangling descriptor.
    template<typename T> ScriptArg(CSTRING pName, const std::span<T> &pValue, uint32_t pType) : Name(pName), Type(pType), Address((APTR)&pValue) { }
+   template<typename T> ScriptArg(CSTRING pName, std::span<T> &pValue, uint32_t pType = FDF_SPAN) : Name(pName), Type(pType), Address((APTR)&pValue) { }
    template<typename T> ScriptArg(CSTRING pName, std::span<T> &&pValue, uint32_t pType) = delete;
 };
 ]])

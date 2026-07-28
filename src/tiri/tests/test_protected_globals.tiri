@@ -7,7 +7,8 @@ function assert_activation_fails(Statement:str, Message:str)
    local script = obj.new('tiri', { statement = Statement })
    local err = script.acActivate()
 
-   assert(err != ERR_Okay, Message .. ' should fail activation')
+   -- Compile-time rejections fail the action itself; runtime boundary rejections surface through script.error.
+   assert((err != ERR_Okay) or (script.error != ERR_Okay), Message .. ' should fail activation')
    assert(script.error != ERR_Okay, Message .. ' should set a script error')
    assert(string.find(script.errorMessage, 'cannot override built-in') != nil,
       Message .. ' should report the protected-global diagnostic, got: ' .. tostring(script.errorMessage))
@@ -125,4 +126,132 @@ end
       myThing = 2
       assert(myThing is 2)
    ]], 'script-created global reassignment')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Environment mutation boundary: every runtime write route into the global environment must enforce protected names
+-- and sticky contracts, and a rejected store must leave the previous value intact.
+
+@Test function RejectsRawsetOfBuiltin()
+   assert_activation_fails([[rawset(_G, 'tostring', 42)]], 'rawset of builtin')
+end
+
+@Test function RejectsAliasStoreToBuiltin()
+   assert_activation_fails([[
+      local environment = _G
+      environment.tostring = 42
+   ]], 'alias store to builtin')
+end
+
+@Test function RejectsComputedKeyStoreToBuiltinAtRuntime()
+   assert_activation_fails([[
+      local key = 'to' .. 'string'
+      _G[key] = 42
+   ]], 'computed runtime key store to builtin')
+end
+
+function expect_global_contract_failure(Store:func, Message:str)
+   local trapped = false
+   try
+      Store()
+   except e
+      trapped = true
+      assert(string.find(tostring(e.message), 'type contract failed for global') != nil,
+         Message .. ' should raise a global contract error, got: ' .. tostring(e.message))
+   end
+   assert(trapped, Message .. ' should raise')
+end
+
+@Test function ContractEnforcedThroughEveryEnvironmentRoute()
+   global glPGRoute = 'text'
+   local alias = _G
+   local key = 'glPG' .. 'Route'
+
+   expect_global_contract_failure(function() _G.glPGRoute = 42 end, '_G member store')
+   expect_global_contract_failure(function() _G['glPGRoute'] = 42 end, '_G literal index store')
+   expect_global_contract_failure(function() _G[key] = 42 end, '_G computed index store')
+   expect_global_contract_failure(function() alias.glPGRoute = 42 end, 'alias store')
+   expect_global_contract_failure(function() rawset(_G, 'glPGRoute', 42) end, 'rawset store')
+
+   assert(glPGRoute is 'text', 'A rejected store must preserve the previous value')
+end
+
+@Test function CompatibleStoresSucceedThroughEveryEnvironmentRoute()
+   global glPGOkay = 'first'
+   local alias = _G
+   local key = 'glPG' .. 'Okay'
+
+   _G.glPGOkay = 'second'
+   assert(glPGOkay is 'second', 'member store should apply')
+   _G['glPGOkay'] = 'third'
+   assert(glPGOkay is 'third', 'literal index store should apply')
+   _G[key] = 'fourth'
+   assert(glPGOkay is 'fourth', 'computed index store should apply')
+   alias.glPGOkay = 'fifth'
+   assert(glPGOkay is 'fifth', 'alias store should apply')
+   rawset(_G, 'glPGOkay', 'sixth')
+   assert(glPGOkay is 'sixth', 'rawset store should apply')
+end
+
+@Test function NilClearsWithoutClearingPolicy()
+   global glPGNil = 'text'
+
+   rawset(_G, 'glPGNil', nil)
+   assert(rawget(_G, 'glPGNil') is nil, 'rawset nil should clear the value')
+   _G.glPGNil = 'again'
+   assert(glPGNil is 'again', 'a compatible store after nil should apply')
+   _G.glPGNil = nil
+   assert(rawget(_G, 'glPGNil') is nil, 'member nil should clear the value')
+
+   expect_global_contract_failure(function() _G.glPGNil = 42 end, 'post-nil incompatible store')
+end
+
+@Test function AnyGlobalAcceptsEveryEnvironmentRoute()
+   global glPGAny:any = 'text'
+   local alias = _G
+
+   _G.glPGAny = 42
+   assert(glPGAny is 42, 'member store to any global')
+   alias.glPGAny = true
+   assert(glPGAny is true, 'alias store to any global')
+   rawset(_G, 'glPGAny', 'back')
+   assert(glPGAny is 'back', 'rawset to any global')
+end
+
+@Test function FreshNamesRemainOpenThroughEnvironmentRoutes()
+   rawset(_G, 'glPGFresh', 42)
+   assert(rawget(_G, 'glPGFresh') is 42, 'rawset may create an undeclared global')
+   _G['glPG' .. 'Fresh2'] = 'seven'
+   assert(rawget(_G, 'glPGFresh2') is 'seven', 'computed store may create an undeclared global')
+end
+
+@Test function OldBytecodeWriterIsChecked()
+   -- A function compiled before the declaration must still cross the boundary (TYP-14 residue).
+   rawset(_G, 'glPGLate', 'seed')
+   local writer = exec('return function() glPGLate = 42 end')
+   global glPGLate = 'text'
+
+   expect_global_contract_failure(function() writer() end, 'pre-declaration writer')
+   assert(glPGLate is 'text', 'The stale writer must not mutate the declared global')
+end
+
+@Test function HotEnvironmentStoresRemainChecked()
+   global glPGHot = 'text'
+   local alias = _G
+   local failures = 0
+
+   for i in {1 into 200} do
+      try
+         alias.glPGHot = i
+      except e
+         failures += 1
+      end
+   end
+   assert(failures is 200, 'Every hot aliased store must be rejected, got ' .. failures)
+   assert(glPGHot is 'text', 'Hot rejected stores must preserve the previous value')
+
+   for i in {1 into 200} do
+      alias.glPGHot = 'iteration'
+   end
+   assert(glPGHot is 'iteration', 'Hot compatible stores must apply')
 end

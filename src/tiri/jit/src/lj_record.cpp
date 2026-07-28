@@ -1928,6 +1928,24 @@ handlemm:
       }
    }
 
+   // Environment mutation boundary: string-keyed stores must honour the destination's runtime policy, so the
+   // environment marker is guarded on every recorded path.  Ordinary tables prove the marker is clear before the
+   // direct store; marked environments divert the store through lj_env_store() so sticky contracts and protected
+   // built-ins hold after trace compilation.
+   if (ix->val and tvisstr(&ix->keyv) and tvistab(&ix->tabv)) {
+      IRBuilder irb(J);
+      TRef marker = irb.fload_tab(ix->tab, IRFL_TAB_GCONTRACTS);
+      if (lj_tab_is_environment(tabV(&ix->tabv))) {
+         irb.guard_ne(marker, irb.knull(IRT_TAB), IRT_TAB);
+         if (not tref_isk(ix->key)) lj_trace_err(J, LJ_TRERR_NYIENVKEY);
+         TRef tmp = rec_tmpref(J, ix->val, IRTMPREF_IN1);
+         lj_ir_call(J, IRCALL_lj_env_store, ix->tab, lj_ir_kstr(J, strV(&ix->keyv)), tmp);
+         J->needsnap = 1;
+         return 0;
+      }
+      irb.guard_eq(marker, irb.knull(IRT_TAB), IRT_TAB);
+   }
+
    // Record the key lookup.
    xref = rec_idx_key(J, ix, &rbp);
    xrefop = (IROp)IR(tref_ref(xref))->o;

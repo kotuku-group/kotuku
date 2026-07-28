@@ -72,7 +72,7 @@ static AliasRet aa_table(jit_State* J, IRRef ta, IRRef tb)
    return aa_escape(J, taba, tabb);
 }
 
-// Check whether there's no aliasing table.clear.
+// Check whether there's no aliasing table.clear or environment store.
 static int fwd_aa_tab_clear(jit_State* J, IRRef lim, IRRef ta)
 {
    IRRef ref = J->chain[IR_CALLS];
@@ -81,6 +81,12 @@ static int fwd_aa_tab_clear(jit_State* J, IRRef lim, IRRef ta)
       if (calls->op2 == IRCALL_lj_tab_clear and
          (ta == calls->op1 or aa_table(J, ta, calls->op1) != ALIAS_NO))
          return 0;  //  Conflict.
+      if (calls->op2 == IRCALL_lj_env_store) {
+         // The environment mutation boundary stores into its table argument (first CARG in the chain).
+         IRRef tab = calls->op1;
+         while (IR(tab)->o == IR_CARG) tab = IR(tab)->op1;
+         if (ta == tab or aa_table(J, ta, tab) != ALIAS_NO) return 0;  //  Conflict.
+      }
       ref = calls->prev;
    }
    return 1;  //  No conflict. Can safely FOLD/CSE.

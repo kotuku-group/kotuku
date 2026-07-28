@@ -712,6 +712,18 @@ static void build_subroutines(BuildCtx *ctx)
   |
   |//-----------------------------------------------------------------------
   |
+  |->vmeta_envset:
+  |  // Marked-environment diversion from BC_TSETS_Z: TAB:CARG2 = GCtab *, STR:RC = GCstr *, value at BASE[RA].
+  |  // Routes global-environment stores through the central policy boundary (contracts, protected built-ins).
+  |  str BASE, L->base
+  |  mov CARG3, STR:RC
+  |  add CARG4, BASE, RA, lsl #3
+  |  mov CARG1, L
+  |  str PC, SAVE_PC
+  |  bl extern lj_vm_envset		// (lua_State *L, GCtab *t, GCstr *k, TValue *v)
+  |  ldr BASE, L->base
+  |  ins_next
+  |
   |->vmeta_tsets1:
   |  movn CARG4, #~LJ_TSTR
   |   add CARG2, BASE, RB, lsl #3
@@ -3375,6 +3387,8 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  checktab CARG2, ->vmeta_tsets1
     |->BC_TSETS_Z:
     |  // TAB:CARG2 = GCtab *, STR:RC = GCstr *, RA = src
+    |  ldr TMP0, TAB:CARG2->global_type_contracts
+    |  cbnz TMP0, ->vmeta_envset	// Marked environment: enforce global policy centrally.
     |  ldr TMP1w, TAB:CARG2->hmask
     |   ldr TMP2w, STR:RC->sid
     |    ldr NODE:CARG3, TAB:CARG2->node

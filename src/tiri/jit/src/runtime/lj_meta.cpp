@@ -829,6 +829,59 @@ extern "C" void lj_meta_contract_pc(lua_State *L, const BCIns *PC, uint32_t Dyna
 }
 
 //********************************************************************************************************************
+// Central environment mutation boundary.  Every runtime write to a marked global environment (VM store fast paths,
+// rawset(), the C API and JIT-recorded stores) must pass through here so sticky contracts and protected built-ins
+// are enforced regardless of source syntax or table aliasing.  Checks run strictly before mutation, so a failed
+// store leaves both the stored value and the persisted policy unchanged.
+//
+// Value must reference a Lua stack slot: thunk resolution and table allocation can reallocate the stack.
+
+extern "C" void lj_env_store(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value)
+{
+   if ((Name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) {
+      CSTRING message = lj_strfmt_pushf(L, "cannot override built-in '%s'", strdata(Name));
+      lj_err_callermsg(L, message);
+   }
+
+   ptrdiff_t value_offset = savestack(L, Value);
+   if (GCstr *persisted = lj_tab_get_global_contract(Environment, Name)) {
+      RuntimeContractDescriptor descriptor;
+      decode_contract_or_error(L, persisted, descriptor);
+      if (descriptor.contract_count >= 1) {
+         const RuntimeContractEntry &entry = descriptor.entries[0];
+         if (entry.type != TiriType::Any and entry.type != TiriType::Unknown) {
+            TValue checked;
+            copyTV(L, &checked, Value);
+            if (lj_is_thunk(&checked)) {
+               // Validate the resolved value, but store the original thunk to preserve lazy evaluation on read.
+               VMHelperGuard guard(L);
+               cTValue *resolved = lj_thunk_resolve(L, udataV(&checked));
+               copyTV(L, &checked, resolved);
+            }
+            if (not contract_matches(L, &checked, entry)) {
+               contract_error(L, &checked, ContractBoundary::Global, entry, entry.position);
+            }
+         }
+      }
+   }
+
+   Environment->nomm = 0;  //  Invalidate negative metamethod cache, matching the diverted VM store path.
+   TValue *slot = lj_tab_setstr(L, Environment, Name);
+   copyTV(L, slot, restorestack(L, value_offset));
+   lj_gc_anybarriert(L, Environment);
+}
+
+//********************************************************************************************************************
+// VM entry point for the environment mutation boundary, reached when BC_TSETS_Z diverts a store to a marked
+// environment (BC_GSET, BC_TSETS and string-keyed BC_TSETV all funnel through that fast path).
+
+extern "C" void lj_vm_envset(lua_State *L, GCtab *Environment, GCstr *Name, TValue *Value)
+{
+   L->top = curr_topL(L);
+   lj_env_store(L, Environment, Name, Value);
+}
+
+//********************************************************************************************************************
 // Helper for calls. __call metamethod.
 
 void lj_meta_call(lua_State *L, TValue *func, TValue *top)

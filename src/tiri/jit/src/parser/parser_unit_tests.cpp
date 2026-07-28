@@ -13,6 +13,7 @@
 #include "bytecode/lj_bcdump.h"
 #include "runtime/lj_contract.h"
 #include "runtime/lj_str.h"
+#include "runtime/lj_tab.h"
 
 #include <array>
 #include <chrono>
@@ -3007,6 +3008,91 @@ static bool test_static_result_set_model(kt::Log &Log)
 
 static size_t count_opcode_tree(const BytecodeSnapshot &, BCOp);
 
+static int envstore_protected_attempt(lua_State *L)
+{
+   lua_pushinteger(L, 42);
+   lua_setglobal(L, "tostring");
+   return 0;
+}
+
+static int envstore_contract_attempt(lua_State *L)
+{
+   lua_pushinteger(L, 42);
+   lua_setglobal(L, "glUnitEnvBoundary");
+   return 0;
+}
+
+static bool test_environment_store_boundary(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   lua_protect_globals(L);
+
+   GCtab *environment = tabref(L->env);
+   if (not lj_tab_is_environment(environment)) {
+      Log.error("lua_protect_globals() did not mark the environment table");
+      return false;
+   }
+
+   // A protected built-in must be rejected before mutation.
+   lua_pushcfunction(L, envstore_protected_attempt);
+   if (lua_pcall(L, 0, 0, 0) IS 0) {
+      Log.error("storing over a protected built-in did not raise");
+      return false;
+   }
+   lua_pop(L, 1);  //  Pop the error message.
+   lua_getglobal(L, "tostring");
+   bool preserved = lua_isfunction(L, -1);
+   lua_pop(L, 1);
+   if (not preserved) {
+      Log.error("the rejected store mutated the protected built-in");
+      return false;
+   }
+
+   // A declared concrete global must reject an incompatible C API store and preserve its value.
+   if (lua_load(L, std::string_view("global glUnitEnvBoundary = 'text'"), "=envboundary") or
+       lua_pcall(L, 0, 0, 0)) {
+      Log.error("declaring the unit-test global failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   lua_pushcfunction(L, envstore_contract_attempt);
+   if (lua_pcall(L, 0, 0, 0) IS 0) {
+      Log.error("an incompatible C API store did not raise against the persisted contract");
+      return false;
+   }
+   lua_pop(L, 1);
+   lua_getglobal(L, "glUnitEnvBoundary");
+   bool value_kept = lua_isstring(L, -1);
+   lua_pop(L, 1);
+   if (not value_kept) {
+      Log.error("the rejected store mutated the declared global");
+      return false;
+   }
+
+   // Compatible stores and nil clears must pass through the boundary unchanged.
+   lua_pushstring(L, "replacement");
+   lua_setglobal(L, "glUnitEnvBoundary");
+   lua_pushnil(L);
+   lua_setglobal(L, "glUnitEnvBoundary");
+   lua_getglobal(L, "glUnitEnvBoundary");
+   bool cleared = lua_isnil(L, -1);
+   lua_pop(L, 1);
+   if (not cleared) {
+      Log.error("a nil store through the boundary did not clear the global");
+      return false;
+   }
+
+   // Ordinary tables must not be treated as environments.
+   lua_newtable(L);
+   if (lj_tab_is_environment(tabV(L->top - 1))) {
+      Log.error("an ordinary table reads as a marked environment");
+      return false;
+   }
+   lua_pop(L, 1);
+   return true;
+}
+
 static bool test_native_prototype_result_descriptors(kt::Log &Log)
 {
    fprototype prototype{};
@@ -3545,7 +3631,7 @@ static bool test_type_guided_emission(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 44> tests = { {
+   constexpr std::array<TestCase, 45> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -3585,6 +3671,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "ternary_falsey_semantics", test_ternary_falsey_semantics },
       { "static_descriptor_model", test_static_descriptor_model },
       { "static_result_set_model", test_static_result_set_model },
+      { "environment_store_boundary", test_environment_store_boundary },
       { "native_prototype_result_descriptors", test_native_prototype_result_descriptors },
       { "object_call_result_descriptors", test_object_call_result_descriptors },
       { "module_call_result_descriptors", test_module_call_result_descriptors },
