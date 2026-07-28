@@ -70,7 +70,7 @@ glIntroduction = [[
    glArgs = glParser.process()
    if glArgs is nil then return end
 
-   local glWindow, glFileView, glTerminateView, glScrollbar, glViewArea, glStats, glAppBar, glSaveRoutine
+   local glWindow, glFileView, glTerminateView, glScrollbar, glViewArea:obj, glStats, glAppBar, glSaveRoutine
 
    glOpenFilter = array<table> {
       { name='SVG Images', ext='.svg' },
@@ -85,7 +85,7 @@ glIntroduction = [[
    picmeta = mSys.FindClass(CLASSID_IMAGE)
    file_ext = picmeta.fileExtension
    if file_ext then
-      local save_ext
+      local save_ext:str
       if file_ext:find('|') then
          file_ext = file_ext:split('|')
          save_ext = file_ext[0]
@@ -106,7 +106,7 @@ glIntroduction = [[
             if c.name is 'RSVG' then continue end
             file_ext = c.extension
             if file_ext then
-               local save_ext
+               local save_ext:str
                if file_ext:find('|') then
                   file_ext = file_ext:split('|')
                   save_ext = file_ext[0]
