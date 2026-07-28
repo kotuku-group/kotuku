@@ -366,7 +366,6 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
          if (target.pending_symbol) {
             this->update_local_binding(target.pending_symbol, base + i);
 
-            // Infer type from initialiser expression (same logic as emit_local_decl_stmt)
             if (i.raw() < values.size()) {
                this->apply_inferred_local_type(base + i, *values[i.raw()]);
             }
@@ -431,8 +430,9 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
             // Create new local for this undeclared variable
             BCReg local_slot = this->finalise_pending_local_assignment(target);
 
-            // Infer type from initialiser expression
-            if (i < values.size()) {
+            // Retain expression inference only when semantic analysis did not publish a binding result.
+            if (this->func_state.var_get(local_slot.raw()).fixed_type IS TiriType::Unknown and
+                i < values.size()) {
                this->apply_inferred_local_type(local_slot, *values[i]);
             }
 
@@ -863,6 +863,9 @@ ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targ
          prepared.needs_var_add  = true;
          prepared.newly_created  = true;
          prepared.pending_symbol = slot.u.sval;
+         if (const auto *name_ref = std::get_if<NameRef>(&node->data)) {
+            prepared.binding_id = name_ref->binding_id;
+         }
          prepared.pending_line   = node->span.line;
          prepared.pending_column = node->span.column;
          // Don't convert to Local yet - keep as Unscoped for now

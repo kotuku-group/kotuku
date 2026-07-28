@@ -85,6 +85,7 @@ struct StaticBindingDescriptor {
    const ExprNode *initialiser = nullptr;
    const FunctionExprPayload *function = nullptr;
    StaticValueHandle value = 0;
+   StaticValueHandle analysed_value = 0;
    StaticCallableHandle callable = 0;
    StaticBindingID alias_of = 0;
    uint8_t result_position = 0;

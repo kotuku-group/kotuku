@@ -3015,8 +3015,11 @@ extern "C" int luaopen_array(lua_State *L)
    reg_iface_prototype("array", "clear", {}, { TiriType::Array });
    reg_iface_prototype("array", "resize", {}, { TiriType::Array, TiriType::Num });
    reg_iface_prototype("array", "push", {}, { TiriType::Array, TiriType::Any });
-   // Private
-   // reg_iface_prototype("array", "append", { TiriType::Any }, { TiriType::Any, TiriType::Any });
+
+   // array.append() was created for concatenation of byte arrays, for this reason it is not documented for client use.
+   // Clients are expected to use array.push() for appending values to arrays of any type.
+   reg_iface_prototype("array", "append", { TiriType::Any }, { TiriType::Any, TiriType::Any });
+
    reg_iface_prototype("array", "pop", { TiriType::Any }, { TiriType::Array });
    reg_iface_prototype("array", "copy", {}, { TiriType::Array, TiriType::Num, TiriType::Num, TiriType::Num });
    reg_iface_prototype("array", "getString", { TiriType::Str }, { TiriType::Array, TiriType::Num, TiriType::Num });

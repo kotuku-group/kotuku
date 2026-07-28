@@ -441,6 +441,72 @@ end
       'Initialiser and assignment contract failures must unwind defer state consistently')
 end
 
+@Test function InferredLocalBindingContracts()
+   expect_contract_failure(function()
+      local value
+      value = 'text'
+      value = dynamic_value(42)
+   end, 'deferred local')
+
+   function inferred_pair():<str, str>
+      return 'first', 'second'
+   end
+   expect_contract_failure(function()
+      local first, second = inferred_pair()
+      second = dynamic_value(42)
+   end, 'secondary local result')
+
+   expect_contract_failure(function()
+      local first, second
+      first, second = inferred_pair()
+      second = dynamic_value(42)
+   end, 'deferred secondary local result')
+
+   expect_contract_failure(function()
+      local task = obj.new('task')
+      check task.acSetKey('ProductName', 'Kotuku')
+      local err, value = task.acGetKey('ProductName')
+      value = dynamic_value(42)
+   end, 'native secondary local result')
+
+   expect_contract_failure(function()
+      local value
+      value = struct<ContractAlpha> { Value=1 }
+      value = dynamic_value(struct<ContractBravo> { Value=2 })
+   end, 'deferred named-structure local')
+
+   expect_contract_failure(function()
+      local value
+      value ?= 'text'
+      value = dynamic_value(42)
+   end, 'predeclared if-nil local')
+
+   expect_contract_failure(function()
+      local value
+      value ??= 'text'
+      value = dynamic_value(42)
+   end, 'predeclared if-empty local')
+
+   expect_contract_failure(function()
+      value ?= 'text'
+      value = dynamic_value(42)
+   end, 'implicit if-nil local')
+
+   expect_contract_failure(function()
+      value ??= 'text'
+      value = dynamic_value(42)
+   end, 'implicit if-empty local')
+
+   expect_contract_failure(function()
+      local value
+      value = 'text'
+      function overwrite(Value:any)
+         value = Value
+      end
+      overwrite(42)
+   end, 'captured deferred local')
+end
+
 @Test function TypedLocalAndCapturedUpvalueStores()
    local typed:num = 1
    expect_contract_failure(function() typed = dynamic_value('wrong') end, 'local')
