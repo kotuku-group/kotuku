@@ -319,7 +319,7 @@ function classOffsetExpression(Class:table, Field:table):str
       error(f"Missing storage-owner metadata for {glModule.name}.{Class.name}.{Field.name}.")
    end
 
-   local entry = glClassOffsets[symbol]
+   local entry:table = glClassOffsets[symbol]
    if entry then
       if entry.origin != Class.storageOrigin then
          error(f"Conflicting storage origins collected for {glModule.name}.{Class.name}.")

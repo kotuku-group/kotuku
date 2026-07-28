@@ -305,7 +305,7 @@ global function cType(Value:table, Origin:str):table
    end
 
    do -- class(Name) and struct(Name); Name can be prefixed with '*'
-      local const, struct = rx_class_type.extract(Value.type)
+      local const:any, struct:any = rx_class_type.extract(Value.type)
       if struct then
          Value.isClass = true
       else
@@ -357,9 +357,9 @@ global function cType(Value:table, Origin:str):table
    end
 
    do -- resource() types are structs, but with an FD_RESOURCE marker.
-      local const, struct = rx_resource_type.extract(Value.type)
+      local const:str, struct:str = rx_resource_type.extract(Value.type)
       if struct then
-         local prefix, ptr_struct = rx_ptr_extract.extract(struct)
+         local prefix:str, ptr_struct:str = rx_ptr_extract.extract(struct)
          if ptr_struct then struct = ptr_struct end
 
          Value.struct = struct
@@ -398,7 +398,7 @@ global function cType(Value:table, Origin:str):table
    end
 
    do -- obj() object references
-      local ref_obj
+      local ref_obj:any
       local extended = false
       ref_obj = rx_ext_type.extract(Value.type)
       if ref_obj then -- 'ext' indicates an object class extended with private fields.
@@ -574,13 +574,13 @@ global function cType(Value:table, Origin:str):table
    -- To describe complex embedded types of fixed size, use 'array(type,n)' such as 'array(struct(RGB8),256)'
 
    do -- Array (pre-sized)
-      local array_type, array_size = rx_array_sized.extract(Value.type)
+      local array_type:str, array_size:str = rx_array_sized.extract(Value.type)
       if array_size then
          assert(not (Value.isFunction or Value.isMethod),
             f'Fixed and null-terminated arrays are not supported for callable {Origin}.')
-         array_size = tonumber(array_size)
+         size = tonumber(array_size)
          Value.isArray = true
-         if array_size is 0 then
+         if size is 0 then
             Value.type      = array_type
             Value.arraySize = 0
             Value           = cType(Value, Origin)
@@ -594,7 +594,7 @@ global function cType(Value:table, Origin:str):table
          else
             Value.type      = array_type
             Value           = cType(Value, Origin)
-            Value.arraySize = array_size
+            Value.arraySize = size
             Value.fullType  = copyOf('ptr')
          end
          return Value
@@ -623,7 +623,7 @@ global function cType(Value:table, Origin:str):table
             assert(not inner_fd:find('FD_VECTOR'), f'Nested vector spans are not supported for {Origin}.')
             assert(not (Value.struct and Value.isPointer), f'Pointer-qualified structure spans are not supported for {Origin}.')
 
-            local element_type = Value.type
+            local element_type:str = Value.type
             if not Value.mutable then
                if element_type:endsWith(' *') then
                   element_type ..= ' const'

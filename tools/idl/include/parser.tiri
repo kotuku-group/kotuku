@@ -166,8 +166,8 @@ end
 global function parseAction(Class:table, Extract:str)
    Extract = '-ACTION-\n' .. Extract:trim() .. '\n-END-\n'
 
-   local name = rx_doc_name.extract(Extract)
-   local comment = rx_doc_comment.extract(Extract)
+   local name:str = rx_doc_name.extract(Extract)
+   local comment:str = rx_doc_comment.extract(Extract)
    if not name then
       name, comment = rx_doc_combo.extract(Extract)
    end
@@ -185,7 +185,7 @@ global function parseAction(Class:table, Extract:str)
       for line in values(errors:split('\n')) do
          line ?! break -- A double line-break forces a premature end to error processing.
 
-         local ecode, emsg = rx_ecode_comment.extract(line)
+         local ecode:str, emsg:str = rx_ecode_comment.extract(line)
          if ecode then
             table.insert(action.results, { code = error_list[ecode], codeName = ecode, msg = emsg })
          else
@@ -199,7 +199,7 @@ global function parseAction(Class:table, Extract:str)
       table.sort(action.results, function(a,b) return a.code < b.code end)
    end
 
-   local tags = rx_tags_section.extract(Extract)
+   local tags:str = rx_tags_section.extract(Extract)
    if tags?? then
       action.tags = parseTags(tags, f"action '{Class.name}.{name}'")
    end
@@ -211,10 +211,10 @@ end
 global function parseField(Class:table, Extract:str)
    Extract = '-FIELD-\n' .. Extract:trim() .. '\n-END-\n'
 
-   local lookup = rx_doc_lookup.extract(Extract)
-   local status = rx_doc_status.extract(Extract)
-   local name, comment = rx_doc_combo.extract(Extract)
-   local description = rx_doc_desc.extract(Extract)
+   local lookup:str = rx_doc_lookup.extract(Extract)
+   local status:str = rx_doc_status.extract(Extract)
+   local name:str, comment:str = rx_doc_combo.extract(Extract)
+   local description:str = rx_doc_desc.extract(Extract)
 
    if not name then
       print('Name not defined for -FIELD- definition.')
@@ -238,7 +238,7 @@ global function parseField(Class:table, Extract:str)
       end
       f.description = description
 
-      local tags = rx_tags_section.extract(Extract)
+      local tags:str = rx_tags_section.extract(Extract)
       if tags?? then
          f.tags = parseTags(tags, f"field '{Class.name}.{name}'")
       end
@@ -251,7 +251,7 @@ end
 -- Convert a parameter string such as "int width: The width of the image"
 
 global function parseParameterString(Parameter:str):table
-   local type, name, comment = rx_param.extract(Parameter)
+   local type:str, name:str, comment:str = rx_param.extract(Parameter)
    if type then
       return {
          type = type:trim(),
@@ -267,8 +267,8 @@ end
 global function parseMethod(Class:table, Extract:str)
    Extract = f'-METHOD-\n{Extract:trim()}\n-END-\n'
 
-   local name = rx_doc_name.extract(Extract)
-   local comment = rx_doc_comment.extract(Extract)
+   local name:str = rx_doc_name.extract(Extract)
+   local comment:str = rx_doc_comment.extract(Extract)
 
    if not name then
       name, comment = rx_doc_combo.extract(Extract)
@@ -310,7 +310,7 @@ global function parseMethod(Class:table, Extract:str)
       for line in values(errors:split('\n')) do
          line ?! break -- A double line-break forces a premature end to error processing.
 
-         local ecode, emsg = rx_ecode_comment.extract(line)
+         local ecode:str, emsg:str = rx_ecode_comment.extract(line)
          if ecode then
             table.insert(method.results, { code = error_list[ecode], codeName = ecode, msg = emsg })
          else
@@ -620,7 +620,7 @@ global function parseFunction(Extract:str)
 
    Extract = f'-FUNCTION-\n{Extract:trim()}\n-END-\n'
 
-   local name, comment = rx_doc_combo.extract(Extract)
+   local name:str, comment:str = rx_doc_combo.extract(Extract)
    local status      = rx_doc_status.extract(Extract)
    local category    = rx_doc_category.extract(Extract)
    local ext_proto   = rx_doc_extproto.extract(Extract)
@@ -653,7 +653,7 @@ global function parseFunction(Extract:str)
       for line in values(errors:split('\n')) do
          line ?! break -- A double line-break forces a premature end to error processing.
 
-         local ecode, emsg = rx_ecode_comment.extract(line)
+         local ecode:str, emsg:str = rx_ecode_comment.extract(line)
          if ecode then
             local code_value = error_list[ecode]
             if not code_value then

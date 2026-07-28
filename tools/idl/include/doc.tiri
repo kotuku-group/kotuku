@@ -1046,7 +1046,7 @@ global function docModuleHeader()
    if glModule.src?? then
       out ..= '    <source>\n'
       for path in values(glModule.src) do
-         local dir, filename = rx_path.extract(path)
+         local dir:str, filename:str = rx_path.extract(path)
          if not filename then
             filename = path
             dir = nil

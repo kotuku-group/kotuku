@@ -45,7 +45,7 @@ global function cpp_include(...)
    priority('#ifdef __cplusplus')
    for v in values({...}) do
       if v:startsWith('<') and v:endsWith('>') then
-         local inc = rx_kotuku_include.extract(v)
+         local inc:str = rx_kotuku_include.extract(v)
 
          if inc then
             inc = rx_path_chars.replace(inc, '_')
@@ -261,7 +261,7 @@ global function flags(Prefix, Options:table, ...)
       out:push('')
    end
 
-   function outputFlagDef(Options:table, Prefix:str, flag_name:str, val)
+   function outputFlagDef(Options:table, Prefix:str, flag_name:str, val:any)
       if not Options.weak then
          if Options.bits is 16 then
             table.insert(sortedFlags, { value = val, define = f'   {flag_name} = 0x{string.format("%.4x",val)},' } )
@@ -294,7 +294,7 @@ global function flags(Prefix, Options:table, ...)
    f = 0
    for a in {0 to #flags} do
       if type(flags[a]) is 'string' then
-         local key, comment = rx_key_comment.extract(flags[a])
+         local key:str, comment:str = rx_key_comment.extract(flags[a])
          key ??= flags[a]
 
          for flag_name in values(key:split('|')) do
@@ -306,7 +306,7 @@ global function flags(Prefix, Options:table, ...)
          for flag_name, ref in pairs(flags[a]) do
             val = 0
 
-            local key, comment
+            local key:any, comment:str
             if type(ref) != 'number' then
                key, comment = rx_key_comment.extract(ref)
                if key then
@@ -507,7 +507,7 @@ global function constants(Prefix:str, Options:table, ...)
          end)
 
          for v in values(sorted) do
-            local val, comment, cap
+            local val:any, comment:str
             if type(v.value) is 'string' then
                val, comment = rx_key_comment.extract(v.value)
             end
@@ -575,7 +575,7 @@ global function enums(Prefix:str, Options:table, ...)
    inc = (Options.start ?? 0)
    for va in values({...}) do
       if type(va) is 'string' then
-         local key, comment = rx_key_comment.extract(va)
+         local key:str, comment:str = rx_key_comment.extract(va)
          key ?= va
          synonym = false
          for name in values(key:split('|')) do
@@ -699,7 +699,7 @@ end
 @input TDL field definition block
 @input Optional raw text to append inside the generated structure
 ]])
-global function structdef(Name:str, Options:table, Def, Append)
+global function structdef(Name:str, Options:table, Def:str, Append:str)
    verbose(f'Processing struct {Name}')
 
    prevStruct = glCurrentStructure
@@ -861,7 +861,7 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
    cl.references = { }
 
    restore_refs = glActiveRefs
-   global glActiveRefs = cl.references
+   global glActiveRefs:table = cl.references
    defer
       glActiveRefs = restore_refs
    end
@@ -994,11 +994,11 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
       -- Return the type to use for a given action/method parameter in its struct
 
       function actionStorageType(Param:table):str
-         local param_type = Param.basicType
+         local param_type:str = Param.basicType
 
          if Param.isComplex and not Param.isSpan then
             -- std::string is not embeddable, convert to `std::string *`
-            param_type = param_type .. ' *'
+            param_type ..= ' *'
          end
 
          return param_type

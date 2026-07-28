@@ -111,7 +111,7 @@ global function flags(Prefix:str, Options:table, ...)
    f = 0
    for flag_def in values({...}) do
       if type(flag_def) is 'string' then
-         local key = rx_key_comment.extract(flag_def)
+         local key:any = rx_key_comment.extract(flag_def)
          key ??= flag_def
 
          for v in values(key:split('|')) do
@@ -119,7 +119,7 @@ global function flags(Prefix:str, Options:table, ...)
          end
       elseif type(flag_def) is 'table' then
          for flag, ref in pairs(flag_def) do
-            local key
+            local key:any
             if type(ref) != 'number' then
                key = rx_key_comment.extract(ref)
                if key then
@@ -167,7 +167,7 @@ global function enums(Prefix, Options:table, ...)
    inc = Options.start ?? 0
    for k, enum_def in ipairs({...}) do
       if type(enum_def) is 'string' then
-         local val = rx_value_only.extract(enum_def)  -- Scrap any comment for this value
+         local val:str = rx_value_only.extract(enum_def)  -- Scrap any comment for this value
          val ?= enum_def
 
          for name in values(val:split('|')) do
@@ -199,7 +199,7 @@ global function constants(Prefix, Options:table, ...)
    for k, const_def in ipairs({...}) do
       assert(type(const_def) is 'table', "Invalid const type for '" .. Prefix .. "', expected table, got '" .. type(const_def) .. "'")
       for k, v in pairs(const_def) do
-         local val
+         local val:any
          if type(v) is 'string' then
             val = rx_key_comment_ng.extract(v)
          end
@@ -293,9 +293,9 @@ global function cType(Field:table, Origin:str):table
    end
 
    do
-      local _, struct = rx_struct_type.extract(Field.type)
+      local _, struct:str = rx_struct_type.extract(Field.type)
       if struct then
-         local ptr_struct = rx_ptr_extract.extract(struct)
+         local ptr_struct:str = rx_ptr_extract.extract(struct)
          if ptr_struct then struct = ptr_struct end
 
          Field.struct = struct
@@ -549,7 +549,7 @@ global function saveOutput()
       for const in values(group.table) do
          if e?? then e ..= ',' end
          if type(const.value) is 'string' then
-            local val = rx_value_only.extract(const.value) -- Scrap any defined comment for this value.
+            local val:str = rx_value_only.extract(const.value) -- Scrap any defined comment for this value.
             val ??= const.value
             e ..= f'{const.name}="{const.value}"'
          else

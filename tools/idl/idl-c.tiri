@@ -94,7 +94,7 @@ global function extractFields(Def:str, Origin:str):table
    for line, content in Def:split('\n') do
       local content_b, comment = rx_field_extract.extract(content)
       if content_b then content = content_b end
-      local type, name = rx_type_name.extract(content)
+      local type:str, name:str = rx_type_name.extract(content)
 
       if type?? then
          local virtual = false
@@ -417,7 +417,7 @@ global function buildPrototypes()
       end
 
       for k, func in ipairs(glFunctions) do
-         local response
+         local response:str
          if func.result and func.result.fullType then
             response = func.result.fullType.c_type
          else

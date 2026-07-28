@@ -203,10 +203,10 @@ end
    end
 
    -- Get benchmark parameters
-   width       = tonumber(arg('width',1024))
-   height      = tonumber(arg('height',768))
-   duration    = tonumber(arg('duration',10))
-   warmup      = tonumber(arg('warmup',10))
+   width       = tonumber(arg('width','1024'))
+   height      = tonumber(arg('height','768'))
+   duration    = tonumber(arg('duration','10'))
+   warmup      = tonumber(arg('warmup','10'))
    showPreview = arg('preview') != 'false'
 
    -- Validate parameters
