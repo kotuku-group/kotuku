@@ -60,7 +60,7 @@ static TRef sload(jit_State *J, int32_t Slot);
 //********************************************************************************************************************
 // Materialise live trace slots back to the Lua stack before a throwable helper runs inside a recorded try block.
 
-static TRef rec_try_stack_slot_addr(jit_State *J, IRBuilder& Ir, int32_t AbsoluteSlot)
+static TRef rec_stack_slot_addr(jit_State *J, IRBuilder& Ir, int32_t AbsoluteSlot)
 {
    lj_assertJ(AbsoluteSlot >= 0 and AbsoluteSlot < LJ_MAX_JSLOTS + LJ_STACK_EXTRA,
       "try materialisation slot out of range");
@@ -68,7 +68,7 @@ static TRef rec_try_stack_slot_addr(jit_State *J, IRBuilder& Ir, int32_t Absolut
    return Ir.emit(IRT(IR_ADD, IRT_PGC), REF_BASE, Ir.kint(byte_offset));
 }
 
-static void rec_try_emit_tvalue_store(jit_State *J, TRef SlotAddr, TRef ValueRef)
+static void rec_emit_tvalue_store(jit_State *J, TRef SlotAddr, TRef ValueRef)
 {
    if (tref_isnum(ValueRef)) {
       emitir(IRT(IR_XSTORE, IRT_NUM), SlotAddr, ValueRef);
@@ -131,8 +131,8 @@ static void rec_try_materialise_slots(jit_State *J, bool ForceLoad, BCREG SlotLi
          continue;
       }
 
-      TRef slot_addr = rec_try_stack_slot_addr(J, ir, absolute_slot);
-      rec_try_emit_tvalue_store(J, slot_addr, value_ref);
+      TRef slot_addr = rec_stack_slot_addr(J, ir, absolute_slot);
+      rec_emit_tvalue_store(J, slot_addr, value_ref);
       J->trymat[absolute_slot] = value_ref;
       J->try_stores++;
       if (ForceLoad) J->try_enter_stores++;
@@ -1930,20 +1930,22 @@ handlemm:
 
    // Environment mutation boundary: string-keyed stores must honour the destination's runtime policy, so the
    // environment marker is guarded on every recorded path.  Ordinary tables prove the marker is clear before the
-   // direct store; marked environments divert the store through lj_env_store() so sticky contracts and protected
-   // built-ins hold after trace compilation.
+   // direct store; marked environments validate the policy before continuing through the ordinary store and
+   // __newindex machinery.
    if (ix->val and tvisstr(&ix->keyv) and tvistab(&ix->tabv)) {
       IRBuilder irb(J);
       TRef marker = irb.fload_tab(ix->tab, IRFL_TAB_GCONTRACTS);
       if (lj_tab_is_environment(tabV(&ix->tabv))) {
          irb.guard_ne(marker, irb.knull(IRT_TAB), IRT_TAB);
          if (not tref_isk(ix->key)) lj_trace_err(J, LJ_TRERR_NYIENVKEY);
-         TRef tmp = rec_tmpref(J, ix->val, IRTMPREF_IN1);
-         lj_ir_call(J, IRCALL_lj_env_store, ix->tab, lj_ir_kstr(J, strV(&ix->keyv)), tmp);
+         if (ix->val_slot < 0) lj_trace_err(J, LJ_TRERR_NYIBC);
+         TRef value_slot = rec_stack_slot_addr(J, irb, int32_t(J->baseslot) + ix->val_slot);
+         rec_emit_tvalue_store(J, value_slot, ix->val);
+         emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);
+         lj_ir_call(J, IRCALL_lj_env_check, ix->tab, lj_ir_kstr(J, strV(&ix->keyv)), value_slot);
          J->needsnap = 1;
-         return 0;
       }
-      irb.guard_eq(marker, irb.knull(IRT_TAB), IRT_TAB);
+      else irb.guard_eq(marker, irb.knull(IRT_TAB), IRT_TAB);
    }
 
    // Record the key lookup.
@@ -2569,10 +2571,12 @@ static void rec_decode_operands(jit_State *J, cTValue *lbase, RecordOps *ops)
    // Decode 'A' operand
    ops->ra = bc_a(ins);
    ops->ix.val = 0;
+   ops->ix.val_slot = -1;
 
    switch (bcmode_a(op)) {
       case BCMvar:
          copyTV(J->L, ops->rav(), &lbase[ops->ra]);
+         ops->ix.val_slot = int32_t(ops->ra);
          ops->ix.val = ops->ra = getslot(J, ops->ra);
          break;
       default: break;  // Handled later by opcode-specific code.

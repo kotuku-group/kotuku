@@ -225,6 +225,31 @@ end
    assert(rawget(_G, 'glPGFresh2') is 'seven', 'computed store may create an undeclared global')
 end
 
+@Test function EnvironmentNewIndexRemainsActive()
+   local captured = {}
+   setmetatable(_G, {
+      __newindex = function(Self, Key, Value)
+         captured[Key] = Value
+      end
+   })
+   defer
+      setmetatable(_G, nil)
+      rawset(_G, 'glPGMetaRouted', nil)
+      rawset(_G, 'glPGMetaRaw', nil)
+   end
+
+   for i in {1 into 200} do
+      _G.glPGMetaRouted = i
+   end
+
+   assert(rawget(_G, 'glPGMetaRouted') is nil, 'A non-raw environment store should not bypass __newindex')
+   assert(captured.glPGMetaRouted is 200, 'The environment __newindex handler should receive hot stores')
+
+   rawset(_G, 'glPGMetaRaw', 'raw')
+   assert(rawget(_G, 'glPGMetaRaw') is 'raw', 'rawset should continue to bypass environment __newindex')
+   assert(captured.glPGMetaRaw is nil, 'The environment __newindex handler should not receive rawset')
+end
+
 @Test function OldBytecodeWriterIsChecked()
    -- A function compiled before the declaration must still cross the boundary (TYP-14 residue).
    rawset(_G, 'glPGLate', 'seed')
@@ -254,4 +279,27 @@ end
       alias.glPGHot = 'iteration'
    end
    assert(glPGHot is 'iteration', 'Hot compatible stores must apply')
+end
+
+@Test function HotThunkEnvironmentStoreSurvivesStackGrowth()
+   global glPGHotThunk = 'seed'
+   local alias = _G
+   local resolutions = 0
+
+   function expand_store_stack(Depth:num):str
+      if Depth <= 0 then return 'resolved' end
+      return expand_store_stack(Depth - 1)
+   end
+
+   thunk deferred_store(Depth:num):str
+      resolutions += 1
+      return expand_store_stack(Depth)
+   end
+
+   for i in {1 into 200} do
+      alias.glPGHotThunk = deferred_store(i)
+   end
+
+   assert(resolutions is 200, 'Each environment policy check should resolve its thunk exactly once')
+   assert(glPGHotThunk is 'resolved', 'A hot thunk store should remain valid when resolution grows the stack')
 end

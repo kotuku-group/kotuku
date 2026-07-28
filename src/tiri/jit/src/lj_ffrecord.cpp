@@ -350,6 +350,7 @@ static void recff_rawset(jit_State* J, RecordFFData* rd)
    ix.tab = J->base[0]; ix.key = J->base[1]; ix.val = J->base[2];
    if (tref_istab(ix.tab) and ix.key and ix.val) {
       ix.idxchain = 0;
+      ix.val_slot = 2;
       settabV(J->L, &ix.tabv, tabV(&rd->argv[0]));
       copyTV(J->L, &ix.keyv, &rd->argv[1]);
       copyTV(J->L, &ix.valv, &rd->argv[2]);

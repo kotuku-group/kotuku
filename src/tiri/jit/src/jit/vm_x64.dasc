@@ -862,9 +862,9 @@ static void build_subroutines(BuildCtx *ctx)
   |
   |//-----------------------------------------------------------------------
   |
-  |->vmeta_envset:
-  |  // Marked-environment diversion from BC_TSETS_Z: RB = GCtab *, RC = GCstr *, value at BASE[RA].
-  |  // Routes global-environment stores through the central policy boundary (contracts, protected built-ins).
+  |->vmeta_envcheck:
+  |  // Marked-environment check from BC_TSETS_Z: RB = GCtab *, RC = GCstr *, value at BASE[RA].
+  |  // The ordinary store path resumes afterwards so __newindex dispatch remains intact.
   |  movzx RAd, PC_RA
   |  lea ITYPE, [BASE+RA*8]
   |  mov TMPR, STR:RC
@@ -874,10 +874,12 @@ static void build_subroutines(BuildCtx *ctx)
   |  mov CARG2, TAB:RB
   |  mov CARG3, TMPR
   |  mov CARG4, ITYPE
-  |  mov L:RB, L:CARG1
-  |  call extern lj_vm_envset      // (lua_State *L, GCtab *t, GCstr *k, TValue *v)
-  |  mov BASE, L:RB->base
-  |  ins_next
+  |  call extern lj_vm_envcheck    // (lua_State *L, GCtab *t, GCstr *k, TValue *v)
+  |  mov L:CARG1, SAVE_L
+  |  mov BASE, L:CARG1->base
+  |  movzx RAd, PC_RA
+  |  // lj_vm_envcheck() returns the string key in RC; RB is callee-saved.
+  |  jmp ->BC_TSETS_ENV
   |
   |->vmeta_tsets:
   |  settp STR:RC, LJ_TSTR    // STR:RC = GCstr *
@@ -4073,7 +4075,8 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |->BC_TSETS_Z:   // RB = GCtab *, RC = GCstr *
     |  mov TMPR, TAB:RB->global_type_contracts
     |  test TMPR, TMPR
-    |  jnz ->vmeta_envset     // Marked environment: enforce global policy centrally.
+    |  jnz ->vmeta_envcheck   // Marked environment: validate global policy centrally.
+    |->BC_TSETS_ENV:
     |  mov TMPRd, TAB:RB->hmask
     |  and TMPRd, STR:RC->sid
     |  imul TMPRd, #NODE

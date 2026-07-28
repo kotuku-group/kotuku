@@ -3022,6 +3022,14 @@ static int envstore_contract_attempt(lua_State *L)
    return 0;
 }
 
+static int envstore_newindex_capture(lua_State *L)
+{
+   lua_pushstring(L, "glUnitEnvMetaCapture");
+   lua_pushvalue(L, 3);
+   lua_rawset(L, 1);
+   return 0;
+}
+
 static bool test_environment_store_boundary(kt::Log &Log)
 {
    LuaStateHolder state;
@@ -3082,6 +3090,50 @@ static bool test_environment_store_boundary(kt::Log &Log)
       Log.error("a nil store through the boundary did not clear the global");
       return false;
    }
+
+   // Non-raw C API stores must validate policy without bypassing the environment's __newindex handler.
+   lua_pushvalue(L, LUA_GLOBALSINDEX);
+   lua_newtable(L);
+   lua_pushcfunction(L, envstore_newindex_capture);
+   lua_setfield(L, -2, "__newindex");
+   lua_setmetatable(L, -2);
+   lua_pop(L, 1);
+
+   lua_pushvalue(L, LUA_GLOBALSINDEX);
+   lua_pushstring(L, "glUnitEnvSetTable");
+   lua_pushinteger(L, 21);
+   lua_settable(L, -3);
+   lua_pop(L, 1);
+   lua_getglobal(L, "glUnitEnvSetTable");
+   bool settable_absent = lua_isnil(L, -1);
+   lua_pop(L, 1);
+   lua_getglobal(L, "glUnitEnvMetaCapture");
+   bool settable_routed = lua_tointeger(L, -1) IS 21;
+   lua_pop(L, 1);
+   if (not settable_absent or not settable_routed) {
+      Log.error("lua_settable() bypassed the environment __newindex handler");
+      return false;
+   }
+
+   lua_pushvalue(L, LUA_GLOBALSINDEX);
+   lua_pushinteger(L, 42);
+   lua_setfield(L, -2, "glUnitEnvSetField");
+   lua_pop(L, 1);
+   lua_getglobal(L, "glUnitEnvSetField");
+   bool setfield_absent = lua_isnil(L, -1);
+   lua_pop(L, 1);
+   lua_getglobal(L, "glUnitEnvMetaCapture");
+   bool setfield_routed = lua_tointeger(L, -1) IS 42;
+   lua_pop(L, 1);
+   if (not setfield_absent or not setfield_routed) {
+      Log.error("lua_setfield() bypassed the environment __newindex handler");
+      return false;
+   }
+
+   lua_pushvalue(L, LUA_GLOBALSINDEX);
+   lua_pushnil(L);
+   lua_setmetatable(L, -2);
+   lua_pop(L, 1);
 
    // Ordinary tables must not be treated as environments.
    lua_newtable(L);

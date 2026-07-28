@@ -109,7 +109,7 @@ LJ_FUNC void lj_tab_set_global_contract(
 LJ_FUNC void lj_env_mark(lua_State* L, GCtab* Environment);
 
 // A non-null contracts table doubles as the runtime marker for "this table is a global environment": every store
-// route (VM fast path, C API, rawset, JIT) must divert marked tables through lj_env_store().
+// route (VM fast path, C API, rawset, JIT) must validate marked tables through lj_env_check().
 [[nodiscard]] inline bool lj_tab_is_environment(const GCtab* Table) noexcept
 {
    return tabref(Table->global_type_contracts) != nullptr;

@@ -343,8 +343,9 @@ When adding entries to `MMDEF` in `lj_obj.h`:
 
 ## Environment Mutation Boundary (Global Type Contracts)
 
-Every runtime write to a global environment table is policy-checked through one central function,
-`lj_env_store()` in `src/runtime/lj_meta.cpp` (protected built-ins, sticky type contracts, atomic failure).
+Every runtime write to a global environment table is policy-checked through `lj_env_check()` in
+`src/runtime/lj_meta.cpp` (protected built-ins, sticky type contracts, atomic failure). `lj_env_store()` composes that
+check with the raw write used by `rawset()`.
 Key facts when working near this machinery:
 
 - A table is "an environment" iff `GCtab.global_type_contracts` is non-null (`lj_tab_is_environment()` in
@@ -353,22 +354,21 @@ Key facts when working near this machinery:
   routed store paths reject writes to protected names afterwards. Re-running `luaL_openlibs()` on a protected
   state raises.
 - Routed paths: the interpreter's `BC_TSETS_Z` (shared by `BC_GSET`, `BC_TSETS` and string-keyed `BC_TSETV`)
-  tests the marker and branches to `->vmeta_envset`; `lua_settable`/`lua_setfield`/`lua_rawset` divert in
-  `lj_api.cpp`; JIT recording emits an `IRCALL_lj_env_store` (see below). Direct `lj_tab_setstr()` calls from C
-  are the trusted bootstrap path and bypass the boundary deliberately.
-- `lj_env_store()` requires its `Value` pointer to reference a Lua stack slot (thunk resolution and allocation
-  can reallocate the stack).
-- Both `vm_x64.dasc` and `vm_arm64.dasc` implement the `BC_TSETS_Z` marker test and `vmeta_envset` stub — keep
-  them in sync when touching either.
+  tests the marker and branches to `->vmeta_envcheck` before resuming the ordinary store; `lua_settable()` and
+  `lua_setfield()` check before normal metamethod dispatch, while `lua_rawset()` uses the checked raw store in
+  `lj_api.cpp`; JIT recording emits an `IRCALL_lj_env_check` (see below). Direct `lj_tab_setstr()` calls from C are
+  the trusted bootstrap path and bypass the boundary deliberately.
+- `lj_env_check()` requires a rooted Lua stack slot. The recorder writes the trace value into its corresponding Lua
+  stack slot before checking instead of using `IR_TMPREF`/`global_State::tmptv`. `lj_env_store()` also requires a stack
+  slot so the raw value can be recovered after stack reallocation.
+- `vm_x64.dasc`, `vm_arm64.dasc` and `vm_ppc.dasc` implement the `BC_TSETS_Z` marker test and `vmeta_envcheck` stub —
+  keep all three in sync when touching any of them.
 
 ### JIT interaction
 
 - `lj_record_idx()` guards the marker (`IRFL_TAB_GCONTRACTS` FLOAD vs null) on every recorded string-keyed table
-  store. Marked environments emit the `IRCALL`; dynamic string keys on a marked environment abort the trace
-  (`LJ_TRERR_NYIENVKEY`).
-- `fwd_aa_tab_clear()` in `lj_opt_mem.cpp` treats `IRCALL_lj_env_store` as a conflicting table store. Any new
-  IRCALL that mutates a table behind the alias analyser's back needs the same treatment, or loads after the call
-  forward stale values (symptom: hot loops read pre-store values after the trace compiles).
+  store. Marked environments emit the policy-check `IRCALL` and then use the regular recorded store and metamethod
+  path; dynamic string keys on a marked environment abort the trace (`LJ_TRERR_NYIENVKEY`).
 
 ### Append-only enum lists
 

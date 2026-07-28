@@ -712,17 +712,20 @@ static void build_subroutines(BuildCtx *ctx)
   |
   |//-----------------------------------------------------------------------
   |
-  |->vmeta_envset:
-  |  // Marked-environment diversion from BC_TSETS_Z: TAB:CARG2 = GCtab *, STR:RC = GCstr *, value at BASE[RA].
-  |  // Routes global-environment stores through the central policy boundary (contracts, protected built-ins).
+  |->vmeta_envcheck:
+  |  // Marked-environment check from BC_TSETS_Z: TAB:CARG2 = GCtab *, STR:RC = GCstr *, value at BASE[RA].
+  |  // The ordinary store path resumes afterwards so __newindex dispatch remains intact.
   |  str BASE, L->base
   |  mov CARG3, STR:RC
+  |  mov RC, CARG2
   |  add CARG4, BASE, RA, lsl #3
   |  mov CARG1, L
   |  str PC, SAVE_PC
-  |  bl extern lj_vm_envset		// (lua_State *L, GCtab *t, GCstr *k, TValue *v)
+  |  bl extern lj_vm_envcheck		// (lua_State *L, GCtab *t, GCstr *k, TValue *v)
   |  ldr BASE, L->base
-  |  ins_next
+  |  mov CARG2, RC
+  |  mov STR:RC, CRET1
+  |  b ->BC_TSETS_ENV
   |
   |->vmeta_tsets1:
   |  movn CARG4, #~LJ_TSTR
@@ -3388,7 +3391,8 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |->BC_TSETS_Z:
     |  // TAB:CARG2 = GCtab *, STR:RC = GCstr *, RA = src
     |  ldr TMP0, TAB:CARG2->global_type_contracts
-    |  cbnz TMP0, ->vmeta_envset	// Marked environment: enforce global policy centrally.
+    |  cbnz TMP0, ->vmeta_envcheck	// Marked environment: validate global policy centrally.
+    |->BC_TSETS_ENV:
     |  ldr TMP1w, TAB:CARG2->hmask
     |   ldr TMP2w, STR:RC->sid
     |    ldr NODE:CARG3, TAB:CARG2->node
