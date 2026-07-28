@@ -21,6 +21,24 @@ function assert_activation_succeeds(Statement:str, Message:str)
    assert(err is ERR_Okay, Message .. ' should activate successfully: ' .. tostring(script.errorMessage))
 end
 
+function clear_table(Target:table)
+   table.clear(Target)
+end
+
+function expect_environment_clear_failure(Target:table, Message:str)
+   local trapped = false
+   try
+      clear_table(Target)
+   except e
+      trapped = true
+      assert(string.find(tostring(e.message), 'cannot clear a global environment') != nil,
+         Message .. ' should report the environment-clear diagnostic, got: ' .. tostring(e.message))
+   end
+   assert(trapped, Message .. ' should raise')
+   assert(type(rawget(_G, 'tostring')) is 'function', Message .. ' should preserve the tostring built-in')
+   assert(type(rawget(_G, 'table')) is 'table', Message .. ' should preserve the table library')
+end
+
 @Test function RejectsGlobalDeclarationOfBuiltinFunction()
    assert_activation_fails([[global tostring = 5]], 'global tostring assignment')
 end
@@ -148,6 +166,19 @@ end
       local key = 'to' .. 'string'
       _G[key] = 42
    ]], 'computed runtime key store to builtin')
+end
+
+@Test function RejectsBulkClearOfGlobalEnvironment()
+   expect_environment_clear_failure(_G, 'direct global environment clear')
+
+   for i in {1 into 200} do
+      local ordinary = { value = i }
+      clear_table(ordinary)
+      assert(table.empty(ordinary), 'table.clear should continue to clear ordinary tables')
+   end
+
+   local alias = _G
+   expect_environment_clear_failure(alias, 'hot aliased global environment clear')
 end
 
 function expect_global_contract_failure(Store:func, Message:str)

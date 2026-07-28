@@ -356,8 +356,9 @@ Key facts when working near this machinery:
 - Routed paths: the interpreter's `BC_TSETS_Z` (shared by `BC_GSET`, `BC_TSETS` and string-keyed `BC_TSETV`)
   tests the marker and branches to `->vmeta_envcheck` before resuming the ordinary store; `lua_settable()` and
   `lua_setfield()` check before normal metamethod dispatch, while `lua_rawset()` uses the checked raw store in
-  `lj_api.cpp`; JIT recording emits an `IRCALL_lj_env_check` (see below). Direct `lj_tab_setstr()` calls from C are
-  the trusted bootstrap path and bypass the boundary deliberately.
+  `lj_api.cpp`; JIT recording emits an `IRCALL_lj_env_check` (see below). `table.clear()` rejects marked environments
+  before mutation, and its recorder guards the marker so ordinary-table traces side-exit when passed an environment.
+  Direct `lj_tab_setstr()` calls from C are the trusted bootstrap path and bypass the boundary deliberately.
 - `lj_env_check()` requires a rooted Lua stack slot. The recorder writes the trace value into its corresponding Lua
   stack slot before checking instead of using `IR_TMPREF`/`global_State::tmptv`. `lj_env_store()` also requires a stack
   slot so the raw value can be recovered after stack reallocation.

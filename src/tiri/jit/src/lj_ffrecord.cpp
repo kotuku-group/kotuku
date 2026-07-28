@@ -1682,6 +1682,9 @@ static void recff_table_clear(jit_State* J, RecordFFData* rd)
 {
    TRef tr = J->base[0];
    if (tref_istab(tr)) {
+      if (lj_tab_is_environment(tabV(&rd->argv[0]))) lj_trace_err(J, LJ_TRERR_NYIFFU);
+      TRef marker = emitir(IRT(IR_FLOAD, IRT_TAB), tr, IRFL_TAB_GCONTRACTS);
+      emitir(IRTG(IR_EQ, IRT_TAB), marker, lj_ir_knull(J, IRT_TAB));
       rd->nres = 0;
       lj_ir_call(J, IRCALL_lj_tab_clear, tr);
       J->needsnap = 1;
