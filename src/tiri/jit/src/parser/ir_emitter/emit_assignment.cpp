@@ -365,11 +365,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
          PreparedAssignment& target = targets[i.raw()];
          if (target.pending_symbol) {
             this->update_local_binding(target.pending_symbol, base + i);
-            VarInfo *info = &this->func_state.var_get((base + i).raw());
-            info->binding_id = target.binding_id;
 
-            if (not this->apply_analysed_local_type(base + i, target.binding_id) and
-                i.raw() < values.size()) {
+            if (i.raw() < values.size()) {
                this->apply_inferred_local_type(base + i, *values[i.raw()]);
             }
          }
