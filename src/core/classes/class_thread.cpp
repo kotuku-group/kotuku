@@ -54,11 +54,13 @@ struct ThreadEntryCleanupGuard {
 //********************************************************************************************************************
 // Called whenever a MSGID::THREAD_CALLBACK message is caught by ProcessMessages().  See thread_entry() for usage.
 
-ERR msg_threadcallback(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
+ERR msg_threadcallback(APTR Custom, int MsgID, MSGID MsgType, std::span<std::byte> Message)
 {
    kt::Log log(__FUNCTION__);
 
-   auto msg = (ThreadMessage *)Message;
+   if (Message.size() < sizeof(ThreadMessage)) return ERR::Okay;
+
+   auto msg = (ThreadMessage *)Message.data();
    auto uid = msg->ThreadID;
 
    log.branch("Executing completion callback for thread #%d", uid);
