@@ -311,13 +311,13 @@ void UnsubscribeEvent(APTR Handle)
 //********************************************************************************************************************
 // ProcessMessages() will call this function whenever a MSGID::EVENT message is received.
 
-ERR msg_event(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
+ERR msg_event(APTR Custom, int MsgID, MSGID MsgType, std::span<std::byte> Message)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((!Message) or ((size_t)MsgSize < sizeof(kt::Event))) return ERR::Okay;
+   if ((Message.empty()) or (Message.size() < sizeof(kt::Event))) return ERR::Okay;
 
-   kt::Event *event_msg = (kt::Event *)Message;
+   kt::Event *event_msg = (kt::Event *)Message.data();
 
    log.msg(VLF::DETAIL|VLF::BRANCH, "Event $%.8x%8x has been received.", (int)((event_msg->EventID>>32)& 0xffffffff),
       (int)(event_msg->EventID & 0xffffffff));
@@ -338,7 +338,7 @@ restart:
          kt::ScopedObjectLock lock(event->ContextID, 3000);
          if (lock.granted()) {
             kt::SwitchContext ctx(lock.obj);
-            event->Callback(Message, MsgSize, event->CallbackMeta);
+            event->Callback(Message.data(), int(Message.size()), event->CallbackMeta);
          }
 
          if (glEventListAltered) goto restart;

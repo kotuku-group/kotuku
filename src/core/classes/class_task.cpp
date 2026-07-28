@@ -434,20 +434,20 @@ static CSTRING action_id_name(ACTIONID ActionID)
 
 //********************************************************************************************************************
 
-static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
+static ERR msg_action(APTR Custom, int MsgID, MSGID MsgType, std::span<std::byte> Message)
 {
    kt::Log log("ProcessMessages");
    ActionMessage *action;
    const FunctionField *copied_fields = nullptr;
    bool executed = false;
 
-   if ((not Message) or (MsgSize < int(sizeof(ActionMessage)))) {
+   if (Message.size() < sizeof(ActionMessage)) {
       log.warning("No data attached to MSGID::ACTION message.");
       return ERR::InvalidData;
    }
-   action = (ActionMessage *)Message;
+   action = (ActionMessage *)Message.data();
 
-   const auto payload_size = size_t(MsgSize) - sizeof(ActionMessage);
+   const auto payload_size = Message.size() - sizeof(ActionMessage);
    if (action->SendArgs and ((action->ArgsSize <= 0) or (size_t(action->ArgsSize) > payload_size))) {
       log.warning("MSGID::ACTION contains a truncated argument record.");
       return ERR::InvalidData;
@@ -456,7 +456,7 @@ static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int Msg
    copied_fields = action->Fields;
 
    #ifdef DBG_INCOMING
-      log.function("Executing action %s on object #%d, Data: %p, Size: %d", action_id_name(action->ActionID), action->ObjectID, Message, MsgSize);
+      log.function("Executing action %s on object #%d, Data: %p, Size: %d", action_id_name(action->ActionID), action->ObjectID, Message.data(), int(Message.size()));
    #endif
 
    if ((action->ObjectID) and (action->ActionID != AC::NIL)) {
@@ -509,7 +509,7 @@ static ERR msg_action(APTR Custom, int MsgID, int MsgType, APTR Message, int Msg
 
 //********************************************************************************************************************
 
-static ERR msg_quit(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
+static ERR msg_quit(APTR Custom, int MsgID, MSGID MsgType, std::span<std::byte> Message)
 {
    kt::Log log(__FUNCTION__);
    log.function("Processing quit message");

@@ -69,13 +69,14 @@ static void resolve_callback(extNetLookup *, ERR, std::string_view, std::vector<
 // Used for receiving asynchronous execution results (sent as a message).
 // These routines execute in the main process.
 
-static ERR resolve_name_receiver(APTR Custom, MSGID MsgID, int MsgType, APTR Message, int MsgSize)
+static ERR resolve_name_receiver(APTR Custom, int MsgID, MSGID MsgType, std::span<std::byte> Message)
 {
    kt::Log log(__FUNCTION__);
 
-   resolve_buffer r((int8_t *)Message);
+   if (Message.empty()) return ERR::Okay;
+   resolve_buffer r((int8_t *)Message.data());
 
-   log.traceBranch("MsgID: %d, MsgType: %d, Host: %s", int(MsgID), int(MsgType), r.Address.c_str());
+   log.traceBranch("MsgID: %d, MsgType: %d, Host: %s", MsgID, int(MsgType), r.Address.c_str());
 
    if (kt::ScopedObjectLock<extNetLookup> nl(r.NetLookupID, 2000); nl.granted()) {
       bool found = false;
@@ -100,13 +101,14 @@ static ERR resolve_name_receiver(APTR Custom, MSGID MsgID, int MsgType, APTR Mes
 
 //********************************************************************************************************************
 
-static ERR resolve_addr_receiver(APTR Custom, MSGID MsgID, int MsgType, APTR Message, int MsgSize)
+static ERR resolve_addr_receiver(APTR Custom, int MsgID, MSGID MsgType, std::span<std::byte> Message)
 {
    kt::Log log(__FUNCTION__);
 
-   resolve_buffer r((int8_t *)Message);
+   if (Message.empty()) return ERR::Okay;
+   resolve_buffer r((int8_t *)Message.data());
 
-   log.traceBranch("MsgID: %d, MsgType: %d, Address: %s", int(MsgID), MsgType, r.Address.c_str());
+   log.traceBranch("MsgID: %d, MsgType: %d, Address: %s", MsgID, int(MsgType), r.Address.c_str());
 
    if (kt::ScopedObjectLock<extNetLookup> nl(r.NetLookupID, 2000); nl.granted()) {
       bool found = false;

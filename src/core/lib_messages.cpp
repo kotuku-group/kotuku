@@ -116,10 +116,10 @@ static void notify_signal_wfo(OBJECTPTR Object, ACTIONID ActionID, ERR Result, A
 // terminate.  A message carrying an object ID is a signal or free that occurred on a child thread, deferred by
 // notify_signal_wfo() so that glWFOList is only ever modified by the main thread.
 
-ERR msg_waitforobjects(APTR Custom, int MsgID, int MsgType, APTR Message, int MsgSize)
+ERR msg_waitforobjects(APTR Custom, int MsgID, MSGID MsgType, std::span<std::byte> Message)
 {
-   if ((Message) and (MsgSize >= int(sizeof(OBJECTID)))) {
-      auto object_id = ((OBJECTID *)Message)[0];
+   if (Message.size() >= sizeof(OBJECTID)) {
+      auto object_id = ((OBJECTID *)Message.data())[0];
       if (auto lref = glWFOList.find(object_id); lref != glWFOList.end()) {
          kt::Log log;
          bool signal_received = false;

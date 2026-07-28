@@ -444,11 +444,11 @@ struct delay_msg {
    int ref;
 };
 
-ERR delayed_msg_handler(APTR Meta, int MsgID, int MsgType, APTR Message, int MsgSize)
+ERR delayed_msg_handler(APTR Meta, int MsgID, MSGID MsgType, std::span<std::byte> Message)
 {
-   if (MsgSize != sizeof(delay_msg)) return kt::Log(__FUNCTION__).warning(ERR::Args);
+   if (Message.size() != sizeof(delay_msg)) return kt::Log(__FUNCTION__).warning(ERR::Args);
 
-   auto msg = (delay_msg *)Message;
+   auto msg = (delay_msg *)Message.data();
    auto lua = msg->lua;
    lua_rawgeti(lua, LUA_REGISTRYINDEX, msg->ref); // Get the function from the registry
    luaL_unref(lua, LUA_REGISTRYINDEX, msg->ref); // Remove it

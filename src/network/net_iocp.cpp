@@ -135,11 +135,11 @@ static std::vector<WindowsProxyEntry> parse_proxy_string(std::string_view Server
 
 //********************************************************************************************************************
 
-static ERR iocp_completion_receiver(APTR Custom, MSGID MsgID, int MsgType, APTR Message, int MsgSize)
+static ERR iocp_completion_receiver(APTR Custom, int MsgID, MSGID MsgType, std::span<std::byte> Message)
 {
-   if ((!Message) or (MsgSize != int(sizeof(iocp_completion_message)))) return ERR::Okay;
+   if (Message.size() != sizeof(iocp_completion_message)) return ERR::Okay;
 
-   auto completion = (iocp_completion_message *)Message;
+   auto completion = (iocp_completion_message *)Message.data();
    if ((!completion->Callback) or (completion->ObjectID <= 0)) return ERR::Okay;
    if (!iocp_validate_completion(completion->Socket, completion->Generation)) return ERR::Okay;
 
