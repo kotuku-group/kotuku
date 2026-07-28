@@ -81,4 +81,7 @@ extern void lua_protect_globals(lua_State* L)
          strV(&entry->key)->flags |= STRFLAG_PROTECTED_GLOBAL;
       }
    }
+
+   // Marking must follow registration: from here on, every store route treats the environment as policy-checked.
+   lj_env_mark(L, globals);
 }

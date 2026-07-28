@@ -1037,6 +1037,22 @@ static void build_subroutines(BuildCtx *ctx)
   |
   |//-----------------------------------------------------------------------
   |
+  |->vmeta_envcheck:
+  |  // Marked-environment check from BC_TSETS_Z: RB = GCtab *, RC = GCstr *, value at BASE[RA].
+  |  // The ordinary store path resumes afterwards so __newindex dispatch remains intact.
+  |  stp BASE, L->base
+  |  add CARG4, BASE, RA
+  |  mr SAVE0, TAB:RB
+  |  mr CARG3, STR:RC
+  |  mr CARG2, TAB:RB
+  |  mr CARG1, L
+  |  stw PC, SAVE_PC
+  |  bl extern lj_vm_envcheck		// (lua_State *L, GCtab *t, GCstr *k, TValue *v)
+  |  mr TAB:RB, SAVE0
+  |  mr STR:RC, CRET1
+  |  lp BASE, L->base
+  |  b ->BC_TSETS_ENV
+  |
   |->vmeta_tsets1:
   |  la CARG3, DISPATCH_GL(tmptv)(DISPATCH)
   |  li TMP0, LJ_TSTR
@@ -5028,6 +5044,10 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  bne ->vmeta_tsets1
     |->BC_TSETS_Z:
     |  // TAB:RB = GCtab *, STR:RC = GCstr *, RA = src*8
+    |  lwz TMP0, TAB:RB->global_type_contracts
+    |  cmplwi TMP0, 0
+    |  bne ->vmeta_envcheck		// Marked environment: validate global policy centrally.
+    |->BC_TSETS_ENV:
     |  lwz TMP0, TAB:RB->hmask
     |  lwz TMP1, STR:RC->sid
     |  lwz NODE:TMP2, TAB:RB->node

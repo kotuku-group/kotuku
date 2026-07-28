@@ -611,6 +611,19 @@ void lj_tab_set_global_contract(lua_State *L, GCtab *Environment, const GCstr *N
 }
 
 //********************************************************************************************************************
+// Mark a table as a global environment by eagerly attaching its contracts table.  Must run after the environment's
+// built-ins are registered and protected: from that point every store route treats the table as policy-checked.
+
+void lj_env_mark(lua_State *L, GCtab *Environment)
+{
+   if (tabref(Environment->global_type_contracts)) return;
+
+   GCtab *contracts = lj_tab_new(L, 0, 1);
+   setgcref(Environment->global_type_contracts, obj2gco(contracts));
+   lj_gc_objbarrier(L, Environment, contracts);
+}
+
+//********************************************************************************************************************
 // Table traversal indexes (0-based):
 //
 // Array key index: [0 .. t->asize-1]

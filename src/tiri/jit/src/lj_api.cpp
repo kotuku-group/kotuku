@@ -1231,6 +1231,10 @@ extern void lua_settable(lua_State *L, int idx)
 {
    cTValue *t = index2adr_check(L, idx);
    lj_checkapi_slot(2);
+   if (tvistab(t) and lj_tab_is_environment(tabV(t)) and tvisstr(L->top - 2)) {
+      lj_env_check(L, tabV(t), strV(L->top - 2), L->top - 1);
+      t = index2adr_check(L, idx);  // The policy check may reallocate the stack.
+   }
    TValue *o = lj_meta_tset(L, t, L->top - 2);
    if (o) {
       // NOBARRIER: lj_meta_tset ensures the table is not black.
@@ -1251,6 +1255,10 @@ extern void lua_setfield(lua_State *L, int idx, CSTRING k)
    cTValue *t = index2adr_check(L, idx);
    lj_checkapi_slot(1);
    setstrV(L, &key, lj_str_newz(L, k));
+   if (tvistab(t) and lj_tab_is_environment(tabV(t))) {
+      lj_env_check(L, tabV(t), strV(&key), L->top - 1);
+      t = index2adr_check(L, idx);  // The policy check may reallocate the stack.
+   }
    TValue *o = lj_meta_tset(L, t, &key);
    if (o) {
       // NOBARRIER: lj_meta_tset ensures the table is not black.
@@ -1270,6 +1278,11 @@ extern void lua_rawset(lua_State *L, int idx)
    TValue* dst, * key;
    lj_checkapi_slot(2);
    key = L->top - 2;
+   if (lj_tab_is_environment(t) and tvisstr(key)) {
+      lj_env_store(L, t, strV(key), key + 1);
+      L->top -= 2;  // Not via 'key': the boundary may reallocate the stack.
+      return;
+   }
    dst = lj_tab_set(L, t, key);
    copyTV(L, dst, key + 1);
    lj_gc_anybarriert(L, t);

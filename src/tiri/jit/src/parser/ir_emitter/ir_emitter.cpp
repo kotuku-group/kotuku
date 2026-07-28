@@ -688,8 +688,7 @@ void IrEmitter::assert_analysed_local_type(BCReg Slot, StaticBindingID Binding) 
    const auto &value = this->ctx.descriptors().value(binding.analysed_value);
    const VarInfo &info = this->func_state.var_get(Slot.raw());
    lj_assertX(info.fixed_type IS value.primary, "analysed and emitted binding types diverged");
-   lj_assertX(info.object_class_id IS value.object_class_id,
-      "analysed and emitted binding object classes diverged");
+   lj_assertX(info.object_class_id IS value.object_class_id, "analysed and emitted binding object classes diverged");
    lj_assertX(info.struct_def IS value.struct_def, "analysed and emitted binding structures diverged");
 }
 

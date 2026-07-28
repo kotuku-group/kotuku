@@ -829,6 +829,71 @@ extern "C" void lj_meta_contract_pc(lua_State *L, const BCIns *PC, uint32_t Dyna
 }
 
 //********************************************************************************************************************
+// Central environment mutation policy check.  Every runtime write to a marked global environment (VM store fast
+// paths, rawset(), the C API and JIT-recorded stores) must pass through here so sticky contracts and protected
+// built-ins are enforced regardless of source syntax or table aliasing.  Checks run strictly before mutation, so a
+// failed store leaves both the stored value and the persisted policy unchanged.
+//
+// Value must reference a rooted Lua stack slot and L->top must be valid.  The recorder materialises JIT values in
+// their corresponding Lua stack slot before emitting this call.
+
+extern "C" void lj_env_check(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value)
+{
+   TValue checked;
+   copyTV(L, &checked, Value);
+
+   if ((Name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) {
+      CSTRING message = lj_strfmt_pushf(L, "cannot override built-in '%s'", strdata(Name));
+      lj_err_callermsg(L, message);
+   }
+
+   if (GCstr *persisted = lj_tab_get_global_contract(Environment, Name)) {
+      RuntimeContractDescriptor descriptor;
+      decode_contract_or_error(L, persisted, descriptor);
+      if (descriptor.contract_count >= 1) {
+         const RuntimeContractEntry &entry = descriptor.entries[0];
+         if (entry.type != TiriType::Any and entry.type != TiriType::Unknown) {
+            if (lj_is_thunk(&checked)) {
+               // Validate the resolved value, but store the original thunk to preserve lazy evaluation on read.
+               VMHelperGuard guard(L);
+               cTValue *resolved = lj_thunk_resolve(L, udataV(&checked));
+               copyTV(L, &checked, resolved);
+            }
+            if (not contract_matches(L, &checked, entry)) {
+               contract_error(L, &checked, ContractBoundary::Global, entry, entry.position);
+            }
+         }
+      }
+   }
+}
+
+//********************************************************************************************************************
+// Checked raw environment store.  Value must reference a Lua stack slot so it can be recovered after policy checks
+// and table allocation resize the stack.  Non-raw paths call lj_env_check() and then resume normal metamethod dispatch.
+
+extern "C" void lj_env_store(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value)
+{
+   ptrdiff_t value_offset = savestack(L, Value);
+   lj_env_check(L, Environment, Name, Value);
+   Environment->nomm = 0;  //  Invalidate negative metamethod cache, matching the diverted VM store path.
+   TValue *slot = lj_tab_setstr(L, Environment, Name);
+   copyTV(L, slot, restorestack(L, value_offset));
+   lj_gc_anybarriert(L, Environment);
+}
+
+//********************************************************************************************************************
+// VM entry point for the environment mutation check, reached when BC_TSETS_Z encounters a marked environment.  The
+// assembly resumes its ordinary store path afterwards so __newindex behaviour remains unchanged.  Returning Name
+// lets each architecture restore the caller-clobbered key register without introducing another saved register.
+
+extern "C" GCstr * lj_vm_envcheck(lua_State *L, GCtab *Environment, GCstr *Name, TValue *Value)
+{
+   L->top = curr_topL(L);
+   lj_env_check(L, Environment, Name, Value);
+   return Name;
+}
+
+//********************************************************************************************************************
 // Helper for calls. __call metamethod.
 
 void lj_meta_call(lua_State *L, TValue *func, TValue *top)

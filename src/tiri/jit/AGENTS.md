@@ -76,6 +76,9 @@ cmake --build build/agents --config <BuildType> --parallel
 cmake --install build/agents --config <BuildType>
 ```
 
+When building targeted instead of the full tree, include `origo_cmd` alongside `tiri` (e.g.
+`--target tiri origo_cmd`) so the installed `origo` executable picks up the changes.
+
 ### JIT Debugging Options
 
 Run `origo` with `--jit-options` to pass JIT engine flags as a CSV list:
@@ -337,6 +340,50 @@ When adding entries to `MMDEF` in `lj_obj.h`:
 3. **Full rebuild**: Run `cmake --build build/agents --config <BuildType> --parallel`
 
 **Note**: CMake includes `lj_obj.h` in the `DEPENDS` clause for both buildvm compilation and VM generation, ensuring automatic regeneration when `lj_obj.h` changes.
+
+## Environment Mutation Boundary (Global Type Contracts)
+
+Every runtime write to a global environment table is policy-checked through `lj_env_check()` in
+`src/runtime/lj_meta.cpp` (protected built-ins, sticky type contracts, atomic failure). `lj_env_store()` composes that
+check with the raw write used by `rawset()`.
+Key facts when working near this machinery:
+
+- A table is "an environment" iff `GCtab.global_type_contracts` is non-null (`lj_tab_is_environment()` in
+  `lj_tab.h`). `lj_env_mark()` sets it eagerly from `lua_protect_globals()`, which every script state calls after
+  built-in registration. **Ordering matters**: library registration must complete before marking, because the
+  routed store paths reject writes to protected names afterwards. Re-running `luaL_openlibs()` on a protected
+  state raises.
+- Routed paths: the interpreter's `BC_TSETS_Z` (shared by `BC_GSET`, `BC_TSETS` and string-keyed `BC_TSETV`)
+  tests the marker and branches to `->vmeta_envcheck` before resuming the ordinary store; `lua_settable()` and
+  `lua_setfield()` check before normal metamethod dispatch, while `lua_rawset()` uses the checked raw store in
+  `lj_api.cpp`; JIT recording emits an `IRCALL_lj_env_check` (see below). `table.clear()` rejects marked environments
+  before mutation, and its recorder guards the marker so ordinary-table traces side-exit when passed an environment.
+  Direct `lj_tab_setstr()` calls from C are the trusted bootstrap path and bypass the boundary deliberately.
+- `lj_env_check()` requires a rooted Lua stack slot. The recorder writes the trace value into its corresponding Lua
+  stack slot before checking instead of using `IR_TMPREF`/`global_State::tmptv`. `lj_env_store()` also requires a stack
+  slot so the raw value can be recovered after stack reallocation.
+- `vm_x64.dasc`, `vm_arm64.dasc` and `vm_ppc.dasc` implement the `BC_TSETS_Z` marker test and `vmeta_envcheck` stub —
+  keep all three in sync when touching any of them.
+
+### JIT interaction
+
+- `lj_record_idx()` guards the marker (`IRFL_TAB_GCONTRACTS` FLOAD vs null) on every recorded string-keyed table
+  store. Marked environments emit the policy-check `IRCALL` and then use the regular recorded store and metamethod
+  path; dynamic string keys on a marked environment abort the trace (`LJ_TRERR_NYIENVKEY`).
+
+### Append-only enum lists
+
+`IRCALLDEF` (lj_ircall.h) and `IRFLDEF` (lj_ir.h) are **append-only**. Inserting mid-list shifts the numeric ids
+of every later entry, which silently degrades trace behaviour and breaks tests that assert on indices through
+`jit.util.traceIR()` (`test_type_guided_jit_signatures.tiri` hard-codes `IRFL_*` numbers). Add new entries at the
+end of each list only.
+
+## Reference Indexing Gotcha (luaL_ref)
+
+Kotuku's 0-based conversion means `luaL_ref()` must never hand out index 0: slot 0 is `FREELIST_REF`. The
+implementation in `lib/lib_aux.cpp` claims slot 0 for the freelist on first use so references start at 1. Host
+code (e.g. `MainChunkRef` in tiri_class.cpp) treats reference 0 as "no reference", so a 0-valued ref silently
+re-triggers initialisation paths.
 
 ---
 

@@ -68,17 +68,6 @@ static GCstr * protected_global_store_key(LexState &State, const ExprNode &Expr)
    return nullptr;
 }
 
-static bool computed_global_environment_store(LexState &State, const ExprNode &Expr)
-{
-   if (Expr.kind != AstNodeKind::IndexExpr) return false;
-
-   const auto &payload = std::get<IndexExprPayload>(Expr.data);
-   if (not payload.table or not payload.index or
-      not is_global_environment_reference(State, *payload.table)) return false;
-
-   return emit_literal_string_key(*payload.index) IS nullptr;
-}
-
 static void patch_safe_nav_skip_here(PreparedAssignment& Target, FuncState& State)
 {
    if (Target.safe_nav_skip.valid()) Target.safe_nav_skip.patch_to(BCPos(State.pc));
@@ -814,12 +803,8 @@ ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targ
             ParserErrorCode::InternalInvariant, "assignment target missing"));
       }
 
-      if (computed_global_environment_store(this->lex_state, *node)) {
-         return ParserResult<std::vector<PreparedAssignment>>::failure(this->make_error(
-            ParserErrorCode::OverrideProtectedGlobal,
-            "cannot override built-in through computed _G key",
-            node->span));
-      }
+      // Computed '_G[key]' assignment is permitted: the runtime environment mutation boundary enforces sticky
+      // contracts and protected built-ins for every environment store.
 
       if (GCstr *protected_name = protected_global_store_key(this->lex_state, *node)) {
          return ParserResult<std::vector<PreparedAssignment>>::failure(this->make_error(

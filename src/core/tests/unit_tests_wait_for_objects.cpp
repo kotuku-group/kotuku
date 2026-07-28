@@ -302,7 +302,8 @@ static bool mid_free_window_check(kt::Log &Log)
    object->setFlag(NF::FREE);
 
    OBJECTID object_id = object->UID;
-   auto result = msg_waitforobjects(nullptr, 0, 0, &object_id, sizeof(object_id));
+   auto result = msg_waitforobjects(nullptr, 0, MSGID::WAIT_FOR_OBJECTS,
+      std::span<std::byte>((std::byte *)&object_id, sizeof(object_id)));
 
    object->clearFlag(NF::FREE);
 
