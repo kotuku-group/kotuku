@@ -21,23 +21,27 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Create tables with initial key-value pairs
 
+local person, mixed, nested, computed
+
 @Test function TableCreateWithKeyValues()
    for i in {0 to 100000} do
       -- Create with string keys
-      local person = { name = "Alice", age = 30, city = "London" }
+      person = { name = "Alice", age = 30, city = "London" }
 
       -- Create with mixed keys
-      local mixed = { [0] = "zero", [1] = "one", key = "value" }
+      mixed = { [0] = "zero", [1] = "one", key = "value" }
 
       -- Create nested tables
-      local nested = {
+      nested = {
          user = { name = "Bob", id = 123 },
          settings = { theme = "dark", language = "en" }
       }
 
       -- Create with computed values
-      local computed = { index = i, doubled = i * 2, squared = i * i }
+      computed = { index = i, doubled = i * 2, squared = i * i }
    end
+
+   return { person, mixed, nested, computed }
 end
 
 ----------------------------------------------------------------------------------------------------------------------

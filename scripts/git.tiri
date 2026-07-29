@@ -11,7 +11,7 @@
 local rx_head = <{ regex.new('ref: refs/heads/(.+)') }>
 
 git.findRepository = function(Path:str):any
-   local path = Path:replace('\\', '/')
+   local path:str = Path:replace('\\', '/')
 
    while #path > 1 and path:endsWith('/') do
       path = path:substr(0, #path - 1)
@@ -54,7 +54,7 @@ git.query = function(Path:str):table
 
    local head_file = io.open(git_path .. 'HEAD', 'r')
    if head_file then
-      local head_content = head_file:read('*all')
+      local head_content:str = head_file:read('*all')
       head_file:close()
 
       if head_content then
