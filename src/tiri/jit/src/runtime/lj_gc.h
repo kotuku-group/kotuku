@@ -48,10 +48,14 @@ concept GCObjectType = requires(T* obj) {
 #define LJ_GC_WEAKVAL   0x10
 #define LJ_GC_FIXED     0x20
 #define LJ_GC_SFIXED    0x40
+#define LJ_GC_FINALISER_SEEN 0x80
 
 #define LJ_GC_WHITES   (LJ_GC_WHITE0 | LJ_GC_WHITE1)
 #define LJ_GC_COLORS   (LJ_GC_WHITES | LJ_GC_BLACK)
 #define LJ_GC_WEAK   (LJ_GC_WEAKKEY | LJ_GC_WEAKVAL)
+
+static_assert((LJ_GC_FINALISER_SEEN & LJ_GC_WEAK) IS 0,
+   "finaliser registration and table weakness flags must remain independent");
 
 // Modern constexpr GC colour test functions (C++20)
 [[nodiscard]] constexpr inline bool iswhite(const GCobj* x) noexcept
@@ -119,14 +123,38 @@ inline void markfinalized(GCobj* x) noexcept
    x->gch.marked |= LJ_GC_FINALIZED;
 }
 
+// Metamethod finalisation supports tables and full userdata. Native Kōtuku
+// objects use their mandatory direct finaliser instead.
+
+[[nodiscard]] inline bool ismetamethodfinalisable(const GCobj* Object) noexcept
+{
+   return Object->gch.gct IS ~LJ_TTAB or Object->gch.gct IS ~LJ_TUDATA;
+}
+
+[[nodiscard]] inline bool isnativefinalisable(const GCobj* Object) noexcept
+{
+   return Object->gch.gct IS ~LJ_TOBJECT;
+}
+
+[[nodiscard]] inline bool isfinaliserseen(const GCobj* Object) noexcept
+{
+   return (Object->gch.marked & LJ_GC_FINALISER_SEEN) != 0;
+}
+
+inline void markfinaliserseen(GCobj* Object) noexcept
+{
+   Object->gch.marked |= LJ_GC_FINALISER_SEEN;
+}
+
 // Collector.
-extern "C" size_t lj_gc_separateudata(global_State* g, int all);
-extern "C" void lj_gc_finalize_udata(lua_State* L);
+extern "C" size_t lj_gc_separatefinalisers(global_State* G, int All);
+extern "C" void lj_gc_finalize_pending(lua_State* L);
 extern "C" void lj_gc_freeall(global_State* g);
 extern "C" int lj_gc_step(lua_State* L);
 extern "C" void lj_gc_step_fixtop(lua_State* L);
 extern "C" int lj_gc_step_jit(global_State* g, MSize steps);
 extern "C" void lj_gc_fullgc(lua_State* L);
+void lj_gc_checkfinaliser(lua_State* L, GCobj* Object, GCtab* Metatable);
 
 // GC check: drive collector forward if the GC threshold has been reached.
 #define lj_gc_check(L) { if (LJ_UNLIKELY(G(L)->gc.total >= G(L)->gc.threshold)) lj_gc_step(L); }
@@ -166,7 +194,7 @@ static LJ_AINLINE void lj_gc_barrierback(global_State* g, GCtab* t)
 // - State Queries: phase(), totalMemory(), isPaused(), isMarking(), etc.
 // - Collection Control: step(), fullCycle(), check()
 // - Write Barriers: barrierForward(), barrierBack(), barrierUpvalue()
-// - Finalization: separateUdata(), finalizeUdata(), freeAll()
+// - Finalisation: separateFinalisers(), finalizePending(), freeAll()
 // - Upvalue Management: closeUpvalue()
 // - JIT Integration: barrierTrace(), stepJit()
 //
@@ -307,17 +335,22 @@ public:
       return gs->gc.stepmul;
    }
 
-   // -- Finalization --
+   // -- Finalisation --
 
-   // Separate userdata with finalisers to the mmudata list.
-   // Returns the total size of userdata to be finalized.
-   size_t separateUdata(int all) noexcept {
-      return lj_gc_separateudata(gs, all);
+   // Move unreachable registered objects to the pending-finaliser queue.
+   size_t separateFinalisers(int All) noexcept {
+      return lj_gc_separatefinalisers(gs, All);
    }
 
-   // Finalize all pending userdata objects.
-   void finalizeUdata(lua_State* L) noexcept {
-      lj_gc_finalize_udata(L);
+   // Snapshot every finaliser registered before state shutdown into the pending queue.
+   // Objects registered by shutdown-time finalisers remain in finobj and are freed without another finalisation pass.
+   void prepareFinalisersForShutdown() noexcept {
+      lj_gc_separatefinalisers(gs, 1);
+   }
+
+   // Finalise all objects in the pending queue.
+   void finalizePending(lua_State* L) noexcept {
+      lj_gc_finalize_pending(L);
    }
 
    // Free all GC objects (called during state shutdown).

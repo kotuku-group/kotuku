@@ -1323,12 +1323,16 @@ extern int lua_setmetatable(lua_State *L, int idx)
 
    auto g = G(L);
    if (tvistab(o)) {
-      setgcref(tabV(o)->metatable, obj2gco(mt));
-      if (mt) lj_gc_objbarriert(L, tabV(o), mt);
+      GCtab* table = tabV(o);
+      setgcref(table->metatable, obj2gco(mt));
+      if (mt) lj_gc_objbarriert(L, table, mt);
+      lj_gc_checkfinaliser(L, obj2gco(table), mt);
    }
    else if (tvisudata(o)) {
-      setgcref(udataV(o)->metatable, obj2gco(mt));
-      if (mt) lj_gc_objbarrier(L, udataV(o), mt);
+      GCudata* userdata = udataV(o);
+      setgcref(userdata->metatable, obj2gco(mt));
+      if (mt) lj_gc_objbarrier(L, userdata, mt);
+      lj_gc_checkfinaliser(L, obj2gco(userdata), mt);
    }
    else if (tvisarray(o)) {
       setgcref(arrayV(o)->metatable, obj2gco(mt));
