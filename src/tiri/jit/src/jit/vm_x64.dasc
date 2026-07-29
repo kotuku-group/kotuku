@@ -1421,24 +1421,6 @@ static void build_subroutines(BuildCtx *ctx)
   |  mov TAB:RB, [DISPATCH+ITYPE*8+DISPATCH_GL(gcroot[GCROOT_BASEMT])]
   |  jmp <2
   |
-  |.ffunc_2 setmetatable
-  |  mov TAB:RB, [BASE]
-  |  mov TAB:TMPR, TAB:RB
-  |  checktab TAB:RB, ->fff_fallback
-  |  // Fast path: no mt for table yet and not clearing the mt.
-  |  cmp aword TAB:RB->metatable, 0; jne ->fff_fallback
-  |  mov TAB:RA, [BASE+8]
-  |  checktab TAB:RA, ->fff_fallback
-  |  mov TAB:RB->metatable, TAB:RA
-  |  mov PC, [BASE-8]
-  |  mov [BASE-16], TAB:TMPR        // Return original table.
-  |  test byte TAB:RB->marked, LJ_GC_BLACK   // isblack(table)
-  |  jz >1
-  |  // Possible write barrier. Table is black, but skip iswhite(mt) check.
-  |  barrierback TAB:RB, RC
-  |1:
-  |  jmp ->fff_res1
-  |
   |.ffunc_2 rawget
   |.if X64WIN
   |  mov TAB:RA, [BASE]

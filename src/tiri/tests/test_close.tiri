@@ -462,3 +462,37 @@ end
    assert(caught_ex, 'Exception should be caught')
    assert(caught_ex.message:find('close2 error'), 'Last __close error should win: ' .. caught_ex.message)
 end
+
+-- An error from __gc must remain contained by the collector's protected call, even when collection is requested from
+-- inside a Tiri try block.
+
+@Test function FinaliserErrorInsideTryIsContained()
+   finalised = false
+   continued_after_collection = false
+   caught_message = nil
+
+   try
+      value = setmetatable({}, {
+         __gc = function()
+            try
+               error('finaliser-local handled error')
+            except ex
+               finalised = true
+            end
+            error('intentional finaliser error')
+         end
+      })
+      value = nil
+      processing.collect('full')
+      continued_after_collection = true
+      error('caller error after collection')
+   except ex
+      caught_message = ex.message
+   end
+
+   assert(finalised, 'The unreachable table should have been finalised')
+   assert(continued_after_collection, 'Collection should return after containing the finaliser error')
+   assert(caught_message != nil, "The caller's restored try handler should catch the post-collection error")
+   assert(caught_message:find('caller error after collection'),
+      "The caller's restored try handler should catch only the post-collection error: " .. caught_message)
+end

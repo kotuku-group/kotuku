@@ -86,6 +86,7 @@ static void attach_exception_metatable(lua_State *L, GCtab *Table)
 {
    GCtab *mt = lj_tab_new(L, 0, 4);
    lj_assertL(mt != nullptr, "attach_exception_metatable: metatable allocation failed");
+   // Internal exception metatables are built here and never define __gc.
    setgcref(Table->metatable, obj2gco(mt));
    lj_gc_objbarriert(L, Table, mt);
 

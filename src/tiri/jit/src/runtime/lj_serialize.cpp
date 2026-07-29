@@ -11,6 +11,7 @@
 #include "lj_obj.h"
 
 #if LJ_HASBUFFER
+#include "lj_gc.h"
 #include "lj_err.h"
 #include "lj_buf.h"
 #include "lj_str.h"
@@ -365,6 +366,7 @@ static char* serialize_get(char* r, SBufExt* sbx, TValue* o)
 
       // NOBARRIER: The table is new (marked white).
       setgcref(t->metatable, obj2gco(mt));
+      lj_gc_checkfinaliser(sbufL(sbx), obj2gco(t), mt);
       settabV(sbufL(sbx), o, t);
       if (narray) {
          TValue* oa = tvref(t->array) + (tp >= SER_TAG_TAB + 4);

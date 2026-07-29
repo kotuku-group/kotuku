@@ -144,18 +144,20 @@ static void recff_nyi(jit_State* J, RecordFFData* rd)
       // Can only stitch from Lua call.
       if (J->framedepth and frame_islua(J->L->base - 1)) {
          BCOp op = bc_op(*frame_pc(J->L->base - 1));
-         // Stitched trace cannot start with *M op with variable # of args.
-         if (!(op == BC_CALLM or op == BC_CALLMT or
-            op == BC_RETM or op == BC_TSETM)) {
+         // Stitched trace cannot start with an op that consumes MULTRES, because recff_stitch() rewrites the frame
+         // and the continuation re-enters at the caller's next instruction with MULTRES no longer valid. BC_TYPEFIX
+         // is emitted directly after a call in return position, so it belongs with the *M ops here.
+         if (!(op IS BC_CALLM or op IS BC_CALLMT or
+            op IS BC_RETM or op IS BC_TSETM or op IS BC_TYPEFIX)) {
             switch (J->fn->c.ffid) {
-            case FF_error:
-            case FF_debug_setHook:
-            case FF_jit_flush:
-               break;  //  Don't stitch across special builtins.
-            default:
-               recff_stitch(J);  //  Use trace stitching.
-               rd->nres = -1;
-               return;
+               case FF_error:
+               case FF_debug_setHook:
+               case FF_jit_flush:
+                  break;  //  Don't stitch across special builtins.
+               default:
+                  recff_stitch(J);  //  Use trace stitching.
+                  rd->nres = -1;
+                  return;
             }
          }
       }
@@ -304,27 +306,6 @@ static void recff_getmetatable(jit_State* J, RecordFFData* rd)
       copyTV(J->L, &ix.tabv, &rd->argv[0]);
       if (lj_record_mm_lookup(J, &ix, MM_metatable)) J->base[0] = ix.mobj;
       else J->base[0] = ix.mt;
-   }  // else: Interpreter will throw.
-}
-
-//********************************************************************************************************************
-
-static void recff_setmetatable(jit_State* J, RecordFFData* rd)
-{
-   TRef tr = J->base[0];
-   TRef mt = J->base[1];
-   if (tref_istab(tr) and (tref_istab(mt) or (mt and tref_isnil(mt)))) {
-      TRef fref, mtref;
-      RecordIndex ix;
-      ix.tab = tr;
-      copyTV(J->L, &ix.tabv, &rd->argv[0]);
-      lj_record_mm_lookup(J, &ix, MM_metatable); //  Guard for no __metatable.
-      fref = emitir(IRT(IR_FREF, IRT_PGC), tr, IRFL_TAB_META);
-      mtref = tref_isnil(mt) ? lj_ir_knull(J, IRT_TAB) : mt;
-      emitir(IRT(IR_FSTORE, IRT_TAB), fref, mtref);
-      if (!tref_isnil(mt)) emitir(IRT(IR_TBAR, IRT_TAB), tr, 0);
-      J->base[0] = tr;
-      J->needsnap = 1;
    }  // else: Interpreter will throw.
 }
 
@@ -1061,7 +1042,7 @@ static void recff_math_round(jit_State* J, RecordFFData* rd)
       // Result is integral (or NaN/Inf), but may not fit an int32_t.
       if (LJ_DUALNUM) {  // Try to narrow using a guarded conversion to int.
          lua_Number n = lj_vm_foldfpm(numberVnum(&rd->argv[0]), rd->data);
-         if (n == (lua_Number)lj_num2int(n))
+         if (n IS (lua_Number)lj_num2int(n))
             tr = emitir(IRTGI(IR_CONV), tr, IRCONV_INT_NUM | IRCONV_CHECK);
       }
       J->base[0] = tr;
@@ -1266,8 +1247,8 @@ static void recff_bit_shift(jit_State* J, RecordFFData* rd)
          !tref_isk(tsh))
          tsh = emitir(IRTI(IR_BAND), tsh, lj_ir_kint(J, 31));
 #ifdef LJ_TARGET_UNIFYROT
-      if (op == (LJ_TARGET_UNIFYROT == 1 ? IR_BROR : IR_BROL)) {
-         op = LJ_TARGET_UNIFYROT == 1 ? IR_BROL : IR_BROR;
+      if (op IS (LJ_TARGET_UNIFYROT IS 1 ? IR_BROR : IR_BROL)) {
+         op = LJ_TARGET_UNIFYROT IS 1 ? IR_BROL : IR_BROR;
          tsh = emitir(IRTI(IR_NEG), tsh, tsh);
       }
 #endif
@@ -1437,7 +1418,7 @@ static void recff_string_char(jit_State* J, RecordFFData* rd)
          tr = emitir(IRTG(IR_BUFPUT, IRT_PGC), tr, J->base[i]);
       J->base[0] = emitir(IRTG(IR_BUFSTR, IRT_STR), tr, hdr);
    }
-   else if (i == 0) J->base[0] = lj_ir_kstr(J, &J2G(J)->strempty);
+   else if (i IS 0) J->base[0] = lj_ir_kstr(J, &J2G(J)->strempty);
 }
 
 //********************************************************************************************************************
@@ -1554,7 +1535,7 @@ static void recff_format(jit_State* J, RecordFFData* rd, TRef hdr, int sbufx)
    emitir(IRTG(IR_EQ, IRT_STR), trfmt, lj_ir_kstr(J, fmt));
    lj_strfmt_init(&fs, strdata(fmt), fmt->len);
    while ((sf = lj_strfmt_parse(&fs)) != STRFMT_EOF) {  // Parse format.
-      TRef tra = sf == STRFMT_LIT ? 0 : J->base[++arg];
+      TRef tra = sf IS STRFMT_LIT ? 0 : J->base[++arg];
       TRef trsf = lj_ir_kint(J, (int32_t)sf);
       IRCallID id;
       switch (STRFMT_TYPE(sf)) {
@@ -1567,7 +1548,7 @@ static void recff_format(jit_State* J, RecordFFData* rd, TRef hdr, int sbufx)
          if (!tref_isinteger(tra)) {
             goto handle_num;
          }
-         if (sf == STRFMT_INT) {  // Shortcut for plain %d.
+         if (sf IS STRFMT_INT) {  // Shortcut for plain %d.
             tr = emitir(IRTG(IR_BUFPUT, IRT_PGC), tr,
                emitir(IRT(IR_TOSTR, IRT_STR), tra, IRTOSTR_INT));
          }
@@ -1591,14 +1572,14 @@ static void recff_format(jit_State* J, RecordFFData* rd, TRef hdr, int sbufx)
             // NYI: also buffers.
             return;
          }
-         if (sf == STRFMT_STR)  //  Shortcut for plain %s.
+         if (sf IS STRFMT_STR)  //  Shortcut for plain %s.
             tr = emitir(IRTG(IR_BUFPUT, IRT_PGC), tr, tra);
          else if ((sf & STRFMT_T_QUOTED)) tr = lj_ir_call(J, IRCALL_lj_strfmt_putquoted, tr, tra);
          else tr = lj_ir_call(J, IRCALL_lj_strfmt_putfstr, tr, trsf, tra);
          break;
       case STRFMT_CHAR:
          tra = lj_opt_narrow_toint(J, tra);
-         if (sf == STRFMT_CHAR)  //  Shortcut for plain %c.
+         if (sf IS STRFMT_CHAR)  //  Shortcut for plain %c.
             tr = emitir(IRTG(IR_BUFPUT, IRT_PGC), tr, emitir(IRT(IR_TOSTR, IRT_STR), tra, IRTOSTR_CHAR));
          else tr = lj_ir_call(J, IRCALL_lj_strfmt_putfchar, tr, trsf, tra);
          break;
@@ -1738,7 +1719,7 @@ void lj_ffrecord_func(jit_State* J)
    J->base[J->maxslot] = 0;  //  Mark end of arguments.
    (recff_func[m >> 8])(J, &rd);  //  Call recff_* handler.
    if (rd.nres >= 0) {
-      if (J->postproc == LJ_POST_NONE) J->postproc = LJ_POST_FFRETRY;
+      if (J->postproc IS LJ_POST_NONE) J->postproc = LJ_POST_FFRETRY;
       lj_record_ret(J, 0, rd.nres);
    }
 }
