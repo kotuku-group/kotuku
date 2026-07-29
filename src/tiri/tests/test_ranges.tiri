@@ -898,6 +898,25 @@ end
    assert(result[5] is 0, "last element should be 0")
 end
 
+@Test function ExplicitDescendingRangeMatchesInferredRange()
+   local inferred = {}
+   local explicit = {}
+
+   for value in {99 into 0} do
+      inferred[#inferred] = value
+   end
+
+   for value in {99 into 0 by -1} do
+      explicit[#explicit] = value
+   end
+
+   assert(#explicit is #inferred, 'Explicit and inferred descending ranges should have the same length')
+   for index in {0 to #inferred} do
+      assert(explicit[index] is inferred[index],
+         f'Explicit descending value {explicit[index]} should match inferred value {inferred[index]} at {index}')
+   end
+end
+
 @Test function RangeIterationEmpty()
    -- Test empty range iteration
    count = 0
@@ -1579,6 +1598,189 @@ end
    assert(translated:contains(large_start + 2), "aligned values should remain members of translated ranges")
    assert(not translated:contains(large_start + 0.5), "half-step values should not be admitted near the start")
    assert(not translated:contains(large_start + 1.5), "half-step values should not be admitted inside the range")
+end
+
+@Test function DirectRuntimeRangeLoopSemanticMatrix()
+   start = 0
+   stop = 5
+   count = 0
+   total = 0
+   for value in {start to stop} do
+      count++
+      total += value
+   end
+   assert(count is 5 and total is 10, "ascending exclusive runtime range should yield 0 through 4")
+
+   start = 5
+   stop = 1
+   count = 0
+   total = 0
+   for value in {start into stop} do
+      count++
+      total += value
+   end
+   assert(count is 5 and total is 15, "descending inclusive runtime range should yield 5 through 1")
+
+   start = 3
+   stop = 3
+   exclusive_count = 0
+   inclusive_count = 0
+   for value in {start to stop} do exclusive_count++ end
+   for value in {start into stop} do inclusive_count += value end
+   assert(exclusive_count is 0 and inclusive_count is 3, "equal runtime bounds should honour endpoint mode")
+
+   start = 0
+   stop = 6
+   step = 2
+   count = 0
+   total = 0
+   for value in {start into stop by step} do
+      count++
+      total += value
+   end
+   assert(count is 4 and total is 12, "explicit positive runtime step should include an aligned stop")
+
+   start = 6
+   stop = 0
+   count = 0
+   for value in {start to stop by step} do count++ end
+   assert(count is 0, "a runtime step pointing away from the stop should produce an empty range")
+
+   start = 0.0
+   stop = 1.0
+   step = 0.25
+   count = 0
+   total = 0
+   for value in {start into stop by step} do
+      count++
+      total += value
+   end
+   assert(count is 5 and approximately(total, 2.5), "aligned fractional runtime range should include its stop")
+
+   step = 0.3
+   count = 0
+   total = 0
+   for value in {start into stop by step} do
+      count++
+      total += value
+   end
+   assert(count is 4 and approximately(total, 1.8),
+      f"unaligned fractional stop should yield four values totalling 1.8, got count={count}, total={total}")
+
+   start = -0.5
+   stop = 0.5
+   step = 0.25
+   count = 0
+   total = 0
+   for value in {start into stop by step} do
+      count++
+      total += value
+   end
+   assert(count is 5 and approximately(total, 0), "mixed-sign fractional runtime range should remain symmetric")
+end
+
+@Test function DirectRuntimeRangeEvaluatesAndPreparesOnce()
+   evaluation_order = ""
+   evaluation_count = 0
+   local start = 0
+   local stop = 4
+   local step = 1
+   function evaluate_runtime_start()
+      evaluation_order ..= "s"
+      evaluation_count++
+      return start
+   end
+   function evaluate_runtime_stop()
+      evaluation_order ..= "e"
+      evaluation_count++
+      return stop
+   end
+   function evaluate_runtime_step()
+      evaluation_order ..= "p"
+      evaluation_count++
+      return step
+   end
+
+   local yielded_values = ""
+   for value in {evaluate_runtime_start() into evaluate_runtime_stop() by evaluate_runtime_step()} do
+      yielded_values ..= tostring(value)
+      start = 100
+      stop = -100
+      step = 0
+   end
+
+   assert(evaluation_order is "sep" and evaluation_count is 3,
+      "direct range operands should be evaluated once in left-to-right order")
+   assert(yielded_values is "01234", "mutating source variables must not alter prepared range bounds")
+end
+
+@Test function DirectRuntimeRangeControlFlow()
+   start = 0
+   stop = 8
+   total = 0
+   for value in {start to stop} do
+      if value is 2 then continue end
+      if value is 5 then break end
+      total += value
+   end
+   assert(total is 8, "break and continue should preserve direct range-loop control flow")
+
+   anonymous_count = 0
+   for {start to stop by 2} do anonymous_count++ end
+   assert(anonymous_count is 4, "anonymous direct runtime range should execute once per value")
+
+   outer_start = 1
+   outer_stop = 3
+   inner_start = -1
+   inner_stop = 1
+   nested_count = 0
+   for outer in {outer_start into outer_stop} do
+      for inner in {inner_start into inner_stop} do
+         nested_count += outer + inner
+      end
+   end
+   assert(nested_count is 18, "nested direct runtime ranges should retain independent prepared state")
+end
+
+@Test function DirectRuntimeRangeRejectsInvalidNumbers()
+   try
+      start = 0
+      stop = 1
+      step = 0
+      for value in {start to stop by step} do end
+   success
+      error("direct runtime range should reject a zero step")
+   end
+   try
+      start = 0
+      stop = 1
+      step = -0.0
+      for value in {start to stop by step} do end
+   success
+      error("direct runtime range should reject a negative-zero step")
+   end
+   try
+      start = 0 / 0
+      stop = 1
+      for value in {start to stop} do end
+   success
+      error("direct runtime range should reject a NaN bound")
+   end
+   try
+      start = 0
+      stop = math.huge
+      for value in {start to stop} do end
+   success
+      error("direct runtime range should reject an infinite bound")
+   end
+   try
+      start = 1e15
+      stop = 1e15 + 1
+      step = 0.1
+      for value in {start to stop by step} do end
+   success
+      error("direct runtime range should reject unrepresentable progress")
+   end
 end
 
 @Test function FloatingRangeRejectsUnrepresentableSteps()

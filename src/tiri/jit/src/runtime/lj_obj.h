@@ -105,6 +105,7 @@ enum class AstNodeKind : uint16_t {
    WhileStmt,
    RepeatStmt,
    NumericForStmt,
+   RangeForStmt,
    GenericForStmt,
    BreakStmt,
    ContinueStmt,

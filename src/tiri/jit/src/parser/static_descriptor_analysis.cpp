@@ -346,6 +346,17 @@ private:
             this->scopes_.pop_back();
             break;
          }
+         case AstNodeKind::RangeForStmt: {
+            auto &payload = std::get<RangeForStmtPayload>(Statement.data);
+            if (payload.start) this->discover_expression(*payload.start);
+            if (payload.stop) this->discover_expression(*payload.stop);
+            if (payload.step) this->discover_expression(*payload.step);
+            this->scopes_.push_back(BindingScope{});
+            this->declare(payload.control, nullptr, 0);
+            if (payload.body) this->discover_block(*payload.body, false);
+            this->scopes_.pop_back();
+            break;
+         }
          case AstNodeKind::GenericForStmt: {
             auto &payload = std::get<GenericForStmtPayload>(Statement.data);
             for (auto &iterator : payload.iterators) if (iterator) this->discover_expression(*iterator);
@@ -1621,6 +1632,13 @@ private:
             visit(p.step);
             break;
          }
+         case AstNodeKind::RangeForStmt: {
+            auto &p = std::get<RangeForStmtPayload>(Statement.data);
+            visit(p.start);
+            visit(p.stop);
+            visit(p.step);
+            break;
+         }
          case AstNodeKind::GenericForStmt:
             for (auto &v : std::get<GenericForStmtPayload>(Statement.data).iterators) visit(v);
             break;
@@ -1661,6 +1679,7 @@ private:
          case AstNodeKind::WhileStmt:
          case AstNodeKind::RepeatStmt: visit(std::get<LoopStmtPayload>(Statement.data).body); break;
          case AstNodeKind::NumericForStmt: visit(std::get<NumericForStmtPayload>(Statement.data).body); break;
+         case AstNodeKind::RangeForStmt: visit(std::get<RangeForStmtPayload>(Statement.data).body); break;
          case AstNodeKind::GenericForStmt: visit(std::get<GenericForStmtPayload>(Statement.data).body); break;
          case AstNodeKind::DoStmt: visit(std::get<DoStmtPayload>(Statement.data).block); break;
          case AstNodeKind::TryExceptStmt: {

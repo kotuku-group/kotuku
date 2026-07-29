@@ -6646,6 +6646,28 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_next
     break;
 
+  case BC_RANGEPREP:
+    |  ins_AD
+    |  lwz L, SAVE_L
+    |  stp BASE, L->base
+    |  add CARG2, BASE, RA
+    |  mr CARG3, RD
+    |  mr CARG1, L
+    |  stw PC, SAVE_PC
+    |  bl extern lj_range_prepare
+    |  lp BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_RANGEVAL:
+    |  lwz L, SAVE_L
+    |  stp BASE, L->base
+    |  add CARG1, BASE, RA
+    |  bl extern lj_range_value_at
+    |  lp BASE, L->base
+    |  ins_next
+    break;
+
   //  ----------------------------------------------------------------------
 
   default:

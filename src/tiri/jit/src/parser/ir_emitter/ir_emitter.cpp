@@ -16,6 +16,7 @@
 #include "lj_tab.h"
 #include "lj_proto_registry.h"
 #include "lj_strfmt.h"
+#include "../../lib/lib_range.h"
 #include "../parse_internal.h"
 #include "../parse_value.h"
 #include "../token_types.h"
@@ -454,6 +455,7 @@ static UnsupportedNodeRecorder glUnsupportedNodes;
       case AstNodeKind::WhileStmt:      return "WhileStmt";
       case AstNodeKind::RepeatStmt:     return "RepeatStmt";
       case AstNodeKind::NumericForStmt: return "NumericForStmt";
+      case AstNodeKind::RangeForStmt:   return "RangeForStmt";
       case AstNodeKind::GenericForStmt: return "GenericForStmt";
       case AstNodeKind::BreakStmt:      return "BreakStmt";
       case AstNodeKind::ContinueStmt:   return "ContinueStmt";
@@ -828,6 +830,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_statement(const StmtNode& stmt)
    case AstNodeKind::NumericForStmt: {
       const auto &payload = std::get<NumericForStmtPayload>(stmt.data);
       return this->emit_numeric_for_stmt(payload);
+   }
+   case AstNodeKind::RangeForStmt: {
+      const auto &payload = std::get<RangeForStmtPayload>(stmt.data);
+      return this->emit_range_for_stmt(payload);
    }
    case AstNodeKind::GenericForStmt: {
       const auto &payload = std::get<GenericForStmtPayload>(stmt.data);
@@ -1810,6 +1816,98 @@ ParserResult<IrEmitUnit> IrEmitter::emit_numeric_for_stmt(const NumericForStmtPa
 
    ControlFlowEdge loopend = this->control_flow.make_unconditional(BCPos(bcemit_AJ(fs, BC_FORL, base, NO_JMP)));
    fs->bcbase[loopend.head().raw()].line = BCLine::encode(this->lex_state.current_file_index, Payload.body->span.line.lineNumber());
+   loopend.patch_head(BCPos(loop.head().raw() + 1));
+   loop.patch_head(fs->current_pc());
+   this->loop_stack.back().continue_target = loopend.head();
+   this->loop_stack.back().continue_edge.patch_to(loopend.head());
+   this->loop_stack.back().break_edge.patch_here();
+   return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+}
+
+//********************************************************************************************************************
+// Emit a direct range loop. The existing numeric loop advances an ordinal; RANGEVAL derives each visible value from
+// the prepared start and step so floating-point error never accumulates between iterations.
+
+ParserResult<IrEmitUnit> IrEmitter::emit_range_for_stmt(const RangeForStmtPayload &Payload)
+{
+   if (not Payload.start or not Payload.stop or not Payload.body) {
+      return this->unsupported_stmt(AstNodeKind::RangeForStmt, SourceSpan{});
+   }
+
+   FuncState *fs = &this->func_state;
+   auto base = fs->free_reg();
+   GCstr *control_symbol = Payload.control.symbol ? Payload.control.symbol : NAME_BLANK;
+
+   FuncScope outer_scope;
+   ScopeGuard loop_guard(fs, &outer_scope, FuncScopeFlag::Loop);
+
+   this->lex_state.var_new_fixed(RANGE_FOR_IDX, VARNAME_FOR_IDX);
+   this->lex_state.var_new_fixed(RANGE_FOR_STOP, VARNAME_FOR_STOP);
+   this->lex_state.var_new_fixed(RANGE_FOR_STEP, VARNAME_FOR_STEP);
+   this->lex_state.var_new_fixed(RANGE_FOR_ORDINAL, VARNAME_RANGE_ORDINAL);
+   this->lex_state.var_new_fixed(RANGE_FOR_START, VARNAME_RANGE_START);
+   this->lex_state.var_new_fixed(RANGE_FOR_VALUE_STEP, VARNAME_RANGE_STEP);
+   this->lex_state.var_new_fixed(RANGE_FOR_FLAGS, VARNAME_RANGE_FLAGS);
+   this->lex_state.var_new(
+      RANGE_FOR_VALUE, control_symbol, Payload.control.span.line, Payload.control.span.column);
+
+   auto start_expr = this->emit_expression(*Payload.start);
+   if (not start_expr.ok()) return ParserResult<IrEmitUnit>::failure(start_expr.error_ref());
+   ExpDesc start_value = start_expr.value_ref();
+   this->materialise_to_next_reg(start_value, "range for start");
+
+   auto stop_expr = this->emit_expression(*Payload.stop);
+   if (not stop_expr.ok()) return ParserResult<IrEmitUnit>::failure(stop_expr.error_ref());
+   ExpDesc stop_value = stop_expr.value_ref();
+   this->materialise_to_next_reg(stop_value, "range for stop");
+
+   uint32_t flags = Payload.inclusive ? RANGE_PREP_INCLUSIVE : 0;
+   if (Payload.step) {
+      auto step_expr = this->emit_expression(*Payload.step);
+      if (not step_expr.ok()) return ParserResult<IrEmitUnit>::failure(step_expr.error_ref());
+      ExpDesc step_value = step_expr.value_ref();
+      this->materialise_to_next_reg(step_value, "range for step");
+      flags |= RANGE_PREP_HAS_STEP;
+   }
+   else {
+      RegisterAllocator allocator(fs);
+      bcemit_AD(fs, BC_KPRI, fs->freereg, BCREG(ExpKind::Nil));
+      allocator.reserve(BCReg(1));
+   }
+
+   {
+      RegisterAllocator allocator(fs);
+      allocator.reserve(BCReg(RANGE_FOR_VALUE - 3));
+   }
+   bcemit_AD(fs, BC_RANGEPREP, base, BCREG(flags));
+   this->lex_state.var_add(RANGE_FOR_VALUE);
+
+   auto loop_stack_guard = this->push_loop_context(BCPos(NO_JMP));
+   ControlFlowEdge loop = this->control_flow.make_unconditional(BCPos(bcemit_AJ(fs, BC_FORI, base, NO_JMP)));
+
+   {
+      FuncScope visible_scope;
+      ScopeGuard guard(fs, &visible_scope, FuncScopeFlag::None);
+      this->lex_state.var_add(1);
+      fs->var_get(base.raw() + RANGE_FOR_VALUE).fixed_type = TiriType::Num;
+      RegisterAllocator allocator(fs);
+      allocator.reserve(BCReg(1));
+      bcemit_AD(fs, BC_RANGEVAL, base, 0);
+
+      std::array<BlockBinding, 1> loop_bindings{};
+      std::span<const BlockBinding> binding_span;
+      if (Payload.control.symbol and not Payload.control.is_blank) {
+         loop_bindings[0].symbol = Payload.control.symbol;
+         loop_bindings[0].slot = BCReg(base.raw() + RANGE_FOR_VALUE);
+         binding_span = std::span<const BlockBinding>(loop_bindings.data(), 1);
+      }
+      auto block_result = this->emit_block_with_bindings(*Payload.body, FuncScopeFlag::None, binding_span);
+      if (not block_result.ok()) return block_result;
+   }
+
+   ControlFlowEdge loopend = this->control_flow.make_unconditional(BCPos(bcemit_AJ(fs, BC_FORL, base, NO_JMP)));
+   fs->bcbase[loopend.head().raw()].line =
+      BCLine::encode(this->lex_state.current_file_index, Payload.body->span.line.lineNumber());
    loopend.patch_head(BCPos(loop.head().raw() + 1));
    loop.patch_head(fs->current_pc());
    this->loop_stack.back().continue_target = loopend.head();
