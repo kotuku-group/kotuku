@@ -3516,7 +3516,28 @@ static void rec_range_prepare(jit_State *J, BCREG Base, uint32_t Flags)
    TRef step;
    TRef count;
    TRef integer_values;
-   if (integer_range) {
+   if (Flags & RANGE_PREP_DIRECT_INTEGER) {
+      TRef start_int = ir.conv_int_num(start);
+      TRef stop_int = ir.conv_int_num(stop);
+      TRef step_int;
+      if (Flags & RANGE_PREP_HAS_STEP) step_int = ir.conv_int_num(explicit_step);
+      else step_int = ir.kint(runtime_step > 0.0 ? 1 : -1);
+
+      bool positive = runtime_step > 0.0;
+      ir.guard_int(positive ? IR_GT : IR_LT, step_int, ir.kint(0));
+      if (not (Flags & RANGE_PREP_INCLUSIVE)) {
+         stop_int = ir.emit_int(IR_ADD, stop_int, ir.kint(positive ? -1 : 1));
+      }
+
+      J->base[Base + RANGE_FOR_IDX] = start_int;
+      J->base[Base + RANGE_FOR_STOP] = stop_int;
+      J->base[Base + RANGE_FOR_STEP] = step_int;
+      J->base[Base + FORL_EXT] = TREF_NIL;
+      BCREG range_top = BCREG(Base + FORL_EXT + 1);
+      if (J->maxslot < range_top) J->maxslot = range_top;
+      return;
+   }
+   else if (integer_range) {
       TRef start_int = ir.conv_int_num(start);
       TRef stop_int = ir.conv_int_num(stop);
       TRef step_int;

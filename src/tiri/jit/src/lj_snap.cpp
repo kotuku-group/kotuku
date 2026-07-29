@@ -43,6 +43,7 @@
 #include "lj_ir.h"
 #include "lj_jit.h"
 #include "lj_iropt.h"
+#include "lib/lib_range.h"
 #include "lj_trace.h"
 #include "lj_snap.h"
 #include "lj_target.h"
@@ -347,7 +348,9 @@ static BCREG snap_usedef(jit_State *J, uint8_t *udf, const BCIns *pc, BCREG maxs
             }
             else if (op IS BC_RANGEPREP) {
                for (s = bc_a(ins); s < bc_a(ins) + 3; s++) USE_SLOT(s);
-               for (s = bc_a(ins); s < bc_a(ins) + RANGE_FOR_SLOTS; s++) DEF_SLOT(s);
+               BCREG prepare_slots = (bc_d(ins) & RANGE_PREP_DIRECT_INTEGER) ?
+                  BCREG(FORL_EXT + 1) : BCREG(RANGE_FOR_SLOTS);
+               for (s = bc_a(ins); s < bc_a(ins) + prepare_slots; s++) DEF_SLOT(s);
             }
             else if (op IS BC_RANGEVAL) {
                for (s = bc_a(ins) + RANGE_FOR_ORDINAL; s < bc_a(ins) + RANGE_FOR_VALUE; s++) USE_SLOT(s);

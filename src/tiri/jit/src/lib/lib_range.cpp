@@ -248,6 +248,16 @@ void lj_range_prepare(lua_State *L, TValue *Base, uint32_t Flags)
    lua_Number count = lj_range_prepare_count(L, start, stop, step, Flags & RANGE_PREP_INCLUSIVE);
    int32_t integer_values = lj_range_integer_values(start, stop, step);
 
+   if (Flags & RANGE_PREP_DIRECT_INTEGER) {
+      lua_Number final_stop = stop;
+      if (not (Flags & RANGE_PREP_INCLUSIVE)) final_stop += step > 0.0 ? -1.0 : 1.0;
+      setintV(&Base[0], int32_t(start));
+      setintV(&Base[1], int32_t(final_stop));
+      setintV(&Base[2], int32_t(step));
+      setnilV(&Base[3]);
+      return;
+   }
+
    setnumV(&Base[0], 0.0);
    setnumV(&Base[1], count - 1.0);
    setnumV(&Base[2], 1.0);

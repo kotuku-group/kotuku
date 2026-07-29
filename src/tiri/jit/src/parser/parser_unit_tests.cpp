@@ -3446,15 +3446,49 @@ static bool test_compile_time_signed_range_for_emission(kt::Log &Log)
 
    if (count_opcode_tree(*optimised_snapshot, BC_FORI) != 8 or
        count_opcode_tree(*optimised_snapshot, BC_FORL) != 8 or
-       count_opcode_tree(*optimised_snapshot, BC_RANGEPREP) != 8 or
-       count_opcode_tree(*optimised_snapshot, BC_RANGEVAL) != 8) {
-      Log.error("signed constant ranges did not emit eight prepared direct range loops");
+       count_opcode_tree(*optimised_snapshot, BC_RANGEPREP) != 0 or
+       count_opcode_tree(*optimised_snapshot, BC_RANGEVAL) != 0) {
+      Log.error("signed constant ranges did not emit eight compact numeric loops");
       return false;
    }
 
    if (count_opcode_tree(*optimised_snapshot, BC_ITERC) != 0 or
        count_opcode_tree(*optimised_snapshot, BC_ITERL) != 0) {
       Log.error("signed constant ranges retained generic iterator bytecode");
+      return false;
+   }
+
+   constexpr std::string_view protected_source =
+      "local total = 0\n"
+      "for value in {0 to 10} do\n"
+      "   try\n"
+      "      total += value\n"
+      "   except error\n"
+      "      total = -1\n"
+      "   success\n"
+      "      total += 1\n"
+      "   end\n"
+      "end\n"
+      "try\n"
+      "   for value in {0 to 10} do\n"
+      "      total += value\n"
+      "   end\n"
+      "except error\n"
+      "   total = -1\n"
+      "end\n";
+
+   error.clear();
+   auto protected_snapshot = compile_snapshot(L, protected_source, true, error);
+   if (not protected_snapshot) {
+      Log.error("failed to compile protected constant range loop: %s", error.c_str());
+      return false;
+   }
+
+   if (count_opcode_tree(*protected_snapshot, BC_FORI) != 2 or
+       count_opcode_tree(*protected_snapshot, BC_FORL) != 2 or
+       count_opcode_tree(*protected_snapshot, BC_RANGEPREP) != 2 or
+       count_opcode_tree(*protected_snapshot, BC_RANGEVAL) != 0) {
+      Log.error("protected constant ranges did not emit compact prepared loop bytecode");
       return false;
    }
 

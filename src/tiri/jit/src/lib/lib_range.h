@@ -29,7 +29,8 @@ struct tiri_index_range {
 
 enum RangePrepareFlag : uint32_t {
    RANGE_PREP_INCLUSIVE = 1u << 0,
-   RANGE_PREP_HAS_STEP = 1u << 1
+   RANGE_PREP_HAS_STEP = 1u << 1,
+   RANGE_PREP_DIRECT_INTEGER = 1u << 2  // Prepare a compact four-slot integer loop.
 };
 
 // Metatable name for range userdata
