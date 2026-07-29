@@ -870,37 +870,70 @@ static void gc_clearweak(global_State *g, GCobj* o)
 }
 
 //********************************************************************************************************************
-// Call a userdata finaliser.
+// Call a table or userdata finaliser.
 
-static void gc_call_finaliser(global_State *g, lua_State *L, cTValue* mo, GCobj* o)
+static void gc_call_finaliser(global_State *G, lua_State *L, cTValue* Metamethod, GCobj* Object)
 {
-   lj_trace_abort(g);
+   lj_assertG_(G, tvisfunc(Metamethod), "attempt to call a non-function finaliser");
+   lj_trace_abort(G);
 
-   // Use RAII guard for hook state and GC threshold preservation.
-   GCFinaliserGuard guard(g);
+   ptrdiff_t saved_top = savestack(L, L->top);
+   const BCIns *saved_try_handler = L->try_handler_pc;
+   CapturedStackTrace *saved_pending_trace = L->pending_trace;
+   GCstr *saved_exception_message = L->pending_exception_message;
+   GCstr *saved_exception_source = L->pending_exception_source;
+   int saved_exception_line = L->pending_exception_line;
+   int saved_try_depth = L->try_stack.depth;
+   ERR saved_caught_error = L->CaughtError;
+   bool saved_exception_valid = L->pending_exception_valid;
+   bool saved_traceback_state = L->sent_traceback;
+   lj_state_checkstack(L, 2 + LJ_FR2);
 
-   if (LJ_HASPROFILE and (guard.savedHook() & HOOK_PROFILE)) lj_dispatch_update(g);
+   int errcode;
+   uint8_t saved_hook;
+   {
+      GCFinaliserGuard guard(G);
+      saved_hook = guard.savedHook();
 
-   // Set up the stack for the finaliser call.
+      if (LJ_HASPROFILE and (saved_hook & HOOK_PROFILE)) lj_dispatch_update(G);
 
-   TValue *top = L->top;
-   copyTV(L, top++, mo);
-   if (LJ_FR2) setnilV(top++);
-   setgcV(L, top, o, ~o->gch.gct);
-   L->top = top + 1;
+      // Set up the stack for the finaliser call.
 
-   // Call the finaliser. Stack: |mo|o| -> |
-   int errcode = lj_vm_pcall(L, top, 1 + 0, -1);
+      TValue *top = restorestack(L, saved_top);
+      copyTV(L, top++, Metamethod);
+      if (LJ_FR2) setnilV(top++);
+      TValue *argument = top;
+      setgcV(L, top, Object, ~Object->gch.gct);
+      L->top = top + 1;
 
-   if (LJ_HASPROFILE and (guard.savedHook() & HOOK_PROFILE)) lj_dispatch_update(g);
+      // Call the finaliser. Stack: |metamethod|object| -> |
+      errcode = lj_vm_pcall(L, argument, 1, -1);
+      setgcref(G->cur_L, obj2gco(L));
+   }
+   if (LJ_HASPROFILE and (saved_hook & HOOK_PROFILE)) lj_dispatch_update(G);
 
-   // Guard destructor restores hook state and threshold here.  Propagate errors after state restoration.
+   if (errcode) {
+      CSTRING message = L->top > restorestack(L, saved_top) and tvisstr(L->top - 1) ?
+         strVdata(L->top - 1) : "non-string finaliser error";
+      kt::Log("gc_call_finaliser").warning("Ignoring finaliser error: %s", message);
+      if (L->pending_trace and L->pending_trace != saved_pending_trace)
+         lj_debug_free_trace(L, L->pending_trace);
+   }
 
-   if (errcode) lj_err_throw(L, errcode);
+   L->try_handler_pc = saved_try_handler;
+   L->pending_trace = saved_pending_trace;
+   L->pending_exception_message = saved_exception_message;
+   L->pending_exception_source = saved_exception_source;
+   L->pending_exception_line = saved_exception_line;
+   L->try_stack.depth = saved_try_depth;
+   L->CaughtError = saved_caught_error;
+   L->pending_exception_valid = saved_exception_valid;
+   L->sent_traceback = saved_traceback_state;
+   L->top = restorestack(L, saved_top);
 }
 
 //********************************************************************************************************************
-// Finalise one object from the pending queue (handles both userdata and native Kōtuku objects).
+// Finalise one object from the pending queue.
 
 static void gc_finalize(lua_State *L)
 {
@@ -912,30 +945,36 @@ static void gc_finalize(lua_State *L)
    if (o IS gcref(g->gc.mmudata)) setgcrefnull(g->gc.mmudata);
    else setgcrefr(gcref(g->gc.mmudata)->gch.nextgc, o->gch.nextgc);
 
-   // Add object back to its original list and make it white.
-   if (o->gch.gct IS ~LJ_TOBJECT) {
-      // GCobject goes back to the main GC root list.
+   // Restore the object to its ordinary list before calling its finaliser, keeping it and its graph usable throughout
+   // the call. The one-shot registration bit remains set after makewhite().
+
+   if (o->gch.gct IS ~LJ_TTAB or o->gch.gct IS ~LJ_TOBJECT) {
       setgcrefr(o->gch.nextgc, g->gc.root);
       setgcref(g->gc.root, o);
-      makewhite(g, o);
-      // Call the finalization function directly (no metamethod lookup).
-      lj_object_finalize(L, gco_to_object(o));
    }
    else {
-      // Userdata goes back to the main userdata list.
+      lj_assertG(o->gch.gct IS ~LJ_TUDATA, "unsupported object in pending-finaliser queue");
       setgcrefr(o->gch.nextgc, mainthread(g)->nextgc);
       setgcref(mainthread(g)->nextgc, o);
-      makewhite(g, o);
-      // Resolve the __gc metamethod from userdata's metatable.
-      cTValue *mo = lj_meta_fastg(g, tabref(gco_to_userdata(o)->metatable), MM_gc);
-      if (mo) gc_call_finaliser(g, L, mo, o);
    }
+   makewhite(g, o);
+
+   if (o->gch.gct IS ~LJ_TOBJECT) {
+      // Native Kōtuku objects have a mandatory direct finaliser.
+      lj_object_finalize(L, gco_to_object(o));
+      return;
+   }
+
+   GCtab *metatable = o->gch.gct IS ~LJ_TTAB ?
+      tabref(gco_to_table(o)->metatable) : tabref(gco_to_userdata(o)->metatable);
+   cTValue *metamethod = lj_meta_fastg(g, metatable, MM_gc);
+   if (metamethod and tvisfunc(metamethod)) gc_call_finaliser(g, L, metamethod, o);
 }
 
 //********************************************************************************************************************
 // Finalise all objects in the pending queue.
 
-void lj_gc_finalize_udata(lua_State *L)
+void lj_gc_finalize_pending(lua_State *L)
 {
    while (gcref(G(L)->gc.mmudata) != nullptr) gc_finalize(L);
 }
@@ -1053,7 +1092,7 @@ static size_t gc_onestep(lua_State *L)
          if (gcref(g->gc.mmudata) != nullptr) {
             GCSize old = g->gc.total;
             if (tvref(g->jit_base)) return LJ_MAX_MEM; //  Don't call finalisers on trace.
-            gc_finalize(L);  //  Finalize one userdata object.
+            gc_finalize(L);
             if (old >= g->gc.total and g->gc.estimate > old - g->gc.total) g->gc.estimate -= old - g->gc.total;
             if (g->gc.estimate > GCFINALIZECOST) g->gc.estimate -= GCFINALIZECOST;
             return GCFINALIZECOST;

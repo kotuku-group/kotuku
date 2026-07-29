@@ -145,7 +145,7 @@ inline void markfinaliserseen(GCobj* Object) noexcept
 
 // Collector.
 extern "C" size_t lj_gc_separatefinalisers(global_State* G, int All);
-extern "C" void lj_gc_finalize_udata(lua_State* L);
+extern "C" void lj_gc_finalize_pending(lua_State* L);
 extern "C" void lj_gc_freeall(global_State* g);
 extern "C" int lj_gc_step(lua_State* L);
 extern "C" void lj_gc_step_fixtop(lua_State* L);
@@ -341,7 +341,7 @@ public:
 
    // Finalise all objects in the pending queue.
    void finalizePending(lua_State* L) noexcept {
-      lj_gc_finalize_udata(L);
+      lj_gc_finalize_pending(L);
    }
 
    // Free all GC objects (called during state shutdown).
