@@ -33,12 +33,20 @@ static ERR DISPLAY_Resize(extDisplay *, struct acResize *);
 static void alloc_display_buffer(extDisplay *Self);
 
 #ifdef __xwindows__
-static void set_x11_input_hints(Window WindowHandle)
+static void set_x11_application_hints(Window WindowHandle)
 {
    XWMHints hints = { };
    hints.flags = InputHint;
    hints.input = True;
    XSetWMHints(XDisplay, WindowHandle, &hints);
+
+   char resource_name[] = "origo";
+   char resource_class[] = "Origo";
+   XClassHint class_hint = {
+      .res_name = resource_name,
+      .res_class = resource_class
+   };
+   XSetClassHint(XDisplay, WindowHandle, &class_hint);
 }
 #endif
 
@@ -821,7 +829,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
          }
          else XStoreName(XDisplay, Self->XWindowHandle, "Kotuku");
 
-         set_x11_input_hints(Self->XWindowHandle);
+         set_x11_application_hints(Self->XWindowHandle);
 
          Atom protocols[2] = { XWADeleteWindow, XWATakeFocus };
          XSetWMProtocols(XDisplay, Self->XWindowHandle, protocols, std::ssize(protocols));
@@ -2339,7 +2347,7 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
          }
          else XStoreName(XDisplay, Self->XWindowHandle, "Kotuku");
 
-         set_x11_input_hints(Self->XWindowHandle);
+         set_x11_application_hints(Self->XWindowHandle);
 
          Atom protocols[2] = { XWADeleteWindow, XWATakeFocus };
          XSetWMProtocols(XDisplay, Self->XWindowHandle, protocols, std::ssize(protocols));

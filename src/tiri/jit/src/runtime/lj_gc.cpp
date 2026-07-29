@@ -158,6 +158,53 @@ inline void gray2black(GCobj *x) noexcept { x->gch.marked |= LJ_GC_BLACK; }
 
 [[nodiscard]] inline bool isfinalized(const GCobject* o) noexcept { return (o->marked & LJ_GC_FINALIZED) != 0; }
 
+// Find the intrusive link which refers to Object in a null-terminated GC list.
+
+[[nodiscard]] static GCRef* gc_find_list_link(GCRef* Head, const GCobj* Object) noexcept
+{
+   GCRef* link = Head;
+   while (gcref(*link)) {
+      if (gcref(*link) IS Object) return link;
+      link = &gcref(*link)->gch.nextgc;
+   }
+   return nullptr;
+}
+
+#ifdef LUA_USE_ASSERT
+// The pending-finaliser queue is circular, unlike the ordinary GC lists.
+
+[[nodiscard]] static bool gc_pending_contains(const global_State* g, const GCobj* Object) noexcept
+{
+   GCobj* tail = gcref(g->gc.mmudata);
+   if (not tail) return false;
+
+   GCobj* current = tail;
+   do {
+      current = gcnext(current);
+      if (current IS Object) return true;
+   } while (current != tail);
+   return false;
+}
+
+static void gc_assert_registration_source(global_State* g, GCobj* Object, GCRef* Source) noexcept
+{
+   GCRef* root_link = gc_find_list_link(&g->gc.root, Object);
+   GCRef* userdata_link = gc_find_list_link(&mainthread(g)->nextgc, Object);
+   GCRef* finaliser_link = gc_find_list_link(&g->gc.finobj, Object);
+
+   lj_assertG(not finaliser_link, "object is already in registered-finaliser list");
+   lj_assertG(not gc_pending_contains(g, Object), "pending object cannot be registered again");
+   lj_assertG((Source IS root_link) or (Source IS userdata_link), "object is not in its ordinary GC list");
+   if (Object->gch.gct IS ~LJ_TTAB) {
+      lj_assertG(Source IS root_link, "table is not in root GC list");
+   }
+   else {
+      lj_assertG(Object->gch.gct IS ~LJ_TUDATA, "unsupported finaliser registration type");
+      lj_assertG(Source IS userdata_link, "userdata is not in userdata GC list");
+   }
+}
+#endif
+
 // Mark a string object (strings go directly to black, never grey).
 
 inline void gc_mark_str(GCstr* s) noexcept { s->marked &= uint8_t(~LJ_GC_WHITES); }
@@ -289,7 +336,7 @@ static void gc_mark_uv(global_State *g)
 }
 
 //********************************************************************************************************************
-// Mark userdata in mmudata list.
+// Mark objects in the pending-finaliser queue.
 
 static void gc_mark_mmudata(global_State *g)
 {
@@ -305,7 +352,7 @@ static void gc_mark_mmudata(global_State *g)
 }
 
 //********************************************************************************************************************
-// Helper to move an object to the mmudata finalization list.
+// Helper to move an object to the pending-finaliser queue.
 
 static void gc_move_to_mmudata(global_State *g, GCobj *o, GCRef *p)
 {
@@ -321,6 +368,45 @@ static void gc_move_to_mmudata(global_State *g, GCobj *o, GCRef *p)
       setgcref(o->gch.nextgc, o);
       setgcref(g->gc.mmudata, o);
    }
+}
+
+// Register a table or full userdata for one-shot metamethod finalisation.
+
+void lj_gc_checkfinaliser(lua_State* L, GCobj* Object, GCtab* Metatable)
+{
+   global_State* g = G(L);
+
+   if (not Metatable or not lj_meta_fastg(g, Metatable, MM_gc) or isfinaliserseen(Object)) return;
+
+   lj_assertG(ismetamethodfinalisable(Object), "unsupported metamethod-finalisable object type");
+
+   GCRef* list = Object->gch.gct IS ~LJ_TTAB ? &g->gc.root : &mainthread(g)->nextgc;
+   GCRef* source = gc_find_list_link(list, Object);
+
+   lj_assertG(source, "finalisable object is not in its ordinary GC list");
+   if (not source) return;
+
+#ifdef LUA_USE_ASSERT
+   gc_assert_registration_source(g, Object, source);
+#endif
+
+   // A sweep cursor may point at the moved object's nextgc field after that object has already been swept.
+   // Redirect it to the predecessor link before nextgc is reused for finobj.
+
+   if (mref<GCRef>(g->gc.sweep) IS &Object->gch.nextgc) setmref(g->gc.sweep, source);
+
+   *source = Object->gch.nextgc;
+   markfinaliserseen(Object);
+
+   // finobj sweeping is introduced separately. Until then, objects registered during either sweep phase must be
+   // made current-white immediately so their colour is valid for the next marking cycle.
+
+   if (g->gc.state IS GCPhase::SweepString or g->gc.state IS GCPhase::Sweep) makewhite(g, Object);
+
+   setgcrefr(Object->gch.nextgc, g->gc.finobj);
+   setgcref(g->gc.finobj, Object);
+
+   lj_assertG(gc_find_list_link(&g->gc.finobj, Object), "registered object is missing from finaliser list");
 }
 
 //********************************************************************************************************************
@@ -807,7 +893,7 @@ static void gc_call_finaliser(global_State *g, lua_State *L, cTValue* mo, GCobj*
 }
 
 //********************************************************************************************************************
-// Finalize one object from the mmudata list (handles both userdata and GCobject).
+// Finalise one object from the pending queue (handles both userdata and native Kōtuku objects).
 
 static void gc_finalize(lua_State *L)
 {
@@ -840,7 +926,7 @@ static void gc_finalize(lua_State *L)
 }
 
 //********************************************************************************************************************
-// Finalize all userdata objects from mmudata list.
+// Finalise all objects in the pending queue.
 
 void lj_gc_finalize_udata(lua_State *L)
 {
@@ -856,6 +942,7 @@ void lj_gc_freeall(global_State *g)
    // Free everything, except super-fixed objects (the main thread).
    g->gc.currentwhite = LJ_GC_WHITES | LJ_GC_SFIXED;
    gc_fullsweep(g, &g->gc.root);
+   gc_fullsweep(g, &g->gc.finobj);
    strmask = g->str.mask;
    for (i = 0; i <= strmask; i++)  //  Free all string hash chains.
       gc_sweepstr(g, &g->str.tab[i]);

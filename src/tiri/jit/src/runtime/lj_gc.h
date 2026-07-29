@@ -48,6 +48,7 @@ concept GCObjectType = requires(T* obj) {
 #define LJ_GC_WEAKVAL   0x10
 #define LJ_GC_FIXED     0x20
 #define LJ_GC_SFIXED    0x40
+#define LJ_GC_FINALISER_SEEN 0x80
 
 #define LJ_GC_WHITES   (LJ_GC_WHITE0 | LJ_GC_WHITE1)
 #define LJ_GC_COLORS   (LJ_GC_WHITES | LJ_GC_BLACK)
@@ -119,6 +120,29 @@ inline void markfinalized(GCobj* x) noexcept
    x->gch.marked |= LJ_GC_FINALIZED;
 }
 
+// Metamethod finalisation supports tables and full userdata. Native Kōtuku
+// objects use their mandatory direct finaliser instead.
+
+[[nodiscard]] inline bool ismetamethodfinalisable(const GCobj* Object) noexcept
+{
+   return Object->gch.gct IS ~LJ_TTAB or Object->gch.gct IS ~LJ_TUDATA;
+}
+
+[[nodiscard]] inline bool isnativefinalisable(const GCobj* Object) noexcept
+{
+   return Object->gch.gct IS ~LJ_TOBJECT;
+}
+
+[[nodiscard]] inline bool isfinaliserseen(const GCobj* Object) noexcept
+{
+   return (Object->gch.marked & LJ_GC_FINALISER_SEEN) != 0;
+}
+
+inline void markfinaliserseen(GCobj* Object) noexcept
+{
+   Object->gch.marked |= LJ_GC_FINALISER_SEEN;
+}
+
 // Collector.
 extern "C" size_t lj_gc_separateudata(global_State* g, int all);
 extern "C" void lj_gc_finalize_udata(lua_State* L);
@@ -127,6 +151,7 @@ extern "C" int lj_gc_step(lua_State* L);
 extern "C" void lj_gc_step_fixtop(lua_State* L);
 extern "C" int lj_gc_step_jit(global_State* g, MSize steps);
 extern "C" void lj_gc_fullgc(lua_State* L);
+void lj_gc_checkfinaliser(lua_State* L, GCobj* Object, GCtab* Metatable);
 
 // GC check: drive collector forward if the GC threshold has been reached.
 #define lj_gc_check(L) { if (LJ_UNLIKELY(G(L)->gc.total >= G(L)->gc.threshold)) lj_gc_step(L); }
@@ -166,7 +191,7 @@ static LJ_AINLINE void lj_gc_barrierback(global_State* g, GCtab* t)
 // - State Queries: phase(), totalMemory(), isPaused(), isMarking(), etc.
 // - Collection Control: step(), fullCycle(), check()
 // - Write Barriers: barrierForward(), barrierBack(), barrierUpvalue()
-// - Finalization: separateUdata(), finalizeUdata(), freeAll()
+// - Finalisation: separateFinalisers(), finalizePending(), freeAll()
 // - Upvalue Management: closeUpvalue()
 // - JIT Integration: barrierTrace(), stepJit()
 //
@@ -307,16 +332,16 @@ public:
       return gs->gc.stepmul;
    }
 
-   // -- Finalization --
+   // -- Finalisation --
 
-   // Separate userdata with finalisers to the mmudata list.
-   // Returns the total size of userdata to be finalized.
-   size_t separateUdata(int all) noexcept {
+   // Separate currently supported finalisable objects to the pending queue.
+   // This delegates to the legacy userdata pass until finobj separation is introduced.
+   size_t separateFinalisers(int all) noexcept {
       return lj_gc_separateudata(gs, all);
    }
 
-   // Finalize all pending userdata objects.
-   void finalizeUdata(lua_State* L) noexcept {
+   // Finalise all objects in the pending queue.
+   void finalizePending(lua_State* L) noexcept {
       lj_gc_finalize_udata(L);
    }
 

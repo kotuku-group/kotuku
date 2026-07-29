@@ -45,6 +45,7 @@ void lj_thunk_new(lua_State *L, GCfunc *Func, uint8_t ExpectedType)
    // Set metatable from registry
    cTValue *tv = lj_tab_getstr(tabV(registry(L)), lj_str_newz(L, THUNK_METATABLE_NAME));
    if (tv and tvistab(tv)) {
+      // The trusted thunk metatable is created internally without __gc.
       setgcref(ud->metatable, obj2gco(tabV(tv)));
    }
 

@@ -311,7 +311,9 @@ extern lua_State * lua_newstate(lua_Alloc allocf, void* allocd)
    lj_buf_init(nullptr, &g->tmpbuf);
    g->gc.state = GCPhase::Pause;
    setgcref(g->gc.root, obj2gco(L));
+   setgcrefnull(g->gc.finobj);
    setmref(g->gc.sweep, &g->gc.root);
+   setmref(g->gc.sweepfin, &g->gc.finobj);
    g->gc.total = sizeof(GG_State);
    g->gc.pause = LUAI_GCPAUSE;
    g->gc.stepmul = LUAI_GCMUL;
@@ -331,7 +333,7 @@ extern lua_State * lua_newstate(lua_Alloc allocf, void* allocd)
 static TValue* cpfinalize(lua_State *L, lua_CFunction dummy, void* ud)
 {
    GarbageCollector collector = gc(G(L));
-   collector.finalizeUdata(L);
+   collector.finalizePending(L);
    // Frame pop omitted.
    return nullptr;
 }
@@ -347,8 +349,8 @@ extern void lua_close(lua_State *L)
    setgcrefnull(g->cur_L);
    lj_func_closeuv(L, tvref(L->stack));
 
-   // Separate userdata which have GC metamethods
-   collector.separateUdata(1);
+   // Separate objects which have pending metamethod finalisers.
+   collector.separateFinalisers(1);
 
    G2J(g)->flags &= ~JIT_F_ON;
    G2J(g)->state = TraceState::IDLE;
@@ -361,8 +363,8 @@ extern void lua_close(lua_State *L)
       if (lj_vm_cpcall(L, nullptr, nullptr, cpfinalize) IS LUA_OK) {
          if (++i >= 10) break;
 
-         // Separate userdata again
-         collector.separateUdata(1);
+         // Separate any newly registered finalisers.
+         collector.separateFinalisers(1);
 
          if (gcref(g->gc.mmudata) IS nullptr) break;  //  Until nothing is left to do.
       }

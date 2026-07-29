@@ -309,27 +309,6 @@ static void recff_getmetatable(jit_State* J, RecordFFData* rd)
 
 //********************************************************************************************************************
 
-static void recff_setmetatable(jit_State* J, RecordFFData* rd)
-{
-   TRef tr = J->base[0];
-   TRef mt = J->base[1];
-   if (tref_istab(tr) and (tref_istab(mt) or (mt and tref_isnil(mt)))) {
-      TRef fref, mtref;
-      RecordIndex ix;
-      ix.tab = tr;
-      copyTV(J->L, &ix.tabv, &rd->argv[0]);
-      lj_record_mm_lookup(J, &ix, MM_metatable); //  Guard for no __metatable.
-      fref = emitir(IRT(IR_FREF, IRT_PGC), tr, IRFL_TAB_META);
-      mtref = tref_isnil(mt) ? lj_ir_knull(J, IRT_TAB) : mt;
-      emitir(IRT(IR_FSTORE, IRT_TAB), fref, mtref);
-      if (!tref_isnil(mt)) emitir(IRT(IR_TBAR, IRT_TAB), tr, 0);
-      J->base[0] = tr;
-      J->needsnap = 1;
-   }  // else: Interpreter will throw.
-}
-
-//********************************************************************************************************************
-
 static void recff_rawget(jit_State* J, RecordFFData* rd)
 {
    RecordIndex ix;

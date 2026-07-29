@@ -1273,11 +1273,13 @@ typedef struct GCState {
    uint8_t lightudnum;   //  Number of lightuserdata segments - 1 (64-bit only).
    MSize   sweepstr;     // Sweep position in string table.
    GCRef   root;         // List of all collectable objects.
+   GCRef   finobj;       // Objects registered for metamethod finalisation.
    MRef    sweep;        // Sweep position in root list.
+   MRef    sweepfin;     // Sweep position in registered-finaliser list.
    GCRef   gray;         // List of gray objects.
    GCRef   grayagain;    // List of objects for atomic traversal.
    GCRef   weak;         // List of weak tables (to be cleared).
-   GCRef   mmudata;      // List of userdata (to be finalized).
+   GCRef   mmudata;      // Circular queue of pending finalisers.
    GCSize  debt;         // Debt (how much GC is behind schedule).
    GCSize  estimate;     // Estimate of memory actually in use.
    MSize   stepmul;      // Incremental GC step granularity.
