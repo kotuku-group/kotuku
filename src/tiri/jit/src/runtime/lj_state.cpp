@@ -330,45 +330,29 @@ extern lua_State * lua_newstate(lua_Alloc allocf, void* allocd)
 
 //********************************************************************************************************************
 
-static TValue* cpfinalize(lua_State *L, lua_CFunction dummy, void* ud)
-{
-   GarbageCollector collector = gc(G(L));
-   collector.finalizePending(L);
-   // Frame pop omitted.
-   return nullptr;
-}
-
-//********************************************************************************************************************
-
 extern void lua_close(lua_State *L)
 {
    global_State* g = G(L);
    GarbageCollector collector = gc(g);
-   int i;
    L = mainthread(g);  //  Only the main thread can be closed.
    setgcrefnull(g->cur_L);
    lj_func_closeuv(L, tvref(L->stack));
 
-   // Separate objects which have pending metamethod finalisers.
-   collector.separateFinalisers(1);
+   // Snapshot pre-shutdown registrations once. Finalisers created while this queue is drained remain in finobj and are
+   // freed by close_state() without being run during this shutdown.
+   collector.prepareFinalisersForShutdown();
 
    G2J(g)->flags &= ~JIT_F_ON;
    G2J(g)->state = TraceState::IDLE;
    lj_dispatch_update(g);
-   for (i = 0;;) {
-      hook_enter(g);
-      L->status = LUA_OK;
-      L->base = L->top = tvref(L->stack) + 1 + LJ_FR2;
-      L->cframe = nullptr;
-      if (lj_vm_cpcall(L, nullptr, nullptr, cpfinalize) IS LUA_OK) {
-         if (++i >= 10) break;
+   hook_enter(g);
+   L->status = LUA_OK;
+   L->base = L->top = tvref(L->stack) + 1 + LJ_FR2;
+   L->cframe = nullptr;
 
-         // Separate any newly registered finalisers.
-         collector.separateFinalisers(1);
-
-         if (gcref(g->gc.mmudata) IS nullptr) break;  //  Until nothing is left to do.
-      }
-   }
+   // Metamethod failures are contained by gc_call_finaliser(), so every object in the snapshot is drained.
+   collector.finalizePending(L);
+   lj_assertG(gcref(g->gc.mmudata) IS nullptr, "pending finaliser queue was not drained during shutdown");
    close_state(L);
 }
 

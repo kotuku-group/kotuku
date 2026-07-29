@@ -342,6 +342,12 @@ public:
       return lj_gc_separatefinalisers(gs, All);
    }
 
+   // Snapshot every finaliser registered before state shutdown into the pending queue.
+   // Objects registered by shutdown-time finalisers remain in finobj and are freed without another finalisation pass.
+   void prepareFinalisersForShutdown() noexcept {
+      lj_gc_separatefinalisers(gs, 1);
+   }
+
    // Finalise all objects in the pending queue.
    void finalizePending(lua_State* L) noexcept {
       lj_gc_finalize_pending(L);
