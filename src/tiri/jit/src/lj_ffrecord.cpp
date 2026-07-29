@@ -144,18 +144,20 @@ static void recff_nyi(jit_State* J, RecordFFData* rd)
       // Can only stitch from Lua call.
       if (J->framedepth and frame_islua(J->L->base - 1)) {
          BCOp op = bc_op(*frame_pc(J->L->base - 1));
-         // Stitched trace cannot start with *M op with variable # of args.
+         // Stitched trace cannot start with an op that consumes MULTRES, because recff_stitch() rewrites the frame
+         // and the continuation re-enters at the caller's next instruction with MULTRES no longer valid. BC_TYPEFIX
+         // is emitted directly after a call in return position, so it belongs with the *M ops here.
          if (!(op == BC_CALLM or op == BC_CALLMT or
-            op == BC_RETM or op == BC_TSETM)) {
+            op == BC_RETM or op == BC_TSETM or op == BC_TYPEFIX)) {
             switch (J->fn->c.ffid) {
-            case FF_error:
-            case FF_debug_setHook:
-            case FF_jit_flush:
-               break;  //  Don't stitch across special builtins.
-            default:
-               recff_stitch(J);  //  Use trace stitching.
-               rd->nres = -1;
-               return;
+               case FF_error:
+               case FF_debug_setHook:
+               case FF_jit_flush:
+                  break;  //  Don't stitch across special builtins.
+               default:
+                  recff_stitch(J);  //  Use trace stitching.
+                  rd->nres = -1;
+                  return;
             }
          }
       }

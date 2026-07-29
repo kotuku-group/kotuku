@@ -54,6 +54,9 @@ concept GCObjectType = requires(T* obj) {
 #define LJ_GC_COLORS   (LJ_GC_WHITES | LJ_GC_BLACK)
 #define LJ_GC_WEAK   (LJ_GC_WEAKKEY | LJ_GC_WEAKVAL)
 
+static_assert((LJ_GC_FINALISER_SEEN & LJ_GC_WEAK) IS 0,
+   "finaliser registration and table weakness flags must remain independent");
+
 // Modern constexpr GC colour test functions (C++20)
 [[nodiscard]] constexpr inline bool iswhite(const GCobj* x) noexcept
 {

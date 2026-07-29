@@ -402,8 +402,8 @@ void lj_gc_checkfinaliser(lua_State* L, GCobj* Object, GCtab* Metatable)
    *source = Object->gch.nextgc;
    markfinaliserseen(Object);
 
-   // finobj sweeping is introduced separately. Until then, objects registered during either sweep phase must be
-   // made current-white immediately so their colour is valid for the next marking cycle.
+   // Objects registered after their ordinary-list sweep position has passed, including during finobj sweeping, will
+   // not be visited by either active cursor. Make them current-white immediately for the next marking cycle.
 
    if (g->gc.state IS GCPhase::SweepString or g->gc.state IS GCPhase::Sweep) makewhite(g, Object);
 
@@ -411,6 +411,8 @@ void lj_gc_checkfinaliser(lua_State* L, GCobj* Object, GCtab* Metatable)
    setgcref(g->gc.finobj, Object);
 
    lj_assertG(gc_find_list_link(&g->gc.finobj, Object), "registered object is missing from finaliser list");
+   lj_assertG(not gc_find_list_link(&g->gc.root, Object), "registered object is still in root GC list");
+   lj_assertG(not gc_pending_contains(g, Object), "registered object is also pending finalisation");
 }
 
 //********************************************************************************************************************
@@ -798,6 +800,26 @@ static GCRef* gc_sweep(global_State *g, GCRef* p, uint32_t lim)
 }
 
 //********************************************************************************************************************
+// Sweep registered finalisers without providing a path that can free them before separation.
+
+static GCRef* gc_sweep_finalisers(global_State* G, GCRef* List, uint32_t Limit)
+{
+   GCobj* object;
+   while ((object = gcref(*List)) and Limit-- > 0) {
+      lj_assertG_(G, ismetamethodfinalisable(object), "unsupported object in registered-finaliser sweep");
+      lj_assertG_(G, isfinaliserseen(object), "registered-finaliser sweep found an unregistered object");
+      lj_assertG_(G, not isdead(G, object), "unreachable registered object escaped finaliser separation");
+      lj_assertG_(G, not gc_find_list_link(&G->gc.root, object),
+         "registered object is also present in root GC list");
+      lj_assertG_(G, not gc_pending_contains(G, object), "registered object is also pending finalisation");
+
+      makewhite(G, object);
+      List = &object->gch.nextgc;
+   }
+   return List;
+}
+
+//********************************************************************************************************************
 // Sweep one string interning table chain. Preserves hashalg bit.
 
 static void gc_sweepstr(global_State *g, GCRef* chain)
@@ -841,31 +863,49 @@ static void gc_sweepstr(global_State *g, GCRef* chain)
 }
 
 //********************************************************************************************************************
-// Clear collected entries from weak tables.
+// Clear collected values from weak tables up to, but excluding, Stop.
 
-static void gc_clearweak(global_State *g, GCobj* o)
+static void gc_clearweakvalues(global_State* G, GCobj* Object, GCobj* Stop)
 {
-   while (o) {
-      GCtab* t = gco_to_table(o);
-      lj_assertG((t->marked & LJ_GC_WEAK), "clear of non-weak table");
+   while (Object and Object != Stop) {
+      GCtab* table = gco_to_table(Object);
+      lj_assertG_(G, (table->marked & LJ_GC_WEAK), "clear of non-weak table");
 
       // Clear array part (TValue has alignment attributes incompatible with std::span).
-      if ((t->marked & LJ_GC_WEAKVAL) and t->asize > 0) {
-         TValue *array_start = arrayslot(t, 0);
-         for (MSize i = 0; i < t->asize; i++) {
+      if ((table->marked & LJ_GC_WEAKVAL) and table->asize > 0) {
+         TValue* array_start = arrayslot(table, 0);
+         for (MSize i = 0; i < table->asize; i++) {
             if (gc_mayclear(&array_start[i], 1)) setnilV(&array_start[i]);
          }
       }
 
-      // Clear hash part using std::span.
-      if (t->hmask > 0) {
-         std::span<Node> hash_part(noderef(t->node), t->hmask + 1);
+      if ((table->marked & LJ_GC_WEAKVAL) and table->hmask > 0) {
+         // Clear hash values without considering weak keys at this stage.
+         std::span<Node> hash_part(noderef(table->node), table->hmask + 1);
          for (Node &n : hash_part) {
-            if (not tvisnil(&n.val) and (gc_mayclear(&n.key, 0) or gc_mayclear(&n.val, 1)))
-               setnilV(&n.val);
+            if (not tvisnil(&n.val) and gc_mayclear(&n.val, 1)) setnilV(&n.val);
          }
       }
-      o = gcref(t->gclist);
+      Object = gcref(table->gclist);
+   }
+   lj_assertG_(G, not Stop or Object IS Stop, "weak-table boundary is not present in weak list");
+}
+
+// Clear collected keys from every weak-key table.
+
+static void gc_clearweakkeys(global_State* G, GCobj* Object)
+{
+   while (Object) {
+      GCtab* table = gco_to_table(Object);
+      lj_assertG_(G, (table->marked & LJ_GC_WEAK), "clear of non-weak table");
+
+      if ((table->marked & LJ_GC_WEAKKEY) and table->hmask > 0) {
+         std::span<Node> hash_part(noderef(table->node), table->hmask + 1);
+         for (Node& n : hash_part) {
+            if (not tvisnil(&n.val) and gc_mayclear(&n.key, 0)) setnilV(&n.val);
+         }
+      }
+      Object = gcref(table->gclist);
    }
 }
 
@@ -1016,6 +1056,10 @@ static void atomic(global_State *g, lua_State *L)
    setgcrefnull(g->gc.grayagain);
    gc_propagate_gray(g);  //  Propagate it.
 
+   // Weak values must not retain objects solely because those objects are about to be finalised.
+   gc_clearweakvalues(g, gcref(g->gc.weak), nullptr);
+   GCobj* original_weak = gcref(g->gc.weak);
+
    finaliser_size = lj_gc_separatefinalisers(g, 0);
    gc_mark_pending_finalisers(g);
    finaliser_size += gc_propagate_gray(g);
@@ -1024,8 +1068,10 @@ static void atomic(global_State *g, lua_State *L)
    finaliser_size += gc_separateobjects(g, 0);
    finaliser_size += gc_propagate_gray(g);
 
-   // All marking done, clear weak tables.
-   gc_clearweak(g, gcref(g->gc.weak));
+   // All marking is complete. Clear dead weak keys everywhere, then clear values from weak tables discovered while
+   // propagating objects preserved for finalisation. Existing weak values were already cleared before separation.
+   gc_clearweakkeys(g, gcref(g->gc.weak));
+   gc_clearweakvalues(g, gcref(g->gc.weak), original_weak);
 
    lj_buf_shrink(L, &g->tmpbuf);  //  Shrink temp buffer.
 
@@ -1033,6 +1079,7 @@ static void atomic(global_State *g, lua_State *L)
    g->gc.currentwhite = (uint8_t)otherwhite(g);  //  Flip current white.
    g->strempty.marked = g->gc.currentwhite;
    setmref(g->gc.sweep, &g->gc.root);
+   setmref(g->gc.sweepfin, &g->gc.finobj);
    g->gc.estimate = g->gc.total - (GCSize)finaliser_size;  //  Initial estimate.
 }
 
@@ -1071,10 +1118,18 @@ static size_t gc_onestep(lua_State *L)
 
       case GCPhase::Sweep: {
          GCSize old = g->gc.total;
-         setmref(g->gc.sweep, gc_sweep(g, mref<GCRef>(g->gc.sweep), GCSWEEPMAX));
+         GCRef* root_sweep = mref<GCRef>(g->gc.sweep);
+         if (gcref(*root_sweep)) {
+            setmref(g->gc.sweep, gc_sweep(g, root_sweep, GCSWEEPMAX));
+         }
+         else {
+            GCRef* finaliser_sweep = mref<GCRef>(g->gc.sweepfin);
+            setmref(g->gc.sweepfin, gc_sweep_finalisers(g, finaliser_sweep, GCSWEEPMAX));
+         }
          lj_assertG(old >= g->gc.total, "sweep increased memory");
          g->gc.estimate -= old - g->gc.total;
-         if (gcref(*mref<GCRef>(g->gc.sweep)) IS nullptr) {
+         if (gcref(*mref<GCRef>(g->gc.sweep)) IS nullptr and
+               gcref(*mref<GCRef>(g->gc.sweepfin)) IS nullptr) {
             if (g->str.num <= (g->str.mask >> 2) and g->str.mask > LJ_MIN_STRTAB * 2 - 1)
                lj_str_resize(L, g->str.mask >> 1);  //  Shrink string table.
             if (gcref(g->gc.mmudata)) {  // Need any finalizations?
@@ -1168,6 +1223,7 @@ void lj_gc_fullgc(lua_State *L)
 
    if (g->gc.state <= (GCPhase::Atomic)) {  // Caught somewhere in the middle.
       setmref(g->gc.sweep, &g->gc.root);  // Sweep everything (preserving it).
+      setmref(g->gc.sweepfin, &g->gc.finobj);
       setgcrefnull(g->gc.gray);  // Reset lists from partial propagation.
       setgcrefnull(g->gc.grayagain);
       setgcrefnull(g->gc.weak);
