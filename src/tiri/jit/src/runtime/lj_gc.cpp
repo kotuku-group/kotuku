@@ -338,35 +338,39 @@ static void gc_mark_uv(global_State *g)
 //********************************************************************************************************************
 // Mark objects in the pending-finaliser queue.
 
-static void gc_mark_mmudata(global_State *g)
+static void gc_mark_pending_finalisers(global_State* G)
 {
-   GCobj *root = gcref(g->gc.mmudata);
+   GCobj *tail = gcref(G->gc.mmudata);
 
-   if (GCobj *u = root) {
+   if (GCobj *object = tail) {
       do {
-         u = gcnext(u);
-         makewhite(g, u);  //  Could be from previous GC.
-         gc_mark(g, u);
-      } while (u != root);
+         object = gcnext(object);
+         makewhite(G, object);  //  Could be from a previous GC.
+         gc_mark(G, object);
+      } while (object != tail);
    }
 }
 
 //********************************************************************************************************************
 // Helper to move an object to the pending-finaliser queue.
 
-static void gc_move_to_mmudata(global_State *g, GCobj *o, GCRef *p)
+static void gc_move_to_pending(global_State *G, GCobj *Object, GCRef *Source)
 {
-   markfinalized(o);
-   *p = o->gch.nextgc;
-   if (gcref(g->gc.mmudata)) {  // Link to end of mmudata list.
-      GCobj *root = gcref(g->gc.mmudata);
-      setgcrefr(o->gch.nextgc, root->gch.nextgc);
-      setgcref(root->gch.nextgc, o);
-      setgcref(g->gc.mmudata, o);
+   // The legacy finalised bit aliases LJ_GC_WEAKKEY for tables. Their one-shot state is carried exclusively by
+   // LJ_GC_FINALISER_SEEN.
+
+   if (Object->gch.gct != ~LJ_TTAB) markfinalized(Object);
+
+   *Source = Object->gch.nextgc;
+   if (gcref(G->gc.mmudata)) {  // Append without reversing registration order.
+      GCobj *tail = gcref(G->gc.mmudata);
+      setgcrefr(Object->gch.nextgc, tail->gch.nextgc);
+      setgcref(tail->gch.nextgc, Object);
+      setgcref(G->gc.mmudata, Object);
    }
    else {  // Create circular list.
-      setgcref(o->gch.nextgc, o);
-      setgcref(g->gc.mmudata, o);
+      setgcref(Object->gch.nextgc, Object);
+      setgcref(G->gc.mmudata, Object);
    }
 }
 
@@ -410,32 +414,34 @@ void lj_gc_checkfinaliser(lua_State* L, GCobj* Object, GCtab* Metatable)
 }
 
 //********************************************************************************************************************
-// Separate userdata objects to be finalized to mmudata list.
+// Move unreachable registered tables and full userdata to the pending-finaliser queue.
 
-size_t lj_gc_separateudata(global_State *g, int all)
+size_t lj_gc_separatefinalisers(global_State* G, int All)
 {
-   size_t m = 0;
-   GCRef *p = &mainthread(g)->nextgc;
-   GCobj *o;
-   while ((o = gcref(*p)) != nullptr) {
-      if (not (iswhite(o) or all) or isfinalized(gco_to_userdata(o))) {
-         p = &o->gch.nextgc;  //  Nothing to do.
+   size_t separated_size = 0;
+   GCRef *source = &G->gc.finobj;
+   GCobj *object;
+
+   while ((object = gcref(*source)) != nullptr) {
+      lj_assertG_(G, ismetamethodfinalisable(object), "unsupported object in registered-finaliser list");
+      lj_assertG_(G, isfinaliserseen(object), "registered finaliser is missing one-shot flag");
+
+      if (not (iswhite(object) or All)) {
+         source = &object->gch.nextgc;
       }
-      else if (not lj_meta_fastg(g, tabref(gco_to_userdata(o)->metatable), MM_gc)) {
-         markfinalized(o);  //  Done, as there's no __gc metamethod.
-         p = &o->gch.nextgc;
-      }
-      else {  // Otherwise move userdata to be finalized to mmudata list.
-         m += sizeudata(gco_to_userdata(o));
-         gc_move_to_mmudata(g, o, p);
+      else {
+         // Table array/hash storage is accounted for when the queued table is propagated below.
+         if (object->gch.gct IS ~LJ_TUDATA) separated_size += sizeudata(gco_to_userdata(object));
+         gc_move_to_pending(G, object, source);
       }
    }
-   return m;
+
+   return separated_size;
 }
 
 //********************************************************************************************************************
-// Separate GCobject (native Kotuku objects) to be finalized to mmudata list.
-// All GCobject instances require finalization via lj_object_finalize() to free the Kotuku object.
+// Move unreachable native Kōtuku objects to the pending-finaliser queue.
+// Every GCobject instance requires direct finalisation through lj_object_finalize().
 
 static size_t gc_separateobjects(global_State *g, int all)
 {
@@ -450,9 +456,10 @@ static size_t gc_separateobjects(global_State *g, int all)
             p = &o->gch.nextgc;  //  Nothing to do.
          }
          else {
-            // Move GCobject to mmudata list for finalization.
+            // Queue the native object for direct finalisation.
             m += sizeof(GCobject);
-            gc_move_to_mmudata(g, o, p);
+            gc_move_to_pending(g, o, p);
+            gc_mark(g, o);
          }
       }
       else p = &o->gch.nextgc;
@@ -953,7 +960,7 @@ void lj_gc_freeall(global_State *g)
 
 static void atomic(global_State *g, lua_State *L)
 {
-   size_t udsize;
+   size_t finaliser_size;
 
    gc_mark_uv(g);  //  Need to remark open upvalues (the thread may be dead).
    gc_propagate_gray(g);  //  Propagate any left-overs.
@@ -970,10 +977,13 @@ static void atomic(global_State *g, lua_State *L)
    setgcrefnull(g->gc.grayagain);
    gc_propagate_gray(g);  //  Propagate it.
 
-   udsize = lj_gc_separateudata(g, 0);  //  Separate userdata to be finalized.
-   udsize += gc_separateobjects(g, 0);  //  Separate GCobjects to be finalized.
-   gc_mark_mmudata(g);  //  Mark them.
-   udsize += gc_propagate_gray(g);  //  And propagate the marks.
+   finaliser_size = lj_gc_separatefinalisers(g, 0);
+   gc_mark_pending_finalisers(g);
+   finaliser_size += gc_propagate_gray(g);
+
+   // Native objects reachable only through a queued table must remain alive for that table's finaliser.
+   finaliser_size += gc_separateobjects(g, 0);
+   finaliser_size += gc_propagate_gray(g);
 
    // All marking done, clear weak tables.
    gc_clearweak(g, gcref(g->gc.weak));
@@ -984,7 +994,7 @@ static void atomic(global_State *g, lua_State *L)
    g->gc.currentwhite = (uint8_t)otherwhite(g);  //  Flip current white.
    g->strempty.marked = g->gc.currentwhite;
    setmref(g->gc.sweep, &g->gc.root);
-   g->gc.estimate = g->gc.total - (GCSize)udsize;  //  Initial estimate.
+   g->gc.estimate = g->gc.total - (GCSize)finaliser_size;  //  Initial estimate.
 }
 
 //********************************************************************************************************************

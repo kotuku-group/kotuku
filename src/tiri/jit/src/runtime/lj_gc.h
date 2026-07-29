@@ -144,7 +144,7 @@ inline void markfinaliserseen(GCobj* Object) noexcept
 }
 
 // Collector.
-extern "C" size_t lj_gc_separateudata(global_State* g, int all);
+extern "C" size_t lj_gc_separatefinalisers(global_State* G, int All);
 extern "C" void lj_gc_finalize_udata(lua_State* L);
 extern "C" void lj_gc_freeall(global_State* g);
 extern "C" int lj_gc_step(lua_State* L);
@@ -334,10 +334,9 @@ public:
 
    // -- Finalisation --
 
-   // Separate currently supported finalisable objects to the pending queue.
-   // This delegates to the legacy userdata pass until finobj separation is introduced.
-   size_t separateFinalisers(int all) noexcept {
-      return lj_gc_separateudata(gs, all);
+   // Move unreachable registered objects to the pending-finaliser queue.
+   size_t separateFinalisers(int All) noexcept {
+      return lj_gc_separatefinalisers(gs, All);
    }
 
    // Finalise all objects in the pending queue.
