@@ -203,9 +203,38 @@ set (BUILDVM_SOURCES
 )
 
 # Common compiler flags and paths (use lists instead of strings for proper handling)
+# The host tools (minilua, buildvm) only run during the build, so they stay optimised in every configuration.
 set (JIT_HOST_CFLAGS -O2 -Wall)
 set (JIT_INCLUDE_DIRS -I${PROJECT_SOURCE_DIR}/include -I${CMAKE_BINARY_DIR} -I${JIT_SRC} -I${JIT_BUILD_DIR} -I${JIT_SRC}/bytecode -I${JIT_SRC}/debug -I${JIT_SRC}/jit -I${JIT_SRC}/lib -I${JIT_SRC}/parser -I${JIT_SRC}/runtime)
-set (JIT_COMMON_CXXFLAGS -fPIC -O2 -fomit-frame-pointer -Wall -std=c++20 -Wno-invalid-offsetof)
+
+# The JIT sources are compiled by bespoke custom commands rather than a CMake target, so the per-configuration flags
+# that CMake would normally supply (CMAKE_CXX_FLAGS_<CONFIG>) never reach them. Select the optimisation and debug
+# flags explicitly from the build type instead, otherwise every configuration silently compiles as -O2 with frame
+# pointers omitted, which makes the JIT effectively undebuggable in a Debug build.
+
+if (KOTUKU_MULTI_CONFIG)
+   # Multi-config generators resolve the configuration at build time, not configure time. Custom commands cannot
+   # vary their flags per configuration here, so keep the optimised defaults.
+   set (JIT_BUILD_TYPE_CXXFLAGS -O2 -fomit-frame-pointer)
+elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
+   # Unoptimised with full debug info. Frame pointers are retained so that the interpreter and JIT-generated frames
+   # remain walkable in gdb, which matters when diagnosing trace and VM faults.
+   set (JIT_BUILD_TYPE_CXXFLAGS -O0 -g -fno-omit-frame-pointer)
+elseif (CMAKE_BUILD_TYPE STREQUAL "FastBuild")
+   # Optimised for compilation speed rather than runtime performance, matching the top-level FastBuild settings.
+   set (JIT_BUILD_TYPE_CXXFLAGS -O0 -g1 -fno-var-tracking -fno-var-tracking-assignments)
+elseif (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+   set (JIT_BUILD_TYPE_CXXFLAGS -O2 -g -fno-omit-frame-pointer)
+elseif (CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
+   set (JIT_BUILD_TYPE_CXXFLAGS -Os -fomit-frame-pointer)
+else ()
+   # Release and any unrecognised configuration.
+   set (JIT_BUILD_TYPE_CXXFLAGS -O2 -fomit-frame-pointer)
+endif ()
+
+message (STATUS "Tiri JIT build flags (${CMAKE_BUILD_TYPE}): ${JIT_BUILD_TYPE_CXXFLAGS}")
+
+set (JIT_COMMON_CXXFLAGS -fPIC ${JIT_BUILD_TYPE_CXXFLAGS} -Wall -std=c++20 -Wno-invalid-offsetof)
 
 # Platform-specific math library (empty on Windows, -lm on Unix)
 if (WIN32)
@@ -834,7 +863,7 @@ set (TIRI_TESTS
    try_except import include_list processing metatables with thunk_table_index debug malformed_syntax numeric_limits return_types url tips tempus
    comparison_chaining reserved_keywords compile_if_import overflow protected_globals constant_shadowing config_library
    object_pinning import_type_analysis global_types type_contracts thunk_contract_argument type_signature_dumps
-   type_guided_emission type_guided_jit_signatures
+   type_guided_emission type_guided_jit_signatures gui_window_gc
 )
 
 foreach (TEST_NAME ${TIRI_TESTS})
