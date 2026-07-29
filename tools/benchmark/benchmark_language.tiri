@@ -5,42 +5,43 @@
 
 @Test function ExceptionTryExcept()
    -- Function that may throw an error
-   local function mayFail(shouldFail)
-      if shouldFail then
+   local function mayFail(ShouldFail:bool):num
+      if ShouldFail then
          error("Intentional error")
       end
       return 42
    end
 
    -- Function that always succeeds
-   local function alwaysSucceeds(x)
-      return x * 2
+   local function alwaysSucceeds(Value:num):num
+      return Value * 2
    end
 
+   local acc = 0
    for i in {0 to 10000} do
       -- Try-except with no exception thrown
       try
-         local result = alwaysSucceeds(i)
+         acc += alwaysSucceeds(i)
       except ex
-         local msg = ex.message
+         acc += #ex.message
       end
 
       -- Try-except with exception thrown occasionally
       try
-         local result = mayFail(i % 100 is 0)
+         acc += mayFail(i % 100 is 0)
       except ex
-         local msg = ex.message
+         acc += #ex.message
       end
 
       -- Nested try-except blocks
       try
          try
-            local result = alwaysSucceeds(i)
+            acc += alwaysSucceeds(i)
          except inner
-            local msg = inner.message
+            acc += #inner.message
          end
       except outer
-         local msg = outer.message
+         acc += #outer.message
       end
 
       -- Try-except with multiple operations
@@ -48,9 +49,9 @@
          local a = alwaysSucceeds(i)
          local b = alwaysSucceeds(i + 1)
          local c = alwaysSucceeds(i + 2)
-         local sum = a + b + c
+         acc += a + b + c
       except ex
-         local msg = ex.message
+         acc += #ex.message
       end
 
       -- Try-except with conditional exception
@@ -58,31 +59,34 @@
          if i % 50 is 0 then
             error("Periodic error")
          end
-         local result = i * 2
+         acc += i * 2
       except ex
-         local recovered = 0
+         acc += 1
       end
    end
+
+   return acc
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Use try-success pattern for handling successful completion
 
 @Test function ExceptionTrySuccess()
-   local function compute(x)
-      if x < 0 then
+   local function compute(Value:num):num
+      if Value < 0 then
          error("Negative value not allowed")
       end
-      return x * x
+      return Value * Value
    end
 
-   local function fetchData(id)
-      if id is 0 then
+   local function fetchData(Id:num):table
+      if Id is 0 then
          error("Invalid ID")
       end
-      return { id = id, value = id * 10 }
+      return { id = Id, value = Id * 10 }
    end
 
+   local acc = 0
    for i in {0 to 30000} do
       local result = 0
 
@@ -104,6 +108,7 @@ end
       success
          data.value = data.value * 2
       end
+      acc += data.value
 
       -- Chained operations in success block
       local a, b
@@ -143,13 +148,18 @@ end
       success
          result = result + 20
       end
+
+      acc += result
    end
+
+   return acc
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Measure overhead of defer statement for cleanup
 
 @Test function ExceptionDefer()
+   local acc = 0
    for i in {0 to 5000} do
       local cleanup_count = 0
 
@@ -209,24 +219,37 @@ end
       end
 
       -- Defer simulating resource cleanup pattern
+      local data = 0
       do
          local resource = { open = true }
          defer()
             resource.open = false
          end
-         local data = resource.open and i or 0
+         data = resource.open and i or 0
       end
+
+      -- Consume the results so that the loop body cannot be eliminated by the JIT
+      acc += cleanup_count + value + result + data
    end
+
+   return acc
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- VARIABLE SCOPE
 ----------------------------------------------------------------------------------------------------------------------
 -- These benchmarks perform identical operations to enable direct performance comparison
--- between different variable scoping mechanisms.
+-- between different variable scoping mechanisms.  They must all share the same iteration count, and each returns
+-- an accumulator so that the JIT cannot discard the loop body.  Verify a change here by checking that ScopeLocal,
+-- ScopeGlobal and ScopeUpvalueAccess still return an identical value.
+--
+-- NB: The iteration count is capped at 20k because global access is roughly two orders of magnitude slower than
+-- local access.  At higher counts ScopeGlobal takes long enough per call that it cannot complete the benchmark
+-- harness warmup phase within a typical duration limit, and the benchmark is reported as an error.
 
 @Test function ScopeLocal()
-   for i in {0 to 1000000} do
+   local acc = 0
+   for i in {0 to 20000} do
       -- Declare local variables
       local a = 10
       local b = 20
@@ -267,7 +290,12 @@ end
       c *= 2
       d /= 2
       e %= 100
+
+      -- Consume the results so that the loop body cannot be eliminated by the JIT
+      acc += r1 + r2 + r3 + r4 + r5 + sum + product + diff + quotient + a + b + c + d + e
    end
+
+   return acc
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -281,7 +309,8 @@ global glScopeD = 40
 global glScopeE = 50
 
 @Test function ScopeGlobal()
-   for i in {0 to 1000000} do
+   local acc = 0
+   for i in {0 to 20000} do
       -- Reset global variables
       glScopeA = 10
       glScopeB = 20
@@ -322,21 +351,26 @@ global glScopeE = 50
       glScopeC *= 2
       glScopeD /= 2
       glScopeE %= 100
+
+      -- Consume the results so that the loop body cannot be eliminated by the JIT
+      acc += r1 + r2 + r3 + r4 + r5 + sum + product + diff + quotient +
+             glScopeA + glScopeB + glScopeC + glScopeD + glScopeE
    end
+
+   return acc
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Measure performance of const-annotated local variable access
 
 @Test function ScopeConstantAccess()
-   for i in {0 to 1000000} do
-      -- Declare const local variables
-      local a <const> = 10
-      local b <const> = 20
-      local c <const> = 30
-      local d <const> = 40
-      local e <const> = 50
-
+   local a <const> = 10
+   local b <const> = 20
+   local c <const> = 30
+   local d <const> = 40
+   local e <const> = 50
+   local acc = 0
+   for i in {0 to 20000} do
       -- Read operations (const can only be read, not written)
       local r1 = a
       local r2 = b
@@ -371,13 +405,11 @@ end
       md /= 2
       me %= 100
 
-      -- Additional const reads to match operation count
-      local x1 = a + b
-      local x2 = c + d
-      local x3 = e + a
-      local x4 = b + c
-      local x5 = d + e
+      -- Consume the results so that the loop body cannot be eliminated by the JIT
+      acc += r1 + r2 + r3 + r4 + r5 + sum + product + diff + quotient + ma + mb + mc + md + me
    end
+
+   return acc
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -392,7 +424,7 @@ end
    local e = 50
 
    -- Create closure that captures upvalues
-   local function accessUpvalues(iter)
+   local function accessUpvalues(Iter:num):num
       -- Read operations
       local r1 = a
       local r2 = b
@@ -407,11 +439,11 @@ end
       local quotient = d / a
 
       -- Write operations
-      a = iter
-      b = iter + 1
-      c = iter + 2
-      d = iter + 3
-      e = iter + 4
+      a = Iter
+      b = Iter + 1
+      c = Iter + 2
+      d = Iter + 3
+      e = Iter + 4
 
       -- Mixed read/write
       a = b + c
@@ -426,9 +458,13 @@ end
       c *= 2
       d /= 2
       e %= 100
+
+      -- Returning the results prevents the JIT from eliminating the upvalue accesses
+      return r1 + r2 + r3 + r4 + r5 + sum + product + diff + quotient + a + b + c + d + e
    end
 
-   for i in {0 to 1000000} do
+   local acc = 0
+   for i in {0 to 20000} do
       -- Reset upvalues
       a = 10
       b = 20
@@ -437,8 +473,10 @@ end
       e = 50
 
       -- Call function that accesses upvalues
-      accessUpvalues(i)
+      acc += accessUpvalues(i)
    end
+
+   return acc
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -458,6 +496,7 @@ end
    local bool_false = false
    local nil_val = nil
 
+   local acc = 0
    for i in {0 to 500} do
       -- Check type of numbers
       local t1 = type(num_int)
@@ -497,13 +536,20 @@ end
       -- Conditional based on type
       local val = i % 3 is 0 and str or (i % 3 is 1 and num_int or tbl)
       if type(val) is "string" then
-         local _ = #val
+         acc += #val
       elseif type(val) is "number" then
-         local _ = val * 2
+         acc += val * 2
       elseif type(val) is "table" then
-         local _ = val.a
+         acc += val.a
       end
+
+      -- Consume the type results so that the loop body cannot be eliminated by the JIT
+      acc += #t1 + #t2 + #t3 + #t4 + #t5 + #t6 + #t7 + #t8 + #t9 + #t10 + #t11 + #t12 + #t13 + #t14
+      acc += (is_num and 1 or 0) + (is_str and 1 or 0) + (is_tbl and 1 or 0) +
+             (is_func and 1 or 0) + (is_bool and 1 or 0)
    end
+
+   return acc
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -520,6 +566,7 @@ end
    local str_invalid = "not_a_number"
    local str_mixed = "123abc"
 
+   local acc = 0
    for i in {0 to 1000} do
       -- Convert integer strings
       local n1 = tonumber(str_int)
@@ -559,7 +606,15 @@ end
       -- Conditional conversion with fallback
       local val = tonumber(str_int) ?? 0
       local val2 = tonumber(str_invalid) ?? -1
+
+      -- Consume the results so that the loop body cannot be eliminated by the JIT.
+      -- n14..n16 are intentionally nil (invalid conversions), so they are counted rather than summed.
+      acc += n1 + n2 + n3 + n4 + n5 + n6 + n7 + n8 + n9 + n10 + n11 + n12 + n13
+      acc += (n14 ?? 0) + (n15 ?? 0) + (n16 ?? 0)
+      acc += n17 + n18 + n19 + val + val2
    end
+
+   return acc
 end
 
 ----------------------------------------------------------------------------------------------------------------------

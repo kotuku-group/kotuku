@@ -10,27 +10,37 @@ function result_series()
 end
 
 @Test function NullificationRetain()
+   local acc = 0
    for i in {0 to 10000000} do
       local a, b, c = result_series()
+      acc += #a + b + c.three
    end
+   return acc
 end
 
 @Test function NullificationBlank()
+   local acc = 0
    for i in {0 to 10000000} do
       local _, _, c = result_series()
+      acc += c.three
    end
+   return acc
 end
 
 @Test function NullificationMask()
+   local acc = 0
    for i in {0 to 10000000} do
       local c = [__*]result_series()
+      acc += c.three
    end
+   return acc
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Execute branching logic with if/elseif/else chains
 
 @Test function ControlIfElseChains()
+   local acc = 0
    for i in {0 to 1000000} do
       local result = 0
       local x = i % 100
@@ -88,13 +98,18 @@ end
       elseif x >= 60 or x < 10 then
          result = 300
       end
+
+      acc += result
    end
+
+   return acc
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Use ternary conditional operator for inline branching
 
 @Test function ControlTernaryOperator()
+   local acc = 0
    for i in {0 to 100000} do
       local x = i % 100
       local result = 0
@@ -120,13 +135,20 @@ end
       -- Ternary with boolean results
       local is_even = x % 2 is 0 ? true :> false
       local in_range = (x >= 25 and x <= 75) ? true :> false
+
+      -- Consume the results so that the loop body cannot be eliminated by the JIT
+      acc += result + a + b + min_val + max_val + clamped +
+             (is_even ? 1 :> 0) + (in_range ? 1 :> 0)
    end
+
+   return acc
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Use nil coalescing operators for default values
 
 @Test function ControlNilCoalescing()
+   local acc = 0
    for i in {0 to 100000} do
       local result = 0
 
@@ -149,19 +171,38 @@ end
       local x = i % 7 is 0 ? nil :> i * 2
       result = (x ?? 0) + 10
 
+      -- Consume the results so that the loop body cannot be eliminated by the JIT
+      acc += result
+   end
+
+   return acc
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Measure nil coalescing over conditionally allocated tables.
+-- NB: Kept separate from ControlNilCoalescing because allocating a table with a conditionally-nil field causes
+-- trace aborts.  Measured in isolation, the ?? operator itself compiles cleanly, so merging the two cases would
+-- wrongly attribute the allocation cost to ??.
+
+@Test function ControlNilCoalescingNested()
+   local acc = 0
+   for i in {0 to 100000} do
       -- Nested nil coalescing
       local outer = i % 4 is 0 ? nil :> { inner = i % 2 is 0 ? nil :> i }
       local safe_val = outer ?? { inner = 0 }
+
+      acc += (safe_val.inner ?? 0)
    end
+
+   return acc
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Execute range loops with start, end, step
 
 @Test function ControlForNumericLoop()
+   local sum = 0
    for i in {0 to 10000} do
-      local sum = 0
-
       -- Simple ascending loop
       for j in {0 into 99} do
          sum += j
@@ -172,39 +213,269 @@ end
          sum += j
       end
 
-      -- Descending loop
-      for j in {99 into 0 by -1} do
-         sum += j
-      end
-
-      -- Descending with step
-      for j in {100 into 0 by -5} do
-         sum += j
-      end
-
       -- Nested numeric loops
       for x in {0 into 9} do
          for y in {0 into 9} do
             sum += x * y
          end
       end
+   end
 
-      -- Loop with computed bounds
-      local start = i % 10
-      local finish = start + 50
+   return sum
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Execute range loops whose bounds are computed at runtime.
+-- NB: Measured separately from ControlForNumericLoop because a range bound supplied by a variable rather than a
+-- literal currently defeats trace compilation, regardless of whether the trip count actually varies.  Each
+-- comparison performs the same outer and inner iteration counts so its timing can be compared directly.
+
+@Test function ControlForComputedBoundsLiteral()
+   local sum = 0
+   local start = 0
+   local finish = 0
+   for i in {0 to 1000} do
+      start = i % 10
+      finish = start + 50
+      for j in {0 into 50} do
+         sum += 1
+      end
+   end
+
+   return sum + start + finish
+end
+
+@Test function ControlForVariableBoundsStable()
+   local sum = 0
+   local start = 0
+   local finish = 50
+   for i in {0 to 1000} do
       for j in {start into finish} do
          sum += 1
       end
    end
+
+   return sum + start + finish
+end
+
+@Test function ControlForVariableBoundsStableLiteral()
+   local sum = 0
+   local start = 0
+   local finish = 50
+   for i in {0 to 1000} do
+      for j in {0 into 50} do
+         sum += 1
+      end
+   end
+
+   return sum + start + finish
+end
+
+@Test function ControlForVariableBoundsStableWhile()
+   local sum = 0
+   local start = 0
+   local finish = 50
+   for i in {0 to 1000} do
+      local j = start
+      while j <= finish do
+         sum += 1
+         j += 1
+      end
+   end
+
+   return sum + start + finish
+end
+
+@Test function ControlForComputedBounds()
+   local sum = 0
+   local start = 0
+   local finish = 0
+   for i in {0 to 1000} do
+      start = i % 10
+      finish = start + 50
+      for j in {start into finish} do
+         sum += 1
+      end
+   end
+
+   return sum + start + finish
+end
+
+@Test function ControlForComputedBoundsWhile()
+   local sum = 0
+   local start = 0
+   local finish = 0
+   for i in {0 to 1000} do
+      start = i % 10
+      finish = start + 50
+      local j = start
+      while j <= finish do
+         sum += 1
+         j += 1
+      end
+   end
+
+   return sum + start + finish
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Execute range loops whose direction changes with their runtime bounds.
+
+@Test function ControlForVariableDirection()
+   local sum = 0
+   local start = 0
+   local finish = 0
+   for i in {0 to 1000} do
+      if i % 2 is 0 then
+         start = 0
+         finish = 50
+      else
+         start = 50
+         finish = 0
+      end
+
+      for j in {start into finish} do
+         sum += 1
+      end
+   end
+
+   return sum + start + finish
+end
+
+@Test function ControlForVariableDirectionWhile()
+   local sum = 0
+   local start = 0
+   local finish = 0
+   for i in {0 to 1000} do
+      if i % 2 is 0 then
+         start = 0
+         finish = 50
+      else
+         start = 50
+         finish = 0
+      end
+
+      local j = start
+      if start <= finish then
+         while j <= finish do
+            sum += 1
+            j += 1
+         end
+      else
+         while j >= finish do
+            sum += 1
+            j -= 1
+         end
+      end
+   end
+
+   return sum + start + finish
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Execute a runtime-bound fractional range.
+-- The quarter step is exactly representable, allowing the while control to yield the same number of iterations.
+
+@Test function ControlForFractionalBounds()
+   local sum = 0
+   local start = 0.0
+   local finish = 10.0
+   local step = 0.25
+   for i in {0 to 1000} do
+      for j in {start into finish by step} do
+         sum += 1
+      end
+   end
+
+   return sum + start + finish + step
+end
+
+@Test function ControlForFractionalBoundsWhile()
+   local sum = 0
+   local start = 0.0
+   local finish = 10.0
+   local step = 0.25
+   for i in {0 to 1000} do
+      local j = start
+      while j <= finish do
+         sum += 1
+         j += step
+      end
+   end
+
+   return sum + start + finish + step
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Execute descending range loops.
+-- The implicit, explicit and while forms perform identical work.  This isolates the parser's handling of the unary
+-- negative step from the numeric loop recorder's handling of descending iteration.
+
+@Test function ControlForDescendingImplicit()
+   local sum = 0
+   for i in {0 to 1000} do
+      for j in {99 into 0} do
+         sum += j
+      end
+   end
+
+   return sum
+end
+
+@Test function ControlForDescendingLoop()
+   local sum = 0
+   for i in {0 to 1000} do
+      for j in {99 into 0 by -1} do
+         sum += j
+      end
+   end
+
+   return sum
+end
+
+@Test function ControlForDescendingWhile()
+   local sum = 0
+   for i in {0 to 1000} do
+      local j = 99
+      while j >= 0 do
+         sum += j
+         j -= 1
+      end
+   end
+
+   return sum
+end
+
+@Test function ControlForDescendingStride()
+   local sum = 0
+   for i in {0 to 1000} do
+      for j in {100 into 0 by -5} do
+         sum += j
+      end
+   end
+
+   return sum
+end
+
+@Test function ControlForDescendingStrideWhile()
+   local sum = 0
+   for i in {0 to 1000} do
+      local j = 100
+      while j >= 0 do
+         sum += j
+         j -= 5
+      end
+   end
+
+   return sum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Execute range-based for loops
 
 @Test function ControlForRangeLoop()
-   for i in {0 to 100} do
-      local sum = 0
-
+   local sum = 0
+   for i in {0 to 10000} do
       -- Simple range loop (exclusive end)
       for j in {0 to 100} do
          sum += j
@@ -215,12 +486,6 @@ end
          sum += j
       end
 
-      -- Range with step (using range.new)
-      nr = range.new(0, 100, false, 2)
-      for j in nr() do
-         sum += j
-      end
-
       -- Nested range loops
       for x in {0 to 10} do
          for y in {0 to 10} do
@@ -228,26 +493,65 @@ end
          end
       end
 
-      -- Range with negative indices
-      for j in {-10 to 10} do
-         sum += j
-      end
-
       -- Short ranges
       for j in {0 to 5} do
          sum += j
       end
    end
+   return sum
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Iterate a range object created via range.new().
+-- NB: Measured separately from ControlForRangeLoop because the range object iterator does not trace-compile, and
+-- hoisting the range.new() call out of the loop makes no difference.  Isolating it keeps the range literal figures
+-- meaningful.
+
+@Test function ControlForRangeObject()
+   local sum = 0
+   local nr = range.new(0, 100, false, 2)
+   for i in {0 to 1000} do
+      for j in nr() do
+         sum += j
+      end
+   end
+   return sum
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Goal: Iterate a range literal that starts from a negative bound.
+-- NB: Measured separately because a negative start bound currently defeats trace compilation, whereas an
+-- equivalent-width range starting at zero or above compiles in a handful of traces.  The trigger is the negative
+-- start value itself, not the range crossing zero -- {-20 to -1} behaves the same as {-10 to 10}.  Both controls
+-- count iterations so their return values and loop bodies are identical.
+
+@Test function ControlForNonNegativeRange()
+   local sum = 0
+   for i in {0 to 1000} do
+      for j in {0 to 20} do
+         sum += 1
+      end
+   end
+   return sum
+end
+
+@Test function ControlForNegativeRange()
+   local sum = 0
+   for i in {0 to 1000} do
+      for j in {-10 to 10} do
+         sum += 1
+      end
+   end
+   return sum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Execute while loops with varying conditions
 
 @Test function ControlWhileLoop()
+   local sum = 0
+   local count = 0
    for i in {0 to 10000} do
-      local sum = 0
-      local count = 0
-
       -- Simple counting while
       count = 0
       while count < 100 do
@@ -291,16 +595,17 @@ end
          n = n - 3
       end
    end
+
+   return sum, count
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Execute repeat-until loops
 
 @Test function ControlRepeatUntil()
+   local sum = 0
+   local count = 0
    for i in {0 to 10000} do
-      local sum = 0
-      local count = 0
-
       -- Simple repeat-until
       count = 0
       repeat
@@ -342,12 +647,14 @@ end
          end
       until found or count >= 100
    end
+   return sum, count
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Use break and continue statements in loops
 
 @Test function ControlBreakContinue()
+   local acc = 0
    for i in {0 to 1000} do
       local sum = 0
       local count = 0
@@ -422,36 +729,76 @@ end
          end
          sum += j
       end
+
+      acc += sum + count
    end
+
+   return acc
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Measure overhead of the safe navigation operator (?.) vs direct access
 
-@Test function ControlSafeNavigationFastCmp()
-   local obj = { name = "Alice", addr = { city = "London", geo = { lat = 51.5 } } }
-   local arr = { 10, 20, 30, 40, 50 }
+-- NB: Safe field access (?.) and safe index access (?[]) are measured separately because they have very
+-- different JIT characteristics.  At the time of writing ?. compiles cleanly and matches direct field access,
+-- whereas ?[] aborts trace compilation and is therefore orders of magnitude slower.  Combining them into one
+-- benchmark would hide that distinction.
 
+@Test function ControlSafeNavigationFieldFastCmp()
+   local obj = { name = "Alice", addr = { city = "London", geo = { lat = 51.5 } } }
+
+   local acc = 0
    for i in {0 to 1000000} do
       local v1 = obj.name
       local v2 = obj.addr.city
       local v3 = obj.addr.geo.lat
-      local v4 = arr[0]
-      local v5 = arr[2]
+      acc += #v1 + #v2 + v3
    end
+
+   return acc
 end
 
-@Test function ControlSafeNavigation()
+@Test function ControlSafeNavigationField()
    local obj = { name = "Alice", addr = { city = "London", geo = { lat = 51.5 } } }
-   local arr = { 10, 20, 30, 40, 50 }
-   local missing = nil
 
+   local acc = 0
    for i in {0 to 1000000} do
       -- Safe access on valid paths (should behave like direct access)
       local v1 = obj?.name
       local v2 = obj?.addr?.city
       local v3 = obj?.addr?.geo?.lat
-      local v4 = arr?[0]
-      local v5 = arr?[2]
+      acc += #v1 + #v2 + v3
    end
+
+   return acc
+end
+
+-- NB: The index pair uses a lower iteration count than the field pair because ?[] does not currently trace-compile.
+-- At 1M iterations it is slow enough to exhaust the benchmark harness warmup budget.  Both functions in the pair
+-- must keep the same count for the comparison to remain valid.
+
+@Test function ControlSafeNavigationIndexFastCmp()
+   local arr = { 10, 20, 30, 40, 50 }
+
+   local acc = 0
+   for i in {0 to 100000} do
+      local v1 = arr[0]
+      local v2 = arr[2]
+      acc += v1 + v2
+   end
+
+   return acc
+end
+
+@Test function ControlSafeNavigationIndex()
+   local arr = { 10, 20, 30, 40, 50 }
+
+   local acc = 0
+   for i in {0 to 100000} do
+      local v1 = arr?[0]
+      local v2 = arr?[2]
+      acc += v1 + v2
+   end
+
+   return acc
 end
