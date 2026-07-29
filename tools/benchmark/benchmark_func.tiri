@@ -29,6 +29,7 @@
       return x, x * 2, x * 3
    end
 
+   local checksum = 0
    for i in {0 to 1000000} do
       -- Call with no arguments
       local r0 = noArgs()
@@ -50,7 +51,9 @@
 
       -- Chain function calls
       local chained = oneArg(oneArg(oneArg(i)))
+      checksum += r0 + r1 + r2 + r3 + r5 + a + b + c + chained
    end
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -78,6 +81,7 @@ end
       return sumAll(...)
    end
 
+   local checksum = 0
    for i in {0 to 1000} do
       -- Call with varying argument counts
       local s1 = sumAll(1)
@@ -92,13 +96,16 @@ end
 
       -- Forward variadic arguments
       local fwd = forwardArgs(i, i + 1, i + 2)
+      checksum += s1 + s2 + s3 + s5 + s10 + #f1 + #f2 + fwd
    end
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Create and call closures that capture upvalues
 
 @Test function FunctionClosures()
+   local checksum = 0
    for i in {0 to 1000} do
       -- Simple closure capturing one variable
       local x = i
@@ -153,13 +160,16 @@ end
       inc()
       inc()
       local v6 = get()
+      checksum += v1 + v2 + counter + v3 + v4 + v5 + v6
    end
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Use anonymous function expressions with arrow syntax
 
 @Test function FunctionAnonymous()
+   local checksum = 0
    for i in {0 to 1000} do
       -- Simple arrow function
       local double = (x => x * 2)
@@ -174,6 +184,7 @@ end
       local mapped = {}
       for idx, n in ipairs(numbers) do
          mapped[idx] = (x => x * 2)(n)
+         checksum += mapped[idx]
       end
 
       -- Immediately invoked arrow function
@@ -199,7 +210,9 @@ end
       local multiplier = i % 10 + 1
       local multiply = (x => x * multiplier)
       local v6 = multiply(5)
+      checksum += v1 + v2 + #mapped + result + v3 + v4 + v5 + v6
    end
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -243,6 +256,7 @@ end
       return isEven(n - 1)
    end
 
+   local checksum = 0
    for i in {0 to 500} do
       -- Call recursive functions with safe depths
       local f1 = factorial(10)
@@ -263,7 +277,10 @@ end
       -- Mutual recursion
       local e1 = isEven(20)
       local o1 = isOdd(21)
+      checksum += f1 + f2 + fib1 + fib2 + s1 + s2 + c1 + c2 +
+         (e1 ? 1 :> 0) + (o1 ? 1 :> 0)
    end
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -309,6 +326,7 @@ end
       end
    }
 
+   local checksum = 0.0
    for i in {0 to 10000} do
       -- Method calls with colon syntax
       Counter:reset()
@@ -337,5 +355,7 @@ end
          Counter:increment()
       end
       local final = Counter:getValue()
+      checksum += v1 + d + v2 + final
    end
+   return checksum
 end

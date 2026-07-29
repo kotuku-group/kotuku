@@ -19,7 +19,7 @@ local glStringBenchmarkSink = 0
       checksum += len1 + len2 + len3
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -46,7 +46,7 @@ end
       checksum += #result
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 @Test function StringConcatBigArray()
@@ -68,7 +68,7 @@ end
       checksum += #result
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 -- This is the standard Lua trick for concatenating strings in a loop.
@@ -84,8 +84,8 @@ end
       table.insert(result, "Value: " .. tostring(i) .. ", Next: " .. tostring(i + 1))
    end
 
-   concat_result = table.concat(result)
-   glStringBenchmarkSink += #concat_result
+   local concat_result = table.concat(result)
+   return #concat_result
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -112,7 +112,7 @@ end
       checksum += #result
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 @Test function StringConcatSmallArray()
@@ -136,7 +136,7 @@ end
       checksum += #result
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -160,7 +160,7 @@ end
       checksum += #result + #sentence
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -179,7 +179,7 @@ end
       checksum += #msg1 + #msg2 + #msg3
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 @Test function StringInterp()
@@ -194,7 +194,7 @@ end
       checksum += #msg4 + #msg5 + #msg6
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -223,7 +223,7 @@ end
       checksum += #first_word + #middle + #last_part + #from_end + #chunk
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -254,7 +254,7 @@ end
       checksum += pos1 + pos2 + pos3 + (pos4 ?? 0) + pos5 + pos6
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -282,7 +282,7 @@ end
       checksum += #result1 + #result2 + #result3 + #result4
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -297,7 +297,7 @@ end
       checksum += #items
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 -- Use regex for more sophisticated splitting
@@ -313,7 +313,7 @@ rx_split = regex.new("[^;,:]+")
       checksum += #parts
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -348,7 +348,7 @@ rx_digits   = regex.new("^\\d+$")
                   (r5 ? 1 :> 0) + (r6 ? 1 :> 0) + (r7 ? 1 :> 0) + (r8 ? 1 :> 0)
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -381,7 +381,7 @@ rx_numbers    = regex.new("\\d+")
       checksum += #r1 + #r2 + #r3 + #r4
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -419,7 +419,7 @@ end
                   (eq_long ? 1 :> 0) + (lt_long ? 1 :> 0)
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -445,7 +445,7 @@ end
       checksum += #up1 + #up2 + #lo1 + #lo2 + #round
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -468,7 +468,7 @@ end
       checksum += #trimmed1 + #trimmed2 + #trimmed3 + #trimmed4 + #trimmed5
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -502,7 +502,7 @@ end
       checksum += #char1 + #char2 + #char3 + code1 + code2 + #codes + #chr + #str + #var_char + var_code
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -535,7 +535,7 @@ end
       checksum += #user + #domain + #year + #month + #day + #level + #timestamp + #protocol + #host + #port
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -568,7 +568,7 @@ end
       checksum += #repeated1 + #repeated2 + #repeated3 + #repeated4 + #separator + #with_sep + #var_rep
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -595,7 +595,7 @@ end
       checksum += #rev1 + #rev2 + #rev3 + #double_rev + (is_palindrome ? 1 :> 0)
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -624,7 +624,7 @@ end
                   (ends_with_pdf ? 1 :> 0) + (ends_with_com ? 1 :> 0) + (chk ? 1 :> 0)
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -683,5 +683,5 @@ end
                   #s11 + #s12 + #s13 + #s14 + #s15 + #s16 + #s17 + #s18 + #s19 + #s20
    end
 
-   glStringBenchmarkSink += checksum
+   return checksum
 end
