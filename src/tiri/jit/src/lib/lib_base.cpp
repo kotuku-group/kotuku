@@ -408,15 +408,14 @@ LJLIB_ASM_(getmetatable)   LJLIB_REC(.)
 //********************************************************************************************************************
 // Recycle the lj_lib_checkany(L, 1) from assert.
 
-LJLIB_ASM(setmetatable)      LJLIB_REC(.)
+LJLIB_CF(setmetatable)
 {
-   GCtab* t = lj_lib_checktab(L, 1);
-   GCtab* mt = lj_lib_checktabornil(L, 2);
+   lj_lib_checktab(L, 1);
+   lj_lib_checktabornil(L, 2);
    if (!tvisnil(lj_meta_lookup(L, L->base, MM_metatable))) lj_err_caller(L, ErrMsg::PROTMT);
-   setgcref(t->metatable, obj2gco(mt));
-   if (mt) { lj_gc_objbarriert(L, t, mt); }
-   settabV(L, L->base - 2, t);
-   return FFH_RES(1);
+   L->top = L->base + 2;
+   lua_setmetatable(L, 1);
+   return 1;
 }
 
 //********************************************************************************************************************
@@ -1006,7 +1005,7 @@ LJLIB_CF(ltr)
 
 static void newproxy_weaktable(lua_State* L)
 {
-   // NOBARRIER: The table is new (marked white).
+   // NOBARRIER: The table is new (marked white). This internal metatable only defines __mode.
    GCtab *t = lj_tab_new(L, 0, 1);
    settabV(L, L->top++, t);
    setgcref(t->metatable, obj2gco(t));

@@ -767,7 +767,9 @@ static void snap_unsink(jit_State *J, GCtrace *T, ExitState *ex, SnapNo snapno, 
                lj_assertJ(irk->op2 IS IRFL_TAB_META, "sunk store with bad field %d", irk->op2);
                snap_restoreval(J, T, ex, snapno, rfilt, irs->op2, &tmp);
                // NOBARRIER: The table is new (marked white).
-               setgcref(t->metatable, obj2gco(tabV(&tmp)));
+               GCtab* metatable = tabV(&tmp);
+               setgcref(t->metatable, obj2gco(metatable));
+               lj_gc_checkfinaliser(J->L, obj2gco(t), metatable);
             }
             else {
                irk = &T->ir[irk->op2];

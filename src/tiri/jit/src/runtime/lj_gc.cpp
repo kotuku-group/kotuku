@@ -49,6 +49,7 @@
 #include "lj_struct.h"
 #include <kotuku/main.h>
 
+#include <algorithm>
 #include <array>
 #include <span>
 
@@ -157,6 +158,53 @@ inline void gray2black(GCobj *x) noexcept { x->gch.marked |= LJ_GC_BLACK; }
 // Check if GCobject has been finalised.
 
 [[nodiscard]] inline bool isfinalized(const GCobject* o) noexcept { return (o->marked & LJ_GC_FINALIZED) != 0; }
+
+// Find the intrusive link which refers to Object in a null-terminated GC list.
+
+[[nodiscard]] static GCRef* gc_find_list_link(GCRef* Head, const GCobj* Object) noexcept
+{
+   GCRef* link = Head;
+   while (gcref(*link)) {
+      if (gcref(*link) IS Object) return link;
+      link = &gcref(*link)->gch.nextgc;
+   }
+   return nullptr;
+}
+
+#ifdef LUA_USE_ASSERT
+// The pending-finaliser queue is circular, unlike the ordinary GC lists.
+
+[[nodiscard]] static bool gc_pending_contains(const global_State* g, const GCobj* Object) noexcept
+{
+   GCobj* tail = gcref(g->gc.mmudata);
+   if (not tail) return false;
+
+   GCobj* current = tail;
+   do {
+      current = gcnext(current);
+      if (current IS Object) return true;
+   } while (current != tail);
+   return false;
+}
+
+static void gc_assert_registration_source(global_State* g, GCobj* Object, GCRef* Source) noexcept
+{
+   GCRef* root_link = gc_find_list_link(&g->gc.root, Object);
+   GCRef* userdata_link = gc_find_list_link(&mainthread(g)->nextgc, Object);
+   GCRef* finaliser_link = gc_find_list_link(&g->gc.finobj, Object);
+
+   lj_assertG(not finaliser_link, "object is already in registered-finaliser list");
+   lj_assertG(not gc_pending_contains(g, Object), "pending object cannot be registered again");
+   lj_assertG((Source IS root_link) or (Source IS userdata_link), "object is not in its ordinary GC list");
+   if (Object->gch.gct IS ~LJ_TTAB) {
+      lj_assertG(Source IS root_link, "table is not in root GC list");
+   }
+   else {
+      lj_assertG(Object->gch.gct IS ~LJ_TUDATA, "unsupported finaliser registration type");
+      lj_assertG(Source IS userdata_link, "userdata is not in userdata GC list");
+   }
+}
+#endif
 
 // Mark a string object (strings go directly to black, never grey).
 
@@ -289,67 +337,114 @@ static void gc_mark_uv(global_State *g)
 }
 
 //********************************************************************************************************************
-// Mark userdata in mmudata list.
+// Mark objects in the pending-finaliser queue.
 
-static void gc_mark_mmudata(global_State *g)
+static void gc_mark_pending_finalisers(global_State* G)
 {
-   GCobj *root = gcref(g->gc.mmudata);
+   GCobj *tail = gcref(G->gc.mmudata);
 
-   if (GCobj *u = root) {
+   if (GCobj *object = tail) {
       do {
-         u = gcnext(u);
-         makewhite(g, u);  //  Could be from previous GC.
-         gc_mark(g, u);
-      } while (u != root);
+         object = gcnext(object);
+         makewhite(G, object);  //  Could be from a previous GC.
+         gc_mark(G, object);
+      } while (object != tail);
    }
 }
 
 //********************************************************************************************************************
-// Helper to move an object to the mmudata finalization list.
+// Helper to move an object to the pending-finaliser queue.
 
-static void gc_move_to_mmudata(global_State *g, GCobj *o, GCRef *p)
+static void gc_move_to_pending(global_State *G, GCobj *Object, GCRef *Source)
 {
-   markfinalized(o);
-   *p = o->gch.nextgc;
-   if (gcref(g->gc.mmudata)) {  // Link to end of mmudata list.
-      GCobj *root = gcref(g->gc.mmudata);
-      setgcrefr(o->gch.nextgc, root->gch.nextgc);
-      setgcref(root->gch.nextgc, o);
-      setgcref(g->gc.mmudata, o);
+   // The legacy finalised bit aliases LJ_GC_WEAKKEY for tables. Their one-shot state is carried exclusively by
+   // LJ_GC_FINALISER_SEEN.
+
+   if (Object->gch.gct != ~LJ_TTAB) markfinalized(Object);
+
+   *Source = Object->gch.nextgc;
+   if (gcref(G->gc.mmudata)) {  // Append without reversing registration order.
+      GCobj *tail = gcref(G->gc.mmudata);
+      setgcrefr(Object->gch.nextgc, tail->gch.nextgc);
+      setgcref(tail->gch.nextgc, Object);
+      setgcref(G->gc.mmudata, Object);
    }
    else {  // Create circular list.
-      setgcref(o->gch.nextgc, o);
-      setgcref(g->gc.mmudata, o);
+      setgcref(Object->gch.nextgc, Object);
+      setgcref(G->gc.mmudata, Object);
    }
 }
 
-//********************************************************************************************************************
-// Separate userdata objects to be finalized to mmudata list.
+// Register a table or full userdata for one-shot metamethod finalisation.
 
-size_t lj_gc_separateudata(global_State *g, int all)
+void lj_gc_checkfinaliser(lua_State* L, GCobj* Object, GCtab* Metatable)
 {
-   size_t m = 0;
-   GCRef *p = &mainthread(g)->nextgc;
-   GCobj *o;
-   while ((o = gcref(*p)) != nullptr) {
-      if (not (iswhite(o) or all) or isfinalized(gco_to_userdata(o))) {
-         p = &o->gch.nextgc;  //  Nothing to do.
-      }
-      else if (not lj_meta_fastg(g, tabref(gco_to_userdata(o)->metatable), MM_gc)) {
-         markfinalized(o);  //  Done, as there's no __gc metamethod.
-         p = &o->gch.nextgc;
-      }
-      else {  // Otherwise move userdata to be finalized to mmudata list.
-         m += sizeudata(gco_to_userdata(o));
-         gc_move_to_mmudata(g, o, p);
-      }
-   }
-   return m;
+   global_State* g = G(L);
+
+   if (not Metatable or not lj_meta_fastg(g, Metatable, MM_gc) or isfinaliserseen(Object)) return;
+
+   lj_assertG(ismetamethodfinalisable(Object), "unsupported metamethod-finalisable object type");
+
+   GCRef* list = Object->gch.gct IS ~LJ_TTAB ? &g->gc.root : &mainthread(g)->nextgc;
+   GCRef* source = gc_find_list_link(list, Object);
+
+   lj_assertG(source, "finalisable object is not in its ordinary GC list");
+   if (not source) return;
+
+#ifdef LUA_USE_ASSERT
+   gc_assert_registration_source(g, Object, source);
+#endif
+
+   // A sweep cursor may point at the moved object's nextgc field after that object has already been swept.
+   // Redirect it to the predecessor link before nextgc is reused for finobj.
+
+   if (mref<GCRef>(g->gc.sweep) IS &Object->gch.nextgc) setmref(g->gc.sweep, source);
+
+   *source = Object->gch.nextgc;
+   markfinaliserseen(Object);
+
+   // Objects registered after their ordinary-list sweep position has passed, including during finobj sweeping, will
+   // not be visited by either active cursor. Make them current-white immediately for the next marking cycle.
+
+   if (g->gc.state IS GCPhase::SweepString or g->gc.state IS GCPhase::Sweep) makewhite(g, Object);
+
+   setgcrefr(Object->gch.nextgc, g->gc.finobj);
+   setgcref(g->gc.finobj, Object);
+
+   lj_assertG(gc_find_list_link(&g->gc.finobj, Object), "registered object is missing from finaliser list");
+   lj_assertG(not gc_find_list_link(&g->gc.root, Object), "registered object is still in root GC list");
+   lj_assertG(not gc_pending_contains(g, Object), "registered object is also pending finalisation");
 }
 
 //********************************************************************************************************************
-// Separate GCobject (native Kotuku objects) to be finalized to mmudata list.
-// All GCobject instances require finalization via lj_object_finalize() to free the Kotuku object.
+// Move unreachable registered tables and full userdata to the pending-finaliser queue.
+
+size_t lj_gc_separatefinalisers(global_State* G, int All)
+{
+   size_t separated_size = 0;
+   GCRef *source = &G->gc.finobj;
+   GCobj *object;
+
+   while ((object = gcref(*source)) != nullptr) {
+      lj_assertG_(G, ismetamethodfinalisable(object), "unsupported object in registered-finaliser list");
+      lj_assertG_(G, isfinaliserseen(object), "registered finaliser is missing one-shot flag");
+
+      if (not (iswhite(object) or All)) {
+         source = &object->gch.nextgc;
+      }
+      else {
+         // Table array/hash storage is accounted for when the queued table is propagated below.
+         if (object->gch.gct IS ~LJ_TUDATA) separated_size += sizeudata(gco_to_userdata(object));
+         gc_move_to_pending(G, object, source);
+      }
+   }
+
+   return separated_size;
+}
+
+//********************************************************************************************************************
+// Move unreachable native Kōtuku objects to the pending-finaliser queue.
+// Every GCobject instance requires direct finalisation through lj_object_finalize().
 
 static size_t gc_separateobjects(global_State *g, int all)
 {
@@ -364,9 +459,10 @@ static size_t gc_separateobjects(global_State *g, int all)
             p = &o->gch.nextgc;  //  Nothing to do.
          }
          else {
-            // Move GCobject to mmudata list for finalization.
+            // Queue the native object for direct finalisation.
             m += sizeof(GCobject);
-            gc_move_to_mmudata(g, o, p);
+            gc_move_to_pending(g, o, p);
+            gc_mark(g, o);
          }
       }
       else p = &o->gch.nextgc;
@@ -705,6 +801,26 @@ static GCRef* gc_sweep(global_State *g, GCRef* p, uint32_t lim)
 }
 
 //********************************************************************************************************************
+// Sweep registered finalisers without providing a path that can free them before separation.
+
+static GCRef* gc_sweep_finalisers(global_State* G, GCRef* List, uint32_t Limit)
+{
+   GCobj* object;
+   while ((object = gcref(*List)) and Limit-- > 0) {
+      lj_assertG_(G, ismetamethodfinalisable(object), "unsupported object in registered-finaliser sweep");
+      lj_assertG_(G, isfinaliserseen(object), "registered-finaliser sweep found an unregistered object");
+      lj_assertG_(G, not isdead(G, object), "unreachable registered object escaped finaliser separation");
+      lj_assertG_(G, not gc_find_list_link(&G->gc.root, object),
+         "registered object is also present in root GC list");
+      lj_assertG_(G, not gc_pending_contains(G, object), "registered object is also pending finalisation");
+
+      makewhite(G, object);
+      List = &object->gch.nextgc;
+   }
+   return List;
+}
+
+//********************************************************************************************************************
 // Sweep one string interning table chain. Preserves hashalg bit.
 
 static void gc_sweepstr(global_State *g, GCRef* chain)
@@ -748,66 +864,123 @@ static void gc_sweepstr(global_State *g, GCRef* chain)
 }
 
 //********************************************************************************************************************
-// Clear collected entries from weak tables.
+// Clear collected values from weak tables up to, but excluding, Stop.
 
-static void gc_clearweak(global_State *g, GCobj* o)
+static void gc_clearweakvalues(global_State* G, GCobj* Object, GCobj* Stop)
 {
-   while (o) {
-      GCtab* t = gco_to_table(o);
-      lj_assertG((t->marked & LJ_GC_WEAK), "clear of non-weak table");
+   while (Object and Object != Stop) {
+      GCtab* table = gco_to_table(Object);
+      lj_assertG_(G, (table->marked & LJ_GC_WEAK), "clear of non-weak table");
 
       // Clear array part (TValue has alignment attributes incompatible with std::span).
-      if ((t->marked & LJ_GC_WEAKVAL) and t->asize > 0) {
-         TValue *array_start = arrayslot(t, 0);
-         for (MSize i = 0; i < t->asize; i++) {
+      if ((table->marked & LJ_GC_WEAKVAL) and table->asize > 0) {
+         TValue* array_start = arrayslot(table, 0);
+         for (MSize i = 0; i < table->asize; i++) {
             if (gc_mayclear(&array_start[i], 1)) setnilV(&array_start[i]);
          }
       }
 
-      // Clear hash part using std::span.
-      if (t->hmask > 0) {
-         std::span<Node> hash_part(noderef(t->node), t->hmask + 1);
+      if ((table->marked & LJ_GC_WEAKVAL) and table->hmask > 0) {
+         // Clear hash values without considering weak keys at this stage.
+         std::span<Node> hash_part(noderef(table->node), table->hmask + 1);
          for (Node &n : hash_part) {
-            if (not tvisnil(&n.val) and (gc_mayclear(&n.key, 0) or gc_mayclear(&n.val, 1)))
-               setnilV(&n.val);
+            if (not tvisnil(&n.val) and gc_mayclear(&n.val, 1)) setnilV(&n.val);
          }
       }
-      o = gcref(t->gclist);
+      Object = gcref(table->gclist);
+   }
+   lj_assertG_(G, not Stop or Object IS Stop, "weak-table boundary is not present in weak list");
+}
+
+// Clear collected keys from every weak-key table.
+
+static void gc_clearweakkeys(global_State* G, GCobj* Object)
+{
+   while (Object) {
+      GCtab* table = gco_to_table(Object);
+      lj_assertG_(G, (table->marked & LJ_GC_WEAK), "clear of non-weak table");
+
+      if ((table->marked & LJ_GC_WEAKKEY) and table->hmask > 0) {
+         std::span<Node> hash_part(noderef(table->node), table->hmask + 1);
+         for (Node& n : hash_part) {
+            if (not tvisnil(&n.val) and gc_mayclear(&n.key, 0)) setnilV(&n.val);
+         }
+      }
+      Object = gcref(table->gclist);
    }
 }
 
 //********************************************************************************************************************
-// Call a userdata finaliser.
+// Call a table or userdata finaliser.
 
-static void gc_call_finaliser(global_State *g, lua_State *L, cTValue* mo, GCobj* o)
+static void gc_call_finaliser(global_State *G, lua_State *L, cTValue* Metamethod, GCobj* Object)
 {
-   lj_trace_abort(g);
+   lj_assertG_(G, tvisfunc(Metamethod), "attempt to call a non-function finaliser");
+   lj_trace_abort(G);
 
-   // Use RAII guard for hook state and GC threshold preservation.
-   GCFinaliserGuard guard(g);
+   ptrdiff_t saved_top = savestack(L, L->top);
+   const BCIns *saved_try_handler = L->try_handler_pc;
+   CapturedStackTrace *saved_pending_trace = L->pending_trace;
+   GCstr *saved_exception_message = L->pending_exception_message;
+   GCstr *saved_exception_source = L->pending_exception_source;
+   int saved_exception_line = L->pending_exception_line;
+   int saved_try_depth = L->try_stack.depth;
+   std::array<TryFrame, LJ_MAX_TRY_DEPTH> saved_try_frames;
+   std::copy_n(L->try_stack.frames, saved_try_depth, saved_try_frames.begin());
+   ERR saved_caught_error = L->CaughtError;
+   bool saved_exception_valid = L->pending_exception_valid;
+   bool saved_traceback_state = L->sent_traceback;
+   lj_state_checkstack(L, 2 + LJ_FR2);
 
-   if (LJ_HASPROFILE and (guard.savedHook() & HOOK_PROFILE)) lj_dispatch_update(g);
+   int errcode;
+   uint8_t saved_hook;
+   {
+      GCFinaliserGuard guard(G);
+      saved_hook = guard.savedHook();
 
-   // Set up the stack for the finaliser call.
+      if (LJ_HASPROFILE and (saved_hook & HOOK_PROFILE)) lj_dispatch_update(G);
 
-   TValue *top = L->top;
-   copyTV(L, top++, mo);
-   if (LJ_FR2) setnilV(top++);
-   setgcV(L, top, o, ~o->gch.gct);
-   L->top = top + 1;
+      // Set up the stack for the finaliser call.
 
-   // Call the finaliser. Stack: |mo|o| -> |
-   int errcode = lj_vm_pcall(L, top, 1 + 0, -1);
+      TValue *top = restorestack(L, saved_top);
+      copyTV(L, top++, Metamethod);
+      if (LJ_FR2) setnilV(top++);
+      TValue *argument = top;
+      setgcV(L, top, Object, ~Object->gch.gct);
+      L->top = top + 1;
 
-   if (LJ_HASPROFILE and (guard.savedHook() & HOOK_PROFILE)) lj_dispatch_update(g);
+      // Call the finaliser. Stack: |metamethod|object| -> |
+      // Suspend the caller's Tiri try handlers so finaliser errors unwind to this protected-call frame.
+      L->try_stack.depth = 0;
+      L->try_handler_pc = nullptr;
+      errcode = lj_vm_pcall(L, argument, 1, -1);
+      std::copy_n(saved_try_frames.begin(), saved_try_depth, L->try_stack.frames);
+      L->try_stack.depth = saved_try_depth;
+      L->try_handler_pc = saved_try_handler;
+      setgcref(G->cur_L, obj2gco(L));
+   }
+   if (LJ_HASPROFILE and (saved_hook & HOOK_PROFILE)) lj_dispatch_update(G);
 
-   // Guard destructor restores hook state and threshold here.  Propagate errors after state restoration.
+   if (errcode) {
+      CSTRING message = L->top > restorestack(L, saved_top) and tvisstr(L->top - 1) ?
+         strVdata(L->top - 1) : "non-string finaliser error";
+      kt::Log("gc_call_finaliser").warning("Ignoring finaliser error: %s", message);
+      if (L->pending_trace and L->pending_trace != saved_pending_trace)
+         lj_debug_free_trace(L, L->pending_trace);
+   }
 
-   if (errcode) lj_err_throw(L, errcode);
+   L->pending_trace = saved_pending_trace;
+   L->pending_exception_message = saved_exception_message;
+   L->pending_exception_source = saved_exception_source;
+   L->pending_exception_line = saved_exception_line;
+   L->CaughtError = saved_caught_error;
+   L->pending_exception_valid = saved_exception_valid;
+   L->sent_traceback = saved_traceback_state;
+   L->top = restorestack(L, saved_top);
 }
 
 //********************************************************************************************************************
-// Finalize one object from the mmudata list (handles both userdata and GCobject).
+// Finalise one object from the pending queue.
 
 static void gc_finalize(lua_State *L)
 {
@@ -819,30 +992,36 @@ static void gc_finalize(lua_State *L)
    if (o IS gcref(g->gc.mmudata)) setgcrefnull(g->gc.mmudata);
    else setgcrefr(gcref(g->gc.mmudata)->gch.nextgc, o->gch.nextgc);
 
-   // Add object back to its original list and make it white.
-   if (o->gch.gct IS ~LJ_TOBJECT) {
-      // GCobject goes back to the main GC root list.
+   // Restore the object to its ordinary list before calling its finaliser, keeping it and its graph usable throughout
+   // the call. The one-shot registration bit remains set after makewhite().
+
+   if (o->gch.gct IS ~LJ_TTAB or o->gch.gct IS ~LJ_TOBJECT) {
       setgcrefr(o->gch.nextgc, g->gc.root);
       setgcref(g->gc.root, o);
-      makewhite(g, o);
-      // Call the finalization function directly (no metamethod lookup).
-      lj_object_finalize(L, gco_to_object(o));
    }
    else {
-      // Userdata goes back to the main userdata list.
+      lj_assertG(o->gch.gct IS ~LJ_TUDATA, "unsupported object in pending-finaliser queue");
       setgcrefr(o->gch.nextgc, mainthread(g)->nextgc);
       setgcref(mainthread(g)->nextgc, o);
-      makewhite(g, o);
-      // Resolve the __gc metamethod from userdata's metatable.
-      cTValue *mo = lj_meta_fastg(g, tabref(gco_to_userdata(o)->metatable), MM_gc);
-      if (mo) gc_call_finaliser(g, L, mo, o);
    }
+   makewhite(g, o);
+
+   if (o->gch.gct IS ~LJ_TOBJECT) {
+      // Native Kōtuku objects have a mandatory direct finaliser.
+      lj_object_finalize(L, gco_to_object(o));
+      return;
+   }
+
+   GCtab *metatable = o->gch.gct IS ~LJ_TTAB ?
+      tabref(gco_to_table(o)->metatable) : tabref(gco_to_userdata(o)->metatable);
+   cTValue *metamethod = lj_meta_fastg(g, metatable, MM_gc);
+   if (metamethod and tvisfunc(metamethod)) gc_call_finaliser(g, L, metamethod, o);
 }
 
 //********************************************************************************************************************
-// Finalize all userdata objects from mmudata list.
+// Finalise all objects in the pending queue.
 
-void lj_gc_finalize_udata(lua_State *L)
+void lj_gc_finalize_pending(lua_State *L)
 {
    while (gcref(G(L)->gc.mmudata) != nullptr) gc_finalize(L);
 }
@@ -856,6 +1035,7 @@ void lj_gc_freeall(global_State *g)
    // Free everything, except super-fixed objects (the main thread).
    g->gc.currentwhite = LJ_GC_WHITES | LJ_GC_SFIXED;
    gc_fullsweep(g, &g->gc.root);
+   gc_fullsweep(g, &g->gc.finobj);
    strmask = g->str.mask;
    for (i = 0; i <= strmask; i++)  //  Free all string hash chains.
       gc_sweepstr(g, &g->str.tab[i]);
@@ -866,7 +1046,7 @@ void lj_gc_freeall(global_State *g)
 
 static void atomic(global_State *g, lua_State *L)
 {
-   size_t udsize;
+   size_t finaliser_size;
 
    gc_mark_uv(g);  //  Need to remark open upvalues (the thread may be dead).
    gc_propagate_gray(g);  //  Propagate any left-overs.
@@ -883,13 +1063,22 @@ static void atomic(global_State *g, lua_State *L)
    setgcrefnull(g->gc.grayagain);
    gc_propagate_gray(g);  //  Propagate it.
 
-   udsize = lj_gc_separateudata(g, 0);  //  Separate userdata to be finalized.
-   udsize += gc_separateobjects(g, 0);  //  Separate GCobjects to be finalized.
-   gc_mark_mmudata(g);  //  Mark them.
-   udsize += gc_propagate_gray(g);  //  And propagate the marks.
+   // Weak values must not retain objects solely because those objects are about to be finalised.
+   gc_clearweakvalues(g, gcref(g->gc.weak), nullptr);
+   GCobj* original_weak = gcref(g->gc.weak);
 
-   // All marking done, clear weak tables.
-   gc_clearweak(g, gcref(g->gc.weak));
+   finaliser_size = lj_gc_separatefinalisers(g, 0);
+   gc_mark_pending_finalisers(g);
+   finaliser_size += gc_propagate_gray(g);
+
+   // Native objects reachable only through a queued table must remain alive for that table's finaliser.
+   finaliser_size += gc_separateobjects(g, 0);
+   finaliser_size += gc_propagate_gray(g);
+
+   // All marking is complete. Clear dead weak keys everywhere, then clear values from weak tables discovered while
+   // propagating objects preserved for finalisation. Existing weak values were already cleared before separation.
+   gc_clearweakkeys(g, gcref(g->gc.weak));
+   gc_clearweakvalues(g, gcref(g->gc.weak), original_weak);
 
    lj_buf_shrink(L, &g->tmpbuf);  //  Shrink temp buffer.
 
@@ -897,7 +1086,8 @@ static void atomic(global_State *g, lua_State *L)
    g->gc.currentwhite = (uint8_t)otherwhite(g);  //  Flip current white.
    g->strempty.marked = g->gc.currentwhite;
    setmref(g->gc.sweep, &g->gc.root);
-   g->gc.estimate = g->gc.total - (GCSize)udsize;  //  Initial estimate.
+   setmref(g->gc.sweepfin, &g->gc.finobj);
+   g->gc.estimate = g->gc.total - (GCSize)finaliser_size;  //  Initial estimate.
 }
 
 //********************************************************************************************************************
@@ -935,10 +1125,18 @@ static size_t gc_onestep(lua_State *L)
 
       case GCPhase::Sweep: {
          GCSize old = g->gc.total;
-         setmref(g->gc.sweep, gc_sweep(g, mref<GCRef>(g->gc.sweep), GCSWEEPMAX));
+         GCRef* root_sweep = mref<GCRef>(g->gc.sweep);
+         if (gcref(*root_sweep)) {
+            setmref(g->gc.sweep, gc_sweep(g, root_sweep, GCSWEEPMAX));
+         }
+         else {
+            GCRef* finaliser_sweep = mref<GCRef>(g->gc.sweepfin);
+            setmref(g->gc.sweepfin, gc_sweep_finalisers(g, finaliser_sweep, GCSWEEPMAX));
+         }
          lj_assertG(old >= g->gc.total, "sweep increased memory");
          g->gc.estimate -= old - g->gc.total;
-         if (gcref(*mref<GCRef>(g->gc.sweep)) IS nullptr) {
+         if (gcref(*mref<GCRef>(g->gc.sweep)) IS nullptr and
+               gcref(*mref<GCRef>(g->gc.sweepfin)) IS nullptr) {
             if (g->str.num <= (g->str.mask >> 2) and g->str.mask > LJ_MIN_STRTAB * 2 - 1)
                lj_str_resize(L, g->str.mask >> 1);  //  Shrink string table.
             if (gcref(g->gc.mmudata)) {  // Need any finalizations?
@@ -956,7 +1154,7 @@ static size_t gc_onestep(lua_State *L)
          if (gcref(g->gc.mmudata) != nullptr) {
             GCSize old = g->gc.total;
             if (tvref(g->jit_base)) return LJ_MAX_MEM; //  Don't call finalisers on trace.
-            gc_finalize(L);  //  Finalize one userdata object.
+            gc_finalize(L);
             if (old >= g->gc.total and g->gc.estimate > old - g->gc.total) g->gc.estimate -= old - g->gc.total;
             if (g->gc.estimate > GCFINALIZECOST) g->gc.estimate -= GCFINALIZECOST;
             return GCFINALIZECOST;
@@ -1032,6 +1230,7 @@ void lj_gc_fullgc(lua_State *L)
 
    if (g->gc.state <= (GCPhase::Atomic)) {  // Caught somewhere in the middle.
       setmref(g->gc.sweep, &g->gc.root);  // Sweep everything (preserving it).
+      setmref(g->gc.sweepfin, &g->gc.finobj);
       setgcrefnull(g->gc.gray);  // Reset lists from partial propagation.
       setgcrefnull(g->gc.grayagain);
       setgcrefnull(g->gc.weak);

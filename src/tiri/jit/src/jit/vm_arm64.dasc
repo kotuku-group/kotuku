@@ -1163,21 +1163,6 @@ static void build_subroutines(BuildCtx *ctx)
   |  ldr TAB:RB, [TMP1, #offsetof(global_State, gcroot[GCROOT_BASEMT])-8]
   |  b <2
   |
-  |.ffunc_2 setmetatable
-  |  // Fast path: no mt for table yet and not clearing the mt.
-  |  checktp TMP1, CARG1, LJ_TTAB, ->fff_fallback
-  |   ldr TAB:TMP0, TAB:TMP1->metatable
-  |  asr ITYPE, CARG2, #47
-  |   ldrb TMP2w, TAB:TMP1->marked
-  |  cmn ITYPE, #-LJ_TTAB
-  |    and TAB:CARG2, CARG2, #LJ_GCVMASK
-  |  ccmp TAB:TMP0, #0, #0, eq
-  |  bne ->fff_fallback
-  |    str TAB:CARG2, TAB:TMP1->metatable
-  |   tbz TMP2w, #2, ->fff_restv	// isblack(table)
-  |  barrierback TAB:TMP1, TMP2w, TMP0
-  |  b ->fff_restv
-  |
   |.ffunc rawget
   |  ldr CARG2, [BASE]
   |   cmp NARGS8:RC, #16

@@ -185,8 +185,6 @@ function TeardownJitTests()
    glCfg.free()
 end
 
-cached_trace_no = nil
-cached_trace_info = nil
 outer_upvalue = 37
 
 function build_trace()
@@ -209,20 +207,11 @@ function build_trace()
    for trace_no in {1 into 20} do
       info = jit.util.traceInfo(trace_no)
       if info then
-         cached_trace_no = trace_no
-         cached_trace_info = info
          return trace_no, info
       end
    end
 
    error("Failed to create a JIT trace for inspection")
-end
-
-function get_trace()
-   if cached_trace_no != nil and cached_trace_info != nil then
-      return cached_trace_no, cached_trace_info
-   end
-   return build_trace()
 end
 
 function ir_opcode(IrOt)
@@ -676,9 +665,6 @@ function jit_try_forced_materialisation_probe(Count)
 end
 
 function build_try_materialisation_trace()
-   cached_trace_no = nil
-   cached_trace_info = nil
-
    jit.on()
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
@@ -859,9 +845,6 @@ assert(trace_count > 0, "Dynamic result calls inside try blocks should remain JI
 end
 
 @Test(hotpath=80) function JITMathClampEmitsMinMax()
-   cached_trace_no = nil
-   cached_trace_info = nil
-
    jit.on()
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
@@ -1027,7 +1010,7 @@ end
 end
 
 @Test function TraceInfoAndIR()
-   trace_no, info = get_trace()
+   trace_no, info = build_trace()
 
    assert(type(info.nins) is "number" and info.nins > 0, "traceInfo should report instruction count")
    assert(type(info.link) is "number", "traceInfo link should be numeric")
@@ -1060,18 +1043,28 @@ end
 end
 
 @Test function TraceConstantsAndSnapshot()
-   trace_no, info = get_trace()
+   trace_no, info = build_trace()
    if type(info.nk) is "number" and info.nk <= 0 then
       error("Trace did not expose any constants for verification")
    end
 
    k_value, k_type, k_slot = nil, nil, nil
-   for idx in {-info.nk to 0} do
-      value, kind, slot = jit.util.traceK(trace_no, idx)
-      if value != nil then
-         k_value, k_type, k_slot = value, kind, slot
-         break
+
+   -- The raw constant pool includes payload slots for wide constants. Inspect only negative references used by IR
+   -- instructions so traceK() always receives a constant header.
+
+   for idx in {1 into info.nins} do
+      local _, _, op1, op2 = jit.util.traceIR(trace_no, idx)
+
+      if op1 != nil and op1 < 0 then
+         k_value, k_type, k_slot = jit.util.traceK(trace_no, op1)
       end
+
+      if k_value is nil and op2 != nil and op2 < 0 then
+         k_value, k_type, k_slot = jit.util.traceK(trace_no, op2)
+      end
+
+      if k_value != nil then break end
    end
    assert(k_value != nil, "traceK should return at least one constant for available trace constants")
    assert(type(k_type) is "number", "traceK should return a type tag")
@@ -1087,7 +1080,7 @@ end
 end
 
 @Test function TraceMachineCodeAndExitStub()
-   trace_no = get_trace()
+   trace_no = build_trace()
    mcode, addr, loop_flag = jit.util.traceMC(trace_no)
    assert(mcode != nil, "traceMC should return machine code for hot traces")
    assert(type(addr) is "number", "traceMC should return a code address")
@@ -1114,9 +1107,6 @@ end
 end
 
 @Test(hotpath=100) function JitAttachTraceEvent()
-   cached_trace_no = nil
-   cached_trace_info = nil
-
    trace_events = 0
    function trace_handler(TraceNo, Reason)
       trace_events++
@@ -1130,9 +1120,6 @@ end
 end
 
 @Test(hotpath=100) function JitAttachTraceEventAllocatingHandler()
-   cached_trace_no = nil
-   cached_trace_info = nil
-
    records = {}
    trace_events = 0
    function trace_handler(TraceNo, Reason)
@@ -1149,9 +1136,6 @@ end
 end
 
 @Test(hotpath=100) function ArrayIteratorTraces()
-   cached_trace_no = nil
-   cached_trace_info = nil
-
    function ensure_trace(IterFunc)
       jit.on()
       jit.flush()
@@ -1187,9 +1171,6 @@ end
 end
 
 @Test(hotpath=80) function ArrayMethodClearLookupTraces()
-   cached_trace_no = nil
-   cached_trace_info = nil
-
    local expected, result, trace_count = run_array_method_trace(array_method_clear_workload, 12)
 
    assert(result is expected, f"Expected traced array:clear() result '{expected}', got '{result}'")
@@ -1197,9 +1178,6 @@ end
 end
 
 @Test(hotpath=80) function ArrayMethodResizeLookupTraces()
-   cached_trace_no = nil
-   cached_trace_info = nil
-
    local expected, result, trace_count = run_array_method_trace(array_method_resize_workload, 12)
 
    assert(result is expected, f"Expected traced array:resize() result '{expected}', got '{result}'")
@@ -1207,9 +1185,6 @@ end
 end
 
 @Test(hotpath=80) function ArrayMethodPushLookupTraces()
-   cached_trace_no = nil
-   cached_trace_info = nil
-
    local expected, result, trace_count = run_array_method_trace(array_method_push_workload, 12)
 
    assert(result is expected, f"Expected traced array:push() result '{expected}', got '{result}'")
@@ -1346,9 +1321,6 @@ end
 end
 
 @Test(hotpath=80) function ArrayNewLiteralTypeTraces()
-   cached_trace_no = nil
-   cached_trace_info = nil
-
    jit.on()
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
@@ -1382,9 +1354,6 @@ end
 end
 
 @Test(hotpath=80) function ArrayClearTracesAndInvalidatesLength()
-   cached_trace_no = nil
-   cached_trace_info = nil
-
    jit.on()
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
@@ -1425,9 +1394,6 @@ end
 end
 
 @Test(hotpath=80) function ArrayResizeTracesAndInvalidatesLength()
-   cached_trace_no = nil
-   cached_trace_info = nil
-
    jit.on()
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
@@ -1472,9 +1438,6 @@ end
 end
 
 @Test(hotpath=80) function ArrayGetStringTracesWithRuntimeRemainingLength()
-   cached_trace_no = nil
-   cached_trace_info = nil
-
    jit.on()
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
@@ -1514,9 +1477,6 @@ end
 end
 
 @Test(hotpath=80) function ArrayPushSingleValueTracesAndReturnsLength()
-   cached_trace_no = nil
-   cached_trace_info = nil
-
    jit.on()
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
@@ -1558,9 +1518,6 @@ end
 end
 
 @Test(hotpath=80) function ArrayAppendFlattenedConcatChainTraces()
-   cached_trace_no = nil
-   cached_trace_info = nil
-
    jit.on()
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
@@ -1598,9 +1555,6 @@ end
 end
 
 @Test(hotpath=80) function ArrayAppendMultiPieceConcatUsesBufferTrace()
-   cached_trace_no = nil
-   cached_trace_info = nil
-
    jit.on()
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
@@ -1648,9 +1602,6 @@ end
 -- Without JIT support, the trace recorder would abort with NYIBC (Not Yet Implemented Bytecode).
 
 @Test(hotpath=50) function JITObjectFieldGet()
-   cached_trace_no = nil
-   cached_trace_info = nil
-
    jit.on()
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
@@ -1687,9 +1638,6 @@ end
 -- Test JIT recording of BC_OBSETF (object field set)
 
 @Test(hotpath=50) function JITObjectFieldSet()
-   cached_trace_no = nil
-   cached_trace_info = nil
-
    jit.on()
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")

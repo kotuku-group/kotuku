@@ -765,6 +765,7 @@ if (UNIT_TESTS)
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_tests_arrays.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_tests_allocator.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_tests_bulk.cpp")
+   list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_tests_gc.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/jit/jit_unit_tests.cpp")
 
    # Add MASM assembly file for register capture on MSVC x64
