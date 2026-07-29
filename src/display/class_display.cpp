@@ -1914,25 +1914,29 @@ ERR DISPLAY_Show(extDisplay *Self)
    log.branch();
 
    #ifdef __xwindows__
-      if (not XDisplay) {
-         log.error("No X11 display has been found for this machine.");
-         return ERR::NoSupport;
+      // In headless mode no X11 window exists, so the display is marked visible without any server interaction.
+
+      if (not glHeadless) {
+         if (not XDisplay) {
+            log.error("No X11 display has been found for this machine.");
+            return ERR::NoSupport;
+         }
+
+         // Some window managers fool with our position when mapping, so we use XMoveWindow() before and after to be
+         // certain that we get the position that we want.
+
+         if ((Self->Flags & SCR::BORDERLESS) IS SCR::NIL) {
+            XMoveWindow(XDisplay, Self->XWindowHandle, Self->X, Self->Y);
+         }
+
+         XMapWindow(XDisplay, Self->XWindowHandle);
+
+         if ((Self->Flags & SCR::BORDERLESS) IS SCR::NIL) {
+            XMoveWindow(XDisplay, Self->XWindowHandle, Self->X, Self->Y);
+         }
+
+         XSync(XDisplay, False);
       }
-
-      // Some window managers fool with our position when mapping, so we use XMoveWindow() before and after to be
-      // certain that we get the position that we want.
-
-      if ((Self->Flags & SCR::BORDERLESS) IS SCR::NIL) {
-         XMoveWindow(XDisplay, Self->XWindowHandle, Self->X, Self->Y);
-      }
-
-      XMapWindow(XDisplay, Self->XWindowHandle);
-
-      if ((Self->Flags & SCR::BORDERLESS) IS SCR::NIL) {
-         XMoveWindow(XDisplay, Self->XWindowHandle, Self->X, Self->Y);
-      }
-
-      XSync(XDisplay, False);
 
       Self->LeftMargin   = 0;
       Self->TopMargin    = 0;
@@ -1942,7 +1946,7 @@ ERR DISPLAY_Show(extDisplay *Self)
       // Mapping a window may cause the window manager to resize it without sending a notification event, so check the
       // window size on a delay.
 
-      QueueAction(gfx::CheckXWindow::id, Self->UID);
+      if (not glHeadless) QueueAction(gfx::CheckXWindow::id, Self->UID);
 
       // Originally introduced as a hack to manage focusing for dropdown menus, possibly no longer required as focus should remain with the instigator.
 
