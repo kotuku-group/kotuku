@@ -280,7 +280,7 @@ bmark.stats = function(Values:any):table
    end
 
    -- Median
-   local median
+   local median:num
    if sample_n % 2 is 0 then
       median = (sorted_sample[sample_n/2 - 1] + sorted_sample[sample_n/2]) / 2
    else
@@ -454,8 +454,8 @@ bmark.histogram = function(Values:array, BinCount:num):table
    end
 
    -- Find min and max
-   local min_val = Values[0]
-   local max_val = Values[0]
+   local min_val:num = Values[0]
+   local max_val:num = Values[0]
    for value in values(Values) do
       if value < min_val then min_val = value end
       if value > max_val then max_val = value end

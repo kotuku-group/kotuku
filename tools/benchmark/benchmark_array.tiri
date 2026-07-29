@@ -532,7 +532,7 @@ end
       local mixed = array<string>
       mixed:push("first")
       mixed:push("second")
-      local top = mixed:pop()
+      local top:str = mixed:pop()
       mixed:push("third")
       mixed:push("fourth")
       top = mixed:pop()
