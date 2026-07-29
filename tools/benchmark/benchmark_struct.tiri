@@ -4,11 +4,10 @@
 
    MAKESTRUCT('BenchmarkNarrowStruct', 'wWord,bByte,uwUnsignedWord,ucUnsignedByte')
 
-   MAKESTRUCT('LargeLookupRecord', 'lZulu,lAlpha,lMike,lBravo,lYankee,lCharlie,lXray,lDelta,lWhiskey,lEcho,lVictor,lFoxtrot')
+   MAKESTRUCT('LargeLookupRecord',
+      'lZulu,lAlpha,lMike,lBravo,lYankee,lCharlie,lXray,lDelta,lWhiskey,lEcho,lVictor,lFoxtrot')
 
 glLargeTable = { }
-
-glMaterialise = 0
 
 glBenchmarkStruct = struct.new('BenchmarkStruct', {
    integer = 1,
@@ -35,7 +34,7 @@ glLargeStruct = struct.new('LargeLookupRecord')
       local double  = glBenchmarkStruct.double
       count += integer + wide + float + double
    end
-   glMaterialise += count
+   return count
 end
 
 @Test function StructWriteFields()
@@ -45,6 +44,8 @@ end
       glBenchmarkStruct.float   = 3.5
       glBenchmarkStruct.double  = 4.5
    end
+   return glBenchmarkStruct.integer + glBenchmarkStruct.wide +
+      glBenchmarkStruct.float + glBenchmarkStruct.double
 end
 
 @Test function NarrowStructReadFields()
@@ -56,7 +57,7 @@ end
       local unsigned_byte = glBenchmarkNarrowStruct.unsignedByte
       count += word + byte + unsigned_word + unsigned_byte
    end
-   glMaterialise += count
+   return count
 end
 
 @Test function NarrowStructWriteFields()
@@ -66,6 +67,8 @@ end
       glBenchmarkNarrowStruct.unsignedWord = i
       glBenchmarkNarrowStruct.unsignedByte = i
    end
+   return glBenchmarkNarrowStruct.word + glBenchmarkNarrowStruct.byte +
+      glBenchmarkNarrowStruct.unsignedWord + glBenchmarkNarrowStruct.unsignedByte
 end
 
 @Test function LargeStructRW()
@@ -79,7 +82,7 @@ end
       -- NB: The JIT may collapse away the reads - benchmark still valid though
       count += glLargeStruct.zulu + glLargeStruct.charlie + glLargeStruct.foxtrot
    end
-   glMaterialise += count
+   return count
 end
 
 -- Keep this test identical to LargeStructRW() for comparing performance between structs and tables.
@@ -95,5 +98,5 @@ end
       -- NB: The JIT may collapse away the reads - benchmark still valid though
       count += glLargeTable.zulu + glLargeTable.charlie + glLargeTable.foxtrot
    end
-   glMaterialise += count
+   return count
 end

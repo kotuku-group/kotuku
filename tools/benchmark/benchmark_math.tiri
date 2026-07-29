@@ -22,6 +22,7 @@
       d = (a + b) * (c - d) / (e + 1)
       e = ((a * 2) + (b * 3) - (c / 4)) % 1000
    end
+   return a + b + c + d + e
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -51,6 +52,7 @@ end
       c = b * 4.56e-3
       d = c / 7.89e2
    end
+   return a + b + c + d
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -81,6 +83,7 @@ end
       a = i & ~(1 << (i % 8))  -- Clear bit
       b = i ^ (1 << (i % 8))   -- Toggle bit
    end
+   return a + b + c + d
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -99,10 +102,12 @@ end
       b = math.atan(c)
       c = math.atan2(a, b)
    end
+   return a + b + c + d
 end
 
 @Test function MathExpLogFunctions()
    local a, b, c, d = 0.0, 0.0, 0.0, 0.0
+   local checksum = 0.0
    for i in {0 to 100000} do
       local x = i * 0.001  -- Scale to reasonable range
 
@@ -110,8 +115,11 @@ end
       a = math.log(i + 1)
       b = math.log10(i + 1)
       c = math.pow(2, x % 20)
+      checksum += a + b + c + d
       d = math.sqrt(i + 1)
+      checksum += d
    end
+   return checksum
 end
 
 @Test function MathRoundingFunctions()
@@ -126,6 +134,7 @@ end
       d = math.min(a, b, c)
       a = math.max(a, b, c)
    end
+   return a + b + c + d
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -133,6 +142,7 @@ end
 
 @Test function MathCompoundOperators()
    local a, b, c, d, e = 1.0, 100.0, 1000.0, 10000.0, 50000.0
+   local checksum = 0.0
    for i in {0 to 100000} do
       -- Compound assignment operators
       a += 1.5
@@ -167,7 +177,9 @@ end
       s ..= "a"
       s ..= "b"
       s ..= "c"
+      checksum += #s
    end
+   return a + b + c + d + e + checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -176,6 +188,7 @@ end
 @Test function MathNumericComparisons()
    local a, b, c, d = 0, 0, 0, 0
    local result = false
+   local checksum = 0
    for i in {0 to 100000} do
       local x = i * 1.1
       local y = i * 1.2
@@ -183,31 +196,45 @@ end
 
       -- Equality comparisons (using 'is' per Tiri convention)
       result = (i % 10) is 0
+      checksum += (result ? 1 :> 0)
       result = x is y
+      checksum += (result ? 1 :> 0)
       result = (i & 0xFF) is 0
+      checksum += (result ? 1 :> 0)
 
       -- Inequality comparisons
       result = x != y
+      checksum += (result ? 1 :> 0)
       result = i != 0
+      checksum += (result ? 1 :> 0)
 
       -- Ordering comparisons
       result = x < y
+      checksum += (result ? 1 :> 0)
       result = x <= y
+      checksum += (result ? 1 :> 0)
       result = x > z
+      checksum += (result ? 1 :> 0)
       result = x >= z
+      checksum += (result ? 1 :> 0)
 
       -- Chained comparisons (evaluated left-to-right)
       result = z < x and x < y
+      checksum += (result ? 1 :> 0)
       result = x >= z and x <= y
+      checksum += (result ? 1 :> 0)
 
       -- Conditional assignments based on comparisons
       a = x < y and 1 or 0
       b = x > z and x or z
       c = (i % 2 is 0) and i or -i
+      checksum += a + b + c
 
       -- Ternary operator
       d = x < y ? x :> y
       a = i % 2 is 0 ? i * 2 :> i * 3
       b = x > 100 ? (x > 1000 ? 2 :> 1) :> 0
+      checksum += a + b + c + d
    end
+   return checksum
 end
