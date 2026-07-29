@@ -49,6 +49,7 @@
 #include "lj_struct.h"
 #include <kotuku/main.h>
 
+#include <algorithm>
 #include <array>
 #include <span>
 
@@ -924,6 +925,8 @@ static void gc_call_finaliser(global_State *G, lua_State *L, cTValue* Metamethod
    GCstr *saved_exception_source = L->pending_exception_source;
    int saved_exception_line = L->pending_exception_line;
    int saved_try_depth = L->try_stack.depth;
+   std::array<TryFrame, LJ_MAX_TRY_DEPTH> saved_try_frames;
+   std::copy_n(L->try_stack.frames, saved_try_depth, saved_try_frames.begin());
    ERR saved_caught_error = L->CaughtError;
    bool saved_exception_valid = L->pending_exception_valid;
    bool saved_traceback_state = L->sent_traceback;
@@ -947,7 +950,13 @@ static void gc_call_finaliser(global_State *G, lua_State *L, cTValue* Metamethod
       L->top = top + 1;
 
       // Call the finaliser. Stack: |metamethod|object| -> |
+      // Suspend the caller's Tiri try handlers so finaliser errors unwind to this protected-call frame.
+      L->try_stack.depth = 0;
+      L->try_handler_pc = nullptr;
       errcode = lj_vm_pcall(L, argument, 1, -1);
+      std::copy_n(saved_try_frames.begin(), saved_try_depth, L->try_stack.frames);
+      L->try_stack.depth = saved_try_depth;
+      L->try_handler_pc = saved_try_handler;
       setgcref(G->cur_L, obj2gco(L));
    }
    if (LJ_HASPROFILE and (saved_hook & HOOK_PROFILE)) lj_dispatch_update(G);
@@ -960,12 +969,10 @@ static void gc_call_finaliser(global_State *G, lua_State *L, cTValue* Metamethod
          lj_debug_free_trace(L, L->pending_trace);
    }
 
-   L->try_handler_pc = saved_try_handler;
    L->pending_trace = saved_pending_trace;
    L->pending_exception_message = saved_exception_message;
    L->pending_exception_source = saved_exception_source;
    L->pending_exception_line = saved_exception_line;
-   L->try_stack.depth = saved_try_depth;
    L->CaughtError = saved_caught_error;
    L->pending_exception_valid = saved_exception_valid;
    L->sent_traceback = saved_traceback_state;

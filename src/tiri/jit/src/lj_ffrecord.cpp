@@ -147,8 +147,8 @@ static void recff_nyi(jit_State* J, RecordFFData* rd)
          // Stitched trace cannot start with an op that consumes MULTRES, because recff_stitch() rewrites the frame
          // and the continuation re-enters at the caller's next instruction with MULTRES no longer valid. BC_TYPEFIX
          // is emitted directly after a call in return position, so it belongs with the *M ops here.
-         if (!(op == BC_CALLM or op == BC_CALLMT or
-            op == BC_RETM or op == BC_TSETM or op == BC_TYPEFIX)) {
+         if (!(op IS BC_CALLM or op IS BC_CALLMT or
+            op IS BC_RETM or op IS BC_TSETM or op IS BC_TYPEFIX)) {
             switch (J->fn->c.ffid) {
                case FF_error:
                case FF_debug_setHook:
@@ -1042,7 +1042,7 @@ static void recff_math_round(jit_State* J, RecordFFData* rd)
       // Result is integral (or NaN/Inf), but may not fit an int32_t.
       if (LJ_DUALNUM) {  // Try to narrow using a guarded conversion to int.
          lua_Number n = lj_vm_foldfpm(numberVnum(&rd->argv[0]), rd->data);
-         if (n == (lua_Number)lj_num2int(n))
+         if (n IS (lua_Number)lj_num2int(n))
             tr = emitir(IRTGI(IR_CONV), tr, IRCONV_INT_NUM | IRCONV_CHECK);
       }
       J->base[0] = tr;
@@ -1247,8 +1247,8 @@ static void recff_bit_shift(jit_State* J, RecordFFData* rd)
          !tref_isk(tsh))
          tsh = emitir(IRTI(IR_BAND), tsh, lj_ir_kint(J, 31));
 #ifdef LJ_TARGET_UNIFYROT
-      if (op == (LJ_TARGET_UNIFYROT == 1 ? IR_BROR : IR_BROL)) {
-         op = LJ_TARGET_UNIFYROT == 1 ? IR_BROL : IR_BROR;
+      if (op IS (LJ_TARGET_UNIFYROT IS 1 ? IR_BROR : IR_BROL)) {
+         op = LJ_TARGET_UNIFYROT IS 1 ? IR_BROL : IR_BROR;
          tsh = emitir(IRTI(IR_NEG), tsh, tsh);
       }
 #endif
@@ -1418,7 +1418,7 @@ static void recff_string_char(jit_State* J, RecordFFData* rd)
          tr = emitir(IRTG(IR_BUFPUT, IRT_PGC), tr, J->base[i]);
       J->base[0] = emitir(IRTG(IR_BUFSTR, IRT_STR), tr, hdr);
    }
-   else if (i == 0) J->base[0] = lj_ir_kstr(J, &J2G(J)->strempty);
+   else if (i IS 0) J->base[0] = lj_ir_kstr(J, &J2G(J)->strempty);
 }
 
 //********************************************************************************************************************
@@ -1535,7 +1535,7 @@ static void recff_format(jit_State* J, RecordFFData* rd, TRef hdr, int sbufx)
    emitir(IRTG(IR_EQ, IRT_STR), trfmt, lj_ir_kstr(J, fmt));
    lj_strfmt_init(&fs, strdata(fmt), fmt->len);
    while ((sf = lj_strfmt_parse(&fs)) != STRFMT_EOF) {  // Parse format.
-      TRef tra = sf == STRFMT_LIT ? 0 : J->base[++arg];
+      TRef tra = sf IS STRFMT_LIT ? 0 : J->base[++arg];
       TRef trsf = lj_ir_kint(J, (int32_t)sf);
       IRCallID id;
       switch (STRFMT_TYPE(sf)) {
@@ -1548,7 +1548,7 @@ static void recff_format(jit_State* J, RecordFFData* rd, TRef hdr, int sbufx)
          if (!tref_isinteger(tra)) {
             goto handle_num;
          }
-         if (sf == STRFMT_INT) {  // Shortcut for plain %d.
+         if (sf IS STRFMT_INT) {  // Shortcut for plain %d.
             tr = emitir(IRTG(IR_BUFPUT, IRT_PGC), tr,
                emitir(IRT(IR_TOSTR, IRT_STR), tra, IRTOSTR_INT));
          }
@@ -1572,14 +1572,14 @@ static void recff_format(jit_State* J, RecordFFData* rd, TRef hdr, int sbufx)
             // NYI: also buffers.
             return;
          }
-         if (sf == STRFMT_STR)  //  Shortcut for plain %s.
+         if (sf IS STRFMT_STR)  //  Shortcut for plain %s.
             tr = emitir(IRTG(IR_BUFPUT, IRT_PGC), tr, tra);
          else if ((sf & STRFMT_T_QUOTED)) tr = lj_ir_call(J, IRCALL_lj_strfmt_putquoted, tr, tra);
          else tr = lj_ir_call(J, IRCALL_lj_strfmt_putfstr, tr, trsf, tra);
          break;
       case STRFMT_CHAR:
          tra = lj_opt_narrow_toint(J, tra);
-         if (sf == STRFMT_CHAR)  //  Shortcut for plain %c.
+         if (sf IS STRFMT_CHAR)  //  Shortcut for plain %c.
             tr = emitir(IRTG(IR_BUFPUT, IRT_PGC), tr, emitir(IRT(IR_TOSTR, IRT_STR), tra, IRTOSTR_CHAR));
          else tr = lj_ir_call(J, IRCALL_lj_strfmt_putfchar, tr, trsf, tra);
          break;
@@ -1719,7 +1719,7 @@ void lj_ffrecord_func(jit_State* J)
    J->base[J->maxslot] = 0;  //  Mark end of arguments.
    (recff_func[m >> 8])(J, &rd);  //  Call recff_* handler.
    if (rd.nres >= 0) {
-      if (J->postproc == LJ_POST_NONE) J->postproc = LJ_POST_FFRETRY;
+      if (J->postproc IS LJ_POST_NONE) J->postproc = LJ_POST_FFRETRY;
       lj_record_ret(J, 0, rd.nres);
    }
 }
