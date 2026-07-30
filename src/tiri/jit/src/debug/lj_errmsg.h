@@ -162,6 +162,8 @@ ERRDEF(ARREXT,  "Cannot grow external or cached string array")
 // Object errors.
 ERRDEF(OBJFREED, "Object has been freed")
 
+ERRDEF(DEPRECATED, "Function is deprecated")
+
 #undef ERRDEF
 
 /* Detecting unused error messages:

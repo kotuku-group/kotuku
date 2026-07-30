@@ -120,21 +120,12 @@ LJLIB_ASM(string_char)      LJLIB_REC(.)
 }
 
 //********************************************************************************************************************
-// NOTE: Backed by an ASM implementation
-// string_sub:	Declares an assembly ffunc as its primary implementation. The C code that follows is the fallback (called when the ffunc jumps to ->fff_fallback).
-// string_range 1: Tells the JIT recorder how to handle this function. string_range is the recorder function name, 1 is a parameter distinguishing it from other range operations.
+// DEPRECATED: Use substr()
 
 LJLIB_ASM(string_sub)      LJLIB_REC(string_range 1)
 {
-   kt::Log("string.sub()").warning("Use substr()");
-   lj_lib_checkstr(L, 1);
-   lj_lib_checkint(L, 2);
-   int32_t end_val = lj_lib_optint(L, 3, -1);
-   // Convert exclusive end to inclusive by subtracting 1, but only for positive indices.
-   // Negative indices already reference positions from the end, so no adjustment needed.
-   if (end_val > 0) end_val--;
-   setintV(L->base + 2, end_val);
-   return FFH_RETRY;
+   lj_err_caller(L, ErrMsg::DEPRECATED);
+   return FFH_RES(0);
 }
 
 //********************************************************************************************************************
@@ -770,30 +761,6 @@ LJLIB_CF(string_find)      LJLIB_REC(.)
 
    setnilV(L->top - 1);  // Not found.
    return 1;
-}
-
-//********************************************************************************************************************
-
-LJLIB_CF(string_match)
-{
-   kt::Log("string.match()").warning("DEPRECATED");
-   return 0;
-}
-
-//********************************************************************************************************************
-
-LJLIB_CF(string_gmatch)
-{
-   kt::Log("string.gmatch()").warning("DEPRECATED");
-   return 0;
-}
-
-//********************************************************************************************************************
-
-LJLIB_CF(string_gsub)
-{
-   kt::Log("string.gsub()").warning("DEPRECATED");
-   return 0;
 }
 
 //********************************************************************************************************************
