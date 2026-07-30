@@ -52,7 +52,7 @@ indexterm:[library, string] See <<ch-strings>>.
 |`string.lower(String)`                  |Converts to lowercase.
 |`string.rep(String, Count, [Separator])`|Repeats `String` `Count` times.
 |`string.reverse(String)`                |Reverses the byte order.
-|`string.substr(String, Start, [End])`   |Extracts a substring.
+|`string.sub(String, Start, [End])`      |Extracts a substring.
 |`string.upper(String)`                  |Converts to uppercase.
 |===
 

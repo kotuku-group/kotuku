@@ -60,7 +60,7 @@ NOTE: The imported code executes in the calling script's context.  `global` vari
 [source,tiri]
 ----
 global function formatDate(Timestamp:str):str
-   return Timestamp:substr(0, 10)
+   return Timestamp:sub(0, 10)
 end
 
 global HELPER_VERSION <const> = '1.0'

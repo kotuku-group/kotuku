@@ -65,7 +65,7 @@ If necessary, the example can be followed with more detail on function behaviour
 Precede function prototype declarations with `[.api]`, e.g.
 
 ```
-[.api]`str = string.substr(String, Start, [End])`
+[.api]`str = string.sub(String, Start, [End])`
 ```
 
 Format Tiri source code examples with the Tiri lexer, e.g.
@@ -73,8 +73,8 @@ Format Tiri source code examples with the Tiri lexer, e.g.
 ```
 [source,tiri]
 ----
-'hello world':substr(0, 5)    -- 'hello'
-'hello world':substr(6)       -- 'world'
+'hello world':sub(0, 5)    -- 'hello'
+'hello world':sub(6)       -- 'world'
 ----
 ```
 

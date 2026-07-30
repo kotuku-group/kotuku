@@ -1,5 +1,6 @@
 // VERIFIED: 2026-02-10
 // CHANGED: 2026-07-30 — Corrected the claim that semicolons carry no semantic weight; added sec-statement-ambiguity.
+// UPDATED: 2026-07-30 — Documented binary integer literals.
 // UPDATED: 2026-07-06 -- Added `extern` to the keyword list.
 // UPDATED: 2026-05-24 — Added regex string shorthand (r'...') to String Literals section.
 
@@ -9,7 +10,7 @@ indexterm:[syntax] indexterm:[lexical conventions] This chapter defines the lexi
 
 [[sec-comments]]
 === Comments
-indexterm:[comments] The lexer discards all comment text.  Comments have no effect on program behaviour.  Tiri supports three comment forms.
+indexterm:[comments] The lexer discards all comment text.  Comments have no effect on program behaviour.  Tiri supports two comment forms.
 
 ==== Single-Line Comments
 
@@ -169,7 +170,7 @@ Tiri is a free-form language.  Line breaks have no syntactic significance; state
 
 ==== Numeric Literals
 
-Numeric literals represent integer and floating-point values.
+indexterm:[numeric literals] indexterm:[binary integer literals] Numeric literals represent integer and floating-point values.
 
 Integer literals:::
 
@@ -178,9 +179,12 @@ Integer literals:::
 42
 0xff
 0xBEEF
+0b1010
+0b1111
+0B11
 ----
 
-Decimal integers are sequences of digits.  Hexadecimal integers begin with `0x` or `0X` followed by hexadecimal digits (`0`-`9`, `a`-`f`, `A`-`F`).
+Decimal integers are sequences of digits.  Hexadecimal integers begin with `0x` or `0X` followed by hexadecimal digits (`0`-`9`, `a`-`f`, `A`-`F`).  Binary integers begin with `0b` or `0B` followed by binary digits (`0` or `1`).
 
 Floating-point literals:::
 

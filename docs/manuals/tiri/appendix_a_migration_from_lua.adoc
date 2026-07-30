@@ -48,7 +48,7 @@ indexterm:[Lua, breaking changes] The following table lists all incompatible cha
 |<<ch-result-management>>
 
 |`loadstring()`
-|`load()`
+|`exec()` (executes the code immediately)
 |<<sec-migration-removed-functions>>
 
 |`dofile()`
@@ -70,10 +70,6 @@ indexterm:[Lua, breaking changes] The following table lists all incompatible cha
 |`gcinfo()` / `table.maxn()`
 |Removed
 |<<sec-migration-removed-functions>>
-
-|`string.sub()`
-|`string.substr()`
-|<<sec-migration-string-functions>>
 
 |`string.gsub()` / `string.match()` / `string.gmatch()`
 |`regex.*` methods
@@ -199,9 +195,9 @@ print(t[0])   -- 'a'
 print(t[1])   -- 'b'
 
 -- Lua: string.sub(s, 1, 3)
--- Tiri: string.substr(s, 0, 3)
+-- Tiri: string.sub(s, 0, 3)
 s = 'hello'
-print(s:substr(0, 3))   -- 'hel'
+print(s:sub(0, 3))   -- 'hel'
 ----
 
 This change affects all table constructors, `ipairs()` iteration, string functions and array access.  When migrating numeric `for` loops that iterate over tables, adjust the start index from 1 to 0 and the end condition accordingly.
@@ -429,20 +425,6 @@ Note that the `async` interface is not a substitute for coroutines in the genera
 === String Function Changes
 
 [discrete]
-==== Renamed Functions
-
-`string.sub()` is renamed to `string.substr()`.  Indices are zero-based, and the end index is exclusive (Lua's end index is inclusive).
-
-[source,tiri]
-----
--- Lua
-string.sub('hello', 1, 3)    -- 'hel'
-
--- Tiri
-string.substr('hello', 0, 3) -- 'hel'
-----
-
-[discrete]
 ==== Index Migration Note
 
 When migrating code that computes substring bounds dynamically, remember that Lua uses 1-based indices with an inclusive end, while Tiri uses 0-based indices with an exclusive end.  A direct translation is:
@@ -453,7 +435,7 @@ When migrating code that computes substring bounds dynamically, remember that Lu
 part = string.sub(s, Start, Stop)      -- Start/Stop are 1-based, Stop inclusive
 
 -- Tiri
-part = string.substr(s, Start - 1, Stop) -- Start is 0-based, Stop is exclusive
+part = string.sub(s, Start - 1, Stop) -- Start is 0-based, Stop is exclusive
 ----
 
 [discrete]
@@ -619,7 +601,7 @@ The following standard Lua functions are removed or replaced:
 |Function |Replacement
 
 |`loadstring(Code)`
-|`load(Code)` compiles and returns a function from a string.
+|`exec(Code)` parses and executes `Code` immediately, returning any values produced.  Unlike `loadstring()`, it does not return a compiled function.
 
 |`dofile(Path)`
 |`loadFile(Path)` loads and executes a file.

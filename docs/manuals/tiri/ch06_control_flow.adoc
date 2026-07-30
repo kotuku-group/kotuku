@@ -285,7 +285,7 @@ This is equivalent to `if not result?? then return -1 end`.
 return_statement = "return" [ expression_list ] [ ";" ] ;
 ----
 
-indexterm:[return statement] `return` exits the current function and returns zero or more values to the caller.  `return` with no values returns `nil`.
+indexterm:[return statement] `return` exits the current function and returns zero or more values to the caller.
 
 [%unbreakable]
 [source,tiri]

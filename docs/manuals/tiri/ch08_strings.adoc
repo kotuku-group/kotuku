@@ -226,19 +226,19 @@ Returns a new string with the bytes in reverse order.
 'hello':reverse()   -- 'olleh'
 ----
 
-[[sec-string-substr]]
-==== string.substr()
+[[sec-string-sub]]
+==== string.sub()
 
-[.api]`str = string.substr(String, Start, [End])`
+[.api]`str = string.sub(String, Start, [End])`
 
 Extracts a substring from `Start` up to but not including `End` (exclusive).  If `End` is not specified, the substring extends to the end of the string.  Negative indices count from the end.
 
 [source,tiri]
 ----
-'hello world':substr(0, 5)    -- 'hello'
-'hello world':substr(6)       -- 'world'
-'hello world':substr(-5)      -- 'world'
-'hello world':substr(0, -6)   -- 'hello'
+'hello world':sub(0, 5)    -- 'hello'
+'hello world':sub(6)       -- 'world'
+'hello world':sub(-5)      -- 'world'
+'hello world':sub(0, -6)   -- 'hello'
 ----
 
 [[sec-string-upper]]
