@@ -372,10 +372,12 @@ ParserResult<ExprNodePtr> AstBuilder::parse_expression(uint8_t precedence)
 
 ParserResult<ExprNodePtr> AstBuilder::parse_unary()
 {
+   constexpr uint8_t unary_precedence = 10;
+
    Token current = this->ctx.tokens().current();
    if (current.kind() IS TokenKind::NotToken) {
       this->ctx.tokens().advance();
-      auto operand = this->parse_unary();
+      auto operand = this->parse_expression(unary_precedence);
       if (not operand.ok()) return operand;
 
       return ParserResult<ExprNodePtr>::success(make_unary_expr(current.span(), AstUnaryOperator::Not, std::move(operand.value_ref())));
@@ -383,7 +385,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_unary()
 
    if (current.kind() IS TokenKind::Minus) {
       this->ctx.tokens().advance();
-      auto operand = this->parse_unary();
+      auto operand = this->parse_expression(unary_precedence);
       if (not operand.ok()) return operand;
 
       return ParserResult<ExprNodePtr>::success(make_unary_expr(current.span(), AstUnaryOperator::Negate, std::move(operand.value_ref())));
@@ -391,14 +393,14 @@ ParserResult<ExprNodePtr> AstBuilder::parse_unary()
 
    if (current.raw() IS '#') {
       this->ctx.tokens().advance();
-      auto operand = this->parse_unary();
+      auto operand = this->parse_expression(unary_precedence);
       if (not operand.ok()) return operand;
       return ParserResult<ExprNodePtr>::success(make_unary_expr(current.span(), AstUnaryOperator::Length, std::move(operand.value_ref())));
    }
 
    if (current.raw() IS '~') {
       this->ctx.tokens().advance();
-      auto operand = this->parse_unary();
+      auto operand = this->parse_expression(unary_precedence);
       if (not operand.ok()) return operand;
 
       return ParserResult<ExprNodePtr>::success(make_unary_expr(current.span(), AstUnaryOperator::BitNot, std::move(operand.value_ref())));
