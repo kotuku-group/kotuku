@@ -96,7 +96,7 @@ end
       -- Substring operations creating new strings
       local source = "The quick brown fox jumps over the lazy dog"
       for j in {0 to 20} do
-         local sub = string.substr(source, j + 1, j + 10)
+         local sub = string.sub(source, j + 1, j + 10)
          checksum += #sub
       end
       checksum += #strings

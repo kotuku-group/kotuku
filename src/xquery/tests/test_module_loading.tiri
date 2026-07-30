@@ -79,7 +79,7 @@ end
    assert(list, "Expected module functions to be accessible")
    math_count = 0
    for k,v in pairs(list) do
-      if (string.substr(v, 0, 5) is 'math:') then math_count++ end
+      if (string.sub(v, 0, 5) is 'math:') then math_count++ end
    end
    assert(math_count >= 2, "Module variable 'math:pi' not found in variables list")
 

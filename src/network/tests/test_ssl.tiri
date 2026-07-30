@@ -432,7 +432,7 @@ function HTTPSConnection()
                   stop = page_content:find('\r\n\r\n')
                   if stop then
                      headers_complete = true
-                     headers = page_content:substr(0, stop)
+                     headers = page_content:sub(0, stop)
                      logOutput('HTTP headers received (' .. #headers .. ' bytes)')
 
                      -- Extract Content-Length if present
@@ -517,10 +517,10 @@ function HTTPSConnection()
          logOutput(page_content)
       else
          logOutput('Response preview (first 500 chars):')
-         logOutput(page_content:substr(0, 500) .. '...')
+         logOutput(page_content:sub(0, 500) .. '...')
       end
    else
-      logOutput('Response content preview: ' .. page_content:substr(0, 200))
+      logOutput('Response content preview: ' .. page_content:sub(0, 200))
       error('Invalid HTTP response received from ' .. SITE)
    end
 end

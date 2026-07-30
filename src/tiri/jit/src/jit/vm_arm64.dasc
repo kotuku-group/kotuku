@@ -1648,57 +1648,6 @@ static void build_subroutines(BuildCtx *ctx)
   |  add CARG1, CARG1, TMP1, lsl #47
   |  b ->fff_restv
   |
-  |// string.substr(str, start, end) - like string.sub but end is exclusive
-  |.ffunc string_substr
-  |  ffgccheck
-  |  ldr CARG1, [BASE]
-  |    ldr CARG3, [BASE, #16]
-  |   cmp NARGS8:RC, #16
-  |    movn RB, #0
-  |   beq >1
-  |   blo ->fff_fallback
-  |    checkint CARG3, ->fff_fallback
-  |    sxtw RB, CARG3w
-  |    // Convert exclusive end to inclusive: end = end - 1 (only for positive values)
-  |    cmp RB, #0
-  |    ble >1
-  |    sub RB, RB, #1
-  |1:
-  |  ldr CARG2, [BASE, #8]
-  |  checkstr CARG1, ->fff_fallback
-  |   ldr TMP1w, STR:CARG1->len
-  |   cbnz TMP1w, >1			// len != 0? Continue
-  |  add STR:CARG1, GL, #offsetof(global_State, strempty)  // Return empty string
-  |   movn TMP1, #~LJ_TSTR
-  |  add CARG1, CARG1, TMP1, lsl #47
-  |  b ->fff_restv
-  |1:
-  |  checkint CARG2, ->fff_fallback
-  |  sxtw CARG2, CARG2w
-  |  // CARG1 = str, TMP1 = str->len, CARG2 = start, RB = end
-  |   add TMP2, RB, TMP1
-  |   cmp RB, #0
-  |  add TMP0, CARG2, TMP1
-  |   csel RB, RB, TMP2, ge		// if (end < 0) end += len (zero-indexed)
-  |  cmp CARG2, #0
-  |  cinc CARG2, TMP0, lt		// if (start < 0) start += len
-  |   cmp RB, #0
-  |   csel RB, RB, xzr, ge		// if (end < 0) end = 0
-  |  cmp CARG2, #0
-  |  csel CARG2, CARG2, xzr, ge	// if (start < 0) start = 0 (zero-indexed)
-  |   cmp RB, TMP1
-  |   sub TMP0, TMP1, #1		// TMP0 = len-1
-  |   csel RB, RB, TMP0, lt		// if (end >= len) end = len-1 (zero-indexed)
-  |  add CARG1, STR:CARG1, #sizeof(GCstr)  // Zero-indexed: no -1 offset needed
-  |   subs CARG3, RB, CARG2		// len = end - start
-  |  add CARG2, CARG1, CARG2
-  |   add CARG3, CARG3, #1		// len += 1
-  |   bge ->fff_newstr
-  |  add STR:CARG1, GL, #offsetof(global_State, strempty)
-  |   movn TMP1, #~LJ_TSTR
-  |  add CARG1, CARG1, TMP1, lsl #47
-  |  b ->fff_restv
-  |
   |.macro ffstring_op, name
   |  .ffunc string_ .. name
   |  ffgccheck

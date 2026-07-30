@@ -120,19 +120,8 @@ LJLIB_ASM(string_char)      LJLIB_REC(.)
 }
 
 //********************************************************************************************************************
-// DEPRECATED: Use substr()
 
 LJLIB_ASM(string_sub)      LJLIB_REC(string_range 1)
-{
-   lj_err_caller(L, ErrMsg::DEPRECATED);
-   return FFH_RES(0);
-}
-
-//********************************************************************************************************************
-// string.substr() is now an alias for string.sub() - both use exclusive end semantics.
-// The ASM implementation jumps directly to string_sub.
-
-LJLIB_ASM(string_substr)      LJLIB_REC(string_range 1)
 {
    lj_lib_checkstr(L, 1);
    lj_lib_checkint(L, 2);
@@ -901,7 +890,7 @@ extern int luaopen_string(lua_State *L)
    reg_iface_prototype("string", "rtrim", { TiriType::Str }, { TiriType::Str });
    reg_iface_prototype("string", "split", { TiriType::Array }, { TiriType::Str, TiriType::Str });
    reg_iface_prototype("string", "startsWith", { TiriType::Bool }, { TiriType::Str, TiriType::Str });
-   reg_iface_prototype("string", "substr", { TiriType::Str }, { TiriType::Str, TiriType::Num, TiriType::Num });
+   reg_iface_prototype("string", "sub", { TiriType::Str }, { TiriType::Str, TiriType::Num, TiriType::Num });
    reg_iface_prototype("string", "trim", { TiriType::Str }, { TiriType::Str });
    reg_iface_prototype("string", "unescapeXML", { TiriType::Str }, { TiriType::Str });
    reg_iface_prototype("string", "upper", { TiriType::Str }, { TiriType::Str });

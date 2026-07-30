@@ -206,20 +206,20 @@ end
 
    for i in {0 to 1000000} do
       -- Extract from beginning
-      local first_word = string.substr(text, 1, 3)
+      local first_word = string.sub(text, 1, 3)
 
       -- Extract from middle
-      local middle = string.substr(text, 16, 19)  -- "fox "
+      local middle = string.sub(text, 16, 19)  -- "fox "
 
       -- Extract from end
-      local last_part = string.substr(text, -10)
+      local last_part = string.sub(text, -10)
 
       -- Extract with negative indices
-      local from_end = string.substr(text, -20, -11)
+      local from_end = string.sub(text, -20, -11)
 
       -- Variable position extraction
       local pos = (i % 40) + 1
-      local chunk = string.substr(text, pos, pos + 10)
+      local chunk = string.sub(text, pos, pos + 10)
       checksum += #first_word + #middle + #last_part + #from_end + #chunk
    end
 
@@ -480,9 +480,9 @@ end
 
    for i in {0 to 1000} do
       -- Get character at specific position using string.sub
-      local char1 = string.substr(text, 1, 1)   -- 'H'
-      local char2 = string.substr(text, 7, 7)   -- ' '
-      local char3 = string.substr(text, -1, -1) -- '!'
+      local char1 = string.sub(text, 1, 1)   -- 'H'
+      local char2 = string.sub(text, 7, 7)   -- ' '
+      local char3 = string.sub(text, -1, -1) -- '!'
 
       -- Get character code (byte value)
       local code1 = string.byte(text, 1)     -- 72 ('H')
@@ -497,7 +497,7 @@ end
 
       -- Variable position access
       local pos = i % #text
-      local var_char = string.substr(text, pos, pos)
+      local var_char = string.sub(text, pos, pos)
       local var_code = string.byte(text, pos)
       checksum += #char1 + #char2 + #char3 + code1 + code2 + #codes + #chr + #str + #var_char + var_code
    end

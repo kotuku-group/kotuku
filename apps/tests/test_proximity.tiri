@@ -44,7 +44,7 @@ function rawProxyRequestOnPort(ProxyPort:num, Request:str, Timeout:num):str
          local buffer = string.alloc(32768)
          local err, read_len = Socket.acRead(buffer)
          if err is ERR_Okay then
-            if read_len > 0 then response ..= buffer:substr(0, read_len) end
+            if read_len > 0 then response ..= buffer:sub(0, read_len) end
          elseif err is ERR_Disconnected then
             Socket.acSignal()
          else
@@ -93,7 +93,7 @@ end
 function responseBody(Response:str):str
    local header_end = Response:find('\r\n\r\n')
    header_end ?! return ''
-   return Response:substr(header_end + 4)
+   return Response:sub(header_end + 4)
 end
 
 function findFlow(Method:str, UrlSuffix:str):table
@@ -160,7 +160,7 @@ function echoIncoming(Server:obj, Client:obj)
       local err, read_len = Client.acRead(buffer)
       if err is ERR_Okay then
          if read_len is 0 then return end
-         local chunk = buffer:substr(0, read_len)
+         local chunk = buffer:sub(0, read_len)
          check Client.acWrite(chunk)
       elseif err is ERR_Disconnected then
          return
@@ -206,7 +206,7 @@ function upstreamProxyIncoming(Server:obj, Client:obj)
       if err is ERR_Okay then
          if read_len is 0 then return end
 
-         local data = buffer:substr(0, read_len)
+         local data = buffer:sub(0, read_len)
          if state.tunnelling then
             check Client.acWrite(data)
             continue
@@ -216,8 +216,8 @@ function upstreamProxyIncoming(Server:obj, Client:obj)
          local header_end = state.buffer:find('\r\n\r\n')
          if not header_end then return end
 
-         local header_block = state.buffer:substr(0, header_end + 4)
-         local body_prefix = state.buffer:substr(header_end + 4)
+         local header_block = state.buffer:sub(0, header_end + 4)
+         local body_prefix = state.buffer:sub(header_end + 4)
          glLastUpstreamProxyRequest = header_block
 
          if header_block:startsWith('CONNECT ') then
@@ -281,7 +281,7 @@ function connectTunnelRoundTripOnProxy(ProxyPort:num, Port:num, Payload:str, Coa
          if err is ERR_Okay then
             if read_len is 0 then return end
 
-            local data = buffer:substr(0, read_len)
+            local data = buffer:sub(0, read_len)
             if connected then
                tunnel_data ..= data
             else
@@ -289,8 +289,8 @@ function connectTunnelRoundTripOnProxy(ProxyPort:num, Port:num, Payload:str, Coa
                local header_end = proxy_headers:find('\r\n\r\n')
                if header_end then
                   connected = true
-                  tunnel_data ..= proxy_headers:substr(header_end + 4)
-                  proxy_headers = proxy_headers:substr(0, header_end + 4)
+                  tunnel_data ..= proxy_headers:sub(header_end + 4)
+                  proxy_headers = proxy_headers:sub(0, header_end + 4)
 
                   if not sent_payload then
                      check Socket.acWrite(Payload)
@@ -705,7 +705,7 @@ function ConnectTunnelPassesSSLHandshake()
          if err is ERR_Okay then
             if read_len is 0 then return end
 
-            local received = buffer:substr(0, read_len)
+            local received = buffer:sub(0, read_len)
             if received is ssl_payload then
                ssl_server_done = true
                local response = 'SSL_TUNNEL_ECHO:' .. received
@@ -743,7 +743,7 @@ function ConnectTunnelPassesSSLHandshake()
          if err is ERR_Okay then
             if read_len is 0 then return end
 
-            local data = buffer:substr(0, read_len)
+            local data = buffer:sub(0, read_len)
             if not connect_established then
                proxy_headers ..= data
                local header_end = proxy_headers:find('\r\n\r\n')

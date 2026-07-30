@@ -553,7 +553,7 @@ end
 -- Negative positions, including -0.0, are interpreted as offsets from the end
 
 gui.separator = function(Viewport:obj, Orientation:str, Pos:any, MarginA:any, MarginB:any):num
-   local o = Orientation:substr(0, 1)
+   local o = Orientation:sub(0, 1)
    local options = { fill=tostring(gui.getTheme(Viewport).window.stroke) }
 
    if o is 'h' or o is 'H' then

@@ -210,8 +210,8 @@ function processChunkedBody(State:table, Server:table):bool
             return false -- Need more data for chunk size line
          end
 
-         size_line = State.buffer:substr(0, line_end)
-         State.buffer = State.buffer:substr(line_end + 2) -- Remove \r\n
+         size_line = State.buffer:sub(0, line_end)
+         State.buffer = State.buffer:sub(line_end + 2) -- Remove \r\n
 
          -- Parse chunk size (ignore extensions after semicolon)
          hex_size = rxHexChunkSize.extract(size_line)
@@ -245,8 +245,8 @@ function processChunkedBody(State:table, Server:table):bool
          end
 
          to_take = math.min(available, needed)
-         State.request.body   = State.request.body .. State.buffer:substr(0, to_take)
-         State.buffer         = State.buffer:substr(to_take)
+         State.request.body   = State.request.body .. State.buffer:sub(0, to_take)
+         State.buffer         = State.buffer:sub(to_take)
          State.chunk_received = State.chunk_received + to_take
          State.body_received  = State.body_received + to_take
 
@@ -260,7 +260,7 @@ function processChunkedBody(State:table, Server:table):bool
          if #State.buffer < 2 then return false end -- Need more data
 
          if State.buffer:startsWith('\r\n') then
-            State.buffer = State.buffer:substr(2)
+            State.buffer = State.buffer:sub(2)
             State.chunk_state = 'SIZE' -- Ready for next chunk
          else
             -- Be lenient - some clients might not send proper CRLF
@@ -272,7 +272,7 @@ function processChunkedBody(State:table, Server:table):bool
          -- Look for final \r\n (trailer headers are ignored for now)
          trailer_end = State.buffer:find('\r\n')
          if trailer_end then
-            State.buffer = State.buffer:substr(trailer_end + 1)
+            State.buffer = State.buffer:sub(trailer_end + 1)
             return true -- Chunked reading complete
          else
             return false -- Need more data for trailer
@@ -336,7 +336,7 @@ function readChunkedRequestBody(Client:obj, MaxSize:num, TimeoutSeconds:num):<st
             end
          end
 
-         chunkSizeLine ..= buffer:substr(0, 1)
+         chunkSizeLine ..= buffer:sub(0, 1)
 
          -- Prevent infinite line reading
          if #chunkSizeLine > 100 then
@@ -384,7 +384,7 @@ function readChunkedRequestBody(Client:obj, MaxSize:num, TimeoutSeconds:num):<st
                -- Connection closed while reading chunk data
                -- Return what we have so far if it's valid
                if chunkRead > 0 then
-                  body ..= chunkData:substr(0, chunkRead)
+                  body ..= chunkData:sub(0, chunkRead)
                end
                if #body > 0 then
                   return body, nil, true  -- Mark as early termination
@@ -398,7 +398,7 @@ function readChunkedRequestBody(Client:obj, MaxSize:num, TimeoutSeconds:num):<st
          if bytes_read is 0 then
             -- No more data - return what we have
             if chunkRead > 0 then
-               body ..= chunkData:substr(0, chunkRead)
+               body ..= chunkData:sub(0, chunkRead)
             end
 
             if #body > 0 then
@@ -407,7 +407,7 @@ function readChunkedRequestBody(Client:obj, MaxSize:num, TimeoutSeconds:num):<st
                return nil, 'unexpected_end', false
             end
          end
-         chunkData ..= buffer:substr(0, bytes_read)
+         chunkData ..= buffer:sub(0, bytes_read)
          chunkRead += bytes_read
       end
 
@@ -439,7 +439,7 @@ function readChunkedRequestBody(Client:obj, MaxSize:num, TimeoutSeconds:num):<st
             earlyTermination = true
             break
          end
-         crlf ..= buffer:substr(0, 1)
+         crlf ..= buffer:sub(0, 1)
       end
 
       -- Be lenient about CRLF validation - some clients may not send it properly
@@ -507,9 +507,9 @@ end
 
 function trimMultipartPartValue(Value:str):str
    if Value:endsWith('\r\n') then
-      return Value:substr(0, #Value - 2)
+      return Value:sub(0, #Value - 2)
    elseif Value:endsWith('\n') then
-      return Value:substr(0, #Value - 1)
+      return Value:sub(0, #Value - 1)
    end
 
    return Value
@@ -533,9 +533,9 @@ function parseMultipartBody(Body:str, ContentType:str):table
 
       part = raw_part
       if part:startsWith('\r\n') then
-         part = part:substr(2)
+         part = part:sub(2)
       elseif part:startsWith('\n') then
-         part = part:substr(1)
+         part = part:sub(1)
       end
 
       header_end = part:find('\r\n\r\n', 0, true)
@@ -546,16 +546,16 @@ function parseMultipartBody(Body:str, ContentType:str):table
       end
       if header_end is nil then continue end
 
-      header_text = part:substr(0, header_end):replace('\r\n', '\n')
-      value = trimMultipartPartValue(part:substr(header_end + delimiter_size))
+      header_text = part:sub(0, header_end):replace('\r\n', '\n')
+      value = trimMultipartPartValue(part:sub(header_end + delimiter_size))
       disposition = nil
 
       for header_line in values(header_text:split('\n')) do
          colon = header_line:find(':', 0, true)
          if colon is nil then continue end
 
-         header_name = header_line:substr(0, colon):trim():lower()
-         header_value = header_line:substr(colon + 1):trim()
+         header_name = header_line:sub(0, colon):trim():lower()
+         header_value = header_line:sub(colon + 1):trim()
 
          if header_name is 'content-disposition' then
             disposition = header_value
@@ -939,7 +939,7 @@ function streamFileBody(self:table, ClientSocket:obj, File:obj, Length:num):bool
       end
 
       if bytes_read > 0 then
-         err, written = ClientSocket.acWrite(buffer:substr(0, bytes_read))
+         err, written = ClientSocket.acWrite(buffer:sub(0, bytes_read))
          if err != ERR_Okay then
             logMessage(self, 'Error writing to ClientSocket: ' .. mSys.GetErrorMsg(err))
             closeHttpResponse(ClientSocket)
@@ -1044,7 +1044,7 @@ function serveFile(self:table, ClientSocket:obj, FilePath:str, Request:table)
 
       sendHttpResponse(self, ClientSocket, 200, "OK", {
          ['content-type'] = mimeType
-      }, buffer:substr(0, bytes_read))
+      }, buffer:sub(0, bytes_read))
    end
 end
 
@@ -1299,7 +1299,7 @@ function authMiddleware(options:table)
 
       token = authHeader
       if tokenPrefix and authHeader:startsWith(tokenPrefix) then
-         token = authHeader:substr(#tokenPrefix)
+         token = authHeader:sub(#tokenPrefix)
       end
 
       if not token or token is '' then
@@ -1585,7 +1585,7 @@ function serverIncoming(self, ClientSocket)
 
    -- Accumulate data
 
-   state.buffer ..= buffer:substr(0, bytes_read)
+   state.buffer ..= buffer:sub(0, bytes_read)
    if #state.buffer > self.maxRequestSize then
       errorBody = createErrorPage(413, 'Payload Too Large', 'Request exceeds maximum allowed size.', 'Maximum size: ' .. self.maxRequestSize .. ' bytes')
       sendHttpResponse(self, ClientSocket, 413, "Payload Too Large", {
@@ -1601,7 +1601,7 @@ function serverIncoming(self, ClientSocket)
       header_end ?! return -- Wait for more data
 
       -- Extract header section
-      header_section = state.buffer:substr(0, header_end + 3) -- Include the \r\n\r\n
+      header_section = state.buffer:sub(0, header_end + 3) -- Include the \r\n\r\n
       state.request = parseHttpRequest(header_section)
 
       if not state.request then
@@ -1640,7 +1640,7 @@ function serverIncoming(self, ClientSocket)
       end
 
       -- Remove processed headers from buffer
-      state.buffer = state.buffer:substr(header_end + 4) -- Remove \r\n\r\n as well
+      state.buffer = state.buffer:sub(header_end + 4) -- Remove \r\n\r\n as well
       state.headers_complete = true
 
       -- Call validateHeader callback if route has one
@@ -1724,8 +1724,8 @@ function serverIncoming(self, ClientSocket)
 
          if available > 0 then
             to_take = math.min(available, needed)
-            state.request.body = state.request.body .. state.buffer:substr(0, to_take)
-            state.buffer = state.buffer:substr(to_take)
+            state.request.body = state.request.body .. state.buffer:sub(0, to_take)
+            state.buffer = state.buffer:sub(to_take)
             state.body_received = state.body_received + to_take
 
             logMessage(self, 'Body progress: ' .. state.body_received .. '/' .. state.content_length .. ' bytes')

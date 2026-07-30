@@ -267,8 +267,8 @@ global function idlFunction(Name:str, Category:str, Comment:str, Status:str, Des
    if Def.ext_proto then
       jumpArgs = Def.ext_proto
       argSeq   = Def.ext_proto
-      if string.substr(argSeq, -3) is '...' then
-         argSeq = string.substr(argSeq, 0, -4) .. 'Args... Tags'
+      if string.sub(argSeq, -3) is '...' then
+         argSeq = string.sub(argSeq, 0, -4) .. 'Args... Tags'
       end
    elseif not jumpArgs then
       jumpArgs = argSeq

@@ -32,7 +32,7 @@ function rawHttpRequest(Method:str, Path:str):<num, str>
          buffer = string.alloc(4096)
          err, read_len = Socket.acRead(buffer)
          if err is ERR_Okay then
-            response ..= buffer:substr(0, read_len)
+            response ..= buffer:sub(0, read_len)
          elseif err is ERR_Disconnected then
             Socket.acSignal()
          else

@@ -215,7 +215,7 @@ function format_nano(Nano:num):str
 
    local text = pad_int(Nano, 9)
    while text:endsWith('0') do
-      text = text:substr(0, #text - 1)
+      text = text:sub(0, #text - 1)
    end
    return '.' .. text
 end
@@ -351,44 +351,44 @@ function format_temporal(Pattern:any, Values:table):str
    local result = ''
    local index = 0
    while index < #Pattern do
-      if Pattern:substr(index, index + 9) is 'SSSSSSSSS' then
+      if Pattern:sub(index, index + 9) is 'SSSSSSSSS' then
          result ..= format_fraction_token(require_format_value(Values, 'nano', 'SSSSSSSSS'), 9)
          index += 9
-      elseif Pattern:substr(index, index + 6) is 'SSSSSS' then
+      elseif Pattern:sub(index, index + 6) is 'SSSSSS' then
          result ..= format_fraction_token(require_format_value(Values, 'nano', 'SSSSSS'), 6)
          index += 6
-      elseif Pattern:substr(index, index + 4) is 'yyyy' then
+      elseif Pattern:sub(index, index + 4) is 'yyyy' then
          result ..= format_year(require_format_value(Values, 'year', 'yyyy'))
          index += 4
-      elseif Pattern:substr(index, index + 3) is 'SSS' then
+      elseif Pattern:sub(index, index + 3) is 'SSS' then
          result ..= format_fraction_token(require_format_value(Values, 'nano', 'SSS'), 3)
          index += 3
-      elseif Pattern:substr(index, index + 3) is 'XXX' then
+      elseif Pattern:sub(index, index + 3) is 'XXX' then
          result ..= format_offset_token(require_format_value(Values, 'offset', 'XXX'))
          index += 3
-      elseif Pattern:substr(index, index + 2) is 'MM' then
+      elseif Pattern:sub(index, index + 2) is 'MM' then
          result ..= pad_int(require_format_value(Values, 'month', 'MM'), 2)
          index += 2
-      elseif Pattern:substr(index, index + 2) is 'dd' then
+      elseif Pattern:sub(index, index + 2) is 'dd' then
          result ..= pad_int(require_format_value(Values, 'day', 'dd'), 2)
          index += 2
-      elseif Pattern:substr(index, index + 2) is 'HH' then
+      elseif Pattern:sub(index, index + 2) is 'HH' then
          result ..= pad_int(require_format_value(Values, 'hour', 'HH'), 2)
          index += 2
-      elseif Pattern:substr(index, index + 2) is 'mm' then
+      elseif Pattern:sub(index, index + 2) is 'mm' then
          result ..= pad_int(require_format_value(Values, 'minute', 'mm'), 2)
          index += 2
-      elseif Pattern:substr(index, index + 2) is 'ss' then
+      elseif Pattern:sub(index, index + 2) is 'ss' then
          result ..= pad_int(require_format_value(Values, 'second', 'ss'), 2)
          index += 2
-      elseif Pattern:substr(index, index + 2) is 'VV' then
+      elseif Pattern:sub(index, index + 2) is 'VV' then
          result ..= require_format_value(Values, 'zone_id', 'VV')
          index += 2
-      elseif Pattern:substr(index, index + 1) is "'" then
+      elseif Pattern:sub(index, index + 1) is "'" then
          index++
          local closed = false
          while index < #Pattern do
-            local literal = Pattern:substr(index, index + 1)
+            local literal = Pattern:sub(index, index + 1)
             if literal is "'" then
                closed = true
                index++
@@ -399,7 +399,7 @@ function format_temporal(Pattern:any, Values:table):str
          end
          if not closed then raise ERR_Syntax, 'Unterminated tempus format literal.' end
       else
-         local text = Pattern:substr(index, index + 1)
+         local text = Pattern:sub(index, index + 1)
          if is_format_token_start(text) then
             raise ERR_Syntax, f"Unsupported tempus format token '{text}'."
          end

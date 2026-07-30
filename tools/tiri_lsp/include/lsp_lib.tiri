@@ -76,7 +76,7 @@ function rebuildLineIndex(Doc:table, FromLine:num)
    end
 
    -- Handle empty document or trailing newline
-   if #Doc.lineIndex is 0 or (len > 0 and content:substr(len - 1, len) is '\n') then
+   if #Doc.lineIndex is 0 or (len > 0 and content:sub(len - 1, len) is '\n') then
       Doc.lineIndex:push(len, len)  -- start, stop
    end
 end
@@ -92,7 +92,7 @@ global function getLine(Doc:table, LineNo:num):str
    if LineNo < 0 or LineNo >= total_lines then return '' end
 
    idx = LineNo * 2
-   return Doc.content:substr(Doc.lineIndex[idx], Doc.lineIndex[idx + 1] + 1)
+   return Doc.content:sub(Doc.lineIndex[idx], Doc.lineIndex[idx + 1] + 1)
 end
 
 -- Mark line N and subsequent lines for recomputation.  Currently we are very lazy about this...
@@ -385,7 +385,7 @@ global function computeErrorRange(Doc:table, Line:num, Column:num)
    line_text = getLine(Doc, Line)
    if Column >= #line_text then return Column, Column + 1 end
 
-   c = line_text:substr(Column, Column + 1)
+   c = line_text:sub(Column, Column + 1)
 
    -- If starting on an identifier/number character, extend both directions
    if isIdentChar(c) or (c >= '0' and c <= '9') then
@@ -393,7 +393,7 @@ global function computeErrorRange(Doc:table, Line:num, Column:num)
 
       start_col = Column
       while start_col > 0 do
-         prev_c = line_text:substr(start_col - 1, start_col)
+         prev_c = line_text:sub(start_col - 1, start_col)
          if isIdentChar(prev_c) or (prev_c >= '0' and prev_c <= '9') then
             start_col -= 1
          else
@@ -405,7 +405,7 @@ global function computeErrorRange(Doc:table, Line:num, Column:num)
 
       end_col = Column + 1
       while end_col < #line_text do
-         next_c = line_text:substr(end_col, end_col + 1)
+         next_c = line_text:sub(end_col, end_col + 1)
          if isIdentChar(next_c) or (next_c >= '0' and next_c <= '9') then
             end_col++
          else
@@ -418,7 +418,7 @@ global function computeErrorRange(Doc:table, Line:num, Column:num)
    -- For operators and punctuation, try to capture multi-character operators
 
    if c is '=' or c is '!' or c is '<' or c is '>' or c is '~' or c is ':' or c is '.' or c is '≈' then
-      next_c = (Column + 1 < #line_text) and line_text:substr(Column + 1, Column + 2) or ''
+      next_c = (Column + 1 < #line_text) and line_text:sub(Column + 1, Column + 2) or ''
       if next_c is '=' or next_c is '>' then
          return Column, Column + 2
       end
@@ -429,7 +429,7 @@ global function computeErrorRange(Doc:table, Line:num, Column:num)
    if c is '"' or c is "'" then
       end_col = Column + 1
       while end_col < #line_text do
-         sc = line_text:substr(end_col, end_col + 1)
+         sc = line_text:sub(end_col, end_col + 1)
          if sc is c then
             return Column, end_col + 1
          elseif sc is '\\' then

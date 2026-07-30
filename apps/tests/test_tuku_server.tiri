@@ -111,11 +111,11 @@ function sendHttpRequest(Host:str, Port:num, Request:str):str
       local header_end = Response:find('\r\n\r\n')
       header_end ?! return false
 
-      local headers = Response:substr(0, header_end + 2)
+      local headers = Response:sub(0, header_end + 2)
       local length_text = rxContentLength.extract(headers)
       length_text ?! return false
 
-      local body = Response:substr(header_end + 4)
+      local body = Response:sub(header_end + 4)
       return #body >= tonumber(length_text)
    end
 
@@ -135,7 +135,7 @@ function sendHttpRequest(Host:str, Port:num, Request:str):str
          local buffer = string.alloc(32768)
          local err, bytes_read = Socket.acRead(buffer)
          if err is ERR_Okay then
-            if bytes_read > 0 then response ..= buffer:substr(0, bytes_read) end
+            if bytes_read > 0 then response ..= buffer:sub(0, bytes_read) end
             if isCompleteResponse(response) then Socket.acSignal() end
          elseif err is ERR_Disconnected then
             Socket.acSignal()
@@ -170,8 +170,8 @@ function parseHttpResponse(Response:str):<str, str, str>
       return nil, Response, ''
    end
 
-   headers = Response:substr(0, header_end)
-   body = Response:substr(header_end + 4)
+   headers = Response:sub(0, header_end)
+   body = Response:sub(header_end + 4)
 
    status_code = rxStatusLine.extract(headers) ?? '000'
 

@@ -114,8 +114,8 @@ function encodeFormBody(Form:array):str
       end
 
       params:push({
-         key   = text:substr(0, eq),
-         value = text:substr(eq + 1)
+         key   = text:sub(0, eq),
+         value = text:sub(eq + 1)
       })
    end
 
@@ -144,8 +144,8 @@ function buildMultipartBody(Fields:array):<str, str>
          error("Parameter 'multipart' entries must use name=value syntax.")
       end
 
-      name = text:substr(0, eq):trim()
-      value = text:substr(eq + 1)
+      name = text:sub(0, eq):trim()
+      value = text:sub(eq + 1)
 
       if name is '' then
          error("Parameter 'multipart' entries require a field name.")
@@ -154,7 +154,7 @@ function buildMultipartBody(Fields:array):<str, str>
       body ..= '--' .. boundary .. crlf
 
       if value:startsWith('@') then
-         path = value:substr(1)
+         path = value:sub(1)
          if path is '' then
             error("Parameter 'multipart' file entries require a path after '@'.")
          end
@@ -186,8 +186,8 @@ function splitHeader(Header:str):<str, str>
       error("Parameter 'header' entries must use Name: Value syntax.")
    end
 
-   name = Header:substr(0, colon):trim()
-   value = Header:substr(colon + 1):trim()
+   name = Header:sub(0, colon):trim()
+   value = Header:sub(colon + 1):trim()
 
    if name is '' then
       error("Parameter 'header' entries require a header name.")
@@ -205,7 +205,7 @@ function splitUser(User:str):<str, str>
       error("Parameter 'user' must use username:password syntax.")
    end
 
-   return User:substr(0, colon), User:substr(colon + 1)
+   return User:sub(0, colon), User:sub(colon + 1)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -217,8 +217,8 @@ function splitProxy(Proxy:str):<str, num>
       error("Parameter 'proxy' must use host:port syntax.")
    end
 
-   host = Proxy:substr(0, colon):trim()
-   port_text = Proxy:substr(colon + 1):trim()
+   host = Proxy:sub(0, colon):trim()
+   port_text = Proxy:sub(colon + 1):trim()
    port = tonumber(port_text)
 
    if host is '' then
@@ -633,7 +633,7 @@ function filterSensitiveHeaders(Headers:array):array
       name = tostring(header)
       colon = name:find(':')
       if colon != nil then
-         name = name:substr(0, colon):trim():lower()
+         name = name:sub(0, colon):trim():lower()
       end
       if name != 'authorization' and name != 'cookie' then
          result:push(header)
