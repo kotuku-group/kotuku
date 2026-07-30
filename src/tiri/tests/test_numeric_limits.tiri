@@ -379,6 +379,15 @@ end
    assert((-1) ** 0 is 1, '(-1)^0 should be 1')
 end
 
+@Test function PowerBindingAndAssociativity()
+   assert(-2 ** 2 is -4, '** should bind more tightly than unary negation')
+   assert((-2) ** 2 is 4, 'parentheses should apply negation before exponentiation')
+   assert(2 ** -2 is 0.25, '** should accept a unary expression as its right operand')
+   assert(2 ** 3 ** 2 is 512, '** should associate from right to left')
+   assert(~2 ** 2 is ~4, '** should bind more tightly than unary bitwise NOT')
+   assert((not 2 ** 2) is false, '** should bind more tightly than logical NOT')
+end
+
 @Test function PowerOverflow()
    result = 2 ** 1024
    assert(result is math.huge, '2^1024 should overflow to infinity')
