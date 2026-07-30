@@ -429,18 +429,23 @@ When the base operand is not a native array, array bytecodes fall back to the st
 
 ### 5.5 JIT Recording
 
-Array bytecodes record to the JIT trace using call-based IR emission:
+Ordinary array bytecodes record bounds guards and inline loads or stores for supported numeric and garbage-collected
+element types.  Other element types use the corresponding helper after the guard:
 
-- `AGETV`/`AGETB` → `IRCALL_lj_arr_getidx`
-- `ASETV`/`ASETB` → `IRCALL_lj_arr_setidx`
-- `ASGETV`/`ASGETB` → `IRCALL_lj_arr_safe_getidx`
+- `AGETV`/`AGETB` fall back to `IRCALL_lj_arr_getidx`.
+- `ASETV`/`ASETB` fall back to `IRCALL_lj_arr_setidx`.
 
-The recorder emits:
-1. Type guard ensuring operand is array
-2. Index narrowing (variable indices converted to integers)
-3. Call to helper function with bounds checking
+Safe array bytecodes use observation-specific recording:
 
-Future optimisation (Phase 5b) may inline element access for common types to eliminate function call overhead.
+- A non-array receiver, or an array with a non-integer key, records the ordinary indexed lookup and metamethod path.
+- An in-bounds `ASGETV` array access narrows the variable index, guards it against the current array length, and uses
+  the same inline load or `lj_arr_getidx` fallback as `AGETV`.
+- An observed out-of-bounds `ASGETV` access terminates the trace with an interpreter link before the bytecode.  The
+  interpreter then writes `nil` to the destination.
+- A native-array `ASGETB` observation disables JIT recording for that prototype.  This prevents installation of a
+  partial trace which can restore a stale destination slot at a later safe-navigation join.
+
+The recorder does not emit `IRCALL_lj_arr_safe_getidx`.  That helper is used by the interpreter implementations.
 
 ### 5.6 Parser Integration
 
@@ -448,10 +453,12 @@ When the parser can determine at compile time that an expression is an array (vi
 
 - Known array + variable index → `BC_AGETV` / `BC_ASETV`
 - Known array + literal index (0-255) → `BC_AGETB` / `BC_ASETB`
-- Safe navigation (`?[]`) with variable index → `BC_ASGETV`
-- Safe navigation (`?[]`) with literal index (0-255) → `BC_ASGETB`
+- Safe navigation on a known array with a variable numeric-capable index → `BC_ASGETV`
+- Safe navigation on a known array with a literal numeric index (0-255) → `BC_ASGETB`
 
-When the base type is unknown, standard table bytecodes (`TGETV`, `TSETV`, etc.) are emitted, relying on runtime type dispatch.
+Safe indexing on a statically proved table uses ordinary `TGETV`, `TGETB` or `TGETS` bytecodes.  A proved string key
+also uses ordinary table indexing.  When the receiver type is unresolved and the key may be numeric, the parser
+retains `ASGETV` or `ASGETB` so a native-array value can preserve safe out-of-bounds semantics at run time.
 
 ### 5.7 Example: Array Access Pattern
 

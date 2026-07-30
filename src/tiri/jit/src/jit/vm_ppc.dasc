@@ -5459,7 +5459,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
 
   case BC_ASGETV:
     |  // Safe array get with variable index - returns nil for out-of-bounds on arrays.
-    |  // For non-arrays, falls back to regular table indexing via vmeta_tgetb.
+    |  // For non-arrays, falls back to regular table indexing via vmeta_tgetv.
     |  // RA = dst, RB = table/array, RC = key
     |  lpx  TMP1, BASE, RB		// Load table/array
     |  lpx  TMP2, BASE, RC		// Load key (hi word)
@@ -5483,7 +5483,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
 
   case BC_ASGETB:
     |  // Safe array get with literal index - returns nil for out-of-bounds on arrays.
-    |  // For non-arrays, falls back to regular table indexing via vmeta_tgetv.
+    |  // For non-arrays, falls back to regular table indexing via vmeta_tgetb.
     |  // RA = dst, RB = table/array, RC = literal index (0-255, 0-based)
     |  lpx TMP1, BASE, RB		// Load table/array
     |  lwz ITYPE, 0(TMP1)
