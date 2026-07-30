@@ -3,8 +3,10 @@
 #include "ir_emitter.h"
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <span>
 #include <string>
 #include <string_view>
@@ -16,6 +18,7 @@
 #include "lj_tab.h"
 #include "lj_proto_registry.h"
 #include "lj_strfmt.h"
+#include "../../lib/lib_range.h"
 #include "../parse_internal.h"
 #include "../parse_value.h"
 #include "../token_types.h"
@@ -35,6 +38,92 @@ inline const TiriConstant * lookup_constant(const GCstr *Name)
 }
 
 static bool is_named_external_global(GCstr *Name);
+
+//********************************************************************************************************************
+// Determine whether a constant integer range can use its visible value as the numeric loop induction variable.
+
+static bool range_direct_integer(
+   const std::optional<CompileTimeValue> &Start, const std::optional<CompileTimeValue> &Stop,
+   const std::optional<CompileTimeValue> &Step, bool HasStep, bool Inclusive)
+{
+   if (not Start or not Stop or Start->kind != LiteralKind::Number or Stop->kind != LiteralKind::Number) return false;
+
+   lua_Number start = Start->number_value;
+   lua_Number stop = Stop->number_value;
+   lua_Number step;
+   if (HasStep) {
+      if (not Step or Step->kind != LiteralKind::Number) return false;
+      step = Step->number_value;
+   }
+   else step = start <= stop ? 1.0 : -1.0;
+
+   constexpr lua_Number minimum = lua_Number(std::numeric_limits<int32_t>::min());
+   constexpr lua_Number maximum = lua_Number(std::numeric_limits<int32_t>::max());
+   if (not std::isfinite(start) or not std::isfinite(stop) or not std::isfinite(step) or step IS 0.0 or
+       std::trunc(start) != start or std::trunc(stop) != stop or std::trunc(step) != step or
+       start < minimum or start > maximum or stop < minimum or stop > maximum or
+       step < minimum or step > maximum) {
+      return false;
+   }
+
+   lua_Number final_stop = stop;
+   if (not Inclusive) final_stop += step > 0.0 ? -1.0 : 1.0;
+   return final_stop >= minimum and final_stop <= maximum;
+}
+
+static bool block_contains_try(const BlockStmt *Block);
+
+//********************************************************************************************************************
+// Numeric loop snapshots remain unsafe when a protected region is nested in the loop body. Identify those bodies so
+// constant integer loops can retain range preparation only where it is required.
+
+static bool statement_contains_try(const StmtNode &Statement)
+{
+   auto contains = [](const std::unique_ptr<BlockStmt> &Block) { return block_contains_try(Block.get()); };
+
+   switch (Statement.kind) {
+      case AstNodeKind::TryExceptStmt:
+         return true;
+      case AstNodeKind::IfStmt:
+         for (const auto &clause : std::get<IfStmtPayload>(Statement.data).clauses) {
+            if (contains(clause.block)) return true;
+         }
+         return false;
+      case AstNodeKind::WhileStmt:
+      case AstNodeKind::RepeatStmt:
+         return contains(std::get<LoopStmtPayload>(Statement.data).body);
+      case AstNodeKind::NumericForStmt:
+         return contains(std::get<NumericForStmtPayload>(Statement.data).body);
+      case AstNodeKind::RangeForStmt:
+         return contains(std::get<RangeForStmtPayload>(Statement.data).body);
+      case AstNodeKind::GenericForStmt:
+         return contains(std::get<GenericForStmtPayload>(Statement.data).body);
+      case AstNodeKind::DoStmt:
+         return contains(std::get<DoStmtPayload>(Statement.data).block);
+      case AstNodeKind::ConditionalShorthandStmt: {
+         const auto &body = std::get<ConditionalShorthandStmtPayload>(Statement.data).body;
+         return body and statement_contains_try(*body);
+      }
+      case AstNodeKind::ImportStmt:
+         for (const auto &entry : std::get<ImportStmtPayload>(Statement.data).entries) {
+            if (contains(entry.inlined_body)) return true;
+         }
+         return false;
+      case AstNodeKind::WithStmt:
+         return contains(std::get<WithStmtPayload>(Statement.data).block);
+      default:
+         return false;
+   }
+}
+
+static bool block_contains_try(const BlockStmt *Block)
+{
+   if (not Block) return false;
+   for (const auto &statement : Block->statements) {
+      if (statement and statement_contains_try(*statement)) return true;
+   }
+   return false;
+}
 
 //********************************************************************************************************************
 // NilShortCircuitGuard - RAII helper for safe navigation nil-check pattern.
@@ -454,6 +543,7 @@ static UnsupportedNodeRecorder glUnsupportedNodes;
       case AstNodeKind::WhileStmt:      return "WhileStmt";
       case AstNodeKind::RepeatStmt:     return "RepeatStmt";
       case AstNodeKind::NumericForStmt: return "NumericForStmt";
+      case AstNodeKind::RangeForStmt:   return "RangeForStmt";
       case AstNodeKind::GenericForStmt: return "GenericForStmt";
       case AstNodeKind::BreakStmt:      return "BreakStmt";
       case AstNodeKind::ContinueStmt:   return "ContinueStmt";
@@ -828,6 +918,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_statement(const StmtNode& stmt)
    case AstNodeKind::NumericForStmt: {
       const auto &payload = std::get<NumericForStmtPayload>(stmt.data);
       return this->emit_numeric_for_stmt(payload);
+   }
+   case AstNodeKind::RangeForStmt: {
+      const auto &payload = std::get<RangeForStmtPayload>(stmt.data);
+      return this->emit_range_for_stmt(payload);
    }
    case AstNodeKind::GenericForStmt: {
       const auto &payload = std::get<GenericForStmtPayload>(stmt.data);
@@ -1810,6 +1904,131 @@ ParserResult<IrEmitUnit> IrEmitter::emit_numeric_for_stmt(const NumericForStmtPa
 
    ControlFlowEdge loopend = this->control_flow.make_unconditional(BCPos(bcemit_AJ(fs, BC_FORL, base, NO_JMP)));
    fs->bcbase[loopend.head().raw()].line = BCLine::encode(this->lex_state.current_file_index, Payload.body->span.line.lineNumber());
+   loopend.patch_head(BCPos(loop.head().raw() + 1));
+   loop.patch_head(fs->current_pc());
+   this->loop_stack.back().continue_target = loopend.head();
+   this->loop_stack.back().continue_edge.patch_to(loopend.head());
+   this->loop_stack.back().break_edge.patch_here();
+   return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
+}
+
+//********************************************************************************************************************
+// Emit a direct range loop. The existing numeric loop advances an ordinal; RANGEVAL derives each visible value from
+// the prepared start and step so floating-point error never accumulates between iterations.
+
+ParserResult<IrEmitUnit> IrEmitter::emit_range_for_stmt(const RangeForStmtPayload &Payload)
+{
+   if (not Payload.start or not Payload.stop or not Payload.body) {
+      return this->unsupported_stmt(AstNodeKind::RangeForStmt, SourceSpan{});
+   }
+
+   auto start_constant = this->constant_evaluator.evaluate(*Payload.start);
+   auto stop_constant = this->constant_evaluator.evaluate(*Payload.stop);
+   std::optional<CompileTimeValue> step_constant;
+   if (Payload.step) step_constant = this->constant_evaluator.evaluate(*Payload.step);
+   bool direct_integer =
+      range_direct_integer(start_constant, stop_constant, step_constant, Payload.step != nullptr, Payload.inclusive);
+   bool prepared_integer =
+      direct_integer and (this->func_state.try_depth > 0 or block_contains_try(Payload.body.get()));
+
+   FuncState *fs = &this->func_state;
+   auto base = fs->free_reg();
+   GCstr *control_symbol = Payload.control.symbol ? Payload.control.symbol : NAME_BLANK;
+
+   FuncScope outer_scope;
+   ScopeGuard loop_guard(fs, &outer_scope, FuncScopeFlag::Loop);
+
+   this->lex_state.var_new_fixed(FORL_IDX, VARNAME_FOR_IDX);
+   this->lex_state.var_new_fixed(FORL_STOP, VARNAME_FOR_STOP);
+   this->lex_state.var_new_fixed(FORL_STEP, VARNAME_FOR_STEP);
+   if (direct_integer) {
+      this->lex_state.var_new(
+         FORL_EXT, control_symbol, Payload.control.span.line, Payload.control.span.column);
+   }
+   else {
+      this->lex_state.var_new_fixed(RANGE_FOR_ORDINAL, VARNAME_RANGE_ORDINAL);
+      this->lex_state.var_new_fixed(RANGE_FOR_START, VARNAME_RANGE_START);
+      this->lex_state.var_new_fixed(RANGE_FOR_VALUE_STEP, VARNAME_RANGE_STEP);
+      this->lex_state.var_new_fixed(RANGE_FOR_FLAGS, VARNAME_RANGE_FLAGS);
+      this->lex_state.var_new(
+         RANGE_FOR_VALUE, control_symbol, Payload.control.span.line, Payload.control.span.column);
+   }
+
+   uint32_t flags = Payload.inclusive ? RANGE_PREP_INCLUSIVE : 0;
+   if (direct_integer) flags |= RANGE_PREP_DIRECT_INTEGER;
+   if (direct_integer and not prepared_integer) {
+      lua_Number start_number = start_constant->number_value;
+      lua_Number stop_number = stop_constant->number_value;
+      lua_Number step_number = Payload.step ? step_constant->number_value :
+         (start_number <= stop_number ? 1.0 : -1.0);
+      if (not Payload.inclusive) stop_number += step_number > 0.0 ? -1.0 : 1.0;
+
+      ExpDesc start_value(start_number);
+      this->materialise_to_next_reg(start_value, "range for start");
+      ExpDesc stop_value(stop_number);
+      this->materialise_to_next_reg(stop_value, "range for stop");
+      ExpDesc step_value(step_number);
+      this->materialise_to_next_reg(step_value, "range for step");
+   }
+   else {
+      auto start_expr = this->emit_expression(*Payload.start);
+      if (not start_expr.ok()) return ParserResult<IrEmitUnit>::failure(start_expr.error_ref());
+      ExpDesc start_value = start_expr.value_ref();
+      this->materialise_to_next_reg(start_value, "range for start");
+
+      auto stop_expr = this->emit_expression(*Payload.stop);
+      if (not stop_expr.ok()) return ParserResult<IrEmitUnit>::failure(stop_expr.error_ref());
+      ExpDesc stop_value = stop_expr.value_ref();
+      this->materialise_to_next_reg(stop_value, "range for stop");
+
+      if (Payload.step) {
+         auto step_expr = this->emit_expression(*Payload.step);
+         if (not step_expr.ok()) return ParserResult<IrEmitUnit>::failure(step_expr.error_ref());
+         ExpDesc step_value = step_expr.value_ref();
+         this->materialise_to_next_reg(step_value, "range for step");
+         flags |= RANGE_PREP_HAS_STEP;
+      }
+      else {
+         RegisterAllocator allocator(fs);
+         bcemit_AD(fs, BC_KPRI, fs->freereg, BCREG(ExpKind::Nil));
+         allocator.reserve(BCReg(1));
+      }
+   }
+
+   if (not direct_integer) {
+      RegisterAllocator allocator(fs);
+      allocator.reserve(BCReg(RANGE_FOR_VALUE - 3));
+   }
+   if (prepared_integer or not direct_integer) bcemit_AD(fs, BC_RANGEPREP, base, BCREG(flags));
+   this->lex_state.var_add(BCREG(direct_integer ? int(FORL_EXT) : int(RANGE_FOR_VALUE)));
+
+   auto loop_stack_guard = this->push_loop_context(BCPos(NO_JMP));
+   ControlFlowEdge loop = this->control_flow.make_unconditional(BCPos(bcemit_AJ(fs, BC_FORI, base, NO_JMP)));
+
+   {
+      FuncScope visible_scope;
+      ScopeGuard guard(fs, &visible_scope, FuncScopeFlag::None);
+      this->lex_state.var_add(1);
+      BCReg value_slot(base.raw() + BCREG(direct_integer ? int(FORL_EXT) : int(RANGE_FOR_VALUE)));
+      fs->var_get(value_slot.raw()).fixed_type = TiriType::Num;
+      RegisterAllocator allocator(fs);
+      allocator.reserve(BCReg(1));
+      if (not direct_integer) bcemit_AD(fs, BC_RANGEVAL, base, 0);
+
+      std::array<BlockBinding, 1> loop_bindings{};
+      std::span<const BlockBinding> binding_span;
+      if (Payload.control.symbol and not Payload.control.is_blank) {
+         loop_bindings[0].symbol = Payload.control.symbol;
+         loop_bindings[0].slot = value_slot;
+         binding_span = std::span<const BlockBinding>(loop_bindings.data(), 1);
+      }
+      auto block_result = this->emit_block_with_bindings(*Payload.body, FuncScopeFlag::None, binding_span);
+      if (not block_result.ok()) return block_result;
+   }
+
+   ControlFlowEdge loopend = this->control_flow.make_unconditional(BCPos(bcemit_AJ(fs, BC_FORL, base, NO_JMP)));
+   fs->bcbase[loopend.head().raw()].line =
+      BCLine::encode(this->lex_state.current_file_index, Payload.body->span.line.lineNumber());
    loopend.patch_head(BCPos(loop.head().raw() + 1));
    loop.patch_head(fs->current_pc());
    this->loop_stack.back().continue_target = loopend.head();

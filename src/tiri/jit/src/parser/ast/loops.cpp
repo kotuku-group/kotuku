@@ -7,9 +7,6 @@
 // - Anonymous for loops (for {range} do)
 // - Range literal optimisation for JIT compilation
 
-#include <cmath>
-#include <limits>
-
 //********************************************************************************************************************
 // Parses a range expression already confirmed by scan_range_literal(): {expr to expr} or {expr into expr}, with an
 // optional `by` step expression.
@@ -63,32 +60,6 @@ ParserResult<ExprNodePtr> AstBuilder::parse_scanned_range_in_braces(bool HasStep
    return ParserResult<ExprNodePtr>::success(std::move(node));
 }
 
-static bool range_literal_number(const ExprNodePtr &Expr, lua_Number &Value)
-{
-   if (not Expr or not (Expr->kind IS AstNodeKind::LiteralExpr)) return false;
-
-   auto *literal = std::get_if<LiteralValue>(&Expr->data);
-   if (not literal or not (literal->kind IS LiteralKind::Number)) return false;
-
-   Value = literal->number_value;
-   return true;
-}
-
-static bool range_literal_valid_step(lua_Number Value)
-{
-   return std::isfinite(Value) and Value != 0;
-}
-
-static bool range_literal_numeric_loop_safe(lua_Number Start, lua_Number Stop, lua_Number Step)
-{
-   constexpr lua_Number minimum = lua_Number(std::numeric_limits<int32_t>::min());
-   constexpr lua_Number maximum = lua_Number(std::numeric_limits<int32_t>::max());
-   return std::trunc(Start) IS Start and std::trunc(Stop) IS Stop and std::trunc(Step) IS Step and
-      Start >= minimum and Start <= maximum and Stop >= minimum and Stop <= maximum and
-      Step >= minimum and Step <= maximum;
-}
-
-//********************************************************************************************************************
 // Parses generic, range and anonymous for loops.  Lua-style numeric headers are rejected.
 
 ParserResult<StmtNodePtr> AstBuilder::parse_for()
@@ -145,68 +116,26 @@ ParserResult<StmtNodePtr> AstBuilder::parse_for()
       iterator_nodes = std::move(iterators.value_ref());
    }
 
-   // JIT Optimisation: Convert range literals with a single loop variable to numeric for loops.
-   // This allows the JIT to compile `for i in {1 to 10} do` into optimised BC_FORI/BC_FORL bytecode
-   // instead of the slower generic iterator path (BC_ITERC/BC_ITERL).
-   //
-   // Lowering: for i in {start to stop} do   => NumericForStmt(start, stop-1, step)  (exclusive)
-   //           for i in {start into stop} do => NumericForStmt(start, stop, step)    (inclusive)
-   //
-   // Step is inferred from start/stop direction unless an explicit literal step is supplied.
+   // Direct range literals use ordinal-based range-loop bytecode.  Keeping constant and runtime ranges on the same
+   // path avoids the legacy numeric loop's frame-state aliasing when a traced loop contains protected regions.
+   if (names.size() IS 1 and iterator_nodes.size() IS 1 and
+       iterator_nodes[0] and iterator_nodes[0]->kind IS AstNodeKind::RangeExpr) {
+      auto *range_payload = std::get_if<RangeExprPayload>(&iterator_nodes[0]->data);
+      if (range_payload and range_payload->start and range_payload->stop) {
+         bool inclusive = range_payload->inclusive;
+         ExprNodePtr start = std::move(range_payload->start);
+         ExprNodePtr stop = std::move(range_payload->stop);
+         ExprNodePtr step = std::move(range_payload->step);
 
-   if (names.size() IS 1 and iterator_nodes.size() IS 1) {
-      ExprNodePtr &first = iterator_nodes[0];
-      if (first and first->kind IS AstNodeKind::RangeExpr) {
-         auto* range_payload = std::get_if<RangeExprPayload>(&first->data);
-         if (range_payload and range_payload->start and range_payload->stop) {
-            SourceSpan span = first->span;
+         this->ctx.consume(TokenKind::DoToken, ParserErrorCode::ExpectedToken);
+         auto body = this->parse_scoped_block({ TokenKind::EndToken });
+         if (not body.ok()) return ParserResult<StmtNodePtr>::failure(body.error_ref());
+         this->ctx.consume(TokenKind::EndToken, ParserErrorCode::ExpectedToken);
 
-            // Check if both start and stop are numeric literals for compile-time optimisation.
-            // When both are constants, we can compute the step direction and exclusive adjustment
-            // at compile time, producing optimal BC_FORI/BC_FORL bytecode.
-
-            lua_Number start_val = 0;
-            lua_Number stop_val = 0;
-            lua_Number step_val = 0;
-            bool start_is_num = range_literal_number(range_payload->start, start_val);
-            bool stop_is_num = range_literal_number(range_payload->stop, stop_val);
-            bool step_is_num = false;
-            if (range_payload->step) step_is_num = range_literal_number(range_payload->step, step_val) and
-               range_literal_valid_step(step_val);
-            else {
-               step_val = (start_val <= stop_val) ? 1.0 : -1.0;
-               step_is_num = true;
-            }
-
-            if (start_is_num and stop_is_num and step_is_num and std::isfinite(start_val) and
-                std::isfinite(stop_val) and range_literal_numeric_loop_safe(start_val, stop_val, step_val)) {
-               ExprNodePtr start_expr = std::move(range_payload->start);
-               ExprNodePtr stop_expr = std::move(range_payload->stop);
-               range_payload->step = nullptr;
-
-               // For exclusive ranges, adjust stop
-               lua_Number final_stop = stop_val;
-               if (not range_payload->inclusive) {
-                  final_stop = step_val > 0 ? stop_val - 1.0 : stop_val + 1.0;
-               }
-
-               // Create literals for stop and step
-               ExprNodePtr final_stop_expr = make_literal_expr(stop_expr->span, LiteralValue::number(final_stop));
-               ExprNodePtr step_expr = make_literal_expr(span, LiteralValue::number(step_val));
-
-               this->ctx.consume(TokenKind::DoToken, ParserErrorCode::ExpectedToken);
-               auto body = this->parse_scoped_block({ TokenKind::EndToken });
-               if (not body.ok()) return ParserResult<StmtNodePtr>::failure(body.error_ref());
-               this->ctx.consume(TokenKind::EndToken, ParserErrorCode::ExpectedToken);
-
-               auto stmt = std::make_unique<StmtNode>(AstNodeKind::NumericForStmt, token.span());
-               NumericForStmtPayload payload(std::move(names[0]), std::move(start_expr),
-                  std::move(final_stop_expr), std::move(step_expr), std::move(body.value_ref()));
-               stmt->data = std::move(payload);
-               return ParserResult<StmtNodePtr>::success(std::move(stmt));
-            }
-
-         }
+         auto stmt = std::make_unique<StmtNode>(AstNodeKind::RangeForStmt, token.span());
+         stmt->data.emplace<RangeForStmtPayload>(std::move(names[0]), std::move(start), std::move(stop),
+            std::move(step), inclusive, std::move(body.value_ref()));
+         return ParserResult<StmtNodePtr>::success(std::move(stmt));
       }
    }
 
@@ -243,7 +172,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_for()
 //    for {1 into 5} do total += 1 end         -- increments total 5 times
 //
 // The implementation creates a blank identifier internally and leverages the existing for-loop
-// machinery, including JIT optimisation for constant ranges.
+// machinery, including direct range-loop JIT optimisation.
 
 ParserResult<StmtNodePtr> AstBuilder::parse_anonymous_for(const Token& ForToken)
 {
@@ -276,55 +205,23 @@ ParserResult<StmtNodePtr> AstBuilder::parse_anonymous_for(const Token& ForToken)
    blank_id.is_blank = true;
    blank_id.span = ForToken.span();
 
-   // JIT Optimisation: Convert constant range literals to numeric for loops.
-   // This allows the JIT to compile `for {1 to 10} do` into optimised BC_FORI/BC_FORL bytecode.
    if (iter_expr and iter_expr->kind IS AstNodeKind::RangeExpr) {
-      auto* range_payload = std::get_if<RangeExprPayload>(&iter_expr->data);
+      auto *range_payload = std::get_if<RangeExprPayload>(&iter_expr->data);
       if (range_payload and range_payload->start and range_payload->stop) {
-         SourceSpan span = iter_expr->span;
+         bool inclusive = range_payload->inclusive;
+         ExprNodePtr start = std::move(range_payload->start);
+         ExprNodePtr stop = std::move(range_payload->stop);
+         ExprNodePtr step = std::move(range_payload->step);
 
-         // Check if both start and stop are numeric literals for compile-time optimisation.
+         this->ctx.consume(TokenKind::DoToken, ParserErrorCode::ExpectedToken);
+         auto body = this->parse_scoped_block({ TokenKind::EndToken });
+         if (not body.ok()) return ParserResult<StmtNodePtr>::failure(body.error_ref());
+         this->ctx.consume(TokenKind::EndToken, ParserErrorCode::ExpectedToken);
 
-         lua_Number start_val = 0;
-         lua_Number stop_val = 0;
-         lua_Number step_val = 0;
-         bool start_is_num = range_literal_number(range_payload->start, start_val);
-         bool stop_is_num = range_literal_number(range_payload->stop, stop_val);
-         bool step_is_num = false;
-         if (range_payload->step) step_is_num = range_literal_number(range_payload->step, step_val) and
-            range_literal_valid_step(step_val);
-         else {
-            step_val = (start_val <= stop_val) ? 1.0 : -1.0;
-            step_is_num = true;
-         }
-
-         if (start_is_num and stop_is_num and step_is_num and std::isfinite(start_val) and std::isfinite(stop_val) and
-             range_literal_numeric_loop_safe(start_val, stop_val, step_val)) {
-            // For exclusive ranges, adjust stop
-            lua_Number final_stop = stop_val;
-            if (not range_payload->inclusive) {
-               final_stop = step_val > 0 ? stop_val - 1.0 : stop_val + 1.0;
-            }
-
-            // Move the start expression from the range
-            ExprNodePtr start_expr = std::move(range_payload->start);
-            range_payload->step = nullptr;
-
-            // Create literals for stop and step
-            ExprNodePtr final_stop_expr = make_literal_expr(span, LiteralValue::number(final_stop));
-            ExprNodePtr step_expr = make_literal_expr(span, LiteralValue::number(step_val));
-
-            this->ctx.consume(TokenKind::DoToken, ParserErrorCode::ExpectedToken);
-            auto body = this->parse_scoped_block({ TokenKind::EndToken });
-            if (not body.ok()) return ParserResult<StmtNodePtr>::failure(body.error_ref());
-            this->ctx.consume(TokenKind::EndToken, ParserErrorCode::ExpectedToken);
-
-            StmtNodePtr stmt = std::make_unique<StmtNode>(AstNodeKind::NumericForStmt, ForToken.span());
-            stmt->data.emplace<NumericForStmtPayload>(std::move(blank_id), std::move(start_expr),
-               std::move(final_stop_expr), std::move(step_expr), std::move(body.value_ref()));
-            return ParserResult<StmtNodePtr>::success(std::move(stmt));
-         }
-
+         auto stmt = std::make_unique<StmtNode>(AstNodeKind::RangeForStmt, ForToken.span());
+         stmt->data.emplace<RangeForStmtPayload>(std::move(blank_id), std::move(start), std::move(stop),
+            std::move(step), inclusive, std::move(body.value_ref()));
+         return ParserResult<StmtNodePtr>::success(std::move(stmt));
       }
    }
 

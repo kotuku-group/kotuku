@@ -270,7 +270,11 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   /* Portable runtime type contracts. */ \
   _(CONTRACT, rbase, ___, str, ___) \
   _(MRSAVE,   rbase, ___, ___, ___) \
-  _(MRRESTORE,rbase, ___, ___, ___)
+  _(MRRESTORE,rbase, ___, ___, ___) \
+  \
+  /* Direct range-loop preparation and value generation. */ \
+  _(RANGEPREP, base, ___, lit, ___) \
+  _(RANGEVAL,  base, ___, ___, ___)
 
 // Bytecode opcode numbers.
 // Explicitly enumerated for debugger visibility and easy value lookup.
@@ -428,7 +432,11 @@ typedef enum {
    BC_MRSAVE = 117,
    BC_MRRESTORE = 118,
 
-   BC__MAX   = 119
+   // Direct range loops
+   BC_RANGEPREP = 119,
+   BC_RANGEVAL = 120,
+
+   BC__MAX   = 121
 } BCOp;
 
 [[nodiscard]] inline constexpr bool bc_is_func_header(BCOp Op) noexcept
@@ -485,6 +493,19 @@ static_assert((int)BC_FUNCV + 2 == (int)BC_JFUNCV);
 // Stack slots used by FORI/FORL, relative to operand A.
 enum {
    FORL_IDX, FORL_STOP, FORL_STEP, FORL_EXT
+};
+
+// Stack slots used by direct range loops, relative to operand A.
+enum {
+   RANGE_FOR_IDX = FORL_IDX,
+   RANGE_FOR_STOP = FORL_STOP,
+   RANGE_FOR_STEP = FORL_STEP,
+   RANGE_FOR_ORDINAL = FORL_EXT,
+   RANGE_FOR_START,
+   RANGE_FOR_VALUE_STEP,
+   RANGE_FOR_FLAGS,
+   RANGE_FOR_VALUE,
+   RANGE_FOR_SLOTS
 };
 
 // Bytecode operand modes. ORDER BCMode

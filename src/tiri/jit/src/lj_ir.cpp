@@ -27,6 +27,7 @@
 #include "lj_strfmt.h"
 #include "lj_prng.h"
 #include "lj_vmarray.h"
+#include "lib/lib_range.h"
 
 // Some local macros to save typing. Undef'd at the end.
 #define IR(ref)         (&J->cur.ir[(ref)])

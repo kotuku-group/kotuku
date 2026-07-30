@@ -43,6 +43,7 @@
 #include "lj_ir.h"
 #include "lj_jit.h"
 #include "lj_iropt.h"
+#include "lib/lib_range.h"
 #include "lj_trace.h"
 #include "lj_snap.h"
 #include "lj_target.h"
@@ -259,7 +260,30 @@ static BCREG snap_usedef(jit_State *J, uint8_t *udf, const BCIns *pc, BCREG maxs
          case BCMjump:
          handle_jump: {
             BCREG minslot = bc_a(ins);
-            if (bc_is_for_loop(op)) minslot += FORL_EXT;
+            if (bc_is_for_loop(op)) {
+               const BCIns *loop_body = nullptr;
+               if (op IS BC_FORI or op IS BC_JFORI) {
+                  loop_body = pc;
+               }
+               else if (op IS BC_FORL or op IS BC_IFORL) {
+                  loop_body = pc + bc_j(ins);
+               }
+               else {
+                  const BCIns *proto_start = proto_bc(J->pt);
+                  for (const BCIns *candidate = pc - 2; ; candidate--) {
+                     BCOp candidate_op = bc_op(*candidate);
+                     if ((candidate_op IS BC_FORI or candidate_op IS BC_JFORI) and
+                         bc_a(*candidate) IS bc_a(ins)) {
+                        loop_body = candidate + 1;
+                        break;
+                     }
+                     if (candidate IS proto_start) break;
+                  }
+               }
+               bool range_loop = loop_body and bc_op(*loop_body) IS BC_RANGEVAL and
+                  bc_a(*loop_body) IS bc_a(ins);
+               minslot += BCREG(range_loop ? int(RANGE_FOR_VALUE) : int(FORL_EXT));
+            }
             else if (bc_is_iter_loop(op)) minslot += bc_b(pc[-2]) - 1;
             else if (op IS BC_UCLO) {
                ptrdiff_t delta = bc_j(ins);
@@ -321,6 +345,16 @@ static BCREG snap_usedef(jit_State *J, uint8_t *udf, const BCIns *pc, BCREG maxs
                for (s = 0; s < entry_slots; s++) USE_SLOT(s);
                for (; s < maxslot; s++) DEF_SLOT(s);
                return entry_slots;
+            }
+            else if (op IS BC_RANGEPREP) {
+               for (s = bc_a(ins); s < bc_a(ins) + 3; s++) USE_SLOT(s);
+               BCREG prepare_slots = (bc_d(ins) & RANGE_PREP_DIRECT_INTEGER) ?
+                  BCREG(FORL_EXT + 1) : BCREG(RANGE_FOR_SLOTS);
+               for (s = bc_a(ins); s < bc_a(ins) + prepare_slots; s++) DEF_SLOT(s);
+            }
+            else if (op IS BC_RANGEVAL) {
+               for (s = bc_a(ins) + RANGE_FOR_ORDINAL; s < bc_a(ins) + RANGE_FOR_VALUE; s++) USE_SLOT(s);
+               DEF_SLOT(bc_a(ins) + RANGE_FOR_VALUE);
             }
             break;
          default: break;

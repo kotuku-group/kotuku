@@ -838,6 +838,20 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
          }
          break;
       }
+      case AstNodeKind::RangeForStmt: {
+         auto *payload = std::get_if<RangeForStmtPayload>(&Statement.data);
+         if (payload and payload->body) {
+            this->push_scope();
+            InferredType control_type(TiriType::Num);
+            this->current_scope().declare_local(
+               payload->control.symbol, control_type, payload->control.span);
+            for (auto &statement : payload->body->statements) {
+               if (statement) this->lower_unanalysed_statement(*statement);
+            }
+            this->pop_scope();
+         }
+         break;
+      }
       case AstNodeKind::GenericForStmt: {
          auto *payload = std::get_if<GenericForStmtPayload>(&Statement.data);
          if (payload and payload->body) {
@@ -968,6 +982,27 @@ void TypeAnalyser::analyse_statement(StmtNode &Statement)
             if (payload->body) {
                this->push_scope();
                // For loop control variable is implicitly typed as num
+               if (payload->control.symbol) {
+                  InferredType loop_var;
+                  loop_var.primary = TiriType::Num;
+                  this->current_scope().declare_local(payload->control.symbol, loop_var, payload->control.span);
+               }
+               this->loop_depth_++;
+               this->analyse_block(*payload->body);
+               this->loop_depth_--;
+               this->pop_scope();
+            }
+         }
+         break;
+      }
+      case AstNodeKind::RangeForStmt: {
+         auto *payload = std::get_if<RangeForStmtPayload>(&Statement.data);
+         if (payload) {
+            if (payload->start) this->analyse_expression(*payload->start);
+            if (payload->stop) this->analyse_expression(*payload->stop);
+            if (payload->step) this->analyse_expression(*payload->step);
+            if (payload->body) {
+               this->push_scope();
                if (payload->control.symbol) {
                   InferredType loop_var;
                   loop_var.primary = TiriType::Num;
@@ -2846,6 +2881,11 @@ bool TypeAnalyser::body_has_return_values(const BlockStmt& Block) const
             if (payload and payload->body and this->body_has_return_values(*payload->body)) return true;
             break;
          }
+         case AstNodeKind::RangeForStmt: {
+            auto *payload = std::get_if<RangeForStmtPayload>(&stmt->data);
+            if (payload and payload->body and this->body_has_return_values(*payload->body)) return true;
+            break;
+         }
          case AstNodeKind::GenericForStmt: {
             auto *payload = std::get_if<GenericForStmtPayload>(&stmt->data);
             if (payload and payload->body and this->body_has_return_values(*payload->body)) return true;
@@ -2933,6 +2973,16 @@ bool TypeAnalyser::statement_contains_call_to(const StmtNode& Stmt, GCstr *Name)
       }
       case AstNodeKind::NumericForStmt: {
          auto *payload = std::get_if<NumericForStmtPayload>(&Stmt.data);
+         if (payload) {
+            if (payload->start and this->expression_contains_call_to(*payload->start, Name)) return true;
+            if (payload->stop and this->expression_contains_call_to(*payload->stop, Name)) return true;
+            if (payload->step and this->expression_contains_call_to(*payload->step, Name)) return true;
+            if (payload->body and this->body_contains_call_to(*payload->body, Name)) return true;
+         }
+         break;
+      }
+      case AstNodeKind::RangeForStmt: {
+         auto *payload = std::get_if<RangeForStmtPayload>(&Stmt.data);
          if (payload) {
             if (payload->start and this->expression_contains_call_to(*payload->start, Name)) return true;
             if (payload->stop and this->expression_contains_call_to(*payload->stop, Name)) return true;

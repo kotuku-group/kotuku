@@ -19,6 +19,31 @@ function jit_regex_failure_convert(Value:any, Param:table):any
    end
 end
 
+function jit_try_local_before_entry(Pattern)
+   local label = "before-entry"
+
+   try
+      regex.new(Pattern)
+   except e
+      return label
+   end
+
+   return "missing-error"
+end
+
+function jit_try_mutated_local_before_throw(Pattern, Iteration)
+   local status = "initial"
+
+   try
+      status = "mutated-" .. tostring(Iteration % 5)
+      regex.new(Pattern)
+   except e
+      return status
+   end
+
+   return "missing-error"
+end
+
 @Test(hotpath=30) function JITTryRegexFailurePreservesParamName()
    local param = { name = 'pattern', type = 'regex' }
    local expected_message = "Intentional exception raised for parent to capture."
@@ -40,4 +65,27 @@ end
    end
 
    assert(count is 80, f"Expected 80 iterations, got {count}")
+end
+
+@Test(hotpath=30) function JITTryLocalMutatedInsideTrySurvivesRegexThrow()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
+
+   for i in {0 to 100} do
+      expected = "mutated-" .. tostring(i % 5)
+      result = jit_try_mutated_local_before_throw("(", i)
+      assert(result is expected, f"Expected handler to see '{expected}', got '{result}'")
+   end
+end
+
+@Test(hotpath=30) function JITTryLocalBeforeEntrySurvivesRegexThrow()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
+
+   for i in {0 to 100} do
+      result = jit_try_local_before_entry("(")
+      assert(result is "before-entry", f"Expected local captured before try entry, got '{result}'")
+   end
 end
