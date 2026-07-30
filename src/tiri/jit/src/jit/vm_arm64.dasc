@@ -1263,6 +1263,9 @@ static void build_subroutines(BuildCtx *ctx)
   |  str TISNIL, [BASE, #-16]
   |  b ->fff_res1
   |
+  |.ffunc_2 range_iterator_next
+  |  b ->fff_fallback
+  |
   |.ffunc_1 pairs
   |  checktp TMP1, CARG1, LJ_TTAB, ->fff_fallback
   |  ldr TAB:CARG2, TAB:TMP1->metatable

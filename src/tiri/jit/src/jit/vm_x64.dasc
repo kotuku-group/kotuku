@@ -1579,6 +1579,9 @@ static void build_subroutines(BuildCtx *ctx)
   |  mov aword [BASE-16], LJ_TNIL
   |  jmp ->fff_res1
   |
+  |.ffunc_2 range_iterator_next
+  |  jmp ->fff_fallback
+  |
   |.ffunc_1 pairs
   |  mov TAB:RB, [BASE]
   |  mov TMPR, TAB:RB

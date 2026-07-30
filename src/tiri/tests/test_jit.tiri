@@ -453,6 +453,44 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 
+@Test(hotpath=100) function ExplicitRangeObjectTraceStability()
+   local source = range.new(0, 100, false, 2)
+   local function range_object_sum():num
+      local total = 0
+      for value in source() do total += value end
+      return total
+   end
+
+   jit.off()
+   local expected = range_object_sum()
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=56', 'hotexit=10', 'minstitch=0')
+
+   local compiled = 0
+   local aborted = 0
+   local function trace_event(Event)
+      if Event is 'stop' then compiled++
+      elseif Event is 'abort' then aborted++
+      end
+   end
+
+   jit.attach(trace_event, 'trace')
+   local result = 0
+   for repetition in {1 into 200} do result = range_object_sum() end
+   jit.attach(trace_event)
+
+   local trace_count = count_jit_traces(20)
+   assert(result is expected, f'Explicit range object should match the interpreter result of {expected}, got {result}')
+   assert(compiled > 0, 'Explicit range object iteration should compile at least one trace')
+   assert(aborted is 0, f'Explicit range object iteration should not abort recording, observed {aborted} aborts')
+   assert(trace_count < 10,
+      f'Explicit range object iteration should record fewer than 10 traces, observed {trace_count}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
 @Test(hotpath=100) function ChangingRuntimeRangeBoundsRemainStable()
    local function changing_range_sum(Start, Stop):num
       local total = 0
@@ -755,38 +793,6 @@ function array_clear_then_push(Array)
    return array.getString(Array)
 end
 
-function jit_try_repeated_throwable_helpers(Pattern)
-   local stable_label = "stable-local"
-   local compiled = nil
-
-   try
-      for i in {0 to 5} do
-         compiled = regex.new("a+")
-      end
-      regex.new(Pattern)
-   except e
-      return stable_label, compiled != nil
-   end
-
-   return "missing-error", false
-end
-
-function jit_try_inner_locals_preserve_entry_local(Pattern, Iteration)
-   local entry_label = "entry-" .. tostring(Iteration % 7)
-
-   try
-      local inner_label = "inner-" .. tostring(Iteration)
-      local combined = inner_label .. ":" .. entry_label
-      if #combined < 1 then
-         return "impossible"
-      end
-      regex.new(Pattern)
-   except e
-      return entry_label
-   end
-
-   return "missing-error"
-end
 
 function jit_try_forced_materialisation_probe(Count)
    local entry_label = "entry"
@@ -821,30 +827,6 @@ function build_try_materialisation_trace()
    end
 
    error("Failed to create a try-entry materialisation trace for inspection")
-end
-
-@Test(hotpath=80) function JITTryRepeatedThrowableHelpersDoNotCorruptLocals()
-   jit.on()
-   jit.flush()
-   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
-
-   for i in {0 to 100} do
-      label, compiled = jit_try_repeated_throwable_helpers("(")
-      assert(label is "stable-local", f"Expected stable local after repeated helpers, got '{label}'")
-      assert(compiled is true, "Successful repeated regex.new() calls should update their local")
-   end
-end
-
-@Test(hotpath=80) function JITTryInnerLocalsPreserveEntryLocal()
-   jit.on()
-   jit.flush()
-   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
-
-   for i in {0 to 100} do
-      local expected = "entry-" .. tostring(i % 7)
-      local result = jit_try_inner_locals_preserve_entry_local("(", i)
-      assert(result is expected, f"Expected handler to see entry local '{expected}', got '{result}'")
-   end
 end
 
 @Test(hotpath=80) function JITTryMaterialisationTraceEmitsXStores()

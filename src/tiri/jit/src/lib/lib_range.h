@@ -20,6 +20,14 @@ struct tiri_range {
    bool inclusive;    // If true, stop is included (default: false)
 };
 
+enum RangeIteratorState {
+   RANGE_ITERATOR_START,
+   RANGE_ITERATOR_STEP,
+   RANGE_ITERATOR_COUNT,
+   RANGE_ITERATOR_INTEGER_VALUES,
+   RANGE_ITERATOR_STATE_SIZE
+};
+
 struct tiri_index_range {
    int32_t start;
    int32_t stop;
@@ -59,6 +67,7 @@ lua_Number lj_range_prepare_count(
    lua_State *L, lua_Number Start, lua_Number Stop, lua_Number Step, uint32_t Inclusive);
 int32_t lj_range_integer_values(lua_Number Start, lua_Number Stop, lua_Number Step);
 lua_Number lj_range_value(lua_Number Ordinal, lua_Number Start, lua_Number Step);
+lua_Number lj_range_iterator_next_ordinal(lua_Number Control, lua_Number Start, lua_Number Step);
 extern "C" void lj_range_prepare(lua_State *L, TValue *Base, uint32_t Flags);
 extern "C" void lj_range_value_at(TValue *Base);
 
