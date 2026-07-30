@@ -1,5 +1,6 @@
 // VERIFIED: 2026-02-13
 // UPDATED: 2026-07-13 — Structures promoted to a first-class 'struct' type; added struct.clone()/struct.copy(), field-assignment semantics, pairs() iteration and tostring() representation.
+// CHANGED: 2026-07-27 — Added the Result Types section; module call results now carry static types derived from the native signature (commit 8905c1966).
 // UPDATED: 2026-07-15 — Struct documentation relocated to the Structs chapter in Part II following the native 'struct' keyword implementation (commit 9279202).  Chapter retitled to Modules.
 
 [[ch-modules]]
@@ -62,6 +63,7 @@ Module interfaces should always be stored in consistently named variables at the
 
 💡The Core module (`mSys`) is an essential API that is always loaded by default.
 
+[[sec-calling-module-functions]]
 [discrete]
 ==== Calling Module Functions
 
@@ -90,6 +92,58 @@ err, list = mSys.ListMemory(0)
 ----
 
 Functions that return allocated resources are automatically covered by the garbage collector.  Use `local` scoping to ensure timely cleanup.
+
+[discrete]
+==== Result Types
+
+indexterm:[modules, result types] The compiler derives the type of every module result from the module's native signature and applies it to the assignment targets, as defined in <<sec-native-result-types>>.  Each result is typed independently, so an unannotated declaration that consumes a module result is fixed to that result's type:
+
+[source,tiri]
+----
+local err, path_type = mSys.AnalysePath('user:')  -- both results are fixed to 'number'
+path_type = 'folder'  -- error: cannot assign 'string' to variable of type 'number'
+----
+
+Result types map from the native signature as follows:
+
+[cols="1,1a",options="header"]
+|===
+|Native result |Tiri type
+|Error code
+|`num`
+|Integer, large or floating point
+|`num`
+|String
+|`str`
+|Object pointer
+|`obj`
+|Resource structure
+|`struct`
+|Non-resource structure
+|`table`
+|Array or vector
+|`array` (element type included)
+|Untyped pointer
+|`userdata`
+|===
+
+Results other than the error code are nullable: they satisfy their type and also accept `nil`.  A function that declares no results yields `nil`.  A safe call marks every result nullable:
+
+[source,tiri]
+----
+local time = mSys?.PreciseTime()   -- nullable numeric result
+----
+
+Result types are derived only when the module reference is statically known.  That condition holds for a module registered by the framework as a built-in global (`mSys`), for a `<const>` alias of such a global, and for `mod.load()` called with a string literal that names a module already registered in the process, where the result is bound to a `<const>` name:
+
+[source,tiri]
+----
+local sys <const> = mSys               -- typed results
+local core <const> = mod.load('core')  -- typed results
+local gfx = mod.load('display')        -- results are unconstrained
+----
+
+A module reference held in a reassignable variable is not statically known because its value can change, so its call results perform dynamic ingress (<<sec-dynamic-ingress>>).  Declare the reference `<const>` to obtain result types.
 
 [discrete]
 ==== Buffer Handling

@@ -1,7 +1,11 @@
 // CHANGED: 2026-07-27 — Completed the annotation type-name list and noted runtime contract enforcement for annotated variables.
 // CHANGED: 2026-07-27 — Documented sticky contracts on 'global' declarations and the ':any' variant opt-out (commit 997f6b551).
+// CHANGED: 2026-07-28 — Added sec-environment-mutation-boundary; computed '_G' keys are now runtime-checked rather than rejected outright (commit 4b4a2f94).
+// CHANGED: 2026-07-27 — Cross-referenced the annotation requirement for dynamic ingress (commit 8905c1966).
 // UPDATED: 2026-07-06 -- Documented extern declarations and protected host globals.
 // VERIFIED: 2026-02-10
+// CHANGED: 2026-07-30 — Added sec-the-global-environment (_G, no _ENV, debug.getEnv/setEnv sandboxing).
+// CHANGED: 2026-07-30 — Documented per-iteration closure capture and the scope of a local's own initialiser.
 
 [[ch-variables-and-scoping]]
 == Variables & Scoping
@@ -53,6 +57,19 @@ A `local` declaration without an initialiser sets the variable to `nil`.  Multip
 ----
 local x, y = 10          -- x is 10, y is nil
 local a, b = 1, 2, 3     -- a is 1, b is 2, 3 is discarded
+----
+
+==== Scope of the Initialiser
+
+A declared variable enters scope after its own declaration completes.  A name appearing in the initialiser therefore resolves to the enclosing binding, not to the variable being declared.  This permits a local to capture the value of an outer variable of the same name:
+
+[source,tiri]
+----
+value = 'outer'
+do
+   local value = value   -- the initialiser reads the outer 'value'
+   print(value)          -- 'outer'
+end
 ----
 
 ==== The Blank Identifier
@@ -166,10 +183,41 @@ global glWindowTitle = 'My App'
 global MAX_RETRIES <const> = 5
 ----
 
+[[sec-the-global-environment]]
+=== The Global Environment
+
+indexterm:[global environment] indexterm:[\_G] Global variables are stored in a single table called the _global environment_, exposed to scripts as `_G`.  A variable introduced by a `global` declaration becomes an entry in this table, and an entry written into the table becomes a global variable:
+
+[source,tiri]
+----
+global glTitle = 'Untitled'
+print(_G.glTitle)      -- 'Untitled'
+
+_G.glVersion = '1.0'   -- creates a global named 'glVersion'
+----
+
+`_G` contains itself as the entry `_G`, so `_G._G` and `_G` are the same table.  The global environment holds host-registered names in addition to those declared by the script; those names are protected from rebinding, as described in <<sec-protected-host-globals>>.
+
+Writes through `_G` are subject to the same policy as direct global assignment.  A write to a protected name raises an error, and a write to a name carrying a type contract is validated against that contract.  This applies to `rawset()` as well, which suppresses metamethod dispatch but not environment policy.
+
+Each script state has one global environment, and a name that is not resolved as a local or upvalue is looked up in the environment of the enclosing function.
+
+A function's environment can still be read and replaced through `debug.getEnv()` and `debug.setEnv()`, which is the supported route for sandboxing.  Replacing a function's environment changes how global names resolve inside it:
+
+[source,tiri]
+----
+extern someGlobal
+function probe() return someGlobal end
+debug.setEnv(probe, { someGlobal = 'from sandbox' })
+probe()   -- 'from sandbox'
+----
+
+See <<ch-the-debug-library>> for the full interface.
+
 [[sec-protected-host-globals]]
 === Protected Host Globals
 
-indexterm:[protected globals] indexterm:[built-in globals] Host-registered global names are protected from rebinding.  This includes built-in functions and library or interface tables such as `math`, `table`, `string`, `obj`, and `tostring`.  A script cannot replace a protected binding through direct assignment, a `global` declaration, a `global function` declaration, or a direct protected-key write through the real `_G` table.  Computed writes through the real `_G` table are rejected because the target key cannot be proven unprotected.
+indexterm:[protected globals] indexterm:[built-in globals] Host-registered global names are protected from rebinding.  This includes built-in functions and library or interface tables such as `math`, `table`, `string`, `obj`, and `tostring`.  A script cannot replace a protected binding through direct assignment, a `global` declaration, a `global function` declaration, or any write into the global environment table.
 
 [source,tiri]
 ----
@@ -179,8 +227,11 @@ global function tostring()   -- error: cannot override built-in 'tostring'
 end
 _G.tostring = nil            -- error: cannot override built-in 'tostring'
 _G['math'] = nil             -- error: cannot override built-in 'math'
-_G[name] = value             -- error: computed global-environment store
+_G[key] = value              -- error if 'key' resolves to a protected name
+rawset(_G, 'math', nil)      -- error: cannot override built-in 'math'
 ----
+
+Writes whose target key is a compile-time literal are rejected at compile time.  Writes whose key is computed are rejected at runtime, at the point of the store.  A store with a computed key that resolves to an unprotected name succeeds.
 
 A local binding may shadow a protected global within its lexical scope.  Variables use an explicit `local` declaration; unqualified function declarations are local by default:
 
@@ -311,6 +362,8 @@ y:num <const> = 42   -- type before attribute
 ----
 
 Type annotations interact with the type inference system.  See <<ch-type-system>> for sticky types, implicit type fixing, and the `any` escape hatch.
+
+An annotation is mandatory when a declaration's initialiser has no statically provable type and the variable is assigned again later.  See <<sec-dynamic-ingress>>.
 
 An annotation on a local, on a local captured as an upvalue, or on a global declared with `global` is enforced at runtime as a type contract.  A `global` declaration carries a contract whether its type is annotated or inferred; only an explicit `:any` annotation opts it out.  See <<sec-runtime-type-contracts>> and <<sec-global-contracts>>.
 

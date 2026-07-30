@@ -1,5 +1,9 @@
 // VERIFIED: 2026-03-03
 // UPDATED: 2026-04-03 -- Added `is not` alongside `!=` in equality semantics.
+// CHANGED: 2026-07-28 — Noted that raw access does not bypass global environment policy (commit 4b4a2f94).
+// CHANGED: 2026-07-29 — Documented __gc for tables and full userdata: registration timing, one-shot finalisation, resurrection, error containment, ordering and shutdown (commit 279cb0a7).
+// CHANGED: 2026-07-29 — Removed the newproxy() section; the function is now internal.
+// CHANGED: 2026-07-30 — Documented weak-table collectability (strings/numbers retained) and value-to-key reference cycles.
 
 [[ch-metatables-and-metamethods]]
 == Metatables & Metamethods
@@ -57,6 +61,8 @@ The following functions bypass all metamethods and operate directly on the under
 |`rawlen(Table)`           |Returns the raw length of the array part without invoking `pass:[__]len`.
 |`rawequal(A, B)`          |Compares `A` and `B` by identity without invoking `pass:[__]eq`.
 |===
+
+Raw access suppresses metamethod dispatch, not the global environment policy.  A `rawset()` into a global environment is still validated for protected names and global type contracts, and a `pass:[__]newindex` metamethod installed on a global environment still receives non-raw stores.
 
 [[sec-arithmetic-metamethods]]
 === Arithmetic Metamethods
@@ -286,9 +292,87 @@ The `pass:[__]call` metamethod enables factory and constructor patterns where a 
 === Garbage Collection
 ==== __gc
 
-indexterm:[metamethods, garbage collection] The `pass:[__]gc` metamethod serves as a finaliser for full userdata.  The garbage collector invokes it during the finalisation phase when the userdata is about to be collected.  The execution order of finalisers across different objects is unspecified.
+[.api]`pass:[__]gc(Self)`
 
-Plain tables do not support `pass:[__]gc`.  For deterministic cleanup of table-based resources, use `<close>` variables with the `pass:[__]close` metamethod (see <<sec-to-be-closed-variables>>).
+indexterm:[metamethods, garbage collection] indexterm:[finalisers] The `pass:[__]gc` metamethod is a _finaliser_.  The garbage collector invokes it with the object as its only argument when that object is about to be reclaimed.  Tables and full userdata both support finalisers.  Any return value is discarded.
+
+Finalisation is nondeterministic.  The collector determines when an unreachable object is reclaimed, so a finaliser runs at an unspecified point after the last reference to the object is released, and possibly not until the interpreter shuts down.  Code that requires cleanup at a known point in the program must use `<close>` or `defer` instead; see <<sec-finalisers-and-scope-cleanup>>.
+
+===== Registration
+
+An object acquires a finaliser only at the moment a metatable that *already contains* a `pass:[__]gc` field is attached to it.  Adding `pass:[__]gc` to a metatable after that metatable has been attached does not register any object that is already using it.
+
+[source,tiri]
+----
+-- Registered: __gc is present when the metatable is attached.
+resource = setmetatable({}, { __gc = function(Self) print('released') end })
+
+-- Not registered: __gc is added after attachment.
+mt = {}
+ignored = setmetatable({}, mt)
+mt.__gc = function() print('never called') end
+----
+
+Attaching the metatable again registers the object, because the field is present at the time of that call:
+
+[source,tiri]
+----
+mt = {}
+subject = setmetatable({}, mt)
+mt.__gc = function() print('released') end
+setmetatable(subject, mt)   -- subject is now registered
+----
+
+`setmetatable()` accepts tables only.  A full userdata receives its metatable through `debug.setMetatable()`, which obeys the same rule:
+
+[source,tiri]
+----
+debug.setMetatable(handle, { __gc = function(Self) print('released') end })
+----
+
+Registration is permanent for the lifetime of the object and cannot be cancelled.  Whether a call takes place is decided at finalisation time by looking up `pass:[__]gc` in the object's current metatable, so removing the field, or detaching the metatable, suppresses the call:
+
+[source,tiri]
+----
+mt = { __gc = function() print('released') end }
+subject = setmetatable({}, mt)
+setmetatable(subject, nil)   -- no finaliser call takes place
+----
+
+===== One-Shot Finalisation
+
+Every object is finalised at most once.  After its finaliser returns, the object is no longer eligible for finalisation, and attaching a further `pass:[__]gc` metatable does not re-arm it.  When the object next becomes unreachable it is reclaimed without any additional call.
+
+The object is fully intact for the duration of the call.  Its fields, its metatable, and every value reachable from it can be read and written normally.
+
+===== Resurrection
+
+indexterm:[resurrection] A finaliser that stores its argument in a location that is still reachable makes the object reachable again.  The collector does not reclaim a resurrected object, and the object remains usable:
+
+[source,tiri]
+----
+registry = nil
+
+pending = setmetatable({ id = 1 }, {
+   __gc = function(Self) registry = Self end   -- resurrects Self
+})
+pending = nil
+
+processing.collect('full')
+print(registry.id)   -- 1
+----
+
+Resurrection does not restore eligibility for finalisation.  One-shot semantics apply to the resurrected object, so releasing `registry` above reclaims the table silently.
+
+===== Errors
+
+An error raised by a finaliser is contained by the collector.  The error is reported as a runtime warning and collection proceeds to the next pending object.  It does not propagate to the code that triggered the collection, and it does not disturb any `try` block that is active at that point.
+
+===== Ordering and Shutdown
+
+Finalisers for objects reclaimed in the same collection cycle run in reverse order of registration.  No ordering relationship exists between objects reclaimed in different cycles.
+
+Every registered object is finalised when the interpreter shuts down, in reverse order of registration, whether or not the object is still reachable.  Objects registered by a finaliser during shutdown are not finalised in that shutdown.
 
 ==== __mode
 
@@ -311,29 +395,38 @@ cache_mt = { __mode = 'v' }
 cache = setmetatable({}, cache_mt)
 ----
 
-==== newproxy
+===== Collectable Keys and Values
 
-[.api]`proxy = newproxy([Arg])`
+Weakness applies only to values that the garbage collector manages as objects: tables, arrays, functions, objects, structs and full userdata.  Strings, numbers, booleans and `nil` are not collectable and are never removed from a weak table.
 
-Creates a lightweight full userdata.  Unlike tables, full userdata supports `pass:[__]gc` finalisers.
-
-[cols="2,4a",options="header"]
-|===
-|Call |Effect
-
-|`newproxy()`       |Returns a userdata with no metatable.
-|`newproxy(true)`   |Returns a userdata with a fresh empty metatable.
-|`newproxy(Proxy)`  |Returns a userdata that shares the metatable of the given proxy.
-|===
+This distinction determines whether a weak table releases anything at all.  A table with weak keys that is keyed by strings retains every entry for the lifetime of the table:
 
 [source,tiri]
 ----
-p = newproxy(true)
-mt = getmetatable(p)
-mt.__gc = function(Self)
-   print('collected')
-end
+by_name = setmetatable({}, { __mode = 'k' })
+by_name['alpha'] = { data = 1 }   -- never released: the key is a string
+
+by_object = setmetatable({}, { __mode = 'k' })
+by_object[{ id = 1 }] = 'meta'    -- released once the key table is unreachable
 ----
+
+The same rule applies to weak values.  A cache declared with `pass:[__]mode = 'v'` that stores strings retains them indefinitely; only collectable values are released.
+
+===== Reference Cycles Through Values
+
+An entry in a table with weak keys is retained when its value holds a reference back to its key.  The value is a strong reference, so the key remains reachable and the pair is never removed:
+
+[source,tiri]
+----
+cache = setmetatable({}, { __mode = 'k' })
+key = {}
+cache[key] = { owner = key }   -- value refers to the key
+key = nil
+processing.collect('full')
+-- the entry is still present
+----
+
+Store a key-free value, or use `pass:[__]mode = 'kv'`, when a value needs to refer to its own key.
 
 ==== Iteration Metamethods
 
@@ -349,7 +442,7 @@ indexterm:[metamethods, reference] The following table lists every metamethod re
 
 |`pass:[__]index`      |Read of absent key           |`pass:[__]index(self, key)` or table
 |`pass:[__]newindex`   |Write to absent key          |`pass:[__]newindex(self, key, value)` or table
-|`pass:[__]gc`         |Userdata finalisation        |`pass:[__]gc(self)`
+|`pass:[__]gc`         |Table or userdata finalisation |`pass:[__]gc(self)`
 |`pass:[__]mode`       |Weak table mode (string)     |Not callable; value is `'k'`, `'v'`, or `'kv'`
 |`pass:[__]eq`         |`is` / `is not` / `!=` comparison       |`pass:[__]eq(a, b)` pass:[->]boolean
 |`pass:[__]len`        |`#` operator                 |`pass:[__]len(self)` pass:[->]number

@@ -1,6 +1,8 @@
 // VERIFIED: 2026-02-12
 // CHANGED: 2026-07-27 — Added sec-runtime-type-contracts; documented userdata annotations and exact contract identity.
 // CHANGED: 2026-07-27 — Declared globals now carry enforced sticky contracts whether annotated or inferred; ':any' is the persistent variant opt-out (commit 997f6b551).
+// CHANGED: 2026-07-28 — Global contracts are enforced at the environment mutation boundary for every store route, including rawset() and pre-declaration bytecode (commit 4b4a2f94).
+// CHANGED: 2026-07-27 — Added sec-dynamic-ingress and sec-native-result-types; native calls now publish result types and an unannotated dynamic initialiser rejects later assignment (commit 8905c1966).
 
 [[ch-type-system]]
 == Type System
@@ -127,6 +129,42 @@ result = 'text'   -- error: cannot assign 'string' to variable of type 'number'
 ----
 
 Repeated `nil` assignments before the first non-nil value do not commit the type.
+
+A declaration target that receives no value from a multiple assignment is `nil` and unfixed, exactly as if it had been declared without an initialiser:
+
+[source,tiri]
+----
+local first, second
+first, second = 1   -- first is 1; second is nil and still unfixed
+second = 'text'     -- fixed to 'string'
+----
+
+[[sec-dynamic-ingress]]
+[discrete]
+==== Dynamic Ingress
+
+indexterm:[dynamic ingress] A declaration whose initialiser has no statically provable type performs _dynamic ingress_.  The value that arrives is unconstrained, so the variable acquires no fixed type and the compiler rejects every later non-nil assignment to it with a diagnostic message.  Reading the variable, passing it and returning it remain valid.
+
+[source,tiri]
+----
+local entry = catalogue[key]   -- dynamic ingress: index results are unconstrained
+entry = {}                     -- error: cannot infer type of local 'entry'
+----
+
+An annotation resolves the diagnostic.  A concrete annotation fixes the type and validates the incoming value at runtime; `:any` opts the variable out of type fixing entirely:
+
+[source,tiri]
+----
+local entry:table = catalogue[key]   -- fixed to 'table'; runtime check on ingress
+entry = {}                           -- valid
+
+local variant:any = catalogue[key]   -- unconstrained
+variant = 42                         -- valid
+----
+
+The rule applies to `global` declarations on the same terms.  Assignments of `nil` are always permitted and never trigger the diagnostic.
+
+Dynamic ingress occurs for any expression whose type the compiler cannot prove, which includes table indexing, indexing of an array whose element type is unknown, member reads from an untyped receiver, calls to functions with no declared or inferred return type, and results declared `any`.  A declaration that consumes a statically typed expression -- a literal, a typed variable, a declared return type, a typed struct field, a typed array element, or a native result (see <<sec-native-result-types>>) -- fixes its type as normal and is unaffected.
 
 [discrete]
 ==== Static and Runtime Checking
@@ -328,20 +366,58 @@ When a function has declared or inferred return types, the compiler uses this in
 
 [source,tiri]
 ----
-function get_number(): num
+function get_number():num
    return 42
 end
 
 local x: num = get_number()   -- compile-time match: no runtime check
 
-function get_any(): any
+function get_any():any
    return 42
 end
 
 local y: num = get_any()      -- runtime check: return type is 'any'
 ----
 
-[[sec-runtime-type-contracts]]
+[[sec-native-result-types]]
+[discrete]
+==== Native Result Types
+
+indexterm:[native result types] indexterm:[type inference, native calls] Calls into native code publish their result types to the type system.  The compiler derives a result tuple from the native signature and applies it to declarations, assignments and function boundaries in the same way as a declared Tiri return type.  Native results therefore fix the type of an unannotated declaration and are exempt from dynamic ingress (<<sec-dynamic-ingress>>).
+
+Result types are derived for:
+
+* Built-in library functions, e.g. `tonumber()`, `math.sin()`, `string.find()`.
+* Module functions called through a statically known module reference (<<sec-calling-module-functions>>).
+* Object actions and methods called on an object of a statically known class (<<sec-actions-and-methods>>).
+* Reads of struct fields (<<ch-structs>>).
+
+[source,tiri]
+----
+local first, last = string.find('abc', 'b')
+first = first + 1  -- valid: both results are numeric
+last = 'text'      -- error: cannot assign 'string' to variable of type 'number'
+----
+
+Each result carries its own type, so a multiple assignment fixes each target independently.  A result that the native signature declares as `any` remains unconstrained and performs dynamic ingress.
+
+Native results are nullable unless the signature guarantees a value.  A nullable result satisfies its fixed type and also accepts `nil`, in line with <<sec-nil-semantics-in-typed-code>>:
+
+[source,tiri]
+----
+local value = tonumber('43') -- fixed to 'number', nullable
+value = tonumber('x')        -- valid: nil clears the value
+----
+
+A safe call (`?.`) makes every result of the tuple nullable but does not change its type.  A result filter (<<ch-result-management>>) selects the descriptors of the results it keeps, and the surviving results retain their types:
+
+[source,tiri]
+----
+local handle = [_*]mSys.ScanMessages(id)   -- fixed to the type of the second result
+----
+
+A native function that declares no results yields `nil`.  Assigning it to an unannotated declaration leaves the variable unfixed.
+
 === Runtime Type Contracts
 indexterm:[type contracts] indexterm:[runtime type contracts] A _runtime type contract_ is a type constraint that the runtime validates as values cross a program boundary.  A contract cannot be bypassed by reaching the boundary indirectly: the check belongs to the boundary, not to the call site or the assignment site that the compiler can see.
 
@@ -358,7 +434,7 @@ The following boundaries carry contracts:
 |Result    |Declared return type |As the function returns, for values whose type is not proved at compile time
 |Local     |Annotated or inferred local |On assignment of a value whose type is not proved at compile time
 |Upvalue   |Typed local captured by a closure |On assignment through the closure
-|Global    |Global introduced by a `global` declaration, whether annotated or inferred |On assignment, before the global is updated
+|Global    |Global introduced by a `global` declaration, whether annotated or inferred |On every write into the global environment, before the global is updated
 |===
 
 Unannotated parameters, unannotated return values, globals that were never declared with `global`, and every declaration annotated `:any` impose no contract.
@@ -434,6 +510,25 @@ print(glName)                 -- 'a'
 ----
 
 [discrete]
+===== Enforcement is Independent of the Store Route
+
+The contract belongs to the name in the environment, not to the statement that writes it.  Every runtime write into the global environment is validated, including a store through the `_G` table, a store through an alias of that table, an index store with a computed key, and `rawset()`:
+
+[source,tiri]
+----
+global glName = 'a'
+local environment = _G
+
+_G.glName = 42                -- error: type contract failed for global ('glName')
+environment.glName = 42       -- error: type contract failed for global ('glName')
+rawset(_G, 'glName', 42)      -- error: type contract failed for global ('glName')
+----
+
+`rawset()` bypasses `pass:[__]newindex` but not the contract.
+
+A store of `nil` through any of these routes clears the value and preserves the contract.  A name that is seeded by `rawset()` before a `global` declaration executes is governed by the contract established by that declaration.
+
+[discrete]
 ===== When a Global Type Becomes Fixed
 
 A declaration fixes its type immediately when the initialiser has a statically concrete type that is neither `nil` nor `any`.  Otherwise the global remains unfixed and acquires its contract from the first later assignment whose type is statically concrete:
@@ -467,7 +562,17 @@ No object-class or structure specialisation survives the opt-out.
 
 A name that reaches the global environment without a `global` declaration -- one registered by the embedding host -- carries no contract, and an assignment to it is checked by compile-time diagnostics alone.  Such a name opts into enforcement by being declared with `global`.
 
-Enforcement also requires the declaration to have executed.  Bytecode compiled before the contract exists does not acquire a guard retroactively, which is the practical reason a global declaration must precede any use of the name (see <<sec-the-global-keyword>>).
+Enforcement requires the declaration to have executed, because the contract is created by the declaration.  Compilation order does not matter: the check is performed by the environment mutation boundary rather than by the emitted store, so a function compiled before the declaration is validated against the contract once the declaration has run.
+
+[source,tiri]
+----
+local writer = exec('return function() glName = 42 end')
+global glName = 'a'
+
+writer()                     -- error: type contract failed for global ('glName')
+----
+
+A global declaration must still precede any use of the name for compile-time diagnostics to apply (see <<sec-the-global-keyword>>).
 
 [discrete]
 ==== Nil and Missing Values

@@ -1,4 +1,5 @@
 // VERIFIED: 2026-02-12
+// CHANGED: 2026-07-30 — Clarified math.fmod truncated-division semantics and its divergence from the % operator.
 
 [[ch-mathematics]]
 == Mathematics
@@ -66,18 +67,21 @@ math.round(1234.5, -1)   -- 1230
 math.round(1234.5, -2)   -- 1200
 ----
 
+[[sec-math-fmod]]
 [discrete]
 ==== math.fmod()
 
 [.api]`result = math.fmod(X, Y)`
 
-Returns the floating-point remainder of `X / Y`.  The result has the same sign as `X`.
+Returns the floating-point remainder of the truncated division of `X` by `Y`.  The result has the same sign as `X`.
 
 [source,tiri]
 ----
 math.fmod(7.5, 2)    -- 1.5
 math.fmod(-7.5, 2)   -- -1.5
 ----
+
+NOTE: `math.fmod()` and the `%` operator use different conventions and disagree whenever the operands have opposite signs.  `math.fmod()` takes the sign of `X`, whereas `%` takes the sign of the right operand.  `math.fmod(-5, 3)` is `-2`, whereas `-5 % 3` is `1`.  See <<sec-arithmetic-operators>>.
 
 [discrete]
 ==== math.modf()

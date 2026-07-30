@@ -1,4 +1,5 @@
 // VERIFIED: 2026-02-10
+// CHANGED: 2026-07-30 — Corrected the claim that semicolons carry no semantic weight; added sec-statement-ambiguity.
 // UPDATED: 2026-07-06 -- Added `extern` to the keyword list.
 // UPDATED: 2026-05-24 — Added regex string shorthand (r'...') to String Literals section.
 
@@ -93,7 +94,7 @@ Keywords are case-sensitive.  `and` is reserved; `And` and `AND` are valid ident
 
 indexterm:[statements] indexterm:[blocks] A statement forms the basic unit of execution.  Tiri supports assignment statements, function calls, control-flow statements, and declarations.
 
-Statements are separated by line breaks or semicolons.  Semicolons are optional and carry no semantic weight; the parser consumes them without effect.
+Statements are separated by line breaks or semicolons.  Semicolons are optional except where a statement boundary is otherwise ambiguous; see <<sec-statement-ambiguity>>.
 
 [%unbreakable]
 [source,tiri]
@@ -101,6 +102,25 @@ Statements are separated by line breaks or semicolons.  Semicolons are optional 
 x = 1
 y = 2
 z = x + y; print(z)
+----
+
+[[sec-statement-ambiguity]]
+==== Statement Ambiguity
+
+A line break does not terminate a statement.  A statement that begins with `(` is therefore parsed as a continuation of the preceding expression, forming a function call:
+
+[source,tiri]
+----
+a = f
+(g).x = 1     -- parsed as 'a = f(g).x = 1', which is a syntax error
+----
+
+Terminate the preceding statement with a semicolon to force a statement boundary:
+
+[source,tiri]
+----
+a = f;
+(g).x = 1     -- two statements
 ----
 
 ==== Blocks
@@ -145,7 +165,7 @@ Tiri source files are sequences of bytes.  The lexer operates on individual byte
 
 The lexer treats spaces (U+0020), horizontal tabs (U+0009), carriage returns (U+000D), and newlines (U+000A) as whitespace.  Whitespace separates tokens and is otherwise ignored outside of string literals.
 
-Tiri is a free-form language.  Line breaks have no syntactic significance; statements are not terminated by newlines.
+Tiri is a free-form language.  Line breaks have no syntactic significance; statements are not terminated by newlines.  See <<sec-statement-ambiguity>> for the one case in which a statement boundary requires an explicit semicolon.
 
 ==== Numeric Literals
 

@@ -1,5 +1,6 @@
 // VERIFIED: 2026-02-12
 // UPDATED: 2026-06-30 — `?!` guard falsey set now includes empty tables; described as empty collections.
+// CHANGED: 2026-07-30 — Documented error() Message type handling; non-string/non-exception values are discarded.
 
 [[ch-error-handling]]
 == Error Handling
@@ -445,9 +446,41 @@ end
 
 [.api]`error(Message, [Level])`
 
-indexterm:[exceptions, raising] Raises an exception with the error code `ERR_Exception`.  `Message` is a string or exception table.  `Level` (default 1) controls the reported source location: level 1 reports the call site, level 2 reports the caller of the calling function, and so on.  Setting `Level` to 0 suppresses source location information in the error message.
+indexterm:[exceptions, raising] Raises an exception with the error code `ERR_Exception`.  The treatment of `Message`
+depends on its type, as described below.  `Level` (default 1) controls the reported source location: level 1 reports the
+call site, level 2 reports the caller of the calling function, and so on.  Setting `Level` to 0 suppresses source
+location information in the error message.
 
 When a string is passed, the exception table's `message` field contains the raw string without any source location prefix.  The `source` and `line` fields are resolved separately from debug frame metadata.
+
+Strings, exception tables and numbers receive specific handling.  A value of any other type does not become the error
+object:
+
+[cols="2,4a",options="header"]
+|===
+|`Message` type |Result
+
+|string
+|`message` is the string, without a source location prefix.
+
+|exception table
+|Re-thrown unchanged, preserving `message`, `source`, `line` and `code`.
+
+|number
+|Converted to a string and prefixed with the source location, giving `source:line: value`.
+
+|any other type
+|Discarded.  `message` is set to a generic description and the value is not recoverable by the handler.
+|===
+
+[source,tiri]
+----
+error('plain text')        -- message: 'plain text'
+error(42)                  -- message: 'script.tiri:9: 42'
+error({ custom = 'data' }) -- message: 'An exception was caught'; the table is discarded
+----
+
+To attach structured data to an exception, use a custom error code with `raise` and carry the payload separately, rather than passing a table to `error()`.
 
 Passing an exception table to `error()` re-throws it to the next enclosing handler, preserving the original `message`, `source`, `line`, and `code`:
 

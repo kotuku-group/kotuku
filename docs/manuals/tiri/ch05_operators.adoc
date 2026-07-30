@@ -1,9 +1,13 @@
 // VERIFIED: 2026-02-10
+// CHANGED: 2026-07-30 — Corrected bitwise operand conversion (rounds to nearest, ties to even; wraps modulo 2^32; coerces strings).
+// CHANGED: 2026-07-30 — Corrected the table length definition in the length operator table.
+// CHANGED: 2026-07-30 — Documented floor-modulo sign rule, accepted string coercion forms and cross-type ordering errors.
 // UPDATED: 2026-06-30 — Extended falsiness now treats empty tables as falsey; described as empty collections.
 // UPDATED: 2026-04-03 -- Documented `is not` as an inequality operator equivalent to `!=`.
 // UPDATED: 2026-03-31 — Added 'has' flag testing operator section and updated precedence table.
 // UPDATED: 2026-05-23 — Added comparison chaining section for ordering operators.
 // UPDATED: 2026-05-25 — Added approximate equality operator (≈) section and updated precedence table.
+// CHANGED: 2026-07-30 — Corrected precedence: `^` and `|` bind tighter than the comparison operators; `**` binds tighter than unary operators; levels renumbered.
 
 [[ch-operators]]
 == Operators
@@ -13,6 +17,18 @@ indexterm:[operators] This chapter defines all operators in Tiri: their syntax, 
 === Arithmetic Operators
 indexterm:[operators, arithmetic] Arithmetic operators accept numeric operands.  The runtime coerces strings that represent valid numbers to numbers automatically.  If an operand is neither numeric nor string-coercible and no metamethod is defined, the runtime raises an error.
 
+A string operand is accepted if it matches the numeric literal syntax defined in <<sec-lexical-conventions>>, optionally surrounded by whitespace and preceded by a sign.  Decimal, hexadecimal and exponent forms are all accepted:
+
+[source,tiri]
+----
+'10' + 5        -- 15
+'  10  ' + 5    -- 15   (surrounding whitespace)
+'-10' + 5       -- -5   (sign)
+'0x10' + 5      -- 21   (hexadecimal)
+'1e2' + 5       -- 105  (exponent)
+'abc' + 5       -- error: attempt to perform arithmetic on a string value
+----
+
 [cols="2,3,3a,3",options="header"]
 |===
 |Operator |Syntax |Effect |Metamethod
@@ -20,12 +36,24 @@ indexterm:[operators, arithmetic] Arithmetic operators accept numeric operands. 
 |Subtraction   |`a - b`  |Difference of `a` and `b`    |`__sub`
 |Multiplication|`a * b`  |Product of `a` and `b`       |`__mul`
 |Division      |`a / b`  |Quotient of `a` and `b`      |`__div`
-|Modulo        |`a % b`  |Remainder of `a / b`         |`__mod`
+|Modulo        |`a % b`  |Remainder of the floor division of `a` by `b`  |`__mod`
 |Exponentiation|`a pass:[**] b` |`a` raised to the power `b`  |`__pow`
 |Unary negation|`-a`     |Negation of `a`              |`__unm`
 |===
 
 Division always produces a floating-point result.  Dividing by zero yields `inf` or `-inf`; dividing zero by zero yields `nan`.
+
+The `%` operator is defined as the remainder of floor division, so the result carries the sign of the right operand:
+
+[source,tiri]
+----
+5 % 3      -- 2
+-5 % 3     -- 1
+5 % -3     -- -1
+-5 % -3    -- -2
+----
+
+NOTE: `math.fmod()` computes the remainder of truncated division, so its result carries the sign of the left operand instead.  `-5 % 3` is `1`, whereas `math.fmod(-5, 3)` is `-2`.  See <<sec-math-fmod>>.
 
 Exponentiation is right-associative: `2 pass:[**] 3 pass:[**] 2` evaluates as `2 pass:[**] (3 pass:[**] 2)` = `512`.  All other arithmetic operators are left-associative.
 
@@ -88,6 +116,19 @@ The `is` operator compares by value for value types (numbers, strings, booleans,
 ==== String Ordering
 
 String comparison is lexicographic and byte-by-byte.  The comparison applies no locale-aware collation.
+
+==== Ordering Across Types
+
+The ordering operators do not coerce their operands.  Comparing a number with a string raises an error, even when the string represents a valid number.  This differs from the arithmetic operators, which do coerce strings.
+
+[source,tiri]
+----
+1 < '1'      -- error: attempt to compare number with string
+'1' < 1      -- error: attempt to compare string with number
+'1' + 1      -- 2 (arithmetic coerces)
+----
+
+The equality operators never raise on a type mismatch.  Values of different types are never equal, so `'0' is 0` is `false`.
 
 [source,tiri]
 ----
@@ -174,7 +215,23 @@ z = not false          -- true
 
 [[sec-bitwise-operators]]
 === Bitwise Operators
-indexterm:[operators, bitwise] Bitwise operators operate on 32-bit integers using two's-complement representation.  Non-integer operands are truncated to 32-bit integers before the operation.  Shift operators mask the shift count to the range 0-31.
+indexterm:[operators, bitwise] Bitwise operators operate on 32-bit integers using two's-complement representation.  Shift operators mask the shift count to the range 0-31.
+
+Operands are converted to 32-bit integers before the operation, according to the following rules:
+
+* A fractional value is rounded to the nearest integer.  A value exactly halfway between two integers rounds to the even one.
+* A value outside the signed 32-bit range wraps modulo 2^32^.
+* A string that represents a valid number is coerced to a number and then converted by the preceding rules.  A string that does not represent a number raises an error.
+
+[source,tiri]
+----
+1.7 | 0        -- 2   (nearest)
+-1.7 | 0       -- -2  (nearest)
+2.5 | 0        -- 2   (halfway, rounds to even)
+3.5 | 0        -- 4   (halfway, rounds to even)
+4294967296 & 0xFFFF -- 0   (wraps modulo 2^32)
+'3' & 1        -- 1   (string coerced)
+----
 
 [cols="2,3,5a",options="header"]
 |===
@@ -293,7 +350,8 @@ indexterm:[operators, length] The unary `#` operator returns the length of a val
 |===
 |Operand type |Result
 |String |Byte count
-|Table  |Length of the sequential integer-keyed portion (highest integer index `n` where `t[n]` is not `nil`)
+|Table  |Length of the contiguous sequence of integer keys that starts at index 0; tables with gaps have an unspecified
+boundary (see <<sec-table-length>>)
 |Array  |Element count
 |===
 
@@ -654,16 +712,22 @@ indexterm:[operators, precedence] The following table lists all operators from h
 [cols="1,4a,2",options="header"]
 |===
 |Level |Operators |Associativity
-|10 |`pass:[**]`                          |Right
-|9  |`-` (unary), `not`, `#`, `~` (unary) |Unary (right)
-|8  |`*`, `/`, `%`                        |Left
-|7  |`+`, `-`                             |Left
-|6  |`..`, `<<`, `>>`                     |`..` right; shifts left
-|5  |`&`                                  |Left
-|4  |`^`, `is`, `is not`, `!=`, `<`, `>`, `\<=`, `>=`, `in` |Left
-|3  |`has`, `≈`, `\|`, `and`, `\|>`       |Left
+|12 |`pass:[**]`                          |Right
+|11 |`-` (unary), `not`, `#`, `~` (unary) |Unary (right)
+|10 |`*`, `/`, `%`                        |Left
+|9  |`+`, `-`                             |Left
+|8  |`..`, `<<`, `>>`                     |`..` right; shifts left
+|7  |`&`                                  |Left
+|6  |`^`                                  |Left
+|5  |`\|`                                 |Left
+|4  |`is`, `is not`, `!=`, `<`, `>`, `\<=`, `>=`, `in` |Left
+|3  |`has`, `≈`, `and`, `\|>`             |Left
 |2  |`or`, `??`, `? :>`                   |Left (`? :>` right)
 |===
+
+The three bitwise operators `&`, `^` and `\|` bind more tightly than the comparison operators, in that order.  An expression such as `a \| b is c` therefore evaluates as `(a \| b) is c`.
+
+Exponentiation binds more tightly than the unary operators, so `-x pass:[**] 2` evaluates as `-(x pass:[**] 2)`.  Parenthesise the unary expression to apply it before exponentiation.  The right operand of `pass:[**]` can still be unary, so `2 pass:[**] -2` evaluates as `2 pass:[**] (-2)`.
 
 Postfix operators (`++`, `??` postfix) bind tighter than all binary operators and evaluate immediately after suffix chains (field access, indexing, calls).
 
@@ -677,9 +741,11 @@ See <<appendix-operator-precedence>> for a quick-reference card.
 ----
 2 + 3 * 4           -- 14 (multiplication before addition)
 2 ** 3 ** 2         -- 512 (right-associative: 2 ** (3 ** 2))
+-x ** 2             -- -(x ** 2) (exponentiation before unary)
 'a' .. 'b' .. 'c'   -- 'abc' (right-associative)
 x > 0 and x < 10    -- comparison before logical
 a & 0xFF | 0x100    -- AND before OR (C-style)
+2 | 1 is 3          -- true: bitwise OR before comparison
 flags has F1 | F2   -- has (level 3) consumes bitwise OR on RHS
-0.1 + 0.2 ≈ 0.3     -- arithmetic (level 7) before approx (level 3)
+0.1 + 0.2 ≈ 0.3     -- arithmetic (level 9) before approx (level 3)
 ----

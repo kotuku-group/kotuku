@@ -1,6 +1,7 @@
 // UPDATED: 2026-07-06 -- Documented extern declarations and protected host globals.
 // UPDATED: 2026-07-26 -- Documented removal of the Lua-style numeric for syntax (commit 1f23b978)
 // UPDATED: 2026-04-03 -- Documented `is not` as an alternative inequality form.
+// CHANGED: 2026-07-30 — Added coroutine and _ENV removals; corrected pcall/xpcall and getfenv/setfenv entries.
 [[appendix-migration-from-lua]]
 [appendix]
 == Migration from Lua
@@ -35,8 +36,12 @@ indexterm:[Lua, breaking changes] The following table lists all incompatible cha
 |<<sec-migration-control-flow>>
 
 |`pcall()` / `xpcall()`
-|`try pass:[...] except`
+|Removed; use `try pass:[...] except`
 |<<sec-migration-exception-handling>>
+
+|`coroutine.*`
+|Removed; no equivalent
+|<<sec-migration-coroutines>>
 
 |`select()`
 |Result filter `[mask]`
@@ -55,8 +60,12 @@ indexterm:[Lua, breaking changes] The following table lists all incompatible cha
 |<<sec-migration-removed-functions>>
 
 |`getfenv()` / `setfenv()`
-|Removed
+|`debug.getEnv()` / `debug.setEnv()`
 |<<sec-migration-removed-functions>>
+
+|`_ENV`
+|Removed; no equivalent
+|<<sec-the-global-environment>>
 
 |`gcinfo()` / `table.maxn()`
 |Removed
@@ -240,7 +249,7 @@ See <<ch-variables-and-scoping>> for the full scoping rules, including `global`,
 [[sec-migration-exception-handling]]
 === Exception Handling
 
-`pcall()` and `xpcall()` are deprecated.  Tiri provides structured exception handling through `try-except`:
+`pcall()` and `xpcall()` are removed.  Tiri provides structured exception handling through `try-except`:
 
 [source,tiri]
 ----
@@ -363,6 +372,58 @@ end
 ==== The continue Statement
 
 `continue` skips the remainder of the current loop body and advances to the next iteration.  It works in `for`, `while` and `repeat` loops.  See <<ch-control-flow>> for details.
+
+[[sec-migration-coroutines]]
+=== Coroutines
+
+indexterm:[Lua, coroutines] indexterm:[coroutines] The `coroutine` library is removed and Tiri provides no coroutine type.  There is no direct replacement, because Tiri offers no mechanism for suspending and resuming a call stack.
+
+Code that relies on coroutines is restructured according to the purpose the coroutine served:
+
+[cols="2,3"]
+|===
+|Lua Pattern |Tiri Replacement
+
+|Generator or custom iterator
+|An iterator function that holds its state in a closure.  See <<sec-generic-for-loop>>.
+
+|Deferring the evaluation of an expression
+|Deferred expressions `<{ expr }>` and thunks.  See <<ch-resource-management>>.
+
+|Concurrent or background work
+|The `async` interface, which executes work on real threads against a Kōtuku object.  See <<ch-threading>>.
+
+|Cooperative scheduling around I/O or events
+|The event processing loop with `processing.sleep()`.  See <<ch-processing-and-events>>.
+|===
+
+A coroutine-based generator is rewritten as a closure that returns the next value on each call, which is the form the generic `for` loop consumes directly:
+
+[source,tiri]
+----
+-- Lua
+local function counter(Limit)
+   return coroutine.wrap(function()
+      for i = 1, Limit do coroutine.yield(i) end
+   end)
+end
+
+-- Tiri
+function counter(Limit)
+   i = 0
+   return () => do
+      i++
+      if i > Limit then return nil end
+      return i
+   end
+end
+
+for v in counter(5) do
+   print(v)
+end
+----
+
+Note that the `async` interface is not a substitute for coroutines in the general case.  Asynchronous work executes on a separate thread in an isolated script state and cannot share local variables with the caller, whereas a coroutine shares the enclosing scope.  See <<sec-threading-model>> for the constraints.
 
 [[sec-migration-string-functions]]
 === String Function Changes
@@ -570,7 +631,7 @@ The following standard Lua functions are removed or replaced:
 |Removed.  Use multiple assignment or `table.unpack()` if available.
 
 |`getfenv()` / `setfenv()`
-|Removed.  Environment manipulation is not supported.
+|Removed.  Use `debug.getEnv()` and `debug.setEnv()`.  See <<sec-the-global-environment>>.
 
 |`gcinfo()`
 |Removed.  Use the garbage collector interface if memory reporting is needed.

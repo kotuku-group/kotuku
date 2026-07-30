@@ -1,4 +1,7 @@
 // CHANGED: 2026-07-27 — Declared globals carry sticky contracts; added Declared global and Variant global (commit 997f6b551).
+// CHANGED: 2026-07-27 — Added Dynamic ingress and Native result type (commit 8905c1966).
+// CHANGED: 2026-07-28 — Added Environment mutation boundary; qualified Raw access (commit 4b4a2f94).
+// CHANGED: 2026-07-29 — Added Finaliser (commit 279cb0a7).
 
 [[appendix-glossary]]
 [appendix]
@@ -55,6 +58,12 @@ Registers a code block for execution when the enclosing scope exits via normal c
 Declared global::
 A global introduced by a `global` declaration, as distinct from a name registered in the global environment by the host.  A declared global carries a sticky type contract enforced at runtime unless it is annotated `:any`.  See <<sec-global-contracts>>.
 
+Dynamic ingress::
+A declaration whose initialiser has no statically provable type.  The variable acquires no fixed type and cannot receive a later non-`nil` assignment; a concrete annotation or `:any` is required.  See <<sec-dynamic-ingress>>.
+
+Environment mutation boundary::
+The single runtime check that validates every write into a global environment table, whatever syntax or alias reaches it.  Enforces protected globals and the sticky contracts of declared globals before the store is applied.  See <<sec-environment-mutation-boundary>>.
+
 Error code::
 A 16-bit integer constant (prefixed with `ERR_`) indicating the result of an operation.  Codes below the exception threshold are safe codes; codes at or above the threshold are exception codes.  See <<sec-the-exception-model>>.
 
@@ -75,6 +84,9 @@ The broader falsiness rules used by the `??` and `??=` operators.  Under extende
 
 Field::
 A named property of an object or a string-keyed entry in a table.  Object fields are accessed as lower camel case names via dot notation.  See <<sec-field-access>>.
+
+Finaliser::
+A `pass:[__]gc` metamethod that the garbage collector invokes on a table or full userdata before reclaiming it.  Registration occurs when a metatable already containing `pass:[__]gc` is attached, and each object is finalised at most once.  See <<sec-garbage-collection>>.
 
 Flute::
 The Tiri test framework.  Test files use annotations to declare test functions and are executed by the Flute test runner (`tools/flute.tiri`).
@@ -121,6 +133,9 @@ A separately loadable component of the Kōtuku framework providing domain-specif
 Namespace::
 An organisational scope declared with the `namespace` keyword.  Groups related functions and variables under a named prefix.  See <<ch-script-management>>.
 
+Native result type::
+The static type of a value returned by a call into native code, derived from the native signature and applied to the call's assignment targets.  See <<sec-native-result-types>>.
+
 Nil::
 A type with a single value representing the absence of a useful value.  `nil` is falsey under both standard and extended falsiness rules.  See <<sec-nil>>.
 
@@ -143,7 +158,7 @@ Range::
 An immutable sequence of numeric values defined by start, stop, and optional step values.  Exclusive ranges (`{a to b}`) exclude the stop value; inclusive ranges (`{a into b}`) include it.  See <<ch-ranges>>.
 
 Raw access::
-Bypassing metamethods on a table using the `rawget`, `rawset`, `rawlen`, and `rawequal` functions.  See <<sec-raw-access>>.
+Bypassing metamethods on a table using the `rawget`, `rawset`, `rawlen`, and `rawequal` functions.  Does not bypass the environment mutation boundary.  See <<sec-raw-access>>.
 
 Reference type::
 A value whose variable holds a reference to the underlying data rather than a copy.  Tables, arrays, functions, userdata, objects, and structs are reference types.  Assignment copies the reference, not the data.  See <<ch-types-and-values>>.

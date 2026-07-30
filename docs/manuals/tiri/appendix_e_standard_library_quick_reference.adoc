@@ -1,3 +1,5 @@
+// CHANGED: 2026-07-29 — Removed newproxy(); the function is now internal.
+
 [[appendix-standard-library-quick-reference]]
 [appendix]
 == Standard Library Quick Reference
@@ -23,12 +25,11 @@ indexterm:[global functions] See <<ch-basic-syntax>>, <<ch-types-and-values>>, <
 |`keys(Table)`                   |Returns an iterator over keys only.
 |`next(Table, [PrevKey])`        |Returns the next key-value pair after `PrevKey`.
 |`rawget(Table, Key)`            |Gets a value bypassing metamethods.
-|`rawset(Table, Key, Value)`     |Sets a value bypassing metamethods.
+|`rawset(Table, Key, Value)`     |Sets a value bypassing metamethods.  Global environment policy still applies.
 |`rawequal(Value1, Value2)`      |Checks equality bypassing metamethods.
 |`rawlen(Table)`                 |Returns length bypassing metamethods.
 |`setmetatable(Table, Metatable)`|Sets the metatable.  See <<ch-metatables-and-metamethods>>.
 |`getmetatable(Value)`           |Returns the metatable.
-|`newproxy([Metatable])`         |Creates a proxy object.
 |`isthunk(Value)`                |Returns `true` if `Value` is a thunk.
 |`resolve(Thunk)`                |Evaluates and returns the value of a thunk.
 |===
@@ -103,7 +104,7 @@ indexterm:[library, table] See <<ch-tables>>.
 |`table.sort(Table, [Comparator])`                   |Sorts the array portion in-place.
 |`table.sortByKeys(Table, [Comparator])`             |Iterates in sorted key order.
 |`table.slice(Table, Range)`                         |Extracts a subsequence.
-|`table.clear(Table)`                                |Removes all entries.
+|`table.clear(Table)`                                |Removes all entries.  Raises an error for a global environment.
 |`table.empty(Table)`                                |Returns `true` if the table has no entries.
 |`table.toXML(Table)`                                |Converts to an XML string.
 |===

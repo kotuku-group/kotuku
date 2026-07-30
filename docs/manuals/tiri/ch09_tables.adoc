@@ -1,4 +1,6 @@
 // VERIFIED: 2026-02-11
+// CHANGED: 2026-07-30 — Documented zero-based sequence boundaries and unspecified lengths for tables with gaps.
+// CHANGED: 2026-07-30 — Documented the nil/NaN key restriction and float-to-integer key normalisation.
 // UPDATED: 2026-05-18 - Updated negative index slicing to reflect corrected inclusive/exclusive stop semantics (commit 15d3bed4)
 // UPDATED: 2026-07-26 - Range indices must be whole-numbered; fractional ranges raise an error (commit 687f1eb7)
 
@@ -52,9 +54,11 @@ t = {
 
 A trailing comma after the last entry is permitted.
 
+[[sec-table-length]]
 ==== Length Operator
 
-The `#` operator returns the count of sequential integer keys starting from index 0.  It counts only the array part of the table; string-keyed and non-sequential entries are excluded.
+For a table containing a contiguous sequence at integer keys `0` through `n - 1`, with no value at key `n`, the `#`
+operator returns `n`.  String-keyed entries do not contribute to this length.
 
 [source,tiri]
 ----
@@ -64,6 +68,29 @@ t = { 'a', 'b', 'c' }
 t.name = 'test'
 #t              -- 3 (hash entries not counted)
 ----
+
+The length of a table with gaps in its integer keys is unspecified.  The runtime selects a valid sequence boundary:
+either zero when key `0` is absent, or an absent key `n` immediately following a present key `n - 1`.  It does not
+guarantee that it selects the first gap.  Do not use `#` to measure sparse tables:
+
+[source,tiri]
+----
+t = { 'a', 'b', 'c', 'd' }
+t[1] = nil
+#t              -- unspecified: do not rely on a particular boundary
+----
+
+Entries above a gap remain accessible even though the table no longer has a defined sequence length:
+
+[source,tiri]
+----
+t = { 'a', 'b', 'c', 'd' }
+t[2] = nil
+t[3]            -- 'd' (still present)
+----
+
+Use `table.empty()` to test whether a table contains no entries.  Use `pairs()` or another iterator when every entry in a
+sparse table must be counted or processed.
 
 ==== Pre-allocation
 
@@ -121,6 +148,19 @@ t.c          -- nil (key does not exist)
 t.a = nil    -- removes key 'a'
 ----
 
+Any value except `nil` and `NaN` can serve as a key.  Assigning to a `nil` or `NaN` key raises an error; reading one returns `nil`.
+
+A float key that holds an exact integer value is converted to that integer.  `t[2.0]` and `t[2]` therefore address the same entry:
+
+[source,tiri]
+----
+t = {}
+t[2] = 'first'
+t[2.0]       -- 'first' (same entry)
+t[2.0] = 'second'
+t[2]         -- 'second'
+----
+
 ==== Numeric Indexing
 
 Sequential elements are accessed by their zero-based integer index:
@@ -158,6 +198,8 @@ Returns the value at `Key` without invoking the `__index` metamethod.  Returns `
 [.api]`rawset(Table, Key, Value)`
 
 Sets `Key` to `Value` without invoking the `__newindex` metamethod.  Returns the table.
+
+Raw access bypasses metamethods only.  If `Table` is a global environment, `rawset()` can raise an error for a protected name or a value that violates the contract of a declared global.
 
 [.api]`length = rawlen(Table)`
 
@@ -370,6 +412,8 @@ end
 [.api]`table.clear(Table)`
 
 Removes all entries from `Table`, including both the array part and the hash part.  After clearing, `#Table` is 0 and `table.empty(Table)` returns `true`.  Values tracked by the garbage collector are released.
+
+Raises an error if `Table` is a global environment, including any alias of one.  The environment is left unmodified.
 
 [[sec-table-empty]]
 ==== table.empty()

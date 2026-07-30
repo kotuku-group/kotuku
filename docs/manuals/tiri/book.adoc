@@ -25,12 +25,12 @@ toc::[]
 [preface]
 == Foreword
 
-// TODO: Add foreword content here.
+*Tiri is currently in an alpha state.  For early adopters this means that the syntax is in a state of flux while the quirks are ironed out, and old code may not compile between releases.  Sorry if I broke your stuff.  Experimentation is encouraged and feedback is welcome on the way to our first release.  See you there!*
 
 [preface]
 == Acknowledgements
 
-The following projects and their contributors have my deepest gratitude for their contributions to the open source eco-sphere.  Tiri would not be possible without them:
+The following projects and their contributors have my deepest gratitude for their contributions to the open source eco-sphere.  Tiri and Kōtuku would not be possible without them:
 
 LuaJIT::
 Mike Pall +

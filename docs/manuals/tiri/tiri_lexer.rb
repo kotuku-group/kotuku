@@ -32,7 +32,7 @@ module Rouge
             tonumber tostring print error
             rawget rawset rawequal rawlen
             getmetatable setmetatable
-            newproxy select
+            select
             isthunk resolve
             arg loadFile exec require load
             collectgarbage ltr

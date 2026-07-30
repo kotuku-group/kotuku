@@ -1,8 +1,10 @@
 // VERIFIED: 2026-02-10
+// CHANGED: 2026-07-30 — Corrected the table key rule; NaN is excluded as a key alongside nil.
 // UPDATED: 2026-06-30 — Extended falsiness now treats empty tables as falsey; described as empty collections.
 // UPDATED: 2026-07-13 — Structures are now a first-class 'struct' type; added to type() and a new Structures subsection.
 // UPDATED: 2026-07-16 — Objects and structs are distinct first-class types, no longer specialised userdata; promoted to top-level sections.
 // CHANGED: 2026-07-27 — Sticky types apply uniformly to locals, upvalues and declared globals (commit 997f6b551).
+// CHANGED: 2026-07-30 — Documented tostring() numeric formatting (14 significant digits, lossy, no int/float distinction).
 
 [[ch-types-and-values]]
 == Types & Values
@@ -62,7 +64,7 @@ All string indexing and standard library operations use zero-based indices.  See
 
 [[sec-tables-overview]]
 === Tables
-indexterm:[tables] Tables are mutable associative key-value stores.  Any non-`nil` value can serve as a key; any value can serve as a value.  Tables are the primary compound data structure in Tiri, used to represent records, dictionaries, and ad-hoc objects.  Although tables can be used as arrays, the dedicated `array` type is more efficient for that purpose.
+indexterm:[tables] Tables are mutable associative key-value stores.  Any value except `nil` and `NaN` can serve as a key; any value can serve as a value.  Assigning to a `nil` or `NaN` key raises an error; reading one returns `nil`.  Tables are the primary compound data structure in Tiri, used to represent records, dictionaries, and ad-hoc objects.  Although tables can be used as arrays, the dedicated `array` type is more efficient for that purpose.
 
 Tables are reference types.  Assigning a table to another variable creates a second reference to the same table, not a copy.  Two distinct tables are never equal under `is`, even if they contain identical entries; `is` compares table identity.
 
@@ -207,6 +209,28 @@ tostring(3.14)    -- '3.14'
 tostring(true)    -- 'true'
 tostring(nil)     -- 'nil'
 ----
+
+Numbers are formatted to 14 significant digits.  A value with an integral result is printed without a fractional part, and a value whose magnitude falls outside the range of that precision is printed in exponential notation:
+
+[source,tiri]
+----
+tostring(1.0)       -- '1'      (no fractional part)
+tostring(10 / 5)    -- '2'
+tostring(1 / 3)     -- '0.33333333333333'
+tostring(1e15)      -- '1e+15'  (exponential)
+tostring(1 / 0)     -- 'inf'
+tostring(0 / 0)     -- 'nan'
+----
+
+This formatting is lossy.  Digits beyond the 14th are not shown, so two values that differ only in those digits produce the same string:
+
+[source,tiri]
+----
+tostring(0.1 + 0.2)                   -- '0.3'
+string.format('%.17g', 0.1 + 0.2)     -- '0.30000000000000004'
+----
+
+Use `string.format()` with an explicit precision when an exact representation is required.  Because integers and floating-point values share the `number` type and both print without a fractional part when integral, `tostring()` does not distinguish between them.
 
 ==== tonumber()
 

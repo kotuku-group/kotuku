@@ -1,5 +1,6 @@
 // VERIFIED: 2026-02-12
 // UPDATED: 2026-07-26 - Migrated examples to range loops following removal of the Lua-style numeric for syntax (commit 1f23b978)
+// CHANGED: 2026-07-29 — Added <<sec-finalisers-and-scope-cleanup>> to distinguish nondeterministic __gc finalisation from deterministic <close> and defer (commit 279cb0a7)
 
 [[ch-resource-management]]
 == Resource Management
@@ -590,6 +591,54 @@ end
 
 print(available) -- resolves and caches on first access
 ----
+
+[[sec-finalisers-and-scope-cleanup]]
+=== Finalisers and Scope-Based Cleanup
+
+indexterm:[finalisers] indexterm:[garbage collection, finalisers] The `pass:[__]gc` metamethod registers a _finaliser_ on a table or full userdata, which the garbage collector invokes before the object is reclaimed (see <<sec-garbage-collection>>).  A finaliser is not a substitute for `<close>` or `defer`.  The three mechanisms differ in when they run and in whether they run at all:
+
+[cols="1,2a,1,1",options="header"]
+|===
+|Mechanism |Runs |Error unwinding |Timing
+
+|`defer`
+|On normal exit from the enclosing scope
+|No
+|Deterministic
+
+|`<close>`
+|On any exit from the enclosing scope
+|Yes
+|Deterministic
+
+|`pass:[__]gc`
+|When the collector reclaims an unreachable object, or at interpreter shutdown
+|Not applicable
+|Nondeterministic
+|===
+
+A `defer` block or `<close>` handler runs at a point that is visible in the source code.  A finaliser runs at an unspecified point after the last reference to the object is released.  The interval between those two events is unbounded: it depends on collector scheduling, and an object that remains reachable is not finalised until shutdown.
+
+Scarce resources must therefore not depend on `pass:[__]gc` for release.  File handles, sockets, locks, and device handles are limited in number, and a program that relies on finalisation to return them exhausts the supply before the collector reacts.  Release such resources explicitly, or wrap them in a value carrying a `pass:[__]close` metamethod where the resource's lifetime matches a lexical scope:
+
+[source,tiri]
+----
+handle_mt = {
+   __close = function(Self:table, Error)
+      Self.file:close()
+   end
+}
+
+-- Deterministic: the file is closed when the scope exits, including on error.
+do
+   local resource <close> = setmetatable(
+      { file = io.open('temp:data.txt', 'r') }, handle_mt
+   )
+   process(resource.file:read('*a'))
+end
+----
+
+Reserve `pass:[__]gc` for cleanup that is not time-critical, such as releasing memory owned outside the collector, and for use as a backstop that reports or recovers from a resource that was not released explicitly.  Because a finaliser runs at most once and its errors are contained by the collector rather than raised to the program, it cannot be used to signal failure to the caller.
 
 [[sec-patterns-and-idioms]]
 === Patterns and Idioms

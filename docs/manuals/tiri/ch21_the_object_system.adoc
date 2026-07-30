@@ -1,4 +1,5 @@
 // VERIFIED: 2026-02-13
+// CHANGED: 2026-07-27 — Added Result Types under Actions & Methods; native action and method results now carry static types (commit 8905c1966).
 // UPDATED: 2026-07-26 - Migrated examples to range loops following removal of the Lua-style numeric for syntax (commit 1f23b978)
 
 [[ch-the-object-system]]
@@ -170,7 +171,7 @@ err = xml.mtFindTag('/document/body')
 [discrete]
 ==== Return Values
 
-Every action and method call returns an `ERR` code as its first result.  Additional return values follow if the action or method defines result parameters:
+Every action and method call returns an `ERR` code (`num`) as its first result.  Additional return values follow if the action or method defines result parameters:
 
 [source,tiri]
 ----
@@ -179,6 +180,17 @@ err, tag = xml.mtFindTag('/document/body')
 ----
 
 The `ERR` code indicates whether the operation succeeded.  Even when an error is returned, result parameters are populated (with nil or default values), as some implementations return information on error.
+
+indexterm:[actions, result types] indexterm:[methods, result types] The compiler derives the type of every action and method result from the native signature and applies it to the assignment targets, as defined in <<sec-native-result-types>>.  Each result carries the type declared by its result parameter and is nullable:
+
+[source,tiri]
+----
+local err, value = task.acGetKey('ProductName')
+value = 'other'   -- valid: the result type is 'string'
+value = 1         -- error: cannot assign 'number' to variable of type 'string'
+----
+
+Result parameters that carry no Tiri equivalent, such as callbacks, are omitted from the result tuple.
 
 Error codes are automatically promoted to exceptions if the call is encapsulated in a `try` statement.  Otherwise use the `check` keyword or compare the error code to verify success.
 
