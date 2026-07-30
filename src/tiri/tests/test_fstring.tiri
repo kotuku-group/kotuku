@@ -82,7 +82,7 @@ end
 end
 
 @Test function NestedStringInExpression()
-   result = f"Nested: {string.substr('hello world', 0, 5)}"
+   result = f"Nested: {string.sub('hello world', 0, 5)}"
    assert(result is "Nested: hello", "Nested string in expression failed: " .. tostring(result))
 end
 

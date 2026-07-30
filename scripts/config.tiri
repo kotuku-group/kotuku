@@ -66,7 +66,7 @@ config.decode = function(String:str):table
       local content_start = first_non_space(raw_line)
       if content_start is nil then continue end
 
-      local line = raw_line:substr(content_start)
+      local line = raw_line:sub(content_start)
       if line:startsWith('#') then continue end
 
       if line:startsWith('[') then
@@ -77,7 +77,7 @@ config.decode = function(String:str):table
             continue
          end
 
-         local group_name = line:substr(1, close_pos)
+         local group_name = line:sub(1, close_pos)
          if group_name is '' then
             current_group = nil
             continue
@@ -96,13 +96,13 @@ config.decode = function(String:str):table
       local equals_pos = line:find('=', 0, true)
       if equals_pos is nil then continue end
 
-      local key = line:substr(0, equals_pos):rtrim()
+      local key = line:sub(0, equals_pos):rtrim()
       if key is '' then continue end
 
-      local value:str = line:substr(equals_pos + 1)
+      local value:str = line:sub(equals_pos + 1)
       local value_start:num = first_non_space(value)
       if value_start is nil then value = ''
-      else value = value:substr(value_start) end
+      else value = value:sub(value_start) end
 
       current_group[key] = value
    end

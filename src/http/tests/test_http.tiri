@@ -336,7 +336,7 @@ function MultiPartLocal()
    str ..= "Content-Disposition: form-data; name=\"workspace\"" .. CRLF .. CRLF
    str ..= '1' .. CRLF
 
-   // File header
+   -- File header
 
    str ..= '--' .. boundary .. CRLF
    str ..= "Content-Disposition: form-data; name=\"file\"; filename=\"" .. filename .. "\"" .. CRLF

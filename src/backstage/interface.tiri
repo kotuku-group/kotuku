@@ -373,7 +373,7 @@ function path_to_regex(Route:table):str
    Route.params = array<string> { }
 
    for i in {0 to #Route.path} do
-      ch = Route.path:substr(i, i + 1)
+      ch = Route.path:sub(i, i + 1)
 
       if in_param then
          if ch is '}' then
@@ -422,7 +422,7 @@ function cpp_string(Value:any):str
    out = '"'
 
    for i in {0 to #text} do
-      ch = text:substr(i, i + 1)
+      ch = text:sub(i, i + 1)
 
       if ch is '\\' then out ..= '\\\\'
       elseif ch is '"' then out ..= '\\"'

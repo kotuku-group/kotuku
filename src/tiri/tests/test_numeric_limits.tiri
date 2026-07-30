@@ -191,6 +191,13 @@ end
    assert(2 ** 10 is 1024, '2^10 should be exactly 1024')
 end
 
+@Test function BinaryIntegerZeroLiterals()
+   assert(0b0 is 0, 'A single binary zero digit should produce zero')
+   assert(0b00 is 0, 'Multiple binary zero digits should produce zero')
+   assert(0B000 is 0, 'An uppercase binary prefix should support an all-zero value')
+   assert(0b0001 is 1, 'Leading binary zero digits should preserve a non-zero value')
+end
+
 @Test function FloorAndCeilWithIntegers()
    assert(math.floor(3.9) is 3, 'floor(3.9) should be 3')
    assert(math.floor(-3.1) is -4, 'floor(-3.1) should be -4')
@@ -377,6 +384,15 @@ end
    assert(1 ** math.huge is 1, '1^infinity should be 1')
    assert(2 ** -1 is 0.5, '2^(-1) should be 0.5')
    assert((-1) ** 0 is 1, '(-1)^0 should be 1')
+end
+
+@Test function PowerBindingAndAssociativity()
+   assert(-2 ** 2 is -4, '** should bind more tightly than unary negation')
+   assert((-2) ** 2 is 4, 'parentheses should apply negation before exponentiation')
+   assert(2 ** -2 is 0.25, '** should accept a unary expression as its right operand')
+   assert(2 ** 3 ** 2 is 512, '** should associate from right to left')
+   assert(~2 ** 2 is ~4, '** should bind more tightly than unary bitwise NOT')
+   assert((not 2 ** 2) is false, '** should bind more tightly than logical NOT')
 end
 
 @Test function PowerOverflow()

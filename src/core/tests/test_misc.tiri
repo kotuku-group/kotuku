@@ -78,7 +78,7 @@ end
 function appendTaskFixtureHex(Bytes, Hex)
    local index = 0
    while index < #Hex do
-      Bytes:push(tonumber(Hex:substr(index, index + 2), 16))
+      Bytes:push(tonumber(Hex:sub(index, index + 2), 16))
       index += 2
    end
 end

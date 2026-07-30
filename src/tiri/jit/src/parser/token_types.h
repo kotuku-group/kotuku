@@ -54,7 +54,6 @@ enum class TokenKind : uint16_t {
    TernarySep = TK_ternary_sep,
    Dots = TK_dots,
    Cat = TK_concat,
-   Equal = TK_eq,
    NotEqual = TK_ne,
    Approx = TK_approx,
    LessEqual = TK_le,
@@ -195,7 +194,6 @@ enum class TokenKind : uint16_t {
       case TokenKind::TernarySep: return ":>";
       case TokenKind::Dots: return "...";
       case TokenKind::Cat: return "..";
-      case TokenKind::Equal: return "==";
       case TokenKind::NotEqual: return "!=";
       case TokenKind::Approx: return "≈";
       case TokenKind::LessEqual: return "<=";

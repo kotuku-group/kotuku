@@ -22,12 +22,12 @@ function enforce_hotpath() end
    big = string.alloc(1000)
    assert(#big is 1000, "Large alloc failed, expected 1000, got " .. #big)
 
-   slice = string.substr(s, #s, #s)
+   slice = string.sub(s, #s, #s)
    assert(slice is "", "Slices copied from mutable buffers should be normal interned strings")
 end
 
 @Test function Index()
---   getmetatable('').__index = function(str,i) return string.substr(str,i,i) end
+--   getmetatable('').__index = function(str,i) return string.sub(str,i,i) end
 --   hw = "Hello World"
 --   assert(string[1] is "H", "Expected 'H' at index 0, got '" .. tostring(string[1]) .. "'")
 end
@@ -430,46 +430,46 @@ end
 end
 
 @Test function SubStr()
-   -- string.substr() uses exclusive end index (like JavaScript substring/Python slicing)
-   -- string.substr(s, start, end) extracts chars from start to end-1
+   -- string.sub() uses exclusive end index (like JavaScript substring/Python slicing)
+   -- string.sub(s, start, end) extracts chars from start to end-1
    s = "hello world"
 
    for i in {0 to 1000} do
       -- Basic substring
-      sub = string.substr(s, 0, 5) -- Indices 0,1,2,3,4 (not 5)
+      sub = string.sub(s, 0, 5) -- Indices 0,1,2,3,4 (not 5)
       assert(sub is "hello", "Expected 'hello', got '" .. sub .. "'")
 
       -- Start from middle
-      mid = string.substr(s, 6, 11) -- Indices 6,7,8,9,10 (not 11)
+      mid = string.sub(s, 6, 11) -- Indices 6,7,8,9,10 (not 11)
       assert(mid is "world", "Expected 'world', got '" .. mid .. "'")
 
       -- Negative indices (count from end)
-      neg = string.substr(s, -5, -1)
+      neg = string.sub(s, -5, -1)
       assert(neg is "world", "Expected 'world' from negative indices, got '" .. neg .. "'")
 
       -- Negative start, positive end
-      mixed = string.substr(s, -5, 11)
+      mixed = string.sub(s, -5, 11)
       assert(mixed is "world", "Expected 'world' from mixed indices, got '" .. mixed .. "'")
 
       -- Default end
-      toEnd = string.substr(s, 6)
+      toEnd = string.sub(s, 6)
       assert(toEnd is "world", "Expected 'world' with default end, got '" .. toEnd .. "'")
 
       -- Single character
-      single = string.substr(s, 0, 1)
+      single = string.sub(s, 0, 1)
       assert(single is "h", "Expected 'h', got '" .. single .. "'")
 
       -- Empty range
-      empty = string.substr(s, 5, 5)
+      empty = string.sub(s, 5, 5)
       assert(empty is "", "Expected empty string, got '" .. empty .. "'")
 
       -- Beyond string length
-      beyond = string.substr(s, 0, 100)
+      beyond = string.sub(s, 0, 100)
       assert(#beyond is #s, "Expected length to match original string length, got " .. #beyond)
       assert(beyond is s, "Expected full string when end exceeds length, got '" .. beyond .. "'")
 
       -- Empty string
-      emptyStr = string.substr("", 0, 0)
+      emptyStr = string.sub("", 0, 0)
       assert(emptyStr is "", "Expected empty string, got '" .. emptyStr .. "'")
    end
 end

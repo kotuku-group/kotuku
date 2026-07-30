@@ -392,29 +392,29 @@ end
       end
 
       for start, stop in rx_hex.findAll(buffer) do
-         segment = buffer:substr(index, start)
+         segment = buffer:sub(index, start)
 
-         col = buffer:substr(start, stop)
+         col = buffer:sub(start, stop)
          err = mVec.ReadPainter(nil, col, painter)
          nrgb = painter.Colour -- Normalised RGB
          out ..= segment .. convert(gui.nrgb(nrgb.Red, nrgb.Green, nrgb.Blue, nrgb.Alpha))
          index = stop
       end
-      out ..= buffer:substr(index)
+      out ..= buffer:sub(index)
 
       buffer = out
       out = ''
       index = 0
       for start, stop in rx_rgb.findAll(buffer) do
-         segment = buffer:substr(index, start)
+         segment = buffer:sub(index, start)
 
-         col = buffer:substr(start, stop)
+         col = buffer:sub(start, stop)
          err = mVec.ReadPainter(nil, col, painter)
          nrgb = painter.Colour -- Normalised RGB
          out ..= segment .. convert(gui.nrgb(nrgb.Red, nrgb.Green, nrgb.Blue, nrgb.Alpha))
          index = stop
       end
-      out ..= buffer:substr(index)
+      out ..= buffer:sub(index)
 
       print(out)
    elseif colour then

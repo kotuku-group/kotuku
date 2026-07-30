@@ -120,28 +120,8 @@ LJLIB_ASM(string_char)      LJLIB_REC(.)
 }
 
 //********************************************************************************************************************
-// NOTE: Backed by an ASM implementation
-// string_sub:	Declares an assembly ffunc as its primary implementation. The C code that follows is the fallback (called when the ffunc jumps to ->fff_fallback).
-// string_range 1: Tells the JIT recorder how to handle this function. string_range is the recorder function name, 1 is a parameter distinguishing it from other range operations.
 
 LJLIB_ASM(string_sub)      LJLIB_REC(string_range 1)
-{
-   kt::Log("string.sub()").warning("Use substr()");
-   lj_lib_checkstr(L, 1);
-   lj_lib_checkint(L, 2);
-   int32_t end_val = lj_lib_optint(L, 3, -1);
-   // Convert exclusive end to inclusive by subtracting 1, but only for positive indices.
-   // Negative indices already reference positions from the end, so no adjustment needed.
-   if (end_val > 0) end_val--;
-   setintV(L->base + 2, end_val);
-   return FFH_RETRY;
-}
-
-//********************************************************************************************************************
-// string.substr() is now an alias for string.sub() - both use exclusive end semantics.
-// The ASM implementation jumps directly to string_sub.
-
-LJLIB_ASM(string_substr)      LJLIB_REC(string_range 1)
 {
    lj_lib_checkstr(L, 1);
    lj_lib_checkint(L, 2);
@@ -774,30 +754,6 @@ LJLIB_CF(string_find)      LJLIB_REC(.)
 
 //********************************************************************************************************************
 
-LJLIB_CF(string_match)
-{
-   kt::Log("string.match()").warning("DEPRECATED");
-   return 0;
-}
-
-//********************************************************************************************************************
-
-LJLIB_CF(string_gmatch)
-{
-   kt::Log("string.gmatch()").warning("DEPRECATED");
-   return 0;
-}
-
-//********************************************************************************************************************
-
-LJLIB_CF(string_gsub)
-{
-   kt::Log("string.gsub()").warning("DEPRECATED");
-   return 0;
-}
-
-//********************************************************************************************************************
-
 LJLIB_CF(string_format)      LJLIB_REC(.)
 {
    int retry = 0;
@@ -934,7 +890,7 @@ extern int luaopen_string(lua_State *L)
    reg_iface_prototype("string", "rtrim", { TiriType::Str }, { TiriType::Str });
    reg_iface_prototype("string", "split", { TiriType::Array }, { TiriType::Str, TiriType::Str });
    reg_iface_prototype("string", "startsWith", { TiriType::Bool }, { TiriType::Str, TiriType::Str });
-   reg_iface_prototype("string", "substr", { TiriType::Str }, { TiriType::Str, TiriType::Num, TiriType::Num });
+   reg_iface_prototype("string", "sub", { TiriType::Str }, { TiriType::Str, TiriType::Num, TiriType::Num });
    reg_iface_prototype("string", "trim", { TiriType::Str }, { TiriType::Str });
    reg_iface_prototype("string", "unescapeXML", { TiriType::Str }, { TiriType::Str });
    reg_iface_prototype("string", "upper", { TiriType::Str }, { TiriType::Str });

@@ -652,7 +652,7 @@ global function cType(Value:table, Origin:str):table
          if Value.docType and not Value.isFunction and not Value.isMethod then
             Value.docType ..= '[]'
             if Value.docType:startsWith('struct ') then
-               Value.docType = Value.docType:substr(7)
+               Value.docType = Value.docType:sub(7)
             end
          else
             Value.docType = Value.type

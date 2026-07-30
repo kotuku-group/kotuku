@@ -764,7 +764,7 @@ end
 function replaceClassOffsetSection(Content:str, ModuleName:str, Sections:table, Section:str):str
    local existing = Sections[ModuleName]
    if existing then
-      return Content:substr(0, existing.start) .. Section .. Content:substr(existing.finish)
+      return Content:sub(0, existing.start) .. Section .. Content:sub(existing.finish)
    end
 
    local insert_at
@@ -775,7 +775,7 @@ function replaceClassOffsetSection(Content:str, ModuleName:str, Sections:table, 
    end
 
    if insert_at != nil then
-      return Content:substr(0, insert_at) .. Section .. '\n\n' .. Content:substr(insert_at)
+      return Content:sub(0, insert_at) .. Section .. '\n\n' .. Content:sub(insert_at)
    end
 
    local separator = Content:endsWith('\n') ? '\n' :> '\n\n'

@@ -112,7 +112,7 @@ end
 
 @Test function Tables()
    err, xml_str = loadXML('tables.rpl')
-   //print(xml_str)
+   --print(xml_str)
    assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for tables.rpl, err=' .. err)
 
    xml = parseXML(xml_str)

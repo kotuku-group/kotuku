@@ -14,7 +14,7 @@ git.findRepository = function(Path:str):any
    local path:str = Path:replace('\\', '/')
 
    while #path > 1 and path:endsWith('/') do
-      path = path:substr(0, #path - 1)
+      path = path:sub(0, #path - 1)
    end
 
    while path?? do
@@ -25,13 +25,13 @@ git.findRepository = function(Path:str):any
       local path_len = #path
       local last_slash = -1
       for i in {0 to path_len} do
-         if path:substr(i, i + 1) is '/' then last_slash = i end
+         if path:sub(i, i + 1) is '/' then last_slash = i end
       end
 
       if last_slash < 0 then break end
       if last_slash is 0 then return nil end
 
-      path = path:substr(0, last_slash)
+      path = path:sub(0, last_slash)
    end
 
    return nil

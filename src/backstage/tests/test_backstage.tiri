@@ -60,7 +60,7 @@ function request_backstage(Request:str, ExpectedToken:str):str
          assert(err is ERR_Okay, 'Failed to read response: ' .. mSys.GetErrorMsg(err))
          if read_len <= 0 then return end
 
-         response ..= buffer:substr(0, read_len)
+         response ..= buffer:sub(0, read_len)
          if ExpectedToken?? and response:find(ExpectedToken) then
             Socket.acSignal()
          end
@@ -139,7 +139,7 @@ function websocket_exchange(Frames:array, ExpectedTokens:array):str
          assert(err is ERR_Okay, 'Failed to read WebSocket response: ' .. mSys.GetErrorMsg(err))
          if read_len <= 0 then return end
 
-         response ..= buffer:substr(0, read_len)
+         response ..= buffer:sub(0, read_len)
 
          if (not frames_sent) and response:find('HTTP/1.1 101 Switching Protocols') then
             for _, frame in Frames do
@@ -197,7 +197,7 @@ function websocket_exchange_until_disconnect(Frame:str):<str, bool>
          assert(err is ERR_Okay, 'Failed to read WebSocket close response: ' .. mSys.GetErrorMsg(err))
          if read_len <= 0 then return end
 
-         response ..= buffer:substr(0, read_len)
+         response ..= buffer:sub(0, read_len)
 
          if (not frame_sent) and response:find('HTTP/1.1 101 Switching Protocols') then
             write_err, write_len = Socket.acWrite(Frame)

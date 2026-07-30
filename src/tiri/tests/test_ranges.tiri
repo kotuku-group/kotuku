@@ -700,7 +700,7 @@ end
    -- Ensure string methods still work after adding range support
    s = "hello"
    assert(s.upper(s) is "HELLO", "string.upper should still work")
-   assert(s.substr(s, 0, 3) is "hel", "string.sub should still work")
+   assert(s.sub(s, 0, 3) is "hel", "string.sub should still work")
    assert(s.len(s) is 5, "string.len should still work")
    assert(s.reverse(s) is "olleh", "string.reverse should still work")
 end
