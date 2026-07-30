@@ -1424,12 +1424,6 @@ static LexToken lex_scan(LexState *State, TValue *tv)
             State->mark_token_start();
             lex_next(State);
             if (State->c IS '>') { lex_next(State); return TK_arrow; }
-            if (State->c IS '=') {
-               lex_next(State);
-               kt::Log("Tiri").warning("%s:%d: Deprecated '==' operator, use 'is' instead",
-                  strdata(State->chunk_name), State->effective_line().lineNumber());
-               return TK_eq;
-            }
             return '=';
 
          case '<':
@@ -1483,15 +1477,9 @@ static LexToken lex_scan(LexState *State, TValue *tv)
             if (State->c IS '>') { lex_next(State); return TK_shr; }
             return '>';
 
-         case '~':  // Deprecated: ~=
+         case '~':
             State->mark_token_start();
             lex_next(State);
-            if (State->c IS '=') {
-               lex_next(State);
-               kt::Log("Tiri").warning("%s:%d: Deprecated '~=' operator, use '!=' instead",
-                  strdata(State->chunk_name), State->effective_line().lineNumber());
-               return TK_ne;
-            }
             return '~';
 
          case ':':

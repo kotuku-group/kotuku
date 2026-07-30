@@ -1218,11 +1218,6 @@ std::optional<AstBuilder::BinaryOpInfo> AstBuilder::match_binary_operator(const 
          info.left = 5;
          info.right = 4;
          return info;
-      case TokenKind::Equal:
-         info.op = AstBinaryOperator::Equal;
-         info.left = 3;
-         info.right = 3;
-         return info;
       case TokenKind::NotEqual:
          info.op = AstBinaryOperator::NotEqual;
          info.left = 3;
