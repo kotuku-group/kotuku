@@ -1406,10 +1406,6 @@ static LexToken lex_scan(LexState *State, TValue *tv)
             State->mark_token_start();
             lex_next(State);
             if (auto tok = check_compound(State, TK_cdiv)) return tok;
-            if (State->c IS '/') {  // Single-line comment "//"
-               while (State->c != '\n' and State->c != LEX_EOF) lex_next(State);
-               continue;
-            }
             return '/';
 
          case '%':
