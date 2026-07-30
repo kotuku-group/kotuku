@@ -21,7 +21,7 @@ lStyle = (function()
 end)()
 
 gui.window = function(Options:table)
-   self = { -- Public variables
+   self = setmetatable({ -- Public variables
       events       = Options.events ?? { },
       aspectRatio  = Options.aspectRatio??,
       minimiseEnabled   = Options.minimise??,
@@ -29,7 +29,7 @@ gui.window = function(Options:table)
       moveToBackEnabled = Options.moveToBack??,
       theme        = nil,
       focus        = Options.focus??,
-      quit         = Options.quit is false ? nil :> true, -- Quit defaults to true, user can explicitly set false to disable
+      quit         = Options.quit is false ? nil :> true, -- Construction-only; defaults to true.
       title        = Options.title ?? 'Window',
       icon         = Options.icon ?? 'devices/monitor',
       restore      = nil, -- { x, y, width, height }
@@ -39,9 +39,20 @@ gui.window = function(Options:table)
       margins      = Options.margins,
       surface      = nil, -- Client access to the surface is permitted
       viewport     = nil -- The window's top-level viewport
-   }
+   }, {
+      __gc = function(Window)
+         local surface = Window.surface
+         Window.surface = nil
+         surface?.free()
+      end
+   })
 
-   self.clientViewport = function(self:userdata, Options:table)
+   -- Callbacks retain this record, not the public window table. Weak-value clearing may remove `window` before
+   -- `__gc` runs, while the construction-time quit policy remains available to the surface free callback.
+
+   lifecycle = setmetatable({ window=self, quit=self.quit }, { __mode='v' })
+
+   self.clientViewport = function(self:table, Options:table)
       if self._clientViewport then return self._clientViewport end
       Options ?= { }
 
@@ -57,7 +68,7 @@ gui.window = function(Options:table)
       return self._clientViewport
    end
 
-   self.getSize = function(self:userdata)
+   self.getSize = function(self:table)
       return {
          x      = self.surface.x - self.client.left,
          y      = self.surface.y - self.client.top,
@@ -66,7 +77,7 @@ gui.window = function(Options:table)
       }
    end
 
-   self.getClientSize = function(self:userdata)
+   self.getClientSize = function(self:table)
       return {
          x = self.surface.x, y = self.surface.y, width = self.surface.width, height = self.surface.height
       }
@@ -74,7 +85,7 @@ gui.window = function(Options:table)
 
    -- Resize the window via the client area
 
-   self.resizeClientArea = function(self:userdata, ClientWidth:num, ClientHeight:num)
+   self.resizeClientArea = function(self:table, ClientWidth:num, ClientHeight:num)
       ClientWidth ?= self.surface.width
       ClientHeight ?= self.surface.height
       self.surface.acResize(ClientWidth, ClientHeight, 0)
@@ -83,7 +94,7 @@ gui.window = function(Options:table)
    -- Changes the size of the position of the window in relation to its parent.  All dimensions refer to the
    -- border of the window.
 
-   self.resize = function(self:userdata, X:num, Y:num, Width:num, Height:num)
+   self.resize = function(self:table, X:num, Y:num, Width:num, Height:num)
       Width ?= self.surface.width
       Height ?= self.surface.height
 
@@ -96,7 +107,7 @@ gui.window = function(Options:table)
 
    -- Define window sizing limits.
 
-   self.sizeHints = function(self:userdata, MinWidth, MinHeight, MaxWidth, MaxHeight, EnforceAspect)
+   self.sizeHints = function(self:table, MinWidth, MinHeight, MaxWidth, MaxHeight, EnforceAspect)
       if self.surface.display.mtSizeHints(MinWidth, MinHeight, MaxWidth, MaxHeight, EnforceAspect) != ERR_Okay then
          self.surface.maxWidth  = MaxWidth
          self.surface.minWidth  = MinWidth
@@ -107,13 +118,13 @@ gui.window = function(Options:table)
 
    -- Smart limits are used to prevent the window from moving completely outside of the visible display area.
 
-   self.applySmartLimits = function(self:userdata)
+   self.applySmartLimits = function(self:table)
       self.smartLimitsEnabled = true
    end
 
    -- Run the minimise procedure for the window (environment dependent).
 
-   self.minimise = function(self:userdata)
+   self.minimise = function(self:table)
       if self.MinimiseEnabled then
          self?.events?.minimise(self)
       end
@@ -125,7 +136,7 @@ gui.window = function(Options:table)
    --
    -- If Toggle is true, the window is restored to its original position if the window is already maximised.
 
-   self.maximise = function(self:userdata, Toggle)
+   self.maximise = function(self:table, Toggle)
       if not self.maximiseEnabled then
          msg('Maximisation for this window is turned off.')
          return
@@ -140,20 +151,20 @@ gui.window = function(Options:table)
       display.flags = display.flags | SCR_MAXIMISE
    end
 
-   self.moveToBack = function(self:userdata)
+   self.moveToBack = function(self:table)
       self.surface.acMoveToBack()
    end
 
-   self.moveToFront = function(self:userdata)
+   self.moveToFront = function(self:table)
       self.surface.acMoveToFront()
    end
 
-   self.parentSize = function(self:any)
+   self.parentSize = function(self:table)
       err, info = mGfx.getDisplayInfo(self.surface.display)
       return info.monitorWidth, info.monitorHeight
    end
 
-   self.show = function(self:userdata, Centre:bool)
+   self.show = function(self:table, Centre:bool)
       if Centre then
          x, y = (function()
             if self.surface.popOver then
@@ -205,13 +216,13 @@ gui.window = function(Options:table)
       self.events?.show(self)
    end
 
-   self.hide = function(self:userdata)
+   self.hide = function(self:table)
       self.visible = false
       self.surface.acHide()
       self.events?.hide(self)
    end
 
-   self.setTitle = function(self:userdata, Title:str)
+   self.setTitle = function(self:table, Title:str)
       self.surface.display.title = Title
       self.title = Title
    end
@@ -309,11 +320,14 @@ gui.window = function(Options:table)
    end
 
    self.viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport, Event)
+      local window = lifecycle.window
+      if not window then return ERR_Terminate end
+
       if Event is FM_LOST_FOCUS then
-         self.events?.lostFocus(self)
+         window.events?.lostFocus(window)
       else
-         if not self.disabled then
-            self.events?.focus(self)
+         if not window.disabled then
+            window.events?.focus(window)
          end
       end
 
@@ -321,43 +335,42 @@ gui.window = function(Options:table)
    end)
 
    mGfx.windowHook(self.surface.id, WH_CLOSE, function()
-      result = self.events?.close(self)
+      local window = lifecycle.window
+      if not window then return ERR_Terminate end
+
+      result = window.events?.close(window)
       if result != nil then -- If client returns something, the window stays open
          msg('Client requested that the window stay open.')
          raise ERR_Cancelled
       end
    end)
 
-   self.surface.subscribe('focus', function(Surface, Args, self)
+   self.surface.subscribe('focus', function(Surface, Args, Lifecycle)
+      local window = Lifecycle.window
+      if not window then return end
+
       Surface.acMoveToFront()
-      if self.visible and not (Surface.flags has RNF_VISIBLE) then
+      if window.visible and not (Surface.flags has RNF_VISIBLE) then
          Surface.acShow()
       end
 
-      self.events?.focus(self)
-   end, self)
+      window.events?.focus(window)
+   end, lifecycle)
 
-   self.surface.subscribe('lostfocus', function(Surface, Args, self)
-      self.events?.lostFocus(self)
-   end, self)
+   self.surface.subscribe('lostfocus', function(Surface, Args, Lifecycle)
+      local window = Lifecycle.window
+      if not window then return end
+      window.events?.lostFocus(window)
+   end, lifecycle)
 
-   self.surface.subscribe('free', function(Surface, Args, self)
-      if self.quit then
+   self.surface.subscribe('free', function(Surface, Args, Lifecycle)
+      if Lifecycle.quit then
          mSys.SendMessage(MSGID_QUIT)
       end
-      table.clear(self)
-   end, self)
 
-   self.surface.detach() -- Keeps the surface unlocked so that window management code can terminate it.
+      local window = Lifecycle.window
+      if window then table.clear(window) end
+   end, lifecycle)
 
-   -- Return an interface for the window so that garbage collection is correctly managed
-
-   proxy = newproxy(true)
-   m = getmetatable(proxy)
-
-   m.__index = function(t, k) return self[k] end
-   m.__newindex = function(t, k, v) self[k] = v end
-   m.__gc = function() if self.surface then self.surface.free() end end
-
-   return proxy
+   return self
 end

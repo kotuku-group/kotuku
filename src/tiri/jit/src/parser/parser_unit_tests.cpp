@@ -689,7 +689,7 @@ return build_pair(1, 2)
 
 //********************************************************************************************************************
 
-static bool test_numeric_for_ast(kt::Log &log)
+static bool test_range_for_ast(kt::Log &log)
 {
    constexpr const char* source = R"(
 local limit = 5
@@ -702,7 +702,7 @@ return sum
 
    auto result = build_ast_from_source(source);
    if (not result.chunk.ok()) {
-      log.error("failed to parse numeric for AST");
+      log.error("failed to parse range for AST");
       log_diagnostics(result.diagnostics, log);
       return false;
    }
@@ -716,31 +716,31 @@ return sum
    }
 
    const StmtNode& for_stmt = statements[2];
-   if (not (for_stmt.kind IS AstNodeKind::NumericForStmt)) {
-      log.error("expected numeric for statement");
+   if (not (for_stmt.kind IS AstNodeKind::RangeForStmt)) {
+      log.error("expected direct range for statement");
       return false;
    }
 
-   const auto* payload = std::get_if<NumericForStmtPayload>(&for_stmt.data);
+   const auto* payload = std::get_if<RangeForStmtPayload>(&for_stmt.data);
    if (not payload or not payload->body) {
-      log.error("numeric for payload missing body");
+      log.error("range for payload missing body");
       return false;
    }
 
    if (not payload->start or not payload->stop or not payload->step) {
-      log.error("numeric for payload missing bounds expressions");
+      log.error("range for payload missing bounds expressions");
       return false;
    }
 
    StatementListView loop_body = payload->body->view();
    if (loop_body.size() != 1) {
-      log.error("numeric for body should include single assignment");
+      log.error("range for body should include single assignment");
       return false;
    }
 
    const StmtNode& assignment = loop_body[0];
    if (not (assignment.kind IS AstNodeKind::AssignmentStmt)) {
-      log.error("numeric for body should assign to accumulator");
+      log.error("range for body should assign to accumulator");
       return false;
    }
 
@@ -835,32 +835,18 @@ end
    }
 
    const StmtNode &loop = statements[1];
-   if (loop.kind != AstNodeKind::GenericForStmt) {
-      Log.error("array-length range should remain generic until semantic type analysis");
+   if (loop.kind != AstNodeKind::RangeForStmt) {
+      Log.error("array-length range should retain a direct range node until semantic type analysis");
       return false;
    }
 
-   const auto *payload = std::get_if<GenericForStmtPayload>(&loop.data);
-   if (not payload or payload->iterators.size() != 1) {
-      Log.error("generic array-length range should retain one iterator");
+   const auto *payload = std::get_if<RangeForStmtPayload>(&loop.data);
+   if (not payload or not payload->start or not payload->stop) {
+      Log.error("direct array-length range should retain its operands");
       return false;
    }
 
-   const ExprNode *iterator = payload->iterators[0].get();
-   if (not iterator or iterator->kind != AstNodeKind::CallExpr) {
-      Log.error("generic array-length range should retain its iterator call");
-      return false;
-   }
-
-   const auto *call = std::get_if<CallExprPayload>(&iterator->data);
-   const auto *direct = call ? std::get_if<DirectCallTarget>(&call->target) : nullptr;
-   if (not direct or not direct->callable or direct->callable->kind != AstNodeKind::RangeExpr) {
-      Log.error("generic iterator should retain the source range expression");
-      return false;
-   }
-
-   const auto *range = std::get_if<RangeExprPayload>(&direct->callable->data);
-   if (not range or not range->stop or range->stop->kind != AstNodeKind::UnaryExpr) {
+   if (payload->stop->kind != AstNodeKind::UnaryExpr) {
       Log.error("source range should retain its length stop expression");
       return false;
    }
@@ -3435,6 +3421,105 @@ static size_t count_opcode_tree(const BytecodeSnapshot &Snapshot, BCOp Opcode)
    return count;
 }
 
+static bool test_compile_time_signed_range_for_emission(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaopen_range(L);
+   lua_setglobal(L, "range");
+   std::string error;
+   constexpr std::string_view optimised_source =
+      "for value in {99 into 0 by -1} do end\n"
+      "for value in {100 into 0 by -5} do end\n"
+      "for value in {-10 to 10} do end\n"
+      "for value in {-20 to -1} do end\n"
+      "for {99 into 0 by -1} do end\n"
+      "for {100 into 0 by -5} do end\n"
+      "for {-10 to 10} do end\n"
+      "for {-20 to -1} do end\n";
+
+   auto optimised_snapshot = compile_snapshot(L, optimised_source, true, error);
+   if (not optimised_snapshot) {
+      Log.error("failed to compile signed constant range loops: %s", error.c_str());
+      return false;
+   }
+
+   if (count_opcode_tree(*optimised_snapshot, BC_FORI) != 8 or
+       count_opcode_tree(*optimised_snapshot, BC_FORL) != 8 or
+       count_opcode_tree(*optimised_snapshot, BC_RANGEPREP) != 0 or
+       count_opcode_tree(*optimised_snapshot, BC_RANGEVAL) != 0) {
+      Log.error("signed constant ranges did not emit eight compact numeric loops");
+      return false;
+   }
+
+   if (count_opcode_tree(*optimised_snapshot, BC_ITERC) != 0 or
+       count_opcode_tree(*optimised_snapshot, BC_ITERL) != 0) {
+      Log.error("signed constant ranges retained generic iterator bytecode");
+      return false;
+   }
+
+   constexpr std::string_view protected_source =
+      "local total = 0\n"
+      "for value in {0 to 10} do\n"
+      "   try\n"
+      "      total += value\n"
+      "   except error\n"
+      "      total = -1\n"
+      "   success\n"
+      "      total += 1\n"
+      "   end\n"
+      "end\n"
+      "try\n"
+      "   for value in {0 to 10} do\n"
+      "      total += value\n"
+      "   end\n"
+      "except error\n"
+      "   total = -1\n"
+      "end\n";
+
+   error.clear();
+   auto protected_snapshot = compile_snapshot(L, protected_source, true, error);
+   if (not protected_snapshot) {
+      Log.error("failed to compile protected constant range loop: %s", error.c_str());
+      return false;
+   }
+
+   if (count_opcode_tree(*protected_snapshot, BC_FORI) != 2 or
+       count_opcode_tree(*protected_snapshot, BC_FORL) != 2 or
+       count_opcode_tree(*protected_snapshot, BC_RANGEPREP) != 2 or
+       count_opcode_tree(*protected_snapshot, BC_RANGEVAL) != 0) {
+      Log.error("protected constant ranges did not emit compact prepared loop bytecode");
+      return false;
+   }
+
+   constexpr std::string_view direct_range_source =
+      "for value in {0.5 to 2.5} do end\n"
+      "for value in {2147483648 into 2147483648} do end\n";
+
+   error.clear();
+   auto direct_range_snapshot = compile_snapshot(L, direct_range_source, true, error);
+   if (not direct_range_snapshot) {
+      Log.error("failed to compile direct range loops: %s", error.c_str());
+      return false;
+   }
+
+   if (count_opcode_tree(*direct_range_snapshot, BC_FORI) != 2 or
+       count_opcode_tree(*direct_range_snapshot, BC_FORL) != 2 or
+       count_opcode_tree(*direct_range_snapshot, BC_RANGEPREP) != 2 or
+       count_opcode_tree(*direct_range_snapshot, BC_RANGEVAL) != 2) {
+      Log.error("fractional or unsafe integral ranges did not use direct range loop bytecode");
+      return false;
+   }
+
+   if (count_opcode_tree(*direct_range_snapshot, BC_ITERC) != 0 or
+       count_opcode_tree(*direct_range_snapshot, BC_ITERL) != 0) {
+      Log.error("fractional and unsafe integral ranges retained generic iterator bytecode");
+      return false;
+   }
+
+   return true;
+}
+
 static bool test_runtime_range_for_emission(kt::Log &Log)
 {
    LuaStateHolder state;
@@ -3459,13 +3544,14 @@ static bool test_runtime_range_for_emission(kt::Log &Log)
       return false;
    }
 
-   if (count_opcode_tree(*snapshot, BC_FORI) != 0 or count_opcode_tree(*snapshot, BC_FORL) != 0) {
-      Log.error("runtime fractional ranges used numeric loop bytecode without safe exclusive-limit preparation");
+   if (count_opcode_tree(*snapshot, BC_FORI) != 4 or count_opcode_tree(*snapshot, BC_FORL) != 4 or
+       count_opcode_tree(*snapshot, BC_RANGEPREP) != 4 or count_opcode_tree(*snapshot, BC_RANGEVAL) != 4) {
+      Log.error("runtime fractional ranges did not emit four prepared direct range loops");
       return false;
    }
 
-   if (count_opcode_tree(*snapshot, BC_ITERL) != 4) {
-      Log.error("fractional ranges did not retain four generic iterator loops");
+   if (count_opcode_tree(*snapshot, BC_ITERC) != 0 or count_opcode_tree(*snapshot, BC_ITERL) != 0) {
+      Log.error("runtime fractional ranges retained generic iterator bytecode");
       return false;
    }
 
@@ -3496,6 +3582,82 @@ static bool test_runtime_range_for_emission(kt::Log &Log)
    }
    lua_pop(L, 1);
    return true;
+}
+
+static bool test_safe_index_bytecode_selection(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   std::string error;
+   bool passed = true;
+
+   auto expect_access = [&](std::string_view Source, BCOp Required, BCOp Forbidden,
+      CSTRING Description) -> bool {
+      auto snapshot = compile_snapshot(lua, Source, true, error);
+      if (not snapshot) {
+         Log.error("failed to compile %s safe-index fixture: %s", Description, error.c_str());
+         return false;
+      }
+
+      size_t required_count = count_opcode_tree(*snapshot, Required);
+      size_t forbidden_count = count_opcode_tree(*snapshot, Forbidden);
+      if (required_count IS 0 or forbidden_count != 0) {
+         Log.error("%s safe-index fixture selected the wrong bytecode family (required=%d, forbidden=%d)",
+            Description, int(required_count), int(forbidden_count));
+         return false;
+      }
+      return true;
+   };
+
+   constexpr std::string_view native_literal =
+      "local function read(Values:array):any\n"
+      "   return Values?[0]\n"
+      "end\n";
+   if (not expect_access(native_literal, BC_ASGETB, BC_TGETB, "native-array literal-key")) passed = false;
+
+   constexpr std::string_view native_variable =
+      "local function read(Values:array, Index:num):any\n"
+      "   return Values?[Index]\n"
+      "end\n";
+   if (not expect_access(native_variable, BC_ASGETV, BC_TGETV, "native-array variable-key")) passed = false;
+
+   constexpr std::string_view table_literal =
+      "local function read(Values:table):any\n"
+      "   return Values?[0]\n"
+      "end\n";
+   if (not expect_access(table_literal, BC_TGETB, BC_ASGETB, "table literal-key")) passed = false;
+
+   constexpr std::string_view table_variable =
+      "local function read(Values:table, Key:any):any\n"
+      "   return Values?[Key]\n"
+      "end\n";
+   if (not expect_access(table_variable, BC_TGETV, BC_ASGETV, "table variable-key")) passed = false;
+
+   constexpr std::string_view dynamic_literal =
+      "local function read(Values:any):any\n"
+      "   return Values?[0]\n"
+      "end\n";
+   if (not expect_access(dynamic_literal, BC_ASGETB, BC_TGETB, "dynamic-receiver literal-key")) passed = false;
+
+   constexpr std::string_view dynamic_variable =
+      "local function read(Values:any, Key:any):any\n"
+      "   return Values?[Key]\n"
+      "end\n";
+   if (not expect_access(dynamic_variable, BC_ASGETV, BC_TGETV, "dynamic-receiver variable-key")) passed = false;
+
+   constexpr std::string_view literal_string =
+      "local function read(Values:any):any\n"
+      "   return Values?['name']\n"
+      "end\n";
+   if (not expect_access(literal_string, BC_TGETS, BC_ASGETV, "literal-string-key")) passed = false;
+
+   constexpr std::string_view variable_string =
+      "local function read(Values:any, Key:str):any\n"
+      "   return Values?[Key]\n"
+      "end\n";
+   if (not expect_access(variable_string, BC_TGETV, BC_ASGETV, "variable-string-key")) passed = false;
+
+   return passed;
 }
 
 static bool test_type_guided_emission(kt::Log &Log)
@@ -3683,7 +3845,7 @@ static bool test_type_guided_emission(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 45> tests = { {
+   constexpr std::array<TestCase, 47> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -3694,7 +3856,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "if_stmt_with_elseif_ast", test_if_stmt_with_elseif_ast },
       { "local_function_table_ast", test_local_function_table_ast },
       { "ast_statement_matrix", test_ast_statement_matrix },
-      { "numeric_for_ast", test_numeric_for_ast },
+      { "range_for_ast", test_range_for_ast },
       { "deprecated_numeric_for_rejected", test_deprecated_numeric_for_rejected },
       { "array_length_range_for_ast", test_array_length_range_for_ast },
       { "generic_for_ast", test_generic_for_ast },
@@ -3727,7 +3889,9 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "native_prototype_result_descriptors", test_native_prototype_result_descriptors },
       { "object_call_result_descriptors", test_object_call_result_descriptors },
       { "module_call_result_descriptors", test_module_call_result_descriptors },
+      { "compile_time_signed_range_for_emission", test_compile_time_signed_range_for_emission },
       { "runtime_range_for_emission", test_runtime_range_for_emission },
+      { "safe_index_bytecode_selection", test_safe_index_bytecode_selection },
       { "type_guided_emission", test_type_guided_emission }
    } };
 

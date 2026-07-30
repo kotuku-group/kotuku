@@ -690,6 +690,21 @@ static TRef fori_arg(jit_State *J, const BCIns *fori, BCREG slot, IRType t, int 
 }
 
 //********************************************************************************************************************
+// Load a range-loop number, retaining hidden loop state across a root trace boundary when requested.
+
+static TRef rec_range_number(jit_State *J, BCREG Slot, int LoadMode = 0)
+{
+   if (not tvisnumber(&J->L->base[Slot])) lj_trace_err(J, LJ_TRERR_BADTYPE);
+   TRef current = J->base[Slot];
+   if (LoadMode and (not current or
+       (not tref_isk(current) and IR(tref_ref(current))->o IS IR_SLOAD and
+        not (IR(tref_ref(current))->op2 & IRSLOAD_INHERIT)))) {
+      return fori_load(J, Slot, IRT_NUM, LoadMode);
+   }
+   return lj_ir_tonum(J, getslot(J, Slot));
+}
+
+//********************************************************************************************************************
 // Return the direction of the FOR loop iterator.
 // It's important to exactly reproduce the semantics of the interpreter.
 
@@ -814,6 +829,8 @@ static LoopEvent rec_for(jit_State *J, const BCIns *fori, int isforl)
 {
    IRBuilder ir(J);
    BCREG ra = bc_a(*fori);
+   bool range_loop = bc_op(fori[1]) IS BC_RANGEVAL and bc_a(fori[1]) IS ra;
+   BCREG loop_slots = range_loop ? BCREG(RANGE_FOR_SLOTS) : BCREG(FORL_EXT + 1);
    TValue* tv = &J->L->base[ra];
    TRef* tr = &J->base[ra];
    IROp op;
@@ -853,9 +870,16 @@ static LoopEvent rec_for(jit_State *J, const BCIns *fori, int isforl)
       rec_for_check(J, t, rec_for_direction(&tv[FORL_STEP]), stop, tr[FORL_STEP], 1);
    }
 
+   if (range_loop) {
+      int inherited_constant = IRSLOAD_INHERIT | IRSLOAD_READONLY;
+      rec_range_number(J, ra + RANGE_FOR_START, inherited_constant);
+      rec_range_number(J, ra + RANGE_FOR_VALUE_STEP, inherited_constant);
+      rec_range_number(J, ra + RANGE_FOR_FLAGS, inherited_constant);
+   }
+
    ev = rec_for_iter(J, &op, tv, isforl);
    if (ev IS LOOPEV_LEAVE) {
-      J->maxslot = ra + FORL_EXT + 1;
+      J->maxslot = ra + loop_slots;
       J->pc = fori + 1;
    }
    else {
@@ -872,7 +896,7 @@ static LoopEvent rec_for(jit_State *J, const BCIns *fori, int isforl)
       J->pc = fori + bc_j(*fori) + 1;
    }
    else {
-      J->maxslot = ra + FORL_EXT + 1;
+      J->maxslot = ra + loop_slots;
       J->pc = fori + 1;
    }
 
@@ -2977,7 +3001,7 @@ static bool rec_array_xstore(jit_State *J, TRef ArrayRef, TRef IdxRef, TRef ValR
 // Handle native array ops: BC_AGETV, BC_AGETB, BC_ASETV, BC_ASETB
 //
 // Native arrays (GCarray) are different from tables - they have typed elements and 0-based indexing internally.
-// We emit calls to helper functions that handle the element type conversion.
+// Record guarded typed loads and stores directly where supported, with helper calls for the remaining element types.
 
 static TRef rec_array_op(jit_State *J, RecordOps *ops)
 {
@@ -3037,6 +3061,88 @@ static TRef rec_array_op(jit_State *J, RecordOps *ops)
    TRef tmp_ref = rec_tmpref(J, ops->ra, IRTMPREF_IN1);
    lj_ir_call(J, IRCALL_lj_arr_setidx, array_ref, idx_ref, tmp_ref);
    return 0;
+}
+
+//********************************************************************************************************************
+// Handle safe native array gets: BC_ASGETV, BC_ASGETB
+//
+// These bytecodes select safe native-array indexing only when the observed receiver is an array and the key is an
+// integer.  All other observations retain ordinary indexed lookup and metamethod behaviour.
+
+static TRef rec_safe_array_get(jit_State *J, RecordOps *Ops)
+{
+   IRBuilder ir(J);
+   RecordIndex *ix = &Ops->ix;
+   bool is_lit = Ops->op IS BC_ASGETB;
+
+   if (is_lit) {
+      setintV(&ix->keyv, int32_t(Ops->rc));
+      ix->key = ir.kint(int32_t(Ops->rc));
+   }
+
+   if (not tref_isarray(Ops->rb)) {
+      ix->idxchain = LJ_MAX_IDXCHAIN;
+      return lj_record_idx(J, ix);
+   }
+
+   int32_t idx_int;
+
+   if (is_lit) idx_int = int32_t(Ops->rc);
+   else {
+      cTValue *key_tv = Ops->rcv();
+      if (tvisint(key_tv)) idx_int = intV(key_tv);
+#if !LJ_DUALNUM
+      else if (tvisnum(key_tv)) {
+         lua_Number key_num = numV(key_tv);
+         idx_int = int32_t(lj_num2int(key_num));
+         if (not (lua_Number(idx_int) IS key_num)) {
+            ix->idxchain = LJ_MAX_IDXCHAIN;
+            return lj_record_idx(J, ix);
+         }
+      }
+#endif
+      else {
+         ix->idxchain = LJ_MAX_IDXCHAIN;
+         return lj_record_idx(J, ix);
+      }
+
+      if (not tref_isnumber(Ops->rc)) {
+         ix->idxchain = LJ_MAX_IDXCHAIN;
+         return lj_record_idx(J, ix);
+      }
+   }
+
+   if (is_lit) {
+      // A safe-navigation join after a literal native-array get can restore a stale destination slot.  Do not install
+      // a partial trace for this prototype until that snapshot interaction can be represented safely.
+      J->pt->flags |= PROTO_NOJIT;
+      lj_trace_err(J, LJ_TRERR_CJITOFF);
+   }
+
+   GCarray *arr = arrayV(Ops->rbv());
+   if (idx_int < 0 or MSize(idx_int) >= arr->len) {
+      // Continuing an out-of-bounds trace across the safe-navigation join leaves the destination slot stale when a
+      // later entry observes an in-bounds index.  End the trace before this bytecode so the VM produces nil directly.
+      lj_snap_add(J);
+      lj_record_stop(J, TraceLink::INTERP, 0);
+      return 0;
+   }
+
+   TRef idx_ref = lj_opt_narrow_index(J, Ops->rc);
+   TRef len_ref = ir.fload_int(Ops->rb, IRFL_ARRAY_LEN);
+   rec_idx_abc(J, len_ref, idx_ref, arr->len);
+   TRef result_ref = rec_array_xload(J, Ops->rb, idx_ref, arr, idx_int);
+   if (not result_ref) {
+      TValue result_tv;
+      lj_arr_getidx(J->L, arr, idx_int, &result_tv);
+      IRType result_type = itype2irt(&result_tv);
+      if (!LJ_DUALNUM and result_type IS IRT_INT) result_type = IRT_NUM;
+      TRef tmp_ref = rec_tmpref(J, TREF_NIL, IRTMPREF_OUT1);
+      lj_ir_call(J, IRCALL_lj_arr_getidx, Ops->rb, idx_ref, tmp_ref);
+      result_ref = lj_record_vload(J, tmp_ref, 0, result_type);
+   }
+   J->needsnap = 1;
+   return result_ref;
 }
 
 //********************************************************************************************************************
@@ -3474,6 +3580,131 @@ static void rec_loop_op(jit_State *J, RecordOps *ops, const BCIns *pc)
 }
 
 //********************************************************************************************************************
+// Record direct range-loop preparation and exact ordinal-based value generation.
+
+static void rec_range_prepare(jit_State *J, BCREG Base, uint32_t Flags)
+{
+   IRBuilder ir(J);
+   TRef start = rec_range_number(J, Base);
+   TRef stop = rec_range_number(J, Base + 1);
+   TRef explicit_step = (Flags & RANGE_PREP_HAS_STEP) ?
+      rec_range_number(J, Base + 2) : lj_ir_knum_zero(J);
+   lua_Number runtime_start = numberVnum(&J->L->base[Base]);
+   lua_Number runtime_stop = numberVnum(&J->L->base[Base + 1]);
+   lua_Number runtime_step = (Flags & RANGE_PREP_HAS_STEP) ?
+      numberVnum(&J->L->base[Base + 2]) : (runtime_start <= runtime_stop ? 1.0 : -1.0);
+   bool integer_range = lj_range_integer_values(runtime_start, runtime_stop, runtime_step);
+
+   TRef step;
+   TRef count;
+   TRef integer_values;
+   if (Flags & RANGE_PREP_DIRECT_INTEGER) {
+      TRef start_int = ir.conv_int_num(start);
+      TRef stop_int = ir.conv_int_num(stop);
+      TRef step_int;
+      if (Flags & RANGE_PREP_HAS_STEP) step_int = ir.conv_int_num(explicit_step);
+      else step_int = ir.kint(runtime_step > 0.0 ? 1 : -1);
+
+      bool positive = runtime_step > 0.0;
+      ir.guard_int(positive ? IR_GT : IR_LT, step_int, ir.kint(0));
+      if (not (Flags & RANGE_PREP_INCLUSIVE)) {
+         stop_int = ir.emit_int(IR_ADD, stop_int, ir.kint(positive ? -1 : 1));
+      }
+
+      J->base[Base + RANGE_FOR_IDX] = start_int;
+      J->base[Base + RANGE_FOR_STOP] = stop_int;
+      J->base[Base + RANGE_FOR_STEP] = step_int;
+      J->base[Base + FORL_EXT] = TREF_NIL;
+      BCREG range_top = BCREG(Base + FORL_EXT + 1);
+      if (J->maxslot < range_top) J->maxslot = range_top;
+      return;
+   }
+   else if (integer_range) {
+      TRef start_int = ir.conv_int_num(start);
+      TRef stop_int = ir.conv_int_num(stop);
+      TRef step_int;
+      if (Flags & RANGE_PREP_HAS_STEP) {
+         step = explicit_step;
+         step_int = ir.conv_int_num(step);
+      }
+      else {
+         step_int = ir.kint(runtime_step > 0.0 ? 1 : -1);
+         step = lj_ir_knum(J, runtime_step);
+      }
+
+      bool positive = runtime_step > 0.0;
+      ir.guard_int(positive ? IR_GT : IR_LT, step_int, ir.kint(0));
+      bool inclusive = Flags & RANGE_PREP_INCLUSIVE;
+      bool in_bounds = positive ?
+         (inclusive ? runtime_start <= runtime_stop : runtime_start < runtime_stop) :
+         (inclusive ? runtime_start >= runtime_stop : runtime_start > runtime_stop);
+      IROp relation = positive ? (inclusive ? IR_LE : IR_LT) : (inclusive ? IR_GE : IR_GT);
+      if (not in_bounds) {
+         relation = positive ? (inclusive ? IR_GT : IR_GE) : (inclusive ? IR_LT : IR_LE);
+      }
+      ir.guard_int(relation, start_int, stop_int);
+
+      if (in_bounds) {
+         TRef distance = ir.emit_num(IR_DIV, ir.emit_num(IR_SUB, stop, start), step);
+         count = ir.emit_num(IR_FPMATH, distance, inclusive ? IRFPM_FLOOR : IRFPM_CEIL);
+         if (inclusive) count = ir.emit_num(IR_ADD, count, lj_ir_knum(J, 1.0));
+      }
+      else {
+         count = lj_ir_knum_zero(J);
+      }
+      integer_values = lj_ir_knum(J, 1.0);
+   }
+   else {
+      TRef flags = ir.kint(int32_t(Flags));
+      step = lj_ir_call(J, IRCALL_lj_range_prepare_step, start, stop, explicit_step, flags);
+      TRef inclusive = ir.kint((Flags & RANGE_PREP_INCLUSIVE) ? 1 : 0);
+      count = lj_ir_call(J, IRCALL_lj_range_prepare_count, start, stop, step, inclusive);
+      TRef integer_result = lj_ir_call(J, IRCALL_lj_range_integer_values, start, stop, step);
+      integer_values = ir.conv_num_int(integer_result);
+   }
+
+   J->base[Base + RANGE_FOR_IDX] = lj_ir_knum_zero(J);
+   J->base[Base + RANGE_FOR_STOP] = ir.emit_num(IR_SUB, count, lj_ir_knum(J, 1.0));
+   J->base[Base + RANGE_FOR_STEP] = lj_ir_knum(J, 1.0);
+   J->base[Base + RANGE_FOR_ORDINAL] = TREF_NIL;
+   J->base[Base + RANGE_FOR_START] = start;
+   J->base[Base + RANGE_FOR_VALUE_STEP] = step;
+   J->base[Base + RANGE_FOR_FLAGS] = integer_values;
+   J->base[Base + RANGE_FOR_VALUE] = TREF_NIL;
+   BCREG range_top = BCREG(Base + RANGE_FOR_SLOTS);
+   if (J->maxslot < range_top) J->maxslot = range_top;
+}
+
+static void rec_range_value(jit_State *J, BCREG Base)
+{
+   IRBuilder ir(J);
+   TRef ordinal = rec_range_number(J, Base + RANGE_FOR_ORDINAL, IRSLOAD_INHERIT);
+   int inherited_constant = IRSLOAD_INHERIT | IRSLOAD_READONLY;
+   TRef start = rec_range_number(J, Base + RANGE_FOR_START, inherited_constant);
+   TRef step = rec_range_number(J, Base + RANGE_FOR_VALUE_STEP, inherited_constant);
+   TRef integer_values = rec_range_number(J, Base + RANGE_FOR_FLAGS, inherited_constant);
+   cTValue *runtime_flag = &J->L->base[Base + RANGE_FOR_FLAGS];
+   if (not tvisnumber(runtime_flag) or not tref_isnum(integer_values)) lj_trace_err(J, LJ_TRERR_BADTYPE);
+
+   int32_t integer_result = numberVnum(runtime_flag) != 0.0;
+   ir.guard(IR_EQ, IRT_NUM, integer_values, lj_ir_knum(J, lua_Number(integer_result)));
+
+   TRef value;
+   if (integer_result) {
+      // Integer-valued ranges stay within signed 32-bit bounds, so the double product and sum are exact and avoid a
+      // per-element helper call.  Fractional ranges retain the shared FMA helper below.
+      value = ir.emit_num(IR_ADD, start, ir.emit_num(IR_MUL, ordinal, step));
+      value = ir.conv_int_num(value);
+   }
+   else {
+      value = lj_ir_call(J, IRCALL_lj_range_value, ordinal, start, step);
+   }
+   J->base[Base + RANGE_FOR_VALUE] = value;
+   BCREG range_top = BCREG(Base + RANGE_FOR_SLOTS);
+   if (J->maxslot < range_top) J->maxslot = range_top;
+}
+
+//********************************************************************************************************************
 // Record the next bytecode instruction (_before_ it's executed).
 
 void lj_record_ins(jit_State *J)
@@ -3686,6 +3917,10 @@ void lj_record_ins(jit_State *J)
       rc = rec_array_op(J, &ops);
       break;
 
+   case BC_ASGETV: case BC_ASGETB:
+      rc = rec_safe_array_get(J, &ops);
+      break;
+
    case BC_ASETV: case BC_ASETB:
       rec_array_op(J, &ops);
       break;
@@ -3764,6 +3999,14 @@ void lj_record_ins(jit_State *J)
    case BC_TYPEFIX:
       // Result inference changes prototype metadata rather than trace values.  Dynamic-result calls are guarded by the
       // prototype-specialisation policy above, independently of whether each result entry has already been inferred.
+      break;
+
+   case BC_RANGEPREP:
+      rec_range_prepare(J, ra, rc);
+      break;
+
+   case BC_RANGEVAL:
+      rec_range_value(J, ra);
       break;
 
       // Loops and branches

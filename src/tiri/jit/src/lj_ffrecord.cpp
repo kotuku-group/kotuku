@@ -908,6 +908,75 @@ static void recff_ipairs_aux(jit_State* J, RecordFFData* rd)
 
 //********************************************************************************************************************
 
+static TRef recff_range_state_load(jit_State *J, RecordFFData *rd, int32_t Index)
+{
+   RecordIndex ix;
+   ix.tab = J->base[0];
+   ix.key = lj_ir_kint(J, Index);
+   ix.val = 0;
+   ix.idxchain = 0;
+   settabV(J->L, &ix.tabv, tabV(&rd->argv[0]));
+   setintV(&ix.keyv, Index);
+   return lj_record_idx(J, &ix);
+}
+
+static void recff_range_iterator_next(jit_State *J, RecordFFData *rd)
+{
+   if (not tref_istab(J->base[0]) or not J->base[1] or not tvistab(&rd->argv[0])) {
+      lj_trace_err(J, LJ_TRERR_BADTYPE);
+   }
+
+   GCtab *state = tabV(&rd->argv[0]);
+   cTValue *runtime_count_value = lj_tab_getint(state, RANGE_ITERATOR_COUNT);
+   cTValue *runtime_integer_value = lj_tab_getint(state, RANGE_ITERATOR_INTEGER_VALUES);
+   if (not tvisnumber(runtime_count_value) or not tvisnumber(runtime_integer_value)) {
+      lj_trace_err(J, LJ_TRERR_BADTYPE);
+   }
+
+   TRef start = lj_ir_tonum(J, recff_range_state_load(J, rd, RANGE_ITERATOR_START));
+   TRef step = lj_ir_tonum(J, recff_range_state_load(J, rd, RANGE_ITERATOR_STEP));
+   TRef count = lj_ir_tonum(J, recff_range_state_load(J, rd, RANGE_ITERATOR_COUNT));
+   TRef integer_values = lj_ir_tonum(J, recff_range_state_load(J, rd, RANGE_ITERATOR_INTEGER_VALUES));
+
+   TRef ordinal;
+   lua_Number runtime_ordinal;
+   if (tvisnil(&rd->argv[1])) {
+      ordinal = lj_ir_knum_zero(J);
+      runtime_ordinal = 0.0;
+   }
+   else {
+      if (not tvisnumber(&rd->argv[1])) lj_trace_err(J, LJ_TRERR_BADTYPE);
+      TRef control = lj_ir_tonum(J, J->base[1]);
+      ordinal = lj_ir_call(J, IRCALL_lj_range_iterator_next_ordinal, control, start, step);
+      runtime_ordinal = lj_range_iterator_next_ordinal(
+         numberVnum(&rd->argv[1]), numberVnum(lj_tab_getint(state, RANGE_ITERATOR_START)),
+         numberVnum(lj_tab_getint(state, RANGE_ITERATOR_STEP)));
+   }
+
+   bool in_bounds = runtime_ordinal < numberVnum(runtime_count_value);
+   emitir(IRTG(in_bounds ? IR_LT : IR_GE, IRT_NUM), ordinal, count);
+   if (not in_bounds) {
+      rd->nres = 0;
+      return;
+   }
+
+   int32_t integer_result = numberVnum(runtime_integer_value) != 0.0;
+   emitir(IRTG(IR_EQ, IRT_NUM), integer_values, lj_ir_knum(J, lua_Number(integer_result)));
+
+   TRef result;
+   if (integer_result) {
+      result = emitir(IRTN(IR_ADD), start, emitir(IRTN(IR_MUL), ordinal, step));
+      result = emitir(IRTGI(IR_CONV), result, IRCONV_INT_NUM | IRCONV_CHECK);
+   }
+   else {
+      result = lj_ir_call(J, IRCALL_lj_range_value, ordinal, start, step);
+   }
+   J->base[0] = result;
+   rd->nres = 1;
+}
+
+//********************************************************************************************************************
+
 static void recff_xpairs(jit_State* J, RecordFFData* rd)
 {
    TRef tr = J->base[0];

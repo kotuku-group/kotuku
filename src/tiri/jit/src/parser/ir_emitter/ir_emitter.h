@@ -173,6 +173,7 @@ private:
    ParserResult<IrEmitUnit> emit_while_stmt(const LoopStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_repeat_stmt(const LoopStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_numeric_for_stmt(const NumericForStmtPayload& payload);
+   ParserResult<IrEmitUnit> emit_range_for_stmt(const RangeForStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_generic_for_stmt(const GenericForStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_defer_stmt(const DeferStmtPayload& payload);
    ParserResult<IrEmitUnit> emit_break_stmt(const BreakStmtPayload& payload);

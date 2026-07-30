@@ -4,6 +4,7 @@
 -- Goal: Create empty tables
 
 @Test function TableCreateEmpty()
+   local checksum = 0
    for i in {0 to 1000} do
       -- Create empty tables
       local t1 = {}
@@ -15,29 +16,35 @@
       for j in {0 to 10} do
          tables[j] = {}
       end
+      checksum += #t1 + #t2 + #t3 + #tables
    end
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Create tables with initial key-value pairs
 
+local person, mixed, nested, computed
+
 @Test function TableCreateWithKeyValues()
    for i in {0 to 100000} do
       -- Create with string keys
-      local person = { name = "Alice", age = 30, city = "London" }
+      person = { name = "Alice", age = 30, city = "London" }
 
       -- Create with mixed keys
-      local mixed = { [0] = "zero", [1] = "one", key = "value" }
+      mixed = { [0] = "zero", [1] = "one", key = "value" }
 
       -- Create nested tables
-      local nested = {
+      nested = {
          user = { name = "Bob", id = 123 },
          settings = { theme = "dark", language = "en" }
       }
 
       -- Create with computed values
-      local computed = { index = i, doubled = i * 2, squared = i * i }
+      computed = { index = i, doubled = i * 2, squared = i * i }
    end
+
+   return { person, mixed, nested, computed }
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -45,6 +52,7 @@ end
 
 @Test function TableAccessByStringKey()
    local t = { alpha = 1, beta = 2, gamma = 3, delta = 4, epsilon = 5 }
+   local checksum = 0
 
    for i in {0 to 1000000} do
       -- Read by string key
@@ -53,6 +61,7 @@ end
       local v3 = t.gamma
       local v4 = t["delta"]
       local v5 = t.epsilon
+      checksum += v1 + v2 + v3 + v4 + v5
 
       -- Write by string key
       t.alpha = i
@@ -61,6 +70,7 @@ end
       t["delta"] = i + 3
       t.epsilon = i + 4
    end
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -81,6 +91,7 @@ end
          { name = "Bob", scores = { math = 82, science = 91 } }
       }
    }
+   local checksum = 0
 
    for i in {0 to 100000} do
       -- Deep property access
@@ -93,17 +104,20 @@ end
       local score1 = data.users[0].scores.math
       local name2 = data.users[1].name
       local score2 = data.users[1].scores.science
+      checksum += v1 + v2 + v3 + #name1 + score1 + #name2 + score2
 
       -- Write to nested properties
       data.level1.level2.level3.value = i
       data.users[0].scores.math = i % 100
    end
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Insert and remove elements from array-like tables
 
 @Test function TableInsertRemove()
+   local checksum = 0
    for i in {0 to 1000} do
       local t = { 1, 2, 3, 4, 5 }
 
@@ -122,6 +136,7 @@ end
       -- Remove from specific position
       local first = table.remove(t, 0)
       local middle = table.remove(t, 3)
+      checksum += last + first + middle + #t
 
       -- Build table with inserts
       local built = {}
@@ -131,15 +146,17 @@ end
 
       -- Empty table with removes
       while #built > 0 do
-         table.remove(built)
+         checksum += table.remove(built)
       end
    end
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Sort table elements with custom comparator
 
 @Test function TableSort()
+   local checksum = 0
    for i in {0 to 1000} do
       -- Sort numbers ascending (default)
       local nums = { 50, 30, 80, 10, 60, 40, 90, 20, 70, 100 }
@@ -147,7 +164,7 @@ end
 
       -- Sort numbers descending
       local nums2 = { 50, 30, 80, 10, 60, 40, 90, 20, 70, 100 }
-      table.sort(nums2, function(a, b) return a > b end)
+      table.sort(nums2, function(A, B) return A > B end)
 
       -- Sort strings
       local words = { "cherry", "apple", "banana", "date", "elderberry" }
@@ -155,7 +172,7 @@ end
 
       -- Sort by string length
       local words2 = { "cherry", "apple", "banana", "date", "elderberry" }
-      table.sort(words2, function(a, b) return #a < #b end)
+      table.sort(words2, function(A, B) return #A < #B end)
 
       -- Sort table of tables by field
       local people = {
@@ -163,8 +180,10 @@ end
          { name = "Alice", age = 30 },
          { name = "Bob", age = 25 }
       }
-      table.sort(people, function(a, b) return a.age < b.age end)
+      table.sort(people, function(A, B) return A.age < B.age end)
+      checksum += nums[0] + nums2[0] + #words[0] + #words2[0] + people[0].age
    end
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -175,6 +194,7 @@ end
    local t2 = { d = 4, e = 5, f = 6 }
    local arr1 = { 1, 2, 3 }
    local arr2 = { 4, 5, 6 }
+   local checksum = 0
 
    for i in {0 to 10000} do
       -- Merge key-value tables (manual)
@@ -204,5 +224,7 @@ end
          combined[idx] = v
          idx++
       end
+      checksum += merged.a + merged.f + base.b + base.d + #combined
    end
+   return checksum
 end

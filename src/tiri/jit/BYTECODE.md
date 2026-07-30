@@ -211,6 +211,67 @@ Operand suffixes: V=variable slot, S=string const, N=number const, P=primitive (
 | `ILOOP` | A D | LOOP interpreter-only variant |
 | `JLOOP` | A D | LOOP with JIT trace linkage |
 | `JMP` | A D | PC += D - 0x8000 (signed jump offset) |
+| `RANGEPREP` | A D | Prepare the direct range at base R(A); D is a `RANGE_PREP_*` flag mask |
+| `RANGEVAL` | A D | Generate the visible range value at R(A+7) from the prepared ordinal state; D is unused |
+
+##### Direct Range Loops (`RANGEPREP`, `RANGEVAL`)
+
+Direct ranges that require runtime preparation use `RANGEPREP` with the existing numeric `FORI`/`FORL` instructions.
+The numeric loop advances an ordinal, while `RANGEVAL` derives the visible value from the original start and step
+without accumulating floating-point error.  Safe compile-time integer ranges outside protected regions can emit
+`FORI`/`FORL` directly and omit both range-specific instructions.
+
+`RANGEPREP` uses the AD format:
+
+- `A` is the first slot in the range-loop frame.
+- `D` is a bit mask containing:
+  - `RANGE_PREP_INCLUSIVE` (`1 << 0`): include an aligned stop value.
+  - `RANGE_PREP_HAS_STEP` (`1 << 1`): read the explicit step from `R(A+2)`; otherwise infer `1` or `-1` from the
+    start and stop.
+  - `RANGE_PREP_DIRECT_INTEGER` (`1 << 2`): prepare the compact four-slot integer layout.
+- On entry, `R(A)` is the start and `R(A+1)` is the stop.  `R(A+2)` is the explicit step when
+  `RANGE_PREP_HAS_STEP` is set.
+- Preparation validates finite bounds, a finite non-zero step, the range count, and representable progress.  Invalid
+  input raises the numeric-range error instead of entering the loop.
+- The instruction otherwise falls through to the following `FORI`; it has no bytecode jump operand.
+
+The stack effects depend on `RANGE_PREP_DIRECT_INTEGER`:
+
+| Relative slot | Compact integer layout | Full ordinal layout |
+|---------------|------------------------|---------------------|
+| `R(A+0)` | Integer start/index | Ordinal index, initialised to `0` |
+| `R(A+1)` | Integer loop limit, adjusted for an exclusive stop | Final ordinal, `count - 1` |
+| `R(A+2)` | Integer step | Ordinal step, always `1` |
+| `R(A+3)` | Current integer value, initialised to nil and maintained by `FORI`/`FORL` | Current ordinal, initialised to nil and maintained by `FORI`/`FORL` |
+| `R(A+4)` | Not part of the compact frame | Original start |
+| `R(A+5)` | Not part of the compact frame | Prepared value step |
+| `R(A+6)` | Not part of the compact frame | Integer-result flag (`1` for signed 32-bit integral values, otherwise `0`) |
+| `R(A+7)` | Not part of the compact frame | Visible loop value, initialised to nil |
+
+The compact layout occupies four slots and does not use `RANGEVAL`; the visible control variable is `R(A+3)`.  The
+full layout occupies eight slots and uses `R(A+7)` as the visible control variable.
+
+`RANGEVAL` also uses the AD format, but only `A` is meaningful.  It reads the current ordinal from `R(A+3)`, the
+original start from `R(A+4)`, the value step from `R(A+5)`, and the integer-result flag from `R(A+6)`.  It writes
+`R(A+7)` as `fma(ordinal, step, start)`, tagging the result as an integer when the flag is set and as a number
+otherwise.  It then proceeds to the next instruction without branching.
+
+The emitted control-flow pattern for the full layout is:
+
+```text
+RANGEPREP A, flags
+FORI      A, loop_exit
+RANGEVAL  A
+loop_body
+FORL      A, RANGEVAL
+loop_exit:
+```
+
+`FORI` checks the prepared ordinal range.  An empty or initially out-of-bounds range transfers control to
+`loop_exit`; otherwise it sets `R(A+3)` to the first ordinal and falls through to `RANGEVAL`.  `FORL` advances the
+ordinal in `R(A)` and `R(A+3)` and jumps back to `RANGEVAL` while the ordinal remains within `R(A+1)`.  A `continue`
+targets `FORL`, while a `break` targets `loop_exit`.  This keeps range preparation outside the loop and executes
+`RANGEVAL` exactly once for every body iteration.
 
 #### Function Header Ops (internal, not emitted by parser)
 | Opcode | Format | Description |
@@ -368,18 +429,23 @@ When the base operand is not a native array, array bytecodes fall back to the st
 
 ### 5.5 JIT Recording
 
-Array bytecodes record to the JIT trace using call-based IR emission:
+Ordinary array bytecodes record bounds guards and inline loads or stores for supported numeric and garbage-collected
+element types.  Other element types use the corresponding helper after the guard:
 
-- `AGETV`/`AGETB` → `IRCALL_lj_arr_getidx`
-- `ASETV`/`ASETB` → `IRCALL_lj_arr_setidx`
-- `ASGETV`/`ASGETB` → `IRCALL_lj_arr_safe_getidx`
+- `AGETV`/`AGETB` fall back to `IRCALL_lj_arr_getidx`.
+- `ASETV`/`ASETB` fall back to `IRCALL_lj_arr_setidx`.
 
-The recorder emits:
-1. Type guard ensuring operand is array
-2. Index narrowing (variable indices converted to integers)
-3. Call to helper function with bounds checking
+Safe array bytecodes use observation-specific recording:
 
-Future optimisation (Phase 5b) may inline element access for common types to eliminate function call overhead.
+- A non-array receiver, or an array with a non-integer key, records the ordinary indexed lookup and metamethod path.
+- An in-bounds `ASGETV` array access narrows the variable index, guards it against the current array length, and uses
+  the same inline load or `lj_arr_getidx` fallback as `AGETV`.
+- An observed out-of-bounds `ASGETV` access terminates the trace with an interpreter link before the bytecode.  The
+  interpreter then writes `nil` to the destination.
+- A native-array `ASGETB` observation disables JIT recording for that prototype.  This prevents installation of a
+  partial trace which can restore a stale destination slot at a later safe-navigation join.
+
+The recorder does not emit `IRCALL_lj_arr_safe_getidx`.  That helper is used by the interpreter implementations.
 
 ### 5.6 Parser Integration
 
@@ -387,10 +453,12 @@ When the parser can determine at compile time that an expression is an array (vi
 
 - Known array + variable index → `BC_AGETV` / `BC_ASETV`
 - Known array + literal index (0-255) → `BC_AGETB` / `BC_ASETB`
-- Safe navigation (`?[]`) with variable index → `BC_ASGETV`
-- Safe navigation (`?[]`) with literal index (0-255) → `BC_ASGETB`
+- Safe navigation on a known array with a variable numeric-capable index → `BC_ASGETV`
+- Safe navigation on a known array with a literal numeric index (0-255) → `BC_ASGETB`
 
-When the base type is unknown, standard table bytecodes (`TGETV`, `TSETV`, etc.) are emitted, relying on runtime type dispatch.
+Safe indexing on a statically proved table uses ordinary `TGETV`, `TGETB` or `TGETS` bytecodes.  A proved string key
+also uses ordinary table indexing.  When the receiver type is unresolved and the key may be numeric, the parser
+retains `ASGETV` or `ASGETB` so a native-array value can preserve safe out-of-bounds semantics at run time.
 
 ### 5.7 Example: Array Access Pattern
 

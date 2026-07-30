@@ -245,6 +245,15 @@ function count_jit_traces(MaxTraceNo)
    return count
 end
 
+function count_trace_link_type(MaxTraceNo, LinkType)
+   local count = 0
+   for trace_no in {1 into MaxTraceNo} do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil and info.linktype is LinkType then count++ end
+   end
+   return count
+end
+
 function count_trace_calls(TraceNo, Info)
    return count_trace_opcode(TraceNo, Info, ir_calln) + count_trace_opcode(TraceNo, Info, ir_calla) +
       count_trace_opcode(TraceNo, Info, ir_calll) + count_trace_opcode(TraceNo, Info, ir_calls)
@@ -353,6 +362,243 @@ function run_array_method_trace(Workload, Count)
    return expected, result, count_jit_traces(30)
 end
 
+function run_safe_index_trace(Workload, Count)
+   jit.off()
+   local expected = Workload(Count)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local compiled = 0
+   local aborted = 0
+   local function trace_event(Event)
+      if Event is "stop" then compiled++
+      elseif Event is "abort" then aborted++
+      end
+   end
+
+   jit.attach(trace_event, "trace")
+   local result = Workload(Count)
+   jit.attach(trace_event)
+
+   return expected, result, compiled, aborted, count_jit_traces(30)
+end
+
+function safe_table_index_workload(Count:num):num
+   local values = { [0] = 3, [1] = 5, label = 7 }
+   local numeric_key = 1
+   local string_key = "label"
+   local total = 0
+
+   for repetition in {1 into Count} do
+      total += values?[0]
+      total += values?[numeric_key]
+      total += values?["label"]
+      total += values?[string_key]
+   end
+
+   return total
+end
+
+function safe_array_literal_workload(Count:num):num
+   local values = array<int> { 3, 5, 7 }
+   local total = 0
+   for repetition in {1 into Count} do total += values?[1] end
+   return total
+end
+
+function safe_array_variable_workload(Count:num):num
+   local values = array<int> { 3, 5, 7 }
+   local total = 0
+   for repetition in {0 to Count} do
+      local index = repetition % #values
+      total += values?[index]
+   end
+   return total
+end
+
+function safe_array_literal_oob_workload(Count:num):num
+   local values = array<int> { 3, 5, 7 }
+   local total = 0
+   for repetition in {1 into Count} do total += values?[9] ?? -1 end
+   return total
+end
+
+function safe_array_variable_oob_workload(Count:num):num
+   local values = array<int> { 3, 5, 7 }
+   local index = #values
+   local total = 0
+   for repetition in {1 into Count} do total += values?[index] ?? -1 end
+   return total
+end
+
+function safe_array_mixed_bounds_workload(Count:num):num
+   local values = array<int> { 3, 5, 7 }
+   local total = 0
+   for repetition in {0 to Count} do
+      local index = repetition % 5
+      total += values?[index] ?? -1
+   end
+   return total
+end
+
+function nil_safe_index_workload(Count:num):num
+   local values = nil
+   local key_evaluations = 0
+   local function next_index():num
+      key_evaluations++
+      return 0
+   end
+
+   local nil_results = 0
+   for repetition in {1 into Count} do
+      if values?[next_index()] is nil then nil_results++ end
+   end
+   return nil_results * 1000 + key_evaluations
+end
+
+function dynamic_safe_index_workload(Receiver:any, Key:any, Count:num):num
+   local total = 0
+   for repetition in {1 into Count} do total += Receiver?[Key] ?? -1 end
+   return total
+end
+
+function dynamic_table_safe_index_workload(Count:num):num
+   return dynamic_safe_index_workload({ label = 11 }, "label", Count)
+end
+
+function dynamic_array_safe_index_workload(Count:num):num
+   return dynamic_safe_index_workload(array<int> { 11, 13 }, 1, Count)
+end
+
+global glSafeIndexJoinDefinitions = {
+   keywords = { alpha = true },
+   annotations = { bravo = true }
+}
+
+function resolve_safe_index_join(Key:str):str
+   if glSafeIndexJoinDefinitions?.keywords?[Key] then return 'keyword' end
+   if glSafeIndexJoinDefinitions?.annotations?[Key] then return 'annotation' end
+   return 'missing'
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=100) function SafeTableIndexTraceParity()
+   local expected, result, compiled, aborted, trace_count = run_safe_index_trace(safe_table_index_workload, 200)
+
+   assert(result is expected, f"Safe table indexing should match the interpreter result {expected}, got {result}")
+   assert(compiled > 0, "Safe table literal and variable keys should compile at least one trace")
+   assert(aborted is 0, f"Safe table literal and variable keys should not abort, observed {aborted} aborts")
+   assert(trace_count < 10, f"Safe table indexing should remain below 10 traces, observed {trace_count}")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=100) function SafeArrayInBoundsTraceParity()
+   local literal_expected, literal_result, literal_compiled, literal_aborted =
+      run_safe_index_trace(safe_array_literal_workload, 200)
+   assert(literal_result is literal_expected,
+      f"Literal safe array indexing should match the interpreter result {literal_expected}, got {literal_result}")
+   assert(literal_compiled is 0, "Literal safe array indexing should retain its conservative interpreter execution")
+   assert(literal_aborted <= 1,
+      f"Literal safe array indexing should disable recording without repeated aborts, observed {literal_aborted}")
+
+   local variable_expected, variable_result, variable_compiled, variable_aborted, variable_trace_count =
+      run_safe_index_trace(safe_array_variable_workload, 200)
+   assert(variable_result is variable_expected,
+      f"Variable safe array indexing should match the interpreter result {variable_expected}, got {variable_result}")
+   assert(variable_compiled > 0, "Variable in-bounds safe array indexing should compile at least one trace")
+   assert(variable_aborted is 0,
+      f"Variable in-bounds safe array indexing should not abort, observed {variable_aborted} aborts")
+   assert(count_trace_link_type(30, "loop") > 0,
+      "Variable in-bounds safe array indexing should remain in a compiled loop trace")
+   assert(variable_trace_count < 10,
+      f"Variable in-bounds safe array indexing should remain below 10 traces, observed {variable_trace_count}")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=100) function SafeArrayOutOfBoundsTraceParity()
+   local literal_expected, literal_result, literal_compiled, literal_aborted =
+      run_safe_index_trace(safe_array_literal_oob_workload, 200)
+   assert(literal_result is literal_expected,
+      f"Literal out-of-bounds safe indexing should produce {literal_expected}, got {literal_result}")
+   assert(literal_compiled is 0,
+      "Literal out-of-bounds safe indexing should retain its conservative interpreter execution")
+   assert(literal_aborted <= 1,
+      f"Literal out-of-bounds safe indexing repeatedly aborted: {literal_aborted}")
+
+   local variable_expected, variable_result, variable_compiled, variable_aborted =
+      run_safe_index_trace(safe_array_variable_oob_workload, 200)
+   assert(variable_result is variable_expected,
+      f"Variable out-of-bounds safe indexing should produce {variable_expected}, got {variable_result}")
+   assert(variable_compiled > 0, "Variable out-of-bounds safe indexing should compile up to its boundary")
+   assert(variable_aborted is 0,
+      f"Variable out-of-bounds safe indexing should terminate cleanly, observed {variable_aborted} aborts")
+   assert(count_trace_link_type(30, "interpreter") > 0,
+      "Variable out-of-bounds safe indexing should retain its conservative interpreter trace boundary")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=100) function SafeArrayMixedBoundsTraceStability()
+   local expected, result, compiled, aborted, trace_count = run_safe_index_trace(safe_array_mixed_bounds_workload, 400)
+
+   assert(result is expected, f"Mixed-bound safe indexing should match the interpreter result {expected}, got {result}")
+   assert(compiled > 0, "Mixed-bound safe indexing should compile at least one trace")
+   assert(aborted is 0, f"Mixed-bound safe indexing should not abort, observed {aborted} aborts")
+   assert(trace_count < 10, f"Mixed-bound safe indexing should remain below 10 traces, observed {trace_count}")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=100) function NilAndDynamicSafeIndexTraceParity()
+   local nil_expected, nil_result, nil_compiled, nil_aborted =
+      run_safe_index_trace(nil_safe_index_workload, 200)
+   assert(nil_result is nil_expected, f"Nil safe indexing should produce {nil_expected}, got {nil_result}")
+   assert(nil_result is 200000, "Nil safe indexing should not evaluate its key expression on the hot path")
+   assert(nil_compiled > 0, "Nil safe indexing should compile at least one surrounding loop trace")
+   assert(nil_aborted < 3, f"Nil safe indexing should settle without repeated aborts, observed {nil_aborted} aborts")
+
+   local table_expected, table_result, table_compiled, table_aborted =
+      run_safe_index_trace(dynamic_table_safe_index_workload, 200)
+   assert(table_result is table_expected,
+      f"Dynamic table safe indexing should match the interpreter result {table_expected}, got {table_result}")
+   assert(table_compiled > 0, "Dynamic table safe indexing should compile at least one trace")
+   assert(table_aborted < 2,
+      f"Dynamic table safe indexing should settle without repeated aborts, observed {table_aborted} aborts")
+
+   local array_expected, array_result, array_compiled, array_aborted =
+      run_safe_index_trace(dynamic_array_safe_index_workload, 200)
+   assert(array_result is array_expected,
+      f"Dynamic array safe indexing should match the interpreter result {array_expected}, got {array_result}")
+   assert(array_compiled > 0, "Dynamic array safe indexing should compile at least one trace")
+   assert(array_aborted < 2,
+      f"Dynamic array safe indexing should settle without repeated aborts, observed {array_aborted} aborts")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=100) function SafeIndexJoinRestoresDestinationSlot()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=3', 'hotexit=1', 'minstitch=0')
+
+   local keys = array<string> { 'alpha', 'missing', 'bravo', 'missing' }
+   for iteration in {0 to 500} do
+      local key = keys[iteration % #keys]
+      local expected = key is 'alpha' ? 'keyword' :> key is 'bravo' ? 'annotation' :> 'missing'
+      local result = resolve_safe_index_join(key)
+      assert(result is expected,
+         f'Safe-index join failed at iteration {iteration}: key={key}, expected={expected}, result={result}')
+   end
+
+   assert(count_jit_traces(30) > 0, 'Alternating safe-index branches should execute through a compiled trace')
+   jit.opt.start()
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 
 @Test function CanonicalArrayRangeMatchesInterpreter()
@@ -370,6 +616,208 @@ end
    end
 
    assert(result is expected, f"JIT array range result '{result}' should match interpreter result '{expected}'")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=100) function ExplicitDescendingRangeTraceStability()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=56', 'hotexit=10', 'minstitch=0')
+
+   local compiled = 0
+   local aborted = 0
+   local function trace_event(Event)
+      if Event is 'stop' then compiled++
+      elseif Event is 'abort' then aborted++
+      end
+   end
+
+   local function descending_workload():num
+      local total = 0
+      for value in {99 into 0 by -1} do
+         total += value
+      end
+      return total
+   end
+
+   jit.attach(trace_event, 'trace')
+   local total = 0
+   local iteration = 0
+   while iteration < 200 do
+      total += descending_workload()
+      iteration++
+   end
+   jit.attach(trace_event)
+
+   local trace_count = count_jit_traces(20)
+   assert(total is 990000, f'Explicit descending range produced an unexpected total of {total}')
+   assert(compiled > 0, 'Explicit descending range should compile at least one trace')
+   assert(aborted is 0, f'Explicit descending range should not abort trace recording, observed {aborted} aborts')
+   assert(trace_count < 10, f'Explicit descending range should record fewer than 10 traces, observed {trace_count}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=100) function RuntimeBoundRangeTraceStability()
+   local function runtime_bound_sum(Start, Stop):num
+      local total = 0
+      for value in {Start into Stop} do
+         total += value
+      end
+      return total
+   end
+
+   jit.off()
+   local expected = runtime_bound_sum(0, 99)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=56', 'hotexit=10', 'minstitch=0')
+
+   local compiled = 0
+   local aborted = 0
+   local function trace_event(Event)
+      if Event is 'stop' then compiled++
+      elseif Event is 'abort' then aborted++
+      end
+   end
+
+   jit.attach(trace_event, 'trace')
+   local result = 0
+   for repetition in {1 into 200} do
+      result = runtime_bound_sum(0, 99)
+   end
+   jit.attach(trace_event)
+
+   local trace_count = count_jit_traces(20)
+   assert(result is expected, f'Runtime-bound range should match the interpreter result of {expected}, got {result}')
+   assert(compiled > 0, 'Runtime-bound range should compile at least one trace')
+   assert(aborted is 0, f'Runtime-bound range should not abort trace recording, observed {aborted} aborts')
+   assert(trace_count < 10, f'Runtime-bound range should record fewer than 10 traces, observed {trace_count}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=100) function ExplicitRangeObjectTraceStability()
+   local source = range.new(0, 100, false, 2)
+   local function range_object_sum():num
+      local total = 0
+      for value in source() do total += value end
+      return total
+   end
+
+   jit.off()
+   local expected = range_object_sum()
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=56', 'hotexit=10', 'minstitch=0')
+
+   local compiled = 0
+   local aborted = 0
+   local function trace_event(Event)
+      if Event is 'stop' then compiled++
+      elseif Event is 'abort' then aborted++
+      end
+   end
+
+   jit.attach(trace_event, 'trace')
+   local result = 0
+   for repetition in {1 into 200} do result = range_object_sum() end
+   jit.attach(trace_event)
+
+   local trace_count = count_jit_traces(20)
+   assert(result is expected, f'Explicit range object should match the interpreter result of {expected}, got {result}')
+   assert(compiled > 0, 'Explicit range object iteration should compile at least one trace')
+   assert(aborted is 0, f'Explicit range object iteration should not abort recording, observed {aborted} aborts')
+   assert(trace_count < 10,
+      f'Explicit range object iteration should record fewer than 10 traces, observed {trace_count}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=100) function ChangingRuntimeRangeBoundsRemainStable()
+   local function changing_range_sum(Start, Stop):num
+      local total = 0
+      for value in {Start into Stop} do
+         total += value
+      end
+      return total
+   end
+
+   jit.off()
+   local expected = 0
+   for repetition in {0 to 200} do
+      local offset = repetition % 5
+      if repetition % 2 is 0 then expected += changing_range_sum(offset, 9 + offset)
+      else expected += changing_range_sum(9 + offset, offset)
+      end
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=56', 'hotexit=10', 'minstitch=0')
+
+   local compiled = 0
+   local aborted = 0
+   local function trace_event(Event)
+      if Event is 'stop' then compiled++
+      elseif Event is 'abort' then aborted++
+      end
+   end
+
+   jit.attach(trace_event, 'trace')
+   local result = 0
+   for repetition in {0 to 200} do
+      local offset = repetition % 5
+      if repetition % 2 is 0 then result += changing_range_sum(offset, 9 + offset)
+      else result += changing_range_sum(9 + offset, offset)
+      end
+   end
+   jit.attach(trace_event)
+
+   local trace_count = count_jit_traces(30)
+   assert(result is expected, f'Changing runtime bounds should produce {expected}, got {result}')
+   assert(compiled > 0, 'Changing runtime-bound ranges should compile at least one trace')
+   assert(aborted is 0, f'Changing runtime bounds should not abort trace recording, observed {aborted} aborts')
+   assert(trace_count < 10,
+      f'Changing runtime bounds and direction should remain below 10 traces, observed {trace_count}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=100) function FractionalRuntimeRangeJitParity()
+   local function fractional_range_signature(Start, Stop, Step):num
+      local total = 0
+      local count = 0
+      for value in {Start into Stop by Step} do
+         total += value
+         count++
+      end
+      return total + count * 100
+   end
+
+   jit.off()
+   local ascending_expected = fractional_range_signature(-0.5, 0.5, 0.1)
+   local descending_expected = fractional_range_signature(0.5, -0.5, -0.2)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local ascending_result = 0
+   local descending_result = 0
+   for repetition in {1 into 100} do
+      ascending_result = fractional_range_signature(-0.5, 0.5, 0.1)
+      descending_result = fractional_range_signature(0.5, -0.5, -0.2)
+   end
+
+   assert(math.abs(ascending_result - ascending_expected) <= 1e-12,
+      f'Ascending fractional JIT result should match {ascending_expected}, got {ascending_result}')
+   assert(math.abs(descending_result - descending_expected) <= 1e-12,
+      f'Descending fractional JIT result should match {descending_expected}, got {descending_result}')
+   assert(count_jit_traces(30) < 10, 'Fractional runtime ranges should stabilise below 10 traces')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -425,7 +873,7 @@ end
 
    local trace_no, info, abc_count = find_array_bounds_trace(40)
    assert(trace_no != nil and info != nil, 'Expected a traced typed-array loop with direct element access')
-   assert(abc_count is 1, f'Expected one invariant array bounds check, found {abc_count}')
+   assert(abc_count <= 2, f'Expected at most two invariant array bounds checks, found {abc_count}')
 
    local abc_position = first_trace_opcode(trace_no, info, ir_abc)
    local loop_position = first_trace_opcode(trace_no, info, ir_loop)
@@ -591,63 +1039,6 @@ function array_clear_then_push(Array)
    return array.getString(Array)
 end
 
-function jit_try_local_before_entry(Pattern)
-   local label = "before-entry"
-
-   try
-      regex.new(Pattern)
-   except e
-      return label
-   end
-
-   return "missing-error"
-end
-
-function jit_try_mutated_local_before_throw(Pattern, Iteration)
-   local status = "initial"
-
-   try
-      status = "mutated-" .. tostring(Iteration % 5)
-      regex.new(Pattern)
-   except e
-      return status
-   end
-
-   return "missing-error"
-end
-
-function jit_try_repeated_throwable_helpers(Pattern)
-   local stable_label = "stable-local"
-   local compiled = nil
-
-   try
-      for i in {0 to 5} do
-         compiled = regex.new("a+")
-      end
-      regex.new(Pattern)
-   except e
-      return stable_label, compiled != nil
-   end
-
-   return "missing-error", false
-end
-
-function jit_try_inner_locals_preserve_entry_local(Pattern, Iteration)
-   local entry_label = "entry-" .. tostring(Iteration % 7)
-
-   try
-      local inner_label = "inner-" .. tostring(Iteration)
-      local combined = inner_label .. ":" .. entry_label
-      if #combined < 1 then
-         return "impossible"
-      end
-      regex.new(Pattern)
-   except e
-      return entry_label
-   end
-
-   return "missing-error"
-end
 
 function jit_try_forced_materialisation_probe(Count)
    local entry_label = "entry"
@@ -684,53 +1075,6 @@ function build_try_materialisation_trace()
    error("Failed to create a try-entry materialisation trace for inspection")
 end
 
-@Test(hotpath=80) function JITTryLocalBeforeEntrySurvivesRegexThrow()
-   jit.on()
-   jit.flush()
-   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
-
-   for i in {0 to 100} do
-      result = jit_try_local_before_entry("(")
-      assert(result is "before-entry", f"Expected local captured before try entry, got '{result}'")
-   end
-end
-
-@Test(hotpath=80) function JITTryLocalMutatedInsideTrySurvivesRegexThrow()
-   jit.on()
-   jit.flush()
-   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
-
-   for i in {0 to 100} do
-      expected = "mutated-" .. tostring(i % 5)
-      result = jit_try_mutated_local_before_throw("(", i)
-      assert(result is expected, f"Expected handler to see '{expected}', got '{result}'")
-   end
-end
-
-@Test(hotpath=80) function JITTryRepeatedThrowableHelpersDoNotCorruptLocals()
-   jit.on()
-   jit.flush()
-   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
-
-   for i in {0 to 100} do
-      label, compiled = jit_try_repeated_throwable_helpers("(")
-      assert(label is "stable-local", f"Expected stable local after repeated helpers, got '{label}'")
-      assert(compiled is true, "Successful repeated regex.new() calls should update their local")
-   end
-end
-
-@Test(hotpath=80) function JITTryInnerLocalsPreserveEntryLocal()
-   jit.on()
-   jit.flush()
-   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
-
-   for i in {0 to 100} do
-      local expected = "entry-" .. tostring(i % 7)
-      local result = jit_try_inner_locals_preserve_entry_local("(", i)
-      assert(result is expected, f"Expected handler to see entry local '{expected}', got '{result}'")
-   end
-end
-
 @Test(hotpath=80) function JITTryMaterialisationTraceEmitsXStores()
    local trace_no, info = build_try_materialisation_trace()
    local xstore_count = count_trace_opcode(trace_no, info, ir_xstore)
@@ -759,6 +1103,94 @@ end
          assert(slot < nslots,
             f"Snapshot {snap_no} entry {entry_idx} slot {slot} should be below nslots {nslots}")
       end
+   end
+end
+
+function range_try_success_workload():num
+   local function compute(Value:num):num
+      if Value < 0 then error("Negative value not allowed") end
+      return Value * Value
+   end
+
+   local function fetchData(Id:num):table
+      if Id is 0 then error("Invalid ID") end
+      return { id = Id, value = Id * 10 }
+   end
+
+   local acc = 0
+   for i in {0 to 300} do
+      local result = 0
+      try
+         result = compute(i)
+      except ex
+         result = -1
+      success
+         result++
+      end
+
+      local data = nil
+      try
+         data = fetchData(i % 100)
+      except ex
+         data = { id = 0, value = 0 }
+      success
+         data.value *= 2
+      end
+      acc += data.value
+
+      local a, b
+      try
+         a = compute(i)
+         b = compute(i + 1)
+      except ex
+         result = 0
+      success
+         result = (a + b) * 2
+      end
+
+      try
+         result = compute(i)
+      except ex
+         result = -1
+      success
+         result += 100
+      end
+
+      try
+         try
+            result = compute(i)
+         except inner
+            result = 0
+         success
+            result += 10
+         end
+      except outer
+         result = -1
+      success
+         result += 20
+      end
+
+      acc += result
+   end
+   return acc
+end
+
+@Test(hotpath=80) function RangeLoopStateSurvivesRepeatedTrySuccessTraces()
+   defer
+      jit.flush()
+      jit.opt.start()
+   end
+
+   jit.off()
+   local expected = range_try_success_workload()
+
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=5", "hotexit=1")
+   for call in {0 to 40} do
+      local result = range_try_success_workload()
+      assert(result is expected,
+         f"Range loop state was corrupted on call {call}: expected {expected}, got {result}")
    end
 end
 

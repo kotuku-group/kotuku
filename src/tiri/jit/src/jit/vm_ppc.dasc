@@ -1752,6 +1752,9 @@ static void build_subroutines(BuildCtx *ctx)
   |  li CARG3, LJ_TNIL
   |  b ->fff_restv
   |
+  |.ffunc_2 range_iterator_next
+  |  b ->fff_fallback
+  |
   |.ffunc_1 pairs
   |  checktab CARG3
   |   lwz PC, FRAME_PC(BASE)
@@ -5456,7 +5459,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
 
   case BC_ASGETV:
     |  // Safe array get with variable index - returns nil for out-of-bounds on arrays.
-    |  // For non-arrays, falls back to regular table indexing via vmeta_tgetb.
+    |  // For non-arrays, falls back to regular table indexing via vmeta_tgetv.
     |  // RA = dst, RB = table/array, RC = key
     |  lpx  TMP1, BASE, RB		// Load table/array
     |  lpx  TMP2, BASE, RC		// Load key (hi word)
@@ -5480,7 +5483,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
 
   case BC_ASGETB:
     |  // Safe array get with literal index - returns nil for out-of-bounds on arrays.
-    |  // For non-arrays, falls back to regular table indexing via vmeta_tgetv.
+    |  // For non-arrays, falls back to regular table indexing via vmeta_tgetb.
     |  // RA = dst, RB = table/array, RC = literal index (0-255, 0-based)
     |  lpx TMP1, BASE, RB		// Load table/array
     |  lwz ITYPE, 0(TMP1)
@@ -6643,6 +6646,28 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
   case BC_MRRESTORE:
     |  lwzux TMP0, RA, BASE
     |  lwz MULTRES, 4(RA)
+    |  ins_next
+    break;
+
+  case BC_RANGEPREP:
+    |  ins_AD
+    |  lwz L, SAVE_L
+    |  stp BASE, L->base
+    |  add CARG2, BASE, RA
+    |  mr CARG3, RD
+    |  mr CARG1, L
+    |  stw PC, SAVE_PC
+    |  bl extern lj_range_prepare
+    |  lp BASE, L->base
+    |  ins_next
+    break;
+
+  case BC_RANGEVAL:
+    |  lwz L, SAVE_L
+    |  stp BASE, L->base
+    |  add CARG1, BASE, RA
+    |  bl extern lj_range_value_at
+    |  lp BASE, L->base
     |  ins_next
     break;
 

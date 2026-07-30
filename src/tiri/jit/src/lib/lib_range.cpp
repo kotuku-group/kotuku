@@ -202,9 +202,90 @@ static void fp_range_push(lua_State *L, lua_Number Value)
    else lua_pushnumber(L, Value);
 }
 
+static void fp_range_set(TValue *Target, lua_Number Value)
+{
+   if (fp_range_is_int32(Value)) setintV(Target, int32_t(Value));
+   else setnumV(Target, Value);
+}
+
 static bool fp_range_integer_array(const tiri_range *Range)
 {
    return fp_range_is_int32(Range->start) and fp_range_is_int32(Range->stop) and fp_range_is_int32(Range->step);
+}
+
+lua_Number lj_range_prepare_step(
+   lua_State *L, lua_Number Start, lua_Number Stop, lua_Number Step, uint32_t Flags)
+{
+   if (not std::isfinite(Start) or not std::isfinite(Stop)) lj_err_caller(L, ErrMsg::NUMRNG);
+
+   lua_Number step = (Flags & RANGE_PREP_HAS_STEP) ? Step : (Start <= Stop ? 1.0 : -1.0);
+   if (not std::isfinite(step) or step IS 0.0) lj_err_caller(L, ErrMsg::NUMRNG);
+   return step;
+}
+
+lua_Number lj_range_prepare_count(
+   lua_State *L, lua_Number Start, lua_Number Stop, lua_Number Step, uint32_t Inclusive)
+{
+   tiri_range range{ Start, Stop, Step, Inclusive != 0 };
+   return lua_Number(fp_range_count(L, &range, false));
+}
+
+int32_t lj_range_integer_values(lua_Number Start, lua_Number Stop, lua_Number Step)
+{
+   return fp_range_is_int32(Start) and fp_range_is_int32(Stop) and fp_range_is_int32(Step);
+}
+
+lua_Number lj_range_value(lua_Number Ordinal, lua_Number Start, lua_Number Step)
+{
+   return std::fma(Ordinal, Step, Start);
+}
+
+lua_Number lj_range_iterator_next_ordinal(lua_Number Control, lua_Number Start, lua_Number Step)
+{
+   long double distance = ((long double)Control - (long double)Start) / (long double)Step;
+   return lua_Number(std::round(distance) + 1.0L);
+}
+
+void lj_range_prepare(lua_State *L, TValue *Base, uint32_t Flags)
+{
+   if (not tvisnumber(&Base[0]) or not tvisnumber(&Base[1]) or
+       ((Flags & RANGE_PREP_HAS_STEP) and not tvisnumber(&Base[2]))) {
+      lj_err_caller(L, ErrMsg::NUMRNG);
+   }
+
+   lua_Number start = numberVnum(&Base[0]);
+   lua_Number stop = numberVnum(&Base[1]);
+   lua_Number explicit_step = (Flags & RANGE_PREP_HAS_STEP) ? numberVnum(&Base[2]) : 0.0;
+   lua_Number step = lj_range_prepare_step(L, start, stop, explicit_step, Flags);
+   lua_Number count = lj_range_prepare_count(L, start, stop, step, Flags & RANGE_PREP_INCLUSIVE);
+   int32_t integer_values = lj_range_integer_values(start, stop, step);
+
+   if (Flags & RANGE_PREP_DIRECT_INTEGER) {
+      lua_Number final_stop = stop;
+      if (not (Flags & RANGE_PREP_INCLUSIVE)) final_stop += step > 0.0 ? -1.0 : 1.0;
+      setintV(&Base[0], int32_t(start));
+      setintV(&Base[1], int32_t(final_stop));
+      setintV(&Base[2], int32_t(step));
+      setnilV(&Base[3]);
+      return;
+   }
+
+   setnumV(&Base[0], 0.0);
+   setnumV(&Base[1], count - 1.0);
+   setnumV(&Base[2], 1.0);
+   setnilV(&Base[3]);
+   setnumV(&Base[4], start);
+   setnumV(&Base[5], step);
+   setintV(&Base[6], integer_values);
+   setnilV(&Base[7]);
+}
+
+void lj_range_value_at(TValue *Base)
+{
+   lua_Number ordinal = numberVnum(&Base[3]);
+   lua_Number value = lj_range_value(ordinal, numberVnum(&Base[4]), numberVnum(&Base[5]));
+   if (numberVnum(&Base[6]) != 0.0) setintV(&Base[7], int32_t(value));
+   else setnumV(&Base[7], value);
 }
 
 static GCarray * fp_range_materialise(lua_State *L, const tiri_range *Range, size_t Count)
@@ -500,32 +581,49 @@ static int fp_range_toarray(lua_State *L)
    return 1;
 }
 
-static int fp_range_iterator_next(lua_State *L)
+LJLIB_ASM(range_iterator_next) LJLIB_REC(.)
 {
-   auto range = (tiri_range *)lua_touserdata(L, lua_upvalueindex(1));
-   if (not range) return 0;
-   size_t ordinal = size_t(lua_tointeger(L, lua_upvalueindex(2)));
-   size_t count = fp_range_count(L, range, false);
-   if (ordinal >= count) return 0;
-   lua_pushinteger(L, lua_Integer(ordinal + 1));
-   lua_replace(L, lua_upvalueindex(2));
-   fp_range_push(L, fp_range_value(range, ordinal));
-   return 1;
+   GCtab *state = lj_lib_checktab(L, 1);
+   cTValue *start_value = lj_tab_getint(state, RANGE_ITERATOR_START);
+   cTValue *step_value = lj_tab_getint(state, RANGE_ITERATOR_STEP);
+   cTValue *count_value = lj_tab_getint(state, RANGE_ITERATOR_COUNT);
+   if (not tvisnumber(start_value) or not tvisnumber(step_value) or not tvisnumber(count_value)) {
+      lj_err_caller(L, ErrMsg::BADVAL);
+   }
+
+   lua_Number ordinal = 0.0;
+   if (not lua_isnil(L, 2)) {
+      if (not lua_isnumber(L, 2)) lj_err_caller(L, ErrMsg::BADVAL);
+      ordinal = lj_range_iterator_next_ordinal(
+         lua_tonumber(L, 2), numberVnum(start_value), numberVnum(step_value));
+   }
+   if (ordinal >= numberVnum(count_value)) return FFH_RES(0);
+
+   fp_range_set(L->base - 1 - LJ_FR2,
+      std::fma(ordinal, numberVnum(step_value), numberVnum(start_value)));
+   return FFH_RES(1);
 }
 
 static int fp_range_call(lua_State *L)
 {
-   get_range(L, 1);
+   tiri_range *range = get_range(L, 1);
    if (lua_gettop(L) >= 2) {
       int argument_type = lua_type(L, 2);
       if (argument_type IS LUA_TNIL or argument_type IS LUA_TNUMBER) {
          luaL_error(L, ERR::Syntax, "range used incorrectly in for loop; use 'for i in range()' not 'for i in range'");
       }
    }
-   lua_pushvalue(L, 1);
-   lua_pushinteger(L, 0);
-   lua_pushcclosure(L, fp_range_iterator_next, 2);
-   lua_pushnil(L);
+   size_t count = fp_range_count(L, range, false);
+   lua_pushvalue(L, lua_upvalueindex(1));
+   lua_createtable(L, RANGE_ITERATOR_STATE_SIZE, 0);
+   fp_range_push(L, range->start);
+   lua_rawseti(L, -2, RANGE_ITERATOR_START);
+   fp_range_push(L, range->step);
+   lua_rawseti(L, -2, RANGE_ITERATOR_STEP);
+   lua_pushnumber(L, lua_Number(count));
+   lua_rawseti(L, -2, RANGE_ITERATOR_COUNT);
+   lua_pushnumber(L, fp_range_integer_array(range) ? 1.0 : 0.0);
+   lua_rawseti(L, -2, RANGE_ITERATOR_INTEGER_VALUES);
    lua_pushnil(L);
    return 3;
 }
@@ -919,13 +1017,20 @@ extern "C" int luaopen_range(lua_State *L)
    lua_pushcfunction(L, range_index);
    lua_setfield(L, -2, "__index");
 
-   lua_pushcfunction(L, fp_range_call);
-   lua_setfield(L, -2, "__call");
-
    lua_pop(L, 1);  // Pop metatable
 
    // Register the library using LuaJIT's library registration system
    LJ_LIB_REG(L, "range", range);
+
+   // Keep the stable fast iterator private and capture it in the range-object __call metamethod.
+   lua_getfield(L, -1, "iterator_next");
+   lua_pushnil(L);
+   lua_setfield(L, -3, "iterator_next");
+   luaL_getmetatable(L, RANGE_METATABLE);
+   lua_pushvalue(L, -2);
+   lua_pushcclosure(L, fp_range_call, 1);
+   lua_setfield(L, -2, "__call");
+   lua_pop(L, 2);  // Pop the range metatable and private iterator.
 
    // At this point the range table is on the stack, add a metatable with __call
 

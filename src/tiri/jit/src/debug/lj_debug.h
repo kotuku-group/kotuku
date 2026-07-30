@@ -50,7 +50,11 @@ extern int lj_debug_getinfo(lua_State* L, const char* what, lj_Debug* ar, int ex
   _(FOR_STEP, "(for step)") \
   _(FOR_GEN, "(for generator)") \
   _(FOR_STATE, "(for state)") \
-  _(FOR_CTL, "(for control)")
+  _(FOR_CTL, "(for control)") \
+  _(RANGE_ORDINAL, "(range ordinal)") \
+  _(RANGE_START, "(range start)") \
+  _(RANGE_STEP, "(range step)") \
+  _(RANGE_FLAGS, "(range flags)")
 
 enum {
    VARNAME_END,

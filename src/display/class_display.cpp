@@ -336,7 +336,7 @@ drivers it is a harmless no-op.
 static ERR DISPLAY_Flush(extDisplay *Self)
 {
 #ifdef __xwindows__
-   XSync(XDisplay, False);
+   if (XDisplay) XSync(XDisplay, False);
 #elif _GLES_
    if (not lock_graphics_active(__func__)) {
       glFlush();
@@ -356,7 +356,7 @@ static ERR DISPLAY_Focus(extDisplay *Self)
 #ifdef _WIN32
    winFocus(Self->WindowHandle);
 #elif __xwindows__
-   if ((Self->Flags & (SCR::BORDERLESS|SCR::COMPOSITE)) != SCR::NIL) {
+   if ((XDisplay) and ((Self->Flags & (SCR::BORDERLESS|SCR::COMPOSITE)) != SCR::NIL)) {
       XSetInputFocus(XDisplay, Self->XWindowHandle, RevertToNone, CurrentTime);
    }
 #endif
@@ -411,7 +411,7 @@ extDisplay::~extDisplay()
       }
    }
 
-   XSync(XDisplay, False);
+   if (XDisplay) XSync(XDisplay, False);
 #endif
 
 #ifdef _WIN32
@@ -602,50 +602,55 @@ static ERR DISPLAY_Init(extDisplay *Self)
    kt::Log log;
 
    #ifdef __xwindows__
+      int xbpp = 32;
+      int xbytes = 4;
+
       // Figure out how many bits and bytes are used per pixel on this XDisplay
 
-      auto xbpp = DefaultDepth(XDisplay, DefaultScreen(XDisplay));
+      if (not glHeadless) {
+         xbpp = DefaultDepth(XDisplay, DefaultScreen(XDisplay));
 
-      if (xbpp <= 8) {
-         log.msg(VLF::CRITICAL, "Please change your X11 setup so that it runs in 15 bit mode or better.");
-         log.msg(VLF::CRITICAL, "Currently X11 is configured to use %d bit graphics.", xbpp);
-         return ERR::NoSupport;
-      }
+         if (xbpp <= 8) {
+            log.msg(VLF::CRITICAL, "Please change your X11 setup so that it runs in 15 bit mode or better.");
+            log.msg(VLF::CRITICAL, "Currently X11 is configured to use %d bit graphics.", xbpp);
+            return ERR::NoSupport;
+         }
 
-      int xbytes;
-      if (xbpp <= 8) xbytes = 1;
-      else if (xbpp <= 16) xbytes = 2;
-      else if (xbpp <= 24) xbytes = 3;
-      else xbytes = 4;
+         if (xbpp <= 8) xbytes = 1;
+         else if (xbpp <= 16) xbytes = 2;
+         else if (xbpp <= 24) xbytes = 3;
+         else xbytes = 4;
 
-      int count;
-      if (auto list = XListPixmapFormats(XDisplay, &count)) {
-         for (int i=0; i < count; i++) {
-            if (list[i].depth IS xbpp) {
-               xbytes = list[i].bits_per_pixel;
-               if (list[i].bits_per_pixel <= 8) xbytes = 1;
-               else if (list[i].bits_per_pixel <= 16) xbytes = 2;
-               else if (list[i].bits_per_pixel <= 24) xbytes = 3;
-               else xbytes = 4;
+         int count;
+         if (auto list = XListPixmapFormats(XDisplay, &count)) {
+            for (int i=0; i < count; i++) {
+               if (list[i].depth IS xbpp) {
+                  xbytes = list[i].bits_per_pixel;
+                  if (list[i].bits_per_pixel <= 8) xbytes = 1;
+                  else if (list[i].bits_per_pixel <= 16) xbytes = 2;
+                  else if (list[i].bits_per_pixel <= 24) xbytes = 3;
+                  else xbytes = 4;
+               }
+            }
+            XFree(list);
+         }
+
+         if ((xbpp IS 24) and (xbytes IS 3)) {
+            static bool bpp_warning = false;
+            if (not bpp_warning) {
+               bpp_warning = true;
+               log.warning("Running in 32bpp instead of 24bpp is strongly recommended.");
             }
          }
-         XFree(list);
-      }
 
-      if ((xbpp IS 24) and (xbytes IS 3)) {
-         static bool bpp_warning = false;
-         if (not bpp_warning) {
-            bpp_warning = true;
-            log.warning("Running in 32bpp instead of 24bpp is strongly recommended.");
+         #ifdef XRANDR_ENABLED
+         if (glXRRAvailable) {
+            // Set the refresh rate to zero to indicate that we have some control of the display (the default is -1 if
+            // there is no control).
+            Self->RefreshRate = 0;
          }
+         #endif
       }
-
-      #ifdef XRANDR_ENABLED
-      if (glXRRAvailable) {
-         // Set the refresh rate to zero to indicate that we have some control of the display (the default is -1 if there is no control).
-         Self->RefreshRate = 0;
-      }
-      #endif
    #endif
 
    // Set defaults
@@ -690,18 +695,21 @@ static ERR DISPLAY_Init(extDisplay *Self)
    #ifdef __xwindows__
       // If the display object will act as window manager, the dimensions must match that of the root window.
 
-      if ((glX11.WSLg) and ((Self->Flags & (SCR::BORDERLESS|SCR::MAXIMISE)) IS (SCR::BORDERLESS|SCR::MAXIMISE))) {
-         log.msg("WSLg detected; using a managed maximised window instead of fullscreen override-redirect.");
-         Self->Flags = Self->Flags & (~SCR::BORDERLESS);
-      }
+      if (not glHeadless) {
+         if ((glX11.WSLg) and ((Self->Flags & (SCR::BORDERLESS|SCR::MAXIMISE)) IS
+               (SCR::BORDERLESS|SCR::MAXIMISE))) {
+            log.msg("WSLg detected; using a managed maximised window instead of fullscreen override-redirect.");
+            Self->Flags = Self->Flags & (~SCR::BORDERLESS);
+         }
 
-      if ((glX11.Manager) or ((Self->Flags & SCR::MAXIMISE) != SCR::NIL)) {
-         Self->Width  = glRootWindow.width;
-         Self->Height = glRootWindow.height;
-      }
+         if ((glX11.Manager) or ((Self->Flags & SCR::MAXIMISE) != SCR::NIL)) {
+            Self->Width  = glRootWindow.width;
+            Self->Height = glRootWindow.height;
+         }
 
-      if (Self->Width > glRootWindow.width) Self->Width = glRootWindow.width;
-      if (Self->Height > glRootWindow.height) Self->Height = glRootWindow.height;
+         if (Self->Width > glRootWindow.width) Self->Width = glRootWindow.width;
+         if (Self->Height > glRootWindow.height) Self->Height = glRootWindow.height;
+      }
    #endif
 
    if (bmp->Width  < Self->Width)  bmp->Width = Self->Width;
@@ -736,8 +744,14 @@ static ERR DISPLAY_Init(extDisplay *Self)
 
    #ifdef __xwindows__
 
-      bmp->Flags |= BMF::NO_DATA;
-      bmp->MemType = BMT::VIDEO;
+      if (glHeadless) {
+         bmp->MemType = BMT::DATA;
+         if (InitObject(bmp) != ERR::Okay) return log.warning(ERR::Init);
+      }
+      else {
+         bmp->Flags |= BMF::NO_DATA;
+         bmp->MemType = BMT::VIDEO;
+      }
 
       // Set the Window Attributes structure
 
@@ -749,7 +763,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
       swa.event_mask  = ExposureMask|EnterWindowMask|LeaveWindowMask|PointerMotionMask|StructureNotifyMask
                         |KeyPressMask|KeyReleaseMask|ButtonPressMask|ButtonReleaseMask|FocusChangeMask;
 
-      if (not glX11.Manager) {
+      if ((not glHeadless) and (not glX11.Manager)) {
          // Window creation for running inside a foreign window manager.
 
          log.msg("Creating X11 window %dx%d,%dx%d, Override: %d, XDisplay: %p, Parent: %" PRId64, Self->X, Self->Y, Self->Width, Self->Height, swa.override_redirect, XDisplay, (int64_t)Self->XWindowHandle);
@@ -857,7 +871,7 @@ static ERR DISPLAY_Init(extDisplay *Self)
 
          if (InitObject(bmp) != ERR::Okay) return log.warning(ERR::Init);
       }
-      else { // If we are the window manager, set up the root window as our display.
+      else if (not glHeadless) { // If we are the window manager, set up the root window as our display.
          if (not Self->WindowHandle) Self->XWindowHandle = DefaultRootWindow(XDisplay);
          bmp->setHandle((APTR)Self->XWindowHandle);
          XChangeWindowAttributes(XDisplay, Self->XWindowHandle, CWEventMask|CWCursor, &swa);
@@ -881,9 +895,12 @@ static ERR DISPLAY_Init(extDisplay *Self)
          }
       }
 
-      glDisplayWindow = Self->XWindowHandle;
+      if (not glHeadless) {
+         glDisplayWindow = Self->XWindowHandle;
 
-      XChangeProperty(XDisplay, Self->XWindowHandle, atomSurfaceID, atomSurfaceID, 32, PropModeReplace, (uint8_t *)&Self->UID, 1);
+         XChangeProperty(XDisplay, Self->XWindowHandle, atomSurfaceID, atomSurfaceID, 32, PropModeReplace,
+            (uint8_t *)&Self->UID, 1);
+      }
 
    #elif _WIN32
 
@@ -1189,9 +1206,11 @@ static ERR DISPLAY_MoveToPoint(extDisplay *Self, struct acMoveToPoint *Args)
 
    // Handling margins isn't necessary as the window manager will take that into account when it receives the move request.
 
-   XMoveWindow(XDisplay, Self->XWindowHandle,
-      ((Args->Flags & MTF::X) != MTF::NIL) ? int(Args->X) : Self->X,
-      ((Args->Flags & MTF::Y) != MTF::NIL) ? int(Args->Y) : Self->Y);
+   if (XDisplay) {
+      XMoveWindow(XDisplay, Self->XWindowHandle,
+         ((Args->Flags & MTF::X) != MTF::NIL) ? int(Args->X) : Self->X,
+         ((Args->Flags & MTF::Y) != MTF::NIL) ? int(Args->Y) : Self->Y);
+   }
 
    if ((Args->Flags & MTF::X) != MTF::NIL) Self->X = int(Args->X);
    if ((Args->Flags & MTF::Y) != MTF::NIL) Self->Y = int(Args->Y);
@@ -1451,6 +1470,8 @@ static ERR DISPLAY_SizeHints(extDisplay *Self, gfx::SizeHints *Args)
    if (not Args) return ERR::NullArgs;
 
 #ifdef __xwindows__
+   if (glHeadless) return ERR::NoSupport;
+
    XSizeHints hints = { .flags = 0 };
 
    if ((Args->MaxWidth > 0) and (Args->MaxHeight > 0)) {
@@ -1569,7 +1590,7 @@ static ERR DISPLAY_SetDisplay(extDisplay *Self, gfx::SetDisplay *Args)
 #endif
    }
    else {
-      XResizeWindow(XDisplay, Self->XWindowHandle, width, height);
+      if (XDisplay) XResizeWindow(XDisplay, Self->XWindowHandle, width, height);
       acResize(Self->Bitmap, width, height, 0.0);
       Self->Width  = width;
       Self->Height = height;
@@ -1893,25 +1914,29 @@ ERR DISPLAY_Show(extDisplay *Self)
    log.branch();
 
    #ifdef __xwindows__
-      if (not XDisplay) {
-         log.error("No X11 display has been found for this machine.");
-         return ERR::NoSupport;
+      // In headless mode no X11 window exists, so the display is marked visible without any server interaction.
+
+      if (not glHeadless) {
+         if (not XDisplay) {
+            log.error("No X11 display has been found for this machine.");
+            return ERR::NoSupport;
+         }
+
+         // Some window managers fool with our position when mapping, so we use XMoveWindow() before and after to be
+         // certain that we get the position that we want.
+
+         if ((Self->Flags & SCR::BORDERLESS) IS SCR::NIL) {
+            XMoveWindow(XDisplay, Self->XWindowHandle, Self->X, Self->Y);
+         }
+
+         XMapWindow(XDisplay, Self->XWindowHandle);
+
+         if ((Self->Flags & SCR::BORDERLESS) IS SCR::NIL) {
+            XMoveWindow(XDisplay, Self->XWindowHandle, Self->X, Self->Y);
+         }
+
+         XSync(XDisplay, False);
       }
-
-      // Some window managers fool with our position when mapping, so we use XMoveWindow() before and after to be
-      // certain that we get the position that we want.
-
-      if ((Self->Flags & SCR::BORDERLESS) IS SCR::NIL) {
-         XMoveWindow(XDisplay, Self->XWindowHandle, Self->X, Self->Y);
-      }
-
-      XMapWindow(XDisplay, Self->XWindowHandle);
-
-      if ((Self->Flags & SCR::BORDERLESS) IS SCR::NIL) {
-         XMoveWindow(XDisplay, Self->XWindowHandle, Self->X, Self->Y);
-      }
-
-      XSync(XDisplay, False);
 
       Self->LeftMargin   = 0;
       Self->TopMargin    = 0;
@@ -1921,7 +1946,7 @@ ERR DISPLAY_Show(extDisplay *Self)
       // Mapping a window may cause the window manager to resize it without sending a notification event, so check the
       // window size on a delay.
 
-      QueueAction(gfx::CheckXWindow::id, Self->UID);
+      if (not glHeadless) QueueAction(gfx::CheckXWindow::id, Self->UID);
 
       // Originally introduced as a hack to manage focusing for dropdown menus, possibly no longer required as focus should remain with the instigator.
 
@@ -2768,7 +2793,7 @@ static ERR GET_Title(extDisplay *Self, std::string_view &Value)
 static ERR SET_Title(extDisplay *Self, const std::string_view &Value)
 {
 #ifdef __xwindows__
-   XStoreName(XDisplay, Self->XWindowHandle, Value.data());
+   if (XDisplay) XStoreName(XDisplay, Self->XWindowHandle, Value.data());
    return ERR::Okay;
 #elif _WIN32
    winSetWindowTitle(Self->WindowHandle, Value.data());

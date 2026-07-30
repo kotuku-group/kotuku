@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Origo
+Comment=Run Kōtuku applications and Tiri scripts
+TryExec=origo
+Exec=origo
+Icon=origo
+Terminal=false
+StartupWMClass=Origo
+Categories=Utility

@@ -14,6 +14,7 @@ Parameters:
   hotloop=[n]  - Cycles required before performing JIT optimisation.
   calls=[n]    - Limit each test to this many calls.
   save[=all]   - Saves the results to the log.  Use save=all to store the full result tables.
+  traces       - Report on JIT trace compilation for each test instead of timing it.
  --]]
 
    import 'benchmark'
@@ -62,6 +63,8 @@ Examples:
   origo tools/benchmark/benchmark.tiri test=String duration=5s calls=500
   origo tools/benchmark/benchmark.tiri test="^Regex" save
   origo tools/benchmark/benchmark.tiri save=all
+  origo tools/benchmark/benchmark.tiri traces
+  origo tools/benchmark/benchmark.tiri traces test="^Control"
 ]],
    args = array<table> {
       { name = 'test', type = 'regex', group = 'Selection',
@@ -78,6 +81,9 @@ Examples:
 
       { name = 'save', type = saveOption, implicit = true, default = false, group = 'Output',
         comment = 'Save summary results to the log. Use "all" to include exhaustive benchmark statistics.' },
+      { name = 'traces', kind = 'flag', group = 'Output',
+        comment = 'Analyse JIT trace compilation for each benchmark and report whether it is being optimised. ' ..
+                  'Replaces the normal timing run; results are not saved or compared.' },
       { name = 'help', kind = 'flag', hidden = true,
         exec = function(Parser:table)
            Parser.printHelp()
@@ -108,6 +114,83 @@ function comparisonP99(Eval:table):any
    return nil
 end
 
+----------------------------------------------------------------------------------------------------------------------
+-- JIT trace analysis.
+--
+-- A benchmark is only meaningful if the code under test is actually being compiled.  Two independent failure modes
+-- are detected, because neither one implies the other:
+--
+--   1. Aborted traces.  The recorder gave up and the code runs in the interpreter.  A small number of aborts is
+--      normal (side exits on cold paths), so this is judged as a proportion of recording attempts.
+--   2. Trace explosion.  Every recording succeeds, but the same code is recorded over and over because the
+--      generated trace is not being reused.  This produces no aborts at all yet is severely slow, so a healthy
+--      abort count alone is not evidence of a healthy benchmark.
+--
+-- A well behaved benchmark records a handful of traces once and then stays on them.
+
+global glTraceStart = 0
+global glTraceStop  = 0
+global glTraceAbort = 0
+
+-- Above this many recordings the benchmark is recording far more than a stable loop nest requires.  Measured
+-- across the existing suite, healthy cases sit well under 30 while pathological cases exceed 300, so the exact
+-- value is not sensitive.
+global glTraceExplosion <const> = 100
+
+-- Proportion of recording attempts that may abort before the code is considered to be running interpreted.
+global glAbortRatioWarn <const> = 0.25
+
+-- The abort ratio is meaningless over a handful of recordings, where a single cold-path abort is both normal and
+-- enough to breach any sensible proportion.  Require an absolute number of aborts before the ratio is applied.
+global glAbortMinimum <const> = 4
+
+function traceAnalysis(Callback:func, Calls:num, HotLoop:num):table
+   -- Discard traces, blacklisting and side traces inherited from earlier benchmarks
+   jit.flush()
+   jit.opt.start(f'hotloop={HotLoop}')
+
+   glTraceStart = 0
+   glTraceStop  = 0
+   glTraceAbort = 0
+
+   local start_time = mSys.PreciseTime()
+   for i in {0 to Calls} do
+      Callback()
+   end
+   local elapsed = (mSys.PreciseTime() - start_time) / 1000.0
+
+   local result = {
+      recorded = glTraceStart,
+      compiled = glTraceStop,
+      aborted  = glTraceAbort,
+      time     = elapsed / Calls
+   }
+
+   result.abortRatio = result.recorded > 0 and (result.aborted / result.recorded) or 0
+
+   -- Classify the outcome.  Order matters: an interpreted benchmark is the more serious diagnosis, so it is
+   -- reported ahead of a trace explosion when a benchmark somehow manages both.
+   if result.recorded is 0 then
+      result.status = 'NO TRACES'
+      result.advice = 'No trace was recorded.  The body may be too short to reach the hot loop threshold, or the ' ..
+                      'JIT may have discarded it as doing no observable work.'
+   elseif result.compiled is 0 then
+      result.status = 'INTERPRETED'
+      result.advice = 'Every recording aborted, so this runs in the interpreter.'
+   elseif result.aborted >= glAbortMinimum and result.abortRatio >= glAbortRatioWarn then
+      result.status = 'PARTIAL'
+      result.advice = string.format('%.0f%% of recordings aborted, so part of this runs in the interpreter.',
+                                    result.abortRatio * 100)
+   elseif result.recorded > glTraceExplosion then
+      result.status = 'CHURNING'
+      result.advice = 'Traces compile but are not reused, so the same code is recorded repeatedly.'
+   else
+      result.status = 'OPTIMISED'
+   end
+
+   return result
+end
+
    global glArgs = glParser.process()
    if glArgs is nil then return end
 
@@ -125,6 +208,7 @@ end
    local hotloop      = glArgs.hotloop
    local call_limit   = glArgs.calls
    local save_results = glArgs.save
+   local trace_mode   = glArgs.traces
 
    local test_match = glArgs.test
    if test_match then
@@ -154,6 +238,69 @@ end
    table.sort(name_list, function(a:table, b:table):bool
       return (a.name < b.name)
    end)
+
+   if trace_mode then
+      jit.attach(function(What:str)
+         if What is 'start' then glTraceStart++
+         elseif What is 'stop' then glTraceStop++
+         elseif What is 'abort' then glTraceAbort++
+         end
+      end, 'trace')
+
+      logMessage('JIT trace analysis')
+      logMessage('')
+      logMessage(string.format('%-*s  %-11s %8s %8s %8s %10s', longest_name, 'BENCHMARK', 'STATUS',
+         'RECORDED', 'COMPILED', 'ABORTED', 'MS/CALL'))
+      logMessage(string.rep('-', longest_name + 50))
+
+      local advice = { }
+      local tally = { OPTIMISED=0, CHURNING=0, PARTIAL=0, INTERPRETED=0, ['NO TRACES']=0, ERROR=0 }
+
+      for entry in values(name_list) do
+         local name = entry.name
+
+         if rx_test then
+            if not rx_test.test(name) then continue end
+         end
+
+         -- A handful of calls is enough for the trace behaviour to settle, and keeps analysis of the slowest
+         -- benchmarks fast.  Trace counts are a property of the code, not of how long it is exercised.
+         local analysis
+         try<trace>
+            analysis = traceAnalysis(entry.func, 3, hotloop)
+         except ex
+            tally.ERROR++
+            logMessage(string.format('%-*s  %-11s %s', longest_name, name, 'ERROR', ex.message))
+            continue
+         end
+
+         tally[analysis.status] += 1
+
+         logMessage(string.format('%-*s  %-11s %8d %8d %8d %10.3f', longest_name, name, analysis.status,
+            analysis.recorded, analysis.compiled, analysis.aborted, analysis.time))
+
+         if analysis.advice then
+            table.insert(advice, { name = name, status = analysis.status, advice = analysis.advice })
+         end
+      end
+
+      logMessage('')
+      logMessage(string.format('Optimised: %d, Churning: %d, Partial: %d, Interpreted: %d, No traces: %d, Errors: %d',
+         tally.OPTIMISED, tally.CHURNING, tally.PARTIAL, tally.INTERPRETED, tally['NO TRACES'], tally.ERROR))
+
+      if #advice > 0 then
+         logMessage('')
+         logMessage('Benchmarks not fully optimised:')
+         logMessage('')
+         for item in values(advice) do
+            logMessage(f'  {item.name} [{item.status}]')
+            logMessage(f'    {item.advice}')
+         end
+      end
+
+      -- Trace analysis replaces the timing run, so there is nothing to save or compare against.
+      return
+   end
 
    for entry in values(name_list) do
       func = entry.func

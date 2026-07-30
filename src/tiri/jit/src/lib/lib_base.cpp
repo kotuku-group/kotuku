@@ -702,7 +702,8 @@ LJLIB_CF(collectgarbage)
 }
 
 //********************************************************************************************************************
-// Base library: miscellaneous functions
+// newproxy() is deprecated and not published for client use.  It remains only to assist some tests that need a
+// userdata return type.
 
 LJLIB_PUSH(top-2)  //  Upvalue holds weak table.
 LJLIB_CF(newproxy)

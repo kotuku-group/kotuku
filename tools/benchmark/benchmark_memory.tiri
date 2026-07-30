@@ -4,16 +4,19 @@
 -- Goal: Measure overhead of creating many small tables
 
 @Test function MemoryTableAllocation()
+   local checksum = 0
    for i in {0 to 100} do
       -- Create empty tables
       local tables = {}
       for j in {0 to 100} do
          tables[j] = {}
+         checksum += #tables[j]
       end
 
       -- Create tables with initial values
       for j in {0 to 100} do
          tables[j] = { a = 1, b = 2, c = 3 }
+         checksum += tables[j].a + tables[j].b + tables[j].c
       end
 
       -- Create nested table structures
@@ -24,6 +27,7 @@
                data = { x = 1, y = 2 }
             }
          }
+         checksum += tables[j].inner.value + tables[j].inner.data.x
       end
 
       -- Create tables with varying sizes
@@ -32,66 +36,79 @@
          for k in {0 to j+1} do
             t[k] = k
          end
+         checksum += #t
          tables[j] = t
       end
 
       -- Create and immediately discard tables
       for j in {0 to 100} do
          local temp = { value = j, name = "temp" }
-         local _ = temp.value
+         checksum += temp.value
       end
+      checksum += #tables
    end
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Measure overhead of creating many strings
 
 @Test function MemoryStringAllocation()
+   local checksum = 0
    for i in {0 to 500} do
       -- Create short strings
       local strings = {}
       for j in {0 to 100} do
          strings[j] = "str"
+         checksum += #strings[j]
       end
 
       -- Create strings via concatenation
       for j in {0 to 50} do
          strings[j] = "prefix_" .. tostring(j) .. "_suffix"
+         checksum += #strings[j]
       end
 
       -- Create strings via string.format
       for j in {0 to 50} do
          strings[j] = string.format("item_%03d", j)
+         checksum += #strings[j]
       end
 
       -- Create strings via interpolation
       for j in {0 to 50} do
          strings[j] = f"value_{j}_data"
+         checksum += #strings[j]
       end
 
       -- Create strings of varying lengths
       for j in {0 to 20} do
          strings[j] = string.rep("x", j + 1)
+         checksum += #strings[j]
       end
 
       -- Create and immediately discard strings
       for j in {0 to 100} do
          local temp = "temporary_" .. tostring(j)
-         local _ = #temp
+         checksum += #temp
       end
 
       -- Substring operations creating new strings
       local source = "The quick brown fox jumps over the lazy dog"
       for j in {0 to 20} do
          local sub = string.substr(source, j + 1, j + 10)
+         checksum += #sub
       end
+      checksum += #strings
    end
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Allocate large numbers of arrays
 
 @Test function MemoryTypedArrayAllocation()
+   local checksum = 0
    for i in {0 to 10} do
       -- Create typed integer arrays
       local int_arrays = array<array>
@@ -110,45 +127,56 @@ end
       for j in {0 to 50} do
          str_arrays[j] = array<string, 50>
       end
+      checksum += #int_arrays + #dbl_arrays + #str_arrays
    end
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Compare typed and untyped array fills
 
 @Test function MemoryTypedArrayFilled()
+   local checksum = 0
    for i in {0 to 100} do
       local int_arrays = array<array>
       for j in {0 to 101} do
          int_arrays:push(array<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 })
       end
+      checksum += #int_arrays + #int_arrays[0]
    end
+   return checksum
 end
 
 @Test function MemoryUntypedArrayFilled()
+   local checksum = 0
    for i in {0 to 100} do
       local any_arrays = array<array>
       for j in {0 to 101} do
          any_arrays:push(array<any> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 })
       end
+      checksum += #any_arrays + #any_arrays[0]
    end
+   return checksum
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Stress test garbage collector with allocation-heavy workload
 
 @Test function MemoryGCPressure()
+   local checksum = 0
    for i in {0 to 100} do
       -- Rapid allocation and discard of tables
       for j in {0 to 200} do
          local t = { a = j, b = j * 2, c = j * 3 }
          local sum = t.a + t.b + t.c
+         checksum += sum
       end
 
       -- Rapid allocation and discard of strings
       for j in {0 to 200} do
          local s = "item_" .. tostring(j) .. "_value"
          local len = #s
+         checksum += len
       end
 
       -- Nested allocations
@@ -159,6 +187,7 @@ end
             inner3 = { value = j * 3 }
          }
          local sum = outer.inner1.value + outer.inner2.value
+         checksum += sum
       end
 
       -- Mixed type allocations
@@ -169,12 +198,14 @@ end
             tbl = { x = 1, y = 2 },
             arr = { 1, 2, 3, 4, 5 }
          }
+         checksum += mixed.num + #mixed.str + mixed.tbl.x + #mixed.arr
       end
 
       -- Array allocation pressure
       for j in {0 to 50} do
          local arr = array<int> { j, j+1, j+2, j+3, j+4 }
          local sum = arr[0] + arr[4]
+         checksum += sum
       end
 
       -- String building pressure
@@ -183,6 +214,7 @@ end
          for k in {0 to 10} do
             result ..= tostring(k)
          end
+         checksum += #result
       end
 
       -- Closure allocation pressure
@@ -192,6 +224,8 @@ end
             return captured * 2
          end
          local result = fn()
+         checksum += result
       end
    end
+   return checksum
 end

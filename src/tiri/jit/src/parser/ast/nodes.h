@@ -770,6 +770,24 @@ struct NumericForStmtPayload {
    ~NumericForStmtPayload();
 };
 
+struct RangeForStmtPayload {
+   RangeForStmtPayload(Identifier Control, ExprNodePtr Start, ExprNodePtr Stop, ExprNodePtr Step,
+                       bool Inclusive, std::unique_ptr<BlockStmt> Body)
+      : control(std::move(Control)), start(std::move(Start)), stop(std::move(Stop)), step(std::move(Step)),
+        inclusive(Inclusive), body(std::move(Body)) {}
+   RangeForStmtPayload(const RangeForStmtPayload&) = delete;
+   RangeForStmtPayload& operator=(const RangeForStmtPayload&) = delete;
+   RangeForStmtPayload(RangeForStmtPayload&&) noexcept = default;
+   RangeForStmtPayload& operator=(RangeForStmtPayload&&) noexcept = default;
+   Identifier control;
+   ExprNodePtr start;
+   ExprNodePtr stop;
+   ExprNodePtr step;
+   bool inclusive = false;
+   std::unique_ptr<BlockStmt> body;
+   ~RangeForStmtPayload();
+};
+
 struct GenericForStmtPayload {
    GenericForStmtPayload(std::vector<Identifier> names, ExprNodeList iterators,
                          std::unique_ptr<BlockStmt> body)
@@ -954,7 +972,7 @@ struct StmtNode {
    SourceSpan span{};
    std::variant<AssignmentStmtPayload, LocalDeclStmtPayload, GlobalDeclStmtPayload,
       ExternDeclStmtPayload, LocalFunctionStmtPayload, FunctionStmtPayload, IfStmtPayload,
-      LoopStmtPayload, NumericForStmtPayload, GenericForStmtPayload,
+      LoopStmtPayload, NumericForStmtPayload, RangeForStmtPayload, GenericForStmtPayload,
       ReturnStmtPayload, BreakStmtPayload, ContinueStmtPayload, DeferStmtPayload,
       DoStmtPayload, ConditionalShorthandStmtPayload, TryExceptPayload,
       RaiseStmtPayload, CheckStmtPayload, ImportStmtPayload, WithStmtPayload,

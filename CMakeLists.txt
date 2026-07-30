@@ -1219,6 +1219,23 @@ endif()
 # Installation steps
 
 if (KOTUKU_INSTALL)
+   if (UNIX AND NOT APPLE)
+      install (FILES "${PROJECT_SOURCE_DIR}/data/org.kotuku.Origo.desktop"
+         DESTINATION "share/applications")
+      #install (FILES "${PROJECT_SOURCE_DIR}/data/logos/kotuku-badge-ext.svg"
+      #   DESTINATION "share/icons/hicolor/scalable/apps"
+      #   RENAME "origo.svg")
+      install (FILES "${PROJECT_SOURCE_DIR}/data/logos/kotuku-badge-16.png"
+         DESTINATION "share/icons/hicolor/16x16/apps"
+         RENAME "origo.png")
+      install (FILES "${PROJECT_SOURCE_DIR}/data/logos/kotuku-badge-32.png"
+         DESTINATION "share/icons/hicolor/32x32/apps"
+         RENAME "origo.png")
+      install (FILES "${PROJECT_SOURCE_DIR}/data/logos/kotuku-badge-256.png"
+         DESTINATION "share/icons/hicolor/256x256/apps"
+         RENAME "origo.png")
+   endif ()
+
    if (INSTALL_INCLUDES)
       install (DIRECTORY "${INCLUDE_OUTPUT}" DESTINATION "include")
       install (FILES "${CMAKE_BINARY_DIR}/kotuku/config.h" DESTINATION "include/kotuku/")

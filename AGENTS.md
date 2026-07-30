@@ -48,15 +48,7 @@ When working in ephemeral cloud environments:
 
 ### Core Framework Structure
 
-**Kōtuku** is an application framework with a core focus on building scalable user interfaces and highly efficient JIT compiled applications. The framework automatically handles display resolution and scaling concerns, allowing developers to focus on application logic rather than display technicalities. Key architectural components include:
-
-1. **Core System** (`src/core/`) - Base object system, memory management, filesystem, and module loading
-2. **Vector Graphics Engine** (`src/vector/`) - Main graphics rendering system with scene graphs, filters, and painters
-3. **SVG Support** (`src/svg/`) - W3C-compliant SVG parsing and rendering with SMIL animation
-4. **Display Management** (`src/display/`) - Cross-platform window management, surfaces, and input handling
-5. **Tiri Scripting** (`src/tiri/`) - An extensively modified Lua-based scripting environment built on LuaJIT
-6. **Document Engine** (`src/document/`) - RIPL text layout engine for rich document rendering
-7. **XML Support** (`src/xml/`, `src/xquery/`) - XML and XQuery functionality
+**Kōtuku** is an application framework with a core focus on building scalable user interfaces and highly efficient JIT compiled applications. The framework automatically handles display resolution and scaling concerns, allowing developers to focus on application logic rather than display technicalities.
 
 ### Module System
 
@@ -126,20 +118,6 @@ The build system heavily uses code generation:
 - In Bash commands, quote paths with spaces: `"path with spaces"`
 - For Flute tests, use relative paths for executables to avoid path separator issues
 
-## Working with Vector Graphics
-
-The vector graphics system is the core of Kōtuku and provides unique capabilities:
-- **API-accessible scene graphs** - Hierarchical scene graphs specifically for vector graphics with full programmatic access
-- **SVG-to-scene graph integration** - SVG files are parsed directly into manipulable scene graphs for real-time modification
-- **Resolution independence** - All graphics scale automatically across display resolutions and DPI settings
-- Filters provide effects like blur, lighting, and color manipulation
-- Painters handle gradients, patterns, and image fills
-- Animation support includes SMIL (SVG animation) and custom VFX
-- Real-time manipulation of individual scene graph nodes for dynamic graphics
-
-**Distinctive Features:**
-Kōtuku maintains retained scene graphs that can be modified at runtime. This enables dynamic, scalable graphics where individual elements can be manipulated programmatically.
-
 ## Development Guidelines
 
 ### ⚠️ CRITICAL PROJECT REQUIREMENTS (Override Standard C++ Practices)
@@ -180,24 +158,6 @@ Before considering ANY C++ code changes complete, verify:
 - This is required before considering any code changes complete
 - There is a dependency on `origo_cmd` being built by cmake in order to make the `origo` executable available to run tests.
 
-**Full Build Commands:**
-```bash
-# Build everything
-cmake --build build/agents --config Debug --parallel
-
-# Install after successful build
-cmake --install build/agents --config Debug
-```
-
-**Module Build Commands:**
-```bash
-# Build specific module (e.g., network, vector, svg, etc.)
-cmake --build build/agents --config Debug --target [module_name] --parallel
-
-# Examples:
-cmake --build build/agents --config Debug --target network --parallel    # For network changes
-```
-
 ### Documentation
 
 - API documentation is embedded within comment sections of the C++ source files.
@@ -211,29 +171,9 @@ cmake --build build/agents --config Debug --target network --parallel    # For n
 
 ## File Organization
 
-- `src/` - All source code organized by module
-- `include/kotuku/` - Public API headers (many auto-generated)
-- `scripts/` - Tiri standard library and GUI toolkit
-- `tools/` - Build tools and utilities (IDL processors, test runner)
-- `examples/` - Example applications and demonstrations (examine git-tracked .tiri files for current examples)
-- `data/` - Icons, fonts, styles, and configuration files
-- `docs/wiki/` - Markdown files for the GitHub Wiki, includes practical tutorials and guides on how to use Kōtuku.
-- `docs/html/` - Contains the entire Kōtuku website for offline viewing.
-- `docs/xml/` - Auto-generated API documentation in XML format.  This content is sourced from the Kōtuku C++ files.
 - `docs/plans/` - For storing and retrieving your plan files.
 
 Lower snake-case is the preferred string format for new file names.
-
-### Key Examples for Learning
-
-- **`apps/find.tiri`** - Commandline application that demonstrates how to effectively search for files and content with `io.search()`
-- **`apps/paintbox.tiri`** - Commandline application with colour manipulation features
-- **`apps/tuku.tiri`** - HTTP client application, mimics cURL functionality
-- **`apps/tuku_server.tiri`** - HTTP server implementation with NetSocket usage patterns
-- **`apps/vuepoint.tiri`** - File viewer supporting SVG, RIPL, JPEG, PNG - shows document and graphics integration
-- **`examples/widgets.tiri`** - Primary showcase of Kōtuku's GUI capabilities, demonstrates standard widgets and UI patterns
-- **`examples/gradients.tiri`** - Interactive gradient editor demonstrating real-time vector graphics manipulation
-- **`tools/idl/idl-c.tiri`** - Extensive file I/O and general API usage
 
 ## Agentic Behaviour
 

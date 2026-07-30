@@ -503,6 +503,11 @@ static bool infer_results_from_statement(FunctionReturnTypes &Result, const Stmt
          if (payload.body and infer_results_from_block(Result, *payload.body, Function)) return true;
          break;
       }
+      case AstNodeKind::RangeForStmt: {
+         const auto &payload = std::get<RangeForStmtPayload>(Statement.data);
+         if (payload.body and infer_results_from_block(Result, *payload.body, Function)) return true;
+         break;
+      }
       case AstNodeKind::GenericForStmt: {
          const auto &payload = std::get<GenericForStmtPayload>(Statement.data);
          if (payload.body and infer_results_from_block(Result, *payload.body, Function)) return true;
@@ -732,6 +737,11 @@ static void collect_from_statement(ParserSymbolCollection &Collection, const Stm
       }
       case AstNodeKind::NumericForStmt: {
          const auto &payload = std::get<NumericForStmtPayload>(Statement.data);
+         if (payload.body) collect_from_block(Collection, *payload.body);
+         break;
+      }
+      case AstNodeKind::RangeForStmt: {
+         const auto &payload = std::get<RangeForStmtPayload>(Statement.data);
          if (payload.body) collect_from_block(Collection, *payload.body);
          break;
       }

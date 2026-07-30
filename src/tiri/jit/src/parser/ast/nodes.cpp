@@ -426,6 +426,16 @@ struct StatementChildCounter {
       return total;
    }
 
+   [[nodiscard]] inline size_t operator()(const RangeForStmtPayload &Payload) const
+   {
+      size_t total = 0;
+      if (Payload.start) total++;
+      if (Payload.stop) total++;
+      if (Payload.step) total++;
+      total += block_child_count(Payload.body);
+      return total;
+   }
+
    [[nodiscard]] inline size_t operator()(const GenericForStmtPayload &Payload) const
    {
       size_t total = Payload.iterators.size();
@@ -539,6 +549,7 @@ FunctionStmtPayload::~FunctionStmtPayload() = default;
 IfStmtPayload::~IfStmtPayload() = default;
 LoopStmtPayload::~LoopStmtPayload() = default;
 NumericForStmtPayload::~NumericForStmtPayload() = default;
+RangeForStmtPayload::~RangeForStmtPayload() = default;
 GenericForStmtPayload::~GenericForStmtPayload() = default;
 ReturnStmtPayload::~ReturnStmtPayload() = default;
 DeferStmtPayload::~DeferStmtPayload() = default;
