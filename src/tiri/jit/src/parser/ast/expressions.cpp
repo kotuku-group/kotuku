@@ -1064,10 +1064,11 @@ ParserResult<ExprNodePtr> AstBuilder::parse_suffixed(ExprNodePtr base)
          if (not name_token.ok()) return ParserResult<ExprNodePtr>::failure(name_token.error_ref());
 
          bool forwards = false;
-         auto args = this->parse_call_arguments(&forwards);
+         SourceSpan call_end;
+         auto args = this->parse_call_arguments(&forwards, &call_end);
          if (not args.ok()) return ParserResult<ExprNodePtr>::failure(args.error_ref());
 
-         SourceSpan span = combine_spans(base->span, name_token.value_ref().span());
+         SourceSpan span = combine_spans(base->span, call_end);
          base = make_method_call_expr(span, std::move(base),
             make_identifier(name_token.value_ref()), std::move(args.value_ref()), forwards);
          continue;
@@ -1079,10 +1080,11 @@ ParserResult<ExprNodePtr> AstBuilder::parse_suffixed(ExprNodePtr base)
          if (not name_token.ok()) return ParserResult<ExprNodePtr>::failure(name_token.error_ref());
 
          bool forwards = false;
-         auto args = this->parse_call_arguments(&forwards);
+         SourceSpan call_end;
+         auto args = this->parse_call_arguments(&forwards, &call_end);
          if (not args.ok()) return ParserResult<ExprNodePtr>::failure(args.error_ref());
 
-         SourceSpan span = combine_spans(base->span, name_token.value_ref().span());
+         SourceSpan span = combine_spans(base->span, call_end);
          base = make_safe_method_call_expr(span, std::move(base),
             make_identifier(name_token.value_ref()), std::move(args.value_ref()), forwards);
          continue;
@@ -1090,7 +1092,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_suffixed(ExprNodePtr base)
 
       if (token.kind() IS TokenKind::LeftParen or token.kind() IS TokenKind::LeftBrace or
             token.kind() IS TokenKind::String) {
-         if (token.kind() IS TokenKind::LeftBrace and token.span().line != base->span.line) break;
+         if (token.span().line != base->span.line) break;
 
          // For table tokens in a choose expression context, check if this starts a table pattern for the next case.
          // If the matching brace is followed by -> or 'when', don't treat it as a table-call argument.
@@ -1150,9 +1152,10 @@ ParserResult<ExprNodePtr> AstBuilder::parse_suffixed(ExprNodePtr base)
          }
 
          bool forwards = false;
-         auto args = this->parse_call_arguments(&forwards);
+         SourceSpan call_end;
+         auto args = this->parse_call_arguments(&forwards, &call_end);
          if (not args.ok()) return ParserResult<ExprNodePtr>::failure(args.error_ref());
-         SourceSpan span = combine_spans(base->span, token.span());
+         SourceSpan span = combine_spans(base->span, call_end);
          base = make_call_expr(span, std::move(base), std::move(args.value_ref()), forwards);
          continue;
       }

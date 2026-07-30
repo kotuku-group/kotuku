@@ -351,7 +351,7 @@ ParserResult<std::vector<TableField>> AstBuilder::parse_table_fields(bool *has_a
 //********************************************************************************************************************
 // Parses function call arguments, handling parenthesised expressions, table constructors, and string literals.
 
-ParserResult<ExprNodeList> AstBuilder::parse_call_arguments(bool *ForwardsMultret)
+ParserResult<ExprNodeList> AstBuilder::parse_call_arguments(bool *ForwardsMultret, SourceSpan *EndSpan)
 {
    ExprNodeList args;
    *ForwardsMultret = false;
@@ -371,7 +371,9 @@ ParserResult<ExprNodeList> AstBuilder::parse_call_arguments(bool *ForwardsMultre
          }
       }
 
-      this->ctx.consume(TokenKind::RightParen, ParserErrorCode::ExpectedToken);
+      auto close = this->ctx.consume(TokenKind::RightParen, ParserErrorCode::ExpectedToken);
+      if (not close.ok()) return ParserResult<ExprNodeList>::failure(close.error_ref());
+      *EndSpan = close.value_ref().span();
       return ParserResult<ExprNodeList>::success(std::move(args));
    }
 
@@ -379,12 +381,14 @@ ParserResult<ExprNodeList> AstBuilder::parse_call_arguments(bool *ForwardsMultre
       auto table = this->parse_table_literal();
       if (not table.ok()) return ParserResult<ExprNodeList>::failure(table.error_ref());
 
+      *EndSpan = table.value_ref()->span;
       args.push_back(std::move(table.value_ref()));
       return ParserResult<ExprNodeList>::success(std::move(args));
    }
 
    if (this->ctx.check(TokenKind::String)) {
       Token literal = this->ctx.tokens().current();
+      *EndSpan = literal.span();
       args.push_back(make_literal_expr(literal.span(), make_literal(literal)));
       this->ctx.tokens().advance();
       return ParserResult<ExprNodeList>::success(std::move(args));

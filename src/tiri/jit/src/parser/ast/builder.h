@@ -155,7 +155,7 @@ private:
    ParserResult<ParameterListResult> parse_parameter_list(bool);
    ParserResult<Token> parse_type_annotation(TiriType &Type, struct_record *&StructDef);
    ParserResult<std::vector<TableField>> parse_table_fields(bool *);
-   ParserResult<ExprNodeList> parse_call_arguments(bool *);
+   ParserResult<ExprNodeList> parse_call_arguments(bool *, SourceSpan *);
 
    struct ResultFilterInfo {
       uint64_t keep_mask = 0;

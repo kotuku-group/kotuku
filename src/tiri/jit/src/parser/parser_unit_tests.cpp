@@ -413,6 +413,32 @@ static bool test_empty_comment_appended_to_variable(kt::Log &log)
 
 //********************************************************************************************************************
 
+static bool test_call_suffix_requires_same_line(kt::Log &Log)
+{
+   auto result = build_ast_from_source("a = f\n(g).x = 1");
+   if (not result.chunk.ok()) {
+      Log.error("newline-separated assignments failed to parse");
+      log_diagnostics(result.diagnostics, Log);
+      return false;
+   }
+
+   StatementListView statements = result.chunk.value_ref()->view();
+   if (statements.size() != 2) {
+      Log.error("expected two newline-separated assignments, got %" PRId64, int64_t(statements.size()));
+      return false;
+   }
+
+   if (not (statements[0].kind IS AstNodeKind::AssignmentStmt) or
+       not (statements[1].kind IS AstNodeKind::AssignmentStmt)) {
+      Log.error("newline-separated expressions were not parsed as assignments");
+      return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
 static bool test_loop_ast(kt::Log &log)
 {
    constexpr const char* source = R"(
@@ -3845,13 +3871,14 @@ static bool test_type_guided_emission(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 47> tests = { {
+   constexpr std::array<TestCase, 48> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
       { "expression_entry_point", test_expression_entry_point },
       { "expression_list_entry_point", test_expression_list_entry_point },
       { "empty_comment_appended_to_variable", test_empty_comment_appended_to_variable },
+      { "call_suffix_requires_same_line", test_call_suffix_requires_same_line },
       { "loop_ast", test_loop_ast },
       { "if_stmt_with_elseif_ast", test_if_stmt_with_elseif_ast },
       { "local_function_table_ast", test_local_function_table_ast },
