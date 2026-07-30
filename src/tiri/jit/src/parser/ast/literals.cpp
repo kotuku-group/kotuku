@@ -45,8 +45,10 @@ ParserResult<ExprNodePtr> AstBuilder::parse_function_literal(
    --this->function_depth;
    if (not body.ok()) return ParserResult<ExprNodePtr>::failure(body.error_ref());
 
-   this->ctx.consume(TokenKind::EndToken, ParserErrorCode::ExpectedToken);
-   ExprNodePtr node = make_function_expr(FunctionToken.span(), std::move(params.value_ref().parameters),
+   auto end_token = this->ctx.consume(TokenKind::EndToken, ParserErrorCode::ExpectedToken);
+   if (not end_token.ok()) return ParserResult<ExprNodePtr>::failure(end_token.error_ref());
+   SourceSpan span = combine_spans(FunctionToken.span(), end_token.value_ref().span());
+   ExprNodePtr node = make_function_expr(span, std::move(params.value_ref().parameters),
       params.value_ref().is_vararg, std::move(body.value_ref()), IsThunk, thunk_return_type, return_types);
    return ParserResult<ExprNodePtr>::success(std::move(node));
 }
@@ -73,8 +75,10 @@ ParserResult<ExprNodePtr> AstBuilder::parse_table_literal(bool AllowRange)
    auto fields = this->parse_table_fields(&has_array);
    if (not fields.ok()) return ParserResult<ExprNodePtr>::failure(fields.error_ref());
 
-   this->ctx.consume(TokenKind::RightBrace, ParserErrorCode::ExpectedToken);
-   ExprNodePtr node = make_table_expr(token.span(), std::move(fields.value_ref()), has_array);
+   auto close = this->ctx.consume(TokenKind::RightBrace, ParserErrorCode::ExpectedToken);
+   if (not close.ok()) return ParserResult<ExprNodePtr>::failure(close.error_ref());
+   SourceSpan span = combine_spans(token.span(), close.value_ref().span());
+   ExprNodePtr node = make_table_expr(span, std::move(fields.value_ref()), has_array);
    return ParserResult<ExprNodePtr>::success(std::move(node));
 }
 

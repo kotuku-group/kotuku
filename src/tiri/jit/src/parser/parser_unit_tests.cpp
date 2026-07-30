@@ -434,6 +434,41 @@ static bool test_call_suffix_requires_same_line(kt::Log &Log)
       return false;
    }
 
+   struct MultilineCalleeCase {
+      const char *name;
+      const char *source;
+   };
+
+   constexpr std::array<MultilineCalleeCase, 5> cases = { {
+      { "grouped", "a = (\nf\n)(g)" },
+      { "grouped_iife", "a = (function()\n   return 1\nend)()" },
+      { "function_literal", "a = function()\n   return 1\nend()" },
+      { "table", "a = {\n   callback = f\n}(g)" },
+      { "index", "a = f[\n   g\n](42)" }
+   } };
+
+   for (const auto &test_case : cases) {
+      auto call_result = build_ast_from_source(test_case.source);
+      if (not call_result.chunk.ok()) {
+         Log.error("%s multiline callee failed to parse", test_case.name);
+         log_diagnostics(call_result.diagnostics, Log);
+         return false;
+      }
+
+      StatementListView call_statements = call_result.chunk.value_ref()->view();
+      if (call_statements.size() != 1 or not (call_statements[0].kind IS AstNodeKind::AssignmentStmt)) {
+         Log.error("%s multiline callee did not produce one assignment", test_case.name);
+         return false;
+      }
+
+      const auto *assignment = std::get_if<AssignmentStmtPayload>(&call_statements[0].data);
+      if (not assignment or assignment->values.size() != 1 or
+          not (assignment->values[0]->kind IS AstNodeKind::CallExpr)) {
+         Log.error("%s multiline callee was not called", test_case.name);
+         return false;
+      }
+   }
+
    return true;
 }
 

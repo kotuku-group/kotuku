@@ -550,12 +550,14 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
 
       case TokenKind::LeftParen: {
          Token open_paren = this->ctx.tokens().current();
+         Token close_paren;
          this->ctx.tokens().advance();
          ExprNodeList expressions;
          bool parsed_empty = false;
 
          if (this->ctx.check(TokenKind::RightParen)) {
             parsed_empty = true;
+            close_paren = this->ctx.tokens().current();
             this->ctx.tokens().advance();
          }
          else {
@@ -569,7 +571,9 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
                expressions.push_back(std::move(next_expr.value_ref()));
             }
 
-            this->ctx.consume(TokenKind::RightParen, ParserErrorCode::ExpectedToken);
+            auto close = this->ctx.consume(TokenKind::RightParen, ParserErrorCode::ExpectedToken);
+            if (not close.ok()) return ParserResult<ExprNodePtr>::failure(close.error_ref());
+            close_paren = close.value_ref();
          }
 
          if (this->ctx.check(TokenKind::Arrow)) {
@@ -589,6 +593,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          }
 
          node = std::move(expressions.front());
+         node->span = combine_spans(node->span, close_paren.span());
          node->is_grouped = true;
          break;
       }
@@ -1041,8 +1046,9 @@ ParserResult<ExprNodePtr> AstBuilder::parse_suffixed(ExprNodePtr base)
          auto index = this->parse_expression();
          if (not index.ok()) return index;
 
-         this->ctx.consume(TokenKind::RightBracket, ParserErrorCode::ExpectedToken);
-         SourceSpan span = combine_spans(base->span, index.value_ref()->span);
+         auto close = this->ctx.consume(TokenKind::RightBracket, ParserErrorCode::ExpectedToken);
+         if (not close.ok()) return ParserResult<ExprNodePtr>::failure(close.error_ref());
+         SourceSpan span = combine_spans(base->span, close.value_ref().span());
          base = make_index_expr(span, std::move(base), std::move(index.value_ref()));
          continue;
       }
@@ -1052,8 +1058,9 @@ ParserResult<ExprNodePtr> AstBuilder::parse_suffixed(ExprNodePtr base)
          auto index = this->parse_expression();
          if (not index.ok()) return index;
 
-         this->ctx.consume(TokenKind::RightBracket, ParserErrorCode::ExpectedToken);
-         SourceSpan span = combine_spans(base->span, index.value_ref()->span);
+         auto close = this->ctx.consume(TokenKind::RightBracket, ParserErrorCode::ExpectedToken);
+         if (not close.ok()) return ParserResult<ExprNodePtr>::failure(close.error_ref());
+         SourceSpan span = combine_spans(base->span, close.value_ref().span());
          base = make_safe_index_expr(span, std::move(base), std::move(index.value_ref()));
          continue;
       }

@@ -280,6 +280,21 @@ end
    chained_call = debug.validate("extern f, g\na = f(\n   g\n)(g)")
    assert(chained_call.success is true, 'A chained call should be valid beside the preceding closing parenthesis')
 
+   grouped_callee = debug.validate("extern f, g\na = (\n   f\n)(g)")
+   assert(grouped_callee.success is true, 'A grouped multiline callee should remain callable')
+
+   grouped_iife = debug.validate("a = (function()\n   return 1\nend)()")
+   assert(grouped_iife.success is true, 'A grouped multiline function literal should remain callable')
+
+   function_literal = debug.validate("a = function()\n   return 1\nend()")
+   assert(function_literal.success is true, 'A multiline function literal should remain callable')
+
+   table_callee = debug.validate("extern f, g\na = {\n   callback = f\n}(g)")
+   assert(table_callee.success is true, 'A multiline table callee should remain callable')
+
+   index_callee = debug.validate("extern f, g\na = f[\n   g\n](42)")
+   assert(index_callee.success is true, 'A multiline index callee should remain callable')
+
    fluent_chain = debug.validate("extern response\nresponse.status(200)\n   .header('Name', 'Value')\n   .send('OK')")
    assert(fluent_chain.success is true, 'Fluent method chains should remain valid across lines')
 end

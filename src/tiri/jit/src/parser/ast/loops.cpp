@@ -53,9 +53,11 @@ ParserResult<ExprNodePtr> AstBuilder::parse_scanned_range_in_braces(bool HasStep
       step_expr = std::move(step.value_ref());
    }
 
-   this->ctx.consume(TokenKind::RightBrace, ParserErrorCode::ExpectedToken);
+   auto close = this->ctx.consume(TokenKind::RightBrace, ParserErrorCode::ExpectedToken);
+   if (not close.ok()) return ParserResult<ExprNodePtr>::failure(close.error_ref());
 
-   ExprNodePtr node = make_range_expr(brace_token.span(), std::move(start_expr.value_ref()),
+   SourceSpan span = combine_spans(brace_token.span(), close.value_ref().span());
+   ExprNodePtr node = make_range_expr(span, std::move(start_expr.value_ref()),
       std::move(stop_expr.value_ref()), is_inclusive, std::move(step_expr));
    return ParserResult<ExprNodePtr>::success(std::move(node));
 }
