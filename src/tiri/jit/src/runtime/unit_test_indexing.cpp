@@ -372,7 +372,7 @@ static bool test_negative_string_indices_unchanged(kt::Log& Log)
    luaL_openlibs(L);
 
    std::string Error;
-   if (not run_lua_test(L, "return string.substr('hello', -1)", Error)) {
+   if (not run_lua_test(L, "return string.sub('hello', -1)", Error)) {
       Log.error("test failed: %s", Error.c_str());
       return false;
    }
