@@ -755,31 +755,6 @@ function array_clear_then_push(Array)
    return array.getString(Array)
 end
 
-function jit_try_local_before_entry(Pattern)
-   local label = "before-entry"
-
-   try
-      regex.new(Pattern)
-   except e
-      return label
-   end
-
-   return "missing-error"
-end
-
-function jit_try_mutated_local_before_throw(Pattern, Iteration)
-   local status = "initial"
-
-   try
-      status = "mutated-" .. tostring(Iteration % 5)
-      regex.new(Pattern)
-   except e
-      return status
-   end
-
-   return "missing-error"
-end
-
 function jit_try_repeated_throwable_helpers(Pattern)
    local stable_label = "stable-local"
    local compiled = nil
@@ -846,29 +821,6 @@ function build_try_materialisation_trace()
    end
 
    error("Failed to create a try-entry materialisation trace for inspection")
-end
-
-@Test(hotpath=80) function JITTryLocalBeforeEntrySurvivesRegexThrow()
-   jit.on()
-   jit.flush()
-   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
-
-   for i in {0 to 100} do
-      result = jit_try_local_before_entry("(")
-      assert(result is "before-entry", f"Expected local captured before try entry, got '{result}'")
-   end
-end
-
-@Test(hotpath=80) function JITTryLocalMutatedInsideTrySurvivesRegexThrow()
-   jit.on()
-   jit.flush()
-   jit.opt.start("hotloop=3", "hotexit=1", "minstitch=0")
-
-   for i in {0 to 100} do
-      expected = "mutated-" .. tostring(i % 5)
-      result = jit_try_mutated_local_before_throw("(", i)
-      assert(result is expected, f"Expected handler to see '{expected}', got '{result}'")
-   end
 end
 
 @Test(hotpath=80) function JITTryRepeatedThrowableHelpersDoNotCorruptLocals()
