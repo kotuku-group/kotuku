@@ -137,9 +137,9 @@ static bool block_contains_try(const BlockStmt *Block)
 // Usage:
 //   NilShortCircuitGuard guard(emitter, base_expression);
 //   if (not guard.ok()) return guard.error<ExpDesc>();
-//   // ... perform operation using guard.base_register() ...
-//   materialise_to_reg(result, guard.base_register(), "...");
-//   return guard.complete();
+//   // ... perform operation using guard.base_expression() ...
+//   BCReg result_reg = materialise_result(...);
+//   return guard.complete(result_reg);
 
 class NilShortCircuitGuard {
 public:
@@ -147,11 +147,11 @@ public:
       : emitter(Emitter), register_guard(&Emitter->func_state), allocator(&Emitter->func_state)
    {
       ExpressionValue base_value(&this->emitter->func_state, BaseExpr);
-      this->result_reg = base_value.discharge_to_any_reg(this->allocator);
+      this->base_reg = base_value.discharge_to_any_reg(this->allocator);
       this->base_expr = base_value.legacy();
 
       ExpDesc nilv(ExpKind::Nil);
-      bcemit_INS(&this->emitter->func_state, BCINS_AD(BC_ISEQP, this->result_reg, const_pri(&nilv)));
+      bcemit_INS(&this->emitter->func_state, BCINS_AD(BC_ISEQP, this->base_reg, const_pri(&nilv)));
       this->nil_jump = this->emitter->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->emitter->func_state)));
       this->setup_ok = true;
    }
@@ -166,38 +166,34 @@ public:
       return ParserResult<T>::failure(err);
    }
 
-   [[nodiscard]] inline BCREG base_register() const { return this->result_reg; }
    [[nodiscard]] inline ExpDesc base_expression() const { return this->base_expr; }
    [[nodiscard]] inline RegisterAllocator& reg_allocator() { return this->allocator; }
-   [[nodiscard]] inline ControlFlowEdge& nil_jump_edge() { return this->nil_jump; }
 
    // Complete the nil short-circuit: emit nil path, patch jumps, return result.
-   // The result is stored in base_register() as a NonReloc expression.
+   // The result is stored in ResultReg as a NonReloc expression.
 
-   ParserResult<ExpDesc> complete()
+   ParserResult<ExpDesc> complete(BCReg ResultReg)
    {
-      this->allocator.collapse_freereg(BCReg(this->result_reg));
+      this->allocator.collapse_freereg(ResultReg);
 
       ControlFlowEdge skip_nil = this->emitter->control_flow.make_unconditional(
          BCPos(bcemit_jmp(&this->emitter->func_state)));
 
       BCPos nil_path = BCPos(this->emitter->func_state.pc);
       this->nil_jump.patch_to(nil_path);
-      bcemit_nil(&this->emitter->func_state, this->result_reg, 1);
+      bcemit_nil(&this->emitter->func_state, ResultReg.raw(), 1);
 
       skip_nil.patch_to(BCPos(this->emitter->func_state.pc));
 
       this->register_guard.disarm();
 
       ExpDesc result;
-      result.init(ExpKind::NonReloc, this->result_reg);
+      result.init(ExpKind::NonReloc, ResultReg);
       return ParserResult<ExpDesc>::success(result);
    }
 
-   // Complete with a custom result register (for call expressions where result may differ).
-   // Note: Unlike complete(), we don't call collapse_freereg(result_reg) here because CallBase
-   // may differ from result_reg after method dispatch setup, and we explicitly set freereg to
-   // CallBase + 1 at the end, which is the correct final state for call expressions.
+   // Complete a call expression, whose method-dispatch frame may move CallBase beyond base_reg.
+   // The final free-register boundary must retain the whole call result frame.
 
    ParserResult<ExpDesc> complete_call(BCReg CallBase, BCPos CallPc)
    {
@@ -226,7 +222,7 @@ private:
    RegisterAllocator allocator;
    ControlFlowEdge nil_jump;
    ExpDesc base_expr;
-   BCReg result_reg = BCReg(0);
+   BCReg base_reg = BCReg(0);
    bool setup_ok = false;
 };
 
@@ -3586,32 +3582,17 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
       apply_struct_field_metadata(table, emitted_struct_def, Payload.member.symbol);
    }
 
-   // Materialize the indexed result to a new register.
-   // Do NOT reuse base_register() as that would clobber the table variable
+   // Materialise to a separate register so the receiver remains available for the lookup.
 
    ExpressionValue indexed_value(&this->func_state, table);
    BCReg result_reg = indexed_value.discharge_to_any_reg(guard.reg_allocator());
 
-   // Collapse freereg to include the result register
-   guard.reg_allocator().collapse_freereg(result_reg);
-
-   // Emit the nil path
-   ControlFlowEdge skip_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-
-   BCPos nil_path = BCPos(this->func_state.pc);
-   guard.nil_jump_edge().patch_to(nil_path);
-   bcemit_nil(&this->func_state, result_reg.raw(), 1);
-
-   skip_nil.patch_to(BCPos(this->func_state.pc));
-
-   ExpDesc result;
-   result.init(ExpKind::NonReloc, result_reg);
-   return ParserResult<ExpDesc>::success(result);
+   return guard.complete(result_reg);
 }
 
 //********************************************************************************************************************
 // Emit bytecode for a safe index expression (table?[key]), returning nil if the table is nil.
-// If base_type is TiriType::Array, emits array-specific bytecodes (BC_AGETV/BC_AGETB).
+// Emits safe array bytecodes when the receiver may be a native array and the key may be numeric.
 
 ParserResult<ExpDesc> IrEmitter::emit_safe_index_expr(const SafeIndexExprPayload &Payload)
 {
@@ -3621,6 +3602,7 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_index_expr(const SafeIndexExprPayload
 
    auto table_result = this->emit_expression(*Payload.table);
    if (not table_result.ok()) return table_result;
+   StaticValueHandle receiver_descriptor = table_result.value_ref().static_value;
 
    NilShortCircuitGuard guard(this, table_result.value_ref());
    if (not guard.ok()) return guard.error<ExpDesc>();
@@ -3628,6 +3610,7 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_index_expr(const SafeIndexExprPayload
    // Index expression is evaluated only on non-nil path (short-circuit)
    auto key_result = this->emit_expression(*Payload.index);
    if (not key_result.ok()) return key_result;
+   StaticValueHandle key_descriptor = key_result.value_ref().static_value;
 
    ExpDesc key = key_result.value_ref();
    ExpressionValue key_toval(&this->func_state, key);
@@ -3637,35 +3620,24 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_index_expr(const SafeIndexExprPayload
    ExpDesc table = guard.base_expression();
    expr_index(&this->func_state, &table, &key);
 
-   // For safe index expressions (?[]), always use SafeIndexedArray for numeric keys.
-   // This emits BC_ASGETV/BC_ASGETB which:
-   // - For arrays: return nil for out-of-bounds instead of throwing
-   // - For non-arrays: fall back to regular table indexing
-   // We only do this for numeric keys (aux >= 0); string keys use regular table indexing.
+   bool proved_table = can_use_static_receiver(
+      this->ctx.descriptors(), receiver_descriptor, TiriType::Table, true);
+   bool proved_string_key = can_use_static_receiver(
+      this->ctx.descriptors(), key_descriptor, TiriType::Str, true);
 
-   if (int32_t(table.u.s.aux) >= 0) table.k = ExpKind::SafeIndexedArray;
+   // String constants are encoded with a negative aux value. Non-negative aux values also include register-held
+   // keys, so the encoding alone does not prove that a key is numeric. Proved tables and proved string keys can use
+   // ordinary table bytecodes. Native arrays and unresolved receivers retain ASGETV/ASGETB so out-of-bounds access
+   // returns nil while non-array runtime values fall back to generic indexing.
 
-   // Materialize the indexed result to a new register.
-   // Do NOT reuse base_register() as that would clobber the table variable,
-   // causing issues if the table is referenced again.
+   bool key_may_be_numeric = int32_t(table.u.s.aux) >= 0 and not proved_string_key;
+   if (key_may_be_numeric and not proved_table) table.k = ExpKind::SafeIndexedArray;
+
+   // Materialise to a separate register so the receiver remains available for the lookup.
    ExpressionValue indexed_value(&this->func_state, table);
    BCReg result_reg = indexed_value.discharge_to_any_reg(guard.reg_allocator());
 
-   // Collapse freereg to include the result register
-   guard.reg_allocator().collapse_freereg(result_reg);
-
-   // Emit the nil path
-   ControlFlowEdge skip_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-
-   BCPos nil_path = BCPos(this->func_state.pc);
-   guard.nil_jump_edge().patch_to(nil_path);
-   bcemit_nil(&this->func_state, result_reg.raw(), 1);
-
-   skip_nil.patch_to(BCPos(this->func_state.pc));
-
-   ExpDesc result;
-   result.init(ExpKind::NonReloc, result_reg);
-   return ParserResult<ExpDesc>::success(result);
+   return guard.complete(result_reg);
 }
 
 //********************************************************************************************************************

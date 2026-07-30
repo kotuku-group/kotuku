@@ -738,10 +738,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Measure overhead of the safe navigation operator (?.) vs direct access
 
--- NB: Safe field access (?.) and safe index access (?[]) are measured separately because they have very
--- different JIT characteristics.  At the time of writing ?. compiles cleanly and matches direct field access,
--- whereas ?[] aborts trace compilation and is therefore orders of magnitude slower.  Combining them into one
--- benchmark would hide that distinction.
+-- NB: Safe field access (?.) and safe index access (?[]) are measured separately because they exercise distinct
+-- bytecode and lookup paths.  Keeping paired direct and safe forms makes their individual overhead visible.
 
 @Test function ControlSafeNavigationFieldFastCmp()
    local obj = { name = "Alice", addr = { city = "London", geo = { lat = 51.5 } } }
@@ -772,15 +770,11 @@ end
    return acc
 end
 
--- NB: The index pair uses a lower iteration count than the field pair because ?[] does not currently trace-compile.
--- At 1M iterations it is slow enough to exhaust the benchmark harness warmup budget.  Both functions in the pair
--- must keep the same count for the comparison to remain valid.
-
 @Test function ControlSafeNavigationIndexFastCmp()
    local arr = { 10, 20, 30, 40, 50 }
 
    local acc = 0
-   for i in {0 to 100000} do
+   for i in {0 to 1000000} do
       local v1 = arr[0]
       local v2 = arr[2]
       acc += v1 + v2
@@ -793,7 +787,7 @@ end
    local arr = { 10, 20, 30, 40, 50 }
 
    local acc = 0
-   for i in {0 to 100000} do
+   for i in {0 to 1000000} do
       local v1 = arr?[0]
       local v2 = arr?[2]
       acc += v1 + v2

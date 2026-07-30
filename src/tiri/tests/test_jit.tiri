@@ -245,6 +245,15 @@ function count_jit_traces(MaxTraceNo)
    return count
 end
 
+function count_trace_link_type(MaxTraceNo, LinkType)
+   local count = 0
+   for trace_no in {1 into MaxTraceNo} do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil and info.linktype is LinkType then count++ end
+   end
+   return count
+end
+
 function count_trace_calls(TraceNo, Info)
    return count_trace_opcode(TraceNo, Info, ir_calln) + count_trace_opcode(TraceNo, Info, ir_calla) +
       count_trace_opcode(TraceNo, Info, ir_calll) + count_trace_opcode(TraceNo, Info, ir_calls)
@@ -351,6 +360,243 @@ function run_array_method_trace(Workload, Count)
    end
 
    return expected, result, count_jit_traces(30)
+end
+
+function run_safe_index_trace(Workload, Count)
+   jit.off()
+   local expected = Workload(Count)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   local compiled = 0
+   local aborted = 0
+   local function trace_event(Event)
+      if Event is "stop" then compiled++
+      elseif Event is "abort" then aborted++
+      end
+   end
+
+   jit.attach(trace_event, "trace")
+   local result = Workload(Count)
+   jit.attach(trace_event)
+
+   return expected, result, compiled, aborted, count_jit_traces(30)
+end
+
+function safe_table_index_workload(Count:num):num
+   local values = { [0] = 3, [1] = 5, label = 7 }
+   local numeric_key = 1
+   local string_key = "label"
+   local total = 0
+
+   for repetition in {1 into Count} do
+      total += values?[0]
+      total += values?[numeric_key]
+      total += values?["label"]
+      total += values?[string_key]
+   end
+
+   return total
+end
+
+function safe_array_literal_workload(Count:num):num
+   local values = array<int> { 3, 5, 7 }
+   local total = 0
+   for repetition in {1 into Count} do total += values?[1] end
+   return total
+end
+
+function safe_array_variable_workload(Count:num):num
+   local values = array<int> { 3, 5, 7 }
+   local total = 0
+   for repetition in {0 to Count} do
+      local index = repetition % #values
+      total += values?[index]
+   end
+   return total
+end
+
+function safe_array_literal_oob_workload(Count:num):num
+   local values = array<int> { 3, 5, 7 }
+   local total = 0
+   for repetition in {1 into Count} do total += values?[9] ?? -1 end
+   return total
+end
+
+function safe_array_variable_oob_workload(Count:num):num
+   local values = array<int> { 3, 5, 7 }
+   local index = #values
+   local total = 0
+   for repetition in {1 into Count} do total += values?[index] ?? -1 end
+   return total
+end
+
+function safe_array_mixed_bounds_workload(Count:num):num
+   local values = array<int> { 3, 5, 7 }
+   local total = 0
+   for repetition in {0 to Count} do
+      local index = repetition % 5
+      total += values?[index] ?? -1
+   end
+   return total
+end
+
+function nil_safe_index_workload(Count:num):num
+   local values = nil
+   local key_evaluations = 0
+   local function next_index():num
+      key_evaluations++
+      return 0
+   end
+
+   local nil_results = 0
+   for repetition in {1 into Count} do
+      if values?[next_index()] is nil then nil_results++ end
+   end
+   return nil_results * 1000 + key_evaluations
+end
+
+function dynamic_safe_index_workload(Receiver:any, Key:any, Count:num):num
+   local total = 0
+   for repetition in {1 into Count} do total += Receiver?[Key] ?? -1 end
+   return total
+end
+
+function dynamic_table_safe_index_workload(Count:num):num
+   return dynamic_safe_index_workload({ label = 11 }, "label", Count)
+end
+
+function dynamic_array_safe_index_workload(Count:num):num
+   return dynamic_safe_index_workload(array<int> { 11, 13 }, 1, Count)
+end
+
+global glSafeIndexJoinDefinitions = {
+   keywords = { alpha = true },
+   annotations = { bravo = true }
+}
+
+function resolve_safe_index_join(Key:str):str
+   if glSafeIndexJoinDefinitions?.keywords?[Key] then return 'keyword' end
+   if glSafeIndexJoinDefinitions?.annotations?[Key] then return 'annotation' end
+   return 'missing'
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=100) function SafeTableIndexTraceParity()
+   local expected, result, compiled, aborted, trace_count = run_safe_index_trace(safe_table_index_workload, 200)
+
+   assert(result is expected, f"Safe table indexing should match the interpreter result {expected}, got {result}")
+   assert(compiled > 0, "Safe table literal and variable keys should compile at least one trace")
+   assert(aborted is 0, f"Safe table literal and variable keys should not abort, observed {aborted} aborts")
+   assert(trace_count < 10, f"Safe table indexing should remain below 10 traces, observed {trace_count}")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=100) function SafeArrayInBoundsTraceParity()
+   local literal_expected, literal_result, literal_compiled, literal_aborted =
+      run_safe_index_trace(safe_array_literal_workload, 200)
+   assert(literal_result is literal_expected,
+      f"Literal safe array indexing should match the interpreter result {literal_expected}, got {literal_result}")
+   assert(literal_compiled is 0, "Literal safe array indexing should retain its conservative interpreter execution")
+   assert(literal_aborted <= 1,
+      f"Literal safe array indexing should disable recording without repeated aborts, observed {literal_aborted}")
+
+   local variable_expected, variable_result, variable_compiled, variable_aborted, variable_trace_count =
+      run_safe_index_trace(safe_array_variable_workload, 200)
+   assert(variable_result is variable_expected,
+      f"Variable safe array indexing should match the interpreter result {variable_expected}, got {variable_result}")
+   assert(variable_compiled > 0, "Variable in-bounds safe array indexing should compile at least one trace")
+   assert(variable_aborted is 0,
+      f"Variable in-bounds safe array indexing should not abort, observed {variable_aborted} aborts")
+   assert(count_trace_link_type(30, "loop") > 0,
+      "Variable in-bounds safe array indexing should remain in a compiled loop trace")
+   assert(variable_trace_count < 10,
+      f"Variable in-bounds safe array indexing should remain below 10 traces, observed {variable_trace_count}")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=100) function SafeArrayOutOfBoundsTraceParity()
+   local literal_expected, literal_result, literal_compiled, literal_aborted =
+      run_safe_index_trace(safe_array_literal_oob_workload, 200)
+   assert(literal_result is literal_expected,
+      f"Literal out-of-bounds safe indexing should produce {literal_expected}, got {literal_result}")
+   assert(literal_compiled is 0,
+      "Literal out-of-bounds safe indexing should retain its conservative interpreter execution")
+   assert(literal_aborted <= 1,
+      f"Literal out-of-bounds safe indexing repeatedly aborted: {literal_aborted}")
+
+   local variable_expected, variable_result, variable_compiled, variable_aborted =
+      run_safe_index_trace(safe_array_variable_oob_workload, 200)
+   assert(variable_result is variable_expected,
+      f"Variable out-of-bounds safe indexing should produce {variable_expected}, got {variable_result}")
+   assert(variable_compiled > 0, "Variable out-of-bounds safe indexing should compile up to its boundary")
+   assert(variable_aborted is 0,
+      f"Variable out-of-bounds safe indexing should terminate cleanly, observed {variable_aborted} aborts")
+   assert(count_trace_link_type(30, "interpreter") > 0,
+      "Variable out-of-bounds safe indexing should retain its conservative interpreter trace boundary")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=100) function SafeArrayMixedBoundsTraceStability()
+   local expected, result, compiled, aborted, trace_count = run_safe_index_trace(safe_array_mixed_bounds_workload, 400)
+
+   assert(result is expected, f"Mixed-bound safe indexing should match the interpreter result {expected}, got {result}")
+   assert(compiled > 0, "Mixed-bound safe indexing should compile at least one trace")
+   assert(aborted is 0, f"Mixed-bound safe indexing should not abort, observed {aborted} aborts")
+   assert(trace_count < 10, f"Mixed-bound safe indexing should remain below 10 traces, observed {trace_count}")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=100) function NilAndDynamicSafeIndexTraceParity()
+   local nil_expected, nil_result, nil_compiled, nil_aborted =
+      run_safe_index_trace(nil_safe_index_workload, 200)
+   assert(nil_result is nil_expected, f"Nil safe indexing should produce {nil_expected}, got {nil_result}")
+   assert(nil_result is 200000, "Nil safe indexing should not evaluate its key expression on the hot path")
+   assert(nil_compiled > 0, "Nil safe indexing should compile at least one surrounding loop trace")
+   assert(nil_aborted < 3, f"Nil safe indexing should settle without repeated aborts, observed {nil_aborted} aborts")
+
+   local table_expected, table_result, table_compiled, table_aborted =
+      run_safe_index_trace(dynamic_table_safe_index_workload, 200)
+   assert(table_result is table_expected,
+      f"Dynamic table safe indexing should match the interpreter result {table_expected}, got {table_result}")
+   assert(table_compiled > 0, "Dynamic table safe indexing should compile at least one trace")
+   assert(table_aborted < 2,
+      f"Dynamic table safe indexing should settle without repeated aborts, observed {table_aborted} aborts")
+
+   local array_expected, array_result, array_compiled, array_aborted =
+      run_safe_index_trace(dynamic_array_safe_index_workload, 200)
+   assert(array_result is array_expected,
+      f"Dynamic array safe indexing should match the interpreter result {array_expected}, got {array_result}")
+   assert(array_compiled > 0, "Dynamic array safe indexing should compile at least one trace")
+   assert(array_aborted < 2,
+      f"Dynamic array safe indexing should settle without repeated aborts, observed {array_aborted} aborts")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test(hotpath=100) function SafeIndexJoinRestoresDestinationSlot()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=3', 'hotexit=1', 'minstitch=0')
+
+   local keys = array<string> { 'alpha', 'missing', 'bravo', 'missing' }
+   for iteration in {0 to 500} do
+      local key = keys[iteration % #keys]
+      local expected = key is 'alpha' ? 'keyword' :> key is 'bravo' ? 'annotation' :> 'missing'
+      local result = resolve_safe_index_join(key)
+      assert(result is expected,
+         f'Safe-index join failed at iteration {iteration}: key={key}, expected={expected}, result={result}')
+   end
+
+   assert(count_jit_traces(30) > 0, 'Alternating safe-index branches should execute through a compiled trace')
+   jit.opt.start()
 end
 
 -----------------------------------------------------------------------------------------------------------------------

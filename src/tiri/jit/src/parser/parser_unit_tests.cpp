@@ -3584,6 +3584,82 @@ static bool test_runtime_range_for_emission(kt::Log &Log)
    return true;
 }
 
+static bool test_safe_index_bytecode_selection(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   std::string error;
+   bool passed = true;
+
+   auto expect_access = [&](std::string_view Source, BCOp Required, BCOp Forbidden,
+      CSTRING Description) -> bool {
+      auto snapshot = compile_snapshot(lua, Source, true, error);
+      if (not snapshot) {
+         Log.error("failed to compile %s safe-index fixture: %s", Description, error.c_str());
+         return false;
+      }
+
+      size_t required_count = count_opcode_tree(*snapshot, Required);
+      size_t forbidden_count = count_opcode_tree(*snapshot, Forbidden);
+      if (required_count IS 0 or forbidden_count != 0) {
+         Log.error("%s safe-index fixture selected the wrong bytecode family (required=%d, forbidden=%d)",
+            Description, int(required_count), int(forbidden_count));
+         return false;
+      }
+      return true;
+   };
+
+   constexpr std::string_view native_literal =
+      "local function read(Values:array):any\n"
+      "   return Values?[0]\n"
+      "end\n";
+   if (not expect_access(native_literal, BC_ASGETB, BC_TGETB, "native-array literal-key")) passed = false;
+
+   constexpr std::string_view native_variable =
+      "local function read(Values:array, Index:num):any\n"
+      "   return Values?[Index]\n"
+      "end\n";
+   if (not expect_access(native_variable, BC_ASGETV, BC_TGETV, "native-array variable-key")) passed = false;
+
+   constexpr std::string_view table_literal =
+      "local function read(Values:table):any\n"
+      "   return Values?[0]\n"
+      "end\n";
+   if (not expect_access(table_literal, BC_TGETB, BC_ASGETB, "table literal-key")) passed = false;
+
+   constexpr std::string_view table_variable =
+      "local function read(Values:table, Key:any):any\n"
+      "   return Values?[Key]\n"
+      "end\n";
+   if (not expect_access(table_variable, BC_TGETV, BC_ASGETV, "table variable-key")) passed = false;
+
+   constexpr std::string_view dynamic_literal =
+      "local function read(Values:any):any\n"
+      "   return Values?[0]\n"
+      "end\n";
+   if (not expect_access(dynamic_literal, BC_ASGETB, BC_TGETB, "dynamic-receiver literal-key")) passed = false;
+
+   constexpr std::string_view dynamic_variable =
+      "local function read(Values:any, Key:any):any\n"
+      "   return Values?[Key]\n"
+      "end\n";
+   if (not expect_access(dynamic_variable, BC_ASGETV, BC_TGETV, "dynamic-receiver variable-key")) passed = false;
+
+   constexpr std::string_view literal_string =
+      "local function read(Values:any):any\n"
+      "   return Values?['name']\n"
+      "end\n";
+   if (not expect_access(literal_string, BC_TGETS, BC_ASGETV, "literal-string-key")) passed = false;
+
+   constexpr std::string_view variable_string =
+      "local function read(Values:any, Key:str):any\n"
+      "   return Values?[Key]\n"
+      "end\n";
+   if (not expect_access(variable_string, BC_TGETV, BC_ASGETV, "variable-string-key")) passed = false;
+
+   return passed;
+}
+
 static bool test_type_guided_emission(kt::Log &Log)
 {
    LuaStateHolder state;
@@ -3769,7 +3845,7 @@ static bool test_type_guided_emission(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 46> tests = { {
+   constexpr std::array<TestCase, 47> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -3815,6 +3891,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "module_call_result_descriptors", test_module_call_result_descriptors },
       { "compile_time_signed_range_for_emission", test_compile_time_signed_range_for_emission },
       { "runtime_range_for_emission", test_runtime_range_for_emission },
+      { "safe_index_bytecode_selection", test_safe_index_bytecode_selection },
       { "type_guided_emission", test_type_guided_emission }
    } };
 

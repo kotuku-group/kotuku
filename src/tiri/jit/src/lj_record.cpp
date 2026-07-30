@@ -3001,7 +3001,7 @@ static bool rec_array_xstore(jit_State *J, TRef ArrayRef, TRef IdxRef, TRef ValR
 // Handle native array ops: BC_AGETV, BC_AGETB, BC_ASETV, BC_ASETB
 //
 // Native arrays (GCarray) are different from tables - they have typed elements and 0-based indexing internally.
-// We emit calls to helper functions that handle the element type conversion.
+// Record guarded typed loads and stores directly where supported, with helper calls for the remaining element types.
 
 static TRef rec_array_op(jit_State *J, RecordOps *ops)
 {
@@ -3061,6 +3061,88 @@ static TRef rec_array_op(jit_State *J, RecordOps *ops)
    TRef tmp_ref = rec_tmpref(J, ops->ra, IRTMPREF_IN1);
    lj_ir_call(J, IRCALL_lj_arr_setidx, array_ref, idx_ref, tmp_ref);
    return 0;
+}
+
+//********************************************************************************************************************
+// Handle safe native array gets: BC_ASGETV, BC_ASGETB
+//
+// These bytecodes select safe native-array indexing only when the observed receiver is an array and the key is an
+// integer.  All other observations retain ordinary indexed lookup and metamethod behaviour.
+
+static TRef rec_safe_array_get(jit_State *J, RecordOps *Ops)
+{
+   IRBuilder ir(J);
+   RecordIndex *ix = &Ops->ix;
+   bool is_lit = Ops->op IS BC_ASGETB;
+
+   if (is_lit) {
+      setintV(&ix->keyv, int32_t(Ops->rc));
+      ix->key = ir.kint(int32_t(Ops->rc));
+   }
+
+   if (not tref_isarray(Ops->rb)) {
+      ix->idxchain = LJ_MAX_IDXCHAIN;
+      return lj_record_idx(J, ix);
+   }
+
+   int32_t idx_int;
+
+   if (is_lit) idx_int = int32_t(Ops->rc);
+   else {
+      cTValue *key_tv = Ops->rcv();
+      if (tvisint(key_tv)) idx_int = intV(key_tv);
+#if !LJ_DUALNUM
+      else if (tvisnum(key_tv)) {
+         lua_Number key_num = numV(key_tv);
+         idx_int = int32_t(lj_num2int(key_num));
+         if (not (lua_Number(idx_int) IS key_num)) {
+            ix->idxchain = LJ_MAX_IDXCHAIN;
+            return lj_record_idx(J, ix);
+         }
+      }
+#endif
+      else {
+         ix->idxchain = LJ_MAX_IDXCHAIN;
+         return lj_record_idx(J, ix);
+      }
+
+      if (not tref_isnumber(Ops->rc)) {
+         ix->idxchain = LJ_MAX_IDXCHAIN;
+         return lj_record_idx(J, ix);
+      }
+   }
+
+   if (is_lit) {
+      // A safe-navigation join after a literal native-array get can restore a stale destination slot.  Do not install
+      // a partial trace for this prototype until that snapshot interaction can be represented safely.
+      J->pt->flags |= PROTO_NOJIT;
+      lj_trace_err(J, LJ_TRERR_CJITOFF);
+   }
+
+   GCarray *arr = arrayV(Ops->rbv());
+   if (idx_int < 0 or MSize(idx_int) >= arr->len) {
+      // Continuing an out-of-bounds trace across the safe-navigation join leaves the destination slot stale when a
+      // later entry observes an in-bounds index.  End the trace before this bytecode so the VM produces nil directly.
+      lj_snap_add(J);
+      lj_record_stop(J, TraceLink::INTERP, 0);
+      return 0;
+   }
+
+   TRef idx_ref = lj_opt_narrow_index(J, Ops->rc);
+   TRef len_ref = ir.fload_int(Ops->rb, IRFL_ARRAY_LEN);
+   rec_idx_abc(J, len_ref, idx_ref, arr->len);
+   TRef result_ref = rec_array_xload(J, Ops->rb, idx_ref, arr, idx_int);
+   if (not result_ref) {
+      TValue result_tv;
+      lj_arr_getidx(J->L, arr, idx_int, &result_tv);
+      IRType result_type = itype2irt(&result_tv);
+      if (!LJ_DUALNUM and result_type IS IRT_INT) result_type = IRT_NUM;
+      TRef tmp_ref = rec_tmpref(J, TREF_NIL, IRTMPREF_OUT1);
+      lj_ir_call(J, IRCALL_lj_arr_getidx, Ops->rb, idx_ref, tmp_ref);
+      result_ref = lj_record_vload(J, tmp_ref, 0, result_type);
+   }
+   J->needsnap = 1;
+   return result_ref;
 }
 
 //********************************************************************************************************************
@@ -3833,6 +3915,10 @@ void lj_record_ins(jit_State *J)
    // Array ops - native array access
    case BC_AGETV: case BC_AGETB:
       rc = rec_array_op(J, &ops);
+      break;
+
+   case BC_ASGETV: case BC_ASGETB:
+      rc = rec_safe_array_get(J, &ops);
       break;
 
    case BC_ASETV: case BC_ASETB:
