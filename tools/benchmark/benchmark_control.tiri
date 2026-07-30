@@ -503,9 +503,8 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Iterate a range object created via range.new().
--- NB: Measured separately from ControlForRangeLoop because the range object iterator does not trace-compile, and
--- hoisting the range.new() call out of the loop makes no difference.  Isolating it keeps the range literal figures
--- meaningful.
+-- NB: Measured separately from ControlForRangeLoop to guard the explicit range-object iterator path.  The range is
+-- hoisted so this case measures iterator preparation and traversal rather than range construction.
 
 @Test function ControlForRangeObject()
    local sum = 0

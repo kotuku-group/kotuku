@@ -211,6 +211,67 @@ Operand suffixes: V=variable slot, S=string const, N=number const, P=primitive (
 | `ILOOP` | A D | LOOP interpreter-only variant |
 | `JLOOP` | A D | LOOP with JIT trace linkage |
 | `JMP` | A D | PC += D - 0x8000 (signed jump offset) |
+| `RANGEPREP` | A D | Prepare the direct range at base R(A); D is a `RANGE_PREP_*` flag mask |
+| `RANGEVAL` | A D | Generate the visible range value at R(A+7) from the prepared ordinal state; D is unused |
+
+##### Direct Range Loops (`RANGEPREP`, `RANGEVAL`)
+
+Direct ranges that require runtime preparation use `RANGEPREP` with the existing numeric `FORI`/`FORL` instructions.
+The numeric loop advances an ordinal, while `RANGEVAL` derives the visible value from the original start and step
+without accumulating floating-point error.  Safe compile-time integer ranges outside protected regions can emit
+`FORI`/`FORL` directly and omit both range-specific instructions.
+
+`RANGEPREP` uses the AD format:
+
+- `A` is the first slot in the range-loop frame.
+- `D` is a bit mask containing:
+  - `RANGE_PREP_INCLUSIVE` (`1 << 0`): include an aligned stop value.
+  - `RANGE_PREP_HAS_STEP` (`1 << 1`): read the explicit step from `R(A+2)`; otherwise infer `1` or `-1` from the
+    start and stop.
+  - `RANGE_PREP_DIRECT_INTEGER` (`1 << 2`): prepare the compact four-slot integer layout.
+- On entry, `R(A)` is the start and `R(A+1)` is the stop.  `R(A+2)` is the explicit step when
+  `RANGE_PREP_HAS_STEP` is set.
+- Preparation validates finite bounds, a finite non-zero step, the range count, and representable progress.  Invalid
+  input raises the numeric-range error instead of entering the loop.
+- The instruction otherwise falls through to the following `FORI`; it has no bytecode jump operand.
+
+The stack effects depend on `RANGE_PREP_DIRECT_INTEGER`:
+
+| Relative slot | Compact integer layout | Full ordinal layout |
+|---------------|------------------------|---------------------|
+| `R(A+0)` | Integer start/index | Ordinal index, initialised to `0` |
+| `R(A+1)` | Integer loop limit, adjusted for an exclusive stop | Final ordinal, `count - 1` |
+| `R(A+2)` | Integer step | Ordinal step, always `1` |
+| `R(A+3)` | Current integer value, initialised to nil and maintained by `FORI`/`FORL` | Current ordinal, initialised to nil and maintained by `FORI`/`FORL` |
+| `R(A+4)` | Not part of the compact frame | Original start |
+| `R(A+5)` | Not part of the compact frame | Prepared value step |
+| `R(A+6)` | Not part of the compact frame | Integer-result flag (`1` for signed 32-bit integral values, otherwise `0`) |
+| `R(A+7)` | Not part of the compact frame | Visible loop value, initialised to nil |
+
+The compact layout occupies four slots and does not use `RANGEVAL`; the visible control variable is `R(A+3)`.  The
+full layout occupies eight slots and uses `R(A+7)` as the visible control variable.
+
+`RANGEVAL` also uses the AD format, but only `A` is meaningful.  It reads the current ordinal from `R(A+3)`, the
+original start from `R(A+4)`, the value step from `R(A+5)`, and the integer-result flag from `R(A+6)`.  It writes
+`R(A+7)` as `fma(ordinal, step, start)`, tagging the result as an integer when the flag is set and as a number
+otherwise.  It then proceeds to the next instruction without branching.
+
+The emitted control-flow pattern for the full layout is:
+
+```text
+RANGEPREP A, flags
+FORI      A, loop_exit
+RANGEVAL  A
+loop_body
+FORL      A, RANGEVAL
+loop_exit:
+```
+
+`FORI` checks the prepared ordinal range.  An empty or initially out-of-bounds range transfers control to
+`loop_exit`; otherwise it sets `R(A+3)` to the first ordinal and falls through to `RANGEVAL`.  `FORL` advances the
+ordinal in `R(A)` and `R(A+3)` and jumps back to `RANGEVAL` while the ordinal remains within `R(A+1)`.  A `continue`
+targets `FORL`, while a `break` targets `loop_exit`.  This keeps range preparation outside the loop and executes
+`RANGEVAL` exactly once for every body iteration.
 
 #### Function Header Ops (internal, not emitted by parser)
 | Opcode | Format | Description |

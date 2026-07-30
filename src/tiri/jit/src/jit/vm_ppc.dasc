@@ -1752,6 +1752,9 @@ static void build_subroutines(BuildCtx *ctx)
   |  li CARG3, LJ_TNIL
   |  b ->fff_restv
   |
+  |.ffunc_2 range_iterator_next
+  |  b ->fff_fallback
+  |
   |.ffunc_1 pairs
   |  checktab CARG3
   |   lwz PC, FRAME_PC(BASE)

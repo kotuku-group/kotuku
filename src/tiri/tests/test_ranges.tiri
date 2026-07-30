@@ -1013,7 +1013,7 @@ end
    r = {1 to 5}
    iter, state, init = r()
    assert(type(iter) is "function", "first return should be function")
-   assert(state is nil, "state should be nil")
+   assert(type(state) is "table", "state should contain the prepared iterator data")
    assert(init is nil, "initial value should be nil")
 end
 
@@ -1581,6 +1581,43 @@ end
    assert(approximately({0 to 1 by 0.25}:reduce(0, (acc, v) => acc + v), 1.5))
    assert({0 to 1 by 0.2}:any(v => v > 0.7))
    assert({0 to 1 by 0.2}:all(v => v < 1))
+end
+
+@Test function ExplicitRangeObjectIteration()
+   local ascending = array<int>
+   local ascending_range = range.new(0, 10, false, 2)
+   for value in ascending_range() do ascending:push(value) end
+   assert(ascending:concat(',') is '0,2,4,6,8', 'Explicit ascending range iteration should preserve its step')
+
+   local descending = array<int>
+   local descending_range = range.new(9, 0, true, -3)
+   for value in descending_range() do descending:push(value) end
+   assert(descending:concat(',') is '9,6,3,0', 'Explicit descending range iteration should include an aligned stop')
+
+   local fractional = array<double>
+   local fractional_range = range.new(-0.5, 0.5, true, 0.2)
+   for value in fractional_range() do fractional:push(value) end
+   assert(#fractional is 6 and approximately(fractional[3], 0.1) and approximately(fractional[5], 0.5),
+      'Explicit fractional range iteration should retain ordinal FMA value generation')
+end
+
+@Test function EarlyRangeObjectExitReleasesSource()
+   local weak_sources = setmetatable({}, { __mode='v' })
+   local function iterate_once()
+      local source = range.new(0, 100, false, 2)
+      weak_sources[0] = source
+      for value in source() do
+         assert(value is 0)
+         break
+      end
+      source = nil
+   end
+
+   jit.off(iterate_once, true)
+   iterate_once()
+   processing.collect()
+   processing.collect()
+   assert(weak_sources[0] is nil, 'An early loop exit should not retain the source range')
 end
 
 @Test function FloatingRangeMaterialisationTypes()
