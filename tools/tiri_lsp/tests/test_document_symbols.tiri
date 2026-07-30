@@ -304,7 +304,7 @@ end
 
 @Test function ControlFlowDoesNotCreateModuleVariables()
    doc = makeDoc([[
-if x == 1 then
+if x is 1 then
    print(x)
 end
 

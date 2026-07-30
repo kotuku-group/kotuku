@@ -208,7 +208,7 @@ function split_token(Token:str):<str, any, bool>
       return Token, nil, false
    end
 
-   return Token:substr(0, eq), Token:substr(eq + 1), true
+   return Token:sub(0, eq), Token:sub(eq + 1), true
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -265,7 +265,7 @@ function convert_array(Value:any, Param:table):array
 
    text = Value:trim()
    if text:startsWith('{') and text:endsWith('}') then
-      text = text:substr(1, #text - 1)
+      text = text:sub(1, #text - 1)
    end
 
    return convert_csv(text, Param)
@@ -286,15 +286,15 @@ function split_number_unit(Value:any, Param:table, Description:str):<num, str>
 
    index = #text
    while index > 0 do
-      ch = text:substr(index - 1, index):lower()
+      ch = text:sub(index - 1, index):lower()
       if not ((ch >= 'a' and ch <= 'z') or ch is '%') then
          break
       end
       index -= 1
    end
 
-   number_text = text:substr(0, index):trim()
-   unit = text:substr(index):trim():lower()
+   number_text = text:sub(0, index):trim()
+   unit = text:sub(index):trim():lower()
    number = tonumber(number_text)
    if number is nil or unit is '' then
       raise ERR_WrongType, f"Parameter '{Param.name}' requires {Description}."
@@ -343,7 +343,7 @@ function convert_percent(Value:any, Param:table):num
 
    text = tostring(Value):trim()
    if text:endsWith('%') then
-      number_text = text:substr(0, #text - 1):trim()
+      number_text = text:sub(0, #text - 1):trim()
       number = tonumber(number_text)
       if number is nil then
          raise ERR_WrongType, f"Parameter '{Param.name}' requires a percent value."
@@ -384,7 +384,7 @@ function convert_json(Value:any, Param:table):any
    local param_name = Param.name
    try
       decoded, pos = json.decode(Value)
-      if pos < #Value and Value:substr(pos):trim() != '' then
+      if pos < #Value and Value:sub(pos):trim() != '' then
          raise ERR_Syntax, 'Trailing content after JSON value.'
       end
 
@@ -668,7 +668,7 @@ function parse_flag_negation(Parser:table, Result:table, ArgNames:table, Presenc
 
    if not Name:startsWith('no-') then return false end
 
-   suffix = Name:substr(3)
+   suffix = Name:sub(3)
    local param = Parser._named_lookup[suffix]
 
    if param then
@@ -709,7 +709,7 @@ end
 -- Check if a launcher option consumes the following argument.
 
 function launcher_option_needs_value(Token:str):bool
-   name = Token:substr(2)
+   name = Token:sub(2)
    eq = name:find('=')
    if eq then return false end
 
@@ -820,10 +820,10 @@ function env_suffix(Name:str):str
    suffix = rx_env_camel.replace(Name, '$1_$2')
    suffix = rx_env_chars.replace(suffix, '_'):upper()
    while suffix:startsWith('_') do
-      suffix = suffix:substr(1)
+      suffix = suffix:sub(1)
    end
    while suffix:endsWith('_') do
-      suffix = suffix:substr(0, #suffix - 1)
+      suffix = suffix:sub(0, #suffix - 1)
    end
    return suffix
 end
@@ -1754,7 +1754,7 @@ function load_user_config_defaults(Parser:table, RawResult:table):table
    local pos:num
    try
       defaults, pos = json.decode(content)
-      if pos < #content and content:substr(pos):trim() != '' then
+      if pos < #content and content:sub(pos):trim() != '' then
          raise ERR_Syntax, 'Trailing content after JSON value.'
       end
    except e
@@ -1919,7 +1919,7 @@ function is_global_ordered_token(Parser:table, Name:str, HasExplicitValue:bool):
       return true
    end
 
-   if not HasExplicitValue and Name:startsWith('no-') and Parser._named_lookup[Name:substr(3)] then
+   if not HasExplicitValue and Name:startsWith('no-') and Parser._named_lookup[Name:sub(3)] then
       return true
    end
 
@@ -2070,7 +2070,7 @@ function reject_command_dispatch_collision(Parser:table, Name:str)
       raise ERR_DuplicateValue, f"Command name or alias '{Name}' conflicts with global parameter '{Name}'."
    end
 
-   if Name:startsWith('no-') and Parser._named_lookup[Name:substr(3)] then
+   if Name:startsWith('no-') and Parser._named_lookup[Name:sub(3)] then
       raise ERR_DuplicateValue, f"Command name or alias '{Name}' conflicts with global no- token '{Name}'."
    end
 end

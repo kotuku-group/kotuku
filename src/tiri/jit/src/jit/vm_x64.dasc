@@ -2057,10 +2057,6 @@ static void build_subroutines(BuildCtx *ctx)
   |  xor TMPRd, TMPRd         // Zero length. Any ptr in RD is ok.
   |  jmp <4
   |
-  |// string.substr() is now an alias for string.sub() - both use exclusive end
-  |.ffunc string_substr
-  |  jmp ->ff_string_sub
-  |
   |.macro ffstring_op, name
   |  .ffunc_1 string_ .. name
   |  ffgccheck

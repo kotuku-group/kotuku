@@ -373,7 +373,7 @@ end
          end
 
          if split != nil then
-            last_result = json.decode(buffer:substr(split + 1))
+            last_result = json.decode(buffer:sub(split + 1))
             break
          end
 

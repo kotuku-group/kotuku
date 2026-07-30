@@ -11,7 +11,7 @@ function parameter_names(Signature)
       trimmed = entry:trim()
       if trimmed?? then
          colon = string.find(trimmed, ":", 0, true)
-         if colon?? then trimmed = string.substr(trimmed, 0, colon) end
+         if colon?? then trimmed = string.sub(trimmed, 0, colon) end
          table.insert(names, trimmed)
       end
    end

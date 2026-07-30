@@ -47,7 +47,7 @@ function rawHttpRequest(Method:str, Path:str, Body:any, Headers:any):<num, str>
          buffer = string.alloc(4096)
          err, read_len = Socket.acRead(buffer)
          if err is ERR_Okay then
-            response ..= buffer:substr(0, read_len)
+            response ..= buffer:sub(0, read_len)
          elseif err is ERR_Disconnected then
             Socket.acSignal()
          else
@@ -69,7 +69,7 @@ end
 function rawHttpBody(Response:str):str
    header_end = Response:find("\r\n\r\n")
    header_end ?! return ''
-   return Response:substr(header_end + 4)
+   return Response:sub(header_end + 4)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -237,7 +237,7 @@ end
    -- HEAD should return no body content, only headers
    header_end = response:find("\r\n\r\n")
    assert(header_end != nil, 'HEAD response missing header terminator')
-   content = response:substr(header_end + 4)
+   content = response:sub(header_end + 4)
    assert(content is '', 'HEAD should return no body content')
 
    -- Check that we received proper headers

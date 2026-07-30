@@ -20,7 +20,7 @@ glPort = 18420
          buffer = string.alloc(256)
          err, read_len = Client.acRead(buffer)
          assert(err is ERR_Okay, '[Server] Read failed: ' .. mSys.GetErrorMsg(err))
-         received_msg = buffer:substr(0, read_len)
+         received_msg = buffer:sub(0, read_len)
          Socket.acSignal()
       end,
       port = glPort,
@@ -74,7 +74,7 @@ end
          buffer = string.alloc(256)
          err, read_len = Socket.acRead(buffer)
          assert(err is ERR_Okay, '[Client] Read failed: ' .. mSys.GetErrorMsg(err))
-         received_msg = buffer:substr(0, read_len)
+         received_msg = buffer:sub(0, read_len)
          server.acSignal()
       end,
    })
@@ -101,7 +101,7 @@ end
          buffer = string.alloc(256)
          err, read_len = Socket.mtRecvFrom(source, buffer)
          assert(err is ERR_Okay, '[UDP Server] RecvFrom failed: ' .. mSys.GetErrorMsg(err))
-         received_msg = buffer:substr(0, read_len)
+         received_msg = buffer:sub(0, read_len)
          Socket.acSignal()
       end,
       port = glPort,

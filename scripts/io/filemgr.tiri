@@ -42,7 +42,7 @@ function copyFeedback(Size:num, Position:num, Path:str, Dest:str, User, Feedback
    if progress_dialog and (Position is 0 or Size > 32768) then
       local folder, file = io.splitPath(Path)
 
-      if string.len(file) >= 80 then file = '...' .. string.substr(file, -80) end
+      if string.len(file) >= 80 then file = '...' .. string.sub(file, -80) end
 
       local msg
       if Position is 0 then

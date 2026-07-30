@@ -180,7 +180,7 @@ end
    err, result = fl.acRead(buffer)
    assert(err is ERR_Okay, 'Failed to read into mutable string buffer: ' .. mSys.GetErrorMsg(err))
    assert(result is #expected, 'Read length should match expected content size.')
-   assert(string.substr(buffer, 0, result) is expected, 'Mutable string buffer read returned unexpected content.')
+   assert(string.sub(buffer, 0, result) is expected, 'Mutable string buffer read returned unexpected content.')
 
    try
       fl.acSeek(SEEK_START, 0)
@@ -220,7 +220,7 @@ end
    err, result = fl.acRead(buffer)
    assert(err is ERR_Okay, 'Buffered acRead() failed: ' .. mSys.GetErrorMsg(err))
    assert(result is #expected, 'Buffered acRead() returned an unexpected byte count.')
-   assert(string.substr(buffer, 0, result) is expected, 'Buffered acRead() returned unexpected content.')
+   assert(string.sub(buffer, 0, result) is expected, 'Buffered acRead() returned unexpected content.')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -523,7 +523,7 @@ end
    string_buffer = string.alloc(#expected)
    err = mSys.ReadFileToBuffer(read_path, string_buffer)
    assert(err is ERR_Okay, 'ReadFileToBuffer() failed for a mutable string buffer: ' .. mSys.GetErrorMsg(err))
-   assert(string.substr(string_buffer, 0, #expected) is expected, 'ReadFileToBuffer() did not fill the mutable string buffer.')
+   assert(string.sub(string_buffer, 0, #expected) is expected, 'ReadFileToBuffer() did not fill the mutable string buffer.')
 
    try
       mSys.ReadFileToBuffer(read_path, 'literal')

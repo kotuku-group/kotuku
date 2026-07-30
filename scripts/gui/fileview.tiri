@@ -1002,7 +1002,7 @@ gui.fileview = function(Options)
       end
 
       if self.limitPath then -- Limit browsing to the limitPath folder and its sub-folders.
-         if not self.path or (self.path:substr(0, self.limitPath:len()) != self.limitPath) then
+         if not self.path or (self.path:sub(0, self.limitPath:len()) != self.limitPath) then
             self.path = self.limitPath
          end
       end
@@ -1082,7 +1082,7 @@ gui.fileview = function(Options)
       self.path ?! return
       if self.limitPath and self.limitPath:lower() is self.path:lower() then return end
 
-      reduced_path, count = rxParentFolder.extract(self.path:substr(0, -2))
+      reduced_path, count = rxParentFolder.extract(self.path:sub(0, -2))
 
       if count is 0 then
          self.browse(nil)
