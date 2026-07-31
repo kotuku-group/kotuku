@@ -653,7 +653,8 @@ static void check_object_class_assignment(FuncState *Fs, const VarInfo &Variable
 //********************************************************************************************************************
 // Emit store for LHS expression.
 
-static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
+static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
+   const RuntimeContract *GlobalDeclarationContract, bool IsGlobalDeclaration)
 {
    BCIns ins;
    RuntimeContract global_const_finaliser;
@@ -698,19 +699,20 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
       // Note: Const global reassignment is checked during type analysis phase
       // Unscoped should normally be resolved in emit_lvalue_expr(), but handle it here defensively
       auto found = fs->ls->global_type_hints.find(LHS->u.sval);
-      if (found != fs->ls->global_type_hints.end() and
+      if (GlobalDeclarationContract) {
+         // Declared global contracts must execute even when no predicate is required.  Concrete contracts and the
+         // explicit 'any' opt-out are both attached to the environment for separately compiled chunks.
+         bcemit_value_contract(fs, RHS, *GlobalDeclarationContract, true);
+      }
+      else if (not IsGlobalDeclaration and found != fs->ls->global_type_hints.end() and
           found->second.contract_policy != GlobalContractPolicy::Advisory) {
          RuntimeContract contract{
             .type = found->second.primary,
             .struct_def = found->second.struct_def,
             .label = LHS->u.sval,
             .boundary = ContractBoundary::Global,
-            .position = 1,
-            .is_const = found->second.is_const,
-            .initialising = found->second.is_const
+            .position = 1
          };
-         // Declared global contracts must execute even when no predicate is required.  Concrete contracts and the
-         // explicit 'any' opt-out are both attached to the environment for separately compiled chunks.
          bcemit_value_contract(fs, RHS, contract, true);
       }
       else if (GCstr *contract = lj_tab_get_global_contract(tabref(fs->L->env), LHS->u.sval)) {
@@ -722,15 +724,9 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
       }
       BCREG ra = expr_toanyreg(fs, RHS);
       ins = BCINS_AD(BC_GSET, ra, const_str(fs, LHS));
-      if (found != fs->ls->global_type_hints.end() and found->second.is_const) {
-         global_const_finaliser = {
-            .type = found->second.primary,
-            .struct_def = found->second.struct_def,
-            .label = LHS->u.sval,
-            .boundary = ContractBoundary::Global,
-            .position = 1,
-            .is_const = true
-         };
+      if (GlobalDeclarationContract and GlobalDeclarationContract->is_const) {
+         global_const_finaliser = *GlobalDeclarationContract;
+         global_const_finaliser.initialising = false;
          global_const_base = ra;
          finalise_global_const = true;
       }

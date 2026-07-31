@@ -209,7 +209,7 @@ static void expr_toreg(FuncState *, ExpDesc* e, BCREG reg);
 static void expr_tonextreg(FuncState *, ExpDesc* e);
 static BCREG expr_toanyreg(FuncState *, ExpDesc* e);
 static void expr_toval(FuncState *, ExpDesc* e);
-static void bcemit_store(FuncState *, ExpDesc* var, ExpDesc* e);
+static void bcemit_store(FuncState *, ExpDesc* var, ExpDesc* e, const RuntimeContract * = nullptr, bool = false);
 static void bcemit_method(FuncState *, ExpDesc* e, ExpDesc* key);
 // These are now exported (non-static) for use by OperatorEmitter facade
 extern BCPOS bcemit_jmp(FuncState *);

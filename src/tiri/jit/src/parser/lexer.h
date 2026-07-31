@@ -166,7 +166,6 @@ public:
       CLASSID  object_class_id = CLASSID::NIL;
       struct_record *struct_def = nullptr;
       GlobalContractPolicy contract_policy = GlobalContractPolicy::Advisory;
-      bool is_const = false;
    };
    ankerl::unordered_dense::map<GCstr*, GlobalTypeHint> global_type_hints;
    std::vector<StructFieldDocumentation> struct_field_documentation;

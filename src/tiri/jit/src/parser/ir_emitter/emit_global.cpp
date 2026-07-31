@@ -6,6 +6,23 @@
 // Emit bytecode for a global variable declaration statement, explicitly storing values in the global table.
 // Handles multi-value returns from function calls (e.g., global a, b, c = f())
 
+[[nodiscard]] static std::optional<RuntimeContract> global_declaration_contract(const Identifier &Identifier)
+{
+   if (Identifier.global_contract_policy IS GlobalContractPolicy::Advisory) return std::nullopt;
+
+   return RuntimeContract{
+      .type = Identifier.global_contract_type,
+      .struct_def = Identifier.global_contract_struct_def,
+      .label = Identifier.symbol,
+      .boundary = ContractBoundary::Global,
+      .position = 1,
+      .is_const = Identifier.has_const,
+      .initialising = Identifier.has_const
+   };
+}
+
+//********************************************************************************************************************
+
 ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPayload &Payload)
 {
    auto nvars = BCReg(BCREG(Payload.names.size()));
@@ -102,7 +119,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
       ExpDesc target;
       target.init(ExpKind::Global, 0);
       target.u.sval = name;
-      bcemit_store(&this->func_state, &target, &rhs);
+      auto contract = global_declaration_contract(identifier);
+      bcemit_store(&this->func_state, &target, &rhs, contract ? &*contract : nullptr, true);
 
       // Patch jumps
       falsey_edge.patch_to(assign_pos);
@@ -173,7 +191,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
       ExpDesc target;
       target.init(ExpKind::Global, 0);
       target.u.sval = name;
-      bcemit_store(&this->func_state, &target, &rhs);
+      auto contract = global_declaration_contract(identifier);
+      bcemit_store(&this->func_state, &target, &rhs, contract ? &*contract : nullptr, true);
 
       // Patch jumps
       check_nil.patch_to(assign_pos);
@@ -225,7 +244,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
       ExpDesc value_expr;
       value_expr.init(ExpKind::NonReloc, value_base + i);
 
-      bcemit_store(&this->func_state, &var, &value_expr); // Store to global
+      auto contract = global_declaration_contract(identifier);
+      bcemit_store(&this->func_state, &var, &value_expr, contract ? &*contract : nullptr, true);
    }
 
    this->func_state.reset_freereg();

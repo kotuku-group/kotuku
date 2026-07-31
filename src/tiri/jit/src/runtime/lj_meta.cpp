@@ -795,9 +795,9 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
             return;
          }
          if (contract_entry_is_initialising(incoming)) {
-            // Validate the initial value before its store, but defer publishing the const policy until the matching
-            // post-store descriptor executes.
-            if (current and current != Descriptor) decode_contract_or_error(L, current, descriptor);
+            // Validate the declaration that will be published while leaving the current environment contract in
+            // place.  BC_GSET validates the same value against that existing policy before the post-store const
+            // descriptor commits the transition.
          }
          else if (incoming.type IS TiriType::Any) {
             // An explicit 'any' declaration is the only ordinary operation that relaxes a sticky global contract.

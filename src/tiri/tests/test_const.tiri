@@ -243,6 +243,75 @@ end
    assert(glConstDynamic is 'dynamic', 'A rejected store should preserve a dynamically initialised const')
 end
 
+@Test function GlobalConstDeclarationOrderIsPreserved()
+   local const_first = f"glConstFirst{failed_const_test_id}"
+   failed_const_test_id++
+   local const_second = f"glConstSecond{failed_const_test_id}"
+   failed_const_test_id++
+
+   expect_const_global_failure(
+      function() exec(f"global {const_first} <const> = 1 global {const_first} = 2") end,
+      'non-const declaration after const declaration')
+   assert(_G[const_first] is 1, 'The rejected later declaration should preserve the first const value')
+
+   exec(f"global {const_second} = 1 global {const_second} <const> = 2")
+   assert(_G[const_second] is 2, 'The later const declaration should store its own initial value')
+   expect_const_global_failure(function() _G[const_second] = 3 end,
+      'assignment after a later const declaration')
+end
+
+@Test function ConstTransitionValidatesPublishedContract()
+   local global_name = f"glConstTransition{failed_const_test_id}"
+   failed_const_test_id++
+   local source_name = f"glConstTransitionSource{failed_const_test_id}"
+   failed_const_test_id++
+   local trapped = false
+
+   exec(f"global {global_name}:any = 1")
+   rawset(_G, source_name, 'wrong')
+   try
+      exec(f"global {global_name} <const>:num = _G['{source_name}']")
+   except e
+      trapped = true
+      assert(string.find(tostring(e.message), 'type contract failed for global') != nil,
+         'The incoming const contract should reject its mismatched initial value: ' .. tostring(e.message))
+   end
+
+   assert(trapped, 'A mismatched const initialiser should raise')
+   assert(_G[global_name] is 1, 'A rejected const initialiser should preserve the old value')
+   _G[global_name] = 2
+   assert(_G[global_name] is 2, 'Failed validation should not publish const policy')
+
+   rawset(_G, source_name, 3)
+   exec(f"global {global_name} <const>:num = _G['{source_name}']")
+   assert(_G[global_name] is 3, 'A corrected const initialiser should be retryable')
+   expect_const_global_failure(function() _G[global_name] = 4 end,
+      'assignment after a retried const transition')
+end
+
+@Test function ConstTransitionRetainsExistingContractUntilStore()
+   local global_name = f"glConstExistingContract{failed_const_test_id}"
+   failed_const_test_id++
+   local source_name = f"glConstExistingSource{failed_const_test_id}"
+   failed_const_test_id++
+   local trapped = false
+
+   exec(f"global {global_name} = 'original'")
+   rawset(_G, source_name, 7)
+   try
+      exec(f"global {global_name} <const>:num = _G['{source_name}']")
+   except e
+      trapped = true
+      assert(string.find(tostring(e.message), 'type contract failed for global') != nil,
+         'The existing environment contract should reject an incompatible transition: ' .. tostring(e.message))
+   end
+
+   assert(trapped, 'An incompatible existing contract should reject the const transition')
+   assert(_G[global_name] is 'original', 'The rejected transition should preserve the old value')
+   _G[global_name] = 'retryable'
+   assert(_G[global_name] is 'retryable', 'A rejected store should not publish const policy')
+end
+
 @Test function FailedGlobalConstInitialisationCanRetry()
    local previous_metatable = getmetatable(_G)
    local trapped = false
