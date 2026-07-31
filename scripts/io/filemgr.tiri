@@ -71,6 +71,8 @@ end
 
 io.ui.paste = function(Dest:str)
    local clipboard = obj.new('clipboard')
+   defer clipboard.free() end
+
    local err, datatype, files, flags = clipboard.mtGetFiles(CLIPTYPE_FILE, 0)
    if (err != ERR_Okay) or (#files is 0) then
       msg('No files on the clipboard.')
@@ -86,6 +88,7 @@ io.ui.paste = function(Dest:str)
    end
 
    local err = io.ui.copy(files, Dest, move)
+   processing.collect('defer')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

@@ -1390,6 +1390,7 @@ struct lua_State {
    GCstr  *pending_exception_source = nullptr;  // Display source filename for try/except tables
    int    pending_exception_line = 0;           // Source line for try/except tables
    bool   pending_exception_valid = false;      // True if pending exception metadata is current
+   bool   pending_collection = false;           // A garbage collection cycle is pending
    ERR    CaughtError = ERR::Okay; // Catches ERR results from module functions.
 
    // FileSource tracking for accurate error reporting in imported files

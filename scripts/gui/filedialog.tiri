@@ -69,6 +69,7 @@ gui.dialog.file = function(Options)
                end
             })
 
+            processing.collect('defer')
             return true
          end
       end
@@ -76,6 +77,7 @@ gui.dialog.file = function(Options)
       self?.feedback(self, self.fileview.path, #list > 0 ? list :> nil)
 
       table.clear(self)
+      processing.collect('defer')
       return true
    end
 
@@ -94,7 +96,7 @@ gui.dialog.file = function(Options)
          close = function(Window)
             Options?.feedback(self, nil)
             table.clear(self)
-            processing.collect()
+            processing.collect('defer')
          end
       }
    })
