@@ -260,9 +260,10 @@ void notify_action(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
                process_error(Self, "Action Subscription");
             }
 
-            if (lua_gc(Self->Lua, LUA_GCISRUNNING, 0)) {
+            if (Self->Lua->pending_collection and lua_gc(Self->Lua, LUA_GCISRUNNING, 0)) {
+               Self->Lua->pending_collection = false;
                log.traceBranch("Collecting garbage.");
-               lua_gc(Self->Lua, LUA_GCCOLLECT, 0);
+               lua_gc(Self->Lua, LUA_GCCOLLECT, 0); // Run the garbage collector
             }
          }
 
@@ -337,7 +338,11 @@ static ERR TIRI_Activate(extTiri *Self)
 
       Self->Recurse--;
 
-      if (Self->Lua) {
+      // Automated garbage collection runs for initial activations only, in order to ensure that any temporary
+      // objects don't persist in memory.  After that, the script is expected to manage its own memory usage.
+
+      if ((Self->Lua) and ((Self->ActivationCount <= 2) or (Self->Lua->pending_collection))) {
+         Self->Lua->pending_collection = false;
          if (lua_gc(Self->Lua, LUA_GCISRUNNING, 0)) {
             kt::Log log;
             log.traceBranch("Collecting garbage.");
@@ -420,8 +425,8 @@ static ERR TIRI_DataFeed(extTiri *Self, struct acDataFeed *Args)
          it++;
       }
 
-      if (lua_gc(Self->Lua, LUA_GCISRUNNING, 0)) {
-         kt::Log log;
+      if (Self->Lua->pending_collection and lua_gc(Self->Lua, LUA_GCISRUNNING, 0)) {
+         Self->Lua->pending_collection = false;
          log.traceBranch("Collecting garbage.");
          lua_gc(Self->Lua, LUA_GCCOLLECT, 0); // Run the garbage collector
       }
@@ -581,13 +586,6 @@ static ERR TIRI_Query(extTiri *Self)
    if (not Self->MainChunkRef) {
       log.branch("Target: %d, Procedure: %s / ID #%" PRId64, Self->TargetID,
          Self->Procedure.empty() ? "." : Self->Procedure.c_str(), Self->ProcedureID);
-
-      auto cleanup = kt::Defer([&]() {
-         if (Self->Lua) {
-            kt::Log().traceBranch("Collecting garbage.");
-            lua_gc(Self->Lua, LUA_GCCOLLECT, 0); // Run the garbage collector
-         }
-      });
 
       lua_gc(Self->Lua, LUA_GCSTOP, 0);  // Stop collector during initialization
          luaL_openlibs(Self->Lua);  // Open Lua libraries

@@ -53,6 +53,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       lOptions?.feedback(self, Accepted)
 
       lWindow = nil
+      processing.collect('defer')
       return true
    end
 

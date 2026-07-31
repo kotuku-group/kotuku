@@ -392,6 +392,7 @@ function buildLayout(self, Options)
          activate = function(Widget)
             self?.feedback(nil)
             table.clear(self)
+            processing.collect('defer')
          end
       }
    })
@@ -407,6 +408,7 @@ function buildLayout(self, Options)
             saveColours(self)
             self?.feedback(self._rgb)
             table.clear(self)
+            processing.collect('defer')
          end
       }
    })
