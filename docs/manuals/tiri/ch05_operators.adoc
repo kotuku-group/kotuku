@@ -1,13 +1,4 @@
 // VERIFIED: 2026-02-10
-// CHANGED: 2026-07-30 — Corrected bitwise operand conversion (rounds to nearest, ties to even; wraps modulo 2^32; coerces strings).
-// CHANGED: 2026-07-30 — Corrected the table length definition in the length operator table.
-// CHANGED: 2026-07-30 — Documented floor-modulo sign rule, accepted string coercion forms and cross-type ordering errors.
-// UPDATED: 2026-06-30 — Extended falsiness now treats empty tables as falsey; described as empty collections.
-// UPDATED: 2026-04-03 -- Documented `is not` as an inequality operator equivalent to `!=`.
-// UPDATED: 2026-03-31 — Added 'has' flag testing operator section and updated precedence table.
-// UPDATED: 2026-05-23 — Added comparison chaining section for ordering operators.
-// UPDATED: 2026-05-25 — Added approximate equality operator (≈) section and updated precedence table.
-// CHANGED: 2026-07-30 — Corrected precedence: `^` and `|` bind tighter than the comparison operators; `**` binds tighter than unary operators; levels renumbered.
 
 [[ch-operators]]
 == Operators
@@ -567,7 +558,7 @@ result = value in container
 
 indexterm:[operators, membership] Returns `true` if `container` contains `value`; `false` otherwise.  The expression `a in b` is equivalent to `b:contains(a)`.
 
-The `in` operator requires the right-hand operand to provide a `:contains()` method.  The built-in types that define this method are ranges, strings and arrays.  Any user-defined type with a compliant `:contains()` method will also support `in`.  If the right-hand operand lacks a `:contains()` method, the runtime raises an error.
+The `in` operator requires the right-hand operand to provide a `:contains()` method.  The built-in types that define this method are ranges, strings and arrays.  Any user-defined type with a compliant `:contains()` method supports `in`.  If the right-hand operand lacks a `:contains()` method, the runtime raises an error.
 
 [source,tiri]
 ----

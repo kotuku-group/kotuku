@@ -1,6 +1,7 @@
 // VERIFIED: 2026-02-12
 // UPDATED: 2026-07-26 - Migrated examples to range loops following removal of the Lua-style numeric for syntax (commit 1f23b978)
 // CHANGED: 2026-07-29 — Added <<sec-finalisers-and-scope-cleanup>> to distinguish nondeterministic __gc finalisation from deterministic <close> and defer (commit 279cb0a7)
+// CHANGED: 2026-07-31 — Tightened deferred-parameter guidance.
 
 [[ch-resource-management]]
 == Resource Management
@@ -547,7 +548,7 @@ same = resolve(plain) -- returns 42 unchanged
 
 ==== Deferred Parameters
 
-Passing a deferred expression as a parameter value is an effective way of avoiding unnecessary computation if the parameter is only used when certain conditions are met in a function. A classic example can be seen in this call to `assert()`, which will only evaluate the message string when the assertion fails:
+A deferred parameter avoids computation until the function uses its value.  For example, `assert()` evaluates its message only when the assertion fails:
 
 [source,tiri]
 ----

@@ -1,8 +1,4 @@
 // VERIFIED: 2026-02-10
-// CHANGED: 2026-07-30 — Corrected the claim that semicolons carry no semantic weight; added sec-statement-ambiguity.
-// UPDATED: 2026-07-30 — Documented binary integer literals.
-// UPDATED: 2026-07-06 -- Added `extern` to the keyword list.
-// UPDATED: 2026-05-24 — Added regex string shorthand (r'...') to String Literals section.
 
 [[ch-basic-syntax]]
 == Basic Syntax
@@ -24,14 +20,14 @@ x = 10  -- This is also a comment
 
 ==== Long Comments
 
-A long comment begins with `--[[` and ends with `]]`:
+A long comment begins with `--[[` and ends with `--]]`:
 
 [source,tiri]
 ----
 --[[
 This comment spans
 multiple lines.
-]]
+--]]
 ----
 
 Long comments support level-matching delimiters using `=` signs between the brackets.  The number of `=` signs in the opening delimiter must match the closing delimiter:
@@ -41,7 +37,7 @@ Long comments support level-matching delimiters using `=` signs between the brac
 --[=[
 This long comment can contain ]] without terminating,
 because the closing delimiter must be ]=].
-]=]
+--]=]
 ----
 
 The lexer discards a newline immediately following the opening delimiter.
@@ -89,6 +85,7 @@ The following words are reserved and cannot be used as identifiers:
 
 Keywords are case-sensitive.  `and` is reserved; `And` and `AND` are valid identifiers.
 
+[%breakable]
 [[sec-statements-and-blocks]]
 === Statements & Blocks
 ==== Statements
@@ -301,7 +298,7 @@ All four delimiter forms -- single-quoted, double-quoted, long-bracket, and leve
 r'\d+'.test('abc123')    -- true
 ----
 
-If the pattern is syntactically invalid, an exception is thrown at runtime during compilation of the regex object.
+If the pattern is syntactically invalid, compiling the regex object raises an exception at runtime.
 
 See <<ch-regular-expressions>> for the full regex API.
 

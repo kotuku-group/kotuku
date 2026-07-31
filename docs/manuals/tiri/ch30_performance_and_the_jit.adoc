@@ -1,12 +1,9 @@
-// CHANGED: 2026-07-27 — Updated annotation guidance for type-guided emission and exact contract recording.
-// CHANGED: 2026-07-27 — Noted the store-side contract cost on declared globals (commit 997f6b551).
-// UPDATED: 2026-07-26 - Replaced numeric for loop guidance with range loops (commit 1f23b978)
 
 [[ch-performance-and-the-jit]]
 == Performance & the JIT
-indexterm:[performance] indexterm:[JIT] **Implementation-specific.** This chapter documents behaviour specific to the JIT (Just-In-Time) compiler as of March 2026 and is not part of the language specification.
+indexterm:[performance] indexterm:[JIT] **Implementation-specific.** This chapter documents behaviour specific to the Kōtuku JIT implementation and is not part of the language specification.
 
-Tiri executes on a tracing JIT compiler derived from LuaJIT 2.1.  Understanding the JIT compilation model is essential for writing high-performance Tiri code.  This chapter describes the compilation pipeline, the `jit` library API, tuneable parameters, and common performance pitfalls.
+Tiri executes on a tracing JIT compiler derived from LuaJIT 2.1.  This chapter describes the compilation pipeline, the `jit` library API, tuneable parameters and common performance constraints.
 
 [[sec-how-the-jit-works]]
 === How the JIT Works
@@ -679,7 +676,7 @@ for i in {0 to 1000} do
 end
 result = tostring(buf) <2>
 ----
-<1> For character arrays, `..=` will automatically convert the `i` to a string for concatenation.  This differs from `push()`, which stores a number as a single raw byte.  See <<ch-arrays>>.
+<1> For character arrays, `..=` converts `i` to a string for concatenation.  This differs from `push()`, which stores a number as a single raw byte.  See <<ch-arrays>>.
 <2> Materialising the string can be skipped if the buffer is passed to a function that supports arrays, which is the case for many file system operations.
 
 ==== NYI Operations

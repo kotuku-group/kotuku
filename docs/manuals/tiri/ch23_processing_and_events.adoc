@@ -1,4 +1,6 @@
 // VERIFIED: 2026-02-14
+// CHANGED: 2026-07-31 — Replaced informal callouts and future-tense behaviour.
+// CHANGED: 2026-07-31 — Documented the 'defer' collection mode and the automatic collection policy (commit faa63c606).
 
 [[ch-processing-and-events]]
 == Processing & Events
@@ -32,7 +34,7 @@ processing.sleep(5.0)
 
 The garbage collector runs a full collection cycle on entry to `processing.sleep()` before the runtime begins waiting for events.  Exceptions apply if `Seconds` is `0` or the garbage collector is disabled by the script.
 
-🔥Encapsulating processing.sleep() in a `try` statement will promote errors to exceptions.
+NOTE: Calling `processing.sleep()` inside a `try` statement promotes error codes to exceptions.
 
 .Processing loop architecture
 image::processing_loop.svg[]
@@ -387,7 +389,7 @@ err, timerHandle = mSys.SubscribeTimer(0.01,
 
 Timer callbacks are dispatched by the event processing loop in `processing.sleep()`.  Small intervals require frequent message processing to maintain reliable timing.
 
-TIP: Timing calculations take into account the amount of time spent in the callback.  If the interval is 1 second and the callback takes 400ms to execute, the next execution cycle will be in 600ms.
+TIP: Timer intervals include the time spent in the callback.  With a one-second interval and a 400ms callback, the next execution cycle begins after 600ms.
 
 ==== mSys.UpdateTimer()
 
@@ -428,7 +430,7 @@ processing.sleep()
 [discrete]
 ===== Self-Cancelling Timers
 
-A timer can cancel itself by calling `raise ERR_Terminate` from the callback (the exception will be handled without impacting the script):
+A timer can cancel itself by calling `raise ERR_Terminate` from the callback.  The timer handles the exception without affecting the script:
 
 [source,tiri]
 ----
@@ -508,6 +510,9 @@ Triggers a garbage collection cycle.  Returns an integer whose meaning depends o
 
 |`'step'`
 |Performs an incremental collection step.  Returns `1` if collection is not finished, `0` if finished.
+
+|`'defer'`
+|Records a request for a full collection cycle to run when the script next returns control to the runtime.  No collection takes place during the call.  Returns `0`.
 |===
 
 `Options` is an optional table with the following field:
@@ -521,6 +526,8 @@ Triggers a garbage collection cycle.  Returns an integer whose meaning depends o
 |Controls the size of an incremental step (only used with `'step'` mode).
 |===
 
+`Options` has no effect in `'full'` and `'defer'` modes.
+
 Raises an exception if `Mode` is not a recognised string.
 
 [source,tiri]
@@ -530,9 +537,50 @@ processing.collect()
 
 -- Incremental step
 result = processing.collect('step', { stepSize = 100 })
+
+-- Request a collection for the end of the current callback
+processing.collect('defer')
 ----
 
-NOTE: `processing.sleep()` automatically performs a full collection on entry.  Explicit calls to `processing.collect()` are only necessary when fine-grained memory management is required outside the processing loop.
+[[sec-deferred-collection]]
+==== Deferred Collection
+
+indexterm:[garbage collector, deferred collection] indexterm:[callback boundary] A request made with `processing.collect('defer')` is fulfilled at the next _callback boundary_, which is the point at which a Tiri callback returns control to the runtime.  The following are callback boundaries:
+
+* Action and field subscription notifications (see <<ch-the-object-system>>).
+* Event subscriptions (see <<sec-the-event-subsystem>>).
+* Input and keyboard handlers (see <<ch-input-handling>>).
+* Data feeds received by the script.
+* Functions scheduled with `processing.delayedCall()`.
+
+The runtime performs one full collection cycle at the boundary and clears the request.  Requests do not accumulate: any number of `processing.collect('defer')` calls made before a boundary produce a single collection cycle.
+
+If the automatic collector is stopped, no collection takes place at the boundary and the request is retained.  The request is fulfilled at the first boundary reached after `processing.startCollector()` is called.
+
+Deferring is the correct choice for a callback that releases the last reference to a group of values, because a collection performed inside the callback cannot reclaim values that the callback's own stack frame still references.  Once the frame is unwound at the boundary, those values are unreachable and are reclaimed by the deferred cycle:
+
+[source,tiri]
+----
+surface.subscribe('free', function(UID, Args, CustomRef)
+   table.clear(state)          -- Drops the last references held by the script
+   processing.collect('defer') -- Reclaimed once the callback returns
+end)
+----
+
+NOTE: The `'defer'` mode is unrelated to the `defer` statement, which runs a block on scope exit; see <<sec-defer-statement>>.
+
+[[sec-automatic-collection]]
+==== Automatic Collection
+
+indexterm:[garbage collector, automatic collection] While the automatic collector is running, the runtime performs a full collection cycle at these points, and at no others:
+
+* On completion of the first execution of the script's top-level code, which discards temporary values created during initialisation.  Subsequent executions do not collect.
+* On entry to `processing.sleep()` and `processing.halt()`, unless `Seconds` is `0`.
+* At the first callback boundary following a `processing.collect('defer')` request.
+
+Returning from a callback does not otherwise trigger a collection cycle.  A script that allocates heavily within callbacks and does not enter the processing loop must request collection explicitly with `processing.collect()`.
+
+NOTE: Incremental collection continues to run under the collector's own scheduling in all cases.  The points listed above define when a *full* cycle is guaranteed.
 
 ==== processing.stopCollector()
 

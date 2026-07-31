@@ -2,6 +2,7 @@
 // UPDATED: 2026-07-13 — Structures promoted to a first-class 'struct' type; added struct.clone()/struct.copy(), field-assignment semantics, pairs() iteration and tostring() representation.
 // CHANGED: 2026-07-27 — Added the Result Types section; module call results now carry static types derived from the native signature (commit 8905c1966).
 // UPDATED: 2026-07-15 — Struct documentation relocated to the Structs chapter in Part II following the native 'struct' keyword implementation (commit 9279202).  Chapter retitled to Modules.
+// CHANGED: 2026-07-31 — Replaced informal callouts with standard AsciiDoc admonitions.
 
 [[ch-modules]]
 == Modules
@@ -40,7 +41,7 @@ mGfx ?= mod.load('display')
 [discrete]
 ==== Naming Conventions
 
-Module interfaces should always be stored in consistently named variables at the top-level scope.  The following table lists the standard naming conventions for the default set of modules:
+Store module interfaces in consistently named variables at the top-level scope.  The following table defines the standard names for the default modules:
 
 [cols="1,1a",options="header"]
 |===
@@ -48,7 +49,7 @@ Module interfaces should always be stored in consistently named variables at the
 |audio
 |`mAudio`
 |core
-|`mSys` 💡
+|`mSys`
 |display
 |`mGfx`
 |font
@@ -61,7 +62,7 @@ Module interfaces should always be stored in consistently named variables at the
 |`mXML`
 |===
 
-💡The Core module (`mSys`) is an essential API that is always loaded by default.
+NOTE: The Core module (`mSys`) is loaded by default.
 
 [[sec-calling-module-functions]]
 [discrete]

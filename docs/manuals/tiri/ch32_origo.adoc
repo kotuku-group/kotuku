@@ -1,4 +1,5 @@
 // VERIFIED: 2026-03-18
+// CHANGED: 2026-07-31 — Removed future-tense behaviour and duplicate wording.
 
 [[ch-origo]]
 == Origo
@@ -152,7 +153,7 @@ The tip system provides style and correctness suggestions during parsing.  Tips 
 |Option |Description
 
 |`off`
-|Disables JIT compilation entirely.  Scripts will run in the interpreter.
+|Disables JIT compilation entirely.  Scripts run in the interpreter.
 |===
 
 [discrete]
@@ -198,7 +199,7 @@ indexterm:[Origo, script detection] When no script path is provided on the comma
 . If neither is found, the default Origo window is displayed.
 . If no display is available, the help message is printed.
 
-This feature makes it simple to distribute packaged Tiri applications by copying the Origo executable with a new name (e.g. `myapp.exe`) and including a `package.zip` or `main.tiri` file alongside it.  The user will now be able to execute the program by running `myapp.exe` without needing to specify commandline parameters.
+To distribute a packaged Tiri application, copy the Origo executable under the application name (e.g. `myapp.exe`) and place `package.zip` or `main.tiri` alongside it.  The renamed executable runs the application without command-line parameters.
 
 [discrete]
 [[sec-script-arguments]]

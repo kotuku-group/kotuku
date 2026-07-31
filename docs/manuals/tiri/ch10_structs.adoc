@@ -2,6 +2,7 @@
 // CREATED: 2026-07-15 — Struct documentation relocated from the former Modules & Structures chapter.  Added the native 'struct' declaration syntax, the official field type table and typed reference annotations (commit 9279202).  Removed the internal MAKESTRUCT interface and its shorthand field definitions.
 // UPDATED: 2026-07-16 — Dynamically sized array<type> fields can now be declared in native structs (commit 408def84d).
 // UPDATED: 2026-07-17 — Declarations are now 'end'-terminated blocks rather than brace-delimited (commit 56400bb).  Declarations no longer bind a constructor; instances are constructed only through the explicit struct<Name> { ... } form (commit 41b2c10).
+// CHANGED: 2026-07-31 — Replaced ambiguous pointer-safety guidance with a specific warning.
 
 [[ch-structs]]
 == Structs
@@ -333,7 +334,7 @@ tag.ptr(next_address)
 -- Process next tag using the same instance...
 ----
 
-WARNING: Modifying the pointer referenced by the struct is dangerous.  Alternative usage patterns are usually available so that this anti-pattern can be avoided.
+WARNING: Modifying the pointer referenced by the struct can corrupt memory.  Avoid this operation unless the caller controls the referenced storage.
 
 ==== Length Operator
 

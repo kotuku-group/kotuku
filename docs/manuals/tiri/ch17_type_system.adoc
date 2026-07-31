@@ -3,6 +3,7 @@
 // CHANGED: 2026-07-27 — Declared globals now carry enforced sticky contracts whether annotated or inferred; ':any' is the persistent variant opt-out (commit 997f6b551).
 // CHANGED: 2026-07-28 — Global contracts are enforced at the environment mutation boundary for every store route, including rawset() and pre-declaration bytecode (commit 4b4a2f94).
 // CHANGED: 2026-07-27 — Added sec-dynamic-ingress and sec-native-result-types; native calls now publish result types and an unannotated dynamic initialiser rejects later assignment (commit 8905c1966).
+// CHANGED: 2026-07-31 — Restored the missing runtime type-contract anchor.
 
 [[ch-type-system]]
 == Type System
@@ -418,6 +419,7 @@ local handle = [_*]mSys.ScanMessages(id)   -- fixed to the type of the second re
 
 A native function that declares no results yields `nil`.  Assigning it to an unannotated declaration leaves the variable unfixed.
 
+[[sec-runtime-type-contracts]]
 === Runtime Type Contracts
 indexterm:[type contracts] indexterm:[runtime type contracts] A _runtime type contract_ is a type constraint that the runtime validates as values cross a program boundary.  A contract cannot be bypassed by reaching the boundary indirectly: the check belongs to the boundary, not to the call site or the assignment site that the compiler can see.
 

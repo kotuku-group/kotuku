@@ -1,6 +1,7 @@
 // CHANGED: 2026-06-28 - Updated debug.validate() symbol-extraction calls to the { symbols=true } options form.
 // CHANGED: 2026-05-02 - Added parser annotation expressions and parser symbol metadata extraction.
 // VERIFIED: 2026-03-05
+// CHANGED: 2026-07-31 — Replaced ambiguous normative wording.
 
 [[ch-annotations-and-preprocessing]]
 == Annotations & Preprocessing
@@ -185,7 +186,7 @@ in `_ANNO`.
 
 [[sec-test-framework-annotations]]
 === Test Framework Annotations
-indexterm:[annotations, test framework] The Flute test runner (see <<ch-flute>>) recognises the following annotations.  These annotations control test
+indexterm:[annotations, test framework] The Flute test runner recognises the following annotations.  These annotations control test
 discovery, lifecycle, filtering, and execution.
 
 ==== @Test
@@ -693,7 +694,7 @@ Marker form uses section markers:
 |Each non-empty line is parsed as `Type: Description` and matched to results by position.
 
 |`-ERRORS-`
-|Each non-empty line is parsed as `Code: Description` and emitted as an error entry.  Codes should match to `ERR` constants, omitting the `ERR_` prefix for brevity.
+|Each non-empty line is parsed as `Code: Description` and emitted as an error entry.  Codes match `ERR` constants with the `ERR_` prefix omitted.
 
 |`-EXAMPLE-`
 |All following lines, up to the next marker or the end of the block, are joined and appended to `doc.examples`.
@@ -731,4 +732,4 @@ function greetCompact(Name: str):str
 end
 ----
 
-Type annotations in the function signature are essential when using compact `@input` and `@result` annotations.  If the parser is unable to determine the type of an input parameter or result value, a default of `any` will be applied.
+Compact `@input` and `@result` annotations require type annotations in the function signature.  If the parser cannot determine an input or result type, it applies `any`.

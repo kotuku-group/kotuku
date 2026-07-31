@@ -1,4 +1,5 @@
 // VERIFIED: 2026-02-15
+// CHANGED: 2026-07-31 — Replaced ambiguous subscription guidance.
 
 [[ch-input-handling]]
 == Input Handling
@@ -7,7 +8,7 @@ indexterm:[input handling] Kōtuku provides a unified input handling model for p
 Two subscription models exist:
 
 * **Vector-level subscriptions** attach directly to a `VectorViewport` or `Vector` object.  Events are filtered by the vector's clipping region and coordinates are transformed into the vector's local coordinate system.  This is the preferred model for GUI programming.
-* **Global subscriptions** use the `input` namespace to receive raw device events, optionally filtered by a `Surface`.  These are lower-level and typically used to interface with the host system (Windows or Linux display).
+* **Global subscriptions** use the `input` namespace to receive raw device events, optionally filtered by a `Surface`.  Use them to interface directly with the host display system.
 
 Both models have a dependency on the `display` module:
 

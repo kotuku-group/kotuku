@@ -5,11 +5,11 @@
 [[sec-what-is-tiri]]
 === What Is Tiri?
 
-indexterm:[Tiri] indexterm:[Kōtuku] Tiri is a programming language derived from Lua and built on the LuaJIT virtual machine.  It is the primary programming interface for the Kōtuku application framework, and has evolved to fully accommodate Kōtuku's object model such that the two are fully co-dependent.
+indexterm:[Tiri] indexterm:[Kōtuku] Tiri is a programming language derived from Lua and built on the LuaJIT virtual machine.  It is the primary programming interface for the Kōtuku application framework and is integrated with Kōtuku's object model.
 
-The Tiri engine features a hard fork of the LuaJIT virtual machine and retains the core execution model -- a register-based virtual machine with trace-compiled JIT -- while rewriting large portions of the engine and extending the language with features absent from standard Lua.  These changes include zero-based indexing, compound assignment operators, true exception handling, annotations, string interpolation, ranges, regex support, contiguous arrays and much more.  As many Lua constructs are removed or replaced, any pre-existing assumptions about Lua semantics should be discarded when learning Tiri.
+The Tiri engine is a hard fork of the LuaJIT virtual machine.  It retains a register-based virtual machine and tracing JIT while extending the language with zero-based indexing, compound assignment, exception handling, annotations, string interpolation, ranges, regular expressions and contiguous arrays.  It also removes or replaces many Lua constructs.
 
-Tiri does not maintain backwards compatibility with Lua.  Code written for standard Lua or LuaJIT requires migration.  See <<appendix-migration-from-lua>> for a comprehensive guide.
+Tiri is not backwards-compatible with Lua.  Code written for standard Lua or LuaJIT requires migration.  See <<appendix-migration-from-lua>>.
 
 [[sec-design-goals]]
 === Design Goals
@@ -32,7 +32,7 @@ Good design can maximise execution speed for code produced by the compiler and v
 [[sec-installing-kotuku]]
 === Installing Tiri and Kōtuku
 
-Tiri forms an integral part of the Kōtuku framework, and there is no standalone Tiri distribution.  Installing Kōtuku will provide access to the Tiri runtime and tools, including the `origo` executable, which serves as the Tiri interpreter and application launcher.
+Tiri is part of the Kōtuku framework and has no standalone distribution.  Installing Kōtuku provides the Tiri runtime and tools, including the `origo` interpreter and application launcher.
 
 Pre-built packages are available from the Kōtuku website.  To build from source, clone the repository and follow the platform-specific build instructions in the Kōtuku documentation.
 
@@ -96,4 +96,4 @@ Tiri source files use the `.tiri` file extension.  To completely avoid ambiguity
 -- $TIRI
 ----
 
-The `$TIRI` marker allows tools, editors, and the runtime to distinguish Tiri scripts where they might not have access to the file name.
+The `$TIRI` marker allows tools, editors and the runtime to identify Tiri source without using the file name.

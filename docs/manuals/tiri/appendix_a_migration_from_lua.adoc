@@ -2,6 +2,7 @@
 // UPDATED: 2026-07-26 -- Documented removal of the Lua-style numeric for syntax (commit 1f23b978)
 // UPDATED: 2026-04-03 -- Documented `is not` as an alternative inequality form.
 // CHANGED: 2026-07-30 — Added coroutine and _ENV removals; corrected pcall/xpcall and getfenv/setfenv entries.
+// CHANGED: 2026-07-31 — Standardised exception terminology on raise.
 [[appendix-migration-from-lua]]
 [appendix]
 == Migration from Lua
@@ -112,7 +113,7 @@ indexterm:[Lua, breaking changes] The following table lists all incompatible cha
 |<<sec-migration-removed-libraries>>
 
 |`io.*` returns error codes
-|`io.*` throws exceptions
+|`io.*` raises exceptions
 |<<sec-migration-exception-handling>>
 |===
 
@@ -267,7 +268,7 @@ end
 
 `try-except` supports filtered handlers with the `when` clause to catch specific `ERR` codes, a `success` block that runs when no exception occurred, and optional stack trace capture with `try<trace>`.
 
-The `io.*` library functions now throw exceptions on error instead of returning error codes.  Code that previously checked return values from `io.open()` or `file:read()` can be replaced with `try-except` blocks:
+The `io.*` library functions raise exceptions on error instead of returning error codes.  Replace code that checks return values from `io.open()` or `file:read()` with `try-except` blocks:
 
 [source,tiri]
 ----

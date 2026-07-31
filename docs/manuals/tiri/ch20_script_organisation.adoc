@@ -1,10 +1,11 @@
 // CHANGED: 2026-07-07 - Documented comma-separated import lists and their restrictions (#1618).
 // CHANGED: 2026-06-28 - Documented parent-relative ('../') import resolution.
 // VERIFIED: 2026-02-13
+// CHANGED: 2026-07-31 — Aligned the chapter title with the manual's organisation terminology.
 
 [[ch-script-management]]
-== Script Management
-indexterm:[script management] Tiri programs are organised through a combination of compile-time directives and runtime loading functions.  The `import` directive inlines library scripts at parse time, and the runtime functions `loadFile()` and `exec()` provide dynamic loading and evaluation.  User interactivity is possible via the `arg()` function, which allows command-line parameters to be passed through to the script.
+== Script Organisation
+indexterm:[script organisation] Tiri programs use compile-time directives and runtime loading functions.  The `import` directive inlines library scripts at parse time; `loadFile()` and `exec()` provide dynamic loading and evaluation.  The `arg()` function reads command-line parameters.
 
 [[sec-the-import-directive]]
 === The import Directive

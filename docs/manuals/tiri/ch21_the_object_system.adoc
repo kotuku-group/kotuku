@@ -1,6 +1,7 @@
 // VERIFIED: 2026-02-13
 // CHANGED: 2026-07-27 — Added Result Types under Actions & Methods; native action and method results now carry static types (commit 8905c1966).
 // UPDATED: 2026-07-26 - Migrated examples to range loops following removal of the Lua-style numeric for syntax (commit 1f23b978)
+// CHANGED: 2026-07-31 — Standardised exception terminology and present-tense behaviour.
 
 [[ch-the-object-system]]
 == The Object System
@@ -51,7 +52,7 @@ file = obj.new('file', { path = 'readme.md', flags = FL_READ })
 
 Initialises the object if not already initialised via `obj.new()`.  Returns an `ERR` code indicating success or failure.  Does not raise exceptions unless called within a `try` statement.
 
-Initialise an object before any interaction beyond setting field values.  Calling actions or methods on an uninitialised object will raise an exception.
+Initialise an object before any interaction beyond setting field values.  Calling actions or methods on an uninitialised object raises an exception.
 
 ==== obj.find()
 
@@ -99,7 +100,7 @@ object.fieldName = value
 
 Field names are case-sensitive and defined in lower camel-case, with the following being valid examples: `id`, `x`, `surfaceID`, `vectorObject`.  Abbreviations are never mixed-case (no `surfaceId`).
 
-An exception can be thrown if:
+An exception can be raised if:
 
 * The `fieldName` does not exist.
 * Permission restrictions are breached, such as writing a read-only field.
@@ -109,7 +110,7 @@ An exception can be thrown if:
 
 [.api]`value = object.get(FieldName, [Default])` 💤
 
-Reads a field value by name.  If the object is inaccessible or the field cannot be read, returns `Default` or `nil`.  Exceptions are never thrown — the `Default` value has priority.
+Reads a field value by name.  If the object is inaccessible or the field cannot be read, returns `Default` or `nil`.  The function never raises an exception; `Default` has priority.
 
 If the object's class defines support for `getKey()`, the call is diverted to the `getKey()` method in cases where `FieldName` does not exist.
 
@@ -117,7 +118,7 @@ If the object's class defines support for `getKey()`, the call is diverted to th
 
 [.api]`err = object.set(FieldName, Value)` 💤
 
-Writes a field value by name.  Returns an `ERR` code.  Equivalent to `object.fieldName = value` but returns the error code rather than raising an exception on failure.  Encapsulation in a `try` statement will promote error codes to exceptions.
+Writes a field value by name and returns an `ERR` code.  It is equivalent to `object.fieldName = value`, but returns the error code rather than raising an exception on failure.  Calling it inside a `try` statement promotes error codes to exceptions.
 
 ==== object.getKey(), object.setKey()
 
@@ -127,7 +128,7 @@ Writes a field value by name.  Returns an `ERR` code.  Equivalent to `object.fie
 
 Some classes support arbitrary key-value string storage.  `getKey()` retrieves a value by key name, returning `Default` or `nil` if the key does not exist or the class does not support key-value storage.  `setKey()` stores or updates a key-value pair.
 
-`setKey()` will throw exceptions if encapsulated in a `try` statement.
+`setKey()` raises exceptions when called inside a `try` statement.
 
 [source,tiri]
 ----

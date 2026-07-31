@@ -1,9 +1,4 @@
 // VERIFIED: 2026-03-03
-// UPDATED: 2026-04-03 -- Added `is not` alongside `!=` in equality semantics.
-// CHANGED: 2026-07-28 — Noted that raw access does not bypass global environment policy (commit 4b4a2f94).
-// CHANGED: 2026-07-29 — Documented __gc for tables and full userdata: registration timing, one-shot finalisation, resurrection, error containment, ordering and shutdown (commit 279cb0a7).
-// CHANGED: 2026-07-29 — Removed the newproxy() section; the function is now internal.
-// CHANGED: 2026-07-30 — Documented weak-table collectability (strings/numbers retained) and value-to-key reference cycles.
 
 [[ch-metatables-and-metamethods]]
 == Metatables & Metamethods
@@ -343,7 +338,7 @@ setmetatable(subject, nil)   -- no finaliser call takes place
 
 Every object is finalised at most once.  After its finaliser returns, the object is no longer eligible for finalisation, and attaching a further `pass:[__]gc` metatable does not re-arm it.  When the object next becomes unreachable it is reclaimed without any additional call.
 
-The object is fully intact for the duration of the call.  Its fields, its metatable, and every value reachable from it can be read and written normally.
+The object remains intact for the duration of the call.  Its fields, metatable and reachable values remain readable and writable.
 
 ===== Resurrection
 

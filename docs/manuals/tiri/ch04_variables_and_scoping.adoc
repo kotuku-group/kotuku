@@ -1,11 +1,4 @@
-// CHANGED: 2026-07-27 — Completed the annotation type-name list and noted runtime contract enforcement for annotated variables.
-// CHANGED: 2026-07-27 — Documented sticky contracts on 'global' declarations and the ':any' variant opt-out (commit 997f6b551).
-// CHANGED: 2026-07-28 — Added sec-environment-mutation-boundary; computed '_G' keys are now runtime-checked rather than rejected outright (commit 4b4a2f94).
-// CHANGED: 2026-07-27 — Cross-referenced the annotation requirement for dynamic ingress (commit 8905c1966).
-// UPDATED: 2026-07-06 -- Documented extern declarations and protected host globals.
-// VERIFIED: 2026-02-10
-// CHANGED: 2026-07-30 — Added sec-the-global-environment (_G, no _ENV, debug.getEnv/setEnv sandboxing).
-// CHANGED: 2026-07-30 — Documented per-iteration closure capture and the scope of a local's own initialiser.
+
 
 [[ch-variables-and-scoping]]
 == Variables & Scoping
@@ -198,6 +191,7 @@ _G.glVersion = '1.0'   -- creates a global named 'glVersion'
 
 `_G` contains itself as the entry `_G`, so `_G._G` and `_G` are the same table.  The global environment holds host-registered names in addition to those declared by the script; those names are protected from rebinding, as described in <<sec-protected-host-globals>>.
 
+[[sec-environment-mutation-boundary]]
 Writes through `_G` are subject to the same policy as direct global assignment.  A write to a protected name raises an error, and a write to a name carrying a type contract is validated against that contract.  This applies to `rawset()` as well, which suppresses metamethod dispatch but not environment policy.
 
 Each script state has one global environment, and a name that is not resolved as a local or upvalue is looked up in the environment of the enclosing function.
@@ -351,21 +345,11 @@ message:str = ''      -- constrained to string
 variant:any = 0       -- unconstrained (accepts any type)
 ----
 
-Supported type names: `any`, `nil`, `bool` (or `boolean`), `num` (or `number`), `str` (or `string`), `table`, `array`, `func` (or `function`), `obj` (or `object`), `range`, `userdata`, `struct` and `struct<Name>`.  An unrecognised type name raises a parse-time diagnostic.
-
-The type annotation can appear before or after a `<const>` or `<close>` attribute:
-
-[source,tiri]
-----
-x <const>:num = 42   -- attribute before type
-y:num <const> = 42   -- type before attribute
-----
-
-Type annotations interact with the type inference system.  See <<ch-type-system>> for sticky types, implicit type fixing, and the `any` escape hatch.
+An annotation fixes the variable to the declared type; `:any` permits values of different types.  See <<sec-explicit-type-annotations>> for the supported type names, attribute syntax and full semantics.
 
 An annotation is mandatory when a declaration's initialiser has no statically provable type and the variable is assigned again later.  See <<sec-dynamic-ingress>>.
 
-An annotation on a local, on a local captured as an upvalue, or on a global declared with `global` is enforced at runtime as a type contract.  A `global` declaration carries a contract whether its type is annotated or inferred; only an explicit `:any` annotation opts it out.  See <<sec-runtime-type-contracts>> and <<sec-global-contracts>>.
+Annotations on locals, upvalues and declared globals are runtime contracts.  See <<sec-runtime-type-contracts>> and <<sec-global-contracts>>.
 
 [[sec-constant-variables]]
 === Constant Variables
@@ -567,7 +551,7 @@ try
    risky_operation() <1>
 end
 ----
-<1> if this throws, `file.__close` still runs
+<1> if this raises an exception, `file.__close` still runs
 
 The close handler receives the active error as its second argument, enabling error-aware cleanup logic.
 
@@ -611,4 +595,4 @@ print(get())    -- 42
 
 When the scope that owns a local variable exits, any upvalue referencing it is closed over -- the value is moved from the stack to a heap-allocated cell.  The closure continues to read and write through that cell.
 
-TIP: Upvalues are a powerful tool but also carry a performance penalty when referencing local variables.  A local that is referenced as an upvalue has performance equivalent to a globally scoped variable.
+TIP: Referencing a local as an upvalue has the same performance penalty as referencing a global variable.

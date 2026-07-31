@@ -1,5 +1,6 @@
 // VERIFIED: 2026-02-13
 // UPDATED: 2026-05-24 — Added regex string shorthand section documenting r'...' syntax.
+// CHANGED: 2026-07-31 — Standardised exception terminology on raise.
 
 [[ch-regular-expressions]]
 == Regular Expressions
@@ -13,7 +14,7 @@ This chapter documents the Tiri API for creating and using regex objects.  For c
 
 [.api]`rx = regex.new(Pattern, [Flags])`
 
-indexterm:[regex, creation] Compiles `Pattern` into a reusable regex object.  `Flags` is an optional bitmask of compilation flags (see <<sec-flags-and-options>>).  If `Pattern` is syntactically invalid, an exception is thrown with error code `ERR_Syntax` and a descriptive message.
+indexterm:[regex, creation] Compiles `Pattern` into a reusable regex object.  `Flags` is an optional bitmask of compilation flags (see <<sec-flags-and-options>>).  If `Pattern` is syntactically invalid, the function raises an exception with error code `ERR_Syntax` and a descriptive message.
 
 [source,tiri]
 ----
@@ -90,7 +91,7 @@ r'\d+'.test('abc123')    -- true
 name, id = r'(\w+)-(\d+)'.extract('item-42')
 ----
 
-If the pattern is syntactically invalid, an exception is thrown at runtime during the implicit `regex.new()` call.  Wrap in a `try` block when the pattern may be incorrect (see <<ch-error-handling>>).
+If the pattern is syntactically invalid, the implicit `regex.new()` call raises an exception.  Wrap patterns from external sources in a `try` block (see <<ch-error-handling>>).
 
 The `r` prefix does not conflict with variables named `r`.  The lexer recognises the regex shorthand only when `r` is immediately followed by a quote character (`'`, `"`) or an opening long-bracket (`[`).  An `r` followed by whitespace, an index operator, or any other token is parsed as an identifier:
 
@@ -406,7 +407,7 @@ indexterm:[regex, properties] Compiled regex objects expose the following read-o
 
 |`error`
 |string or nil
-|Always `nil` for regex objects accessible to scripts.  Invalid patterns throw an exception during construction rather than producing an object with an error state.
+|Always `nil` for regex objects accessible to scripts.  Invalid patterns raise an exception during construction rather than producing an object with an error state.
 |===
 
 [source,tiri]

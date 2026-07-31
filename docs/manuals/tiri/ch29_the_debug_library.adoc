@@ -1,9 +1,12 @@
 // CHANGED: 2026-06-28 - debug.validate() now takes an options table ('symbols', 'path').
 // VERIFIED: 2026-03-06
+// CHANGED: 2026-07-31 — Added the required implementation-specific notice and standardised exception terminology.
 
 [[ch-the-debug-library]]
 == The Debug Library
-indexterm:[library, debug] The `debug` library provides introspection and manipulation of the Tiri runtime environment.  It exposes internal state that is not accessible through normal language constructs: stack frames, local variables, upvalues, metatables, hooks, and source file tracking.  The library is always available and requires no explicit import.
+indexterm:[library, debug] **Implementation-specific.** This chapter documents behaviour specific to the Kōtuku JIT implementation and is not part of the language specification.
+
+The `debug` library provides introspection and manipulation of the Tiri runtime environment.  It exposes internal state that is not accessible through normal language constructs: stack frames, local variables, upvalues, metatables, hooks and source file tracking.  The library is always available and requires no explicit import.
 
 All `debug` functions operate on the runtime state of the currently executing programme.  Using them in production code is discouraged; they exist to support debuggers, profilers, testing frameworks, and diagnostic tools.
 
@@ -110,7 +113,7 @@ The returned table contains the following fields:
 |A table whose keys are line numbers containing executable code.
 |===
 
-Returns `nil` if `Target` is a stack level that does not exist.  Throws an error if `What` contains an invalid character.
+Returns `nil` if `Target` is a stack level that does not exist.  Raises an error if `What` contains an invalid character.
 
 [discrete]
 ==== debug.getLocal()
@@ -132,7 +135,7 @@ function example(a, b)
 end
 ----
 
-Throws an error if `Level` is out of range.
+Raises an error if `Level` is out of range.
 
 [discrete]
 ==== debug.setLocal()
@@ -149,7 +152,7 @@ function example()
 end
 ----
 
-Throws an error if `Level` is out of range.
+Raises an error if `Level` is out of range.
 
 [discrete]
 ==== debug.getRegistry()
@@ -201,7 +204,7 @@ function f2() shared++ end
 print(debug.upvalueID(f1, 0) is debug.upvalueID(f2, 0))   -- true
 ----
 
-Throws an error if `Index` is out of range.
+Raises an error if `Index` is out of range.
 
 [discrete]
 ==== debug.upvalueJoin()
@@ -224,7 +227,7 @@ c1()
 print(c2())   -- 2
 ----
 
-Throws an error if either function is a C function or if an index is out of range.
+Raises an error if either function is a C function or if an index is out of range.
 
 [[sec-metatable-access]]
 === Metatable Access
@@ -271,7 +274,7 @@ print(env is _G)   -- true
 
 [.api]`Object = debug.setEnv(Object, Table)`
 
-Sets the environment table of `Object` to `Table`.  Returns `Object`.  Throws an error if the environment cannot be set (e.g. for C functions).
+Sets the environment table of `Object` to `Table`.  Returns `Object`.  Raises an error if the environment cannot be set (e.g. for C functions).
 
 [source,tiri]
 ----
@@ -382,7 +385,7 @@ Returns the table associated with `Userdata`, or `nil` if the argument is not a 
 
 [.api]`Userdata = debug.setUserValue(Userdata, Table)`
 
-Associates `Table` with `Userdata`.  Returns `Userdata`.  Throws an error if the first argument is not a userdata or the second is not a table.
+Associates `Table` with `Userdata`.  Returns `Userdata`.  Raises an error if the first argument is not a userdata or the second is not a table.
 
 [[sec-file-source-tracking]]
 === File Source Tracking

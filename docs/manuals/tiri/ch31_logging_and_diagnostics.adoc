@@ -1,10 +1,11 @@
 // VERIFIED: 2026-03-11
+// CHANGED: 2026-07-31 — Added the required implementation-specific notice, removed duplicated advice and tightened wording.
 
 [[ch-logging-and-diagnostics]]
 == Logging & Diagnostics
-indexterm:[logging] indexterm:[diagnostics] _This chapter includes documentation for extensions that are not part of the language specification._
+indexterm:[logging] indexterm:[diagnostics] **Implementation-specific.** This chapter documents behaviour specific to the Kōtuku/LuaJIT implementation and is not part of the language specification.
 
-Tiri provides two primary output functions for writing diagnostic information: `print()` and `msg()`.  For structured runtime inspection, the `DebugLog` method on Script objects offers comprehensive state dumping.  Exception handling supports optional stack trace capture through the `try<trace>` syntax.
+Tiri provides `print()` and `msg()` for diagnostic output.  The `DebugLog` method on Script objects captures structured runtime state, and `try<trace>` enables stack trace capture during exception handling.
 
 [[sec-print-and-msg]]
 === Print & Msg
@@ -20,11 +21,11 @@ indexterm:[print] indexterm:[msg] Writes each argument to standard error (stderr
 print('count:', 42, true)   -- "count:42true"
 ----
 
-Throws an error if `tostring()` does not return a string for any argument.
+Raises an error if `tostring()` does not return a string for any argument.
 
 On Android, output is redirected to the platform logging system.
 
-TIP: Tiri's default output policy is that program generated output is directed to standard output (stdout), while all general messages and logs are directed to standard error.  If printing to standard output is desired, calling `io.write()` is the recommended approach.
+TIP: Use `io.write()` for program output on standard output (stdout).  Tiri directs general messages and logs to standard error (stderr).
 
 [discrete]
 ==== msg()
@@ -40,9 +41,9 @@ msg(f'status: {result}') -- Inline formatting with f-strings
 msg('status: ', result)  -- Multiple arguments concatenated without spaces
 ----
 
-`msg()` is the recommended function for diagnostic output.  It integrates with Kōtuku's log filtering and is visible when running with `--log-api` or higher verbosity.  Output from `msg()` is directed to stderr alongside all other log messages.
+Use `msg()` for diagnostic output that requires Kōtuku log filtering.  It is visible with `--log-api` or a more verbose level and writes to stderr.
 
-Throws an error if `tostring()` does not return a string for any argument.
+Raises an error if `tostring()` does not return a string for any argument.
 
 [[sec-log-levels]]
 === Log Levels
@@ -86,8 +87,6 @@ Each command-line flag enables its level and all levels above it.  For example, 
 origo script.tiri --log-warning   # Warnings and errors
 origo script.tiri --log-api       # API messages and above
 ----
-
-When debugging thread-related issues, append `--log-threads` to include thread identification in log output.
 
 [[sec-debug-logging]]
 === Debug Logging

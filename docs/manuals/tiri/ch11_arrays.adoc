@@ -3,6 +3,7 @@
 // UPDATED: 2026-05-20 - Updated concat() with new API (separator-first, optional format, range support); removed join() which was merged into concat() (commit 2fbf2ea0)
 // UPDATED: 2026-07-02 - Documented in-place ..= append, byte-array string pushes, and array<char> as the preferred string-buffer builder (commit 1dc290463)
 // UPDATED: 2026-07-26 - Range arguments to fill(), find() and slice() must be whole-numbered; fractional ranges raise an error (commit 687f1eb7)
+// CHANGED: 2026-07-31 — Removed repeated array-concatenation guidance.
 
 [[ch-arrays]]
 == Arrays
@@ -96,7 +97,7 @@ array<array<string>>:type()  -- 'array'
 
 [.api]`result = arr:readOnly()`
 
-Returns `true` if the array is read-only.  Read-only arrays are produced by Kōtuku API calls that expose internal buffers.  Mutation methods will raise an error when called on a read-only array.
+Returns `true` if the array is read-only.  Read-only arrays are produced by Kōtuku API calls that expose internal buffers.  Mutation methods raise an error when called on a read-only array.
 
 [discrete]
 ==== Length and Equality
@@ -442,7 +443,7 @@ arr:fill(33, range.new(0, 10, false, 2))   -- every 2nd element
 
 Sorts the array in place.  The default order is ascending.  If `Descending` is `true`, sorts in descending order.  Supported for all numeric types, string arrays, and `any` arrays.
 
-Alternatively, a comparator function can be provided.  The function receives two elements `(a, b)` and must return `true` if `a` should come before `b` in the sorted result.  This works for all pushable array types, including `table` and `object` arrays.
+Alternatively, a comparator function can be provided.  The function receives two elements `(a, b)` and returns `true` if `a` precedes `b` in the sorted result.  This works for all pushable array types, including `table` and `object` arrays.
 
 [source,tiri]
 ----
@@ -624,11 +625,9 @@ Concatenates array elements into a string.  `Separator` is inserted between each
 
 When `Format` is provided, it must contain exactly one format specifier.  An error is raised if `Format` contains zero or multiple specifiers, or if the format specifier is incomplete.  For non-string arrays without a format specifier, elements are converted to their default string representation, which is a more optimal conversion path.
 
-Concatenation is only available for primitive array types that consist of string and number elements.  Attempting to concatenate types like table, struct and object will raise an error.
+Concatenation is only available for primitive array types that consist of string and number elements.  Attempting to concatenate table, struct or object elements raises an error.
 
 An error is raised if `Start` or `End` is negative or beyond the array bounds.  If `End` is less than `Start`, an empty string is returned.  Empty arrays are converted to an empty string.
-
-TIP: Compared to other methods of concatenation, arrays provide the most efficient means of concatenating long series of data values in Tiri.
 
 [source,tiri]
 ----

@@ -1,4 +1,5 @@
 // VERIFIED: 2026-02-15
+// CHANGED: 2026-07-31 — Standardised exception terminology on raise.
 
 [[ch-file-io]]
 == File I/O
@@ -6,7 +7,7 @@ indexterm:[file system] Tiri provides file system access through two complementa
 
 All file paths in Tiri use the virtual volume system (<<sec-virtual-volumes>>).  Paths take the form `volume:folder/file`, for example `temp:output.txt` or `config:settings.tiri`.  The volume prefix is resolved at runtime to a platform-native location.
 
-Filesystem failures in the `io` library throw exceptions.  This differs from standard Lua, which returns `nil` plus an error string.  Use `try-except` blocks (<<ch-error-handling>>) to handle errors.
+Filesystem failures in the `io` library raise exceptions.  This differs from standard Lua, which returns `nil` plus an error string.  Use `try-except` blocks (<<ch-error-handling>>) to handle errors.
 
 [[sec-the-io-standard-library]]
 === The io Standard Library
@@ -16,7 +17,7 @@ indexterm:[library, io] The `io` namespace provides built-in functions for file 
 
 [.api]`file = io.open(Path, [Mode])`
 
-Opens the file at `Path`, requesting access permissions specified by `Mode`.  If `Mode` is not set, the file is opened in read-only mode.  Throws an exception if the file cannot be opened.
+Opens the file at `Path`, requesting access permissions specified by `Mode`.  If `Mode` is not set, the file is opened in read-only mode.  Raises an exception if the file cannot be opened.
 
 [source,tiri]
 ----
@@ -69,7 +70,7 @@ all  = io.read('*a')   -- Read entire file
 
 [.api]`io.write(Data, pass:[...])`
 
-Writes each argument to the default output file.  The default output file is initially `stdout` but can be changed with `io.output()`.  Arguments must be strings or numbers.  Throws an exception if a write error occurs.
+Writes each argument to the default output file.  The default output file is initially `stdout` but can be changed with `io.output()`.  Arguments must be strings or numbers.  Raises an exception if a write error occurs.
 
 ==== io.flush()
 
@@ -153,13 +154,13 @@ tmp:close()
 
 [.api]`content = io.readAll(Path)`
 
-Reads the entire contents of the file at `Path` and returns it as a string.  Throws an exception if the file cannot be opened or read.  Returns an empty string if the file is empty.
+Reads the entire contents of the file at `Path` and returns it as a string.  Raises an exception if the file cannot be opened or read.  Returns an empty string if the file is empty.
 
 ==== io.writeAll()
 
 [.api]`io.writeAll(Path, Content)`
 
-Writes `Content` to the file at `Path`, creating the file if it does not exist or overwriting it if it does.  Throws an exception if the file cannot be created or written to.
+Writes `Content` to the file at `Path`, creating the file if it does not exist or overwriting it if it does.  Raises an exception if the file cannot be created or written to.
 
 ==== io.isFolder()
 
@@ -204,7 +205,7 @@ print(io.sanitisePath('system://users///file.txt'))
 
 [[sec-file-handle-methods]]
 === File Handle Methods
-indexterm:[file system, handles] File handles returned by `io.open()` and related functions support the following methods, called with the colon syntax (e.g. `file:read()`).  Operating on a closed file handle throws an exception.
+indexterm:[file system, handles] File handles returned by `io.open()` and related functions support the following methods, called with the colon syntax (e.g. `file:read()`).  Operating on a closed file handle raises an exception.
 
 [[sec-file-read]]
 ==== file:read()
@@ -245,7 +246,7 @@ file:close()
 
 [.api]`file = file:write(Data, pass:[...])`
 
-Writes each argument to the file.  Arguments must be strings or numbers.  Returns the file handle to allow chained calls.  Throws an exception if a write error occurs.
+Writes each argument to the file.  Arguments must be strings or numbers.  Returns the file handle to allow chained calls.  Raises an exception if a write error occurs.
 
 ==== file:close()
 
@@ -532,7 +533,7 @@ end, 0, MFF_CREATE | MFF_DELETE | MFF_MODIFY)
 processing.sleep()
 ----
 
-Calling `raise ERR_Terminate` in the callback function will cancel the watch.
+Calling `raise ERR_Terminate` in the callback cancels the watch.
 
 [[sec-file-search]]
 === File Search
@@ -641,7 +642,7 @@ import 'io/filemgr'
 
 Copies the file or files specified by `Source` to the folder specified by `Dest`.  `Source` is a file path string or an array of path strings.  If `Move` is `true`, each source file is deleted after a successful copy.
 
-Returns an `ERR` code.  If the user cancels the operation, `ERR_Cancelled` is returned.  Errors are presented to the user with a dialog box and are not thrown as exceptions.
+Returns an `ERR` code.  If the user cancels the operation, `ERR_Cancelled` is returned.  Errors are presented to the user with a dialog box and are not raised as exceptions.
 
 ==== io.ui.paste()
 

@@ -1,4 +1,3 @@
-// This manual is governed by the style guide rules specified in AGENTS.md in this folder.  Please refer to that document before making modifications.
 
 = Tiri Reference Manual: {copyright}
 Paul Manias
@@ -25,12 +24,12 @@ toc::[]
 [preface]
 == Foreword
 
-*Tiri is currently in an alpha state.  For early adopters this means that the syntax is in a state of flux while the quirks are ironed out, and old code may not compile between releases.  Sorry if I broke your stuff.  Experimentation is encouraged and feedback is welcome on the way to our first release.  See you there!*
+Tiri is currently in alpha.  Its syntax and behaviour may change between releases, and existing code may require migration.  Experimentation and feedback are welcome during development.
 
 [preface]
 == Acknowledgements
 
-The following projects and their contributors have my deepest gratitude for their contributions to the open source eco-sphere.  Tiri and Kōtuku would not be possible without them:
+The following projects and their contributors have my deepest gratitude for their contributions to the open-source ecosystem.  Tiri and Kōtuku would not be possible without them:
 
 LuaJIT::
 Mike Pall +
@@ -148,7 +147,7 @@ include::ch31_logging_and_diagnostics.adoc[]
 
 include::ch32_origo.adoc[]
 
-include::ch33_tiri_lsp.adoc[]
+// ch33_tiri_lsp.adoc remains excluded until its reference content is complete.
 
 // Appendices
 

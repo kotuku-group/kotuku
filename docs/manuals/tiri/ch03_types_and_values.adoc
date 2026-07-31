@@ -1,14 +1,8 @@
 // VERIFIED: 2026-02-10
-// CHANGED: 2026-07-30 — Corrected the table key rule; NaN is excluded as a key alongside nil.
-// UPDATED: 2026-06-30 — Extended falsiness now treats empty tables as falsey; described as empty collections.
-// UPDATED: 2026-07-13 — Structures are now a first-class 'struct' type; added to type() and a new Structures subsection.
-// UPDATED: 2026-07-16 — Objects and structs are distinct first-class types, no longer specialised userdata; promoted to top-level sections.
-// CHANGED: 2026-07-27 — Sticky types apply uniformly to locals, upvalues and declared globals (commit 997f6b551).
-// CHANGED: 2026-07-30 — Documented tostring() numeric formatting (14 significant digits, lossy, no int/float distinction).
 
 [[ch-types-and-values]]
 == Types & Values
-indexterm:[types] indexterm:[values] Tiri is dynamically typed: every value carries its type at runtime, and variables do not require explicit type declarations.  However, Tiri enforces type consistency through _sticky types_: when a variable receives its first non-`nil` value, the variable commits to that value's type.  All subsequent non-`nil` assignments must match the committed type; assigning a value of a different type produces a compile-time or runtime error.  This applies to locals, to upvalues and to globals introduced by a `global` declaration.  Assigning `nil` is always permitted, acting as a "clear" operation that preserves the type constraint.  The `:any` annotation opts a variable out of type fixing entirely.  See <<ch-type-system>> for the complete rules governing type inference, explicit annotations, runtime type contracts, and the `any` escape hatch.
+indexterm:[types] indexterm:[values] Tiri is dynamically typed: every value carries its type at runtime, and variables do not require explicit type declarations.  Variables are constrained through _sticky types_; see <<ch-type-system>> for type inference, annotations, runtime contracts and `nil` assignment.
 
 Tiri defines the following types: nil, boolean, number, string, table, array, function, userdata, object and struct.
 
@@ -145,7 +139,7 @@ See <<ch-the-object-system>> for the full object interface.
 === Structures
 indexterm:[structures] A structure is a first-class value that maps a fixed set of named, typed fields onto memory with a C/C++ compatible layout.  Structures are a distinct reference type: they are not tables, and the `type()` function returns `"struct"` for them.  Definitions are registered with the `struct` declaration statement or by Kōtuku modules; instances are created by calling a declared name or `struct.new()`, iterated with `pairs()`, and formatted with `tostring()`.
 
-Although structs are most often used as a compatibility layer between Tiri and compiled programs, they also offer a compact data layout option for storage, and access to values is optimised by the JIT compiler.  Accessing non-existent keys will also throw errors, preventing common typos.
+Structs provide a compatibility layer between Tiri and compiled programs and a compact data layout for storage.  Accessing a non-existent key raises an error.
 
 [source,tiri]
 ----
