@@ -1070,10 +1070,6 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
       }
    }
 
-   // Register a fake FD as input_event_loop() so that we can process input events on every ProcessMessages() cycle.
-
-   RegisterFD((HOSTHANDLE)-2, RFD::ALWAYS_CALL, input_event_loop, nullptr);
-
    #ifdef _GLES_
       pthread_mutexattr_t attr;
       pthread_mutexattr_init(&attr);
@@ -1299,6 +1295,10 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    winInitCursors(winCursors, std::ssize(winCursors));
 
 #endif
+
+   // Register input dispatch after platform event sources so that newly queued input is handled before the task sleeps.
+
+   RegisterFD((HOSTHANDLE)-2, RFD::ALWAYS_CALL, input_event_loop, nullptr);
 
    if (create_pointer_class() != ERR::Okay) return log.warning(ERR::AddClass);
    if (create_display_class() != ERR::Okay) return log.warning(ERR::AddClass);
