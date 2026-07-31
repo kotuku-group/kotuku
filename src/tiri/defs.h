@@ -94,6 +94,25 @@ extern uint64_t glActionsWithResults;
 using namespace tiri;
 
 //********************************************************************************************************************
+// Run a requested collection after control returns from a Tiri callback.  A pending request is retained while the
+// collector is stopped so that it can be fulfilled at a later callback boundary.
+
+inline void collect_garbage(lua_State *Lua, bool Force = false)
+{
+   if ((not Lua) or ((not Force) and (not Lua->pending_collection))) return;
+   if (not lua_gc(Lua, LUA_GCISRUNNING, 0)) return;
+
+   Lua->pending_collection = false;
+
+   #ifndef NDEBUG
+   kt::Log log;
+   log.traceBranch("Collecting garbage.");
+   #endif
+   
+   lua_gc(Lua, LUA_GCCOLLECT, 0);
+}
+
+//********************************************************************************************************************
 // Compile-time constant value (64-bit integer or double)
 
 struct TiriConstant {

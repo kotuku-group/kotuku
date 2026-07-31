@@ -101,6 +101,7 @@ gui.dialog.message = function(Options)
 
          if self.waiting then processing.signal() end
          table.clear(self)
+         processing.collect('defer')
       else
          print('Document event received')
       end

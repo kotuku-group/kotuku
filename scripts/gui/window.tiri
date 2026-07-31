@@ -234,8 +234,8 @@ gui.window = function(Options:table)
    surface_opts = {
       name      = 'winsurface',
       parent    = self._desktop,
-      width     = Options.width ?? DEFAULT_WIDTH,
-      height    = Options.height ?? DEFAULT_HEIGHT,
+      width     = Options.insideWidth ?? Options.width ?? DEFAULT_WIDTH,
+      height    = Options.insideHeight ?? Options.height ?? DEFAULT_HEIGHT,
       type      = RT_ROOT,
       modal     = Options.modal ?? false,
       popOver   = Options.popOver,
@@ -276,12 +276,23 @@ gui.window = function(Options:table)
       self.client = { left = 0, top = 0, right = 0, bottom = 0 }
    else
       self.margins = { left = 6, top = 6, right = 6, bottom = 6 }
-      self.client = { -- Retrieve the available client area from the host
-         left   = self.surface.display.leftMargin,
-         top    = self.surface.display.topMargin,
-         right  = self.surface.display.rightMargin,
-         bottom = self.surface.display.bottomMargin
+
+      -- Retrieve the available client area from the host
+      local display = self.surface.display
+      self.client = {
+         left   = display.leftMargin,
+         top    = display.topMargin,
+         right  = display.rightMargin,
+         bottom = display.bottomMargin
       }
+
+      if Options.width and not Options.insideWidth then
+         self.surface.width = Options.width - self.client.left - self.client.right
+      end
+
+      if Options.height and not Options.insideHeight then
+         self.surface.height = Options.height - self.client.top - self.client.bottom
+      end
    end
 
    self.scene = self.surface.new('VectorScene', { flags=VPF_RESIZE, surface=self.surface })
@@ -299,14 +310,6 @@ gui.window = function(Options:table)
    })
 
    self.surface.display.title = self.title
-
-   if Options.insideWidth then
-      self.surface.width = Options.insideWidth
-   end
-
-   if Options.insideHeight then
-      self.surface.height = Options.insideHeight
-   end
 
    if self.surface.popOver != 0 then
       -- If a pop-over surface is stick-to-front, we also need that status to avoid being behind it.
@@ -343,6 +346,7 @@ gui.window = function(Options:table)
          msg('Client requested that the window stay open.')
          raise ERR_Cancelled
       end
+      processing.collect('defer')
    end)
 
    self.surface.subscribe('focus', function(Surface, Args, Lifecycle)

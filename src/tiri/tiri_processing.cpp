@@ -303,8 +303,9 @@ static int processing_start_collector(lua_State *Lua)
 // Controls the garbage collector.
 //
 // Modes:
-//   "full"    - Full collection cycle (default)
-//   "step"    - Incremental collection step
+//   "full"  - Full collection cycle (default)
+//   "step"  - Incremental collection step
+//   "defer" - Collection occurs when the script hands control back to the Tiri engine.  Good for callbacks.
 //
 // Use "step" when a script needs to spread collection work across regular update or idle points instead of pausing for
 // a full collection.  It is most useful in interactive loops or long-running tasks where temporary allocations are
@@ -327,10 +328,15 @@ static int processing_collect(lua_State *Lua)
    // Arg 1: Optional mode string
 
    if (lua_type(Lua, 1) IS LUA_TSTRING) {
-      auto mode_str = lua_tostring(Lua, 1);
-      if (std::string_view("full") IS mode_str) gc_mode = LUA_GCCOLLECT;
-      else if (std::string_view("step") IS mode_str) gc_mode = LUA_GCSTEP;
-      else luaL_error(Lua, "Invalid mode '%s'. Use 'full', 'step'.", mode_str);
+      auto mode_str = lua_tostringview(Lua, 1);
+      if ("full" IS mode_str) gc_mode = LUA_GCCOLLECT;
+      else if ("step" IS mode_str) gc_mode = LUA_GCSTEP;
+      else if ("defer" IS mode_str) {
+         Lua->pending_collection = true;
+         lua_pushinteger(Lua, 0);
+         return 1;
+      }
+      else luaL_error(Lua, "Invalid mode '%.*s'. Use 'full', 'step', 'defer'.", (int)mode_str.size(), mode_str.data());
    }
 
    // Arg 2: Optional options table
@@ -457,6 +463,7 @@ ERR delayed_msg_handler(APTR Meta, int MsgID, MSGID MsgType, std::span<std::byte
    if (lua_pcall(lua, 0, 0, 0)) {
       process_error(lua->script, "delayedCall()");
    }
+   collect_garbage(lua);
    return ERR::Okay;
 }
 

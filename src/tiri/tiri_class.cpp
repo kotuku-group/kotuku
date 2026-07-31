@@ -260,10 +260,6 @@ void notify_action(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
                process_error(Self, "Action Subscription");
             }
 
-            if (lua_gc(Self->Lua, LUA_GCISRUNNING, 0)) {
-               log.traceBranch("Collecting garbage.");
-               lua_gc(Self->Lua, LUA_GCCOLLECT, 0);
-            }
          }
 
          SetResource(RES::LOG_DEPTH, depth);
@@ -287,6 +283,8 @@ void notify_action(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
                else return false;
             });
          }
+
+         collect_garbage(Self->Lua);
 
          return;
       }
@@ -337,13 +335,10 @@ static ERR TIRI_Activate(extTiri *Self)
 
       Self->Recurse--;
 
-      if (Self->Lua) {
-         if (lua_gc(Self->Lua, LUA_GCISRUNNING, 0)) {
-            kt::Log log;
-            log.traceBranch("Collecting garbage.");
-            lua_gc(Self->Lua, LUA_GCCOLLECT, 0); // Run the garbage collector
-         }
-      }
+      // Automated garbage collection runs for initial activations only, in order to ensure that any temporary
+      // objects don't persist in memory.  After that, the script is expected to manage its own memory usage.
+
+      collect_garbage(Self->Lua, Self->ActivationCount <= 2);
 
       return ERR::Okay; // The error reflects on the initial processing of the script only - the developer must check the Error field for information on script execution
    }
@@ -420,11 +415,7 @@ static ERR TIRI_DataFeed(extTiri *Self, struct acDataFeed *Args)
          it++;
       }
 
-      if (lua_gc(Self->Lua, LUA_GCISRUNNING, 0)) {
-         kt::Log log;
-         log.traceBranch("Collecting garbage.");
-         lua_gc(Self->Lua, LUA_GCCOLLECT, 0); // Run the garbage collector
-      }
+      collect_garbage(Self->Lua);
    }
 
    return ERR::Okay;
@@ -581,13 +572,6 @@ static ERR TIRI_Query(extTiri *Self)
    if (not Self->MainChunkRef) {
       log.branch("Target: %d, Procedure: %s / ID #%" PRId64, Self->TargetID,
          Self->Procedure.empty() ? "." : Self->Procedure.c_str(), Self->ProcedureID);
-
-      auto cleanup = kt::Defer([&]() {
-         if (Self->Lua) {
-            kt::Log().traceBranch("Collecting garbage.");
-            lua_gc(Self->Lua, LUA_GCCOLLECT, 0); // Run the garbage collector
-         }
-      });
 
       lua_gc(Self->Lua, LUA_GCSTOP, 0);  // Stop collector during initialization
          luaL_openlibs(Self->Lua);  // Open Lua libraries
