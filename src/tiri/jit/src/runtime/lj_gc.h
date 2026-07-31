@@ -148,6 +148,7 @@ inline void markfinaliserseen(GCobj* Object) noexcept
 
 // Collector.
 extern "C" size_t lj_gc_separatefinalisers(global_State* G, int All);
+extern "C" void lj_gc_prepare_shutdown(global_State* G);
 extern "C" void lj_gc_finalize_pending(lua_State* L);
 extern "C" void lj_gc_freeall(global_State* g);
 extern "C" int lj_gc_step(lua_State* L);
@@ -219,6 +220,9 @@ class GarbageCollector {
    global_State *gs;
 
 public:
+   static constexpr int RESOURCE_STEP_KB = 64;
+   static constexpr uint16_t RESOURCE_COOLDOWN = 16;
+
    // Construct a GarbageCollector facade for the given global state.
    explicit GarbageCollector(global_State* g) noexcept : gs(g) {}
 
@@ -345,7 +349,7 @@ public:
    // Snapshot every finaliser registered before state shutdown into the pending queue.
    // Objects registered by shutdown-time finalisers remain in finobj and are freed without another finalisation pass.
    void prepareFinalisersForShutdown() noexcept {
-      lj_gc_separatefinalisers(gs, 1);
+      lj_gc_prepare_shutdown(gs);
    }
 
    // Finalise all objects in the pending queue.
@@ -412,6 +416,75 @@ public:
    // Returns false if GC was stopped via stop(), true otherwise.
    [[nodiscard]] bool isRunning() const noexcept {
       return gs->gc.threshold != LJ_MAX_MEM;
+   }
+
+   // -- Native Resource Scheduling --
+
+   void trackOwnedObject(GCobject* Object) noexcept {
+      lj_assertG_(gs, not Object->is_detached(), "detached native object cannot be resource tracked");
+      lj_assertG_(gs, not Object->is_resource_tracked(), "native object is already resource tracked");
+      if (Object->is_detached() or Object->is_resource_tracked()) return;
+      Object->set_resource_tracked(true);
+      gs->gc.ownedobjects++;
+      requestResourceCycle();
+   }
+
+   void releaseOwnedObject(GCobject* Object) noexcept {
+      if (not Object->is_resource_tracked()) return;
+      Object->set_resource_tracked(false);
+      lj_assertG_(gs, gs->gc.ownedobjects > 0, "native resource ownership count underflow");
+      if (gs->gc.ownedobjects > 0) gs->gc.ownedobjects--;
+   }
+
+   [[nodiscard]] bool hasOwnedObjects() const noexcept {
+      return gs->gc.ownedobjects > 0;
+   }
+
+   [[nodiscard]] MSize ownedObjectCount() const noexcept {
+      return gs->gc.ownedobjects;
+   }
+
+   void requestResourceCycle() noexcept {
+      gs->gc.resourcepending = 1;
+   }
+
+   [[nodiscard]] bool resourceCycleDue() const noexcept {
+      return hasOwnedObjects() and
+         (gs->gc.resourcepending or gs->gc.resourceactive or (gs->gc.resourcecooldown IS 0));
+   }
+
+   [[nodiscard]] bool resourceCycleActive() const noexcept {
+      return gs->gc.resourceactive != 0;
+   }
+
+   [[nodiscard]] bool resourceCyclePending() const noexcept {
+      return gs->gc.resourcepending != 0;
+   }
+
+   [[nodiscard]] uint16_t resourceCooldown() const noexcept {
+      return gs->gc.resourcecooldown;
+   }
+
+   void beginResourceCycle(bool ConsumeRequest = true) noexcept {
+      if (ConsumeRequest) gs->gc.resourcepending = 0;
+      else gs->gc.resourcepending = 1;
+      gs->gc.resourceactive = 1;
+   }
+
+   void finishResourceCycle() noexcept {
+      if (not gs->gc.resourceactive) return;
+      gs->gc.resourceactive = 0;
+      gs->gc.resourcecooldown = RESOURCE_COOLDOWN;
+   }
+
+   void deferResourceCycle() noexcept {
+      if (gs->gc.resourcecooldown > 0) gs->gc.resourcecooldown--;
+   }
+
+   void clearResourceScheduling() noexcept {
+      gs->gc.resourcepending = 0;
+      gs->gc.resourceactive = 0;
+      gs->gc.resourcecooldown = 0;
    }
 
    // -- Access to underlying state --

@@ -286,6 +286,119 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+-- Native resources are collected incrementally at child-script activation boundaries.
+
+@Test(hotpath=false) function ResourceAwareGarbageCollection()
+   local base_name = f"FluteResourceGC{glScript.id}"
+   local temporary_name = base_name .. "Temporary"
+   local reachable_name = base_name .. "Reachable"
+   local detached_name = base_name .. "Detached"
+   local stopped_name = base_name .. "Stopped"
+
+   local temporary_script = obj.new('tiri', {
+      statement = "global gl_resource\n" ..
+         "global function Create()\n" ..
+         "   gl_resource = obj.new('time', { name='" .. temporary_name .. "' })\n" ..
+         "end\n" ..
+         "global function Clear()\n" ..
+         "   gl_resource = nil\n" ..
+         "end\n" ..
+         "global function Tick() end",
+      procedure = "Create"
+   })
+
+   check temporary_script.acActivate()
+   assert(obj.find(temporary_name) != nil, "Reachable temporary resource should survive its creation cycle")
+   temporary_script.procedure = "Clear"
+   check temporary_script.acActivate()
+   temporary_script.procedure = "Tick"
+
+   local temporary_collected = false
+   for _ in {0 to 128} do
+      check temporary_script.acActivate()
+      if obj.find(temporary_name) is nil then
+         temporary_collected = true
+         break
+      end
+   end
+   assert(temporary_collected, "Dereferenced resource was not collected within 128 activation boundaries")
+   temporary_script.free()
+
+   local reachable_script = obj.new('tiri', {
+      statement = "global gl_resource\n" ..
+         "global function Create()\n" ..
+         "   gl_resource = obj.new('time', { name='" .. reachable_name .. "' })\n" ..
+         "end\n" ..
+         "global function Tick() end",
+      procedure = "Create"
+   })
+   check reachable_script.acActivate()
+   reachable_script.procedure = "Tick"
+   for _ in {0 to 40} do check reachable_script.acActivate() end
+   assert(obj.find(reachable_name) != nil, "Reachable resource did not survive fallback collection cycles")
+   reachable_script.free()
+   assert(obj.find(reachable_name) is nil, "Freeing the owner script did not release its reachable resource")
+
+   local detached_script = obj.new('tiri', {
+      statement = "global gl_resource\n" ..
+         "global function Create()\n" ..
+         "   gl_resource = obj.new('time', { name='" .. detached_name .. "' })\n" ..
+         "   gl_resource.detach()\n" ..
+         "end\n" ..
+         "global function Clear()\n" ..
+         "   gl_resource = nil\n" ..
+         "end\n" ..
+         "global function Tick() end",
+      procedure = "Create"
+   })
+   check detached_script.acActivate()
+   detached_script.procedure = "Clear"
+   check detached_script.acActivate()
+   detached_script.procedure = "Tick"
+   for _ in {0 to 40} do check detached_script.acActivate() end
+   local detached_resource = obj.find(detached_name)
+   assert(detached_resource != nil, "Detached resource was automatically finalised")
+   detached_resource.free()
+   detached_script.free()
+
+   local stopped_script = obj.new('tiri', {
+      statement = "global gl_resource\n" ..
+         "global function Create()\n" ..
+         "   processing.stopCollector()\n" ..
+         "   gl_resource = obj.new('time', { name='" .. stopped_name .. "' })\n" ..
+         "end\n" ..
+         "global function Clear()\n" ..
+         "   gl_resource = nil\n" ..
+         "end\n" ..
+         "global function Start()\n" ..
+         "   processing.startCollector()\n" ..
+         "end\n" ..
+         "global function Tick() end",
+      procedure = "Create"
+   })
+   check stopped_script.acActivate()
+   stopped_script.procedure = "Clear"
+   check stopped_script.acActivate()
+   stopped_script.procedure = "Tick"
+   for _ in {0 to 5} do check stopped_script.acActivate() end
+   assert(obj.find(stopped_name) != nil, "Stopped collector finalised a pending native resource")
+   stopped_script.procedure = "Start"
+   check stopped_script.acActivate()
+   stopped_script.procedure = "Tick"
+
+   local restarted_collected = false
+   for _ in {0 to 128} do
+      check stopped_script.acActivate()
+      if obj.find(stopped_name) is nil then
+         restarted_collected = true
+         break
+      end
+   end
+   assert(restarted_collected, "Restarted collector did not resume pending native resource work")
+   stopped_script.free()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 -- Test obj.class property returns MetaClass
 
 @Test function ObjClassProperty()

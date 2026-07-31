@@ -417,6 +417,8 @@ void lj_gc_checkfinaliser(lua_State* L, GCobj* Object, GCtab* Metatable)
 }
 
 //********************************************************************************************************************
+static size_t gc_separateobjects(global_State* g, int all);
+
 // Move unreachable registered tables and full userdata to the pending-finaliser queue.
 
 size_t lj_gc_separatefinalisers(global_State* G, int All)
@@ -462,12 +464,21 @@ static size_t gc_separateobjects(global_State *g, int all)
             // Queue the native object for direct finalisation.
             m += sizeof(GCobject);
             gc_move_to_pending(g, o, p);
-            gc_mark(g, o);
+            if (not all) gc_mark(g, o);
          }
       }
       else p = &o->gch.nextgc;
    }
    return m;
+}
+
+//********************************************************************************************************************
+// Snapshot all pre-existing finalisable values before state shutdown.
+
+void lj_gc_prepare_shutdown(global_State* G)
+{
+   lj_gc_separatefinalisers(G, 1);
+   gc_separateobjects(G, 1);
 }
 
 //********************************************************************************************************************
@@ -1181,6 +1192,7 @@ int lj_gc_step(lua_State *L)
       lim -= (GCSize)gc_onestep(L);
       if (g->gc.state IS (GCPhase::Pause)) {
          g->gc.threshold = (g->gc.estimate / 100) * g->gc.pause;
+         GarbageCollector(g).finishResourceCycle();
          return 1;  // Finished a GC cycle.
       }
    } while (sizeof(lim) IS 8 ? ((int64_t)lim > 0) : ((int32_t)lim > 0));
@@ -1226,6 +1238,8 @@ void lj_gc_fullgc(lua_State *L)
    kt::Log(__FUNCTION__).detail("Running full cycle");
 
    global_State *g = G(L);
+   GarbageCollector collector(g);
+   if (collector.hasOwnedObjects()) collector.beginResourceCycle(true);
    VMStateGuard vm_guard(g);  // RAII: saves vmstate, sets to GC, restores on exit.
 
    if (g->gc.state <= (GCPhase::Atomic)) {  // Caught somewhere in the middle.
@@ -1248,6 +1262,8 @@ void lj_gc_fullgc(lua_State *L)
    g->gc.state = (GCPhase::Pause);
    do { gc_onestep(L); } while (g->gc.state != (GCPhase::Pause));
    g->gc.threshold = (g->gc.estimate / 100) * g->gc.pause;
+   collector.finishResourceCycle();
+   if (not collector.hasOwnedObjects()) collector.clearResourceScheduling();
 }
 
 //********************************************************************************************************************

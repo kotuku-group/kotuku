@@ -55,6 +55,11 @@ GCobject * lj_object_new(lua_State *L, OBJECTID UID, OBJECTPTR Ptr, objMetaClass
    obj->ptr         = Ptr;
    obj->classptr    = ClassPtr;
 
+   if ((not obj->is_detached()) and UID) {
+      gc(L).trackOwnedObject(obj);
+      kt::Log("resource.gc").detail("Tracked native object #%d (%u owned).", UID, gc(L).ownedObjectCount());
+   }
+
    return obj;
 }
 
@@ -74,6 +79,7 @@ void lj_object_finalize(lua_State *L, GCobject *obj)
 
       auto error = FreeObject(obj->uid);
       if ((!error) or (error IS ERR::DoesNotExist)) {
+         gc(L).releaseOwnedObject(obj);
          if (obj->is_pinned()) {
             obj->ptr->unpinWeak();
             obj->set_pinned(false);
@@ -92,6 +98,8 @@ void lj_object_finalize(lua_State *L, GCobject *obj)
 
 void lj_object_free(global_State *g, GCobject *obj)
 {
+   gc(g).releaseOwnedObject(obj);
+
    // Release any active locks before freeing the wrapper
    while (obj->accesscount > 0) {
       if (obj->flags & GCOBJ_LOCKED) {
