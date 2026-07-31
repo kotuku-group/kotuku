@@ -199,7 +199,6 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
 
    if (processed_events) {
       XFlush(XDisplay);
-      if (XDisplay) XSync(XDisplay, False);
    }
 }
 
