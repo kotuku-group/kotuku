@@ -1118,12 +1118,11 @@ inline GCarray* arrayref(GCRef r) noexcept;
 inline constexpr uint8_t GCOBJ_DETACHED = 0x01;  // Object is external reference, not owned
 inline constexpr uint8_t GCOBJ_LOCKED   = 0x02;  // Lock acquired via AccessObject()
 inline constexpr uint8_t GCOBJ_PINNED   = 0x04;  // Wrapper holds one weak pin on ptr
-inline constexpr uint8_t GCOBJ_RESOURCE_TRACKED = 0x08; // Wrapper owns a native resource tracked by the GC scheduler
 
 struct GCobject {
    GCHeader;                    // [0]  nextgc, marked, gct (10 bytes)
    uint8_t udtype;              // [10] Reserved for sub-types (future use)
-   uint8_t flags;               // [11] Object flags (GCOBJ_*)
+   uint8_t flags;               // [11] Object flags (GCOBJ_DETACHED, GCOBJ_LOCKED, GCOBJ_PINNED)
    int32_t uid;                 // [12] Kotuku object unique ID (OBJECTID)
    uint32_t accesscount;        // [16] Access count for lock management
    uint32_t reserved;           // [20] Reserved for alignment
@@ -1135,14 +1134,9 @@ struct GCobject {
    inline bool is_detached() { return (flags & GCOBJ_DETACHED) != 0; }
    inline bool is_locked() { return (flags & GCOBJ_LOCKED) != 0; }
    inline bool is_pinned() { return (flags & GCOBJ_PINNED) != 0; }
-   inline bool is_resource_tracked() { return (flags & GCOBJ_RESOURCE_TRACKED) != 0; }
    inline void set_detached(bool v) { if (v) flags |= GCOBJ_DETACHED; else flags &= ~GCOBJ_DETACHED; }
    inline void set_locked(bool v) { if (v) flags |= GCOBJ_LOCKED; else flags &= ~GCOBJ_LOCKED; }
    inline void set_pinned(bool v) { if (v) flags |= GCOBJ_PINNED; else flags &= ~GCOBJ_PINNED; }
-   inline void set_resource_tracked(bool v) {
-      if (v) flags |= GCOBJ_RESOURCE_TRACKED;
-      else flags &= ~GCOBJ_RESOURCE_TRACKED;
-   }
 };
 
 // Ensure metatable and gclist fields are at same offset as other GC types
@@ -1292,10 +1286,6 @@ typedef struct GCState {
    MSize   stepmul;      // Incremental GC step granularity.
    MSize   pause;        // Pause between successive GC cycles.
    MRef    lightudseg;   //  Upper bits of lightuserdata segments (64-bit).
-   MSize   ownedobjects; // Native-object wrappers whose resources are owned by this universe.
-   uint8_t resourcepending; // A newly owned wrapper requested a resource collection cycle.
-   uint8_t resourceactive;  // A resource-driven incremental cycle is in progress.
-   uint16_t resourcecooldown; // Activation boundaries before the next fallback resource cycle.
 } GCState;
 
 // String interning state.
