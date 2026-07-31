@@ -312,6 +312,45 @@ end
    assert(_G[global_name] is 'retryable', 'A rejected store should not publish const policy')
 end
 
+@Test function ConditionalGlobalConstPersistsWhenStoreIsSkipped()
+   local if_nil_name = f"glConstIfNil{failed_const_test_id}"
+   failed_const_test_id++
+   local if_empty_name = f"glConstIfEmpty{failed_const_test_id}"
+   failed_const_test_id++
+
+   rawset(_G, if_nil_name, 'retained-if-nil')
+   exec(f"global {if_nil_name} <const> ?= 'fallback'")
+   assert(_G[if_nil_name] is 'retained-if-nil', '?= should retain an existing non-nil value')
+   expect_const_global_failure(function() exec(f"{if_nil_name} = 'changed'") end,
+      'cross-chunk assignment after skipped ?= const store')
+
+   rawset(_G, if_empty_name, 'retained-if-empty')
+   exec(f"global {if_empty_name} <const> ??= 'fallback'")
+   assert(_G[if_empty_name] is 'retained-if-empty', '??= should retain an existing non-empty value')
+   expect_const_global_failure(function() exec(f"{if_empty_name} = 'changed'") end,
+      'cross-chunk assignment after skipped ??= const store')
+end
+
+@Test function SkippedConditionalConstValidatesRetainedValue()
+   local global_name = f"glConstConditionalMismatch{failed_const_test_id}"
+   failed_const_test_id++
+   local trapped = false
+
+   rawset(_G, global_name, 'wrong')
+   try
+      exec(f"global {global_name} <const>:num ?= 1")
+   except e
+      trapped = true
+      assert(string.find(tostring(e.message), 'type contract failed for global') != nil,
+         'The retained value should be checked against the const declaration: ' .. tostring(e.message))
+   end
+
+   assert(trapped, 'An incompatible retained value should reject the const declaration')
+   assert(_G[global_name] is 'wrong', 'Rejected validation should preserve the retained value')
+   exec(f"{global_name} = 'changed'")
+   assert(_G[global_name] is 'changed', 'Rejected validation should not publish const policy')
+end
+
 @Test function FailedGlobalConstInitialisationCanRetry()
    local previous_metatable = getmetatable(_G)
    local trapped = false

@@ -21,6 +21,17 @@
    };
 }
 
+static void bcemit_skipped_global_const(FuncState *State, BCReg Value,
+   const std::optional<RuntimeContract> &Contract)
+{
+   if (not Contract or not Contract->is_const) return;
+
+   bcemit_contract(State, Value, std::span(&*Contract, 1), 1);
+   RuntimeContract finaliser = *Contract;
+   finaliser.initialising = false;
+   bcemit_contract(State, Value, std::span(&finaliser, 1), 1);
+}
+
 //********************************************************************************************************************
 
 ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPayload &Payload)
@@ -96,8 +107,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
       ControlFlowEdge falsey_edge = emit_falsey_jumps(
          this->func_state, this->control_flow, lhs_reg, options);
 
-      // Skip assignment if not empty
+      // A retained value still initialises a const binding.  Validate it and publish policy without storing it.
 
+      auto contract = global_declaration_contract(identifier);
+      bcemit_skipped_global_const(&this->func_state, lhs_reg, contract);
       ControlFlowEdge skip_assign = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
       BCPos assign_pos = BCPos(this->func_state.pc);
 
@@ -119,7 +132,6 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
       ExpDesc target;
       target.init(ExpKind::Global, 0);
       target.u.sval = name;
-      auto contract = global_declaration_contract(identifier);
       bcemit_store(&this->func_state, &target, &rhs, contract ? &*contract : nullptr, true);
 
       // Patch jumps
@@ -168,8 +180,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
       ControlFlowEdge check_nil = emit_falsey_jumps(
          this->func_state, this->control_flow, lhs_reg, nil_only);
 
-      // Skip assignment if not nil
+      // A retained value still initialises a const binding.  Validate it and publish policy without storing it.
 
+      auto contract = global_declaration_contract(identifier);
+      bcemit_skipped_global_const(&this->func_state, lhs_reg, contract);
       ControlFlowEdge skip_assign = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
       BCPos assign_pos = BCPos(this->func_state.pc);
 
@@ -191,7 +205,6 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
       ExpDesc target;
       target.init(ExpKind::Global, 0);
       target.u.sval = name;
-      auto contract = global_declaration_contract(identifier);
       bcemit_store(&this->func_state, &target, &rhs, contract ? &*contract : nullptr, true);
 
       // Patch jumps
