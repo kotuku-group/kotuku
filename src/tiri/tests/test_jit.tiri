@@ -591,8 +591,10 @@ end
       local key = keys[iteration % #keys]
       local expected = key is 'alpha' ? 'keyword' :> key is 'bravo' ? 'annotation' :> 'missing'
       local result = resolve_safe_index_join(key)
-      assert(result is expected,
-         f'Safe-index join failed at iteration {iteration}: key={key}, expected={expected}, result={result}')
+      if result != expected then
+         assert(false,
+            f'Safe-index join failed at iteration {iteration}: key={key}, expected={expected}, result={result}')
+      end
    end
 
    assert(count_jit_traces(30) > 0, 'Alternating safe-index branches should execute through a compiled trace')
