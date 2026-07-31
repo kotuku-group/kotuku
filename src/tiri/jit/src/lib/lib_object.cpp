@@ -574,7 +574,7 @@ LJLIB_CF(object_new)
 
       load_include_for_class(L, obj->Class);
 
-      lua_pushobject(L, obj->UID, obj, obj->Class, 0);
+      auto wrapper = lua_pushobject(L, obj->UID, obj, obj->Class, 0);
       if (lua_istable(L, 2)) {
          ERR field_error    = ERR::Okay;
          CSTRING field_name = nullptr;
@@ -599,7 +599,16 @@ LJLIB_CF(object_new)
 
          if ((field_error != ERR::Okay) or ((error = InitObject(obj)) != ERR::Okay)) {
             auto class_name = obj->className();
+            gc(L).releaseOwnedObject(wrapper);
+            wrapper->set_detached(true);
             FreeResource(obj);
+            if (wrapper->is_pinned()) {
+               wrapper->ptr->unpinWeak();
+               wrapper->set_pinned(false);
+            }
+            wrapper->uid = 0;
+            wrapper->ptr = nullptr;
+            wrapper->classptr = nullptr;
 
             if (field_error != ERR::Okay) {
                auto field_type = failed_field ? field_typename(*failed_field) : "unknown";
@@ -860,7 +869,10 @@ static int object_children(lua_State *Lua)
 static int object_detach(lua_State *Lua)
 {
    auto def = object_context(Lua);
-   if (not def->is_detached()) def->set_detached(true);
+   if (not def->is_detached()) {
+      gc(Lua).releaseOwnedObject(def);
+      def->set_detached(true);
+   }
    return 0;
 }
 
@@ -977,6 +989,7 @@ static int object_free(lua_State *Lua)
 {
    auto def = object_context(Lua);
 
+   gc(Lua).releaseOwnedObject(def);
    def->flags |= GCOBJ_DETACHED; // Prevents a second object free at finalise.
 
    if (FreeObject(def->uid) IS ERR::InUse) {

@@ -30,6 +30,7 @@ The Tiri class provides functionality for running scripts written in the Tiri pr
 #include "lua.hpp"
 
 #include "lj_obj.h"
+#include "lj_gc.h"
 #include "parser/parser_diagnostics.h"
 #include "jit/src/debug/dump_bytecode.h"
 #include "lj_proto_registry.h"
@@ -260,10 +261,7 @@ void notify_action(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
                process_error(Self, "Action Subscription");
             }
 
-            if (lua_gc(Self->Lua, LUA_GCISRUNNING, 0)) {
-               log.traceBranch("Collecting garbage.");
-               lua_gc(Self->Lua, LUA_GCCOLLECT, 0);
-            }
+            // No automatic garbage collection here - that decision is left to the client
          }
 
          SetResource(RES::LOG_DEPTH, depth);
@@ -337,11 +335,26 @@ static ERR TIRI_Activate(extTiri *Self)
 
       Self->Recurse--;
 
-      if (Self->Lua) {
-         if (lua_gc(Self->Lua, LUA_GCISRUNNING, 0)) {
-            kt::Log log;
-            log.traceBranch("Collecting garbage.");
-            lua_gc(Self->Lua, LUA_GCCOLLECT, 0); // Run the garbage collector
+      if ((Self->Lua) and (Self->Recurse IS 0)) {
+         auto collector = gc(Self->Lua);
+         if (collector.isRunning()) {
+            if (not collector.hasOwnedObjects()) collector.clearResourceScheduling();
+            else {
+               if (not collector.resourceCycleDue()) collector.deferResourceCycle();
+               if (collector.resourceCycleDue()) {
+                  if (not collector.resourceCycleActive()) {
+                     log.detail("Starting native resource GC cycle (%u owned).", collector.ownedObjectCount());
+                     // A cycle already in progress may predate the newly owned wrapper.  Advance it without consuming
+                     // the request so that completion schedules a fresh cycle in which the wrapper is mark-eligible.
+                     collector.beginResourceCycle(collector.isPaused());
+                  }
+
+                  if (lua_gc(Self->Lua, LUA_GCSTEP, GarbageCollector::RESOURCE_STEP_KB)) {
+                     collector.finishResourceCycle();
+                     log.detail("Completed native resource GC cycle (%u owned).", collector.ownedObjectCount());
+                  }
+               }
+            }
          }
       }
 
@@ -420,11 +433,7 @@ static ERR TIRI_DataFeed(extTiri *Self, struct acDataFeed *Args)
          it++;
       }
 
-      if (lua_gc(Self->Lua, LUA_GCISRUNNING, 0)) {
-         kt::Log log;
-         log.traceBranch("Collecting garbage.");
-         lua_gc(Self->Lua, LUA_GCCOLLECT, 0); // Run the garbage collector
-      }
+      // No automatic garbage collection here - that decision is left to the client
    }
 
    return ERR::Okay;
@@ -581,13 +590,6 @@ static ERR TIRI_Query(extTiri *Self)
    if (not Self->MainChunkRef) {
       log.branch("Target: %d, Procedure: %s / ID #%" PRId64, Self->TargetID,
          Self->Procedure.empty() ? "." : Self->Procedure.c_str(), Self->ProcedureID);
-
-      auto cleanup = kt::Defer([&]() {
-         if (Self->Lua) {
-            kt::Log().traceBranch("Collecting garbage.");
-            lua_gc(Self->Lua, LUA_GCCOLLECT, 0); // Run the garbage collector
-         }
-      });
 
       lua_gc(Self->Lua, LUA_GCSTOP, 0);  // Stop collector during initialization
          luaL_openlibs(Self->Lua);  // Open Lua libraries
