@@ -189,6 +189,84 @@ X = 2
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+-- Global const policy persists in the environment and applies to every mutation route.
+
+function expect_const_global_failure(Store:func, Message:str)
+   local trapped = false
+   try
+      Store()
+   except e
+      trapped = true
+      assert(string.find(tostring(e.message), 'cannot assign to const global') != nil,
+         Message .. ' should raise a const-global error, got: ' .. tostring(e.message))
+   end
+   assert(trapped, Message .. ' should raise')
+end
+
+function const_dynamic_source(Value:any):any return Value end
+
+local failed_const_test_id = 0
+
+global glConstAcrossChunks <const> = 1
+global glConstEnvironment <const> = 'original'
+global glConstTable <const> = { value = 1 }
+global glConstDynamic <const> = const_dynamic_source('dynamic')
+
+@Test function GlobalConstPersistsAcrossChunks()
+   expect_const_global_failure(function() exec('glConstAcrossChunks = 2') end, 'exec assignment')
+   expect_const_global_failure(
+      function() exec('global glConstAcrossChunks = 2') end, 'exec redeclaration')
+   expect_const_global_failure(
+      function() exec("global glConstAcrossChunks:any = 'variant'") end, 'explicit any redeclaration')
+
+   assert(glConstAcrossChunks is 1, 'Rejected cross-chunk stores should preserve the const value')
+end
+
+@Test function GlobalConstRejectsEnvironmentMutationRoutes()
+   local alias = _G
+
+   expect_const_global_failure(function() _G.glConstEnvironment = 'member' end, '_G member store')
+   expect_const_global_failure(function() _G['glConstEnvironment'] = 'index' end, '_G index store')
+   expect_const_global_failure(function() alias.glConstEnvironment = 'alias' end, 'environment alias store')
+   expect_const_global_failure(function() rawset(_G, 'glConstEnvironment', 'raw') end, 'rawset store')
+
+   assert(glConstEnvironment is 'original', 'Rejected environment stores should preserve the const value')
+end
+
+@Test function GlobalConstIsShallow()
+   glConstTable.value = 2
+   assert(glConstTable.value is 2, 'Global const should protect the binding, not table contents')
+end
+
+@Test function DynamicGlobalConstPersistsAcrossChunks()
+   expect_const_global_failure(function() exec("glConstDynamic = 'changed'") end, 'dynamic const assignment')
+   assert(glConstDynamic is 'dynamic', 'A rejected store should preserve a dynamically initialised const')
+end
+
+@Test function FailedGlobalConstInitialisationCanRetry()
+   local previous_metatable = getmetatable(_G)
+   local trapped = false
+   local global_name = f"glRetriedConst{failed_const_test_id}"
+   failed_const_test_id++
+
+   setmetatable(_G, { __newindex = function(Table, Key, Value) error('blocked const store') end })
+   try
+      exec(f"global {global_name} <const> = 'first'")
+   except e
+      trapped = true
+      assert(string.find(tostring(e.message), 'blocked const store') != nil,
+         'The failed initialisation should preserve the store error')
+   end
+   setmetatable(_G, previous_metatable)
+
+   assert(trapped, 'The first const initialisation should fail')
+   exec(f"global {global_name} <const> = 'second'")
+   assert(_G[global_name] is 'second', 'A failed store should not leave a persisted const policy')
+   expect_const_global_failure(function() exec(f"{global_name} = 'third'") end,
+      'assignment after retried const initialisation')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 -- Test that local const without initialiser fails at compile time
 
 @Test function LocalConstRequiresInitialiser()

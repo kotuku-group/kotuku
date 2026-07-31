@@ -28,7 +28,9 @@ enum class ContractDescriptorFlag : uint8_t {
 enum class ContractEntryFlag : uint8_t {
    None = 0,
    Nullable = 1 << 0,
-   Required = 1 << 1
+   Required = 1 << 1,
+   Const = 1 << 2,
+   Initialising = 1 << 3
 };
 
 [[nodiscard]] constexpr inline uint8_t contract_flag(ContractDescriptorFlag Flag) noexcept
@@ -73,6 +75,16 @@ struct RuntimeContractDescriptor {
       return nullptr;
    }
 };
+
+[[nodiscard]] constexpr inline bool contract_entry_is_const(const RuntimeContractEntry &Entry) noexcept
+{
+   return (Entry.flags & contract_flag(ContractEntryFlag::Const)) != 0;
+}
+
+[[nodiscard]] constexpr inline bool contract_entry_is_initialising(const RuntimeContractEntry &Entry) noexcept
+{
+   return (Entry.flags & contract_flag(ContractEntryFlag::Initialising)) != 0;
+}
 
 enum class RuntimeContractDecodeError : uint8_t {
    None,
@@ -142,12 +154,19 @@ private:
       if (not reader.read_byte(type) or type > uint8_t(TiriType::Unknown) or
           not reader.read_byte(entry.flags) or
           (entry.flags & ~(contract_flag(ContractEntryFlag::Nullable) |
-             contract_flag(ContractEntryFlag::Required))) != 0 or
+             contract_flag(ContractEntryFlag::Required) | contract_flag(ContractEntryFlag::Const) |
+             contract_flag(ContractEntryFlag::Initialising))) != 0 or
           not reader.read_byte(entry.position) or entry.position IS 0 or
           not reader.read_text(entry.struct_name) or not reader.read_text(entry.label)) {
          return fail(RuntimeContractDecodeError::Entry);
       }
       entry.type = TiriType(type);
+      bool is_const = contract_entry_is_const(entry);
+      bool is_initialising = contract_entry_is_initialising(entry);
+      if ((is_const and Result.boundary != ContractBoundary::Global) or
+          (is_initialising and not is_const)) {
+         return fail(RuntimeContractDecodeError::Entry);
+      }
       if (not entry.struct_name.empty() and entry.type != TiriType::Struct) {
          return fail(RuntimeContractDecodeError::Entry);
       }

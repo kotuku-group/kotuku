@@ -3138,14 +3138,21 @@ void TypeAnalyser::publish_global_type_hints(LexState &Lex) const
    for (const auto &[name, info] : this->global_types_) {
       if (info.contract_policy IS GlobalContractPolicy::Variant) {
          Lex.global_type_hints[name] = {
-            TiriType::Any, CLASSID::NIL, nullptr, GlobalContractPolicy::Variant
+            TiriType::Any, CLASSID::NIL, nullptr, GlobalContractPolicy::Variant, info.is_const
+         };
+         continue;
+      }
+      if (info.is_const and not info.type.is_fixed) {
+         Lex.global_type_hints[name] = {
+            TiriType::Any, CLASSID::NIL, nullptr, GlobalContractPolicy::Enforced, true
          };
          continue;
       }
       if (not info.type.is_fixed) continue;
       if (info.contract_policy IS GlobalContractPolicy::Enforced) {
          Lex.global_type_hints[name] = {
-            info.type.primary, info.type.object_class_id, info.type.struct_def, GlobalContractPolicy::Enforced
+            info.type.primary, info.type.object_class_id, info.type.struct_def, GlobalContractPolicy::Enforced,
+            info.is_const
          };
          continue;
       }
@@ -3154,7 +3161,8 @@ void TypeAnalyser::publish_global_type_hints(LexState &Lex) const
          case TiriType::Object:
          case TiriType::Array:
             Lex.global_type_hints[name] = {
-               info.type.primary, info.type.object_class_id, info.type.struct_def, GlobalContractPolicy::Advisory
+               info.type.primary, info.type.object_class_id, info.type.struct_def, GlobalContractPolicy::Advisory,
+               info.is_const
             };
             break;
          default:

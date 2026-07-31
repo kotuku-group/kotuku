@@ -1795,12 +1795,12 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
    lua_State *lua = state.get();
    std::string encoded{
       char(TIRI_CONTRACT_VERSION),
-      char(uint8_t(ContractBoundary::Parameter)),
+      char(uint8_t(ContractBoundary::Global)),
       char(0),
       char(1),
       char(1),
       char(uint8_t(TiriType::Struct)),
-      char(contract_flag(ContractEntryFlag::Nullable)),
+      char(contract_flag(ContractEntryFlag::Nullable) | contract_flag(ContractEntryFlag::Const)),
       char(1),
       char(5)
    };
@@ -1811,9 +1811,10 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
    RuntimeContractDescriptor decoded;
    GCstr *descriptor = lj_str_new(lua, encoded.data(), encoded.size());
    if (not decode_runtime_contract(descriptor, decoded) or
-       decoded.boundary != ContractBoundary::Parameter or decoded.dynamic_count() or decoded.variadic() or
+       decoded.boundary != ContractBoundary::Global or decoded.dynamic_count() or decoded.variadic() or
        decoded.static_value_count != 1 or decoded.contract_count != 1 or
        decoded.entries[0].type != TiriType::Struct or decoded.entries[0].position != 1 or
+       not contract_entry_is_const(decoded.entries[0]) or
        decoded.entries[0].struct_name != "Point" or decoded.entries[0].label != "Value") {
       Log.error("valid runtime contract descriptor did not round-trip through the shared decoder");
       return false;
@@ -1829,6 +1830,8 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
    invalid_descriptor_flags[2] = char(0x80);
    std::string invalid_entry_flags = encoded;
    invalid_entry_flags[6] = char(0x80);
+   std::string invalid_initialising_flag = encoded;
+   invalid_initialising_flag[6] = char(contract_flag(ContractEntryFlag::Initialising));
    std::string invalid_position = encoded;
    invalid_position[7] = char(0);
    std::string invalid_constraint = encoded;
@@ -1837,6 +1840,7 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
    std::string truncated = encoded.substr(0, encoded.size() - 1);
 
    if (not rejected(invalid_descriptor_flags) or not rejected(invalid_entry_flags) or
+       not rejected(invalid_initialising_flag) or
        not rejected(invalid_position) or not rejected(invalid_constraint) or not rejected(trailing) or
        not rejected(truncated)) {
       Log.error("shared runtime contract decoder accepted malformed input");
@@ -1904,6 +1908,16 @@ static bool test_complex_contract_jit_eligibility(kt::Log &Log)
       "dynamic-result-contract");
    if (not dynamic or not (dynamic->flags & PROTO_NOJIT)) {
       Log.error("a dynamic-result contract became JIT-eligible without exact multi-result recorder support");
+      return false;
+   }
+
+   GCproto *global_const = compile_child(
+      "return function()\n"
+      "   global glRecordedConst <const> = 1\n"
+      "end\n",
+      "global-const-contract");
+   if (not global_const or not (global_const->flags & PROTO_NOJIT)) {
+      Log.error("a global const contract became JIT-eligible despite its post-store policy side effect");
       return false;
    }
    return true;

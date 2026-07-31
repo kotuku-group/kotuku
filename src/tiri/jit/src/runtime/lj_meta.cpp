@@ -754,6 +754,12 @@ static void decode_contract_or_error(lua_State *L, GCstr *Descriptor, RuntimeCon
    else lj_err_callermsg(L, "invalid runtime type-contract descriptor");
 }
 
+[[noreturn]] static void const_global_error(lua_State *L, const GCstr *Name)
+{
+   CSTRING message = lj_strfmt_pushf(L, "cannot assign to const global '%s'", strdata(Name));
+   lj_err_callermsg(L, message);
+}
+
 } // namespace
 
 extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCount, GCstr *Descriptor)
@@ -772,11 +778,32 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
          environment = tabref(curr_func(L)->c.env);
          global_name = lj_str_new(L, incoming.label.data(), incoming.label.size());
 
-         if (incoming.type IS TiriType::Any) {
+         GCstr *current = lj_tab_get_global_contract(environment, global_name);
+         if (current) {
+            RuntimeContractDescriptor current_descriptor;
+            decode_contract_or_error(L, current, current_descriptor);
+            if (current_descriptor.contract_count >= 1 and
+                contract_entry_is_const(current_descriptor.entries[0])) {
+               const_global_error(L, global_name);
+            }
+         }
+
+         if (contract_entry_is_const(incoming) and not contract_entry_is_initialising(incoming)) {
+            // This descriptor follows a successful global store.  Publishing here makes const initialisation
+            // transactional: a failed store never reaches this instruction and leaves no policy behind.
+            lj_tab_set_global_contract(L, environment, global_name, Descriptor);
+            return;
+         }
+         if (contract_entry_is_initialising(incoming)) {
+            // Validate the initial value before its store, but defer publishing the const policy until the matching
+            // post-store descriptor executes.
+            if (current and current != Descriptor) decode_contract_or_error(L, current, descriptor);
+         }
+         else if (incoming.type IS TiriType::Any) {
             // An explicit 'any' declaration is the only ordinary operation that relaxes a sticky global contract.
             lj_tab_set_global_contract(L, environment, global_name, Descriptor);
          }
-         else if (GCstr *current = lj_tab_get_global_contract(environment, global_name)) {
+         else if (current) {
             // Bytecode may outlive the declaration policy it was compiled against.  The environment policy is
             // authoritative for ordinary stores and concrete redeclarations.
             if (current != Descriptor) decode_contract_or_error(L, current, descriptor);
@@ -852,6 +879,9 @@ extern "C" void lj_env_check(lua_State *L, GCtab *Environment, GCstr *Name, cTVa
       decode_contract_or_error(L, persisted, descriptor);
       if (descriptor.contract_count >= 1) {
          const RuntimeContractEntry &entry = descriptor.entries[0];
+         if (contract_entry_is_const(entry) and not contract_entry_is_initialising(entry)) {
+            const_global_error(L, Name);
+         }
          if (entry.type != TiriType::Any and entry.type != TiriType::Unknown) {
             if (lj_is_thunk(&checked)) {
                // Validate the resolved value, but store the original thunk to preserve lazy evaluation on read.

@@ -550,6 +550,14 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
    // Dynamic result counts still require interpreter-only MRSAVE/MRRESTORE handling.  Fixed contracts have exact
    // recorder predicates, including callable values, named structures, ranges and userdata.
    if (DynamicCount) fs->flags |= PROTO_NOJIT;
+   for (const RuntimeContract &contract : Contracts) {
+      // Global const descriptors validate before the store and publish environment policy afterwards.  The recorder
+      // only emits type guards for BC_CONTRACT, so the post-store side effect must remain interpreter-only.
+      if (contract.is_const) {
+         fs->flags |= PROTO_NOJIT;
+         break;
+      }
+   }
 
    std::string descriptor;
    descriptor.reserve(5 + Contracts.size() * 8);
@@ -568,6 +576,8 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
       uint8_t entry_flags = 0;
       if (contract.nullable) entry_flags |= contract_flag(ContractEntryFlag::Nullable);
       if (contract.required) entry_flags |= contract_flag(ContractEntryFlag::Required);
+      if (contract.is_const) entry_flags |= contract_flag(ContractEntryFlag::Const);
+      if (contract.initialising) entry_flags |= contract_flag(ContractEntryFlag::Initialising);
       descriptor.push_back(char(entry_flags));
       descriptor.push_back(char(contract.position));
 
@@ -646,6 +656,9 @@ static void check_object_class_assignment(FuncState *Fs, const VarInfo &Variable
 static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
 {
    BCIns ins;
+   RuntimeContract global_const_finaliser;
+   BCREG global_const_base = 0;
+   bool finalise_global_const = false;
    if (LHS->k IS ExpKind::Local) {
       fs->ls->vstack[LHS->u.s.aux].info |= VarInfoFlag::VarReadWrite;
       VarInfo *vinfo = &fs->ls->vstack[LHS->u.s.aux];
@@ -692,7 +705,9 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
             .struct_def = found->second.struct_def,
             .label = LHS->u.sval,
             .boundary = ContractBoundary::Global,
-            .position = 1
+            .position = 1,
+            .is_const = found->second.is_const,
+            .initialising = found->second.is_const
          };
          // Declared global contracts must execute even when no predicate is required.  Concrete contracts and the
          // explicit 'any' opt-out are both attached to the environment for separately compiled chunks.
@@ -707,6 +722,18 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
       }
       BCREG ra = expr_toanyreg(fs, RHS);
       ins = BCINS_AD(BC_GSET, ra, const_str(fs, LHS));
+      if (found != fs->ls->global_type_hints.end() and found->second.is_const) {
+         global_const_finaliser = {
+            .type = found->second.primary,
+            .struct_def = found->second.struct_def,
+            .label = LHS->u.sval,
+            .boundary = ContractBoundary::Global,
+            .position = 1,
+            .is_const = true
+         };
+         global_const_base = ra;
+         finalise_global_const = true;
+      }
    }
    else if (LHS->k IS ExpKind::IndexedArray or LHS->k IS ExpKind::SafeIndexedArray) {
       // Array index assignment - emit BC_ASETV or BC_ASETB
@@ -774,6 +801,9 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
       }
    }
    bcemit_INS(fs, ins);
+   if (finalise_global_const) {
+      bcemit_contract(fs, global_const_base, std::span(&global_const_finaliser, 1), 1);
+   }
    expr_free(fs, RHS);
 }
 

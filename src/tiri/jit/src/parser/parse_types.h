@@ -93,6 +93,8 @@ struct RuntimeContract {
    uint8_t position = 0;
    bool nullable = true;
    bool required = false;
+   bool is_const = false;
+   bool initialising = false;
 };
 
 // Concept for flag types that support bitwise operations
