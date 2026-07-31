@@ -101,10 +101,7 @@ static void receive_event(kt::Event *Info, int InfoSize, APTR CallbackMeta)
       process_error(tiri, "Event Subscription");
    }
 
-   if (lua_gc(lua, LUA_GCISRUNNING, 0)) {
-      log.traceBranch("Collecting garbage.");
-      lua_gc(lua, LUA_GCCOLLECT, 0); // Run the garbage collector
-   }
+   collect_garbage(lua);
 }
 
 //********************************************************************************************************************

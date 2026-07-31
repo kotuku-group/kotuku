@@ -333,7 +333,8 @@ static int processing_collect(lua_State *Lua)
       else if ("step" IS mode_str) gc_mode = LUA_GCSTEP;
       else if ("defer" IS mode_str) {
          Lua->pending_collection = true;
-         return 0;
+         lua_pushinteger(Lua, 0);
+         return 1;
       }
       else luaL_error(Lua, "Invalid mode '%.*s'. Use 'full', 'step', 'defer'.", (int)mode_str.size(), mode_str.data());
    }
@@ -462,6 +463,7 @@ ERR delayed_msg_handler(APTR Meta, int MsgID, MSGID MsgType, std::span<std::byte
    if (lua_pcall(lua, 0, 0, 0)) {
       process_error(lua->script, "delayedCall()");
    }
+   collect_garbage(lua);
    return ERR::Okay;
 }
 
