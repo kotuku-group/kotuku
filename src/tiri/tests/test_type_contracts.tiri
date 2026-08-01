@@ -587,6 +587,72 @@ end
       'A rejected concrete redeclaration must preserve the global value and its existing contract')
 end
 
+@Test function GlobalFunctionAndThunkContracts()
+   @Typ07Marker
+   global function glContractFunction():num return 7 end
+   assert(glContractFunction() is 7, 'A global function declaration should remain callable')
+   local annotation = debug.anno.get(glContractFunction)
+   assert(annotation != nil and annotation.annotations[0].name is 'Typ07Marker',
+      'A global function contract must preserve annotation registration')
+
+   local wrong_function:any = 42
+   expect_contract_failure(function() glContractFunction = wrong_function end, 'global function')
+   assert(glContractFunction() is 7, 'A rejected same-chunk store must preserve the global function')
+
+   expect_contract_failure(function() exec('glContractFunction = 42') end, 'global function')
+   assert(glContractFunction() is 7, 'A rejected cross-chunk store must preserve the global function')
+
+   local environment = _G
+   expect_contract_failure(function() environment.glContractFunction = 42 end, 'global function alias')
+   expect_contract_failure(function() rawset(_G, 'glContractFunction', 42) end, 'global function rawset')
+   assert(glContractFunction() is 7, 'Rejected indirect stores must preserve the global function')
+
+   exec('global function glContractFunction():num return 8 end')
+   assert(glContractFunction() is 8, 'A compatible cross-chunk global function redeclaration should succeed')
+
+   global thunk glContractThunk():str return 'original' end
+   assert(glContractThunk() is 'original', 'A global thunk declaration should remain callable')
+   local wrong_thunk:any = false
+   expect_contract_failure(function() glContractThunk = wrong_thunk end, 'global thunk')
+   expect_contract_failure(function() exec('glContractThunk = 42') end, 'global thunk')
+   assert(glContractThunk() is 'original', 'Rejected stores must preserve the global thunk')
+
+   exec("global thunk glContractThunk():str return 'redeclared' end")
+   assert(glContractThunk() is 'redeclared', 'A compatible cross-chunk global thunk redeclaration should succeed')
+
+   global glContractConcrete = 'preserved'
+   expect_contract_failure(
+      function() exec('global function glContractConcrete() return 1 end') end, 'global redeclaration')
+   assert(glContractConcrete is 'preserved', 'A conflicting callable declaration must preserve the concrete global')
+
+   global glVariantCallback:any = function() return 'callable' end
+   exec('glVariantCallback = 42')
+   assert(glVariantCallback is 42, 'An explicit any variable declaration must remain the callable storage opt-out')
+end
+
+@Test function GlobalCallableForwardSignatures()
+   local result = exec([[
+global function glContractForward(Value:num):num end
+global function glContractForward(Value:num):num return Value end
+return glContractForward(4)
+]])
+   assert(result is 4, 'A matching global function definition must satisfy its forward declaration')
+
+   expect_contract_failure(function()
+      exec([[
+global function glContractForwardMismatch(Value:num):num end
+global function glContractForwardMismatch(Value:str):num return 1 end
+]])
+   end, 'global function forward signature')
+
+   expect_contract_failure(function()
+      exec([[
+global thunk glContractForwardKind():num end
+global function glContractForwardKind():num return 1 end
+]])
+   end, 'global callable kind')
+end
+
 @Test function CompiledGlobalWriterObservesVariantPolicy()
    global glContractWriter:num = 1
 
@@ -673,11 +739,16 @@ end
    function hot_results(Value:num):<num, str> return Value, 'kept', false end
    function hot_userdata(Value:userdata):userdata return Value end
    global glHotInferredContract = 0
+   global function glHotCallableContract():num return 1 end
    function store_hot_global(Value:any):num
       glHotInferredContract = Value
       return glHotInferredContract
    end
+   function store_hot_callable(Value:any)
+      glHotCallableContract = Value
+   end
    local dynamic:any = hot
+   local compatible_callable:any = function():num return 2 end
    local proxy = newproxy(true)
    for i in {0 to 200} do
       assert(dynamic(i) is i + 1, 'Valid hot call should preserve its argument')
@@ -686,10 +757,14 @@ end
          'Hot fixed return contracts must truncate additional results')
       assert(hot_userdata(proxy) is proxy, 'userdata contracts must remain stable on hot paths')
       assert(store_hot_global(i) is i, 'An inferred global contract should preserve valid values on hot paths')
+      store_hot_callable(compatible_callable)
+      assert(glHotCallableContract() is 2, 'A hot global func contract should preserve compatible callables')
    end
    expect_contract_failure(function() dynamic(dynamic_value('wrong')) end, 'parameter')
    expect_contract_failure(function() hot_userdata(dynamic_value({0 to 2})) end, 'parameter')
    expect_contract_failure(function() store_hot_global('wrong') end, 'global')
+   expect_contract_failure(function() store_hot_callable('wrong') end, 'global function')
+   assert(glHotCallableContract() is 2, 'A rejected hot store must preserve the global callable')
 end
 
 @Test function ContractDisassemblyOrder()

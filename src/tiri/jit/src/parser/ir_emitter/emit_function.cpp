@@ -783,6 +783,11 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
 
    ExpDesc target = target_result.value_ref();
    ExpDesc value = function_value.value_ref();
+   std::optional<RuntimeContract> global_contract;
+   bool is_direct_global_declaration = Payload.name.is_explicit_global and is_simple_name;
+   if (is_direct_global_declaration) {
+      global_contract = global_declaration_contract(Payload.name.segments.front());
+   }
 
    // For annotation registration, we need the function in a register
    // Materialise the function value to a register before the store
@@ -795,7 +800,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
       bcreg_reserve(&this->func_state, 1);
    }
 
-   bcemit_store(&this->func_state, &target, &value);
+   bcemit_store(&this->func_state, &target, &value,
+      global_contract ? &*global_contract : nullptr, is_direct_global_declaration);
    release_indexed_original(this->func_state, target);
 
    // Register annotations if present

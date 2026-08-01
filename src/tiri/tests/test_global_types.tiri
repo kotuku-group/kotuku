@@ -31,6 +31,34 @@ glGTSticky = dynamic
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+-- Direct global callable declarations must publish the same persistent binding contract as global variables.
+
+@Test function GlobalCallableContractBytecode()
+   local function_disasm = disassemble([[
+global function glGTContractFunction() return 1 end
+]])
+   local function_contract = function_disasm:find('CONTRACT')
+   local function_store = function_disasm:find('GSET')
+   assert(function_contract != nil and function_store != nil and function_contract < function_store,
+      'A global function contract must precede its store, got:\n' .. function_disasm)
+
+   local thunk_disasm = disassemble([[
+global thunk glGTContractThunk():str return 'value' end
+]])
+   local thunk_contract = thunk_disasm:find('CONTRACT')
+   local thunk_store = thunk_disasm:find('GSET')
+   assert(thunk_contract != nil and thunk_store != nil and thunk_contract < thunk_store,
+      'A global thunk func contract must precede its store, got:\n' .. thunk_disasm)
+
+   local member_disasm = disassemble([[
+local holder = {}
+function holder.callback() return 1 end
+]])
+   assert(member_disasm:find('CONTRACT') is nil,
+      'A table method must not publish a global binding contract, got:\n' .. member_disasm)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 -- Explicit global assignment must propagate the struct type to reads and writes.
 
 @Test function GlobalStructBytecode()
