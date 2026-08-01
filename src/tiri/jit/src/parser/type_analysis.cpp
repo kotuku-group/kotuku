@@ -2652,6 +2652,7 @@ void TypeAnalyser::declare_global_function(GCstr *Name, const FunctionExprPayloa
    info.location = Location;
    info.function = Function;
    info.forward_declaration = forward_declaration;
+   info.contract_policy = GlobalContractPolicy::Enforced;
    if (not info.forward_declaration and Function and is_function_forward_declaration(*Function)) {
       info.forward_declaration = Function;
    }

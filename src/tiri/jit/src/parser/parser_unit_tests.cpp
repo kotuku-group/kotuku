@@ -117,7 +117,8 @@ struct AstHarnessResult {
 
 //********************************************************************************************************************
 
-static AstHarnessResult build_ast_from_source(std::string_view source, bool Diagnose = false)
+static AstHarnessResult build_ast_from_source(std::string_view source, bool Diagnose = false,
+   bool EnableTypeAnalysis = true)
 {
    AstHarnessResult result;
    result.state = std::make_unique<LuaStateHolder>();
@@ -136,6 +137,7 @@ static AstHarnessResult build_ast_from_source(std::string_view source, bool Diag
    ParserConfig config;
    config.abort_on_error = false;
    config.max_diagnostics = 32;
+   config.enable_type_analysis = EnableTypeAnalysis;
    ParserSession session(context, config);
 
    lex.next();
@@ -409,6 +411,44 @@ static bool test_empty_comment_appended_to_variable(kt::Log &log)
    log.error("expected empty appended comment diagnostic");
    log_diagnostics(result.diagnostics, log);
    return false;
+}
+
+//********************************************************************************************************************
+
+static bool test_global_callable_contract_without_type_analysis(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "global function glParserContract() end\n"
+      "global thunk glParserThunk():num end\n";
+   auto result = build_ast_from_source(source, false, false);
+   if (not result.chunk.ok()) {
+      Log.error("failed to parse global callable declarations with type analysis disabled");
+      log_diagnostics(result.diagnostics, Log);
+      return false;
+   }
+
+   StatementListView statements = result.chunk.value_ref()->view();
+   if (statements.size() != 2) {
+      Log.error("expected two global callable declarations, got %" PRId64, int64_t(statements.size()));
+      return false;
+   }
+
+   for (size_t i = 0; i < statements.size(); ++i) {
+      const auto *payload = std::get_if<FunctionStmtPayload>(&statements[i].data);
+      if (not payload or payload->name.segments.size() != 1) {
+         Log.error("global callable declaration %" PRId64 " has no direct identifier", int64_t(i));
+         return false;
+      }
+
+      const Identifier &identifier = payload->name.segments.front();
+      if (identifier.global_contract_type != TiriType::Func or
+          identifier.global_contract_policy != GlobalContractPolicy::Enforced) {
+         Log.error("global callable declaration %" PRId64 " did not acquire an intrinsic func contract", int64_t(i));
+         return false;
+      }
+   }
+
+   return true;
 }
 
 //********************************************************************************************************************
@@ -3859,13 +3899,14 @@ static bool test_type_guided_emission(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 47> tests = { {
+   constexpr std::array<TestCase, 48> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
       { "expression_entry_point", test_expression_entry_point },
       { "expression_list_entry_point", test_expression_list_entry_point },
       { "empty_comment_appended_to_variable", test_empty_comment_appended_to_variable },
+      { "global_callable_contract_without_type_analysis", test_global_callable_contract_without_type_analysis },
       { "loop_ast", test_loop_ast },
       { "if_stmt_with_elseif_ast", test_if_stmt_with_elseif_ast },
       { "local_function_table_ast", test_local_function_table_ast },
