@@ -435,6 +435,23 @@ static RecordedContract rec_contract_guard_struct(
    return RecordedContract::Basic;
 }
 
+static RecordedContract rec_contract_guard_object(
+   jit_State *J, TRef ValueRef, cTValue *Value, CLASSID ExpectedClassId)
+{
+   if (not tvisobject(Value)) return RecordedContract::Mismatch;
+   if (ExpectedClassId IS CLASSID::NIL) return RecordedContract::Basic;
+
+   GCobject *object = objectV(Value);
+   if (not object->classptr or object->classptr->ClassID != ExpectedClassId) {
+      return RecordedContract::Mismatch;
+   }
+
+   IRBuilder ir(J);
+   TRef class_ref = ir.fload(ValueRef, IRFL_OBJ_CLASSPTR, IRT_PTR);
+   ir.guard_eq(class_ref, ir.kkptr(object->classptr), IRT_PTR);
+   return RecordedContract::Basic;
+}
+
 static RecordedContract rec_contract_guard_userdata(jit_State *J, TRef ValueRef, cTValue *Value)
 {
    if (tvislightud(Value)) return RecordedContract::Basic;
@@ -489,7 +506,7 @@ static RecordedContract rec_contract_record(jit_State *J, BCREG Base, GCstr *Enc
             if (not tvisarray(value)) result = RecordedContract::Mismatch;
             break;
          case TiriType::Object:
-            if (not tvisobject(value)) result = RecordedContract::Mismatch;
+            result = rec_contract_guard_object(J, value_ref, value, entry->object_class_id);
             break;
          case TiriType::Func:
             result = rec_contract_guard_callable(J, value_ref, value);

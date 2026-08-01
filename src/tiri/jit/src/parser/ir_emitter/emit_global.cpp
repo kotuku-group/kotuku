@@ -12,6 +12,7 @@
 
    return RuntimeContract{
       .type = Identifier.global_contract_type,
+      .object_class_id = Identifier.global_contract_object_class_id,
       .struct_def = Identifier.global_contract_struct_def,
       .label = Identifier.symbol,
       .boundary = ContractBoundary::Global,

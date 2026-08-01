@@ -87,6 +87,7 @@ enum class VarInfoFlag : uint8_t {
 
 struct RuntimeContract {
    TiriType type = TiriType::Unknown;
+   CLASSID object_class_id = CLASSID::NIL;
    struct_record *struct_def = nullptr;
    GCstr *label = nullptr;
    ContractBoundary boundary = ContractBoundary::Local;

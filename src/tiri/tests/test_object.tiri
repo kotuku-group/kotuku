@@ -389,3 +389,28 @@ end
    str_value = c.keyFilter  -- str_value is inferred as str
    assert(type(str_value) is 'string', "Expected str_value to be a string")
 end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Object class identity remains exact for inferred bindings, while explicit obj annotations remain broad.
+
+@Test function ObjectClassAssignmentControls()
+   local matching = obj.new('time')
+   matching = obj.new('time')
+   assert(matching.class.name is 'Time', 'A matching object class assignment should remain valid')
+
+   try
+      exec([[
+local value = obj.new('time')
+value = obj.new('file')
+]])
+   except ex
+      assert(ex.message:find('object class mismatch') != nil or ex.message:find('ObjectClassMismatch') != nil,
+         'A visible cross-class assignment should retain its compile-time diagnostic: ' .. ex.message)
+   success
+      error('Expected a compile-time object class mismatch')
+   end
+
+   local broad:obj = obj.new('time')
+   broad = obj.new('file')
+   assert(broad.class.name is 'File', 'An explicit obj annotation should accept either object class')
+end

@@ -26,6 +26,20 @@ function expect_contract_failure(Callback:func, Boundary:str)
    assert(failed, 'Expected a catchable ' .. Boundary .. ' contract failure')
 end
 
+function expect_object_contract_failure(Callback:func, Boundary:str)
+   local failed = false
+   try
+      Callback()
+   except e
+      failed = true
+      assert(e.message:find('expected obj<Time>') != nil,
+         'The message should identify the expected Time class: ' .. e.message)
+      assert(e.message:find('got obj<File>') != nil or e.message:find('got obj<invalid>') != nil,
+         'The message should identify the actual object class: ' .. e.message)
+   end
+   assert(failed, 'Expected a catchable ' .. Boundary .. ' object-class contract failure')
+end
+
 function expect_diagnostic_failure(Callback:func)
    local failed = false
    try
@@ -520,6 +534,96 @@ end
    assert(captured is 2, 'A rejected upvalue store must preserve the previous value')
 end
 
+@Test function ObjectClassLocalAndUpvalueContracts()
+   local value = obj.new('time')
+   value = dynamic_value(obj.new('time'))
+   assert(value.class.name is 'Time', 'A dynamically sourced Time should satisfy an inferred Time local')
+
+   local file = obj.new('file')
+   expect_object_contract_failure(function() value = dynamic_value(file) end, 'local')
+   assert(value.class.name is 'Time', 'A rejected local store must preserve the previous Time object')
+
+   value = nil
+   assert(value is nil, 'Nil should clear a class-constrained local')
+   value = dynamic_value(obj.new('time'))
+   assert(value.class.name is 'Time', 'A Time should restore a nil-cleared class-constrained local')
+
+   local deferred
+   deferred = obj.new('time')
+   expect_object_contract_failure(function() deferred = dynamic_value(file) end, 'deferred local')
+   assert(deferred.class.name is 'Time', 'A deferred local should retain its first concrete object class')
+
+   local captured = obj.new('time')
+   function write_captured_object(Value:any)
+      captured = Value
+   end
+   write_captured_object(obj.new('time'))
+   expect_object_contract_failure(function() write_captured_object(file) end, 'upvalue')
+   assert(captured.class.name is 'Time', 'A rejected upvalue store must preserve the previous Time object')
+
+   local deferred_file = <{ obj.new('file') }>
+   expect_object_contract_failure(function() captured = dynamic_value(deferred_file) end, 'resolved thunk')
+   assert(captured.class.name is 'Time', 'A rejected resolved thunk must not mutate the captured object')
+
+   local invalid = obj.new('time')
+   invalid.free()
+   expect_object_contract_failure(function() captured = dynamic_value(invalid) end, 'invalid wrapper')
+
+   local broad:obj = obj.new('time')
+   broad = dynamic_value(file)
+   assert(broad.class.name is 'File', 'An explicit obj annotation should remain a broad object contract')
+end
+
+@Test function ObjectClassGlobalContracts()
+   global glContractTimeObject = obj.new('time')
+   glContractTimeObject = dynamic_value(obj.new('time'))
+   exec("glContractTimeObject = obj.new('time')")
+   assert(glContractTimeObject.class.name is 'Time', 'Matching same- and cross-chunk Time stores should pass')
+
+   local file = obj.new('file')
+   expect_object_contract_failure(
+      function() glContractTimeObject = dynamic_value(file) end, 'same-chunk global')
+   expect_object_contract_failure(
+      function() exec("glContractTimeObject = obj.new('file')") end, 'cross-chunk global')
+   local environment = _G
+   expect_object_contract_failure(
+      function() environment.glContractTimeObject = file end, 'environment alias')
+   expect_object_contract_failure(
+      function() rawset(_G, 'glContractTimeObject', file) end, 'raw global store')
+   assert(glContractTimeObject.class.name is 'Time',
+      'Rejected direct and indirect global stores must preserve the previous Time object')
+   exec("glContractTimeObject = obj.new('time')")
+
+   glContractTimeObject = nil
+   assert(glContractTimeObject is nil, 'Nil should clear a class-constrained global')
+   expect_object_contract_failure(
+      function() glContractTimeObject = dynamic_value(file) end, 'nil-cleared global')
+   exec("glContractTimeObject = obj.new('time')")
+
+   exec("global glContractTimeObject = obj.new('time')")
+   expect_object_contract_failure(
+      function() exec("global glContractTimeObject = obj.new('file')") end, 'global redeclaration')
+   assert(glContractTimeObject.class.name is 'Time',
+      'A rejected cross-class redeclaration must preserve the global value and policy')
+
+   try
+      global glContractReducedTime = obj.new('time')
+   end
+   expect_object_contract_failure(
+      function() exec("glContractReducedTime = obj.new('file')") end, 'reduced-analysis global')
+   assert(glContractReducedTime.class.name is 'Time',
+      'Reduced analysis should retain the inferred object class')
+
+   global glContractBroadObject:obj = obj.new('time')
+   glContractBroadObject = dynamic_value(file)
+   assert(glContractBroadObject.class.name is 'File', 'An explicit global obj contract should remain broad')
+
+   global glContractRelaxedObject = obj.new('time')
+   exec("global glContractRelaxedObject:any = obj.new('file')")
+   exec("glContractRelaxedObject = 42")
+   assert(glContractRelaxedObject is 42, 'An explicit global any redeclaration should relax object-class policy')
+end
+
 @Test function ExplicitGlobalStores()
    global glContractNumber:num = 3
    expect_contract_failure(function() glContractNumber = dynamic_value('wrong') end, 'global')
@@ -911,6 +1015,7 @@ end
    function hot_results(Value:num):<num, str> return Value, 'kept', false end
    function hot_userdata(Value:userdata):userdata return Value end
    global glHotInferredContract = 0
+   global glHotTimeObject = obj.new('time')
    global function glHotCallableContract():num return 1 end
    function store_hot_global(Value:any):num
       glHotInferredContract = Value
@@ -919,9 +1024,19 @@ end
    function store_hot_callable(Value:any)
       glHotCallableContract = Value
    end
+   function store_hot_object(Value:any):obj
+      glHotTimeObject = Value
+      return glHotTimeObject
+   end
+   local hot_captured = obj.new('time')
+   function store_hot_captured_object(Value:any):obj
+      hot_captured = Value
+      return hot_captured
+   end
    local dynamic:any = hot
    local compatible_callable:any = function():num return 2 end
    local proxy = newproxy(true)
+   local matching_time = obj.new('time')
    for i in {0 to 200} do
       assert(dynamic(i) is i + 1, 'Valid hot call should preserve its argument')
       local value, text, extra = hot_results(i)
@@ -929,6 +1044,10 @@ end
          'Hot fixed return contracts must truncate additional results')
       assert(hot_userdata(proxy) is proxy, 'userdata contracts must remain stable on hot paths')
       assert(store_hot_global(i) is i, 'An inferred global contract should preserve valid values on hot paths')
+      assert(store_hot_object(matching_time).class.name is 'Time',
+         'A matching global object class should remain valid on hot paths')
+      assert(store_hot_captured_object(matching_time).class.name is 'Time',
+         'A matching captured object class should remain valid on hot paths')
       store_hot_callable(compatible_callable)
       assert(glHotCallableContract() is 2, 'A hot global func contract should preserve compatible callables')
    end
@@ -936,6 +1055,11 @@ end
    expect_contract_failure(function() hot_userdata(dynamic_value({0 to 2})) end, 'parameter')
    expect_contract_failure(function() store_hot_global('wrong') end, 'global')
    expect_contract_failure(function() store_hot_callable('wrong') end, 'global function')
+   local file = obj.new('file')
+   expect_object_contract_failure(function() store_hot_object(file) end, 'hot global object')
+   expect_object_contract_failure(function() store_hot_captured_object(file) end, 'hot captured object')
+   assert(glHotTimeObject.class.name is 'Time' and hot_captured.class.name is 'Time',
+      'Rejected hot object stores must preserve both global and captured values')
    assert(glHotCallableContract() is 2, 'A rejected hot store must preserve the global callable')
 end
 

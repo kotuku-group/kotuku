@@ -1797,7 +1797,11 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
 {
    LuaStateHolder state;
    lua_State *L = state.get();
-   constexpr std::string_view source = "function typed(Value:userdata):userdata return Value end";
+   constexpr std::string_view source =
+      "extern obj\n"
+      "function dynamic(Value:any):any return Value end\n"
+      "local value = obj.new('time')\n"
+      "value = dynamic(value)\n";
    if (lua_load(L, source, "contract-roundtrip")) {
       Log.error("failed to compile contract source: %s", lua_tostring(L, -1));
       return false;
@@ -1821,9 +1825,32 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
 
    GCproto *restored_proto = funcproto(funcV(L->top - 1));
    BytecodeSnapshot restored = snapshot_proto(restored_proto);
-   lua_pop(L, 1);
    if (not snapshot_has_opcode(restored, BC_CONTRACT)) {
       Log.error("reloaded bytecode lost BC_CONTRACT");
+      lua_pop(L, 1);
+      return false;
+   }
+
+   auto has_time_contract = [L](auto &Self, GCproto *Proto) -> bool {
+      for (uint32_t i = 1; i < Proto->sizebc; ++i) {
+         BCIns instruction = proto_bc(Proto)[i];
+         if (bc_op(instruction) != BC_CONTRACT) continue;
+         GCstr *encoded = gco_to_string(proto_kgc(Proto, ~(ptrdiff_t)bc_d(instruction)));
+         RuntimeContractDescriptor descriptor;
+         if (decode_runtime_contract(encoded, descriptor) and descriptor.contract_count > 0 and
+             descriptor.entries[0].object_class_id IS CLASSID::TIME) return true;
+      }
+      GCRef *constant = mref<GCRef>(Proto->k) - 1;
+      for (uint32_t i = 0; i < Proto->sizekgc; ++i, --constant) {
+         GCobj *child = gcref(*constant);
+         if (child->gch.gct IS ~LJ_TPROTO and Self(Self, gco_to_proto(child))) return true;
+      }
+      return false;
+   };
+   bool class_survived = has_time_contract(has_time_contract, restored_proto);
+   lua_pop(L, 1);
+   if (not class_survived) {
+      Log.error("reloaded bytecode lost the multi-byte object class constraint in BC_CONTRACT");
       return false;
    }
    return true;
@@ -1833,20 +1860,37 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
 {
    LuaStateHolder state;
    lua_State *lua = state.get();
-   std::string encoded{
-      char(TIRI_CONTRACT_VERSION),
-      char(uint8_t(ContractBoundary::Global)),
-      char(0),
-      char(1),
-      char(1),
-      char(uint8_t(TiriType::Struct)),
-      char(contract_flag(ContractEntryFlag::Nullable) | contract_flag(ContractEntryFlag::Const)),
-      char(1),
-      char(5)
+   auto append_uleb = [](std::string &Bytes, uint32_t Value) {
+      do {
+         uint8_t byte = uint8_t(Value & 0x7f);
+         Value >>= 7;
+         if (Value) byte |= 0x80;
+         Bytes.push_back(char(byte));
+      } while (Value);
    };
-   encoded += "Point";
-   encoded.push_back(char(5));
-   encoded += "Value";
+   auto build_descriptor = [&append_uleb](uint8_t Version, TiriType Type, CLASSID ObjectClassId,
+      std::string_view StructName, std::string_view Label, uint8_t EntryFlags) {
+      std::string result{
+         char(Version),
+         char(uint8_t(ContractBoundary::Global)),
+         char(0),
+         char(1),
+         char(1),
+         char(uint8_t(Type)),
+         char(EntryFlags),
+         char(1)
+      };
+      if (Version IS TIRI_CONTRACT_VERSION) append_uleb(result, uint32_t(ObjectClassId));
+      result.push_back(char(uint8_t(StructName.size())));
+      result.append(StructName);
+      result.push_back(char(uint8_t(Label.size())));
+      result.append(Label);
+      return result;
+   };
+
+   uint8_t const_flags = contract_flag(ContractEntryFlag::Nullable) | contract_flag(ContractEntryFlag::Const);
+   std::string encoded = build_descriptor(
+      TIRI_CONTRACT_VERSION, TiriType::Struct, CLASSID::NIL, "Point", "Value", const_flags);
 
    RuntimeContractDescriptor decoded;
    GCstr *descriptor = lj_str_new(lua, encoded.data(), encoded.size());
@@ -1854,6 +1898,7 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
        decoded.boundary != ContractBoundary::Global or decoded.dynamic_count() or decoded.variadic() or
        decoded.static_value_count != 1 or decoded.contract_count != 1 or
        decoded.entries[0].type != TiriType::Struct or decoded.entries[0].position != 1 or
+       decoded.entries[0].object_class_id != CLASSID::NIL or
        not contract_entry_is_const(decoded.entries[0]) or
        decoded.entries[0].struct_name != "Point" or decoded.entries[0].label != "Value") {
       Log.error("valid runtime contract descriptor did not round-trip through the shared decoder");
@@ -1866,6 +1911,36 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
       return not decode_runtime_contract(value, result);
    };
 
+   std::string object_encoded = build_descriptor(
+      TIRI_CONTRACT_VERSION, TiriType::Object, CLASSID::TIME, {}, "Clock", const_flags);
+   RuntimeContractDescriptor object_decoded;
+   GCstr *object_descriptor = lj_str_new(lua, object_encoded.data(), object_encoded.size());
+   if (not decode_runtime_contract(object_descriptor, object_decoded) or
+       object_decoded.entries[0].type != TiriType::Object or
+       object_decoded.entries[0].object_class_id != CLASSID::TIME or
+       not object_decoded.entries[0].struct_name.empty()) {
+      Log.error("version-2 object class constraint did not round-trip through the shared decoder");
+      return false;
+   }
+
+   std::string broad_object = build_descriptor(
+      TIRI_CONTRACT_VERSION, TiriType::Object, CLASSID::NIL, {}, "Broad", const_flags);
+   GCstr *broad_descriptor = lj_str_new(lua, broad_object.data(), broad_object.size());
+   if (not decode_runtime_contract(broad_descriptor, object_decoded) or
+       object_decoded.entries[0].object_class_id != CLASSID::NIL) {
+      Log.error("version-2 broad object contract gained a class constraint while decoding");
+      return false;
+   }
+
+   std::string legacy = build_descriptor(
+      TIRI_CONTRACT_LEGACY_VERSION, TiriType::Object, CLASSID::TIME, {}, "Legacy", const_flags);
+   GCstr *legacy_descriptor = lj_str_new(lua, legacy.data(), legacy.size());
+   if (not decode_runtime_contract(legacy_descriptor, object_decoded) or
+       object_decoded.entries[0].object_class_id != CLASSID::NIL or object_decoded.entries[0].label != "Legacy") {
+      Log.error("legacy object contract did not decode broadly or retained stale class metadata");
+      return false;
+   }
+
    std::string invalid_descriptor_flags = encoded;
    invalid_descriptor_flags[2] = char(0x80);
    std::string invalid_entry_flags = encoded;
@@ -1874,15 +1949,29 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
    invalid_initialising_flag[6] = char(contract_flag(ContractEntryFlag::Initialising));
    std::string invalid_position = encoded;
    invalid_position[7] = char(0);
-   std::string invalid_constraint = encoded;
-   invalid_constraint[5] = char(uint8_t(TiriType::Num));
+   std::string invalid_scalar_class = build_descriptor(
+      TIRI_CONTRACT_VERSION, TiriType::Num, CLASSID::TIME, {}, "Value", const_flags);
+   std::string invalid_struct_class = build_descriptor(
+      TIRI_CONTRACT_VERSION, TiriType::Struct, CLASSID::TIME, "Point", "Value", const_flags);
+   std::string truncated_class{
+      char(TIRI_CONTRACT_VERSION), char(uint8_t(ContractBoundary::Local)), char(0), char(1), char(1),
+      char(uint8_t(TiriType::Object)), char(0), char(1), char(0x80)
+   };
+   std::string over_wide_class{
+      char(TIRI_CONTRACT_VERSION), char(uint8_t(ContractBoundary::Local)), char(0), char(1), char(1),
+      char(uint8_t(TiriType::Object)), char(0), char(1), char(0x80), char(0x80), char(0x80), char(0x80),
+      char(0x10), char(0), char(0)
+   };
    std::string trailing = encoded + "x";
    std::string truncated = encoded.substr(0, encoded.size() - 1);
+   std::string unknown_version = encoded;
+   unknown_version[0] = char(TIRI_CONTRACT_VERSION + 1);
 
    if (not rejected(invalid_descriptor_flags) or not rejected(invalid_entry_flags) or
        not rejected(invalid_initialising_flag) or
-       not rejected(invalid_position) or not rejected(invalid_constraint) or not rejected(trailing) or
-       not rejected(truncated)) {
+       not rejected(invalid_position) or not rejected(invalid_scalar_class) or not rejected(invalid_struct_class) or
+       not rejected(truncated_class) or not rejected(over_wide_class) or not rejected(trailing) or
+       not rejected(truncated) or not rejected(unknown_version)) {
       Log.error("shared runtime contract decoder accepted malformed input");
       return false;
    }
@@ -1938,6 +2027,19 @@ static bool test_complex_contract_jit_eligibility(kt::Log &Log)
       "fixed-complex-contract");
    if (not fixed or (fixed->flags & PROTO_NOJIT)) {
       Log.error("a fixed complex contract remained interpreter-only");
+      return false;
+   }
+
+   GCproto *fixed_object_class = compile_child(
+      "extern obj\n"
+      "return function(Value:any)\n"
+      "   local stored = obj.new('time')\n"
+      "   stored = Value\n"
+      "   return stored\n"
+      "end\n",
+      "fixed-object-class-contract");
+   if (not fixed_object_class or (fixed_object_class->flags & PROTO_NOJIT)) {
+      Log.error("a fixed object-class contract became interpreter-only");
       return false;
    }
 

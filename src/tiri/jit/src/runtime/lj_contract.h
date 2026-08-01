@@ -9,7 +9,8 @@
 #include <cstdint>
 #include <string_view>
 
-inline constexpr uint8_t TIRI_CONTRACT_VERSION = 1;
+inline constexpr uint8_t TIRI_CONTRACT_VERSION = 2;
+inline constexpr uint8_t TIRI_CONTRACT_LEGACY_VERSION = 1;
 
 enum class ContractBoundary : uint8_t {
    Parameter = 1,
@@ -47,6 +48,7 @@ struct RuntimeContractEntry {
    TiriType type = TiriType::Unknown;
    uint8_t flags = 0;
    uint8_t position = 0;
+   CLASSID object_class_id = CLASSID::NIL;
    std::string_view struct_name;
    std::string_view label;
 };
@@ -114,6 +116,20 @@ public:
       return true;
    }
 
+   [[nodiscard]] bool read_uleb32(uint32_t &Value) noexcept
+   {
+      Value = 0;
+      uint32_t shift = 0;
+      for (uint32_t count = 0; count < 5 and this->cursor_ < this->end_; ++count) {
+         uint8_t byte = *this->cursor_++;
+         if (count IS 4 and (byte & 0xf0)) return false;
+         Value |= uint32_t(byte & 0x7f) << shift;
+         if (not (byte & 0x80)) return true;
+         shift += 7;
+      }
+      return false;
+   }
+
    [[nodiscard]] bool at_end() const noexcept
    {
       return this->cursor_ IS this->end_;
@@ -128,8 +144,10 @@ private:
    const GCstr *Descriptor, RuntimeContractDescriptor &Result,
    RuntimeContractDecodeError *Error = nullptr) noexcept
 {
+   Result = RuntimeContractDescriptor{};
    if (Error) *Error = RuntimeContractDecodeError::None;
-   auto fail = [Error](RuntimeContractDecodeError Value) {
+   auto fail = [&Result, Error](RuntimeContractDecodeError Value) {
+      Result = RuntimeContractDescriptor{};
       if (Error) *Error = Value;
       return false;
    };
@@ -137,7 +155,8 @@ private:
    RuntimeContractReader reader(Descriptor);
    uint8_t version;
    uint8_t boundary;
-   if (not reader.read_byte(version) or version != TIRI_CONTRACT_VERSION or
+   if (not reader.read_byte(version) or
+       (version != TIRI_CONTRACT_LEGACY_VERSION and version != TIRI_CONTRACT_VERSION) or
        not reader.read_byte(boundary) or boundary < uint8_t(ContractBoundary::Parameter) or
        boundary > uint8_t(ContractBoundary::Global) or not reader.read_byte(Result.flags) or
        (Result.flags & ~(contract_flag(ContractDescriptorFlag::DynamicCount) |
@@ -151,16 +170,19 @@ private:
    for (uint8_t i = 0; i < Result.contract_count; ++i) {
       auto &entry = Result.entries[i];
       uint8_t type;
+      uint32_t object_class_id = 0;
       if (not reader.read_byte(type) or type > uint8_t(TiriType::Unknown) or
           not reader.read_byte(entry.flags) or
           (entry.flags & ~(contract_flag(ContractEntryFlag::Nullable) |
              contract_flag(ContractEntryFlag::Required) | contract_flag(ContractEntryFlag::Const) |
              contract_flag(ContractEntryFlag::Initialising))) != 0 or
           not reader.read_byte(entry.position) or entry.position IS 0 or
+          (version IS TIRI_CONTRACT_VERSION and not reader.read_uleb32(object_class_id)) or
           not reader.read_text(entry.struct_name) or not reader.read_text(entry.label)) {
          return fail(RuntimeContractDecodeError::Entry);
       }
       entry.type = TiriType(type);
+      entry.object_class_id = CLASSID(object_class_id);
       bool is_const = contract_entry_is_const(entry);
       bool is_initialising = contract_entry_is_initialising(entry);
       if ((is_const and Result.boundary != ContractBoundary::Global) or
@@ -168,6 +190,9 @@ private:
          return fail(RuntimeContractDecodeError::Entry);
       }
       if (not entry.struct_name.empty() and entry.type != TiriType::Struct) {
+         return fail(RuntimeContractDecodeError::Entry);
+      }
+      if (entry.object_class_id != CLASSID::NIL and entry.type != TiriType::Object) {
          return fail(RuntimeContractDecodeError::Entry);
       }
    }
