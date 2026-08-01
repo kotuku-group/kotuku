@@ -214,6 +214,7 @@ struct Identifier {
    mutable StaticBindingID binding_id = 0;
    mutable StaticValueHandle static_value = 0;
    mutable TiriType global_contract_type = TiriType::Unknown;
+   mutable CLASSID global_contract_object_class_id = CLASSID::NIL;
    mutable struct_record *global_contract_struct_def = nullptr;
    mutable GlobalContractPolicy global_contract_policy = GlobalContractPolicy::Advisory;
 

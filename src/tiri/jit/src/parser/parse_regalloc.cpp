@@ -542,6 +542,16 @@ static void contract_append_text(FuncState *fs, std::string &Descriptor, std::st
    Descriptor.append(Text);
 }
 
+static void contract_append_uleb32(std::string &Descriptor, uint32_t Value)
+{
+   do {
+      uint8_t byte = uint8_t(Value & 0x7f);
+      Value >>= 7;
+      if (Value) byte |= 0x80;
+      Descriptor.push_back(char(byte));
+   } while (Value);
+}
+
 static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeContract> Contracts,
    BCREG StaticValueCount, bool DynamicCount, bool Variadic)
 {
@@ -580,6 +590,8 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
       if (contract.initialising) entry_flags |= contract_flag(ContractEntryFlag::Initialising);
       descriptor.push_back(char(entry_flags));
       descriptor.push_back(char(contract.position));
+      CLASSID object_class_id = contract.type IS TiriType::Object ? contract.object_class_id : CLASSID::NIL;
+      contract_append_uleb32(descriptor, uint32_t(object_class_id));
 
       std::string_view struct_name;
       if (contract.struct_def) struct_name = contract.struct_def->Name;
@@ -631,9 +643,12 @@ static void bcemit_value_contract(
    if (Value->static_value and fs->ls->active_context) {
       const auto &descriptor = fs->ls->active_context->descriptors().value(Value->static_value);
       bool same_type = descriptor.primary IS Contract.type;
+      bool same_object_class = Contract.type != TiriType::Object or Contract.object_class_id IS CLASSID::NIL or
+         descriptor.object_class_id IS Contract.object_class_id;
       bool same_struct = Contract.type != TiriType::Struct or descriptor.struct_def IS Contract.struct_def;
       bool same_nullability = descriptor.nullable IS Contract.nullable;
-      if (same_type and same_struct and same_nullability and descriptor.proved() and not ForceRuntimeCheck) return;
+      if (same_type and same_object_class and same_struct and same_nullability and descriptor.proved() and
+          not ForceRuntimeCheck) return;
    }
 
    BCREG source = expr_toanyreg(fs, Value);
@@ -666,6 +681,7 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
       check_object_class_assignment(fs, *vinfo, *RHS);
       RuntimeContract contract{
          .type = vinfo->fixed_type,
+         .object_class_id = vinfo->object_class_id,
          .struct_def = vinfo->struct_def,
          .label = strref(vinfo->name),
          .boundary = ContractBoundary::Local,
@@ -683,6 +699,7 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
       check_object_class_assignment(fs, *vinfo, *RHS);
       RuntimeContract contract{
          .type = vinfo->fixed_type,
+         .object_class_id = vinfo->object_class_id,
          .struct_def = vinfo->struct_def,
          .label = strref(vinfo->name),
          .boundary = ContractBoundary::Upvalue,
@@ -708,6 +725,7 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
           found->second.contract_policy != GlobalContractPolicy::Advisory) {
          RuntimeContract contract{
             .type = found->second.primary,
+            .object_class_id = found->second.object_class_id,
             .struct_def = found->second.struct_def,
             .label = LHS->u.sval,
             .boundary = ContractBoundary::Global,

@@ -1815,10 +1815,13 @@ void TypeAnalyser::discover_global_decl_policy(const GlobalDeclStmtPayload &Payl
       else if (inferred.is_fixed) contract_policy = GlobalContractPolicy::Enforced;
 
       name.global_contract_type = inferred.primary;
+      name.global_contract_object_class_id = inferred.primary IS TiriType::Object ?
+         inferred.object_class_id : CLASSID::NIL;
       name.global_contract_struct_def = inferred.struct_def;
       name.global_contract_policy = contract_policy;
       if (name.has_const and not inferred.is_fixed) {
          name.global_contract_type = TiriType::Any;
+         name.global_contract_object_class_id = CLASSID::NIL;
          name.global_contract_struct_def = nullptr;
          name.global_contract_policy = GlobalContractPolicy::Enforced;
       }

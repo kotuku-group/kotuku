@@ -617,10 +617,10 @@ void lj_meta_istype(lua_State *L, BCREG ra, BCREG tp)
 
 //********************************************************************************************************************
 // Exact runtime type contracts.  The descriptor is an interned byte string, so it remains portable across bytecode
-// dump/write/read boundaries.  Layout:
+// dump/write/read boundaries.  Version-2 layout:
 //
 //   version, boundary, descriptor_flags, static_value_count, contract_count,
-//   repeated { type, entry_flags, position, struct_name_length, struct_name_bytes,
+//   repeated { type, entry_flags, position, object_class_id_uleb32, struct_name_length, struct_name_bytes,
 //              label_length, label_bytes }
 
 namespace {
@@ -671,7 +671,12 @@ namespace {
          struct_record *definition = find_struct(L, Entry.struct_name);
          return definition and structV(Value)->def IS definition;
       }
-      case TiriType::Object:   return tvisobject(Value);
+      case TiriType::Object: {
+         if (not tvisobject(Value)) return false;
+         if (Entry.object_class_id IS CLASSID::NIL) return true;
+         GCobject *object = objectV(Value);
+         return object->classptr and object->classptr->ClassID IS Entry.object_class_id;
+      }
       case TiriType::Range:    return contract_is_range(L, Value);
       case TiriType::Userdata: return contract_is_userdata(L, Value);
    }
@@ -692,6 +697,14 @@ namespace {
 
 static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractEntry &Entry)
 {
+   if (Entry.type IS TiriType::Object and Entry.object_class_id != CLASSID::NIL) {
+      if (CSTRING class_name = ResolveClassID(Entry.object_class_id)) {
+         std::snprintf(Buffer, Size, "obj<%s>", class_name);
+      }
+      else std::snprintf(Buffer, Size, "obj<#%08x>", uint32_t(Entry.object_class_id));
+      return;
+   }
+
    if (Entry.type IS TiriType::Struct and not Entry.struct_name.empty()) {
       std::snprintf(Buffer, Size, "struct<%.*s>", int(Entry.struct_name.size()), Entry.struct_name.data());
       return;
@@ -723,7 +736,12 @@ static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractE
    char actual[280];
    contract_type_name(expected, sizeof(expected), Entry);
 
-   if (tvisstruct(Value) and structV(Value)->def) {
+   if (tvisobject(Value)) {
+      GCobject *object = objectV(Value);
+      if (object->classptr) std::snprintf(actual, sizeof(actual), "obj<%s>", object->classptr->ClassName.c_str());
+      else std::snprintf(actual, sizeof(actual), "obj<invalid>");
+   }
+   else if (tvisstruct(Value) and structV(Value)->def) {
       const auto &name = structV(Value)->def->Name;
       std::snprintf(actual, sizeof(actual), "struct<%.*s>", int(name.size()), name.data());
    }
