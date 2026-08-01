@@ -280,7 +280,7 @@ end
    local result = exec([[
       import 'tempus'
 
-      @Test function GeneratedAnnotationAfterTempusImport()
+      @Test function GeneratedAnnotationAfterTempusImport():num
          return tempus.instant(0):toUnixSeconds()
       end
 
@@ -294,7 +294,7 @@ end
    local result = exec(source_after_large_constant_pool([[
       local target = { marker = 'method-ok' }
 
-      function target:overflowMethod()
+      function target:overflowMethod():str
          return self.marker
       end
 

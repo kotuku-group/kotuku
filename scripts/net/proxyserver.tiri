@@ -49,7 +49,7 @@ glMimeTypes = {
 ----------------------------------------------------------------------------------------------------------------------
 -- Utility Functions
 
-function timestamp()
+function timestamp():str
    return tempus.now():toZonedDateTime(tempus.zone.local()):format('yyyy-MM-dd HH:mm:ss.SSS')
 end
 
@@ -147,7 +147,7 @@ function invokeProxyHook(self, HookName:str, State:table, Callback:func, ...):an
 end
 
 -- URL-decode percent-encoded characters
-function urlDecode(str)
+function urlDecode(str:str):str
    if not str then return str end
    str = str:replace('+', ' ')
    result = ''
@@ -372,17 +372,17 @@ function createFlowManager(self)
    end
 
    -- Get all recorded flows
-   manager.getFlows = function()
+   manager.getFlows = function():table
       return manager._flows
    end
 
    -- Get specific flow by ID
-   manager.getFlow = function(id)
+   manager.getFlow = function(id):table
       return manager._flows[id]
    end
 
    -- Clear all flows
-   manager.clear = function()
+   manager.clear = function():nil
       manager._flows = {}
       manager._flowId = 0
    end
@@ -523,7 +523,7 @@ function createCertificateManager(self)
    end
 
    -- Get or generate certificate for domain
-   manager.getCertificate = function(domain)
+   manager.getCertificate = function(domain):obj
       if manager._certificates[domain] then
          return manager._certificates[domain]
       end
@@ -572,7 +572,7 @@ function createInterceptorEngine(self)
    end
 
    -- Process request through interceptors
-   engine.interceptRequest = function(request, flow)
+   engine.interceptRequest = function(request, flow):<table, bool>
       modified = false
       for interceptor in values(engine._requestInterceptors) do
          try
@@ -596,7 +596,7 @@ function createInterceptorEngine(self)
    end
 
    -- Process response through interceptors
-   engine.interceptResponse = function(response, flow)
+   engine.interceptResponse = function(response, flow):<table, bool>
       modified = false
       for interceptor in values(engine._responseInterceptors) do
          try
@@ -1513,32 +1513,32 @@ proxylib.start = function(Options:table)
    end
 
    -- Flow management API
-   self.getFlows = function()
+   self.getFlows = function():table
       return self._flowManager.getFlows()
    end
 
-   self.clearFlows = function()
+   self.clearFlows = function():nil
       return self._flowManager.clear()
    end
 
-   self.exportFlows = function(filename)
+   self.exportFlows = function(filename):bool
       return self._flowManager.export(filename)
    end
 
-   self.loadFlows = function(filename)
+   self.loadFlows = function(filename):bool
       return self._flowManager.load(filename)
    end
 
    -- Interceptor API
-   self.addRequestInterceptor = function(interceptor)
+   self.addRequestInterceptor = function(interceptor):nil
       return self._interceptor.addRequestInterceptor(interceptor)
    end
 
-   self.addResponseInterceptor = function(interceptor)
+   self.addResponseInterceptor = function(interceptor):nil
       return self._interceptor.addResponseInterceptor(interceptor)
    end
 
-   self.clearInterceptors = function()
+   self.clearInterceptors = function():nil
       return self._interceptor.clear()
    end
 

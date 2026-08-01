@@ -8,7 +8,7 @@
 local MATH_NAMESPACE = 'http://www.w3.org/2005/xpath-functions/math'
 local MATH_DECLARE = 'declare namespace math = "' .. MATH_NAMESPACE .. '"; '
 
-local function executeMath(Expression)
+local function executeMath(Expression:str):<obj, num>
    local query = obj.new('xquery', {
       statement = MATH_DECLARE .. Expression
    })
@@ -16,7 +16,7 @@ local function executeMath(Expression)
    return query, err
 end
 
-local function describeError(Query, Err)
+local function describeError(Query:obj, Err:num):str
    if Query and Query.errorMsg and Query.errorMsg != '' then
       return Query.errorMsg
    end

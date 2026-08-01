@@ -119,6 +119,16 @@ end
    assert(returned[1] is 10, 'Array element descriptors should survive function result propagation')
 end
 
+@Test function NativeArrayMethodResultIsInferred()
+   local function byte_text()
+      local bytes = array<byte>
+      bytes ..= 'hello'
+      return bytes:getString()
+   end
+
+   assert(byte_text() is 'hello', 'Registered array method results should participate in return inference')
+end
+
 @Test function ArrayDescriptorInvalidation()
    local values = array<int> { 1 }
    values = array<string> { 'changed' }

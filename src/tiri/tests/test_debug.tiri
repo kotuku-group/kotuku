@@ -598,7 +598,7 @@ end
 
    symbol = result.symbols[0]
    assert(symbol.params[0].doc is "Value to format", "Expected compact @input doc to be positional")
-   assert(symbol.results[0].type is "num", "Expected first compact result type to be inferred as num")
+   assert(symbol.results[0].type is "num", "Expected first compact result type to be inferred as num, got " .. tostring(symbol.results[0].type))
    assert(symbol.results[0].doc is "Incremented value", "Expected first inferred compact @result doc")
    assert(symbol.results[0].inferred is true, "Inferred compact result type should be marked inferred")
    assert(symbol.results[1].type is "str", "Expected second compact result type to be inferred as str")
@@ -616,7 +616,7 @@ end
          @input Callback that produces a value
          @result Callback result
       ]])
-      function compactFallback(Callback)
+      function compactFallback(Callback:func):any
          return Callback()
       end
    ]=]
@@ -628,9 +628,8 @@ end
 
    symbol = result.symbols[0]
    assert(symbol.params[0].doc is "Callback that produces a value", "Expected fallback compact @input doc")
-   assert(symbol.results[0].type is "any", "Unknown compact result type should fall back to any")
+   assert(symbol.results[0].type is "any", "Compact result type expected to be any")
    assert(symbol.results[0].doc is "Callback result", "Expected fallback compact @result doc")
-   assert(symbol.results[0].inferred is true, "Fallback compact result type should be marked inferred")
 end
 
 @Test function ValidateSymbolsWithAnnotatedFunctionAssignment()
@@ -700,7 +699,7 @@ struct ValidateUser
    List: ptr<ValidatePoint[]>
 end
 
-function validateGreet(U)
+function validateGreet(U):str
    return U.Name
 end
 ]=]

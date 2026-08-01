@@ -346,7 +346,7 @@ function push_during_array_loop(Array:array):<num, num, num>
    return original_length, #Array, Array[#Array - 1]
 end
 
-function run_array_method_trace(Workload, Count):<num, num, num>
+function run_array_method_trace(Workload, Count):<str, str, num>
    jit.off()
    local expected = Workload(Count)
 
@@ -354,7 +354,7 @@ function run_array_method_trace(Workload, Count):<num, num, num>
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
 
-   local result = nil
+   local result:str = nil
    for i in {0 to 80} do
       result = Workload(Count)
    end
@@ -991,7 +991,7 @@ function constant_target(Value)
    return offset, label
 end
 
-function array_method_clear_workload(Count)
+function array_method_clear_workload(Count):str
    local result = array.new("")
 
    for i in {1 into Count} do
@@ -1002,7 +1002,7 @@ function array_method_clear_workload(Count)
    return array.getString(result)
 end
 
-function array_method_resize_workload(Count)
+function array_method_resize_workload(Count):str
    local result = array.new("abcdef")
 
    for i in {1 into Count} do
@@ -1013,7 +1013,7 @@ function array_method_resize_workload(Count)
    return array.getString(result)
 end
 
-function array_method_push_workload(Count)
+function array_method_push_workload(Count):str
    local result = array.new("")
 
    for i in {1 into Count} do

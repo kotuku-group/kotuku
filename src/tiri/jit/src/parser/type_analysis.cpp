@@ -229,6 +229,7 @@ private:
    // Type inference - determines types from expressions and context
    [[nodiscard]] InferredType infer_expression_type(const ExprNode &);
    [[nodiscard]] InferredType refine_static_expression_type(const ExprNode &, InferredType) const;
+   [[nodiscard]] bool is_explicit_variant_expression(const ExprNode &) const;
    [[nodiscard]] InferredType infer_call_return_type(const ExprNode &, size_t Position) const;
 
    // Symbol resolution - looks up variables and functions in scope stack
@@ -630,6 +631,30 @@ void TypeAnalyser::leave_function()
       while (inferred_return_count > 0 and
           ctx.inferred_returns[inferred_return_count - 1].state IS ReturnInferenceState::NilOnly) {
          inferred_return_count--;
+      }
+
+      for (size_t i = 0; i < inferred_return_count; ++i) {
+         const InferredReturnPosition &position = ctx.inferred_returns[i];
+         if (position.state != ReturnInferenceState::Dynamic) continue;
+
+         TypeDiagnostic diag;
+         diag.location = position.dynamic_location;
+         diag.actual = position.dynamic_type;
+         diag.code = ParserErrorCode::ReturnTypeRequired;
+         if (position.concrete.primary != TiriType::Any and position.concrete.primary != TiriType::Unknown) {
+            diag.expected = position.concrete.primary;
+            diag.message = std::format(
+               "cannot infer result {} as '{}' from a dynamic value; declare ': {}' to check it at runtime or "
+               "': any' to allow a variant result",
+               i + 1, type_name(position.concrete.primary), type_name(position.concrete.primary));
+         }
+         else {
+            diag.message = std::format(
+               "cannot infer result {} from a dynamic value; declare a concrete result type to check it at "
+               "runtime or ': any' to allow a variant result", i + 1);
+         }
+         this->record_diagnostic(std::move(diag));
+         ctx.inference_failed = true;
       }
 
       if (inferred_return_count > 0 and not ctx.inference_failed) {
@@ -2694,6 +2719,26 @@ InferredType TypeAnalyser::refine_static_expression_type(const ExprNode &Expr, I
    return Type;
 }
 
+bool TypeAnalyser::is_explicit_variant_expression(const ExprNode &Expr) const
+{
+   if (Expr.kind IS AstNodeKind::IdentifierExpr) {
+      const auto &reference = std::get<NameRef>(Expr.data);
+      if (reference.binding_id) return this->explicit_variant_bindings_.contains(reference.binding_id);
+      if (reference.identifier.symbol) {
+         auto global = this->global_types_.find(reference.identifier.symbol);
+         return global != this->global_types_.end() and
+            global->second.contract_policy IS GlobalContractPolicy::Variant;
+      }
+   }
+   else if (Expr.kind IS AstNodeKind::CallExpr or Expr.kind IS AstNodeKind::SafeCallExpr) {
+      const auto &call = std::get<CallExprPayload>(Expr.data);
+      const FunctionExprPayload *target = this->resolve_call_target(call);
+      return target and target->return_types.is_explicit and target->return_types.count > 0 and
+         target->return_types.types[0] IS TiriType::Any;
+   }
+   return false;
+}
+
 //********************************************************************************************************************
 // Multi-Value Return Type Inference: Infers the return type at a specific position from a function call expression.
 // Used for multi-value assignments like: local a, b, c = func()
@@ -3113,26 +3158,19 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
             continue;
          }
 
+         if (actual.primary IS TiriType::Any and this->is_explicit_variant_expression(*Return.values[i])) {
+            position.concrete = actual;
+            position.concrete.primary = TiriType::Any;
+            position.state = ReturnInferenceState::ExplicitAny;
+            continue;
+         }
+
+         if (position.state IS ReturnInferenceState::ExplicitAny) continue;
+
          if (actual.primary IS TiriType::Any or actual.primary IS TiriType::Unknown) {
-            TypeDiagnostic diag;
-            diag.location = Return.values[i]->span;
-            diag.actual = actual.primary;
-            diag.code = ParserErrorCode::ReturnTypeRequired;
-            if (position.concrete.primary != TiriType::Any and position.concrete.primary != TiriType::Unknown) {
-               diag.expected = position.concrete.primary;
-               diag.message = std::format(
-                  "cannot infer result {} as '{}' from a dynamic value; declare ': {}' to check it at runtime or "
-                  "': any' to allow a variant result",
-                  i + 1, type_name(position.concrete.primary), type_name(position.concrete.primary));
-            }
-            else {
-               diag.message = std::format(
-                  "cannot infer result {} from a dynamic value; declare a concrete result type to check it at "
-                  "runtime or ': any' to allow a variant result", i + 1);
-            }
-            this->record_diagnostic(std::move(diag));
             position.state = ReturnInferenceState::Dynamic;
-            ctx->inference_failed = true;
+            position.dynamic_location = Return.values[i]->span;
+            position.dynamic_type = actual.primary;
             continue;
          }
 

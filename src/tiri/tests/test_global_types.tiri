@@ -144,7 +144,7 @@ end
    local disasm = disassemble([[
 MAKESTRUCT('GTImplicitRec', 'lAlpha,lBravo')
 global glGTRec = struct.new('GTImplicitRec')
-function readField()
+function readField():num
    return glGTRec.alpha
 end
 function writeField()
@@ -163,7 +163,7 @@ end
    local disasm = disassemble([[
 MAKESTRUCT('GTExplicitRec', 'lAlpha')
 global glGTExplicit = struct.new('GTExplicitRec')
-function readField()
+function readField():num
    return glGTExplicit.alpha
 end
 ]])
@@ -178,7 +178,7 @@ end
 MAKESTRUCT('GTConflictRec', 'lAlpha')
 global glGTMixed:any = struct.new('GTConflictRec')
 glGTMixed = 'text'
-function readField()
+function readField():num
    return glGTMixed.alpha
 end
 ]])
@@ -206,7 +206,7 @@ end
 @Test function GlobalObjectUnknownFieldRejected()
    local script = obj.new('tiri', { statement = [[
 global glGTTime2 = obj.new('time')
-function readBad()
+function readBad():num
    return glGTTime2.no_such_field
 end
 ]] })
@@ -236,7 +236,7 @@ end
    local disasm = disassemble([[
 MAKESTRUCT('GTShadowRec', 'lAlpha')
 global glGTShadow = struct.new('GTShadowRec')
-function readShadowed()
+function readShadowed():num
    local glGTShadow = { alpha = 1 }
    return glGTShadow.alpha
 end

@@ -713,6 +713,18 @@ private:
          return 0;
       }
 
+      if (base.primary IS TiriType::Array and base.proved()) {
+         const fprototype *prototype = get_prototype(
+            "array", std::string_view(strdata(member), member->len));
+         if (not prototype) return 0;
+
+         StaticResultSet results = describe_native_prototype_results(prototype);
+         if (results.stored_count > 0 and results.values[0].primary != TiriType::Array) {
+            return this->catalogue_.add_results(results);
+         }
+         return 0;
+      }
+
       if (not direct_member or base.primary != TiriType::Userdata or not base.proved() or not base.module) return 0;
       const FunctionField *fields = static_module_function(
          base.module, std::string_view(strdata(member), member->len));

@@ -970,7 +970,7 @@ end
 end
 
 @Test(hotpath=true) function StateTransition()
-   function nextState(current, action)
+   function nextState(current, action):str
       return choose (current, action) from
          ('idle', 'start') -> 'running'
          ('running', 'pause') -> 'paused'

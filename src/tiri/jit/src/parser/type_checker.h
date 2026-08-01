@@ -53,6 +53,7 @@ enum class ReturnInferenceState : uint8_t {
    Unobserved,
    NilOnly,
    Concrete,
+   ExplicitAny,
    Dynamic
 };
 
@@ -60,6 +61,8 @@ struct InferredReturnPosition {
    ReturnInferenceState state = ReturnInferenceState::Unobserved;
    InferredType concrete{};
    SourceSpan location{};
+   SourceSpan dynamic_location{};
+   TiriType dynamic_type = TiriType::Unknown;
 };
 
 struct FunctionContext {
