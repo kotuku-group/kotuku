@@ -205,6 +205,7 @@ private:
    bool lower_array_length_range(StmtNode &);
    void lower_unanalysed_block(BlockStmt &);
    void lower_unanalysed_except_clause(ExceptClause &);
+   void lower_unanalysed_expression(ExprNode &);
    void lower_unanalysed_function(const FunctionExprPayload &);
    void lower_unanalysed_statement(StmtNode &);
    void analyse_assignment(const AssignmentStmtPayload &);
@@ -762,12 +763,127 @@ void TypeAnalyser::lower_unanalysed_function(const FunctionExprPayload &Function
 
 //********************************************************************************************************************
 
+void TypeAnalyser::lower_unanalysed_expression(ExprNode &Expression)
+{
+   auto lower = [this](ExprNodePtr &Child) {
+      if (Child) this->lower_unanalysed_expression(*Child);
+   };
+
+   switch (Expression.kind) {
+      case AstNodeKind::UnaryExpr:
+         lower(std::get<UnaryExprPayload>(Expression.data).operand);
+         break;
+      case AstNodeKind::UpdateExpr:
+         lower(std::get<UpdateExprPayload>(Expression.data).target);
+         break;
+      case AstNodeKind::BinaryExpr: {
+         auto &payload = std::get<BinaryExprPayload>(Expression.data);
+         lower(payload.left);
+         lower(payload.right);
+         break;
+      }
+      case AstNodeKind::ComparisonChainExpr:
+         for (auto &operand : std::get<ComparisonChainExprPayload>(Expression.data).operands) lower(operand);
+         break;
+      case AstNodeKind::TernaryExpr: {
+         auto &payload = std::get<TernaryExprPayload>(Expression.data);
+         lower(payload.condition);
+         lower(payload.if_true);
+         lower(payload.if_false);
+         break;
+      }
+      case AstNodeKind::PresenceExpr:
+         lower(std::get<PresenceExprPayload>(Expression.data).value);
+         break;
+      case AstNodeKind::PipeExpr: {
+         auto &payload = std::get<PipeExprPayload>(Expression.data);
+         lower(payload.lhs);
+         lower(payload.rhs_call);
+         break;
+      }
+      case AstNodeKind::CallExpr:
+      case AstNodeKind::SafeCallExpr: {
+         auto &payload = std::get<CallExprPayload>(Expression.data);
+         if (auto *direct = std::get_if<DirectCallTarget>(&payload.target)) lower(direct->callable);
+         else if (auto *method = std::get_if<MethodCallTarget>(&payload.target)) lower(method->receiver);
+         else if (auto *method = std::get_if<SafeMethodCallTarget>(&payload.target)) lower(method->receiver);
+         for (auto &argument : payload.arguments) lower(argument);
+         break;
+      }
+      case AstNodeKind::MemberExpr:
+         lower(std::get<MemberExprPayload>(Expression.data).table);
+         break;
+      case AstNodeKind::IndexExpr: {
+         auto &payload = std::get<IndexExprPayload>(Expression.data);
+         lower(payload.table);
+         lower(payload.index);
+         break;
+      }
+      case AstNodeKind::SafeMemberExpr:
+         lower(std::get<SafeMemberExprPayload>(Expression.data).table);
+         break;
+      case AstNodeKind::SafeIndexExpr: {
+         auto &payload = std::get<SafeIndexExprPayload>(Expression.data);
+         lower(payload.table);
+         lower(payload.index);
+         break;
+      }
+      case AstNodeKind::ResultFilterExpr:
+         lower(std::get<ResultFilterPayload>(Expression.data).expression);
+         break;
+      case AstNodeKind::TableExpr:
+         for (auto &field : std::get<TableExprPayload>(Expression.data).fields) {
+            lower(field.key);
+            lower(field.value);
+         }
+         break;
+      case AstNodeKind::FunctionExpr:
+         this->lower_unanalysed_function(std::get<FunctionExprPayload>(Expression.data));
+         break;
+      case AstNodeKind::DeferredExpr:
+         lower(std::get<DeferredExprPayload>(Expression.data).inner);
+         break;
+      case AstNodeKind::RangeExpr: {
+         auto &payload = std::get<RangeExprPayload>(Expression.data);
+         lower(payload.start);
+         lower(payload.stop);
+         lower(payload.step);
+         break;
+      }
+      case AstNodeKind::ChooseExpr: {
+         auto &payload = std::get<ChooseExprPayload>(Expression.data);
+         lower(payload.scrutinee);
+         for (auto &item : payload.scrutinee_tuple) lower(item);
+         for (auto &choice : payload.cases) {
+            lower(choice.pattern);
+            for (auto &item : choice.tuple_patterns) lower(item);
+            lower(choice.guard);
+            lower(choice.result);
+            if (choice.result_stmt) this->lower_unanalysed_statement(*choice.result_stmt);
+         }
+         break;
+      }
+      default:
+         break;
+   }
+}
+
+//********************************************************************************************************************
+
 void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
 {
    this->unanalysed_depth_++;
    this->lower_array_length_range(Statement);
 
    switch (Statement.kind) {
+      case AstNodeKind::AssignmentStmt: {
+         auto *payload = std::get_if<AssignmentStmtPayload>(&Statement.data);
+         if (payload) {
+            for (auto &target : payload->targets) this->lower_unanalysed_expression(*target);
+            for (auto &value : payload->values) this->lower_unanalysed_expression(*value);
+         }
+         break;
+      }
       case AstNodeKind::LocalDeclStmt: {
          auto *payload = std::get_if<LocalDeclStmtPayload>(&Statement.data);
          if (not payload) break;
@@ -794,11 +910,15 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
             const Identifier &name = payload->names[i];
             this->current_scope().declare_local(name.symbol, inferred_types[i], name.span, name.has_const);
          }
+         for (auto &value : payload->values) this->lower_unanalysed_expression(*value);
          break;
       }
       case AstNodeKind::GlobalDeclStmt: {
          auto *payload = std::get_if<GlobalDeclStmtPayload>(&Statement.data);
-         if (payload) this->discover_global_decl_policy(*payload, false);
+         if (payload) {
+            this->discover_global_decl_policy(*payload, false);
+            for (auto &value : payload->values) this->lower_unanalysed_expression(*value);
+         }
          break;
       }
       case AstNodeKind::LocalFunctionStmt: {
@@ -819,6 +939,7 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
          auto *payload = std::get_if<IfStmtPayload>(&Statement.data);
          if (payload) {
             for (auto &clause : payload->clauses) {
+               if (clause.condition) this->lower_unanalysed_expression(*clause.condition);
                if (clause.block) this->lower_unanalysed_block(*clause.block);
             }
          }
@@ -827,11 +948,19 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
       case AstNodeKind::WhileStmt:
       case AstNodeKind::RepeatStmt: {
          auto *payload = std::get_if<LoopStmtPayload>(&Statement.data);
-         if (payload and payload->body) this->lower_unanalysed_block(*payload->body);
+         if (payload) {
+            if (payload->condition) this->lower_unanalysed_expression(*payload->condition);
+            if (payload->body) this->lower_unanalysed_block(*payload->body);
+         }
          break;
       }
       case AstNodeKind::NumericForStmt: {
          auto *payload = std::get_if<NumericForStmtPayload>(&Statement.data);
+         if (payload) {
+            if (payload->start) this->lower_unanalysed_expression(*payload->start);
+            if (payload->stop) this->lower_unanalysed_expression(*payload->stop);
+            if (payload->step) this->lower_unanalysed_expression(*payload->step);
+         }
          if (payload and payload->body) {
             this->push_scope();
             InferredType control_type(TiriType::Num);
@@ -846,6 +975,11 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
       }
       case AstNodeKind::RangeForStmt: {
          auto *payload = std::get_if<RangeForStmtPayload>(&Statement.data);
+         if (payload) {
+            if (payload->start) this->lower_unanalysed_expression(*payload->start);
+            if (payload->stop) this->lower_unanalysed_expression(*payload->stop);
+            if (payload->step) this->lower_unanalysed_expression(*payload->step);
+         }
          if (payload and payload->body) {
             this->push_scope();
             InferredType control_type(TiriType::Num);
@@ -860,6 +994,9 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
       }
       case AstNodeKind::GenericForStmt: {
          auto *payload = std::get_if<GenericForStmtPayload>(&Statement.data);
+         if (payload) {
+            for (auto &iterator : payload->iterators) this->lower_unanalysed_expression(*iterator);
+         }
          if (payload and payload->body) {
             this->push_scope();
             for (const Identifier &name : payload->names) {
@@ -872,6 +1009,21 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
          }
          break;
       }
+      case AstNodeKind::ReturnStmt: {
+         auto *payload = std::get_if<ReturnStmtPayload>(&Statement.data);
+         if (payload) {
+            for (auto &value : payload->values) this->lower_unanalysed_expression(*value);
+         }
+         break;
+      }
+      case AstNodeKind::DeferStmt: {
+         auto *payload = std::get_if<DeferStmtPayload>(&Statement.data);
+         if (payload) {
+            if (payload->callable) this->lower_unanalysed_function(*payload->callable);
+            for (auto &argument : payload->arguments) this->lower_unanalysed_expression(*argument);
+         }
+         break;
+      }
       case AstNodeKind::DoStmt: {
          auto *payload = std::get_if<DoStmtPayload>(&Statement.data);
          if (payload and payload->block) this->lower_unanalysed_block(*payload->block);
@@ -879,7 +1031,10 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
       }
       case AstNodeKind::ConditionalShorthandStmt: {
          auto *payload = std::get_if<ConditionalShorthandStmtPayload>(&Statement.data);
-         if (payload and payload->body) this->lower_unanalysed_statement(*payload->body);
+         if (payload) {
+            if (payload->condition) this->lower_unanalysed_expression(*payload->condition);
+            if (payload->body) this->lower_unanalysed_statement(*payload->body);
+         }
          break;
       }
       case AstNodeKind::TryExceptStmt: {
@@ -887,10 +1042,24 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
          if (payload) {
             if (payload->try_block) this->lower_unanalysed_block(*payload->try_block);
             for (auto &clause : payload->except_clauses) {
+               for (auto &filter : clause.filter_codes) this->lower_unanalysed_expression(*filter);
                this->lower_unanalysed_except_clause(clause);
             }
             if (payload->success_block) this->lower_unanalysed_block(*payload->success_block);
          }
+         break;
+      }
+      case AstNodeKind::RaiseStmt: {
+         auto *payload = std::get_if<RaiseStmtPayload>(&Statement.data);
+         if (payload) {
+            if (payload->error_code) this->lower_unanalysed_expression(*payload->error_code);
+            if (payload->message) this->lower_unanalysed_expression(*payload->message);
+         }
+         break;
+      }
+      case AstNodeKind::CheckStmt: {
+         auto *payload = std::get_if<CheckStmtPayload>(&Statement.data);
+         if (payload and payload->error_code) this->lower_unanalysed_expression(*payload->error_code);
          break;
       }
       case AstNodeKind::ImportStmt: {
@@ -906,7 +1075,15 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
       }
       case AstNodeKind::WithStmt: {
          auto *payload = std::get_if<WithStmtPayload>(&Statement.data);
-         if (payload and payload->block) this->lower_unanalysed_block(*payload->block);
+         if (payload) {
+            for (auto &object : payload->objects) this->lower_unanalysed_expression(*object);
+            if (payload->block) this->lower_unanalysed_block(*payload->block);
+         }
+         break;
+      }
+      case AstNodeKind::ExpressionStmt: {
+         auto *payload = std::get_if<ExpressionStmtPayload>(&Statement.data);
+         if (payload and payload->expression) this->lower_unanalysed_expression(*payload->expression);
          break;
       }
       default:

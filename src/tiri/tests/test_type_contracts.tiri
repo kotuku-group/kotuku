@@ -698,6 +698,26 @@ end
    assert(glContractReducedTry is 'updated', 'A rejected try-global store must preserve the previous value')
 
    try
+      defer
+         global glContractReducedDefer = 'deferred'
+      end
+   end
+   expect_contract_failure(function() exec('glContractReducedDefer = 42') end, 'reduced defer global')
+   assert(glContractReducedDefer is 'deferred',
+      'A rejected deferred-global store must preserve the previous value')
+
+   try
+      local callback = function()
+         global glContractReducedExpression = 'expression'
+      end
+      callback()
+   end
+   expect_contract_failure(
+      function() exec('glContractReducedExpression = 42') end, 'reduced function-expression global')
+   assert(glContractReducedExpression is 'expression',
+      'A rejected function-expression global store must preserve the previous value')
+
+   try
       raise ERR_Args
    except e when ERR_Args
       global glContractReducedFilteredExcept = 'filtered'
