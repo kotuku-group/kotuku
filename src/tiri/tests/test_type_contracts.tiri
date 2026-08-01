@@ -756,11 +756,21 @@ end
    exec('glContractReducedConflict = 2')
    assert(glContractReducedConflict is 2, 'A rejected declaration must preserve the previous global policy')
 
+   global glContractReducedFailedFlow:any = 'start'
+   local wrong:any = 'wrong'
+   try
+      global glContractReducedFailedFlow:num = wrong
+   except e
+   end
+   glContractReducedFailedFlow = 'allowed'
+   assert(glContractReducedFailedFlow is 'allowed',
+      'Statements after a rejected reduced declaration must use the active runtime policy')
+
    global glContractReducedVariant:num = 1
    try
       global glContractReducedVariant:any = 'variant'
    end
-   exec('glContractReducedVariant = {}')
+   glContractReducedVariant = {}
    assert(type(glContractReducedVariant) is 'table',
       'An explicit any declaration inside try must replace the previous concrete policy')
 end

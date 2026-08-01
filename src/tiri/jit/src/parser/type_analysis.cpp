@@ -210,7 +210,7 @@ private:
    void analyse_assignment(const AssignmentStmtPayload &);
    void analyse_local_decl(const LocalDeclStmtPayload &);
    void analyse_global_decl(const GlobalDeclStmtPayload &);
-   void discover_global_decl_policy(const GlobalDeclStmtPayload &);
+   void discover_global_decl_policy(const GlobalDeclStmtPayload &, bool PublishStaticPolicy);
    void analyse_local_function(const LocalFunctionStmtPayload &);
    void analyse_function_stmt(const FunctionStmtPayload &);
    void analyse_function_payload(const FunctionExprPayload &, GCstr *Name = nullptr);
@@ -798,7 +798,7 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
       }
       case AstNodeKind::GlobalDeclStmt: {
          auto *payload = std::get_if<GlobalDeclStmtPayload>(&Statement.data);
-         if (payload) this->discover_global_decl_policy(*payload);
+         if (payload) this->discover_global_decl_policy(*payload, false);
          break;
       }
       case AstNodeKind::LocalFunctionStmt: {
@@ -1542,7 +1542,7 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
       }
    }
 
-   this->discover_global_decl_policy(Payload);
+   this->discover_global_decl_policy(Payload, true);
 
    #ifdef INCLUDE_TIPS
    // Track globals for loop access detection
@@ -1571,7 +1571,7 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
 // Reduced-analysis blocks use this path so their runtime failures remain catchable while global declarations still
 // publish the same sticky environment contracts as declarations in ordinarily analysed blocks.
 
-void TypeAnalyser::discover_global_decl_policy(const GlobalDeclStmtPayload &Payload)
+void TypeAnalyser::discover_global_decl_policy(const GlobalDeclStmtPayload &Payload, bool PublishStaticPolicy)
 {
    size_t value_index = 0;
    size_t call_return_index = 0;
@@ -1644,7 +1644,15 @@ void TypeAnalyser::discover_global_decl_policy(const GlobalDeclStmtPayload &Payl
          name.global_contract_struct_def = nullptr;
          name.global_contract_policy = GlobalContractPolicy::Enforced;
       }
-      this->declare_global(name.symbol, inferred, name.span, name.has_const, contract_policy);
+      if (PublishStaticPolicy) this->declare_global(name.symbol, inferred, name.span, name.has_const, contract_policy);
+      else {
+         // A reduced declaration may fail before its environment policy is installed.  Do not let subsequent
+         // ordinary analysis assume either the incoming or the declared policy; runtime stores remain authoritative.
+         InferredType runtime_policy;
+         runtime_policy.primary = TiriType::Any;
+         runtime_policy.is_fixed = true;
+         this->declare_global(name.symbol, runtime_policy, name.span);
+      }
    }
 }
 
