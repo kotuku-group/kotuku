@@ -243,6 +243,20 @@ end
    assert(glConstDynamic is 'dynamic', 'A rejected store should preserve a dynamically initialised const')
 end
 
+@Test function ReducedAnalysisGlobalConstPersists()
+   try
+      global glConstReduced <const> = 'original'
+   end
+
+   expect_const_global_failure(function() exec("glConstReduced = 'plain'") end,
+      'plain assignment after reduced const declaration')
+   expect_const_global_failure(function() exec("global glConstReduced:any = 'variant'") end,
+      'explicit any redeclaration after reduced const declaration')
+   expect_const_global_failure(function() rawset(_G, 'glConstReduced', 'indirect') end,
+      'indirect write after reduced const declaration')
+   assert(glConstReduced is 'original', 'Rejected writes must preserve a const declared in reduced analysis')
+end
+
 @Test function GlobalConstDeclarationOrderIsPreserved()
    local const_first = f"glConstFirst{failed_const_test_id}"
    failed_const_test_id++

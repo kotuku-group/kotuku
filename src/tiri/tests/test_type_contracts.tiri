@@ -1,6 +1,7 @@
 -- Runtime contracts for parameters, explicit returns, typed stores and indirect call routes.
 
 import './type_contract_fixture'
+import './typ08_reduced_import_fixture'
 
 struct ContractAlpha
    Value: int
@@ -683,6 +684,129 @@ end
    expect_contract_failure(function() exec('glContractPairText = 42') end, 'global')
    assert(glContractPairText is 'updated',
       'A rejected store must preserve a secondary multi-return global and its contract')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Global declarations in reduced-analysis blocks must publish the same persistent policies as ordinary declarations.
+
+@Test function ReducedAnalysisGlobalContracts()
+   try
+      global glContractReducedTry = 'try'
+   end
+   exec("glContractReducedTry = 'updated'")
+   expect_contract_failure(function() exec('glContractReducedTry = 42') end, 'reduced try global')
+   assert(glContractReducedTry is 'updated', 'A rejected try-global store must preserve the previous value')
+
+   try
+      raise ERR_Args
+   except e when ERR_Args
+      global glContractReducedFilteredExcept = 'filtered'
+   end
+   expect_contract_failure(
+      function() exec('glContractReducedFilteredExcept = false') end, 'reduced filtered except global')
+   assert(glContractReducedFilteredExcept is 'filtered',
+      'A rejected filtered-except global store must preserve the previous value')
+
+   try
+      error('expected')
+   except e
+      global glContractReducedExcept = 'except'
+   end
+   expect_contract_failure(function() exec('glContractReducedExcept = 42') end, 'reduced except global')
+   assert(glContractReducedExcept is 'except',
+      'A rejected except-global store must preserve the previous value')
+
+   try
+      local ready = true
+   success
+      global glContractReducedSuccess = 'success'
+   end
+   expect_contract_failure(function() exec('glContractReducedSuccess = 42') end, 'reduced success global')
+   assert(glContractReducedSuccess is 'success',
+      'A rejected success-global store must preserve the previous value')
+
+   local clock = obj.new('time')
+   with clock do
+      global glContractReducedWith = 'with'
+   end
+   expect_contract_failure(function() exec('glContractReducedWith = 42') end, 'reduced with global')
+   assert(glContractReducedWith is 'with', 'A rejected with-global store must preserve the previous value')
+
+   try
+      if true then
+         global glContractReducedNested = 'nested'
+      end
+   end
+   expect_contract_failure(function() exec('glContractReducedNested = 42') end, 'nested reduced global')
+   assert(glContractReducedNested is 'nested', 'A rejected nested global store must preserve the previous value')
+end
+
+@Test function ReducedAnalysisGlobalPolicyComposition()
+   global glContractReducedConflict = 1
+   local trapped = false
+   try
+      global glContractReducedConflict = 'wrong'
+   except e
+      trapped = true
+      assert(string.find(tostring(e.message), 'type contract failed for global') != nil,
+         'The conflicting declaration should raise a global contract error: ' .. tostring(e.message))
+   end
+   assert(trapped, 'An incompatible declaration inside try must remain catchable')
+   assert(glContractReducedConflict is 1, 'A rejected declaration must preserve the previous global value')
+   exec('glContractReducedConflict = 2')
+   assert(glContractReducedConflict is 2, 'A rejected declaration must preserve the previous global policy')
+
+   global glContractReducedVariant:num = 1
+   try
+      global glContractReducedVariant:any = 'variant'
+   end
+   exec('glContractReducedVariant = {}')
+   assert(type(glContractReducedVariant) is 'table',
+      'An explicit any declaration inside try must replace the previous concrete policy')
+end
+
+@Test function ReducedAnalysisMultiResultAndImportContracts()
+   local function reduced_pair():<num, str>
+      return 2, 'text'
+   end
+
+   try
+      global glContractReducedNumber, glContractReducedText = reduced_pair()
+   end
+   exec("glContractReducedText = 'updated'")
+   expect_contract_failure(function() exec('glContractReducedText = 42') end, 'reduced secondary global')
+   assert(glContractReducedNumber is 2 and glContractReducedText is 'updated',
+      'A rejected secondary store must preserve both reduced multi-result globals')
+
+   exec("glContractReducedImport = 'updated'")
+   expect_contract_failure(function() exec('glContractReducedImport = 42') end, 'reduced imported global')
+   assert(glContractReducedImport is 'updated',
+      'A rejected imported-global store must preserve the previous value')
+end
+
+@Test function ReducedAnalysisGlobalContractJitParity()
+   function reduced_hot_store(Value:any):bool
+      try
+         global glContractReducedHot:str = Value
+         return true
+      except e
+         return false
+      end
+   end
+
+   jit.off()
+   assert(reduced_hot_store('interpreter'), 'A matching reduced global declaration should pass in the interpreter')
+   assert(not reduced_hot_store(1), 'An incompatible reduced global declaration should fail in the interpreter')
+   assert(glContractReducedHot is 'interpreter', 'The interpreter must preserve the value after a rejected store')
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   for i in {0 to 200} do
+      assert(reduced_hot_store('compiled'), 'A matching reduced global declaration should pass on the hot path')
+   end
+   assert(not reduced_hot_store(42), 'An incompatible reduced global declaration should fail on the hot path')
+   assert(glContractReducedHot is 'compiled', 'The JIT must preserve the value after a rejected store')
 end
 
 @Test function UserdataContractBoundaries()

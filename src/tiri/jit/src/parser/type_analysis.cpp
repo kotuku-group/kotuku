@@ -210,6 +210,7 @@ private:
    void analyse_assignment(const AssignmentStmtPayload &);
    void analyse_local_decl(const LocalDeclStmtPayload &);
    void analyse_global_decl(const GlobalDeclStmtPayload &);
+   void discover_global_decl_policy(const GlobalDeclStmtPayload &);
    void analyse_local_function(const LocalFunctionStmtPayload &);
    void analyse_function_stmt(const FunctionStmtPayload &);
    void analyse_function_payload(const FunctionExprPayload &, GCstr *Name = nullptr);
@@ -795,6 +796,11 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
          }
          break;
       }
+      case AstNodeKind::GlobalDeclStmt: {
+         auto *payload = std::get_if<GlobalDeclStmtPayload>(&Statement.data);
+         if (payload) this->discover_global_decl_policy(*payload);
+         break;
+      }
       case AstNodeKind::LocalFunctionStmt: {
          auto *payload = std::get_if<LocalFunctionStmtPayload>(&Statement.data);
          if (payload and payload->function) {
@@ -891,7 +897,9 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
          auto *payload = std::get_if<ImportStmtPayload>(&Statement.data);
          if (payload) {
             for (auto &entry : payload->entries) {
-               if (entry.inlined_body) this->lower_unanalysed_block(*entry.inlined_body);
+               if (not entry.inlined_body) continue;
+               ImportGuard guard(*this, entry.file_source_idx);
+               this->lower_unanalysed_block(*entry.inlined_body);
             }
          }
          break;
@@ -1516,11 +1524,55 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
 
 void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
 {
-   // Analyse the values first
-   for (const auto &value : Payload.values) {
-      this->analyse_expression(*value);
+   for (const auto &value : Payload.values) this->analyse_expression(*value);
+
+   for (const auto &name : Payload.names) {
+      if (not name.symbol) continue;
+
+      if ((name.symbol->flags & STRFLAG_PROTECTED_GLOBAL) != 0) {
+         this->report_protected_global_override(name.symbol, name.span);
+      }
+      else if (type_is_registered_constant(name.symbol)) {
+         std::string_view name_view(strdata(name.symbol), name.symbol->len);
+         TypeDiagnostic diag;
+         diag.location = name.span;
+         diag.code = ParserErrorCode::AssignToConstant;
+         diag.message = std::format("cannot assign to constant '{}'", name_view);
+         this->record_diagnostic(std::move(diag));
+      }
    }
 
+   this->discover_global_decl_policy(Payload);
+
+   #ifdef INCLUDE_TIPS
+   // Track globals for loop access detection
+   for (const auto &name : Payload.names) {
+      if (name.symbol) this->track_global(name.symbol);
+   }
+
+   // Check global naming conventions
+   if (this->should_emit_tip(3)) {
+      for (const auto &name : Payload.names) {
+         if (not name.symbol) continue;
+         std::string_view name_view(strdata(name.symbol), name.symbol->len);
+         if (not is_valid_global_name(name_view)) {
+            this->emit_tip(3, TipCategory::Style,
+               std::format("Global variable '{}' should follow naming convention: 'gl[A-Z]...' or 'ALL_CAPS'",
+                  name_view),
+               Token::from_span(name.span, TokenKind::Identifier));
+         }
+      }
+   }
+   #endif
+}
+
+//********************************************************************************************************************
+// Discover the binding policy needed by IR emission without performing ordinary expression analysis or diagnostics.
+// Reduced-analysis blocks use this path so their runtime failures remain catchable while global declarations still
+// publish the same sticky environment contracts as declarations in ordinarily analysed blocks.
+
+void TypeAnalyser::discover_global_decl_policy(const GlobalDeclStmtPayload &Payload)
+{
    size_t value_index = 0;
    size_t call_return_index = 0;
    const ExprNode *multi_return_call = nullptr;
@@ -1530,20 +1582,7 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
       const auto &name = Payload.names[i];
       if (not name.symbol) continue;
 
-      if ((name.symbol->flags & STRFLAG_PROTECTED_GLOBAL) != 0) {
-         this->report_protected_global_override(name.symbol, name.span);
-         continue;
-      }
-
-      if (type_is_registered_constant(name.symbol)) {
-         std::string_view name_view(strdata(name.symbol), name.symbol->len);
-         TypeDiagnostic diag;
-         diag.location = name.span;
-         diag.code = ParserErrorCode::AssignToConstant;
-         diag.message = std::format("cannot assign to constant '{}'", name_view);
-         this->record_diagnostic(std::move(diag));
-         continue;
-      }
+      if ((name.symbol->flags & STRFLAG_PROTECTED_GLOBAL) != 0 or type_is_registered_constant(name.symbol)) continue;
 
       InferredType inferred;
       InferredType value_type;
@@ -1607,27 +1646,6 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
       }
       this->declare_global(name.symbol, inferred, name.span, name.has_const, contract_policy);
    }
-
-   #ifdef INCLUDE_TIPS
-   // Track globals for loop access detection
-   for (const auto &name : Payload.names) {
-      if (name.symbol) this->track_global(name.symbol);
-   }
-
-   // Check global naming conventions
-   if (this->should_emit_tip(3)) {
-      for (const auto &name : Payload.names) {
-         if (not name.symbol) continue;
-         std::string_view name_view(strdata(name.symbol), name.symbol->len);
-         if (not is_valid_global_name(name_view)) {
-            this->emit_tip(3, TipCategory::Style,
-               std::format("Global variable '{}' should follow naming convention: 'gl[A-Z]...' or 'ALL_CAPS'",
-                  name_view),
-               Token::from_span(name.span, TokenKind::Identifier));
-         }
-      }
-   }
-   #endif
 }
 
 //********************************************************************************************************************
