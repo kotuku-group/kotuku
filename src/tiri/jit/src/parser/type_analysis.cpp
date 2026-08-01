@@ -626,7 +626,13 @@ void TypeAnalyser::leave_function()
 
    FunctionContext &ctx = this->function_stack_.back();
    if (ctx.function and not ctx.expected_returns.is_explicit) {
-      for (size_t i = 0; i < ctx.observed_return_count; ++i) {
+      size_t inferred_return_count = ctx.observed_return_count;
+      while (inferred_return_count > 0 and
+          ctx.inferred_returns[inferred_return_count - 1].state IS ReturnInferenceState::NilOnly) {
+         inferred_return_count--;
+      }
+
+      for (size_t i = 0; i < inferred_return_count; ++i) {
          const InferredReturnPosition &position = ctx.inferred_returns[i];
          if (position.state IS ReturnInferenceState::NilOnly) {
             TypeDiagnostic diag;
@@ -640,12 +646,12 @@ void TypeAnalyser::leave_function()
          }
       }
 
-      if (ctx.observed_return_count > 0 and not ctx.inference_failed) {
+      if (inferred_return_count > 0 and not ctx.inference_failed) {
          FunctionReturnTypes &published = ctx.function->return_types;
-         published.count = ctx.observed_return_count;
+         published.count = uint8_t(inferred_return_count);
          published.is_inferred = true;
          published.is_variadic = false;
-         for (size_t i = 0; i < ctx.observed_return_count; ++i) {
+         for (size_t i = 0; i < inferred_return_count; ++i) {
             const InferredType &inferred = ctx.inferred_returns[i].concrete;
             published.types[i] = inferred.primary;
             published.object_class_ids[i] = inferred.object_class_id;

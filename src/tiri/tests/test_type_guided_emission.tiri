@@ -43,7 +43,7 @@ end
    local disassembly = disassemble_source(string.format([[
 MAKESTRUCT('%s', 'lValue')
 captured_point = struct.new('%s')
-function read_point()
+function read_point():num
    return captured_point.value
 end
 function write_point()

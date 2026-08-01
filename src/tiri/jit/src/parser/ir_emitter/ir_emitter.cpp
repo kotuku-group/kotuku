@@ -1128,6 +1128,13 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
             setbc_b(ip, 0);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
+         else if (last.u.s.info + 1 != this->func_state.pc) {
+            // Safe calls and other call expressions with post-call control flow cannot be converted to CALLT: the
+            // conversion removes the final emitted instruction rather than the earlier CALL.  Such expressions
+            // represent one consolidated value, so retain that result and return it normally.
+            setbc_b(ip, 2);
+            ins = BCINS_AD(BC_RET1, last.u.s.aux, 2);
+         }
          else if (bc_op(*ip) IS BC_VARG) {
             // Variadic return: return ...
             setbc_b(ir_bcptr(&this->func_state, &last), 0);

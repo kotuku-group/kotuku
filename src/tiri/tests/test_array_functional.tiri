@@ -116,7 +116,7 @@ end
    obj_one = obj.new('time')
    obj_two = obj.new('file')
    arr = array<object> { obj_one, obj_two }
-   copied = arr:map(Value => Value)
+   copied = arr:map(Value => object: Value)
    assert(copied[0].id is obj_one.id and copied[1].id is obj_two.id, "map() should preserve objects")
    obj_one.free()
    obj_two.free()
@@ -254,7 +254,7 @@ end
 
 @Test function ReduceToTable()
    arr = array<int> { 1, 2, 3 }
-   result = arr:reduce({}, function(acc, v, i):num
+   result = arr:reduce({}, function(acc, v, i):table
       acc[i] = v * v
       return acc
    end)
@@ -269,7 +269,7 @@ end
 
 @Test function ReduceMax()
    arr = array<int> { 3, 1, 4, 1, 5, 9, 2, 6 }
-   maxVal = arr:reduce(arr[0], (acc, v) => v > acc ? v :> acc)
+   maxVal = arr:reduce(arr[0], (acc, v) => num: v > acc ? v :> acc)
    assert(maxVal is 9, "reduce() should find maximum value")
 end
 

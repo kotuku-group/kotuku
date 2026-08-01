@@ -164,7 +164,7 @@ end
 end
 
 @Test function InferredMultipleReturns()
-   function pair(A, B)
+   function pair(A:num, B:num)
       return A, B
    end
    x, y = pair(1, 2)
@@ -262,6 +262,22 @@ end
    end
    result = bareReturn()
    assert(result is nil, "bare return should return nil")
+end
+
+@Test function NilOnlyReturnIsVoid()
+   function nil_only()
+      return nil
+   end
+   assert(nil_only() is nil, "an explicit nil-only return should behave like a bare return")
+end
+
+@Test function TrailingNilOnlyResultIsOmitted()
+   function value_with_trailing_nil()
+      return 42, nil
+   end
+   local value, omitted = value_with_trailing_nil()
+   assert(value is 42, "the concrete leading result should be inferred")
+   assert(omitted is nil, "a trailing nil-only result should behave like an omitted result")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
