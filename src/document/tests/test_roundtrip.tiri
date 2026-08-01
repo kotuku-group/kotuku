@@ -29,7 +29,7 @@ function parseXML(XmlStr:str)
    return xml
 end
 
-function xpath(Xml, Expr:str)
+function xpath(Xml, Expr:str):str
    err_xp, result = Xml.mtEvaluate(Expr)
    assert(err_xp is ERR_Okay, 'XPath failed: ' .. Expr .. ', err=' .. tostring(err_xp))
    return result

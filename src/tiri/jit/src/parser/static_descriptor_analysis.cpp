@@ -673,6 +673,18 @@ private:
       StaticValueDescriptor base = this->descriptor_of(*receiver);
       if (base.primary IS TiriType::Object and base.proved()) {
          std::string_view exposed_name(strdata(member), member->len);
+         if (member->hash IS kt::strhash("new")) {
+            const fprototype *prototype = get_prototype("obj", exposed_name);
+            if (not prototype) return 0;
+
+            StaticResultSet results = describe_native_prototype_results(prototype);
+            if (results.stored_count > 0) {
+               StaticValueDescriptor &child = results.values[0];
+               child.nullable = false;
+            }
+            return this->catalogue_.add_results(results);
+         }
+
          ObjectCallMemberKind kind = classify_object_call_member(exposed_name);
          if (kind IS ObjectCallMemberKind::None) return 0;
          std::string_view native_name = exposed_name.substr(2);

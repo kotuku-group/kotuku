@@ -129,6 +129,19 @@ end
    assert(byte_text() is 'hello', 'Registered array method results should participate in return inference')
 end
 
+@Test function NativeObjectConstructorResultIsInferred()
+   local parent = obj.new('time')
+
+   local function make_child()
+      local child = parent.new('time')
+      return child
+   end
+
+   local child = make_child()
+   assert(type(child) is 'object', 'An object new() member call should infer an object result')
+   parent.free()
+end
+
 @Test function ArrayDescriptorInvalidation()
    local values = array<int> { 1 }
    values = array<string> { 'changed' }
