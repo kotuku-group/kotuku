@@ -265,7 +265,7 @@ constant_pool[255] = 'constant_255'
    assert(#constant_pool is 256, 'constant pool should remain populated')
 end
 
-function source_after_large_constant_pool(Tail)
+function source_after_large_constant_pool(Tail):str
    local lines = array<string> { 'local constant_pool = {}' }
 
    for i in {0 to 256} do

@@ -280,6 +280,15 @@ end
    assert(omitted is nil, "a trailing nil-only result should behave like an omitted result")
 end
 
+@Test function LeadingNilResultIsPreserved()
+   function nil_then_value()
+      return nil, 'success'
+   end
+   local empty, value = nil_then_value()
+   assert(empty is nil, "a leading nil result should retain its position")
+   assert(value is 'success', "a concrete result after nil should retain its position and type")
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- RECURSIVE FUNCTIONS REQUIRE EXPLICIT TYPE
 

@@ -259,7 +259,7 @@ function count_trace_calls(TraceNo, Info)
       count_trace_opcode(TraceNo, Info, ir_calll) + count_trace_opcode(TraceNo, Info, ir_calls)
 end
 
-function canonical_array_workload(Count)
+function canonical_array_workload(Count):str
    local values = array<int> { 1, 2, 3, 4, 5, 6, 7, 8 }
 
    for pass in {1 into Count} do
@@ -271,7 +271,7 @@ function canonical_array_workload(Count)
    return values:concat(',', '%d')
 end
 
-function canonical_array_try_workload(Count)
+function canonical_array_try_workload(Count):str
    local values = array<int, 8>
 
    try
@@ -337,7 +337,7 @@ function reassign_during_array_loop(Array:array, Reassign:bool)
    end
 end
 
-function push_during_array_loop(Array:array)
+function push_during_array_loop(Array:array):<num, num, num>
    local original_length = #Array
    for index in {0 to #Array} do
       if index is 0 then Array:push(99) end
@@ -346,7 +346,7 @@ function push_during_array_loop(Array:array)
    return original_length, #Array, Array[#Array - 1]
 end
 
-function run_array_method_trace(Workload, Count)
+function run_array_method_trace(Workload, Count):<num, num, num>
    jit.off()
    local expected = Workload(Count)
 
@@ -362,7 +362,7 @@ function run_array_method_trace(Workload, Count)
    return expected, result, count_jit_traces(30)
 end
 
-function run_safe_index_trace(Workload, Count)
+function run_safe_index_trace(Workload, Count):<num, num, num, num, num>
    jit.off()
    local expected = Workload(Count)
 

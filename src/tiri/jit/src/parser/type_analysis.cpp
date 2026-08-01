@@ -632,30 +632,23 @@ void TypeAnalyser::leave_function()
          inferred_return_count--;
       }
 
-      for (size_t i = 0; i < inferred_return_count; ++i) {
-         const InferredReturnPosition &position = ctx.inferred_returns[i];
-         if (position.state IS ReturnInferenceState::NilOnly) {
-            TypeDiagnostic diag;
-            diag.location = position.location;
-            diag.code = ParserErrorCode::ReturnTypeRequired;
-            diag.message = std::format(
-               "cannot infer result {} because it has no concrete value; declare a concrete result type to check it "
-               "at runtime or ': any' to allow a variant result", i + 1);
-            this->record_diagnostic(std::move(diag));
-            ctx.inference_failed = true;
-         }
-      }
-
       if (inferred_return_count > 0 and not ctx.inference_failed) {
          FunctionReturnTypes &published = ctx.function->return_types;
          published.count = uint8_t(inferred_return_count);
          published.is_inferred = true;
          published.is_variadic = false;
          for (size_t i = 0; i < inferred_return_count; ++i) {
-            const InferredType &inferred = ctx.inferred_returns[i].concrete;
-            published.types[i] = inferred.primary;
-            published.object_class_ids[i] = inferred.object_class_id;
-            published.struct_defs[i] = inferred.struct_def;
+            const InferredReturnPosition &position = ctx.inferred_returns[i];
+            if (position.state IS ReturnInferenceState::NilOnly) {
+               published.types[i] = TiriType::Nil;
+               published.object_class_ids[i] = CLASSID::NIL;
+               published.struct_defs[i] = nullptr;
+            }
+            else {
+               published.types[i] = position.concrete.primary;
+               published.object_class_ids[i] = position.concrete.object_class_id;
+               published.struct_defs[i] = position.concrete.struct_def;
+            }
          }
       }
    }
