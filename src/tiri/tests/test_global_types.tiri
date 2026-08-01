@@ -15,6 +15,15 @@ local function disassemble(Statement)
    return disasm
 end
 
+local function assert_global_contract_before_store(Statement, Context)
+   local disasm = disassemble(Statement)
+   local contract = disasm:find('CONTRACT')
+   local store = disasm:find('GSET')
+   assert(contract != nil and store != nil and contract < store,
+      Context .. ' must emit CONTRACT before GSET, got:\n' .. disasm)
+   return disasm
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Inferred scalar globals must emit sticky contracts for their declaration and later dynamic stores.
 
@@ -56,6 +65,76 @@ function holder.callback() return 1 end
 ]])
    assert(member_disasm:find('CONTRACT') is nil,
       'A table method must not publish a global binding contract, got:\n' .. member_disasm)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Reduced-analysis blocks suppress ordinary diagnostics but must still publish global declaration contracts.
+
+@Test function ReducedAnalysisGlobalContractBytecode()
+   assert_global_contract_before_store([[
+try
+   global glGTReducedTry = 'text'
+end
+]], 'try declaration')
+
+   assert_global_contract_before_store([[
+try
+   raise ERR_Args
+except e when ERR_Args
+   global glGTReducedFilteredExcept = 'text'
+end
+]], 'filtered except declaration')
+
+   assert_global_contract_before_store([[
+try
+   error('expected')
+except e
+   global glGTReducedExcept = 'text'
+end
+]], 'catch-all except declaration')
+
+   assert_global_contract_before_store([[
+try
+   local ready = true
+success
+   global glGTReducedSuccess = 'text'
+end
+]], 'success declaration')
+
+   assert_global_contract_before_store([[
+local clock = obj.new('time')
+with clock do
+   global glGTReducedWith = 'text'
+end
+]], 'with declaration')
+
+   local nested = assert_global_contract_before_store([[
+try
+   local function declare_value()
+      global glGTReducedNested = 'text'
+   end
+   declare_value()
+end
+]], 'nested declaration')
+   assert(nested:count('CONTRACT') is 1,
+      'A nested reduced declaration should emit exactly one contract, got:\n' .. nested)
+
+   local multi = disassemble([[
+local function pair():<num, str> return 2, 'text' end
+try
+   global glGTReducedNumber, glGTReducedText = pair()
+end
+]])
+   assert(multi:count('CONTRACT') >= 2,
+      'Both reduced multi-result positions must emit contracts in addition to callable contracts, got:\n' .. multi)
+   assert(multi:count('GSET') is 2,
+      'Both reduced multi-result positions must emit stores, got:\n' .. multi)
+
+   assert_global_contract_before_store([[
+try
+   global glGTReducedVariant:any = 1
+end
+]], 'reduced explicit any declaration')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
