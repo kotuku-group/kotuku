@@ -1691,13 +1691,7 @@ void TypeAnalyser::analyse_function_stmt(const FunctionStmtPayload &Payload)
             diag.message = std::format("cannot assign to constant '{}'", name_view);
             this->record_diagnostic(std::move(diag));
          }
-         else {
-            const Identifier &declaration = Payload.name.segments.front();
-            declaration.global_contract_type = TiriType::Func;
-            declaration.global_contract_struct_def = nullptr;
-            declaration.global_contract_policy = GlobalContractPolicy::Enforced;
-            this->declare_global_function(function_name, function, function_location);
-         }
+         else this->declare_global_function(function_name, function, function_location);
       }
       else if (Payload.name.method) {
          function_name = Payload.name.method->symbol;
