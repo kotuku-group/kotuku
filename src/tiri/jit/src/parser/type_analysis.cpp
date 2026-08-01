@@ -348,6 +348,7 @@ private:
       struct_record *StructDef = nullptr);
    void mark_dynamic_ingress(GCstr *Name, bool IsGlobal);
    void degrade_global_type(GCstr *Name);
+   void invalidate_global_flow_policy(GCstr *Name, SourceSpan Location);
 
    ParserContext &ctx_;                             // Parser context for diagnostics and lexer access
    std::vector<TypeCheckScope> scope_stack_{};      // Stack of scopes for variable tracking
@@ -1822,14 +1823,7 @@ void TypeAnalyser::discover_global_decl_policy(const GlobalDeclStmtPayload &Payl
          name.global_contract_policy = GlobalContractPolicy::Enforced;
       }
       if (PublishStaticPolicy) this->declare_global(name.symbol, inferred, name.span, name.has_const, contract_policy);
-      else {
-         // A reduced declaration may fail before its environment policy is installed.  Do not let subsequent
-         // ordinary analysis assume either the incoming or the declared policy; runtime stores remain authoritative.
-         InferredType runtime_policy;
-         runtime_policy.primary = TiriType::Any;
-         runtime_policy.is_fixed = true;
-         this->declare_global(name.symbol, runtime_policy, name.span);
-      }
+      else this->invalidate_global_flow_policy(name.symbol, name.span);
    }
 }
 
@@ -2918,6 +2912,31 @@ void TypeAnalyser::degrade_global_type(GCstr *Name)
       it->second.type.struct_def = nullptr;
       this->trace_fix(this->ctx_.lex().linenumber, Name, TiriType::Any);
    }
+}
+
+// A reduced declaration may fail before its environment policy is installed.  Clear state that depends on whether
+// the declaration executes successfully, while retaining any forward signature that constrains later definitions.
+
+void TypeAnalyser::invalidate_global_flow_policy(GCstr *Name, SourceSpan Location)
+{
+   if (not Name) return;
+
+   const FunctionExprPayload *forward_declaration = nullptr;
+   if (auto existing = this->global_types_.find(Name); existing != this->global_types_.end()) {
+      forward_declaration = existing->second.forward_declaration;
+      if (not forward_declaration and existing->second.function and
+          is_function_forward_declaration(*existing->second.function)) {
+         forward_declaration = existing->second.function;
+      }
+   }
+
+   GlobalTypeInfo info;
+   info.type.primary = TiriType::Any;
+   info.type.is_fixed = true;
+   info.location = Location;
+   info.forward_declaration = forward_declaration;
+   this->global_types_[Name] = info;
+   this->trace_decl(this->ctx_.lex().linenumber, Name, TiriType::Any, true);
 }
 
 void TypeAnalyser::fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId, struct_record *StructDef)

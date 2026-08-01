@@ -646,6 +646,24 @@ global function glContractForwardMismatch(Value:str):num return 1 end
 ]])
    end, 'global function forward signature')
 
+   local reduced_forward_failed = false
+   try
+      exec([[
+global function glContractReducedForward(Value:num):num end
+try
+   global glContractReducedForward:str = 'wrong'
+except e
+end
+global function glContractReducedForward(Value:str):str return Value end
+]])
+   except e
+      reduced_forward_failed = true
+      assert(e.message:find("signature for global function 'glContractReducedForward'") != nil,
+         'The failed reduced declaration must preserve the forward-signature diagnostic: ' .. e.message)
+   end
+   assert(reduced_forward_failed,
+      'An incompatible definition after a failed reduced declaration must fail compilation')
+
    expect_contract_failure(function()
       exec([[
 global thunk glContractForwardKind():num end
