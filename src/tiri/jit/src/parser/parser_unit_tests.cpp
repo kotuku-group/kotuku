@@ -1500,7 +1500,7 @@ static bool test_signature_runtime_inference(kt::Log &Log)
 {
    LuaStateHolder state;
    lua_State *L = state.get();
-   constexpr std::string_view source = "return function(Value) return Value end";
+   constexpr std::string_view source = "return function(Value:num) return Value end";
    if (lua_load(L, source, "signature-inference") or lua_pcall(L, 0, 1, 0)) {
       Log.error("failed to create the inference function: %s", lua_tostring(L, -1));
       return false;
@@ -1518,8 +1518,8 @@ static bool test_signature_runtime_inference(kt::Log &Log)
 
    ProtoTypeEntry inferred = proto_result_type(prototype, 0);
    if (inferred.type != TiriType::Num or proto_type_origin(inferred) != ProtoTypeOrigin::Inferred or
-       proto_type_strength(inferred) != ProtoTypeStrength::Advisory) {
-      Log.error("runtime inference did not remain advisory");
+       proto_type_strength(inferred) != ProtoTypeStrength::Trusted) {
+      Log.error("validated static inference did not remain trusted");
       return false;
    }
 
@@ -1536,7 +1536,7 @@ static bool test_signature_runtime_inference(kt::Log &Log)
    bool equal = compare_proto_signatures(prototype, restored);
    lua_pop(L, 2);
    if (not equal) {
-      Log.error("runtime-inferred signature changed during serialisation");
+      Log.error("statically inferred signature changed during serialisation");
       return false;
    }
    return true;
@@ -2596,7 +2596,7 @@ extern math
 
 local context = { base = 5 }
 
-function context:compute(delta)
+function context:compute(delta):<any, ...>
    return self.base + math.abs(-delta)
 end
 
@@ -2637,7 +2637,7 @@ static bool test_return_lowering(kt::Log &log)
    constexpr const char* source =
       "extern math\n"
       "\n"
-      "local function retmix(flag, ...)\n"
+      "local function retmix(flag, ...):<any, ...>\n"
       "   if flag then\n"
       "      return ...\n"
       "   end\n"
@@ -2721,7 +2721,7 @@ return sum
 )" },
       { "function_stmt_closure", R"(
 local function outer(flag):any
-   local function helper(value)
+   local function helper(value):<any, ...>
       return value * 2
    end
 
@@ -2729,7 +2729,7 @@ local function outer(flag):any
       return helper(flag)
    end
 
-   return function(a, b)
+   return function(a, b):<any, ...>
       return helper(a + b)
    end
 end
@@ -3324,6 +3324,16 @@ static bool test_native_prototype_result_descriptors(kt::Log &Log)
       "wave = math.cos(wave)\n"
       "local text = string.trim(' value ')\n"
       "text = string.upper(text)\n"
+      "local function allocated_text()\n"
+      "   local buffer = string.alloc(16)\n"
+      "   return buffer\n"
+      "end\n"
+      "local function sliced_text()\n"
+      "   local buffer = string.alloc(16)\n"
+      "   return buffer:sub(0, 1)\n"
+      "end\n"
+      "text = allocated_text()\n"
+      "text = sliced_text()\n"
       "local first, last = string.find('abc', 'b')\n"
       "first = first + 1\n"
       "last = last + 1\n"
@@ -3881,9 +3891,9 @@ static bool test_type_guided_emission(kt::Log &Log)
 
    constexpr std::string_view mutable_alias =
       "local function typed(Value:num):num return Value end\n"
-      "local function invoke(Replace:any)\n"
+      "local function invoke(Replace:any):<any, ...>\n"
       "   local callback = typed\n"
-      "   if Replace then callback = (Value => Value) end\n"
+      "   if Replace then callback = (Value => any: Value) end\n"
       "   return callback('runtime checked')\n"
       "end\n"
       "return invoke(true)\n";
@@ -3895,7 +3905,7 @@ static bool test_type_guided_emission(kt::Log &Log)
    constexpr std::string_view dead_write =
       "local function typed(Value:num):num return Value end\n"
       "local callback = typed\n"
-      "if false then callback = (Value => Value) end\n"
+      "if false then callback = (Value => any: Value) end\n"
       "return callback('still checked')\n";
    if (compile_snapshot(L, dead_write, true, error)) {
       Log.error("dead branch write incorrectly invalidated a stable callable alias");
@@ -3933,7 +3943,7 @@ static bool test_type_guided_emission(kt::Log &Log)
       "try\n"
       "   global guided_object = obj.new('time')\n"
       "end\n"
-      "local function query_object()\n"
+      "local function query_object():<any, ...>\n"
       "   return guided_object?.acQuery()\n"
       "end\n";
    snapshot = compile_snapshot(L, safe_object_call, true, error);
@@ -3944,7 +3954,7 @@ static bool test_type_guided_emission(kt::Log &Log)
    }
 
    constexpr std::string_view generic_accesses =
-      "local function update(Value:any, Key:any)\n"
+      "local function update(Value:any, Key:any):<any, ...>\n"
       "   Value.field = 1\n"
       "   Value[Key] = Value[Key]\n"
       "   return Value.field\n"

@@ -897,8 +897,14 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          body_stmts.push_back(std::move(return_stmt));
          auto body = make_block(span, std::move(body_stmts));
 
-         // Build anonymous thunk function (no parameters, is_thunk=true)
-         ExprNodePtr thunk_func = make_function_expr(span, {}, false, std::move(body), true, explicit_type);
+         // Build anonymous thunk function (no parameters, is_thunk=true).  Preserve the deferred annotation as an
+         // explicit function result contract so dynamic captured expressions are validated at the thunk boundary.
+         FunctionReturnTypes return_types;
+         return_types.types[0] = explicit_type;
+         return_types.count = 1;
+         return_types.is_explicit = true;
+         ExprNodePtr thunk_func = make_function_expr(
+            span, {}, false, std::move(body), true, explicit_type, return_types);
 
          // Build immediate call to thunk (no arguments)
          ExprNodeList call_args;
@@ -944,6 +950,22 @@ ParserResult<ExprNodePtr> AstBuilder::parse_arrow_function(ExprNodeList paramete
    FunctionReturnTypes return_types;
    FunctionNameScope function_name_scope(*this, nullptr);
 
+   // An explicit result precedes either an expression or block body: `=> type: expr` and `=> type: do ... end`.
+   Token current = this->ctx.tokens().current();
+   if (current.kind() IS TokenKind::Identifier) {
+      GCstr *type_name_str = current.identifier();
+      std::string_view type_str(strdata(type_name_str), type_name_str->len);
+      TiriType parsed = parse_type_name(type_str);
+      Token next = this->ctx.tokens().peek(1);
+      if (parsed != TiriType::Unknown and next.kind() IS TokenKind::Colon) {
+         this->ctx.tokens().advance();
+         this->ctx.tokens().advance();
+         return_types.types[0] = parsed;
+         return_types.count = 1;
+         return_types.is_explicit = true;
+      }
+   }
+
    if (this->ctx.check(TokenKind::DoToken)) {
       this->ctx.tokens().advance();
       auto block = this->parse_scoped_block({ TokenKind::EndToken });
@@ -952,34 +974,6 @@ ParserResult<ExprNodePtr> AstBuilder::parse_arrow_function(ExprNodeList paramete
       body = std::move(block.value_ref());
    }
    else {
-      // Expression body - check for optional type annotation: => type: expr
-      // The syntax is: => type: expr (where type is a known type name like num, str, bool, etc.)
-      // We must distinguish this from method calls like: => value:method()
-      // Only consume as type annotation if the identifier is a KNOWN type name.
-      Token current = this->ctx.tokens().current();
-      if (current.kind() IS TokenKind::Identifier) {
-         // Check if this identifier is a known type name
-         GCstr *type_name_str = current.identifier();
-         std::string_view type_str(strdata(type_name_str), type_name_str->len);
-         TiriType parsed = parse_type_name(type_str);
-
-         // Only treat as type annotation if:
-         // 1. The identifier is a known type name (not Unknown)
-         // 2. It's followed by a colon
-         if (not (parsed IS TiriType::Unknown)) {
-            Token next = this->ctx.tokens().peek(1);
-            if (next.kind() IS TokenKind::Colon) {
-               // This is a type annotation: "=> type: expr"
-               this->ctx.tokens().advance();  // consume type identifier
-               this->ctx.tokens().advance();  // consume ':'
-
-               return_types.types[0] = parsed;
-               return_types.count = 1;
-               return_types.is_explicit = true;
-            }
-         }
-      }
-
       auto expr = this->parse_expression();
       if (not expr.ok()) return ParserResult<ExprNodePtr>::failure(expr.error_ref());
 

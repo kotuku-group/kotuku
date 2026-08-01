@@ -30,6 +30,7 @@ enum class ParserErrorCode : uint16_t {
    ObjectClassMismatch,      // Object class ID mismatch in assignment
    TypeMismatchReturn,
    DeferredTypeRequired,
+   ReturnTypeRequired,
    UndefinedVariable,
    ThunkDirectCall,         // Warning: thunk called without assignment defeats memoization
    ReturnTypeMismatch,      // Return value type doesn't match declaration

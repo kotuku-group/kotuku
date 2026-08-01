@@ -209,7 +209,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Process a class XML file and extract method/action/field information
 
-function processClassXML(FilePath, DocPath)
+function processClassXML(FilePath:str, DocPath:str):<str, table>
    content = io.readAll(FilePath)
    content ?! return
 
@@ -304,7 +304,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-global function buildDocCache(DocPath)
+global function buildDocCache(DocPath):table
    -- Build the documentation cache from XML files
 
    cache = {
@@ -413,7 +413,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-global function loadDocCache(DocPath)
+global function loadDocCache(DocPath):table
    -- Attempt to load the cache, returns nil if invalid
    msg('Loading document cache from ' .. CACHE_PATH)
 
@@ -422,11 +422,11 @@ global function loadDocCache(DocPath)
       cache = loadFile(CACHE_PATH)
    except ex
       msg('Failed to run cache file.  Error: ' .. ex.message)
-      return nil
+      return
    end
 
-   if cache.version != 6 then msg('Unsupported version'); return nil end
-   if cache.sdkPath != DocPath then msg('Path mismatch: ' .. cache.sdkPath .. ' != ' .. DocPath); return nil end
+   if cache.version != 6 then msg('Unsupported version'); return end
+   if cache.sdkPath != DocPath then msg('Path mismatch: ' .. cache.sdkPath .. ' != ' .. DocPath); return end
 
    module_count = 0
    class_count = 0
@@ -434,7 +434,7 @@ global function loadDocCache(DocPath)
    for k, v in pairs(cache.classes or {}) do class_count++ end
    if module_count is 0 or class_count is 0 then
       msg('Documentation cache is empty; rebuilding.')
-      return nil
+      return
    end
 
    return cache

@@ -280,7 +280,7 @@ end
    }
    state = {
       clientSocket = {
-         acWrite = function(Text) return ERR_Okay end
+         acWrite = function(Text):num return ERR_Okay end
       }
    }
 

@@ -183,7 +183,7 @@ end
 @Test function MethodCall()
    t = {
       name = "Method",
-      getName = function(self) return self.name end
+      getName = function(self):str return self.name end
    }
    result = f"Name: {t:getName()}"
    assert(result is "Name: Method", "Method call failed: " .. tostring(result))
@@ -197,7 +197,7 @@ end
 end
 
 @Test function ArrowFunction()
-   fn = x => x * 2
+   fn = x => num: x * 2
    result = f"{fn(3)}"
    assert(result is "6", "Arrow function failed: " .. tostring(result))
 end

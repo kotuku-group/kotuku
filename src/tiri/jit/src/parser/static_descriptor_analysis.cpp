@@ -441,15 +441,20 @@ private:
       results.declared_count = Function.return_types.count;
       results.stored_count = uint8_t(std::min<size_t>(Function.return_types.count, MAX_RETURN_TYPES));
       results.variadic = Function.return_types.is_variadic;
-      results.dynamic = not Function.return_types.is_explicit;
+      results.dynamic = not Function.return_types.is_explicit and not Function.return_types.is_inferred;
       for (size_t i = 0; i < results.stored_count; ++i) {
          StaticValueDescriptor value = this->catalogue_.value(Function.return_types.descriptors[i]);
          value.primary = Function.return_types.types[i];
+         value.object_class_id = Function.return_types.object_class_ids[i];
          value.struct_def = Function.return_types.struct_defs[i] ?
             Function.return_types.struct_defs[i] : value.struct_def;
          value.nullable = true;
-         value.proof = Function.return_types.is_explicit and value.primary != TiriType::Any and
-            value.primary != TiriType::Unknown ? StaticProof::Checked : StaticProof::Advisory;
+         if (Function.return_types.is_explicit and value.primary != TiriType::Any and
+             value.primary != TiriType::Unknown) {
+            value.proof = StaticProof::Checked;
+         }
+         else if (Function.return_types.is_inferred) value.proof = StaticProof::Closed;
+         else value.proof = StaticProof::Advisory;
          results.values[i] = value;
       }
       return results;
@@ -695,6 +700,15 @@ private:
                fields = methods[i].Args;
                return this->catalogue_.add_results(describe_object_call_results(fields));
             }
+         }
+         return 0;
+      }
+
+      if (base.primary IS TiriType::Str and base.proved()) {
+         const fprototype *prototype = get_prototype(
+            "string", std::string_view(strdata(member), member->len));
+         if (prototype) {
+            return this->catalogue_.add_results(describe_native_prototype_results(prototype));
          }
          return 0;
       }
@@ -1311,7 +1325,7 @@ private:
       bool have_return = false;
       if (Function.body) this->collect_return_descriptors(*Function.body, inferred, have_return);
       if (have_return) {
-         if (Function.return_types.is_explicit) {
+         if (Function.return_types.is_explicit or Function.return_types.is_inferred) {
             inferred.declared_count = Function.return_types.count;
             inferred.stored_count = uint8_t(std::min<size_t>(
                Function.return_types.count, MAX_RETURN_TYPES));
@@ -1320,10 +1334,13 @@ private:
             for (size_t i = 0; i < inferred.stored_count; ++i) {
                auto &value = inferred.values[i];
                value.primary = Function.return_types.types[i];
+               value.object_class_id = Function.return_types.object_class_ids[i];
                value.struct_def = Function.return_types.struct_defs[i] ?
                   Function.return_types.struct_defs[i] : value.struct_def;
                value.nullable = true;
-               value.proof = value.primary IS TiriType::Any ? StaticProof::Advisory : StaticProof::Checked;
+               value.proof = Function.return_types.is_explicit ?
+                  (value.primary IS TiriType::Any ? StaticProof::Advisory : StaticProof::Checked) :
+                  StaticProof::Closed;
                Function.return_types.descriptors[i] = this->add_value(value);
             }
          }

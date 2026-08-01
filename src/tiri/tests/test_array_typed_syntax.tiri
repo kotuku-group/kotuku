@@ -162,7 +162,7 @@ end
 
 @Test function ArrayTypedAsArgument()
    -- Pass typed array as function argument
-   function sum_array(a)
+   function sum_array(a):num
       total = 0
       for i in {0 to #a} do
          total += a[i]
@@ -379,7 +379,7 @@ end
 
 @Test function ArrayTypedAsReturnValue()
    -- Function returning typed array
-   function makeNumbers(n)
+   function makeNumbers(n):array
       result = array<int, n>
       for i in {0 to n} do
          result[i] = i + 1

@@ -1090,7 +1090,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
 
    // Runtime inference applies only when there is no explicit result declaration. This distinguishes explicit void
    // (`:<>`) from an unannotated function even though both have no stored concrete result types.
-   bool needs_typefix = not this->func_state.return_contract_explicit;
+   bool needs_typefix = not this->func_state.return_contract_explicit and
+      not this->func_state.return_inference_validated;
 
    if (Payload.values.empty()) {
       ins = BCINS_AD(BC_RET0, 0, 1);

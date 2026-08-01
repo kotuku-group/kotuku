@@ -98,11 +98,11 @@ global function tokenizeTiri(Source:str):array
       return Char is ')' or Char is ']' or Char is '}'
    end
 
-   function isRangeWord(Ident)
+   function isRangeWord(Ident:str):bool
       return Ident is 'to' or Ident is 'into'
    end
 
-   function previousNonWhitespace(Pos)
+   function previousNonWhitespace(Pos:num):num
       while Pos >= 0 do
          c = Source:sub(Pos, Pos + 1)
          if c is ' ' or c is '\t' then Pos -= 1 else break end
@@ -110,7 +110,7 @@ global function tokenizeTiri(Source:str):array
       return Pos
    end
 
-   function nextNonWhitespace(Pos)
+   function nextNonWhitespace(Pos:num):num
       while Pos < len do
          c = Source:sub(Pos, Pos + 1)
          if c is ' ' or c is '\t' then Pos++ else break end
@@ -118,7 +118,7 @@ global function tokenizeTiri(Source:str):array
       return Pos
    end
 
-   function skipQuotedSource(Pos, Quote)
+   function skipQuotedSource(Pos:num, Quote):num
       Pos++
       while Pos < len do
          c = Source:sub(Pos, Pos + 1)
@@ -896,7 +896,7 @@ global function extractFoldingRanges(Doc:table):array
       comment_pos = line_text:find('--')
 
       -- Check for block openers (only if not in a comment)
-      function checkKeyword(RxPattern)
+      function checkKeyword(RxPattern):num
          start_pos, stop_pos = RxPattern.findFirst(line_text)
          if start_pos and (not comment_pos or start_pos < comment_pos) then
             return start_pos

@@ -378,7 +378,7 @@ end
 -- Compute start and end columns for an error range based on context
 -- Returns: start_col, end_col
 
-global function computeErrorRange(Doc:table, Line:num, Column:num)
+global function computeErrorRange(Doc:table, Line:num, Column:num):<num, num>
    -- Find the target line
    if Line >= getTotalLines(Doc) then return Column, Column + 1 end
 
@@ -632,7 +632,7 @@ function runStdioServer(Self:table)
    end
 end
 
-global function lspStart(Options)
+global function lspStart(Options):table
    Options ?= {}
 
    self.port            = Options.port or 5007
