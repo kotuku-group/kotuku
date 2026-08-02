@@ -89,7 +89,7 @@ end
 
 @Test function testSafeMethodChain()
    account = { profile = { email = "user@example.com" } }
-   function account:getProfile()
+   function account:getProfile():table
       return self.profile
    end
    email = account?:getProfile()?.email
@@ -136,7 +136,7 @@ end
 
 @Test function testSafeNavPresenceInsideCallLosesFallback()
    guest = nil
-   function capture(value)
+   function capture(value):any
       return value
    end
 
@@ -152,7 +152,7 @@ end
 
 @Test function testSafeNavPresenceWithSiblingArgumentLosesFallback()
    guest = nil
-   function capture(first, second)
+   function capture(first, second):<any, any>
       return first, second
    end
 
@@ -275,7 +275,7 @@ end
             return 0xff
          end
       },
-      getData = function(self)
+      getData = function(self):table
          return self.data
       end
    }

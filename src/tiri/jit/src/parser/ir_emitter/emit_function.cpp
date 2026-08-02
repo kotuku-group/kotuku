@@ -170,12 +170,14 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       if (param.type != TiriType::Unknown and param.type != TiriType::Any) {
          param_info.fixed_type = param.type;
          param_info.struct_def = param.struct_def;
+         param_info.array_element = param.array_element;
       }
       else if (param.name.static_value) {
          const auto &descriptor = this->ctx.descriptors().value(param.name.static_value);
          if (descriptor.primary != TiriType::Unknown and descriptor.primary != TiriType::Any) {
             param_info.fixed_type = descriptor.primary;
             param_info.struct_def = descriptor.struct_def;
+            param_info.array_element = descriptor.array_element;
          }
       }
       param_info.binding_id = param.name.binding_id;
@@ -204,6 +206,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       RuntimeContract contract{
          .type = param.type,
          .struct_def = param.struct_def,
+         .array_element = param.array_element,
          .label = param.name.is_blank ? nullptr : param.name.symbol,
          .boundary = ContractBoundary::Parameter,
          .position = uint8_t(i.raw() + 1),
@@ -234,6 +237,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       for (size_t i = 0; i < Payload.return_types.count and i < child_state.return_types.size(); ++i) {
          child_state.return_types[i] = Payload.return_types.types[i];
          child_state.return_struct_defs[i] = Payload.return_types.struct_defs[i];
+         child_state.return_array_elements[i] = Payload.return_types.array_elements[i];
          auto type = Payload.return_types.types[i];
          auto struct_def = Payload.return_types.struct_defs[i];
          child_state.signature_results[i] = ProtoTypeEntry{
@@ -242,6 +246,24 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
             .flags = proto_type_flags(true, false, ProtoTypeOrigin::Declared,
                (type IS TiriType::Any or type IS TiriType::Unknown) ?
                   ProtoTypeStrength::Advisory : ProtoTypeStrength::Checked)
+         };
+      }
+   }
+   else if (Payload.return_types.is_inferred) {
+      child_state.return_inference_validated = true;
+      child_state.signature_result_count = Payload.return_types.count;
+      child_state.signature_result_entry_count = uint8_t(std::min<size_t>(
+         Payload.return_types.count, child_state.signature_results.size()));
+      for (size_t i = 0; i < Payload.return_types.count and i < child_state.signature_results.size(); ++i) {
+         auto type = Payload.return_types.types[i];
+         auto struct_def = Payload.return_types.struct_defs[i];
+         uint32_t constraint = 0;
+         if (struct_def and type IS TiriType::Struct) constraint = struct_key(struct_def->Name);
+         else if (type IS TiriType::Object) constraint = uint32_t(Payload.return_types.object_class_ids[i]);
+         child_state.signature_results[i] = ProtoTypeEntry{
+            .constraint = constraint,
+            .type = type,
+            .flags = proto_type_flags(true, false, ProtoTypeOrigin::Inferred, ProtoTypeStrength::Trusted)
          };
       }
    }
@@ -659,7 +681,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_function_stmt(const LocalFunction
    if (Payload.name.symbol and not Payload.name.is_blank) this->update_local_binding(Payload.name.symbol, slot);
 
    // Copy function return types to VarInfo for compile-time type checking at call sites
-   if (Payload.function->return_types.is_explicit) {
+   if (Payload.function->return_types.is_explicit or Payload.function->return_types.is_inferred) {
       for (size_t i = 0; i < Payload.function->return_types.count and i < var_info.result_types.size(); ++i) {
          var_info.result_types[i] = Payload.function->return_types.types[i];
       }
@@ -758,7 +780,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
       this->update_local_binding(symbol, slot);
 
       // Copy function return types to VarInfo for compile-time type checking at call sites
-      if (Payload.function->return_types.is_explicit) {
+      if (Payload.function->return_types.is_explicit or Payload.function->return_types.is_inferred) {
          for (size_t i = 0; i < Payload.function->return_types.count and i < var_info.result_types.size(); ++i) {
             var_info.result_types[i] = Payload.function->return_types.types[i];
          }
@@ -783,6 +805,11 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
 
    ExpDesc target = target_result.value_ref();
    ExpDesc value = function_value.value_ref();
+   std::optional<RuntimeContract> global_contract;
+   bool is_direct_global_declaration = Payload.name.is_explicit_global and is_simple_name;
+   if (is_direct_global_declaration) {
+      global_contract = global_declaration_contract(Payload.name.segments.front());
+   }
 
    // For annotation registration, we need the function in a register
    // Materialise the function value to a register before the store
@@ -795,7 +822,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
       bcreg_reserve(&this->func_state, 1);
    }
 
-   bcemit_store(&this->func_state, &target, &value);
+   bcemit_store(&this->func_state, &target, &value,
+      global_contract ? &*global_contract : nullptr, is_direct_global_declaration);
    release_indexed_original(this->func_state, target);
 
    // Register annotations if present

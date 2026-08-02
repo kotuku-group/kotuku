@@ -172,7 +172,6 @@ global function registerCoreHandlers(Self)
    -- initialized: Client confirms handshake complete (notification, no response)
    Self._handlers['initialized'] = function(Msg, State)
       logMessage(Self, 'LSP initialized notification received - handshake complete')
-      return nil
    end
 
    -- shutdown: Client requests shutdown preparation
@@ -195,14 +194,12 @@ global function registerCoreHandlers(Self)
          logMessage(Self, 'LSP exit notification - unexpected (no prior shutdown)')
       end
       State.should_disconnect = true
-      return nil
    end
 
    -- $/cancelRequest: Client wants to cancel a pending request (notification)
    -- Since we process requests synchronously, we just acknowledge and ignore
    Self._handlers['$/cancelRequest'] = function(Msg, State)
       logVerbose(Self, 'Cancel request received for id: ' .. tostring(Msg.params.id))
-      return nil  -- Notification, no response
    end
 
    -------------------------------------------------------------------------------------------------------------------
@@ -223,8 +220,6 @@ global function registerCoreHandlers(Self)
       -- Compute and publish diagnostics
       params = computeDiagnostics(glDocuments[doc.uri])
       sendNotification(Self, State.clientSocket, 'textDocument/publishDiagnostics', params)
-
-      return nil  -- Notification, no response
    end
 
    -- textDocument/didChange: Document content changed
@@ -263,7 +258,6 @@ global function registerCoreHandlers(Self)
          params = computeDiagnostics(glDocuments[uri])
          sendNotification(Self, State.clientSocket, 'textDocument/publishDiagnostics', params)
       end
-      return nil  -- Notification, no response
    end
 
    -- textDocument/didClose: Client closed a document
@@ -279,8 +273,6 @@ global function registerCoreHandlers(Self)
          uri = uri,
          diagnostics = array<table>
       })
-
-      return nil  -- Notification, no response
    end
 
    -------------------------------------------------------------------------------------------------------------------

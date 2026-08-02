@@ -564,9 +564,10 @@ static FunctionReturnTypes infer_function_results(const FunctionExprPayload &Fun
 static TiriType compact_result_type_at(const FunctionExprPayload &Function, const FunctionReturnTypes &Inferred,
    size_t Index, bool &InferredType)
 {
-   if (Function.return_types.is_explicit and (Index < Function.return_types.count or
+   if ((Function.return_types.is_explicit or Function.return_types.is_inferred) and
+       (Index < Function.return_types.count or
        (Function.return_types.is_variadic and Function.return_types.count > 0))) {
-      InferredType = false;
+      InferredType = Function.return_types.is_inferred;
       return Function.return_types.type_at(Index);
    }
 
@@ -577,12 +578,13 @@ static TiriType compact_result_type_at(const FunctionExprPayload &Function, cons
 
 static void add_results(ParserSymbolMetadata &Symbol, const FunctionExprPayload &Function, const ParsedDocText *Doc)
 {
-   size_t declared_count = Function.return_types.count;
+   size_t result_count = Function.return_types.count;
+   size_t explicit_count = Function.return_types.is_explicit ? result_count : 0;
    size_t doc_count = Doc ? Doc->results.size() : 0;
-   size_t count = declared_count > doc_count ? declared_count : doc_count;
+   size_t count = result_count > doc_count ? result_count : doc_count;
    FunctionReturnTypes inferred_results;
 
-   if (Doc and Doc->compact and doc_count > declared_count) {
+   if (Doc and Doc->compact and doc_count > result_count) {
       inferred_results = infer_function_results(Function);
    }
 
@@ -594,9 +596,9 @@ static void add_results(ParserSymbolMetadata &Symbol, const FunctionExprPayload 
          meta.type = type_to_string(compact_result_type_at(Function, inferred_results, i, inferred_type));
          meta.inferred = inferred_type;
       }
-      else if (i < declared_count) {
+      else if (i < result_count) {
          meta.type = type_to_string(Function.return_types.types[i]);
-         meta.inferred = false;
+         meta.inferred = i >= explicit_count;
       }
 
       if (Doc and i < Doc->results.size()) {
@@ -604,7 +606,7 @@ static void add_results(ParserSymbolMetadata &Symbol, const FunctionExprPayload 
          if ((not Doc->compact) and meta.type.empty()) meta.type = Doc->results[i].type;
       }
 
-      if (not (Doc and Doc->compact)) meta.inferred = i >= declared_count;
+      if (not (Doc and Doc->compact)) meta.inferred = i >= explicit_count;
       Symbol.results.push_back(std::move(meta));
    }
 }

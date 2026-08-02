@@ -15,6 +15,7 @@ struct InferredType {
    bool requires_destination_type = false; // Dynamic ingress cannot be replaced by a concrete type without annotation
    CLASSID object_class_id = CLASSID::NIL;  // CLASSID for Object types
    struct_record *struct_def = nullptr; // Resolved layout for Struct types and definition callables
+   ArrayElementDescriptor array_element{}; // Resolved native-array member identity
 
    InferredType() = default;
    explicit InferredType(TiriType Primary, bool IsConstant = false, bool IsNullable = false, bool IsFixed = false,
@@ -49,10 +50,28 @@ struct TypeDiagnostic {
 };
 
 // Context for tracking function return type validation during type analysis
+enum class ReturnInferenceState : uint8_t {
+   Unobserved,
+   NilOnly,
+   Concrete,
+   ExplicitAny,
+   Dynamic
+};
+
+struct InferredReturnPosition {
+   ReturnInferenceState state = ReturnInferenceState::Unobserved;
+   InferredType concrete{};
+   SourceSpan location{};
+   SourceSpan dynamic_location{};
+   TiriType dynamic_type = TiriType::Unknown;
+};
+
 struct FunctionContext {
    const FunctionExprPayload* function = nullptr;  // The function being analysed
    FunctionReturnTypes expected_returns{};         // Declared or inferred return types
-   bool return_type_inferred = false;              // True once first return statement sets types
+   std::array<InferredReturnPosition, MAX_RETURN_TYPES> inferred_returns{};
+   uint8_t observed_return_count = 0;
+   bool inference_failed = false;
    GCstr *function_name = nullptr;                 // Function name (for recursive detection)
 
    FunctionContext() = default;
@@ -74,11 +93,12 @@ struct UnusedVariableInfo {
 
 class TypeCheckScope {
 public:
-   void declare_parameter(GCstr *, TiriType Type, struct_record *StructDef, SourceSpan Location = {});
+   void declare_parameter(GCstr *, TiriType Type, struct_record *StructDef,
+      const ArrayElementDescriptor &ArrayElement = {}, SourceSpan Location = {});
    void declare_local(GCstr *, const InferredType &, SourceSpan Location = {}, bool IsConst = false);
    void declare_function(GCstr *, const FunctionExprPayload *, SourceSpan Location = {});
    void fix_local_type(GCstr *, TiriType Type, CLASSID ObjectClassId = CLASSID::NIL,
-      struct_record *StructDef = nullptr);
+      struct_record *StructDef = nullptr, const ArrayElementDescriptor &ArrayElement = {});
    void mark_dynamic_ingress(GCstr *);
 
    // Mark a variable as used (called when variable is referenced)

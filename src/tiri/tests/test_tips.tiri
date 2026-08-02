@@ -54,20 +54,20 @@ glConcatScript = [[
 glFunctionLoopScript = [[
    -- Function expression in range loop (should warn)
    for i in {0 into 10} do
-      callback = function() return i end
+      callback = function():num return i end
    end
 
    -- Function expression in while loop (should warn)
    count = 0
    while count < 5 do
-      handler = function() return count end
+      handler = function():num return count end
       count = count + 1
    end
 
    -- Function expression in generic for loop (should warn)
    data = { a = 1, b = 2 }
    for k, v in pairs(data) do
-      processor = function() return v end
+      processor = function():num return v end
    end
 
    -- Arrow function in loop (should warn)
@@ -267,9 +267,9 @@ end
 @Test function NestedLoops()
    statement = [[
    for i in {0 into 3} do
-      outer_fn = function() return i end  -- Warning: function in loop
+      outer_fn = function():num return i end  -- Warning: function in loop
       for j in {0 into 3} do
-         inner_fn = function() return i + j end  -- Warning: function in nested loop
+         inner_fn = function():num return i + j end  -- Warning: function in nested loop
       end
    end
 ]]

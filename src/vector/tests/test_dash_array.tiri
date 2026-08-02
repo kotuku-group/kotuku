@@ -73,7 +73,7 @@ end
    except e when ERR_SetValueNotArray
       caught = true
       assert(e.message:contains('array<double>'),
-         'The DashArray type mismatch should identify array<double> as the expected field type.')
+         'The DashArray type mismatch should identify array<double> as the expected field type, got: ' .. e.message)
    end
 
    assert(caught, 'An array<int> should not be accepted by the DashArray field.')

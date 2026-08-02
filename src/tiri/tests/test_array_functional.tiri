@@ -1,5 +1,13 @@
 -- Flute tests for array functional methods (Tier 4)
 
+struct Typ12FunctionalValue
+   Value: int
+end
+
+struct Typ12AlternateValue
+   Value: int
+end
+
 @BeforeEach(hotpath=true)
 function enforce_hotpath() end
 
@@ -73,7 +81,7 @@ end
 
 @Test function MapDoubleValues()
    arr = array<int> { 1, 2, 3, 4, 5 }
-   doubled = arr:map(v => v * 2)
+   doubled = arr:map(v => num: v * 2)
    assert(#doubled is 5, "map() should return array of same length")
    assert(doubled[0] is 2 and doubled[1] is 4 and doubled[2] is 6 and doubled[3] is 8 and doubled[4] is 10,
       "map() should transform each element")
@@ -81,19 +89,19 @@ end
 
 @Test function MapPreservesOriginal()
    arr = array<int> { 1, 2, 3 }
-   doubled = arr:map(v => v * 2)
+   doubled = arr:map(v => num: v * 2)
    assert(arr[0] is 1 and arr[1] is 2 and arr[2] is 3, "map() should not modify original array")
 end
 
 @Test function MapEmptyArray()
    arr = array<int>
-   result = arr:map(v => v * 2)
+   result = arr:map(v => num: v * 2)
    assert(#result is 0, "map() on empty array should return empty array")
 end
 
 @Test function MapWithIndex()
    arr = array<int> { 10, 20, 30 }
-   indexed = arr:map(function(v, i)
+   indexed = arr:map(function(v, i):num
       return v + i
    end)
    assert(indexed[0] is 10 and indexed[1] is 21 and indexed[2] is 32, "map() should pass index as second argument")
@@ -101,14 +109,14 @@ end
 
 @Test function MapFloatArray()
    arr = array<float> { 1.5, 2.5, 3.5 }
-   squared = arr:map(v => v * v)
+   squared = arr:map(v => num: v * v)
    assert(math.abs(squared[0] - 2.25) < 0.001, "map() should work with float arrays")
    assert(math.abs(squared[1] - 6.25) < 0.001, "map() should work with float arrays")
 end
 
 @Test function MapStringArray()
    arr = array<string> { 'hello', 'world' }
-   upper = arr:map(v => v:upper())
+   upper = arr:map(v => str: v:upper())
    assert(upper[0] is 'HELLO' and upper[1] is 'WORLD', "map() should work with string arrays")
 end
 
@@ -116,7 +124,7 @@ end
    obj_one = obj.new('time')
    obj_two = obj.new('file')
    arr = array<object> { obj_one, obj_two }
-   copied = arr:map(Value => Value)
+   copied = arr:map(Value => object: Value)
    assert(copied[0].id is obj_one.id and copied[1].id is obj_two.id, "map() should preserve objects")
    obj_one.free()
    obj_two.free()
@@ -245,7 +253,7 @@ end
 
 @Test function ReduceWithIndex()
    arr = array<int> { 10, 20, 30 }
-   result = arr:reduce(0, function(acc, v, i)
+   result = arr:reduce(0, function(acc, v, i):num
       return acc + v * i
    end)
    -- 10*0 + 20*1 + 30*2 = 0 + 20 + 60 = 80
@@ -254,7 +262,7 @@ end
 
 @Test function ReduceToTable()
    arr = array<int> { 1, 2, 3 }
-   result = arr:reduce({}, function(acc, v, i)
+   result = arr:reduce({}, function(acc, v, i):table
       acc[i] = v * v
       return acc
    end)
@@ -269,7 +277,7 @@ end
 
 @Test function ReduceMax()
    arr = array<int> { 3, 1, 4, 1, 5, 9, 2, 6 }
-   maxVal = arr:reduce(arr[0], (acc, v) => v > acc ? v :> acc)
+   maxVal = arr:reduce(arr[0], (acc, v) => num: v > acc ? v :> acc)
    assert(maxVal is 9, "reduce() should find maximum value")
 end
 
@@ -454,4 +462,38 @@ end
    arr = array<int64> { 1000000000, 2000000000, 3000000000 }
    sum = arr:reduce(0, (acc, v) => acc + v)
    assert(sum is 6000000000, "reduce() should work with int64 arrays")
+end
+
+@Test function MapRejectsIncompatibleResultCategory()
+   local values = array<int> { 1, 2, 3 }
+
+   try
+      values:map(v => tostring(v))
+   success
+      error('map() should reject transform results incompatible with the source element type')
+   end
+
+   assert(#values is 3 and values[0] is 1 and values[1] is 2 and values[2] is 3,
+      'a rejected map() should preserve the source array')
+end
+
+@Test function StructTransformationsPreserveElementIdentity()
+   local values = array<struct<Typ12FunctionalValue>> {
+      struct<Typ12FunctionalValue> { Value=1 },
+      struct<Typ12FunctionalValue> { Value=2 }
+   }
+
+   local mapped = values:map(Value => struct<Typ12FunctionalValue> { Value=Value.Value + 10 })
+   assert(mapped[0].Value is 11 and mapped[1].Value is 12,
+      'map() should preserve named structure metadata')
+
+   local filtered = values:filter(Value => Value.Value > 1)
+   assert(#filtered is 1 and filtered[0].Value is 2,
+      'filter() should preserve named structure metadata')
+
+   try
+      values:map(Value => struct<Typ12AlternateValue> { Value=Value.Value })
+   success
+      error('map() should reject a different structure definition with the same layout')
+   end
 end

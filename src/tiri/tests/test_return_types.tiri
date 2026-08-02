@@ -138,6 +138,38 @@ end
    assert(alternate() is 3, "third call returns number")
 end
 
+@Test function ExplicitAnyParameterInfersVariantResult()
+   function get_value(Input:any)
+      Input ?! return 'default'
+      return Input
+   end
+
+   assert(get_value(nil) is 'default', 'an empty explicit-any parameter should use the concrete fallback')
+   assert(get_value('value') is 'value', 'an explicit-any parameter should permit an inferred variant result')
+   assert(get_value(42) is 42, 'the inferred any result should accept values of different types')
+
+   function variant_first(Input:any)
+      if Input then return Input end
+      return 'default'
+   end
+
+   assert(variant_first(false) is 'default', 'a later concrete fallback should not narrow an inferred any result')
+   assert(variant_first(42) is 42, 'explicit-any inference should be independent of return source order')
+end
+
+@Test function ImplicitDynamicStillRequiresResultAnnotation()
+   try
+      exec([[
+         extern glUnspecifiedValue
+         function unresolved_value()
+            return glUnspecifiedValue
+         end
+      ]])
+   success
+      error('an unspecified dynamic return should still require an explicit result annotation')
+   end
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- TYPE INFERENCE FROM RETURN STATEMENTS (no explicit declaration)
 
@@ -164,7 +196,7 @@ end
 end
 
 @Test function InferredMultipleReturns()
-   function pair(A, B)
+   function pair(A:num, B:num)
       return A, B
    end
    x, y = pair(1, 2)
@@ -262,6 +294,31 @@ end
    end
    result = bareReturn()
    assert(result is nil, "bare return should return nil")
+end
+
+@Test function NilOnlyReturnIsVoid()
+   function nil_only()
+      return nil
+   end
+   assert(nil_only() is nil, "an explicit nil-only return should behave like a bare return")
+end
+
+@Test function TrailingNilOnlyResultIsOmitted()
+   function value_with_trailing_nil()
+      return 42, nil
+   end
+   local value, omitted = value_with_trailing_nil()
+   assert(value is 42, "the concrete leading result should be inferred")
+   assert(omitted is nil, "a trailing nil-only result should behave like an omitted result")
+end
+
+@Test function LeadingNilResultIsPreserved()
+   function nil_then_value()
+      return nil, 'success'
+   end
+   local empty, value = nil_then_value()
+   assert(empty is nil, "a leading nil result should retain its position")
+   assert(value is 'success', "a concrete result after nil should retain its position and type")
 end
 
 ----------------------------------------------------------------------------------------------------------------------

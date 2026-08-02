@@ -16,7 +16,7 @@ function enforce_hotpath() end
 end
 
 @Test function AsciiVarargsWithNamedParams()
-   function variadic(a, b, ...)
+   function variadic(a, b, ...):<any, ...>
       return a, b, {...}
    end
 

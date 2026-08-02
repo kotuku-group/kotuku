@@ -421,7 +421,8 @@ static void bcread_signature(LexState *State, MSize Size, MSize NumParams, BCRea
    if ((explicit_results and dynamic_results) or (variadic_results and (not explicit_results or result_count IS 0)) or
        (dynamic_results and (result_count != 0 or result_entry_count != PROTO_MAX_RETURN_TYPES)) or
        (explicit_results and result_entry_count != std::min<uint32_t>(result_count, PROTO_MAX_RETURN_TYPES)) or
-       (not explicit_results and not dynamic_results and (result_count != 0 or result_entry_count != 0))) {
+       (not explicit_results and not dynamic_results and
+          result_entry_count != std::min<uint32_t>(result_count, PROTO_MAX_RETURN_TYPES))) {
       bcread_error(State, ErrMsg::BCBAD);
    }
 
@@ -435,6 +436,11 @@ static void bcread_signature(LexState *State, MSize Size, MSize NumParams, BCRea
    }
    for (uint32_t i = 0; i < result_entry_count; ++i) {
       bcread_signature_entry(State, cursor, end, Result.results[i]);
+      if (not explicit_results and not dynamic_results and
+          (proto_type_origin(Result.results[i]) != ProtoTypeOrigin::Inferred or
+           proto_type_strength(Result.results[i]) != ProtoTypeStrength::Trusted)) {
+         bcread_error(State, ErrMsg::BCBAD);
+      }
    }
    if (cursor != end) bcread_error(State, ErrMsg::BCBAD);
 }

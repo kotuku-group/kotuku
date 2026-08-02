@@ -21,7 +21,7 @@ function makeDoc(Content:str):table
    }
 end
 
-function findRange(Ranges:array, StartLine:num, EndLine:num):table
+function findRange(Ranges:array<table>, StartLine:num, EndLine:num):table
    for range in values(Ranges) do
       if range.startLine is StartLine and range.endLine is EndLine then return range end
    end

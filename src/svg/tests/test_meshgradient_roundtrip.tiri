@@ -18,12 +18,12 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function absValue(Value)
+function absValue(Value:num):num
    if Value < 0 then return -Value end
    return Value
 end
 
-function assertNear(Actual, Expected, Message)
+function assertNear(Actual, Expected, Message:str)
    assert(Actual ≈ Expected, Message .. ' expected ' .. Expected .. ', got ' .. Actual)
 end
 

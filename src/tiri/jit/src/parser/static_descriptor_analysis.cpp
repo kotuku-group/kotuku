@@ -441,15 +441,22 @@ private:
       results.declared_count = Function.return_types.count;
       results.stored_count = uint8_t(std::min<size_t>(Function.return_types.count, MAX_RETURN_TYPES));
       results.variadic = Function.return_types.is_variadic;
-      results.dynamic = not Function.return_types.is_explicit;
+      results.dynamic = not Function.return_types.is_explicit and not Function.return_types.is_inferred;
       for (size_t i = 0; i < results.stored_count; ++i) {
          StaticValueDescriptor value = this->catalogue_.value(Function.return_types.descriptors[i]);
          value.primary = Function.return_types.types[i];
+         value.object_class_id = Function.return_types.object_class_ids[i];
          value.struct_def = Function.return_types.struct_defs[i] ?
             Function.return_types.struct_defs[i] : value.struct_def;
+         value.array_element = Function.return_types.array_elements[i].known ?
+            Function.return_types.array_elements[i] : value.array_element;
          value.nullable = true;
-         value.proof = Function.return_types.is_explicit and value.primary != TiriType::Any and
-            value.primary != TiriType::Unknown ? StaticProof::Checked : StaticProof::Advisory;
+         if (Function.return_types.is_explicit and value.primary != TiriType::Any and
+             value.primary != TiriType::Unknown) {
+            value.proof = StaticProof::Checked;
+         }
+         else if (Function.return_types.is_inferred) value.proof = StaticProof::Closed;
+         else value.proof = StaticProof::Advisory;
          results.values[i] = value;
       }
       return results;
@@ -668,6 +675,18 @@ private:
       StaticValueDescriptor base = this->descriptor_of(*receiver);
       if (base.primary IS TiriType::Object and base.proved()) {
          std::string_view exposed_name(strdata(member), member->len);
+         if (member->hash IS kt::strhash("new")) {
+            const fprototype *prototype = get_prototype("obj", exposed_name);
+            if (not prototype) return 0;
+
+            StaticResultSet results = describe_native_prototype_results(prototype);
+            if (results.stored_count > 0) {
+               StaticValueDescriptor &child = results.values[0];
+               child.nullable = false;
+            }
+            return this->catalogue_.add_results(results);
+         }
+
          ObjectCallMemberKind kind = classify_object_call_member(exposed_name);
          if (kind IS ObjectCallMemberKind::None) return 0;
          std::string_view native_name = exposed_name.substr(2);
@@ -695,6 +714,27 @@ private:
                fields = methods[i].Args;
                return this->catalogue_.add_results(describe_object_call_results(fields));
             }
+         }
+         return 0;
+      }
+
+      if (base.primary IS TiriType::Str and base.proved()) {
+         const fprototype *prototype = get_prototype(
+            "string", std::string_view(strdata(member), member->len));
+         if (prototype) {
+            return this->catalogue_.add_results(describe_native_prototype_results(prototype));
+         }
+         return 0;
+      }
+
+      if (base.primary IS TiriType::Array and base.proved()) {
+         const fprototype *prototype = get_prototype(
+            "array", std::string_view(strdata(member), member->len));
+         if (not prototype) return 0;
+
+         StaticResultSet results = describe_native_prototype_results(prototype);
+         if (results.stored_count > 0 and results.values[0].primary != TiriType::Array) {
+            return this->catalogue_.add_results(results);
          }
          return 0;
       }
@@ -781,11 +821,12 @@ private:
    }
 
    [[nodiscard]] StaticValueDescriptor declared_descriptor(
-      TiriType Type, struct_record *StructDef, StaticProof Proof) const
+      TiriType Type, struct_record *StructDef, const ArrayElementDescriptor &ArrayElement, StaticProof Proof) const
    {
       StaticValueDescriptor result;
       result.primary = Type;
       result.struct_def = StructDef;
+      result.array_element = ArrayElement;
       result.proof = Proof;
       result.nullable = true;
       return result;
@@ -1252,7 +1293,8 @@ private:
       StaticValueDescriptor value;
 
       if (Name.type != TiriType::Unknown and Name.type != TiriType::Any) {
-         value = this->declared_descriptor(Name.type, Name.struct_def, StaticProof::Checked);
+         value = this->declared_descriptor(
+            Name.type, Name.struct_def, Name.array_element, StaticProof::Checked);
       }
       else if (binding.function) {
          value.primary = TiriType::Func;
@@ -1298,7 +1340,7 @@ private:
             value = ContextParameters[i];
          }
          else {
-            value = this->declared_descriptor(parameter.type, parameter.struct_def,
+            value = this->declared_descriptor(parameter.type, parameter.struct_def, parameter.array_element,
                parameter.type IS TiriType::Any ? StaticProof::Advisory : StaticProof::Checked);
          }
          auto &binding = this->catalogue_.binding(parameter.name.binding_id);
@@ -1311,7 +1353,7 @@ private:
       bool have_return = false;
       if (Function.body) this->collect_return_descriptors(*Function.body, inferred, have_return);
       if (have_return) {
-         if (Function.return_types.is_explicit) {
+         if (Function.return_types.is_explicit or Function.return_types.is_inferred) {
             inferred.declared_count = Function.return_types.count;
             inferred.stored_count = uint8_t(std::min<size_t>(
                Function.return_types.count, MAX_RETURN_TYPES));
@@ -1320,10 +1362,15 @@ private:
             for (size_t i = 0; i < inferred.stored_count; ++i) {
                auto &value = inferred.values[i];
                value.primary = Function.return_types.types[i];
+               value.object_class_id = Function.return_types.object_class_ids[i];
                value.struct_def = Function.return_types.struct_defs[i] ?
                   Function.return_types.struct_defs[i] : value.struct_def;
+               value.array_element = Function.return_types.array_elements[i].known ?
+                  Function.return_types.array_elements[i] : value.array_element;
                value.nullable = true;
-               value.proof = value.primary IS TiriType::Any ? StaticProof::Advisory : StaticProof::Checked;
+               value.proof = Function.return_types.is_explicit ?
+                  (value.primary IS TiriType::Any ? StaticProof::Advisory : StaticProof::Checked) :
+                  StaticProof::Closed;
                Function.return_types.descriptors[i] = this->add_value(value);
             }
          }
@@ -1487,7 +1534,8 @@ private:
                if (name.type IS TiriType::Any or not name.symbol) continue;
                StaticValueDescriptor value;
                if (name.type != TiriType::Unknown) {
-                  value = this->declared_descriptor(name.type, name.struct_def, StaticProof::Checked);
+                  value = this->declared_descriptor(
+                     name.type, name.struct_def, name.array_element, StaticProof::Checked);
                }
                else if (not payload.values.empty()) {
                   size_t source = std::min(i, payload.values.size() - 1);

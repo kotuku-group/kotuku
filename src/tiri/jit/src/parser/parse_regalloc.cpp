@@ -542,6 +542,16 @@ static void contract_append_text(FuncState *fs, std::string &Descriptor, std::st
    Descriptor.append(Text);
 }
 
+static void contract_append_uleb32(std::string &Descriptor, uint32_t Value)
+{
+   do {
+      uint8_t byte = uint8_t(Value & 0x7f);
+      Value >>= 7;
+      if (Value) byte |= 0x80;
+      Descriptor.push_back(char(byte));
+   } while (Value);
+}
+
 static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeContract> Contracts,
    BCREG StaticValueCount, bool DynamicCount, bool Variadic)
 {
@@ -550,6 +560,14 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
    // Dynamic result counts still require interpreter-only MRSAVE/MRRESTORE handling.  Fixed contracts have exact
    // recorder predicates, including callable values, named structures, ranges and userdata.
    if (DynamicCount) fs->flags |= PROTO_NOJIT;
+   for (const RuntimeContract &contract : Contracts) {
+      // Global const descriptors validate before the store and publish environment policy afterwards.  The recorder
+      // only emits type guards for BC_CONTRACT, so the post-store side effect must remain interpreter-only.
+      if (contract.is_const) {
+         fs->flags |= PROTO_NOJIT;
+         break;
+      }
+   }
 
    std::string descriptor;
    descriptor.reserve(5 + Contracts.size() * 8);
@@ -568,8 +586,21 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
       uint8_t entry_flags = 0;
       if (contract.nullable) entry_flags |= contract_flag(ContractEntryFlag::Nullable);
       if (contract.required) entry_flags |= contract_flag(ContractEntryFlag::Required);
+      if (contract.is_const) entry_flags |= contract_flag(ContractEntryFlag::Const);
+      if (contract.initialising) entry_flags |= contract_flag(ContractEntryFlag::Initialising);
       descriptor.push_back(char(entry_flags));
       descriptor.push_back(char(contract.position));
+      CLASSID object_class_id = contract.type IS TiriType::Object ? contract.object_class_id : CLASSID::NIL;
+      contract_append_uleb32(descriptor, uint32_t(object_class_id));
+
+      AET array_element_type = contract.type IS TiriType::Array and contract.array_element.known ?
+         contract.array_element.storage : AET::MAX;
+      descriptor.push_back(char(uint8_t(array_element_type)));
+      std::string_view array_struct_name;
+      if (array_element_type IS AET::STRUCT and contract.array_element.struct_def) {
+         array_struct_name = contract.array_element.struct_def->Name;
+      }
+      contract_append_text(fs, descriptor, array_struct_name, "runtime contract array structure name");
 
       std::string_view struct_name;
       if (contract.struct_def) struct_name = contract.struct_def->Name;
@@ -621,9 +652,14 @@ static void bcemit_value_contract(
    if (Value->static_value and fs->ls->active_context) {
       const auto &descriptor = fs->ls->active_context->descriptors().value(Value->static_value);
       bool same_type = descriptor.primary IS Contract.type;
+      bool same_object_class = Contract.type != TiriType::Object or Contract.object_class_id IS CLASSID::NIL or
+         descriptor.object_class_id IS Contract.object_class_id;
       bool same_struct = Contract.type != TiriType::Struct or descriptor.struct_def IS Contract.struct_def;
+      bool same_array = Contract.type != TiriType::Array or
+         array_element_matches(Contract.array_element, descriptor.array_element);
       bool same_nullability = descriptor.nullable IS Contract.nullable;
-      if (same_type and same_struct and same_nullability and descriptor.proved() and not ForceRuntimeCheck) return;
+      if (same_type and same_object_class and same_struct and same_array and same_nullability and descriptor.proved() and
+          not ForceRuntimeCheck) return;
    }
 
    BCREG source = expr_toanyreg(fs, Value);
@@ -643,16 +679,22 @@ static void check_object_class_assignment(FuncState *Fs, const VarInfo &Variable
 //********************************************************************************************************************
 // Emit store for LHS expression.
 
-static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
+static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
+   const RuntimeContract *GlobalDeclarationContract, bool IsGlobalDeclaration)
 {
    BCIns ins;
+   RuntimeContract global_const_finaliser;
+   BCREG global_const_base = 0;
+   bool finalise_global_const = false;
    if (LHS->k IS ExpKind::Local) {
       fs->ls->vstack[LHS->u.s.aux].info |= VarInfoFlag::VarReadWrite;
       VarInfo *vinfo = &fs->ls->vstack[LHS->u.s.aux];
       check_object_class_assignment(fs, *vinfo, *RHS);
       RuntimeContract contract{
          .type = vinfo->fixed_type,
+         .object_class_id = vinfo->object_class_id,
          .struct_def = vinfo->struct_def,
+         .array_element = vinfo->array_element,
          .label = strref(vinfo->name),
          .boundary = ContractBoundary::Local,
          .position = uint8_t(vinfo->slot + 1)
@@ -669,7 +711,9 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
       check_object_class_assignment(fs, *vinfo, *RHS);
       RuntimeContract contract{
          .type = vinfo->fixed_type,
+         .object_class_id = vinfo->object_class_id,
          .struct_def = vinfo->struct_def,
+         .array_element = vinfo->array_element,
          .label = strref(vinfo->name),
          .boundary = ContractBoundary::Upvalue,
          .position = uint8_t(LHS->u.s.info + 1)
@@ -685,17 +729,22 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
       // Note: Const global reassignment is checked during type analysis phase
       // Unscoped should normally be resolved in emit_lvalue_expr(), but handle it here defensively
       auto found = fs->ls->global_type_hints.find(LHS->u.sval);
-      if (found != fs->ls->global_type_hints.end() and
+      if (GlobalDeclarationContract) {
+         // Declared global contracts must execute even when no predicate is required.  Concrete contracts and the
+         // explicit 'any' opt-out are both attached to the environment for separately compiled chunks.
+         bcemit_value_contract(fs, RHS, *GlobalDeclarationContract, true);
+      }
+      else if (not IsGlobalDeclaration and found != fs->ls->global_type_hints.end() and
           found->second.contract_policy != GlobalContractPolicy::Advisory) {
          RuntimeContract contract{
             .type = found->second.primary,
+            .object_class_id = found->second.object_class_id,
             .struct_def = found->second.struct_def,
+            .array_element = found->second.array_element,
             .label = LHS->u.sval,
             .boundary = ContractBoundary::Global,
             .position = 1
          };
-         // Declared global contracts must execute even when no predicate is required.  Concrete contracts and the
-         // explicit 'any' opt-out are both attached to the environment for separately compiled chunks.
          bcemit_value_contract(fs, RHS, contract, true);
       }
       else if (GCstr *contract = lj_tab_get_global_contract(tabref(fs->L->env), LHS->u.sval)) {
@@ -707,6 +756,12 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
       }
       BCREG ra = expr_toanyreg(fs, RHS);
       ins = BCINS_AD(BC_GSET, ra, const_str(fs, LHS));
+      if (GlobalDeclarationContract and GlobalDeclarationContract->is_const) {
+         global_const_finaliser = *GlobalDeclarationContract;
+         global_const_finaliser.initialising = false;
+         global_const_base = ra;
+         finalise_global_const = true;
+      }
    }
    else if (LHS->k IS ExpKind::IndexedArray or LHS->k IS ExpKind::SafeIndexedArray) {
       // Array index assignment - emit BC_ASETV or BC_ASETB
@@ -774,6 +829,9 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS)
       }
    }
    bcemit_INS(fs, ins);
+   if (finalise_global_const) {
+      bcemit_contract(fs, global_const_base, std::span(&global_const_finaliser, 1), 1);
+   }
    expr_free(fs, RHS);
 }
 

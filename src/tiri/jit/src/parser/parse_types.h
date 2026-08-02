@@ -87,12 +87,16 @@ enum class VarInfoFlag : uint8_t {
 
 struct RuntimeContract {
    TiriType type = TiriType::Unknown;
+   CLASSID object_class_id = CLASSID::NIL;
    struct_record *struct_def = nullptr;
+   ArrayElementDescriptor array_element{};
    GCstr *label = nullptr;
    ContractBoundary boundary = ContractBoundary::Local;
    uint8_t position = 0;
    bool nullable = true;
    bool required = false;
+   bool is_const = false;
+   bool initialising = false;
 };
 
 // Concept for flag types that support bitwise operations

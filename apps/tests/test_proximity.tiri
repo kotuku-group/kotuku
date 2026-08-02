@@ -773,6 +773,11 @@ function ConnectTunnelPassesSSLHandshake()
    check socket.mtConnect('127.0.0.1', PROXY_PORT, 3.0)
    local err = proc.sleep()
 
+   -- The client socket is switched to SSL mid-connection by SetSSL(), so it must be freed explicitly rather than
+   -- left to garbage collection.  A surviving SSL socket keeps encrypting subsequent plain-HTTP proxy requests,
+   -- which the proxy then rejects as malformed.
+
+   socket.free()
    ssl_server.free()
 
    assert(err is ERR_Okay, 'SSL CONNECT tunnel timed out or failed: ' .. mSys.GetErrorMsg(err))

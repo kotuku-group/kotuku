@@ -52,7 +52,7 @@ gui.window = function(Options:table)
 
    lifecycle = setmetatable({ window=self, quit=self.quit }, { __mode='v' })
 
-   self.clientViewport = function(self:table, Options:table)
+   self.clientViewport = function(self:table, Options:table):obj
       if self._clientViewport then return self._clientViewport end
       Options ?= { }
 

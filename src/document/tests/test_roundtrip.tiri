@@ -12,7 +12,7 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 -- Helpers
 
-function feedAndRead(Content:str, PageWidth:num)
+function feedAndRead(Content:str, PageWidth:num):str
    scene = obj.new('VectorScene', { pageWidth=PageWidth ?? 1024, pageHeight=768 })
    vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    doc = vp.new('document', { viewport=vp })
@@ -29,7 +29,7 @@ function parseXML(XmlStr:str)
    return xml
 end
 
-function xpath(Xml, Expr:str)
+function xpath(Xml, Expr:str):str
    err_xp, result = Xml.mtEvaluate(Expr)
    assert(err_xp is ERR_Okay, 'XPath failed: ' .. Expr .. ', err=' .. tostring(err_xp))
    return result

@@ -194,7 +194,6 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
    }
 
    trace_ast_boundary(Context, *chunk, "parse");
-   collect_parser_symbols(Context.lua(), Context.lex(), *chunk);
    discover_static_bindings(Context, *chunk);
    // Publish the first descriptor pass before semantic type analysis so dynamic-ingress policy can distinguish
    // genuinely unknown values from concrete native and callable results.  A second pass below refreshes descriptors
@@ -217,6 +216,7 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
    }
 
    propagate_static_descriptors(Context, *chunk);
+   collect_parser_symbols(Context.lua(), Context.lex(), *chunk);
 
    // Emit bytecode instructions
 

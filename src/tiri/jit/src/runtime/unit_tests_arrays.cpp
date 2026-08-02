@@ -897,7 +897,7 @@ static bool test_lib_array_new(kt::Log &Log)
 
    // Test array.new via Lua
    const char* code = R"(
-      local arr:array = array.new(100, "int")
+      local arr:array<int> = array.new(100, "int")
       return arr != nil and #arr is 100 and array.type(arr) is "int"
    )";
 
@@ -926,7 +926,7 @@ static bool test_lib_array_index(kt::Log &Log)
 
    // Test array indexing via library metamethods
    const char* code = R"(
-      local arr:array = array.new(10, "int")
+      local arr:array<int> = array.new(10, "int")
       arr[0] = 100
       arr[5] = 500
       arr[9] = 900
@@ -958,7 +958,7 @@ static bool test_lib_array_table(kt::Log &Log)
 
    // Test array.table conversion
    const char* code = R"(
-      local arr:array = array.new(5, "int")
+      local arr:array<int> = array.new(5, "int")
       arr[0] = 10
       arr[1] = 20
       arr[2] = 30
@@ -993,8 +993,8 @@ static bool test_lib_array_copy(kt::Log &Log)
 
    // Test array.copy
    const char* code = R"(
-      local src:array = array.new(5, "int")
-      local dst:array = array.new(5, "int")
+      local src:array<int> = array.new(5, "int")
+      local dst:array<int> = array.new(5, "int")
       src[0] = 100
       src[1] = 200
       src[2] = 300
@@ -1029,7 +1029,7 @@ static bool test_lib_array_string(kt::Log &Log)
 
    // Test array.getString and setString
    const char* code = R"(
-      local arr:array = array.new(10, "char")
+      local arr:array<byte> = array.new(10, "char")
       array.setString(arr, "hello")
       local s:str = array.getString(arr, 0, 5)
       return s is "hello"
@@ -1060,7 +1060,7 @@ static bool test_lib_array_fill(kt::Log &Log)
 
    // Test array.fill
    const char* code = R"(
-      local arr:array = array.new(10, "int")
+      local arr:array<int> = array.new(10, "int")
       array.fill(arr, 42)
       local ok = true
       for i in {0 into 9} do
@@ -1094,7 +1094,7 @@ static bool test_lib_array_len_operator(kt::Log &Log)
 
    // Test # operator via __len metamethod
    const char* code = R"(
-      local arr:array = array.new(42, "double")
+      local arr:array<double> = array.new(42, "double")
       return #arr is 42
    )";
 
@@ -1123,7 +1123,7 @@ static bool test_lib_array_double_type(kt::Log &Log)
 
    // Test double array type
    const char* code = R"(
-      local arr:array = array.new(5, "double")
+      local arr:array<double> = array.new(5, "double")
       arr[0] = 3.14159
       arr[2] = -2.71828
       arr[4] = 1.41421
@@ -1146,6 +1146,50 @@ static bool test_lib_array_double_type(kt::Log &Log)
    return true;
 }
 
+static bool test_lib_array_exact_contracts(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *L = holder.get();
+   if (not L) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+   luaL_openlibs(L);
+
+   const char *code = R"(
+      local values = array<int> { 5, 6, 7 }
+      local push_rejected = false
+      local copy_rejected = false
+
+      try
+         values:push('4')
+      except e
+         push_rejected = true
+      end
+
+      try
+         values:copy({ 8, {}, 9 })
+      except e
+         copy_rejected = true
+      end
+
+      return push_rejected and copy_rejected and #values is 3 and
+         values[0] is 5 and values[1] is 6 and values[2] is 7
+   )";
+
+   if (dostring(L, code) != 0) {
+      Log.error("array exact-contract test code failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   if (not lua_toboolean(L, -1)) {
+      Log.error("array exact-contract validation or mutation preservation failed");
+      return false;
+   }
+
+   return true;
+}
+
 //********************************************************************************************************************
 // Test runner
 
@@ -1153,7 +1197,7 @@ static bool test_lib_array_double_type(kt::Log &Log)
 
 void array_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 31> Tests = { {
+   constexpr std::array<TestCase, 32> Tests = { {
       // Core Data Structures
       { "array_creation_byte", test_array_creation_byte },
       { "array_creation_int32", test_array_creation_int32 },
@@ -1188,7 +1232,8 @@ void array_unit_tests(int &Passed, int &Total)
       { "lib_array_string", test_lib_array_string },
       { "lib_array_fill", test_lib_array_fill },
       { "lib_array_len_operator", test_lib_array_len_operator },
-      { "lib_array_double_type", test_lib_array_double_type }
+      { "lib_array_double_type", test_lib_array_double_type },
+      { "lib_array_exact_contracts", test_lib_array_exact_contracts }
    } };
 
    if (NewObject(CLASSID::TIRI, &glArrayTestScript) != ERR::Okay) return;

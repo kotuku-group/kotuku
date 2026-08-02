@@ -53,11 +53,11 @@ function activateItem(self) -- Activate the current menu item.
    end
 end
 
-function firstItem(self) -- Return the first item
+function firstItem(self):table -- Return the first item
    return self._first
 end
 
-function lastItem(self) -- Return the last item
+function lastItem(self):table -- Return the last item
    return self._last
 end
 
@@ -79,7 +79,7 @@ function newItem(self, Name, ID) -- Append an item to the menu bar
    return item
 end
 
-function getCursorItem(self, X, Y)
+function getCursorItem(self, X, Y):table
    item = self._first
    while item do
       if (X >= item.x) and (X <  item.x + item.width) and (Y >= item.y) and (Y <  item.y + item.height) then

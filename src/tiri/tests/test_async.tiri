@@ -14,7 +14,7 @@ function enforce_hotpath() end
 
    callback = function()
       msg('Thread has finished execution.')
-      work_list:each(o => o.acSignal())
+      work_list:each(o => num: o.acSignal())
    end
 
    proc = processing.new({ timeout=1.0, signals = work_list })

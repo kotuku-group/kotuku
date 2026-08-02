@@ -1469,3 +1469,91 @@ end
    assert(arr[6] is 42, "fill original: arr[6] should be 42")
    assert(arr[7] is 0, "fill original: arr[7] should be 0")
 end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Exact typed-element contracts
+
+@Test function TypedArrayMutatorsRejectCoercion()
+   local ints = array<int> { 10, 20, 30 }
+
+   try
+      ints:push('4')
+   success
+      error('push() should reject numeric strings')
+   end
+
+   try
+      ints:insert(1, '4')
+   success
+      error('insert() should reject numeric strings')
+   end
+
+   try
+      ints:fill('4')
+   success
+      error('fill() should reject numeric strings')
+   end
+
+   try
+      ints ..= '4'
+   success
+      error('non-byte concat assignment should reject numeric strings')
+   end
+
+   local strings = array<string> { 'sentinel' }
+   try
+      strings:push(42)
+   success
+      error('string push() should reject numbers')
+   end
+
+   try
+      strings:insert(0, 42)
+   success
+      error('string insert() should reject numbers')
+   end
+
+   assert(#ints is 3 and ints[0] is 10 and ints[1] is 20 and ints[2] is 30,
+      'rejected numeric mutators should preserve the integer array')
+   assert(#strings is 1 and strings[0] is 'sentinel',
+      'rejected string mutators should preserve the string array')
+end
+
+@Test function TypedArrayBulkMutationsAreAtomic()
+   local pushed = array<int> { 10, 20, 30 }
+   try
+      pushed:push(40, {})
+   success
+      error('multi-value push() should reject an incompatible later value')
+   end
+   assert(#pushed is 3 and pushed[0] is 10 and pushed[1] is 20 and pushed[2] is 30,
+      'failed multi-value push() should preserve length and contents')
+
+   local inserted = array<int> { 10, 20, 30 }
+   try
+      inserted:insert(1, 40, {})
+   success
+      error('multi-value insert() should reject an incompatible later value')
+   end
+   assert(#inserted is 3 and inserted[0] is 10 and inserted[1] is 20 and inserted[2] is 30,
+      'failed multi-value insert() should preserve length and contents')
+end
+
+@Test function TypedArrayReferenceMutatorsAcceptNil()
+   local first = { value=1 }
+   local second = { value=2 }
+   local refs = array<table> { first }
+
+   refs:push(nil)
+   refs:insert(1, second)
+   assert(#refs is 3 and refs[0] is first and refs[1] is second and refs[2] is nil,
+      'reference push() and insert() should match indexed nil semantics')
+
+   refs:fill(first)
+   assert(refs[0] is first and refs[1] is first and refs[2] is first,
+      'fill() should support exact reference values')
+
+   refs:fill(nil, 1, 2)
+   assert(refs[0] is first and refs[1] is nil and refs[2] is nil,
+      'fill(nil) should clear reference slots')
+end

@@ -18,7 +18,7 @@ glWhite = struct.new('RGB8', { red = 255, green = 255, blue = 255, alpha = 255 }
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function renderSVGToBitmap(Path:str, Stable:bool)
+function renderSVGToBitmap(Path:str, Stable:bool):obj
    -- Some tests require Stable to be true when the hashes differ due to compiler/platform differences
    scene = obj.new('VectorScene', { name='TestSceneRender', pageWidth=1024, pageHeight=768, flags=Stable ? VPF_STABLE_RENDER :> nil })
    vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
@@ -67,7 +67,7 @@ end
 -- an 8x8 discrete cosine transform.  Bitmap.data is an external byte-array view over the pixel buffer, so this avoids
 -- the overhead of calling a pixel reader for every source pixel.
 
-function pHash(Bitmap:obj):array
+function pHash(Bitmap:obj):array<byte>
    local sample_size <const> = 32
    local dct_size <const> = 8
    local pixels = Bitmap.data
@@ -148,7 +148,7 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 
-function pHashString(Hash:array):str
+function pHashString(Hash:array<byte>):str
    local result = ''
    for i in {0 to #Hash} do result ..= string.format('%d,', Hash[i]) end
    return result
@@ -156,7 +156,7 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 
-function pHashDistance(Left:array, Right:array):num
+function pHashDistance(Left:array<byte>, Right:array<byte>):num
    assert(#Left is #Right, 'Perceptual hashes must have the same length')
    local set_bits <const> = array<byte> { 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4 }
    local distance = 0
@@ -171,7 +171,7 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 
-function pHashTestSVG(Path:str, ExpectedHash:array, MaxDistance:num, Stable:bool)
+function pHashTestSVG(Path:str, ExpectedHash:array<byte>, MaxDistance:num, Stable:bool)
    local bmp = renderSVGToBitmap(glSVGFolder .. Path, Stable)
    local hash = pHash(bmp)
    local distance = pHashDistance(hash, ExpectedHash)

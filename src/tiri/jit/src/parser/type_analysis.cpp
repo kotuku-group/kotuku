@@ -47,6 +47,21 @@
    return result;
 }
 
+[[nodiscard]] static bool array_type_mismatch(
+   const ArrayElementDescriptor &Expected, const InferredType &Actual)
+{
+   return Actual.primary IS TiriType::Array and Expected.known and Actual.array_element.known and
+      not array_element_matches(Expected, Actual.array_element);
+}
+
+[[nodiscard]] static std::string inferred_type_name(const InferredType &Type)
+{
+   if (Type.primary IS TiriType::Array and Type.array_element.known) {
+      return std::format("array<{}>", array_element_name(Type.array_element));
+   }
+   return std::string(type_name(Type.primary));
+}
+
 [[nodiscard]] static bool type_identifier_name_is(GCstr *Name, std::string_view Text)
 {
    return Name and std::string_view(strdata(Name), Name->len) IS Text;
@@ -112,6 +127,10 @@
          return std::format("parameter {} has struct type '{}', expected '{}'",
             i + 1, actual_name, expected_name);
       }
+      if (not (expected.array_element IS actual.array_element)) {
+         return std::format("parameter {} has array member type '{}', expected '{}'", i + 1,
+            array_element_name(actual.array_element), array_element_name(expected.array_element));
+      }
    }
 
    const FunctionReturnTypes &expected_results = Expected.return_types;
@@ -147,6 +166,11 @@
             actual_results.struct_defs[i]->Name : "struct";
          return std::format("return {} has struct type '{}', expected '{}'",
             i + 1, actual_name, expected_name);
+      }
+      if (not (expected_results.array_elements[i] IS actual_results.array_elements[i])) {
+         return std::format("return {} has array member type '{}', expected '{}'", i + 1,
+            array_element_name(actual_results.array_elements[i]),
+            array_element_name(expected_results.array_elements[i]));
       }
    }
 
@@ -205,11 +229,13 @@ private:
    bool lower_array_length_range(StmtNode &);
    void lower_unanalysed_block(BlockStmt &);
    void lower_unanalysed_except_clause(ExceptClause &);
+   void lower_unanalysed_expression(ExprNode &);
    void lower_unanalysed_function(const FunctionExprPayload &);
    void lower_unanalysed_statement(StmtNode &);
    void analyse_assignment(const AssignmentStmtPayload &);
    void analyse_local_decl(const LocalDeclStmtPayload &);
    void analyse_global_decl(const GlobalDeclStmtPayload &);
+   void discover_global_decl_policy(const GlobalDeclStmtPayload &, bool PublishStaticPolicy);
    void analyse_local_function(const LocalFunctionStmtPayload &);
    void analyse_function_stmt(const FunctionStmtPayload &);
    void analyse_function_payload(const FunctionExprPayload &, GCstr *Name = nullptr);
@@ -222,10 +248,12 @@ private:
 
    // Argument type checking for function calls
    void check_arguments(const FunctionExprPayload &, const CallExprPayload &);
-   void check_argument_type(const ExprNode &, TiriType, size_t);
+   void check_argument_type(const ExprNode &, const FunctionParameter &, size_t);
 
    // Type inference - determines types from expressions and context
    [[nodiscard]] InferredType infer_expression_type(const ExprNode &);
+   [[nodiscard]] InferredType refine_static_expression_type(const ExprNode &, InferredType) const;
+   [[nodiscard]] bool is_explicit_variant_expression(const ExprNode &, size_t Position = 0) const;
    [[nodiscard]] InferredType infer_call_return_type(const ExprNode &, size_t Position) const;
 
    // Symbol resolution - looks up variables and functions in scope stack
@@ -238,7 +266,7 @@ private:
 
    // Type fixation - locks variable type after first concrete assignment
    void fix_local_type(GCstr *, StaticBindingID, TiriType, CLASSID ObjectClassId = CLASSID::NIL,
-      struct_record *StructDef = nullptr);
+      struct_record *StructDef = nullptr, const ArrayElementDescriptor &ArrayElement = {});
    void publish_binding_type(StaticBindingID, const InferredType &);
 
    // Usage tracking - marks variables as used for unused variable detection
@@ -343,9 +371,10 @@ private:
    [[nodiscard]] bool is_global_const(GCstr *Name) const;
    [[nodiscard]] bool is_implicit_global(GCstr *Name) const;
    void fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId = CLASSID::NIL,
-      struct_record *StructDef = nullptr);
+      struct_record *StructDef = nullptr, const ArrayElementDescriptor &ArrayElement = {});
    void mark_dynamic_ingress(GCstr *Name, bool IsGlobal);
    void degrade_global_type(GCstr *Name);
+   void invalidate_global_flow_policy(GCstr *Name, SourceSpan Location);
 
    ParserContext &ctx_;                             // Parser context for diagnostics and lexer access
    std::vector<TypeCheckScope> scope_stack_{};      // Stack of scopes for variable tracking
@@ -356,6 +385,7 @@ private:
    uint32_t unanalysed_depth_{0};                   // Reduced-traversal nesting depth; non-zero suppresses tips
    uint8_t current_file_index_{0};                  // FileSource index of the file being analysed
    ankerl::unordered_dense::map<GCstr*, GlobalTypeInfo> global_types_{};  // Type info for global variables
+   ankerl::unordered_dense::set<StaticBindingID> explicit_variant_bindings_{};
    #ifdef INCLUDE_TIPS
    std::vector<GCstr*> declared_globals_{};         // Globals explicitly declared with 'global' keyword
    #endif
@@ -608,7 +638,6 @@ void TypeAnalyser::enter_function(const FunctionExprPayload &Function, GCstr *Na
    // If function has explicit return types, use them
    if (Function.return_types.is_explicit) {
       ctx.expected_returns = Function.return_types;
-      ctx.return_type_inferred = true;  // Explicit types are considered "inferred" for validation purposes
    }
 
    this->function_stack_.push_back(ctx);
@@ -618,9 +647,64 @@ void TypeAnalyser::enter_function(const FunctionExprPayload &Function, GCstr *Na
 
 void TypeAnalyser::leave_function()
 {
-   if (not this->function_stack_.empty()) {
-      this->function_stack_.pop_back();
+   if (this->function_stack_.empty()) return;
+
+   FunctionContext &ctx = this->function_stack_.back();
+   if (ctx.function and not ctx.expected_returns.is_explicit) {
+      size_t inferred_return_count = ctx.observed_return_count;
+      while (inferred_return_count > 0 and
+          ctx.inferred_returns[inferred_return_count - 1].state IS ReturnInferenceState::NilOnly) {
+         inferred_return_count--;
+      }
+
+      for (size_t i = 0; i < inferred_return_count; ++i) {
+         const InferredReturnPosition &position = ctx.inferred_returns[i];
+         if (position.state != ReturnInferenceState::Dynamic) continue;
+
+         TypeDiagnostic diag;
+         diag.location = position.dynamic_location;
+         diag.actual = position.dynamic_type;
+         diag.code = ParserErrorCode::ReturnTypeRequired;
+         if (position.concrete.primary != TiriType::Any and position.concrete.primary != TiriType::Unknown) {
+            diag.expected = position.concrete.primary;
+            diag.message = std::format(
+               "cannot infer result {} as '{}' from a dynamic value; declare ': {}' to check it at runtime or "
+               "': any' to allow a variant result",
+               i + 1, type_name(position.concrete.primary), type_name(position.concrete.primary));
+         }
+         else {
+            diag.message = std::format(
+               "cannot infer result {} from a dynamic value; declare a concrete result type to check it at "
+               "runtime or ': any' to allow a variant result", i + 1);
+         }
+         this->record_diagnostic(std::move(diag));
+         ctx.inference_failed = true;
+      }
+
+      if (inferred_return_count > 0 and not ctx.inference_failed) {
+         FunctionReturnTypes &published = ctx.function->return_types;
+         published.count = uint8_t(inferred_return_count);
+         published.is_inferred = true;
+         published.is_variadic = false;
+         for (size_t i = 0; i < inferred_return_count; ++i) {
+            const InferredReturnPosition &position = ctx.inferred_returns[i];
+            if (position.state IS ReturnInferenceState::NilOnly) {
+               published.types[i] = TiriType::Nil;
+               published.object_class_ids[i] = CLASSID::NIL;
+               published.struct_defs[i] = nullptr;
+               published.array_elements[i] = {};
+            }
+            else {
+               published.types[i] = position.concrete.primary;
+               published.object_class_ids[i] = position.concrete.object_class_id;
+               published.struct_defs[i] = position.concrete.struct_def;
+               published.array_elements[i] = position.concrete.array_element;
+            }
+         }
+      }
    }
+
+   this->function_stack_.pop_back();
 }
 
 FunctionContext * TypeAnalyser::current_function()
@@ -748,7 +832,8 @@ void TypeAnalyser::lower_unanalysed_function(const FunctionExprPayload &Function
    this->unanalysed_depth_++;
    this->push_scope();
    for (const FunctionParameter &param : Function.parameters) {
-      this->current_scope().declare_parameter(param.name.symbol, param.type, param.struct_def, param.name.span);
+      this->current_scope().declare_parameter(
+         param.name.symbol, param.type, param.struct_def, param.array_element, param.name.span);
    }
    if (Function.body) {
       for (auto &statement : Function.body->statements) {
@@ -761,12 +846,127 @@ void TypeAnalyser::lower_unanalysed_function(const FunctionExprPayload &Function
 
 //********************************************************************************************************************
 
+void TypeAnalyser::lower_unanalysed_expression(ExprNode &Expression)
+{
+   auto lower = [this](ExprNodePtr &Child) {
+      if (Child) this->lower_unanalysed_expression(*Child);
+   };
+
+   switch (Expression.kind) {
+      case AstNodeKind::UnaryExpr:
+         lower(std::get<UnaryExprPayload>(Expression.data).operand);
+         break;
+      case AstNodeKind::UpdateExpr:
+         lower(std::get<UpdateExprPayload>(Expression.data).target);
+         break;
+      case AstNodeKind::BinaryExpr: {
+         auto &payload = std::get<BinaryExprPayload>(Expression.data);
+         lower(payload.left);
+         lower(payload.right);
+         break;
+      }
+      case AstNodeKind::ComparisonChainExpr:
+         for (auto &operand : std::get<ComparisonChainExprPayload>(Expression.data).operands) lower(operand);
+         break;
+      case AstNodeKind::TernaryExpr: {
+         auto &payload = std::get<TernaryExprPayload>(Expression.data);
+         lower(payload.condition);
+         lower(payload.if_true);
+         lower(payload.if_false);
+         break;
+      }
+      case AstNodeKind::PresenceExpr:
+         lower(std::get<PresenceExprPayload>(Expression.data).value);
+         break;
+      case AstNodeKind::PipeExpr: {
+         auto &payload = std::get<PipeExprPayload>(Expression.data);
+         lower(payload.lhs);
+         lower(payload.rhs_call);
+         break;
+      }
+      case AstNodeKind::CallExpr:
+      case AstNodeKind::SafeCallExpr: {
+         auto &payload = std::get<CallExprPayload>(Expression.data);
+         if (auto *direct = std::get_if<DirectCallTarget>(&payload.target)) lower(direct->callable);
+         else if (auto *method = std::get_if<MethodCallTarget>(&payload.target)) lower(method->receiver);
+         else if (auto *method = std::get_if<SafeMethodCallTarget>(&payload.target)) lower(method->receiver);
+         for (auto &argument : payload.arguments) lower(argument);
+         break;
+      }
+      case AstNodeKind::MemberExpr:
+         lower(std::get<MemberExprPayload>(Expression.data).table);
+         break;
+      case AstNodeKind::IndexExpr: {
+         auto &payload = std::get<IndexExprPayload>(Expression.data);
+         lower(payload.table);
+         lower(payload.index);
+         break;
+      }
+      case AstNodeKind::SafeMemberExpr:
+         lower(std::get<SafeMemberExprPayload>(Expression.data).table);
+         break;
+      case AstNodeKind::SafeIndexExpr: {
+         auto &payload = std::get<SafeIndexExprPayload>(Expression.data);
+         lower(payload.table);
+         lower(payload.index);
+         break;
+      }
+      case AstNodeKind::ResultFilterExpr:
+         lower(std::get<ResultFilterPayload>(Expression.data).expression);
+         break;
+      case AstNodeKind::TableExpr:
+         for (auto &field : std::get<TableExprPayload>(Expression.data).fields) {
+            lower(field.key);
+            lower(field.value);
+         }
+         break;
+      case AstNodeKind::FunctionExpr:
+         this->lower_unanalysed_function(std::get<FunctionExprPayload>(Expression.data));
+         break;
+      case AstNodeKind::DeferredExpr:
+         lower(std::get<DeferredExprPayload>(Expression.data).inner);
+         break;
+      case AstNodeKind::RangeExpr: {
+         auto &payload = std::get<RangeExprPayload>(Expression.data);
+         lower(payload.start);
+         lower(payload.stop);
+         lower(payload.step);
+         break;
+      }
+      case AstNodeKind::ChooseExpr: {
+         auto &payload = std::get<ChooseExprPayload>(Expression.data);
+         lower(payload.scrutinee);
+         for (auto &item : payload.scrutinee_tuple) lower(item);
+         for (auto &choice : payload.cases) {
+            lower(choice.pattern);
+            for (auto &item : choice.tuple_patterns) lower(item);
+            lower(choice.guard);
+            lower(choice.result);
+            if (choice.result_stmt) this->lower_unanalysed_statement(*choice.result_stmt);
+         }
+         break;
+      }
+      default:
+         break;
+   }
+}
+
+//********************************************************************************************************************
+
 void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
 {
    this->unanalysed_depth_++;
    this->lower_array_length_range(Statement);
 
    switch (Statement.kind) {
+      case AstNodeKind::AssignmentStmt: {
+         auto *payload = std::get_if<AssignmentStmtPayload>(&Statement.data);
+         if (payload) {
+            for (auto &target : payload->targets) this->lower_unanalysed_expression(*target);
+            for (auto &value : payload->values) this->lower_unanalysed_expression(*value);
+         }
+         break;
+      }
       case AstNodeKind::LocalDeclStmt: {
          auto *payload = std::get_if<LocalDeclStmtPayload>(&Statement.data);
          if (not payload) break;
@@ -793,6 +993,15 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
             const Identifier &name = payload->names[i];
             this->current_scope().declare_local(name.symbol, inferred_types[i], name.span, name.has_const);
          }
+         for (auto &value : payload->values) this->lower_unanalysed_expression(*value);
+         break;
+      }
+      case AstNodeKind::GlobalDeclStmt: {
+         auto *payload = std::get_if<GlobalDeclStmtPayload>(&Statement.data);
+         if (payload) {
+            this->discover_global_decl_policy(*payload, false);
+            for (auto &value : payload->values) this->lower_unanalysed_expression(*value);
+         }
          break;
       }
       case AstNodeKind::LocalFunctionStmt: {
@@ -813,6 +1022,7 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
          auto *payload = std::get_if<IfStmtPayload>(&Statement.data);
          if (payload) {
             for (auto &clause : payload->clauses) {
+               if (clause.condition) this->lower_unanalysed_expression(*clause.condition);
                if (clause.block) this->lower_unanalysed_block(*clause.block);
             }
          }
@@ -821,11 +1031,19 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
       case AstNodeKind::WhileStmt:
       case AstNodeKind::RepeatStmt: {
          auto *payload = std::get_if<LoopStmtPayload>(&Statement.data);
-         if (payload and payload->body) this->lower_unanalysed_block(*payload->body);
+         if (payload) {
+            if (payload->condition) this->lower_unanalysed_expression(*payload->condition);
+            if (payload->body) this->lower_unanalysed_block(*payload->body);
+         }
          break;
       }
       case AstNodeKind::NumericForStmt: {
          auto *payload = std::get_if<NumericForStmtPayload>(&Statement.data);
+         if (payload) {
+            if (payload->start) this->lower_unanalysed_expression(*payload->start);
+            if (payload->stop) this->lower_unanalysed_expression(*payload->stop);
+            if (payload->step) this->lower_unanalysed_expression(*payload->step);
+         }
          if (payload and payload->body) {
             this->push_scope();
             InferredType control_type(TiriType::Num);
@@ -840,6 +1058,11 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
       }
       case AstNodeKind::RangeForStmt: {
          auto *payload = std::get_if<RangeForStmtPayload>(&Statement.data);
+         if (payload) {
+            if (payload->start) this->lower_unanalysed_expression(*payload->start);
+            if (payload->stop) this->lower_unanalysed_expression(*payload->stop);
+            if (payload->step) this->lower_unanalysed_expression(*payload->step);
+         }
          if (payload and payload->body) {
             this->push_scope();
             InferredType control_type(TiriType::Num);
@@ -854,6 +1077,9 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
       }
       case AstNodeKind::GenericForStmt: {
          auto *payload = std::get_if<GenericForStmtPayload>(&Statement.data);
+         if (payload) {
+            for (auto &iterator : payload->iterators) this->lower_unanalysed_expression(*iterator);
+         }
          if (payload and payload->body) {
             this->push_scope();
             for (const Identifier &name : payload->names) {
@@ -866,6 +1092,21 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
          }
          break;
       }
+      case AstNodeKind::ReturnStmt: {
+         auto *payload = std::get_if<ReturnStmtPayload>(&Statement.data);
+         if (payload) {
+            for (auto &value : payload->values) this->lower_unanalysed_expression(*value);
+         }
+         break;
+      }
+      case AstNodeKind::DeferStmt: {
+         auto *payload = std::get_if<DeferStmtPayload>(&Statement.data);
+         if (payload) {
+            if (payload->callable) this->lower_unanalysed_function(*payload->callable);
+            for (auto &argument : payload->arguments) this->lower_unanalysed_expression(*argument);
+         }
+         break;
+      }
       case AstNodeKind::DoStmt: {
          auto *payload = std::get_if<DoStmtPayload>(&Statement.data);
          if (payload and payload->block) this->lower_unanalysed_block(*payload->block);
@@ -873,7 +1114,10 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
       }
       case AstNodeKind::ConditionalShorthandStmt: {
          auto *payload = std::get_if<ConditionalShorthandStmtPayload>(&Statement.data);
-         if (payload and payload->body) this->lower_unanalysed_statement(*payload->body);
+         if (payload) {
+            if (payload->condition) this->lower_unanalysed_expression(*payload->condition);
+            if (payload->body) this->lower_unanalysed_statement(*payload->body);
+         }
          break;
       }
       case AstNodeKind::TryExceptStmt: {
@@ -881,24 +1125,48 @@ void TypeAnalyser::lower_unanalysed_statement(StmtNode &Statement)
          if (payload) {
             if (payload->try_block) this->lower_unanalysed_block(*payload->try_block);
             for (auto &clause : payload->except_clauses) {
+               for (auto &filter : clause.filter_codes) this->lower_unanalysed_expression(*filter);
                this->lower_unanalysed_except_clause(clause);
             }
             if (payload->success_block) this->lower_unanalysed_block(*payload->success_block);
          }
          break;
       }
+      case AstNodeKind::RaiseStmt: {
+         auto *payload = std::get_if<RaiseStmtPayload>(&Statement.data);
+         if (payload) {
+            if (payload->error_code) this->lower_unanalysed_expression(*payload->error_code);
+            if (payload->message) this->lower_unanalysed_expression(*payload->message);
+         }
+         break;
+      }
+      case AstNodeKind::CheckStmt: {
+         auto *payload = std::get_if<CheckStmtPayload>(&Statement.data);
+         if (payload and payload->error_code) this->lower_unanalysed_expression(*payload->error_code);
+         break;
+      }
       case AstNodeKind::ImportStmt: {
          auto *payload = std::get_if<ImportStmtPayload>(&Statement.data);
          if (payload) {
             for (auto &entry : payload->entries) {
-               if (entry.inlined_body) this->lower_unanalysed_block(*entry.inlined_body);
+               if (not entry.inlined_body) continue;
+               ImportGuard guard(*this, entry.file_source_idx);
+               this->lower_unanalysed_block(*entry.inlined_body);
             }
          }
          break;
       }
       case AstNodeKind::WithStmt: {
          auto *payload = std::get_if<WithStmtPayload>(&Statement.data);
-         if (payload and payload->block) this->lower_unanalysed_block(*payload->block);
+         if (payload) {
+            for (auto &object : payload->objects) this->lower_unanalysed_expression(*object);
+            if (payload->block) this->lower_unanalysed_block(*payload->block);
+         }
+         break;
+      }
+      case AstNodeKind::ExpressionStmt: {
+         auto *payload = std::get_if<ExpressionStmtPayload>(&Statement.data);
+         if (payload and payload->expression) this->lower_unanalysed_expression(*payload->expression);
          break;
       }
       default:
@@ -1319,6 +1587,21 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
                   value_type.struct_def->Name, existing->struct_def->Name);
                this->record_diagnostic(std::move(diag));
             }
+            else if (existing->primary IS TiriType::Array and
+                array_type_mismatch(existing->array_element, value_type)) {
+               if (is_global and this->is_implicit_global(name)) {
+                  this->degrade_global_type(name);
+                  continue;
+               }
+               TypeDiagnostic diag;
+               diag.location = target.span;
+               diag.expected = TiriType::Array;
+               diag.actual = TiriType::Array;
+               diag.code = ParserErrorCode::TypeMismatchAssignment;
+               diag.message = std::format("array member mismatch: cannot assign '{}' to 'array<{}>'",
+                  inferred_type_name(value_type), array_element_name(existing->array_element));
+               this->record_diagnostic(std::move(diag));
+            }
          }
          else {
             // Unfixed variable: first non-nil assignment fixes the type
@@ -1329,11 +1612,12 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
             }
             else if ((existing->primary != TiriType::Any) and (value_type.primary != TiriType::Nil)) {
                if (is_global) {
-                  this->fix_global_type(name, value_type.primary, value_type.object_class_id, value_type.struct_def);
+                  this->fix_global_type(name, value_type.primary, value_type.object_class_id, value_type.struct_def,
+                     value_type.array_element);
                }
                else {
                   this->fix_local_type(name, name_ref->binding_id, value_type.primary,
-                     value_type.object_class_id, value_type.struct_def);
+                     value_type.object_class_id, value_type.struct_def, value_type.array_element);
                }
             }
          }
@@ -1402,6 +1686,7 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
       if (name.type != TiriType::Unknown) {
          inferred.primary = name.type;
          inferred.struct_def = name.struct_def;
+         inferred.array_element = name.array_element;
          // 'any' type is not fixed - it accepts any value
          inferred.is_fixed = (name.type != TiriType::Any);
 
@@ -1435,6 +1720,18 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
                   value_type.struct_def->Name, name.struct_def->Name);
                this->record_diagnostic(std::move(diag));
             }
+            else if (name.type IS TiriType::Array and array_type_mismatch(name.array_element, value_type)) {
+               TypeDiagnostic diag;
+               if (value_index > 0 and value_index - 1 < Payload.values.size()) {
+                  diag.location = Payload.values[value_index - 1]->span;
+               }
+               diag.expected = TiriType::Array;
+               diag.actual = TiriType::Array;
+               diag.code = ParserErrorCode::TypeMismatchAssignment;
+               diag.message = std::format("cannot assign '{}' to variable of type 'array<{}>'",
+                  inferred_type_name(value_type), array_element_name(name.array_element));
+               this->record_diagnostic(std::move(diag));
+            }
          }
       }
       else if (have_value_type) {
@@ -1462,6 +1759,9 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
       #endif
 
       this->current_scope().declare_local(name.symbol, inferred, name.span, name.has_const);
+      if (name.type IS TiriType::Any and name.binding_id) {
+         this->explicit_variant_bindings_.insert(name.binding_id);
+      }
       this->publish_binding_type(name.binding_id, inferred);
       this->trace_decl(this->ctx_.lex().linenumber, name.symbol, inferred.primary, inferred.is_fixed);
    }
@@ -1516,11 +1816,55 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
 
 void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
 {
-   // Analyse the values first
-   for (const auto &value : Payload.values) {
-      this->analyse_expression(*value);
+   for (const auto &value : Payload.values) this->analyse_expression(*value);
+
+   for (const auto &name : Payload.names) {
+      if (not name.symbol) continue;
+
+      if ((name.symbol->flags & STRFLAG_PROTECTED_GLOBAL) != 0) {
+         this->report_protected_global_override(name.symbol, name.span);
+      }
+      else if (type_is_registered_constant(name.symbol)) {
+         std::string_view name_view(strdata(name.symbol), name.symbol->len);
+         TypeDiagnostic diag;
+         diag.location = name.span;
+         diag.code = ParserErrorCode::AssignToConstant;
+         diag.message = std::format("cannot assign to constant '{}'", name_view);
+         this->record_diagnostic(std::move(diag));
+      }
    }
 
+   this->discover_global_decl_policy(Payload, true);
+
+   #ifdef INCLUDE_TIPS
+   // Track globals for loop access detection
+   for (const auto &name : Payload.names) {
+      if (name.symbol) this->track_global(name.symbol);
+   }
+
+   // Check global naming conventions
+   if (this->should_emit_tip(3)) {
+      for (const auto &name : Payload.names) {
+         if (not name.symbol) continue;
+         std::string_view name_view(strdata(name.symbol), name.symbol->len);
+         if (not is_valid_global_name(name_view)) {
+            this->emit_tip(3, TipCategory::Style,
+               std::format("Global variable '{}' should follow naming convention: 'gl[A-Z]...' or 'ALL_CAPS'",
+                  name_view),
+               Token::from_span(name.span, TokenKind::Identifier));
+         }
+      }
+   }
+   #endif
+}
+
+//********************************************************************************************************************
+// Discover the binding policy needed by IR emission without performing ordinary expression analysis or diagnostics.
+// Reduced-analysis blocks use this path so their runtime failures remain catchable while global declarations still
+// publish the same sticky environment contracts as declarations in ordinarily analysed blocks.
+
+void TypeAnalyser::discover_global_decl_policy(const GlobalDeclStmtPayload &Payload, bool PublishStaticPolicy)
+{
    size_t value_index = 0;
    size_t call_return_index = 0;
    const ExprNode *multi_return_call = nullptr;
@@ -1530,20 +1874,7 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
       const auto &name = Payload.names[i];
       if (not name.symbol) continue;
 
-      if ((name.symbol->flags & STRFLAG_PROTECTED_GLOBAL) != 0) {
-         this->report_protected_global_override(name.symbol, name.span);
-         continue;
-      }
-
-      if (type_is_registered_constant(name.symbol)) {
-         std::string_view name_view(strdata(name.symbol), name.symbol->len);
-         TypeDiagnostic diag;
-         diag.location = name.span;
-         diag.code = ParserErrorCode::AssignToConstant;
-         diag.message = std::format("cannot assign to constant '{}'", name_view);
-         this->record_diagnostic(std::move(diag));
-         continue;
-      }
+      if ((name.symbol->flags & STRFLAG_PROTECTED_GLOBAL) != 0 or type_is_registered_constant(name.symbol)) continue;
 
       InferredType inferred;
       InferredType value_type;
@@ -1575,6 +1906,7 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
       if (name.type != TiriType::Unknown) {
          inferred.primary = name.type;
          inferred.struct_def = name.struct_def;
+         inferred.array_element = name.array_element;
          inferred.is_fixed = (name.type != TiriType::Any);
       }
       else if (have_value_type) {
@@ -1596,29 +1928,23 @@ void TypeAnalyser::analyse_global_decl(const GlobalDeclStmtPayload &Payload)
       GlobalContractPolicy contract_policy = GlobalContractPolicy::Advisory;
       if (name.type IS TiriType::Any) contract_policy = GlobalContractPolicy::Variant;
       else if (inferred.is_fixed) contract_policy = GlobalContractPolicy::Enforced;
-      this->declare_global(name.symbol, inferred, name.span, name.has_const, contract_policy);
-   }
 
-   #ifdef INCLUDE_TIPS
-   // Track globals for loop access detection
-   for (const auto &name : Payload.names) {
-      if (name.symbol) this->track_global(name.symbol);
-   }
-
-   // Check global naming conventions
-   if (this->should_emit_tip(3)) {
-      for (const auto &name : Payload.names) {
-         if (not name.symbol) continue;
-         std::string_view name_view(strdata(name.symbol), name.symbol->len);
-         if (not is_valid_global_name(name_view)) {
-            this->emit_tip(3, TipCategory::Style,
-               std::format("Global variable '{}' should follow naming convention: 'gl[A-Z]...' or 'ALL_CAPS'",
-                  name_view),
-               Token::from_span(name.span, TokenKind::Identifier));
-         }
+      name.global_contract_type = inferred.primary;
+      name.global_contract_object_class_id = inferred.primary IS TiriType::Object ?
+         inferred.object_class_id : CLASSID::NIL;
+      name.global_contract_struct_def = inferred.struct_def;
+      name.global_contract_array_element = inferred.array_element;
+      name.global_contract_policy = contract_policy;
+      if (name.has_const and not inferred.is_fixed) {
+         name.global_contract_type = TiriType::Any;
+         name.global_contract_object_class_id = CLASSID::NIL;
+         name.global_contract_struct_def = nullptr;
+         name.global_contract_array_element = {};
+         name.global_contract_policy = GlobalContractPolicy::Enforced;
       }
+      if (PublishStaticPolicy) this->declare_global(name.symbol, inferred, name.span, name.has_const, contract_policy);
+      else this->invalidate_global_flow_policy(name.symbol, name.span);
    }
-   #endif
 }
 
 //********************************************************************************************************************
@@ -1757,7 +2083,11 @@ void TypeAnalyser::analyse_function_payload(const FunctionExprPayload &Function,
    this->enter_function(Function, Name);
 
    for (const auto &param : Function.parameters) {
-      this->current_scope().declare_parameter(param.name.symbol, param.type, param.struct_def, param.name.span);
+      this->current_scope().declare_parameter(
+         param.name.symbol, param.type, param.struct_def, param.array_element, param.name.span);
+      if (param.type_is_explicit and param.type IS TiriType::Any and param.name.binding_id) {
+         this->explicit_variant_bindings_.insert(param.name.binding_id);
+      }
    }
 
    // Check for recursive functions without explicit return types
@@ -2023,9 +2353,11 @@ void TypeAnalyser::analyse_call_expr(const CallExprPayload &Call)
 
    const FunctionExprPayload* target = this->resolve_call_target(Call);
    if (target) {
-      if (Call.result_type IS TiriType::Unknown and target->return_types.is_explicit and
+      if (Call.result_type IS TiriType::Unknown and
+          (target->return_types.is_explicit or target->return_types.is_inferred) and
           target->return_types.count > 0) {
          Call.result_type = target->return_types.types[0];
+         Call.object_class_id = target->return_types.object_class_ids[0];
          Call.struct_def = target->return_types.struct_defs[0];
       }
       this->check_arguments(*target, Call);
@@ -2040,7 +2372,7 @@ void TypeAnalyser::check_arguments(const FunctionExprPayload &Function, const Ca
    size_t param_index = 0;
    for (const auto &param : Function.parameters) {
       if (param_index >= Call.arguments.size()) break;
-      this->check_argument_type(*Call.arguments[param_index], param.type, param_index);
+      this->check_argument_type(*Call.arguments[param_index], param, param_index);
       param_index += 1;
    }
 }
@@ -2048,20 +2380,24 @@ void TypeAnalyser::check_arguments(const FunctionExprPayload &Function, const Ca
 //********************************************************************************************************************
 // Check a single argument against its expected type, reporting diagnostics for mismatches.
 
-void TypeAnalyser::check_argument_type(const ExprNode& Argument, TiriType Expected, size_t Index)
+void TypeAnalyser::check_argument_type(
+   const ExprNode& Argument, const FunctionParameter &Parameter, size_t Index)
 {
-   if (Expected IS TiriType::Any) return;
+   TiriType expected = Parameter.type;
+   if (expected IS TiriType::Any) return;
 
    InferredType actual = this->infer_expression_type(Argument);
 
-   if (not actual.matches(Expected)) {
+   if (not actual.matches(expected) or array_type_mismatch(Parameter.array_element, actual)) {
       TypeDiagnostic diag;
       diag.location = Argument.span;
-      diag.expected = Expected;
+      diag.expected = expected;
       diag.actual = actual.primary;
       diag.code = ParserErrorCode::TypeMismatchArgument;
+      std::string expected_name = expected IS TiriType::Array and Parameter.array_element.known ?
+         std::format("array<{}>", array_element_name(Parameter.array_element)) : std::string(type_name(expected));
       diag.message = std::format("type mismatch: argument {} expects '{}', got '{}'",
-         Index + 1, type_name(Expected), type_name(actual.primary));
+         Index + 1, expected_name, inferred_type_name(actual));
       this->record_diagnostic(std::move(diag));
    }
 }
@@ -2096,6 +2432,12 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
             this->mark_identifier_used(payload->identifier.symbol);
             auto resolved = this->resolve_identifier(payload->identifier.symbol);
             if (resolved) return *resolved;
+            if (type_is_registered_constant(payload->identifier.symbol)) {
+               result.primary = TiriType::Num;
+               result.is_constant = true;
+               result.is_fixed = true;
+               return result;
+            }
             resolved = this->lookup_global_type(payload->identifier.symbol);
             if (resolved) return *resolved;
          }
@@ -2125,9 +2467,12 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                }
             }
             const FunctionExprPayload* target = this->resolve_call_target(*payload);
-            if (target and target->return_types.is_explicit and target->return_types.count > 0) {
+            if (target and (target->return_types.is_explicit or target->return_types.is_inferred) and
+                target->return_types.count > 0) {
                result.primary = target->return_types.types[0];
+               result.object_class_id = target->return_types.object_class_ids[0];
                result.struct_def = target->return_types.struct_defs[0];
+               result.array_element = target->return_types.array_elements[0];
                payload->struct_def = result.struct_def;
                return result;
             }
@@ -2139,6 +2484,9 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                   result.object_class_id = payload->object_class_id;
                }
                result.struct_def = payload->struct_def;
+               if (result.primary IS TiriType::Array and Expr.static_value) {
+                  result.array_element = this->ctx_.descriptors().value(Expr.static_value).array_element;
+               }
                if ((result.primary IS TiriType::Struct or result.primary IS TiriType::Func) and
                    not result.struct_def and not payload->arguments.empty()) {
                   const auto *literal = std::get_if<LiteralValue>(&payload->arguments[0]->data);
@@ -2157,6 +2505,7 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                   result.is_nullable = descriptor.nullable;
                   result.object_class_id = descriptor.object_class_id;
                   result.struct_def = descriptor.struct_def;
+                  result.array_element = descriptor.array_element;
                   return result;
                }
             }
@@ -2172,6 +2521,7 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                result.is_nullable = descriptor.nullable;
                result.object_class_id = descriptor.object_class_id;
                result.struct_def = descriptor.struct_def;
+               result.array_element = descriptor.array_element;
                return result;
             }
          }
@@ -2201,6 +2551,7 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                result.is_nullable = descriptor.nullable;
                result.object_class_id = descriptor.object_class_id;
                result.struct_def = descriptor.struct_def;
+               result.array_element = descriptor.array_element;
                return result;
             }
          }
@@ -2227,6 +2578,7 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                result.is_nullable = descriptor.nullable or safe;
                result.object_class_id = descriptor.object_class_id;
                result.struct_def = descriptor.struct_def;
+               result.array_element = descriptor.array_element;
                return result;
             }
          }
@@ -2331,17 +2683,35 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                   result.primary = TiriType::Num;
                   return result;
                // IfEmpty returns type of the operands
-               case AstBinaryOperator::IfEmpty:
-                  if (payload->left) {
-                     result = this->infer_expression_type(*payload->left);
-                     if (result.primary != TiriType::Any and result.primary != TiriType::Unknown) {
-                        return result;
-                     }
+               case AstBinaryOperator::IfEmpty: {
+                  InferredType left_type, right_type;
+                  if (payload->left) left_type = this->infer_expression_type(*payload->left);
+                  if (payload->right) right_type = this->infer_expression_type(*payload->right);
+
+                  if (payload->left and payload->left->kind IS AstNodeKind::LiteralExpr) {
+                     const auto &literal = std::get<LiteralValue>(payload->left->data);
+                     bool is_empty = literal.kind IS LiteralKind::Nil or
+                        (literal.kind IS LiteralKind::Boolean and not literal.bool_value) or
+                        (literal.kind IS LiteralKind::Number and literal.number_value IS 0) or
+                        (literal.kind IS LiteralKind::String and literal.string_value and
+                           literal.string_value->len IS 0);
+                     return is_empty ? right_type : left_type;
                   }
-                  if (payload->right) {
-                     return this->infer_expression_type(*payload->right);
+
+                  if (left_type.primary IS TiriType::Nil) return right_type;
+                  if (left_type.primary IS TiriType::Any or left_type.primary IS TiriType::Unknown or
+                      right_type.primary IS TiriType::Any or right_type.primary IS TiriType::Unknown or
+                      left_type.primary != right_type.primary or
+                      (left_type.primary IS TiriType::Object and
+                         left_type.object_class_id != right_type.object_class_id) or
+                      (left_type.primary IS TiriType::Struct and left_type.struct_def != right_type.struct_def)) {
+                     result.primary = TiriType::Any;
+                     return result;
                   }
-                  break;
+
+                  left_type.is_nullable = right_type.is_nullable;
+                  return left_type;
+               }
             }
          }
          result.primary = TiriType::Any;
@@ -2401,6 +2771,47 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
    return result;
 }
 
+InferredType TypeAnalyser::refine_static_expression_type(const ExprNode &Expr, InferredType Type) const
+{
+   if ((Type.primary != TiriType::Any and Type.primary != TiriType::Unknown) or not Expr.static_value) return Type;
+
+   if (Expr.kind IS AstNodeKind::IdentifierExpr) {
+      const auto &reference = std::get<NameRef>(Expr.data);
+      if (reference.binding_id and this->explicit_variant_bindings_.contains(reference.binding_id)) return Type;
+   }
+
+   const StaticValueDescriptor &descriptor = this->ctx_.descriptors().value(Expr.static_value);
+   if (descriptor.primary IS TiriType::Unknown or descriptor.primary IS TiriType::Any) return Type;
+
+   Type.primary = descriptor.primary;
+   Type.is_nullable = descriptor.nullable;
+   Type.object_class_id = descriptor.object_class_id;
+   Type.struct_def = descriptor.struct_def;
+   Type.array_element = descriptor.array_element;
+   Type.is_fixed = true;
+   return Type;
+}
+
+bool TypeAnalyser::is_explicit_variant_expression(const ExprNode &Expr, size_t Position) const
+{
+   if (Expr.kind IS AstNodeKind::IdentifierExpr) {
+      const auto &reference = std::get<NameRef>(Expr.data);
+      if (reference.binding_id) return this->explicit_variant_bindings_.contains(reference.binding_id);
+      if (reference.identifier.symbol) {
+         auto global = this->global_types_.find(reference.identifier.symbol);
+         return global != this->global_types_.end() and
+            global->second.contract_policy IS GlobalContractPolicy::Variant;
+      }
+   }
+   else if (Expr.kind IS AstNodeKind::CallExpr or Expr.kind IS AstNodeKind::SafeCallExpr) {
+      const auto &call = std::get<CallExprPayload>(Expr.data);
+      const FunctionExprPayload *target = this->resolve_call_target(call);
+      return target and target->return_types.is_explicit and Position < target->return_types.count and
+         target->return_types.types[Position] IS TiriType::Any;
+   }
+   return false;
+}
+
 //********************************************************************************************************************
 // Multi-Value Return Type Inference: Infers the return type at a specific position from a function call expression.
 // Used for multi-value assignments like: local a, b, c = func()
@@ -2417,6 +2828,7 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
       result.is_nullable = descriptor.nullable;
       result.object_class_id = descriptor.object_class_id;
       result.struct_def = descriptor.struct_def;
+      result.array_element = descriptor.array_element;
       return result;
    }
 
@@ -2428,7 +2840,7 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
    const FunctionExprPayload* target = this->resolve_call_target(*payload);
    if (not target) return result;
 
-   if (not target->return_types.is_explicit) return result;
+   if (not target->return_types.is_explicit and not target->return_types.is_inferred) return result;
 
    if (Position >= target->return_types.count and not target->return_types.is_variadic) {
       result.primary = TiriType::Nil;
@@ -2439,10 +2851,12 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
    // Get the type at the requested position
    TiriType type = target->return_types.type_at(Position);
    if (type != TiriType::Unknown) {
+      const size_t type_position = Position < target->return_types.count ?
+         Position : size_t(target->return_types.count - 1);
       result.primary = type;
-      if (Position < target->return_types.struct_defs.size()) {
-         result.struct_def = target->return_types.struct_defs[Position];
-      }
+      result.object_class_id = target->return_types.object_class_ids[type_position];
+      result.struct_def = target->return_types.struct_defs[type_position];
+      result.array_element = target->return_types.array_elements[type_position];
    }
 
    return result;
@@ -2526,6 +2940,9 @@ const FunctionExprPayload * TypeAnalyser::resolve_function(GCstr *Name) const
       const FunctionExprPayload* fn = it->lookup_function(Name);
       if (fn) return fn;
    }
+   if (auto global = this->global_types_.find(Name); global != this->global_types_.end()) {
+      return global->second.function;
+   }
    return nullptr;
 }
 
@@ -2550,20 +2967,22 @@ void TypeAnalyser::publish_binding_type(StaticBindingID Binding, const InferredT
    value.primary = Type.primary;
    value.object_class_id = Type.object_class_id;
    value.struct_def = Type.struct_def;
+   value.array_element = Type.array_element;
    value.nullable = Type.is_nullable;
    value.proof = StaticProof::Advisory;
    this->ctx_.descriptors().binding(Binding).analysed_value = this->ctx_.descriptors().add_value(value);
 }
 
 void TypeAnalyser::fix_local_type(GCstr *Name, StaticBindingID Binding, TiriType Type,
-   CLASSID ObjectClassId, struct_record *StructDef)
+   CLASSID ObjectClassId, struct_record *StructDef, const ArrayElementDescriptor &ArrayElement)
 {
    for (auto it = this->scope_stack_.rbegin(); it != this->scope_stack_.rend(); ++it) {
       auto existing = it->lookup_local_type(Name);
       if (existing) {
-         it->fix_local_type(Name, Type, ObjectClassId, StructDef);
+         it->fix_local_type(Name, Type, ObjectClassId, StructDef, ArrayElement);
          InferredType fixed(Type, false, false, true, ObjectClassId);
          fixed.struct_def = StructDef;
+         fixed.array_element = ArrayElement;
          this->publish_binding_type(Binding, fixed);
          this->trace_fix(this->ctx_.lex().linenumber, Name, Type);
          return;
@@ -2643,6 +3062,7 @@ void TypeAnalyser::declare_global_function(GCstr *Name, const FunctionExprPayloa
    info.location = Location;
    info.function = Function;
    info.forward_declaration = forward_declaration;
+   info.contract_policy = GlobalContractPolicy::Enforced;
    if (not info.forward_declaration and Function and is_function_forward_declaration(*Function)) {
       info.forward_declaration = Function;
    }
@@ -2703,11 +3123,38 @@ void TypeAnalyser::degrade_global_type(GCstr *Name)
       it->second.type.is_fixed = true;  // 'any' accepts every subsequent assignment
       it->second.type.object_class_id = CLASSID::NIL;
       it->second.type.struct_def = nullptr;
+      it->second.type.array_element = {};
       this->trace_fix(this->ctx_.lex().linenumber, Name, TiriType::Any);
    }
 }
 
-void TypeAnalyser::fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId, struct_record *StructDef)
+// A reduced declaration may fail before its environment policy is installed.  Clear state that depends on whether
+// the declaration executes successfully, while retaining any forward signature that constrains later definitions.
+
+void TypeAnalyser::invalidate_global_flow_policy(GCstr *Name, SourceSpan Location)
+{
+   if (not Name) return;
+
+   const FunctionExprPayload *forward_declaration = nullptr;
+   if (auto existing = this->global_types_.find(Name); existing != this->global_types_.end()) {
+      forward_declaration = existing->second.forward_declaration;
+      if (not forward_declaration and existing->second.function and
+          is_function_forward_declaration(*existing->second.function)) {
+         forward_declaration = existing->second.function;
+      }
+   }
+
+   GlobalTypeInfo info;
+   info.type.primary = TiriType::Any;
+   info.type.is_fixed = true;
+   info.location = Location;
+   info.forward_declaration = forward_declaration;
+   this->global_types_[Name] = info;
+   this->trace_decl(this->ctx_.lex().linenumber, Name, TiriType::Any, true);
+}
+
+void TypeAnalyser::fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId, struct_record *StructDef,
+   const ArrayElementDescriptor &ArrayElement)
 {
    if (not Name) return;
    if (auto it = this->global_types_.find(Name); it != this->global_types_.end()) {
@@ -2715,6 +3162,7 @@ void TypeAnalyser::fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectCla
       it->second.type.is_fixed = true;
       it->second.type.object_class_id = ObjectClassId;
       it->second.type.struct_def = StructDef;
+      it->second.type.array_element = ArrayElement;
       if (not it->second.implicit) it->second.contract_policy = GlobalContractPolicy::Enforced;
       this->trace_fix(this->ctx_.lex().linenumber, Name, Type);
    }
@@ -2743,6 +3191,33 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
    if (not ctx) return;  // Not inside a function (shouldn't happen in valid code)
 
    size_t return_count = Return.values.size();
+   size_t fixed_count = return_count;
+   const ExprNode *tail_expression = nullptr;
+   const StaticResultSet *tail_results = nullptr;
+   if (not ctx->expected_returns.is_explicit and Return.forwards_call and not Return.values.empty()) {
+      tail_expression = Return.values.back().get();
+      if (tail_expression->static_results) {
+         const StaticResultSet &results = this->ctx_.descriptors().results(tail_expression->static_results);
+         if (not results.dynamic and not results.variadic) {
+            fixed_count--;
+            tail_results = &results;
+            return_count = fixed_count + results.declared_count;
+         }
+      }
+   }
+
+   auto expression_at = [&](size_t Position) -> const ExprNode & {
+      return Position < fixed_count ? *Return.values[Position] : *tail_expression;
+   };
+
+   auto infer_position = [&](size_t Position) {
+      const ExprNode &expression = expression_at(Position);
+      if (tail_results and Position >= fixed_count) {
+         return this->infer_call_return_type(expression, Position - fixed_count);
+      }
+      InferredType actual = this->infer_expression_type(expression);
+      return this->refine_static_expression_type(expression, actual);
+   };
 
    if (ctx->expected_returns.is_explicit) {
       // Explicit declaration: validate against declared types
@@ -2752,78 +3227,95 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
          TiriType expected = ctx->expected_returns.type_at(i);
          if (expected IS TiriType::Any or expected IS TiriType::Unknown) continue;
 
-         InferredType actual = this->infer_expression_type(*Return.values[i]);
+         const ExprNode &expression = expression_at(i);
+         InferredType actual = this->infer_expression_type(expression);
 
          // Nil is always allowed as a "clear" or "no value" return
          if (actual.primary IS TiriType::Nil) continue;
-         // Any can be assigned to any type
-         if (actual.primary IS TiriType::Any) continue;
+         // A concrete declaration supplies the destination type for runtime validation of dynamic values.
+         if (actual.primary IS TiriType::Any or actual.primary IS TiriType::Unknown) continue;
 
-         if (actual.primary != expected) {
+         const bool struct_matches = expected != TiriType::Struct or not ctx->expected_returns.struct_defs[i] or
+            actual.struct_def IS ctx->expected_returns.struct_defs[i];
+         const bool array_matches = expected != TiriType::Array or
+            not array_type_mismatch(ctx->expected_returns.array_elements[i], actual);
+         if (actual.primary != expected or not struct_matches or not array_matches) {
             TypeDiagnostic diag;
-            diag.location = Return.values[i]->span;
+            diag.location = expression.span;
             diag.expected = expected;
             diag.actual = actual.primary;
             diag.code = ParserErrorCode::ReturnTypeMismatch;
+            std::string expected_name = expected IS TiriType::Array and
+               ctx->expected_returns.array_elements[i].known ?
+               std::format("array<{}>", array_element_name(ctx->expected_returns.array_elements[i])) :
+               std::string(type_name(expected));
             diag.message = std::format("return type mismatch at position {}: expected '{}', got '{}'",
-               i + 1, type_name(expected), type_name(actual.primary));
+               i + 1, expected_name, inferred_type_name(actual));
             this->record_diagnostic(std::move(diag));
          }
       }
    }
    else {
-      // Inference mode: first non-nil return statement fixes types (first-wins rule)
-      // Nil returns don't establish a type - they're compatible with any future type
-      if (not ctx->return_type_inferred and return_count > 0) {
-         // First return: infer types from returned values
-         bool has_non_nil = false;
-         for (size_t i = 0; i < std::min(return_count, MAX_RETURN_TYPES); ++i) {
-            InferredType inferred = this->infer_expression_type(*Return.values[i]);
-            ctx->expected_returns.types[i] = inferred.primary;
-            if (inferred.primary != TiriType::Nil and inferred.primary != TiriType::Any) {
-               has_non_nil = true;
+      const size_t check_count = std::min(return_count, size_t(MAX_RETURN_TYPES));
+      ctx->observed_return_count = uint8_t(std::max<size_t>(ctx->observed_return_count, check_count));
+
+      for (size_t i = 0; i < check_count; ++i) {
+         InferredReturnPosition &position = ctx->inferred_returns[i];
+         const ExprNode &expression = expression_at(i);
+         const size_t expression_position = tail_results and i >= fixed_count ? i - fixed_count : 0;
+         InferredType actual = infer_position(i);
+         position.location = expression.span;
+
+         if (actual.primary IS TiriType::Nil) {
+            if (position.state IS ReturnInferenceState::Unobserved) {
+               position.state = ReturnInferenceState::NilOnly;
             }
+            continue;
          }
-         ctx->expected_returns.count = uint8_t(std::min(return_count, MAX_RETURN_TYPES));
-         // Only mark as inferred if we have at least one concrete (non-nil) type
-         // This allows a later return with concrete types to establish the actual types
-         ctx->return_type_inferred = has_non_nil;
-      }
-      else if (return_count > 0) {
-         // Subsequent return: check consistency with inferred types
-         size_t check_count = std::min(return_count, size_t(ctx->expected_returns.count));
 
-         for (size_t i = 0; i < check_count; ++i) {
-            TiriType expected = ctx->expected_returns.types[i];
-            InferredType actual = this->infer_expression_type(*Return.values[i]);
-
-            // If expected is nil/any/unknown, and actual is concrete, upgrade the expected type
-            if ((expected IS TiriType::Nil or expected IS TiriType::Any or expected IS TiriType::Unknown) and
-                actual.primary != TiriType::Nil and actual.primary != TiriType::Any and
-                actual.primary != TiriType::Unknown) {
-               ctx->expected_returns.types[i] = actual.primary;
-               ctx->return_type_inferred = true;
-               continue;
-            }
-
-            if (expected IS TiriType::Any or expected IS TiriType::Unknown) continue;
-
-            // Nil is always allowed as a "clear" or "no value" return
-            if (actual.primary IS TiriType::Nil) continue;
-            // Any can match any type
-            if (actual.primary IS TiriType::Any) continue;
-
-            if (actual.primary != expected) {
-               TypeDiagnostic diag;
-               diag.location = Return.values[i]->span;
-               diag.expected = expected;
-               diag.actual = actual.primary;
-               diag.code = ParserErrorCode::ReturnTypeMismatch;
-               diag.message = std::format("inconsistent return type at position {}: first return established '{}', but this returns '{}'",
-                  i + 1, type_name(expected), type_name(actual.primary));
-               this->record_diagnostic(std::move(diag));
-            }
+         if (actual.primary IS TiriType::Any and
+             this->is_explicit_variant_expression(expression, expression_position)) {
+            position.concrete = actual;
+            position.concrete.primary = TiriType::Any;
+            position.state = ReturnInferenceState::ExplicitAny;
+            continue;
          }
+
+         if (position.state IS ReturnInferenceState::ExplicitAny) continue;
+
+         if (actual.primary IS TiriType::Any or actual.primary IS TiriType::Unknown) {
+            position.state = ReturnInferenceState::Dynamic;
+            position.dynamic_location = expression.span;
+            position.dynamic_type = actual.primary;
+            continue;
+         }
+
+         if (position.concrete.primary IS TiriType::Any or position.concrete.primary IS TiriType::Unknown) {
+            position.concrete = actual;
+            if (position.state != ReturnInferenceState::Dynamic) position.state = ReturnInferenceState::Concrete;
+            continue;
+         }
+
+         const bool type_matches = actual.primary IS position.concrete.primary;
+         const bool class_matches = position.concrete.primary != TiriType::Object or
+            position.concrete.object_class_id IS CLASSID::NIL or
+            actual.object_class_id IS position.concrete.object_class_id;
+         const bool struct_matches = position.concrete.primary != TiriType::Struct or
+            not position.concrete.struct_def or actual.struct_def IS position.concrete.struct_def;
+         const bool array_matches = position.concrete.primary != TiriType::Array or
+            not array_type_mismatch(position.concrete.array_element, actual);
+         if (type_matches and class_matches and struct_matches and array_matches) continue;
+
+         TypeDiagnostic diag;
+         diag.location = expression.span;
+         diag.expected = position.concrete.primary;
+         diag.actual = actual.primary;
+         diag.code = ParserErrorCode::ReturnTypeMismatch;
+         diag.message = std::format(
+            "inconsistent return type at position {}: first return established '{}', but this returns '{}'",
+            i + 1, type_name(position.concrete.primary), type_name(actual.primary));
+         this->record_diagnostic(std::move(diag));
+         ctx->inference_failed = true;
       }
    }
 }
@@ -3138,14 +3630,21 @@ void TypeAnalyser::publish_global_type_hints(LexState &Lex) const
    for (const auto &[name, info] : this->global_types_) {
       if (info.contract_policy IS GlobalContractPolicy::Variant) {
          Lex.global_type_hints[name] = {
-            TiriType::Any, CLASSID::NIL, nullptr, GlobalContractPolicy::Variant
+            TiriType::Any, CLASSID::NIL, nullptr, {}, GlobalContractPolicy::Variant
+         };
+         continue;
+      }
+      if (info.is_const and not info.type.is_fixed) {
+         Lex.global_type_hints[name] = {
+            TiriType::Any, CLASSID::NIL, nullptr, {}, GlobalContractPolicy::Enforced
          };
          continue;
       }
       if (not info.type.is_fixed) continue;
       if (info.contract_policy IS GlobalContractPolicy::Enforced) {
          Lex.global_type_hints[name] = {
-            info.type.primary, info.type.object_class_id, info.type.struct_def, GlobalContractPolicy::Enforced
+            info.type.primary, info.type.object_class_id, info.type.struct_def, info.type.array_element,
+            GlobalContractPolicy::Enforced
          };
          continue;
       }
@@ -3154,7 +3653,8 @@ void TypeAnalyser::publish_global_type_hints(LexState &Lex) const
          case TiriType::Object:
          case TiriType::Array:
             Lex.global_type_hints[name] = {
-               info.type.primary, info.type.object_class_id, info.type.struct_def, GlobalContractPolicy::Advisory
+               info.type.primary, info.type.object_class_id, info.type.struct_def, info.type.array_element,
+               GlobalContractPolicy::Advisory
             };
             break;
          default:

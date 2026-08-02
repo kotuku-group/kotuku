@@ -43,7 +43,7 @@ end
 end
 
 @Test function AllowsParameterShadowOfConstant()
-   local function use_constant_name(ERR_Okay)
+   local function use_constant_name(ERR_Okay:str)
       return ERR_Okay
    end
 

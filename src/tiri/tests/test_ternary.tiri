@@ -434,7 +434,7 @@ end
    v = process(true ? 5 :> 10)
    assert(v is 10, "Failed ternary as function argument: expected 10, got " .. tostring(v))
 
-   function myFunc(value)
+   function myFunc(value):num
       return value
    end
 
@@ -466,7 +466,7 @@ end
 -- combination of both
 
 @Test function Concat()
-   function returnString(Arg)
+   function returnString(Arg:str):str
       if Arg then return Arg else return "Result" end
    end
 

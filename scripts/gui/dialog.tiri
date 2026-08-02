@@ -29,7 +29,7 @@ ICONS = {
 
    gui.dialog ?= { }
 
-function defaultIcon(self)
+function defaultIcon(self):str
    if self.type and ICONS[self.type] then
       return ICONS[self.type]
    end
@@ -291,7 +291,7 @@ gui.dialog.message = function(Options)
    return self
 end
 
-gui.dialog.error = function(Title:str, Message:str, Options:table)
+gui.dialog.error = function(Title:str, Message:str, Options:table):table
    Options ?= { }
    Options.type = 'error'
    Options.title = Title

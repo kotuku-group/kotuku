@@ -441,7 +441,7 @@ function bool_literal(Value:any):str
    return Value ? 'true' :> 'false'
 end
 
-function sorted_field_names(Fields:table):array
+function sorted_field_names(Fields:table):array<string>
    names = array<string> { }
    if not Fields then return names end
 
@@ -453,7 +453,7 @@ function sorted_field_names(Fields:table):array
    return names
 end
 
-function route_param_array(Name:str, Names:array, Fields:table):str
+function route_param_array(Name:str, Names:array<string>, Fields:table):str
    out = f"static constexpr std::array<BackstageParam, {#Names}> {Name} = {{"
 
    if #Names > 0 then

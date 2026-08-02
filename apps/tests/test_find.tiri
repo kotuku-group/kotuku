@@ -2,7 +2,7 @@
 
 glTask = mSys.CurrentTask()
 
-function resolveFirstPath(Candidates:array):str
+function resolveFirstPath(Candidates:array<string>):str
    for candidate in values(Candidates) do
       err, resolved = mSys.ResolvePath(candidate, RSF_APPROXIMATE)
       if err is ERR_Okay then return resolved end
@@ -35,7 +35,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function runFind(Parameters:array):table
+function runFind(Parameters:array<string>):table
    local output = ''
    local errors = ''
    local task_params = array<string> { quoteTaskParam(glFindPath:replace('\\', '/')) }
@@ -51,10 +51,10 @@ function runFind(Parameters:array):table
       args = task_params:concat(' '),
       flags = TSF_WAIT|TSF_SHELL,
       timeout = 10,
-      outputCallback = function(Task:obj, Buffer:array)
+      outputCallback = function(Task:obj, Buffer:array<byte>)
          output ..= Buffer:getString()
       end,
-      errorCallback = function(Task:obj, Buffer:array)
+      errorCallback = function(Task:obj, Buffer:array<byte>)
          errors ..= Buffer:getString()
       end
    })

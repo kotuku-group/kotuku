@@ -15,6 +15,15 @@ local function disassemble(Statement)
    return disasm
 end
 
+local function assert_global_contract_before_store(Statement, Context)
+   local disasm = disassemble(Statement)
+   local contract = disasm:find('CONTRACT')
+   local store = disasm:find('GSET')
+   assert(contract != nil and store != nil and contract < store,
+      Context .. ' must emit CONTRACT before GSET, got:\n' .. disasm)
+   return disasm
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Inferred scalar globals must emit sticky contracts for their declaration and later dynamic stores.
 
@@ -31,13 +40,111 @@ glGTSticky = dynamic
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+-- Direct global callable declarations must publish the same persistent binding contract as global variables.
+
+@Test function GlobalCallableContractBytecode()
+   local function_disasm = disassemble([[
+global function glGTContractFunction() return 1 end
+]])
+   local function_contract = function_disasm:find('CONTRACT')
+   local function_store = function_disasm:find('GSET')
+   assert(function_contract != nil and function_store != nil and function_contract < function_store,
+      'A global function contract must precede its store, got:\n' .. function_disasm)
+
+   local thunk_disasm = disassemble([[
+global thunk glGTContractThunk():str return 'value' end
+]])
+   local thunk_contract = thunk_disasm:find('CONTRACT')
+   local thunk_store = thunk_disasm:find('GSET')
+   assert(thunk_contract != nil and thunk_store != nil and thunk_contract < thunk_store,
+      'A global thunk func contract must precede its store, got:\n' .. thunk_disasm)
+
+   local member_disasm = disassemble([[
+local holder = {}
+function holder.callback() return 1 end
+]])
+   assert(member_disasm:find('CONTRACT') is nil,
+      'A table method must not publish a global binding contract, got:\n' .. member_disasm)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Reduced-analysis blocks suppress ordinary diagnostics but must still publish global declaration contracts.
+
+@Test function ReducedAnalysisGlobalContractBytecode()
+   assert_global_contract_before_store([[
+try
+   global glGTReducedTry = 'text'
+end
+]], 'try declaration')
+
+   assert_global_contract_before_store([[
+try
+   raise ERR_Args
+except e when ERR_Args
+   global glGTReducedFilteredExcept = 'text'
+end
+]], 'filtered except declaration')
+
+   assert_global_contract_before_store([[
+try
+   error('expected')
+except e
+   global glGTReducedExcept = 'text'
+end
+]], 'catch-all except declaration')
+
+   assert_global_contract_before_store([[
+try
+   local ready = true
+success
+   global glGTReducedSuccess = 'text'
+end
+]], 'success declaration')
+
+   assert_global_contract_before_store([[
+local clock = obj.new('time')
+with clock do
+   global glGTReducedWith = 'text'
+end
+]], 'with declaration')
+
+   local nested = assert_global_contract_before_store([[
+try
+   local function declare_value()
+      global glGTReducedNested = 'text'
+   end
+   declare_value()
+end
+]], 'nested declaration')
+   assert(nested:count('CONTRACT') is 1,
+      'A nested reduced declaration should emit exactly one contract, got:\n' .. nested)
+
+   local multi = disassemble([[
+local function pair():<num, str> return 2, 'text' end
+try
+   global glGTReducedNumber, glGTReducedText = pair()
+end
+]])
+   assert(multi:count('CONTRACT') >= 2,
+      'Both reduced multi-result positions must emit contracts in addition to callable contracts, got:\n' .. multi)
+   assert(multi:count('GSET') is 2,
+      'Both reduced multi-result positions must emit stores, got:\n' .. multi)
+
+   assert_global_contract_before_store([[
+try
+   global glGTReducedVariant:any = 1
+end
+]], 'reduced explicit any declaration')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 -- Explicit global assignment must propagate the struct type to reads and writes.
 
 @Test function GlobalStructBytecode()
    local disasm = disassemble([[
 MAKESTRUCT('GTImplicitRec', 'lAlpha,lBravo')
 global glGTRec = struct.new('GTImplicitRec')
-function readField()
+function readField():num
    return glGTRec.alpha
 end
 function writeField()
@@ -56,7 +163,7 @@ end
    local disasm = disassemble([[
 MAKESTRUCT('GTExplicitRec', 'lAlpha')
 global glGTExplicit = struct.new('GTExplicitRec')
-function readField()
+function readField():num
    return glGTExplicit.alpha
 end
 ]])
@@ -71,7 +178,7 @@ end
 MAKESTRUCT('GTConflictRec', 'lAlpha')
 global glGTMixed:any = struct.new('GTConflictRec')
 glGTMixed = 'text'
-function readField()
+function readField():num
    return glGTMixed.alpha
 end
 ]])
@@ -99,7 +206,7 @@ end
 @Test function GlobalObjectUnknownFieldRejected()
    local script = obj.new('tiri', { statement = [[
 global glGTTime2 = obj.new('time')
-function readBad()
+function readBad():num
    return glGTTime2.no_such_field
 end
 ]] })
@@ -122,6 +229,70 @@ end
       'Global array indexing should emit AGETB/AGETV, got:\n' .. disasm)
 end
 
+@Test function GlobalArrayMemberContract()
+   global glGTMemberArray:array<int> = array<int> { 7 }
+   local writer = exec('return function(Value) glGTMemberArray = Value end')
+
+   writer(array<int> { 9 })
+   assert(glGTMemberArray[0] is 9, 'A matching cross-chunk array member type should pass')
+
+   try
+      writer(array<string> { 'wrong' })
+      error('A conflicting cross-chunk array member type should raise')
+   except e
+      assert(e.message:find('expected array<int>') != nil,
+         'The global contract should identify array<int>: ' .. e.message)
+      assert(e.message:find('got array<string>') != nil,
+         'The global contract should identify array<string>: ' .. e.message)
+   end
+   assert(glGTMemberArray[0] is 9, 'A rejected global array store must preserve the previous value')
+end
+
+@Test function GlobalArrayWildcardRedeclaration()
+   global glGTWildcardArray:array<int> = array<int> { 1 }
+   global glGTWildcardArray:array<any> = array<string> { 'open' }
+   assert(glGTWildcardArray[0] is 'open', 'array<any> should relax a concrete global member contract')
+
+   local writer = exec('return function(Value) glGTWildcardArray = Value end')
+   writer(array<double> { 2.5 })
+   assert(glGTWildcardArray[0] is 2.5, 'A wildcard global should accept another array member type')
+
+   try
+      writer({ 3 })
+      error('array<any> should continue to reject ordinary tables')
+   except e
+      assert(e.message:find('expected array<any>') != nil,
+         'The wildcard contract should remain an array contract: ' .. e.message)
+   end
+end
+
+@Test function FailedGlobalArrayWildcardRedeclarationPreservesPolicy()
+   global glGTFailedWildcardArray:array<int> = array<int> { 11 }
+
+   try
+      global glGTFailedWildcardArray:array<any> = { 'not an array' }
+      error('A wildcard array redeclaration should reject an ordinary table')
+   except e
+      assert(e.message:find('expected array<any>') != nil,
+         'The failed wildcard redeclaration should report its incoming contract: ' .. e.message)
+   end
+
+   assert(glGTFailedWildcardArray[0] is 11,
+      'A failed wildcard redeclaration must preserve the previous global value')
+
+   local writer = exec('return function(Value) glGTFailedWildcardArray = Value end')
+   try
+      writer(array<string> { 'wrong' })
+      error('A failed wildcard redeclaration must not relax the existing concrete policy')
+   except e
+      assert(e.message:find('expected array<int>') != nil,
+         'The original concrete policy should survive the failed wildcard redeclaration: ' .. e.message)
+   end
+
+   assert(glGTFailedWildcardArray[0] is 11,
+      'A store rejected by the preserved concrete policy must leave the value unchanged')
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- A local variable shadowing a typed global name must not inherit the global's type.
 
@@ -129,7 +300,7 @@ end
    local disasm = disassemble([[
 MAKESTRUCT('GTShadowRec', 'lAlpha')
 global glGTShadow = struct.new('GTShadowRec')
-function readShadowed()
+function readShadowed():num
    local glGTShadow = { alpha = 1 }
    return glGTShadow.alpha
 end

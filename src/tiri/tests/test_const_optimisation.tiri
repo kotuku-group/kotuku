@@ -247,13 +247,13 @@ end
    local captured = disassemble([[
 function sample()
    local value <const> = 37
-   return function()
+   return function():num
       return value
    end
 end
 ]])
    local non_primitive = disassemble([[
-function sample()
+function sample():num
    local value <const> = { count = 1 }
    value.count++
    return value.count

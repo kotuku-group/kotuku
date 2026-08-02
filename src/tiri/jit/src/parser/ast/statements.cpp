@@ -145,7 +145,13 @@ ParserResult<StmtNodePtr> AstBuilder::parse_global()
 
       auto stmt = std::make_unique<StmtNode>(AstNodeKind::FunctionStmt, this->span_from(global_token, name_token.value_ref()));
       FunctionNamePath name;
-      name.segments.push_back(make_identifier(name_token.value_ref()));
+      // The binding category is intrinsic to this syntax and must not depend on the optional type-analysis pass.
+      Identifier declaration = make_identifier(name_token.value_ref());
+      declaration.global_contract_type = TiriType::Func;
+      declaration.global_contract_object_class_id = CLASSID::NIL;
+      declaration.global_contract_struct_def = nullptr;
+      declaration.global_contract_policy = GlobalContractPolicy::Enforced;
+      name.segments.push_back(std::move(declaration));
       name.is_explicit_global = true;  // Mark as explicitly global
       FunctionStmtPayload payload(std::move(name), move_function_payload(function_expr));
       stmt->data = std::move(payload);
@@ -379,7 +385,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
       Token type_token = this->ctx.tokens().current();
       bool array_type = type_token.kind() IS TokenKind::ArrayTyped;
       bool struct_typed = type_token.kind() IS TokenKind::StructTyped;
-      int64_t array_dimension = array_type ? this->ctx.lex().array_typed_size : -1;
+      int64_t array_dimension = array_type ? this->ctx.lex().current_array_typed_size : -1;
       if (array_type or struct_typed) this->ctx.tokens().advance();
       else {
          auto type_result = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
@@ -1090,7 +1096,9 @@ ParserResult<ReturnStmtPayload> AstBuilder::parse_return_payload(const Token& re
    if (parse_values) {
       auto exprs = this->parse_expression_list();
       if (not exprs.ok()) return ParserResult<ReturnStmtPayload>::failure(exprs.error_ref());
-      if (exprs.value_ref().size() IS 1 and exprs.value_ref()[0]->kind IS AstNodeKind::CallExpr) {
+      if (not exprs.value_ref().empty() and
+          (exprs.value_ref().back()->kind IS AstNodeKind::CallExpr or
+           exprs.value_ref().back()->kind IS AstNodeKind::SafeCallExpr)) {
          forwards_call = true;
       }
       values = std::move(exprs.value_ref());

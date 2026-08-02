@@ -1,6 +1,7 @@
 -- Runtime contracts for parameters, explicit returns, typed stores and indirect call routes.
 
 import './type_contract_fixture'
+import './typ08_reduced_import_fixture'
 
 struct ContractAlpha
    Value: int
@@ -23,6 +24,20 @@ function expect_contract_failure(Callback:func, Boundary:str)
       assert(e.message != nil, 'A contract failure must carry a message')
    end
    assert(failed, 'Expected a catchable ' .. Boundary .. ' contract failure')
+end
+
+function expect_object_contract_failure(Callback:func, Boundary:str)
+   local failed = false
+   try
+      Callback()
+   except e
+      failed = true
+      assert(e.message:find('expected obj<Time>') != nil,
+         'The message should identify the expected Time class: ' .. e.message)
+      assert(e.message:find('got obj<File>') != nil or e.message:find('got obj<invalid>') != nil,
+         'The message should identify the actual object class: ' .. e.message)
+   end
+   assert(failed, 'Expected a catchable ' .. Boundary .. ' object-class contract failure')
 end
 
 function expect_diagnostic_failure(Callback:func)
@@ -61,7 +76,7 @@ end
    function accept_num(Value:num) return Value end
    function accept_str(Value:str) return Value end
    function accept_table(Value:table) return Value end
-   function accept_array(Value:array) return Value end
+   function accept_array(Value:array<any>) return Value end
    function accept_func(Value:func) return Value end
    function accept_struct(Value:struct) return Value end
    function accept_obj(Value:obj) return Value end
@@ -76,7 +91,7 @@ end
    local captured = 1
    function capture() return captured end
    local pointer = debug.upvalueID(capture, 0)
-   local callable = setmetatable({}, { __call = function(Self) return Self end })
+   local callable = setmetatable({}, { __call = function(Self):table return Self end })
 
    assert(accept_nil(nil) is nil, 'nil should satisfy nil')
    assert(accept_bool(true) is true, 'true should satisfy bool')
@@ -118,6 +133,38 @@ end
    local bravo = struct<ContractBravo> { Value=7 }
    assert(accept_alpha(alpha) is 7, 'Matching named structure should pass')
    expect_contract_failure(function() accept_alpha(dynamic_value(bravo)) end, 'parameter')
+end
+
+@Test function ArrayMemberIdentity()
+   function accept_int_array(Value:array<int>):array<int> return Value end
+   function accept_any_array(Value:array<any>):array<any> return Value end
+
+   local numbers = array<int> { 4, 8 }
+   local words = array<string> { 'four', 'eight' }
+   assert(accept_int_array(numbers) is numbers, 'A matching concrete member type should pass')
+   assert(accept_any_array(numbers) is numbers, 'array<any> should accept array<int>')
+   assert(accept_any_array(words) is words, 'array<any> should accept array<string>')
+
+   expect_contract_failure(
+      function() accept_int_array(dynamic_value(words)) end, 'array member parameter')
+
+   local sticky = array<int> { 1 }
+   expect_contract_failure(
+      function() sticky = dynamic_value(words) end, 'inferred array member store')
+   assert(sticky[0] is 1, 'A rejected member-type store must preserve the previous array')
+
+   function wrong_result():any return words end
+   function checked_result():array<int> return wrong_result() end
+   expect_contract_failure(function() checked_result() end, 'array member result')
+
+   local alpha = struct<ContractAlpha> { Value=3 }
+   local bravo = struct<ContractBravo> { Value=5 }
+   local alpha_values = array<struct<ContractAlpha>> { alpha }
+   local bravo_values = array<struct<ContractBravo>> { bravo }
+   function accept_alpha_array(Value:array<struct<ContractAlpha>>):num return Value[0].Value end
+   assert(accept_alpha_array(alpha_values) is 3, 'A matching named-structure array should pass')
+   expect_contract_failure(
+      function() accept_alpha_array(dynamic_value(bravo_values)) end, 'named-structure array member')
 end
 
 @Test function NilMissingAndExtraArguments()
@@ -183,7 +230,7 @@ end
 end
 
 @Test function GuardPrecedesSpecialisedMutation()
-   function increment(Values:array)
+   function increment(Values:array<any>)
       Values[0] += 1
    end
 
@@ -231,7 +278,7 @@ end
    function checked_num(Value:any):num return dynamic_value(Value) end
    function checked_str(Value:any):str return dynamic_value(Value) end
    function checked_table(Value:any):table return dynamic_value(Value) end
-   function checked_array(Value:any):array return dynamic_value(Value) end
+   function checked_array(Value:any):array<any> return dynamic_value(Value) end
    function checked_func(Value:any):func return dynamic_value(Value) end
    function checked_struct(Value:any):struct return dynamic_value(Value) end
    function checked_alpha(Value:any):struct<ContractAlpha> return dynamic_value(Value) end
@@ -519,6 +566,96 @@ end
    assert(captured is 2, 'A rejected upvalue store must preserve the previous value')
 end
 
+@Test function ObjectClassLocalAndUpvalueContracts()
+   local value = obj.new('time')
+   value = dynamic_value(obj.new('time'))
+   assert(value.class.name is 'Time', 'A dynamically sourced Time should satisfy an inferred Time local')
+
+   local file = obj.new('file')
+   expect_object_contract_failure(function() value = dynamic_value(file) end, 'local')
+   assert(value.class.name is 'Time', 'A rejected local store must preserve the previous Time object')
+
+   value = nil
+   assert(value is nil, 'Nil should clear a class-constrained local')
+   value = dynamic_value(obj.new('time'))
+   assert(value.class.name is 'Time', 'A Time should restore a nil-cleared class-constrained local')
+
+   local deferred
+   deferred = obj.new('time')
+   expect_object_contract_failure(function() deferred = dynamic_value(file) end, 'deferred local')
+   assert(deferred.class.name is 'Time', 'A deferred local should retain its first concrete object class')
+
+   local captured = obj.new('time')
+   function write_captured_object(Value:any)
+      captured = Value
+   end
+   write_captured_object(obj.new('time'))
+   expect_object_contract_failure(function() write_captured_object(file) end, 'upvalue')
+   assert(captured.class.name is 'Time', 'A rejected upvalue store must preserve the previous Time object')
+
+   local deferred_file = <{ obj.new('file') }>
+   expect_object_contract_failure(function() captured = dynamic_value(deferred_file) end, 'resolved thunk')
+   assert(captured.class.name is 'Time', 'A rejected resolved thunk must not mutate the captured object')
+
+   local invalid = obj.new('time')
+   invalid.free()
+   expect_object_contract_failure(function() captured = dynamic_value(invalid) end, 'invalid wrapper')
+
+   local broad:obj = obj.new('time')
+   broad = dynamic_value(file)
+   assert(broad.class.name is 'File', 'An explicit obj annotation should remain a broad object contract')
+end
+
+@Test function ObjectClassGlobalContracts()
+   global glContractTimeObject = obj.new('time')
+   glContractTimeObject = dynamic_value(obj.new('time'))
+   exec("glContractTimeObject = obj.new('time')")
+   assert(glContractTimeObject.class.name is 'Time', 'Matching same- and cross-chunk Time stores should pass')
+
+   local file = obj.new('file')
+   expect_object_contract_failure(
+      function() glContractTimeObject = dynamic_value(file) end, 'same-chunk global')
+   expect_object_contract_failure(
+      function() exec("glContractTimeObject = obj.new('file')") end, 'cross-chunk global')
+   local environment = _G
+   expect_object_contract_failure(
+      function() environment.glContractTimeObject = file end, 'environment alias')
+   expect_object_contract_failure(
+      function() rawset(_G, 'glContractTimeObject', file) end, 'raw global store')
+   assert(glContractTimeObject.class.name is 'Time',
+      'Rejected direct and indirect global stores must preserve the previous Time object')
+   exec("glContractTimeObject = obj.new('time')")
+
+   glContractTimeObject = nil
+   assert(glContractTimeObject is nil, 'Nil should clear a class-constrained global')
+   expect_object_contract_failure(
+      function() glContractTimeObject = dynamic_value(file) end, 'nil-cleared global')
+   exec("glContractTimeObject = obj.new('time')")
+
+   exec("global glContractTimeObject = obj.new('time')")
+   expect_object_contract_failure(
+      function() exec("global glContractTimeObject = obj.new('file')") end, 'global redeclaration')
+   assert(glContractTimeObject.class.name is 'Time',
+      'A rejected cross-class redeclaration must preserve the global value and policy')
+
+   try
+      global glContractReducedTime = obj.new('time')
+   end
+   expect_object_contract_failure(
+      function() exec("glContractReducedTime = obj.new('file')") end, 'reduced-analysis global')
+   assert(glContractReducedTime.class.name is 'Time',
+      'Reduced analysis should retain the inferred object class')
+
+   global glContractBroadObject:obj = obj.new('time')
+   glContractBroadObject = dynamic_value(file)
+   assert(glContractBroadObject.class.name is 'File', 'An explicit global obj contract should remain broad')
+
+   global glContractRelaxedObject = obj.new('time')
+   exec("global glContractRelaxedObject:any = obj.new('file')")
+   exec("glContractRelaxedObject = 42")
+   assert(glContractRelaxedObject is 42, 'An explicit global any redeclaration should relax object-class policy')
+end
+
 @Test function ExplicitGlobalStores()
    global glContractNumber:num = 3
    expect_contract_failure(function() glContractNumber = dynamic_value('wrong') end, 'global')
@@ -527,8 +664,8 @@ end
    expect_contract_failure(function() exec("glContractNumber = 'wrong'") end, 'global')
    assert(glContractNumber is 3, 'A rejected store from a separately compiled chunk must preserve the global value')
 
-   global glContractArray:array = array<int> { 4, 8 }
-   function read_contract_array()
+   global glContractArray:array<any> = array<int> { 4, 8 }
+   function read_contract_array():num
       return glContractArray[1]
    end
    expect_contract_failure(function() exec("glContractArray = {}") end, 'global')
@@ -587,6 +724,90 @@ end
       'A rejected concrete redeclaration must preserve the global value and its existing contract')
 end
 
+@Test function GlobalFunctionAndThunkContracts()
+   @Typ07Marker
+   global function glContractFunction():num return 7 end
+   assert(glContractFunction() is 7, 'A global function declaration should remain callable')
+   local annotation = debug.anno.get(glContractFunction)
+   assert(annotation != nil and annotation.annotations[0].name is 'Typ07Marker',
+      'A global function contract must preserve annotation registration')
+
+   local wrong_function:any = 42
+   expect_contract_failure(function() glContractFunction = wrong_function end, 'global function')
+   assert(glContractFunction() is 7, 'A rejected same-chunk store must preserve the global function')
+
+   expect_contract_failure(function() exec('glContractFunction = 42') end, 'global function')
+   assert(glContractFunction() is 7, 'A rejected cross-chunk store must preserve the global function')
+
+   local environment = _G
+   expect_contract_failure(function() environment.glContractFunction = 42 end, 'global function alias')
+   expect_contract_failure(function() rawset(_G, 'glContractFunction', 42) end, 'global function rawset')
+   assert(glContractFunction() is 7, 'Rejected indirect stores must preserve the global function')
+
+   exec('global function glContractFunction():num return 8 end')
+   assert(glContractFunction() is 8, 'A compatible cross-chunk global function redeclaration should succeed')
+
+   global thunk glContractThunk():str return 'original' end
+   assert(glContractThunk() is 'original', 'A global thunk declaration should remain callable')
+   local wrong_thunk:any = false
+   expect_contract_failure(function() glContractThunk = wrong_thunk end, 'global thunk')
+   expect_contract_failure(function() exec('glContractThunk = 42') end, 'global thunk')
+   assert(glContractThunk() is 'original', 'Rejected stores must preserve the global thunk')
+
+   exec("global thunk glContractThunk():str return 'redeclared' end")
+   assert(glContractThunk() is 'redeclared', 'A compatible cross-chunk global thunk redeclaration should succeed')
+
+   global glContractConcrete = 'preserved'
+   expect_contract_failure(
+      function() exec('global function glContractConcrete() return 1 end') end, 'global redeclaration')
+   assert(glContractConcrete is 'preserved', 'A conflicting callable declaration must preserve the concrete global')
+
+   global glVariantCallback:any = function() return 'callable' end
+   exec('glVariantCallback = 42')
+   assert(glVariantCallback is 42, 'An explicit any variable declaration must remain the callable storage opt-out')
+end
+
+@Test function GlobalCallableForwardSignatures()
+   local result = exec([[
+global function glContractForward(Value:num):num end
+global function glContractForward(Value:num):num return Value end
+return glContractForward(4)
+]])
+   assert(result is 4, 'A matching global function definition must satisfy its forward declaration')
+
+   expect_contract_failure(function()
+      exec([[
+global function glContractForwardMismatch(Value:num):num end
+global function glContractForwardMismatch(Value:str):num return 1 end
+]])
+   end, 'global function forward signature')
+
+   local reduced_forward_failed = false
+   try
+      exec([[
+global function glContractReducedForward(Value:num):num end
+try
+   global glContractReducedForward:str = 'wrong'
+except e
+end
+global function glContractReducedForward(Value:str):str return Value end
+]])
+   except e
+      reduced_forward_failed = true
+      assert(e.message:find("signature for global function 'glContractReducedForward'") != nil,
+         'The failed reduced declaration must preserve the forward-signature diagnostic: ' .. e.message)
+   end
+   assert(reduced_forward_failed,
+      'An incompatible definition after a failed reduced declaration must fail compilation')
+
+   expect_contract_failure(function()
+      exec([[
+global thunk glContractForwardKind():num end
+global function glContractForwardKind():num return 1 end
+]])
+   end, 'global callable kind')
+end
+
 @Test function CompiledGlobalWriterObservesVariantPolicy()
    global glContractWriter:num = 1
 
@@ -617,6 +838,159 @@ end
    expect_contract_failure(function() exec('glContractPairText = 42') end, 'global')
    assert(glContractPairText is 'updated',
       'A rejected store must preserve a secondary multi-return global and its contract')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Global declarations in reduced-analysis blocks must publish the same persistent policies as ordinary declarations.
+
+@Test function ReducedAnalysisGlobalContracts()
+   try
+      global glContractReducedTry = 'try'
+   end
+   exec("glContractReducedTry = 'updated'")
+   expect_contract_failure(function() exec('glContractReducedTry = 42') end, 'reduced try global')
+   assert(glContractReducedTry is 'updated', 'A rejected try-global store must preserve the previous value')
+
+   try
+      defer
+         global glContractReducedDefer = 'deferred'
+      end
+   end
+   expect_contract_failure(function() exec('glContractReducedDefer = 42') end, 'reduced defer global')
+   assert(glContractReducedDefer is 'deferred',
+      'A rejected deferred-global store must preserve the previous value')
+
+   try
+      local callback = function()
+         global glContractReducedExpression = 'expression'
+      end
+      callback()
+   end
+   expect_contract_failure(
+      function() exec('glContractReducedExpression = 42') end, 'reduced function-expression global')
+   assert(glContractReducedExpression is 'expression',
+      'A rejected function-expression global store must preserve the previous value')
+
+   try
+      raise ERR_Args
+   except e when ERR_Args
+      global glContractReducedFilteredExcept = 'filtered'
+   end
+   expect_contract_failure(
+      function() exec('glContractReducedFilteredExcept = false') end, 'reduced filtered except global')
+   assert(glContractReducedFilteredExcept is 'filtered',
+      'A rejected filtered-except global store must preserve the previous value')
+
+   try
+      error('expected')
+   except e
+      global glContractReducedExcept = 'except'
+   end
+   expect_contract_failure(function() exec('glContractReducedExcept = 42') end, 'reduced except global')
+   assert(glContractReducedExcept is 'except',
+      'A rejected except-global store must preserve the previous value')
+
+   try
+      local ready = true
+   success
+      global glContractReducedSuccess = 'success'
+   end
+   expect_contract_failure(function() exec('glContractReducedSuccess = 42') end, 'reduced success global')
+   assert(glContractReducedSuccess is 'success',
+      'A rejected success-global store must preserve the previous value')
+
+   local clock = obj.new('time')
+   with clock do
+      global glContractReducedWith = 'with'
+   end
+   expect_contract_failure(function() exec('glContractReducedWith = 42') end, 'reduced with global')
+   assert(glContractReducedWith is 'with', 'A rejected with-global store must preserve the previous value')
+
+   try
+      if true then
+         global glContractReducedNested = 'nested'
+      end
+   end
+   expect_contract_failure(function() exec('glContractReducedNested = 42') end, 'nested reduced global')
+   assert(glContractReducedNested is 'nested', 'A rejected nested global store must preserve the previous value')
+end
+
+@Test function ReducedAnalysisGlobalPolicyComposition()
+   global glContractReducedConflict = 1
+   local trapped = false
+   try
+      global glContractReducedConflict = 'wrong'
+   except e
+      trapped = true
+      assert(string.find(tostring(e.message), 'type contract failed for global') != nil,
+         'The conflicting declaration should raise a global contract error: ' .. tostring(e.message))
+   end
+   assert(trapped, 'An incompatible declaration inside try must remain catchable')
+   assert(glContractReducedConflict is 1, 'A rejected declaration must preserve the previous global value')
+   exec('glContractReducedConflict = 2')
+   assert(glContractReducedConflict is 2, 'A rejected declaration must preserve the previous global policy')
+
+   global glContractReducedFailedFlow:any = 'start'
+   local wrong:any = 'wrong'
+   try
+      global glContractReducedFailedFlow:num = wrong
+   except e
+   end
+   glContractReducedFailedFlow = 'allowed'
+   assert(glContractReducedFailedFlow is 'allowed',
+      'Statements after a rejected reduced declaration must use the active runtime policy')
+
+   global glContractReducedVariant:num = 1
+   try
+      global glContractReducedVariant:any = 'variant'
+   end
+   glContractReducedVariant = {}
+   assert(type(glContractReducedVariant) is 'table',
+      'An explicit any declaration inside try must replace the previous concrete policy')
+end
+
+@Test function ReducedAnalysisMultiResultAndImportContracts()
+   local function reduced_pair():<num, str>
+      return 2, 'text'
+   end
+
+   try
+      global glContractReducedNumber, glContractReducedText = reduced_pair()
+   end
+   exec("glContractReducedText = 'updated'")
+   expect_contract_failure(function() exec('glContractReducedText = 42') end, 'reduced secondary global')
+   assert(glContractReducedNumber is 2 and glContractReducedText is 'updated',
+      'A rejected secondary store must preserve both reduced multi-result globals')
+
+   exec("glContractReducedImport = 'updated'")
+   expect_contract_failure(function() exec('glContractReducedImport = 42') end, 'reduced imported global')
+   assert(glContractReducedImport is 'updated',
+      'A rejected imported-global store must preserve the previous value')
+end
+
+@Test function ReducedAnalysisGlobalContractJitParity()
+   function reduced_hot_store(Value:any):bool
+      try
+         global glContractReducedHot:str = Value
+         return true
+      except e
+         return false
+      end
+   end
+
+   jit.off()
+   assert(reduced_hot_store('interpreter'), 'A matching reduced global declaration should pass in the interpreter')
+   assert(not reduced_hot_store(1), 'An incompatible reduced global declaration should fail in the interpreter')
+   assert(glContractReducedHot is 'interpreter', 'The interpreter must preserve the value after a rejected store')
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   for i in {0 to 200} do
+      assert(reduced_hot_store('compiled'), 'A matching reduced global declaration should pass on the hot path')
+   end
+   assert(not reduced_hot_store(42), 'An incompatible reduced global declaration should fail on the hot path')
+   assert(glContractReducedHot is 'compiled', 'The JIT must preserve the value after a rejected store')
 end
 
 @Test function UserdataContractBoundaries()
@@ -673,12 +1047,28 @@ end
    function hot_results(Value:num):<num, str> return Value, 'kept', false end
    function hot_userdata(Value:userdata):userdata return Value end
    global glHotInferredContract = 0
+   global glHotTimeObject = obj.new('time')
+   global function glHotCallableContract():num return 1 end
    function store_hot_global(Value:any):num
       glHotInferredContract = Value
       return glHotInferredContract
    end
+   function store_hot_callable(Value:any)
+      glHotCallableContract = Value
+   end
+   function store_hot_object(Value:any):obj
+      glHotTimeObject = Value
+      return glHotTimeObject
+   end
+   local hot_captured = obj.new('time')
+   function store_hot_captured_object(Value:any):obj
+      hot_captured = Value
+      return hot_captured
+   end
    local dynamic:any = hot
+   local compatible_callable:any = function():num return 2 end
    local proxy = newproxy(true)
+   local matching_time = obj.new('time')
    for i in {0 to 200} do
       assert(dynamic(i) is i + 1, 'Valid hot call should preserve its argument')
       local value, text, extra = hot_results(i)
@@ -686,15 +1076,28 @@ end
          'Hot fixed return contracts must truncate additional results')
       assert(hot_userdata(proxy) is proxy, 'userdata contracts must remain stable on hot paths')
       assert(store_hot_global(i) is i, 'An inferred global contract should preserve valid values on hot paths')
+      assert(store_hot_object(matching_time).class.name is 'Time',
+         'A matching global object class should remain valid on hot paths')
+      assert(store_hot_captured_object(matching_time).class.name is 'Time',
+         'A matching captured object class should remain valid on hot paths')
+      store_hot_callable(compatible_callable)
+      assert(glHotCallableContract() is 2, 'A hot global func contract should preserve compatible callables')
    end
    expect_contract_failure(function() dynamic(dynamic_value('wrong')) end, 'parameter')
    expect_contract_failure(function() hot_userdata(dynamic_value({0 to 2})) end, 'parameter')
    expect_contract_failure(function() store_hot_global('wrong') end, 'global')
+   expect_contract_failure(function() store_hot_callable('wrong') end, 'global function')
+   local file = obj.new('file')
+   expect_object_contract_failure(function() store_hot_object(file) end, 'hot global object')
+   expect_object_contract_failure(function() store_hot_captured_object(file) end, 'hot captured object')
+   assert(glHotTimeObject.class.name is 'Time' and hot_captured.class.name is 'Time',
+      'Rejected hot object stores must preserve both global and captured values')
+   assert(glHotCallableContract() is 2, 'A rejected hot store must preserve the global callable')
 end
 
 @Test function ContractDisassemblyOrder()
    local script = obj.new('tiri', { statement = [[
-function first(Values:array)
+function first(Values:array<any>):any
    return Values[0]
 end
 ]] })

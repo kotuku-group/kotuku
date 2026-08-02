@@ -49,7 +49,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Parse a JSON-RPC 2.0 message
 
-function parseMessage(JsonBody)
+function parseMessage(JsonBody):<any, str>
    local msg
    try
       msg = json.decode(JsonBody)
@@ -151,7 +151,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Incoming Data Handling
 
-function initClientState(Self:table, ClientSocket:any)
+function initClientState(Self:table, ClientSocket:any):table
    state = ClientSocket._state()
 
    if not state.initialised then

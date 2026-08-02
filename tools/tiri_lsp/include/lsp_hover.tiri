@@ -101,7 +101,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Doc(text="Hover Support - Type Inference")
-function buildTypeMap(Doc)
+function buildTypeMap(Doc):table
    -- Build a mapping of variable names to class types based on obj.new() calls
    typeMap = {}
 
@@ -157,7 +157,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Doc(text="Hover Support - Content Resolution and Formatting")
-function formatClassHover(ClassName, ClassDoc)
+function formatClassHover(ClassName, ClassDoc):str
    md = '**class ' .. ClassName .. '**\n\n'
    md ..= ClassDoc.comment
    if ClassDoc.module and #ClassDoc.module > 0 then
@@ -208,7 +208,7 @@ function formatModuleFunctionHover(ModuleName, FuncName, FuncDoc)
    return md
 end
 
-function formatBuiltinHover(FuncName, BuiltinDoc)
+function formatBuiltinHover(FuncName, BuiltinDoc):str
    md = f'**{FuncName}** _(Built-in)_\n\n'
    if BuiltinDoc.prototype?? then
       md ..= '```lua\n' .. BuiltinDoc.prototype .. '\n```\n\n'
@@ -217,12 +217,12 @@ function formatBuiltinHover(FuncName, BuiltinDoc)
    return md
 end
 
-function formatKeywordHover(Keyword, KeywordDoc)
+function formatKeywordHover(Keyword, KeywordDoc):str
    md = f'**{Keyword}** _(Keyword)_\n\n' .. KeywordDoc.comment
    return md
 end
 
-function formatParserAnnotationHover(AnnotationName, AnnotationDoc)
+function formatParserAnnotationHover(AnnotationName, AnnotationDoc):str
    md = f'**@{AnnotationName}** _(Parser annotation)_\n\n'
    if AnnotationDoc.prototype?? then
       md ..= '```lua\n' .. AnnotationDoc.prototype .. '\n```\n\n'
@@ -430,7 +430,7 @@ function resolveStructFieldHover(TokenInfo:table, Doc:table, Position:table):str
 end
 
 @Doc(text="Resolve hover content for a token")
-global function resolveHoverContent(TokenInfo, Doc, Position)
+global function resolveHoverContent(TokenInfo, Doc, Position):str
    -- Priority: keywords, builtins, class names, module functions, object methods/fields
 
    if not TokenInfo then return nil end

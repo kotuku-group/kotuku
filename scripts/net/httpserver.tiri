@@ -111,7 +111,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function timestamp()
+function timestamp():str
    return tempus.now():toZonedDateTime(tempus.zone.local()):format('yyyy-MM-dd HH:mm:ss')
 end
 
@@ -1064,7 +1064,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function printableTime(Time)
+function printableTime(Time):str
    return tempus.localDateTime(Time.Year, Time.Month, Time.Day, Time.Hour, Time.Minute, Time.Second):format(
       'yyyy-MM-dd HH:mm:ss')
 end
@@ -1261,19 +1261,19 @@ function loggingMiddleware(request:table, response:table, next:func)
       logMessage(response._self, response._statusCode .. ' ' .. request.path .. ' (' .. string.format('%.2f', duration) .. 'ms)')
    end
 
-   response.send = function(...)
+   response.send = function(...):table
       result = originalSend(...)
       logResponse()
       return result
    end
 
-   response.json = function(...)
+   response.json = function(...):table
       result = originalJson(...)
       logResponse()
       return result
    end
 
-   response.redirect = function(...)
+   response.redirect = function(...):table
       result = originalRedirect(...)
       logResponse()
       return result
@@ -1380,7 +1380,7 @@ function extractParams(pattern:str, matchResults):table
 end
 
 @Doc(text="Find matching route for a request from a server instance")
-function matchRoute(serverInstance, method, path)
+function matchRoute(serverInstance, method, path):<table, table>
    serverInstance._routes ?! return
 
    methodRoutes = serverInstance._routes[method]

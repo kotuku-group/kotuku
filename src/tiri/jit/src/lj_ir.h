@@ -219,7 +219,8 @@ typedef enum {
   _(STRUCT_FLAGS, offsetof(GCstruct, flags)) \
   _(STRUCT_DATA, offsetof(GCstruct, data)) \
   _(STRUCT_DEF, offsetof(GCstruct, def)) \
-  _(TAB_GCONTRACTS, offsetof(GCtab, global_type_contracts))
+  _(TAB_GCONTRACTS, offsetof(GCtab, global_type_contracts)) \
+  _(OBJ_CLASSPTR, offsetof(GCobject, classptr))
 
 typedef enum {
 #define FLENUM(name, ofs)   IRFL_##name,

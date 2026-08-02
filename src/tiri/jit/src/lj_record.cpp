@@ -37,6 +37,8 @@
 #include "lib/lib_range.h"
 #include "../../defs.h"
 
+#include <cfloat>
+
 // Some local macros to save typing. Undef'd at the end.
 #define IR(ref)         (&J->cur.ir[(ref)])
 
@@ -435,6 +437,23 @@ static RecordedContract rec_contract_guard_struct(
    return RecordedContract::Basic;
 }
 
+static RecordedContract rec_contract_guard_object(
+   jit_State *J, TRef ValueRef, cTValue *Value, CLASSID ExpectedClassId)
+{
+   if (not tvisobject(Value)) return RecordedContract::Mismatch;
+   if (ExpectedClassId IS CLASSID::NIL) return RecordedContract::Basic;
+
+   GCobject *object = objectV(Value);
+   if (not object->classptr or object->classptr->ClassID != ExpectedClassId) {
+      return RecordedContract::Mismatch;
+   }
+
+   IRBuilder ir(J);
+   TRef class_ref = ir.fload(ValueRef, IRFL_OBJ_CLASSPTR, IRT_PTR);
+   ir.guard_eq(class_ref, ir.kkptr(object->classptr), IRT_PTR);
+   return RecordedContract::Basic;
+}
+
 static RecordedContract rec_contract_guard_userdata(jit_State *J, TRef ValueRef, cTValue *Value)
 {
    if (tvislightud(Value)) return RecordedContract::Basic;
@@ -444,6 +463,31 @@ static RecordedContract rec_contract_guard_userdata(jit_State *J, TRef ValueRef,
    TRef userdata_type = ir.fload(ValueRef, IRFL_UDATA_UDTYPE, IRT_U8);
    ir.guard_ne_int(userdata_type, ir.kint(UDTYPE_THUNK));
    return rec_contract_guard_range(J, ValueRef, Value, false);
+}
+
+static RecordedContract rec_contract_guard_array(
+   jit_State *J, TRef ValueRef, cTValue *Value, const RuntimeContractEntry &Entry)
+{
+   if (not tvisarray(Value)) return RecordedContract::Mismatch;
+   if (Entry.array_element_type IS AET::MAX or Entry.array_element_type IS AET::ANY) {
+      return RecordedContract::Basic;
+   }
+
+   GCarray *array = arrayV(Value);
+   auto string_storage = [](AET Storage) {
+      return Storage IS AET::CSTR or Storage IS AET::STR_CPP or Storage IS AET::STR_GC;
+   };
+   bool matching_storage = array->elemtype IS Entry.array_element_type or
+      (string_storage(array->elemtype) and string_storage(Entry.array_element_type));
+   if (not matching_storage) return RecordedContract::Mismatch;
+   if (Entry.array_element_type IS AET::STRUCT and not Entry.array_struct_name.empty()) {
+      return RecordedContract::Complex;
+   }
+
+   IRBuilder ir(J);
+   TRef element_type = ir.fload(ValueRef, IRFL_ARRAY_ELEMTYPE, IRT_U8);
+   ir.guard_eq(element_type, ir.kint(int32_t(array->elemtype)), IRT_U8);
+   return RecordedContract::Basic;
 }
 
 static RecordedContract rec_contract_record(jit_State *J, BCREG Base, GCstr *Encoded)
@@ -486,10 +530,10 @@ static RecordedContract rec_contract_record(jit_State *J, BCREG Base, GCstr *Enc
             if (not tvistab(value)) result = RecordedContract::Mismatch;
             break;
          case TiriType::Array:
-            if (not tvisarray(value)) result = RecordedContract::Mismatch;
+            result = rec_contract_guard_array(J, value_ref, value, *entry);
             break;
          case TiriType::Object:
-            if (not tvisobject(value)) result = RecordedContract::Mismatch;
+            result = rec_contract_guard_object(J, value_ref, value, entry->object_class_id);
             break;
          case TiriType::Func:
             result = rec_contract_guard_callable(J, value_ref, value);
@@ -2917,6 +2961,25 @@ static bool rec_array_xstore(jit_State *J, TRef ArrayRef, TRef IdxRef, TRef ValR
    // For numeric types, the value must be a number
    if (not is_gc_type and not tref_isnumber(ValRef)) return false;
 
+#if 0 // Disabled in favour of pushing this responsibility onto the client
+   // Keep conversions in ranges where the machine conversion is defined.  Values outside these ranges side-exit to
+   // lj_arr_storeelem(), which applies the canonical modulo-width conversion and reports non-finite values.
+   if (tref_isnum(ValRef)) {
+      if (et IS AET::BYTE or et IS AET::INT16 or et IS AET::INT32) {
+         emitir(IRTG(IR_GE, IRT_NUM), ValRef, lj_ir_knum(J, -2147483648.0));
+         emitir(IRTG(IR_LT, IRT_NUM), ValRef, lj_ir_knum(J, 2147483648.0));
+      }
+      else if (et IS AET::INT64) {
+         emitir(IRTG(IR_GE, IRT_NUM), ValRef, lj_ir_knum(J, -9223372036854775808.0));
+         emitir(IRTG(IR_LT, IRT_NUM), ValRef, lj_ir_knum(J, 9223372036854775808.0));
+      }
+      else if (et IS AET::FLOAT) {
+         emitir(IRTG(IR_GE, IRT_NUM), ValRef, lj_ir_knum(J, -lua_Number(FLT_MAX)));
+         emitir(IRTG(IR_LE, IRT_NUM), ValRef, lj_ir_knum(J, lua_Number(FLT_MAX)));
+      }
+   }
+#endif
+
    // For GC types, validate the value type at recording time
    if (is_gc_type and not tref_isnil(ValRef)) {
       if (et IS AET::STR_GC and not tref_isstr(ValRef)) return false;
@@ -3342,13 +3405,43 @@ static TRef rec_struct_payload_guard(jit_State *J, TRef StructRef, GCstruct *Val
    return data_ref;
 }
 
-static bool rec_struct_scalar_field(uint32_t FieldFlags)
+static NativeStructType rec_struct_scalar_type(uint32_t FieldFlags, NativeStructType NativeType)
 {
-   constexpr uint32_t supported = FD_FLOAT|FD_DOUBLE|FD_INT64|FD_INT|FD_WORD|FD_BYTE;
+   if (NativeType != NativeStructType::Legacy) return NativeType;
+   if (FieldFlags & FD_FLOAT) return NativeStructType::Float;
+   if (FieldFlags & FD_DOUBLE) return NativeStructType::Double;
+   if (FieldFlags & FD_INT64) {
+      return (FieldFlags & FD_UNSIGNED) ? NativeStructType::UInt64 : NativeStructType::Int64;
+   }
+   if (FieldFlags & FD_INT) {
+      return (FieldFlags & FD_UNSIGNED) ? NativeStructType::UInt32 : NativeStructType::Int32;
+   }
+   if (FieldFlags & FD_WORD) {
+      return (FieldFlags & FD_UNSIGNED) ? NativeStructType::UInt16 : NativeStructType::Int16;
+   }
+   if (FieldFlags & FD_BYTE) return NativeStructType::UInt8;
+   return NativeStructType::Legacy;
+}
+
+static bool rec_struct_scalar_field(uint32_t FieldFlags, NativeStructType NativeType)
+{
    constexpr uint32_t unsupported = FD_ARRAY|FD_VECTOR|FD_STRUCT|FD_POINTER|FD_STRING|FD_OBJECT|FD_FUNCTION|FD_CPP;
    if (FieldFlags & unsupported) return false;
-   if ((FieldFlags & FD_UNSIGNED) and not (FieldFlags & (FD_WORD|FD_BYTE))) return false;
-   return (FieldFlags & supported) != 0;
+
+   switch (rec_struct_scalar_type(FieldFlags, NativeType)) {
+      case NativeStructType::Char:
+      case NativeStructType::Int8:
+      case NativeStructType::UInt8:
+      case NativeStructType::Int16:
+      case NativeStructType::UInt16:
+      case NativeStructType::Int32:
+      case NativeStructType::Int64:
+      case NativeStructType::Float:
+      case NativeStructType::Double:
+         return true;
+      default:
+         return false;
+   }
 }
 
 static TRef rec_struct_get(jit_State *J, RecordOps *ops)
@@ -3360,34 +3453,43 @@ static TRef rec_struct_get(jit_State *J, RecordOps *ops)
    GCstr *key = strV(ops->rcv());
    int field_offset;
    uint32_t field_flags = 0;
-   int field_type = ir_struct_field_type(value, key, field_offset, field_flags);
+   NativeStructType native_type = NativeStructType::Legacy;
+   int field_type = ir_struct_field_type(value, key, field_offset, field_flags, native_type);
    if (field_type < 0) lj_trace_err(J, LJ_TRERR_BADTYPE);
 
-   if (not value->is_lifecycle_bound() and rec_struct_scalar_field(field_flags)) {
+   const auto scalar_type = rec_struct_scalar_type(field_flags, native_type);
+   if (scalar_type IS NativeStructType::Bool or scalar_type IS NativeStructType::UInt32 or
+         scalar_type IS NativeStructType::UInt64) {
+      lj_trace_err(J, LJ_TRERR_BADTYPE);
+   }
+
+   if (not value->is_lifecycle_bound() and rec_struct_scalar_field(field_flags, native_type)) {
       TRef data_ref = rec_struct_payload_guard(J, struct_ref, value);
       TRef addr_ref = emitir(IRT(IR_ADD, IRT_PTR), data_ref, lj_ir_kintp(J, field_offset));
 
-      if (field_flags & FD_FLOAT) {
+      if (scalar_type IS NativeStructType::Float) {
          TRef result_ref = emitir(IRT(IR_XLOAD, IRT_FLOAT), addr_ref, 0);
          return emitir(IRTN(IR_CONV), result_ref, (IRT_NUM << IRCONV_DSH) | IRT_FLOAT);
       }
-      else if (field_flags & FD_DOUBLE) return emitir(IRT(IR_XLOAD, IRT_NUM), addr_ref, 0);
-      else if (field_flags & FD_INT64) {
+      else if (scalar_type IS NativeStructType::Double) return emitir(IRT(IR_XLOAD, IRT_NUM), addr_ref, 0);
+      else if (scalar_type IS NativeStructType::Int64) {
          TRef result_ref = emitir(IRT(IR_XLOAD, IRT_I64), addr_ref, 0);
          return emitir(IRTN(IR_CONV), result_ref, (IRT_NUM << IRCONV_DSH) | IRT_I64);
       }
-      else if (field_flags & FD_WORD) {
-         IRType load_type = (field_flags & FD_UNSIGNED) ? IRT_U16 : IRT_I16;
+      else if (scalar_type IS NativeStructType::Int16 or scalar_type IS NativeStructType::UInt16) {
+         IRType load_type = (scalar_type IS NativeStructType::UInt16) ? IRT_U16 : IRT_I16;
          TRef result_ref = emitir(IRT(IR_XLOAD, load_type), addr_ref, 0);
          if (not LJ_DUALNUM) result_ref = emitir(IRTN(IR_CONV), result_ref, IRCONV_NUM_INT);
          return result_ref;
       }
-      else if (field_flags & FD_BYTE) {
-         TRef result_ref = emitir(IRT(IR_XLOAD, IRT_U8), addr_ref, 0);
+      else if (scalar_type IS NativeStructType::Char or scalar_type IS NativeStructType::Int8 or
+            scalar_type IS NativeStructType::UInt8) {
+         IRType load_type = (scalar_type IS NativeStructType::UInt8) ? IRT_U8 : IRT_I8;
+         TRef result_ref = emitir(IRT(IR_XLOAD, load_type), addr_ref, 0);
          if (not LJ_DUALNUM) result_ref = emitir(IRTN(IR_CONV), result_ref, IRCONV_NUM_INT);
          return result_ref;
       }
-      else {
+      else if (scalar_type IS NativeStructType::Int32) {
          TRef result_ref = emitir(IRT(IR_XLOAD, IRT_INT), addr_ref, 0);
          if (not LJ_DUALNUM) result_ref = emitir(IRTN(IR_CONV), result_ref, IRCONV_NUM_INT);
          return result_ref;
@@ -3409,61 +3511,28 @@ static void rec_struct_set(jit_State *J, RecordOps *ops)
    GCstr *key = strV(ops->rcv());
    int field_offset;
    uint32_t field_flags = 0;
-   int field_type = ir_struct_field_type(value, key, field_offset, field_flags);
+   NativeStructType native_type = NativeStructType::Legacy;
+   int field_type = ir_struct_field_type(value, key, field_offset, field_flags, native_type);
    if (field_type < 0) {
       lj_trace_err(J, LJ_TRERR_BADTYPE);
    }
 
    TRef val_ref = ops->ra;
-   if (not value->is_lifecycle_bound() and rec_struct_scalar_field(field_flags) and tref_isnumber(val_ref)) {
+   const auto scalar_type = rec_struct_scalar_type(field_flags, native_type);
+   if (not value->is_lifecycle_bound() and scalar_type IS NativeStructType::Double and tref_isnumber(val_ref)) {
       TRef data_ref = rec_struct_payload_guard(J, struct_ref, value);
       TRef addr_ref = emitir(IRT(IR_ADD, IRT_PTR), data_ref, lj_ir_kintp(J, field_offset));
 
-      if (field_flags & FD_FLOAT) {
-         TRef store_ref = val_ref;
-         if (tref_isint(val_ref)) store_ref = emitir(IRTN(IR_CONV), val_ref, IRCONV_NUM_INT);
-         store_ref = emitir(IRT(IR_CONV, IRT_FLOAT), store_ref, (IRT_FLOAT << IRCONV_DSH) | IRT_NUM);
-         emitir(IRT(IR_XSTORE, IRT_FLOAT), addr_ref, store_ref);
-      }
-      else if (field_flags & FD_DOUBLE) {
-         TRef store_ref = val_ref;
-         if (tref_isint(val_ref)) store_ref = emitir(IRTN(IR_CONV), val_ref, IRCONV_NUM_INT);
-         emitir(IRT(IR_XSTORE, IRT_NUM), addr_ref, store_ref);
-      }
-      else if (field_flags & FD_INT64) {
-         TRef store_ref;
-         if (tref_isint(val_ref)) {
-            store_ref = emitir(IRT(IR_CONV, IRT_I64), val_ref,
-               (IRT_I64 << IRCONV_DSH) | IRT_INT | IRCONV_SEXT);
-         }
-         else {
-            store_ref = emitir(IRT(IR_CONV, IRT_I64), val_ref,
-               (IRT_I64 << IRCONV_DSH) | IRT_NUM | IRCONV_ANY);
-         }
-         emitir(IRT(IR_XSTORE, IRT_I64), addr_ref, store_ref);
-      }
-      else if (field_flags & FD_WORD) {
-         TRef store_ref = val_ref;
-         if (tref_isnum(val_ref)) store_ref = emitir(IRTI(IR_CONV), val_ref, IRCONV_INT_NUM | IRCONV_ANY);
-         IRType store_type = (field_flags & FD_UNSIGNED) ? IRT_U16 : IRT_I16;
-         emitir(IRT(IR_XSTORE, store_type), addr_ref, store_ref);
-      }
-      else if (field_flags & FD_BYTE) {
-         TRef store_ref = val_ref;
-         if (tref_isnum(val_ref)) store_ref = emitir(IRTI(IR_CONV), val_ref, IRCONV_INT_NUM | IRCONV_ANY);
-         emitir(IRT(IR_XSTORE, IRT_U8), addr_ref, store_ref);
-      }
-      else {
-         TRef store_ref = val_ref;
-         if (tref_isnum(val_ref)) store_ref = emitir(IRTI(IR_CONV), val_ref, IRCONV_INT_NUM | IRCONV_ANY);
-         emitir(IRT(IR_XSTORE, IRT_INT), addr_ref, store_ref);
-      }
+      TRef store_ref = val_ref;
+      if (tref_isint(val_ref)) store_ref = emitir(IRTN(IR_CONV), val_ref, IRCONV_NUM_INT);
+      emitir(IRT(IR_XSTORE, IRT_NUM), addr_ref, store_ref);
       return;
    }
 
    TRef tmp_ref = rec_tmpref(J, ops->ra, IRTMPREF_IN1);
    TRef null_ref = lj_ir_kkptr(J, nullptr);
    lj_ir_call(J, IRCALL_bc_struct_setfield, struct_ref, ops->rc, tmp_ref, null_ref);
+   emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);
 }
 
 //********************************************************************************************************************

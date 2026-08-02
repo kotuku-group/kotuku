@@ -617,10 +617,10 @@ void lj_meta_istype(lua_State *L, BCREG ra, BCREG tp)
 
 //********************************************************************************************************************
 // Exact runtime type contracts.  The descriptor is an interned byte string, so it remains portable across bytecode
-// dump/write/read boundaries.  Layout:
+// dump/write/read boundaries.  Version-2 layout:
 //
 //   version, boundary, descriptor_flags, static_value_count, contract_count,
-//   repeated { type, entry_flags, position, struct_name_length, struct_name_bytes,
+//   repeated { type, entry_flags, position, object_class_id_uleb32, struct_name_length, struct_name_bytes,
 //              label_length, label_bytes }
 
 namespace {
@@ -663,7 +663,21 @@ namespace {
       case TiriType::Num:     return tvisnumber(Value);
       case TiriType::Str:     return tvisstr(Value);
       case TiriType::Table:   return tvistab(Value);
-      case TiriType::Array:   return tvisarray(Value);
+      case TiriType::Array: {
+         if (not tvisarray(Value)) return false;
+         if (Entry.array_element_type IS AET::MAX or Entry.array_element_type IS AET::ANY) return true;
+         GCarray *array = arrayV(Value);
+         auto string_storage = [](AET Storage) {
+            return Storage IS AET::CSTR or Storage IS AET::STR_CPP or Storage IS AET::STR_GC;
+         };
+         if (string_storage(Entry.array_element_type) and string_storage(array->elemtype)) return true;
+         if (array->elemtype != Entry.array_element_type) return false;
+         if (Entry.array_element_type IS AET::STRUCT and not Entry.array_struct_name.empty()) {
+            struct_record *definition = find_struct(L, Entry.array_struct_name);
+            return definition and array->structdef IS definition;
+         }
+         return true;
+      }
       case TiriType::Func:    return contract_is_callable(L, Value);
       case TiriType::Struct: {
          if (not tvisstruct(Value)) return false;
@@ -671,11 +685,22 @@ namespace {
          struct_record *definition = find_struct(L, Entry.struct_name);
          return definition and structV(Value)->def IS definition;
       }
-      case TiriType::Object:   return tvisobject(Value);
+      case TiriType::Object: {
+         if (not tvisobject(Value)) return false;
+         if (Entry.object_class_id IS CLASSID::NIL) return true;
+         GCobject *object = objectV(Value);
+         return object->classptr and object->classptr->ClassID IS Entry.object_class_id;
+      }
       case TiriType::Range:    return contract_is_range(L, Value);
       case TiriType::Userdata: return contract_is_userdata(L, Value);
    }
    return false;
+}
+
+[[nodiscard]] static bool contract_is_variant(const RuntimeContractEntry &Entry) noexcept
+{
+   return Entry.type IS TiriType::Any or
+      (Entry.type IS TiriType::Array and Entry.array_element_type IS AET::ANY);
 }
 
 [[nodiscard]] static const char * contract_boundary_name(ContractBoundary Boundary)
@@ -692,6 +717,42 @@ namespace {
 
 static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractEntry &Entry)
 {
+   if (Entry.type IS TiriType::Array and Entry.array_element_type != AET::MAX) {
+      const char *element_name = "unknown";
+      switch (Entry.array_element_type) {
+         case AET::BYTE: element_name = "byte"; break;
+         case AET::INT16: element_name = "int16"; break;
+         case AET::INT32: element_name = "int"; break;
+         case AET::INT64: element_name = "int64"; break;
+         case AET::FLOAT: element_name = "float"; break;
+         case AET::DOUBLE: element_name = "double"; break;
+         case AET::CSTR:
+         case AET::STR_CPP:
+         case AET::STR_GC: element_name = "string"; break;
+         case AET::TABLE: element_name = "table"; break;
+         case AET::ARRAY: element_name = "array"; break;
+         case AET::ANY: element_name = "any"; break;
+         case AET::STRUCT: element_name = "struct"; break;
+         case AET::OBJECT: element_name = "object"; break;
+         case AET::PTR: element_name = "pointer"; break;
+         case AET::MAX: break;
+      }
+      if (Entry.array_element_type IS AET::STRUCT and not Entry.array_struct_name.empty()) {
+         std::snprintf(Buffer, Size, "array<struct<%.*s>>", int(Entry.array_struct_name.size()),
+            Entry.array_struct_name.data());
+      }
+      else std::snprintf(Buffer, Size, "array<%s>", element_name);
+      return;
+   }
+
+   if (Entry.type IS TiriType::Object and Entry.object_class_id != CLASSID::NIL) {
+      if (CSTRING class_name = ResolveClassID(Entry.object_class_id)) {
+         std::snprintf(Buffer, Size, "obj<%s>", class_name);
+      }
+      else std::snprintf(Buffer, Size, "obj<#%08x>", uint32_t(Entry.object_class_id));
+      return;
+   }
+
    if (Entry.type IS TiriType::Struct and not Entry.struct_name.empty()) {
       std::snprintf(Buffer, Size, "struct<%.*s>", int(Entry.struct_name.size()), Entry.struct_name.data());
       return;
@@ -723,9 +784,23 @@ static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractE
    char actual[280];
    contract_type_name(expected, sizeof(expected), Entry);
 
-   if (tvisstruct(Value) and structV(Value)->def) {
+   if (tvisobject(Value)) {
+      GCobject *object = objectV(Value);
+      if (object->classptr) std::snprintf(actual, sizeof(actual), "obj<%s>", object->classptr->ClassName.c_str());
+      else std::snprintf(actual, sizeof(actual), "obj<invalid>");
+   }
+   else if (tvisstruct(Value) and structV(Value)->def) {
       const auto &name = structV(Value)->def->Name;
       std::snprintf(actual, sizeof(actual), "struct<%.*s>", int(name.size()), name.data());
+   }
+   else if (tvisarray(Value)) {
+      RuntimeContractEntry actual_entry;
+      actual_entry.type = TiriType::Array;
+      actual_entry.array_element_type = arrayV(Value)->elemtype;
+      if (arrayV(Value)->elemtype IS AET::STRUCT and arrayV(Value)->structdef) {
+         actual_entry.array_struct_name = arrayV(Value)->structdef->Name;
+      }
+      contract_type_name(actual, sizeof(actual), actual_entry);
    }
    else if (contract_is_range(L, Value)) std::snprintf(actual, sizeof(actual), "range");
    else std::snprintf(actual, sizeof(actual), "%s", lj_typename(Value));
@@ -754,6 +829,12 @@ static void decode_contract_or_error(lua_State *L, GCstr *Descriptor, RuntimeCon
    else lj_err_callermsg(L, "invalid runtime type-contract descriptor");
 }
 
+[[noreturn]] static void const_global_error(lua_State *L, const GCstr *Name)
+{
+   CSTRING message = lj_strfmt_pushf(L, "cannot assign to const global '%s'", strdata(Name));
+   lj_err_callermsg(L, message);
+}
+
 } // namespace
 
 extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCount, GCstr *Descriptor)
@@ -772,11 +853,33 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
          environment = tabref(curr_func(L)->c.env);
          global_name = lj_str_new(L, incoming.label.data(), incoming.label.size());
 
-         if (incoming.type IS TiriType::Any) {
-            // An explicit 'any' declaration is the only ordinary operation that relaxes a sticky global contract.
-            lj_tab_set_global_contract(L, environment, global_name, Descriptor);
+         GCstr *current = lj_tab_get_global_contract(environment, global_name);
+         if (current) {
+            RuntimeContractDescriptor current_descriptor;
+            decode_contract_or_error(L, current, current_descriptor);
+            if (current_descriptor.contract_count >= 1 and
+                contract_entry_is_const(current_descriptor.entries[0])) {
+               const_global_error(L, global_name);
+            }
          }
-         else if (GCstr *current = lj_tab_get_global_contract(environment, global_name)) {
+
+         if (contract_entry_is_const(incoming) and not contract_entry_is_initialising(incoming)) {
+            // This descriptor follows a successful global store.  Publishing here makes const initialisation
+            // transactional: a failed store never reaches this instruction and leaves no policy behind.
+            lj_tab_set_global_contract(L, environment, global_name, Descriptor);
+            return;
+         }
+         if (contract_entry_is_initialising(incoming)) {
+            // Validate the declaration that will be published while leaving the current environment contract in
+            // place.  BC_GSET validates the same value against that existing policy before the post-store const
+            // descriptor commits the transition.
+         }
+         else if (contract_is_variant(incoming)) {
+            // Explicit 'any' and array<any> declarations relax their respective sticky global contracts only after
+            // the declaration value passes this descriptor.  A caught failure must preserve the previous policy.
+            publish_global_contract = true;
+         }
+         else if (current) {
             // Bytecode may outlive the declaration policy it was compiled against.  The environment policy is
             // authoritative for ordinary stores and concrete redeclarations.
             if (current != Descriptor) decode_contract_or_error(L, current, descriptor);
@@ -852,6 +955,9 @@ extern "C" void lj_env_check(lua_State *L, GCtab *Environment, GCstr *Name, cTVa
       decode_contract_or_error(L, persisted, descriptor);
       if (descriptor.contract_count >= 1) {
          const RuntimeContractEntry &entry = descriptor.entries[0];
+         if (contract_entry_is_const(entry) and not contract_entry_is_initialising(entry)) {
+            const_global_error(L, Name);
+         }
          if (entry.type != TiriType::Any and entry.type != TiriType::Unknown) {
             if (lj_is_thunk(&checked)) {
                // Validate the resolved value, but store the original thunk to preserve lazy evaluation on read.

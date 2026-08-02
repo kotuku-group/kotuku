@@ -7,6 +7,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -141,5 +142,8 @@ enum class ObjectCallMemberKind : uint8_t {
 [[nodiscard]] std::optional<ArrayElementDescriptor> describe_array_element(
    std::string_view Name, lua_State *State = nullptr);
 [[nodiscard]] std::optional<ArrayElementDescriptor> describe_array_element(const struct_field &);
+[[nodiscard]] bool array_element_matches(
+   const ArrayElementDescriptor &Expected, const ArrayElementDescriptor &Actual) noexcept;
+[[nodiscard]] std::string array_element_name(const ArrayElementDescriptor &Element);
 [[nodiscard]] bool can_use_static_receiver(
    const StaticDescriptorCatalogue &, StaticValueHandle, TiriType, bool AllowNullable = false);

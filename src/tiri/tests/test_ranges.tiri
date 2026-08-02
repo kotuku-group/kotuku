@@ -1235,7 +1235,7 @@ end
 end
 
 @Test function RangeReduceReverse()
-   result = {5 into 1}:reduce({}, function(acc, i)
+   result = {5 into 1}:reduce({}, function(acc, i):table
       acc[#acc] = i
       return acc
    end)
@@ -1387,7 +1387,7 @@ end
 @Test function RangeMethodChaining()
    -- Use reduce directly on a range (filter returns a table, so can't chain reduce on it)
    -- Sum even numbers by filtering in the reducer
-   sum = {1 to 20}:reduce(0, function(acc, i)
+   sum = {1 to 20}:reduce(0, function(acc, i):num
       if i % 2 is 0 then return acc + i end
       return acc
    end)

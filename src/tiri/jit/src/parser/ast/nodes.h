@@ -60,11 +60,14 @@ using StmtNodeList = std::vector<StmtNodePtr>;
 // Function return type declaration for static analysis
 struct FunctionReturnTypes {
    std::array<TiriType, MAX_RETURN_TYPES> types{};  // Return types (Unknown = unused slot)
+   std::array<CLASSID, MAX_RETURN_TYPES> object_class_ids{}; // Inferred object-class constraints
    std::array<struct_record *, MAX_RETURN_TYPES> struct_defs{}; // Resolved layouts for struct<Name> results
+   std::array<ArrayElementDescriptor, MAX_RETURN_TYPES> array_elements{}; // Array member constraints
    std::array<StaticValueHandle, MAX_RETURN_TYPES> descriptors{};
    uint8_t count = 0;           // Number of declared types (0 = not declared)
    bool is_variadic = false;    // True if declaration ends with ... (last type repeats)
    bool is_explicit = false;    // True if explicitly declared, false if inferred
+   bool is_inferred = false;    // True when semantic analysis validated every returned position
 
    [[nodiscard]] bool is_void() const { return count IS 0 and is_explicit; }
    [[nodiscard]] bool is_any() const { return count IS 1 and types[0] IS TiriType::Any; }
@@ -211,8 +214,14 @@ struct Identifier {
    bool is_future_reserved = false;  // True when parsed from a keyword reserved for future syntax
    TiriType type = TiriType::Unknown;  // Explicit type annotation (Unknown = no annotation)
    struct_record *struct_def = nullptr; // Resolved layout for struct<Name> annotations
+   ArrayElementDescriptor array_element{}; // Resolved member type for array<Element> annotations
    mutable StaticBindingID binding_id = 0;
    mutable StaticValueHandle static_value = 0;
+   mutable TiriType global_contract_type = TiriType::Unknown;
+   mutable CLASSID global_contract_object_class_id = CLASSID::NIL;
+   mutable struct_record *global_contract_struct_def = nullptr;
+   mutable ArrayElementDescriptor global_contract_array_element{};
+   mutable GlobalContractPolicy global_contract_policy = GlobalContractPolicy::Advisory;
 
    // Default constructor
    Identifier() = default;
@@ -283,6 +292,7 @@ struct FunctionParameter {
    Identifier name;
    TiriType type = TiriType::Any;
    struct_record *struct_def = nullptr;
+   ArrayElementDescriptor array_element{};
    bool type_is_explicit = false;
    bool is_self = false;
 };
@@ -525,7 +535,7 @@ struct FunctionExprPayload {
    bool is_vararg = false;
    bool is_thunk = false;              // Marks function as thunk
    TiriType thunk_return_type = TiriType::Any;  // Return type for thunk (kept for IR emission compatibility)
-   FunctionReturnTypes return_types{};            // General return type tracking for type checking
+   mutable FunctionReturnTypes return_types{};    // Declared or validated inferred result metadata
    mutable StaticCallableHandle callable = 0;
    std::unique_ptr<BlockStmt> body;
    std::vector<AnnotationEntry> annotations;  // Annotations attached to this function

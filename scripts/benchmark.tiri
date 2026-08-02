@@ -25,7 +25,7 @@ end
 
 -- Generate a text report from benchmark statistics
 
-bmark.textReport = function(Results:table):array
+bmark.textReport = function(Results:table):array<string>
    assert(Results, "Results are required")
    local msg = array<string>
    msg:push('=== BENCHMARK RESULTS ===')
@@ -312,7 +312,7 @@ end
 -- Calculate 95% confidence interval for an array of values.
 -- Returns table with lower, upper bounds and margin of error.
 
-bmark.confidenceInterval = function(Values:array, Confidence:num):table
+bmark.confidenceInterval = function(Values:array<double>, Confidence:num):table
    Confidence ??= 0.95
 
    local n = #Values
@@ -366,7 +366,7 @@ end
 -- are considered outliers.  Default multiplier k is 1.5 (standard), use 3.0 for extreme outliers only.  Returns
 -- table with filtered values and outlier information.
 
-bmark.removeOutliers = function(Values:array, Multiplier:num):table
+bmark.removeOutliers = function(Values:array<double>, Multiplier:num):table
    Multiplier ??= 1.5
 
    local n = #Values
@@ -445,7 +445,7 @@ end
 -- Generate a histogram from an array of values.
 -- Returns table with bins, counts, and distribution information.
 
-bmark.histogram = function(Values:array, BinCount:num):table
+bmark.histogram = function(Values:array<double>, BinCount:num):table
    BinCount ??= 10
 
    local n = #Values
@@ -531,7 +531,7 @@ end
 
 -- Generate an ASCII histogram representation for console output.
 
-bmark.histogramText = function(Histogram:table, Width:num):array
+bmark.histogramText = function(Histogram:table, Width:num):array<string>
    Width ??= 40
 
    local msg = array<string>
@@ -718,7 +718,7 @@ end
 
 -- Generate a text report from a comparison result
 
-bmark.comparisonReport = function(Comparison:table):array
+bmark.comparisonReport = function(Comparison:table):array<string>
    local msg = array<string>
 
    local function formatChange(Change:num, Improved:boolean):string

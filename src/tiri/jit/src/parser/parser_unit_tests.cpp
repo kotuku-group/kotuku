@@ -117,7 +117,8 @@ struct AstHarnessResult {
 
 //********************************************************************************************************************
 
-static AstHarnessResult build_ast_from_source(std::string_view source, bool Diagnose = false)
+static AstHarnessResult build_ast_from_source(std::string_view source, bool Diagnose = false,
+   bool EnableTypeAnalysis = true)
 {
    AstHarnessResult result;
    result.state = std::make_unique<LuaStateHolder>();
@@ -136,6 +137,7 @@ static AstHarnessResult build_ast_from_source(std::string_view source, bool Diag
    ParserConfig config;
    config.abort_on_error = false;
    config.max_diagnostics = 32;
+   config.enable_type_analysis = EnableTypeAnalysis;
    ParserSession session(context, config);
 
    lex.next();
@@ -409,6 +411,44 @@ static bool test_empty_comment_appended_to_variable(kt::Log &log)
    log.error("expected empty appended comment diagnostic");
    log_diagnostics(result.diagnostics, log);
    return false;
+}
+
+//********************************************************************************************************************
+
+static bool test_global_callable_contract_without_type_analysis(kt::Log &Log)
+{
+   constexpr std::string_view source =
+      "global function glParserContract() end\n"
+      "global thunk glParserThunk():num end\n";
+   auto result = build_ast_from_source(source, false, false);
+   if (not result.chunk.ok()) {
+      Log.error("failed to parse global callable declarations with type analysis disabled");
+      log_diagnostics(result.diagnostics, Log);
+      return false;
+   }
+
+   StatementListView statements = result.chunk.value_ref()->view();
+   if (statements.size() != 2) {
+      Log.error("expected two global callable declarations, got %" PRId64, int64_t(statements.size()));
+      return false;
+   }
+
+   for (size_t i = 0; i < statements.size(); ++i) {
+      const auto *payload = std::get_if<FunctionStmtPayload>(&statements[i].data);
+      if (not payload or payload->name.segments.size() != 1) {
+         Log.error("global callable declaration %" PRId64 " has no direct identifier", int64_t(i));
+         return false;
+      }
+
+      const Identifier &identifier = payload->name.segments.front();
+      if (identifier.global_contract_type != TiriType::Func or
+          identifier.global_contract_policy != GlobalContractPolicy::Enforced) {
+         Log.error("global callable declaration %" PRId64 " did not acquire an intrinsic func contract", int64_t(i));
+         return false;
+      }
+   }
+
+   return true;
 }
 
 //********************************************************************************************************************
@@ -1460,7 +1500,7 @@ static bool test_signature_runtime_inference(kt::Log &Log)
 {
    LuaStateHolder state;
    lua_State *L = state.get();
-   constexpr std::string_view source = "return function(Value) return Value end";
+   constexpr std::string_view source = "return function(Value:num) return Value end";
    if (lua_load(L, source, "signature-inference") or lua_pcall(L, 0, 1, 0)) {
       Log.error("failed to create the inference function: %s", lua_tostring(L, -1));
       return false;
@@ -1478,8 +1518,8 @@ static bool test_signature_runtime_inference(kt::Log &Log)
 
    ProtoTypeEntry inferred = proto_result_type(prototype, 0);
    if (inferred.type != TiriType::Num or proto_type_origin(inferred) != ProtoTypeOrigin::Inferred or
-       proto_type_strength(inferred) != ProtoTypeStrength::Advisory) {
-      Log.error("runtime inference did not remain advisory");
+       proto_type_strength(inferred) != ProtoTypeStrength::Trusted) {
+      Log.error("validated static inference did not remain trusted");
       return false;
    }
 
@@ -1496,9 +1536,82 @@ static bool test_signature_runtime_inference(kt::Log &Log)
    bool equal = compare_proto_signatures(prototype, restored);
    lua_pop(L, 2);
    if (not equal) {
-      Log.error("runtime-inferred signature changed during serialisation");
+      Log.error("statically inferred signature changed during serialisation");
       return false;
    }
+
+   constexpr std::string_view forwarded_source =
+      "local function declared():<num, str> return 7, 'forwarded' end\n"
+      "return function() return declared() end\n";
+   if (lua_load(L, forwarded_source, "signature-forwarded-results") or lua_pcall(L, 0, 1, 0)) {
+      Log.error("failed to create the forwarded-result function: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *forwarded = funcproto(funcV(L->top - 1));
+   const ProtoSignature *forwarded_signature = proto_signature(forwarded);
+   ProtoTypeEntry first = proto_result_type(forwarded, 0);
+   ProtoTypeEntry second = proto_result_type(forwarded, 1);
+   if (not forwarded_signature or forwarded_signature->result_count != 2 or
+       forwarded_signature->result_entry_count != 2 or first.type != TiriType::Num or second.type != TiriType::Str or
+       proto_type_origin(first) != ProtoTypeOrigin::Inferred or
+       proto_type_origin(second) != ProtoTypeOrigin::Inferred) {
+      Log.error("tail-call result inference lost a declared positional result");
+      return false;
+   }
+
+   std::string forwarded_dump;
+   if (lj_bcwrite(L, forwarded, bytecode_writer, &forwarded_dump, 1) != 0 or
+       lua_load(L, std::string_view(forwarded_dump.data(), forwarded_dump.size()), "signature-forwarded-results")) {
+      Log.error("failed to round-trip the forwarded-result signature: %s", lua_tostring(L, -1));
+      return false;
+   }
+   GCproto *restored_forwarded = funcproto(funcV(L->top - 1));
+   if (not compare_proto_signatures(forwarded, restored_forwarded)) {
+      Log.error("forwarded-result inference changed during serialisation");
+      return false;
+   }
+   lua_pop(L, 2);
+
+   constexpr std::string_view forwarded_any_source =
+      "local function declared():<num, any> return 7, nil end\n"
+      "return function() return declared() end\n";
+   if (lua_load(L, forwarded_any_source, "signature-forwarded-any") or lua_pcall(L, 0, 1, 0)) {
+      Log.error("failed to create the forwarded-any function: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *forwarded_any = funcproto(funcV(L->top - 1));
+   const ProtoSignature *forwarded_any_signature = proto_signature(forwarded_any);
+   ProtoTypeEntry forwarded_any_first = proto_result_type(forwarded_any, 0);
+   ProtoTypeEntry forwarded_any_second = proto_result_type(forwarded_any, 1);
+   if (not forwarded_any_signature or forwarded_any_signature->result_count != 2 or
+       forwarded_any_first.type != TiriType::Num or forwarded_any_second.type != TiriType::Any or
+       proto_type_origin(forwarded_any_first) != ProtoTypeOrigin::Inferred or
+       proto_type_origin(forwarded_any_second) != ProtoTypeOrigin::Inferred) {
+      Log.error("tail-call result inference refined an explicit any result from the first result");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   constexpr std::string_view forwarded_with_prefix_source =
+      "local function declared():<num, str> return 7, 'forwarded' end\n"
+      "return function() return true, declared() end\n";
+   if (lua_load(L, forwarded_with_prefix_source, "signature-forwarded-prefix") or lua_pcall(L, 0, 1, 0)) {
+      Log.error("failed to create the prefixed forwarded-result function: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *forwarded_with_prefix = funcproto(funcV(L->top - 1));
+   const ProtoSignature *forwarded_with_prefix_signature = proto_signature(forwarded_with_prefix);
+   if (not forwarded_with_prefix_signature or forwarded_with_prefix_signature->result_count != 3 or
+       proto_result_type(forwarded_with_prefix, 0).type != TiriType::Bool or
+       proto_result_type(forwarded_with_prefix, 1).type != TiriType::Num or
+       proto_result_type(forwarded_with_prefix, 2).type != TiriType::Str) {
+      Log.error("tail-call result inference dropped results after a fixed return prefix");
+      return false;
+   }
+   lua_pop(L, 1);
    return true;
 }
 
@@ -1757,7 +1870,14 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
 {
    LuaStateHolder state;
    lua_State *L = state.get();
-   constexpr std::string_view source = "function typed(Value:userdata):userdata return Value end";
+   constexpr std::string_view source =
+      "extern obj\n"
+      "extern array\n"
+      "function dynamic(Value:any):any return Value end\n"
+      "local value = obj.new('time')\n"
+      "value = dynamic(value)\n"
+      "local values:array<int> = array<int> { 1 }\n"
+      "values = dynamic(values)\n";
    if (lua_load(L, source, "contract-roundtrip")) {
       Log.error("failed to compile contract source: %s", lua_tostring(L, -1));
       return false;
@@ -1781,9 +1901,54 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
 
    GCproto *restored_proto = funcproto(funcV(L->top - 1));
    BytecodeSnapshot restored = snapshot_proto(restored_proto);
-   lua_pop(L, 1);
    if (not snapshot_has_opcode(restored, BC_CONTRACT)) {
       Log.error("reloaded bytecode lost BC_CONTRACT");
+      lua_pop(L, 1);
+      return false;
+   }
+
+   auto has_time_contract = [L](auto &Self, GCproto *Proto) -> bool {
+      for (uint32_t i = 1; i < Proto->sizebc; ++i) {
+         BCIns instruction = proto_bc(Proto)[i];
+         if (bc_op(instruction) != BC_CONTRACT) continue;
+         GCstr *encoded = gco_to_string(proto_kgc(Proto, ~(ptrdiff_t)bc_d(instruction)));
+         RuntimeContractDescriptor descriptor;
+         if (decode_runtime_contract(encoded, descriptor) and descriptor.contract_count > 0 and
+             descriptor.entries[0].object_class_id IS CLASSID::TIME) return true;
+      }
+      GCRef *constant = mref<GCRef>(Proto->k) - 1;
+      for (uint32_t i = 0; i < Proto->sizekgc; ++i, --constant) {
+         GCobj *child = gcref(*constant);
+         if (child->gch.gct IS ~LJ_TPROTO and Self(Self, gco_to_proto(child))) return true;
+      }
+      return false;
+   };
+   bool class_survived = has_time_contract(has_time_contract, restored_proto);
+   auto has_int_array_contract = [L](auto &Self, GCproto *Proto) -> bool {
+      for (uint32_t i = 1; i < Proto->sizebc; ++i) {
+         BCIns instruction = proto_bc(Proto)[i];
+         if (bc_op(instruction) != BC_CONTRACT) continue;
+         GCstr *encoded = gco_to_string(proto_kgc(Proto, ~(ptrdiff_t)bc_d(instruction)));
+         RuntimeContractDescriptor descriptor;
+         if (decode_runtime_contract(encoded, descriptor) and descriptor.contract_count > 0 and
+             descriptor.entries[0].type IS TiriType::Array and
+             descriptor.entries[0].array_element_type IS AET::INT32) return true;
+      }
+      GCRef *constant = mref<GCRef>(Proto->k) - 1;
+      for (uint32_t i = 0; i < Proto->sizekgc; ++i, --constant) {
+         GCobj *child = gcref(*constant);
+         if (child->gch.gct IS ~LJ_TPROTO and Self(Self, gco_to_proto(child))) return true;
+      }
+      return false;
+   };
+   bool array_survived = has_int_array_contract(has_int_array_contract, restored_proto);
+   lua_pop(L, 1);
+   if (not class_survived) {
+      Log.error("reloaded bytecode lost the multi-byte object class constraint in BC_CONTRACT");
+      return false;
+   }
+   if (not array_survived) {
+      Log.error("reloaded bytecode lost the array member constraint in BC_CONTRACT");
       return false;
    }
    return true;
@@ -1793,27 +1958,52 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
 {
    LuaStateHolder state;
    lua_State *lua = state.get();
-   std::string encoded{
-      char(TIRI_CONTRACT_VERSION),
-      char(uint8_t(ContractBoundary::Parameter)),
-      char(0),
-      char(1),
-      char(1),
-      char(uint8_t(TiriType::Struct)),
-      char(contract_flag(ContractEntryFlag::Nullable)),
-      char(1),
-      char(5)
+   auto append_uleb = [](std::string &Bytes, uint32_t Value) {
+      do {
+         uint8_t byte = uint8_t(Value & 0x7f);
+         Value >>= 7;
+         if (Value) byte |= 0x80;
+         Bytes.push_back(char(byte));
+      } while (Value);
    };
-   encoded += "Point";
-   encoded.push_back(char(5));
-   encoded += "Value";
+   auto build_descriptor = [&append_uleb](uint8_t Version, TiriType Type, CLASSID ObjectClassId,
+      std::string_view StructName, std::string_view Label, uint8_t EntryFlags,
+      AET ArrayElementType = AET::MAX, std::string_view ArrayStructName = {}) {
+      std::string result{
+         char(Version),
+         char(uint8_t(ContractBoundary::Global)),
+         char(0),
+         char(1),
+         char(1),
+         char(uint8_t(Type)),
+         char(EntryFlags),
+         char(1)
+      };
+      if (Version >= TIRI_CONTRACT_OBJECT_VERSION) append_uleb(result, uint32_t(ObjectClassId));
+      if (Version IS TIRI_CONTRACT_VERSION) {
+         result.push_back(char(uint8_t(ArrayElementType)));
+         result.push_back(char(uint8_t(ArrayStructName.size())));
+         result.append(ArrayStructName);
+      }
+      result.push_back(char(uint8_t(StructName.size())));
+      result.append(StructName);
+      result.push_back(char(uint8_t(Label.size())));
+      result.append(Label);
+      return result;
+   };
+
+   uint8_t const_flags = contract_flag(ContractEntryFlag::Nullable) | contract_flag(ContractEntryFlag::Const);
+   std::string encoded = build_descriptor(
+      TIRI_CONTRACT_VERSION, TiriType::Struct, CLASSID::NIL, "Point", "Value", const_flags);
 
    RuntimeContractDescriptor decoded;
    GCstr *descriptor = lj_str_new(lua, encoded.data(), encoded.size());
    if (not decode_runtime_contract(descriptor, decoded) or
-       decoded.boundary != ContractBoundary::Parameter or decoded.dynamic_count() or decoded.variadic() or
+       decoded.boundary != ContractBoundary::Global or decoded.dynamic_count() or decoded.variadic() or
        decoded.static_value_count != 1 or decoded.contract_count != 1 or
        decoded.entries[0].type != TiriType::Struct or decoded.entries[0].position != 1 or
+       decoded.entries[0].object_class_id != CLASSID::NIL or
+       not contract_entry_is_const(decoded.entries[0]) or
        decoded.entries[0].struct_name != "Point" or decoded.entries[0].label != "Value") {
       Log.error("valid runtime contract descriptor did not round-trip through the shared decoder");
       return false;
@@ -1825,20 +2015,95 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
       return not decode_runtime_contract(value, result);
    };
 
+   std::string object_encoded = build_descriptor(
+      TIRI_CONTRACT_VERSION, TiriType::Object, CLASSID::TIME, {}, "Clock", const_flags);
+   RuntimeContractDescriptor object_decoded;
+   GCstr *object_descriptor = lj_str_new(lua, object_encoded.data(), object_encoded.size());
+   if (not decode_runtime_contract(object_descriptor, object_decoded) or
+       object_decoded.entries[0].type != TiriType::Object or
+       object_decoded.entries[0].object_class_id != CLASSID::TIME or
+       not object_decoded.entries[0].struct_name.empty()) {
+      Log.error("object class constraint did not round-trip through the shared decoder");
+      return false;
+   }
+
+   std::string broad_object = build_descriptor(
+      TIRI_CONTRACT_VERSION, TiriType::Object, CLASSID::NIL, {}, "Broad", const_flags);
+   GCstr *broad_descriptor = lj_str_new(lua, broad_object.data(), broad_object.size());
+   if (not decode_runtime_contract(broad_descriptor, object_decoded) or
+       object_decoded.entries[0].object_class_id != CLASSID::NIL) {
+      Log.error("broad object contract gained a class constraint while decoding");
+      return false;
+   }
+
+   std::string array_encoded = build_descriptor(
+      TIRI_CONTRACT_VERSION, TiriType::Array, CLASSID::NIL, {}, "Values", const_flags, AET::INT32);
+   RuntimeContractDescriptor array_decoded;
+   GCstr *array_descriptor = lj_str_new(lua, array_encoded.data(), array_encoded.size());
+   if (not decode_runtime_contract(array_descriptor, array_decoded) or
+       array_decoded.entries[0].type != TiriType::Array or
+       array_decoded.entries[0].array_element_type != AET::INT32 or
+       not array_decoded.entries[0].array_struct_name.empty()) {
+      Log.error("array member constraint did not round-trip through the shared decoder");
+      return false;
+   }
+
+   std::string struct_array_encoded = build_descriptor(
+      TIRI_CONTRACT_VERSION, TiriType::Array, CLASSID::NIL, {}, "Points", const_flags,
+      AET::STRUCT, "Point");
+   GCstr *struct_array_descriptor = lj_str_new(lua, struct_array_encoded.data(), struct_array_encoded.size());
+   if (not decode_runtime_contract(struct_array_descriptor, array_decoded) or
+       array_decoded.entries[0].array_element_type != AET::STRUCT or
+       array_decoded.entries[0].array_struct_name != "Point") {
+      Log.error("named-structure array constraint did not round-trip through the shared decoder");
+      return false;
+   }
+
+   std::string legacy = build_descriptor(
+      TIRI_CONTRACT_LEGACY_VERSION, TiriType::Object, CLASSID::TIME, {}, "Legacy", const_flags);
+   GCstr *legacy_descriptor = lj_str_new(lua, legacy.data(), legacy.size());
+   if (not decode_runtime_contract(legacy_descriptor, object_decoded) or
+       object_decoded.entries[0].object_class_id != CLASSID::NIL or object_decoded.entries[0].label != "Legacy") {
+      Log.error("legacy object contract did not decode broadly or retained stale class metadata");
+      return false;
+   }
+
    std::string invalid_descriptor_flags = encoded;
    invalid_descriptor_flags[2] = char(0x80);
    std::string invalid_entry_flags = encoded;
    invalid_entry_flags[6] = char(0x80);
+   std::string invalid_initialising_flag = encoded;
+   invalid_initialising_flag[6] = char(contract_flag(ContractEntryFlag::Initialising));
    std::string invalid_position = encoded;
    invalid_position[7] = char(0);
-   std::string invalid_constraint = encoded;
-   invalid_constraint[5] = char(uint8_t(TiriType::Num));
+   std::string invalid_scalar_class = build_descriptor(
+      TIRI_CONTRACT_VERSION, TiriType::Num, CLASSID::TIME, {}, "Value", const_flags);
+   std::string invalid_struct_class = build_descriptor(
+      TIRI_CONTRACT_VERSION, TiriType::Struct, CLASSID::TIME, "Point", "Value", const_flags);
+   std::string invalid_scalar_array_member = build_descriptor(
+      TIRI_CONTRACT_VERSION, TiriType::Num, CLASSID::NIL, {}, "Value", const_flags, AET::INT32);
+   std::string invalid_named_non_struct_array = build_descriptor(
+      TIRI_CONTRACT_VERSION, TiriType::Array, CLASSID::NIL, {}, "Value", const_flags, AET::INT32, "Point");
+   std::string truncated_class{
+      char(TIRI_CONTRACT_VERSION), char(uint8_t(ContractBoundary::Local)), char(0), char(1), char(1),
+      char(uint8_t(TiriType::Object)), char(0), char(1), char(0x80)
+   };
+   std::string over_wide_class{
+      char(TIRI_CONTRACT_VERSION), char(uint8_t(ContractBoundary::Local)), char(0), char(1), char(1),
+      char(uint8_t(TiriType::Object)), char(0), char(1), char(0x80), char(0x80), char(0x80), char(0x80),
+      char(0x10), char(0), char(0)
+   };
    std::string trailing = encoded + "x";
    std::string truncated = encoded.substr(0, encoded.size() - 1);
+   std::string unknown_version = encoded;
+   unknown_version[0] = char(TIRI_CONTRACT_VERSION + 1);
 
    if (not rejected(invalid_descriptor_flags) or not rejected(invalid_entry_flags) or
-       not rejected(invalid_position) or not rejected(invalid_constraint) or not rejected(trailing) or
-       not rejected(truncated)) {
+       not rejected(invalid_initialising_flag) or
+       not rejected(invalid_position) or not rejected(invalid_scalar_class) or not rejected(invalid_struct_class) or
+       not rejected(invalid_scalar_array_member) or not rejected(invalid_named_non_struct_array) or
+       not rejected(truncated_class) or not rejected(over_wide_class) or not rejected(trailing) or
+       not rejected(truncated) or not rejected(unknown_version)) {
       Log.error("shared runtime contract decoder accepted malformed input");
       return false;
    }
@@ -1897,6 +2162,19 @@ static bool test_complex_contract_jit_eligibility(kt::Log &Log)
       return false;
    }
 
+   GCproto *fixed_object_class = compile_child(
+      "extern obj\n"
+      "return function(Value:any)\n"
+      "   local stored = obj.new('time')\n"
+      "   stored = Value\n"
+      "   return stored\n"
+      "end\n",
+      "fixed-object-class-contract");
+   if (not fixed_object_class or (fixed_object_class->flags & PROTO_NOJIT)) {
+      Log.error("a fixed object-class contract became interpreter-only");
+      return false;
+   }
+
    GCproto *dynamic = compile_child(
       "return function(...):<num, ...>\n"
       "   return ...\n"
@@ -1904,6 +2182,16 @@ static bool test_complex_contract_jit_eligibility(kt::Log &Log)
       "dynamic-result-contract");
    if (not dynamic or not (dynamic->flags & PROTO_NOJIT)) {
       Log.error("a dynamic-result contract became JIT-eligible without exact multi-result recorder support");
+      return false;
+   }
+
+   GCproto *global_const = compile_child(
+      "return function()\n"
+      "   global glRecordedConst <const> = 1\n"
+      "end\n",
+      "global-const-contract");
+   if (not global_const or not (global_const->flags & PROTO_NOJIT)) {
+      Log.error("a global const contract became JIT-eligible despite its post-store policy side effect");
       return false;
    }
    return true;
@@ -2440,7 +2728,7 @@ extern math
 
 local context = { base = 5 }
 
-function context:compute(delta)
+function context:compute(delta):<any, ...>
    return self.base + math.abs(-delta)
 end
 
@@ -2481,7 +2769,7 @@ static bool test_return_lowering(kt::Log &log)
    constexpr const char* source =
       "extern math\n"
       "\n"
-      "local function retmix(flag, ...)\n"
+      "local function retmix(flag, ...):<any, ...>\n"
       "   if flag then\n"
       "      return ...\n"
       "   end\n"
@@ -2565,7 +2853,7 @@ return sum
 )" },
       { "function_stmt_closure", R"(
 local function outer(flag):any
-   local function helper(value)
+   local function helper(value):<any, ...>
       return value * 2
    end
 
@@ -2573,7 +2861,7 @@ local function outer(flag):any
       return helper(flag)
    end
 
-   return function(a, b)
+   return function(a, b):<any, ...>
       return helper(a + b)
    end
 end
@@ -3168,6 +3456,16 @@ static bool test_native_prototype_result_descriptors(kt::Log &Log)
       "wave = math.cos(wave)\n"
       "local text = string.trim(' value ')\n"
       "text = string.upper(text)\n"
+      "local function allocated_text()\n"
+      "   local buffer = string.alloc(16)\n"
+      "   return buffer\n"
+      "end\n"
+      "local function sliced_text()\n"
+      "   local buffer = string.alloc(16)\n"
+      "   return buffer:sub(0, 1)\n"
+      "end\n"
+      "text = allocated_text()\n"
+      "text = sliced_text()\n"
       "local first, last = string.find('abc', 'b')\n"
       "first = first + 1\n"
       "last = last + 1\n"
@@ -3610,13 +3908,13 @@ static bool test_safe_index_bytecode_selection(kt::Log &Log)
    };
 
    constexpr std::string_view native_literal =
-      "local function read(Values:array):any\n"
+      "local function read(Values:array<any>):any\n"
       "   return Values?[0]\n"
       "end\n";
    if (not expect_access(native_literal, BC_ASGETB, BC_TGETB, "native-array literal-key")) passed = false;
 
    constexpr std::string_view native_variable =
-      "local function read(Values:array, Index:num):any\n"
+      "local function read(Values:array<any>, Index:num):any\n"
       "   return Values?[Index]\n"
       "end\n";
    if (not expect_access(native_variable, BC_ASGETV, BC_TGETV, "native-array variable-key")) passed = false;
@@ -3667,7 +3965,7 @@ static bool test_type_guided_emission(kt::Log &Log)
    std::string error;
    constexpr std::string_view source =
       "extern array\n"
-      "local function read(Values:array):num\n"
+      "local function read(Values:array<any>):num\n"
       "   return Values[0]\n"
       "end\n"
       "local alias = read\n"
@@ -3725,9 +4023,9 @@ static bool test_type_guided_emission(kt::Log &Log)
 
    constexpr std::string_view mutable_alias =
       "local function typed(Value:num):num return Value end\n"
-      "local function invoke(Replace:any)\n"
+      "local function invoke(Replace:any):<any, ...>\n"
       "   local callback = typed\n"
-      "   if Replace then callback = (Value => Value) end\n"
+      "   if Replace then callback = (Value => any: Value) end\n"
       "   return callback('runtime checked')\n"
       "end\n"
       "return invoke(true)\n";
@@ -3739,7 +4037,7 @@ static bool test_type_guided_emission(kt::Log &Log)
    constexpr std::string_view dead_write =
       "local function typed(Value:num):num return Value end\n"
       "local callback = typed\n"
-      "if false then callback = (Value => Value) end\n"
+      "if false then callback = (Value => any: Value) end\n"
       "return callback('still checked')\n";
    if (compile_snapshot(L, dead_write, true, error)) {
       Log.error("dead branch write incorrectly invalidated a stable callable alias");
@@ -3750,7 +4048,7 @@ static bool test_type_guided_emission(kt::Log &Log)
       "extern array\n"
       "extern obj\n"
       "struct GuidedLayout Value: int end\n"
-      "local function update_array(Values:array):num\n"
+      "local function update_array(Values:array<any>):num\n"
       "   Values[0] = Values[0] + 1\n"
       "   return Values?[0]\n"
       "end\n"
@@ -3777,7 +4075,7 @@ static bool test_type_guided_emission(kt::Log &Log)
       "try\n"
       "   global guided_object = obj.new('time')\n"
       "end\n"
-      "local function query_object()\n"
+      "local function query_object():<any, ...>\n"
       "   return guided_object?.acQuery()\n"
       "end\n";
    snapshot = compile_snapshot(L, safe_object_call, true, error);
@@ -3788,7 +4086,7 @@ static bool test_type_guided_emission(kt::Log &Log)
    }
 
    constexpr std::string_view generic_accesses =
-      "local function update(Value:any, Key:any)\n"
+      "local function update(Value:any, Key:any):<any, ...>\n"
       "   Value.field = 1\n"
       "   Value[Key] = Value[Key]\n"
       "   return Value.field\n"
@@ -3845,13 +4143,14 @@ static bool test_type_guided_emission(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 47> tests = { {
+   constexpr std::array<TestCase, 48> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
       { "expression_entry_point", test_expression_entry_point },
       { "expression_list_entry_point", test_expression_list_entry_point },
       { "empty_comment_appended_to_variable", test_empty_comment_appended_to_variable },
+      { "global_callable_contract_without_type_analysis", test_global_callable_contract_without_type_analysis },
       { "loop_ast", test_loop_ast },
       { "if_stmt_with_elseif_ast", test_if_stmt_with_elseif_ast },
       { "local_function_table_ast", test_local_function_table_ast },

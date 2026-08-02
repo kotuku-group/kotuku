@@ -162,7 +162,7 @@ end
 
 @Test function ArrayTypedAsArgument()
    -- Pass typed array as function argument
-   function sum_array(a)
+   function sum_array(a):num
       total = 0
       for i in {0 to #a} do
          total += a[i]
@@ -368,8 +368,8 @@ end
 end
 
 @Test function ArrayTypedReassignment()
-   -- Reassigning array variable
-   arr = array<int> { 1, 2, 3 }
+   -- A wildcard member annotation permits reassignment to another array member type.
+   local arr:array<any> = array<int> { 1, 2, 3 }
    assert(#arr is 3, "Initial array should have 3 elements")
 
    arr = array<double> { 1.5, 2.5 }
@@ -379,7 +379,7 @@ end
 
 @Test function ArrayTypedAsReturnValue()
    -- Function returning typed array
-   function makeNumbers(n)
+   function makeNumbers(n):array<any>
       result = array<int, n>
       for i in {0 to n} do
          result[i] = i + 1

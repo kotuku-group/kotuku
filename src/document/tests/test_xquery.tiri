@@ -10,11 +10,11 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 -- Helpers
 
-function contains(Haystack:str, Needle:str)
+function contains(Haystack:str, Needle:str):bool
    return regex.new(Needle).test(Haystack)
 end
 
-function feedAndRead(Content:str, PageWidth:num, Username:str, ObjectName:str)
+function feedAndRead(Content:str, PageWidth:num, Username:str, ObjectName:str):str
    scene = obj.new('VectorScene', { pageWidth=PageWidth ?? 1024, pageHeight=768 })
    vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    doc = vp.new('document', { viewport=vp })
@@ -29,7 +29,7 @@ function feedAndRead(Content:str, PageWidth:num, Username:str, ObjectName:str)
    return xml_str
 end
 
-function feedExpectError(Content:str, PageWidth:num, Username:str, ObjectName:str)
+function feedExpectError(Content:str, PageWidth:num, Username:str, ObjectName:str):num
    scene = obj.new('VectorScene', { pageWidth=PageWidth ?? 1024, pageHeight=768 })
    vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    doc = vp.new('document', { viewport=vp })
@@ -43,7 +43,7 @@ function feedExpectError(Content:str, PageWidth:num, Username:str, ObjectName:st
    return err
 end
 
-function loadAndRead(Path:str, PageWidth:num, Username:str, ObjectName:str, Unrestricted:any)
+function loadAndRead(Path:str, PageWidth:num, Username:str, ObjectName:str, Unrestricted:any):str
    scene = obj.new('VectorScene', { pageWidth=PageWidth ?? 1024, pageHeight=768 })
    vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    doc = vp.new('document')

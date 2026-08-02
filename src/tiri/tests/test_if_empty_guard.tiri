@@ -20,7 +20,7 @@ end
 
 -- Test return with value
 @Test function ShortHandReturnValue()
-   function getValue(Input)
+   function getValue(Input:any)
       Input ?! return "default"
       return Input
    end
@@ -48,7 +48,7 @@ end
 end
 
 @Test function ShortHandTableValues()
-   function describeTable(Value)
+   function describeTable(Value):str
       Value ?! return 'empty'
       return Value.name ?? 'present'
    end

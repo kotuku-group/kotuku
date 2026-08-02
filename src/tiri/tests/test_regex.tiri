@@ -61,7 +61,7 @@ end
    end
 
    do
-      local r = function(Value) return Value end
+      local r = function(Value:str) return Value end
       assert(r 'text' is 'text', 'Whitespace-separated r string call syntax should remain unchanged')
    end
 end

@@ -320,8 +320,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-gui.columnView = function(Options)
-
+gui.columnView = function(Options):table
    function setColumns(View:table, Columns)
       if #Columns is 0 then return end
 

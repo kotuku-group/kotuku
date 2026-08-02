@@ -15,6 +15,12 @@ local ir_calla <const> = 96
 local ir_calll <const> = 97
 local ir_calls <const> = 98
 
+struct JITValidatedStructFields
+   Flag: bool
+   Signed: int8
+   Unsigned: uint8
+end
+
 @BeforeAll
 function SetupJitTests()
    jit.on()
@@ -35,7 +41,7 @@ end
 function numberPresent(Value:num):bool return Value?? end
 function stringPresent(Value:str):bool return Value?? end
 function booleanPresent(Value:bool):bool return Value?? end
-function arrayPresent(Value:array):bool return Value?? end
+function arrayPresent(Value:array<any>):bool return Value?? end
 function tablePresent(Value:table):bool return Value?? end
 function anyPresent(Value:any):bool return Value?? end
 ]] })
@@ -131,15 +137,15 @@ end
 
 @Test function ArrayParameterAndLengthRangeBytecode()
    local script = obj.new('tiri', { statement=[[
-global glBytecodeValues:array = array<int> { 1, 2, 3 }
+global glBytecodeValues:array<any> = array<int> { 1, 2, 3 }
 
-function increment(Array:array)
+function increment(Array:array<any>)
    for index in {0 to #Array} do
       Array[index] += 1
    end
 end
 
-function incrementInTry(Array:array)
+function incrementInTry(Array:array<any>)
    try
       for index in {0 to #Array} do
          Array[index] += 1
@@ -259,7 +265,7 @@ function count_trace_calls(TraceNo, Info)
       count_trace_opcode(TraceNo, Info, ir_calll) + count_trace_opcode(TraceNo, Info, ir_calls)
 end
 
-function canonical_array_workload(Count)
+function canonical_array_workload(Count):str
    local values = array<int> { 1, 2, 3, 4, 5, 6, 7, 8 }
 
    for pass in {1 into Count} do
@@ -271,7 +277,7 @@ function canonical_array_workload(Count)
    return values:concat(',', '%d')
 end
 
-function canonical_array_try_workload(Count)
+function canonical_array_try_workload(Count):str
    local values = array<int, 8>
 
    try
@@ -286,7 +292,7 @@ function canonical_array_try_workload(Count)
    return values:concat(',', '%d')
 end
 
-global glCanonicalArrayRangeValues:array = array<int> { 1, 2, 3, 4, 5, 6, 7, 8 }
+global glCanonicalArrayRangeValues:array<any> = array<int> { 1, 2, 3, 4, 5, 6, 7, 8 }
 
 function canonical_global_array_workload(Count)
    local total = 0
@@ -314,7 +320,7 @@ function find_array_bounds_trace(MaxTraceNo)
    return nil, nil, 0
 end
 
-function resize_during_array_loop(Array:array, Shrink:bool)
+function resize_during_array_loop(Array:array<any>, Shrink:bool)
    local alias = Array
    for index in {0 to #Array} do
       if Shrink and index is 16 then alias:resize(8) end
@@ -322,7 +328,7 @@ function resize_during_array_loop(Array:array, Shrink:bool)
    end
 end
 
-function clear_during_array_loop(Array:array, Clear:bool)
+function clear_during_array_loop(Array:array<any>, Clear:bool)
    local alias = Array
    for index in {0 to #Array} do
       if Clear and index is 16 then alias:clear() end
@@ -330,14 +336,14 @@ function clear_during_array_loop(Array:array, Clear:bool)
    end
 end
 
-function reassign_during_array_loop(Array:array, Reassign:bool)
+function reassign_during_array_loop(Array:array<any>, Reassign:bool)
    for index in {0 to #Array} do
       if Reassign and index is 16 then Array = array<int, 8> end
       Array[index] += 1
    end
 end
 
-function push_during_array_loop(Array:array)
+function push_during_array_loop(Array:array<any>):<num, num, num>
    local original_length = #Array
    for index in {0 to #Array} do
       if index is 0 then Array:push(99) end
@@ -346,7 +352,7 @@ function push_during_array_loop(Array:array)
    return original_length, #Array, Array[#Array - 1]
 end
 
-function run_array_method_trace(Workload, Count)
+function run_array_method_trace(Workload, Count):<str, str, num>
    jit.off()
    local expected = Workload(Count)
 
@@ -354,7 +360,7 @@ function run_array_method_trace(Workload, Count)
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
 
-   local result = nil
+   local result:str = nil
    for i in {0 to 80} do
       result = Workload(Count)
    end
@@ -362,7 +368,7 @@ function run_array_method_trace(Workload, Count)
    return expected, result, count_jit_traces(30)
 end
 
-function run_safe_index_trace(Workload, Count)
+function run_safe_index_trace(Workload, Count):<num, num, num, num, num>
    jit.off()
    local expected = Workload(Count)
 
@@ -991,7 +997,7 @@ function constant_target(Value)
    return offset, label
 end
 
-function array_method_clear_workload(Count)
+function array_method_clear_workload(Count):str
    local result = array.new("")
 
    for i in {1 into Count} do
@@ -1002,7 +1008,7 @@ function array_method_clear_workload(Count)
    return array.getString(result)
 end
 
-function array_method_resize_workload(Count)
+function array_method_resize_workload(Count):str
    local result = array.new("abcdef")
 
    for i in {1 into Count} do
@@ -1013,7 +1019,7 @@ function array_method_resize_workload(Count)
    return array.getString(result)
 end
 
-function array_method_push_workload(Count)
+function array_method_push_workload(Count):str
    local result = array.new("")
 
    for i in {1 into Count} do
@@ -2031,6 +2037,73 @@ end
    assert(buffer_trace_found is true, "Expected multi-piece array append to record buffer IR")
 end
 
+@Test(hotpath=80) function JITTypedArrayMutationRejectsCategoryChanges()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   function typ12_hot_push(Array:array<any>, Value:any)
+      Array:push(Value)
+   end
+
+   function typ12_hot_store(Array:array<any>, Value:any)
+      Array[0] = Value
+   end
+
+   local pushed = array<int>
+   for i in {1 into 80} do typ12_hot_push(pushed, i) end
+   local pushed_len = #pushed
+
+   try
+      typ12_hot_push(pushed, '81')
+   success
+      error('hot array push() should reject a numeric string')
+   end
+   assert(#pushed is pushed_len and pushed[#pushed - 1] is 80,
+      'a rejected hot push() should preserve length and contents')
+
+   local stored = array<int> { 0 }
+   for i in {1 into 80} do typ12_hot_store(stored, i) end
+   assert(stored[0] is 80, 'hot indexed stores should accept exact numeric values')
+
+   try
+      typ12_hot_store(stored, '81')
+   success
+      error('hot indexed store should reject a numeric string')
+   end
+   assert(stored[0] is 80, 'a rejected hot indexed store should preserve the previous element')
+
+   typ12_hot_store(stored, 3000000000)
+   assert(stored[0] is -1294967296,
+      'an out-of-machine-range hot store should side-exit to defined integer wrapping')
+end
+
+@Test(hotpath=80) function JITArrayMemberContractRejectsTypeChanges()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   function typ13_dynamic(Value:any):any return Value end
+   function typ13_first(Array:array<int>):num return Array[0] end
+
+   local numbers = array<int> { 7 }
+   for i in {1 into 80} do
+      assert(typ13_first(typ13_dynamic(numbers)) is 7,
+         'A matching member contract should remain valid while tracing')
+   end
+
+   try
+      typ13_first(typ13_dynamic(array<string> { 'wrong' }))
+   except e
+      assert(e.message:find('expected array<int>') != nil,
+         'The traced contract should retain the expected member type: ' .. e.message)
+      assert(e.message:find('got array<string>') != nil,
+         'The traced contract should report the incoming member type: ' .. e.message)
+   success
+      error('A hot concrete array contract should reject a different member type')
+   end
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Test JIT recording of BC_OBGETF (object field get)
 -- Without JIT support, the trace recorder would abort with NYIBC (Not Yet Implemented Bytecode).
@@ -2115,15 +2188,15 @@ end
 
 function traced_struct_numeric_write(Value:struct, Count:num)
    for i in {1 into Count} do
-      Value.value = i + 0.75
+      Value.value = i
       Value.ratio = i + 0.5
-      Value.large = (i * 1000000) + 0.75
+      Value.large = i * 1000000
       Value.single = i + 0.25
       Value.integral = i
-      Value.word = -(i + 0.75)
-      Value.byte = i + 250.75
-      Value.unsignedWord = i + 65525.75
-      Value.unsignedByte = i + 250.75
+      Value.word = -i
+      Value.byte = i + 200
+      Value.unsignedWord = i + 65000
+      Value.unsignedByte = i + 200
    end
 end
 
@@ -2145,22 +2218,20 @@ end
    assert(value.single is 10.25, f"Expected traced float write to retain 10.25, got {value.single}")
    assert(value.integral is 10, f"Expected traced integer-to-float write to retain 10, got {value.integral}")
    assert(value.word is -10, f"Expected traced word write to retain -10, got {value.word}")
-   assert(value.byte is 4, f"Expected traced byte write to wrap to 4, got {value.byte}")
-   assert(value.unsignedWord is 65535,
-      f"Expected traced unsigned word write to retain 65535, got {value.unsignedWord}")
-   assert(value.unsignedByte is 4,
-      f"Expected traced qualified byte write to wrap to 4, got {value.unsignedByte}")
+   assert(value.byte is 210, f"Expected traced byte write to retain 210, got {value.byte}")
+   assert(value.unsignedWord is 65010,
+      f"Expected traced unsigned word write to retain 65010, got {value.unsignedWord}")
+   assert(value.unsignedByte is 210,
+      f"Expected traced qualified byte write to retain 210, got {value.unsignedByte}")
 
    local store_trace_found = false
    for trace_no in {1 into 30} do
       local info = jit.util.traceInfo(trace_no)
-      if info != nil and count_trace_opcode(trace_no, info, ir_xstore) >= 9 then
+      if info != nil and count_trace_opcode(trace_no, info, ir_xstore) >= 1 then
          store_trace_found = true
-         assert(count_trace_calls(trace_no, info) is 0,
-            "Expected scalar struct writes to avoid the helper-call fallback")
       end
    end
-   assert(store_trace_found, "Expected scalar struct writes to emit direct XSTORE instructions")
+   assert(store_trace_found, "Expected validated double stores to retain a direct XSTORE path")
 
    -- Reuse the compiled access sites with a different definition whose fields have different offsets.
    for i in {1 into 20} do
@@ -2178,19 +2249,19 @@ end
       f"Expected guarded alternate integer-to-float write to retain 10, got {alternate.integral}")
    assert(alternate.word is -10,
       f"Expected guarded alternate word write to retain -10, got {alternate.word}")
-   assert(alternate.byte is 4,
-      f"Expected guarded alternate byte write to wrap to 4, got {alternate.byte}")
-   assert(alternate.unsignedWord is 65535,
-      f"Expected guarded alternate unsigned word write to retain 65535, got {alternate.unsignedWord}")
-   assert(alternate.unsignedByte is 4,
-      f"Expected guarded alternate qualified byte write to wrap to 4, got {alternate.unsignedByte}")
+   assert(alternate.byte is 210,
+      f"Expected guarded alternate byte write to retain 210, got {alternate.byte}")
+   assert(alternate.unsignedWord is 65010,
+      f"Expected guarded alternate unsigned word write to retain 65010, got {alternate.unsignedWord}")
+   assert(alternate.unsignedByte is 210,
+      f"Expected guarded alternate qualified byte write to retain 210, got {alternate.unsignedByte}")
 
    jit.flush()
    local result = 0
    for i in {0 to 20} do
       result = traced_struct_numeric_read(value, 10)
    end
-   assert(result is 100655737.5, f"Expected traced scalar struct sum 100655737.5, got {result}")
+   assert(result is 100654607.5, f"Expected traced scalar struct sum 100654607.5, got {result}")
 
    local load_trace_found = false
    for trace_no in {1 into 30} do
@@ -2206,6 +2277,49 @@ end
    local alternate_result = traced_struct_numeric_read(alternate, 10)
    assert(alternate_result is result,
       f"Expected guarded alternate struct read {result}, got {alternate_result}")
+end
+
+function traced_validated_signed_write(Value:struct, Input:any, Count:num)
+   for i in {1 into Count} do
+      Value.Signed = Input
+   end
+end
+
+@Test(hotpath=50) function JITStructFiniteNarrowingAndRejectedCategories()
+   local value = struct<JITValidatedStructFields> { Flag=true, Signed=12, Unsigned=34 }
+
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+   for i in {1 into 20} do
+      traced_validated_signed_write(value, 12, 10)
+   end
+
+   traced_validated_signed_write(value, 140.75, 10)
+   assert(value.Signed is -116, 'A hot finite int8 store should truncate and wrap')
+
+   try
+      traced_validated_signed_write(value, math.huge, 10)
+   except error_value
+      assert(error_value.code is ERR_OutOfRange,
+         f"Expected a hot non-finite store to raise ERR_OutOfRange, got {error_value.code}")
+   success
+      error('A hot non-finite int8 store should fail')
+   end
+   assert(value.Signed is -116, 'A rejected hot non-finite store should preserve the signed field')
+
+   value.Unsigned = 300
+   assert(value.Unsigned is 44, 'A specialised finite uint8 store should wrap')
+
+   try
+      value.Flag = 2
+   except error_value
+      assert(error_value.code is ERR_InvalidType,
+         f"Expected a specialised bool store to raise ERR_InvalidType, got {error_value.code}")
+   success
+      error('A numeric bool store should fail')
+   end
+   assert(value.Flag is true, 'A rejected specialised bool store should preserve the boolean field')
 end
 
 -----------------------------------------------------------------------------------------------------------------------

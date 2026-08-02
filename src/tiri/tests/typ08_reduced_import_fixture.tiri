@@ -1,0 +1,5 @@
+-- Inline-import fixture containing a reduced-analysis global declaration.
+
+try
+   global glContractReducedImport = 'imported'
+end
