@@ -34,7 +34,7 @@ MULTIBYTE_OPERATORS = {
 -- Tokenize a Tiri source file and return semantic tokens
 -- Returns array of tokens: { line, startChar, length, tokenType, tokenModifiers }
 
-global function tokenizeTiri(Source:str):array
+global function tokenizeTiri(Source:str):array<table>
    tokens = array<table>
    line = 0
    col = 0
@@ -845,7 +845,7 @@ end
 -- Extract folding ranges from Tiri source
 -- Returns array of FoldingRange objects for code folding
 
-global function extractFoldingRanges(Doc:table):array
+global function extractFoldingRanges(Doc:table):array<table>
    ranges = array<table>
    total_lines = getTotalLines(Doc)
    block_stack = array<table>  -- Stack of { line, kind } for nested blocks
@@ -973,7 +973,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Encode tokens into LSP semantic tokens format (delta-encoded integers)
 
-global function encodeSemanticTokens(Tokens:array):array
+global function encodeSemanticTokens(Tokens:array<table>):array<int>
    data = array<int>
    prev_line = 0
    prev_char = 0
@@ -999,7 +999,7 @@ end
 -- Compute semantic token edits between old and new data arrays
 -- Returns array of SemanticTokensEdit: { start, deleteCount, data? }
 
-global function computeTokenEdits(OldData:array, NewData:array):array
+global function computeTokenEdits(OldData:array<int>, NewData:array<int>):array<table>
    old_len = #OldData
    new_len = #NewData
 

@@ -1068,6 +1068,7 @@ static LexToken lex_current_char_token(const LexState *State) noexcept
 
 static LexToken lex_array_typed(LexState *State, TValue *tv)
 {
+   State->array_typed_nested = false;
    lex_next(State);  // Consume '<'
    lex_skip_inline_ws(State);
 
@@ -1092,6 +1093,7 @@ static LexToken lex_array_typed(LexState *State, TValue *tv)
    // determined when individual inner arrays are created.
 
    if (type_str == "array" and State->c IS '<') {
+      State->array_typed_nested = true;
       int depth = 1;
       lex_next(State);  // Consume inner '<'
       while (depth > 0) {
@@ -1458,11 +1460,21 @@ static LexToken lex_scan(LexState *State, TValue *tv)
                // Not a typed deferred expression (e.g., "x < y" comparison)
                // Push the identifier as a buffered token to be returned after '<'
                auto str_view = std::string_view(State->sb.b, sbuflen(&State->sb));
-               GCstr *s = State->keepstr(str_view);
-
                LexState::BufferedToken buffered;
-               buffered.token = (s->reserved > 0) ? (TK_OFS + s->reserved) : TK_name;
-               setstrV(State->L, &buffered.value, s);
+               setnilV(&buffered.value);
+               if (str_view IS "array" and State->c IS '<') {
+                  buffered.token = lex_array_typed(State, &buffered.value);
+                  buffered.array_typed_size = State->array_typed_size;
+                  buffered.array_typed_nested = State->array_typed_nested;
+               }
+               else if (str_view IS "struct" and State->c IS '<') {
+                  buffered.token = lex_struct_typed(State, &buffered.value);
+               }
+               else {
+                  GCstr *s = State->keepstr(str_view);
+                  buffered.token = (s->reserved > 0) ? (TK_OFS + s->reserved) : TK_name;
+                  setstrV(State->L, &buffered.value, s);
+               }
                buffered.line = ident_line;
                buffered.column = ident_column;
                buffered.offset = ident_offset;
@@ -1852,6 +1864,8 @@ void LexState::next()
       this->current_token_line = this->lookahead_line;
       this->current_token_column = this->lookahead_column;
       this->current_token_offset = this->lookahead_offset;
+      this->current_array_typed_size = this->lookahead_array_typed_size;
+      this->current_array_typed_nested = this->lookahead_array_typed_nested;
       this->lastline = this->current_token_line;
       this->lookahead = TK_eof;
       setnilV(&this->lookaheadval);
@@ -1872,6 +1886,8 @@ void LexState::next()
    this->current_token_line = this->pending_token_line;
    this->current_token_column = this->pending_token_column;
    this->current_token_offset = this->pending_token_offset;
+   this->current_array_typed_size = this->array_typed_size;
+   this->current_array_typed_nested = this->array_typed_nested;
    this->lastline = this->current_token_line;
 }
 
@@ -1890,6 +1906,8 @@ LexToken LexState::lookahead_token()
       this->lookahead_line = buffered.line;
       this->lookahead_column = buffered.column;
       this->lookahead_offset = buffered.offset;
+      this->lookahead_array_typed_size = buffered.array_typed_size;
+      this->lookahead_array_typed_nested = buffered.array_typed_nested;
       return this->lookahead;
    }
 
@@ -1898,6 +1916,8 @@ LexToken LexState::lookahead_token()
    this->lookahead_line = this->pending_token_line;
    this->lookahead_column = this->pending_token_column;
    this->lookahead_offset = this->pending_token_offset;
+   this->lookahead_array_typed_size = this->array_typed_size;
+   this->lookahead_array_typed_nested = this->array_typed_nested;
    return this->lookahead;
 }
 
@@ -1937,6 +1957,8 @@ void LexState::apply_buffered_token(const BufferedToken& token)
    this->current_token_line = token.line;
    this->current_token_column = token.column;
    this->current_token_offset = token.offset;
+   this->current_array_typed_size = token.array_typed_size;
+   this->current_array_typed_nested = token.array_typed_nested;
    this->lastline = this->current_token_line;
 }
 
@@ -1948,6 +1970,8 @@ LexState::BufferedToken LexState::scan_buffered_token()
    buffered.line = this->pending_token_line;
    buffered.column = this->pending_token_column;
    buffered.offset = this->pending_token_offset;
+   buffered.array_typed_size = this->array_typed_size;
+   buffered.array_typed_nested = this->array_typed_nested;
    return buffered;
 }
 

@@ -217,7 +217,7 @@ function buildLayout(self, Options)
       align     = 'left'
    })
 
-   self._colourNodes = array<any>
+   self._colourNodes = array<object>
 
    dy += gui.getFontHeight(gui.fonts.window) + WIDGET_GAP
    y = dy

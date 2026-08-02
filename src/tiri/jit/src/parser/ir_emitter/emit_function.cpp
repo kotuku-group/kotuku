@@ -170,12 +170,14 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       if (param.type != TiriType::Unknown and param.type != TiriType::Any) {
          param_info.fixed_type = param.type;
          param_info.struct_def = param.struct_def;
+         param_info.array_element = param.array_element;
       }
       else if (param.name.static_value) {
          const auto &descriptor = this->ctx.descriptors().value(param.name.static_value);
          if (descriptor.primary != TiriType::Unknown and descriptor.primary != TiriType::Any) {
             param_info.fixed_type = descriptor.primary;
             param_info.struct_def = descriptor.struct_def;
+            param_info.array_element = descriptor.array_element;
          }
       }
       param_info.binding_id = param.name.binding_id;
@@ -204,6 +206,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       RuntimeContract contract{
          .type = param.type,
          .struct_def = param.struct_def,
+         .array_element = param.array_element,
          .label = param.name.is_blank ? nullptr : param.name.symbol,
          .boundary = ContractBoundary::Parameter,
          .position = uint8_t(i.raw() + 1),
@@ -234,6 +237,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       for (size_t i = 0; i < Payload.return_types.count and i < child_state.return_types.size(); ++i) {
          child_state.return_types[i] = Payload.return_types.types[i];
          child_state.return_struct_defs[i] = Payload.return_types.struct_defs[i];
+         child_state.return_array_elements[i] = Payload.return_types.array_elements[i];
          auto type = Payload.return_types.types[i];
          auto struct_def = Payload.return_types.struct_defs[i];
          child_state.signature_results[i] = ProtoTypeEntry{

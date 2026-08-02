@@ -1,6 +1,7 @@
 #include "parser/type_checker.h"
 
-void TypeCheckScope::declare_parameter(GCstr *Name, TiriType Type, struct_record *StructDef, SourceSpan Location)
+void TypeCheckScope::declare_parameter(GCstr *Name, TiriType Type, struct_record *StructDef,
+   const ArrayElementDescriptor &ArrayElement, SourceSpan Location)
 {
    VariableInfo info;
    info.name = Name;
@@ -8,6 +9,7 @@ void TypeCheckScope::declare_parameter(GCstr *Name, TiriType Type, struct_record
    info.type.is_constant = false;
    info.type.is_nullable = false;
    info.type.struct_def = StructDef;
+   info.type.array_element = ArrayElement;
    info.location = Location;
    info.is_parameter = true;
    info.is_used = false;
@@ -64,7 +66,8 @@ const FunctionExprPayload* TypeCheckScope::lookup_function(GCstr *Name) const
    return nullptr;
 }
 
-void TypeCheckScope::fix_local_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId, struct_record *StructDef)
+void TypeCheckScope::fix_local_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId, struct_record *StructDef,
+   const ArrayElementDescriptor &ArrayElement)
 {
    for (auto it = this->variables_.rbegin(); it != this->variables_.rend(); ++it) {
       if (it->name IS Name and not it->is_parameter) {
@@ -72,6 +75,7 @@ void TypeCheckScope::fix_local_type(GCstr *Name, TiriType Type, CLASSID ObjectCl
          it->type.is_fixed = true;
          it->type.object_class_id = ObjectClassId;
          it->type.struct_def = StructDef;
+         it->type.array_element = ArrayElement;
          return;
       }
    }

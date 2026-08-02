@@ -1872,9 +1872,12 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
    lua_State *L = state.get();
    constexpr std::string_view source =
       "extern obj\n"
+      "extern array\n"
       "function dynamic(Value:any):any return Value end\n"
       "local value = obj.new('time')\n"
-      "value = dynamic(value)\n";
+      "value = dynamic(value)\n"
+      "local values:array<int> = array<int> { 1 }\n"
+      "values = dynamic(values)\n";
    if (lua_load(L, source, "contract-roundtrip")) {
       Log.error("failed to compile contract source: %s", lua_tostring(L, -1));
       return false;
@@ -1921,9 +1924,31 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
       return false;
    };
    bool class_survived = has_time_contract(has_time_contract, restored_proto);
+   auto has_int_array_contract = [L](auto &Self, GCproto *Proto) -> bool {
+      for (uint32_t i = 1; i < Proto->sizebc; ++i) {
+         BCIns instruction = proto_bc(Proto)[i];
+         if (bc_op(instruction) != BC_CONTRACT) continue;
+         GCstr *encoded = gco_to_string(proto_kgc(Proto, ~(ptrdiff_t)bc_d(instruction)));
+         RuntimeContractDescriptor descriptor;
+         if (decode_runtime_contract(encoded, descriptor) and descriptor.contract_count > 0 and
+             descriptor.entries[0].type IS TiriType::Array and
+             descriptor.entries[0].array_element_type IS AET::INT32) return true;
+      }
+      GCRef *constant = mref<GCRef>(Proto->k) - 1;
+      for (uint32_t i = 0; i < Proto->sizekgc; ++i, --constant) {
+         GCobj *child = gcref(*constant);
+         if (child->gch.gct IS ~LJ_TPROTO and Self(Self, gco_to_proto(child))) return true;
+      }
+      return false;
+   };
+   bool array_survived = has_int_array_contract(has_int_array_contract, restored_proto);
    lua_pop(L, 1);
    if (not class_survived) {
       Log.error("reloaded bytecode lost the multi-byte object class constraint in BC_CONTRACT");
+      return false;
+   }
+   if (not array_survived) {
+      Log.error("reloaded bytecode lost the array member constraint in BC_CONTRACT");
       return false;
    }
    return true;
@@ -1942,7 +1967,8 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
       } while (Value);
    };
    auto build_descriptor = [&append_uleb](uint8_t Version, TiriType Type, CLASSID ObjectClassId,
-      std::string_view StructName, std::string_view Label, uint8_t EntryFlags) {
+      std::string_view StructName, std::string_view Label, uint8_t EntryFlags,
+      AET ArrayElementType = AET::MAX, std::string_view ArrayStructName = {}) {
       std::string result{
          char(Version),
          char(uint8_t(ContractBoundary::Global)),
@@ -1953,7 +1979,12 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
          char(EntryFlags),
          char(1)
       };
-      if (Version IS TIRI_CONTRACT_VERSION) append_uleb(result, uint32_t(ObjectClassId));
+      if (Version >= TIRI_CONTRACT_OBJECT_VERSION) append_uleb(result, uint32_t(ObjectClassId));
+      if (Version IS TIRI_CONTRACT_VERSION) {
+         result.push_back(char(uint8_t(ArrayElementType)));
+         result.push_back(char(uint8_t(ArrayStructName.size())));
+         result.append(ArrayStructName);
+      }
       result.push_back(char(uint8_t(StructName.size())));
       result.append(StructName);
       result.push_back(char(uint8_t(Label.size())));
@@ -1992,7 +2023,7 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
        object_decoded.entries[0].type != TiriType::Object or
        object_decoded.entries[0].object_class_id != CLASSID::TIME or
        not object_decoded.entries[0].struct_name.empty()) {
-      Log.error("version-2 object class constraint did not round-trip through the shared decoder");
+      Log.error("object class constraint did not round-trip through the shared decoder");
       return false;
    }
 
@@ -2001,7 +2032,30 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
    GCstr *broad_descriptor = lj_str_new(lua, broad_object.data(), broad_object.size());
    if (not decode_runtime_contract(broad_descriptor, object_decoded) or
        object_decoded.entries[0].object_class_id != CLASSID::NIL) {
-      Log.error("version-2 broad object contract gained a class constraint while decoding");
+      Log.error("broad object contract gained a class constraint while decoding");
+      return false;
+   }
+
+   std::string array_encoded = build_descriptor(
+      TIRI_CONTRACT_VERSION, TiriType::Array, CLASSID::NIL, {}, "Values", const_flags, AET::INT32);
+   RuntimeContractDescriptor array_decoded;
+   GCstr *array_descriptor = lj_str_new(lua, array_encoded.data(), array_encoded.size());
+   if (not decode_runtime_contract(array_descriptor, array_decoded) or
+       array_decoded.entries[0].type != TiriType::Array or
+       array_decoded.entries[0].array_element_type != AET::INT32 or
+       not array_decoded.entries[0].array_struct_name.empty()) {
+      Log.error("array member constraint did not round-trip through the shared decoder");
+      return false;
+   }
+
+   std::string struct_array_encoded = build_descriptor(
+      TIRI_CONTRACT_VERSION, TiriType::Array, CLASSID::NIL, {}, "Points", const_flags,
+      AET::STRUCT, "Point");
+   GCstr *struct_array_descriptor = lj_str_new(lua, struct_array_encoded.data(), struct_array_encoded.size());
+   if (not decode_runtime_contract(struct_array_descriptor, array_decoded) or
+       array_decoded.entries[0].array_element_type != AET::STRUCT or
+       array_decoded.entries[0].array_struct_name != "Point") {
+      Log.error("named-structure array constraint did not round-trip through the shared decoder");
       return false;
    }
 
@@ -2026,6 +2080,10 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
       TIRI_CONTRACT_VERSION, TiriType::Num, CLASSID::TIME, {}, "Value", const_flags);
    std::string invalid_struct_class = build_descriptor(
       TIRI_CONTRACT_VERSION, TiriType::Struct, CLASSID::TIME, "Point", "Value", const_flags);
+   std::string invalid_scalar_array_member = build_descriptor(
+      TIRI_CONTRACT_VERSION, TiriType::Num, CLASSID::NIL, {}, "Value", const_flags, AET::INT32);
+   std::string invalid_named_non_struct_array = build_descriptor(
+      TIRI_CONTRACT_VERSION, TiriType::Array, CLASSID::NIL, {}, "Value", const_flags, AET::INT32, "Point");
    std::string truncated_class{
       char(TIRI_CONTRACT_VERSION), char(uint8_t(ContractBoundary::Local)), char(0), char(1), char(1),
       char(uint8_t(TiriType::Object)), char(0), char(1), char(0x80)
@@ -2043,6 +2101,7 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
    if (not rejected(invalid_descriptor_flags) or not rejected(invalid_entry_flags) or
        not rejected(invalid_initialising_flag) or
        not rejected(invalid_position) or not rejected(invalid_scalar_class) or not rejected(invalid_struct_class) or
+       not rejected(invalid_scalar_array_member) or not rejected(invalid_named_non_struct_array) or
        not rejected(truncated_class) or not rejected(over_wide_class) or not rejected(trailing) or
        not rejected(truncated) or not rejected(unknown_version)) {
       Log.error("shared runtime contract decoder accepted malformed input");
@@ -3849,13 +3908,13 @@ static bool test_safe_index_bytecode_selection(kt::Log &Log)
    };
 
    constexpr std::string_view native_literal =
-      "local function read(Values:array):any\n"
+      "local function read(Values:array<any>):any\n"
       "   return Values?[0]\n"
       "end\n";
    if (not expect_access(native_literal, BC_ASGETB, BC_TGETB, "native-array literal-key")) passed = false;
 
    constexpr std::string_view native_variable =
-      "local function read(Values:array, Index:num):any\n"
+      "local function read(Values:array<any>, Index:num):any\n"
       "   return Values?[Index]\n"
       "end\n";
    if (not expect_access(native_variable, BC_ASGETV, BC_TGETV, "native-array variable-key")) passed = false;
@@ -3906,7 +3965,7 @@ static bool test_type_guided_emission(kt::Log &Log)
    std::string error;
    constexpr std::string_view source =
       "extern array\n"
-      "local function read(Values:array):num\n"
+      "local function read(Values:array<any>):num\n"
       "   return Values[0]\n"
       "end\n"
       "local alias = read\n"
@@ -3989,7 +4048,7 @@ static bool test_type_guided_emission(kt::Log &Log)
       "extern array\n"
       "extern obj\n"
       "struct GuidedLayout Value: int end\n"
-      "local function update_array(Values:array):num\n"
+      "local function update_array(Values:array<any>):num\n"
       "   Values[0] = Values[0] + 1\n"
       "   return Values?[0]\n"
       "end\n"

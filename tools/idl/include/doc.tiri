@@ -276,7 +276,7 @@ setAction('Query', {
 setAction('Read', {
    comment   = 'Reads raw data information from objects.',
    prototype = 'ERR acRead(*Object, std::span<int8_t> Buffer, INT *Result)',
-   tiriPrototype = 'err, Result:num = Object.acRead(Buffer:array)',
+   tiriPrototype = 'err, Result:num = Object.acRead(Buffer:array<byte>)',
    params    = {
       { name='Buffer', type='std::span<int8_t>', comment='A mutable buffer that will receive the data.' },
       { name='Result', type='INT', comment='The Read action will write this parameter with the total number of bytes read into the Buffer.' }

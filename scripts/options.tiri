@@ -78,7 +78,7 @@ rx_css_colour <const> = regex.new(
 ----------------------------------------------------------------------------------------------------------------------
 -- Build the canonical name and alias list for a parameter definition.
 
-function normalise_names(Definition:table):array
+function normalise_names(Definition:table):array<string>
    names = array<string>
    seen = {}
 
@@ -221,7 +221,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert an existing array or table into an array of strings.
 
-function string_array(Value:any):array
+function string_array(Value:any):array<string>
    result = array<string>
 
    for item in values(Value) do
@@ -234,7 +234,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert a comma-separated string into an array of trimmed strings.
 
-function convert_csv(Value:any, Param:table):array
+function convert_csv(Value:any, Param:table):array<string>
    if type(Value) is 'array' or type(Value) is 'table' then
       return string_array(Value)
    end
@@ -254,7 +254,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Convert a raw value into an array of strings.
 
-function convert_array(Value:any, Param:table):array
+function convert_array(Value:any, Param:table):array<string>
    if type(Value) is 'array' or type(Value) is 'table' then
       return string_array(Value)
    end
@@ -549,7 +549,7 @@ function add_result_value(Result:table, ArgNames:table, Presence:table, Param:ta
    IsExplicit:bool):table
 
    if Param.multiple then
-      local param_values:array = Result[Param.name]
+      local param_values:array<any> = Result[Param.name]
       if param_values is nil then
          param_values = array<any>
          Result[Param.name] = param_values
@@ -721,7 +721,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Remove launcher options and the script path from ordered task parameters.
 
-function get_script_arguments(Parameters:array):array
+function get_script_arguments(Parameters:array<string>):array<string>
    result = array<string>
    index = 0
    script_seen = false
@@ -755,7 +755,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Read ordered arguments from the active task, or return nil if they are unavailable.
 
-function get_task_parameters(Options:table):array
+function get_task_parameters(Options:table):array<string>
    if Options and Options.taskParameters != nil then
       assert(type(Options.taskParameters) is 'array', 'Options.taskParameters must be an array.')
       return Options.taskParameters
@@ -774,7 +774,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Parse ordered command-line tokens, preserving the order of named and positional input.
 
-function parse_ordered_input(Parser:table, Result:table, ArgNames:table, Presence:table, Input:array)
+function parse_ordered_input(Parser:table, Result:table, ArgNames:table, Presence:table, Input:array<string>)
    -- Parse one ordered command-line token and apply it to the result table.
 
    function parse_ordered_token(Parser:table, Result:table, ArgNames:table, Presence:table, Token:str, PosIndex:num):num
@@ -932,7 +932,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Join prepared text lines into one help string.
 
-function append_help_line(Output:array, Line:str)
+function append_help_line(Output:array<string>, Line:str)
    if Line:trim() is '' then
       if #Output > 0 and Output[#Output - 1] != '' then
          Output:push('')
@@ -944,7 +944,7 @@ function append_help_line(Output:array, Line:str)
    Output:push(Line:rtrim())
 end
 
-function line_list(Lines:array):str
+function line_list(Lines:array<string>):str
    output = array<string>
 
    for line in values(Lines) do
@@ -1070,7 +1070,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Append parser metadata fields to help output.
 
-function append_metadata(Lines:array, Parser:table)
+function append_metadata(Lines:array<string>, Parser:table)
    if Parser.epilog then
       Lines:push('')
       Lines:push(Parser.epilog)
@@ -1524,7 +1524,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Normalise a relationship field to an array of canonical parameter names.
 
-function relationship_names(Parser:table, Param:table, Field:str, Value:any):array
+function relationship_names(Parser:table, Param:table, Field:str, Value:any):array<string>
    names = array<string>
 
    if type(Value) is 'string' then
@@ -1869,7 +1869,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Parse a non-command parser context from explicit ordered input.
 
-function parse_context_ordered_input(Parser:table, Input:array):table
+function parse_context_ordered_input(Parser:table, Input:array<string>):table
    input_result = {}
    input_arg_names = {}
    input_presence = {}
@@ -1929,7 +1929,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Parse ordered input for a parser that defines subcommands.
 
-function parse_command_ordered_input(Parser:table, Input:array):table
+function parse_command_ordered_input(Parser:table, Input:array<string>):table
    global_input = array<string>
    command_input = array<string>
    command = nil

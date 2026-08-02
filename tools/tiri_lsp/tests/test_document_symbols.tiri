@@ -21,7 +21,7 @@ function makeDoc(Content:str):table
    }
 end
 
-function findSymbol(Symbols:array, Name:str):table
+function findSymbol(Symbols:array<table>, Name:str):table
    for symbol in values(Symbols) do
       if symbol.name is Name then return symbol end
    end

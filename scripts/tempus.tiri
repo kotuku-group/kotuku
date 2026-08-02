@@ -662,7 +662,7 @@ end
 
 function convert_time_zone_info(Info:table):table
    local transitions = array<table> {}
-   local source_transitions:array = Info.transitions
+   local source_transitions:array<table> = Info.transitions
    if source_transitions is nil then source_transitions = array<table> {} end
 
    for _, transition in ipairs(source_transitions) do

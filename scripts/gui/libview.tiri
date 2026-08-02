@@ -476,7 +476,7 @@ gui.initView = function(Options:table, BuildUI, NewItems)
 
    -- Return a table of all selected items
 
-   vw.selectedItems = function():array
+   vw.selectedItems = function():array<table>
       list = array<table> { }
       for item in values(vw.items) do
          if item._selected then

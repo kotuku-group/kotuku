@@ -89,6 +89,7 @@ struct RuntimeContract {
    TiriType type = TiriType::Unknown;
    CLASSID object_class_id = CLASSID::NIL;
    struct_record *struct_def = nullptr;
+   ArrayElementDescriptor array_element{};
    GCstr *label = nullptr;
    ContractBoundary boundary = ContractBoundary::Local;
    uint8_t position = 0;
