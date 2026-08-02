@@ -1539,6 +1539,79 @@ static bool test_signature_runtime_inference(kt::Log &Log)
       Log.error("statically inferred signature changed during serialisation");
       return false;
    }
+
+   constexpr std::string_view forwarded_source =
+      "local function declared():<num, str> return 7, 'forwarded' end\n"
+      "return function() return declared() end\n";
+   if (lua_load(L, forwarded_source, "signature-forwarded-results") or lua_pcall(L, 0, 1, 0)) {
+      Log.error("failed to create the forwarded-result function: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *forwarded = funcproto(funcV(L->top - 1));
+   const ProtoSignature *forwarded_signature = proto_signature(forwarded);
+   ProtoTypeEntry first = proto_result_type(forwarded, 0);
+   ProtoTypeEntry second = proto_result_type(forwarded, 1);
+   if (not forwarded_signature or forwarded_signature->result_count != 2 or
+       forwarded_signature->result_entry_count != 2 or first.type != TiriType::Num or second.type != TiriType::Str or
+       proto_type_origin(first) != ProtoTypeOrigin::Inferred or
+       proto_type_origin(second) != ProtoTypeOrigin::Inferred) {
+      Log.error("tail-call result inference lost a declared positional result");
+      return false;
+   }
+
+   std::string forwarded_dump;
+   if (lj_bcwrite(L, forwarded, bytecode_writer, &forwarded_dump, 1) != 0 or
+       lua_load(L, std::string_view(forwarded_dump.data(), forwarded_dump.size()), "signature-forwarded-results")) {
+      Log.error("failed to round-trip the forwarded-result signature: %s", lua_tostring(L, -1));
+      return false;
+   }
+   GCproto *restored_forwarded = funcproto(funcV(L->top - 1));
+   if (not compare_proto_signatures(forwarded, restored_forwarded)) {
+      Log.error("forwarded-result inference changed during serialisation");
+      return false;
+   }
+   lua_pop(L, 2);
+
+   constexpr std::string_view forwarded_any_source =
+      "local function declared():<num, any> return 7, nil end\n"
+      "return function() return declared() end\n";
+   if (lua_load(L, forwarded_any_source, "signature-forwarded-any") or lua_pcall(L, 0, 1, 0)) {
+      Log.error("failed to create the forwarded-any function: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *forwarded_any = funcproto(funcV(L->top - 1));
+   const ProtoSignature *forwarded_any_signature = proto_signature(forwarded_any);
+   ProtoTypeEntry forwarded_any_first = proto_result_type(forwarded_any, 0);
+   ProtoTypeEntry forwarded_any_second = proto_result_type(forwarded_any, 1);
+   if (not forwarded_any_signature or forwarded_any_signature->result_count != 2 or
+       forwarded_any_first.type != TiriType::Num or forwarded_any_second.type != TiriType::Any or
+       proto_type_origin(forwarded_any_first) != ProtoTypeOrigin::Inferred or
+       proto_type_origin(forwarded_any_second) != ProtoTypeOrigin::Inferred) {
+      Log.error("tail-call result inference refined an explicit any result from the first result");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   constexpr std::string_view forwarded_with_prefix_source =
+      "local function declared():<num, str> return 7, 'forwarded' end\n"
+      "return function() return true, declared() end\n";
+   if (lua_load(L, forwarded_with_prefix_source, "signature-forwarded-prefix") or lua_pcall(L, 0, 1, 0)) {
+      Log.error("failed to create the prefixed forwarded-result function: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *forwarded_with_prefix = funcproto(funcV(L->top - 1));
+   const ProtoSignature *forwarded_with_prefix_signature = proto_signature(forwarded_with_prefix);
+   if (not forwarded_with_prefix_signature or forwarded_with_prefix_signature->result_count != 3 or
+       proto_result_type(forwarded_with_prefix, 0).type != TiriType::Bool or
+       proto_result_type(forwarded_with_prefix, 1).type != TiriType::Num or
+       proto_result_type(forwarded_with_prefix, 2).type != TiriType::Str) {
+      Log.error("tail-call result inference dropped results after a fixed return prefix");
+      return false;
+   }
+   lua_pop(L, 1);
    return true;
 }
 

@@ -229,7 +229,7 @@ private:
    // Type inference - determines types from expressions and context
    [[nodiscard]] InferredType infer_expression_type(const ExprNode &);
    [[nodiscard]] InferredType refine_static_expression_type(const ExprNode &, InferredType) const;
-   [[nodiscard]] bool is_explicit_variant_expression(const ExprNode &) const;
+   [[nodiscard]] bool is_explicit_variant_expression(const ExprNode &, size_t Position = 0) const;
    [[nodiscard]] InferredType infer_call_return_type(const ExprNode &, size_t Position) const;
 
    // Symbol resolution - looks up variables and functions in scope stack
@@ -2719,7 +2719,7 @@ InferredType TypeAnalyser::refine_static_expression_type(const ExprNode &Expr, I
    return Type;
 }
 
-bool TypeAnalyser::is_explicit_variant_expression(const ExprNode &Expr) const
+bool TypeAnalyser::is_explicit_variant_expression(const ExprNode &Expr, size_t Position) const
 {
    if (Expr.kind IS AstNodeKind::IdentifierExpr) {
       const auto &reference = std::get<NameRef>(Expr.data);
@@ -2733,8 +2733,8 @@ bool TypeAnalyser::is_explicit_variant_expression(const ExprNode &Expr) const
    else if (Expr.kind IS AstNodeKind::CallExpr or Expr.kind IS AstNodeKind::SafeCallExpr) {
       const auto &call = std::get<CallExprPayload>(Expr.data);
       const FunctionExprPayload *target = this->resolve_call_target(call);
-      return target and target->return_types.is_explicit and target->return_types.count > 0 and
-         target->return_types.types[0] IS TiriType::Any;
+      return target and target->return_types.is_explicit and Position < target->return_types.count and
+         target->return_types.types[Position] IS TiriType::Any;
    }
    return false;
 }
@@ -3111,6 +3111,33 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
    if (not ctx) return;  // Not inside a function (shouldn't happen in valid code)
 
    size_t return_count = Return.values.size();
+   size_t fixed_count = return_count;
+   const ExprNode *tail_expression = nullptr;
+   const StaticResultSet *tail_results = nullptr;
+   if (not ctx->expected_returns.is_explicit and Return.forwards_call and not Return.values.empty()) {
+      tail_expression = Return.values.back().get();
+      if (tail_expression->static_results) {
+         const StaticResultSet &results = this->ctx_.descriptors().results(tail_expression->static_results);
+         if (not results.dynamic and not results.variadic) {
+            fixed_count--;
+            tail_results = &results;
+            return_count = fixed_count + results.declared_count;
+         }
+      }
+   }
+
+   auto expression_at = [&](size_t Position) -> const ExprNode & {
+      return Position < fixed_count ? *Return.values[Position] : *tail_expression;
+   };
+
+   auto infer_position = [&](size_t Position) {
+      const ExprNode &expression = expression_at(Position);
+      if (tail_results and Position >= fixed_count) {
+         return this->infer_call_return_type(expression, Position - fixed_count);
+      }
+      InferredType actual = this->infer_expression_type(expression);
+      return this->refine_static_expression_type(expression, actual);
+   };
 
    if (ctx->expected_returns.is_explicit) {
       // Explicit declaration: validate against declared types
@@ -3120,7 +3147,8 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
          TiriType expected = ctx->expected_returns.type_at(i);
          if (expected IS TiriType::Any or expected IS TiriType::Unknown) continue;
 
-         InferredType actual = this->infer_expression_type(*Return.values[i]);
+         const ExprNode &expression = expression_at(i);
+         InferredType actual = this->infer_expression_type(expression);
 
          // Nil is always allowed as a "clear" or "no value" return
          if (actual.primary IS TiriType::Nil) continue;
@@ -3131,7 +3159,7 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
             actual.struct_def IS ctx->expected_returns.struct_defs[i];
          if (actual.primary != expected or not struct_matches) {
             TypeDiagnostic diag;
-            diag.location = Return.values[i]->span;
+            diag.location = expression.span;
             diag.expected = expected;
             diag.actual = actual.primary;
             diag.code = ParserErrorCode::ReturnTypeMismatch;
@@ -3147,9 +3175,10 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
 
       for (size_t i = 0; i < check_count; ++i) {
          InferredReturnPosition &position = ctx->inferred_returns[i];
-         InferredType actual = this->infer_expression_type(*Return.values[i]);
-         actual = this->refine_static_expression_type(*Return.values[i], actual);
-         position.location = Return.values[i]->span;
+         const ExprNode &expression = expression_at(i);
+         const size_t expression_position = tail_results and i >= fixed_count ? i - fixed_count : 0;
+         InferredType actual = infer_position(i);
+         position.location = expression.span;
 
          if (actual.primary IS TiriType::Nil) {
             if (position.state IS ReturnInferenceState::Unobserved) {
@@ -3158,7 +3187,8 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
             continue;
          }
 
-         if (actual.primary IS TiriType::Any and this->is_explicit_variant_expression(*Return.values[i])) {
+         if (actual.primary IS TiriType::Any and
+             this->is_explicit_variant_expression(expression, expression_position)) {
             position.concrete = actual;
             position.concrete.primary = TiriType::Any;
             position.state = ReturnInferenceState::ExplicitAny;
@@ -3169,7 +3199,7 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
 
          if (actual.primary IS TiriType::Any or actual.primary IS TiriType::Unknown) {
             position.state = ReturnInferenceState::Dynamic;
-            position.dynamic_location = Return.values[i]->span;
+            position.dynamic_location = expression.span;
             position.dynamic_type = actual.primary;
             continue;
          }
@@ -3189,7 +3219,7 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
          if (type_matches and class_matches and struct_matches) continue;
 
          TypeDiagnostic diag;
-         diag.location = Return.values[i]->span;
+         diag.location = expression.span;
          diag.expected = position.concrete.primary;
          diag.actual = actual.primary;
          diag.code = ParserErrorCode::ReturnTypeMismatch;
