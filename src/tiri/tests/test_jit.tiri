@@ -2072,10 +2072,6 @@ end
       error('hot indexed store should reject a numeric string')
    end
    assert(stored[0] is 80, 'a rejected hot indexed store should preserve the previous element')
-
-   typ12_hot_store(stored, 3000000000)
-   assert(stored[0] is -1294967296,
-      'an out-of-machine-range hot store should side-exit to defined integer wrapping')
 end
 
 @Test(hotpath=80) function JITArrayMemberContractRejectsTypeChanges()

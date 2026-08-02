@@ -43,8 +43,6 @@ For more information on the Tiri syntax, please refer to the official Tiri Refer
 #include "lj_bc.h"
 #include "lj_array.h"
 #include "lj_gc.h"
-#include "lj_meta.h"
-#include "lj_str.h"
 #include "lj_vm.h"
 
 JUMPTABLE_CORE
@@ -483,6 +481,8 @@ static TValue * set_variable_protected(lua_State *Lua, lua_CFunction, void *Data
 {
    auto context = (SetVariableContext *)Data;
 
+   lua_pushlstring(Lua, context->name, context->name_size);
+
    switch (context->value_type) {
       case SetVariableValueType::String:  lua_pushstring(Lua, context->value.string_value); break;
       case SetVariableValueType::Pointer: lua_pushlightuserdata(Lua, context->value.pointer_value); break;
@@ -491,12 +491,9 @@ static TValue * set_variable_protected(lua_State *Lua, lua_CFunction, void *Data
       case SetVariableValueType::Double:  lua_pushnumber(Lua, context->value.double_value); break;
    }
 
-   GCstr *name = lj_str_new(Lua, context->name, context->name_size);
-
-   // Always use the checked boundary.  An unmarked environment has no policy attached yet, so the same path is valid
-   // both before and after the script's first activation.
-   lj_env_store(Lua, tabref(Lua->env), name, Lua->top - 1);
-   Lua->top--;
+   // Always use the checked non-raw boundary.  An unmarked environment has no policy attached yet, while a marked
+   // environment enforces its policy before preserving ordinary __newindex dispatch.
+   lua_settable(Lua, LUA_GLOBALSINDEX);
    return nullptr;
 }
 

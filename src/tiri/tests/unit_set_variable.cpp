@@ -208,6 +208,40 @@ static bool test_set_variable_reactivation(kt::Log &Log)
    return true;
 }
 
+static bool test_set_variable_newindex_dispatch(kt::Log &Log)
+{
+   SetVariableTestScript holder;
+   constexpr std::string_view statement = R"(
+      setmetatable(_G, {
+         __newindex = function(Environment, Name, Value)
+            rawset(Environment, 'glHostInterceptedName', Name)
+            rawset(Environment, 'glHostInterceptedValue', Value)
+         end
+      })
+   )";
+   if (not holder.initialise(statement, Log)) return false;
+   auto script = holder.get();
+   if (not activate_test_script(script, Log)) return false;
+
+   if (ti::SetVariable(script, "glHostProxied", FD_INT, 73) != ERR::Okay) {
+      Log.error("SetVariable() rejected a name handled by _G.__newindex");
+      return false;
+   }
+   if (not global_is_nil(script->Lua, "glHostProxied") or
+       not global_string_is(script->Lua, "glHostInterceptedName", "glHostProxied")) {
+      Log.error("SetVariable() bypassed the _G.__newindex handler");
+      return false;
+   }
+   lua_getglobal(script->Lua, "glHostInterceptedValue");
+   bool value_matches = lua_tointeger(script->Lua, -1) IS 73;
+   lua_pop(script->Lua, 1);
+   if (not value_matches) {
+      Log.error("the _G.__newindex handler received the wrong SetVariable() value");
+      return false;
+   }
+   return true;
+}
+
 } // namespace
 
 void set_variable_unit_tests(int &Passed, int &Total)
@@ -216,11 +250,12 @@ void set_variable_unit_tests(int &Passed, int &Total)
       const char *name;
       bool (*function)(kt::Log &Log);
    };
-   constexpr std::array<TestCase, 4> tests = { {
+   constexpr std::array<TestCase, 5> tests = { {
       { "set_variable_pre_activation", test_set_variable_pre_activation },
       { "set_variable_policy_rejections", test_set_variable_policy_rejections },
       { "set_variable_name_and_state", test_set_variable_name_and_state },
-      { "set_variable_reactivation", test_set_variable_reactivation }
+      { "set_variable_reactivation", test_set_variable_reactivation },
+      { "set_variable_newindex_dispatch", test_set_variable_newindex_dispatch }
    } };
 
    for (const auto &test : tests) {
