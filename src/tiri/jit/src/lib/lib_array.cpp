@@ -30,7 +30,6 @@
 #include "../parser/static_type_descriptor.h"
 
 #include <cstdio>
-#include <climits>
 #include <cstring>
 #include <algorithm>
 #include <string_view>
@@ -1171,23 +1170,21 @@ LJLIB_CF(array_copy)
       auto span = array_copy_span(L, dest_idx, dest->len, src_idx, table_len, copy_total, true);
       if (span.count IS 0) return 0;
 
-      // Stage and validate the complete source span before changing the destination.
-      if (span.count > MSize(INT_MAX) or not lua_checkstack(L, int(span.count))) {
-         lj_err_caller(L, ErrMsg::STKOVM);
-      }
-      int staged_index = lua_gettop(L) + 1;
-      for (MSize i = 0; i < span.count; i++) {
-         int32_t source_index = src_idx + int32_t(i);
-         lua_pushinteger(L, source_index);
-         lua_gettable(L, 2);
-         lj_arr_checkelem(L, dest, L->top - 1);
-      }
+      // Stage and validate the complete source span before changing the destination.  A temporary array is used
+      // for staging rather than the Lua stack, because the span can legitimately exceed the VM stack limit.
+      GCarray *staged = array_new_like(L, dest, span.count);
+      int staged_slot = lua_gettop(L) + 1;
+      setarrayV(L, L->top++, staged); // Root the staging array against collection
 
       for (MSize i = 0; i < span.count; i++) {
-         TValue *value = L->base + staged_index - 1 + int(i);
-         lj_arr_storeelem(L, dest, span.start + i, value);
+         lua_pushinteger(L, src_idx + int32_t(i));
+         lua_gettable(L, 2);
+         lj_arr_storeelem(L, staged, i, L->top - 1); // Raises before the destination is touched
+         L->top--;
       }
-      lua_settop(L, staged_index - 1);
+
+      lj_array_copy(L, dest, span.start, staged, 0, span.count);
+      lua_settop(L, staged_slot - 1);
 
       return 0;
    }
