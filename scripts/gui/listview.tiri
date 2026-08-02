@@ -37,7 +37,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-gui.listView = function(Options:table)
+gui.listView = function(Options:table):table
    lTextAttrib = Options.textAttrib ?? 'name'
    lCompact    = Options.compact ?? 0
 

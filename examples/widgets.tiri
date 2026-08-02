@@ -19,8 +19,8 @@ A demonstration of standard widgets
    import 'gui/window'
    import 'vfx'
 
-   glSelf = <{ obj.find('self') }>
-   glPath = <{ glSelf.workingPath }>
+   glSelf = <obj{ obj.find('self') }>
+   glPath = <str{ glSelf.workingPath }>
 
    win = gui.window({ title='Widget Examples', insideWidth=600, insideHeight=400 })
    viewport = win:clientViewport({ aspectRatio = ARF_MEET })

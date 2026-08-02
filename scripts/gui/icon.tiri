@@ -16,7 +16,7 @@ rx_volume_prefix = <{ regex.new([[^[^:\/\\]+:]]) }>
 
 -- NB: If a custom SVG file is desired then the client must specify a volume in the path.
 
-function imageLocation(Path)
+function imageLocation(Path:str):str
    if Path:startsWith('icons:') then
       return Path
    elseif rx_volume_prefix.test(Path) then

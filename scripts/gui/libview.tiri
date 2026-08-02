@@ -59,7 +59,7 @@ function deselectItem(View:table, Item)
    Item?._selectEvent(View, Item)
 end
 
-function lastItem(View)
+function lastItem(View):table
    return View.items[#View.items-1]
 end
 
@@ -114,7 +114,7 @@ function simpleSelect(View:table, Item)
    View.scene.surface.mtScheduleRedraw()
 end
 
-function selectNext(View:table, Filter)
+function selectNext(View:table, Filter):table
    if not View.sItem then
       for item in values(View.items) do
          if (not item.hidden) and Filter(item) then
@@ -135,7 +135,7 @@ function selectNext(View:table, Filter)
    end
 end
 
-function selectPrev(View:table, Filter)
+function selectPrev(View:table, Filter):table
    if not View.sItem then
       for i in {1 into #View.items} do
          item = View.items[#View.items - i]
@@ -272,7 +272,7 @@ gui.initView = function(Options:table, BuildUI, NewItems)
    -- Add a monitored click zone.  Not for client use.
    -- If Width is nil then the click zone will span the entire width of the page and X is ignored.
 
-   vw.addZone = function(X, Y, Width, Height, Item, HoverCallback)
+   vw.addZone = function(X, Y, Width, Height, Item, HoverCallback):table
       if not HoverCallback then HoverCallback = itemHoverCallback end
 
       table.insert(vw.zones, {

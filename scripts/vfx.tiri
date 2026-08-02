@@ -13,43 +13,43 @@ vfx.ease = { }
 
 ----------------------------------------------------------------------------------------------------------------------
 
-vfx.ease.linear = function(Value)
+vfx.ease.linear = function(Value:num)
    return Value
 end
 
-vfx.ease.inQuad = function(Value)
+vfx.ease.inQuad = function(Value:num)
    return Value * Value
 end
 
-vfx.ease.outQuad = function(Value)
+vfx.ease.outQuad = function(Value:num)
    inverse = 1.0 - Value
    return 1.0 - (inverse * inverse)
 end
 
-vfx.ease.inOutQuad = function(Value)
+vfx.ease.inOutQuad = function(Value:num)
    if Value < 0.5 then return 2.0 * Value * Value end
 
    inverse = -2.0 * Value + 2.0
    return 1.0 - ((inverse * inverse) * 0.5)
 end
 
-vfx.ease.inCubic = function(Value)
+vfx.ease.inCubic = function(Value:num)
    return Value * Value * Value
 end
 
-vfx.ease.outCubic = function(Value)
+vfx.ease.outCubic = function(Value:num)
    inverse = 1.0 - Value
    return 1.0 - (inverse * inverse * inverse)
 end
 
-vfx.ease.inOutCubic = function(Value)
+vfx.ease.inOutCubic = function(Value:num)
    if Value < 0.5 then return 4.0 * Value * Value * Value end
 
    inverse = -2.0 * Value + 2.0
    return 1.0 - ((inverse * inverse * inverse) * 0.5)
 end
 
-vfx.apply_easing = function(Value, Easing)
+vfx.apply_easing = function(Value:num, Easing):num
    progress = math.clamp(Value, 0.0, 1.0)
 
    if not Easing then return progress end

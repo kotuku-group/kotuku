@@ -621,7 +621,7 @@ gui.fileview = function(Options)
 
    -- Returns the item for a given file or folder name.
 
-   function findItem(Name)
+   function findItem(Name):table
       if self._file_table[Name] then return self._file_table[Name] end
    end
 
@@ -970,21 +970,21 @@ gui.fileview = function(Options)
       end
    end
 
-   self.bytesFree = function()
+   self.bytesFree = function():num
       if self.deviceInfo then return self.deviceInfo.bytesFree end
    end
 
-   self.bytesUsed = function()
+   self.bytesUsed = function():num
       if self.deviceInfo then return self.deviceInfo.bytesUsed end
    end
 
-   self.byteSize = function()
+   self.byteSize = function():num
       if self.deviceInfo then return self.deviceInfo.deviceSize end
    end
 
    -- Change the current path that is being viewed.
 
-   self.browse = function(Path)
+   self.browse = function(Path):str
       if (not Path??) or (Path is ':') then Path = nil end
 
       if Path is self.path then return self.path end
@@ -1097,7 +1097,7 @@ gui.fileview = function(Options)
 
    self.createFolder = function()
       if not self.path?? then -- Create a new shortcut/volume at the root level
-         return self.createShortcut()
+         self.createShortcut()
       else
          self.dlgFolder = gui.dialog.message({
             title     = 'Create New Folder',
@@ -1626,7 +1626,7 @@ gui.fileview = function(Options)
    -- Returns the name of the currently selected item, as it appears to the user (e.g.
    -- the file extension might be stripped).
 
-   self.selection = function()
+   self.selection = function():str
       if self.view.sItem then
          return rxStripFolder.extract(self.view.sItem.name.value)
       end
@@ -1634,13 +1634,13 @@ gui.fileview = function(Options)
 
    -- Returns the currently selected file or folder (fully-qualified).
 
-   self.selectionFile = function()
+   self.selectionFile = function():str
       return self.view?.sItem?.filename
    end
 
    -- Return the complete, fully-qualified path of the most recently selected item
 
-   self.selectionPath = function()
+   self.selectionPath = function():str
       if self.view.sItem then return (self.path ?? '') .. self.view.sItem.filename end
    end
 
