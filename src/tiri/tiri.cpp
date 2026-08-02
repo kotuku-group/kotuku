@@ -43,6 +43,9 @@ For more information on the Tiri syntax, please refer to the official Tiri Refer
 #include "lj_bc.h"
 #include "lj_array.h"
 #include "lj_gc.h"
+#include "lj_meta.h"
+#include "lj_str.h"
+#include "lj_vm.h"
 
 JUMPTABLE_CORE
 JUMPTABLE_REGEX
@@ -358,11 +361,17 @@ extern void array_unit_tests(int &, int &);
 extern void allocator_unit_tests(int &, int &);
 extern void bulk_unit_tests(int &, int &);
 extern void gc_unit_tests(int &, int &);
+extern void set_variable_unit_tests(int &, int &);
 #endif
 
 static void MODTest(std::string_view Options, int *Passed, int *Total)
 {
 #ifdef UNIT_TESTS
+   {
+      kt::Log log("TiriTests");
+      log.branch("Running SetVariable unit tests...");
+      set_variable_unit_tests(*Passed, *Total);
+   }
    {
       kt::Log log("TiriTests");
       log.branch("Running indexing unit tests...");
@@ -427,6 +436,10 @@ SetVariable: Sets any variable in a loaded Tiri script.
 The SetVariable() function provides a method for setting global variables in a Tiri script prior to execution of that
 script.  If the script is cached, the variable settings will be available on the next activation.
 
+Before the first activation, no script policy is attached to the global environment, so host-provided variables are
+unconstrained and may be overwritten by declarations in the script source.  After the first activation, variable
+stores are subject to the script's sticky global type contracts, const bindings and protected built-ins.
+
 -INPUT-
 obj(Tiri) Script: Pointer to a Tiri script.
 strview Name: The name of the variable to set.
@@ -436,9 +449,11 @@ tags Variable: A variable that matches the indicated `Type`.
 -ERRORS-
 Okay: The variable was defined successfully.
 Args:
-FieldTypeMismatch: A valid field type was not specified in the `Type` parameter.
-InvalidState: The script does not have an active Tiri state.
+Failed: A Lua allocation or other runtime error prevented the store.
+FieldTypeMismatch: A valid field type was not specified, or the value conflicts with a sticky global type contract.
+InvalidState: The script does not have an active Tiri state, or is currently executing.
 ObjectCorrupt: Privately maintained memory has become inaccessible.
+ReadOnly: The requested name is a protected built-in or an initialised const global.
 
 -TAGS-
 mutates-object, copies-input
@@ -447,10 +462,59 @@ mutates-object, copies-input
 *********************************************************************************************************************/
 
 namespace ti {
+namespace {
+
+enum class SetVariableValueType : uint8_t { String, Pointer, Int, Int64, Double };
+
+struct SetVariableContext {
+   const char *name;
+   size_t name_size;
+   SetVariableValueType value_type;
+   union {
+      STRING string_value;
+      APTR pointer_value;
+      int int_value;
+      int64_t int64_value;
+      double double_value;
+   } value;
+};
+
+static TValue * set_variable_protected(lua_State *Lua, lua_CFunction, void *Data)
+{
+   auto context = (SetVariableContext *)Data;
+
+   switch (context->value_type) {
+      case SetVariableValueType::String:  lua_pushstring(Lua, context->value.string_value); break;
+      case SetVariableValueType::Pointer: lua_pushlightuserdata(Lua, context->value.pointer_value); break;
+      case SetVariableValueType::Int:     lua_pushinteger(Lua, context->value.int_value); break;
+      case SetVariableValueType::Int64:   lua_pushnumber(Lua, context->value.int64_value); break;
+      case SetVariableValueType::Double:  lua_pushnumber(Lua, context->value.double_value); break;
+   }
+
+   GCstr *name = lj_str_new(Lua, context->name, context->name_size);
+
+   // Always use the checked boundary.  An unmarked environment has no policy attached yet, so the same path is valid
+   // both before and after the script's first activation.
+   lj_env_store(Lua, tabref(Lua->env), name, Lua->top - 1);
+   Lua->top--;
+   return nullptr;
+}
+
+static ERR set_variable_error(std::string_view Message)
+{
+   if ((Message.find("cannot override built-in") != std::string_view::npos) or
+       (Message.find("cannot assign to const global") != std::string_view::npos)) {
+      return ERR::ReadOnly;
+   }
+   if (Message.find("type contract failed") != std::string_view::npos) return ERR::FieldTypeMismatch;
+   return ERR::Failed;
+}
+
+} // namespace
+
 ERR SetVariable(objTiri *Script, const std::string_view &Name, int Type, ...)
 {
    kt::Log log(__FUNCTION__);
-   va_list list;
 
    if ((not Script) or (Script->classID() != CLASSID::TIRI) or Name.empty()) return log.warning(ERR::Args);
 
@@ -459,22 +523,53 @@ ERR SetVariable(objTiri *Script, const std::string_view &Name, int Type, ...)
    auto tiri = (extTiri *)Script;
    auto lua = tiri->Lua;
    if (not lua) return log.warning(ERR::InvalidState);
+   if (tiri->Recurse) return log.warning(ERR::InvalidState);
 
+   SetVariableContext context = { Name.data(), Name.size(), SetVariableValueType::String, {} };
+   va_list list;
    va_start(list, Type);
 
-   if (Type & FD_STRING)       lua_pushstring(lua, va_arg(list, STRING));
-   else if (Type & FD_POINTER) lua_pushlightuserdata(lua, va_arg(list, APTR));
-   else if (Type & FD_INT)     lua_pushinteger(lua, va_arg(list, int));
-   else if (Type & FD_INT64)   lua_pushnumber(lua, va_arg(list, int64_t));
-   else if (Type & FD_DOUBLE)  lua_pushnumber(lua, va_arg(list, double));
+   if (Type & FD_STRING) {
+      context.value_type = SetVariableValueType::String;
+      context.value.string_value = va_arg(list, STRING);
+   }
+   else if (Type & FD_POINTER) {
+      context.value_type = SetVariableValueType::Pointer;
+      context.value.pointer_value = va_arg(list, APTR);
+   }
+   else if (Type & FD_INT) {
+      context.value_type = SetVariableValueType::Int;
+      context.value.int_value = va_arg(list, int);
+   }
+   else if (Type & FD_INT64) {
+      context.value_type = SetVariableValueType::Int64;
+      context.value.int64_value = va_arg(list, int64_t);
+   }
+   else if (Type & FD_DOUBLE) {
+      context.value_type = SetVariableValueType::Double;
+      context.value.double_value = va_arg(list, double);
+   }
    else {
       va_end(list);
       return log.warning(ERR::FieldTypeMismatch);
    }
 
-   lua_setglobal(lua, Name.data());
-
    va_end(list);
+
+   int stack_top = lua_gettop(lua);
+   int status = lj_vm_cpcall(lua, nullptr, &context, set_variable_protected);
+   if (status) {
+      std::string_view message;
+      if ((lua_gettop(lua) > stack_top) and (lua_type(lua, -1) IS LUA_TSTRING)) {
+         message = lua_tostringview(lua, -1);
+      }
+      ERR error = set_variable_error(message);
+      if (not message.empty()) log.warning("%.*s", int(message.size()), message.data());
+      else log.warning("The protected Tiri variable store failed with Lua status %d.", status);
+      lua_settop(lua, stack_top);
+      return error;
+   }
+
    return ERR::Okay;
 }
 }
