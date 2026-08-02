@@ -33,7 +33,7 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 
-@Test(priority=10) function MessageThroughput()
+@Test(priority=10) function MessageThroughput():num
    start_time = 0
    messages_sent = 0
    read_chunks = 0

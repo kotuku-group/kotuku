@@ -51,7 +51,7 @@ end
 -- Test const with function values
 
 @Test function ConstWithFunction()
-   add <const> = function(a, b)
+   add <const> = function(a:num, b:num)
       return a + b
    end
 

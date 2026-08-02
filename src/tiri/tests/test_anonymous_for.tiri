@@ -160,7 +160,7 @@ end
 
 @Test function AnonymousForFunctionCall()
    -- Test calling functions inside anonymous for
-   function increment(val)
+   function increment(val:num):num
       return val + 1
    end
 

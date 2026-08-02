@@ -25,7 +25,7 @@ function build_source(Signature)
    return "local function typed(" .. Signature .. ") return " .. returns .. " end return typed"
 end
 
-function compile_signature(Signature)
+function compile_signature(Signature:str):func
    factory = exec(build_source(Signature))
    assert(type(factory) is "function", "Chunk did not produce a function")
    return factory
@@ -40,7 +40,7 @@ end
 end
 
 @Test function MixedParameters()
-   mixed = compile_signature("Untyped, Typed:bool")
+   mixed = compile_signature("Untyped:any, Typed:bool")
    results = { mixed("anything", true) }
    assert(results[0] is "anything", "Untyped parameter should accept any value")
    assert(results[1] is true, "Typed boolean parameter should pass through")

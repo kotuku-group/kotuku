@@ -60,11 +60,13 @@ using StmtNodeList = std::vector<StmtNodePtr>;
 // Function return type declaration for static analysis
 struct FunctionReturnTypes {
    std::array<TiriType, MAX_RETURN_TYPES> types{};  // Return types (Unknown = unused slot)
+   std::array<CLASSID, MAX_RETURN_TYPES> object_class_ids{}; // Inferred object-class constraints
    std::array<struct_record *, MAX_RETURN_TYPES> struct_defs{}; // Resolved layouts for struct<Name> results
    std::array<StaticValueHandle, MAX_RETURN_TYPES> descriptors{};
    uint8_t count = 0;           // Number of declared types (0 = not declared)
    bool is_variadic = false;    // True if declaration ends with ... (last type repeats)
    bool is_explicit = false;    // True if explicitly declared, false if inferred
+   bool is_inferred = false;    // True when semantic analysis validated every returned position
 
    [[nodiscard]] bool is_void() const { return count IS 0 and is_explicit; }
    [[nodiscard]] bool is_any() const { return count IS 1 and types[0] IS TiriType::Any; }
@@ -529,7 +531,7 @@ struct FunctionExprPayload {
    bool is_vararg = false;
    bool is_thunk = false;              // Marks function as thunk
    TiriType thunk_return_type = TiriType::Any;  // Return type for thunk (kept for IR emission compatibility)
-   FunctionReturnTypes return_types{};            // General return type tracking for type checking
+   mutable FunctionReturnTypes return_types{};    // Declared or validated inferred result metadata
    mutable StaticCallableHandle callable = 0;
    std::unique_ptr<BlockStmt> body;
    std::vector<AnnotationEntry> annotations;  // Annotations attached to this function

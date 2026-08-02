@@ -49,7 +49,7 @@ end
       return 1, 2, 3, 4, 5
    end
 
-   function first_arg(a)
+   function first_arg(a):num
       return a
    end
 
@@ -120,7 +120,7 @@ end
 
 @Test function PipePrecedence()
    -- Pipe should have lower precedence than comparison, so this parses as (5 > 3) |> func()
-   function identity(x)
+   function identity(x):num
       return x
    end
 

@@ -214,7 +214,7 @@ end
 
 @Test function ArrayAnyReduce()
    arr = array<any> { 1, 2, 3, 4 }
-   sum = array.reduce(arr, 0, function(acc, v)
+   sum = array.reduce(arr, 0, function(acc, v):num
       return acc + v
    end)
 

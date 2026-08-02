@@ -911,10 +911,11 @@ GCproto * LexState::fs_finish(BCLine Line)
 
    fs_fixup_ret(fs);
 
-   // Finalise the canonical result signature.  Unannotated functions reserve the bounded result prefix used by
-   // BC_TYPEFIX; provenance and strength are fixed before publication so runtime inference mutates only the type byte.
+   // Finalise the canonical result signature.  Unvalidated dynamic functions reserve the bounded result prefix used
+   // by BC_TYPEFIX; provenance and strength are fixed before publication so observation mutates only the type byte.
 
-   if (not fs->return_contract_explicit and (fs->flags & PROTO_HAS_RETURN)) {
+   if (not fs->return_contract_explicit and not fs->return_inference_validated and
+       (fs->flags & PROTO_HAS_RETURN)) {
       fs->signature_flags |= proto_signature_flag(ProtoSignatureFlag::DynamicResults);
       fs->signature_result_count = 0;
       fs->signature_result_entry_count = uint8_t(fs->signature_results.size());

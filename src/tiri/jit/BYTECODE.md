@@ -623,7 +623,8 @@ Each `TryHandlerDesc` contains:
 
 ### 10.2 Runtime Type Fixing (`BC_TYPEFIX`)
 
-`BC_TYPEFIX` enables runtime type inference for function return types when the function has no explicit return type annotations.
+`BC_TYPEFIX` records advisory runtime observations for dynamic prototype result entries.  It does not enforce or prove
+the source language's static return-inference rule.
 
 **Opcode semantics:**
 - `BC_TYPEFIX A, D`: Fixes return types at runtime. `A` is the base register, `D` is the count of return values to process.
@@ -633,14 +634,13 @@ Each `TryHandlerDesc` contains:
   remain unchanged.
 
 **When emitted:**
-The parser sets the canonical signature's `DynamicResults` flag on function prototypes when:
-1. The function has NO explicit return type annotations, AND
-2. At least one return statement exists
+Validated statically inferred results do not use this opcode.  Dynamic signatures retained for compatibility or
+tooling may set `DynamicResults` and use `BC_TYPEFIX` to gather advisory observations.
 
 **Purpose:**
-Enables type inference for untyped functions, allowing the VM to optimise subsequent calls based on observed return
-types. The inferred types are stored in the canonical signature's result entries (up to
-`PROTO_MAX_RETURN_TYPES` positions).
+Supplies optional optimisation metadata for dynamic result positions.  The observations are stored in the canonical
+signature's result entries (up to `PROTO_MAX_RETURN_TYPES` positions), but consumers must not treat them as checked
+contracts or as evidence that all control-flow paths return the observed type.
 
 **Implementation:** See [vm_x64.dasc:4901-4922](src/tiri/jit/src/jit/vm_x64.dasc#L4901-L4922), [lj_meta.cpp:664-685](src/tiri/jit/src/runtime/lj_meta.cpp#L664-L685), [parse_scope.cpp:1012-1024](src/tiri/jit/src/parser/parse_scope.cpp#L1012-L1024).
 
@@ -658,8 +658,9 @@ Every typed function prototype carries one versioned signature containing:
   strength.
 
 Constraints use stable 32-bit structure keys or class identifiers, never process-local pointers. Declared non-`any`
-contracts have checked strength, while omitted, explicit `any` and runtime-inferred positions remain advisory.
-`BC_TYPEFIX` changes only the type of a reserved inferred result entry.
+contracts have checked strength, statically validated inferred results have trusted strength, and explicit `any` or
+runtime-observed dynamic positions remain advisory.  `BC_TYPEFIX` changes only the type of a reserved dynamic result
+entry.
 
 The signature is stored in the prototype allocation between upvalue descriptors and debug metadata. Its fields are
 written explicitly because bytecode-loaded prototypes are allocated as raw GC memory. Both stripped and unstripped

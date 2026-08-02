@@ -598,7 +598,7 @@ end
 
    symbol = result.symbols[0]
    assert(symbol.params[0].doc is "Value to format", "Expected compact @input doc to be positional")
-   assert(symbol.results[0].type is "num", "Expected first compact result type to be inferred as num")
+   assert(symbol.results[0].type is "num", "Expected first compact result type to be inferred as num, got " .. tostring(symbol.results[0].type))
    assert(symbol.results[0].doc is "Incremented value", "Expected first inferred compact @result doc")
    assert(symbol.results[0].inferred is true, "Inferred compact result type should be marked inferred")
    assert(symbol.results[1].type is "str", "Expected second compact result type to be inferred as str")
@@ -609,6 +609,75 @@ end
    assert(symbol.results[2].inferred is true, "Inferred compact result type should be marked inferred")
 end
 
+@Test function ValidateSymbolsWithForwardedCallResults()
+   code = [=[
+      function declaredPair():<num, str>
+         return 7, "forwarded"
+      end
+
+      function inferredWrapper()
+         return declaredPair()
+      end
+   ]=]
+
+   result = debug.validate(code, { symbols = true })
+   assert(result.success is true, "A wrapper forwarding declared results should succeed")
+   assert(#result.symbols is 2, "Expected the declared function and its wrapper")
+
+   symbol = result.symbols[1]
+   assert(symbol.name is "inferredWrapper", "Expected the inferred wrapper symbol")
+   assert(#symbol.results is 2, "Expected both forwarded results in parser symbols")
+   assert(symbol.results[0].type is "num", "Expected the first forwarded result to remain num")
+   assert(symbol.results[1].type is "str", "Expected the second forwarded result to remain str")
+   assert(symbol.results[0].inferred is true, "Expected the first forwarded result to be inferred")
+   assert(symbol.results[1].inferred is true, "Expected the second forwarded result to be inferred")
+end
+
+@Test function ValidateSymbolsWithForwardedAnyResult()
+   code = [=[
+      function declaredPair():<num, any>
+         return 7, nil
+      end
+
+      function inferredWrapper()
+         return declaredPair()
+      end
+   ]=]
+
+   result = debug.validate(code, { symbols = true })
+   assert(result.success is true, "A wrapper forwarding an explicit any result should succeed")
+   assert(#result.symbols is 2, "Expected the declared function and its wrapper")
+
+   symbol = result.symbols[1]
+   assert(symbol.name is "inferredWrapper", "Expected the inferred wrapper symbol")
+   assert(#symbol.results is 2, "Expected both forwarded results in parser symbols")
+   assert(symbol.results[0].type is "num", "Expected the first forwarded result to remain num")
+   assert(symbol.results[1].type is "any", "Expected the second forwarded result to remain any")
+end
+
+@Test function ValidateSymbolsWithPrefixedForwardedCallResults()
+   code = [=[
+      function declaredPair():<num, str>
+         return 7, "forwarded"
+      end
+
+      function inferredWrapper()
+         return true, declaredPair()
+      end
+   ]=]
+
+   result = debug.validate(code, { symbols = true })
+   assert(result.success is true, "A wrapper with a fixed return prefix should succeed")
+   assert(#result.symbols is 2, "Expected the declared function and its wrapper")
+
+   symbol = result.symbols[1]
+   assert(symbol.name is "inferredWrapper", "Expected the inferred wrapper symbol")
+   assert(#symbol.results is 3, "Expected the fixed result and both forwarded results")
+   assert(symbol.results[0].type is "bool", "Expected the fixed result to remain bool")
+   assert(symbol.results[1].type is "num", "Expected the first forwarded result to remain num")
+   assert(symbol.results[2].type is "str", "Expected the second forwarded result to remain str")
+end
+
 @Test function ValidateSymbolsWithCompactDocUnknownResultFallback()
    code = [=[
       @Doc(text=[[
@@ -616,7 +685,7 @@ end
          @input Callback that produces a value
          @result Callback result
       ]])
-      function compactFallback(Callback)
+      function compactFallback(Callback:func):any
          return Callback()
       end
    ]=]
@@ -628,9 +697,8 @@ end
 
    symbol = result.symbols[0]
    assert(symbol.params[0].doc is "Callback that produces a value", "Expected fallback compact @input doc")
-   assert(symbol.results[0].type is "any", "Unknown compact result type should fall back to any")
+   assert(symbol.results[0].type is "any", "Compact result type expected to be any")
    assert(symbol.results[0].doc is "Callback result", "Expected fallback compact @result doc")
-   assert(symbol.results[0].inferred is true, "Fallback compact result type should be marked inferred")
 end
 
 @Test function ValidateSymbolsWithAnnotatedFunctionAssignment()
@@ -700,7 +768,7 @@ struct ValidateUser
    List: ptr<ValidatePoint[]>
 end
 
-function validateGreet(U)
+function validateGreet(U):str
    return U.Name
 end
 ]=]

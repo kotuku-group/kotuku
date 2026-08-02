@@ -49,10 +49,28 @@ struct TypeDiagnostic {
 };
 
 // Context for tracking function return type validation during type analysis
+enum class ReturnInferenceState : uint8_t {
+   Unobserved,
+   NilOnly,
+   Concrete,
+   ExplicitAny,
+   Dynamic
+};
+
+struct InferredReturnPosition {
+   ReturnInferenceState state = ReturnInferenceState::Unobserved;
+   InferredType concrete{};
+   SourceSpan location{};
+   SourceSpan dynamic_location{};
+   TiriType dynamic_type = TiriType::Unknown;
+};
+
 struct FunctionContext {
    const FunctionExprPayload* function = nullptr;  // The function being analysed
    FunctionReturnTypes expected_returns{};         // Declared or inferred return types
-   bool return_type_inferred = false;              // True once first return statement sets types
+   std::array<InferredReturnPosition, MAX_RETURN_TYPES> inferred_returns{};
+   uint8_t observed_return_count = 0;
+   bool inference_failed = false;
    GCstr *function_name = nullptr;                 // Function name (for recursive detection)
 
    FunctionContext() = default;

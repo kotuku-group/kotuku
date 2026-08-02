@@ -1096,7 +1096,9 @@ ParserResult<ReturnStmtPayload> AstBuilder::parse_return_payload(const Token& re
    if (parse_values) {
       auto exprs = this->parse_expression_list();
       if (not exprs.ok()) return ParserResult<ReturnStmtPayload>::failure(exprs.error_ref());
-      if (exprs.value_ref().size() IS 1 and exprs.value_ref()[0]->kind IS AstNodeKind::CallExpr) {
+      if (not exprs.value_ref().empty() and
+          (exprs.value_ref().back()->kind IS AstNodeKind::CallExpr or
+           exprs.value_ref().back()->kind IS AstNodeKind::SafeCallExpr)) {
          forwards_call = true;
       }
       values = std::move(exprs.value_ref());

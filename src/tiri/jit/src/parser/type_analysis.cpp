@@ -228,6 +228,8 @@ private:
 
    // Type inference - determines types from expressions and context
    [[nodiscard]] InferredType infer_expression_type(const ExprNode &);
+   [[nodiscard]] InferredType refine_static_expression_type(const ExprNode &, InferredType) const;
+   [[nodiscard]] bool is_explicit_variant_expression(const ExprNode &, size_t Position = 0) const;
    [[nodiscard]] InferredType infer_call_return_type(const ExprNode &, size_t Position) const;
 
    // Symbol resolution - looks up variables and functions in scope stack
@@ -359,6 +361,7 @@ private:
    uint32_t unanalysed_depth_{0};                   // Reduced-traversal nesting depth; non-zero suppresses tips
    uint8_t current_file_index_{0};                  // FileSource index of the file being analysed
    ankerl::unordered_dense::map<GCstr*, GlobalTypeInfo> global_types_{};  // Type info for global variables
+   ankerl::unordered_dense::set<StaticBindingID> explicit_variant_bindings_{};
    #ifdef INCLUDE_TIPS
    std::vector<GCstr*> declared_globals_{};         // Globals explicitly declared with 'global' keyword
    #endif
@@ -611,7 +614,6 @@ void TypeAnalyser::enter_function(const FunctionExprPayload &Function, GCstr *Na
    // If function has explicit return types, use them
    if (Function.return_types.is_explicit) {
       ctx.expected_returns = Function.return_types;
-      ctx.return_type_inferred = true;  // Explicit types are considered "inferred" for validation purposes
    }
 
    this->function_stack_.push_back(ctx);
@@ -621,9 +623,62 @@ void TypeAnalyser::enter_function(const FunctionExprPayload &Function, GCstr *Na
 
 void TypeAnalyser::leave_function()
 {
-   if (not this->function_stack_.empty()) {
-      this->function_stack_.pop_back();
+   if (this->function_stack_.empty()) return;
+
+   FunctionContext &ctx = this->function_stack_.back();
+   if (ctx.function and not ctx.expected_returns.is_explicit) {
+      size_t inferred_return_count = ctx.observed_return_count;
+      while (inferred_return_count > 0 and
+          ctx.inferred_returns[inferred_return_count - 1].state IS ReturnInferenceState::NilOnly) {
+         inferred_return_count--;
+      }
+
+      for (size_t i = 0; i < inferred_return_count; ++i) {
+         const InferredReturnPosition &position = ctx.inferred_returns[i];
+         if (position.state != ReturnInferenceState::Dynamic) continue;
+
+         TypeDiagnostic diag;
+         diag.location = position.dynamic_location;
+         diag.actual = position.dynamic_type;
+         diag.code = ParserErrorCode::ReturnTypeRequired;
+         if (position.concrete.primary != TiriType::Any and position.concrete.primary != TiriType::Unknown) {
+            diag.expected = position.concrete.primary;
+            diag.message = std::format(
+               "cannot infer result {} as '{}' from a dynamic value; declare ': {}' to check it at runtime or "
+               "': any' to allow a variant result",
+               i + 1, type_name(position.concrete.primary), type_name(position.concrete.primary));
+         }
+         else {
+            diag.message = std::format(
+               "cannot infer result {} from a dynamic value; declare a concrete result type to check it at "
+               "runtime or ': any' to allow a variant result", i + 1);
+         }
+         this->record_diagnostic(std::move(diag));
+         ctx.inference_failed = true;
+      }
+
+      if (inferred_return_count > 0 and not ctx.inference_failed) {
+         FunctionReturnTypes &published = ctx.function->return_types;
+         published.count = uint8_t(inferred_return_count);
+         published.is_inferred = true;
+         published.is_variadic = false;
+         for (size_t i = 0; i < inferred_return_count; ++i) {
+            const InferredReturnPosition &position = ctx.inferred_returns[i];
+            if (position.state IS ReturnInferenceState::NilOnly) {
+               published.types[i] = TiriType::Nil;
+               published.object_class_ids[i] = CLASSID::NIL;
+               published.struct_defs[i] = nullptr;
+            }
+            else {
+               published.types[i] = position.concrete.primary;
+               published.object_class_ids[i] = position.concrete.object_class_id;
+               published.struct_defs[i] = position.concrete.struct_def;
+            }
+         }
+      }
    }
+
+   this->function_stack_.pop_back();
 }
 
 FunctionContext * TypeAnalyser::current_function()
@@ -1648,6 +1703,9 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
       #endif
 
       this->current_scope().declare_local(name.symbol, inferred, name.span, name.has_const);
+      if (name.type IS TiriType::Any and name.binding_id) {
+         this->explicit_variant_bindings_.insert(name.binding_id);
+      }
       this->publish_binding_type(name.binding_id, inferred);
       this->trace_decl(this->ctx_.lex().linenumber, name.symbol, inferred.primary, inferred.is_fixed);
    }
@@ -1967,6 +2025,9 @@ void TypeAnalyser::analyse_function_payload(const FunctionExprPayload &Function,
 
    for (const auto &param : Function.parameters) {
       this->current_scope().declare_parameter(param.name.symbol, param.type, param.struct_def, param.name.span);
+      if (param.type_is_explicit and param.type IS TiriType::Any and param.name.binding_id) {
+         this->explicit_variant_bindings_.insert(param.name.binding_id);
+      }
    }
 
    // Check for recursive functions without explicit return types
@@ -2232,9 +2293,11 @@ void TypeAnalyser::analyse_call_expr(const CallExprPayload &Call)
 
    const FunctionExprPayload* target = this->resolve_call_target(Call);
    if (target) {
-      if (Call.result_type IS TiriType::Unknown and target->return_types.is_explicit and
+      if (Call.result_type IS TiriType::Unknown and
+          (target->return_types.is_explicit or target->return_types.is_inferred) and
           target->return_types.count > 0) {
          Call.result_type = target->return_types.types[0];
+         Call.object_class_id = target->return_types.object_class_ids[0];
          Call.struct_def = target->return_types.struct_defs[0];
       }
       this->check_arguments(*target, Call);
@@ -2305,6 +2368,12 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
             this->mark_identifier_used(payload->identifier.symbol);
             auto resolved = this->resolve_identifier(payload->identifier.symbol);
             if (resolved) return *resolved;
+            if (type_is_registered_constant(payload->identifier.symbol)) {
+               result.primary = TiriType::Num;
+               result.is_constant = true;
+               result.is_fixed = true;
+               return result;
+            }
             resolved = this->lookup_global_type(payload->identifier.symbol);
             if (resolved) return *resolved;
          }
@@ -2334,8 +2403,10 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                }
             }
             const FunctionExprPayload* target = this->resolve_call_target(*payload);
-            if (target and target->return_types.is_explicit and target->return_types.count > 0) {
+            if (target and (target->return_types.is_explicit or target->return_types.is_inferred) and
+                target->return_types.count > 0) {
                result.primary = target->return_types.types[0];
+               result.object_class_id = target->return_types.object_class_ids[0];
                result.struct_def = target->return_types.struct_defs[0];
                payload->struct_def = result.struct_def;
                return result;
@@ -2540,17 +2611,35 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                   result.primary = TiriType::Num;
                   return result;
                // IfEmpty returns type of the operands
-               case AstBinaryOperator::IfEmpty:
-                  if (payload->left) {
-                     result = this->infer_expression_type(*payload->left);
-                     if (result.primary != TiriType::Any and result.primary != TiriType::Unknown) {
-                        return result;
-                     }
+               case AstBinaryOperator::IfEmpty: {
+                  InferredType left_type, right_type;
+                  if (payload->left) left_type = this->infer_expression_type(*payload->left);
+                  if (payload->right) right_type = this->infer_expression_type(*payload->right);
+
+                  if (payload->left and payload->left->kind IS AstNodeKind::LiteralExpr) {
+                     const auto &literal = std::get<LiteralValue>(payload->left->data);
+                     bool is_empty = literal.kind IS LiteralKind::Nil or
+                        (literal.kind IS LiteralKind::Boolean and not literal.bool_value) or
+                        (literal.kind IS LiteralKind::Number and literal.number_value IS 0) or
+                        (literal.kind IS LiteralKind::String and literal.string_value and
+                           literal.string_value->len IS 0);
+                     return is_empty ? right_type : left_type;
                   }
-                  if (payload->right) {
-                     return this->infer_expression_type(*payload->right);
+
+                  if (left_type.primary IS TiriType::Nil) return right_type;
+                  if (left_type.primary IS TiriType::Any or left_type.primary IS TiriType::Unknown or
+                      right_type.primary IS TiriType::Any or right_type.primary IS TiriType::Unknown or
+                      left_type.primary != right_type.primary or
+                      (left_type.primary IS TiriType::Object and
+                         left_type.object_class_id != right_type.object_class_id) or
+                      (left_type.primary IS TiriType::Struct and left_type.struct_def != right_type.struct_def)) {
+                     result.primary = TiriType::Any;
+                     return result;
                   }
-                  break;
+
+                  left_type.is_nullable = right_type.is_nullable;
+                  return left_type;
+               }
             }
          }
          result.primary = TiriType::Any;
@@ -2610,6 +2699,46 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
    return result;
 }
 
+InferredType TypeAnalyser::refine_static_expression_type(const ExprNode &Expr, InferredType Type) const
+{
+   if ((Type.primary != TiriType::Any and Type.primary != TiriType::Unknown) or not Expr.static_value) return Type;
+
+   if (Expr.kind IS AstNodeKind::IdentifierExpr) {
+      const auto &reference = std::get<NameRef>(Expr.data);
+      if (reference.binding_id and this->explicit_variant_bindings_.contains(reference.binding_id)) return Type;
+   }
+
+   const StaticValueDescriptor &descriptor = this->ctx_.descriptors().value(Expr.static_value);
+   if (descriptor.primary IS TiriType::Unknown or descriptor.primary IS TiriType::Any) return Type;
+
+   Type.primary = descriptor.primary;
+   Type.is_nullable = descriptor.nullable;
+   Type.object_class_id = descriptor.object_class_id;
+   Type.struct_def = descriptor.struct_def;
+   Type.is_fixed = true;
+   return Type;
+}
+
+bool TypeAnalyser::is_explicit_variant_expression(const ExprNode &Expr, size_t Position) const
+{
+   if (Expr.kind IS AstNodeKind::IdentifierExpr) {
+      const auto &reference = std::get<NameRef>(Expr.data);
+      if (reference.binding_id) return this->explicit_variant_bindings_.contains(reference.binding_id);
+      if (reference.identifier.symbol) {
+         auto global = this->global_types_.find(reference.identifier.symbol);
+         return global != this->global_types_.end() and
+            global->second.contract_policy IS GlobalContractPolicy::Variant;
+      }
+   }
+   else if (Expr.kind IS AstNodeKind::CallExpr or Expr.kind IS AstNodeKind::SafeCallExpr) {
+      const auto &call = std::get<CallExprPayload>(Expr.data);
+      const FunctionExprPayload *target = this->resolve_call_target(call);
+      return target and target->return_types.is_explicit and Position < target->return_types.count and
+         target->return_types.types[Position] IS TiriType::Any;
+   }
+   return false;
+}
+
 //********************************************************************************************************************
 // Multi-Value Return Type Inference: Infers the return type at a specific position from a function call expression.
 // Used for multi-value assignments like: local a, b, c = func()
@@ -2637,7 +2766,7 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
    const FunctionExprPayload* target = this->resolve_call_target(*payload);
    if (not target) return result;
 
-   if (not target->return_types.is_explicit) return result;
+   if (not target->return_types.is_explicit and not target->return_types.is_inferred) return result;
 
    if (Position >= target->return_types.count and not target->return_types.is_variadic) {
       result.primary = TiriType::Nil;
@@ -2648,10 +2777,11 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
    // Get the type at the requested position
    TiriType type = target->return_types.type_at(Position);
    if (type != TiriType::Unknown) {
+      const size_t type_position = Position < target->return_types.count ?
+         Position : size_t(target->return_types.count - 1);
       result.primary = type;
-      if (Position < target->return_types.struct_defs.size()) {
-         result.struct_def = target->return_types.struct_defs[Position];
-      }
+      result.object_class_id = target->return_types.object_class_ids[type_position];
+      result.struct_def = target->return_types.struct_defs[type_position];
    }
 
    return result;
@@ -2734,6 +2864,9 @@ const FunctionExprPayload * TypeAnalyser::resolve_function(GCstr *Name) const
    for (auto it = this->scope_stack_.rbegin(); it != this->scope_stack_.rend(); ++it) {
       const FunctionExprPayload* fn = it->lookup_function(Name);
       if (fn) return fn;
+   }
+   if (auto global = this->global_types_.find(Name); global != this->global_types_.end()) {
+      return global->second.function;
    }
    return nullptr;
 }
@@ -2978,6 +3111,33 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
    if (not ctx) return;  // Not inside a function (shouldn't happen in valid code)
 
    size_t return_count = Return.values.size();
+   size_t fixed_count = return_count;
+   const ExprNode *tail_expression = nullptr;
+   const StaticResultSet *tail_results = nullptr;
+   if (not ctx->expected_returns.is_explicit and Return.forwards_call and not Return.values.empty()) {
+      tail_expression = Return.values.back().get();
+      if (tail_expression->static_results) {
+         const StaticResultSet &results = this->ctx_.descriptors().results(tail_expression->static_results);
+         if (not results.dynamic and not results.variadic) {
+            fixed_count--;
+            tail_results = &results;
+            return_count = fixed_count + results.declared_count;
+         }
+      }
+   }
+
+   auto expression_at = [&](size_t Position) -> const ExprNode & {
+      return Position < fixed_count ? *Return.values[Position] : *tail_expression;
+   };
+
+   auto infer_position = [&](size_t Position) {
+      const ExprNode &expression = expression_at(Position);
+      if (tail_results and Position >= fixed_count) {
+         return this->infer_call_return_type(expression, Position - fixed_count);
+      }
+      InferredType actual = this->infer_expression_type(expression);
+      return this->refine_static_expression_type(expression, actual);
+   };
 
    if (ctx->expected_returns.is_explicit) {
       // Explicit declaration: validate against declared types
@@ -2987,16 +3147,19 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
          TiriType expected = ctx->expected_returns.type_at(i);
          if (expected IS TiriType::Any or expected IS TiriType::Unknown) continue;
 
-         InferredType actual = this->infer_expression_type(*Return.values[i]);
+         const ExprNode &expression = expression_at(i);
+         InferredType actual = this->infer_expression_type(expression);
 
          // Nil is always allowed as a "clear" or "no value" return
          if (actual.primary IS TiriType::Nil) continue;
-         // Any can be assigned to any type
-         if (actual.primary IS TiriType::Any) continue;
+         // A concrete declaration supplies the destination type for runtime validation of dynamic values.
+         if (actual.primary IS TiriType::Any or actual.primary IS TiriType::Unknown) continue;
 
-         if (actual.primary != expected) {
+         const bool struct_matches = expected != TiriType::Struct or not ctx->expected_returns.struct_defs[i] or
+            actual.struct_def IS ctx->expected_returns.struct_defs[i];
+         if (actual.primary != expected or not struct_matches) {
             TypeDiagnostic diag;
-            diag.location = Return.values[i]->span;
+            diag.location = expression.span;
             diag.expected = expected;
             diag.actual = actual.primary;
             diag.code = ParserErrorCode::ReturnTypeMismatch;
@@ -3007,58 +3170,64 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
       }
    }
    else {
-      // Inference mode: first non-nil return statement fixes types (first-wins rule)
-      // Nil returns don't establish a type - they're compatible with any future type
-      if (not ctx->return_type_inferred and return_count > 0) {
-         // First return: infer types from returned values
-         bool has_non_nil = false;
-         for (size_t i = 0; i < std::min(return_count, MAX_RETURN_TYPES); ++i) {
-            InferredType inferred = this->infer_expression_type(*Return.values[i]);
-            ctx->expected_returns.types[i] = inferred.primary;
-            if (inferred.primary != TiriType::Nil and inferred.primary != TiriType::Any) {
-               has_non_nil = true;
+      const size_t check_count = std::min(return_count, size_t(MAX_RETURN_TYPES));
+      ctx->observed_return_count = uint8_t(std::max<size_t>(ctx->observed_return_count, check_count));
+
+      for (size_t i = 0; i < check_count; ++i) {
+         InferredReturnPosition &position = ctx->inferred_returns[i];
+         const ExprNode &expression = expression_at(i);
+         const size_t expression_position = tail_results and i >= fixed_count ? i - fixed_count : 0;
+         InferredType actual = infer_position(i);
+         position.location = expression.span;
+
+         if (actual.primary IS TiriType::Nil) {
+            if (position.state IS ReturnInferenceState::Unobserved) {
+               position.state = ReturnInferenceState::NilOnly;
             }
+            continue;
          }
-         ctx->expected_returns.count = uint8_t(std::min(return_count, MAX_RETURN_TYPES));
-         // Only mark as inferred if we have at least one concrete (non-nil) type
-         // This allows a later return with concrete types to establish the actual types
-         ctx->return_type_inferred = has_non_nil;
-      }
-      else if (return_count > 0) {
-         // Subsequent return: check consistency with inferred types
-         size_t check_count = std::min(return_count, size_t(ctx->expected_returns.count));
 
-         for (size_t i = 0; i < check_count; ++i) {
-            TiriType expected = ctx->expected_returns.types[i];
-            InferredType actual = this->infer_expression_type(*Return.values[i]);
-
-            // If expected is nil/any/unknown, and actual is concrete, upgrade the expected type
-            if ((expected IS TiriType::Nil or expected IS TiriType::Any or expected IS TiriType::Unknown) and
-                actual.primary != TiriType::Nil and actual.primary != TiriType::Any and
-                actual.primary != TiriType::Unknown) {
-               ctx->expected_returns.types[i] = actual.primary;
-               ctx->return_type_inferred = true;
-               continue;
-            }
-
-            if (expected IS TiriType::Any or expected IS TiriType::Unknown) continue;
-
-            // Nil is always allowed as a "clear" or "no value" return
-            if (actual.primary IS TiriType::Nil) continue;
-            // Any can match any type
-            if (actual.primary IS TiriType::Any) continue;
-
-            if (actual.primary != expected) {
-               TypeDiagnostic diag;
-               diag.location = Return.values[i]->span;
-               diag.expected = expected;
-               diag.actual = actual.primary;
-               diag.code = ParserErrorCode::ReturnTypeMismatch;
-               diag.message = std::format("inconsistent return type at position {}: first return established '{}', but this returns '{}'",
-                  i + 1, type_name(expected), type_name(actual.primary));
-               this->record_diagnostic(std::move(diag));
-            }
+         if (actual.primary IS TiriType::Any and
+             this->is_explicit_variant_expression(expression, expression_position)) {
+            position.concrete = actual;
+            position.concrete.primary = TiriType::Any;
+            position.state = ReturnInferenceState::ExplicitAny;
+            continue;
          }
+
+         if (position.state IS ReturnInferenceState::ExplicitAny) continue;
+
+         if (actual.primary IS TiriType::Any or actual.primary IS TiriType::Unknown) {
+            position.state = ReturnInferenceState::Dynamic;
+            position.dynamic_location = expression.span;
+            position.dynamic_type = actual.primary;
+            continue;
+         }
+
+         if (position.concrete.primary IS TiriType::Any or position.concrete.primary IS TiriType::Unknown) {
+            position.concrete = actual;
+            if (position.state != ReturnInferenceState::Dynamic) position.state = ReturnInferenceState::Concrete;
+            continue;
+         }
+
+         const bool type_matches = actual.primary IS position.concrete.primary;
+         const bool class_matches = position.concrete.primary != TiriType::Object or
+            position.concrete.object_class_id IS CLASSID::NIL or
+            actual.object_class_id IS position.concrete.object_class_id;
+         const bool struct_matches = position.concrete.primary != TiriType::Struct or
+            not position.concrete.struct_def or actual.struct_def IS position.concrete.struct_def;
+         if (type_matches and class_matches and struct_matches) continue;
+
+         TypeDiagnostic diag;
+         diag.location = expression.span;
+         diag.expected = position.concrete.primary;
+         diag.actual = actual.primary;
+         diag.code = ParserErrorCode::ReturnTypeMismatch;
+         diag.message = std::format(
+            "inconsistent return type at position {}: first return established '{}', but this returns '{}'",
+            i + 1, type_name(position.concrete.primary), type_name(actual.primary));
+         this->record_diagnostic(std::move(diag));
+         ctx->inference_failed = true;
       }
    }
 }

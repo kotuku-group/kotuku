@@ -217,7 +217,7 @@ end
 end
 
 @Test function DeferredAsArgument()
-   function identity(val)
+   function identity(val:str):str
       return resolve(val)
    end
    x = <{ 'test' }>

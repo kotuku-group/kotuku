@@ -56,7 +56,7 @@ end
 
 -- Helper: create a simple 2D vector type with arithmetic metamethods
 
-function newVec(X, Y)
+function newVec(X, Y):table
    vec_mt = {
       __add = function(A, B) return newVec(A.x + B.x, A.y + B.y) end,
       __sub = function(A, B) return newVec(A.x - B.x, A.y - B.y) end,
@@ -233,7 +233,7 @@ end
 end
 
 @Test function MetaLen()
-   mt = { __len = function(Self) return Self.custom_size end }
+   mt = { __len = function(Self):num return Self.custom_size end }
    local obj = setmetatable({ custom_size = 42 }, mt)
    assert(#obj is 42, "__len should return custom length, got " .. #obj)
 end
@@ -246,7 +246,7 @@ end
 
 @Test function MetaConcat()
    mt = {
-      __concat = function(A, B)
+      __concat = function(A, B):table
          if type(A) is 'table' and type(B) is 'table' then
             return setmetatable({ val = A.val .. B.val }, getmetatable(A))
          end
@@ -376,7 +376,7 @@ end
    -- Classic proxy pattern: separate storage from the proxy object
    storage = {}
    mt = {
-      __index = function(Self, Key)
+      __index = function(Self, Key):any
          return storage[Key]
       end,
       __newindex = function(Self, Key, Value)
@@ -412,7 +412,7 @@ end
 end
 
 @Test function MetaCallMultipleReturns()
-   mt = { __call = function(Self, X) return X, X * 2, X * 3 end }
+   mt = { __call = function(Self, X):<num, num, num> return X, X * 2, X * 3 end }
    t = setmetatable({}, mt)
    a, b, c = t(5)
    assert(a is 5, "__call first return should be 5, got " .. a)
@@ -422,7 +422,7 @@ end
 
 @Test function MetaCallSelfAccess()
    mt = {
-      __call = function(Self, Key)
+      __call = function(Self, Key):any
          return Self.data[Key]
       end
    }
@@ -522,11 +522,11 @@ end
    function createCounting()
       state = { reads = 0, writes = 0, data = {} }
       mt = {
-         __index = function(Self, Key)
+         __index = function(Self, Key):any
             state.reads++
             return state.data[Key]
          end,
-         __newindex = function(Self, Key, Value)
+         __newindex = function(Self, Key, Value):any
             state.writes++
             state.data[Key] = Value
          end
@@ -605,12 +605,12 @@ function newWrapped(Val)
    return setmetatable({ val = Val }, wrapped_mt)
 end
 
-wrapped_mt.__add      = function(A, B) return newWrapped(A.val + B.val) end
-wrapped_mt.__tostring = function(Self) return 'Wrapped(' .. Self.val .. ')' end
-wrapped_mt.__eq       = function(A, B) return A.val is B.val end
-wrapped_mt.__len      = function(Self) return Self.val end
-wrapped_mt.__call     = function(Self) return Self.val end
-wrapped_mt.__unm      = function(Self) return newWrapped(-Self.val) end
+wrapped_mt.__add      = function(A, B):table return newWrapped(A.val + B.val) end
+wrapped_mt.__tostring = function(Self):str return 'Wrapped(' .. Self.val .. ')' end
+wrapped_mt.__eq       = function(A, B):bool return A.val is B.val end
+wrapped_mt.__len      = function(Self):num return Self.val end
+wrapped_mt.__call     = function(Self):num return Self.val end
+wrapped_mt.__unm      = function(Self):table return newWrapped(-Self.val) end
 
 @Test function CombinedMetamethods()
 

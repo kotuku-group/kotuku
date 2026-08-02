@@ -245,6 +245,24 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
          };
       }
    }
+   else if (Payload.return_types.is_inferred) {
+      child_state.return_inference_validated = true;
+      child_state.signature_result_count = Payload.return_types.count;
+      child_state.signature_result_entry_count = uint8_t(std::min<size_t>(
+         Payload.return_types.count, child_state.signature_results.size()));
+      for (size_t i = 0; i < Payload.return_types.count and i < child_state.signature_results.size(); ++i) {
+         auto type = Payload.return_types.types[i];
+         auto struct_def = Payload.return_types.struct_defs[i];
+         uint32_t constraint = 0;
+         if (struct_def and type IS TiriType::Struct) constraint = struct_key(struct_def->Name);
+         else if (type IS TiriType::Object) constraint = uint32_t(Payload.return_types.object_class_ids[i]);
+         child_state.signature_results[i] = ProtoTypeEntry{
+            .constraint = constraint,
+            .type = type,
+            .flags = proto_type_flags(true, false, ProtoTypeOrigin::Inferred, ProtoTypeStrength::Trusted)
+         };
+      }
+   }
 
    // Save the parent's lastline - function body emission will update it, but we need
    // to restore it so the BC_FNEW instruction gets the correct line (start of function, not body).
@@ -659,7 +677,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_function_stmt(const LocalFunction
    if (Payload.name.symbol and not Payload.name.is_blank) this->update_local_binding(Payload.name.symbol, slot);
 
    // Copy function return types to VarInfo for compile-time type checking at call sites
-   if (Payload.function->return_types.is_explicit) {
+   if (Payload.function->return_types.is_explicit or Payload.function->return_types.is_inferred) {
       for (size_t i = 0; i < Payload.function->return_types.count and i < var_info.result_types.size(); ++i) {
          var_info.result_types[i] = Payload.function->return_types.types[i];
       }
@@ -758,7 +776,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_function_stmt(const FunctionStmtPayload
       this->update_local_binding(symbol, slot);
 
       // Copy function return types to VarInfo for compile-time type checking at call sites
-      if (Payload.function->return_types.is_explicit) {
+      if (Payload.function->return_types.is_explicit or Payload.function->return_types.is_inferred) {
          for (size_t i = 0; i < Payload.function->return_types.count and i < var_info.result_types.size(); ++i) {
             var_info.result_types[i] = Payload.function->return_types.types[i];
          }

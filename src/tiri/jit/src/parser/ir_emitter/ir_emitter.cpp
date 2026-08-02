@@ -1090,7 +1090,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
 
    // Runtime inference applies only when there is no explicit result declaration. This distinguishes explicit void
    // (`:<>`) from an unannotated function even though both have no stored concrete result types.
-   bool needs_typefix = not this->func_state.return_contract_explicit;
+   bool needs_typefix = not this->func_state.return_contract_explicit and
+      not this->func_state.return_inference_validated;
 
    if (Payload.values.empty()) {
       ins = BCINS_AD(BC_RET0, 0, 1);
@@ -1126,6 +1127,13 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
             // A return contract must observe dynamic results inside this function, so tail-call conversion is unsafe.
             setbc_b(ip, 0);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
+         }
+         else if (last.u.s.info + 1 != this->func_state.pc) {
+            // Safe calls and other call expressions with post-call control flow cannot be converted to CALLT: the
+            // conversion removes the final emitted instruction rather than the earlier CALL.  Such expressions
+            // represent one consolidated value, so retain that result and return it normally.
+            setbc_b(ip, 2);
+            ins = BCINS_AD(BC_RET1, last.u.s.aux, 2);
          }
          else if (bc_op(*ip) IS BC_VARG) {
             // Variadic return: return ...

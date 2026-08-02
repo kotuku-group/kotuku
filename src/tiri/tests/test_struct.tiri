@@ -539,7 +539,7 @@ end
    MAKESTRUCT('AnchoredBranch', 'eLeaf:AnchoredLeaf')
    MAKESTRUCT('AnchoredRoot', 'eBranch:AnchoredBranch')
 
-   function create_view()
+   function create_view():any
       local root = struct.new('AnchoredRoot')
       root.branch.leaf.value = 417
       root.branch.leaf.name = 'parent payload remains alive'
@@ -734,7 +734,7 @@ end
 @Test function FastFieldBytecodeDisassembly()
    MAKESTRUCT('FastFieldDisassembly', 'lValue')
 
-   function capture_struct_disassembly()
+   function capture_struct_disassembly():<num, str>
       local value = struct.new('FastFieldDisassembly')
       value.value = 19
       local result = value.value

@@ -91,7 +91,7 @@ end
    local captured = 1
    function capture() return captured end
    local pointer = debug.upvalueID(capture, 0)
-   local callable = setmetatable({}, { __call = function(Self) return Self end })
+   local callable = setmetatable({}, { __call = function(Self):table return Self end })
 
    assert(accept_nil(nil) is nil, 'nil should satisfy nil')
    assert(accept_bool(true) is true, 'true should satisfy bool')
@@ -633,7 +633,7 @@ end
    assert(glContractNumber is 3, 'A rejected store from a separately compiled chunk must preserve the global value')
 
    global glContractArray:array = array<int> { 4, 8 }
-   function read_contract_array()
+   function read_contract_array():num
       return glContractArray[1]
    end
    expect_contract_failure(function() exec("glContractArray = {}") end, 'global')
@@ -1065,7 +1065,7 @@ end
 
 @Test function ContractDisassemblyOrder()
    local script = obj.new('tiri', { statement = [[
-function first(Values:array)
+function first(Values:array):any
    return Values[0]
 end
 ]] })

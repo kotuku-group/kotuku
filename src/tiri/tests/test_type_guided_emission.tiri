@@ -43,7 +43,7 @@ end
    local disassembly = disassemble_source(string.format([[
 MAKESTRUCT('%s', 'lValue')
 captured_point = struct.new('%s')
-function read_point()
+function read_point():num
    return captured_point.value
 end
 function write_point()
@@ -117,6 +117,29 @@ end
    assert(captured_sum() is 12, 'Array element descriptors should survive immutable capture and iteration')
    assert(mapped[2] is 12, 'Array element descriptors should survive preserving methods')
    assert(returned[1] is 10, 'Array element descriptors should survive function result propagation')
+end
+
+@Test function NativeArrayMethodResultIsInferred()
+   local function byte_text()
+      local bytes = array<byte>
+      bytes ..= 'hello'
+      return bytes:getString()
+   end
+
+   assert(byte_text() is 'hello', 'Registered array method results should participate in return inference')
+end
+
+@Test function NativeObjectConstructorResultIsInferred()
+   local parent = obj.new('time')
+
+   local function make_child()
+      local child = parent.new('time')
+      return child
+   end
+
+   local child = make_child()
+   assert(type(child) is 'object', 'An object new() member call should infer an object result')
+   parent.free()
 end
 
 @Test function ArrayDescriptorInvalidation()

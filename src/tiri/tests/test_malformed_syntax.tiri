@@ -85,7 +85,7 @@ end
    result = debug.validate("extern externalValue\nlocal something = externalValue")
    assert(result.success is true, "Extern read should validate")
 
-   result = debug.validate("extern externalValue\nfunction nested()\n   return externalValue\nend")
+   result = debug.validate("extern externalValue\nfunction nested():any\n   return externalValue\nend")
    assert(result.success is true, "Extern read inside nested function should validate")
 
    assertInvalidCode("local something = externalValue", 'UndefinedVariable',
@@ -94,7 +94,7 @@ end
    result = debug.validate("extern *\nlocal value = anyMissingSymbol")
    assert(result.success is true, "Extern wildcard read should validate")
 
-   result = debug.validate("extern *\nfunction nested()\n   return anyMissingSymbol\nend")
+   result = debug.validate("extern *\nfunction nested():any\n   return anyMissingSymbol\nend")
    assert(result.success is true, "Extern wildcard read inside nested function should validate")
 
    assertInvalidCode("local value = anyMissingSymbol", 'UndefinedVariable',
