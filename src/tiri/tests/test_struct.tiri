@@ -219,8 +219,12 @@ end
       'bByte,wWord,uwUnsignedWord,lInteger,ulUnsigned,xWide,uxUnsignedWide,fFloat,dDouble')
    local legacy = struct.new('LegacyScalarValidation', {
       byte=255, word=-32768, unsignedWord=65535, integer=-2147483648, unsigned=4294967295,
-      wide=-9007199254740992, unsignedWide=9007199254740992, float=1.5, double=2.5
+      wide=-9007199254740992, unsignedWide=9223372036854777856, float=1.5, double=2.5
    })
+   assert(legacy.unsigned is 4294967295,
+      'Legacy unsigned int fields should preserve values with the high bit set')
+   assert(legacy.unsignedWide is 9223372036854777856,
+      'Legacy unsigned int64 fields should preserve values above the signed range')
    legacy.byte = 256
    legacy.word = 1.5
    legacy.unsignedWord = -1

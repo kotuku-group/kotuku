@@ -403,8 +403,14 @@ static bool read_primitive_field(lua_State *L, APTR Address, const struct_field 
    else if (Field.NativeType IS NativeStructType::UInt64) lua_pushnumber(L, ((uint64_t *)Address)[0]);
    else if (Type & FD_FLOAT)  lua_pushnumber(L, ((float *)Address)[0]);
    else if (Type & FD_DOUBLE) lua_pushnumber(L, ((double *)Address)[0]);
-   else if (Type & FD_INT64)  lua_pushnumber(L, ((int64_t *)Address)[0]);
-   else if (Type & FD_INT)    lua_pushinteger(L, ((int *)Address)[0]);
+   else if (Type & FD_INT64) {
+      if (Type & FD_UNSIGNED) lua_pushnumber(L, ((uint64_t *)Address)[0]);
+      else lua_pushnumber(L, ((int64_t *)Address)[0]);
+   }
+   else if (Type & FD_INT) {
+      if (Type & FD_UNSIGNED) lua_pushinteger(L, ((uint32_t *)Address)[0]);
+      else lua_pushinteger(L, ((int32_t *)Address)[0]);
+   }
    else if (Type & FD_WORD) {
       if (Type & FD_UNSIGNED) lua_pushinteger(L, ((uint16_t *)Address)[0]);
       else lua_pushinteger(L, ((int16_t *)Address)[0]);
