@@ -1198,6 +1198,11 @@ extern void lua_upvaluejoin(lua_State *L, int idx1, int n1, int idx2, int n2)
    lj_checkapi((uint32_t)n2 < fn2->l.nupvalues, "bad upvalue %d", n2 + 1);
    setgcrefr(fn1->l.uvptr[n1], fn2->l.uvptr[n2]);
    lj_gc_objbarrier(L, fn1, gcref(fn1->l.uvptr[n1]));
+
+   // Repointing the upvalue invalidates any trace that constified the previous cell or guarded on its address, so
+   // discard compiled code for the same reason as lua_setupvalue().
+
+   lj_trace_flushall(L);
 }
 
 //********************************************************************************************************************
@@ -1424,6 +1429,19 @@ extern CSTRING lua_setupvalue(lua_State *L, int idx, int n)
       L->top--;
       copyTV(L, val, L->top);
       lj_gc_barrier(L, o, L->top);
+
+      // The parser marks an upvalue immutable when no assignment to it appears in the source, which allows the
+      // recorder to constify it into a trace (see rec_upvalue_constify()).  Writing through the debug API breaks that
+      // assumption, so the flag must be cleared and any trace that already baked in the old value discarded.
+      // Otherwise compiled code keeps returning the stale constant.
+
+      if (tvisfunc(f) and isluafunc(funcV(f))) {
+         GCupval *uv = &o->uv;
+         if (uv->immutable) {
+            uv->immutable = 0;
+            lj_trace_flushall(L);
+         }
+      }
    }
    return name;
 }
