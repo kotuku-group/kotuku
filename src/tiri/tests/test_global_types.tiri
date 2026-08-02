@@ -266,6 +266,33 @@ end
    end
 end
 
+@Test function FailedGlobalArrayWildcardRedeclarationPreservesPolicy()
+   global glGTFailedWildcardArray:array<int> = array<int> { 11 }
+
+   try
+      global glGTFailedWildcardArray:array<any> = { 'not an array' }
+      error('A wildcard array redeclaration should reject an ordinary table')
+   except e
+      assert(e.message:find('expected array<any>') != nil,
+         'The failed wildcard redeclaration should report its incoming contract: ' .. e.message)
+   end
+
+   assert(glGTFailedWildcardArray[0] is 11,
+      'A failed wildcard redeclaration must preserve the previous global value')
+
+   local writer = exec('return function(Value) glGTFailedWildcardArray = Value end')
+   try
+      writer(array<string> { 'wrong' })
+      error('A failed wildcard redeclaration must not relax the existing concrete policy')
+   except e
+      assert(e.message:find('expected array<int>') != nil,
+         'The original concrete policy should survive the failed wildcard redeclaration: ' .. e.message)
+   end
+
+   assert(glGTFailedWildcardArray[0] is 11,
+      'A store rejected by the preserved concrete policy must leave the value unchanged')
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- A local variable shadowing a typed global name must not inherit the global's type.
 

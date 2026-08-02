@@ -875,8 +875,9 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
             // descriptor commits the transition.
          }
          else if (contract_is_variant(incoming)) {
-            // Explicit 'any' and array<any> declarations relax their respective sticky global contracts.
-            lj_tab_set_global_contract(L, environment, global_name, Descriptor);
+            // Explicit 'any' and array<any> declarations relax their respective sticky global contracts only after
+            // the declaration value passes this descriptor.  A caught failure must preserve the previous policy.
+            publish_global_contract = true;
          }
          else if (current) {
             // Bytecode may outlive the declaration policy it was compiled against.  The environment policy is
