@@ -57,6 +57,18 @@ function create_declared_user():struct<DeclaredUser>
    return struct<DeclaredUser> { }
 end
 
+function expect_struct_error(Action:func, ExpectedCode:num, Description:str)
+   local caught = false
+   try
+      Action()
+   except error_value
+      assert(error_value.code is ExpectedCode,
+         f"{Description}: expected error {ExpectedCode}, got {error_value.code}: {error_value.message}")
+      caught = true
+   end
+   assert(caught is true, Description .. ': assignment should have failed')
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Retrieve a known struct from a function and test the field values.
 
@@ -83,6 +95,143 @@ end
    local empty_user = struct<DeclaredUser> { }
    assert(empty_user.Age is 0 and empty_user.Name is '', 'Empty initialisers should zero-initialise fields')
    assert(struct.new('DeclaredUser').Age is 0, 'struct.new() should interoperate with declarations')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Primitive fields validate exact Tiri categories and native numeric domains before changing storage.
+
+@Test function NativeStructPrimitiveValidation()
+   local value = struct<DeclaredLayout> {
+      Bool=true, Char=-128, Byte=255, Int8=127, UInt8=0, Int16=-32768, UInt16=65535,
+      Int=-2147483648, UInt=4294967295, Int32=2147483647, UInt32=0,
+      Int64=-9223372036854775808, UInt64=9007199254740992, Float=1.25, Double=math.huge,
+      String='valid', Buffer='buffer'
+   }
+
+   assert(value.Bool is true and value.Char is -128 and value.Byte is 255,
+      'Constructor assignment should preserve valid bool and byte-sized values')
+   assert(value.Int16 is -32768 and value.UInt16 is 65535 and value.Int is -2147483648,
+      'Constructor assignment should preserve valid signed and unsigned integer boundaries')
+   assert(value.UInt is 4294967295 and value.Int32 is 2147483647 and value.UInt64 is 9007199254740992,
+      'Constructor assignment should preserve valid wide integer values')
+   assert(value.Float is 1.25 and value.Double is math.huge and value.String is 'valid' and value.Buffer is 'buffer',
+      'Constructor assignment should preserve floating, string and character-buffer values')
+
+   value.Bool = false
+   value.Char = 127
+   value.Byte = 0
+   value.Int8 = -128
+   value.UInt8 = 255
+   value.Int16 = 32767
+   value.UInt16 = 0
+   value.Int = 2147483647
+   value.UInt = 0
+   value.Int32 = -2147483648
+   value.UInt32 = 4294967295
+   value.Int64 = 9007199254740992
+   value.UInt64 = 18446744073709549568
+   value.Float = math.huge
+   assert(value.Float is math.huge, 'Float fields should accept positive infinity')
+   value.Float = 0 / 0
+   value.Double = -math.huge
+   value.String = 'updated'
+   assert(value.Bool is false and value.Char is 127 and value.UInt8 is 255 and value.Int16 is 32767,
+      'Later assignment should accept valid scalar boundaries')
+   assert(value.UInt32 is 4294967295 and value.UInt64 is 18446744073709549568,
+      'Later assignment should accept representable unsigned wide values below their exclusive upper bounds')
+   assert(value.Float != value.Float and value.Double is -math.huge and value.String is 'updated',
+      'Floating special values and exact strings should remain valid')
+
+   value.Bool = true
+   expect_struct_error(() => do value.Bool = 1 end, ERR_InvalidType, 'bool should reject numbers')
+   expect_struct_error(() => do value.Bool = nil end, ERR_InvalidType, 'bool should reject nil')
+   assert(value.Bool is true, 'Rejected bool assignment should preserve the prior value')
+
+   value.Int8 = 12
+   value.Int8 = 12.5
+   assert(value.Int8 is 12, 'Integer fields should truncate finite fractional values toward zero')
+   expect_struct_error(() => do value.Int8 = 0 / 0 end, ERR_OutOfRange, 'int8 should reject NaN')
+   expect_struct_error(() => do value.Int8 = math.huge end, ERR_OutOfRange, 'int8 should reject infinity')
+   value.Int8 = 128
+   assert(value.Int8 is -128, 'Signed integer overflow should wrap through the destination width')
+   value.Int8 = -129
+   assert(value.Int8 is 127, 'Signed integer underflow should wrap through the destination width')
+   expect_struct_error(() => do value.Int8 = '12' end, ERR_InvalidType, 'int8 should reject numeric strings')
+   expect_struct_error(() => do value.Int8 = nil end, ERR_InvalidType, 'integer fields should reject nil')
+   assert(value.Int8 is 127, 'Rejected wrong-category assignments should preserve the prior value')
+
+   value.UInt8 = -1
+   assert(value.UInt8 is 255, 'Unsigned integer underflow should wrap through the destination width')
+   value.UInt8 = 256
+   assert(value.UInt8 is 0, 'Unsigned integer overflow should wrap through the destination width')
+
+   value.Int16 = -32769
+   assert(value.Int16 is 32767, 'int16 underflow should wrap')
+   value.Int16 = 32768
+   assert(value.Int16 is -32768, 'int16 overflow should wrap')
+   value.UInt16 = -1
+   assert(value.UInt16 is 65535, 'uint16 underflow should wrap')
+   value.UInt16 = 65536
+   assert(value.UInt16 is 0, 'uint16 overflow should wrap')
+   value.Int32 = -2147483649
+   assert(value.Int32 is 2147483647, 'int32 underflow should wrap')
+   value.Int32 = 2147483648
+   assert(value.Int32 is -2147483648, 'int32 overflow should wrap')
+   value.UInt32 = -1
+   assert(value.UInt32 is 4294967295, 'uint32 underflow should wrap')
+   value.UInt32 = 4294967296
+   assert(value.UInt32 is 0, 'uint32 overflow should wrap')
+   value.Int64 = 9223372036854775808
+   assert(value.Int64 is -9223372036854775808, 'int64 overflow should wrap')
+   value.UInt64 = -2048
+   assert(value.UInt64 is 18446744073709549568, 'uint64 underflow should wrap to a representable result')
+   value.UInt64 = 18446744073709551616
+   assert(value.UInt64 is 0, 'uint64 overflow should wrap')
+
+   value.Float = 2.5
+   expect_struct_error(() => do value.Float = '2.5' end, ERR_InvalidType, 'float should reject numeric strings')
+   expect_struct_error(() => do value.Float = nil end, ERR_InvalidType, 'float should reject nil')
+   expect_struct_error(() => do value.Float = 3.5e38 end, ERR_OutOfRange, 'float should reject finite overflow')
+   assert(value.Float is 2.5, 'Rejected float assignments should preserve the prior value')
+   expect_struct_error(() => do value.Double = '2.5' end, ERR_InvalidType, 'double should reject numeric strings')
+
+   value.String = 'sentinel'
+   expect_struct_error(() => do value.String = 42 end, ERR_InvalidType, 'owned strings should reject numbers')
+   expect_struct_error(() => do value.String = nil end, ERR_InvalidType, 'owned strings should reject nil')
+   assert(value.String is 'sentinel', 'Rejected string assignment should preserve the prior value')
+   expect_struct_error(() => do value.Buffer = 42 end, ERR_InvalidType, 'character buffers should reject numbers')
+   expect_struct_error(() => do value.Char = 'A' end, ERR_InvalidType, 'scalar char should reject strings')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NativeStructConstructorAndLegacyValidation()
+   local wrong_bool:any = 2
+   expect_struct_error(() => do struct<DeclaredLayout> { Bool=wrong_bool } end, ERR_InvalidType,
+      'Declared constructor expressions should validate primitive fields')
+   expect_struct_error(() => do struct.new('DeclaredLayout', { String=42 }) end, ERR_InvalidType,
+      'struct.new() should use the same exact string validation')
+   local narrowed = struct.new('DeclaredLayout', { String='temporary', Int=1.5 })
+   assert(narrowed.Int is 1 and narrowed.String is 'temporary',
+      'constructors should apply the same finite numeric narrowing as later assignment')
+
+   MAKESTRUCT('LegacyScalarValidation',
+      'bByte,wWord,uwUnsignedWord,lInteger,ulUnsigned,xWide,uxUnsignedWide,fFloat,dDouble')
+   local legacy = struct.new('LegacyScalarValidation', {
+      byte=255, word=-32768, unsignedWord=65535, integer=-2147483648, unsigned=4294967295,
+      wide=-9007199254740992, unsignedWide=9223372036854777856, float=1.5, double=2.5
+   })
+   assert(legacy.unsigned is 4294967295,
+      'Legacy unsigned int fields should preserve values with the high bit set')
+   assert(legacy.unsignedWide is 9223372036854777856,
+      'Legacy unsigned int64 fields should preserve values above the signed range')
+   legacy.byte = 256
+   legacy.word = 1.5
+   legacy.unsignedWord = -1
+   expect_struct_error(() => do legacy.integer = {} end, ERR_InvalidType,
+      'legacy integer fields should reject non-number categories')
+   assert(legacy.byte is 0 and legacy.word is 1 and legacy.unsignedWord is 65535,
+      'Legacy fields should use the same deterministic truncation and wrapping contract')
 end
 
 ----------------------------------------------------------------------------------------------------------------------

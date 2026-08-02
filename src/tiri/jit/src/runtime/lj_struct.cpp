@@ -159,7 +159,8 @@ static struct_field * find_cached_field(GCstruct *Struct, GCstr *Key, BCIns *Ins
 // JIT field type lookup.  Struct definitions are immutable for the lifetime of the Lua state, so the recorder can
 // derive a stable result type without reading the field payload or invoking any field access behaviour.
 
-extern "C" int ir_struct_field_type(GCstruct *Struct, GCstr *Key, int &Offset, uint32_t &Flags)
+extern "C" int ir_struct_field_type(GCstruct *Struct, GCstr *Key, int &Offset, uint32_t &Flags,
+   NativeStructType &NativeType)
 {
    if (not Struct or not Key) return -1;
 
@@ -167,6 +168,7 @@ extern "C" int ir_struct_field_type(GCstruct *Struct, GCstr *Key, int &Offset, u
       const uint32_t flags = uint32_t(field->Type);
       Offset = field->Offset;
       Flags = flags;
+      NativeType = field->NativeType;
 
       // Order is significant because array, struct and object fields also carry element/storage flags.
       if ((flags & FD_CUSTOM) and (flags & FD_BYTE) and (flags & FD_ARRAY)) return IRT_STR;
