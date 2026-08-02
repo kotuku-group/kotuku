@@ -1,5 +1,13 @@
 -- Flute tests for array functional methods (Tier 4)
 
+struct Typ12FunctionalValue
+   Value: int
+end
+
+struct Typ12AlternateValue
+   Value: int
+end
+
 @BeforeEach(hotpath=true)
 function enforce_hotpath() end
 
@@ -454,4 +462,38 @@ end
    arr = array<int64> { 1000000000, 2000000000, 3000000000 }
    sum = arr:reduce(0, (acc, v) => acc + v)
    assert(sum is 6000000000, "reduce() should work with int64 arrays")
+end
+
+@Test function MapRejectsIncompatibleResultCategory()
+   local values = array<int> { 1, 2, 3 }
+
+   try
+      values:map(v => tostring(v))
+   success
+      error('map() should reject transform results incompatible with the source element type')
+   end
+
+   assert(#values is 3 and values[0] is 1 and values[1] is 2 and values[2] is 3,
+      'a rejected map() should preserve the source array')
+end
+
+@Test function StructTransformationsPreserveElementIdentity()
+   local values = array<struct<Typ12FunctionalValue>> {
+      struct<Typ12FunctionalValue> { Value=1 },
+      struct<Typ12FunctionalValue> { Value=2 }
+   }
+
+   local mapped = values:map(Value => struct<Typ12FunctionalValue> { Value=Value.Value + 10 })
+   assert(mapped[0].Value is 11 and mapped[1].Value is 12,
+      'map() should preserve named structure metadata')
+
+   local filtered = values:filter(Value => Value.Value > 1)
+   assert(#filtered is 1 and filtered[0].Value is 2,
+      'filter() should preserve named structure metadata')
+
+   try
+      values:map(Value => struct<Typ12AlternateValue> { Value=Value.Value })
+   success
+      error('map() should reject a different structure definition with the same layout')
+   end
 end

@@ -37,6 +37,8 @@
 #include "lib/lib_range.h"
 #include "../../defs.h"
 
+#include <cfloat>
+
 // Some local macros to save typing. Undef'd at the end.
 #define IR(ref)         (&J->cur.ir[(ref)])
 
@@ -2933,6 +2935,25 @@ static bool rec_array_xstore(jit_State *J, TRef ArrayRef, TRef IdxRef, TRef ValR
 
    // For numeric types, the value must be a number
    if (not is_gc_type and not tref_isnumber(ValRef)) return false;
+
+#if 0 // Disabled in favour of pushing this responsibility onto the client
+   // Keep conversions in ranges where the machine conversion is defined.  Values outside these ranges side-exit to
+   // lj_arr_storeelem(), which applies the canonical modulo-width conversion and reports non-finite values.
+   if (tref_isnum(ValRef)) {
+      if (et IS AET::BYTE or et IS AET::INT16 or et IS AET::INT32) {
+         emitir(IRTG(IR_GE, IRT_NUM), ValRef, lj_ir_knum(J, -2147483648.0));
+         emitir(IRTG(IR_LT, IRT_NUM), ValRef, lj_ir_knum(J, 2147483648.0));
+      }
+      else if (et IS AET::INT64) {
+         emitir(IRTG(IR_GE, IRT_NUM), ValRef, lj_ir_knum(J, -9223372036854775808.0));
+         emitir(IRTG(IR_LT, IRT_NUM), ValRef, lj_ir_knum(J, 9223372036854775808.0));
+      }
+      else if (et IS AET::FLOAT) {
+         emitir(IRTG(IR_GE, IRT_NUM), ValRef, lj_ir_knum(J, -lua_Number(FLT_MAX)));
+         emitir(IRTG(IR_LE, IRT_NUM), ValRef, lj_ir_knum(J, lua_Number(FLT_MAX)));
+      }
+   }
+#endif
 
    // For GC types, validate the value type at recording time
    if (is_gc_type and not tref_isnil(ValRef)) {
