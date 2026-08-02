@@ -27,4 +27,4 @@ extern "C" void bc_struct_setfield(lua_State *, GCstruct *, GCstr *, TValue *, B
 
 // Side-effect-free field type lookup for JIT recording.
 
-extern "C" int ir_struct_field_type(GCstruct *, GCstr *, int &, uint32_t &);
+extern "C" int ir_struct_field_type(GCstruct *, GCstr *, int &, uint32_t &, NativeStructType &);

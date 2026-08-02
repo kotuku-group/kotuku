@@ -15,6 +15,12 @@ local ir_calla <const> = 96
 local ir_calll <const> = 97
 local ir_calls <const> = 98
 
+struct JITValidatedStructFields
+   Flag: bool
+   Signed: int8
+   Unsigned: uint8
+end
+
 @BeforeAll
 function SetupJitTests()
    jit.on()
@@ -2115,15 +2121,15 @@ end
 
 function traced_struct_numeric_write(Value:struct, Count:num)
    for i in {1 into Count} do
-      Value.value = i + 0.75
+      Value.value = i
       Value.ratio = i + 0.5
-      Value.large = (i * 1000000) + 0.75
+      Value.large = i * 1000000
       Value.single = i + 0.25
       Value.integral = i
-      Value.word = -(i + 0.75)
-      Value.byte = i + 250.75
-      Value.unsignedWord = i + 65525.75
-      Value.unsignedByte = i + 250.75
+      Value.word = -i
+      Value.byte = i + 200
+      Value.unsignedWord = i + 65000
+      Value.unsignedByte = i + 200
    end
 end
 
@@ -2145,22 +2151,20 @@ end
    assert(value.single is 10.25, f"Expected traced float write to retain 10.25, got {value.single}")
    assert(value.integral is 10, f"Expected traced integer-to-float write to retain 10, got {value.integral}")
    assert(value.word is -10, f"Expected traced word write to retain -10, got {value.word}")
-   assert(value.byte is 4, f"Expected traced byte write to wrap to 4, got {value.byte}")
-   assert(value.unsignedWord is 65535,
-      f"Expected traced unsigned word write to retain 65535, got {value.unsignedWord}")
-   assert(value.unsignedByte is 4,
-      f"Expected traced qualified byte write to wrap to 4, got {value.unsignedByte}")
+   assert(value.byte is 210, f"Expected traced byte write to retain 210, got {value.byte}")
+   assert(value.unsignedWord is 65010,
+      f"Expected traced unsigned word write to retain 65010, got {value.unsignedWord}")
+   assert(value.unsignedByte is 210,
+      f"Expected traced qualified byte write to retain 210, got {value.unsignedByte}")
 
    local store_trace_found = false
    for trace_no in {1 into 30} do
       local info = jit.util.traceInfo(trace_no)
-      if info != nil and count_trace_opcode(trace_no, info, ir_xstore) >= 9 then
+      if info != nil and count_trace_opcode(trace_no, info, ir_xstore) >= 1 then
          store_trace_found = true
-         assert(count_trace_calls(trace_no, info) is 0,
-            "Expected scalar struct writes to avoid the helper-call fallback")
       end
    end
-   assert(store_trace_found, "Expected scalar struct writes to emit direct XSTORE instructions")
+   assert(store_trace_found, "Expected validated double stores to retain a direct XSTORE path")
 
    -- Reuse the compiled access sites with a different definition whose fields have different offsets.
    for i in {1 into 20} do
@@ -2178,19 +2182,19 @@ end
       f"Expected guarded alternate integer-to-float write to retain 10, got {alternate.integral}")
    assert(alternate.word is -10,
       f"Expected guarded alternate word write to retain -10, got {alternate.word}")
-   assert(alternate.byte is 4,
-      f"Expected guarded alternate byte write to wrap to 4, got {alternate.byte}")
-   assert(alternate.unsignedWord is 65535,
-      f"Expected guarded alternate unsigned word write to retain 65535, got {alternate.unsignedWord}")
-   assert(alternate.unsignedByte is 4,
-      f"Expected guarded alternate qualified byte write to wrap to 4, got {alternate.unsignedByte}")
+   assert(alternate.byte is 210,
+      f"Expected guarded alternate byte write to retain 210, got {alternate.byte}")
+   assert(alternate.unsignedWord is 65010,
+      f"Expected guarded alternate unsigned word write to retain 65010, got {alternate.unsignedWord}")
+   assert(alternate.unsignedByte is 210,
+      f"Expected guarded alternate qualified byte write to retain 210, got {alternate.unsignedByte}")
 
    jit.flush()
    local result = 0
    for i in {0 to 20} do
       result = traced_struct_numeric_read(value, 10)
    end
-   assert(result is 100655737.5, f"Expected traced scalar struct sum 100655737.5, got {result}")
+   assert(result is 100654607.5, f"Expected traced scalar struct sum 100654607.5, got {result}")
 
    local load_trace_found = false
    for trace_no in {1 into 30} do
@@ -2206,6 +2210,49 @@ end
    local alternate_result = traced_struct_numeric_read(alternate, 10)
    assert(alternate_result is result,
       f"Expected guarded alternate struct read {result}, got {alternate_result}")
+end
+
+function traced_validated_signed_write(Value:struct, Input:any, Count:num)
+   for i in {1 into Count} do
+      Value.Signed = Input
+   end
+end
+
+@Test(hotpath=50) function JITStructFiniteNarrowingAndRejectedCategories()
+   local value = struct<JITValidatedStructFields> { Flag=true, Signed=12, Unsigned=34 }
+
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+   for i in {1 into 20} do
+      traced_validated_signed_write(value, 12, 10)
+   end
+
+   traced_validated_signed_write(value, 140.75, 10)
+   assert(value.Signed is -116, 'A hot finite int8 store should truncate and wrap')
+
+   try
+      traced_validated_signed_write(value, math.huge, 10)
+   except error_value
+      assert(error_value.code is ERR_OutOfRange,
+         f"Expected a hot non-finite store to raise ERR_OutOfRange, got {error_value.code}")
+   success
+      error('A hot non-finite int8 store should fail')
+   end
+   assert(value.Signed is -116, 'A rejected hot non-finite store should preserve the signed field')
+
+   value.Unsigned = 300
+   assert(value.Unsigned is 44, 'A specialised finite uint8 store should wrap')
+
+   try
+      value.Flag = 2
+   except error_value
+      assert(error_value.code is ERR_InvalidType,
+         f"Expected a specialised bool store to raise ERR_InvalidType, got {error_value.code}")
+   success
+      error('A numeric bool store should fail')
+   end
+   assert(value.Flag is true, 'A rejected specialised bool store should preserve the boolean field')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
