@@ -188,7 +188,7 @@ end
 end
 
 @Test function ArrayPipeIterationChaining()
-   -- Chaining: array |> func1 |> func2
+   -- Chaining: array<any> |> func1 |> func2
    log1 = {}
    log2 = {}
    array<int> { 5, 10, 15 } |> function(v) log1[#log1] = v end

@@ -76,7 +76,7 @@ end
    function accept_num(Value:num) return Value end
    function accept_str(Value:str) return Value end
    function accept_table(Value:table) return Value end
-   function accept_array(Value:array) return Value end
+   function accept_array(Value:array<any>) return Value end
    function accept_func(Value:func) return Value end
    function accept_struct(Value:struct) return Value end
    function accept_obj(Value:obj) return Value end
@@ -133,6 +133,38 @@ end
    local bravo = struct<ContractBravo> { Value=7 }
    assert(accept_alpha(alpha) is 7, 'Matching named structure should pass')
    expect_contract_failure(function() accept_alpha(dynamic_value(bravo)) end, 'parameter')
+end
+
+@Test function ArrayMemberIdentity()
+   function accept_int_array(Value:array<int>):array<int> return Value end
+   function accept_any_array(Value:array<any>):array<any> return Value end
+
+   local numbers = array<int> { 4, 8 }
+   local words = array<string> { 'four', 'eight' }
+   assert(accept_int_array(numbers) is numbers, 'A matching concrete member type should pass')
+   assert(accept_any_array(numbers) is numbers, 'array<any> should accept array<int>')
+   assert(accept_any_array(words) is words, 'array<any> should accept array<string>')
+
+   expect_contract_failure(
+      function() accept_int_array(dynamic_value(words)) end, 'array member parameter')
+
+   local sticky = array<int> { 1 }
+   expect_contract_failure(
+      function() sticky = dynamic_value(words) end, 'inferred array member store')
+   assert(sticky[0] is 1, 'A rejected member-type store must preserve the previous array')
+
+   function wrong_result():any return words end
+   function checked_result():array<int> return wrong_result() end
+   expect_contract_failure(function() checked_result() end, 'array member result')
+
+   local alpha = struct<ContractAlpha> { Value=3 }
+   local bravo = struct<ContractBravo> { Value=5 }
+   local alpha_values = array<struct<ContractAlpha>> { alpha }
+   local bravo_values = array<struct<ContractBravo>> { bravo }
+   function accept_alpha_array(Value:array<struct<ContractAlpha>>):num return Value[0].Value end
+   assert(accept_alpha_array(alpha_values) is 3, 'A matching named-structure array should pass')
+   expect_contract_failure(
+      function() accept_alpha_array(dynamic_value(bravo_values)) end, 'named-structure array member')
 end
 
 @Test function NilMissingAndExtraArguments()
@@ -198,7 +230,7 @@ end
 end
 
 @Test function GuardPrecedesSpecialisedMutation()
-   function increment(Values:array)
+   function increment(Values:array<any>)
       Values[0] += 1
    end
 
@@ -246,7 +278,7 @@ end
    function checked_num(Value:any):num return dynamic_value(Value) end
    function checked_str(Value:any):str return dynamic_value(Value) end
    function checked_table(Value:any):table return dynamic_value(Value) end
-   function checked_array(Value:any):array return dynamic_value(Value) end
+   function checked_array(Value:any):array<any> return dynamic_value(Value) end
    function checked_func(Value:any):func return dynamic_value(Value) end
    function checked_struct(Value:any):struct return dynamic_value(Value) end
    function checked_alpha(Value:any):struct<ContractAlpha> return dynamic_value(Value) end
@@ -632,7 +664,7 @@ end
    expect_contract_failure(function() exec("glContractNumber = 'wrong'") end, 'global')
    assert(glContractNumber is 3, 'A rejected store from a separately compiled chunk must preserve the global value')
 
-   global glContractArray:array = array<int> { 4, 8 }
+   global glContractArray:array<any> = array<int> { 4, 8 }
    function read_contract_array():num
       return glContractArray[1]
    end
@@ -1065,7 +1097,7 @@ end
 
 @Test function ContractDisassemblyOrder()
    local script = obj.new('tiri', { statement = [[
-function first(Values:array):any
+function first(Values:array<any>):any
    return Values[0]
 end
 ]] })

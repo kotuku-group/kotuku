@@ -593,6 +593,15 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
       CLASSID object_class_id = contract.type IS TiriType::Object ? contract.object_class_id : CLASSID::NIL;
       contract_append_uleb32(descriptor, uint32_t(object_class_id));
 
+      AET array_element_type = contract.type IS TiriType::Array and contract.array_element.known ?
+         contract.array_element.storage : AET::MAX;
+      descriptor.push_back(char(uint8_t(array_element_type)));
+      std::string_view array_struct_name;
+      if (array_element_type IS AET::STRUCT and contract.array_element.struct_def) {
+         array_struct_name = contract.array_element.struct_def->Name;
+      }
+      contract_append_text(fs, descriptor, array_struct_name, "runtime contract array structure name");
+
       std::string_view struct_name;
       if (contract.struct_def) struct_name = contract.struct_def->Name;
       contract_append_text(fs, descriptor, struct_name, "runtime contract structure name");
@@ -646,8 +655,10 @@ static void bcemit_value_contract(
       bool same_object_class = Contract.type != TiriType::Object or Contract.object_class_id IS CLASSID::NIL or
          descriptor.object_class_id IS Contract.object_class_id;
       bool same_struct = Contract.type != TiriType::Struct or descriptor.struct_def IS Contract.struct_def;
+      bool same_array = Contract.type != TiriType::Array or
+         array_element_matches(Contract.array_element, descriptor.array_element);
       bool same_nullability = descriptor.nullable IS Contract.nullable;
-      if (same_type and same_object_class and same_struct and same_nullability and descriptor.proved() and
+      if (same_type and same_object_class and same_struct and same_array and same_nullability and descriptor.proved() and
           not ForceRuntimeCheck) return;
    }
 
@@ -683,6 +694,7 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
          .type = vinfo->fixed_type,
          .object_class_id = vinfo->object_class_id,
          .struct_def = vinfo->struct_def,
+         .array_element = vinfo->array_element,
          .label = strref(vinfo->name),
          .boundary = ContractBoundary::Local,
          .position = uint8_t(vinfo->slot + 1)
@@ -701,6 +713,7 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
          .type = vinfo->fixed_type,
          .object_class_id = vinfo->object_class_id,
          .struct_def = vinfo->struct_def,
+         .array_element = vinfo->array_element,
          .label = strref(vinfo->name),
          .boundary = ContractBoundary::Upvalue,
          .position = uint8_t(LHS->u.s.info + 1)
@@ -727,6 +740,7 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
             .type = found->second.primary,
             .object_class_id = found->second.object_class_id,
             .struct_def = found->second.struct_def,
+            .array_element = found->second.array_element,
             .label = LHS->u.sval,
             .boundary = ContractBoundary::Global,
             .position = 1

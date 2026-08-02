@@ -385,7 +385,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
       Token type_token = this->ctx.tokens().current();
       bool array_type = type_token.kind() IS TokenKind::ArrayTyped;
       bool struct_typed = type_token.kind() IS TokenKind::StructTyped;
-      int64_t array_dimension = array_type ? this->ctx.lex().array_typed_size : -1;
+      int64_t array_dimension = array_type ? this->ctx.lex().current_array_typed_size : -1;
       if (array_type or struct_typed) this->ctx.tokens().advance();
       else {
          auto type_result = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);

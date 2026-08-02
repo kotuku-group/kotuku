@@ -14,6 +14,7 @@
       .type = Identifier.global_contract_type,
       .object_class_id = Identifier.global_contract_object_class_id,
       .struct_def = Identifier.global_contract_struct_def,
+      .array_element = Identifier.global_contract_array_element,
       .label = Identifier.symbol,
       .boundary = ContractBoundary::Global,
       .position = 1,

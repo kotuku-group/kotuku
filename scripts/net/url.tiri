@@ -182,7 +182,7 @@ end
 @input Query string without a leading question mark
 @result Array of decoded key-value tables
 ]])
-url.parseQueryList = function(Query:str):array
+url.parseQueryList = function(Query:str):array<table>
    params = array<table>
    Query ?! return params
 

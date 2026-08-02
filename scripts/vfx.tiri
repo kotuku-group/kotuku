@@ -562,7 +562,7 @@ vfx.wipes.radial.init = function(State, Options)
 
    State.interval    = 1.0 / State.segments
    State.stroke_size = State.max_radius / State.segments
-   State.ellipses    = array<any>
+   State.ellipses    = array<object>
    State.clip.flags  = 'ApplyStrokes|ApplyFills'
 
    State.center = State.clip.viewport.new('VectorEllipse', {

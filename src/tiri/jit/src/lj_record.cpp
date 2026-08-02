@@ -465,6 +465,31 @@ static RecordedContract rec_contract_guard_userdata(jit_State *J, TRef ValueRef,
    return rec_contract_guard_range(J, ValueRef, Value, false);
 }
 
+static RecordedContract rec_contract_guard_array(
+   jit_State *J, TRef ValueRef, cTValue *Value, const RuntimeContractEntry &Entry)
+{
+   if (not tvisarray(Value)) return RecordedContract::Mismatch;
+   if (Entry.array_element_type IS AET::MAX or Entry.array_element_type IS AET::ANY) {
+      return RecordedContract::Basic;
+   }
+
+   GCarray *array = arrayV(Value);
+   auto string_storage = [](AET Storage) {
+      return Storage IS AET::CSTR or Storage IS AET::STR_CPP or Storage IS AET::STR_GC;
+   };
+   bool matching_storage = array->elemtype IS Entry.array_element_type or
+      (string_storage(array->elemtype) and string_storage(Entry.array_element_type));
+   if (not matching_storage) return RecordedContract::Mismatch;
+   if (Entry.array_element_type IS AET::STRUCT and not Entry.array_struct_name.empty()) {
+      return RecordedContract::Complex;
+   }
+
+   IRBuilder ir(J);
+   TRef element_type = ir.fload(ValueRef, IRFL_ARRAY_ELEMTYPE, IRT_U8);
+   ir.guard_eq(element_type, ir.kint(int32_t(array->elemtype)), IRT_U8);
+   return RecordedContract::Basic;
+}
+
 static RecordedContract rec_contract_record(jit_State *J, BCREG Base, GCstr *Encoded)
 {
    RuntimeContractDescriptor descriptor;
@@ -505,7 +530,7 @@ static RecordedContract rec_contract_record(jit_State *J, BCREG Base, GCstr *Enc
             if (not tvistab(value)) result = RecordedContract::Mismatch;
             break;
          case TiriType::Array:
-            if (not tvisarray(value)) result = RecordedContract::Mismatch;
+            result = rec_contract_guard_array(J, value_ref, value, *entry);
             break;
          case TiriType::Object:
             result = rec_contract_guard_object(J, value_ref, value, entry->object_class_id);

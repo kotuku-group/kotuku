@@ -97,6 +97,8 @@ public:
       BCLine line = 0;
       BCLine column = 0;
       size_t offset = 0;
+      int64_t array_typed_size = -1;
+      bool array_typed_nested = false;
    };
 
    struct FuncState *fs;              // Current FuncState (points to func_stack.back()).
@@ -137,6 +139,9 @@ public:
    uint8_t    pending_if_empty_colon; // Tracks ?: misuse after ??.
    int        is_bytecode;    // Set to 1 if input is bytecode, 0 if source text.
    int64_t    array_typed_size = -1;  // Size parameter for array<type, size> (-1 = no size specified)
+   bool       array_typed_nested = false; // The most recent array token contained nested specialisation
+   int64_t    current_array_typed_size = -1;
+   bool       current_array_typed_nested = false;
 
    size_t   current_offset = 0;
    size_t   line_start_offset = 0;
@@ -148,6 +153,8 @@ public:
    BCLine   lookahead_line = 1;
    BCLine   lookahead_column = 1;
    size_t   lookahead_offset = 0;
+   int64_t  lookahead_array_typed_size = -1;
+   bool     lookahead_array_typed_nested = false;
 
    BCLine   pending_token_line = 1;
    BCLine   pending_token_column = 1;
@@ -165,6 +172,7 @@ public:
       TiriType primary = TiriType::Unknown;
       CLASSID  object_class_id = CLASSID::NIL;
       struct_record *struct_def = nullptr;
+      ArrayElementDescriptor array_element{};
       GlobalContractPolicy contract_policy = GlobalContractPolicy::Advisory;
    };
    ankerl::unordered_dense::map<GCstr*, GlobalTypeHint> global_type_hints;

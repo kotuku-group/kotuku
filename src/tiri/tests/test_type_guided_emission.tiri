@@ -27,7 +27,7 @@ function make_point_pair():<str, struct<EmissionPoint>>
    return 'point', struct<EmissionPoint> { Value=37 }
 end
 
-function make_number_array():array
+function make_number_array():array<int>
    return array<int> { 5, 10, 15 }
 end
 
@@ -143,11 +143,11 @@ end
 end
 
 @Test function ArrayDescriptorInvalidation()
-   local values = array<int> { 1 }
+   local values:array<any> = array<int> { 1 }
    values = array<string> { 'changed' }
    assert(values[0] is 'changed', 'Conflicting array reassignment must not retain a stale numeric descriptor')
 
-   local branch_values = array<int> { 2 }
+   local branch_values:array<any> = array<int> { 2 }
    if true then branch_values = array<table> { { value=23 } } end
    assert(branch_values[0].value is 23, 'A conflicting branch assignment must degrade the element descriptor')
 end

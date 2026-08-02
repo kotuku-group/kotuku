@@ -107,7 +107,7 @@ end
 
 -- Add a call frame to the parser stack for an opening parenthesis.
 
-function signaturePushFrame(Stack:array, Content:str, Pos:num)
+function signaturePushFrame(Stack:array<table>, Content:str, Pos:num)
    call = signatureReadCallName(Content, Pos)
    Stack:push({
       name = call?.name,
@@ -233,7 +233,7 @@ end
 
 -- Convert internal parameter records to LSP ParameterInformation records.
 
-function signatureBuildParameterInfo(Params:any):array
+function signatureBuildParameterInfo(Params:any):array<table>
    result = array<table>
    for param in values(Params or array<table>) do
       label = param.label or signatureParamLabel(param)
@@ -267,7 +267,7 @@ end
 
 -- Split a prototype parameter string while ignoring commas inside nested expressions.
 
-function signatureSplitParams(ParamText:str):array
+function signatureSplitParams(ParamText:str):array<table>
    params = array<table>
    current = ''
    paren_depth = 0
@@ -301,7 +301,7 @@ end
 
 -- Extract raw parameter labels from the first parenthesised parameter list in a prototype.
 
-function signatureParamsFromPrototype(Prototype:str):array
+function signatureParamsFromPrototype(Prototype:str):array<table>
    Prototype ?! return array<table>
    open_pos = Prototype:find('(', 0, true)
    close_pos = Prototype:find(')', open_pos or 0, true)
@@ -490,7 +490,7 @@ end
 
 -- Extract API parameters from a generated XML prototype.
 
-function signatureXmlParamsFromPrototype(Prototype:str):array
+function signatureXmlParamsFromPrototype(Prototype:str):array<table>
    params = array<table>
    for param in values(signatureParamsFromPrototype(Prototype)) do
       params:push(signatureParamFromPrototypeLabel(param.label))
@@ -500,7 +500,7 @@ end
 
 -- Extract Tiri parameters from a generated Tiri prototype.
 
-function signatureTiriParamsFromPrototype(Prototype:str):array
+function signatureTiriParamsFromPrototype(Prototype:str):array<table>
    params = array<table>
    for param in values(signatureParamsFromPrototype(Prototype)) do
       params:push(signatureParamFromTiriLabel(param.label))
@@ -528,7 +528,7 @@ end
 
 -- Copy parameter documentation from generated API metadata onto parsed prototype parameters.
 
-function signatureCopyParamDocs(Params:array, SourceParams:any):array
+function signatureCopyParamDocs(Params:array<table>, SourceParams:any):array<table>
    if not SourceParams then return Params end
 
    for param in values(Params or array<table>) do
@@ -556,7 +556,7 @@ end
 
 -- Build visible API parameters, optionally hiding the generated receiver argument.
 
-function signatureXmlParams(MethodDoc:table, HideReceiver:bool):array
+function signatureXmlParams(MethodDoc:table, HideReceiver:bool):array<table>
    source_params = MethodDoc.params
    if not source_params or #source_params is 0 then
       source_params = signatureXmlParamsFromPrototype(MethodDoc.prototype)
@@ -580,7 +580,7 @@ end
 
 -- Build the display label for a signature sourced from XML API metadata.
 
-function signatureXmlLabel(DisplayName:str, Params:array):str
+function signatureXmlLabel(DisplayName:str, Params:array<table>):str
    labels = array<string>
    for param in values(Params or array<table>) do
       labels:push(signatureParamLabel(param))

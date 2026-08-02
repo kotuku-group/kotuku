@@ -3,6 +3,7 @@
 #include "static_type_descriptor.h"
 
 #include <algorithm>
+#include <format>
 
 #include <kotuku/main.h>
 #include <kotuku/objects.h>
@@ -494,6 +495,52 @@ std::optional<ArrayElementDescriptor> describe_array_element(const struct_field 
    else return std::nullopt;
 
    return result;
+}
+
+bool array_element_matches(
+   const ArrayElementDescriptor &Expected, const ArrayElementDescriptor &Actual) noexcept
+{
+   if (not Expected.known) return not Actual.known;
+   if (Expected.storage IS AET::ANY) return true;
+   if (not Actual.known) return false;
+
+   auto string_storage = [](AET Storage) {
+      return Storage IS AET::CSTR or Storage IS AET::STR_CPP or Storage IS AET::STR_GC;
+   };
+   if (string_storage(Expected.storage) and string_storage(Actual.storage)) return true;
+   if (Expected.storage != Actual.storage) return false;
+   if (Expected.storage IS AET::STRUCT and Expected.struct_def) {
+      return Actual.struct_def IS Expected.struct_def;
+   }
+   if (Expected.storage IS AET::OBJECT and Expected.object_class_id != CLASSID::NIL) {
+      return Actual.object_class_id IS Expected.object_class_id;
+   }
+   return true;
+}
+
+std::string array_element_name(const ArrayElementDescriptor &Element)
+{
+   if (not Element.known) return "unknown";
+   switch (Element.storage) {
+      case AET::BYTE:    return "byte";
+      case AET::INT16:   return "int16";
+      case AET::INT32:   return "int";
+      case AET::INT64:   return "int64";
+      case AET::FLOAT:   return "float";
+      case AET::DOUBLE:  return "double";
+      case AET::CSTR:
+      case AET::STR_CPP:
+      case AET::STR_GC:  return "string";
+      case AET::TABLE:   return "table";
+      case AET::ARRAY:   return "array";
+      case AET::ANY:     return "any";
+      case AET::OBJECT:  return "object";
+      case AET::STRUCT:
+         return Element.struct_def ? std::format("struct<{}>", Element.struct_def->Name) : "struct";
+      case AET::PTR:     return "pointer";
+      case AET::MAX:     break;
+   }
+   return "unknown";
 }
 
 bool can_use_static_receiver(

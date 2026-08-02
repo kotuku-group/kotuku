@@ -79,7 +79,7 @@ end
 @Test function MistypedArrayArgumentRaisesCleanly()
    -- Annotated parameters emit specialised bytecode, so passing a mismatched value must raise a
    -- catchable error rather than crash or silently operate on the wrong type.
-   function increment(Values:array)
+   function increment(Values:array<any>)
       for index in {0 to #Values} do
          Values[index] += 1
       end
@@ -93,4 +93,49 @@ end
       assert(e.message != nil, "The mistyped argument error should carry a message")
    end
    assert(plain_table[0] is 1, "A rejected table argument should remain unmodified")
+end
+
+@Test function ArrayMemberAnnotations()
+   function first_word(Values:array<string>):str
+      return Values[0]
+   end
+
+   function make_numbers():array<int>
+      return array<int> { 3, 5 }
+   end
+
+   function words_and_count():<array<string>,num>
+      return array<string> { 'one', 'two' }, 2
+   end
+
+   local words:array<string> = array<string> { 'alpha', 'beta' }
+   assert(first_word(words) is 'alpha', 'A matching array<string> parameter should pass')
+   assert(make_numbers()[1] is 5, 'A matching array<int> result should pass')
+   local returned_words, returned_count = words_and_count()
+   assert(returned_words[1] is 'two' and returned_count is 2,
+      'A member-specialised array should work in a multi-result annotation')
+
+   function count_values(Values:array<any>):num return #Values end
+   assert(count_values(array<int> { 1, 2 }) is 2, 'array<any> should accept numeric arrays')
+   assert(count_values(array<string> { 'one' }) is 1, 'array<any> should accept string arrays')
+end
+
+@Test function IncompleteArrayAnnotationsRejected()
+   try
+      exec('function rejected(Value:array) return Value end')
+   success
+      error('A bare array annotation should be rejected')
+   end
+
+   try
+      exec('function rejected(Value:array<int, 4>) return Value end')
+   success
+      error('An array annotation should not accept a constructor size')
+   end
+
+   try
+      exec('function rejected(Value:array<array<string>>) return Value end')
+   success
+      error('Nested array member specialisation should be rejected explicitly')
+   end
 end

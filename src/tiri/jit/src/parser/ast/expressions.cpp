@@ -647,7 +647,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
 
          Token start = this->ctx.tokens().current();
          GCstr *type_str = start.payload().as_string();
-         int64_t specified_size = this->ctx.lex().array_typed_size;
+         int64_t specified_size = this->ctx.lex().current_array_typed_size;
          this->ctx.tokens().advance();
 
          // If size is -2, the lexer found a comma followed by a non-literal expression

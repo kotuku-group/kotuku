@@ -60,14 +60,14 @@ function symbolCountChar(LineCode:str, Char:str):num
    return count
 end
 
-function symbolCurrentParent(Stack:array):table
+function symbolCurrentParent(Stack:array<table>):table
    for i in {#Stack - 1 into 0 by -1} do
       if Stack[i].symbol then return Stack[i].symbol end
    end
    return nil
 end
 
-function symbolAddChild(Roots:array, Stack:array, Symbol:table)
+function symbolAddChild(Roots:array<table>, Stack:array<table>, Symbol:table)
    parent = symbolCurrentParent(Stack)
    if parent then
       parent.children:push(Symbol)
@@ -90,7 +90,7 @@ function symbolMakeRange(LineNo:num, StartChar:num, EndChar:num):table
    }
 end
 
-function symbolAnnotationLabels(Annotations:array):array
+function symbolAnnotationLabels(Annotations:array<table>):array<string>
    labels = array<string>
    for anno in values(Annotations or array<table>) do
       labels:push('@' .. anno.name)
@@ -98,14 +98,14 @@ function symbolAnnotationLabels(Annotations:array):array
    return labels
 end
 
-function symbolHasAnnotation(Annotations:array, Name:str):bool
+function symbolHasAnnotation(Annotations:array<table>, Name:str):bool
    for anno in values(Annotations or array<table>) do
       if anno.name is Name then return true end
    end
    return false
 end
 
-function symbolBuildDetail(Base:str, Annotations:array):str
+function symbolBuildDetail(Base:str, Annotations:array<table>):str
    parts = array<string>
    if Base and Base != '' then parts:push(Base) end
    for label in values(symbolAnnotationLabels(Annotations)) do
@@ -115,7 +115,7 @@ function symbolBuildDetail(Base:str, Annotations:array):str
    return parts:concat(' ')
 end
 
-function symbolMergeAnnotations(Left:array, Right:array):array
+function symbolMergeAnnotations(Left:array<table>, Right:array<table>):array<table>
    merged = array<table>
    for anno in values(Left or array<table>) do merged:push(anno) end
    for anno in values(Right or array<table>) do merged:push(anno) end
@@ -169,7 +169,7 @@ function symbolReadAnnotationArgs(Text:str, Pos:num):<str,num>
    return Text:sub(start_pos + 1), Pos
 end
 
-function symbolParseAnnotationPrefix(LineText:str):<array,num>
+function symbolParseAnnotationPrefix(LineText:str):<array<table>,num>
    annotations = array<table>
    pos = 0
 
@@ -208,7 +208,7 @@ function symbolParseAnnotationPrefix(LineText:str):<array,num>
    return annotations, pos
 end
 
-function symbolMakeDocumentSymbol(Name:str, Kind:num, LineNo:num, LineText:str, NameStart:num, Detail:str, Annotations:array):table
+function symbolMakeDocumentSymbol(Name:str, Kind:num, LineNo:num, LineText:str, NameStart:num, Detail:str, Annotations:array<table>):table
    name_start = NameStart or 0
    symbol = {
       name = Name,
@@ -229,7 +229,7 @@ function symbolMakeDocumentSymbol(Name:str, Kind:num, LineNo:num, LineText:str, 
    return symbol
 end
 
-function symbolDetectFunction(LineCode:str, LineText:str, LineNo:num, Annotations:array):table
+function symbolDetectFunction(LineCode:str, LineText:str, LineNo:num, Annotations:array<table>):table
    start_pos, stop_pos, cap = rx_symbol_named_function.findFirst(LineCode)
    if start_pos then
       scope = nil
@@ -343,7 +343,7 @@ function symbolAddStructFields(Symbol:table, LineCode:str, LineText:str, LineNo:
    end
 end
 
-function symbolPushBlockFrames(Stack:array, LineCode:str, FunctionFrame:table)
+function symbolPushBlockFrames(Stack:array<table>, LineCode:str, FunctionFrame:table)
    function_count = symbolCountBlockKeyword(LineCode, 'function') + symbolCountBlockKeyword(LineCode, 'thunk')
    if FunctionFrame and function_count > 0 then function_count -= 1 end
 
@@ -380,7 +380,7 @@ function symbolPushBlockFrames(Stack:array, LineCode:str, FunctionFrame:table)
    end
 end
 
-function symbolCloseBlockFrames(Stack:array, LineCode:str, LineNo:num, LineText:str)
+function symbolCloseBlockFrames(Stack:array<table>, LineCode:str, LineNo:num, LineText:str)
    close_count = symbolCountBlockKeyword(LineCode, 'end') + symbolCountBlockKeyword(LineCode, 'until')
    for i in {1 to close_count+1} do
       if #Stack > 0 then
@@ -394,7 +394,7 @@ function symbolIsBraceFrame(Frame:table):bool
    return Frame.kind is 'table'
 end
 
-function symbolFindTopTableFrame(Stack:array):table
+function symbolFindTopTableFrame(Stack:array<table>):table
    for i in {#Stack - 1 into 0 by -1} do
       frame = Stack[i]
       if symbolIsBraceFrame(frame) then
@@ -404,7 +404,7 @@ function symbolFindTopTableFrame(Stack:array):table
    return nil
 end
 
-function symbolCloseTables(Stack:array, LineCode:str, LineNo:num, LineText:str)
+function symbolCloseTables(Stack:array<table>, LineCode:str, LineNo:num, LineText:str)
    table_frame = symbolFindTopTableFrame(Stack)
    if not table_frame then return end
 
@@ -437,7 +437,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Extract document symbols from Tiri source.
 
-global function extractDocumentSymbols(Doc:table):array
+global function extractDocumentSymbols(Doc:table):array<table>
    symbols = array<table>
    total_lines = getTotalLines(Doc)
    stack = array<table>

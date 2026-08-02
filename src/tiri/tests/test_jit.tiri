@@ -41,7 +41,7 @@ end
 function numberPresent(Value:num):bool return Value?? end
 function stringPresent(Value:str):bool return Value?? end
 function booleanPresent(Value:bool):bool return Value?? end
-function arrayPresent(Value:array):bool return Value?? end
+function arrayPresent(Value:array<any>):bool return Value?? end
 function tablePresent(Value:table):bool return Value?? end
 function anyPresent(Value:any):bool return Value?? end
 ]] })
@@ -137,15 +137,15 @@ end
 
 @Test function ArrayParameterAndLengthRangeBytecode()
    local script = obj.new('tiri', { statement=[[
-global glBytecodeValues:array = array<int> { 1, 2, 3 }
+global glBytecodeValues:array<any> = array<int> { 1, 2, 3 }
 
-function increment(Array:array)
+function increment(Array:array<any>)
    for index in {0 to #Array} do
       Array[index] += 1
    end
 end
 
-function incrementInTry(Array:array)
+function incrementInTry(Array:array<any>)
    try
       for index in {0 to #Array} do
          Array[index] += 1
@@ -292,7 +292,7 @@ function canonical_array_try_workload(Count):str
    return values:concat(',', '%d')
 end
 
-global glCanonicalArrayRangeValues:array = array<int> { 1, 2, 3, 4, 5, 6, 7, 8 }
+global glCanonicalArrayRangeValues:array<any> = array<int> { 1, 2, 3, 4, 5, 6, 7, 8 }
 
 function canonical_global_array_workload(Count)
    local total = 0
@@ -320,7 +320,7 @@ function find_array_bounds_trace(MaxTraceNo)
    return nil, nil, 0
 end
 
-function resize_during_array_loop(Array:array, Shrink:bool)
+function resize_during_array_loop(Array:array<any>, Shrink:bool)
    local alias = Array
    for index in {0 to #Array} do
       if Shrink and index is 16 then alias:resize(8) end
@@ -328,7 +328,7 @@ function resize_during_array_loop(Array:array, Shrink:bool)
    end
 end
 
-function clear_during_array_loop(Array:array, Clear:bool)
+function clear_during_array_loop(Array:array<any>, Clear:bool)
    local alias = Array
    for index in {0 to #Array} do
       if Clear and index is 16 then alias:clear() end
@@ -336,14 +336,14 @@ function clear_during_array_loop(Array:array, Clear:bool)
    end
 end
 
-function reassign_during_array_loop(Array:array, Reassign:bool)
+function reassign_during_array_loop(Array:array<any>, Reassign:bool)
    for index in {0 to #Array} do
       if Reassign and index is 16 then Array = array<int, 8> end
       Array[index] += 1
    end
 end
 
-function push_during_array_loop(Array:array):<num, num, num>
+function push_during_array_loop(Array:array<any>):<num, num, num>
    local original_length = #Array
    for index in {0 to #Array} do
       if index is 0 then Array:push(99) end
@@ -2042,11 +2042,11 @@ end
    jit.flush()
    jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
 
-   function typ12_hot_push(Array:array, Value:any)
+   function typ12_hot_push(Array:array<any>, Value:any)
       Array:push(Value)
    end
 
-   function typ12_hot_store(Array:array, Value:any)
+   function typ12_hot_store(Array:array<any>, Value:any)
       Array[0] = Value
    end
 
@@ -2076,6 +2076,32 @@ end
    typ12_hot_store(stored, 3000000000)
    assert(stored[0] is -1294967296,
       'an out-of-machine-range hot store should side-exit to defined integer wrapping')
+end
+
+@Test(hotpath=80) function JITArrayMemberContractRejectsTypeChanges()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   function typ13_dynamic(Value:any):any return Value end
+   function typ13_first(Array:array<int>):num return Array[0] end
+
+   local numbers = array<int> { 7 }
+   for i in {1 into 80} do
+      assert(typ13_first(typ13_dynamic(numbers)) is 7,
+         'A matching member contract should remain valid while tracing')
+   end
+
+   try
+      typ13_first(typ13_dynamic(array<string> { 'wrong' }))
+   except e
+      assert(e.message:find('expected array<int>') != nil,
+         'The traced contract should retain the expected member type: ' .. e.message)
+      assert(e.message:find('got array<string>') != nil,
+         'The traced contract should report the incoming member type: ' .. e.message)
+   success
+      error('A hot concrete array contract should reject a different member type')
+   end
 end
 
 -----------------------------------------------------------------------------------------------------------------------

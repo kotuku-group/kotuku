@@ -24,7 +24,7 @@ function makeDoc(Content:str):table
    }
 end
 
-function findToken(Tokens:array, Line:num, Char:num, Text:str):table
+function findToken(Tokens:array<table>, Line:num, Char:num, Text:str):table
    for token in values(Tokens) do
       if token.line is Line and token.char is Char and token.length is #Text then
          return token
@@ -32,12 +32,12 @@ function findToken(Tokens:array, Line:num, Char:num, Text:str):table
    end
 end
 
-function assertOperatorToken(Tokens:array, Line:num, Char:num, Text:str, Message:str)
+function assertOperatorToken(Tokens:array<table>, Line:num, Char:num, Text:str, Message:str)
    token = findToken(Tokens, Line, Char, Text)
    assert(token and token.type is 1, Message)
 end
 
-function assertNoToken(Tokens:array, Line:num, Char:num, Text:str, Message:str)
+function assertNoToken(Tokens:array<table>, Line:num, Char:num, Text:str, Message:str)
    token = findToken(Tokens, Line, Char, Text)
    assert(not token, Message)
 end

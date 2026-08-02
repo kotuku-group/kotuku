@@ -22,13 +22,13 @@ function makeDoc(Content:str):table
    }
 end
 
-function assertLocationLine(Locations:array, Line:num, Message:str)
+function assertLocationLine(Locations:array<table>, Line:num, Message:str)
    assert(Locations and #Locations > 0, Message .. ': expected at least one location.')
    assert(Locations[0].range.start.line is Line,
       f'{Message}: expected line {Line}, got {Locations[0].range.start.line}')
 end
 
-function assertUriContains(Locations:array, Needle:str, Message:str)
+function assertUriContains(Locations:array<table>, Needle:str, Message:str)
    assert(Locations and #Locations > 0, Message .. ': expected at least one location.')
    uri = Locations[0].uri:replace('\\', '/'):lower()
    assert(uri:find(Needle:lower(), 0, true), f'{Message}: expected URI to contain {Needle}, got {Locations[0].uri}')
