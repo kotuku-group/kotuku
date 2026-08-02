@@ -18,6 +18,8 @@
 #include "lj_vm.h"
 #include "lj_frame.h"
 
+#include <cfloat>
+#include <cmath>
 #include <cstring>
 #include <string>
 
@@ -114,97 +116,140 @@ static void arr_load_elem(lua_State *L, GCarray *Array, uint32_t Idx, TValue *Re
 }
 
 //********************************************************************************************************************
-// Helper to store TValue into array element based on element type
+// Validate a TValue against the exact storage contract for an array element.
 
-static void arr_store_elem(lua_State *L, GCarray *Array, uint32_t Idx, cTValue *Val)
+extern "C" void lj_arr_checkelem(lua_State *L, GCarray *Array, cTValue *Val)
 {
+   switch (Array->elemtype) {
+      case AET::BYTE:
+      case AET::INT16:
+      case AET::INT32:
+      case AET::INT64:
+         if (tvisnil(Val)) return;
+         if (not tvisnumber(Val)) lj_err_msgv(L, ErrMsg::ARRTYPE);
+         if (tvisnum(Val) and not std::isfinite(numV(Val))) lj_err_msgv(L, ErrMsg::NUMRNG);
+         return;
+
+      case AET::FLOAT:
+         if (tvisnil(Val)) return;
+         if (not tvisnumber(Val)) lj_err_msgv(L, ErrMsg::ARRTYPE);
+         if (tvisnum(Val) and std::isfinite(numV(Val)) and std::abs(numV(Val)) > FLT_MAX) {
+            lj_err_msgv(L, ErrMsg::NUMRNG);
+         }
+         return;
+
+      case AET::DOUBLE:
+         if (tvisnil(Val) or tvisnumber(Val)) return;
+         break;
+
+      case AET::STR_GC:
+      case AET::TABLE:
+      case AET::ARRAY:
+      case AET::OBJECT:
+         if (tvisnil(Val) or Array->itype IS uint8_t(itype(Val))) return;
+         break;
+
+      case AET::ANY:
+         return;
+
+      case AET::PTR:
+         if (tvislightud(Val)) return;
+         break;
+
+      case AET::STRUCT:
+         if (tvisstruct(Val)) {
+            auto source = structV(Val);
+            if ((source->def IS Array->structdef) and (source->structsize IS Array->elemsize)) return;
+         }
+         break;
+
+      case AET::CSTR:
+      case AET::STR_CPP:
+      default:
+         break;
+   }
+
+   lj_err_msgv(L, ErrMsg::ARRTYPE);
+}
+
+//********************************************************************************************************************
+
+static double arr_integer_value(cTValue *Val)
+{
+   return std::trunc(tvisint(Val) ? double(intV(Val)) : numV(Val));
+}
+
+template <typename T> static T arr_signed_value(cTValue *Val, int Bits)
+{
+   const double modulus = std::ldexp(1.0, Bits);
+   const double half = std::ldexp(1.0, Bits - 1);
+   double value = std::fmod(arr_integer_value(Val), modulus);
+   if (value >= half) value -= modulus;
+   else if (value < -half) value += modulus;
+   return T(value);
+}
+
+template <typename T> static T arr_unsigned_value(cTValue *Val, int Bits)
+{
+   const double modulus = std::ldexp(1.0, Bits);
+   const double value = std::fmod(arr_integer_value(Val), modulus);
+   if (value < 0) return T(uint64_t(0) - uint64_t(-value));
+   return T(value);
+}
+
+//********************************************************************************************************************
+// Store a previously or concurrently validated TValue into an array element.
+
+extern "C" void lj_arr_storeelem(lua_State *L, GCarray *Array, MSize Idx, cTValue *Val)
+{
+   lj_arr_checkelem(L, Array, Val);
    void *elem = lj_array_index(Array, Idx);
 
-   // Handle non-numeric types first
-
-   if (not glArrayConversion[uint8_t(Array->elemtype)].primitive) {
-      switch (Array->elemtype) {
-         case AET::STR_GC:
-         case AET::TABLE:
-         case AET::ARRAY:
-         case AET::OBJECT: {
-            if (tvisnil(Val)) setgcrefnull(*(GCRef*)elem);
-            else {
-               if (Array->itype IS uint8_t(itype(Val))) {
-                  auto gcobj = gcV(Val);
-                  setgcref(*(GCRef*)elem, gcobj);
-                  lj_gc_objbarrier(L, Array, gcobj);
-               }
-               else lj_err_msgv(L, ErrMsg::ARRTYPE);
-            }
-            return;
-         }
-
-         case AET::ANY: {
-            auto dest = (TValue *)elem;
-            copyTV(L, dest, Val);
-            if (tvisgcv(Val)) lj_gc_objbarrier(L, Array, gcV(Val));
-            return;
-         }
-
-         case AET::PTR:
-            if (tvislightud(Val)) { // Extract raw pointer (note: lightudV on 64-bit requires global_State)
-               *(void**)elem = (void*)(Val->u64 & LJ_GCVMASK);
-               return;
-            }
-            break;
-
-         case AET::STRUCT:
-            if (tvisstruct(Val)) {
-               auto source = structV(Val);
-               if ((source->def IS Array->structdef) and (source->structsize IS Array->elemsize)) {
-                  memcpy(elem, source->data, Array->elemsize);
-                  return;
-               }
-            }
-            break;
-
-         case AET::CSTR:
-         case AET::STR_CPP:
-            // Storing pointers to C strings is potentially feasible but currently unsafe; for this reason we disallow it.
-         default: break;
+   if (tvisnil(Val)) {
+      if (Array->elemtype IS AET::ANY) {
+         setnilV((TValue *)elem);
       }
-
-      // We could attempt automated conversion (e.g. string to int), but this would be unpredictable
-      // between releases and the user can perform explicit conversion if desired.
-
-      lj_err_msgv(L, ErrMsg::ARRTYPE);
+      else memset(elem, 0, Array->elemsize);
+      return;
    }
-   else { // All primitive types are numeric
-      if (tvisint(Val)) {
-         int32_t ival = intV(Val);
-         switch (Array->elemtype) {
-            case AET::BYTE:   *(uint8_t*)elem = uint8_t(ival); return;
-            case AET::INT16:  *(int16_t*)elem = int16_t(ival); return;
-            case AET::INT32:  *(int32_t*)elem = ival; return;
-            case AET::INT64:  *(int64_t*)elem = ival; return;
-            case AET::FLOAT:  *(float*)elem = float(ival); return;
-            case AET::DOUBLE: *(double*)elem = double(ival); return;
-            default: break;
-         }
-      }
-      else if (tvisnum(Val)) {
-         lua_Number num = numV(Val);
-         switch (Array->elemtype) {
-            case AET::BYTE:   *(uint8_t*)elem = uint8_t(num); return;
-            case AET::INT16:  *(int16_t*)elem = int16_t(num); return;
-            case AET::INT32:  *(int32_t*)elem = int32_t(num); return;
-            case AET::INT64:  *(int64_t*)elem = int64_t(num); return;
-            case AET::FLOAT:  *(float*)elem = float(num); return;
-            case AET::DOUBLE: *(double*)elem = num; return;
-            default: break;
-         }
-      }
-      else if (tvisnil(Val)) {
-         memset(elem, 0, Array->elemsize);
+
+   switch (Array->elemtype) {
+      case AET::BYTE:   *(uint8_t *)elem = arr_unsigned_value<uint8_t>(Val, 8); return;
+      case AET::INT16:  *(int16_t *)elem = arr_signed_value<int16_t>(Val, 16); return;
+      case AET::INT32:  *(int32_t *)elem = arr_signed_value<int32_t>(Val, 32); return;
+      case AET::INT64:  *(int64_t *)elem = arr_signed_value<int64_t>(Val, 64); return;
+      case AET::FLOAT:  *(float *)elem = float(tvisint(Val) ? intV(Val) : numV(Val)); return;
+      case AET::DOUBLE: *(double *)elem = tvisint(Val) ? double(intV(Val)) : numV(Val); return;
+
+      case AET::STR_GC:
+      case AET::TABLE:
+      case AET::ARRAY:
+      case AET::OBJECT: {
+         auto gcobj = gcV(Val);
+         setgcref(*(GCRef *)elem, gcobj);
+         lj_gc_objbarrier(L, Array, gcobj);
          return;
       }
-      lj_err_msgv(L, ErrMsg::ARRTYPE);
+
+      case AET::ANY:
+         copyTV(L, (TValue *)elem, Val);
+         if (tvisgcv(Val)) lj_gc_objbarrier(L, Array, gcV(Val));
+         return;
+
+      case AET::PTR:
+         *(void **)elem = (void *)(Val->u64 & LJ_GCVMASK);
+         return;
+
+      case AET::STRUCT: {
+         auto source = structV(Val);
+         memcpy(elem, source->data, Array->elemsize);
+         return;
+      }
+
+      case AET::CSTR:
+      case AET::STR_CPP:
+      default:
+         lj_err_msgv(L, ErrMsg::ARRTYPE);
    }
 }
 
@@ -313,7 +358,7 @@ extern "C" int lj_arr_set(lua_State *L, cTValue *O, cTValue *K, cTValue *V)
    }
 
    // Perform the actual store
-   arr_store_elem(L, arr, uint32_t(idx), V);
+   lj_arr_storeelem(L, arr, MSize(idx), V);
    return 1;  // Success
 }
 
@@ -346,7 +391,7 @@ extern "C" void lj_arr_setidx(lua_State *L, GCarray *Array, int32_t Idx, cTValue
 {
    if (Idx < 0 or MSize(Idx) >= Array->len) lj_err_msgv(L, ErrMsg::ARROB, Idx, int(Array->len));
    if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
-   arr_store_elem(L, Array, uint32_t(Idx), Val);
+   lj_arr_storeelem(L, Array, MSize(Idx), Val);
 }
 
 //********************************************************************************************************************
@@ -367,10 +412,11 @@ extern "C" void lj_arr_push1(lua_State *L, GCarray *Array, cTValue *Val)
       return;
    }
 
+   lj_arr_checkelem(L, Array, Val);
    MSize idx = Array->len;
    if (idx IS ~MSize(0)) lj_err_msg(L, ErrMsg::ARREXT);
    if (idx + 1 > Array->capacity and not lj_array_grow(L, Array, idx + 1)) lj_err_msg(L, ErrMsg::ARREXT);
-   arr_store_elem(L, Array, idx, Val);
+   lj_arr_storeelem(L, Array, idx, Val);
    Array->len = idx + 1;
 }
 

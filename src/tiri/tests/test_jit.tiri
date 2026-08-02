@@ -2037,6 +2037,47 @@ end
    assert(buffer_trace_found is true, "Expected multi-piece array append to record buffer IR")
 end
 
+@Test(hotpath=80) function JITTypedArrayMutationRejectsCategoryChanges()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   function typ12_hot_push(Array:array, Value:any)
+      Array:push(Value)
+   end
+
+   function typ12_hot_store(Array:array, Value:any)
+      Array[0] = Value
+   end
+
+   local pushed = array<int>
+   for i in {1 into 80} do typ12_hot_push(pushed, i) end
+   local pushed_len = #pushed
+
+   try
+      typ12_hot_push(pushed, '81')
+   success
+      error('hot array push() should reject a numeric string')
+   end
+   assert(#pushed is pushed_len and pushed[#pushed - 1] is 80,
+      'a rejected hot push() should preserve length and contents')
+
+   local stored = array<int> { 0 }
+   for i in {1 into 80} do typ12_hot_store(stored, i) end
+   assert(stored[0] is 80, 'hot indexed stores should accept exact numeric values')
+
+   try
+      typ12_hot_store(stored, '81')
+   success
+      error('hot indexed store should reject a numeric string')
+   end
+   assert(stored[0] is 80, 'a rejected hot indexed store should preserve the previous element')
+
+   typ12_hot_store(stored, 3000000000)
+   assert(stored[0] is -1294967296,
+      'an out-of-machine-range hot store should side-exit to defined integer wrapping')
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Test JIT recording of BC_OBGETF (object field get)
 -- Without JIT support, the trace recorder would abort with NYIBC (Not Yet Implemented Bytecode).

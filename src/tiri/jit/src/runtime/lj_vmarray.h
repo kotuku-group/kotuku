@@ -19,6 +19,11 @@ extern "C" [[nodiscard]] int lj_arr_set(lua_State *, cTValue *, cTValue *, cTVal
 extern "C" void lj_arr_getidx(lua_State *, GCarray *, int32_t idx, TValue *);
 extern "C" void lj_arr_setidx(lua_State *, GCarray *, int32_t idx, cTValue *);
 
+// Canonical typed-element validation and storage used by array library methods.
+
+extern "C" void lj_arr_checkelem(lua_State *, GCarray *, cTValue *);
+extern "C" void lj_arr_storeelem(lua_State *, GCarray *, MSize, cTValue *);
+
 // Append a single value to an array (array.append() semantics), called from JIT traces
 
 extern "C" void lj_arr_push1(lua_State *, GCarray *, cTValue *);

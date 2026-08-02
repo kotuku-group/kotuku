@@ -529,6 +529,47 @@ end
    assert(int_arr[2] is 3, 'Float to integer conversion failed')
 end
 
+@Test function TypedArrayConstructionRejectsCategoryCoercion()
+   try
+      local ints = array.of('int', '4')
+   success
+      error('array.of() should reject numeric strings for integer storage')
+   end
+
+   try
+      local strings = array.of('string', 42)
+   success
+      error('array.of() should reject numbers for string storage')
+   end
+
+   local values = array<int> { 1.9, 3000000000, nil }
+   assert(values[0] is 1, 'integer initialisers should retain finite fractional truncation')
+   assert(values[1] is -1294967296, 'integer initialisers should retain defined 32-bit wrapping')
+   assert(values[2] is 0, 'nil should retain numeric zeroing semantics')
+
+   try
+      values[0] = math.huge
+   success
+      error('integer arrays should reject non-finite values')
+   end
+   assert(values[0] is 1, 'a rejected non-finite indexed store should preserve the previous value')
+end
+
+@Test function TableCopyUsesExactAtomicElementContract()
+   local values = array<int> { 5, 6, 7 }
+   try
+      values:copy({ 8, {}, 9 })
+   success
+      error('table-backed copy() should reject incompatible element categories')
+   end
+   assert(values[0] is 5 and values[1] is 6 and values[2] is 7,
+      'failed table-backed copy() should preserve every destination element')
+
+   values:copy({ 1.9, 2.1, 3.8 })
+   assert(values[0] is 1 and values[1] is 2 and values[2] is 3,
+      'table-backed copy() should retain numeric native-storage conversion')
+end
+
 @Test function ToString()
    str_array = array.new('hello')
    assert(tostring(str_array) is 'hello', "String array tostring() failed, got '" .. tostring(str_array) .. "'")

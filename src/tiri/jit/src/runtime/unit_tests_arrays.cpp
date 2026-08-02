@@ -1146,6 +1146,50 @@ static bool test_lib_array_double_type(kt::Log &Log)
    return true;
 }
 
+static bool test_lib_array_exact_contracts(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *L = holder.get();
+   if (not L) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+   luaL_openlibs(L);
+
+   const char *code = R"(
+      local values = array<int> { 5, 6, 7 }
+      local push_rejected = false
+      local copy_rejected = false
+
+      try
+         values:push('4')
+      except e
+         push_rejected = true
+      end
+
+      try
+         values:copy({ 8, {}, 9 })
+      except e
+         copy_rejected = true
+      end
+
+      return push_rejected and copy_rejected and #values is 3 and
+         values[0] is 5 and values[1] is 6 and values[2] is 7
+   )";
+
+   if (dostring(L, code) != 0) {
+      Log.error("array exact-contract test code failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   if (not lua_toboolean(L, -1)) {
+      Log.error("array exact-contract validation or mutation preservation failed");
+      return false;
+   }
+
+   return true;
+}
+
 //********************************************************************************************************************
 // Test runner
 
@@ -1153,7 +1197,7 @@ static bool test_lib_array_double_type(kt::Log &Log)
 
 void array_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 31> Tests = { {
+   constexpr std::array<TestCase, 32> Tests = { {
       // Core Data Structures
       { "array_creation_byte", test_array_creation_byte },
       { "array_creation_int32", test_array_creation_int32 },
@@ -1188,7 +1232,8 @@ void array_unit_tests(int &Passed, int &Total)
       { "lib_array_string", test_lib_array_string },
       { "lib_array_fill", test_lib_array_fill },
       { "lib_array_len_operator", test_lib_array_len_operator },
-      { "lib_array_double_type", test_lib_array_double_type }
+      { "lib_array_double_type", test_lib_array_double_type },
+      { "lib_array_exact_contracts", test_lib_array_exact_contracts }
    } };
 
    if (NewObject(CLASSID::TIRI, &glArrayTestScript) != ERR::Okay) return;
