@@ -827,6 +827,88 @@ static void decode_contract_or_error(lua_State *L, GCstr *Descriptor, RuntimeCon
    else lj_err_callermsg(L, "invalid runtime type-contract descriptor");
 }
 
+[[nodiscard]] static uint16_t cached_contract_text_offset(
+   const GCstr *Descriptor, std::string_view Text) noexcept
+{
+   if (Text.empty()) return 0;
+   ptrdiff_t offset = Text.data() - strdata(Descriptor);
+   lj_assertX(offset > 0 and uint64_t(offset) <= UINT16_MAX, "runtime contract text offset is out of range");
+   return uint16_t(offset);
+}
+
+[[nodiscard]] static std::string_view cached_contract_text(
+   const GCstr *Descriptor, uint16_t Offset) noexcept
+{
+   if (not Offset) return {};
+   const char *text = strdata(Descriptor) + Offset;
+   return std::string_view(text, uint8_t(text[-1]));
+}
+
+[[nodiscard]] static const CachedRuntimeContractRecord * find_cached_contract(
+   const GCproto *Prototype, uint32_t BytecodePosition, const CachedRuntimeContractEntry *&Entries) noexcept
+{
+   const RuntimeContractCache *cache = proto_contract_cache(Prototype);
+   if (not cache) return nullptr;
+
+   const CachedRuntimeContractRecord *records = runtime_contract_cache_records(cache);
+   uint32_t lower = 0;
+   uint32_t upper = cache->record_count;
+   while (lower < upper) {
+      uint32_t middle = lower + ((upper - lower) >> 1);
+      if (records[middle].bytecode_position < BytecodePosition) lower = middle + 1;
+      else upper = middle;
+   }
+   if (lower >= cache->record_count or records[lower].bytecode_position != BytecodePosition) return nullptr;
+
+   const CachedRuntimeContractRecord *record = &records[lower];
+   Entries = runtime_contract_cache_entries(cache) + record->entry_index;
+   return record;
+}
+
+static void apply_cached_contract(lua_State *L, TValue *Base, uint32_t DynamicCount, GCstr *Descriptor,
+   const CachedRuntimeContractRecord &Record, const CachedRuntimeContractEntry *Entries)
+{
+   L->top = curr_topL(L);
+   uint32_t value_count = (Record.flags & contract_flag(ContractDescriptorFlag::DynamicCount)) ?
+      DynamicCount + Record.static_value_count : Record.static_value_count;
+   bool variadic = (Record.flags & contract_flag(ContractDescriptorFlag::Variadic)) != 0;
+   ptrdiff_t base_offset = savestack(L, Base);
+
+   for (uint32_t i = 0; i < value_count; ++i) {
+      uint32_t entry_index;
+      if (i < Record.contract_count) entry_index = i;
+      else if (variadic and Record.contract_count > 0) entry_index = Record.contract_count - 1;
+      else continue;
+
+      const CachedRuntimeContractEntry &cached = Entries[entry_index];
+      RuntimeContractEntry entry{
+         .type = cached.type,
+         .flags = cached.flags,
+         .position = cached.position,
+         .object_class_id = CLASSID(cached.object_class_id),
+         .array_element_type = cached.array_element_type,
+         .array_struct_name = cached_contract_text(Descriptor, cached.array_struct_offset),
+         .struct_name = cached_contract_text(Descriptor, cached.struct_offset),
+         .label = cached_contract_text(Descriptor, cached.label_offset)
+      };
+      if (entry.type IS TiriType::Any or entry.type IS TiriType::Unknown) continue;
+
+      Base = restorestack(L, base_offset);
+      TValue *value = Base + i;
+      if (lj_is_thunk(value)) {
+         TValue *resolved = lj_thunk_resolve(L, udataV(value));
+         Base = restorestack(L, base_offset);
+         value = Base + i;
+         copyTV(L, value, resolved);
+      }
+
+      if (not contract_matches(L, value, entry)) {
+         uint32_t position = Record.boundary IS ContractBoundary::Result ? i + 1 : entry.position;
+         contract_error(L, value, Record.boundary, entry, position);
+      }
+   }
+}
+
 [[noreturn]] static void const_global_error(lua_State *L, const GCstr *Name)
 {
    CSTRING message = lj_strfmt_pushf(L, "cannot assign to const global '%s'", strdata(Name));
@@ -834,6 +916,84 @@ static void decode_contract_or_error(lua_State *L, GCstr *Descriptor, RuntimeCon
 }
 
 } // namespace
+
+void lj_contract_build_cache(lua_State *L, GCproto *Prototype)
+{
+   lj_assertX(not proto_contract_cache(Prototype), "runtime contract cache was built twice");
+
+   uint16_t record_count = 0;
+   uint16_t entry_count = 0;
+   for (uint32_t i = 1; i < Prototype->sizebc; ++i) {
+      BCIns instruction = proto_bc(Prototype)[i];
+      if (bc_op(instruction) != BC_CONTRACT) continue;
+
+      GCobj *constant = proto_kgc(Prototype, ~(ptrdiff_t)bc_d(instruction));
+      if (constant->gch.gct != uint8_t(~LJ_TSTR)) continue;
+      RuntimeContractDescriptor descriptor;
+      if (not decode_runtime_contract(gco_to_string(constant), descriptor) or descriptor.contract_count < 2 or
+          descriptor.boundary IS ContractBoundary::Global) {
+         continue;
+      }
+      if (record_count IS UINT16_MAX or entry_count > UINT16_MAX - descriptor.contract_count) return;
+      record_count++;
+      entry_count += descriptor.contract_count;
+   }
+   if (not record_count) return;
+
+   size_t byte_size = sizeof(RuntimeContractCache) + record_count * sizeof(CachedRuntimeContractRecord) +
+      entry_count * sizeof(CachedRuntimeContractEntry);
+   if (byte_size > UINT32_MAX) return;
+
+   auto cache = (RuntimeContractCache *)lj_mem_new(L, byte_size);
+   memset(cache, 0, byte_size);
+   cache->byte_size = uint32_t(byte_size);
+   cache->record_count = record_count;
+   cache->entry_count = entry_count;
+
+   CachedRuntimeContractRecord *records = runtime_contract_cache_records(cache);
+   CachedRuntimeContractEntry *entries = runtime_contract_cache_entries(cache);
+   uint16_t record_index = 0;
+   uint16_t entry_index = 0;
+   for (uint32_t i = 1; i < Prototype->sizebc; ++i) {
+      BCIns instruction = proto_bc(Prototype)[i];
+      if (bc_op(instruction) != BC_CONTRACT) continue;
+
+      GCobj *constant = proto_kgc(Prototype, ~(ptrdiff_t)bc_d(instruction));
+      if (constant->gch.gct != uint8_t(~LJ_TSTR)) continue;
+      GCstr *encoded = gco_to_string(constant);
+      RuntimeContractDescriptor descriptor;
+      if (not decode_runtime_contract(encoded, descriptor) or descriptor.contract_count < 2 or
+          descriptor.boundary IS ContractBoundary::Global) {
+         continue;
+      }
+
+      records[record_index++] = CachedRuntimeContractRecord{
+         .bytecode_position = i,
+         .boundary = descriptor.boundary,
+         .flags = descriptor.flags,
+         .static_value_count = descriptor.static_value_count,
+         .contract_count = descriptor.contract_count,
+         .entry_index = entry_index
+      };
+      for (uint8_t j = 0; j < descriptor.contract_count; ++j) {
+         const RuntimeContractEntry &source = descriptor.entries[j];
+         entries[entry_index++] = CachedRuntimeContractEntry{
+            .object_class_id = uint32_t(source.object_class_id),
+            .array_struct_offset = cached_contract_text_offset(encoded, source.array_struct_name),
+            .struct_offset = cached_contract_text_offset(encoded, source.struct_name),
+            .label_offset = cached_contract_text_offset(encoded, source.label),
+            .type = source.type,
+            .flags = source.flags,
+            .position = source.position,
+            .array_element_type = source.array_element_type
+         };
+      }
+   }
+
+   lj_assertX(record_index IS record_count and entry_index IS entry_count,
+      "runtime contract cache sizing changed while building");
+   setmref(Prototype->contract_cache, cache);
+}
 
 extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCount, GCstr *Descriptor)
 {
@@ -933,6 +1093,13 @@ extern "C" void lj_meta_contract_pc(lua_State *L, const BCIns *PC, uint32_t Dyna
       BCIns instruction = *--cursor;
       if (bc_op(instruction) IS BC_CONTRACT) {
          GCstr *descriptor = gco_to_string(proto_kgc(prototype, ~(ptrdiff_t)bc_d(instruction)));
+         const CachedRuntimeContractEntry *entries = nullptr;
+         uint32_t bytecode_position = uint32_t(cursor - proto_bc(prototype));
+         if (const CachedRuntimeContractRecord *record =
+               find_cached_contract(prototype, bytecode_position, entries)) {
+            apply_cached_contract(L, L->base + bc_a(instruction), DynamicCount, descriptor, *record, entries);
+            return;
+         }
          lj_meta_contract(L, L->base + bc_a(instruction), DynamicCount, descriptor);
          return;
       }

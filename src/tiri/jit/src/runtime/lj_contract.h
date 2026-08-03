@@ -84,6 +84,73 @@ struct RuntimeContractDescriptor {
    }
 };
 
+// Compact, prototype-owned derivative of grouped portable descriptors.  Text offsets address the first text byte in
+// the rooted GCstr descriptor; its preceding byte remains the canonical length.  Single-entry descriptors use the
+// portable decoder directly because caching them would add lifetime memory without amortising batching work.
+
+struct CachedRuntimeContractEntry {
+   uint32_t object_class_id;
+   uint16_t array_struct_offset;
+   uint16_t struct_offset;
+   uint16_t label_offset;
+   TiriType type;
+   uint8_t flags;
+   uint8_t position;
+   AET array_element_type;
+};
+
+struct CachedRuntimeContractRecord {
+   uint32_t bytecode_position;
+   ContractBoundary boundary;
+   uint8_t flags;
+   uint8_t static_value_count;
+   uint8_t contract_count;
+   uint16_t entry_index;
+};
+
+struct RuntimeContractCache {
+   uint32_t byte_size;
+   uint16_t record_count;
+   uint16_t entry_count;
+};
+
+static_assert(sizeof(CachedRuntimeContractEntry) IS 16, "cached runtime contract entries must remain compact");
+static_assert(sizeof(CachedRuntimeContractRecord) IS 12, "cached runtime contract records must remain compact");
+static_assert(sizeof(RuntimeContractCache) IS 8, "runtime contract cache header must remain compact");
+
+[[nodiscard]] inline CachedRuntimeContractRecord * runtime_contract_cache_records(
+   RuntimeContractCache *Cache) noexcept
+{
+   return (CachedRuntimeContractRecord *)(Cache + 1);
+}
+
+[[nodiscard]] inline const CachedRuntimeContractRecord * runtime_contract_cache_records(
+   const RuntimeContractCache *Cache) noexcept
+{
+   return (const CachedRuntimeContractRecord *)(Cache + 1);
+}
+
+[[nodiscard]] inline CachedRuntimeContractEntry * runtime_contract_cache_entries(RuntimeContractCache *Cache) noexcept
+{
+   return (CachedRuntimeContractEntry *)(runtime_contract_cache_records(Cache) + Cache->record_count);
+}
+
+[[nodiscard]] inline const CachedRuntimeContractEntry * runtime_contract_cache_entries(
+   const RuntimeContractCache *Cache) noexcept
+{
+   return (const CachedRuntimeContractEntry *)(runtime_contract_cache_records(Cache) + Cache->record_count);
+}
+
+[[nodiscard]] inline RuntimeContractCache * proto_contract_cache(GCproto *Proto) noexcept
+{
+   return Proto->contract_cache.get<RuntimeContractCache>();
+}
+
+[[nodiscard]] inline const RuntimeContractCache * proto_contract_cache(const GCproto *Proto) noexcept
+{
+   return Proto->contract_cache.get<const RuntimeContractCache>();
+}
+
 [[nodiscard]] constexpr inline bool contract_entry_is_const(const RuntimeContractEntry &Entry) noexcept
 {
    return (Entry.flags & contract_flag(ContractEntryFlag::Const)) != 0;

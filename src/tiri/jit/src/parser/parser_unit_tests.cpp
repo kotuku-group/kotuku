@@ -2189,6 +2189,166 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
    return true;
 }
 
+static bool test_runtime_contract_batching(kt::Log &Log)
+{
+   struct ContractInstruction {
+      BCREG base = 0;
+      RuntimeContractDescriptor descriptor;
+   };
+
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   bool decode_failed = false;
+   auto read_contracts = [&decode_failed](GCproto *Proto, ContractBoundary Boundary) {
+      std::vector<ContractInstruction> result;
+      for (uint32_t i = 1; Proto and i < Proto->sizebc; ++i) {
+         BCIns instruction = proto_bc(Proto)[i];
+         if (bc_op(instruction) != BC_CONTRACT) continue;
+
+         GCstr *encoded = gco_to_string(proto_kgc(Proto, ~(ptrdiff_t)bc_d(instruction)));
+         RuntimeContractDescriptor descriptor;
+         if (not decode_runtime_contract(encoded, descriptor)) {
+            decode_failed = true;
+            continue;
+         }
+         if (descriptor.boundary IS Boundary) {
+            result.push_back(ContractInstruction{
+               .base = bc_a(instruction),
+               .descriptor = descriptor
+            });
+         }
+      }
+      return result;
+   };
+   auto compile_child = [lua, &Log](std::string_view Source, const char *Label) -> GCproto * {
+      if (lua_load(lua, Source, Label)) {
+         Log.error("failed to compile %s: %s", Label, lua_tostring(lua, -1));
+         return nullptr;
+      }
+      return first_child_proto(funcproto(funcV(lua->top - 1)));
+   };
+
+   GCproto *dense = compile_child(
+      "return function(A:num, B:str, C:bool, D:table) return A end\n", "dense-parameter-contracts");
+   auto dense_contracts = read_contracts(dense, ContractBoundary::Parameter);
+   if (not dense or decode_failed or dense_contracts.size() != 1 or dense_contracts[0].base != 0 or
+       dense_contracts[0].descriptor.static_value_count != 4 or
+       dense_contracts[0].descriptor.contract_count != 4 or not proto_contract_cache(dense) or
+       proto_contract_cache(dense)->record_count != 1 or proto_contract_cache(dense)->entry_count != 4) {
+      Log.error("four adjacent parameter contracts did not batch into one descriptor");
+      return false;
+   }
+   constexpr std::array<TiriType, 4> dense_types{
+      TiriType::Num, TiriType::Str, TiriType::Bool, TiriType::Table
+   };
+   constexpr std::array<std::string_view, 4> dense_labels{ "A", "B", "C", "D" };
+   for (uint8_t i = 0; i < dense_types.size(); ++i) {
+      const RuntimeContractEntry &entry = dense_contracts[0].descriptor.entries[i];
+      if (entry.type != dense_types[i] or entry.position != i + 1 or entry.label != dense_labels[i]) {
+         Log.error("dense parameter contract entry %u lost its type, position or label", unsigned(i + 1));
+         return false;
+      }
+   }
+   lua_pop(lua, 1);
+
+   GCproto *wide = compile_child(
+      "return function(A:num, B:num, C:num, D:num, E:num, F:num, G:num, H:num, I:num) return A end\n",
+      "wide-parameter-contracts");
+   auto wide_contracts = read_contracts(wide, ContractBoundary::Parameter);
+   if (not wide or decode_failed or wide_contracts.size() != 2 or wide_contracts[0].base != 0 or
+       wide_contracts[0].descriptor.static_value_count != MAX_RETURN_TYPES or
+       wide_contracts[0].descriptor.contract_count != MAX_RETURN_TYPES or wide_contracts[1].base != 8 or
+       wide_contracts[1].descriptor.static_value_count != 1 or wide_contracts[1].descriptor.contract_count != 1 or
+       wide_contracts[1].descriptor.entries[0].position != 9 or wide_contracts[1].descriptor.entries[0].label != "I") {
+      Log.error("nine adjacent parameter contracts did not split at the descriptor entry limit");
+      return false;
+   }
+   lua_pop(lua, 1);
+
+   GCproto *fragmented = compile_child(
+      "return function(A:num, B:any, C:str) return A end\n", "fragmented-parameter-contracts");
+   auto fragmented_contracts = read_contracts(fragmented, ContractBoundary::Parameter);
+   if (not fragmented or decode_failed or fragmented_contracts.size() != 2 or
+       fragmented_contracts[0].base != 0 or fragmented_contracts[0].descriptor.contract_count != 1 or
+       fragmented_contracts[0].descriptor.entries[0].position != 1 or fragmented_contracts[1].base != 2 or
+       fragmented_contracts[1].descriptor.contract_count != 1 or
+       fragmented_contracts[1].descriptor.entries[0].position != 3 or proto_contract_cache(fragmented)) {
+      Log.error("an unchecked parameter gap did not split dense contract runs");
+      return false;
+   }
+   lua_pop(lua, 1);
+
+   constexpr std::string_view combined_source =
+      "local function Dynamic():<any,any,any,any> return 1,'text',true,{} end\n"
+      "return function(A:num, B:str, C:bool, D:table)\n"
+      "   local E:num, F:str, G:bool, H:table = Dynamic()\n"
+      "   return A\n"
+      "end\n";
+   if (lua_load(lua, combined_source, "grouped-contract-roundtrip")) {
+      Log.error("failed to compile grouped contract round-trip source: %s", lua_tostring(lua, -1));
+      return false;
+   }
+
+   auto find_four_parameter_proto = [](auto &Self, GCproto *Proto) -> GCproto * {
+      if (Proto->numparams IS 4) return Proto;
+      for (ptrdiff_t i = -ptrdiff_t(Proto->sizekgc); i < 0; ++i) {
+         GCobj *object = proto_kgc(Proto, i);
+         if (object->gch.gct != uint8_t(~LJ_TPROTO)) continue;
+         if (GCproto *result = Self(Self, gco_to_proto(object))) return result;
+      }
+      return nullptr;
+   };
+
+   GCproto *root = funcproto(funcV(lua->top - 1));
+   GCproto *combined = find_four_parameter_proto(find_four_parameter_proto, root);
+   auto combined_parameters = read_contracts(combined, ContractBoundary::Parameter);
+   auto combined_locals = read_contracts(combined, ContractBoundary::Local);
+   if (not combined or decode_failed or combined_parameters.size() != 1 or combined_locals.size() != 1 or
+       combined_parameters[0].descriptor.contract_count != 4 or
+       combined_locals[0].descriptor.contract_count != 4 or combined_locals[0].base != 4 or
+       not proto_contract_cache(combined) or proto_contract_cache(combined)->record_count != 2 or
+       proto_contract_cache(combined)->entry_count != 8) {
+      Log.error("parameter and local declaration runs did not batch in one prototype");
+      return false;
+   }
+
+   std::string dump;
+   if (lua_dump(lua, bytecode_writer, &dump) != 0) {
+      Log.error("failed to dump grouped contract bytecode");
+      return false;
+   }
+   std::string stripped_dump;
+   if (lj_bcwrite(lua, root, bytecode_writer, &stripped_dump, 1) != 0) {
+      Log.error("failed to dump stripped grouped contract bytecode");
+      return false;
+   }
+   lua_pop(lua, 1);
+
+   auto verify_dump = [&](const std::string &Dump, const char *Label) {
+      if (lua_load(lua, std::string_view(Dump.data(), Dump.size()), Label)) {
+         Log.error("failed to reload %s: %s", Label, lua_tostring(lua, -1));
+         return false;
+      }
+
+      GCproto *loaded_root = funcproto(funcV(lua->top - 1));
+      GCproto *loaded = find_four_parameter_proto(find_four_parameter_proto, loaded_root);
+      auto parameters = read_contracts(loaded, ContractBoundary::Parameter);
+      auto locals = read_contracts(loaded, ContractBoundary::Local);
+      const RuntimeContractCache *cache = loaded ? proto_contract_cache(loaded) : nullptr;
+      bool valid = loaded and not decode_failed and parameters.size() IS 1 and locals.size() IS 1 and
+         parameters[0].descriptor.contract_count IS 4 and locals[0].descriptor.contract_count IS 4 and cache and
+         cache->record_count IS 2 and cache->entry_count IS 8;
+      lua_pop(lua, 1);
+      return valid;
+   };
+   if (not verify_dump(dump, "grouped-contract-roundtrip") or
+       not verify_dump(stripped_dump, "stripped-grouped-contract-roundtrip")) {
+      Log.error("grouped parameter or local contracts did not survive bytecode round-trip");
+      return false;
+   }
+   return true;
+}
+
 static bool test_complex_contract_jit_eligibility(kt::Log &Log)
 {
    LuaStateHolder state;
@@ -3583,6 +3743,27 @@ static bool test_native_prototype_result_descriptors(kt::Log &Log)
       return false;
    }
 
+   // Untyped table reads yield 'any' because element types are not tracked.  Reassigning such a local must stay
+   // legal: an annotation would only add a CONTRACT guard without unlocking a specialised opcode, and ':any' would
+   // restore exactly the type the local already had.
+
+   constexpr std::string_view table_read_reassignment =
+      "local source = { Value = 1.5 }\n"
+      "local direct = source.Value\n"
+      "direct = direct * 2\n"
+      "local indexed = source['Value']\n"
+      "indexed = 5\n"
+      "local same_source = source.Value\n"
+      "same_source = source.Value\n"
+      "local defaulted = source.Missing ?? 1.96\n"
+      "defaulted = defaulted * 2\n"
+      "return direct, indexed, same_source, defaulted\n";
+   error.clear();
+   if (not compile_snapshot(L, table_read_reassignment, true, error)) {
+      Log.error("reassigning a local initialised from an untyped table read was rejected: %s", error.c_str());
+      return false;
+   }
+
    return true;
 }
 
@@ -4216,7 +4397,7 @@ static bool test_type_guided_emission(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 48> tests = { {
+   constexpr std::array<TestCase, 49> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -4245,6 +4426,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "malformed_signature_rejected", test_malformed_signature_rejected },
       { "contract_bytecode_roundtrip", test_contract_bytecode_roundtrip },
       { "runtime_contract_decoder", test_runtime_contract_decoder },
+      { "runtime_contract_batching", test_runtime_contract_batching },
       { "complex_contract_jit_eligibility", test_complex_contract_jit_eligibility },
       { "parser_diagnostics_reset_per_load", test_parser_diagnostics_reset_per_load },
       { "userdata_type_annotations", test_userdata_type_annotations },

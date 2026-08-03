@@ -15,6 +15,7 @@
 #include "lj_bcdump.h"
 #include "lj_state.h"
 #include "lj_strfmt.h"
+#include "lj_meta.h"
 
 // Reuse some lexer fields for our own purposes.
 
@@ -598,6 +599,7 @@ GCproto *lj_bcread_proto(LexState *State)
       setmref(pt->uvinfo, nullptr);
       setmref(pt->varinfo, nullptr);
    }
+   lj_contract_build_cache(State->L, pt);
    return pt;
 }
 
