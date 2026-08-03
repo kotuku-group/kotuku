@@ -1322,6 +1322,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
    // Declaration initialisers are placed directly into their local slots, so they do not pass through
    // bcemit_store().  Validate every concrete annotation after result-count adjustment and before publishing the
    // binding's checked metadata.  This also covers values supplied by calls, varargs and result filters.
+   std::vector<RuntimeContractSlot> local_contracts;
+   local_contracts.reserve(nvars.raw());
    for (auto i = BCReg(0); i < nvars; ++i) {
       const Identifier &identifier = Payload.names[i.raw()];
       if (identifier.type IS TiriType::Unknown or identifier.type IS TiriType::Any) continue;
@@ -1353,8 +1355,12 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
          .boundary = ContractBoundary::Local,
          .position = uint8_t(base.raw() + i.raw() + 1)
       };
-      bcemit_contract(&this->func_state, base + i, std::span(&contract, 1), 1);
+      local_contracts.push_back(RuntimeContractSlot{
+         .register_index = BCREG(base.raw() + i.raw()),
+         .contract = contract
+      });
    }
+   bcemit_contracts(&this->func_state, local_contracts);
 
    for (auto i = BCReg(0); i < nvars; ++i) {
       const Identifier& identifier = Payload.names[i.raw()];

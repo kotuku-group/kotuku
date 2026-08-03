@@ -99,6 +99,14 @@ struct RuntimeContract {
    bool global_hint = false;
 };
 
+// Associates a transient contract with the register it validates.  Dense batching uses the register separately from
+// RuntimeContract::position because the latter is stable diagnostic metadata rather than a relative stack offset.
+
+struct RuntimeContractSlot {
+   BCREG register_index = 0;
+   RuntimeContract contract;
+};
+
 // Concept for flag types that support bitwise operations
 template<typename Flag>
 concept FlagType = std::same_as<Flag, ExprFlag> or

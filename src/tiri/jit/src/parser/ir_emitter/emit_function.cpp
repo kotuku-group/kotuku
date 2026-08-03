@@ -198,6 +198,8 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    // Parameter contracts execute inside the callee after local bindings exist and before any user statement.
    // Blank parameters still have a boundary and must be checked.
 
+   std::vector<RuntimeContractSlot> parameter_contracts;
+   parameter_contracts.reserve(param_count.raw());
    for (auto i = BCReg(0); i < param_count; ++i) {
       const FunctionParameter &param = Payload.parameters[i.raw()];
       if (param.type IS TiriType::Unknown or param.type IS TiriType::Any) continue;
@@ -211,8 +213,12 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
          .nullable = true,
          .required = false
       };
-      bcemit_contract(&child_state, base + i, std::span(&contract, 1), 1);
+      parameter_contracts.push_back(RuntimeContractSlot{
+         .register_index = BCREG(base.raw() + i.raw()),
+         .contract = contract
+      });
    }
+   bcemit_contracts(&child_state, parameter_contracts);
 
    // Copy explicit return types to the function state BEFORE emitting the body.
    // This ensures emit_return_stmt can see the types when deciding whether to use tail-calls

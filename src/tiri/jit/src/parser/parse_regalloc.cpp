@@ -619,6 +619,46 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
 }
 
 //********************************************************************************************************************
+// Emit maximal dense runs of fixed runtime contracts.  Descriptor entries are ordinal, so an unchecked register gap
+// starts a new instruction.  The descriptor entry limit is shared with return contracts and splits wider runs.
+
+static void bcemit_contracts(FuncState *Fs, std::span<const RuntimeContractSlot> Contracts)
+{
+   if (Contracts.empty()) return;
+
+   std::array<RuntimeContract, MAX_RETURN_TYPES> batch;
+   BCREG batch_base = 0;
+   BCREG previous_register = 0;
+   uint8_t batch_count = 0;
+
+   auto flush = [&]() {
+      if (not batch_count) return;
+      bcemit_contract(Fs, batch_base, std::span(batch.data(), batch_count), BCREG(batch_count));
+      batch_count = 0;
+   };
+
+   for (size_t i = 0; i < Contracts.size(); ++i) {
+      const RuntimeContractSlot &slot = Contracts[i];
+      if (i > 0) {
+         lj_assertX(slot.register_index > previous_register, "runtime contract registers are not increasing");
+         lj_assertX(slot.contract.position > Contracts[i - 1].contract.position,
+            "runtime contract positions are not increasing");
+      }
+
+      if (batch_count and (slot.register_index != BCREG(previous_register + 1) or
+          batch_count IS MAX_RETURN_TYPES or slot.contract.boundary != batch[0].boundary)) {
+         flush();
+      }
+      if (not batch_count) batch_base = slot.register_index;
+
+      batch[batch_count++] = slot.contract;
+      previous_register = slot.register_index;
+   }
+
+   flush();
+}
+
+//********************************************************************************************************************
 // Literal values are closed proofs.  Every other ExpDesc type is advisory and receives a runtime check.
 
 [[nodiscard]] static bool contract_literal_proved(FuncState *fs, ExpDesc *Value, TiriType Expected)

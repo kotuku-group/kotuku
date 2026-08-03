@@ -53,6 +53,20 @@ function expect_diagnostic_failure(Callback:func)
    assert(failed, 'Expected a diagnostic contract failure')
 end
 
+function expect_batched_contract_failure(Callback:func, Boundary:str, Position:num, Label:str)
+   local failed = false
+   try
+      Callback()
+   except e
+      failed = true
+      assert(e.message:find(Boundary .. ' ' .. Position) != nil,
+         'The message should identify the failing contract position: ' .. e.message)
+      assert(e.message:find("('" .. Label .. "')") != nil,
+         'The message should identify the failing contract label: ' .. e.message)
+   end
+   assert(failed, 'Expected a batched contract failure')
+end
+
 function expect_userdata_diagnostic(Callback:func, Actual:str)
    local failed = false
    try
@@ -357,6 +371,48 @@ end
    expect_diagnostic_failure(function() diagnostic(dynamic_value('wrong')) end)
 end
 
+@Test function BatchedContractDiagnostics()
+   function checked_parameters(A:num, B:str, C:bool, D:table)
+      return A
+   end
+   local parameter_alias:any = checked_parameters
+   expect_batched_contract_failure(
+      function() parameter_alias(1, 'valid', dynamic_value('wrong'), {}) end, 'parameter', 3, 'C')
+
+   function dynamic_local_values():<any, any, any, any>
+      return 1, 'valid', 'wrong', {}
+   end
+   function checked_locals()
+      local first:num, second:str, third:bool, fourth:table = dynamic_local_values()
+      return first, second, third, fourth
+   end
+   expect_batched_contract_failure(checked_locals, 'local', 3, 'third')
+
+   local alpha = struct<ContractAlpha> { Value=3 }
+   local bravo = struct<ContractBravo> { Value=5 }
+   local alpha_values = array<struct<ContractAlpha>> { alpha }
+   local bravo_values = array<struct<ContractBravo>> { bravo }
+   local time_object = obj.new('time')
+   function checked_refined(Record:struct<ContractAlpha>, Values:array<struct<ContractAlpha>>, Clock:obj)
+      return Record.Value + Values[0].Value, Clock
+   end
+   local refined_value, refined_clock = checked_refined(alpha, alpha_values, time_object)
+   assert(refined_value is 6 and refined_clock is time_object,
+      'Batched refined contracts should preserve matching structure, array and object identities')
+
+   local refined_failed = false
+   try
+      checked_refined(alpha, dynamic_value(bravo_values), time_object)
+   except e
+      refined_failed = true
+      assert(e.message:find('parameter 2') != nil and e.message:find("('Values')") != nil,
+         'A cached refined diagnostic should preserve its position and label: ' .. e.message)
+      assert(e.message:find('array<struct<ContractAlpha>>') != nil,
+         'A cached refined diagnostic should preserve its exact expected type: ' .. e.message)
+   end
+   assert(refined_failed, 'A cached refined array contract should reject the wrong structure member type')
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Other approved write boundaries.
 
@@ -432,6 +488,19 @@ end
       }))
    end, 'to-be-closed local initialiser')
    assert(closed, 'A rejected local initialiser must unwind its <close> value')
+
+   local grouped_closed = false
+   function dynamic_close_pair():<any, any>
+      return setmetatable({}, {
+         __close = function(Self, Error)
+            grouped_closed = true
+         end
+      }), 'wrong'
+   end
+   expect_batched_contract_failure(function()
+      local resource <close>:table, value:num = dynamic_close_pair()
+   end, 'local', 2, 'value')
+   assert(grouped_closed, 'A later failure in a grouped local contract must unwind an earlier <close> value')
 
    local initialiser_deferred = false
    function fail_initialiser()

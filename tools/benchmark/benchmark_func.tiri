@@ -5,7 +5,7 @@
 
 @Test function FunctionLocalCalls()
    -- Define local functions with varying argument counts
-   local function noArgs()
+   local function noArgs():num
       return 42
    end
 
@@ -25,7 +25,7 @@
       return a + b + c + d + e
    end
 
-   local function returnsMultiple(x):num
+   local function returnsMultiple(x):<num, num, num>
       return x, x * 2, x * 3
    end
 
@@ -183,7 +183,7 @@ end
       local numbers = { 1, 2, 3, 4, 5 }
       local mapped = {}
       for idx, n in ipairs(numbers) do
-         mapped[idx] = (x => x * 2)(n)
+         mapped[idx] = (x => num: x * 2)(n)
          checksum += mapped[idx]
       end
 
@@ -194,15 +194,15 @@ end
       local apply = function(fn, val):num
          return fn(val)
       end
-      local v3 = apply((x => x + 10), i)
-      local v4 = apply((x => x * 3), i)
+      local v3 = apply((x => num: x + 10), i)
+      local v4 = apply((x => num: x * 3), i)
 
       -- Nested arrow functions
       local compose = function(f, g)
          return (x => num: f(g(x)))
       end
-      local addOne = (x => x + 1)
-      local timesTwo = (x => x * 2)
+      local addOne = (x => num: x + 1)
+      local timesTwo = (x => num: x * 2)
       local composed = compose(addOne, timesTwo)
       local v5 = composed(i)
 
