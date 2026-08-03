@@ -819,8 +819,6 @@ ExprNodePtr make_member_expr(SourceSpan Span, ExprNodePtr Table, Identifier memb
 {
    assert_node(ensure_operand(Table), "member expression requires table value");
    MemberExprPayload payload;
-   // Infer base type before moving the table expression
-   payload.base_type = infer_expression_type(*Table);
    payload.table = std::move(Table);
    payload.member = member;
    payload.uses_method_dispatch = uses_method_dispatch;
@@ -848,8 +846,6 @@ ExprNodePtr make_safe_member_expr(SourceSpan Span, ExprNodePtr Table, Identifier
 {
    assert_node(ensure_operand(Table), "safe member expression requires table value");
    SafeMemberExprPayload payload;
-   // Infer base type before moving the table expression
-   payload.base_type = infer_expression_type(*Table);
    payload.table = std::move(Table);
    payload.member = Member;
    ExprNodePtr node = std::make_unique<ExprNode>();
@@ -900,16 +896,16 @@ ExprNodePtr make_table_expr(SourceSpan Span, std::vector<TableField> fields, boo
    return node;
 }
 
-ExprNodePtr make_function_expr(SourceSpan Span, std::vector<FunctionParameter> parameters, bool is_vararg, std::unique_ptr<BlockStmt> body, bool IsThunk, TiriType ThunkReturnType, FunctionReturnTypes ReturnTypes)
+ExprNodePtr make_function_expr(SourceSpan Span, std::vector<FunctionParameter> Parameters, bool IsVararg,
+   std::unique_ptr<BlockStmt> Body, bool IsThunk, FunctionReturnTypes ReturnTypes)
 {
-   assert_node(body != nullptr, "function literal body required");
+   assert_node(Body != nullptr, "function literal body required");
    FunctionExprPayload payload;
-   payload.parameters = std::move(parameters);
-   payload.is_vararg = is_vararg;
+   payload.parameters = std::move(Parameters);
+   payload.is_vararg = IsVararg;
    payload.is_thunk = IsThunk;
-   payload.thunk_return_type = ThunkReturnType;
    payload.return_types = ReturnTypes;
-   payload.body = std::move(body);
+   payload.body = std::move(Body);
    ExprNodePtr node = std::make_unique<ExprNode>();
    node->kind = AstNodeKind::FunctionExpr;
    node->span = Span;
@@ -975,17 +971,16 @@ ExprNodePtr make_choose_expr_tuple(SourceSpan Span, ExprNodeList ScrutineeTuple,
    return node;
 }
 
-std::unique_ptr<FunctionExprPayload> make_function_payload(std::vector<FunctionParameter> parameters,
-   bool is_vararg, std::unique_ptr<BlockStmt> body, bool IsThunk, TiriType ThunkReturnType, FunctionReturnTypes ReturnTypes)
+std::unique_ptr<FunctionExprPayload> make_function_payload(std::vector<FunctionParameter> Parameters,
+   bool IsVararg, std::unique_ptr<BlockStmt> Body, bool IsThunk, FunctionReturnTypes ReturnTypes)
 {
-   assert_node(body != nullptr, "function body required");
+   assert_node(Body != nullptr, "function body required");
    auto payload = std::make_unique<FunctionExprPayload>();
-   payload->parameters = std::move(parameters);
-   payload->is_vararg = is_vararg;
+   payload->parameters = std::move(Parameters);
+   payload->is_vararg = IsVararg;
    payload->is_thunk = IsThunk;
-   payload->thunk_return_type = ThunkReturnType;
    payload->return_types = ReturnTypes;
-   payload->body = std::move(body);
+   payload->body = std::move(Body);
    return payload;
 }
 

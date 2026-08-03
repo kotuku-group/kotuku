@@ -240,7 +240,6 @@ struct ExpDesc {
    StaticValueHandle static_value = 0;
    StaticResultSetHandle static_results = 0;
    uint32_t struct_field_index = 0xFFFFFFFFu; // Pre-resolved field index for STGETF/STSETF
-   bool type_confirmed = false;  // True if result_type is confirmed from class dictionary lookup
    BCPOS t;        // True condition jump list.
    BCPOS f;        // False condition jump list.
 

@@ -628,7 +628,13 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          auto body = make_block(span, std::move(body_stmts));
 
          // Build anonymous thunk function (no parameters, is_thunk=true)
-         ExprNodePtr thunk_func = make_function_expr(span, {}, false, std::move(body), true, inferred_type);
+         FunctionReturnTypes return_types;
+         if (inferred_type != TiriType::Any and inferred_type != TiriType::Unknown) {
+            return_types.types[0] = inferred_type;
+            return_types.count = 1;
+            return_types.has_thunk_type = true;
+         }
+         ExprNodePtr thunk_func = make_function_expr(span, {}, false, std::move(body), true, return_types);
 
          // Build immediate call to thunk (no arguments)
          ExprNodeList call_args;
@@ -784,7 +790,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
                auto body = make_block(span, std::move(body_stmts));
 
                // Build anonymous function (no parameters)
-               ExprNodePtr anon_func = make_function_expr(span, {}, false, std::move(body), false, TiriType::Any);
+               ExprNodePtr anon_func = make_function_expr(span, {}, false, std::move(body));
 
                // Build immediate call to function (no arguments)
                ExprNodeList call_args;
@@ -904,7 +910,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          return_types.count = 1;
          return_types.is_explicit = true;
          ExprNodePtr thunk_func = make_function_expr(
-            span, {}, false, std::move(body), true, explicit_type, return_types);
+            span, {}, false, std::move(body), true, return_types);
 
          // Build immediate call to thunk (no arguments)
          ExprNodeList call_args;
@@ -1001,7 +1007,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_arrow_function(ExprNodeList paramete
    else function_span = combine_spans(arrow_token.span(), body->span);
 
    ExprNodePtr node = make_function_expr(function_span, std::move(parsed_params), false, std::move(body),
-      false, TiriType::Any, return_types);
+      false, return_types);
    return ParserResult<ExprNodePtr>::success(std::move(node));
 }
 
