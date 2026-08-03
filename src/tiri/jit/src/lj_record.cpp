@@ -1185,7 +1185,18 @@ static bool rec_proto_specialise_by_prototype(const GCproto *Proto)
 {
    if (Proto->flags >= PROTO_CLC_POLY) return true;
    const auto signature = proto_signature(Proto);
-   return signature and (signature->flags & proto_signature_flag(ProtoSignatureFlag::DynamicResults));
+   if (not signature) return false;
+   if (signature->flags & proto_signature_flag(ProtoSignatureFlag::DynamicResults)) return true;
+
+   // Deterministically inferred result signatures describe the prototype rather than a particular closure.  Retain
+   // prototype specialisation for these functions; closure specialisation produces substantially slower traces for
+   // multi-result forwarding and filtering.
+
+   const auto results = proto_result_types(Proto);
+   for (uint8_t i = 0; i < signature->result_entry_count; ++i) {
+      if (proto_type_origin(results[i]) IS ProtoTypeOrigin::Inferred) return true;
+   }
+   return false;
 }
 
 // Specialise to the runtime value of the called function or its prototype.

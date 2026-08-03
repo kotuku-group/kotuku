@@ -140,14 +140,14 @@ private:
    const uint8_t *end_;
 };
 
+// Result is usable only when decoding succeeds.  Avoid clearing the fixed-capacity entry array here because callers
+// already default-initialise it and every live entry is overwritten below.
 [[nodiscard]] inline bool decode_runtime_contract(
    const GCstr *Descriptor, RuntimeContractDescriptor &Result,
    RuntimeContractDecodeError *Error = nullptr) noexcept
 {
-   Result = RuntimeContractDescriptor{};
    if (Error) *Error = RuntimeContractDecodeError::None;
-   auto fail = [&Result, Error](RuntimeContractDecodeError Value) {
-      Result = RuntimeContractDescriptor{};
+   auto fail = [Error](RuntimeContractDecodeError Value) {
       if (Error) *Error = Value;
       return false;
    };
