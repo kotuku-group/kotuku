@@ -617,11 +617,14 @@ void lj_meta_istype(lua_State *L, BCREG ra, BCREG tp)
 
 //********************************************************************************************************************
 // Exact runtime type contracts.  The descriptor is an interned byte string, so it remains portable across bytecode
-// dump/write/read boundaries.  Version-2 layout:
+// dump/write/read boundaries.  New descriptors use the version-3 layout:
 //
 //   version, boundary, descriptor_flags, static_value_count, contract_count,
-//   repeated { type, entry_flags, position, object_class_id_uleb32, struct_name_length, struct_name_bytes,
-//              label_length, label_bytes }
+//   repeated { type, entry_flags, position, object_class_id_uleb32, array_element_type,
+//              array_struct_name_length, array_struct_name_bytes,
+//              struct_name_length, struct_name_bytes, label_length, label_bytes }
+//
+// The shared decoder also accepts legacy version-1 and version-2 descriptors, whose entries omit newer fields.
 
 namespace {
 

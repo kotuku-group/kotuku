@@ -509,7 +509,11 @@ void IrEmitter::optimise_assert(ExprNodeList &Args)
       body_stmts.push_back(std::move(return_stmt));
       auto body = make_block(span, std::move(body_stmts));
 
-      ExprNodePtr thunk_func = make_function_expr(span, {}, false, std::move(body), true, TiriType::Str);
+      FunctionReturnTypes return_types;
+      return_types.types[0] = TiriType::Str;
+      return_types.count = 1;
+      return_types.has_thunk_type = true;
+      ExprNodePtr thunk_func = make_function_expr(span, {}, false, std::move(body), true, return_types);
 
       ExprNodeList call_args;
       msg_arg = make_call_expr(span, std::move(thunk_func), std::move(call_args), false);

@@ -64,16 +64,21 @@ struct FunctionReturnTypes {
    std::array<struct_record *, MAX_RETURN_TYPES> struct_defs{}; // Resolved layouts for struct<Name> results
    std::array<ArrayElementDescriptor, MAX_RETURN_TYPES> array_elements{}; // Array member constraints
    std::array<StaticValueHandle, MAX_RETURN_TYPES> descriptors{};
-   uint8_t count = 0;           // Number of declared types (0 = not declared)
+   uint8_t count = 0;           // Number of stored result types (0 = none)
    bool is_variadic = false;    // True if declaration ends with ... (last type repeats)
    bool is_explicit = false;    // True if explicitly declared, false if inferred
    bool is_inferred = false;    // True when semantic analysis validated every returned position
+   bool has_thunk_type = false; // First result also supplies an advisory runtime type for a synthetic thunk
 
    [[nodiscard]] bool is_void() const { return count IS 0 and is_explicit; }
    [[nodiscard]] bool is_any() const { return count IS 1 and types[0] IS TiriType::Any; }
    [[nodiscard]] TiriType type_at(size_t Index) const {
       if (Index >= count) return is_variadic ? types[count - 1] : TiriType::Unknown;
       return types[Index];
+   }
+   [[nodiscard]] TiriType thunk_type() const {
+      if (count IS 0 or (not is_explicit and not has_thunk_type)) return TiriType::Unknown;
+      return types[0];
    }
 };
 
@@ -442,7 +447,6 @@ struct MemberExprPayload {
    Identifier member;
    bool uses_method_dispatch = false;
    bool is_call_target = false;                       // True if this expression is the callee of a function call
-   mutable TiriType base_type = TiriType::Unknown;  // Known type of the base (table/object) expression
    mutable CLASSID class_id = CLASSID::NIL;           // CLASSID if base is Object
    ~MemberExprPayload();
 };
@@ -455,7 +459,6 @@ struct IndexExprPayload {
    IndexExprPayload& operator=(IndexExprPayload&&) noexcept = default;
    ExprNodePtr table;
    ExprNodePtr index;
-   mutable TiriType base_type = TiriType::Unknown;  // Known type of the base (table/array) expression
    ~IndexExprPayload();
 };
 
@@ -468,7 +471,6 @@ struct SafeMemberExprPayload {
    ExprNodePtr table;
    Identifier member;
    bool is_call_target = false;                       // True if this expression is the callee of a function call
-   mutable TiriType base_type = TiriType::Unknown;  // Known type of the base (table/object) expression
    mutable CLASSID class_id = CLASSID::NIL;           // CLASSID if base is Object
    ~SafeMemberExprPayload();
 };
@@ -481,7 +483,6 @@ struct SafeIndexExprPayload {
    SafeIndexExprPayload& operator=(SafeIndexExprPayload&&) noexcept = default;
    ExprNodePtr table;
    ExprNodePtr index;
-   mutable TiriType base_type = TiriType::Unknown;  // Known type of the base (table/array) expression
    ~SafeIndexExprPayload();
 };
 
@@ -534,8 +535,7 @@ struct FunctionExprPayload {
    std::vector<FunctionParameter> parameters;
    bool is_vararg = false;
    bool is_thunk = false;              // Marks function as thunk
-   TiriType thunk_return_type = TiriType::Any;  // Return type for thunk (kept for IR emission compatibility)
-   mutable FunctionReturnTypes return_types{};    // Declared or validated inferred result metadata
+   mutable FunctionReturnTypes return_types{}; // Declared, validated inferred or advisory result metadata
    mutable StaticCallableHandle callable = 0;
    std::unique_ptr<BlockStmt> body;
    std::vector<AnnotationEntry> annotations;  // Annotations attached to this function
@@ -1088,13 +1088,15 @@ ExprNodePtr make_safe_member_expr(SourceSpan span, ExprNodePtr table, Identifier
 ExprNodePtr make_safe_index_expr(SourceSpan span, ExprNodePtr table, ExprNodePtr index);
 ExprNodePtr make_result_filter_expr(SourceSpan span, ExprNodePtr expression, uint64_t keep_mask, uint8_t explicit_count, bool trailing_keep);
 ExprNodePtr make_table_expr(SourceSpan span, std::vector<TableField> fields, bool has_array_part);
-ExprNodePtr make_function_expr(SourceSpan span, std::vector<FunctionParameter> parameters, bool is_vararg, std::unique_ptr<BlockStmt> body, bool is_thunk = false, TiriType thunk_return_type = TiriType::Any, FunctionReturnTypes return_types = {});
+ExprNodePtr make_function_expr(SourceSpan Span, std::vector<FunctionParameter> Parameters, bool IsVararg,
+   std::unique_ptr<BlockStmt> Body, bool IsThunk = false, FunctionReturnTypes ReturnTypes = {});
 ExprNodePtr make_deferred_expr(SourceSpan span, ExprNodePtr inner, TiriType type = TiriType::Unknown, bool type_explicit = false);
 ExprNodePtr make_range_expr(SourceSpan span, ExprNodePtr start, ExprNodePtr stop, bool inclusive,
    ExprNodePtr step = nullptr);
 ExprNodePtr make_choose_expr(SourceSpan span, ExprNodePtr scrutinee, std::vector<ChooseCase> cases, size_t inferred_arity = 0);
 ExprNodePtr make_choose_expr_tuple(SourceSpan span, ExprNodeList scrutinee_tuple, std::vector<ChooseCase> cases);
-std::unique_ptr<FunctionExprPayload> make_function_payload(std::vector<FunctionParameter> parameters, bool is_vararg, std::unique_ptr<BlockStmt> body, bool is_thunk = false, TiriType thunk_return_type = TiriType::Any, FunctionReturnTypes return_types = {});
+std::unique_ptr<FunctionExprPayload> make_function_payload(std::vector<FunctionParameter> Parameters, bool IsVararg,
+   std::unique_ptr<BlockStmt> Body, bool IsThunk = false, FunctionReturnTypes ReturnTypes = {});
 std::unique_ptr<BlockStmt> make_block(SourceSpan span, StmtNodeList statements);
 StmtNodePtr make_assignment_stmt(SourceSpan span, AssignmentOperator op, ExprNodeList targets, ExprNodeList values);
 StmtNodePtr make_local_decl_stmt(SourceSpan span, std::vector<Identifier> names, ExprNodeList values);

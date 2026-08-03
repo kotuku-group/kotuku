@@ -193,9 +193,9 @@ struct RecordOps {
 };
 
 //********************************************************************************************************************
-// Classify a runtime contract while recording.  Exact TValue tag checks are already represented by trace slot
-// specialisation.  Identity and metatable predicates require dedicated IR guards, so prototypes containing those
-// predicates remain interpreter-only for now.
+// Classify a runtime contract while recording.  Exact TValue tag checks use trace slot specialisation, while refined
+// range, callable, structure, object, userdata and array predicates emit dedicated guards.  Contracts whose dynamic or
+// identity requirements cannot be represented safely are classified as complex and remain interpreter-only.
 
 enum class RecordedContract : uint8_t {
    Basic,

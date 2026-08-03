@@ -3291,7 +3291,7 @@ ParserResult<ExpDesc> IrEmitter::emit_presence_expr(const PresenceExprPayload &P
 
 //********************************************************************************************************************
 // Emit bytecode for a member access expression (table.field), indexing a table with a string key.
-// base_type and class_id are tracked for potential future optimizations (Object-specific bytecode paths).
+// Receiver specialisation uses its static descriptor; object class metadata supports field-type resolution.
 
 static void apply_struct_field_metadata(ExpDesc &Expression, struct_record *StructDef, GCstr *FieldName)
 {
@@ -3349,10 +3349,8 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
    ExpDesc key(Payload.member.symbol);
    expr_index(&this->func_state, &table, &key);
 
-   // Propagate known base type information for downstream optimizations.
-   // When base_type is Object, emit specialised BC_OBGETF/BC_OBSETF bytecodes by changing the expression kind
-   // to IndexedObject.  Check both AST-level base_type AND emitted expression's result_type (the latter captures
-   // type info from variable declarations like `fl = obj.new(...)`).
+   // A dominating static descriptor proof selects specialised object or structure bytecodes.  The descriptor includes
+   // type information propagated from declarations and other statically known expressions.
 
    bool proved_object = can_use_static_receiver(
       this->ctx.descriptors(), table.static_value, TiriType::Object, true);
@@ -3376,7 +3374,6 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
          if (is_field) {
             table.result_type = field_info->type;
             table.object_class_id = field_info->object_class_id;
-            table.type_confirmed = true;  // Type is confirmed from class dictionary lookup
          }
          else if (not Payload.is_call_target) {
             // Field not found in dictionary and not being called as a function - raise parse error
@@ -3405,7 +3402,7 @@ ParserResult<ExpDesc> IrEmitter::emit_member_expr(const MemberExprPayload &Paylo
 //********************************************************************************************************************
 // Emit bytecode for an index expression (table[key]), indexing a table or array with an arbitrary key.
 // Special case: if key is a range expression, emit a call to table.slice() instead.
-// If base_type is TiriType::Array, emits array-specific bytecodes (BC_AGETV/BC_AGETB).
+// A proved array receiver uses array-specific bytecodes (BC_AGETV/BC_AGETB).
 
 ParserResult<ExpDesc> IrEmitter::emit_index_expr(const IndexExprPayload &Payload)
 {
@@ -3436,8 +3433,7 @@ ParserResult<ExpDesc> IrEmitter::emit_index_expr(const IndexExprPayload &Payload
    key = key_toval.legacy();
    expr_index(&this->func_state, &table, &key);
 
-   // If base type is known to be an array, use array-specific bytecodes
-   // Check both AST-level base_type AND emitted expression's result_type.
+   // Select specialised bytecodes only when the receiver's static descriptor proves its category.
    bool proved_array = can_use_static_receiver(
       this->ctx.descriptors(), table.static_value, TiriType::Array, true);
    bool proved_object = can_use_static_receiver(
@@ -3452,8 +3448,7 @@ ParserResult<ExpDesc> IrEmitter::emit_index_expr(const IndexExprPayload &Payload
          table.k = ExpKind::IndexedArray;
       }
    }
-   // If base type is known to be an object with a string key, use object-specific bytecodes
-   // Check both AST-level base_type AND emitted expression's result_type.
+   // A proved object receiver with a string key uses object-specific bytecodes.
    else if (proved_object) {
       // Objects use string field access - only change kind for string const keys
       // (aux < 0 means string const key)
@@ -3533,7 +3528,7 @@ ParserResult<ExpDesc> IrEmitter::emit_table_slice_call(const IndexExprPayload &P
 
 //********************************************************************************************************************
 // Emit bytecode for a safe member access expression (table?.field), returning nil if the table is nil.
-// base_type and class_id are tracked for potential future optimizations (Object-specific bytecode paths).
+// Receiver specialisation uses the static descriptor captured before nil short-circuit lowering.
 
 ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPayload &Payload)
 {
@@ -3553,8 +3548,8 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
    ExpDesc key(Payload.member.symbol);
    expr_index(&this->func_state, &table, &key);
 
-   // Propagate known base type information for downstream optimizations.
-   // When base_type is Object and class_id is set, field-level type resolution may be possible.
+   // A dominating static descriptor proof selects specialised object or structure handling and supplies exact object
+   // class metadata for field-type resolution when available.
    bool proved_object = can_use_static_receiver(
       this->ctx.descriptors(), receiver_descriptor, TiriType::Object, true);
    bool proved_struct = can_use_static_receiver(
@@ -3582,7 +3577,6 @@ ParserResult<ExpDesc> IrEmitter::emit_safe_member_expr(const SafeMemberExprPaylo
          if (is_field) {
             table.result_type     = field_info->type;
             table.object_class_id = field_info->object_class_id;
-            table.type_confirmed  = true;  // Type is confirmed from class dictionary lookup
          }
          else if (not Payload.is_call_target) {
             auto *meta_class = FindClass(class_id);

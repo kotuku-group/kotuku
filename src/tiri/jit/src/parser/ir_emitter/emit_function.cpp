@@ -39,7 +39,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
          inner_body->statements.push_back(std::move(const_cast<StmtNodePtr&>(stmt)));
       }
 
-      ExprNodePtr inner_fn = make_function_expr(span, {}, false, std::move(inner_body), false, TiriType::Any);
+      ExprNodePtr inner_fn = make_function_expr(span, {}, false, std::move(inner_body));
 
       // Create call to __create_thunk(inner_fn, type_tag)
       NameRef create_thunk_ref;
@@ -51,8 +51,9 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       // Logical type argument.  A VM tag cannot distinguish range from full userdata or represent both full and
       // light userdata, so deferred values retain the language-level type.
 
-      uint8_t logical_type = (Payload.thunk_return_type IS TiriType::Any or
-         Payload.thunk_return_type IS TiriType::Unknown) ? 0xff : uint8_t(Payload.thunk_return_type);
+      TiriType thunk_type = Payload.return_types.thunk_type();
+      uint8_t logical_type = (thunk_type IS TiriType::Any or
+         thunk_type IS TiriType::Unknown) ? 0xff : uint8_t(thunk_type);
       ExprNodePtr type_arg = make_literal_expr(span, LiteralValue::number(double(logical_type)));
 
       // Build argument list
@@ -437,9 +438,7 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          key.u.sval = payload.member.symbol;
          expr_index(&this->func_state, &table, &key);
 
-         // Propagate known base type information for downstream optimizations.
-         // When base_type is Object, emit specialised BC_OBSETF bytecodes via IndexedObject.
-         // Check both AST-level base_type AND emitted expression's result_type.
+         // A dominating static descriptor proof selects specialised object or structure store bytecodes.
          bool proved_object = can_use_static_receiver(
             this->ctx.descriptors(), receiver_descriptor, TiriType::Object, true);
          bool proved_struct = can_use_static_receiver(
@@ -495,8 +494,7 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(const ExprNode &Expr, bool All
          key = key_toval_idx.legacy();
          expr_index(&this->func_state, &table, &key);
 
-         // Propagate known base type information for downstream optimizations.
-         // Check both AST-level base_type AND emitted expression's result_type.
+         // Select specialised store bytecodes only when the receiver's static descriptor proves its category.
          bool proved_array = can_use_static_receiver(
             this->ctx.descriptors(), receiver_descriptor, TiriType::Array, true);
          bool proved_object = can_use_static_receiver(
