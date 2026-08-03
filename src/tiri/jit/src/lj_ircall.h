@@ -240,6 +240,7 @@ typedef struct CCallInfo {
   _(ANY,        jit_object_getobj, 4, S, NIL, CCI_L|CCI_T) \
   /* Environment mutation boundary */ \
   _(ANY,        lj_env_check,      4, S, NIL, CCI_L|CCI_T) \
+  _(ANY,        lj_env_check_override, 5, S, NIL, CCI_L|CCI_T) \
   \
   // End of list.
 
@@ -275,3 +276,5 @@ extern "C" void lj_try_leave(lua_State *L);
 
 // Environment mutation boundary (see lj_meta.cpp).
 extern "C" void lj_env_check(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value);
+extern "C" void lj_env_check_override(
+   lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value, GCstr *DeclarationOverride);

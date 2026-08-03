@@ -19,7 +19,7 @@
       .boundary = ContractBoundary::Global,
       .position = 1,
       .is_const = Identifier.has_const,
-      .initialising = Identifier.has_const
+      .initialising = true
    };
 }
 

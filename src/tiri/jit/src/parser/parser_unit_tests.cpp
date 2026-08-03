@@ -1877,7 +1877,10 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
       "local value = obj.new('time')\n"
       "value = dynamic(value)\n"
       "local values:array<int> = array<int> { 1 }\n"
-      "values = dynamic(values)\n";
+      "values = dynamic(values)\n"
+      "global glContractRoundtrip = 'first'\n"
+      "local global_value:any = 'second'\n"
+      "glContractRoundtrip = global_value\n";
    if (lua_load(L, source, "contract-roundtrip")) {
       Log.error("failed to compile contract source: %s", lua_tostring(L, -1));
       return false;
@@ -1942,6 +1945,23 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
       return false;
    };
    bool array_survived = has_int_array_contract(has_int_array_contract, restored_proto);
+   auto has_global_hint_contract = [](auto &Self, GCproto *Proto) -> bool {
+      for (uint32_t i = 1; i < Proto->sizebc; ++i) {
+         BCIns instruction = proto_bc(Proto)[i];
+         if (bc_op(instruction) != BC_CONTRACT) continue;
+         GCstr *encoded = gco_to_string(proto_kgc(Proto, ~(ptrdiff_t)bc_d(instruction)));
+         RuntimeContractDescriptor descriptor;
+         if (decode_runtime_contract(encoded, descriptor) and descriptor.contract_count > 0 and
+             contract_entry_is_global_hint(descriptor.entries[0])) return true;
+      }
+      GCRef *constant = mref<GCRef>(Proto->k) - 1;
+      for (uint32_t i = 0; i < Proto->sizekgc; ++i, --constant) {
+         GCobj *child = gcref(*constant);
+         if (child->gch.gct IS ~LJ_TPROTO and Self(Self, gco_to_proto(child))) return true;
+      }
+      return false;
+   };
+   bool global_hint_survived = has_global_hint_contract(has_global_hint_contract, restored_proto);
    lua_pop(L, 1);
    if (not class_survived) {
       Log.error("reloaded bytecode lost the multi-byte object class constraint in BC_CONTRACT");
@@ -1949,6 +1969,10 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
    }
    if (not array_survived) {
       Log.error("reloaded bytecode lost the array member constraint in BC_CONTRACT");
+      return false;
+   }
+   if (not global_hint_survived) {
+      Log.error("reloaded bytecode lost the global-hint contract mode");
       return false;
    }
    return true;
@@ -1980,7 +2004,7 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
          char(1)
       };
       if (Version >= TIRI_CONTRACT_OBJECT_VERSION) append_uleb(result, uint32_t(ObjectClassId));
-      if (Version IS TIRI_CONTRACT_VERSION) {
+      if (Version >= TIRI_CONTRACT_VERSION) {
          result.push_back(char(uint8_t(ArrayElementType)));
          result.push_back(char(uint8_t(ArrayStructName.size())));
          result.append(ArrayStructName);
@@ -2059,6 +2083,19 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
       return false;
    }
 
+   uint8_t global_hint_flags = contract_flag(ContractEntryFlag::Nullable) |
+      contract_flag(ContractEntryFlag::GlobalHint);
+   std::string global_hint_encoded = build_descriptor(
+      TIRI_CONTRACT_GLOBAL_HINT_VERSION, TiriType::Str, CLASSID::NIL, {}, "GlobalValue", global_hint_flags);
+   GCstr *global_hint_descriptor = lj_str_new(lua, global_hint_encoded.data(), global_hint_encoded.size());
+   RuntimeContractDescriptor global_hint_decoded;
+   if (not decode_runtime_contract(global_hint_descriptor, global_hint_decoded) or
+       global_hint_decoded.boundary != ContractBoundary::Global or
+       not contract_entry_is_global_hint(global_hint_decoded.entries[0])) {
+      Log.error("version-4 global-hint contract did not round-trip through the shared decoder");
+      return false;
+   }
+
    std::string legacy = build_descriptor(
       TIRI_CONTRACT_LEGACY_VERSION, TiriType::Object, CLASSID::TIME, {}, "Legacy", const_flags);
    GCstr *legacy_descriptor = lj_str_new(lua, legacy.data(), legacy.size());
@@ -2073,7 +2110,20 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
    std::string invalid_entry_flags = encoded;
    invalid_entry_flags[6] = char(0x80);
    std::string invalid_initialising_flag = encoded;
+   invalid_initialising_flag[1] = char(uint8_t(ContractBoundary::Local));
    invalid_initialising_flag[6] = char(contract_flag(ContractEntryFlag::Initialising));
+   std::string invalid_legacy_global_hint = build_descriptor(
+      TIRI_CONTRACT_VERSION, TiriType::Str, CLASSID::NIL, {}, "Value", global_hint_flags);
+   std::string invalid_local_global_hint = global_hint_encoded;
+   invalid_local_global_hint[1] = char(uint8_t(ContractBoundary::Local));
+   std::string invalid_const_global_hint = build_descriptor(
+      TIRI_CONTRACT_GLOBAL_HINT_VERSION, TiriType::Str, CLASSID::NIL, {}, "Value",
+      global_hint_flags | contract_flag(ContractEntryFlag::Const));
+   std::string invalid_unmarked_version_four = build_descriptor(
+      TIRI_CONTRACT_GLOBAL_HINT_VERSION, TiriType::Str, CLASSID::NIL, {}, "Value",
+      contract_flag(ContractEntryFlag::Nullable));
+   std::string invalid_unlabelled_global_hint = build_descriptor(
+      TIRI_CONTRACT_GLOBAL_HINT_VERSION, TiriType::Str, CLASSID::NIL, {}, {}, global_hint_flags);
    std::string invalid_position = encoded;
    invalid_position[7] = char(0);
    std::string invalid_scalar_class = build_descriptor(
@@ -2096,10 +2146,13 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
    std::string trailing = encoded + "x";
    std::string truncated = encoded.substr(0, encoded.size() - 1);
    std::string unknown_version = encoded;
-   unknown_version[0] = char(TIRI_CONTRACT_VERSION + 1);
+   unknown_version[0] = char(TIRI_CONTRACT_GLOBAL_HINT_VERSION + 1);
 
    if (not rejected(invalid_descriptor_flags) or not rejected(invalid_entry_flags) or
        not rejected(invalid_initialising_flag) or
+       not rejected(invalid_legacy_global_hint) or not rejected(invalid_local_global_hint) or
+       not rejected(invalid_const_global_hint) or not rejected(invalid_unmarked_version_four) or
+       not rejected(invalid_unlabelled_global_hint) or
        not rejected(invalid_position) or not rejected(invalid_scalar_class) or not rejected(invalid_struct_class) or
        not rejected(invalid_scalar_array_member) or not rejected(invalid_named_non_struct_array) or
        not rejected(truncated_class) or not rejected(over_wide_class) or not rejected(trailing) or
@@ -3349,6 +3402,26 @@ static bool test_environment_store_boundary(kt::Log &Log)
    lua_pop(L, 1);
    if (not value_kept) {
       Log.error("the rejected store mutated the declared global");
+      return false;
+   }
+
+   // A separately compiled direct assignment must rely on BC_GSET instead of copying the persisted descriptor into a
+   // preceding BC_CONTRACT.
+   constexpr std::string_view assignment_source =
+      "extern glUnitEnvBoundary\n"
+      "glUnitEnvBoundary = 'compiled'\n";
+   if (lua_load(L, assignment_source, "=envboundary-assignment")) {
+      Log.error("compiling the persisted-policy assignment failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   BytecodeSnapshot assignment = snapshot_proto(funcproto(funcV(L->top - 1)));
+   if (count_opcode_tree(assignment, BC_CONTRACT) != 0 or count_opcode_tree(assignment, BC_GSET) != 1) {
+      Log.error("persisted-policy assignment emitted %zu contracts and %zu global stores",
+         count_opcode_tree(assignment, BC_CONTRACT), count_opcode_tree(assignment, BC_GSET));
+      return false;
+   }
+   if (lua_pcall(L, 0, 0, 0)) {
+      Log.error("executing the persisted-policy assignment failed: %s", lua_tostring(L, -1));
       return false;
    }
 

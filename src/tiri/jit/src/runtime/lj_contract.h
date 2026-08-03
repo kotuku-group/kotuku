@@ -7,9 +7,11 @@
 
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <string_view>
 
 inline constexpr uint8_t TIRI_CONTRACT_VERSION = 3;
+inline constexpr uint8_t TIRI_CONTRACT_GLOBAL_HINT_VERSION = 4;
 inline constexpr uint8_t TIRI_CONTRACT_OBJECT_VERSION = 2;
 inline constexpr uint8_t TIRI_CONTRACT_LEGACY_VERSION = 1;
 
@@ -32,7 +34,8 @@ enum class ContractEntryFlag : uint8_t {
    Nullable = 1 << 0,
    Required = 1 << 1,
    Const = 1 << 2,
-   Initialising = 1 << 3
+   Initialising = 1 << 3,
+   GlobalHint = 1 << 4
 };
 
 [[nodiscard]] constexpr inline uint8_t contract_flag(ContractDescriptorFlag Flag) noexcept
@@ -89,6 +92,28 @@ struct RuntimeContractDescriptor {
 [[nodiscard]] constexpr inline bool contract_entry_is_initialising(const RuntimeContractEntry &Entry) noexcept
 {
    return (Entry.flags & contract_flag(ContractEntryFlag::Initialising)) != 0;
+}
+
+[[nodiscard]] constexpr inline bool contract_entry_is_global_hint(const RuntimeContractEntry &Entry) noexcept
+{
+   return (Entry.flags & contract_flag(ContractEntryFlag::GlobalHint)) != 0;
+}
+
+[[nodiscard]] constexpr inline bool contract_entry_is_variant(const RuntimeContractEntry &Entry) noexcept
+{
+   return Entry.type IS TiriType::Any or
+      (Entry.type IS TiriType::Array and Entry.array_element_type IS AET::ANY);
+}
+
+[[nodiscard]] inline bool contract_descriptor_is_global_variant_initialiser(
+   const RuntimeContractDescriptor &Descriptor, const GCstr *Name) noexcept
+{
+   if (Descriptor.boundary != ContractBoundary::Global or Descriptor.contract_count != 1) return false;
+
+   const RuntimeContractEntry &entry = Descriptor.entries[0];
+   return contract_entry_is_initialising(entry) and not contract_entry_is_const(entry) and
+      contract_entry_is_variant(entry) and entry.label.size() IS Name->len and
+      not std::memcmp(entry.label.data(), strdata(Name), Name->len);
 }
 
 enum class RuntimeContractDecodeError : uint8_t {
@@ -160,7 +185,7 @@ private:
    uint8_t boundary;
    if (not reader.read_byte(version) or
        (version != TIRI_CONTRACT_LEGACY_VERSION and version != TIRI_CONTRACT_OBJECT_VERSION and
-        version != TIRI_CONTRACT_VERSION) or
+        version != TIRI_CONTRACT_VERSION and version != TIRI_CONTRACT_GLOBAL_HINT_VERSION) or
        not reader.read_byte(boundary) or boundary < uint8_t(ContractBoundary::Parameter) or
        boundary > uint8_t(ContractBoundary::Global) or not reader.read_byte(Result.flags) or
        (Result.flags & ~(contract_flag(ContractDescriptorFlag::DynamicCount) |
@@ -170,20 +195,25 @@ private:
       return fail(RuntimeContractDecodeError::Descriptor);
    }
    Result.boundary = ContractBoundary(boundary);
+   bool has_global_hint = false;
 
    for (uint8_t i = 0; i < Result.contract_count; ++i) {
       auto &entry = Result.entries[i];
       uint8_t type;
       uint8_t array_element_type = uint8_t(AET::MAX);
       uint32_t object_class_id = 0;
+      uint8_t allowed_entry_flags = contract_flag(ContractEntryFlag::Nullable) |
+         contract_flag(ContractEntryFlag::Required) | contract_flag(ContractEntryFlag::Const) |
+         contract_flag(ContractEntryFlag::Initialising);
+      if (version IS TIRI_CONTRACT_GLOBAL_HINT_VERSION) {
+         allowed_entry_flags |= contract_flag(ContractEntryFlag::GlobalHint);
+      }
       if (not reader.read_byte(type) or type > uint8_t(TiriType::Unknown) or
           not reader.read_byte(entry.flags) or
-          (entry.flags & ~(contract_flag(ContractEntryFlag::Nullable) |
-             contract_flag(ContractEntryFlag::Required) | contract_flag(ContractEntryFlag::Const) |
-             contract_flag(ContractEntryFlag::Initialising))) != 0 or
+          (entry.flags & ~allowed_entry_flags) != 0 or
           not reader.read_byte(entry.position) or entry.position IS 0 or
           (version >= TIRI_CONTRACT_OBJECT_VERSION and not reader.read_uleb32(object_class_id)) or
-          (version IS TIRI_CONTRACT_VERSION and
+          (version >= TIRI_CONTRACT_VERSION and
            (not reader.read_byte(array_element_type) or array_element_type > uint8_t(AET::MAX) or
             not reader.read_text(entry.array_struct_name))) or
           not reader.read_text(entry.struct_name) or not reader.read_text(entry.label)) {
@@ -194,8 +224,14 @@ private:
       entry.array_element_type = AET(array_element_type);
       bool is_const = contract_entry_is_const(entry);
       bool is_initialising = contract_entry_is_initialising(entry);
+      bool is_global_hint = contract_entry_is_global_hint(entry);
+      if (is_global_hint) has_global_hint = true;
       if ((is_const and Result.boundary != ContractBoundary::Global) or
-          (is_initialising and not is_const)) {
+          (is_initialising and Result.boundary != ContractBoundary::Global) or
+          (is_global_hint and
+             (Result.boundary != ContractBoundary::Global or Result.static_value_count != 1 or
+              Result.contract_count != 1 or entry.position != 1 or entry.label.empty() or is_const or
+              is_initialising))) {
          return fail(RuntimeContractDecodeError::Entry);
       }
       if (not entry.struct_name.empty() and entry.type != TiriType::Struct) {
@@ -213,6 +249,9 @@ private:
       }
    }
 
+   if ((version IS TIRI_CONTRACT_GLOBAL_HINT_VERSION) != has_global_hint) {
+      return fail(RuntimeContractDecodeError::Descriptor);
+   }
    if (not reader.at_end()) return fail(RuntimeContractDecodeError::Descriptor);
    return true;
 }
