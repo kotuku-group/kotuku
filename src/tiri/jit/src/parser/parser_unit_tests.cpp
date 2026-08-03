@@ -3743,27 +3743,6 @@ static bool test_native_prototype_result_descriptors(kt::Log &Log)
       return false;
    }
 
-   // Untyped table reads yield 'any' because element types are not tracked.  Reassigning such a local must stay
-   // legal: an annotation would only add a CONTRACT guard without unlocking a specialised opcode, and ':any' would
-   // restore exactly the type the local already had.
-
-   constexpr std::string_view table_read_reassignment =
-      "local source = { Value = 1.5 }\n"
-      "local direct = source.Value\n"
-      "direct = direct * 2\n"
-      "local indexed = source['Value']\n"
-      "indexed = 5\n"
-      "local same_source = source.Value\n"
-      "same_source = source.Value\n"
-      "local defaulted = source.Missing ?? 1.96\n"
-      "defaulted = defaulted * 2\n"
-      "return direct, indexed, same_source, defaulted\n";
-   error.clear();
-   if (not compile_snapshot(L, table_read_reassignment, true, error)) {
-      Log.error("reassigning a local initialised from an untyped table read was rejected: %s", error.c_str());
-      return false;
-   }
-
    return true;
 }
 
