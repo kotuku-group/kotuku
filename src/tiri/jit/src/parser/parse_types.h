@@ -96,6 +96,7 @@ struct RuntimeContract {
    bool required = false;
    bool is_const = false;
    bool initialising = false;
+   bool global_hint = false;
 };
 
 // Concept for flag types that support bitwise operations

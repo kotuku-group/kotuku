@@ -197,6 +197,7 @@ struct RecordOps {
 
 enum class RecordedContract : uint8_t {
    Basic,
+   SideEffect,
    Complex,
    Mismatch,
    Invalid
@@ -468,6 +469,16 @@ static RecordedContract rec_contract_record(jit_State *J, BCREG Base, GCstr *Enc
    RuntimeContractDescriptor descriptor;
    if (not decode_runtime_contract(Encoded, descriptor)) return RecordedContract::Invalid;
    if (descriptor.dynamic_count()) return RecordedContract::Complex;
+
+   if (descriptor.boundary IS ContractBoundary::Global and descriptor.contract_count IS 1 and
+       contract_entry_is_global_hint(descriptor.entries[0])) {
+      const RuntimeContractEntry &entry = descriptor.entries[0];
+      if (entry.label.empty()) return RecordedContract::Invalid;
+      GCtab *environment = tabref(curr_func(J->L)->c.env);
+      GCstr *global_name = lj_str_new(J->L, entry.label.data(), entry.label.size());
+      if (lj_tab_get_global_contract(environment, global_name)) return RecordedContract::Basic;
+      return RecordedContract::SideEffect;
+   }
 
    for (uint8_t i = 0; i < descriptor.static_value_count; ++i) {
       const RuntimeContractEntry *entry = descriptor.entry_for(i);
@@ -4144,6 +4155,10 @@ void lj_record_ins(jit_State *J)
       if (contract IS RecordedContract::Basic) {
          J->needsnap = 1;
          break;
+      }
+      if (contract IS RecordedContract::SideEffect) {
+         setintV(&J->errinfo, int32_t(op));
+         lj_trace_err_info(J, LJ_TRERR_NYIBC);
       }
       if (contract IS RecordedContract::Complex) {
          J->pt->flags |= PROTO_NOJIT;

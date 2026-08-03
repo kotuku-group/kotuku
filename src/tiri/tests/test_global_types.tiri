@@ -25,7 +25,8 @@ local function assert_global_contract_before_store(Statement, Context)
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Inferred scalar globals must emit sticky contracts for their declaration and later dynamic stores.
+-- Inferred scalar globals emit a declaration contract and retain a bootstrap hint for stores that may execute before
+-- declaration publication.  Once policy exists, the environment boundary owns semantic validation.
 
 @Test function InferredScalarGlobalContractBytecode()
    local disasm = disassemble([[
@@ -33,10 +34,80 @@ global glGTSticky = 'first'
 local dynamic:any = 'second'
 glGTSticky = dynamic
 ]])
-   assert(disasm:count('CONTRACT') is 2,
-      'An inferred global declaration and dynamic store must each emit CONTRACT, got:\n' .. disasm)
+   assert(disasm:count('CONTRACT') is 3,
+      'An inferred declaration must validate and publish around its store, then retain a bootstrap-capable hint, got:\n' ..
+      disasm)
    assert(disasm:count('GSET') is 2,
       'The inferred global declaration and reassignment should each emit GSET, got:\n' .. disasm)
+end
+
+@Test function BootstrapHintProtectsSkippedDeclaration()
+   local trapped = false
+   try
+      exec([[
+if false then global glGTBootstrapArray:array<int> = array<int> { 1 } end
+local dynamic:any = array<string> { 'wrong' }
+glGTBootstrapArray = dynamic
+]])
+   except e
+      trapped = true
+      assert(e.message:find('expected array<int>') != nil,
+         'The bootstrap hint should preserve the exact array policy: ' .. e.message)
+   end
+
+   assert(trapped, 'A store before declaration publication must still cross the bootstrap contract')
+   assert(rawget(_G, 'glGTBootstrapArray') is nil,
+      'A rejected bootstrap store must not publish a value')
+end
+
+@Test function ExistingEnvironmentPolicyOverridesBootstrapHint()
+   global glGTAuthoritativePolicy = 'first'
+
+   exec([[
+if false then global glGTAuthoritativePolicy = 1 end
+local dynamic:any = 'updated'
+glGTAuthoritativePolicy = dynamic
+]])
+   assert(glGTAuthoritativePolicy is 'updated',
+      'The existing string policy should override a conflicting same-chunk bootstrap hint')
+
+   try
+      rawset(_G, 'glGTAuthoritativePolicy', 42)
+      error('The original environment policy should remain authoritative')
+   except e
+      assert(e.message:find('expected str') != nil,
+         'The preserved environment policy should report its string contract: ' .. e.message)
+   end
+   assert(glGTAuthoritativePolicy is 'updated',
+      'A rejected store must preserve the value governed by the environment policy')
+end
+
+@Test function FailedGlobalDeclarationCanRetryWithDifferentType()
+   local previous_metatable = getmetatable(_G)
+   local trapped = false
+
+   setmetatable(_G, { __newindex = function(Table, Key, Value) error('blocked global store') end })
+   defer
+      setmetatable(_G, previous_metatable)
+      rawset(_G, 'glGTFailedDeclaration', nil)
+   end
+
+   try
+      exec([[global glGTFailedDeclaration = 'first']])
+   except e
+      trapped = true
+      assert(e.message:find('blocked global store') != nil,
+         'The failed declaration should preserve the environment store error: ' .. e.message)
+   end
+   setmetatable(_G, previous_metatable)
+
+   assert(trapped, 'The environment should reject the first global declaration store')
+   assert(rawget(_G, 'glGTFailedDeclaration') is nil,
+      'A rejected declaration must not publish its value')
+
+   exec([[global glGTFailedDeclaration = 42]])
+   assert(glGTFailedDeclaration is 42,
+      'A rejected declaration must not leave a stale type policy that prevents retry')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -116,8 +187,8 @@ try
    declare_value()
 end
 ]], 'nested declaration')
-   assert(nested:count('CONTRACT') is 1,
-      'A nested reduced declaration should emit exactly one contract, got:\n' .. nested)
+   assert(nested:count('CONTRACT') is 2,
+      'A nested reduced declaration should validate and publish around its store, got:\n' .. nested)
 
    local multi = disassemble([[
 local function pair():<num, str> return 2, 'text' end
@@ -125,8 +196,8 @@ try
    global glGTReducedNumber, glGTReducedText = pair()
 end
 ]])
-   assert(multi:count('CONTRACT') >= 2,
-      'Both reduced multi-result positions must emit contracts in addition to callable contracts, got:\n' .. multi)
+   assert(multi:count('CONTRACT') >= 4,
+      'Both reduced multi-result positions must validate and publish in addition to callable contracts, got:\n' .. multi)
    assert(multi:count('GSET') is 2,
       'Both reduced multi-result positions must emit stores, got:\n' .. multi)
 
