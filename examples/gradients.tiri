@@ -29,7 +29,7 @@ local MAX_GAMMA <const> = 5
 -- Corner colours for the Gouraud quad, mutated interactively then rebuilt into the mesh.  Each entry is
 -- { r, g, b }.  Order: top-left, top-right, bottom-left, bottom-right.
 
-gouraudColours = array<array> {
+gouraudColours = array<array<double>> {
    array<double> { 1.0, 0.0, 0.0 }, -- red
    array<double> { 0.0, 1.0, 0.0 }, -- green
    array<double> { 0.0, 0.0, 1.0 }, -- blue
@@ -38,7 +38,7 @@ gouraudColours = array<array> {
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function createGradient(ClassName:str, Options:table)
+function createGradient(ClassName:str, Options:table):obj
    global glRegisteredGradients ?= { }
 
    local gradient = glRegisteredGradients[ClassName]

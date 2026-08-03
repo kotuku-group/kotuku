@@ -46,23 +46,23 @@ Examples:
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function clamp(Value, Min, Max)
+function clamp(Value, Min, Max):num
    if Value < Min then return Min end
    if Value > Max then return Max end
    return Value
 end
 
-function normaliseHue(Hue)
+function normaliseHue(Hue):num
    Hue = Hue % 360
    if Hue < 0 then Hue += 360 end
    return Hue
 end
 
-function channelToByte(Value)
+function channelToByte(Value):num
    return math.floor((clamp(Value, 0, 1) * 255) + 0.5)
 end
 
-function hexFromRGB(RGB)
+function hexFromRGB(RGB):str
    local r = channelToByte(RGB.r)
    local g = channelToByte(RGB.g)
    local b = channelToByte(RGB.b)
@@ -72,7 +72,7 @@ function hexFromRGB(RGB)
       string.format('#%02x%02x%02x%02x', r, g, b, a)
 end
 
-function hslToRGB(H, S, L, A)
+function hslToRGB(H, S, L, A):table
    H = normaliseHue(H) / 360
    S = clamp(S, 0, 1)
    L = clamp(L, 0, 1)
@@ -82,7 +82,7 @@ function hslToRGB(H, S, L, A)
       return gui.nrgb(L, L, L, A)
    end
 
-   hue2rgb = function(P, Q, T)
+   hue2rgb = function(P, Q, T):num
       if T < 0 then T++ end
       if T > 1 then T -= 1 end
       if T < (1 / 6) then return P + ((Q - P) * 6 * T) end

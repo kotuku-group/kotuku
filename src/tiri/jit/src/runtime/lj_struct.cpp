@@ -122,9 +122,13 @@ bool lj_struct_stale(GCstruct *s)
 //********************************************************************************************************************
 // Guard access to a struct view whose payload is owned by a Kotuku object.
 
-void lj_struct_check_lifecycle(lua_State *L, GCstruct *Struct, const char *FieldName)
+void lj_struct_check_lifecycle(lua_State *L, GCstruct *Struct, const char *FieldName, bool CurrentFrame)
 {
    if (lj_struct_stale(Struct)) {
+      if (CurrentFrame) {
+         luaL_error_current(L, ERR::DoesNotExist,
+            "Cannot access field '%s'; the object providing this struct has been destroyed.", FieldName);
+      }
       luaL_error(L, ERR::DoesNotExist, "Cannot access field '%s'; the object providing this struct has been destroyed.",
          FieldName);
    }
@@ -207,21 +211,21 @@ extern "C" void bc_struct_getfield(lua_State *L, GCstruct *Struct, GCstr *Key, T
       return;
    }
 
-   lj_struct_check_lifecycle(L, Struct, field_name);
+   lj_struct_check_lifecycle(L, Struct, field_name, true);
    if (not Struct->data) {
-      luaL_error(L, ERR::Failed, "Cannot reference field '%s' because struct address is NULL.", field_name);
+      luaL_error_current(L, ERR::Failed, "Cannot reference field '%s' because struct address is NULL.", field_name);
    }
 
    if (auto field = find_cached_field(Struct, Key, Ins)) {
       auto address = (int8_t *)Struct->data + field->Offset;
-      lj_struct_getfield_core(L, Struct, *field, address);
+      lj_struct_getfield_core(L, Struct, *field, address, true);
       copyTV(L, Dest, L->top - 1);
       L->base = saved_base;
       L->top = saved_top;
       return;
    }
 
-   luaL_error(L, ERR::FieldNotFound, "Field '%s' does not exist in structure.", field_name);
+   luaL_error_current(L, ERR::FieldNotFound, "Field '%s' does not exist in structure.", field_name);
 }
 
 //********************************************************************************************************************
@@ -259,16 +263,18 @@ extern "C" void bc_struct_setfield(lua_State *L, GCstruct *Struct, GCstr *Key, T
    }
 
    const auto field_name = strdata(Key);
-   lj_struct_check_lifecycle(L, Struct, field_name);
-   if (not Struct->data) luaL_error(L, "Cannot reference field '%s' because struct address is NULL.", field_name);
+   lj_struct_check_lifecycle(L, Struct, field_name, true);
+   if (not Struct->data) {
+      luaL_error_current(L, ERR::Exception, "Cannot reference field '%s' because struct address is NULL.", field_name);
+   }
 
    if (auto field = find_cached_field(Struct, Key, Ins)) {
       auto address = (int8_t *)Struct->data + field->Offset;
-      lj_struct_setfield_core(L, Struct, *field, address);
+      lj_struct_setfield_core(L, Struct, *field, address, true);
       L->base = saved_base;
       L->top = saved_top;
       return;
    }
 
-   luaL_error(L, "Invalid field reference '%s'", field_name);
+   luaL_error_current(L, ERR::Exception, "Invalid field reference '%s'", field_name);
 }
