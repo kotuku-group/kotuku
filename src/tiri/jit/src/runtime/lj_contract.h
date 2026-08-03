@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <string_view>
 
 inline constexpr uint8_t TIRI_CONTRACT_VERSION = 3;
@@ -96,6 +97,23 @@ struct RuntimeContractDescriptor {
 [[nodiscard]] constexpr inline bool contract_entry_is_global_hint(const RuntimeContractEntry &Entry) noexcept
 {
    return (Entry.flags & contract_flag(ContractEntryFlag::GlobalHint)) != 0;
+}
+
+[[nodiscard]] constexpr inline bool contract_entry_is_variant(const RuntimeContractEntry &Entry) noexcept
+{
+   return Entry.type IS TiriType::Any or
+      (Entry.type IS TiriType::Array and Entry.array_element_type IS AET::ANY);
+}
+
+[[nodiscard]] inline bool contract_descriptor_is_global_variant_initialiser(
+   const RuntimeContractDescriptor &Descriptor, const GCstr *Name) noexcept
+{
+   if (Descriptor.boundary != ContractBoundary::Global or Descriptor.contract_count != 1) return false;
+
+   const RuntimeContractEntry &entry = Descriptor.entries[0];
+   return contract_entry_is_initialising(entry) and not contract_entry_is_const(entry) and
+      contract_entry_is_variant(entry) and entry.label.size() IS Name->len and
+      not std::memcmp(entry.label.data(), strdata(Name), Name->len);
 }
 
 enum class RuntimeContractDecodeError : uint8_t {

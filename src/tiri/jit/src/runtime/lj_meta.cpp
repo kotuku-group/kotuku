@@ -701,12 +701,6 @@ namespace {
    return false;
 }
 
-[[nodiscard]] static bool contract_is_variant(const RuntimeContractEntry &Entry) noexcept
-{
-   return Entry.type IS TiriType::Any or
-      (Entry.type IS TiriType::Array and Entry.array_element_type IS AET::ANY);
-}
-
 [[nodiscard]] static const char * contract_boundary_name(ContractBoundary Boundary)
 {
    switch (Boundary) {
@@ -889,7 +883,7 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
             // stores retain the same runtime invariant even when the declaration has not executed.
             publish_global_contract = true;
          }
-         else if (contract_is_variant(incoming)) {
+         else if (contract_entry_is_variant(incoming)) {
             // Explicit 'any' and array<any> declarations relax their respective sticky global contracts only after
             // the declaration value passes this descriptor.  A caught failure must preserve the previous policy.
             publish_global_contract = true;
@@ -995,6 +989,12 @@ extern "C" void lj_env_check(lua_State *L, GCtab *Environment, GCstr *Name, cTVa
    env_check_contract(L, Environment, Name, Value, nullptr);
 }
 
+extern "C" void lj_env_check_override(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value,
+   GCstr *DeclarationOverride)
+{
+   env_check_contract(L, Environment, Name, Value, DeclarationOverride);
+}
+
 //********************************************************************************************************************
 // Checked raw environment store.  Value must reference a Lua stack slot so it can be recovered after policy checks
 // and table allocation resize the stack.  Non-raw paths call lj_env_check() and then resume normal metamethod dispatch.
@@ -1024,20 +1024,15 @@ extern "C" GCstr * lj_vm_envcheck(lua_State *L, GCtab *Environment, GCstr *Name,
    if (pc >= begin + 2 and bc_op(pc[-1]) IS BC_GSET and bc_op(pc[-2]) IS BC_CONTRACT) {
       GCstr *candidate = gco_to_string(proto_kgc(prototype, ~(ptrdiff_t)bc_d(pc[-2])));
       RuntimeContractDescriptor descriptor;
-      if (decode_runtime_contract(candidate, descriptor) and descriptor.boundary IS ContractBoundary::Global and
-          descriptor.contract_count IS 1) {
-         const RuntimeContractEntry &entry = descriptor.entries[0];
-         if (contract_entry_is_initialising(entry) and not contract_entry_is_const(entry) and
-             contract_is_variant(entry) and entry.label.size() IS Name->len and
-             not std::memcmp(entry.label.data(), strdata(Name), Name->len)) {
-            // A variant redeclaration deliberately replaces the existing concrete policy.  Validate BC_GSET against
-            // the incoming descriptor without publishing it; the following CONTRACT commits only after the ordinary
-            // store path (including __newindex dispatch) succeeds.
-            declaration_override = candidate;
-         }
+      if (decode_runtime_contract(candidate, descriptor) and
+          contract_descriptor_is_global_variant_initialiser(descriptor, Name)) {
+         // A variant redeclaration deliberately replaces the existing concrete policy.  Validate BC_GSET against the
+         // incoming descriptor without publishing it; the following CONTRACT commits only after the ordinary store
+         // path (including __newindex dispatch) succeeds.
+         declaration_override = candidate;
       }
    }
-   env_check_contract(L, Environment, Name, Value, declaration_override);
+   lj_env_check_override(L, Environment, Name, Value, declaration_override);
    return Name;
 }
 
