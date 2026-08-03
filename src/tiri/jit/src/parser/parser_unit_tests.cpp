@@ -3759,7 +3759,9 @@ static bool test_native_prototype_result_descriptors(kt::Log &Log)
       "defaulted = defaulted * 2\n"
       "local arithmetic = 0.5 + source.Value\n"
       "arithmetic = 11\n"
-      "return direct, indexed, same_source, defaulted, arithmetic\n";
+      "local negated = -source.Value\n"
+      "negated = 5\n"
+      "return direct, indexed, same_source, defaulted, arithmetic, negated\n";
    error.clear();
    if (not compile_snapshot(L, table_read_reassignment, true, error)) {
       Log.error("reassigning a local initialised from an untyped table read was rejected: %s", error.c_str());

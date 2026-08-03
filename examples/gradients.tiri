@@ -494,7 +494,7 @@ end
 
    buildScene()
 
-   button_held = false
+   button_held = 0
    check gradientVP.mtSubscribeInput(JTYPE_MOVEMENT | JTYPE_BUTTON, function(Viewport, Events)
       ev = Events
       while ev do

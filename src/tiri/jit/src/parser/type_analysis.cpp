@@ -113,6 +113,13 @@
             (payload->right and is_table_read_expression(*payload->right));
       }
 
+      // Unary negation can remain dynamic when its operand is a table read because the value may overload '-'.
+
+      case AstNodeKind::UnaryExpr: {
+         const auto *payload = std::get_if<UnaryExprPayload>(&Expr.data);
+         return payload and payload->operand and is_table_read_expression(*payload->operand);
+      }
+
       default:
          return false;
    }
