@@ -58,7 +58,6 @@ static std::unique_ptr<FunctionExprPayload> move_function_payload(ExprNodePtr &N
    result->parameters        = std::move(payload->parameters);
    result->is_vararg         = payload->is_vararg;
    result->is_thunk          = payload->is_thunk;
-   result->thunk_return_type = payload->thunk_return_type;
    result->return_types      = payload->return_types;  // Copy return type information
    result->body              = std::move(payload->body);
    result->annotations = std::move(payload->annotations);
