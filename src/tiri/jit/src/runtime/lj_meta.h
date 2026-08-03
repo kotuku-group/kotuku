@@ -35,6 +35,7 @@ extern "C" [[nodiscard]] TValue* lj_meta_comp(lua_State* L, cTValue* o1, cTValue
 extern "C" void lj_meta_istype(lua_State* L, BCREG ra, BCREG tp);
 extern "C" void lj_meta_contract(lua_State *, TValue *, uint32_t, GCstr *);
 extern "C" void lj_meta_contract_pc(lua_State *, const BCIns *, uint32_t);
+LJ_FUNC void lj_contract_build_cache(lua_State *, GCproto *);
 extern "C" void lj_env_check(lua_State *, GCtab *, GCstr *, cTValue *);
 extern "C" void lj_env_check_override(lua_State *, GCtab *, GCstr *, cTValue *, GCstr *);
 extern "C" void lj_env_store(lua_State *, GCtab *, GCstr *, cTValue *);

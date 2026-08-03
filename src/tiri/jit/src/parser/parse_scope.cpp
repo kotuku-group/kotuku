@@ -1073,6 +1073,7 @@ GCproto * LexState::fs_finish(BCLine Line)
    fs_fixup_uv1(fs, pt, (uint16_t*)((char*)pt + ofsuv));
    fs_fixup_line(fs, pt, (void*)((char*)pt + ofsli), numline);
    this->fs_fixup_var(pt, (uint8_t*)((char*)pt + ofsdbg), ofsvar);
+   lj_contract_build_cache(L, pt);
 
    lj_vmevent_send(L, BC,
       setprotoV(L, L->top++, pt);

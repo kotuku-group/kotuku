@@ -733,7 +733,7 @@ typedef struct GCproto {
    uint8_t  numparams; //  Number of parameters.
    uint8_t  framesize; //  Fixed frame size.
    MSize    sizebc;    //  Number of bytecode instructions.
-   uint32_t unused_gc64; // Padding for 64-bit alignment
+   MRef     contract_cache; // Optional immutable decoded runtime-contract cache.
    GCRef    gclist;
    MRef     k;        //  Split constant array (points to the middle).
    MRef     uv;       //  Upvalue list. local slot|0x8000 or parent uv idx.
@@ -855,6 +855,7 @@ inline constexpr uint16_t PROTO_UV_IMMUTABLE = 0x4000;   //  Immutable upvalue.
 
 inline void proto_metadata_init(GCproto *Proto) noexcept
 {
+   setmref(Proto->contract_cache, nullptr);
    Proto->file_source_idx = 0;
    setmref(Proto->lineinfo, nullptr);
    setmref(Proto->uvinfo, nullptr);
