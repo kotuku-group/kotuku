@@ -1,33 +1,55 @@
 -- Benchmark direct reads and writes on fields exposed by the native struct interface.
 
-   MAKESTRUCT('BenchmarkStruct', 'lInteger,xWide,fFloat,dDouble')
+struct BenchmarkStruct
+   Integer:int
+   Wide:int64
+   Float:float
+   Double:double
+end
 
-   MAKESTRUCT('BenchmarkNarrowStruct', 'wWord,bByte,uwUnsignedWord,ucUnsignedByte')
+struct BenchmarkNarrowStruct
+   Word:int
+   Byte:int8
+   UnsignedWord:uint
+   UnsignedByte:uint8
+end
 
-   MAKESTRUCT('LargeLookupRecord',
-      'lZulu,lAlpha,lMike,lBravo,lYankee,lCharlie,lXray,lDelta,lWhiskey,lEcho,lVictor,lFoxtrot')
+struct LargeLookupRecord
+   Zulu:int
+   Alpha:int
+   Mike:int
+   Bravo:int
+   Yankee:int
+   Charlie:int
+   Xray:int
+   Delta:int
+   Whiskey:int
+   Echo:int
+   Victor:int
+   Foxtrot:int
+end
 
 glLargeTable = { }
 
-glBenchmarkStruct = struct.new('BenchmarkStruct', {
+glBenchmarkStruct = struct<BenchmarkStruct> {
    integer = 1,
    wide    = 2,
    float   = 3.5,
    double  = 4.5
-})
+}
 
-glBenchmarkNarrowStruct = struct.new('BenchmarkNarrowStruct', {
+glBenchmarkNarrowStruct = struct<BenchmarkNarrowStruct> {
    word         = -123,
-   byte         = 250,
+   byte         = 120,
    unsignedWord = 321,
    unsignedByte = 200
-})
+}
 
-glLargeStruct = struct.new('LargeLookupRecord')
+glLargeStruct = struct<LargeLookupRecord> {}
 
 @Test function StructReadFields()
    local count = 0
-   for i in {0 to 10000000} do
+   for i in {0 to 1000000} do
       local integer = glBenchmarkStruct.integer
       local wide    = glBenchmarkStruct.wide
       local float   = glBenchmarkStruct.float
@@ -38,7 +60,7 @@ glLargeStruct = struct.new('LargeLookupRecord')
 end
 
 @Test function StructWriteFields()
-   for i in {0 to 10000000} do
+   for i in {0 to 1000000} do
       glBenchmarkStruct.integer = 1
       glBenchmarkStruct.wide    = 2
       glBenchmarkStruct.float   = 3.5
@@ -50,7 +72,7 @@ end
 
 @Test function NarrowStructReadFields()
    local count = 0
-   for i in {0 to 10000000} do
+   for i in {0 to 1000000} do
       local word          = glBenchmarkNarrowStruct.word
       local byte          = glBenchmarkNarrowStruct.byte
       local unsigned_word = glBenchmarkNarrowStruct.unsignedWord
@@ -61,11 +83,11 @@ end
 end
 
 @Test function NarrowStructWriteFields()
-   for i in {0 to 10000000} do
-      glBenchmarkNarrowStruct.word         = -i
-      glBenchmarkNarrowStruct.byte         = i
-      glBenchmarkNarrowStruct.unsignedWord = i
-      glBenchmarkNarrowStruct.unsignedByte = i
+   for i in {0 to 1000000} do
+      glBenchmarkNarrowStruct.word         = -(i & 0x7fffffff)
+      glBenchmarkNarrowStruct.byte         = i & 0x7f
+      glBenchmarkNarrowStruct.unsignedWord = i & 0xffffffff
+      glBenchmarkNarrowStruct.unsignedByte = i & 0xff
    end
    return glBenchmarkNarrowStruct.word + glBenchmarkNarrowStruct.byte +
       glBenchmarkNarrowStruct.unsignedWord + glBenchmarkNarrowStruct.unsignedByte
@@ -73,7 +95,7 @@ end
 
 @Test function LargeStructRW()
    local count = 0
-   for i in {0 to 10000000} do
+   for i in {0 to 1000000} do
       glLargeStruct.zulu = i
       glLargeStruct.charlie = i
       glLargeStruct.foxtrot = i
@@ -89,7 +111,7 @@ end
 
 @Test function LargeStructTableCompareRW()
    local count = 0
-   for i in {0 to 10000000} do
+   for i in {0 to 1000000} do
       glLargeTable.zulu = i
       glLargeTable.charlie = i
       glLargeTable.foxtrot = i

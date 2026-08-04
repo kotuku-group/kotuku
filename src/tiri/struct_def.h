@@ -29,6 +29,8 @@ enum class NativeStructType : uint8_t {
    Function
 };
 
+[[nodiscard]] NativeStructType effective_scalar_type(uint32_t FieldFlags, NativeStructType NativeType) noexcept;
+
 struct struct_record;
 
 struct struct_field {
@@ -49,6 +51,11 @@ struct struct_field {
    private:
    uint32_t NameHash = 0;     // Lowercase hash of the field name
 };
+
+[[nodiscard]] inline NativeStructType effective_scalar_type(const struct_field &Field) noexcept
+{
+   return effective_scalar_type(uint32_t(Field.Type), Field.NativeType);
+}
 
 struct struct_record {
    std::string Name;

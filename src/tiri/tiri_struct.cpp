@@ -707,6 +707,7 @@ static void make_camel_case(std::string &String)
 static int struct_field_alignment(const struct_field &Field, int Type, int FieldSize)
 {
    if (Type & FD_VECTOR) return alignof(kt::vector<int>);
+   if ((Type & FD_OBJECT) and (Type & FD_INT)) return alignof(OBJECTID);
    if (Type & (FD_POINTER|FD_OBJECT|FD_FUNCTION)) return alignof(APTR);
    if ((Type & FD_STRUCT) and (not (Type & FD_PTR)) and Field.StructDefinition) {
       return Field.StructDefinition->Alignment;
@@ -1000,6 +1001,7 @@ static int declared_field_size(lua_State *Lua, const struct_field &Field)
       return 0;
    }
    if (Field.Type & FD_STRING) return (Field.Type & FD_CPP) ? int(sizeof(std::string)) : int(sizeof(STRING));
+   if ((Field.Type & FD_OBJECT) and (Field.Type & FD_INT)) return sizeof(OBJECTID);
    if (Field.Type & FD_OBJECT) return sizeof(OBJECTPTR);
    if (Field.Type & FD_POINTER) return sizeof(APTR);
    if (Field.Type & FD_FUNCTION) return sizeof(FUNCTION);

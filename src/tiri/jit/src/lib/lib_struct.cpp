@@ -26,25 +26,6 @@
 
 #define LJLIB_MODULE_struct
 
-static NativeStructType effective_scalar_type(const struct_field &Field)
-{
-   if (Field.NativeType != NativeStructType::Legacy) return Field.NativeType;
-
-   if (Field.Type & FD_FLOAT) return NativeStructType::Float;
-   if (Field.Type & FD_DOUBLE) return NativeStructType::Double;
-   if (Field.Type & FD_INT64) {
-      return (Field.Type & FD_UNSIGNED) ? NativeStructType::UInt64 : NativeStructType::Int64;
-   }
-   if (Field.Type & FD_INT) {
-      return (Field.Type & FD_UNSIGNED) ? NativeStructType::UInt32 : NativeStructType::Int32;
-   }
-   if (Field.Type & FD_WORD) {
-      return (Field.Type & FD_UNSIGNED) ? NativeStructType::UInt16 : NativeStructType::Int16;
-   }
-   if (Field.Type & FD_BYTE) return NativeStructType::UInt8;
-   return NativeStructType::Legacy;
-}
-
 static const char * scalar_type_name(NativeStructType Type)
 {
    switch (Type) {
@@ -74,7 +55,9 @@ template <typename... Args> [[noreturn]] static void struct_field_error(lua_Stat
 static double finite_integer_value(lua_State *L, int StackIndex, CSTRING FieldName, NativeStructType Type,
    bool CurrentFrame)
 {
-   if (lua_type(L, StackIndex) != LUA_TNUMBER) {
+   auto ltype = lua_type(L, StackIndex);
+   if (ltype IS LUA_TNIL) return 0;
+   if (ltype != LUA_TNUMBER) {
       struct_field_error(L, CurrentFrame, ERR::InvalidType, "Field '%s' requires a number for %s storage.", FieldName,
          scalar_type_name(Type));
    }
@@ -88,24 +71,17 @@ static double finite_integer_value(lua_State *L, int StackIndex, CSTRING FieldNa
    return std::trunc(value);
 }
 
-template <typename T> static void write_signed_field(lua_State *L, APTR Address, int StackIndex, int ElementIndex,
-   CSTRING FieldName, NativeStructType Type, int Bits, bool CurrentFrame)
+template <typename T> static void write_integer_field(lua_State *L, APTR Address, int StackIndex, int ElementIndex,
+   CSTRING FieldName, NativeStructType Type, int Bits, bool Signed, bool CurrentFrame)
 {
-   const double modulus = std::ldexp(1.0, Bits);
-   const double half = std::ldexp(1.0, Bits - 1);
-   double value = std::fmod(finite_integer_value(L, StackIndex, FieldName, Type, CurrentFrame), modulus);
-   if (value >= half) value -= modulus;
-   else if (value < -half) value += modulus;
+   const double value = finite_integer_value(L, StackIndex, FieldName, Type, CurrentFrame);
+   const double lower_bound = Signed ? -std::ldexp(1.0, Bits - 1) : 0.0;
+   const double upper_bound = std::ldexp(1.0, Signed ? Bits - 1 : Bits);
+   if (value < lower_bound or value >= upper_bound) {
+      struct_field_error(L, CurrentFrame, ERR::OutOfRange, "Field '%s' value is out of range for %s.", FieldName,
+         scalar_type_name(Type));
+   }
    ((T *)Address)[ElementIndex] = T(value);
-}
-
-template <typename T> static void write_unsigned_field(lua_State *L, APTR Address, int StackIndex, int ElementIndex,
-   CSTRING FieldName, NativeStructType Type, int Bits, bool CurrentFrame)
-{
-   const double modulus = std::ldexp(1.0, Bits);
-   const double value = std::fmod(finite_integer_value(L, StackIndex, FieldName, Type, CurrentFrame), modulus);
-   if (value < 0) ((T *)Address)[ElementIndex] = T(uint64_t(0) - uint64_t(-value));
-   else ((T *)Address)[ElementIndex] = T(value);
 }
 
 static bool write_primitive_field(lua_State *L, APTR Address, const struct_field &Field, int StackIndex,
@@ -121,36 +97,45 @@ static bool write_primitive_field(lua_State *L, APTR Address, const struct_field
          return true;
       case NativeStructType::Char:
       case NativeStructType::Int8:
-         write_signed_field<int8_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 8, CurrentFrame);
+         write_integer_field<int8_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 8, true, CurrentFrame);
          return true;
       case NativeStructType::UInt8:
-         write_unsigned_field<uint8_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 8, CurrentFrame);
+         write_integer_field<uint8_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 8, false, CurrentFrame);
          return true;
       case NativeStructType::Int16:
-         write_signed_field<int16_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 16, CurrentFrame);
+         write_integer_field<int16_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 16, true, CurrentFrame);
          return true;
       case NativeStructType::UInt16:
-         write_unsigned_field<uint16_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 16, CurrentFrame);
+         write_integer_field<uint16_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 16, false, CurrentFrame);
          return true;
       case NativeStructType::Int32:
-         write_signed_field<int32_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 32, CurrentFrame);
+         write_integer_field<int32_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 32, true, CurrentFrame);
          return true;
       case NativeStructType::UInt32:
-         write_unsigned_field<uint32_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 32, CurrentFrame);
+         write_integer_field<uint32_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 32, false, CurrentFrame);
          return true;
       case NativeStructType::Int64:
-         write_signed_field<int64_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 64, CurrentFrame);
+         write_integer_field<int64_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 64, true, CurrentFrame);
          return true;
       case NativeStructType::UInt64:
-         write_unsigned_field<uint64_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 64, CurrentFrame);
+         write_integer_field<uint64_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 64, false, CurrentFrame);
          return true;
       case NativeStructType::Float:
       case NativeStructType::Double: {
-         if (lua_type(L, StackIndex) != LUA_TNUMBER) {
+         auto ltype = lua_type(L, StackIndex);
+
+         if (ltype IS LUA_TNIL) {
+            if (type IS NativeStructType::Float) ((float *)Address)[ElementIndex] = 0.0f;
+            else ((double *)Address)[ElementIndex] = 0.0;
+            return true;
+         }
+
+         if (ltype != LUA_TNUMBER) {
             struct_field_error(L, CurrentFrame, ERR::InvalidType,
                "Field '%s' requires a number for %s storage.", FieldName,
                scalar_type_name(type));
          }
+
          const double value = lua_tonumber(L, StackIndex);
          if ((type IS NativeStructType::Float) and std::isfinite(value) and std::abs(value) > FLT_MAX) {
             struct_field_error(L, CurrentFrame, ERR::OutOfRange,
@@ -318,7 +303,12 @@ static void write_field(lua_State *L, APTR Address, const struct_field &Field, i
          "Field '%s' does not support string assignment.", FieldName);
    }
    else if (Field.Type & FD_OBJECT) {
-      if (lua_isnil(L, StackIndex)) ((OBJECTPTR *)Address)[0] = nullptr;
+      const bool uid_backed = Field.Type & FD_INT;
+      auto ltype = lua_type(L, StackIndex);
+      if (ltype IS LUA_TNIL) {
+         if (uid_backed) ((OBJECTID *)Address)[0] = OBJECTID(0);
+         else ((OBJECTPTR *)Address)[0] = nullptr;
+      }
       else if (lua_isobject(L, StackIndex)) {
          auto object = lua_toobject(L, StackIndex);
          if (object_is_dead(object)) {
@@ -335,10 +325,11 @@ static void write_field(lua_State *L, APTR Address, const struct_field &Field, i
                   ResolveClassID(Field.ObjectClassID));
             }
          }
-         ((OBJECTPTR *)Address)[0] = object->ptr;
+         if (uid_backed) ((OBJECTID *)Address)[0] = OBJECTID(object->uid);
+         else ((OBJECTPTR *)Address)[0] = object->ptr;
       }
       else if (lua_islightuserdata(L, StackIndex)) {
-         if (Field.ObjectClassID != CLASSID::NIL) {
+         if (uid_backed or Field.ObjectClassID != CLASSID::NIL) {
             struct_field_error(L, CurrentFrame, ERR::InvalidType,
                "Field '%s' requires a typed object reference.", FieldName);
          }
@@ -692,7 +683,8 @@ void lj_struct_getfield_core(lua_State *L, GCstruct *Struct, struct_field &Field
       else lua_pushstring(L, ((STRING *)Address)[0]);
    }
    else if (Field.Type & FD_OBJECT) {
-      if (auto object = ((OBJECTPTR *)Address)[0]) push_object(L, object);
+      if (Field.Type & FD_INT) push_object_id(L, ((OBJECTID *)Address)[0]);
+      else if (auto object = ((OBJECTPTR *)Address)[0]) push_object(L, object);
       else lua_pushnil(L);
    }
    else if (Field.Type & FD_POINTER) {

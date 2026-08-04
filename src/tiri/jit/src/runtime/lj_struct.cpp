@@ -138,6 +138,24 @@ void lj_struct_check_lifecycle(lua_State *L, GCstruct *Struct, const char *Field
 // Resolve a struct field and maintain the instruction's P32 inline cache.  Struct definitions are stable for the
 // lifetime of the Lua state, but the hash is checked on every hit so polymorphic access sites self-heal.
 
+NativeStructType effective_scalar_type(uint32_t FieldFlags, NativeStructType NativeType) noexcept
+{
+   if (NativeType != NativeStructType::Legacy) return NativeType;
+   if (FieldFlags & FD_FLOAT) return NativeStructType::Float;
+   if (FieldFlags & FD_DOUBLE) return NativeStructType::Double;
+   if (FieldFlags & FD_INT64) {
+      return (FieldFlags & FD_UNSIGNED) ? NativeStructType::UInt64 : NativeStructType::Int64;
+   }
+   if (FieldFlags & FD_INT) {
+      return (FieldFlags & FD_UNSIGNED) ? NativeStructType::UInt32 : NativeStructType::Int32;
+   }
+   if (FieldFlags & FD_WORD) {
+      return (FieldFlags & FD_UNSIGNED) ? NativeStructType::UInt16 : NativeStructType::Int16;
+   }
+   if (FieldFlags & FD_BYTE) return NativeStructType::UInt8;
+   return NativeStructType::Legacy;
+}
+
 static struct_field * find_cached_field(GCstruct *Struct, GCstr *Key, BCIns *Ins)
 {
    if (not Struct->def) return nullptr;
@@ -163,12 +181,15 @@ static struct_field * find_cached_field(GCstruct *Struct, GCstr *Key, BCIns *Ins
 // JIT field type lookup.  Struct definitions are immutable for the lifetime of the Lua state, so the recorder can
 // derive a stable result type without reading the field payload or invoking any field access behaviour.
 
-extern "C" int ir_struct_field_type(GCstruct *Struct, GCstr *Key, int &Offset, uint32_t &Flags,
-   NativeStructType &NativeType)
+extern "C" int ir_struct_field_type(GCstruct *Struct, GCstr *Key, uint32_t FieldIndex, int &Offset, uint32_t &Flags,
+   NativeStructType &NativeType, bool &AcceptedIndex)
 {
    if (not Struct or not Key) return -1;
 
-   if (auto field = find_cached_field(Struct, Key, nullptr)) {
+   BCIns hint = BCINS_AD(BC_STGETF, 0, 0);
+   setbc_p32(&hint, FieldIndex);
+   if (auto field = find_cached_field(Struct, Key, &hint)) {
+      AcceptedIndex = (FieldIndex != 0xFFFFFFFFu) and (bc_p32(hint) IS FieldIndex);
       const uint32_t flags = uint32_t(field->Type);
       Offset = field->Offset;
       Flags = flags;
