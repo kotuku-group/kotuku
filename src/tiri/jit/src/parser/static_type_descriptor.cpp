@@ -8,6 +8,7 @@
 #include <kotuku/objects.h>
 
 #include "ast/nodes.h"
+#include "parse_types.h"
 #include "../runtime/lj_struct.h"
 
 bool StaticValueDescriptor::constrained() const noexcept
@@ -163,6 +164,58 @@ StaticValueDescriptor join_static_descriptors(
    if (Left.module != Right.module) result.module = nullptr;
    if (not (Left.array_element IS Right.array_element)) result.array_element = {};
    return result;
+}
+
+StaticValueDescriptor describe_arithmetic_result(
+   const StaticValueDescriptor &Left, const StaticValueDescriptor &Right)
+{
+   StaticValueDescriptor result;
+   if (Left.primary IS TiriType::Num and Right.primary IS TiriType::Num and Left.proved() and Right.proved() and
+       not Left.nullable and not Right.nullable) {
+      result.primary = TiriType::Num;
+      result.proof = StaticProof::Closed;
+   }
+   else {
+      result.primary = TiriType::Num;
+      result.proof = StaticProof::Advisory;
+      result.nullable = Left.nullable or Right.nullable;
+   }
+   return result;
+}
+
+StaticValueDescriptor describe_unary_numeric_result(const StaticValueDescriptor &Operand)
+{
+   StaticValueDescriptor result;
+   result.primary = TiriType::Num;
+   if (Operand.primary IS TiriType::Num and Operand.proved() and not Operand.nullable) {
+      result.proof = StaticProof::Closed;
+   }
+   else {
+      result.proof = StaticProof::Advisory;
+      result.nullable = Operand.nullable;
+   }
+   return result;
+}
+
+bool static_value_satisfies_contract(
+   const StaticValueDescriptor &Value, const RuntimeContract &Contract)
+{
+   if (Contract.type IS TiriType::Unknown or Contract.type IS TiriType::Any) return true;
+   if (not Value.proved()) return false;
+
+   if (Value.primary IS TiriType::Nil) return Contract.nullable and not Contract.required;
+   if (Value.nullable and (Contract.required or not Contract.nullable)) return false;
+   if (Value.primary != Contract.type) return false;
+
+   switch (Contract.type) {
+      case TiriType::Object:
+         return Contract.object_class_id IS CLASSID::NIL or
+            Value.object_class_id IS Contract.object_class_id;
+      case TiriType::Struct:
+         return not Contract.struct_def or Value.struct_def IS Contract.struct_def;
+      default:
+         return true;
+   }
 }
 
 StaticResultSet map_static_result_filter(

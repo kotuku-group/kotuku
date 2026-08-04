@@ -603,6 +603,57 @@ end
    assert(captured is 2, 'A rejected upvalue store must preserve the previous value')
 end
 
+@Test function ProvedNumericStoreAndResultContracts()
+   function accumulate():num
+      local value = 1
+      for i in {0 to 200} do
+         value += i + 1
+      end
+      return value
+   end
+
+   jit.off()
+   assert(accumulate() is 20101, 'Proved numeric stores and results should remain correct in the interpreter')
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   for i in {0 to 20} do
+      assert(accumulate() is 20101, 'Proved numeric stores and results should remain correct on compiled traces')
+   end
+
+   local value = 1
+   local overloaded:any = setmetatable({}, {
+      __add = function(Left, Right):str return 'wrong' end
+   })
+   expect_contract_failure(function() value += overloaded end, 'overloaded compound assignment')
+   assert(value is 1, 'A rejected overloaded compound result must preserve the sticky local')
+end
+
+@Test function VariantMutationInvalidatesStaticProof()
+   local overloaded:any = setmetatable({}, {
+      __add = function(Left, Right):str return 'wrong' end
+   })
+
+   local compound_source:any = 1
+   compound_source += overloaded
+   local compound_target = 0
+   expect_contract_failure(function() compound_target = compound_source end, 'variant compound result')
+   assert(compound_target is 0, 'A rejected variant compound result must preserve the sticky destination')
+
+   local empty_source:any = 0
+   empty_source ??= 'wrong'
+   local empty_target = 0
+   expect_contract_failure(function() empty_target = empty_source end, 'variant if-empty result')
+   assert(empty_target is 0, 'A rejected variant if-empty result must preserve the sticky destination')
+
+   local nil_source:any = nil
+   nil_source ?= 'wrong'
+   local nil_target = 0
+   expect_contract_failure(function() nil_target = nil_source end, 'variant if-nil result')
+   assert(nil_target is 0, 'A rejected variant if-nil result must preserve the sticky destination')
+end
+
 @Test function ObjectClassLocalAndUpvalueContracts()
    local value = obj.new('time')
    value = dynamic_value(obj.new('time'))

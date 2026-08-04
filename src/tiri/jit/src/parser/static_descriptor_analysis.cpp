@@ -1233,11 +1233,33 @@ private:
                value = join_static_descriptors(
                   this->descriptor_of(*payload.left), this->descriptor_of(*payload.right));
             }
+            else if ((payload.op IS AstBinaryOperator::Add or payload.op IS AstBinaryOperator::Subtract or
+                      payload.op IS AstBinaryOperator::Multiply or payload.op IS AstBinaryOperator::Divide or
+                      payload.op IS AstBinaryOperator::Modulo or payload.op IS AstBinaryOperator::Power) and
+                     payload.left and payload.right) {
+               value = describe_arithmetic_result(
+                  this->descriptor_of(*payload.left), this->descriptor_of(*payload.right));
+            }
             else {
                TiriType inferred = infer_expression_type(Expression);
                if (inferred != TiriType::Unknown) {
                   value.primary = inferred;
                   value.proof = StaticProof::Advisory;
+               }
+            }
+            break;
+         }
+         case AstNodeKind::UnaryExpr: {
+            auto &payload = std::get<UnaryExprPayload>(Expression.data);
+            if (payload.op IS AstUnaryOperator::Negate and payload.operand) {
+               value = describe_unary_numeric_result(this->descriptor_of(*payload.operand));
+            }
+            else {
+               TiriType inferred = infer_expression_type(Expression);
+               if (inferred != TiriType::Unknown) {
+                  value.primary = inferred;
+                  value.proof = payload.op IS AstUnaryOperator::Not ?
+                     StaticProof::Closed : StaticProof::Advisory;
                }
             }
             break;
@@ -1323,6 +1345,35 @@ private:
       binding.callable = 0;
       reference.identifier.static_value = binding.value;
       Target.static_value = binding.value;
+
+      lj_assertX(Assigned.proved() or not this->catalogue_.value(binding.value).proved(),
+         "an advisory assignment retained a proved binding descriptor");
+   }
+
+   [[nodiscard]] StaticValueDescriptor compound_assignment_descriptor(
+      AssignmentOperator Operator, const ExprNode &Target, const ExprNode &Value) const
+   {
+      StaticValueDescriptor current = this->descriptor_of(Target);
+      StaticValueDescriptor operand = this->descriptor_of(Value);
+      switch (Operator) {
+         case AssignmentOperator::Add:
+         case AssignmentOperator::Subtract:
+         case AssignmentOperator::Multiply:
+         case AssignmentOperator::Divide:
+         case AssignmentOperator::Modulo:
+            return describe_arithmetic_result(current, operand);
+
+         case AssignmentOperator::Concat:
+            if (current.primary IS TiriType::Array and current.proved() and not current.nullable) return current;
+            return StaticValueDescriptor{
+               .primary = current.primary,
+               .proof = StaticProof::Advisory,
+               .nullable = current.nullable or operand.nullable
+            };
+
+         default:
+            return {};
+      }
    }
 
    void propagate_function(
@@ -1458,22 +1509,19 @@ private:
             auto &payload = std::get<AssignmentStmtPayload>(Statement.data);
             for (auto &value : payload.values) if (value) this->propagate_expression(*value);
             for (auto &target : payload.targets) if (target) this->propagate_expression(*target);
-            if (payload.op IS AssignmentOperator::Plain or
-                payload.op IS AssignmentOperator::IfEmpty or payload.op IS AssignmentOperator::IfNil) {
+            if (payload.op IS AssignmentOperator::Plain or payload.op IS AssignmentOperator::IfEmpty or
+                payload.op IS AssignmentOperator::IfNil) {
                for (size_t i = 0; i < payload.targets.size(); ++i) {
                   if (not payload.targets[i] or payload.values.empty()) continue;
                   size_t source = std::min(i, payload.values.size() - 1);
-                  bool update = payload.op IS AssignmentOperator::Plain;
                   bool initialises_binding = false;
                   if (payload.targets[i]->kind IS AstNodeKind::IdentifierExpr) {
                      const auto &reference = std::get<NameRef>(payload.targets[i]->data);
                      if (reference.binding_id) {
                         const auto &binding = this->catalogue_.binding(reference.binding_id);
                         initialises_binding = binding.initialiser IS payload.values[source].get();
-                        if (not update) update = initialises_binding;
                      }
                   }
-                  if (not update) continue;
                   StaticValueDescriptor assigned;
                   if (source IS payload.values.size() - 1 and i >= payload.values.size() and
                       payload.values[source]->static_results) {
@@ -1491,6 +1539,16 @@ private:
                      payload.targets[i]->static_value = binding.value;
                   }
                   else this->update_assigned_binding(*payload.targets[i], assigned);
+               }
+            }
+            else if (payload.op IS AssignmentOperator::Add or payload.op IS AssignmentOperator::Subtract or
+                     payload.op IS AssignmentOperator::Multiply or payload.op IS AssignmentOperator::Divide or
+                     payload.op IS AssignmentOperator::Modulo or payload.op IS AssignmentOperator::Concat) {
+               if (payload.targets.size() IS 1 and payload.values.size() IS 1 and
+                   payload.targets.front() and payload.values.front()) {
+                  StaticValueDescriptor assigned = this->compound_assignment_descriptor(
+                     payload.op, *payload.targets.front(), *payload.values.front());
+                  this->update_assigned_binding(*payload.targets.front(), assigned);
                }
             }
             break;

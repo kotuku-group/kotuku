@@ -650,11 +650,11 @@ static void bcemit_contracts(FuncState *Fs, std::span<const RuntimeContractSlot>
 }
 
 //********************************************************************************************************************
-// Literal values are closed proofs.  Every other ExpDesc type is advisory and receives a runtime check.
+// Literal values are closed proofs.  Descriptor-backed values may also suppress a compatible runtime check.
 
 [[nodiscard]] static bool contract_literal_proved(FuncState *fs, ExpDesc *Value, TiriType Expected)
 {
-   if (Value->k IS ExpKind::Nil) return true;
+   if (Value->k IS ExpKind::Nil) return false;
 
    TiriType actual = TiriType::Unknown;
    if (Value->k IS ExpKind::False or Value->k IS ExpKind::True) actual = TiriType::Bool;
@@ -679,16 +679,18 @@ static void bcemit_value_contract(
       Value->u.s.info = source;
       return;
    }
+   if (Value->k IS ExpKind::Nil and not ForceRuntimeCheck) {
+      StaticValueDescriptor descriptor{
+         .primary = TiriType::Nil,
+         .proof = StaticProof::Closed,
+         .nullable = true
+      };
+      if (static_value_satisfies_contract(descriptor, Contract)) return;
+   }
    if (contract_literal_proved(fs, Value, Contract.type) and not ForceRuntimeCheck) return;
    if (Value->static_value and fs->ls->active_context) {
       const auto &descriptor = fs->ls->active_context->descriptors().value(Value->static_value);
-      bool same_type = descriptor.primary IS Contract.type;
-      bool same_object_class = Contract.type != TiriType::Object or Contract.object_class_id IS CLASSID::NIL or
-         descriptor.object_class_id IS Contract.object_class_id;
-      bool same_struct = Contract.type != TiriType::Struct or descriptor.struct_def IS Contract.struct_def;
-      bool same_nullability = descriptor.nullable IS Contract.nullable;
-      if (same_type and same_object_class and same_struct and same_nullability and descriptor.proved() and
-          not ForceRuntimeCheck) return;
+      if (static_value_satisfies_contract(descriptor, Contract) and not ForceRuntimeCheck) return;
    }
 
    BCREG source = expr_toanyreg(fs, Value);

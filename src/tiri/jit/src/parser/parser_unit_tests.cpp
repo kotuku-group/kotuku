@@ -2063,8 +2063,9 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
    }
 
    constexpr std::string_view wide_source =
-      "return function():<num,num,num,num,num,num,num,num,str>\n"
-      "   return 1,2,3,4,5,6,7,8,'ninth',false\n"
+      "return function(A:any,B:any,C:any,D:any,E:any,F:any,G:any,H:any,I:any):"
+      "<num,num,num,num,num,num,num,num,str>\n"
+      "   return A,B,C,D,E,F,G,H,I,false\n"
       "end\n";
    if (lua_load(lua, wide_source, "wide-runtime-contract")) {
       Log.error("failed to compile a wide runtime contract: %s", lua_tostring(lua, -1));
@@ -3374,6 +3375,59 @@ static bool test_static_descriptor_model(kt::Log &Log)
       return false;
    }
 
+   RuntimeContract nullable_number{
+      .type = TiriType::Num,
+      .nullable = true
+   };
+   RuntimeContract required_number = nullable_number;
+   required_number.nullable = false;
+   required_number.required = true;
+   if (not static_value_satisfies_contract(number, nullable_number) or
+       not static_value_satisfies_contract(number, required_number) or
+       static_value_satisfies_contract(checked_number, required_number)) {
+      Log.error("static contract satisfaction lost directional nullability");
+      return false;
+   }
+
+   StaticValueDescriptor advisory_number = number;
+   advisory_number.proof = StaticProof::Advisory;
+   if (static_value_satisfies_contract(advisory_number, nullable_number)) {
+      Log.error("an advisory descriptor satisfied a runtime contract");
+      return false;
+   }
+
+   StaticValueDescriptor nil_value{
+      .primary = TiriType::Nil,
+      .proof = StaticProof::Closed,
+      .nullable = true
+   };
+   if (not static_value_satisfies_contract(nil_value, nullable_number) or
+       static_value_satisfies_contract(nil_value, required_number)) {
+      Log.error("nil descriptor did not respect optional and required contracts");
+      return false;
+   }
+
+   auto *struct_a = (struct_record *)(uintptr_t(1));
+   auto *struct_b = (struct_record *)(uintptr_t(2));
+   StaticValueDescriptor exact_struct{
+      .primary = TiriType::Struct,
+      .struct_def = struct_a,
+      .proof = StaticProof::Trusted
+   };
+   RuntimeContract exact_struct_contract{
+      .type = TiriType::Struct,
+      .struct_def = struct_a
+   };
+   if (not static_value_satisfies_contract(exact_struct, exact_struct_contract)) {
+      Log.error("an exact proved structure did not satisfy its matching contract");
+      return false;
+   }
+   exact_struct.struct_def = struct_b;
+   if (static_value_satisfies_contract(exact_struct, exact_struct_contract)) {
+      Log.error("a mismatched structure identity satisfied an exact contract");
+      return false;
+   }
+
    struct ArrayMapping {
       std::string_view name;
       AET storage;
@@ -4030,8 +4084,8 @@ static bool test_tail_call_eligibility(kt::Log &Log)
    auto contracted = compile_snapshot(L, contract_source, true, error);
    if (not contracted or count_opcode_tree(*contracted, BC_CALLT) != 0 or
        count_opcode_tree(*contracted, BC_CALLMT) != 0 or count_opcode_tree(*contracted, BC_CALL) IS 0 or
-       count_opcode_tree(*contracted, BC_CONTRACT) IS 0) {
-      Log.error("a fixed explicit result contract was incorrectly tail lowered: %s", error.c_str());
+       count_opcode_tree(*contracted, BC_CONTRACT) != 0) {
+      Log.error("a proved fixed result changed truncating call lowering or retained a contract: %s", error.c_str());
       return false;
    }
 
@@ -4482,6 +4536,113 @@ static bool test_type_guided_emission(kt::Log &Log)
       return false;
    }
 
+   constexpr std::string_view proved_contract_elision =
+      "extern struct\n"
+      "struct ContractElisionFields\n"
+      "   Integer:int\n"
+      "   Wide:int64\n"
+      "   Float:float\n"
+      "   Double:double\n"
+      "end\n"
+      "global glContractElisionValue = struct<ContractElisionFields> {\n"
+      "   integer=1, wide=2, float=3.5, double=4.5\n"
+      "}\n"
+      "local function accumulate():num\n"
+      "   local count = 0\n"
+      "   count += glContractElisionValue.integer + glContractElisionValue.wide +\n"
+      "      glContractElisionValue.float + glContractElisionValue.double\n"
+      "   return count\n"
+      "end\n"
+      "return accumulate\n";
+   snapshot = compile_snapshot(L, proved_contract_elision, true, error);
+   if (not snapshot or snapshot->children.empty()) {
+      Log.error("failed to compile proved contract-elision fixture: %s", error.c_str());
+      return false;
+   }
+   const BytecodeSnapshot &accumulate = snapshot->children.front();
+   if (count_opcode(accumulate, BC_STGETF) != 4 or count_opcode(accumulate, BC_CONTRACT) != 0) {
+      Log.error("proved structure arithmetic retained a redundant local or result contract: %s",
+         error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view fixed_return_elision =
+      "local function literal():num return 1 end\n"
+      "local function identifier():num local value = 1 return value end\n"
+      "local function pair():<num, str> return 1, 'two', false end\n"
+      "return literal, identifier, pair\n";
+   snapshot = compile_snapshot(L, fixed_return_elision, true, error);
+   if (not snapshot or count_opcode_tree(*snapshot, BC_CONTRACT) != 0) {
+      Log.error("proved fixed returns retained a redundant result contract: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view retained_return_contract =
+      "local function source(Value:any):any return Value end\n"
+      "local function dynamic(Value:any):num return source(Value) end\n"
+      "return dynamic\n";
+   snapshot = compile_snapshot(L, retained_return_contract, true, error);
+   if (not snapshot or snapshot->children.size() < 2 or
+       count_opcode_tree(*snapshot, BC_CONTRACT) IS 0) {
+      Log.error("an advisory fixed return incorrectly lost its result contract: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view retained_arithmetic_contract =
+      "local function update(Value:any):num\n"
+      "   local result = 1\n"
+      "   result += Value\n"
+      "   return result\n"
+      "end\n"
+      "return update\n";
+   snapshot = compile_snapshot(L, retained_arithmetic_contract, true, error);
+   if (not snapshot or snapshot->children.empty() or
+       count_opcode(snapshot->children.front(), BC_CONTRACT) != 2) {
+      Log.error("dynamic compound arithmetic did not retain its sticky-store and result contracts: %s",
+         error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view variant_mutation_contracts =
+      "local function compound(Operand:any):num\n"
+      "   local source:any = 1\n"
+      "   source += Operand\n"
+      "   local target = 0\n"
+      "   target = source\n"
+      "   return target\n"
+      "end\n"
+      "local function if_empty():num\n"
+      "   local source:any = 0\n"
+      "   source ?" "?= 'wrong'\n"
+      "   local target = 0\n"
+      "   target = source\n"
+      "   return target\n"
+      "end\n"
+      "local function if_nil():num\n"
+      "   local source:any = nil\n"
+      "   source ?= 'wrong'\n"
+      "   local target = 0\n"
+      "   target = source\n"
+      "   return target\n"
+      "end\n"
+      "local function unchanged():num\n"
+      "   local source:any = 1\n"
+      "   local target = 0\n"
+      "   target = source\n"
+      "   return target\n"
+      "end\n"
+      "return compound, if_empty, if_nil, unchanged\n";
+   snapshot = compile_snapshot(L, variant_mutation_contracts, true, error);
+   if (not snapshot or snapshot->children.size() != 4 or
+       count_opcode(snapshot->children[0], BC_CONTRACT) != 2 or
+       count_opcode(snapshot->children[1], BC_CONTRACT) != 2 or
+       count_opcode(snapshot->children[2], BC_CONTRACT) != 2 or
+       count_opcode(snapshot->children[3], BC_CONTRACT) != 0) {
+      Log.error("variant mutation descriptors did not retain only the required store and result contracts: %s",
+         error.c_str());
+      return false;
+   }
+
    constexpr std::string_view member_inference =
       "extern struct\n"
       "struct DescriptorMember Value: int end\n"
@@ -4503,8 +4664,9 @@ static bool test_type_guided_emission(kt::Log &Log)
       "local callable = {}\n"
       "return accept(callable)\n";
    snapshot = compile_snapshot(L, callable_table, true, error);
-   if (not snapshot or count_opcode_tree(*snapshot, BC_CONTRACT) < 2) {
-      Log.error("callable-table compatibility bypassed runtime func contracts: %s", error.c_str());
+   if (not snapshot or count_opcode_tree(*snapshot, BC_CONTRACT) != 1) {
+      Log.error("callable-table compatibility lost its parameter contract or retained a proved result contract: %s",
+         error.c_str());
       return false;
    }
    return true;

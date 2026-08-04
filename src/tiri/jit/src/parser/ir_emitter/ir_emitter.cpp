@@ -1063,6 +1063,59 @@ ParserResult<IrEmitUnit> IrEmitter::emit_conditional_shorthand_stmt(const Condit
 //********************************************************************************************************************
 // Emit bytecode for a return statement, handling zero, single, or multiple return values.
 
+static StaticValueDescriptor return_value_descriptor(
+   const ParserContext &Context, const ReturnStmtPayload &Payload, size_t Position, bool &Dynamic)
+{
+   StaticValueDescriptor result;
+   if (Payload.values.empty()) {
+      result.primary = TiriType::Nil;
+      result.proof = StaticProof::Closed;
+      result.nullable = true;
+      return result;
+   }
+
+   size_t tail_position = Payload.values.size() - 1;
+   if (Position < tail_position) {
+      const ExprNode &value = *Payload.values[Position];
+      return Context.descriptors().value(value.static_value);
+   }
+
+   const ExprNode &tail = *Payload.values.back();
+   if (tail.static_results) {
+      const StaticResultSet &results = Context.descriptors().results(tail.static_results);
+      if (results.dynamic or results.variadic) Dynamic = true;
+      return results.value_at(Position - tail_position);
+   }
+   if (Position IS tail_position) return Context.descriptors().value(tail.static_value);
+
+   result.primary = TiriType::Nil;
+   result.proof = StaticProof::Closed;
+   result.nullable = true;
+   return result;
+}
+
+static bool fixed_return_contract_is_proved(
+   const ParserContext &Context, const FuncState &State, const ReturnStmtPayload &Payload)
+{
+   if (not State.return_contract_explicit or State.return_contract_variadic) return false;
+
+   bool dynamic = false;
+   for (uint8_t i = 0; i < State.return_contract_count; ++i) {
+      RuntimeContract contract{
+         .type = State.return_types[i],
+         .struct_def = State.return_struct_defs[i],
+         .boundary = ContractBoundary::Result,
+         .position = uint8_t(i + 1),
+         .nullable = true,
+         .required = false
+      };
+      if (contract.type IS TiriType::Unknown or contract.type IS TiriType::Any) continue;
+      StaticValueDescriptor value = return_value_descriptor(Context, Payload, i, dynamic);
+      if (dynamic or not static_value_satisfies_contract(value, contract)) return false;
+   }
+   return true;
+}
+
 ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Payload)
 {
    BCIns ins;
@@ -1082,6 +1135,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
 
    bool truncate_return_results =
       this->func_state.return_contract_explicit and not this->func_state.return_contract_variadic;
+   bool return_contract_elided = has_return_contract and
+      fixed_return_contract_is_proved(this->ctx, this->func_state, Payload);
    BCREG cleanup_temp_regs = return_cleanup_temp_regs(&this->func_state);
    BCREG multres_slot = BCREG(this->func_state.varmap.size() + cleanup_temp_regs);
    if (cleanup_temp_regs > 0) return_allocator.reserve(BCReg(cleanup_temp_regs + 1));
@@ -1219,7 +1274,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
    if (this->func_state.flags & PROTO_CHILD) bcemit_AJ(&this->func_state, BC_UCLO, 0, 0);
    if (preserve_multres) bcemit_AD(&this->func_state, BC_MRRESTORE, multres_slot, 0);
 
-   if (has_return_contract and bc_op(ins) != BC_RET0) {
+   if (has_return_contract and not return_contract_elided and bc_op(ins) != BC_RET0) {
       std::array<RuntimeContract, MAX_RETURN_TYPES> contracts;
       for (uint8_t i = 0; i < this->func_state.return_contract_count; ++i) {
          contracts[i] = RuntimeContract{
@@ -1323,18 +1378,16 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
          else if (value.static_value) initialiser = this->ctx.descriptors().value(value.static_value);
       }
 
-      bool matching_type = initialiser.primary IS TiriType::Nil or initialiser.primary IS identifier.type;
-      bool matching_struct = identifier.type != TiriType::Struct or initialiser.primary IS TiriType::Nil or
-         initialiser.struct_def IS identifier.struct_def;
-      if (initialiser.proved() and matching_type and matching_struct) continue;
-
+      const VarInfo &variable = this->func_state.var_get(base.raw() + i.raw());
       RuntimeContract contract{
          .type = identifier.type,
-         .struct_def = identifier.struct_def,
+         .object_class_id = variable.object_class_id,
+         .struct_def = variable.struct_def ? variable.struct_def : identifier.struct_def,
          .label = is_blank_symbol(identifier) ? nullptr : identifier.symbol,
          .boundary = ContractBoundary::Local,
          .position = uint8_t(base.raw() + i.raw() + 1)
       };
+      if (static_value_satisfies_contract(initialiser, contract)) continue;
       local_contracts.push_back(RuntimeContractSlot{
          .register_index = BCREG(base.raw() + i.raw()),
          .contract = contract
