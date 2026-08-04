@@ -266,8 +266,14 @@ end
 
    check task.acActivate()
 
-   processing.sleep(1.0) -- Should return almost immediately because the shell detaches
-   processing.halt(0.3) -- Need to wait for echo to complete in the background
+   -- Note that because the task detaches immediately, the signal is received prior to the output being generated.
+
+   deadline = mSys.PreciseTime() + 1000000
+   now = mSys.PreciseTime()
+   while (not exit_called or not output_text:find('late')) and now < deadline do
+      processing.sleep((deadline - now) / 100000)
+      now = mSys.PreciseTime()
+   end
 
    assert(exit_called is true, 'Task ExitCallback was not invoked after the shell process exited.')
    assert(output_text:find('late'), 'Expected output from a background descendant after shell exit, got: ' .. output_text)
