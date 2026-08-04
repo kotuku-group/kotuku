@@ -14,6 +14,7 @@
 #include "lj_str.h"
 #include "lj_tab.h"
 #include "lj_meta.h"
+#include "lj_state.h"
 #include "lj_frame.h"
 #include "lj_bc.h"
 #include "lj_vm.h"
@@ -54,6 +55,13 @@ uint32_t lj_meta_multres_restore(lua_State *L, TValue *Base)
    lj_assertL(saved_frame.frame_base IS L->base - tvref(L->stack),
       "saved multi-result values belong to another frame");
    uint32_t count = uint32_t(saved_frame.values.size());
+   ptrdiff_t base_slot = Base - tvref(L->stack);
+   ptrdiff_t required_slots = base_slot + ptrdiff_t(count);
+   ptrdiff_t available_slots = tvref(L->maxstack) - tvref(L->stack);
+   if (required_slots > available_slots) {
+      lj_state_growstack(L, MSize(required_slots - available_slots));
+      Base = tvref(L->stack) + base_slot;
+   }
    for (uint32_t i = 0; i < count; ++i) Base[i].u64 = saved_frame.values[i];
    L->saved_multres.pop_back();
    return count + 1;
