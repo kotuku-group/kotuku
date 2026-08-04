@@ -10,6 +10,7 @@ local ir_max <const> = 51  -- IRDEF order; traceIR exposes the opcode as traceIR
 local ir_fpmath <const> = 52  -- IRDEF order; floating-point rounding and related operations.
 local ir_xload <const> = 70  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
 local ir_xstore <const> = 78  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
+local ir_conv <const> = 91  -- IRDEF order; numeric and integer conversions.
 local ir_bufput <const> = 86
 local ir_bufstr <const> = 87
 local ir_calln <const> = 95  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
@@ -44,6 +45,13 @@ end
 struct JITPhaseFiveObjectFields
    Owner: obj
    Clock: obj<Time>
+end
+
+struct JITRangeTraceFields
+   Word: int16
+   ByteValue: int8
+   UnsignedWord: uint16
+   UnsignedByte: uint8
 end
 
 @BeforeAll
@@ -266,6 +274,18 @@ function first_trace_opcode(TraceNo, Info, Opcode)
       if ir_ot != nil and ir_opcode(ir_ot) is Opcode then return idx end
    end
    return nil
+end
+
+function count_trace_opcode_after(TraceNo, Info, Opcode, BoundaryOpcode)
+   local boundary = first_trace_opcode(TraceNo, Info, BoundaryOpcode)
+   if boundary is nil then return 0 end
+
+   local count = 0
+   for idx in {boundary + 1 into Info.nins} do
+      local _, ir_ot = jit.util.traceIR(TraceNo, idx)
+      if ir_ot != nil and ir_opcode(ir_ot) is Opcode then count++ end
+   end
+   return count
 end
 
 function count_jit_traces(MaxTraceNo)
@@ -2307,6 +2327,61 @@ function traced_phase_five_integer_write(Value:struct<JITPhaseFiveScalarFields>,
       Value.Signed64 = i
       Value.Unsigned64 = i
    end
+end
+
+function traced_integer_range_struct_write(Value:struct<JITRangeTraceFields>)
+   for i in {0 to 10000} do
+      Value.Word = -i
+      Value.ByteValue = i
+      Value.UnsignedWord = i
+      Value.UnsignedByte = i
+   end
+end
+
+@Test(hotpath=50) function JITIntegerRangeTracePreservation()
+   local value = struct<JITRangeTraceFields> { }
+   local compiled = 0
+   local aborted = 0
+   local function trace_event(Event)
+      if Event is 'stop' then compiled++
+      elseif Event is 'abort' then aborted++
+      end
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   jit.attach(trace_event, 'trace')
+   for call_no in {0 to 15} do traced_integer_range_struct_write(value) end
+   jit.attach(trace_event)
+   local trace_count = count_jit_traces(20)
+
+   assert(value.Word is -9999 and value.ByteValue is 15 and value.UnsignedWord is 9999 and
+      value.UnsignedByte is 15, 'Repeated integer range stores should preserve signed and wrapped field values')
+
+   local matching_traces = 0
+   for trace_no in {1 into 20} do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil and first_trace_opcode(trace_no, info, ir_loop) != nil and
+            count_trace_opcode(trace_no, info, ir_xstore) >= 8 then
+         matching_traces++
+         local repeated_conversions = count_trace_opcode_after(trace_no, info, ir_conv, ir_loop)
+         assert(repeated_conversions is 0,
+            f'Integer range trace {trace_no} should not convert induction-derived values after IR_LOOP, ' ..
+            f'observed {repeated_conversions} conversions')
+         assert(count_trace_calls(trace_no, info) is 0,
+            f'Integer range trace {trace_no} should retain direct structure stores')
+         local machine_code = jit.util.traceMC(trace_no)
+         assert(info.nins <= 64 and machine_code != nil and #machine_code <= 2048,
+            f'Integer range trace {trace_no} should retain bounded IR and machine code')
+      end
+   end
+
+   assert(matching_traces >= 2,
+      f'Expected both initial and later integer range traces, observed {matching_traces}')
+   assert(compiled > 0 and aborted is 0,
+      f'Integer range tracing should compile without aborts (compiled={compiled}, aborted={aborted})')
+   assert(trace_count <= 8, f'Integer range tracing should remain bounded, observed {trace_count} traces')
 end
 
 @Test(hotpath=50) function JITStructPhaseFiveScalarMatrix()
