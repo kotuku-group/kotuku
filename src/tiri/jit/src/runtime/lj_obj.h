@@ -1395,6 +1395,16 @@ struct lua_State {
    bool   pending_collection = false;           // A garbage collection cycle is pending
    ERR    CaughtError = ERR::Okay; // Catches ERR results from module functions.
 
+   struct SavedMultresFrame {
+      ptrdiff_t frame_base = 0;
+      std::vector<uint64_t> values;
+   };
+
+   // Return values preserved while user-visible <close> and defer handlers execute. Entries are stacked because a
+   // cleanup handler may itself return through another cleanup boundary. The owning base lets error unwinding discard
+   // saves belonging to abandoned return paths.
+   std::vector<SavedMultresFrame> saved_multres;
+
    // FileSource tracking for accurate error reporting in imported files
    std::vector<FileSource> file_sources;  // Index 0 = main file, 255 = overflow
    ankerl::unordered_dense::map<uint32_t, uint8_t> file_index_map;  // path_hash -> index

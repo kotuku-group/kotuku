@@ -37,8 +37,7 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // If you perform *any* kind of private modifications to the bytecode itself
 // or to the dump format, you *must* set BCDUMP_VERSION to 0x80 or higher.
 
-constexpr uint8_t BCDUMP_VERSION_LEGACY = 0x81;
-constexpr uint8_t BCDUMP_VERSION = 0x83;
+constexpr uint8_t BCDUMP_VERSION = 0x84;
 
 // Compatibility flags.
 

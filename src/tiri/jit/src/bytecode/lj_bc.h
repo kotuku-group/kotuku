@@ -230,9 +230,6 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   _(RET0, rbase, ___, lit, ___) \
   _(RET1, rbase, ___, lit, ___) \
   \
-  /* Type fixing. */ \
-  _(TYPEFIX,   rbase,   ___,   lit,   ___) \
-  \
   /* Loops and branches. I/J = interp/JIT, I/C/L = init/call/loop. */ \
   _(FORI,  base, ___, jump, ___) \
   _(JFORI, base, ___, jump, ___) \
@@ -394,49 +391,46 @@ typedef enum {
    BC_RET0   = 89,
    BC_RET1   = 90,
 
-   // Type fixing (91)
-   BC_TYPEFIX = 91,
+   // Loops and branches (91-102)
+   BC_FORI   = 91,
+   BC_JFORI  = 92,
+   BC_FORL   = 93,
+   BC_IFORL  = 94,
+   BC_JFORL  = 95,
+   BC_ITERL  = 96,
+   BC_IITERL = 97,
+   BC_JITERL = 98,
+   BC_LOOP   = 99,
+   BC_ILOOP  = 100,
+   BC_JLOOP  = 101,
+   BC_JMP    = 102,
 
-   // Loops and branches (92-103)
-   BC_FORI   = 92,
-   BC_JFORI  = 93,
-   BC_FORL   = 94,
-   BC_IFORL  = 95,
-   BC_JFORL  = 96,
-   BC_ITERL  = 97,
-   BC_IITERL = 98,
-   BC_JITERL = 99,
-   BC_LOOP   = 100,
-   BC_ILOOP  = 101,
-   BC_JLOOP  = 102,
-   BC_JMP    = 103,
+   // Function headers (103-110)
+   BC_FUNCF  = 103,
+   BC_IFUNCF = 104,
+   BC_JFUNCF = 105,
+   BC_FUNCV  = 106,
+   BC_IFUNCV = 107,
+   BC_JFUNCV = 108,
+   BC_FUNCC  = 109,
+   BC_FUNCCW = 110,
 
-   // Function headers (104-111)
-   BC_FUNCF  = 104,
-   BC_IFUNCF = 105,
-   BC_JFUNCF = 106,
-   BC_FUNCV  = 107,
-   BC_IFUNCV = 108,
-   BC_JFUNCV = 109,
-   BC_FUNCC  = 110,
-   BC_FUNCCW = 111,
+   // Exception handling (111-114)
+   BC_TRYENTER = 111,
+   BC_TRYLEAVE = 112,
+   BC_CHECK  = 113,  // Check error code, raise if >= threshold
+   BC_RAISE  = 114,  // Raise exception with error code and optional message
 
-   // Exception handling (112-115)
-   BC_TRYENTER = 112,
-   BC_TRYLEAVE = 113,
-   BC_CHECK  = 114,  // Check error code, raise if >= threshold
-   BC_RAISE  = 115,  // Raise exception with error code and optional message
-
-   // Runtime contracts (appended to preserve every existing opcode number)
-   BC_CONTRACT = 116,
-   BC_MRSAVE = 117,
-   BC_MRRESTORE = 118,
+   // Runtime contracts
+   BC_CONTRACT = 115,
+   BC_MRSAVE = 116,
+   BC_MRRESTORE = 117,
 
    // Direct range loops
-   BC_RANGEPREP = 119,
-   BC_RANGEVAL = 120,
+   BC_RANGEPREP = 118,
+   BC_RANGEVAL = 119,
 
-   BC__MAX   = 121
+   BC__MAX   = 120
 } BCOp;
 
 [[nodiscard]] inline constexpr bool bc_is_func_header(BCOp Op) noexcept

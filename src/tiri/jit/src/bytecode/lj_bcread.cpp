@@ -288,10 +288,9 @@ static void bcread_knum(LexState *State, GCproto *pt, MSize sizekn)
 //********************************************************************************************************************
 // Read bytecode instructions.
 
-static bool bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
+static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
 {
    BCIns* bc = proto_bc(pt);
-   bool has_typefix = false;
    bc[0] = BCINS_AD((pt->flags & PROTO_VARARG) ? BC_FUNCV : BC_FUNCF,
       pt->framesize, 0);
    bcread_block(State, bc + 1, (sizebc - 1) * (MSize)sizeof(BCIns));
@@ -302,12 +301,10 @@ static bool bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
    }
    for (MSize i = 1; i < sizebc; ++i) {
       BCOp op = bc_op(bc[i]);
-      if (op IS BC_TYPEFIX) has_typefix = true;
       if (op IS BC_MRSAVE or op IS BC_MRRESTORE) {
          pt->flags |= PROTO_NOJIT;
       }
    }
-   return has_typefix;
 }
 
 //********************************************************************************************************************
@@ -420,7 +417,7 @@ static void bcread_signature(LexState *State, MSize Size, MSize NumParams, BCRea
    const bool dynamic_results = flags & proto_signature_flag(ProtoSignatureFlag::DynamicResults);
    const bool variadic_results = flags & proto_signature_flag(ProtoSignatureFlag::ResultVariadic);
    if ((explicit_results and dynamic_results) or (variadic_results and (not explicit_results or result_count IS 0)) or
-       (dynamic_results and (result_count != 0 or result_entry_count != PROTO_MAX_RETURN_TYPES)) or
+       (dynamic_results and (result_count != 0 or result_entry_count != 0)) or
        (explicit_results and result_entry_count != std::min<uint32_t>(result_count, PROTO_MAX_RETURN_TYPES)) or
        (not explicit_results and not dynamic_results and
           result_entry_count != std::min<uint32_t>(result_count, PROTO_MAX_RETURN_TYPES))) {
@@ -444,27 +441,6 @@ static void bcread_signature(LexState *State, MSize Size, MSize NumParams, BCRea
       }
    }
    if (cursor != end) bcread_error(State, ErrMsg::BCBAD);
-}
-
-static void bcread_legacy_signature(MSize NumParams, BCReadSignature &Result)
-{
-   Result.present = true;
-   Result.parameter_count = uint8_t(NumParams);
-   Result.result_entry_count = PROTO_MAX_RETURN_TYPES;
-   for (MSize i = 0; i < NumParams; ++i) {
-      Result.parameters[i] = ProtoTypeEntry{
-         .constraint = 0,
-         .type = TiriType::Any,
-         .flags = proto_type_flags(true, false, ProtoTypeOrigin::Unspecified, ProtoTypeStrength::Advisory)
-      };
-   }
-   for (auto &entry : Result.results) {
-      entry = ProtoTypeEntry{
-         .constraint = 0,
-         .type = TiriType::Unknown,
-         .flags = proto_type_flags(true, false, ProtoTypeOrigin::Inferred, ProtoTypeStrength::Advisory)
-      };
-   }
 }
 
 static void bcread_install_signature(GCproto *Proto, void *Buffer, const BCReadSignature &Source)
@@ -512,7 +488,7 @@ GCproto *lj_bcread_proto(LexState *State)
    sizekgc   = bcread_uleb128(State);
    sizekn    = bcread_uleb128(State);
    sizebc    = bcread_uleb128(State) + 1;
-   if (State->bytecode_version >= BCDUMP_VERSION) sizesig = bcread_uleb128(State);
+   sizesig = bcread_uleb128(State);
    if (!(bcread_flags(State) & BCDUMP_F_STRIP)) {
       sizedbg = bcread_uleb128(State);
       if (sizedbg) {
@@ -520,8 +496,7 @@ GCproto *lj_bcread_proto(LexState *State)
          numline = bcread_uleb128(State);
       }
    }
-   if (State->bytecode_version >= BCDUMP_VERSION) bcread_signature(State, sizesig, numparams, signature);
-   else bcread_legacy_signature(numparams, signature);
+   bcread_signature(State, sizesig, numparams, signature);
 
    // Calculate total size of prototype including all colocated arrays.
 
@@ -559,21 +534,7 @@ GCproto *lj_bcread_proto(LexState *State)
 
    // Read bytecode instructions and upvalue refs.
 
-   bool has_typefix = bcread_bytecode(State, pt, sizebc);
-   auto installed_signature = proto_signature(pt);
-   if (State->bytecode_version IS BCDUMP_VERSION_LEGACY) {
-      if (has_typefix) {
-         installed_signature->flags |= proto_signature_flag(ProtoSignatureFlag::DynamicResults);
-      }
-      else installed_signature->result_entry_count = 0;
-      pt->signature_size = uint16_t(proto_signature_size(installed_signature->parameter_count,
-         installed_signature->result_entry_count));
-   }
-   else {
-      bool dynamic_results = installed_signature and
-         (installed_signature->flags & proto_signature_flag(ProtoSignatureFlag::DynamicResults));
-      if (has_typefix and not dynamic_results) bcread_error(State, ErrMsg::BCBAD);
-   }
+   bcread_bytecode(State, pt, sizebc);
    bcread_uv(State, pt, sizeuv);
 
    // Read constants.
@@ -612,7 +573,7 @@ static int bcread_header(LexState *State)
    bcread_want(State, 3 + 5 + 5);
    if (bcread_byte(State) != BCDUMP_HEAD2 or bcread_byte(State) != BCDUMP_HEAD3) return 0;
    uint8_t version = uint8_t(bcread_byte(State));
-   if (version != BCDUMP_VERSION and version != BCDUMP_VERSION_LEGACY) return 0;
+   if (version != BCDUMP_VERSION) return 0;
    State->bytecode_version = version;
    bcread_flags(State) = flags = bcread_uleb128(State);
    if ((flags & ~(BCDUMP_F_KNOWN)) != 0) return 0;

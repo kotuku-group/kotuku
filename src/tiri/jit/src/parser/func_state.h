@@ -76,9 +76,8 @@ struct FuncState {
    bool return_contract_explicit = false;
    bool return_inference_validated = false;
 
-   // Canonical prototype signature under construction.  Parameter entries are populated before body emission.
-   // Result entries are populated from explicit declarations, validated inference, or reserved for advisory
-   // BC_TYPEFIX observations in fs_finish().
+   // Canonical prototype signature under construction.  Result entries come only from explicit declarations or
+   // validated static inference; unresolved results use the DynamicResults flag without stored entries.
    std::vector<ProtoTypeEntry> signature_parameters;
    std::array<ProtoTypeEntry, MAX_RETURN_TYPES> signature_results{};
    uint8_t signature_result_count = 0;

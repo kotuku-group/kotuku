@@ -1082,16 +1082,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
 
    bool truncate_return_results =
       this->func_state.return_contract_explicit and not this->func_state.return_contract_variadic;
-   BCREG cleanup_temp_regs =
-      (has_return_contract or truncate_return_results) ? return_cleanup_temp_regs(&this->func_state) : 0;
+   BCREG cleanup_temp_regs = return_cleanup_temp_regs(&this->func_state);
    BCREG multres_slot = BCREG(this->func_state.varmap.size() + cleanup_temp_regs);
    if (cleanup_temp_regs > 0) return_allocator.reserve(BCReg(cleanup_temp_regs + 1));
    BCREG return_base = this->func_state.freereg;
-
-   // Runtime inference applies only when there is no explicit result declaration. This distinguishes explicit void
-   // (`:<>`) from an unannotated function even though both have no stored concrete result types.
-   bool needs_typefix = not this->func_state.return_contract_explicit and
-      not this->func_state.return_inference_validated;
 
    if (Payload.values.empty()) {
       ins = BCINS_AD(BC_RET0, 0, 1);
@@ -1106,6 +1100,12 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
       // Handle tail-call case: return f() or return f(...)
       if (count IS 1 and last.k IS ExpKind::Call) {
          BCIns* ip = ir_bcptr(&this->func_state, &last);
+         BCOp call_op = bc_op(*ip);
+         bool has_post_call_control_flow = last.u.s.info + 1 != this->func_state.pc;
+         bool has_user_cleanup = cleanup_temp_regs > 0;
+         bool tail_call_eligible = not truncate_return_results and this->func_state.try_depth IS 0 and
+            not has_return_contract and not has_post_call_control_flow and not has_user_cleanup and
+            (call_op IS BC_CALL or call_op IS BC_CALLM);
          if (truncate_return_results) {
             BCREG result_count = this->func_state.return_declared_count;
             setbc_b(ip, result_count + 1);
@@ -1120,7 +1120,6 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
             // while still inside the try block. This must be checked before any tail-call optimisation paths.
 
             setbc_b(ip, 0);  // Request all results (MULTRES)
-            if (needs_typefix) bcemit_AD(&this->func_state, BC_TYPEFIX, last.u.s.aux, 1);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
          else if (has_return_contract) {
@@ -1128,45 +1127,32 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
             setbc_b(ip, 0);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
-         else if (last.u.s.info + 1 != this->func_state.pc) {
+         else if (has_post_call_control_flow) {
             // Safe calls and other call expressions with post-call control flow cannot be converted to CALLT: the
             // conversion removes the final emitted instruction rather than the earlier CALL.  Such expressions
             // represent one consolidated value, so retain that result and return it normally.
             setbc_b(ip, 2);
             ins = BCINS_AD(BC_RET1, last.u.s.aux, 2);
          }
-         else if (bc_op(*ip) IS BC_VARG) {
+         else if (call_op IS BC_VARG) {
             // Variadic return: return ...
-            setbc_b(ir_bcptr(&this->func_state, &last), 0);
-            // For VARG returns, we can't know count at compile time - skip typefix
+            setbc_b(ip, 0);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
-         else if (needs_typefix and bc_op(*ip) IS BC_CALL) {
-            // DISABLE TAIL-CALL: emit BC_CALL + BC_TYPEFIX + BC_RET instead of BC_CALLT
-            // This ensures BC_TYPEFIX runs for the return value.
-            // Only apply to simple BC_CALL - not BC_CALLM (used by result filters) or other call types.
-            bool has_closes = has_close_variables(&this->func_state);
-            if (has_closes) {
-               // With close handlers: Use fixed 1 result (B=2) because MULTRES can be corrupted
-               // by close handlers that run between the call and return.
-               setbc_b(ip, 2);
-               bcemit_AD(&this->func_state, BC_TYPEFIX, last.u.s.aux, 1);
-               ins = BCINS_AD(BC_RET1, last.u.s.aux, 2);
-            }
-            else {
-               // No close handlers: Safe to use RETM with all results
-               setbc_b(ip, 0);  // Request all results (MULTRES)
-               bcemit_AD(&this->func_state, BC_TYPEFIX, last.u.s.aux, 1);
-               ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
-            }
+         else if (has_user_cleanup) {
+            // The callee must execute before user-visible cleanup.  Preserve all results and MULTRES across handlers.
+            setbc_b(ip, 0);
+            ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
-         else {
-            // Normal tail-call for:
-            // - Explicitly typed functions (needs_typefix=false)
-            // - Special call types like BC_CALLM (result filters) where we can't safely modify
-            // - Not inside a try block (handled by the try_depth check above)
+         else if (tail_call_eligible) {
+            lj_assertX(last.u.s.info + 1 IS this->func_state.pc,
+               "tail call is not the final expression instruction");
             this->func_state.pc--;
             ins = BCINS_AD(bc_op(*ip) - BC_CALL + BC_CALLT, bc_a(*ip), bc_c(*ip));
+         }
+         else {
+            setbc_b(ip, 0);
+            ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
          }
       }
       else if (count IS 1) {
@@ -1174,7 +1160,6 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
          RegisterAllocator allocator(&this->func_state);
          ExpressionValue value(&this->func_state, last);
          auto reg = value.discharge_to_any_reg(allocator);
-         if (needs_typefix) bcemit_AD(&this->func_state, BC_TYPEFIX, reg, 1);
          ins = BCINS_AD(BC_RET1, reg, 2);
       }
       else {
@@ -1191,16 +1176,11 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
             }
             else {
                setbc_b(ir_bcptr(&this->func_state, &last), 0);
-               // Variadic tail - count unknown, skip typefix for safety
                ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
             }
          }
          else {
             this->materialise_to_next_reg(last, "return tail value");
-            if (needs_typefix) {
-               auto typefix_count = std::min(count.raw(), BCREG(PROTO_MAX_RETURN_TYPES));
-               bcemit_AD(&this->func_state, BC_TYPEFIX, return_base, typefix_count);
-            }
             ins = BCINS_AD(BC_RET, return_base, count + 1);
          }
       }

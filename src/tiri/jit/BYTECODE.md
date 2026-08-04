@@ -191,11 +191,6 @@ Operand suffixes: V=variable slot, S=string const, N=number const, P=primitive (
 | `RET0` | A D | return (no values) |
 | `RET1` | A D | return R(A) (single value) |
 
-#### Type Fixing Ops
-| Opcode | Format | Description |
-|--------|--------|-------------|
-| `TYPEFIX` | A D | Fix function return types at runtime (D = count of values) |
-
 #### Loop and Branch Ops
 | Opcode | Format | Description |
 |--------|--------|-------------|
@@ -621,31 +616,16 @@ Each `TryHandlerDesc` contains:
 
 **Implementation:** See [emit_try.cpp:30-240](src/tiri/jit/src/parser/ir_emitter/emit_try.cpp#L30-L240), [emit_try.cpp:248-291](src/tiri/jit/src/parser/ir_emitter/emit_try.cpp#L248-L291), [emit_try.cpp:299-320](src/tiri/jit/src/parser/ir_emitter/emit_try.cpp#L299-L320).
 
-### 10.2 Runtime Type Fixing (`BC_TYPEFIX`)
+### 10.2 Dynamic Result Classification
 
-`BC_TYPEFIX` records advisory runtime observations for dynamic prototype result entries.  It does not enforce or prove
-the source language's static return-inference rule.
+Return signatures have one static authority.  Explicit declarations produce checked entries and validated return
+analysis produces trusted inferred entries.  When analysis cannot validate a function's results, the prototype sets
+`DynamicResults` with a result count and stored-entry count of zero.  Execution never observes results to refine that
+metadata, so a prototype signature is immutable after compilation or loading.
 
-**Opcode semantics:**
-- `BC_TYPEFIX A, D`: Fixes return types at runtime. `A` is the base register, `D` is the count of return values to process.
-- The VM calls `lj_meta_typefix(L, base, count)`. The helper returns immediately unless the prototype signature has
-  `DynamicResults` set.
-- Each non-`nil` observation can replace an unknown result entry's type. Its inferred provenance and advisory strength
-  remain unchanged.
-
-**When emitted:**
-Validated statically inferred results do not use this opcode.  Dynamic signatures retained for compatibility or
-tooling may set `DynamicResults` and use `BC_TYPEFIX` to gather advisory observations.
-
-**Purpose:**
-Supplies optional optimisation metadata for dynamic result positions.  The observations are stored in the canonical
-signature's result entries (up to `PROTO_MAX_RETURN_TYPES` positions), but consumers must not treat them as checked
-contracts or as evidence that all control-flow paths return the observed type.
-
-**Implementation:** See [vm_x64.dasc:4901-4922](src/tiri/jit/src/jit/vm_x64.dasc#L4901-L4922), [lj_meta.cpp:664-685](src/tiri/jit/src/runtime/lj_meta.cpp#L664-L685), [parse_scope.cpp:1012-1024](src/tiri/jit/src/parser/parse_scope.cpp#L1012-L1024).
-
-The update is state-owned: a prototype belongs to its Tiri state and is not published for concurrent mutation by
-another state. Asynchronous workers use their own state and prototype graph.
+The JIT uses the flag itself to select its conservative prototype-specialisation policy.  Dynamic functions keep
+normal language behaviour: different calls may return different categories and arities without acquiring a result
+contract.
 
 ### 10.3 Prototype Signatures
 
@@ -658,9 +638,8 @@ Every typed function prototype carries one versioned signature containing:
   strength.
 
 Constraints use stable 32-bit structure keys or class identifiers, never process-local pointers. Declared non-`any`
-contracts have checked strength, statically validated inferred results have trusted strength, and explicit `any` or
-runtime-observed dynamic positions remain advisory.  `BC_TYPEFIX` changes only the type of a reserved dynamic result
-entry.
+contracts have checked strength and statically validated inferred results have trusted strength. Explicit `any`
+entries remain advisory, while dynamic results have no positional entries.
 
 The signature is stored in the prototype allocation between upvalue descriptors and debug metadata. Its fields are
 written explicitly because bytecode-loaded prototypes are allocated as raw GC memory. Both stripped and unstripped
@@ -754,11 +733,11 @@ entry. It resolves known constraint names when possible and otherwise prints the
 - `CONTRACT A, D`: validates values starting at register `A` using the portable descriptor string at constant `D`.
   Descriptors encode the boundary, exact Tiri types, nullable/required flags, labels, named-structure identity and
   fixed or dynamic result shape.
-- `MRSAVE A` / `MRRESTORE A`: preserve the VM multi-result count in register `A` while return-path `<close>` and
-  `defer` handlers execute. Return values are allocated above the cleanup scratch area.
+- `MRSAVE A` / `MRRESTORE A`: preserve the VM multi-result count and returned values in a state-owned nested save stack
+  while return-path `<close>` and `defer` handlers execute. Restored values begin at `R(A+1)`.
 - Basic tag contracts use trace slot specialisation. Prototypes needing structure identity, range metatable,
   callable-value or dynamic-result predicates remain interpreter-only until those predicates have dedicated trace IR
   guards.
-- The private bytecode dump version is `0x82`. It includes a length-delimited, schema-versioned signature before each
-  prototype's bytecode. Version `0x81` dumps remain loadable and receive conservative advisory defaults; older versions
-  are rejected and must be regenerated.
+- The private bytecode dump version is `0x84`. It includes a length-delimited, schema-versioned signature before each
+  prototype's bytecode. Every older version is rejected at the header because opcode numbering changed; discard old
+  dumps and rebuild them from source.

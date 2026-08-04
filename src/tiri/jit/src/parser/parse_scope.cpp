@@ -911,25 +911,26 @@ GCproto * LexState::fs_finish(BCLine Line)
 
    fs_fixup_ret(fs);
 
-   // Finalise the canonical result signature.  Unvalidated dynamic functions reserve the bounded result prefix used
-   // by BC_TYPEFIX; provenance and strength are fixed before publication so observation mutates only the type byte.
+   // Finalise the canonical result signature.  Unvalidated functions are classified as dynamic without storing
+   // placeholder result entries; execution never mutates prototype signature metadata.
 
    if (not fs->return_contract_explicit and not fs->return_inference_validated and
        (fs->flags & PROTO_HAS_RETURN)) {
       fs->signature_flags |= proto_signature_flag(ProtoSignatureFlag::DynamicResults);
       fs->signature_result_count = 0;
-      fs->signature_result_entry_count = uint8_t(fs->signature_results.size());
-      for (auto &entry : fs->signature_results) {
-         entry = ProtoTypeEntry{
-            .constraint = 0,
-            .type = TiriType::Unknown,
-            .flags = proto_type_flags(true, false, ProtoTypeOrigin::Inferred, ProtoTypeStrength::Advisory)
-         };
-      }
+      fs->signature_result_entry_count = 0;
    }
 
    lj_assertX(fs->signature_parameters.size() IS fs->numparams,
       "prototype signature parameter count does not match numparams");
+   [[maybe_unused]] const bool dynamic_results =
+      fs->signature_flags & proto_signature_flag(ProtoSignatureFlag::DynamicResults);
+   lj_assertX(not dynamic_results or
+      (fs->signature_result_count IS 0 and fs->signature_result_entry_count IS 0),
+      "dynamic prototype signature owns result entries");
+   lj_assertX(dynamic_results or fs->signature_result_entry_count IS
+      std::min<size_t>(fs->signature_result_count, fs->signature_results.size()),
+      "explicit or inferred prototype signature has inconsistent result entries");
    const bool has_signature = not fs->signature_parameters.empty() or fs->signature_result_entry_count > 0 or
       fs->signature_flags != 0;
    const size_t signature_size = has_signature ?

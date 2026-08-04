@@ -556,6 +556,8 @@ extern "C" void setup_try_handler(lua_State *L)
    int min_slot_index = int(try_frame->saved_nactvar);  // Slots >= this were created inside try
    TValue *final_err = unwind_close_try_block(L, try_frame_ptr, errobj, min_slot_index);
 
+   lj_meta_multres_unwind(L, saved_base);
+
    // After all __close handlers have run, extract the final error message.
    // The error may have been updated by handlers in nested frames (unwind_close_all)
    // or in the try block's frame (unwind_close_try_block).
@@ -636,6 +638,7 @@ void * err_unwind(lua_State *L, void *StopCatchFrame, int errcode)
          if (frame < top) {  // Frame reached?
             if (errcode) {
                unwind_close_all(L, L->base - 1, top);
+               lj_meta_multres_unwind(L, top);
                L->base = frame + 1;
                L->cframe = cframe_prev(cf);
                unwindstack(L, top);
@@ -658,6 +661,7 @@ void * err_unwind(lua_State *L, void *StopCatchFrame, int errcode)
             if (errcode) {
                TValue* target = frame - LJ_FR2;
                unwind_close_all(L, L->base - 1, target);
+               lj_meta_multres_unwind(L, target);
                L->base = frame_prevd(frame) + 1;
                L->cframe = cframe_prev(cf);
                unwindstack(L, target);
@@ -686,6 +690,7 @@ void * err_unwind(lua_State *L, void *StopCatchFrame, int errcode)
             }
 
             if (errcode) {
+               lj_meta_multres_unwind(L, frame_prevd(frame) + 1);
                L->base = frame_prevd(frame) + 1;
                L->cframe = cframe_prev(cf);
                unwindstack(L, frame - LJ_FR2);
@@ -712,6 +717,7 @@ void * err_unwind(lua_State *L, void *StopCatchFrame, int errcode)
 
                TValue *target = frame_prevd(frame) + 1;
                unwind_close_all(L, L->base - 1, target);
+               lj_meta_multres_unwind(L, target);
                L->base = target;
                L->cframe = cf;
                unwindstack(L, L->base);
@@ -726,6 +732,7 @@ void * err_unwind(lua_State *L, void *StopCatchFrame, int errcode)
    if (errcode) {
       TValue* target = tvref(L->stack) + 1 + LJ_FR2;
       unwind_close_all(L, L->base - 1, target);
+      lj_meta_multres_unwind(L, target);
       L->base = target;
       L->cframe = nullptr;
       unwindstack(L, L->base);

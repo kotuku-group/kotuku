@@ -114,3 +114,23 @@ end
    end
    expect_contract_failure(function() restored(dynamic_value('wrong')) end)
 end
+
+@Test function DynamicResultRoundTrip()
+   function factory():func
+      return function(Value:any)
+         return Value
+      end
+   end
+
+   for stripped in values({ false, true }) do
+      local restored = reload_factory(factory, stripped)
+      local nil_value:any = restored(nil)
+      local number_value:any = restored(17)
+      local string_value:any = restored('variant')
+      local table_value:any = restored({ key='table' })
+      assert(nil_value is nil, 'A reloaded dynamic result must preserve nil')
+      assert(number_value is 17, 'A reloaded dynamic result must preserve numbers')
+      assert(string_value is 'variant', 'A reloaded dynamic result must preserve strings')
+      assert(table_value.key is 'table', 'A reloaded dynamic result must preserve tables')
+   end
+end

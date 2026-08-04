@@ -194,6 +194,26 @@ end
    assert(second is 'omega', "Expected second return value to remain 'omega', got '" .. tostring(second) .. "'")
 end
 
+@Test function TailCallResultsBeforeDefer()
+   order = {}
+
+   function source()
+      table.insert(order, 'call')
+      return 'first', 'second'
+   end
+
+   function subject()
+      defer
+         table.insert(order, 'defer')
+      end
+      return source()
+   end
+
+   local first, second = subject()
+   assert(first is 'first' and second is 'second', 'Deferred cleanup must preserve all returned call values')
+   assert(order[0] is 'call' and order[1] is 'defer', 'The returned call must execute before deferred cleanup')
+end
+
 @Test function ConditionalScopes()
    order = {}
 

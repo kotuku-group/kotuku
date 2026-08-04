@@ -667,6 +667,13 @@ static void gc_traverse_thread(global_State *g, lua_State* th)
    }
    if (th->pending_exception_message) gc_markobj(g, th->pending_exception_message);
    if (th->pending_exception_source) gc_markobj(g, th->pending_exception_source);
+   for (const auto &saved_frame : th->saved_multres) {
+      for (uint64_t bits : saved_frame.values) {
+         TValue value;
+         value.u64 = bits;
+         gc_marktv(g, &value);
+      }
+   }
    lj_state_shrinkstack(th, gc_traverse_frames(g, th));
 }
 

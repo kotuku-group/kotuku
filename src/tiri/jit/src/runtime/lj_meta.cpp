@@ -14,6 +14,7 @@
 #include "lj_str.h"
 #include "lj_tab.h"
 #include "lj_meta.h"
+#include "lj_state.h"
 #include "lj_frame.h"
 #include "lj_bc.h"
 #include "lj_vm.h"
@@ -33,24 +34,48 @@
 #include <string_view>
 
 //********************************************************************************************************************
-// Convert LuaJIT internal type tag to TiriType for runtime type inference.
-// Called by BC_TYPEFIX to fix a function's return type based on actual value.
+// Preserve an unknown number of returned values while user-visible cleanup handlers execute.  The ordinary Lua stack
+// above a cleanup call base belongs to its callee, so keeping only MULTRES or reserving caller registers is unsafe.
 
-static TiriType lj_tag_to_tiri_type(uint32_t tag)
+void lj_meta_multres_save(lua_State *L, TValue *Base, uint32_t Count)
 {
-   switch (tag) {
-      case LJ_TNIL:    return TiriType::Nil;
-      case LJ_TFALSE:
-      case LJ_TTRUE:   return TiriType::Bool;
-      case LJ_TSTR:    return TiriType::Str;
-      case LJ_TSTRUCT: return TiriType::Struct;
-      case LJ_TFUNC:   return TiriType::Func;
-      case LJ_TOBJECT: return TiriType::Object;
-      case LJ_TTAB:    return TiriType::Table;
-      case LJ_TLIGHTUD:
-      case LJ_TUDATA:  return TiriType::Userdata;
-      case LJ_TARRAY:  return TiriType::Array;
-      default:         return TiriType::Num;  // Numbers have itype < LJ_TISNUM
+   auto &saved_frame = L->saved_multres.emplace_back();
+   saved_frame.frame_base = L->base - tvref(L->stack);
+   saved_frame.values.resize(Count);
+   for (uint32_t i = 0; i < Count; ++i) saved_frame.values[i] = Base[i].u64;
+}
+
+//********************************************************************************************************************
+// Restore values after cleanup and return MULTRES (the result count plus one) to the VM.
+
+uint32_t lj_meta_multres_restore(lua_State *L, TValue *Base)
+{
+   lj_assertL(not L->saved_multres.empty(), "missing saved multi-result values");
+   auto &saved_frame = L->saved_multres.back();
+   lj_assertL(saved_frame.frame_base IS L->base - tvref(L->stack),
+      "saved multi-result values belong to another frame");
+   uint32_t count = uint32_t(saved_frame.values.size());
+   ptrdiff_t base_slot = Base - tvref(L->stack);
+   ptrdiff_t required_slots = base_slot + ptrdiff_t(count);
+   ptrdiff_t available_slots = tvref(L->maxstack) - tvref(L->stack);
+   if (required_slots > available_slots) {
+      lj_state_growstack(L, MSize(required_slots - available_slots));
+      Base = tvref(L->stack) + base_slot;
+   }
+   for (uint32_t i = 0; i < count; ++i) Base[i].u64 = saved_frame.values[i];
+   L->saved_multres.pop_back();
+   return count + 1;
+}
+
+//********************************************************************************************************************
+// Discard saves owned by frames abandoned during error unwinding. Saves below TargetBase belong to callers that may
+// still resume after a nested protected error.
+
+void lj_meta_multres_unwind(lua_State *L, TValue *TargetBase)
+{
+   ptrdiff_t target_base = TargetBase - tvref(L->stack);
+   while (not L->saved_multres.empty() and L->saved_multres.back().frame_base >= target_base) {
+      L->saved_multres.pop_back();
    }
 }
 
@@ -1264,50 +1289,5 @@ void lj_meta_for(lua_State *L, TValue *o)
          if (tvisint(o + 1)) setnumV(o + 1, (lua_Number)intV(o + 1));
          if (tvisint(o + 2)) setnumV(o + 2, (lua_Number)intV(o + 2));
       }
-   }
-}
-
-//********************************************************************************************************************
-// Helper for BC_TYPEFIX. Fix function return types based on actual returned values.
-// Called when a function without explicit return types returns values for the first time.
-//
-// Parameters:
-//   L     - Lua state
-//   base  - Base register containing first return value
-//   count - Number of return values to fix (1-8)
-
-void lj_meta_typefix(lua_State *L, TValue *base, uint32_t count)
-{
-   // Get the current function's prototype
-   GCfunc *fn = curr_func(L);
-   if (not isluafunc(fn)) return;  // C functions don't have prototypes
-
-   GCproto *pt = funcproto(fn);
-
-   auto signature = proto_signature(pt);
-   if (not signature or not (signature->flags & proto_signature_flag(ProtoSignatureFlag::DynamicResults))) return;
-   auto result_types = proto_result_types(pt);
-
-   // Process each return value position
-   for (uint32_t pos = 0; pos < count and pos < signature->result_entry_count; ++pos) {
-      // Only fix if type is currently Unknown
-      if (result_types[pos].type != TiriType::Unknown) continue;
-
-      // Get the value being returned
-      TValue *val = base + pos;
-
-      // Don't fix type for nil - nil is always allowed as a return value
-      if (tvisnil(val)) continue;
-
-      // Determine the type from the value
-
-      TiriType inferred;
-      if (tvisnumber(val)) inferred = TiriType::Num;
-      else inferred = lj_tag_to_tiri_type(itype(val));
-
-      // Fix the type in the state-owned prototype. Asynchronous workers use separate Tiri states and prototype graphs,
-      // so this metadata is not published for concurrent mutation.
-
-      result_types[pos].type = inferred;
    }
 }

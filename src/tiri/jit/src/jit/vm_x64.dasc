@@ -5017,24 +5017,6 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  jmp <1
     break;
 
-  //  -- Type fixing -------------------------------------------------------
-
-  case BC_TYPEFIX:
-    |  // BC_TYPEFIX: Fix function return types at runtime
-    |  // RA = base register index (rbase), RD = count of values to fix
-    |  ins_AD
-    |  // Call the helper; the canonical signature decides whether inference is active.
-    |  mov L:RB, SAVE_L
-    |  mov L:RB->base, BASE          // Save BASE before potential clobber
-    |  lea CARG2, [BASE+RA*8]        // Compute pointer to first return value
-    |  mov CARG3d, RDd               // count
-    |  mov L:CARG1, L:RB             // lua_State *L (note: CARG1 == RA on x64, so do this last)
-    |  mov SAVE_PC, PC
-    |  call extern lj_meta_typefix   // (lua_State *L, TValue *base, uint32_t count)
-    |  mov BASE, L:RB->base          // Restore BASE
-    |  ins_next
-    break;
-
   //  -- Loops and branches ------------------------------------------------
 
   |.define FOR_IDX,  [RA]
@@ -5531,15 +5513,29 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     break;
 
   case BC_MRSAVE:
-    |  mov RCd, MULTRES
-    |  setint RC
-    |  mov [BASE+RA*8], RC
+    |  ins_AD
+    |  mov L:RB, SAVE_L
+    |  mov L:RB->base, BASE
+    |  lea CARG2, [BASE+RA*8+8]
+    |  mov CARG3d, MULTRES
+    |  sub CARG3d, 1
+    |  mov L:CARG1, L:RB
+    |  mov SAVE_PC, PC
+    |  call extern lj_meta_multres_save
+    |  mov BASE, L:RB->base
     |  ins_next
     break;
 
   case BC_MRRESTORE:
-    |  mov RCd, [BASE+RA*8]
+    |  ins_AD
+    |  mov L:RB, SAVE_L
+    |  mov L:RB->base, BASE
+    |  lea CARG2, [BASE+RA*8+8]
+    |  mov L:CARG1, L:RB
+    |  mov SAVE_PC, PC
+    |  call extern lj_meta_multres_restore
     |  mov MULTRES, RCd
+    |  mov BASE, L:RB->base
     |  ins_next
     break;
 
