@@ -52,6 +52,7 @@ function rawProxyRequestOnPort(ProxyPort:num, Request:str, Timeout:num):str
          end
       end
    })
+   defer socket.free() end
 
    local proc = processing.new({ timeout = Timeout, signals = array<object> { socket } })
    check socket.mtConnect('127.0.0.1', ProxyPort, 3.0)
@@ -310,6 +311,7 @@ function connectTunnelRoundTripOnProxy(ProxyPort:num, Port:num, Payload:str, Coa
          end
       end
    })
+   defer socket.free() end
 
    local proc = processing.new({ timeout = 8.0, signals = array<object> { socket } })
    check socket.mtConnect('127.0.0.1', ProxyPort, 3.0)
@@ -622,9 +624,9 @@ end
          table.insert(errors, Error)
       end
    })
+   defer hook_proxy.stop() end
 
    local response = proxyRequestOnPort(HOOK_PROXY_PORT, 'GET', '/hello', '', '')
-   hook_proxy.stop()
 
    assert(responseStatus(response) is 200, 'Request should still succeed when onRequest raises')
    assert(#errors > 0, 'Callback failure should call onError')
@@ -671,12 +673,12 @@ end
          table.insert(errors, Error)
       end
    })
+   defer timeout_proxy.stop() end
 
    local request = 'GET http://127.0.0.1:' .. STALL_SERVER_PORT .. '/stall HTTP/1.1\r\n' ..
       'Host: 127.0.0.1:' .. STALL_SERVER_PORT .. '\r\n' ..
       'Connection: close\r\n\r\n'
    local response = rawProxyRequestOnPort(TIMEOUT_PROXY_PORT, request, 5.0)
-   timeout_proxy.stop()
 
    assert(responseStatus(response) is 504, 'Silent origin should return 504 after proxy timeout')
    assert(#errors > 0, 'Silent origin timeout should call onError')
@@ -719,6 +721,7 @@ function ConnectTunnelPassesSSLHandshake()
    })
 
    assert(ssl_server and ssl_server.error is ERR_Okay, 'Failed to create SSL tunnel server')
+   defer ssl_server.free() end
 
    local socket = obj.new('netsocket', {
       flags = 'DISABLE_SERVER_VERIFY',
@@ -768,12 +771,11 @@ function ConnectTunnelPassesSSLHandshake()
          end
       end
    })
+   defer socket.free() end
 
    local proc = processing.new({ timeout = 8.0, signals = array<object> { socket } })
    check socket.mtConnect('127.0.0.1', PROXY_PORT, 3.0)
    local err = proc.sleep()
-
-   ssl_server.free()
 
    assert(err is ERR_Okay, 'SSL CONNECT tunnel timed out or failed: ' .. mSys.GetErrorMsg(err))
    assert(ssl_server_done, 'SSL server should receive payload through CONNECT tunnel')
@@ -846,6 +848,7 @@ end
       maxFlows    = 2,
       verbose     = false
    })
+   defer limited_proxy.stop() end
 
    assert(limited_proxy.loadFlows(FLOW_IMPORT_FILE) is true, 'Limited proxy should import persisted flows')
    local flows:table = limited_proxy.getFlows()
@@ -857,8 +860,6 @@ end
 
    assert(flowCount(flows) is 2, 'Recording should keep maxFlows bounded')
    assert(flows[2] is nil and flows[3] != nil and flows[4] != nil, 'Recording should prune the oldest imported flow')
-
-   limited_proxy.stop()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
