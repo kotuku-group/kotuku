@@ -617,15 +617,11 @@ void lj_meta_istype(lua_State *L, BCREG ra, BCREG tp)
 
 //********************************************************************************************************************
 // Exact runtime type contracts.  The descriptor is an interned byte string, so it remains portable across bytecode
-// dump/write/read boundaries.  Version-3 descriptors use this layout, and version 4 adds the global-hint entry flag
-// for same-chunk bootstrap policy:
+// dump/write/read boundaries.  Descriptors use this layout:
 //
-//   version, boundary, descriptor_flags, static_value_count, contract_count,
-//   repeated { type, entry_flags, position, object_class_id_uleb32, array_element_type,
-//              array_struct_name_length, array_struct_name_bytes,
+//   boundary, descriptor_flags, static_value_count, contract_count,
+//   repeated { type, entry_flags, position, object_class_id_uleb32,
 //              struct_name_length, struct_name_bytes, label_length, label_bytes }
-//
-// The shared decoder also accepts legacy version-1 and version-2 descriptors, whose entries omit newer fields.
 
 namespace {
 
@@ -834,8 +830,9 @@ static void apply_cached_contract(lua_State *L, TValue *Base, uint32_t DynamicCo
          .type = cached.type,
          .flags = cached.flags,
          .position = cached.position,
-         .object_class_id = CLASSID(cached.object_class_id),
-         .struct_name = cached_contract_text(Descriptor, cached.struct_offset),
+         .object_class_id = cached.type IS TiriType::Object ? CLASSID(cached.object_class_id) : CLASSID::NIL,
+         .struct_name = cached.type IS TiriType::Struct ?
+            cached_contract_text(Descriptor, cached.struct_offset) : std::string_view{},
          .label = cached_contract_text(Descriptor, cached.label_offset)
       };
       if (entry.type IS TiriType::Any or entry.type IS TiriType::Unknown) continue;
@@ -877,7 +874,7 @@ void lj_contract_build_cache(lua_State *L, GCproto *Prototype)
       GCobj *constant = proto_kgc(Prototype, ~(ptrdiff_t)bc_d(instruction));
       if (constant->gch.gct != uint8_t(~LJ_TSTR)) continue;
       RuntimeContractDescriptor descriptor;
-      if (not decode_runtime_contract(gco_to_string(constant), descriptor) or descriptor.contract_count < 2 or
+      if (not decode_runtime_contract(gco_to_string(constant), descriptor) or not descriptor.contract_count or
           descriptor.boundary IS ContractBoundary::Global) {
          continue;
       }
@@ -909,7 +906,7 @@ void lj_contract_build_cache(lua_State *L, GCproto *Prototype)
       if (constant->gch.gct != uint8_t(~LJ_TSTR)) continue;
       GCstr *encoded = gco_to_string(constant);
       RuntimeContractDescriptor descriptor;
-      if (not decode_runtime_contract(encoded, descriptor) or descriptor.contract_count < 2 or
+      if (not decode_runtime_contract(encoded, descriptor) or not descriptor.contract_count or
           descriptor.boundary IS ContractBoundary::Global) {
          continue;
       }
@@ -924,14 +921,16 @@ void lj_contract_build_cache(lua_State *L, GCproto *Prototype)
       };
       for (uint8_t j = 0; j < descriptor.contract_count; ++j) {
          const RuntimeContractEntry &source = descriptor.entries[j];
-         entries[entry_index++] = CachedRuntimeContractEntry{
-            .object_class_id = uint32_t(source.object_class_id),
-            .struct_offset = cached_contract_text_offset(encoded, source.struct_name),
-            .label_offset = cached_contract_text_offset(encoded, source.label),
-            .type = source.type,
-            .flags = source.flags,
-            .position = source.position
-         };
+         CachedRuntimeContractEntry &target = entries[entry_index++];
+         if (source.type IS TiriType::Object) target.object_class_id = uint32_t(source.object_class_id);
+         else if (source.type IS TiriType::Struct) {
+            target.struct_offset = cached_contract_text_offset(encoded, source.struct_name);
+         }
+         else target.object_class_id = 0;
+         target.label_offset = cached_contract_text_offset(encoded, source.label);
+         target.type = source.type;
+         target.flags = source.flags;
+         target.position = source.position;
       }
    }
 

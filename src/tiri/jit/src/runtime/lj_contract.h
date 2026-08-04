@@ -10,10 +10,6 @@
 #include <cstring>
 #include <string_view>
 
-inline constexpr uint8_t TIRI_CONTRACT_VERSION = 3;
-inline constexpr uint8_t TIRI_CONTRACT_GLOBAL_HINT_VERSION = 4;
-inline constexpr uint8_t TIRI_CONTRACT_OBJECT_VERSION = 2;
-
 enum class ContractBoundary : uint8_t {
    Parameter = 1,
    Result,
@@ -81,18 +77,19 @@ struct RuntimeContractDescriptor {
    }
 };
 
-// Compact, prototype-owned derivative of grouped portable descriptors.  Text offsets address the first text byte in
-// the rooted GCstr descriptor; its preceding byte remains the canonical length.  Single-entry descriptors use the
-// portable decoder directly because caching them would add lifetime memory without amortising batching work.
+// Compact, prototype-owned derivative of portable descriptors.  Text offsets address the first text byte in the
+// rooted GCstr descriptor; its preceding byte remains the canonical length.  Both single-entry and grouped records
+// share this representation so hot contract checks never need to decode their portable descriptor.
 
 struct CachedRuntimeContractEntry {
-   uint32_t object_class_id;
-   uint16_t struct_offset;
+   union {
+      uint32_t object_class_id;
+      uint16_t struct_offset;
+   };
    uint16_t label_offset;
    TiriType type;
    uint8_t flags;
    uint8_t position;
-   AET array_element_type;
 };
 
 struct CachedRuntimeContractRecord {
@@ -109,6 +106,10 @@ struct RuntimeContractCache {
    uint16_t record_count;
    uint16_t entry_count;
 };
+
+static_assert(sizeof(CachedRuntimeContractEntry) IS 12, "cached runtime contract entries must remain compact");
+static_assert(sizeof(CachedRuntimeContractRecord) IS 12, "cached runtime contract records must remain compact");
+static_assert(sizeof(RuntimeContractCache) IS 8, "runtime contract cache header must remain compact");
 
 [[nodiscard]] inline CachedRuntimeContractRecord * runtime_contract_cache_records(
    RuntimeContractCache *Cache) noexcept
@@ -240,12 +241,8 @@ private:
    };
 
    RuntimeContractReader reader(Descriptor);
-   uint8_t version;
    uint8_t boundary;
-   if (not reader.read_byte(version) or
-       (version != TIRI_CONTRACT_OBJECT_VERSION and
-        version != TIRI_CONTRACT_VERSION and version != TIRI_CONTRACT_GLOBAL_HINT_VERSION) or
-       not reader.read_byte(boundary) or boundary < uint8_t(ContractBoundary::Parameter) or
+   if (not reader.read_byte(boundary) or boundary < uint8_t(ContractBoundary::Parameter) or
        boundary > uint8_t(ContractBoundary::Global) or not reader.read_byte(Result.flags) or
        (Result.flags & ~(contract_flag(ContractDescriptorFlag::DynamicCount) |
           contract_flag(ContractDescriptorFlag::Variadic))) != 0 or
@@ -254,26 +251,18 @@ private:
       return fail(RuntimeContractDecodeError::Descriptor);
    }
    Result.boundary = ContractBoundary(boundary);
-   bool has_global_hint = false;
-
    for (uint8_t i = 0; i < Result.contract_count; ++i) {
       auto &entry = Result.entries[i];
       uint8_t type;
       uint32_t object_class_id = 0;
       uint8_t allowed_entry_flags = contract_flag(ContractEntryFlag::Nullable) |
          contract_flag(ContractEntryFlag::Required) | contract_flag(ContractEntryFlag::Const) |
-         contract_flag(ContractEntryFlag::Initialising);
-      if (version IS TIRI_CONTRACT_GLOBAL_HINT_VERSION) {
-         allowed_entry_flags |= contract_flag(ContractEntryFlag::GlobalHint);
-      }
+         contract_flag(ContractEntryFlag::Initialising) | contract_flag(ContractEntryFlag::GlobalHint);
       if (not reader.read_byte(type) or type > uint8_t(TiriType::Unknown) or
           not reader.read_byte(entry.flags) or
           (entry.flags & ~allowed_entry_flags) != 0 or
           not reader.read_byte(entry.position) or entry.position IS 0 or
-          (version >= TIRI_CONTRACT_OBJECT_VERSION and not reader.read_uleb32(object_class_id)) or
-          //(version >= TIRI_CONTRACT_VERSION and
-          // (not reader.read_byte(array_element_type) or array_element_type > uint8_t(AET::MAX) or
-          //  not reader.read_text(entry.array_struct_name))) or
+          not reader.read_uleb32(object_class_id) or
           not reader.read_text(entry.struct_name) or not reader.read_text(entry.label)) {
          return fail(RuntimeContractDecodeError::Entry);
       }
@@ -282,7 +271,6 @@ private:
       bool is_const = contract_entry_is_const(entry);
       bool is_initialising = contract_entry_is_initialising(entry);
       bool is_global_hint = contract_entry_is_global_hint(entry);
-      if (is_global_hint) has_global_hint = true;
       if ((is_const and Result.boundary != ContractBoundary::Global) or
           (is_initialising and Result.boundary != ContractBoundary::Global) or
           (is_global_hint and
@@ -299,9 +287,6 @@ private:
       }
    }
 
-   if ((version IS TIRI_CONTRACT_GLOBAL_HINT_VERSION) != has_global_hint) {
-      return fail(RuntimeContractDecodeError::Descriptor);
-   }
    if (not reader.at_end()) return fail(RuntimeContractDecodeError::Descriptor);
    return true;
 }

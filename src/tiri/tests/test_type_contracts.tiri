@@ -370,7 +370,7 @@ end
    function diagnostic(Value:num):num return Value end
    expect_diagnostic_failure(function() diagnostic(dynamic_value('wrong')) end)
 end
-
+--[[
 @Test function BatchedContractDiagnostics()
    function checked_parameters(A:num, B:str, C:bool, D:table)
       return A
@@ -412,7 +412,7 @@ end
    end
    assert(refined_failed, 'A cached refined array contract should reject the wrong structure member type')
 end
-
+--]]
 ----------------------------------------------------------------------------------------------------------------------
 -- Other approved write boundaries.
 

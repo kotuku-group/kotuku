@@ -569,17 +569,8 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
       }
    }
 
-   bool has_global_hint = false;
-   for (const RuntimeContract &contract : Contracts) {
-      if (contract.global_hint) {
-         has_global_hint = true;
-         break;
-      }
-   }
-
    std::string descriptor;
-   descriptor.reserve(5 + Contracts.size() * 8);
-   descriptor.push_back(char(has_global_hint ? TIRI_CONTRACT_GLOBAL_HINT_VERSION : TIRI_CONTRACT_VERSION));
+   descriptor.reserve(4 + Contracts.size() * 8);
    descriptor.push_back(char(uint8_t(Contracts.front().boundary)));
 
    uint8_t descriptor_flags = 0;
