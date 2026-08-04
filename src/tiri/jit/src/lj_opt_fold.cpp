@@ -1077,6 +1077,19 @@ LJFOLDF(simplify_conv_int_num)
    return NEXTFOLD;
 }
 
+LJFOLD(CONV NEG IRCONV_INT_NUM)
+LJFOLDF(simplify_conv_neg_int)
+{
+   PHIBARRIER(fleft);
+   IRIns* converted = IR(fleft->op1);
+   if ((fins->op2 & IRCONV_CONVMASK) IS IRCONV_CHECK and converted->o IS IR_CONV and
+         (converted->op2 & (IRCONV_MODEMASK | IRCONV_CONVMASK)) IS IRCONV_NUM_INT) {
+      // Deliberately fold through a converted PHI to remove the repeated integer-to-number round trip.
+      return emitir(IRTGI(IR_SUBOV), lj_ir_kint(J, 0), converted->op1);
+   }
+   return NEXTFOLD;
+}
+
 LJFOLD(CONV CONV IRCONV_I64_NUM)  //  _INT or _U32
 LJFOLD(CONV CONV IRCONV_U64_NUM)  //  _INT or _U32
 LJFOLDF(simplify_conv_i64_num)
