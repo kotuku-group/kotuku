@@ -4,8 +4,10 @@ local glCfg
 local ir_ult <const> = 4  -- IRDEF order; unsigned less-than guard.
 local ir_abc <const> = 10  -- IRDEF order; array bounds check.
 local ir_loop <const> = 17  -- IRDEF order; loop body boundary.
+local ir_div <const> = 44  -- IRDEF order; floating-point division.
 local ir_min <const> = 50  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
 local ir_max <const> = 51  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
+local ir_fpmath <const> = 52  -- IRDEF order; floating-point rounding and related operations.
 local ir_xload <const> = 70  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
 local ir_xstore <const> = 78  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
 local ir_bufput <const> = 86
@@ -19,6 +21,29 @@ struct JITValidatedStructFields
    Flag: bool
    Signed: int8
    Unsigned: uint8
+end
+
+struct JITPhaseFiveScalarFields
+   Flag: bool
+   CharValue: char
+   ByteValue: byte
+   Signed8: int8
+   Unsigned8: uint8
+   Signed16: int16
+   Unsigned16: uint16
+   Signed: int
+   Unsigned: uint
+   Signed32: int32
+   Unsigned32: uint32
+   Signed64: int64
+   Unsigned64: uint64
+   Single: float
+   DoubleValue: double
+end
+
+struct JITPhaseFiveObjectFields
+   Owner: obj
+   Clock: obj<Time>
 end
 
 @BeforeAll
@@ -2160,11 +2185,13 @@ end
    local store_trace_found = false
    for trace_no in {1 into 30} do
       local info = jit.util.traceInfo(trace_no)
-      if info != nil and count_trace_opcode(trace_no, info, ir_xstore) >= 1 then
+      if info != nil and count_trace_opcode(trace_no, info, ir_xstore) >= 9 then
          store_trace_found = true
+         assert(count_trace_calls(trace_no, info) is 0,
+            'Expected stable legacy scalar struct writes to avoid the helper-call fallback')
       end
    end
-   assert(store_trace_found, "Expected validated double stores to retain a direct XSTORE path")
+   assert(store_trace_found, 'Expected every stable legacy scalar write to emit a direct XSTORE')
 
    -- Reuse the compiled access sites with a different definition whose fields have different offsets.
    for i in {1 into 20} do
@@ -2212,6 +2239,205 @@ end
       f"Expected guarded alternate struct read {result}, got {alternate_result}")
 end
 
+function traced_phase_five_scalar_write(Value:struct<JITPhaseFiveScalarFields>, Input:any, Count:num)
+   for i in {1 into Count} do
+      Value.Flag = true
+      Value.CharValue = Input
+      Value.ByteValue = Input
+      Value.Signed8 = Input
+      Value.Unsigned8 = Input
+      Value.Signed16 = Input
+      Value.Unsigned16 = Input
+      Value.Signed = Input
+      Value.Unsigned = Input
+      Value.Signed32 = Input
+      Value.Unsigned32 = Input
+      Value.Signed64 = Input
+      Value.Unsigned64 = Input
+      Value.Single = Input
+      Value.DoubleValue = Input
+   end
+end
+
+function traced_phase_five_scalar_read(Value:struct<JITPhaseFiveScalarFields>, Count:num):num
+   local total = 0
+   for i in {1 into Count} do
+      total = Value.CharValue + Value.ByteValue + Value.Signed8 + Value.Unsigned8 + Value.Signed16 +
+         Value.Unsigned16 + Value.Signed + Value.Unsigned + Value.Signed32 + Value.Unsigned32 + Value.Signed64 +
+         Value.Unsigned64 + Value.Single + Value.DoubleValue
+      if Value.Flag then total++ end
+   end
+   return total
+end
+
+function traced_phase_five_unsigned32_read(Value:struct<JITPhaseFiveScalarFields>, Count:num):num
+   local result = 0
+   for i in {1 into Count} do result = Value.Unsigned32 end
+   return result
+end
+
+function traced_phase_five_unsigned64_read(Value:struct<JITPhaseFiveScalarFields>, Count:num):num
+   local result = 0
+   for i in {1 into Count} do result = Value.Unsigned64 end
+   return result
+end
+
+function traced_phase_five_float_write(Value:struct<JITPhaseFiveScalarFields>, Input:any, Count:num)
+   for i in {1 into Count} do Value.Single = Input end
+end
+
+function traced_phase_five_bool_read(Value:struct<JITPhaseFiveScalarFields>, Count:num):bool
+   local result = false
+   for i in {1 into Count} do result = Value.Flag end
+   return result
+end
+
+function traced_phase_five_integer_write(Value:struct<JITPhaseFiveScalarFields>, Count:num)
+   for i in {1 into Count} do
+      Value.CharValue = i
+      Value.ByteValue = i
+      Value.Signed8 = i
+      Value.Unsigned8 = i
+      Value.Signed16 = i
+      Value.Unsigned16 = i
+      Value.Signed = i
+      Value.Unsigned = i
+      Value.Signed32 = i
+      Value.Unsigned32 = i
+      Value.Signed64 = i
+      Value.Unsigned64 = i
+   end
+end
+
+@Test(hotpath=50) function JITStructPhaseFiveScalarMatrix()
+   local value = struct<JITPhaseFiveScalarFields> { }
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   for i in {1 into 20} do traced_phase_five_scalar_write(value, 260.75, 10) end
+
+   assert(traced_phase_five_scalar_read(value, 10) is 2618.5,
+      'Declared scalar reads should preserve boolean, integer and floating categories')
+
+   local store_trace_found = false
+   local load_trace_found = false
+   for trace_no in {1 into 40} do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil and count_trace_opcode(trace_no, info, ir_xstore) >= 15 then
+         store_trace_found = true
+         assert(count_trace_calls(trace_no, info) is 0,
+            'The stable declared all-scalar write trace should not call the structure setter')
+      end
+      if info != nil and count_trace_opcode(trace_no, info, ir_xload) >= 15 then
+         load_trace_found = true
+         assert(count_trace_calls(trace_no, info) is 0,
+            'The stable declared all-scalar read trace should not call the structure getter')
+      end
+   end
+   assert(store_trace_found, 'Expected 15 direct stores in the declared all-scalar write trace')
+   assert(load_trace_found, 'Expected 15 direct loads in the declared all-scalar read trace')
+
+   value.Unsigned32 = 4294967295
+   value.Unsigned64 = 18446744073709549568
+   assert(traced_phase_five_unsigned32_read(value, 20) is 4294967295,
+      'A hot uint32 read should preserve values above the signed range')
+   assert(traced_phase_five_unsigned64_read(value, 20) is 18446744073709549568,
+      'A hot uint64 read should preserve representable values above the signed range')
+
+   traced_phase_five_scalar_write(value, nil, 10)
+   assert(value.Flag is true and traced_phase_five_scalar_read(value, 10) is 1,
+      'A nil-specialised trace should zero every numeric scalar without changing bool')
+   traced_phase_five_scalar_write(value, -129.75, 10)
+   assert(value.Signed8 is 127 and value.Unsigned8 is 127 and value.Signed16 is -129 and value.DoubleValue is -129.75,
+      'Numeric stores should recover after a nil side exit and retain truncation and wrapping')
+
+   traced_phase_five_scalar_write(value, 4294967297.75, 10)
+   assert(value.Signed8 is 1 and value.Unsigned16 is 1 and value.Signed32 is 1 and value.Unsigned32 is 1,
+      'Direct integer stores should wrap modulo their destination width')
+   traced_phase_five_scalar_write(value, 9223372036854775808, 10)
+   assert(value.Signed64 is -9223372036854775808,
+      'A direct int64 store should wrap values above the signed range')
+   traced_phase_five_scalar_write(value, 18446744073709551616, 10)
+   assert(value.Unsigned64 is 0, f'A direct uint64 store should wrap at 2^64, got {value.Unsigned64}')
+
+   value.Flag = false
+   assert(traced_phase_five_bool_read(value, 20) is false,
+      'A changing boolean read should side-exit and return false rather than a numeric value')
+   value.Flag = true
+   assert(traced_phase_five_bool_read(value, 20) is true,
+      'A boolean read should recover when the field changes back to true')
+
+   traced_phase_five_float_write(value, 2.5, 10)
+   try
+      traced_phase_five_float_write(value, 3.5e38, 10)
+   except error_value
+      assert(error_value.code is ERR_OutOfRange,
+         f'Expected a hot finite float overflow to raise ERR_OutOfRange, got {error_value.code}')
+   success
+      error('A hot finite float overflow should fail')
+   end
+   assert(value.Single is 2.5, 'A rejected hot float overflow should preserve the field')
+   traced_phase_five_float_write(value, math.huge, 10)
+   assert(value.Single is math.huge, 'The float helper side trace should continue to accept infinity')
+   traced_phase_five_float_write(value, 0 / 0, 10)
+   assert(value.Single != value.Single, 'The float helper side trace should continue to accept NaN')
+end
+
+@Test(hotpath=50) function JITStructPhaseFiveIntegerStoreFastPath()
+   local value = struct<JITPhaseFiveScalarFields> { }
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   for i in {1 into 20} do traced_phase_five_integer_write(value, 20) end
+
+   assert(value.Signed8 is 20 and value.Unsigned16 is 20 and value.Signed64 is 20,
+      'Integer-specialised scalar stores should preserve values across destination widths')
+
+   local store_trace_found = false
+   for trace_no in {1 into 40} do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil and count_trace_opcode(trace_no, info, ir_xstore) >= 12 then
+         store_trace_found = true
+         local div_count = count_trace_opcode(trace_no, info, ir_div)
+         local fpmath_count = count_trace_opcode(trace_no, info, ir_fpmath)
+         assert(div_count is 0 and fpmath_count is 0,
+            f'Integer-specialised scalar stores should not use floating-point modulo normalisation ' ..
+            f'(DIV={div_count}, FPMATH={fpmath_count})')
+         assert(count_trace_calls(trace_no, info) is 0,
+            'Integer-specialised scalar stores should not call the structure setter')
+      end
+   end
+   assert(store_trace_found, 'Expected 12 direct stores in the integer-specialised scalar write trace')
+end
+
+function traced_phase_five_object_write(Value:struct<JITPhaseFiveObjectFields>, Input:any, Count:num)
+   for i in {1 into Count} do
+      Value.Owner = Input
+      Value.Clock = Input
+   end
+end
+
+@Test(hotpath=50) function JITStructPhaseFiveObjectClearing()
+   local holder = struct<JITPhaseFiveObjectFields> { }
+   local clock = obj.new('time', { })
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   for i in {1 into 20} do traced_phase_five_object_write(holder, clock, 10) end
+   assert(holder.Owner != nil and holder.Clock != nil,
+      'Hot helper-backed object assignments should retain unconstrained and constrained references')
+
+   traced_phase_five_object_write(holder, nil, 10)
+   assert(holder.Owner is nil and holder.Clock is nil,
+      'A helper side trace should clear unconstrained and constrained object pointers with nil')
+   traced_phase_five_object_write(holder, clock, 10)
+   assert(holder.Owner != nil and holder.Clock != nil,
+      'Object helper stores should recover after nil clearing')
+end
+
 function traced_validated_signed_write(Value:struct, Input:any, Count:num)
    for i in {1 into Count} do
       Value.Signed = Input
@@ -2253,6 +2479,18 @@ end
       error('A numeric bool store should fail')
    end
    assert(value.Flag is true, 'A rejected specialised bool store should preserve the boolean field')
+
+   value.Signed = 27
+   traced_validated_signed_write(value, 27, 10)
+   try
+      traced_validated_signed_write(value, 0 / 0, 10)
+   except error_value
+      assert(error_value.code is ERR_OutOfRange,
+         f'Expected a hot NaN integer store to raise ERR_OutOfRange, got {error_value.code}')
+   success
+      error('A hot NaN int8 store should fail')
+   end
+   assert(value.Signed is 27, 'A rejected hot NaN store should preserve the signed field')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
