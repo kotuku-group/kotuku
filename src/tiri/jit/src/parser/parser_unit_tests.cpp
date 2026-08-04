@@ -4597,8 +4597,49 @@ static bool test_type_guided_emission(kt::Log &Log)
       "return update\n";
    snapshot = compile_snapshot(L, retained_arithmetic_contract, true, error);
    if (not snapshot or snapshot->children.empty() or
-       count_opcode(snapshot->children.front(), BC_CONTRACT) != 1) {
-      Log.error("dynamic compound arithmetic did not retain exactly its sticky-store contract: %s", error.c_str());
+       count_opcode(snapshot->children.front(), BC_CONTRACT) != 2) {
+      Log.error("dynamic compound arithmetic did not retain its sticky-store and result contracts: %s",
+         error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view variant_mutation_contracts =
+      "local function compound(Operand:any):num\n"
+      "   local source:any = 1\n"
+      "   source += Operand\n"
+      "   local target = 0\n"
+      "   target = source\n"
+      "   return target\n"
+      "end\n"
+      "local function if_empty():num\n"
+      "   local source:any = 0\n"
+      "   source ?" "?= 'wrong'\n"
+      "   local target = 0\n"
+      "   target = source\n"
+      "   return target\n"
+      "end\n"
+      "local function if_nil():num\n"
+      "   local source:any = nil\n"
+      "   source ?= 'wrong'\n"
+      "   local target = 0\n"
+      "   target = source\n"
+      "   return target\n"
+      "end\n"
+      "local function unchanged():num\n"
+      "   local source:any = 1\n"
+      "   local target = 0\n"
+      "   target = source\n"
+      "   return target\n"
+      "end\n"
+      "return compound, if_empty, if_nil, unchanged\n";
+   snapshot = compile_snapshot(L, variant_mutation_contracts, true, error);
+   if (not snapshot or snapshot->children.size() != 4 or
+       count_opcode(snapshot->children[0], BC_CONTRACT) != 2 or
+       count_opcode(snapshot->children[1], BC_CONTRACT) != 2 or
+       count_opcode(snapshot->children[2], BC_CONTRACT) != 2 or
+       count_opcode(snapshot->children[3], BC_CONTRACT) != 0) {
+      Log.error("variant mutation descriptors did not retain only the required store and result contracts: %s",
+         error.c_str());
       return false;
    }
 

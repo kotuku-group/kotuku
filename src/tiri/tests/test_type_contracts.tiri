@@ -630,6 +630,30 @@ end
    assert(value is 1, 'A rejected overloaded compound result must preserve the sticky local')
 end
 
+@Test function VariantMutationInvalidatesStaticProof()
+   local overloaded:any = setmetatable({}, {
+      __add = function(Left, Right):str return 'wrong' end
+   })
+
+   local compound_source:any = 1
+   compound_source += overloaded
+   local compound_target = 0
+   expect_contract_failure(function() compound_target = compound_source end, 'variant compound result')
+   assert(compound_target is 0, 'A rejected variant compound result must preserve the sticky destination')
+
+   local empty_source:any = 0
+   empty_source ??= 'wrong'
+   local empty_target = 0
+   expect_contract_failure(function() empty_target = empty_source end, 'variant if-empty result')
+   assert(empty_target is 0, 'A rejected variant if-empty result must preserve the sticky destination')
+
+   local nil_source:any = nil
+   nil_source ?= 'wrong'
+   local nil_target = 0
+   expect_contract_failure(function() nil_target = nil_source end, 'variant if-nil result')
+   assert(nil_target is 0, 'A rejected variant if-nil result must preserve the sticky destination')
+end
+
 @Test function ObjectClassLocalAndUpvalueContracts()
    local value = obj.new('time')
    value = dynamic_value(obj.new('time'))
