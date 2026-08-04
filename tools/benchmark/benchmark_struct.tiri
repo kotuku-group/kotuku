@@ -40,7 +40,7 @@ glBenchmarkStruct = struct<BenchmarkStruct> {
 
 glBenchmarkNarrowStruct = struct<BenchmarkNarrowStruct> {
    word         = -123,
-   byte         = 250,
+   byte         = 120,
    unsignedWord = 321,
    unsignedByte = 200
 }
@@ -84,10 +84,10 @@ end
 
 @Test function NarrowStructWriteFields()
    for i in {0 to 1000000} do
-      glBenchmarkNarrowStruct.word         = -i
-      glBenchmarkNarrowStruct.byte         = i
-      glBenchmarkNarrowStruct.unsignedWord = i
-      glBenchmarkNarrowStruct.unsignedByte = i
+      glBenchmarkNarrowStruct.word         = -(i & 0x7fffffff)
+      glBenchmarkNarrowStruct.byte         = i & 0x7f
+      glBenchmarkNarrowStruct.unsignedWord = i & 0xffffffff
+      glBenchmarkNarrowStruct.unsignedByte = i & 0xff
    end
    return glBenchmarkNarrowStruct.word + glBenchmarkNarrowStruct.byte +
       glBenchmarkNarrowStruct.unsignedWord + glBenchmarkNarrowStruct.unsignedByte

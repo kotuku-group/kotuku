@@ -2330,7 +2330,7 @@ function traced_phase_five_integer_write(Value:struct<JITPhaseFiveScalarFields>,
 end
 
 function traced_integer_range_struct_write(Value:struct<JITRangeTraceFields>)
-   for i in {0 to 10000} do
+   for i in {0 to 100} do
       Value.Word = -i
       Value.ByteValue = i
       Value.UnsignedWord = i
@@ -2356,8 +2356,8 @@ end
    jit.attach(trace_event)
    local trace_count = count_jit_traces(20)
 
-   assert(value.Word is -9999 and value.ByteValue is 15 and value.UnsignedWord is 9999 and
-      value.UnsignedByte is 15, 'Repeated integer range stores should preserve signed and wrapped field values')
+   assert(value.Word is -99 and value.ByteValue is 99 and value.UnsignedWord is 99 and
+      value.UnsignedByte is 99, 'Repeated integer range stores should preserve in-range field values')
 
    local matching_traces = 0
    for trace_no in {1 into 20} do
@@ -2366,9 +2366,9 @@ end
             count_trace_opcode(trace_no, info, ir_xstore) >= 8 then
          matching_traces++
          local repeated_conversions = count_trace_opcode_after(trace_no, info, ir_conv, ir_loop)
-         assert(repeated_conversions is 0,
-            f'Integer range trace {trace_no} should not convert induction-derived values after IR_LOOP, ' ..
-            f'observed {repeated_conversions} conversions')
+         assert(repeated_conversions <= 2,
+            f'Integer range trace {trace_no} should retain only required wide conversions after IR_LOOP, ' ..
+            f'observed {repeated_conversions}')
          assert(count_trace_calls(trace_no, info) is 0,
             f'Integer range trace {trace_no} should retain direct structure stores')
          local machine_code = jit.util.traceMC(trace_no)
@@ -2390,9 +2390,9 @@ end
    jit.on()
    jit.flush()
    jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
-   for i in {1 into 20} do traced_phase_five_scalar_write(value, 260.75, 10) end
+   for i in {1 into 20} do traced_phase_five_scalar_write(value, 12.75, 10) end
 
-   assert(traced_phase_five_scalar_read(value, 10) is 2618.5,
+   assert(traced_phase_five_scalar_read(value, 10) is 170.5,
       'Declared scalar reads should preserve boolean, integer and floating categories')
 
    local store_trace_found = false
@@ -2423,18 +2423,9 @@ end
    traced_phase_five_scalar_write(value, nil, 10)
    assert(value.Flag is true and traced_phase_five_scalar_read(value, 10) is 1,
       'A nil-specialised trace should zero every numeric scalar without changing bool')
-   traced_phase_five_scalar_write(value, -129.75, 10)
-   assert(value.Signed8 is 127 and value.Unsigned8 is 127 and value.Signed16 is -129 and value.DoubleValue is -129.75,
-      'Numeric stores should recover after a nil side exit and retain truncation and wrapping')
-
-   traced_phase_five_scalar_write(value, 4294967297.75, 10)
-   assert(value.Signed8 is 1 and value.Unsigned16 is 1 and value.Signed32 is 1 and value.Unsigned32 is 1,
-      'Direct integer stores should wrap modulo their destination width')
-   traced_phase_five_scalar_write(value, 9223372036854775808, 10)
-   assert(value.Signed64 is -9223372036854775808,
-      'A direct int64 store should wrap values above the signed range')
-   traced_phase_five_scalar_write(value, 18446744073709551616, 10)
-   assert(value.Unsigned64 is 0, f'A direct uint64 store should wrap at 2^64, got {value.Unsigned64}')
+   traced_phase_five_scalar_write(value, 27.75, 10)
+   assert(value.Signed8 is 27 and value.Unsigned8 is 27 and value.Signed16 is 27 and value.DoubleValue is 27.75,
+      'Numeric stores should recover after a nil side exit and truncate in-range integer values')
 
    value.Flag = false
    assert(traced_phase_five_bool_read(value, 20) is false,
@@ -2529,8 +2520,27 @@ end
       traced_validated_signed_write(value, 12, 10)
    end
 
-   traced_validated_signed_write(value, 140.75, 10)
-   assert(value.Signed is -116, 'A hot finite int8 store should truncate and wrap')
+   traced_validated_signed_write(value, 127.75, 10)
+   assert(value.Signed is 127, 'A hot finite int8 store should truncate an in-range value')
+
+   try
+      traced_validated_signed_write(value, 128, 10)
+   except error_value
+      assert(error_value.code is ERR_OutOfRange,
+         f"Expected a hot int8 overflow to raise ERR_OutOfRange, got {error_value.code}")
+   success
+      error('A hot int8 overflow should fail')
+   end
+   assert(value.Signed is 127, 'A rejected hot overflow should preserve the signed field')
+
+   try
+      traced_validated_signed_write(value, 1e100, 10)
+   except error_value
+      assert(error_value.code is ERR_OutOfRange,
+         f"Expected a huge hot int8 store to raise ERR_OutOfRange, got {error_value.code}")
+   success
+      error('A huge hot int8 store should fail')
+   end
 
    try
       traced_validated_signed_write(value, math.huge, 10)
@@ -2540,10 +2550,18 @@ end
    success
       error('A hot non-finite int8 store should fail')
    end
-   assert(value.Signed is -116, 'A rejected hot non-finite store should preserve the signed field')
+   assert(value.Signed is 127, 'A rejected hot non-finite store should preserve the signed field')
 
-   value.Unsigned = 300
-   assert(value.Unsigned is 44, 'A specialised finite uint8 store should wrap')
+   try
+      value.Unsigned = 300
+   except error_value
+      assert(error_value.code is ERR_OutOfRange,
+         f"Expected a uint8 overflow to raise ERR_OutOfRange, got {error_value.code}")
+   success
+      error('A uint8 overflow should fail')
+   end
+   value.Unsigned = 300 & 0xff
+   assert(value.Unsigned is 44, 'A client should be able to wrap explicitly before a uint8 store')
 
    try
       value.Flag = 2

@@ -3443,38 +3443,39 @@ static TRef rec_struct_number_ref(jit_State *J, TRef ValueRef)
    return ValueRef;
 }
 
-// Normalise a finite number to the low Bits of its truncated integer representation.  All guards precede the
-// conversion so an exceptional value exits before the caller can emit a store.
-static TRef rec_struct_integer_bits(jit_State *J, TRef ValueRef, double RecordedValue, int Bits)
+static bool rec_struct_integer_signed(NativeStructType Type)
 {
-   TRef number_ref = rec_struct_number_ref(J, ValueRef);
-   if (Bits <= 32 and RecordedValue >= double(INT32_MIN) and RecordedValue <= double(INT32_MAX) and
-         std::trunc(RecordedValue) IS RecordedValue) {
-      return emitir(IRTGI(IR_CONV), number_ref, IRCONV_INT_NUM | IRCONV_CHECK);
+   switch (Type) {
+      case NativeStructType::Char:
+      case NativeStructType::Int8:
+      case NativeStructType::Int16:
+      case NativeStructType::Int32:
+      case NativeStructType::Int64:
+         return true;
+      default:
+         return false;
    }
+}
 
-   TRef maximum_ref = lj_ir_knum(J, DBL_MAX);
-   emitir(IRTG(IR_GE, IRT_NUM), number_ref, lj_ir_knum(J, -DBL_MAX));
-   emitir(IRTG(IR_LE, IRT_NUM), number_ref, maximum_ref);
+static bool rec_struct_integer_fits_int32(double Value, NativeStructType Type, int Bits)
+{
+   const bool signed_type = rec_struct_integer_signed(Type);
+   const double lower_bound = signed_type ? -std::ldexp(1.0, Bits - 1) : 0.0;
+   const double upper_bound = std::ldexp(1.0, signed_type ? Bits - 1 : Bits);
+   const double truncated_value = std::trunc(Value);
+   return truncated_value >= lower_bound and truncated_value < upper_bound and truncated_value >= double(INT32_MIN) and
+      truncated_value <= double(INT32_MAX);
+}
 
-   TRef truncated_ref = emitir(IRTN(IR_FPMATH), number_ref, IRFPM_TRUNC);
-   if (Bits <= 32) return lj_opt_narrow_tobit(J, truncated_ref);
-
-   TRef modulus_ref = lj_ir_knum(J, std::ldexp(1.0, Bits));
-   TRef quotient_ref = emitir(IRTN(IR_DIV), truncated_ref, modulus_ref);
-   quotient_ref = emitir(IRTN(IR_FPMATH), quotient_ref, IRFPM_FLOOR);
-   TRef multiple_ref = emitir(IRTN(IR_MUL), quotient_ref, modulus_ref);
-   TRef reduced_ref = emitir(IRTN(IR_SUB), truncated_ref, multiple_ref);
-
-   const double half = std::ldexp(1.0, 63);
-   double recorded_bits = std::fmod(std::trunc(RecordedValue), std::ldexp(1.0, 64));
-   if (recorded_bits < 0) recorded_bits += std::ldexp(1.0, 64);
-   if (recorded_bits >= half) {
-      emitir(IRTG(IR_GE, IRT_NUM), reduced_ref, lj_ir_knum(J, half));
-      reduced_ref = emitir(IRTN(IR_SUB), reduced_ref, modulus_ref);
-   }
-   else emitir(IRTG(IR_LT, IRT_NUM), reduced_ref, lj_ir_knum(J, half));
-   return emitir(IRT(IR_CONV, IRT_I64), reduced_ref, (IRT_I64 << IRCONV_DSH) | IRT_NUM | IRCONV_ANY);
+static TRef rec_struct_checked_integer(jit_State *J, TRef ValueRef, NativeStructType Type, int Bits)
+{
+   TRef truncated_ref = emitir(IRTN(IR_FPMATH), rec_struct_number_ref(J, ValueRef), IRFPM_TRUNC);
+   const bool signed_type = rec_struct_integer_signed(Type);
+   const double lower_bound = signed_type ? -std::ldexp(1.0, Bits - 1) : 0.0;
+   const double upper_bound = std::ldexp(1.0, signed_type ? Bits - 1 : Bits);
+   emitir(IRTG(IR_GE, IRT_NUM), truncated_ref, lj_ir_knum(J, lower_bound));
+   emitir(IRTG(IR_LT, IRT_NUM), truncated_ref, lj_ir_knum(J, upper_bound));
+   return emitir(IRTGI(IR_CONV), truncated_ref, IRCONV_INT_NUM | IRCONV_CHECK);
 }
 
 static int rec_struct_integer_width(NativeStructType Type)
@@ -3625,6 +3626,15 @@ static void rec_struct_set(jit_State *J, RecordOps *ops)
       }
       if (integer_width and tref_isint(val_ref)) {
          TRef store_ref = val_ref;
+         const double recorded_value = rec_struct_recorded_number(ops->rav());
+         if (not rec_struct_integer_fits_int32(recorded_value, scalar_type, integer_width)) {
+            lj_trace_err(J, LJ_TRERR_BADTYPE);
+         }
+         const bool signed_type = rec_struct_integer_signed(scalar_type);
+         const double lower_bound = signed_type ? -std::ldexp(1.0, integer_width - 1) : 0.0;
+         const double upper_bound = std::ldexp(1.0, signed_type ? integer_width - 1 : integer_width);
+         if (lower_bound > double(INT32_MIN)) emitir(IRTGI(IR_GE), store_ref, lj_ir_kint(J, int(lower_bound)));
+         if (upper_bound <= double(INT32_MAX)) emitir(IRTGI(IR_LT), store_ref, lj_ir_kint(J, int(upper_bound)));
          if (integer_width IS 64) {
             store_ref = emitir(IRT(IR_CONV, IRT_I64), val_ref,
                (IRT_I64 << IRCONV_DSH) | IRT_INT | IRCONV_SEXT);
@@ -3632,8 +3642,13 @@ static void rec_struct_set(jit_State *J, RecordOps *ops)
          emitir(IRT(IR_XSTORE, rec_struct_integer_store_type(integer_width)), addr_ref, store_ref);
          return;
       }
-      if (integer_width and tref_isnumber(val_ref) and std::isfinite(rec_struct_recorded_number(ops->rav()))) {
-         TRef store_ref = rec_struct_integer_bits(J, val_ref, rec_struct_recorded_number(ops->rav()), integer_width);
+      if (integer_width and tref_isnumber(val_ref) and
+            rec_struct_integer_fits_int32(rec_struct_recorded_number(ops->rav()), scalar_type, integer_width)) {
+         TRef store_ref = rec_struct_checked_integer(J, val_ref, scalar_type, integer_width);
+         if (integer_width IS 64) {
+            store_ref = emitir(IRT(IR_CONV, IRT_I64), store_ref,
+               (IRT_I64 << IRCONV_DSH) | IRT_INT | IRCONV_SEXT);
+         }
          emitir(IRT(IR_XSTORE, rec_struct_integer_store_type(integer_width)), addr_ref, store_ref);
          return;
       }

@@ -71,24 +71,17 @@ static double finite_integer_value(lua_State *L, int StackIndex, CSTRING FieldNa
    return std::trunc(value);
 }
 
-template <typename T> static void write_signed_field(lua_State *L, APTR Address, int StackIndex, int ElementIndex,
-   CSTRING FieldName, NativeStructType Type, int Bits, bool CurrentFrame)
+template <typename T> static void write_integer_field(lua_State *L, APTR Address, int StackIndex, int ElementIndex,
+   CSTRING FieldName, NativeStructType Type, int Bits, bool Signed, bool CurrentFrame)
 {
-   const double modulus = std::ldexp(1.0, Bits);
-   const double half = std::ldexp(1.0, Bits - 1);
-   double value = std::fmod(finite_integer_value(L, StackIndex, FieldName, Type, CurrentFrame), modulus);
-   if (value >= half) value -= modulus;
-   else if (value < -half) value += modulus;
+   const double value = finite_integer_value(L, StackIndex, FieldName, Type, CurrentFrame);
+   const double lower_bound = Signed ? -std::ldexp(1.0, Bits - 1) : 0.0;
+   const double upper_bound = std::ldexp(1.0, Signed ? Bits - 1 : Bits);
+   if (value < lower_bound or value >= upper_bound) {
+      struct_field_error(L, CurrentFrame, ERR::OutOfRange, "Field '%s' value is out of range for %s.", FieldName,
+         scalar_type_name(Type));
+   }
    ((T *)Address)[ElementIndex] = T(value);
-}
-
-template <typename T> static void write_unsigned_field(lua_State *L, APTR Address, int StackIndex, int ElementIndex,
-   CSTRING FieldName, NativeStructType Type, int Bits, bool CurrentFrame)
-{
-   const double modulus = std::ldexp(1.0, Bits);
-   const double value = std::fmod(finite_integer_value(L, StackIndex, FieldName, Type, CurrentFrame), modulus);
-   if (value < 0) ((T *)Address)[ElementIndex] = T(uint64_t(0) - uint64_t(-value));
-   else ((T *)Address)[ElementIndex] = T(value);
 }
 
 static bool write_primitive_field(lua_State *L, APTR Address, const struct_field &Field, int StackIndex,
@@ -104,28 +97,28 @@ static bool write_primitive_field(lua_State *L, APTR Address, const struct_field
          return true;
       case NativeStructType::Char:
       case NativeStructType::Int8:
-         write_signed_field<int8_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 8, CurrentFrame);
+         write_integer_field<int8_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 8, true, CurrentFrame);
          return true;
       case NativeStructType::UInt8:
-         write_unsigned_field<uint8_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 8, CurrentFrame);
+         write_integer_field<uint8_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 8, false, CurrentFrame);
          return true;
       case NativeStructType::Int16:
-         write_signed_field<int16_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 16, CurrentFrame);
+         write_integer_field<int16_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 16, true, CurrentFrame);
          return true;
       case NativeStructType::UInt16:
-         write_unsigned_field<uint16_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 16, CurrentFrame);
+         write_integer_field<uint16_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 16, false, CurrentFrame);
          return true;
       case NativeStructType::Int32:
-         write_signed_field<int32_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 32, CurrentFrame);
+         write_integer_field<int32_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 32, true, CurrentFrame);
          return true;
       case NativeStructType::UInt32:
-         write_unsigned_field<uint32_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 32, CurrentFrame);
+         write_integer_field<uint32_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 32, false, CurrentFrame);
          return true;
       case NativeStructType::Int64:
-         write_signed_field<int64_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 64, CurrentFrame);
+         write_integer_field<int64_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 64, true, CurrentFrame);
          return true;
       case NativeStructType::UInt64:
-         write_unsigned_field<uint64_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 64, CurrentFrame);
+         write_integer_field<uint64_t>(L, Address, StackIndex, ElementIndex, FieldName, type, 64, false, CurrentFrame);
          return true;
       case NativeStructType::Float:
       case NativeStructType::Double: {
