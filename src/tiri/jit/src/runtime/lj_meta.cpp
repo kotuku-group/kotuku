@@ -1064,33 +1064,55 @@ extern "C" void lj_meta_contract_pc(lua_State *L, const BCIns *PC, uint32_t Dyna
 static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value,
    GCstr *DeclarationOverride)
 {
-   TValue checked;
-   copyTV(L, &checked, Value);
-
    if ((Name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) {
       CSTRING message = lj_strfmt_pushf(L, "cannot override built-in '%s'", strdata(Name));
       lj_err_callermsg(L, message);
    }
 
-   GCstr *persisted = DeclarationOverride ? DeclarationOverride : lj_tab_get_global_contract(Environment, Name);
-   if (persisted) {
-      RuntimeContractDescriptor descriptor;
+   RuntimeContractEntry cached_entry;
+   RuntimeContractDescriptor descriptor;
+   const RuntimeContractEntry *entry = nullptr;
+   if (DeclarationOverride) {
+      decode_contract_or_error(L, DeclarationOverride, descriptor);
+      if (descriptor.contract_count >= 1) entry = &descriptor.entries[0];
+   }
+   else if (const CachedGlobalContractRecord *cached =
+         lj_tab_get_cached_global_contract(Environment, Name)) {
+      lj_assertX(lj_tab_get_global_contract(Environment, Name) IS cached->descriptor,
+         "decoded global contract cache does not match persisted policy");
+      cached_entry = RuntimeContractEntry{
+         .type = cached->entry.type,
+         .flags = cached->entry.flags,
+         .position = cached->entry.position,
+         .object_class_id = cached->entry.type IS TiriType::Object ?
+            CLASSID(cached->entry.object_class_id) : CLASSID::NIL,
+         .struct_name = cached->entry.type IS TiriType::Struct ?
+            cached_contract_text(cached->descriptor, cached->entry.struct_offset) : std::string_view{},
+         .label = cached_contract_text(cached->descriptor, cached->entry.label_offset)
+      };
+      entry = &cached_entry;
+   }
+   else if (GCstr *persisted = lj_tab_get_global_contract(Environment, Name)) {
       decode_contract_or_error(L, persisted, descriptor);
-      if (descriptor.contract_count >= 1) {
-         const RuntimeContractEntry &entry = descriptor.entries[0];
-         if (contract_entry_is_const(entry) and not contract_entry_is_initialising(entry)) {
-            const_global_error(L, Name);
+      if (descriptor.contract_count >= 1) entry = &descriptor.entries[0];
+   }
+
+   if (entry) {
+      if (contract_entry_is_const(*entry) and not contract_entry_is_initialising(*entry)) {
+         const_global_error(L, Name);
+      }
+      if (entry->type != TiriType::Any and entry->type != TiriType::Unknown) {
+         cTValue *checked = Value;
+         TValue resolved_value;
+         if (lj_is_thunk(Value)) {
+            // Validate the resolved value, but store the original thunk to preserve lazy evaluation on read.
+            VMHelperGuard guard(L);
+            cTValue *resolved = lj_thunk_resolve(L, udataV(Value));
+            copyTV(L, &resolved_value, resolved);
+            checked = &resolved_value;
          }
-         if (entry.type != TiriType::Any and entry.type != TiriType::Unknown) {
-            if (lj_is_thunk(&checked)) {
-               // Validate the resolved value, but store the original thunk to preserve lazy evaluation on read.
-               VMHelperGuard guard(L);
-               cTValue *resolved = lj_thunk_resolve(L, udataV(&checked));
-               copyTV(L, &checked, resolved);
-            }
-            if (not contract_matches(L, &checked, entry)) {
-               contract_error(L, &checked, ContractBoundary::Global, entry, entry.position);
-            }
+         if (not contract_matches(L, checked, *entry)) {
+            contract_error(L, checked, ContractBoundary::Global, *entry, entry->position);
          }
       }
    }

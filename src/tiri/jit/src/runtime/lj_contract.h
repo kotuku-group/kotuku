@@ -107,9 +107,27 @@ struct RuntimeContractCache {
    uint16_t entry_count;
 };
 
+// Environment-owned derivative of a persisted global contract.  Name and descriptor are raw pointers because the
+// authoritative contracts table roots both strings for at least as long as this cache.  Empty slots have a null name.
+
+struct CachedGlobalContractRecord {
+   const GCstr *name;
+   GCstr *descriptor;
+   CachedRuntimeContractEntry entry;
+};
+
+struct GlobalContractCache {
+   uint32_t byte_size;
+   uint32_t count;
+   uint32_t capacity;
+   uint32_t reserved;
+};
+
 static_assert(sizeof(CachedRuntimeContractEntry) IS 12, "cached runtime contract entries must remain compact");
 static_assert(sizeof(CachedRuntimeContractRecord) IS 12, "cached runtime contract records must remain compact");
 static_assert(sizeof(RuntimeContractCache) IS 8, "runtime contract cache header must remain compact");
+static_assert(sizeof(CachedGlobalContractRecord) IS 32, "cached global contract records must remain compact");
+static_assert(sizeof(GlobalContractCache) IS 16, "global contract cache header must remain compact");
 
 [[nodiscard]] inline CachedRuntimeContractRecord * runtime_contract_cache_records(
    RuntimeContractCache *Cache) noexcept
@@ -142,6 +160,28 @@ static_assert(sizeof(RuntimeContractCache) IS 8, "runtime contract cache header 
 [[nodiscard]] inline const RuntimeContractCache * proto_contract_cache(const GCproto *Proto) noexcept
 {
    return Proto->contract_cache.get<const RuntimeContractCache>();
+}
+
+[[nodiscard]] inline CachedGlobalContractRecord * global_contract_cache_records(
+   GlobalContractCache *Cache) noexcept
+{
+   return (CachedGlobalContractRecord *)(Cache + 1);
+}
+
+[[nodiscard]] inline const CachedGlobalContractRecord * global_contract_cache_records(
+   const GlobalContractCache *Cache) noexcept
+{
+   return (const CachedGlobalContractRecord *)(Cache + 1);
+}
+
+[[nodiscard]] inline GlobalContractCache * table_global_contract_cache(GCtab *Table) noexcept
+{
+   return Table->global_contract_cache.get<GlobalContractCache>();
+}
+
+[[nodiscard]] inline const GlobalContractCache * table_global_contract_cache(const GCtab *Table) noexcept
+{
+   return Table->global_contract_cache.get<const GlobalContractCache>();
 }
 
 [[nodiscard]] constexpr inline bool contract_entry_is_const(const RuntimeContractEntry &Entry) noexcept

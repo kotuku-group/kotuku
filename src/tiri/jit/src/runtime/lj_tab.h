@@ -104,6 +104,9 @@ LJ_FUNC TValue* lj_tab_set(lua_State* L, GCtab* t, cTValue* key);
 // Explicit global type contracts are attached to the environment table so separately compiled chunks that share
 // that environment can enforce the declaration.
 LJ_FUNC [[nodiscard]] GCstr* lj_tab_get_global_contract(GCtab* Environment, const GCstr* Name);
+struct CachedGlobalContractRecord;
+LJ_FUNC [[nodiscard]] const CachedGlobalContractRecord* lj_tab_get_cached_global_contract(
+   const GCtab* Environment, const GCstr* Name);
 LJ_FUNC void lj_tab_set_global_contract(
    lua_State* L, GCtab* Environment, const GCstr* Name, GCstr* Descriptor);
 LJ_FUNC void lj_env_mark(lua_State* L, GCtab* Environment);

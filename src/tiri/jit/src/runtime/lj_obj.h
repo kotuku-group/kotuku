@@ -979,6 +979,7 @@ typedef struct GCtab {
    uint32_t hmask;     // Hash part mask (size of hash part - 1).
    MRef     freetop;   // Top of free elements.
    GCRef    global_type_contracts; // Runtime contracts for globals stored in this environment table.
+   MRef     global_contract_cache; // Environment-owned decoded derivative of global_type_contracts.
 } GCtab;
 
 [[nodiscard]] constexpr inline size_t sizetabcolo(MSize n) noexcept { return n * sizeof(TValue) + sizeof(GCtab); }

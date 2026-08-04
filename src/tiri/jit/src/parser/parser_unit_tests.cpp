@@ -3506,6 +3506,58 @@ static bool test_environment_store_boundary(kt::Log &Log)
       Log.error("declaring the unit-test global failed: %s", lua_tostring(L, -1));
       return false;
    }
+   GCstr *contract_name = lj_str_newz(L, "glUnitEnvBoundary");
+   GCstr *original_descriptor = lj_tab_get_global_contract(environment, contract_name);
+   const CachedGlobalContractRecord *cached = lj_tab_get_cached_global_contract(environment, contract_name);
+   if (not original_descriptor or not cached or cached->descriptor != original_descriptor or
+       cached->entry.type != TiriType::Str or not cached->entry.label_offset) {
+      Log.error("declaring a global did not publish its decoded environment policy cache");
+      return false;
+   }
+   const char *cached_label = strdata(cached->descriptor) + cached->entry.label_offset;
+   if (std::string_view(cached_label, uint8_t(cached_label[-1])) != "glUnitEnvBoundary") {
+      Log.error("the decoded environment policy cache lost its rooted global label");
+      return false;
+   }
+
+   lua_gc(L, LUA_GCCOLLECT, 0);
+   cached = lj_tab_get_cached_global_contract(environment, contract_name);
+   if (not cached or cached->descriptor != original_descriptor or cached->entry.type != TiriType::Str) {
+      Log.error("the decoded environment policy cache did not survive a full collection");
+      return false;
+   }
+
+   constexpr std::string_view cache_growth_source =
+      "global glUnitCache0 = 0\n"
+      "global glUnitCache1 = 1\n"
+      "global glUnitCache2 = 2\n"
+      "global glUnitCache3 = 3\n"
+      "global glUnitCache4 = 4\n"
+      "global glUnitCache5 = 5\n"
+      "global glUnitCache6 = 6\n"
+      "global glUnitCache7 = 7\n"
+      "global glUnitCache8 = 8\n"
+      "global glUnitCache9 = 9\n";
+   if (lua_load(L, cache_growth_source, "=envboundary-growth") or lua_pcall(L, 0, 0, 0)) {
+      Log.error("growing the decoded environment policy cache failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   const GlobalContractCache *global_cache = table_global_contract_cache(environment);
+   if (not global_cache or global_cache->capacity <= 8 or global_cache->count < 11) {
+      Log.error("the decoded environment policy cache did not grow at its load boundary");
+      return false;
+   }
+   for (uint32_t i = 0; i < 10; ++i) {
+      char name[24];
+      std::snprintf(name, sizeof(name), "glUnitCache%u", i);
+      const CachedGlobalContractRecord *record = lj_tab_get_cached_global_contract(
+         environment, lj_str_newz(L, name));
+      if (not record or record->entry.type != TiriType::Num) {
+         Log.error("decoded environment policy cache rehashing lost global %s", name);
+         return false;
+      }
+   }
+
    lua_pushcfunction(L, envstore_contract_attempt);
    if (lua_pcall(L, 0, 0, 0) IS 0) {
       Log.error("an incompatible C API store did not raise against the persisted contract");
@@ -3604,6 +3656,28 @@ static bool test_environment_store_boundary(kt::Log &Log)
       return false;
    }
    lua_pop(L, 1);
+
+   // Policy replacement must update the decoded record and descriptor identity as one publication.  An explicit any
+   // declaration deliberately relaxes the earlier concrete policy.
+   if (lua_load(L, std::string_view("global glUnitEnvBoundary:any = 5"), "=envboundary-replacement") or
+       lua_pcall(L, 0, 0, 0)) {
+      Log.error("replacing the unit-test global policy failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   GCstr *replacement_descriptor = lj_tab_get_global_contract(environment, contract_name);
+   cached = lj_tab_get_cached_global_contract(environment, contract_name);
+   if (not replacement_descriptor or replacement_descriptor IS original_descriptor or not cached or
+       cached->descriptor != replacement_descriptor or cached->entry.type != TiriType::Any) {
+      Log.error("global policy replacement left a stale decoded cache record");
+      return false;
+   }
+
+   lua_gc(L, LUA_GCCOLLECT, 0);
+   cached = lj_tab_get_cached_global_contract(environment, contract_name);
+   if (not cached or cached->descriptor != replacement_descriptor or cached->entry.type != TiriType::Any) {
+      Log.error("a replaced decoded global policy did not survive collection");
+      return false;
+   }
    return true;
 }
 

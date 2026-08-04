@@ -12,6 +12,7 @@
 #include "lj_err.h"
 #include "lj_tab.h"
 #include "lj_bulk.h"
+#include "lj_contract.h"
 
 //********************************************************************************************************************
 // Hash an arbitrary key and return its anchor position in the hash table.
@@ -91,6 +92,7 @@ static GCtab * newtab(lua_State *L, uint32_t asize, uint32_t hbits)
       setmref(t->array, (TValue*)((char*)t + sizeof(GCtab)));
       setgcrefnull(t->metatable);
       setgcrefnull(t->global_type_contracts);
+      setmref(t->global_contract_cache, nullptr);
       t->asize = asize;
       t->hmask = 0;
       nilnode = &G(L)->nilnode;
@@ -106,6 +108,7 @@ static GCtab * newtab(lua_State *L, uint32_t asize, uint32_t hbits)
       setmref(t->array, nullptr);
       setgcrefnull(t->metatable);
       setgcrefnull(t->global_type_contracts);
+      setmref(t->global_contract_cache, nullptr);
       t->asize = 0;  //  In case the array allocation fails.
       t->hmask = 0;
       nilnode = &G(L)->nilnode;
@@ -219,6 +222,7 @@ void lj_tab_clear(GCtab *t)
 
 void lj_tab_free(global_State *g, GCtab *t)
 {
+   if (auto cache = table_global_contract_cache(t)) lj_mem_free(g, cache, cache->byte_size);
    if (t->hmask > 0) lj_mem_freevec(g, noderef(t->node), t->hmask + 1, Node);
    if (t->asize > 0 and LJ_MAX_COLOSIZE != 0 and t->colo <= 0) {
       lj_mem_freevec(g, tvref(t->array), t->asize, TValue);
@@ -593,11 +597,76 @@ GCstr * lj_tab_get_global_contract(GCtab *Environment, const GCstr *Name)
 }
 
 //********************************************************************************************************************
+// Retrieve the decoded derivative of an explicit global contract.  The cache is authoritative only while its
+// descriptor identity matches the contracts table; lj_tab_set_global_contract() publishes both together.
+
+static const CachedGlobalContractRecord * find_cached_global_contract(
+   const GlobalContractCache *Cache, const GCstr *Name)
+{
+   if (not Cache) return nullptr;
+   const CachedGlobalContractRecord *records = global_contract_cache_records(Cache);
+   uint32_t index = Name->hash & (Cache->capacity - 1);
+   for (;;) {
+      const CachedGlobalContractRecord &record = records[index];
+      if (not record.name) return nullptr;
+      if (record.name IS Name) return &record;
+      index = (index + 1) & (Cache->capacity - 1);
+   }
+}
+
+const CachedGlobalContractRecord * lj_tab_get_cached_global_contract(
+   const GCtab *Environment, const GCstr *Name)
+{
+   if (not Environment or not Name) return nullptr;
+   const CachedGlobalContractRecord *record = find_cached_global_contract(
+      table_global_contract_cache(Environment), Name);
+   return record and record->descriptor ? record : nullptr;
+}
+
+//********************************************************************************************************************
+// Ensure space for one new decoded global contract.  Allocation and rehashing finish before the environment pointer
+// changes, so an allocation failure leaves the existing cache and persisted descriptor untouched.
+
+static GlobalContractCache * grow_global_contract_cache(lua_State *L, GCtab *Environment, bool NewName)
+{
+   GlobalContractCache *old_cache = table_global_contract_cache(Environment);
+   if (old_cache and (not NewName or (old_cache->count + 1) * 4 <= old_cache->capacity * 3)) return old_cache;
+
+   uint32_t capacity = old_cache ? old_cache->capacity << 1 : 8;
+   size_t byte_size = sizeof(GlobalContractCache) + capacity * sizeof(CachedGlobalContractRecord);
+   auto cache = (GlobalContractCache *)lj_mem_new(L, byte_size);
+   memset(cache, 0, byte_size);
+   cache->byte_size = uint32_t(byte_size);
+   cache->capacity = capacity;
+
+   if (old_cache) {
+      const CachedGlobalContractRecord *old_records = global_contract_cache_records(old_cache);
+      CachedGlobalContractRecord *records = global_contract_cache_records(cache);
+      for (uint32_t i = 0; i < old_cache->capacity; ++i) {
+         const CachedGlobalContractRecord &source = old_records[i];
+         if (not source.name) continue;
+         uint32_t index = source.name->hash & (capacity - 1);
+         while (records[index].name) index = (index + 1) & (capacity - 1);
+         records[index] = source;
+         cache->count++;
+      }
+   }
+
+   setmref(Environment->global_contract_cache, cache);
+   if (old_cache) lj_mem_free(G(L), old_cache, old_cache->byte_size);
+   return cache;
+}
+
+//********************************************************************************************************************
 // Attach an explicit global type contract to an environment table.
 
 void lj_tab_set_global_contract(lua_State *L, GCtab *Environment, const GCstr *Name, GCstr *Descriptor)
 {
    if (not Environment or not Name or not Descriptor) return;
+
+   RuntimeContractDescriptor decoded;
+   bool cacheable = decode_runtime_contract(Descriptor, decoded) and
+      decoded.boundary IS ContractBoundary::Global and decoded.contract_count IS 1;
 
    GCtab *contracts = tabref(Environment->global_type_contracts);
    if (not contracts) {
@@ -606,8 +675,42 @@ void lj_tab_set_global_contract(lua_State *L, GCtab *Environment, const GCstr *N
       lj_gc_objbarrier(L, Environment, contracts);
    }
 
-   setstrV(L, lj_tab_setstr(L, contracts, Name), Descriptor);
+   TValue *policy_slot = lj_tab_setstr(L, contracts, Name);
+   const CachedGlobalContractRecord *existing = find_cached_global_contract(
+      table_global_contract_cache(Environment), Name);
+   GlobalContractCache *cache = grow_global_contract_cache(L, Environment, not existing);
+   CachedGlobalContractRecord *records = global_contract_cache_records(cache);
+   uint32_t index = Name->hash & (cache->capacity - 1);
+   while (records[index].name and records[index].name != Name) index = (index + 1) & (cache->capacity - 1);
+
+   CachedGlobalContractRecord replacement{};
+   replacement.name = Name;
+   if (cacheable) {
+      const RuntimeContractEntry &source = decoded.entries[0];
+      replacement.descriptor = Descriptor;
+      if (source.type IS TiriType::Object) replacement.entry.object_class_id = uint32_t(source.object_class_id);
+      else if (source.type IS TiriType::Struct) {
+         ptrdiff_t offset = source.struct_name.data() - strdata(Descriptor);
+         lj_assertX(offset > 0 and uint64_t(offset) <= UINT16_MAX,
+            "global contract structure offset is out of range");
+         replacement.entry.struct_offset = uint16_t(offset);
+      }
+      replacement.entry.label_offset = 0;
+      if (not source.label.empty()) {
+         ptrdiff_t offset = source.label.data() - strdata(Descriptor);
+         lj_assertX(offset > 0 and uint64_t(offset) <= UINT16_MAX,
+            "global contract label offset is out of range");
+         replacement.entry.label_offset = uint16_t(offset);
+      }
+      replacement.entry.type = source.type;
+      replacement.entry.flags = source.flags;
+      replacement.entry.position = source.position;
+   }
+
+   setstrV(L, policy_slot, Descriptor);
    lj_gc_anybarriert(L, contracts);
+   if (not records[index].name) cache->count++;
+   records[index] = replacement;
 }
 
 //********************************************************************************************************************
