@@ -607,8 +607,20 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
       rhs = list.value_ref();
       ExpDesc infix = working;
 
+      StaticValueDescriptor operation_descriptor;
+      if (working.static_value and rhs.static_value) {
+         operation_descriptor = describe_arithmetic_result(
+            this->ctx.descriptors().value(working.static_value),
+            this->ctx.descriptors().value(rhs.static_value));
+      }
+
       // Use OperatorEmitter for arithmetic compound assignments (+=, -=, *=, /=, %=)
       this->operator_emitter.emit_binary_arith(mapped.value(), ExprValue(&infix), rhs);
+
+      infix.static_value = this->ctx.descriptors().add_value(operation_descriptor);
+      infix.static_results = 0;
+      infix.object_class_id = CLASSID::NIL;
+      infix.struct_def = nullptr;
 
       bcemit_store(&this->func_state, &target.storage, &infix);
    }

@@ -1233,11 +1233,33 @@ private:
                value = join_static_descriptors(
                   this->descriptor_of(*payload.left), this->descriptor_of(*payload.right));
             }
+            else if ((payload.op IS AstBinaryOperator::Add or payload.op IS AstBinaryOperator::Subtract or
+                      payload.op IS AstBinaryOperator::Multiply or payload.op IS AstBinaryOperator::Divide or
+                      payload.op IS AstBinaryOperator::Modulo or payload.op IS AstBinaryOperator::Power) and
+                     payload.left and payload.right) {
+               value = describe_arithmetic_result(
+                  this->descriptor_of(*payload.left), this->descriptor_of(*payload.right));
+            }
             else {
                TiriType inferred = infer_expression_type(Expression);
                if (inferred != TiriType::Unknown) {
                   value.primary = inferred;
                   value.proof = StaticProof::Advisory;
+               }
+            }
+            break;
+         }
+         case AstNodeKind::UnaryExpr: {
+            auto &payload = std::get<UnaryExprPayload>(Expression.data);
+            if (payload.op IS AstUnaryOperator::Negate and payload.operand) {
+               value = describe_unary_numeric_result(this->descriptor_of(*payload.operand));
+            }
+            else {
+               TiriType inferred = infer_expression_type(Expression);
+               if (inferred != TiriType::Unknown) {
+                  value.primary = inferred;
+                  value.proof = payload.op IS AstUnaryOperator::Not ?
+                     StaticProof::Closed : StaticProof::Advisory;
                }
             }
             break;

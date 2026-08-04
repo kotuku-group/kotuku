@@ -17,6 +17,7 @@ struct FunctionField;
 struct FunctionExprPayload;
 struct struct_field;
 struct struct_record;
+struct RuntimeContract;
 
 using StaticValueHandle = uint32_t;
 using StaticResultSetHandle = uint32_t;
@@ -125,6 +126,11 @@ private:
 
 [[nodiscard]] StaticValueDescriptor join_static_descriptors(
    const StaticValueDescriptor &, const StaticValueDescriptor &);
+[[nodiscard]] StaticValueDescriptor describe_arithmetic_result(
+   const StaticValueDescriptor &, const StaticValueDescriptor &);
+[[nodiscard]] StaticValueDescriptor describe_unary_numeric_result(const StaticValueDescriptor &);
+[[nodiscard]] bool static_value_satisfies_contract(
+   const StaticValueDescriptor &, const RuntimeContract &);
 [[nodiscard]] StaticResultSet map_static_result_filter(
    const StaticResultSet &, uint64_t KeepMask, uint8_t ExplicitCount, bool TrailingKeep);
 enum class ObjectCallMemberKind : uint8_t {

@@ -10,7 +10,7 @@ end
 struct BenchmarkNarrowStruct
    Word:int
    Byte:int8
-   UnsignedWord:uint
+   UnsignedWord:uint16
    UnsignedByte:uint8
 end
 
