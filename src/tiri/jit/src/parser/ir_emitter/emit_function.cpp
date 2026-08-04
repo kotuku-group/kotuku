@@ -220,9 +220,8 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
    }
    bcemit_contracts(&child_state, parameter_contracts);
 
-   // Copy explicit return types to the function state BEFORE emitting the body.
-   // This ensures emit_return_stmt can see the types when deciding whether to use tail-calls
-   // and whether to emit BC_TYPEFIX instructions.
+   // Copy explicit return types to the function state before emitting the body so return lowering can preserve
+   // contracts, fixed arity and tail-call eligibility.
 
    child_state.funcname = funcname;
    if (Payload.return_types.is_explicit) {

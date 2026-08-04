@@ -1208,7 +1208,7 @@ static void rec_isarr(jit_State *J, BCREG ra)
 //********************************************************************************************************************
 // Record calls and returns
 
-// Preserve the prototype specialisation previously implied by PROTO_TYPEFIX sharing the closure-count flag range.
+// Dynamic and trusted inferred results specialise calls by prototype because their metadata describes the prototype.
 
 static bool rec_proto_specialise_by_prototype(const GCproto *Proto)
 {
@@ -4064,13 +4064,6 @@ void lj_record_ins(jit_State *J)
 
    case BC_RET: case BC_RET0: case BC_RET1:
       lj_record_ret(J, ra, (ptrdiff_t)rc - 1);
-      break;
-
-      // Type fixing
-
-   case BC_TYPEFIX:
-      // Result inference changes prototype metadata rather than trace values.  Dynamic-result calls are guarded by the
-      // prototype-specialisation policy above, independently of whether each result entry has already been inferred.
       break;
 
    case BC_RANGEPREP:

@@ -1,5 +1,4 @@
--- Flute tests for Tiri Runtime Type Inference feature
--- Runtime type inference commits function return types based on the first non-nil return value
+-- Flute tests for static result inference and deliberately dynamic result behaviour.
 
 @BeforeEach(hotpath=true)
 function enforce_hotpath() end
@@ -7,21 +6,20 @@ function enforce_hotpath() end
 ----------------------------------------------------------------------------------------------------------------------
 -- BASIC TYPE INFERENCE
 
-@Test function TypefixNumber()
+@Test function StaticNumberInference()
    function getValue()
       return 42
    end
 
-   -- First call fixes the type
    local a = getValue()
-   assert(a is 42, "First call should return 42")
+   assert(a is 42, "Inferred numeric result should return 42")
 
    -- Second call should still work with typed assignment
    local x: num = getValue()
-   assert(x is 42, "Typed assignment should work after type inference")
+   assert(x is 42, "Typed assignment should accept the statically inferred result")
 end
 
-@Test function TypefixString()
+@Test function StaticStringInference()
    function getMessage()
       return "hello"
    end
@@ -31,7 +29,7 @@ end
    assert(s is "hello", "String type should be inferred")
 end
 
-@Test function TypefixTable()
+@Test function StaticTableInference()
    function getConfig()
       return { key = "value" }
    end
@@ -41,13 +39,13 @@ end
    assert(t.key is "value", "Table type should be inferred")
 end
 
-@Test function TypefixBool()
+@Test function StaticBooleanInference()
    function getFlag()
       return true
    end
 
    local a = getFlag()
-   assert(a is true, "First call should return true")
+   assert(a is true, "Inferred boolean result should return true")
 
    local b: bool = getFlag()
    assert(b is true, "Bool type should be inferred")
@@ -56,7 +54,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- NIL HANDLING
 
-@Test function TypefixNilDoesNotFix()
+@Test function NilCompatibleStaticInference()
    global call_count = 0
    function maybeValue()
       call_count += 1
@@ -66,17 +64,14 @@ end
       return 42
    end
 
-   -- First call returns nil - should not fix type
    local a = maybeValue()
    assert(a is nil, "First call returns nil")
 
-   -- Second call returns number - this should fix the type
    local b = maybeValue()
    assert(b is 42, "Second call returns number")
 
-   -- Third call - type is now fixed to num
    local x: num = maybeValue()
-   assert(x is 42, "Type should be fixed to num after first non-nil return")
+   assert(x is 42, "Nil-compatible static inference should retain the concrete numeric result")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -87,13 +82,12 @@ end
       return 42
    end
 
-   -- Explicit type should not be changed by runtime inference
+   -- An explicit type remains the authoritative checked signature.
    local x: num = getTyped()
    assert(x is 42, "Explicit return type should work")
 end
 
-@Test function ExplicitTypePreventsTypefix()
-   -- Function with explicit return type should not emit BC_TYPEFIX
+@Test function ExplicitResultContract()
    function typedFunc(): str
       return "typed"
    end
@@ -105,25 +99,23 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- TAIL-CALL HANDLING
 
-@Test function TypefixTailCall()
-   -- Test that tail-call returns still work with type inference
+@Test function InferredTailCallForwarding()
    function inner()
       return 99
    end
 
    function outer()
-      return inner()  -- Would be tail-call without PROTO_TYPEFIX
+      return inner()
    end
 
    local a = outer()
    assert(a is 99, "Tail-call return should work")
 
-   -- After first call, type should be inferred
    local x: num = outer()
-   assert(x is 99, "Typed assignment after tail-call should work")
+   assert(x is 99, "Typed assignment should accept a statically inferred tail result")
 end
 
-@Test function TypefixNestedTailCalls()
+@Test function NestedTailCallForwarding()
    function level3()
       return 333
    end
@@ -140,13 +132,13 @@ end
    assert(a is 333, "Nested tail-calls should work")
 
    local x: num = level1()
-   assert(x is 333, "Typed assignment after nested tail-calls should work")
+   assert(x is 333, "Nested tail-call inference should retain the numeric result")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- MULTIPLE RETURN VALUES
 
-@Test function TypefixMultiReturn()
+@Test function StaticMultipleResultInference()
    function getMultiple()
       return 1, "a"
    end
@@ -161,8 +153,7 @@ end
    assert(y is "a", "Typed second return should work")
 end
 
-@Test function TypefixMultiReturnPartial()
-   -- Test that each return position is fixed independently
+@Test function NilCompatibleMultipleResultInference()
    global multi_call = 0
    function partialMulti()
       multi_call += 1
@@ -172,23 +163,20 @@ end
       return 42, "second"
    end
 
-   -- First call: nil at position 0, "first" at position 1
    local a1, b1 = partialMulti()
    assert(a1 is nil, "First call position 0 is nil")
    assert(b1 is "first", "First call position 1 is string")
 
-   -- Second call: 42 at position 0 (fixes type), "second" at position 1
    local a2, b2 = partialMulti()
    assert(a2 is 42, "Second call position 0 is number")
    assert(b2 is "second", "Second call position 1 is string")
 
-   -- Now position 0 is fixed to num, position 1 to str
    local x: num, y: str = partialMulti()
    assert(x is 42, "Typed position 0 should work")
    assert(y is "second", "Typed position 1 should work")
 end
 
-@Test function TypefixThreeReturns()
+@Test function StaticThreeResultInference()
    function getThree()
       return 1, "two", true
    end
@@ -207,7 +195,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- FUNCTION TYPE INFERENCE
 
-@Test function TypefixFunction()
+@Test function StaticFunctionResultInference()
    function getHandler()
       return function(x) return x * 2 end
    end
@@ -222,8 +210,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- CLOSURE BEHAVIOR
 
-@Test function TypefixClosure()
-   -- Multiple closures share the same prototype, so type inference affects all
+@Test function ClosureResultInference()
    function makeCounter()
       local count = 0
       return function()
@@ -239,7 +226,40 @@ end
    assert(counter1() is 2, "First counter should return 2")
    assert(counter2() is 1, "Second counter should return 1")
 
-   -- Type is inferred for the inner function prototype
    local x: num = counter1()
    assert(x is 3, "Typed assignment should work for closures")
+end
+
+@Test function ExplicitAnyRemainsDynamic()
+   function dynamicValue(Value:any):any
+      return Value
+   end
+
+   assert(dynamicValue(nil) is nil, "A dynamic result should preserve nil")
+   assert(dynamicValue(42) is 42, "A dynamic result should preserve numbers")
+   assert(dynamicValue("text") is "text", "A dynamic result should preserve strings without gaining a contract")
+   assert(dynamicValue({ key="value" }).key is "value",
+      "A dynamic result should preserve tables without gaining a contract")
+
+   for i in {0 to 250} do
+      local value:any = i % 2 is 0 ? i :> "dynamic"
+      assert(dynamicValue(value) is value, "Hot dynamic calls should retain interpreter and JIT behaviour")
+   end
+end
+
+@Test function TailPositionExceptionRemainsProtected()
+   function fail():num
+      error('tail-position failure')
+   end
+
+   function protectedCall():any
+      try
+         return fail()
+      except e
+         return e.message
+      end
+   end
+
+   local message:any = protectedCall()
+   assert(message:find('tail-position failure'), 'A try boundary must catch an exception from a returned call')
 end

@@ -45,9 +45,9 @@ extern "C" void lj_meta_for(lua_State* L, TValue* o);
 
 // Helper for __close metamethod during scope exit. Returns error code (0 = success).
 extern "C" int lj_meta_close(lua_State* L, TValue* o, TValue* err);
-
-// Helper for BC_TYPEFIX. Fix function return types based on actual returned values.
-extern "C" void lj_meta_typefix(lua_State* L, TValue* base, uint32_t count);
+extern "C" void lj_meta_multres_save(lua_State *L, TValue *Base, uint32_t Count);
+extern "C" uint32_t lj_meta_multres_restore(lua_State *L, TValue *Base);
+extern "C" void lj_meta_multres_unwind(lua_State *L, TValue *TargetBase);
 
 // Setup call to metamethod to be run by Assembler VM.
 TValue* mmcall(lua_State* L, ASMFunction cont, cTValue* mo, cTValue* a, cTValue* b);

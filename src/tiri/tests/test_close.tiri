@@ -362,6 +362,30 @@ end
    assert(has_outer, 'Outer close should be called')
 end
 
+@Test function TailCallResultsBeforeClose()
+   order = {}
+
+   function source()
+      table.insert(order, 'call')
+      return { marker='first' }, 'second'
+   end
+
+   function subject()
+      local resource <close> = setmetatable({}, {
+         __close=function()
+            processing.collect('full')
+            table.insert(order, 'close')
+         end
+      })
+      return source()
+   end
+
+   local first, second = subject()
+   assert(first.marker is 'first' and second is 'second',
+      'Close cleanup and collection must preserve all returned call values')
+   assert(order[0] is 'call' and order[1] is 'close', 'The returned call must execute before close cleanup')
+end
+
 -- Close with early return in loop
 
 @Test function CloseEarlyReturnInLoop()
