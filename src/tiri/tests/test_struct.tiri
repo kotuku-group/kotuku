@@ -861,17 +861,44 @@ end
    MAKESTRUCT('FastFieldErrors', 'lValue')
    local value = struct.new('FastFieldErrors')
 
+   local expected_read_line = @SourceLine + 3
+
    try
       local missing = value.unknown
       assert(missing is nil, 'Unknown struct field access should not return normally')
+   except error_value when ERR_FieldNotFound
+      assert(error_value.source:find('test_struct.tiri'),
+         'Fast struct reads should retain the access source, got ' .. tostring(error_value.source))
+      assert(error_value.line is expected_read_line,
+         f'Fast struct reads should retain access line {expected_read_line}, got {error_value.line}')
    success
       error('Unknown struct field access should raise through STGETF')
    end
 
+   local expected_write_line = @SourceLine + 3
+
    try
       value.unknown = 1
+   except error_value
+      assert(error_value.source:find('test_struct.tiri'),
+         'Fast struct writes should retain the assignment source, got ' .. tostring(error_value.source))
+      assert(error_value.line is expected_write_line,
+         f'Fast struct writes should retain assignment line {expected_write_line}, got {error_value.line}')
    success
       error('Unknown struct field assignment should raise through STSETF')
+   end
+
+   local expected_line = @SourceLine + 3
+
+   try
+      value.value = nil
+   except error_value when ERR_InvalidType
+      assert(error_value.source:find('test_struct.tiri'),
+         'Fast struct field errors should retain the assignment source, got ' .. tostring(error_value.source))
+      assert(error_value.line is expected_line,
+         f'Fast struct field errors should retain assignment line {expected_line}, got {error_value.line}')
+   success
+      error('Invalid struct field assignment should raise through STSETF')
    end
 
    assert(value.structSize() > 0, 'structSize() should continue to resolve through the struct metatable')

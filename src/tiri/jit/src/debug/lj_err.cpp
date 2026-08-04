@@ -1363,6 +1363,17 @@ LJ_NOINLINE void lj_err_callermsg(lua_State *L, CSTRING msg)
    lj_err_run(L);
 }
 
+// Error in the context of the active Tiri frame.  VM helpers use this path because they execute C++ code without
+// adding the C frame that lj_err_callermsg() normally skips.
+
+LJ_NORET LJ_NOINLINE static void err_currentmsg(lua_State *L, CSTRING Message)
+{
+   auto frame = L->base - 1;
+   err_record_pending_exception(L, Message, frame, nullptr);
+   lj_debug_addloc(L, Message, frame, nullptr);
+   lj_err_run(L);
+}
+
 //********************************************************************************************************************
 // Formatted error in context of caller. Use this for errors raised from C library functions (lua_* API, lib_*.cpp).
 // Do NOT use for VM helper functions called from assembler - use lj_err_msgv() instead, which adjusts L->top for
@@ -1551,6 +1562,16 @@ static CSTRING luaL_push_error_string(lua_State *L, std::string &Message)
    auto msg = lj_strfmt_pushvf(L, Format, argp);
    va_end(argp);
    lj_err_callermsg(L, msg);
+}
+
+[[noreturn]] extern void luaL_error_current(lua_State *L, ERR ErrorCode, CSTRING Format, ...)
+{
+   L->CaughtError = ErrorCode;
+   va_list argp;
+   va_start(argp, Format);
+   auto msg = lj_strfmt_pushvf(L, Format, argp);
+   va_end(argp);
+   err_currentmsg(L, msg);
 }
 
 [[noreturn]] extern void luaL_error(lua_State *L, ERR ErrorCode, std::string Message)

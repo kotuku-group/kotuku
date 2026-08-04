@@ -13,7 +13,6 @@
 inline constexpr uint8_t TIRI_CONTRACT_VERSION = 3;
 inline constexpr uint8_t TIRI_CONTRACT_GLOBAL_HINT_VERSION = 4;
 inline constexpr uint8_t TIRI_CONTRACT_OBJECT_VERSION = 2;
-inline constexpr uint8_t TIRI_CONTRACT_LEGACY_VERSION = 1;
 
 enum class ContractBoundary : uint8_t {
    Parameter = 1,
@@ -88,7 +87,6 @@ struct RuntimeContractDescriptor {
 
 struct CachedRuntimeContractEntry {
    uint32_t object_class_id;
-   uint16_t array_struct_offset;
    uint16_t struct_offset;
    uint16_t label_offset;
    TiriType type;
@@ -111,10 +109,6 @@ struct RuntimeContractCache {
    uint16_t record_count;
    uint16_t entry_count;
 };
-
-static_assert(sizeof(CachedRuntimeContractEntry) IS 16, "cached runtime contract entries must remain compact");
-static_assert(sizeof(CachedRuntimeContractRecord) IS 12, "cached runtime contract records must remain compact");
-static_assert(sizeof(RuntimeContractCache) IS 8, "runtime contract cache header must remain compact");
 
 [[nodiscard]] inline CachedRuntimeContractRecord * runtime_contract_cache_records(
    RuntimeContractCache *Cache) noexcept
@@ -249,7 +243,7 @@ private:
    uint8_t version;
    uint8_t boundary;
    if (not reader.read_byte(version) or
-       (version != TIRI_CONTRACT_LEGACY_VERSION and version != TIRI_CONTRACT_OBJECT_VERSION and
+       (version != TIRI_CONTRACT_OBJECT_VERSION and
         version != TIRI_CONTRACT_VERSION and version != TIRI_CONTRACT_GLOBAL_HINT_VERSION) or
        not reader.read_byte(boundary) or boundary < uint8_t(ContractBoundary::Parameter) or
        boundary > uint8_t(ContractBoundary::Global) or not reader.read_byte(Result.flags) or

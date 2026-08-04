@@ -87,14 +87,22 @@
       case AstNodeKind::SafeIndexExpr:
          return true;
 
-      // '??' yields 'any' whenever either operand is dynamic, so a defaulted table read (t[k] ?? fallback) reports
-      // the same untracked element type one level removed.  Recurse so the exemption follows the value's origin.
+      // Binary expressions yield 'any' when a table read can invoke an overloaded operator.  This includes defaulted
+      // reads such as t[k] ?? fallback and arithmetic such as 0.5 + t.value.  Recurse so the exemption follows the
+      // value's origin.
 
       case AstNodeKind::BinaryExpr: {
          const auto *payload = std::get_if<BinaryExprPayload>(&Expr.data);
-         if (not payload or payload->op != AstBinaryOperator::IfEmpty) return false;
+         if (not payload) return false;
          return (payload->left and is_table_read_expression(*payload->left)) or
             (payload->right and is_table_read_expression(*payload->right));
+      }
+
+      // Unary negation can remain dynamic when its operand is a table read because the value may overload '-'.
+
+      case AstNodeKind::UnaryExpr: {
+         const auto *payload = std::get_if<UnaryExprPayload>(&Expr.data);
+         return payload and payload->operand and is_table_read_expression(*payload->operand);
       }
 
       default:

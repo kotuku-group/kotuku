@@ -10,8 +10,8 @@ Documentation is available in the Kotuku Wiki.
    namespace 'gui'
 
 lDate = nil
-VSPACING  <const> = 2
-EDGE      <const> = 4 -- Whitespace around the page
+VSPACING <const> = 2
+EDGE     <const> = 4 -- Whitespace around the page
 
 rx_datetime <const> = <{ regex.new([[^(\d{4}-\d{1,2}-\d{1,2})[\sT]?(.*)$]]) }>
 rx_date <const> = <{ regex.new([[^(\d+)-(\d+)-(\d+)$]]) }>
@@ -60,13 +60,14 @@ function columnText(Value:any, Type:str):any
 
       if not lDate then lDate = struct.new('DateTime') end
       day, time = rx_datetime.extract(Value)
-      lDate.year, lDate.month, lDate.day = rx_date.extract(day)
+      local y, m, d = rx_date.extract(day)
+      lDate.year, lDate.month, lDate.day = tonumber(y), tonumber(m), tonumber(d)
 
-      h, min, sec = rx_time.extract(time)
+      local h, min, sec = rx_time.extract(time)
       if h then
-         lDate.hour   = h
-         lDate.minute = min
-         lDate.second = sec
+         lDate.hour   = tonumber(h ?? '0')
+         lDate.minute = tonumber(min ?? '0')
+         lDate.second = tonumber(sec ?? '0')
       end
 
       return string.format('%4d-%02d-%02d %02d:%02d', lDate.year, lDate.month, lDate.day, lDate.hour, lDate.minute)

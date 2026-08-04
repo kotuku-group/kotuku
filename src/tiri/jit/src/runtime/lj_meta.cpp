@@ -699,12 +699,6 @@ namespace {
    return "value";
 }
 
-[[nodiscard]] static bool contract_is_variant(const RuntimeContractEntry &Entry) noexcept
-{
-   return Entry.type IS TiriType::Any;
-      //or (Entry.type IS TiriType::Array and Entry.array_element_type IS AET::ANY);
-}
-
 static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractEntry &Entry)
 {
    if (Entry.type IS TiriType::Object and Entry.object_class_id != CLASSID::NIL) {
@@ -841,8 +835,6 @@ static void apply_cached_contract(lua_State *L, TValue *Base, uint32_t DynamicCo
          .flags = cached.flags,
          .position = cached.position,
          .object_class_id = CLASSID(cached.object_class_id),
-         .array_element_type = cached.array_element_type,
-         .array_struct_name = cached_contract_text(Descriptor, cached.array_struct_offset),
          .struct_name = cached_contract_text(Descriptor, cached.struct_offset),
          .label = cached_contract_text(Descriptor, cached.label_offset)
       };
@@ -934,13 +926,11 @@ void lj_contract_build_cache(lua_State *L, GCproto *Prototype)
          const RuntimeContractEntry &source = descriptor.entries[j];
          entries[entry_index++] = CachedRuntimeContractEntry{
             .object_class_id = uint32_t(source.object_class_id),
-            .array_struct_offset = cached_contract_text_offset(encoded, source.array_struct_name),
             .struct_offset = cached_contract_text_offset(encoded, source.struct_name),
             .label_offset = cached_contract_text_offset(encoded, source.label),
             .type = source.type,
             .flags = source.flags,
-            .position = source.position,
-            .array_element_type = source.array_element_type
+            .position = source.position
          };
       }
    }
@@ -972,6 +962,7 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
             // exists, BC_GSET owns validation against that authoritative descriptor.
             return;
          }
+
          if (current) {
             RuntimeContractDescriptor current_descriptor;
             decode_contract_or_error(L, current, current_descriptor);
@@ -987,6 +978,7 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
             lj_tab_set_global_contract(L, environment, global_name, Descriptor);
             return;
          }
+
          if (contract_entry_is_initialising(incoming)) {
             // Validate the declaration that will be published while leaving the current environment contract in
             // place.  BC_GSET validates the same value against that existing policy before the post-store descriptor
