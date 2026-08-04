@@ -570,8 +570,7 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
    }
 
    std::string descriptor;
-   descriptor.reserve(5 + Contracts.size() * 8);
-   descriptor.push_back(char(TIRI_CONTRACT_VERSION));
+   descriptor.reserve(4 + Contracts.size() * 8);
    descriptor.push_back(char(uint8_t(Contracts.front().boundary)));
 
    uint8_t descriptor_flags = 0;
@@ -588,6 +587,7 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
       if (contract.required) entry_flags |= contract_flag(ContractEntryFlag::Required);
       if (contract.is_const) entry_flags |= contract_flag(ContractEntryFlag::Const);
       if (contract.initialising) entry_flags |= contract_flag(ContractEntryFlag::Initialising);
+      if (contract.global_hint) entry_flags |= contract_flag(ContractEntryFlag::GlobalHint);
       descriptor.push_back(char(entry_flags));
       descriptor.push_back(char(contract.position));
       CLASSID object_class_id = contract.type IS TiriType::Object ? contract.object_class_id : CLASSID::NIL;
@@ -607,6 +607,46 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
    GCstr *encoded = fs->ls->keepstr(std::string_view(descriptor.data(), descriptor.size()));
    ExpDesc constant(encoded);
    bcemit_AD(fs, BC_CONTRACT, Base, const_str(fs, &constant));
+}
+
+//********************************************************************************************************************
+// Emit maximal dense runs of fixed runtime contracts.  Descriptor entries are ordinal, so an unchecked register gap
+// starts a new instruction.  The descriptor entry limit is shared with return contracts and splits wider runs.
+
+static void bcemit_contracts(FuncState *Fs, std::span<const RuntimeContractSlot> Contracts)
+{
+   if (Contracts.empty()) return;
+
+   std::array<RuntimeContract, MAX_RETURN_TYPES> batch;
+   BCREG batch_base = 0;
+   BCREG previous_register = 0;
+   uint8_t batch_count = 0;
+
+   auto flush = [&]() {
+      if (not batch_count) return;
+      bcemit_contract(Fs, batch_base, std::span(batch.data(), batch_count), BCREG(batch_count));
+      batch_count = 0;
+   };
+
+   for (size_t i = 0; i < Contracts.size(); ++i) {
+      const RuntimeContractSlot &slot = Contracts[i];
+      if (i > 0) {
+         lj_assertX(slot.register_index > previous_register, "runtime contract registers are not increasing");
+         lj_assertX(slot.contract.position > Contracts[i - 1].contract.position,
+            "runtime contract positions are not increasing");
+      }
+
+      if (batch_count and (slot.register_index != BCREG(previous_register + 1) or
+          batch_count IS MAX_RETURN_TYPES or slot.contract.boundary != batch[0].boundary)) {
+         flush();
+      }
+      if (not batch_count) batch_base = slot.register_index;
+
+      batch[batch_count++] = slot.contract;
+      previous_register = slot.register_index;
+   }
+
+   flush();
 }
 
 //********************************************************************************************************************
@@ -672,9 +712,9 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
    const RuntimeContract *GlobalDeclarationContract, bool IsGlobalDeclaration)
 {
    BCIns ins;
-   RuntimeContract global_const_finaliser;
-   BCREG global_const_base = 0;
-   bool finalise_global_const = false;
+   RuntimeContract global_declaration_finaliser;
+   BCREG global_declaration_base = 0;
+   bool finalise_global_declaration = false;
    if (LHS->k IS ExpKind::Local) {
       fs->ls->vstack[LHS->u.s.aux].info |= VarInfoFlag::VarReadWrite;
       VarInfo *vinfo = &fs->ls->vstack[LHS->u.s.aux];
@@ -729,24 +769,18 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
             .struct_def = found->second.struct_def,
             .label = LHS->u.sval,
             .boundary = ContractBoundary::Global,
-            .position = 1
+            .position = 1,
+            .global_hint = true
          };
          bcemit_value_contract(fs, RHS, contract, true);
       }
-      else if (GCstr *contract = lj_tab_get_global_contract(tabref(fs->L->env), LHS->u.sval)) {
-         BCREG source = expr_toanyreg(fs, RHS);
-         ExpDesc descriptor(contract);
-         bcemit_AD(fs, BC_CONTRACT, source, const_str(fs, &descriptor));
-         RHS->k = ExpKind::NonReloc;
-         RHS->u.s.info = source;
-      }
       BCREG ra = expr_toanyreg(fs, RHS);
       ins = BCINS_AD(BC_GSET, ra, const_str(fs, LHS));
-      if (GlobalDeclarationContract and GlobalDeclarationContract->is_const) {
-         global_const_finaliser = *GlobalDeclarationContract;
-         global_const_finaliser.initialising = false;
-         global_const_base = ra;
-         finalise_global_const = true;
+      if (GlobalDeclarationContract) {
+         global_declaration_finaliser = *GlobalDeclarationContract;
+         global_declaration_finaliser.initialising = false;
+         global_declaration_base = ra;
+         finalise_global_declaration = true;
       }
    }
    else if (LHS->k IS ExpKind::IndexedArray or LHS->k IS ExpKind::SafeIndexedArray) {
@@ -815,8 +849,8 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
       }
    }
    bcemit_INS(fs, ins);
-   if (finalise_global_const) {
-      bcemit_contract(fs, global_const_base, std::span(&global_const_finaliser, 1), 1);
+   if (finalise_global_declaration) {
+      bcemit_contract(fs, global_declaration_base, std::span(&global_declaration_finaliser, 1), 1);
    }
    expr_free(fs, RHS);
 }

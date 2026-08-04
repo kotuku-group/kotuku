@@ -617,11 +617,11 @@ void lj_meta_istype(lua_State *L, BCREG ra, BCREG tp)
 
 //********************************************************************************************************************
 // Exact runtime type contracts.  The descriptor is an interned byte string, so it remains portable across bytecode
-// dump/write/read boundaries.  Version-2 layout:
+// dump/write/read boundaries.  Descriptors use this layout:
 //
-//   version, boundary, descriptor_flags, static_value_count, contract_count,
-//   repeated { type, entry_flags, position, object_class_id_uleb32, struct_name_length, struct_name_bytes,
-//              label_length, label_bytes }
+//   boundary, descriptor_flags, static_value_count, contract_count,
+//   repeated { type, entry_flags, position, object_class_id_uleb32,
+//              struct_name_length, struct_name_bytes, label_length, label_bytes }
 
 namespace {
 
@@ -772,6 +772,87 @@ static void decode_contract_or_error(lua_State *L, GCstr *Descriptor, RuntimeCon
    else lj_err_callermsg(L, "invalid runtime type-contract descriptor");
 }
 
+[[nodiscard]] static uint16_t cached_contract_text_offset(
+   const GCstr *Descriptor, std::string_view Text) noexcept
+{
+   if (Text.empty()) return 0;
+   ptrdiff_t offset = Text.data() - strdata(Descriptor);
+   lj_assertX(offset > 0 and uint64_t(offset) <= UINT16_MAX, "runtime contract text offset is out of range");
+   return uint16_t(offset);
+}
+
+[[nodiscard]] static std::string_view cached_contract_text(
+   const GCstr *Descriptor, uint16_t Offset) noexcept
+{
+   if (not Offset) return {};
+   const char *text = strdata(Descriptor) + Offset;
+   return std::string_view(text, uint8_t(text[-1]));
+}
+
+[[nodiscard]] static const CachedRuntimeContractRecord * find_cached_contract(
+   const GCproto *Prototype, uint32_t BytecodePosition, const CachedRuntimeContractEntry *&Entries) noexcept
+{
+   const RuntimeContractCache *cache = proto_contract_cache(Prototype);
+   if (not cache) return nullptr;
+
+   const CachedRuntimeContractRecord *records = runtime_contract_cache_records(cache);
+   uint32_t lower = 0;
+   uint32_t upper = cache->record_count;
+   while (lower < upper) {
+      uint32_t middle = lower + ((upper - lower) >> 1);
+      if (records[middle].bytecode_position < BytecodePosition) lower = middle + 1;
+      else upper = middle;
+   }
+   if (lower >= cache->record_count or records[lower].bytecode_position != BytecodePosition) return nullptr;
+
+   const CachedRuntimeContractRecord *record = &records[lower];
+   Entries = runtime_contract_cache_entries(cache) + record->entry_index;
+   return record;
+}
+
+static void apply_cached_contract(lua_State *L, TValue *Base, uint32_t DynamicCount, GCstr *Descriptor,
+   const CachedRuntimeContractRecord &Record, const CachedRuntimeContractEntry *Entries)
+{
+   L->top = curr_topL(L);
+   uint32_t value_count = (Record.flags & contract_flag(ContractDescriptorFlag::DynamicCount)) ?
+      DynamicCount + Record.static_value_count : Record.static_value_count;
+   bool variadic = (Record.flags & contract_flag(ContractDescriptorFlag::Variadic)) != 0;
+   ptrdiff_t base_offset = savestack(L, Base);
+
+   for (uint32_t i = 0; i < value_count; ++i) {
+      uint32_t entry_index;
+      if (i < Record.contract_count) entry_index = i;
+      else if (variadic and Record.contract_count > 0) entry_index = Record.contract_count - 1;
+      else continue;
+
+      const CachedRuntimeContractEntry &cached = Entries[entry_index];
+      RuntimeContractEntry entry{
+         .type = cached.type,
+         .flags = cached.flags,
+         .position = cached.position,
+         .object_class_id = cached.type IS TiriType::Object ? CLASSID(cached.object_class_id) : CLASSID::NIL,
+         .struct_name = cached.type IS TiriType::Struct ?
+            cached_contract_text(Descriptor, cached.struct_offset) : std::string_view{},
+         .label = cached_contract_text(Descriptor, cached.label_offset)
+      };
+      if (entry.type IS TiriType::Any or entry.type IS TiriType::Unknown) continue;
+
+      Base = restorestack(L, base_offset);
+      TValue *value = Base + i;
+      if (lj_is_thunk(value)) {
+         TValue *resolved = lj_thunk_resolve(L, udataV(value));
+         Base = restorestack(L, base_offset);
+         value = Base + i;
+         copyTV(L, value, resolved);
+      }
+
+      if (not contract_matches(L, value, entry)) {
+         uint32_t position = Record.boundary IS ContractBoundary::Result ? i + 1 : entry.position;
+         contract_error(L, value, Record.boundary, entry, position);
+      }
+   }
+}
+
 [[noreturn]] static void const_global_error(lua_State *L, const GCstr *Name)
 {
    CSTRING message = lj_strfmt_pushf(L, "cannot assign to const global '%s'", strdata(Name));
@@ -779,6 +860,84 @@ static void decode_contract_or_error(lua_State *L, GCstr *Descriptor, RuntimeCon
 }
 
 } // namespace
+
+void lj_contract_build_cache(lua_State *L, GCproto *Prototype)
+{
+   lj_assertX(not proto_contract_cache(Prototype), "runtime contract cache was built twice");
+
+   uint16_t record_count = 0;
+   uint16_t entry_count = 0;
+   for (uint32_t i = 1; i < Prototype->sizebc; ++i) {
+      BCIns instruction = proto_bc(Prototype)[i];
+      if (bc_op(instruction) != BC_CONTRACT) continue;
+
+      GCobj *constant = proto_kgc(Prototype, ~(ptrdiff_t)bc_d(instruction));
+      if (constant->gch.gct != uint8_t(~LJ_TSTR)) continue;
+      RuntimeContractDescriptor descriptor;
+      if (not decode_runtime_contract(gco_to_string(constant), descriptor) or not descriptor.contract_count or
+          descriptor.boundary IS ContractBoundary::Global) {
+         continue;
+      }
+      if (record_count IS UINT16_MAX or entry_count > UINT16_MAX - descriptor.contract_count) return;
+      record_count++;
+      entry_count += descriptor.contract_count;
+   }
+   if (not record_count) return;
+
+   size_t byte_size = sizeof(RuntimeContractCache) + record_count * sizeof(CachedRuntimeContractRecord) +
+      entry_count * sizeof(CachedRuntimeContractEntry);
+   if (byte_size > UINT32_MAX) return;
+
+   auto cache = (RuntimeContractCache *)lj_mem_new(L, byte_size);
+   memset(cache, 0, byte_size);
+   cache->byte_size = uint32_t(byte_size);
+   cache->record_count = record_count;
+   cache->entry_count = entry_count;
+
+   CachedRuntimeContractRecord *records = runtime_contract_cache_records(cache);
+   CachedRuntimeContractEntry *entries = runtime_contract_cache_entries(cache);
+   uint16_t record_index = 0;
+   uint16_t entry_index = 0;
+   for (uint32_t i = 1; i < Prototype->sizebc; ++i) {
+      BCIns instruction = proto_bc(Prototype)[i];
+      if (bc_op(instruction) != BC_CONTRACT) continue;
+
+      GCobj *constant = proto_kgc(Prototype, ~(ptrdiff_t)bc_d(instruction));
+      if (constant->gch.gct != uint8_t(~LJ_TSTR)) continue;
+      GCstr *encoded = gco_to_string(constant);
+      RuntimeContractDescriptor descriptor;
+      if (not decode_runtime_contract(encoded, descriptor) or not descriptor.contract_count or
+          descriptor.boundary IS ContractBoundary::Global) {
+         continue;
+      }
+
+      records[record_index++] = CachedRuntimeContractRecord{
+         .bytecode_position = i,
+         .boundary = descriptor.boundary,
+         .flags = descriptor.flags,
+         .static_value_count = descriptor.static_value_count,
+         .contract_count = descriptor.contract_count,
+         .entry_index = entry_index
+      };
+      for (uint8_t j = 0; j < descriptor.contract_count; ++j) {
+         const RuntimeContractEntry &source = descriptor.entries[j];
+         CachedRuntimeContractEntry &target = entries[entry_index++];
+         if (source.type IS TiriType::Object) target.object_class_id = uint32_t(source.object_class_id);
+         else if (source.type IS TiriType::Struct) {
+            target.struct_offset = cached_contract_text_offset(encoded, source.struct_name);
+         }
+         else target.object_class_id = 0;
+         target.label_offset = cached_contract_text_offset(encoded, source.label);
+         target.type = source.type;
+         target.flags = source.flags;
+         target.position = source.position;
+      }
+   }
+
+   lj_assertX(record_index IS record_count and entry_index IS entry_count,
+      "runtime contract cache sizing changed while building");
+   setmref(Prototype->contract_cache, cache);
+}
 
 extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCount, GCstr *Descriptor)
 {
@@ -797,6 +956,12 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
          global_name = lj_str_new(L, incoming.label.data(), incoming.label.size());
 
          GCstr *current = lj_tab_get_global_contract(environment, global_name);
+         if (current and contract_entry_is_global_hint(incoming)) {
+            // A same-chunk hint only bootstraps policy before declaration publication.  Once any environment policy
+            // exists, BC_GSET owns validation against that authoritative descriptor.
+            return;
+         }
+
          if (current) {
             RuntimeContractDescriptor current_descriptor;
             decode_contract_or_error(L, current, current_descriptor);
@@ -812,10 +977,17 @@ extern "C" void lj_meta_contract(lua_State *L, TValue *Base, uint32_t DynamicCou
             lj_tab_set_global_contract(L, environment, global_name, Descriptor);
             return;
          }
+
          if (contract_entry_is_initialising(incoming)) {
             // Validate the declaration that will be published while leaving the current environment contract in
-            // place.  BC_GSET validates the same value against that existing policy before the post-store const
-            // descriptor commits the transition.
+            // place.  BC_GSET validates the same value against that existing policy before the post-store descriptor
+            // commits the transition.  This keeps ordinary and const declaration publication transactional when an
+            // environment __newindex handler rejects the store.
+         }
+         else if (contract_entry_is_global_hint(incoming)) {
+            // No environment policy exists yet.  Validate and publish the hint so type-guided reads and indirect
+            // stores retain the same runtime invariant even when the declaration has not executed.
+            publish_global_contract = true;
          }
          else if (incoming.type IS TiriType::Any) {
             // An explicit 'any' declaration is the only ordinary operation that relaxes a sticky global contract.
@@ -866,6 +1038,13 @@ extern "C" void lj_meta_contract_pc(lua_State *L, const BCIns *PC, uint32_t Dyna
       BCIns instruction = *--cursor;
       if (bc_op(instruction) IS BC_CONTRACT) {
          GCstr *descriptor = gco_to_string(proto_kgc(prototype, ~(ptrdiff_t)bc_d(instruction)));
+         const CachedRuntimeContractEntry *entries = nullptr;
+         uint32_t bytecode_position = uint32_t(cursor - proto_bc(prototype));
+         if (const CachedRuntimeContractRecord *record =
+               find_cached_contract(prototype, bytecode_position, entries)) {
+            apply_cached_contract(L, L->base + bc_a(instruction), DynamicCount, descriptor, *record, entries);
+            return;
+         }
          lj_meta_contract(L, L->base + bc_a(instruction), DynamicCount, descriptor);
          return;
       }
@@ -882,37 +1061,72 @@ extern "C" void lj_meta_contract_pc(lua_State *L, const BCIns *PC, uint32_t Dyna
 // Value must reference a rooted Lua stack slot and L->top must be valid.  The recorder materialises JIT values in
 // their corresponding Lua stack slot before emitting this call.
 
-extern "C" void lj_env_check(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value)
+static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value,
+   GCstr *DeclarationOverride)
 {
-   TValue checked;
-   copyTV(L, &checked, Value);
-
    if ((Name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) {
       CSTRING message = lj_strfmt_pushf(L, "cannot override built-in '%s'", strdata(Name));
       lj_err_callermsg(L, message);
    }
 
-   if (GCstr *persisted = lj_tab_get_global_contract(Environment, Name)) {
-      RuntimeContractDescriptor descriptor;
+   RuntimeContractEntry cached_entry;
+   RuntimeContractDescriptor descriptor;
+   const RuntimeContractEntry *entry = nullptr;
+   if (DeclarationOverride) {
+      decode_contract_or_error(L, DeclarationOverride, descriptor);
+      if (descriptor.contract_count >= 1) entry = &descriptor.entries[0];
+   }
+   else if (const CachedGlobalContractRecord *cached =
+         lj_tab_get_cached_global_contract(Environment, Name)) {
+      lj_assertX(lj_tab_get_global_contract(Environment, Name) IS cached->descriptor,
+         "decoded global contract cache does not match persisted policy");
+      cached_entry = RuntimeContractEntry{
+         .type = cached->entry.type,
+         .flags = cached->entry.flags,
+         .position = cached->entry.position,
+         .object_class_id = cached->entry.type IS TiriType::Object ?
+            CLASSID(cached->entry.object_class_id) : CLASSID::NIL,
+         .struct_name = cached->entry.type IS TiriType::Struct ?
+            cached_contract_text(cached->descriptor, cached->entry.struct_offset) : std::string_view{},
+         .label = cached_contract_text(cached->descriptor, cached->entry.label_offset)
+      };
+      entry = &cached_entry;
+   }
+   else if (GCstr *persisted = lj_tab_get_global_contract(Environment, Name)) {
       decode_contract_or_error(L, persisted, descriptor);
-      if (descriptor.contract_count >= 1) {
-         const RuntimeContractEntry &entry = descriptor.entries[0];
-         if (contract_entry_is_const(entry) and not contract_entry_is_initialising(entry)) {
-            const_global_error(L, Name);
+      if (descriptor.contract_count >= 1) entry = &descriptor.entries[0];
+   }
+
+   if (entry) {
+      if (contract_entry_is_const(*entry) and not contract_entry_is_initialising(*entry)) {
+         const_global_error(L, Name);
+      }
+      if (entry->type != TiriType::Any and entry->type != TiriType::Unknown) {
+         cTValue *checked = Value;
+         TValue resolved_value;
+         if (lj_is_thunk(Value)) {
+            // Validate the resolved value, but store the original thunk to preserve lazy evaluation on read.
+            VMHelperGuard guard(L);
+            cTValue *resolved = lj_thunk_resolve(L, udataV(Value));
+            copyTV(L, &resolved_value, resolved);
+            checked = &resolved_value;
          }
-         if (entry.type != TiriType::Any and entry.type != TiriType::Unknown) {
-            if (lj_is_thunk(&checked)) {
-               // Validate the resolved value, but store the original thunk to preserve lazy evaluation on read.
-               VMHelperGuard guard(L);
-               cTValue *resolved = lj_thunk_resolve(L, udataV(&checked));
-               copyTV(L, &checked, resolved);
-            }
-            if (not contract_matches(L, &checked, entry)) {
-               contract_error(L, &checked, ContractBoundary::Global, entry, entry.position);
-            }
+         if (not contract_matches(L, checked, *entry)) {
+            contract_error(L, checked, ContractBoundary::Global, *entry, entry->position);
          }
       }
    }
+}
+
+extern "C" void lj_env_check(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value)
+{
+   env_check_contract(L, Environment, Name, Value, nullptr);
+}
+
+extern "C" void lj_env_check_override(lua_State *L, GCtab *Environment, GCstr *Name, cTValue *Value,
+   GCstr *DeclarationOverride)
+{
+   env_check_contract(L, Environment, Name, Value, DeclarationOverride);
 }
 
 //********************************************************************************************************************
@@ -937,7 +1151,22 @@ extern "C" void lj_env_store(lua_State *L, GCtab *Environment, GCstr *Name, cTVa
 extern "C" GCstr * lj_vm_envcheck(lua_State *L, GCtab *Environment, GCstr *Name, TValue *Value)
 {
    L->top = curr_topL(L);
-   lj_env_check(L, Environment, Name, Value);
+   GCstr *declaration_override = nullptr;
+   const BCIns *pc = cframe_Lpc(L);
+   GCproto *prototype = funcproto(curr_func(L));
+   const BCIns *begin = proto_bc(prototype) + 1;
+   if (pc >= begin + 2 and bc_op(pc[-1]) IS BC_GSET and bc_op(pc[-2]) IS BC_CONTRACT) {
+      GCstr *candidate = gco_to_string(proto_kgc(prototype, ~(ptrdiff_t)bc_d(pc[-2])));
+      RuntimeContractDescriptor descriptor;
+      if (decode_runtime_contract(candidate, descriptor) and
+          contract_descriptor_is_global_variant_initialiser(descriptor, Name)) {
+         // A variant redeclaration deliberately replaces the existing concrete policy.  Validate BC_GSET against the
+         // incoming descriptor without publishing it; the following CONTRACT commits only after the ordinary store
+         // path (including __newindex dispatch) succeeds.
+         declaration_override = candidate;
+      }
+   }
+   lj_env_check_override(L, Environment, Name, Value, declaration_override);
    return Name;
 }
 

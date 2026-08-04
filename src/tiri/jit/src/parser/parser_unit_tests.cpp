@@ -1941,10 +1941,9 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
          Bytes.push_back(char(byte));
       } while (Value);
    };
-   auto build_descriptor = [&append_uleb](uint8_t Version, TiriType Type, CLASSID ObjectClassId,
+   auto build_descriptor = [&append_uleb](TiriType Type, CLASSID ObjectClassId,
       std::string_view StructName, std::string_view Label, uint8_t EntryFlags) {
       std::string result{
-         char(Version),
          char(uint8_t(ContractBoundary::Global)),
          char(0),
          char(1),
@@ -1953,7 +1952,7 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
          char(EntryFlags),
          char(1)
       };
-      if (Version IS TIRI_CONTRACT_VERSION) append_uleb(result, uint32_t(ObjectClassId));
+      append_uleb(result, uint32_t(ObjectClassId));
       result.push_back(char(uint8_t(StructName.size())));
       result.append(StructName);
       result.push_back(char(uint8_t(Label.size())));
@@ -1963,7 +1962,7 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
 
    uint8_t const_flags = contract_flag(ContractEntryFlag::Nullable) | contract_flag(ContractEntryFlag::Const);
    std::string encoded = build_descriptor(
-      TIRI_CONTRACT_VERSION, TiriType::Struct, CLASSID::NIL, "Point", "Value", const_flags);
+      TiriType::Struct, CLASSID::NIL, "Point", "Value", const_flags);
 
    RuntimeContractDescriptor decoded;
    GCstr *descriptor = lj_str_new(lua, encoded.data(), encoded.size());
@@ -1985,66 +1984,81 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
    };
 
    std::string object_encoded = build_descriptor(
-      TIRI_CONTRACT_VERSION, TiriType::Object, CLASSID::TIME, {}, "Clock", const_flags);
+      TiriType::Object, CLASSID::TIME, {}, "Clock", const_flags);
    RuntimeContractDescriptor object_decoded;
    GCstr *object_descriptor = lj_str_new(lua, object_encoded.data(), object_encoded.size());
    if (not decode_runtime_contract(object_descriptor, object_decoded) or
        object_decoded.entries[0].type != TiriType::Object or
        object_decoded.entries[0].object_class_id != CLASSID::TIME or
        not object_decoded.entries[0].struct_name.empty()) {
-      Log.error("version-2 object class constraint did not round-trip through the shared decoder");
+      Log.error("object class constraint did not round-trip through the shared decoder");
       return false;
    }
 
    std::string broad_object = build_descriptor(
-      TIRI_CONTRACT_VERSION, TiriType::Object, CLASSID::NIL, {}, "Broad", const_flags);
+      TiriType::Object, CLASSID::NIL, {}, "Broad", const_flags);
    GCstr *broad_descriptor = lj_str_new(lua, broad_object.data(), broad_object.size());
    if (not decode_runtime_contract(broad_descriptor, object_decoded) or
        object_decoded.entries[0].object_class_id != CLASSID::NIL) {
-      Log.error("version-2 broad object contract gained a class constraint while decoding");
+      Log.error("broad object contract gained a class constraint while decoding");
       return false;
    }
 
-   std::string legacy = build_descriptor(
-      TIRI_CONTRACT_LEGACY_VERSION, TiriType::Object, CLASSID::TIME, {}, "Legacy", const_flags);
-   GCstr *legacy_descriptor = lj_str_new(lua, legacy.data(), legacy.size());
-   if (not decode_runtime_contract(legacy_descriptor, object_decoded) or
-       object_decoded.entries[0].object_class_id != CLASSID::NIL or object_decoded.entries[0].label != "Legacy") {
-      Log.error("legacy object contract did not decode broadly or retained stale class metadata");
+   uint8_t global_hint_flags = contract_flag(ContractEntryFlag::Nullable) |
+      contract_flag(ContractEntryFlag::GlobalHint);
+   std::string global_hint_encoded = build_descriptor(
+      TiriType::Str, CLASSID::NIL, {}, "GlobalValue", global_hint_flags);
+   GCstr *global_hint_descriptor = lj_str_new(lua, global_hint_encoded.data(), global_hint_encoded.size());
+   RuntimeContractDescriptor global_hint_decoded;
+   if (not decode_runtime_contract(global_hint_descriptor, global_hint_decoded) or
+       global_hint_decoded.boundary != ContractBoundary::Global or
+       not contract_entry_is_global_hint(global_hint_decoded.entries[0])) {
+      Log.error("global-hint contract did not round-trip through the shared decoder");
       return false;
    }
 
    std::string invalid_descriptor_flags = encoded;
-   invalid_descriptor_flags[2] = char(0x80);
+   invalid_descriptor_flags[1] = char(0x80);
+   std::string invalid_boundary = encoded;
+   invalid_boundary[0] = char(0xff);
    std::string invalid_entry_flags = encoded;
-   invalid_entry_flags[6] = char(0x80);
+   invalid_entry_flags[5] = char(0x80);
    std::string invalid_initialising_flag = encoded;
-   invalid_initialising_flag[6] = char(contract_flag(ContractEntryFlag::Initialising));
+   invalid_initialising_flag[0] = char(uint8_t(ContractBoundary::Local));
+   invalid_initialising_flag[5] = char(contract_flag(ContractEntryFlag::Initialising));
+   std::string invalid_local_global_hint = global_hint_encoded;
+   invalid_local_global_hint[0] = char(uint8_t(ContractBoundary::Local));
+   std::string invalid_const_global_hint = build_descriptor(
+      TiriType::Str, CLASSID::NIL, {}, "Value",
+      global_hint_flags | contract_flag(ContractEntryFlag::Const));
+   std::string invalid_unlabelled_global_hint = build_descriptor(
+      TiriType::Str, CLASSID::NIL, {}, {}, global_hint_flags);
    std::string invalid_position = encoded;
-   invalid_position[7] = char(0);
+   invalid_position[6] = char(0);
    std::string invalid_scalar_class = build_descriptor(
-      TIRI_CONTRACT_VERSION, TiriType::Num, CLASSID::TIME, {}, "Value", const_flags);
+      TiriType::Num, CLASSID::TIME, {}, "Value", const_flags);
    std::string invalid_struct_class = build_descriptor(
-      TIRI_CONTRACT_VERSION, TiriType::Struct, CLASSID::TIME, "Point", "Value", const_flags);
+      TiriType::Struct, CLASSID::TIME, "Point", "Value", const_flags);
    std::string truncated_class{
-      char(TIRI_CONTRACT_VERSION), char(uint8_t(ContractBoundary::Local)), char(0), char(1), char(1),
+      char(uint8_t(ContractBoundary::Local)), char(0), char(1), char(1),
       char(uint8_t(TiriType::Object)), char(0), char(1), char(0x80)
    };
    std::string over_wide_class{
-      char(TIRI_CONTRACT_VERSION), char(uint8_t(ContractBoundary::Local)), char(0), char(1), char(1),
+      char(uint8_t(ContractBoundary::Local)), char(0), char(1), char(1),
       char(uint8_t(TiriType::Object)), char(0), char(1), char(0x80), char(0x80), char(0x80), char(0x80),
       char(0x10), char(0), char(0)
    };
    std::string trailing = encoded + "x";
    std::string truncated = encoded.substr(0, encoded.size() - 1);
-   std::string unknown_version = encoded;
-   unknown_version[0] = char(TIRI_CONTRACT_VERSION + 1);
 
-   if (not rejected(invalid_descriptor_flags) or not rejected(invalid_entry_flags) or
+   if (not rejected(invalid_descriptor_flags) or not rejected(invalid_boundary) or
+       not rejected(invalid_entry_flags) or
        not rejected(invalid_initialising_flag) or
+       not rejected(invalid_local_global_hint) or not rejected(invalid_const_global_hint) or
+       not rejected(invalid_unlabelled_global_hint) or
        not rejected(invalid_position) or not rejected(invalid_scalar_class) or not rejected(invalid_struct_class) or
        not rejected(truncated_class) or not rejected(over_wide_class) or not rejected(trailing) or
-       not rejected(truncated) or not rejected(unknown_version)) {
+       not rejected(truncated)) {
       Log.error("shared runtime contract decoder accepted malformed input");
       return false;
    }
@@ -2074,6 +2088,219 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
       return false;
    }
    lua_pop(lua, 1);
+   return true;
+}
+
+static bool test_runtime_contract_batching(kt::Log &Log)
+{
+   struct ContractInstruction {
+      BCREG base = 0;
+      RuntimeContractDescriptor descriptor;
+   };
+
+   LuaStateHolder state;
+   lua_State *lua = state.get();
+   bool decode_failed = false;
+   auto read_contracts = [&decode_failed](GCproto *Proto, ContractBoundary Boundary) {
+      std::vector<ContractInstruction> result;
+      for (uint32_t i = 1; Proto and i < Proto->sizebc; ++i) {
+         BCIns instruction = proto_bc(Proto)[i];
+         if (bc_op(instruction) != BC_CONTRACT) continue;
+
+         GCstr *encoded = gco_to_string(proto_kgc(Proto, ~(ptrdiff_t)bc_d(instruction)));
+         RuntimeContractDescriptor descriptor;
+         if (not decode_runtime_contract(encoded, descriptor)) {
+            decode_failed = true;
+            continue;
+         }
+         if (descriptor.boundary IS Boundary) {
+            result.push_back(ContractInstruction{
+               .base = bc_a(instruction),
+               .descriptor = descriptor
+            });
+         }
+      }
+      return result;
+   };
+   auto compile_child = [lua, &Log](std::string_view Source, const char *Label) -> GCproto * {
+      if (lua_load(lua, Source, Label)) {
+         Log.error("failed to compile %s: %s", Label, lua_tostring(lua, -1));
+         return nullptr;
+      }
+      return first_child_proto(funcproto(funcV(lua->top - 1)));
+   };
+
+   GCproto *dense = compile_child(
+      "return function(A:num, B:str, C:bool, D:table) return A end\n", "dense-parameter-contracts");
+   auto dense_contracts = read_contracts(dense, ContractBoundary::Parameter);
+   if (not dense or decode_failed or dense_contracts.size() != 1 or dense_contracts[0].base != 0 or
+       dense_contracts[0].descriptor.static_value_count != 4 or
+       dense_contracts[0].descriptor.contract_count != 4 or not proto_contract_cache(dense) or
+       proto_contract_cache(dense)->record_count != 1 or proto_contract_cache(dense)->entry_count != 4) {
+      Log.error("four adjacent parameter contracts did not batch into one descriptor");
+      return false;
+   }
+   constexpr std::array<TiriType, 4> dense_types{
+      TiriType::Num, TiriType::Str, TiriType::Bool, TiriType::Table
+   };
+   constexpr std::array<std::string_view, 4> dense_labels{ "A", "B", "C", "D" };
+   for (uint8_t i = 0; i < dense_types.size(); ++i) {
+      const RuntimeContractEntry &entry = dense_contracts[0].descriptor.entries[i];
+      if (entry.type != dense_types[i] or entry.position != i + 1 or entry.label != dense_labels[i]) {
+         Log.error("dense parameter contract entry %u lost its type, position or label", unsigned(i + 1));
+         return false;
+      }
+   }
+   lua_pop(lua, 1);
+
+   GCproto *wide = compile_child(
+      "return function(A:num, B:num, C:num, D:num, E:num, F:num, G:num, H:num, I:num) return A end\n",
+      "wide-parameter-contracts");
+   auto wide_contracts = read_contracts(wide, ContractBoundary::Parameter);
+   const RuntimeContractCache *wide_cache = wide ? proto_contract_cache(wide) : nullptr;
+   if (not wide or decode_failed or wide_contracts.size() != 2 or wide_contracts[0].base != 0 or
+       wide_contracts[0].descriptor.static_value_count != MAX_RETURN_TYPES or
+       wide_contracts[0].descriptor.contract_count != MAX_RETURN_TYPES or wide_contracts[1].base != 8 or
+       wide_contracts[1].descriptor.static_value_count != 1 or wide_contracts[1].descriptor.contract_count != 1 or
+       wide_contracts[1].descriptor.entries[0].position != 9 or wide_contracts[1].descriptor.entries[0].label != "I" or
+       not wide_cache or wide_cache->record_count != 2 or wide_cache->entry_count != MAX_RETURN_TYPES + 1) {
+      Log.error("nine adjacent parameter contracts did not split at the descriptor entry limit");
+      return false;
+   }
+   lua_pop(lua, 1);
+
+   GCproto *fragmented = compile_child(
+      "struct FragmentedRecord Value: int end\n"
+      "return function(A:num, B:any, C:struct<FragmentedRecord>) return A end\n",
+      "fragmented-parameter-contracts");
+   auto fragmented_contracts = read_contracts(fragmented, ContractBoundary::Parameter);
+   const RuntimeContractCache *fragmented_cache = fragmented ? proto_contract_cache(fragmented) : nullptr;
+   if (not fragmented or decode_failed or fragmented_contracts.size() != 2 or
+       fragmented_contracts[0].base != 0 or fragmented_contracts[0].descriptor.contract_count != 1 or
+       fragmented_contracts[0].descriptor.entries[0].position != 1 or fragmented_contracts[1].base != 2 or
+       fragmented_contracts[1].descriptor.contract_count != 1 or
+       fragmented_contracts[1].descriptor.entries[0].position != 3 or
+       fragmented_contracts[1].descriptor.entries[0].struct_name != "FragmentedRecord" or
+       not fragmented_cache or fragmented_cache->record_count != 2 or fragmented_cache->entry_count != 2) {
+      Log.error("an unchecked parameter gap did not split dense contract runs");
+      return false;
+   }
+
+   lua_gc(lua, LUA_GCCOLLECT, 0);
+   fragmented_cache = proto_contract_cache(fragmented);
+   const CachedRuntimeContractRecord *fragmented_records = runtime_contract_cache_records(fragmented_cache);
+   const CachedRuntimeContractEntry *fragmented_entries = runtime_contract_cache_entries(fragmented_cache);
+   if (fragmented_records[0].contract_count != 1 or fragmented_records[0].entry_index != 0 or
+       fragmented_records[1].contract_count != 1 or fragmented_records[1].entry_index != 1 or
+       fragmented_records[0].bytecode_position >= fragmented_records[1].bytecode_position or
+       fragmented_entries[0].type != TiriType::Num or fragmented_entries[0].position != 1 or
+       fragmented_entries[1].type != TiriType::Struct or fragmented_entries[1].position != 3) {
+      Log.error("single-entry runtime contract cache records have an invalid layout");
+      return false;
+   }
+
+   BCIns fragmented_instruction = proto_bc(fragmented)[fragmented_records[1].bytecode_position];
+   GCstr *fragmented_descriptor = gco_to_string(
+      proto_kgc(fragmented, ~(ptrdiff_t)bc_d(fragmented_instruction)));
+   auto cached_text = [fragmented_descriptor](uint16_t Offset) -> std::string_view {
+      if (not Offset) return {};
+      const char *text = strdata(fragmented_descriptor) + Offset;
+      return std::string_view(text, uint8_t(text[-1]));
+   };
+   if (cached_text(fragmented_entries[1].struct_offset) != "FragmentedRecord" or
+       cached_text(fragmented_entries[1].label_offset) != "C") {
+      Log.error("single-entry runtime contract cache lost rooted structure or label text");
+      return false;
+   }
+   lua_pop(lua, 1);
+
+   for (uint32_t iteration = 0; iteration < 32; ++iteration) {
+      GCproto *repeated = compile_child(
+         "return function(Value:num) return Value end\n", "repeated-single-contract-lifetime");
+      const RuntimeContractCache *repeated_cache = repeated ? proto_contract_cache(repeated) : nullptr;
+      if (not repeated_cache or repeated_cache->record_count != 1 or repeated_cache->entry_count != 1) {
+         Log.error("repeated prototype creation did not build a single-entry runtime contract cache");
+         return false;
+      }
+
+      lua_gc(lua, LUA_GCCOLLECT, 0);
+      repeated_cache = proto_contract_cache(repeated);
+      if (not repeated_cache or repeated_cache->record_count != 1 or repeated_cache->entry_count != 1) {
+         Log.error("a rooted single-entry runtime contract cache did not survive collection");
+         return false;
+      }
+      lua_pop(lua, 1);
+      lua_gc(lua, LUA_GCCOLLECT, 0);
+   }
+
+   constexpr std::string_view combined_source =
+      "local function Dynamic():<any,any,any,any> return 1,'text',true,{} end\n"
+      "return function(A:num, B:str, C:bool, D:table)\n"
+      "   local E:num, F:str, G:bool, H:table = Dynamic()\n"
+      "   return A\n"
+      "end\n";
+   if (lua_load(lua, combined_source, "grouped-contract-roundtrip")) {
+      Log.error("failed to compile grouped contract round-trip source: %s", lua_tostring(lua, -1));
+      return false;
+   }
+
+   auto find_four_parameter_proto = [](auto &Self, GCproto *Proto) -> GCproto * {
+      if (Proto->numparams IS 4) return Proto;
+      for (ptrdiff_t i = -ptrdiff_t(Proto->sizekgc); i < 0; ++i) {
+         GCobj *object = proto_kgc(Proto, i);
+         if (object->gch.gct != uint8_t(~LJ_TPROTO)) continue;
+         if (GCproto *result = Self(Self, gco_to_proto(object))) return result;
+      }
+      return nullptr;
+   };
+
+   GCproto *root = funcproto(funcV(lua->top - 1));
+   GCproto *combined = find_four_parameter_proto(find_four_parameter_proto, root);
+   auto combined_parameters = read_contracts(combined, ContractBoundary::Parameter);
+   auto combined_locals = read_contracts(combined, ContractBoundary::Local);
+   if (not combined or decode_failed or combined_parameters.size() != 1 or combined_locals.size() != 1 or
+       combined_parameters[0].descriptor.contract_count != 4 or
+       combined_locals[0].descriptor.contract_count != 4 or combined_locals[0].base != 4 or
+       not proto_contract_cache(combined) or proto_contract_cache(combined)->record_count != 2 or
+       proto_contract_cache(combined)->entry_count != 8) {
+      Log.error("parameter and local declaration runs did not batch in one prototype");
+      return false;
+   }
+
+   std::string dump;
+   if (lua_dump(lua, bytecode_writer, &dump) != 0) {
+      Log.error("failed to dump grouped contract bytecode");
+      return false;
+   }
+   std::string stripped_dump;
+   if (lj_bcwrite(lua, root, bytecode_writer, &stripped_dump, 1) != 0) {
+      Log.error("failed to dump stripped grouped contract bytecode");
+      return false;
+   }
+   lua_pop(lua, 1);
+
+   auto verify_dump = [&](const std::string &Dump, const char *Label) {
+      if (lua_load(lua, std::string_view(Dump.data(), Dump.size()), Label)) {
+         Log.error("failed to reload %s: %s", Label, lua_tostring(lua, -1));
+         return false;
+      }
+
+      GCproto *loaded_root = funcproto(funcV(lua->top - 1));
+      GCproto *loaded = find_four_parameter_proto(find_four_parameter_proto, loaded_root);
+      auto parameters = read_contracts(loaded, ContractBoundary::Parameter);
+      auto locals = read_contracts(loaded, ContractBoundary::Local);
+      const RuntimeContractCache *cache = loaded ? proto_contract_cache(loaded) : nullptr;
+      bool valid = loaded and not decode_failed and parameters.size() IS 1 and locals.size() IS 1 and
+         parameters[0].descriptor.contract_count IS 4 and locals[0].descriptor.contract_count IS 4 and cache and
+         cache->record_count IS 2 and cache->entry_count IS 8;
+      lua_pop(lua, 1);
+      return valid;
+   };
+   if (not verify_dump(dump, "grouped-contract-roundtrip") or
+       not verify_dump(stripped_dump, "stripped-grouped-contract-roundtrip")) {
+      Log.error("grouped parameter or local contracts did not survive bytecode round-trip");
+      return false;
+   }
    return true;
 }
 
@@ -3279,6 +3506,58 @@ static bool test_environment_store_boundary(kt::Log &Log)
       Log.error("declaring the unit-test global failed: %s", lua_tostring(L, -1));
       return false;
    }
+   GCstr *contract_name = lj_str_newz(L, "glUnitEnvBoundary");
+   GCstr *original_descriptor = lj_tab_get_global_contract(environment, contract_name);
+   const CachedGlobalContractRecord *cached = lj_tab_get_cached_global_contract(environment, contract_name);
+   if (not original_descriptor or not cached or cached->descriptor != original_descriptor or
+       cached->entry.type != TiriType::Str or not cached->entry.label_offset) {
+      Log.error("declaring a global did not publish its decoded environment policy cache");
+      return false;
+   }
+   const char *cached_label = strdata(cached->descriptor) + cached->entry.label_offset;
+   if (std::string_view(cached_label, uint8_t(cached_label[-1])) != "glUnitEnvBoundary") {
+      Log.error("the decoded environment policy cache lost its rooted global label");
+      return false;
+   }
+
+   lua_gc(L, LUA_GCCOLLECT, 0);
+   cached = lj_tab_get_cached_global_contract(environment, contract_name);
+   if (not cached or cached->descriptor != original_descriptor or cached->entry.type != TiriType::Str) {
+      Log.error("the decoded environment policy cache did not survive a full collection");
+      return false;
+   }
+
+   constexpr std::string_view cache_growth_source =
+      "global glUnitCache0 = 0\n"
+      "global glUnitCache1 = 1\n"
+      "global glUnitCache2 = 2\n"
+      "global glUnitCache3 = 3\n"
+      "global glUnitCache4 = 4\n"
+      "global glUnitCache5 = 5\n"
+      "global glUnitCache6 = 6\n"
+      "global glUnitCache7 = 7\n"
+      "global glUnitCache8 = 8\n"
+      "global glUnitCache9 = 9\n";
+   if (lua_load(L, cache_growth_source, "=envboundary-growth") or lua_pcall(L, 0, 0, 0)) {
+      Log.error("growing the decoded environment policy cache failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   const GlobalContractCache *global_cache = table_global_contract_cache(environment);
+   if (not global_cache or global_cache->capacity <= 8 or global_cache->count < 11) {
+      Log.error("the decoded environment policy cache did not grow at its load boundary");
+      return false;
+   }
+   for (uint32_t i = 0; i < 10; ++i) {
+      char name[24];
+      std::snprintf(name, sizeof(name), "glUnitCache%u", i);
+      const CachedGlobalContractRecord *record = lj_tab_get_cached_global_contract(
+         environment, lj_str_newz(L, name));
+      if (not record or record->entry.type != TiriType::Num) {
+         Log.error("decoded environment policy cache rehashing lost global %s", name);
+         return false;
+      }
+   }
+
    lua_pushcfunction(L, envstore_contract_attempt);
    if (lua_pcall(L, 0, 0, 0) IS 0) {
       Log.error("an incompatible C API store did not raise against the persisted contract");
@@ -3290,6 +3569,26 @@ static bool test_environment_store_boundary(kt::Log &Log)
    lua_pop(L, 1);
    if (not value_kept) {
       Log.error("the rejected store mutated the declared global");
+      return false;
+   }
+
+   // A separately compiled direct assignment must rely on BC_GSET instead of copying the persisted descriptor into a
+   // preceding BC_CONTRACT.
+   constexpr std::string_view assignment_source =
+      "extern glUnitEnvBoundary\n"
+      "glUnitEnvBoundary = 'compiled'\n";
+   if (lua_load(L, assignment_source, "=envboundary-assignment")) {
+      Log.error("compiling the persisted-policy assignment failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   BytecodeSnapshot assignment = snapshot_proto(funcproto(funcV(L->top - 1)));
+   if (count_opcode_tree(assignment, BC_CONTRACT) != 0 or count_opcode_tree(assignment, BC_GSET) != 1) {
+      Log.error("persisted-policy assignment emitted %zu contracts and %zu global stores",
+         count_opcode_tree(assignment, BC_CONTRACT), count_opcode_tree(assignment, BC_GSET));
+      return false;
+   }
+   if (lua_pcall(L, 0, 0, 0)) {
+      Log.error("executing the persisted-policy assignment failed: %s", lua_tostring(L, -1));
       return false;
    }
 
@@ -3357,6 +3656,28 @@ static bool test_environment_store_boundary(kt::Log &Log)
       return false;
    }
    lua_pop(L, 1);
+
+   // Policy replacement must update the decoded record and descriptor identity as one publication.  An explicit any
+   // declaration deliberately relaxes the earlier concrete policy.
+   if (lua_load(L, std::string_view("global glUnitEnvBoundary:any = 5"), "=envboundary-replacement") or
+       lua_pcall(L, 0, 0, 0)) {
+      Log.error("replacing the unit-test global policy failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   GCstr *replacement_descriptor = lj_tab_get_global_contract(environment, contract_name);
+   cached = lj_tab_get_cached_global_contract(environment, contract_name);
+   if (not replacement_descriptor or replacement_descriptor IS original_descriptor or not cached or
+       cached->descriptor != replacement_descriptor or cached->entry.type != TiriType::Any) {
+      Log.error("global policy replacement left a stale decoded cache record");
+      return false;
+   }
+
+   lua_gc(L, LUA_GCCOLLECT, 0);
+   cached = lj_tab_get_cached_global_contract(environment, contract_name);
+   if (not cached or cached->descriptor != replacement_descriptor or cached->entry.type != TiriType::Any) {
+      Log.error("a replaced decoded global policy did not survive collection");
+      return false;
+   }
    return true;
 }
 
@@ -3448,6 +3769,31 @@ static bool test_native_prototype_result_descriptors(kt::Log &Log)
    if (compile_snapshot(L, dynamic_result, true, error) or
        error.find("cannot infer type of local 'value'") IS std::string::npos) {
       Log.error("an any-valued native prototype was incorrectly treated as a fixed type: %s", error.c_str());
+      return false;
+   }
+
+   // Untyped table reads yield 'any' because element types are not tracked.  Reassigning such a local must stay
+   // legal: an annotation would only add a CONTRACT guard without unlocking a specialised opcode, and ':any' would
+   // restore exactly the type the local already had.
+
+   constexpr std::string_view table_read_reassignment =
+      "local source = { Value = 1.5 }\n"
+      "local direct = source.Value\n"
+      "direct = direct * 2\n"
+      "local indexed = source['Value']\n"
+      "indexed = 5\n"
+      "local same_source = source.Value\n"
+      "same_source = source.Value\n"
+      "local defaulted = source.Missing ?? 1.96\n"
+      "defaulted = defaulted * 2\n"
+      "local arithmetic = 0.5 + source.Value\n"
+      "arithmetic = 11\n"
+      "local negated = -source.Value\n"
+      "negated = 5\n"
+      "return direct, indexed, same_source, defaulted, arithmetic, negated\n";
+   error.clear();
+   if (not compile_snapshot(L, table_read_reassignment, true, error)) {
+      Log.error("reassigning a local initialised from an untyped table read was rejected: %s", error.c_str());
       return false;
    }
 
@@ -4084,7 +4430,7 @@ static bool test_type_guided_emission(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 48> tests = { {
+   constexpr std::array<TestCase, 49> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -4113,6 +4459,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "malformed_signature_rejected", test_malformed_signature_rejected },
       { "contract_bytecode_roundtrip", test_contract_bytecode_roundtrip },
       { "runtime_contract_decoder", test_runtime_contract_decoder },
+      { "runtime_contract_batching", test_runtime_contract_batching },
       { "complex_contract_jit_eligibility", test_complex_contract_jit_eligibility },
       { "parser_diagnostics_reset_per_load", test_parser_diagnostics_reset_per_load },
       { "userdata_type_annotations", test_userdata_type_annotations },

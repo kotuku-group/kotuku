@@ -10,6 +10,7 @@
 #include "lj_obj.h"
 #include "lj_gc.h"
 #include "lj_func.h"
+#include "lj_contract.h"
 #include "lj_trace.h"
 #include "lj_vm.h"
 
@@ -17,6 +18,8 @@
 
 void lj_func_freeproto(global_State *g, GCproto *pt)
 {
+   if (auto cache = proto_contract_cache(pt)) lj_mem_free(g, cache, cache->byte_size);
+
    // Free try-except metadata if present
    if (pt->try_blocks) lj_mem_free(g, pt->try_blocks, pt->try_block_count * sizeof(TryBlockDesc));
    if (pt->try_handlers) lj_mem_free(g, pt->try_handlers, pt->try_handler_count * sizeof(TryHandlerDesc));

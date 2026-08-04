@@ -41,6 +41,7 @@ extern void luaL_where(lua_State *, int lvl);
 [[noreturn]] extern void luaL_error(lua_State *, ERR);
 [[noreturn]] extern void luaL_error(lua_State *, ERR, const char *, ...);
 [[noreturn]] extern void luaL_error(lua_State *, ERR, std::string);
+[[noreturn]] extern void luaL_error_current(lua_State *, ERR, const char *, ...);
 extern int luaL_checkoption(lua_State *, int, const char *, const char *const lst[]);
 extern TValue * resolve_index(lua_State *L, int);
 

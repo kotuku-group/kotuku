@@ -96,6 +96,15 @@ struct RuntimeContract {
    bool required = false;
    bool is_const = false;
    bool initialising = false;
+   bool global_hint = false;
+};
+
+// Associates a transient contract with the register it validates.  Dense batching uses the register separately from
+// RuntimeContract::position because the latter is stable diagnostic metadata rather than a relative stack offset.
+
+struct RuntimeContractSlot {
+   BCREG register_index = 0;
+   RuntimeContract contract;
 };
 
 // Concept for flag types that support bitwise operations
@@ -240,7 +249,6 @@ struct ExpDesc {
    StaticValueHandle static_value = 0;
    StaticResultSetHandle static_results = 0;
    uint32_t struct_field_index = 0xFFFFFFFFu; // Pre-resolved field index for STGETF/STSETF
-   bool type_confirmed = false;  // True if result_type is confirmed from class dictionary lookup
    BCPOS t;        // True condition jump list.
    BCPOS f;        // False condition jump list.
 

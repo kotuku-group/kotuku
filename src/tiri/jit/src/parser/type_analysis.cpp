@@ -73,6 +73,43 @@
    return Function.body and Function.body->statements.empty();
 }
 
+// Reads from an untyped table yield 'any' because element types are not tracked.  Such a value is dynamic by nature
+// rather than by an unresolved ingress, so it must not lock the destination into requiring an annotation; demanding
+// one would only add a CONTRACT guard without unlocking a specialised opcode.  Struct fields and typed array elements
+// infer concrete types and never reach this path.
+
+[[nodiscard]] static bool is_table_read_expression(const ExprNode &Expr)
+{
+   switch (Expr.kind) {
+      case AstNodeKind::MemberExpr:
+      case AstNodeKind::IndexExpr:
+      case AstNodeKind::SafeMemberExpr:
+      case AstNodeKind::SafeIndexExpr:
+         return true;
+
+      // Binary expressions yield 'any' when a table read can invoke an overloaded operator.  This includes defaulted
+      // reads such as t[k] ?? fallback and arithmetic such as 0.5 + t.value.  Recurse so the exemption follows the
+      // value's origin.
+
+      case AstNodeKind::BinaryExpr: {
+         const auto *payload = std::get_if<BinaryExprPayload>(&Expr.data);
+         if (not payload) return false;
+         return (payload->left and is_table_read_expression(*payload->left)) or
+            (payload->right and is_table_read_expression(*payload->right));
+      }
+
+      // Unary negation can remain dynamic when its operand is a table read because the value may overload '-'.
+
+      case AstNodeKind::UnaryExpr: {
+         const auto *payload = std::get_if<UnaryExprPayload>(&Expr.data);
+         return payload and payload->operand and is_table_read_expression(*payload->operand);
+      }
+
+      default:
+         return false;
+   }
+}
+
 [[nodiscard]] static std::optional<std::string> function_signature_mismatch(
    const FunctionExprPayload &Expected, const FunctionExprPayload &Actual)
 {
@@ -1437,7 +1474,8 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
                else inferred = this->infer_call_return_type(*Payload.values[source], result_position);
 
                inferred.requires_destination_type =
-                  inferred.primary IS TiriType::Any or inferred.primary IS TiriType::Unknown;
+                  (inferred.primary IS TiriType::Any or inferred.primary IS TiriType::Unknown) and
+                  not (result_position IS 0 and is_table_read_expression(*Payload.values[source]));
                inferred.is_fixed = inferred.primary != TiriType::Nil and inferred.primary != TiriType::Any and
                   inferred.primary != TiriType::Unknown;
                if (Payload.op != AssignmentOperator::Plain and not inferred.requires_destination_type) {
@@ -1611,6 +1649,7 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
       InferredType inferred;
       InferredType value_type;
       bool have_value_type = false;
+      const ExprNode *initialiser = nullptr;  // Direct initialiser, excluding trailing multi-return positions
 
       // Determine the value type for this variable
       if (value_index < Payload.values.size()) {
@@ -1618,6 +1657,7 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
          const ExprNode& value_expr = *Payload.values[value_index];
          value_type = this->infer_expression_type(value_expr);
          have_value_type = true;
+         initialiser = &value_expr;
 
          // If this is the last value and it can provide multiple results, retain it for later declaration positions.
          if (value_index IS Payload.values.size() - 1 and
@@ -1683,7 +1723,8 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
          inferred = value_type;
 
          inferred.requires_destination_type = not name.is_blank and
-            (inferred.primary IS TiriType::Any or inferred.primary IS TiriType::Unknown);
+            (inferred.primary IS TiriType::Any or inferred.primary IS TiriType::Unknown) and
+            not (initialiser and is_table_read_expression(*initialiser));
 
          // Non-nil, non-any initial values fix the type
          if (inferred.primary != TiriType::Nil and inferred.primary != TiriType::Any and

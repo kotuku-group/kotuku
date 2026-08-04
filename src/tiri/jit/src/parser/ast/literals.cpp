@@ -32,12 +32,6 @@ ParserResult<ExprNodePtr> AstBuilder::parse_function_literal(
    if (not type_result.ok()) return ParserResult<ExprNodePtr>::failure(type_result.error_ref());
    FunctionReturnTypes return_types = type_result.value_ref();
 
-   // For thunk compatibility: extract single return type for thunk_return_type field
-   TiriType thunk_return_type = TiriType::Any;
-   if (IsThunk and return_types.count > 0) {
-      thunk_return_type = return_types.types[0];
-   }
-
    const TokenKind terms[] = { TokenKind::EndToken };
    FunctionNameScope function_name_scope(*this, FunctionName);
    ++this->function_depth;
@@ -47,7 +41,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_function_literal(
 
    this->ctx.consume(TokenKind::EndToken, ParserErrorCode::ExpectedToken);
    ExprNodePtr node = make_function_expr(FunctionToken.span(), std::move(params.value_ref().parameters),
-      params.value_ref().is_vararg, std::move(body.value_ref()), IsThunk, thunk_return_type, return_types);
+      params.value_ref().is_vararg, std::move(body.value_ref()), IsThunk, return_types);
    return ParserResult<ExprNodePtr>::success(std::move(node));
 }
 

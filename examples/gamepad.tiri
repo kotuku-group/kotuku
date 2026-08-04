@@ -90,7 +90,7 @@ Gamepad demonstration
    err, ball_squash_matrix = ballVP.mtNewMatrix(false)
    err, ball_spin_matrix = ballInnerVP.mtNewMatrix(false)
 
-function clamp(Value, MinValue, MaxValue)
+function clamp(Value, MinValue, MaxValue):num
    if Value < MinValue then
       return MinValue
    elseif Value > MaxValue then

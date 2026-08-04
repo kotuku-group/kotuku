@@ -344,7 +344,7 @@ bmark.confidenceInterval = function(Values:array, Confidence:num):table
    }
 
    -- Use z-value or approximate t-value for small samples
-   local z_val = z_values[Confidence] ?? 1.96
+   z_val = z_values[Confidence] ?? 1.96
    if n <= 30 then
       -- Rough t-distribution approximation for small samples
       z_val = z_val * (1 + 1 / (2 * (n - 1)))

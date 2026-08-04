@@ -266,6 +266,7 @@ end
    end
 
    val = untyped_thunk()
+   assert(type(val) is "userdata", "Thunk without a return annotation should retain the default userdata type")
    -- Direct comparison now works transparently
    assert(val is "default", "Untyped thunk should work")
 end

@@ -137,7 +137,7 @@ function newParticle()
          })
       end
    elseif glMode is MODE_DIRECTVECTOR then
-      particle.colour = glColours[(math.floor(math.random() * #glColours))]
+      particle.colour = glVectorColours[(math.floor(math.random() * #glVectorColours))]
       local err:num
       if glShape is 'star' then
          err, particle.path = lVec.GeneratePath(makeStarSequence(particle.x+particle.radius, particle.y+particle.radius, particle.radius))
@@ -336,7 +336,7 @@ end
 
       glSurface.mtAddCallback(drawDirectVector)
 
-      glColours = array<object> {
+      global glVectorColours = array<object> {
         obj.new('VectorColour', { red=0.8,   green=0,   blue=0 }),
         obj.new('VectorColour', { red=1.0,   green=0.8, blue=0 }),
         obj.new('VectorColour', { red=0.666, green=1.0, blue=0 }),

@@ -7,10 +7,8 @@
 
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <string_view>
-
-inline constexpr uint8_t TIRI_CONTRACT_VERSION = 2;
-inline constexpr uint8_t TIRI_CONTRACT_LEGACY_VERSION = 1;
 
 enum class ContractBoundary : uint8_t {
    Parameter = 1,
@@ -31,7 +29,8 @@ enum class ContractEntryFlag : uint8_t {
    Nullable = 1 << 0,
    Required = 1 << 1,
    Const = 1 << 2,
-   Initialising = 1 << 3
+   Initialising = 1 << 3,
+   GlobalHint = 1 << 4
 };
 
 [[nodiscard]] constexpr inline uint8_t contract_flag(ContractDescriptorFlag Flag) noexcept
@@ -78,6 +77,113 @@ struct RuntimeContractDescriptor {
    }
 };
 
+// Compact, prototype-owned derivative of portable descriptors.  Text offsets address the first text byte in the
+// rooted GCstr descriptor; its preceding byte remains the canonical length.  Both single-entry and grouped records
+// share this representation so hot contract checks never need to decode their portable descriptor.
+
+struct CachedRuntimeContractEntry {
+   union {
+      uint32_t object_class_id;
+      uint16_t struct_offset;
+   };
+   uint16_t label_offset;
+   TiriType type;
+   uint8_t flags;
+   uint8_t position;
+};
+
+struct CachedRuntimeContractRecord {
+   uint32_t bytecode_position;
+   ContractBoundary boundary;
+   uint8_t flags;
+   uint8_t static_value_count;
+   uint8_t contract_count;
+   uint16_t entry_index;
+};
+
+struct RuntimeContractCache {
+   uint32_t byte_size;
+   uint16_t record_count;
+   uint16_t entry_count;
+};
+
+// Environment-owned derivative of a persisted global contract.  Name and descriptor are raw pointers because the
+// authoritative contracts table roots both strings for at least as long as this cache.  Empty slots have a null name.
+
+struct CachedGlobalContractRecord {
+   const GCstr *name;
+   GCstr *descriptor;
+   CachedRuntimeContractEntry entry;
+};
+
+struct GlobalContractCache {
+   uint32_t byte_size;
+   uint32_t count;
+   uint32_t capacity;
+   uint32_t reserved;
+};
+
+static_assert(sizeof(CachedRuntimeContractEntry) IS 12, "cached runtime contract entries must remain compact");
+static_assert(sizeof(CachedRuntimeContractRecord) IS 12, "cached runtime contract records must remain compact");
+static_assert(sizeof(RuntimeContractCache) IS 8, "runtime contract cache header must remain compact");
+static_assert(sizeof(CachedGlobalContractRecord) IS 32, "cached global contract records must remain compact");
+static_assert(sizeof(GlobalContractCache) IS 16, "global contract cache header must remain compact");
+
+[[nodiscard]] inline CachedRuntimeContractRecord * runtime_contract_cache_records(
+   RuntimeContractCache *Cache) noexcept
+{
+   return (CachedRuntimeContractRecord *)(Cache + 1);
+}
+
+[[nodiscard]] inline const CachedRuntimeContractRecord * runtime_contract_cache_records(
+   const RuntimeContractCache *Cache) noexcept
+{
+   return (const CachedRuntimeContractRecord *)(Cache + 1);
+}
+
+[[nodiscard]] inline CachedRuntimeContractEntry * runtime_contract_cache_entries(RuntimeContractCache *Cache) noexcept
+{
+   return (CachedRuntimeContractEntry *)(runtime_contract_cache_records(Cache) + Cache->record_count);
+}
+
+[[nodiscard]] inline const CachedRuntimeContractEntry * runtime_contract_cache_entries(
+   const RuntimeContractCache *Cache) noexcept
+{
+   return (const CachedRuntimeContractEntry *)(runtime_contract_cache_records(Cache) + Cache->record_count);
+}
+
+[[nodiscard]] inline RuntimeContractCache * proto_contract_cache(GCproto *Proto) noexcept
+{
+   return Proto->contract_cache.get<RuntimeContractCache>();
+}
+
+[[nodiscard]] inline const RuntimeContractCache * proto_contract_cache(const GCproto *Proto) noexcept
+{
+   return Proto->contract_cache.get<const RuntimeContractCache>();
+}
+
+[[nodiscard]] inline CachedGlobalContractRecord * global_contract_cache_records(
+   GlobalContractCache *Cache) noexcept
+{
+   return (CachedGlobalContractRecord *)(Cache + 1);
+}
+
+[[nodiscard]] inline const CachedGlobalContractRecord * global_contract_cache_records(
+   const GlobalContractCache *Cache) noexcept
+{
+   return (const CachedGlobalContractRecord *)(Cache + 1);
+}
+
+[[nodiscard]] inline GlobalContractCache * table_global_contract_cache(GCtab *Table) noexcept
+{
+   return Table->global_contract_cache.get<GlobalContractCache>();
+}
+
+[[nodiscard]] inline const GlobalContractCache * table_global_contract_cache(const GCtab *Table) noexcept
+{
+   return Table->global_contract_cache.get<const GlobalContractCache>();
+}
+
 [[nodiscard]] constexpr inline bool contract_entry_is_const(const RuntimeContractEntry &Entry) noexcept
 {
    return (Entry.flags & contract_flag(ContractEntryFlag::Const)) != 0;
@@ -86,6 +192,28 @@ struct RuntimeContractDescriptor {
 [[nodiscard]] constexpr inline bool contract_entry_is_initialising(const RuntimeContractEntry &Entry) noexcept
 {
    return (Entry.flags & contract_flag(ContractEntryFlag::Initialising)) != 0;
+}
+
+[[nodiscard]] constexpr inline bool contract_entry_is_global_hint(const RuntimeContractEntry &Entry) noexcept
+{
+   return (Entry.flags & contract_flag(ContractEntryFlag::GlobalHint)) != 0;
+}
+
+[[nodiscard]] constexpr inline bool contract_entry_is_variant(const RuntimeContractEntry &Entry) noexcept
+{
+   return Entry.type IS TiriType::Any;
+    //or (Entry.type IS TiriType::Array and Entry.array_element_type IS AET::ANY);
+}
+
+[[nodiscard]] inline bool contract_descriptor_is_global_variant_initialiser(
+   const RuntimeContractDescriptor &Descriptor, const GCstr *Name) noexcept
+{
+   if (Descriptor.boundary != ContractBoundary::Global or Descriptor.contract_count != 1) return false;
+
+   const RuntimeContractEntry &entry = Descriptor.entries[0];
+   return contract_entry_is_initialising(entry) and not contract_entry_is_const(entry) and
+      contract_entry_is_variant(entry) and entry.label.size() IS Name->len and
+      not std::memcmp(entry.label.data(), strdata(Name), Name->len);
 }
 
 enum class RuntimeContractDecodeError : uint8_t {
@@ -140,24 +268,21 @@ private:
    const uint8_t *end_;
 };
 
+// Result is usable only when decoding succeeds.  Avoid clearing the fixed-capacity entry array here because callers
+// already default-initialise it and every live entry is overwritten below.
 [[nodiscard]] inline bool decode_runtime_contract(
    const GCstr *Descriptor, RuntimeContractDescriptor &Result,
    RuntimeContractDecodeError *Error = nullptr) noexcept
 {
-   Result = RuntimeContractDescriptor{};
    if (Error) *Error = RuntimeContractDecodeError::None;
-   auto fail = [&Result, Error](RuntimeContractDecodeError Value) {
-      Result = RuntimeContractDescriptor{};
+   auto fail = [Error](RuntimeContractDecodeError Value) {
       if (Error) *Error = Value;
       return false;
    };
 
    RuntimeContractReader reader(Descriptor);
-   uint8_t version;
    uint8_t boundary;
-   if (not reader.read_byte(version) or
-       (version != TIRI_CONTRACT_LEGACY_VERSION and version != TIRI_CONTRACT_VERSION) or
-       not reader.read_byte(boundary) or boundary < uint8_t(ContractBoundary::Parameter) or
+   if (not reader.read_byte(boundary) or boundary < uint8_t(ContractBoundary::Parameter) or
        boundary > uint8_t(ContractBoundary::Global) or not reader.read_byte(Result.flags) or
        (Result.flags & ~(contract_flag(ContractDescriptorFlag::DynamicCount) |
           contract_flag(ContractDescriptorFlag::Variadic))) != 0 or
@@ -166,18 +291,18 @@ private:
       return fail(RuntimeContractDecodeError::Descriptor);
    }
    Result.boundary = ContractBoundary(boundary);
-
    for (uint8_t i = 0; i < Result.contract_count; ++i) {
       auto &entry = Result.entries[i];
       uint8_t type;
       uint32_t object_class_id = 0;
+      uint8_t allowed_entry_flags = contract_flag(ContractEntryFlag::Nullable) |
+         contract_flag(ContractEntryFlag::Required) | contract_flag(ContractEntryFlag::Const) |
+         contract_flag(ContractEntryFlag::Initialising) | contract_flag(ContractEntryFlag::GlobalHint);
       if (not reader.read_byte(type) or type > uint8_t(TiriType::Unknown) or
           not reader.read_byte(entry.flags) or
-          (entry.flags & ~(contract_flag(ContractEntryFlag::Nullable) |
-             contract_flag(ContractEntryFlag::Required) | contract_flag(ContractEntryFlag::Const) |
-             contract_flag(ContractEntryFlag::Initialising))) != 0 or
+          (entry.flags & ~allowed_entry_flags) != 0 or
           not reader.read_byte(entry.position) or entry.position IS 0 or
-          (version IS TIRI_CONTRACT_VERSION and not reader.read_uleb32(object_class_id)) or
+          not reader.read_uleb32(object_class_id) or
           not reader.read_text(entry.struct_name) or not reader.read_text(entry.label)) {
          return fail(RuntimeContractDecodeError::Entry);
       }
@@ -185,8 +310,13 @@ private:
       entry.object_class_id = CLASSID(object_class_id);
       bool is_const = contract_entry_is_const(entry);
       bool is_initialising = contract_entry_is_initialising(entry);
+      bool is_global_hint = contract_entry_is_global_hint(entry);
       if ((is_const and Result.boundary != ContractBoundary::Global) or
-          (is_initialising and not is_const)) {
+          (is_initialising and Result.boundary != ContractBoundary::Global) or
+          (is_global_hint and
+             (Result.boundary != ContractBoundary::Global or Result.static_value_count != 1 or
+              Result.contract_count != 1 or entry.position != 1 or entry.label.empty() or is_const or
+              is_initialising))) {
          return fail(RuntimeContractDecodeError::Entry);
       }
       if (not entry.struct_name.empty() and entry.type != TiriType::Struct) {

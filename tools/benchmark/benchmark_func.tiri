@@ -5,27 +5,27 @@
 
 @Test function FunctionLocalCalls()
    -- Define local functions with varying argument counts
-   local function noArgs()
+   local function noArgs():num
       return 42
    end
 
-   local function oneArg(a)
+   local function oneArg(a):num
       return a * 2
    end
 
-   local function twoArgs(a, b)
+   local function twoArgs(a, b):num
       return a + b
    end
 
-   local function threeArgs(a, b, c)
+   local function threeArgs(a, b, c):num
       return a + b + c
    end
 
-   local function fiveArgs(a, b, c, d, e)
+   local function fiveArgs(a, b, c, d, e):num
       return a + b + c + d + e
    end
 
-   local function returnsMultiple(x)
+   local function returnsMultiple(x):<num, num, num>
       return x, x * 2, x * 3
    end
 
@@ -183,26 +183,26 @@ end
       local numbers = { 1, 2, 3, 4, 5 }
       local mapped = {}
       for idx, n in ipairs(numbers) do
-         mapped[idx] = (x => x * 2)(n)
+         mapped[idx] = (x => num: x * 2)(n)
          checksum += mapped[idx]
       end
 
       -- Immediately invoked arrow function
-      local result = (x => x * x)(i)
+      local result = (x => num: x * x)(i)
 
       -- Arrow functions as callbacks (simulated)
-      local apply = function(fn, val)
+      local apply = function(fn, val):num
          return fn(val)
       end
-      local v3 = apply((x => x + 10), i)
-      local v4 = apply((x => x * 3), i)
+      local v3 = apply((x => num: x + 10), i)
+      local v4 = apply((x => num: x * 3), i)
 
       -- Nested arrow functions
       local compose = function(f, g)
-         return (x => f(g(x)))
+         return (x => num: f(g(x)))
       end
-      local addOne = (x => x + 1)
-      local timesTwo = (x => x * 2)
+      local addOne = (x => num: x + 1)
+      local timesTwo = (x => num: x * 2)
       local composed = compose(addOne, timesTwo)
       local v5 = composed(i)
 
@@ -290,19 +290,19 @@ end
    -- Create object-like tables with methods
    local Counter = {
       value = 0,
-      increment = function(self)
+      increment = function(self):num
          self.value++
          return self.value
       end,
-      decrement = function(self)
+      decrement = function(self):num
          self.value -= 1
          return self.value
       end,
-      add = function(self, n)
+      add = function(self, n):num
          self.value += n
          return self.value
       end,
-      getValue = function(self)
+      getValue = function(self):num
          return self.value
       end,
       reset = function(self)

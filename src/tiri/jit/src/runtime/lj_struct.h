@@ -14,9 +14,9 @@ extern GCstruct * lj_struct_new_external(lua_State *, struct struct_record &, vo
 extern void lj_struct_free(global_State *, GCstruct *);
 extern bool lj_struct_stale(GCstruct *);
 
-extern void lj_struct_check_lifecycle(lua_State *, GCstruct *, const char *);
-extern void lj_struct_getfield_core(lua_State *, GCstruct *, struct_field &, void *);
-extern void lj_struct_setfield_core(lua_State *, GCstruct *, struct_field &, void *);
+extern void lj_struct_check_lifecycle(lua_State *, GCstruct *, const char *, bool CurrentFrame = false);
+extern void lj_struct_getfield_core(lua_State *, GCstruct *, struct_field &, void *, bool CurrentFrame = false);
+extern void lj_struct_setfield_core(lua_State *, GCstruct *, struct_field &, void *, bool CurrentFrame = false);
 extern void lj_struct_push_size_closure(lua_State *, GCstruct *);
 
 // Fast path bytecode handlers for BC_STGETF and BC_STSETF.
