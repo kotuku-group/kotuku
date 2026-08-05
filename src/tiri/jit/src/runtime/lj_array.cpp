@@ -10,9 +10,13 @@
 #include "lj_array.h"
 #include "lj_bulk.h"
 #include "lj_object.h"
+#include "lj_str.h"
 #include "lj_tab.h"
 
 #include <cstring>
+#include <cfloat>
+#include <cmath>
+#include <limits>
 #include <kotuku/main.h>
 #include <kotuku/modules/tiri.h>
 #include <kotuku/strings.hpp>
@@ -52,6 +56,302 @@ uint8_t lj_array_elemsize(AET Type)
 static bool array_is_gc_ref_type(AET Type)
 {
    return Type IS AET::STR_GC or Type IS AET::TABLE or Type IS AET::ARRAY or Type IS AET::OBJECT;
+}
+
+//********************************************************************************************************************
+
+static uint64_t array_unsigned_integer(lua_Number Value, unsigned Bits);
+
+static LJ_AINLINE ArrayElementResult array_prepare_int32(cTValue *Value, uint32_t *Bits)
+{
+   uint32_t value_type = itype(Value);
+   if (value_type IS LJ_TNIL) {
+      *Bits = 0;
+      return ArrayElementResult::OK;
+   }
+   if (LJ_DUALNUM and value_type IS LJ_TISNUM) {
+      *Bits = uint32_t(intV(Value));
+      return ArrayElementResult::OK;
+   }
+   if (value_type > LJ_TISNUM) return ArrayElementResult::INVALID_TYPE;
+
+   lua_Number number = numV(Value);
+   if (not std::isfinite(number)) return ArrayElementResult::OUT_OF_RANGE;
+   if (number >= std::numeric_limits<int32_t>::min() and number <= std::numeric_limits<int32_t>::max()) {
+      int32_t signed_value = int32_t(number);
+      std::memcpy(Bits, &signed_value, sizeof(signed_value));
+   }
+   else *Bits = uint32_t(array_unsigned_integer(number, 32));
+   return ArrayElementResult::OK;
+}
+
+//********************************************************************************************************************
+
+static LJ_AINLINE ArrayElementResult array_validate_integer(cTValue *Value)
+{
+   if (tvisnil(Value)) return ArrayElementResult::OK;
+   if (not tvisnumber(Value)) return ArrayElementResult::INVALID_TYPE;
+   if (tvisnum(Value) and not std::isfinite(numV(Value))) return ArrayElementResult::OUT_OF_RANGE;
+   return ArrayElementResult::OK;
+}
+
+//********************************************************************************************************************
+
+static LJ_AINLINE ArrayElementResult array_validate_element(GCarray *Array, cTValue *Value)
+{
+   if (Array->elemtype IS AET::ANY) return ArrayElementResult::OK;
+
+   if (tvisnil(Value)) {
+      switch (Array->elemtype) {
+         case AET::BYTE:
+         case AET::INT16:
+         case AET::INT32:
+         case AET::INT64:
+         case AET::FLOAT:
+         case AET::DOUBLE:
+         case AET::STR_GC:
+         case AET::TABLE:
+         case AET::ARRAY:
+         case AET::OBJECT:
+            return ArrayElementResult::OK;
+         case AET::CSTR:
+         case AET::STR_CPP:
+            return ArrayElementResult::UNSUPPORTED_STORAGE;
+         default:
+            return ArrayElementResult::INVALID_TYPE;
+      }
+   }
+
+   switch (Array->elemtype) {
+      case AET::BYTE:
+      case AET::INT16:
+      case AET::INT64:
+         return array_validate_integer(Value);
+      case AET::INT32: {
+         uint32_t bits;
+         return array_prepare_int32(Value, &bits);
+      }
+
+      case AET::FLOAT:
+         if (not tvisnumber(Value)) return ArrayElementResult::INVALID_TYPE;
+         if (tvisnum(Value) and std::isfinite(numV(Value)) and std::abs(numV(Value)) > FLT_MAX) {
+            return ArrayElementResult::OUT_OF_RANGE;
+         }
+         return ArrayElementResult::OK;
+
+      case AET::DOUBLE:
+         return tvisnumber(Value) ? ArrayElementResult::OK : ArrayElementResult::INVALID_TYPE;
+      case AET::STR_GC:
+         return tvisstr(Value) ? ArrayElementResult::OK : ArrayElementResult::INVALID_TYPE;
+      case AET::TABLE:
+         return tvistab(Value) ? ArrayElementResult::OK : ArrayElementResult::INVALID_TYPE;
+      case AET::ARRAY:
+         return tvisarray(Value) ? ArrayElementResult::OK : ArrayElementResult::INVALID_TYPE;
+      case AET::OBJECT:
+         return tvisobject(Value) ? ArrayElementResult::OK : ArrayElementResult::INVALID_TYPE;
+      case AET::PTR:
+         return tvislightud(Value) ? ArrayElementResult::OK : ArrayElementResult::INVALID_TYPE;
+      case AET::STRUCT:
+         if (tvisstruct(Value)) {
+            auto source = structV(Value);
+            if (source->def IS Array->structdef and source->structsize IS Array->elemsize) {
+               return ArrayElementResult::OK;
+            }
+         }
+         return ArrayElementResult::INVALID_TYPE;
+      case AET::CSTR:
+      case AET::STR_CPP:
+         return ArrayElementResult::UNSUPPORTED_STORAGE;
+      default:
+         return ArrayElementResult::UNSUPPORTED_STORAGE;
+   }
+}
+
+//********************************************************************************************************************
+
+ArrayElementResult lj_array_validate_element(GCarray *Array, cTValue *Value)
+{
+   return array_validate_element(Array, Value);
+}
+
+//********************************************************************************************************************
+
+void lj_array_check_element(lua_State *L, GCarray *Array, cTValue *Value)
+{
+   auto result = array_validate_element(Array, Value);
+   if (result IS ArrayElementResult::OK) return;
+   if (result IS ArrayElementResult::OUT_OF_RANGE) lj_err_msg(L, ErrMsg::NUMRNG);
+   lj_err_msg(L, ErrMsg::ARRTYPE);
+}
+
+//********************************************************************************************************************
+
+static uint64_t array_unsigned_integer(lua_Number Value, unsigned Bits)
+{
+   double modulus = std::ldexp(1.0, int(Bits));
+   double reduced = std::fmod(std::trunc(Value), modulus);
+   if (Bits IS 64) {
+      double signed_limit = std::ldexp(1.0, 63);
+      if (reduced >= signed_limit) reduced -= modulus;
+      else if (reduced < -signed_limit) reduced += modulus;
+      return uint64_t(int64_t(reduced));
+   }
+   if (reduced < 0) reduced += modulus;
+   return uint64_t(reduced);
+}
+
+//********************************************************************************************************************
+
+static LJ_AINLINE void array_store_int32(void *Element, cTValue *Value)
+{
+   uint32_t bits;
+   auto result = array_prepare_int32(Value, &bits);
+   lj_assertX(result IS ArrayElementResult::OK, "invalid prepared int32 array value");
+   std::memcpy(Element, &bits, sizeof(bits));
+}
+
+//********************************************************************************************************************
+
+static LJ_AINLINE void array_store_validated(lua_State *L, GCarray *Array, MSize Index, cTValue *Value)
+{
+   void *element = lj_array_index(Array, Index);
+
+   if (tvisnil(Value)) {
+      if (Array->elemtype IS AET::ANY) setnilV((TValue *)element);
+      else std::memset(element, 0, Array->elemsize);
+      return;
+   }
+
+   switch (Array->elemtype) {
+      case AET::BYTE:
+         if (tvisint(Value)) *(uint8_t *)element = uint8_t(intV(Value));
+         else if (numV(Value) >= 0 and numV(Value) <= std::numeric_limits<uint8_t>::max()) {
+            *(uint8_t *)element = uint8_t(numV(Value));
+         }
+         else *(uint8_t *)element = uint8_t(array_unsigned_integer(numV(Value), 8));
+         return;
+      case AET::INT16: {
+         if (tvisint(Value) and intV(Value) >= std::numeric_limits<int16_t>::min() and
+               intV(Value) <= std::numeric_limits<int16_t>::max()) {
+            *(int16_t *)element = int16_t(intV(Value));
+            return;
+         }
+         if (tvisnum(Value) and numV(Value) >= std::numeric_limits<int16_t>::min() and
+               numV(Value) <= std::numeric_limits<int16_t>::max()) {
+            *(int16_t *)element = int16_t(numV(Value));
+            return;
+         }
+         uint16_t bits = tvisint(Value) ? uint16_t(intV(Value)) : uint16_t(array_unsigned_integer(numV(Value), 16));
+         std::memcpy(element, &bits, sizeof(bits));
+         return;
+      }
+      case AET::INT32: {
+         array_store_int32(element, Value);
+         return;
+      }
+      case AET::INT64: {
+         double signed_limit = std::ldexp(1.0, 63);
+         if (tvisnum(Value) and numV(Value) >= -signed_limit and numV(Value) < signed_limit) {
+            *(int64_t *)element = int64_t(numV(Value));
+            return;
+         }
+         uint64_t bits = tvisint(Value) ? uint64_t(int64_t(intV(Value))) : array_unsigned_integer(numV(Value), 64);
+         std::memcpy(element, &bits, sizeof(bits));
+         return;
+      }
+      case AET::FLOAT:
+         *(float *)element = tvisint(Value) ? float(intV(Value)) : float(numV(Value));
+         return;
+      case AET::DOUBLE:
+         *(double *)element = tvisint(Value) ? double(intV(Value)) : numV(Value);
+         return;
+      case AET::STR_GC:
+      case AET::TABLE:
+      case AET::ARRAY:
+      case AET::OBJECT: {
+         auto object = gcV(Value);
+         setgcref(*(GCRef *)element, object);
+         lj_gc_objbarrier(L, Array, object);
+         return;
+      }
+      case AET::ANY:
+         copyTV(L, (TValue *)element, Value);
+         if (tvisgcv(Value)) lj_gc_objbarrier(L, Array, gcV(Value));
+         return;
+      case AET::PTR:
+         *(void **)element = (void *)(Value->u64 & LJ_GCVMASK);
+         return;
+      case AET::STRUCT:
+         std::memcpy(element, structV(Value)->data, Array->elemsize);
+         return;
+      default:
+         lj_assertL(false, "unsupported validated array store");
+         return;
+   }
+}
+
+//********************************************************************************************************************
+
+void lj_array_store_validated(lua_State *L, GCarray *Array, MSize Index, cTValue *Value)
+{
+   array_store_validated(L, Array, Index, Value);
+}
+
+//********************************************************************************************************************
+
+void lj_array_store_checked(lua_State *L, GCarray *Array, MSize Index, cTValue *Value)
+{
+   bool exact_integer = tvisint(Value) and glArrayConversion[size_t(Array->elemtype)].primitive;
+   if (not exact_integer) {
+      auto result = array_validate_element(Array, Value);
+      if (result IS ArrayElementResult::OUT_OF_RANGE) lj_err_msg(L, ErrMsg::NUMRNG);
+      if (result != ArrayElementResult::OK) lj_err_msg(L, ErrMsg::ARRTYPE);
+   }
+   array_store_validated(L, Array, Index, Value);
+}
+
+//********************************************************************************************************************
+// Append a single value to an array.  Called from JIT traces when recording array.push(), mirroring the semantics
+// of array.push() for one value.  Byte arrays accept strings, appending their bytes verbatim.
+
+extern "C" void lj_arr_push1(lua_State *L, GCarray *Array, cTValue *Value)
+{
+   if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
+
+   if (Array->elemtype IS AET::BYTE and tvisstr(Value)) {
+      GCstr *string = strV(Value);
+      if (string->len > (~MSize(0) - Array->len)) lj_err_msg(L, ErrMsg::ARREXT);
+      MSize new_len = Array->len + string->len;
+      if (new_len > Array->capacity and not lj_array_grow(L, Array, new_len)) lj_err_msg(L, ErrMsg::ARREXT);
+      if (string->len > 0) memcpy((uint8_t *)Array->arraydata() + Array->len, strdata(string), string->len);
+      Array->len = new_len;
+      return;
+   }
+
+   MSize index = Array->len;
+   if (index IS ~MSize(0)) lj_err_msg(L, ErrMsg::ARREXT);
+
+   if (Array->elemtype IS AET::INT32) {
+      uint32_t bits;
+      auto result = array_prepare_int32(Value, &bits);
+      if (result IS ArrayElementResult::OUT_OF_RANGE) lj_err_msg(L, ErrMsg::NUMRNG);
+      if (result != ArrayElementResult::OK) lj_err_msg(L, ErrMsg::ARRTYPE);
+      if (index + 1 > Array->capacity and not lj_array_grow(L, Array, index + 1)) lj_err_msg(L, ErrMsg::ARREXT);
+      std::memcpy(lj_array_index(Array, index), &bits, sizeof(bits));
+      Array->len = index + 1;
+      return;
+   }
+
+   bool exact_integer = tvisint(Value) and glArrayConversion[size_t(Array->elemtype)].primitive;
+   if (not exact_integer) {
+      auto result = array_validate_element(Array, Value);
+      if (result IS ArrayElementResult::OUT_OF_RANGE) lj_err_msg(L, ErrMsg::NUMRNG);
+      if (result != ArrayElementResult::OK) lj_err_msg(L, ErrMsg::ARRTYPE);
+   }
+
+   if (index + 1 > Array->capacity and not lj_array_grow(L, Array, index + 1)) lj_err_msg(L, ErrMsg::ARREXT);
+   array_store_validated(L, Array, index, Value);
+   Array->len = index + 1;
 }
 
 //********************************************************************************************************************

@@ -114,101 +114,6 @@ static void arr_load_elem(lua_State *L, GCarray *Array, uint32_t Idx, TValue *Re
 }
 
 //********************************************************************************************************************
-// Helper to store TValue into array element based on element type
-
-static void arr_store_elem(lua_State *L, GCarray *Array, uint32_t Idx, cTValue *Val)
-{
-   void *elem = lj_array_index(Array, Idx);
-
-   // Handle non-numeric types first
-
-   if (not glArrayConversion[uint8_t(Array->elemtype)].primitive) {
-      switch (Array->elemtype) {
-         case AET::STR_GC:
-         case AET::TABLE:
-         case AET::ARRAY:
-         case AET::OBJECT: {
-            if (tvisnil(Val)) setgcrefnull(*(GCRef*)elem);
-            else {
-               if (Array->itype IS uint8_t(itype(Val))) {
-                  auto gcobj = gcV(Val);
-                  setgcref(*(GCRef*)elem, gcobj);
-                  lj_gc_objbarrier(L, Array, gcobj);
-               }
-               else lj_err_msgv(L, ErrMsg::ARRTYPE);
-            }
-            return;
-         }
-
-         case AET::ANY: {
-            auto dest = (TValue *)elem;
-            copyTV(L, dest, Val);
-            if (tvisgcv(Val)) lj_gc_objbarrier(L, Array, gcV(Val));
-            return;
-         }
-
-         case AET::PTR:
-            if (tvislightud(Val)) { // Extract raw pointer (note: lightudV on 64-bit requires global_State)
-               *(void**)elem = (void*)(Val->u64 & LJ_GCVMASK);
-               return;
-            }
-            break;
-
-         case AET::STRUCT:
-            if (tvisstruct(Val)) {
-               auto source = structV(Val);
-               if ((source->def IS Array->structdef) and (source->structsize IS Array->elemsize)) {
-                  memcpy(elem, source->data, Array->elemsize);
-                  return;
-               }
-            }
-            break;
-
-         case AET::CSTR:
-         case AET::STR_CPP:
-            // Storing pointers to C strings is potentially feasible but currently unsafe; for this reason we disallow it.
-         default: break;
-      }
-
-      // We could attempt automated conversion (e.g. string to int), but this would be unpredictable
-      // between releases and the user can perform explicit conversion if desired.
-
-      lj_err_msgv(L, ErrMsg::ARRTYPE);
-   }
-   else { // All primitive types are numeric
-      if (tvisint(Val)) {
-         int32_t ival = intV(Val);
-         switch (Array->elemtype) {
-            case AET::BYTE:   *(uint8_t*)elem = uint8_t(ival); return;
-            case AET::INT16:  *(int16_t*)elem = int16_t(ival); return;
-            case AET::INT32:  *(int32_t*)elem = ival; return;
-            case AET::INT64:  *(int64_t*)elem = ival; return;
-            case AET::FLOAT:  *(float*)elem = float(ival); return;
-            case AET::DOUBLE: *(double*)elem = double(ival); return;
-            default: break;
-         }
-      }
-      else if (tvisnum(Val)) {
-         lua_Number num = numV(Val);
-         switch (Array->elemtype) {
-            case AET::BYTE:   *(uint8_t*)elem = uint8_t(num); return;
-            case AET::INT16:  *(int16_t*)elem = int16_t(num); return;
-            case AET::INT32:  *(int32_t*)elem = int32_t(num); return;
-            case AET::INT64:  *(int64_t*)elem = int64_t(num); return;
-            case AET::FLOAT:  *(float*)elem = float(num); return;
-            case AET::DOUBLE: *(double*)elem = num; return;
-            default: break;
-         }
-      }
-      else if (tvisnil(Val)) {
-         memset(elem, 0, Array->elemsize);
-         return;
-      }
-      lj_err_msgv(L, ErrMsg::ARRTYPE);
-   }
-}
-
-//********************************************************************************************************************
 // Helper for AGETV/AGETB. Array get with metamethod support.
 // Returns pointer to result TValue, or nullptr to trigger metamethod call.
 
@@ -313,7 +218,7 @@ extern "C" int lj_arr_set(lua_State *L, cTValue *O, cTValue *K, cTValue *V)
    }
 
    // Perform the actual store
-   arr_store_elem(L, arr, uint32_t(idx), V);
+   lj_array_store_checked(L, arr, uint32_t(idx), V);
    return 1;  // Success
 }
 
@@ -346,32 +251,7 @@ extern "C" void lj_arr_setidx(lua_State *L, GCarray *Array, int32_t Idx, cTValue
 {
    if (Idx < 0 or MSize(Idx) >= Array->len) lj_err_msgv(L, ErrMsg::ARROB, Idx, int(Array->len));
    if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
-   arr_store_elem(L, Array, uint32_t(Idx), Val);
-}
-
-//********************************************************************************************************************
-// Append a single value to an array.  Called from JIT traces when recording array.append(), mirroring the semantics
-// of array.push() for one value.  Byte arrays accept strings, appending their bytes verbatim.
-
-extern "C" void lj_arr_push1(lua_State *L, GCarray *Array, cTValue *Val)
-{
-   if (Array->flags & ARRAY_READONLY) lj_err_msg(L, ErrMsg::ARRRO);
-
-   if (Array->elemtype IS AET::BYTE and tvisstr(Val)) {
-      GCstr *str = strV(Val);
-      if (str->len > (~MSize(0) - Array->len)) lj_err_msg(L, ErrMsg::ARREXT);
-      MSize new_len = Array->len + str->len;
-      if (new_len > Array->capacity and not lj_array_grow(L, Array, new_len)) lj_err_msg(L, ErrMsg::ARREXT);
-      if (str->len > 0) memcpy((uint8_t*)Array->arraydata() + Array->len, strdata(str), str->len);
-      Array->len = new_len;
-      return;
-   }
-
-   MSize idx = Array->len;
-   if (idx IS ~MSize(0)) lj_err_msg(L, ErrMsg::ARREXT);
-   if (idx + 1 > Array->capacity and not lj_array_grow(L, Array, idx + 1)) lj_err_msg(L, ErrMsg::ARREXT);
-   arr_store_elem(L, Array, idx, Val);
-   Array->len = idx + 1;
+   lj_array_store_checked(L, Array, uint32_t(Idx), Val);
 }
 
 //********************************************************************************************************************

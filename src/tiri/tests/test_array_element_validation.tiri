@@ -1,0 +1,160 @@
+-- Regression coverage for the exact typed-array element contract.
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+struct ValidationElement
+   Value: int
+end
+
+struct ValidationOther
+   Value: int
+end
+
+function expect_failure(Action:func, Description:str)
+   local failed = false
+   try
+      Action()
+   except error_value
+      failed = true
+   end
+   assert(failed, Description)
+end
+
+@Test function NumericStringsAreNeverElements()
+   local element_types = array<string> { 'byte', 'int16', 'int', 'int64', 'float', 'double' }
+
+   for _, element_type in element_types do
+      local indexed = array.new(1, element_type)
+      expect_failure(() => do indexed[0] = '12' end, element_type .. ' indexed store accepted a string')
+
+      local pushed = array.new(0, element_type)
+      if element_type != 'byte' then
+         expect_failure(() => do pushed:push('12') end, element_type .. ' push accepted a string')
+      end
+
+      local inserted = array.new(1, element_type)
+      expect_failure(() => do inserted:insert(0, '12') end, element_type .. ' insert accepted a string')
+      expect_failure(() => do inserted:fill('12') end, element_type .. ' fill accepted a string')
+      expect_failure(() => do array.of(element_type, '12') end, element_type .. ' constructor accepted a string')
+      expect_failure(() => do inserted:copy({ [0]='12' }) end, element_type .. ' table copy accepted a string')
+
+      local source = array.new(1, element_type)
+      source[0] = 1
+      expect_failure(() => do source:map(Value => str: '12') end, element_type .. ' map accepted a string')
+   end
+
+   local appended = array<int> { 1 }
+   expect_failure(() => do appended ..= '12' end, 'Non-byte compound append accepted a string')
+end
+
+@Test function StringArraysRejectNumbers()
+   local indexed = array<string, 1>
+   expect_failure(() => do indexed[0] = 12 end, 'String indexed store accepted a number')
+   expect_failure(() => do indexed:push(12) end, 'String push accepted a number')
+   expect_failure(() => do indexed:insert(0, 12) end, 'String insert accepted a number')
+   expect_failure(() => do indexed:fill(12) end, 'String fill accepted a number')
+   expect_failure(() => do array.of('string', 12) end, 'String constructor accepted a number')
+   expect_failure(() => do indexed:copy({ [0]=12 }) end, 'String table copy accepted a number')
+   expect_failure(() => do indexed:map(Value => num: 12) end, 'String map accepted a number')
+end
+
+@Test function ReferenceCategoriesAreExact()
+   local table_value = { marker='table' }
+   local array_value = array<int> { 7 }
+   local object_value = obj.new('time')
+
+   local tables = array<table, 1>
+   local arrays = array<array, 1>
+   local objects = array<object, 1>
+   tables[0] = table_value
+   arrays[0] = array_value
+   objects[0] = object_value
+   assert(tables[0] is table_value and arrays[0] is array_value and objects[0] is object_value,
+      'Exact reference categories were not retained')
+
+   expect_failure(() => do tables[0] = array_value end, 'Table array accepted an array')
+   expect_failure(() => do arrays[0] = table_value end, 'Array array accepted a table')
+   expect_failure(() => do objects[0] = table_value end, 'Object array accepted a table')
+
+   object_value.free()
+end
+
+@Test function NilUsesTheTypedEmptyValue()
+   local numeric_types = array<string> { 'byte', 'int16', 'int', 'int64', 'float', 'double' }
+   for _, element_type in numeric_types do
+      local values = array.new(1, element_type)
+      values[0] = 9
+      values[0] = nil
+      assert(values[0] is 0, element_type .. ' nil store did not produce zero')
+   end
+
+   local strings = array<string> { 'value' }
+   local tables = array<table> { {} }
+   local arrays = array<array> { array<int> { 1 } }
+   strings:fill(nil)
+   tables:fill(nil)
+   arrays:fill(nil)
+   assert(strings[0] is nil and tables[0] is nil and arrays[0] is nil, 'Nil did not clear reference arrays')
+
+   local values = array<any> { 1 }
+   values:fill(nil)
+   assert(values[0] is nil, 'Any array did not retain a real nil TValue')
+end
+
+@Test function AnyAcceptsMixedValuesAcrossWriters()
+   local table_value = { marker=true }
+   local array_value = array<int> { 3 }
+   local object_value = obj.new('time')
+   local values = array<any> { 1, 'two', table_value, array_value, object_value, nil }
+
+   values:push(false)
+   values:insert(0, 'first')
+   values[1] = table_value
+   values:fill(array_value, 2, 1)
+   local mapped = values:map(Value => any: Value)
+   assert(mapped[0] is 'first' and mapped[1] is table_value and mapped[2] is array_value,
+      'Any writers did not preserve mixed categories')
+
+   object_value.free()
+end
+
+@Test function StructDefinitionsMustMatchExactly()
+   local exact = struct<ValidationElement> { Value=7 }
+   local other = struct<ValidationOther> { Value=7 }
+   local values = array<struct<ValidationElement>, 2>
+
+   values[0] = exact
+   values:fill(exact)
+   assert(values[1].Value is 7, 'Exact struct definition was not stored')
+   expect_failure(() => do values[0] = other end, 'Same-sized different struct definition was accepted')
+   expect_failure(() => do values:push(other) end, 'Struct push accepted a mismatched definition')
+end
+
+@Test function MultiValueFailuresAreAtomic()
+   local pushed = array<int> { 1, 2 }
+   expect_failure(() => do pushed:push(3, 'bad', 4) end, 'Mixed push unexpectedly succeeded')
+   assert(#pushed is 2 and pushed[0] is 1 and pushed[1] is 2, 'Failed push changed visible contents')
+
+   local inserted = array<int> { 1, 4 }
+   expect_failure(() => do inserted:insert(1, 2, 'bad', 3) end, 'Mixed insert unexpectedly succeeded')
+   assert(#inserted is 2 and inserted[0] is 1 and inserted[1] is 4, 'Failed insert changed visible contents')
+
+   local copied = array<int> { 10, 20, 30 }
+   expect_failure(() => do copied:copy({ [0]=1, [1]='bad', [2]=3 }) end, 'Mixed table copy unexpectedly succeeded')
+   assert(copied[0] is 10 and copied[1] is 20 and copied[2] is 30,
+      'Failed table copy changed the destination')
+end
+
+@Test function ByteStringsRemainBufferOperations()
+   local nul_source = array<byte> { 65, 0, 66 }
+   local bytes = array<byte>
+   bytes:push(nul_source:getString())
+   bytes ..= nul_source:getString()
+   assert(#bytes is 6 and bytes[1] is 0 and bytes[4] is 0, 'Byte append did not preserve embedded NUL bytes')
+
+   local ordinary = array<byte, 1>
+   expect_failure(() => do ordinary[0] = 'A' end, 'Byte indexed store accepted a string element')
+   expect_failure(() => do ordinary:insert(0, 'A') end, 'Byte insert accepted a string element')
+   expect_failure(() => do ordinary:fill('A') end, 'Byte fill accepted a string element')
+end

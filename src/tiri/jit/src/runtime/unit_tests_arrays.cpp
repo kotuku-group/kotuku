@@ -18,8 +18,10 @@
 #include "lj_vmarray.h"
 
 #include <cmath>
+#include <cfloat>
 #include <cstring>
 #include <array>
+#include <limits>
 
 #include "../../defs.h"
 
@@ -387,6 +389,65 @@ static bool test_array_external(kt::Log &Log)
       Log.error("external array reads incorrectly: got %d, expected 30", data[2]);
       return false;
    }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool test_array_element_contract(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   lua_State *L = holder.get();
+   if (not L) return false;
+   luaL_openlibs(L);
+
+   TValue value;
+   GCarray *integers = lj_array_new(L, 2, AET::INT32);
+   setnumV(&value, 12.75);
+   if (lj_array_validate_element(integers, &value) != ArrayElementResult::OK) return false;
+   lj_array_store_checked(L, integers, 0, &value);
+   if (integers->get<int32_t>()[0] != 12) return false;
+
+   setnumV(&value, std::numeric_limits<lua_Number>::infinity());
+   if (lj_array_validate_element(integers, &value) != ArrayElementResult::OUT_OF_RANGE) return false;
+   setnilV(&value);
+   lj_array_store_checked(L, integers, 1, &value);
+   if (integers->get<int32_t>()[1] != 0) return false;
+
+   GCstr *string = lj_str_newlit(L, "12");
+   setstrV(L, &value, string);
+   if (lj_array_validate_element(integers, &value) != ArrayElementResult::INVALID_TYPE) return false;
+
+   GCarray *floats = lj_array_new(L, 1, AET::FLOAT);
+   setnumV(&value, double(FLT_MAX) * 2.0);
+   if (lj_array_validate_element(floats, &value) != ArrayElementResult::OUT_OF_RANGE) return false;
+   setnumV(&value, std::numeric_limits<lua_Number>::infinity());
+   if (lj_array_validate_element(floats, &value) != ArrayElementResult::OK) return false;
+
+   GCarray *strings = lj_array_new(L, 1, AET::STR_GC);
+   setstrV(L, &value, string);
+   lj_array_store_checked(L, strings, 0, &value);
+   if (gcref(strings->get<GCRef>()[0]) != obj2gco(string)) return false;
+
+   GCtab *table = lj_tab_new(L, 0, 0);
+   settabV(L, &value, table);
+   if (lj_array_validate_element(strings, &value) != ArrayElementResult::INVALID_TYPE) return false;
+   GCarray *tables = lj_array_new(L, 1, AET::TABLE);
+   if (lj_array_validate_element(tables, &value) != ArrayElementResult::OK) return false;
+
+   GCarray *any = lj_array_new(L, 1, AET::ANY);
+   lj_array_store_checked(L, any, 0, &value);
+   if (not tvistab(&any->get<TValue>()[0])) return false;
+
+   GCarray *pointers = lj_array_new(L, 1, AET::PTR);
+   setrawlightudV(&value, integers);
+   if (lj_array_validate_element(pointers, &value) != ArrayElementResult::OK) return false;
+   GCarray *cached_strings = lj_array_new(L, 0, AET::CSTR);
+   if (lj_array_validate_element(cached_strings, &value) != ArrayElementResult::UNSUPPORTED_STORAGE) return false;
+   setnilV(&value);
+   if (lj_array_validate_element(pointers, &value) != ArrayElementResult::INVALID_TYPE) return false;
+   if (lj_array_validate_element(cached_strings, &value) != ArrayElementResult::UNSUPPORTED_STORAGE) return false;
 
    return true;
 }
@@ -1153,7 +1214,7 @@ static bool test_lib_array_double_type(kt::Log &Log)
 
 void array_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 31> Tests = { {
+   constexpr std::array<TestCase, 32> Tests = { {
       // Core Data Structures
       { "array_creation_byte", test_array_creation_byte },
       { "array_creation_int32", test_array_creation_int32 },
@@ -1163,6 +1224,7 @@ void array_unit_tests(int &Passed, int &Total)
       { "array_index_access", test_array_index_access },
       { "array_elemsize", test_array_elemsize },
       { "array_external", test_array_external },
+      { "array_element_contract", test_array_element_contract },
       { "array_to_table", test_array_to_table },
       { "array_type_tag", test_array_type_tag },
       // VM Type System
