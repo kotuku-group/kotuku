@@ -1388,6 +1388,10 @@ LJLIB_CF(array_fill)
 {
    GCarray *arr = lj_lib_checkarray(L, 1);
 
+   // The fill value must be present before any early return, otherwise an omitted argument would read a stale
+   // stack slot beyond L->top.  An explicit nil is still passed through to the element validator.
+   lj_lib_checkany(L, 2);
+
    if (arr->flags & ARRAY_READONLY) lj_err_caller(L, ErrMsg::ARRRO);
 
    // Check if third argument is a range
