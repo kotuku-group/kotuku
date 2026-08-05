@@ -313,6 +313,43 @@ void lj_array_store_checked(lua_State *L, GCarray *Array, MSize Index, cTValue *
 }
 
 //********************************************************************************************************************
+
+template<typename T>
+static bool array_store_integer_sequence(GCarray *Array, cTValue *Values, MSize Count)
+{
+   for (MSize index = 0; index < Count; index++) {
+      if (not tvisint(Values + index)) return false;
+      Array->get<T>()[index] = T(intV(Values + index));
+   }
+   return true;
+}
+
+//********************************************************************************************************************
+
+// Populate a new, unexposed array.  If the integer fast path encounters another value type, the checked fallback
+// validates the complete sequence before overwriting any values already stored by the fast path.
+
+void lj_array_store_new_values(lua_State *L, GCarray *Array, cTValue *Values, MSize Count)
+{
+   if (glArrayConversion[size_t(Array->elemtype)].primitive) {
+      bool stored = false;
+      switch (Array->elemtype) {
+         case AET::BYTE:   stored = array_store_integer_sequence<uint8_t>(Array, Values, Count); break;
+         case AET::INT16:  stored = array_store_integer_sequence<int16_t>(Array, Values, Count); break;
+         case AET::INT32:  stored = array_store_integer_sequence<int32_t>(Array, Values, Count); break;
+         case AET::INT64:  stored = array_store_integer_sequence<int64_t>(Array, Values, Count); break;
+         case AET::FLOAT:  stored = array_store_integer_sequence<float>(Array, Values, Count); break;
+         case AET::DOUBLE: stored = array_store_integer_sequence<double>(Array, Values, Count); break;
+         default: break;
+      }
+      if (stored) return;
+   }
+
+   for (MSize index = 0; index < Count; index++) lj_array_check_element(L, Array, Values + index);
+   for (MSize index = 0; index < Count; index++) array_store_validated(L, Array, index, Values + index);
+}
+
+//********************************************************************************************************************
 // Append a single value to an array.  Called from JIT traces when recording array.push(), mirroring the semantics
 // of array.push() for one value.  Byte arrays accept strings, appending their bytes verbatim.
 

@@ -313,12 +313,7 @@ LJLIB_CF(array_of)
    else arr = lj_array_new(L, uint32_t(num_values), elem_type);
    setarrayV(L, L->top++, arr);
 
-   for (int i = 0; i < num_values; i++) {
-      lj_array_check_element(L, arr, L->base + i + 1);
-   }
-   for (int i = 0; i < num_values; i++) {
-      lj_array_store_validated(L, arr, MSize(i), L->base + i + 1);
-   }
+   lj_array_store_new_values(L, arr, L->base + 1, MSize(num_values));
 
    return 1;
 }
