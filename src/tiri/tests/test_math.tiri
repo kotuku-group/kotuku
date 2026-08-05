@@ -23,6 +23,17 @@
    assert(math.round(1234.5, -2) is 1200, 'math.round(1234.5, -2) should be 1200')
 end
 
+@Test function RandomUsesZeroBasedUpperBound()
+   for _ in {0 to 100} do
+      assert(math.random(1) is 0, 'math.random(1) should return the only value in the range [0, 1)')
+   end
+
+   assert(math.random(7, 7) is 7, 'math.random(Min, Max) should retain its explicit inclusive bounds')
+
+   local fraction = math.random()
+   assert(fraction >= 0 and fraction < 1, 'math.random() should return a value in the range [0, 1)')
+end
+
 @Test function Clamp()
    assert(math.clamp(-5, 0, 10) is 0, 'math.clamp() should clamp values below the lower bound')
    assert(math.clamp(5, 0, 10) is 5, 'math.clamp() should leave values inside the range unchanged')
