@@ -4227,6 +4227,47 @@ static bool test_tail_call_eligibility(kt::Log &Log)
       return false;
    }
 
+   constexpr std::string_view recursive_contract_source =
+      "local function recurse(Count:num, Value:any):num\n"
+      "   if Count is 0 then return Value end\n"
+      "   return recurse(Count - 1, Value)\n"
+      "end\n"
+      "return recurse\n";
+   auto recursive_contract = compile_snapshot(L, recursive_contract_source, true, error);
+   if (not recursive_contract or count_opcode_tree(*recursive_contract, BC_CALLT) != 1 or
+       count_opcode_tree(*recursive_contract, BC_CALL) != 0 or
+       count_opcode_tree(*recursive_contract, BC_CONTRACT) != 2) {
+      Log.error("a direct self-tail call did not forward its fixed return contract: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view recursive_void_source =
+      "local function recurse(Count:num):<>\n"
+      "   if Count is 0 then return end\n"
+      "   return recurse(Count - 1)\n"
+      "end\n"
+      "return recurse\n";
+   auto recursive_void = compile_snapshot(L, recursive_void_source, true, error);
+   if (not recursive_void or count_opcode_tree(*recursive_void, BC_CALLT) != 1 or
+       count_opcode_tree(*recursive_void, BC_CALL) != 0) {
+      Log.error("an explicit-void self-tail call was overwritten by result truncation: %s", error.c_str());
+      return false;
+   }
+
+   constexpr std::string_view mutable_recursive_source =
+      "local function recurse(Count:num):num\n"
+      "   if Count is 0 then return 0 end\n"
+      "   return recurse(Count - 1)\n"
+      "end\n"
+      "recurse = function(Value:num):num return Value end\n"
+      "return recurse\n";
+   auto mutable_recursive = compile_snapshot(L, mutable_recursive_source, true, error);
+   if (not mutable_recursive or count_opcode_tree(*mutable_recursive, BC_CALLT) != 0 or
+       count_opcode_tree(*mutable_recursive, BC_CALL) IS 0) {
+      Log.error("a mutable recursive target was incorrectly treated as the current function: %s", error.c_str());
+      return false;
+   }
+
    constexpr std::string_view cleanup_source =
       "local function source():<num, str> return 7, 'cleanup' end\n"
       "local function cleaned()\n"

@@ -340,6 +340,54 @@ end
    assert(fib(10) is 55, "recursive fibonacci with type should work")
 end
 
+@Test function TypedTailRecursionDoesNotGrowTheStack()
+   function count_down(Count: num, Accumulator: num):num
+      if Count is 0 then return Accumulator end
+      return count_down(Count - 1, Accumulator + 1)
+   end
+
+   assert(count_down(100000, 0) is 100000,
+      "a typed self-tail call should complete without exhausting the stack")
+end
+
+@Test function TypedTailRecursionPreservesTheReturnContract()
+   function typed_tail(Count: num, Value:any):num
+      if Count is 0 then return Value end
+      return typed_tail(Count - 1, Value)
+   end
+
+   try
+      typed_tail(1000, 'wrong')
+   except ex
+      assert(ex.message, "the terminal activation should report the invalid result")
+   success
+      error("a forwarded recursive return contract should still reject an invalid result")
+   end
+end
+
+@Test function TypedTailRecursionPreservesFixedArity()
+   function fixed_tail(Count: num):num
+      if Count is 0 then return 1, 2 end
+      return fixed_tail(Count - 1)
+   end
+
+   local first, truncated = fixed_tail(1000)
+   assert(first is 1, "the declared recursive result should be preserved")
+   assert(truncated is nil, "the terminal activation should truncate undeclared recursive results")
+end
+
+@Test function ExplicitVoidTailRecursionExecutesEveryCall()
+   local visits = 0
+   function void_tail(Count: num):<>
+      visits++
+      if Count is 0 then return end
+      return void_tail(Count - 1)
+   end
+
+   void_tail(100000)
+   assert(visits is 100001, "an explicit-void self-tail call should execute every recursive activation")
+end
+
 @Test function RecursiveFunctionWithoutTypeError()
    try
       exec([[
