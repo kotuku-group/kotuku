@@ -3441,6 +3441,9 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  jnz >9
     |3:
     |->BC_LEN_Z:
+    |  // An ordinary table that has ever been addressed with a string key has no sequence length.
+    |  test byte TAB:CARG1->flags, TAB_STRING_KEYED
+    |  jnz >8
     |  mov RB, BASE        // Save BASE.
     |  call extern lj_tab_len    // (GCtab *t)
     |  // Length of table returned in eax (RD).
@@ -3462,6 +3465,10 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  cvtsi2sd xmm0, dword ARRAY:RD->len
     |  jmp <1
     |.endif
+    |8:  // String-keyed table: the length operator yields nil.
+    |  movzx RAd, PC_RA
+    |  mov aword [BASE+RA*8], LJ_TNIL
+    |  ins_next
     |9:  // Check for __len.
     |  test byte TAB:RB->nomm, 1<<MM_len
     |  jnz <3
@@ -4073,7 +4080,9 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |2:
     |  test byte TAB:RB->marked, LJ_GC_BLACK // isblack(table)
     |  jnz >7
-    |3:  // Set node value.
+    |3:  // Set node value.  The raw store commits here, so classify the receiving table (lj_tab_newkey() covers the
+    |    // new-key path below).  A store diverted to __newindex never reaches this point.
+    |  or byte TAB:RB->flags, TAB_STRING_KEYED
     |  mov ITYPE, [BASE+RA*8]
     |  mov [TMPR], ITYPE
     |  ins_next

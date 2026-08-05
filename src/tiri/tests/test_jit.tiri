@@ -2806,3 +2806,62 @@ end
 
    t.free()
 end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- The permanent string-key classification governs '#table'.  A trace recorded while the flag is clear must guard the
+-- state and side-exit on the first clear-to-set transition rather than returning a stale numerical length.
+
+@Test(hotpath=100) function LengthTraceExitsOnFirstStringKey()
+   local t = { 1, 2, 3 }
+   local numeric_results = 0
+   for i in {0 to 200} do
+      if #t is 3 then numeric_results++ end
+   end
+   assert(numeric_results is 200, f"Hot pure table should report length 3 throughout, got {numeric_results}")
+
+   -- Introduce the first string key.  The recorded guard must fail rather than keep returning 3.
+   t.name = 'x'
+
+   local nil_results = 0
+   for i in {0 to 200} do
+      if #t is nil then nil_results++ end
+   end
+   assert(nil_results is 200, f"Hot classified table should report nil throughout, got {nil_results}")
+end
+
+@Test(hotpath=100) function LengthTraceOnAlreadyClassifiedTable()
+   local t = { 1, 2, 3, name = 'x' }
+   local nil_results = 0
+   for i in {0 to 200} do
+      if #t is nil then nil_results++ end
+   end
+   assert(nil_results is 200, f"An already-classified table should report nil on trace, got {nil_results}")
+end
+
+@Test(hotpath=100) function ComputedStringKeyStoreInHotCodeClassifies()
+   local t = { 1, 2, 3 }
+   for i in {0 to 200} do
+      local key = 'field' .. tostring(i % 4)
+      t[key] = i
+   end
+   assert(#t is nil, f"A hot computed string-key store should classify the table, got {tostring(#t)}")
+end
+
+@Test(hotpath=100) function ClearInHotCodeKeepsClassification()
+   local t = { 1, 2 }
+   t.name = 'x'
+   for i in {0 to 200} do
+      table.clear(t)
+      t[0] = i
+   end
+   assert(#t is nil, f"Clearing in hot code must not restore a numerical length, got {tostring(#t)}")
+end
+
+@Test(hotpath=100) function PureTableLengthRemainsNumericalOnTrace()
+   -- A table that is only ever addressed numerically must keep the fast numerical path on trace.
+   local t = {}
+   for i in {0 to 200} do
+      t[i % 8] = i
+   end
+   assert(#t is 8, f"A numerically addressed table should keep its length, got {tostring(#t)}")
+end

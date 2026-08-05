@@ -244,6 +244,46 @@ end
    assert(#obj is 0, "__len returning 0 should override actual length")
 end
 
+@Test function MetaLenOverridesStringKeyClassification()
+   -- A table addressed with a string key normally has no length, but __len takes precedence.
+   local obj = setmetatable({ 1, 2 }, { __len = function(Self):num return 7 end })
+   obj.name = 'x'
+   assert(#obj is 7, "__len should override the string-key classification, got " .. tostring(#obj))
+
+   -- Removing the string entry does not change either behaviour.
+   obj.name = nil
+   assert(#obj is 7, "__len should still take precedence after the entry is removed")
+
+   -- Removing the metatable exposes the permanent classification again.
+   setmetatable(obj, nil)
+   assert(#obj is nil, "Removing __len should expose the permanent nil result, got " .. tostring(#obj))
+end
+
+@Test function MetaLenAbsentLeavesPureTableNumerical()
+   -- A metatable without __len must not disturb the ordinary numerical length.
+   local obj = setmetatable({ 1, 2, 3 }, { __index = function(Self, Key) return nil end })
+   assert(#obj is 3, "A pure table with an unrelated metatable should keep its length, got " .. tostring(#obj))
+end
+
+@Test function IndexMetamethodDoesNotClassify()
+   -- String keys supplied by __index do not classify the target table, because no store reaches it.
+   local backing = { name = 'from index' }
+   local obj = setmetatable({ 1, 2, 3 }, { __index = backing })
+   assert(obj.name is 'from index', "__index should supply the string key")
+   assert(#obj is 3, "A read through __index must not classify the table, got " .. tostring(#obj))
+end
+
+@Test function NewIndexMetamethodClassifiesTheReceivingTable()
+   -- A __newindex that diverts the store classifies the table that actually receives it, not the proxy.
+   local backing = { 1, 2, 3 }
+   local proxy = setmetatable({ 1, 2, 3 }, {
+      __newindex = function(Self, Key, Value) rawset(backing, Key, Value) end
+   })
+   proxy.name = 'x'
+   assert(#proxy is 3, "The proxy should not be classified by a diverted store, got " .. tostring(#proxy))
+   assert(#backing is nil, "The receiving table should be classified, got " .. tostring(#backing))
+end
+
 @Test function MetaConcat()
    mt = {
       __concat = function(A, B):table

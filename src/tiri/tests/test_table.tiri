@@ -113,12 +113,13 @@ end
    assert(#t is 5, "Array with 5 elements should have length 5, got " .. #t)
 end
 
-@Test function TableLengthIgnoresHashPart()
-   -- Test that getn only counts array part
+@Test function TableLengthNilForStringKeyed()
+   -- A table addressed with a string key is permanently classified as associative and has no sequence length.
    t = { 'x', 'y' }
+   assert(#t is 2, "Pure array table should have length 2, got " .. tostring(#t))
    t.name = 'test'
    t.value = 42
-   assert(#t is 2, "getn should only count array elements, got " .. #t)
+   assert(#t is nil, "String-keyed table should have no length, got " .. tostring(#t))
 end
 
 @Test function TableLengthAfterInsertRemove()
@@ -419,12 +420,14 @@ end
 end
 
 @Test function ClearMixed()
-   -- Clear a table with both array and hash parts
+   -- Clear a table with both array and hash parts.  Clearing empties the table but does not restore its
+   -- classification, so the length operator continues to report nil.
    t = { 'x', 'y', name = 'test', value = 42 }
    table.clear(t)
-   assert(#t is 0, "Array part should be cleared")
+   assert(t[0] is nil, "Array part should be cleared")
    assert(t.name is nil, "Hash part should be cleared")
    assert(table.empty(t) is true, "Table should be completely empty")
+   assert(#t is nil, "Clearing must not restore a numerical length")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -541,4 +544,106 @@ end
    t = {}
    result = table.toXML(t)
    assert(result is '', "Empty table should produce empty XML string, got '" .. result .. "'")
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Tests for the permanent string-key classification that governs the length operator
+
+@Test function LengthEmptyAndNumericTables()
+   -- Tables that have never been addressed with a string key retain the numerical sequence length.
+   assert(#{} is 0, "Empty table should have length 0")
+   assert(#{ 10, 20, 30 } is 3, "Numerical literal should have length 3")
+
+   t = {}
+   t[0] = 'a'
+   t[1] = 'b'
+   assert(#t is 2, "Numerical assignment should yield length 2, got " .. tostring(#t))
+end
+
+@Test function LengthNilForStringLiteral()
+   -- String-only and mixed literals are classified at construction.
+   assert(#{ name = 'x' } is nil, "String-only literal should have no length")
+   assert(#{ 1, 2, name = 'x' } is nil, "Mixed literal should have no length")
+end
+
+@Test function LengthNilAfterNamedAssignment()
+   t = { 1, 2 }
+   t.name = 'x'
+   assert(#t is nil, "Named field assignment should remove the length")
+end
+
+@Test function LengthNilAfterIndexedStringAssignment()
+   t = { 1, 2 }
+   t['name'] = 'x'
+   assert(#t is nil, "Indexed string assignment should remove the length")
+end
+
+@Test function LengthNilAfterComputedStringKey()
+   t = { 1, 2 }
+   key = 'na' .. 'me'
+   t[key] = 'x'
+   assert(#t is nil, "Computed string key should remove the length")
+end
+
+@Test function LengthNilAfterAssigningNilToStringKey()
+   -- Classification happens on the store, even when no live entry results.
+   t = { 1, 2 }
+   t.name = nil
+   assert(#t is nil, "Assigning nil through a string key should classify the table")
+end
+
+@Test function LengthClassificationIsPermanent()
+   t = { 1, 2 }
+   t.name = 'x'
+   t.name = nil
+   assert(#t is nil, "Deleting the last string entry must not restore the length")
+
+   table.clear(t)
+   assert(#t is nil, "table.clear() must not restore the length")
+
+   t[0] = 'a'
+   t[1] = 'b'
+   t[2] = 'c'
+   assert(#t is nil, "Adding numerical entries must not restore the length")
+end
+
+@Test function LengthClassifiesRegardlessOfValue()
+   -- Every value type stored under a string key classifies identically, including falsey values.
+   local stored: table = { false, 0, '', {}, print }
+   for i in {0 to 5} do
+      t = { 1, 2 }
+      t.field = stored[i]
+      assert(#t is nil, "Value at index " .. i .. " should have classified the table")
+   end
+end
+
+@Test function LengthUnaffectedByNonStringKeys()
+   -- Boolean, negative-number and table keys use the hash part but do not trigger this rule.
+   t = { 1, 2, 3 }
+   t[true] = 'bool'
+   t[-5] = 'negative'
+   t[9999] = 'sparse'
+   assert(#t is 3, "Non-string hash keys should preserve the length, got " .. tostring(#t))
+
+   u = { 1, 2, 3 }
+   u[{}] = 'table key'
+   assert(#u is 3, "A table key should preserve the length, got " .. tostring(#u))
+end
+
+@Test function LengthOfStringsAndArraysUnchanged()
+   assert(#'hello' is 5, "String length should be unchanged")
+   assert(#'' is 0, "Empty string length should be 0")
+
+   a = array<int> { 1, 2, 3, 4 }
+   assert(#a is 4, "Native array length should be unchanged, got " .. tostring(#a))
+end
+
+@Test function InternalLengthConsumersUnaffected()
+   -- table.insert(), table.remove() and table.empty() keep using the internal numerical length.
+   t = { 1, 2 }
+   t.name = 'x'
+   table.insert(t, 3)
+   assert(t[2] is 3, "insert should still append at the numerical length")
+   assert(table.remove(t) is 3, "remove should still operate on the sequence")
+   assert(table.empty(t) is false, "Table with entries should not be empty")
 end

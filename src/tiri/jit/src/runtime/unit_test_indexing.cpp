@@ -556,11 +556,177 @@ static bool test_table_string_hash_keys_unchanged(kt::Log& Log)
    return true;
 }
 
+// The permanent string-key classification underpins the Tiri '#' operator returning nil for associative tables.
+
+static bool test_table_flags_initialise_clear(kt::Log& Log)
+{
+   LuaStateHolder Holder;
+   lua_State* L = Holder.get();
+   if (not L) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   // Both the colocated and separately allocated array paths must start unclassified.
+
+   GCtab* colocated = lj_tab_new(L, 4, 0);
+   GCtab* separated = lj_tab_new(L, 0, 3);
+   if (colocated->flags != 0) {
+      Log.error("colocated table did not initialise flags to zero");
+      return false;
+   }
+   if (separated->flags != 0) {
+      Log.error("separately allocated table did not initialise flags to zero");
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_table_numeric_keys_do_not_classify(kt::Log& Log)
+{
+   LuaStateHolder Holder;
+   lua_State* L = Holder.get();
+   if (not L) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   GCtab* table = lj_tab_new(L, 4, 3);
+   TValue value;
+   setnumV(&value, 1.0);
+
+   copyTV(L, lj_tab_setint(L, table, 0), &value);   // Array part.
+   copyTV(L, lj_tab_setint(L, table, 5000), &value); // Hash part.
+
+   TValue bool_key;
+   setboolV(&bool_key, 1);
+   copyTV(L, lj_tab_set(L, table, &bool_key), &value);
+
+   if (table->flags & TAB_STRING_KEYED) {
+      Log.error("non-string keys incorrectly classified the table as string-keyed");
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_table_string_key_classifies(kt::Log& Log)
+{
+   LuaStateHolder Holder;
+   lua_State* L = Holder.get();
+   if (not L) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   GCtab* table = lj_tab_new(L, 0, 3);
+   GCstr* key = lj_str_newlit(L, "name");
+   TValue value;
+   setnumV(&value, 7.0);
+   copyTV(L, lj_tab_setstr(L, table, key), &value);
+
+   if (not (table->flags & TAB_STRING_KEYED)) {
+      Log.error("string key did not classify the table");
+      return false;
+   }
+
+   // Storing nil through a string key must classify too, and removing the value must not clear the flag.
+
+   TValue nil_value;
+   setnilV(&nil_value);
+   copyTV(L, lj_tab_setstr(L, table, key), &nil_value);
+   if (not (table->flags & TAB_STRING_KEYED)) {
+      Log.error("removing the string value cleared the classification");
+      return false;
+   }
+
+   GCtab* nil_only = lj_tab_new(L, 0, 3);
+   GCstr* missing = lj_str_newlit(L, "missing");
+   copyTV(L, lj_tab_setstr(L, nil_only, missing), &nil_value);
+   if (not (nil_only->flags & TAB_STRING_KEYED)) {
+      Log.error("assigning nil through a string key did not classify the table");
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_table_classification_survives_mutation(kt::Log& Log)
+{
+   LuaStateHolder Holder;
+   lua_State* L = Holder.get();
+   if (not L) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   GCtab* table = lj_tab_new(L, 2, 1);
+   GCstr* key = lj_str_newlit(L, "field");
+   TValue value;
+   setnumV(&value, 3.0);
+   copyTV(L, lj_tab_setstr(L, table, key), &value);
+
+   lj_tab_clear(table);
+   if (not (table->flags & TAB_STRING_KEYED)) {
+      Log.error("lj_tab_clear() cleared the classification");
+      return false;
+   }
+
+   lj_tab_resize(L, table, 32, 4);
+   if (not (table->flags & TAB_STRING_KEYED)) {
+      Log.error("lj_tab_resize() cleared the classification");
+      return false;
+   }
+
+   GCtab* copy = lj_tab_dup(L, table);
+   if (not (copy->flags & TAB_STRING_KEYED)) {
+      Log.error("lj_tab_dup() did not copy the classification");
+      return false;
+   }
+
+   // A duplicate of an unclassified table must remain unclassified.
+
+   GCtab* pure = lj_tab_new(L, 4, 0);
+   GCtab* pure_copy = lj_tab_dup(L, pure);
+   if (pure_copy->flags & TAB_STRING_KEYED) {
+      Log.error("lj_tab_dup() invented a classification for a pure table");
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_table_layout_offsets_stable(kt::Log& Log)
+{
+   // The generated VM encodes these offsets directly.  static_assert() in lj_obj.h guards the build; this test
+   // guards the installed binary that the Flute suites exercise.
+
+   if (not (offsetof(GCtab, flags) IS 12)) {
+      Log.error("GCtab::flags is no longer at offset 12");
+      return false;
+   }
+   if (not (offsetof(GCtab, array) IS 16) or not (offsetof(GCtab, metatable) IS 32)) {
+      Log.error("GCtab array/metatable offsets have shifted");
+      return false;
+   }
+   if (not (offsetof(GCtab, asize) IS 48) or not (offsetof(GCtab, hmask) IS 52)) {
+      Log.error("GCtab asize/hmask offsets have shifted");
+      return false;
+   }
+   if (not (sizeof(GCtab) IS 80)) {
+      Log.error("sizeof(GCtab) has changed");
+      return false;
+   }
+
+   return true;
+}
+
 }  // namespace
 
 extern void indexing_unit_tests(int& Passed, int& Total)
 {
-   constexpr std::array<TestCase, 16> Tests = { {
+   constexpr std::array<TestCase, 21> Tests = { {
       { "array_first_element_access", test_array_first_element_access },
       { "table_length_operator", test_table_length_operator },
       { "ipairs_starting_index", test_ipairs_starting_index },
@@ -576,7 +742,12 @@ extern void indexing_unit_tests(int& Passed, int& Total)
       { "table_hash_mixer_matches_expected", test_table_hash_mixer_matches_expected },
       { "table_numeric_hash_keys_roundtrip", test_table_numeric_hash_keys_roundtrip },
       { "table_gc_hash_keys_roundtrip", test_table_gc_hash_keys_roundtrip },
-      { "table_string_hash_keys_unchanged", test_table_string_hash_keys_unchanged }
+      { "table_string_hash_keys_unchanged", test_table_string_hash_keys_unchanged },
+      { "table_flags_initialise_clear", test_table_flags_initialise_clear },
+      { "table_numeric_keys_do_not_classify", test_table_numeric_keys_do_not_classify },
+      { "table_string_key_classifies", test_table_string_key_classifies },
+      { "table_classification_survives_mutation", test_table_classification_survives_mutation },
+      { "table_layout_offsets_stable", test_table_layout_offsets_stable }
    } };
 
    if (NewObject(CLASSID::TIRI, &glTestScript) != ERR::Okay) return;
