@@ -621,6 +621,7 @@ static void trace_stop(jit_State *J)
       pt->trace = (TraceNo1)traceno;
       break;
    case BC_ITERN:
+   case BC_ITERA:
    case BC_RET:
    case BC_RET0:
    case BC_RET1:

@@ -604,17 +604,13 @@ LJLIB_ASM(range_iterator_next) LJLIB_REC(.)
    return FFH_RES(1);
 }
 
-static int fp_range_call(lua_State *L)
+static constexpr const char *RANGE_ITERATOR_REGISTRY_KEY = "Tiri.private.range_iterator";
+
+int lj_range_prepare_iterator(lua_State *L, int Index)
 {
-   tiri_range *range = get_range(L, 1);
-   if (lua_gettop(L) >= 2) {
-      int argument_type = lua_type(L, 2);
-      if (argument_type IS LUA_TNIL or argument_type IS LUA_TNUMBER) {
-         luaL_error(L, ERR::Syntax, "range used incorrectly in for loop; use 'for i in range()' not 'for i in range'");
-      }
-   }
+   tiri_range *range = get_range(L, Index);
    size_t count = fp_range_count(L, range, false);
-   lua_pushvalue(L, lua_upvalueindex(1));
+   lua_getfield(L, LUA_REGISTRYINDEX, RANGE_ITERATOR_REGISTRY_KEY);
    lua_createtable(L, RANGE_ITERATOR_STATE_SIZE, 0);
    fp_range_push(L, range->start);
    lua_rawseti(L, -2, RANGE_ITERATOR_START);
@@ -626,6 +622,11 @@ static int fp_range_call(lua_State *L)
    lua_rawseti(L, -2, RANGE_ITERATOR_INTEGER_VALUES);
    lua_pushnil(L);
    return 3;
+}
+
+static int fp_range_call(lua_State *L)
+{
+   return lj_range_prepare_iterator(L, 1);
 }
 
 //********************************************************************************************************************
@@ -1022,13 +1023,14 @@ extern "C" int luaopen_range(lua_State *L)
    // Register the library using LuaJIT's library registration system
    LJ_LIB_REG(L, "range", range);
 
-   // Keep the stable fast iterator private and capture it in the range-object __call metamethod.
+   // Keep the stable fast iterator private for shared bare and explicit range preparation.
    lua_getfield(L, -1, "iterator_next");
+   lua_pushvalue(L, -1);
+   lua_setfield(L, LUA_REGISTRYINDEX, RANGE_ITERATOR_REGISTRY_KEY);
    lua_pushnil(L);
    lua_setfield(L, -3, "iterator_next");
    luaL_getmetatable(L, RANGE_METATABLE);
-   lua_pushvalue(L, -2);
-   lua_pushcclosure(L, fp_range_call, 1);
+   lua_pushcfunction(L, fp_range_call);
    lua_setfield(L, -2, "__call");
    lua_pop(L, 2);  // Pop the range metatable and private iterator.
 

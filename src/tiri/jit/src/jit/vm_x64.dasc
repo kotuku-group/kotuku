@@ -4787,17 +4787,26 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |.endif
     |
     |  // Fetch the array element into R[A+1] (value slot).
-    |  mov L:CARG1, SAVE_L
+    |  mov TMPR, SAVE_L
+    |  mov L:TMPR->base, BASE
+    |  mov SAVE_PC, PC
     |.if X64WIN
-    |  lea CARG4, [BASE+RA*8+8]    // Caveat: CARG2 == BASE.
-    |  mov CARG2, ARRAY:RB
+    |  lea CARG4, [BASE+RA*8+8]
+    |  mov TMPR, ARRAY:RB
+    |  mov RB, BASE
+    |  mov CARG2, TMPR
     |  mov CARG3d, RCd
+    |  mov L:CARG1, SAVE_L
     |.else
-    |  mov CARG2, ARRAY:RB
-    |  lea CARG4, [BASE+RA*8+8]    // Caveat: CARG3 == BASE.
-    |  mov CARG3d, RCd
+    |  mov L:CARG1, SAVE_L
+    |  mov TMPR, ARRAY:RB
+    |  lea CARG4, [BASE+RA*8+8]
+    |  mov RB, BASE
+    |  mov CARG2, TMPR
+    |  mov CARG3d, RCd             // CARG3 aliases BASE on System V.
     |.endif
     |  call extern lj_arr_getidx // (lua_State *L, GCarray *arr, int32_t idx, TValue *result)
+    |  mov BASE, RB
     |
     |  movzx RDd, PC_RD       // Get target from following ITERL instruction.
     |  branchPC RD

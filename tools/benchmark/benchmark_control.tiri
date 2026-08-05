@@ -517,6 +517,17 @@ end
    return sum
 end
 
+@Test function ControlForBareRangeObject()
+   local sum = 0
+   local nr = range.new(0, 100, false, 2)
+   for i in {0 to 1000} do
+      for j in nr do
+         sum += j
+      end
+   end
+   return sum
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Goal: Iterate a range literal that starts from a negative bound.
 -- NB: Measured separately because a negative start bound currently defeats trace compilation, whereas an

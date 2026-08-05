@@ -4152,6 +4152,51 @@ static size_t count_opcode_tree(const BytecodeSnapshot &Snapshot, BCOp Opcode)
    return count;
 }
 
+static bool test_bare_collection_iteration_emission(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   lua_protect_globals(L);
+   std::string error;
+
+   constexpr std::string_view source =
+      "local array_values = array<int> { 1, 2, 3 }\n"
+      "for index, value in array_values do end\n"
+      "local table_values = { answer = 42 }\n"
+      "for key, value in table_values do end\n"
+      "local stored_range = range(1, 4)\n"
+      "for value in stored_range do end\n"
+      "for value in {1 to 4} do end\n"
+      "local function dynamic(Target:any) for first, second in Target do end end\n"
+      "for key, value in pairs(table_values) do end\n";
+
+   auto snapshot = compile_snapshot(L, source, true, error);
+   if (not snapshot) {
+      Log.error("bare collection iteration source failed to compile: %s", error.c_str());
+      return false;
+   }
+
+   if (count_opcode_tree(*snapshot, BC_ITERA) != 1 or count_opcode_tree(*snapshot, BC_ISARR) != 0) {
+      Log.error("proved bare arrays did not lower directly to ITERA without ISARR");
+      return false;
+   }
+   if (count_opcode_tree(*snapshot, BC_ITERN) != 2) {
+      Log.error("proved bare tables and explicit pairs() emitted %" PRId64 " ITERN instructions instead of two",
+         int64_t(count_opcode_tree(*snapshot, BC_ITERN)));
+      return false;
+   }
+   if (count_opcode_tree(*snapshot, BC_ITERC) != 2) {
+      Log.error("stored ranges and dynamic targets did not use one prepared ITERC path each");
+      return false;
+   }
+   if (count_opcode_tree(*snapshot, BC_FORI) != 1 or count_opcode_tree(*snapshot, BC_FORL) != 1) {
+      Log.error("direct range literals did not retain their specialised FORI/FORL lowering");
+      return false;
+   }
+   return true;
+}
+
 static bool test_tail_call_eligibility(kt::Log &Log)
 {
    LuaStateHolder state;
@@ -4769,7 +4814,7 @@ static bool test_type_guided_emission(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 51> tests = { {
+   constexpr std::array<TestCase, 52> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -4785,6 +4830,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "deprecated_numeric_for_rejected", test_deprecated_numeric_for_rejected },
       { "array_length_range_for_ast", test_array_length_range_for_ast },
       { "generic_for_ast", test_generic_for_ast },
+      { "bare_collection_iteration_emission", test_bare_collection_iteration_emission },
       { "repeat_defer_ast", test_repeat_defer_ast },
       { "ternary_presence_expr_ast", test_ternary_presence_expr_ast },
       { "return_lowering", test_return_lowering },
