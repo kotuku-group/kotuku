@@ -14,6 +14,18 @@ extern void lj_array_copy(lua_State *, GCarray *, uint32_t dstidx, GCarray *, ui
 extern GCtab* lj_array_to_table(lua_State *, GCarray *);
 extern bool lj_array_grow(lua_State *, GCarray *, MSize MinCapacity);
 
+enum class ArrayElementResult : uint8_t {
+   OK,
+   INVALID_TYPE,
+   OUT_OF_RANGE,
+   UNSUPPORTED_STORAGE
+};
+
+[[nodiscard]] extern ArrayElementResult lj_array_validate_element(GCarray *, cTValue *);
+extern void lj_array_check_element(lua_State *, GCarray *, cTValue *);
+extern void lj_array_store_validated(lua_State *, GCarray *, MSize Index, cTValue *);
+extern void lj_array_store_checked(lua_State *, GCarray *, MSize Index, cTValue *);
+
 //********************************************************************************************************************
 
 inline void * lj_array_index(GCarray *Array, uint32_t Idx) {

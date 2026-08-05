@@ -927,6 +927,8 @@ end
    local trace_no, info, abc_count = find_array_bounds_trace(40)
    assert(trace_no != nil and info != nil, 'Expected a traced typed-array loop with direct element access')
    assert(abc_count <= 2, f'Expected at most two invariant array bounds checks, found {abc_count}')
+   assert(count_trace_calls(trace_no, info) is 0,
+      'Hot numeric indexed stores should remain direct XSTORE operations without helper calls')
 
    local abc_position = first_trace_opcode(trace_no, info, ir_abc)
    local loop_position = first_trace_opcode(trace_no, info, ir_loop)

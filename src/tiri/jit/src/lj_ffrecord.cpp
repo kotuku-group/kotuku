@@ -43,6 +43,7 @@
 #include "lj_dispatch.h"
 #include "lj_vm.h"
 #include "lj_strscan.h"
+#include "runtime/lj_array.h"
 #include "lj_strfmt.h"
 #include "lj_serialize.h"
 #include "lib_range.h"
@@ -694,22 +695,8 @@ static void recff_array_getString(jit_State* J, RecordFFData* rd)
 
 static bool array_push_recordable(GCarray *Array, cTValue *Val)
 {
-   switch (Array->elemtype) {
-      case AET::BYTE:
-         return tvisstr(Val) or tvisnumber(Val);
-      case AET::INT16:
-      case AET::INT32:
-      case AET::INT64:
-      case AET::FLOAT:
-      case AET::DOUBLE:
-         return tvisnumber(Val);
-      case AET::STR_GC:
-         return tvisstr(Val);
-      case AET::ANY:
-         return true;
-      default:
-         return false;
-   }
+   if (Array->elemtype IS AET::BYTE and tvisstr(Val)) return true;
+   return lj_array_validate_element(Array, Val) IS ArrayElementResult::OK;
 }
 
 static int recff_arg_count(jit_State *J)
