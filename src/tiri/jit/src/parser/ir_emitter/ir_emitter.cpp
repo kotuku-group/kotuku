@@ -1250,7 +1250,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
       }
    }
 
-   if (truncate_return_results and this->func_state.return_declared_count IS 0) {
+   if (truncate_return_results and this->func_state.return_declared_count IS 0 and
+       not return_contract_forwarded) {
       ins = BCINS_AD(BC_RET0, 0, 1);
    }
    else if (truncate_return_results and bc_op(ins) IS BC_RET) {

@@ -4241,6 +4241,19 @@ static bool test_tail_call_eligibility(kt::Log &Log)
       return false;
    }
 
+   constexpr std::string_view recursive_void_source =
+      "local function recurse(Count:num):<>\n"
+      "   if Count is 0 then return end\n"
+      "   return recurse(Count - 1)\n"
+      "end\n"
+      "return recurse\n";
+   auto recursive_void = compile_snapshot(L, recursive_void_source, true, error);
+   if (not recursive_void or count_opcode_tree(*recursive_void, BC_CALLT) != 1 or
+       count_opcode_tree(*recursive_void, BC_CALL) != 0) {
+      Log.error("an explicit-void self-tail call was overwritten by result truncation: %s", error.c_str());
+      return false;
+   }
+
    constexpr std::string_view mutable_recursive_source =
       "local function recurse(Count:num):num\n"
       "   if Count is 0 then return 0 end\n"

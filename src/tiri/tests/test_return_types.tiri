@@ -376,6 +376,18 @@ end
    assert(truncated is nil, "the terminal activation should truncate undeclared recursive results")
 end
 
+@Test function ExplicitVoidTailRecursionExecutesEveryCall()
+   local visits = 0
+   function void_tail(Count: num):<>
+      visits++
+      if Count is 0 then return end
+      return void_tail(Count - 1)
+   end
+
+   void_tail(100000)
+   assert(visits is 100001, "an explicit-void self-tail call should execute every recursive activation")
+end
+
 @Test function RecursiveFunctionWithoutTypeError()
    try
       exec([[
