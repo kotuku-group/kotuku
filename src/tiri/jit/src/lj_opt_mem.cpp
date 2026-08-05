@@ -614,10 +614,17 @@ TRef lj_opt_fwd_fload(jit_State* J)
    }
 
    // No conflicting store: const-fold field loads from allocations.
-   if (fid == IRFL_TAB_META) {
+   if (fid IS IRFL_TAB_META or fid IS IRFL_TAB_GCONTRACTS) {
       IRIns* ir = IR(oref);
-      if (ir->o == IR_TNEW or ir->o == IR_TDUP)
+      if (ir->o IS IR_TNEW or ir->o IS IR_TDUP)
          return lj_ir_knull(J, IRT_TAB);
+   }
+   else if (fid IS IRFL_TAB_FLAGS) {
+      IRIns* ir = IR(oref);
+      if (ir->o IS IR_TNEW)
+         return lj_ir_kint(J, 0);
+      else if (ir->o IS IR_TDUP)
+         return lj_ir_kint(J, ir_ktab(IR(ir->op1))->flags);
    }
 
 cselim:

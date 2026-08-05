@@ -10,6 +10,8 @@ local ir_max <const> = 51  -- IRDEF order; traceIR exposes the opcode as traceIR
 local ir_fpmath <const> = 52  -- IRDEF order; floating-point rounding and related operations.
 local ir_xload <const> = 70  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
 local ir_xstore <const> = 78  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
+local ir_tnew <const> = 81  -- IRDEF order; fresh table allocation.
+local ir_tdup <const> = 82  -- IRDEF order; template table allocation.
 local ir_conv <const> = 91  -- IRDEF order; numeric and integer conversions.
 local ir_bufput <const> = 86
 local ir_bufstr <const> = 87
@@ -17,6 +19,7 @@ local ir_calln <const> = 95  -- IRDEF order; traceIR exposes the opcode as trace
 local ir_calla <const> = 96
 local ir_calll <const> = 97
 local ir_calls <const> = 98
+local rid_sink <const> = 254  -- lj_target.h register marker, exposed in the low byte of traceIR().prev.
 
 struct JITValidatedStructFields
    Flag: bool
@@ -2845,6 +2848,71 @@ end
       t[key] = i
    end
    assert(#t is nil, f"A hot computed string-key store should classify the table, got {tostring(#t)}")
+end
+
+function string_keyed_tnew_value(Value):any
+   local temporary = {}
+   temporary.key = Value
+   return temporary.key
+end
+
+function string_keyed_tdup_value(Value):any
+   local temporary = { 1 }
+   temporary.key = Value
+   return temporary.key
+end
+
+function string_keyed_tnew_workload(Value)
+   local total = 0
+   for i in {0 to 100} do
+      total += string_keyed_tnew_value(Value + i)
+   end
+   return total
+end
+
+function string_keyed_tdup_workload(Value)
+   local total = 0
+   for i in {0 to 100} do
+      total += string_keyed_tdup_value(Value + i)
+   end
+   return total
+end
+
+@Test function StringKeyedStoresPreserveAllocationSinking()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+
+   assert(string_keyed_tnew_workload(3) is 5250, 'TNEW workload should retain its result on trace')
+   assert(string_keyed_tdup_workload(3) is 5250, 'TDUP workload should retain its result on trace')
+
+   jit.off()
+   local allocation_counts = { [ir_tnew] = 0, [ir_tdup] = 0 }
+   local sunk_counts = { [ir_tnew] = 0, [ir_tdup] = 0 }
+
+   for trace_no in {1 into 100} do
+      local info = jit.util.traceInfo(trace_no)
+      if info is nil then continue end
+
+      for instruction in {1 into info.nins} do
+         local _, ir_ot, _, _, ir_prev = jit.util.traceIR(trace_no, instruction)
+         if ir_ot is nil then continue end
+
+         local opcode = ir_ot >> 8
+         if opcode is ir_tnew or opcode is ir_tdup then
+            allocation_counts[opcode]++
+            if (ir_prev & 255) is rid_sink then sunk_counts[opcode]++ end
+         end
+      end
+   end
+
+   assert(allocation_counts[ir_tnew] > 0 and sunk_counts[ir_tnew] is allocation_counts[ir_tnew],
+      f'Every temporary TNEW receiving a string-keyed store should be sunk: {sunk_counts[ir_tnew]}/' ..
+      f'{allocation_counts[ir_tnew]}')
+   assert(allocation_counts[ir_tdup] > 0 and sunk_counts[ir_tdup] is allocation_counts[ir_tdup],
+      f'Every temporary TDUP receiving a string-keyed store should be sunk: {sunk_counts[ir_tdup]}/' ..
+      f'{allocation_counts[ir_tdup]}')
+   jit.on()
+   jit.opt.start()
 end
 
 @Test(hotpath=100) function ClearInHotCodeKeepsClassification()
