@@ -646,7 +646,8 @@ void lj_meta_istype(lua_State *L, BCREG ra, BCREG tp)
 //
 //   boundary, descriptor_flags, static_value_count, contract_count,
 //   repeated { type, entry_flags, position, object_class_id_uleb32,
-//              struct_name_length, struct_name_bytes, label_length, label_bytes }
+//              struct_name_length, struct_name_bytes, optional array member and structure name,
+//              label_length, label_bytes }
 
 namespace {
 
@@ -674,6 +675,20 @@ namespace {
    return not contract_is_range(L, Value);
 }
 
+[[nodiscard]] static bool contract_array_element_matches(
+   lua_State *L, const GCarray *Array, const RuntimeContractEntry &Entry)
+{
+   if (Entry.array_element_type IS AET::ANY) return true;
+   AET actual = Array->elemtype;
+   AET expected = Entry.array_element_type;
+   bool string_match = expected IS AET::STR_GC and
+      (actual IS AET::STR_GC or actual IS AET::CSTR or actual IS AET::STR_CPP);
+   if (not string_match and actual != expected) return false;
+   if (expected != AET::STRUCT) return true;
+   struct_record *definition = find_struct(L, Entry.constraint_name);
+   return definition and Array->structdef IS definition;
+}
+
 [[nodiscard]] static bool contract_matches(lua_State *L, cTValue *Value, const RuntimeContractEntry &Entry)
 {
    bool nullable = (Entry.flags & contract_flag(ContractEntryFlag::Nullable)) != 0;
@@ -688,12 +703,13 @@ namespace {
       case TiriType::Num:     return tvisnumber(Value);
       case TiriType::Str:     return tvisstr(Value);
       case TiriType::Table:   return tvistab(Value);
-      case TiriType::Array:   return tvisarray(Value);
+      case TiriType::Array:
+         return tvisarray(Value) and contract_array_element_matches(L, arrayV(Value), Entry);
       case TiriType::Func:    return contract_is_callable(L, Value);
       case TiriType::Struct: {
          if (not tvisstruct(Value)) return false;
-         if (Entry.struct_name.empty()) return true;
-         struct_record *definition = find_struct(L, Entry.struct_name);
+         if (Entry.constraint_name.empty()) return true;
+         struct_record *definition = find_struct(L, Entry.constraint_name);
          return definition and structV(Value)->def IS definition;
       }
       case TiriType::Object: {
@@ -730,8 +746,39 @@ static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractE
       return;
    }
 
-   if (Entry.type IS TiriType::Struct and not Entry.struct_name.empty()) {
-      std::snprintf(Buffer, Size, "struct<%.*s>", int(Entry.struct_name.size()), Entry.struct_name.data());
+   if (Entry.type IS TiriType::Struct and not Entry.constraint_name.empty()) {
+      std::snprintf(Buffer, Size, "struct<%.*s>", int(Entry.constraint_name.size()), Entry.constraint_name.data());
+      return;
+   }
+
+   if (Entry.type IS TiriType::Array) {
+      const char *member = "any";
+      switch (Entry.array_element_type) {
+         case AET::BYTE:   member = "byte"; break;
+         case AET::INT16:  member = "int16"; break;
+         case AET::INT32:  member = "int"; break;
+         case AET::INT64:  member = "int64"; break;
+         case AET::FLOAT:  member = "float"; break;
+         case AET::DOUBLE: member = "double"; break;
+         case AET::CSTR:
+         case AET::STR_CPP:
+         case AET::STR_GC: member = "string"; break;
+         case AET::TABLE:  member = "table"; break;
+         case AET::ARRAY:  member = "array"; break;
+         case AET::PTR:    member = "pointer"; break;
+         case AET::ANY:    member = "any"; break;
+         case AET::OBJECT: member = "object"; break;
+         case AET::STRUCT:
+            if (not Entry.constraint_name.empty()) {
+               std::snprintf(Buffer, Size, "array<struct<%.*s>>", int(Entry.constraint_name.size()),
+                  Entry.constraint_name.data());
+               return;
+            }
+            member = "struct";
+            break;
+         case AET::MAX: break;
+      }
+      std::snprintf(Buffer, Size, "array<%s>", member);
       return;
    }
 
@@ -769,6 +816,15 @@ static void contract_type_name(char *Buffer, size_t Size, const RuntimeContractE
    else if (tvisstruct(Value) and structV(Value)->def) {
       const auto &name = structV(Value)->def->Name;
       std::snprintf(actual, sizeof(actual), "struct<%.*s>", int(name.size()), name.data());
+   }
+   else if (tvisarray(Value)) {
+      RuntimeContractEntry actual_entry;
+      actual_entry.type = TiriType::Array;
+      actual_entry.array_element_type = arrayV(Value)->elemtype;
+      if (arrayV(Value)->elemtype IS AET::STRUCT and arrayV(Value)->structdef) {
+         actual_entry.constraint_name = arrayV(Value)->structdef->Name;
+      }
+      contract_type_name(actual, sizeof(actual), actual_entry);
    }
    else if (contract_is_range(L, Value)) std::snprintf(actual, sizeof(actual), "range");
    else std::snprintf(actual, sizeof(actual), "%s", lj_typename(Value));
@@ -853,11 +909,13 @@ static void apply_cached_contract(lua_State *L, TValue *Base, uint32_t DynamicCo
       const CachedRuntimeContractEntry &cached = Entries[entry_index];
       RuntimeContractEntry entry{
          .type = cached.type,
+         .array_element_type = cached.type IS TiriType::Array ? cached.array_element_type : AET::MAX,
          .flags = cached.flags,
          .position = cached.position,
          .object_class_id = cached.type IS TiriType::Object ? CLASSID(cached.object_class_id) : CLASSID::NIL,
-         .struct_name = cached.type IS TiriType::Struct ?
-            cached_contract_text(Descriptor, cached.struct_offset) : std::string_view{},
+         .constraint_name = (cached.type IS TiriType::Struct or
+            (cached.type IS TiriType::Array and cached.array_element_type IS AET::STRUCT)) ?
+            cached_contract_text(Descriptor, cached.constraint_offset) : std::string_view{},
          .label = cached_contract_text(Descriptor, cached.label_offset)
       };
       if (entry.type IS TiriType::Any or entry.type IS TiriType::Unknown) continue;
@@ -948,12 +1006,14 @@ void lj_contract_build_cache(lua_State *L, GCproto *Prototype)
          const RuntimeContractEntry &source = descriptor.entries[j];
          CachedRuntimeContractEntry &target = entries[entry_index++];
          if (source.type IS TiriType::Object) target.object_class_id = uint32_t(source.object_class_id);
-         else if (source.type IS TiriType::Struct) {
-            target.struct_offset = cached_contract_text_offset(encoded, source.struct_name);
+         else if (source.type IS TiriType::Struct or
+                  (source.type IS TiriType::Array and source.array_element_type IS AET::STRUCT)) {
+            target.constraint_offset = cached_contract_text_offset(encoded, source.constraint_name);
          }
          else target.object_class_id = 0;
          target.label_offset = cached_contract_text_offset(encoded, source.label);
          target.type = source.type;
+         target.array_element_type = source.array_element_type;
          target.flags = source.flags;
          target.position = source.position;
       }
@@ -1107,12 +1167,15 @@ static void env_check_contract(lua_State *L, GCtab *Environment, GCstr *Name, cT
          "decoded global contract cache does not match persisted policy");
       cached_entry = RuntimeContractEntry{
          .type = cached->entry.type,
+         .array_element_type = cached->entry.type IS TiriType::Array ?
+            cached->entry.array_element_type : AET::MAX,
          .flags = cached->entry.flags,
          .position = cached->entry.position,
          .object_class_id = cached->entry.type IS TiriType::Object ?
             CLASSID(cached->entry.object_class_id) : CLASSID::NIL,
-         .struct_name = cached->entry.type IS TiriType::Struct ?
-            cached_contract_text(cached->descriptor, cached->entry.struct_offset) : std::string_view{},
+         .constraint_name = (cached->entry.type IS TiriType::Struct or
+            (cached->entry.type IS TiriType::Array and cached->entry.array_element_type IS AET::STRUCT)) ?
+            cached_contract_text(cached->descriptor, cached->entry.constraint_offset) : std::string_view{},
          .label = cached_contract_text(cached->descriptor, cached->entry.label_offset)
       };
       entry = &cached_entry;

@@ -689,11 +689,12 @@ void lj_tab_set_global_contract(lua_State *L, GCtab *Environment, const GCstr *N
       const RuntimeContractEntry &source = decoded.entries[0];
       replacement.descriptor = Descriptor;
       if (source.type IS TiriType::Object) replacement.entry.object_class_id = uint32_t(source.object_class_id);
-      else if (source.type IS TiriType::Struct) {
-         ptrdiff_t offset = source.struct_name.data() - strdata(Descriptor);
+      else if (source.type IS TiriType::Struct or
+               (source.type IS TiriType::Array and source.array_element_type IS AET::STRUCT)) {
+         ptrdiff_t offset = source.constraint_name.data() - strdata(Descriptor);
          lj_assertX(offset > 0 and uint64_t(offset) <= UINT16_MAX,
-            "global contract structure offset is out of range");
-         replacement.entry.struct_offset = uint16_t(offset);
+            "global contract constraint offset is out of range");
+         replacement.entry.constraint_offset = uint16_t(offset);
       }
       replacement.entry.label_offset = 0;
       if (not source.label.empty()) {
@@ -703,6 +704,7 @@ void lj_tab_set_global_contract(lua_State *L, GCtab *Environment, const GCstr *N
          replacement.entry.label_offset = uint16_t(offset);
       }
       replacement.entry.type = source.type;
+      replacement.entry.array_element_type = source.array_element_type;
       replacement.entry.flags = source.flags;
       replacement.entry.position = source.position;
    }

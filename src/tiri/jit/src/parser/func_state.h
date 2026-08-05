@@ -70,6 +70,7 @@ struct FuncState {
       return arr;
    }();
    std::array<struct_record *, MAX_RETURN_TYPES> return_struct_defs{};
+   std::array<ArrayElementDescriptor, MAX_RETURN_TYPES> return_array_elements{};
    uint8_t return_declared_count = 0;
    uint8_t return_contract_count = 0;
    bool return_contract_variadic = false;

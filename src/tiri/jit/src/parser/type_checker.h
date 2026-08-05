@@ -15,6 +15,7 @@ struct InferredType {
    bool requires_destination_type = false; // Dynamic ingress cannot be replaced by a concrete type without annotation
    CLASSID object_class_id = CLASSID::NIL;  // CLASSID for Object types
    struct_record *struct_def = nullptr; // Resolved layout for Struct types and definition callables
+   ArrayElementDescriptor array_element{};
 
    InferredType() = default;
    explicit InferredType(TiriType Primary, bool IsConstant = false, bool IsNullable = false, bool IsFixed = false,
@@ -96,7 +97,7 @@ public:
    void declare_local(GCstr *, const InferredType &, SourceSpan Location = {}, bool IsConst = false);
    void declare_function(GCstr *, const FunctionExprPayload *, SourceSpan Location = {});
    void fix_local_type(GCstr *, TiriType Type, CLASSID ObjectClassId = CLASSID::NIL,
-      struct_record *StructDef = nullptr);
+      struct_record *StructDef = nullptr, ArrayElementDescriptor ArrayElement = {});
    void mark_dynamic_ingress(GCstr *);
 
    // Mark a variable as used (called when variable is referenced)

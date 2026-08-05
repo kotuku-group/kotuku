@@ -741,6 +741,9 @@ void IrEmitter::apply_inferred_local_type(BCReg Slot, const ExprNode& Value)
    info->fixed_type = inferred.type;
    info->object_class_id = (inferred.type IS TiriType::Object) ? inferred.object_class_id : CLASSID::NIL;
    info->struct_def = inferred.struct_def;
+   if (Value.static_value) {
+      info->array_element = this->ctx.descriptors().value(Value.static_value).array_element;
+   }
    info->static_value = Value.static_value;
    info->static_results = Value.static_results;
 }
@@ -760,6 +763,7 @@ bool IrEmitter::apply_analysed_local_type(BCReg Slot, StaticBindingID Binding)
    info->fixed_type = value.primary;
    info->object_class_id = value.object_class_id;
    info->struct_def = value.struct_def;
+   info->array_element = value.array_element;
    this->assert_analysed_local_type(Slot, Binding);
    return true;
 }
@@ -776,6 +780,8 @@ void IrEmitter::assert_analysed_local_type(BCReg Slot, StaticBindingID Binding) 
    lj_assertX(info.fixed_type IS value.primary, "analysed and emitted binding types diverged");
    lj_assertX(info.object_class_id IS value.object_class_id, "analysed and emitted binding object classes diverged");
    lj_assertX(info.struct_def IS value.struct_def, "analysed and emitted binding structures diverged");
+   lj_assertX(info.array_element IS value.array_element,
+      "analysed and emitted binding array member types diverged");
 }
 
 BCReg IrEmitter::finalise_pending_local_assignment(PreparedAssignment& Target)
@@ -1104,6 +1110,7 @@ static bool fixed_return_contract_is_proved(
       RuntimeContract contract{
          .type = State.return_types[i],
          .struct_def = State.return_struct_defs[i],
+         .array_element = State.return_array_elements[i],
          .boundary = ContractBoundary::Result,
          .position = uint8_t(i + 1),
          .nullable = true,
@@ -1280,6 +1287,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
          contracts[i] = RuntimeContract{
             .type = this->func_state.return_types[i],
             .struct_def = this->func_state.return_struct_defs[i],
+            .array_element = this->func_state.return_array_elements[i],
             .label = nullptr,
             .boundary = ContractBoundary::Result,
             .position = uint8_t(i + 1),
@@ -1383,6 +1391,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
          .type = identifier.type,
          .object_class_id = variable.object_class_id,
          .struct_def = variable.struct_def ? variable.struct_def : identifier.struct_def,
+         .array_element = identifier.array_element.known ? identifier.array_element : variable.array_element,
          .label = is_blank_symbol(identifier) ? nullptr : identifier.symbol,
          .boundary = ContractBoundary::Local,
          .position = uint8_t(base.raw() + i.raw() + 1)
@@ -1444,6 +1453,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_local_decl_stmt(const LocalDeclStmtPayl
          // Explicit type annotation takes precedence
          info->fixed_type = identifier.type;
          info->struct_def = identifier.struct_def;
+         info->array_element = identifier.array_element;
       }
       else if (this->apply_analysed_local_type(base + i, identifier.binding_id)) {
          // The analyser owns sticky fixation.  Its per-binding result covers deferred and secondary values.
@@ -2149,6 +2159,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_generic_for_stmt(const GenericForStmtPa
             variable.fixed_type = descriptor.primary;
             variable.object_class_id = descriptor.object_class_id;
             variable.struct_def = descriptor.struct_def;
+            variable.array_element = descriptor.array_element;
          }
          if (identifier.symbol and not identifier.is_blank) {
             BlockBinding binding;

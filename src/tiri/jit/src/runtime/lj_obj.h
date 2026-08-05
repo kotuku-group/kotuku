@@ -623,7 +623,7 @@ inline constexpr int LJ_MAX_TRY_DEPTH = 32;
 // Function signature metadata.  Entries contain only state-portable identifiers: struct constraints use struct_key()
 // and object constraints use CLASSID.  Parameter entries are stored first, followed by result entries.
 
-inline constexpr uint8_t PROTO_SIGNATURE_VERSION = 1;
+inline constexpr uint8_t PROTO_SIGNATURE_VERSION = 2;
 
 enum class ProtoTypeOrigin : uint8_t {
    Unspecified = 0,
@@ -1016,6 +1016,16 @@ enum class AET : uint8_t {
    MAX,
    VULNERABLE = PTR
 };
+
+[[nodiscard]] constexpr inline uint16_t proto_array_member(AET Type) noexcept
+{
+   return uint16_t(Type) + 1;
+}
+
+[[nodiscard]] constexpr inline AET proto_array_member(const ProtoTypeEntry &Entry) noexcept
+{
+   return Entry.reserved ? AET(Entry.reserved - 1) : AET::MAX;
+}
 
 // Array flags
 inline constexpr uint8_t ARRAY_READONLY  = 0x01;  // Cannot modify elements

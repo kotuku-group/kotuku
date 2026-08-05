@@ -81,6 +81,43 @@ function expect_userdata_diagnostic(Callback:func, Actual:str)
    assert(failed, 'Expected a userdata diagnostic contract failure')
 end
 
+function expect_array_contract_failure(Callback:func, Expected:str, Actual:str)
+   local failed = false
+   try
+      Callback()
+   except e
+      failed = true
+      assert(e.message:find('expected array<' .. Expected .. '>') != nil,
+         'The message should identify the expected array member: ' .. e.message)
+      assert(e.message:find('got array<' .. Actual .. '>') != nil,
+         'The message should identify the actual array member: ' .. e.message)
+   end
+   assert(failed, 'Expected an array member contract failure')
+end
+
+@Test function ArrayBindingMemberContracts()
+   function accept_ints(Value:array<int>):array<int> return Value end
+   function checked_ints(Value:any):array<int> return dynamic_value(Value) end
+
+   local ints = array<int> { 1 }
+   local words = array<string> { 'text' }
+   assert(accept_ints(dynamic_value(ints)) is ints, 'A matching dynamic array should satisfy the member contract')
+   expect_array_contract_failure(function() accept_ints(dynamic_value(words)) end, 'int', 'string')
+   expect_array_contract_failure(function() checked_ints(words) end, 'int', 'string')
+
+   local inferred = array<int> { 2 }
+   expect_array_contract_failure(function() inferred = dynamic_value(words) end, 'int', 'string')
+   assert(inferred[0] is 2, 'A rejected inferred-array store should preserve the previous value')
+   inferred = nil
+   inferred = dynamic_value(ints)
+   assert(inferred[0] is 1, 'Nil should not clear an inferred array member contract')
+
+   local wildcard:array<any> = ints
+   wildcard = dynamic_value(words)
+   assert(wildcard[0] is 'text', 'array<any> should accept every native-array member identity')
+   expect_contract_failure(function() wildcard = dynamic_value({}) end, 'local')
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Parameter matrix and exact, non-coercing predicates.
 
@@ -90,7 +127,7 @@ end
    function accept_num(Value:num) return Value end
    function accept_str(Value:str) return Value end
    function accept_table(Value:table) return Value end
-   function accept_array(Value:array) return Value end
+   function accept_array(Value:array<any>) return Value end
    function accept_func(Value:func) return Value end
    function accept_struct(Value:struct) return Value end
    function accept_obj(Value:obj) return Value end
@@ -212,7 +249,7 @@ end
 end
 
 @Test function GuardPrecedesSpecialisedMutation()
-   function increment(Values:array)
+   function increment(Values:array<any>)
       Values[0] += 1
    end
 
@@ -260,7 +297,7 @@ end
    function checked_num(Value:any):num return dynamic_value(Value) end
    function checked_str(Value:any):str return dynamic_value(Value) end
    function checked_table(Value:any):table return dynamic_value(Value) end
-   function checked_array(Value:any):array return dynamic_value(Value) end
+   function checked_array(Value:any):array<any> return dynamic_value(Value) end
    function checked_func(Value:any):func return dynamic_value(Value) end
    function checked_struct(Value:any):struct return dynamic_value(Value) end
    function checked_alpha(Value:any):struct<ContractAlpha> return dynamic_value(Value) end
@@ -752,7 +789,7 @@ end
    expect_contract_failure(function() exec("glContractNumber = 'wrong'") end, 'global')
    assert(glContractNumber is 3, 'A rejected store from a separately compiled chunk must preserve the global value')
 
-   global glContractArray:array = array<int> { 4, 8 }
+   global glContractArray:array<any> = array<int> { 4, 8 }
    function read_contract_array():num
       return glContractArray[1]
    end
@@ -1185,7 +1222,7 @@ end
 
 @Test function ContractDisassemblyOrder()
    local script = obj.new('tiri', { statement = [[
-function first(Values:array):any
+function first(Values:array<any>):any
    return Values[0]
 end
 ]] })

@@ -1086,14 +1086,13 @@ static LexToken lex_array_typed(LexState *State, TValue *tv)
 
    lex_skip_inline_ws(State);
 
-   // Handle nested array type: array< array<inner_type> >
-   // When the inner type is itself array<...>, skip the inner type specification.
-   // The type name "array" maps to AET::ARRAY at runtime; inner element types are
-   // determined when individual inner arrays are created.
+   // Preserve a nested array spelling so annotation parsing can reject unsupported recursive specialisation.
+   // Constructor parsing deliberately reduces it to the existing immediate array member identity.
 
    if (type_str == "array" and State->c IS '<') {
       int depth = 1;
       lex_next(State);  // Consume inner '<'
+      std::string inner;
       while (depth > 0) {
          if (State->c IS '<') depth++;
          else if (State->c IS '>') depth--;
@@ -1101,9 +1100,13 @@ static LexToken lex_array_typed(LexState *State, TValue *tv)
             lj_lex_error(State, TK_eof, ErrMsg::XTOKEN, State->token2str('>'));
             break;
          }
-         if (depth > 0) lex_next(State);
+         if (depth > 0) {
+            inner.push_back(char(State->c));
+            lex_next(State);
+         }
       }
       if (State->c IS '>') lex_next(State);  // Move past the inner closing '>'
+      nested_type = std::format("array<{}>", inner);
       lex_skip_inline_ws(State);
    }
    else if (type_str IS "struct" and State->c IS '<') {

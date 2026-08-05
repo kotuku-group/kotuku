@@ -420,6 +420,31 @@ end
    assert(glGTCrossAlias is 'replaced', 'A rejected cross-chunk store must preserve the previous value')
 end
 
+@Test function CrossChunkArrayMemberPolicy()
+   global glGTMemberArray:array<int> = array<int> { 7 }
+   local writer = exec([[
+return function(Value:any)
+   local environment = _G
+   environment.glGTMemberArray = Value
+end
+]])
+
+   writer(array<int> { 9 })
+   assert(glGTMemberArray[0] is 9, 'A matching member identity should cross an environment alias')
+   try
+      writer(array<string> { 'wrong' })
+      error('A different array member identity should be rejected')
+   except e
+      assert(e.message:find('expected array<int>') != nil and e.message:find('got array<string>') != nil,
+         'The global member diagnostic should include both array identities: ' .. e.message)
+   end
+   assert(glGTMemberArray[0] is 9, 'A rejected cross-chunk array store should preserve the previous value')
+
+   exec([[global glGTWildcardArray:array<any> = array<int> { 1 }]])
+   exec([[global glGTWildcardArray:array<any> = array<string> { 'open' }]])
+   assert(glGTWildcardArray[0] is 'open', 'array<any> should remain an explicit global member wildcard')
+end
+
 @Test function DeclarationGovernsRawsetSeededName()
    rawset(_G, 'glGTSeeded', 'seed')
    global glGTSeeded = 'declared'

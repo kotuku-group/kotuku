@@ -358,6 +358,14 @@ static std::string expression_name_to_string(const ExprNode &Expression)
    return {};
 }
 
+static std::string annotation_type_to_string(
+   TiriType Type, struct_record *StructDef, const ArrayElementDescriptor &ArrayElement)
+{
+   if (Type IS TiriType::Struct and StructDef) return std::format("struct<{}>", StructDef->Name);
+   if (Type IS TiriType::Array) return std::format("array<{}>", array_element_name(ArrayElement));
+   return type_to_string(Type);
+}
+
 static std::string build_signature(const std::string &Name, const FunctionExprPayload &Function)
 {
    std::string signature = Name + "(";
@@ -372,7 +380,7 @@ static std::string build_signature(const std::string &Name, const FunctionExprPa
       signature += identifier_to_string(param.name);
       if (param.type != TiriType::Any and param.type != TiriType::Unknown) {
          signature += ": ";
-         signature += type_to_string(param.type);
+         signature += annotation_type_to_string(param.type, param.struct_def, param.array_element);
       }
    }
 
@@ -385,13 +393,15 @@ static std::string build_signature(const std::string &Name, const FunctionExprPa
 
    if (Function.return_types.count IS 1) {
       signature += ":";
-      signature += type_to_string(Function.return_types.types[0]);
+      signature += annotation_type_to_string(Function.return_types.types[0], Function.return_types.struct_defs[0],
+         Function.return_types.array_elements[0]);
    }
    else if (Function.return_types.count > 1) {
       signature += ":<";
       for (uint8_t i = 0; i < Function.return_types.count; ++i) {
          if (i > 0) signature += ", ";
-         signature += type_to_string(Function.return_types.types[i]);
+         signature += annotation_type_to_string(Function.return_types.types[i], Function.return_types.struct_defs[i],
+            Function.return_types.array_elements[i]);
       }
       if (Function.return_types.is_variadic) signature += ", ...";
       signature += ">";
@@ -432,7 +442,7 @@ static void add_params(ParserSymbolMetadata &Symbol, const FunctionExprPayload &
 
       ParserDocParamMetadata meta;
       meta.name = identifier_to_string(param.name);
-      meta.type = type_to_string(param.type);
+      meta.type = annotation_type_to_string(param.type, param.struct_def, param.array_element);
 
       bool found = false;
       if (Doc) meta.doc = find_param_doc(*Doc, meta.name, param_index, found);
@@ -597,7 +607,8 @@ static void add_results(ParserSymbolMetadata &Symbol, const FunctionExprPayload 
          meta.inferred = inferred_type;
       }
       else if (i < result_count) {
-         meta.type = type_to_string(Function.return_types.types[i]);
+         meta.type = annotation_type_to_string(Function.return_types.types[i], Function.return_types.struct_defs[i],
+            Function.return_types.array_elements[i]);
          meta.inferred = i >= explicit_count;
       }
 

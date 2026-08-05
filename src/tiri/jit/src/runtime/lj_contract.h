@@ -45,10 +45,11 @@ enum class ContractEntryFlag : uint8_t {
 
 struct RuntimeContractEntry {
    TiriType type = TiriType::Unknown;
+   AET array_element_type = AET::MAX;
    uint8_t flags = 0;
    uint8_t position = 0;
    CLASSID object_class_id = CLASSID::NIL;
-   std::string_view struct_name;
+   std::string_view constraint_name; // Named structure, or the structure member of array<struct<Name>>.
    std::string_view label;
 };
 
@@ -84,10 +85,11 @@ struct RuntimeContractDescriptor {
 struct CachedRuntimeContractEntry {
    union {
       uint32_t object_class_id;
-      uint16_t struct_offset;
+      uint16_t constraint_offset; // Structure or array-member structure name, selected by type.
    };
    uint16_t label_offset;
    TiriType type;
+   AET array_element_type;
    uint8_t flags;
    uint8_t position;
 };
@@ -123,6 +125,7 @@ struct GlobalContractCache {
    uint32_t reserved;
 };
 
+static_assert(sizeof(RuntimeContractEntry) IS 40, "runtime contract entries must remain compact");
 static_assert(sizeof(CachedRuntimeContractEntry) IS 12, "cached runtime contract entries must remain compact");
 static_assert(sizeof(CachedRuntimeContractRecord) IS 12, "cached runtime contract records must remain compact");
 static_assert(sizeof(RuntimeContractCache) IS 8, "runtime contract cache header must remain compact");
@@ -295,6 +298,8 @@ private:
       auto &entry = Result.entries[i];
       uint8_t type;
       uint32_t object_class_id = 0;
+      std::string_view struct_name;
+      std::string_view array_struct_name;
       uint8_t allowed_entry_flags = contract_flag(ContractEntryFlag::Nullable) |
          contract_flag(ContractEntryFlag::Required) | contract_flag(ContractEntryFlag::Const) |
          contract_flag(ContractEntryFlag::Initialising) | contract_flag(ContractEntryFlag::GlobalHint);
@@ -303,11 +308,22 @@ private:
           (entry.flags & ~allowed_entry_flags) != 0 or
           not reader.read_byte(entry.position) or entry.position IS 0 or
           not reader.read_uleb32(object_class_id) or
-          not reader.read_text(entry.struct_name) or not reader.read_text(entry.label)) {
+          not reader.read_text(struct_name)) {
          return fail(RuntimeContractDecodeError::Entry);
       }
       entry.type = TiriType(type);
-      entry.object_class_id = CLASSID(object_class_id);
+      entry.array_element_type = AET::MAX;
+      entry.object_class_id = CLASSID::NIL;
+      entry.constraint_name = {};
+      if (entry.type IS TiriType::Array) {
+         uint8_t array_element_type;
+         if (not reader.read_byte(array_element_type) or array_element_type >= uint8_t(AET::MAX) or
+             not reader.read_text(array_struct_name)) {
+            return fail(RuntimeContractDecodeError::Entry);
+         }
+         entry.array_element_type = AET(array_element_type);
+      }
+      if (not reader.read_text(entry.label)) return fail(RuntimeContractDecodeError::Entry);
       bool is_const = contract_entry_is_const(entry);
       bool is_initialising = contract_entry_is_initialising(entry);
       bool is_global_hint = contract_entry_is_global_hint(entry);
@@ -319,12 +335,21 @@ private:
               is_initialising))) {
          return fail(RuntimeContractDecodeError::Entry);
       }
-      if (not entry.struct_name.empty() and entry.type != TiriType::Struct) {
+      if (not struct_name.empty() and entry.type != TiriType::Struct) {
          return fail(RuntimeContractDecodeError::Entry);
       }
-      if (entry.object_class_id != CLASSID::NIL and entry.type != TiriType::Object) {
+      if (object_class_id != uint32_t(CLASSID::NIL) and entry.type != TiriType::Object) {
          return fail(RuntimeContractDecodeError::Entry);
       }
+      if (entry.type IS TiriType::Array) {
+         if (entry.array_element_type IS AET::STRUCT) {
+            if (array_struct_name.empty()) return fail(RuntimeContractDecodeError::Entry);
+         }
+         else if (not array_struct_name.empty()) return fail(RuntimeContractDecodeError::Entry);
+      }
+      if (entry.type IS TiriType::Object) entry.object_class_id = CLASSID(object_class_id);
+      else if (entry.type IS TiriType::Struct) entry.constraint_name = struct_name;
+      else if (entry.type IS TiriType::Array) entry.constraint_name = array_struct_name;
    }
 
    if (not reader.at_end()) return fail(RuntimeContractDecodeError::Descriptor);

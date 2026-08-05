@@ -114,7 +114,7 @@ function websocket_frame(Payload:str, Opcode:num):str
    return frame
 end
 
-function websocket_exchange(Frames:array, ExpectedTokens:array):str
+function websocket_exchange(Frames:array<string>, ExpectedTokens:array<string>):str
    response = ''
    frames_sent = false
 

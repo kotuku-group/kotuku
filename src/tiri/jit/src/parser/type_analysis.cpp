@@ -149,6 +149,10 @@
          return std::format("parameter {} has struct type '{}', expected '{}'",
             i + 1, actual_name, expected_name);
       }
+      if (not (expected.array_element IS actual.array_element)) {
+         return std::format("parameter {} has array type 'array<{}>', expected 'array<{}>'", i + 1,
+            array_element_name(actual.array_element), array_element_name(expected.array_element));
+      }
    }
 
    const FunctionReturnTypes &expected_results = Expected.return_types;
@@ -184,6 +188,11 @@
             actual_results.struct_defs[i]->Name : "struct";
          return std::format("return {} has struct type '{}', expected '{}'",
             i + 1, actual_name, expected_name);
+      }
+      if (not (expected_results.array_elements[i] IS actual_results.array_elements[i])) {
+         return std::format("return {} has array type 'array<{}>', expected 'array<{}>'", i + 1,
+            array_element_name(actual_results.array_elements[i]),
+            array_element_name(expected_results.array_elements[i]));
       }
    }
 
@@ -261,7 +270,7 @@ private:
 
    // Argument type checking for function calls
    void check_arguments(const FunctionExprPayload &, const CallExprPayload &);
-   void check_argument_type(const ExprNode &, TiriType, size_t);
+   void check_argument_type(const ExprNode &, const FunctionParameter &, size_t);
 
    // Type inference - determines types from expressions and context
    [[nodiscard]] InferredType infer_expression_type(const ExprNode &);
@@ -279,7 +288,7 @@ private:
 
    // Type fixation - locks variable type after first concrete assignment
    void fix_local_type(GCstr *, StaticBindingID, TiriType, CLASSID ObjectClassId = CLASSID::NIL,
-      struct_record *StructDef = nullptr);
+      struct_record *StructDef = nullptr, ArrayElementDescriptor ArrayElement = {});
    void publish_binding_type(StaticBindingID, const InferredType &);
 
    // Usage tracking - marks variables as used for unused variable detection
@@ -384,7 +393,7 @@ private:
    [[nodiscard]] bool is_global_const(GCstr *Name) const;
    [[nodiscard]] bool is_implicit_global(GCstr *Name) const;
    void fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId = CLASSID::NIL,
-      struct_record *StructDef = nullptr);
+      struct_record *StructDef = nullptr, ArrayElementDescriptor ArrayElement = {});
    void mark_dynamic_ingress(GCstr *Name, bool IsGlobal);
    void degrade_global_type(GCstr *Name);
    void invalidate_global_flow_policy(GCstr *Name, SourceSpan Location);
@@ -710,6 +719,7 @@ void TypeAnalyser::leave_function()
                published.types[i] = position.concrete.primary;
                published.object_class_ids[i] = position.concrete.object_class_id;
                published.struct_defs[i] = position.concrete.struct_def;
+               published.array_elements[i] = position.concrete.array_element;
             }
          }
       }
@@ -1598,6 +1608,18 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
                   value_type.struct_def->Name, existing->struct_def->Name);
                this->record_diagnostic(std::move(diag));
             }
+            else if (existing->primary IS TiriType::Array and value_type.primary IS TiriType::Array and
+                value_type.array_element.known and
+                not array_element_matches(existing->array_element, value_type.array_element)) {
+               TypeDiagnostic diag;
+               diag.location = target.span;
+               diag.expected = TiriType::Array;
+               diag.actual = TiriType::Array;
+               diag.code = ParserErrorCode::TypeMismatchAssignment;
+               diag.message = std::format("array member mismatch: expected array<{}>, got array<{}>",
+                  array_element_name(existing->array_element), array_element_name(value_type.array_element));
+               this->record_diagnostic(std::move(diag));
+            }
          }
          else {
             // Unfixed variable: first non-nil assignment fixes the type
@@ -1608,11 +1630,12 @@ void TypeAnalyser::analyse_assignment(const AssignmentStmtPayload &Payload)
             }
             else if ((existing->primary != TiriType::Any) and (value_type.primary != TiriType::Nil)) {
                if (is_global) {
-                  this->fix_global_type(name, value_type.primary, value_type.object_class_id, value_type.struct_def);
+                  this->fix_global_type(name, value_type.primary, value_type.object_class_id, value_type.struct_def,
+                     value_type.array_element);
                }
                else {
                   this->fix_local_type(name, name_ref->binding_id, value_type.primary,
-                     value_type.object_class_id, value_type.struct_def);
+                     value_type.object_class_id, value_type.struct_def, value_type.array_element);
                }
             }
          }
@@ -1656,6 +1679,7 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
          // We have an explicit value at this position
          const ExprNode& value_expr = *Payload.values[value_index];
          value_type = this->infer_expression_type(value_expr);
+         value_type = this->refine_static_expression_type(value_expr, value_type);
          have_value_type = true;
          initialiser = &value_expr;
 
@@ -1683,6 +1707,7 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
       if (name.type != TiriType::Unknown) {
          inferred.primary = name.type;
          inferred.struct_def = name.struct_def;
+         inferred.array_element = name.array_element;
          // 'any' type is not fixed - it accepts any value
          inferred.is_fixed = (name.type != TiriType::Any);
 
@@ -1714,6 +1739,18 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
                diag.code = ParserErrorCode::TypeMismatchAssignment;
                diag.message = std::format("struct layout mismatch: cannot assign '{}' to '{}'",
                   value_type.struct_def->Name, name.struct_def->Name);
+               this->record_diagnostic(std::move(diag));
+            }
+            else if (name.type IS TiriType::Array and value_type.primary IS TiriType::Array and
+                value_type.array_element.known and
+                not array_element_matches(name.array_element, value_type.array_element)) {
+               TypeDiagnostic diag;
+               diag.location = initialiser ? initialiser->span : name.span;
+               diag.expected = TiriType::Array;
+               diag.actual = TiriType::Array;
+               diag.code = ParserErrorCode::TypeMismatchAssignment;
+               diag.message = std::format("array member mismatch: expected array<{}>, got array<{}>",
+                  array_element_name(name.array_element), array_element_name(value_type.array_element));
                this->record_diagnostic(std::move(diag));
             }
          }
@@ -1868,6 +1905,7 @@ void TypeAnalyser::discover_global_decl_policy(const GlobalDeclStmtPayload &Payl
       if (value_index < Payload.values.size()) {
          const ExprNode &value_expr = *Payload.values[value_index];
          value_type = this->infer_expression_type(value_expr);
+         value_type = this->refine_static_expression_type(value_expr, value_type);
          have_value_type = true;
 
          if (value_index IS Payload.values.size() - 1 and
@@ -1891,6 +1929,7 @@ void TypeAnalyser::discover_global_decl_policy(const GlobalDeclStmtPayload &Payl
       if (name.type != TiriType::Unknown) {
          inferred.primary = name.type;
          inferred.struct_def = name.struct_def;
+         inferred.array_element = name.array_element;
          inferred.is_fixed = (name.type != TiriType::Any);
       }
       else if (have_value_type) {
@@ -1917,11 +1956,13 @@ void TypeAnalyser::discover_global_decl_policy(const GlobalDeclStmtPayload &Payl
       name.global_contract_object_class_id = inferred.primary IS TiriType::Object ?
          inferred.object_class_id : CLASSID::NIL;
       name.global_contract_struct_def = inferred.struct_def;
+      name.global_contract_array_element = inferred.array_element;
       name.global_contract_policy = contract_policy;
       if (name.has_const and not inferred.is_fixed) {
          name.global_contract_type = TiriType::Any;
          name.global_contract_object_class_id = CLASSID::NIL;
          name.global_contract_struct_def = nullptr;
+         name.global_contract_array_element = {};
          name.global_contract_policy = GlobalContractPolicy::Enforced;
       }
       if (PublishStaticPolicy) this->declare_global(name.symbol, inferred, name.span, name.has_const, contract_policy);
@@ -2353,7 +2394,7 @@ void TypeAnalyser::check_arguments(const FunctionExprPayload &Function, const Ca
    size_t param_index = 0;
    for (const auto &param : Function.parameters) {
       if (param_index >= Call.arguments.size()) break;
-      this->check_argument_type(*Call.arguments[param_index], param.type, param_index);
+      this->check_argument_type(*Call.arguments[param_index], param, param_index);
       param_index += 1;
    }
 }
@@ -2361,19 +2402,27 @@ void TypeAnalyser::check_arguments(const FunctionExprPayload &Function, const Ca
 //********************************************************************************************************************
 // Check a single argument against its expected type, reporting diagnostics for mismatches.
 
-void TypeAnalyser::check_argument_type(const ExprNode& Argument, TiriType Expected, size_t Index)
+void TypeAnalyser::check_argument_type(
+   const ExprNode& Argument, const FunctionParameter &Parameter, size_t Index)
 {
+   TiriType Expected = Parameter.type;
    if (Expected IS TiriType::Any) return;
 
    InferredType actual = this->infer_expression_type(Argument);
 
-   if (not actual.matches(Expected)) {
+   bool member_matches = Expected != TiriType::Array or actual.primary != TiriType::Array or
+      not actual.array_element.known or array_element_matches(Parameter.array_element, actual.array_element);
+   if (not actual.matches(Expected) or not member_matches) {
       TypeDiagnostic diag;
       diag.location = Argument.span;
       diag.expected = Expected;
       diag.actual = actual.primary;
       diag.code = ParserErrorCode::TypeMismatchArgument;
-      diag.message = std::format("type mismatch: argument {} expects '{}', got '{}'",
+      if (Expected IS TiriType::Array and actual.primary IS TiriType::Array) {
+         diag.message = std::format("type mismatch: argument {} expects array<{}>, got array<{}>", Index + 1,
+            array_element_name(Parameter.array_element), array_element_name(actual.array_element));
+      }
+      else diag.message = std::format("type mismatch: argument {} expects '{}', got '{}'",
          Index + 1, type_name(Expected), type_name(actual.primary));
       this->record_diagnostic(std::move(diag));
    }
@@ -2449,6 +2498,7 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                result.primary = target->return_types.types[0];
                result.object_class_id = target->return_types.object_class_ids[0];
                result.struct_def = target->return_types.struct_defs[0];
+               result.array_element = target->return_types.array_elements[0];
                payload->struct_def = result.struct_def;
                return result;
             }
@@ -2460,6 +2510,9 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                   result.object_class_id = payload->object_class_id;
                }
                result.struct_def = payload->struct_def;
+               if (result.primary IS TiriType::Array and Expr.static_value) {
+                  result.array_element = this->ctx_.descriptors().value(Expr.static_value).array_element;
+               }
                if ((result.primary IS TiriType::Struct or result.primary IS TiriType::Func) and
                    not result.struct_def and not payload->arguments.empty()) {
                   const auto *literal = std::get_if<LiteralValue>(&payload->arguments[0]->data);
@@ -2478,6 +2531,7 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                   result.is_nullable = descriptor.nullable;
                   result.object_class_id = descriptor.object_class_id;
                   result.struct_def = descriptor.struct_def;
+                  result.array_element = descriptor.array_element;
                   return result;
                }
             }
@@ -2493,6 +2547,7 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                result.is_nullable = descriptor.nullable;
                result.object_class_id = descriptor.object_class_id;
                result.struct_def = descriptor.struct_def;
+               result.array_element = descriptor.array_element;
                return result;
             }
          }
@@ -2742,20 +2797,27 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
 
 InferredType TypeAnalyser::refine_static_expression_type(const ExprNode &Expr, InferredType Type) const
 {
-   if ((Type.primary != TiriType::Any and Type.primary != TiriType::Unknown) or not Expr.static_value) return Type;
+   if (not Expr.static_value) return Type;
+
+   const StaticValueDescriptor &descriptor = this->ctx_.descriptors().value(Expr.static_value);
+   if (Type.primary IS TiriType::Array and descriptor.primary IS TiriType::Array) {
+      Type.array_element = descriptor.array_element;
+      return Type;
+   }
+   if (Type.primary != TiriType::Any and Type.primary != TiriType::Unknown) return Type;
 
    if (Expr.kind IS AstNodeKind::IdentifierExpr) {
       const auto &reference = std::get<NameRef>(Expr.data);
       if (reference.binding_id and this->explicit_variant_bindings_.contains(reference.binding_id)) return Type;
    }
 
-   const StaticValueDescriptor &descriptor = this->ctx_.descriptors().value(Expr.static_value);
    if (descriptor.primary IS TiriType::Unknown or descriptor.primary IS TiriType::Any) return Type;
 
    Type.primary = descriptor.primary;
    Type.is_nullable = descriptor.nullable;
    Type.object_class_id = descriptor.object_class_id;
    Type.struct_def = descriptor.struct_def;
+   Type.array_element = descriptor.array_element;
    Type.is_fixed = true;
    return Type;
 }
@@ -2796,6 +2858,7 @@ bool TypeAnalyser::is_explicit_variant_expression(const ExprNode &Expr, size_t P
       result.is_nullable = descriptor.nullable;
       result.object_class_id = descriptor.object_class_id;
       result.struct_def = descriptor.struct_def;
+      result.array_element = descriptor.array_element;
       return result;
    }
 
@@ -2823,6 +2886,7 @@ bool TypeAnalyser::is_explicit_variant_expression(const ExprNode &Expr, size_t P
       result.primary = type;
       result.object_class_id = target->return_types.object_class_ids[type_position];
       result.struct_def = target->return_types.struct_defs[type_position];
+      result.array_element = target->return_types.array_elements[type_position];
    }
 
    return result;
@@ -2933,20 +2997,22 @@ void TypeAnalyser::publish_binding_type(StaticBindingID Binding, const InferredT
    value.primary = Type.primary;
    value.object_class_id = Type.object_class_id;
    value.struct_def = Type.struct_def;
+   value.array_element = Type.array_element;
    value.nullable = Type.is_nullable;
    value.proof = StaticProof::Advisory;
    this->ctx_.descriptors().binding(Binding).analysed_value = this->ctx_.descriptors().add_value(value);
 }
 
 void TypeAnalyser::fix_local_type(GCstr *Name, StaticBindingID Binding, TiriType Type,
-   CLASSID ObjectClassId, struct_record *StructDef)
+   CLASSID ObjectClassId, struct_record *StructDef, ArrayElementDescriptor ArrayElement)
 {
    for (auto it = this->scope_stack_.rbegin(); it != this->scope_stack_.rend(); ++it) {
       auto existing = it->lookup_local_type(Name);
       if (existing) {
-         it->fix_local_type(Name, Type, ObjectClassId, StructDef);
+         it->fix_local_type(Name, Type, ObjectClassId, StructDef, ArrayElement);
          InferredType fixed(Type, false, false, true, ObjectClassId);
          fixed.struct_def = StructDef;
+         fixed.array_element = ArrayElement;
          this->publish_binding_type(Binding, fixed);
          this->trace_fix(this->ctx_.lex().linenumber, Name, Type);
          return;
@@ -3116,7 +3182,8 @@ void TypeAnalyser::invalidate_global_flow_policy(GCstr *Name, SourceSpan Locatio
    this->trace_decl(this->ctx_.lex().linenumber, Name, TiriType::Any, true);
 }
 
-void TypeAnalyser::fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId, struct_record *StructDef)
+void TypeAnalyser::fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId, struct_record *StructDef,
+   ArrayElementDescriptor ArrayElement)
 {
    if (not Name) return;
    if (auto it = this->global_types_.find(Name); it != this->global_types_.end()) {
@@ -3124,6 +3191,7 @@ void TypeAnalyser::fix_global_type(GCstr *Name, TiriType Type, CLASSID ObjectCla
       it->second.type.is_fixed = true;
       it->second.type.object_class_id = ObjectClassId;
       it->second.type.struct_def = StructDef;
+      it->second.type.array_element = ArrayElement;
       if (not it->second.implicit) it->second.contract_policy = GlobalContractPolicy::Enforced;
       this->trace_fix(this->ctx_.lex().linenumber, Name, Type);
    }
@@ -3198,7 +3266,10 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
 
          const bool struct_matches = expected != TiriType::Struct or not ctx->expected_returns.struct_defs[i] or
             actual.struct_def IS ctx->expected_returns.struct_defs[i];
-         if (actual.primary != expected or not struct_matches) {
+         const bool array_matches = expected != TiriType::Array or actual.primary != TiriType::Array or
+            not actual.array_element.known or
+            array_element_matches(ctx->expected_returns.array_elements[i], actual.array_element);
+         if (actual.primary != expected or not struct_matches or not array_matches) {
             TypeDiagnostic diag;
             diag.location = expression.span;
             diag.expected = expected;
@@ -3257,7 +3328,9 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
             actual.object_class_id IS position.concrete.object_class_id;
          const bool struct_matches = position.concrete.primary != TiriType::Struct or
             not position.concrete.struct_def or actual.struct_def IS position.concrete.struct_def;
-         if (type_matches and class_matches and struct_matches) continue;
+         const bool array_matches = position.concrete.primary != TiriType::Array or
+            array_element_matches(position.concrete.array_element, actual.array_element);
+         if (type_matches and class_matches and struct_matches and array_matches) continue;
 
          TypeDiagnostic diag;
          diag.location = expression.span;
@@ -3583,20 +3656,21 @@ void TypeAnalyser::publish_global_type_hints(LexState &Lex) const
    for (const auto &[name, info] : this->global_types_) {
       if (info.contract_policy IS GlobalContractPolicy::Variant) {
          Lex.global_type_hints[name] = {
-            TiriType::Any, CLASSID::NIL, nullptr, GlobalContractPolicy::Variant
+            TiriType::Any, CLASSID::NIL, nullptr, {}, GlobalContractPolicy::Variant
          };
          continue;
       }
       if (info.is_const and not info.type.is_fixed) {
          Lex.global_type_hints[name] = {
-            TiriType::Any, CLASSID::NIL, nullptr, GlobalContractPolicy::Enforced
+            TiriType::Any, CLASSID::NIL, nullptr, {}, GlobalContractPolicy::Enforced
          };
          continue;
       }
       if (not info.type.is_fixed) continue;
       if (info.contract_policy IS GlobalContractPolicy::Enforced) {
          Lex.global_type_hints[name] = {
-            info.type.primary, info.type.object_class_id, info.type.struct_def, GlobalContractPolicy::Enforced
+            info.type.primary, info.type.object_class_id, info.type.struct_def, info.type.array_element,
+            GlobalContractPolicy::Enforced
          };
          continue;
       }
@@ -3605,7 +3679,8 @@ void TypeAnalyser::publish_global_type_hints(LexState &Lex) const
          case TiriType::Object:
          case TiriType::Array:
             Lex.global_type_hints[name] = {
-               info.type.primary, info.type.object_class_id, info.type.struct_def, GlobalContractPolicy::Advisory
+               info.type.primary, info.type.object_class_id, info.type.struct_def, info.type.array_element,
+               GlobalContractPolicy::Advisory
             };
             break;
          default:

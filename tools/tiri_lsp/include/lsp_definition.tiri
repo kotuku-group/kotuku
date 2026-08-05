@@ -181,7 +181,7 @@ function makeXmlLocation(Entry:table, ByteStart:num, ByteEnd:num):table
    return makeOffsetLocation(glDocCache.sdkPath .. Entry.file, ByteStart or Entry.byteStart or 0, ByteEnd or Entry.byteEnd or 0)
 end
 
-function pushLocation(Locations:array, Location:table)
+function pushLocation(Locations:array<table>, Location:table)
    if Location then Locations:push(Location) end
 end
 
@@ -268,7 +268,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Current Document Symbols
 
-function addSymbol(Symbols:array, Name:str, Kind:str, Line:num, StartChar:num, EndChar:num)
+function addSymbol(Symbols:array<table>, Name:str, Kind:str, Line:num, StartChar:num, EndChar:num)
    if not Name or Name is '' then return end
    Symbols:push({
       name = Name,
@@ -283,7 +283,7 @@ function addSymbol(Symbols:array, Name:str, Kind:str, Line:num, StartChar:num, E
    })
 end
 
-function addFunctionParameters(Symbols:array, Params:str, LineText:str, Line:num, SearchFrom:num)
+function addFunctionParameters(Symbols:array<table>, Params:str, LineText:str, Line:num, SearchFrom:num)
    Params ?! return
    scan_from = SearchFrom or 0
 
@@ -319,7 +319,7 @@ end
 
 -- Add 'StructName.FieldName' symbols for the struct fields present in LineCode.
 
-function addStructFieldSymbols(Symbols:array, StructName:str, LineCode:str, LineText:str, Line:num, SearchFrom:num)
+function addStructFieldSymbols(Symbols:array<table>, StructName:str, LineCode:str, LineText:str, Line:num, SearchFrom:num)
    scan_from = SearchFrom or 0
 
    for segment in values(LineCode:split(',')) do
@@ -336,7 +336,7 @@ function addStructFieldSymbols(Symbols:array, StructName:str, LineCode:str, Line
    end
 end
 
-global function extractDefinitionSymbols(Doc:table):array
+global function extractDefinitionSymbols(Doc:table):array<table>
    symbols = array<table>
    total_lines = getTotalLines(Doc)
    in_block_comment = false
@@ -472,7 +472,7 @@ function symbolNameMatches(SymbolName:str, TokenInfo:table):bool
    return false
 end
 
-function resolveDocumentSymbolDefinition(Doc:table, TokenInfo:table, Position:table):array
+function resolveDocumentSymbolDefinition(Doc:table, TokenInfo:table, Position:table):array<table>
    TokenInfo ?! return nil
 
    symbols = extractDefinitionSymbols(Doc)
@@ -557,7 +557,7 @@ function resolveScriptImport(Doc:table, Name:str):table
    return nil
 end
 
-function resolveLoaderDefinition(Doc:table, Position:table):array
+function resolveLoaderDefinition(Doc:table, Position:table):array<table>
    string_info = getLoaderStringAtPosition(Doc, Position)
    string_info ?! return nil
 
@@ -606,7 +606,7 @@ function buildDefinitionTypeMap(Doc:table):table
    return type_map
 end
 
-function addSourceFallback(Locations:array, ApiEntry:table)
+function addSourceFallback(Locations:array<table>, ApiEntry:table)
    if not ApiEntry or not ApiEntry.sources or not ApiEntry.module then return end
 
    module_folder = ApiEntry.module:lower()
@@ -622,7 +622,7 @@ function addSourceFallback(Locations:array, ApiEntry:table)
    end
 end
 
-function resolveClassDefinition(ClassName:str):array
+function resolveClassDefinition(ClassName:str):array<table>
    class_name = normaliseClassName(ClassName)
    class_name ?! return nil
 
@@ -633,7 +633,7 @@ function resolveClassDefinition(ClassName:str):array
    return #locations > 0 and locations or nil
 end
 
-function resolveApiMemberDefinition(Doc:table, TokenInfo:table):array
+function resolveApiMemberDefinition(Doc:table, TokenInfo:table):array<table>
    if not TokenInfo or not TokenInfo.object or not glDocCache then return nil end
 
    token = TokenInfo.text
@@ -707,7 +707,7 @@ function resolveApiMemberDefinition(Doc:table, TokenInfo:table):array
    return nil
 end
 
-function resolveApiDefinition(Doc:table, Position:table, TokenInfo:table):array
+function resolveApiDefinition(Doc:table, Position:table, TokenInfo:table):array<table>
    obj_new_string = getObjNewStringAtPosition(Doc, Position)
    if obj_new_string then
       class_locations = resolveClassDefinition(obj_new_string.text)
@@ -730,7 +730,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Public Resolver
 
-global function resolveDefinition(Doc:table, Position:table):array
+global function resolveDefinition(Doc:table, Position:table):array<table>
    Doc ?! return nil
    Position ?! return nil
 

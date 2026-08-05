@@ -323,6 +323,13 @@ static std::string signature_type_name(lua_State *L, const ProtoTypeEntry &Entry
       if (auto class_name = ResolveClassID(CLASSID(Entry.constraint))) return std::format("obj<{}>", class_name);
       return std::format("obj<#{:08x}>", Entry.constraint);
    }
+   if (Entry.type IS TiriType::Array and Entry.reserved) {
+      ArrayElementDescriptor element;
+      element.storage = proto_array_member(Entry);
+      element.known = true;
+      if (element.storage IS AET::STRUCT and Entry.constraint) element.struct_def = find_struct(L, Entry.constraint);
+      return std::format("array<{}>", array_element_name(element));
+   }
    return name;
 }
 

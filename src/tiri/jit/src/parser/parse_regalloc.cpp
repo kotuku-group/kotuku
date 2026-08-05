@@ -597,6 +597,14 @@ static void bcemit_contract(FuncState *fs, BCREG Base, std::span<const RuntimeCo
       if (contract.struct_def) struct_name = contract.struct_def->Name;
       contract_append_text(fs, descriptor, struct_name, "runtime contract structure name");
 
+      if (contract.type IS TiriType::Array) {
+         lj_assertX(contract.array_element.known, "array runtime contracts require a member identity");
+         descriptor.push_back(char(uint8_t(contract.array_element.storage)));
+         std::string_view array_struct_name;
+         if (contract.array_element.struct_def) array_struct_name = contract.array_element.struct_def->Name;
+         contract_append_text(fs, descriptor, array_struct_name, "runtime array contract structure name");
+      }
+
       std::string_view label;
       if (contract.label and contract.label != NAME_BLANK) {
          label = std::string_view(strdata(contract.label), contract.label->len);
@@ -725,6 +733,7 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
          .type = vinfo->fixed_type,
          .object_class_id = vinfo->object_class_id,
          .struct_def = vinfo->struct_def,
+         .array_element = vinfo->array_element,
          .label = strref(vinfo->name),
          .boundary = ContractBoundary::Local,
          .position = uint8_t(vinfo->slot + 1)
@@ -743,6 +752,7 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
          .type = vinfo->fixed_type,
          .object_class_id = vinfo->object_class_id,
          .struct_def = vinfo->struct_def,
+         .array_element = vinfo->array_element,
          .label = strref(vinfo->name),
          .boundary = ContractBoundary::Upvalue,
          .position = uint8_t(LHS->u.s.info + 1)
@@ -769,6 +779,7 @@ static void bcemit_store(FuncState *fs, ExpDesc *LHS, ExpDesc *RHS,
             .type = found->second.primary,
             .object_class_id = found->second.object_class_id,
             .struct_def = found->second.struct_def,
+            .array_element = found->second.array_element,
             .label = LHS->u.sval,
             .boundary = ContractBoundary::Global,
             .position = 1,

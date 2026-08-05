@@ -352,13 +352,15 @@ static bool bcread_signature_uleb(const uint8_t *&Cursor, const uint8_t *End, ui
 }
 
 static void bcread_signature_entry(LexState *State, const uint8_t *&Cursor, const uint8_t *End,
-   ProtoTypeEntry &Entry)
+   ProtoTypeEntry &Entry, uint8_t Version)
 {
    if (End - Cursor < 2) bcread_error(State, ErrMsg::BCBAD);
    uint8_t type = *Cursor++;
    uint8_t flags = *Cursor++;
    uint32_t constraint = 0;
    if (not bcread_signature_uleb(Cursor, End, constraint)) bcread_error(State, ErrMsg::BCBAD);
+   uint32_t reserved = 0;
+   if (Version >= 2 and not bcread_signature_uleb(Cursor, End, reserved)) bcread_error(State, ErrMsg::BCBAD);
 
    constexpr uint8_t known_flags = PROTO_TYPE_NULLABLE | PROTO_TYPE_REQUIRED | PROTO_TYPE_ORIGIN_MASK |
       PROTO_TYPE_STRENGTH_MASK;
@@ -372,14 +374,22 @@ static void bcread_signature_entry(LexState *State, const uint8_t *&Cursor, cons
    }
 
    TiriType entry_type = TiriType(type);
-   if (constraint and entry_type != TiriType::Struct and entry_type != TiriType::Object) {
+   if (constraint and entry_type != TiriType::Struct and entry_type != TiriType::Object and
+       entry_type != TiriType::Array) {
       bcread_error(State, ErrMsg::BCBAD);
    }
+   if (entry_type IS TiriType::Array) {
+      if (Version < 2 or not reserved or reserved > uint32_t(AET::MAX)) bcread_error(State, ErrMsg::BCBAD);
+      AET member = AET(reserved - 1);
+      if ((member IS AET::STRUCT) != (constraint != 0)) bcread_error(State, ErrMsg::BCBAD);
+   }
+   else if (reserved) bcread_error(State, ErrMsg::BCBAD);
 
    Entry = ProtoTypeEntry{
       .constraint = constraint,
       .type = entry_type,
-      .flags = flags
+      .flags = flags,
+      .reserved = uint16_t(reserved)
    };
 }
 
@@ -393,7 +403,9 @@ static void bcread_signature(LexState *State, MSize Size, MSize NumParams, BCRea
    bcread_need(State, Size);
    const uint8_t *cursor = bcread_mem(State, Size);
    const uint8_t *end = cursor + Size;
-   if (end - cursor < 2 or *cursor++ != PROTO_SIGNATURE_VERSION) bcread_error(State, ErrMsg::BCBAD);
+   if (end - cursor < 2) bcread_error(State, ErrMsg::BCBAD);
+   uint8_t version = *cursor++;
+   if (version != 1 and version != PROTO_SIGNATURE_VERSION) bcread_error(State, ErrMsg::BCBAD);
 
    uint8_t flags = *cursor++;
    constexpr uint8_t known_flags = proto_signature_flag(ProtoSignatureFlag::ParameterVariadic) |
@@ -430,10 +442,10 @@ static void bcread_signature(LexState *State, MSize Size, MSize NumParams, BCRea
    Result.result_count = uint8_t(result_count);
    Result.result_entry_count = uint8_t(result_entry_count);
    for (uint32_t i = 0; i < parameter_count; ++i) {
-      bcread_signature_entry(State, cursor, end, Result.parameters[i]);
+      bcread_signature_entry(State, cursor, end, Result.parameters[i], version);
    }
    for (uint32_t i = 0; i < result_entry_count; ++i) {
-      bcread_signature_entry(State, cursor, end, Result.results[i]);
+      bcread_signature_entry(State, cursor, end, Result.results[i], version);
       if (not explicit_results and not dynamic_results and
           (proto_type_origin(Result.results[i]) != ProtoTypeOrigin::Inferred or
            proto_type_strength(Result.results[i]) != ProtoTypeStrength::Trusted)) {

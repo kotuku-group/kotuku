@@ -653,6 +653,8 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
 
          Token start = this->ctx.tokens().current();
          GCstr *type_str = start.payload().as_string();
+         std::string_view element_name(strdata(type_str), type_str->len);
+         if (element_name.starts_with("array<")) type_str = this->ctx.lex().keepstr("array");
          int64_t specified_size = this->ctx.lex().array_typed_size;
          this->ctx.tokens().advance();
 
