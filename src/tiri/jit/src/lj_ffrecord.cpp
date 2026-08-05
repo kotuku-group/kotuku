@@ -1233,10 +1233,9 @@ static void recff_math_random(jit_State* J, RecordFFData* rd)
          tr = emitir(IRTN(IR_FPMATH), tr, IRFPM_FLOOR);
          tr = emitir(IRTN(IR_ADD), tr, tr1);
       }
-      else {  // d = floor(d*r1) + 1.0
+      else {  // d = floor(d*r1)
          tr = emitir(IRTN(IR_MUL), tr, tr1);
          tr = emitir(IRTN(IR_FPMATH), tr, IRFPM_FLOOR);
-         tr = emitir(IRTN(IR_ADD), tr, one);
       }
    }
    J->base[0] = tr;
