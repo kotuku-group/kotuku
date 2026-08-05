@@ -1108,6 +1108,19 @@ static bool fixed_return_contract_is_proved(
    return true;
 }
 
+// A direct call to the same immutable function can forward its result contract to the terminal activation.  The
+// terminal return performs the identical type validation and fixed-arity adjustment once, so intermediate recursive
+// activations do not need to regain control solely to repeat those operations.
+
+static bool tail_call_forwards_current_contract(
+   const ParserContext &Context, StaticCallableHandle CurrentCallable, const ExprNode &Expression)
+{
+   if (not CurrentCallable or Expression.kind != AstNodeKind::CallExpr) return false;
+   const auto &call = std::get<CallExprPayload>(Expression.data);
+   if (call.callable != CurrentCallable) return false;
+   return Context.descriptors().callable(CurrentCallable).immutable;
+}
+
 ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Payload)
 {
    BCIns ins;
@@ -1129,6 +1142,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
       this->func_state.return_contract_explicit and not this->func_state.return_contract_variadic;
    bool return_contract_elided = has_return_contract and
       fixed_return_contract_is_proved(this->ctx, this->func_state, Payload);
+   bool return_contract_forwarded = false;
    BCREG cleanup_temp_regs = return_cleanup_temp_regs(&this->func_state);
    BCREG multres_slot = BCREG(this->func_state.varmap.size() + cleanup_temp_regs);
    if (cleanup_temp_regs > 0) return_allocator.reserve(BCReg(cleanup_temp_regs + 1));
@@ -1150,10 +1164,19 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
          BCOp call_op = bc_op(*ip);
          bool has_post_call_control_flow = last.u.s.info + 1 != this->func_state.pc;
          bool has_user_cleanup = cleanup_temp_regs > 0;
-         bool tail_call_eligible = not truncate_return_results and this->func_state.try_depth IS 0 and
-            not has_return_contract and not has_post_call_control_flow and not has_user_cleanup and
-            (call_op IS BC_CALL or call_op IS BC_CALLM);
-         if (truncate_return_results) {
+         bool forwards_current_contract = tail_call_forwards_current_contract(
+            this->ctx, this->current_callable, *Payload.values.back());
+         bool tail_call_eligible = this->func_state.try_depth IS 0 and not has_post_call_control_flow and
+            not has_user_cleanup and (call_op IS BC_CALL or call_op IS BC_CALLM) and
+            (forwards_current_contract or (not truncate_return_results and not has_return_contract));
+         if (tail_call_eligible) {
+            return_contract_forwarded = forwards_current_contract;
+            lj_assertX(last.u.s.info + 1 IS this->func_state.pc,
+               "tail call is not the final expression instruction");
+            this->func_state.pc--;
+            ins = BCINS_AD(bc_op(*ip) - BC_CALL + BC_CALLT, bc_a(*ip), bc_c(*ip));
+         }
+         else if (truncate_return_results) {
             BCREG result_count = this->func_state.return_declared_count;
             setbc_b(ip, result_count + 1);
             ins = result_count > 0 ?
@@ -1190,12 +1213,6 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
             // The callee must execute before user-visible cleanup.  Preserve all results and MULTRES across handlers.
             setbc_b(ip, 0);
             ins = BCINS_AD(BC_RETM, return_base, last.u.s.aux - return_base);
-         }
-         else if (tail_call_eligible) {
-            lj_assertX(last.u.s.info + 1 IS this->func_state.pc,
-               "tail call is not the final expression instruction");
-            this->func_state.pc--;
-            ins = BCINS_AD(bc_op(*ip) - BC_CALL + BC_CALLT, bc_a(*ip), bc_c(*ip));
          }
          else {
             setbc_b(ip, 0);
@@ -1266,7 +1283,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_return_stmt(const ReturnStmtPayload &Pa
    if (this->func_state.flags & PROTO_CHILD) bcemit_AJ(&this->func_state, BC_UCLO, 0, 0);
    if (preserve_multres) bcemit_AD(&this->func_state, BC_MRRESTORE, multres_slot, 0);
 
-   if (has_return_contract and not return_contract_elided and bc_op(ins) != BC_RET0) {
+   if (has_return_contract and not return_contract_elided and not return_contract_forwarded and
+       bc_op(ins) != BC_RET0) {
       std::array<RuntimeContract, MAX_RETURN_TYPES> contracts;
       for (uint8_t i = 0; i < this->func_state.return_contract_count; ++i) {
          contracts[i] = RuntimeContract{

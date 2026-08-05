@@ -158,6 +158,7 @@ private:
    OperatorEmitter   operator_emitter;
    LocalBindingTable binding_table;
    ConstantEvaluator constant_evaluator;
+   StaticCallableHandle current_callable = 0;
 
    ParserResult<IrEmitUnit> emit_block(const BlockStmt& block, FuncScopeFlag flags = FuncScopeFlag::None);
    ParserResult<IrEmitUnit> emit_block_with_bindings(const BlockStmt& block, FuncScopeFlag flags, std::span<const BlockBinding> bindings);
