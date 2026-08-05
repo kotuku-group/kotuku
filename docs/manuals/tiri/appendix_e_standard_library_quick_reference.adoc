@@ -30,8 +30,8 @@ indexterm:[global functions] See <<ch-basic-syntax>>, <<ch-types-and-values>>, <
 |`rawlen(Table)`                 |Returns length bypassing metamethods.
 |`setmetatable(Table, Metatable)`|Sets the metatable.  See <<ch-metatables-and-metamethods>>.
 |`getmetatable(Value)`           |Returns the metatable.
-|`isthunk(Value)`                |Returns `true` if `Value` is a thunk.
-|`resolve(Thunk)`                |Evaluates and returns the value of a thunk.
+|`isthunk(Value)`                |Returns `true` if `Value` is an unresolved thunk.  See <<sec-deferred-expressions>>.
+|`resolve(Thunk)`                |Evaluates and returns the value of a thunk.  See <<sec-deferred-expressions>>.
 |===
 
 <<<
@@ -169,8 +169,7 @@ Typed literal syntax is also supported: `array<int> { 10, 20, 30 }`
 |`arr:table()`                                   |Converts to a table.
 |`arr:getString([Start, Length])`                |Byte/char arrays only.  Extracts a string.
 |`arr:setString(String, [Start])`                |Byte/char arrays only.  Writes a string.
-|`arr:concat(Format, [Separator])`               |Formats and concatenates elements.
-|`arr:join([Separator])`                         |Concatenates elements with a separator.
+|`arr:concat([Separator], [Format], [Start], [End])`|Concatenates elements into a string, optionally formatted.
 |===
 
 ==== Functional Methods

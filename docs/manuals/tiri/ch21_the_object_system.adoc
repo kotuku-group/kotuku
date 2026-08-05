@@ -108,7 +108,7 @@ An exception can be raised if:
 
 ==== object.get()
 
-[.api]`value = object.get(FieldName, [Default])` 💤
+[.api]`value = object.get(FieldName, [Default])`
 
 Reads a field value by name.  If the object is inaccessible or the field cannot be read, returns `Default` or `nil`.  The function never raises an exception; `Default` has priority.
 
@@ -116,15 +116,15 @@ If the object's class defines support for `getKey()`, the call is diverted to th
 
 ==== object.set()
 
-[.api]`err = object.set(FieldName, Value)` 💤
+[.api]`err = object.set(FieldName, Value)`
 
 Writes a field value by name and returns an `ERR` code.  It is equivalent to `object.fieldName = value`, but returns the error code rather than raising an exception on failure.  Calling it inside a `try` statement promotes error codes to exceptions.
 
 ==== object.getKey(), object.setKey()
 
-[.api]`value = object.getKey(Key, [Default])` 💤
+[.api]`value = object.getKey(Key, [Default])`
 
-[.api]`object.setKey(Key, Value)` 💤
+[.api]`object.setKey(Key, Value)`
 
 Some classes support arbitrary key-value string storage.  `getKey()` retrieves a value by key name, returning `Default` or `nil` if the key does not exist or the class does not support key-value storage.  `setKey()` stores or updates a key-value pair.
 
@@ -315,9 +315,11 @@ function on_deactivate(UID, Args, CustomRef)
    print('Download complete.')
 end
 
+custom_ref = { label = 'download' }
+
 http = obj.new('http', { src = 'https://example.com/data' })
 err = http.acActivate()
-http.subscribe('deactivate', on_deactivate, customref)
+http.subscribe('deactivate', on_deactivate, custom_ref)
 ----
 
 ==== Callback Signature

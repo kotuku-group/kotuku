@@ -1,4 +1,4 @@
-// VERIFIED: 2026-02-10
+// VERIFIED: 2026-08-01
 
 [[ch-types-and-values]]
 == Types & Values
@@ -25,6 +25,8 @@ Booleans are the natural result of comparison and logical expressions.  Conditio
 indexterm:[numbers] Tiri uses a dual-number representation.  A single `number` type encompasses both integers and floating-point values.  The `type()` function returns `"number"` for both.
 
 Integers are stored as signed 32-bit values (range: −2,147,483,648 to 2,147,483,647).  Floating-point values are stored as 64-bit IEEE 754 doubles.  The runtime promotes integers to doubles transparently when an operation requires it.
+
+NOTE: The 32-bit integer width is a property of the value representation, not of the host: Tiri targets 64-bit platforms exclusively, and whole numbers beyond the 32-bit range remain exactly representable as doubles up to 2^53^.  Integer width is therefore only significant to the bitwise operators (<<sec-bitwise-operators>>) and to the sized element types offered by arrays and structs.
 
 Numeric literal syntax is defined in <<sec-lexical-conventions>>.
 
@@ -158,13 +160,18 @@ The `type()` function returns `"userdata"` for userdata values.  Ranges are impl
 
 [[sec-truthiness]]
 === Truthiness and Falsiness
-indexterm:[truthiness] indexterm:[falsiness] Tiri defines two sets of falsiness rules.
+indexterm:[truthiness] indexterm:[falsiness] Tiri defines three sets of falsiness rules.  Each operator states which set it applies.
 
 Standard falsiness::
-The values `nil` and `false` are falsey.  All other values -- including `0`, `""`, and empty tables -- are truthy.  The `and`, `or`, `not` operators, `if`, and `while` all use standard falsiness.
+The values `nil` and `false` are falsey.  All other values -- including `0`, `""`, and empty collections -- are truthy.  The `and`, `or` and `not` operators, the `if` and `while` statements, `assert()`, and `choose` case guards all use standard falsiness.
 
 Extended falsiness::
-The `??` operator and its postfix form `??` use a broader definition.  The values `nil`, `false`, `0` (integer zero and floating-point zero), `""` (the empty string), and empty collections (arrays or tables with no entries) are falsey under extended semantics.  All other values are truthy.  See <<ch-operators>> for the `??` operator.
+The values `nil`, `false`, `0` (integer zero and floating-point zero), `""` (the empty string), and empty collections (arrays or tables with no entries) are falsey.  All other values are truthy.  Extended falsiness is applied by the `??` binary operator, the postfix `??` operator, the `??=` compound assignment, the `?!` guard operator, and the extended ternary `?? :>`.  See <<sec-conditional-operators>>.
+
+Nil-only tests::
+The safe navigation operators (`?.`, `?:`, `?[]`) and the `?=` compound assignment test for `nil` alone.  See <<sec-safe-navigation>> and <<sec-compound-assignment>>.
+
+NOTE: The sigil identifies the rule for testing.  A single `?` applies the standard test and `??` applies the extended test.
 
 [[sec-type-inspection]]
 === Type Inspection

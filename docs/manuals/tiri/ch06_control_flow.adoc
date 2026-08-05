@@ -1,7 +1,4 @@
-// VERIFIED: 2026-02-10
-// UPDATED: 2026-06-30 — Shorthand guard falsey set now includes empty tables; described as empty collections.
-// UPDATED: 2026-07-26 - Range iteration generalised to fractional operands; clarified the numeric for loop optimisation criteria (commit 687f1eb7)
-// UPDATED: 2026-07-26 - Replaced the Numeric For Loop section with Range For Loop following removal of the Lua-style numeric for syntax (commit 1f23b978)
+// VERIFIED: 2028-08-05
 
 [[ch-control-flow]]
 == Control Flow
@@ -188,7 +185,7 @@ Returns an iterator that produces each key in `Table`, without its value.  Itera
 [source,tiri]
 ----
 for k, v in pairs({x = 1, y = 2}) do
-   print(k, v)
+   print(k, ' = ', v)
 end
 
 for v in values({10, 20, 30}) do

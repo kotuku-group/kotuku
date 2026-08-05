@@ -1,8 +1,4 @@
-// UPDATED: 2026-07-06 -- Documented extern declarations and protected host globals.
-// UPDATED: 2026-07-26 -- Documented removal of the Lua-style numeric for syntax (commit 1f23b978)
-// UPDATED: 2026-04-03 -- Documented `is not` as an alternative inequality form.
-// CHANGED: 2026-07-30 — Added coroutine and _ENV removals; corrected pcall/xpcall and getfenv/setfenv entries.
-// CHANGED: 2026-07-31 — Standardised exception terminology on raise.
+
 [[appendix-migration-from-lua]]
 [appendix]
 == Migration from Lua
@@ -12,7 +8,7 @@ indexterm:[Lua, migration] This appendix provides a systematic guide for develop
 === Summary of Breaking Changes
 indexterm:[Lua, breaking changes] The following table lists all incompatible changes between standard Lua and Tiri.  Entries are grouped by category and cross-referenced to the relevant manual sections.
 
-[cols="3,3,2"]
+[cols="2,3,2"]
 |===
 |Lua |Tiri |Reference
 
@@ -28,7 +24,7 @@ indexterm:[Lua, breaking changes] The following table lists all incompatible cha
 |`**`
 |<<sec-migration-operators>>
 
-|`for i = Start, Stop [, Step]`
+|`for i = A, B [, C]`
 |Removed; use `for i in {Start into Stop [by Step]}`
 |<<sec-migration-numeric-for>>
 
@@ -41,7 +37,7 @@ indexterm:[Lua, breaking changes] The following table lists all incompatible cha
 |<<sec-migration-exception-handling>>
 
 |`coroutine.*`
-|Removed; no equivalent
+|Removed; async.* interface
 |<<sec-migration-coroutines>>
 
 |`select()`
@@ -60,20 +56,25 @@ indexterm:[Lua, breaking changes] The following table lists all incompatible cha
 |Removed
 |<<sec-migration-removed-functions>>
 
-|`getfenv()` / `setfenv()`
-|`debug.getEnv()` / `debug.setEnv()`
+|`getfenv()` +
+`setfenv()`
+|`debug.getEnv()` +
+`debug.setEnv()`
 |<<sec-migration-removed-functions>>
 
 |`_ENV`
 |Removed; no equivalent
 |<<sec-the-global-environment>>
 
-|`gcinfo()` / `table.maxn()`
+|`gcinfo()` +
+`table.maxn()`
 |Removed
 |<<sec-migration-removed-functions>>
 
-|`string.gsub()` / `string.match()` / `string.gmatch()`
-|`regex.*` methods
+|`string.gsub()` +
+`string.match()` +
+`string.gmatch()`
+|`regex.*` interface
 |<<sec-migration-pattern-matching>>
 
 |Lua patterns
@@ -95,6 +96,10 @@ indexterm:[Lua, breaking changes] The following table lists all incompatible cha
 |Implicit reads of unknown globals
 |Use `global` or `extern`
 |<<sec-migration-scoping>>
+
+|Functions return values of any type
+|Results are inferred; a dynamic result needs an annotation
+|<<sec-return-type-inference>>
 
 |Tables for sequential data
 |Arrays (distinct type)
@@ -611,7 +616,7 @@ The following standard Lua functions are removed or replaced:
 |Result filter operator `[mask]`.  See <<ch-result-management>>.
 
 |`unpack(Table)`
-|Removed.  Use multiple assignment or `table.unpack()` if available.
+|Removed, with no replacement.  Use multiple assignment, or a result filter (<<ch-result-management>>) when selecting from the results of a call.
 
 |`getfenv()` / `setfenv()`
 |Removed.  Use `debug.getEnv()` and `debug.setEnv()`.  See <<sec-the-global-environment>>.
@@ -815,14 +820,15 @@ The following Tiri features have no counterpart in standard Lua.  They do not re
 * **Pipe operator**: `x |> func()` (see <<ch-result-management>>)
 * **Deferred expressions**: `<{ expr }>` (see <<ch-resource-management>>)
 * **Thunk functions**: `thunk name():type pass:[...] end` (see <<ch-resource-management>>)
-* **Unicode operators**: `≠`, `≤`, `≥`, `×`, `÷`, `↑` (see <<ch-operators>>)
+* **Unicode operator aliases**: `≠`, `≤`, `≥`, `×`, `÷`, `↑`, `‥`, `⁇`, `▷`, `⧺` (see <<sec-unicode-operator-aliases>>)
+* **Approximate equality**: `a ≈ b` (see <<sec-approximate-equality>>)
 
 The following subsections illustrate how selected features replace common verbose Lua patterns.  Each example shows the Lua idiom followed by the equivalent Tiri code.  Refer to the cross-referenced chapters for the complete specification.
 
 [discrete]
 ==== If-Nil and If-Empty Assignment
 
-The `?=` operator assigns a value only when the variable is `nil`.  The `??=` variant assigns when the variable is falsey under extended semantics (`nil`, `false`, `0` or `""`).  Both replace the common Lua pattern of checking before assigning defaults.
+The `?=` operator assigns a value only when the variable is `nil`.  The `??=` variant assigns when the variable is falsey under extended semantics (`nil`, `false`, `0`, `""`, or an empty collection).  Both replace the common Lua pattern of checking before assigning defaults.
 
 [source,tiri]
 ----
@@ -943,7 +949,9 @@ items:sort((a, b) => a.name < b.name)
 [discrete]
 ==== Defer
 
-The `defer` statement schedules cleanup code to run when the enclosing scope exits, regardless of whether the exit is normal, a `return` or an exception.  This replaces the Lua pattern of manually closing resources at every exit point.
+The `defer` statement schedules cleanup code to run when the enclosing scope exits via normal completion, `return`, `break` or `continue`.  This replaces the Lua pattern of manually closing resources at every exit point.
+
+IMPORTANT: `defer` blocks do *not* run during error unwinding.  A `pcall`-based Lua idiom that guarantees cleanup on error translates to a `<close>` variable, not to `defer`.  See <<sec-to-be-closed-variables>>.
 
 [source,tiri]
 ----
@@ -958,14 +966,19 @@ function readConfig(path)
 end
 
 -- Tiri
-function readConfig(Path)
-   file = io.open(Path, 'r')
-   defer
-      file:close()        -- runs automatically when scope exits
+handle_mt = {
+   __close = function(Self:table, Error)
+      Self.file:close()
    end
-   return file:read('*a')
+}
+
+function readConfig(Path)
+   local cfg <close> = setmetatable({ file = io.open(Path, 'r') }, handle_mt)
+   return cfg.file:read('*a')   -- closed on every outcome
 end
 ----
+
+A `<close>` variable is used here rather than `defer` because `io.open()` and `file:read()` raise exceptions, and `defer` does not run during error unwinding.  Use `defer` when cleanup only needs to cover normal exits, `return`, `break` and `continue`.  File handles returned by `io.open()` carry no `pass:[__]close` metamethod of their own, so the wrapper table above supplies one.
 
 [discrete]
 ==== Ranges

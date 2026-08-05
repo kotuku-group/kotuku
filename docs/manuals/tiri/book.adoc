@@ -10,8 +10,8 @@ Paul Manias
 :source-highlighter: rouge
 :source-language: tiri
 :icons: font
-:revnumber: 0.2
-:revdate: May 2026
+:revnumber: 0.3
+:revdate: August 2026
 :revremark: Draft
 :toc: macro
 :toclevels: 3

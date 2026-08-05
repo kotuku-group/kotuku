@@ -3,6 +3,7 @@
 // UPDATED: 2026-07-16 — Dynamically sized array<type> fields can now be declared in native structs (commit 408def84d).
 // UPDATED: 2026-07-17 — Declarations are now 'end'-terminated blocks rather than brace-delimited (commit 56400bb).  Declarations no longer bind a constructor; instances are constructed only through the explicit struct<Name> { ... } form (commit 41b2c10).
 // CHANGED: 2026-07-31 — Replaced ambiguous pointer-safety guidance with a specific warning.
+// CHANGED: 2026-08-02 — Field writes validate value categories exactly; added sec-struct-numeric-conversion for truncation, width wrapping and non-finite rejection (commit 9f89c965).
 
 [[ch-structs]]
 == Structs
@@ -345,6 +346,8 @@ The `#` operator returns the total number of fields in the struct.
 
 Fields are read and written directly on the instance using dot notation.  Field names are matched against the definition case-insensitively.  Reading or writing a name that the definition does not declare raises an exception.
 
+A write validates the category of the value against the field before any storage is changed.  The categories are exact and no conversion between them is attempted: a boolean field accepts only a boolean, a numeric field only a number, and an owned string field only a string.  A value of the wrong category raises `ERR_InvalidType` and leaves the field at its previous value, so a numeric string does not satisfy a numeric field, a number does not satisfy a string field or a character buffer, and `nil` does not clear a scalar field.
+
 The value produced by a read, and the values accepted by a write, depend on the field's declared type:
 
 [cols="1,3a",options="header"]
@@ -355,7 +358,7 @@ The value produced by a read, and the values accepted by a write, depend on the 
 |Reads and writes a boolean.
 
 |Scalar numeric (`char`, `int8`, `byte`, `int16`, `int`, `int64`, `float`, `double` and unsigned variants)
-|Reads and writes a number.  Unsigned fields preserve the full unsigned range of the storage width.
+|Reads and writes a number, converted as defined in <<sec-struct-numeric-conversion>>.  Unsigned fields preserve the full unsigned range of the storage width.
 
 |Object (`obj`, `obj<Class>`)
 |Reads as a native object (`type()` is `"object"`), or `nil` when unset.  Accepts an object or `nil` on assignment; assigning `nil` clears the field.  A constrained field (`obj<Class>`) accepts instances of the named class or a sub-class of it; any other class raises an exception.  Assigning a detached object wrapper raises an exception.
@@ -405,6 +408,31 @@ value.points = array<table> {           -- struct element vector
    { red=4, green=5, blue=6 }
 }
 ----
+
+[[sec-struct-numeric-conversion]]
+==== Numeric Conversion
+
+A number written to an integer field is truncated toward zero and then reduced modulo the width of the field, so a value outside the representable range wraps rather than saturating:
+
+[source,tiri]
+----
+value.Int8 = 12.7    -- stores 12
+value.Int8 = -12.7   -- stores -12
+value.Int8 = 128     -- stores -128
+value.UInt8 = -1     -- stores 255
+----
+
+An integer field requires a finite value.  Infinity and `NaN` raise `ERR_OutOfRange` and leave the field unchanged.
+
+A `double` field stores any number, including infinity and `NaN`.  A `float` field stores those same special values, but a finite value whose magnitude exceeds the range of single precision raises `ERR_OutOfRange`:
+
+[source,tiri]
+----
+value.Float = math.huge   -- accepted
+value.Float = 3.5e38      -- error: out of range for float
+----
+
+These conversions apply wherever a field is written: the `struct<Name> { pass:[...] }` constructor, `struct.new()`, and later assignment all validate and convert alike, and compiled code produces the same results as the interpreter.
 
 [[sec-struct-iteration]]
 === Iteration

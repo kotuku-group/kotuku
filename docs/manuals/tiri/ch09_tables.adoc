@@ -1,8 +1,4 @@
 // VERIFIED: 2026-02-11
-// CHANGED: 2026-07-30 — Documented zero-based sequence boundaries and unspecified lengths for tables with gaps.
-// CHANGED: 2026-07-30 — Documented the nil/NaN key restriction and float-to-integer key normalisation.
-// UPDATED: 2026-05-18 - Updated negative index slicing to reflect corrected inclusive/exclusive stop semantics (commit 15d3bed4)
-// UPDATED: 2026-07-26 - Range indices must be whole-numbered; fractional ranges raise an error (commit 687f1eb7)
 
 [[ch-tables]]
 == Tables
@@ -231,7 +227,7 @@ end
 
 ==== ipairs()
 
-[.api]`for index, value in ipairs(Table) do ... end`
+[.api]`for index, value in ipairs(Table) do pass:[...] end`
 
 Iterates over the array part of `Table` in sequential order, starting at index 0.  Stops at the first `nil` gap in the sequence.
 
@@ -433,7 +429,7 @@ Returns a new table containing the elements of `Table` selected by `Range`.  Sup
 ----
 t = { 10, 20, 30, 40, 50 }
 table.slice(t, {1 to 4})             -- {20, 30, 40}
-table.slice(t, range(0, 7, true, 2)) -- {10, 30, 50, 70}
+table.slice(t, range(0, 7, true, 2)) -- {10, 30, 50} (stop clamped to the table length)
 ----
 
 [[sec-table-toXML]]
@@ -575,7 +571,7 @@ indexterm:[tables, arrays comparison] indexterm:[arrays, tables comparison] Tabl
 
 |Identity
 |Reference type; `is` compares identity
-|Reference type; `is` compares identity
+|Reference type; `is` compares __content__.  Use `rawequal()` for identity.
 |===
 
 The `ipairs()`, `pairs()`, and `values()` functions work identically on both types.  Numeric indexing behaves the same way.  Code that iterates with these functions is compatible with tables and arrays interchangeably.

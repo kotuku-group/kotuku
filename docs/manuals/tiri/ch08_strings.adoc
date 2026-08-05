@@ -1,16 +1,14 @@
-// VERIFIED: 2026-02-11
-// UPDATED: 2026-05-18 - Updated negative index slicing to reflect corrected inclusive/exclusive stop semantics (commit 15d3bed4)
-// UPDATED: 2026-07-26 - Range indices must be whole-numbered; fractional ranges raise an error (commit 687f1eb7)
+// VERIFIED: 2026-08-05
 
 [[ch-strings]]
 == Strings
 indexterm:[strings] This chapter defines the string library: the built-in functions for creating, inspecting, searching, modifying, and encoding strings.  For string literal syntax, escape sequences, and type semantics see <<sec-strings-overview>> and <<sec-lexical-conventions>>.
 
-Strings are immutable.  Every string operation that appears to modify a string produces a new string value.  Identical strings are interned: two strings with the same byte content share the same internal object.
+Strings are immutable except for the interoperability exemption provided by `string.alloc()`.  String operations that appear to modify a string produce a new string value.  Identical strings are interned: two strings with the same byte content share the same internal object.
 
 All string indexing is zero-based.  Index 0 refers to the first byte, index `#s - 1` to the last.  Negative indices count backwards from the end: index `-1` is the last byte, `-2` the second-to-last.
 
-All string library functions raise a type error if a required string argument is not a string.  Functions that accept optional parameters treat missing arguments as described in each function's specification.
+Most string library functions raise a type error if a required string argument is not a string.  The exceptions are `string.trim()`, `string.rtrim()`, `string.escXML()` and `string.unescapeXML()`, which treat a `nil` argument as an empty string and return `''`.  Each function's specification states its own behaviour.  Functions that accept optional parameters treat missing arguments as described in each function's specification.
 
 String functions are accessed through the `string` namespace or via method-call syntax on string values:
 
@@ -111,13 +109,15 @@ f'Use {{braces}} for interpolation'
 
 [.api]`str = string.alloc(Size)`
 
-Creates a string of `Size` bytes with uninitialised content.  Intended for creating sized data buffers that are passed to Kōtuku interfaces.  Raises an error if `Size` is negative.
+Creates a string of `Size` bytes with uninitialised content.  Intended for creating sized data buffers that are passed to Kōtuku interfaces.  Raises an error if `Size` is negative.  Strings allocated via this interface are exempt from interning and the immutability guarantee, allowing them to be modified by external code.  The contents of the string are undefined until written to by external code.
 
 [source,tiri]
 ----
 buf = string.alloc(1024)
 #buf   -- 1024
 ----
+
+TIP: For binary buffers, use the `array` type instead of strings.  Arrays provide a more convenient interface for working with binary data.  See <<ch-arrays>>.
 
 [[sec-string-byte]]
 ==== string.byte()
@@ -353,7 +353,7 @@ Removes leading and trailing whitespace from `String`.  Whitespace characters ar
 
 [.api]`str = string.rtrim(String)`
 
-Removes trailing whitespace from `String`.  Leading whitespace is preserved.  Whitespace characters are: space, tab, newline, and carriage return.
+Removes trailing whitespace from `String`.  Leading whitespace is preserved.  Whitespace characters are: space, tab, newline, and carriage return.  Returns an empty string if `String` is `nil` or contains only whitespace.
 
 [[sec-splitting]]
 === Splitting

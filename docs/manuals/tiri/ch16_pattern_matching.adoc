@@ -264,7 +264,7 @@ end
 [discrete]
 ==== Literal Patterns
 
-indexterm:[patterns, matching] Literal patterns match using `is` semantics (identity comparison with no implicit type coercion).  Supported literal types: numbers (including negative and floating-point), strings, booleans (`true`, `false`), and `nil`.
+indexterm:[patterns, matching] Literal patterns match using `is` semantics: value comparison for numbers, strings, booleans and `nil`, with no implicit type coercion (see <<sec-comparison-operators>>).  Supported literal types: numbers (including negative and floating-point), strings, booleans (`true`, `false`), and `nil`.
 
 [source,tiri]
 ----
@@ -345,7 +345,9 @@ result = choose event from
 end
 ----
 
-The empty table pattern `{}` matches any table value but does not match non-table values (`nil`, strings, numbers, booleans):
+The empty table pattern `{}` is a type test, not an emptiness test.  It matches *any* table value, including a populated one, and does not match non-table values (`nil`, strings, numbers, booleans):
+
+CAUTION: This is the opposite of the meaning `{}` carries under extended falsiness, where an empty table is falsey and a populated one is truthy (<<sec-truthiness>>).  In a pattern, `{}` reads as "is a table"; use a guard such as `{} when table.empty(value)` to test for emptiness.
 
 [source,tiri]
 ----

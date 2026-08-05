@@ -8,7 +8,7 @@
 == Modules
 indexterm:[modules] Tiri provides direct access to Kōtuku's compiled modules through the `mod` namespace.  This chapter defines the interfaces for loading modules and calling module functions.  Struct definitions registered by modules are documented in <<ch-structs>>.
 
-The Core module (`mSys`) is loaded automatically and is always available.  All other modules are loaded on demand with `mod.load()` or `mod.new()`.  The `include` directive (<<sec-the-include-directive>>) provides a lightweight alternative that loads only definitions (constants, structures, and class metadata) without opening the module's function table.
+The Core module (`mSys`) is loaded automatically and is always available.  All other modules are loaded on demand with `mod.load()`.  The `include` directive (<<sec-the-include-directive>>) provides a lightweight alternative that loads only definitions (constants, structures, and class metadata) without opening the module's function table.
 
 [[sec-loading-modules]]
 === Loading Modules

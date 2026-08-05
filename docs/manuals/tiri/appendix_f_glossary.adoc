@@ -1,7 +1,3 @@
-// CHANGED: 2026-07-27 — Declared globals carry sticky contracts; added Declared global and Variant global (commit 997f6b551).
-// CHANGED: 2026-07-27 — Added Dynamic ingress and Native result type (commit 8905c1966).
-// CHANGED: 2026-07-28 — Added Environment mutation boundary; qualified Raw access (commit 4b4a2f94).
-// CHANGED: 2026-07-29 — Added Finaliser (commit 279cb0a7).
 
 [[appendix-glossary]]
 [appendix]
@@ -26,7 +22,7 @@ Arrow function::
 A concise function syntax using the `pass:[=>]` operator.  Single-parameter arrow functions omit parentheses; the body is a single expression whose value is returned implicitly.  See <<sec-arrow-functions>>.
 
 Blank identifier::
-The single underscore (`pass:[_]`) used to explicitly discard values.  Assigning to `pass:[_]` suppresses unused-variable warnings without allocating storage.  See <<sec-blank-identifier>>.
+The single underscore (`pass:[_]`) used to explicitly discard values.  Assigning to `pass:[_]` consumes the value without allocating storage or a register.  Reading it is a parse error.  See <<sec-blank-identifier>>.
 
 Block::
 A sequence of statements forming the body of a control structure, function, or explicit `do`/`end` scope.  Each block introduces a new scope for local variables.  See <<sec-statements-and-blocks>>.
@@ -35,7 +31,7 @@ Check statement::
 A conditional exception mechanism.  `check` evaluates an error code and raises an exception if the code is at or above the exception threshold.  See <<sec-the-check-statement>>.
 
 Choose expression::
-A pattern-matching construct that evaluates a scrutinee against a series of `from` clauses.  Each clause specifies a pattern with optional guard conditions.  Produces a value when used in expression context.  See <<ch-pattern-matching>>.
+A pattern-matching construct that evaluates a scrutinee, introduced by `from`, against a series of case arms.  Each arm specifies a pattern with an optional `when` guard and a result following `\->`.  Produces a value when used in expression context.  See <<ch-pattern-matching>>.
 
 Close variable::
 A local variable declared with the `<close>` attribute.  The `local` keyword is optional; the attribute implicitly creates a local.  Its `pass:[__]close` metamethod executes automatically when the variable goes out of scope, enabling deterministic resource cleanup.  See <<sec-close-variables>>.
@@ -71,7 +67,7 @@ Exception::
 A runtime error that interrupts normal control flow.  Exceptions are raised by `raise`, `check`, or internal operations, and caught by `try`/`except` blocks.  Each exception carries an error code, message, source line, and stack trace.  See <<ch-error-handling>>.
 
 Exception table::
-A table value passed to `except` handlers, containing the fields `code`, `message`, `line`, and `trace` describing the caught exception.  See <<sec-try-except-statements>>.
+A table value passed to `except` handlers, containing the fields `code`, `message`, `source` and `line` describing the caught exception.  The `trace` and `stackTrace` fields are present only when the handler belongs to a `try<trace>` statement.  See <<sec-try-except-statements>>.
 
 Exception threshold::
 The error code value that divides safe codes from exception codes.  Error codes at or above this threshold trigger exceptions when evaluated by `check`.  See <<sec-exception-threshold>>.
@@ -80,7 +76,7 @@ Extern declaration::
 A declaration using `extern` to mark a name as supplied by another parsed file or by the embedding host.  The declaration creates no variable and emits no bytecode; it only authorises strict name resolution to treat the name as a global reference.  See <<sec-the-extern-keyword>>.
 
 Extended falsiness::
-The broader falsiness rules used by the `??` and `??=` operators.  Under extended falsiness, `nil`, `false`, `0`, `""`, and empty collections evaluate as falsey.  See <<sec-conditional-operators>>.
+The broader falsiness rules used by the `??` binary and postfix operators, `??=`, the `?!` guard and the extended ternary `?? :>`.  Under extended falsiness, `nil`, `false`, `0`, `""`, and empty collections evaluate as falsey.  The plain ternary `? :>` uses standard falsiness instead, so the two ternary forms disagree on `0`, `""` and empty collections.  See <<sec-conditional-operators>>.
 
 Field::
 A named property of an object or a string-keyed entry in a table.  Object fields are accessed as lower camel case names via dot notation.  See <<sec-field-access>>.
@@ -92,7 +88,10 @@ Flute::
 The Tiri test framework.  Test files use annotations to declare test functions and are executed by the Flute test runner (`tools/flute.tiri`).
 
 Guard::
-A boolean expression following `if` in a `from` clause of a `choose` expression.  The guard must evaluate to `true` for the pattern to match.  See <<sec-guards>>.
+An expression introduced by `when` on a `choose` case arm, evaluated only after the arm's pattern has matched.  If the guard is falsey the arm is skipped and matching continues with the next arm.  See <<sec-guards>>.
+
+Guarded block::
+The body of a `try`, `except` or `success` clause, or of a `with` statement.
 
 Forward declaration::
 A `global function` declaration with an empty body, published ahead of the full definition.  Later definitions of the same name must match the declared signature.  See <<sec-forward-declarations>>.
@@ -101,10 +100,10 @@ Hash part::
 The non-sequential and string-keyed portion of a table.  Iteration order over the hash part is unspecified.  See <<sec-table-fundamentals>>.
 
 Identifier::
-A name used to refer to a variable, function, or label.  Identifiers begin with a letter or underscore, followed by letters, digits, or underscores.  Identifiers are case-sensitive.  See <<sec-identifiers>>.
+A name used to refer to a variable, function, or field.  Identifiers begin with a letter, an underscore, or a byte in the range 128-255, followed by letters, digits, underscores or high bytes.  The high-byte rule permits UTF-8 encoded identifiers.  Identifiers are case-sensitive.  See <<sec-identifiers>>.
 
 Import::
-A directive that loads and executes a Tiri script, making its exported namespace available to the importing script.  See <<sec-the-import-directive>>.
+A directive that loads a Tiri library script and inlines its bytecode into the importing script at parse time, making its exported namespace available to the caller.  Contrast with `loadFile()`, which parses and executes at runtime.  See <<sec-the-import-directive>>.
 
 JIT compilation::
 Just-in-time compilation performed by the LuaJIT engine underlying Tiri.  Frequently executed code paths (traces) are compiled to native machine code at runtime.  See <<ch-performance-and-the-jit>>.
@@ -125,7 +124,7 @@ Metatable::
 A table that customises the behaviour of another table or userdata value.  Operations on the value dispatch to metamethods defined in its metatable.  See <<sec-metatable-basics>>.
 
 Method::
-A class-specific operation on a Kōtuku object, prefixed with `mt`.  Methods are invoked using colon syntax and receive an implicit `self` parameter.  See <<sec-actions-and-methods>>.
+A class-specific operation on a Kōtuku object, prefixed with `mt`.  Object methods are invoked with dot notation on the object interface (`xml.mtFindTag(...)`) and return an `ERR` code as their first result.  This is distinct from the colon syntax used to declare and call methods on tables, strings, arrays and ranges, which supplies an implicit `self`.  See <<sec-actions-and-methods>> and <<sec-function-definitions>>.
 
 Module::
 A separately loadable component of the Kōtuku framework providing domain-specific functionality (e.g. network, vector, display).  Modules are loaded dynamically or linked statically depending on the build configuration.  See <<ch-modules>>.
@@ -167,7 +166,7 @@ Regular expression::
 A pattern-matching facility provided by the `regex` library.  Replaces the deprecated Lua pattern system.  See <<ch-regular-expressions>>.
 
 Result filter operator::
-The `[mask]` operator used in assignment context to filter error codes from function results, separating successful values from error indicators.  See <<sec-result-filter-operator>>.
+The `[mask]` operator placed before a call to select which of its results are kept, using `*` to keep a position and `pass:[_]` to discard it.  The filtered call can appear anywhere a call is valid, not only in an assignment.  Commonly used to drop a leading `ERR` code.  See <<sec-result-filter-operator>>.
 
 Safe navigation::
 A family of nil-safe operators (`?.`, `?:`, `?[]`) that return `nil` instead of raising an error when the receiver is `nil`.  See <<sec-safe-navigation>>.
@@ -209,7 +208,7 @@ Tail call::
 A function call that is the last action performed by a function before returning.  The runtime reuses the current stack frame, preventing stack growth in recursive patterns.  See <<sec-tail-calls>>.
 
 Ternary operator::
-The conditional expression `condition ? true_expr :> false_expr`.  Evaluates and returns one of two expressions based on the truthiness of the condition.  See <<sec-ternary-operator>>.
+The conditional expression `condition ? true_expr :> false_expr`, which evaluates and returns one of two expressions based on the truthiness of the condition.  The `?` form applies standard falsiness; the `??` form (`condition pass:[??] true_expr :> false_expr`) applies extended falsiness.  See <<sec-ternary-operator>>.
 
 Thread::
 An independent execution context with its own Tiri state and stack.  Threads communicate through action queues and shared data pools, not shared mutable state.  See <<ch-threading>>.

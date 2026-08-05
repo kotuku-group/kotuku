@@ -41,7 +41,7 @@ indexterm:[local variables] The `local` keyword explicitly declares one or more 
 local config                -- nil, no type commitment
 local a, b, c = 1, 2, 3     -- multiple locals
 local limit:num             -- typed, starts as nil
-local max <const> = 100     -- constant (see <<sec-constant-variables>>)
+local max <const> = 100     -- constant
 ----
 
 A `local` declaration without an initialiser sets the variable to `nil`.  Multiple variables on the left receive values from the right in left-to-right order; excess variables receive `nil` and excess values are discarded.
@@ -96,6 +96,7 @@ end
 
 A local variable can shadow a global with the same name if explicitly declared with `local`:
 
+[%unbreakable]
 [source,tiri]
 ----
 global VERBOSE = true
@@ -116,6 +117,8 @@ A `global` declaration also makes the variable sticky.  The declared or inferred
 global glTitle = 'Untitled'   -- sticky: constrained to 'string'
 global glPayload:any          -- variant: accepts any type
 ----
+
+A declaration inside a `try`, `except`, `success` or `with` block publishes its contract on the same terms, but constrains the name at runtime only.  See <<sec-global-contracts-in-guarded-blocks>>.
 
 
 [[sec-the-extern-keyword]]
@@ -179,7 +182,7 @@ global MAX_RETRIES <const> = 5
 [[sec-the-global-environment]]
 === The Global Environment
 
-indexterm:[global environment] indexterm:[\_G] Global variables are stored in a single table called the _global environment_, exposed to scripts as `_G`.  A variable introduced by a `global` declaration becomes an entry in this table, and an entry written into the table becomes a global variable:
+indexterm:[global environment] indexterm:[\_G] Global variables are stored in a single table called the __global environment__, exposed to scripts as `_G`.  A variable introduced by a `global` declaration becomes an entry in this table, and an entry written into the table becomes a global variable:
 
 [source,tiri]
 ----
@@ -201,7 +204,9 @@ A function's environment can still be read and replaced through `debug.getEnv()`
 [source,tiri]
 ----
 extern someGlobal
-function probe() return someGlobal end
+function probe()
+   return someGlobal
+end
 debug.setEnv(probe, { someGlobal = 'from sandbox' })
 probe()   -- 'from sandbox'
 ----
@@ -215,14 +220,14 @@ indexterm:[protected globals] indexterm:[built-in globals] Host-registered globa
 
 [source,tiri]
 ----
-math = {}                    -- error: cannot override built-in 'math'
-global table = {}            -- error: cannot override built-in 'table'
-global function tostring()   -- error: cannot override built-in 'tostring'
+math = {}                    -- error: cannot override 'math'
+global table = {}            -- error: cannot override 'table'
+global function tostring()   -- error: cannot override 'tostring'
 end
-_G.tostring = nil            -- error: cannot override built-in 'tostring'
-_G['math'] = nil             -- error: cannot override built-in 'math'
-_G[key] = value              -- error if 'key' resolves to a protected name
-rawset(_G, 'math', nil)      -- error: cannot override built-in 'math'
+_G.tostring = nil            -- error: cannot override 'tostring'
+_G['math'] = nil             -- error: cannot override 'math'
+_G[key] = value              -- error if 'key' is a protected name
+rawset(_G, 'math', nil)      -- error: cannot override 'math'
 ----
 
 Writes whose target key is a compile-time literal are rejected at compile time.  Writes whose key is computed are rejected at runtime, at the point of the store.  A store with a computed key that resolves to an unprotected name succeeds.
@@ -327,8 +332,6 @@ For a single target, a failed safe-nav hop short-circuits both the store and the
 config?.theme = load_theme()   -- function is not called if config is nil
 ----
 
-Bitwise compound variants (`&=`, `|=`, `^=`) do not exist.  Use `x = x & y` instead.
-
 ==== Compound Assignment on Undeclared Variables
 
 Compound assignment (`+=`, `-=`, etc.) on an undeclared variable is an error.  The variable must exist before a compound operator can modify it.
@@ -345,7 +348,7 @@ message:str = ''      -- constrained to string
 variant:any = 0       -- unconstrained (accepts any type)
 ----
 
-An annotation fixes the variable to the declared type; `:any` permits values of different types.  See <<sec-explicit-type-annotations>> for the supported type names, attribute syntax and full semantics.
+An annotation fixes the variable to the declared type; `any` permits values of different types.  See <<sec-explicit-type-annotations>> for the supported type names, attribute syntax and full semantics.
 
 An annotation is mandatory when a declaration's initialiser has no statically provable type and the variable is assigned again later.  See <<sec-dynamic-ingress>>.
 
@@ -362,16 +365,12 @@ local max_size <const> = 100
 global DEBUG <const> = false
 ----
 
-==== Initialiser Requirement
-
 A `<const>` variable must have an initialiser.  Declaring a constant without a value is a compile-time error:
 
 [source,tiri]
 ----
 local x <const>      -- error: const 'x' requires an initialiser
 ----
-
-==== Reassignment Prevention
 
 Assigning to a `<const>` variable is a compile-time error:
 
@@ -380,8 +379,6 @@ Assigning to a `<const>` variable is a compile-time error:
 x <const> = 1
 x = 2           -- error: cannot assign to const local 'x'
 ----
-
-==== Binding Immutability
 
 The `<const>` attribute protects the variable binding, not the contents of the value.  Table and object contents remain mutable:
 
@@ -392,8 +389,6 @@ data.x = 999       -- valid: modifying table contents
 data = {}          -- error: cannot reassign the binding
 ----
 
-==== Multiple Declarations with <const>
-
 Each variable in a multiple declaration independently carries the attribute:
 
 [source,tiri]
@@ -402,8 +397,6 @@ local a <const>, b, c <const> = 1, 2, 3
 b = 20             -- valid
 a = 10             -- error: cannot assign to const local 'a'
 ----
-
-==== Shadowing
 
 A `<const>` variable follows normal scoping rules.  An inner scope can shadow a constant with a new variable:
 
@@ -438,10 +431,7 @@ The prefix and all member names must use uppercase identifier style: uppercase l
 [source,tiri]
 ----
 enum HTTP_METHOD {
-   GET = 0,
-   POST,
-   PUT,
-   DELETE,
+   GET = 0, POST, PUT, DELETE
 }
 
 -- Generates: HTTP_METHOD_GET = 0, HTTP_METHOD_POST = 1,
@@ -485,13 +475,7 @@ function setup()
 end
 ----
 
-The `global` modifier may precede the `enum` keyword.  The `local` modifier is not supported with `enum` and raises a compile-time error.
-
-[source,tiri]
-----
-global enum ERR { OKAY = 0, FAIL } -- valid: global enum
-local enum BAD { ONE }             -- error: local enum not supported
-----
+The `global` modifier may precede the `enum` keyword but has no impact on visibility.  The `local` modifier is not supported with `enum` and raises a compile-time error.
 
 ==== Compile-Time Constants
 
@@ -530,15 +514,9 @@ local resource <close> = acquire_resource() -- equivalent explicit form
 -- resource.__close(resource, nil) called when scope ends
 ----
 
-==== Close Handler Signature
-
 The `__close` metamethod receives two arguments: the value being closed and an error value.  The error is `nil` for normal scope exit, or the error object when an exception is unwinding.
 
-==== Execution Order
-
 Close handlers execute in LIFO (last-declared first) order and run before `defer` blocks in the same scope (which also execute in LIFO order).  Close handlers trigger on normal scope exit, `return`, `break`, `continue`, and error unwinding.
-
-==== Primitive Values
 
 The runtime ignores values without metatables (`nil`, `false`, strings, numbers) and raises no error if the value lacks a `__close` metamethod.
 
@@ -567,7 +545,7 @@ indexterm:[upvalues] indexterm:[closures] When a function references a variable 
 function make_counter()
    count = 0
    return () => do
-      count += 1
+      count++
       return count
    end
 end

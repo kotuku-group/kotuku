@@ -165,7 +165,7 @@ recurse(3)
 [discrete]
 ==== Errors
 
-Deferred blocks do not execute during error unwinding caused by `error()` or runtime exceptions.  For error-safe cleanup, use to-be-closed variables (<<sec-to-be-closed-variables>>) or place the `defer` inside a `try` block.
+Deferred blocks do not execute during error unwinding caused by `error()` or runtime exceptions.  For error-safe cleanup, use to-be-closed variables (<<sec-to-be-closed-variables>>).
 
 If a deferred block itself raises an error, the error propagates to the enclosing handler.  Remaining deferred blocks in the same scope do not execute.  To prevent a deferred block from aborting cleanup, wrap the body in a `try` block:
 
@@ -546,6 +546,22 @@ plain = 42
 same = resolve(plain) -- returns 42 unchanged
 ----
 
+==== isthunk()
+
+[.api]`result = isthunk(Value)`
+
+Returns `true` if `Value` is an unresolved deferred expression, `false` otherwise.  Because `type()` reports the declared or inferred type of a thunk rather than identifying it as one (see <<sec-type-inspection>>), `isthunk()` is the only way to distinguish a deferred expression from an ordinary value of the same type.
+
+[source,tiri]
+----
+lazy = <{ 'hello' }>
+type(lazy)      -- 'string' (no evaluation)
+isthunk(lazy)   -- true
+
+plain = 'hello'
+isthunk(plain)  -- false
+----
+
 ==== Deferred Parameters
 
 A deferred parameter avoids computation until the function uses its value.  For example, `assert()` evaluates its message only when the assertion fails:
@@ -698,7 +714,7 @@ function perform_transaction(Operations:table)
          txn:rollback()
       end
    end
-   for _, op in Operations do
+   for _, op in pairs(Operations) do
       txn:execute(op)
    end
    txn:commit()

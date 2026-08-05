@@ -1,4 +1,4 @@
-// VERIFIED: 2026-02-10
+// VERIFIED: 2026-08-01
 
 [[ch-basic-syntax]]
 == Basic Syntax
@@ -92,7 +92,7 @@ Keywords are case-sensitive.  `and` is reserved; `And` and `AND` are valid ident
 
 indexterm:[statements] indexterm:[blocks] A statement forms the basic unit of execution.  Tiri supports assignment statements, function calls, control-flow statements, and declarations.
 
-Statements are separated by line breaks or semicolons.  Semicolons are optional except where a statement boundary is otherwise ambiguous; see <<sec-statement-ambiguity>>.
+Statements are separated by line breaks or semicolons.  Semicolons are optional except where a statement boundary is otherwise ambiguous.
 
 [%unbreakable]
 [source,tiri]
@@ -163,7 +163,7 @@ Tiri source files are sequences of bytes.  The lexer operates on individual byte
 
 The lexer treats spaces (U+0020), horizontal tabs (U+0009), carriage returns (U+000D), and newlines (U+000A) as whitespace.  Whitespace separates tokens and is otherwise ignored outside of string literals.
 
-Tiri is a free-form language.  Line breaks have no syntactic significance; statements are not terminated by newlines.  See <<sec-statement-ambiguity>> for the one case in which a statement boundary requires an explicit semicolon.
+Tiri is a free-form language.  Line breaks have no syntactic significance; statements are not terminated by newlines.
 
 ==== Numeric Literals
 

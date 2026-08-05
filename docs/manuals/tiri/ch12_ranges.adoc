@@ -1,10 +1,4 @@
 // VERIFIED: 2026-02-12
-// UPDATED: 2026-05-18 - Updated negative index slicing to reflect corrected inclusive/exclusive stop semantics (commit 15d3bed4)
-// UPDATED: 2026-05-23 - Updated range literal syntax from {start..stop}/{start...stop} to {start to stop}/{start into stop} (commit 9e5ba300)
-// UPDATED: 2026-05-23 - Added stepped range literal support with `by` clause (commit 377df4dd)
-// UPDATED: 2026-07-26 - Ranges generalised from 32-bit integers to finite floating-point values; added the numeric model section, integer requirements for collection indexing, revised membership tolerance and materialisation element types (commit 687f1eb7)
-// UPDATED: 2026-07-26 - filter() now materialises typed int/double arrays instead of array<any> (commit cabff8eb)
-// UPDATED: 2026-07-26 - Reworded loop lowering to avoid referencing the removed Lua-style numeric for syntax (commit 1f23b978)
 
 [[ch-ranges]]
 == Ranges

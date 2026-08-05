@@ -91,7 +91,7 @@ indexterm:[reserved words] indexterm:[keywords] This appendix provides a quick-r
 |`try`     |Begins an exception-handling block.  See <<ch-error-handling>>.
 |`except`  |Catches exceptions raised within a `try` block.
 |`success` |Executes when a `try` block completes without raising an exception.
-|`when`    |Filters exceptions by error code in an `except` clause.
+|`when`    |Filters exceptions by error code in an `except` clause.  Also introduces a guard expression on a `choose` case arm (see <<sec-guards>>).
 |`raise`   |Raises an exception with a specific error code and optional message.
 |`check`   |Evaluates an error code and raises an exception if it is at or above the exception threshold.
 |===
@@ -102,9 +102,9 @@ indexterm:[reserved words] indexterm:[keywords] This appendix provides a quick-r
 |===
 |Keyword |Description
 
-|`with`      |Introduces a scoped block with context bindings.
+|`with`      |Locks one or more Kōtuku objects for the duration of a block, releasing them on every exit path.  See <<sec-object-locking>>.
 |`namespace` |Declares a namespace for organising related definitions.  See <<ch-script-management>>.
-|`import`    |Imports a module or namespace.  See <<ch-script-management>>.
-|`as`        |Provides an alias in `import` statements or performs type conversion.
+|`import`    |Inlines a Tiri library script at parse time.  See <<sec-the-import-directive>>.
+|`as`        |Provides a namespace alias in an `import` statement.  See <<sec-the-import-directive>>.
 |`defer`     |Registers code to execute when the enclosing scope exits.  See <<ch-resource-management>>.
 |===

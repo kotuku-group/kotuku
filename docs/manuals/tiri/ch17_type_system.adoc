@@ -4,6 +4,9 @@
 // CHANGED: 2026-07-28 — Global contracts are enforced at the environment mutation boundary for every store route, including rawset() and pre-declaration bytecode (commit 4b4a2f94).
 // CHANGED: 2026-07-27 — Added sec-dynamic-ingress and sec-native-result-types; native calls now publish result types and an unannotated dynamic initialiser rejects later assignment (commit 8905c1966).
 // CHANGED: 2026-07-31 — Restored the missing runtime type-contract anchor.
+// CHANGED: 2026-08-02 — Added sec-global-contracts-in-guarded-blocks; declarations inside try/except/success/with now publish contracts, enforced at runtime without static propagation (commit c52956fc).
+// CHANGED: 2026-08-02 — Corrected return inference from first-wins to per-position; inferred signatures carry no runtime contract and reject dynamic results (commit 62d01f11).
+// CHANGED: 2026-08-02 — Array annotations are member-specialised: 'array' alone is rejected and 'array<element>' is now the annotation form, carried by contracts and by inferred types (commit 31fd44072).
 
 [[ch-type-system]]
 == Type System
@@ -195,8 +198,14 @@ indexterm:[type annotations, explicit] The `:type` syntax after a variable name 
 local_declaration = "local" identifier ":" type_name [ "=" expression ] ;
 type_name         = "any" | "nil" | "bool" | "boolean"
                   | "num" | "number" | "str" | "string"
-                  | "table" | "array" | "func" | "function"
+                  | "table" | "func" | "function"
                   | "obj" | "object" | "range" | "userdata"
+                  | "struct" | "struct" "<" identifier ">"
+                  | array_type ;
+array_type        = "array" "<" element_type ">" ;
+element_type      = "byte" | "char" | "int16" | "int" | "int64"
+                  | "float" | "double" | "string" | "table"
+                  | "array" | "object" | "any"
                   | "struct" | "struct" "<" identifier ">" ;
 ----
 
@@ -236,7 +245,7 @@ local count: num = 'text'  -- error: cannot assign 'string' to 'number'
 |`num`, `number`    |Number
 |`str`, `string`    |String
 |`table`            |Table
-|`array`            |Array
+|`array<element>`   |Array constrained to the declared element type (see <<sec-array-member-annotations>>)
 |`func`, `function` |Function
 |`obj`, `object`    |Object
 |`range`            |Range
@@ -245,7 +254,44 @@ local count: num = 'text'  -- error: cannot assign 'string' to 'number'
 |`struct<Name>`     |Structure constrained to the declared layout `Name` (see <<sec-struct-typed-references>>)
 |===
 
-Short and long forms are interchangeable.  An unrecognised type name raises a parse-time diagnostic.  Native array element types are not part of the annotation grammar: `array` is the only array annotation, and `array<int>` in a type position raises a parse error.
+Short and long forms are interchangeable.  An unrecognised type name raises a parse-time diagnostic.
+
+[[sec-array-member-annotations]]
+[discrete]
+==== Array Member Annotations
+
+indexterm:[type annotations, arrays] indexterm:[arrays, type annotations] An array annotation names the element type.  `array` alone is not a type name and raises a parse-time diagnostic.  The element type is written exactly as it is in an array constructor, and the permitted names are those listed in <<sec-array-fundamentals>>:
+
+[source,tiri]
+----
+local values:array<int>           -- integer elements only
+local names:array<string>         -- string elements only
+local points:array<struct<Vec>>   -- elements of the Vec definition only
+local variant:array<any>          -- any array, whatever its element type
+----
+
+Element names belong to the array vocabulary rather than the annotation vocabulary, so `array<double>` and `array<object>` are valid while `array<num>` and `array<obj>` raise a diagnostic.
+
+The annotation constrains the element type and nothing else.  Length is not part of the type, and nested specialisation is not expressible:
+
+[source,tiri]
+----
+function first(Values:array)                 -- error: an element type is required
+function first(Values:array<int, 4>)         -- error: an annotation cannot declare a size
+function first(Values:array<array<string>>)  -- error: use array<array>
+----
+
+`array<any>` is an array contract, not the variant opt-out: it accepts an array of any element type and rejects every non-array value.  Only a plain `:any` annotation removes the constraint entirely.  `array<array>` accepts an array of arrays without constraining the elements of the inner arrays.  `array<struct>` accepts an array of any single struct definition, while `array<struct<Name>>` requires that definition.
+
+The element type is part of the fixed type wherever a type is fixed, including implicit type fixing from an untyped declaration:
+
+[source,tiri]
+----
+local scores = array<int> { 1, 2 }   -- fixed to 'array<int>'
+scores = array<int> { 3 }            -- valid
+scores = array<string> { 'a' }       -- error: array member mismatch: cannot
+                                     -- assign 'array<string>' to 'array<int>'
+----
 
 [discrete]
 ==== Interaction with Attributes
@@ -323,11 +369,11 @@ function divide(A: num, B: num):<num, num>
 end
 ----
 
-When no explicit return type is declared, the compiler infers the return type from the function's `return` statements using a first-wins rule:
+When no explicit return type is declared, the compiler infers a result signature from the function's `return` statements.  Each result position is inferred independently across every `return` statement in the function:
 
-1. The first `return` statement with a non-nil value establishes the expected type(s).
-2. Subsequent `return` statements must be consistent with the established types.
-3. Returning `nil` is always permitted and does not establish a type.
+1. Returning `nil` is always permitted and establishes no type.
+2. The first value whose type is known at compile time establishes the type of its position.
+3. Subsequent values at that position must be consistent with the established type.
 
 [source,tiri]
 ----
@@ -337,6 +383,8 @@ function get_status(Code: num)
    return 'Error'                      -- must also be 'string'
 end
 ----
+
+An inferred signature is a static description of the results and carries no runtime contract.  Every inferred position must therefore be provable at compile time: returning a dynamic value from a function with no return type annotation is an error, resolved by declaring the result type or `:any`.  A trailing position whose values are all `nil` is omitted from the signature.  See <<sec-return-type-inference>> for the full rules.
 
 Inconsistent return types produce a compile-time error:
 
@@ -360,6 +408,7 @@ function factorial(N: num): num
 end
 ----
 
+[[sec-call-site-type-propagation]]
 [discrete]
 ==== Call-Site Type Propagation
 
@@ -557,7 +606,63 @@ exec("global glValue:any = 'variant'")
 glValue = { }                -- accepted: the concrete contract has been replaced
 ----
 
-No object-class or structure specialisation survives the opt-out.
+No object-class, structure or array element specialisation survives the opt-out.
+
+An `array<any>` redeclaration is a weaker form of the same idea for arrays alone.  It replaces a concrete element contract with one that accepts any array, while continuing to reject values that are not arrays:
+
+[source,tiri]
+----
+global glValues:array<int> = array<int> { 1 }
+global glValues:array<any> = array<string> { 'open' }
+
+glValues = array<double> { 2.5 }   -- accepted: any element type satisfies array<any>
+glValues = { 3 }                   -- error: expected array<any>, got table
+----
+
+[[sec-global-contracts-in-guarded-blocks]]
+[discrete]
+===== Declarations in Guarded Blocks
+
+indexterm:[global variables, guarded blocks] A _guarded block_ is the body of a `try`, `except` or `success` clause (see <<sec-try-except-statements>>) or of a `with` statement (see <<sec-object-locking>>).  A `global` declaration inside a guarded block, or inside a nested block, function literal, `defer` body or inlined import within one, publishes the same contract as a declaration made outside it.  The rules for contract creation, the store route, `<const>` and the variant opt-out are unchanged:
+
+[source,tiri]
+----
+try
+   global glName = 'a'        -- contract: str, published when the
+end                           -- declaration executes
+
+glName = 42                   -- error: type contract failed for global
+                              -- ('glName'): expected str, got number
+----
+
+The declaration constrains the name at runtime only.  The compiler does not carry the declared type into the remainder of the chunk, because a guarded block is not guaranteed to reach the declaration.  A later mismatched read or write in the same chunk is therefore reported as a contract failure when it executes, rather than as the compile-time diagnostic that an unguarded declaration produces:
+
+[source,tiri]
+----
+global glOuter = 'a'
+glOuter = 42                  -- error: compile-time diagnostic
+
+try
+   global glGuarded = 'a'
+end
+glGuarded = 42                -- error: contract failure at runtime
+----
+
+A declaration that conflicts with the contract already held by the name fails as an ordinary contract failure.  The failure is catchable, and the previous value and the previous contract both survive it:
+
+[source,tiri]
+----
+global glCount:num = 1
+
+try
+   global glCount = 'wrong'   -- contract failure, caught below
+except e
+end
+
+print(glCount)                -- 1, the previous value is preserved
+glCount = 2                   -- accepted: the num contract still applies
+glCount = 'text'              -- error: the num contract still applies
+----
 
 [discrete]
 ===== Undeclared Globals
@@ -614,7 +719,8 @@ count(dynamic)   -- error: expected num, got string
 
 Contracts distinguish types that are related in the underlying representation:
 
-* `table` and `array` are mutually exclusive.  An array does not satisfy `table` and a table does not satisfy `array`.
+* `table` and array annotations are mutually exclusive.  An array does not satisfy `table` and a table does not satisfy `array<any>`.
+* `array<element>` requires an array whose element type is exactly `element`.  `array<int>` rejects `array<double>`, `array<any>` and every other element type, and `array<struct<Name>>` requires that struct definition.  `array<any>` accepts any array; `array<struct>` accepts an array of any single struct definition.
 * `struct<Name>` requires an instance of the declared layout `Name`.  An instance of a different layout is rejected even when the two layouts declare identical fields.  The plain `struct` annotation accepts any struct instance.
 * `range` requires a range value.  `userdata` accepts other userdata values but rejects ranges and thunks, even though ranges are userdata at runtime (see <<sec-userdata>>).
 * `func` accepts any value that normal call dispatch supports, which includes a table or userdata carrying a `pass:[__]call` metamethod.

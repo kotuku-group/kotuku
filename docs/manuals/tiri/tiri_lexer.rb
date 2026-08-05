@@ -67,6 +67,7 @@ module Rouge
             rule %r((?i)(\d*\.\d+|\d+\.\d*)(e[+-]?\d+)?), Num::Float
             rule %r((?i)\d+e[+-]?\d+), Num::Float
             rule %r((?i)0x[0-9a-f]+), Num::Hex
+            rule %r((?i)0b[01]+), Num::Bin
             rule %r(\d+), Num::Integer
 
             # Whitespace

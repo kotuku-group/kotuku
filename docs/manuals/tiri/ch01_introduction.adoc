@@ -1,4 +1,4 @@
-// VERIFIED: 2026-02-10
+// VERIFIED: 2026-08-01
 
 [[ch-introduction]]
 == Introduction
@@ -7,7 +7,21 @@
 
 indexterm:[Tiri] indexterm:[Kōtuku] Tiri is a programming language derived from Lua and built on the LuaJIT virtual machine.  It is the primary programming interface for the Kōtuku application framework and is integrated with Kōtuku's object model.
 
-The Tiri engine is a hard fork of the LuaJIT virtual machine.  It retains a register-based virtual machine and tracing JIT while extending the language with zero-based indexing, compound assignment, exception handling, annotations, string interpolation, ranges, regular expressions and contiguous arrays.  It also removes or replaces many Lua constructs.
+The Tiri engine is a hard fork of the LuaJIT virtual machine.  It retains a register-based virtual machine and tracing JIT while extending the language with many additional features:
+
+* Zero-based indexing
+* Compound assignment
+* Structured exception handling
+* Annotations
+* Type safety
+* String interpolation
+* New types, including ranges, structs, arrays and objects
+* Regular expressions
+* Thunks
+* Asynchronous threading
+* Standard library extensions
+
+It also removes or replaces many Lua constructs.
 
 Tiri is not backwards-compatible with Lua.  Code written for standard Lua or LuaJIT requires migration.  See <<appendix-migration-from-lua>>.
 
@@ -15,16 +29,16 @@ Tiri is not backwards-compatible with Lua.  Code written for standard Lua or Lua
 === Design Goals
 
 Minimalism::
-We want developers to be able to write code quickly and with minimal boilerplate.  Type inference eliminates explicit type declarations.  Safe navigation, compound operators, and string interpolation reduce verbosity.  Less code also gives way to more optimisation opportunities for the compiler and virtual machine.
+We want developers to be able to write code quickly and with minimal boilerplate.  Type inference eliminates explicit type declarations.  Safe navigation, compound operators, and string interpolation reduce verbosity.  Less code and more simplification provides more optimisation opportunities for the compiler and virtual machine.
 
 Simplicity::
-Tiri needed to be easy to learn and understand, with a minimal set of core concepts.  Using Lua as a foundational language and maintaining its core principles of simplicity and flexibility was a natural choice.
+Tiri needed to be easy to learn and understand, with a minimal set of core concepts.  Using Lua as a foundational language and maintaining its core principles was a natural choice.
 
 Intuitiveness::
-Ensure logical, consistent syntax and semantics.  Lua features that conflicted with these goals were removed rather than preserved.  Behaviours are largely predictable and consistent across different constructs, with few special cases or exceptions to learn.
+We seek to ensure logical, consistent syntax and semantics.  Research into the most common pain points in Lua and other languages helped us in making targeted changes to lower friction and satisfy experienced programmers.  Behaviours are largely predictable and consistent across different constructs, with few special cases or exceptions to learn.
 
 Interoperability::
-Tiri has seamless access to all Kōtuku C++ APIs and can interact with C++ classes.  The Kōtuku API documentation is the same for C++ as it is for Tiri, without language-specific translations.  Host system abstraction eliminates the battle of needing to interact with POSIX or Win32 APIs when needing to engage in system-level programming.
+Tiri has seamless access to all Kōtuku pass:[C++] APIs and can interact with external objects and classes.  The Kōtuku API documentation is the same for pass:[C++] as it is for Tiri, without language-specific shims or translations.  Host system abstraction eliminates the battle of needing to interact with POSIX or Win32 APIs when needing to engage in system-level programming.
 
 Performance::
 Good design can maximise execution speed for code produced by the compiler and virtual machine.  Features such as arrays enable faster processing of sequential data.  The type system permits more efficient code paths with added type safety guarantees.  Under-the-hood changes, such as the switch to 64-bit exclusive design, new opcodes and a re-written parser, allow for more efficient execution and better optimisation opportunities.
@@ -61,7 +75,7 @@ Named arguments are passed as key-value pairs after the script path:
 origo myscript.tiri name='John' surname=Bloggs
 ----
 
-These arguments are accessible within the script via the `arg()` function.
+Command-line arguments are accessible within the script via the `arg()` function.
 
 To enable diagnostic log output, append `--log-warning` for warnings or `--log-api` for detailed API-level logging.
 Log output is directed to standard error.  Run `origo --help` for the full list of available options.
@@ -69,7 +83,7 @@ Log output is directed to standard error.  Run `origo --help` for the full list 
 [[sec-hello-world]]
 === Hello World
 
-The following script prints a message to standard output:
+The following script prints a message to the terminal:
 
 [source,tiri]
 ----
@@ -84,6 +98,8 @@ Hello, world
 ----
 
 Notice that no entry-point function was declared in the script.  Tiri scripts execute top-to-bottom and the script body is the main program.
+
+NOTE: `print()` writes to standard error, not standard output.  Tiri directs diagnostic and log output to stderr and reserves stdout for program output written with `io.write()`.  See <<sec-print-and-msg>>.
 
 [[sec-file-recognition]]
 === File Recognition

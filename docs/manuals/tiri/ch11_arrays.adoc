@@ -4,6 +4,8 @@
 // UPDATED: 2026-07-02 - Documented in-place ..= append, byte-array string pushes, and array<char> as the preferred string-buffer builder (commit 1dc290463)
 // UPDATED: 2026-07-26 - Range arguments to fill(), find() and slice() must be whole-numbered; fractional ranges raise an error (commit 687f1eb7)
 // CHANGED: 2026-07-31 — Removed repeated array-concatenation guidance.
+// UPDATED: 2026-08-02 - Documented the exact element storage contract, defined numeric narrowing, atomic mutation, and struct element identity (commit c393e710d)
+// UPDATED: 2026-08-02 - Cross-referenced member-specialised array type annotations (commit 31fd44072)
 
 [[ch-arrays]]
 == Arrays
@@ -26,7 +28,7 @@ All indexing is zero-based.  The `#` operator returns the element count.  Elemen
 [discrete]
 ==== Element Types
 
-indexterm:[arrays, fundamentals] Each array declares a fixed element type at creation.  Storing a value of an incompatible type raises an error.
+indexterm:[arrays, fundamentals] Each array declares a fixed element type at creation.  Storing a value of an incompatible type raises an error, as defined in <<sec-element-storage-contract>>.
 
 [cols="1,1,3a",options="header"]
 |===
@@ -72,10 +74,83 @@ indexterm:[arrays, fundamentals] Each array declares a fixed element type at cre
 |8
 |Nested array reference (garbage-collected)
 
+|`struct<Name>`
+|Varies
+|Struct instance stored by value.  The array is bound to the struct definition declared at creation.
+
 |`any`
 |16
 |Any Tiri value (mixed types permitted)
 |===
+
+[[sec-element-storage-contract]]
+[discrete]
+==== Element Storage Contract
+
+indexterm:[arrays, element storage] indexterm:[arrays, type safety] Every operation that writes an element applies the same contract.  A value is stored only if it matches the declared element type exactly.  Values are never converted between categories; a conversion that crosses categories must be written explicitly at the call site.
+
+* Numeric and string element types accept their counterparts only.  Use `tonumber()` and `tostring()` for conversion.
+* The `table`, `array` and `object` element types accept only a value of that exact category.
+* A `struct<Name>` element type accepts only instances of the same struct definition.  A different definition is rejected even when its field layout is identical.
+* The `any` element type accepts every value.
+
+The element type therefore behaves as a type contract on every write, applying the same identity rules as the runtime contracts defined in <<sec-runtime-type-contracts>>.
+
+`nil` writes the empty value for the element type: zero for numeric elements, a cleared reference for `string`, `table`, `array` and `object` elements, and `nil` for `any` elements.  The `struct<Name>` element type is the sole exception and rejects `nil`, because a struct element is stored by value and has no empty representation.
+
+Byte arrays (`byte`, `char`) extend the contract for two operations: 
+
+* `push()` also accepts strings and appends their characters
+* `..=` automatically stringifies values, as for regular string types.
+
+[source,tiri]
+----
+nums = array<int> { 1, 2, 3 }
+nums[0] = 4             -- 4
+nums[0] = '4'           -- error: incompatible element type
+nums[0] = tonumber('4') -- 4
+
+names = array<string> { 'a' }
+names:push(42)          -- error: incompatible element type
+names:push(tostring(42))  -- '42'
+----
+
+[[sec-element-numeric-conversion]]
+[discrete]
+==== Numeric Conversion
+
+indexterm:[arrays, numeric conversion] Storing a number in a numeric element type narrower than a double converts the value by the following rules.  The result is defined for every accepted value and does not vary between platforms.
+
+* Integer element types (`byte`, `int16`, `int`, `int64`) truncate the value towards zero, then wrap modulo the width of the type.  The signed types wrap into two's complement range; `byte` wraps into the range 0--255.
+* Integer element types reject infinity and NaN with an out-of-range error.
+* The `float` element type rejects a finite value whose magnitude exceeds the largest representable single-precision number (approximately 3.4×10^38^) with an out-of-range error.  Infinity and NaN are stored unchanged.  All other values are rounded to the nearest representable single-precision value.
+* The `double` element type accepts every number, including infinity and NaN.
+
+A rejected value leaves the target element at its previous value.
+
+[source,tiri]
+----
+vals = array<int> { 1.9, -1.9, 3000000000, nil }
+-- vals = {1, -1, -1294967296, 0}
+
+bytes = array<byte> { 300, -1 }
+-- bytes = {44, 255}
+
+vals[0] = math.huge   -- error: value out of range; vals[0] remains 1
+----
+
+[[sec-array-atomic-mutation]]
+[discrete]
+==== Atomic Mutation
+
+indexterm:[arrays, atomic mutation] Operations that write more than one element validate every value against the element contract before any element is written.  If any value is rejected, the operation raises an error and the array retains its original length and contents; a partial write is never observable.  This guarantee covers multi-value `push()` and `insert()`, `fill()`, and `copy()` from a table.
+
+[source,tiri]
+----
+arr = array<int> { 10, 20, 30 }
+arr:push(40, {})   -- error: incompatible element type
+#arr               -- 3; arr is unchanged
+----
 
 [discrete]
 ==== Type Inspection
@@ -90,6 +165,7 @@ array<int>:type()            -- 'int'
 array<float>:type()          -- 'float'
 array<byte>:type()           -- 'char'
 array<array<string>>:type()  -- 'array'
+array<struct<Vec>>:type()    -- 'struct'
 ----
 
 [discrete]
@@ -188,7 +264,7 @@ When the target of a `..=` compound assignment is an array, the operator appends
 The appended representation depends on the array's element type:
 
 * Byte arrays (`byte`, `char`) follow concatenation semantics.  A string operand contributes its bytes, preserving embedded NUL bytes; a number operand contributes its decimal text, identical to the conversion the `..` operator performs.
-* All other array types append the operand as a single element of the array's element type.  A number is stored as a numeric element, not as text; an incompatible operand raises an error.
+* All other array types append the operand as a single element of the array's element type.  A number is stored as a numeric element, not as text.  The operand must satisfy <<sec-element-storage-contract>>; an incompatible operand raises an error and the array is unchanged.
 
 If the right operand is a function call or vararg, only its first value is appended.  The target is any assignable array reference, including a table or object field.  See <<sec-compound-assignment>> for the general rules governing compound assignment.
 
@@ -202,8 +278,6 @@ print(buf)           -- 'Value = 42'
 nums = array<int> { 1, 2 }
 nums ..= 3           -- append the element 3; nums = {1, 2, 3}
 ----
-
-NOTE: On a byte array, `..=` stringifies numbers: `buf ..= 42` appends the two bytes `'42'`.  This is distinct from `push()`, which stores a number as a single raw byte.
 
 TIP: A byte array assembled with `..=` is the most efficient way to build a large string buffer.  Each append mutates the array in place and reuses spare capacity, avoiding the repeated allocation and copying that building a string with `..` in a loop incurs.  Recover the finished string with `tostring(buf)` or `buf:getString()`, or pass the array directly to functions that support character arrays.
 
@@ -243,6 +317,8 @@ n = 8
 buf = array<int, n>   -- 8 zero-initialised elements
 ----
 
+The `array<type>` form is also the array type annotation, where it constrains a variable, parameter or result to arrays of that element type.  A size is not permitted in that position.  See <<sec-array-member-annotations>>.
+
 ==== array.new()
 
 [.api]`arr = array.new(Size, Type)`
@@ -269,7 +345,7 @@ arr[0]         -- 72 (ASCII 'H')
 
 [.api]`arr = array.of(Type, Value, pass:[...])`
 
-Creates an array populated with the given values.  At least one value is required.  Raises an error if any value is incompatible with `Type`.
+Creates an array populated with the given values.  At least one value is required.  Each value must satisfy <<sec-element-storage-contract>> for `Type`; an incompatible value raises an error and no array is returned.
 
 [source,tiri]
 ----
@@ -358,6 +434,8 @@ end
 
 indexterm:[arrays, mutation] Appends one or more values to the end of the array.  Grows the array if necessary.  Returns the new length.  If called with no arguments, returns the current length without modification.
 
+Each value must satisfy <<sec-element-storage-contract>>.  All values are validated before the first is appended, so a rejected value leaves the array unchanged as defined in <<sec-array-atomic-mutation>>.
+
 For byte arrays (`byte`, `char`), string arguments are also accepted: the bytes of each string are appended in sequence, preserving embedded NUL bytes.  Integer arguments are appended as single bytes.  A single call may mix strings and integers.
 
 [source,tiri]
@@ -397,6 +475,8 @@ Returns `nil` on an empty array.
 
 Inserts one or more values at `Index`, shifting subsequent elements to the right.  Returns the new length.  Raises an error if `Index` is negative or exceeds the current length.  If no values are provided, the array is unchanged.
 
+Each value must satisfy <<sec-element-storage-contract>>.  All values are validated before any element is shifted, so a rejected value leaves the array unchanged as defined in <<sec-array-atomic-mutation>>.  Unlike `push()`, string arguments are not accepted by byte arrays.
+
 [source,tiri]
 ----
 arr = array<int> { 1, 2, 5 }
@@ -426,6 +506,8 @@ arr:remove(1, 2)    -- arr = {1, 5}
 
 Sets elements to `Value`.  With no additional arguments, fills the entire array.  With `Start` and `Count`, fills `Count` elements beginning at `Start`.  With a range, fills the elements selected by the range (supports exclusive, inclusive, negative, and stepped ranges).  The range must be whole-numbered as defined in <<sec-range-index-requirement>>; a fractional range raises an error.
 
+`Value` must satisfy <<sec-element-storage-contract>> and is validated before the first element is written, so a rejected value leaves the array unchanged.  Reference element types accept a reference, or `nil` to clear the selected elements.
+
 [source,tiri]
 ----
 arr = array<int, 10>
@@ -433,6 +515,10 @@ arr:fill(0)               -- zero-fill all elements
 arr:fill(99, 2, 3)        -- arr[2..4] = 99
 arr:fill(77, {2 into 5})  -- arr[2 into 5] = 77 (inclusive)
 arr:fill(33, range.new(0, 10, false, 2))   -- every 2nd element
+
+refs = array<table, 3>
+refs:fill({ id = 1 })     -- every element references the same table
+refs:fill(nil, 1, 2)      -- clears refs[1] and refs[2]
 ----
 
 [discrete]
@@ -564,7 +650,13 @@ Copies data into the array from `Source`.  `Source` can be an array, a string (c
 
 `DestIndex` specifies the starting position in the destination (default: 0).  `SrcIndex` specifies the starting position in the source (default: 0).  `Count` limits the number of elements copied (default: all remaining from `SrcIndex`).
 
-Raises an error if the copy would exceed the destination bounds.  For string sources, the destination must be a byte array.
+Raises an error if the copy would exceed the destination bounds.
+
+The source must match the destination:
+
+* An array source must declare the same element type as the destination, and for `struct` element types the same struct definition.  Element values are transferred without conversion, so an `array<double>` cannot be copied into an `array<int>`.
+* A string source requires a byte array destination.
+* A table source is read as a sequence and each element must satisfy <<sec-element-storage-contract>>.  The complete sequence is validated before the destination is modified, so a rejected element leaves the destination unchanged as defined in <<sec-array-atomic-mutation>>.
 
 [source,tiri]
 ----
@@ -572,6 +664,11 @@ dest = array<int, 6>
 dest:fill(0)
 dest:copy(array<int> { 100, 200, 300 }, 2, 0, 3)
 -- dest = {0, 0, 100, 200, 300, 0}
+
+dest:copy({ 1.9, 2.1, 3.8 })
+-- dest = {1, 2, 3, 200, 300, 0}
+
+dest:copy({ 8, {}, 9 })   -- error: incompatible element type; dest is unchanged
 
 buf = array<byte, 10>
 buf:copy('Hello')
@@ -680,13 +777,17 @@ end)
 
 [.api]`result = arr:map(Callback)`
 
-Returns a new array where each element is the result of `Callback(Value, Index)`.  The original array is not modified.  The result array preserves the source element type.
+Returns a new array where each element is the result of `Callback(Value, Index)`.  The original array is not modified.  The result array preserves the source element type, including the struct definition of a `struct` element type.
+
+Each callback result must satisfy <<sec-element-storage-contract>> for that element type; a result of another category raises an error.  Use `map()` for transformations that preserve the element type, and build a new array of the target type for transformations that do not.
 
 [source,tiri]
 ----
 arr = array<int> { 1, 2, 3, 4, 5 }
 doubled = arr:map(v => v * 2)
 -- doubled = {2, 4, 6, 8, 10}
+
+arr:map(v => tostring(v))   -- error: incompatible element type
 ----
 
 [discrete]
@@ -694,7 +795,7 @@ doubled = arr:map(v => v * 2)
 
 [.api]`result = arr:filter(Predicate)`
 
-Returns a new array containing only the elements for which `Predicate(Value, Index)` returns a truthy value.  The original array is not modified.  The result preserves the source element type.
+Returns a new array containing only the elements for which `Predicate(Value, Index)` returns a truthy value.  The original array is not modified.  The result preserves the source element type, including the struct definition of a `struct` element type.
 
 [source,tiri]
 ----
