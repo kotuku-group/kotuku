@@ -84,9 +84,9 @@ end
 
 @Test function NarrowStructWriteFields()
    for i in {0 to 1000000} do
-      glBenchmarkNarrowStruct.word         = -(i & 0x7fffffff)
+      glBenchmarkNarrowStruct.word         = i & 0x7fff
       glBenchmarkNarrowStruct.byte         = i & 0x7f
-      glBenchmarkNarrowStruct.unsignedWord = i & 0xffffffff
+      glBenchmarkNarrowStruct.unsignedWord = i & 0xffff
       glBenchmarkNarrowStruct.unsignedByte = i & 0xff
    end
    return glBenchmarkNarrowStruct.word + glBenchmarkNarrowStruct.byte +

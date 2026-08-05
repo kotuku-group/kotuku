@@ -404,6 +404,16 @@ end
    return total_length
 end
 
+@Test function IterateArrayBare()
+   local total_length = 0
+   for i in {0 to 50} do
+      for _, s in glStrArray do
+         total_length += #s
+      end
+   end
+   return total_length
+end
+
 @Test function IterateTableIPairs()
    local total_length = 0
    for i in {0 to 50} do
@@ -432,6 +442,48 @@ end
       end
    end
    return checksum
+end
+
+@Test function IterateTableBare()
+   local checksum = 0
+   for i in {0 to 50} do
+      for k, v in glIntTable do
+         checksum += k + v
+      end
+   end
+   return checksum
+end
+
+function iterate_dynamic_array_bare(Target:any)
+   local total_length = 0
+   for _, value in Target do
+      total_length += #value
+   end
+   return total_length
+end
+
+function iterate_dynamic_array_ipairs(Target:any)
+   local total_length = 0
+   for _, value in ipairs(Target) do
+      total_length += #value
+   end
+   return total_length
+end
+
+@Test function IterateDynamicArrayBare()
+   local total_length = 0
+   for i in {0 to 50} do
+      total_length += iterate_dynamic_array_bare(glStrArray)
+   end
+   return total_length
+end
+
+@Test function IterateDynamicArrayIPairs()
+   local total_length = 0
+   for i in {0 to 50} do
+      total_length += iterate_dynamic_array_ipairs(glStrArray)
+   end
+   return total_length
 end
 
 ----------------------------------------------------------------------------------------------------------------------

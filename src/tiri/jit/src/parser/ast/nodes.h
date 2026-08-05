@@ -798,6 +798,14 @@ struct RangeForStmtPayload {
    ~RangeForStmtPayload();
 };
 
+enum class GenericForTarget : uint8_t {
+   IteratorProtocol,
+   KnownArray,
+   KnownTable,
+   KnownRange,
+   RuntimeCollectionOrIterator
+};
+
 struct GenericForStmtPayload {
    GenericForStmtPayload(std::vector<Identifier> names, ExprNodeList iterators,
                          std::unique_ptr<BlockStmt> body)
@@ -808,6 +816,7 @@ struct GenericForStmtPayload {
    GenericForStmtPayload& operator=(GenericForStmtPayload&&) noexcept = default;
    std::vector<Identifier> names;
    ExprNodeList iterators;
+   GenericForTarget target = GenericForTarget::IteratorProtocol;
    std::unique_ptr<BlockStmt> body;
    ~GenericForStmtPayload();
 };

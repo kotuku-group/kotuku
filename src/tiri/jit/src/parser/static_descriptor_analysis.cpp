@@ -899,6 +899,15 @@ private:
             result.nullable = false;
          }
       }
+      else if (const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
+          direct and direct->callable and direct->callable->kind IS AstNodeKind::IdentifierExpr and
+          not std::get<NameRef>(direct->callable->data).binding_id and
+          std::get<NameRef>(direct->callable->data).identifier.symbol and
+          std::get<NameRef>(direct->callable->data).identifier.symbol->hash IS kt::strhash("range")) {
+         result.primary = TiriType::Range;
+         result.proof = StaticProof::Closed;
+         result.nullable = false;
+      }
       else if (StaticModuleHandle mod = this->literal_module_load(Call);
           mod and (result.primary IS TiriType::Unknown or result.primary IS TiriType::Userdata)) {
          result.primary = TiriType::Userdata;
@@ -912,7 +921,12 @@ private:
             std::get_if<NameRef>(&member.table->data) : nullptr;
          if (base and not base->binding_id and base->identifier.symbol and member.member.symbol and
              member.member.symbol->hash IS kt::strhash("new")) {
-            if (base->identifier.symbol->hash IS kt::strhash("obj") and
+            if (base->identifier.symbol->hash IS kt::strhash("range")) {
+               result.primary = TiriType::Range;
+               result.proof = StaticProof::Closed;
+               result.nullable = false;
+            }
+            else if (base->identifier.symbol->hash IS kt::strhash("obj") and
                 Call.result_type IS TiriType::Object) {
                result.primary = TiriType::Object;
                result.object_class_id = Call.object_class_id;
@@ -1618,7 +1632,21 @@ private:
             for (auto &iterator : payload.iterators) if (iterator) this->propagate_expression(*iterator);
             if (payload.iterators.size() IS 1 and not payload.names.empty()) {
                StaticValueDescriptor iterator = this->descriptor_of(*payload.iterators.front());
-               if (iterator.primary IS TiriType::Array and iterator.array_element.known) {
+               if (iterator.proved() and iterator.primary IS TiriType::Func and
+                   (not iterator.nullable or payload.iterators.front()->kind IS AstNodeKind::CallExpr)) {
+                  payload.target = GenericForTarget::IteratorProtocol;
+               }
+               else if (iterator.proved() and not iterator.nullable) {
+                  switch (iterator.primary) {
+                     case TiriType::Array: payload.target = GenericForTarget::KnownArray; break;
+                     case TiriType::Table: payload.target = GenericForTarget::KnownTable; break;
+                     case TiriType::Range: payload.target = GenericForTarget::KnownRange; break;
+                     default: payload.target = GenericForTarget::RuntimeCollectionOrIterator; break;
+                  }
+               }
+               else payload.target = GenericForTarget::RuntimeCollectionOrIterator;
+
+               if (payload.target IS GenericForTarget::KnownArray) {
                   auto &first = this->catalogue_.binding(payload.names.front().binding_id);
                   StaticValueDescriptor index;
                   index.primary = TiriType::Num;
@@ -1636,7 +1664,16 @@ private:
                      payload.names[1].static_value = second.value;
                   }
                }
+               else if (payload.target IS GenericForTarget::KnownRange) {
+                  auto &first = this->catalogue_.binding(payload.names.front().binding_id);
+                  StaticValueDescriptor value;
+                  value.primary = TiriType::Num;
+                  value.proof = StaticProof::Trusted;
+                  first.value = this->add_value(value);
+                  payload.names.front().static_value = first.value;
+               }
             }
+            else payload.target = GenericForTarget::IteratorProtocol;
             if (payload.body) this->propagate_block(*payload.body);
             break;
          }

@@ -13,6 +13,7 @@ Parameters:
   warmup=[n]   - Warmup cycles per test.
   hotloop=[n]  - Cycles required before performing JIT optimisation.
   calls=[n]    - Limit each test to this many calls.
+  interpreter  - Disable JIT compilation during timing.
   save[=all]   - Saves the results to the log.  Use save=all to store the full result tables.
   traces       - Report on JIT trace compilation for each test instead of timing it.
  --]]
@@ -78,6 +79,8 @@ Examples:
         comment = 'Cycles required before performing JIT optimisation.' },
       { name = 'calls', type = 'int', default = 1000, group = 'Timing',
         comment = 'Limit each benchmark to this many measured calls.' },
+      { name = 'interpreter', kind = 'flag', group = 'Timing',
+        comment = 'Disable JIT compilation during the timing run.' },
 
       { name = 'save', type = saveOption, implicit = true, default = false, group = 'Output',
         comment = 'Save summary results to the log. Use "all" to include exhaustive benchmark statistics.' },
@@ -209,6 +212,7 @@ end
    local call_limit   = glArgs.calls
    local save_results = glArgs.save
    local trace_mode   = glArgs.traces
+   local interpreter_mode = glArgs.interpreter
 
    local test_match = glArgs.test
    if test_match then
@@ -302,6 +306,13 @@ end
       return
    end
 
+   if interpreter_mode then
+      jit.off()
+      logMessage('Interpreter-only timing mode')
+   else
+      jit.on()
+   end
+
    for entry in values(name_list) do
       func = entry.func
       name = entry.name
@@ -347,6 +358,8 @@ end
          end
       end
    end
+
+   if interpreter_mode then jit.on() end
 
    local last_result
    try

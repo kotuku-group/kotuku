@@ -279,6 +279,61 @@ LJLIB_ASM(ipairs)      LJLIB_REC(xpairs 1)
 }
 
 //********************************************************************************************************************
+
+static int bare_array_iterator_next(lua_State *L)
+{
+   GCarray *array = lua_toarray(L, 1);
+   if (not array) lj_err_argt(L, 1, LUA_TARRAY);
+
+   int32_t index = lua_isnil(L, 2) ? 0 : int32_t(lua_tointeger(L, 2)) + 1;
+   if (index < 0 or MSize(index) >= array->len) return 0;
+
+   lua_pushinteger(L, index);
+   lj_arr_getidx(L, array, index, L->top);
+   L->top++;
+   return 2;
+}
+
+// Normalise a single dynamic generic-for target once at loop entry.  This is a protected compiler intrinsic; source
+// code should continue to use the ordinary collection and iterator forms.
+
+LJLIB_CF(__tiri_iter_prepare)
+{
+   int32_t value_count = lua_gettop(L);
+   if (value_count >= 2) return value_count;
+
+   if (value_count IS 1 and lua_isarray(L, 1)) {
+      lua_pushcfunction(L, bare_array_iterator_next);
+      lua_pushvalue(L, 1);
+      lua_pushnil(L);
+      return 3;
+   }
+
+   if (value_count IS 1 and lua_istable(L, 1)) {
+      lua_getglobal(L, "pairs");
+      lua_pushvalue(L, 1);
+      lua_call(L, 1, LUA_MULTRET);
+      return lua_gettop(L) - 1;
+   }
+
+   if (value_count IS 1 and check_range(L, 1)) return lj_range_prepare_iterator(L, 1);
+
+   if (value_count IS 1) {
+      TValue *value = L->base;
+      if (tvisfunc(value) or not tvisnil(lj_meta_lookup(L, value, MM_call))) {
+         lua_pushvalue(L, 1);
+         lua_pushnil(L);
+         lua_pushnil(L);
+         return 3;
+      }
+   }
+
+   const char *type_name = value_count IS 0 ? "nil" : luaL_typename(L, 1);
+   luaL_error(L, "cannot iterate over a %s value", type_name);
+   return 0;
+}
+
+//********************************************************************************************************************
 // values() iterator - iterates over table values only, discarding keys
 // Usage: for v in values(tbl) do ... end
 // Equivalent to: for _, v in pairs(tbl) do ... end

@@ -68,6 +68,7 @@ lua_Number lj_range_prepare_count(
 int32_t lj_range_integer_values(lua_Number Start, lua_Number Stop, lua_Number Step);
 lua_Number lj_range_value(lua_Number Ordinal, lua_Number Start, lua_Number Step);
 lua_Number lj_range_iterator_next_ordinal(lua_Number Control, lua_Number Start, lua_Number Step);
+int lj_range_prepare_iterator(lua_State *L, int Index);
 extern "C" void lj_range_prepare(lua_State *L, TValue *Base, uint32_t Flags);
 extern "C" void lj_range_value_at(TValue *Base);
 

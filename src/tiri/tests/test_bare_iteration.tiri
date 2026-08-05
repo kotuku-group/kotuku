@@ -1,0 +1,169 @@
+-- Flute regression tests for collection-aware generic for loops.
+
+@Test function BareArrayIteration()
+   local values = array<int> { 10, 20, 30 }
+   local total = 0
+   local expected_index = 0
+   for index, value in values do
+      assert(index is expected_index, 'Bare array iteration should yield zero-based indices')
+      total += value
+      expected_index++
+   end
+   assert(total is 60, 'Bare array iteration should yield every element')
+end
+
+@Test function BareTableIteration()
+   local values = { alpha = 2, beta = 3, [7] = 5 }
+   local total = 0
+   local count = 0
+   for key, value in values do
+      assert(values[key] is value, 'Bare table iteration should yield matching key/value pairs')
+      total += value
+      count++
+   end
+   assert(total is 10 and count is 3, 'Bare table iteration should visit every entry')
+end
+
+@Test function BareTableHonoursPairsMetamethod()
+   local values = setmetatable({ ignored = 1 }, {
+      __pairs = function(Self):<func, table, nil>
+         return next, { custom = 42 }, nil
+      end
+   })
+
+   local count = 0
+   for key, value in values do
+      assert(key is 'custom' and value is 42, 'Bare table iteration should use __pairs results')
+      count++
+   end
+   assert(count is 1, 'Custom __pairs iteration should control the result set')
+end
+
+@Test function BareStoredRangeIteration()
+   local cases = {
+      { value = range(0, 5), expected = 10 },
+      { value = range(5, 0), expected = 15 },
+      { value = range(0, 4, true, 0.5), expected = 18 },
+      { value = range(3, 3), expected = 0 }
+   }
+   for _, case in pairs(cases) do
+      local total = 0
+      for value in case.value do total += value end
+      assert(total is case.expected, 'Bare stored range iteration produced the wrong values')
+   end
+end
+
+@Test function CollectionTargetEvaluatedOnce()
+   local calls = 0
+   function make_values():array<int>
+      calls++
+      return array<int> { 1, 2, 3 }
+   end
+
+   local total = 0
+   for _, value in make_values() do total += value end
+   assert(calls is 1 and total is 6, 'A bare collection target should be evaluated exactly once')
+end
+
+@Test function CallableTableUsesPairsWhenBare()
+   local call_count = 0
+   local values = setmetatable({ amount = 7 }, {
+      __call = function(Self):num
+         call_count++
+         return Self.amount
+      end
+   })
+
+   local seen = 0
+   for key, value in values do
+      if key is 'amount' then seen = value end
+   end
+   assert(seen is 7 and call_count is 0, 'A bare callable table should use table iteration')
+   assert(values() is 7 and call_count is 1, 'An explicit call should continue to use __call')
+end
+
+@Test function DynamicTargetCanChangeCategory()
+   function sum_dynamic(Target:any, UseSecond:bool):num
+      local total = 0
+      for first, second in Target do total += UseSecond ? second :> first end
+      return total
+   end
+
+   local values = array<int> { 2, 3, 5 }
+   for _ in {0 to 250} do assert(sum_dynamic(values, true) is 10) end
+   assert(sum_dynamic({ a = 4, b = 6 }, true) is 10)
+   assert(sum_dynamic(range(1, 5), false) is 10)
+   assert(sum_dynamic(values, true) is 10, 'Dynamic dispatch should remain valid after changing categories')
+end
+
+@Test function InterpreterAndJITResultsMatch()
+   function sum_array(Target:array<int>):num
+      local total = 0
+      for index, value in Target do total += index + value end
+      return total
+   end
+
+   function sum_table(Target:table):num
+      local total = 0
+      for _, value in Target do total += value end
+      return total
+   end
+
+   function sum_range(Target:range):num
+      local total = 0
+      for value in Target do total += value end
+      return total
+   end
+
+   local values = array<int> { 2, 3, 5 }
+   local entries = { a = 4, b = 6 }
+   local numbers = range(1, 5)
+
+   jit.off()
+   local interpreted = { sum_array(values), sum_table(entries), sum_range(numbers) }
+
+   jit.on()
+   jit.flush()
+   local compiled
+   for _ in {0 to 250} do
+      compiled = { sum_array(values), sum_table(entries), sum_range(numbers) }
+   end
+
+   assert(interpreted[1] is compiled[1] and interpreted[2] is compiled[2] and interpreted[3] is compiled[3],
+      'Known collection loops should produce matching interpreter and JIT results')
+end
+
+@Test function ExistingIteratorProtocolsRemainSupported()
+   function iterator(State, Control):<num, num>
+      local next_value = (Control ?? 0) + 1
+      if next_value > State then return end
+      return next_value, next_value * 2
+   end
+
+   local total = 0
+   for key, value in iterator, 3, 0 do total += key + value end
+   assert(total is 18, 'Explicit iterator triples should retain their established behaviour')
+
+   total = 0
+   for key, value in pairs({ a = 2, b = 3 }) do total += value end
+   assert(total is 5, 'Explicit pairs() should retain its established behaviour')
+end
+
+@Test function UnsupportedBareTargetsHaveFocusedDiagnostic()
+   local cases = {
+      { source = 'local value:any = nil; for item in value do end', type_name = 'nil' },
+      { source = 'local value:func = nil; for item in value do end', type_name = 'nil' },
+      { source = 'local value:any = 7; for item in value do end', type_name = 'number' },
+      { source = "local value:any = 'text'; for item in value do end", type_name = 'string' },
+      { source = 'local value:any = false; for item in value do end', type_name = 'boolean' }
+   }
+
+   for _, case in pairs(cases) do
+      local script = obj.new('tiri', { statement = case.source })
+      local result = script.acActivate()
+      assert(result != ERR_Okay or script.error != ERR_Okay,
+         'Unsupported bare targets should fail before iteration')
+      assert(string.find(script.errorMessage, 'cannot iterate over a ' .. case.type_name .. ' value') != nil,
+         'Unsupported bare target diagnostic should identify its runtime type: ' .. script.errorMessage)
+   end
+end
