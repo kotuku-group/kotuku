@@ -3,6 +3,8 @@
 #include "static_type_descriptor.h"
 
 #include <algorithm>
+#include <format>
+#include <string>
 
 #include <kotuku/main.h>
 #include <kotuku/objects.h>
@@ -23,6 +25,83 @@ bool StaticValueDescriptor::proved() const noexcept
 {
    return this->proof IS StaticProof::Closed or this->proof IS StaticProof::Checked or
       this->proof IS StaticProof::Trusted;
+}
+
+[[nodiscard]] static AET public_array_storage(AET Storage) noexcept
+{
+   if (Storage IS AET::CSTR or Storage IS AET::STR_CPP) return AET::STR_GC;
+   return Storage;
+}
+
+bool array_element_matches(
+   const ArrayElementDescriptor &Expected, const ArrayElementDescriptor &Actual) noexcept
+{
+   if (not Expected.known or Expected.storage IS AET::ANY) return Actual.known;
+   if (not Actual.known or public_array_storage(Expected.storage) != public_array_storage(Actual.storage)) return false;
+   if (Expected.storage IS AET::STRUCT and Expected.struct_def) return Expected.struct_def IS Actual.struct_def;
+   return true;
+}
+
+ArrayElementDescriptor describe_array_element(const GCarray *Array) noexcept
+{
+   if (not Array) return {};
+   ArrayElementDescriptor result;
+   result.storage = public_array_storage(Array->elemtype);
+   result.logical_type = TiriType::Any;
+   result.struct_def = Array->elemtype IS AET::STRUCT ? Array->structdef : nullptr;
+   result.known = true;
+   switch (result.storage) {
+      case AET::BYTE:
+      case AET::INT16:
+      case AET::INT32:
+      case AET::INT64:
+      case AET::FLOAT:
+      case AET::DOUBLE: result.logical_type = TiriType::Num; break;
+      case AET::STR_GC: result.logical_type = TiriType::Str; break;
+      case AET::TABLE:  result.logical_type = TiriType::Table; break;
+      case AET::ARRAY:  result.logical_type = TiriType::Array; break;
+      case AET::OBJECT: result.logical_type = TiriType::Object; break;
+      case AET::STRUCT: result.logical_type = TiriType::Struct; break;
+      case AET::PTR:
+      case AET::ANY:    break;
+      case AET::CSTR:
+      case AET::STR_CPP:
+      case AET::MAX: break;
+   }
+   return result;
+}
+
+bool array_element_matches(const ArrayElementDescriptor &Expected, const GCarray *Actual) noexcept
+{
+   return array_element_matches(Expected, describe_array_element(Actual));
+}
+
+std::string array_element_name(const ArrayElementDescriptor &Element)
+{
+   if (not Element.known) return "array";
+   std::string_view name = "any";
+   switch (public_array_storage(Element.storage)) {
+      case AET::BYTE:   name = "byte"; break;
+      case AET::INT16:  name = "int16"; break;
+      case AET::INT32:  name = "int"; break;
+      case AET::INT64:  name = "int64"; break;
+      case AET::FLOAT:  name = "float"; break;
+      case AET::DOUBLE: name = "double"; break;
+      case AET::STR_GC: name = "string"; break;
+      case AET::TABLE:  name = "table"; break;
+      case AET::ARRAY:  name = "array"; break;
+      case AET::OBJECT: name = "object"; break;
+      case AET::PTR:    name = "pointer"; break;
+      case AET::ANY:    name = "any"; break;
+      case AET::STRUCT:
+         if (Element.struct_def) return std::format("struct<{}>", Element.struct_def->Name);
+         name = "struct";
+         break;
+      case AET::CSTR:
+      case AET::STR_CPP:
+      case AET::MAX: break;
+   }
+   return std::string(name);
 }
 
 StaticValueDescriptor StaticResultSet::value_at(size_t Position) const
@@ -162,7 +241,17 @@ StaticValueDescriptor join_static_descriptors(
    if (Left.object_class_id != Right.object_class_id) result.object_class_id = CLASSID::NIL;
    if (Left.struct_def != Right.struct_def) result.struct_def = nullptr;
    if (Left.module != Right.module) result.module = nullptr;
-   if (not (Left.array_element IS Right.array_element)) result.array_element = {};
+   if (Left.primary IS TiriType::Array and not (Left.array_element IS Right.array_element)) {
+      if (Left.array_element.known and Right.array_element.known and
+          (Left.array_element.storage IS AET::ANY or Right.array_element.storage IS AET::ANY)) {
+         result.array_element = { AET::ANY, TiriType::Any, CLASSID::NIL, nullptr, true };
+      }
+      else {
+         result.primary = TiriType::Any;
+         result.array_element = {};
+         result.proof = StaticProof::Advisory;
+      }
+   }
    return result;
 }
 
@@ -213,6 +302,8 @@ bool static_value_satisfies_contract(
             Value.object_class_id IS Contract.object_class_id;
       case TiriType::Struct:
          return not Contract.struct_def or Value.struct_def IS Contract.struct_def;
+      case TiriType::Array:
+         return array_element_matches(Contract.array_element, Value.array_element);
       default:
          return true;
    }

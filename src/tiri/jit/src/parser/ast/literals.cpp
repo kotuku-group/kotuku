@@ -93,11 +93,35 @@ ParserResult<ExprNodeList> AstBuilder::parse_expression_list()
 //********************************************************************************************************************
 // Parses comma-separated lists of identifiers with optional attributes (e.g., <close>).
 
-ParserResult<Token> AstBuilder::parse_type_annotation(TiriType &Type, struct_record *&StructDef)
+ParserResult<Token> AstBuilder::parse_type_annotation(
+   TiriType &Type, struct_record *&StructDef, ArrayElementDescriptor &ArrayElement)
 {
    Token type_token = this->ctx.tokens().current();
    auto kind = type_token.kind();
    std::string_view type_view;
+
+   if (kind IS TokenKind::ArrayTyped) {
+      this->ctx.tokens().advance();
+      if (this->ctx.lex().array_typed_size != -1) {
+         return this->fail<Token>(ParserErrorCode::UnexpectedToken, type_token,
+            "Array type annotations cannot declare a size");
+      }
+      GCstr *element_symbol = type_token.payload().as_string();
+      std::string_view element_name(strdata(element_symbol), element_symbol->len);
+      if (element_name.starts_with("array<")) {
+         return this->fail<Token>(ParserErrorCode::UnexpectedToken, type_token,
+            "Nested array specialisation is not supported; use array<array>");
+      }
+      auto element = describe_array_element(element_name, &this->ctx.lua());
+      if (not element or element->storage IS AET::PTR or
+          (element->storage IS AET::STRUCT and not element->struct_def)) {
+         return this->fail<Token>(ParserErrorCode::UnknownTypeName, type_token,
+            std::format("Unknown array element type '{}'", element_name));
+      }
+      Type = TiriType::Array;
+      ArrayElement = *element;
+      return ParserResult<Token>::success(type_token);
+   }
 
    if (kind IS TokenKind::StructTyped) {
       // struct<Name> lexes as a single token carrying the referenced struct name
@@ -131,6 +155,50 @@ ParserResult<Token> AstBuilder::parse_type_annotation(TiriType &Type, struct_rec
          std::format("Unknown type name '{}'; expected a valid type name", type_view));
    }
 
+   if (Type IS TiriType::Array) {
+      if (this->ctx.check(TokenKind::Less)) {
+         this->ctx.tokens().advance();
+         Token element_token = this->ctx.tokens().current();
+         std::string element_storage;
+         if (element_token.kind() IS TokenKind::StructTyped) {
+            GCstr *name = element_token.payload().as_string();
+            element_storage = std::format("struct<{}>", std::string_view(strdata(name), name->len));
+            this->ctx.tokens().advance();
+         }
+         else if (element_token.kind() IS TokenKind::ArrayTyped) {
+            return this->fail<Token>(ParserErrorCode::UnexpectedToken, element_token,
+               "Nested array specialisation is not supported; use array<array>");
+         }
+         else if (element_token.kind() IS TokenKind::Identifier) {
+            GCstr *name = element_token.identifier();
+            element_storage.assign(strdata(name), name->len);
+            this->ctx.tokens().advance();
+         }
+         else {
+            return this->fail<Token>(ParserErrorCode::ExpectedTypeName, element_token,
+               "Expected an array element type");
+         }
+
+         if (this->ctx.check(TokenKind::Comma)) {
+            return this->fail<Token>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+               "Array type annotations cannot declare a size");
+         }
+         auto close = this->ctx.consume(TokenKind::Greater, ParserErrorCode::ExpectedToken);
+         if (not close.ok()) return ParserResult<Token>::failure(close.error_ref());
+
+         auto element = describe_array_element(element_storage, &this->ctx.lua());
+         if (not element or element->storage IS AET::PTR or
+             (element->storage IS AET::STRUCT and not element->struct_def)) {
+            return this->fail<Token>(ParserErrorCode::UnknownTypeName, element_token,
+               std::format("Unknown array element type '{}'", element_storage));
+         }
+         ArrayElement = *element;
+         return ParserResult<Token>::success(type_token);
+      }
+      return this->fail<Token>(ParserErrorCode::ExpectedTypeName, type_token,
+         "Array annotations require an element type; use array<any> for a wildcard array contract");
+   }
+
    if (Type IS TiriType::Struct and this->ctx.check(TokenKind::Less)) {
       this->ctx.tokens().advance();
       auto name_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
@@ -162,7 +230,8 @@ ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
       // Parse optional type annotation (:type)
       if (this->ctx.check(TokenKind::Colon)) {
          this->ctx.tokens().advance();
-         auto parsed = this->parse_type_annotation(identifier.type, identifier.struct_def);
+         auto parsed = this->parse_type_annotation(
+            identifier.type, identifier.struct_def, identifier.array_element);
          if (not parsed.ok()) return ParserResult<Identifier>::failure(parsed.error_ref());
       }
 
@@ -225,7 +294,8 @@ ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
       // Parse optional type annotation (:type) after attribute (supports `name <const>:type` syntax)
       if (identifier.type IS TiriType::Unknown and this->ctx.check(TokenKind::Colon)) {
          this->ctx.tokens().advance();
-         auto parsed = this->parse_type_annotation(identifier.type, identifier.struct_def);
+         auto parsed = this->parse_type_annotation(
+            identifier.type, identifier.struct_def, identifier.array_element);
          if (not parsed.ok()) return ParserResult<Identifier>::failure(parsed.error_ref());
       }
 
@@ -270,7 +340,7 @@ ParserResult<AstBuilder::ParameterListResult> AstBuilder::parse_parameter_list(b
 
          if (this->ctx.check(TokenKind::Colon)) {
             this->ctx.tokens().advance();
-            auto parsed = this->parse_type_annotation(param.type, param.struct_def);
+            auto parsed = this->parse_type_annotation(param.type, param.struct_def, param.array_element);
             if (not parsed.ok()) return ParserResult<ParameterListResult>::failure(parsed.error_ref());
             param.type_is_explicit = true;
          }
@@ -575,10 +645,12 @@ ParserResult<FunctionReturnTypes> AstBuilder::parse_return_type_annotation()
 
          TiriType parsed = TiriType::Unknown;
          struct_record *struct_def = nullptr;
-         auto type_token = this->parse_type_annotation(parsed, struct_def);
+         ArrayElementDescriptor array_element;
+         auto type_token = this->parse_type_annotation(parsed, struct_def, array_element);
          if (not type_token.ok()) return ParserResult<FunctionReturnTypes>::failure(type_token.error_ref());
          result.types[result.count] = parsed;
-         result.struct_defs[result.count++] = struct_def;
+         result.struct_defs[result.count] = struct_def;
+         result.array_elements[result.count++] = array_element;
 
       } while (this->ctx.match(TokenKind::Comma).ok());
 
@@ -588,7 +660,8 @@ ParserResult<FunctionReturnTypes> AstBuilder::parse_return_type_annotation()
       else return this->fail<FunctionReturnTypes>(ParserErrorCode::ExpectedToken, current, "expected '>' to close return type list");
    }
    else {
-      auto type_token = this->parse_type_annotation(result.types[0], result.struct_defs[0]);
+      auto type_token = this->parse_type_annotation(
+         result.types[0], result.struct_defs[0], result.array_elements[0]);
       if (not type_token.ok()) return ParserResult<FunctionReturnTypes>::failure(type_token.error_ref());
       result.count = 1;
    }

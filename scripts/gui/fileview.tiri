@@ -215,7 +215,7 @@ function updateFileAttributes(Item:table, Info)
    end
 end
 
-function defineViewColumns(Path:str):array
+function defineViewColumns(Path:str):array<table>
    if not Path then
       return array<table> {
          { attrib='name',      title='Name',       width=16, showIcons=true },
@@ -242,7 +242,7 @@ end
 
 -- Return allowed file extensions as a string list, which is cached.
 
-function getFilters(self):array
+function getFilters(self):array<string>
    if self._filters then return self._filters end
    self._filters = array<string>
    if self.filterList then
@@ -870,7 +870,7 @@ gui.fileview = function(Options)
    -- Execute a command with a given Mode.  All files listed in the Items argument will be passed to the object as
    -- a mass execution operation.
 
-   function openFiles(Items:array, Mode:str)
+   function openFiles(Items:array<table>, Mode:str)
       Items ?! return
       self.path ?! return
 

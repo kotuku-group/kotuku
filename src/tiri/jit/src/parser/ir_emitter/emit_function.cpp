@@ -154,12 +154,19 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
          }
       }
 
+      ArrayElementDescriptor parameter_array = param.array_element;
+      if (not param.type_is_explicit and param.name.static_value) {
+         parameter_array = this->ctx.descriptors().value(param.name.static_value).array_element;
+      }
       uint32_t constraint = (parameter_struct and parameter_type IS TiriType::Struct) ?
          struct_key(parameter_struct->Name) : 0;
+      if (parameter_type IS TiriType::Array and parameter_array.storage IS AET::STRUCT and
+          parameter_array.struct_def) constraint = struct_key(parameter_array.struct_def->Name);
       child_state.signature_parameters.push_back(ProtoTypeEntry{
          .constraint = constraint,
          .type = parameter_type,
-         .flags = proto_type_flags(true, false, origin, strength)
+         .flags = proto_type_flags(true, false, origin, strength),
+         .reserved = parameter_type IS TiriType::Array ? proto_array_member(parameter_array.storage) : uint16_t(0)
       });
    }
 
@@ -171,12 +178,14 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       if (param.type != TiriType::Unknown and param.type != TiriType::Any) {
          param_info.fixed_type = param.type;
          param_info.struct_def = param.struct_def;
+         param_info.array_element = param.array_element;
       }
       else if (param.name.static_value) {
          const auto &descriptor = this->ctx.descriptors().value(param.name.static_value);
          if (descriptor.primary != TiriType::Unknown and descriptor.primary != TiriType::Any) {
             param_info.fixed_type = descriptor.primary;
             param_info.struct_def = descriptor.struct_def;
+            param_info.array_element = descriptor.array_element;
          }
       }
       param_info.binding_id = param.name.binding_id;
@@ -207,6 +216,7 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       RuntimeContract contract{
          .type = param.type,
          .struct_def = param.struct_def,
+         .array_element = param.array_element,
          .label = param.name.is_blank ? nullptr : param.name.symbol,
          .boundary = ContractBoundary::Parameter,
          .position = uint8_t(i.raw() + 1),
@@ -240,14 +250,21 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       for (size_t i = 0; i < Payload.return_types.count and i < child_state.return_types.size(); ++i) {
          child_state.return_types[i] = Payload.return_types.types[i];
          child_state.return_struct_defs[i] = Payload.return_types.struct_defs[i];
+         child_state.return_array_elements[i] = Payload.return_types.array_elements[i];
          auto type = Payload.return_types.types[i];
          auto struct_def = Payload.return_types.struct_defs[i];
+         auto array_element = Payload.return_types.array_elements[i];
+         uint32_t constraint = (struct_def and type IS TiriType::Struct) ? struct_key(struct_def->Name) : 0;
+         if (type IS TiriType::Array and array_element.storage IS AET::STRUCT and array_element.struct_def) {
+            constraint = struct_key(array_element.struct_def->Name);
+         }
          child_state.signature_results[i] = ProtoTypeEntry{
-            .constraint = (struct_def and type IS TiriType::Struct) ? struct_key(struct_def->Name) : 0,
+            .constraint = constraint,
             .type = type,
             .flags = proto_type_flags(true, false, ProtoTypeOrigin::Declared,
                (type IS TiriType::Any or type IS TiriType::Unknown) ?
-                  ProtoTypeStrength::Advisory : ProtoTypeStrength::Checked)
+                  ProtoTypeStrength::Advisory : ProtoTypeStrength::Checked),
+            .reserved = type IS TiriType::Array ? proto_array_member(array_element.storage) : uint16_t(0)
          };
       }
    }
@@ -259,13 +276,18 @@ ParserResult<ExpDesc> IrEmitter::emit_function_expr(const FunctionExprPayload &P
       for (size_t i = 0; i < Payload.return_types.count and i < child_state.signature_results.size(); ++i) {
          auto type = Payload.return_types.types[i];
          auto struct_def = Payload.return_types.struct_defs[i];
+         auto array_element = Payload.return_types.array_elements[i];
          uint32_t constraint = 0;
          if (struct_def and type IS TiriType::Struct) constraint = struct_key(struct_def->Name);
          else if (type IS TiriType::Object) constraint = uint32_t(Payload.return_types.object_class_ids[i]);
+         else if (type IS TiriType::Array and array_element.storage IS AET::STRUCT and array_element.struct_def) {
+            constraint = struct_key(array_element.struct_def->Name);
+         }
          child_state.signature_results[i] = ProtoTypeEntry{
             .constraint = constraint,
             .type = type,
-            .flags = proto_type_flags(true, false, ProtoTypeOrigin::Inferred, ProtoTypeStrength::Trusted)
+            .flags = proto_type_flags(true, false, ProtoTypeOrigin::Inferred, ProtoTypeStrength::Trusted),
+            .reserved = type IS TiriType::Array ? proto_array_member(array_element.storage) : uint16_t(0)
          };
       }
    }

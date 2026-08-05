@@ -467,6 +467,34 @@ static RecordedContract rec_contract_guard_userdata(jit_State *J, TRef ValueRef,
    return rec_contract_guard_range(J, ValueRef, Value, false);
 }
 
+static RecordedContract rec_contract_guard_array(
+   jit_State *J, TRef ValueRef, cTValue *Value, const RuntimeContractEntry &Entry)
+{
+   if (not tvisarray(Value)) return RecordedContract::Mismatch;
+   if (Entry.array_element_type IS AET::ANY) return RecordedContract::Basic;
+
+   GCarray *array = arrayV(Value);
+   AET observed_element_type = array->elemtype;
+   if (Entry.array_element_type IS AET::STR_GC) {
+      if (observed_element_type != AET::STR_GC and observed_element_type != AET::CSTR and
+          observed_element_type != AET::STR_CPP) return RecordedContract::Mismatch;
+   }
+   else if (observed_element_type != Entry.array_element_type) return RecordedContract::Mismatch;
+
+   IRBuilder ir(J);
+   TRef element_type_ref = ir.fload(ValueRef, IRFL_ARRAY_ELEMTYPE, IRT_U8);
+   ir.guard_eq_int(element_type_ref, ir.kint(int32_t(observed_element_type)));
+
+   if (Entry.array_element_type IS AET::STRUCT) {
+      struct_record *definition = find_struct(J->L, Entry.constraint_name);
+      if (not definition or array->structdef != definition) return RecordedContract::Mismatch;
+      TRef definition_ref = ir.fload(ValueRef, IRFL_ARRAY_STRUCTDEF, IRT_PTR);
+      ir.guard_eq(definition_ref, ir.kkptr(definition), IRT_PTR);
+   }
+
+   return RecordedContract::Basic;
+}
+
 static RecordedContract rec_contract_record(jit_State *J, BCREG Base, GCstr *Encoded)
 {
    RuntimeContractDescriptor descriptor;
@@ -517,7 +545,7 @@ static RecordedContract rec_contract_record(jit_State *J, BCREG Base, GCstr *Enc
             if (not tvistab(value)) result = RecordedContract::Mismatch;
             break;
          case TiriType::Array:
-            if (not tvisarray(value)) result = RecordedContract::Mismatch;
+            result = rec_contract_guard_array(J, value_ref, value, *entry);
             break;
          case TiriType::Object:
             result = rec_contract_guard_object(J, value_ref, value, entry->object_class_id);
@@ -526,7 +554,7 @@ static RecordedContract rec_contract_record(jit_State *J, BCREG Base, GCstr *Enc
             result = rec_contract_guard_callable(J, value_ref, value);
             break;
          case TiriType::Struct:
-            result = rec_contract_guard_struct(J, value_ref, value, entry->struct_name);
+            result = rec_contract_guard_struct(J, value_ref, value, entry->constraint_name);
             break;
          case TiriType::Range:
             if (not tvisudata(value)) result = RecordedContract::Mismatch;

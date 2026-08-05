@@ -54,6 +54,14 @@ struct JITRangeTraceFields
    UnsignedByte: uint8
 end
 
+struct JITArrayContractAlpha
+   Value: int
+end
+
+struct JITArrayContractBeta
+   Value: int
+end
+
 @BeforeAll
 function SetupJitTests()
    jit.on()
@@ -74,7 +82,7 @@ end
 function numberPresent(Value:num):bool return Value?? end
 function stringPresent(Value:str):bool return Value?? end
 function booleanPresent(Value:bool):bool return Value?? end
-function arrayPresent(Value:array):bool return Value?? end
+function arrayPresent(Value:array<any>):bool return Value?? end
 function tablePresent(Value:table):bool return Value?? end
 function anyPresent(Value:any):bool return Value?? end
 ]] })
@@ -170,15 +178,15 @@ end
 
 @Test function ArrayParameterAndLengthRangeBytecode()
    local script = obj.new('tiri', { statement=[[
-global glBytecodeValues:array = array<int> { 1, 2, 3 }
+global glBytecodeValues:array<any> = array<int> { 1, 2, 3 }
 
-function increment(Array:array)
+function increment(Array:array<any>)
    for index in {0 to #Array} do
       Array[index] += 1
    end
 end
 
-function incrementInTry(Array:array)
+function incrementInTry(Array:array<any>)
    try
       for index in {0 to #Array} do
          Array[index] += 1
@@ -337,7 +345,7 @@ function canonical_array_try_workload(Count):str
    return values:concat(',', '%d')
 end
 
-global glCanonicalArrayRangeValues:array = array<int> { 1, 2, 3, 4, 5, 6, 7, 8 }
+global glCanonicalArrayRangeValues:array<any> = array<int> { 1, 2, 3, 4, 5, 6, 7, 8 }
 
 function canonical_global_array_workload(Count)
    local total = 0
@@ -365,7 +373,7 @@ function find_array_bounds_trace(MaxTraceNo)
    return nil, nil, 0
 end
 
-function resize_during_array_loop(Array:array, Shrink:bool)
+function resize_during_array_loop(Array:array<any>, Shrink:bool)
    local alias = Array
    for index in {0 to #Array} do
       if Shrink and index is 16 then alias:resize(8) end
@@ -373,7 +381,7 @@ function resize_during_array_loop(Array:array, Shrink:bool)
    end
 end
 
-function clear_during_array_loop(Array:array, Clear:bool)
+function clear_during_array_loop(Array:array<any>, Clear:bool)
    local alias = Array
    for index in {0 to #Array} do
       if Clear and index is 16 then alias:clear() end
@@ -381,14 +389,14 @@ function clear_during_array_loop(Array:array, Clear:bool)
    end
 end
 
-function reassign_during_array_loop(Array:array, Reassign:bool)
+function reassign_during_array_loop(Array:array<any>, Reassign:bool)
    for index in {0 to #Array} do
       if Reassign and index is 16 then Array = array<int, 8> end
       Array[index] += 1
    end
 end
 
-function push_during_array_loop(Array:array):<num, num, num>
+function push_during_array_loop(Array:array<any>):<num, num, num>
    local original_length = #Array
    for index in {0 to #Array} do
       if index is 0 then Array:push(99) end
@@ -2628,6 +2636,88 @@ end
    assert(result is 5, f"Expected traced complex struct result 5, got {result}")
    assert(value.name is "trace", "Expected traced string assignment to retain its value")
    assert(count_jit_traces(30) > 0, "Expected complex struct field types to remain traceable")
+end
+
+@Test(hotpath=50) function JITArrayBindingMemberContract()
+   function checked_member(Value:array<int>):num
+      return Value[0]
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local ints = array<int> { 4 }
+   for _ in {1 into 100} do
+      assert(checked_member(ints) is 4, 'The hot matching array contract should pass')
+   end
+
+   local failed = false
+   try
+      checked_member(array<string> { 'wrong' })
+   except e
+      failed = true
+      assert(e.message:find('expected array<int>') != nil and e.message:find('got array<string>') != nil,
+         'A hot member mismatch should report both array identities: ' .. e.message)
+   end
+   assert(failed, 'Changing only the array member type at a hot contract site should raise')
+end
+
+@Test(hotpath=50) function JITStringArrayBindingMemberContract()
+   function checked_string_member(Value:array<string>):str
+      return Value[0]
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local strings = array<string> { 'kept' }
+   for _ in {1 into 100} do
+      assert(checked_string_member(strings) is 'kept', 'The hot string-array contract should pass')
+   end
+   assert(count_jit_traces(30) > 0, 'A string-array member contract should remain traceable')
+
+   local failed = false
+   try
+      checked_string_member(array<int> { 7 })
+   except e
+      failed = true
+      assert(e.message:find('expected array<string>') != nil and e.message:find('got array<int>') != nil,
+         'A hot string member mismatch should report both array identities: ' .. e.message)
+   end
+   assert(failed, 'A hot string-array contract should reject a numeric member type')
+end
+
+@Test(hotpath=50) function JITStructArrayBindingMemberContract()
+   function checked_struct_member(Value:array<struct<JITArrayContractAlpha>>):num
+      return Value[0].Value
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local matching = array<struct<JITArrayContractAlpha>> {
+      struct<JITArrayContractAlpha> { Value=9 }
+   }
+   for _ in {1 into 100} do
+      assert(checked_struct_member(matching) is 9, 'The hot structure-array contract should pass')
+   end
+   assert(count_jit_traces(30) > 0, 'A structure-array member contract should remain traceable')
+
+   local failed = false
+   try
+      checked_struct_member(array<struct<JITArrayContractBeta>> {
+         struct<JITArrayContractBeta> { Value=4 }
+      })
+   except e
+      failed = true
+      assert(e.message:find('expected array<struct<JITArrayContractAlpha>>') != nil and
+         e.message:find('got array<struct<JITArrayContractBeta>>') != nil,
+         'A hot structure member mismatch should report both layouts: ' .. e.message)
+   end
+   assert(failed, 'A hot structure-array contract should reject a different layout')
 end
 
 -----------------------------------------------------------------------------------------------------------------------

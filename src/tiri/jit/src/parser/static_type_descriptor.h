@@ -43,6 +43,12 @@ struct ArrayElementDescriptor {
    [[nodiscard]] bool operator==(const ArrayElementDescriptor &) const = default;
 };
 
+[[nodiscard]] bool array_element_matches(
+   const ArrayElementDescriptor &Expected, const ArrayElementDescriptor &Actual) noexcept;
+[[nodiscard]] bool array_element_matches(const ArrayElementDescriptor &Expected, const GCarray *Actual) noexcept;
+[[nodiscard]] ArrayElementDescriptor describe_array_element(const GCarray *) noexcept;
+[[nodiscard]] std::string array_element_name(const ArrayElementDescriptor &);
+
 struct StaticValueDescriptor {
    TiriType primary = TiriType::Unknown;
    CLASSID object_class_id = CLASSID::NIL;

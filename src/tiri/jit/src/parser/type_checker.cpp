@@ -64,7 +64,8 @@ const FunctionExprPayload* TypeCheckScope::lookup_function(GCstr *Name) const
    return nullptr;
 }
 
-void TypeCheckScope::fix_local_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId, struct_record *StructDef)
+void TypeCheckScope::fix_local_type(GCstr *Name, TiriType Type, CLASSID ObjectClassId, struct_record *StructDef,
+   ArrayElementDescriptor ArrayElement)
 {
    for (auto it = this->variables_.rbegin(); it != this->variables_.rend(); ++it) {
       if (it->name IS Name and not it->is_parameter) {
@@ -72,6 +73,7 @@ void TypeCheckScope::fix_local_type(GCstr *Name, TiriType Type, CLASSID ObjectCl
          it->type.is_fixed = true;
          it->type.object_class_id = ObjectClassId;
          it->type.struct_def = StructDef;
+         it->type.array_element = ArrayElement;
          return;
       }
    }

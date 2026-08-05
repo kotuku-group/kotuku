@@ -118,7 +118,7 @@ function extractChildAttr(Content:str, TagName:str, AttrName:str):str
    return content
 end
 
-function extractSources(Content:str):array
+function extractSources(Content:str):array<table>
    sources = array<table>
    sourceMatch = extractXMLElement(Content, 'source', 0)
    sourceMatch ?! return sources
@@ -140,7 +140,7 @@ function extractSources(Content:str):array
    return sources
 end
 
-function extractInputParams(Content:str):array
+function extractInputParams(Content:str):array<table>
    params = array<table>
    inputMatch = extractXMLElement(Content, 'input', 0)
    inputMatch ?! return params

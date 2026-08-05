@@ -69,7 +69,7 @@ global glOfficialTags = {
 ----------------------------------------------------------------------------------------------------------------------
 -- Parse and validate comma or newline-separated documentation tags for the supplied context.
 
-function parseTags(Tags:str, Context:str):array
+function parseTags(Tags:str, Context:str):array<string>
    result = array<string>
    Tags ?! return result
 
@@ -91,7 +91,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Apply automatic documentation tags to a tag list based on a field definition.
 
-global function addTag(Tags:array, Tag:str):array
+global function addTag(Tags:array<string>, Tag:str):array<string>
    Tags ?= array<string>
 
    for existing_tag in values(Tags) do
@@ -105,7 +105,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Apply automatic documentation tags to a tag list based on a field definition.
 
-global function getTagsFromField(Field:table, Tags:array):array
+global function getTagsFromField(Field:table, Tags:array<string>):array<string>
    Field ?! return Tags
    Tags ?= array<string>
 
@@ -122,7 +122,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Apply automatic documentation tags for every field or parameter in a collection.
 
-global function getTagsFromCollection(Tags:array, Fields:any):array
+global function getTagsFromCollection(Tags:array<string>, Fields:any):array<string>
    Tags ?= array<string>
    Fields ?! return Tags
 

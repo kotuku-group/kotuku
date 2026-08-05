@@ -3,6 +3,39 @@
 @BeforeEach(hotpath=200)
 function enforce_hotpath() end
 
+struct ArrayBindingPoint
+   Value: int
+end
+
+@Test function ArrayBindingPublicMemberKinds()
+   function identity_byte(Value:array<char>):array<byte> return Value end
+   function identity_int16(Value:array<int16>):array<int16> return Value end
+   function identity_int(Value:array<int>):array<int> return Value end
+   function identity_int64(Value:array<int64>):array<int64> return Value end
+   function identity_float(Value:array<float>):array<float> return Value end
+   function identity_double(Value:array<double>):array<double> return Value end
+   function identity_string(Value:array<string>):array<string> return Value end
+   function identity_table(Value:array<table>):array<table> return Value end
+   function identity_array(Value:array<array>):array<array> return Value end
+   function identity_object(Value:array<object>):array<object> return Value end
+   function identity_any(Value:array<any>):array<any> return Value end
+   function identity_struct(Value:array<struct<ArrayBindingPoint>>):array<struct<ArrayBindingPoint>> return Value end
+
+   assert(identity_byte(array<byte> {}) != nil, 'char and byte should share one binding identity')
+   assert(identity_int16(array<int16> {}) != nil, 'int16 binding identity should be accepted')
+   assert(identity_int(array<int> {}) != nil, 'int binding identity should be accepted')
+   assert(identity_int64(array<int64> {}) != nil, 'int64 binding identity should be accepted')
+   assert(identity_float(array<float> {}) != nil, 'float binding identity should be accepted')
+   assert(identity_double(array<double> {}) != nil, 'double binding identity should be accepted')
+   assert(identity_string(array<string> {}) != nil, 'string binding identity should be accepted')
+   assert(identity_table(array<table> {}) != nil, 'table binding identity should be accepted')
+   assert(identity_array(array<array> {}) != nil, 'immediate nested-array identity should be accepted')
+   assert(identity_object(array<object> {}) != nil, 'object binding identity should be accepted')
+   assert(identity_any(array<any> {}) != nil, 'any member identity should be accepted')
+   assert(identity_struct(array<struct<ArrayBindingPoint>> {}) != nil,
+      'named-structure binding identity should be accepted')
+end
+
 @Test function IntegerArrayConcat()
    int_array = array<int, 5>
    int_array[0] = 10

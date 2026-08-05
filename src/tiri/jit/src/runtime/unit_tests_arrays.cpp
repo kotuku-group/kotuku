@@ -958,7 +958,7 @@ static bool test_lib_array_new(kt::Log &Log)
 
    // Test array.new via Lua
    const char* code = R"(
-      local arr:array = array.new(100, "int")
+      local arr:array<int> = array.new(100, "int")
       return arr != nil and #arr is 100 and array.type(arr) is "int"
    )";
 
@@ -987,7 +987,7 @@ static bool test_lib_array_index(kt::Log &Log)
 
    // Test array indexing via library metamethods
    const char* code = R"(
-      local arr:array = array.new(10, "int")
+      local arr:array<int> = array.new(10, "int")
       arr[0] = 100
       arr[5] = 500
       arr[9] = 900
@@ -1019,7 +1019,7 @@ static bool test_lib_array_table(kt::Log &Log)
 
    // Test array.table conversion
    const char* code = R"(
-      local arr:array = array.new(5, "int")
+      local arr:array<int> = array.new(5, "int")
       arr[0] = 10
       arr[1] = 20
       arr[2] = 30
@@ -1054,8 +1054,8 @@ static bool test_lib_array_copy(kt::Log &Log)
 
    // Test array.copy
    const char* code = R"(
-      local src:array = array.new(5, "int")
-      local dst:array = array.new(5, "int")
+      local src:array<int> = array.new(5, "int")
+      local dst:array<int> = array.new(5, "int")
       src[0] = 100
       src[1] = 200
       src[2] = 300
@@ -1090,7 +1090,7 @@ static bool test_lib_array_string(kt::Log &Log)
 
    // Test array.getString and setString
    const char* code = R"(
-      local arr:array = array.new(10, "char")
+      local arr:array<byte> = array.new(10, "char")
       array.setString(arr, "hello")
       local s:str = array.getString(arr, 0, 5)
       return s is "hello"
@@ -1121,7 +1121,7 @@ static bool test_lib_array_fill(kt::Log &Log)
 
    // Test array.fill
    const char* code = R"(
-      local arr:array = array.new(10, "int")
+      local arr:array<int> = array.new(10, "int")
       array.fill(arr, 42)
       local ok = true
       for i in {0 into 9} do
@@ -1155,7 +1155,7 @@ static bool test_lib_array_len_operator(kt::Log &Log)
 
    // Test # operator via __len metamethod
    const char* code = R"(
-      local arr:array = array.new(42, "double")
+      local arr:array<double> = array.new(42, "double")
       return #arr is 42
    )";
 
@@ -1184,7 +1184,7 @@ static bool test_lib_array_double_type(kt::Log &Log)
 
    // Test double array type
    const char* code = R"(
-      local arr:array = array.new(5, "double")
+      local arr:array<double> = array.new(5, "double")
       arr[0] = 3.14159
       arr[2] = -2.71828
       arr[4] = 1.41421

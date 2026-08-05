@@ -66,7 +66,7 @@ end
 -- The mesh is rebuilt from fresh struct values each time rather than read-modify-written, which keeps the nested
 -- FRGB colours marshalling cleanly back into the gradient.
 
-function gouraudVertex(X:num, Y:num, Col:array):any
+function gouraudVertex(X:num, Y:num, Col:array<double>):any
    v = struct.new('GouraudVertex')
    v.x = X
    v.y = Y

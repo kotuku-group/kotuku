@@ -150,6 +150,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_global()
       declaration.global_contract_type = TiriType::Func;
       declaration.global_contract_object_class_id = CLASSID::NIL;
       declaration.global_contract_struct_def = nullptr;
+      declaration.global_contract_array_element = {};
       declaration.global_contract_policy = GlobalContractPolicy::Enforced;
       name.segments.push_back(std::move(declaration));
       name.is_explicit_global = true;  // Mark as explicitly global

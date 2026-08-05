@@ -252,7 +252,7 @@ static MSize bcwrite_signature_size(const GCproto *Proto)
    auto entries = proto_parameter_types(Proto);
    MSize entry_count = MSize(signature->parameter_count) + signature->result_entry_count;
    for (MSize i = 0; i < entry_count; ++i) {
-      size += 2 + bcwrite_uleb128_size(entries[i].constraint);
+      size += 2 + bcwrite_uleb128_size(entries[i].constraint) + bcwrite_uleb128_size(entries[i].reserved);
    }
    return size;
 }
@@ -274,6 +274,7 @@ static char * bcwrite_signature(char *Buffer, const GCproto *Proto)
       *Buffer++ = uint8_t(entries[i].type);
       *Buffer++ = entries[i].flags;
       Buffer = lj_strfmt_wuleb128(Buffer, entries[i].constraint);
+      Buffer = lj_strfmt_wuleb128(Buffer, entries[i].reserved);
    }
    return Buffer;
 }

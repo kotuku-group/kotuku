@@ -1289,7 +1289,7 @@ static bool test_signature_metadata_roundtrip(kt::Log &Log)
       "   Value: int\n"
       "end\n"
       "local function outer(Value:num, Flexible:any, Untyped, Item:struct<SignatureLayout>, Generic:struct, "
-      "Object:obj, ...):func\n"
+      "Object:obj, Numbers:array<int>, Records:array<struct<SignatureLayout>>, ...):func\n"
       "   local function inner(Text:str):<str, num, ...>\n"
       "      return Text, Value, Value\n"
       "   end\n"
@@ -1312,7 +1312,7 @@ static bool test_signature_metadata_roundtrip(kt::Log &Log)
 
    const ProtoSignature *outer_signature = proto_signature(outer);
    const ProtoSignature *inner_signature = proto_signature(inner);
-   if (not outer_signature or outer_signature->parameter_count != 6 or outer_signature->result_count != 1 or
+   if (not outer_signature or outer_signature->parameter_count != 8 or outer_signature->result_count != 1 or
        not (outer_signature->flags & proto_signature_flag(ProtoSignatureFlag::ExplicitResults)) or
        not (outer_signature->flags & proto_signature_flag(ProtoSignatureFlag::ParameterVariadic))) {
       Log.error("outer prototype signature header is incomplete");
@@ -1327,7 +1327,11 @@ static bool test_signature_metadata_roundtrip(kt::Log &Log)
        proto_type_origin(outer_params[1]) != ProtoTypeOrigin::Declared or
        proto_type_origin(outer_params[2]) != ProtoTypeOrigin::Unspecified or
        outer_params[3].constraint != struct_key("SignatureLayout") or outer_params[4].type != TiriType::Struct or
-       outer_params[4].constraint != 0 or outer_params[5].type != TiriType::Object or outer_params[5].constraint != 0) {
+       outer_params[4].constraint != 0 or outer_params[5].type != TiriType::Object or outer_params[5].constraint != 0 or
+       outer_params[6].type != TiriType::Array or proto_array_member(outer_params[6]) != AET::INT32 or
+       outer_params[6].constraint != 0 or outer_params[7].type != TiriType::Array or
+       proto_array_member(outer_params[7]) != AET::STRUCT or
+       outer_params[7].constraint != struct_key("SignatureLayout")) {
       Log.error("outer prototype parameter entries lost type, provenance, strength or constraint data");
       return false;
    }
@@ -1871,9 +1875,11 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
    lua_State *L = state.get();
    constexpr std::string_view source =
       "extern obj\n"
+      "extern array\n"
       "function dynamic(Value:any):any return Value end\n"
       "local value = obj.new('time')\n"
-      "value = dynamic(value)\n";
+      "value = dynamic(value)\n"
+      "local numbers:array<int> = dynamic(array<int> {})\n";
    if (lua_load(L, source, "contract-roundtrip")) {
       Log.error("failed to compile contract source: %s", lua_tostring(L, -1));
       return false;
@@ -1920,9 +1926,27 @@ static bool test_contract_bytecode_roundtrip(kt::Log &Log)
       return false;
    };
    bool class_survived = has_time_contract(has_time_contract, restored_proto);
+   auto has_int_array_contract = [L](auto &Self, GCproto *Proto) -> bool {
+      for (uint32_t i = 1; i < Proto->sizebc; ++i) {
+         BCIns instruction = proto_bc(Proto)[i];
+         if (bc_op(instruction) != BC_CONTRACT) continue;
+         GCstr *encoded = gco_to_string(proto_kgc(Proto, ~(ptrdiff_t)bc_d(instruction)));
+         RuntimeContractDescriptor descriptor;
+         if (decode_runtime_contract(encoded, descriptor) and descriptor.contract_count > 0 and
+             descriptor.entries[0].type IS TiriType::Array and
+             descriptor.entries[0].array_element_type IS AET::INT32) return true;
+      }
+      GCRef *constant = mref<GCRef>(Proto->k) - 1;
+      for (uint32_t i = 0; i < Proto->sizekgc; ++i, --constant) {
+         GCobj *child = gcref(*constant);
+         if (child->gch.gct IS ~LJ_TPROTO and Self(Self, gco_to_proto(child))) return true;
+      }
+      return false;
+   };
+   bool array_survived = has_int_array_contract(has_int_array_contract, restored_proto);
    lua_pop(L, 1);
-   if (not class_survived) {
-      Log.error("reloaded bytecode lost the multi-byte object class constraint in BC_CONTRACT");
+   if (not class_survived or not array_survived) {
+      Log.error("reloaded bytecode lost an object or array member constraint in BC_CONTRACT");
       return false;
    }
    return true;
@@ -1941,7 +1965,8 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
       } while (Value);
    };
    auto build_descriptor = [&append_uleb](TiriType Type, CLASSID ObjectClassId,
-      std::string_view StructName, std::string_view Label, uint8_t EntryFlags) {
+      std::string_view StructName, std::string_view Label, uint8_t EntryFlags,
+      AET ArrayElementType = AET::MAX, std::string_view ArrayStructName = {}) {
       std::string result{
          char(uint8_t(ContractBoundary::Global)),
          char(0),
@@ -1954,6 +1979,11 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
       append_uleb(result, uint32_t(ObjectClassId));
       result.push_back(char(uint8_t(StructName.size())));
       result.append(StructName);
+      if (Type IS TiriType::Array) {
+         result.push_back(char(uint8_t(ArrayElementType)));
+         result.push_back(char(uint8_t(ArrayStructName.size())));
+         result.append(ArrayStructName);
+      }
       result.push_back(char(uint8_t(Label.size())));
       result.append(Label);
       return result;
@@ -1971,7 +2001,7 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
        decoded.entries[0].type != TiriType::Struct or decoded.entries[0].position != 1 or
        decoded.entries[0].object_class_id != CLASSID::NIL or
        not contract_entry_is_const(decoded.entries[0]) or
-       decoded.entries[0].struct_name != "Point" or decoded.entries[0].label != "Value") {
+       decoded.entries[0].constraint_name != "Point" or decoded.entries[0].label != "Value") {
       Log.error("valid runtime contract descriptor did not round-trip through the shared decoder");
       return false;
    }
@@ -1989,7 +2019,7 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
    if (not decode_runtime_contract(object_descriptor, object_decoded) or
        object_decoded.entries[0].type != TiriType::Object or
        object_decoded.entries[0].object_class_id != CLASSID::TIME or
-       not object_decoded.entries[0].struct_name.empty()) {
+       not object_decoded.entries[0].constraint_name.empty()) {
       Log.error("object class constraint did not round-trip through the shared decoder");
       return false;
    }
@@ -2000,6 +2030,35 @@ static bool test_runtime_contract_decoder(kt::Log &Log)
    if (not decode_runtime_contract(broad_descriptor, object_decoded) or
        object_decoded.entries[0].object_class_id != CLASSID::NIL) {
       Log.error("broad object contract gained a class constraint while decoding");
+      return false;
+   }
+
+   std::string array_encoded = build_descriptor(
+      TiriType::Array, CLASSID::NIL, {}, "Values", const_flags, AET::INT32);
+   RuntimeContractDescriptor array_decoded;
+   GCstr *array_descriptor = lj_str_new(lua, array_encoded.data(), array_encoded.size());
+   if (not decode_runtime_contract(array_descriptor, array_decoded) or
+       array_decoded.entries[0].array_element_type != AET::INT32 or
+       not array_decoded.entries[0].constraint_name.empty()) {
+      Log.error("array member constraint did not round-trip through the shared decoder");
+      return false;
+   }
+
+   std::string struct_array_encoded = build_descriptor(
+      TiriType::Array, CLASSID::NIL, {}, "Points", const_flags, AET::STRUCT, "Point");
+   GCstr *struct_array_descriptor = lj_str_new(lua, struct_array_encoded.data(), struct_array_encoded.size());
+   if (not decode_runtime_contract(struct_array_descriptor, array_decoded) or
+       array_decoded.entries[0].array_element_type != AET::STRUCT or
+       array_decoded.entries[0].constraint_name != "Point") {
+      Log.error("named-structure array constraint did not round-trip through the shared decoder");
+      return false;
+   }
+
+   std::string legacy_broad_array = build_descriptor(
+      TiriType::Num, CLASSID::NIL, {}, "Values", const_flags);
+   legacy_broad_array[4] = char(uint8_t(TiriType::Array));
+   if (not rejected(legacy_broad_array)) {
+      Log.error("legacy broad-array contract unexpectedly satisfied the member-aware decoder");
       return false;
    }
 
@@ -2171,17 +2230,21 @@ static bool test_runtime_contract_batching(kt::Log &Log)
 
    GCproto *fragmented = compile_child(
       "struct FragmentedRecord Value: int end\n"
-      "return function(A:num, B:any, C:struct<FragmentedRecord>) return A end\n",
+      "return function(A:num, B:any, C:struct<FragmentedRecord>, "
+      "D:array<struct<FragmentedRecord>>) return A end\n",
       "fragmented-parameter-contracts");
    auto fragmented_contracts = read_contracts(fragmented, ContractBoundary::Parameter);
    const RuntimeContractCache *fragmented_cache = fragmented ? proto_contract_cache(fragmented) : nullptr;
    if (not fragmented or decode_failed or fragmented_contracts.size() != 2 or
        fragmented_contracts[0].base != 0 or fragmented_contracts[0].descriptor.contract_count != 1 or
        fragmented_contracts[0].descriptor.entries[0].position != 1 or fragmented_contracts[1].base != 2 or
-       fragmented_contracts[1].descriptor.contract_count != 1 or
+       fragmented_contracts[1].descriptor.contract_count != 2 or
        fragmented_contracts[1].descriptor.entries[0].position != 3 or
-       fragmented_contracts[1].descriptor.entries[0].struct_name != "FragmentedRecord" or
-       not fragmented_cache or fragmented_cache->record_count != 2 or fragmented_cache->entry_count != 2) {
+       fragmented_contracts[1].descriptor.entries[0].constraint_name != "FragmentedRecord" or
+       fragmented_contracts[1].descriptor.entries[1].position != 4 or
+       fragmented_contracts[1].descriptor.entries[1].array_element_type != AET::STRUCT or
+       fragmented_contracts[1].descriptor.entries[1].constraint_name != "FragmentedRecord" or
+       not fragmented_cache or fragmented_cache->record_count != 2 or fragmented_cache->entry_count != 3) {
       Log.error("an unchecked parameter gap did not split dense contract runs");
       return false;
    }
@@ -2191,10 +2254,12 @@ static bool test_runtime_contract_batching(kt::Log &Log)
    const CachedRuntimeContractRecord *fragmented_records = runtime_contract_cache_records(fragmented_cache);
    const CachedRuntimeContractEntry *fragmented_entries = runtime_contract_cache_entries(fragmented_cache);
    if (fragmented_records[0].contract_count != 1 or fragmented_records[0].entry_index != 0 or
-       fragmented_records[1].contract_count != 1 or fragmented_records[1].entry_index != 1 or
+       fragmented_records[1].contract_count != 2 or fragmented_records[1].entry_index != 1 or
        fragmented_records[0].bytecode_position >= fragmented_records[1].bytecode_position or
        fragmented_entries[0].type != TiriType::Num or fragmented_entries[0].position != 1 or
-       fragmented_entries[1].type != TiriType::Struct or fragmented_entries[1].position != 3) {
+       fragmented_entries[1].type != TiriType::Struct or fragmented_entries[1].position != 3 or
+       fragmented_entries[2].type != TiriType::Array or fragmented_entries[2].array_element_type != AET::STRUCT or
+       fragmented_entries[2].position != 4) {
       Log.error("single-entry runtime contract cache records have an invalid layout");
       return false;
    }
@@ -2207,9 +2272,11 @@ static bool test_runtime_contract_batching(kt::Log &Log)
       const char *text = strdata(fragmented_descriptor) + Offset;
       return std::string_view(text, uint8_t(text[-1]));
    };
-   if (cached_text(fragmented_entries[1].struct_offset) != "FragmentedRecord" or
-       cached_text(fragmented_entries[1].label_offset) != "C") {
-      Log.error("single-entry runtime contract cache lost rooted structure or label text");
+   if (cached_text(fragmented_entries[1].constraint_offset) != "FragmentedRecord" or
+       cached_text(fragmented_entries[2].constraint_offset) != "FragmentedRecord" or
+       cached_text(fragmented_entries[1].label_offset) != "C" or
+       cached_text(fragmented_entries[2].label_offset) != "D") {
+      Log.error("runtime contract cache lost rooted structure, array member or label text");
       return false;
    }
    lua_pop(lua, 1);
@@ -3428,6 +3495,32 @@ static bool test_static_descriptor_model(kt::Log &Log)
       return false;
    }
 
+   StaticValueDescriptor int_array{
+      .primary = TiriType::Array,
+      .array_element = { AET::INT32, TiriType::Num, CLASSID::NIL, nullptr, true },
+      .proof = StaticProof::Closed
+   };
+   RuntimeContract int_array_contract{
+      .type = TiriType::Array,
+      .array_element = { AET::INT32, TiriType::Num, CLASSID::NIL, nullptr, true }
+   };
+   if (not static_value_satisfies_contract(int_array, int_array_contract)) {
+      Log.error("an exact array member descriptor did not satisfy its matching contract");
+      return false;
+   }
+   StaticValueDescriptor string_array = int_array;
+   string_array.array_element = { AET::STR_GC, TiriType::Str, CLASSID::NIL, nullptr, true };
+   if (static_value_satisfies_contract(string_array, int_array_contract)) {
+      Log.error("a mismatched array member descriptor satisfied an exact contract");
+      return false;
+   }
+   StaticValueDescriptor joined_arrays = join_static_descriptors(int_array, string_array);
+   if (joined_arrays.primary != TiriType::Any or joined_arrays.array_element.known or
+       joined_arrays.proof != StaticProof::Advisory) {
+      Log.error("a conflicting array descriptor join did not retain an unresolved member identity");
+      return false;
+   }
+
    struct ArrayMapping {
       std::string_view name;
       AET storage;
@@ -4333,13 +4426,13 @@ static bool test_safe_index_bytecode_selection(kt::Log &Log)
    };
 
    constexpr std::string_view native_literal =
-      "local function read(Values:array):any\n"
+      "local function read(Values:array<any>):any\n"
       "   return Values?[0]\n"
       "end\n";
    if (not expect_access(native_literal, BC_ASGETB, BC_TGETB, "native-array literal-key")) passed = false;
 
    constexpr std::string_view native_variable =
-      "local function read(Values:array, Index:num):any\n"
+      "local function read(Values:array<any>, Index:num):any\n"
       "   return Values?[Index]\n"
       "end\n";
    if (not expect_access(native_variable, BC_ASGETV, BC_TGETV, "native-array variable-key")) passed = false;
@@ -4390,7 +4483,7 @@ static bool test_type_guided_emission(kt::Log &Log)
    std::string error;
    constexpr std::string_view source =
       "extern array\n"
-      "local function read(Values:array):num\n"
+      "local function read(Values:array<int>):num\n"
       "   return Values[0]\n"
       "end\n"
       "local alias = read\n"
@@ -4473,7 +4566,7 @@ static bool test_type_guided_emission(kt::Log &Log)
       "extern array\n"
       "extern obj\n"
       "struct GuidedLayout Value: int end\n"
-      "local function update_array(Values:array):num\n"
+      "local function update_array(Values:array<int>):num\n"
       "   Values[0] = Values[0] + 1\n"
       "   return Values?[0]\n"
       "end\n"

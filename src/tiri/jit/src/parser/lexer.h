@@ -165,6 +165,7 @@ public:
       TiriType primary = TiriType::Unknown;
       CLASSID  object_class_id = CLASSID::NIL;
       struct_record *struct_def = nullptr;
+      ArrayElementDescriptor array_element{};
       GlobalContractPolicy contract_policy = GlobalContractPolicy::Advisory;
    };
    ankerl::unordered_dense::map<GCstr*, GlobalTypeHint> global_type_hints;

@@ -208,6 +208,7 @@ typedef struct VarInfo {
    TiriType fixed_type;  // Type once established (Unknown = not yet fixed)
    CLASSID object_class_id = CLASSID::NIL;  // CLASSID for Object types (0 = unknown class)
    struct_record *struct_def = nullptr; // Resolved layout for struct values and callable definitions
+   ArrayElementDescriptor array_element{}; // Member identity for fixed array bindings
    BCLine line = 0;    // Line number where the variable was declared (for diagnostics)
    BCLine column = 0;  // Column number where the variable was declared (for diagnostics)
 } VarInfo;

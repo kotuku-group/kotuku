@@ -204,9 +204,11 @@ static uint64_t array_unsigned_integer(lua_Number Value, unsigned Bits)
 
 static LJ_AINLINE void array_store_int32(void *Element, cTValue *Value)
 {
-   uint32_t bits;
-   auto result = array_prepare_int32(Value, &bits);
-   lj_assertX(result IS ArrayElementResult::OK, "invalid prepared int32 array value");
+   uint32_t bits = 0;
+   if (array_prepare_int32(Value, &bits) != ArrayElementResult::OK) {
+      lj_assertX(false, "invalid prepared int32 array value");
+      return;
+   }
    std::memcpy(Element, &bits, sizeof(bits));
 }
 

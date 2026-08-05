@@ -369,7 +369,7 @@ end
 
 @Test function ArrayTypedReassignment()
    -- Reassigning array variable
-   arr = array<int> { 1, 2, 3 }
+   local arr:array<any> = array<int> { 1, 2, 3 }
    assert(#arr is 3, "Initial array should have 3 elements")
 
    arr = array<double> { 1.5, 2.5 }
@@ -379,7 +379,7 @@ end
 
 @Test function ArrayTypedAsReturnValue()
    -- Function returning typed array
-   function makeNumbers(n):array
+   function makeNumbers(n):array<any>
       result = array<int, n>
       for i in {0 to n} do
          result[i] = i + 1

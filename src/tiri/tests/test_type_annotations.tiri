@@ -76,10 +76,36 @@ end
    end
 end
 
+@Test function ArrayMemberAnnotations()
+   function accept_ints(Values:array<int>):array<int>
+      return Values
+   end
+
+   local values:array<int> = array<int> { 3, 5 }
+   global glAnnotatedWords:array<string> = array<string> { 'one' }
+   assert(accept_ints(values)[1] is 5, 'Concrete array annotations should work in parameters, locals and results')
+   assert(glAnnotatedWords[0] is 'one', 'Concrete array annotations should work for globals')
+
+   function assert_rejected(Source:str, Message:str)
+      try
+         exec(Source)
+         error('Expected array annotation syntax to be rejected')
+      except e
+         assert(e.message:find(Message) != nil, 'Unexpected array annotation diagnostic: ' .. e.message)
+      end
+   end
+
+   assert_rejected('function invalid(Value:array) end', 'element type')
+   assert_rejected('function invalid(Value:array<missing>) end', 'Unknown array element type')
+   assert_rejected('function invalid(Value:array<pointer>) end', 'Unknown array element type')
+   assert_rejected('function invalid(Value:array<array<string>>) end', 'Nested array specialisation')
+   assert_rejected('function invalid(Value:array<int, 4>) end', 'cannot declare a size')
+end
+
 @Test function MistypedArrayArgumentRaisesCleanly()
    -- Annotated parameters emit specialised bytecode, so passing a mismatched value must raise a
    -- catchable error rather than crash or silently operate on the wrong type.
-   function increment(Values:array)
+   function increment(Values:array<any>)
       for index in {0 to #Values} do
          Values[index] += 1
       end
