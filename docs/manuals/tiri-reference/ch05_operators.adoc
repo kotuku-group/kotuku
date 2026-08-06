@@ -1,4 +1,4 @@
-// VERIFIED: 2026-08-03
+// VERIFIED: 2026-08-06
 
 [[ch-operators]]
 == Operators
@@ -87,7 +87,7 @@ The `is` operator compares by value for value types (numbers, strings, booleans,
 `nil is nil` evaluates to `true`.  Values of different types are never equal.
 
 .Equality summary by type
-[cols="1,2,2",options="header"]
+[cols="2,2,1",options="header"]
 |===
 |Type |`is` behaviour |Override
 
@@ -333,20 +333,22 @@ indexterm:[operators, length] The unary `#` operator returns the length of a val
 |===
 |Operand type |Result
 |String |Byte count
-|Table  |Length of the contiguous sequence of integer keys that starts at index 0, or `nil` if the table has ever been addressed with a non-numeric key.  Tables with gaps have an unspecified boundary
+|Table  |Length of the contiguous sequence of integer keys that starts at index 0, or `nil` if the table is sparse.  Tables with holes have an unspecified boundary
 |Array  |Element count
 |===
 
 Because a table operand can yield `nil`, the result of `#` is statically nullable whenever the operand is a table or of unknown type.  Applying arithmetic to that result without checking it raises an error at runtime.  The rule and its rationale are defined in <<sec-table-length>>.
 
-The `pass:[__]len` metamethod overrides the default behaviour, including the `nil` result described above.  It is required to return a number; any other result raises `__len metamethod must return a number`.  If a non-string, non-table, non-array value lacks a `pass:[__]len` metamethod, the runtime raises an error.
+The `pass:[__]len` metamethod overrides the default behaviour.  It is required to return a number; any other result raises an error.  If a non-string, non-table, non-array value lacks a `pass:[__]len` metamethod, the runtime raises an error.  The metamethod masks the `nil` result of `#` only; it does not make a classified table acceptable to the sequence operations listed in <<sec-table-classification>>.
 
 [source,tiri]
 ----
 print(#'hello')                -- 5
 print(#{ 'a', 'b', 'c' })      -- 3
 print(#{ 'a', name = 'x' })    -- nil
-print(#{ 'a', [true] = 'x' })  -- nil: any non-numeric key has the same effect
+print(#{ 'a', [true] = 'x' })  -- nil: any non-numeric key classifies
+print(#{ 'a', [-1] = 'x' })    -- nil: so does a negative key
+print(#{ 'a', [9999] = 'x' })  -- 1: positive integers are exempt
 ----
 
 [[sec-compound-assignment]]

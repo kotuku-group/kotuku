@@ -1,5 +1,6 @@
 // CHANGED: 2026-07-29 — Removed newproxy(); the function is now internal.
 // UPDATED: 2026-08-06 - Recorded the zero-based math.random(High) range (commit 2e7951d41)
+// UPDATED: 2026-08-06 - Added table.kind(), table.size() and the sequence requirements (commit 26e122ab7)
 
 [[appendix-standard-library-quick-reference]]
 [appendix]
@@ -98,17 +99,21 @@ indexterm:[library, table] See <<ch-tables>>.
 |Signature |Description
 
 |`table.new(ArraySize, HashSize)`                    |Creates a pre-allocated table.
-|`table.insert(Table, [Pos,] Value)`                 |Inserts an element.
-|`table.remove(Table, [Pos])`                        |Removes and returns an element.
+|`table.insert(Table, [Pos,] Value)`                 |Inserts an element.  Requires a sequence table.
+|`table.remove(Table, [Pos])`                        |Removes and returns an element.  Requires a sequence table.
 |`table.move(Table, Start, End, Target, [DestTable])`|Copies a range of elements.
-|`table.concat(Table, [Sep, Start, End])`            |Concatenates elements into a string.
-|`table.sort(Table, [Comparator])`                   |Sorts the array portion in-place.
+|`table.concat(Table, [Sep, Start, End])`            |Concatenates elements into a string.  Requires a sequence table unless `End` is given.
+|`table.sort(Table, [Comparator])`                   |Sorts the array portion in-place.  Requires a sequence table.
 |`table.sortByKeys(Table, [Comparator])`             |Iterates in sorted key order.
-|`table.slice(Table, Range)`                         |Extracts a subsequence.
+|`table.slice(Table, Range)`                         |Extracts a subsequence.  Requires a sequence table.
 |`table.clear(Table)`                                |Removes all entries.  Raises an error for a global environment.
 |`table.empty(Table)`                                |Returns `true` if the table has no entries.
+|`table.kind(Table)`                                 |Returns the classification: `'sequence'`, `'sparse'`, `'associative'` or `'mixed'`.
+|`table.size(Table)`                                 |Counts every live entry across both parts.
 |`table.toXML(Table)`                                |Converts to an XML string.
 |===
+
+Sequence classification is defined in <<sec-table-classification>>.
 
 === Array Library
 indexterm:[library, array] See <<ch-arrays>>.

@@ -1,3 +1,4 @@
+// UPDATED: 2026-08-06 - Added the table classification terms (commit 26e122ab7)
 
 [[appendix-glossary]]
 [appendix]
@@ -32,6 +33,9 @@ A conditional exception mechanism.  `check` evaluates an error code and raises a
 
 Choose expression::
 A pattern-matching construct that evaluates a scrutinee, introduced by `from`, against a series of case arms.  Each arm specifies a pattern with an optional `when` guard and a result following `\->`.  Produces a value when used in expression context.  See <<ch-pattern-matching>>.
+
+Classification (table)::
+The permanent record of the key kinds a table has been stored through, reported by `table.kind()` as `sequence`, `sparse`, `associative` or `mixed`.  It determines whether `#` yields a length and whether the sequence operations accept the table.  See <<sec-table-classification>>.
 
 Close variable::
 A local variable declared with the `<close>` attribute.  The `local` keyword is optional; the attribute implicitly creates a local.  Its `pass:[__]close` metamethod executes automatically when the variable goes out of scope, enabling deterministic resource cleanup.  See <<sec-close-variables>>.
@@ -180,8 +184,14 @@ The value being matched against patterns in a `choose` expression.  Specified af
 Short-circuit evaluation::
 Evaluation strategy where the second operand of `and`, `or`, or `??` is evaluated only if the first operand does not determine the result.  See <<sec-logical-operators>>.
 
+Sequence table::
+A table that has only ever been stored through non-negative integer keys.  `#` returns its numerical length and the sequence operations accept it.  The classification constrains the key domain and does not guarantee that the live contents are free of holes.  See <<sec-table-classification>>.
+
 Signal::
 A named notification broadcast by an object to registered subscribers.  Signals enable decoupled communication between components.  See <<sec-signals>>.
+
+Sparse table::
+A table that has been stored through a negative or non-integral numerical key.  `#` returns `nil` and the sequence operations reject it.  See <<sec-table-classification>>.
 
 Standard falsiness::
 The conservative falsiness rules used by `and`, `or`, `not`, and `if` conditions.  Under standard falsiness, only `nil` and `false` are falsey; all other values (including `0` and `""`) are truthy.  See <<sec-truthiness>>.

@@ -1,4 +1,4 @@
-// VERIFIED: 2028-08-05
+// VERIFIED: 2028-08-06
 
 [[ch-functions]]
 == Functions
@@ -588,28 +588,70 @@ If any condition is not met, the call uses a standard call-and-return sequence.
 
 [source,tiri]
 ----
--- NOT a tail call: additional work after the call
-function notTail(N)
+function notTail(N) <1>
    return handler(N) + 1
 end
 
--- NOT a tail call: multiple return values
-function notTail2(N)
+function notTail2(N) <2>
    return handler(N), 0
 end
 
--- NOT a tail call: inside a try block
-function notTail3(N)
+function notTail3(N) <3>
    try
       return handler(N)
    end
 end
-----
 
+function notTail4(N) <4>
+   local resource <close> = openResource()
+   return handler(N)
+end
+----
+<1> Not optimised; Additional work placed after the call
+<2> Not optimised; Multiple return values
+<3> Not optimised; Inside a try block
+<4> Not optimised; The frame owns a resource that must be closed on exit
+
+[[sec-tail-calls-recursion]]
 [discrete]
 ==== Interaction with Recursion
 
-WARNING: A self-recursive function must declare an explicit return type (<<sec-recursive-functions>>), and a function with typed return values is excluded from tail call optimisation by the fourth condition above.  The two rules are mutually exclusive, so a directly recursive function never receives tail call optimisation and its recursion depth remains bounded by the stack.  The same applies to a mutually recursive pair, because both members must also declare return types.  Express deep iteration as a loop rather than as tail recursion.
+A self-recursive function must declare an explicit return type (<<sec-recursive-functions>>), which would otherwise exclude it from tail call optimisation by the final condition above.  A *direct self-call* is exempt: the recursive activation shares the caller's return contract and declared arity exactly, so the terminal activation can perform the type validation and any fixed-arity truncation once on behalf of the entire chain.  Intermediate activations do not need to regain control, and the whole recursion therefore occupies a single stack frame:
+
+[source,tiri]
+----
+function countDown(Count: num, Accumulator: num):num
+   if Count is 0 then return Accumulator end
+   return countDown(Count - 1, Accumulator + 1)   -- tail call: one frame for the entire chain
+end
+
+print(countDown(3000000, 0))   -- 3000000
+----
+
+Forwarding the contract does not weaken it.  The declared type is still enforced, and undeclared results are still discarded, at the point where the chain terminates:
+
+[source,tiri]
+----
+function typedTail(Count: num, Value:any):num
+   if Count is 0 then return Value end
+   return typedTail(Count - 1, Value)
+end
+
+typedTail(1000, 'wrong') <1>
+
+function fixedTail(Count: num):num
+   if Count is 0 then return 1, 2 end
+   return fixedTail(Count - 1)
+end
+
+first, truncated = fixedTail(1000) <2>
+----
+<1> Fails because `Value` is returned as a `string` when `num` is expected
+<2> The undeclared second result is discarded, `truncated` is `nil`
+
+WARNING: The exemption requires the recursive name to be immutable.  Assigning to the function's binding anywhere in scope means a call through that name is no longer provably a call to the current function, so the optimisation is withdrawn and the recursion consumes a stack frame per activation.
+
+Mutual recursion is not covered by the exemption.  Each call targets a different function, whose return contract cannot be assumed identical to the caller's, so a mutually recursive pair receives no tail call optimisation and its depth remains bounded by the stack.  Express deep mutual iteration as a loop rather than as tail recursion.
 
 [[sec-recursive-functions]]
 === Recursive Functions

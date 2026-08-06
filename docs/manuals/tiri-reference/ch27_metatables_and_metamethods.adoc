@@ -1,4 +1,7 @@
 // VERIFIED: 2026-03-03
+// UPDATED: 2026-08-06 - __len must now return a number, and takes precedence over the string-key classification (commit 6fc85b01b)
+// UPDATED: 2026-08-06 - The classification now covers every non-numeric key (commit d40436498)
+// UPDATED: 2026-08-06 - __len masks the length only; the sequence operations ignore it (commit 26e122ab7)
 
 [[ch-metatables-and-metamethods]]
 == Metatables & Metamethods
@@ -160,12 +163,31 @@ The `..` operator invokes `pass:[__]concat` when either operand is neither a str
 
 The `#` operator invokes `pass:[__]len` when present on the operand's metatable, overriding the default table length.  The metamethod receives the table as its sole argument and returns the custom length.
 
+The metamethod is required to return a number.  Returning any other value, including `nil`, raises an error.
+
 [source,tiri]
 ----
-mt = { __len = function(Self) return Self.size end }
+mt = { __len = function(Self):num return Self.size end }
 t = setmetatable({ size = 42 }, mt)
 print(#t)   -- 42
 ----
+
+`pass:[__]len` takes precedence over the classification defined in <<sec-table-classification>>, so it restores a numeric length to a table that would otherwise report `nil`.  This holds whatever kind of key caused the classification, associative or sparse.  The classification itself is unchanged and reappears if the metamethod is removed:
+
+[source,tiri]
+----
+t = setmetatable({ 1, 2 }, { __len = function(Self):num return 7 end })
+t.name  = 'x'
+t[-1]   = 'y'
+print(#t)   -- 7: the metamethod overrides the classification
+
+setmetatable(t, nil)
+print(#t)   -- nil: the classification was only masked, not cleared
+----
+
+The precedence extends to `#` alone.  `table.insert()`, `table.remove()`, `table.sort()`, `table.slice()` and `table.concat()` without an explicit `End` consult the classification directly and reject a classified table irrespective of `pass:[__]len`.
+
+A metatable that does not define `pass:[__]len` has no effect on the length of a table.
 
 See <<sec-length-operator>> for full operator semantics.
 
