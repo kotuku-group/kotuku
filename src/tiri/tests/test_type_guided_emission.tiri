@@ -90,14 +90,14 @@ end
    local nested = array<array> { array<int> { 19 } }
    local points = array<struct<EmissionPoint>> { struct<EmissionPoint> { Value=29 } }
    local clock = obj.new('time')
-   local objects = array<object> { clock }
+   local objects = array<obj> { clock }
 
    assert(numbers[1] is 7, 'array<int> indexing should return a number')
    assert(strings[0] is 'a', 'array<string> indexing should return a string')
    assert(tables[0].value is 11, 'array<table> indexing should retain table behaviour')
    assert(nested[0][0] is 19, 'array<array> indexing should retain nested array behaviour')
    assert(points[0].Value is 29, 'named struct-array indexing should retain its layout')
-   assert(objects[0].id is clock.id, 'array<object> indexing should retain object behaviour')
+   assert(objects[0].id is clock.id, 'array<obj> indexing should retain object behaviour')
    clock.free()
 end
 

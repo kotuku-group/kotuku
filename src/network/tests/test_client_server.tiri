@@ -111,7 +111,7 @@ end
       end
    } )
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { sockServer } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { sockServer } })
 
    check clientSocket.mtConnect('127.0.0.1', glPort)
    check proc.sleep()
@@ -150,7 +150,7 @@ end
       end,
    } )
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { server } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { server } })
    check client.mtConnect('127.0.0.1', glPort)
    check proc.sleep()
 
@@ -258,7 +258,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 10.0, signals = array<object> { sockServer } })
+   proc = processing.new({ timeout = 10.0, signals = array<obj> { sockServer } })
    check clientSocket.mtConnect('127.0.0.1', glPort)
    check proc.sleep()
 
@@ -296,7 +296,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { server } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { server } })
    client.mtConnect('127.0.0.1', glPort)
    check proc.sleep()
 
@@ -343,7 +343,7 @@ end
 
    logOutput(string.format('[Client] Attempting connection to %s:%d with %.1fs timeout...', testAddress, testPort, timeoutDuration))
 
-   proc = processing.new({ timeout = timeoutDuration + 2.0, signals = array<object> { clientSocket } })
+   proc = processing.new({ timeout = timeoutDuration + 2.0, signals = array<obj> { clientSocket } })
    check clientSocket.mtConnect(testAddress, testPort, timeoutDuration)
    check proc.sleep()
 

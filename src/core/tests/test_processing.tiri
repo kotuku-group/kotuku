@@ -5,7 +5,7 @@
    local second = obj.new('config')
    local proc = processing.new({
       timeout = 0.5,
-      signals = array<object> { first, second },
+      signals = array<obj> { first, second },
       mode = 'any'
    })
 
@@ -24,7 +24,7 @@ end
    local second = obj.new('config')
    local proc = processing.new({
       timeout = 0.5,
-      signals = array<object> { first, second },
+      signals = array<obj> { first, second },
       mode = 'any'
    })
 

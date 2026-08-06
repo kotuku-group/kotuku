@@ -17,7 +17,7 @@ end
    function identity_string(Value:array<string>):array<string> return Value end
    function identity_table(Value:array<table>):array<table> return Value end
    function identity_array(Value:array<array>):array<array> return Value end
-   function identity_object(Value:array<object>):array<object> return Value end
+   function identity_object(Value:array<obj>):array<obj> return Value end
    function identity_any(Value:array<any>):array<any> return Value end
    function identity_struct(Value:array<struct<ArrayBindingPoint>>):array<struct<ArrayBindingPoint>> return Value end
 
@@ -30,7 +30,7 @@ end
    assert(identity_string(array<string> {}) != nil, 'string binding identity should be accepted')
    assert(identity_table(array<table> {}) != nil, 'table binding identity should be accepted')
    assert(identity_array(array<array> {}) != nil, 'immediate nested-array identity should be accepted')
-   assert(identity_object(array<object> {}) != nil, 'object binding identity should be accepted')
+   assert(identity_object(array<obj> {}) != nil, 'object binding identity should be accepted')
    assert(identity_any(array<any> {}) != nil, 'any member identity should be accepted')
    assert(identity_struct(array<struct<ArrayBindingPoint>> {}) != nil,
       'named-structure binding identity should be accepted')
@@ -650,10 +650,10 @@ end
    obj_two = obj.new('file')
    obj_one_ref = obj.find(obj_one.id)
 
-   object_a = array<object> { obj_one, obj_two }
-   object_b = array<object> { obj_one_ref, obj_two }
-   object_c = array<object> { obj_two, obj_one }
-   object_short = array<object> { obj_one }
+   object_a = array<obj> { obj_one, obj_two }
+   object_b = array<obj> { obj_one_ref, obj_two }
+   object_c = array<obj> { obj_two, obj_one }
+   object_short = array<obj> { obj_one }
 
    assert(object_a is object_b, 'Object arrays with matching UIDs should be equal')
    assert(object_a != object_c, 'Object arrays with different UID order should not be equal')
@@ -709,7 +709,7 @@ end
 @Test function ArrayFindObject()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object> { obj_one, obj_two }
+   arr = array<obj> { obj_one, obj_two }
 
    assert(arr:find(obj_one) is 0, "find(object) should return 0")
    assert(arr:find(obj_two.id) is 1, "find(uid) should return 1")
@@ -1473,10 +1473,10 @@ end
 @Test function ArrayOfObject()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object> { obj_one, obj_two }
+   arr = array<obj> { obj_one, obj_two }
 
-   assert(#arr is 2, "array<object> should have 2 elements")
-   assert(arr:type() is 'object', "array<object> type should be 'object'")
+   assert(#arr is 2, "array<obj> should have 2 elements")
+   assert(arr:type() is 'object', "array<obj> type should be 'object'")
    assert(arr[0].id is obj_one.id, "first object should match obj_one")
    assert(arr[1].id is obj_two.id, "second object should match obj_two")
 
@@ -1923,7 +1923,7 @@ end
 @Test function ArrayContainsObject()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object> { obj_one }
+   arr = array<obj> { obj_one }
 
    assert(arr:contains(obj_one) is true, "contains(object) should return true")
    assert(arr:contains(obj_one.id) is true, "contains(uid) should return true")
@@ -2051,7 +2051,7 @@ end
 @Test function ArrayFirstObject()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object> { obj_one, obj_two }
+   arr = array<obj> { obj_one, obj_two }
    result = arr:first()
    assert(result.id is obj_one.id, "first() should return obj_one")
    obj_one.free()
@@ -2112,7 +2112,7 @@ end
 @Test function ArrayLastObject()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object> { obj_one, obj_two }
+   arr = array<obj> { obj_one, obj_two }
    result = arr:last()
    assert(result.id is obj_two.id, "last() should return obj_two")
    obj_one.free()

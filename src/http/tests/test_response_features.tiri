@@ -48,7 +48,7 @@ function rawHttpRequestWithHeaders(Method:str, Path:str, Headers:table):<num, st
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { socket } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { socket } })
    check socket.mtConnect('127.0.0.1', SERVER_PORT, 3.0)
    err = proc.sleep()
    assert(err is ERR_Okay, 'Raw HTTP request failed: ' .. mSys.GetErrorMsg(err))
@@ -242,7 +242,7 @@ end
       if not wait_http then wait_http = http end
    end
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { wait_http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { wait_http } })
 
    for i, http in ipairs(requests) do
       assert(http.acActivate() is ERR_Okay, "Status code test " .. status_codes[i] .. " failed to activate")
@@ -281,7 +281,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -347,7 +347,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -378,7 +378,7 @@ end
    })
 
    check http.acSetKey('Accept-Encoding', 'gzip, deflate')
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -409,7 +409,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -443,7 +443,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 10.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 10.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 

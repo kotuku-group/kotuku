@@ -47,7 +47,7 @@ end
       end
    } )
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { netsocket } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { netsocket } })
    check netsocket.mtConnect('kotuku.dev', 80)
    check proc.sleep()
 end

@@ -1851,6 +1851,39 @@ end
    assert(trace_found is true, "Expected array.new(size, literal_type) to produce a JIT trace")
 end
 
+@Test(hotpath=80) function ArrayNewObjTypeTraces()
+   jit.on()
+   jit.flush()
+   jit.opt.start("hotloop=1", "hotexit=1", "minstitch=0")
+
+   function traced_obj_array_new(Count)
+      local total = 0
+      for i in {1 into Count} do
+         local arr = array<obj, 2>
+         total += #arr
+      end
+      return total
+   end
+
+   local result = 0
+   for i in {0 to 80} do
+      result = traced_obj_array_new(10)
+   end
+
+   assert(result is 20, f"Expected recorded array<obj> loop to total 20, got {result}")
+
+   local allocation_trace_found = false
+   for trace_no in {1 into 20} do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil and first_trace_opcode(trace_no, info, ir_loop) != nil and
+            count_trace_opcode(trace_no, info, ir_calla) > 0 then
+         allocation_trace_found = true
+         break
+      end
+   end
+   assert(allocation_trace_found, "Expected array<obj> allocation to be recorded inside a loop trace")
+end
+
 @Test(hotpath=80) function ArrayClearTracesAndInvalidatesLength()
    jit.on()
    jit.flush()

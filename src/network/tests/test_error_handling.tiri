@@ -181,7 +181,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 4.0, signals = array<object> { server } })
+   proc = processing.new({ timeout = 4.0, signals = array<obj> { server } })
    check client.mtConnect('127.0.0.1', glPort)
 
    wait_start = mSys.PreciseTime()
@@ -310,7 +310,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 2.0, signals = array<object> { server } })
+   proc = processing.new({ timeout = 2.0, signals = array<obj> { server } })
    client.mtConnect('127.0.0.1', glPort)
    check proc.sleep()
    assert(close_handled, 'Close handling was not properly detected')

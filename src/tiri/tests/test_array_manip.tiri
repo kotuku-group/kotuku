@@ -147,7 +147,7 @@ end
 @Test function ArrayPushObject()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object>
+   arr = array<obj>
    arr:push(obj_one)
    arr:push(obj_two)
 
@@ -256,7 +256,7 @@ end
 @Test function ArrayPopObject()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object> { obj_one, obj_two }
+   arr = array<obj> { obj_one, obj_two }
 
    val = arr:pop()
    assert(val.id is obj_two.id, 'pop() should return obj_two')
@@ -316,7 +316,7 @@ end
 @Test function ArrayClearObject()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object> { obj_one, obj_two }
+   arr = array<obj> { obj_one, obj_two }
 
    arr:clear()
    assert(#arr is 0, 'Object array should be empty after clear')
@@ -505,7 +505,7 @@ end
    obj_one = obj.new('time')
    obj_two = obj.new('file')
    obj_three = obj.new('time')
-   arr = array<object> { obj_one, obj_three }
+   arr = array<obj> { obj_one, obj_three }
    arr:insert(1, obj_two)
    assert(#arr is 3, "Object array length should be 3")
    assert(arr[0].id is obj_one.id, "arr[0] should be obj_one")
@@ -657,7 +657,7 @@ end
    obj_one = obj.new('time')
    obj_two = obj.new('file')
    obj_three = obj.new('time')
-   arr = array<object> { obj_one, obj_two, obj_three }
+   arr = array<obj> { obj_one, obj_two, obj_three }
    len = arr:remove(1)
    assert(len is 2, "remove(1) should return new length 2")
    assert(#arr is 2, "Array length should be 2")
@@ -939,7 +939,7 @@ end
 @Test function ArrayCloneObject()
    obj_one = obj.new('file')
    obj_one.path = 'temp:clone-object.txt'
-   original = array<object> { obj_one }
+   original = array<obj> { obj_one }
    copy = original:clone()
 
    assert(#copy is 1, "Clone should have same length")

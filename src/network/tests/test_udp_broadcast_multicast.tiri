@@ -116,7 +116,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { server } })
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { server } })
    client = obj.new('netsocket', { flags = NSF_UDP|NSF_BROADCAST })
 
    -- Send to loopback (not true broadcast, but tests the broadcast socket option)

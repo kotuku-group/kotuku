@@ -84,11 +84,11 @@ end
       nlA = obj.new('NetLookup', { callback = duplicate_resolved, flags=NLF_NO_CACHE })
       nlB = obj.new('NetLookup', { callback = duplicate_resolved })
 
-      proc = processing.new({ timeout = 5.0, signals = array<object> { nlA } })
+      proc = processing.new({ timeout = 5.0, signals = array<obj> { nlA } })
       check nlA.mtResolveName(domain)
       check proc.sleep()
 
-      proc = processing.new({ timeout = 5.0, signals = array<object> { nlB } })
+      proc = processing.new({ timeout = 5.0, signals = array<obj> { nlB } })
       save = resolved
       check nlB.mtResolveName(domain)
       if save is resolved then
@@ -103,7 +103,7 @@ end
 @Test; @Requires(network=true) function NameResolutionAsync()
    nl = obj.new('NetLookup', { callback=name_resolved, flags=NLF_NO_CACHE })
 
-   proc = processing.new({ timeout = 2.0, signals = array<object> { nl } })
+   proc = processing.new({ timeout = 2.0, signals = array<obj> { nl } })
 
    glTotalResolved = 0
    for domain in values(glDomains) do

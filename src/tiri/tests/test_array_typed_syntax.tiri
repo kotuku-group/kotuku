@@ -31,8 +31,8 @@ end
 end
 
 @Test function ArrayTypedBasicObject()
-   arr = array<object>
-   assert(#arr is 0, "Empty array<object> should have length 0")
+   arr = array<obj>
+   assert(#arr is 0, "Empty array<obj> should have length 0")
    assert(arr:type() is 'object', "Type should be 'object'")
 end
 
@@ -615,7 +615,7 @@ end
 @Test function ArrayResizeObjectArray()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object> { obj_one, obj_two }
+   arr = array<obj> { obj_one, obj_two }
    array.resize(arr, 4)
    assert(#arr is 4, "Length should be 4")
    assert(arr[0].id is obj_one.id, "First object preserved")
