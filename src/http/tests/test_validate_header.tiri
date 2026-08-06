@@ -133,7 +133,7 @@ end
    })
 
    check http.acSetKey('Authorization', 'Bearer valid-token-123')
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Valid header test failed to activate")
 
    err = proc.sleep()
@@ -162,7 +162,7 @@ end
    })
 
    check http.acSetKey('Authorization', 'Bearer invalid-token')
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Invalid header test failed to activate")
 
    err = proc.sleep()
@@ -190,7 +190,7 @@ end
    })
 
    check http.acSetKey('Authorization', 'Bearer user-token')
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Custom error test failed to activate")
 
    err = proc.sleep()
@@ -216,7 +216,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
 
    err = proc.sleep()
@@ -246,7 +246,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Content type validation test failed to activate")
 
    err = proc.sleep()
@@ -271,7 +271,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Validation exception test failed to activate")
 
    err = proc.sleep()
@@ -301,7 +301,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "No validation test failed to activate")
 
    err = proc.sleep()

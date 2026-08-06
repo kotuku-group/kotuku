@@ -80,7 +80,7 @@ end
       socketLimit = glMaxSockets
    })
 
-   proc = processing.new({ timeout = 3.0, signals = array<object> { server } })
+   proc = processing.new({ timeout = 3.0, signals = array<obj> { server } })
 
    assert(server, 'Failed to create NetServer')
 
@@ -261,7 +261,7 @@ end
    clients = {}
    completedClients = 0
    signal = obj.new('time', { })
-   proc = processing.new({ timeout = 3.0, signals = array<object> { signal } })
+   proc = processing.new({ timeout = 3.0, signals = array<obj> { signal } })
 
    for i in {0 to clientCount} do
       clients[i] = { }

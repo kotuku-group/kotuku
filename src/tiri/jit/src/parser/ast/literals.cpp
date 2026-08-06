@@ -169,7 +169,11 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
          return this->fail<Token>(ParserErrorCode::UnexpectedToken, type_token,
             "Nested array specialisation is not supported; use array<array>");
       }
-      auto element = describe_array_element(element_name, &this->ctx.lua());
+      if (element_name IS "object") {
+         return this->fail<Token>(ParserErrorCode::UnknownTypeName, type_token,
+            "Unknown array element type 'object'; use 'obj'");
+      }
+      auto element = describe_array_element(element_name IS "obj" ? "object" : element_name, &this->ctx.lua());
       if (not element or element->storage IS AET::PTR or
           (element->storage IS AET::STRUCT and not element->struct_def)) {
          return this->fail<Token>(ParserErrorCode::UnknownTypeName, type_token,
@@ -243,7 +247,11 @@ ParserResult<Token> AstBuilder::parse_type_annotation(
          auto close = this->ctx.consume(TokenKind::Greater, ParserErrorCode::ExpectedToken);
          if (not close.ok()) return ParserResult<Token>::failure(close.error_ref());
 
-         auto element = describe_array_element(element_storage, &this->ctx.lua());
+         if (element_storage IS "object") {
+            return this->fail<Token>(ParserErrorCode::UnknownTypeName, element_token,
+               "Unknown array element type 'object'; use 'obj'");
+         }
+         auto element = describe_array_element(element_storage IS "obj" ? "object" : element_storage, &this->ctx.lua());
          if (not element or element->storage IS AET::PTR or
              (element->storage IS AET::STRUCT and not element->struct_def)) {
             return this->fail<Token>(ParserErrorCode::UnknownTypeName, element_token,

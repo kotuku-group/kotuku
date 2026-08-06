@@ -79,7 +79,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 10.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 10.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -118,7 +118,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -160,7 +160,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -203,7 +203,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -232,7 +232,7 @@ function SSLOverProxyRemote()
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep(5.0)
 end
@@ -259,7 +259,7 @@ function HTTPSRemote()
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep(5.0)
 
@@ -290,7 +290,7 @@ function RedirectedHTTPSRemote()
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep(5.0)
 
@@ -353,7 +353,7 @@ function MultiPartLocal()
 
    http.size = headfile.size + tailfile.size + srcfile.size
    http.inputfile = headfile.path .. '|' .. srcfile.path .. '|' .. tailfile.path
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
 
    headfile = nil
@@ -383,7 +383,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 10.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 10.0, signals = array<obj> { http } })
    check http.acActivate()
    proc.sleep()
 

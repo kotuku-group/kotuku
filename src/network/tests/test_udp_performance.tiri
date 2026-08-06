@@ -38,7 +38,7 @@ UDP Performance and Stress Test
       end
    })
 
-   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { server } })
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { server } })
    client = obj.new('netsocket', { flags = 'UDP' })
 
    dest = struct.new('IPAddress')
@@ -98,7 +98,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { server } })
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { server } })
    client = obj.new('netsocket', { flags = 'UDP' })
 
    -- Test different large packet sizes
@@ -169,7 +169,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { server } })
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { server } })
 
    -- Create multiple client sockets
    clients = {}

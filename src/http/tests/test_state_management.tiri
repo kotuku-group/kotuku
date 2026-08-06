@@ -119,7 +119,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Incomplete request test failed to activate")
 
    err = proc.sleep()
@@ -154,7 +154,7 @@ end
          end
       })
 
-      proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+      proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
       assert(http.acActivate() is ERR_Okay, "State cleanup test " .. i .. " failed to activate")
 
       err = proc.sleep()
@@ -194,7 +194,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 8.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 8.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 end
@@ -203,7 +203,7 @@ end
 
 @Test function PipelineStateManagement()
    results = {}
-   requests = array<object> {}
+   requests = array<obj> {}
    completed = 0
    TOTAL_REQUESTS <const> = 4
    wait_http = nil
@@ -233,7 +233,7 @@ end
       if not wait_http then wait_http = http end
    end
 
-   proc = processing.new({ timeout = 10.0, signals = array<object> { wait_http } })
+   proc = processing.new({ timeout = 10.0, signals = array<obj> { wait_http } })
 
    for http in values(requests) do
       check http.acActivate()
@@ -273,7 +273,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
 
    check proc.sleep()
@@ -309,7 +309,7 @@ end
          end
       })
 
-      proc = processing.new({ timeout = 10.0, signals = array<object> { http } })
+      proc = processing.new({ timeout = 10.0, signals = array<obj> { http } })
       check http.acActivate()
 
       check proc.sleep()
@@ -344,7 +344,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 

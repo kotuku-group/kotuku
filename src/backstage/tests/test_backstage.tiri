@@ -67,7 +67,7 @@ function request_backstage(Request:str, ExpectedToken:str):str
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { client } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { client } })
    check client.mtConnect('127.0.0.1', SERVER_PORT)
    check proc.sleep()
    client.free()
@@ -159,7 +159,7 @@ function websocket_exchange(Frames:array<string>, ExpectedTokens:array<string>):
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { client } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { client } })
    check client.mtConnect('127.0.0.1', SERVER_PORT)
    check proc.sleep()
    client.free()
@@ -208,7 +208,7 @@ function websocket_exchange_until_disconnect(Frame:str):<str, bool>
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { client } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { client } })
    check client.mtConnect('127.0.0.1', SERVER_PORT)
    check proc.sleep()
    client.free()

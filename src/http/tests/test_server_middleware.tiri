@@ -100,7 +100,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Middleware chain test failed to activate")
 
    err = proc.sleep()
@@ -134,7 +134,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "404 test failed to activate")
 
    err = proc.sleep()
@@ -166,7 +166,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "405 test failed to activate")
 
    err = proc.sleep()
@@ -196,7 +196,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Wildcard test failed to activate")
 
    err = proc.sleep()
@@ -233,7 +233,7 @@ end
    check http.acSetKey('Origin', 'https://example.com')
    check http.acSetKey('Access-Control-Request-Method', 'POST')
    check http.acSetKey('Access-Control-Request-Headers', 'Content-Type')
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "CORS test failed to activate")
 
    err = proc.sleep()

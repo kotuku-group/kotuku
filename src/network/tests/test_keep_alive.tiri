@@ -37,7 +37,7 @@ glPort = 18420
       end,
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { server } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { server } })
    check client.mtConnect('127.0.0.1', glPort)
    check proc.sleep()
 
@@ -79,7 +79,7 @@ end
       end,
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { server } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { server } })
    check client.mtConnect('127.0.0.1', glPort)
    check proc.sleep()
 
@@ -116,7 +116,7 @@ end
    check mNet.StrToAddress('127.0.0.1', dest)
    dest.Port = glPort
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { server } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { server } })
    err, sent = client.mtSendTo(dest, 'udp-keep-alive')
    assert(err is ERR_Okay, '[UDP Client] SendTo failed: ' .. mSys.GetErrorMsg(err))
    assert(sent is #'udp-keep-alive', 'UDP SendTo byte count mismatch.')

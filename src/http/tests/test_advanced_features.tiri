@@ -137,7 +137,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -169,7 +169,7 @@ end
    })
 
    check http.acSetKey('Cookie', 'session_id=abc123; user_pref=dark_mode; lang=en')
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -204,7 +204,7 @@ end
    check http.acSetKey('X-Custom-Header', 'CustomValue')
    check http.acSetKey('X-API-Key', 'secret123')
    check http.acSetKey('X-Client-Version', '1.0.0')
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -236,7 +236,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -268,7 +268,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -309,7 +309,7 @@ end
 
    check http.acSetKey('X-Filename', 'test.txt')
    check http.acSetKey('X-File-Size', tostring(fileContent:len()))
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 

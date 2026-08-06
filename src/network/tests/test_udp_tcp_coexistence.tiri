@@ -84,7 +84,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { tcpServer } })
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { tcpServer } })
    processing.halt(0.2)  -- Let servers initialize
 
    -- Create UDP client
@@ -203,7 +203,7 @@ end
       })
    }
 
-   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { servers.udp1, servers.tcp1, servers.udp2 } })
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { servers.udp1, servers.tcp1, servers.udp2 } })
    processing.halt(0.2)  -- Let servers initialize
 
    -- Create clients and send messages

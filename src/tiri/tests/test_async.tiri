@@ -10,7 +10,7 @@ function enforce_hotpath() end
 @Test(priority=1) function MultipleSignals()
    signal_a = obj.new('time', { }) -- This would normally be something more practical, like a file
    signal_b = obj.new('time', { })
-   work_list = array<object> { signal_a, signal_b }
+   work_list = array<obj> { signal_a, signal_b }
 
    callback = function()
       msg('Thread has finished execution.')
@@ -81,9 +81,9 @@ end
    completed = 0
 
    signal = obj.new('time', { })
-   proc = processing.new({ timeout=5.0, signals = array<object> { signal } })
+   proc = processing.new({ timeout=5.0, signals = array<obj> { signal } })
 
-   scripts = array<object>
+   scripts = array<obj>
    for i in {0 to total} do
       scripts:push(obj.new('tiri', { statement = [[ msg('Queued script ]] .. i .. [[ running.') ]] }))
    end
@@ -104,13 +104,13 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Demonstrate the use of array<object> |> pipe iteration to fan out async work across multiple objects.
+-- Demonstrate the use of array<obj> |> pipe iteration to fan out async work across multiple objects.
 -- Each script object runs in its own thread; the pipe dispatches all of them without an explicit loop.
 
 @Test(priority=4) function ArrayPipeFanOut()
    -- Create a bunch of worker scripts that return a result
 
-   scripts = array<object> { }
+   scripts = array<obj> { }
    for i in {0 into 10} do
       scripts:push(obj.new('tiri', { statement = [[ print('Pipe worker ]] .. i .. [[ running.'); return ]] .. i }))
    end
@@ -409,7 +409,7 @@ end
    total = 20
    completed = 0
    signal = obj.new('time', { })
-   proc = processing.new({ timeout=5.0, signals = array<object> { signal } })
+   proc = processing.new({ timeout=5.0, signals = array<obj> { signal } })
 
    for i in {0 to total} do
       script = obj.new('tiri', { statement = f"for j in {{0 into 99}} do async.pool.counter = {i} * 100 + j end" })
@@ -437,7 +437,7 @@ end
 
 @Test(priority=20) function MultipleClientSignals()
    signal_a = obj.new('time', { }) -- This would normally be something more practical, like a file
-   work_list = array<object> { signal_a } -- List all the objects that will be worked on
+   work_list = array<obj> { signal_a } -- List all the objects that will be worked on
 
    async_statement = [[
       print(f'Thread {arg('Iteration')} is now in session.')
@@ -529,7 +529,7 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- async.cancel() accepts an array<object> argument.
+-- async.cancel() accepts an array<obj> argument.
 
 @Test(priority=25) function CancelArrayOfObjects()
    script_a = obj.new('tiri', { statement=[[ mSys.WaitTime(1.0) ]] })
@@ -547,7 +547,7 @@ end
    processing.halt(0.25)
 
    print('Cancelling both scripts at ', elapsed(), ' seconds')
-   check async.cancel(array<object> { script_a, script_b })
+   check async.cancel(array<obj> { script_a, script_b })
 
    print('Waiting for cancellation to complete at ', elapsed(), ' seconds')
 

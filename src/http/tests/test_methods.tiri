@@ -56,7 +56,7 @@ function rawHttpRequest(Method:str, Path:str, Body:any, Headers:any):<num, str>
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { socket } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { socket } })
    check socket.mtConnect('127.0.0.1', SERVER_PORT, 3.0)
    check proc.sleep()
 
@@ -163,7 +163,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "HTTP PUT failed to activate")
    check proc.sleep()
 
@@ -197,7 +197,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "HTTP DELETE failed to activate")
    check proc.sleep()
 
@@ -265,7 +265,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -299,7 +299,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "HTTP method test failed to activate")
    check proc.sleep()
    assert(http.status is 405, 'Expected 405 Method Not Allowed, got: ' .. http.status)
