@@ -797,12 +797,29 @@ function assert_duplicate_key(Source:str, Context:str)
       Context .. ': expected a duplicate-key diagnostic, got: ' .. tostring(result.diagnostics[0].message))
 end
 
+function no_table_results() end
+
+function two_table_results():<str, str>
+   return 'tail', 'extra'
+end
+
 @Test function DuplicateLiteralKeysAreRejected()
    -- Provable duplicates are a compile-time error, because the overwritten intermediate value cannot be observed.
    assert_duplicate_key("x = { name = 1, name = 2 }", 'duplicate named keys')
    assert_duplicate_key("x = { 10, [0] = 20 }", 'positional and explicit key collision')
    assert_duplicate_key("x = { ['name'] = 1, name = 2 }", 'string and named key collision')
    assert_duplicate_key("x = { [1] = 'a', [1.0] = 'b' }", 'equivalent integer and float keys')
+   assert_duplicate_key("x = { no_table_results(), [0] = 20 }", 'non-tail calls have one positional slot')
+end
+
+@Test function VariableResultTailDoesNotImplyDuplicateKey()
+   -- A final call writes from its nominal index only when it returns values, so the parser cannot prove a collision.
+   local preserved = { [0] = 'explicit', no_table_results() }
+   assert(preserved[0] is 'explicit', 'A zero-result tail call must preserve the explicit entry')
+
+   local expanded = { [0] = 'explicit', two_table_results(), }
+   assert(expanded[0] is 'tail', 'A multi-result tail call should write its first result at the nominal index')
+   assert(expanded[1] is 'extra', 'A multi-result tail call should expand into subsequent indices')
 end
 
 @Test function DistinctAndComputedKeysRemainValid()

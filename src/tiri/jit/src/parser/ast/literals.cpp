@@ -11,6 +11,8 @@
 // - Result filter expressions
 // - Return type annotations
 
+#include <unordered_map>
+
 //********************************************************************************************************************
 // Parses function literals (anonymous functions) with parameters and body.
 // Parses optional return type annotation after parameters for all functions.
@@ -399,6 +401,29 @@ struct ConstantKey {
    }
 };
 
+struct ConstantKeyHash {
+   [[nodiscard]] size_t operator()(const ConstantKey &Key) const noexcept
+   {
+      const size_t kind_hash = size_t(Key.kind) << 1;
+      switch (Key.kind) {
+         case ConstantKey::Kind::Number:  return std::hash<lua_Number>{}(Key.number) ^ kind_hash;
+         case ConstantKey::Kind::String:  return std::hash<std::string>{}(Key.text) ^ kind_hash;
+         case ConstantKey::Kind::Boolean: return std::hash<bool>{}(Key.boolean) ^ kind_hash;
+      }
+      return kind_hash;
+   }
+};
+
+// These expressions retain a variable result count when they are the final positional field.  Their nominal array
+// index is not guaranteed to be written, so it cannot participate in a provable duplicate-key diagnostic.
+
+[[nodiscard]] bool can_expand_table_tail(const ExprNode &Expression)
+{
+   return Expression.kind IS AstNodeKind::CallExpr or Expression.kind IS AstNodeKind::SafeCallExpr or
+      Expression.kind IS AstNodeKind::VarArgExpr or Expression.kind IS AstNodeKind::PipeExpr or
+      Expression.kind IS AstNodeKind::ResultFilterExpr;
+}
+
 // Extract the canonical key of a field, if the parser can prove it without evaluating user code.
 
 [[nodiscard]] std::optional<ConstantKey> constant_key_of(const TableField &Field, int32_t &NextArrayIndex)
@@ -453,7 +478,7 @@ ParserResult<std::vector<TableField>> AstBuilder::parse_table_fields(bool *has_a
 
    // Provable duplicate keys within one literal are rejected: the overwritten intermediate value cannot be observed
    // and the later entry unambiguously wins today, so accepting the literal can only hide a mistake.
-   std::vector<std::pair<ConstantKey, Token>> seen_keys;
+   std::unordered_map<ConstantKey, Token, ConstantKeyHash> seen_keys;
    int32_t next_array_index = 0;
 
    while (not this->ctx.check(TokenKind::RightBrace)) {
@@ -493,15 +518,21 @@ ParserResult<std::vector<TableField>> AstBuilder::parse_table_fields(bool *has_a
       }
       field.span = current.span();
 
+      const bool final_field = this->ctx.check(TokenKind::RightBrace) or
+         ((this->ctx.check(TokenKind::Comma) or this->ctx.check(TokenKind::Semicolon)) and
+          this->ctx.tokens().peek(1).kind() IS TokenKind::RightBrace);
+      const bool variable_tail = final_field and field.kind IS TableFieldKind::Array and field.value and
+         can_expand_table_tail(*field.value);
+
       if (auto key = constant_key_of(field, next_array_index)) {
-         for (const auto &[previous, previous_token] : seen_keys) {
-            if (previous IS *key) {
+         if (not variable_tail) {
+            auto [entry, inserted] = seen_keys.emplace(*key, current);
+            if (not inserted) {
                return this->fail<std::vector<TableField>>(ParserErrorCode::UnexpectedToken, current,
                   std::format("Duplicate key {} in table constructor; first defined at line {}",
-                     key->describe(), previous_token.span().line + 1));
+                     key->describe(), entry->second.span().line + 1));
             }
          }
-         seen_keys.emplace_back(std::move(*key), current);
       }
 
       fields.push_back(std::move(field));
