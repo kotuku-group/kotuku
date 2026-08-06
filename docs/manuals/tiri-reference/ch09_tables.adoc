@@ -54,7 +54,11 @@ A trailing comma after the last entry is permitted.
 ==== Length Operator
 
 For a table containing a contiguous sequence at integer keys `0` through `n - 1`, with no value at key `n`, the `#`
-operator returns `n`.  String-keyed entries do not contribute to this length.
+operator returns `n`.
+
+A table that has ever been addressed with a *non-numeric* key is not a sequence, and `#` returns `nil` for it.  The
+intent is that a table used as a record or as an associative map cannot silently report a length that describes only
+part of its contents.
 
 [source,tiri]
 ----
