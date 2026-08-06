@@ -1,12 +1,13 @@
-# Documentation Guide for Claude Sessions
+# Documentation Guide for Agents
 
-This guide describes the comprehensive documentation available in the `docs/` directories to help Claude sessions navigate and utilise Kōtuku documentation effectively.
+This guide describes the comprehensive documentation available in the `docs/` directories to help AI agents navigate and utilise Kōtuku documentation effectively.
 
 ## Documentation Structure Overview
 
-Kōtuku maintains three parallel documentation systems in the `docs/` directory:
+Kōtuku maintains four parallel documentation systems in the `docs/` directory:
 
 - **`docs/wiki/`** - Community-oriented guides and tutorials (Markdown source)
+- **`docs/manuals/`** - Long-form AsciiDoc manuals and their generated PDFs
 - **`docs/html/`** - Complete website with API references and galleries (HTML output)
 - **`docs/xml/`** - Machine-generated API documentation from source code (XML format)
 
@@ -23,22 +24,37 @@ The wiki contains practical, community-oriented documentation covering:
 
 ### Core Concepts
 - **`Home.md`** - Main wiki landing page with navigation
+- **`_Sidebar.md`** - Wiki navigation sidebar
 - **`Kotuku-Objects.md`** - Object system fundamentals
 - **`Kotuku-In-Depth.md`** - Advanced framework concepts
+- **`Kotuku-Design-Patterns.md`** - Recurring design patterns across the framework
+- **`Coding-With-AI.md`** - Guidance for AI-assisted development against Kōtuku
 
 ### Tiri Scripting Documentation
 - **`Tiri-Reference-Manual.md`** - Core Tiri language reference
+- **`Tiri-Defer-Syntax.md`** - Deferred execution syntax
 - **`Tiri-GUI-API.md`** - GUI toolkit APIs and constants
-- **`Tiri-JSON-API.md`** - JSON processing utilities
+- **`Tiri-Widgets.md`** - Widget system documentation
 - **`Tiri-VFX-API.md`** - Visual effects and animation APIs
-- **`Widgets.md`** - Widget system documentation
+- **`Tiri-IO-API.md`** - File and stream I/O
+- **`Tiri-JSON-API.md`** - JSON processing utilities
+- **`Tiri-URL-API.md`** - URL parsing and construction
+- **`Tiri-HTTP-Server-API.md`** - HTTP server interfaces
+- **`Tiri-Proxy-Server-API.md`** - Proxy server interfaces
+- **`Tiri-OAuth-API.md`** - OAuth authentication flows
+- **`Tiri-Config-API.md`** - Configuration file handling
+- **`Tiri-Options-API.md`** - Command-line option parsing
+- **`Tiri-Tempus-API.md`** - Date and time handling
 
-### RIPL Document Engine
+### Document and Text Engines
 - **`RIPL-Reference-Manual.md`** - Rich text document formatting system
+- **`Regex-Manual.md`** - Regular expression support
+- **`XML-Comparisons.md`** - Comparison of the XML processing approaches
 
 ### Development Tools
 - **`Unit-Testing.md`** - Flute test documentation
 - **`Origo.md`** - Command-line tool usage
+- **`Tuku.md`** - Tuku tool usage
 - **`TDL-Tools.md`** - Interface Definition Language tools
 - **`TDL-Reference-Manual.md`** - TDL syntax and usage
 
@@ -52,6 +68,23 @@ The wiki contains practical, community-oriented documentation covering:
 - Written for developers learning the framework
 - Complement the technical API documentation
 - Include working examples and best practices
+
+## 📘 docs/manuals/ - Long-Form AsciiDoc Manuals
+
+**Location:** `docs/manuals/` (AsciiDoc source and generated PDFs)
+
+Book-length manuals maintained as AsciiDoc and published as PDF.  Unlike the wiki, these are written as
+specifications and contracts rather than tutorials.
+
+- **`tiri-reference/`** - The Tiri Programming Language manual.  Carries its own `AGENTS.md` with the manual's
+  style guide, versioning rules, and function documentation template.  Read that file before editing the manual.
+- **`fonts/`** - Noto font files embedded into the generated PDFs.
+
+**Key Usage Notes:**
+- Each manual folder holds its own `book.adoc` master document and a `tiri_lexer.rb` syntax highlighter.
+- PDF generation uses `asciidoctor-pdf`; see the manual's own `AGENTS.md` for the exact invocation.
+- These manuals are authored by hand.  They are *not* regenerated from source code, so changes here will not be
+  overwritten by the documentation pipeline.
 
 ## 🌐 docs/html/ - Complete Website Documentation
 
@@ -67,9 +100,11 @@ The HTML documentation provides a fully browsable website experience:
 ### API Documentation Structure
 - **`modules/`** - Module-level documentation
   - `core.html`, `vector.html`, `display.html`, `network.html`, etc.
-- **`modules/classes/`** - Individual class documentation (70+ classes)
+- **`modules/classes/`** - Individual class documentation
   - `vector.html`, `surface.html`, `file.html`, `bitmap.html`, etc.
   - Each class page includes methods, fields, actions, and examples
+- **`wiki/`** - Rendered HTML of the `docs/wiki/` Markdown sources
+- **`manuals/`** - Published PDF manuals
 
 ### Gallery Assets
 - **`gallery/`** - Screenshots and demonstrations
@@ -92,19 +127,18 @@ The HTML documentation provides a fully browsable website experience:
 Raw structured documentation extracted directly from C++ source code:
 
 ### Module Documentation
-- **`modules/core.xml`** - Core system documentation
-- **`modules/vector.xml`** - Vector graphics module
-- **`modules/display.xml`** - Display management module
-- **`modules/network.xml`** - Network communications module
-- And others for each Kōtuku module
+- **`modules/`** - One XML file per module (16 in total): `audio`, `config`, `core`, `display`, `document`,
+  `font`, `http`, `network`, `regex`, `scintilla`, `svg`, `tiri`, `vector`, `xml`, `xquery`, `xrandr`.
 
 ### Class Documentation
-- **`modules/classes/`** - Individual class XML files
+- **`modules/classes/`** - Individual class XML files (82 in total)
   - **`vector.xml`** - Abstract vector graphics base class
   - **`surface.xml`** - Display surface management
   - **`file.xml`** - File system operations
   - **`bitmap.xml`** - Image processing
-  - 70+ additional class files covering all Kōtuku functionality
+
+### Transformation Assets
+- **`css/`, `js/`, `images/`** - Assets consumed when generating the HTML website
 
 ### Structure and Content
 Each XML file contains:
@@ -121,48 +155,15 @@ Each XML file contains:
 - Structured data suitable for programmatic processing
 - Used to generate the HTML documentation
 
-## 🤖 AI-Optimized Documentation System
-
-**Location:** `docs/xml/ai/` files and `tools/docgen-ai.tiri`
-
-For Claude Code sessions, a specialized condensed documentation format is available:
-
-### AI Documentation Files
-- **`ai-condensed.xsd`** - XML Schema for the condensed format
-- **`ai-condense.xsl`** - XSLT transformation from full XML to condensed format
-- **`../tools/docgen-ai.tiri`** - Build script for AI documentation
-
-### Condensed Format Features
-The AI documentation system creates ultra-compact XML files optimized for AI processing:
-
-- **95%+ size reduction** from original XML files
-- **Complete API coverage** - all modules, classes, methods, fields
-- **Essential information preserved** - signatures, types, constants, errors
-- **Abbreviated element names** - `<m>` for modules, `<cl>` for classes, etc.
-- **Short comments only** - verbose descriptions removed
-- **Machine-readable structure** - consistent XML format
-
-### Generation and Usage
-```bash
-# Generate AI-optimized documentation
-origo tools/docgen-ai.tiri
-
-# Custom output location
-origo tools/docgen-ai.tiri output=my-docs.xml
-```
-
-The generated files in `docs/xml/ai/modules/` and `docs/xml/ai/classes/` provide comprehensive API reference for AI assistants while consuming minimal context window space.
-
 ## 📖 How to Use This Documentation Effectively
 
 ### For Understanding APIs
 1. **Start with wiki guides** for conceptual understanding
-4. **Load AI documentation** for comprehensive API coverage in AI context
-3. **Check XML files** for extended commentary and examples
+2. **Check XML files** in `docs/xml/modules/` for precise interfaces, extended commentary and examples
 
 ### For Tiri Scripting
 1. **`Tiri-Reference-Manual.md`** for language fundamentals
-2. **`Tiri-GUI-API.md`** for user interface development
+2. **The topic-specific `Tiri-*-API.md` page** for the area in question (GUI, IO, JSON, HTTP server, OAuth, and so on)
 3. **XML class pages** for specific object APIs
 4. **Examples in `examples/`** for practical patterns
 
@@ -183,14 +184,12 @@ The documentation follows this generation pipeline:
 
 1. **C++ Source** → **XML** (via TDL parsing)
 2. **XML** → **HTML** (via XSLT transformation)
-3. **XML** → **AI-optimized XML** (via condensed transformation)
-4. **Markdown** → **HTML** (via documentation generator)
+3. **Markdown** → **HTML** (via documentation generator)
 
 Key scripts:
 
 - **`tools/docgen.tiri`** - Main documentation generator
-- **`tools/docgen-wiki.tiri`** - Wiki-specific processing
-- **`tools/docgen-ai.tiri`** - AI documentation generator
+- **`tools/docgen_wiki.tiri`** - Wiki-specific processing
 
 ## ✍️ Writing Style Guide
 
@@ -267,16 +266,14 @@ When documenting functions or methods, follow this consistent pattern:
 
 ### When Researching Kōtuku Concepts
 - Start with relevant wiki pages for conceptual understanding
-- Load AI documentation for complete API coverage
-- Reference XML for detailed technical specifications
+- Reference `docs/xml/` for detailed technical specifications and complete API coverage
 - **NEVER** read documentation from `docs/html` when writing code, use the XML documentation instead.
 
 ### When Writing Code
 - Check existing examples in `examples/` directory first
-- Use API documentation to understand object interfaces
+- Use the XML API documentation to understand object interfaces
 - Follow patterns established in wiki tutorials
-- Reference condensed AI docs for quick API lookup
-- If there are discrepencies between documentation and code, bring it to the user's attention
+- If there are discrepancies between documentation and code, bring it to the user's attention
 
 ### When Debugging Issues
 - Consult error codes in `docs/wiki/System-Error-Codes.md`
@@ -285,15 +282,7 @@ When documenting functions or methods, follow this consistent pattern:
 
 ### When Working with Tiri Scripts
 - Always study existing `.tiri` files for patterns
-- Use GUI API documentation for interface constants
+- Use `Tiri-GUI-API.md` for interface constants
 - Reference class XML pages for object method signatures
-- Use AI documentation for complete method/field reference
 
-### For AI Documentation Maintenance
-The AI documentation should be regenerated when:
-- New classes or modules are added
-- API signatures change in existing code
-- Field definitions or access patterns are modified
-- Constants or enumerations are updated
-
-This documentation ecosystem provides comprehensive coverage from high-level concepts to low-level implementation details, with specialized AI-optimized formats for efficient context usage, enabling effective development with the Kōtuku framework.
+This documentation ecosystem provides comprehensive coverage from high-level concepts to low-level implementation details, enabling effective development with the Kōtuku framework.

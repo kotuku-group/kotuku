@@ -2777,9 +2777,9 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  cbnz TAB:CARG2, >9
     |3:
     |->BC_LEN_Z:
-    |  // An ordinary table that has ever been addressed with a string key has no sequence length.
+    |  // An ordinary table that has ever been addressed with a non-numeric key has no sequence length.
     |  ldrb TMP1w, TAB:CARG1->flags
-    |  tbnz TMP1w, #TAB_STRING_KEYED_BIT, >8
+    |  tbnz TMP1w, #TAB_ASSOCIATIVE_BIT, >8
     |  bl extern lj_tab_len		// (GCtab *t)
     |  // Returns uint32_t (but less than 2^31).
     |  b <1
@@ -3367,7 +3367,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  // The raw store commits here, so classify the receiving table (lj_tab_newkey() covers the new-key path
     |  // below).  A store diverted to __newindex never reaches this point.
     |  ldrb CARG4w, TAB:CARG2->flags
-    |  orr CARG4w, CARG4w, #TAB_STRING_KEYED
+    |  orr CARG4w, CARG4w, #TAB_ASSOCIATIVE
     |  strb CARG4w, TAB:CARG2->flags
     |   str TMP0, NODE:CARG3->val
     |    tbnz TMP2w, #2, >7		// isblack(table)

@@ -3450,8 +3450,8 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  jnz >9
     |3:
     |->BC_LEN_Z:
-    |  // An ordinary table that has ever been addressed with a string key has no sequence length.
-    |  test byte TAB:CARG1->flags, TAB_STRING_KEYED
+    |  // An ordinary table that has ever been addressed with a non-numeric key has no sequence length.
+    |  test byte TAB:CARG1->flags, TAB_ASSOCIATIVE
     |  jnz >8
     |  mov RB, BASE        // Save BASE.
     |  call extern lj_tab_len    // (GCtab *t)
@@ -4091,7 +4091,7 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  jnz >7
     |3:  // Set node value.  The raw store commits here, so classify the receiving table (lj_tab_newkey() covers the
     |    // new-key path below).  A store diverted to __newindex never reaches this point.
-    |  or byte TAB:RB->flags, TAB_STRING_KEYED
+    |  or byte TAB:RB->flags, TAB_ASSOCIATIVE
     |  mov ITYPE, [BASE+RA*8]
     |  mov [TMPR], ITYPE
     |  ins_next
