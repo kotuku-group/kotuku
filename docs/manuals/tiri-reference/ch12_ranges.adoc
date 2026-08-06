@@ -264,23 +264,21 @@ end
 
 ==== Variable and Constructor Ranges
 
-When iterating over a range stored in a variable or created with the constructor, call it to obtain the iterator triple:
+A range stored in a variable or produced by the constructor iterates directly, exactly as a literal does:
 
 [source,tiri]
 ----
 r = {0 to 5}
 sum = 0
-for i in r() do
+for i in r do
    sum += i
 end
 -- sum is 10
 
-for i in range(0, 10, false, 2)() do
+for i in range(0, 10, false, 2) do
    print(i)   -- 0, 2, 4, 6, 8
 end
 ----
-
-Using a range variable directly (without calling it) raises an error.
 
 ==== Empty and Single-Element Ranges
 

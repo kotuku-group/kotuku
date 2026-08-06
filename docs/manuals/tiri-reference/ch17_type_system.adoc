@@ -1,4 +1,5 @@
 // VERIFIED: 2026-02-12
+// UPDATED: 2026-08-06 - Corrected the array<struct> annotation form, which is rejected, and the quoted array member mismatch diagnostic (commit bbac3cf3f)
 
 [[ch-type-system]]
 == Type System
@@ -368,7 +369,9 @@ function first(Values:array<int, 4>)         -- error: an annotation cannot decl
 function first(Values:array<array<string>>)  -- error: use array<array>
 ----
 
-`array<any>` is an array contract, not the variant opt-out: it accepts an array of any element type and rejects every non-array value.  Only a plain `:any` annotation removes the constraint entirely.  `array<array>` accepts an array of arrays without constraining the elements of the inner arrays.  `array<struct>` accepts an array of any single struct definition, while `array<struct<Name>>` requires that definition.
+`array<any>` is an array contract, not the variant opt-out: it accepts an array of any element type and rejects every non-array value.  Only a plain `:any` annotation removes the constraint entirely.  `array<array>` accepts an array of arrays without constraining the elements of the inner arrays.
+
+A struct element type must name its definition.  `array<struct>` is rejected, because an unnamed struct element carries no definition for the contract to compare, and `array<struct<Name>>` requires a definition that is already declared at the point of use.  Write `array<any>` for an array whose struct definition varies.
 
 The element type is part of the fixed type wherever a type is fixed, including implicit type fixing from an untyped declaration:
 
@@ -376,8 +379,8 @@ The element type is part of the fixed type wherever a type is fixed, including i
 ----
 local scores = array<int> { 1, 2 }   -- fixed to 'array<int>'
 scores = array<int> { 3 }            -- valid
-scores = array<string> { 'a' }       -- error: array member mismatch: cannot
-                                     -- assign 'array<string>' to 'array<int>'
+scores = array<string> { 'a' }       -- error: array member mismatch: expected
+                                     -- array<int>, got array<string>
 ----
 
 [discrete]
@@ -809,7 +812,7 @@ count(dynamic)   -- error: expected num, got string
 A contract is stated in the native vocabulary and compares native types, so it cannot distinguish storage widths: `num` is satisfied by a value that originated in an `int16` field as readily as by one from a `double` field.  Within that limit, contracts distinguish types that are related in the underlying representation:
 
 * `table` and array annotations are mutually exclusive.  An array does not satisfy `table` and a table does not satisfy `array<any>`.
-* `array<element>` requires an array whose element type is exactly `element`.  `array<int>` rejects `array<double>`, `array<any>` and every other element type, and `array<struct<Name>>` requires that struct definition.  `array<any>` accepts any array; `array<struct>` accepts an array of any single struct definition.
+* `array<element>` requires an array whose element type is exactly `element`.  `array<int>` rejects `array<double>`, `array<any>` and every other element type, and `array<struct<Name>>` requires that struct definition.  `array<any>` accepts any array.  There is no `array<struct>` form; see <<sec-array-member-annotations>>.
 * `struct<Name>` requires an instance of the declared layout `Name`.  An instance of a different layout is rejected even when the two layouts declare identical fields.  The plain `struct` annotation accepts any struct instance.
 * `range` requires a range value.  `userdata` accepts other userdata values but rejects ranges and thunks, even though ranges are userdata at runtime (see <<sec-userdata>>).
 * `func` accepts any value that normal call dispatch supports, which includes a table or userdata carrying a `pass:[__]call` metamethod.

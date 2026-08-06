@@ -203,7 +203,18 @@ Returns the raw length of the array part without invoking the `__len` metamethod
 
 [[sec-iteration]]
 === Iteration
-indexterm:[tables, iteration] Tiri provides four iterator functions for traversing tables in `for` loops.
+indexterm:[tables, iteration] A table placed directly in a `for` loop header is iterated without an iterator function, yielding the same key-value pairs as `pairs()`:
+
+[source,tiri]
+----
+for key, value in { x = 1, y = 2 } do
+   print(key, value)
+end
+----
+
+This holds even when the table declares a `pass:[__]call` metamethod; a bare table is always iterated, never called.  The general rule is defined in <<sec-bare-collection-iteration>>.
+
+Tiri also provides four iterator functions for traversing tables, which remain the way to select a specific traversal.
 
 ==== pairs()
 

@@ -1,4 +1,5 @@
 // VERIFIED: 2028-08-05
+// UPDATED: 2026-08-06 - Documented bare collection iteration in generic for loops (commit 5f9e2003e)
 
 [[ch-control-flow]]
 == Control Flow
@@ -161,12 +162,41 @@ Evaluates `iterator_expr` once to obtain an iterator function, an invariant stat
 
 [source,tiri]
 ----
-for i, v in ipairs({10, 20, 30}) do
-   print(i, v)   -- 0 10, 1 20, 2 30
+for i, v in {10, 20, 30} do
+   print(i, ' ', v)   -- 0 10, 1 20, 2 30
 end
 ----
 
 The loop variables are local to the loop body.
+
+[[sec-bare-collection-iteration]]
+==== Bare Collection Iteration
+
+indexterm:[loops, bare iteration] indexterm:[iteration, bare collections] When the expression list after `in` yields exactly one value and that value is a collection, the collection is iterated directly.
+
+[source,tiri]
+----
+for index, value in array<int> { 10, 20, 30 } do end   -- 0 10, 1 20, 2 30
+for key, value in { x = 1, y = 2 } do end              -- 'x' 1, 'y' 2
+for value in range(1, 5) do end                        -- 1, 2, 3, 4
+----
+
+The three collection categories yield the following:
+
+`array`::
+Index and value, zero-based, in ascending index order.  A single loop variable therefore receives the *index*, not the element; write `for _, value in arr` or `values(arr)` to iterate elements alone.
+
+`table`::
+Key and value, exactly as `pairs()` produces them, including the `pass:[__]pairs` metamethod when the table declares one.  The order over non-integer keys is unspecified.
+
+`range`::
+Each value of the sequence in turn.  This covers ranges held in a variable and ranges returned by `range()` and `range.new()`, not only range literals.
+
+The target expression is evaluated exactly once, before the first iteration, so a function call in the loop header is not repeated per element.
+
+A single value that is not a collection is still resolved by the established rules.  A function is used as the iterator function, as is any non-collection value carrying a `pass:[__]call` metamethod.  A table is always iterated as a table, even when it declares `pass:[__]call`; call it explicitly if the callable behaviour is wanted.  Two or more values after `in` are always taken as an iterator triple, unchanged.
+
+Any other single value -- `nil`, a number, a string or a boolean -- raises an error at the point the loop starts.
 
 ==== Standard Iterators
 
@@ -199,17 +229,17 @@ end
 
 ==== Range Iterators
 
-Ranges (see <<ch-ranges>>) are callable.  Calling a range returns an iterator function suitable for use with `for pass:[...] in`:
+A range (see <<ch-ranges>>) iterates directly, whether it is written as a literal in the loop header or held in a variable:
 
 [source,tiri]
 ----
 r = {1 to 10}
-for i in r() do
+for i in r do
    print(i)
 end
 ----
 
-When a range literal appears directly after `in`, the call is implicit -- the compiler wraps it automatically.  When using a range stored in a variable, invoke it explicitly with `()`.
+Ranges are also callable, and calling one returns an iterator function suitable for use with `for pass:[...] in` and other mechanisms that rely on iterators.
 
 [[sec-break-and-continue]]
 === Break & Continue

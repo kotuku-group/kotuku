@@ -1,4 +1,5 @@
 // CHANGED: 2026-07-29 — Removed newproxy(); the function is now internal.
+// UPDATED: 2026-08-06 - Recorded the zero-based math.random(High) range (commit 2e7951d41)
 
 [[appendix-standard-library-quick-reference]]
 [appendix]
@@ -269,7 +270,7 @@ All trigonometric functions operate in radians.
 |===
 |Signature |Description
 
-|`math.random([Low], [High])`|Returns a pseudo-random number.
+|`math.random([Low], [High])`|Returns a pseudo-random number.  No arguments: a float in [0, 1).  One argument: an integer in [0, `High`).  Two arguments: an integer in [`Low`, `High`].
 |`math.randomSeed(Seed)`     |Seeds the random number generator.
 |===
 

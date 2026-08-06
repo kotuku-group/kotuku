@@ -36,7 +36,7 @@ indexterm:[arrays, fundamentals] Each array declares a fixed element type at cre
 
 |`byte`
 |1
-|Unsigned 8-bit integer (0--255).  Alias: `char`.
+|Unsigned 8-bit integer (0--255).  Aliases: `char`, `int8`.
 
 |`int16`
 |2
@@ -388,7 +388,7 @@ Returns the last element, or `nil` if the array is empty.
 
 Arrays support three iteration styles for use in `for` loops.
 
-Direct iteration returns index-value pairs:
+Direct iteration returns index-value pairs, following the general rule defined in <<sec-bare-collection-iteration>>:
 
 [source,tiri]
 ----
@@ -397,6 +397,8 @@ for i, v in arr do
    print(i, v)
 end
 ----
+
+A single loop variable binds the index rather than the element, because the index is the first value yielded.  Use `for _, v in arr` or `values(arr)` to iterate elements alone.
 
 The `ipairs()`, `pairs()`, and `values()` functions also work on arrays with identical semantics to tables:
 
@@ -623,6 +625,8 @@ arr:find(20, {4 into 0})   -- 3 (found searching backwards)
 
 indexterm:[arrays, copying] indexterm:[arrays, slicing] Creates a new array with the same element type and a copy of all elements.  For reference types (tables, objects, arrays), the clone is shallow: the new array holds references to the same underlying objects.
 
+A `struct` element type is not supported and raises an error.
+
 [discrete]
 ==== slice()
 
@@ -654,9 +658,11 @@ Raises an error if the copy would exceed the destination bounds.
 
 The source must match the destination:
 
-* An array source must declare the same element type as the destination, and for `struct` element types the same struct definition.  Element values are transferred without conversion, so an `array<double>` cannot be copied into an `array<int>`.
+* An array source must declare the same element type as the destination.  Element values are transferred without conversion, so an `array<double>` cannot be copied into an `array<int>`.
 * A string source requires a byte array destination.
 * A table source is read as a sequence and each element must satisfy <<sec-element-storage-contract>>.  The complete sequence is validated before the destination is modified, so a rejected element leaves the destination unchanged as defined in <<sec-array-atomic-mutation>>.
+
+CAUTION: An array source is matched on its element type alone.  For a `struct` element type the struct definition is not compared, so two `struct` arrays declaring different definitions satisfy the check and their raw bytes are transferred.  The result is meaningless when the definitions differ, and unsafe when their sizes differ.  Confirm the definitions match at the call site before copying between struct arrays.
 
 [source,tiri]
 ----
@@ -795,7 +801,9 @@ arr:map(v => tostring(v))   -- error: incompatible element type
 
 [.api]`result = arr:filter(Predicate)`
 
-Returns a new array containing only the elements for which `Predicate(Value, Index)` returns a truthy value.  The original array is not modified.  The result preserves the source element type, including the struct definition of a `struct` element type.
+Returns a new array containing only the elements for which `Predicate(Value, Index)` returns a truthy value.  The original array is not modified.  The result declares the same element type as the source.
+
+A `struct` element type is not supported, because the result array is created without the struct definition that gives a struct element its size.  Filter a `struct` array by iterating it and appending the wanted elements to an array constructed with the same `array<struct<Name>>` declaration.
 
 [source,tiri]
 ----

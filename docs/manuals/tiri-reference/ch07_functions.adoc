@@ -581,7 +581,8 @@ Tail call optimisation applies when all of the following conditions hold:
 - The return statement contains exactly one expression.
 - That expression is a function call.
 - The return statement is not inside a `try` block.
-- The function does not have typed return values that require validation.
+- The enclosing function holds no `<close>` variables or `defer` blocks requiring cleanup on scope exit.
+- The function does not have typed return values that require validation, unless the call is a direct self-call (see <<sec-tail-calls-recursion>>).
 
 If any condition is not met, the call uses a standard call-and-return sequence.
 

@@ -385,16 +385,19 @@ Generates a pseudo-random number.  Behaviour depends on the number of arguments:
 |Returns a floating-point number in the range [0, 1).
 
 |One (`High`)
-|Returns an integer in the range [1, `High`].
+|Returns an integer in the range [0, `High`), that is, from `0` up to but excluding `High`.
 
 |Two (`Low`, `High`)
-|Returns an integer in the range [`Low`, `High`].
+|Returns an integer in the range [`Low`, `High`], with both bounds inclusive.
 |===
+
+The single-argument form is zero-based and exclusive of its bound, so `math.random(#arr)` selects a valid index of `arr` directly.  The two-argument form is unaffected and retains inclusive bounds, so `math.random(1, N)` is the way to obtain a one-based value.
 
 [source,tiri]
 ----
 math.random()        -- e.g. 0.523 (float in [0, 1))
-math.random(10)      -- e.g. 7     (integer in [1, 10])
+math.random(10)      -- e.g. 7     (integer in [0, 10) -- never 10)
+math.random(1)       -- always 0   (the range [0, 1) holds one integer)
 math.random(5, 15)   -- e.g. 11    (integer in [5, 15])
 ----
 
