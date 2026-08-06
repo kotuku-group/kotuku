@@ -2,6 +2,7 @@
 // UPDATED: 2026-08-06 - Recorded the #t and math.random(N) divergences from Lua (commits 6fc85b01b, 2e7951d41)
 // UPDATED: 2026-08-06 - Broadened the #t divergence to every non-numeric key (commit d40436498)
 // UPDATED: 2026-08-06 - Added the sparse-key divergence, the sequence guards and duplicate constructor keys (commit 26e122ab7)
+// UPDATED: 2026-08-06 - Added the type() 'bool' divergence and regrouped the silent differences (commit 66ad8a7dc)
 
 [[appendix-migration-from-lua]]
 [appendix]
@@ -104,6 +105,10 @@ indexterm:[Lua, breaking changes] The following table lists all incompatible cha
 |Functions return values of any type
 |Results are inferred; a dynamic result needs an annotation
 |<<sec-return-type-inference>>
+
+|`type()` returns `'boolean'`
+|Returns `'bool'`
+|<<sec-type-inspection>>
 
 |Tables for sequential data
 |Arrays (distinct type)
@@ -635,10 +640,16 @@ The following standard Lua functions are removed or replaced:
 [discrete]
 ==== Behavioural Differences
 
-Two operators in common Lua code return different values in Tiri and produce no diagnostic when translated literally:
+Three constructs in common Lua code return different values in Tiri and produce no diagnostic when translated literally:
 
 `#t` on a mixed table::
 Lua returns the sequence length and ignores the hash part.  Tiri returns `nil` for any table that has ever been stored through a key that is not a non-negative integer, so a record-shaped table, a set keyed by object identity, a table keyed by booleans and a table indexed from `-1` all have no length.  Non-negative integer keys are unaffected however scattered, so `t[9999]` leaves the length intact.  Translate `#t` to `rawlen(t)` wherever the numerical sequence length is what the original code meant.  See <<sec-table-classification>>.
+
+`type()` on a boolean::
+Lua returns `'boolean'`, Tiri returns `'bool'.  A Lua test written as `type(v) is 'boolean'` therefore evaluates to `false` for every value.  See <<sec-type-inspection>>.
+
+`math.random(N)`::
+Lua returns an integer in [1, `N`].  Tiri returns an integer in [0, `N`), matching its zero-based indexing so that `math.random(#arr)` is a valid index.  Translate a one-based Lua call to the two-argument form `math.random(1, N)`.  See <<sec-random-numbers>>.
 
 Two further differences produce an explicit diagnostic rather than a wrong value:
 
@@ -647,9 +658,6 @@ Sequence operations reject classified tables::
 
 Duplicate constructor keys are rejected::
 Lua accepts `{ name = 1, name = 2 }` and keeps the last value.  Tiri rejects any duplicate key it can resolve at compile time.  See <<sec-table-fundamentals>>.
-
-`math.random(N)`::
-Lua returns an integer in [1, `N`].  Tiri returns an integer in [0, `N`), matching its zero-based indexing so that `math.random(#arr)` is a valid index.  Translate a one-based Lua call to the two-argument form `math.random(1, N)`.  See <<sec-random-numbers>>.
 
 [[sec-migration-removed-libraries]]
 === Removed Libraries

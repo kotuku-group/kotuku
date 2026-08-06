@@ -2,6 +2,7 @@
 // UPDATED: 2026-07-26 - Migrated examples to range loops following removal of the Lua-style numeric for syntax (commit 1f23b978)
 // CHANGED: 2026-07-29 — Added <<sec-finalisers-and-scope-cleanup>> to distinguish nondeterministic __gc finalisation from deterministic <close> and defer (commit 279cb0a7)
 // CHANGED: 2026-07-31 — Tightened deferred-parameter guidance.
+// UPDATED: 2026-08-06 - Removed 'boolean' from the deferred-expression type names, which now rejects it (commit 66ad8a7dc)
 
 [[ch-resource-management]]
 == Resource Management
@@ -466,7 +467,7 @@ x = <string{ getValue() }>
 y = <num{ compute() }>
 ----
 
-Supported type names: `str`, `num`, `bool`, `table`, `obj`, `string`, `number`, `boolean`.
+Supported type names: `str`, `num`, `bool`, `table`, `obj`, `string`, `number`.  Any other name raises a parse-time error.
 
 [discrete]
 ==== Semantics
@@ -503,7 +504,7 @@ For literal values and simple expressions, the type is inferred automatically:
 |number
 
 |`<{ true }>`
-|boolean
+|bool
 
 |`<{ {} }>`
 |table
@@ -515,7 +516,7 @@ For literal values and simple expressions, the type is inferred automatically:
 |string
 
 |`<{ a < b }>`
-|boolean
+|bool
 |===
 
 When the expression is a function call or otherwise ambiguous, use an explicit type annotation to ensure correct behaviour with type-checking code.

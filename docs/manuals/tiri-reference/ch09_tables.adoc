@@ -80,7 +80,7 @@ t[1] = nil
 #t              -- unspecified: do not rely on a particular boundary
 ----
 
-Entries above a gap remain accessible even though the table no longer has a defined sequence length:
+Entries above a hole remain accessible even though the table no longer has a defined sequence length:
 
 [source,tiri]
 ----

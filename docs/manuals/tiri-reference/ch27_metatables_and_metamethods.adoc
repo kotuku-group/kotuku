@@ -2,6 +2,7 @@
 // UPDATED: 2026-08-06 - __len must now return a number, and takes precedence over the string-key classification (commit 6fc85b01b)
 // UPDATED: 2026-08-06 - The classification now covers every non-numeric key (commit d40436498)
 // UPDATED: 2026-08-06 - __len masks the length only; the sequence operations ignore it (commit 26e122ab7)
+// UPDATED: 2026-08-06 - Renamed the boolean return kind to bool in the metamethod signatures (commit 66ad8a7dc)
 
 [[ch-metatables-and-metamethods]]
 == Metatables & Metamethods
@@ -461,10 +462,10 @@ indexterm:[metamethods, reference] The following table lists every metamethod re
 |`pass:[__]newindex`   |Write to absent key          |`pass:[__]newindex(self, key, value)` or table
 |`pass:[__]gc`         |Table or userdata finalisation |`pass:[__]gc(self)`
 |`pass:[__]mode`       |Weak table mode (string)     |Not callable; value is `'k'`, `'v'`, or `'kv'`
-|`pass:[__]eq`         |`is` / `is not` / `!=` comparison       |`pass:[__]eq(a, b)` pass:[->]boolean
+|`pass:[__]eq`         |`is` / `is not` / `!=` comparison       |`pass:[__]eq(a, b)` pass:[->]bool
 |`pass:[__]len`        |`#` operator                 |`pass:[__]len(self)` pass:[->]number
-|`pass:[__]lt`         |`<` and `>` comparison       |`pass:[__]lt(a, b)` pass:[->]boolean
-|`pass:[__]le`         |`\<=` and `>=` comparison |`pass:[__]le(a, b)` pass:[->]boolean
+|`pass:[__]lt`         |`<` and `>` comparison       |`pass:[__]lt(a, b)` pass:[->]bool
+|`pass:[__]le`         |`\<=` and `>=` comparison |`pass:[__]le(a, b)` pass:[->]bool
 |`pass:[__]concat`     |`..` operator                |`pass:[__]concat(a, b)`
 |`pass:[__]call`       |Function call on table       |`pass:[__]call(self, ...)`
 |`pass:[__]add`        |`+` operator                 |`pass:[__]add(a, b)`

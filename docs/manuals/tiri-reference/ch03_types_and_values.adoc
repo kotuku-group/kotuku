@@ -4,7 +4,7 @@
 == Types & Values
 indexterm:[types] indexterm:[values] Tiri is dynamically typed: every value carries its type at runtime, and variables do not require explicit type declarations.  Variables are constrained through _sticky types_; see <<ch-type-system>> for type inference, annotations, runtime contracts and `nil` assignment.
 
-Tiri defines the following types: nil, boolean, number, string, table, array, function, userdata, object and struct.
+Tiri defines the following types: nil, bool, number, string, table, array, function, userdata, object and struct.
 
 [[sec-nil]]
 === Nil
@@ -16,7 +16,7 @@ Unassigned variables evaluate to `nil`.  Setting a table field to `nil` removes 
 
 [[sec-booleans]]
 === Booleans
-indexterm:[booleans] The type `boolean` has exactly two values: `true` and `false`.
+indexterm:[booleans] The type `bool` has exactly two values: `true` and `false`.  `bool` is the sole spelling of the type name; it is what `type()` returns and the only form an annotation accepts.
 
 Booleans are the natural result of comparison and logical expressions.  Conditional constructs (`if`, `while`) accept any value, not only booleans; see <<sec-truthiness>> for the evaluation rules.
 
@@ -179,12 +179,12 @@ NOTE: The sigil identifies the rule for testing.  A single `?` applies the stand
 
 indexterm:[type inspection] `result = type(Value)`
 
-Returns a string naming the type of `Value`.  The returned string is one of: "nil", "boolean", "number", "string", "table", "array", "function", "userdata", "range", "object", "struct".
+Returns a string naming the type of `Value`.  The returned string is one of: "nil", "bool", "number", "string", "table", "array", "function", "userdata", "range", "object", "struct".
 
 [source,tiri]
 ----
 type(nil)           -- 'nil'
-type(true)          -- 'boolean'
+type(true)          -- 'bool'
 type(42)            -- 'number'
 type(3.14)          -- 'number'
 type('hello')       -- 'string'

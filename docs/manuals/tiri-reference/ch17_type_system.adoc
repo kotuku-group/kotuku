@@ -1,5 +1,7 @@
 // VERIFIED: 2026-02-12
 // UPDATED: 2026-08-06 - Corrected the array<struct> annotation form, which is rejected, and the quoted array member mismatch diagnostic (commit bbac3cf3f)
+// UPDATED: 2026-08-06 - int8 is now an accepted array element spelling; corrected the unsigned rows, which are struct-only (commit 7517513e3)
+// UPDATED: 2026-08-06 - Removed the 'boolean' annotation alias, leaving 'bool' as the sole spelling (commit 66ad8a7dc)
 
 [[ch-type-system]]
 == Type System
@@ -80,7 +82,7 @@ end
 local sample = struct<Sample> { Count = 7 }
 local total = sample.Count   -- fixed to 'num', not to 'int16'
 total = 2.5                  -- valid: 'num' admits every numeric representation
-total = 'seven'              -- error: cannot assign 'string' to variable of type 'number'
+total = 'seven'              -- errors on assigning string to a number
 ----
 
 Writing in the other direction re-imposes the compatibility rules.  The storage contract of the field or element governs the write, including range and precision conversion, and it is stricter than the native type that the value carries.  Those rules are defined in <<sec-struct-field-access>> for struct fields and <<sec-element-storage-contract>> for array elements:
@@ -142,7 +144,7 @@ Each variable in a multiple declaration is fixed independently based on its own 
 local a, b, c = 1, 'two', true
 -- a is fixed to 'number'
 -- b is fixed to 'string'
--- c is fixed to 'boolean'
+-- c is fixed to 'bool'
 ----
 
 [discrete]
@@ -278,7 +280,7 @@ An annotation is written in the native vocabulary.  The sole exception is the el
 local_declaration = "local" identifier ":" type_name [ "=" expression ] ;
 
 (* native vocabulary *)
-type_name         = "any" | "nil" | "bool" | "boolean"
+type_name         = "any" | "nil" | "bool"
                   | "num" | "number" | "str" | "string"
                   | "table" | "func" | "function"
                   | "obj" | "object" | "range" | "userdata"
@@ -327,7 +329,7 @@ These are the names of the native vocabulary, and they are the complete set that
 
 |`any`              |Any (see <<sec-the-any-type>>)
 |`nil`              |Nil
-|`bool`, `boolean`  |Boolean
+|`bool`             |Boolean
 |`num`, `number`    |Number
 |`str`, `string`    |String
 |`table`            |Table
