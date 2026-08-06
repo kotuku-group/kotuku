@@ -11,12 +11,12 @@
 // Object type names.
 
 LJ_DATADEF CSTRING const lj_obj_typename[] = {  // ORDER LUA_T
-  "no value", "nil", "boolean", "userdata", "number", "string",
+  "no value", "nil", "bool", "userdata", "number", "string",
   "table", "function", "userdata", "struct", "proto", "object", "array"
 };
 
 LJ_DATADEF CSTRING const lj_obj_itypename[] = {  // ORDER LJ_T
-  "nil", "boolean", "boolean", "userdata", "string", "upval", "struct",
+  "nil", "bool", "bool", "userdata", "string", "upval", "struct",
   "proto", "function", "trace", "object", "table", "userdata", "array", "number"
 };
 

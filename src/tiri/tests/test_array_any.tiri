@@ -35,7 +35,7 @@ end
 
    assert(type(arr[0]) is 'number', "element 0 should be number")
    assert(type(arr[1]) is 'string', "element 1 should be string")
-   assert(type(arr[2]) is 'boolean', "element 2 should be boolean")
+   assert(type(arr[2]) is 'bool', "element 2 should be bool")
    assert(arr[3] is nil, "element 3 should be nil")
    assert(type(arr[4]) is 'table', "element 4 should be table")
    assert(type(arr[5]) is 'number', "element 5 should be number")

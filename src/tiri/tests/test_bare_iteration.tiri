@@ -155,7 +155,7 @@ end
       { source = 'local value:func = nil; for item in value do end', type_name = 'nil' },
       { source = 'local value:any = 7; for item in value do end', type_name = 'number' },
       { source = "local value:any = 'text'; for item in value do end", type_name = 'string' },
-      { source = 'local value:any = false; for item in value do end', type_name = 'boolean' }
+      { source = 'local value:any = false; for item in value do end', type_name = 'bool' }
    }
 
    for _, case in pairs(cases) do

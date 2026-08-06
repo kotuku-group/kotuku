@@ -594,7 +594,7 @@ end
    assert(type(zone:nativeId()) is 'string' and #zone:nativeId() > 0, 'Local zone should expose a native ID')
    assert((zone:source() is 'win32') or (zone:source() is 'tzif') or (zone:source() is 'utc'),
       'Local zone source should come from Core')
-   assert(type(zone:isFallback()) is 'boolean', 'Local zone fallback state should be boolean')
+   assert(type(zone:isFallback()) is 'bool', 'Local zone fallback state should be bool')
    assert(tempus.isOffset(offset), 'Local zone offsetAt() should return an Offset value')
    assert(type(zone:nameAt(instant)) is 'string', 'Local zone nameAt() should return a string')
 end

@@ -345,7 +345,7 @@
          "patterns": [
             {
                "name": "support.type.primitive.tiri",
-               "match": "\\b(any|bool|boolean|byte|char|cstr|double|float|func|int|int8|int16|int32|int64|integer|num|number|ptr|string|table|uint|uint8|uint16|uint32|uint64|void)\\b"
+               "match": "\\b(any|bool|byte|char|cstr|double|float|func|int|int8|int16|int32|int64|integer|num|number|ptr|string|table|uint|uint8|uint16|uint32|uint64|void)\\b"
             },
             {
                "name": "support.class.tiri",

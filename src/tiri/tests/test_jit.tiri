@@ -1433,7 +1433,7 @@ end
    -- Verify all values in the flags table are booleans
    for name, value in pairs(flags) do
       assert(type(name) is "string", "Flag keys should be strings")
-      assert(type(value) is "boolean", f"Flag '{name}' should be a boolean, got {type(value)}")
+      assert(type(value) is "bool", f"Flag '{name}' should be a bool, got {type(value)}")
    end
 
    -- Verify known optimisation flags are present

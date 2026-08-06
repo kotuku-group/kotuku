@@ -377,7 +377,7 @@ function serializeTable(Tbl:any, Indent):str
          return "'" .. escaped .. "'"
       elseif type(Tbl) is 'number' then
          return tostring(Tbl)
-      elseif type(Tbl) is 'boolean' then
+      elseif type(Tbl) is 'bool' then
          return Tbl and 'true' or 'false'
       else
          return 'nil'

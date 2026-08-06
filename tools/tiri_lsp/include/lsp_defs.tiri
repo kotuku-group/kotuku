@@ -27,7 +27,7 @@ glBuiltins = {
 
    -- Type conversion/introspection
    ['type'] = {
-      comment = 'Returns the type of a value as a string.',
+      comment = 'Returns the canonical type name of a value as a string, including bool for true and false.',
       prototype = 'type(value)'
    },
    ['tonumber'] = {

@@ -23,12 +23,12 @@ end
 @Test function InferredBooleanType()
    x = <{ true }>
    result = resolve(x)
-   assert(type(result) is 'boolean', 'Expected boolean type, got ' .. type(result))
+   assert(type(result) is 'bool', 'Expected bool type, got ' .. type(result))
    assert(result is true, 'Expected true')
 
    y = <{ false }>
    result2 = resolve(y)
-   assert(type(result2) is 'boolean', 'Expected boolean type')
+   assert(type(result2) is 'bool', 'Expected bool type')
    assert(result2 is false, 'Expected false')
 end
 
@@ -69,7 +69,7 @@ end
    b = 10
    x = <{ a < b }>
    result = resolve(x)
-   assert(type(result) is 'boolean', 'Expected boolean type from comparison')
+   assert(type(result) is 'bool', 'Expected bool type from comparison')
    assert(result is true, 'Expected true')
 end
 
@@ -124,7 +124,7 @@ end
    end
    x = <bool{ checkCondition() }>
    result = resolve(x)
-   assert(type(result) is 'boolean', 'Expected boolean type')
+   assert(type(result) is 'bool', 'Expected bool type')
    assert(result is true, 'Expected true')
 end
 
@@ -164,7 +164,7 @@ end
    assert(type(num) is 'number', 'Expected type(num) to be "number", got "' .. type(num) .. '"')
 
    bool = <{ true }>
-   assert(type(bool) is 'boolean', 'Expected type(bool) to be "boolean", got "' .. type(bool) .. '"')
+   assert(type(bool) is 'bool', 'Expected type(bool) to be "bool", got "' .. type(bool) .. '"')
 
    tbl = <{ {} }>
    assert(type(tbl) is 'table', 'Expected type(tbl) to be "table", got "' .. type(tbl) .. '"')

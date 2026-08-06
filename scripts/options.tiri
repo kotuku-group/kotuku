@@ -486,7 +486,7 @@ function convert_builtin(TypeName:str, Value:any, Param:table):any
       end
       return number
    elseif TypeName is 'bool' then
-      if type(Value) is 'boolean' then return Value end
+      if type(Value) is 'bool' then return Value end
 
       local text = tostring(Value):lower()
       if text is 'true' or text is '1' or text is 'yes' or text is 'on' then return true end
