@@ -73,43 +73,6 @@
    return Function.body and Function.body->statements.empty();
 }
 
-// Reads from an untyped table yield 'any' because element types are not tracked.  Such a value is dynamic by nature
-// rather than by an unresolved ingress, so it must not lock the destination into requiring an annotation; demanding
-// one would only add a CONTRACT guard without unlocking a specialised opcode.  Struct fields and typed array elements
-// infer concrete types and never reach this path.
-
-[[nodiscard]] static bool is_table_read_expression(const ExprNode &Expr)
-{
-   switch (Expr.kind) {
-      case AstNodeKind::MemberExpr:
-      case AstNodeKind::IndexExpr:
-      case AstNodeKind::SafeMemberExpr:
-      case AstNodeKind::SafeIndexExpr:
-         return true;
-
-      // Binary expressions yield 'any' when a table read can invoke an overloaded operator.  This includes defaulted
-      // reads such as t[k] ?? fallback and arithmetic such as 0.5 + t.value.  Recurse so the exemption follows the
-      // value's origin.
-
-      case AstNodeKind::BinaryExpr: {
-         const auto *payload = std::get_if<BinaryExprPayload>(&Expr.data);
-         if (not payload) return false;
-         return (payload->left and is_table_read_expression(*payload->left)) or
-            (payload->right and is_table_read_expression(*payload->right));
-      }
-
-      // Unary negation can remain dynamic when its operand is a table read because the value may overload '-'.
-
-      case AstNodeKind::UnaryExpr: {
-         const auto *payload = std::get_if<UnaryExprPayload>(&Expr.data);
-         return payload and payload->operand and is_table_read_expression(*payload->operand);
-      }
-
-      default:
-         return false;
-   }
-}
-
 [[nodiscard]] static std::optional<std::string> function_signature_mismatch(
    const FunctionExprPayload &Expected, const FunctionExprPayload &Actual)
 {
@@ -276,6 +239,7 @@ private:
    [[nodiscard]] InferredType infer_expression_type(const ExprNode &);
    [[nodiscard]] InferredType refine_static_expression_type(const ExprNode &, InferredType) const;
    [[nodiscard]] bool is_explicit_variant_expression(const ExprNode &, size_t Position = 0) const;
+   [[nodiscard]] bool is_table_read_expression(const ExprNode &);
    [[nodiscard]] InferredType infer_call_return_type(const ExprNode &, size_t Position) const;
 
    // Symbol resolution - looks up variables and functions in scope stack
@@ -2440,6 +2404,52 @@ void TypeAnalyser::check_argument_type(
 // - Calls: Uses function's declared return type if available, otherwise Any
 // - Binary ops: Depends on operator (comparisons -> bool, arithmetic -> num, etc.)
 // - Unary ops: Depends on operator (not -> bool, negate -> num, length -> num)
+
+// Reads from a resolved untyped table yield 'any' because element types are not tracked.  Such a value is dynamic by
+// nature rather than by an unresolved ingress, so it must not lock the destination into requiring an annotation.
+// Struct fields and typed array elements infer concrete types and never reach this path.
+
+bool TypeAnalyser::is_table_read_expression(const ExprNode &Expr)
+{
+   const ExprNode *base = nullptr;
+
+   switch (Expr.kind) {
+      case AstNodeKind::MemberExpr:
+         base = std::get<MemberExprPayload>(Expr.data).table.get();
+         break;
+      case AstNodeKind::IndexExpr:
+         base = std::get<IndexExprPayload>(Expr.data).table.get();
+         break;
+      case AstNodeKind::SafeMemberExpr:
+         base = std::get<SafeMemberExprPayload>(Expr.data).table.get();
+         break;
+      case AstNodeKind::SafeIndexExpr:
+         base = std::get<SafeIndexExprPayload>(Expr.data).table.get();
+         break;
+
+      // Binary expressions yield 'any' when a table read can invoke an overloaded operator.  This includes defaulted
+      // reads such as t[k] ?? fallback and arithmetic such as 0.5 + t.value.  Recurse so the exemption follows the
+      // value's origin.
+
+      case AstNodeKind::BinaryExpr: {
+         const auto *payload = std::get_if<BinaryExprPayload>(&Expr.data);
+         return payload and ((payload->left and this->is_table_read_expression(*payload->left)) or
+            (payload->right and this->is_table_read_expression(*payload->right)));
+      }
+
+      // Unary negation can remain dynamic when its operand is a table read because the value may overload '-'.
+
+      case AstNodeKind::UnaryExpr: {
+         const auto *payload = std::get_if<UnaryExprPayload>(&Expr.data);
+         return payload and payload->operand and this->is_table_read_expression(*payload->operand);
+      }
+
+      default:
+         return false;
+   }
+
+   return base and this->infer_expression_type(*base).primary IS TiriType::Table;
+}
 
 InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
 {

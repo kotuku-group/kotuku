@@ -166,6 +166,19 @@ end
    assert(first_entry({ 'value' }) is 'value', 'the inferred result should accept different table value types')
 end
 
+@Test function UnknownTableIndexStillRequiresResultAnnotation()
+   try
+      exec([[
+         extern glUnspecifiedValue
+         function unresolved_entry()
+            return glUnspecifiedValue[0]
+         end
+      ]])
+   success
+      error('an unresolved indexed return requires an explicit result annotation')
+   end
+end
+
 @Test function ImplicitDynamicStillRequiresResultAnnotation()
    try
       exec([[
@@ -175,7 +188,7 @@ end
          end
       ]])
    success
-      error('an unspecified dynamic return should still require an explicit result annotation')
+      error('an unspecified dynamic return requires an explicit result annotation')
    end
 end
 
