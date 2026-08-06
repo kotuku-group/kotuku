@@ -772,6 +772,22 @@ end
    assert(table.empty(t) is true, "table.clear() should still empty the table")
 end
 
+@Test function LiteralClassificationSurvivesBytecodeRoundTrip()
+   function sparse_factory():table return { [-1] = nil } end
+   function associative_factory():table return { name = nil } end
+   function mixed_factory():table return { [-1] = nil, name = nil } end
+
+   for stripped in values({ false, true }) do
+      local sparse = exec(string.dump(sparse_factory, stripped))
+      local associative = exec(string.dump(associative_factory, stripped))
+      local mixed = exec(string.dump(mixed_factory, stripped))
+      assert(table.kind(sparse) is 'sparse', "Sparse literal classification must survive bytecode dumping")
+      assert(table.kind(associative) is 'associative',
+         "Associative literal classification must survive bytecode dumping")
+      assert(table.kind(mixed) is 'mixed', "Mixed literal classification must survive bytecode dumping")
+   end
+end
+
 @Test function SizeCountsEveryLiveEntry()
    -- table.size() counts array and hash entries alike, independently of classification and '#'.
    assert(table.size({ 10, 20, name = 'example' }) is 3, "Should count array and hash entries")
