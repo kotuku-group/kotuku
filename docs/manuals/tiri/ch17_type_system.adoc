@@ -1,18 +1,95 @@
 // VERIFIED: 2026-02-12
-// CHANGED: 2026-07-27 — Added sec-runtime-type-contracts; documented userdata annotations and exact contract identity.
-// CHANGED: 2026-07-27 — Declared globals now carry enforced sticky contracts whether annotated or inferred; ':any' is the persistent variant opt-out (commit 997f6b551).
-// CHANGED: 2026-07-28 — Global contracts are enforced at the environment mutation boundary for every store route, including rawset() and pre-declaration bytecode (commit 4b4a2f94).
-// CHANGED: 2026-07-27 — Added sec-dynamic-ingress and sec-native-result-types; native calls now publish result types and an unannotated dynamic initialiser rejects later assignment (commit 8905c1966).
-// CHANGED: 2026-07-31 — Restored the missing runtime type-contract anchor.
-// CHANGED: 2026-08-02 — Added sec-global-contracts-in-guarded-blocks; declarations inside try/except/success/with now publish contracts, enforced at runtime without static propagation (commit c52956fc).
-// CHANGED: 2026-08-02 — Corrected return inference from first-wins to per-position; inferred signatures carry no runtime contract and reject dynamic results (commit 62d01f11).
-// CHANGED: 2026-08-02 — Array annotations are member-specialised: 'array' alone is rejected and 'array<element>' is now the annotation form, carried by contracts and by inferred types (commit 31fd44072).
 
 [[ch-type-system]]
 == Type System
 indexterm:[type system] Tiri is dynamically typed: every value carries its type at runtime.  However, Tiri enforces type consistency through a lazy inference mechanism called _sticky types_.  Once a variable commits to a type, all subsequent non-nil assignments must match that type.  This chapter defines the rules governing type commitment, explicit annotations, the `any` escape hatch, and the interaction between `nil` and typed variables.
 
 Type checking operates at two levels.  The compiler performs static analysis during parsing, catching mismatches that are visible in the source (literal assignments, annotated function returns).  When the compiler cannot determine the type statically -- function calls without return type declarations, table field lookups, array indexing -- it emits runtime type checks that validate values at the point of assignment.
+
+Tiri also names types with two distinct vocabularies, one for the language and one for interoperability with the host platform.  The distinction governs which names are legal in which position, so it is stated first, in <<sec-type-vocabularies>>.  Everything after that section, unless it says otherwise, concerns the native vocabulary.
+
+[[sec-type-vocabularies]]
+=== The Two Type Vocabularies
+
+indexterm:[type vocabularies] indexterm:[compatibility types] indexterm:[native types] Type names in Tiri are drawn from two separate vocabularies.  They overlap in spelling, but each name belongs to one vocabulary only and is rejected in a position that expects the other.
+
+The _native vocabulary_ describes the language's own value model.  Its names are the ones `type()` reports (see <<sec-type-inspection>>) and the only ones a type annotation accepts.  It is deliberately coarse: `num` covers every numeric representation, `str` covers every string, and storage width, signedness and memory layout are not expressible in it.  All type inference, all annotations and all runtime type contracts operate in this vocabulary.
+
+The _compatibility vocabulary_ describes how a value is laid out in memory that the host platform can also address.  Its names carry storage width and signedness, and it includes forms with no native counterpart, such as raw pointers and C strings.  Exactly two interfaces use it, because both expose their storage to C and C++ code:
+
+* `struct` field declarations (<<sec-struct-field-types>>), which describe a C-compatible record layout.
+* `array` element declarations (<<sec-array-fundamentals>>), which describe a contiguous block of uniform elements.
+
+The consequence is a pair of symmetrical errors that are otherwise puzzling:
+
+[source,tiri]
+----
+local count:num             -- valid: 'num' is a native type name
+local count:int             -- error: 'int' is a compatibility type name
+
+local values:array<int>     -- valid: 'int' is a compatibility type name
+local values:array<num>     -- error: 'num' is a native type name
+----
+
+[discrete]
+==== Where the Vocabularies Meet
+
+`array<element>` is the only construct in which both vocabularies appear at once.  The outer name is native: it is the type the annotation fixes, the type `type()` reports and the type a contract validates.  The text inside the angle brackets is a compatibility element type.  `array<int>` therefore reads as the native type `array`, specialised to the compatibility element type `int`.
+
+[discrete]
+==== The Compatibility Vocabulary
+
+The two interfaces share a core of names but are not identical dialects, and the spelling diverges in two places worth committing to memory: arrays name the object element type `object`, while structs name it `obj`; and arrays treat `char` as an alias of `byte`, while structs distinguish the two.
+
+[cols="2,1,1,2a",options="header"]
+|===
+|Compatibility name |Array element |Struct field |Native type produced
+
+|`bool`                          |--   |Yes |Boolean
+|`char`                          |Yes  |Yes |Number, but `char[N]` reads as a string
+|`byte`, `int8`, `uint8`         |`byte` |Yes |Number
+|`int16`, `uint16`               |`int16` |Yes |Number
+|`int`, `int32`, `uint`, `uint32`|`int` |Yes |Number
+|`int64`, `uint64`               |`int64` |Yes |Number
+|`float`, `double`               |Yes  |Yes |Number
+|`string`                        |Yes  |Yes |String
+|`cstr`                          |--   |Yes |String
+|`table`                         |Yes  |--  |Table
+|`array`, `array<type>`, `type[N]`|`array` |Yes |Array
+|`object` (arrays), `obj`, `obj<Class>` (structs) |`object` |Yes |Object
+|`struct`, `struct<Name>`        |Yes  |`struct<Name>` |Struct
+|`func`                          |--   |Yes |Reads as `nil`
+|`ptr`, `ptr<type>`, `ptr<type[]>`|--  |Yes |Userdata, struct or array
+|`any`                           |Yes  |--  |Any
+|===
+
+Unsigned integers, `cstr`, `ptr` and fixed arrays exist only in the compatibility vocabulary.  Conversely `nil`, `range`, `userdata` and the alternative spellings `num`, `str`, `obj`, `number`, `boolean` and `function` exist only in the native vocabulary.
+
+[discrete]
+==== Crossing Between the Systems
+
+A compatibility-typed value acquires a native type the moment it is read into a Tiri variable, and the extra precision of the compatibility name is not carried across.  Every numeric width collapses to `num`, and both string forms collapse to `str`.  A declaration that reads a struct field or an array element therefore fixes to the native type, not to the declared storage type:
+
+[source,tiri]
+----
+struct Sample
+   Count: int16
+end
+
+local sample = struct<Sample> { Count = 7 }
+local total = sample.Count   -- fixed to 'num', not to 'int16'
+total = 2.5                  -- valid: 'num' admits every numeric representation
+total = 'seven'              -- error: cannot assign 'string' to variable of type 'number'
+----
+
+Writing in the other direction re-imposes the compatibility rules.  The storage contract of the field or element governs the write, including range and precision conversion, and it is stricter than the native type that the value carries.  Those rules are defined in <<sec-struct-field-access>> for struct fields and <<sec-element-storage-contract>> for array elements:
+
+[source,tiri]
+----
+sample.Count = total         -- 'num' satisfies the field; 2.5 truncates to 2
+----
+
+The one compatibility distinction that does survive into the native system is the array element type, because an array carries it as part of its identity.  `array<int>` and `array<double>` are distinct native types for the purposes of type fixing and contracts, even though `int` and `double` both project to `num` when an individual element is read.  See <<sec-array-member-annotations>>.
 
 [[sec-sticky-types]]
 === Sticky Types (Type Inference)
@@ -193,9 +270,13 @@ indexterm:[type annotations, explicit] The `:type` syntax after a variable name 
 [discrete]
 ==== Syntax
 
+An annotation is written in the native vocabulary.  The sole exception is the element type of an array annotation, which is written in the compatibility vocabulary (<<sec-type-vocabularies>>):
+
 [source,ebnf]
 ----
 local_declaration = "local" identifier ":" type_name [ "=" expression ] ;
+
+(* native vocabulary *)
 type_name         = "any" | "nil" | "bool" | "boolean"
                   | "num" | "number" | "str" | "string"
                   | "table" | "func" | "function"
@@ -203,6 +284,8 @@ type_name         = "any" | "nil" | "bool" | "boolean"
                   | "struct" | "struct" "<" identifier ">"
                   | array_type ;
 array_type        = "array" "<" element_type ">" ;
+
+(* compatibility vocabulary *)
 element_type      = "byte" | "char" | "int16" | "int" | "int64"
                   | "float" | "double" | "string" | "table"
                   | "array" | "object" | "any"
@@ -235,6 +318,8 @@ local count: num = 'text'  -- error: cannot assign 'string' to 'number'
 [discrete]
 ==== Supported Type Names
 
+These are the names of the native vocabulary, and they are the complete set that an annotation accepts:
+
 [cols="1,1a",options="header"]
 |===
 |Annotation |Type
@@ -254,13 +339,15 @@ local count: num = 'text'  -- error: cannot assign 'string' to 'number'
 |`struct<Name>`     |Structure constrained to the declared layout `Name` (see <<sec-struct-typed-references>>)
 |===
 
-Short and long forms are interchangeable.  An unrecognised type name raises a parse-time diagnostic.
+Short and long forms are interchangeable.  An unrecognised type name raises a parse-time diagnostic, and a compatibility type name such as `int` or `double` is unrecognised here.
+
+The only constrained forms are `struct<Name>` and `array<element>`.  There is no `obj<Class>` annotation; a class constraint is expressible on a struct field (<<sec-struct-field-types>>) but not on a variable, parameter or return value, where `obj` accepts an object of any class.
 
 [[sec-array-member-annotations]]
 [discrete]
 ==== Array Member Annotations
 
-indexterm:[type annotations, arrays] indexterm:[arrays, type annotations] An array annotation names the element type.  `array` alone is not a type name and raises a parse-time diagnostic.  The element type is written exactly as it is in an array constructor, and the permitted names are those listed in <<sec-array-fundamentals>>:
+indexterm:[type annotations, arrays] indexterm:[arrays, type annotations] An array annotation names the element type.  `array` alone is not a type name and raises a parse-time diagnostic.  The element type is written in the compatibility vocabulary, exactly as it is in an array constructor, and the permitted names are those listed in <<sec-array-fundamentals>>:
 
 [source,tiri]
 ----
@@ -270,7 +357,7 @@ local points:array<struct<Vec>>   -- elements of the Vec definition only
 local variant:array<any>          -- any array, whatever its element type
 ----
 
-Element names belong to the array vocabulary rather than the annotation vocabulary, so `array<double>` and `array<object>` are valid while `array<num>` and `array<obj>` raise a diagnostic.
+Because the element name is drawn from the compatibility vocabulary and the enclosing `array` from the native one, `array<double>` and `array<object>` are valid while `array<num>` and `array<obj>` raise a diagnostic.  The distinction is the one set out in <<sec-type-vocabularies>>.
 
 The annotation constrains the element type and nothing else.  Length is not part of the type, and nested specialisation is not expressible:
 
@@ -441,6 +528,8 @@ Result types are derived for:
 * Module functions called through a statically known module reference (<<sec-calling-module-functions>>).
 * Object actions and methods called on an object of a statically known class (<<sec-actions-and-methods>>).
 * Reads of struct fields (<<ch-structs>>).
+
+Result types are published in the native vocabulary.  A native signature that declares a width-specific type contributes `num`, in line with <<sec-type-vocabularies>>.
 
 [source,tiri]
 ----
@@ -717,7 +806,7 @@ count(dynamic)   -- error: expected num, got string
 [discrete]
 ==== Contract Identity
 
-Contracts distinguish types that are related in the underlying representation:
+A contract is stated in the native vocabulary and compares native types, so it cannot distinguish storage widths: `num` is satisfied by a value that originated in an `int16` field as readily as by one from a `double` field.  Within that limit, contracts distinguish types that are related in the underlying representation:
 
 * `table` and array annotations are mutually exclusive.  An array does not satisfy `table` and a table does not satisfy `array<any>`.
 * `array<element>` requires an array whose element type is exactly `element`.  `array<int>` rejects `array<double>`, `array<any>` and every other element type, and `array<struct<Name>>` requires that struct definition.  `array<any>` accepts any array; `array<struct>` accepts an array of any single struct definition.
