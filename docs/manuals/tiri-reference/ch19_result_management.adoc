@@ -1,0 +1,160 @@
+// VERIFIED: 2026-02-13
+
+[[ch-result-management]]
+== Result Management
+indexterm:[result management] Tiri functions return zero or more values.  This chapter expands on <<ch-functions>> with more information on how results can be managed.
+
+[[sec-blank-identifier]]
+=== Blank Identifier
+indexterm:[blank identifier] The blank identifier `_` is a write-only placeholder that discards a value without allocating a variable.
+
+[discrete]
+==== Syntax
+
+The blank identifier appears wherever a variable name is expected on the left-hand side of an assignment:
+
+[source,tiri]
+----
+_, value = getStatus()          -- discard first, keep second
+_, _, third = getThree()        -- discard first two, keep third
+a, _, c = getThree()            -- keep first and third
+_, _, _ = getThree()            -- discard all three
+----
+
+Multiple blank identifiers in the same statement are permitted.  Each occurrence independently discards the value at its position.
+
+[discrete]
+==== Valid Locations
+
+The blank identifier is accepted in the following positions:
+
+Assignment targets:: Both local and non-local assignments.
++
+[source,tiri]
+----
+local _, value = compute()
+global _, result, _ = getValues()
+----
+
+For-loop variables:: Both numeric and generic `for` loops.
++
+[source,tiri]
+----
+for _, v in ipairs(items) do
+   process(v)
+end
+
+for k, _ in pairs(t) do
+   print(k)
+end
+----
+
+Function parameters:: The parameter receives the argument value but discards it.
++
+[source,tiri]
+----
+function second(_, X)
+   return X
+end
+
+second(10, 20)   -- returns 20
+----
+
+[discrete]
+==== Read Restriction
+
+Reading the blank identifier raises a parse error.  The blank identifier exists only to discard values:
+
+[source,tiri]
+----
+-- Parse error: cannot read blank identifier '_'
+x = _
+print(_)
+y = 1 + _
+----
+
+[discrete]
+==== Performance
+
+Assigning to the blank identifier incurs no runtime cost.  Values at blank positions are consumed for correct adjustment but are not stored.
+
+[[sec-result-filter-operator]]
+=== Result Filter Operator
+indexterm:[operators, result filter] The result filter operator selectively extracts return values from a function call using a positional mask.  It provides a concise alternative to intermediate variables or blank identifiers when only specific return positions are needed.
+
+[discrete]
+==== Syntax
+
+[source,ebnf]
+----
+result_filter = "[" filter_pattern "]" call_expr ;
+filter_pattern = { "_" | "*" } ;
+----
+
+The filter pattern is enclosed in square brackets and placed immediately before a function call or method call.  Each character in the pattern corresponds to a return value position: `*` keeps the value, `_` discards it.
+
+[source,tiri]
+----
+content = [_*]file.acRead()   -- drop error code, keep the buffer
+----
+
+[discrete]
+==== Pattern Rules
+
+The last character in the pattern determines the behaviour for positions beyond those explicitly specified: `*` keep all subsequent values; `_` discard all subsequent values.
+
+Specifying an empty pattern `[]` causes all values to be dropped.
+
+[source,tiri]
+----
+function five()
+   return 1, 2, 3, 4, 5
+end
+
+a, b, c, d, e = [*]five()  -- keep all
+a, b, c, d = [_*]five()    -- drop first, keep rest
+a, b, c = [__*]five()      -- drop first two, keep rest
+a = [*_]five()             -- keep first, drop rest
+a = [_*_]five()            -- drop 1st, keep 2nd, drop rest
+a, b, c = [_***_]five()    -- drop 1st, keep 2-4, drop rest
+a, b = [_*_*]five()        -- drop 1st, keep 2nd, drop 3rd, keep 4th+
+x = []five()               -- drop all: x=nil
+----
+
+[discrete]
+==== Maximum Pattern Length
+
+The filter pattern supports a maximum of 64 positions.  Patterns exceeding this limit raise a parse error.
+
+[discrete]
+==== Interaction with Assignment
+
+The filtered results follow the standard adjustment rules.  If fewer kept values exist than assignment targets, excess targets receive `nil`:
+
+[source,tiri]
+----
+function two()
+   return 'a', 'b'
+end
+
+x, y, z = [*]two()     -- x='a', y='b', z=nil
+x = [_*]two()          -- x='b'
+x, y = [_____*]two()   -- x=nil, y=nil (no values at positions 5+)
+----
+
+[discrete]
+==== Comparison with Blank Identifiers
+
+Both the blank identifier and the result filter discard unwanted return values.  The blank identifier is simpler and works directly in assignment targets.  The result filter operates on the call expression itself, making it useful when the filtered result is passed directly to another function or returned without intermediate variables:
+
+[source,tiri]
+----
+-- Blank identifier: requires assignment targets
+_, content, _ = file.acRead()
+
+-- Result filter: operates on the call expression
+content = [_*_]file.acRead()
+
+-- Result filter passed directly to another function
+process([_*]getData())
+----
