@@ -604,7 +604,9 @@ std::optional<ArrayElementDescriptor> describe_array_element(std::string_view Na
    ArrayElementDescriptor result;
    result.known = true;
 
-   if (Name IS "byte" or Name IS "char") result = { AET::BYTE, TiriType::Num, CLASSID::NIL, nullptr, true };
+   if (Name IS "byte" or Name IS "char" or Name IS "int8") {
+      result = { AET::BYTE, TiriType::Num, CLASSID::NIL, nullptr, true };
+   }
    else if (Name IS "int16") result = { AET::INT16, TiriType::Num, CLASSID::NIL, nullptr, true };
    else if (Name IS "int") result = { AET::INT32, TiriType::Num, CLASSID::NIL, nullptr, true };
    else if (Name IS "int64") result = { AET::INT64, TiriType::Num, CLASSID::NIL, nullptr, true };

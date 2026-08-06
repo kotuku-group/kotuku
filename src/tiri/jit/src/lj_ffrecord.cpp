@@ -567,6 +567,7 @@ static bool array_elemtype_from_string(GCstr *TypeStr, AET *Result)
    if (TypeStr->len IS 3 and memcmp(type_name, "int", 3) IS 0) *Result = AET::INT32;
    else if (TypeStr->len IS 4 and memcmp(type_name, "byte", 4) IS 0) *Result = AET::BYTE;
    else if (TypeStr->len IS 4 and memcmp(type_name, "char", 4) IS 0) *Result = AET::BYTE;
+   else if (TypeStr->len IS 4 and memcmp(type_name, "int8", 4) IS 0) *Result = AET::BYTE;
    else if (TypeStr->len IS 5 and memcmp(type_name, "int16", 5) IS 0) *Result = AET::INT16;
    else if (TypeStr->len IS 5 and memcmp(type_name, "int64", 5) IS 0) *Result = AET::INT64;
    else if (TypeStr->len IS 5 and memcmp(type_name, "float", 5) IS 0) *Result = AET::FLOAT;
