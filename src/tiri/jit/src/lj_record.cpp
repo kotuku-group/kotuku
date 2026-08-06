@@ -1465,10 +1465,12 @@ void lj_record_ret(jit_State *J, BCREG rbase, ptrdiff_t gotresults)
       if (FRC::dec_depth_by(J, 2) < 0) lj_trace_err(J, LJ_TRERR_NYIRETL);
       fm.pop_delta_frame(cbase);
       slots.set_maxslot(cbase - FRC::CONT_FRAME_SIZE);
-      if (cont IS lj_cont_ra) {
+      if (cont IS lj_cont_ra or cont IS lj_cont_len) {
          // Copy result to destination slot.
          BCREG dst = bc_a(*(frame_contpc(frame) - 1));
-         slots[dst] = gotresults ? slots[cbase + rbase] : TREF_NIL;
+         TRef result = gotresults ? slots[cbase + rbase] : TREF_NIL;
+         if (cont IS lj_cont_len and not tref_isnumber(result)) lj_trace_err(J, LJ_TRERR_BADTYPE);
+         slots[dst] = result;
          slots.ensure_slot(dst);
       }
       else if (cont IS lj_cont_nop) {
@@ -1630,7 +1632,7 @@ static TRef rec_mm_len(jit_State *J, TRef tr, TValue* tv)
    ix.tab = tr;
    copyTV(J->L, &ix.tabv, tv);
    if (lj_record_mm_lookup(J, &ix, MM_len)) {
-      BCREG func = rec_mm_prep(J, lj_cont_ra);
+      BCREG func = rec_mm_prep(J, lj_cont_len);
       TRef* base = J->base + func;
       TValue* basev = J->L->base + func;
       base[0] = ix.mobj; copyTV(J->L, basev + 0, &ix.mobjv);

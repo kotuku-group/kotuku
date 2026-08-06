@@ -565,7 +565,7 @@ static void bcemit_unop(FuncState* fs, BCOp op, ExpDesc* e)
    expr_free(fs, e);
    e->u.s.info = bcemit_AD(fs, op, 0, e->u.s.info);
    e->k = ExpKind::Relocable;
-   // BC_UNM (negate) and BC_LEN (length) always return number
+   // BC_UNM and successful BC_LEN operations always return a number.  Ordinary associative tables may produce nil.
    e->result_type = TiriType::Num;
 }
 

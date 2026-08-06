@@ -1255,6 +1255,14 @@ static void build_subroutines(BuildCtx *ctx)
   |->cont_nop:
   |  ins_next
   |
+  |->cont_len:				// RA = resultptr
+  |  stp BASE, L->base
+  |  mr CARG2, RA
+  |  mr CARG1, L
+  |  stw PC, SAVE_PC
+  |  bl extern lj_meta_len_result	// (lua_State *L, TValue *Result)
+  |  lp BASE, L->base
+  |  mr RA, CRET1
   |->cont_ra:				// RA = resultptr
   |  ld INS, -8(PC)
   |.if FPU

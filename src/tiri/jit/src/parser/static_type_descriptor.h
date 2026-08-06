@@ -135,6 +135,7 @@ private:
 [[nodiscard]] StaticValueDescriptor describe_arithmetic_result(
    const StaticValueDescriptor &, const StaticValueDescriptor &);
 [[nodiscard]] StaticValueDescriptor describe_unary_numeric_result(const StaticValueDescriptor &);
+[[nodiscard]] StaticValueDescriptor describe_length_result(const StaticValueDescriptor &);
 [[nodiscard]] bool static_value_satisfies_contract(
    const StaticValueDescriptor &, const RuntimeContract &);
 [[nodiscard]] StaticResultSet map_static_result_filter(

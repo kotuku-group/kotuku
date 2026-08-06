@@ -864,6 +864,14 @@ static void build_subroutines(BuildCtx *ctx)
   |->cont_nop:
   |  ins_next
   |
+  |->cont_len:                         // RA = resultptr
+  |  str BASE, L->base
+  |  mov CARG2, RA
+  |  mov CARG1, L
+  |  str PC, SAVE_PC
+  |  bl extern lj_meta_len_result      // (lua_State *L, TValue *Result)
+  |  ldr BASE, L->base
+  |  mov RA, CRET1
   |->cont_ra:				// RA = resultptr
   |  ldr INS, [PC, #-8]		// Load full 64-bit BCIns
   |   ldr TMP0, [RA]

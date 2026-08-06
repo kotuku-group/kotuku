@@ -286,6 +286,16 @@ StaticValueDescriptor describe_unary_numeric_result(const StaticValueDescriptor 
    return result;
 }
 
+StaticValueDescriptor describe_length_result(const StaticValueDescriptor &Operand)
+{
+   StaticValueDescriptor result;
+   result.primary = TiriType::Num;
+   result.proof = StaticProof::Advisory;
+   result.nullable = Operand.primary IS TiriType::Table or Operand.primary IS TiriType::Any or
+      Operand.primary IS TiriType::Unknown;
+   return result;
+}
+
 bool static_value_satisfies_contract(
    const StaticValueDescriptor &Value, const RuntimeContract &Contract)
 {

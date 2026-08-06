@@ -2767,6 +2767,11 @@ InferredType TypeAnalyser::infer_expression_type(const ExprNode& Expr)
                   return result;
                case AstUnaryOperator::Length:
                   result.primary = TiriType::Num;
+                  if (payload->operand) {
+                     InferredType operand_type = this->infer_expression_type(*payload->operand);
+                     result.is_nullable = operand_type.primary IS TiriType::Table or
+                        operand_type.primary IS TiriType::Any or operand_type.primary IS TiriType::Unknown;
+                  }
                   return result;
             }
          }

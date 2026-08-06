@@ -2915,6 +2915,36 @@ end
    jit.opt.start()
 end
 
+function traced_metamethod_length(Value, Count):num
+   local total = 0
+   for i in {1 into Count} do
+      total += #Value
+   end
+   return total
+end
+
+@Test function JITLenRejectsNonNumericMetamethodResult()
+   local metamethod_result:any = 4
+   local value = setmetatable({}, { __len = function(Self):any return metamethod_result end })
+
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+   assert(traced_metamethod_length(value, 20) is 80, 'The numeric __len result should trace normally')
+
+   metamethod_result = 'invalid'
+   try
+      traced_metamethod_length(value, 20)
+   except err
+      assert(tostring(err.message):find('__len metamethod must return a number'),
+         'A traced string __len result should report the numeric result requirement')
+   success
+      error('A traced string __len result should fail')
+   end
+
+   jit.on()
+   jit.opt.start()
+end
+
 @Test(hotpath=100) function ClearInHotCodeKeepsClassification()
    local t = { 1, 2 }
    t.name = 'x'

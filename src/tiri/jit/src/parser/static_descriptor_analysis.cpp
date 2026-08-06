@@ -1269,7 +1269,10 @@ private:
          }
          case AstNodeKind::UnaryExpr: {
             auto &payload = std::get<UnaryExprPayload>(Expression.data);
-            if (payload.op IS AstUnaryOperator::Negate and payload.operand) {
+            if (payload.op IS AstUnaryOperator::Length and payload.operand) {
+               value = describe_length_result(this->descriptor_of(*payload.operand));
+            }
+            else if (payload.op IS AstUnaryOperator::Negate and payload.operand) {
                value = describe_unary_numeric_result(this->descriptor_of(*payload.operand));
             }
             else {
