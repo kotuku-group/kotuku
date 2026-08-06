@@ -130,7 +130,7 @@ json.encode = function(Value:any, ErrorCallback:func, AsKey:bool):str
    elseif kind is 'number' then
       if AsKey then return '"' .. tostring(Value) .. '"' end
       return tostring(Value)
-   elseif kind is 'boolean' then
+   elseif kind is 'bool' then
       return tostring(Value)
    elseif kind is 'nil' then
       return 'null'

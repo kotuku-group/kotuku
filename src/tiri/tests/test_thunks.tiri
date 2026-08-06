@@ -489,8 +489,8 @@ end
    result_true = is_positive(5)
    result_false = is_positive(-5)
 
-   assert(type(result_true) is "boolean", "type() should return 'boolean' for :bool thunk")
-   assert(type(result_false) is "boolean", "type() should return 'boolean' for :bool thunk")
+   assert(type(result_true) is "bool", "type() should return 'bool' for :bool thunk")
+   assert(type(result_false) is "bool", "type() should return 'bool' for :bool thunk")
 
    -- Note: Thunks are always truthy in conditionals (userdata are truthy)
    -- Must use resolve() or tostring() to get the actual boolean value

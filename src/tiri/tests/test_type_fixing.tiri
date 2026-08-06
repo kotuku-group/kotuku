@@ -74,7 +74,7 @@ end
    assert(type(data) is "string", "any should accept string")
 
    data = true
-   assert(type(data) is "boolean", "any should accept boolean")
+   assert(type(data) is "bool", "any should accept bool")
 
    data = { x = 1 }
    assert(type(data) is "table", "any should accept table")
@@ -239,11 +239,8 @@ end
    assert(s1 is "a", "str alias works")
    assert(s2 is "b", "string alias works")
 
-   -- bool/boolean are aliases
    local b1: bool = true
-   local b2: boolean = false
-   assert(b1 is true, "bool alias works")
-   assert(b2 is false, "boolean alias works")
+   assert(b1 is true, "bool type works")
 
    -- func/function are aliases
    local f1: func = function() return 1 end

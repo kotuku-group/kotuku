@@ -281,7 +281,7 @@ function createFlowManager(self)
 
       for name, value in pairs(Headers) do
          local value_type = type(value)
-         if value_type is 'string' or value_type is 'number' or value_type is 'boolean' then
+         if value_type is 'string' or value_type is 'number' or value_type is 'bool' then
             headers[tostring(name)] = value
          end
       end

@@ -131,7 +131,7 @@ config.encode = function(Value:table):str
          key = validate_key_name(key, group_name)
 
          local value_type = type(value)
-         if value_type != 'string' and value_type != 'number' and value_type != 'boolean' then
+         if value_type != 'string' and value_type != 'number' and value_type != 'bool' then
             error(f'Config value for "{group_name}.{key}" has unsupported type "{value_type}".')
          end
 

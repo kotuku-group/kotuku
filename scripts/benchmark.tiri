@@ -711,7 +711,7 @@ end
 -- Check if results indicate a regression compared to baseline.
 -- Simple boolean check useful for CI/CD pipelines.
 
-bmark.hasRegression = function(Current:table, BaselinePath:str, Threshold:num):boolean
+bmark.hasRegression = function(Current:table, BaselinePath:str, Threshold:num):bool
    local comparison = bmark.compareToBaseline(Current, BaselinePath, Threshold)
    return not comparison.passed
 end
@@ -721,7 +721,7 @@ end
 bmark.comparisonReport = function(Comparison:table):array<string>
    local msg = array<string>
 
-   local function formatChange(Change:num, Improved:boolean):string
+   local function formatChange(Change:num, Improved:bool):string
       local sign = Change >= 0 and '+' or ''
       local indicator = Improved and '✓' or (math.abs(Change) > 5 and '✗' or '~')
       return string.format('%s%.1f%% %s', sign, Change, indicator)
