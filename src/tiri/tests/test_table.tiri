@@ -617,13 +617,29 @@ end
    end
 end
 
-@Test function LengthUnaffectedByNumericKeys()
-   -- Negative, sparse and fractional keys use the hash part but remain numeric, so the length survives.
+@Test function LengthNilAfterNegativeKey()
+   -- A negative key has no place in a zero-based sequence domain, so it classifies the table as sparse.
    t = { 1, 2, 3 }
    t[-5] = 'negative'
-   t[9999] = 'sparse'
+   assert(#t is nil, "A negative key should classify the table as sparse, got " .. tostring(#t))
+   assert(table.kind(t) is 'sparse', "Expected sparse, got " .. table.kind(t))
+end
+
+@Test function LengthNilAfterFractionalKey()
+   -- A fractional key can never be a sequence index.
+   t = { 1, 2, 3 }
    t[1.5] = 'fractional'
-   assert(#t is 3, "Numeric hash keys should preserve the length, got " .. tostring(#t))
+   assert(#t is nil, "A fractional key should classify the table as sparse, got " .. tostring(#t))
+   assert(table.kind(t) is 'sparse', "Expected sparse, got " .. table.kind(t))
+end
+
+@Test function LengthSurvivesDistantNumericKey()
+   -- Positive holes remain in the sequence-compatible key domain.  This classification records key usage and does
+   -- not promise that the current live table shape is dense.
+   t = { 1, 2, 3 }
+   t[9999] = 'distant'
+   assert(#t is 3, "A distant positive key should preserve the length, got " .. tostring(#t))
+   assert(table.kind(t) is 'sequence', "Expected sequence, got " .. table.kind(t))
 end
 
 @Test function LengthNilAfterNonNumericKeys()
@@ -669,12 +685,176 @@ end
    assert(#a is 4, "Native array length should be unchanged, got " .. tostring(#a))
 end
 
-@Test function InternalLengthConsumersUnaffected()
-   -- table.insert(), table.remove() and table.empty() keep using the internal numerical length.
+@Test function SequenceFunctionsRejectClassifiedTables()
+   -- Functions that infer a numerical boundary refuse tables whose usage history is not sequence-compatible.
    t = { 1, 2 }
    t.name = 'x'
-   table.insert(t, 3)
-   assert(t[2] is 3, "insert should still append at the numerical length")
-   assert(table.remove(t) is 3, "remove should still operate on the sequence")
+
+   local rejected = false
+   try
+      table.insert(t, 3)
+   except e
+      rejected = true
+      assert(e.message:find('sequence table'), "Diagnostic should name the requirement, got " .. e.message)
+      assert(e.message:find('associative'), "Diagnostic should name the classification, got " .. e.message)
+   end
+   assert(rejected is true, "insert should reject an associative table")
+
+   rejected = false
+   try
+      table.remove(t)
+   except e
+      rejected = true
+   end
+   assert(rejected is true, "remove should reject an associative table")
+
+   rejected = false
+   try
+      table.sort(t)
+   except e
+      rejected = true
+   end
+   assert(rejected is true, "sort should reject an associative table")
+
+   -- table.empty() is independent of classification and keeps inspecting live entries.
    assert(table.empty(t) is false, "Table with entries should not be empty")
+end
+
+@Test function SequenceFunctionsAcceptSequences()
+   -- The guard must not disturb ordinary dense sequence usage.
+   t = { 1, 2 }
+   table.insert(t, 3)
+   assert(t[2] is 3, "insert should append at the numerical length")
+   assert(table.remove(t) is 3, "remove should operate on the sequence")
+   assert(table.empty(t) is false, "Table with entries should not be empty")
+end
+
+@Test function ExplicitBoundsRemainValidOnClassifiedTables()
+   -- Explicitly bounded operations work on the caller-supplied domain, so they accept any classification.
+   t = { 'a', 'b', 'c' }
+   t.name = 'x'
+   assert(table.concat(t, ',', 0, 2) is 'a,b,c', "Explicitly bounded concat should be permitted")
+
+   -- Omitting the end index infers the boundary and is therefore rejected.
+   local rejected = false
+   try
+      local joined = table.concat(t, ',')
+   except e
+      rejected = true
+   end
+   assert(rejected is true, "concat without an end index should reject a classified table")
+end
+
+@Test function KindReportsEveryClassification()
+   -- table.kind() reports permanent usage history, not the table's current live shape.
+   assert(table.kind({ 10, 20, 30 }) is 'sequence', "Dense literal should be a sequence")
+   assert(table.kind({ name = 'example' }) is 'associative', "Named field should classify as associative")
+
+   local sparse = { 1, 2 }
+   sparse[-1] = 'negative'
+   assert(table.kind(sparse) is 'sparse', "Negative key should classify as sparse")
+
+   local mixed = { 1, 2 }
+   mixed[-1] = 'negative'
+   mixed.name = 'example'
+   assert(table.kind(mixed) is 'mixed', "Both histories should report mixed")
+end
+
+@Test function KindIsPermanent()
+   -- Classification survives deletion and table.clear(): it records history, not live shape.
+   local t = { 1, 2, 3 }
+   t.name = 'example'
+   t.name = nil
+   assert(table.kind(t) is 'associative', "Deleting the key must not restore the classification")
+
+   table.clear(t)
+   assert(table.kind(t) is 'associative', "table.clear() must not restore the classification")
+   assert(table.empty(t) is true, "table.clear() should still empty the table")
+end
+
+@Test function LiteralClassificationSurvivesBytecodeRoundTrip()
+   function sparse_factory():table return { [-1] = nil } end
+   function associative_factory():table return { name = nil } end
+   function mixed_factory():table return { [-1] = nil, name = nil } end
+
+   for stripped in values({ false, true }) do
+      local sparse = exec(string.dump(sparse_factory, stripped))
+      local associative = exec(string.dump(associative_factory, stripped))
+      local mixed = exec(string.dump(mixed_factory, stripped))
+      assert(table.kind(sparse) is 'sparse', "Sparse literal classification must survive bytecode dumping")
+      assert(table.kind(associative) is 'associative',
+         "Associative literal classification must survive bytecode dumping")
+      assert(table.kind(mixed) is 'mixed', "Mixed literal classification must survive bytecode dumping")
+   end
+end
+
+@Test function SizeCountsEveryLiveEntry()
+   -- table.size() counts array and hash entries alike, independently of classification and '#'.
+   assert(table.size({ 10, 20, name = 'example' }) is 3, "Should count array and hash entries")
+   assert(table.size({}) is 0, "Empty table should report zero")
+
+   local sparse = {}
+   sparse[-1] = true
+   assert(table.size(sparse) is 1, "Should count a single sparse entry")
+
+   -- Falsey values are live entries; nilled nodes are not.
+   local falsey = { false, 0, '' }
+   assert(table.size(falsey) is 3, "Falsey values are live entries")
+
+   local removed = { 1, 2, 3 }
+   removed[2] = nil
+   assert(table.size(removed) is 2, "Nilled entries should not be counted")
+end
+
+function assert_duplicate_key(Source:str, Context:str)
+   local result = debug.validate(Source)
+   assert(result.success is false, Context .. ': source should fail validation')
+   assert(string.find(result.diagnostics[0].message, 'Duplicate key', 0, true) != nil,
+      Context .. ': expected a duplicate-key diagnostic, got: ' .. tostring(result.diagnostics[0].message))
+end
+
+function no_table_results() end
+
+function two_table_results():<str, str>
+   return 'tail', 'extra'
+end
+
+@Test function DuplicateLiteralKeysAreRejected()
+   -- Provable duplicates are a compile-time error, because the overwritten intermediate value cannot be observed.
+   assert_duplicate_key("x = { name = 1, name = 2 }", 'duplicate named keys')
+   assert_duplicate_key("x = { 10, [0] = 20 }", 'positional and explicit key collision')
+   assert_duplicate_key("x = { ['name'] = 1, name = 2 }", 'string and named key collision')
+   assert_duplicate_key("x = { [1] = 'a', [1.0] = 'b' }", 'equivalent integer and float keys')
+   assert_duplicate_key("x = { no_table_results(), [0] = 20 }", 'non-tail calls have one positional slot')
+end
+
+@Test function VariableResultTailDoesNotImplyDuplicateKey()
+   -- A final call writes from its nominal index only when it returns values, so the parser cannot prove a collision.
+   local preserved = { [0] = 'explicit', no_table_results() }
+   assert(preserved[0] is 'explicit', 'A zero-result tail call must preserve the explicit entry')
+
+   local expanded = { [0] = 'explicit', two_table_results(), }
+   assert(expanded[0] is 'tail', 'A multi-result tail call should write its first result at the nominal index')
+   assert(expanded[1] is 'extra', 'A multi-result tail call should expand into subsequent indices')
+end
+
+@Test function FormattedStringsFollowingFieldsRemainValid()
+   -- Separator handling must not look ahead into the buffered tokens produced by an interpolated string.
+   local port = 18952
+   local values = { f'url=http://127.0.0.1:{port}/hello', f'proxy=127.0.0.1:{port}', 'timeout=5' }
+   assert(values[1] is 'proxy=127.0.0.1:18952', 'The second formatted string should parse intact')
+end
+
+@Test function DistinctAndComputedKeysRemainValid()
+   -- Distinct keys are unaffected, and keys that cannot be proven without evaluating user code are not diagnosed.
+   assert(debug.validate("x = { name = 1, other = 2 }").success is true, "Distinct keys must remain valid")
+   assert(debug.validate("local k = 'a'; x = { [k] = 1, [k] = 2 }").success is true,
+      "Computed keys must not be diagnosed")
+end
+
+@Test function LiteralClassificationIgnoresOrder()
+   -- Explicit non-negative integer keys remain in the sequence-compatible domain regardless of source order.
+   local ordered = { [1] = 'b', [0] = 'a', [2] = 'c' }
+   assert(table.kind(ordered) is 'sequence', "Out-of-order dense keys should remain a sequence")
+   assert(#ordered is 3, "Out-of-order dense literal should report its length, got " .. tostring(#ordered))
 end

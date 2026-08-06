@@ -95,8 +95,9 @@ static void bcwrite_ktab(BCWriteCtx* ctx, char* p, const GCtab* t)
          nhash += !tvisnil(&node[i].val);
    }
 
-   // Write number of array slots and hash slots.
+   // Write classification flags, number of array slots and number of hash slots.
 
+   p = lj_strfmt_wuleb128(p, t->flags & TAB_NOT_SEQUENCE);
    p = lj_strfmt_wuleb128(p, narray);
    p = lj_strfmt_wuleb128(p, nhash);
    ctx->sb.w = p;
@@ -142,7 +143,7 @@ static void bcwrite_kgc(BCWriteCtx *ctx, GCproto *pt)
       else {
          lj_assertBCW(o->gch.gct IS ~LJ_TTAB, "bad constant GC type %d", o->gch.gct);
          tp = BCDUMP_KGC_TAB;
-         need = 1 + 2 * 5;
+         need = 1 + 3 * 5;
       }
 
       // Write constant type.

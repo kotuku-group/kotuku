@@ -276,7 +276,7 @@ TValue * lj_meta_tset(lua_State *L, cTValue *o, cTValue *k)
             t->nomm = 0;  //  Invalidate negative metamethod cache.
             // Overwriting a live slot commits a store, so classify here: the returning paths below bypass
             // lj_tab_newkey() because the node already carries the key.
-            if (not tvisnumber(k)) t->flags |= TAB_ASSOCIATIVE;
+            lj_tab_classify_store(t, k);
             lj_gc_anybarriert(L, t);
             return (TValue *)tv;
          }
@@ -284,7 +284,7 @@ TValue * lj_meta_tset(lua_State *L, cTValue *o, cTValue *k)
             t->nomm = 0;  //  Invalidate negative metamethod cache.
             lj_gc_anybarriert(L, t);
             if (tv != niltv(L)) {  // Resurrecting a dead node that still holds the key.
-               if (not tvisnumber(k)) t->flags |= TAB_ASSOCIATIVE;
+               lj_tab_classify_store(t, k);
                return (TValue *)tv;
             }
             if (tvisnil(k)) lj_err_msg(L, ErrMsg::NILIDX);

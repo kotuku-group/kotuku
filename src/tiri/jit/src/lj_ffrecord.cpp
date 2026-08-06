@@ -1663,6 +1663,25 @@ static void recff_string_format(jit_State* J, RecordFFData* rd)
 //********************************************************************************************************************
 // Table library fast functions
 
+// Guard the public sequence-domain contract used by table functions that infer a numerical boundary.  A classified
+// table records through the interpreter so the library can raise its detailed diagnostic.  A compatible table gets
+// a flags guard so later classification side-exits before any raw IR_ALEN operation is executed.
+
+static bool recff_guard_sequence(jit_State *J, RecordFFData *RecordData, TRef TableRef, GCtab *Table)
+{
+   if (not lj_tab_is_sequence(Table)) {
+      recff_nyiu(J, RecordData);
+      return false;
+   }
+
+   TRef flags = emitir(IRT(IR_FLOAD, IRT_U8), TableRef, IRFL_TAB_FLAGS);
+   TRef classified = emitir(IRTI(IR_BAND), flags, lj_ir_kint(J, TAB_NOT_SEQUENCE));
+   emitir(IRTGI(IR_EQ), classified, lj_ir_kint(J, 0));
+   return true;
+}
+
+//********************************************************************************************************************
+
 static void recff_table_insert(jit_State* J, RecordFFData* rd)
 {
    RecordIndex ix;
@@ -1671,8 +1690,9 @@ static void recff_table_insert(jit_State* J, RecordFFData* rd)
    rd->nres = 0;
    if (tref_istab(ix.tab) and ix.val) {
       if (!J->base[2]) {  // Simple push: t[#t] = v (0-based: next index = len)
-         TRef trlen = emitir(IRTI(IR_ALEN), ix.tab, TREF_NIL);
          GCtab* t = tabV(&rd->argv[0]);
+         if (not recff_guard_sequence(J, rd, ix.tab, t)) return;
+         TRef trlen = emitir(IRTI(IR_ALEN), ix.tab, TREF_NIL);
          ix.key = trlen;  // 0-based: next available index is len
          settabV(J->L, &ix.tabv, t);
          setintV(&ix.keyv, lj_tab_len(t));  // 0-based: next index = len
@@ -1692,9 +1712,11 @@ static void recff_table_concat(jit_State* J, RecordFFData* rd)
 {
    TRef tab = J->base[0];
    if (tref_istab(tab)) {
+      const bool explicit_end = J->base[1] and J->base[2] and not tref_isnil(J->base[3]);
+      if (not explicit_end and not recff_guard_sequence(J, rd, tab, tabV(&rd->argv[0]))) return;
       TRef sep = !tref_isnil(J->base[1]) ? lj_ir_tostr(J, J->base[1]) : lj_ir_knull(J, IRT_STR);
       TRef tri = (J->base[1] and !tref_isnil(J->base[2])) ? lj_opt_narrow_toint(J, J->base[2]) : lj_ir_kint(J, 0);  // 0-based: default start
-      TRef tre = (J->base[1] and J->base[2] and !tref_isnil(J->base[3])) ?
+      TRef tre = explicit_end ?
          lj_opt_narrow_toint(J, J->base[3]) : emitir(IRTI(IR_ADD), emitir(IRTI(IR_ALEN), tab, TREF_NIL), lj_ir_kint(J, -1));  // 0-based: end = len - 1
       TRef hdr = recff_bufhdr(J);
       TRef tr = lj_ir_call(J, IRCALL_lj_buf_puttab, hdr, tab, sep, tri, tre);

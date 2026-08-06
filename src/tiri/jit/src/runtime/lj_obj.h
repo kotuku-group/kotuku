@@ -968,9 +968,27 @@ typedef struct Node {
 static_assert(offsetof(Node, val) == 0);
 
 // GCtab::flags bits.  These record permanent facts about a table's usage history and are never cleared.
+//
+// Classification describes usage history rather than the table's current live shape.  Removing keys or calling
+// table.clear() does not restore the 'sequence' classification.  The monotonic, one-way nature of these bits is what
+// allows the JIT to guard the observed state cheaply: the first offending store side-exits the trace.
 
 inline constexpr uint32_t TAB_ASSOCIATIVE_BIT = 0;  // Bit index, for backends that test single bits.
 inline constexpr uint8_t  TAB_ASSOCIATIVE = (uint8_t)(1u << TAB_ASSOCIATIVE_BIT); // Ever addressed by a non-numeric key
+inline constexpr uint32_t TAB_SPARSE_BIT = 1;       // Bit index, for backends that test single bits.
+inline constexpr uint8_t  TAB_SPARSE = (uint8_t)(1u << TAB_SPARSE_BIT); // Ever used with non-sequence numerical keys
+
+// Either flag makes the sequence length meaningless, so '#' reports nil and sequence library functions refuse to
+// infer a boundary.  Backends test this composite mask in one operation.
+
+inline constexpr uint8_t TAB_NOT_SEQUENCE = (uint8_t)(TAB_ASSOCIATIVE | TAB_SPARSE);
+
+// Public classification names, matching the strings reported by table.kind().
+
+inline constexpr const char* TAB_KIND_SEQUENCE    = "sequence";
+inline constexpr const char* TAB_KIND_SPARSE      = "sparse";
+inline constexpr const char* TAB_KIND_ASSOCIATIVE = "associative";
+inline constexpr const char* TAB_KIND_MIXED       = "mixed";
 
 typedef struct GCtab {
    GCHeader;
@@ -1001,8 +1019,55 @@ static_assert(offsetof(GCtab, metatable) == 32);
 static_assert(offsetof(GCtab, node) == 40);
 static_assert(offsetof(GCtab, asize) == 48);
 static_assert(offsetof(GCtab, hmask) == 52);
+static_assert(offsetof(GCtab, freetop) IS 56);
+static_assert(offsetof(GCtab, global_type_contracts) IS 64);
+static_assert(offsetof(GCtab, global_contract_cache) IS 72);
 static_assert(sizeof(GCtab) == 80);
 static_assert((sizeof(GCtab) & 7) == 0);
+
+// The classification bits share the single 'flags' byte, so they must remain addressable as one 8-bit field by the
+// x64, ARM64 and PPC backends.
+
+static_assert(sizeof(GCtab::flags) IS 1);
+static_assert(TAB_NOT_SEQUENCE IS (TAB_ASSOCIATIVE | TAB_SPARSE));
+static_assert((1u << TAB_ASSOCIATIVE_BIT) IS TAB_ASSOCIATIVE);
+static_assert((1u << TAB_SPARSE_BIT) IS TAB_SPARSE);
+
+// Table classification helpers.  Every interpreter, library and C API path publishes classification through these so
+// that the semantics stay aligned; the JIT recorder mirrors them with equivalent IR.
+
+[[nodiscard]] inline bool lj_tab_is_associative(const GCtab *Table) noexcept
+{
+   return (Table->flags & TAB_ASSOCIATIVE) != 0;
+}
+
+[[nodiscard]] inline bool lj_tab_is_sparse(const GCtab *Table) noexcept
+{
+   return (Table->flags & TAB_SPARSE) != 0;
+}
+
+// True when the table's usage history remains inside the non-negative integral sequence domain.  This does not prove
+// that every index below the numerical boundary is currently populated: positive holes deliberately remain legal.
+// This is the single predicate behind the '#' operator's nil result and the sequence library guards.
+
+[[nodiscard]] inline bool lj_tab_is_sequence(const GCtab *Table) noexcept
+{
+   return (Table->flags & TAB_NOT_SEQUENCE) IS 0;
+}
+
+inline void lj_tab_mark_associative(GCtab *Table) noexcept { Table->flags |= TAB_ASSOCIATIVE; }
+inline void lj_tab_mark_sparse(GCtab *Table) noexcept { Table->flags |= TAB_SPARSE; }
+
+// Report the permanent classification as one of the four public names.
+
+[[nodiscard]] inline const char * lj_tab_kind(const GCtab *Table) noexcept
+{
+   const uint8_t flags = Table->flags & TAB_NOT_SEQUENCE;
+   if (flags IS 0) return TAB_KIND_SEQUENCE;
+   if (flags IS TAB_SPARSE) return TAB_KIND_SPARSE;
+   if (flags IS TAB_ASSOCIATIVE) return TAB_KIND_ASSOCIATIVE;
+   return TAB_KIND_MIXED;
+}
 
 [[nodiscard]] constexpr inline size_t sizetabcolo(MSize n) noexcept { return n * sizeof(TValue) + sizeof(GCtab); }
 

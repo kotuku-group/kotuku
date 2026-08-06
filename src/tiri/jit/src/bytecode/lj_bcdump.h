@@ -21,7 +21,7 @@
 ** typeentry = typeB metaflagsB constraintU
 ** kgc    = kgctypeU { ktab | (loU hiU) | (rloU rhiU iloU ihiU) | strB* }
 ** knum   = intU0 | (loU1 hiU)
-** ktab   = narrayU nhashU karray* khash*
+** ktab   = flagsU narrayU nhashU karray* khash*
 ** karray = ktabk
 ** khash  = ktabk ktabk
 ** ktabk  = ktabtypeU { intU | (loU hiU) | strB* }
@@ -37,7 +37,7 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // If you perform *any* kind of private modifications to the bytecode itself
 // or to the dump format, you *must* set BCDUMP_VERSION to 0x80 or higher.
 
-constexpr uint8_t BCDUMP_VERSION = 0x84;
+constexpr uint8_t BCDUMP_VERSION = 0x85;
 
 // Compatibility flags.
 
