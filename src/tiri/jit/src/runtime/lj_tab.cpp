@@ -461,9 +461,10 @@ genlookup:
 TValue * lj_tab_newkey(lua_State *L, GCtab *t, cTValue *key)
 {
    Node *n = hashkey(t, key);
-   // Catch store routes that reach the hash part without passing through lj_tab_setstr(), such as the interpreter's
-   // inline BC_TSETS chain-miss path.
-   if (tvisstr(key)) t->flags |= TAB_STRING_KEYED;
+   // Every new hash-part key funnels through here, including store routes that bypass lj_tab_setstr(), such as the
+   // interpreter's inline BC_TSETS chain-miss path and the JIT's IRCALL_lj_tab_newkey.  Any key that is not a number
+   // makes the sequence length meaningless, so classify the table as associative.
+   if (not tvisnumber(key)) t->flags |= TAB_ASSOCIATIVE;
    if (not tvisnil(&n->val) or t->hmask == 0) {
       Node* nodebase = noderef(t->node);
       Node* collide, * freenode = getfreetop(t, nodebase);
@@ -558,7 +559,7 @@ TValue* lj_tab_setstr(lua_State* L, GCtab* t, const GCstr* key)
 {
    TValue k;
    Node* n = hashstr(t, key);
-   t->flags |= TAB_STRING_KEYED;  //  Permanently classify the table as associative.
+   t->flags |= TAB_ASSOCIATIVE;  //  Permanently classify the table as associative.
    do {
       if (tvisstr(&n->key) and strV(&n->key) == key) return &n->val;
    } while ((n = nextnode(n)));
@@ -582,6 +583,11 @@ TValue * lj_tab_set(lua_State *L, GCtab *t, cTValue *key)
       // Else use the generic lookup.
    }
    else if (tvisnil(key)) lj_err_msg(L, ErrMsg::NILIDX);
+
+   // Classify before the chain search, because resurrecting an existing node whose value went nil returns its slot
+   // directly and never reaches lj_tab_newkey().  Non-integral numbers land here too, but they remain numeric keys.
+
+   if (not tvisnumber(key)) t->flags |= TAB_ASSOCIATIVE;
 
    n = hashkey(t, key);
    do {

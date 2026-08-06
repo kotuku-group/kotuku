@@ -969,8 +969,8 @@ static_assert(offsetof(Node, val) == 0);
 
 // GCtab::flags bits.  These record permanent facts about a table's usage history and are never cleared.
 
-inline constexpr uint32_t TAB_STRING_KEYED_BIT = 0;  // Bit index, for backends that test single bits.
-inline constexpr uint8_t  TAB_STRING_KEYED = (uint8_t)(1u << TAB_STRING_KEYED_BIT); // Ever addressed by a string key.
+inline constexpr uint32_t TAB_ASSOCIATIVE_BIT = 0;  // Bit index, for backends that test single bits.
+inline constexpr uint8_t  TAB_ASSOCIATIVE = (uint8_t)(1u << TAB_ASSOCIATIVE_BIT); // Ever addressed by a non-numeric key
 
 typedef struct GCtab {
    GCHeader;

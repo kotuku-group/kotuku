@@ -306,6 +306,38 @@ end
    assert(#backing is nil, "The receiving table should be classified, got " .. tostring(#backing))
 end
 
+@Test function NewIndexMetamethodClassifiesTheReceiverForNonNumericKeys()
+   -- The same diversion rule applies to any non-numeric key, not just strings.
+   local backing = { 1, 2, 3 }
+   local proxy = setmetatable({ 1, 2, 3 }, {
+      __newindex = function(Self, Key, Value) rawset(backing, Key, Value) end
+   })
+   proxy[true] = 'x'
+   assert(#proxy is 3, "The proxy should not be classified by a diverted store, got " .. tostring(#proxy))
+   assert(#backing is nil, "The receiving table should be classified, got " .. tostring(#backing))
+end
+
+@Test function MetaLenOverridesNonNumericKeyClassification()
+   -- __len takes precedence over the classification regardless of which key type caused it.
+   local obj = setmetatable({ 1, 2 }, { __len = function(Self):num return 7 end })
+   obj[true] = 'x'
+   assert(#obj is 7, "__len should override a boolean-key classification, got " .. tostring(#obj))
+
+   setmetatable(obj, nil)
+   assert(#obj is nil, "Removing __len should expose the permanent nil result, got " .. tostring(#obj))
+end
+
+@Test function RawSetWithNonNumericKeyClassifies()
+   -- rawset() bypasses metamethods but still commits a store, so it must classify.
+   local t = { 1, 2, 3 }
+   rawset(t, true, 'x')
+   assert(#t is nil, "rawset() with a boolean key should classify the table, got " .. tostring(#t))
+
+   local u = { 1, 2, 3 }
+   rawset(u, -4, 'x')
+   assert(#u is 3, "rawset() with a numeric key should preserve the length, got " .. tostring(#u))
+end
+
 @Test function MetaConcat()
    mt = {
       __concat = function(A, B):table

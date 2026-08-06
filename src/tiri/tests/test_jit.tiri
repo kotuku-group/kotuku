@@ -2850,6 +2850,64 @@ end
    assert(#t is nil, f"A hot computed string-key store should classify the table, got {tostring(#t)}")
 end
 
+@Test(hotpath=100) function BooleanKeyStoreInHotCodeClassifies()
+   local t = { 1, 2, 3 }
+   for i in {0 to 200} do
+      t[i % 2 is 0] = i
+   end
+   assert(#t is nil, f"A hot boolean-key store should classify the table, got {tostring(#t)}")
+end
+
+@Test(hotpath=100) function TableKeyStoreInHotCodeClassifies()
+   local t = { 1, 2, 3 }
+   local key = {}
+   for i in {0 to 200} do
+      t[key] = i
+   end
+   assert(#t is nil, f"A hot table-key store should classify the table, got {tostring(#t)}")
+end
+
+@Test(hotpath=100) function FunctionKeyStoreInHotCodeClassifies()
+   local t = { 1, 2, 3 }
+   for i in {0 to 200} do
+      t[print] = i
+   end
+   assert(#t is nil, f"A hot function-key store should classify the table, got {tostring(#t)}")
+end
+
+@Test(hotpath=100) function LengthTraceExitsOnFirstBooleanKey()
+   -- The recorded '#' guard proves the table is unclassified, so the first boolean key must side-exit.
+   local t = { 1, 2, 3 }
+   local numeric_results = 0
+   for i in {0 to 200} do
+      if #t is 3 then numeric_results++ end
+   end
+   assert(numeric_results is 200, f"Hot pure table should report length 3 throughout, got {numeric_results}")
+
+   t[true] = 'x'
+
+   local nil_results = 0
+   for i in {0 to 200} do
+      if #t is nil then nil_results++ end
+   end
+   assert(nil_results is 200, f"Hot boolean-keyed table should report nil throughout, got {nil_results}")
+end
+
+@Test(hotpath=100) function NumericHashKeyStoresStayNumericalOnTrace()
+   -- Negative, sparse and fractional keys live in the hash part but must not classify on a trace.
+   local negative = { 1, 2, 3 }
+   local sparse = { 1, 2, 3 }
+   local fractional = { 1, 2, 3 }
+   for i in {0 to 200} do
+      negative[-1 - (i % 4)] = i
+      sparse[9000 + (i % 4)] = i
+      fractional[0.5 + (i % 4)] = i
+   end
+   assert(#negative is 3, f"Negative keys should preserve the length on trace, got {tostring(#negative)}")
+   assert(#sparse is 3, f"Sparse keys should preserve the length on trace, got {tostring(#sparse)}")
+   assert(#fractional is 3, f"Fractional keys should preserve the length on trace, got {tostring(#fractional)}")
+end
+
 function string_keyed_tnew_value(Value):any
    local temporary = {}
    temporary.key = Value
@@ -2938,6 +2996,33 @@ end
    local tdup_result = string_keyed_side_exit(50, true)
    assert(tdup_result.key is 50, 'A restored TDUP should retain its string-keyed value')
    assert(#tdup_result is nil, 'A restored TDUP should retain its string-key classification')
+
+   jit.opt.start()
+end
+
+function boolean_keyed_side_exit(ExitAt, UseTemplate):any
+   for i in {0 to 100} do
+      local temporary = UseTemplate ? { 1 } :> {}
+      temporary[true] = i
+      if i is ExitAt then return temporary end
+   end
+   return nil
+end
+
+@Test function BooleanKeyedSunkTablesRestoreFlagsOnSideExit()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+
+   assert(boolean_keyed_side_exit(-1, false) is nil, 'TNEW workload should record without taking the side exit')
+   local tnew_result = boolean_keyed_side_exit(50, false)
+   assert(tnew_result[true] is 50, 'A restored TNEW should retain its boolean-keyed value')
+   assert(#tnew_result is nil, 'A restored TNEW should retain its associative classification')
+
+   jit.flush()
+   assert(boolean_keyed_side_exit(-1, true) is nil, 'TDUP workload should record without taking the side exit')
+   local tdup_result = boolean_keyed_side_exit(50, true)
+   assert(tdup_result[true] is 50, 'A restored TDUP should retain its boolean-keyed value')
+   assert(#tdup_result is nil, 'A restored TDUP should retain its associative classification')
 
    jit.opt.start()
 end

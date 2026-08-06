@@ -1644,12 +1644,12 @@ static TRef rec_mm_len(jit_State *J, TRef tr, TValue* tv)
    else {
       if (tref_istab(tr)) {
          IRBuilder ir(J);
-         // A table that has ever been addressed with a string key has no sequence length.  The classification is
-         // one-way, so guarding the observed state is sufficient: the first string-keyed store side-exits the trace
+         // A table that has ever been addressed with a non-numeric key has no sequence length.  The classification is
+         // one-way, so guarding the observed state is sufficient: the first non-numeric store side-exits the trace
          // and the recompilation specialises to nil.
          TRef flags = ir.fload(tr, IRFL_TAB_FLAGS, IRT_U8);
-         TRef classified = ir.emit_int(IR_BAND, flags, ir.kint(TAB_STRING_KEYED));
-         if (tabV(tv)->flags & TAB_STRING_KEYED) {
+         TRef classified = ir.emit_int(IR_BAND, flags, ir.kint(TAB_ASSOCIATIVE));
+         if (tabV(tv)->flags & TAB_ASSOCIATIVE) {
             ir.guard_ne_int(classified, ir.kint(0));
             return TREF_NIL;
          }
@@ -2165,12 +2165,13 @@ handlemm:
          ir.emit(IRT(IR_FSTORE, IRT_U8), fref, ir.kint(0));
       }
 
-      // Publish the permanent string-key classification so that a concurrently recorded '#' guard observes it.
+      // Publish the permanent associative classification so that a concurrently recorded '#' guard observes it.  The
+      // recorded key is type-specialised, so a non-numeric key is a static fact for the lifetime of this trace.
 
-      if (tref_isstr(ix->key) and tref_istab(ix->tab)) {
+      if (tref_istab(ix->tab) and not tref_isnumber(ix->key)) {
          TRef fref = ir.emit(IRT(IR_FREF, IRT_PGC), ix->tab, IRFL_TAB_FLAGS);
          TRef flags = ir.fload(ix->tab, IRFL_TAB_FLAGS, IRT_U8);
-         ir.emit(IRT(IR_FSTORE, IRT_U8), fref, ir.emit_int(IR_BOR, flags, ir.kint(TAB_STRING_KEYED)));
+         ir.emit(IRT(IR_FSTORE, IRT_U8), fref, ir.emit_int(IR_BOR, flags, ir.kint(TAB_ASSOCIATIVE)));
       }
 
       J->needsnap = 1;

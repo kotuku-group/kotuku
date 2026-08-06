@@ -556,7 +556,7 @@ static bool test_table_string_hash_keys_unchanged(kt::Log& Log)
    return true;
 }
 
-// The permanent string-key classification underpins the Tiri '#' operator returning nil for associative tables.
+// The permanent non-numeric key classification underpins the Tiri '#' operator returning nil for associative tables.
 
 static bool test_table_flags_initialise_clear(kt::Log& Log)
 {
@@ -596,15 +596,70 @@ static bool test_table_numeric_keys_do_not_classify(kt::Log& Log)
    TValue value;
    setnumV(&value, 1.0);
 
-   copyTV(L, lj_tab_setint(L, table, 0), &value);   // Array part.
-   copyTV(L, lj_tab_setint(L, table, 5000), &value); // Hash part.
+   copyTV(L, lj_tab_setint(L, table, 0), &value);     // Array part.
+   copyTV(L, lj_tab_setint(L, table, 5000), &value);  // Hash part, sparse.
+   copyTV(L, lj_tab_setint(L, table, -7), &value);    // Hash part, negative.
 
-   TValue bool_key;
-   setboolV(&bool_key, 1);
-   copyTV(L, lj_tab_set(L, table, &bool_key), &value);
+   TValue fractional;  // Non-integral numbers take the generic lj_tab_set() path.
+   setnumV(&fractional, 1.5);
+   copyTV(L, lj_tab_set(L, table, &fractional), &value);
 
-   if (table->flags & TAB_STRING_KEYED) {
-      Log.error("non-string keys incorrectly classified the table as string-keyed");
+   if (table->flags & TAB_ASSOCIATIVE) {
+      Log.error("numeric keys incorrectly classified the table as associative");
+      return false;
+   }
+
+   return true;
+}
+
+// Any key that is not a number must classify the table, not just strings.
+
+static bool test_table_non_numeric_keys_classify(kt::Log& Log)
+{
+   LuaStateHolder Holder;
+   lua_State* L = Holder.get();
+   if (not L) {
+      Log.error("failed to create Lua state");
+      return false;
+   }
+
+   TValue value;
+   setnumV(&value, 1.0);
+
+   // Booleans, tables and functions all reach the hash part through lj_tab_set().
+
+   TValue keys[3];
+   setboolV(&keys[0], 1);
+   setboolV(&keys[1], 0);
+   settabV(L, &keys[2], lj_tab_new(L, 0, 0));
+
+   const char *names[3] = { "true", "false", "table" };
+
+   for (int i = 0; i < 3; i++) {
+      GCtab* table = lj_tab_new(L, 4, 3);
+      copyTV(L, lj_tab_setint(L, table, 0), &value);
+      copyTV(L, lj_tab_set(L, table, &keys[i]), &value);
+      if (not (table->flags & TAB_ASSOCIATIVE)) {
+         Log.error("a %s key did not classify the table as associative", names[i]);
+         return false;
+      }
+   }
+
+   // Resurrecting a nilled non-numeric key returns the existing node directly, bypassing lj_tab_newkey().
+
+   GCtab* revived = lj_tab_new(L, 4, 3);
+   TValue nil_value;
+   setnilV(&nil_value);
+   copyTV(L, lj_tab_set(L, revived, &keys[0]), &nil_value);
+   if (not (revived->flags & TAB_ASSOCIATIVE)) {
+      Log.error("assigning nil through a boolean key did not classify the table");
+      return false;
+   }
+
+   revived->flags = 0;  //  Force the resurrection path to re-establish the classification on its own.
+   copyTV(L, lj_tab_set(L, revived, &keys[0]), &value);
+   if (not (revived->flags & TAB_ASSOCIATIVE)) {
+      Log.error("resurrecting a boolean key did not classify the table");
       return false;
    }
 
@@ -626,7 +681,7 @@ static bool test_table_string_key_classifies(kt::Log& Log)
    setnumV(&value, 7.0);
    copyTV(L, lj_tab_setstr(L, table, key), &value);
 
-   if (not (table->flags & TAB_STRING_KEYED)) {
+   if (not (table->flags & TAB_ASSOCIATIVE)) {
       Log.error("string key did not classify the table");
       return false;
    }
@@ -636,7 +691,7 @@ static bool test_table_string_key_classifies(kt::Log& Log)
    TValue nil_value;
    setnilV(&nil_value);
    copyTV(L, lj_tab_setstr(L, table, key), &nil_value);
-   if (not (table->flags & TAB_STRING_KEYED)) {
+   if (not (table->flags & TAB_ASSOCIATIVE)) {
       Log.error("removing the string value cleared the classification");
       return false;
    }
@@ -644,7 +699,7 @@ static bool test_table_string_key_classifies(kt::Log& Log)
    GCtab* nil_only = lj_tab_new(L, 0, 3);
    GCstr* missing = lj_str_newlit(L, "missing");
    copyTV(L, lj_tab_setstr(L, nil_only, missing), &nil_value);
-   if (not (nil_only->flags & TAB_STRING_KEYED)) {
+   if (not (nil_only->flags & TAB_ASSOCIATIVE)) {
       Log.error("assigning nil through a string key did not classify the table");
       return false;
    }
@@ -668,19 +723,19 @@ static bool test_table_classification_survives_mutation(kt::Log& Log)
    copyTV(L, lj_tab_setstr(L, table, key), &value);
 
    lj_tab_clear(table);
-   if (not (table->flags & TAB_STRING_KEYED)) {
+   if (not (table->flags & TAB_ASSOCIATIVE)) {
       Log.error("lj_tab_clear() cleared the classification");
       return false;
    }
 
    lj_tab_resize(L, table, 32, 4);
-   if (not (table->flags & TAB_STRING_KEYED)) {
+   if (not (table->flags & TAB_ASSOCIATIVE)) {
       Log.error("lj_tab_resize() cleared the classification");
       return false;
    }
 
    GCtab* copy = lj_tab_dup(L, table);
-   if (not (copy->flags & TAB_STRING_KEYED)) {
+   if (not (copy->flags & TAB_ASSOCIATIVE)) {
       Log.error("lj_tab_dup() did not copy the classification");
       return false;
    }
@@ -689,7 +744,7 @@ static bool test_table_classification_survives_mutation(kt::Log& Log)
 
    GCtab* pure = lj_tab_new(L, 4, 0);
    GCtab* pure_copy = lj_tab_dup(L, pure);
-   if (pure_copy->flags & TAB_STRING_KEYED) {
+   if (pure_copy->flags & TAB_ASSOCIATIVE) {
       Log.error("lj_tab_dup() invented a classification for a pure table");
       return false;
    }
@@ -726,7 +781,7 @@ static bool test_table_layout_offsets_stable(kt::Log& Log)
 
 extern void indexing_unit_tests(int& Passed, int& Total)
 {
-   constexpr std::array<TestCase, 21> Tests = { {
+   constexpr std::array<TestCase, 22> Tests = { {
       { "array_first_element_access", test_array_first_element_access },
       { "table_length_operator", test_table_length_operator },
       { "ipairs_starting_index", test_ipairs_starting_index },
@@ -745,6 +800,7 @@ extern void indexing_unit_tests(int& Passed, int& Total)
       { "table_string_hash_keys_unchanged", test_table_string_hash_keys_unchanged },
       { "table_flags_initialise_clear", test_table_flags_initialise_clear },
       { "table_numeric_keys_do_not_classify", test_table_numeric_keys_do_not_classify },
+      { "table_non_numeric_keys_classify", test_table_non_numeric_keys_classify },
       { "table_string_key_classifies", test_table_string_key_classifies },
       { "table_classification_survives_mutation", test_table_classification_survives_mutation },
       { "table_layout_offsets_stable", test_table_layout_offsets_stable }
