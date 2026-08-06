@@ -822,6 +822,13 @@ end
    assert(expanded[1] is 'extra', 'A multi-result tail call should expand into subsequent indices')
 end
 
+@Test function FormattedStringsFollowingFieldsRemainValid()
+   -- Separator handling must not look ahead into the buffered tokens produced by an interpolated string.
+   local port = 18952
+   local values = { f'url=http://127.0.0.1:{port}/hello', f'proxy=127.0.0.1:{port}', 'timeout=5' }
+   assert(values[1] is 'proxy=127.0.0.1:18952', 'The second formatted string should parse intact')
+end
+
 @Test function DistinctAndComputedKeysRemainValid()
    -- Distinct keys are unaffected, and keys that cannot be proven without evaluating user code are not diagnosed.
    assert(debug.validate("x = { name = 1, other = 2 }").success is true, "Distinct keys must remain valid")

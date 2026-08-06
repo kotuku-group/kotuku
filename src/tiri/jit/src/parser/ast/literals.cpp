@@ -518,9 +518,11 @@ ParserResult<std::vector<TableField>> AstBuilder::parse_table_fields(bool *has_a
       }
       field.span = current.span();
 
-      const bool final_field = this->ctx.check(TokenKind::RightBrace) or
-         ((this->ctx.check(TokenKind::Comma) or this->ctx.check(TokenKind::Semicolon)) and
-          this->ctx.tokens().peek(1).kind() IS TokenKind::RightBrace);
+      // Consume the separator through the normal token stream before checking for a trailing separator.  Peeking
+      // across it can pre-expand an f-string field into the lexer's buffered tokens and corrupt subsequent parsing.
+      const bool has_separator = this->ctx.match(TokenKind::Comma).ok() or
+         this->ctx.match(TokenKind::Semicolon).ok();
+      const bool final_field = this->ctx.check(TokenKind::RightBrace);
       const bool variable_tail = final_field and field.kind IS TableFieldKind::Array and field.value and
          can_expand_table_tail(*field.value);
 
@@ -536,8 +538,7 @@ ParserResult<std::vector<TableField>> AstBuilder::parse_table_fields(bool *has_a
       }
 
       fields.push_back(std::move(field));
-      if (this->ctx.match(TokenKind::Comma).ok()) continue;
-      if (this->ctx.match(TokenKind::Semicolon).ok()) continue;
+      if (has_separator) continue;
    }
    if (has_array_part) *has_array_part = array;
    return ParserResult<std::vector<TableField>>::success(std::move(fields));
