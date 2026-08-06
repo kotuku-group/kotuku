@@ -627,3 +627,106 @@ end
    obj_one.free()
    obj_two.free()
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Initialiser grammar: separators, adjacency, nesting and diagnostics.  These cases pin the accepted syntax of the
+-- dedicated typed-array initialiser parser so that it cannot silently diverge from table-literal field parsing.
+
+function array_init_no_results() end
+
+function array_init_two_results():<num, num>
+   return 7, 8
+end
+
+@Test function ArrayInitialiserEmptyBraces()
+   -- An empty braced initialiser must still produce a correctly typed empty array.
+   arr = array<int> {}
+   assert(#arr is 0, "Empty initialiser should have length 0, got " .. #arr)
+   assert(arr:type() is 'int', "Empty initialiser should retain its element type")
+end
+
+@Test function ArrayInitialiserSemicolonSeparators()
+   arr = array<int> { 1; 2; 3 }
+   assert(#arr is 3, "Semicolon separators should yield 3 elements, got " .. #arr)
+   assert(arr[0] is 1, "First element should be 1")
+   assert(arr[2] is 3, "Third element should be 3")
+end
+
+@Test function ArrayInitialiserTrailingSeparators()
+   local trailing_comma = array<int> { 1, 2, }
+   assert(#trailing_comma is 2, "A trailing comma should not add an element, got " .. #trailing_comma)
+   assert(trailing_comma[1] is 2, "Trailing comma should preserve the last value")
+
+   local trailing_semicolon = array<int> { 4; 5; }
+   assert(#trailing_semicolon is 2, "A trailing semicolon should not add an element, got " .. #trailing_semicolon)
+   assert(trailing_semicolon[1] is 5, "Trailing semicolon should preserve the last value")
+end
+
+@Test function ArrayInitialiserAdjacentExpressions()
+   -- Values without an intervening separator are accepted, matching the historic table-field loop.
+   arr = array<int> { 1 2 3 }
+   assert(#arr is 3, "Adjacent values should yield 3 elements, got " .. #arr)
+   assert(arr[0] is 1, "First adjacent value should be 1")
+   assert(arr[2] is 3, "Third adjacent value should be 3")
+end
+
+@Test function ArrayInitialiserNestedLiterals()
+   local tables = array<table> { { 10, 20 }, { x = 1 } }
+   assert(#tables is 2, "Nested table values should yield 2 elements, got " .. #tables)
+   assert(tables[0][1] is 20, "Nested table array part should be preserved")
+   assert(tables[1].x is 1, "Nested table record part should be preserved")
+
+   local arrays = array<array> { array<int> { 1, 2 }, array<int> { 3 } }
+   assert(#arrays is 2, "Nested typed arrays should yield 2 elements, got " .. #arrays)
+   assert(#arrays[0] is 2, "First nested array should retain 2 elements")
+   assert(arrays[1][0] is 3, "Second nested array should retain its value")
+end
+
+@Test function ArrayInitialiserConsecutiveFormattedStrings()
+   -- Separator handling must not peek into the buffered tokens produced by an interpolated string.
+   local port = 18952
+   local args = array<string> { f'url=http://127.0.0.1:{port}/echo', f'proxy=127.0.0.1:{port}', 'timeout=5' }
+   assert(#args is 3, "Formatted string values should yield 3 elements, got " .. #args)
+   assert(args[0] is 'url=http://127.0.0.1:18952/echo', "First formatted string should parse intact")
+   assert(args[1] is 'proxy=127.0.0.1:18952', "Second formatted string should parse intact")
+   assert(args[2] is 'timeout=5', "Trailing plain string should parse intact")
+end
+
+@Test function ArrayInitialiserTailCallContributesOneValue()
+   -- Unlike a table constructor, a final call contributes exactly one value and must not expand.
+   local expanded = array<int> { 1, array_init_two_results() }
+   assert(#expanded is 2, "A multi-result tail call should contribute one value, got " .. #expanded)
+   assert(expanded[1] is 7, "The tail call should contribute its first result only")
+
+   local empty_tail = array<int> { 1, array_init_no_results() }
+   assert(#empty_tail is 2, "A zero-result tail call should still occupy one slot, got " .. #empty_tail)
+   assert(empty_tail[1] is 0, "A zero-result tail call should default its slot")
+end
+
+@Test function ArrayInitialiserNestedRangeExpressionsRemainValid()
+   -- Range syntax is disabled for the outer braces, but nested range expressions are ordinary values.
+   arr = array<any> { 2 in {0 to 5}, 9 in {0 to 5} }
+   assert(#arr is 2, "Nested range membership tests should yield 2 elements, got " .. #arr)
+   assert(arr[0] is true, "2 should be within {0 to 5}")
+   assert(arr[1] is false, "9 should be outside {0 to 5}")
+end
+
+@Test function ArrayInitialiserRangeSyntaxRemainsDisabled()
+   -- 'to' is not a range keyword inside typed-array braces; it resolves as an ordinary identifier.
+   local result = debug.validate("x = array<int> { 0 to 3 }")
+   assert(result.success is false, "Range syntax should not be accepted in a typed-array initialiser")
+end
+
+function assert_array_key_rejected(Source:str, Context:str)
+   local result = debug.validate(Source)
+   assert(result.success is false, Context .. ': source should fail validation')
+   assert(string.find(result.diagnostics[0].message, 'Array initialiser', 0, true) != nil,
+      Context .. ': expected an array-initialiser diagnostic, got: ' .. tostring(result.diagnostics[0].message))
+end
+
+@Test function ArrayInitialiserRejectsKeyedFields()
+   assert_array_key_rejected("x = array<int> { value = 1 }", 'named key')
+   assert_array_key_rejected("x = array<int> { [0] = 1 }", 'computed key')
+   assert_array_key_rejected("x = array<int> { 1, 2, value = 3 }", 'named key after positional values')
+   assert_array_key_rejected("x = array<int> { 1, [2] = 3 }", 'computed key after positional values')
+end
