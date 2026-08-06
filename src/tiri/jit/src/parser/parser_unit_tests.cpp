@@ -3542,9 +3542,10 @@ static bool test_static_descriptor_model(kt::Log &Log)
       AET storage;
       TiriType logical_type;
    };
-   constexpr std::array<ArrayMapping, 14> mappings = { {
+   constexpr std::array<ArrayMapping, 15> mappings = { {
       { "byte", AET::BYTE, TiriType::Num },
       { "char", AET::BYTE, TiriType::Num },
+      { "int8", AET::BYTE, TiriType::Num },
       { "int16", AET::INT16, TiriType::Num },
       { "int", AET::INT32, TiriType::Num },
       { "int64", AET::INT64, TiriType::Num },
