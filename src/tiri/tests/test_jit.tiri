@@ -2915,6 +2915,33 @@ end
    jit.opt.start()
 end
 
+function string_keyed_side_exit(ExitAt, UseTemplate):any
+   for i in {0 to 100} do
+      local temporary = UseTemplate ? { 1 } :> {}
+      temporary.key = i
+      if i is ExitAt then return temporary end
+   end
+   return nil
+end
+
+@Test function StringKeyedSunkTablesRestoreFlagsOnSideExit()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+
+   assert(string_keyed_side_exit(-1, false) is nil, 'TNEW workload should record without taking the side exit')
+   local tnew_result = string_keyed_side_exit(50, false)
+   assert(tnew_result.key is 50, 'A restored TNEW should retain its string-keyed value')
+   assert(#tnew_result is nil, 'A restored TNEW should retain its string-key classification')
+
+   jit.flush()
+   assert(string_keyed_side_exit(-1, true) is nil, 'TDUP workload should record without taking the side exit')
+   local tdup_result = string_keyed_side_exit(50, true)
+   assert(tdup_result.key is 50, 'A restored TDUP should retain its string-keyed value')
+   assert(#tdup_result is nil, 'A restored TDUP should retain its string-key classification')
+
+   jit.opt.start()
+end
+
 function traced_metamethod_length(Value, Count):num
    local total = 0
    for i in {1 into Count} do
