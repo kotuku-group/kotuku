@@ -238,7 +238,7 @@ private:
    // Type inference - determines types from expressions and context
    [[nodiscard]] InferredType infer_expression_type(const ExprNode &);
    [[nodiscard]] InferredType refine_static_expression_type(const ExprNode &, InferredType) const;
-   [[nodiscard]] bool is_explicit_variant_expression(const ExprNode &, size_t Position = 0) const;
+   [[nodiscard]] bool is_variant_expression(const ExprNode &, size_t Position = 0) const;
    [[nodiscard]] bool is_table_read_expression(const ExprNode &);
    [[nodiscard]] InferredType infer_call_return_type(const ExprNode &, size_t Position) const;
 
@@ -2837,7 +2837,7 @@ InferredType TypeAnalyser::refine_static_expression_type(const ExprNode &Expr, I
    return Type;
 }
 
-bool TypeAnalyser::is_explicit_variant_expression(const ExprNode &Expr, size_t Position) const
+bool TypeAnalyser::is_variant_expression(const ExprNode &Expr, size_t Position) const
 {
    if (Expr.kind IS AstNodeKind::IdentifierExpr) {
       const auto &reference = std::get<NameRef>(Expr.data);
@@ -2850,8 +2850,11 @@ bool TypeAnalyser::is_explicit_variant_expression(const ExprNode &Expr, size_t P
    }
    else if (Expr.kind IS AstNodeKind::CallExpr or Expr.kind IS AstNodeKind::SafeCallExpr) {
       const auto &call = std::get<CallExprPayload>(Expr.data);
+      if (Position IS 0 and call.result_type IS TiriType::Any) return true;
+
       const FunctionExprPayload *target = this->resolve_call_target(call);
-      return target and target->return_types.is_explicit and Position < target->return_types.count and
+      return target and (target->return_types.is_explicit or target->return_types.is_inferred) and
+         Position < target->return_types.count and
          target->return_types.types[Position] IS TiriType::Any;
    }
    return false;
@@ -3314,9 +3317,9 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
             continue;
          }
 
-         if (actual.primary IS TiriType::Any and
-             (this->is_explicit_variant_expression(expression, expression_position) or
-              is_table_read_expression(expression))) {
+         if (((actual.primary IS TiriType::Any or actual.primary IS TiriType::Unknown) and
+              this->is_variant_expression(expression, expression_position)) or
+             (actual.primary IS TiriType::Any and is_table_read_expression(expression))) {
             position.concrete = actual;
             position.concrete.primary = TiriType::Any;
             position.state = ReturnInferenceState::ExplicitAny;
