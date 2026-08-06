@@ -157,6 +157,34 @@ end
    assert(variant_first(42) is 42, 'explicit-any inference should be independent of return source order')
 end
 
+@Test function TableIndexReadInfersAnyResult()
+   function first_entry(Values:table)
+      return Values[0]
+   end
+
+   function wrapped_entry(Values:table)
+      return first_entry(Values)
+   end
+
+   assert(first_entry({ 42 }) is 42, 'an indexed table read should infer an any result')
+   assert(first_entry({ 'value' }) is 'value', 'the inferred result should accept different table value types')
+   assert(wrapped_entry({ 42 }) is 42, 'a wrapper should preserve an inferred table variant result')
+   assert(wrapped_entry({ 'value' }) is 'value', 'a wrapped table variant should accept different value types')
+end
+
+@Test function UnknownTableIndexStillRequiresResultAnnotation()
+   try
+      exec([[
+         extern glUnspecifiedValue
+         function unresolved_entry()
+            return glUnspecifiedValue[0]
+         end
+      ]])
+   success
+      error('an unresolved indexed return requires an explicit result annotation')
+   end
+end
+
 @Test function ImplicitDynamicStillRequiresResultAnnotation()
    try
       exec([[
@@ -166,7 +194,20 @@ end
          end
       ]])
    success
-      error('an unspecified dynamic return should still require an explicit result annotation')
+      error('an unspecified dynamic return requires an explicit result annotation')
+   end
+end
+
+@Test function UnknownCallStillRequiresResultAnnotation()
+   try
+      exec([[
+         extern glUnspecifiedFunction
+         function unresolved_call()
+            return glUnspecifiedFunction()
+         end
+      ]])
+   success
+      error('an unresolved call result requires an explicit result annotation')
    end
 end
 
