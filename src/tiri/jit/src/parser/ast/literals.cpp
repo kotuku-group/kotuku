@@ -11,6 +11,8 @@
 // - Result filter expressions
 // - Return type annotations
 
+#include <unordered_map>
+
 //********************************************************************************************************************
 // Parses function literals (anonymous functions) with parameters and body.
 // Parses optional return type annotation after parameters for all functions.
@@ -363,10 +365,121 @@ ParserResult<AstBuilder::ParameterListResult> AstBuilder::parse_parameter_list(b
 //********************************************************************************************************************
 // Parses the fields inside table constructors, distinguishing between array, record, and computed key forms.
 
+// Canonical form of a statically known table-constructor key, used to detect provable duplicates.
+//
+// Numerical keys are canonicalised so that equivalent integer and floating representations collide, and named
+// fields collide with equivalent constant string keys.  Keys whose value cannot be proven without evaluating user
+// code are not represented here and are never diagnosed.
+
+namespace {
+
+struct ConstantKey {
+   enum class Kind : uint8_t { Number, String, Boolean } kind;
+   lua_Number number{};
+   std::string text;
+   bool boolean{};
+
+   [[nodiscard]] bool operator==(const ConstantKey &Other) const
+   {
+      if (kind != Other.kind) return false;
+      switch (kind) {
+         case Kind::Number:  return number == Other.number;
+         case Kind::String:  return text == Other.text;
+         case Kind::Boolean: return boolean == Other.boolean;
+      }
+      return false;
+   }
+
+   [[nodiscard]] std::string describe() const
+   {
+      switch (kind) {
+         case Kind::Number:  return std::format("{}", number);
+         case Kind::String:  return std::format("'{}'", text);
+         case Kind::Boolean: return boolean ? "true" : "false";
+      }
+      return "?";
+   }
+};
+
+struct ConstantKeyHash {
+   [[nodiscard]] size_t operator()(const ConstantKey &Key) const noexcept
+   {
+      const size_t kind_hash = size_t(Key.kind) << 1;
+      switch (Key.kind) {
+         case ConstantKey::Kind::Number:  return std::hash<lua_Number>{}(Key.number) ^ kind_hash;
+         case ConstantKey::Kind::String:  return std::hash<std::string>{}(Key.text) ^ kind_hash;
+         case ConstantKey::Kind::Boolean: return std::hash<bool>{}(Key.boolean) ^ kind_hash;
+      }
+      return kind_hash;
+   }
+};
+
+// These expressions retain a variable result count when they are the final positional field.  Their nominal array
+// index is not guaranteed to be written, so it cannot participate in a provable duplicate-key diagnostic.
+
+[[nodiscard]] bool can_expand_table_tail(const ExprNode &Expression)
+{
+   return Expression.kind IS AstNodeKind::CallExpr or Expression.kind IS AstNodeKind::SafeCallExpr or
+      Expression.kind IS AstNodeKind::VarArgExpr or Expression.kind IS AstNodeKind::PipeExpr or
+      Expression.kind IS AstNodeKind::ResultFilterExpr;
+}
+
+// Extract the canonical key of a field, if the parser can prove it without evaluating user code.
+
+[[nodiscard]] std::optional<ConstantKey> constant_key_of(const TableField &Field, int32_t &NextArrayIndex)
+{
+   if (Field.kind IS TableFieldKind::Record) {
+      if (not Field.name or not Field.name->symbol) return std::nullopt;
+      ConstantKey key;
+      key.kind = ConstantKey::Kind::String;
+      key.text.assign(strdata(Field.name->symbol), Field.name->symbol->len);
+      return key;
+   }
+
+   if (Field.kind IS TableFieldKind::Array) {
+      // Positional entries occupy consecutive indices from zero, so they collide with equivalent explicit keys.
+      ConstantKey key;
+      key.kind = ConstantKey::Kind::Number;
+      key.number = (lua_Number)NextArrayIndex++;
+      return key;
+   }
+
+   // Computed: only a literal key is statically provable.
+   if (not Field.key or Field.key->kind != AstNodeKind::LiteralExpr) return std::nullopt;
+   const auto *literal = std::get_if<LiteralValue>(&Field.key->data);
+   if (not literal) return std::nullopt;
+
+   ConstantKey key;
+   switch (literal->kind) {
+      case LiteralKind::Number:
+         key.kind = ConstantKey::Kind::Number;
+         key.number = literal->number_value;
+         return key;
+      case LiteralKind::String:
+         if (not literal->string_value) return std::nullopt;
+         key.kind = ConstantKey::Kind::String;
+         key.text.assign(strdata(literal->string_value), literal->string_value->len);
+         return key;
+      case LiteralKind::Boolean:
+         key.kind = ConstantKey::Kind::Boolean;
+         key.boolean = literal->bool_value;
+         return key;
+      default:
+         return std::nullopt;  //  A nil key is rejected at runtime, not here.
+   }
+}
+
+} // namespace
+
 ParserResult<std::vector<TableField>> AstBuilder::parse_table_fields(bool *has_array_part)
 {
    std::vector<TableField> fields;
    bool array = false;
+
+   // Provable duplicate keys within one literal are rejected: the overwritten intermediate value cannot be observed
+   // and the later entry unambiguously wins today, so accepting the literal can only hide a mistake.
+   std::unordered_map<ConstantKey, Token, ConstantKeyHash> seen_keys;
+   int32_t next_array_index = 0;
 
    while (not this->ctx.check(TokenKind::RightBrace)) {
       TableField field;
@@ -404,9 +517,28 @@ ParserResult<std::vector<TableField>> AstBuilder::parse_table_fields(bool *has_a
          array = true;
       }
       field.span = current.span();
+
+      // Consume the separator through the normal token stream before checking for a trailing separator.  Peeking
+      // across it can pre-expand an f-string field into the lexer's buffered tokens and corrupt subsequent parsing.
+      const bool has_separator = this->ctx.match(TokenKind::Comma).ok() or
+         this->ctx.match(TokenKind::Semicolon).ok();
+      const bool final_field = this->ctx.check(TokenKind::RightBrace);
+      const bool variable_tail = final_field and field.kind IS TableFieldKind::Array and field.value and
+         can_expand_table_tail(*field.value);
+
+      if (auto key = constant_key_of(field, next_array_index)) {
+         if (not variable_tail) {
+            auto [entry, inserted] = seen_keys.emplace(*key, current);
+            if (not inserted) {
+               return this->fail<std::vector<TableField>>(ParserErrorCode::UnexpectedToken, current,
+                  std::format("Duplicate key {} in table constructor; first defined at line {}",
+                     key->describe(), entry->second.span().line + 1));
+            }
+         }
+      }
+
       fields.push_back(std::move(field));
-      if (this->ctx.match(TokenKind::Comma).ok()) continue;
-      if (this->ctx.match(TokenKind::Semicolon).ok()) continue;
+      if (has_separator) continue;
    }
    if (has_array_part) *has_array_part = array;
    return ParserResult<std::vector<TableField>>::success(std::move(fields));

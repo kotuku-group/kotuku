@@ -332,10 +332,18 @@ end
    local t = { 1, 2, 3 }
    rawset(t, true, 'x')
    assert(#t is nil, "rawset() with a boolean key should classify the table, got " .. tostring(#t))
+   assert(table.kind(t) is 'associative', "Expected associative, got " .. table.kind(t))
 
+   -- A negative key is not a valid zero-based sequence index, so it classifies the table as sparse.
    local u = { 1, 2, 3 }
    rawset(u, -4, 'x')
-   assert(#u is 3, "rawset() with a numeric key should preserve the length, got " .. tostring(#u))
+   assert(#u is nil, "rawset() with a negative key should classify the table, got " .. tostring(#u))
+   assert(table.kind(u) is 'sparse', "Expected sparse, got " .. table.kind(u))
+
+   -- A distant positive key is not classified, because gap detection is deliberately not implemented.
+   local v = { 1, 2, 3 }
+   rawset(v, 9000, 'x')
+   assert(#v is 3, "rawset() with a distant key should preserve the length, got " .. tostring(#v))
 end
 
 @Test function MetaConcat()

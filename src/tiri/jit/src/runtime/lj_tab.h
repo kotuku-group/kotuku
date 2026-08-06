@@ -96,6 +96,18 @@ LJ_FUNCA [[nodiscard]] cTValue* lj_tab_get(lua_State* L, GCtab* t, cTValue* key)
 
 // Caveat: all setters require a write barrier for the stored value.
 
+// Classification of script-facing stores.  These record permanent usage history (see the TAB_* flags in lj_obj.h)
+// and are called from the interpreter helpers, library code and the C API.  They are deliberately not called from
+// the raw setters below, because internal consumers reinsert existing entries through those during resizing and
+// snapshot restoration, where the logical key set does not change.
+//
+// Classification depends only on the key, never on the table's current sequence end.  See lj_tab.cpp for why
+// gap-based classification is not implemented.
+
+LJ_FUNC void lj_tab_classify_numeric_key(GCtab* Table, int32_t Key);
+LJ_FUNC void lj_tab_classify_number_key(GCtab* Table, lua_Number Key);
+LJ_FUNC void lj_tab_classify_store(GCtab* Table, cTValue* Key);
+
 LJ_FUNCA TValue* lj_tab_newkey(lua_State* L, GCtab* t, cTValue* key);
 LJ_FUNCA TValue* lj_tab_setinth(lua_State* L, GCtab* t, int32_t key);
 LJ_FUNC TValue* lj_tab_setstr(lua_State* L, GCtab* t, const GCstr* key);

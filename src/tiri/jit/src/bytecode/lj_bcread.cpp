@@ -218,9 +218,12 @@ static void bcread_ktabk(LexState *State, TValue* o)
 
 static GCtab* bcread_ktab(LexState *State)
 {
+   MSize flags = bcread_uleb128(State);
+   State->assert_condition((flags & ~MSize(TAB_NOT_SEQUENCE)) IS 0, "bad table flags %d", flags);
    MSize narray = bcread_uleb128(State);
    MSize nhash = bcread_uleb128(State);
    GCtab* t = lj_tab_new(State->L, narray, hsize2hbits(nhash));
+   t->flags |= uint8_t(flags);
    if (narray) {  // Read array entries.
       MSize i;
       TValue* o = tvref(t->array);

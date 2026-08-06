@@ -801,9 +801,11 @@ static int range_slice_impl(lua_State *L)
       return 1;
    }
 
-   // Table slicing
+   // Table slicing.  Clipping and negative index resolution both depend on the sequence length, so the table's
+   // usage history must still be sequence-compatible.
    if (tvistab(o)) {
       GCtab *t = tabV(o);
+      if (not lj_tab_is_sequence(t)) lj_err_callerv(L, ErrMsg::TABSEQ, "slice", lj_tab_kind(t));
       int32_t len = int32_t(lj_tab_len(t));
       tiri_index_range index_range;
       range_check_index(L, r, &index_range);

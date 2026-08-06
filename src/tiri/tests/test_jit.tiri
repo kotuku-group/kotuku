@@ -2893,19 +2893,90 @@ end
    assert(nil_results is 200, f"Hot boolean-keyed table should report nil throughout, got {nil_results}")
 end
 
-@Test(hotpath=100) function NumericHashKeyStoresStayNumericalOnTrace()
-   -- Negative, sparse and fractional keys live in the hash part but must not classify on a trace.
+@Test(hotpath=100) function NumericHashKeyStoresClassifyOnTrace()
+   -- Negative and fractional keys can never be sequence indices, so they classify the table as sparse.  Recorded
+   -- stores must reach the same conclusion as the interpreter, including after the trace becomes hot.
    local negative = { 1, 2, 3 }
-   local sparse = { 1, 2, 3 }
    local fractional = { 1, 2, 3 }
    for i in {0 to 200} do
       negative[-1 - (i % 4)] = i
-      sparse[9000 + (i % 4)] = i
       fractional[0.5 + (i % 4)] = i
    end
-   assert(#negative is 3, f"Negative keys should preserve the length on trace, got {tostring(#negative)}")
-   assert(#sparse is 3, f"Sparse keys should preserve the length on trace, got {tostring(#sparse)}")
-   assert(#fractional is 3, f"Fractional keys should preserve the length on trace, got {tostring(#fractional)}")
+   assert(#negative is nil, f"Negative keys should classify on trace, got {tostring(#negative)}")
+   assert(table.kind(negative) is 'sparse', f"Expected sparse, got {table.kind(negative)}")
+   assert(#fractional is nil, f"Fractional keys should classify on trace, got {tostring(#fractional)}")
+   assert(table.kind(fractional) is 'sparse', f"Expected sparse, got {table.kind(fractional)}")
+end
+
+@Test(hotpath=100) function DistantNumericKeyStoresStayNumericalOnTrace()
+   -- Positive holes remain inside the sequence-compatible key domain.  The classification does not promise that
+   -- every slot below the numerical boundary is populated.
+   local distant = { 1, 2, 3 }
+   for i in {0 to 200} do
+      distant[9000 + (i % 4)] = i
+   end
+   assert(#distant is 3, f"Distant positive keys should preserve the length on trace, got {tostring(#distant)}")
+   assert(table.kind(distant) is 'sequence', f"Expected sequence, got {table.kind(distant)}")
+end
+
+@Test(hotpath=100) function NumericStoreTraceExitsOnFirstNegativeKey()
+   -- Warm a variable-key store with non-negative hash keys, then cross into the sparse domain without changing the
+   -- key's integer type.  The recorded non-negative guard must side-exit so the interpreter publishes TAB_SPARSE.
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+
+   local t = {}
+   for i in {0 to 100} do
+      local key = i < 80 ? 1000 + (i % 4) :> -1
+      t[key] = i
+   end
+
+   assert(#t is nil, f"The first negative key must invalidate length, got {tostring(#t)}")
+   assert(table.kind(t) is 'sparse', f"Expected sparse after the side exit, got {table.kind(t)}")
+   jit.opt.start()
+end
+
+@Test(hotpath=100) function RecordedInsertRejectsTableClassifiedMidLoop()
+   -- The table.insert() recorder must guard the same flags as its interpreter implementation.
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+
+   local t = {}
+   local rejected = false
+   try
+      for i in {0 to 100} do
+         if i is 80 then t.name = 'classified' end
+         table.insert(t, i)
+      end
+   except e
+      rejected = true
+      assert(e.message:find('sequence table'), f"Unexpected insert diagnostic: {e.message}")
+   end
+
+   assert(rejected is true, 'Recorded insert must reject a table after classification')
+   jit.opt.start()
+end
+
+@Test(hotpath=100) function RecordedConcatRejectsTableClassifiedMidLoop()
+   -- Default table.concat() infers its end index and therefore needs the same recorded flags guard.
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+
+   local t = { 'a', 'b' }
+   local rejected = false
+   try
+      for i in {0 to 100} do
+         if i is 80 then t.name = 'classified' end
+         local joined = table.concat(t, ',')
+         assert(joined is 'a,b', f"Unexpected concatenation before classification: {joined}")
+      end
+   except e
+      rejected = true
+      assert(e.message:find('sequence table'), f"Unexpected concat diagnostic: {e.message}")
+   end
+
+   assert(rejected is true, 'Recorded concat must reject a table after classification')
+   jit.opt.start()
 end
 
 function string_keyed_tnew_value(Value):any

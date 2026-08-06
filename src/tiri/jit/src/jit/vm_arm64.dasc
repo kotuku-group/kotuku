@@ -2777,9 +2777,11 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  cbnz TAB:CARG2, >9
     |3:
     |->BC_LEN_Z:
-    |  // An ordinary table that has ever been addressed with a non-numeric key has no sequence length.
+    |  // An ordinary table whose usage history is outside the sequence key domain (non-numeric keys, or
+    |  // negative/fractional numerical keys) has no sequence length.
     |  ldrb TMP1w, TAB:CARG1->flags
-    |  tbnz TMP1w, #TAB_ASSOCIATIVE_BIT, >8
+    |  tst TMP1w, #TAB_NOT_SEQUENCE
+    |  bne >8
     |  bl extern lj_tab_len		// (GCtab *t)
     |  // Returns uint32_t (but less than 2^31).
     |  b <1

@@ -3,9 +3,9 @@
    import 'net/httpserver'
    import 'json'
 
-SERVER_PORT <const> = 18952
+SERVER_PORT <const>  = 18952
 glOutputFile <const> = 'temp:tuku-test-output.txt'
-glBodyFile <const> = 'temp:tuku-test-body.txt'
+glBodyFile <const>   = 'temp:tuku-test-body.txt'
 glUploadFile <const> = 'temp:tuku-test-upload.txt'
 
 glTask = mSys.CurrentTask()

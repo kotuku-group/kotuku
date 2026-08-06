@@ -304,6 +304,21 @@ GCtab * lj_lib_checktab(lua_State *L, int Arg)
 }
 
 //********************************************************************************************************************
+// Check that an argument is a table whose usage history is still inside the non-negative integral sequence domain.
+// This classification permits positive holes; it is a key-domain contract rather than a live-density check.  Library
+// operations that infer a numerical boundary from lj_tab_len() must use this instead of lj_lib_checktab(), because
+// the sequence length is meaningless once the table has been classified otherwise.
+//
+// 'Function' names the caller so that the diagnostic identifies both the operation and the classification.
+
+GCtab * lj_lib_checksequence(lua_State *L, int Arg, const char *Function)
+{
+   GCtab *t = lj_lib_checktab(L, Arg);
+   if (not lj_tab_is_sequence(t)) lj_err_callerv(L, ErrMsg::TABSEQ, Function, lj_tab_kind(t));
+   return t;
+}
+
+//********************************************************************************************************************
 // Helper function to check argument is an object (nil not accepted).  Throws error unless CanThrow is false
 
 GCobject * lj_lib_checkobject(lua_State *L, int Arg, bool CanThrow)

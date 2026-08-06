@@ -742,6 +742,6 @@ entry. It resolves known constraint names when possible and otherwise prints the
 - Basic tag contracts use trace slot specialisation. Prototypes needing structure identity, range metatable,
   callable-value or dynamic-result predicates remain interpreter-only until those predicates have dedicated trace IR
   guards.
-- The private bytecode dump version is `0x84`. It includes a length-delimited, schema-versioned signature before each
-  prototype's bytecode. Every older version is rejected at the header because opcode numbering changed; discard old
-  dumps and rebuild them from source.
+- The private bytecode dump version is `0x85`. It includes a length-delimited, schema-versioned signature before each
+  prototype's bytecode and preserves constant-table classification flags. Every older version is rejected at the header;
+  discard old dumps and rebuild them from source.
