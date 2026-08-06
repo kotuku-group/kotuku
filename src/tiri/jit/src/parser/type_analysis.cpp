@@ -3305,7 +3305,8 @@ void TypeAnalyser::validate_return_types(const ReturnStmtPayload &Return, Source
          }
 
          if (actual.primary IS TiriType::Any and
-             this->is_explicit_variant_expression(expression, expression_position)) {
+             (this->is_explicit_variant_expression(expression, expression_position) or
+              is_table_read_expression(expression))) {
             position.concrete = actual;
             position.concrete.primary = TiriType::Any;
             position.state = ReturnInferenceState::ExplicitAny;

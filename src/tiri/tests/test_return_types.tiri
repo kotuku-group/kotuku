@@ -157,6 +157,15 @@ end
    assert(variant_first(42) is 42, 'explicit-any inference should be independent of return source order')
 end
 
+@Test function TableIndexReadInfersAnyResult()
+   function first_entry(Values:table)
+      return Values[0]
+   end
+
+   assert(first_entry({ 42 }) is 42, 'an indexed table read should infer an any result')
+   assert(first_entry({ 'value' }) is 'value', 'the inferred result should accept different table value types')
+end
+
 @Test function ImplicitDynamicStillRequiresResultAnnotation()
    try
       exec([[
