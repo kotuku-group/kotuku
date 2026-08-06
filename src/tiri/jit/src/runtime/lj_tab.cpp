@@ -454,6 +454,49 @@ genlookup:
 }
 
 //********************************************************************************************************************
+// Sparse classification for numerical keys.
+//
+// A numerical key is incompatible with the zero-based sequence domain when it is negative, not an exact integer, or
+// outside the supported table index range.  All three facts are decidable from the key alone, which keeps
+// classification free of any dependency on the table's current sequence end.
+//
+// Gap-based classification (storing beyond the sequence end, or deleting an interior element) is deliberately NOT
+// implemented.  The public 'sequence' classification therefore describes a compatible key domain, not a guarantee
+// that the live shape is dense.  Detecting density would require extra state or checks on the hottest table stores.
+// Positive holes retain the numerical boundary reported by '#'.
+//
+// This is kept out of the raw setters (lj_tab_setint() and friends) because internal consumers such as
+// lj_tab_resize(), snapshot restoration and bytecode reading reinsert existing entries through them.  Reclassifying
+// during a rehash would be a false positive: the logical key set does not change.
+
+void lj_tab_classify_numeric_key(GCtab *Table, int32_t Key)
+{
+   if (Key < 0) Table->flags |= TAB_SPARSE;
+}
+
+//********************************************************************************************************************
+// Classify a floating-point key.  Fractional values can never be sequence indices; exact integers are deferred to
+// the integer rule above.
+
+void lj_tab_classify_number_key(GCtab *Table, lua_Number Key)
+{
+   int32_t k = lj_num2int(Key);
+   if (Key != (lua_Number)k) Table->flags |= TAB_SPARSE;  //  Not an exact integer.
+   else lj_tab_classify_numeric_key(Table, k);
+}
+
+//********************************************************************************************************************
+// Classify any script-facing store.  This is the single entry point used by the interpreter helpers, the library
+// code and the C API so that associative and sparse history stay consistent across every route.
+
+void lj_tab_classify_store(GCtab *Table, cTValue *Key)
+{
+   if (tvisint(Key)) lj_tab_classify_numeric_key(Table, intV(Key));
+   else if (tvisnum(Key)) lj_tab_classify_number_key(Table, numV(Key));
+   else Table->flags |= TAB_ASSOCIATIVE;
+}
+
+//********************************************************************************************************************
 // Table setters
 
 // Insert new key. Use Brent's variation to optimize the chain length.
@@ -463,8 +506,9 @@ TValue * lj_tab_newkey(lua_State *L, GCtab *t, cTValue *key)
    Node *n = hashkey(t, key);
    // Every new hash-part key funnels through here, including store routes that bypass lj_tab_setstr(), such as the
    // interpreter's inline BC_TSETS chain-miss path and the JIT's IRCALL_lj_tab_newkey.  Any key that is not a number
-   // makes the sequence length meaningless, so classify the table as associative.
-   if (not tvisnumber(key)) t->flags |= TAB_ASSOCIATIVE;
+   // makes the sequence length meaningless, so classify the table as associative.  Numerical keys that reach the
+   // hash part are checked for sequence compatibility: negative and fractional keys are permanently sparse.
+   lj_tab_classify_store(t, key);
    if (not tvisnil(&n->val) or t->hmask == 0) {
       Node* nodebase = noderef(t->node);
       Node* collide, * freenode = getfreetop(t, nodebase);
@@ -559,7 +603,7 @@ TValue* lj_tab_setstr(lua_State* L, GCtab* t, const GCstr* key)
 {
    TValue k;
    Node* n = hashstr(t, key);
-   t->flags |= TAB_ASSOCIATIVE;  //  Permanently classify the table as associative.
+   lj_tab_mark_associative(t);  //  Permanently classify the table as associative.
    do {
       if (tvisstr(&n->key) and strV(&n->key) == key) return &n->val;
    } while ((n = nextnode(n)));
@@ -585,9 +629,10 @@ TValue * lj_tab_set(lua_State *L, GCtab *t, cTValue *key)
    else if (tvisnil(key)) lj_err_msg(L, ErrMsg::NILIDX);
 
    // Classify before the chain search, because resurrecting an existing node whose value went nil returns its slot
-   // directly and never reaches lj_tab_newkey().  Non-integral numbers land here too, but they remain numeric keys.
+   // directly and never reaches lj_tab_newkey().  Only non-integral numbers reach here on the numeric route, and
+   // those are permanently sparse rather than associative.
 
-   if (not tvisnumber(key)) t->flags |= TAB_ASSOCIATIVE;
+   lj_tab_classify_store(t, key);
 
    n = hashkey(t, key);
    do {

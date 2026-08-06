@@ -14,6 +14,7 @@
 #include "lj_obj.h"
 #include "lj_gc.h"
 #include "lj_err.h"
+#include "lj_str.h"
 #include "lj_buf.h"
 #include "lj_tab.h"
 #include "lj_ff.h"
@@ -30,7 +31,7 @@
 
 LJLIB_CF(table_insert)      LJLIB_REC(.)
 {
-   GCtab* t = lj_lib_checktab(L, 1);
+   GCtab* t = lj_lib_checksequence(L, 1, "insert");
    int32_t n, i = (int32_t)lj_tab_len(t);  // 0-based: next index = len
    int nargs = (int)((char*)L->top - (char*)L->base);
    if (nargs != 2 * sizeof(TValue)) {
@@ -56,7 +57,7 @@ LJLIB_CF(table_insert)      LJLIB_REC(.)
 
 LJLIB_CF(table_remove)
 {
-   GCtab *t = lj_lib_checktab(L, 1);
+   GCtab *t = lj_lib_checksequence(L, 1, "remove");
    auto len = (int32_t)lj_tab_len(t);
    int32_t pos;
 
@@ -133,10 +134,13 @@ LJLIB_CF(table_move)
 
 LJLIB_CF(table_concat) LJLIB_REC(.)
 {
-   GCtab* t = lj_lib_checktab(L, 1);
+   // An explicit end index supplies the numerical domain, so any classification is acceptable.  Without one the
+   // boundary is inferred from lj_tab_len(), which requires a sequence.
+   const int explicit_end = (L->base + 3 < L->top and !tvisnil(L->base + 3));
+   GCtab* t = explicit_end ? lj_lib_checktab(L, 1) : lj_lib_checksequence(L, 1, "concat");
    GCstr* sep = lj_lib_optstr(L, 2);
    int32_t i = lj_lib_optint(L, 3, 0);  // 0-based: default start
-   int32_t e = (L->base + 3 < L->top and !tvisnil(L->base + 3)) ? lj_lib_checkint(L, 4) : (int32_t)lj_tab_len(t) - 1;  // 0-based: last index = len-1
+   int32_t e = explicit_end ? lj_lib_checkint(L, 4) : (int32_t)lj_tab_len(t) - 1;  // 0-based: last index = len-1
 
    SBuf* sb = lj_buf_tmp_(L);
    SBuf* sbx = lj_buf_puttab(sb, t, sep, i, e);
@@ -248,7 +252,7 @@ static void auxsort(lua_State *L, int l, int u)
 
 LJLIB_CF(table_sort)
 {
-   GCtab *t = lj_lib_checktab(L, 1);
+   GCtab *t = lj_lib_checksequence(L, 1, "sort");
    int32_t n = (int32_t)lj_tab_len(t);
    lua_settop(L, 2);
    if (!tvisnil(L->base + 1)) lj_lib_checkfunc(L, 2);
@@ -283,6 +287,49 @@ LJLIB_CF(table_empty)
 
    setboolV(L->top - 1, lj_tab_empty(t));
 
+   return 1;
+}
+
+//********************************************************************************************************************
+// table.kind(t)
+// Reports the table's permanent usage classification as 'sequence', 'sparse', 'associative' or 'mixed'.
+//
+// The result describes usage history rather than the table's current live shape.  In particular, 'sequence' means
+// that all observed keys are non-negative integers, not that every index below the numerical boundary is populated.
+// Removing keys or calling table.clear() does not restore the 'sequence' classification.  Raw inspection only; no
+// metamethods are invoked.
+
+LJLIB_CF(table_kind)
+{
+   GCtab *t = lj_lib_checktab(L, 1);
+   setstrV(L, L->top - 1, lj_str_newz(L, lj_tab_kind(t)));
+   return 1;
+}
+
+//********************************************************************************************************************
+// table.size(t)
+// Counts every live entry across the array and hash parts.
+//
+// Nodes whose value is nil are ignored, __index is never invoked, and the result is independent of the table's
+// classification and of any __len metamethod.  The traversal is O(n) in the allocated size of the table.
+
+LJLIB_CF(table_size)
+{
+   GCtab *t = lj_lib_checktab(L, 1);
+   uint32_t count = 0;
+
+   for (uint32_t i = 0; i < t->asize; i++) {
+      if (not tvisnil(arrayslot(t, i))) count++;
+   }
+
+   if (t->hmask > 0) {
+      Node *node = noderef(t->node);
+      for (uint32_t i = 0; i <= t->hmask; i++) {
+         if (not tvisnil(&node[i].val)) count++;
+      }
+   }
+
+   setintV(L->top - 1, (int32_t)count);
    return 1;
 }
 
@@ -580,6 +627,8 @@ extern int luaopen_table(lua_State *L)
    reg_iface_prototype("table", "sort", {}, { TiriType::Table, TiriType::Func });
    reg_iface_prototype("table", "new", { TiriType::Table }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("table", "empty", { TiriType::Bool }, { TiriType::Table });
+   reg_iface_prototype("table", "kind", { TiriType::Str }, { TiriType::Table });
+   reg_iface_prototype("table", "size", { TiriType::Num }, { TiriType::Table });
    reg_iface_prototype("table", "clear", {}, { TiriType::Table });
    reg_iface_prototype("table", "slice", { TiriType::Table }, { TiriType::Table, TiriType::Any });
    reg_iface_prototype("table", "sortByKeys", { TiriType::Func }, { TiriType::Table, TiriType::Func });

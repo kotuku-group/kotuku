@@ -363,10 +363,98 @@ ParserResult<AstBuilder::ParameterListResult> AstBuilder::parse_parameter_list(b
 //********************************************************************************************************************
 // Parses the fields inside table constructors, distinguishing between array, record, and computed key forms.
 
+// Canonical form of a statically known table-constructor key, used to detect provable duplicates.
+//
+// Numerical keys are canonicalised so that equivalent integer and floating representations collide, and named
+// fields collide with equivalent constant string keys.  Keys whose value cannot be proven without evaluating user
+// code are not represented here and are never diagnosed.
+
+namespace {
+
+struct ConstantKey {
+   enum class Kind : uint8_t { Number, String, Boolean } kind;
+   lua_Number number{};
+   std::string text;
+   bool boolean{};
+
+   [[nodiscard]] bool operator==(const ConstantKey &Other) const
+   {
+      if (kind != Other.kind) return false;
+      switch (kind) {
+         case Kind::Number:  return number == Other.number;
+         case Kind::String:  return text == Other.text;
+         case Kind::Boolean: return boolean == Other.boolean;
+      }
+      return false;
+   }
+
+   [[nodiscard]] std::string describe() const
+   {
+      switch (kind) {
+         case Kind::Number:  return std::format("{}", number);
+         case Kind::String:  return std::format("'{}'", text);
+         case Kind::Boolean: return boolean ? "true" : "false";
+      }
+      return "?";
+   }
+};
+
+// Extract the canonical key of a field, if the parser can prove it without evaluating user code.
+
+[[nodiscard]] std::optional<ConstantKey> constant_key_of(const TableField &Field, int32_t &NextArrayIndex)
+{
+   if (Field.kind IS TableFieldKind::Record) {
+      if (not Field.name or not Field.name->symbol) return std::nullopt;
+      ConstantKey key;
+      key.kind = ConstantKey::Kind::String;
+      key.text.assign(strdata(Field.name->symbol), Field.name->symbol->len);
+      return key;
+   }
+
+   if (Field.kind IS TableFieldKind::Array) {
+      // Positional entries occupy consecutive indices from zero, so they collide with equivalent explicit keys.
+      ConstantKey key;
+      key.kind = ConstantKey::Kind::Number;
+      key.number = (lua_Number)NextArrayIndex++;
+      return key;
+   }
+
+   // Computed: only a literal key is statically provable.
+   if (not Field.key or Field.key->kind != AstNodeKind::LiteralExpr) return std::nullopt;
+   const auto *literal = std::get_if<LiteralValue>(&Field.key->data);
+   if (not literal) return std::nullopt;
+
+   ConstantKey key;
+   switch (literal->kind) {
+      case LiteralKind::Number:
+         key.kind = ConstantKey::Kind::Number;
+         key.number = literal->number_value;
+         return key;
+      case LiteralKind::String:
+         if (not literal->string_value) return std::nullopt;
+         key.kind = ConstantKey::Kind::String;
+         key.text.assign(strdata(literal->string_value), literal->string_value->len);
+         return key;
+      case LiteralKind::Boolean:
+         key.kind = ConstantKey::Kind::Boolean;
+         key.boolean = literal->bool_value;
+         return key;
+      default:
+         return std::nullopt;  //  A nil key is rejected at runtime, not here.
+   }
+}
+
+} // namespace
+
 ParserResult<std::vector<TableField>> AstBuilder::parse_table_fields(bool *has_array_part)
 {
    std::vector<TableField> fields;
    bool array = false;
+
+   // Provable duplicate keys within one literal are rejected: the overwritten intermediate value cannot be observed
+   // and the later entry unambiguously wins today, so accepting the literal can only hide a mistake.
+   std::vector<std::pair<ConstantKey, Token>> seen_keys;
+   int32_t next_array_index = 0;
 
    while (not this->ctx.check(TokenKind::RightBrace)) {
       TableField field;
@@ -404,6 +492,18 @@ ParserResult<std::vector<TableField>> AstBuilder::parse_table_fields(bool *has_a
          array = true;
       }
       field.span = current.span();
+
+      if (auto key = constant_key_of(field, next_array_index)) {
+         for (const auto &[previous, previous_token] : seen_keys) {
+            if (previous IS *key) {
+               return this->fail<std::vector<TableField>>(ParserErrorCode::UnexpectedToken, current,
+                  std::format("Duplicate key {} in table constructor; first defined at line {}",
+                     key->describe(), previous_token.span().line + 1));
+            }
+         }
+         seen_keys.emplace_back(std::move(*key), current);
+      }
+
       fields.push_back(std::move(field));
       if (this->ctx.match(TokenKind::Comma).ok()) continue;
       if (this->ctx.match(TokenKind::Semicolon).ok()) continue;

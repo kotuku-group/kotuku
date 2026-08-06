@@ -1644,12 +1644,12 @@ static TRef rec_mm_len(jit_State *J, TRef tr, TValue* tv)
    else {
       if (tref_istab(tr)) {
          IRBuilder ir(J);
-         // A table that has ever been addressed with a non-numeric key has no sequence length.  The classification is
-         // one-way, so guarding the observed state is sufficient: the first non-numeric store side-exits the trace
-         // and the recompilation specialises to nil.
+         // A table whose usage history is outside the non-negative integral sequence domain has no sequence length. The
+         // classification is one-way, so guarding the observed state is sufficient: the first offending store
+         // side-exits the trace and the recompilation specialises to nil.
          TRef flags = ir.fload(tr, IRFL_TAB_FLAGS, IRT_U8);
-         TRef classified = ir.emit_int(IR_BAND, flags, ir.kint(TAB_ASSOCIATIVE));
-         if (tabV(tv)->flags & TAB_ASSOCIATIVE) {
+         TRef classified = ir.emit_int(IR_BAND, flags, ir.kint(TAB_NOT_SEQUENCE));
+         if (tabV(tv)->flags & TAB_NOT_SEQUENCE) {
             ir.guard_ne_int(classified, ir.kint(0));
             return TREF_NIL;
          }
@@ -2165,13 +2165,42 @@ handlemm:
          ir.emit(IRT(IR_FSTORE, IRT_U8), fref, ir.kint(0));
       }
 
-      // Publish the permanent associative classification so that a concurrently recorded '#' guard observes it.  The
-      // recorded key is type-specialised, so a non-numeric key is a static fact for the lifetime of this trace.
+      // Publish permanent table classification.  Non-numeric keys are type-specialised.  Numeric traces additionally
+      // guard the observed key domain so a trace recorded with a non-negative integer cannot later accept a negative
+      // or fractional key without side-exiting to the interpreter, which applies the sparse classification.
 
-      if (tref_istab(ix->tab) and not tref_isnumber(ix->key)) {
-         TRef fref = ir.emit(IRT(IR_FREF, IRT_PGC), ix->tab, IRFL_TAB_FLAGS);
-         TRef flags = ir.fload(ix->tab, IRFL_TAB_FLAGS, IRT_U8);
-         ir.emit(IRT(IR_FSTORE, IRT_U8), fref, ir.emit_int(IR_BOR, flags, ir.kint(TAB_ASSOCIATIVE)));
+      if (tref_istab(ix->tab)) {
+         uint8_t classification = 0;
+         if (not tref_isnumber(ix->key)) classification = TAB_ASSOCIATIVE;
+         else {
+            int32_t observed_key = numberVint(&ix->keyv);
+            const bool exact_integer = tvisint(&ix->keyv) or numV(&ix->keyv) IS (lua_Number)observed_key;
+
+            if (not exact_integer) {
+               // A variable floating key could later become integral without changing its IR type.  Leave that case
+               // to the interpreter rather than permanently classifying a valid key on the recorded path.
+               if (not tref_isk(ix->key)) lj_trace_err(J, LJ_TRERR_NYITMIX);
+               classification = TAB_SPARSE;
+            }
+            else if (observed_key < 0) {
+               if (not tref_isk(ix->key)) {
+                  TRef integer_key = lj_opt_narrow_index(J, ix->key);
+                  ir.guard_int(IR_LT, integer_key, ir.kint(0));
+               }
+               classification = TAB_SPARSE;
+            }
+            else if (not tref_isk(ix->key)) {
+               TRef integer_key = lj_opt_narrow_index(J, ix->key);
+               ir.guard_int(IR_GE, integer_key, ir.kint(0));
+            }
+         }
+
+         if (classification) {
+            TRef fref = ir.emit(IRT(IR_FREF, IRT_PGC), ix->tab, IRFL_TAB_FLAGS);
+            TRef flags = ir.fload(ix->tab, IRFL_TAB_FLAGS, IRT_U8);
+            ir.emit(IRT(IR_FSTORE, IRT_U8), fref,
+               ir.emit_int(IR_BOR, flags, ir.kint(classification)));
+         }
       }
 
       J->needsnap = 1;

@@ -39,6 +39,7 @@ extern int32_t     lj_lib_checkint(lua_State *, int);
 extern int32_t     lj_lib_optint(lua_State *, int, int32_t def);
 extern GCfunc *    lj_lib_checkfunc(lua_State *, int);
 extern GCtab *     lj_lib_checktab(lua_State *, int);
+extern GCtab *     lj_lib_checksequence(lua_State *, int, const char *);
 extern GCtab *     lj_lib_checktabornil(lua_State *, int);
 extern int         lj_lib_checkopt(lua_State *, int, int def, const char* lst);
 extern GCarray *   lj_lib_optarray(lua_State *L, int);
