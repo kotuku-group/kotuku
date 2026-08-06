@@ -116,7 +116,7 @@ end
    obj_one = obj.new('time')
    obj_two = obj.new('file')
    arr = array<obj> { obj_one, obj_two }
-   copied = arr:map(Value => object: Value)
+   copied = arr:map(Value => obj: Value)
    assert(copied[0].id is obj_one.id and copied[1].id is obj_two.id, "map() should preserve objects")
    obj_one.free()
    obj_two.free()
