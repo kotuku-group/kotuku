@@ -274,13 +274,19 @@ TValue * lj_meta_tset(lua_State *L, cTValue *o, cTValue *k)
          cTValue *tv = lj_tab_get(L, t, k);
          if (not tvisnil(tv)) [[likely]] {
             t->nomm = 0;  //  Invalidate negative metamethod cache.
+            // Overwriting a live slot commits a store, so classify here: the returning paths below bypass
+            // lj_tab_newkey() because the node already carries the key.
+            if (not tvisnumber(k)) t->flags |= TAB_ASSOCIATIVE;
             lj_gc_anybarriert(L, t);
             return (TValue *)tv;
          }
          else if (not (mo = lj_meta_fast(L, tabref(t->metatable), MM_newindex))) {
             t->nomm = 0;  //  Invalidate negative metamethod cache.
             lj_gc_anybarriert(L, t);
-            if (tv != niltv(L)) return (TValue *)tv;
+            if (tv != niltv(L)) {  // Resurrecting a dead node that still holds the key.
+               if (not tvisnumber(k)) t->flags |= TAB_ASSOCIATIVE;
+               return (TValue *)tv;
+            }
             if (tvisnil(k)) lj_err_msg(L, ErrMsg::NILIDX);
             else if (tvisint(k)) { setnumV(&tmp, (lua_Number)intV(k)); k = &tmp; }
             else if (tvisnum(k) and tvisnan(k)) lj_err_msg(L, ErrMsg::NANIDX);

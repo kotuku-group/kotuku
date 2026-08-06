@@ -617,17 +617,48 @@ end
    end
 end
 
-@Test function LengthUnaffectedByNonStringKeys()
-   -- Boolean, negative-number and table keys use the hash part but do not trigger this rule.
+@Test function LengthUnaffectedByNumericKeys()
+   -- Negative, sparse and fractional keys use the hash part but remain numeric, so the length survives.
    t = { 1, 2, 3 }
-   t[true] = 'bool'
    t[-5] = 'negative'
    t[9999] = 'sparse'
-   assert(#t is 3, "Non-string hash keys should preserve the length, got " .. tostring(#t))
+   t[1.5] = 'fractional'
+   assert(#t is 3, "Numeric hash keys should preserve the length, got " .. tostring(#t))
+end
+
+@Test function LengthNilAfterNonNumericKeys()
+   -- Any key that is not a number makes the sequence length meaningless.
+   t = { 1, 2, 3 }
+   t[true] = 'bool'
+   assert(#t is nil, "A boolean key should classify the table, got " .. tostring(#t))
 
    u = { 1, 2, 3 }
-   u[{}] = 'table key'
-   assert(#u is 3, "A table key should preserve the length, got " .. tostring(#u))
+   u[false] = 'bool'
+   assert(#u is nil, "A false key should classify the table, got " .. tostring(#u))
+
+   v = { 1, 2, 3 }
+   v[{}] = 'table key'
+   assert(#v is nil, "A table key should classify the table, got " .. tostring(#v))
+
+   w = { 1, 2, 3 }
+   w[print] = 'function key'
+   assert(#w is nil, "A function key should classify the table, got " .. tostring(#w))
+end
+
+@Test function LengthNilAfterNonNumericKeyInLiteral()
+   -- A constant non-numeric key in a table literal classifies the template, which duplicates inherit.
+   t = { 1, 2, [true] = 'bool' }
+   assert(#t is nil, "A boolean key in a literal should classify the table, got " .. tostring(#t))
+end
+
+@Test function LengthNilAfterResurrectingNonNumericKey()
+   -- Assigning nil then storing again resurrects the existing node without passing through new-key insertion.
+   t = { 1, 2, 3 }
+   t[true] = 'bool'
+   t[true] = nil
+   assert(#t is nil, "Removing a boolean key should not restore the length")
+   t[true] = 'bool again'
+   assert(#t is nil, "Resurrecting a boolean key should keep the table classified")
 end
 
 @Test function LengthOfStringsAndArraysUnchanged()
