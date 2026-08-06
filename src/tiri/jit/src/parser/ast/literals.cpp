@@ -75,6 +75,61 @@ ParserResult<ExprNodePtr> AstBuilder::parse_table_literal(bool AllowRange)
 }
 
 //********************************************************************************************************************
+// Parses the braced initialiser of a typed array: array<Type> { Value, Value, ... }
+//
+// Typed arrays are positional by construction, so this parser returns the values directly instead of building a
+// throw-away table literal.  Avoiding parse_table_fields() also avoids allocating a TableField per value and hashing
+// a canonical key that is sequential by definition.
+//
+// Range scanning is deliberately absent: `to` and `into` are ordinary identifiers inside these braces, matching the
+// previous parse_table_literal(false) behaviour.  Separators are consumed through the normal token stream, because
+// peeking across one can pre-expand an f-string value into the lexer's buffered tokens and corrupt later parsing.
+
+ParserResult<ExprNodeList> AstBuilder::parse_array_initialiser()
+{
+   ExprNodeList values;
+
+   if (not this->ctx.match(TokenKind::LeftBrace).ok()) {
+      return this->fail<ExprNodeList>(ParserErrorCode::ExpectedToken, this->ctx.tokens().current(),
+         "Expected '{' to open array initialiser");
+   }
+
+   while (not this->ctx.check(TokenKind::RightBrace)) {
+      Token current = this->ctx.tokens().current();
+
+      // Reject keyed syntax at the offending field rather than at the array type token.  Lookahead is limited to the
+      // start of the field so that buffered interpolation tokens are never disturbed.
+
+      const bool record_key = current.is_identifier_or_future_reserved() and
+         this->ctx.tokens().peek(1).kind() IS TokenKind::Equals;
+
+      if (record_key or current.kind() IS TokenKind::LeftBracket) {
+         return this->fail<ExprNodeList>(ParserErrorCode::UnexpectedToken, current,
+            "Array initialiser can only contain sequential values, not key-value pairs");
+      }
+
+      auto value = this->parse_expression();
+      if (not value.ok()) return ParserResult<ExprNodeList>::failure(value.error_ref());
+
+      values.push_back(std::move(value.value_ref()));
+
+      // Separators are optional; adjacent values are accepted for source compatibility.  In diagnose mode a failed
+      // expression parse can leave the stream stationary, so guarantee forward progress rather than looping forever.
+
+      if (this->ctx.match(TokenKind::Comma).ok() or this->ctx.match(TokenKind::Semicolon).ok()) continue;
+
+      if (this->ctx.tokens().current().kind() IS current.kind() and
+          this->ctx.tokens().current().span().offset IS current.span().offset) {
+         return this->fail<ExprNodeList>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+            "Expected a value or '}' in array initialiser");
+      }
+   }
+
+   this->ctx.consume(TokenKind::RightBrace, ParserErrorCode::ExpectedToken);
+   return ParserResult<ExprNodeList>::success(std::move(values));
+}
+
+//********************************************************************************************************************
 // Parses comma-separated lists of expressions.
 
 ParserResult<ExprNodeList> AstBuilder::parse_expression_list()
@@ -383,9 +438,9 @@ struct ConstantKey {
    {
       if (kind != Other.kind) return false;
       switch (kind) {
-         case Kind::Number:  return number == Other.number;
-         case Kind::String:  return text == Other.text;
-         case Kind::Boolean: return boolean == Other.boolean;
+         case Kind::Number:  return number IS Other.number;
+         case Kind::String:  return text IS Other.text;
+         case Kind::Boolean: return boolean IS Other.boolean;
       }
       return false;
    }
