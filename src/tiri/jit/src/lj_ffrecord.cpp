@@ -575,6 +575,9 @@ static bool array_elemtype_from_string(GCstr *TypeStr, AET *Result)
    else if (TypeStr->len IS 6 and memcmp(type_name, "string", 6) IS 0) *Result = AET::STR_GC;
    else if (TypeStr->len IS 6 and memcmp(type_name, "struct", 6) IS 0) *Result = AET::STRUCT;
    else if (TypeStr->len IS 7 and memcmp(type_name, "pointer", 7) IS 0) *Result = AET::PTR;
+   // Source syntax uses "obj", but array:type() returns the canonical runtime name "object".  Accept both so that
+   // array.new(Size, Existing:type()) records consistently with interpreted execution.
+   else if (TypeStr->len IS 3 and memcmp(type_name, "obj", 3) IS 0) *Result = AET::OBJECT;
    else if (TypeStr->len IS 6 and memcmp(type_name, "object", 6) IS 0) *Result = AET::OBJECT;
    else if (TypeStr->len IS 5 and memcmp(type_name, "table", 5) IS 0) *Result = AET::TABLE;
    else if (TypeStr->len IS 5 and memcmp(type_name, "array", 5) IS 0) *Result = AET::ARRAY;

@@ -100,6 +100,7 @@ static AET parse_elemtype(lua_State *L, int NArg)
 {
    GCstr *type_str = lj_lib_checkstr(L, NArg);
    std::string_view type_name(strdata(type_str), type_str->len);
+   if (type_name IS "obj") type_name = "object";
    if (auto descriptor = describe_array_element(type_name, L)) return descriptor->storage;
 
    lj_err_argv(L, NArg, ErrMsg::BADTYPE, "valid array type", strdata(type_str));

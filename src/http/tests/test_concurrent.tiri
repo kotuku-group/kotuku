@@ -101,7 +101,7 @@ end
       if not wait_http then wait_http = results[i].http end
    end
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { wait_http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { wait_http } })
 
    for i in {0 to TOTAL_REQ} do
       assert(results[i].http.acActivate() is ERR_Okay, "Parallel request " .. i .. " failed to activate")
@@ -156,7 +156,7 @@ end
       if not wait_http then wait_http = results[i].http end
    end
 
-   proc = processing.new({ timeout = 10.0, signals = array<object> { wait_http } })
+   proc = processing.new({ timeout = 10.0, signals = array<obj> { wait_http } })
 
    for i in {0 to total_posts} do
       assert(results[i].http.acActivate() is ERR_Okay, "Concurrent POST " .. i .. " failed to activate")
@@ -208,7 +208,7 @@ end
       if not wait_http then wait_http = results[i].http end
    end
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { wait_http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { wait_http } })
 
    for i in {0 to TOTAL_REQ} do
       assert(results[i].http.acActivate() is ERR_Okay, "High load request " .. i .. " failed to activate")

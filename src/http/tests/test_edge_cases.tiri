@@ -117,7 +117,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 3.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 3.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Timeout test failed to activate")
 
    err = proc.sleep()
@@ -148,7 +148,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Aborted connection test failed to activate")
 
    err = proc.sleep()
@@ -189,7 +189,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Malformed chunks test failed to activate")
 
    err = proc.sleep()
@@ -218,7 +218,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Content mismatch test failed to activate")
 
    err = proc.sleep()
@@ -255,7 +255,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Max size test failed to activate")
 
    err = proc.sleep()
@@ -288,7 +288,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "HTTP version test failed to activate")
 
    err = proc.sleep()
@@ -323,7 +323,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Empty request test failed to activate")
 
    err = proc.sleep()

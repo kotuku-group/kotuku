@@ -209,7 +209,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -256,7 +256,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -302,7 +302,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -339,7 +339,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -382,7 +382,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -417,7 +417,7 @@ end
    check http.acSetKey('Accept', 'application/json, application/xml;q=0.9, text/plain;q=0.8, */*;q=0.1')
    check http.acSetKey('Accept-Encoding', 'gzip, deflate')
    check http.acSetKey('Accept-Language', 'en-US,en;q=0.9')
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -451,7 +451,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 

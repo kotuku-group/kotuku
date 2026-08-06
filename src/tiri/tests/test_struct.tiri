@@ -568,8 +568,8 @@ end
    local succeeded = 0
    local failed = 0
    local signal = obj.new('time', { })
-   local proc = processing.new({ timeout=5.0, signals=array<object> { signal } })
-   local scripts = array<object>
+   local proc = processing.new({ timeout=5.0, signals=array<obj> { signal } })
+   local scripts = array<obj>
 
    for i in {0 to total} do
       local statement

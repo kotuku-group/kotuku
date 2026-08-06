@@ -51,7 +51,7 @@ end
 @Test function EachWithObjectArray()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object> { obj_one, obj_two }
+   arr = array<obj> { obj_one, obj_two }
    ids = array<int, 2>
    arr:each(function(Value, Index)
       ids[Index] = Value.id
@@ -115,8 +115,8 @@ end
 @Test function MapObjectArray()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object> { obj_one, obj_two }
-   copied = arr:map(Value => object: Value)
+   arr = array<obj> { obj_one, obj_two }
+   copied = arr:map(Value => obj: Value)
    assert(copied[0].id is obj_one.id and copied[1].id is obj_two.id, "map() should preserve objects")
    obj_one.free()
    obj_two.free()
@@ -147,7 +147,7 @@ end
 @Test function FilterObjectArray()
    obj_one = obj.new('time')
    obj_two = obj.new('file')
-   arr = array<object> { obj_one, obj_two }
+   arr = array<obj> { obj_one, obj_two }
    filtered = arr:filter(Value => Value.id is obj_two.id)
    assert(#filtered is 1, "filter() should return one object")
    assert(filtered[0].id is obj_two.id, "filter() should keep matching object")

@@ -41,7 +41,7 @@ function rawHttpRequest(Method:str, Path:str):<num, str>
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { socket } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { socket } })
    check socket.mtConnect('127.0.0.1', SERVER_PORT, 3.0)
    check proc.sleep()
 
@@ -132,7 +132,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -175,7 +175,7 @@ end
       if not wait_http then wait_http = http end
    end
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { wait_http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { wait_http } })
 
    for i, http in ipairs(requests) do
       assert(http.acActivate() is ERR_Okay, "Forbidden file test " .. i .. " failed to activate")
@@ -236,7 +236,7 @@ end
    assert(http.acSetKey('X-Test-Header', 'value\r\nX-Injected-Header: injected\r\nHost: evil.com') != ERR_Okay,
       'Header injection should not succeed')
    check http.acSetKey('X-Test-Header', 'safe-value')
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -272,7 +272,7 @@ end
    })
 
    check http.acSetKey('X-Large-Header', largeHeaderValue)
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -303,7 +303,7 @@ end
    })
 
    check http.acSetKey('User-Agent', '<script>alert("xss")</script>Malicious/1.0')
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
 
    if not completed then

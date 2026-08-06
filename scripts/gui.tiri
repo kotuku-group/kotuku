@@ -449,14 +449,26 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Generate a simple gradient fill for vectors.
 
-gui.simpleGradient = function(Scene:obj, Name:str, Colours, X1:num, Y1:num, X2:num, Y2:num, Units:str, IgnoreClashes:bool)
+gui.simpleGradient = function(Scene:obj, Name:str, Colours:any, X1:num, Y1:num, X2:num, Y2:num, Units:str, IgnoreClashes:bool)
    assert(Name, 'A name for the gradient is required.')
+
+   local colours:any
+
+   if #Colours then
+      colours = Colours
+   else
+      colours = array<table>
+      colours:push(Colours.first)
+      colours:push(Colours.last)
+   end
+
+   assert(#colours > 1, 'At least two colours are required to create a gradient.')
 
    stops = { }
    i = 0
-   for col in values(Colours) do
+   for col in values(colours) do
       vc = struct.new('GradientStop')
-      vc.offset    = col.offset ? col.offset :> (i / (#Colours - 1))
+      vc.offset    = col.offset ? col.offset :> (i / (#colours - 1))
       vc.rgb.red   = col.r
       vc.rgb.green = col.g
       vc.rgb.blue  = col.b
@@ -685,7 +697,7 @@ gui.fonts = {
    window   = { face='Noto Sans,Source Sans Pro', style='medium', size='100%' }, -- For non-widget text
    button   = { face='Noto Sans,Source Sans Pro', size='12' }, -- Text inside buttons
    filesys  = { face='Inconsolata', size='12', style='medium' }, -- Text for files, folders
-   icon     = { face='Noto Sans,Source Sans Pro', size='10', size='100%' }, -- Labeling for icons
+   icon     = { face='Noto Sans,Source Sans Pro', size='100%' }, -- Labeling for icons
    menu     = { face='Noto Sans,Source Sans Pro', style='medium', size='12' }, -- Menu & dropdown item text
    page     = { face='Noto Sans,Source Sans Pro', size='12' }, -- Multiple lines of text
    titlebar = { face='Noto Sans', size='100%' }, -- Window titlebar text

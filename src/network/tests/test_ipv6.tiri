@@ -111,7 +111,7 @@ end
 
    -- Try IPv6 loopback connection
 
-   proc = processing.new({ timeout = 10.0, signals = array<object> { server } })
+   proc = processing.new({ timeout = 10.0, signals = array<obj> { server } })
    err = client.mtConnect('::1', glPort)
    if err != ERR_Okay then
       logOutput('[Client] IPv6 loopback connection failed, trying IPv4: ' .. mSys.GetErrorMsg(err))
@@ -150,7 +150,7 @@ end
 
    -- Test resolving a hostname that should have both IPv4 and IPv6 addresses
 
-   proc = processing.new({ timeout = 8.0, signals = array<object> { lookup } })
+   proc = processing.new({ timeout = 8.0, signals = array<obj> { lookup } })
    check lookup.mtResolveName('dns.google')
    check proc.sleep()
    assert(resolution_complete, 'DNS resolution did not complete')

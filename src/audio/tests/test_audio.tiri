@@ -33,7 +33,7 @@ function SequentialPlayback()
    duration = snd.duration
    processing.collect()
 
-   proc = processing.new({ signals = array<object> { snd } })
+   proc = processing.new({ signals = array<obj> { snd } })
    check snd.acActivate()
    time = mSys.preciseTime()
 
@@ -52,7 +52,7 @@ function SequentialPlayback()
       Sound.acSignal()
    end
 
-   proc = processing.new({ signals = array<object> { snd } })
+   proc = processing.new({ signals = array<obj> { snd } })
 
    duration = snd.duration
    check snd.acActivate()
@@ -113,7 +113,7 @@ function Volume()
       Sound.acSignal()
    end
 
-   proc = processing.new({ signals = array<object> { snd } })
+   proc = processing.new({ signals = array<obj> { snd } })
 
    for i in {1 to 5} do
       snd.volume = 1.0 * (i / 4)

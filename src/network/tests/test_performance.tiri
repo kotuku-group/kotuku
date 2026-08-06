@@ -86,7 +86,7 @@ end
       port = glPort,
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { server } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { server } })
 
    client = obj.new('netsocket', {
       name = 'ThroughputClient',
@@ -223,7 +223,7 @@ end
       msgLimit = 512 * 1024 -- Allow large messages
    })
 
-   proc = processing.new({ timeout = 15.0, signals = array<object> { server } })
+   proc = processing.new({ timeout = 15.0, signals = array<obj> { server } })
 
    client = obj.new('netsocket', {
       name = 'LargeMessageClient',
@@ -286,7 +286,7 @@ end
       backlog = max_clients
    })
 
-   proc = processing.new({ timeout = 20.0, signals = array<object> { server } })
+   proc = processing.new({ timeout = 20.0, signals = array<obj> { server } })
 
    -- Create and connect clients rapidly
    clients = {}
@@ -384,7 +384,7 @@ end
       port = glPort + 3,
    })
 
-   proc = processing.new({ timeout = 15.0, signals = array<object> { server } })
+   proc = processing.new({ timeout = 15.0, signals = array<obj> { server } })
 
    client = obj.new('netsocket', {
       name = 'QueueTestClient',

@@ -38,7 +38,7 @@ glTestTimeout = 3.0
       end
    })
 
-   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { server } })
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { server } })
 
    client = obj.new('netsocket', { flags = 'UDP' })
 
@@ -96,7 +96,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { server } })
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { server } })
 
    client = obj.new('netsocket', { flags = 'UDP' })
 

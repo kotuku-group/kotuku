@@ -122,7 +122,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 10.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 10.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Large chunked POST failed to activate")
 
    err = proc.sleep()
@@ -162,7 +162,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 10.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 10.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Large Content-Length POST failed to activate")
 
    err = proc.sleep()
@@ -206,7 +206,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 15.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 15.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Large file download failed to activate")
 
    err = proc.sleep()
@@ -253,7 +253,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 15.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 15.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Very large request failed to activate")
 
    err = proc.sleep()
@@ -290,7 +290,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 10.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 10.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Streaming response failed to activate")
 
    err = proc.sleep()

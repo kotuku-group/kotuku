@@ -149,7 +149,7 @@ function BasicSSLCommunication()
       flags = 'DISABLE_SERVER_VERIFY'
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { ssl_server } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { ssl_server } })
    check ssl_client.mtConnect('127.0.0.1', glPort)
    check proc.sleep()
 
@@ -233,7 +233,7 @@ function SSLStateTransitions()
       flags = NSF_SSL|NSF_DISABLE_SERVER_VERIFY
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { ssl_server } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { ssl_server } })
    check ssl_client.mtConnect('127.0.0.1', glPort)
    check proc.sleep()
 
@@ -335,7 +335,7 @@ function SSLDataIntegrity()
       flags = 'SSL|DISABLE_SERVER_VERIFY'
    })
 
-   proc = processing.new({ timeout = 3.0, signals = array<object> { ssl_server } })
+   proc = processing.new({ timeout = 3.0, signals = array<obj> { ssl_server } })
    check ssl_client.mtConnect('127.0.0.1', glPort)
    check proc.sleep()
 
@@ -472,7 +472,7 @@ function HTTPSConnection()
       flags = NSF_SSL
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { https_client } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { https_client } })
    check https_client.mtConnect(SITE, 443)
    err = proc.sleep()
 
@@ -602,7 +602,7 @@ function runCustomCertificateHandshake(TestName, CertPath, KeyPath, KeyPassword)
       flags = NSF_SSL|NSF_DISABLE_SERVER_VERIFY  -- Use no-verify for test certificate
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { ssl_server } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { ssl_server } })
    check ssl_client.mtConnect('127.0.0.1', glPort)
    check proc.sleep()
 

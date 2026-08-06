@@ -67,7 +67,7 @@ glTestTimeout = 3.0
       end
    })
 
-   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { client } })
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { client } })
 
    -- Client sends initial message
    message = 'Hello UDP Server'
@@ -153,7 +153,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { server } })
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { server } })
    client = obj.new('netsocket', { flags = NSF_UDP })
 
    dest = struct.new('IPAddress')

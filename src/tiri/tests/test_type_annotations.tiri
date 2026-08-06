@@ -64,7 +64,21 @@ end
    assert_compiles("NilVal:nil")
    assert_compiles("StructVal:struct")
    assert_compiles("ObjVal:obj")
-   assert_compiles("ObjectVal:object")
+end
+
+@Test function ObjectTypeAliasRejected()
+   function assert_rejected(Source:str, Context:str)
+      try
+         exec(Source)
+      success
+         error(f"Expected object type name to be rejected in {Context}")
+      end
+   end
+
+   assert_rejected("local value:object = nil", "a local annotation")
+   assert_rejected("local function rejected(Value:object) return Value end", "a parameter annotation")
+   assert_rejected("local function rejected():object return nil end", "a return annotation")
+   assert_rejected("local values:array<object> = array<obj> {}", "an array element annotation")
 end
 
 @Test function RemovedBooleanTypeRejected()

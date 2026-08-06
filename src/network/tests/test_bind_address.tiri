@@ -16,7 +16,7 @@
 @Test function BindLocalhost()
    port = glBasePort + 1
    signal = obj.new('time', { })
-   proc = processing.new({ timeout = 3.0, signals = array<object> { signal } })
+   proc = processing.new({ timeout = 3.0, signals = array<obj> { signal } })
 
    server = obj.new('netserver', {
       port = port,
