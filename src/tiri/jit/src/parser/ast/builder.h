@@ -135,6 +135,7 @@ private:
    ParserResult<ExprNodePtr> parse_function_literal(
       const Token &, bool IsThunk = false, GCstr *FunctionName = nullptr);
    ParserResult<ExprNodePtr> parse_table_literal(bool AllowRange = true);
+   ParserResult<ExprNodeList> parse_array_initialiser();
    ParserResult<ReturnStmtPayload> parse_return_payload(const Token &, bool same_line_only);
    ParserResult<FunctionReturnTypes> parse_return_type_annotation();
 

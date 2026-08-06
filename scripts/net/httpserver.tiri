@@ -1955,7 +1955,7 @@ hslib.start = function(Options)
    self.folder ?? error('The folder option is required')
 
    if Options.verbose then
-      if type(Options.verbose) is 'boolean' then
+      if type(Options.verbose) is 'bool' then
          self.verbose = Options.verbose
       else
          verbose = tostring(Options.verbose):lower()
@@ -1991,7 +1991,7 @@ hslib.start = function(Options)
    end
 
    if Options.autoIndex then
-      if type(Options.autoIndex) is 'boolean' then
+      if type(Options.autoIndex) is 'bool' then
          self.autoIndex = Options.autoIndex
       else
          autoindex = tostring(Options.autoIndex):lower()

@@ -531,7 +531,7 @@ end
       local is_str = type(str) is "string"
       local is_tbl = type(tbl) is "table"
       local is_func = type(func) is "function"
-      local is_bool = type(bool_true) is "boolean"
+      local is_bool = type(bool_true) is "bool"
 
       -- Conditional based on type
       local val = i % 3 is 0 and str or (i % 3 is 1 and num_int or tbl)

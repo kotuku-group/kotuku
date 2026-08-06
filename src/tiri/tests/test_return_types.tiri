@@ -674,13 +674,6 @@ end
    assert(getString() is "hello", "string alias in return type should work")
 end
 
-@Test function ReturnTypeAliasBoolean()
-   function getBoolean():boolean
-      return true
-   end
-   assert(getBoolean() is true, "boolean alias in return type should work")
-end
-
 @Test function ReturnTypeAliasFunction()
    -- 'function' is a keyword, so the alias 'func' should be used for return types
    function getFunction():func

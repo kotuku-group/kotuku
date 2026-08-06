@@ -8,6 +8,8 @@ This file provides guidance to Agentic programs when working with code in this r
 - `cmake -S . -B build/agents -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=build/agents-install -DRUN_ANYWHERE=TRUE -DKOTUKU_STATIC=OFF -DUNIT_TESTS=ON -DORIGO_CONSOLE=ON`
 - Modular/Static builds: Use `-DKOTUKU_STATIC=OFF` for modular builds and `-DKOTUKU_STATIC=ON` for static.
 - Always use Debug builds unless the user requests otherwise.
+- `UNIT_TESTS=ON` enables compiled C++ unit tests and prolongs the build.  Note that this is not declared as a CMake
+  `option()`; it is consumed directly by `src/core/CMakeLists.txt`, so it will not appear in the options listing.
 
 **Build and install:**
 - Build and install: `cmake --build build/agents --config Debug --parallel && cmake --install build/agents --config Debug`
@@ -27,35 +29,10 @@ This file provides guidance to Agentic programs when working with code in this r
 **Verify:**
 - You can inspect the version, git commit hash and build type of the build by running `origo` with `--version`.
 
-### CMake Configuration Options
-
-Key build options (use with `-D` flag):
-- `KOTUKU_STATIC=ON/OFF` - Build as static libraries instead of modules
-- `BUILD_TESTS=ON/OFF` - Enable/disable Flute tests
-- `UNIT_TESTS=ON/OFF` - Enable compiled C++ unit tests (prolongs build)
-- `RUN_ANYWHERE=ON/OFF` - Build for local folder execution
-- `KOTUKU_VLOG=ON/OFF` - Enables trace level log messages via log.trace() in Debug builds (has no effect on Release builds).
-
-### Development in the Cloud
-
-When working in ephemeral cloud environments:
-
-- Prefer the pre-created build tree at `build/agents` and install tree at `build/agents-install` to avoid the expense of repeated configuration.  If the directory exists you can update it with `cmake --build build/agents --config Debug --parallel`.
-- If `origo` is not already installed at `build/agents-install` then performing the build and install process is essential if intending to run `origo` for Tiri scripts and Flute tests.
-- If configuring a build, disabling unnecessary modules like Audio and Graphics features (if they are not relevant) will speed up compilation.  If *certain* that the environment is cloud-based, you can consider including the following with your CMake build configuration: `-DDISABLE_AUDIO=ON -DDISABLE_X11=ON -DDISABLE_DISPLAY=ON -DDISABLE_FONT=ON`
-
 ## Architecture Overview
-
-### Core Framework Structure
-
-**Kōtuku** is an application framework with a core focus on building scalable user interfaces and highly efficient JIT compiled applications. The framework automatically handles display resolution and scaling concerns, allowing developers to focus on application logic rather than display technicalities.
 
 ### Module System
 
-Kōtuku uses a modular architecture where each major feature is implemented as a separate module:
-
-- Each module is in `src/[module_name]/` with its own `CMakeLists.txt`
-- Static builds link all modules into the core, while modular builds load them dynamically
 - Module definitions are stored in `.tdl` files which generate C++ headers and module `MOD_IDL` strings
 
 ### Object System and TDL Files
@@ -64,8 +41,6 @@ Kōtuku uses Interface Definition Language (IDL) files with `.tdl` extension to 
 
 - TDL files define classes, methods, fields, and constants
 - The `build_headers` target generates C/C++ headers and XML documentation from TDL using tools in `tools/idl/`
-- Class implementations are in `class_*.cpp` files
-- Generated headers go to `include/kotuku/` directory
 - Normal builds consume the existing generated headers.  After changing `.tdl` files, C++ blueprints or embedded documentation, run `build_headers` to regenerate headers and XML documentation.  Use `touch` on any `.tdl` file beforehand if needing to force regeneration of its downstream files.
 
 ### Scripting Integration
@@ -110,8 +85,6 @@ The build system heavily uses code generation:
 ### Multi-Platform Considerations
 
 - Core code is cross-platform (Windows/Linux/MacOS/Android) and is specifically optimised for 64-bit CPUs.  32-bit compatibility is redundant.
-- Platform-specific code is in subdirectories (`win32/`, `x11/`, etc.)
-- Build system auto-detects platform capabilities (X11, SSL, etc.)
 - Windows builds support the MSVC toolchain.  MinGW support is deprecated
 
 **Windows-Specific Notes:**

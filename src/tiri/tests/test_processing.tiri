@@ -25,7 +25,7 @@
    assert(diff < 0.0001, f'memoryMB ({stats.memoryMB}) should be consistent with KB+bytes ({expected_mb})')
 
    assert(stats.isRunning != nil, 'gcStats() should have isRunning field')
-   assert(type(stats.isRunning) is 'boolean', 'isRunning should be a boolean')
+   assert(type(stats.isRunning) is 'bool', 'isRunning should be a bool')
 
    assert(stats.pause != nil, 'gcStats() should have pause field')
    assert(type(stats.pause) is 'number', 'pause should be a number')

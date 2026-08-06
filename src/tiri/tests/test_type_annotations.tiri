@@ -57,7 +57,6 @@ end
    assert_compiles("S:str")
    assert_compiles("String:string")
    assert_compiles("B:bool")
-   assert_compiles("Boolean:boolean")
    assert_compiles("T:table")
    assert_compiles("F:func")
    assert_compiles("Function:function")
@@ -66,6 +65,20 @@ end
    assert_compiles("StructVal:struct")
    assert_compiles("ObjVal:obj")
    assert_compiles("ObjectVal:object")
+end
+
+@Test function RemovedBooleanTypeRejected()
+   function assert_rejected(Source:str, Context:str)
+      try
+         exec(Source)
+      success
+         error(f"Expected boolean type name to be rejected in {Context}")
+      end
+   end
+
+   assert_rejected("local value:boolean = true", "a local annotation")
+   assert_rejected("local function rejected(Value:boolean) return Value end", "a parameter annotation")
+   assert_rejected("local function rejected():boolean return true end", "a return annotation")
 end
 
 @Test function UnknownTypeRejected()

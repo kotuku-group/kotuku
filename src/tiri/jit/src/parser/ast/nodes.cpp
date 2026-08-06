@@ -11,7 +11,6 @@ TiriType parse_type_name(std::string_view Name)
       { "any",       TiriType::Any },
       { "nil",       TiriType::Nil },
       { "bool",      TiriType::Bool },
-      { "boolean",   TiriType::Bool },
       { "num",       TiriType::Num },
       { "number",    TiriType::Num },
       { "str",       TiriType::Str },

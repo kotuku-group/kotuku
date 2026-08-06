@@ -678,27 +678,10 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          bool has_initialiser = false;
          if (this->ctx.check(TokenKind::LeftBrace)) {
             has_initialiser = true;
-            // Parse the table literal to extract values
-            auto table_result = this->parse_table_literal(false);
-            if (not table_result.ok()) return table_result;
-
-            // Extract array-style values from table literal
-            // The table should contain only sequential integer-keyed entries
-            if (table_result.value_ref()->kind IS AstNodeKind::TableExpr) {
-               auto *table_payload = std::get_if<TableExprPayload>(&table_result.value_ref()->data);
-               if (table_payload) {
-                  for (auto &field : table_payload->fields) {
-                     if (field.kind IS TableFieldKind::Array and field.value) {
-                        init_values.push_back(std::move(field.value));
-                     }
-                     else {
-                        // Non-array field in array initialiser - emit error
-                        return this->fail<ExprNodePtr>(ParserErrorCode::UnexpectedToken, start,
-                           "Array initialiser can only contain sequential values, not key-value pairs");
-                     }
-                  }
-               }
-            }
+            // Positional values are parsed directly into an expression list; no temporary table AST is built.
+            auto values = this->parse_array_initialiser();
+            if (not values.ok()) return ParserResult<ExprNodePtr>::failure(values.error_ref());
+            init_values = std::move(values.value_ref());
          }
 
          SourceSpan span = start.span();

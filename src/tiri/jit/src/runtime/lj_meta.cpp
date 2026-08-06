@@ -649,7 +649,7 @@ void lj_meta_istype(lua_State *L, BCREG ra, BCREG tp)
       // Boolean check: accept both true and false
       // LJ_TFALSE = ~1, LJ_TTRUE = ~2
       TValue* o = L->base + ra - 1;
-      if (not tvisbool(o)) lj_err_assigntype(L, int(ra) - 1, "boolean");
+      if (not tvisbool(o)) lj_err_assigntype(L, int(ra) - 1, "bool");
    }
    else lj_err_assigntype(L, int(ra) - 1, lj_obj_itypename[tp]);
 }

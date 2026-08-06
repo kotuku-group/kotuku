@@ -161,8 +161,8 @@ static bool is_range_userdata(lua_State *L, GCudata *Userdata)
 }
 
 LJLIB_PUSH("nil")
-LJLIB_PUSH("boolean")
-LJLIB_PUSH(top-1)  //  boolean
+LJLIB_PUSH("bool")
+LJLIB_PUSH(top-1)  //  bool
 LJLIB_PUSH("userdata")
 LJLIB_PUSH("string")
 LJLIB_PUSH("upval")
