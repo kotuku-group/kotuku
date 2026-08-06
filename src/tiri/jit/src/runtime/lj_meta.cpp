@@ -451,6 +451,14 @@ TValue * lj_meta_cat(lua_State *L, TValue *top, int left)
 //********************************************************************************************************************
 // Helper for LEN. __len metamethod.
 
+TValue * lj_meta_len_result(lua_State *L, TValue *Result)
+{
+   if (not tvisnumber(Result)) lj_err_msg(L, ErrMsg::LENMM);
+   return Result;
+}
+
+//********************************************************************************************************************
+
 TValue * lj_meta_len(lua_State *L, cTValue *o)
 {
    cTValue *mo = lj_meta_lookup(L, o, MM_len);
@@ -460,7 +468,7 @@ TValue * lj_meta_len(lua_State *L, cTValue *o)
       else lj_err_optype(L, o, ErrMsg::OPLEN);
       return nullptr;
    }
-   return mmcall(L, lj_cont_ra, mo, o, o);
+   return mmcall(L, lj_cont_len, mo, o, o);
 }
 
 //********************************************************************************************************************

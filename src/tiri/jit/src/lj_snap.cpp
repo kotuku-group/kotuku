@@ -798,12 +798,17 @@ static void snap_unsink(jit_State *J, GCtrace *T, ExitState *ex, SnapNo snapno, 
             TValue tmp, * val;
             lj_assertJ(irs->o IS IR_ASTORE or irs->o IS IR_HSTORE or irs->o IS IR_FSTORE, "sunk store with bad op %d", irs->o);
             if (irk->o IS IR_FREF) {
-               lj_assertJ(irk->op2 IS IRFL_TAB_META, "sunk store with bad field %d", irk->op2);
                snap_restoreval(J, T, ex, snapno, rfilt, irs->op2, &tmp);
-               // NOBARRIER: The table is new (marked white).
-               GCtab* metatable = tabV(&tmp);
-               setgcref(t->metatable, obj2gco(metatable));
-               lj_gc_checkfinaliser(J->L, obj2gco(t), metatable);
+               if (irk->op2 IS IRFL_TAB_META) {
+                  // NOBARRIER: The table is new (marked white).
+                  GCtab* metatable = tabV(&tmp);
+                  setgcref(t->metatable, obj2gco(metatable));
+                  lj_gc_checkfinaliser(J->L, obj2gco(t), metatable);
+               }
+               else if (irk->op2 IS IRFL_TAB_FLAGS) {
+                  t->flags = uint8_t(numberVint(&tmp));
+               }
+               else lj_assertJ(false, "sunk store with bad field %d", irk->op2);
             }
             else {
                irk = &T->ir[irk->op2];

@@ -967,10 +967,17 @@ typedef struct Node {
 
 static_assert(offsetof(Node, val) == 0);
 
+// GCtab::flags bits.  These record permanent facts about a table's usage history and are never cleared.
+
+inline constexpr uint32_t TAB_STRING_KEYED_BIT = 0;  // Bit index, for backends that test single bits.
+inline constexpr uint8_t  TAB_STRING_KEYED = (uint8_t)(1u << TAB_STRING_KEYED_BIT); // Ever addressed by a string key.
+
 typedef struct GCtab {
    GCHeader;
    uint8_t  nomm;      // Negative cache for fast metamethods.
    int8_t   colo;      // Array colocation.
+   uint8_t  flags;     // [12] Permanent table classification bits (TAB_*).  Never cleared once set.
+   uint8_t  _pad0[3];  // [13] Padding to align the array field.
    MRef     array;     // [16] Array part.
    GCRef    gclist;    // [24] GC list for marking (must match GCudata.gclist)
    GCRef    metatable; // [32] Must be at same offset in GCudata.
@@ -981,6 +988,21 @@ typedef struct GCtab {
    GCRef    global_type_contracts; // Runtime contracts for globals stored in this environment table.
    MRef     global_contract_cache; // Environment-owned decoded derivative of global_type_contracts.
 } GCtab;
+
+// The generated VM and the JIT backends encode these offsets directly, so any layout drift must fail the build
+// rather than silently corrupt table access.
+
+static_assert(offsetof(GCtab, nomm) == 10);
+static_assert(offsetof(GCtab, colo) == 11);
+static_assert(offsetof(GCtab, flags) == 12);
+static_assert(offsetof(GCtab, array) == 16);
+static_assert(offsetof(GCtab, gclist) == 24);
+static_assert(offsetof(GCtab, metatable) == 32);
+static_assert(offsetof(GCtab, node) == 40);
+static_assert(offsetof(GCtab, asize) == 48);
+static_assert(offsetof(GCtab, hmask) == 52);
+static_assert(sizeof(GCtab) == 80);
+static_assert((sizeof(GCtab) & 7) == 0);
 
 [[nodiscard]] constexpr inline size_t sizetabcolo(MSize n) noexcept { return n * sizeof(TValue) + sizeof(GCtab); }
 

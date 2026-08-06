@@ -864,6 +864,14 @@ static void build_subroutines(BuildCtx *ctx)
   |->cont_nop:
   |  ins_next
   |
+  |->cont_len:                         // RA = resultptr
+  |  str BASE, L->base
+  |  mov CARG2, RA
+  |  mov CARG1, L
+  |  str PC, SAVE_PC
+  |  bl extern lj_meta_len_result      // (lua_State *L, TValue *Result)
+  |  ldr BASE, L->base
+  |  mov RA, CRET1
   |->cont_ra:				// RA = resultptr
   |  ldr INS, [PC, #-8]		// Load full 64-bit BCIns
   |   ldr TMP0, [RA]
@@ -2769,6 +2777,9 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  cbnz TAB:CARG2, >9
     |3:
     |->BC_LEN_Z:
+    |  // An ordinary table that has ever been addressed with a string key has no sequence length.
+    |  ldrb TMP1w, TAB:CARG1->flags
+    |  tbnz TMP1w, #TAB_STRING_KEYED_BIT, >8
     |  bl extern lj_tab_len		// (GCtab *t)
     |  // Returns uint32_t (but less than 2^31).
     |  b <1
@@ -2778,6 +2789,10 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  bne ->vmeta_len
     |  ldr CARG1w, ARRAY:CARG1->len
     |  b <1
+    |
+    |8:  // String-keyed table: the length operator yields nil.
+    |  str TISNIL, [BASE, RA, lsl #3]
+    |  ins_next
     |
     |9:
     |  ldrb TMP1w, TAB:CARG2->nomm
@@ -3349,6 +3364,11 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  cmp TMP1, TISNIL			// Previous value is nil?
     |  beq >4
     |2:
+    |  // The raw store commits here, so classify the receiving table (lj_tab_newkey() covers the new-key path
+    |  // below).  A store diverted to __newindex never reaches this point.
+    |  ldrb CARG4w, TAB:CARG2->flags
+    |  orr CARG4w, CARG4w, #TAB_STRING_KEYED
+    |  strb CARG4w, TAB:CARG2->flags
     |   str TMP0, NODE:CARG3->val
     |    tbnz TMP2w, #2, >7		// isblack(table)
     |3:

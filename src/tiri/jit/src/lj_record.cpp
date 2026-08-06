@@ -1465,10 +1465,12 @@ void lj_record_ret(jit_State *J, BCREG rbase, ptrdiff_t gotresults)
       if (FRC::dec_depth_by(J, 2) < 0) lj_trace_err(J, LJ_TRERR_NYIRETL);
       fm.pop_delta_frame(cbase);
       slots.set_maxslot(cbase - FRC::CONT_FRAME_SIZE);
-      if (cont IS lj_cont_ra) {
+      if (cont IS lj_cont_ra or cont IS lj_cont_len) {
          // Copy result to destination slot.
          BCREG dst = bc_a(*(frame_contpc(frame) - 1));
-         slots[dst] = gotresults ? slots[cbase + rbase] : TREF_NIL;
+         TRef result = gotresults ? slots[cbase + rbase] : TREF_NIL;
+         if (cont IS lj_cont_len and not tref_isnumber(result)) lj_trace_err(J, LJ_TRERR_BADTYPE);
+         slots[dst] = result;
          slots.ensure_slot(dst);
       }
       else if (cont IS lj_cont_nop) {
@@ -1630,7 +1632,7 @@ static TRef rec_mm_len(jit_State *J, TRef tr, TValue* tv)
    ix.tab = tr;
    copyTV(J->L, &ix.tabv, tv);
    if (lj_record_mm_lookup(J, &ix, MM_len)) {
-      BCREG func = rec_mm_prep(J, lj_cont_ra);
+      BCREG func = rec_mm_prep(J, lj_cont_len);
       TRef* base = J->base + func;
       TValue* basev = J->L->base + func;
       base[0] = ix.mobj; copyTV(J->L, basev + 0, &ix.mobjv);
@@ -1642,6 +1644,16 @@ static TRef rec_mm_len(jit_State *J, TRef tr, TValue* tv)
    else {
       if (tref_istab(tr)) {
          IRBuilder ir(J);
+         // A table that has ever been addressed with a string key has no sequence length.  The classification is
+         // one-way, so guarding the observed state is sufficient: the first string-keyed store side-exits the trace
+         // and the recompilation specialises to nil.
+         TRef flags = ir.fload(tr, IRFL_TAB_FLAGS, IRT_U8);
+         TRef classified = ir.emit_int(IR_BAND, flags, ir.kint(TAB_STRING_KEYED));
+         if (tabV(tv)->flags & TAB_STRING_KEYED) {
+            ir.guard_ne_int(classified, ir.kint(0));
+            return TREF_NIL;
+         }
+         ir.guard_eq_int(classified, ir.kint(0));
          return ir.emit_int(IR_ALEN, tr, TREF_NIL); //equiv to: rc = emitir(IRTI(IR_ALEN), rc, TREF_NIL);
       }
       else if (tref_isarray(tr)) {
@@ -2152,6 +2164,15 @@ handlemm:
          TRef fref = ir.emit(IRT(IR_FREF, IRT_PGC), ix->tab, IRFL_TAB_NOMM);
          ir.emit(IRT(IR_FSTORE, IRT_U8), fref, ir.kint(0));
       }
+
+      // Publish the permanent string-key classification so that a concurrently recorded '#' guard observes it.
+
+      if (tref_isstr(ix->key) and tref_istab(ix->tab)) {
+         TRef fref = ir.emit(IRT(IR_FREF, IRT_PGC), ix->tab, IRFL_TAB_FLAGS);
+         TRef flags = ir.fload(ix->tab, IRFL_TAB_FLAGS, IRT_U8);
+         ir.emit(IRT(IR_FSTORE, IRT_U8), fref, ir.emit_int(IR_BOR, flags, ir.kint(TAB_STRING_KEYED)));
+      }
+
       J->needsnap = 1;
       return 0;
    }

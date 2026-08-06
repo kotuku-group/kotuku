@@ -3463,6 +3463,22 @@ static bool test_static_descriptor_model(kt::Log &Log)
       return false;
    }
 
+   StaticValueDescriptor table_value{
+      .primary = TiriType::Table,
+      .proof = StaticProof::Closed
+   };
+   StaticValueDescriptor table_length = describe_length_result(table_value);
+   StaticValueDescriptor string_value{
+      .primary = TiriType::Str,
+      .proof = StaticProof::Closed
+   };
+   StaticValueDescriptor string_length = describe_length_result(string_value);
+   if (table_length.primary != TiriType::Num or not table_length.nullable or
+       string_length.primary != TiriType::Num or string_length.nullable) {
+      Log.error("length descriptors did not retain numeric type with operand-specific nullability");
+      return false;
+   }
+
    StaticValueDescriptor nil_value{
       .primary = TiriType::Nil,
       .proof = StaticProof::Closed,

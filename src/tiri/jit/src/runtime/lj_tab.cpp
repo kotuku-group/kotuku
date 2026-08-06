@@ -89,6 +89,7 @@ static GCtab * newtab(lua_State *L, uint32_t asize, uint32_t hbits)
       t->gct = ~LJ_TTAB;
       t->nomm = (uint8_t)~0;
       t->colo = (int8_t)asize;
+      t->flags = 0;
       setmref(t->array, (TValue*)((char*)t + sizeof(GCtab)));
       setgcrefnull(t->metatable);
       setgcrefnull(t->global_type_contracts);
@@ -105,6 +106,7 @@ static GCtab * newtab(lua_State *L, uint32_t asize, uint32_t hbits)
       t->gct = ~LJ_TTAB;
       t->nomm = (uint8_t)~0;
       t->colo = 0;
+      t->flags = 0;
       setmref(t->array, nullptr);
       setgcrefnull(t->metatable);
       setgcrefnull(t->global_type_contracts);
@@ -173,6 +175,7 @@ GCtab * lj_tab_dup(lua_State *L, const GCtab *kt)
    t = newtab(L, kt->asize, kt->hmask > 0 ? lj_fls(kt->hmask) + 1 : 0);
    lj_assertL(kt->asize == t->asize and kt->hmask == t->hmask, "mismatched size of table and template");
    t->nomm = 0;  //  Keys with metamethod names may be present.
+   t->flags = kt->flags;  //  Classification is inherited by duplicates of a template table.
 
    asize = kt->asize;
    if (asize > 0) {
@@ -458,6 +461,9 @@ genlookup:
 TValue * lj_tab_newkey(lua_State *L, GCtab *t, cTValue *key)
 {
    Node *n = hashkey(t, key);
+   // Catch store routes that reach the hash part without passing through lj_tab_setstr(), such as the interpreter's
+   // inline BC_TSETS chain-miss path.
+   if (tvisstr(key)) t->flags |= TAB_STRING_KEYED;
    if (not tvisnil(&n->val) or t->hmask == 0) {
       Node* nodebase = noderef(t->node);
       Node* collide, * freenode = getfreetop(t, nodebase);
@@ -552,6 +558,7 @@ TValue* lj_tab_setstr(lua_State* L, GCtab* t, const GCstr* key)
 {
    TValue k;
    Node* n = hashstr(t, key);
+   t->flags |= TAB_STRING_KEYED;  //  Permanently classify the table as associative.
    do {
       if (tvisstr(&n->key) and strV(&n->key) == key) return &n->val;
    } while ((n = nextnode(n)));

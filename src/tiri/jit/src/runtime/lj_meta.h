@@ -27,6 +27,7 @@ extern "C" [[nodiscard]] TValue* lj_meta_tset(lua_State* L, cTValue* o, cTValue*
 extern "C" [[nodiscard]] TValue* lj_meta_arith(lua_State* L, TValue* ra, cTValue* rb, cTValue* rc, BCREG op);
 extern "C" [[nodiscard]] TValue* lj_meta_cat(lua_State* L, TValue* top, int left);
 extern "C" [[nodiscard]] TValue* lj_meta_len(lua_State* L, cTValue* o);
+extern "C" [[nodiscard]] TValue* lj_meta_len_result(lua_State* L, TValue* Result);
 extern "C" [[nodiscard]] TValue* lj_meta_equal(lua_State* L, GCobj* o1, GCobj* o2, int ne);
 extern "C" [[nodiscard]] TValue* lj_meta_equal_cd(lua_State* L, BCIns ins);
 extern "C" [[nodiscard]] TValue* lj_meta_equal_thunk(lua_State* L, BCIns ins);

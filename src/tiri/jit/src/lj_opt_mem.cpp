@@ -565,8 +565,9 @@ static AliasRet aa_fref(jit_State* J, IRIns* refa, IRIns* refb)
       return ALIAS_NO;  //  Different fields.
    if (refa->op1 == refb->op1)
       return ALIAS_MUST;  //  Same field, same object.
-   else if (refa->op2 >= IRFL_TAB_META and refa->op2 <= IRFL_TAB_NOMM)
+   else if ((refa->op2 >= IRFL_TAB_META and refa->op2 <= IRFL_TAB_NOMM) or refa->op2 IS IRFL_TAB_FLAGS)
       return aa_table(J, refa->op1, refb->op1);  //  Disambiguate tables.
+      // IRFLDEF is append-only, so IRFL_TAB_FLAGS sits outside the contiguous table-field range above.
    else
       return ALIAS_MAY;  //  Same field, possibly different object.
 }
@@ -613,10 +614,17 @@ TRef lj_opt_fwd_fload(jit_State* J)
    }
 
    // No conflicting store: const-fold field loads from allocations.
-   if (fid == IRFL_TAB_META) {
+   if (fid IS IRFL_TAB_META or fid IS IRFL_TAB_GCONTRACTS) {
       IRIns* ir = IR(oref);
-      if (ir->o == IR_TNEW or ir->o == IR_TDUP)
+      if (ir->o IS IR_TNEW or ir->o IS IR_TDUP)
          return lj_ir_knull(J, IRT_TAB);
+   }
+   else if (fid IS IRFL_TAB_FLAGS) {
+      IRIns* ir = IR(oref);
+      if (ir->o IS IR_TNEW)
+         return lj_ir_kint(J, 0);
+      else if (ir->o IS IR_TDUP)
+         return lj_ir_kint(J, ir_ktab(IR(ir->op1))->flags);
    }
 
 cselim:

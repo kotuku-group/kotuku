@@ -10,6 +10,8 @@ local ir_max <const> = 51  -- IRDEF order; traceIR exposes the opcode as traceIR
 local ir_fpmath <const> = 52  -- IRDEF order; floating-point rounding and related operations.
 local ir_xload <const> = 70  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
 local ir_xstore <const> = 78  -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
+local ir_tnew <const> = 81  -- IRDEF order; fresh table allocation.
+local ir_tdup <const> = 82  -- IRDEF order; template table allocation.
 local ir_conv <const> = 91  -- IRDEF order; numeric and integer conversions.
 local ir_bufput <const> = 86
 local ir_bufstr <const> = 87
@@ -17,6 +19,7 @@ local ir_calln <const> = 95  -- IRDEF order; traceIR exposes the opcode as trace
 local ir_calla <const> = 96
 local ir_calll <const> = 97
 local ir_calls <const> = 98
+local rid_sink <const> = 254  -- lj_target.h register marker, exposed in the low byte of traceIR().prev.
 
 struct JITValidatedStructFields
    Flag: bool
@@ -2805,4 +2808,185 @@ end
    assert(t.month is 11, f"Expected month=11 (truncated from 11.9), got {t.month}")
 
    t.free()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- The permanent string-key classification governs '#table'.  A trace recorded while the flag is clear must guard the
+-- state and side-exit on the first clear-to-set transition rather than returning a stale numerical length.
+
+@Test(hotpath=100) function LengthTraceExitsOnFirstStringKey()
+   local t = { 1, 2, 3 }
+   local numeric_results = 0
+   for i in {0 to 200} do
+      if #t is 3 then numeric_results++ end
+   end
+   assert(numeric_results is 200, f"Hot pure table should report length 3 throughout, got {numeric_results}")
+
+   -- Introduce the first string key.  The recorded guard must fail rather than keep returning 3.
+   t.name = 'x'
+
+   local nil_results = 0
+   for i in {0 to 200} do
+      if #t is nil then nil_results++ end
+   end
+   assert(nil_results is 200, f"Hot classified table should report nil throughout, got {nil_results}")
+end
+
+@Test(hotpath=100) function LengthTraceOnAlreadyClassifiedTable()
+   local t = { 1, 2, 3, name = 'x' }
+   local nil_results = 0
+   for i in {0 to 200} do
+      if #t is nil then nil_results++ end
+   end
+   assert(nil_results is 200, f"An already-classified table should report nil on trace, got {nil_results}")
+end
+
+@Test(hotpath=100) function ComputedStringKeyStoreInHotCodeClassifies()
+   local t = { 1, 2, 3 }
+   for i in {0 to 200} do
+      local key = 'field' .. tostring(i % 4)
+      t[key] = i
+   end
+   assert(#t is nil, f"A hot computed string-key store should classify the table, got {tostring(#t)}")
+end
+
+function string_keyed_tnew_value(Value):any
+   local temporary = {}
+   temporary.key = Value
+   return temporary.key
+end
+
+function string_keyed_tdup_value(Value):any
+   local temporary = { 1 }
+   temporary.key = Value
+   return temporary.key
+end
+
+function string_keyed_tnew_workload(Value)
+   local total = 0
+   for i in {0 to 100} do
+      total += string_keyed_tnew_value(Value + i)
+   end
+   return total
+end
+
+function string_keyed_tdup_workload(Value)
+   local total = 0
+   for i in {0 to 100} do
+      total += string_keyed_tdup_value(Value + i)
+   end
+   return total
+end
+
+@Test function StringKeyedStoresPreserveAllocationSinking()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+
+   assert(string_keyed_tnew_workload(3) is 5250, 'TNEW workload should retain its result on trace')
+   assert(string_keyed_tdup_workload(3) is 5250, 'TDUP workload should retain its result on trace')
+
+   jit.off()
+   local allocation_counts = { [ir_tnew] = 0, [ir_tdup] = 0 }
+   local sunk_counts = { [ir_tnew] = 0, [ir_tdup] = 0 }
+
+   for trace_no in {1 into 100} do
+      local info = jit.util.traceInfo(trace_no)
+      if info is nil then continue end
+
+      for instruction in {1 into info.nins} do
+         local _, ir_ot, _, _, ir_prev = jit.util.traceIR(trace_no, instruction)
+         if ir_ot is nil then continue end
+
+         local opcode = ir_ot >> 8
+         if opcode is ir_tnew or opcode is ir_tdup then
+            allocation_counts[opcode]++
+            if (ir_prev & 255) is rid_sink then sunk_counts[opcode]++ end
+         end
+      end
+   end
+
+   assert(allocation_counts[ir_tnew] > 0 and sunk_counts[ir_tnew] is allocation_counts[ir_tnew],
+      f'Every temporary TNEW receiving a string-keyed store should be sunk: {sunk_counts[ir_tnew]}/' ..
+      f'{allocation_counts[ir_tnew]}')
+   assert(allocation_counts[ir_tdup] > 0 and sunk_counts[ir_tdup] is allocation_counts[ir_tdup],
+      f'Every temporary TDUP receiving a string-keyed store should be sunk: {sunk_counts[ir_tdup]}/' ..
+      f'{allocation_counts[ir_tdup]}')
+   jit.on()
+   jit.opt.start()
+end
+
+function string_keyed_side_exit(ExitAt, UseTemplate):any
+   for i in {0 to 100} do
+      local temporary = UseTemplate ? { 1 } :> {}
+      temporary.key = i
+      if i is ExitAt then return temporary end
+   end
+   return nil
+end
+
+@Test function StringKeyedSunkTablesRestoreFlagsOnSideExit()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+
+   assert(string_keyed_side_exit(-1, false) is nil, 'TNEW workload should record without taking the side exit')
+   local tnew_result = string_keyed_side_exit(50, false)
+   assert(tnew_result.key is 50, 'A restored TNEW should retain its string-keyed value')
+   assert(#tnew_result is nil, 'A restored TNEW should retain its string-key classification')
+
+   jit.flush()
+   assert(string_keyed_side_exit(-1, true) is nil, 'TDUP workload should record without taking the side exit')
+   local tdup_result = string_keyed_side_exit(50, true)
+   assert(tdup_result.key is 50, 'A restored TDUP should retain its string-keyed value')
+   assert(#tdup_result is nil, 'A restored TDUP should retain its string-key classification')
+
+   jit.opt.start()
+end
+
+function traced_metamethod_length(Value, Count):num
+   local total = 0
+   for i in {1 into Count} do
+      total += #Value
+   end
+   return total
+end
+
+@Test function JITLenRejectsNonNumericMetamethodResult()
+   local metamethod_result:any = 4
+   local value = setmetatable({}, { __len = function(Self):any return metamethod_result end })
+
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+   assert(traced_metamethod_length(value, 20) is 80, 'The numeric __len result should trace normally')
+
+   metamethod_result = 'invalid'
+   try
+      traced_metamethod_length(value, 20)
+   except err
+      assert(tostring(err.message):find('__len metamethod must return a number'),
+         'A traced string __len result should report the numeric result requirement')
+   success
+      error('A traced string __len result should fail')
+   end
+
+   jit.on()
+   jit.opt.start()
+end
+
+@Test(hotpath=100) function ClearInHotCodeKeepsClassification()
+   local t = { 1, 2 }
+   t.name = 'x'
+   for i in {0 to 200} do
+      table.clear(t)
+      t[0] = i
+   end
+   assert(#t is nil, f"Clearing in hot code must not restore a numerical length, got {tostring(#t)}")
+end
+
+@Test(hotpath=100) function PureTableLengthRemainsNumericalOnTrace()
+   -- A table that is only ever addressed numerically must keep the fast numerical path on trace.
+   local t = {}
+   for i in {0 to 200} do
+      t[i % 8] = i
+   end
+   assert(#t is 8, f"A numerically addressed table should keep its length, got {tostring(#t)}")
 end
