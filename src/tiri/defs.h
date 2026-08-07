@@ -428,6 +428,22 @@ ERR load_module_defs(std::string_view);
 #ifdef UNIT_TESTS
 [[nodiscard]] std::string test_module_string_view_call(lua_State *, APTR,
    std::span<const std::string> Inputs);
+
+// What the registry resolved for one module function, from both the compiler's and the runtime's entry point.  The
+// two now share one ordinal mapping and one metadata owner, so a test can assert that agreement directly.
+
+struct test_module_resolution {
+   bool Found = false;              // The name resolved through the compiler's signature index
+   bool CallableFound = false;      // The name resolved through the runtime callable lookup
+   uint32_t Ordinal = 0;            // Compiler ordinal for the canonical function
+   uint32_t CallableOrdinal = 0;    // Position of the resolved callable within the binding's callable list
+   CSTRING SignatureName = nullptr; // Canonical name owned by the immutable signature
+   CSTRING CallableName = nullptr;  // Canonical name held by the runtime callable
+   const FunctionField *SignatureFields = nullptr;
+   const FunctionField *CallableFields = nullptr;
+};
+
+[[nodiscard]] test_module_resolution test_module_resolve(std::string_view Module, std::string_view Function);
 #endif
 int MAKESTRUCT(lua_State *);
 [[maybe_unused]] void make_any_array(lua_State *, int, std::string_view, int, CPTR, struct_record * = nullptr);

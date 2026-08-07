@@ -6,13 +6,29 @@ The module registry is the process-wide owner of native modules used by Tiri.  `
 `ModuleBinding` exactly once.  A binding owns:
 
 - the loaded `objModule`;
-- an immutable compiler signature and its collision-safe function index;
-- stable `ModuleCallable` records containing native addresses, argument metadata and prepared `ffi_cif` values; and
+- an immutable signature and its collision-safe function index;
+- stable `ModuleCallable` records containing native addresses, marshalling profiles and prepared `ffi_cif` values; and
 - the state and result of publishing the module's constants and structures.
 
 The registry index is non-owning.  It maps case-insensitive hashes to entries that retain the indexed spelling, so
 every lookup revalidates the name and cannot mistake a hash collision for a match.  Bindings and callables are
 allocated individually and remain at stable addresses until registry expunge.
+
+## One Representation of Function Metadata
+
+The immutable signature is the sole owner of each function's canonical name and copied `FunctionField` metadata.
+Compile-time queries read those copies, and so does every `ModuleCallable`: a callable's `Name` and `Fields` point into
+its binding's signature rather than into the loaded module's original `Function` list.  That list is consulted only
+while the binding is being constructed, as the source of the native addresses the signature deliberately does not
+retain.  A module may therefore be unloaded from under its metadata without leaving a callable pointing at freed
+descriptors, and a name or field descriptor cannot drift between the compiler's view and the runtime's.
+
+Function lookup is likewise single.  `ModuleBinding::Callables` is parallel to `static_module_signature::Functions`:
+element *i* describes the same export in both, because both are built in the module's export order.  Runtime lookup
+calls `find_ordinal()` on the signature — the same index the compiler queries — and then addresses `Callables`
+directly.  There is no second runtime hash map, so the two paths cannot disagree about which export a name selects.
+The `module_registry` unit test asserts that agreement, and that a callable's name and fields are the signature's own
+storage rather than a copy.
 
 ## Lifecycle and Publication
 
