@@ -2064,68 +2064,15 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
 
 #ifdef UNIT_TESTS
 //********************************************************************************************************************
-// Synthetic wide-signature coverage for the bounded marshalling stores.
-//
-// No exported module declares enough C++ string parameters to reach the point at which the previous reserve(8)
-// vectors reallocated, so the boundary is exercised with callables built here instead.  A synthetic callable is
-// prepared exactly as a real one is -- through prepare_module_callables()'s helpers -- so the test measures the
-// production preparation and marshalling paths rather than a parallel implementation.
-//
-// The verification that matters is pointer stability: each native function checks that every std::string_view it
-// receives still refers to the text the script passed.  Under the old vectors, the ninth emplacement moved the
-// earlier elements and the first arguments arrived as dangling references.
+// Test-only support for driving a synthetic string-view signature through the real module call bridge.
 
 namespace {
-
-constexpr int SYNTHETIC_MAX_ARGS = MAX_MODULE_ARGS;
-
-// Records what the most recent synthetic call observed, so the test can assert on the native side of the boundary.
-
-struct synthetic_observation {
-   int Count = 0;
-   std::array<std::string, SYNTHETIC_MAX_ARGS> Values;
-   bool Corrupt = false; // Set when an argument arrived as a null or unreadable reference
-};
-
-static synthetic_observation glSyntheticObservation;
-
-// Reads a std::string_view argument, recording its content.  A reference invalidated by reallocation shows up here as
-// either a null pointer or text that does not match what the script supplied.
-
-static void observe_view(int Slot, const std::string_view *View)
-{
-   if (not View) { glSyntheticObservation.Corrupt = true; return; }
-   glSyntheticObservation.Values[Slot].assign(View->data(), View->size());
-}
-
-// The native entry points.  libffi needs a real function per arity, and each one is passed pointers to the bridge's
-// std::string_view temporaries.
-
-template <int Count> static void synthetic_views(
-   const std::string_view *A0, const std::string_view *A1, const std::string_view *A2, const std::string_view *A3,
-   const std::string_view *A4, const std::string_view *A5, const std::string_view *A6, const std::string_view *A7,
-   const std::string_view *A8, const std::string_view *A9, const std::string_view *A10, const std::string_view *A11,
-   const std::string_view *A12, const std::string_view *A13, const std::string_view *A14, const std::string_view *A15)
-{
-   const std::string_view *views[SYNTHETIC_MAX_ARGS] = {
-      A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15
-   };
-
-   glSyntheticObservation.Count = Count;
-   glSyntheticObservation.Corrupt = false;
-   for (int slot = 0; slot < Count; ++slot) observe_view(slot, views[slot]);
-}
-
-// Build and prepare a synthetic callable of the requested arity.  Storage is static so that the FunctionField list
-// outlives the callable, matching a real module's function list.
 
 struct synthetic_callable {
    std::vector<FunctionField> Fields;
    std::vector<std::string> Names;
    ModuleCallable Callable;
 };
-
-// A callable taking Count read-only std::string_view parameters.
 
 static bool build_synthetic_view_callable(int Count, APTR Address, synthetic_callable &Result)
 {
@@ -2158,81 +2105,35 @@ static bool build_synthetic_view_callable(int Count, APTR Address, synthetic_cal
    return ffi_prep_cif(&Result.Callable.Cif, FFI_DEFAULT_ABI, Count, return_type, Result.Callable.ArgTypes) IS FFI_OK;
 }
 
-// Dispatch table mapping an arity to its native entry point, because the arity must be a template argument.
-
-static APTR synthetic_view_address(int Count)
-{
-   switch (Count) {
-      case  9: return (APTR)synthetic_views<9>;
-      case 10: return (APTR)synthetic_views<10>;
-      case 11: return (APTR)synthetic_views<11>;
-      case 12: return (APTR)synthetic_views<12>;
-      case 13: return (APTR)synthetic_views<13>;
-      case 14: return (APTR)synthetic_views<14>;
-      case 15: return (APTR)synthetic_views<15>;
-      case 16: return (APTR)synthetic_views<16>;
-      default: return nullptr;
-   }
-}
-
 } // namespace
 
-// Drive one synthetic call of the given arity through module_call() and confirm that every argument survived.
-//
-// Returns an empty string on success, or a description of the first discrepancy.
-
-std::string test_module_wide_string_signature(lua_State *Lua, int Count)
+std::string test_module_string_view_call(lua_State *Lua, APTR Address, std::span<const std::string> Inputs)
 {
-   if ((Count < 1) or (Count > SYNTHETIC_MAX_ARGS)) return std::format("Unsupported synthetic arity {}.", Count);
-
-   auto address = synthetic_view_address(Count);
-   if (not address) return std::format("No synthetic entry point for arity {}.", Count);
+   int count = int(Inputs.size());
+   if ((count < 1) or (count > MAX_MODULE_ARGS)) return std::format("Unsupported synthetic arity {}.", count);
+   if (not Address) return "The synthetic entry point is null.";
 
    auto synthetic = std::make_unique<synthetic_callable>();
-   if (not build_synthetic_view_callable(Count, address, *synthetic)) {
-      return std::format("Failed to prepare the synthetic callable for arity {}.", Count);
+   if (not build_synthetic_view_callable(count, Address, *synthetic)) {
+      return std::format("Failed to prepare the synthetic callable for arity {}.", count);
    }
 
-   if (synthetic->Callable.Profile.StringViews != Count) {
+   if (synthetic->Callable.Profile.StringViews != count) {
       return std::format("Profile counted {} string views for arity {}.",
-         int(synthetic->Callable.Profile.StringViews), Count);
+         int(synthetic->Callable.Profile.StringViews), count);
    }
-
-   // Distinct, differently sized argument texts, so a stale reference cannot coincidentally match.
-
-   std::vector<std::string> inputs;
-   inputs.reserve(Count);
-   for (int arg = 0; arg < Count; ++arg) inputs.push_back(std::format("synthetic-argument-{:03}{}", arg,
-      std::string(size_t(arg), 'x')));
-
-   glSyntheticObservation = { };
 
    int base = lua_gettop(Lua);
    lua_pushlightuserdata(Lua, &synthetic->Callable);
    lua_pushcclosure(Lua, module_call, 1);
-   for (const auto &input : inputs) lua_pushstring(Lua, input);
+   for (const auto &input : Inputs) lua_pushstring(Lua, input);
 
-   if (lua_pcall(Lua, Count, LUA_MULTRET, 0) != 0) {
+   if (lua_pcall(Lua, count, LUA_MULTRET, 0) != 0) {
       std::string message = lua_tostring(Lua, -1) ? lua_tostring(Lua, -1) : "unknown error";
       lua_settop(Lua, base);
-      return std::format("Synthetic call of arity {} failed: {}", Count, message);
+      return std::format("Synthetic call of arity {} failed: {}", count, message);
    }
    lua_settop(Lua, base);
-
-   if (glSyntheticObservation.Corrupt) {
-      return std::format("Arity {} delivered a null string view reference.", Count);
-   }
-   if (glSyntheticObservation.Count != Count) {
-      return std::format("Arity {} invoked an entry point reporting {} args.", Count,
-         glSyntheticObservation.Count);
-   }
-   for (int arg = 0; arg < Count; ++arg) {
-      if (glSyntheticObservation.Values[arg] != inputs[arg]) {
-         return std::format("Arity {} arg #{} arrived as '{}' rather than '{}'.", Count, arg,
-            glSyntheticObservation.Values[arg], inputs[arg]);
-      }
-   }
-
    return { };
 }
 #endif

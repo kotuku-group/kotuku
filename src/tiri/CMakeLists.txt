@@ -790,6 +790,7 @@ if (INCLUDE_TIPS)
 endif ()
 
 if (UNIT_TESTS)
+   list (APPEND TIRI_SOURCES "tests/unit_module_marshalling.cpp")
    list (APPEND TIRI_SOURCES "tests/unit_set_variable.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_test_indexing.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_test_vm_asm.cpp")
