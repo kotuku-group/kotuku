@@ -318,6 +318,8 @@ static void prepare_module_callables(module *Module, const Function *Functions)
 
       if (not function.Args) {
          // A function with no argument list takes no parameters and returns nothing, so libffi is unnecessary.
+         // The callable is still exported, so it must be registered for name lookup like any other.
+         Module->FunctionMap[strihash(function.Name)].push_back(callable.get());
          Module->Callables.push_back(std::move(callable));
          continue;
       }
