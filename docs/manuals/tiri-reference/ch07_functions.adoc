@@ -1,4 +1,6 @@
 // VERIFIED: 2028-08-06
+// UPDATED: 2026-08-07 - Return type inference now accepts reads from a known table as variant results, so an
+//                       annotation is no longer required for them; added the Variant Results section (commit 58755ad6f)
 
 [[ch-functions]]
 == Functions
@@ -320,11 +322,11 @@ The inferred signature is published to call sites, where it is used exactly as a
 [discrete]
 ===== Dynamic Results
 
-An inferred signature carries no runtime contract, so every inferred position must be provable at compile time.  Returning a value whose type is not statically known is an error.  Unannotated parameters, table and array elements, names supplied by the host, and the results of calls that have no result signature are all dynamic, on the same terms as the initialisers described in <<sec-dynamic-ingress>>:
+An inferred signature carries no runtime contract, so every inferred position must be provable at compile time.  Returning a value whose type is not statically known is an error.  Unannotated parameters, array elements, member reads from an object, names supplied by the host, and the results of calls that have no result signature are all dynamic, on the same terms as the initialisers described in <<sec-dynamic-ingress>>:
 
 [source,tiri]
 ----
-function firstEntry(Values:table)
+function firstEntry(Values)
    return Values['key']   -- error: cannot infer result 1 from a dynamic value
 end
 ----
@@ -333,23 +335,49 @@ Declare the result type to resolve it.  A declared type is validated as the func
 
 [source,tiri]
 ----
-function firstEntry(Values:table):num
+function firstEntry(Values):num
    return Values['key']   -- validated on return
 end
 
-function firstAny(Values:table):any
+function firstAny(Values):any
    return Values['key']   -- accepted, no contract
 end
 ----
 
-A value read from a name that is itself declared `:any` is variant rather than dynamic, and infers an `any` result without an annotation:
+[discrete]
+===== Variant Results
+
+A value that is unconstrained by construction rather than by an unresolved origin is _variant_, and infers an `any` result without an annotation.  Three sources are variant:
+
+. A read from a name declared `:any`.
+. A member or index read whose receiver is known to be a `table`, written with `.`, `[]`, `?.` or `?[]`.  Element types are not tracked for tables, so the result is unconstrained by construction.
+. A call to a function whose signature -- declared or inferred -- gives `any` at that position.
 
 [source,tiri]
 ----
 function identity(Value:any)
-   return Value       -- inferred signature: <any>
+   return Value           -- inferred signature: <any>
+end
+
+function firstEntry(Values:table)
+   return Values['key']   -- inferred signature: <any>
+end
+
+function wrapped(Values:table)
+   return firstEntry(Values)   -- inferred signature: <any>
 end
 ----
+
+The receiver's type must be known.  A chained read is not variant beyond its first step, because the intermediate value is `any` rather than `table`:
+
+[source,tiri]
+----
+function nested(Values:table)
+   return Values.a.b      -- error: cannot infer result 1 from a dynamic value
+end
+----
+
+Variance follows the value's origin through arithmetic and defaulting operators, so `Values[Key] ?? Default` is variant.  Where the operator itself fixes the result type the operator wins: `#Values.a` infers `num` and `'x' .. Values.a` infers `str`, on the terms set out in <<ch-operators>>.
 
 [discrete]
 ===== Nil Positions
@@ -397,6 +425,16 @@ A function that returns different concrete types at the same position raises a c
 function flexible(X):any
    if X > 0 then return 42 end
    return 'negative'
+end
+----
+
+A position that receives a variant value at any point infers `any` and accepts every other type at that position, irrespective of the order in which the returns appear:
+
+[source,tiri]
+----
+function lookup(Values:table, X)
+   if X > 0 then return Values[X] end
+   return 'negative'      -- inferred signature: <any>
 end
 ----
 

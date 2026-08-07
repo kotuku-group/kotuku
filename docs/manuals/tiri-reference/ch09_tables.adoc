@@ -1,4 +1,9 @@
 // VERIFIED: 2026-02-11
+// UPDATED: 2026-08-06 - Documented bare table iteration in generic for loops (commit 5f9e2003e)
+// UPDATED: 2026-08-06 - The length of a string-keyed table is now permanently nil (commit 6fc85b01b)
+// UPDATED: 2026-08-06 - Broadened the length classification to every non-numeric key (commit d40436498)
+// UPDATED: 2026-08-06 - Added sparse classification, the sequence guards, table.kind(), table.size() and
+//                       duplicate constructor key rejection (commit 26e122ab7)
 
 [[ch-tables]]
 == Tables
@@ -298,6 +303,8 @@ indexterm:[library, table] All table library functions are accessed through the 
 
 Inserts `Value` into the array part of `Table`.  If `Pos` is omitted, appends `Value` after the last element.  If `Pos` is given, inserts at that index and shifts subsequent elements upward by one position.
 
+`Table` must be classified as a sequence.  Raises an error if it is not, as defined in <<sec-table-classification>>.
+
 [source,tiri]
 ----
 t = {}
@@ -321,6 +328,8 @@ table.insert(t, 0, 'z')
 Removes and returns the element at `Pos`.  If `Pos` is omitted, removes the last element.  Remaining elements shift downward to fill the gap.
 
 Returns `nil` if the table is empty or `Pos` is out of bounds.  The table is not modified in either case.
+
+`Table` must be classified as a sequence.  Raises an error if it is not, as defined in <<sec-table-classification>>.
 
 [source,tiri]
 ----

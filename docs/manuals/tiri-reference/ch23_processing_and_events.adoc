@@ -1,6 +1,7 @@
 // VERIFIED: 2026-02-14
 // CHANGED: 2026-07-31 — Replaced informal callouts and future-tense behaviour.
 // CHANGED: 2026-07-31 — Documented the 'defer' collection mode and the automatic collection policy (commit faa63c606).
+// UPDATED: 2026-08-06 - Renamed array<object> to array<obj>, the sole accepted source spelling (commit ca06aefda)
 
 [[ch-processing-and-events]]
 == Processing & Events
@@ -170,7 +171,7 @@ Creates a processing object.  `Options` is an optional table with the following 
 |Maximum sleep duration in seconds.  Defaults to indefinite (`-1`).
 
 |`signals`
-|array<object>
+|array<obj>
 |An array of Kōtuku objects to monitor for signals.  If omitted or empty, the script object itself is monitored.
 |===
 
@@ -178,7 +179,7 @@ Raises an exception if an entry in the `signals` table is not a valid object ref
 
 [source,tiri]
 ----
-objects = array<object> { obj.new('time', { }), obj.new('time', { }) }
+objects = array<obj> { obj.new('time', { }), obj.new('time', { }) }
 
 proc = processing.new({
    timeout = 5.0,
@@ -223,7 +224,7 @@ A common pattern uses signals to synchronise a worker thread with the main scrip
 
 [source,tiri]
 ----
-files = array<object> { <1>
+files = array<obj> { <1>
    obj.new('file', { ... })
 }
 

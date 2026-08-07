@@ -2,6 +2,8 @@
 // UPDATED: 2026-08-06 - Corrected the array<struct> annotation form, which is rejected, and the quoted array member mismatch diagnostic (commit bbac3cf3f)
 // UPDATED: 2026-08-06 - int8 is now an accepted array element spelling; corrected the unsigned rows, which are struct-only (commit 7517513e3)
 // UPDATED: 2026-08-06 - Removed the 'boolean' annotation alias, leaving 'bool' as the sole spelling (commit 66ad8a7dc)
+// UPDATED: 2026-08-06 - 'obj' is now the sole source spelling for objects, including array elements; 'object' survives
+//                       only as the runtime name reported by type() (commit ca06aefda)
 
 [[ch-type-system]]
 == Type System
@@ -42,7 +44,7 @@ local values:array<num>     -- error: 'num' is a native type name
 [discrete]
 ==== The Compatibility Vocabulary
 
-The two interfaces share a core of names but are not identical dialects, and the spelling diverges in two places worth committing to memory: arrays name the object element type `object`, while structs name it `obj`; and arrays treat `char` as an alias of `byte`, while structs distinguish the two.
+The two interfaces share a core of names but are not identical dialects, and the spelling diverges in one place worth committing to memory: arrays treat `char` as an alias of `byte`, while structs distinguish the two.
 
 [cols="2,1,1,2a",options="header"]
 |===
@@ -59,7 +61,7 @@ The two interfaces share a core of names but are not identical dialects, and the
 |`cstr`                          |--   |Yes |String
 |`table`                         |Yes  |--  |Table
 |`array`, `array<type>`, `type[N]`|`array` |Yes |Array
-|`object` (arrays), `obj`, `obj<Class>` (structs) |`object` |Yes |Object
+|`obj`, `obj<Class>` (structs only) |`obj` |Yes |Object
 |`struct`, `struct<Name>`        |Yes  |`struct<Name>` |Struct
 |`func`                          |--   |Yes |Reads as `nil`
 |`ptr`, `ptr<type>`, `ptr<type[]>`|--  |Yes |Userdata, struct or array
@@ -283,7 +285,7 @@ local_declaration = "local" identifier ":" type_name [ "=" expression ] ;
 type_name         = "any" | "nil" | "bool"
                   | "num" | "number" | "str" | "string"
                   | "table" | "func" | "function"
-                  | "obj" | "object" | "range" | "userdata"
+                  | "obj" | "range" | "userdata"
                   | "struct" | "struct" "<" identifier ">"
                   | array_type ;
 array_type        = "array" "<" element_type ">" ;
@@ -291,7 +293,7 @@ array_type        = "array" "<" element_type ">" ;
 (* compatibility vocabulary *)
 element_type      = "byte" | "char" | "int16" | "int" | "int64"
                   | "float" | "double" | "string" | "table"
-                  | "array" | "object" | "any"
+                  | "array" | "obj" | "any"
                   | "struct" | "struct" "<" identifier ">" ;
 ----
 
@@ -335,7 +337,7 @@ These are the names of the native vocabulary, and they are the complete set that
 |`table`            |Table
 |`array<element>`   |Array constrained to the declared element type (see <<sec-array-member-annotations>>)
 |`func`, `function` |Function
-|`obj`, `object`    |Object
+|`obj`              |Object
 |`range`            |Range
 |`userdata`         |Userdata with client-side origins (see <<sec-userdata>>)
 |`struct`           |Structure (see <<ch-structs>>)
@@ -360,7 +362,7 @@ local points:array<struct<Vec>>   -- elements of the Vec definition only
 local variant:array<any>          -- any array, whatever its element type
 ----
 
-Because the element name is drawn from the compatibility vocabulary and the enclosing `array` from the native one, `array<double>` and `array<object>` are valid while `array<num>` and `array<obj>` raise a diagnostic.  The distinction is the one set out in <<sec-type-vocabularies>>.
+Because the element name is drawn from the compatibility vocabulary and the enclosing `array` from the native one, `array<double>` is valid while `array<num>` raises a diagnostic.  The distinction is the one set out in <<sec-type-vocabularies>>.
 
 The annotation constrains the element type and nothing else.  Length is not part of the type, and nested specialisation is not expressible:
 

@@ -1,4 +1,5 @@
 // UPDATED: 2026-08-06 - Added the table classification terms (commit 26e122ab7)
+// UPDATED: 2026-08-07 - Added the Variant value entry (commit 58755ad6f)
 
 [[appendix-glossary]]
 [appendix]
@@ -246,6 +247,9 @@ An opaque C data value managed outside the Tiri runtime.  Ranges are implemented
 
 Value type::
 A value whose variable holds the data directly rather than a reference.  Nil, booleans, numbers, and strings are value types.  Assignment copies the value.  See <<ch-types-and-values>>.
+
+Variant value::
+A value that is unconstrained by construction rather than by an unresolved origin: a read from a name declared `:any`, a member or index read from a known `table`, or a result declared or inferred `any`.  A variant value requires no annotation at a declaration and infers an `any` result at a `return`, in contrast to dynamic ingress (<<sec-dynamic-ingress>>).  See <<sec-return-type-inference>>.
 
 Variant global::
 A global declared with an explicit `:any` annotation, opting the name out of sticky typing.  The opt-out persists in the environment and supersedes a concrete contract established by an earlier declaration of the same name.  See <<sec-global-contracts>>.

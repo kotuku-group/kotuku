@@ -1,3 +1,4 @@
+// UPDATED: 2026-08-06 - Renamed array<object> to array<obj>, the sole accepted source spelling (commit ca06aefda)
 
 [[ch-threading]]
 == Threading
@@ -155,7 +156,7 @@ An exception is raised if:
 * The action/method name is not recognised.
 * The asynchronous action fails to launch.  In this case, the callback is not executed.
 
-In this example, `pictures` is an `array<object>` of pre-configured `Picture` objects that are processed in parallel by firing `Activate` actions in their own threads:
+In this example, `pictures` is an `array<obj>` of pre-configured `Picture` objects that are processed in parallel by firing `Activate` actions in their own threads:
 
 [source,tiri]
 ----
@@ -195,7 +196,7 @@ Any async actions submitted during callback execution — including actions targ
 
 indexterm:[threading, queue management] Blocks the main thread until all queued and in-flight asynchronous actions for the listed objects have completed.  Message processing continues while waiting, so async completion callbacks still fire.
 
-`Objects` is a single Kōtuku object or `array<object>` list.  `Timeout` is an optional number of seconds to wait before returning `ERR_Timeout`.  If omitted, the wait is indefinite.
+`Objects` is a single Kōtuku object or `array<obj>` list.  `Timeout` is an optional number of seconds to wait before returning `ERR_Timeout`.  If omitted, the wait is indefinite.
 
 Returns `ERR_Okay` when all async actions have completed, or `ERR_Timeout` if the timeout elapses first.  Inside a `try` block, error codes are promoted to exceptions.
 
@@ -213,7 +214,7 @@ check async.wait(script, 5.0) -- Block until complete (5 second timeout)
 [%unbreakable]
 [source,tiri]
 ----
-scripts = array<object> { script_a, script_b, script_c }
+scripts = array<obj> { script_a, script_b, script_c }
 scripts |> (s) => async.script(s)
 check async.wait(scripts, 10.0) -- Block until all three complete
 ----
@@ -243,7 +244,7 @@ print(async.pending(script)) -- 0 (complete)
 
 Cancels all pending asynchronous actions for the listed objects.  The in-flight thread (if any) is interrupted and the remaining action queue is drained without execution.  Callbacks for cancelled actions receive `ERR_DoesNotExist`.
 
-`Objects` can be a single Kōtuku object or `array<object>` list.  Returns `ERR_Okay` on success.  Inside a `try` block, a non-zero error raises an exception.
+`Objects` can be a single Kōtuku object or `array<obj>` list.  Returns `ERR_Okay` on success.  Inside a `try` block, a non-zero error raises an exception.
 
 Cancelling an object with no pending actions succeeds without error.
 
@@ -262,7 +263,7 @@ check async.wait(script, 5.0)
 .Cancelling multiple objects
 [source,tiri]
 ----
-check async.cancel(array<object> { script_a, script_b })
+check async.cancel(array<obj> { script_a, script_b })
 ----
 
 [[sec-thread-synchronisation]]
@@ -306,7 +307,7 @@ For finer-grained coordination, create worker objects in an array and pass them 
 ----
 file_a = obj.new('file', { ... })
 file_b = obj.new('file', { ... })
-work_list = array<object> { file_a, file_b }
+work_list = array<obj> { file_a, file_b }
 
 async.script(obj.new('script', { statement=[[ msg('Task A') ]] }),
    function(Object)
@@ -331,7 +332,7 @@ The pipe iteration operator (see <<sec-pipe-iteration>>) can be combined with `a
 
 [source,tiri]
 ----
-   scripts = array<object> { } <1>
+   scripts = array<obj> { } <1>
    for i in {1 into 10} do
       scripts:push(obj.new('script', { statement = [[
          print('Pipe worker ]] .. i .. [[ running.'); return ]] .. i <2>

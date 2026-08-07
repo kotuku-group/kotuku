@@ -2,10 +2,13 @@
 // UPDATED: 2026-05-18 - Updated negative index slicing to reflect corrected inclusive/exclusive stop semantics (commit 15d3bed4)
 // UPDATED: 2026-05-20 - Updated concat() with new API (separator-first, optional format, range support); removed join() which was merged into concat() (commit 2fbf2ea0)
 // UPDATED: 2026-07-02 - Documented in-place ..= append, byte-array string pushes, and array<char> as the preferred string-buffer builder (commit 1dc290463)
+// UPDATED: 2026-08-06 - int8 accepted as a byte element synonym; recorded the complete set of accepted element type names (commit 7517513e3)
 // UPDATED: 2026-07-26 - Range arguments to fill(), find() and slice() must be whole-numbered; fractional ranges raise an error (commit 687f1eb7)
 // CHANGED: 2026-07-31 — Removed repeated array-concatenation guidance.
 // UPDATED: 2026-08-02 - Documented the exact element storage contract, defined numeric narrowing, atomic mutation, and struct element identity (commit c393e710d)
 // UPDATED: 2026-08-02 - Cross-referenced member-specialised array type annotations (commit 31fd44072)
+// UPDATED: 2026-08-06 - The object element type is now spelled 'obj'; recorded the 'object' synonym retained by
+//                       array.new() and array.of() (commit ca06aefda)
 
 [[ch-arrays]]
 == Arrays
@@ -66,9 +69,9 @@ indexterm:[arrays, fundamentals] Each array declares a fixed element type at cre
 |8
 |Table reference (garbage-collected)
 
-|`object`
+|`obj`
 |8
-|Kōtuku object reference (garbage-collected)
+|Kōtuku object reference (garbage-collected).  `arr:type()` reports the element type as `'object'`.
 
 |`array`
 |8
@@ -90,13 +93,13 @@ indexterm:[arrays, fundamentals] Each array declares a fixed element type at cre
 indexterm:[arrays, element storage] indexterm:[arrays, type safety] Every operation that writes an element applies the same contract.  A value is stored only if it matches the declared element type exactly.  Values are never converted between categories; a conversion that crosses categories must be written explicitly at the call site.
 
 * Numeric and string element types accept their counterparts only.  Use `tonumber()` and `tostring()` for conversion.
-* The `table`, `array` and `object` element types accept only a value of that exact category.
+* The `table`, `array` and `obj` element types accept only a value of that exact category.
 * A `struct<Name>` element type accepts only instances of the same struct definition.  A different definition is rejected even when its field layout is identical.
 * The `any` element type accepts every value.
 
 The element type therefore behaves as a type contract on every write, applying the same identity rules as the runtime contracts defined in <<sec-runtime-type-contracts>>.
 
-`nil` writes the empty value for the element type: zero for numeric elements, a cleared reference for `string`, `table`, `array` and `object` elements, and `nil` for `any` elements.  The `struct<Name>` element type is the sole exception and rejects `nil`, because a struct element is stored by value and has no empty representation.
+`nil` writes the empty value for the element type: zero for numeric elements, a cleared reference for `string`, `table`, `array` and `obj` elements, and `nil` for `any` elements.  The `struct<Name>` element type is the sole exception and rejects `nil`, because a struct element is stored by value and has no empty representation.
 
 Byte arrays (`byte`, `char`) extend the contract for two operations: 
 
@@ -206,7 +209,7 @@ Equality rules depend on the element type:
 |`string`
 |Element-by-element string comparison (hash, length, then content).
 
-|`object`
+|`obj`
 |Element-by-element comparison of object UIDs.
 |===
 
@@ -531,7 +534,7 @@ refs:fill(nil, 1, 2)      -- clears refs[1] and refs[2]
 
 Sorts the array in place.  The default order is ascending.  If `Descending` is `true`, sorts in descending order.  Supported for all numeric types, string arrays, and `any` arrays.
 
-Alternatively, a comparator function can be provided.  The function receives two elements `(a, b)` and returns `true` if `a` precedes `b` in the sorted result.  This works for all pushable array types, including `table` and `object` arrays.
+Alternatively, a comparator function can be provided.  The function receives two elements `(a, b)` and returns `true` if `a` precedes `b` in the sorted result.  This works for all pushable array types, including `table` and `obj` arrays.
 
 [source,tiri]
 ----
@@ -597,7 +600,7 @@ Changes the array length to `NewSize`.  When growing, new elements are zero-init
 
 indexterm:[arrays, searching] indexterm:[arrays, querying] Searches for `Value` and returns its zero-based index, or `nil` if not found.  With a numeric `Start`, the search begins at that index.  With a range, the search is restricted to the indices selected by the range (supports exclusive, inclusive, negative, stepped, and reverse ranges).  The range must be whole-numbered as defined in <<sec-range-index-requirement>>; a fractional range raises an error.
 
-For `object` arrays, `Value` can be an object or a numeric UID.
+For `obj` arrays, `Value` can be an object or a numeric UID.
 
 [source,tiri]
 ----
