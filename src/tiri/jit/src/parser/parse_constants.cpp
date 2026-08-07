@@ -52,6 +52,19 @@ GCstr* LexState::keepstr(std::string_view str)
    return s;
 }
 
+// Anchor a string as a genuine GC constant of the function under construction.
+//
+// keepstr() only pins a string in the constant table for the duration of parsing; the entry carries no constant slot,
+// so fs_fixup_k() does not copy it into the prototype's kgc array and the GC would not mark it afterwards.  Metadata
+// that outlives parsing and refers to a GCstr - module dependency descriptors in particular - must use this instead,
+// so that the reference is reachable from the prototype for as long as the prototype exists.
+
+GCstr* LexState::anchorstr(GCstr *Value)
+{
+   if (Value) (void)const_gc(this->fs, obj2gco(Value), LJ_TSTR);
+   return Value;
+}
+
 GCstr* LexState::intern_empty_string()
 {
    if (!this->empty_string_constant) this->empty_string_constant = this->keepstr(std::string_view());

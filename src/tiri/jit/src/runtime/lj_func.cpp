@@ -24,6 +24,13 @@ void lj_func_freeproto(global_State *g, GCproto *pt)
    if (pt->try_blocks) lj_mem_free(g, pt->try_blocks, pt->try_block_count * sizeof(TryBlockDesc));
    if (pt->try_handlers) lj_mem_free(g, pt->try_handlers, pt->try_handler_count * sizeof(TryHandlerDesc));
 
+   // The resolved dependency sidecar holds non-owning pointers into the global module registry, so releasing it must
+   // not touch the records themselves.  The registry outlives every Tiri state by contract (see expunge_modules()).
+
+   if (pt->resolved_dependencies) {
+      lj_mem_free(g, pt->resolved_dependencies, pt->resolved_count * sizeof(void *));
+   }
+
    lj_mem_free(g, pt, pt->sizept);
 }
 

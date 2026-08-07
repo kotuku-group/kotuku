@@ -228,6 +228,7 @@ private:
    [[nodiscard]] GCstr *module_function_binding(ModuleDependency &, GCstr *CanonicalFunction);
    [[nodiscard]] StmtNodePtr make_dependency_initialiser(ModuleDependency &, const SourceSpan &);
    void finalise_module_dependencies();
+   void publish_dependency_descriptors();
    void prepend_implicit_dependencies(BlockStmt &);
    void append_pending_statements(StmtNodeList &);
 

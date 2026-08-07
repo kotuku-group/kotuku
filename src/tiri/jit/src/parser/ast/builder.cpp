@@ -512,9 +512,15 @@ GCstr * AstBuilder::module_function_binding(ModuleDependency &Dependency, GCstr 
 //
 // A declaration that references no function still has to resolve its module during activation, so its initialiser
 // retains a single hidden sentinel binding rather than becoming an empty local declaration.
+//
+// The same pass publishes the portable descriptors that fs_finish colocates with the prototype.  They are recorded
+// even while the hidden-local lowering remains the active dispatch path, so that serialised chunks carry canonical
+// dependency metadata that a fresh state or process can resolve without re-parsing the source.
 
 void AstBuilder::finalise_module_dependencies()
 {
+   this->publish_dependency_descriptors();
+
    for (auto &dependency : this->module_dependencies) {
       if (not dependency->initialiser) continue;
 
@@ -539,6 +545,55 @@ void AstBuilder::finalise_module_dependencies()
          // source can rebind it, and the const validator requires one initialiser expression per name whereas the
          // binder supplies its results as a single multiple-value call.
          payload->names.push_back(Identifier::from_keepstr(function.binding, span));
+      }
+   }
+}
+
+//********************************************************************************************************************
+// Record the compilation unit's module dependencies as portable descriptors on the function state.
+//
+// The descriptors hold canonical names only.  A native address or an export-list index is a process identity and
+// would not survive serialisation, whereas a canonical name resolves against the module's current exports in any
+// process.  Deduplication has already happened: aliases of one canonical module share a single ModuleDependency, and
+// module_function_binding() pools repeated references to one function.
+//
+// Descriptors are unit-scoped, so only the root function state carries them.  An imported file is parsed by a nested
+// builder against its own function state and contributes its dependencies through that unit's own descriptors.
+
+void AstBuilder::publish_dependency_descriptors()
+{
+   if (this->module_dependencies.empty()) return;
+
+   auto &target = this->ctx.func();
+   target.module_descriptors.clear();
+
+   if (this->module_dependencies.size() > PROTO_MAX_DEPENDENCIES) {
+      this->ctx.emit_error(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         std::format("A compilation unit may declare at most {} module dependencies", PROTO_MAX_DEPENDENCIES));
+      return;
+   }
+
+   size_t total_functions = 0;
+   for (const auto &dependency : this->module_dependencies) total_functions += dependency->functions.size();
+
+   if (total_functions > PROTO_MAX_DEPENDENCY_FUNCTIONS) {
+      this->ctx.emit_error(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+         std::format("A compilation unit may reference at most {} module functions",
+            PROTO_MAX_DEPENDENCY_FUNCTIONS));
+      return;
+   }
+
+   target.module_descriptors.reserve(this->module_dependencies.size());
+   for (const auto &dependency : this->module_dependencies) {
+      // Anchor every name as a GC constant of the prototype.  The descriptors outlive parsing, so a name that is not
+      // otherwise emitted as a constant - a dependency-only module in particular - would be unreachable and could be
+      // collected while the prototype still refers to it.
+
+      auto &descriptor = target.module_descriptors.emplace_back();
+      descriptor.name = this->ctx.lex().anchorstr(this->ctx.lex().keepstr(dependency->canonical_module));
+      descriptor.functions.reserve(dependency->functions.size());
+      for (const auto &function : dependency->functions) {
+         descriptor.functions.push_back(this->ctx.lex().anchorstr(function.function));
       }
    }
 }

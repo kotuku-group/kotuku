@@ -709,6 +709,58 @@ static_assert(sizeof(ProtoSignature) IS 8, "ProtoSignature header must remain co
    return sizeof(ProtoSignature) + (ParameterCount + ResultEntryCount) * sizeof(ProtoTypeEntry);
 }
 
+// Portable module dependency metadata.
+//
+// A compilation unit that declares `module x as mX` records the canonical module name and the canonical names of the
+// functions it references.  Only names are persisted: a native address or a function index would be a process
+// identity and could not survive serialisation, whereas a name resolves against the module's current export list in
+// any process.  Resolution happens through the global module registry, which owns the resulting records.
+//
+// The descriptors are colocated with the prototype and reference strings that are also anchored in the prototype's
+// GC constant table, so the GC keeps them alive without any additional marking.
+
+inline constexpr uint8_t PROTO_DEPENDENCY_VERSION = 1;
+
+// Bounds are deliberately small.  They are far above any plausible compilation unit and keep a corrupt or hostile
+// dump from requesting an unbounded allocation before the names have been validated.
+
+inline constexpr uint32_t PROTO_MAX_DEPENDENCIES = 255;
+inline constexpr uint32_t PROTO_MAX_DEPENDENCY_FUNCTIONS = 1023;
+
+// One referenced module function.  'module' indexes the dependency that owns it.
+
+struct ProtoDependencyFunction {
+   GCRef name;             // Canonical function name as exported by the module
+   uint16_t module = 0;    // Owning ProtoDependency index
+   uint16_t reserved = 0;
+};
+
+// One declared module dependency.  A declaration that references no function still needs a descriptor, because the
+// module must be resolved and retained even when nothing is called through it.
+
+struct ProtoDependency {
+   GCRef name;                  // Canonical module name
+   uint16_t first_function = 0; // Index of this dependency's first entry in the function array
+   uint16_t function_count = 0;
+};
+
+// Header of the colocated descriptor block, followed by ProtoDependency[] then ProtoDependencyFunction[].
+
+struct ProtoDependencyTable {
+   uint8_t version = PROTO_DEPENDENCY_VERSION;
+   uint8_t reserved = 0;
+   uint16_t dependency_count = 0;
+   uint32_t function_count = 0;
+};
+
+static_assert(sizeof(ProtoDependencyTable) IS 8, "ProtoDependencyTable header must remain compact");
+
+[[nodiscard]] constexpr inline size_t proto_dependency_size(size_t DependencyCount, size_t FunctionCount) noexcept
+{
+   return sizeof(ProtoDependencyTable) + DependencyCount * sizeof(ProtoDependency) +
+      FunctionCount * sizeof(ProtoDependencyFunction);
+}
+
 // Exception frame for try-except blocks (runtime state)
 // Note: frame_base and saved_top are offsets from L->stack (not absolute pointers) because the Lua stack can be
 // reallocated during execution.  Use savestack(L, ptr) to convert to offset, restorestack(L, offset) to convert back.
@@ -760,6 +812,12 @@ typedef struct GCproto {
    TryHandlerDesc *try_handlers;      // Array of handler descriptors (nullptr if none)
    uint16_t        try_block_count;   // Number of try blocks
    uint16_t        try_handler_count; // Number of handlers
+   // Module dependency metadata.  'dependencies' is a colocated portable descriptor block containing canonical names
+   // only; 'resolved_dependencies' is a separately allocated sidecar of non-owning pointers to the global registry's
+   // callable records, built on first activation and freed with the prototype.
+   MRef            dependencies;      // Colocated ProtoDependencyTable, or null when the unit declares no module.
+   void          **resolved_dependencies; // ModuleCallable *[] sidecar, or nullptr until resolved.
+   uint32_t        resolved_count;    // Number of sidecar slots.
 } GCproto;
 
 // Flags for prototype.
@@ -868,6 +926,42 @@ inline void proto_metadata_init(GCproto *Proto) noexcept
    Proto->try_handlers = nullptr;
    Proto->try_block_count = 0;
    Proto->try_handler_count = 0;
+   setmref(Proto->dependencies, nullptr);
+   Proto->resolved_dependencies = nullptr;
+   Proto->resolved_count = 0;
+}
+
+[[nodiscard]] inline const ProtoDependencyTable * proto_dependencies(const GCproto *Proto) noexcept
+{
+   return Proto->dependencies.get<const ProtoDependencyTable>();
+}
+
+[[nodiscard]] inline ProtoDependencyTable * proto_dependencies(GCproto *Proto) noexcept
+{
+   return Proto->dependencies.get<ProtoDependencyTable>();
+}
+
+[[nodiscard]] inline const ProtoDependency * proto_dependency_list(const ProtoDependencyTable *Table) noexcept
+{
+   return Table ? (const ProtoDependency *)(Table + 1) : nullptr;
+}
+
+[[nodiscard]] inline ProtoDependency * proto_dependency_list(ProtoDependencyTable *Table) noexcept
+{
+   return Table ? (ProtoDependency *)(Table + 1) : nullptr;
+}
+
+[[nodiscard]] inline const ProtoDependencyFunction * proto_dependency_functions(
+   const ProtoDependencyTable *Table) noexcept
+{
+   if (not Table) return nullptr;
+   return (const ProtoDependencyFunction *)(proto_dependency_list(Table) + Table->dependency_count);
+}
+
+[[nodiscard]] inline ProtoDependencyFunction * proto_dependency_functions(ProtoDependencyTable *Table) noexcept
+{
+   if (not Table) return nullptr;
+   return (ProtoDependencyFunction *)(proto_dependency_list(Table) + Table->dependency_count);
 }
 
 // Forward declarations - defined after GCobj is complete

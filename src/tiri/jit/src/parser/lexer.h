@@ -234,6 +234,7 @@ public:
 
    // Public parser helpers
    GCstr * keepstr(std::string_view Value);
+   GCstr * anchorstr(GCstr *Value);
    [[nodiscard]] GCstr* intern_empty_string();
    void ensure_lookahead(size_t count);
    [[nodiscard]] size_t available_lookahead() const;

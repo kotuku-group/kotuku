@@ -92,6 +92,16 @@ struct FuncState {
    uint8_t try_depth = 0;  // Current try nesting depth for break/continue cleanup
    bool is_root = false;   // True if this is the top-level (root) function
 
+   // Portable module dependency descriptors, published by the AST builder once the compilation unit is fully parsed
+   // and copied to the prototype during fs_finish.  Only the root function carries them, because module declarations
+   // are unit-scoped.  Names are canonical and interned, so the strings are also anchored as GC constants.
+   struct DependencyDescriptor {
+      GCstr *name = nullptr;                 // Canonical module name
+      std::vector<GCstr *> functions;        // Canonical names of the functions this unit references
+   };
+
+   std::vector<DependencyDescriptor> module_descriptors;
+
    // Default constructor - initialises all fields to safe defaults.
    FuncState() = default;
 

@@ -424,6 +424,13 @@ ERR load_module_defs(std::string_view);
 [[nodiscard]] const FunctionField * static_module_function(StaticModuleHandle, std::string_view) noexcept;
 [[nodiscard]] std::string_view static_module_name(StaticModuleHandle) noexcept;
 [[nodiscard]] std::string_view static_module_function_name(StaticModuleHandle, std::string_view) noexcept;
+// Resolves a prototype's portable dependency descriptors into its state-owned sidecar of non-owning pointers to
+// global registry records.  Idempotent; called at dependency activation so that failure timing is unchanged.
+ERR resolve_proto_dependencies(lua_State *, struct GCproto *, std::string &);
+[[nodiscard]] APTR proto_dependency_callable(struct GCproto *, uint32_t);
+// Running total of module function-name lookups.  Exposed so that tests can observe whether a dependency activation
+// was served from the prototype's resolved sidecar or by re-resolving each name.
+[[nodiscard]] uint64_t module_function_lookup_count();
 int MAKESTRUCT(lua_State *);
 [[maybe_unused]] void make_any_array(lua_State *, int, std::string_view, int, CPTR, struct_record * = nullptr);
 [[maybe_unused]] void make_array(lua_State *, AET, int = 0, CPTR = nullptr, std::string_view = {});

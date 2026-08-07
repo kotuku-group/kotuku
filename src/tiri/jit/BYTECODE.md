@@ -652,6 +652,40 @@ bytecode dumps retain signatures, and nested prototypes are handled recursively.
 Debug bytecode output prints a deterministic signature header and one line for every stored parameter and result
 entry. It resolves known constraint names when possible and otherwise prints the stable identifier.
 
+### 10.4 Module Dependency Descriptors
+
+A compilation unit that declares `module x as mX` records its dependencies as portable descriptors on the unit's
+prototype.  Module declarations are unit-scoped, so only the prototype that declared them carries a descriptor block;
+ordinary functions carry none and pay nothing.
+
+Each block holds a version, a dependency array and a function array:
+
+- a dependency stores the canonical module name and the contiguous range of functions the unit references from it;
+- a function stores the canonical function name and its owning dependency index.
+
+Only names are persisted.  A native address or an export-list index is a process identity: it could not survive
+serialisation, and a stored index would select the wrong function if the module's export list were reordered or
+extended between writing and loading.  Names resolve against the global module registry in any process.
+
+Descriptors are deduplicated at compile time.  Aliases of one canonical module share one dependency, and repeated
+references to one function share one entry.  A declaration that references no function still produces a dependency,
+because the module must be resolved and retained regardless.
+
+The block is stored in the prototype allocation after the signature, naturally aligned because its entries hold
+`GCRef` fields.  Names are anchored as GC constants when the parser builds the prototype; a prototype rebuilt from a
+dump has no such constants, so the collector marks the descriptor names directly.
+
+Resolution produces a state-owned sidecar of non-owning pointers to the registry's callable records.  The sidecar is
+allocated on first activation, freed with the prototype, and never stored in a global collection.  Registry records
+remain stable until expunge, which runs only once no Tiri state can execute, so a resolved pointer cannot dangle.
+Resolution happens at activation rather than at load, which preserves the existing failure timing: a missing module or
+function is reported when the dependency declaration executes.
+
+The reader validates the block structurally before allocating anything: bounded counts, contiguous non-overlapping
+function ranges, an owning dependency that actually contains each function, no duplicate module names, non-empty names
+and exact consumption of the declared length.  Structural validity is not export validity, so every name is
+revalidated against the registry at resolution.
+
 ## 11. Testing, Debugging, and Tooling
 ### 11.1 Using Flute and Tiri Tests
 - Run the Tiri regression tests under `src/tiri/tests/` (e.g. `test_if_empty.tiri`, `test_presence.tiri`, logical/ternary suites) to validate control-flow changes.
@@ -742,6 +776,8 @@ entry. It resolves known constraint names when possible and otherwise prints the
 - Basic tag contracts use trace slot specialisation. Prototypes needing structure identity, range metatable,
   callable-value or dynamic-result predicates remain interpreter-only until those predicates have dedicated trace IR
   guards.
-- The private bytecode dump version is `0x85`. It includes a length-delimited, schema-versioned signature before each
-  prototype's bytecode and preserves constant-table classification flags. Every older version is rejected at the header;
-  discard old dumps and rebuild them from source.
+- The private bytecode dump version is `0x86`. It includes a length-delimited, schema-versioned signature and a
+  length-delimited module dependency block before each prototype's bytecode, and preserves constant-table
+  classification flags. Every older version, `0x85` included, is rejected at the header: the dependency block added an
+  unconditional length field to every prototype header, so an earlier dump cannot be decoded. Discard old dumps and
+  rebuild them from source.

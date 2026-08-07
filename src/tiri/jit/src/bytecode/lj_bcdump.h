@@ -14,11 +14,14 @@
 ** dump   = header proto+ 0U
 ** header = ESC 'L' 'J' versionB flagsU [namelenU nameB*]
 ** proto  = lengthU pdata
-** pdata  = phead signatureB* bcinsW* uvdataH* kgc* knum* [debugB*]
-** phead  = flagsB numparamsB framesizeB numuvB numkgcU numknU numbcU siglenU
+** pdata  = phead signatureB* dependB* bcinsW* uvdataH* kgc* knum* [debugB*]
+** phead  = flagsB numparamsB framesizeB numuvB numkgcU numknU numbcU siglenU deplenU
 **          [debuglenU [firstlineU numlineU]]
 ** signature = sigversionB sigflagsB paramcountU resultcountU resultentriesU typeentry*
 ** typeentry = typeB metaflagsB constraintU
+** depend = depversionB depcountU funccountU depentry* funcentry*
+** depentry  = namelenU nameB* funcfirstU funccountU
+** funcentry = namelenU nameB* moduleU
 ** kgc    = kgctypeU { ktab | (loU hiU) | (rloU rhiU iloU ihiU) | strB* }
 ** knum   = intU0 | (loU1 hiU)
 ** ktab   = flagsU narrayU nhashU karray* khash*
@@ -37,7 +40,11 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // If you perform *any* kind of private modifications to the bytecode itself
 // or to the dump format, you *must* set BCDUMP_VERSION to 0x80 or higher.
 
-constexpr uint8_t BCDUMP_VERSION = 0x85;
+// 0x86 adds the per-prototype module dependency descriptor block.  The prototype header gained an unconditional
+// length field, so a 0x85 dump cannot be decoded by this reader; it is rejected by the existing version check rather
+// than being read through a compatibility path (Gate E, option 2).
+
+constexpr uint8_t BCDUMP_VERSION = 0x86;
 
 // Compatibility flags.
 

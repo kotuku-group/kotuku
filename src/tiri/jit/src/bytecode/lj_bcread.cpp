@@ -483,17 +483,192 @@ static void bcread_install_signature(GCproto *Proto, void *Buffer, const BCReadS
 }
 
 //********************************************************************************************************************
+// Read and validate the portable module dependency descriptors.
+//
+// Names are validated and located here but deliberately neither interned nor resolved.  Interning is deferred to
+// installation because a GCstr held only by this structure would be unreachable across the prototype allocation, and
+// the reader's stack discipline reserves L->top for child prototypes.  Resolution is deferred to activation, so that
+// a chunk still loads when a module is temporarily unavailable and the failure is reported at the documented point.
+//
+// Validation is structural only, and every count is bounded before any allocation depends on it.
+
+struct BCReadDependencies {
+   bool present = false;
+
+   // A private copy of the dependency block.  The reader's buffer is refilled by later reads and the names must
+   // outlive that, but they cannot be interned early either: an unanchored GCstr would not survive the prototype
+   // allocation, and interning after the allocation would run the collector over a prototype whose constant array is
+   // still uninitialised.  Copying the bytes decouples both concerns for a few hundred bytes at most.
+
+   std::string storage;
+
+   struct Entry {
+      uint32_t name_offset = 0;  // Offset of the name within 'storage'
+      uint32_t name_length = 0;
+      uint32_t first = 0;        // Dependencies: first function index.  Functions: owning dependency index.
+      uint32_t count = 0;        // Dependencies only
+   };
+
+   std::vector<Entry> dependencies;
+   std::vector<Entry> functions;
+
+   [[nodiscard]] std::string_view name_of(const Entry &Value) const {
+      return std::string_view(this->storage).substr(Value.name_offset, Value.name_length);
+   }
+};
+
+static void bcread_dependency_name(LexState *State, const uint8_t *&Cursor, const uint8_t *End,
+   const uint8_t *Base, BCReadDependencies::Entry &Entry)
+{
+   uint32_t length = 0;
+   if (not bcread_signature_uleb(Cursor, End, length)) bcread_error(State, ErrMsg::BCBAD);
+
+   // A zero-length or oversized name cannot be a canonical module or function name, and would otherwise be carried
+   // into the registry lookup as an unresolvable entry.
+
+   if (length IS 0 or length > LJ_MAX_STR or uint32_t(End - Cursor) < length) bcread_error(State, ErrMsg::BCBAD);
+
+   Entry.name_offset = uint32_t(Cursor - Base);
+   Entry.name_length = length;
+   Cursor += length;
+}
+
+static void bcread_dependencies(LexState *State, MSize Size, BCReadDependencies &Result)
+{
+   if (Size IS 0) return;
+
+   bcread_need(State, Size);
+   const uint8_t *base = bcread_mem(State, Size);
+   const uint8_t *cursor = base;
+   const uint8_t *end = base + Size;
+   if (end - cursor < 1) bcread_error(State, ErrMsg::BCBAD);
+
+   uint8_t version = *cursor++;
+   if (version != PROTO_DEPENDENCY_VERSION) bcread_error(State, ErrMsg::BCBAD);
+
+   uint32_t dependency_count = 0;
+   uint32_t function_count = 0;
+   if (not bcread_signature_uleb(cursor, end, dependency_count) or
+       not bcread_signature_uleb(cursor, end, function_count) or
+       dependency_count IS 0 or dependency_count > PROTO_MAX_DEPENDENCIES or
+       function_count > PROTO_MAX_DEPENDENCY_FUNCTIONS) {
+      bcread_error(State, ErrMsg::BCBAD);
+   }
+
+   Result.storage.assign((const char *)base, Size);
+   Result.dependencies.reserve(dependency_count);
+   Result.functions.reserve(function_count);
+
+   uint32_t expected_first = 0;
+   for (uint32_t i = 0; i < dependency_count; ++i) {
+      BCReadDependencies::Entry entry;
+      bcread_dependency_name(State, cursor, end, base, entry);
+      if (not bcread_signature_uleb(cursor, end, entry.first) or
+          not bcread_signature_uleb(cursor, end, entry.count)) {
+         bcread_error(State, ErrMsg::BCBAD);
+      }
+
+      // The writer emits one contiguous, ordered run per dependency.  Requiring the same here means a slice can be
+      // trusted without a further bounds check at activation, and rejects overlapping or out-of-range ranges.
+
+      if (entry.first != expected_first or entry.count > function_count - entry.first) {
+         bcread_error(State, ErrMsg::BCBAD);
+      }
+      expected_first = entry.first + entry.count;
+
+      // Aliases of one canonical module are pooled by the compiler, so a repeated module name is a corrupt or
+      // hand-edited dump rather than anything the writer can produce.
+
+      for (const auto &existing : Result.dependencies) {
+         if (kt::iequals(Result.name_of(existing), Result.name_of(entry))) bcread_error(State, ErrMsg::BCBAD);
+      }
+
+      Result.dependencies.push_back(entry);
+   }
+
+   if (expected_first != function_count) bcread_error(State, ErrMsg::BCBAD);
+
+   for (uint32_t i = 0; i < function_count; ++i) {
+      BCReadDependencies::Entry entry;
+      bcread_dependency_name(State, cursor, end, base, entry);
+      if (not bcread_signature_uleb(cursor, end, entry.first) or entry.first >= dependency_count) {
+         bcread_error(State, ErrMsg::BCBAD);
+      }
+
+      // The owning dependency's declared range must actually contain this entry, otherwise a slice would expose a
+      // function belonging to a different module.
+
+      const auto &owner = Result.dependencies[entry.first];
+      if (i < owner.first or i >= owner.first + owner.count) bcread_error(State, ErrMsg::BCBAD);
+
+      Result.functions.push_back(entry);
+   }
+
+   if (cursor != end) bcread_error(State, ErrMsg::BCBAD);
+   Result.present = true;
+}
+
+// Intern the validated names and write them into the colocated table.
+//
+// This must run only once the prototype's constant array is complete, because lj_str_new() can step the collector and
+// the descriptor names are reachable solely through the prototype.  Each reference is therefore installed as soon as
+// its string exists, and the table's counts are written first so that a traversal never sees an unbounded array.
+
+static void bcread_install_dependencies(lua_State *L, GCproto *Proto, void *Buffer,
+   const BCReadDependencies &Source)
+{
+   if (not Source.present) return;
+
+   auto table = (ProtoDependencyTable *)Buffer;
+   table->version = PROTO_DEPENDENCY_VERSION;
+   table->reserved = 0;
+
+   // dependency_count is final from the outset because the function array's position is derived from it.  Only
+   // function_count grows as entries are filled, so a traversal during interning sees a prefix of complete entries.
+
+   table->dependency_count = uint16_t(Source.dependencies.size());
+   table->function_count = 0;
+
+   auto dependencies = proto_dependency_list(table);
+   auto functions = proto_dependency_functions(table);
+
+   for (size_t i = 0; i < Source.dependencies.size(); ++i) {
+      dependencies[i].first_function = uint16_t(Source.dependencies[i].first);
+      dependencies[i].function_count = uint16_t(Source.dependencies[i].count);
+      setgcref(dependencies[i].name, obj2gco(&G(L)->strempty));
+   }
+
+   setmref(Proto->dependencies, table);
+
+   for (size_t i = 0; i < Source.dependencies.size(); ++i) {
+      std::string_view name = Source.name_of(Source.dependencies[i]);
+      setgcref(dependencies[i].name, obj2gco(lj_str_new(L, name.data(), name.size())));
+   }
+
+   for (size_t i = 0; i < Source.functions.size(); ++i) {
+      std::string_view name = Source.name_of(Source.functions[i]);
+      GCstr *interned = lj_str_new(L, name.data(), name.size());
+      setgcref(functions[i].name, obj2gco(interned));
+      functions[i].module = uint16_t(Source.functions[i].first);
+      functions[i].reserved = 0;
+      table->function_count = uint32_t(i + 1);
+   }
+}
+
+//********************************************************************************************************************
 // Read a prototype.
 
 GCproto *lj_bcread_proto(LexState *State)
 {
    GCproto *pt;
    MSize framesize, numparams, flags, sizeuv, sizekgc, sizekn, sizebc, sizept;
-   MSize ofsk, ofsuv, ofssig, ofsdbg;
+   MSize ofsk, ofsuv, ofssig, ofsdep, ofsdbg;
    MSize sizedbg = 0;
    MSize sizesig = 0;
+   MSize sizedep = 0;
    BCLine firstline = 0, numline = 0;
    BCReadSignature signature;
+   BCReadDependencies dependencies;
 
    // Read prototype header.
    flags     = bcread_byte(State);
@@ -504,6 +679,7 @@ GCproto *lj_bcread_proto(LexState *State)
    sizekn    = bcread_uleb128(State);
    sizebc    = bcread_uleb128(State) + 1;
    sizesig = bcread_uleb128(State);
+   sizedep = bcread_uleb128(State);
    if (!(bcread_flags(State) & BCDUMP_F_STRIP)) {
       sizedbg = bcread_uleb128(State);
       if (sizedbg) {
@@ -513,15 +689,25 @@ GCproto *lj_bcread_proto(LexState *State)
    }
    bcread_signature(State, sizesig, numparams, signature);
 
+   // The validated dependency names are referenced in place within the read buffer, which the next refill may move.
+   // No further bcread_need()/bcread_want() call may occur before bcread_install_dependencies() has interned them.
+
+   bcread_dependencies(State, sizedep, dependencies);
+
    // Calculate total size of prototype including all colocated arrays.
 
    MSize signature_memory_size = signature.present ?
       MSize(proto_signature_size(signature.parameter_count, signature.result_entry_count)) : 0;
+   MSize dependency_memory_size = dependencies.present ?
+      MSize(proto_dependency_size(dependencies.dependencies.size(), dependencies.functions.size())) : 0;
    sizept = (MSize)sizeof(GCproto) + sizebc * (MSize)sizeof(BCIns) + sizekgc * (MSize)sizeof(GCRef);
    sizept = (sizept + (MSize)sizeof(TValue) - 1) & ~((MSize)sizeof(TValue) - 1);
    ofsk   = sizept; sizept += sizekn * (MSize)sizeof(TValue);
    ofsuv  = sizept; sizept += ((sizeuv + 1) & ~1) * 2;
    ofssig = sizept; sizept += signature_memory_size;
+   // The descriptors hold GCRef fields and must be naturally aligned; the upvalue array is only 2-byte granular.
+   sizept = (sizept + (MSize)alignof(ProtoDependency) - 1) & ~((MSize)alignof(ProtoDependency) - 1);
+   ofsdep = sizept; sizept += dependency_memory_size;
    ofsdbg = sizept; sizept += sizedbg;
 
    // Allocate prototype object and initialize its fields.
@@ -557,6 +743,11 @@ GCproto *lj_bcread_proto(LexState *State)
    bcread_kgc(State, pt, sizekgc);
    pt->sizekgc = sizekgc;
    bcread_knum(State, pt, sizekn);
+
+   // Deferred until the constant array is complete, because interning the names can step the collector and the
+   // prototype must be safe to traverse by then.
+
+   bcread_install_dependencies(State->L, pt, (char *)pt + ofsdep, dependencies);
 
    // Read and initialize debug info.
 
