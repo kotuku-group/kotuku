@@ -989,7 +989,7 @@ static ERR register_interfaces(extTiri *Self)
    reg_func_prototype("unsubscribeEvent", {}, { TiriType::Userdata });
    reg_func_prototype("MAKESTRUCT", { TiriType::Any }, { TiriType::Str });
 
-   if (auto error = load_include(Self, "core"); error != ERR::Okay) {
+   if (auto error = load_module_defs("core"); error != ERR::Okay) {
       log.error("Failed to process the core includes.");
       return error;
    }

@@ -1370,7 +1370,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_check()
 }
 
 //********************************************************************************************************************
-// Validates an include module name before load_include() touches the module loader.
+// Validates an include module name before load_module_defs() touches the module loader.
 
 static bool include_module_name_is_valid(std::string_view Module)
 {
@@ -1454,7 +1454,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_module_decl()
             std::string_view(strdata(namespace_name), namespace_name->len)));
    }
 
-   if (auto error = load_include(this->ctx.lua().script, module_name); error != ERR::Okay) {
+   if (auto error = load_module_defs(module_name); error != ERR::Okay) {
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token,
          std::format("Module '{}' is not available: {}. Guard optional dependencies with "
             "@if(exists='modules:{}').", module_name, GetErrorMsg(error), module_name));
@@ -1525,7 +1525,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_include_stmt()
             "Invalid module name; only alpha-numeric names shorter than 32 characters are permitted with include");
       }
 
-      if (auto error = load_include(this->ctx.lua().script, module_name); error != ERR::Okay) {
+      if (auto error = load_module_defs(module_name); error != ERR::Okay) {
          std::string message;
          if (error IS ERR::FileNotFound) message = std::format("Requested include file '{}' does not exist", module_name);
          else message = std::format("Failed to process include file '{}': {}", module_name, GetErrorMsg(error));

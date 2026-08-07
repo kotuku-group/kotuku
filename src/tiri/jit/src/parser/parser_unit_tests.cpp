@@ -17,6 +17,8 @@
 #include "runtime/lj_tab.h"
 
 #include <array>
+#include <thread>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <memory>
@@ -2791,17 +2793,17 @@ static bool test_state_local_struct_declarations(kt::Log &Log)
    constexpr std::string_view global_parent_name = "ParserGlobalParentRecord";
    std::string error;
 
-   if (auto result = make_struct(glTestScript, shadow_name, "lGlobal");
+   if (auto result = make_struct(nullptr, shadow_name, "lGlobal");
          result != ERR::Okay and result != ERR::Exists) {
       Log.error("failed to register global shadow fixture: %s", GetErrorMsg(result));
       return false;
    }
-   if (auto result = make_struct(glTestScript, global_child_name, "lGlobalValue");
+   if (auto result = make_struct(nullptr, global_child_name, "lGlobalValue");
          result != ERR::Okay and result != ERR::Exists) {
       Log.error("failed to register global child fixture: %s", GetErrorMsg(result));
       return false;
    }
-   if (auto result = make_struct(glTestScript, global_parent_name,
+   if (auto result = make_struct(nullptr, global_parent_name,
          "eChild:ParserGlobalChildRecord"); result != ERR::Okay and result != ERR::Exists) {
       Log.error("failed to register global parent fixture: %s", GetErrorMsg(result));
       return false;
@@ -2890,6 +2892,199 @@ static bool test_state_local_struct_declarations(kt::Log &Log)
    }
 
    return true;
+}
+
+// Covers the process-wide module registry: indexed case-insensitive lookup, revalidation of the canonical name after
+// hashing, stable record addresses across registry growth, and single publication under concurrent first resolution.
+
+static bool test_module_registry_lookup(kt::Log &Log)
+{
+   auto core = static_module_by_name("core");
+   if (not core) {
+      Log.error("core module could not be resolved through the registry");
+      return false;
+   }
+
+   // Case variants and repeated lookups must resolve to the one published binding.
+
+   for (auto spelling : { "core", "Core", "CORE", "cOrE" }) {
+      if (static_module_by_name(spelling) != core) {
+         Log.error("module spelling '%s' did not resolve to the canonical binding", spelling);
+         return false;
+      }
+   }
+
+   if (static_module_by_name("core") != core) {
+      Log.error("repeated resolution returned a different binding address");
+      return false;
+   }
+
+   // A name that does not exist must fail rather than resolving to a bucket neighbour.
+
+   if (static_module_by_name("ParserNoSuchModuleName")) {
+      Log.error("an unknown module name resolved to a binding");
+      return false;
+   }
+
+   // Function lookup must be case-insensitive and must revalidate the canonical spelling.
+
+   auto fields = static_module_function(core, "PreciseTime");
+   if (not fields) {
+      Log.error("PreciseTime was not found through the function index");
+      return false;
+   }
+   for (auto spelling : { "precisetime", "PRECISETIME", "PreciseTime" }) {
+      if (static_module_function(core, spelling) != fields) {
+         Log.error("function spelling '%s' did not resolve to the canonical entry", spelling);
+         return false;
+      }
+      if (static_module_function_name(core, spelling) != std::string_view("PreciseTime")) {
+         Log.error("function spelling '%s' did not report the canonical name", spelling);
+         return false;
+      }
+   }
+
+   if (static_module_function(core, "ParserNoSuchFunctionName")) {
+      Log.error("an unknown function name resolved through the index");
+      return false;
+   }
+   if (not static_module_function_name(core, "ParserNoSuchFunctionName").empty()) {
+      Log.error("an unknown function name reported a canonical spelling");
+      return false;
+   }
+
+   // Resolving further modules grows the registry; previously published addresses must not move.
+
+   if (load_module_defs("display") IS ERR::Okay) {
+      if (static_module_by_name("core") != core) {
+         Log.error("registry growth moved a published module binding");
+         return false;
+      }
+      if (static_module_function(core, "PreciseTime") != fields) {
+         Log.error("registry growth moved a published function record");
+         return false;
+      }
+   }
+
+   return true;
+}
+
+// Concurrent first resolution of one module must publish exactly one binding, and concurrent resolution of several
+// modules must not corrupt the index.
+
+static bool test_module_registry_concurrency(kt::Log &Log)
+{
+   constexpr int thread_count = 8;
+   std::vector<std::thread> threads;
+   std::array<StaticModuleHandle, thread_count> observed = { };
+   std::atomic<int> failures = 0;
+
+   for (int index = 0; index < thread_count; ++index) {
+      threads.emplace_back([index, &observed, &failures]() {
+         // Every thread resolves the same module, using a different spelling on alternate threads.
+         if (load_module_defs((index & 1) ? "Core" : "core") != ERR::Okay) failures++;
+         observed[index] = static_module_by_name("core");
+      });
+   }
+   for (auto &thread : threads) thread.join();
+
+   if (failures.load() > 0) {
+      Log.error("concurrent module resolution reported %d failures", failures.load());
+      return false;
+   }
+
+   for (int index = 0; index < thread_count; ++index) {
+      if (not observed[index]) {
+         Log.error("thread %d observed no binding for core", index);
+         return false;
+      }
+      if (observed[index] != observed[0]) {
+         Log.error("concurrent resolution published more than one binding for core");
+         return false;
+      }
+   }
+
+   return true;
+}
+
+// Module definitions are process-wide, so their layout must not depend on the state that requested them, and a
+// state-local declaration must be able to shadow one without altering the published global definition.
+
+static bool test_module_definition_ownership(kt::Log &Log)
+{
+   // Definitions load without any Lua state in scope.
+
+   if (auto error = load_module_defs("core"); error != ERR::Okay) {
+      Log.error("global module definitions failed to load: %s", GetErrorMsg(error));
+      return false;
+   }
+
+   auto global_definition = find_struct(nullptr, "RGB8");
+   if (not global_definition) {
+      Log.error("a global module structure was not published to the global dictionary");
+      return false;
+   }
+
+   // Repeated requests are idempotent and must not republish or alter the definition.
+
+   if (load_module_defs("core") != ERR::Okay) {
+      Log.error("a repeated definition request failed");
+      return false;
+   }
+   if (find_struct(nullptr, "RGB8") != global_definition) {
+      Log.error("a repeated definition request republished the structure");
+      return false;
+   }
+
+   // Two independent states observe the identical global definition.
+
+   LuaStateHolder first;
+   LuaStateHolder second;
+   if ((not first.get()) or (not second.get())) {
+      Log.error("failed to allocate states for the definition ownership test");
+      return false;
+   }
+   if ((find_struct(first.get(), "RGB8") != global_definition) or
+       (find_struct(second.get(), "RGB8") != global_definition)) {
+      Log.error("independent states observed differing global module definitions");
+      return false;
+   }
+
+   // A state-local declaration shadows the global definition for its own state only, and the global definition that
+   // other states resolve is unchanged.
+
+   std::string error;
+   if (not parse_struct_source(first.get(), "struct RGB8 ParserLocalOnly: double end", error)) {
+      Log.error("failed to declare a shadowing structure: %s", error.c_str());
+      return false;
+   }
+
+   auto shadowed = find_struct(first.get(), "RGB8");
+   if ((not shadowed) or (shadowed IS global_definition)) {
+      Log.error("a state-local declaration did not shadow the global module definition");
+      return false;
+   }
+   if (shadowed->Fields.empty() or shadowed->Fields[0].Name != "ParserLocalOnly") {
+      Log.error("the shadowing structure did not retain its declared layout");
+      return false;
+   }
+   if (find_struct(second.get(), "RGB8") != global_definition) {
+      Log.error("a state-local declaration altered the definition seen by another state");
+      return false;
+   }
+   if (find_struct(nullptr, "RGB8") != global_definition) {
+      Log.error("a state-local declaration altered the published global definition");
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_module_registry(kt::Log &Log)
+{
+   return test_module_registry_lookup(Log) and
+      test_module_registry_concurrency(Log) and
+      test_module_definition_ownership(Log);
 }
 
 static bool test_struct_declaration_syntax(kt::Log &Log)
@@ -5282,7 +5477,7 @@ static bool test_type_guided_emission(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 53> tests = { {
+   constexpr std::array<TestCase, 54> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -5319,6 +5514,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "parser_diagnostics_reset_per_load", test_parser_diagnostics_reset_per_load },
       { "userdata_type_annotations", test_userdata_type_annotations },
       { "state_local_struct_declarations", test_state_local_struct_declarations },
+      { "module_registry", test_module_registry },
       { "struct_declaration_syntax", test_struct_declaration_syntax },
       { "struct_field_documentation", test_struct_field_documentation },
       { "struct_declaration_metadata", test_struct_declaration_metadata },

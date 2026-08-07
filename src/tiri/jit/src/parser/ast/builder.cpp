@@ -451,7 +451,7 @@ const AstBuilder::ModuleNamespaceSymbol * AstBuilder::resolve_module_namespace(G
    // Core is a required dependency of every Tiri state, so a failure here is a host defect rather than a script
    // error.  Fall through to ordinary identifier handling so that the resulting diagnostic names the real problem.
 
-   if (load_include(this->ctx.lua().script, "core") != ERR::Okay) return nullptr;
+   if (load_module_defs("core") != ERR::Okay) return nullptr;
 
    StaticModuleHandle signature = static_module_by_name("core");
    std::string canonical_module = signature ? std::string(static_module_name(signature)) : std::string("core");
@@ -556,7 +556,7 @@ bool AstBuilder::module_is_available(std::string_view Name)
    }
 
    AdjustLogLevel(1);
-   bool available = load_include(this->ctx.lua().script, Name) IS ERR::Okay;
+   bool available = load_module_defs(Name) IS ERR::Okay;
    AdjustLogLevel(-1);
    root->module_availability.emplace(std::move(canonical), available);
    return available;
