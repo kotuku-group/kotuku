@@ -3537,6 +3537,41 @@ static bool test_module_dependency_activation_uses_sidecar(kt::Log &Log)
    return true;
 }
 
+// The bounded marshalling stores must keep every argument's address valid up to the documented argument limit.
+//
+// Nine C++ string-view parameters is the first arity the previous reserve(8) vectors could not survive: the ninth
+// emplacement reallocated the vector and moved the eight addresses already written into the libffi argument buffer.
+// The sweep runs from that boundary to MAX_MODULE_ARGS so a future change to either limit is caught.
+
+static bool test_module_wide_string_marshalling(kt::Log &Log)
+{
+   LuaStateHolder holder;
+   if (not holder.get()) {
+      Log.error("failed to allocate a state for the wide signature test");
+      return false;
+   }
+
+   for (int count = 9; count <= 16; ++count) {
+      auto failure = test_module_wide_string_signature(holder.get(), count);
+      if (not failure.empty()) {
+         Log.error("%s", failure.c_str());
+         return false;
+      }
+   }
+
+   // Repeating a call must not accumulate state in the bounded stores, which are frame-local and destroyed per call.
+
+   for (int repeat = 0; repeat < 4; ++repeat) {
+      auto failure = test_module_wide_string_signature(holder.get(), 16);
+      if (not failure.empty()) {
+         Log.error("repeat %d: %s", repeat, failure.c_str());
+         return false;
+      }
+   }
+
+   return true;
+}
+
 static bool test_module_registry(kt::Log &Log)
 {
    return test_module_registry_lookup(Log) and
@@ -3544,7 +3579,8 @@ static bool test_module_registry(kt::Log &Log)
       test_module_definition_ownership(Log) and
       test_module_dependency_descriptors(Log) and
       test_module_dependency_activation_uses_sidecar(Log) and
-      test_module_dependency_corruption_rejected(Log);
+      test_module_dependency_corruption_rejected(Log) and
+      test_module_wide_string_marshalling(Log);
 }
 
 static bool test_struct_declaration_syntax(kt::Log &Log)

@@ -425,6 +425,11 @@ ERR load_module_defs(std::string_view);
 [[nodiscard]] std::string_view static_module_name(StaticModuleHandle) noexcept;
 [[nodiscard]] std::string_view static_module_function_name(StaticModuleHandle, std::string_view) noexcept;
 [[nodiscard]] APTR proto_dependency_callable(struct GCproto *, uint32_t);
+#ifdef UNIT_TESTS
+// Drives a synthetic wide C++ string-view signature through the module call bridge, which no exported module declares
+// widely enough to exercise.  Returns an empty string on success or a description of the first discrepancy.
+[[nodiscard]] std::string test_module_wide_string_signature(lua_State *, int Count);
+#endif
 int MAKESTRUCT(lua_State *);
 [[maybe_unused]] void make_any_array(lua_State *, int, std::string_view, int, CPTR, struct_record * = nullptr);
 [[maybe_unused]] void make_array(lua_State *, AET, int = 0, CPTR = nullptr, std::string_view = {});
