@@ -52,15 +52,32 @@ private:
    std::vector<uint32_t> chunk_import_hashes;  // Path hashes inlined during this compilation (root builder only)
    StmtNodeList pending_statements;
 
+   // One record per canonical module declared by this compilation unit.  Aliases of the same module share a
+   // dependency, so a function referenced through two namespaces materialises exactly one hidden callable.
+   //
+   // The initialiser statement is emitted with an empty binding list when the declaration is parsed, then finalised
+   // once the whole unit has been seen and the complete ordered function list is known.
+
+   struct ModuleDependency {
+      std::string canonical_module;
+      StaticModuleHandle module = nullptr;
+      std::vector<GCstr *> functions;                 // Canonical names, in binder argument order
+      std::vector<GCstr *> bindings;                  // Hidden local names, in step with functions
+      GCstr *sentinel_name = nullptr;                 // Hidden local used when no function is referenced
+      StmtNode *initialiser = nullptr;                // The generated local declaration, finalised after parsing
+      SourceSpan declaration_span{};
+   };
+
    struct ModuleNamespaceSymbol {
       GCstr *source_name = nullptr;
-      GCstr *hidden_name = nullptr;
       StaticModuleHandle module = nullptr;
       std::string canonical_module;
+      size_t dependency = 0;                          // Index into module_dependencies
       SourceSpan declaration_span{};
    };
 
    std::unordered_map<GCstr *, ModuleNamespaceSymbol> module_namespaces;
+   std::vector<std::unique_ptr<ModuleDependency>> module_dependencies;
    std::unordered_map<std::string, bool> module_availability;
 
    // FileSource entries persist across compilations, so diagnose-mode re-parsing of cached imports needs a
@@ -200,6 +217,8 @@ private:
    [[nodiscard]] bool is_extended_ternary_ahead() const;
    [[nodiscard]] const ModuleNamespaceSymbol *find_module_namespace(GCstr *) const;
    [[nodiscard]] bool module_is_available(std::string_view);
+   [[nodiscard]] GCstr *module_function_binding(ModuleDependency &, GCstr *CanonicalFunction);
+   void finalise_module_dependencies();
    void append_pending_statements(StmtNodeList &);
 
    // Helper to emit an error and return a failure result in one step.

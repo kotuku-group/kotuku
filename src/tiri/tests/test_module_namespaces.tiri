@@ -97,6 +97,52 @@ end
    check async.wait(scripts, 10.0)
 end
 
+-- A declaration materialises only the functions its compilation unit references, so aliases and repeated references
+-- must resolve to one shared callable rather than a fresh closure per use site.
+
+@Test function ReferencedFunctionsMaterialiseOnce()
+   local direct <const> = mCore.PreciseTime
+   local repeated <const> = mCore.PreciseTime
+   local through_alias <const> = mCoreAlias.PreciseTime
+   local case_folded <const> = mCore.preciseTime
+
+   assert(direct is repeated, 'Repeated references should reuse one hidden callable')
+   assert(direct is through_alias, 'An alias of the same module should share hidden callables')
+   assert(direct is case_folded, 'Case-insensitive spellings should resolve to one canonical callable')
+
+   local other <const> = mCore.GetErrorMsg
+   assert(direct != other, 'Distinct functions must have distinct callables')
+end
+
+-- A declaration that references no function still has to resolve and retain its module, so its initialiser must not
+-- be discarded as an empty local declaration.
+
+@Test function UnreferencedDeclarationsStillResolveTheirModule()
+   assert_valid([[
+      module core as mUnreferenced
+      local value = 1
+   ]], 'unreferenced module declaration')
+
+   local script = obj.new('tiri', { statement = [[
+      module core as mUnreferenced
+      assert(1 is 1, 'an unreferenced declaration should not prevent execution')
+   ]] })
+   check script.acActivate()
+end
+
+-- Bytecode persists canonical names rather than process addresses or a bare function index, so a chunk executed in a
+-- separate Tiri state must rebuild its bindings against the module's current function list.
+
+@Test function SeparateStatesRebindByName()
+   local script = obj.new('tiri', { statement = [[
+      module core as mRebound
+      local clock <const> = mRebound.PreciseTime
+      assert(clock() > 0, 'a rebound extracted callable should execute')
+      assert(mRebound.ResolveClassName('Tiri') > 0, 'a rebound direct call should execute')
+   ]] })
+   check script.acActivate()
+end
+
 @Test function NamespaceIsNotAGlobalValue()
    assert(rawget(_G, 'mCore') is nil, 'A declared module namespace must not be stored in _G')
    assert(rawget(_G, 'mCoreAlias') is nil, 'A module alias must not be stored in _G')

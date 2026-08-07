@@ -650,6 +650,20 @@ private:
 
       if (const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
           direct and direct->callable) {
+         // A module function selection carries its own immutable signature, so its results are described without a
+         // receiver descriptor.  This is the only path that can describe a compiler-managed namespace call, because
+         // the namespace has no script value for descriptor propagation to observe.
+
+         if (direct->callable->kind IS AstNodeKind::ModuleFunctionExpr) {
+            const auto &payload = std::get<ModuleFunctionExprPayload>(direct->callable->data);
+            if (not payload.module or not payload.function.symbol) return 0;
+            const FunctionField *fields = static_module_function(payload.module,
+               std::string_view(strdata(payload.function.symbol), payload.function.symbol->len));
+            if (not fields) return 0;
+            return this->catalogue_.add_results(
+               describe_module_call_results(fields, &this->context_.lua()));
+         }
+
          if (direct->callable->kind IS AstNodeKind::MemberExpr) {
             const auto &payload = std::get<MemberExprPayload>(direct->callable->data);
             receiver = payload.table.get();

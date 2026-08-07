@@ -40,14 +40,12 @@ ParserResult<StmtNodePtr> AstBuilder::parse_expression_stmt()
 
    if (assignment_result.has_value()) {
       for (const ExprNodePtr &target : targets) {
-         if (target and target->kind IS AstNodeKind::MemberExpr) {
-            const auto &member = std::get<MemberExprPayload>(target->data);
-            if (member.module_namespace) {
-               return this->fail<StmtNodePtr>(ParserErrorCode::InvalidAssignment,
-                  Token::from_span(member.member.span, TokenKind::Identifier),
-                  std::format("Module namespace '{}' members cannot be assigned",
-                     std::string_view(strdata(member.module_namespace_name), member.module_namespace_name->len)));
-            }
+         if (target and target->kind IS AstNodeKind::ModuleFunctionExpr) {
+            const auto &member = std::get<ModuleFunctionExprPayload>(target->data);
+            return this->fail<StmtNodePtr>(ParserErrorCode::InvalidAssignment,
+               Token::from_span(member.function.span, TokenKind::Identifier),
+               std::format("Module namespace '{}' members cannot be assigned",
+                  std::string_view(strdata(member.namespace_name), member.namespace_name->len)));
          }
          if (const Identifier *identifier = future_reserved_identifier_expr(target)) {
             return this->fail<StmtNodePtr>(ParserErrorCode::InvalidAssignment,
@@ -483,14 +481,15 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
             }
             if (not canonical_function.empty()) member.symbol = this->ctx.lex().keepstr(canonical_function);
 
-            NameRef hidden_reference;
-            hidden_reference.identifier = Identifier::from_keepstr(module_symbol->hidden_name, current.span());
-            ExprNodePtr hidden_expr = make_identifier_expr(current.span(), hidden_reference);
-            node = make_member_expr(
-               span_from(current, member_token.value_ref()), std::move(hidden_expr), member, false);
-            auto &payload = std::get<MemberExprPayload>(node->data);
-            payload.module_namespace = module_symbol->module;
-            payload.module_namespace_name = module_symbol->source_name;
+            // Record the reference against the module's dependency and reuse its hidden binding.  Deduplication is
+            // by canonical name, so aliases and repeated references share one materialised callable.
+
+            ModuleDependency &dependency = *this->module_dependencies[module_symbol->dependency];
+            GCstr *binding_name = this->module_function_binding(dependency, member.symbol);
+
+            Identifier binding = Identifier::from_keepstr(binding_name, current.span());
+            node = make_module_function_expr(span_from(current, member_token.value_ref()), binding, member,
+               module_symbol->module, module_symbol->source_name);
             break;
          }
 

@@ -125,11 +125,28 @@ local EMPTY_SOURCE <const> = [[
    local value = 1
 ]]
 
--- Two aliases of the same module, which must share one dependency.
+-- Two aliases of the same module, which must share one dependency.  Both namespaces reference PreciseTime, which must
+-- be materialised once.
 local ALIAS_SOURCE <const> = [[
    module core as mBenchA
    module core as mBenchB
    local value = mBenchA.PreciseTime() + mBenchB.PreciseTime()
+]]
+
+-- A large module with a small referenced subset.  Core exports several hundred functions, so this workload shows
+-- whether activation cost scales with the referenced subset or with the module's total exports.
+local SUBSET_SOURCE <const> = [[
+   module core as mBench
+   local a = mBench.PreciseTime()
+   local b = mBench.GetErrorMsg(0)
+   local c = mBench.GetResource(1)
+]]
+
+-- Several modules in one compilation unit.
+local MULTI_SOURCE <const> = [[
+   module core as mBenchCore
+   module display as mBenchDisplay
+   local value = mBenchCore.PreciseTime()
 ]]
 
 -- exec() compiles and runs the statement, so each sample covers parse plus activation.  A baseline statement that
@@ -167,4 +184,6 @@ print(f"Activation ({ACTIVATIONS} exec() calls per sample; includes parse cost)"
 measure_activation('  no module (baseline)', NO_MODULE_SOURCE)
 measure_activation('  one module, one function', ACTIVATION_SOURCE)
 measure_activation('  one module, no functions', EMPTY_SOURCE)
+measure_activation('  one module, three functions', SUBSET_SOURCE)
 measure_activation('  two aliases, one module', ALIAS_SOURCE)
+measure_activation('  two modules', MULTI_SOURCE)

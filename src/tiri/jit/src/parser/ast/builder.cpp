@@ -365,6 +365,66 @@ const AstBuilder::ModuleNamespaceSymbol *AstBuilder::find_module_namespace(GCstr
    return nullptr;
 }
 
+//********************************************************************************************************************
+// Record a reference to a canonical module function and return the hidden local that will hold its callable.  The
+// first reference assigns the binding; later references, including those made through an alias of the same module,
+// reuse it so that exactly one closure is created per unique function.
+
+GCstr * AstBuilder::module_function_binding(ModuleDependency &Dependency, GCstr *CanonicalFunction)
+{
+   if (not CanonicalFunction) return nullptr;
+
+   for (size_t index = 0; index < Dependency.functions.size(); ++index) {
+      if (Dependency.functions[index] IS CanonicalFunction) return Dependency.bindings[index];
+   }
+
+   std::string binding_text = std::string("\x1fmodfn:") + Dependency.canonical_module + ":" +
+      std::string(strdata(CanonicalFunction), CanonicalFunction->len);
+   GCstr *binding = this->ctx.lex().keepstr(binding_text);
+   Dependency.functions.push_back(CanonicalFunction);
+   Dependency.bindings.push_back(binding);
+   return binding;
+}
+
+//********************************************************************************************************************
+// Complete every generated dependency initialiser once the compilation unit has been parsed and the full set of
+// referenced functions is known.  This must run before static descriptor discovery so that the hidden locals are
+// visible to later stages as ordinary declarations.
+//
+// A declaration that references no function still has to resolve its module during activation, so its initialiser
+// retains a single hidden sentinel binding rather than becoming an empty local declaration.
+
+void AstBuilder::finalise_module_dependencies()
+{
+   for (auto &dependency : this->module_dependencies) {
+      if (not dependency->initialiser) continue;
+
+      auto *payload = std::get_if<LocalDeclStmtPayload>(&dependency->initialiser->data);
+      if (not payload or payload->values.empty()) continue;
+
+      auto *call = std::get_if<CallExprPayload>(&payload->values.front()->data);
+      if (not call) continue;
+
+      SourceSpan span = dependency->declaration_span;
+      payload->names.clear();
+
+      if (dependency->functions.empty()) {
+         payload->names.push_back(Identifier::from_keepstr(dependency->sentinel_name, span));
+         continue;
+      }
+
+      for (size_t index = 0; index < dependency->functions.size(); ++index) {
+         GCstr *function = dependency->functions[index];
+         call->arguments.push_back(make_literal_expr(span, LiteralValue::string(function)));
+
+         // The binding carries neither a declared type nor a <const> attribute.  Its name is unspellable, so no
+         // source can rebind it, and the const validator requires one initialiser expression per name whereas the
+         // binder supplies its results as a single multiple-value call.
+         payload->names.push_back(Identifier::from_keepstr(dependency->bindings[index], span));
+      }
+   }
+}
+
 bool AstBuilder::module_is_available(std::string_view Name)
 {
    AstBuilder *root = this;
@@ -504,7 +564,9 @@ GCstr *AstBuilder::current_source_file()
 ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_chunk()
 {
    const TokenKind terminators[] = { TokenKind::EndOfFile };
-   return this->parse_block(terminators);
+   auto chunk = this->parse_block(terminators);
+   if (chunk.ok()) this->finalise_module_dependencies();
+   return chunk;
 }
 
 //********************************************************************************************************************

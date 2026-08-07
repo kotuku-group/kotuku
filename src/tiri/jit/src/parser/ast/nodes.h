@@ -448,9 +448,22 @@ struct MemberExprPayload {
    bool uses_method_dispatch = false;
    bool is_call_target = false;                       // True if this expression is the callee of a function call
    mutable CLASSID class_id = CLASSID::NIL;           // CLASSID if base is Object
-   StaticModuleHandle module_namespace = nullptr;     // Compiler namespace metadata; never represents a script value
-   GCstr *module_namespace_name = nullptr;
    ~MemberExprPayload();
+};
+
+// Selection of a module function through a compiler-managed namespace, e.g. mCore.PreciseTime.
+//
+// This is a leaf node: it carries no base expression, because a module namespace is compiler metadata rather than a
+// script value.  The emitter resolves `binding` to the hidden local that the dependency initialiser produced, so no
+// table member lookup is involved.  Retaining a dedicated node keeps generic member emission from restoring table
+// semantics to a namespace, and gives static analysis the module signature without a value descriptor.
+
+struct ModuleFunctionExprPayload {
+   Identifier binding;                                // Hidden local holding the callable, assigned by the dependency
+   Identifier function;                               // Canonical function name, for diagnostics and metadata lookup
+   StaticModuleHandle module = nullptr;               // Immutable module signature; never a script value
+   GCstr *namespace_name = nullptr;                   // Source namespace spelling, for diagnostics
+   bool is_call_target = false;                       // True when this is the callee of a direct call
 };
 
 struct IndexExprPayload {
@@ -640,7 +653,7 @@ struct ExprNode {
       PresenceExprPayload, PipeExprPayload, CallExprPayload, MemberExprPayload,
       IndexExprPayload, SafeMemberExprPayload, SafeIndexExprPayload,
       ResultFilterPayload, TableExprPayload, FunctionExprPayload, DeferredExprPayload,
-      RangeExprPayload, ChooseExprPayload>
+      RangeExprPayload, ChooseExprPayload, ModuleFunctionExprPayload>
       data;
 
    ExprNode() = default;
@@ -1094,6 +1107,8 @@ ExprNodePtr make_method_call_expr(SourceSpan span, ExprNodePtr receiver, Identif
 ExprNodePtr make_safe_method_call_expr(SourceSpan span, ExprNodePtr receiver, Identifier method, ExprNodeList arguments,
    bool forwards_multret);
 ExprNodePtr make_member_expr(SourceSpan span, ExprNodePtr table, Identifier member, bool uses_method_dispatch);
+ExprNodePtr make_module_function_expr(SourceSpan span, Identifier binding, Identifier function,
+   StaticModuleHandle module, GCstr *namespace_name);
 ExprNodePtr make_index_expr(SourceSpan span, ExprNodePtr table, ExprNodePtr index);
 ExprNodePtr make_safe_member_expr(SourceSpan span, ExprNodePtr table, Identifier member);
 ExprNodePtr make_safe_index_expr(SourceSpan span, ExprNodePtr table, ExprNodePtr index);

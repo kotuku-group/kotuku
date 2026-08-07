@@ -762,8 +762,32 @@ static int module_test(lua_State *Lua)
 }
 
 //********************************************************************************************************************
-// Build a lightweight callable table for a compiler-declared dependency.  The process-wide C++ store owns the module;
-// Lua closures retain only its stable address and the exported function index.
+// Locate one exported function by canonical name.  Case-insensitive, matching the compiler's source-level resolution.
+
+static module_callable * find_module_callable(module *Module, std::string_view Name)
+{
+   if (not Module->Functions) return nullptr;
+   auto hash = strihash(Name);
+   if (auto it = Module->FunctionMap.find(hash); it != Module->FunctionMap.end()) {
+      for (int index : it->second) {
+         if (kt::iequals(Module->Functions[index].Name, Name)) return Module->Callables[index].get();
+      }
+   }
+   return nullptr;
+}
+
+//********************************************************************************************************************
+// Activate a compiler-declared module dependency.
+//
+// Usage: binding1, binding2, ... = mod.<dependency>(ModuleName, FunctionName1, FunctionName2, ...)
+//
+// The compiler passes the canonical module name followed by the canonical names of the functions its compilation unit
+// actually references, and receives one closure per name in matching order.  Only names are persisted in bytecode, so
+// a chunk loaded in a fresh process resolves against the module's current function list.
+//
+// No module table, metatable, environment cache or per-function name lookup table is created.  A declaration that
+// references no function still resolves its module and returns one sentinel value, so that the generated local
+// declaration remains well-formed and the dependency is retained.
 
 static int module_dependency(lua_State *Lua)
 {
@@ -778,13 +802,27 @@ static int module_dependency(lua_State *Lua)
       luaL_error(Lua, error, "Failed to process definitions for the %s module.", modname);
    }
 
-   lua_newtable(Lua);
-   for (const auto &callable : mod->Callables) {
-      lua_pushlightuserdata(Lua, callable.get());
-      lua_pushcclosure(Lua, module_call, 1);
-      lua_setfield(Lua, -2, callable->Name);
+   int requested = lua_gettop(Lua) - 1;
+   if (requested <= 0) { // Dependency-only activation; the module is now resolved and retained.
+      lua_pushboolean(Lua, 1);
+      return 1;
    }
-   return 1;
+
+   for (int arg = 2; arg <= requested + 1; ++arg) {
+      auto function_name = lua_tostringview(Lua, arg);
+      if (function_name.empty()) luaL_argerror(Lua, arg, "String expected for module function name.");
+
+      auto callable = find_module_callable(mod, function_name);
+      if (not callable) {
+         luaL_error(Lua, ERR::Search, "Function %.*s() is not exported by the %s module.",
+            int(function_name.size()), function_name.data(), modname);
+      }
+
+      lua_pushlightuserdata(Lua, callable);
+      lua_pushcclosure(Lua, module_call, 1);
+   }
+
+   return requested;
 }
 
 //********************************************************************************************************************

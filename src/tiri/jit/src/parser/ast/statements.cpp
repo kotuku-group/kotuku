@@ -1453,23 +1453,34 @@ ParserResult<StmtNodePtr> AstBuilder::parse_module_decl()
 
    StaticModuleHandle signature = static_module_by_name(module_name);
    std::string canonical_module = signature ? std::string(static_module_name(signature)) : module_name;
-   std::string hidden_text = std::string("\x1fmodule:") + canonical_module;
-   GCstr *hidden_name = this->ctx.lex().keepstr(hidden_text);
-   bool dependency_declared = false;
-   for (const auto &[source_name, declared] : this->module_namespaces) {
-      (void)source_name;
-      if (kt::iequals(declared.canonical_module, canonical_module)) {
-         hidden_name = declared.hidden_name;
-         dependency_declared = true;
+
+   // Aliases of one canonical module share a single dependency record, so their referenced functions are pooled and
+   // deduplicated into one initialiser.
+
+   size_t dependency_index = this->module_dependencies.size();
+   for (size_t index = 0; index < this->module_dependencies.size(); ++index) {
+      if (kt::iequals(this->module_dependencies[index]->canonical_module, canonical_module)) {
+         dependency_index = index;
          break;
       }
    }
 
+   bool dependency_declared = dependency_index < this->module_dependencies.size();
+   if (not dependency_declared) {
+      auto record = std::make_unique<ModuleDependency>();
+      record->canonical_module  = canonical_module;
+      record->module            = signature;
+      record->sentinel_name     = this->ctx.lex().keepstr(std::string("\x1fmodule:") + canonical_module);
+      record->declaration_span  = module_token.span();
+      this->module_dependencies.push_back(std::move(record));
+   }
+   ModuleDependency *dependency = this->module_dependencies[dependency_index].get();
+
    ModuleNamespaceSymbol symbol;
    symbol.source_name = namespace_name;
-   symbol.hidden_name = hidden_name;
    symbol.module = signature;
    symbol.canonical_module = canonical_module;
+   symbol.dependency = dependency_index;
    symbol.declaration_span = module_token.span();
    this->module_namespaces.emplace(namespace_name, std::move(symbol));
 
@@ -1485,10 +1496,9 @@ ParserResult<StmtNodePtr> AstBuilder::parse_module_decl()
    }
    #endif
 
-   Identifier hidden_identifier = Identifier::from_keepstr(hidden_name, module_token.span());
-   hidden_identifier.has_const = true;
-   std::vector<Identifier> names;
-   names.push_back(hidden_identifier);
+   // The initialiser is generated now so that it occupies the declaration's position in the statement list, but its
+   // binding names and function arguments are unknown until the compilation unit has been parsed.  A placeholder
+   // sentinel name keeps the declaration well-formed in the interim; finalise_module_dependencies() replaces it.
 
    NameRef mod_reference;
    mod_reference.identifier = Identifier::from_keepstr(this->ctx.lex().keepstr("mod"), module_token.span());
@@ -1503,8 +1513,12 @@ ParserResult<StmtNodePtr> AstBuilder::parse_module_decl()
    ExprNodeList values;
    values.push_back(make_call_expr(module_token.span(), std::move(load_expr), std::move(arguments), false));
 
-   return ParserResult<StmtNodePtr>::success(
-      make_local_decl_stmt(module_token.span(), std::move(names), std::move(values)));
+   std::vector<Identifier> names;
+   names.push_back(Identifier::from_keepstr(dependency->sentinel_name, module_token.span()));
+
+   StmtNodePtr initialiser = make_local_decl_stmt(module_token.span(), std::move(names), std::move(values));
+   dependency->initialiser = initialiser.get();
+   return ParserResult<StmtNodePtr>::success(std::move(initialiser));
 }
 
 //********************************************************************************************************************
@@ -1906,6 +1920,11 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
    AstBuilder import_builder(import_ctx, this);
    const TokenKind terms[] = { TokenKind::EndOfFile };
    auto result = import_builder.parse_block(terms);
+
+   // The imported file is its own compilation unit for module namespace purposes, so its dependency initialisers are
+   // completed here rather than by the parent's parse_chunk().
+
+   if (result.ok()) import_builder.finalise_module_dependencies();
 
    fs.ls = saved_ls; // Restore the parent FuncState's lexer reference
    // import_guard destructor handles cleanup
