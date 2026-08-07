@@ -50,12 +50,41 @@ struct static_module_signature {
    }
 };
 
+// The native argument limit.  A signature is rejected during preparation if it declares more than this many native
+// parameters, so every bounded store in the call bridge can be sized from it and can never overflow at call time.
+//
+// Script callers supply at most MAX_MODULE_ARGS values as well: argument i of the signature reads script index i, so
+// the two limits are one contract rather than two.  Result and span arguments consume a signature slot without
+// consuming a script value, which makes the script side of the contract an upper bound rather than an exact count.
+
 constexpr int MAX_MODULE_ARGS = 16;
 constexpr size_t BUFFER_ELEMENT_SIZE = 16;
 constexpr size_t BUFFER_SIZE = MAX_MODULE_ARGS * BUFFER_ELEMENT_SIZE;
 constexpr size_t MAX_STRING_PREFIX_LENGTH = 200;
 
 struct ModuleBinding;
+
+// Precomputed counts of the bridge-owned temporaries one signature can require.  Deriving these once per callable lets
+// the call bridge construct only the elements a signature actually uses, and lets preparation reject a signature whose
+// demands would exceed a bounded store instead of discovering the overflow mid-call.
+//
+// Counts are upper bounds.  A conditional temporary, such as the structure conversion performed only when a script
+// passes a table, is counted for every argument that could require it.
+
+struct marshalling_profile {
+   uint8_t Strings = 0;         // Mutable std::string temporaries (FD_STR|FD_CPP with FD_MUTABLE or FD_RESULT)
+   uint8_t StringViews = 0;     // std::string_view temporaries (FD_STR|FD_CPP, read-only)
+   uint8_t MutableStrings = 0;  // Copy-back records for mutable std::string arguments
+   uint8_t Structs = 0;         // Table-to-structure conversions
+   uint8_t Arrays = 0;          // kt::vector<> results
+   uint8_t Spans = 0;           // std::span wrappers
+
+   // True when the signature needs no bridge-owned temporary at all.  Scalar-only and read-only C-string calls take
+   // this path and perform no heap allocation of their own.
+   [[nodiscard]] bool trivial_storage() const noexcept {
+      return not (Strings or StringViews or MutableStrings or Structs or Arrays or Spans);
+   }
+};
 
 // One process-wide callable record per exported module function.  Records are allocated individually so that their
 // addresses remain stable from publication until expunge_modules(), which is required because Tiri closures retain a
@@ -69,6 +98,8 @@ struct ModuleCallable {
    APTR Address = nullptr;               // Native function address; leave as null if function wasn't processed
    const FunctionField *Fields = nullptr; // Argument metadata, owned by the module's Function list
 
+   marshalling_profile Profile;          // Upper bounds on the bridge-owned temporaries this signature can require
+
    ffi_cif Cif = { };
    ffi_type *ArgTypes[MAX_MODULE_ARGS] = { };
 
@@ -79,6 +110,43 @@ struct ModuleCallable {
    }
 
    inline void invalidate() { Address = nullptr; }
+};
+
+// Address-stable bounded storage for the call bridge's temporaries.
+//
+// Elements live in raw aligned storage and are constructed only as they are used, so a signature that needs none pays
+// nothing beyond the (stack-resident) storage itself.  Because the capacity is fixed and validated during preparation,
+// an element's address never changes once it has been handed to libffi -- the property the previous reserve(8) vectors
+// only provided by accident.
+//
+// emplace() returns null when the store is full.  Preparation rejects any signature that could reach that point, so a
+// null return indicates a profile/marshaller disagreement rather than an expected condition.
+
+template <class T, size_t Capacity> class bounded_store {
+   alignas(T) uint8_t Storage[Capacity * sizeof(T)];
+   size_t Count = 0;
+
+   [[nodiscard]] T * slot(size_t Index) noexcept { return (T *)(Storage + (Index * sizeof(T))); }
+
+   public:
+   bounded_store() = default;
+   bounded_store(const bounded_store &) = delete;
+   bounded_store & operator=(const bounded_store &) = delete;
+
+   ~bounded_store() {
+      while (Count) slot(--Count)->~T();
+   }
+
+   template <class... Args> [[nodiscard]] T * emplace(Args &&...Arguments) {
+      if (Count >= Capacity) return nullptr;
+      auto element = new (slot(Count)) T(std::forward<Args>(Arguments)...);
+      Count++;
+      return element;
+   }
+
+   [[nodiscard]] size_t size() const noexcept { return Count; }
+
+   T & operator[](size_t Index) noexcept { return *slot(Index); }
 };
 
 // Records how far the module's IDL definitions (constants and structures) have progressed.  The state belongs to the
@@ -354,6 +422,43 @@ static ERR callable_arg_type(const FunctionField &Field, ffi_type *&Type, std::s
 }
 
 //********************************************************************************************************************
+// Accumulate the bridge-owned temporaries one argument can require.  The classification must agree with the
+// marshalling loop in module_call_inner(); a temporary counted here but not used is merely wasteful, whereas one used
+// but not counted would overflow a bounded store.
+
+static void profile_arg(const FunctionField &Field, marshalling_profile &Profile)
+{
+   const int argtype = Field.Type;
+
+   if ((argtype & FDF_SPAN) IS FDF_SPAN) { Profile.Spans++; return; }
+
+   if (argtype & FD_RESULT) {
+      if (((argtype & FDF_VECTOR) IS FDF_VECTOR) and (argtype & FD_MUTABLE)) Profile.Arrays++;
+      else if ((argtype & FD_STR) and (argtype & FD_CPP)) {
+         // A mutable result is backed by a std::string the bridge owns; a read-only one by a std::string_view.
+         if (argtype & FD_MUTABLE) Profile.Strings++;
+         else Profile.StringViews++;
+      }
+      return;
+   }
+
+   if (argtype & FD_FUNCTION) return; // The single FUNCTION reserve lives in the frame, not a store
+
+   if (argtype & FD_STR) {
+      if (argtype & FD_CPP) {
+         if (argtype & FD_MUTABLE) { Profile.Strings++; Profile.MutableStrings++; }
+         else Profile.StringViews++;
+      }
+      return;
+   }
+
+   // A pointer argument allocates a structure only when the script passes a table, which cannot be known until the
+   // call.  Counting it unconditionally keeps the bound safe for every input the argument accepts.
+
+   if ((argtype & FD_PTR) and (argtype & FD_STRUCT)) Profile.Structs++;
+}
+
+//********************************************************************************************************************
 // Determine the libffi return type from the function's result descriptor, which is stored in element zero of the
 // argument list.
 
@@ -405,6 +510,10 @@ static void prepare_module_callables(ModuleBinding *Module, const Function *Func
 
       const FunctionField *args = function.Args;
       int total = 0;
+      marshalling_profile profile;
+      size_t front_bytes = 0; // Argument slots, allocated from the start of the call buffer
+      size_t back_bytes = 0;  // Result storage, allocated from the end of the call buffer
+
       for (int arg = 1; args[arg].Name; ++arg) {
          if (total >= MAX_MODULE_ARGS) {
             callable->invalidate();
@@ -420,9 +529,51 @@ static void prepare_module_callables(ModuleBinding *Module, const Function *Func
             break;
          }
          callable->ArgTypes[total++] = type;
+         profile_arg(args[arg], profile);
+
+         // Mirror the call buffer's two-ended allocation so that an overlap is rejected here rather than corrupting
+         // an argument slot at call time.  The front slot is sized as the marshaller sizes it; the back allocation
+         // applies only to the result kinds that write into buffer-tail storage.
+
+         const int argtype = args[arg].Type;
+         if ((argtype & FDF_SPAN) IS FDF_SPAN) front_bytes += sizeof(APTR);
+         else if (argtype & FD_RESULT) {
+            front_bytes += sizeof(APTR);
+            if (((argtype & FDF_VECTOR) IS FDF_VECTOR) and (argtype & FD_MUTABLE)) { }
+            else if ((argtype & FD_STR) and (argtype & FD_CPP)) { }
+            else if (argtype & (FD_STR|FD_PTR)) back_bytes += sizeof(APTR);
+            else if (argtype & FD_INT) back_bytes += sizeof(int);
+            else if (argtype & (FD_DOUBLE|FD_INT64)) back_bytes += sizeof(int64_t);
+         }
+         else if (argtype & FD_FUNCTION) front_bytes += sizeof(FUNCTION *);
+         else if (argtype & FD_STR) front_bytes += sizeof(APTR);
+         else if (argtype & FD_PTR) front_bytes += sizeof(APTR);
+         else if (argtype & FD_INT) front_bytes += sizeof(int);
+         else if (argtype & FD_DOUBLE) front_bytes += sizeof(double);
+         else if (argtype & FD_INT64) front_bytes += sizeof(int64_t);
+      }
+
+      if (callable->valid() and (front_bytes + back_bytes > BUFFER_SIZE)) {
+         callable->invalidate();
+         log.msg("Function '%s' requires %zu call buffer bytes, exceeding the %zu byte limit.",
+            function.Name, front_bytes + back_bytes, BUFFER_SIZE);
+      }
+
+      // Every bounded store is sized at MAX_MODULE_ARGS, and each temporary is required by a distinct argument, so a
+      // signature within the argument limit cannot exhaust one.  The check is retained because it is the contract the
+      // marshaller relies on to treat a full store as unreachable.
+
+      if (callable->valid()) {
+         if ((profile.Strings > MAX_MODULE_ARGS) or (profile.StringViews > MAX_MODULE_ARGS) or
+             (profile.MutableStrings > MAX_MODULE_ARGS) or (profile.Structs > MAX_MODULE_ARGS) or
+             (profile.Arrays > MAX_MODULE_ARGS) or (profile.Spans > MAX_MODULE_ARGS)) {
+            callable->invalidate();
+            log.msg("Function '%s' exceeds the bounded temporary storage limit.", function.Name);
+         }
       }
 
       if (callable->valid()) {
+         callable->Profile = profile;
          ffi_type *return_type = callable_return_type(args->Type);
 
          if (ffi_prep_cif(&callable->Cif, FFI_DEFAULT_ABI, total, return_type, callable->ArgTypes) != FFI_OK) {
@@ -1150,20 +1301,26 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       std::string *Source;
       GCstr *Target;
       int Arg;
+
+      mutable_cpp_string_ref(std::string *InitSource, GCstr *InitTarget, int InitArg):
+         Source(InitSource), Target(InitTarget), Arg(InitArg) { }
    };
 
-   std::vector<std::string> strings;
-   std::vector<std::string_view> string_views;
-   std::vector<allocated_struct_ref> allocated_structs;
-   std::vector<mutable_cpp_string_ref> mutable_cpp_strings;
-   std::vector<cpp_array_result> cpp_arrays;
+   // Bridge-owned temporaries.  Each store has a fixed capacity that preparation has already proved sufficient for
+   // this signature, so an element's address stays valid once written into arg_values, and a signature that needs no
+   // temporaries constructs nothing.
+
+   bounded_store<std::string, MAX_MODULE_ARGS> strings;
+   bounded_store<std::string_view, MAX_MODULE_ARGS> string_views;
+   bounded_store<allocated_struct_ref, MAX_MODULE_ARGS> allocated_structs;
+   bounded_store<mutable_cpp_string_ref, MAX_MODULE_ARGS> mutable_cpp_strings;
+   bounded_store<cpp_array_result, MAX_MODULE_ARGS> cpp_arrays;
    std::array<module_span_arg, MAX_MODULE_ARGS> span_args;
    size_t span_count = 0;
-   strings.reserve(8); // Keep the collection stable
-   string_views.reserve(8);
 
    auto copy_mutable_cpp_strings = [&]() {
-      for (auto &entry : mutable_cpp_strings) {
+      for (size_t entry_index = 0; entry_index < mutable_cpp_strings.size(); ++entry_index) {
+         auto &entry = mutable_cpp_strings[entry_index];
          auto capacity = size_t(entry.Target->len);
          auto length = entry.Source->size();
          if (length > capacity) ErrorMsg = "Mutable buffer too small.";
@@ -1199,10 +1356,15 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       return ERR::NoSupport;
    }
 
+   // The script and native argument limits are one contract: the marshaller reads script index i for signature
+   // argument i, so a value beyond MAX_MODULE_ARGS could never be marshalled.  Previously this clamped a local that
+   // nothing else consumed, which silently discarded the diagnostic; the surplus is now rejected outright.
+
    int nargs = lua_gettop(Lua);
-   if (nargs > MAX_MODULE_ARGS-1) {
-      log.warning("Limit of %d args exceeded.", MAX_MODULE_ARGS - 1);
-      nargs = MAX_MODULE_ARGS-1;
+   if (nargs > MAX_MODULE_ARGS) {
+      ErrorMsg = std::format("Function '{}' received {} arguments, exceeding the limit of {}.",
+         callable->Name, nargs, MAX_MODULE_ARGS);
+      return ERR::Args;
    }
 
    uint8_t *end = buffer + sizeof(buffer);
@@ -1368,7 +1530,10 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             }
             else if (auto error = make_cpp_array_result(argtype, &result_ref); !error) {
                ((APTR *)(buffer + j))[0] = result_ref.Data; // kt::vector<>
-               cpp_arrays.push_back(std::move(result_ref));
+               if (not cpp_arrays.emplace(std::move(result_ref))) {
+                  ErrorMsg = std::format("Function '{}' exceeded its C++ array result storage.", callable->Name);
+                  return ERR::BufferOverflow;
+               }
                arg_values[in]  = buffer + j;
                in++;
                j += sizeof(APTR);
@@ -1384,16 +1549,24 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                   // Use of MUTABLE enables support for std::string buffering.  We provide our own std::string that will be used as
                   // the buffer, it gets converted to a Tiri string when the function returns.
 
-                  strings.emplace_back();
-                  ((std::string **)(buffer + j))[0] = &strings.back();
+                  auto slot = strings.emplace();
+                  if (not slot) {
+                     ErrorMsg = std::format("Function '{}' exceeded its string storage.", callable->Name);
+                     return ERR::BufferOverflow;
+                  }
+                  ((std::string **)(buffer + j))[0] = slot;
                   arg_values[in]  = buffer + j;
                   in++;
                   j += sizeof(APTR);
                }
                else {
                   // Non-mutable string reference, supported as a std::string_view
-                  string_views.emplace_back();
-                  ((std::string_view **)(buffer + j))[0] = &string_views.back();
+                  auto slot = string_views.emplace();
+                  if (not slot) {
+                     ErrorMsg = std::format("Function '{}' exceeded its string view storage.", callable->Name);
+                     return ERR::BufferOverflow;
+                  }
+                  ((std::string_view **)(buffer + j))[0] = slot;
                   arg_values[in]  = buffer + j;
                   in++;
                   j += sizeof(APTR);
@@ -1495,20 +1668,29 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
             if (argtype & FD_CPP) { // Function expects a pointer to std::string that it can mutate
                size_t len;
-               if (auto str = lua_tolstring(Lua, i, &len)) strings.emplace_back(str, len);
-               else strings.emplace_back();
-
-               auto cppstr = &strings.back();
-               mutable_cpp_strings.push_back({ cppstr, string, i });
+               auto str = lua_tolstring(Lua, i, &len);
+               auto cppstr = str ? strings.emplace(str, len) : strings.emplace();
+               if (not cppstr) {
+                  ErrorMsg = std::format("Function '{}' exceeded its string storage.", callable->Name);
+                  return ERR::BufferOverflow;
+               }
+               if (not mutable_cpp_strings.emplace(cppstr, string, i)) {
+                  ErrorMsg = std::format("Function '{}' exceeded its mutable string storage.", callable->Name);
+                  return ERR::BufferOverflow;
+               }
                ((std::string **)(buffer + j))[0] = cppstr;
             }
             else ((CSTRING *)(buffer + j))[0] = strdatawr(string);
          }
          else if (argtype & FD_CPP) { // Read-only std::string_view (enforced, cannot be nullptr)
             size_t len;
-            if (auto str = lua_tolstring(Lua, i, &len)) string_views.emplace_back(str, len);
-            else string_views.emplace_back();
-            ((std::string_view **)(buffer + j))[0] = &string_views.back();
+            auto str = lua_tolstring(Lua, i, &len);
+            auto view = str ? string_views.emplace(str, len) : string_views.emplace();
+            if (not view) {
+               ErrorMsg = std::format("Function '{}' exceeded its string view storage.", callable->Name);
+               return ERR::BufferOverflow;
+            }
+            ((std::string_view **)(buffer + j))[0] = view;
          }
          else if ((type IS LUA_TSTRING) or (type IS LUA_TNUMBER) or (type IS LUA_TBOOLEAN)) {
             ((CSTRING *)(buffer + j))[0] = lua_tostring(Lua, i);
@@ -1600,8 +1782,10 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                if (!table_to_struct(Lua, args[i].Name, struct_data)) {
                   auto struct_address = struct_data.get();
                   auto def = find_struct(Lua, args[i].Name);
-                  if (def) allocated_structs.emplace_back(std::move(struct_data), def, Lua);
-                  else allocated_structs.emplace_back(std::move(struct_data), nullptr, Lua);
+                  if (not allocated_structs.emplace(std::move(struct_data), def, Lua)) {
+                     ErrorMsg = std::format("Function '{}' exceeded its structure storage.", callable->Name);
+                     return ERR::BufferOverflow;
+                  }
                   ((APTR *)(buffer + j))[0] = struct_address;
                   arg_values[in] = buffer + j;
                   in++;
@@ -1664,6 +1848,15 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
    int restype = args->Type;
    int result = (callable->Cif.rtype IS &ffi_type_void) ? 0 : 1;
+
+   // The buffer is allocated from both ends: argument slots grow forwards from 'buffer' and result storage grows
+   // backwards from 'end'.  Preparation proves the two cannot meet for an accepted signature, so this check confirms
+   // the marshaller honoured the sizes preparation measured rather than guarding an expected condition.
+
+   if (buffer + j > end) {
+      ErrorMsg = std::format("Function '{}' overran its call buffer.", callable->Name);
+      return ERR::BufferOverflow;
+   }
 
    if (in != int(callable->Cif.nargs)) {
       ErrorMsg = std::format("Function '{}' marshalled {} args but its call interface expects {}.",
@@ -1868,6 +2061,82 @@ static int process_results(extTiri *Tiri, APTR resultsidx, const FunctionField *
 
    return results;
 }
+
+#ifdef UNIT_TESTS
+//********************************************************************************************************************
+// Test-only support for driving a synthetic string-view signature through the real module call bridge.
+
+namespace {
+
+struct synthetic_callable {
+   std::vector<FunctionField> Fields;
+   std::vector<std::string> Names;
+   ModuleCallable Callable;
+};
+
+static bool build_synthetic_view_callable(int Count, APTR Address, synthetic_callable &Result)
+{
+   Result.Names.reserve(Count + 1);
+   Result.Names.emplace_back("Result");
+   for (int arg = 0; arg < Count; ++arg) Result.Names.emplace_back(std::format("Arg{}", arg));
+
+   Result.Fields.reserve(Count + 2);
+   Result.Fields.push_back({ Result.Names[0].c_str(), FD_VOID });
+   for (int arg = 0; arg < Count; ++arg) {
+      Result.Fields.push_back({ Result.Names[arg + 1].c_str(), FD_STR|FD_CPP });
+   }
+   Result.Fields.push_back({ nullptr, 0 });
+
+   Result.Callable.Name    = "SyntheticViews";
+   Result.Callable.Address = Address;
+   Result.Callable.Fields  = Result.Fields.data();
+
+   marshalling_profile profile;
+   for (int arg = 1; arg <= Count; ++arg) {
+      std::string message;
+      ffi_type *type = nullptr;
+      if (callable_arg_type(Result.Fields[arg], type, message) != ERR::Okay) return false;
+      Result.Callable.ArgTypes[arg - 1] = type;
+      profile_arg(Result.Fields[arg], profile);
+   }
+
+   Result.Callable.Profile = profile;
+   ffi_type *return_type = callable_return_type(Result.Fields[0].Type);
+   return ffi_prep_cif(&Result.Callable.Cif, FFI_DEFAULT_ABI, Count, return_type, Result.Callable.ArgTypes) IS FFI_OK;
+}
+
+} // namespace
+
+std::string test_module_string_view_call(lua_State *Lua, APTR Address, std::span<const std::string> Inputs)
+{
+   int count = int(Inputs.size());
+   if ((count < 1) or (count > MAX_MODULE_ARGS)) return std::format("Unsupported synthetic arity {}.", count);
+   if (not Address) return "The synthetic entry point is null.";
+
+   auto synthetic = std::make_unique<synthetic_callable>();
+   if (not build_synthetic_view_callable(count, Address, *synthetic)) {
+      return std::format("Failed to prepare the synthetic callable for arity {}.", count);
+   }
+
+   if (synthetic->Callable.Profile.StringViews != count) {
+      return std::format("Profile counted {} string views for arity {}.",
+         int(synthetic->Callable.Profile.StringViews), count);
+   }
+
+   int base = lua_gettop(Lua);
+   lua_pushlightuserdata(Lua, &synthetic->Callable);
+   lua_pushcclosure(Lua, module_call, 1);
+   for (const auto &input : Inputs) lua_pushstring(Lua, input);
+
+   if (lua_pcall(Lua, count, LUA_MULTRET, 0) != 0) {
+      std::string message = lua_tostring(Lua, -1) ? lua_tostring(Lua, -1) : "unknown error";
+      lua_settop(Lua, base);
+      return std::format("Synthetic call of arity {} failed: {}", count, message);
+   }
+   lua_settop(Lua, base);
+   return { };
+}
+#endif
 
 //********************************************************************************************************************
 // Register the module interface.

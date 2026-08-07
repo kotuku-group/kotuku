@@ -425,6 +425,10 @@ ERR load_module_defs(std::string_view);
 [[nodiscard]] std::string_view static_module_name(StaticModuleHandle) noexcept;
 [[nodiscard]] std::string_view static_module_function_name(StaticModuleHandle, std::string_view) noexcept;
 [[nodiscard]] APTR proto_dependency_callable(struct GCproto *, uint32_t);
+#ifdef UNIT_TESTS
+[[nodiscard]] std::string test_module_string_view_call(lua_State *, APTR,
+   std::span<const std::string> Inputs);
+#endif
 int MAKESTRUCT(lua_State *);
 [[maybe_unused]] void make_any_array(lua_State *, int, std::string_view, int, CPTR, struct_record * = nullptr);
 [[maybe_unused]] void make_array(lua_State *, AET, int = 0, CPTR = nullptr, std::string_view = {});
