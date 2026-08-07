@@ -2976,6 +2976,73 @@ static bool test_module_registry_lookup(kt::Log &Log)
    return true;
 }
 
+// Compile-time signature queries and runtime callable lookup must share one ordinal mapping and one owner of the
+// canonical name and FunctionField metadata.  Proving the shared ordinal is what allows ModuleBinding to carry no
+// second function index of its own.
+
+static bool test_module_registry_shared_ordinal(kt::Log &Log)
+{
+   auto core = static_module_by_name("core");
+   if (not core) {
+      Log.error("core module could not be resolved through the registry");
+      return false;
+   }
+
+   // Every spelling of a function must resolve through both entry points, to the same ordinal.
+
+   for (auto spelling : { "PreciseTime", "precisetime", "PRECISETIME", "GetErrorMsg", "geterrormsg" }) {
+      auto resolution = test_module_resolve("core", spelling);
+      if ((not resolution.Found) or (not resolution.CallableFound)) {
+         Log.error("'%s' resolved through only one of the compiler and runtime paths", spelling);
+         return false;
+      }
+      if (resolution.Ordinal != resolution.CallableOrdinal) {
+         Log.error("'%s' resolved to compiler ordinal %u but runtime ordinal %u", spelling,
+            resolution.Ordinal, resolution.CallableOrdinal);
+         return false;
+      }
+
+      // The runtime callable must expose the signature's own copies rather than a second representation.
+
+      if (resolution.CallableName != resolution.SignatureName) {
+         Log.error("'%s' has separate canonical name storage for the compiler and runtime", spelling);
+         return false;
+      }
+      if (resolution.CallableFields and (resolution.CallableFields != resolution.SignatureFields)) {
+         Log.error("'%s' has separate FunctionField storage for the compiler and runtime", spelling);
+         return false;
+      }
+      if (static_module_function(core, spelling) != resolution.SignatureFields) {
+         Log.error("'%s' reported differing fields through the compiler query and the signature", spelling);
+         return false;
+      }
+   }
+
+   // Case variants of one function share one ordinal, and distinct functions do not.
+
+   auto lower = test_module_resolve("core", "precisetime");
+   auto exact = test_module_resolve("core", "PreciseTime");
+   auto other = test_module_resolve("core", "GetErrorMsg");
+   if (lower.Ordinal != exact.Ordinal) {
+      Log.error("case variants of one function resolved to differing ordinals");
+      return false;
+   }
+   if (other.Ordinal IS exact.Ordinal) {
+      Log.error("distinct functions resolved to the same ordinal");
+      return false;
+   }
+
+   // An unknown name must fail through both paths rather than resolving to a bucket neighbour or a stale ordinal.
+
+   auto missing = test_module_resolve("core", "ParserNoSuchFunctionName");
+   if (missing.Found or missing.CallableFound) {
+      Log.error("an unknown function name resolved through the shared index");
+      return false;
+   }
+
+   return true;
+}
+
 // Concurrent first resolution of one module must publish exactly one binding, and concurrent resolution of several
 // modules must not corrupt the index.
 
@@ -3540,6 +3607,7 @@ static bool test_module_dependency_activation_uses_sidecar(kt::Log &Log)
 static bool test_module_registry(kt::Log &Log)
 {
    return test_module_registry_lookup(Log) and
+      test_module_registry_shared_ordinal(Log) and
       test_module_registry_concurrency(Log) and
       test_module_definition_ownership(Log) and
       test_module_dependency_descriptors(Log) and

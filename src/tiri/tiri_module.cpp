@@ -31,22 +31,34 @@ struct static_module_function_signature {
    std::vector<FunctionField> Fields;
 };
 
-// Immutable per-module signature published to the compiler.  The function-name index removes the linear scan that
-// compile-time queries previously performed; it maps a case-insensitive hash to every function sharing that hash, so
-// the canonical name is always revalidated after the lookup and a collision cannot resolve to the wrong function.
+// Immutable per-module signature.  This is the sole owner of the canonical function names and copied FunctionField
+// metadata: compile-time queries and the runtime ModuleCallable records both read these copies rather than the loaded
+// module's original Function list, so a name or field descriptor has one representation with one lifetime.
+//
+// The function-name index removes the linear scan that compile-time queries previously performed; it maps a
+// case-insensitive hash to every ordinal sharing that hash, so the canonical name is always revalidated after the
+// lookup and a collision cannot resolve to the wrong function.  Because Functions is built in the module's export
+// order and ModuleBinding::Callables is built from it, one ordinal addresses both representations.
+
+constexpr uint32_t NO_FUNCTION_ORDINAL = std::numeric_limits<uint32_t>::max();
 
 struct static_module_signature {
    std::string Name;
    std::vector<static_module_function_signature> Functions;
    ankerl::unordered_dense::map<uint32_t, std::vector<uint32_t>> FunctionIndex;
 
-   [[nodiscard]] const static_module_function_signature * find(std::string_view Name) const noexcept {
+   [[nodiscard]] uint32_t find_ordinal(std::string_view Name) const noexcept {
       if (auto it = FunctionIndex.find(strihash(Name)); it != FunctionIndex.end()) {
          for (auto slot : it->second) {
-            if (kt::iequals(Functions[slot].Name, Name)) return &Functions[slot];
+            if (kt::iequals(Functions[slot].Name, Name)) return slot;
          }
       }
-      return nullptr;
+      return NO_FUNCTION_ORDINAL;
+   }
+
+   [[nodiscard]] const static_module_function_signature * find(std::string_view Name) const noexcept {
+      auto ordinal = find_ordinal(Name);
+      return (ordinal IS NO_FUNCTION_ORDINAL) ? nullptr : &Functions[ordinal];
    }
 };
 
@@ -94,9 +106,9 @@ struct marshalling_profile {
 // Tiri states can share one record without synchronisation.
 
 struct ModuleCallable {
-   CSTRING Name = nullptr;               // Canonical name, owned by the module's Function list
+   CSTRING Name = nullptr;               // Canonical name, owned by the binding's immutable signature
    APTR Address = nullptr;               // Native function address; leave as null if function wasn't processed
-   const FunctionField *Fields = nullptr; // Argument metadata, owned by the module's Function list
+   const FunctionField *Fields = nullptr; // Argument metadata, owned by the binding's immutable signature
 
    marshalling_profile Profile;          // Upper bounds on the bridge-owned temporaries this signature can require
 
@@ -158,11 +170,14 @@ enum class def_state : uint8_t {
    Failed        // Definition processing failed; the batch was rolled back
 };
 
+// Callables is parallel to Signature->Functions: element i describes the module's i'th export in both. Runtime name
+// lookup therefore uses the signature's index to obtain an ordinal and then addresses Callables directly, so the
+// compiler and the call bridge share one collision-safe, case-insensitive mapping.
+
 struct ModuleBinding {
    std::string Name;
    objModule *Module = nullptr;
    std::unique_ptr<const static_module_signature> Signature;
-   ankerl::unordered_dense::map<uint32_t, std::vector<ModuleCallable *>> FunctionMap;
    std::vector<std::unique_ptr<ModuleCallable>> Callables;
 
    // Definition-loading state is guarded by glConstantMutex rather than the registry mutex.  DefError retains the
@@ -479,6 +494,11 @@ static ffi_type * callable_return_type(int ResultType)
 // Build the process-wide callable records for a module.  Called once, while the module is being resolved and before
 // it is published to the registry, so no other thread can observe a partially prepared record.
 //
+// The binding's signature must already be built, because it owns the canonical names and copied FunctionField
+// metadata that the callables refer to.  The loaded Function list is consulted only for the native addresses, which
+// the signature deliberately does not retain.  One callable is emitted per signature entry, in signature order, so
+// that an ordinal from the signature's index addresses the matching callable.
+//
 // A preparation failure is recorded on the individual callable rather than propagated, because one unsupported
 // signature must not prevent the rest of the module from being used.
 
@@ -486,29 +506,27 @@ static void prepare_module_callables(ModuleBinding *Module, const Function *Func
 {
    kt::Log log(__FUNCTION__);
 
-   if (not Functions) return;
+   if ((not Functions) or (not Module->Signature)) return;
 
-   size_t function_count = 0;
-   while (Functions[function_count].Name) function_count++;
-   Module->Callables.reserve(function_count);
+   const auto &signatures = Module->Signature->Functions;
+   Module->Callables.reserve(signatures.size());
 
-   for (size_t index = 0; index < function_count; ++index) {
+   for (size_t index = 0; index < signatures.size(); ++index) {
       const auto &function = Functions[index];
+      const auto &signature = signatures[index];
       auto callable = std::make_unique<ModuleCallable>();
 
-      callable->Name    = function.Name;
+      callable->Name    = signature.Name.c_str();
       callable->Address = function.Address;
-      callable->Fields  = function.Args;
+      callable->Fields  = function.Args ? signature.Fields.data() : nullptr;
 
       if (not function.Args) {
          // A function with no argument list takes no parameters and returns nothing, so libffi is unnecessary.
-         // The callable is still exported, so it must be registered for name lookup like any other.
-         Module->FunctionMap[strihash(function.Name)].push_back(callable.get());
          Module->Callables.push_back(std::move(callable));
          continue;
       }
 
-      const FunctionField *args = function.Args;
+      const FunctionField *args = callable->Fields;
       int total = 0;
       marshalling_profile profile;
       size_t front_bytes = 0; // Argument slots, allocated from the start of the call buffer
@@ -517,7 +535,7 @@ static void prepare_module_callables(ModuleBinding *Module, const Function *Func
       for (int arg = 1; args[arg].Name; ++arg) {
          if (total >= MAX_MODULE_ARGS) {
             callable->invalidate();
-            log.msg("Function '%s' exceeds the %d argument limit.", function.Name, MAX_MODULE_ARGS);
+            log.msg("Function '%s' exceeds the %d argument limit.", callable->Name, MAX_MODULE_ARGS);
             break;
          }
 
@@ -525,7 +543,7 @@ static void prepare_module_callables(ModuleBinding *Module, const Function *Func
          std::string message;
          if (auto error = callable_arg_type(args[arg], type, message); error != ERR::Okay) {
             callable->invalidate();
-            log.msg("Function '%s': %s", function.Name, message.c_str());
+            log.msg("Function '%s': %s", callable->Name, message.c_str());
             break;
          }
          callable->ArgTypes[total++] = type;
@@ -556,7 +574,7 @@ static void prepare_module_callables(ModuleBinding *Module, const Function *Func
       if (callable->valid() and (front_bytes + back_bytes > BUFFER_SIZE)) {
          callable->invalidate();
          log.msg("Function '%s' requires %zu call buffer bytes, exceeding the %zu byte limit.",
-            function.Name, front_bytes + back_bytes, BUFFER_SIZE);
+            callable->Name, front_bytes + back_bytes, BUFFER_SIZE);
       }
 
       // Every bounded store is sized at MAX_MODULE_ARGS, and each temporary is required by a distinct argument, so a
@@ -568,7 +586,7 @@ static void prepare_module_callables(ModuleBinding *Module, const Function *Func
              (profile.MutableStrings > MAX_MODULE_ARGS) or (profile.Structs > MAX_MODULE_ARGS) or
              (profile.Arrays > MAX_MODULE_ARGS) or (profile.Spans > MAX_MODULE_ARGS)) {
             callable->invalidate();
-            log.msg("Function '%s' exceeds the bounded temporary storage limit.", function.Name);
+            log.msg("Function '%s' exceeds the bounded temporary storage limit.", callable->Name);
          }
       }
 
@@ -578,11 +596,10 @@ static void prepare_module_callables(ModuleBinding *Module, const Function *Func
 
          if (ffi_prep_cif(&callable->Cif, FFI_DEFAULT_ABI, total, return_type, callable->ArgTypes) != FFI_OK) {
             callable->invalidate();
-            log.msg("Failed to prepare the call interface for '%s'.", function.Name);
+            log.msg("Failed to prepare the call interface for '%s'.", callable->Name);
          }
       }
 
-      Module->FunctionMap[strihash(function.Name)].push_back(callable.get());
       Module->Callables.push_back(std::move(callable));
    }
 }
@@ -1036,17 +1053,17 @@ static int module_test(lua_State *Lua)
 }
 
 //********************************************************************************************************************
-// Locate one exported function by canonical name.  Case-insensitive, matching the compiler's source-level resolution.
+// Locate one exported function by canonical name.  Case-insensitive, matching the compiler's source-level resolution
+// because it is literally the same index: the signature resolves the name to an ordinal, and Callables is parallel to
+// the signature's function list.  A module whose signature failed to build exports nothing resolvable.
 
 static ModuleCallable * find_module_callable(ModuleBinding *Module, std::string_view Name)
 {
-   auto hash = strihash(Name);
-   if (auto it = Module->FunctionMap.find(hash); it != Module->FunctionMap.end()) {
-      for (auto callable : it->second) {
-         if (kt::iequals(callable->Name, Name)) return callable;
-      }
-   }
-   return nullptr;
+   if (not Module->Signature) return nullptr;
+   auto ordinal = Module->Signature->find_ordinal(Name);
+   if (ordinal IS NO_FUNCTION_ORDINAL) return nullptr;
+   if (ordinal >= Module->Callables.size()) return nullptr;
+   return Module->Callables[ordinal].get();
 }
 
 //********************************************************************************************************************
@@ -2135,6 +2152,43 @@ std::string test_module_string_view_call(lua_State *Lua, APTR Address, std::span
    }
    lua_settop(Lua, base);
    return { };
+}
+
+// Report what the compiler's signature index and the runtime's callable lookup each resolved for one function name.
+// Both paths run through static_module_signature::find_ordinal(), so the test can assert that they agree on the
+// ordinal and that the names and field descriptors they expose are the signature's single owned copy.
+
+test_module_resolution test_module_resolve(std::string_view Module, std::string_view Function)
+{
+   test_module_resolution result;
+
+   ModuleBinding *binding = nullptr;
+   if (resolve_module(Module, binding) != ERR::Okay) return result;
+
+   std::lock_guard lock(glModuleRegistry.Mutex);
+   if (not binding->Signature) return result;
+
+   if (auto ordinal = binding->Signature->find_ordinal(Function); ordinal != NO_FUNCTION_ORDINAL) {
+      const auto &signature = binding->Signature->Functions[ordinal];
+      result.Found = true;
+      result.Ordinal = ordinal;
+      result.SignatureName = signature.Name.c_str();
+      result.SignatureFields = signature.Fields.data();
+   }
+
+   if (auto callable = find_module_callable(binding, Function)) {
+      result.CallableFound = true;
+      result.CallableName = callable->Name;
+      result.CallableFields = callable->Fields;
+      for (size_t index = 0; index < binding->Callables.size(); ++index) {
+         if (binding->Callables[index].get() IS callable) {
+            result.CallableOrdinal = uint32_t(index);
+            break;
+         }
+      }
+   }
+
+   return result;
 }
 #endif
 
