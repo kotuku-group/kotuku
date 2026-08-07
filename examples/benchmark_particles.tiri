@@ -8,7 +8,7 @@ Particle Graphics Benchmark
    import 'options'
    include 'display', 'vector'
 
-   lVec = mVec
+   module vector as mVec
 
    local glWinWidth:num, glWinHeight:num, glColours, glMode, glShape, glWindow, glSurface:obj, glParticles, glViewport, glScene
    local glTimerHandle, glFPS, glPrinted, glArgs
@@ -57,7 +57,7 @@ function drawDirectVector(Surface:obj, Bitmap:obj)
 
    start = mSys.PreciseTime()
    for p in values(glParticles) do
-      lVec.DrawPath(Bitmap, p.path, 0, nil, p.colour)
+      mVec.DrawPath(Bitmap, p.path, 0, nil, p.colour)
    end
 
    glFrameStats.times:push(mSys.PreciseTime() - start)
@@ -140,9 +140,9 @@ function newParticle()
       particle.colour = glVectorColours[(math.floor(math.random() * #glVectorColours))]
       local err:num
       if glShape is 'star' then
-         err, particle.path = lVec.GeneratePath(makeStarSequence(particle.x+particle.radius, particle.y+particle.radius, particle.radius))
+         err, particle.path = mVec.GeneratePath(makeStarSequence(particle.x+particle.radius, particle.y+particle.radius, particle.radius))
       else
-         err, particle.path = lVec.GenerateEllipse(particle.x+particle.radius, particle.y+particle.radius, particle.radius, particle.radius, 0)
+         err, particle.path = mVec.GenerateEllipse(particle.x+particle.radius, particle.y+particle.radius, particle.radius, particle.radius, 0)
       end
       check err
    elseif glMode is MODE_PRIMITIVE then
@@ -209,7 +209,7 @@ function timer(Subscriber, Elapsed, Current)
 
       choose glMode from
          MODE_VECTOR -> p.vector.acMoveToPoint(nextX + p.center, nextY + p.center, 0, moveflag)
-         MODE_DIRECTVECTOR -> lVec.TranslatePath(p.path, tx, ty)
+         MODE_DIRECTVECTOR -> mVec.TranslatePath(p.path, tx, ty)
       end
 
       p.x = nextX

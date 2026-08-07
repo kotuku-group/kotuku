@@ -337,6 +337,7 @@ static ERR MODExpunge(void)
    if (clTiri)      { FreeResource(clTiri); clTiri = nullptr; }
    if (modDisplay)  { FreeResource(modDisplay); modDisplay = nullptr; }
    if (modRegex)    { FreeResource(modRegex); modRegex = nullptr; }
+   expunge_modules();
    return ERR::Okay;
 }
 

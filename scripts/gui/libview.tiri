@@ -5,7 +5,7 @@
 
    namespace 'gui'
 
-   global mGfx ?= mod.load('display')
+   module display as mGfx
 
    glItemCounter = 1
 

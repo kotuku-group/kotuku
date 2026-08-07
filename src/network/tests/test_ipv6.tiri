@@ -8,7 +8,7 @@
 
    include 'network'
 
-   mNet ?= mod.load('network')
+module network as mNet
 
 glPort = 8089
 

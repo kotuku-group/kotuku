@@ -1,0 +1,275 @@
+-- Parser-integrated module namespace behaviour.
+
+import './module_namespace_helper'
+
+module core as mCore
+module CORE as mCore
+module core as mCoreAlias
+
+function assert_valid(Source:str, Context:str)
+   local result = debug.validate(Source)
+   assert(result.success is true, Context .. ': expected successful validation')
+end
+
+function assert_invalid(Source:str, ExpectedMessage:str, Context:str)
+   local result = debug.validate(Source)
+   assert(result.success is false, Context .. ': expected validation failure')
+
+   local found = false
+   for _, diagnostic in result.diagnostics do
+      if string.find(diagnostic.message, ExpectedMessage, 0, true) != nil then
+         found = true
+         break
+      end
+   end
+   assert(found, Context .. ': expected diagnostic containing "' .. ExpectedMessage .. '"')
+end
+
+@Test function DirectCallsAndAliasesPreserveResults()
+   local direct_time = mCore.preciseTime()
+   local alias_time = mCoreAlias.PreciseTime()
+   assert(direct_time > 0 and alias_time > 0, 'Declared module calls should preserve scalar results')
+end
+
+@Test function InterpreterAndJitCallsAgree()
+   local interpreted = 0
+   jit.off()
+   for _ in {0 to 200} do interpreted = mCore.PreciseTime() end
+
+   local compiled = 0
+   jit.on()
+   for _ in {0 to 200} do compiled = mCore.PreciseTime() end
+   assert(interpreted > 0 and compiled >= interpreted,
+      'Declared module calls should execute consistently with the JIT enabled and disabled')
+end
+
+@Test function ExtractedCallableSurvivesCollection()
+   local clock <const> = mCore.PreciseTime
+   processing.collect()
+   assert(clock() > 0, 'An extracted module callable should retain its dependency')
+end
+
+-- Every supported signature family must marshal correctly through the shared callable record.  The libffi call
+-- interface is prepared once per function when its module is resolved, so a fault in that preparation would surface
+-- here as a wrong result or a crash rather than as a per-call error.
+
+@Test function SignatureFamiliesMarshalThroughCachedInterfaces()
+   assert(mCore.PreciseTime() > 0, 'zero-argument scalar result')
+   assert(mCore.GetResource(1) != nil, 'scalar argument')
+   assert(#mCore.GetErrorMsg(0) > 0, 'C-string result')
+   assert(mCore.ResolveClassName('Tiri') > 0, 'C++ string-view argument')
+   assert(mCore.GetThreadID() >= 0, 'unsigned scalar result')
+   assert(mCore.CurrentTask() != nil, 'object result')
+   assert(mCore.ActionList() != nil, 'C++ array result')
+
+   local err, path_type = mCore.AnalysePath('temp:')
+   assert(err is ERR_Okay and path_type != nil, 'multiple results via out-parameters')
+
+   local resolved_err, resolved = mCore.ResolvePath('temp:', 0)
+   assert(resolved_err is ERR_Okay and #resolved > 0, 'mutable C++ string result')
+end
+
+-- A callback argument holds a Lua registry reference that the bridge hands to the module.  Preparing the call
+-- interface in advance must not disturb that ownership transfer.
+
+@Test function CallbackArgumentsRetainTheirReference()
+   local err, subscription = mCore.SubscribeTimer(0.5, function() end)
+   assert(err is ERR_Okay, 'a callback-bearing signature should succeed')
+   assert(subscription != nil, 'the subscription result should be returned')
+   check mCore.UpdateTimer(subscription, 0) -- An interval of zero releases the subscription
+end
+
+-- Callable records are process-wide and immutable after publication, so independent Tiri states must be able to call
+-- the same function concurrently without synchronisation.
+
+@Test function ConcurrentStatesShareCallableRecords()
+   local scripts = array<obj>
+   for _ in {1 into 4} do
+      scripts:push(obj.new('tiri', { statement = [[
+         module core as mConcurrent
+         local total = 0
+         for _ in {0 to 500} do total += mConcurrent.PreciseTime() end
+         assert(total > 0, 'concurrent module calls produced no result')
+      ]] }))
+   end
+
+   for script in values(scripts) do async.script(script) end
+   check async.wait(scripts, 10.0)
+end
+
+-- A declaration materialises only the functions its compilation unit references, so aliases and repeated references
+-- must resolve to one shared callable rather than a fresh closure per use site.
+
+@Test function ReferencedFunctionsMaterialiseOnce()
+   local direct <const> = mCore.PreciseTime
+   local repeated <const> = mCore.PreciseTime
+   local through_alias <const> = mCoreAlias.PreciseTime
+   local case_folded <const> = mCore.preciseTime
+
+   assert(direct is repeated, 'Repeated references should reuse one hidden callable')
+   assert(direct is through_alias, 'An alias of the same module should share hidden callables')
+   assert(direct is case_folded, 'Case-insensitive spellings should resolve to one canonical callable')
+
+   local other <const> = mCore.GetErrorMsg
+   assert(direct != other, 'Distinct functions must have distinct callables')
+end
+
+-- A declaration that references no function still has to resolve and retain its module, so its initialiser must not
+-- be discarded as an empty local declaration.
+
+@Test function UnreferencedDeclarationsStillResolveTheirModule()
+   assert_valid([[
+      module core as mUnreferenced
+      local value = 1
+   ]], 'unreferenced module declaration')
+
+   local script = obj.new('tiri', { statement = [[
+      module core as mUnreferenced
+      assert(1 is 1, 'an unreferenced declaration should not prevent execution')
+   ]] })
+   check script.acActivate()
+end
+
+-- Bytecode persists canonical names rather than process addresses or a bare function index, so a chunk executed in a
+-- separate Tiri state must rebuild its bindings against the module's current function list.
+
+@Test function SeparateStatesRebindByName()
+   local script = obj.new('tiri', { statement = [[
+      module core as mRebound
+      local clock <const> = mRebound.PreciseTime
+      assert(clock() > 0, 'a rebound extracted callable should execute')
+      assert(mRebound.ResolveClassName('Tiri') > 0, 'a rebound direct call should execute')
+   ]] })
+   check script.acActivate()
+end
+
+@Test function NamespaceIsNotAGlobalValue()
+   assert(rawget(_G, 'mCore') is nil, 'A declared module namespace must not be stored in _G')
+   assert(rawget(_G, 'mCoreAlias') is nil, 'A module alias must not be stored in _G')
+   assert(rawget(_G, 'mSys') is nil, 'The implicit mSys namespace must not be stored in _G')
+end
+
+-- 'mSys' behaves as though every compilation unit begins with `module core as mSys`.  The dependency is created on
+-- first use, so a unit that never mentions mSys neither resolves Core nor emits an activation statement.
+
+@Test function ImplicitSysNamespaceResolvesCore()
+   assert(mSys.PreciseTime() > 0, 'An implicit mSys call should execute')
+   assert(mSys.preciseTime() > 0, 'An implicit mSys call should resolve case-insensitively')
+
+   local clock <const> = mSys.PreciseTime
+   assert(clock() > 0, 'An extracted implicit mSys callable should execute')
+
+   assert_valid([[
+      local value = mSys.PreciseTime()
+   ]], 'implicit mSys reference')
+
+   -- An explicit declaration of the same namespace is redundant rather than a conflict, in either statement order.
+
+   assert_valid([[
+      module core as mSys
+      local value = mSys.PreciseTime()
+   ]], 'explicit mSys declaration')
+
+   assert_valid([[
+      local first = mSys.PreciseTime()
+      module core as mSys
+      local second = mSys.PreciseTime()
+   ]], 'explicit mSys declaration after an implicit reference')
+
+   -- An alias of Core shares the implicit namespace's dependency and hidden callable bindings.
+
+   assert_valid([[
+      module core as mCoreTwin
+      local implicit = mSys.PreciseTime()
+      local aliased = mCoreTwin.PreciseTime()
+   ]], 'implicit and explicit Core aliases')
+end
+
+-- mSys is compiler metadata, so every first-class use is rejected exactly as a declared namespace would be.
+
+@Test function ImplicitSysIsNotAFirstClassValue()
+   assert_invalid([[ print(mSys) ]], 'can only select a named module function', 'bare mSys')
+   assert_invalid([[ local alias = mSys ]], 'can only select a named module function', 'assigned mSys')
+   assert_invalid([[ local value = mSys?.PreciseTime() ]],
+      'can only select a named module function', 'safe navigation on mSys')
+   assert_invalid([[ local value = mSys['PreciseTime']() ]],
+      'can only select a named module function', 'indexed mSys')
+   assert_invalid([[ local mSys = 1 ]], 'cannot be declared as a variable', 'mSys as a local')
+   assert_invalid([[ function mSys() end ]], 'cannot be declared as', 'mSys as a function')
+   assert_invalid([[ local function accept(mSys) end ]],
+      'cannot be declared as a function parameter', 'mSys as a parameter')
+   assert_invalid([[ module display as mSys ]], 'reserved for the core module', 'mSys bound to another module')
+   assert_invalid([[ local value = mSys.NotARealCoreFunction() ]],
+      'Unknown function', 'unknown implicit mSys function')
+end
+
+@Test function ImportedNamespaceIsPrivate()
+   assert(imported_module_time() > 0, 'An imported function should retain its module dependency')
+   assert(rawget(_G, 'mImportedCore') is nil, 'An imported module namespace must not leak into _G')
+end
+
+@Test function OptionalModuleConditionsUseTheLoader()
+   assert_valid([[
+      @if(exists='modules:core')
+         module core as mOptionalCore
+      @end
+      local value = mOptionalCore.PreciseTime()
+   ]], 'available module condition')
+
+   assert_valid([[
+      @if(exists='modules:definitelymissingmodule')
+         module definitelymissingmodule as mMissing
+      @end
+      local value = 1
+   ]], 'missing optional module condition')
+
+   assert_valid([[
+      @if(exists='modules:display')
+         module display as mOptionalDisplay
+      @end
+      local value = 1
+   ]], 'host-dependent optional module condition')
+end
+
+@Test function NamespaceRestrictionsAreDiagnosed()
+   assert_invalid([[
+      module core as mRestricted
+      print(mRestricted)
+   ]], 'can only select a named module function', 'bare namespace')
+
+   assert_invalid([[
+      module core as mRestricted
+      mRestricted['PreciseTime']()
+   ]], 'can only select a named module function', 'dynamic member')
+
+   assert_invalid([[
+      module core as mRestricted
+      mRestricted.PreciseTime = nil
+   ]], 'members cannot be assigned', 'member write')
+
+   assert_invalid([[
+      module core as mRestricted
+      local mRestricted = nil
+   ]], 'cannot be declared as a variable', 'local redeclaration')
+
+   assert_invalid([[
+      module core as mRestricted
+      local value = mRestricted.DoesNotExist()
+   ]], 'Unknown function', 'unknown function')
+
+   assert_invalid([[
+      function nested()
+         module core as mNested
+      end
+   ]], 'compilation-unit level', 'nested declaration')
+end
+
+@Test function ContextualKeywordCompatibilityIsPreserved()
+   assert_valid([[
+      global function module(Options, Function)
+         return 7
+      end
+      local value = module({}, function() end)
+      assert(value is 7)
+   ]], 'existing module identifier')
+end

@@ -8,7 +8,7 @@ To be used in conjunction with the gui.menubar or as an independent pop-up only.
 
    namespace 'gui'
 
-   mGfx <const> ?= mod.load('display')
+   module display as mGfx
 
 FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.menu)
 ITEM_HEIGHT  <const> = math.floor(FONT_MAX_HEIGHT * 1.5)

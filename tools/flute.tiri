@@ -57,37 +57,27 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-glNetworkAvailable = thunk():bool
+function moduleAvailable(Name:str):bool
+   local loaded_module
    try
-      global mNet ?= mod.load('network')
+      loaded_module ?= obj.new('module', { name=Name })
    end
-   return mNet != nil
+   return loaded_module != nil
 end
 
-glAudioAvailable = thunk():bool
-   try
-      global mAudio ?= mod.load('audio')
-   end
-   return mAudio != nil
-end
+glNetworkAvailable = thunk():bool return moduleAvailable('network') end
 
-glFontAvailable = thunk():bool
-   try
-      global mFont ?= mod.load('font')
-   end
-   return mFont != nil
-end
+glAudioAvailable = thunk():bool return moduleAvailable('audio') end
 
-glDisplayAvailable = thunk():bool
-   try
-      global mGfx ?= mod.load('display')
-   end
-   return mGfx != nil
-end
+glFontAvailable = thunk():bool return moduleAvailable('font') end
+
+glDisplayAvailable = thunk():bool return moduleAvailable('display') end
 
 global glSSLAvailable = thunk():bool
-   glNetworkAvailable ?! return false -- Opens network module
-   return mNet.setSSL(nil, nil, nil) != ERR_NoSecureSockets
+   return exec([[
+      module network as mNet
+      return mNet.setSSL(nil, nil, nil) != ERR_NoSecureSockets
+   ]])
 end
 
 global glWindowsPlatform = thunk():bool

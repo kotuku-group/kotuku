@@ -151,8 +151,8 @@ Regex object properties: `pattern`, `flags`, and `error`.
 - Use `@if(imported=true)` and `@if(imported=false)` to separate library-import behaviour from direct execution.
 - Use `loadFile(Path)` only when runtime loading is required; it does not get parse-time inlining benefits.
 - Use `exec(Statement)` for dynamic statements and expect parse/runtime failures to raise exceptions.
-- Load modules with `mName ?= mod.load('module')`; common globals are `mAudio`, `mSys`, `mGfx`, `mFont`,
-  `mNet`, `mVec`, and `mXML`.
+- Declare modules at compilation-unit level with `module name as mName`; common namespaces are `mAudio`, `mSys`,
+  `mGfx`, `mFont`, `mNet`, `mVec`, and `mXML`. Guard optional modules with `@if(exists='modules:name')`.
 - Module and object API calls often return `ERR` as the first result; use `check`, result filters, or explicit
   handling rather than ignoring error codes accidentally.
 - Create objects with `obj.new('Class', { field=value })` when fields are known up front; this initialises the

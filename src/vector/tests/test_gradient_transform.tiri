@@ -1,6 +1,6 @@
    include 'display', 'vector'
 
-   mGfx ?= mod.load('display')
+module display as mGfx
 
 -- These tests exercise the Gradient.Matrices field, which holds gradientTransform values in contiguous
 -- kt::vector<VectorMatrix> storage.  The transform is consumed by the renderer via apply_transforms(), so a

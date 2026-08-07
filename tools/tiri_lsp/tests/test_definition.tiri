@@ -143,6 +143,13 @@ end
    assertUriContains(locations, '/docs/xml/modules/core.xml', 'Module function should resolve to module docs')
 end
 
+@Test function DeclaredModuleFunctionResolution()
+   doc = makeDoc('module core as runtimeCore\nruntimeCore.WaitTime(0.1)\n')
+   locations = resolveDefinition(doc, { line = 1, character = 14 })
+   assertUriContains(locations, '/docs/xml/modules/core.xml',
+      'Declared module function should resolve to module docs')
+end
+
 @Test function HandlerAdvertisesAndResolvesDefinition()
    server = {
       _handlers = {},

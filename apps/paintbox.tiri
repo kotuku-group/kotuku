@@ -5,6 +5,8 @@
    import 'json'
    import 'options'
 
+   module vector as mVec
+
 function lowercaseOption(Value:any, Param:table):str
    Value ?! return
    return tostring(Value):lower()

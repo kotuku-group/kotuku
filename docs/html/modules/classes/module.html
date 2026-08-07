@@ -27,9 +27,9 @@ auto modDisplay = objModule::create::global(fl::Name("display"));
 if (modDisplay) modDisplay-&gt;getModBase(DisplayBase);
 </pre>
 <p>To do the same in Tiri:</p>
-<pre>mGfx = mod.load('display')
+<pre>module display as mGfx
 </pre>
-<p>It is critical that the module object is permanently retained until the program no longer needs its functionality.</p>
+<p>Tiri retains the module in its process-wide store until the Tiri module is expunged.</p>
 <h3>Structure</h3><p>The Module class consists of the following fields:</p><table class="table"><thead><th class="col-md-1"><div data-bs-toggle="tooltip" title="Read/Write access indicators are listed below">Access</div></th><th class="col-md-1">Name</th><th class="col-md-1">Type</th><th>Comment</th></thead><tbody><tr data-bs-toggle="collapse" data-bs-target="#fl-Defs" style="scroll-margin:3em;" role="button"><td class="col-md-1" id="tf-Defs"><i class="bi bi-check-circle text-success" data-bs-toggle="tooltip" title="Functional read access"></i> <i class="bi bi-dash-circle-fill text-secondary" data-bs-toggle="tooltip" title="Not writeable"></i></td><th class="col-md-1">Defs</th><td class="col-md-1"><span class="text-nowrap">STRING</span></td><td>Returns the compiled IDL definition for the module.</td></tr><tr><td colspan="4" class="hiddenRow"><div id="fl-Defs" class="accordion-body collapse"><div class="doc-content" style="margin:20px">
 <p>Returns the IDL definition string that was compiled from the module's TDL file.  Useful for introspection purposes.</p>
       

@@ -72,6 +72,13 @@ end
    assertContains(hover, 'Parser annotation', 'Parser annotation hover should identify the symbol kind.')
 end
 
+@Test function DeclaredModuleFunctionHover()
+   hover, token = hoverAt("module core as runtimeCore\nruntimeCore.Res|olvePath('test:')\n")
+
+   assert(token and token.text is 'ResolvePath', 'Hover should identify a declared module function.')
+   assertContains(hover, 'ResolvePath', 'Declared module hover should use generated module documentation.')
+end
+
 @Test function ExternKeywordHover()
    hover, token = hoverAt('ex|tern runTest\n')
 

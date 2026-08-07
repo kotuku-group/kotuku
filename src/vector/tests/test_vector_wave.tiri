@@ -1,6 +1,6 @@
    include 'vector'
 
-   mVec ?= mod.load('vector')
+module vector as mVec
 
 TOLERANCE <const> = 0.01
 

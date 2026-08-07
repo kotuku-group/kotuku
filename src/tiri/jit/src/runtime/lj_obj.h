@@ -95,6 +95,7 @@ enum class AstNodeKind : uint16_t {
    DeferredExpr,  // Deferred expression <{ expr }>
    RangeExpr,     // Range literal {start to stop} or {start into stop}
    ChooseExpr,    // Choose expression: choose value from pattern -> result ... end
+   ModuleFunctionExpr, // Compiler-managed module function selection, e.g. mCore.PreciseTime
    BlockStmt,
    AssignmentStmt,
    LocalDeclStmt,

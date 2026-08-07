@@ -1,7 +1,7 @@
 -- $TIRI
 -- Flute tests for Font functionality
 
-   mFont ?= mod.load("font")
+   module font as mFont
 
 @Test function SelectFont()
    err, path, meta = mFont.selectFont("Noto Sans", "Regular")

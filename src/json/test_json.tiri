@@ -2,7 +2,7 @@
 -- Alternatively the native JSON library can be used by Tiri programs.
 
    include 'xml'
-   mJson = mod.load('json')
+   module json as mJson
    import 'json'
 
 glJSON = [[

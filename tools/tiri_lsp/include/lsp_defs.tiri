@@ -170,12 +170,6 @@ glBuiltins = {
    ['obj.find'] = {
       comment = 'Finds an existing Kotuku object by name.',
       prototype = 'obj.find(name)'
-   },
-
-   -- Module loading
-   ['mod.load'] = {
-      comment = 'Loads a Kotuku module.',
-      prototype = 'mod.load(modname)'
    }
 }
 

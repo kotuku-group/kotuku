@@ -2,7 +2,7 @@
 
    include 'vector'
 
-   mVec ?= mod.load('vector')
+   module vector as mVec
 
    global vfx ?= {
       fps = 1/60 -- Desired FPS for the effects, ideally matches the display

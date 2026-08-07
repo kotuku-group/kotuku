@@ -3,7 +3,7 @@ TCP keep-alive socket option smoke tests.
 --]]
 
    include 'network'
-   mNet ?= mod.load('network')
+module network as mNet
 
 glPort = 18420
 

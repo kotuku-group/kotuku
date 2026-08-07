@@ -7,7 +7,7 @@ Documentation is available in the Kotuku Wiki.
 
    namespace 'gui'
 
-   mGfx <const> ?= mod.load('display')
+   module display as mGfx
 
 DEFAULT_WIDTH  <const> = 600
 DEFAULT_HEIGHT <const> = 400
@@ -159,7 +159,7 @@ gui.window = function(Options:table)
       self.surface.acMoveToFront()
    end
 
-   self.parentSize = function(self:table)
+   self.parentSize = function(self:table):<num, num>
       err, info = mGfx.getDisplayInfo(self.surface.display)
       return info.monitorWidth, info.monitorHeight
    end

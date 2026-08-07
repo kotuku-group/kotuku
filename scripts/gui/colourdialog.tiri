@@ -11,7 +11,7 @@ Documentation is available in the Kotuku Wiki.
 
    namespace 'gui'
 
-   mGfx ?= mod.load('display')
+   module display as mGfx
 
    gui.dialog ?= { }
 

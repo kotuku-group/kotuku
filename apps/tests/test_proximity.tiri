@@ -4,7 +4,7 @@
    import 'net/proxyserver'
    import 'json'
    include 'network'
-   mNet ?= mod.load('network')
+   module network as mNet
 
 PROXY_PORT <const> = 18962
 SERVER_PORT <const> = 18963

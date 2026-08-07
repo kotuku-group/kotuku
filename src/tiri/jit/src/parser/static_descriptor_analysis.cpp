@@ -646,21 +646,32 @@ private:
    {
       const ExprNode *receiver = nullptr;
       GCstr *member = nullptr;
-      bool direct_member = false;
 
       if (const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
           direct and direct->callable) {
+         // A module function selection carries its own immutable signature, so its results are described without a
+         // receiver descriptor.  This is the only path that can describe a compiler-managed namespace call, because
+         // the namespace has no script value for descriptor propagation to observe.
+
+         if (direct->callable->kind IS AstNodeKind::ModuleFunctionExpr) {
+            const auto &payload = std::get<ModuleFunctionExprPayload>(direct->callable->data);
+            if (not payload.module or not payload.function.symbol) return 0;
+            const FunctionField *fields = static_module_function(payload.module,
+               std::string_view(strdata(payload.function.symbol), payload.function.symbol->len));
+            if (not fields) return 0;
+            return this->catalogue_.add_results(
+               describe_module_call_results(fields, &this->context_.lua()));
+         }
+
          if (direct->callable->kind IS AstNodeKind::MemberExpr) {
             const auto &payload = std::get<MemberExprPayload>(direct->callable->data);
             receiver = payload.table.get();
             member = payload.member.symbol;
-            direct_member = true;
          }
          else if (direct->callable->kind IS AstNodeKind::SafeMemberExpr) {
             const auto &payload = std::get<SafeMemberExprPayload>(direct->callable->data);
             receiver = payload.table.get();
             member = payload.member.symbol;
-            direct_member = true;
          }
       }
       else if (const auto *method = std::get_if<MethodCallTarget>(&Call.target)) {
@@ -740,12 +751,7 @@ private:
          return 0;
       }
 
-      if (not direct_member or base.primary != TiriType::Userdata or not base.proved() or not base.module) return 0;
-      const FunctionField *fields = static_module_function(
-         base.module, std::string_view(strdata(member), member->len));
-      if (not fields) return 0;
-      return this->catalogue_.add_results(
-         describe_module_call_results(fields, &this->context_.lua()));
+      return 0;
    }
 
    void annotate_callables_expression(ExprNode &Expression)
@@ -781,19 +787,6 @@ private:
          if (entry->first IS Name) return this->catalogue_.value(entry->second);
       }
       return {};
-   }
-
-   [[nodiscard]] StaticValueDescriptor environment_global_value(GCstr *Name) const
-   {
-      StaticValueDescriptor result;
-      cTValue *global = this->protected_global_value(Name);
-      if (not global) return result;
-      StaticModuleHandle module = static_module_from_value(&this->context_.lua(), global);
-      if (not module) return result;
-      result.primary = TiriType::Userdata;
-      result.module = module;
-      result.proof = StaticProof::Trusted;
-      return result;
    }
 
    [[nodiscard]] StaticValueDescriptor literal_descriptor(const LiteralValue &Literal) const
@@ -859,26 +852,6 @@ private:
       return std::pair(std::string_view(strdata(literal.string_value), literal.string_value->len), true);
    }
 
-   [[nodiscard]] StaticModuleHandle literal_module_load(const CallExprPayload &Call) const
-   {
-      const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
-      if (not direct or not direct->callable or direct->callable->kind != AstNodeKind::MemberExpr or
-          Call.arguments.size() != 1) return nullptr;
-      const auto &member = std::get<MemberExprPayload>(direct->callable->data);
-      if (not member.table or member.table->kind != AstNodeKind::IdentifierExpr or not member.member.symbol or
-          member.member.symbol->hash != kt::strhash("load")) return nullptr;
-      const auto &base = std::get<NameRef>(member.table->data);
-      if (base.binding_id or not base.identifier.symbol or base.identifier.symbol->hash != kt::strhash("mod")) {
-         return nullptr;
-      }
-      const ExprNode &argument = *Call.arguments.front();
-      if (argument.kind != AstNodeKind::LiteralExpr) return nullptr;
-      const auto &literal = std::get<LiteralValue>(argument.data);
-      if (literal.kind != LiteralKind::String or not literal.string_value) return nullptr;
-      return static_module_by_name(
-         std::string_view(strdata(literal.string_value), literal.string_value->len));
-   }
-
    [[nodiscard]] StaticValueDescriptor call_descriptor(CallExprPayload &Call, bool Safe)
    {
       if (this->native_calls_only_) {
@@ -907,12 +880,6 @@ private:
          result.primary = TiriType::Range;
          result.proof = StaticProof::Closed;
          result.nullable = false;
-      }
-      else if (StaticModuleHandle mod = this->literal_module_load(Call);
-          mod and (result.primary IS TiriType::Unknown or result.primary IS TiriType::Userdata)) {
-         result.primary = TiriType::Userdata;
-         result.module = mod;
-         result.proof = StaticProof::Trusted;
       }
       else if (const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
           direct and direct->callable and direct->callable->kind IS AstNodeKind::MemberExpr) {
@@ -1151,12 +1118,7 @@ private:
             const auto &reference = std::get<NameRef>(Expression.data);
             if (reference.binding_id) value = this->catalogue_.value(
                this->catalogue_.binding(reference.binding_id).value);
-            else {
-               value = this->global_value(reference.identifier.symbol);
-               if (value.primary IS TiriType::Unknown) {
-                  value = this->environment_global_value(reference.identifier.symbol);
-               }
-            }
+            else value = this->global_value(reference.identifier.symbol);
             break;
          }
          case AstNodeKind::TableExpr:

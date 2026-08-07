@@ -18,23 +18,18 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 
-@Test function ModuleResultSignatures()
-   local sys <const> = mSys
-   local precise_time = sys.preciseTime()
-   assert(precise_time > 0, 'Case-insensitive module lookup or immutable alias typing failed.')
+-- 'mSys' is a compiler-managed namespace for Core rather than a script value, so a source-level alias is taken over
+-- an individual function.  Safe navigation is not applicable because Core is a required dependency.
 
-   local safe_time = mSys?.PreciseTime()
-   assert(safe_time > 0, 'Safe module calls did not retain their nullable result signature.')
+@Test function ModuleResultSignatures()
+   local precise_time <const> = mSys.preciseTime
+   assert(precise_time() > 0, 'Case-insensitive module lookup or extracted callable typing failed.')
 
    local actions = mSys.ActionList()
    assert(type(actions) is 'array', 'ActionList() did not return its vector result as an array.')
 
    local no_result = mSys.LogReturn()
    assert(no_result is nil, 'LogReturn() did not produce a closed empty result tuple.')
-
-   local core <const> = mod.load('core')
-   local loaded_time = core.PreciseTime()
-   assert(loaded_time > 0, "A registered literal mod.load('core') did not retain module result metadata.")
 end
 
 -----------------------------------------------------------------------------------------------------------------------

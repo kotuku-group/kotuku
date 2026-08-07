@@ -692,8 +692,8 @@ global function substituteReferences(String:str, Class:table):str
    -- Substitute external function references, identified as ~Module.Function()
 
    String = substituteReferenceMatches(String, rx_ext_func_ref, function(Cap, Match)
-      -- TODO: Validate that the module and function actually exist.  Easiest way is with mod.load()
-      -- and build a cache of the function list.
+      -- TODO: Validate that the module and function actually exist.  Easiest way is
+      -- to build a cache of the function list.
       return f'<function module="{Cap[0]}">{Cap[1]}</function>'
    end)
 

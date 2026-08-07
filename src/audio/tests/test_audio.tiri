@@ -3,6 +3,9 @@
 -- These are audible tests that require human verification to confirm a full pass.
 -- NB: Latency differs between platforms.  Do not expect playback gaps to match between Windows and Linux.
 
+@if(exists='modules:audio')
+   module audio as mAudio
+
 @BeforeAll function init(State)
    global glFolder = State.folder
    global glAudio = obj.new('audio', { name='SystemAudio' })
@@ -19,8 +22,7 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 -- This test must result in playback of a low-tone, then followed by a high tone.
 
-@Test(priority=10); @Requires(audio=true)
-function SequentialPlayback()
+@Test(priority=10) function SequentialPlayback()
    snd = obj.new('sound', { path=glFolder .. 'low-tone.wav', volume=0.25 })
    assert(snd, 'Failed to process low-tone wav file.')
 
@@ -69,7 +71,7 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 -- Test left and right speaker panning
 
-@Test(priority=20); @Requires(audio=true)
+@Test(priority=20)
 function Pan()
    proc = processing.new()
 
@@ -100,8 +102,7 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 -- Test volume adjustment and OnStop trigger rates.
 
-@Test(priority=30); @Requires(audio=true)
-function Volume()
+@Test(priority=30) function Volume()
    snd = obj.new('sound', { path=glFolder .. 'low-tone.wav' })
 
    logOutput('Sample duration is ' .. string.format('%.2fs', snd.duration))
@@ -130,8 +131,7 @@ end
 -----------------------------------------------------------------------------------------------------------------------
 -- Increase the pitch repeatedly
 
-@Test(priority=40); @Requires(audio=true)
-function Tones()
+@Test(priority=40) function Tones()
    proc = processing.new()
 
    snd = obj.new('sound', { path=glFolder .. 'low-tone.wav', volume=0.25 })
@@ -155,8 +155,7 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 
-@Test(priority=50); @Requires(audio=true)
-function Beep()
+@Test(priority=50) function Beep()
    glAudio.mtBeep(3000, 100, 5)
 end
 
@@ -164,8 +163,7 @@ end
 -- Test WAVE file saving by loading a file and saving it to a temp location, then comparing the binary content of
 -- both files.
 
-@Test(priority=60); @Requires(audio=true)
-function WaveSave()
+@Test(priority=60) function WaveSave()
    snd = obj.new('sound', { path=glFolder .. 'low-tone.wav' })
    output_file = obj.new('file', { path='temp:low-tone.wav', flags='!NEW|WRITE' })
 
@@ -222,3 +220,5 @@ function WaveSave()
    saved_file = nil
    processing.collect()
 end
+
+@end

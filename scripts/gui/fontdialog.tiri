@@ -10,12 +10,11 @@ Documentation is available in the Kotuku Wiki.
    include 'display', 'font'
 
    namespace 'gui'
+   module font as mFont
 
    gui.dialog ?= { }
 
 gui.dialog.font = function(Options)
-   global mFont <const> ?= mod.load('font')
-
    self = { -- Public variables
       windowID    = nil,
       face        = 'Noto Sans',

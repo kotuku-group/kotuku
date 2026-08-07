@@ -358,6 +358,216 @@ AstBuilder::~AstBuilder()
    this->ctx.clear_error_rollback_callback(this);
 }
 
+const AstBuilder::ModuleNamespaceSymbol *AstBuilder::find_module_namespace(GCstr *Name) const
+{
+   if (not Name) return nullptr;
+   if (auto found = this->module_namespaces.find(Name); found != this->module_namespaces.end()) return &found->second;
+   return nullptr;
+}
+
+//********************************************************************************************************************
+// Test whether a name is reserved by a module namespace, without materialising an implicit dependency for it.
+//
+// Declaration sites use this to reject rebinding, which must apply to an implicit namespace whether or not the
+// compilation unit has referenced it yet.  Creating the dependency here would make a unit that merely shadows the
+// name load Core and emit an activation statement.
+
+bool AstBuilder::is_module_namespace_name(GCstr *Name) const
+{
+   if (not Name) return false;
+   if (this->find_module_namespace(Name)) return true;
+   return std::string_view(strdata(Name), Name->len) IS std::string_view("mSys");
+}
+
+//********************************************************************************************************************
+// Find the shared dependency for a canonical module, creating it when this is the first declaration or implicit use.
+
+std::pair<size_t, bool> AstBuilder::find_or_create_module_dependency(
+   std::string_view CanonicalModule, const SourceSpan &Span, bool Implicit)
+{
+   for (size_t index = 0; index < this->module_dependencies.size(); ++index) {
+      if (kt::iequals(this->module_dependencies[index]->canonical_module, CanonicalModule)) return { index, false };
+   }
+
+   auto record = std::make_unique<ModuleDependency>();
+   record->canonical_module = CanonicalModule;
+   record->sentinel_name = this->ctx.lex().keepstr(std::string("\x1fmodule:") + std::string(CanonicalModule));
+   record->declaration_span = Span;
+   record->implicit = Implicit;
+   this->module_dependencies.push_back(std::move(record));
+   return { this->module_dependencies.size() - 1, true };
+}
+
+//********************************************************************************************************************
+// Build the generated local declaration that activates one module dependency.
+//
+// The statement is created as soon as the dependency is recorded so that it occupies a well-defined position in the
+// statement list, but its binding names and function arguments are unknown until the compilation unit has been
+// parsed.  A placeholder sentinel name keeps the declaration well-formed in the interim;
+// finalise_module_dependencies() replaces it with the complete ordered binding list.
+
+StmtNodePtr AstBuilder::make_dependency_initialiser(ModuleDependency &Dependency, const SourceSpan &Span)
+{
+   NameRef mod_reference;
+   mod_reference.identifier = Identifier::from_keepstr(this->ctx.lex().keepstr("mod"), Span);
+   ExprNodePtr mod_expr = make_identifier_expr(Span, mod_reference);
+   Identifier load_identifier = Identifier::from_keepstr(
+      this->ctx.lex().keepstr(std::string_view("\x1f" "dependency", 11)), Span);
+   ExprNodePtr load_expr = make_member_expr(Span, std::move(mod_expr), load_identifier, false);
+
+   ExprNodeList arguments;
+   arguments.push_back(make_literal_expr(Span,
+      LiteralValue::string(this->ctx.lex().keepstr(Dependency.canonical_module))));
+   ExprNodeList values;
+   values.push_back(make_call_expr(Span, std::move(load_expr), std::move(arguments), false));
+
+   std::vector<Identifier> names;
+   names.push_back(Identifier::from_keepstr(Dependency.sentinel_name, Span));
+
+   StmtNodePtr initialiser = make_local_decl_stmt(Span, std::move(names), std::move(values));
+   Dependency.initialiser = initialiser.get();
+   return initialiser;
+}
+
+//********************************************************************************************************************
+// Resolve an identifier to a module namespace, creating an implicit dependency on first use where one is defined.
+//
+// 'mSys' is a compiler-managed namespace for Core rather than a script value, so it behaves as though every
+// compilation unit begins with `module core as mSys`.  The dependency is created lazily so that a unit which never
+// mentions mSys neither resolves Core nor emits an activation statement.  Its initialiser is prepended to the unit's
+// statement list by prepend_implicit_dependencies(), which guarantees that it dominates every reference.
+//
+// An explicit `module core as mSys` declaration is parsed before any expression can reference the namespace, so it
+// simply wins the race and no implicit record is created.
+
+const AstBuilder::ModuleNamespaceSymbol * AstBuilder::resolve_module_namespace(GCstr *Name)
+{
+   if (auto existing = this->find_module_namespace(Name)) return existing;
+   if (not Name) return nullptr;
+
+   std::string_view name_view(strdata(Name), Name->len);
+   if (name_view != "mSys") return nullptr;
+
+   // Core is a required dependency of every Tiri state, so a failure here is a host defect rather than a script
+   // error.  Fall through to ordinary identifier handling so that the resulting diagnostic names the real problem.
+
+   if (load_include(this->ctx.lua().script, "core") != ERR::Okay) return nullptr;
+
+   StaticModuleHandle signature = static_module_by_name("core");
+   std::string canonical_module = signature ? std::string(static_module_name(signature)) : std::string("core");
+
+   // An explicit declaration of core may already have created the dependency, in which case mSys becomes another
+   // alias of it.  Pooling matches parse_module_decl() so that one canonical module always has one initialiser and
+   // one set of hidden callable bindings.
+
+   size_t dependency_index = this->find_or_create_module_dependency(canonical_module, {}, true).first;
+
+   ModuleNamespaceSymbol symbol;
+   symbol.source_name      = Name;
+   symbol.module           = signature;
+   symbol.canonical_module = std::move(canonical_module);
+   symbol.dependency       = dependency_index;
+   return &this->module_namespaces.emplace(Name, std::move(symbol)).first->second;
+}
+
+//********************************************************************************************************************
+// Insert the activation statements of implicitly created dependencies at the head of the compilation unit.
+//
+// Explicit declarations already occupy their source position.  An implicit dependency has no source position, so its
+// initialiser is placed first, where it dominates every reference in the unit.
+
+void AstBuilder::prepend_implicit_dependencies(BlockStmt &Block)
+{
+   for (auto &dependency : this->module_dependencies) {
+      if (not dependency->implicit or dependency->initialiser) continue;
+      Block.statements.insert(Block.statements.begin(),
+         this->make_dependency_initialiser(*dependency, Block.span));
+   }
+}
+
+//********************************************************************************************************************
+// Record a reference to a canonical module function and return the hidden local that will hold its callable.  The
+// first reference assigns the binding; later references, including those made through an alias of the same module,
+// reuse it so that exactly one closure is created per unique function.
+
+GCstr * AstBuilder::module_function_binding(ModuleDependency &Dependency, GCstr *CanonicalFunction)
+{
+   if (not CanonicalFunction) return nullptr;
+
+   for (const auto &function : Dependency.functions) {
+      if (function.function IS CanonicalFunction) return function.binding;
+   }
+
+   std::string binding_text = std::string("\x1fmodfn:") + Dependency.canonical_module + ":" +
+      std::string(strdata(CanonicalFunction), CanonicalFunction->len);
+   GCstr *binding = this->ctx.lex().keepstr(binding_text);
+   Dependency.functions.push_back({ CanonicalFunction, binding });
+   return binding;
+}
+
+//********************************************************************************************************************
+// Complete every generated dependency initialiser once the compilation unit has been parsed and the full set of
+// referenced functions is known.  This must run before static descriptor discovery so that the hidden locals are
+// visible to later stages as ordinary declarations.
+//
+// A declaration that references no function still has to resolve its module during activation, so its initialiser
+// retains a single hidden sentinel binding rather than becoming an empty local declaration.
+
+void AstBuilder::finalise_module_dependencies()
+{
+   for (auto &dependency : this->module_dependencies) {
+      if (not dependency->initialiser) continue;
+
+      auto *payload = std::get_if<LocalDeclStmtPayload>(&dependency->initialiser->data);
+      if (not payload or payload->values.empty()) continue;
+
+      auto *call = std::get_if<CallExprPayload>(&payload->values.front()->data);
+      if (not call) continue;
+
+      SourceSpan span = dependency->declaration_span;
+      payload->names.clear();
+
+      if (dependency->functions.empty()) {
+         payload->names.push_back(Identifier::from_keepstr(dependency->sentinel_name, span));
+         continue;
+      }
+
+      for (const auto &function : dependency->functions) {
+         call->arguments.push_back(make_literal_expr(span, LiteralValue::string(function.function)));
+
+         // The binding carries neither a declared type nor a <const> attribute.  Its name is unspellable, so no
+         // source can rebind it, and the const validator requires one initialiser expression per name whereas the
+         // binder supplies its results as a single multiple-value call.
+         payload->names.push_back(Identifier::from_keepstr(function.binding, span));
+      }
+   }
+}
+
+bool AstBuilder::module_is_available(std::string_view Name)
+{
+   AstBuilder *root = this;
+   while (root->parent_builder) root = root->parent_builder;
+
+   std::string canonical(Name);
+   std::transform(canonical.begin(), canonical.end(), canonical.begin(),
+      [](unsigned char Character) { return char(std::tolower(Character)); });
+   if (auto found = root->module_availability.find(canonical); found != root->module_availability.end()) {
+      return found->second;
+   }
+
+   AdjustLogLevel(1);
+   bool available = load_include(this->ctx.lua().script, Name) IS ERR::Okay;
+   AdjustLogLevel(-1);
+   root->module_availability.emplace(std::move(canonical), available);
+   return available;
+}
+
+void AstBuilder::append_pending_statements(StmtNodeList &Statements)
+{
+   for (auto &statement : this->pending_statements) Statements.push_back(std::move(statement));
+   this->pending_statements.clear();
+}
+
 void AstBuilder::commit_registered_enum_constants()
 {
    this->registered_enum_constants.clear();
@@ -472,7 +682,12 @@ GCstr *AstBuilder::current_source_file()
 ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_chunk()
 {
    const TokenKind terminators[] = { TokenKind::EndOfFile };
-   return this->parse_block(terminators);
+   auto chunk = this->parse_block(terminators);
+   if (chunk.ok()) {
+      this->prepend_implicit_dependencies(*chunk.value_ref());
+      this->finalise_module_dependencies();
+   }
+   return chunk;
 }
 
 //********************************************************************************************************************
@@ -550,6 +765,7 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_block(std::span<const
 
          statements.push_back(std::move(stmt.value_ref()));
       }
+      this->append_pending_statements(statements);
    }
 
    Token last = this->ctx.tokens().current();
@@ -624,6 +840,14 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
          std::string_view(strdata(current.identifier()), current.identifier()->len) IS "struct" and
          this->ctx.tokens().peek(1).kind() IS TokenKind::Identifier) {
       return this->parse_struct_declaration();
+   }
+
+   if (current.kind() IS TokenKind::Identifier and current.identifier() and
+         std::string_view(strdata(current.identifier()), current.identifier()->len) IS "module") {
+      Token next = this->ctx.tokens().peek(1);
+      if (next.kind() IS TokenKind::Identifier or next.kind() IS TokenKind::String) {
+         return this->parse_module_decl();
+      }
    }
 
    switch (current.kind()) {

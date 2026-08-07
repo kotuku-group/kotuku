@@ -1,4 +1,4 @@
-   mVec ?= mod.load('vector')
+module vector as mVec
 
 function newConvolve()
    filter = obj.new('VectorFilter')

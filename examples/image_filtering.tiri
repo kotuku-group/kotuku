@@ -9,7 +9,7 @@ Image Filter Demonstration
    import 'gui/slider'
    import 'gui/button'
 
-   mVec ?= mod.load('vector')
+   module vector as mVec
 
    local win, viewport, photo, mainVP, rect, picPhoto, glMatrix
 

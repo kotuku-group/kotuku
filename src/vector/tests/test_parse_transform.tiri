@@ -1,5 +1,5 @@
 
-   mVec ?= mod.load('vector')
+module vector as mVec
 
 function assertMatrix(Matrix, ScaleX, ShearY, ShearX, ScaleY, TranslateX, TranslateY, Message)
    function near(Actual, Expected, Message)
