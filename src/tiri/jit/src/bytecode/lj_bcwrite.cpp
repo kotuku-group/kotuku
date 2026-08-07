@@ -281,12 +281,71 @@ static char * bcwrite_signature(char *Buffer, const GCproto *Proto)
 }
 
 //********************************************************************************************************************
+// Calculate and write the portable module dependency descriptors.
+//
+// Only canonical names are written.  The reader resolves them through the global module registry, so a chunk written
+// by one process resolves correctly in another even if the module's export list has been reordered.
+
+static MSize bcwrite_dependency_size(const GCproto *Proto)
+{
+   const auto table = proto_dependencies(Proto);
+   if (not table) return 0;
+
+   MSize size = 1 + bcwrite_uleb128_size(table->dependency_count) + bcwrite_uleb128_size(table->function_count);
+
+   auto dependencies = proto_dependency_list(table);
+   for (MSize i = 0; i < table->dependency_count; ++i) {
+      GCstr *name = gco_to_string(gcref(dependencies[i].name));
+      size += bcwrite_uleb128_size(name->len) + name->len +
+         bcwrite_uleb128_size(dependencies[i].first_function) + bcwrite_uleb128_size(dependencies[i].function_count);
+   }
+
+   auto functions = proto_dependency_functions(table);
+   for (MSize i = 0; i < table->function_count; ++i) {
+      GCstr *name = gco_to_string(gcref(functions[i].name));
+      size += bcwrite_uleb128_size(name->len) + name->len + bcwrite_uleb128_size(functions[i].module);
+   }
+
+   return size;
+}
+
+static char * bcwrite_dependencies(char *Buffer, const GCproto *Proto)
+{
+   const auto table = proto_dependencies(Proto);
+   if (not table) return Buffer;
+
+   *Buffer++ = table->version;
+   Buffer = lj_strfmt_wuleb128(Buffer, table->dependency_count);
+   Buffer = lj_strfmt_wuleb128(Buffer, table->function_count);
+
+   auto dependencies = proto_dependency_list(table);
+   for (MSize i = 0; i < table->dependency_count; ++i) {
+      GCstr *name = gco_to_string(gcref(dependencies[i].name));
+      Buffer = lj_strfmt_wuleb128(Buffer, name->len);
+      Buffer = lj_buf_wmem(Buffer, strdata(name), name->len);
+      Buffer = lj_strfmt_wuleb128(Buffer, dependencies[i].first_function);
+      Buffer = lj_strfmt_wuleb128(Buffer, dependencies[i].function_count);
+   }
+
+   auto functions = proto_dependency_functions(table);
+   for (MSize i = 0; i < table->function_count; ++i) {
+      GCstr *name = gco_to_string(gcref(functions[i].name));
+      Buffer = lj_strfmt_wuleb128(Buffer, name->len);
+      Buffer = lj_buf_wmem(Buffer, strdata(name), name->len);
+      Buffer = lj_strfmt_wuleb128(Buffer, functions[i].module);
+   }
+
+   return Buffer;
+}
+
+//********************************************************************************************************************
 // Write prototype.
 
 static void bcwrite_proto(BCWriteCtx *ctx, GCproto *pt)
 {
    MSize sizedbg = 0;
    MSize sizesig = bcwrite_signature_size(pt);
+   MSize sizedep = bcwrite_dependency_size(pt);
    char *p;
 
    // Recursively write children of prototype.
@@ -300,7 +359,7 @@ static void bcwrite_proto(BCWriteCtx *ctx, GCproto *pt)
    }
 
    // Start writing the prototype info to a buffer.
-   p = lj_buf_need(&ctx->sb, 5 + 4 + 7 * 5 + sizesig +
+   p = lj_buf_need(&ctx->sb, 5 + 4 + 8 * 5 + sizesig + sizedep +
       (pt->sizebc - 1) * (MSize)sizeof(BCIns) + pt->sizeuv * 2);
    p += 5;  //  Leave room for final size.
 
@@ -313,6 +372,7 @@ static void bcwrite_proto(BCWriteCtx *ctx, GCproto *pt)
    p = lj_strfmt_wuleb128(p, pt->sizekn);
    p = lj_strfmt_wuleb128(p, pt->sizebc - 1);
    p = lj_strfmt_wuleb128(p, sizesig);
+   p = lj_strfmt_wuleb128(p, sizedep);
    if (!ctx->strip) {
       if (proto_lineinfo(pt)) sizedbg = pt->sizept - (MSize)((char*)proto_lineinfo(pt) - (char*)pt);
       p = lj_strfmt_wuleb128(p, sizedbg);
@@ -323,6 +383,7 @@ static void bcwrite_proto(BCWriteCtx *ctx, GCproto *pt)
    }
 
    p = bcwrite_signature(p, pt);
+   p = bcwrite_dependencies(p, pt);
 
    // Write bytecode instructions and upvalue refs.
    p = bcwrite_bytecode(ctx, p, pt);

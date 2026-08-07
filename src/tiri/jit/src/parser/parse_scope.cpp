@@ -904,7 +904,7 @@ GCproto * LexState::fs_finish(BCLine Line)
    if (min_line < fs->linedefined) fs->linedefined = min_line;
 
    BCLine numline = line - fs->linedefined;
-   size_t sizept, ofsk, ofsuv, ofssig, ofsli, ofsdbg, ofsvar;
+   size_t sizept, ofsk, ofsuv, ofssig, ofsdep, ofsli, ofsdbg, ofsvar;
    GCproto *pt;
 
    // Apply final fixups.
@@ -936,6 +936,15 @@ GCproto * LexState::fs_finish(BCLine Line)
    const size_t signature_size = has_signature ?
       proto_signature_size(fs->signature_parameters.size(), fs->signature_result_entry_count) : 0;
    lj_assertX(signature_size <= UINT16_MAX, "prototype signature size exceeds uint16_t");
+
+   // Module dependency descriptors.  Only the function that declared them carries a table; the counts were bounded
+   // when the AST builder published them, so the arithmetic below cannot overflow the colocated block.
+
+   size_t dependency_function_count = 0;
+   for (const auto &descriptor : fs->module_descriptors) dependency_function_count += descriptor.functions.size();
+   const bool has_dependencies = not fs->module_descriptors.empty();
+   const size_t dependency_size = has_dependencies ?
+      proto_dependency_size(fs->module_descriptors.size(), dependency_function_count) : 0;
 
    // Capture variable declarations if JOF::DIAGNOSE is enabled.
 
@@ -987,6 +996,12 @@ GCproto * LexState::fs_finish(BCLine Line)
    ofssig = sizept;
    lj_assertX((ofssig % alignof(ProtoTypeEntry)) IS 0, "prototype signature is not naturally aligned");
    sizept += signature_size;
+   // The descriptors hold GCRef fields, so the block needs natural alignment.  The upvalue array is only 2-byte
+   // granular and the signature may be absent, so the offset is rounded up rather than assumed.
+
+   sizept = (sizept + alignof(ProtoDependency) - 1) & ~(alignof(ProtoDependency) - 1);
+   ofsdep = sizept;
+   sizept += dependency_size;
    ofsli  = sizept;
    sizept += fs_prep_line(fs);
    ofsdbg = sizept;
@@ -1025,6 +1040,37 @@ GCproto * LexState::fs_finish(BCLine Line)
       }
       setmref(pt->signature, signature);
       pt->signature_size = uint16_t(signature_size);
+   }
+
+   // Install the portable module dependency descriptors.  Every name was anchored as a GC constant when the builder
+   // published it, so the references below are reachable from the prototype without any additional marking.
+
+   if (has_dependencies) {
+      auto table = (ProtoDependencyTable *)((char *)pt + ofsdep);
+      table->version = PROTO_DEPENDENCY_VERSION;
+      table->reserved = 0;
+      table->dependency_count = uint16_t(fs->module_descriptors.size());
+      table->function_count = uint32_t(dependency_function_count);
+
+      auto dependencies = proto_dependency_list(table);
+      auto functions = proto_dependency_functions(table);
+      uint32_t next_function = 0;
+
+      for (size_t i = 0; i < fs->module_descriptors.size(); ++i) {
+         const auto &descriptor = fs->module_descriptors[i];
+         setgcref(dependencies[i].name, obj2gco(descriptor.name));
+         dependencies[i].first_function = uint16_t(next_function);
+         dependencies[i].function_count = uint16_t(descriptor.functions.size());
+
+         for (GCstr *function : descriptor.functions) {
+            setgcref(functions[next_function].name, obj2gco(function));
+            functions[next_function].module = uint16_t(i);
+            functions[next_function].reserved = 0;
+            next_function++;
+         }
+      }
+
+      setmref(pt->dependencies, table);
    }
 
    // Register the function name if one was provided (for named function declarations).

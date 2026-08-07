@@ -607,6 +607,20 @@ static void gc_traverse_proto(global_State *g, GCproto* pt)
    for (i = -(ptrdiff_t)pt->sizekgc; i < 0; i++)  //  Mark collectable consts.
       gc_markobj(g, proto_kgc(pt, i));
    if (pt->trace) gc_marktrace(g, pt->trace);
+
+   // Module dependency names.  A prototype built by the parser also anchors these in its constant array, but one
+   // rebuilt from a bytecode dump does not: the descriptors are the only reference, so they must be marked here.
+
+   if (auto table = proto_dependencies(pt)) {
+      auto dependencies = proto_dependency_list(table);
+      for (uint32_t d = 0; d < table->dependency_count; ++d) {
+         gc_mark_str(gco_to_string(gcref(dependencies[d].name)));
+      }
+      auto functions = proto_dependency_functions(table);
+      for (uint32_t f = 0; f < table->function_count; ++f) {
+         gc_mark_str(gco_to_string(gcref(functions[f].name)));
+      }
+   }
 }
 
 //********************************************************************************************************************

@@ -56,8 +56,8 @@ private:
    // One record per canonical module declared by this compilation unit.  Aliases of the same module share a
    // dependency, so a function referenced through two namespaces materialises exactly one hidden callable.
    //
-   // The initialiser statement is emitted with a placeholder binding when the declaration is parsed, then finalised
-   // once the whole unit has been seen and the complete ordered function list is known.
+   // The activation statement is emitted when the declaration is parsed, then its hidden bindings are finalised once
+   // the whole unit has been seen and the complete ordered function list is known.
 
    struct ModuleFunctionBinding {
       GCstr *function = nullptr;
@@ -66,9 +66,9 @@ private:
 
    struct ModuleDependency {
       std::string canonical_module;
-      std::vector<ModuleFunctionBinding> functions;   // Canonical names and hidden locals, in binder argument order
-      GCstr *sentinel_name = nullptr;                 // Hidden local used when no function is referenced
-      StmtNode *initialiser = nullptr;                // The generated local declaration, finalised after parsing
+      std::vector<ModuleFunctionBinding> functions;   // Canonical names and hidden locals, in descriptor order
+      StmtNode *activation = nullptr;                 // Generated activation declaration, finalised after parsing
+      uint32_t descriptor = 0;                        // Index in the prototype dependency table
       SourceSpan declaration_span{};
       bool implicit = false;                          // Created on demand by an implicit namespace such as mSys
    };
@@ -226,8 +226,9 @@ private:
    [[nodiscard]] std::pair<size_t, bool> find_or_create_module_dependency(
       std::string_view, const SourceSpan &, bool Implicit);
    [[nodiscard]] GCstr *module_function_binding(ModuleDependency &, GCstr *CanonicalFunction);
-   [[nodiscard]] StmtNodePtr make_dependency_initialiser(ModuleDependency &, const SourceSpan &);
+   [[nodiscard]] StmtNodePtr make_dependency_activation(ModuleDependency &, const SourceSpan &);
    void finalise_module_dependencies();
+   void publish_dependency_descriptors();
    void prepend_implicit_dependencies(BlockStmt &);
    void append_pending_statements(StmtNodeList &);
 

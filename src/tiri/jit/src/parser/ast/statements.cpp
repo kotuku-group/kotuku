@@ -1370,7 +1370,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_check()
 }
 
 //********************************************************************************************************************
-// Validates an include module name before load_include() touches the module loader.
+// Validates an include module name before load_module_defs() touches the module loader.
 
 static bool include_module_name_is_valid(std::string_view Module)
 {
@@ -1389,9 +1389,9 @@ static bool include_module_name_is_valid(std::string_view Module)
 //********************************************************************************************************************
 // Parses a contextual module namespace declaration: module <name> as <namespace>.
 //
-// The emitted local has an internal, unspellable name and is solely the runtime dependency handle.  Source references
-// are recognised from module_namespaces and may only form named member expressions, so the declared namespace never
-// becomes a Tiri value or a global-table entry.
+// Source references are recognised from module_namespaces and may only form named member expressions.  The namespace
+// itself never becomes a Tiri value or a global-table entry; BC_MODACT populates only the hidden callable locals that
+// are actually referenced by the compilation unit.
 
 ParserResult<StmtNodePtr> AstBuilder::parse_module_decl()
 {
@@ -1454,7 +1454,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_module_decl()
             std::string_view(strdata(namespace_name), namespace_name->len)));
    }
 
-   if (auto error = load_include(this->ctx.lua().script, module_name); error != ERR::Okay) {
+   if (auto error = load_module_defs(module_name); error != ERR::Okay) {
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token,
          std::format("Module '{}' is not available: {}. Guard optional dependencies with "
             "@if(exists='modules:{}').", module_name, GetErrorMsg(error), module_name));
@@ -1464,7 +1464,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_module_decl()
    std::string canonical_module = signature ? std::string(static_module_name(signature)) : module_name;
 
    // Aliases of one canonical module share a single dependency record, so their referenced functions are pooled and
-   // deduplicated into one initialiser.
+   // deduplicated into one activation.
 
    auto [dependency_index, dependency_created] = this->find_or_create_module_dependency(
       canonical_module, module_token.span(), false);
@@ -1490,7 +1490,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_module_decl()
    #endif
 
    return ParserResult<StmtNodePtr>::success(
-      this->make_dependency_initialiser(*dependency, module_token.span()));
+      this->make_dependency_activation(*dependency, module_token.span()));
 }
 
 //********************************************************************************************************************
@@ -1525,7 +1525,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_include_stmt()
             "Invalid module name; only alpha-numeric names shorter than 32 characters are permitted with include");
       }
 
-      if (auto error = load_include(this->ctx.lua().script, module_name); error != ERR::Okay) {
+      if (auto error = load_module_defs(module_name); error != ERR::Okay) {
          std::string message;
          if (error IS ERR::FileNotFound) message = std::format("Requested include file '{}' does not exist", module_name);
          else message = std::format("Failed to process include file '{}': {}", module_name, GetErrorMsg(error));
@@ -1893,7 +1893,7 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
    const TokenKind terms[] = { TokenKind::EndOfFile };
    auto result = import_builder.parse_block(terms);
 
-   // The imported file is its own compilation unit for module namespace purposes, so its dependency initialisers are
+   // The imported file is its own compilation unit for module namespace purposes, so its dependency activations are
    // completed here rather than by the parent's parse_chunk().
 
    if (result.ok()) {

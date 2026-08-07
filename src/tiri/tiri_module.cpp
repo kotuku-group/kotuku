@@ -9,6 +9,7 @@
 #include "lua.h"
 #include "lauxlib.h"
 #include "lj_obj.h"
+#include "lj_gc.h"
 #include "lj_str.h"
 #include "lj_struct.h"
 #include "lj_tab.h"
@@ -20,7 +21,6 @@
 #include <utility>
 #include <unordered_map>
 #include <algorithm>
-#include <set>
 #include <mutex>
 #include <new>
 #include <limits>
@@ -31,9 +31,23 @@ struct static_module_function_signature {
    std::vector<FunctionField> Fields;
 };
 
+// Immutable per-module signature published to the compiler.  The function-name index removes the linear scan that
+// compile-time queries previously performed; it maps a case-insensitive hash to every function sharing that hash, so
+// the canonical name is always revalidated after the lookup and a collision cannot resolve to the wrong function.
+
 struct static_module_signature {
    std::string Name;
    std::vector<static_module_function_signature> Functions;
+   ankerl::unordered_dense::map<uint32_t, std::vector<uint32_t>> FunctionIndex;
+
+   [[nodiscard]] const static_module_function_signature * find(std::string_view Name) const noexcept {
+      if (auto it = FunctionIndex.find(strihash(Name)); it != FunctionIndex.end()) {
+         for (auto slot : it->second) {
+            if (kt::iequals(Functions[slot].Name, Name)) return &Functions[slot];
+         }
+      }
+      return nullptr;
+   }
 };
 
 constexpr int MAX_MODULE_ARGS = 16;
@@ -41,7 +55,7 @@ constexpr size_t BUFFER_ELEMENT_SIZE = 16;
 constexpr size_t BUFFER_SIZE = MAX_MODULE_ARGS * BUFFER_ELEMENT_SIZE;
 constexpr size_t MAX_STRING_PREFIX_LENGTH = 200;
 
-struct module;
+struct ModuleBinding;
 
 // One process-wide callable record per exported module function.  Records are allocated individually so that their
 // addresses remain stable from publication until expunge_modules(), which is required because Tiri closures retain a
@@ -50,7 +64,7 @@ struct module;
 // Every field is written once during preparation and is immutable afterwards, so concurrent calls from independent
 // Tiri states can share one record without synchronisation.
 
-struct module_callable {
+struct ModuleCallable {
    CSTRING Name = nullptr;               // Canonical name, owned by the module's Function list
    APTR Address = nullptr;               // Native function address; leave as null if function wasn't processed
    const FunctionField *Fields = nullptr; // Argument metadata, owned by the module's Function list
@@ -67,20 +81,82 @@ struct module_callable {
    inline void invalidate() { Address = nullptr; }
 };
 
-struct module {
+// Records how far the module's IDL definitions (constants and structures) have progressed.  The state belongs to the
+// module binding rather than a separate name set, so that a module and the definitions it published cannot disagree.
+
+enum class def_state : uint8_t {
+   Unloaded = 0, // No definition processing has been attempted
+   Loaded,       // Definitions were published in full
+   Failed        // Definition processing failed; the batch was rolled back
+};
+
+struct ModuleBinding {
    std::string Name;
    objModule *Module = nullptr;
    std::unique_ptr<const static_module_signature> Signature;
-   ankerl::unordered_dense::map<uint32_t, std::vector<module_callable *>> FunctionMap;
-   std::vector<std::unique_ptr<module_callable>> Callables;
+   ankerl::unordered_dense::map<uint32_t, std::vector<ModuleCallable *>> FunctionMap;
+   std::vector<std::unique_ptr<ModuleCallable>> Callables;
 
-   ~module() {
+   // Definition-loading state is guarded by glConstantMutex rather than the registry mutex.  DefError retains the
+   // failure so that a repeated request reports the original cause instead of silently succeeding.
+   def_state DefState = def_state::Unloaded;
+   ERR DefError = ERR::Okay;
+
+   ~ModuleBinding() {
       if (Module) FreeResource(Module);
    }
 };
 
-static std::mutex glModuleMutex;
-static std::vector<std::unique_ptr<module>> glModules;
+// One index entry.  The spelling under which the binding was registered is stored alongside it, because an alias is
+// reachable under a name that differs from the binding's canonical name.  Retaining the spelling lets the lookup
+// revalidate it after hashing, so a hash collision can never resolve to the wrong module.
+
+struct ModuleIndexEntry {
+   std::string Name;
+   ModuleBinding *Binding = nullptr;
+};
+
+// The process-wide module registry.  See MODULE_REGISTRY.md for its lifecycle and lock contract.  Ownership and lookup
+// are deliberately separate: Bindings owns every binding exactly once, while Index maps a case-insensitive name hash
+// to non-owning entries.  Because bindings are allocated individually, growth of either container never moves a
+// published binding, its signature or its callables.  That stability is required, as Tiri closures and compiler
+// symbols retain raw pointers until expunge_modules().
+//
+// Separating the two also lets one binding be reached through several spellings (the requested name and the module's
+// canonical name) without any shared-ownership scheme.
+
+struct ModuleRegistry {
+   std::mutex Mutex;
+   std::vector<std::unique_ptr<ModuleBinding>> Bindings;
+   ankerl::unordered_dense::map<uint32_t, std::vector<ModuleIndexEntry>> Index;
+   bool Expunging = false;
+};
+
+static ModuleRegistry glModuleRegistry;
+
+// Locate a published binding.  The caller must hold glModuleRegistry.Mutex.
+
+static ModuleBinding * find_module_binding(std::string_view Name)
+{
+   if (auto it = glModuleRegistry.Index.find(strihash(Name)); it != glModuleRegistry.Index.end()) {
+      for (const auto &entry : it->second) {
+         if (kt::iequals(entry.Name, Name)) return entry.Binding;
+      }
+   }
+   return nullptr;
+}
+
+// Make Binding reachable under Name.  The caller must hold glModuleRegistry.Mutex.  Registering the requested
+// spelling in addition to the canonical one lets a later lookup for either spelling hit the index directly.
+
+static void publish_module_alias(std::string_view Name, ModuleBinding *Binding)
+{
+   auto &bucket = glModuleRegistry.Index[strihash(Name)];
+   for (const auto &entry : bucket) {
+      if (kt::iequals(entry.Name, Name)) return; // Already reachable under this spelling
+   }
+   bucket.push_back({ std::string(Name), Binding });
+}
 
 template<class... Args> void RMSG(Args...) {
    //log.msg(Args)
@@ -129,21 +205,28 @@ static ERR module_span_element_metadata(lua_State *Lua, const FunctionField &Fie
    return ERR::Okay;
 }
 
-struct CaseInsensitiveCompare {
-   using is_transparent = void;
+// One constant parsed from a module's IDL, retained with its full canonical name.
+//
+// The registry is keyed by hash alone, so the name is preserved here to make a collision or a conflicting redefinition
+// diagnosable: without it, two different constants that hash alike would silently reduce to one value with no way to
+// report which module supplied either.
 
-   bool operator()(std::string_view A, std::string_view B) const {
-      return std::lexicographical_compare(
-         A.begin(), A.end(), B.begin(), B.end(),
-         [](char CharA, char CharB) { return std::tolower((unsigned char)CharA) < std::tolower((unsigned char)CharB); }
-      );
-   }
+struct staged_constant {
+   std::string Name;
+   TiriConstant Value;
 };
 
-static std::set<std::string, CaseInsensitiveCompare> glLoadedConstants; // Stores the names of modules that have loaded constants (system wide)
+// A module's definitions, parsed but not yet published.  Staging the whole module before committing keeps publication
+// atomic, so a malformed definition cannot leave half of a module's constants and structures visible.
 
-[[nodiscard]] static ERR load_include_struct(extTiri *, CSTRING, std::string_view, CSTRING *);
-[[nodiscard]] static CSTRING load_include_constant(CSTRING, std::string_view);
+struct definition_batch {
+   std::string Source;                       // Module supplying the definitions, retained for diagnostics
+   std::vector<staged_constant> Constants;
+   std::vector<std::pair<std::string, std::string>> Structs; // Name, definition sequence
+};
+
+[[nodiscard]] static ERR load_include_struct(CSTRING, std::string_view, CSTRING *, definition_batch &);
+[[nodiscard]] static CSTRING load_include_constant(CSTRING, std::string_view, definition_batch &);
 
 static int module_call(lua_State *);
 static ERR module_call_inner(lua_State *, std::string &, int &);
@@ -164,6 +247,7 @@ static std::unique_ptr<const static_module_signature> make_module_signature(
    for (size_t i = 0; i < function_count; ++i) {
       auto &entry = signature->Functions.emplace_back();
       entry.Name = Functions[i].Name;
+      signature->FunctionIndex[strihash(entry.Name)].push_back(uint32_t(i));
 
       if (const FunctionField *fields = Functions[i].Args) {
          size_t field_count = 0;
@@ -184,21 +268,18 @@ static std::unique_ptr<const static_module_signature> make_module_signature(
 
 StaticModuleHandle static_module_by_name(std::string_view Name) noexcept
 {
-   std::lock_guard lock(glModuleMutex);
-   for (const auto &entry : glModules) {
-      if (kt::iequals(entry->Name, Name)) return entry->Signature.get();
-   }
-   return nullptr;
+   std::lock_guard lock(glModuleRegistry.Mutex);
+   if (glModuleRegistry.Expunging) return nullptr;
+   auto binding = find_module_binding(Name);
+   return binding ? binding->Signature.get() : nullptr;
 }
 
 const FunctionField * static_module_function(
    StaticModuleHandle Module, std::string_view Name) noexcept
 {
    if (not Module) return nullptr;
-   for (const auto &function : Module->Functions) {
-      if (kt::iequals(function.Name, Name)) return function.Fields.data();
-   }
-   return nullptr;
+   auto function = Module->find(Name);
+   return function ? function->Fields.data() : nullptr;
 }
 
 std::string_view static_module_name(StaticModuleHandle Module) noexcept
@@ -209,10 +290,8 @@ std::string_view static_module_name(StaticModuleHandle Module) noexcept
 std::string_view static_module_function_name(StaticModuleHandle Module, std::string_view Name) noexcept
 {
    if (not Module) return {};
-   for (const auto &function : Module->Functions) {
-      if (kt::iequals(function.Name, Name)) return function.Name;
-   }
-   return {};
+   auto function = Module->find(Name);
+   return function ? std::string_view(function->Name) : std::string_view();
 }
 
 //********************************************************************************************************************
@@ -293,12 +372,12 @@ static ffi_type * callable_return_type(int ResultType)
 
 //********************************************************************************************************************
 // Build the process-wide callable records for a module.  Called once, while the module is being resolved and before
-// it is published to glModules, so no other thread can observe a partially prepared record.
+// it is published to the registry, so no other thread can observe a partially prepared record.
 //
 // A preparation failure is recorded on the individual callable rather than propagated, because one unsupported
 // signature must not prevent the rest of the module from being used.
 
-static void prepare_module_callables(module *Module, const Function *Functions)
+static void prepare_module_callables(ModuleBinding *Module, const Function *Functions)
 {
    kt::Log log(__FUNCTION__);
 
@@ -310,7 +389,7 @@ static void prepare_module_callables(module *Module, const Function *Functions)
 
    for (size_t index = 0; index < function_count; ++index) {
       const auto &function = Functions[index];
-      auto callable = std::make_unique<module_callable>();
+      auto callable = std::make_unique<ModuleCallable>();
 
       callable->Name    = function.Name;
       callable->Address = function.Address;
@@ -360,20 +439,25 @@ static void prepare_module_callables(module *Module, const Function *Functions)
 //********************************************************************************************************************
 // Resolve one process-wide module instance.  Entries remain stable until the Tiri module is expunged.
 
-static ERR resolve_module(std::string_view Name, module *&Result)
+static ERR resolve_module(std::string_view Name, ModuleBinding *&Result)
 {
-   std::lock_guard lock(glModuleMutex);
-   for (const auto &entry : glModules) {
-      if (kt::iequals(entry->Name, Name)) {
-         Result = entry.get();
+   {
+      std::lock_guard lock(glModuleRegistry.Mutex);
+      if (glModuleRegistry.Expunging) return ERR::InvalidState;
+      if (auto binding = find_module_binding(Name)) {
+         Result = binding;
          return ERR::Okay;
       }
    }
 
+   // Module creation runs external initialisation code that can re-enter the registry, so it is performed without
+   // holding the index lock.  Two threads racing on the same name may therefore both construct a module; the loser's
+   // instance is discarded below so that exactly one binding is ever published.
+
    auto loaded_module = objModule::create::global(fl::Name(Name));
    if (not loaded_module) return ERR::CreateObject;
 
-   auto entry = std::make_unique<module>();
+   auto entry = std::make_unique<ModuleBinding>();
    entry->Module = loaded_module;
    const Function *functions = nullptr;
    loaded_module->getFunctionList(functions);
@@ -384,20 +468,42 @@ static ERR resolve_module(std::string_view Name, module *&Result)
    entry->Signature = make_module_signature(entry->Name, functions);
    prepare_module_callables(entry.get(), functions);
 
+   std::lock_guard lock(glModuleRegistry.Mutex);
+   if (glModuleRegistry.Expunging) return ERR::InvalidState;
+
+   // Re-check under the lock; another thread may have published this module while it was being prepared.
+   if (auto binding = find_module_binding(Name)) {
+      Result = binding;
+      return ERR::Okay;
+   }
+   if (auto binding = find_module_binding(entry->Name)) { // Requested an alias of an already published module
+      publish_module_alias(Name, binding);
+      Result = binding;
+      return ERR::Okay;
+   }
+
    Result = entry.get();
-   glModules.push_back(std::move(entry));
+   glModuleRegistry.Bindings.push_back(std::move(entry));
+   publish_module_alias(Result->Name, Result);
+   publish_module_alias(Name, Result);
    return ERR::Okay;
 }
 
+// Destroy every registered module.  All Tiri states must be unable to execute before this runs, because published
+// ModuleCallable addresses are retained by closures and compiler symbols for the lifetime of the registry.
+//
+// The index holds only non-owning pointers, so it is discarded before the bindings it refers to.  Binding destruction
+// runs after releasing the registry mutex because FreeResource() executes external module teardown code that must be
+// free to re-enter registry-facing code without deadlocking.
+
 void expunge_modules()
 {
+   std::vector<std::unique_ptr<ModuleBinding>> bindings;
    {
-      std::lock_guard lock(glModuleMutex);
-      glModules.clear();
-   }
-   {
-      std::unique_lock lock(glConstantMutex);
-      glLoadedConstants.clear();
+      std::lock_guard lock(glModuleRegistry.Mutex);
+      glModuleRegistry.Expunging = true;
+      glModuleRegistry.Index.clear();
+      bindings.swap(glModuleRegistry.Bindings);
    }
 }
 
@@ -532,12 +638,15 @@ static bool push_cpp_array_result(lua_State *Lua, int Type, std::string_view Nam
 }
 
 //********************************************************************************************************************
-// Update the constant registry.
-// A lock on glConstantMutex must be held before calling this function.
+// Parse one constant group into the staging batch.
+//
+// Nothing is written to the process-wide registry here.  Definitions are staged so that a malformed entry later in the
+// module's IDL cannot leave a partially populated registry behind; publish_definition_batch() commits the batch only
+// once the whole module has parsed successfully.
 
-static CSTRING load_include_constant(CSTRING Line, std::string_view Source)
+static CSTRING load_include_constant(CSTRING Line, std::string_view Source, definition_batch &Batch)
 {
-   kt::Log log("load_include");
+   kt::Log log("load_module_defs");
 
    int i;
    for (i=0; (unsigned(Line[i]) > 0x20) and (Line[i] != ':'); i++);
@@ -583,7 +692,7 @@ static CSTRING load_include_constant(CSTRING Line, std::string_view Source)
          else if (dt IS 'h') constant = TiriConstant(int64_t(strtoull(value.c_str(), nullptr, 0)));
          else log.warning("Unsupported constant value: %s", value.c_str());
 
-         glConstantRegistry.emplace(kt::strhash(name), constant);
+         Batch.Constants.push_back({ name, constant });
       }
 
       if (*Line IS ',') Line++;
@@ -593,51 +702,125 @@ static CSTRING load_include_constant(CSTRING Line, std::string_view Source)
 }
 
 //********************************************************************************************************************
+// Parse a module's IDL into a staging batch.  No global state is modified.
 
-static ERR process_module_defs(extTiri *Script, objModule *module, std::string_view Name)
+static ERR stage_module_defs(objModule *Module, std::string_view Name, definition_batch &Batch)
 {
-   if (auto root = (OBJECTPTR)module->Root) {
-      struct ModHeader *header;
-      if (auto error = root->get(strhash("header"), header); error != ERR::Okay) return error;
-      if (not header) return ERR::NoData;
+   auto root = (OBJECTPTR)Module->Root;
+   if (not root) return ERR::FieldNotSet;
 
-      if (auto idl = header->Definitions) {
-         while ((idl) and (*idl)) {
-            if ((idl[0] IS 's') and (idl[1] IS '.')) {
-               if (auto error = load_include_struct(Script, idl+2, Name, &idl); error != ERR::Okay) return error;
-            }
-            else if ((idl[0] IS 'c') and (idl[1] IS '.')) idl = load_include_constant(idl+2, Name);
-            else idl = next_line(idl);
+   struct ModHeader *header;
+   if (auto error = root->get(strhash("header"), header); error != ERR::Okay) return error;
+   if (not header) return ERR::NoData;
+
+   Batch.Source = Name;
+
+   if (auto idl = header->Definitions) {
+      while ((idl) and (*idl)) {
+         if ((idl[0] IS 's') and (idl[1] IS '.')) {
+            if (auto error = load_include_struct(idl+2, Name, &idl, Batch); error != ERR::Okay) return error;
          }
+         else if ((idl[0] IS 'c') and (idl[1] IS '.')) idl = load_include_constant(idl+2, Name, Batch);
+         else idl = next_line(idl);
       }
-      return ERR::Okay;
    }
-   else return ERR::FieldNotSet;
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
-// Process a process-wide module's definitions once.
+// Commit a staged batch to the process-wide registries, rolling back completely on failure.
+//
+// A lock on glConstantMutex must be held before calling this function.  glStructMutex remains locked across structure
+// publication and rollback so that readers cannot observe definitions that a later failure withdraws.  Structures are
+// registered with a null state so that a state-local declaration cannot influence the published global layout.
 
-static ERR ensure_module_defs(extTiri *Script, module *Module)
+static ERR publish_definition_batch(const definition_batch &Batch)
+{
+   kt::Log log(__FUNCTION__);
+   const std::lock_guard struct_lock(glStructMutex);
+
+   std::vector<uint32_t> published_constants;
+   std::vector<std::string> published_structs;
+   published_constants.reserve(Batch.Constants.size());
+   published_structs.reserve(Batch.Structs.size());
+
+   auto rollback = [&]() {
+      for (auto key : published_constants) glConstantRegistry.erase(key);
+      for (const auto &name : published_structs) remove_struct(name);
+   };
+
+   for (const auto &constant : Batch.Constants) {
+      const auto key = kt::strhash(constant.Name);
+
+      // A repeated definition of the same constant is normal, because several modules may publish the same IDL.  A
+      // differing value for the same key is not: it indicates either a genuine conflict or a hash collision, and
+      // either way silently keeping the first value would hide the problem.
+
+      if (auto existing = glConstantRegistry.find(key); existing != glConstantRegistry.end()) {
+         if (not (existing->second IS constant.Value)) {
+            log.warning("Constant '%s' from module '%s' conflicts with an existing definition.",
+               constant.Name.c_str(), Batch.Source.c_str());
+            rollback();
+            return ERR::Exists;
+         }
+         continue;
+      }
+
+      glConstantRegistry.emplace(key, constant.Value);
+      published_constants.push_back(key);
+   }
+
+   for (const auto &[name, sequence] : Batch.Structs) {
+      auto error = make_struct(nullptr, name, sequence.c_str());
+
+      // ERR::Exists means the structure is already registered, which is expected when modules share definitions.
+      if (error IS ERR::Exists) continue;
+
+      if (error != ERR::Okay) {
+         log.warning("Failed to register structure '%s' from module '%s': %s",
+            name.c_str(), Batch.Source.c_str(), GetErrorMsg(error));
+         rollback();
+         return error;
+      }
+      published_structs.push_back(name);
+   }
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Process a module's definitions once, independently of any Lua state.
+//
+// The definitions a module publishes are process-wide, so neither the parsing nor the publication may depend on which
+// state requested them first.  The result is recorded on the binding itself, which keeps a module and the definitions
+// it published from disagreeing.
+
+static ERR ensure_module_defs(ModuleBinding *Module)
 {
    std::unique_lock lock(glConstantMutex);
-   if (glLoadedConstants.contains(Module->Name)) return ERR::Okay;
 
-   ERR error = process_module_defs(Script, Module->Module, Module->Name);
-   if (error IS ERR::Okay) glLoadedConstants.emplace(Module->Name);
+   if (Module->DefState IS def_state::Loaded) return ERR::Okay;
+   if (Module->DefState IS def_state::Failed) return Module->DefError;
+
+   definition_batch batch;
+   ERR error = stage_module_defs(Module->Module, Module->Name, batch);
+   if (error IS ERR::Okay) error = publish_definition_batch(batch);
+
+   Module->DefState = (error IS ERR::Okay) ? def_state::Loaded : def_state::Failed;
+   Module->DefError = error;
    return error;
 }
 
 //********************************************************************************************************************
-// For the 'include' statement.  Resolves the process-wide module and makes its definitions available to the parser.
+// For the 'include' statement.  Resolves the process-wide module and publishes its definitions.
 
-[[nodiscard]] ERR load_include(extTiri *Script, std::string_view Module)
+[[nodiscard]] ERR load_module_defs(std::string_view Module)
 {
-   module *resolved_module = nullptr;
+   ModuleBinding *resolved_module = nullptr;
    if (auto error = resolve_module(Module, resolved_module); error != ERR::Okay) return error;
 
    AdjustLogLevel(1);
-   ERR error = ensure_module_defs(Script, resolved_module);
+   ERR error = ensure_module_defs(resolved_module);
    AdjustLogLevel(-1);
    return error;
 }
@@ -646,7 +829,8 @@ static ERR ensure_module_defs(extTiri *Script, module *Module)
 // Format: s.Name:typeField,...
 // TODO: This parses the struct definitions in advance - ideally we'd record the definition string and parse on first-use.
 
-[[nodiscard]] static ERR load_include_struct(extTiri *Script, CSTRING Line, std::string_view Source, CSTRING *NextLine)
+[[nodiscard]] static ERR load_include_struct(CSTRING Line, std::string_view Source, CSTRING *NextLine,
+   definition_batch &Batch)
 {
    if (not NextLine) return ERR::NullArgs;
    *NextLine = next_line(Line);
@@ -661,16 +845,14 @@ static ERR ensure_module_defs(extTiri *Script, module *Module)
       int j;
       for (j=0; (Line[j] != '\n') and (Line[j] != '\r') and (Line[j]); j++);
 
+      std::string sequence(Line, j);
       if ((Line[j] IS '\n') or (Line[j] IS '\r')) {
-         std::string linebuf(Line, j);
          while ((Line[j] IS '\n') or (Line[j] IS '\r')) j++;
-         *NextLine = Line + j;
-         return make_struct(Script, name, linebuf.c_str());
       }
-      else {
-         *NextLine = Line + j;
-         return make_struct(Script, name, Line);
-      }
+      *NextLine = Line + j;
+
+      Batch.Structs.emplace_back(std::move(name), std::move(sequence));
+      return ERR::Okay;
    }
    else {
       kt::Log(__FUNCTION__).warning("Malformed struct name in %.*s.", int(Source.size()), Source.data());
@@ -686,7 +868,7 @@ static int module_test(lua_State *Lua)
 {
    CSTRING module_name = luaL_checkstring(Lua, 1);
 
-   module *mod = nullptr;
+   ModuleBinding *mod = nullptr;
    if (auto error = resolve_module(module_name, mod); error != ERR::Okay) {
       luaL_error(Lua, error, "Failed to load the %s module.", module_name);
    }
@@ -705,7 +887,7 @@ static int module_test(lua_State *Lua)
 //********************************************************************************************************************
 // Locate one exported function by canonical name.  Case-insensitive, matching the compiler's source-level resolution.
 
-static module_callable * find_module_callable(module *Module, std::string_view Name)
+static ModuleCallable * find_module_callable(ModuleBinding *Module, std::string_view Name)
 {
    auto hash = strihash(Name);
    if (auto it = Module->FunctionMap.find(hash); it != Module->FunctionMap.end()) {
@@ -717,52 +899,139 @@ static module_callable * find_module_callable(module *Module, std::string_view N
 }
 
 //********************************************************************************************************************
-// Activate a compiler-declared module dependency.
-//
-// Usage: binding1, binding2, ... = mod.<dependency>(ModuleName, FunctionName1, FunctionName2, ...)
-//
-// The compiler passes the canonical module name followed by the canonical names of the functions its compilation unit
-// actually references, and receives one closure per name in matching order.  Only names are persisted in bytecode, so
-// a chunk loaded in a fresh process resolves against the module's current function list.
-//
-// No module table, metatable, environment cache or per-function name lookup table is created.  A declaration that
-// references no function still resolves its module and returns one sentinel value, so that the generated local
-// declaration remains well-formed and the dependency is retained.
+// Ensure that a prototype has state-owned storage for resolved callables and per-descriptor activation state.
 
-static int module_dependency(lua_State *Lua)
+static void ensure_proto_dependency_sidecar(lua_State *Lua, GCproto *Proto, const ProtoDependencyTable *Table)
 {
-   auto modname = luaL_checkstring(Lua, 1);
-   if (not modname) luaL_argerror(Lua, 1, "String expected for module name.");
-
-   module *mod = nullptr;
-   if (auto error = resolve_module(modname, mod); error != ERR::Okay) {
-      luaL_error(Lua, error, "Failed to load the %s module.", modname);
+   if (not Proto->resolved_dependencies) {
+      Proto->resolved_count = Table->function_count ? Table->function_count : 1;
+      Proto->resolved_dependencies = (void **)lj_mem_new(Lua, Proto->resolved_count * sizeof(void *));
+      memset(Proto->resolved_dependencies, 0, Proto->resolved_count * sizeof(void *));
    }
-   if (auto error = ensure_module_defs(Lua->script, mod); error != ERR::Okay) {
-      luaL_error(Lua, error, "Failed to process definitions for the %s module.", modname);
+   if (not Proto->resolved_dependency_states) {
+      Proto->resolved_dependency_count = Table->dependency_count;
+      Proto->resolved_dependency_states = (uint8_t *)lj_mem_new(Lua, Table->dependency_count * sizeof(uint8_t));
+      memset(Proto->resolved_dependency_states, 0, Table->dependency_count * sizeof(uint8_t));
+   }
+}
+
+//********************************************************************************************************************
+// Resolve one portable dependency descriptor into the prototype's state-owned sidecar.
+//
+// The descriptors persist canonical names only, so every load resolves them afresh against the registry's current
+// contents.  That is what makes a serialised chunk portable: the module's export list may have been reordered or
+// extended since the chunk was written, and a stored index would then select the wrong function.
+//
+// The sidecar holds non-owning pointers.  Registry records are stable until expunge_modules(), which runs only once
+// no Tiri state can execute, so a resolved pointer cannot outlive its record.
+//
+// Resolution is idempotent and descriptor-local.  A later declaration is not resolved by an earlier BC_MODACT, so a
+// missing module or function is reported at that declaration's execution position.
+
+static ERR resolve_proto_dependency(lua_State *Lua, GCproto *Proto, uint32_t Dependency, std::string &ErrorMsg)
+{
+   auto table = proto_dependencies(Proto);
+   if (not table) return ERR::Okay;
+   if (Dependency >= table->dependency_count) return ERR::InvalidData;
+
+   ensure_proto_dependency_sidecar(Lua, Proto, table);
+   if (Proto->resolved_dependency_states[Dependency]) return ERR::Okay;
+
+   auto dependencies = proto_dependency_list(table);
+   auto functions = proto_dependency_functions(table);
+   const ProtoDependency &dependency = dependencies[Dependency];
+
+   GCstr *module_name = gco_to_string(gcref(dependency.name));
+   std::string_view name(strdata(module_name), module_name->len);
+
+   ModuleBinding *binding = nullptr;
+   if (auto error = resolve_module(name, binding); error != ERR::Okay) {
+      ErrorMsg = std::format("Failed to load the {} module.", name);
+      return error;
+   }
+   if (auto error = ensure_module_defs(binding); error != ERR::Okay) {
+      ErrorMsg = std::format("Failed to process definitions for the {} module.", name);
+      return error;
    }
 
-   int requested = lua_gettop(Lua) - 1;
-   if (requested <= 0) { // Dependency-only activation; the module is now resolved and retained.
-      lua_pushboolean(Lua, 1);
-      return 1;
-   }
+   // Resolve into temporary storage first, so failure cannot mark this descriptor as activated or expose a partial
+   // callable range.
 
-   for (int arg = 2; arg <= requested + 1; ++arg) {
-      auto function_name = lua_tostringview(Lua, arg);
-      if (function_name.empty()) luaL_argerror(Lua, arg, "String expected for module function name.");
+   std::vector<void *> resolved(dependency.function_count, nullptr);
+   for (uint32_t f = 0; f < dependency.function_count; ++f) {
+      uint32_t slot = dependency.first_function + f;
+      GCstr *function_name = gco_to_string(gcref(functions[slot].name));
+      std::string_view function(strdata(function_name), function_name->len);
 
-      auto callable = find_module_callable(mod, function_name);
+      // The name is revalidated here even though the reader accepted the descriptor.  Structural validity says
+      // nothing about whether the module still exports the function under that name.
+
+      auto callable = find_module_callable(binding, function);
       if (not callable) {
-         luaL_error(Lua, ERR::Search, "Function %.*s() is not exported by the %s module.",
-            int(function_name.size()), function_name.data(), modname);
+         ErrorMsg = std::format("Function {}() is not exported by the {} module.", function, name);
+         return ERR::Search;
       }
+      resolved[f] = callable;
+   }
 
+   if (not resolved.empty()) {
+      memcpy(Proto->resolved_dependencies + dependency.first_function, resolved.data(),
+         resolved.size() * sizeof(void *));
+   }
+   Proto->resolved_dependency_states[Dependency] = 1;
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Return the callable resolved for one descriptor slot, or null if the prototype has not been activated or the slot
+// is out of range.  Callers must treat the result as non-owning.
+
+APTR proto_dependency_callable(GCproto *Proto, uint32_t Slot)
+{
+   if (not Proto->resolved_dependencies or Slot >= Proto->resolved_count) return nullptr;
+   return Proto->resolved_dependencies[Slot];
+}
+
+//********************************************************************************************************************
+// Activate one compiler-declared module dependency from BC_MODACT.
+//
+// The VM positions Lua->top at the opcode's destination register before entering this helper.  Descriptor names are
+// resolved once into the prototype-owned sidecar, then the state-owned closures required by ordinary local-call
+// bytecode are materialised directly into consecutive stack slots.  A dependency-only declaration resolves its
+// module but creates no artificial value.
+
+extern "C" void tiri_module_activate(lua_State *Lua, uint32_t Dependency)
+{
+   if (not curr_funcisL(Lua)) {
+      luaL_error(Lua, ERR::InvalidState, "Module activation requires a Lua prototype.");
+   }
+
+   GCproto *proto = curr_proto(Lua);
+   auto table = proto_dependencies(proto);
+   if (not table or Dependency >= table->dependency_count) {
+      luaL_error(Lua, ERR::InvalidData, "Invalid module dependency descriptor %u.", Dependency);
+   }
+
+   auto dependencies = proto_dependency_list(table);
+   const ProtoDependency &dependency = dependencies[Dependency];
+   ptrdiff_t destination = Lua->top - Lua->base;
+   if (destination < 0 or destination + dependency.function_count > proto->framesize) {
+      luaL_error(Lua, ERR::InvalidData, "Module dependency %u exceeds the prototype register frame.", Dependency);
+   }
+
+   std::string error_msg;
+   if (auto error = resolve_proto_dependency(Lua, proto, Dependency, error_msg); error != ERR::Okay) {
+      luaL_error(Lua, error, std::move(error_msg));
+   }
+
+   for (uint32_t slot = 0; slot < dependency.function_count; ++slot) {
+      auto callable = proto_dependency_callable(proto, dependency.first_function + slot);
+      if (not callable) {
+         luaL_error(Lua, ERR::InvalidData, "Module dependency %u has an unresolved callable slot.", Dependency);
+      }
       lua_pushlightuserdata(Lua, callable);
       lua_pushcclosure(Lua, module_call, 1);
    }
-
-   return requested;
 }
 
 //********************************************************************************************************************
@@ -917,7 +1186,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    // One light-userdata upvalue holds the process-wide callable record, which carries the native address, the argument
    // metadata and the libffi call interface that was prepared when the module was resolved.
 
-   auto callable = (module_callable *)lua_touserdata(Lua, lua_upvalueindex(1));
+   auto callable = (ModuleCallable *)lua_touserdata(Lua, lua_upvalueindex(1));
    if (not callable) {
       ErrorMsg = "module_call() expected a callable record in its upvalue.";
       return ERR::Args;
@@ -1608,7 +1877,6 @@ void register_module_class(lua_State *Lua)
    kt::Log log;
 
    static const struct luaL_Reg modlib_functions[] = {
-      { "\x1f" "dependency", module_dependency },
       { "test", module_test },
       { nullptr, nullptr}
    };
@@ -1617,6 +1885,5 @@ void register_module_class(lua_State *Lua)
    lua_pop(Lua, 1); // Drop the mod library table
 
    // Register mod interface prototypes for compile-time type inference
-   reg_iface_prototype("mod", "\x1f" "dependency", { TiriType::Table }, { TiriType::Str });
    reg_iface_prototype("mod", "test", { TiriType::Num, TiriType::Num }, { TiriType::Str, TiriType::Str });
 }

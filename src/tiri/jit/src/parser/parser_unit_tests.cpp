@@ -17,6 +17,8 @@
 #include "runtime/lj_tab.h"
 
 #include <array>
+#include <thread>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <memory>
@@ -1473,7 +1475,10 @@ static bool test_old_bytecode_versions_rejected(kt::Log &Log)
    }
    lua_pop(L, 1);
 
-   for (uint8_t version : { uint8_t(0x81), uint8_t(0x83) }) {
+   // 0x86 is included deliberately: Phase 5 removed the compiler-private binder referenced by those chunks and
+   // replaced it with BC_MODACT.  Gate E selected format rejection over a compatibility shim.
+
+   for (uint8_t version : { uint8_t(0x81), uint8_t(0x83), uint8_t(0x85), uint8_t(0x86) }) {
       std::string old_dump = dump;
       old_dump[3] = char(version);
       if (lua_load(L, std::string_view(old_dump.data(), old_dump.size()), "old-version") IS 0) {
@@ -1781,8 +1786,12 @@ static bool test_malformed_signature_rejected(kt::Log &Log)
       return false;
    }
    position += 4;
+
+   // Header ULEB fields, in order: sizekgc, sizekn, sizebc, siglen, deplen.  The dump is stripped, so no debug
+   // length follows and the signature payload begins immediately after deplen.
+
    size_t signature_length_offset = 0;
-   for (int field = 0; field < 4; ++field) {
+   for (int field = 0; field < 5; ++field) {
       if (field IS 3) signature_length_offset = position;
       if (not read_uleb(position, value)) {
          Log.error("could not locate the signature in the malformed-signature fixture");
@@ -2791,17 +2800,17 @@ static bool test_state_local_struct_declarations(kt::Log &Log)
    constexpr std::string_view global_parent_name = "ParserGlobalParentRecord";
    std::string error;
 
-   if (auto result = make_struct(glTestScript, shadow_name, "lGlobal");
+   if (auto result = make_struct(nullptr, shadow_name, "lGlobal");
          result != ERR::Okay and result != ERR::Exists) {
       Log.error("failed to register global shadow fixture: %s", GetErrorMsg(result));
       return false;
    }
-   if (auto result = make_struct(glTestScript, global_child_name, "lGlobalValue");
+   if (auto result = make_struct(nullptr, global_child_name, "lGlobalValue");
          result != ERR::Okay and result != ERR::Exists) {
       Log.error("failed to register global child fixture: %s", GetErrorMsg(result));
       return false;
    }
-   if (auto result = make_struct(glTestScript, global_parent_name,
+   if (auto result = make_struct(nullptr, global_parent_name,
          "eChild:ParserGlobalChildRecord"); result != ERR::Okay and result != ERR::Exists) {
       Log.error("failed to register global parent fixture: %s", GetErrorMsg(result));
       return false;
@@ -2890,6 +2899,652 @@ static bool test_state_local_struct_declarations(kt::Log &Log)
    }
 
    return true;
+}
+
+// Covers the process-wide module registry: indexed case-insensitive lookup, revalidation of the canonical name after
+// hashing, stable record addresses across registry growth, and single publication under concurrent first resolution.
+
+static bool test_module_registry_lookup(kt::Log &Log)
+{
+   auto core = static_module_by_name("core");
+   if (not core) {
+      Log.error("core module could not be resolved through the registry");
+      return false;
+   }
+
+   // Case variants and repeated lookups must resolve to the one published binding.
+
+   for (auto spelling : { "core", "Core", "CORE", "cOrE" }) {
+      if (static_module_by_name(spelling) != core) {
+         Log.error("module spelling '%s' did not resolve to the canonical binding", spelling);
+         return false;
+      }
+   }
+
+   if (static_module_by_name("core") != core) {
+      Log.error("repeated resolution returned a different binding address");
+      return false;
+   }
+
+   // A name that does not exist must fail rather than resolving to a bucket neighbour.
+
+   if (static_module_by_name("ParserNoSuchModuleName")) {
+      Log.error("an unknown module name resolved to a binding");
+      return false;
+   }
+
+   // Function lookup must be case-insensitive and must revalidate the canonical spelling.
+
+   auto fields = static_module_function(core, "PreciseTime");
+   if (not fields) {
+      Log.error("PreciseTime was not found through the function index");
+      return false;
+   }
+   for (auto spelling : { "precisetime", "PRECISETIME", "PreciseTime" }) {
+      if (static_module_function(core, spelling) != fields) {
+         Log.error("function spelling '%s' did not resolve to the canonical entry", spelling);
+         return false;
+      }
+      if (static_module_function_name(core, spelling) != std::string_view("PreciseTime")) {
+         Log.error("function spelling '%s' did not report the canonical name", spelling);
+         return false;
+      }
+   }
+
+   if (static_module_function(core, "ParserNoSuchFunctionName")) {
+      Log.error("an unknown function name resolved through the index");
+      return false;
+   }
+   if (not static_module_function_name(core, "ParserNoSuchFunctionName").empty()) {
+      Log.error("an unknown function name reported a canonical spelling");
+      return false;
+   }
+
+   // Resolving further modules grows the registry; previously published addresses must not move.
+
+   if (load_module_defs("display") IS ERR::Okay) {
+      if (static_module_by_name("core") != core) {
+         Log.error("registry growth moved a published module binding");
+         return false;
+      }
+      if (static_module_function(core, "PreciseTime") != fields) {
+         Log.error("registry growth moved a published function record");
+         return false;
+      }
+   }
+
+   return true;
+}
+
+// Concurrent first resolution of one module must publish exactly one binding, and concurrent resolution of several
+// modules must not corrupt the index.
+
+static bool test_module_registry_concurrency(kt::Log &Log)
+{
+   constexpr int thread_count = 8;
+   std::vector<std::thread> threads;
+   std::array<StaticModuleHandle, thread_count> observed = { };
+   std::atomic<int> failures = 0;
+
+   for (int index = 0; index < thread_count; ++index) {
+      threads.emplace_back([index, &observed, &failures]() {
+         // Every thread resolves the same module, using a different spelling on alternate threads.
+         if (load_module_defs((index & 1) ? "Core" : "core") != ERR::Okay) failures++;
+         observed[index] = static_module_by_name("core");
+      });
+   }
+   for (auto &thread : threads) thread.join();
+
+   if (failures.load() > 0) {
+      Log.error("concurrent module resolution reported %d failures", failures.load());
+      return false;
+   }
+
+   for (int index = 0; index < thread_count; ++index) {
+      if (not observed[index]) {
+         Log.error("thread %d observed no binding for core", index);
+         return false;
+      }
+      if (observed[index] != observed[0]) {
+         Log.error("concurrent resolution published more than one binding for core");
+         return false;
+      }
+   }
+
+   return true;
+}
+
+// Module definitions are process-wide, so their layout must not depend on the state that requested them, and a
+// state-local declaration must be able to shadow one without altering the published global definition.
+
+static bool test_module_definition_ownership(kt::Log &Log)
+{
+   // Definitions load without any Lua state in scope.
+
+   if (auto error = load_module_defs("core"); error != ERR::Okay) {
+      Log.error("global module definitions failed to load: %s", GetErrorMsg(error));
+      return false;
+   }
+
+   auto global_definition = find_struct(nullptr, "RGB8");
+   if (not global_definition) {
+      Log.error("a global module structure was not published to the global dictionary");
+      return false;
+   }
+
+   // Repeated requests are idempotent and must not republish or alter the definition.
+
+   if (load_module_defs("core") != ERR::Okay) {
+      Log.error("a repeated definition request failed");
+      return false;
+   }
+   if (find_struct(nullptr, "RGB8") != global_definition) {
+      Log.error("a repeated definition request republished the structure");
+      return false;
+   }
+
+   // Two independent states observe the identical global definition.
+
+   LuaStateHolder first;
+   LuaStateHolder second;
+   if ((not first.get()) or (not second.get())) {
+      Log.error("failed to allocate states for the definition ownership test");
+      return false;
+   }
+   if ((find_struct(first.get(), "RGB8") != global_definition) or
+       (find_struct(second.get(), "RGB8") != global_definition)) {
+      Log.error("independent states observed differing global module definitions");
+      return false;
+   }
+
+   // A state-local declaration shadows the global definition for its own state only, and the global definition that
+   // other states resolve is unchanged.
+
+   std::string error;
+   if (not parse_struct_source(first.get(), "struct RGB8 ParserLocalOnly: double end", error)) {
+      Log.error("failed to declare a shadowing structure: %s", error.c_str());
+      return false;
+   }
+
+   auto shadowed = find_struct(first.get(), "RGB8");
+   if ((not shadowed) or (shadowed IS global_definition)) {
+      Log.error("a state-local declaration did not shadow the global module definition");
+      return false;
+   }
+   if (shadowed->Fields.empty() or shadowed->Fields[0].Name != "ParserLocalOnly") {
+      Log.error("the shadowing structure did not retain its declared layout");
+      return false;
+   }
+   if (find_struct(second.get(), "RGB8") != global_definition) {
+      Log.error("a state-local declaration altered the definition seen by another state");
+      return false;
+   }
+   if (find_struct(nullptr, "RGB8") != global_definition) {
+      Log.error("a state-local declaration altered the published global definition");
+      return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+// Phase 3: portable prototype dependency descriptors.
+//
+// Verifies that a compilation unit's module declarations are recorded as canonical names on its prototype, that the
+// names deduplicate across aliases, that a dependency with no referenced function is retained, and that the whole
+// block survives a bytecode round trip in a fresh state.
+
+static bool test_module_dependency_descriptors(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   register_module_class(L);
+   lua_protect_globals(L);
+
+   // 'core' is referenced through two aliases and 'display' is declared without being referenced, so the descriptors
+   // must contain exactly two modules, one carrying a single function and the other none.
+
+   constexpr std::string_view source =
+      "module core as mC\n"
+      "module core as mCore\n"
+      "module display as mD\n"
+      "local a = mC.PreciseTime()\n"
+      "local b = mCore.PreciseTime()\n"
+      "return a + b\n";
+
+   if (lua_load(L, source, "dependency-descriptors")) {
+      Log.error("failed to compile the descriptor fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *proto = funcproto(funcV(L->top - 1));
+   auto table = proto_dependencies(proto);
+   if (not table) {
+      Log.error("a unit declaring modules produced no dependency descriptors");
+      return false;
+   }
+
+   if (table->version != PROTO_DEPENDENCY_VERSION) {
+      Log.error("descriptor version is %d, expected %d", int(table->version), int(PROTO_DEPENDENCY_VERSION));
+      return false;
+   }
+
+   if (table->dependency_count != 2) {
+      Log.error("two aliases of one module produced %d dependencies, expected 2",
+         int(table->dependency_count));
+      return false;
+   }
+
+   if (table->function_count != 1) {
+      Log.error("one deduplicated function reference produced %d entries, expected 1",
+         int(table->function_count));
+      return false;
+   }
+
+   auto dependencies = proto_dependency_list(table);
+   auto functions = proto_dependency_functions(table);
+
+   bool saw_core = false, saw_display = false;
+   for (uint32_t i = 0; i < table->dependency_count; ++i) {
+      GCstr *name = gco_to_string(gcref(dependencies[i].name));
+      std::string_view view(strdata(name), name->len);
+
+      if (kt::iequals(view, "core")) {
+         saw_core = true;
+         if (dependencies[i].function_count != 1) {
+            Log.error("the core dependency records %d functions, expected 1",
+               int(dependencies[i].function_count));
+            return false;
+         }
+         GCstr *function = gco_to_string(gcref(functions[dependencies[i].first_function].name));
+         if (not kt::iequals(std::string_view(strdata(function), function->len), "PreciseTime")) {
+            Log.error("the recorded function name is '%.*s', expected PreciseTime",
+               int(function->len), strdata(function));
+            return false;
+         }
+      }
+      else if (kt::iequals(view, "display")) {
+         saw_display = true;
+         if (dependencies[i].function_count != 0) {
+            Log.error("an unreferenced declaration recorded %d functions, expected 0",
+               int(dependencies[i].function_count));
+            return false;
+         }
+      }
+      else {
+         Log.error("unexpected dependency '%.*s'", int(name->len), strdata(name));
+         return false;
+      }
+   }
+
+   if (not saw_core or not saw_display) {
+      Log.error("descriptors are missing core (%d) or display (%d)", int(saw_core), int(saw_display));
+      return false;
+   }
+
+   // Round trip through a dump.  The reload happens in a second state, so the rebuilt descriptors cannot be sharing
+   // anything with the originals; only the persisted names connect them.
+
+   std::string dump;
+   if (lua_dump(L, bytecode_writer, &dump) != 0) {
+      Log.error("failed to dump the descriptor fixture");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   LuaStateHolder reload_state;
+   lua_State *R = reload_state.get();
+   luaL_openlibs(R);
+   register_module_class(R);
+   lua_protect_globals(R);
+   if (lua_load(R, std::string_view(dump.data(), dump.size()), "dependency-reload")) {
+      Log.error("failed to reload the descriptor fixture: %s", lua_tostring(R, -1));
+      return false;
+   }
+
+   auto reloaded = proto_dependencies(funcproto(funcV(R->top - 1)));
+   if (not reloaded) {
+      Log.error("the reloaded prototype lost its dependency descriptors");
+      return false;
+   }
+
+   if (reloaded->dependency_count != table->dependency_count or
+       reloaded->function_count != table->function_count) {
+      Log.error("the reloaded descriptors have %d/%d entries, expected %d/%d",
+         int(reloaded->dependency_count), int(reloaded->function_count),
+         int(table->dependency_count), int(table->function_count));
+      return false;
+   }
+
+   auto reloaded_dependencies = proto_dependency_list(reloaded);
+   for (uint32_t i = 0; i < reloaded->dependency_count; ++i) {
+      GCstr *original = gco_to_string(gcref(dependencies[i].name));
+      GCstr *restored = gco_to_string(gcref(reloaded_dependencies[i].name));
+      if (not kt::iequals(std::string_view(strdata(original), original->len),
+            std::string_view(strdata(restored), restored->len))) {
+         Log.error("dependency %d reloaded as '%.*s', expected '%.*s'", int(i),
+            int(restored->len), strdata(restored), int(original->len), strdata(original));
+         return false;
+      }
+      if (reloaded_dependencies[i].first_function != dependencies[i].first_function or
+          reloaded_dependencies[i].function_count != dependencies[i].function_count) {
+         Log.error("dependency %d reloaded with a different function range", int(i));
+         return false;
+      }
+   }
+
+   // The dumped chunk must still run in the fresh state, which exercises resolution of the reloaded names against
+   // the global registry rather than anything carried over from compilation.
+
+   if (lua_pcall(R, 0, 1, 0)) {
+      Log.error("the reloaded chunk failed to execute: %s", lua_tostring(R, -1));
+      return false;
+   }
+   if (not lua_isnumber(R, -1)) {
+      Log.error("the reloaded chunk did not produce a numeric result");
+      return false;
+   }
+   lua_pop(R, 1);
+
+   // A prototype without module declarations must carry no descriptor block at all, so that ordinary functions pay
+   // nothing for the feature.
+
+   LuaStateHolder plain_state;
+   lua_State *P = plain_state.get();
+   luaL_openlibs(P);
+   register_module_class(P);
+   lua_protect_globals(P);
+   if (lua_load(P, std::string_view("return 1"), "dependency-none")) {
+      Log.error("failed to compile the descriptor-free fixture: %s", lua_tostring(P, -1));
+      return false;
+   }
+   if (proto_dependencies(funcproto(funcV(P->top - 1)))) {
+      Log.error("a unit with no module declaration produced dependency descriptors");
+      return false;
+   }
+   lua_pop(P, 1);
+
+   return true;
+}
+
+//********************************************************************************************************************
+// Corrupt dependency metadata must be rejected rather than resolved.  The fixture mutates a valid dump, so every
+// rejection below is attributable to the dependency block and not to an unrelated inconsistency.
+
+static bool test_module_dependency_corruption_rejected(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   register_module_class(L);
+   lua_protect_globals(L);
+   constexpr std::string_view source =
+      "module core as mC\n"
+      "return mC.PreciseTime()\n";
+
+   if (lua_load(L, source, "dependency-corrupt-source")) {
+      Log.error("failed to compile the corruption fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   std::string dump;
+   if (lj_bcwrite(L, funcproto(funcV(L->top - 1)), bytecode_writer, &dump, 1) != 0) {
+      Log.error("failed to dump the corruption fixture");
+      return false;
+   }
+   lua_pop(L, 1);
+
+   auto read_uleb = [&dump](size_t &Position, uint32_t &Value) {
+      Value = 0;
+      uint32_t shift = 0;
+      for (uint32_t count = 0; count < 5 and Position < dump.size(); ++count) {
+         uint8_t byte = uint8_t(dump[Position++]);
+         Value |= uint32_t(byte & 0x7f) << shift;
+         if (not (byte & 0x80)) return true;
+         shift += 7;
+      }
+      return false;
+   };
+
+   // Walk the prototype header to the dependency block: proto length, four header bytes, then sizekgc, sizekn,
+   // sizebc, siglen and deplen.  The dump is stripped, so the signature payload follows immediately.
+
+   size_t position = 5;
+   uint32_t value = 0;
+   if (not read_uleb(position, value) or position + 4 > dump.size()) {
+      Log.error("could not locate the prototype header in the corruption fixture");
+      return false;
+   }
+   position += 4;
+
+   uint32_t signature_length = 0, dependency_length = 0;
+   for (int field = 0; field < 3; ++field) {
+      if (not read_uleb(position, value)) {
+         Log.error("could not walk the corruption fixture header");
+         return false;
+      }
+   }
+   if (not read_uleb(position, signature_length) or not read_uleb(position, dependency_length)) {
+      Log.error("could not read the corruption fixture lengths");
+      return false;
+   }
+
+   if (dependency_length IS 0) {
+      Log.error("the corruption fixture carries no dependency block");
+      return false;
+   }
+
+   size_t dependency_offset = position + signature_length;
+   if (dependency_offset + dependency_length > dump.size()) {
+      Log.error("the corruption fixture dependency block is out of range");
+      return false;
+   }
+
+   struct Corruption {
+      const char *description;
+      size_t offset;
+      char value;
+   };
+
+   // The block layout is: versionB depcountU funccountU, then the entries.  Each mutation below targets one of the
+   // reader's structural invariants.
+
+   const Corruption cases[] = {
+      { "an unsupported descriptor version", dependency_offset, char(0xff) },
+      { "a zero dependency count", dependency_offset + 1, char(0) },
+      { "an oversized dependency count", dependency_offset + 1, char(0x7f) },
+      { "an inconsistent function count", dependency_offset + 2, char(0x7f) }
+   };
+
+   for (const auto &corruption : cases) {
+      std::string corrupt = dump;
+      corrupt[corruption.offset] = corruption.value;
+      if (lua_load(L, std::string_view(corrupt.data(), corrupt.size()), "dependency-corrupt") IS 0) {
+         Log.error("the bytecode reader accepted %s", corruption.description);
+         lua_pop(L, 1);
+         return false;
+      }
+      lua_pop(L, 1);
+   }
+
+   size_t bytecode_offset = dependency_offset + dependency_length;
+   if (bytecode_offset + sizeof(BCIns) > dump.size()) {
+      Log.error("the corruption fixture carries no activation instruction");
+      return false;
+   }
+
+   BCIns activation;
+   memcpy(&activation, dump.data() + bytecode_offset, sizeof(activation));
+   if (bc_op(activation) != BC_MODACT) {
+      Log.error("the corruption fixture does not begin with module activation");
+      return false;
+   }
+
+   for (bool missing : { false, true }) {
+      std::string corrupt = dump;
+      BCIns instruction = activation;
+      if (missing) setbc_op(&instruction, BC_MOV);
+      else setbc_d(&instruction, 0xffff);
+      memcpy(corrupt.data() + bytecode_offset, &instruction, sizeof(instruction));
+      if (lua_load(L, std::string_view(corrupt.data(), corrupt.size()), "activation-corrupt") IS 0) {
+         Log.error("the bytecode reader accepted %s module activation",
+            missing ? "a missing" : "an out-of-range");
+         lua_pop(L, 1);
+         return false;
+      }
+      lua_pop(L, 1);
+   }
+
+   // Truncating the declared block length must also be rejected, because the reader requires the block to be
+   // consumed exactly.
+
+   std::string truncated = dump;
+   truncated[position - 1] = char(uint8_t(truncated[position - 1]) - 1);
+   if (lua_load(L, std::string_view(truncated.data(), truncated.size()), "dependency-truncated") IS 0) {
+      Log.error("the bytecode reader accepted a truncated dependency block");
+      lua_pop(L, 1);
+      return false;
+   }
+   lua_pop(L, 1);
+
+   return true;
+}
+
+//********************************************************************************************************************
+// Executing a unit's dependency declaration must populate the prototype's resolved sidecar, and the callables bound
+// into the generated locals must be exactly the records the sidecar holds.
+//
+// BC_MODACT serves its bindings from the sidecar rather than repeating module and function lookups.  Comparing the
+// bound upvalue against the sidecar slot makes the descriptor path observable independently of call behaviour.
+
+static bool test_module_dependency_activation_uses_sidecar(kt::Log &Log)
+{
+   LuaStateHolder state;
+   lua_State *L = state.get();
+   luaL_openlibs(L);
+   register_module_class(L);
+   lua_protect_globals(L);
+
+   // Two distinct functions from one module, plus a declaration that references none.  The unreferenced module must
+   // still resolve, and the referenced functions must occupy consecutive sidecar slots in declaration order.
+
+   constexpr std::string_view source =
+      "module core as mC\n"
+      "module display as mD\n"
+      "local a = mC.PreciseTime\n"
+      "local b = mC.GetErrorMsg\n"
+      "return a, b\n";
+
+   if (lua_load(L, source, "dependency-activation")) {
+      Log.error("failed to compile the activation fixture: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   GCproto *proto = funcproto(funcV(L->top - 1));
+
+   if (proto->resolved_dependencies) {
+      Log.error("the sidecar was populated before the chunk executed");
+      return false;
+   }
+
+   // lua_pcall() consumes the chunk, so retain a copy for the re-activation check below.
+
+   lua_pushvalue(L, -1);
+
+   if (lua_pcall(L, 0, 2, 0)) {
+      Log.error("the activation fixture failed to execute: %s", lua_tostring(L, -1));
+      return false;
+   }
+
+   if (not proto->resolved_dependencies) {
+      Log.error("executing a dependency declaration left the sidecar unresolved");
+      return false;
+   }
+
+   auto table = proto_dependencies(proto);
+   if (not table or table->function_count != 2) {
+      Log.error("expected two resolved function slots, found %d", table ? int(table->function_count) : -1);
+      return false;
+   }
+
+   // Every referenced function slot must hold a record, and every declaration must be marked activated even when it
+   // references no function.
+
+   std::array<const void *, 2> resolved = { };
+   for (uint32_t slot = 0; slot < table->function_count; ++slot) {
+      resolved[slot] = proto_dependency_callable(proto, slot);
+      if (not resolved[slot]) {
+         Log.error("sidecar slot %d is empty after activation", int(slot));
+         return false;
+      }
+   }
+   if (not proto->resolved_dependency_states or proto->resolved_dependency_count != table->dependency_count) {
+      Log.error("dependency activation state does not match the descriptor table");
+      return false;
+   }
+   for (uint32_t dependency = 0; dependency < table->dependency_count; ++dependency) {
+      if (not proto->resolved_dependency_states[dependency]) {
+         Log.error("dependency %d was not marked activated", int(dependency));
+         return false;
+      }
+   }
+
+   // The returned values are the generated bindings.  Each is a C closure whose single upvalue is the light userdata
+   // pointing at the callable record, so it can be compared directly against the sidecar.
+
+   for (int index = 0; index < 2; ++index) {
+      int stack_slot = index - 2; // -2 is the first result, -1 the second
+
+      if (not lua_iscfunction(L, stack_slot)) {
+         Log.error("binding %d is not a C closure", index);
+         return false;
+      }
+
+      if (not lua_getupvalue(L, stack_slot, 1)) {
+         Log.error("binding %d exposes no callable upvalue", index);
+         return false;
+      }
+
+      const void *bound = lua_topointer(L, -1);
+      lua_pop(L, 1);
+
+      const void *expected = proto_dependency_callable(proto, uint32_t(index));
+      if (bound != expected) {
+         Log.error("binding %d holds %p but sidecar slot %d holds %p; the adapter is not serving from the sidecar",
+            index, bound, index, expected);
+         return false;
+      }
+   }
+
+   lua_pop(L, 2); // Discard the two bindings, leaving the retained chunk on top.
+
+   // Re-executing the chunk must preserve the resolved sidecar and simply rebuild closures from its stable records.
+
+   if (lua_pcall(L, 0, 2, 0)) {
+      Log.error("re-executing the activation fixture failed: %s", lua_tostring(L, -1));
+      return false;
+   }
+   lua_pop(L, 2);
+
+   for (uint32_t slot = 0; slot < table->function_count; ++slot) {
+      if (proto_dependency_callable(proto, slot) != resolved[slot]) {
+         Log.error("re-activation replaced resolved sidecar slot %d", int(slot));
+         return false;
+      }
+   }
+
+   return true;
+}
+
+static bool test_module_registry(kt::Log &Log)
+{
+   return test_module_registry_lookup(Log) and
+      test_module_registry_concurrency(Log) and
+      test_module_definition_ownership(Log) and
+      test_module_dependency_descriptors(Log) and
+      test_module_dependency_activation_uses_sidecar(Log) and
+      test_module_dependency_corruption_rejected(Log);
 }
 
 static bool test_struct_declaration_syntax(kt::Log &Log)
@@ -4211,34 +4866,15 @@ static bool test_module_namespace_ast(kt::Log &Log)
       return false;
    }
 
-   // The dependency initialiser is finalised after parsing and must name exactly the referenced functions.
+   // The dependency activation is finalised after parsing and must name exactly the referenced functions.
 
    const auto &dependency = std::get<LocalDeclStmtPayload>(valid.chunk.value_ref()->statements[0]->data);
    if (dependency.names.size() != 1 or dependency.names[0].symbol != member.binding.symbol) {
-      Log.error("the dependency initialiser did not declare one binding per referenced function");
+      Log.error("the dependency activation did not declare one binding per referenced function");
       return false;
    }
-   if (dependency.values.size() != 1 or dependency.values[0]->kind != AstNodeKind::CallExpr) {
-      Log.error("the dependency initialiser lost its binder call");
-      return false;
-   }
-   const auto &binder = std::get<CallExprPayload>(dependency.values[0]->data);
-   if (binder.arguments.size() != 2) {
-      Log.error("the binder received %zu arguments rather than a module name and one function name",
-         binder.arguments.size());
-      return false;
-   }
-   for (size_t index = 0; index < binder.arguments.size(); ++index) {
-      const auto *literal = std::get_if<LiteralValue>(&binder.arguments[index]->data);
-      if (not literal or literal->kind != LiteralKind::String or not literal->string_value) {
-         Log.error("binder argument %zu was not a canonical name literal", index);
-         return false;
-      }
-   }
-   const auto &function_argument = std::get<LiteralValue>(binder.arguments[1]->data);
-   if (std::string_view(strdata(function_argument.string_value), function_argument.string_value->len) !=
-       "PreciseTime") {
-      Log.error("the binder did not persist the canonical function name");
+   if (not dependency.values.empty() or dependency.module_dependency != 0) {
+      Log.error("the dependency activation retained a value expression or the wrong descriptor ordinal");
       return false;
    }
 
@@ -4261,14 +4897,12 @@ static bool test_module_namespace_ast(kt::Log &Log)
       Log.error("aliased namespaces materialised %zu bindings rather than 2", alias_dependency.names.size());
       return false;
    }
-   const auto &alias_binder = std::get<CallExprPayload>(alias_dependency.values[0]->data);
-   if (alias_binder.arguments.size() != 3) {
+   if (not alias_dependency.values.empty() or alias_dependency.module_dependency != 0) {
       Log.error("aliased namespaces did not deduplicate their referenced functions");
       return false;
    }
 
-   // An unused declaration must still resolve its module during activation, so its initialiser retains one hidden
-   // sentinel binding rather than becoming an empty local declaration.
+   // An unused declaration must still resolve its module during activation without retaining a hidden sentinel.
 
    auto unused = build_ast_from_source("module core as mUnused\nlocal value = 1\n");
    if (not unused.chunk.ok() or not unused.diagnostics.empty()) {
@@ -4277,14 +4911,9 @@ static bool test_module_namespace_ast(kt::Log &Log)
       return false;
    }
    const auto &unused_dependency = std::get<LocalDeclStmtPayload>(unused.chunk.value_ref()->statements[0]->data);
-   if (unused_dependency.names.size() != 1 or unused_dependency.values.size() != 1) {
-      Log.error("an unreferenced module declaration did not retain a sentinel binding");
-      return false;
-   }
-   const auto &unused_binder = std::get<CallExprPayload>(unused_dependency.values[0]->data);
-   if (unused_binder.arguments.size() != 1) {
-      Log.error("an unreferenced module declaration requested %zu functions rather than none",
-         unused_binder.arguments.size() - 1);
+   if (not unused_dependency.names.empty() or not unused_dependency.values.empty() or
+       unused_dependency.module_dependency != 0) {
+      Log.error("an unreferenced module declaration retained a hidden binding or lost its activation descriptor");
       return false;
    }
 
@@ -4323,7 +4952,7 @@ static bool test_module_namespace_conditions(kt::Log &Log)
 
 static bool test_implicit_module_namespace(kt::Log &Log)
 {
-   // 'mSys' is an implicit namespace for core.  Its dependency is created on first use and its initialiser is
+   // 'mSys' is an implicit namespace for core.  Its dependency is created on first use and its activation is
    // prepended to the compilation unit, so it dominates every reference without occupying a source position.
 
    auto implicit = build_ast_from_source(
@@ -4345,9 +4974,8 @@ static bool test_implicit_module_namespace(kt::Log &Log)
       Log.error("implicit mSys materialised %zu bindings rather than 2", implicit_dependency.names.size());
       return false;
    }
-   const auto &implicit_binder = std::get<CallExprPayload>(implicit_dependency.values[0]->data);
-   if (implicit_binder.arguments.size() != 3) {
-      Log.error("implicit mSys requested %zu binder arguments rather than 3", implicit_binder.arguments.size());
+   if (not implicit_dependency.values.empty() or implicit_dependency.module_dependency != 0) {
+      Log.error("implicit mSys did not retain its descriptor-indexed activation");
       return false;
    }
 
@@ -4374,21 +5002,11 @@ static bool test_implicit_module_namespace(kt::Log &Log)
          log_diagnostics(redundant.diagnostics, Log);
          return false;
       }
-      // A dependency initialiser is the only local declaration whose value calls the binder, so it is identified by
-      // that call target rather than by shape alone.
-
       size_t dependencies = 0;
       for (const auto &statement : redundant.chunk.value_ref()->statements) {
          if (statement->kind != AstNodeKind::LocalDeclStmt) continue;
          const auto &decl = std::get<LocalDeclStmtPayload>(statement->data);
-         if (decl.values.size() != 1 or decl.values[0]->kind != AstNodeKind::CallExpr) continue;
-         const auto &call = std::get<CallExprPayload>(decl.values[0]->data);
-         const auto *direct = std::get_if<DirectCallTarget>(&call.target);
-         if (not direct or not direct->callable or direct->callable->kind != AstNodeKind::MemberExpr) continue;
-         const auto &target = std::get<MemberExprPayload>(direct->callable->data);
-         if (not target.member.symbol) continue;
-         if (std::string_view(strdata(target.member.symbol), target.member.symbol->len) IS
-             std::string_view("\x1f" "dependency", 11)) dependencies++;
+         if (decl.module_dependency != UINT32_MAX) dependencies++;
       }
       if (dependencies != 1) {
          Log.error("explicit and implicit core namespaces produced %zu dependencies rather than 1", dependencies);
@@ -4480,13 +5098,13 @@ static bool test_module_namespace_bytecode(kt::Log &Log)
 
    std::string error;
    auto snapshot = compile_snapshot(lua, bytecode_source, true, error);
-   if (not snapshot or count_opcode_tree(*snapshot, BC_GGET) != 1) {
+   if (not snapshot or count_opcode_tree(*snapshot, BC_GGET) != 0) {
       Log.error("module namespace references retained an ordinary global lookup: %s", error.c_str());
       return false;
    }
 
-   // The binder is reached through one member access on the public 'mod' table during activation.  The module call
-   // itself is a hidden local read, so the function containing it must perform no table member lookup at all.
+   // Activation is descriptor-indexed bytecode.  The module call itself is a hidden local read, so neither path
+   // performs a table member lookup.
 
    if (snapshot->children.size() != 1) {
       Log.error("the module namespace fixture produced %zu child functions rather than 1",
@@ -4498,9 +5116,10 @@ static bool test_module_namespace_bytecode(kt::Log &Log)
          count_opcode(snapshot->children.front(), BC_TGETS));
       return false;
    }
-   if (count_opcode_tree(*snapshot, BC_TGETS) != 1) {
-      Log.error("module namespace activation used %zu table member lookups rather than 1",
-         count_opcode_tree(*snapshot, BC_TGETS));
+   if (count_opcode_tree(*snapshot, BC_TGETS) != 0 or count_opcode_tree(*snapshot, BC_MODACT) != 1) {
+      Log.error("module namespace activation used %zu table lookups and %zu activation opcodes",
+         count_opcode_tree(*snapshot, BC_TGETS),
+         count_opcode_tree(*snapshot, BC_MODACT));
       return false;
    }
 
@@ -4528,25 +5147,15 @@ static bool test_module_namespace_bytecode(kt::Log &Log)
       return false;
    }
 
-   // Activation validates every persisted name against the module's current function list, so a name that no longer
-   // resolves must fail with a precise diagnostic rather than binding the wrong function.
+   // The compiler-private binder is no longer published through the public mod table.
 
-   constexpr std::string_view missing_function_source =
-      "local binder = mod['\\31dependency']\n"
-      "return binder('core', 'DefinitelyNotAnExportedFunction')\n";
-   if (lua_load(lua, missing_function_source, "module-namespace-missing")) {
-      Log.error("failed to compile the missing-function fixture: %s", lua_tostring(lua, -1));
+   constexpr std::string_view hidden_binder_source = "return mod['\\31dependency']\n";
+   if (lua_load(lua, hidden_binder_source, "module-namespace-hidden-binder")) {
+      Log.error("failed to compile the hidden-binder fixture: %s", lua_tostring(lua, -1));
       return false;
    }
-   if (lua_pcall(lua, 0, 0, 0) IS 0) {
-      Log.error("binding an unexported module function unexpectedly succeeded");
-      return false;
-   }
-   CSTRING activation_error = lua_tostring(lua, -1);
-   if (not activation_error or not strstr(activation_error, "DefinitelyNotAnExportedFunction")) {
-      Log.error("the activation diagnostic did not name the missing function: %s",
-         activation_error ? activation_error : "no message");
-      lua_pop(lua, 1);
+   if (lua_pcall(lua, 0, 1, 0) != 0 or not lua_isnil(lua, -1)) {
+      Log.error("the compiler-private binder remains visible through the mod table");
       return false;
    }
    lua_pop(lua, 1);
@@ -5282,7 +5891,7 @@ static bool test_type_guided_emission(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 53> tests = { {
+   constexpr std::array<TestCase, 54> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -5319,6 +5928,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "parser_diagnostics_reset_per_load", test_parser_diagnostics_reset_per_load },
       { "userdata_type_annotations", test_userdata_type_annotations },
       { "state_local_struct_declarations", test_state_local_struct_declarations },
+      { "module_registry", test_module_registry },
       { "struct_declaration_syntax", test_struct_declaration_syntax },
       { "struct_field_documentation", test_struct_field_documentation },
       { "struct_declaration_metadata", test_struct_declaration_metadata },
