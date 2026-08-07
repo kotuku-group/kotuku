@@ -36,12 +36,48 @@ struct static_module_signature {
    std::vector<std::unique_ptr<static_module_function_signature>> Functions;
 };
 
+constexpr int MAX_MODULE_ARGS = 16;
+constexpr size_t BUFFER_ELEMENT_SIZE = 16;
+constexpr size_t BUFFER_SIZE = MAX_MODULE_ARGS * BUFFER_ELEMENT_SIZE;
+constexpr size_t MAX_STRING_PREFIX_LENGTH = 200;
+
+struct module;
+
+// One process-wide callable record per exported module function.  Records are allocated individually so that their
+// addresses remain stable from publication until expunge_modules(), which is required because Tiri closures retain a
+// raw pointer to their record and the cached ffi_cif refers to ArgTypes in place.
+//
+// Every field is written once during preparation and is immutable afterwards, so concurrent calls from independent
+// Tiri states can share one record without synchronisation.
+
+struct module_callable {
+   module *Owner = nullptr;
+   CSTRING Name = nullptr;               // Canonical name, owned by the module's Function list
+   APTR Address = nullptr;               // Native function address
+   const FunctionField *Fields = nullptr; // Argument metadata, owned by the module's Function list
+   int Index = -1;                       // Position in the module's Function list
+
+   ffi_cif Cif = { };
+   ffi_type *ArgTypes[MAX_MODULE_ARGS] = { };
+   ffi_type *ReturnType = nullptr;
+   int TotalArgs = 0;
+
+   // Preparation may fail for signatures libffi cannot describe, or that the bridge does not support.  The failure is
+   // recorded rather than raised so that it can be reported consistently at call time; an unreferenced function with a
+   // bad signature must not prevent its module from loading.
+   ERR Status = ERR::Okay;
+   std::string StatusMessage;
+
+   bool Trivial = false;                 // No argument list at all; callable directly without libffi
+};
+
 struct module {
    std::string Name;
    const struct Function *Functions = nullptr;
    objModule *Module = nullptr;
    std::unique_ptr<const static_module_signature> Signature;
    ankerl::unordered_dense::map<uint32_t, std::vector<int>> FunctionMap; // Hash buckets validated by canonical name
+   std::vector<std::unique_ptr<module_callable>> Callables; // Indexed in step with Functions
 
    ~module() {
       if (Module) FreeResource(Module);
@@ -58,11 +94,6 @@ static std::vector<std::unique_ptr<module>> glModules;
 template<class... Args> void RMSG(Args...) {
    //log.msg(Args)
 }
-
-constexpr int MAX_MODULE_ARGS = 16;
-constexpr size_t BUFFER_ELEMENT_SIZE = 16;
-constexpr size_t BUFFER_SIZE = MAX_MODULE_ARGS * BUFFER_ELEMENT_SIZE;
-constexpr size_t MAX_STRING_PREFIX_LENGTH = 200;
 
 struct module_span_arg {
    std::span<int8_t> Span;
@@ -211,6 +242,148 @@ std::string_view static_module_function_name(StaticModuleHandle Module, std::str
 }
 
 //********************************************************************************************************************
+// Determine the libffi type for one argument.  The mapping mirrors the argument marshalling in module_call_inner();
+// both must agree on the number and type of arguments passed to ffi_call().
+//
+// Signature-dependent validation that does not require a lua_State is performed here so that it happens once per
+// process rather than on every call.  State-dependent checks, such as resolving a named structure for a span, remain
+// in the call bridge.
+
+static ERR callable_arg_type(const FunctionField &Field, ffi_type *&Type, std::string &ErrorMsg)
+{
+   const int argtype = Field.Type;
+
+   if ((argtype & FDF_SPAN) IS FDF_SPAN) {
+      if (argtype & (FD_RESULT|FD_ALLOC)) {
+         ErrorMsg = std::format("Unsupported span result for arg '{}'.", Field.Name);
+         return ERR::NoSupport;
+      }
+      Type = &ffi_type_pointer;
+      return ERR::Okay;
+   }
+
+   if (argtype & FD_ARRAY) { // Non-span arrays are no longer marshalled
+      ErrorMsg = std::format("Unsupported pointer array arg '{}'.", Field.Name);
+      return ERR::NoSupport;
+   }
+
+   if (argtype & FD_RESULT) {
+      // Every result argument is passed as a pointer to storage that the bridge provides.
+      if ((((argtype & FDF_VECTOR) IS FDF_VECTOR) and (argtype & FD_MUTABLE)) or
+          (argtype & (FD_STR|FD_PTR|FD_INT|FD_DOUBLE|FD_INT64))) {
+         Type = &ffi_type_pointer;
+         return ERR::Okay;
+      }
+      ErrorMsg = std::format("Unrecognised result arg '{}', flags ${:08x}.", Field.Name, argtype);
+      return ERR::InvalidType;
+   }
+
+   if (argtype & FD_FUNCTION) { Type = &ffi_type_pointer; return ERR::Okay; }
+   if (argtype & FD_STR) { Type = &ffi_type_pointer; return ERR::Okay; }
+
+   if ((argtype & FDF_VECTOR) IS FDF_VECTOR) {
+      ErrorMsg = "C++ array inputs are not supported.";
+      return ERR::NoSupport;
+   }
+
+   if (argtype & FD_PTR) { Type = &ffi_type_pointer; return ERR::Okay; }
+   if (argtype & FD_INT) { Type = &ffi_type_sint32; return ERR::Okay; }
+   if (argtype & FD_DOUBLE) { Type = &ffi_type_double; return ERR::Okay; }
+   if (argtype & FD_INT64) { Type = &ffi_type_sint64; return ERR::Okay; }
+
+   if (argtype & (FD_TAGS|FD_VARTAGS)) {
+      ErrorMsg = "Functions using tags are not supported.";
+      return ERR::NoSupport;
+   }
+
+   ErrorMsg = std::format("Unsupported arg '{}', flags ${:08x}.", Field.Name, argtype);
+   return ERR::NoSupport;
+}
+
+//********************************************************************************************************************
+// Determine the libffi return type from the function's result descriptor, which is stored in element zero of the
+// argument list.
+
+static ffi_type * callable_return_type(int ResultType)
+{
+   if (ResultType & FD_STR) return &ffi_type_pointer;
+   if (ResultType & FD_OBJECT) return &ffi_type_pointer;
+   if (ResultType & FD_PTR) return &ffi_type_pointer;
+   if (ResultType & (FD_INT|FD_ERROR)) {
+      return (ResultType & FD_UNSIGNED) ? &ffi_type_uint32 : &ffi_type_sint32;
+   }
+   if (ResultType & FD_DOUBLE) return &ffi_type_double;
+   if (ResultType & FD_INT64) return &ffi_type_sint64;
+   return &ffi_type_void;
+}
+
+//********************************************************************************************************************
+// Build the process-wide callable records for a module.  Called once, while the module is being resolved and before
+// it is published to glModules, so no other thread can observe a partially prepared record.
+//
+// A preparation failure is recorded on the individual callable rather than propagated, because one unsupported
+// signature must not prevent the rest of the module from being used.
+
+static void prepare_module_callables(module *Module)
+{
+   if (not Module->Functions) return;
+
+   size_t function_count = 0;
+   while (Module->Functions[function_count].Name) function_count++;
+   Module->Callables.reserve(function_count);
+
+   for (size_t index = 0; index < function_count; ++index) {
+      const auto &function = Module->Functions[index];
+      auto callable = std::make_unique<module_callable>();
+      callable->Owner   = Module;
+      callable->Name    = function.Name;
+      callable->Address = function.Address;
+      callable->Fields  = function.Args;
+      callable->Index   = int(index);
+
+      if (not function.Args) {
+         // A function with no argument list takes no parameters and returns nothing, so libffi is unnecessary.
+         callable->Trivial = true;
+         Module->Callables.push_back(std::move(callable));
+         continue;
+      }
+
+      const FunctionField *args = function.Args;
+      int total = 0;
+      for (int arg = 1; args[arg].Name; ++arg) {
+         if (total >= MAX_MODULE_ARGS) {
+            callable->Status = ERR::BufferOverflow;
+            callable->StatusMessage = std::format("Function '{}' exceeds the {} argument limit.",
+               function.Name, MAX_MODULE_ARGS);
+            break;
+         }
+
+         ffi_type *type = nullptr;
+         std::string message;
+         if (auto error = callable_arg_type(args[arg], type, message); error != ERR::Okay) {
+            callable->Status = error;
+            callable->StatusMessage = std::format("Function '{}': {}", function.Name, message);
+            break;
+         }
+         callable->ArgTypes[total++] = type;
+      }
+
+      if (callable->Status IS ERR::Okay) {
+         callable->TotalArgs  = total;
+         callable->ReturnType = callable_return_type(args->Type);
+
+         if (ffi_prep_cif(&callable->Cif, FFI_DEFAULT_ABI, total, callable->ReturnType,
+                callable->ArgTypes) != FFI_OK) {
+            callable->Status = ERR::SystemCall;
+            callable->StatusMessage = std::format("Failed to prepare the call interface for '{}'.", function.Name);
+         }
+      }
+
+      Module->Callables.push_back(std::move(callable));
+   }
+}
+
+//********************************************************************************************************************
 // Resolve one process-wide module instance.  Entries remain stable until the Tiri module is expunged.
 
 static ERR resolve_module(std::string_view Name, module *&Result)
@@ -239,6 +412,7 @@ static ERR resolve_module(std::string_view Name, module *&Result)
          entry->FunctionMap[strihash(entry->Functions[index].Name)].push_back(index);
       }
    }
+   prepare_module_callables(entry.get());
 
    Result = entry.get();
    glModules.push_back(std::move(entry));
@@ -605,13 +779,10 @@ static int module_dependency(lua_State *Lua)
    }
 
    lua_newtable(Lua);
-   if (mod->Functions) {
-      for (int index = 0; mod->Functions[index].Name; ++index) {
-         lua_pushlightuserdata(Lua, mod);
-         lua_pushinteger(Lua, index);
-         lua_pushcclosure(Lua, module_call, 2);
-         lua_setfield(Lua, -2, mod->Functions[index].Name);
-      }
+   for (const auto &callable : mod->Callables) {
+      lua_pushlightuserdata(Lua, callable.get());
+      lua_pushcclosure(Lua, module_call, 1);
+      lua_setfield(Lua, -2, callable->Name);
    }
    return 1;
 }
@@ -637,9 +808,10 @@ static int module_index(lua_State *Lua)
                      }
                      lua_pop(Lua, 1);
 
-                     lua_pushvalue(Lua, 1); // Arg1: Duplicate the module reference
-                     lua_pushinteger(Lua, index); // Arg2: Index of the function that is being called
-                     lua_pushcclosure(Lua, module_call, 2);
+                     // The closure retains the process-wide callable record, matching the namespace path.  The
+                     // userdata itself is not captured; the record outlives every Tiri state that can call it.
+                     lua_pushlightuserdata(Lua, mod->Callables[index].get());
+                     lua_pushcclosure(Lua, module_call, 1);
                      lua_pushvalue(Lua, -1);
                      lua_setfield(Lua, -3, canonical_name);
                      lua_remove(Lua, -2);
@@ -808,21 +980,22 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       else return "";
    };
 
-   module *mod = nullptr;
-   if (lua_islightuserdata(Lua, lua_upvalueindex(1))) {
-      mod = (module *)lua_touserdata(Lua, lua_upvalueindex(1));
-   }
-   else if (auto reference = (module_ref *)get_meta(Lua, lua_upvalueindex(1), "Tiri.mod")) {
-      mod = reference->Binding;
-   }
-   if (not mod) {
-      ErrorMsg = "module_call() expected module in upvalue.";
+   // One light-userdata upvalue holds the process-wide callable record, which carries the native address, the argument
+   // metadata and the libffi call interface that was prepared when the module was resolved.
+
+   auto callable = (module_callable *)lua_touserdata(Lua, lua_upvalueindex(1));
+   if (not callable) {
+      ErrorMsg = "module_call() expected a callable record in its upvalue.";
       return ERR::Args;
    }
 
-   if (not mod->Functions) return ERR::UnknownProperty;
+   // Signature problems are detected during preparation and reported here, so that an unsupported function fails
+   // consistently whether it is called directly or through an extracted callable.
+   if (callable->Status != ERR::Okay) {
+      ErrorMsg = callable->StatusMessage;
+      return callable->Status;
+   }
 
-   auto index = lua_tointeger(Lua, lua_upvalueindex(2));
    int nargs = lua_gettop(Lua);
    if (nargs > MAX_MODULE_ARGS-1) {
       log.warning("Limit of %d args exceeded.", MAX_MODULE_ARGS - 1);
@@ -831,24 +1004,16 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
    uint8_t *end = buffer + sizeof(buffer);
 
-   log.trace("%s() Index: %d, Args: %d", mod->Functions[index].Name, index, nargs);
+   log.trace("%s() Index: %d, Args: %d", callable->Name, callable->Index, nargs);
 
-   const FunctionField *args;
-   if (not (args = mod->Functions[index].Args)) {
-      auto function = (void (*)(void))mod->Functions[index].Address;
+   if (callable->Trivial) {
+      auto function = (void (*)(void))callable->Address;
       function();
       return ERR::Okay;
    }
 
-   for (int arg=1; args[arg].Name; arg++) {
-      if ((args[arg].Type & FD_ARRAY) and ((args[arg].Type & FDF_SPAN) != FDF_SPAN)) {
-         ErrorMsg = std::format("Function '{}' uses unsupported pointer array arg '{}'.",
-            mod->Functions[index].Name, args[arg].Name);
-         return ERR::NoSupport;
-      }
-   }
-
-   APTR function = mod->Functions[index].Address;
+   const FunctionField *args = callable->Fields;
+   APTR function = callable->Address;
    FUNCTION func;
 
    // This guard owns the Lua registry reference for an FD_FUNCTION argument until the call is handed to the module.
@@ -866,13 +1031,11 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       }
    } func_guard{ Lua, func };
 
-   ffi_cif cif;
    union {
       ffi_arg Arg;
       double  Double;
       int64_t Int64;
    } rc = { };
-   ffi_type *arg_types[MAX_MODULE_ARGS];
    void * arg_values[MAX_MODULE_ARGS];
    int in = 0;
 
@@ -881,7 +1044,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    for (i=1; args[i].Name; i++) {
       int argtype = args[i].Type;
 
-      //log.trace("%s() Arg: %s, Offset: %d, Type: $%.8x (received %s)", mod->Functions[index].Name, args[i].Name, j, argtype, lua_typename(Lua, lua_type(Lua, i)));
+      //log.trace("%s() Arg: %s, Offset: %d, Type: $%.8x (received %s)", callable->Name, args[i].Name, j, argtype, lua_typename(Lua, lua_type(Lua, i)));
 
       if ((argtype & FDF_SPAN) IS FDF_SPAN) {
          if (span_count >= span_args.size()) {
@@ -890,7 +1053,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          }
 
          if (argtype & (FD_RESULT|FD_ALLOC)) {
-            ErrorMsg = std::format("Function '{}' uses an unsupported span result.", mod->Functions[index].Name);
+            ErrorMsg = std::format("Function '{}' uses an unsupported span result.", callable->Name);
             return ERR::NoSupport;
          }
 
@@ -902,8 +1065,8 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          if (auto error = module_span_element_metadata(Lua, args[i], &element_type, &element_size, &struct_def);
              error != ERR::Okay) {
             ErrorMsg = (error IS ERR::Search) ?
-               std::format("Function '{}' references an unknown span structure.", mod->Functions[index].Name) :
-               std::format("Function '{}' uses invalid span element metadata.", mod->Functions[index].Name);
+               std::format("Function '{}' references an unknown span structure.", callable->Name) :
+               std::format("Function '{}' uses invalid span element metadata.", callable->Name);
             return error;
          }
 
@@ -981,7 +1144,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          auto span_address = span_arg.set(data, extent);
          ((APTR *)(buffer + j))[0] = span_address;
          arg_values[in] = buffer + j;
-         arg_types[in++] = &ffi_type_pointer;
+         in++;
          j += sizeof(APTR);
       }
       else if (argtype & FD_RESULT) {
@@ -1006,11 +1169,11 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                ((APTR *)(buffer + j))[0] = result_ref.Data; // kt::vector<>
                cpp_arrays.push_back(std::move(result_ref));
                arg_values[in]  = buffer + j;
-               arg_types[in++] = &ffi_type_pointer;
+               in++;
                j += sizeof(APTR);
             }
             else {
-               ErrorMsg = std::format("Function '{}' uses an unsupported C++ array result type.", mod->Functions[index].Name);
+               ErrorMsg = std::format("Function '{}' uses an unsupported C++ array result type.", callable->Name);
                return error;
             }
          }
@@ -1023,7 +1186,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                   strings.emplace_back();
                   ((std::string **)(buffer + j))[0] = &strings.back();
                   arg_values[in]  = buffer + j;
-                  arg_types[in++] = &ffi_type_pointer;
+                  in++;
                   j += sizeof(APTR);
                }
                else {
@@ -1031,7 +1194,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                   string_views.emplace_back();
                   ((std::string_view **)(buffer + j))[0] = &string_views.back();
                   arg_values[in]  = buffer + j;
-                  arg_types[in++] = &ffi_type_pointer;
+                  in++;
                   j += sizeof(APTR);
                }
             }
@@ -1040,7 +1203,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                ((APTR *)(buffer + j))[0] = end;
                ((APTR *)end)[0] = nullptr;
                arg_values[in]  = buffer + j;
-               arg_types[in++] = &ffi_type_pointer;
+               in++;
                j += sizeof(APTR);
             }
          }
@@ -1049,7 +1212,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             ((APTR *)(buffer + j))[0] = end;
             ((APTR *)end)[0] = nullptr;
             arg_values[in]  = buffer + j;
-            arg_types[in++] = &ffi_type_pointer;
+            in++;
             j += sizeof(APTR);
          }
          else if (argtype & FD_INT) { // FD_RESULT
@@ -1057,7 +1220,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             ((APTR *)(buffer + j))[0] = end;
             ((int *)end)[0] = 0;
             arg_values[in]  = buffer + j;
-            arg_types[in++] = &ffi_type_pointer;
+            in++;
             j += sizeof(APTR);
          }
          else if (argtype & (FD_DOUBLE|FD_INT64)) { // FD_RESULT
@@ -1065,7 +1228,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             ((APTR *)(buffer + j))[0] = end;
             ((int64_t *)end)[0] = 0;
             arg_values[in]  = buffer + j;
-            arg_types[in++] = &ffi_type_pointer;
+            in++;
             j += sizeof(APTR);
          }
          else {
@@ -1109,7 +1272,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          }
 
          arg_values[in]  = buffer + j;
-         arg_types[in++] = &ffi_type_pointer;
+         in++;
          j += sizeof(FUNCTION *);
       }
       else if (argtype & FD_STR) {
@@ -1163,7 +1326,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          }
 
          arg_values[in] = buffer + j;
-         arg_types[in++] = &ffi_type_pointer;
+         in++;
          j += type_size;
       }
       else if ((argtype & FDF_VECTOR) IS FDF_VECTOR) {
@@ -1182,7 +1345,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
             ((CSTRING *)(buffer + j))[0] = (argtype & FD_MUTABLE) ? strdatawr(string) : strdata(string);
             arg_values[in] = buffer + j;
-            arg_types[in++] = &ffi_type_pointer;
+            in++;
             j += sizeof(CSTRING);
          }
          else if (auto native_struct = lua_isstruct(Lua, i) ? lua_tostruct(Lua, i) : nullptr) {
@@ -1193,7 +1356,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             }
             ((APTR *)(buffer + j))[0] = native_struct->data;
             arg_values[in] = buffer + j;
-            arg_types[in++] = &ffi_type_pointer;
+            in++;
             j += sizeof(APTR);
 
             log.trace("Struct address %p inserted to arg offset %d", native_struct->data, j);
@@ -1217,7 +1380,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             }
 
             arg_values[in] = buffer + j;
-            arg_types[in++] = &ffi_type_pointer;
+            in++;
             j += sizeof(APTR);
          }
          else if (arg_type IS LUA_TARRAY) {
@@ -1225,7 +1388,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
             ((APTR *)(buffer + j))[0] = array->arraydata();
             arg_values[in] = buffer + j;
-            arg_types[in++] = &ffi_type_pointer;
+            in++;
             j += sizeof(APTR);
          }
          else if (arg_type IS LUA_TTABLE) {
@@ -1240,7 +1403,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                   else allocated_structs.emplace_back(std::move(struct_data), nullptr, Lua);
                   ((APTR *)(buffer + j))[0] = struct_address;
                   arg_values[in] = buffer + j;
-                  arg_types[in++] = &ffi_type_pointer;
+                  in++;
                   j += sizeof(APTR);
                }
                else {
@@ -1256,7 +1419,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          else {
             ((APTR *)(buffer + j))[0] = lua_touserdata(Lua, i); //lua_topointer?
             arg_values[in] = buffer + j;
-            arg_types[in++] = &ffi_type_pointer;
+            in++;
             j += sizeof(APTR);
          }
       }
@@ -1270,19 +1433,19 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          else if (argtype & FD_UNSIGNED) ((uint32_t *)(buffer + j))[0] = lua_tointeger(Lua, i);
          else ((int *)(buffer + j))[0] = lua_tointeger(Lua, i);
          arg_values[in] = buffer + j;
-         arg_types[in++] = &ffi_type_sint32;
+         in++;
          j += sizeof(int);
       }
       else if (argtype & FD_DOUBLE) {
          ((double *)(buffer + j))[0] = lua_tonumber(Lua, i);
          arg_values[in] = buffer + j;
-         arg_types[in++] = &ffi_type_double;
+         in++;
          j += sizeof(double);
       }
       else if (argtype & FD_INT64) {
          ((int64_t *)(buffer + j))[0] = lua_tointeger(Lua, i);
          arg_values[in] = buffer + j;
-         arg_types[in++] = &ffi_type_sint64;
+         in++;
          j += sizeof(int64_t);
       }
       else if (argtype & (FD_TAGS|FD_VARTAGS)) {
@@ -1290,37 +1453,26 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          return ERR::NoSupport;
       }
       else {
-         ErrorMsg = std::format("{}() unsupported arg '{}', flags ${:08x}.", mod->Functions[index].Name, args[i].Name, argtype);
+         ErrorMsg = std::format("{}() unsupported arg '{}', flags ${:08x}.", callable->Name, args[i].Name, argtype);
          return ERR::NoSupport;
       }
    }
 
-   // Call the function.  Determine return type and prepare FFI call interface once.
+   // Call the function.  The call interface and return type were prepared when the module was resolved, so the hot
+   // path only has to verify that the marshaller produced the argument count the interface was built for.
 
    int restype = args->Type;
-   int result = 1;
-   int total_args = i - 1;
+   int result = (callable->ReturnType IS &ffi_type_void) ? 0 : 1;
 
-   // Determine the correct FFI return type
-
-   ffi_type *return_type;
-   if (restype & FD_STR) return_type = &ffi_type_pointer;
-   else if (restype & FD_OBJECT) return_type = &ffi_type_pointer;
-   else if (restype & FD_PTR) return_type = &ffi_type_pointer;
-   else if (restype & (FD_INT|FD_ERROR)) {
-      if (restype & FD_UNSIGNED) return_type = &ffi_type_uint32;
-      else return_type = &ffi_type_sint32;
-   }
-   else if (restype & FD_DOUBLE) return_type = &ffi_type_double;
-   else if (restype & FD_INT64) return_type = &ffi_type_sint64;
-   else { // Void
-      return_type = &ffi_type_void;
-      result = 0;
+   if (in != callable->TotalArgs) {
+      ErrorMsg = std::format("Function '{}' marshalled {} args but its call interface expects {}.",
+         callable->Name, in, callable->TotalArgs);
+      return ERR::Mismatch;
    }
 
-   if (ffi_prep_cif(&cif, FFI_DEFAULT_ABI, total_args, return_type, arg_types) IS FFI_OK) {
+   {
       func_guard.OwnsReference = false;
-      ffi_call(&cif, (void (*)())function, &rc, arg_values);
+      ffi_call(&callable->Cif, (void (*)())function, &rc, arg_values);
       copy_mutable_cpp_strings();
       if (not ErrorMsg.empty()) return ERR::BufferOverflow;
 
@@ -1372,7 +1524,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             if ((restype & FD_ERROR) and (rc.Arg >= int(ERR::ExceptionThreshold)) and in_try_immediate_scope(Lua)) {
                // Scope isolation: Only throw exceptions for direct calls within the try block.
                auto error = ERR(rc.Arg);
-               ErrorMsg = std::format("{}() failed: {}", mod->Functions[index].Name ? mod->Functions[index].Name : "Function",
+               ErrorMsg = std::format("{}() failed: {}", callable->Name ? callable->Name : "Function",
                   GetErrorMsg(error));
                return error;
             }
@@ -1386,7 +1538,6 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       }
       // Void functions don't push anything to the stack
    }
-   else lua_pushnil(Lua);
 
    Results = process_results(tiri, buffer, args) + result;
    return ERR::Okay;

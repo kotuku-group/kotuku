@@ -49,6 +49,54 @@ end
    assert(clock() > 0, 'An extracted module callable should retain its dependency')
 end
 
+-- Every supported signature family must marshal correctly through the shared callable record.  The libffi call
+-- interface is prepared once per function when its module is resolved, so a fault in that preparation would surface
+-- here as a wrong result or a crash rather than as a per-call error.
+
+@Test function SignatureFamiliesMarshalThroughCachedInterfaces()
+   assert(mCore.PreciseTime() > 0, 'zero-argument scalar result')
+   assert(mCore.GetResource(1) != nil, 'scalar argument')
+   assert(#mCore.GetErrorMsg(0) > 0, 'C-string result')
+   assert(mCore.ResolveClassName('Tiri') > 0, 'C++ string-view argument')
+   assert(mCore.GetThreadID() >= 0, 'unsigned scalar result')
+   assert(mCore.CurrentTask() != nil, 'object result')
+   assert(mCore.ActionList() != nil, 'C++ array result')
+
+   local err, path_type = mCore.AnalysePath('temp:')
+   assert(err is ERR_Okay and path_type != nil, 'multiple results via out-parameters')
+
+   local resolved_err, resolved = mCore.ResolvePath('temp:', 0)
+   assert(resolved_err is ERR_Okay and #resolved > 0, 'mutable C++ string result')
+end
+
+-- A callback argument holds a Lua registry reference that the bridge hands to the module.  Preparing the call
+-- interface in advance must not disturb that ownership transfer.
+
+@Test function CallbackArgumentsRetainTheirReference()
+   local err, subscription = mCore.SubscribeTimer(0.5, function() end)
+   assert(err is ERR_Okay, 'a callback-bearing signature should succeed')
+   assert(subscription != nil, 'the subscription result should be returned')
+   check mCore.UpdateTimer(subscription, 0) -- An interval of zero releases the subscription
+end
+
+-- Callable records are process-wide and immutable after publication, so independent Tiri states must be able to call
+-- the same function concurrently without synchronisation.
+
+@Test function ConcurrentStatesShareCallableRecords()
+   local scripts = array<obj>
+   for _ in {1 into 4} do
+      scripts:push(obj.new('tiri', { statement = [[
+         module core as mConcurrent
+         local total = 0
+         for _ in {0 to 500} do total += mConcurrent.PreciseTime() end
+         assert(total > 0, 'concurrent module calls produced no result')
+      ]] }))
+   end
+
+   for script in values(scripts) do async.script(script) end
+   check async.wait(scripts, 10.0)
+end
+
 @Test function NamespaceIsNotAGlobalValue()
    assert(rawget(_G, 'mCore') is nil, 'A declared module namespace must not be stored in _G')
    assert(rawget(_G, 'mCoreAlias') is nil, 'A module alias must not be stored in _G')
