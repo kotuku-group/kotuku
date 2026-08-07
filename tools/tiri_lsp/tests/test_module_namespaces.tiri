@@ -1,5 +1,6 @@
 global glModuleNamespaceLspUri = nil
-extern lspInitDocs, lspPathToUri, resolveModuleCompletion, resolveModuleRename, registerCoreHandlers
+extern lspInitDocs, lspPathToUri, markLineIndex, moduleDeclarationsForDocument, modulePrefixesForDocument,
+   resolveModuleCompletion, resolveModuleRename, registerCoreHandlers
 
 @BeforeAll function SetupModuleNamespaceLspTests(State)
    local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
@@ -65,6 +66,18 @@ end
    local declared_doc = makeDoc("module core as runtimeCore\nruntimeCore.PreciseTime()")
    assert(not resolveModuleRename(declared_doc, { line=0, character=17 }, 'not-valid'),
       'Rename should reject invalid identifier names.')
+end
+
+@Test function ModuleNamespaceMetadataCacheInvalidatesWithDocument()
+   local doc = makeDoc("module core as mFirst\nmFirst.PreciseTime()")
+   assert(moduleDeclarationsForDocument(doc).mFirst is 'core', 'Initial namespace declaration should be cached.')
+   assert(modulePrefixesForDocument(doc).mFirst is 'core', 'Initial namespace prefix should be cached.')
+
+   doc.content = "module core as mSecond\nmSecond.PreciseTime()"
+   markLineIndex(doc, 0)
+
+   assert(not moduleDeclarationsForDocument(doc).mFirst, 'Invalidation should discard stale namespace declarations.')
+   assert(modulePrefixesForDocument(doc).mSecond is 'core', 'Invalidation should expose the replacement namespace.')
 end
 
 @Test function HandlerAdvertisesCompletionAndRename()

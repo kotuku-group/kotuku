@@ -1466,23 +1466,8 @@ ParserResult<StmtNodePtr> AstBuilder::parse_module_decl()
    // Aliases of one canonical module share a single dependency record, so their referenced functions are pooled and
    // deduplicated into one initialiser.
 
-   size_t dependency_index = this->module_dependencies.size();
-   for (size_t index = 0; index < this->module_dependencies.size(); ++index) {
-      if (kt::iequals(this->module_dependencies[index]->canonical_module, canonical_module)) {
-         dependency_index = index;
-         break;
-      }
-   }
-
-   bool dependency_declared = dependency_index < this->module_dependencies.size();
-   if (not dependency_declared) {
-      auto record = std::make_unique<ModuleDependency>();
-      record->canonical_module  = canonical_module;
-      record->module            = signature;
-      record->sentinel_name     = this->ctx.lex().keepstr(std::string("\x1fmodule:") + canonical_module);
-      record->declaration_span  = module_token.span();
-      this->module_dependencies.push_back(std::move(record));
-   }
+   auto [dependency_index, dependency_created] = this->find_or_create_module_dependency(
+      canonical_module, module_token.span(), false);
    ModuleDependency *dependency = this->module_dependencies[dependency_index].get();
 
    ModuleNamespaceSymbol symbol;
@@ -1490,10 +1475,9 @@ ParserResult<StmtNodePtr> AstBuilder::parse_module_decl()
    symbol.module = signature;
    symbol.canonical_module = canonical_module;
    symbol.dependency = dependency_index;
-   symbol.declaration_span = module_token.span();
    this->module_namespaces.emplace(namespace_name, std::move(symbol));
 
-   if (dependency_declared) return ParserResult<StmtNodePtr>::success(nullptr);
+   if (not dependency_created) return ParserResult<StmtNodePtr>::success(nullptr);
 
    #ifdef INCLUDE_TIPS
    std::string_view namespace_view(strdata(namespace_name), namespace_name->len);

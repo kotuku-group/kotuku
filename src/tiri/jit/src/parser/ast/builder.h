@@ -14,6 +14,7 @@
 #include <span>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "nodes.h"
@@ -55,14 +56,17 @@ private:
    // One record per canonical module declared by this compilation unit.  Aliases of the same module share a
    // dependency, so a function referenced through two namespaces materialises exactly one hidden callable.
    //
-   // The initialiser statement is emitted with an empty binding list when the declaration is parsed, then finalised
+   // The initialiser statement is emitted with a placeholder binding when the declaration is parsed, then finalised
    // once the whole unit has been seen and the complete ordered function list is known.
+
+   struct ModuleFunctionBinding {
+      GCstr *function = nullptr;
+      GCstr *binding = nullptr;
+   };
 
    struct ModuleDependency {
       std::string canonical_module;
-      StaticModuleHandle module = nullptr;
-      std::vector<GCstr *> functions;                 // Canonical names, in binder argument order
-      std::vector<GCstr *> bindings;                  // Hidden local names, in step with functions
+      std::vector<ModuleFunctionBinding> functions;   // Canonical names and hidden locals, in binder argument order
       GCstr *sentinel_name = nullptr;                 // Hidden local used when no function is referenced
       StmtNode *initialiser = nullptr;                // The generated local declaration, finalised after parsing
       SourceSpan declaration_span{};
@@ -74,7 +78,6 @@ private:
       StaticModuleHandle module = nullptr;
       std::string canonical_module;
       size_t dependency = 0;                          // Index into module_dependencies
-      SourceSpan declaration_span{};
    };
 
    std::unordered_map<GCstr *, ModuleNamespaceSymbol> module_namespaces;
@@ -220,6 +223,8 @@ private:
    [[nodiscard]] const ModuleNamespaceSymbol *resolve_module_namespace(GCstr *);
    [[nodiscard]] bool is_module_namespace_name(GCstr *) const;
    [[nodiscard]] bool module_is_available(std::string_view);
+   [[nodiscard]] std::pair<size_t, bool> find_or_create_module_dependency(
+      std::string_view, const SourceSpan &, bool Implicit);
    [[nodiscard]] GCstr *module_function_binding(ModuleDependency &, GCstr *CanonicalFunction);
    [[nodiscard]] StmtNodePtr make_dependency_initialiser(ModuleDependency &, const SourceSpan &);
    void finalise_module_dependencies();

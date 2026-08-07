@@ -770,11 +770,6 @@ ExprNodePtr make_call_expr(SourceSpan Span, ExprNodePtr callee, ExprNodeList arg
       auto *member_payload = std::get_if<SafeMemberExprPayload>(&callee->data);
       if (member_payload) member_payload->is_call_target = true;
    }
-   else if (callee->kind IS AstNodeKind::ModuleFunctionExpr) {
-      auto *module_payload = std::get_if<ModuleFunctionExprPayload>(&callee->data);
-      if (module_payload) module_payload->is_call_target = true;
-   }
-
    DirectCallTarget target;
    target.callable = std::move(callee);
    payload.target = std::move(target);

@@ -34,13 +34,13 @@ MULTIBYTE_OPERATORS = {
 -- Tokenize a Tiri source file and return semantic tokens
 -- Returns array of tokens: { line, startChar, length, tokenType, tokenModifiers }
 
-global function tokenizeTiri(Source:str):array<table>
+global function tokenizeTiri(Source:str, ModulePrefixes:table):array<table>
    tokens = array<table>
    line = 0
    col = 0
    pos = 0
    len = #Source
-   module_prefixes = modulePrefixesForDocument({ content=Source, lineIndex=nil })
+   module_prefixes = ModulePrefixes or modulePrefixesForDocument({ content=Source, lineIndex=nil })
 
    -- Helper to add a token (skips zero-length tokens)
    function addToken(TokenLine, TokenCol, TokenLen, TokenType, TokenMod)

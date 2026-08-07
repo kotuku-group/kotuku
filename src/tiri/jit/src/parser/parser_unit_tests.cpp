@@ -4164,7 +4164,7 @@ static bool diagnostics_contain(const AstHarnessResult &Result, std::string_view
    return false;
 }
 
-static bool test_module_namespace_declarations(kt::Log &Log)
+static bool test_module_namespace_ast(kt::Log &Log)
 {
    auto valid = build_ast_from_source(
       "module core as mCore\n"
@@ -4191,8 +4191,7 @@ static bool test_module_namespace_declarations(kt::Log &Log)
    if (not member.module or not member.namespace_name or not member.function.symbol or not member.binding.symbol or
        not kt::iequals(static_module_name(member.module), "core") or
        std::string_view(strdata(member.namespace_name), member.namespace_name->len) != "mCore" or
-       std::string_view(strdata(member.function.symbol), member.function.symbol->len) != "PreciseTime" or
-       not member.is_call_target) {
+       std::string_view(strdata(member.function.symbol), member.function.symbol->len) != "PreciseTime") {
       Log.error("module member did not retain canonical compiler metadata");
       return false;
    }
@@ -4207,7 +4206,7 @@ static bool test_module_namespace_declarations(kt::Log &Log)
       return false;
    }
    const auto &extracted = std::get<ModuleFunctionExprPayload>(extract_decl.values.front()->data);
-   if (extracted.binding.symbol != member.binding.symbol or extracted.is_call_target) {
+   if (extracted.binding.symbol != member.binding.symbol) {
       Log.error("an extracted module callable did not share the direct call's hidden binding");
       return false;
    }
@@ -4289,6 +4288,11 @@ static bool test_module_namespace_declarations(kt::Log &Log)
       return false;
    }
 
+   return true;
+}
+
+static bool test_module_namespace_conditions(kt::Log &Log)
+{
    auto conditional = build_ast_from_source(
       "@if(exists='modules:core')\n"
       "   module core as mCore\n"
@@ -4314,6 +4318,11 @@ static bool test_module_namespace_declarations(kt::Log &Log)
       return false;
    }
 
+   return true;
+}
+
+static bool test_implicit_module_namespace(kt::Log &Log)
+{
    // 'mSys' is an implicit namespace for core.  Its dependency is created on first use and its initialiser is
    // prepended to the compilation unit, so it dominates every reference without occupying a source position.
 
@@ -4355,8 +4364,10 @@ static bool test_module_namespace_declarations(kt::Log &Log)
 
    for (std::string_view source : {
          std::string_view("module core as mSys\nlocal value = mSys.PreciseTime()\n"),
-         std::string_view("local first = mSys.PreciseTime()\nmodule core as mSys\nlocal second = mSys.GetErrorMsg(0)\n"),
-         std::string_view("module core as mCoreTwin\nlocal a = mSys.PreciseTime()\nlocal b = mCoreTwin.PreciseTime()\n") }) {
+         std::string_view(
+            "local first = mSys.PreciseTime()\nmodule core as mSys\nlocal second = mSys.GetErrorMsg(0)\n"),
+         std::string_view(
+            "module core as mCoreTwin\nlocal a = mSys.PreciseTime()\nlocal b = mCoreTwin.PreciseTime()\n") }) {
       auto redundant = build_ast_from_source(source);
       if (not redundant.chunk.ok() or not redundant.diagnostics.empty()) {
          Log.error("an explicit core declaration alongside implicit mSys failed to parse");
@@ -4385,6 +4396,11 @@ static bool test_module_namespace_declarations(kt::Log &Log)
       }
    }
 
+   return true;
+}
+
+static bool test_module_namespace_diagnostics(kt::Log &Log)
+{
    struct InvalidCase { std::string_view source; std::string_view diagnostic; };
    constexpr std::array<InvalidCase, 15> invalid = { {
       { "module 'core' as mCore\n", "Module name must be an identifier" },
@@ -4426,6 +4442,11 @@ static bool test_module_namespace_declarations(kt::Log &Log)
       return false;
    }
 
+   return true;
+}
+
+static bool test_module_namespace_bytecode(kt::Log &Log)
+{
    LuaStateHolder bytecode_state;
    lua_State *lua = bytecode_state.get();
    luaL_openlibs(lua);
@@ -4531,6 +4552,15 @@ static bool test_module_namespace_declarations(kt::Log &Log)
    lua_pop(lua, 1);
 
    return true;
+}
+
+static bool test_module_namespace_declarations(kt::Log &Log)
+{
+   return test_module_namespace_ast(Log) and
+      test_module_namespace_conditions(Log) and
+      test_implicit_module_namespace(Log) and
+      test_module_namespace_diagnostics(Log) and
+      test_module_namespace_bytecode(Log);
 }
 
 static size_t count_opcode(const BytecodeSnapshot &Snapshot, BCOp Opcode)

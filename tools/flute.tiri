@@ -57,37 +57,21 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-glNetworkAvailable = thunk():bool
-   local net
+function moduleAvailable(Name:str):bool
+   local loaded_module
    try
-       net ?= obj.new('module', { name='network' })
+      loaded_module ?= obj.new('module', { name=Name })
    end
-   return net != nil
+   return loaded_module != nil
 end
 
-glAudioAvailable = thunk():bool
-   local audio
-   try
-       audio ?= obj.new('module', { name='audio' })
-   end
-   return audio != nil
-end
+glNetworkAvailable = thunk():bool return moduleAvailable('network') end
 
-glFontAvailable = thunk():bool
-   local font
-   try
-       font ?= obj.new('module', { name='font' })
-   end
-   return font != nil
-end
+glAudioAvailable = thunk():bool return moduleAvailable('audio') end
 
-glDisplayAvailable = thunk():bool
-   local gfx
-   try
-       gfx ?= obj.new('module', { name='display' })
-   end
-   return gfx != nil
-end
+glFontAvailable = thunk():bool return moduleAvailable('font') end
+
+glDisplayAvailable = thunk():bool return moduleAvailable('display') end
 
 global glSSLAvailable = thunk():bool
    return exec([[

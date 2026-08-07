@@ -33,7 +33,7 @@ struct static_module_function_signature {
 
 struct static_module_signature {
    std::string Name;
-   std::vector<std::unique_ptr<static_module_function_signature>> Functions;
+   std::vector<static_module_function_signature> Functions;
 };
 
 constexpr int MAX_MODULE_ARGS = 16;
@@ -57,9 +57,6 @@ struct module_callable {
 
    ffi_cif Cif = { };
    ffi_type *ArgTypes[MAX_MODULE_ARGS] = { };
-   ffi_type *ReturnType = nullptr;
-
-   uint8_t TotalArgs = 0;
 
    inline bool trivial() { return Fields IS nullptr; }
 
@@ -72,11 +69,10 @@ struct module_callable {
 
 struct module {
    std::string Name;
-   const struct Function *Functions = nullptr;
    objModule *Module = nullptr;
    std::unique_ptr<const static_module_signature> Signature;
-   ankerl::unordered_dense::map<uint32_t, std::vector<int>> FunctionMap; // Hash buckets validated by canonical name
-   std::vector<std::unique_ptr<module_callable>> Callables; // Indexed in step with Functions
+   ankerl::unordered_dense::map<uint32_t, std::vector<module_callable *>> FunctionMap;
+   std::vector<std::unique_ptr<module_callable>> Callables;
 
    ~module() {
       if (Module) FreeResource(Module);
@@ -166,23 +162,21 @@ static std::unique_ptr<const static_module_signature> make_module_signature(
    signature->Functions.reserve(function_count);
 
    for (size_t i = 0; i < function_count; ++i) {
-      auto entry = std::make_unique<static_module_function_signature>();
-      entry->Name = Functions[i].Name;
+      auto &entry = signature->Functions.emplace_back();
+      entry.Name = Functions[i].Name;
 
       if (const FunctionField *fields = Functions[i].Args) {
          size_t field_count = 0;
          while (fields[field_count].Name) field_count++;
-         entry->FieldNames.reserve(field_count);
-         entry->Fields.reserve(field_count + 1);
-         for (size_t j = 0; j < field_count; ++j) entry->FieldNames.emplace_back(fields[j].Name);
+         entry.FieldNames.reserve(field_count);
+         entry.Fields.reserve(field_count + 1);
+         for (size_t j = 0; j < field_count; ++j) entry.FieldNames.emplace_back(fields[j].Name);
          for (size_t j = 0; j < field_count; ++j) {
-            entry->Fields.push_back({ entry->FieldNames[j].c_str(), fields[j].Type });
+            entry.Fields.push_back({ entry.FieldNames[j].c_str(), fields[j].Type });
          }
-         entry->Fields.push_back({ nullptr, 0 });
+         entry.Fields.push_back({ nullptr, 0 });
       }
-      else entry->Fields.push_back({ nullptr, 0 });
-
-      signature->Functions.push_back(std::move(entry));
+      else entry.Fields.push_back({ nullptr, 0 });
    }
 
    return signature;
@@ -202,7 +196,7 @@ const FunctionField * static_module_function(
 {
    if (not Module) return nullptr;
    for (const auto &function : Module->Functions) {
-      if (kt::iequals(function->Name, Name)) return function->Fields.data();
+      if (kt::iequals(function.Name, Name)) return function.Fields.data();
    }
    return nullptr;
 }
@@ -216,7 +210,7 @@ std::string_view static_module_function_name(StaticModuleHandle Module, std::str
 {
    if (not Module) return {};
    for (const auto &function : Module->Functions) {
-      if (kt::iequals(function->Name, Name)) return function->Name;
+      if (kt::iequals(function.Name, Name)) return function.Name;
    }
    return {};
 }
@@ -304,18 +298,18 @@ static ffi_type * callable_return_type(int ResultType)
 // A preparation failure is recorded on the individual callable rather than propagated, because one unsupported
 // signature must not prevent the rest of the module from being used.
 
-static void prepare_module_callables(module *Module)
+static void prepare_module_callables(module *Module, const Function *Functions)
 {
    kt::Log log(__FUNCTION__);
 
-   if (not Module->Functions) return;
+   if (not Functions) return;
 
    size_t function_count = 0;
-   while (Module->Functions[function_count].Name) function_count++;
+   while (Functions[function_count].Name) function_count++;
    Module->Callables.reserve(function_count);
 
    for (size_t index = 0; index < function_count; ++index) {
-      const auto &function = Module->Functions[index];
+      const auto &function = Functions[index];
       auto callable = std::make_unique<module_callable>();
 
       callable->Name    = function.Name;
@@ -348,16 +342,15 @@ static void prepare_module_callables(module *Module)
       }
 
       if (callable->valid()) {
-         callable->TotalArgs  = total;
-         callable->ReturnType = callable_return_type(args->Type);
+         ffi_type *return_type = callable_return_type(args->Type);
 
-         if (ffi_prep_cif(&callable->Cif, FFI_DEFAULT_ABI, total, callable->ReturnType,
-                callable->ArgTypes) != FFI_OK) {
+         if (ffi_prep_cif(&callable->Cif, FFI_DEFAULT_ABI, total, return_type, callable->ArgTypes) != FFI_OK) {
             callable->invalidate();
             log.msg("Failed to prepare the call interface for '%s'.", function.Name);
          }
       }
 
+      Module->FunctionMap[strihash(function.Name)].push_back(callable.get());
       Module->Callables.push_back(std::move(callable));
    }
 }
@@ -380,18 +373,14 @@ static ERR resolve_module(std::string_view Name, module *&Result)
 
    auto entry = std::make_unique<module>();
    entry->Module = loaded_module;
-   loaded_module->getFunctionList(entry->Functions);
+   const Function *functions = nullptr;
+   loaded_module->getFunctionList(functions);
 
    std::string_view canonical_name;
    if (loaded_module->getName(canonical_name) != ERR::Okay or canonical_name.empty()) canonical_name = Name;
    entry->Name = canonical_name;
-   entry->Signature = make_module_signature(entry->Name, entry->Functions);
-   if (entry->Functions) {
-      for (int index = 0; entry->Functions[index].Name; ++index) {
-         entry->FunctionMap[strihash(entry->Functions[index].Name)].push_back(index);
-      }
-   }
-   prepare_module_callables(entry.get());
+   entry->Signature = make_module_signature(entry->Name, functions);
+   prepare_module_callables(entry.get(), functions);
 
    Result = entry.get();
    glModules.push_back(std::move(entry));
@@ -716,11 +705,10 @@ static int module_test(lua_State *Lua)
 
 static module_callable * find_module_callable(module *Module, std::string_view Name)
 {
-   if (not Module->Functions) return nullptr;
    auto hash = strihash(Name);
    if (auto it = Module->FunctionMap.find(hash); it != Module->FunctionMap.end()) {
-      for (int index : it->second) {
-         if (kt::iequals(Module->Functions[index].Name, Name)) return Module->Callables[index].get();
+      for (auto callable : it->second) {
+         if (kt::iequals(callable->Name, Name)) return callable;
       }
    }
    return nullptr;
@@ -987,8 +975,6 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
    for (i=1; args[i].Name; i++) {
       int argtype = args[i].Type;
-
-      //log.trace("%s() Arg: %s, Offset: %d, Type: $%.8x (received %s)", callable->Name, args[i].Name, j, argtype, lua_typename(Lua, lua_type(Lua, i)));
 
       if ((argtype & FDF_SPAN) IS FDF_SPAN) {
          if (span_count >= span_args.size()) {
@@ -1406,11 +1392,11 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    // path only has to verify that the marshaller produced the argument count the interface was built for.
 
    int restype = args->Type;
-   int result = (callable->ReturnType IS &ffi_type_void) ? 0 : 1;
+   int result = (callable->Cif.rtype IS &ffi_type_void) ? 0 : 1;
 
-   if (in != callable->TotalArgs) {
+   if (in != int(callable->Cif.nargs)) {
       ErrorMsg = std::format("Function '{}' marshalled {} args but its call interface expects {}.",
-         callable->Name, in, callable->TotalArgs);
+         callable->Name, in, callable->Cif.nargs);
       return ERR::Mismatch;
    }
 

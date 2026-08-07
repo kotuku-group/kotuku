@@ -140,9 +140,7 @@ global function resolveModuleCompletion(Doc:table, Position:table):array<table>
    end
    local object_name = before:sub(object_start, object_stop)
    local member_prefix = before:sub(dot_pos + 1):lower()
-   local module_name = modulePrefixesForDocument(Doc)[object_name]
-   if not module_name then return array<table> end
-   local module_doc = moduleDocumentByName(module_name)
+   local module_doc = moduleDocumentForNamespace(Doc, object_name)
    if not module_doc?.functions then return array<table> end
 
    local items = array<table>
@@ -175,7 +173,7 @@ global function resolveModuleRename(Doc:table, Position:table, NewName:str):tabl
    if not old_name or not moduleDeclarationsForDocument(Doc)[old_name] then return nil end
 
    local edits = array<table>
-   for token in values(tokenizeTiri(Doc.content)) do
+   for token in values(tokenizeTiri(Doc.content, modulePrefixesForDocument(Doc))) do
       local line_text = getLine(Doc, token.line)
       local text = line_text:sub(token.char, token.char + token.length)
       if token.type is 10 and text is old_name and (token.modifiers & 8) is 0 then

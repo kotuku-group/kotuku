@@ -463,7 +463,6 @@ struct ModuleFunctionExprPayload {
    Identifier function;                               // Canonical function name, for diagnostics and metadata lookup
    StaticModuleHandle module = nullptr;               // Immutable module signature; never a script value
    GCstr *namespace_name = nullptr;                   // Source namespace spelling, for diagnostics
-   bool is_call_target = false;                       // True when this is the callee of a direct call
 };
 
 struct IndexExprPayload {

@@ -540,14 +540,10 @@ global function resolveHoverContent(TokenInfo, Doc, Position):str
       end
 
       -- Try module function lookup (mSys.Sleep, mNet.AddressToStr, etc.)
-      module_prefixes = modulePrefixesForDocument(Doc)
-      if module_prefixes[objName] then
-         modName = module_prefixes[objName]
-         moduleDoc = moduleDocumentByName(modName)
-         if moduleDoc then
-            if moduleDoc?.functions?[token] then
-               return formatModuleFunctionHover(modName, token, moduleDoc.functions[token])
-            end
+      moduleDoc, modName = moduleDocumentForNamespace(Doc, objName)
+      if moduleDoc then
+         if moduleDoc?.functions?[token] then
+            return formatModuleFunctionHover(modName, token, moduleDoc.functions[token])
          end
       end
    end

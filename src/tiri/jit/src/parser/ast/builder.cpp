@@ -380,6 +380,25 @@ bool AstBuilder::is_module_namespace_name(GCstr *Name) const
 }
 
 //********************************************************************************************************************
+// Find the shared dependency for a canonical module, creating it when this is the first declaration or implicit use.
+
+std::pair<size_t, bool> AstBuilder::find_or_create_module_dependency(
+   std::string_view CanonicalModule, const SourceSpan &Span, bool Implicit)
+{
+   for (size_t index = 0; index < this->module_dependencies.size(); ++index) {
+      if (kt::iequals(this->module_dependencies[index]->canonical_module, CanonicalModule)) return { index, false };
+   }
+
+   auto record = std::make_unique<ModuleDependency>();
+   record->canonical_module = CanonicalModule;
+   record->sentinel_name = this->ctx.lex().keepstr(std::string("\x1fmodule:") + std::string(CanonicalModule));
+   record->declaration_span = Span;
+   record->implicit = Implicit;
+   this->module_dependencies.push_back(std::move(record));
+   return { this->module_dependencies.size() - 1, true };
+}
+
+//********************************************************************************************************************
 // Build the generated local declaration that activates one module dependency.
 //
 // The statement is created as soon as the dependency is recorded so that it occupies a well-defined position in the
@@ -441,22 +460,7 @@ const AstBuilder::ModuleNamespaceSymbol * AstBuilder::resolve_module_namespace(G
    // alias of it.  Pooling matches parse_module_decl() so that one canonical module always has one initialiser and
    // one set of hidden callable bindings.
 
-   size_t dependency_index = this->module_dependencies.size();
-   for (size_t index = 0; index < this->module_dependencies.size(); ++index) {
-      if (kt::iequals(this->module_dependencies[index]->canonical_module, canonical_module)) {
-         dependency_index = index;
-         break;
-      }
-   }
-
-   if (dependency_index IS this->module_dependencies.size()) {
-      auto record = std::make_unique<ModuleDependency>();
-      record->canonical_module = canonical_module;
-      record->module           = signature;
-      record->sentinel_name    = this->ctx.lex().keepstr(std::string("\x1fmodule:") + canonical_module);
-      record->implicit         = true;
-      this->module_dependencies.push_back(std::move(record));
-   }
+   size_t dependency_index = this->find_or_create_module_dependency(canonical_module, {}, true).first;
 
    ModuleNamespaceSymbol symbol;
    symbol.source_name      = Name;
@@ -490,15 +494,14 @@ GCstr * AstBuilder::module_function_binding(ModuleDependency &Dependency, GCstr 
 {
    if (not CanonicalFunction) return nullptr;
 
-   for (size_t index = 0; index < Dependency.functions.size(); ++index) {
-      if (Dependency.functions[index] IS CanonicalFunction) return Dependency.bindings[index];
+   for (const auto &function : Dependency.functions) {
+      if (function.function IS CanonicalFunction) return function.binding;
    }
 
    std::string binding_text = std::string("\x1fmodfn:") + Dependency.canonical_module + ":" +
       std::string(strdata(CanonicalFunction), CanonicalFunction->len);
    GCstr *binding = this->ctx.lex().keepstr(binding_text);
-   Dependency.functions.push_back(CanonicalFunction);
-   Dependency.bindings.push_back(binding);
+   Dependency.functions.push_back({ CanonicalFunction, binding });
    return binding;
 }
 
@@ -529,14 +532,13 @@ void AstBuilder::finalise_module_dependencies()
          continue;
       }
 
-      for (size_t index = 0; index < dependency->functions.size(); ++index) {
-         GCstr *function = dependency->functions[index];
-         call->arguments.push_back(make_literal_expr(span, LiteralValue::string(function)));
+      for (const auto &function : dependency->functions) {
+         call->arguments.push_back(make_literal_expr(span, LiteralValue::string(function.function)));
 
          // The binding carries neither a declared type nor a <const> attribute.  Its name is unspellable, so no
          // source can rebind it, and the const validator requires one initialiser expression per name whereas the
          // binder supplies its results as a single multiple-value call.
-         payload->names.push_back(Identifier::from_keepstr(dependency->bindings[index], span));
+         payload->names.push_back(Identifier::from_keepstr(function.binding, span));
       }
    }
 }
