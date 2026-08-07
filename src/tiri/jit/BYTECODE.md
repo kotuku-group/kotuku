@@ -7,6 +7,8 @@ Kōtuku integrates a heavily modified LuaJIT 2.1 VM. This note captures the cont
 - Registers are shown as `R0`, `R1`, etc. Fields A/B/C/D follow LuaJIT encoding: `A` is usually a destination or base, `B`/`C` are sources, `D` is a constant or split field. `base` is the current stack frame start.
 - Conditions are expressed as "condition true → skip next instruction; condition false → execute next instruction (normally a `JMP`)." "Next instruction" means the sequential `BCIns`; a taken `JMP` applies its offset from the following instruction.
 - Version: LuaJIT 2.1 with extensive changes, assuming the `LJ_FR2` two-slot frame layout used by all supported platforms.
+- Serialised bytecode format: `0x87`.  Earlier formats are rejected; there is no compatibility shim for the removed
+  compiler-private module dependency binder.
 - **64-bit bytecode**: `BCIns` is now `uint64_t` (was `uint32_t`). Instructions occupy 8 bytes each. New extended formats (ABCP, ADP, AP) enable native 64-bit pointer storage for inline caching. See section 3.1 for format details.
 - Keep this file aligned with changes in `src/tiri/jit/src/parser/*`, whenever bytecode emission patterns change.
 
@@ -194,6 +196,19 @@ Operand suffixes: V=variable slot, S=string const, N=number const, P=primitive (
 | `RET` | A D | return R(A)...R(A+D-2) |
 | `RET0` | A D | return (no values) |
 | `RET1` | A D | return R(A) (single value) |
+
+#### Module Dependency Activation
+
+| Opcode | Format | Description |
+|--------|--------|-------------|
+| `MODACT` | A D | Resolve dependency descriptor D and materialise its callable closures from R(A) onward |
+
+`MODACT` is compiler-private and executes at the source declaration's activation position.  The descriptor provides
+the canonical module name and ordered function names; no module or function name is repeated in the instruction
+stream.  `A` is the first destination register and `D` is the descriptor ordinal.  A dependency with no referenced
+functions still executes the opcode but writes no register.  Direct and extracted module calls both read the resulting
+hidden locals and enter the shared native marshaller.  Activation materialises closures and may load a module, so the
+JIT exits to the interpreter at this opcode rather than recording it in a trace.
 
 #### Loop and Branch Ops
 | Opcode | Format | Description |
@@ -667,24 +682,32 @@ Only names are persisted.  A native address or an export-list index is a process
 serialisation, and a stored index would select the wrong function if the module's export list were reordered or
 extended between writing and loading.  Names resolve against the global module registry in any process.
 
-Descriptors are deduplicated at compile time.  Aliases of one canonical module share one dependency, and repeated
-references to one function share one entry.  A declaration that references no function still produces a dependency,
+Descriptors are deduplicated within each compilation unit.  Aliases of one canonical module share one dependency, and
+repeated references to one function share one entry.  Imported units are parsed independently but emit into the root
+prototype, so two imported units may contribute distinct descriptors for the same canonical module.  Their ordinals
+and activation positions remain separate.  A declaration that references no function still produces a dependency,
 because the module must be resolved and retained regardless.
 
 The block is stored in the prototype allocation after the signature, naturally aligned because its entries hold
 `GCRef` fields.  Names are anchored as GC constants when the parser builds the prototype; a prototype rebuilt from a
 dump has no such constants, so the collector marks the descriptor names directly.
 
-Resolution produces a state-owned sidecar of non-owning pointers to the registry's callable records.  The sidecar is
-allocated on first activation, freed with the prototype, and never stored in a global collection.  Registry records
-remain stable until expunge, which runs only once no Tiri state can execute, so a resolved pointer cannot dangle.
-Resolution happens at activation rather than at load, which preserves the existing failure timing: a missing module or
-function is reported when the dependency declaration executes.
+Resolution produces a prototype-owned sidecar of non-owning pointers to the registry's callable records plus one
+activation byte per descriptor.  The Lua state allocates this sidecar on first activation, the collector frees it with
+the prototype, and it is never stored in a global collection.  Registry records remain stable until expunge, which
+runs only once no Tiri state can execute, so a resolved pointer cannot dangle.  Descriptors resolve independently at
+activation rather than at load, which preserves failure timing: a missing module or function is reported when its
+dependency declaration executes.
 
-The reader validates the block structurally before allocating anything: bounded counts, contiguous non-overlapping
-function ranges, an owning dependency that actually contains each function, no duplicate module names, non-empty names
-and exact consumption of the declared length.  Structural validity is not export validity, so every name is
-revalidated against the registry at resolution.
+The reader validates the block structurally before installing it: bounded counts, contiguous non-overlapping function
+ranges, an owning dependency that actually contains each function, non-empty names and exact consumption of the
+declared length.  It then requires exactly one `MODACT` for every descriptor, rejects unknown or repeated descriptor
+ordinals, and verifies that each destination range fits the prototype frame.  Repeated canonical module names are
+valid because imported compilation units can contribute independent descriptors.  Structural validity is not export
+validity, so every name is revalidated against the registry at resolution.
+
+The process-wide ownership, publication and lock contract is documented in
+[MODULE_REGISTRY.md](../MODULE_REGISTRY.md).
 
 ## 11. Testing, Debugging, and Tooling
 ### 11.1 Using Flute and Tiri Tests
@@ -776,8 +799,8 @@ revalidated against the registry at resolution.
 - Basic tag contracts use trace slot specialisation. Prototypes needing structure identity, range metatable,
   callable-value or dynamic-result predicates remain interpreter-only until those predicates have dedicated trace IR
   guards.
-- The private bytecode dump version is `0x86`. It includes a length-delimited, schema-versioned signature and a
+- The private bytecode dump version is `0x87`. It includes a length-delimited, schema-versioned signature and a
   length-delimited module dependency block before each prototype's bytecode, and preserves constant-table
-  classification flags. Every older version, `0x85` included, is rejected at the header: the dependency block added an
-  unconditional length field to every prototype header, so an earlier dump cannot be decoded. Discard old dumps and
-  rebuild them from source.
+  classification flags. Version `0x87` replaces the compiler-private `mod['\31dependency']` call emitted by `0x86`
+  with `MODACT`; all older versions are rejected at the header rather than retaining a binder compatibility shim.
+  Discard old dumps and rebuild them from source.

@@ -104,7 +104,7 @@ function bench_cpp_string_result(Iterations: num): num
 end
 
 --********************************************************************************************************************
--- Activation workloads.  These measure the cost of the generated dependency initialiser rather than the call itself.
+-- Activation workloads.  These measure the cost of descriptor activation rather than the call itself.
 
 -- Baseline: no module declaration at all.  Subtract this from the others to isolate the module-specific cost, since
 -- exec() also pays for tokenising, parsing and emitting the statement.
@@ -112,8 +112,8 @@ local NO_MODULE_SOURCE <const> = [[
    local value = 1 + 1
 ]]
 
--- One module and one referenced function.  Activation currently materialises a closure for every exported Core
--- function, so this is the workload that Phase 2 is expected to improve.
+-- One module and one referenced function.  This is the smallest workload that resolves a dependency descriptor and
+-- materialises a callable closure.
 local ACTIVATION_SOURCE <const> = [[
    module core as mBench
    local value = mBench.PreciseTime()

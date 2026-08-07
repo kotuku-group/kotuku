@@ -40,11 +40,10 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // If you perform *any* kind of private modifications to the bytecode itself
 // or to the dump format, you *must* set BCDUMP_VERSION to 0x80 or higher.
 
-// 0x86 adds the per-prototype module dependency descriptor block.  The prototype header gained an unconditional
-// length field, so a 0x85 dump cannot be decoded by this reader; it is rejected by the existing version check rather
-// than being read through a compatibility path (Gate E, option 2).
+// 0x86 added the per-prototype module dependency descriptor block.  Version 0x87 replaces the compiler-private
+// mod['\31dependency'] activation call with BC_MODACT.  Older chunks are rejected rather than retaining a binder shim.
 
-constexpr uint8_t BCDUMP_VERSION = 0x86;
+constexpr uint8_t BCDUMP_VERSION = 0x87;
 
 // Compatibility flags.
 

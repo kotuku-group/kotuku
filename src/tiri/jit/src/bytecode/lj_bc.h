@@ -271,7 +271,10 @@ constexpr uint8_t  NO_REG = BCMAX_A;
   \
   /* Direct range-loop preparation and value generation. */ \
   _(RANGEPREP, base, ___, lit, ___) \
-  _(RANGEVAL,  base, ___, ___, ___)
+  _(RANGEVAL,  base, ___, ___, ___) \
+  \
+  /* Compiler-managed module dependency activation. */ \
+  _(MODACT,    base, ___, lit, ___)
 
 // Bytecode opcode numbers.
 // Explicitly enumerated for debugger visibility and easy value lookup.
@@ -429,8 +432,9 @@ typedef enum {
    // Direct range loops
    BC_RANGEPREP = 118,
    BC_RANGEVAL = 119,
+   BC_MODACT = 120,
 
-   BC__MAX   = 120
+   BC__MAX   = 121
 } BCOp;
 
 [[nodiscard]] inline constexpr bool bc_is_func_header(BCOp Op) noexcept

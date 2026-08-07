@@ -1475,11 +1475,10 @@ static bool test_old_bytecode_versions_rejected(kt::Log &Log)
    }
    lua_pop(L, 1);
 
-   // 0x85 is included deliberately: the module dependency descriptors added an unconditional length field to every
-   // prototype header, so a 0x85 dump cannot be decoded.  Gate E selected format rejection over a compatibility
-   // shim, and this asserts that the documented rejection actually happens.
+   // 0x86 is included deliberately: Phase 5 removed the compiler-private binder referenced by those chunks and
+   // replaced it with BC_MODACT.  Gate E selected format rejection over a compatibility shim.
 
-   for (uint8_t version : { uint8_t(0x81), uint8_t(0x83), uint8_t(0x85) }) {
+   for (uint8_t version : { uint8_t(0x81), uint8_t(0x83), uint8_t(0x85), uint8_t(0x86) }) {
       std::string old_dump = dump;
       old_dump[3] = char(version);
       if (lua_load(L, std::string_view(old_dump.data(), old_dump.size()), "old-version") IS 0) {
@@ -3369,6 +3368,34 @@ static bool test_module_dependency_corruption_rejected(kt::Log &Log)
       lua_pop(L, 1);
    }
 
+   size_t bytecode_offset = dependency_offset + dependency_length;
+   if (bytecode_offset + sizeof(BCIns) > dump.size()) {
+      Log.error("the corruption fixture carries no activation instruction");
+      return false;
+   }
+
+   BCIns activation;
+   memcpy(&activation, dump.data() + bytecode_offset, sizeof(activation));
+   if (bc_op(activation) != BC_MODACT) {
+      Log.error("the corruption fixture does not begin with module activation");
+      return false;
+   }
+
+   for (bool missing : { false, true }) {
+      std::string corrupt = dump;
+      BCIns instruction = activation;
+      if (missing) setbc_op(&instruction, BC_MOV);
+      else setbc_d(&instruction, 0xffff);
+      memcpy(corrupt.data() + bytecode_offset, &instruction, sizeof(instruction));
+      if (lua_load(L, std::string_view(corrupt.data(), corrupt.size()), "activation-corrupt") IS 0) {
+         Log.error("the bytecode reader accepted %s module activation",
+            missing ? "a missing" : "an out-of-range");
+         lua_pop(L, 1);
+         return false;
+      }
+      lua_pop(L, 1);
+   }
+
    // Truncating the declared block length must also be rejected, because the reader requires the block to be
    // consumed exactly.
 
@@ -3388,10 +3415,8 @@ static bool test_module_dependency_corruption_rejected(kt::Log &Log)
 // Executing a unit's dependency declaration must populate the prototype's resolved sidecar, and the callables bound
 // into the generated locals must be exactly the records the sidecar holds.
 //
-// This is the Phase 4 dispatch contract.  module_dependency() serves its bindings from the sidecar rather than
-// repeating the module and function lookups, so a regression that silently reverted it to direct resolution would
-// still produce working closures and pass every behavioural test.  Comparing the bound upvalue against the sidecar
-// slot is what makes the adapter's use of the descriptors observable.
+// BC_MODACT serves its bindings from the sidecar rather than repeating module and function lookups.  Comparing the
+// bound upvalue against the sidecar slot makes the descriptor path observable independently of call behaviour.
 
 static bool test_module_dependency_activation_uses_sidecar(kt::Log &Log)
 {
@@ -3443,11 +3468,24 @@ static bool test_module_dependency_activation_uses_sidecar(kt::Log &Log)
       return false;
    }
 
-   // Every slot must hold a record, including those of the module that is declared but never referenced.
+   // Every referenced function slot must hold a record, and every declaration must be marked activated even when it
+   // references no function.
 
+   std::array<const void *, 2> resolved = { };
    for (uint32_t slot = 0; slot < table->function_count; ++slot) {
-      if (not proto_dependency_callable(proto, slot)) {
+      resolved[slot] = proto_dependency_callable(proto, slot);
+      if (not resolved[slot]) {
          Log.error("sidecar slot %d is empty after activation", int(slot));
+         return false;
+      }
+   }
+   if (not proto->resolved_dependency_states or proto->resolved_dependency_count != table->dependency_count) {
+      Log.error("dependency activation state does not match the descriptor table");
+      return false;
+   }
+   for (uint32_t dependency = 0; dependency < table->dependency_count; ++dependency) {
+      if (not proto->resolved_dependency_states[dependency]) {
+         Log.error("dependency %d was not marked activated", int(dependency));
          return false;
       }
    }
@@ -3481,14 +3519,7 @@ static bool test_module_dependency_activation_uses_sidecar(kt::Log &Log)
 
    lua_pop(L, 2); // Discard the two bindings, leaving the retained chunk on top.
 
-   // Re-executing the chunk must not repeat any function-name lookup.  The sidecar is already resolved, so the
-   // adapter has nothing left to resolve and simply rebuilds the closures from it.
-   //
-   // This is the assertion that distinguishes the two dispatch paths.  Direct resolution would call
-   // find_module_callable() once per referenced function on every activation, whereas serving from the sidecar
-   // performs none.  Pointer identity cannot detect the difference because both paths yield the same records.
-
-   uint64_t before = module_function_lookup_count();
+   // Re-executing the chunk must preserve the resolved sidecar and simply rebuild closures from its stable records.
 
    if (lua_pcall(L, 0, 2, 0)) {
       Log.error("re-executing the activation fixture failed: %s", lua_tostring(L, -1));
@@ -3496,10 +3527,11 @@ static bool test_module_dependency_activation_uses_sidecar(kt::Log &Log)
    }
    lua_pop(L, 2);
 
-   if (uint64_t after = module_function_lookup_count(); after != before) {
-      Log.error("re-activation performed %llu function lookups, expected 0; the resolved sidecar is not being used",
-         (unsigned long long)(after - before));
-      return false;
+   for (uint32_t slot = 0; slot < table->function_count; ++slot) {
+      if (proto_dependency_callable(proto, slot) != resolved[slot]) {
+         Log.error("re-activation replaced resolved sidecar slot %d", int(slot));
+         return false;
+      }
    }
 
    return true;
@@ -4834,34 +4866,15 @@ static bool test_module_namespace_ast(kt::Log &Log)
       return false;
    }
 
-   // The dependency initialiser is finalised after parsing and must name exactly the referenced functions.
+   // The dependency activation is finalised after parsing and must name exactly the referenced functions.
 
    const auto &dependency = std::get<LocalDeclStmtPayload>(valid.chunk.value_ref()->statements[0]->data);
    if (dependency.names.size() != 1 or dependency.names[0].symbol != member.binding.symbol) {
-      Log.error("the dependency initialiser did not declare one binding per referenced function");
+      Log.error("the dependency activation did not declare one binding per referenced function");
       return false;
    }
-   if (dependency.values.size() != 1 or dependency.values[0]->kind != AstNodeKind::CallExpr) {
-      Log.error("the dependency initialiser lost its binder call");
-      return false;
-   }
-   const auto &binder = std::get<CallExprPayload>(dependency.values[0]->data);
-   if (binder.arguments.size() != 2) {
-      Log.error("the binder received %zu arguments rather than a module name and one function name",
-         binder.arguments.size());
-      return false;
-   }
-   for (size_t index = 0; index < binder.arguments.size(); ++index) {
-      const auto *literal = std::get_if<LiteralValue>(&binder.arguments[index]->data);
-      if (not literal or literal->kind != LiteralKind::String or not literal->string_value) {
-         Log.error("binder argument %zu was not a canonical name literal", index);
-         return false;
-      }
-   }
-   const auto &function_argument = std::get<LiteralValue>(binder.arguments[1]->data);
-   if (std::string_view(strdata(function_argument.string_value), function_argument.string_value->len) !=
-       "PreciseTime") {
-      Log.error("the binder did not persist the canonical function name");
+   if (not dependency.values.empty() or dependency.module_dependency != 0) {
+      Log.error("the dependency activation retained a value expression or the wrong descriptor ordinal");
       return false;
    }
 
@@ -4884,14 +4897,12 @@ static bool test_module_namespace_ast(kt::Log &Log)
       Log.error("aliased namespaces materialised %zu bindings rather than 2", alias_dependency.names.size());
       return false;
    }
-   const auto &alias_binder = std::get<CallExprPayload>(alias_dependency.values[0]->data);
-   if (alias_binder.arguments.size() != 3) {
+   if (not alias_dependency.values.empty() or alias_dependency.module_dependency != 0) {
       Log.error("aliased namespaces did not deduplicate their referenced functions");
       return false;
    }
 
-   // An unused declaration must still resolve its module during activation, so its initialiser retains one hidden
-   // sentinel binding rather than becoming an empty local declaration.
+   // An unused declaration must still resolve its module during activation without retaining a hidden sentinel.
 
    auto unused = build_ast_from_source("module core as mUnused\nlocal value = 1\n");
    if (not unused.chunk.ok() or not unused.diagnostics.empty()) {
@@ -4900,14 +4911,9 @@ static bool test_module_namespace_ast(kt::Log &Log)
       return false;
    }
    const auto &unused_dependency = std::get<LocalDeclStmtPayload>(unused.chunk.value_ref()->statements[0]->data);
-   if (unused_dependency.names.size() != 1 or unused_dependency.values.size() != 1) {
-      Log.error("an unreferenced module declaration did not retain a sentinel binding");
-      return false;
-   }
-   const auto &unused_binder = std::get<CallExprPayload>(unused_dependency.values[0]->data);
-   if (unused_binder.arguments.size() != 1) {
-      Log.error("an unreferenced module declaration requested %zu functions rather than none",
-         unused_binder.arguments.size() - 1);
+   if (not unused_dependency.names.empty() or not unused_dependency.values.empty() or
+       unused_dependency.module_dependency != 0) {
+      Log.error("an unreferenced module declaration retained a hidden binding or lost its activation descriptor");
       return false;
    }
 
@@ -4946,7 +4952,7 @@ static bool test_module_namespace_conditions(kt::Log &Log)
 
 static bool test_implicit_module_namespace(kt::Log &Log)
 {
-   // 'mSys' is an implicit namespace for core.  Its dependency is created on first use and its initialiser is
+   // 'mSys' is an implicit namespace for core.  Its dependency is created on first use and its activation is
    // prepended to the compilation unit, so it dominates every reference without occupying a source position.
 
    auto implicit = build_ast_from_source(
@@ -4968,9 +4974,8 @@ static bool test_implicit_module_namespace(kt::Log &Log)
       Log.error("implicit mSys materialised %zu bindings rather than 2", implicit_dependency.names.size());
       return false;
    }
-   const auto &implicit_binder = std::get<CallExprPayload>(implicit_dependency.values[0]->data);
-   if (implicit_binder.arguments.size() != 3) {
-      Log.error("implicit mSys requested %zu binder arguments rather than 3", implicit_binder.arguments.size());
+   if (not implicit_dependency.values.empty() or implicit_dependency.module_dependency != 0) {
+      Log.error("implicit mSys did not retain its descriptor-indexed activation");
       return false;
    }
 
@@ -4997,21 +5002,11 @@ static bool test_implicit_module_namespace(kt::Log &Log)
          log_diagnostics(redundant.diagnostics, Log);
          return false;
       }
-      // A dependency initialiser is the only local declaration whose value calls the binder, so it is identified by
-      // that call target rather than by shape alone.
-
       size_t dependencies = 0;
       for (const auto &statement : redundant.chunk.value_ref()->statements) {
          if (statement->kind != AstNodeKind::LocalDeclStmt) continue;
          const auto &decl = std::get<LocalDeclStmtPayload>(statement->data);
-         if (decl.values.size() != 1 or decl.values[0]->kind != AstNodeKind::CallExpr) continue;
-         const auto &call = std::get<CallExprPayload>(decl.values[0]->data);
-         const auto *direct = std::get_if<DirectCallTarget>(&call.target);
-         if (not direct or not direct->callable or direct->callable->kind != AstNodeKind::MemberExpr) continue;
-         const auto &target = std::get<MemberExprPayload>(direct->callable->data);
-         if (not target.member.symbol) continue;
-         if (std::string_view(strdata(target.member.symbol), target.member.symbol->len) IS
-             std::string_view("\x1f" "dependency", 11)) dependencies++;
+         if (decl.module_dependency != UINT32_MAX) dependencies++;
       }
       if (dependencies != 1) {
          Log.error("explicit and implicit core namespaces produced %zu dependencies rather than 1", dependencies);
@@ -5103,13 +5098,13 @@ static bool test_module_namespace_bytecode(kt::Log &Log)
 
    std::string error;
    auto snapshot = compile_snapshot(lua, bytecode_source, true, error);
-   if (not snapshot or count_opcode_tree(*snapshot, BC_GGET) != 1) {
+   if (not snapshot or count_opcode_tree(*snapshot, BC_GGET) != 0) {
       Log.error("module namespace references retained an ordinary global lookup: %s", error.c_str());
       return false;
    }
 
-   // The binder is reached through one member access on the public 'mod' table during activation.  The module call
-   // itself is a hidden local read, so the function containing it must perform no table member lookup at all.
+   // Activation is descriptor-indexed bytecode.  The module call itself is a hidden local read, so neither path
+   // performs a table member lookup.
 
    if (snapshot->children.size() != 1) {
       Log.error("the module namespace fixture produced %zu child functions rather than 1",
@@ -5121,9 +5116,10 @@ static bool test_module_namespace_bytecode(kt::Log &Log)
          count_opcode(snapshot->children.front(), BC_TGETS));
       return false;
    }
-   if (count_opcode_tree(*snapshot, BC_TGETS) != 1) {
-      Log.error("module namespace activation used %zu table member lookups rather than 1",
-         count_opcode_tree(*snapshot, BC_TGETS));
+   if (count_opcode_tree(*snapshot, BC_TGETS) != 0 or count_opcode_tree(*snapshot, BC_MODACT) != 1) {
+      Log.error("module namespace activation used %zu table lookups and %zu activation opcodes",
+         count_opcode_tree(*snapshot, BC_TGETS),
+         count_opcode_tree(*snapshot, BC_MODACT));
       return false;
    }
 
@@ -5151,25 +5147,15 @@ static bool test_module_namespace_bytecode(kt::Log &Log)
       return false;
    }
 
-   // Activation validates every persisted name against the module's current function list, so a name that no longer
-   // resolves must fail with a precise diagnostic rather than binding the wrong function.
+   // The compiler-private binder is no longer published through the public mod table.
 
-   constexpr std::string_view missing_function_source =
-      "local binder = mod['\\31dependency']\n"
-      "return binder('core', 'DefinitelyNotAnExportedFunction')\n";
-   if (lua_load(lua, missing_function_source, "module-namespace-missing")) {
-      Log.error("failed to compile the missing-function fixture: %s", lua_tostring(lua, -1));
+   constexpr std::string_view hidden_binder_source = "return mod['\\31dependency']\n";
+   if (lua_load(lua, hidden_binder_source, "module-namespace-hidden-binder")) {
+      Log.error("failed to compile the hidden-binder fixture: %s", lua_tostring(lua, -1));
       return false;
    }
-   if (lua_pcall(lua, 0, 0, 0) IS 0) {
-      Log.error("binding an unexported module function unexpectedly succeeded");
-      return false;
-   }
-   CSTRING activation_error = lua_tostring(lua, -1);
-   if (not activation_error or not strstr(activation_error, "DefinitelyNotAnExportedFunction")) {
-      Log.error("the activation diagnostic did not name the missing function: %s",
-         activation_error ? activation_error : "no message");
-      lua_pop(lua, 1);
+   if (lua_pcall(lua, 0, 1, 0) != 0 or not lua_isnil(lua, -1)) {
+      Log.error("the compiler-private binder remains visible through the mod table");
       return false;
    }
    lua_pop(lua, 1);

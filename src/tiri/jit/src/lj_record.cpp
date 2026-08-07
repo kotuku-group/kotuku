@@ -4407,7 +4407,8 @@ void lj_record_ins(jit_State *J)
 
    case BC_CHECK:
    case BC_RAISE:
-      // These bytecodes throw exceptions and cannot be compiled into traces.
+   case BC_MODACT:
+      // These bytecodes throw exceptions or materialise GC closures and cannot be compiled into traces.
       // Exit to interpreter to handle them. This avoids trace abort and ensures
       // clean handoff without corrupting interpreter state.
       lj_snap_add(J);

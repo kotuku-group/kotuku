@@ -818,6 +818,8 @@ typedef struct GCproto {
    MRef            dependencies;      // Colocated ProtoDependencyTable, or null when the unit declares no module.
    void          **resolved_dependencies; // ModuleCallable *[] sidecar, or nullptr until resolved.
    uint32_t        resolved_count;    // Number of sidecar slots.
+   uint8_t        *resolved_dependency_states; // One activation flag per dependency descriptor.
+   uint32_t        resolved_dependency_count;
 } GCproto;
 
 // Flags for prototype.
@@ -929,6 +931,8 @@ inline void proto_metadata_init(GCproto *Proto) noexcept
    setmref(Proto->dependencies, nullptr);
    Proto->resolved_dependencies = nullptr;
    Proto->resolved_count = 0;
+   Proto->resolved_dependency_states = nullptr;
+   Proto->resolved_dependency_count = 0;
 }
 
 [[nodiscard]] inline const ProtoDependencyTable * proto_dependencies(const GCproto *Proto) noexcept

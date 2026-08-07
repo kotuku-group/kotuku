@@ -55,7 +55,7 @@ constexpr size_t BUFFER_ELEMENT_SIZE = 16;
 constexpr size_t BUFFER_SIZE = MAX_MODULE_ARGS * BUFFER_ELEMENT_SIZE;
 constexpr size_t MAX_STRING_PREFIX_LENGTH = 200;
 
-struct module;
+struct ModuleBinding;
 
 // One process-wide callable record per exported module function.  Records are allocated individually so that their
 // addresses remain stable from publication until expunge_modules(), which is required because Tiri closures retain a
@@ -64,7 +64,7 @@ struct module;
 // Every field is written once during preparation and is immutable afterwards, so concurrent calls from independent
 // Tiri states can share one record without synchronisation.
 
-struct module_callable {
+struct ModuleCallable {
    CSTRING Name = nullptr;               // Canonical name, owned by the module's Function list
    APTR Address = nullptr;               // Native function address; leave as null if function wasn't processed
    const FunctionField *Fields = nullptr; // Argument metadata, owned by the module's Function list
@@ -90,19 +90,19 @@ enum class def_state : uint8_t {
    Failed        // Definition processing failed; the batch was rolled back
 };
 
-struct module {
+struct ModuleBinding {
    std::string Name;
    objModule *Module = nullptr;
    std::unique_ptr<const static_module_signature> Signature;
-   ankerl::unordered_dense::map<uint32_t, std::vector<module_callable *>> FunctionMap;
-   std::vector<std::unique_ptr<module_callable>> Callables;
+   ankerl::unordered_dense::map<uint32_t, std::vector<ModuleCallable *>> FunctionMap;
+   std::vector<std::unique_ptr<ModuleCallable>> Callables;
 
-   // Definition-loading state, guarded by glConstantMutex rather than glModuleMutex.  DefError retains the failure so
-   // that a repeated request reports the original cause instead of silently succeeding.
+   // Definition-loading state is guarded by glConstantMutex rather than the registry mutex.  DefError retains the
+   // failure so that a repeated request reports the original cause instead of silently succeeding.
    def_state DefState = def_state::Unloaded;
    ERR DefError = ERR::Okay;
 
-   ~module() {
+   ~ModuleBinding() {
       if (Module) FreeResource(Module);
    }
 };
@@ -111,29 +111,34 @@ struct module {
 // reachable under a name that differs from the binding's canonical name.  Retaining the spelling lets the lookup
 // revalidate it after hashing, so a hash collision can never resolve to the wrong module.
 
-struct module_index_entry {
+struct ModuleIndexEntry {
    std::string Name;
-   module *Binding = nullptr;
+   ModuleBinding *Binding = nullptr;
 };
 
-// The process-wide module registry.  Ownership and lookup are deliberately separate: glModuleBindings owns every
-// binding exactly once, while glModuleIndex maps a case-insensitive name hash to non-owning entries.  Because
-// bindings are allocated individually, growth of either container never moves a published binding, its signature or
-// its callables.  That stability is required, as Tiri closures and compiler symbols retain raw pointers to those
-// records until expunge_modules().
+// The process-wide module registry.  See MODULE_REGISTRY.md for its lifecycle and lock contract.  Ownership and lookup
+// are deliberately separate: Bindings owns every binding exactly once, while Index maps a case-insensitive name hash
+// to non-owning entries.  Because bindings are allocated individually, growth of either container never moves a
+// published binding, its signature or its callables.  That stability is required, as Tiri closures and compiler
+// symbols retain raw pointers until expunge_modules().
 //
 // Separating the two also lets one binding be reached through several spellings (the requested name and the module's
 // canonical name) without any shared-ownership scheme.
 
-static std::mutex glModuleMutex;
-static std::vector<std::unique_ptr<module>> glModuleBindings;
-static ankerl::unordered_dense::map<uint32_t, std::vector<module_index_entry>> glModuleIndex;
+struct ModuleRegistry {
+   std::mutex Mutex;
+   std::vector<std::unique_ptr<ModuleBinding>> Bindings;
+   ankerl::unordered_dense::map<uint32_t, std::vector<ModuleIndexEntry>> Index;
+   bool Expunging = false;
+};
 
-// Locate a published binding.  The caller must hold glModuleMutex.
+static ModuleRegistry glModuleRegistry;
 
-static module * find_module_binding(std::string_view Name)
+// Locate a published binding.  The caller must hold glModuleRegistry.Mutex.
+
+static ModuleBinding * find_module_binding(std::string_view Name)
 {
-   if (auto it = glModuleIndex.find(strihash(Name)); it != glModuleIndex.end()) {
+   if (auto it = glModuleRegistry.Index.find(strihash(Name)); it != glModuleRegistry.Index.end()) {
       for (const auto &entry : it->second) {
          if (kt::iequals(entry.Name, Name)) return entry.Binding;
       }
@@ -141,12 +146,12 @@ static module * find_module_binding(std::string_view Name)
    return nullptr;
 }
 
-// Make Binding reachable under Name.  The caller must hold glModuleMutex.  Registering the requested spelling in
-// addition to the canonical one lets a later lookup for either spelling hit the index directly.
+// Make Binding reachable under Name.  The caller must hold glModuleRegistry.Mutex.  Registering the requested
+// spelling in addition to the canonical one lets a later lookup for either spelling hit the index directly.
 
-static void publish_module_alias(std::string_view Name, module *Binding)
+static void publish_module_alias(std::string_view Name, ModuleBinding *Binding)
 {
-   auto &bucket = glModuleIndex[strihash(Name)];
+   auto &bucket = glModuleRegistry.Index[strihash(Name)];
    for (const auto &entry : bucket) {
       if (kt::iequals(entry.Name, Name)) return; // Already reachable under this spelling
    }
@@ -263,7 +268,8 @@ static std::unique_ptr<const static_module_signature> make_module_signature(
 
 StaticModuleHandle static_module_by_name(std::string_view Name) noexcept
 {
-   std::lock_guard lock(glModuleMutex);
+   std::lock_guard lock(glModuleRegistry.Mutex);
+   if (glModuleRegistry.Expunging) return nullptr;
    auto binding = find_module_binding(Name);
    return binding ? binding->Signature.get() : nullptr;
 }
@@ -366,12 +372,12 @@ static ffi_type * callable_return_type(int ResultType)
 
 //********************************************************************************************************************
 // Build the process-wide callable records for a module.  Called once, while the module is being resolved and before
-// it is published to glModules, so no other thread can observe a partially prepared record.
+// it is published to the registry, so no other thread can observe a partially prepared record.
 //
 // A preparation failure is recorded on the individual callable rather than propagated, because one unsupported
 // signature must not prevent the rest of the module from being used.
 
-static void prepare_module_callables(module *Module, const Function *Functions)
+static void prepare_module_callables(ModuleBinding *Module, const Function *Functions)
 {
    kt::Log log(__FUNCTION__);
 
@@ -383,7 +389,7 @@ static void prepare_module_callables(module *Module, const Function *Functions)
 
    for (size_t index = 0; index < function_count; ++index) {
       const auto &function = Functions[index];
-      auto callable = std::make_unique<module_callable>();
+      auto callable = std::make_unique<ModuleCallable>();
 
       callable->Name    = function.Name;
       callable->Address = function.Address;
@@ -433,10 +439,11 @@ static void prepare_module_callables(module *Module, const Function *Functions)
 //********************************************************************************************************************
 // Resolve one process-wide module instance.  Entries remain stable until the Tiri module is expunged.
 
-static ERR resolve_module(std::string_view Name, module *&Result)
+static ERR resolve_module(std::string_view Name, ModuleBinding *&Result)
 {
    {
-      std::lock_guard lock(glModuleMutex);
+      std::lock_guard lock(glModuleRegistry.Mutex);
+      if (glModuleRegistry.Expunging) return ERR::InvalidState;
       if (auto binding = find_module_binding(Name)) {
          Result = binding;
          return ERR::Okay;
@@ -450,7 +457,7 @@ static ERR resolve_module(std::string_view Name, module *&Result)
    auto loaded_module = objModule::create::global(fl::Name(Name));
    if (not loaded_module) return ERR::CreateObject;
 
-   auto entry = std::make_unique<module>();
+   auto entry = std::make_unique<ModuleBinding>();
    entry->Module = loaded_module;
    const Function *functions = nullptr;
    loaded_module->getFunctionList(functions);
@@ -461,7 +468,8 @@ static ERR resolve_module(std::string_view Name, module *&Result)
    entry->Signature = make_module_signature(entry->Name, functions);
    prepare_module_callables(entry.get(), functions);
 
-   std::lock_guard lock(glModuleMutex);
+   std::lock_guard lock(glModuleRegistry.Mutex);
+   if (glModuleRegistry.Expunging) return ERR::InvalidState;
 
    // Re-check under the lock; another thread may have published this module while it was being prepared.
    if (auto binding = find_module_binding(Name)) {
@@ -475,22 +483,28 @@ static ERR resolve_module(std::string_view Name, module *&Result)
    }
 
    Result = entry.get();
-   glModuleBindings.push_back(std::move(entry));
+   glModuleRegistry.Bindings.push_back(std::move(entry));
    publish_module_alias(Result->Name, Result);
    publish_module_alias(Name, Result);
    return ERR::Okay;
 }
 
 // Destroy every registered module.  All Tiri states must be unable to execute before this runs, because published
-// module_callable addresses are retained by closures and compiler symbols for the lifetime of the registry.
+// ModuleCallable addresses are retained by closures and compiler symbols for the lifetime of the registry.
 //
-// The index holds only non-owning pointers, so it is discarded before the bindings it refers to.
+// The index holds only non-owning pointers, so it is discarded before the bindings it refers to.  Binding destruction
+// runs after releasing the registry mutex because FreeResource() executes external module teardown code that must be
+// free to re-enter registry-facing code without deadlocking.
 
 void expunge_modules()
 {
-   std::lock_guard lock(glModuleMutex);
-   glModuleIndex.clear();
-   glModuleBindings.clear();
+   std::vector<std::unique_ptr<ModuleBinding>> bindings;
+   {
+      std::lock_guard lock(glModuleRegistry.Mutex);
+      glModuleRegistry.Expunging = true;
+      glModuleRegistry.Index.clear();
+      bindings.swap(glModuleRegistry.Bindings);
+   }
 }
 
 //********************************************************************************************************************
@@ -779,7 +793,7 @@ static ERR publish_definition_batch(const definition_batch &Batch)
 // state requested them first.  The result is recorded on the binding itself, which keeps a module and the definitions
 // it published from disagreeing.
 
-static ERR ensure_module_defs(module *Module)
+static ERR ensure_module_defs(ModuleBinding *Module)
 {
    std::unique_lock lock(glConstantMutex);
 
@@ -800,7 +814,7 @@ static ERR ensure_module_defs(module *Module)
 
 [[nodiscard]] ERR load_module_defs(std::string_view Module)
 {
-   module *resolved_module = nullptr;
+   ModuleBinding *resolved_module = nullptr;
    if (auto error = resolve_module(Module, resolved_module); error != ERR::Okay) return error;
 
    AdjustLogLevel(1);
@@ -852,7 +866,7 @@ static int module_test(lua_State *Lua)
 {
    CSTRING module_name = luaL_checkstring(Lua, 1);
 
-   module *mod = nullptr;
+   ModuleBinding *mod = nullptr;
    if (auto error = resolve_module(module_name, mod); error != ERR::Okay) {
       luaL_error(Lua, error, "Failed to load the %s module.", module_name);
    }
@@ -869,27 +883,10 @@ static int module_test(lua_State *Lua)
 }
 
 //********************************************************************************************************************
-// Counts calls to find_module_callable().  Phase 0 of the module registry plan required this instrumentation for the
-// phase whose acceptance depends on lookup and allocation counts, which is Phase 4.
-//
-// Its purpose is to make the dispatch path observable to tests.  Serving a binder activation from the prototype's
-// resolved sidecar and serving it by re-resolving every function name both produce the same callable records, so
-// pointer comparison alone cannot tell them apart; the number of lookups performed can.  Relaxed ordering is
-// sufficient because tests read the counter only from the thread that performed the activation.
-
-static std::atomic<uint64_t> glFunctionLookups{0};
-
-uint64_t module_function_lookup_count()
-{
-   return glFunctionLookups.load(std::memory_order_relaxed);
-}
-
-//********************************************************************************************************************
 // Locate one exported function by canonical name.  Case-insensitive, matching the compiler's source-level resolution.
 
-static module_callable * find_module_callable(module *Module, std::string_view Name)
+static ModuleCallable * find_module_callable(ModuleBinding *Module, std::string_view Name)
 {
-   glFunctionLookups.fetch_add(1, std::memory_order_relaxed);
    auto hash = strihash(Name);
    if (auto it = Module->FunctionMap.find(hash); it != Module->FunctionMap.end()) {
       for (auto callable : it->second) {
@@ -900,175 +897,24 @@ static module_callable * find_module_callable(module *Module, std::string_view N
 }
 
 //********************************************************************************************************************
-// Return the prototype of the Lua function that called the currently executing C function, or null when there is
-// none.
-//
-// The binder is invoked from the generated dependency initialiser, so the caller is the chunk whose descriptors carry
-// the dependency metadata.  Lua->base - 1 is this C function's own frame slot; stepping once with the frame-type
-// dependent accessor yields the caller's frame slot, from which its function can be read.  The step must be selected
-// from the *current* frame's type, which is what lj_debug_frame() does; applying frame_islua() to an already stepped
-// pointer misreads an unrelated stack slot as a frame header.
-//
-// The stack bottom is tvref(stack) + LJ_FR2 to match the rest of the frame walking code: on FR2 builds the first
-// usable frame slot is offset, and comparing against the raw stack base would accept the dummy frame below it.
+// Ensure that a prototype has state-owned storage for resolved callables and per-descriptor activation state.
 
-static GCproto * calling_lua_proto(lua_State *Lua)
+static void ensure_proto_dependency_sidecar(lua_State *Lua, GCproto *Proto, const ProtoDependencyTable *Table)
 {
-   TValue *bot = tvref(Lua->stack) + LJ_FR2;
-   TValue *frame = Lua->base - 1;
-   if (frame <= bot) return nullptr;
-
-   TValue *caller = frame_islua(frame) ? frame_prevl(frame) : frame_prevd(frame);
-   if (caller <= bot) return nullptr;
-
-   GCfunc *fn = frame_func(caller);
-   if (not fn or not isluafunc(fn)) return nullptr;
-   return funcproto(fn);
+   if (not Proto->resolved_dependencies) {
+      Proto->resolved_count = Table->function_count ? Table->function_count : 1;
+      Proto->resolved_dependencies = (void **)lj_mem_new(Lua, Proto->resolved_count * sizeof(void *));
+      memset(Proto->resolved_dependencies, 0, Proto->resolved_count * sizeof(void *));
+   }
+   if (not Proto->resolved_dependency_states) {
+      Proto->resolved_dependency_count = Table->dependency_count;
+      Proto->resolved_dependency_states = (uint8_t *)lj_mem_new(Lua, Table->dependency_count * sizeof(uint8_t));
+      memset(Proto->resolved_dependency_states, 0, Table->dependency_count * sizeof(uint8_t));
+   }
 }
 
 //********************************************************************************************************************
-// Locate the descriptor slot range that one binder activation corresponds to.
-//
-// The compiler publishes descriptors and emits binder arguments from the same ordered per-dependency function list,
-// so argument N of an activation is the Nth function of the matching dependency.  Matching is by canonical module
-// name, because a prototype may declare several dependencies and the binder activates one of them per call.  The
-// comparison is case-insensitive for consistency with every other module-name lookup in the registry.
-
-static bool find_dependency_range(GCproto *Proto, std::string_view ModuleName, uint32_t &FirstSlot, uint32_t &Count)
-{
-   auto table = proto_dependencies(Proto);
-   if (not table) return false;
-
-   auto dependencies = proto_dependency_list(table);
-   for (uint32_t d = 0; d < table->dependency_count; ++d) {
-      GCstr *name = gco_to_string(gcref(dependencies[d].name));
-      if (kt::iequals(std::string_view(strdata(name), name->len), ModuleName)) {
-         FirstSlot = dependencies[d].first_function;
-         Count     = dependencies[d].function_count;
-         return true;
-      }
-   }
-   return false;
-}
-
-//********************************************************************************************************************
-// Activate a compiler-declared module dependency.
-//
-// Usage: binding1, binding2, ... = mod.<dependency>(ModuleName, FunctionName1, FunctionName2, ...)
-//
-// The compiler passes the canonical module name followed by the canonical names of the functions its compilation unit
-// actually references, and receives one closure per name in matching order.  Only names are persisted in bytecode, so
-// a chunk loaded in a fresh process resolves against the module's current function list.
-//
-// This is a state adapter over the portable descriptors published in Phase 3.  Resolution - the module lookup, the
-// definition load and every function-name lookup - is state-independent, belongs to the global registry, and is
-// performed once by resolve_proto_dependencies(), which caches its results in the prototype's sidecar.  What remains
-// here is the part that genuinely requires a Lua state: materialising one C closure per referenced function so that
-// the generated local declaration has values to bind.
-//
-// Gate D was measured and failed (see the plan's Phase 4 record), so ordinary local-call bytecode is retained rather
-// than a dedicated direct-call opcode.  Reading the resolved callables out of the sidecar removes the duplicated
-// resolution that Phase 3 necessarily introduced while both representations had to stay live.
-//
-// No module table, metatable, environment cache or per-function name lookup table is created.  A declaration that
-// references no function still resolves its module and returns one sentinel value, so that the generated local
-// declaration remains well-formed and the dependency is retained.
-
-static int module_dependency(lua_State *Lua)
-{
-   auto modname = luaL_checkstring(Lua, 1);
-   if (not modname) luaL_argerror(Lua, 1, "String expected for module name.");
-
-   int requested = lua_gettop(Lua) - 1;
-
-   // Resolve the calling prototype's descriptors into its sidecar.  This performs every registry lookup the
-   // activation needs, for all of the unit's dependencies at once, and is idempotent across repeated activations.
-
-   GCproto *proto = calling_lua_proto(Lua);
-
-   if (proto) {
-      std::string error_msg;
-      if (auto error = resolve_proto_dependencies(Lua, proto, error_msg); error != ERR::Okay) {
-         luaL_error(Lua, error, std::move(error_msg));
-      }
-   }
-
-   // Serve the bindings from the sidecar.  The descriptor range is matched by canonical module name, and its length
-   // must agree with the argument count because both were emitted from one ordered list at compile time.  A mismatch
-   // means the descriptors and the binder call disagree, so the resolving path below is taken rather than trusting a
-   // slot index that may not describe the requested function.
-
-   uint32_t first_slot = 0, slot_count = 0;
-   bool served = false;
-
-   if (proto and find_dependency_range(proto, modname, first_slot, slot_count) and int(slot_count) IS requested) {
-      if (requested <= 0) { // Dependency-only activation; the module is resolved and retained by the sidecar.
-         lua_pushboolean(Lua, 1);
-         return 1;
-      }
-
-      auto functions = proto_dependency_functions(proto_dependencies(proto));
-
-      served = true;
-      for (uint32_t slot = 0; slot < slot_count; ++slot) {
-         // Positional agreement is guaranteed by the compiler emitting descriptors and binder arguments from one
-         // ordered list, but the name is compared anyway.  The cost is a pointer-length string compare against an
-         // argument that is already on the stack, and it means a descriptor block that disagrees with the call - a
-         // corrupt dump, or a future change to either emitter - degrades to correct resolution instead of silently
-         // binding the wrong function under the right name.
-
-         GCstr *expected = gco_to_string(gcref(functions[first_slot + slot].name));
-         auto supplied = lua_tostringview(Lua, int(slot) + 2);
-         auto callable = proto_dependency_callable(proto, first_slot + slot);
-
-         if (not callable or supplied.empty() or
-             not kt::iequals(std::string_view(strdata(expected), expected->len), supplied)) {
-            lua_settop(Lua, requested + 1); // Discard partial results so one consistent path produces every binding.
-            served = false;
-            break;
-         }
-
-         lua_pushlightuserdata(Lua, callable);
-         lua_pushcclosure(Lua, module_call, 1);
-      }
-      if (served) return requested;
-   }
-
-   // Fallback for an activation whose prototype carries no usable descriptor.  Behaviour and diagnostics are
-   // identical to the descriptor path; only the resolution work differs.
-
-   module *mod = nullptr;
-   if (auto error = resolve_module(modname, mod); error != ERR::Okay) {
-      luaL_error(Lua, error, "Failed to load the %s module.", modname);
-   }
-   if (auto error = ensure_module_defs(mod); error != ERR::Okay) {
-      luaL_error(Lua, error, "Failed to process definitions for the %s module.", modname);
-   }
-
-   if (requested <= 0) { // Dependency-only activation; the module is now resolved and retained.
-      lua_pushboolean(Lua, 1);
-      return 1;
-   }
-
-   for (int arg = 2; arg <= requested + 1; ++arg) {
-      auto function_name = lua_tostringview(Lua, arg);
-      if (function_name.empty()) luaL_argerror(Lua, arg, "String expected for module function name.");
-
-      auto callable = find_module_callable(mod, function_name);
-      if (not callable) {
-         luaL_error(Lua, ERR::Search, "Function %.*s() is not exported by the %s module.",
-            int(function_name.size()), function_name.data(), modname);
-      }
-
-      lua_pushlightuserdata(Lua, callable);
-      lua_pushcclosure(Lua, module_call, 1);
-   }
-
-   return requested;
-}
-
-//********************************************************************************************************************
-// Resolve a prototype's portable dependency descriptors into its state-owned sidecar.
+// Resolve one portable dependency descriptor into the prototype's state-owned sidecar.
 //
 // The descriptors persist canonical names only, so every load resolves them afresh against the registry's current
 // contents.  That is what makes a serialised chunk portable: the module's export list may have been reordered or
@@ -1077,69 +923,60 @@ static int module_dependency(lua_State *Lua)
 // The sidecar holds non-owning pointers.  Registry records are stable until expunge_modules(), which runs only once
 // no Tiri state can execute, so a resolved pointer cannot outlive its record.
 //
-// Resolution is idempotent and happens on first activation rather than at bytecode load, which preserves the existing
-// failure timing: a missing module or function is reported when the dependency declaration executes, exactly as the
-// hidden-local binder reports it today.
+// Resolution is idempotent and descriptor-local.  A later declaration is not resolved by an earlier BC_MODACT, so a
+// missing module or function is reported at that declaration's execution position.
 
-ERR resolve_proto_dependencies(lua_State *Lua, GCproto *Proto, std::string &ErrorMsg)
+static ERR resolve_proto_dependency(lua_State *Lua, GCproto *Proto, uint32_t Dependency, std::string &ErrorMsg)
 {
    auto table = proto_dependencies(Proto);
    if (not table) return ERR::Okay;
-   if (Proto->resolved_dependencies) return ERR::Okay;
+   if (Dependency >= table->dependency_count) return ERR::InvalidData;
+
+   ensure_proto_dependency_sidecar(Lua, Proto, table);
+   if (Proto->resolved_dependency_states[Dependency]) return ERR::Okay;
 
    auto dependencies = proto_dependency_list(table);
    auto functions = proto_dependency_functions(table);
+   const ProtoDependency &dependency = dependencies[Dependency];
 
-   // Resolve into a temporary vector first, so that a failure part-way through leaves no partially populated sidecar
-   // that a later activation would mistake for a completed resolution.
+   GCstr *module_name = gco_to_string(gcref(dependency.name));
+   std::string_view name(strdata(module_name), module_name->len);
 
-   std::vector<void *> resolved(table->function_count, nullptr);
-
-   for (uint32_t d = 0; d < table->dependency_count; ++d) {
-      GCstr *module_name = gco_to_string(gcref(dependencies[d].name));
-      std::string_view name(strdata(module_name), module_name->len);
-
-      module *binding = nullptr;
-      if (auto error = resolve_module(name, binding); error != ERR::Okay) {
-         ErrorMsg = std::format("Failed to load the {} module.", name);
-         return error;
-      }
-      if (auto error = ensure_module_defs(binding); error != ERR::Okay) {
-         ErrorMsg = std::format("Failed to process definitions for the {} module.", name);
-         return error;
-      }
-
-      for (uint32_t f = 0; f < dependencies[d].function_count; ++f) {
-         uint32_t slot = dependencies[d].first_function + f;
-         GCstr *function_name = gco_to_string(gcref(functions[slot].name));
-         std::string_view function(strdata(function_name), function_name->len);
-
-         // The name is revalidated here even though the reader accepted the descriptor.  Structural validity says
-         // nothing about whether the module still exports the function under that name.
-
-         auto callable = find_module_callable(binding, function);
-         if (not callable) {
-            ErrorMsg = std::format("Function {}() is not exported by the {} module.", function, name);
-            return ERR::Search;
-         }
-         resolved[slot] = callable;
-      }
+   ModuleBinding *binding = nullptr;
+   if (auto error = resolve_module(name, binding); error != ERR::Okay) {
+      ErrorMsg = std::format("Failed to load the {} module.", name);
+      return error;
+   }
+   if (auto error = ensure_module_defs(binding); error != ERR::Okay) {
+      ErrorMsg = std::format("Failed to process definitions for the {} module.", name);
+      return error;
    }
 
-   if (resolved.empty()) {
-      // A dependency-only unit has nothing to resolve but must still record that activation completed, so that the
-      // modules it retains are not resolved again on every execution.
+   // Resolve into temporary storage first, so failure cannot mark this descriptor as activated or expose a partial
+   // callable range.
 
-      Proto->resolved_dependencies = (void **)lj_mem_new(Lua, sizeof(void *));
-      Proto->resolved_dependencies[0] = nullptr;
-      Proto->resolved_count = 1;
-      return ERR::Okay;
+   std::vector<void *> resolved(dependency.function_count, nullptr);
+   for (uint32_t f = 0; f < dependency.function_count; ++f) {
+      uint32_t slot = dependency.first_function + f;
+      GCstr *function_name = gco_to_string(gcref(functions[slot].name));
+      std::string_view function(strdata(function_name), function_name->len);
+
+      // The name is revalidated here even though the reader accepted the descriptor.  Structural validity says
+      // nothing about whether the module still exports the function under that name.
+
+      auto callable = find_module_callable(binding, function);
+      if (not callable) {
+         ErrorMsg = std::format("Function {}() is not exported by the {} module.", function, name);
+         return ERR::Search;
+      }
+      resolved[f] = callable;
    }
 
-   auto sidecar = (void **)lj_mem_new(Lua, resolved.size() * sizeof(void *));
-   memcpy(sidecar, resolved.data(), resolved.size() * sizeof(void *));
-   Proto->resolved_dependencies = sidecar;
-   Proto->resolved_count = uint32_t(resolved.size());
+   if (not resolved.empty()) {
+      memcpy(Proto->resolved_dependencies + dependency.first_function, resolved.data(),
+         resolved.size() * sizeof(void *));
+   }
+   Proto->resolved_dependency_states[Dependency] = 1;
    return ERR::Okay;
 }
 
@@ -1151,6 +988,48 @@ APTR proto_dependency_callable(GCproto *Proto, uint32_t Slot)
 {
    if (not Proto->resolved_dependencies or Slot >= Proto->resolved_count) return nullptr;
    return Proto->resolved_dependencies[Slot];
+}
+
+//********************************************************************************************************************
+// Activate one compiler-declared module dependency from BC_MODACT.
+//
+// The VM positions Lua->top at the opcode's destination register before entering this helper.  Descriptor names are
+// resolved once into the prototype-owned sidecar, then the state-owned closures required by ordinary local-call
+// bytecode are materialised directly into consecutive stack slots.  A dependency-only declaration resolves its
+// module but creates no artificial value.
+
+extern "C" void tiri_module_activate(lua_State *Lua, uint32_t Dependency)
+{
+   if (not curr_funcisL(Lua)) {
+      luaL_error(Lua, ERR::InvalidState, "Module activation requires a Lua prototype.");
+   }
+
+   GCproto *proto = curr_proto(Lua);
+   auto table = proto_dependencies(proto);
+   if (not table or Dependency >= table->dependency_count) {
+      luaL_error(Lua, ERR::InvalidData, "Invalid module dependency descriptor %u.", Dependency);
+   }
+
+   auto dependencies = proto_dependency_list(table);
+   const ProtoDependency &dependency = dependencies[Dependency];
+   ptrdiff_t destination = Lua->top - Lua->base;
+   if (destination < 0 or destination + dependency.function_count > proto->framesize) {
+      luaL_error(Lua, ERR::InvalidData, "Module dependency %u exceeds the prototype register frame.", Dependency);
+   }
+
+   std::string error_msg;
+   if (auto error = resolve_proto_dependency(Lua, proto, Dependency, error_msg); error != ERR::Okay) {
+      luaL_error(Lua, error, std::move(error_msg));
+   }
+
+   for (uint32_t slot = 0; slot < dependency.function_count; ++slot) {
+      auto callable = proto_dependency_callable(proto, dependency.first_function + slot);
+      if (not callable) {
+         luaL_error(Lua, ERR::InvalidData, "Module dependency %u has an unresolved callable slot.", Dependency);
+      }
+      lua_pushlightuserdata(Lua, callable);
+      lua_pushcclosure(Lua, module_call, 1);
+   }
 }
 
 //********************************************************************************************************************
@@ -1305,7 +1184,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    // One light-userdata upvalue holds the process-wide callable record, which carries the native address, the argument
    // metadata and the libffi call interface that was prepared when the module was resolved.
 
-   auto callable = (module_callable *)lua_touserdata(Lua, lua_upvalueindex(1));
+   auto callable = (ModuleCallable *)lua_touserdata(Lua, lua_upvalueindex(1));
    if (not callable) {
       ErrorMsg = "module_call() expected a callable record in its upvalue.";
       return ERR::Args;
@@ -1996,7 +1875,6 @@ void register_module_class(lua_State *Lua)
    kt::Log log;
 
    static const struct luaL_Reg modlib_functions[] = {
-      { "\x1f" "dependency", module_dependency },
       { "test", module_test },
       { nullptr, nullptr}
    };
@@ -2005,6 +1883,5 @@ void register_module_class(lua_State *Lua)
    lua_pop(Lua, 1); // Drop the mod library table
 
    // Register mod interface prototypes for compile-time type inference
-   reg_iface_prototype("mod", "\x1f" "dependency", { TiriType::Table }, { TiriType::Str });
    reg_iface_prototype("mod", "test", { TiriType::Num, TiriType::Num }, { TiriType::Str, TiriType::Str });
 }

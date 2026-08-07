@@ -391,7 +391,7 @@ std::pair<size_t, bool> AstBuilder::find_or_create_module_dependency(
 
    auto record = std::make_unique<ModuleDependency>();
    record->canonical_module = CanonicalModule;
-   record->sentinel_name = this->ctx.lex().keepstr(std::string("\x1fmodule:") + std::string(CanonicalModule));
+   record->descriptor = uint32_t(this->module_dependencies.size());
    record->declaration_span = Span;
    record->implicit = Implicit;
    this->module_dependencies.push_back(std::move(record));
@@ -399,34 +399,20 @@ std::pair<size_t, bool> AstBuilder::find_or_create_module_dependency(
 }
 
 //********************************************************************************************************************
-// Build the generated local declaration that activates one module dependency.
+// Build the generated declaration that activates one module dependency.
 //
 // The statement is created as soon as the dependency is recorded so that it occupies a well-defined position in the
-// statement list, but its binding names and function arguments are unknown until the compilation unit has been
-// parsed.  A placeholder sentinel name keeps the declaration well-formed in the interim;
-// finalise_module_dependencies() replaces it with the complete ordered binding list.
+// statement list, but its binding names are unknown until the compilation unit has been parsed.  The descriptor
+// ordinal is stable because dependencies are append-only; finalise_module_dependencies() supplies the ordered locals.
 
-StmtNodePtr AstBuilder::make_dependency_initialiser(ModuleDependency &Dependency, const SourceSpan &Span)
+StmtNodePtr AstBuilder::make_dependency_activation(ModuleDependency &Dependency, const SourceSpan &Span)
 {
-   NameRef mod_reference;
-   mod_reference.identifier = Identifier::from_keepstr(this->ctx.lex().keepstr("mod"), Span);
-   ExprNodePtr mod_expr = make_identifier_expr(Span, mod_reference);
-   Identifier load_identifier = Identifier::from_keepstr(
-      this->ctx.lex().keepstr(std::string_view("\x1f" "dependency", 11)), Span);
-   ExprNodePtr load_expr = make_member_expr(Span, std::move(mod_expr), load_identifier, false);
-
-   ExprNodeList arguments;
-   arguments.push_back(make_literal_expr(Span,
-      LiteralValue::string(this->ctx.lex().keepstr(Dependency.canonical_module))));
    ExprNodeList values;
-   values.push_back(make_call_expr(Span, std::move(load_expr), std::move(arguments), false));
-
    std::vector<Identifier> names;
-   names.push_back(Identifier::from_keepstr(Dependency.sentinel_name, Span));
-
-   StmtNodePtr initialiser = make_local_decl_stmt(Span, std::move(names), std::move(values));
-   Dependency.initialiser = initialiser.get();
-   return initialiser;
+   StmtNodePtr activation = make_local_decl_stmt(Span, std::move(names), std::move(values));
+   std::get<LocalDeclStmtPayload>(activation->data).module_dependency = Dependency.descriptor;
+   Dependency.activation = activation.get();
+   return activation;
 }
 
 //********************************************************************************************************************
@@ -434,7 +420,7 @@ StmtNodePtr AstBuilder::make_dependency_initialiser(ModuleDependency &Dependency
 //
 // 'mSys' is a compiler-managed namespace for Core rather than a script value, so it behaves as though every
 // compilation unit begins with `module core as mSys`.  The dependency is created lazily so that a unit which never
-// mentions mSys neither resolves Core nor emits an activation statement.  Its initialiser is prepended to the unit's
+// mentions mSys neither resolves Core nor emits an activation statement.  Its activation is prepended to the unit's
 // statement list by prepend_implicit_dependencies(), which guarantees that it dominates every reference.
 //
 // An explicit `module core as mSys` declaration is parsed before any expression can reference the namespace, so it
@@ -457,7 +443,7 @@ const AstBuilder::ModuleNamespaceSymbol * AstBuilder::resolve_module_namespace(G
    std::string canonical_module = signature ? std::string(static_module_name(signature)) : std::string("core");
 
    // An explicit declaration of core may already have created the dependency, in which case mSys becomes another
-   // alias of it.  Pooling matches parse_module_decl() so that one canonical module always has one initialiser and
+   // alias of it.  Pooling matches parse_module_decl() so that one canonical module always has one activation and
    // one set of hidden callable bindings.
 
    size_t dependency_index = this->find_or_create_module_dependency(canonical_module, {}, true).first;
@@ -474,14 +460,14 @@ const AstBuilder::ModuleNamespaceSymbol * AstBuilder::resolve_module_namespace(G
 // Insert the activation statements of implicitly created dependencies at the head of the compilation unit.
 //
 // Explicit declarations already occupy their source position.  An implicit dependency has no source position, so its
-// initialiser is placed first, where it dominates every reference in the unit.
+// activation is placed first, where it dominates every reference in the unit.
 
 void AstBuilder::prepend_implicit_dependencies(BlockStmt &Block)
 {
    for (auto &dependency : this->module_dependencies) {
-      if (not dependency->implicit or dependency->initialiser) continue;
+      if (not dependency->implicit or dependency->activation) continue;
       Block.statements.insert(Block.statements.begin(),
-         this->make_dependency_initialiser(*dependency, Block.span));
+         this->make_dependency_activation(*dependency, Block.span));
    }
 }
 
@@ -506,12 +492,11 @@ GCstr * AstBuilder::module_function_binding(ModuleDependency &Dependency, GCstr 
 }
 
 //********************************************************************************************************************
-// Complete every generated dependency initialiser once the compilation unit has been parsed and the full set of
+// Complete every generated dependency activation once the compilation unit has been parsed and the full set of
 // referenced functions is known.  This must run before static descriptor discovery so that the hidden locals are
 // visible to later stages as ordinary declarations.
 //
-// A declaration that references no function still has to resolve its module during activation, so its initialiser
-// retains a single hidden sentinel binding rather than becoming an empty local declaration.
+// A declaration that references no function still emits BC_MODACT, but needs no artificial local binding.
 //
 // The same pass publishes the portable descriptors that fs_finish colocates with the prototype.  They are recorded
 // even while the hidden-local lowering remains the active dispatch path, so that serialised chunks carry canonical
@@ -522,28 +507,17 @@ void AstBuilder::finalise_module_dependencies()
    this->publish_dependency_descriptors();
 
    for (auto &dependency : this->module_dependencies) {
-      if (not dependency->initialiser) continue;
+      if (not dependency->activation) continue;
 
-      auto *payload = std::get_if<LocalDeclStmtPayload>(&dependency->initialiser->data);
-      if (not payload or payload->values.empty()) continue;
-
-      auto *call = std::get_if<CallExprPayload>(&payload->values.front()->data);
-      if (not call) continue;
+      auto *payload = std::get_if<LocalDeclStmtPayload>(&dependency->activation->data);
+      if (not payload) continue;
 
       SourceSpan span = dependency->declaration_span;
       payload->names.clear();
 
-      if (dependency->functions.empty()) {
-         payload->names.push_back(Identifier::from_keepstr(dependency->sentinel_name, span));
-         continue;
-      }
-
       for (const auto &function : dependency->functions) {
-         call->arguments.push_back(make_literal_expr(span, LiteralValue::string(function.function)));
-
-         // The binding carries neither a declared type nor a <const> attribute.  Its name is unspellable, so no
-         // source can rebind it, and the const validator requires one initialiser expression per name whereas the
-         // binder supplies its results as a single multiple-value call.
+         // The binding carries neither a declared type nor a <const> attribute.  Its name is unspellable in source
+         // and BC_MODACT initialises it directly from the matching descriptor slot.
          payload->names.push_back(Identifier::from_keepstr(function.binding, span));
       }
    }
@@ -557,23 +531,24 @@ void AstBuilder::finalise_module_dependencies()
 // process.  Deduplication has already happened: aliases of one canonical module share a single ModuleDependency, and
 // module_function_binding() pools repeated references to one function.
 //
-// Descriptors are unit-scoped, so only the root function state carries them.  An imported file is parsed by a nested
-// builder against its own function state and contributes its dependencies through that unit's own descriptors.
+// Descriptors are activation-scope isolated.  Imports use nested builders against the same root function state, so
+// each builder appends its descriptors and rebases its BC_MODACT ordinals rather than replacing earlier imports.
 
 void AstBuilder::publish_dependency_descriptors()
 {
    if (this->module_dependencies.empty()) return;
 
    auto &target = this->ctx.func();
-   target.module_descriptors.clear();
+   size_t descriptor_base = target.module_descriptors.size();
 
-   if (this->module_dependencies.size() > PROTO_MAX_DEPENDENCIES) {
+   if (descriptor_base + this->module_dependencies.size() > PROTO_MAX_DEPENDENCIES) {
       this->ctx.emit_error(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
          std::format("A compilation unit may declare at most {} module dependencies", PROTO_MAX_DEPENDENCIES));
       return;
    }
 
    size_t total_functions = 0;
+   for (const auto &descriptor : target.module_descriptors) total_functions += descriptor.functions.size();
    for (const auto &dependency : this->module_dependencies) total_functions += dependency->functions.size();
 
    if (total_functions > PROTO_MAX_DEPENDENCY_FUNCTIONS) {
@@ -583,8 +558,14 @@ void AstBuilder::publish_dependency_descriptors()
       return;
    }
 
-   target.module_descriptors.reserve(this->module_dependencies.size());
-   for (const auto &dependency : this->module_dependencies) {
+   target.module_descriptors.reserve(descriptor_base + this->module_dependencies.size());
+   for (size_t index = 0; index < this->module_dependencies.size(); ++index) {
+      auto &dependency = this->module_dependencies[index];
+      dependency->descriptor = uint32_t(descriptor_base + index);
+      if (dependency->activation) {
+         std::get<LocalDeclStmtPayload>(dependency->activation->data).module_dependency = dependency->descriptor;
+      }
+
       // Anchor every name as a GC constant of the prototype.  The descriptors outlive parsing, so a name that is not
       // otherwise emitted as a constant - a dependency-only module in particular - would be unreachable and could be
       // collected while the prototype still refers to it.

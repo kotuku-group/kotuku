@@ -311,6 +311,34 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
 }
 
 //********************************************************************************************************************
+// Validate descriptor-indexed module activation after the dependency block has been installed.
+
+static void bcread_module_activations(LexState *State, GCproto *pt)
+{
+   auto table = proto_dependencies(pt);
+   uint8_t activations[PROTO_MAX_DEPENDENCIES] = {};
+
+   for (MSize i = 1; i < pt->sizebc; ++i) {
+      BCIns instruction = proto_bc(pt)[i];
+      if (bc_op(instruction) != BC_MODACT) continue;
+
+      uint32_t dependency = bc_d(instruction);
+      if (not table or dependency >= table->dependency_count) bcread_error(State, ErrMsg::BCBAD);
+      const ProtoDependency &descriptor = proto_dependency_list(table)[dependency];
+      if (uint32_t(bc_a(instruction)) + descriptor.function_count > pt->framesize or activations[dependency]) {
+         bcread_error(State, ErrMsg::BCBAD);
+      }
+      activations[dependency] = 1;
+   }
+
+   if (table) {
+      for (uint32_t dependency = 0; dependency < table->dependency_count; ++dependency) {
+         if (not activations[dependency]) bcread_error(State, ErrMsg::BCBAD);
+      }
+   }
+}
+
+//********************************************************************************************************************
 // Read upvalue refs.
 
 static void bcread_uv(LexState *State, GCproto *pt, MSize sizeuv)
@@ -576,12 +604,8 @@ static void bcread_dependencies(LexState *State, MSize Size, BCReadDependencies 
       }
       expected_first = entry.first + entry.count;
 
-      // Aliases of one canonical module are pooled by the compiler, so a repeated module name is a corrupt or
-      // hand-edited dump rather than anything the writer can produce.
-
-      for (const auto &existing : Result.dependencies) {
-         if (kt::iequals(Result.name_of(existing), Result.name_of(entry))) bcread_error(State, ErrMsg::BCBAD);
-      }
+      // Aliases within one source unit are pooled.  Imported units retain isolated activation scopes inside the same
+      // prototype, so two valid descriptors may carry the same canonical module name.
 
       Result.dependencies.push_back(entry);
    }
@@ -748,6 +772,7 @@ GCproto *lj_bcread_proto(LexState *State)
    // prototype must be safe to traverse by then.
 
    bcread_install_dependencies(State->L, pt, (char *)pt + ofsdep, dependencies);
+   bcread_module_activations(State, pt);
 
    // Read and initialize debug info.
 

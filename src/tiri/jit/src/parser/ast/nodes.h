@@ -454,7 +454,7 @@ struct MemberExprPayload {
 // Selection of a module function through a compiler-managed namespace, e.g. mCore.PreciseTime.
 //
 // This is a leaf node: it carries no base expression, because a module namespace is compiler metadata rather than a
-// script value.  The emitter resolves `binding` to the hidden local that the dependency initialiser produced, so no
+// script value.  The emitter resolves `binding` to the hidden local that dependency activation produced, so no
 // table member lookup is involved.  Retaining a dedicated node keeps generic member emission from restoring table
 // semantics to a namespace, and gives static analysis the module signature without a value descriptor.
 
@@ -694,6 +694,7 @@ struct LocalDeclStmtPayload {
    AssignmentOperator op = AssignmentOperator::Plain;  // Supports ??= conditional assignment
    std::vector<Identifier> names;
    ExprNodeList values;
+   uint32_t module_dependency = UINT32_MAX; // Descriptor ordinal for compiler-generated module activation
    ~LocalDeclStmtPayload();
 };
 

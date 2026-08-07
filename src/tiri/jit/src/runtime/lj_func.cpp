@@ -30,6 +30,9 @@ void lj_func_freeproto(global_State *g, GCproto *pt)
    if (pt->resolved_dependencies) {
       lj_mem_free(g, pt->resolved_dependencies, pt->resolved_count * sizeof(void *));
    }
+   if (pt->resolved_dependency_states) {
+      lj_mem_free(g, pt->resolved_dependency_states, pt->resolved_dependency_count * sizeof(uint8_t));
+   }
 
    lj_mem_free(g, pt, pt->sizept);
 }
