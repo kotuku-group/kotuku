@@ -9,6 +9,7 @@ This test verifies that UDP and TCP sockets can coexist and operate independentl
 --]]
 
    include 'network'
+   module network as mNet
 
    glBasePort = 19840  -- Base port for coexistence tests
    glTestTimeout = 4.0

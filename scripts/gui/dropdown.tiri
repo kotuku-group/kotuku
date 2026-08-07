@@ -7,7 +7,7 @@ Internal script for combobox drop-down menus.
 
    namespace 'gui'
 
-   mGfx <const> ?= mod.load('display')
+   module display as mGfx
 
 FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.menu)
 ITEM_HEIGHT  <const> = math.floor(FONT_MAX_HEIGHT * 1.5)

@@ -202,6 +202,10 @@ TiriType infer_expression_type(const ExprNode &Expr)
       case AstNodeKind::ResultFilterExpr:
          return TiriType::Unknown;
 
+      // A module function selection yields the hidden callable itself
+      case AstNodeKind::ModuleFunctionExpr:
+         return TiriType::Func;
+
       // Deferred expressions return the type of their inner expression
       case AstNodeKind::DeferredExpr: {
          const auto& payload = std::get<DeferredExprPayload>(Expr.data);
@@ -305,6 +309,8 @@ struct ExpressionChildCounter {
    [[nodiscard]] inline size_t operator()(const MemberExprPayload &Payload) const {
       return Payload.table ? 1 : 0;
    }
+
+   [[nodiscard]] inline size_t operator()(const ModuleFunctionExprPayload &) const { return 0; }
 
    [[nodiscard]] inline size_t operator()(const IndexExprPayload &Payload) const {
       size_t total = Payload.table ? 1 : 0;
@@ -764,7 +770,6 @@ ExprNodePtr make_call_expr(SourceSpan Span, ExprNodePtr callee, ExprNodeList arg
       auto *member_payload = std::get_if<SafeMemberExprPayload>(&callee->data);
       if (member_payload) member_payload->is_call_target = true;
    }
-
    DirectCallTarget target;
    target.callable = std::move(callee);
    payload.target = std::move(target);
@@ -822,6 +827,21 @@ ExprNodePtr make_member_expr(SourceSpan Span, ExprNodePtr Table, Identifier memb
    payload.uses_method_dispatch = uses_method_dispatch;
    ExprNodePtr node = std::make_unique<ExprNode>();
    node->kind = AstNodeKind::MemberExpr;
+   node->span = Span;
+   node->data = std::move(payload);
+   return node;
+}
+
+ExprNodePtr make_module_function_expr(SourceSpan Span, Identifier Binding, Identifier Function,
+   StaticModuleHandle Module, GCstr *NamespaceName)
+{
+   ModuleFunctionExprPayload payload;
+   payload.binding        = Binding;
+   payload.function       = Function;
+   payload.module         = Module;
+   payload.namespace_name = NamespaceName;
+   ExprNodePtr node = std::make_unique<ExprNode>();
+   node->kind = AstNodeKind::ModuleFunctionExpr;
    node->span = Span;
    node->data = std::move(payload);
    return node;

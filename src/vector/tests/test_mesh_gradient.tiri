@@ -1,6 +1,6 @@
    include 'display', 'vector'
 
-   mGfx ?= mod.load('display')
+module display as mGfx
 
 function newBitmap(Width, Height)
    local bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })

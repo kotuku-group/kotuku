@@ -190,6 +190,15 @@ end
    assert(help.activeParameter is 1, 'Second module parameter should be active.')
 end
 
+@Test function DeclaredModuleApiSignature()
+   help = signatureAt("module core as runtimeCore\nruntimeCore.ResolvePath('test:', |)\n")
+   signature = firstSignature(help)
+
+   assertContains(signature.label, 'runtimeCore.ResolvePath',
+      'Declared module signature help should retain the source namespace.')
+   assert(help.activeParameter is 1, 'Declared module signature help should track the active parameter.')
+end
+
 @Test function ObjectMethodSignatureHidesReceiver()
    help = signatureAt([=[
 xml = obj.new('xml')

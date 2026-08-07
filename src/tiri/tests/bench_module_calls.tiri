@@ -1,0 +1,189 @@
+-- Module call benchmark for docs/plans/2-tiri-module-interface-efficiency-plan.md
+--
+-- Measures steady-state module call cost across the signature families named in the plan's Phase 0 exit criteria, plus
+-- dependency activation cost.  Run with the JIT enabled and disabled to record both modes:
+--
+--    build/agents-install/origo src/tiri/tests/bench_module_calls.tiri
+--    build/agents-install/origo src/tiri/tests/bench_module_calls.tiri --jit-options off
+--
+-- Each workload is run REPEATS times and the median is reported, because a single run is sensitive to scheduling noise.
+-- Accumulators are deliberately dependent on the call result so that dead-code elimination cannot remove the loop body.
+
+module core as mCore
+
+local ITERATIONS <const> = tonumber(arg('iterations', '100000'))
+local REPEATS <const> = tonumber(arg('repeats', '5'))
+local ACTIVATIONS <const> = tonumber(arg('activations', '200'))
+
+-- Report the median of a set of samples.  Medians are used throughout because they resist the occasional outlier
+-- produced by scheduler preemption during a run.
+
+function median(Samples: array<double>): num
+   local ordered = Samples:clone()
+   ordered:sort()
+   local count = #ordered
+   if count & 1 is 1 then return ordered[count >> 1] end
+   return (ordered[(count >> 1) - 1] + ordered[count >> 1]) / 2
+end
+
+-- Time one workload.  Workload receives the iteration count and must return a value derived from every call it makes,
+-- which is then consumed so that the optimiser cannot discard the work.
+
+function measure(Name: str, Iterations: num, Workload: func)
+   local samples = array<double>
+   local sink = 0
+
+   for _ in {0 to REPEATS} do
+      local start = mCore.PreciseTime()
+      sink += Workload(Iterations)
+      samples:push(mCore.PreciseTime() - start)
+   end
+
+   local elapsed = median(samples)
+   print(string.format('%-34s %10.0f us total  %8.4f us/call  sink=%s',
+      Name, elapsed, elapsed / Iterations, tostring(sink != nil)))
+end
+
+--********************************************************************************************************************
+-- Steady-state workloads.  One per signature family named in the plan.
+
+-- Zero-argument scalar result: the plan's headline baseline.
+function bench_zero_arg(Iterations: num): num
+   local total = 0
+   for _ in {0 to Iterations} do total += mCore.PreciseTime() end
+   return total
+end
+
+-- Scalar input, scalar result.
+function bench_scalar_arg(Iterations: num): num
+   local total = 0
+   for i in {0 to Iterations} do total += mCore.GetResource(i & 7) end
+   return total
+end
+
+-- C++ string-view input (FDF_CPPSTRING), scalar result.
+function bench_string_view(Iterations: num): num
+   local total = 0
+   for _ in {0 to Iterations} do total += mCore.ResolveClassName('Tiri') end
+   return total
+end
+
+-- Scalar input, C-string result.
+function bench_string_result(Iterations: num): num
+   local total = 0
+   for i in {0 to Iterations} do total += #mCore.GetErrorMsg(i & 31) end
+   return total
+end
+
+-- Extracted callable: the closure is hoisted out of the loop.
+function bench_extracted(Iterations: num): num
+   local clock <const> = mCore.PreciseTime
+   local total = 0
+   for _ in {0 to Iterations} do total += clock() end
+   return total
+end
+
+-- Multiple results via FD_RESULT out-parameters.
+function bench_multiple_results(Iterations: num): num
+   local total = 0
+   for _ in {0 to Iterations} do
+      local err, path_type = mCore.AnalysePath('temp:')
+      total += tonumber(err) + tonumber(path_type ?? 0)
+   end
+   return total
+end
+
+-- A mutable C++ string result, which exercises the copy-back path.
+function bench_cpp_string_result(Iterations: num): num
+   local total = 0
+   for _ in {0 to Iterations} do
+      local err, path = mCore.ResolvePath('temp:', 0)
+      total += #(path ?? '')
+   end
+   return total
+end
+
+--********************************************************************************************************************
+-- Activation workloads.  These measure the cost of the generated dependency initialiser rather than the call itself.
+
+-- Baseline: no module declaration at all.  Subtract this from the others to isolate the module-specific cost, since
+-- exec() also pays for tokenising, parsing and emitting the statement.
+local NO_MODULE_SOURCE <const> = [[
+   local value = 1 + 1
+]]
+
+-- One module and one referenced function.  Activation currently materialises a closure for every exported Core
+-- function, so this is the workload that Phase 2 is expected to improve.
+local ACTIVATION_SOURCE <const> = [[
+   module core as mBench
+   local value = mBench.PreciseTime()
+]]
+
+-- A declaration that references no function; the dependency must still be resolved.
+local EMPTY_SOURCE <const> = [[
+   module core as mBench
+   local value = 1
+]]
+
+-- Two aliases of the same module, which must share one dependency.  Both namespaces reference PreciseTime, which must
+-- be materialised once.
+local ALIAS_SOURCE <const> = [[
+   module core as mBenchA
+   module core as mBenchB
+   local value = mBenchA.PreciseTime() + mBenchB.PreciseTime()
+]]
+
+-- A large module with a small referenced subset.  Core exports several hundred functions, so this workload shows
+-- whether activation cost scales with the referenced subset or with the module's total exports.
+local SUBSET_SOURCE <const> = [[
+   module core as mBench
+   local a = mBench.PreciseTime()
+   local b = mBench.GetErrorMsg(0)
+   local c = mBench.GetResource(1)
+]]
+
+-- Several modules in one compilation unit.
+local MULTI_SOURCE <const> = [[
+   module core as mBenchCore
+   module display as mBenchDisplay
+   local value = mBenchCore.PreciseTime()
+]]
+
+-- exec() compiles and runs the statement, so each sample covers parse plus activation.  A baseline statement that
+-- declares no module is measured separately so that the module-specific share of the cost can be isolated.
+
+function measure_activation(Name: str, Source: str)
+   local samples = array<double>
+   for _ in {0 to REPEATS} do
+      local start = mCore.PreciseTime()
+      for _ in {0 to ACTIVATIONS} do exec(Source) end
+      samples:push(mCore.PreciseTime() - start)
+   end
+
+   local elapsed = median(samples)
+   print(string.format('%-34s %10.0f us total  %8.4f us/activation',
+      Name, elapsed, elapsed / ACTIVATIONS))
+end
+
+--********************************************************************************************************************
+
+print(f"Module call benchmark: {ITERATIONS} iterations, {REPEATS} repeats, JIT {tostring(jit.status())}")
+print(string.rep('-', 96))
+
+print('Steady state:')
+measure('  zero-arg scalar result', ITERATIONS, bench_zero_arg)
+measure('  scalar arg', ITERATIONS, bench_scalar_arg)
+measure('  C++ string-view arg', ITERATIONS, bench_string_view)
+measure('  C-string result', ITERATIONS, bench_string_result)
+measure('  extracted callable', ITERATIONS, bench_extracted)
+measure('  multiple results', math.floor(ITERATIONS / 10), bench_multiple_results)
+measure('  mutable C++ string result', math.floor(ITERATIONS / 10), bench_cpp_string_result)
+
+print('')
+print(f"Activation ({ACTIVATIONS} exec() calls per sample; includes parse cost)")
+measure_activation('  no module (baseline)', NO_MODULE_SOURCE)
+measure_activation('  one module, one function', ACTIVATION_SOURCE)
+measure_activation('  one module, no functions', EMPTY_SOURCE)
+measure_activation('  one module, three functions', SUBSET_SOURCE)
+measure_activation('  two aliases, one module', ALIAS_SOURCE)
+measure_activation('  two modules', MULTI_SOURCE)

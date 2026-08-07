@@ -14,7 +14,7 @@
    _LIB[_NS] = { }
    proxylib = _LIB[_NS]
 
-   global mNet ?= mod.load('network')
+   module network as mNet
 
 -- Deferred regex patterns
 rxPercentEncoded <const> = <{ regex.new([[%([0-9A-Fa-f]{2})]]) }>

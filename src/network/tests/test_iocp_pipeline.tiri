@@ -6,6 +6,8 @@ These tests exercise Windows IOCP accept and receive depth without changing the 
 
    include 'network'
 
+   module network as mNet
+
    glIocpPipelinePort = 18740
 
 function nextPort()

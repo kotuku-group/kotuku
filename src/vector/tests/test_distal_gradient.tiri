@@ -1,6 +1,6 @@
    include 'display', 'vector'
 
-   mGfx ?= mod.load('display')
+module display as mGfx
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Validation of the signed distance field (distal) gradient render path (VGT::DISTAL).  A distal gradient is signed:

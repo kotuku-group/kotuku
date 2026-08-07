@@ -7,7 +7,7 @@ Gamepad demonstration
    import 'gui/slider'
    import 'gui/window'
 
-   mVec ?= mod.load('vector')
+   module vector as mVec
 
    glSelf = obj.find('self')
    glPath = glSelf.workingPath

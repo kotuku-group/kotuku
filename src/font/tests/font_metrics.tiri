@@ -5,7 +5,7 @@ A simple test program for confirming that our fonts and reported metrics values 
    import 'gui/window'
    import 'gui/combobox'
 
-   global mFont ?= mod.load('font')
+   module font as mFont
 
 glFontSize = 30
 local glViewport, glWindow, glTextY

@@ -24,10 +24,10 @@ if (modDisplay) modDisplay->getModBase(DisplayBase);
 To do the same in Tiri:
 
 <pre>
-mGfx = mod.load('display')
+module display as mGfx
 </pre>
 
-It is critical that the module object is permanently retained until the program no longer needs its functionality.
+Tiri retains the module in its process-wide store until the Tiri module is expunged.
 -END-
 
 **********************************************************************************************************************/

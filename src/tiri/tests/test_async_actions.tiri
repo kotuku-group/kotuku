@@ -4,14 +4,13 @@
 -- until picLoaded() sends a signal().
 
    import 'io/filesearch'
+   module display as mGfx
 
    proc = processing.new(5.0)
    glPicsProcessed = 0
    glImages = array<table>
 
 @BeforeAll function init()
-   mGfx ?! return
-
    folder = 'icons:programs/'
    list = ''
    print(f'Scanning "{folder}" for SVGs')

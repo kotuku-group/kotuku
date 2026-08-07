@@ -19,7 +19,7 @@ If SSL is not available, tests will be skipped with appropriate messages.
 
    include 'network'
 
-   mNet ?= mod.load('network')
+module network as mNet
 
 glPort = 21605
 glSSLTestData = 'SECRET_SSL_MESSAGE_123'

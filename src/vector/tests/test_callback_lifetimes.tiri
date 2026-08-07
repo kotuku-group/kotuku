@@ -4,7 +4,7 @@
 
    include 'vector'
 
-   mVec ?= mod.load('vector')
+module vector as mVec
 
 function newRectScene(RectName)
    scene = obj.new('VectorScene')

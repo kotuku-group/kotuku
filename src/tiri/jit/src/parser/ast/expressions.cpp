@@ -40,6 +40,13 @@ ParserResult<StmtNodePtr> AstBuilder::parse_expression_stmt()
 
    if (assignment_result.has_value()) {
       for (const ExprNodePtr &target : targets) {
+         if (target and target->kind IS AstNodeKind::ModuleFunctionExpr) {
+            const auto &member = std::get<ModuleFunctionExprPayload>(target->data);
+            return this->fail<StmtNodePtr>(ParserErrorCode::InvalidAssignment,
+               Token::from_span(member.function.span, TokenKind::Identifier),
+               std::format("Module namespace '{}' members cannot be assigned",
+                  std::string_view(strdata(member.namespace_name), member.namespace_name->len)));
+         }
          if (const Identifier *identifier = future_reserved_identifier_expr(target)) {
             return this->fail<StmtNodePtr>(ParserErrorCode::InvalidAssignment,
                Token::from_span(identifier->span, TokenKind::Identifier),
@@ -452,6 +459,40 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
       }
 
       case TokenKind::Identifier: {
+         if (const ModuleNamespaceSymbol *module_symbol = this->resolve_module_namespace(current.identifier())) {
+            this->ctx.tokens().advance();
+            Token suffix = this->ctx.tokens().current();
+            if (suffix.kind() != TokenKind::Dot) {
+               return this->fail<ExprNodePtr>(ParserErrorCode::UnexpectedToken, suffix,
+                  std::format("Module namespace '{}' can only select a named module function",
+                     std::string_view(strdata(current.identifier()), current.identifier()->len)));
+            }
+            this->ctx.tokens().advance();
+            auto member_token = this->ctx.expect_name(ParserErrorCode::ExpectedIdentifier);
+            if (not member_token.ok()) return ParserResult<ExprNodePtr>::failure(member_token.error_ref());
+
+            Identifier member = make_identifier(member_token.value_ref());
+            std::string_view source_function(strdata(member.symbol), member.symbol->len);
+            std::string_view canonical_function = static_module_function_name(module_symbol->module, source_function);
+            if (module_symbol->module and canonical_function.empty()) {
+               return this->fail<ExprNodePtr>(ParserErrorCode::UnexpectedToken, member_token.value_ref(),
+                  std::format("Unknown function '{}' in module '{}'", source_function,
+                     module_symbol->canonical_module));
+            }
+            if (not canonical_function.empty()) member.symbol = this->ctx.lex().keepstr(canonical_function);
+
+            // Record the reference against the module's dependency and reuse its hidden binding.  Deduplication is
+            // by canonical name, so aliases and repeated references share one materialised callable.
+
+            ModuleDependency &dependency = *this->module_dependencies[module_symbol->dependency];
+            GCstr *binding_name = this->module_function_binding(dependency, member.symbol);
+
+            Identifier binding = Identifier::from_keepstr(binding_name, current.span());
+            node = make_module_function_expr(span_from(current, member_token.value_ref()), binding, member,
+               module_symbol->module, module_symbol->source_name);
+            break;
+         }
+
          Identifier id = make_identifier(current);
          NameRef name;
          name.identifier = id;

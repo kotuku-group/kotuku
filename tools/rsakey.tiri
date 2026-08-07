@@ -88,7 +88,7 @@ end
 
    print("SSL Key Generator\n")
 
-   mSSL  = mod.load("openssl")
+   module openssl as mSSL
 
    local err
    err, glPrivateKey, glPublicKey = mSSL.GenerateRSAKey(glBits, glPassword)

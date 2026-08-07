@@ -629,9 +629,8 @@ end
 function resolveApiSignature(Doc:table, Context:table):table
    if not Context.object or not glDocCache then return nil end
 
-   if glDefs and glDefs.modulePrefixes and glDefs.modulePrefixes[Context.object] then
-      module_name = glDefs.modulePrefixes[Context.object]
-      module_doc = glDocCache.modules and glDocCache.modules[module_name] or nil
+   module_doc = moduleDocumentForNamespace(Doc, Context.object)
+   if module_doc then
       func_doc = module_doc and module_doc.functions and module_doc.functions[Context.name] or nil
       if func_doc then return signatureFromXmlEntry(Context.object .. '.' .. Context.name, func_doc, false) end
    end

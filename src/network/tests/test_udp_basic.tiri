@@ -3,7 +3,7 @@ UDP Basic Communication Test
 --]]
 
    include 'network'
-   mNet ?= mod.load('network')
+module network as mNet
 
 extern logOutput
 

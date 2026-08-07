@@ -3,8 +3,7 @@
    namespace 'gui'
    include 'vector'
 
-global mVec ?= mod.load('vector') -- Configure mVec as a global convenience.  For fast access, clients assign to lVec
-local lVec = mVec
+   module vector as mVec
 
 _LIB[_NS] = {
    theme = nil,
@@ -360,9 +359,9 @@ end
 gui.getFontHeight = function(Font:table):<num,num>
    try<trace>
       if not Font.height then
-         err, handle = lVec.getFontHandle(Font.face, 'Regular', 0, Font.size)
+         err, handle = mVec.getFontHandle(Font.face, 'Regular', 0, Font.size)
          metrics = struct.new('FontMetrics')
-         lVec.getFontMetrics(handle, metrics)
+         mVec.getFontMetrics(handle, metrics)
          Font.height  = metrics.height
          Font.spacing = metrics.lineSpacing
       end
@@ -397,7 +396,7 @@ gui.strToRGB = function(Value:str):table
    assert(Value, 'Empty value passed to strToRGB()')
 
    try<trace>
-      lVec.ReadPainter(nil, Value, glPainter)
+      mVec.ReadPainter(nil, Value, glPainter)
       nrgb = glPainter.Colour
       return setmetatable({
          r = math.clamp(nrgb.red, 0, 1),
@@ -671,7 +670,7 @@ gui.setTheme = function(Object:obj, Theme:str):table
 end
 
 function modifyAlpha(Colour:str, Alpha:num):str
-   lVec.ReadPainter(nil, Colour, glPainter)
+   mVec.ReadPainter(nil, Colour, glPainter)
    nrgb = glPainter.Colour
    rgb = gui.nrgb(nrgb.red, nrgb.green, nrgb.blue, nrgb.alpha)
    return tostring(rgb:withAlpha(Alpha))

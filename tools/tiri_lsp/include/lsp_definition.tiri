@@ -692,11 +692,10 @@ function resolveApiMemberDefinition(Doc:table, TokenInfo:table):array<table>
       end
    end
 
-   if glDefs?.modulePrefixes?[object_name] then
-      module_name = glDefs.modulePrefixes[object_name]
-      module_doc = glDocCache?.modules?[module_name]
+   module_doc = moduleDocumentForNamespace(Doc, object_name)
+   if module_doc then
       func_doc = module_doc?.functions?[token]
-      if module_doc and func_doc then
+      if func_doc then
          decoded_func = func_doc
          locations = array<table>
          pushLocation(locations, makeXmlLocation(module_doc, decoded_func.byteStart, decoded_func.byteEnd))

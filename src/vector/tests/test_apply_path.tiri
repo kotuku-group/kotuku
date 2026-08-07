@@ -1,6 +1,6 @@
    include 'vector'
 
-   mVec ?= mod.load('vector')
+module vector as mVec
 
 function assertNear(Actual, Expected, Message)
    assert(Actual ≈ Expected, f'{Message}: expected {Expected}, got {Actual}')

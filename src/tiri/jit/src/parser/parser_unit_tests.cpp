@@ -3612,6 +3612,7 @@ static bool test_static_result_set_model(kt::Log &Log)
 }
 
 static size_t count_opcode_tree(const BytecodeSnapshot &, BCOp);
+static size_t count_opcode(const BytecodeSnapshot &, BCOp);
 
 static int envstore_protected_attempt(lua_State *L)
 {
@@ -4151,6 +4152,415 @@ static bool test_module_call_result_descriptors(kt::Log &Log)
    }
 
    return true;
+}
+
+static size_t count_opcode_tree(const BytecodeSnapshot &, BCOp);
+
+static bool diagnostics_contain(const AstHarnessResult &Result, std::string_view Text)
+{
+   for (const auto &diagnostic : Result.diagnostics) {
+      if (diagnostic.message.find(Text) != std::string::npos) return true;
+   }
+   return false;
+}
+
+static bool test_module_namespace_ast(kt::Log &Log)
+{
+   auto valid = build_ast_from_source(
+      "module core as mCore\n"
+      "local first = mCore.preciseTime()\n"
+      "local callable = mCore.PreciseTime\n");
+   if (not valid.chunk.ok() or not valid.diagnostics.empty() or valid.chunk.value_ref()->statements.size() != 3) {
+      Log.error("valid module namespace declaration did not produce the expected AST");
+      log_diagnostics(valid.diagnostics, Log);
+      return false;
+   }
+
+   const auto &call_decl = std::get<LocalDeclStmtPayload>(valid.chunk.value_ref()->statements[1]->data);
+   if (call_decl.values.empty() or call_decl.values.front()->kind != AstNodeKind::CallExpr) {
+      Log.error("module namespace call did not remain a call expression");
+      return false;
+   }
+   const auto &call = std::get<CallExprPayload>(call_decl.values.front()->data);
+   const auto *target = std::get_if<DirectCallTarget>(&call.target);
+   if (not target or not target->callable or target->callable->kind != AstNodeKind::ModuleFunctionExpr) {
+      Log.error("module namespace call did not have a direct module function target");
+      return false;
+   }
+   const auto &member = std::get<ModuleFunctionExprPayload>(target->callable->data);
+   if (not member.module or not member.namespace_name or not member.function.symbol or not member.binding.symbol or
+       not kt::iequals(static_module_name(member.module), "core") or
+       std::string_view(strdata(member.namespace_name), member.namespace_name->len) != "mCore" or
+       std::string_view(strdata(member.function.symbol), member.function.symbol->len) != "PreciseTime") {
+      Log.error("module member did not retain canonical compiler metadata");
+      return false;
+   }
+
+   // The extracted callable must reuse the binding created by the call, so the declaration materialises exactly one
+   // closure for PreciseTime despite two references.
+
+   const auto &extract_decl = std::get<LocalDeclStmtPayload>(valid.chunk.value_ref()->statements[2]->data);
+   if (extract_decl.values.empty() or
+       extract_decl.values.front()->kind != AstNodeKind::ModuleFunctionExpr) {
+      Log.error("an extracted module callable did not use the dedicated module function node");
+      return false;
+   }
+   const auto &extracted = std::get<ModuleFunctionExprPayload>(extract_decl.values.front()->data);
+   if (extracted.binding.symbol != member.binding.symbol) {
+      Log.error("an extracted module callable did not share the direct call's hidden binding");
+      return false;
+   }
+
+   // The dependency initialiser is finalised after parsing and must name exactly the referenced functions.
+
+   const auto &dependency = std::get<LocalDeclStmtPayload>(valid.chunk.value_ref()->statements[0]->data);
+   if (dependency.names.size() != 1 or dependency.names[0].symbol != member.binding.symbol) {
+      Log.error("the dependency initialiser did not declare one binding per referenced function");
+      return false;
+   }
+   if (dependency.values.size() != 1 or dependency.values[0]->kind != AstNodeKind::CallExpr) {
+      Log.error("the dependency initialiser lost its binder call");
+      return false;
+   }
+   const auto &binder = std::get<CallExprPayload>(dependency.values[0]->data);
+   if (binder.arguments.size() != 2) {
+      Log.error("the binder received %zu arguments rather than a module name and one function name",
+         binder.arguments.size());
+      return false;
+   }
+   for (size_t index = 0; index < binder.arguments.size(); ++index) {
+      const auto *literal = std::get_if<LiteralValue>(&binder.arguments[index]->data);
+      if (not literal or literal->kind != LiteralKind::String or not literal->string_value) {
+         Log.error("binder argument %zu was not a canonical name literal", index);
+         return false;
+      }
+   }
+   const auto &function_argument = std::get<LiteralValue>(binder.arguments[1]->data);
+   if (std::string_view(strdata(function_argument.string_value), function_argument.string_value->len) !=
+       "PreciseTime") {
+      Log.error("the binder did not persist the canonical function name");
+      return false;
+   }
+
+   // Aliases of one canonical module share a dependency, so a function referenced through two namespaces is
+   // materialised once.
+
+   auto aliased = build_ast_from_source(
+      "module core as mFirst\n"
+      "module core as mSecond\n"
+      "local a = mFirst.PreciseTime()\n"
+      "local b = mSecond.preciseTime()\n"
+      "local c = mSecond.GetErrorMsg(0)\n");
+   if (not aliased.chunk.ok() or not aliased.diagnostics.empty()) {
+      Log.error("aliased module namespaces failed to parse");
+      log_diagnostics(aliased.diagnostics, Log);
+      return false;
+   }
+   const auto &alias_dependency = std::get<LocalDeclStmtPayload>(aliased.chunk.value_ref()->statements[0]->data);
+   if (alias_dependency.names.size() != 2) {
+      Log.error("aliased namespaces materialised %zu bindings rather than 2", alias_dependency.names.size());
+      return false;
+   }
+   const auto &alias_binder = std::get<CallExprPayload>(alias_dependency.values[0]->data);
+   if (alias_binder.arguments.size() != 3) {
+      Log.error("aliased namespaces did not deduplicate their referenced functions");
+      return false;
+   }
+
+   // An unused declaration must still resolve its module during activation, so its initialiser retains one hidden
+   // sentinel binding rather than becoming an empty local declaration.
+
+   auto unused = build_ast_from_source("module core as mUnused\nlocal value = 1\n");
+   if (not unused.chunk.ok() or not unused.diagnostics.empty()) {
+      Log.error("an unreferenced module declaration failed to parse");
+      log_diagnostics(unused.diagnostics, Log);
+      return false;
+   }
+   const auto &unused_dependency = std::get<LocalDeclStmtPayload>(unused.chunk.value_ref()->statements[0]->data);
+   if (unused_dependency.names.size() != 1 or unused_dependency.values.size() != 1) {
+      Log.error("an unreferenced module declaration did not retain a sentinel binding");
+      return false;
+   }
+   const auto &unused_binder = std::get<CallExprPayload>(unused_dependency.values[0]->data);
+   if (unused_binder.arguments.size() != 1) {
+      Log.error("an unreferenced module declaration requested %zu functions rather than none",
+         unused_binder.arguments.size() - 1);
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_module_namespace_conditions(kt::Log &Log)
+{
+   auto conditional = build_ast_from_source(
+      "@if(exists='modules:core')\n"
+      "   module core as mCore\n"
+      "@end\n"
+      "local value = mCore.PreciseTime()\n");
+   if (not conditional.chunk.ok() or not conditional.diagnostics.empty() or
+       conditional.chunk.value_ref()->statements.size() != 2 or
+       conditional.chunk.value_ref()->statements.front()->kind != AstNodeKind::LocalDeclStmt) {
+      Log.error("a selected compile-time module guard introduced a runtime scope");
+      log_diagnostics(conditional.diagnostics, Log);
+      return false;
+   }
+
+   auto absent = build_ast_from_source(
+      "@if(exists='modules:definitelymissingmodule')\n"
+      "   module definitelymissingmodule as mMissing\n"
+      "@end\n"
+      "local value = 1\n");
+   if (not absent.chunk.ok() or not absent.diagnostics.empty() or
+       absent.chunk.value_ref()->statements.size() != 1) {
+      Log.error("an unavailable optional module did not skip its declaration cleanly");
+      log_diagnostics(absent.diagnostics, Log);
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_implicit_module_namespace(kt::Log &Log)
+{
+   // 'mSys' is an implicit namespace for core.  Its dependency is created on first use and its initialiser is
+   // prepended to the compilation unit, so it dominates every reference without occupying a source position.
+
+   auto implicit = build_ast_from_source(
+      "local started = mSys.PreciseTime()\n"
+      "local message = mSys.getErrorMsg(0)\n"
+      "local clock <const> = mSys.PreciseTime\n");
+   if (not implicit.chunk.ok() or not implicit.diagnostics.empty()) {
+      Log.error("an implicit mSys reference failed to parse");
+      log_diagnostics(implicit.diagnostics, Log);
+      return false;
+   }
+   if (implicit.chunk.value_ref()->statements.front()->kind != AstNodeKind::LocalDeclStmt) {
+      Log.error("the implicit mSys dependency was not prepended to the compilation unit");
+      return false;
+   }
+   const auto &implicit_dependency = std::get<LocalDeclStmtPayload>(
+      implicit.chunk.value_ref()->statements.front()->data);
+   if (implicit_dependency.names.size() != 2) {
+      Log.error("implicit mSys materialised %zu bindings rather than 2", implicit_dependency.names.size());
+      return false;
+   }
+   const auto &implicit_binder = std::get<CallExprPayload>(implicit_dependency.values[0]->data);
+   if (implicit_binder.arguments.size() != 3) {
+      Log.error("implicit mSys requested %zu binder arguments rather than 3", implicit_binder.arguments.size());
+      return false;
+   }
+
+   // A unit that never mentions mSys must not resolve core or emit an activation statement.
+
+   auto unreferenced = build_ast_from_source("local value = 1\n");
+   if (not unreferenced.chunk.ok() or unreferenced.chunk.value_ref()->statements.size() != 1) {
+      Log.error("a unit that does not use mSys emitted an implicit dependency");
+      log_diagnostics(unreferenced.diagnostics, Log);
+      return false;
+   }
+
+   // An explicit declaration of the same namespace shares the implicit dependency in either statement order.
+
+   for (std::string_view source : {
+         std::string_view("module core as mSys\nlocal value = mSys.PreciseTime()\n"),
+         std::string_view(
+            "local first = mSys.PreciseTime()\nmodule core as mSys\nlocal second = mSys.GetErrorMsg(0)\n"),
+         std::string_view(
+            "module core as mCoreTwin\nlocal a = mSys.PreciseTime()\nlocal b = mCoreTwin.PreciseTime()\n") }) {
+      auto redundant = build_ast_from_source(source);
+      if (not redundant.chunk.ok() or not redundant.diagnostics.empty()) {
+         Log.error("an explicit core declaration alongside implicit mSys failed to parse");
+         log_diagnostics(redundant.diagnostics, Log);
+         return false;
+      }
+      // A dependency initialiser is the only local declaration whose value calls the binder, so it is identified by
+      // that call target rather than by shape alone.
+
+      size_t dependencies = 0;
+      for (const auto &statement : redundant.chunk.value_ref()->statements) {
+         if (statement->kind != AstNodeKind::LocalDeclStmt) continue;
+         const auto &decl = std::get<LocalDeclStmtPayload>(statement->data);
+         if (decl.values.size() != 1 or decl.values[0]->kind != AstNodeKind::CallExpr) continue;
+         const auto &call = std::get<CallExprPayload>(decl.values[0]->data);
+         const auto *direct = std::get_if<DirectCallTarget>(&call.target);
+         if (not direct or not direct->callable or direct->callable->kind != AstNodeKind::MemberExpr) continue;
+         const auto &target = std::get<MemberExprPayload>(direct->callable->data);
+         if (not target.member.symbol) continue;
+         if (std::string_view(strdata(target.member.symbol), target.member.symbol->len) IS
+             std::string_view("\x1f" "dependency", 11)) dependencies++;
+      }
+      if (dependencies != 1) {
+         Log.error("explicit and implicit core namespaces produced %zu dependencies rather than 1", dependencies);
+         return false;
+      }
+   }
+
+   return true;
+}
+
+static bool test_module_namespace_diagnostics(kt::Log &Log)
+{
+   struct InvalidCase { std::string_view source; std::string_view diagnostic; };
+   constexpr std::array<InvalidCase, 15> invalid = { {
+      { "module 'core' as mCore\n", "Module name must be an identifier" },
+      { "module core mCore\n", "Expected 'as'" },
+      { "do module core as mCore end\n", "compilation-unit level" },
+      { "module core as mCore\nlocal value = mCore\n", "can only select" },
+      { "module core as mCore\nmCore['PreciseTime']()\n", "can only select" },
+      { "module core as mCore\nmCore.PreciseTime = 1\n", "members cannot be assigned" },
+      { "module core as mCore\nlocal mCore = 1\n", "cannot be declared as a variable" },
+
+      // The implicit mSys namespace is subject to every restriction that applies to a declared namespace, whether or
+      // not the compilation unit has already referenced it.
+
+      { "local value = mSys\n", "can only select" },
+      { "print(mSys)\n", "can only select" },
+      { "mSys['PreciseTime']()\n", "can only select" },
+      { "local value = mSys?.PreciseTime()\n", "can only select" },
+      { "local mSys = 1\n", "cannot be declared as a variable" },
+      { "local function accept(mSys) end\n", "cannot be declared as a function parameter" },
+      { "module display as mSys\n", "reserved for the core module" },
+      { "local value = mSys.NotARealCoreFunction()\n", "Unknown function" }
+   } };
+   for (const auto &entry : invalid) {
+      auto result = build_ast_from_source(entry.source);
+      if (not diagnostics_contain(result, entry.diagnostic)) {
+         Log.error("module namespace invalid case did not report '%.*s'", int(entry.diagnostic.size()),
+            entry.diagnostic.data());
+         log_diagnostics(result.diagnostics, Log);
+         return false;
+      }
+   }
+
+   auto contextual = build_ast_from_source(
+      "global function module(Options, Function) return 7 end\n"
+      "local result = module({}, function() end)\n");
+   if (not contextual.chunk.ok() or not contextual.diagnostics.empty()) {
+      Log.error("contextual module declarations reserved an existing identifier use");
+      log_diagnostics(contextual.diagnostics, Log);
+      return false;
+   }
+
+   return true;
+}
+
+static bool test_module_namespace_bytecode(kt::Log &Log)
+{
+   LuaStateHolder bytecode_state;
+   lua_State *lua = bytecode_state.get();
+   luaL_openlibs(lua);
+   register_module_class(lua);
+   lua_protect_globals(lua);
+   constexpr std::string_view bytecode_source =
+      "module core as mRoundTrip\n"
+      "local function clock():num return mRoundTrip.PreciseTime() end\n"
+      "return clock()\n";
+   if (lua_load(lua, bytecode_source, "module-namespace-roundtrip")) {
+      Log.error("failed to compile module namespace bytecode fixture: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   GCproto *root = funcproto(funcV(lua->top - 1));
+   std::string dump;
+   if (lj_bcwrite(lua, root, bytecode_writer, &dump, 1) != 0) {
+      Log.error("failed to write module namespace bytecode fixture");
+      return false;
+   }
+   lua_pop(lua, 1);
+   if (lua_load(lua, std::string_view(dump.data(), dump.size()), "module-namespace-roundtrip")) {
+      Log.error("failed to reload module namespace bytecode fixture: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   if (lua_pcall(lua, 0, 1, 0) != 0 or not lua_isnumber(lua, -1) or lua_tonumber(lua, -1) <= 0) {
+      Log.error("reloaded module namespace bytecode did not resolve and execute its dependency: %s",
+         lua_isstring(lua, -1) ? lua_tostring(lua, -1) : "invalid result");
+      return false;
+   }
+   lua_pop(lua, 1);
+
+   std::string error;
+   auto snapshot = compile_snapshot(lua, bytecode_source, true, error);
+   if (not snapshot or count_opcode_tree(*snapshot, BC_GGET) != 1) {
+      Log.error("module namespace references retained an ordinary global lookup: %s", error.c_str());
+      return false;
+   }
+
+   // The binder is reached through one member access on the public 'mod' table during activation.  The module call
+   // itself is a hidden local read, so the function containing it must perform no table member lookup at all.
+
+   if (snapshot->children.size() != 1) {
+      Log.error("the module namespace fixture produced %zu child functions rather than 1",
+         snapshot->children.size());
+      return false;
+   }
+   if (count_opcode(snapshot->children.front(), BC_TGETS) != 0) {
+      Log.error("a module member call retained %zu table member lookups",
+         count_opcode(snapshot->children.front(), BC_TGETS));
+      return false;
+   }
+   if (count_opcode_tree(*snapshot, BC_TGETS) != 1) {
+      Log.error("module namespace activation used %zu table member lookups rather than 1",
+         count_opcode_tree(*snapshot, BC_TGETS));
+      return false;
+   }
+
+   // Compiled chunks must persist canonical module and function names, never a process address or a bare index.
+
+   if (lua_load(lua, bytecode_source, "module-namespace-constants")) {
+      Log.error("failed to recompile the module namespace fixture: %s", lua_tostring(lua, -1));
+      return false;
+   }
+
+   bool has_module_name = false, has_function_name = false;
+   GCproto *compiled = funcproto(funcV(lua->top - 1));
+   for (ptrdiff_t i = -ptrdiff_t(compiled->sizekgc); i < 0; ++i) {
+      GCobj *object = proto_kgc(compiled, i);
+      if (object->gch.gct != uint8_t(~LJ_TSTR)) continue;
+      GCstr *constant = gco_to_string(object);
+      std::string_view text(strdata(constant), constant->len);
+      if (kt::iequals(text, "core")) has_module_name = true;
+      else if (text IS "PreciseTime") has_function_name = true;
+   }
+   lua_pop(lua, 1);
+
+   if (not has_module_name or not has_function_name) {
+      Log.error("the compiled chunk did not persist canonical module and function names");
+      return false;
+   }
+
+   // Activation validates every persisted name against the module's current function list, so a name that no longer
+   // resolves must fail with a precise diagnostic rather than binding the wrong function.
+
+   constexpr std::string_view missing_function_source =
+      "local binder = mod['\\31dependency']\n"
+      "return binder('core', 'DefinitelyNotAnExportedFunction')\n";
+   if (lua_load(lua, missing_function_source, "module-namespace-missing")) {
+      Log.error("failed to compile the missing-function fixture: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   if (lua_pcall(lua, 0, 0, 0) IS 0) {
+      Log.error("binding an unexported module function unexpectedly succeeded");
+      return false;
+   }
+   CSTRING activation_error = lua_tostring(lua, -1);
+   if (not activation_error or not strstr(activation_error, "DefinitelyNotAnExportedFunction")) {
+      Log.error("the activation diagnostic did not name the missing function: %s",
+         activation_error ? activation_error : "no message");
+      lua_pop(lua, 1);
+      return false;
+   }
+   lua_pop(lua, 1);
+
+   return true;
+}
+
+static bool test_module_namespace_declarations(kt::Log &Log)
+{
+   return test_module_namespace_ast(Log) and
+      test_module_namespace_conditions(Log) and
+      test_implicit_module_namespace(Log) and
+      test_module_namespace_diagnostics(Log) and
+      test_module_namespace_bytecode(Log);
 }
 
 static size_t count_opcode(const BytecodeSnapshot &Snapshot, BCOp Opcode)
@@ -4872,7 +5282,7 @@ static bool test_type_guided_emission(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 52> tests = { {
+   constexpr std::array<TestCase, 53> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -4921,6 +5331,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "native_prototype_result_descriptors", test_native_prototype_result_descriptors },
       { "object_call_result_descriptors", test_object_call_result_descriptors },
       { "module_call_result_descriptors", test_module_call_result_descriptors },
+      { "module_namespace_declarations", test_module_namespace_declarations },
       { "compile_time_signed_range_for_emission", test_compile_time_signed_range_for_emission },
       { "runtime_range_for_emission", test_runtime_range_for_emission },
       { "safe_index_bytecode_selection", test_safe_index_bytecode_selection },

@@ -33,32 +33,58 @@ struct static_module_function_signature {
 
 struct static_module_signature {
    std::string Name;
-   std::vector<std::unique_ptr<static_module_function_signature>> Functions;
-   ankerl::unordered_dense::map<uint32_t, static_module_function_signature *> FunctionMap;
+   std::vector<static_module_function_signature> Functions;
 };
 
-static std::mutex glModuleSignatureMutex;
-static ankerl::unordered_dense::map<uint32_t, std::shared_ptr<const static_module_signature>> glModuleSignatures;
+constexpr int MAX_MODULE_ARGS = 16;
+constexpr size_t BUFFER_ELEMENT_SIZE = 16;
+constexpr size_t BUFFER_SIZE = MAX_MODULE_ARGS * BUFFER_ELEMENT_SIZE;
+constexpr size_t MAX_STRING_PREFIX_LENGTH = 200;
+
+struct module;
+
+// One process-wide callable record per exported module function.  Records are allocated individually so that their
+// addresses remain stable from publication until expunge_modules(), which is required because Tiri closures retain a
+// raw pointer to their record and the cached ffi_cif refers to ArgTypes in place.
+//
+// Every field is written once during preparation and is immutable afterwards, so concurrent calls from independent
+// Tiri states can share one record without synchronisation.
+
+struct module_callable {
+   CSTRING Name = nullptr;               // Canonical name, owned by the module's Function list
+   APTR Address = nullptr;               // Native function address; leave as null if function wasn't processed
+   const FunctionField *Fields = nullptr; // Argument metadata, owned by the module's Function list
+
+   ffi_cif Cif = { };
+   ffi_type *ArgTypes[MAX_MODULE_ARGS] = { };
+
+   inline bool trivial() { return Fields IS nullptr; }
+
+   inline bool valid() { // Returns false if the function couldn't be processed
+      return Address != nullptr;
+   }
+
+   inline void invalidate() { Address = nullptr; }
+};
 
 struct module {
-   const struct Function *Functions = nullptr;
+   std::string Name;
    objModule *Module = nullptr;
-   std::shared_ptr<const static_module_signature> Signature;
-   ankerl::unordered_dense::map<uint32_t, int> FunctionMap; // Hash map for O(1) function lookup
+   std::unique_ptr<const static_module_signature> Signature;
+   ankerl::unordered_dense::map<uint32_t, std::vector<module_callable *>> FunctionMap;
+   std::vector<std::unique_ptr<module_callable>> Callables;
 
    ~module() {
       if (Module) FreeResource(Module);
    }
 };
 
+static std::mutex glModuleMutex;
+static std::vector<std::unique_ptr<module>> glModules;
+
 template<class... Args> void RMSG(Args...) {
    //log.msg(Args)
 }
-
-constexpr int MAX_MODULE_ARGS = 16;
-constexpr size_t BUFFER_ELEMENT_SIZE = 16;
-constexpr size_t BUFFER_SIZE = MAX_MODULE_ARGS * BUFFER_ELEMENT_SIZE;
-constexpr size_t MAX_STRING_PREFIX_LENGTH = 200;
 
 struct module_span_arg {
    std::span<int8_t> Span;
@@ -123,12 +149,12 @@ static int module_call(lua_State *);
 static ERR module_call_inner(lua_State *, std::string &, int &);
 static int process_results(extTiri *, APTR, const FunctionField *);
 
-static std::shared_ptr<const static_module_signature> register_module_signature(
+static std::unique_ptr<const static_module_signature> make_module_signature(
    std::string_view Name, const Function *Functions)
 {
    if (not Functions) return {};
 
-   auto signature = std::make_shared<static_module_signature>();
+   auto signature = std::make_unique<static_module_signature>();
    signature->Name = Name;
 
    size_t function_count = 0;
@@ -136,56 +162,31 @@ static std::shared_ptr<const static_module_signature> register_module_signature(
    signature->Functions.reserve(function_count);
 
    for (size_t i = 0; i < function_count; ++i) {
-      auto entry = std::make_unique<static_module_function_signature>();
-      entry->Name = Functions[i].Name;
+      auto &entry = signature->Functions.emplace_back();
+      entry.Name = Functions[i].Name;
 
       if (const FunctionField *fields = Functions[i].Args) {
          size_t field_count = 0;
          while (fields[field_count].Name) field_count++;
-         entry->FieldNames.reserve(field_count);
-         entry->Fields.reserve(field_count + 1);
-         for (size_t j = 0; j < field_count; ++j) entry->FieldNames.emplace_back(fields[j].Name);
+         entry.FieldNames.reserve(field_count);
+         entry.Fields.reserve(field_count + 1);
+         for (size_t j = 0; j < field_count; ++j) entry.FieldNames.emplace_back(fields[j].Name);
          for (size_t j = 0; j < field_count; ++j) {
-            entry->Fields.push_back({ entry->FieldNames[j].c_str(), fields[j].Type });
+            entry.Fields.push_back({ entry.FieldNames[j].c_str(), fields[j].Type });
          }
-         entry->Fields.push_back({ nullptr, 0 });
+         entry.Fields.push_back({ nullptr, 0 });
       }
-      else entry->Fields.push_back({ nullptr, 0 });
-
-      static_module_function_signature *stored = entry.get();
-      signature->FunctionMap[kt::strihash(entry->Name)] = stored;
-      signature->Functions.push_back(std::move(entry));
+      else entry.Fields.push_back({ nullptr, 0 });
    }
 
-   std::lock_guard lock(glModuleSignatureMutex);
-   auto hash = kt::strihash(Name);
-   if (auto existing = glModuleSignatures.find(hash); existing != glModuleSignatures.end()) {
-      return existing->second;
-   }
-   glModuleSignatures[hash] = signature;
    return signature;
-}
-
-StaticModuleHandle static_module_from_value(lua_State *Lua, cTValue *Value) noexcept
-{
-   if (not Lua or not Value or not tvisudata(Value)) return nullptr;
-   GCudata *userdata = udataV(Value);
-   if (userdata->len != sizeof(module)) return nullptr;
-
-   cTValue *registered = lj_tab_getstr(
-      tabV(registry(Lua)), lj_str_newlit(Lua, "Tiri.mod"));
-   if (not registered or not tvistab(registered) or
-       tabref(userdata->metatable) != tabV(registered)) return nullptr;
-
-   auto *mod = (module *)uddata(userdata);
-   return mod->Signature.get();
 }
 
 StaticModuleHandle static_module_by_name(std::string_view Name) noexcept
 {
-   std::lock_guard lock(glModuleSignatureMutex);
-   if (auto found = glModuleSignatures.find(kt::strihash(Name)); found != glModuleSignatures.end()) {
-      return found->second.get();
+   std::lock_guard lock(glModuleMutex);
+   for (const auto &entry : glModules) {
+      if (kt::iequals(entry->Name, Name)) return entry->Signature.get();
    }
    return nullptr;
 }
@@ -194,10 +195,210 @@ const FunctionField * static_module_function(
    StaticModuleHandle Module, std::string_view Name) noexcept
 {
    if (not Module) return nullptr;
-   if (auto found = Module->FunctionMap.find(kt::strihash(Name)); found != Module->FunctionMap.end()) {
-      return found->second->Fields.data();
+   for (const auto &function : Module->Functions) {
+      if (kt::iequals(function.Name, Name)) return function.Fields.data();
    }
    return nullptr;
+}
+
+std::string_view static_module_name(StaticModuleHandle Module) noexcept
+{
+   return Module ? std::string_view(Module->Name) : std::string_view();
+}
+
+std::string_view static_module_function_name(StaticModuleHandle Module, std::string_view Name) noexcept
+{
+   if (not Module) return {};
+   for (const auto &function : Module->Functions) {
+      if (kt::iequals(function.Name, Name)) return function.Name;
+   }
+   return {};
+}
+
+//********************************************************************************************************************
+// Determine the libffi type for one argument.  The mapping mirrors the argument marshalling in module_call_inner();
+// both must agree on the number and type of arguments passed to ffi_call().
+//
+// Signature-dependent validation that does not require a lua_State is performed here so that it happens once per
+// process rather than on every call.  State-dependent checks, such as resolving a named structure for a span, remain
+// in the call bridge.
+
+static ERR callable_arg_type(const FunctionField &Field, ffi_type *&Type, std::string &ErrorMsg)
+{
+   const int argtype = Field.Type;
+
+   if ((argtype & FDF_SPAN) IS FDF_SPAN) {
+      if (argtype & (FD_RESULT|FD_ALLOC)) {
+         ErrorMsg = std::format("Unsupported span result for arg '{}'.", Field.Name);
+         return ERR::NoSupport;
+      }
+      Type = &ffi_type_pointer;
+      return ERR::Okay;
+   }
+
+   if (argtype & FD_ARRAY) { // Non-span arrays are no longer marshalled
+      ErrorMsg = std::format("Unsupported pointer array arg '{}'.", Field.Name);
+      return ERR::NoSupport;
+   }
+
+   if (argtype & FD_RESULT) {
+      // Every result argument is passed as a pointer to storage that the bridge provides.
+      if ((((argtype & FDF_VECTOR) IS FDF_VECTOR) and (argtype & FD_MUTABLE)) or
+          (argtype & (FD_STR|FD_PTR|FD_INT|FD_DOUBLE|FD_INT64))) {
+         Type = &ffi_type_pointer;
+         return ERR::Okay;
+      }
+      ErrorMsg = std::format("Unrecognised result arg '{}', flags ${:08x}.", Field.Name, argtype);
+      return ERR::InvalidType;
+   }
+
+   if (argtype & FD_FUNCTION) { Type = &ffi_type_pointer; return ERR::Okay; }
+   if (argtype & FD_STR) { Type = &ffi_type_pointer; return ERR::Okay; }
+
+   if ((argtype & FDF_VECTOR) IS FDF_VECTOR) {
+      ErrorMsg = "C++ array inputs are not supported.";
+      return ERR::NoSupport;
+   }
+
+   if (argtype & FD_PTR) { Type = &ffi_type_pointer; return ERR::Okay; }
+   if (argtype & FD_INT) { Type = &ffi_type_sint32; return ERR::Okay; }
+   if (argtype & FD_DOUBLE) { Type = &ffi_type_double; return ERR::Okay; }
+   if (argtype & FD_INT64) { Type = &ffi_type_sint64; return ERR::Okay; }
+
+   if (argtype & (FD_TAGS|FD_VARTAGS)) {
+      ErrorMsg = "Functions using tags are not supported.";
+      return ERR::NoSupport;
+   }
+
+   ErrorMsg = std::format("Unsupported arg '{}', flags ${:08x}.", Field.Name, argtype);
+   return ERR::NoSupport;
+}
+
+//********************************************************************************************************************
+// Determine the libffi return type from the function's result descriptor, which is stored in element zero of the
+// argument list.
+
+static ffi_type * callable_return_type(int ResultType)
+{
+   if (ResultType & FD_STR) return &ffi_type_pointer;
+   if (ResultType & FD_OBJECT) return &ffi_type_pointer;
+   if (ResultType & FD_PTR) return &ffi_type_pointer;
+   if (ResultType & (FD_INT|FD_ERROR)) {
+      return (ResultType & FD_UNSIGNED) ? &ffi_type_uint32 : &ffi_type_sint32;
+   }
+   if (ResultType & FD_DOUBLE) return &ffi_type_double;
+   if (ResultType & FD_INT64) return &ffi_type_sint64;
+   return &ffi_type_void;
+}
+
+//********************************************************************************************************************
+// Build the process-wide callable records for a module.  Called once, while the module is being resolved and before
+// it is published to glModules, so no other thread can observe a partially prepared record.
+//
+// A preparation failure is recorded on the individual callable rather than propagated, because one unsupported
+// signature must not prevent the rest of the module from being used.
+
+static void prepare_module_callables(module *Module, const Function *Functions)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (not Functions) return;
+
+   size_t function_count = 0;
+   while (Functions[function_count].Name) function_count++;
+   Module->Callables.reserve(function_count);
+
+   for (size_t index = 0; index < function_count; ++index) {
+      const auto &function = Functions[index];
+      auto callable = std::make_unique<module_callable>();
+
+      callable->Name    = function.Name;
+      callable->Address = function.Address;
+      callable->Fields  = function.Args;
+
+      if (not function.Args) {
+         // A function with no argument list takes no parameters and returns nothing, so libffi is unnecessary.
+         // The callable is still exported, so it must be registered for name lookup like any other.
+         Module->FunctionMap[strihash(function.Name)].push_back(callable.get());
+         Module->Callables.push_back(std::move(callable));
+         continue;
+      }
+
+      const FunctionField *args = function.Args;
+      int total = 0;
+      for (int arg = 1; args[arg].Name; ++arg) {
+         if (total >= MAX_MODULE_ARGS) {
+            callable->invalidate();
+            log.msg("Function '%s' exceeds the %d argument limit.", function.Name, MAX_MODULE_ARGS);
+            break;
+         }
+
+         ffi_type *type = nullptr;
+         std::string message;
+         if (auto error = callable_arg_type(args[arg], type, message); error != ERR::Okay) {
+            callable->invalidate();
+            log.msg("Function '%s': %s", function.Name, message.c_str());
+            break;
+         }
+         callable->ArgTypes[total++] = type;
+      }
+
+      if (callable->valid()) {
+         ffi_type *return_type = callable_return_type(args->Type);
+
+         if (ffi_prep_cif(&callable->Cif, FFI_DEFAULT_ABI, total, return_type, callable->ArgTypes) != FFI_OK) {
+            callable->invalidate();
+            log.msg("Failed to prepare the call interface for '%s'.", function.Name);
+         }
+      }
+
+      Module->FunctionMap[strihash(function.Name)].push_back(callable.get());
+      Module->Callables.push_back(std::move(callable));
+   }
+}
+
+//********************************************************************************************************************
+// Resolve one process-wide module instance.  Entries remain stable until the Tiri module is expunged.
+
+static ERR resolve_module(std::string_view Name, module *&Result)
+{
+   std::lock_guard lock(glModuleMutex);
+   for (const auto &entry : glModules) {
+      if (kt::iequals(entry->Name, Name)) {
+         Result = entry.get();
+         return ERR::Okay;
+      }
+   }
+
+   auto loaded_module = objModule::create::global(fl::Name(Name));
+   if (not loaded_module) return ERR::CreateObject;
+
+   auto entry = std::make_unique<module>();
+   entry->Module = loaded_module;
+   const Function *functions = nullptr;
+   loaded_module->getFunctionList(functions);
+
+   std::string_view canonical_name;
+   if (loaded_module->getName(canonical_name) != ERR::Okay or canonical_name.empty()) canonical_name = Name;
+   entry->Name = canonical_name;
+   entry->Signature = make_module_signature(entry->Name, functions);
+   prepare_module_callables(entry.get(), functions);
+
+   Result = entry.get();
+   glModules.push_back(std::move(entry));
+   return ERR::Okay;
+}
+
+void expunge_modules()
+{
+   {
+      std::lock_guard lock(glModuleMutex);
+      glModules.clear();
+   }
+   {
+      std::unique_lock lock(glConstantMutex);
+      glLoadedConstants.clear();
+   }
 }
 
 //********************************************************************************************************************
@@ -415,42 +616,29 @@ static ERR process_module_defs(extTiri *Script, objModule *module, std::string_v
 }
 
 //********************************************************************************************************************
-// For the 'include' statement.  Creates a temporary module object to process the definitions without formally opening
-// an interface.
+// Process a process-wide module's definitions once.
+
+static ERR ensure_module_defs(extTiri *Script, module *Module)
+{
+   std::unique_lock lock(glConstantMutex);
+   if (glLoadedConstants.contains(Module->Name)) return ERR::Okay;
+
+   ERR error = process_module_defs(Script, Module->Module, Module->Name);
+   if (error IS ERR::Okay) glLoadedConstants.emplace(Module->Name);
+   return error;
+}
+
+//********************************************************************************************************************
+// For the 'include' statement.  Resolves the process-wide module and makes its definitions available to the parser.
 
 [[nodiscard]] ERR load_include(extTiri *Script, std::string_view Module)
 {
-   ERR error = ERR::Okay;
+   module *resolved_module = nullptr;
+   if (auto error = resolve_module(Module, resolved_module); error != ERR::Okay) return error;
 
-   std::unique_lock lock(glConstantMutex); // Required to update the constant registry
-
-   // Constants are system-wide, so process only once per session.
-
-   bool process_constants = false;
-   if (not glLoadedConstants.contains(Module)) {
-      process_constants = true;
-   }
-
-   if (process_constants) {
-      kt::Log log(__FUNCTION__);
-      log.branch("Definition: %.*s", int(Module.size()), Module.data());
-
-      AdjustLogLevel(1);
-
-         objModule::create module = { fl::Name(Module) };
-         if (module.ok()) {
-            const Function *functions = nullptr;
-            module->getFunctionList(functions);
-            register_module_signature(Module, functions);
-            error = process_module_defs(Script, *module, Module);
-         }
-         else error = ERR::CreateObject;
-
-      AdjustLogLevel(-1);
-
-      if (!error) glLoadedConstants.emplace(Module);
-   }
-
+   AdjustLogLevel(1);
+   ERR error = ensure_module_defs(Script, resolved_module);
+   AdjustLogLevel(-1);
    return error;
 }
 
@@ -491,161 +679,90 @@ static ERR process_module_defs(extTiri *Script, objModule *module, std::string_v
 }
 
 //********************************************************************************************************************
-// Configure a Tiri module object (post-loading).
-
-void new_module(lua_State *Lua, objModule *Module)
-{
-   auto mod = (module *)lua_newuserdata(Lua, sizeof(module));
-   new (mod) module;
-
-   luaL_getmetatable(Lua, "Tiri.mod");
-   lua_setmetatable(Lua, -2);
-
-   mod->Module = Module;
-   Module->getFunctionList(mod->Functions);
-   std::string_view module_name;
-   if (Module->getName(module_name) != ERR::Okay) module_name = {};
-   mod->Signature = register_module_signature(module_name, mod->Functions);
-
-   // Build hash map for O(1) function lookups
-   if (mod->Functions) {
-      for (int i = 0; mod->Functions[i].Name; i++) {
-         auto hash = strihash(mod->Functions[i].Name);
-         mod->FunctionMap[hash] = i;
-      }
-   }
-}
-
-//********************************************************************************************************************
-// Usage: passed, total, = mod.test(module, Options)
-// Runs the module's unit tests, if any
+// Usage: passed, total = mod.test(ModuleName, Options)
+// Resolves the named module and runs its unit tests, if any.
 
 static int module_test(lua_State *Lua)
 {
-   if (auto mod = (module *)luaL_checkudata(Lua, 1, "Tiri.mod")) {
-      auto options = lua_tostringview(Lua, 2);
-      int passed = 0, total = 0;
-      if (((objModule *)mod->Module)->test(options, &passed, &total) IS ERR::Okay) {
-         lua_pushinteger(Lua, passed);
-         lua_pushinteger(Lua, total);
-         return 2;
-      }
-      else luaL_error(Lua, ERR::Failed, "Module test failed.");
+   CSTRING module_name = luaL_checkstring(Lua, 1);
+
+   module *mod = nullptr;
+   if (auto error = resolve_module(module_name, mod); error != ERR::Okay) {
+      luaL_error(Lua, error, "Failed to load the %s module.", module_name);
    }
-   else luaL_argerror(Lua, 1, "Expected module.");
+
+   auto options = lua_tostringview(Lua, 2);
+   int passed = 0, total = 0;
+   if (mod->Module->test(options, &passed, &total) IS ERR::Okay) {
+      lua_pushinteger(Lua, passed);
+      lua_pushinteger(Lua, total);
+      return 2;
+   }
+   luaL_error(Lua, ERR::Failed, "Module test failed.");
    return 0;
 }
 
 //********************************************************************************************************************
-// Usage: module = mod.load('core')
+// Locate one exported function by canonical name.  Case-insensitive, matching the compiler's source-level resolution.
 
-static int module_load(lua_State *Lua)
+static module_callable * find_module_callable(module *Module, std::string_view Name)
+{
+   auto hash = strihash(Name);
+   if (auto it = Module->FunctionMap.find(hash); it != Module->FunctionMap.end()) {
+      for (auto callable : it->second) {
+         if (kt::iequals(callable->Name, Name)) return callable;
+      }
+   }
+   return nullptr;
+}
+
+//********************************************************************************************************************
+// Activate a compiler-declared module dependency.
+//
+// Usage: binding1, binding2, ... = mod.<dependency>(ModuleName, FunctionName1, FunctionName2, ...)
+//
+// The compiler passes the canonical module name followed by the canonical names of the functions its compilation unit
+// actually references, and receives one closure per name in matching order.  Only names are persisted in bytecode, so
+// a chunk loaded in a fresh process resolves against the module's current function list.
+//
+// No module table, metatable, environment cache or per-function name lookup table is created.  A declaration that
+// references no function still resolves its module and returns one sentinel value, so that the generated local
+// declaration remains well-formed and the dependency is retained.
+
+static int module_dependency(lua_State *Lua)
 {
    auto modname = luaL_checkstring(Lua, 1);
    if (not modname) luaL_argerror(Lua, 1, "String expected for module name.");
 
-   kt::Log log(__FUNCTION__);
-   log.branch("Module: %s", modname);
-
-   int i;
-   for (i=0; modname[i]; i++) {
-      if ((modname[i] >= 'a') and (modname[i] <= 'z')) continue;
-      if ((modname[i] >= 'A') and (modname[i] <= 'Z')) continue;
-      if ((modname[i] >= '0') and (modname[i] <= '9')) continue;
-      break;
+   module *mod = nullptr;
+   if (auto error = resolve_module(modname, mod); error != ERR::Okay) {
+      luaL_error(Lua, error, "Failed to load the %s module.", modname);
+   }
+   if (auto error = ensure_module_defs(Lua->script, mod); error != ERR::Okay) {
+      luaL_error(Lua, error, "Failed to process definitions for the %s module.", modname);
    }
 
-   if ((modname[i]) or (i >= 32)) {
-      luaL_error(Lua, ERR::Syntax,
-         "Invalid module name; only alpha-numeric names shorter than 32 characters are permitted.");
+   int requested = lua_gettop(Lua) - 1;
+   if (requested <= 0) { // Dependency-only activation; the module is now resolved and retained.
+      lua_pushboolean(Lua, 1);
+      return 1;
    }
 
-   if (auto loaded_mod = objModule::create::global(fl::Name(modname))) {
-      ERR defs_error = ERR::Okay;
-      {
-         std::unique_lock lock(glConstantMutex); // Required to update the constant registry
+   for (int arg = 2; arg <= requested + 1; ++arg) {
+      auto function_name = lua_tostringview(Lua, arg);
+      if (function_name.empty()) luaL_argerror(Lua, arg, "String expected for module function name.");
 
-         bool process_constants = false;
-         if (not glLoadedConstants.contains(modname)) {
-            process_constants = true;
-         }
-
-         if (process_constants) {
-            if (!(defs_error = process_module_defs(Lua->script, loaded_mod, modname))) {
-               glLoadedConstants.insert(modname);
-            }
-         }
+      auto callable = find_module_callable(mod, function_name);
+      if (not callable) {
+         luaL_error(Lua, ERR::Search, "Function %.*s() is not exported by the %s module.",
+            int(function_name.size()), function_name.data(), modname);
       }
 
-      if (defs_error != ERR::Okay) {
-         FreeResource(loaded_mod);
-         luaL_error(Lua, defs_error, "Failed to process definitions for the %s module.", modname);
-      }
-
-      new_module(Lua, loaded_mod);
-      return 1;  // new userdatum is already on the stack
-   }
-   else {
-      log.debranch();
-      luaL_error(Lua, ERR::LoadModule, "Failed to load the %s module.", modname);
-   }
-   return 0;
-}
-
-//********************************************************************************************************************
-// Object garbage collector.
-
-static int module_destruct(lua_State *Lua)
-{
-   if (auto mod = (module *)luaL_checkudata(Lua, 1, "Tiri.mod")) {
-      mod->~module();
+      lua_pushlightuserdata(Lua, callable);
+      lua_pushcclosure(Lua, module_call, 1);
    }
 
-   return 0;
-}
-
-//********************************************************************************************************************
-// Prints the module name
-
-static int module_tostring(lua_State *Lua)
-{
-   if (auto mod = (struct module *)luaL_checkudata(Lua, 1, "Tiri.mod")) {
-      std::string_view name;
-      if (!mod->Module->getName(name)) {
-         lua_pushstring(Lua, name);
-      }
-      else lua_pushnil(Lua);
-   }
-   else lua_pushnil(Lua);
-
-   return 1;
-}
-
-//********************************************************************************************************************
-// Any Read accesses to the module object will pass through here.
-
-static int module_index(lua_State *Lua)
-{
-   if (auto mod = (module *)luaL_checkudata(Lua, 1, "Tiri.mod")) {
-      if (auto function = luaL_checkstring(Lua, 2)) {
-         if (mod->Functions) {
-            auto hash = strihash(function); // Case insensitive function calls
-            if (auto it = mod->FunctionMap.find(hash); it != mod->FunctionMap.end()) {
-               lua_pushvalue(Lua, 1); // Arg1: Duplicate the module reference
-               lua_pushinteger(Lua, it->second); // Arg2: Index of the function that is being called
-               lua_pushcclosure(Lua, module_call, 2);
-               return 1;
-            }
-
-            luaL_error(Lua, ERR::UnknownProperty, "Call to function %s() not recognised.", function);
-         }
-         else luaL_error(Lua, ERR::UnknownProperty, "No exported function list for this module.", function);
-      }
-      else luaL_argerror(Lua, 2, "Expected function string.");
-   }
-   else luaL_argerror(Lua, 1, "Expected module.");
-
-   return 0;
+   return requested;
 }
 
 //********************************************************************************************************************
@@ -797,15 +914,22 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       else return "";
    };
 
-   auto mod = (module *)get_meta(Lua, lua_upvalueindex(1), "Tiri.mod");
-   if (not mod) {
-      ErrorMsg = "module_call() expected module in upvalue.";
+   // One light-userdata upvalue holds the process-wide callable record, which carries the native address, the argument
+   // metadata and the libffi call interface that was prepared when the module was resolved.
+
+   auto callable = (module_callable *)lua_touserdata(Lua, lua_upvalueindex(1));
+   if (not callable) {
+      ErrorMsg = "module_call() expected a callable record in its upvalue.";
       return ERR::Args;
    }
 
-   if (not mod->Functions) return ERR::UnknownProperty;
+   // Signature problems are detected during preparation and reported here, so that an unsupported function fails
+   // consistently whether it is called directly or through an extracted callable.
+   if (not callable->valid()) {
+      ErrorMsg = "Function not compatible with Tiri";
+      return ERR::NoSupport;
+   }
 
-   auto index = lua_tointeger(Lua, lua_upvalueindex(2));
    int nargs = lua_gettop(Lua);
    if (nargs > MAX_MODULE_ARGS-1) {
       log.warning("Limit of %d args exceeded.", MAX_MODULE_ARGS - 1);
@@ -814,24 +938,16 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
    uint8_t *end = buffer + sizeof(buffer);
 
-   log.trace("%s() Index: %d, Args: %d", mod->Functions[index].Name, index, nargs);
+   log.trace("%s() Args: %d", callable->Name, nargs);
 
-   const FunctionField *args;
-   if (not (args = mod->Functions[index].Args)) {
-      auto function = (void (*)(void))mod->Functions[index].Address;
+   if (callable->trivial()) {
+      auto function = (void (*)(void))callable->Address;
       function();
       return ERR::Okay;
    }
 
-   for (int arg=1; args[arg].Name; arg++) {
-      if ((args[arg].Type & FD_ARRAY) and ((args[arg].Type & FDF_SPAN) != FDF_SPAN)) {
-         ErrorMsg = std::format("Function '{}' uses unsupported pointer array arg '{}'.",
-            mod->Functions[index].Name, args[arg].Name);
-         return ERR::NoSupport;
-      }
-   }
-
-   APTR function = mod->Functions[index].Address;
+   const FunctionField *args = callable->Fields;
+   APTR function = callable->Address;
    FUNCTION func;
 
    // This guard owns the Lua registry reference for an FD_FUNCTION argument until the call is handed to the module.
@@ -849,13 +965,11 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       }
    } func_guard{ Lua, func };
 
-   ffi_cif cif;
    union {
       ffi_arg Arg;
       double  Double;
       int64_t Int64;
    } rc = { };
-   ffi_type *arg_types[MAX_MODULE_ARGS];
    void * arg_values[MAX_MODULE_ARGS];
    int in = 0;
 
@@ -864,8 +978,6 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
    for (i=1; args[i].Name; i++) {
       int argtype = args[i].Type;
 
-      //log.trace("%s() Arg: %s, Offset: %d, Type: $%.8x (received %s)", mod->Functions[index].Name, args[i].Name, j, argtype, lua_typename(Lua, lua_type(Lua, i)));
-
       if ((argtype & FDF_SPAN) IS FDF_SPAN) {
          if (span_count >= span_args.size()) {
             ErrorMsg = "Too many span arguments.";
@@ -873,7 +985,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          }
 
          if (argtype & (FD_RESULT|FD_ALLOC)) {
-            ErrorMsg = std::format("Function '{}' uses an unsupported span result.", mod->Functions[index].Name);
+            ErrorMsg = std::format("Function '{}' uses an unsupported span result.", callable->Name);
             return ERR::NoSupport;
          }
 
@@ -885,8 +997,8 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          if (auto error = module_span_element_metadata(Lua, args[i], &element_type, &element_size, &struct_def);
              error != ERR::Okay) {
             ErrorMsg = (error IS ERR::Search) ?
-               std::format("Function '{}' references an unknown span structure.", mod->Functions[index].Name) :
-               std::format("Function '{}' uses invalid span element metadata.", mod->Functions[index].Name);
+               std::format("Function '{}' references an unknown span structure.", callable->Name) :
+               std::format("Function '{}' uses invalid span element metadata.", callable->Name);
             return error;
          }
 
@@ -964,7 +1076,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          auto span_address = span_arg.set(data, extent);
          ((APTR *)(buffer + j))[0] = span_address;
          arg_values[in] = buffer + j;
-         arg_types[in++] = &ffi_type_pointer;
+         in++;
          j += sizeof(APTR);
       }
       else if (argtype & FD_RESULT) {
@@ -989,11 +1101,11 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                ((APTR *)(buffer + j))[0] = result_ref.Data; // kt::vector<>
                cpp_arrays.push_back(std::move(result_ref));
                arg_values[in]  = buffer + j;
-               arg_types[in++] = &ffi_type_pointer;
+               in++;
                j += sizeof(APTR);
             }
             else {
-               ErrorMsg = std::format("Function '{}' uses an unsupported C++ array result type.", mod->Functions[index].Name);
+               ErrorMsg = std::format("Function '{}' uses an unsupported C++ array result type.", callable->Name);
                return error;
             }
          }
@@ -1006,7 +1118,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                   strings.emplace_back();
                   ((std::string **)(buffer + j))[0] = &strings.back();
                   arg_values[in]  = buffer + j;
-                  arg_types[in++] = &ffi_type_pointer;
+                  in++;
                   j += sizeof(APTR);
                }
                else {
@@ -1014,7 +1126,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                   string_views.emplace_back();
                   ((std::string_view **)(buffer + j))[0] = &string_views.back();
                   arg_values[in]  = buffer + j;
-                  arg_types[in++] = &ffi_type_pointer;
+                  in++;
                   j += sizeof(APTR);
                }
             }
@@ -1023,7 +1135,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                ((APTR *)(buffer + j))[0] = end;
                ((APTR *)end)[0] = nullptr;
                arg_values[in]  = buffer + j;
-               arg_types[in++] = &ffi_type_pointer;
+               in++;
                j += sizeof(APTR);
             }
          }
@@ -1032,7 +1144,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             ((APTR *)(buffer + j))[0] = end;
             ((APTR *)end)[0] = nullptr;
             arg_values[in]  = buffer + j;
-            arg_types[in++] = &ffi_type_pointer;
+            in++;
             j += sizeof(APTR);
          }
          else if (argtype & FD_INT) { // FD_RESULT
@@ -1040,7 +1152,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             ((APTR *)(buffer + j))[0] = end;
             ((int *)end)[0] = 0;
             arg_values[in]  = buffer + j;
-            arg_types[in++] = &ffi_type_pointer;
+            in++;
             j += sizeof(APTR);
          }
          else if (argtype & (FD_DOUBLE|FD_INT64)) { // FD_RESULT
@@ -1048,7 +1160,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             ((APTR *)(buffer + j))[0] = end;
             ((int64_t *)end)[0] = 0;
             arg_values[in]  = buffer + j;
-            arg_types[in++] = &ffi_type_pointer;
+            in++;
             j += sizeof(APTR);
          }
          else {
@@ -1092,7 +1204,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          }
 
          arg_values[in]  = buffer + j;
-         arg_types[in++] = &ffi_type_pointer;
+         in++;
          j += sizeof(FUNCTION *);
       }
       else if (argtype & FD_STR) {
@@ -1146,7 +1258,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          }
 
          arg_values[in] = buffer + j;
-         arg_types[in++] = &ffi_type_pointer;
+         in++;
          j += type_size;
       }
       else if ((argtype & FDF_VECTOR) IS FDF_VECTOR) {
@@ -1165,7 +1277,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
             ((CSTRING *)(buffer + j))[0] = (argtype & FD_MUTABLE) ? strdatawr(string) : strdata(string);
             arg_values[in] = buffer + j;
-            arg_types[in++] = &ffi_type_pointer;
+            in++;
             j += sizeof(CSTRING);
          }
          else if (auto native_struct = lua_isstruct(Lua, i) ? lua_tostruct(Lua, i) : nullptr) {
@@ -1176,7 +1288,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             }
             ((APTR *)(buffer + j))[0] = native_struct->data;
             arg_values[in] = buffer + j;
-            arg_types[in++] = &ffi_type_pointer;
+            in++;
             j += sizeof(APTR);
 
             log.trace("Struct address %p inserted to arg offset %d", native_struct->data, j);
@@ -1200,7 +1312,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             }
 
             arg_values[in] = buffer + j;
-            arg_types[in++] = &ffi_type_pointer;
+            in++;
             j += sizeof(APTR);
          }
          else if (arg_type IS LUA_TARRAY) {
@@ -1208,7 +1320,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
             ((APTR *)(buffer + j))[0] = array->arraydata();
             arg_values[in] = buffer + j;
-            arg_types[in++] = &ffi_type_pointer;
+            in++;
             j += sizeof(APTR);
          }
          else if (arg_type IS LUA_TTABLE) {
@@ -1223,7 +1335,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
                   else allocated_structs.emplace_back(std::move(struct_data), nullptr, Lua);
                   ((APTR *)(buffer + j))[0] = struct_address;
                   arg_values[in] = buffer + j;
-                  arg_types[in++] = &ffi_type_pointer;
+                  in++;
                   j += sizeof(APTR);
                }
                else {
@@ -1239,7 +1351,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          else {
             ((APTR *)(buffer + j))[0] = lua_touserdata(Lua, i); //lua_topointer?
             arg_values[in] = buffer + j;
-            arg_types[in++] = &ffi_type_pointer;
+            in++;
             j += sizeof(APTR);
          }
       }
@@ -1253,19 +1365,19 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          else if (argtype & FD_UNSIGNED) ((uint32_t *)(buffer + j))[0] = lua_tointeger(Lua, i);
          else ((int *)(buffer + j))[0] = lua_tointeger(Lua, i);
          arg_values[in] = buffer + j;
-         arg_types[in++] = &ffi_type_sint32;
+         in++;
          j += sizeof(int);
       }
       else if (argtype & FD_DOUBLE) {
          ((double *)(buffer + j))[0] = lua_tonumber(Lua, i);
          arg_values[in] = buffer + j;
-         arg_types[in++] = &ffi_type_double;
+         in++;
          j += sizeof(double);
       }
       else if (argtype & FD_INT64) {
          ((int64_t *)(buffer + j))[0] = lua_tointeger(Lua, i);
          arg_values[in] = buffer + j;
-         arg_types[in++] = &ffi_type_sint64;
+         in++;
          j += sizeof(int64_t);
       }
       else if (argtype & (FD_TAGS|FD_VARTAGS)) {
@@ -1273,37 +1385,26 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
          return ERR::NoSupport;
       }
       else {
-         ErrorMsg = std::format("{}() unsupported arg '{}', flags ${:08x}.", mod->Functions[index].Name, args[i].Name, argtype);
+         ErrorMsg = std::format("{}() unsupported arg '{}', flags ${:08x}.", callable->Name, args[i].Name, argtype);
          return ERR::NoSupport;
       }
    }
 
-   // Call the function.  Determine return type and prepare FFI call interface once.
+   // Call the function.  The call interface and return type were prepared when the module was resolved, so the hot
+   // path only has to verify that the marshaller produced the argument count the interface was built for.
 
    int restype = args->Type;
-   int result = 1;
-   int total_args = i - 1;
+   int result = (callable->Cif.rtype IS &ffi_type_void) ? 0 : 1;
 
-   // Determine the correct FFI return type
-
-   ffi_type *return_type;
-   if (restype & FD_STR) return_type = &ffi_type_pointer;
-   else if (restype & FD_OBJECT) return_type = &ffi_type_pointer;
-   else if (restype & FD_PTR) return_type = &ffi_type_pointer;
-   else if (restype & (FD_INT|FD_ERROR)) {
-      if (restype & FD_UNSIGNED) return_type = &ffi_type_uint32;
-      else return_type = &ffi_type_sint32;
-   }
-   else if (restype & FD_DOUBLE) return_type = &ffi_type_double;
-   else if (restype & FD_INT64) return_type = &ffi_type_sint64;
-   else { // Void
-      return_type = &ffi_type_void;
-      result = 0;
+   if (in != int(callable->Cif.nargs)) {
+      ErrorMsg = std::format("Function '{}' marshalled {} args but its call interface expects {}.",
+         callable->Name, in, callable->Cif.nargs);
+      return ERR::Mismatch;
    }
 
-   if (ffi_prep_cif(&cif, FFI_DEFAULT_ABI, total_args, return_type, arg_types) IS FFI_OK) {
+   {
       func_guard.OwnsReference = false;
-      ffi_call(&cif, (void (*)())function, &rc, arg_values);
+      ffi_call(&callable->Cif, (void (*)())function, &rc, arg_values);
       copy_mutable_cpp_strings();
       if (not ErrorMsg.empty()) return ERR::BufferOverflow;
 
@@ -1355,8 +1456,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             if ((restype & FD_ERROR) and (rc.Arg >= int(ERR::ExceptionThreshold)) and in_try_immediate_scope(Lua)) {
                // Scope isolation: Only throw exceptions for direct calls within the try block.
                auto error = ERR(rc.Arg);
-               ErrorMsg = std::format("{}() failed: {}", mod->Functions[index].Name ? mod->Functions[index].Name : "Function",
-                  GetErrorMsg(error));
+               ErrorMsg = std::format("{}() failed: {}", callable->Name, GetErrorMsg(error));
                return error;
             }
          }
@@ -1369,7 +1469,6 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       }
       // Void functions don't push anything to the stack
    }
-   else lua_pushnil(Lua);
 
    Results = process_results(tiri, buffer, args) + result;
    return ERR::Okay;
@@ -1509,38 +1608,15 @@ void register_module_class(lua_State *Lua)
    kt::Log log;
 
    static const struct luaL_Reg modlib_functions[] = {
-      { "load", module_load },
+      { "\x1f" "dependency", module_dependency },
       { "test", module_test },
       { nullptr, nullptr}
    };
 
-   static const struct luaL_Reg modlib_methods[] = {
-      { "__index",    module_index },
-      { "__tostring", module_tostring },
-      { "__gc",       module_destruct },
-      { nullptr, nullptr }
-   };
-
-   log.trace("Registering module interface.");
-
-   int stack_top = lua_gettop(Lua);
-
-   luaL_newmetatable(Lua, "Tiri.mod");
-   lua_pushstring(Lua, "Tiri.mod");
-   lua_setfield(Lua, -2, "__name");
-   lua_pushstring(Lua, "__index");
-   lua_pushvalue(Lua, -2);  // pushes the metatable
-   lua_settable(Lua, -3);   // metatable.__index = metatable
-
-   luaL_openlib(Lua, nullptr, modlib_methods, 0);
    luaL_openlib(Lua, "mod", modlib_functions, 0);
-
-   lua_pop(Lua, 2); // Drop the Tiri.mod metatable and the mod library table
-
-   int stack_delta = lua_gettop(Lua) - stack_top;
-   if (stack_delta) log.warning("Module registration left %d value(s) on the Lua stack.", stack_delta);
+   lua_pop(Lua, 1); // Drop the mod library table
 
    // Register mod interface prototypes for compile-time type inference
-   reg_iface_prototype("mod", "load", { TiriType::Userdata }, { TiriType::Str });
-   reg_iface_prototype("mod", "test", { TiriType::Num, TiriType::Num }, { TiriType::Any, TiriType::Str });
+   reg_iface_prototype("mod", "\x1f" "dependency", { TiriType::Table }, { TiriType::Str });
+   reg_iface_prototype("mod", "test", { TiriType::Num, TiriType::Num }, { TiriType::Str, TiriType::Str });
 }

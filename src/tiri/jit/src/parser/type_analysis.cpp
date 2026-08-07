@@ -1763,7 +1763,7 @@ void TypeAnalyser::analyse_local_decl(const LocalDeclStmtPayload &Payload)
 // Checks if a global variable name follows Tiri naming conventions:
 // - glX... - Starts with 'gl' followed by uppercase letter (e.g., glMyGlobal, glConfig)
 // - ALL_CAPS - Full uppercase with underscores for constants (e.g., MY_FLAG, ERR_OKAY)
-// - mX... - Starts with 'm' for modules from mod.load() (e.g., mSys, mDisplay)
+// - mX... - Starts with 'm' for module namespaces (e.g., mSys, mDisplay)
 //
 // These conventions help distinguish globals from locals and make code more readable.
 

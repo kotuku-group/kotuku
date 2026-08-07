@@ -1,0 +1,90 @@
+global glModuleNamespaceLspUri = nil
+extern lspInitDocs, lspPathToUri, markLineIndex, moduleDeclarationsForDocument, modulePrefixesForDocument,
+   resolveModuleCompletion, resolveModuleRename, registerCoreHandlers
+
+@BeforeAll function SetupModuleNamespaceLspTests(State)
+   local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
+   assert(err is ERR_Okay, 'Failed to resolve SDK path for module namespace LSP tests.')
+   mSys.SetVolume('sdk', sdk_path)
+
+   loadFile('sdk:tools/tiri_lsp/include/lsp_lib.tiri')
+   assert(lspInitDocs('sdk:docs/xml/'), 'Failed to initialise LSP documentation cache.')
+   glModuleNamespaceLspUri = lspPathToUri('sdk:tools/tiri_lsp/tests/test_module_namespaces.tiri')
+end
+
+function makeDoc(Content:str):table
+   return {
+      uri = glModuleNamespaceLspUri,
+      languageId = 'tiri',
+      version = 1,
+      content = Content,
+      lineIndex = nil
+   }
+end
+
+function findCompletion(Items:array<table>, Name:str):table
+   for item in values(Items) do
+      if item.label is Name then return item end
+   end
+end
+
+@Test function CompletesDeclaredModuleMembers()
+   local doc = makeDoc("module core as runtimeCore\nruntimeCore.Res")
+   local items = resolveModuleCompletion(doc, { line=1, character=15 })
+   local resolve_path = findCompletion(items, 'ResolvePath')
+
+   assert(resolve_path, 'Declared module completion should include matching generated functions.')
+   assert(resolve_path.kind is 3, 'Module functions should use the LSP function completion kind.')
+end
+
+@Test function DoesNotCompleteUnknownNamespaces()
+   local doc = makeDoc('ordinary.Res')
+   assert(#resolveModuleCompletion(doc, { line=0, character=12 }) is 0,
+      'Ordinary values should not receive module completions.')
+end
+
+@Test function RenamesOnlyCompilationUnitNamespaceReferences()
+   local doc = makeDoc([[
+module core as runtimeCore
+runtimeCore.PreciseTime()
+local text = 'runtimeCore'
+-- runtimeCore
+]])
+   local edit = resolveModuleRename(doc, { line=0, character=17 }, 'mClock')
+   local edits = edit?.changes?[doc.uri]
+
+   assert(edits and #edits is 2, 'Rename should edit only the declaration and code reference.')
+   assert(edits[0].newText is 'mClock' and edits[1].newText is 'mClock',
+      'Every namespace edit should use the requested name.')
+end
+
+@Test function RenameRejectsLegacyAndInvalidNames()
+   local legacy_doc = makeDoc('mSys.PreciseTime()')
+   assert(not resolveModuleRename(legacy_doc, { line=0, character=1 }, 'mClock'),
+      'Legacy fixed prefixes should not be renamed as declarations.')
+
+   local declared_doc = makeDoc("module core as runtimeCore\nruntimeCore.PreciseTime()")
+   assert(not resolveModuleRename(declared_doc, { line=0, character=17 }, 'not-valid'),
+      'Rename should reject invalid identifier names.')
+end
+
+@Test function ModuleNamespaceMetadataCacheInvalidatesWithDocument()
+   local doc = makeDoc("module core as mFirst\nmFirst.PreciseTime()")
+   assert(moduleDeclarationsForDocument(doc).mFirst is 'core', 'Initial namespace declaration should be cached.')
+   assert(modulePrefixesForDocument(doc).mFirst is 'core', 'Initial namespace prefix should be cached.')
+
+   doc.content = "module core as mSecond\nmSecond.PreciseTime()"
+   markLineIndex(doc, 0)
+
+   assert(not moduleDeclarationsForDocument(doc).mFirst, 'Invalidation should discard stale namespace declarations.')
+   assert(modulePrefixesForDocument(doc).mSecond is 'core', 'Invalidation should expose the replacement namespace.')
+end
+
+@Test function HandlerAdvertisesCompletionAndRename()
+   local server = { _handlers={}, verbose=false, logMessage=function(Message) end }
+   registerCoreHandlers(server)
+   local init = server._handlers['initialize']({ jsonrpc='2.0', id=1, params={} }, {})
+
+   assert(init.result.capabilities.completionProvider, 'Server should advertise module completion.')
+   assert(init.result.capabilities.renameProvider is true, 'Server should advertise namespace rename.')
+end
