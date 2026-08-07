@@ -366,6 +366,122 @@ const AstBuilder::ModuleNamespaceSymbol *AstBuilder::find_module_namespace(GCstr
 }
 
 //********************************************************************************************************************
+// Test whether a name is reserved by a module namespace, without materialising an implicit dependency for it.
+//
+// Declaration sites use this to reject rebinding, which must apply to an implicit namespace whether or not the
+// compilation unit has referenced it yet.  Creating the dependency here would make a unit that merely shadows the
+// name load Core and emit an activation statement.
+
+bool AstBuilder::is_module_namespace_name(GCstr *Name) const
+{
+   if (not Name) return false;
+   if (this->find_module_namespace(Name)) return true;
+   return std::string_view(strdata(Name), Name->len) IS std::string_view("mSys");
+}
+
+//********************************************************************************************************************
+// Build the generated local declaration that activates one module dependency.
+//
+// The statement is created as soon as the dependency is recorded so that it occupies a well-defined position in the
+// statement list, but its binding names and function arguments are unknown until the compilation unit has been
+// parsed.  A placeholder sentinel name keeps the declaration well-formed in the interim;
+// finalise_module_dependencies() replaces it with the complete ordered binding list.
+
+StmtNodePtr AstBuilder::make_dependency_initialiser(ModuleDependency &Dependency, const SourceSpan &Span)
+{
+   NameRef mod_reference;
+   mod_reference.identifier = Identifier::from_keepstr(this->ctx.lex().keepstr("mod"), Span);
+   ExprNodePtr mod_expr = make_identifier_expr(Span, mod_reference);
+   Identifier load_identifier = Identifier::from_keepstr(
+      this->ctx.lex().keepstr(std::string_view("\x1f" "dependency", 11)), Span);
+   ExprNodePtr load_expr = make_member_expr(Span, std::move(mod_expr), load_identifier, false);
+
+   ExprNodeList arguments;
+   arguments.push_back(make_literal_expr(Span,
+      LiteralValue::string(this->ctx.lex().keepstr(Dependency.canonical_module))));
+   ExprNodeList values;
+   values.push_back(make_call_expr(Span, std::move(load_expr), std::move(arguments), false));
+
+   std::vector<Identifier> names;
+   names.push_back(Identifier::from_keepstr(Dependency.sentinel_name, Span));
+
+   StmtNodePtr initialiser = make_local_decl_stmt(Span, std::move(names), std::move(values));
+   Dependency.initialiser = initialiser.get();
+   return initialiser;
+}
+
+//********************************************************************************************************************
+// Resolve an identifier to a module namespace, creating an implicit dependency on first use where one is defined.
+//
+// 'mSys' is a compiler-managed namespace for Core rather than a script value, so it behaves as though every
+// compilation unit begins with `module core as mSys`.  The dependency is created lazily so that a unit which never
+// mentions mSys neither resolves Core nor emits an activation statement.  Its initialiser is prepended to the unit's
+// statement list by prepend_implicit_dependencies(), which guarantees that it dominates every reference.
+//
+// An explicit `module core as mSys` declaration is parsed before any expression can reference the namespace, so it
+// simply wins the race and no implicit record is created.
+
+const AstBuilder::ModuleNamespaceSymbol * AstBuilder::resolve_module_namespace(GCstr *Name)
+{
+   if (auto existing = this->find_module_namespace(Name)) return existing;
+   if (not Name) return nullptr;
+
+   std::string_view name_view(strdata(Name), Name->len);
+   if (name_view != "mSys") return nullptr;
+
+   // Core is a required dependency of every Tiri state, so a failure here is a host defect rather than a script
+   // error.  Fall through to ordinary identifier handling so that the resulting diagnostic names the real problem.
+
+   if (load_include(this->ctx.lua().script, "core") != ERR::Okay) return nullptr;
+
+   StaticModuleHandle signature = static_module_by_name("core");
+   std::string canonical_module = signature ? std::string(static_module_name(signature)) : std::string("core");
+
+   // An explicit declaration of core may already have created the dependency, in which case mSys becomes another
+   // alias of it.  Pooling matches parse_module_decl() so that one canonical module always has one initialiser and
+   // one set of hidden callable bindings.
+
+   size_t dependency_index = this->module_dependencies.size();
+   for (size_t index = 0; index < this->module_dependencies.size(); ++index) {
+      if (kt::iequals(this->module_dependencies[index]->canonical_module, canonical_module)) {
+         dependency_index = index;
+         break;
+      }
+   }
+
+   if (dependency_index IS this->module_dependencies.size()) {
+      auto record = std::make_unique<ModuleDependency>();
+      record->canonical_module = canonical_module;
+      record->module           = signature;
+      record->sentinel_name    = this->ctx.lex().keepstr(std::string("\x1fmodule:") + canonical_module);
+      record->implicit         = true;
+      this->module_dependencies.push_back(std::move(record));
+   }
+
+   ModuleNamespaceSymbol symbol;
+   symbol.source_name      = Name;
+   symbol.module           = signature;
+   symbol.canonical_module = std::move(canonical_module);
+   symbol.dependency       = dependency_index;
+   return &this->module_namespaces.emplace(Name, std::move(symbol)).first->second;
+}
+
+//********************************************************************************************************************
+// Insert the activation statements of implicitly created dependencies at the head of the compilation unit.
+//
+// Explicit declarations already occupy their source position.  An implicit dependency has no source position, so its
+// initialiser is placed first, where it dominates every reference in the unit.
+
+void AstBuilder::prepend_implicit_dependencies(BlockStmt &Block)
+{
+   for (auto &dependency : this->module_dependencies) {
+      if (not dependency->implicit or dependency->initialiser) continue;
+      Block.statements.insert(Block.statements.begin(),
+         this->make_dependency_initialiser(*dependency, Block.span));
+   }
+}
+
+//********************************************************************************************************************
 // Record a reference to a canonical module function and return the hidden local that will hold its callable.  The
 // first reference assigns the binding; later references, including those made through an alias of the same module,
 // reuse it so that exactly one closure is created per unique function.
@@ -565,7 +681,10 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_chunk()
 {
    const TokenKind terminators[] = { TokenKind::EndOfFile };
    auto chunk = this->parse_block(terminators);
-   if (chunk.ok()) this->finalise_module_dependencies();
+   if (chunk.ok()) {
+      this->prepend_implicit_dependencies(*chunk.value_ref());
+      this->finalise_module_dependencies();
+   }
    return chunk;
 }
 

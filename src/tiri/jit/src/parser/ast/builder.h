@@ -66,6 +66,7 @@ private:
       GCstr *sentinel_name = nullptr;                 // Hidden local used when no function is referenced
       StmtNode *initialiser = nullptr;                // The generated local declaration, finalised after parsing
       SourceSpan declaration_span{};
+      bool implicit = false;                          // Created on demand by an implicit namespace such as mSys
    };
 
    struct ModuleNamespaceSymbol {
@@ -216,9 +217,13 @@ private:
    [[nodiscard]] bool is_choose_relational_pattern(size_t) const;
    [[nodiscard]] bool is_extended_ternary_ahead() const;
    [[nodiscard]] const ModuleNamespaceSymbol *find_module_namespace(GCstr *) const;
+   [[nodiscard]] const ModuleNamespaceSymbol *resolve_module_namespace(GCstr *);
+   [[nodiscard]] bool is_module_namespace_name(GCstr *) const;
    [[nodiscard]] bool module_is_available(std::string_view);
    [[nodiscard]] GCstr *module_function_binding(ModuleDependency &, GCstr *CanonicalFunction);
+   [[nodiscard]] StmtNodePtr make_dependency_initialiser(ModuleDependency &, const SourceSpan &);
    void finalise_module_dependencies();
+   void prepend_implicit_dependencies(BlockStmt &);
    void append_pending_statements(StmtNodeList &);
 
    // Helper to emit an error and return a failure result in one step.

@@ -4314,15 +4314,98 @@ static bool test_module_namespace_declarations(kt::Log &Log)
       return false;
    }
 
+   // 'mSys' is an implicit namespace for core.  Its dependency is created on first use and its initialiser is
+   // prepended to the compilation unit, so it dominates every reference without occupying a source position.
+
+   auto implicit = build_ast_from_source(
+      "local started = mSys.PreciseTime()\n"
+      "local message = mSys.getErrorMsg(0)\n"
+      "local clock <const> = mSys.PreciseTime\n");
+   if (not implicit.chunk.ok() or not implicit.diagnostics.empty()) {
+      Log.error("an implicit mSys reference failed to parse");
+      log_diagnostics(implicit.diagnostics, Log);
+      return false;
+   }
+   if (implicit.chunk.value_ref()->statements.front()->kind != AstNodeKind::LocalDeclStmt) {
+      Log.error("the implicit mSys dependency was not prepended to the compilation unit");
+      return false;
+   }
+   const auto &implicit_dependency = std::get<LocalDeclStmtPayload>(
+      implicit.chunk.value_ref()->statements.front()->data);
+   if (implicit_dependency.names.size() != 2) {
+      Log.error("implicit mSys materialised %zu bindings rather than 2", implicit_dependency.names.size());
+      return false;
+   }
+   const auto &implicit_binder = std::get<CallExprPayload>(implicit_dependency.values[0]->data);
+   if (implicit_binder.arguments.size() != 3) {
+      Log.error("implicit mSys requested %zu binder arguments rather than 3", implicit_binder.arguments.size());
+      return false;
+   }
+
+   // A unit that never mentions mSys must not resolve core or emit an activation statement.
+
+   auto unreferenced = build_ast_from_source("local value = 1\n");
+   if (not unreferenced.chunk.ok() or unreferenced.chunk.value_ref()->statements.size() != 1) {
+      Log.error("a unit that does not use mSys emitted an implicit dependency");
+      log_diagnostics(unreferenced.diagnostics, Log);
+      return false;
+   }
+
+   // An explicit declaration of the same namespace shares the implicit dependency in either statement order.
+
+   for (std::string_view source : {
+         std::string_view("module core as mSys\nlocal value = mSys.PreciseTime()\n"),
+         std::string_view("local first = mSys.PreciseTime()\nmodule core as mSys\nlocal second = mSys.GetErrorMsg(0)\n"),
+         std::string_view("module core as mCoreTwin\nlocal a = mSys.PreciseTime()\nlocal b = mCoreTwin.PreciseTime()\n") }) {
+      auto redundant = build_ast_from_source(source);
+      if (not redundant.chunk.ok() or not redundant.diagnostics.empty()) {
+         Log.error("an explicit core declaration alongside implicit mSys failed to parse");
+         log_diagnostics(redundant.diagnostics, Log);
+         return false;
+      }
+      // A dependency initialiser is the only local declaration whose value calls the binder, so it is identified by
+      // that call target rather than by shape alone.
+
+      size_t dependencies = 0;
+      for (const auto &statement : redundant.chunk.value_ref()->statements) {
+         if (statement->kind != AstNodeKind::LocalDeclStmt) continue;
+         const auto &decl = std::get<LocalDeclStmtPayload>(statement->data);
+         if (decl.values.size() != 1 or decl.values[0]->kind != AstNodeKind::CallExpr) continue;
+         const auto &call = std::get<CallExprPayload>(decl.values[0]->data);
+         const auto *direct = std::get_if<DirectCallTarget>(&call.target);
+         if (not direct or not direct->callable or direct->callable->kind != AstNodeKind::MemberExpr) continue;
+         const auto &target = std::get<MemberExprPayload>(direct->callable->data);
+         if (not target.member.symbol) continue;
+         if (std::string_view(strdata(target.member.symbol), target.member.symbol->len) IS
+             std::string_view("\x1f" "dependency", 11)) dependencies++;
+      }
+      if (dependencies != 1) {
+         Log.error("explicit and implicit core namespaces produced %zu dependencies rather than 1", dependencies);
+         return false;
+      }
+   }
+
    struct InvalidCase { std::string_view source; std::string_view diagnostic; };
-   constexpr std::array<InvalidCase, 7> invalid = { {
+   constexpr std::array<InvalidCase, 15> invalid = { {
       { "module 'core' as mCore\n", "Module name must be an identifier" },
       { "module core mCore\n", "Expected 'as'" },
       { "do module core as mCore end\n", "compilation-unit level" },
       { "module core as mCore\nlocal value = mCore\n", "can only select" },
       { "module core as mCore\nmCore['PreciseTime']()\n", "can only select" },
       { "module core as mCore\nmCore.PreciseTime = 1\n", "members cannot be assigned" },
-      { "module core as mCore\nlocal mCore = 1\n", "cannot be declared as a variable" }
+      { "module core as mCore\nlocal mCore = 1\n", "cannot be declared as a variable" },
+
+      // The implicit mSys namespace is subject to every restriction that applies to a declared namespace, whether or
+      // not the compilation unit has already referenced it.
+
+      { "local value = mSys\n", "can only select" },
+      { "print(mSys)\n", "can only select" },
+      { "mSys['PreciseTime']()\n", "can only select" },
+      { "local value = mSys?.PreciseTime()\n", "can only select" },
+      { "local mSys = 1\n", "cannot be declared as a variable" },
+      { "local function accept(mSys) end\n", "cannot be declared as a function parameter" },
+      { "module display as mSys\n", "reserved for the core module" },
+      { "local value = mSys.NotARealCoreFunction()\n", "Unknown function" }
    } };
    for (const auto &entry : invalid) {
       auto result = build_ast_from_source(entry.source);

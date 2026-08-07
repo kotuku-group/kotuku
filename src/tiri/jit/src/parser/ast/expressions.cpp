@@ -459,7 +459,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
       }
 
       case TokenKind::Identifier: {
-         if (const ModuleNamespaceSymbol *module_symbol = this->find_module_namespace(current.identifier())) {
+         if (const ModuleNamespaceSymbol *module_symbol = this->resolve_module_namespace(current.identifier())) {
             this->ctx.tokens().advance();
             Token suffix = this->ctx.tokens().current();
             if (suffix.kind() != TokenKind::Dot) {

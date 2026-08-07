@@ -646,7 +646,6 @@ private:
    {
       const ExprNode *receiver = nullptr;
       GCstr *member = nullptr;
-      bool direct_member = false;
 
       if (const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
           direct and direct->callable) {
@@ -668,13 +667,11 @@ private:
             const auto &payload = std::get<MemberExprPayload>(direct->callable->data);
             receiver = payload.table.get();
             member = payload.member.symbol;
-            direct_member = true;
          }
          else if (direct->callable->kind IS AstNodeKind::SafeMemberExpr) {
             const auto &payload = std::get<SafeMemberExprPayload>(direct->callable->data);
             receiver = payload.table.get();
             member = payload.member.symbol;
-            direct_member = true;
          }
       }
       else if (const auto *method = std::get_if<MethodCallTarget>(&Call.target)) {
@@ -754,12 +751,7 @@ private:
          return 0;
       }
 
-      if (not direct_member or base.primary != TiriType::Userdata or not base.proved() or not base.module) return 0;
-      const FunctionField *fields = static_module_function(
-         base.module, std::string_view(strdata(member), member->len));
-      if (not fields) return 0;
-      return this->catalogue_.add_results(
-         describe_module_call_results(fields, &this->context_.lua()));
+      return 0;
    }
 
    void annotate_callables_expression(ExprNode &Expression)
@@ -795,19 +787,6 @@ private:
          if (entry->first IS Name) return this->catalogue_.value(entry->second);
       }
       return {};
-   }
-
-   [[nodiscard]] StaticValueDescriptor environment_global_value(GCstr *Name) const
-   {
-      StaticValueDescriptor result;
-      cTValue *global = this->protected_global_value(Name);
-      if (not global) return result;
-      StaticModuleHandle module = static_module_from_value(&this->context_.lua(), global);
-      if (not module) return result;
-      result.primary = TiriType::Userdata;
-      result.module = module;
-      result.proof = StaticProof::Trusted;
-      return result;
    }
 
    [[nodiscard]] StaticValueDescriptor literal_descriptor(const LiteralValue &Literal) const
@@ -1139,12 +1118,7 @@ private:
             const auto &reference = std::get<NameRef>(Expression.data);
             if (reference.binding_id) value = this->catalogue_.value(
                this->catalogue_.binding(reference.binding_id).value);
-            else {
-               value = this->global_value(reference.identifier.symbol);
-               if (value.primary IS TiriType::Unknown) {
-                  value = this->environment_global_value(reference.identifier.symbol);
-               }
-            }
+            else value = this->global_value(reference.identifier.symbol);
             break;
          }
          case AstNodeKind::TableExpr:

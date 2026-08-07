@@ -39,7 +39,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_local()
          Token function_token = local_token;  // Use local_token as span start
          auto name_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
          if (not name_token.ok()) return ParserResult<StmtNodePtr>::failure(name_token.error_ref());
-         if (this->find_module_namespace(name_token.value_ref().identifier())) {
+         if (this->is_module_namespace_name(name_token.value_ref().identifier())) {
             return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token.value_ref(),
                "Module namespaces cannot be declared as functions");
          }
@@ -140,7 +140,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_global()
       Token function_token = global_token;
       auto name_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
       if (not name_token.ok()) return ParserResult<StmtNodePtr>::failure(name_token.error_ref());
-      if (this->find_module_namespace(name_token.value_ref().identifier())) {
+      if (this->is_module_namespace_name(name_token.value_ref().identifier())) {
          return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token.value_ref(),
             "Module namespaces cannot be declared as functions");
       }
@@ -856,7 +856,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_function_stmt()
    FunctionNamePath path;
    auto name_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
    if (not name_token.ok()) return ParserResult<StmtNodePtr>::failure(name_token.error_ref());
-   if (this->find_module_namespace(name_token.value_ref().identifier())) {
+   if (this->is_module_namespace_name(name_token.value_ref().identifier())) {
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token.value_ref(),
          "Module namespaces cannot be declared as functions or have members replaced");
    }
@@ -1445,6 +1445,15 @@ ParserResult<StmtNodePtr> AstBuilder::parse_module_decl()
             std::string_view(strdata(namespace_name), namespace_name->len), existing->canonical_module));
    }
 
+   // 'mSys' is the compiler-managed namespace for Core.  Redeclaring it against another module is rejected even when
+   // the unit has not yet referenced it, so the diagnostic does not depend on statement order.
+
+   if (this->is_module_namespace_name(namespace_name) and not kt::iequals(module_name, "core")) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, namespace_token,
+         std::format("Module namespace '{}' is reserved for the core module",
+            std::string_view(strdata(namespace_name), namespace_name->len)));
+   }
+
    if (auto error = load_include(this->ctx.lua().script, module_name); error != ERR::Okay) {
       return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token,
          std::format("Module '{}' is not available: {}. Guard optional dependencies with "
@@ -1496,29 +1505,8 @@ ParserResult<StmtNodePtr> AstBuilder::parse_module_decl()
    }
    #endif
 
-   // The initialiser is generated now so that it occupies the declaration's position in the statement list, but its
-   // binding names and function arguments are unknown until the compilation unit has been parsed.  A placeholder
-   // sentinel name keeps the declaration well-formed in the interim; finalise_module_dependencies() replaces it.
-
-   NameRef mod_reference;
-   mod_reference.identifier = Identifier::from_keepstr(this->ctx.lex().keepstr("mod"), module_token.span());
-   ExprNodePtr mod_expr = make_identifier_expr(module_token.span(), mod_reference);
-   Identifier load_identifier = Identifier::from_keepstr(
-      this->ctx.lex().keepstr(std::string_view("\x1f" "dependency", 11)), module_token.span());
-   ExprNodePtr load_expr = make_member_expr(module_token.span(), std::move(mod_expr), load_identifier, false);
-
-   ExprNodeList arguments;
-   GCstr *module_string = this->ctx.lex().keepstr(canonical_module);
-   arguments.push_back(make_literal_expr(name_token.span(), LiteralValue::string(module_string)));
-   ExprNodeList values;
-   values.push_back(make_call_expr(module_token.span(), std::move(load_expr), std::move(arguments), false));
-
-   std::vector<Identifier> names;
-   names.push_back(Identifier::from_keepstr(dependency->sentinel_name, module_token.span()));
-
-   StmtNodePtr initialiser = make_local_decl_stmt(module_token.span(), std::move(names), std::move(values));
-   dependency->initialiser = initialiser.get();
-   return ParserResult<StmtNodePtr>::success(std::move(initialiser));
+   return ParserResult<StmtNodePtr>::success(
+      this->make_dependency_initialiser(*dependency, module_token.span()));
 }
 
 //********************************************************************************************************************
@@ -1924,7 +1912,10 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(std::st
    // The imported file is its own compilation unit for module namespace purposes, so its dependency initialisers are
    // completed here rather than by the parent's parse_chunk().
 
-   if (result.ok()) import_builder.finalise_module_dependencies();
+   if (result.ok()) {
+      import_builder.prepend_implicit_dependencies(*result.value_ref());
+      import_builder.finalise_module_dependencies();
+   }
 
    fs.ls = saved_ls; // Restore the parent FuncState's lexer reference
    // import_guard destructor handles cleanup

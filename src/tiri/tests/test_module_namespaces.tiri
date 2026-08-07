@@ -146,11 +146,61 @@ end
 @Test function NamespaceIsNotAGlobalValue()
    assert(rawget(_G, 'mCore') is nil, 'A declared module namespace must not be stored in _G')
    assert(rawget(_G, 'mCoreAlias') is nil, 'A module alias must not be stored in _G')
+   assert(rawget(_G, 'mSys') is nil, 'The implicit mSys namespace must not be stored in _G')
+end
+
+-- 'mSys' behaves as though every compilation unit begins with `module core as mSys`.  The dependency is created on
+-- first use, so a unit that never mentions mSys neither resolves Core nor emits an activation statement.
+
+@Test function ImplicitSysNamespaceResolvesCore()
+   assert(mSys.PreciseTime() > 0, 'An implicit mSys call should execute')
+   assert(mSys.preciseTime() > 0, 'An implicit mSys call should resolve case-insensitively')
+
+   local clock <const> = mSys.PreciseTime
+   assert(clock() > 0, 'An extracted implicit mSys callable should execute')
+
+   assert_valid([[
+      local value = mSys.PreciseTime()
+   ]], 'implicit mSys reference')
+
+   -- An explicit declaration of the same namespace is redundant rather than a conflict, in either statement order.
 
    assert_valid([[
       module core as mSys
       local value = mSys.PreciseTime()
-   ]], 'declared mSys shadow')
+   ]], 'explicit mSys declaration')
+
+   assert_valid([[
+      local first = mSys.PreciseTime()
+      module core as mSys
+      local second = mSys.PreciseTime()
+   ]], 'explicit mSys declaration after an implicit reference')
+
+   -- An alias of Core shares the implicit namespace's dependency and hidden callable bindings.
+
+   assert_valid([[
+      module core as mCoreTwin
+      local implicit = mSys.PreciseTime()
+      local aliased = mCoreTwin.PreciseTime()
+   ]], 'implicit and explicit Core aliases')
+end
+
+-- mSys is compiler metadata, so every first-class use is rejected exactly as a declared namespace would be.
+
+@Test function ImplicitSysIsNotAFirstClassValue()
+   assert_invalid([[ print(mSys) ]], 'can only select a named module function', 'bare mSys')
+   assert_invalid([[ local alias = mSys ]], 'can only select a named module function', 'assigned mSys')
+   assert_invalid([[ local value = mSys?.PreciseTime() ]],
+      'can only select a named module function', 'safe navigation on mSys')
+   assert_invalid([[ local value = mSys['PreciseTime']() ]],
+      'can only select a named module function', 'indexed mSys')
+   assert_invalid([[ local mSys = 1 ]], 'cannot be declared as a variable', 'mSys as a local')
+   assert_invalid([[ function mSys() end ]], 'cannot be declared as', 'mSys as a function')
+   assert_invalid([[ local function accept(mSys) end ]],
+      'cannot be declared as a function parameter', 'mSys as a parameter')
+   assert_invalid([[ module display as mSys ]], 'reserved for the core module', 'mSys bound to another module')
+   assert_invalid([[ local value = mSys.NotARealCoreFunction() ]],
+      'Unknown function', 'unknown implicit mSys function')
 end
 
 @Test function ImportedNamespaceIsPrivate()

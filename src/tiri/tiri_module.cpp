@@ -84,10 +84,6 @@ struct module {
    }
 };
 
-struct module_ref {
-   module *Binding = nullptr;
-};
-
 static std::mutex glModuleMutex;
 static std::vector<std::unique_ptr<module>> glModules;
 
@@ -191,21 +187,6 @@ static std::unique_ptr<const static_module_signature> make_module_signature(
    }
 
    return signature;
-}
-
-StaticModuleHandle static_module_from_value(lua_State *Lua, cTValue *Value) noexcept
-{
-   if (not Lua or not Value or not tvisudata(Value)) return nullptr;
-   GCudata *userdata = udataV(Value);
-   if (userdata->len != sizeof(module_ref)) return nullptr;
-
-   cTValue *registered = lj_tab_getstr(
-      tabV(registry(Lua)), lj_str_newlit(Lua, "Tiri.mod"));
-   if (not registered or not tvistab(registered) or
-       tabref(userdata->metatable) != tabV(registered)) return nullptr;
-
-   auto *reference = (module_ref *)uddata(userdata);
-   return reference->Binding ? reference->Binding->Signature.get() : nullptr;
 }
 
 StaticModuleHandle static_module_by_name(std::string_view Name) noexcept
@@ -709,35 +690,6 @@ static ERR ensure_module_defs(extTiri *Script, module *Module)
 }
 
 //********************************************************************************************************************
-// Push a lightweight reference to a process-wide module binding.
-
-static void push_module_ref(lua_State *Lua, module *Binding)
-{
-   auto reference = (module_ref *)lua_newuserdata(Lua, sizeof(module_ref));
-   reference->Binding = Binding;
-
-   luaL_getmetatable(Lua, "Tiri.mod");
-   lua_setmetatable(Lua, -2);
-   lua_newtable(Lua);
-   lua_setfenv(Lua, -2); // Private cache for canonical extracted-callable wrappers.
-}
-
-ERR new_module(lua_State *Lua, std::string_view Name)
-{
-   module *binding = nullptr;
-   if (auto error = resolve_module(Name, binding); error != ERR::Okay) return error;
-   if (auto error = ensure_module_defs(Lua->script, binding); error != ERR::Okay) return error;
-   push_module_ref(Lua, binding);
-   return ERR::Okay;
-}
-
-static module * module_from_userdata(lua_State *Lua, int Index)
-{
-   auto reference = (module_ref *)luaL_checkudata(Lua, Index, "Tiri.mod");
-   return reference ? reference->Binding : nullptr;
-}
-
-//********************************************************************************************************************
 // Usage: passed, total = mod.test(ModuleName, Options)
 // Resolves the named module and runs its unit tests, if any.
 
@@ -823,50 +775,6 @@ static int module_dependency(lua_State *Lua)
    }
 
    return requested;
-}
-
-//********************************************************************************************************************
-// Any Read accesses to the module object will pass through here.
-
-static int module_index(lua_State *Lua)
-{
-   if (auto mod = module_from_userdata(Lua, 1)) {
-      if (auto function = luaL_checkstring(Lua, 2)) {
-         if (mod->Functions) {
-            auto hash = strihash(function); // Case insensitive function calls
-            if (auto it = mod->FunctionMap.find(hash); it != mod->FunctionMap.end()) {
-               for (int index : it->second) {
-                  if (kt::iequals(mod->Functions[index].Name, function)) {
-                     CSTRING canonical_name = mod->Functions[index].Name;
-                     lua_getfenv(Lua, 1);
-                     lua_getfield(Lua, -1, canonical_name);
-                     if (not lua_isnil(Lua, -1)) {
-                        lua_remove(Lua, -2);
-                        return 1;
-                     }
-                     lua_pop(Lua, 1);
-
-                     // The closure retains the process-wide callable record, matching the namespace path.  The
-                     // userdata itself is not captured; the record outlives every Tiri state that can call it.
-                     lua_pushlightuserdata(Lua, mod->Callables[index].get());
-                     lua_pushcclosure(Lua, module_call, 1);
-                     lua_pushvalue(Lua, -1);
-                     lua_setfield(Lua, -3, canonical_name);
-                     lua_remove(Lua, -2);
-                     return 1;
-                  }
-               }
-            }
-
-            luaL_error(Lua, ERR::UnknownProperty, "Call to function %s() not recognised.", function);
-         }
-         else luaL_error(Lua, ERR::UnknownProperty, "No exported function list for this module.", function);
-      }
-      else luaL_argerror(Lua, 2, "Expected function string.");
-   }
-   else luaL_argerror(Lua, 1, "Expected module.");
-
-   return 0;
 }
 
 //********************************************************************************************************************
@@ -1720,29 +1628,8 @@ void register_module_class(lua_State *Lua)
       { nullptr, nullptr}
    };
 
-   static const struct luaL_Reg modlib_methods[] = {
-      { "__index",    module_index },
-      { nullptr, nullptr }
-   };
-
-   log.trace("Registering module interface.");
-
-   int stack_top = lua_gettop(Lua);
-
-   luaL_newmetatable(Lua, "Tiri.mod");
-   lua_pushstring(Lua, "Tiri.mod");
-   lua_setfield(Lua, -2, "__name");
-   lua_pushstring(Lua, "__index");
-   lua_pushvalue(Lua, -2);  // pushes the metatable
-   lua_settable(Lua, -3);   // metatable.__index = metatable
-
-   luaL_openlib(Lua, nullptr, modlib_methods, 0);
    luaL_openlib(Lua, "mod", modlib_functions, 0);
-
-   lua_pop(Lua, 2); // Drop the Tiri.mod metatable and the mod library table
-
-   int stack_delta = lua_gettop(Lua) - stack_top;
-   if (stack_delta) log.warning("Module registration left %d value(s) on the Lua stack.", stack_delta);
+   lua_pop(Lua, 1); // Drop the mod library table
 
    // Register mod interface prototypes for compile-time type inference
    reg_iface_prototype("mod", "\x1f" "dependency", { TiriType::Table }, { TiriType::Str });

@@ -592,16 +592,10 @@ static ERR TIRI_Query(extTiri *Self)
          lua_sethook(Self->Lua, hook_debug, LUA_MASKCALL|LUA_MASKRET|LUA_MASKLINE, 0);
       }
 
-      // Pre-load the Core module as the protected mSys compatibility interface.
+      // 'mSys' is a compiler-managed namespace for Core rather than a global value, so no module object is created
+      // here.  The compiler materialises Core's callables as hidden locals in any compilation unit that uses them.
 
-      if (new_module(Self->Lua, "core") IS ERR::Okay) {
-         lua_setglobal(Self->Lua, "mSys");
-         lua_protect_globals(Self->Lua);
-      }
-      else {
-         log.warning("Failed to create module object.");
-         return ERR::LoadModule;
-      }
+      lua_protect_globals(Self->Lua);
 
       // Determine chunk name for better debug output.
       // Prefix with '@' to indicate file-based chunk (Lua convention), otherwise use '=' for special sources.

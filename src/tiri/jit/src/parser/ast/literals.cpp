@@ -291,7 +291,7 @@ ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
       if (not token.ok()) return ParserResult<Identifier>::failure(token.error_ref());
 
       Identifier identifier = make_identifier(token.value_ref());
-      if (this->find_module_namespace(identifier.symbol)) {
+      if (this->is_module_namespace_name(identifier.symbol)) {
          return this->fail<Identifier>(ParserErrorCode::UnexpectedToken, token.value_ref(),
             std::format("Module namespace '{}' cannot be declared as a variable",
                std::string_view(strdata(identifier.symbol), identifier.symbol->len)));
@@ -407,7 +407,7 @@ ParserResult<AstBuilder::ParameterListResult> AstBuilder::parse_parameter_list(b
 
          FunctionParameter param;
          param.name = make_identifier(name.value_ref());
-         if (this->find_module_namespace(param.name.symbol)) {
+         if (this->is_module_namespace_name(param.name.symbol)) {
             return this->fail<ParameterListResult>(ParserErrorCode::UnexpectedToken, name.value_ref(),
                std::format("Module namespace '{}' cannot be declared as a function parameter",
                   std::string_view(strdata(param.name.symbol), param.name.symbol->len)));
