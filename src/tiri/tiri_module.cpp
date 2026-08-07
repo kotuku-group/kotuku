@@ -51,24 +51,23 @@ struct module;
 // Tiri states can share one record without synchronisation.
 
 struct module_callable {
-   module *Owner = nullptr;
    CSTRING Name = nullptr;               // Canonical name, owned by the module's Function list
-   APTR Address = nullptr;               // Native function address
+   APTR Address = nullptr;               // Native function address; leave as null if function wasn't processed
    const FunctionField *Fields = nullptr; // Argument metadata, owned by the module's Function list
-   int Index = -1;                       // Position in the module's Function list
 
    ffi_cif Cif = { };
    ffi_type *ArgTypes[MAX_MODULE_ARGS] = { };
    ffi_type *ReturnType = nullptr;
-   int TotalArgs = 0;
 
-   // Preparation may fail for signatures libffi cannot describe, or that the bridge does not support.  The failure is
-   // recorded rather than raised so that it can be reported consistently at call time; an unreferenced function with a
-   // bad signature must not prevent its module from loading.
-   ERR Status = ERR::Okay;
-   std::string StatusMessage;
+   uint8_t TotalArgs = 0;
 
-   bool Trivial = false;                 // No argument list at all; callable directly without libffi
+   inline bool trivial() { return Fields IS nullptr; }
+
+   inline bool valid() { // Returns false if the function couldn't be processed
+      return Address != nullptr;
+   }
+
+   inline void invalidate() { Address = nullptr; }
 };
 
 struct module {
@@ -307,6 +306,8 @@ static ffi_type * callable_return_type(int ResultType)
 
 static void prepare_module_callables(module *Module)
 {
+   kt::Log log(__FUNCTION__);
+
    if (not Module->Functions) return;
 
    size_t function_count = 0;
@@ -316,15 +317,13 @@ static void prepare_module_callables(module *Module)
    for (size_t index = 0; index < function_count; ++index) {
       const auto &function = Module->Functions[index];
       auto callable = std::make_unique<module_callable>();
-      callable->Owner   = Module;
+
       callable->Name    = function.Name;
       callable->Address = function.Address;
       callable->Fields  = function.Args;
-      callable->Index   = int(index);
 
       if (not function.Args) {
          // A function with no argument list takes no parameters and returns nothing, so libffi is unnecessary.
-         callable->Trivial = true;
          Module->Callables.push_back(std::move(callable));
          continue;
       }
@@ -333,30 +332,29 @@ static void prepare_module_callables(module *Module)
       int total = 0;
       for (int arg = 1; args[arg].Name; ++arg) {
          if (total >= MAX_MODULE_ARGS) {
-            callable->Status = ERR::BufferOverflow;
-            callable->StatusMessage = std::format("Function '{}' exceeds the {} argument limit.",
-               function.Name, MAX_MODULE_ARGS);
+            callable->invalidate();
+            log.msg("Function '%s' exceeds the %d argument limit.", function.Name, MAX_MODULE_ARGS);
             break;
          }
 
          ffi_type *type = nullptr;
          std::string message;
          if (auto error = callable_arg_type(args[arg], type, message); error != ERR::Okay) {
-            callable->Status = error;
-            callable->StatusMessage = std::format("Function '{}': {}", function.Name, message);
+            callable->invalidate();
+            log.msg("Function '%s': %s", function.Name, message.c_str());
             break;
          }
          callable->ArgTypes[total++] = type;
       }
 
-      if (callable->Status IS ERR::Okay) {
+      if (callable->valid()) {
          callable->TotalArgs  = total;
          callable->ReturnType = callable_return_type(args->Type);
 
          if (ffi_prep_cif(&callable->Cif, FFI_DEFAULT_ABI, total, callable->ReturnType,
                 callable->ArgTypes) != FFI_OK) {
-            callable->Status = ERR::SystemCall;
-            callable->StatusMessage = std::format("Failed to prepare the call interface for '{}'.", function.Name);
+            callable->invalidate();
+            log.msg("Failed to prepare the call interface for '%s'.", function.Name);
          }
       }
 
@@ -937,9 +935,9 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
    // Signature problems are detected during preparation and reported here, so that an unsupported function fails
    // consistently whether it is called directly or through an extracted callable.
-   if (callable->Status != ERR::Okay) {
-      ErrorMsg = callable->StatusMessage;
-      return callable->Status;
+   if (not callable->valid()) {
+      ErrorMsg = "Function not compatible with Tiri";
+      return ERR::NoSupport;
    }
 
    int nargs = lua_gettop(Lua);
@@ -950,9 +948,9 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
 
    uint8_t *end = buffer + sizeof(buffer);
 
-   log.trace("%s() Index: %d, Args: %d", callable->Name, callable->Index, nargs);
+   log.trace("%s() Args: %d", callable->Name, nargs);
 
-   if (callable->Trivial) {
+   if (callable->trivial()) {
       auto function = (void (*)(void))callable->Address;
       function();
       return ERR::Okay;
@@ -1470,8 +1468,7 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
             if ((restype & FD_ERROR) and (rc.Arg >= int(ERR::ExceptionThreshold)) and in_try_immediate_scope(Lua)) {
                // Scope isolation: Only throw exceptions for direct calls within the try block.
                auto error = ERR(rc.Arg);
-               ErrorMsg = std::format("{}() failed: {}", callable->Name ? callable->Name : "Function",
-                  GetErrorMsg(error));
+               ErrorMsg = std::format("{}() failed: {}", callable->Name, GetErrorMsg(error));
                return error;
             }
          }
