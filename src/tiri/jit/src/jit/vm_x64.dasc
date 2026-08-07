@@ -5593,9 +5593,9 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  ins_AD
     |  mov L:RB, SAVE_L
     |  mov L:RB->base, BASE
+    |  lea TMPR, [BASE+RA*8]
     |  mov CARG2d, RDd
-    |  lea RC, [BASE+RA*8]
-    |  mov L:RB->top, RC
+    |  mov L:RB->top, TMPR
     |  mov L:CARG1, L:RB
     |  mov SAVE_PC, PC
     |  call extern tiri_module_activate

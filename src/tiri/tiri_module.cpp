@@ -730,12 +730,14 @@ static ERR stage_module_defs(objModule *Module, std::string_view Name, definitio
 //********************************************************************************************************************
 // Commit a staged batch to the process-wide registries, rolling back completely on failure.
 //
-// A lock on glConstantMutex must be held before calling this function.  Structures are registered through make_struct()
-// with a null state, so that a state-local declaration cannot influence the published global layout.
+// A lock on glConstantMutex must be held before calling this function.  glStructMutex remains locked across structure
+// publication and rollback so that readers cannot observe definitions that a later failure withdraws.  Structures are
+// registered with a null state so that a state-local declaration cannot influence the published global layout.
 
 static ERR publish_definition_batch(const definition_batch &Batch)
 {
    kt::Log log(__FUNCTION__);
+   const std::lock_guard struct_lock(glStructMutex);
 
    std::vector<uint32_t> published_constants;
    std::vector<std::string> published_structs;

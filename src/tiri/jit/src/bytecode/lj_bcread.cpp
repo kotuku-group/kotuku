@@ -313,19 +313,19 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
 //********************************************************************************************************************
 // Validate descriptor-indexed module activation after the dependency block has been installed.
 
-static void bcread_module_activations(LexState *State, GCproto *pt)
+static void bcread_module_activations(LexState *State, GCproto *Proto)
 {
-   auto table = proto_dependencies(pt);
+   auto table = proto_dependencies(Proto);
    uint8_t activations[PROTO_MAX_DEPENDENCIES] = {};
 
-   for (MSize i = 1; i < pt->sizebc; ++i) {
-      BCIns instruction = proto_bc(pt)[i];
+   for (MSize i = 1; i < Proto->sizebc; ++i) {
+      BCIns instruction = proto_bc(Proto)[i];
       if (bc_op(instruction) != BC_MODACT) continue;
 
       uint32_t dependency = bc_d(instruction);
       if (not table or dependency >= table->dependency_count) bcread_error(State, ErrMsg::BCBAD);
       const ProtoDependency &descriptor = proto_dependency_list(table)[dependency];
-      if (uint32_t(bc_a(instruction)) + descriptor.function_count > pt->framesize or activations[dependency]) {
+      if (uint32_t(bc_a(instruction)) + descriptor.function_count > Proto->framesize or activations[dependency]) {
          bcread_error(State, ErrMsg::BCBAD);
       }
       activations[dependency] = 1;
