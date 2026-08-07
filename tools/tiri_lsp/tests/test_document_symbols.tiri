@@ -82,6 +82,16 @@ end
    assert(alpha.selectionRange['end'].character is 20, 'Selection range should end after the function name.')
 end
 
+@Test function ModuleNamespaceDeclarationSymbol()
+   doc = makeDoc('module core as runtimeCore\n')
+   symbols = extractDocumentSymbols(doc)
+   namespace_symbol = findSymbol(symbols, 'runtimeCore')
+
+   assert(namespace_symbol and namespace_symbol.kind is SYMBOL_KIND.NAMESPACE,
+      'A module declaration should create a namespace document symbol.')
+   assert(namespace_symbol.detail is 'module core', 'Namespace symbol detail should retain the module name.')
+end
+
 @Test function ModuleScopeVariablesAndTables()
    doc = makeDoc([[
 local glFolderFill

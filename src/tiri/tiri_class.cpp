@@ -592,11 +592,9 @@ static ERR TIRI_Query(extTiri *Self)
          lua_sethook(Self->Lua, hook_debug, LUA_MASKCALL|LUA_MASKRET|LUA_MASKLINE, 0);
       }
 
-      // Pre-load the Core module: mSys = mod.load('core')
+      // Pre-load the Core module as the protected mSys compatibility interface.
 
-      if (auto core = objModule::create::global(fl::Name("core"))) {
-         SetName(core, "mSys");
-         new_module(Self->Lua, core);
+      if (new_module(Self->Lua, "core") IS ERR::Okay) {
          lua_setglobal(Self->Lua, "mSys");
          lua_protect_globals(Self->Lua);
       }

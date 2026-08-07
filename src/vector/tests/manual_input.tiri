@@ -6,7 +6,7 @@
 --
 -- Be aware that transparency can lead to some confusion as to which vector is the front-most position.
 
-   local mVector = mod.load('vector')
+module vector as mVector
 
    local COL_VIEWPORT  = 'rgb(0,0,255)'
    local COL_SHAPE = 'rgb(255,0,0)'

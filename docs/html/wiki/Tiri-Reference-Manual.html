@@ -2236,12 +2236,12 @@ complex expression positions, the compiler may wrap the <code>choose</code> in a
 <hr>
 <h2 id="script-management">Script Management</h2>
 <h3 id="include">include</h3>
-<p>The <code>include</code> statement loads the definitions for an API&#39;s functions, classes, constants and structures. It accepts
-one or more string-literal API names and loads each in sequence, for example:</p>
+<p>The <code>include</code> statement loads definitions for an API&#39;s classes, constants and structures. It accepts one or more
+string-literal API names and loads each in sequence, for example:</p>
 <pre><code>include &#39;core&#39;,&#39;xml&#39;,&#39;display&#39;</code></pre>
 <p>Parenthesised calls such as <code>include(&#39;xml&#39;)</code> are not supported. Module names must be string literals; dynamic include
-names are not permitted. API interfaces are protected from being loaded more than once. Calls to <code>mod.load()</code> result
-in API definitions being loaded automatically, and may make a call to <code>include</code> unnecessary in that case.</p>
+names are not permitted. API interfaces are protected from being loaded more than once. A <code>module</code> declaration
+loads the API definitions required for calls through its namespace, so a matching <code>include</code> is unnecessary.</p>
 <h3 id="import">import</h3>
 <div class="sourceCode" id="cb135"><pre class="sourceCode lua"><code class="sourceCode lua"><span id="cb135-1"><a href="#cb135-1" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;name&#39;</span></span>
 <span id="cb135-2"><a href="#cb135-2" aria-hidden="true" tabindex="-1"></a>import <span class="st">&#39;name&#39;</span><span class="op">,</span> <span class="st">&#39;other/name&#39;</span></span>
@@ -2324,17 +2324,18 @@ end</code></pre>
 ]])</code></pre>
 <hr>
 <h2 id="module-interface">Module Interface</h2>
-<p>The module interface provides a means for Tiri programs to communicate with Kōtuku&#39;s APIs. They are loaded using the <code>mod.load()</code> function, for instance:</p>
-<p><code>mGfx = mod.load(&#39;display&#39;)</code></p>
-<p>Calling <code>mod.load()</code> returns the function table for the requested module, allowing calls to be made to its functions. For instance:</p>
-<p><code>err, x, y = mGfx.getCursorPos()</code></p>
-<p>Notice that Tiri is capable of returning multiple results if a function has declared more than one return value. Typically the first value will be an <code>ERR</code> code.</p>
-<p>For consistency, we use a set of commonly named global variables to store module function tables. This is because loading an API more than once is undesirable. The following table illustrates the global names that we use for the default set of APIs.</p>
+<p>The <code>module</code> declaration gives Tiri programs a compiler-managed namespace for a Kōtuku API:</p>
+<pre><code>module display as mGfx
+
+local err, x, y = mGfx.getCursorPos()</code></pre>
+<p>Tiri returns multiple results when a function declares them. The first result is typically an <code>ERR</code> code. Module
+namespaces are not global values, cannot be reassigned or passed as arguments, and support only named function access.
+The following names are conventional for commonly used APIs:</p>
 <table>
 <thead>
 <tr>
 <th>Module</th>
-<th>Global Name</th>
+<th>Namespace</th>
 </tr>
 </thead>
 <tbody>
@@ -2368,9 +2369,8 @@ end</code></pre>
 </tr>
 </tbody>
 </table>
-<p>Taking the above into account, our first example should now be written as follows:</p>
-<p><code>mGfx ?= mod.load(&#39;display&#39;)</code></p>
-<p>Note that the Core module, identified by the <code>mSys</code> global variable is considered an essential API and is always available by default.</p>
+<p>The protected <code>mSys</code> compatibility interface remains available by default. New compilation units may explicitly
+declare <code>module core as mSys</code> to use the compiler-managed Core namespace.</p>
 <h3 id="type-conversion">Type Conversion</h3>
 <p>When calling an API function, Tiri uses best efforts to convert function values to the types declared in the function definition. For instance, if a string value is used for a numeric argument, Tiri will automatically convert the string to an integer. If the type cannot be converted (for instance, an abstract pointer cannot be converted to a number) then a type mismatch occurs and an exception will be raised.</p>
 <p>While type conversion is convenient, we recommend using the correct type whenever possible as this will ensure that your calls are being made efficiently.</p>

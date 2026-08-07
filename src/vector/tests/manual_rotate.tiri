@@ -6,7 +6,7 @@
 
    glSelf = obj.find('self')
    glFrameRate = 120
-   local mVec = mod.load('vector')
+module vector as mVec
 
 -----------------------------------------------------------------------------------------------------------------------
 

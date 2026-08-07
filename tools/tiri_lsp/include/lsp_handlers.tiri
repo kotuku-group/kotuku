@@ -118,6 +118,80 @@ global function maskNonCode(LineText:str, InBlockComment:bool):<str, bool>
    return result, InBlockComment
 end
 
+-- Module namespace handlers
+
+global function resolveModuleCompletion(Doc:table, Position:table):array<table>
+   local line_text = getLine(Doc, Position.line)
+   local byte_col = utf16ColToByteCol(line_text, Position.character)
+   local before = line_text:sub(0, byte_col)
+   local dot_pos
+   for i in {#before - 1 into 0 by -1} do
+      if before:sub(i, i + 1) is '.' then dot_pos = i; break end
+   end
+   if not dot_pos then return array<table> end
+
+   local object_stop = dot_pos
+   local object_start = object_stop
+   while object_start > 0 do
+      local char = before:sub(object_start - 1, object_start)
+      if not ((char >= 'a' and char <= 'z') or (char >= 'A' and char <= 'Z') or
+            (char >= '0' and char <= '9') or char is '_') then break end
+      object_start -= 1
+   end
+   local object_name = before:sub(object_start, object_stop)
+   local member_prefix = before:sub(dot_pos + 1):lower()
+   local module_name = modulePrefixesForDocument(Doc)[object_name]
+   if not module_name then return array<table> end
+   local module_doc = moduleDocumentByName(module_name)
+   if not module_doc?.functions then return array<table> end
+
+   local items = array<table>
+   for function_name, function_doc in pairs(module_doc.functions) do
+      if member_prefix is '' or function_name:lower():startsWith(member_prefix) then
+         items:push({
+            label = function_name,
+            kind = 3,
+            detail = function_doc.prototype,
+            documentation = function_doc.comment and { kind='markdown', value=function_doc.comment } or nil,
+            insertText = function_name
+         })
+      end
+   end
+   return items
+end
+
+global function resolveModuleRename(Doc:table, Position:table, NewName:str):table
+   if not NewName or #NewName is 0 then return nil end
+   local first = NewName:sub(0, 1)
+   if not ((first >= 'a' and first <= 'z') or (first >= 'A' and first <= 'Z') or first is '_') then return nil end
+   for i in {1 to #NewName} do
+      local char = NewName:sub(i, i + 1)
+      if not ((char >= 'a' and char <= 'z') or (char >= 'A' and char <= 'Z') or
+            (char >= '0' and char <= '9') or char is '_') then return nil end
+   end
+
+   local token_info = getTokenAtPosition(Doc, Position.line, Position.character)
+   local old_name = token_info?.text
+   if not old_name or not moduleDeclarationsForDocument(Doc)[old_name] then return nil end
+
+   local edits = array<table>
+   for token in values(tokenizeTiri(Doc.content)) do
+      local line_text = getLine(Doc, token.line)
+      local text = line_text:sub(token.char, token.char + token.length)
+      if token.type is 10 and text is old_name and (token.modifiers & 8) is 0 then
+         edits:push({
+            range = {
+               start = { line=token.line, character=byteColToUtf16Col(line_text, token.char) },
+               ['end'] = { line=token.line, character=byteColToUtf16Col(line_text, token.char + token.length) }
+            },
+            newText = NewName
+         })
+      end
+   end
+   return #edits > 0 and { changes = { [Doc.uri] = edits } } or nil
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Core LSP Handlers
 
 global function registerCoreHandlers(Self)
@@ -155,6 +229,8 @@ global function registerCoreHandlers(Self)
                hoverProvider = true,
                -- Go to Definition
                definitionProvider = true,
+               completionProvider = { triggerCharacters = array<string> { '.' } },
+               renameProvider = true,
                -- Signature Help
                signatureHelpProvider = {
                   triggerCharacters = array<string> { '(', ',' },
@@ -167,6 +243,22 @@ global function registerCoreHandlers(Self)
             }
          }
       }
+   end
+
+   -- textDocument/completion: Complete functions from a declared module namespace.
+   Self._handlers['textDocument/completion'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      doc = glDocuments[uri]
+      items = doc and resolveModuleCompletion(doc, Msg.params.position) or array<table>
+      return { jsonrpc='2.0', id=Msg.id, result={ isIncomplete=false, items=items } }
+   end
+
+   -- textDocument/rename: Rename a declared namespace and its references within this compilation unit.
+   Self._handlers['textDocument/rename'] = function(Msg, State)
+      uri = Msg.params.textDocument.uri
+      doc = glDocuments[uri]
+      edit = doc and resolveModuleRename(doc, Msg.params.position, Msg.params.newName) or nil
+      return { jsonrpc='2.0', id=Msg.id, result=edit or json.null }
    end
 
    -- initialized: Client confirms handshake complete (notification, no response)

@@ -755,6 +755,7 @@ bool IrEmitter::apply_analysed_local_type(BCReg Slot, StaticBindingID Binding)
 
 void IrEmitter::assert_analysed_local_type(BCReg Slot, StaticBindingID Binding) const
 {
+#ifdef LUA_USE_ASSERT
    if (not Binding) return;
 
    const auto &binding = this->ctx.descriptors().binding(Binding);
@@ -767,6 +768,7 @@ void IrEmitter::assert_analysed_local_type(BCReg Slot, StaticBindingID Binding) 
    lj_assertX(info.struct_def IS value.struct_def, "analysed and emitted binding structures diverged");
    lj_assertX(info.array_element IS value.array_element,
       "analysed and emitted binding array member types diverged");
+#endif
 }
 
 BCReg IrEmitter::finalise_pending_local_assignment(PreparedAssignment& Target)

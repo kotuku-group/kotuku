@@ -3,14 +3,11 @@ Tests for resolving server names in parallel.
 --]]
 
    include 'network'
+   module network as mNet
 
 glDomains = array<string> { 'google.com', 'kotuku.dev', 'amazon.co.uk', 'stackoverflow.com', 'theguardian.com', 'www.bbc.co.uk' }
 glTotalResolved = 0
 local proc, signal
-
-@BeforeAll function init()
-   global mNet ?= mod.load('network')
-end
 
 @AfterAll function cleanup()
    glDomains = nil

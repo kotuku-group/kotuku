@@ -1,0 +1,131 @@
+-- Parser-integrated module namespace behaviour.
+
+import './module_namespace_helper'
+
+module core as mCore
+module CORE as mCore
+module core as mCoreAlias
+
+function assert_valid(Source:str, Context:str)
+   local result = debug.validate(Source)
+   assert(result.success is true, Context .. ': expected successful validation')
+end
+
+function assert_invalid(Source:str, ExpectedMessage:str, Context:str)
+   local result = debug.validate(Source)
+   assert(result.success is false, Context .. ': expected validation failure')
+
+   local found = false
+   for _, diagnostic in result.diagnostics do
+      if string.find(diagnostic.message, ExpectedMessage, 0, true) != nil then
+         found = true
+         break
+      end
+   end
+   assert(found, Context .. ': expected diagnostic containing "' .. ExpectedMessage .. '"')
+end
+
+@Test function DirectCallsAndAliasesPreserveResults()
+   local direct_time = mCore.preciseTime()
+   local alias_time = mCoreAlias.PreciseTime()
+   assert(direct_time > 0 and alias_time > 0, 'Declared module calls should preserve scalar results')
+end
+
+@Test function InterpreterAndJitCallsAgree()
+   local interpreted = 0
+   jit.off()
+   for _ in {0 to 200} do interpreted = mCore.PreciseTime() end
+
+   local compiled = 0
+   jit.on()
+   for _ in {0 to 200} do compiled = mCore.PreciseTime() end
+   assert(interpreted > 0 and compiled >= interpreted,
+      'Declared module calls should execute consistently with the JIT enabled and disabled')
+end
+
+@Test function ExtractedCallableSurvivesCollection()
+   local clock <const> = mCore.PreciseTime
+   processing.collect()
+   assert(clock() > 0, 'An extracted module callable should retain its dependency')
+end
+
+@Test function NamespaceIsNotAGlobalValue()
+   assert(rawget(_G, 'mCore') is nil, 'A declared module namespace must not be stored in _G')
+   assert(rawget(_G, 'mCoreAlias') is nil, 'A module alias must not be stored in _G')
+
+   assert_valid([[
+      module core as mSys
+      local value = mSys.PreciseTime()
+   ]], 'declared mSys shadow')
+end
+
+@Test function ImportedNamespaceIsPrivate()
+   assert(imported_module_time() > 0, 'An imported function should retain its module dependency')
+   assert(rawget(_G, 'mImportedCore') is nil, 'An imported module namespace must not leak into _G')
+end
+
+@Test function OptionalModuleConditionsUseTheLoader()
+   assert_valid([[
+      @if(exists='modules:core')
+         module core as mOptionalCore
+      @end
+      local value = mOptionalCore.PreciseTime()
+   ]], 'available module condition')
+
+   assert_valid([[
+      @if(exists='modules:definitelymissingmodule')
+         module definitelymissingmodule as mMissing
+      @end
+      local value = 1
+   ]], 'missing optional module condition')
+
+   assert_valid([[
+      @if(exists='modules:display')
+         module display as mOptionalDisplay
+      @end
+      local value = 1
+   ]], 'host-dependent optional module condition')
+end
+
+@Test function NamespaceRestrictionsAreDiagnosed()
+   assert_invalid([[
+      module core as mRestricted
+      print(mRestricted)
+   ]], 'can only select a named module function', 'bare namespace')
+
+   assert_invalid([[
+      module core as mRestricted
+      mRestricted['PreciseTime']()
+   ]], 'can only select a named module function', 'dynamic member')
+
+   assert_invalid([[
+      module core as mRestricted
+      mRestricted.PreciseTime = nil
+   ]], 'members cannot be assigned', 'member write')
+
+   assert_invalid([[
+      module core as mRestricted
+      local mRestricted = nil
+   ]], 'cannot be declared as a variable', 'local redeclaration')
+
+   assert_invalid([[
+      module core as mRestricted
+      local value = mRestricted.DoesNotExist()
+   ]], 'Unknown function', 'unknown function')
+
+   assert_invalid([[
+      function nested()
+         module core as mNested
+      end
+   ]], 'compilation-unit level', 'nested declaration')
+end
+
+@Test function ContextualKeywordCompatibilityIsPreserved()
+   assert_valid([[
+      global function module(Options, Function)
+         return 7
+      end
+      local value = module({}, function() end)
+      assert(value is 7)
+   ]], 'existing module identifier')
+end

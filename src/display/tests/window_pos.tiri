@@ -2,7 +2,7 @@
 
    import 'gui/window'
 
-   mGfx ?= mod.load('display')
+   module display as mGfx
 
    win = gui.window({ title='Keyboard Example', insideWidth=400, insideHeight=200,
       maxWidth=600, maxHeight=300, minWidth=400, minHeight=200 })

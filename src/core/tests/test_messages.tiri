@@ -31,10 +31,6 @@ end
 
    local no_result = mSys.LogReturn()
    assert(no_result is nil, 'LogReturn() did not produce a closed empty result tuple.')
-
-   local core <const> = mod.load('core')
-   local loaded_time = core.PreciseTime()
-   assert(loaded_time > 0, "A registered literal mod.load('core') did not retain module result metadata.")
 end
 
 -----------------------------------------------------------------------------------------------------------------------

@@ -4153,6 +4153,143 @@ static bool test_module_call_result_descriptors(kt::Log &Log)
    return true;
 }
 
+static size_t count_opcode_tree(const BytecodeSnapshot &, BCOp);
+
+static bool diagnostics_contain(const AstHarnessResult &Result, std::string_view Text)
+{
+   for (const auto &diagnostic : Result.diagnostics) {
+      if (diagnostic.message.find(Text) != std::string::npos) return true;
+   }
+   return false;
+}
+
+static bool test_module_namespace_declarations(kt::Log &Log)
+{
+   auto valid = build_ast_from_source(
+      "module core as mCore\n"
+      "local first = mCore.preciseTime()\n"
+      "local callable = mCore.PreciseTime\n");
+   if (not valid.chunk.ok() or not valid.diagnostics.empty() or valid.chunk.value_ref()->statements.size() != 3) {
+      Log.error("valid module namespace declaration did not produce the expected AST");
+      log_diagnostics(valid.diagnostics, Log);
+      return false;
+   }
+
+   const auto &call_decl = std::get<LocalDeclStmtPayload>(valid.chunk.value_ref()->statements[1]->data);
+   if (call_decl.values.empty() or call_decl.values.front()->kind != AstNodeKind::CallExpr) {
+      Log.error("module namespace call did not remain a call expression");
+      return false;
+   }
+   const auto &call = std::get<CallExprPayload>(call_decl.values.front()->data);
+   const auto *target = std::get_if<DirectCallTarget>(&call.target);
+   if (not target or not target->callable or target->callable->kind != AstNodeKind::MemberExpr) {
+      Log.error("module namespace call did not have a direct member target");
+      return false;
+   }
+   const auto &member = std::get<MemberExprPayload>(target->callable->data);
+   if (not member.module_namespace or not member.module_namespace_name or not member.member.symbol or
+       not kt::iequals(static_module_name(member.module_namespace), "core") or
+       std::string_view(strdata(member.module_namespace_name), member.module_namespace_name->len) != "mCore" or
+       std::string_view(strdata(member.member.symbol), member.member.symbol->len) != "PreciseTime") {
+      Log.error("module member did not retain canonical compiler metadata");
+      return false;
+   }
+
+   auto conditional = build_ast_from_source(
+      "@if(exists='modules:core')\n"
+      "   module core as mCore\n"
+      "@end\n"
+      "local value = mCore.PreciseTime()\n");
+   if (not conditional.chunk.ok() or not conditional.diagnostics.empty() or
+       conditional.chunk.value_ref()->statements.size() != 2 or
+       conditional.chunk.value_ref()->statements.front()->kind != AstNodeKind::LocalDeclStmt) {
+      Log.error("a selected compile-time module guard introduced a runtime scope");
+      log_diagnostics(conditional.diagnostics, Log);
+      return false;
+   }
+
+   auto absent = build_ast_from_source(
+      "@if(exists='modules:definitelymissingmodule')\n"
+      "   module definitelymissingmodule as mMissing\n"
+      "@end\n"
+      "local value = 1\n");
+   if (not absent.chunk.ok() or not absent.diagnostics.empty() or
+       absent.chunk.value_ref()->statements.size() != 1) {
+      Log.error("an unavailable optional module did not skip its declaration cleanly");
+      log_diagnostics(absent.diagnostics, Log);
+      return false;
+   }
+
+   struct InvalidCase { std::string_view source; std::string_view diagnostic; };
+   constexpr std::array<InvalidCase, 7> invalid = { {
+      { "module 'core' as mCore\n", "Module name must be an identifier" },
+      { "module core mCore\n", "Expected 'as'" },
+      { "do module core as mCore end\n", "compilation-unit level" },
+      { "module core as mCore\nlocal value = mCore\n", "can only select" },
+      { "module core as mCore\nmCore['PreciseTime']()\n", "can only select" },
+      { "module core as mCore\nmCore.PreciseTime = 1\n", "members cannot be assigned" },
+      { "module core as mCore\nlocal mCore = 1\n", "cannot be declared as a variable" }
+   } };
+   for (const auto &entry : invalid) {
+      auto result = build_ast_from_source(entry.source);
+      if (not diagnostics_contain(result, entry.diagnostic)) {
+         Log.error("module namespace invalid case did not report '%.*s'", int(entry.diagnostic.size()),
+            entry.diagnostic.data());
+         log_diagnostics(result.diagnostics, Log);
+         return false;
+      }
+   }
+
+   auto contextual = build_ast_from_source(
+      "global function module(Options, Function) return 7 end\n"
+      "local result = module({}, function() end)\n");
+   if (not contextual.chunk.ok() or not contextual.diagnostics.empty()) {
+      Log.error("contextual module declarations reserved an existing identifier use");
+      log_diagnostics(contextual.diagnostics, Log);
+      return false;
+   }
+
+   LuaStateHolder bytecode_state;
+   lua_State *lua = bytecode_state.get();
+   luaL_openlibs(lua);
+   register_module_class(lua);
+   lua_protect_globals(lua);
+   constexpr std::string_view bytecode_source =
+      "module core as mRoundTrip\n"
+      "local function clock():num return mRoundTrip.PreciseTime() end\n"
+      "return clock()\n";
+   if (lua_load(lua, bytecode_source, "module-namespace-roundtrip")) {
+      Log.error("failed to compile module namespace bytecode fixture: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   GCproto *root = funcproto(funcV(lua->top - 1));
+   std::string dump;
+   if (lj_bcwrite(lua, root, bytecode_writer, &dump, 1) != 0) {
+      Log.error("failed to write module namespace bytecode fixture");
+      return false;
+   }
+   lua_pop(lua, 1);
+   if (lua_load(lua, std::string_view(dump.data(), dump.size()), "module-namespace-roundtrip")) {
+      Log.error("failed to reload module namespace bytecode fixture: %s", lua_tostring(lua, -1));
+      return false;
+   }
+   if (lua_pcall(lua, 0, 1, 0) != 0 or not lua_isnumber(lua, -1) or lua_tonumber(lua, -1) <= 0) {
+      Log.error("reloaded module namespace bytecode did not resolve and execute its dependency: %s",
+         lua_isstring(lua, -1) ? lua_tostring(lua, -1) : "invalid result");
+      return false;
+   }
+   lua_pop(lua, 1);
+
+   std::string error;
+   auto snapshot = compile_snapshot(lua, bytecode_source, true, error);
+   if (not snapshot or count_opcode_tree(*snapshot, BC_GGET) != 1) {
+      Log.error("module namespace references retained an ordinary global lookup: %s", error.c_str());
+      return false;
+   }
+
+   return true;
+}
+
 static size_t count_opcode(const BytecodeSnapshot &Snapshot, BCOp Opcode)
 {
    size_t count = 0;
@@ -4872,7 +5009,7 @@ static bool test_type_guided_emission(kt::Log &Log)
 
 extern void parser_unit_tests(int &Passed, int &Total)
 {
-   constexpr std::array<TestCase, 52> tests = { {
+   constexpr std::array<TestCase, 53> tests = { {
       { "parser_profiler_captures_stages", test_parser_profiler_captures_stages },
       { "parser_profiler_disabled_noop", test_parser_profiler_disabled_noop },
       { "literal_binary_expr", test_literal_binary_expr },
@@ -4921,6 +5058,7 @@ extern void parser_unit_tests(int &Passed, int &Total)
       { "native_prototype_result_descriptors", test_native_prototype_result_descriptors },
       { "object_call_result_descriptors", test_object_call_result_descriptors },
       { "module_call_result_descriptors", test_module_call_result_descriptors },
+      { "module_namespace_declarations", test_module_namespace_declarations },
       { "compile_time_signed_range_for_emission", test_compile_time_signed_range_for_emission },
       { "runtime_range_for_emission", test_runtime_range_for_emission },
       { "safe_index_bytecode_selection", test_safe_index_bytecode_selection },

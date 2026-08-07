@@ -12,6 +12,8 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "nodes.h"
@@ -48,6 +50,18 @@ private:
    std::vector<uint32_t> registered_enum_constants;
    std::vector<uint32_t> registered_structs;
    std::vector<uint32_t> chunk_import_hashes;  // Path hashes inlined during this compilation (root builder only)
+   StmtNodeList pending_statements;
+
+   struct ModuleNamespaceSymbol {
+      GCstr *source_name = nullptr;
+      GCstr *hidden_name = nullptr;
+      StaticModuleHandle module = nullptr;
+      std::string canonical_module;
+      SourceSpan declaration_span{};
+   };
+
+   std::unordered_map<GCstr *, ModuleNamespaceSymbol> module_namespaces;
+   std::unordered_map<std::string, bool> module_availability;
 
    // FileSource entries persist across compilations, so diagnose-mode re-parsing of cached imports needs a
    // dedup scope limited to the current chunk.  Records Hash on the root builder; returns true if already seen.
@@ -120,6 +134,7 @@ private:
    ParserResult<StmtNodePtr> parse_raise();
    ParserResult<StmtNodePtr> parse_check();
    ParserResult<StmtNodePtr> parse_include_stmt();
+   ParserResult<StmtNodePtr> parse_module_decl();
    ParserResult<ImportEntryPayload> parse_import_entry(const Token&, bool, bool * = nullptr);
    ParserResult<StmtNodePtr> parse_import();
    ParserResult<StmtNodePtr> parse_namespace();
@@ -183,6 +198,9 @@ private:
    [[nodiscard]] std::optional<BinaryOpInfo> match_binary_operator(const Token &) const;
    [[nodiscard]] bool is_choose_relational_pattern(size_t) const;
    [[nodiscard]] bool is_extended_ternary_ahead() const;
+   [[nodiscard]] const ModuleNamespaceSymbol *find_module_namespace(GCstr *) const;
+   [[nodiscard]] bool module_is_available(std::string_view);
+   void append_pending_statements(StmtNodeList &);
 
    // Helper to emit an error and return a failure result in one step.
    // Reduces boilerplate for the common pattern of emit_error + return failure.

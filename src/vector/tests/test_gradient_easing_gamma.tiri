@@ -1,6 +1,6 @@
    include 'display', 'vector'
 
-   mGfx ?= mod.load('display')
+module display as mGfx
 
 function newBitmap(Width, Height)
    local bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })
@@ -86,7 +86,7 @@ function drawHash(Scene, Bitmap)
    return mSys.GenCRC32(0, Bitmap.data, Bitmap.size)
 end
 
-function sampleMiddleRed(Scene)
+function sampleMiddleRed(Scene):num
    local bmp = newBitmap(100, 20)
    drawScene(Scene, bmp)
    return mGfx.ReadRGBPixel(bmp, 50, 10).red

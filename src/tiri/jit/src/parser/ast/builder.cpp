@@ -358,6 +358,38 @@ AstBuilder::~AstBuilder()
    this->ctx.clear_error_rollback_callback(this);
 }
 
+const AstBuilder::ModuleNamespaceSymbol *AstBuilder::find_module_namespace(GCstr *Name) const
+{
+   if (not Name) return nullptr;
+   if (auto found = this->module_namespaces.find(Name); found != this->module_namespaces.end()) return &found->second;
+   return nullptr;
+}
+
+bool AstBuilder::module_is_available(std::string_view Name)
+{
+   AstBuilder *root = this;
+   while (root->parent_builder) root = root->parent_builder;
+
+   std::string canonical(Name);
+   std::transform(canonical.begin(), canonical.end(), canonical.begin(),
+      [](unsigned char Character) { return char(std::tolower(Character)); });
+   if (auto found = root->module_availability.find(canonical); found != root->module_availability.end()) {
+      return found->second;
+   }
+
+   AdjustLogLevel(1);
+   bool available = load_include(this->ctx.lua().script, Name) IS ERR::Okay;
+   AdjustLogLevel(-1);
+   root->module_availability.emplace(std::move(canonical), available);
+   return available;
+}
+
+void AstBuilder::append_pending_statements(StmtNodeList &Statements)
+{
+   for (auto &statement : this->pending_statements) Statements.push_back(std::move(statement));
+   this->pending_statements.clear();
+}
+
 void AstBuilder::commit_registered_enum_constants()
 {
    this->registered_enum_constants.clear();
@@ -550,6 +582,7 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_block(std::span<const
 
          statements.push_back(std::move(stmt.value_ref()));
       }
+      this->append_pending_statements(statements);
    }
 
    Token last = this->ctx.tokens().current();
@@ -624,6 +657,14 @@ ParserResult<StmtNodePtr> AstBuilder::parse_statement()
          std::string_view(strdata(current.identifier()), current.identifier()->len) IS "struct" and
          this->ctx.tokens().peek(1).kind() IS TokenKind::Identifier) {
       return this->parse_struct_declaration();
+   }
+
+   if (current.kind() IS TokenKind::Identifier and current.identifier() and
+         std::string_view(strdata(current.identifier()), current.identifier()->len) IS "module") {
+      Token next = this->ctx.tokens().peek(1);
+      if (next.kind() IS TokenKind::Identifier or next.kind() IS TokenKind::String) {
+         return this->parse_module_decl();
+      }
    }
 
    switch (current.kind()) {

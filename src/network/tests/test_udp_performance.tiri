@@ -3,7 +3,7 @@ UDP Performance and Stress Test
 --]]
 
    include 'network'
-   mNet ?= mod.load('network')
+module network as mNet
 
    glBasePort = 19830  -- Base port for performance tests
    glTestTimeout = 5.0

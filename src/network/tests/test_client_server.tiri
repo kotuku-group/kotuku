@@ -3,7 +3,7 @@ Client-Server Network Communications test.  Creates a NetServer and then starts 
 --]]
 
    include 'network'
-   mNet ?= mod.load('network')
+module network as mNet
 
 glTestSteps     = 0
 glExpectedSteps = 6

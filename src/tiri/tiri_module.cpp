@@ -34,22 +34,26 @@ struct static_module_function_signature {
 struct static_module_signature {
    std::string Name;
    std::vector<std::unique_ptr<static_module_function_signature>> Functions;
-   ankerl::unordered_dense::map<uint32_t, static_module_function_signature *> FunctionMap;
 };
 
-static std::mutex glModuleSignatureMutex;
-static ankerl::unordered_dense::map<uint32_t, std::shared_ptr<const static_module_signature>> glModuleSignatures;
-
 struct module {
+   std::string Name;
    const struct Function *Functions = nullptr;
    objModule *Module = nullptr;
-   std::shared_ptr<const static_module_signature> Signature;
-   ankerl::unordered_dense::map<uint32_t, int> FunctionMap; // Hash map for O(1) function lookup
+   std::unique_ptr<const static_module_signature> Signature;
+   ankerl::unordered_dense::map<uint32_t, std::vector<int>> FunctionMap; // Hash buckets validated by canonical name
 
    ~module() {
       if (Module) FreeResource(Module);
    }
 };
+
+struct module_ref {
+   module *Binding = nullptr;
+};
+
+static std::mutex glModuleMutex;
+static std::vector<std::unique_ptr<module>> glModules;
 
 template<class... Args> void RMSG(Args...) {
    //log.msg(Args)
@@ -123,12 +127,12 @@ static int module_call(lua_State *);
 static ERR module_call_inner(lua_State *, std::string &, int &);
 static int process_results(extTiri *, APTR, const FunctionField *);
 
-static std::shared_ptr<const static_module_signature> register_module_signature(
+static std::unique_ptr<const static_module_signature> make_module_signature(
    std::string_view Name, const Function *Functions)
 {
    if (not Functions) return {};
 
-   auto signature = std::make_shared<static_module_signature>();
+   auto signature = std::make_unique<static_module_signature>();
    signature->Name = Name;
 
    size_t function_count = 0;
@@ -152,17 +156,9 @@ static std::shared_ptr<const static_module_signature> register_module_signature(
       }
       else entry->Fields.push_back({ nullptr, 0 });
 
-      static_module_function_signature *stored = entry.get();
-      signature->FunctionMap[kt::strihash(entry->Name)] = stored;
       signature->Functions.push_back(std::move(entry));
    }
 
-   std::lock_guard lock(glModuleSignatureMutex);
-   auto hash = kt::strihash(Name);
-   if (auto existing = glModuleSignatures.find(hash); existing != glModuleSignatures.end()) {
-      return existing->second;
-   }
-   glModuleSignatures[hash] = signature;
    return signature;
 }
 
@@ -170,22 +166,22 @@ StaticModuleHandle static_module_from_value(lua_State *Lua, cTValue *Value) noex
 {
    if (not Lua or not Value or not tvisudata(Value)) return nullptr;
    GCudata *userdata = udataV(Value);
-   if (userdata->len != sizeof(module)) return nullptr;
+   if (userdata->len != sizeof(module_ref)) return nullptr;
 
    cTValue *registered = lj_tab_getstr(
       tabV(registry(Lua)), lj_str_newlit(Lua, "Tiri.mod"));
    if (not registered or not tvistab(registered) or
        tabref(userdata->metatable) != tabV(registered)) return nullptr;
 
-   auto *mod = (module *)uddata(userdata);
-   return mod->Signature.get();
+   auto *reference = (module_ref *)uddata(userdata);
+   return reference->Binding ? reference->Binding->Signature.get() : nullptr;
 }
 
 StaticModuleHandle static_module_by_name(std::string_view Name) noexcept
 {
-   std::lock_guard lock(glModuleSignatureMutex);
-   if (auto found = glModuleSignatures.find(kt::strihash(Name)); found != glModuleSignatures.end()) {
-      return found->second.get();
+   std::lock_guard lock(glModuleMutex);
+   for (const auto &entry : glModules) {
+      if (kt::iequals(entry->Name, Name)) return entry->Signature.get();
    }
    return nullptr;
 }
@@ -194,10 +190,71 @@ const FunctionField * static_module_function(
    StaticModuleHandle Module, std::string_view Name) noexcept
 {
    if (not Module) return nullptr;
-   if (auto found = Module->FunctionMap.find(kt::strihash(Name)); found != Module->FunctionMap.end()) {
-      return found->second->Fields.data();
+   for (const auto &function : Module->Functions) {
+      if (kt::iequals(function->Name, Name)) return function->Fields.data();
    }
    return nullptr;
+}
+
+std::string_view static_module_name(StaticModuleHandle Module) noexcept
+{
+   return Module ? std::string_view(Module->Name) : std::string_view();
+}
+
+std::string_view static_module_function_name(StaticModuleHandle Module, std::string_view Name) noexcept
+{
+   if (not Module) return {};
+   for (const auto &function : Module->Functions) {
+      if (kt::iequals(function->Name, Name)) return function->Name;
+   }
+   return {};
+}
+
+//********************************************************************************************************************
+// Resolve one process-wide module instance.  Entries remain stable until the Tiri module is expunged.
+
+static ERR resolve_module(std::string_view Name, module *&Result)
+{
+   std::lock_guard lock(glModuleMutex);
+   for (const auto &entry : glModules) {
+      if (kt::iequals(entry->Name, Name)) {
+         Result = entry.get();
+         return ERR::Okay;
+      }
+   }
+
+   auto loaded_module = objModule::create::global(fl::Name(Name));
+   if (not loaded_module) return ERR::CreateObject;
+
+   auto entry = std::make_unique<module>();
+   entry->Module = loaded_module;
+   loaded_module->getFunctionList(entry->Functions);
+
+   std::string_view canonical_name;
+   if (loaded_module->getName(canonical_name) != ERR::Okay or canonical_name.empty()) canonical_name = Name;
+   entry->Name = canonical_name;
+   entry->Signature = make_module_signature(entry->Name, entry->Functions);
+   if (entry->Functions) {
+      for (int index = 0; entry->Functions[index].Name; ++index) {
+         entry->FunctionMap[strihash(entry->Functions[index].Name)].push_back(index);
+      }
+   }
+
+   Result = entry.get();
+   glModules.push_back(std::move(entry));
+   return ERR::Okay;
+}
+
+void expunge_modules()
+{
+   {
+      std::lock_guard lock(glModuleMutex);
+      glModules.clear();
+   }
+   {
+      std::unique_lock lock(glConstantMutex);
+      glLoadedConstants.clear();
+   }
 }
 
 //********************************************************************************************************************
@@ -415,42 +472,29 @@ static ERR process_module_defs(extTiri *Script, objModule *module, std::string_v
 }
 
 //********************************************************************************************************************
-// For the 'include' statement.  Creates a temporary module object to process the definitions without formally opening
-// an interface.
+// Process a process-wide module's definitions once.
+
+static ERR ensure_module_defs(extTiri *Script, module *Module)
+{
+   std::unique_lock lock(glConstantMutex);
+   if (glLoadedConstants.contains(Module->Name)) return ERR::Okay;
+
+   ERR error = process_module_defs(Script, Module->Module, Module->Name);
+   if (error IS ERR::Okay) glLoadedConstants.emplace(Module->Name);
+   return error;
+}
+
+//********************************************************************************************************************
+// For the 'include' statement.  Resolves the process-wide module and makes its definitions available to the parser.
 
 [[nodiscard]] ERR load_include(extTiri *Script, std::string_view Module)
 {
-   ERR error = ERR::Okay;
+   module *resolved_module = nullptr;
+   if (auto error = resolve_module(Module, resolved_module); error != ERR::Okay) return error;
 
-   std::unique_lock lock(glConstantMutex); // Required to update the constant registry
-
-   // Constants are system-wide, so process only once per session.
-
-   bool process_constants = false;
-   if (not glLoadedConstants.contains(Module)) {
-      process_constants = true;
-   }
-
-   if (process_constants) {
-      kt::Log log(__FUNCTION__);
-      log.branch("Definition: %.*s", int(Module.size()), Module.data());
-
-      AdjustLogLevel(1);
-
-         objModule::create module = { fl::Name(Module) };
-         if (module.ok()) {
-            const Function *functions = nullptr;
-            module->getFunctionList(functions);
-            register_module_signature(Module, functions);
-            error = process_module_defs(Script, *module, Module);
-         }
-         else error = ERR::CreateObject;
-
-      AdjustLogLevel(-1);
-
-      if (!error) glLoadedConstants.emplace(Module);
-   }
-
+   AdjustLogLevel(1);
+   ERR error = ensure_module_defs(Script, resolved_module);
+   AdjustLogLevel(-1);
    return error;
 }
 
@@ -491,133 +535,84 @@ static ERR process_module_defs(extTiri *Script, objModule *module, std::string_v
 }
 
 //********************************************************************************************************************
-// Configure a Tiri module object (post-loading).
+// Push a lightweight reference to a process-wide module binding.
 
-void new_module(lua_State *Lua, objModule *Module)
+static void push_module_ref(lua_State *Lua, module *Binding)
 {
-   auto mod = (module *)lua_newuserdata(Lua, sizeof(module));
-   new (mod) module;
+   auto reference = (module_ref *)lua_newuserdata(Lua, sizeof(module_ref));
+   reference->Binding = Binding;
 
    luaL_getmetatable(Lua, "Tiri.mod");
    lua_setmetatable(Lua, -2);
+   lua_newtable(Lua);
+   lua_setfenv(Lua, -2); // Private cache for canonical extracted-callable wrappers.
+}
 
-   mod->Module = Module;
-   Module->getFunctionList(mod->Functions);
-   std::string_view module_name;
-   if (Module->getName(module_name) != ERR::Okay) module_name = {};
-   mod->Signature = register_module_signature(module_name, mod->Functions);
+ERR new_module(lua_State *Lua, std::string_view Name)
+{
+   module *binding = nullptr;
+   if (auto error = resolve_module(Name, binding); error != ERR::Okay) return error;
+   if (auto error = ensure_module_defs(Lua->script, binding); error != ERR::Okay) return error;
+   push_module_ref(Lua, binding);
+   return ERR::Okay;
+}
 
-   // Build hash map for O(1) function lookups
-   if (mod->Functions) {
-      for (int i = 0; mod->Functions[i].Name; i++) {
-         auto hash = strihash(mod->Functions[i].Name);
-         mod->FunctionMap[hash] = i;
-      }
-   }
+static module * module_from_userdata(lua_State *Lua, int Index)
+{
+   auto reference = (module_ref *)luaL_checkudata(Lua, Index, "Tiri.mod");
+   return reference ? reference->Binding : nullptr;
 }
 
 //********************************************************************************************************************
-// Usage: passed, total, = mod.test(module, Options)
-// Runs the module's unit tests, if any
+// Usage: passed, total = mod.test(ModuleName, Options)
+// Resolves the named module and runs its unit tests, if any.
 
 static int module_test(lua_State *Lua)
 {
-   if (auto mod = (module *)luaL_checkudata(Lua, 1, "Tiri.mod")) {
-      auto options = lua_tostringview(Lua, 2);
-      int passed = 0, total = 0;
-      if (((objModule *)mod->Module)->test(options, &passed, &total) IS ERR::Okay) {
-         lua_pushinteger(Lua, passed);
-         lua_pushinteger(Lua, total);
-         return 2;
-      }
-      else luaL_error(Lua, ERR::Failed, "Module test failed.");
+   CSTRING module_name = luaL_checkstring(Lua, 1);
+
+   module *mod = nullptr;
+   if (auto error = resolve_module(module_name, mod); error != ERR::Okay) {
+      luaL_error(Lua, error, "Failed to load the %s module.", module_name);
    }
-   else luaL_argerror(Lua, 1, "Expected module.");
+
+   auto options = lua_tostringview(Lua, 2);
+   int passed = 0, total = 0;
+   if (mod->Module->test(options, &passed, &total) IS ERR::Okay) {
+      lua_pushinteger(Lua, passed);
+      lua_pushinteger(Lua, total);
+      return 2;
+   }
+   luaL_error(Lua, ERR::Failed, "Module test failed.");
    return 0;
 }
 
 //********************************************************************************************************************
-// Usage: module = mod.load('core')
+// Build a lightweight callable table for a compiler-declared dependency.  The process-wide C++ store owns the module;
+// Lua closures retain only its stable address and the exported function index.
 
-static int module_load(lua_State *Lua)
+static int module_dependency(lua_State *Lua)
 {
    auto modname = luaL_checkstring(Lua, 1);
    if (not modname) luaL_argerror(Lua, 1, "String expected for module name.");
 
-   kt::Log log(__FUNCTION__);
-   log.branch("Module: %s", modname);
-
-   int i;
-   for (i=0; modname[i]; i++) {
-      if ((modname[i] >= 'a') and (modname[i] <= 'z')) continue;
-      if ((modname[i] >= 'A') and (modname[i] <= 'Z')) continue;
-      if ((modname[i] >= '0') and (modname[i] <= '9')) continue;
-      break;
+   module *mod = nullptr;
+   if (auto error = resolve_module(modname, mod); error != ERR::Okay) {
+      luaL_error(Lua, error, "Failed to load the %s module.", modname);
+   }
+   if (auto error = ensure_module_defs(Lua->script, mod); error != ERR::Okay) {
+      luaL_error(Lua, error, "Failed to process definitions for the %s module.", modname);
    }
 
-   if ((modname[i]) or (i >= 32)) {
-      luaL_error(Lua, ERR::Syntax,
-         "Invalid module name; only alpha-numeric names shorter than 32 characters are permitted.");
-   }
-
-   if (auto loaded_mod = objModule::create::global(fl::Name(modname))) {
-      ERR defs_error = ERR::Okay;
-      {
-         std::unique_lock lock(glConstantMutex); // Required to update the constant registry
-
-         bool process_constants = false;
-         if (not glLoadedConstants.contains(modname)) {
-            process_constants = true;
-         }
-
-         if (process_constants) {
-            if (!(defs_error = process_module_defs(Lua->script, loaded_mod, modname))) {
-               glLoadedConstants.insert(modname);
-            }
-         }
+   lua_newtable(Lua);
+   if (mod->Functions) {
+      for (int index = 0; mod->Functions[index].Name; ++index) {
+         lua_pushlightuserdata(Lua, mod);
+         lua_pushinteger(Lua, index);
+         lua_pushcclosure(Lua, module_call, 2);
+         lua_setfield(Lua, -2, mod->Functions[index].Name);
       }
-
-      if (defs_error != ERR::Okay) {
-         FreeResource(loaded_mod);
-         luaL_error(Lua, defs_error, "Failed to process definitions for the %s module.", modname);
-      }
-
-      new_module(Lua, loaded_mod);
-      return 1;  // new userdatum is already on the stack
    }
-   else {
-      log.debranch();
-      luaL_error(Lua, ERR::LoadModule, "Failed to load the %s module.", modname);
-   }
-   return 0;
-}
-
-//********************************************************************************************************************
-// Object garbage collector.
-
-static int module_destruct(lua_State *Lua)
-{
-   if (auto mod = (module *)luaL_checkudata(Lua, 1, "Tiri.mod")) {
-      mod->~module();
-   }
-
-   return 0;
-}
-
-//********************************************************************************************************************
-// Prints the module name
-
-static int module_tostring(lua_State *Lua)
-{
-   if (auto mod = (struct module *)luaL_checkudata(Lua, 1, "Tiri.mod")) {
-      std::string_view name;
-      if (!mod->Module->getName(name)) {
-         lua_pushstring(Lua, name);
-      }
-      else lua_pushnil(Lua);
-   }
-   else lua_pushnil(Lua);
-
    return 1;
 }
 
@@ -626,15 +621,31 @@ static int module_tostring(lua_State *Lua)
 
 static int module_index(lua_State *Lua)
 {
-   if (auto mod = (module *)luaL_checkudata(Lua, 1, "Tiri.mod")) {
+   if (auto mod = module_from_userdata(Lua, 1)) {
       if (auto function = luaL_checkstring(Lua, 2)) {
          if (mod->Functions) {
             auto hash = strihash(function); // Case insensitive function calls
             if (auto it = mod->FunctionMap.find(hash); it != mod->FunctionMap.end()) {
-               lua_pushvalue(Lua, 1); // Arg1: Duplicate the module reference
-               lua_pushinteger(Lua, it->second); // Arg2: Index of the function that is being called
-               lua_pushcclosure(Lua, module_call, 2);
-               return 1;
+               for (int index : it->second) {
+                  if (kt::iequals(mod->Functions[index].Name, function)) {
+                     CSTRING canonical_name = mod->Functions[index].Name;
+                     lua_getfenv(Lua, 1);
+                     lua_getfield(Lua, -1, canonical_name);
+                     if (not lua_isnil(Lua, -1)) {
+                        lua_remove(Lua, -2);
+                        return 1;
+                     }
+                     lua_pop(Lua, 1);
+
+                     lua_pushvalue(Lua, 1); // Arg1: Duplicate the module reference
+                     lua_pushinteger(Lua, index); // Arg2: Index of the function that is being called
+                     lua_pushcclosure(Lua, module_call, 2);
+                     lua_pushvalue(Lua, -1);
+                     lua_setfield(Lua, -3, canonical_name);
+                     lua_remove(Lua, -2);
+                     return 1;
+                  }
+               }
             }
 
             luaL_error(Lua, ERR::UnknownProperty, "Call to function %s() not recognised.", function);
@@ -797,7 +808,13 @@ static ERR module_call_inner(lua_State *Lua, std::string &ErrorMsg, int &Results
       else return "";
    };
 
-   auto mod = (module *)get_meta(Lua, lua_upvalueindex(1), "Tiri.mod");
+   module *mod = nullptr;
+   if (lua_islightuserdata(Lua, lua_upvalueindex(1))) {
+      mod = (module *)lua_touserdata(Lua, lua_upvalueindex(1));
+   }
+   else if (auto reference = (module_ref *)get_meta(Lua, lua_upvalueindex(1), "Tiri.mod")) {
+      mod = reference->Binding;
+   }
    if (not mod) {
       ErrorMsg = "module_call() expected module in upvalue.";
       return ERR::Args;
@@ -1509,15 +1526,13 @@ void register_module_class(lua_State *Lua)
    kt::Log log;
 
    static const struct luaL_Reg modlib_functions[] = {
-      { "load", module_load },
+      { "\x1f" "dependency", module_dependency },
       { "test", module_test },
       { nullptr, nullptr}
    };
 
    static const struct luaL_Reg modlib_methods[] = {
       { "__index",    module_index },
-      { "__tostring", module_tostring },
-      { "__gc",       module_destruct },
       { nullptr, nullptr }
    };
 
@@ -1541,6 +1556,6 @@ void register_module_class(lua_State *Lua)
    if (stack_delta) log.warning("Module registration left %d value(s) on the Lua stack.", stack_delta);
 
    // Register mod interface prototypes for compile-time type inference
-   reg_iface_prototype("mod", "load", { TiriType::Userdata }, { TiriType::Str });
-   reg_iface_prototype("mod", "test", { TiriType::Num, TiriType::Num }, { TiriType::Any, TiriType::Str });
+   reg_iface_prototype("mod", "\x1f" "dependency", { TiriType::Table }, { TiriType::Str });
+   reg_iface_prototype("mod", "test", { TiriType::Num, TiriType::Num }, { TiriType::Str, TiriType::Str });
 }

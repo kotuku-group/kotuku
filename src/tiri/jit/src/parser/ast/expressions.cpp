@@ -40,6 +40,15 @@ ParserResult<StmtNodePtr> AstBuilder::parse_expression_stmt()
 
    if (assignment_result.has_value()) {
       for (const ExprNodePtr &target : targets) {
+         if (target and target->kind IS AstNodeKind::MemberExpr) {
+            const auto &member = std::get<MemberExprPayload>(target->data);
+            if (member.module_namespace) {
+               return this->fail<StmtNodePtr>(ParserErrorCode::InvalidAssignment,
+                  Token::from_span(member.member.span, TokenKind::Identifier),
+                  std::format("Module namespace '{}' members cannot be assigned",
+                     std::string_view(strdata(member.module_namespace_name), member.module_namespace_name->len)));
+            }
+         }
          if (const Identifier *identifier = future_reserved_identifier_expr(target)) {
             return this->fail<StmtNodePtr>(ParserErrorCode::InvalidAssignment,
                Token::from_span(identifier->span, TokenKind::Identifier),
@@ -452,6 +461,39 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
       }
 
       case TokenKind::Identifier: {
+         if (const ModuleNamespaceSymbol *module_symbol = this->find_module_namespace(current.identifier())) {
+            this->ctx.tokens().advance();
+            Token suffix = this->ctx.tokens().current();
+            if (suffix.kind() != TokenKind::Dot) {
+               return this->fail<ExprNodePtr>(ParserErrorCode::UnexpectedToken, suffix,
+                  std::format("Module namespace '{}' can only select a named module function",
+                     std::string_view(strdata(current.identifier()), current.identifier()->len)));
+            }
+            this->ctx.tokens().advance();
+            auto member_token = this->ctx.expect_name(ParserErrorCode::ExpectedIdentifier);
+            if (not member_token.ok()) return ParserResult<ExprNodePtr>::failure(member_token.error_ref());
+
+            Identifier member = make_identifier(member_token.value_ref());
+            std::string_view source_function(strdata(member.symbol), member.symbol->len);
+            std::string_view canonical_function = static_module_function_name(module_symbol->module, source_function);
+            if (module_symbol->module and canonical_function.empty()) {
+               return this->fail<ExprNodePtr>(ParserErrorCode::UnexpectedToken, member_token.value_ref(),
+                  std::format("Unknown function '{}' in module '{}'", source_function,
+                     module_symbol->canonical_module));
+            }
+            if (not canonical_function.empty()) member.symbol = this->ctx.lex().keepstr(canonical_function);
+
+            NameRef hidden_reference;
+            hidden_reference.identifier = Identifier::from_keepstr(module_symbol->hidden_name, current.span());
+            ExprNodePtr hidden_expr = make_identifier_expr(current.span(), hidden_reference);
+            node = make_member_expr(
+               span_from(current, member_token.value_ref()), std::move(hidden_expr), member, false);
+            auto &payload = std::get<MemberExprPayload>(node->data);
+            payload.module_namespace = module_symbol->module;
+            payload.module_namespace_name = module_symbol->source_name;
+            break;
+         }
+
          Identifier id = make_identifier(current);
          NameRef name;
          name.identifier = id;

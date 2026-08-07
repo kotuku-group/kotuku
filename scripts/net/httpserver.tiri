@@ -12,7 +12,7 @@
    _LIB[_NS] = { }
    hslib = _LIB[_NS]
 
-global mNet ?= mod.load('network')
+   module network as mNet
 
 rxControlChars    <const> = <{ regex.new([=[[\x00-\x1f\x7f]]=]) }>
 rxQueryFragment   <const> = <{ regex.new([[^([^?#]*)]]) }>

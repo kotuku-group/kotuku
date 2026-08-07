@@ -39,6 +39,10 @@ ParserResult<StmtNodePtr> AstBuilder::parse_local()
          Token function_token = local_token;  // Use local_token as span start
          auto name_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
          if (not name_token.ok()) return ParserResult<StmtNodePtr>::failure(name_token.error_ref());
+         if (this->find_module_namespace(name_token.value_ref().identifier())) {
+            return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token.value_ref(),
+               "Module namespaces cannot be declared as functions");
+         }
          GCstr *funcname = name_token.value_ref().identifier();
          auto fn = this->parse_function_literal(function_token, is_thunk, funcname);
          if (not fn.ok()) return ParserResult<StmtNodePtr>::failure(fn.error_ref());
@@ -136,6 +140,10 @@ ParserResult<StmtNodePtr> AstBuilder::parse_global()
       Token function_token = global_token;
       auto name_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
       if (not name_token.ok()) return ParserResult<StmtNodePtr>::failure(name_token.error_ref());
+      if (this->find_module_namespace(name_token.value_ref().identifier())) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token.value_ref(),
+            "Module namespaces cannot be declared as functions");
+      }
       GCstr *funcname = name_token.value_ref().identifier();
       auto fn = this->parse_function_literal(function_token, is_thunk, funcname);
       if (not fn.ok()) return ParserResult<StmtNodePtr>::failure(fn.error_ref());
@@ -848,6 +856,10 @@ ParserResult<StmtNodePtr> AstBuilder::parse_function_stmt()
    FunctionNamePath path;
    auto name_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
    if (not name_token.ok()) return ParserResult<StmtNodePtr>::failure(name_token.error_ref());
+   if (this->find_module_namespace(name_token.value_ref().identifier())) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token.value_ref(),
+         "Module namespaces cannot be declared as functions or have members replaced");
+   }
    path.segments.push_back(make_identifier(name_token.value_ref()));
 
    bool method = false;
@@ -1372,6 +1384,127 @@ static bool include_module_name_is_valid(std::string_view Module)
    }
 
    return true;
+}
+
+//********************************************************************************************************************
+// Parses a contextual module namespace declaration: module <name> as <namespace>.
+//
+// The emitted local has an internal, unspellable name and is solely the runtime dependency handle.  Source references
+// are recognised from module_namespaces and may only form named member expressions, so the declared namespace never
+// becomes a Tiri value or a global-table entry.
+
+ParserResult<StmtNodePtr> AstBuilder::parse_module_decl()
+{
+   Token module_token = this->ctx.tokens().current();
+   if (not this->at_top_level()) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, module_token,
+         "Module declarations are only permitted at compilation-unit level");
+   }
+   this->ctx.tokens().advance();
+
+   Token name_token = this->ctx.tokens().current();
+   if (name_token.kind() != TokenKind::Identifier or not name_token.identifier()) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedIdentifier, name_token,
+         "Module name must be an identifier");
+   }
+   std::string module_name(strdata(name_token.identifier()), name_token.identifier()->len);
+   if (not include_module_name_is_valid(module_name)) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token,
+         "Invalid module name; only alpha-numeric names shorter than 32 characters are permitted");
+   }
+   this->ctx.tokens().advance();
+
+   Token as_token = this->ctx.tokens().current();
+   if (as_token.kind() != TokenKind::AsToken) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, as_token,
+         "Expected 'as' after module name");
+   }
+   this->ctx.tokens().advance();
+
+   Token namespace_token = this->ctx.tokens().current();
+   if (namespace_token.kind() != TokenKind::Identifier or not namespace_token.identifier()) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedIdentifier, namespace_token,
+         "Module namespace must be an identifier");
+   }
+   GCstr *namespace_name = namespace_token.identifier();
+   this->ctx.tokens().advance();
+
+   Token trailing = this->ctx.tokens().current();
+   if (trailing.span().line IS namespace_token.span().line and trailing.kind() != TokenKind::Semicolon and
+         trailing.kind() != TokenKind::EndOfFile and trailing.kind() != TokenKind::CompileEnd) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, trailing,
+         "Unexpected token after module namespace declaration");
+   }
+
+   if (auto existing = this->find_module_namespace(namespace_name)) {
+      if (kt::iequals(existing->canonical_module, module_name)) {
+         return ParserResult<StmtNodePtr>::success(nullptr);
+      }
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, namespace_token,
+         std::format("Module namespace '{}' is already bound to module '{}'",
+            std::string_view(strdata(namespace_name), namespace_name->len), existing->canonical_module));
+   }
+
+   if (auto error = load_include(this->ctx.lua().script, module_name); error != ERR::Okay) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, name_token,
+         std::format("Module '{}' is not available: {}. Guard optional dependencies with "
+            "@if(exists='modules:{}').", module_name, GetErrorMsg(error), module_name));
+   }
+
+   StaticModuleHandle signature = static_module_by_name(module_name);
+   std::string canonical_module = signature ? std::string(static_module_name(signature)) : module_name;
+   std::string hidden_text = std::string("\x1fmodule:") + canonical_module;
+   GCstr *hidden_name = this->ctx.lex().keepstr(hidden_text);
+   bool dependency_declared = false;
+   for (const auto &[source_name, declared] : this->module_namespaces) {
+      (void)source_name;
+      if (kt::iequals(declared.canonical_module, canonical_module)) {
+         hidden_name = declared.hidden_name;
+         dependency_declared = true;
+         break;
+      }
+   }
+
+   ModuleNamespaceSymbol symbol;
+   symbol.source_name = namespace_name;
+   symbol.hidden_name = hidden_name;
+   symbol.module = signature;
+   symbol.canonical_module = canonical_module;
+   symbol.declaration_span = module_token.span();
+   this->module_namespaces.emplace(namespace_name, std::move(symbol));
+
+   if (dependency_declared) return ParserResult<StmtNodePtr>::success(nullptr);
+
+   #ifdef INCLUDE_TIPS
+   std::string_view namespace_view(strdata(namespace_name), namespace_name->len);
+   if (namespace_view.size() < 2 or namespace_view[0] != 'm' or
+         namespace_view[1] < 'A' or namespace_view[1] > 'Z') {
+      this->ctx.emit_tip(3, TipCategory::Style,
+         std::format("Module namespace '{}' does not follow the recommended 'mName' convention", namespace_view),
+         namespace_token);
+   }
+   #endif
+
+   Identifier hidden_identifier = Identifier::from_keepstr(hidden_name, module_token.span());
+   hidden_identifier.has_const = true;
+   std::vector<Identifier> names;
+   names.push_back(hidden_identifier);
+
+   NameRef mod_reference;
+   mod_reference.identifier = Identifier::from_keepstr(this->ctx.lex().keepstr("mod"), module_token.span());
+   ExprNodePtr mod_expr = make_identifier_expr(module_token.span(), mod_reference);
+   Identifier load_identifier = Identifier::from_keepstr(
+      this->ctx.lex().keepstr(std::string_view("\x1f" "dependency", 11)), module_token.span());
+   ExprNodePtr load_expr = make_member_expr(module_token.span(), std::move(mod_expr), load_identifier, false);
+
+   ExprNodeList arguments;
+   GCstr *module_string = this->ctx.lex().keepstr(canonical_module);
+   arguments.push_back(make_literal_expr(name_token.span(), LiteralValue::string(module_string)));
+   ExprNodeList values;
+   values.push_back(make_call_expr(module_token.span(), std::move(load_expr), std::move(arguments), false));
+
+   return ParserResult<StmtNodePtr>::success(
+      make_local_decl_stmt(module_token.span(), std::move(names), std::move(values)));
 }
 
 //********************************************************************************************************************
@@ -1927,16 +2060,29 @@ ParserResult<StmtNodePtr> AstBuilder::parse_compile_if()
    else if (condition_name IS "exists") {
       if (is_bool_value) return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, value_token, "Condition 'exists' requires a string path value");
 
-      // Resolve the path relative to the current script
-      std::string check_path;
-      if (this->ctx.lex().chunk_arg) {
-         std::string current_file(this->ctx.lex().chunk_arg);
-         if (not current_file.empty() and (current_file[0] IS '@' or current_file[0] IS '=')) {
-            current_file = current_file.substr(1);
-         }
-         size_t last_sep = current_file.find_last_of("/\\");
-         if (last_sep != std::string::npos) {
-            check_path = current_file.substr(0, last_sep + 1) + std::string(string_value);
+      if (string_value.starts_with("modules:")) {
+         std::string_view module_name = string_value.substr(8);
+         condition_result = include_module_name_is_valid(module_name) and this->module_is_available(module_name);
+      }
+      else {
+
+         // Resolve the path relative to the current script
+         std::string check_path;
+         if (this->ctx.lex().chunk_arg) {
+            std::string current_file(this->ctx.lex().chunk_arg);
+            if (not current_file.empty() and (current_file[0] IS '@' or current_file[0] IS '=')) {
+               current_file = current_file.substr(1);
+            }
+            size_t last_sep = current_file.find_last_of("/\\");
+            if (last_sep != std::string::npos) {
+               check_path = current_file.substr(0, last_sep + 1) + std::string(string_value);
+            }
+            else {
+               std::string_view working_path;
+               this->ctx.lua().script->getWorkingPath(working_path);
+               if (not working_path.empty()) check_path = std::string(working_path) + std::string(string_value);
+               else check_path = std::string(string_value);
+            }
          }
          else {
             std::string_view working_path;
@@ -1944,15 +2090,9 @@ ParserResult<StmtNodePtr> AstBuilder::parse_compile_if()
             if (not working_path.empty()) check_path = std::string(working_path) + std::string(string_value);
             else check_path = std::string(string_value);
          }
-      }
-      else {
-         std::string_view working_path;
-         this->ctx.lua().script->getWorkingPath(working_path);
-         if (not working_path.empty()) check_path = std::string(working_path) + std::string(string_value);
-         else check_path = std::string(string_value);
-      }
 
-      condition_result = (!AnalysePath(check_path, nullptr));
+         condition_result = (!AnalysePath(check_path, nullptr));
+      }
    }
    else return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, ident_token, "Unknown @if condition: " + std::string(condition_name));
 
@@ -1966,6 +2106,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_compile_if()
          auto stmt = this->parse_statement();
          if (not stmt.ok()) return ParserResult<StmtNodePtr>::failure(stmt.error_ref());
          if (stmt.value_ref()) statements.push_back(std::move(stmt.value_ref()));
+         this->append_pending_statements(statements);
       }
 
       // Expect @end
@@ -1976,12 +2117,15 @@ ParserResult<StmtNodePtr> AstBuilder::parse_compile_if()
       }
       this->ctx.tokens().advance();  // consume @end
 
-      // Return a do block containing the statements (transparent wrapper)
+      // The selected branch is source-level syntax, not a runtime block.  Return its first statement and queue the
+      // remainder so bindings (including module namespaces) retain compilation-unit scope.
 
-      auto block = make_block(compif_token.span(), std::move(statements));
-      auto stmt = std::make_unique<StmtNode>(AstNodeKind::DoStmt, compif_token.span());
-      stmt->data = DoStmtPayload(std::move(block));
-      return ParserResult<StmtNodePtr>::success(std::move(stmt));
+      if (statements.empty()) return ParserResult<StmtNodePtr>::success(nullptr);
+      StmtNodePtr first = std::move(statements.front());
+      for (size_t i = 1; i < statements.size(); ++i) {
+         this->pending_statements.push_back(std::move(statements[i]));
+      }
+      return ParserResult<StmtNodePtr>::success(std::move(first));
    }
    else {
       log.detail("@if condition false, skipping to @end");

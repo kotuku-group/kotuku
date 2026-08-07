@@ -86,6 +86,29 @@ end
    assert(import_path and import_path.type is 4, 'Parent-relative import path should remain a string token.')
 end
 
+@Test function ModuleDeclarationsReceiveContextualSemanticTokens()
+   source = 'module core as runtimeCore\n' ..
+      'runtimeCore.PreciseTime()\n' ..
+      'module({}, function() end)\n'
+   tokens = tokenizeTiri(source)
+
+   module_keyword = findToken(tokens, 0, 0, 'module')
+   module_name = findToken(tokens, 0, 7, 'core')
+   as_keyword = findToken(tokens, 0, 12, 'as')
+   namespace_decl = findToken(tokens, 0, 15, 'runtimeCore')
+   namespace_ref = findToken(tokens, 1, 0, 'runtimeCore')
+   compatibility_call = findToken(tokens, 2, 0, 'module')
+
+   assert(module_keyword and module_keyword.type is 0, 'Declaration module should be a contextual keyword.')
+   assert(module_name and module_name.type is 10, 'Declared module name should use namespace highlighting.')
+   assert(as_keyword and as_keyword.type is 0, 'Declaration as should remain a keyword.')
+   assert(namespace_decl and namespace_decl.type is 10 and (namespace_decl.modifiers & 5) is 5,
+      'Module namespace declaration should be readonly declaration highlighting.')
+   assert(namespace_ref and namespace_ref.type is 10, 'Declared namespace references should be highlighted.')
+   assert(compatibility_call and compatibility_call.type is 3,
+      'Existing module(...) identifiers should retain function highlighting.')
+end
+
 @Test function ImportListPathsReceiveSemanticTokens()
    source = "import 'json',\n   'options'\n"
 

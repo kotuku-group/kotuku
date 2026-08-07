@@ -7,7 +7,7 @@ Documentation is available in the Kotuku Wiki.
 
    namespace 'gui'
 
-   global mGfx <const> ?= mod.load('display')
+   module display as mGfx
 
 GAP <const> = gui.sizing.widget.gap
 HALF_GAP <const> = gui.sizing.widget.gap / 2

@@ -448,6 +448,8 @@ struct MemberExprPayload {
    bool uses_method_dispatch = false;
    bool is_call_target = false;                       // True if this expression is the callee of a function call
    mutable CLASSID class_id = CLASSID::NIL;           // CLASSID if base is Object
+   StaticModuleHandle module_namespace = nullptr;     // Compiler namespace metadata; never represents a script value
+   GCstr *module_namespace_name = nullptr;
    ~MemberExprPayload();
 };
 

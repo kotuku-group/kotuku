@@ -859,26 +859,6 @@ private:
       return std::pair(std::string_view(strdata(literal.string_value), literal.string_value->len), true);
    }
 
-   [[nodiscard]] StaticModuleHandle literal_module_load(const CallExprPayload &Call) const
-   {
-      const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
-      if (not direct or not direct->callable or direct->callable->kind != AstNodeKind::MemberExpr or
-          Call.arguments.size() != 1) return nullptr;
-      const auto &member = std::get<MemberExprPayload>(direct->callable->data);
-      if (not member.table or member.table->kind != AstNodeKind::IdentifierExpr or not member.member.symbol or
-          member.member.symbol->hash != kt::strhash("load")) return nullptr;
-      const auto &base = std::get<NameRef>(member.table->data);
-      if (base.binding_id or not base.identifier.symbol or base.identifier.symbol->hash != kt::strhash("mod")) {
-         return nullptr;
-      }
-      const ExprNode &argument = *Call.arguments.front();
-      if (argument.kind != AstNodeKind::LiteralExpr) return nullptr;
-      const auto &literal = std::get<LiteralValue>(argument.data);
-      if (literal.kind != LiteralKind::String or not literal.string_value) return nullptr;
-      return static_module_by_name(
-         std::string_view(strdata(literal.string_value), literal.string_value->len));
-   }
-
    [[nodiscard]] StaticValueDescriptor call_descriptor(CallExprPayload &Call, bool Safe)
    {
       if (this->native_calls_only_) {
@@ -907,12 +887,6 @@ private:
          result.primary = TiriType::Range;
          result.proof = StaticProof::Closed;
          result.nullable = false;
-      }
-      else if (StaticModuleHandle mod = this->literal_module_load(Call);
-          mod and (result.primary IS TiriType::Unknown or result.primary IS TiriType::Userdata)) {
-         result.primary = TiriType::Userdata;
-         result.module = mod;
-         result.proof = StaticProof::Trusted;
       }
       else if (const auto *direct = std::get_if<DirectCallTarget>(&Call.target);
           direct and direct->callable and direct->callable->kind IS AstNodeKind::MemberExpr) {
