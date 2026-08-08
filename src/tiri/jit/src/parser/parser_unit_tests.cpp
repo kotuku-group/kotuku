@@ -5970,6 +5970,25 @@ static bool test_type_guided_emission(kt::Log &Log)
       return false;
    }
 
+   constexpr std::string_view annotated_array_element_inference =
+      "extern array\n"
+      "local values:array<double> = array<double, 3> { 1, 2, 3 }\n"
+      "local value = values[0]\n"
+      "value = value + 1\n"
+      "local function increment(Values:array<double>):num\n"
+      "   local safe_value = Values?[0]\n"
+      "   safe_value = safe_value + 1\n"
+      "   return safe_value\n"
+      "end\n"
+      "return value, increment(values)\n";
+   error.clear();
+   snapshot = compile_snapshot(L, annotated_array_element_inference, true, error);
+   if (not snapshot or count_opcode_tree(*snapshot, BC_AGETB) IS 0 or
+       count_opcode_tree(*snapshot, BC_ASGETB) IS 0) {
+      Log.error("annotated arrays lost indexed element inference: %s", error.c_str());
+      return false;
+   }
+
    constexpr std::string_view callable_table =
       "local function accept(Value:func):func return Value end\n"
       "local callable = {}\n"

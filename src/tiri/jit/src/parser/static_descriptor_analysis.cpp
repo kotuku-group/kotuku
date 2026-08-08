@@ -1177,12 +1177,9 @@ private:
             if (base) {
                StaticValueDescriptor base_value = this->descriptor_of(*base);
                if (base_value.primary IS TiriType::Array and base_value.array_element.known and
-                   base_value.proved() and not base_value.nullable) {
-                  value.primary = base_value.array_element.logical_type;
-                  value.object_class_id = base_value.array_element.object_class_id;
-                  value.struct_def = base_value.array_element.struct_def;
-                  value.proof = StaticProof::Trusted;
-                  value.nullable = safe;
+                   base_value.proved()) {
+                  value = this->array_element_value(base_value.array_element);
+                  value.nullable = value.nullable or safe;
                }
             }
             break;
