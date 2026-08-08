@@ -852,7 +852,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
       }
 
       case TokenKind::StructTyped: {
-         // Explicit struct construction: struct<Name> { fields }
+         // Explicit struct construction: struct<Name> or struct<Name> { fields }
          // Desugar to: struct.new('Name', { fields })
          // This is the only declaration-based construction form; declarations do not bind a constructor variable.
 
@@ -865,15 +865,14 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
          }
          this->ctx.tokens().advance();
 
-         if (not this->ctx.check(TokenKind::LeftBrace)) {
-            return this->fail<ExprNodePtr>(ParserErrorCode::ExpectedToken, this->ctx.tokens().current(),
-               std::format("Expected '{{' to construct struct<{}>", struct_name));
-         }
-
-         auto table_result = this->parse_table_literal(false);
-         if (not table_result.ok()) return table_result;
-
          SourceSpan span = start.span();
+         ExprNodePtr initialiser;
+         if (this->ctx.check(TokenKind::LeftBrace)) {
+            auto table_result = this->parse_table_literal(false);
+            if (not table_result.ok()) return table_result;
+            initialiser = std::move(table_result.value_ref());
+         }
+         else initialiser = make_table_expr(span, {}, false);
 
          // Build struct.new('Name', { fields })
          Identifier struct_id = Identifier::from_keepstr(this->ctx.lex().keepstr("struct"), span);
@@ -885,7 +884,7 @@ ParserResult<ExprNodePtr> AstBuilder::parse_primary()
 
          ExprNodeList args;
          args.push_back(make_literal_expr(span, LiteralValue::string(name_str)));
-         args.push_back(std::move(table_result.value_ref()));
+         args.push_back(std::move(initialiser));
          node = make_call_expr(span, std::move(struct_new), std::move(args), false);
          break;
       }

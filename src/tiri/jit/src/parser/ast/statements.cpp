@@ -429,10 +429,10 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
          else if (element_name IS "uint16") {
             field.Type = FD_WORD|FD_UNSIGNED; field.NativeType = NativeStructType::UInt16;
          }
-         else if (element_name IS "int" or element_name IS "int32") {
+         else if (element_name IS "int") {
             field.Type = FD_INT; field.NativeType = NativeStructType::Int32;
          }
-         else if (element_name IS "uint" or element_name IS "uint32") {
+         else if (element_name IS "uint") {
             field.Type = FD_INT|FD_UNSIGNED; field.NativeType = NativeStructType::UInt32;
          }
          else if (element_name IS "int64") { field.Type = FD_INT64; field.NativeType = NativeStructType::Int64; }
@@ -499,10 +499,10 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
       else if (type_name IS "uint16") {
          field.Type = FD_WORD|FD_UNSIGNED; field.NativeType = NativeStructType::UInt16;
       }
-      else if (type_name IS "int" or type_name IS "int32") {
+      else if (type_name IS "int") {
          field.Type = FD_INT; field.NativeType = NativeStructType::Int32;
       }
-      else if (type_name IS "uint" or type_name IS "uint32") {
+      else if (type_name IS "uint") {
          field.Type = FD_INT|FD_UNSIGNED; field.NativeType = NativeStructType::UInt32;
       }
       else if (type_name IS "int64") { field.Type = FD_INT64; field.NativeType = NativeStructType::Int64; }
@@ -548,8 +548,7 @@ ParserResult<StmtNodePtr> AstBuilder::parse_struct_declaration()
                if (reference_name IS "bool" or reference_name IS "char" or reference_name IS "byte" or
                      reference_name IS "int8" or reference_name IS "uint8") field.Type |= FD_BYTE;
                else if (reference_name IS "int16" or reference_name IS "uint16") field.Type |= FD_WORD;
-               else if (reference_name IS "int" or reference_name IS "uint" or reference_name IS "int32" or
-                     reference_name IS "uint32") field.Type |= FD_INT;
+               else if (reference_name IS "int" or reference_name IS "uint") field.Type |= FD_INT;
                else if (reference_name IS "int64" or reference_name IS "uint64") field.Type |= FD_INT64;
                else if (reference_name IS "float") field.Type |= FD_FLOAT;
                else if (reference_name IS "double") field.Type |= FD_DOUBLE;

@@ -224,14 +224,12 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- TYPE ANNOTATION ALIASES
+-- TYPE ANNOTATIONS
 
 @Test function TypeAliases()
-   -- num/number are aliases
+   -- num is the exclusive numeric type name
    local n1: num = 1
-   local n2: number = 2
-   assert(n1 is 1, "num alias works")
-   assert(n2 is 2, "number alias works")
+   assert(n1 is 1, "num type works")
 
    -- str is the exclusive string type name
    local s1: str = "a"

@@ -875,22 +875,14 @@ static int object_exists(lua_State *Lua)
       OBJECTPTR obj;
       access_object(def, obj); // Clears the stale UID and releases the wrapper's weak pin.
       lua_pushboolean(Lua, false);
-      return 1;
    }
-
-   if (def->is_pinned()) {
+   else if (def->is_pinned()) {
       // The weak pin guarantees the header remains valid, so not-dead means alive - no lock cycle required.
       lua_pushboolean(Lua, true);
-      return 1;
    }
+   else lua_pushboolean(Lua, CheckResourceExists(def->uid) IS ERR::True);
 
-   OBJECTPTR obj;
-   if (!access_object(def, obj)) {
-      release_object(def);
-      lua_pushboolean(Lua, true);
-      return 1;
-   }
-   return 0;
+   return 1;
 }
 
 //********************************************************************************************************************

@@ -53,7 +53,6 @@ end
    end
 
    assert_compiles("N:num")
-   assert_compiles("Number:number")
    assert_compiles("S:str")
    assert_compiles("B:bool")
    assert_compiles("T:table")
@@ -63,6 +62,22 @@ end
    assert_compiles("NilVal:nil")
    assert_compiles("StructVal:struct")
    assert_compiles("ObjVal:obj")
+end
+
+@Test function RemovedNumberTypeRejected()
+   function assert_rejected(Source:str, Context:str)
+      try
+         exec(Source)
+      success
+         error(f"Expected number type name to be rejected in {Context}")
+      end
+   end
+
+   assert_rejected("local value:number = 1", "a local annotation")
+   assert_rejected("local function rejected(Value:number) return Value end", "a parameter annotation")
+   assert_rejected("local function rejected():number return 1 end", "a return annotation")
+   assert_rejected("local value = <number{ 1 }>", "a deferred expression")
+   assert_rejected("thunk rejected():number return 1 end", "a thunk return annotation")
 end
 
 @Test function RemovedStringTypeRejected()

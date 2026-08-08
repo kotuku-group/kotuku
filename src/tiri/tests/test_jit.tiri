@@ -37,8 +37,8 @@ struct JITPhaseFiveScalarFields
    Unsigned16: uint16
    Signed: int
    Unsigned: uint
-   Signed32: int32
-   Unsigned32: uint32
+   Signed32: int
+   Unsigned32: uint
    Signed64: int64
    Unsigned64: uint64
    Single: float
@@ -2462,7 +2462,7 @@ end
    value.Unsigned32 = 4294967295
    value.Unsigned64 = 18446744073709549568
    assert(traced_phase_five_unsigned32_read(value, 20) is 4294967295,
-      'A hot uint32 read should preserve values above the signed range')
+      'A hot uint read should preserve values above the signed range')
    assert(traced_phase_five_unsigned64_read(value, 20) is 18446744073709549568,
       'A hot uint64 read should preserve representable values above the signed range')
 
